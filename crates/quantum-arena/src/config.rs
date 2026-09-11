@@ -196,6 +196,8 @@ impl QuantumConfig {
     /// Con el constructor explícito, el test T-2 puede exigir que ambos
     /// caminos produzcan el MISMO estado gen a gen.
     pub fn from_genome(initial_capital: f64, genome: &crate::genome::SuperGenotype) -> Self {
+        // D-683: curvas continuas derivadas de los genes (ver `apply_to_arena`).
+        let curvas = genome.with_synced_continuous_curves();
         let genome = genome.clone();
         Self {
             base_capital: AtomicF64::new(initial_capital),
@@ -256,7 +258,10 @@ impl QuantumConfig {
             swing_trail_max_atr: AtomicF64::new(genome.swing_trail_max_atr),
             swing_trail_min_pnl: AtomicF64::new(genome.swing_trail_min_pnl),
             swing_trail_atr_mult_base: AtomicF64::new(genome.swing_trail_atr_mult_base),
-            zombie_timeout_ms: AtomicF64::new(genome.zombie_timeout_ms),
+            zombie_timeout_ms: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
+                genome.zombie_timeout_ms,
+                crate::genome::SuperGenotype::SLOT_ZOMBIE_TIMEOUT,
+            )),
             hurst_trend_threshold: AtomicF64::new(genome.hurst_trend_threshold),
             cvd_veto_threshold: AtomicF64::new(genome.cvd_veto_threshold),
             wall_veto_threshold: AtomicF64::new(genome.wall_veto_threshold),
@@ -368,16 +373,16 @@ impl QuantumConfig {
             tp_curve_b: AtomicF64::new(genome.tp_horizon_curve.b),
             sl_curve_a: AtomicF64::new(genome.sl_horizon_curve.a),
             sl_curve_b: AtomicF64::new(genome.sl_horizon_curve.b),
-            kelly_curve_a: AtomicF64::new(genome.kelly_horizon_curve.a),
-            kelly_curve_b: AtomicF64::new(genome.kelly_horizon_curve.b),
-            trail_mult_curve_a: AtomicF64::new(genome.trail_mult_horizon_curve.a),
-            trail_mult_curve_b: AtomicF64::new(genome.trail_mult_horizon_curve.b),
-            trail_act_curve_a: AtomicF64::new(genome.trail_act_horizon_curve.a),
-            trail_act_curve_b: AtomicF64::new(genome.trail_act_horizon_curve.b),
-            trail_step_curve_a: AtomicF64::new(genome.trail_step_horizon_curve.a),
-            trail_step_curve_b: AtomicF64::new(genome.trail_step_horizon_curve.b),
-            obi_curve_a: AtomicF64::new(genome.obi_horizon_curve.a),
-            obi_curve_b: AtomicF64::new(genome.obi_horizon_curve.b),
+            kelly_curve_a: AtomicF64::new(curvas.kelly_horizon_curve.a),
+            kelly_curve_b: AtomicF64::new(curvas.kelly_horizon_curve.b),
+            trail_mult_curve_a: AtomicF64::new(curvas.trail_mult_horizon_curve.a),
+            trail_mult_curve_b: AtomicF64::new(curvas.trail_mult_horizon_curve.b),
+            trail_act_curve_a: AtomicF64::new(curvas.trail_act_horizon_curve.a),
+            trail_act_curve_b: AtomicF64::new(curvas.trail_act_horizon_curve.b),
+            trail_step_curve_a: AtomicF64::new(curvas.trail_step_horizon_curve.a),
+            trail_step_curve_b: AtomicF64::new(curvas.trail_step_horizon_curve.b),
+            obi_curve_a: AtomicF64::new(curvas.obi_horizon_curve.a),
+            obi_curve_b: AtomicF64::new(curvas.obi_horizon_curve.b),
         }
     }
 

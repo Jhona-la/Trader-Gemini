@@ -505,6 +505,12 @@ impl RecursiveHurst {
     pub fn confidence(&self) -> f64 {
         if self.dfa.is_valid { self.dfa.r_squared } else { 0.0 }
     }
+
+    /// Retornos acumulados por el estimador.
+    #[inline(always)]
+    pub fn samples(&self) -> usize {
+        self.dfa.samples()
+    }
 }
 
 // FFI Kelly Fraction & Stats Calculation

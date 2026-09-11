@@ -55,8 +55,6 @@ pub struct TpSlInputs {
     pub hurst: f64,
     /// Fricción de ida y vuelta como fracción del nocional (fees + slippage).
     pub roundtrip_fee: f64,
-    /// Win rate observado del sistema. Gobierna el RR mínimo exigible.
-    pub win_rate: f64,
     /// Multiplicador genómico del stop sobre la dispersión difusiva.
     pub sl_atr_multiplier: f64,
 }
@@ -69,7 +67,8 @@ pub struct TpSl {
     pub sl_pct: f64,
     /// RR efectivamente aplicado (≥ el mínimo exigido por la fricción).
     pub rr_applied: f64,
-    /// RR mínimo que la fricción exigía al nivel de SL resultante.
+    /// RR mínimo que la fricción exige al nivel de SL resultante, evaluado en
+    /// el win rate de diseño (D-681).
     pub rr_required: f64,
     /// `true` si el horizonte solicitado NO es operable: la dispersión
     /// esperada a esa τ no cubre el stop mínimo viable frente a la fricción.
@@ -77,10 +76,19 @@ pub struct TpSl {
     pub below_tradeable_floor: bool,
 }
 
-/// Horizonte de referencia de la curva de dispersión: 1 segundo. `atr_ratio`
-/// se interpreta como la dispersión medida a esta escala, de modo que
-/// `sigma(tau) = atr_ratio · (tau/1000)^H`.
-const TAU_REFERENCE_MS: f64 = 1_000.0;
+/// Horizonte de referencia de la curva de dispersión: la escala a la que se
+/// MIDE `atr_ratio`, de modo que `sigma(tau) = atr_ratio · (tau/TAU_REF)^H`.
+///
+/// D-677 (DÉCIMA OLA) — ERROR DE UNIDADES. Valía 1 segundo, pero `atr_ratio`
+/// es `v_t / precio` y `v_t` es la EMA del true range de la vela interna de
+/// **1 minuto** (`StatefulEngine::process_tick`, cierre a 60 000 ms), también
+/// calentada con velas REST `interval=1m`. Con la referencia en 1 s, a
+/// τ = 19 min y H = 0,30 la dispersión salía `(1138)^0,3 ≈ 8,3` veces el ATR
+/// en lugar de `(19)^0,3 ≈ 2,4`: stops y objetivos 3,4 veces más anchos de lo
+/// que la difusión justifica, y a H = 0,5 hasta 7,7 veces. El objetivo quedaba
+/// fuera del alcance del horizonte (0 salidas por TP en el backtest forense)
+/// y las posiciones terminaban por stop o por caducidad.
+const TAU_REFERENCE_MS: f64 = 60_000.0;
 
 /// FUNCIÓN PURA ÚNICA. La invocan, con las MISMAS entradas, tanto el gate de
 /// expectativa como el constructor de la orden: es imposible por construcción
@@ -101,11 +109,16 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
     } else {
         SuperGenotype::REFERENCE_ROUNDTRIP_FEE
     };
-    let w = if input.win_rate.is_finite() {
-        input.win_rate.clamp(0.05, 0.95)
-    } else {
-        SuperGenotype::WORST_TOLERATED_WR
-    };
+    // D-681 (DÉCIMA OLA): el RR mínimo se evalúa en el win rate de DISEÑO, no
+    // en el observado. Con el observado la geometría era autorreferente: cada
+    // pérdida bajaba `w`, subía `RR_req = (1−w)/w + f/(w·SL)`, alejaba el TP y
+    // reducía la probabilidad de alcanzarlo, lo que producía más pérdidas. Con
+    // `w = 0` tras una primera pérdida (acotado a 0,05) el TP quedaba a 19
+    // stops o más: 0 salidas por TP en el backtest forense desde 220b7433, y el
+    // breakeven y el trailing —que se arman en fracción del TP— dejaban de
+    // activarse. La evidencia observada pertenece al gate y al Kelly, no a la
+    // geometría de la orden.
+    let w = SuperGenotype::WORST_TOLERATED_WR;
     let k = if input.sl_atr_multiplier.is_finite() && input.sl_atr_multiplier > 0.0 {
         input.sl_atr_multiplier
     } else {
@@ -176,7 +189,6 @@ mod tests {
             atr_ratio: 0.005,
             hurst: 0.5,
             roundtrip_fee: 0.0010,
-            win_rate: 0.40,
             sl_atr_multiplier: 1.0,
         }
     }
@@ -233,7 +245,7 @@ mod tests {
                 i.atr_ratio = atr;
                 i.tau_ms = tau;
                 let r = compute_tp_sl(i);
-                let w = i.win_rate;
+                let w = SuperGenotype::WORST_TOLERATED_WR;
                 let f = i.roundtrip_fee;
                 let ev = w * (r.tp_pct - f) - (1.0 - w) * (r.sl_pct + f);
                 assert!(
@@ -257,6 +269,43 @@ mod tests {
             r.below_tradeable_floor,
             "a 1 ms con vol baja la dispersión no cubre la fricción: debe marcarse"
         );
+    }
+
+    /// D-677: a la escala en la que se mide el ATR, la dispersión ES el ATR; y
+    /// bajo difusión browniana cuatro veces el horizonte es el doble de
+    /// dispersión. Fija las unidades de la ley de escala.
+    #[test]
+    fn d677_la_referencia_temporal_es_la_escala_del_atr() {
+        let mut i = base();
+        i.atr_ratio = 0.005;
+        i.hurst = 0.5;
+        i.tau_ms = 60_000.0;
+        let a_1m = compute_tp_sl(i);
+        assert!(!a_1m.below_tradeable_floor);
+        assert!(
+            (a_1m.sl_pct - 0.005).abs() < 1e-12,
+            "a 1 minuto el stop difusivo debe ser el ATR de 1 minuto, dio {}",
+            a_1m.sl_pct
+        );
+        i.tau_ms = 240_000.0;
+        let a_4m = compute_tp_sl(i);
+        assert!(
+            (a_4m.sl_pct - 0.010).abs() < 1e-12,
+            "a 4 minutos y H = 0,5 la dispersión debe duplicarse, dio {}",
+            a_4m.sl_pct
+        );
+    }
+
+    /// D-681: la geometría de la orden no depende del desempeño observado. El
+    /// RR aplicado es exactamente el mínimo en el win rate de diseño.
+    #[test]
+    fn d681_el_objetivo_no_depende_del_desempeno_observado() {
+        let i = base();
+        let r = compute_tp_sl(i);
+        let rr = SuperGenotype::min_rr_for(SuperGenotype::WORST_TOLERATED_WR, i.roundtrip_fee, r.sl_pct)
+            .max(1.0);
+        assert!((r.tp_pct / r.sl_pct - rr).abs() < 1e-12);
+        assert!(r.rr_applied < 3.0, "a la geometría de referencia el RR es acotado: {}", r.rr_applied);
     }
 
     /// Un horizonte más largo implica más dispersión y por tanto más recorrido

@@ -732,7 +732,7 @@ impl SuperGenotype {
             swing_trail_max_atr: e_const * 2.5,
             swing_trail_min_pnl: taker_base * 15000.0,
             swing_trail_atr_mult_base: pi * 1.5,
-            zombie_timeout_ms: (1.0 / taker_base) * 900.0,
+            zombie_timeout_ms: 14_400_000.0, // D-649b: suelo de la banda (4 h)
             hurst_trend_threshold: golden_ratio - 1.0, // ~0.618
             cvd_veto_threshold: w_base * golden_ratio,
             wall_veto_threshold: pi * 5.0,
@@ -930,7 +930,7 @@ impl SuperGenotype {
             swing_trail_max_atr: rand::rng().random_range(0.001..20.0),
             swing_trail_min_pnl: rand::rng().random_range(0.001..20.0),
             swing_trail_atr_mult_base: rand::rng().random_range(0.001..20.0),
-            zombie_timeout_ms: rand::rng().random_range(10000.0..3600000.0),
+            zombie_timeout_ms: rand::rng().random_range(14_400_000.0..28_800_000.0),
             hurst_trend_threshold: rand::rng().random_range(0.4..0.8),
             cvd_veto_threshold: rand::rng().random_range(0.1..1.5),
             wall_veto_threshold: rand::rng().random_range(0.5..5.0),
@@ -1057,16 +1057,26 @@ impl SuperGenotype {
         arena.config.tp_curve_b.store(self.tp_horizon_curve.b, Ordering::Relaxed);
         arena.config.sl_curve_a.store(self.sl_horizon_curve.a, Ordering::Relaxed);
         arena.config.sl_curve_b.store(self.sl_horizon_curve.b, Ordering::Relaxed);
-        arena.config.kelly_curve_a.store(self.kelly_horizon_curve.a, Ordering::Relaxed);
-        arena.config.kelly_curve_b.store(self.kelly_horizon_curve.b, Ordering::Relaxed);
-        arena.config.trail_mult_curve_a.store(self.trail_mult_horizon_curve.a, Ordering::Relaxed);
-        arena.config.trail_mult_curve_b.store(self.trail_mult_horizon_curve.b, Ordering::Relaxed);
-        arena.config.trail_act_curve_a.store(self.trail_act_horizon_curve.a, Ordering::Relaxed);
-        arena.config.trail_act_curve_b.store(self.trail_act_horizon_curve.b, Ordering::Relaxed);
-        arena.config.trail_step_curve_a.store(self.trail_step_horizon_curve.a, Ordering::Relaxed);
-        arena.config.trail_step_curve_b.store(self.trail_step_horizon_curve.b, Ordering::Relaxed);
-        arena.config.obi_curve_a.store(self.obi_horizon_curve.a, Ordering::Relaxed);
-        arena.config.obi_curve_b.store(self.obi_horizon_curve.b, Ordering::Relaxed);
+        // D-683 (DÉCIMA OLA): las curvas de Kelly, trailing y OBI NO están en el
+        // vector de genes; `from_vector`, `mutate` y los constructores las
+        // derivan de los genes scalp/swing con `sync_continuous_curves`. Pero el
+        // genoma que se carga desde disco pasa por serde, que rellena las curvas
+        // ausentes con LITERALES (OBI 0,25–0,40, Kelly 0,20–0,15, trailing
+        // 2,5–3,5 ATR): producción y el backtest forense ejecutaban parámetros
+        // que el ciclo evolutivo jamás evaluó —en el genoma de producción, un
+        // umbral de OBI de 0,25 donde sus genes dicen 0,80—. Se derivan aquí,
+        // en la entrada al arena, igual que en la evolución.
+        let curvas = self.with_synced_continuous_curves();
+        arena.config.kelly_curve_a.store(curvas.kelly_horizon_curve.a, Ordering::Relaxed);
+        arena.config.kelly_curve_b.store(curvas.kelly_horizon_curve.b, Ordering::Relaxed);
+        arena.config.trail_mult_curve_a.store(curvas.trail_mult_horizon_curve.a, Ordering::Relaxed);
+        arena.config.trail_mult_curve_b.store(curvas.trail_mult_horizon_curve.b, Ordering::Relaxed);
+        arena.config.trail_act_curve_a.store(curvas.trail_act_horizon_curve.a, Ordering::Relaxed);
+        arena.config.trail_act_curve_b.store(curvas.trail_act_horizon_curve.b, Ordering::Relaxed);
+        arena.config.trail_step_curve_a.store(curvas.trail_step_horizon_curve.a, Ordering::Relaxed);
+        arena.config.trail_step_curve_b.store(curvas.trail_step_horizon_curve.b, Ordering::Relaxed);
+        arena.config.obi_curve_a.store(curvas.obi_horizon_curve.a, Ordering::Relaxed);
+        arena.config.obi_curve_b.store(curvas.obi_horizon_curve.b, Ordering::Relaxed);
 
         arena
             .config
@@ -1280,7 +1290,7 @@ impl SuperGenotype {
         arena
             .config
             .zombie_timeout_ms
-            .store(self.zombie_timeout_ms, Ordering::Relaxed);
+            .store(Self::clamp_slot(self.zombie_timeout_ms, Self::SLOT_ZOMBIE_TIMEOUT), Ordering::Relaxed);
         arena
             .config
             .hurst_trend_threshold
@@ -1745,7 +1755,7 @@ impl SuperGenotype {
             swing_trail_max_atr: mutate_val(self.swing_trail_max_atr, 0.001, 20.0),
             swing_trail_min_pnl: mutate_val(self.swing_trail_min_pnl, 0.001, 20.0),
             swing_trail_atr_mult_base: mutate_val(self.swing_trail_atr_mult_base, 0.001, 20.0),
-            zombie_timeout_ms: mutate_val(self.zombie_timeout_ms, 10000.0, 3600000.0),
+            zombie_timeout_ms: mutate_val(self.zombie_timeout_ms, 14_400_000.0, 28_800_000.0),
             hurst_trend_threshold: mutate_val(self.hurst_trend_threshold, 0.4, 0.8),
             cvd_veto_threshold: mutate_val(self.cvd_veto_threshold, 0.1, 2.0),
             wall_veto_threshold: mutate_val(self.wall_veto_threshold, 5.0, 50.0),
@@ -1886,6 +1896,14 @@ impl SuperGenotype {
 
     /// Sincroniza las curvas continuas de horizonte para Kelly, Trailing y OBI
     /// a partir de los parámetros del genoma en los puntos de anclaje (fast/slow).
+    /// D-683 (DÉCIMA OLA): copia con las curvas continuas derivadas de los
+    /// genes. Es lo que el arena debe recibir, venga el genoma de donde venga.
+    pub fn with_synced_continuous_curves(&self) -> Self {
+        let mut g = self.clone();
+        g.sync_continuous_curves();
+        g
+    }
+
     pub fn sync_continuous_curves(&mut self) {
         use crate::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS, HorizonCurve};
         self.kelly_horizon_curve = HorizonCurve::through_two_points(
@@ -2133,6 +2151,29 @@ impl SuperGenotype {
     /// Peor win rate que el sistema tolera — el punto de diseño conservador
     /// desde el que se dimensiona el gate.
     pub const WORST_TOLERATED_WR: f64 = 0.40;
+
+    /// D-680 (DÉCIMA OLA): peso del prior del win rate, en operaciones
+    /// equivalentes. Es `z²` con `z = 1,959964` (95 %): la misma corrección que
+    /// centra el intervalo de Wilson / Agresti–Coull, aquí hacia el win rate de
+    /// diseño en lugar de hacia ½. Una sola operación ya no puede llevar la
+    /// estimación a 0 ni a 1.
+    pub const WR_PRIOR_PSEUDO_TRADES: f64 = 1.959_963_984_540_054 * 1.959_963_984_540_054;
+
+    /// Media posterior del win rate tras una operación más. `current` es la
+    /// media posterior tras `n_prev` operaciones (el prior de diseño cuando
+    /// `n_prev` = 0). Equivale a `(aciertos + k·w₀) / (n + k)`.
+    #[inline]
+    pub fn posterior_win_rate(current: f64, n_prev: f64, is_win: bool) -> f64 {
+        let k = Self::WR_PRIOR_PSEUDO_TRADES;
+        let cur = if current.is_finite() {
+            current.clamp(0.0, 1.0)
+        } else {
+            Self::WORST_TOLERATED_WR
+        };
+        let n = if n_prev.is_finite() && n_prev >= 0.0 { n_prev } else { 0.0 };
+        let x = if is_win { 1.0 } else { 0.0 };
+        (cur * (n + k) + x) / (n + 1.0 + k)
+    }
     /// Fricción de referencia de ida y vuelta. D-645: la física del motor
     /// aplica 2×taker + deslizamiento, NO maker+taker. Con taker = 5 bps por
     /// pierna: 2 × 0,0005 = 0,0010.
@@ -2615,6 +2656,37 @@ impl SuperGenotype {
         g
     }
 
+    /// D-649b (DÉCIMA OLA): la escala de caducidad de posiciones.
+    ///
+    /// Al conectar el gen muerto `zombie_timeout_ms` (D-649) entró en vivo un
+    /// valor que la evolución jamás seleccionó —35 min en el genoma de
+    /// producción—, que acortaba el debounce de 4–8 h a ~52 min y el
+    /// hard-timeout de 12–24 h a ~2,6 h. D-649 además bajó el umbral de pérdida
+    /// de la rama de inversión de tendencia de −0,60 % a −0,50 %. En el
+    /// backtest forense: 12 de 31 salidas ZOMBIE con PnL ≈ −0,52 %.
+    ///
+    /// La banda pasa a [4 h, 8 h] y el umbral vuelve a −0,60 %: con el gen en
+    /// su suelo, `g·(1+s)` y `3g·(1+s)` coinciden con las fórmulas anteriores
+    /// `4h·(1+s)` y `12h·(1+s)`. Se conserva lo que D-649 añadió con razón —la
+    /// caducidad absoluta `12g·(1+s)` de posiciones huérfanas— y el gen queda
+    /// evolucionable dentro de una banda con sentido.
+    pub const SLOT_ZOMBIE_TIMEOUT: usize = 54;
+
+    /// Acota un gen a sus bounds evolutivos.
+    ///
+    /// D-625/D-643/D-649b: la regla es que un gen se acota donde se muta y
+    /// donde entra al sistema —`apply_to_arena` y `QuantumConfig::from_genome`—,
+    /// no en cada sitio de lectura. Así el valor en vivo y el que la evolución
+    /// explora coinciden, y la aptitud mide lo que realmente se ejecuta.
+    pub fn clamp_slot(value: f64, slot: usize) -> f64 {
+        let lo = Self::get_lower_bounds();
+        let hi = Self::get_upper_bounds();
+        if slot >= lo.len() || !value.is_finite() {
+            return value;
+        }
+        value.clamp(lo[slot], hi[slot])
+    }
+
     pub fn get_lower_bounds() -> Vec<f64> {
         vec![
             0.5,
@@ -2674,7 +2746,7 @@ impl SuperGenotype {
             0.001,
             0.001,
             0.001,
-            10000.0,
+            14_400_000.0, // D-649b: 4 h — reproduce el debounce previo
             0.4,
             0.1,
             5.0,
@@ -2828,7 +2900,7 @@ impl SuperGenotype {
             20.0,
             20.0,
             20.0,
-            3600000.0,
+            28_800_000.0, // D-649b: 8 h
             0.8,
             2.0,
             50.0,

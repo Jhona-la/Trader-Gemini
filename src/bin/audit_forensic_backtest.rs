@@ -87,7 +87,19 @@ async fn main() {
     // ═══════════════════════════════════════════════════════════════════════
     // PASO 2: Construir Arena y Core (Paridad Producción)
     // ═══════════════════════════════════════════════════════════════════════
-    let arena = Arc::new(quantum_arena::GlobalArena::new(initial_capital));
+    // D-684 (DÉCIMA OLA): el arena se construye en un hilo con la MISMA pila que
+    // producción (`god_engine`, 32 MiB). `CoinArena` lleva el búfer del ring de
+    // ticks en línea y `GlobalArena::build` materializa temporales de ese tamaño:
+    // su necesidad de pila depende de cómo el optimizador inlinee la construcción,
+    // y con 1 MiB (hilo principal en Windows) un cambio de una línea en `build`
+    // bastó para desbordarla. El evolver y el simulador ya seguían este patrón.
+    let arena = std::thread::Builder::new()
+        .name("arena-build".into())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(move || Arc::new(quantum_arena::GlobalArena::new(initial_capital)))
+        .expect("no se pudo crear el hilo de construcción del arena")
+        .join()
+        .expect("la construcción del arena entró en pánico");
     genome.apply_to_arena(&arena);
 
     // Desactivar NanoForest obsoleto para activar DarkAlphaEngine 54D unificado

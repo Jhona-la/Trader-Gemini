@@ -975,6 +975,9 @@ impl GodEngineCore {
                 let trend_reversed =
                     (is_long && macro_t < -0.0045) || (!is_long && macro_t > 0.0045);
 
+                // D-649b: el gen entra acotado a [4 h, 8 h] (ver
+                // SuperGenotype::SLOT_ZOMBIE_TIMEOUT). En su suelo, debounce y
+                // hard-timeout reproducen exactamente las fórmulas anteriores.
                 // D-649 (DÉCIMA OLA) — EL GEN `zombie_timeout_ms` ENTRA EN SERVICIO.
                 //
                 // El gen existía, se escribía en el arena y NINGÚN consumidor lo
@@ -1015,7 +1018,7 @@ impl GodEngineCore {
                 let is_zombie = expired_by_age
                     || (event_time_ms > 0
                         && position_age_ms > dynamic_zombie_debounce_ms
-                        && ((trend_reversed && pnl_pct <= -0.0050) || hard_timeout));
+                        && ((trend_reversed && pnl_pct <= -0.0060) || hard_timeout)); // D-649b: umbral original
 
                 // D-492: Dynamic Adverse Order Flow Stop Cutting (Toxic Flow Cutoff)
                 // Se activa únicamente cuando el trade ha consumido la gran mayoría de su stop loss continuo
@@ -1231,9 +1234,14 @@ impl GodEngineCore {
                         self.conformal.update(ml_at_entry, is_win);
                     }
 
-                    let n = coin.metrics.trade_count.fetch_add(1, Ordering::Relaxed) as f64 + 1.0;
+                    // D-680 (DÉCIMA OLA): media posterior con prior de diseño. Antes
+                    // `n` empezaba en 1 y la primera operación sobrescribía el
+                    // prior entero: tras una pérdida inicial el win rate valía 0.
+                    let n_prev = coin.metrics.trade_count.fetch_add(1, Ordering::Relaxed) as f64;
                     let old_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
-                    let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
+                    let new_wr = quantum_arena::genome::SuperGenotype::posterior_win_rate(
+                        old_wr, n_prev, is_win,
+                    );
                     coin.metrics.win_rate.store(new_wr, Ordering::Relaxed);
 
                     // F-014 FIX: Removed bifurcated writes to coin.scalp/coin.swing.
@@ -2449,11 +2457,16 @@ impl GodEngineCore {
             // En el espectro continuo universal, la duración esperada se modula continuamente por Hurst:
             // Hurst < 0.48 (anti-persistente) comprime la duración hacia la microestructura (tau bajo);
             // Hurst >= 0.52 (persistente/trending) expande la duración temporal para capturar la tendencia.
-            if hurst_exponent < 0.48 {
-                unified_intent.expected_duration_ms = (unified_intent.expected_duration_ms / 2).max(15_000);
-            } else if hurst_exponent >= 0.52 {
-                unified_intent.expected_duration_ms = (unified_intent.expected_duration_ms * 2).min(3_600_000);
-            }
+            // D-609 (DÉCIMA OLA): antes escalones en H = 0,48 y 0,52 (duración ×½ o
+            // ×2). Ahora la misma modulación es continua en H, y sólo actúa sobre
+            // duraciones DECLARADAS: la versión anterior asignaba 15 s a cualquier
+            // intención sin duración en régimen anti-persistente por un artefacto
+            // de `(0 / 2).max(15_000)` — las entradas del consenso tensorial, que no
+            // declaran duración, recibían un horizonte de 15 segundos.
+            unified_intent.expected_duration_ms = hurst_duration_modulation(
+                unified_intent.expected_duration_ms,
+                hurst_exponent,
+            );
             unified_intent.horizon = strategy_core::TradeHorizon::Continuous;
 
             // D-467, D-472, D-488 & D-496: Escudo Invariante Macro Multiescala (Secular 12h, Superior 2h y Macro 1m/15m).
@@ -3012,5 +3025,60 @@ impl GodEngineCore {
             event_time_ms,
             omni_features,
         )
+    }
+}
+
+/// D-609 (DÉCIMA OLA) — modulación continua de la duración esperada por el
+/// exponente de Hurst.
+///
+/// Reproduce los extremos calibrados del diseño anterior —×2 a H = 0,52, ×½ a
+/// H = 0,48— con `factor = 2^((H − 0,5)/0,02)` acotado a [½, 2], sin escalones.
+/// El recorte a [15 s, 1 h] se aplica sólo en la dirección del cambio, de modo
+/// que a H = 0,5 la duración no se altera. Una duración no declarada (0) se deja
+/// en 0: el horizonte lo decide entonces el mapeo τ único del sistema.
+pub fn hurst_duration_modulation(expected_duration_ms: u64, hurst: f64) -> u64 {
+    if expected_duration_ms == 0 || !hurst.is_finite() {
+        return expected_duration_ms;
+    }
+    let dur = expected_duration_ms as f64;
+    let factor = 2f64.powf((hurst - 0.5) / 0.02).clamp(0.5, 2.0);
+    let modulated = dur * factor;
+    let bounded = if factor > 1.0 {
+        modulated.min(3_600_000.0).max(dur)
+    } else {
+        modulated.max(15_000.0).min(dur)
+    };
+    bounded.round() as u64
+}
+
+#[cfg(test)]
+mod tests_d609 {
+    use super::hurst_duration_modulation;
+
+    #[test]
+    fn conserva_los_extremos_calibrados() {
+        assert_eq!(hurst_duration_modulation(600_000, 0.52), 1_200_000);
+        assert_eq!(hurst_duration_modulation(600_000, 0.48), 300_000);
+        assert_eq!(hurst_duration_modulation(600_000, 0.50), 600_000);
+    }
+
+    #[test]
+    fn es_continua_alrededor_de_los_antiguos_escalones() {
+        for &h in &[0.48, 0.52] {
+            let a = hurst_duration_modulation(600_000, h - 1e-6) as f64;
+            let b = hurst_duration_modulation(600_000, h + 1e-6) as f64;
+            assert!((a - b).abs() / 600_000.0 < 1e-3, "salto en H = {h}: {a} vs {b}");
+        }
+    }
+
+    #[test]
+    fn no_inventa_duracion_para_intenciones_sin_duracion() {
+        assert_eq!(hurst_duration_modulation(0, 0.30), 0);
+    }
+
+    #[test]
+    fn respeta_los_limites_solo_en_la_direccion_del_cambio() {
+        assert_eq!(hurst_duration_modulation(7_200_000, 0.60), 7_200_000);
+        assert_eq!(hurst_duration_modulation(10_000, 0.40), 10_000);
     }
 }

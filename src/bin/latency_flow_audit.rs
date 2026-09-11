@@ -9,7 +9,20 @@ fn main() {
     println!("Initialize Isolated Execution Environment...");
 
     // Create Arena
-    let arena = Arc::new(GlobalArena::new(0.0)); // Capital gets dynamically injected by API later
+    // D-684 (DÉCIMA OLA): el arena se construye en un hilo con la MISMA pila que
+    // producción (`god_engine`, 32 MiB). `CoinArena` lleva el búfer del ring de
+    // ticks en línea y `GlobalArena::build` materializa temporales de ese tamaño:
+    // su necesidad de pila depende de cómo el optimizador inlinee la construcción,
+    // y con 1 MiB (hilo principal en Windows) un cambio de una línea en `build`
+    // bastó para desbordarla. El evolver y el simulador ya seguían este patrón.
+    // El capital lo inyecta la API más tarde.
+    let arena = std::thread::Builder::new()
+        .name("arena-build".into())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(move || Arc::new(GlobalArena::new(0.0)))
+        .expect("no se pudo crear el hilo de construcción del arena")
+        .join()
+        .expect("la construcción del arena entró en pánico");
     let mut engine = GodEngineCore::new(Arc::clone(&arena));
 
     let total_ticks = 1_000_000;

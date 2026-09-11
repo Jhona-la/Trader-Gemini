@@ -407,6 +407,72 @@ mod tests {
     /// Este test compara gen a gen, mediante `current_from_arena`, el estado
     /// que produce cada camino. Es el contrato que impide que la exhaustividad
     /// de `apply_to_arena` vuelva a depender de que alguien se acuerde.
+    /// D-649b: el gen zombie entra acotado a [4 h, 8 h]; el valor del genoma de
+    /// producción (35 min) queda en el suelo, que reproduce la escala previa.
+    #[test]
+    fn d649b_zombie_se_acota_a_la_banda_de_diseno() {
+        use std::sync::atomic::Ordering;
+        let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
+        assert_eq!(g.to_vector()[SuperGenotype::SLOT_ZOMBIE_TIMEOUT], g.zombie_timeout_ms);
+        g.zombie_timeout_ms = 2_100_140.98;
+        let arena = crate::state::GlobalArena::from_genome(13.0, &g);
+        assert_eq!(arena.config.zombie_timeout_ms.load(Ordering::Relaxed), 14_400_000.0);
+    }
+
+    /// D-680: el prior del win rate es el de diseño y una operación no lo destruye.
+    #[test]
+    fn d680_prior_del_win_rate_y_media_posterior() {
+        use std::sync::atomic::Ordering;
+        let g = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let arena = crate::state::GlobalArena::from_genome(13.0, &g);
+        let w0 = arena.coins[0].metrics.win_rate.load(Ordering::Relaxed);
+        assert_eq!(w0, SuperGenotype::WORST_TOLERATED_WR);
+        let tras_perdida = SuperGenotype::posterior_win_rate(w0, 0.0, false);
+        assert!(
+            tras_perdida > 0.25 && tras_perdida < w0,
+            "una pérdida no puede llevarlo a 0: {tras_perdida}"
+        );
+        let mut w = w0;
+        for i in 0..10_000u32 {
+            w = SuperGenotype::posterior_win_rate(w, i as f64, i % 4 == 0);
+        }
+        assert!((w - 0.25).abs() < 0.01, "debe converger a la frecuencia observada, dio {w}");
+    }
+
+    /// D-683: un genoma cargado desde disco sin curvas continuas (serde las
+    /// rellena con literales) entra al arena con las curvas DERIVADAS de sus
+    /// genes, igual que el que sale de `from_vector`. Arranque en frío y
+    /// hot-swap coinciden.
+    #[test]
+    fn d683_curvas_continuas_se_derivan_de_los_genes_al_entrar_al_arena() {
+        use crate::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+        let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
+        g.scalp_obi_threshold = 0.45;
+        g.swing_obi_threshold = 0.30;
+        g.scalp_kelly_fraction = 0.157;
+        g.swing_kelly_fraction = 0.112;
+        g.scalp_trail_atr_mult_base = 2.2;
+        g.swing_trail_atr_mult_base = 4.1;
+        // Lo que serde deja en un genoma serializado sin curvas.
+        g.obi_horizon_curve =
+            HorizonCurve::through_two_points(TAU_ANCHOR_FAST_MS, 0.25, TAU_ANCHOR_SLOW_MS, 0.40);
+        g.kelly_horizon_curve =
+            HorizonCurve::through_two_points(TAU_ANCHOR_FAST_MS, 0.20, TAU_ANCHOR_SLOW_MS, 0.15);
+        g.trail_mult_horizon_curve =
+            HorizonCurve::through_two_points(TAU_ANCHOR_FAST_MS, 2.5, TAU_ANCHOR_SLOW_MS, 3.5);
+
+        let frio = crate::state::GlobalArena::from_genome(13.0, &g);
+        let caliente = crate::state::GlobalArena::new(13.0);
+        g.apply_to_arena(&caliente);
+        for (nombre, arena) in [("frío", &frio), ("hot-swap", &caliente)] {
+            let c = &arena.config;
+            assert!((c.obi_threshold_at_tau(TAU_ANCHOR_FAST_MS) - 0.45).abs() < 1e-9, "{nombre}: OBI rápido");
+            assert!((c.obi_threshold_at_tau(TAU_ANCHOR_SLOW_MS) - 0.30).abs() < 1e-9, "{nombre}: OBI lento");
+            assert!((c.kelly_at_tau(TAU_ANCHOR_SLOW_MS) - 0.112).abs() < 1e-9, "{nombre}: Kelly lento");
+            assert!((c.trail_params_at_tau(TAU_ANCHOR_FAST_MS).0 - 2.2).abs() < 1e-9, "{nombre}: trailing rápido");
+        }
+    }
+
     #[test]
     fn t2_simetria_from_genome_vs_apply_to_arena() {
         use crate::GlobalArena;

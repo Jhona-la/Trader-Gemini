@@ -376,7 +376,11 @@ impl GlobalArena {
     }
 
     fn build(initial_capital: f64, config: QuantumConfig) -> Self {
-        let w_base = config.maker_obi_threshold.load(Ordering::Relaxed);
+        // D-680 (DÉCIMA OLA): el prior del win rate era `maker_obi_threshold`
+        // (0,95 en el genoma de producción), un umbral de desequilibrio del
+        // libro de órdenes, no una tasa de acierto: antes de su primera
+        // operación el sistema se creía acertando el 95 %.
+        let w_base = crate::genome::SuperGenotype::WORST_TOLERATED_WR;
         let mut coins_vec = Vec::with_capacity(30);
         for _ in 0..30 {
             coins_vec.push(CoinArena::new(w_base));

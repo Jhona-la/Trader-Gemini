@@ -723,17 +723,25 @@ impl RiskEngine {
         // Ahora ambos caminos llaman a la MISMA función pura con las MISMAS
         // entradas: la identidad es estructural, no disciplinaria.
         let tau_for_sizing = horizon_tau_ms(intent, arena);
-        let tpsl_gate = crate::tp_sl::compute_tp_sl(crate::tp_sl::TpSlInputs {
-            tau_ms: tau_for_sizing,
-            atr_ratio: atr_pct,
-            hurst: hurst_exponent,
-            roundtrip_fee,
-            win_rate: real_win_rate,
-            sl_atr_multiplier: arena
-                .config
-                .sl_atr_multiplier
-                .load(Ordering::Relaxed),
-        });
+        // D-682 (DÉCIMA OLA): el gate evaluaba `compute_tp_sl` (TP = SL·RR_req)
+        // mientras la orden usaba `compute_tp_sl_with_target_rr` (TP = SL·RR
+        // genómico, mayor): la identidad que D-637 prometía seguía rota. Ahora
+        // se construye UNA vez y la orden reutiliza exactamente lo evaluado.
+        let tpsl_gate = crate::tp_sl::compute_tp_sl_with_target_rr(
+            crate::tp_sl::TpSlInputs {
+                tau_ms: tau_for_sizing,
+                atr_ratio: atr_pct,
+                hurst: hurst_exponent,
+                roundtrip_fee,
+                sl_atr_multiplier: arena
+                    .config
+                    .sl_atr_multiplier
+                    .load(Ordering::Relaxed),
+            },
+            // El RR genómico puede ser MÁS ambicioso que el mínimo exigido por
+            // la fricción, nunca menor.
+            arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
+        );
         // Horizonte no operable: la dispersión esperada a esa tau no cubre la
         // fricción. Se RECHAZA en lugar de acotar y fingir que es viable.
         if tpsl_gate.below_tradeable_floor {
@@ -921,23 +929,8 @@ impl RiskEngine {
         // se anulaba con el `clamp` que le seguía, y a la banda literal que
         // confinaba el stop entre 40 y 60 bps con independencia de la
         // volatilidad, del horizonte y de los genes.
-        let tpsl = crate::tp_sl::compute_tp_sl_with_target_rr(
-            crate::tp_sl::TpSlInputs {
-                tau_ms: tau_for_sizing,
-                atr_ratio: atr_pct,
-                hurst: hurst_exponent,
-                roundtrip_fee,
-                win_rate: real_win_rate,
-                sl_atr_multiplier: arena
-                    .config
-                    .sl_atr_multiplier
-                    .load(Ordering::Relaxed),
-            },
-            // El RR genómico puede ser MÁS ambicioso que el mínimo exigido por
-            // la fricción, nunca menor: el mínimo es una restricción de
-            // rentabilidad, no una preferencia de estilo.
-            arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
-        );
+        // D-682: la orden usa exactamente el TP/SL que el gate evaluó.
+        let tpsl = tpsl_gate;
         let sl_pct = tpsl.sl_pct;
         let tp_pct = tpsl.tp_pct;
 

@@ -112,6 +112,12 @@ impl HurstDfa {
         }
     }
 
+    /// Retornos acumulados en el histórico circular.
+    #[inline]
+    pub fn samples(&self) -> usize {
+        self.filled
+    }
+
     /// Alimenta un precio. Devuelve `(hurst, r_squared)`.
     pub fn update(&mut self, price: f64) -> (f64, f64) {
         if !price.is_finite() || price <= 0.0 {

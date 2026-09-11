@@ -249,7 +249,8 @@ impl StatefulEngine {
             self.dir_velocity = self.dir_velocity * 0.85 + inst_v * 0.15;
         }
 
-        self.hurst.update(price);
+        // D-615b: el Hurst YA NO se alimenta por evento (ver el cierre de la
+        // vela interna de 1 minuto, más abajo).
         let notional_usd = if _volume > 0.0 && price > 0.0 {
             _volume * price
         } else {
@@ -297,6 +298,24 @@ impl StatefulEngine {
 
             // Generate 1-minute Kline internally (60,000 ms) and update True Range EMA & Trend EMAs
             if event_time_ms.saturating_sub(self.kline_start_ms) >= 60000 {
+                // D-615b (DÉCIMA OLA) — HURST MUESTREADO POR RELOJ.
+                //
+                // Se alimentaba en cada evento. Un estimador de memoria sobre
+                // retornos por evento mide la microestructura del FEED, no la
+                // del activo: en producción llegan eventos cada ~100 ms y en el
+                // backtest forense barras de ~15 s, así que el mismo mercado
+                // producía exponentes distintos en cada entorno (0,22 en el
+                // forense). Y ese exponente gobierna la ley de escala del TP/SL,
+                // el régimen, el Kelly, el apalancamiento, la duración y siete
+                // umbrales de decisión.
+                //
+                // Se muestrea al cierre de la vela interna de 1 minuto: la
+                // escala en la que se mide el ATR (v_t) y la de las velas REST
+                // del calentamiento (`interval=1m`, vía `process_kline`). Así
+                // el exponente describe la difusión entre 1 minuto y el
+                // horizonte, que es exactamente lo que `tp_sl` necesita, y es
+                // idéntico en producción y en backtest.
+                self.hurst.update(price);
                 // FIX #608: True Range robusto y no nulo para evitar distorsiones en SL dinámico
                 let tr = (self.kline_high - self.kline_low).max(price * 0.0010);
                 self.v_t = if self.v_t == 0.0 || !self.v_t.is_finite() {
@@ -663,6 +682,35 @@ mod tests {
 
         let atr_pct = engine.get_atr_pct();
         assert!(atr_pct.is_finite());
+    }
+
+    /// D-615b: el Hurst depende del RELOJ, no de la cadencia del feed. La
+    /// misma ventana de 3 min 5 s alimentada a 100 ms (producción) y a 15 s
+    /// (backtest forense) debe entregar al estimador las mismas muestras.
+    #[test]
+    fn d615b_hurst_se_muestrea_por_reloj_no_por_evento() {
+        let t0: u64 = 1_700_000_000_000;
+        let precio = |i: u64| 50_000.0 + ((i % 7) as f64 - 3.0);
+
+        let mut rapido = StatefulEngine::new();
+        for i in 0..1_850u64 {
+            rapido.process_tick(precio(i), 1.0, t0 + i * 100);
+        }
+        let mut lento = StatefulEngine::new();
+        for i in 0..13u64 {
+            lento.process_tick(precio(i), 1.0, t0 + i * 15_000);
+        }
+
+        assert_eq!(
+            rapido.hurst.samples(),
+            lento.hurst.samples(),
+            "la cadencia del feed no debe cambiar la muestra del estimador"
+        );
+        assert!(
+            rapido.hurst.samples() <= 3,
+            "3 cierres de minuto no pueden producir {} retornos",
+            rapido.hurst.samples()
+        );
     }
 
     #[test]

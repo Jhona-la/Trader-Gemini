@@ -21,7 +21,19 @@ fn main() {
     } else {
         13.0
     };
-    let arena = GlobalArena::new(safe_capital);
+    // D-684 (DÉCIMA OLA): el arena se construye en un hilo con la MISMA pila que
+    // producción (`god_engine`, 32 MiB). `CoinArena` lleva el búfer del ring de
+    // ticks en línea y `GlobalArena::build` materializa temporales de ese tamaño:
+    // su necesidad de pila depende de cómo el optimizador inlinee la construcción,
+    // y con 1 MiB (hilo principal en Windows) un cambio de una línea en `build`
+    // bastó para desbordarla. El evolver y el simulador ya seguían este patrón.
+    let arena = std::thread::Builder::new()
+        .name("arena-build".into())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(move || GlobalArena::new(safe_capital))
+        .expect("no se pudo crear el hilo de construcción del arena")
+        .join()
+        .expect("la construcción del arena entró en pánico");
     arena.config.global_leverage.store(10.0, Ordering::Relaxed);
     arena
         .config
