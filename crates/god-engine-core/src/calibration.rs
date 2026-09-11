@@ -160,9 +160,72 @@ impl PlattCalibrator {
     }
 }
 
+/// D-693 (DÉCIMA OLA) — PROBABILIDAD DE SUBIDA QUE CONSUMEN LAS DECISIONES.
+///
+/// Es la probabilidad del ensamble (bosque y red, ponderados por Brier) más el
+/// sesgo spot, acotada a [0, 1]. El residuo online del `OnlineLearningModule`
+/// queda fuera:
+///
+/// - Se entrenaba con `realized_ret − ml_at_entry`, un retorno fraccional
+///   (≈ ±0,005) menos una probabilidad (≈ 0,3–0,5). El error fue negativo en el
+///   100 % de los cierres medidos y el residuo pasó el 99 % del tiempo en su
+///   suelo de −0,15, restando 0,15 a toda predicción: `ml_prob < ½` en el 99,5 %
+///   de las evaluaciones y el escudo neuronal vetando casi todos los largos
+///   (D-692).
+/// - Con el error en unidades de probabilidad tampoco converge: la ganancia de
+///   Kalman por rasgo, con momentum 0,9 y rasgos correlacionados, oscila con
+///   amplitud muy superior a su cota, así que sólo añadiría ruido de ±0,15.
+///
+/// Reincorporarlo exige un estimador que converja (mínimos cuadrados recursivos
+/// sobre el vector completo, con el error del predictor completo) y su propia
+/// validación walk-forward. La calibración con resultados reales ya la hace
+/// `PlattCalibrator` (D-619).
+pub fn compose_ml_prob(ensemble_prob: f64, spot_bias: f64) -> f64 {
+    let p = if ensemble_prob.is_finite() { ensemble_prob } else { 0.5 };
+    let b = if spot_bias.is_finite() { spot_bias } else { 0.0 };
+    (p + b).clamp(0.0, 1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn d693_ml_prob_es_el_ensamble_mas_el_sesgo_spot() {
+        assert_eq!(compose_ml_prob(0.45, 0.0), 0.45);
+        assert_eq!(compose_ml_prob(0.95, 0.15), 1.0);
+        assert_eq!(compose_ml_prob(0.05, -0.15), 0.0);
+        assert_eq!(compose_ml_prob(f64::NAN, 0.0), 0.5);
+        assert_eq!(compose_ml_prob(0.6, f64::NAN), 0.6);
+    }
+
+    /// D-693: por qué el residuo online no puede entrar en la probabilidad. Con
+    /// el error que usaba el núcleo (retorno − probabilidad), y aunque las
+    /// operaciones ganen y pierdan por igual, su predicción se satura en negativo.
+    #[test]
+    fn d693_el_error_en_unidades_mezcladas_satura_el_residuo() {
+        use metacortex_engine::online_learning::OnlineLearningModule;
+        let mut features = [0.0f32; 64];
+        for f in features.iter_mut().take(12) {
+            *f = 0.5;
+        }
+        let mut learner = OnlineLearningModule::new(0.001, 0.9);
+        for i in 0..400 {
+            let realized_ret = if i % 2 == 0 { 0.005 } else { -0.005 };
+            let ml_at_entry = 0.5 + (learner.predict(&features) as f64).clamp(-0.15, 0.15);
+            learner.update_weights_with_kalman_adaptive_vol(
+                &features,
+                (realized_ret - ml_at_entry) as f32,
+                0.1,
+                0.001,
+            );
+        }
+        assert!(
+            learner.predict(&features) < -0.15,
+            "predicción del residuo {}",
+            learner.predict(&features)
+        );
+    }
 
     /// Media posterior Beta de D-680 para `n` observaciones en una única
     /// puntuación `s` con `wins` aciertos.

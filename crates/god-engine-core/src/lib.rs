@@ -1603,7 +1603,10 @@ impl GodEngineCore {
             } else {
                 0.5
             };
-            let ml_prob = (base_ml_prob + online_residual.clamp(-0.15, 0.15) + spot_bias).clamp(0.0, 1.0);
+            // D-693 (DÉCIMA OLA): el residuo online ya no entra en la probabilidad
+            // (ver `calibration::compose_ml_prob`). Se sigue calculando para que el
+            // diagnóstico muestre lo que habría sumado.
+            let ml_prob = crate::calibration::compose_ml_prob(base_ml_prob, spot_bias);
             self.diag_dir.record_ml_components(
                 base_ml_prob,
                 online_residual.clamp(-0.15, 0.15),
