@@ -432,16 +432,40 @@ impl ShannonEntropy {
     }
 }
 
-/// Hurst Exponent via Rescaled Range (O(1) Recursive Approximation)
-/// Hurst Exponent via Exact Rescaled Range (Sliding Window Ring Buffer)
-/// FASE 17: O(1) decay mathematically destroys R/S range.
-/// Using a highly optimized ring buffer for exact nanosecond tick-level Hurst.
+/// EXPONENTE DE HURST DEL CAMINO DE DECISIÓN (D-615 — DÉCIMA OLA).
+///
+/// # El sesgo que se elimina
+///
+/// La implementación anterior era R/S de UNA SOLA ESCALA:
+/// `H = ln(R/S) / ln(N)` con `N = 256`. Es el estimador clásico de Mandelbrot
+/// y Wallis **sin la corrección de Anis–Lloyd**, y arrastra un sesgo conocido:
+/// para movimiento browniano fraccional `E[R/S] ≈ (πN/2)^H`, no `N^H`. De ahí
+///
+/// ```text
+/// H_medido = ln(√(πN/2)) / ln N = 0,5 + 0,5·ln(π/2)/ln N
+/// ```
+///
+/// que con `N = 256` da **0,5407** analíticamente y **0,524** medido sobre
+/// 400 realizaciones de un paseo aleatorio puro.
+///
+/// El motor clasifica «tendencia» a partir de `H ≥ 0,52` y «anti-persistente»
+/// por debajo de `0,48`. **Un paseo aleatorio sin ninguna estructura cruzaba
+/// el umbral de tendencia**, de modo que el sistema percibía dirección donde
+/// sólo había ruido — y lo hacía de forma sistemática, no ocasional.
+///
+/// # El estimador adoptado
+///
+/// DFA sobre agregaciones temporales reales, con regresión de `ln F(s)` sobre
+/// `ln s` en siete escalas (ver `feature_engine::hurst_dfa`). Insesgado frente
+/// al paseo aleatorio, robusto a tendencias no estacionarias y capaz de
+/// declarar cuándo NO hay ley de potencias (`r_squared`), cosa que el
+/// estimador anterior ni siquiera podía expresar.
+///
+/// Durante el calentamiento devuelve 0,50 —la hipótesis nula honesta— en lugar
+/// de una estimación sesgada: es preferible no opinar a opinar mal.
 #[derive(Debug, Clone)]
 pub struct RecursiveHurst {
-    pub window: [f64; 256], // Power of 2 for fast masking
-    pub index: usize,
-    pub count: usize,
-    pub prev_price: f64,
+    dfa: feature_engine::hurst_dfa::HurstDfa,
 }
 
 impl Default for RecursiveHurst {
@@ -453,78 +477,33 @@ impl Default for RecursiveHurst {
 impl RecursiveHurst {
     pub fn new() -> Self {
         Self {
-            window: [0.0; 256],
-            index: 0,
-            count: 0,
-            prev_price: 0.0,
+            dfa: feature_engine::hurst_dfa::HurstDfa::new(),
         }
     }
 
     #[inline(always)]
     pub fn update(&mut self, price: f64) -> f64 {
-        if price <= 0.0 || !price.is_finite() {
-            return self.current();
-        }
-        if self.prev_price <= 0.0 {
-            self.prev_price = price;
-            return 0.5;
-        }
-        let ret = (price / self.prev_price).ln();
-        self.prev_price = price;
-        self.window[self.index] = ret;
-        self.index = (self.index + 1) & 255; // Fast modulo 256
-        if self.count < 256 {
-            self.count += 1;
-        }
+        self.dfa.update(price);
         self.current()
     }
 
-    /// Returns the current Hurst exponent WITHOUT updating state.
-    /// FIX #570: Cálculo exacto del Rango de Desviaciones Acumuladas R(N) de Mandelbrot & Wallis
+    /// Exponente actual sin mutar estado.
+    ///
+    /// El umbral de `r²` exige que la serie SIGA efectivamente una ley de
+    /// potencias antes de emitir un valor distinto de 0,5. Sin él, el
+    /// consumidor trataría cualquier pendiente de regresión como un régimen
+    /// de mercado — que es la clase de error que esta corrección persigue.
     #[inline(always)]
     pub fn current(&self) -> f64 {
-        if self.count < 10 {
-            return 0.5; // Random walk fallback while warming up
-        }
+        self.dfa.hurst_or_neutral(0.85)
+    }
 
-        let n = self.count;
-        let mut sum = 0.0;
-        for i in 0..n {
-            sum += self.window[i];
-        }
-        let mean = sum / (n as f64);
-
-        let mut sq_sum = 0.0;
-        let mut cum_dev = 0.0;
-        let mut max_dev = 0.0f64;
-        let mut min_dev = 0.0f64;
-
-        // Recorrido cronológico circular desde el elemento más antiguo
-        let start_idx = (self.index + 256 - n) & 255;
-        for i in 0..n {
-            let p = self.window[(start_idx + i) & 255];
-            let diff = p - mean;
-            sq_sum += diff * diff;
-            cum_dev += diff;
-            if cum_dev > max_dev {
-                max_dev = cum_dev;
-            }
-            if cum_dev < min_dev {
-                min_dev = cum_dev;
-            }
-        }
-
-        let variance = sq_sum / (n as f64 - 1.0);
-        let std = variance.sqrt();
-        let range = max_dev - min_dev;
-
-        if std > 1e-12 && range > 0.0 {
-            let rs = (range / std).max(1.0001); // Evitar ln(rs) <= 0
-            let n_f64 = n as f64;
-            (rs.ln() / n_f64.ln()).clamp(0.05, 0.95)
-        } else {
-            0.5
-        }
+    /// Bondad del ajuste log-log en [0,1]. Permite a los consumidores modular
+    /// su convicción por la calidad de la medición en lugar de tratar el
+    /// exponente como un número siempre significativo.
+    #[inline(always)]
+    pub fn confidence(&self) -> f64 {
+        if self.dfa.is_valid { self.dfa.r_squared } else { 0.0 }
     }
 }
 

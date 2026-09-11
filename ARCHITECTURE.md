@@ -78,8 +78,8 @@ The architecture strictly simulates the **Cruel Reality** of Binance Futures fee
 ### Phase 33+: AEGIS V2 HFT Dual-Engine & Quantum Compounding
 1. **Zero-Drop Data Queues & Forensic Telemetry:** Rastreo riguroso del `tick_id` desde `binance_loader.py` hasta el cierre de órdenes en `engine.py`. Permite auditorías sistémicas exactas de dónde y por qué se pierde latencia o datos.
 2. **Streaming Features O(1):** `math_kernel.py` ha sido equipado con algoritmos O(1) asíncronos para EMA y RSI (recursividad matemática), evitando recalculaciones de arreglos completos para mitigar bloqueos en HFT.
-3. **Bifurcación de Motores (FastLane vs HeavyLane):** El event loop HFT de `engine.py` se dividió. Estrategias `Scalping` se procesan "inline" de forma síncrona en microsegundos (`FastLane`), mientras `Swing/ML` pesadas se descargan a un `ThreadPoolExecutor` (`HeavyLane`), evadiendo contención.
-4. **Matemática Expansiva All-In (Micro-Accounts):** `risk_manager.py` aplica apalancamiento compuesto que arriesga hasta el 95% del capital total para cuentas `< $50`, ejecutando Asymmetric Kelly Fraction para salir del fango exponencialmente.
+3. **Espectro Continuo Universal (1 ns a 146 años):** Erradicación total de la dicotomía Scalping vs Swing. El motor `GodEngineCore` evalúa un espectro temporal continuo de 32 escalas log-espaciadas base 4 ($\tau_k = 10^{-6} \times 4^k\,\text{ms}$). Cada operación viva evalúa dinámicamente sus funciones analíticas de horizonte continuo ($TP(\tau), SL(\tau), \text{Kelly}(\tau), \text{Trailing}(\tau), OBI(\tau)$) sin colapso discreto ni supresión de frecuencias.
+4. **Matemática Expansiva All-In (Micro-Accounts):** `risk-engine` aplica apalancamiento compuesto que arriesga hasta el 95% del capital total para cuentas `< $50`, ejecutando Asymmetric Kelly Fraction continua para salir del fango exponencialmente.
 
 ---
 
@@ -90,8 +90,8 @@ The architecture strictly simulates the **Cruel Reality** of Binance Futures fee
 - **Riesgo por estrategia:** Drawdown acumulado por módulo (desactiva la estrategia específica).
 - **Riesgo sistémico:** Drawdown crítico del portafolio (protocolo de emergencia).
 - **Stop loss obligatorio:** Ninguna operación nace sin Stop Loss definido en Binance.
-- **Ratio R:R:** Mínimos obligatorios no intercambiables por modalidad.
-- **Trailing Stop Dinámico:** Para proteger ganancias al cruzar umbrales.
+- **Ratio R:R:** Curvas continuas $SL(\tau)$ y $TP(\tau)$ garantizan EV $> 0$ en toda escala.
+- **Trailing Stop Dinámico:** Curvas continuas $Trailing(\tau) = (\text{mult}, \text{act}, \text{step}, \text{max})$ lock-free.
 
 ---
 
@@ -103,10 +103,9 @@ El sistema reconoce: *tendencial alcista/bajista, lateral comprimido/volátil, r
 ### 5.2 Calidad de Señal
 Score de 0 a 100 basado en confluencia, timeframes, régimen y liquidez. Aprende estadísticamente: penaliza puntajes en regímenes donde históricamente fallan.
 
-### 5.3 Gestión de Tiempo y Sesiones
-- **Microscalping:** Overlaps (Londres-NY, Tokio-Londres).
-- **Scalping:** Intradía, post-apertura de 30 minutos.
-- **Swing:** Ignora ruido intradía, alta liquidez para evitar slippage.
+### 5.3 Gestión de Tiempo y Continuidad Temporal
+- **Espectro Universal:** Cobertura de micro-impulsos de flujo ($\tau \approx 10\,\text{ms}-1\,\text{s}$) hasta tendencias estructurales macro ($\tau > 24\,\text{h}$) de forma simultánea e integral.
+- **Sin Pisarse ni Anularse:** La mecánica de ondas continuas (`Continuous Wave Mechanics`) permite interferencia constructiva cuando las escalas coinciden en dirección, y preservación de capital cuando colisionan sin tendencia dominante confirmada.
 - *Calendario de restricciones:* Evita noticias de alto impacto.
 
 ### 5.4 Fatiga y Correlación

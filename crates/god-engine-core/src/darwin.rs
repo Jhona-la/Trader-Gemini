@@ -142,6 +142,8 @@ impl Genotype {
         arena.config.scalp_sl_base.store(sc_sl, Ordering::Relaxed);
         arena.config.swing_tp_base.store(sw_tp, Ordering::Relaxed);
         arena.config.swing_sl_base.store(sw_sl, Ordering::Relaxed);
+        arena.config.update_tp_curve(sc_tp, sw_tp);
+        arena.config.update_sl_curve(sc_sl, sw_sl);
         arena
             .config
             .scalp_obi_threshold

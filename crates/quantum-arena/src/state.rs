@@ -362,7 +362,20 @@ pub struct GlobalArena {
 
 impl GlobalArena {
     pub fn new(initial_capital: f64) -> Self {
-        let config = QuantumConfig::new(initial_capital);
+        Self::build(initial_capital, QuantumConfig::new(initial_capital))
+    }
+
+    /// D-650: arena construida desde un genoma EXPLÍCITO. Permite al test T-2
+    /// comparar el arranque en frío con el hot-swap sin depender del genoma
+    /// que hubiera en disco.
+    pub fn from_genome(initial_capital: f64, genome: &crate::genome::SuperGenotype) -> Self {
+        Self::build(
+            initial_capital,
+            QuantumConfig::from_genome(initial_capital, genome),
+        )
+    }
+
+    fn build(initial_capital: f64, config: QuantumConfig) -> Self {
         let w_base = config.maker_obi_threshold.load(Ordering::Relaxed);
         let mut coins_vec = Vec::with_capacity(30);
         for _ in 0..30 {

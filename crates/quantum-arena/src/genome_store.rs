@@ -396,6 +396,57 @@ fn atomic_write(path: &str, contents: &str) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// T-2 (DÉCIMA OLA) — SIMETRÍA ENTRE ARRANQUE EN FRÍO Y HOT-SWAP (D-650).
+    ///
+    /// El arena se puede poblar por dos caminos: `QuantumConfig::from_genome()`
+    /// en el arranque y `SuperGenotype::apply_to_arena()` en cada promoción
+    /// evolutiva. Si divergen —y divergían en 12 genes—, el organismo vivo tras
+    /// un hot-swap es una quimera que ninguna aptitud evaluó: N genes del
+    /// genoma nuevo y M del de arranque.
+    ///
+    /// Este test compara gen a gen, mediante `current_from_arena`, el estado
+    /// que produce cada camino. Es el contrato que impide que la exhaustividad
+    /// de `apply_to_arena` vuelva a depender de que alguien se acuerde.
+    #[test]
+    fn t2_simetria_from_genome_vs_apply_to_arena() {
+        use crate::GlobalArena;
+
+        // Genoma de prueba con valores distinguibles del baseline, para que un
+        // gen no refrescado se note.
+        let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
+        g = g.mutate_cmaes_seeded(0.45, 20260910);
+        let g = SuperGenotype::from_vector(&g.to_vector());
+
+        // Camino A: arranque en frío.
+        let arena_frio = GlobalArena::from_genome(13.0, &g);
+        let visto_frio = SuperGenotype::current_from_arena(&arena_frio);
+
+        // Camino B: arena con OTRO genoma y luego hot-swap al nuestro.
+        let otro = SuperGenotype::new_baseline(0.0004, 0.0009);
+        let arena_swap = GlobalArena::from_genome(13.0, &otro);
+        g.apply_to_arena(&arena_swap);
+        let visto_swap = SuperGenotype::current_from_arena(&arena_swap);
+
+        let a = visto_frio.to_vector();
+        let b = visto_swap.to_vector();
+        assert_eq!(a.len(), b.len(), "dimensionalidad divergente");
+
+        let mut divergentes: Vec<(usize, f64, f64)> = Vec::new();
+        for i in 0..a.len() {
+            let (x, y) = (a[i], b[i]);
+            let tol = 1e-9 * x.abs().max(1.0);
+            if !(x - y).abs().le(&tol) {
+                divergentes.push((i, x, y));
+            }
+        }
+        assert!(
+            divergentes.is_empty(),
+            "hot-swap NO refresca {} gen(es): {:?}. Un gen que se inicializa en              frío pero no se refresca deja el arena con una mezcla de dos              genomas tras cada promoción (D-650).",
+            divergentes.len(),
+            divergentes
+        );
+    }
+
     use super::*;
 
     #[test]

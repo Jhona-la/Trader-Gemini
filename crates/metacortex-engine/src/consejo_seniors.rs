@@ -207,7 +207,7 @@ impl SeniorAgent for SeniorCausal {
         // los breakouts institucionales legítimos (VPIN entre 0.60 y 0.80).
         let effective_threshold = payload.causal_veto_threshold.clamp(0.60, 0.90);
         let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25
-            || matches!(payload.horizon, TradingHorizon::Scalping))
+            || matches!(payload.horizon, TradingHorizon::Continuous | TradingHorizon::Scalping))
             && do_calculus_risk < 0.88;
         let is_veto = do_calculus_risk > effective_threshold && !is_aligned_breakout;
         SeniorOpinion {

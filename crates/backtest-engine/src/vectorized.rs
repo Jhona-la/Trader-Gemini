@@ -460,23 +460,28 @@ mod tests {
     /// resultado. Es la fuerza compensatoria que faltaba.
     #[test]
     fn d669_mas_apalancamiento_penaliza_en_serie_adversa() {
-        // Serie con deriva bajista y ruido: un sistema largo pierde.
-        let n = 4_000usize;
+        // Serie genuinamente adversa para un sistema bidireccional (long/short):
+        // Falsos breakouts con reversiones bruscas que barren los Stop Losses en ambas direcciones.
+        let n = 400usize;
         let mut closes = Vec::with_capacity(n);
         let mut highs = Vec::with_capacity(n);
         let mut lows = Vec::with_capacity(n);
         let mut vols = Vec::with_capacity(n);
         let mut p = 60_000.0f64;
-        let mut seed = 12345u64;
         for i in 0..n {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            let u = ((seed >> 33) as f64 / u32::MAX as f64) - 0.5;
-            // Deriva negativa dominante + ruido.
-            p *= 1.0 + (u * 0.004) - 0.00015;
-            let _ = i;
+            let phase = i % 20;
+            if phase == 10 {
+                p *= 0.988; // Ruptura falsa hacia abajo: barre el SL del Long
+            } else if phase == 19 {
+                p *= 1.012; // Ruptura falsa hacia arriba: barre el SL del Short
+            } else if phase < 10 {
+                p *= 1.001; // Impulso alcista suave que genera señal Long
+            } else {
+                p *= 0.999; // Impulso bajista suave que genera señal Short
+            }
             closes.push(p);
-            highs.push(p * 1.002);
-            lows.push(p * 0.998);
+            highs.push(p * 1.001);
+            lows.push(p * 0.999);
             vols.push(1_000.0);
         }
 

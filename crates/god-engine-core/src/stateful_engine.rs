@@ -143,6 +143,12 @@ impl StatefulEngine {
         elapsed >= required
     }
 
+    /// Smart cooldown universal para posiciones en el espectro continuo
+    #[inline(always)]
+    pub fn can_open_position(&self, min_cooldown: u64) -> bool {
+        self.can_open_scalp(min_cooldown)
+    }
+
     /// Obtiene la racha de pérdidas activa para una dirección (long/short), considerando el decaimiento temporal
     #[inline(always)]
     pub fn get_active_directional_streak(&self, is_long: bool) -> u32 {

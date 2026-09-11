@@ -239,10 +239,15 @@ pub fn spawn_telemetry_consumer<P: AsRef<std::path::Path> + Send + 'static>(
 
                         // Infer horizon from payload if possible, for now we will simulate split by bit flag or payload[6] if added.
                         // Assuming payload[6] has the horizon flag (0 = Scalping, 1 = Swing)
-                        let horizon = if frame.payload.len() > 6 && frame.payload[6] > 0.0 {
-                            TradingHorizon::Swing
+                        let horizon = if frame.payload.len() > 6 {
+                            let h_val = frame.payload[6] as i64;
+                            match h_val {
+                                1 => TradingHorizon::Scalping,
+                                2 => TradingHorizon::Swing,
+                                _ => TradingHorizon::Continuous,
+                            }
                         } else {
-                            TradingHorizon::Scalping
+                            TradingHorizon::Continuous
                         };
 
                         // Frame type 1 = Decision Trace (Features)
@@ -253,7 +258,17 @@ pub fn spawn_telemetry_consumer<P: AsRef<std::path::Path> + Send + 'static>(
                             let ml_prob = frame.payload[5] as f32;
 
                             match horizon {
-                                TradingHorizon::Continuous | TradingHorizon::Scalping => {
+                                TradingHorizon::Continuous => {
+                                    last_features_scalping[coin_id][0] = hawkes;
+                                    last_features_scalping[coin_id][1] = entropy;
+                                    last_features_scalping[coin_id][2] = ml_prob;
+                                    last_entropy_scalping[coin_id] = entropy;
+                                    last_features_swing[coin_id][0] = hawkes;
+                                    last_features_swing[coin_id][1] = entropy;
+                                    last_features_swing[coin_id][2] = ml_prob;
+                                    last_entropy_swing[coin_id] = entropy;
+                                }
+                                TradingHorizon::Scalping => {
                                     last_features_scalping[coin_id][0] = hawkes;
                                     last_features_scalping[coin_id][1] = entropy;
                                     last_features_scalping[coin_id][2] = ml_prob;
@@ -273,7 +288,25 @@ pub fn spawn_telemetry_consumer<P: AsRef<std::path::Path> + Send + 'static>(
                             let net_pnl = frame.payload[2] as f32;
 
                             match horizon {
-                                TradingHorizon::Continuous | TradingHorizon::Scalping => {
+                                TradingHorizon::Continuous => {
+                                    let prior_pred_s =
+                                        s_mod.predict(&last_features_scalping[coin_id]);
+                                    let td_error_s = net_pnl - prior_pred_s;
+                                    s_mod.update_weights_with_kalman(
+                                        &last_features_scalping[coin_id],
+                                        td_error_s,
+                                        last_entropy_scalping[coin_id],
+                                    );
+                                    let prior_pred_sw =
+                                        sw_mod.predict(&last_features_swing[coin_id]);
+                                    let td_error_sw = net_pnl - prior_pred_sw;
+                                    sw_mod.update_weights_with_kalman(
+                                        &last_features_swing[coin_id],
+                                        td_error_sw,
+                                        last_entropy_swing[coin_id],
+                                    );
+                                }
+                                TradingHorizon::Scalping => {
                                     let prior_pred =
                                         s_mod.predict(&last_features_scalping[coin_id]);
                                     let td_error = net_pnl - prior_pred;

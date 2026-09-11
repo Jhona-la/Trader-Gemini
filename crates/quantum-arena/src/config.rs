@@ -161,11 +161,42 @@ pub struct QuantumConfig {
 
     /// F3-2 — eje temporal continuo (ver genome.rs).
     pub temporal_scale: AtomicF64,
+
+    // --- FASE 23: Curvas de Horizonte Continuas (1 ns a 100 años) ---
+    pub tp_curve_a: AtomicF64,
+    pub tp_curve_b: AtomicF64,
+    pub sl_curve_a: AtomicF64,
+    pub sl_curve_b: AtomicF64,
+    pub kelly_curve_a: AtomicF64,
+    pub kelly_curve_b: AtomicF64,
+    pub trail_mult_curve_a: AtomicF64,
+    pub trail_mult_curve_b: AtomicF64,
+    pub trail_act_curve_a: AtomicF64,
+    pub trail_act_curve_b: AtomicF64,
+    pub trail_step_curve_a: AtomicF64,
+    pub trail_step_curve_b: AtomicF64,
+    pub obi_curve_a: AtomicF64,
+    pub obi_curve_b: AtomicF64,
 }
 
 impl QuantumConfig {
     pub fn new(initial_capital: f64) -> Self {
         let genome = crate::genome::SuperGenotype::load_or_default();
+        Self::from_genome(initial_capital, &genome)
+    }
+
+    /// D-650 (DÉCIMA OLA) — CONSTRUCTOR EXPLÍCITO DESDE UN GENOMA.
+    ///
+    /// Antes el arranque en frío cargaba el genoma de disco DENTRO de `new()`,
+    /// de modo que no existía forma de construir una configuración a partir de
+    /// un genoma dado. Eso hacía imposible comparar este camino con el del
+    /// hot-swap (`apply_to_arena`) y es la razón por la que los 12 genes que
+    /// sólo se inicializaban aquí pasaron desapercibidos.
+    ///
+    /// Con el constructor explícito, el test T-2 puede exigir que ambos
+    /// caminos produzcan el MISMO estado gen a gen.
+    pub fn from_genome(initial_capital: f64, genome: &crate::genome::SuperGenotype) -> Self {
+        let genome = genome.clone();
         Self {
             base_capital: AtomicF64::new(initial_capital),
             min_notional: AtomicF64::new(5.0),
@@ -313,8 +344,119 @@ impl QuantumConfig {
             iceberg_slice_count: AtomicF64::new(genome.iceberg_slice_count),
             swing_obi_threshold: AtomicF64::new(genome.swing_obi_threshold),
             swing_accel_min_samples: AtomicF64::new(genome.swing_accel_min_samples),
-            // D-144: temporal_scale derivado del genoma (split scalp vs swing) en vez de hardcode 1.0
-            temporal_scale: AtomicF64::new((1.0 - genome.capital_split_scalp).clamp(0.05, 0.95)),
+            // D-603 (DÉCIMA OLA) — FUENTE ÚNICA PARA `temporal_scale`.
+            //
+            // Antes el arranque en frío lo derivaba de `1 − capital_split_scalp`
+            // —una fracción de ASIGNACIÓN DE CAPITAL— mientras el hot-swap
+            // escribía el gen `temporal_scale`. Dos expresiones distintas para
+            // el mismo eje según el camino de código.
+            //
+            // Peor: `current_from_arena()` lee de vuelta este valor HACIA el
+            // gen, de modo que el ciclo Genoma → from_genome → current_from_arena
+            // DESTRUÍA irreversiblemente `temporal_scale`, sustituyéndolo por
+            // una función de otro gen. La evolución de ese gen era inútil:
+            // cada ciclo lo borraba. Y como el backtest construye arenas
+            // frescas y producción hace hot-swap, ambos entornos operaban con
+            // valores de `s` distintos para el mismo genoma.
+            //
+            // El acoplamiento con `capital_split_scalp` era además un error de
+            // categoría: una fracción de capital no es un horizonte temporal.
+            temporal_scale: AtomicF64::new(genome.temporal_scale.clamp(0.05, 0.95)),
+
+            // FASE 23: Curvas de Horizonte Continuas (1 ns a 100 años)
+            tp_curve_a: AtomicF64::new(genome.tp_horizon_curve.a),
+            tp_curve_b: AtomicF64::new(genome.tp_horizon_curve.b),
+            sl_curve_a: AtomicF64::new(genome.sl_horizon_curve.a),
+            sl_curve_b: AtomicF64::new(genome.sl_horizon_curve.b),
+            kelly_curve_a: AtomicF64::new(genome.kelly_horizon_curve.a),
+            kelly_curve_b: AtomicF64::new(genome.kelly_horizon_curve.b),
+            trail_mult_curve_a: AtomicF64::new(genome.trail_mult_horizon_curve.a),
+            trail_mult_curve_b: AtomicF64::new(genome.trail_mult_horizon_curve.b),
+            trail_act_curve_a: AtomicF64::new(genome.trail_act_horizon_curve.a),
+            trail_act_curve_b: AtomicF64::new(genome.trail_act_horizon_curve.b),
+            trail_step_curve_a: AtomicF64::new(genome.trail_step_horizon_curve.a),
+            trail_step_curve_b: AtomicF64::new(genome.trail_step_horizon_curve.b),
+            obi_curve_a: AtomicF64::new(genome.obi_horizon_curve.a),
+            obi_curve_b: AtomicF64::new(genome.obi_horizon_curve.b),
         }
     }
+
+    /// Evalúa el TP objetivo continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
+    #[inline(always)]
+    pub fn tp_at_tau(&self, tau_ms: f64) -> f64 {
+        use std::sync::atomic::Ordering;
+        let a = self.tp_curve_a.load(Ordering::Relaxed);
+        let b = self.tp_curve_b.load(Ordering::Relaxed);
+        (a + b * tau_ms.max(1e-6).ln()).exp()
+    }
+
+    /// Evalúa el SL continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
+    #[inline(always)]
+    pub fn sl_at_tau(&self, tau_ms: f64) -> f64 {
+        use std::sync::atomic::Ordering;
+        let a = self.sl_curve_a.load(Ordering::Relaxed);
+        let b = self.sl_curve_b.load(Ordering::Relaxed);
+        (a + b * tau_ms.max(1e-6).ln()).exp()
+    }
+
+    /// Evalúa la fracción Kelly continua en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
+    #[inline(always)]
+    pub fn kelly_at_tau(&self, tau_ms: f64) -> f64 {
+        use std::sync::atomic::Ordering;
+        let a = self.kelly_curve_a.load(Ordering::Relaxed);
+        let b = self.kelly_curve_b.load(Ordering::Relaxed);
+        (a + b * tau_ms.max(1e-6).ln()).exp().clamp(0.05, 0.40)
+    }
+
+    /// Evalúa los parámetros del Trailing Stop continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años]:
+    /// Retorna `(trail_mult, trail_act_atr, trail_step_atr, trail_max_atr)`.
+    #[inline(always)]
+    pub fn trail_params_at_tau(&self, tau_ms: f64) -> (f64, f64, f64, f64) {
+        use std::sync::atomic::Ordering;
+        let mult_a = self.trail_mult_curve_a.load(Ordering::Relaxed);
+        let mult_b = self.trail_mult_curve_b.load(Ordering::Relaxed);
+        let act_a = self.trail_act_curve_a.load(Ordering::Relaxed);
+        let act_b = self.trail_act_curve_b.load(Ordering::Relaxed);
+        let step_a = self.trail_step_curve_a.load(Ordering::Relaxed);
+        let step_b = self.trail_step_curve_b.load(Ordering::Relaxed);
+
+        let ln_t = tau_ms.max(1e-6).ln();
+        let mult = (mult_a + mult_b * ln_t).exp().clamp(1.5, 6.0);
+        let act = (act_a + act_b * ln_t).exp().clamp(1.5, 6.0);
+        let step = (step_a + step_b * ln_t).exp().clamp(0.5, 4.0);
+        let max = (act * 1.5).clamp(2.0, 7.0);
+        (mult, act, step, max)
+    }
+
+    /// Evalúa el umbral OBI continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
+    #[inline(always)]
+    pub fn obi_threshold_at_tau(&self, tau_ms: f64) -> f64 {
+        use std::sync::atomic::Ordering;
+        let a = self.obi_curve_a.load(Ordering::Relaxed);
+        let b = self.obi_curve_b.load(Ordering::Relaxed);
+        (a + b * tau_ms.max(1e-6).ln()).exp().clamp(0.10, 0.60)
+    }
+
+    /// Actualiza la curva continua de TP a partir de anclas rápida y lenta
+    #[inline(always)]
+    pub fn update_tp_curve(&self, fast_val: f64, slow_val: f64) {
+        use std::sync::atomic::Ordering;
+        let curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
+            10_000.0, fast_val, 86_400_000.0, slow_val,
+        );
+        self.tp_curve_a.store(curve.a, Ordering::Relaxed);
+        self.tp_curve_b.store(curve.b, Ordering::Relaxed);
+    }
+
+    /// Actualiza la curva continua de SL a partir de anclas rápida y lenta
+    #[inline(always)]
+    pub fn update_sl_curve(&self, fast_val: f64, slow_val: f64) {
+        use std::sync::atomic::Ordering;
+        let curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
+            10_000.0, fast_val, 86_400_000.0, slow_val,
+        );
+        self.sl_curve_a.store(curve.a, Ordering::Relaxed);
+        self.sl_curve_b.store(curve.b, Ordering::Relaxed);
+    }
 }
+

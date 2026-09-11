@@ -270,10 +270,6 @@ pub fn reconcile_arena(
                     coin.current_price
                         .load(std::sync::atomic::Ordering::Relaxed)
                 };
-                let pos_horizon = coin.positions.position.horizon();
-                let is_pos_swing = pos_horizon == quantum_arena::position::PositionHorizon::Swing;
-                let is_pos_scalp =
-                    pos_horizon == quantum_arena::position::PositionHorizon::Scalping;
                 let (was_long, entry_p, qty, m, entry_fee_paid) =
                     coin.positions.position.close_with_fee();
                 if m > 0.0 {
@@ -298,19 +294,16 @@ pub fn reconcile_arena(
                     let net_realized_pnl = gross_pnl - close_fee;
                     let net_trade_pnl = net_realized_pnl - entry_fee_paid;
 
-                    // D-447: coin.metrics es la fuente unificada para Continuous
+                    // D-447: coin.metrics es la fuente unificada para el espectro continuo
                     coin.metrics
                         .pnl_realized
                         .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                    if is_pos_swing {
-                        coin.swing
-                            .pnl_realized
-                            .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                    } else if is_pos_scalp {
-                        coin.scalp
-                            .pnl_realized
-                            .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                    }
+                    coin.swing
+                        .pnl_realized
+                        .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                    coin.scalp
+                        .pnl_realized
+                        .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
                     arena
                         .unified_capital
                         .fetch_add(net_realized_pnl, std::sync::atomic::Ordering::Relaxed);
@@ -322,6 +315,13 @@ pub fn reconcile_arena(
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                         as f64
                         + 1.0;
+                    coin.swing
+                        .trade_count
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    coin.scalp
+                        .trade_count
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
                     let old_wr = coin
                         .metrics
                         .win_rate
@@ -330,40 +330,12 @@ pub fn reconcile_arena(
                     coin.metrics
                         .win_rate
                         .store(new_wr, std::sync::atomic::Ordering::Relaxed);
-
-                    if is_pos_swing {
-                        let n_sw = coin
-                            .swing
-                            .trade_count
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                            as f64
-                            + 1.0;
-                        let old_sw_wr = coin
-                            .swing
-                            .win_rate
-                            .load(std::sync::atomic::Ordering::Relaxed);
-                        let new_sw_wr =
-                            old_sw_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sw_wr) / n_sw);
-                        coin.swing
-                            .win_rate
-                            .store(new_sw_wr, std::sync::atomic::Ordering::Relaxed);
-                    } else if is_pos_scalp {
-                        let n_sc = coin
-                            .scalp
-                            .trade_count
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                            as f64
-                            + 1.0;
-                        let old_sc_wr = coin
-                            .scalp
-                            .win_rate
-                            .load(std::sync::atomic::Ordering::Relaxed);
-                        let new_sc_wr =
-                            old_sc_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sc_wr) / n_sc);
-                        coin.scalp
-                            .win_rate
-                            .store(new_sc_wr, std::sync::atomic::Ordering::Relaxed);
-                    }
+                    coin.swing
+                        .win_rate
+                        .store(new_wr, std::sync::atomic::Ordering::Relaxed);
+                    coin.scalp
+                        .win_rate
+                        .store(new_wr, std::sync::atomic::Ordering::Relaxed);
 
                     if is_win {
                         coin.metrics

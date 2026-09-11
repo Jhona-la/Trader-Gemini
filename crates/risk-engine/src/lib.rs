@@ -160,14 +160,17 @@ impl RiskEngine {
             .load(Ordering::Relaxed)
             .clamp(0.1, 0.9);
         let coin = &arena.coins[coin_id];
-        let scalp_edge = (coin.scalp.win_rate.load(Ordering::Relaxed)
-            * coin.scalp.kelly_fraction.load(Ordering::Relaxed))
+        let unified_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
+        let unified_kelly = coin.metrics.kelly_fraction.load(Ordering::Relaxed);
+        let unified_n = coin.metrics.trade_count.load(Ordering::Relaxed) as f64;
+        let scalp_edge = (coin.scalp.win_rate.load(Ordering::Relaxed).max(unified_wr)
+            * coin.scalp.kelly_fraction.load(Ordering::Relaxed).max(unified_kelly))
         .max(0.0);
-        let swing_edge = (coin.swing.win_rate.load(Ordering::Relaxed)
-            * coin.swing.kelly_fraction.load(Ordering::Relaxed))
+        let swing_edge = (coin.swing.win_rate.load(Ordering::Relaxed).max(unified_wr)
+            * coin.swing.kelly_fraction.load(Ordering::Relaxed).max(unified_kelly))
         .max(0.0);
-        let scalp_n = coin.scalp.trade_count.load(Ordering::Relaxed) as f64;
-        let swing_n = coin.swing.trade_count.load(Ordering::Relaxed) as f64;
+        let scalp_n = (coin.scalp.trade_count.load(Ordering::Relaxed) as f64).max(unified_n);
+        let swing_n = (coin.swing.trade_count.load(Ordering::Relaxed) as f64).max(unified_n);
         let posterior_scalp = scalp_edge * scalp_n.sqrt() + genome_split;
         let posterior_swing = swing_edge * swing_n.sqrt() + (1.0 - genome_split);
         let target_split = if posterior_scalp + posterior_swing > 1e-12 {
@@ -494,15 +497,23 @@ impl RiskEngine {
         // capital por trade. Escalamos por temporal_scale para que el RIESGO
         // POR TRADE sea constante en el continuo (sin el salto invisible
         // de 4-8x en riesgo entre extremos).
-        let scalp_sl_ref = arena.config.scalp_sl_base.load(Ordering::Relaxed).max(1e-6);
-        let swing_sl_ref = arena.config.swing_sl_base.load(Ordering::Relaxed).max(1e-6);
-        let ts = arena
-            .config
-            .temporal_scale
-            .load(Ordering::Relaxed)
-            .clamp(0.05, 0.95);
-        let sl_interp_est = scalp_sl_ref * (1.0 - ts) + swing_sl_ref * ts;
-        let risk_normalizer = (scalp_sl_ref / sl_interp_est).clamp(0.15, 1.0);
+        // O-03 — KELLY ESCALADO POR RIESGO DEL STOP CONTINUO:
+        // En el espectro continuo universal (1 ns a 100 años), evaluamos el SL directamente
+        // sobre la curva analítica del genoma sl_at_tau(tau_ms) para normalizar el riesgo
+        // de forma suave y C^inf sin buckets discretos ni saltos artificiales.
+        let tau_ms = if intent.expected_duration_ms > 0 {
+            intent.expected_duration_ms as f64
+        } else {
+            let ts = arena
+                .config
+                .temporal_scale
+                .load(Ordering::Relaxed)
+                .clamp(0.0, 1.0);
+            (10_000.0_f64.ln() + ts * (86_400_000.0_f64.ln() - 10_000.0_f64.ln())).exp()
+        };
+        let continuous_sl = arena.config.sl_at_tau(tau_ms).max(1e-6);
+        let fast_anchor_sl = arena.config.sl_at_tau(10_000.0).max(1e-6);
+        let risk_normalizer = (fast_anchor_sl / continuous_sl).clamp(0.15, 1.0);
         let kelly_adjusted = kelly_fraction * risk_normalizer;
 
         // D-494: Micro-Account Kelly Scaler. En micro-cuentas ($13 USD), la fracción base (0.10)

@@ -200,9 +200,18 @@ impl QuantumLeverageMatrix {
                 .clamp(0.0, 1.0)
         };
         let s = match signal.horizon {
+            signal_engine::TradeHorizon::Continuous => {
+                if signal.expected_duration_ms > 0 {
+                    let ln_tau = (signal.expected_duration_ms as f64).max(10_000.0).ln();
+                    let ln_min = 10_000.0_f64.ln();
+                    let ln_max = 86_400_000.0_f64.ln();
+                    ((ln_tau - ln_min) / (ln_max - ln_min)).clamp(0.0, 1.0)
+                } else {
+                    effective_temporal_scale
+                }
+            }
             signal_engine::TradeHorizon::Scalp => 0.0,
             signal_engine::TradeHorizon::Swing => 1.0,
-            signal_engine::TradeHorizon::Continuous => effective_temporal_scale,
         };
 
         // D-338: Homotopía continua y diferenciable s in [0, 1].
@@ -210,9 +219,9 @@ impl QuantumLeverageMatrix {
         let effective_vol_clamp = vol_clamp_min * (1.0 - s) + (vol_clamp_min + 0.20) * s;
         let final_vol_factor = vol_brake.max(effective_vol_clamp);
 
-        let scalp_dynamic_kelly = kelly * fraction_multiplier.max(1.0);
-        let swing_dynamic_kelly = dynamic_kelly * 0.70;
-        let final_dynamic_kelly = scalp_dynamic_kelly * (1.0 - s) + swing_dynamic_kelly * s;
+        let fast_dynamic_kelly = kelly * fraction_multiplier.max(1.0);
+        let slow_dynamic_kelly = dynamic_kelly * 0.70;
+        let final_dynamic_kelly = fast_dynamic_kelly * (1.0 - s) + slow_dynamic_kelly * s;
 
         // Capital factor: Kelly escala el leverage. Sqrt para suavizar.
         let safe_dyn_kelly = if final_dynamic_kelly.is_finite() && final_dynamic_kelly >= 0.0 {

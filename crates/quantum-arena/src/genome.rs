@@ -33,6 +33,46 @@ fn default_sl_curve() -> crate::temporal_spectrum::HorizonCurve {
         0.025,
     )
 }
+fn default_kelly_curve() -> crate::temporal_spectrum::HorizonCurve {
+    crate::temporal_spectrum::HorizonCurve::through_two_points(
+        crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+        0.20,
+        crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+        0.15,
+    )
+}
+fn default_trail_mult_curve() -> crate::temporal_spectrum::HorizonCurve {
+    crate::temporal_spectrum::HorizonCurve::through_two_points(
+        crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+        2.5,
+        crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+        3.5,
+    )
+}
+fn default_trail_act_curve() -> crate::temporal_spectrum::HorizonCurve {
+    crate::temporal_spectrum::HorizonCurve::through_two_points(
+        crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+        2.0,
+        crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+        3.0,
+    )
+}
+fn default_trail_step_curve() -> crate::temporal_spectrum::HorizonCurve {
+    crate::temporal_spectrum::HorizonCurve::through_two_points(
+        crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+        1.2,
+        crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+        1.8,
+    )
+}
+fn default_obi_curve() -> crate::temporal_spectrum::HorizonCurve {
+    crate::temporal_spectrum::HorizonCurve::through_two_points(
+        crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+        0.25,
+        crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+        0.40,
+    )
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuperGenotype {
@@ -61,6 +101,16 @@ pub struct SuperGenotype {
     pub tp_horizon_curve: crate::temporal_spectrum::HorizonCurve,
     #[serde(default = "default_sl_curve")]
     pub sl_horizon_curve: crate::temporal_spectrum::HorizonCurve,
+    #[serde(default = "default_kelly_curve")]
+    pub kelly_horizon_curve: crate::temporal_spectrum::HorizonCurve,
+    #[serde(default = "default_trail_mult_curve")]
+    pub trail_mult_horizon_curve: crate::temporal_spectrum::HorizonCurve,
+    #[serde(default = "default_trail_act_curve")]
+    pub trail_act_horizon_curve: crate::temporal_spectrum::HorizonCurve,
+    #[serde(default = "default_trail_step_curve")]
+    pub trail_step_horizon_curve: crate::temporal_spectrum::HorizonCurve,
+    #[serde(default = "default_obi_curve")]
+    pub obi_horizon_curve: crate::temporal_spectrum::HorizonCurve,
     pub sl_atr_mult_btc: f64,
     pub tp_rr_ratio_btc: f64,
     pub min_confidence_btc: f64,
@@ -265,6 +315,36 @@ impl SuperGenotype {
                 arena.config.scalp_sl_base.load(Ordering::Relaxed),
                 crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
                 arena.config.swing_sl_base.load(Ordering::Relaxed),
+            ),
+            kelly_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                arena.config.scalp_kelly_fraction.load(Ordering::Relaxed),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                arena.config.swing_kelly_fraction.load(Ordering::Relaxed),
+            ),
+            trail_mult_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                arena.config.scalp_trail_atr_mult_base.load(Ordering::Relaxed),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                arena.config.swing_trail_atr_mult_base.load(Ordering::Relaxed),
+            ),
+            trail_act_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                arena.config.scalp_trail_act_atr.load(Ordering::Relaxed),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                arena.config.swing_trail_act_atr.load(Ordering::Relaxed),
+            ),
+            trail_step_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                arena.config.scalp_trail_step_atr.load(Ordering::Relaxed),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                arena.config.swing_trail_step_atr.load(Ordering::Relaxed),
+            ),
+            obi_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                arena.config.scalp_obi_threshold.load(Ordering::Relaxed),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                arena.config.swing_obi_threshold.load(Ordering::Relaxed),
             ),
             sl_atr_mult_btc: arena.config.sl_atr_mult_btc.load(Ordering::Relaxed),
             tp_rr_ratio_btc: arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
@@ -585,6 +665,36 @@ impl SuperGenotype {
                 crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
                 swing_sl_math,
             ),
+            kelly_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                k_scalp,
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                k_swing,
+            ),
+            trail_mult_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                2.5,
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                3.5,
+            ),
+            trail_act_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                2.0,
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                3.0,
+            ),
+            trail_step_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                1.2,
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                1.8,
+            ),
+            obi_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                taker_base * 50.0,
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                taker_base * 100.0,
+            ),
             sl_atr_mult_btc: 1.0,
             tp_rr_ratio_btc: r_scalp,
             min_confidence_btc: w_base * 1.018, // Ligeramente mayor que base
@@ -717,6 +827,7 @@ impl SuperGenotype {
         // mutante — nace dentro de la banda operable y con RR suficiente.
         g.enforce_curve_rr();
         g.derive_anchors_from_curves();
+        g.sync_continuous_curves();
         g
     }
 
@@ -750,6 +861,36 @@ impl SuperGenotype {
                 rand::rng().random_range(0.0025..0.0120),
                 crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
                 rand::rng().random_range(0.01..0.045),
+            ),
+            kelly_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                rand::rng().random_range(0.1..2.0),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                rand::rng().random_range(0.01..1.0),
+            ),
+            trail_mult_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                rand::rng().random_range(0.5..3.0),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                rand::rng().random_range(1.0..5.0),
+            ),
+            trail_act_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                rand::rng().random_range(0.5..2.5),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                rand::rng().random_range(1.0..4.0),
+            ),
+            trail_step_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                rand::rng().random_range(0.2..1.5),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                rand::rng().random_range(0.5..2.5),
+            ),
+            obi_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                rand::rng().random_range(0.1..0.8),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                rand::rng().random_range(0.3..0.9),
             ),
             sl_atr_mult_btc: rand::rng().random_range(0.5..5.0),
             tp_rr_ratio_btc: rand::rng().random_range(1.0..10.0),
@@ -881,6 +1022,7 @@ impl SuperGenotype {
         };
         g.enforce_curve_rr();
         g.derive_anchors_from_curves();
+        g.sync_continuous_curves();
         g
     }
 
@@ -908,6 +1050,22 @@ impl SuperGenotype {
         arena.config.swing_tp_base.store(slow_tp, Ordering::Relaxed);
         arena.config.scalp_sl_base.store(fast_sl, Ordering::Relaxed);
         arena.config.swing_sl_base.store(slow_sl, Ordering::Relaxed);
+
+        // Continuo Universal: almacenamiento atómico de todas las curvas de horizonte
+        arena.config.tp_curve_a.store(self.tp_horizon_curve.a, Ordering::Relaxed);
+        arena.config.tp_curve_b.store(self.tp_horizon_curve.b, Ordering::Relaxed);
+        arena.config.sl_curve_a.store(self.sl_horizon_curve.a, Ordering::Relaxed);
+        arena.config.sl_curve_b.store(self.sl_horizon_curve.b, Ordering::Relaxed);
+        arena.config.kelly_curve_a.store(self.kelly_horizon_curve.a, Ordering::Relaxed);
+        arena.config.kelly_curve_b.store(self.kelly_horizon_curve.b, Ordering::Relaxed);
+        arena.config.trail_mult_curve_a.store(self.trail_mult_horizon_curve.a, Ordering::Relaxed);
+        arena.config.trail_mult_curve_b.store(self.trail_mult_horizon_curve.b, Ordering::Relaxed);
+        arena.config.trail_act_curve_a.store(self.trail_act_horizon_curve.a, Ordering::Relaxed);
+        arena.config.trail_act_curve_b.store(self.trail_act_horizon_curve.b, Ordering::Relaxed);
+        arena.config.trail_step_curve_a.store(self.trail_step_horizon_curve.a, Ordering::Relaxed);
+        arena.config.trail_step_curve_b.store(self.trail_step_horizon_curve.b, Ordering::Relaxed);
+        arena.config.obi_curve_a.store(self.obi_horizon_curve.a, Ordering::Relaxed);
+        arena.config.obi_curve_b.store(self.obi_horizon_curve.b, Ordering::Relaxed);
 
         arena
             .config
@@ -1422,6 +1580,38 @@ impl SuperGenotype {
             .config
             .iceberg_slice_count
             .store(self.iceberg_slice_count, Ordering::Relaxed);
+
+        // D-650 (DÉCIMA OLA) — LOS 12 GENES QUE EL HOT-SWAP NUNCA REFRESCABA.
+        //
+        // `from_genome()` inicializaba 140 genes y `apply_to_arena()` sólo
+        // refrescaba 128. Tras cualquier promoción evolutiva en un proceso
+        // vivo, el arena quedaba con 128 genes del genoma NUEVO y 12 del de
+        // ARRANQUE: un organismo quimérico que ninguna función de aptitud
+        // había evaluado jamás, porque nunca existió en la población.
+        //
+        // Dos de ellos son decisorios y activos: `conformal_alpha` gobierna el
+        // umbral del filtro conformal y `vecm_beta_hedge` el del z-score VECM.
+        // La evolución no podía modificarlos en un proceso vivo pero SÍ en el
+        // backtest (que arranca en frío por `from_genome`), de modo que un
+        // genoma evaluado con alpha=0,05 se desplegaba operando con el alpha
+        // del genoma de arranque. Cuarta contribución verificada a la
+        // divergencia backtest↔producción.
+        //
+        // El test `t2_simetria_from_genome_vs_apply_to_arena` fija la
+        // exhaustividad como contrato: no volverá a reintroducirse por olvido.
+        arena.config.conformal_alpha.store(self.conformal_alpha, Ordering::Relaxed);
+        arena.config.global_learning_rate.store(self.global_learning_rate, Ordering::Relaxed);
+        arena.config.global_momentum.store(self.global_momentum, Ordering::Relaxed);
+        arena.config.min_trades_per_day.store(self.min_trades_per_day, Ordering::Relaxed);
+        arena.config.survival_capital_threshold.store(self.survival_capital_threshold, Ordering::Relaxed);
+        arena.config.vecm_alpha_speed.store(self.vecm_alpha_speed, Ordering::Relaxed);
+        arena.config.vecm_beta_hedge.store(self.vecm_beta_hedge, Ordering::Relaxed);
+        arena.config.ppo_weight_ofi.store(self.ppo_weight_ofi, Ordering::Relaxed);
+        arena.config.ppo_weight_obi.store(self.ppo_weight_obi, Ordering::Relaxed);
+        arena.config.ppo_weight_hawkes.store(self.ppo_weight_hawkes, Ordering::Relaxed);
+        arena.config.ppo_weight_leadlag.store(self.ppo_weight_leadlag, Ordering::Relaxed);
+        arena.config.ppo_weight_regime.store(self.ppo_weight_regime, Ordering::Relaxed);
+
     }
 
     pub fn mutate_cmaes(&self, rate: f64) -> Self {
@@ -1496,6 +1686,11 @@ impl SuperGenotype {
             // pendiente b controla cómo escala el parámetro con el horizonte.
             tp_horizon_curve: mutated_tp_curve,
             sl_horizon_curve: mutated_sl_curve,
+            kelly_horizon_curve: crate::temporal_spectrum::HorizonCurve::flat(1.0),
+            trail_mult_horizon_curve: crate::temporal_spectrum::HorizonCurve::flat(1.0),
+            trail_act_horizon_curve: crate::temporal_spectrum::HorizonCurve::flat(1.0),
+            trail_step_horizon_curve: crate::temporal_spectrum::HorizonCurve::flat(1.0),
+            obi_horizon_curve: crate::temporal_spectrum::HorizonCurve::flat(1.0),
             swing_tp_base: self.swing_tp_base, // X-005: vista
             swing_sl_base: self.swing_sl_base, // X-005: vista
             sl_atr_mult_btc: mutate_val(self.sl_atr_mult_btc, 0.5, 5.0),
@@ -1662,6 +1857,7 @@ impl SuperGenotype {
         // violar TP(τ)>SL(τ) fuera de los dos puntos de anclaje.
         mutated.enforce_curve_rr();
         mutated.derive_anchors_from_curves();
+        mutated.sync_continuous_curves();
 
         mutated
     }
@@ -1681,12 +1877,77 @@ impl SuperGenotype {
         self.swing_sl_base = self.sl_horizon_curve.eval(TAU_ANCHOR_SLOW_MS);
     }
 
+    /// Sincroniza las curvas continuas de horizonte para Kelly, Trailing y OBI
+    /// a partir de los parámetros del genoma en los puntos de anclaje (fast/slow).
+    pub fn sync_continuous_curves(&mut self) {
+        use crate::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS, HorizonCurve};
+        self.kelly_horizon_curve = HorizonCurve::through_two_points(
+            TAU_ANCHOR_FAST_MS,
+            self.scalp_kelly_fraction.max(0.001),
+            TAU_ANCHOR_SLOW_MS,
+            self.swing_kelly_fraction.max(0.001),
+        );
+        self.trail_mult_horizon_curve = HorizonCurve::through_two_points(
+            TAU_ANCHOR_FAST_MS,
+            self.scalp_trail_atr_mult_base.max(0.001),
+            TAU_ANCHOR_SLOW_MS,
+            self.swing_trail_atr_mult_base.max(0.001),
+        );
+        self.trail_act_horizon_curve = HorizonCurve::through_two_points(
+            TAU_ANCHOR_FAST_MS,
+            self.scalp_trail_act_atr.max(0.001),
+            TAU_ANCHOR_SLOW_MS,
+            self.swing_trail_act_atr.max(0.001),
+        );
+        self.trail_step_horizon_curve = HorizonCurve::through_two_points(
+            TAU_ANCHOR_FAST_MS,
+            self.scalp_trail_step_atr.max(0.001),
+            TAU_ANCHOR_SLOW_MS,
+            self.swing_trail_step_atr.max(0.001),
+        );
+        self.obi_horizon_curve = HorizonCurve::through_two_points(
+            TAU_ANCHOR_FAST_MS,
+            self.scalp_obi_threshold.max(0.001),
+            TAU_ANCHOR_SLOW_MS,
+            self.swing_obi_threshold.max(0.001),
+        );
+    }
+
     /// Bandas evolutivas de los coeficientes de curva — FUENTE ÚNICA de las
     /// cotas (los bounds del vector las leen; el reparo RR clampa contra ellas).
     pub const TP_A_BOUNDS: (f64, f64) = (-9.5, -2.0);
     pub const TP_B_BOUNDS: (f64, f64) = (-0.2, 0.35);
     pub const SL_A_BOUNDS: (f64, f64) = (-10.5, -3.0);
     pub const SL_B_BOUNDS: (f64, f64) = (-0.2, 0.35);
+
+
+    #[inline]
+    pub fn tp_at_tau(&self, tau_ms: f64) -> f64 {
+        self.tp_horizon_curve.eval(tau_ms)
+    }
+
+    #[inline]
+    pub fn sl_at_tau(&self, tau_ms: f64) -> f64 {
+        self.sl_horizon_curve.eval(tau_ms)
+    }
+
+    #[inline]
+    pub fn kelly_at_tau(&self, tau_ms: f64) -> f64 {
+        self.kelly_horizon_curve.eval(tau_ms).clamp(0.01, 3.0)
+    }
+
+    #[inline]
+    pub fn trail_params_at_tau(&self, tau_ms: f64) -> (f64, f64, f64) {
+        let mult = self.trail_mult_horizon_curve.eval(tau_ms).clamp(0.01, 20.0);
+        let act = self.trail_act_horizon_curve.eval(tau_ms).clamp(0.01, 20.0);
+        let step = self.trail_step_horizon_curve.eval(tau_ms).clamp(0.01, 20.0);
+        (mult, act, step)
+    }
+
+    #[inline]
+    pub fn obi_threshold_at_tau(&self, tau_ms: f64) -> f64 {
+        self.obi_horizon_curve.eval(tau_ms).clamp(0.01, 1.0)
+    }
 
     /// X-005 (REHAB-1): invariante RR SOBRE CURVAS — TP(τ) ≥ SL(τ)·MIN_RR_MUTATION
     /// en ambas anclas del espectro. Estrategia: (1) deprimir a_sl (escala
@@ -2316,7 +2577,7 @@ impl SuperGenotype {
             swing_obi_threshold: vec[137].clamp(lo[137], hi[137]),
             swing_accel_min_samples: vec[138].clamp(lo[138], hi[138]),
             temporal_scale: vec[139].clamp(lo[139], hi[139]),
-            // X-004 (REHAB-1): las CURVAS son genes del vector (slots 140-143).
+            // X-004 (REHAB-1): las CURVAS son genes del vector (slots 140-153).
             // Son la FUENTE ÚNICA: las anclas del literal se sobrescriben con
             // vistas derivadas de las curvas abajo (derive_anchors), y el
             // reparo RR opera SOBRE CURVAS — nunca más doble verdad.
@@ -2328,6 +2589,11 @@ impl SuperGenotype {
                 a: vec[142].clamp(lo[142], hi[142]),
                 b: vec[143].clamp(lo[143], hi[143]),
             },
+            kelly_horizon_curve: crate::temporal_spectrum::HorizonCurve::flat(1.0),
+            trail_mult_horizon_curve: crate::temporal_spectrum::HorizonCurve::flat(1.0),
+            trail_act_horizon_curve: crate::temporal_spectrum::HorizonCurve::flat(1.0),
+            trail_step_horizon_curve: crate::temporal_spectrum::HorizonCurve::flat(1.0),
+            obi_horizon_curve: crate::temporal_spectrum::HorizonCurve::flat(1.0),
         };
 
         let mut g = rebuilt;
@@ -2338,6 +2604,7 @@ impl SuperGenotype {
         // invariante — determinista y sin tocar la pendiente evolucionada.
         g.enforce_curve_rr();
         g.derive_anchors_from_curves();
+        g.sync_continuous_curves();
         g
     }
 
