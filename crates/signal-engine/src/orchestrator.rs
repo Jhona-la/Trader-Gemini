@@ -142,6 +142,14 @@ impl TensorVoteOrchestrator {
         };
 
         let expected_lifetime_ms = match target_horizon {
+            TradeHorizon::Continuous => {
+                // Sistema continuo universal: la vida esperada de la posición
+                // se interpola por confianza entre el horizonte corto (1x base)
+                // y el extendido (10x base), en vez de fijarse por modo binario.
+                let conf = net_confidence.abs().clamp(0.0, 1.0);
+                let scale = 1.0 + 9.0 * conf;
+                ((base_duration as f64) * scale).max(30_000.0) as u64
+            }
             TradeHorizon::Scalp => {
                 if net_confidence.abs() > confidence_cutoff {
                     (base_duration / 2).max(15_000)
@@ -150,17 +158,7 @@ impl TensorVoteOrchestrator {
                 }
             }
             TradeHorizon::Swing => {
-                // Swing horizon operates on multi-hour time-in-force (minimum 1 hour)
                 (base_duration * 10).max(3_600_000)
-            }
-            TradeHorizon::Continuous => {
-                // Sistema continuo universal: la vida esperada de la posición
-                // se interpola por confianza entre el horizonte corto (scalp,
-                // 1x base) y el extendido (swing, 10x base), en vez de fijarse
-                // por modo.
-                let conf = net_confidence.abs().clamp(0.0, 1.0);
-                let scale = 1.0 + 9.0 * conf;
-                ((base_duration as f64) * scale).max(30_000.0) as u64
             }
         };
 

@@ -89,7 +89,7 @@ impl StatArbEngine {
             return SignalIntent {
                 signal: SignalType::Short,
                 confidence: norm_conf,
-                horizon: crate::TradeHorizon::Swing,
+                horizon: crate::TradeHorizon::Continuous,
                 ..Default::default()
             };
         } else if z_score < -self.z_score_threshold && expected_spread_edge > min_spread_profit_bps
@@ -98,7 +98,7 @@ impl StatArbEngine {
             return SignalIntent {
                 signal: SignalType::Long,
                 confidence: norm_conf,
-                horizon: crate::TradeHorizon::Swing,
+                horizon: crate::TradeHorizon::Continuous,
                 ..Default::default()
             };
         } else if z_score.abs() < 0.1 {
@@ -106,7 +106,7 @@ impl StatArbEngine {
             return SignalIntent {
                 signal: SignalType::Flat,
                 confidence: 1.0,
-                horizon: crate::TradeHorizon::Swing,
+                horizon: crate::TradeHorizon::Continuous,
                 ..Default::default()
             };
         }
@@ -156,7 +156,7 @@ mod tests {
         // Divergencia donde A cae fuertemente respecto a B
         let long_signal = engine.update(90.0, 100.0);
         assert_eq!(long_signal.signal, SignalType::Long);
-        assert_eq!(long_signal.horizon, crate::TradeHorizon::Swing);
+        assert_eq!(long_signal.horizon, crate::TradeHorizon::Continuous);
 
         // Reversión a la media
         for _ in 0..10 {

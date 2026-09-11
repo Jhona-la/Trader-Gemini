@@ -7,8 +7,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub static DROP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum MarketRegime {
+    #[default]
+    Continuous,
     Scalping,
     Swing,
     Neutral,
@@ -228,16 +230,8 @@ impl StatefulEngine {
                     self.a_t = self.a_t * 0.95 + (centroid * 0.001) * 0.05;
                 }
             }
-            let (_h_mic, _h_mes, _h_mac, _score, scalp, swing) = self.multifractal.update(price);
-
-            // Lógica Branchless-like O(1) para discriminar atómicamente el régimen
-            self.regime = if scalp {
-                MarketRegime::Scalping
-            } else if swing {
-                MarketRegime::Swing
-            } else {
-                MarketRegime::Neutral
-            };
+            let (_h_mic, _h_mes, _h_mac, _score, _micro_p, _macro_p) = self.multifractal.update(price);
+            self.regime = MarketRegime::Continuous;
 
             // Tick-level instantaneous velocity & acceleration
             let inst_v = diff;
@@ -380,14 +374,8 @@ impl StatefulEngine {
             self.spectral
                 .push((close - self.last_price) / self.last_price);
         }
-        let (_h_mic, _h_mes, _h_mac, _score, scalp, swing) = self.multifractal.update(close);
-        self.regime = if scalp {
-            MarketRegime::Scalping
-        } else if swing {
-            MarketRegime::Swing
-        } else {
-            MarketRegime::Neutral
-        };
+        let (_h_mic, _h_mes, _h_mac, _score, _micro_p, _macro_p) = self.multifractal.update(close);
+        self.regime = MarketRegime::Continuous;
         self.last_price = close;
 
         if self.ema_fast == 0.0 {
@@ -426,16 +414,18 @@ impl StatefulEngine {
         self.dark_alpha.apply_event(dex_severity, ts_ms);
     }
 
-    pub fn get_market_regime(&self) -> MarketRegime {
-        let h = self.hurst.current(); // Read last computed Hurst — NO double-update
+    pub fn update_macro_flow(
+        &mut self,
+        funding_rate: f64,
+        dex_severity: f64,
+        ts_ms: u64,
+    ) {
+        self.fr_elasticity.update(funding_rate, self.last_price);
+        self.dark_alpha.apply_event(dex_severity, ts_ms);
+    }
 
-        if h < 0.45 {
-            MarketRegime::Scalping // Mean reverting
-        } else if h > 0.55 {
-            MarketRegime::Swing // Trending
-        } else {
-            MarketRegime::Neutral // Random walk
-        }
+    pub fn get_market_regime(&self) -> MarketRegime {
+        MarketRegime::Continuous
     }
 
     pub fn get_features(&self) -> [f32; 12] {
@@ -659,7 +649,10 @@ mod tests {
         let regime = engine.get_market_regime();
         assert!(matches!(
             regime,
-            MarketRegime::Scalping | MarketRegime::Swing | MarketRegime::Neutral
+            MarketRegime::Continuous
+                | MarketRegime::Scalping
+                | MarketRegime::Swing
+                | MarketRegime::Neutral
         ));
 
         let atr_pct = engine.get_atr_pct();

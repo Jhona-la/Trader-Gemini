@@ -172,7 +172,7 @@ impl QuantumStrategy for SwingConformalFilterEngine {
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Swing
+        strategy_core::TradeHorizon::Continuous
     }
 }
 
@@ -214,7 +214,7 @@ mod tests {
         let mut engine = SwingConformalFilterEngine::new();
         assert!(engine.init(registry).is_ok());
         assert_eq!(engine.name(), "SwingConformalFilterEngine");
-        assert_eq!(engine.horizon(), strategy_core::TradeHorizon::Swing);
+        assert_eq!(engine.horizon(), strategy_core::TradeHorizon::Continuous);
 
         let score = engine.evaluate();
         assert!(score.is_finite());

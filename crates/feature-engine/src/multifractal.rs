@@ -182,17 +182,17 @@ impl MultiScaleHurstConfluence {
 
         let confluence_score: f64 = (c_micro * 0.4 + c_meso * 0.3 + c_macro * 0.3).clamp(-1.0, 1.0);
 
-        // O(1) Branchless-like thresholds para determinar la viabilidad atómica del horizonte
-        let is_scalp_viable = h_micro > 0.60 || h_micro < 0.40; // Micro-tendencia fuerte o Micro-reversión fuerte
-        let is_swing_viable = h_macro > 0.65 || h_macro < 0.35; // Macro-tendencia o Macro-rango
+        // O(1) Indicadores continuos de persistencia fractal en el espectro universal
+        let is_micro_persistent = (h_micro - 0.5).abs() > 0.10;
+        let is_macro_persistent = (h_macro - 0.5).abs() > 0.15;
 
         (
             h_micro,
             h_meso,
             h_macro,
             confluence_score,
-            is_scalp_viable,
-            is_swing_viable,
+            is_micro_persistent,
+            is_macro_persistent,
         )
     }
 }

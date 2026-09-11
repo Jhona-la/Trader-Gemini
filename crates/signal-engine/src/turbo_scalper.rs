@@ -100,7 +100,7 @@ impl TurboScalpEngine {
                 signal: signal_type,
                 confidence,
                 expected_duration_ms: base_duration.max(15_000),
-                horizon: strategy_core::TradeHorizon::Scalp,
+                horizon: strategy_core::TradeHorizon::Continuous,
                 ..Default::default()
             });
         }

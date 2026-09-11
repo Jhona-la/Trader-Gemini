@@ -1,8 +1,10 @@
 use rusqlite::{params, Connection, OpenFlags, Result};
 use std::path::Path;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HorizonIntent {
+    #[default]
+    Continuous,
     Scalp,
     Swing,
 }
@@ -32,7 +34,7 @@ impl StateDb {
         )?;
 
         // Tabla de intenciones de posición con clave primaria compuesta (coin_id, horizon)
-        // Permite coexistencia simultánea e independiente de posiciones Scalp y Swing en la misma moneda
+        // Permite coexistencia simultánea e independiente de posiciones en el espectro continuo
         conn.execute(
             "CREATE TABLE IF NOT EXISTS position_intent (
                 coin_id INTEGER NOT NULL,
@@ -68,6 +70,7 @@ impl StateDb {
         }
 
         let horizon_str = match horizon {
+            HorizonIntent::Continuous => "CONTINUOUS",
             HorizonIntent::Scalp => "SCALP",
             HorizonIntent::Swing => "SWING",
         };
@@ -86,6 +89,7 @@ impl StateDb {
     #[inline]
     pub fn clear_position_horizon(&self, coin_id: usize, horizon: HorizonIntent) -> Result<()> {
         let horizon_str = match horizon {
+            HorizonIntent::Continuous => "CONTINUOUS",
             HorizonIntent::Scalp => "SCALP",
             HorizonIntent::Swing => "SWING",
         };
@@ -113,6 +117,7 @@ impl StateDb {
         horizon: HorizonIntent,
     ) -> Result<Option<(HorizonIntent, bool, f64, f64)>> {
         let horizon_str = match horizon {
+            HorizonIntent::Continuous => "CONTINUOUS",
             HorizonIntent::Scalp => "SCALP",
             HorizonIntent::Swing => "SWING",
         };
@@ -128,6 +133,7 @@ impl StateDb {
             let qty: f64 = row.get(3)?;
 
             let h = match h_str.as_str() {
+                "CONTINUOUS" => HorizonIntent::Continuous,
                 "SCALP" => HorizonIntent::Scalp,
                 _ => HorizonIntent::Swing,
             };
@@ -155,6 +161,7 @@ impl StateDb {
             let qty: f64 = row.get(3)?;
 
             let horizon = match horizon_str.as_str() {
+                "CONTINUOUS" => HorizonIntent::Continuous,
                 "SCALP" => HorizonIntent::Scalp,
                 _ => HorizonIntent::Swing,
             };

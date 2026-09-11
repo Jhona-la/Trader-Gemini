@@ -163,7 +163,7 @@ impl QuantumStrategy for MicroScalpTriggerEngine {
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Scalp
+        strategy_core::TradeHorizon::Continuous
     }
 }
 
@@ -225,7 +225,7 @@ mod tests {
         let mut engine = MicroScalpTriggerEngine::new();
         assert!(engine.init(registry).is_ok());
         assert_eq!(engine.name(), "MicroScalpTriggerEngine");
-        assert_eq!(engine.horizon(), strategy_core::TradeHorizon::Scalp);
+        assert_eq!(engine.horizon(), strategy_core::TradeHorizon::Continuous);
 
         let val = engine.evaluate();
         assert!(val.is_finite());

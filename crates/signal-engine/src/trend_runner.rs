@@ -86,7 +86,7 @@ impl QuantumStrategy for HighPayoffTrendRunner {
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Swing
+        strategy_core::TradeHorizon::Continuous
     }
 
     fn evaluate(&self) -> f64 {

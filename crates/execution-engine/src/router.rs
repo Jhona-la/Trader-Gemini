@@ -215,7 +215,7 @@ mod tests {
             net_confidence: 0.0,
             expected_volatility: 0.0,
             expected_lifetime_ms: 1000,
-            horizon: TradeHorizon::Scalp,
+            horizon: TradeHorizon::Continuous,
         };
 
         // Flat decision returns Ok(()) immediately without calling executor
@@ -239,7 +239,7 @@ mod tests {
             net_confidence: 0.9,
             expected_volatility: 0.02,
             expected_lifetime_ms: 1000,
-            horizon: TradeHorizon::Scalp,
+            horizon: TradeHorizon::Continuous,
         };
 
         // Invalid price (NaN) returns Err

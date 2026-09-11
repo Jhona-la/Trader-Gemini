@@ -103,5 +103,14 @@
   - [x] Verificación de compilación workspace (`cargo check --workspace --all-targets` 0 errores)
   - [x] Aprobación de suite de tests unitarios e integración (121 tests pasados al 100%)
   - [x] Certificación de backtest 1:1 sobre 1,033,320 ticks con `audit_forensic_backtest` (34 trades continuos, 0 hard SL, DD 2.64%)
+- [ ] ### FASE 22: ERRADICACIÓN TOTAL DE BIFURCACIÓN SCALP/SWING (ESPECTRO CONTINUO UNIVERSAL)
+  - [ ] Paso 1: `strategy-core` — default trait `QuantumStrategy::horizon` a `TradeHorizon::Continuous`
+  - [ ] Paso 2: `signal-engine` — 15 estrategias cuánticas migradas a `TradeHorizon::Continuous`
+  - [ ] Paso 3: `god-engine-core/src/lib.rs` — erradicar asignaciones y fallbacks de `Scalp` / `Swing` en emisión de `SignalIntent` y `pos_h`
+  - [ ] Paso 4: `feature-engine/src/multifractal.rs` — erradicar `is_scalp_viable` e `is_swing_viable`
+  - [ ] Paso 5: `data-pipeline/src/state_db.rs` — unificar `HorizonIntent` con `Continuous`
+  - [ ] Paso 6: Compilación y verificación con `cargo check` y suites de tests
+  - [ ] Paso 7: Certificación en backtest 1:1 con `audit_forensic_backtest`
+
 
 

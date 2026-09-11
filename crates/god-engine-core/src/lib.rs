@@ -1990,7 +1990,7 @@ impl GodEngineCore {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 1.0,
                             ..Default::default()
                         };
@@ -2009,7 +2009,7 @@ impl GodEngineCore {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score.abs()),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 2.0,
                             ..Default::default()
                         };
@@ -2021,7 +2021,7 @@ impl GodEngineCore {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 3.0,
                             ..Default::default()
                         };
@@ -2038,7 +2038,7 @@ impl GodEngineCore {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 4.0,
                             ..Default::default()
                         };
@@ -2057,7 +2057,7 @@ impl GodEngineCore {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 5.0,
                             ..Default::default()
                         };
@@ -2069,7 +2069,7 @@ impl GodEngineCore {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score.abs()),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 6.0,
                             ..Default::default()
                         };
@@ -2081,7 +2081,7 @@ impl GodEngineCore {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 7.0,
                             ..Default::default()
                         };
@@ -2093,7 +2093,7 @@ impl GodEngineCore {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 8.0,
                             ..Default::default()
                         };
@@ -2102,7 +2102,7 @@ impl GodEngineCore {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(current_obi.abs().min(composite_score.abs())),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 9.0,
                             ..Default::default()
                         };
@@ -2110,7 +2110,7 @@ impl GodEngineCore {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(current_obi.abs().min(composite_score.abs())),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 10.0,
                             ..Default::default()
                         };
@@ -2164,7 +2164,7 @@ impl GodEngineCore {
                                 .net_confidence
                                 .abs()
                                 .clamp(tensor_min_conf, 1.0),
-                            horizon: strategy_core::TradeHorizon::Scalp,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 11.0,
                             ..Default::default()
                         };
@@ -2417,7 +2417,7 @@ impl GodEngineCore {
                             signal: SignalType::Long,
                             confidence,
                             expected_duration_ms: swing_duration_ms,
-                            horizon: strategy_core::TradeHorizon::Swing,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             ..Default::default()
                         };
                     } else if macd_diff < -threshold
@@ -2436,7 +2436,7 @@ impl GodEngineCore {
                             signal: SignalType::Short,
                             confidence,
                             expected_duration_ms: swing_duration_ms,
-                            horizon: strategy_core::TradeHorizon::Swing,
+                            horizon: strategy_core::TradeHorizon::Continuous,
                             ..Default::default()
                         };
                     }
@@ -2478,7 +2478,7 @@ impl GodEngineCore {
                             .net_confidence
                             .abs()
                             .clamp(tensor_min_conf * 0.95, 1.0),
-                        horizon: strategy_core::TradeHorizon::Swing,
+                        horizon: strategy_core::TradeHorizon::Continuous,
                         ..Default::default()
                     };
                 } else if tensor_swing.signal == SignalType::Short
@@ -2492,7 +2492,7 @@ impl GodEngineCore {
                             .net_confidence
                             .abs()
                             .clamp(tensor_min_conf * 0.95, 1.0),
-                        horizon: strategy_core::TradeHorizon::Swing,
+                        horizon: strategy_core::TradeHorizon::Continuous,
                         ..Default::default()
                     };
                 } else if tensor_cont.signal == SignalType::Long
@@ -2560,17 +2560,17 @@ impl GodEngineCore {
                         ..scalp_intent
                     };
                 } else {
-                    // Señales opuestas (conflicto Scalp vs Swing):
-                    // En lugar de una guerra ciega de vectores, la tendencia mayor confirmada decide
+                    // Señales opuestas (conflicto de frecuencia):
+                    // La tendencia mayor confirmada decide la dirección en el continuo temporal universal
                     if is_confirmed_downtrend {
                         if scalp_intent.signal == SignalType::Short {
                             unified_intent = SignalIntent {
-                                horizon: strategy_core::TradeHorizon::Scalp,
+                                horizon: strategy_core::TradeHorizon::Continuous,
                                 ..scalp_intent
                             };
                         } else if swing_intent.signal == SignalType::Short {
                             unified_intent = SignalIntent {
-                                horizon: strategy_core::TradeHorizon::Swing,
+                                horizon: strategy_core::TradeHorizon::Continuous,
                                 ..swing_intent
                             };
                         } else {
@@ -2579,12 +2579,12 @@ impl GodEngineCore {
                     } else if is_confirmed_uptrend {
                         if scalp_intent.signal == SignalType::Long {
                             unified_intent = SignalIntent {
-                                horizon: strategy_core::TradeHorizon::Scalp,
+                                horizon: strategy_core::TradeHorizon::Continuous,
                                 ..scalp_intent
                             };
                         } else if swing_intent.signal == SignalType::Long {
                             unified_intent = SignalIntent {
-                                horizon: strategy_core::TradeHorizon::Swing,
+                                horizon: strategy_core::TradeHorizon::Continuous,
                                 ..swing_intent
                             };
                         } else {
@@ -2597,24 +2597,26 @@ impl GodEngineCore {
                 }
             } else if scalp_intent.signal != SignalType::Flat {
                 unified_intent = SignalIntent {
-                    horizon: strategy_core::TradeHorizon::Scalp,
+                    horizon: strategy_core::TradeHorizon::Continuous,
                     ..scalp_intent
                 };
             } else if swing_intent.signal != SignalType::Flat {
                 unified_intent = SignalIntent {
-                    horizon: strategy_core::TradeHorizon::Swing,
+                    horizon: strategy_core::TradeHorizon::Continuous,
                     ..swing_intent
                 };
             }
 
-            // D-474: Invariante Fractal Universal de Horizonte (Persistencia Browniana Hurst)
-            // Si el régimen es anti-persistente (Hurst < 0.48), las operaciones de Swing multi-hora
-            // con stops anchos de 140 bps quedan estrictamente mapeadas a Scalping táctico (stops 50 bps, TP 80-120 bps).
-            // En régimen trending (Hurst >= 0.52), conservan su horizonte Swing para correr la tendencia completa.
-            if hurst_exponent < 0.48 && unified_intent.horizon == strategy_core::TradeHorizon::Swing
-            {
-                unified_intent.horizon = strategy_core::TradeHorizon::Scalp;
+            // D-474: Invariante Fractal Universal de Horizonte Continuo (Persistencia Browniana Hurst)
+            // En el espectro continuo universal, la duración esperada se modula continuamente por Hurst:
+            // Hurst < 0.48 (anti-persistente) comprime la duración hacia la microestructura (tau bajo);
+            // Hurst >= 0.52 (persistente/trending) expande la duración temporal para capturar la tendencia.
+            if hurst_exponent < 0.48 {
+                unified_intent.expected_duration_ms = (unified_intent.expected_duration_ms / 2).max(15_000);
+            } else if hurst_exponent >= 0.52 {
+                unified_intent.expected_duration_ms = (unified_intent.expected_duration_ms * 2).min(3_600_000);
             }
+            unified_intent.horizon = strategy_core::TradeHorizon::Continuous;
 
             // D-467, D-472, D-488 & D-496: Escudo Invariante Macro Multiescala (Secular 12h, Superior 2h y Macro 1m/15m).
             // Erradica operaciones a contratendencia del régimen mayor (e.g. comprar Longs en caída o vender Shorts en rally)
@@ -2925,17 +2927,8 @@ impl GodEngineCore {
                     };
                     let slip_bps = ((current_spread_bps * 0.5) + 0.5).clamp(0.5, 500.0);
 
-                    let council_horizon = match unified_intent.horizon {
-                        strategy_core::TradeHorizon::Scalp => {
-                            metacortex_engine::consejo_seniors::TradingHorizon::Scalping
-                        }
-                        strategy_core::TradeHorizon::Swing => {
-                            metacortex_engine::consejo_seniors::TradingHorizon::Swing
-                        }
-                        strategy_core::TradeHorizon::Continuous => {
-                            metacortex_engine::consejo_seniors::TradingHorizon::Continuous
-                        }
-                    };
+                    let council_horizon =
+                        metacortex_engine::consejo_seniors::TradingHorizon::Continuous;
 
                     let council_snapshot =
                         metacortex_engine::consejo_seniors::MarketSnapshotPayload {
@@ -2952,14 +2945,11 @@ impl GodEngineCore {
                     let senior_sigs = self
                         .consejo_deliberacion
                         .extract_senior_signals(&council_snapshot, wr);
-                    if unified_intent.horizon == strategy_core::TradeHorizon::Swing {
-                        if coin_id < self.last_swing_senior_signals.len() {
-                            self.last_swing_senior_signals[coin_id] = senior_sigs;
-                        }
-                    } else {
-                        if coin_id < self.last_scalp_senior_signals.len() {
-                            self.last_scalp_senior_signals[coin_id] = senior_sigs;
-                        }
+                    if coin_id < self.last_scalp_senior_signals.len() {
+                        self.last_scalp_senior_signals[coin_id] = senior_sigs;
+                    }
+                    if coin_id < self.last_swing_senior_signals.len() {
+                        self.last_swing_senior_signals[coin_id] = senior_sigs;
                     }
                     let deliberation = self.consejo_deliberacion.deliberar_with_weights(
                         &council_snapshot,
@@ -3046,17 +3036,7 @@ impl GodEngineCore {
 
                                 let qty = nominal_size / real_entry_price;
 
-                                let pos_h = match unified_intent.horizon {
-                                    strategy_core::TradeHorizon::Scalp => {
-                                        quantum_arena::position::PositionHorizon::Scalping
-                                    }
-                                    strategy_core::TradeHorizon::Swing => {
-                                        quantum_arena::position::PositionHorizon::Swing
-                                    }
-                                    strategy_core::TradeHorizon::Continuous => {
-                                        quantum_arena::position::PositionHorizon::Continuous
-                                    }
-                                };
+                                let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 
                                 coin.positions.position.open_with_fee(
                                     is_long,

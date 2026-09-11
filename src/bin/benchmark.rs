@@ -61,14 +61,14 @@ fn main() {
             SignalIntent {
                 signal: SignalType::Long,
                 confidence: obi.abs(),
-                horizon: TradeHorizon::Scalp,
+                horizon: TradeHorizon::Continuous,
                 ..Default::default()
             }
         } else if obi < -0.20 {
             SignalIntent {
                 signal: SignalType::Short,
                 confidence: obi.abs(),
-                horizon: TradeHorizon::Scalp,
+                horizon: TradeHorizon::Continuous,
                 ..Default::default()
             }
         } else {

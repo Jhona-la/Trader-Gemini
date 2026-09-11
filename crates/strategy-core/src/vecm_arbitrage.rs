@@ -167,7 +167,7 @@ impl QuantumStrategy for JohansenVecmEngine {
     }
 
     fn horizon(&self) -> TradeHorizon {
-        TradeHorizon::Swing
+        TradeHorizon::Continuous
     }
 }
 
@@ -219,7 +219,7 @@ mod tests {
             vecm.update(100.0, 100.0);
         }
         let _ = vecm.evaluate();
-        assert_eq!(vecm.horizon(), TradeHorizon::Swing);
+        assert_eq!(vecm.horizon(), TradeHorizon::Continuous);
     }
 
     #[test]

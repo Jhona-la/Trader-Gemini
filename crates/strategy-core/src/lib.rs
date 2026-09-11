@@ -35,9 +35,9 @@ pub trait QuantumStrategy: Send + Sync {
         }
     }
 
-    /// Target operational trading horizon (Scalp vs Swing)
+    /// Target operational trading horizon (Universal Continuous Temporal Spectrum)
     fn horizon(&self) -> TradeHorizon {
-        TradeHorizon::Scalp
+        TradeHorizon::Continuous
     }
 }
 

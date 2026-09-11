@@ -6,6 +6,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time::sleep;
 
+pub mod fitness;
 pub mod anti_bias_governor;
 pub mod ast_mutator;
 pub mod cma_es;
@@ -430,24 +431,52 @@ impl EvolutionEngine {
 
                         let velocity = final_cap / initial_capital;
 
-                        // FIX BLOQUEO #1: OOS Walk-Forward Penalty (Matemática continua sin asimetrías abruptas)
-                        // Multiplicador simétrico de castigo.
-                        let oos_capital_end = test_arena.unified_capital.load(Ordering::Relaxed);
-                        let oos_pnl = oos_capital_end - oos_capital_start;
-                        let oos_penalty = if oos_pnl < 0.0 { 1.5 } else { 1.0 }; // Penalización del 50% extra en pérdidas
-
-                        let raw_fitness = if pnl > 0.0 && velocity >= 1.0 {
-                            (pnl * sharpe.max(0.01) * if total_trades > 0 { 1.0 } else { 0.0 })
-                                / oos_penalty
-                        } else {
-                            // Castigo monótono, sin división que corrompa la convexidad
-                            (pnl.min(0.0) * (1.0 + sharpe.abs()) * oos_penalty)
-                                - (if total_trades == 0 { 1.0 } else { 0.0 })
+                        // D-653/D-654 (DÉCIMA OLA) — APTITUD ÚNICA Y CORRECTA.
+                        //
+                        // Sustituye a `pnl · sharpe / oos_penalty`, que:
+                        //   · crecía LINEALMENTE con el apalancamiento (sharpe
+                        //     es invariante de escala, pnl no) y sin cota, de
+                        //     modo que la evolución escogía invariablemente el
+                        //     genoma más apalancado; y
+                        //   · puntuaba la INACCIÓN (−1,0) muy por encima de la
+                        //     pérdida moderada (−112,5), convirtiendo la
+                        //     parálisis operativa en el óptimo local más
+                        //     accesible del paisaje.
+                        //
+                        // La nueva es crecimiento logarítmico penalizado por
+                        // ruina: invariante de escala, cóncava en la riqueza y
+                        // coherente con el dimensionamiento de Kelly del motor.
+                        let max_dd = {
+                            let mut peak = initial_capital.max(1e-12);
+                            let mut worst = 0.0f64;
+                            for &e in equity_curve.iter() {
+                                if e > peak {
+                                    peak = e;
+                                }
+                                if peak > 0.0 {
+                                    worst = worst.max((peak - e) / peak);
+                                }
+                            }
+                            worst.clamp(0.0, 1.0)
                         };
-
-                        // Normalización logarítmica simétrica para estabilizar matriz de covarianza CMA-ES
+                        let min_trades_required = self
+                            .arena
+                            .config
+                            .min_trades_per_day
+                            .load(Ordering::Relaxed)
+                            .max(1.0) as u32;
                         let normalized_fitness =
-                            raw_fitness.signum() * (1.0 + raw_fitness.abs()).ln();
+                            crate::fitness::compute(&crate::fitness::FitnessInputs {
+                                initial_capital,
+                                final_capital: final_cap,
+                                max_drawdown_pct: max_dd,
+                                total_trades: total_trades as u32,
+                                min_trades_required,
+                                oos_start_capital: oos_capital_start,
+                                oos_end_capital: test_arena
+                                    .unified_capital
+                                    .load(Ordering::Relaxed),
+                            });
 
                         (
                             i,

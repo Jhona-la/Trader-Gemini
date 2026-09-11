@@ -118,7 +118,7 @@ impl MultivariateCointegrationEngine {
                 return Some(SignalIntent {
                     signal: SignalType::Long,
                     confidence,
-                    horizon: TradeHorizon::Swing,
+                    horizon: TradeHorizon::Continuous,
                     expected_magnitude: 0.015,
                     ..Default::default()
                 });
@@ -128,7 +128,7 @@ impl MultivariateCointegrationEngine {
                 return Some(SignalIntent {
                     signal: SignalType::Short,
                     confidence,
-                    horizon: TradeHorizon::Swing,
+                    horizon: TradeHorizon::Continuous,
                     expected_magnitude: 0.015,
                     ..Default::default()
                 });
@@ -203,7 +203,7 @@ mod tests {
         assert!(signal.is_some());
         let intent = signal.unwrap();
         assert_eq!(intent.signal, SignalType::Long);
-        assert_eq!(intent.horizon, TradeHorizon::Swing);
+        assert_eq!(intent.horizon, TradeHorizon::Continuous);
     }
 
     #[test]
@@ -272,6 +272,6 @@ mod tests {
         assert!(signal.is_some());
         let intent = signal.unwrap();
         assert_eq!(intent.signal, SignalType::Short);
-        assert_eq!(intent.horizon, TradeHorizon::Swing);
+        assert_eq!(intent.horizon, TradeHorizon::Continuous);
     }
 }

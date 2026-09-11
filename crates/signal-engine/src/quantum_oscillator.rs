@@ -159,7 +159,7 @@ impl QuantumStrategy for QuantumOscillatorEngine {
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
-        strategy_core::TradeHorizon::Scalp
+        strategy_core::TradeHorizon::Continuous
     }
 }
 
