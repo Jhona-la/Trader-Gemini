@@ -473,6 +473,26 @@ mod tests {
         }
     }
 
+    /// D-625: los slots usados para acotar en la entrada corresponden a los
+    /// genes que dicen, y un gen fuera de bounds entra al arena acotado.
+    #[test]
+    fn d625_genes_se_acotan_al_entrar_al_arena() {
+        use crate::GlobalArena;
+        use std::sync::atomic::Ordering;
+        let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let v = g.to_vector();
+        assert_eq!(v[SuperGenotype::SLOT_TECH_THRESHOLD], g.tech_threshold);
+        assert_eq!(v[SuperGenotype::SLOT_TREND_THRESHOLD], g.trend_threshold);
+
+        // El genoma de producción trae tech_threshold = 0,05.
+        g.tech_threshold = 0.05;
+        let frio = GlobalArena::from_genome(13.0, &g);
+        assert!((frio.config.tech_threshold.load(Ordering::Relaxed) - 0.24).abs() < 1e-12);
+        let swap = GlobalArena::new(13.0);
+        g.apply_to_arena(&swap);
+        assert!((swap.config.tech_threshold.load(Ordering::Relaxed) - 0.24).abs() < 1e-12);
+    }
+
     #[test]
     fn t2_simetria_from_genome_vs_apply_to_arena() {
         use crate::GlobalArena;

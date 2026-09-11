@@ -699,7 +699,7 @@ impl SuperGenotype {
             tp_rr_ratio_btc: r_scalp,
             min_confidence_btc: w_base * 1.018, // Ligeramente mayor que base
             veto_threshold_btc: w_base * 1.09,
-            tech_threshold: 0.15,
+            tech_threshold: 0.24, // D-625: dentro de los bounds
             ml_threshold_long: w_base * 1.036,
             ml_threshold_short: 1.0 - (w_base * 1.036),
             maker_spread_pct: maker_base,
@@ -897,7 +897,7 @@ impl SuperGenotype {
             tp_rr_ratio_btc: rand::rng().random_range(1.0..10.0),
             min_confidence_btc: rand::rng().random_range(0.5..0.95),
             veto_threshold_btc: rand::rng().random_range(0.5..0.99),
-            tech_threshold: rand::rng().random_range(0.001..0.30),
+            tech_threshold: rand::rng().random_range(0.24..0.30),
             ml_threshold_long: rand::rng().random_range(0.5..0.95),
             ml_threshold_short: rand::rng().random_range(0.05..0.49),
             maker_spread_pct: rand::rng().random_range(0.0001..0.01),
@@ -1105,7 +1105,7 @@ impl SuperGenotype {
         arena
             .config
             .trend_threshold
-            .store(self.trend_threshold, Ordering::Relaxed);
+            .store(Self::clamp_slot(self.trend_threshold, Self::SLOT_TREND_THRESHOLD), Ordering::Relaxed);
         arena
             .config
             .range_threshold
@@ -1147,7 +1147,7 @@ impl SuperGenotype {
         arena
             .config
             .tech_threshold
-            .store(self.tech_threshold, Ordering::Relaxed);
+            .store(Self::clamp_slot(self.tech_threshold, Self::SLOT_TECH_THRESHOLD), Ordering::Relaxed);
         arena
             .config
             .ml_threshold_long
@@ -1714,7 +1714,9 @@ impl SuperGenotype {
             tp_rr_ratio_btc: mutate_val(self.tp_rr_ratio_btc, 1.0, 10.0),
             min_confidence_btc: mutate_val(self.min_confidence_btc, 0.5, 0.95),
             veto_threshold_btc: mutate_val(self.veto_threshold_btc, 0.5, 0.99),
-            tech_threshold: mutate_val(self.tech_threshold, 0.05, 0.35),
+            // D-625: banda de mutación = bounds [0,24; 0,30]. Antes (0,05; 0,35): el
+            // piso lo imponía el motor al LEER y el techo excedía los bounds.
+            tech_threshold: mutate_val(self.tech_threshold, 0.24, 0.30),
             ml_threshold_long: mutate_val(self.ml_threshold_long, 0.5, 0.95),
             ml_threshold_short: mutate_val(self.ml_threshold_short, 0.05, 0.49),
             maker_spread_pct: mutate_val(self.maker_spread_pct, 0.0001, 0.01),
@@ -2687,6 +2689,11 @@ impl SuperGenotype {
         value.clamp(lo[slot], hi[slot])
     }
 
+    /// D-625 (DÉCIMA OLA): slots del vector de genes cuyo acotado se aplica al
+    /// ENTRAR al arena. Verificados contra `to_vector` por test.
+    pub const SLOT_TREND_THRESHOLD: usize = 8;
+    pub const SLOT_TECH_THRESHOLD: usize = 21;
+
     pub fn get_lower_bounds() -> Vec<f64> {
         vec![
             0.5,
@@ -2713,7 +2720,7 @@ impl SuperGenotype {
             1.0,
             0.5,
             0.5,
-            0.05,
+            0.24, // D-625: antes 0.05 — el motor imponía .max(0.24) al leer
             0.5,
             0.05,
             0.0001,

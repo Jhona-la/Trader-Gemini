@@ -212,7 +212,10 @@ impl QuantumConfig {
             survival_capital_threshold: AtomicF64::new(genome.survival_capital_threshold),
             funding_rate_sensitivity: AtomicF64::new(genome.funding_rate_sensitivity),
             global_correlation_threshold: AtomicF64::new(genome.global_correlation_threshold),
-            trend_threshold: AtomicF64::new(genome.trend_threshold),
+            trend_threshold: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
+                genome.trend_threshold,
+                crate::genome::SuperGenotype::SLOT_TREND_THRESHOLD,
+            )),
             range_threshold: AtomicF64::new(genome.range_threshold),
             scalp_kelly_fraction: AtomicF64::new(genome.scalp_kelly_fraction),
             swing_kelly_fraction: AtomicF64::new(genome.swing_kelly_fraction),
@@ -225,7 +228,10 @@ impl QuantumConfig {
             tp_rr_ratio_btc: AtomicF64::new(genome.tp_rr_ratio_btc),
             min_confidence_btc: AtomicF64::new(genome.min_confidence_btc),
             veto_threshold_btc: AtomicF64::new(genome.veto_threshold_btc),
-            tech_threshold: AtomicF64::new(genome.tech_threshold),
+            tech_threshold: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
+                genome.tech_threshold,
+                crate::genome::SuperGenotype::SLOT_TECH_THRESHOLD,
+            )),
             ml_threshold_long: AtomicF64::new(genome.ml_threshold_long),
             ml_threshold_short: AtomicF64::new(genome.ml_threshold_short),
             maker_spread_pct: AtomicF64::new(genome.maker_spread_pct),

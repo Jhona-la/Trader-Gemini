@@ -76,18 +76,26 @@ impl SwingConformalFilterEngine {
     /// Puntuación direccional pura, separada del registro para poder
     /// verificarla.
     #[inline]
-    pub(crate) fn score(z: f64, trend: f64, conformal_accept: bool, alpha: f64) -> f64 {
-        if !conformal_accept || !z.is_finite() || !trend.is_finite() {
+    pub(crate) fn score(
+        z: f64,
+        trend: f64,
+        accept_long: bool,
+        accept_short: bool,
+        alpha: f64,
+    ) -> f64 {
+        if !z.is_finite() || !trend.is_finite() {
             return 0.0;
         }
         let strength = significance_strength(z, alpha);
         if strength <= 0.0 {
             return 0.0;
         }
-        if z < 0.0 && trend >= 0.0 {
+        // D-676: la aceptación conformal se consulta para la dirección de la
+        // señal, no para «sube» en todos los casos.
+        if z < 0.0 && trend >= 0.0 && accept_long {
             // Precio bajo su base con tendencia alcista: la reversión acompaña.
             strength
-        } else if z > 0.0 && trend <= 0.0 {
+        } else if z > 0.0 && trend <= 0.0 && accept_short {
             // Precio sobre su base con tendencia bajista.
             -strength
         } else {
@@ -129,9 +137,10 @@ impl QuantumStrategy for SwingConformalFilterEngine {
             .unwrap_or(0.0);
         // Fail-open si el motor aún no publica la decisión conformal, coherente
         // con el warmup del calibrador.
-        let accept = get("conformal_accept").map(|v| v >= 0.5).unwrap_or(true);
+        let accept_long = get("conformal_accept_long").map(|v| v >= 0.5).unwrap_or(true);
+        let accept_short = get("conformal_accept_short").map(|v| v >= 0.5).unwrap_or(true);
         let alpha = get("conformal_alpha").unwrap_or(0.10);
-        Self::score(z, trend, accept, alpha)
+        Self::score(z, trend, accept_long, accept_short, alpha)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
@@ -153,24 +162,27 @@ mod tests {
     /// D-626: el umbral lo fija el α del genoma, no un literal.
     #[test]
     fn d626_el_umbral_sigue_al_alpha_del_genoma() {
-        assert_eq!(SwingConformalFilterEngine::score(-1.5, 1.0, true, 0.10), 0.0);
-        assert!(SwingConformalFilterEngine::score(-1.7, 1.0, true, 0.10) > 0.0);
-        assert!(SwingConformalFilterEngine::score(-1.5, 1.0, true, 0.20) > 0.0);
+        assert_eq!(SwingConformalFilterEngine::score(-1.5, 1.0, true, true, 0.10), 0.0);
+        assert!(SwingConformalFilterEngine::score(-1.7, 1.0, true, true, 0.10) > 0.0);
+        assert!(SwingConformalFilterEngine::score(-1.5, 1.0, true, true, 0.20) > 0.0);
     }
 
     /// D-626: sin salto en el umbral.
     #[test]
     fn d626_la_puntuacion_es_continua_en_el_umbral() {
-        let just_above = SwingConformalFilterEngine::score(-1.646, 1.0, true, 0.10);
+        let just_above = SwingConformalFilterEngine::score(-1.646, 1.0, true, true, 0.10);
         assert!(just_above > 0.0 && just_above < 0.01, "salto en el umbral: {just_above}");
     }
 
     #[test]
     fn direccion_tendencia_y_rechazo_conformal() {
-        assert!(SwingConformalFilterEngine::score(-2.5, 1.0, true, 0.10) > 0.5);
-        assert!(SwingConformalFilterEngine::score(2.5, -1.0, true, 0.10) < -0.5);
-        assert_eq!(SwingConformalFilterEngine::score(-2.5, -1.0, true, 0.10), 0.0);
-        assert_eq!(SwingConformalFilterEngine::score(-2.5, 1.0, false, 0.10), 0.0);
+        assert!(SwingConformalFilterEngine::score(-2.5, 1.0, true, true, 0.10) > 0.5);
+        assert!(SwingConformalFilterEngine::score(2.5, -1.0, true, true, 0.10) < -0.5);
+        assert_eq!(SwingConformalFilterEngine::score(-2.5, -1.0, true, true, 0.10), 0.0);
+        // D-676: cada dirección consulta su propia aceptación.
+        assert_eq!(SwingConformalFilterEngine::score(-2.5, 1.0, false, true, 0.10), 0.0);
+        assert!(SwingConformalFilterEngine::score(-2.5, 1.0, true, false, 0.10) > 0.5);
+        assert_eq!(SwingConformalFilterEngine::score(2.5, -1.0, true, false, 0.10), 0.0);
     }
 
     #[test]
@@ -178,13 +190,14 @@ mod tests {
         let registry = Arc::new(OmniscientRegistry::new());
         registry.set("vecm_zscore", -2.5);
         registry.set("ema_trend_swing", 1.0);
-        registry.set("conformal_accept", 1.0);
+        registry.set("conformal_accept_long", 1.0);
+        registry.set("conformal_accept_short", 1.0);
         registry.set("conformal_alpha", 0.10);
         let mut engine = SwingConformalFilterEngine::new();
         assert!(engine.init(registry.clone()).is_ok());
         assert_eq!(engine.horizon(), strategy_core::TradeHorizon::Continuous);
         assert!(engine.evaluate() > 0.0);
-        registry.set("conformal_accept", 0.0);
+        registry.set("conformal_accept_long", 0.0);
         assert_eq!(engine.evaluate(), 0.0);
     }
 }

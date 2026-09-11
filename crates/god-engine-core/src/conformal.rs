@@ -15,9 +15,11 @@
 //! p_y = (1 + #{score_i ≥ score_nuevo(y)}) / (n + 1)
 //! ```
 //!
-//! FUENTE DEL DATO: cada cierre de trade alimenta el calibrador con el
-//! `ml_prediction` almacenado en la posición AL ABRIR y su resultado neto de
-//! comisiones. Con menos de `min_calibration` observaciones el calibrador
+//! FUENTE DEL DATO: cada cierre de trade alimenta el calibrador con la
+//! probabilidad de ganar EN LA DIRECCIÓN OPERADA al abrir y su resultado neto
+//! de comisiones. La posición guarda `ml_prob` crudo (probabilidad de que el
+//! precio suba); para un corto el llamador debe pasar la complementaria
+//! (D-676). Con menos de `min_calibration` observaciones el calibrador
 //! acepta (fail-open documentado: sin evidencia no bloquea, pero no miente con
 //! una constante).
 //!

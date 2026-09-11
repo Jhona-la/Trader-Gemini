@@ -69,7 +69,27 @@ async fn main() {
     if std::env::var("TG_GENOME_ENV").is_err() {
         std::env::set_var("TG_GENOME_ENV", "prod");
     }
-    let genome = quantum_arena::genome::SuperGenotype::load_or_default();
+    // D-686 (DÉCIMA OLA): el evolucionador walk-forward evalúa cada candidato
+    // pasando su genoma en un fichero. Sin la variable se carga el genoma
+    // activo del entorno, como hasta ahora.
+    let genome = match std::env::var("FORENSIC_GENOME_PATH") {
+        Ok(path) => {
+            let parsed = std::fs::read_to_string(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|data| {
+                    serde_json::from_str::<quantum_arena::genome::SuperGenotype>(&data)
+                        .map_err(|e| e.to_string())
+                });
+            match parsed {
+                Ok(g) => g,
+                Err(e) => {
+                    println!("❌ FORENSIC_GENOME_PATH={} no contiene un genoma válido: {}", path, e);
+                    return;
+                }
+            }
+        }
+        Err(_) => quantum_arena::genome::SuperGenotype::load_or_default(),
+    };
 
     // Extracción y control del capital base ($13.00 USD) para validación forense
     let initial_capital = std::env::var("INITIAL_CAPITAL")
@@ -106,6 +126,13 @@ async fn main() {
     println!("🧠 [UNIFIED ML] DarkAlphaEngine 54D configurado como motor neuronal primario.");
 
     let mut core = god_engine_core::GodEngineCore::new(arena.clone());
+    // D-686: con un genoma externo, `refresh_models` no debe sustituirlo por el
+    // activo del almacén a mitad de la corrida (lo relee cada 1000 ticks). Una
+    // generación aplicada máxima fija el candidato evaluado.
+    if std::env::var("FORENSIC_GENOME_PATH").is_ok() {
+        core.applied_generation
+            .store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
+    }
 
     // F3.1 — FIX PARIDAD REAL: antes se instanciaba una NN ALEATORIA
     // (DarkAlphaEngine::new) y el "backtest forense" evaluaba ruido.
@@ -238,15 +265,26 @@ async fn main() {
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(total_file_ticks);
-    let num_ticks = total_file_ticks.min(max_ticks_env);
+    // D-686: FORENSIC_START_TICK desplaza el inicio de la ventana, de modo que
+    // las particiones de entrenamiento y validación se evalúan sin copiar datos.
+    let start_tick = std::env::var("FORENSIC_START_TICK")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(total_file_ticks);
+    let num_ticks = (total_file_ticks - start_tick).min(max_ticks_env);
 
     if num_ticks < 1000 {
         println!("❌ Datos insuficientes: {} ticks (mínimo 1000)", num_ticks);
         return;
     }
 
-    let ticks_slice =
-        unsafe { std::slice::from_raw_parts(mmap.as_ptr() as *const BinTick, num_ticks) };
+    let ticks_slice = unsafe {
+        std::slice::from_raw_parts(
+            mmap.as_ptr().add(start_tick * tick_size) as *const BinTick,
+            num_ticks,
+        )
+    };
 
     println!(
         "📊 [DATOS] {} ticks cargados desde {} ({:.1} MB)",
@@ -789,6 +827,28 @@ async fn main() {
             println!("   ⚠️ PRECAUCIÓN: ROI > 100% puede indicar overfitting o falta de penalización de slippage.");
         }
     }
+
+    // D-686: resumen legible por máquina, una sola línea.
+    println!(
+        "FORENSIC_JSON {{\"start_tick\":{},\"ticks\":{},\"start_ts\":{},\"end_ts\":{},\"initial_capital\":{:.6},\"final_capital\":{:.6},\"net_roi\":{:.6},\"gross_roi\":{:.6},\"trades\":{},\"net_wins\":{},\"max_drawdown\":{:.6},\"sharpe\":{:.6},\"tp\":{},\"sl\":{},\"trail\":{},\"zombie\":{},\"toxic\":{}}}",
+        start_tick,
+        num_ticks,
+        start_timestamp,
+        end_timestamp,
+        initial_capital,
+        final_capital,
+        roi,
+        gross_roi,
+        total_trades,
+        total_net_wins,
+        max_drawdown,
+        if sharpe.is_finite() { sharpe } else { 0.0 },
+        reason_tp,
+        reason_sl,
+        reason_trail,
+        reason_zombie,
+        reason_toxic
+    );
 
     println!();
     println!("🛡️ ═══════════════════════════════════════════════════════════════");

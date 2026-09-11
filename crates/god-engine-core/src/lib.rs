@@ -1231,7 +1231,14 @@ impl GodEngineCore {
                     self.diag_pnl_sum += net_trade_pnl;
 
                     if ml_at_entry > 0.0 {
-                        self.conformal.update(ml_at_entry, is_win);
+                        // D-676 (DÉCIMA OLA): la posición guarda `ml_prob` crudo, la
+                        // probabilidad de que el precio SUBA. La convención del
+                        // calibrador es la probabilidad de que la operación gane EN
+                        // SU DIRECCIÓN: para un corto es la complementaria. Antes los
+                        // cortos entraban invertidos y contaminaban la calibración
+                        // de todas las operaciones.
+                        let p_win_at_entry = if is_long { ml_at_entry } else { 1.0 - ml_at_entry };
+                        self.conformal.update(p_win_at_entry, is_win);
                     }
 
                     // D-680 (DÉCIMA OLA): media posterior con prior de diseño. Antes
@@ -1643,12 +1650,18 @@ impl GodEngineCore {
             // consume el filtro; el p-valor queda para telemetría.
             self.conformal.set_target_alpha(conf_alpha);
             let ml_prob_now = coin.ml_prob.load(Ordering::Relaxed);
+            // D-676: la aceptación depende de la dirección — un largo gana si el
+            // precio sube (p = ml_prob) y un corto si baja (p = 1 − ml_prob).
             let conformal_p = self.conformal.p_value(ml_prob_now);
-            let conformal_accept = self.conformal.accepts(ml_prob_now);
+            let conformal_p_short = self.conformal.p_value(1.0 - ml_prob_now);
+            let accept_long = self.conformal.accepts(ml_prob_now);
+            let accept_short = self.conformal.accepts(1.0 - ml_prob_now);
             set_reg("conformal_p_value", conformal_p);
+            set_reg("conformal_p_value_short", conformal_p_short);
             set_reg("conformal_alpha", conf_alpha);
             set_reg("conformal_alpha_eff", self.conformal.effective_alpha());
-            set_reg("conformal_accept", if conformal_accept { 1.0 } else { 0.0 });
+            set_reg("conformal_accept_long", if accept_long { 1.0 } else { 0.0 });
+            set_reg("conformal_accept_short", if accept_short { 1.0 } else { 0.0 });
             let buy_vol = coin.agg_buy_vol.load(Ordering::Relaxed);
             let sell_vol = coin.agg_sell_vol.load(Ordering::Relaxed);
             let total_vol_cvd = buy_vol + sell_vol;
@@ -1797,8 +1810,7 @@ impl GodEngineCore {
                     .arena
                     .config
                     .tech_threshold
-                    .load(Ordering::Relaxed)
-                    .max(0.24);
+                    .load(Ordering::Relaxed);
 
                 if is_anti_persistent {
                     dynamic_tech_thr *= 1.20; // Elevar exigencia analítica 20% en régimen de ruido/chop
@@ -2096,20 +2108,11 @@ impl GodEngineCore {
                     }
                 }
 
-                let last_close = coin.last_close_ts.load(Ordering::Relaxed);
-                let is_high_vol = atr_pct > 0.0015 || self.feature_engines[coin_id].v_t > 0.0015;
-                let min_cooldown_ms = if self.feature_engines[coin_id].last_scalp_was_loss {
-                    if is_high_vol {
-                        180_000 // 3 minutos de cooldown tras pérdida en alta volatilidad para absorber cascadas
-                    } else {
-                        90_000
-                    }
-                } else {
-                    20_000
-                };
-                if event_time_ms.saturating_sub(last_close) < min_cooldown_ms {
-                    scalp_intent = SignalIntent::flat();
-                }
+                // D-622 (DÉCIMA OLA): el cooldown binario del lado scalp (20 s tras
+                // ganar; 90 s o 180 s tras perder según volatilidad) se retira. El
+                // guard unificado D-463 cubre la reentrada tras cualquier cierre
+                // —dirección, ganancia o pérdida, racha— con ventanas iguales o
+                // mayores, y sin distinguir de qué «motor» vino la señal.
             }
 
             // --- CVD & L2 Wall HARD FILTERS (VETOS) ---
@@ -2188,8 +2191,7 @@ impl GodEngineCore {
                 .arena
                 .config
                 .trend_threshold
-                .load(Ordering::Relaxed)
-                .max(0.52);
+                .load(Ordering::Relaxed);
 
             let ml_long = self.arena.config.ml_threshold_long.load(Ordering::Relaxed);
             let ml_short = self.arena.config.ml_threshold_short.load(Ordering::Relaxed);
@@ -2264,6 +2266,8 @@ impl GodEngineCore {
                             confidence,
                             expected_duration_ms: swing_duration_ms,
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            // D-678: rama 13 · camino de tendencia.
+                            volume_flow_rate: 13.0,
                             ..Default::default()
                         };
                     } else if macd_diff < -threshold
@@ -2283,6 +2287,8 @@ impl GodEngineCore {
                             confidence,
                             expected_duration_ms: swing_duration_ms,
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            // D-678: rama 13 · camino de tendencia.
+                            volume_flow_rate: 13.0,
                             ..Default::default()
                         };
                     }
@@ -2325,6 +2331,8 @@ impl GodEngineCore {
                             .abs()
                             .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
+                        // D-678: rama 14 · consenso tensorial.
+                        volume_flow_rate: 14.0,
                         ..Default::default()
                     };
                 } else if tensor_swing.signal == SignalType::Short
@@ -2339,6 +2347,8 @@ impl GodEngineCore {
                             .abs()
                             .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
+                        // D-678: rama 14 · consenso tensorial.
+                        volume_flow_rate: 14.0,
                         ..Default::default()
                     };
                 } else if tensor_cont.signal == SignalType::Long
@@ -2353,6 +2363,8 @@ impl GodEngineCore {
                             .abs()
                             .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
+                        // D-678: rama 14 · consenso tensorial.
+                        volume_flow_rate: 14.0,
                         ..Default::default()
                     };
                 } else if tensor_cont.signal == SignalType::Short
@@ -2367,21 +2379,17 @@ impl GodEngineCore {
                             .abs()
                             .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
+                        // D-678: rama 14 · consenso tensorial.
+                        volume_flow_rate: 14.0,
                         ..Default::default()
                     };
                 }
             }
 
-            let last_swing_close = coin.last_swing_close_ts.load(Ordering::Relaxed);
-            let last_close = coin.last_close_ts.load(Ordering::Relaxed);
-            let swing_cooldown_ms = if self.feature_engines[coin_id].last_scalp_was_loss {
-                180_000
-            } else {
-                60_000
-            };
-            if event_time_ms.saturating_sub(last_swing_close.max(last_close)) < swing_cooldown_ms {
-                swing_intent = SignalIntent::flat();
-            }
+            // D-622 (DÉCIMA OLA): el cooldown del lado swing dependía de que el
+            // ÚLTIMO CIERRE SCALP hubiera perdido — una pérdida de 30 segundos
+            // bloqueaba una tesis de horas. Contaminación cruzada entre horizontes
+            // que el sistema declara unificados. Lo cubre el guard D-463.
 
             if coin_id < self.last_scalp_intent.len() {
                 self.last_scalp_intent[coin_id] = scalp_intent;
@@ -2489,8 +2497,7 @@ impl GodEngineCore {
                     .arena
                     .config
                     .tech_threshold
-                    .load(Ordering::Relaxed)
-                    .max(0.24);
+                    .load(Ordering::Relaxed);
                 let extreme_capitulation = p_stretch < -2.5
                     && current_obi > dynamic_obi_thr * 0.8
                     && composite_score > dynamic_tech_thr;
@@ -2515,8 +2522,7 @@ impl GodEngineCore {
                     .arena
                     .config
                     .tech_threshold
-                    .load(Ordering::Relaxed)
-                    .max(0.24);
+                    .load(Ordering::Relaxed);
                 let extreme_blowoff = p_stretch > 2.5
                     && current_obi < -dynamic_obi_thr * 0.8
                     && composite_score < -dynamic_tech_thr;
@@ -2542,19 +2548,11 @@ impl GodEngineCore {
                 }
             }
 
-            // D-504: Gate de Confianza Genómica Post-Acondicionamiento Espectral
-            // El genoma establece `min_confidence_btc` (ej. 0.70). Permitimos un margen dinámico
-            // del 85% para absorber la dispersión microestructural del espectro continuo.
-            let genome_min_conf = self
-                .arena
-                .config
-                .min_confidence_btc
-                .load(Ordering::Relaxed)
-                .clamp(0.50, 0.85);
-            let effective_conf_floor = (genome_min_conf * 0.85).clamp(0.48, 0.72);
-            if unified_intent.signal != SignalType::Flat && unified_intent.confidence < effective_conf_floor {
-                unified_intent = SignalIntent::flat();
-            }
+            // D-620 (DÉCIMA OLA): aquí había un segundo gate de confianza sobre el
+            // mismo gen, `(min_confidence_btc·0,85).clamp(0,48; 0,72)`. El
+            // risk-engine exige después `min_confidence_btc·[1; 1,0645]`, que
+            // siempre es mayor: este gate nunca decidía nada y sólo repetía con
+            // otra fórmula una regla que vive en un único sitio.
 
             let current_cap = self.arena.unified_capital.load(Ordering::Relaxed);
             let _global_leverage = self
@@ -2932,7 +2930,7 @@ impl GodEngineCore {
 
                                 if self.diag_opened <= 100 {
                                     println!(
-                                        "🚀 [OPEN TRACE] #{} dir={} gen={:.0} h={:?} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sc={:.3} obi={:.3} ht={:.5} st={:.5} mac={:.5} mic={:.5} ts={}",
+                                        "🚀 [OPEN TRACE] #{} dir={} rama={:.0} h={:?} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sc={:.3} obi={:.3} ht={:.5} st={:.5} mac={:.5} mic={:.5} ts={}",
                                         self.diag_opened,
                                         if is_long { "LONG" } else { "SHORT" },
                                         unified_intent.volume_flow_rate,
