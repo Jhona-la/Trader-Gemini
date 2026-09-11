@@ -154,11 +154,18 @@ impl QuantumLeverageMatrix {
         };
 
         // Techo dinámico logarítmico: capitales bajos permiten leverages guiados por EV pero acotados para micro-cuentas ($13 USD)
-        let raw_ceiling = if safe_curr_cap <= 20.0 {
-            4.0 // Micro-cuenta: techo estricto de 4.0x para inmunidad absoluta contra pérdidas abultadas por SL
-        } else {
-            50.0 * (1.0 - (log_cap / (log_divisor * 2.0)).min(0.8))
-        };
+        // D-641 (completo) — EL TECHO DE APALANCAMIENTO YA NO SALTA DE 4× A ~40×.
+        // Con el divisor genómico en su banda [3, 10], el techo estándar a $20,01
+        // valía 50·(1 − log10(20)/(2·d)) ≈ 39–47×, frente a 4× un centavo antes:
+        // un salto de un orden de magnitud en el riesgo por operación. Ahora el
+        // techo micro de 4× rige pleno a ≤3 operaciones mínimas y se funde
+        // geométricamente con el estándar hasta 10.
+        let standard_ceiling = 50.0 * (1.0 - (log_cap / (log_divisor * 2.0)).min(0.8));
+        let micro_w = crate::capital_regime::micro_weight(
+            safe_curr_cap,
+            arena.config.min_notional.load(Ordering::Relaxed),
+        );
+        let raw_ceiling = crate::capital_regime::log_lerp(standard_ceiling, 4.0, micro_w);
         let dynamic_ceiling = if raw_ceiling.is_finite() {
             raw_ceiling.clamp(1.0, 50.0)
         } else {
@@ -201,11 +208,11 @@ impl QuantumLeverageMatrix {
         };
         let s = match signal.horizon {
             signal_engine::TradeHorizon::Continuous => {
+                // D-638b: misma conversión τ ↔ s que el resto del sistema.
                 if signal.expected_duration_ms > 0 {
-                    let ln_tau = (signal.expected_duration_ms as f64).max(10_000.0).ln();
-                    let ln_min = 10_000.0_f64.ln();
-                    let ln_max = 86_400_000.0_f64.ln();
-                    ((ln_tau - ln_min) / (ln_max - ln_min)).clamp(0.0, 1.0)
+                    quantum_arena::temporal_spectrum::temporal_scale_from_tau(
+                        signal.expected_duration_ms as f64,
+                    )
                 } else {
                     effective_temporal_scale
                 }

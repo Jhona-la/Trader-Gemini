@@ -132,11 +132,8 @@ pub fn run_vectorized_hybrid(
     let mut position = 0; // 0 = flat, 1 = long, -1 = short
     let mut entry_price = 0.0;
     let mut position_size = 0.0; // in coins
-    // D-669: margen BLOQUEADO por la posición abierta. `capital` sigue siendo
-    // el patrimonio total; `capital - used_margin` es lo realmente disponible
-    // para abrir. Antes esta distinción no existía y el apalancamiento salía
-    // gratis.
-    let mut used_margin = 0.0f64;
+    // Margen comprometido por la posición abierta. Se usa para que una
+    // liquidación descuente exactamente el margen puesto al abrir.
     let mut entry_margin = 0.0f64;
     let mut peak_capital = capital;
     let mut max_dd = 0.0;
@@ -227,14 +224,9 @@ pub fn run_vectorized_hybrid(
 
             if hit_liq {
                 // Liquidación forzosa por el Exchange
-                // D-669: lo que se pierde en la liquidación es el margen
-                // efectivamente bloqueado, no una reconstrucción a partir del
-                // nocional (que ignoraba el capital libre real).
                 let margin_lost = entry_margin;
                 let liquidation_fee = (liq_price * position_size) * (taker_fee * 1.5);
                 capital = (capital - margin_lost - liquidation_fee).max(0.0);
-                // D-669: devolver el margen bloqueado al capital disponible.
-                used_margin = 0.0;
                 entry_margin = 0.0;
                 position = 0;
             } else if hit_sl {
@@ -242,8 +234,6 @@ pub fn run_vectorized_hybrid(
                 let exit_fee = (sl_price * position_size) * taker_fee;
                 let pnl = (sl_price - entry_price) * position_size;
                 capital = (capital + pnl - exit_fee).max(0.0);
-                // D-669: devolver el margen bloqueado al capital disponible.
-                used_margin = 0.0;
                 entry_margin = 0.0;
                 position = 0;
             } else if hit_tp {
@@ -252,8 +242,6 @@ pub fn run_vectorized_hybrid(
                 let pnl = (tp_price - entry_price) * position_size;
                 capital += pnl - exit_fee;
                 wins += 1;
-                // D-669: devolver el margen bloqueado al capital disponible.
-                used_margin = 0.0;
                 entry_margin = 0.0;
                 position = 0;
             } else if sl_short {
@@ -267,8 +255,6 @@ pub fn run_vectorized_hybrid(
                 if pnl > exit_fee {
                     wins += 1;
                 }
-                // D-669: devolver el margen bloqueado al capital disponible.
-                used_margin = 0.0;
                 entry_margin = 0.0;
                 position = 0;
             }
@@ -286,14 +272,9 @@ pub fn run_vectorized_hybrid(
 
             if hit_liq {
                 // Liquidación forzosa por el Exchange
-                // D-669: lo que se pierde en la liquidación es el margen
-                // efectivamente bloqueado, no una reconstrucción a partir del
-                // nocional (que ignoraba el capital libre real).
                 let margin_lost = entry_margin;
                 let liquidation_fee = (liq_price * position_size) * (taker_fee * 1.5);
                 capital = (capital - margin_lost - liquidation_fee).max(0.0);
-                // D-669: devolver el margen bloqueado al capital disponible.
-                used_margin = 0.0;
                 entry_margin = 0.0;
                 position = 0;
             } else if hit_sl {
@@ -301,8 +282,6 @@ pub fn run_vectorized_hybrid(
                 let exit_fee = (sl_price * position_size) * taker_fee;
                 let pnl = (entry_price - sl_price) * position_size;
                 capital = (capital + pnl - exit_fee).max(0.0);
-                // D-669: devolver el margen bloqueado al capital disponible.
-                used_margin = 0.0;
                 entry_margin = 0.0;
                 position = 0;
             } else if hit_tp {
@@ -311,8 +290,6 @@ pub fn run_vectorized_hybrid(
                 let pnl = (entry_price - tp_price) * position_size;
                 capital += pnl - exit_fee;
                 wins += 1;
-                // D-669: devolver el margen bloqueado al capital disponible.
-                used_margin = 0.0;
                 entry_margin = 0.0;
                 position = 0;
             } else if sl_long {
@@ -326,8 +303,6 @@ pub fn run_vectorized_hybrid(
                 if pnl > exit_fee {
                     wins += 1;
                 }
-                // D-669: devolver el margen bloqueado al capital disponible.
-                used_margin = 0.0;
                 entry_margin = 0.0;
                 position = 0;
             }
@@ -336,28 +311,18 @@ pub fn run_vectorized_hybrid(
         // 4. Apertura de Posiciones (Enforce MIN_NOTIONAL $5.00)
         // FIX #700: Reservar margen libre para comisión de entrada en microcuentas de $13 USD
         if position == 0 && (sl_long || sl_short) {
-            // D-669 (DÉCIMA OLA) — EL BACKTEST RESERVA MARGEN.
-            //
-            // Antes al abrir sólo se descontaba la COMISIÓN: `capital` quedaba
-            // íntegro y disponible mientras el PnL se calculaba sobre nocional
-            // apalancado 30×. La recurrencia resultante era
-            //
-            //     cap(n+1) = cap(n) · (1 + 0,99·L·r(n))
-            //
-            // es decir, la curva de equity era el precio del activo compuesto
-            // a 30× SIN colateral. Un movimiento favorable del 1 % producía un
-            // 29,7 % de crecimiento. Y la rama de liquidación no compensaba
-            // nada: con stops de 40–60 bps, el 2,83 % de la liquidación era
-            // inalcanzable, de modo que el apalancamiento no tenía coste
-            // simulado alguno.
-            //
-            // Combinado con D-653 (el fitness crece linealmente con el
-            // apalancamiento) y D-644 (la mutación impedía bajar de 25×), el
-            // sistema tenía TRES presiones hacia el apalancamiento máximo y
-            // ninguna fuerza compensatoria.
+            // CORRECCIÓN DE D-669 (DÉCIMA OLA). La auditoría afirmó que este
+            // backtest inflaba la equity por no reservar margen. Era incorrecto:
+            // comprometer el 99 % del capital como margen a L× produce retornos
+            // L× de forma legítima —así funcionan los futuros— y, como sólo se
+            // abre desde plano, llevar la cuenta del margen no alteraba ningún
+            // resultado. La diferencia real con producción es la POLÍTICA DE
+            // TAMAÑO: aquí cada operación usa todo el capital al apalancamiento
+            // del genoma, mientras producción dimensiona por Kelly y riesgo. Por
+            // eso este evaluador ya no alimenta ninguna ruta (ver
+            // `ffi_run_polars_backtest_mmap`).
             let leverage = cfg.global_leverage.clamp(1.0, 125.0);
-            // El margen disponible es el capital LIBRE, no el total.
-            let free_capital = (capital - used_margin).max(0.0);
+            let free_capital = capital.max(0.0);
             // Reserva del 1 % para la comisión de entrada.
             let margin = (free_capital * 0.99).max(0.0);
             let notional = margin * leverage;
@@ -372,8 +337,6 @@ pub fn run_vectorized_hybrid(
                         c * (1.0 - slip_pct)
                     };
                     capital -= entry_fee;
-                    // BLOQUEAR el margen: deja de estar disponible hasta cerrar.
-                    used_margin = margin;
                     entry_margin = margin;
                     position_size = notional / entry_price;
                     trades += 1;
@@ -447,19 +410,15 @@ impl Default for OrderBookL2DepthSlippageModel {
 
 #[cfg(test)]
 mod tests {
-    /// D-669 (DÉCIMA OLA) — EL APALANCAMIENTO DEBE TENER COSTE.
+    /// El apalancamiento amplifica las pérdidas en una serie adversa.
     ///
-    /// Antes el backtest no reservaba margen: `capital` quedaba íntegro tras
-    /// abrir y el PnL se calculaba sobre nocional apalancado, de modo que la
-    /// curva de equity era el precio compuesto a 30× sin colateral. Con tres
-    /// presiones evolutivas hacia el apalancamiento máximo (D-653, D-644) y
-    /// ninguna compensatoria, el genoma promovido era necesariamente el más
-    /// apalancado que el sistema permitía.
-    ///
-    /// Contrato: en una serie adversa, más apalancamiento debe producir PEOR
-    /// resultado. Es la fuerza compensatoria que faltaba.
+    /// Nota de corrección (D-669): este test se escribió creyendo que protegía
+    /// una «reserva de margen» que en realidad no cambiaba ningún resultado. Lo
+    /// que verifica es más simple y sigue siendo útil: en una serie de rupturas
+    /// falsas que barren los stops en ambas direcciones, 50× debe terminar peor
+    /// que 3×. Esa propiedad vale con o sin contabilidad de margen.
     #[test]
-    fn d669_mas_apalancamiento_penaliza_en_serie_adversa() {
+    fn apalancamiento_amplifica_perdidas_en_serie_adversa() {
         // Serie genuinamente adversa para un sistema bidireccional (long/short):
         // Falsos breakouts con reversiones bruscas que barren los Stop Losses en ambas direcciones.
         let n = 400usize;
@@ -501,10 +460,9 @@ mod tests {
         );
     }
 
-    /// D-669: el margen bloqueado impide abrir con más capital del que hay.
-    /// El capital final nunca puede superar lo que el nocional permite.
+    /// El capital final es finito y no negativo, y el drawdown está en [0, 1].
     #[test]
-    fn d669_el_capital_nunca_es_negativo_ni_infinito() {
+    fn capital_final_finito_y_no_negativo() {
         let n = 2_000usize;
         let closes: Vec<f64> = (0..n).map(|i| 60_000.0 * (1.0 + 0.0001 * i as f64)).collect();
         let highs: Vec<f64> = closes.iter().map(|c| c * 1.001).collect();

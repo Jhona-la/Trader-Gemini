@@ -1,4 +1,5 @@
 pub mod capital_compounder;
+pub mod capital_regime;
 pub mod correlation_guard;
 pub mod epigenetic_capital_alloc;
 pub mod epigenetic_fitness_landscape;
@@ -163,14 +164,17 @@ impl RiskEngine {
         let unified_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
         let unified_kelly = coin.metrics.kelly_fraction.load(Ordering::Relaxed);
         let unified_n = coin.metrics.trade_count.load(Ordering::Relaxed) as f64;
-        let scalp_edge = (coin.scalp.win_rate.load(Ordering::Relaxed).max(unified_wr)
-            * coin.scalp.kelly_fraction.load(Ordering::Relaxed).max(unified_kelly))
-        .max(0.0);
-        let swing_edge = (coin.swing.win_rate.load(Ordering::Relaxed).max(unified_wr)
-            * coin.swing.kelly_fraction.load(Ordering::Relaxed).max(unified_kelly))
-        .max(0.0);
-        let scalp_n = (coin.scalp.trade_count.load(Ordering::Relaxed) as f64).max(unified_n);
-        let swing_n = (coin.swing.trade_count.load(Ordering::Relaxed) as f64).max(unified_n);
+        // Las métricas por bucket scalp/swing ya no se escriben en ningún punto
+        // de producción (sólo un test de telemetría y un certificador de
+        // simulación las tocan): valen 0, y el `.max(unificado)` anterior
+        // equivalía a leer el unificado. Se lee directamente para eliminar un
+        // sesgo optimista latente: si algo volviera a escribir los buckets,
+        // `max` tomaría siempre el mejor de dos estimadores e inflaría el tamaño.
+        let unified_edge = (unified_wr * unified_kelly).max(0.0);
+        let scalp_edge = unified_edge;
+        let swing_edge = unified_edge;
+        let scalp_n = unified_n;
+        let swing_n = unified_n;
         let posterior_scalp = scalp_edge * scalp_n.sqrt() + genome_split;
         let posterior_swing = swing_edge * swing_n.sqrt() + (1.0 - genome_split);
         let target_split = if posterior_scalp + posterior_swing > 1e-12 {
@@ -247,6 +251,7 @@ impl RiskEngine {
             base_capital * split,
             guard_dd_sigmoid_steepness,
             guard_dd_sigmoid_center,
+            arena.config.min_notional.load(Ordering::Relaxed),
         ) {
             scalp_valid = false;
         }
@@ -258,6 +263,7 @@ impl RiskEngine {
             base_capital * (1.0 - split),
             guard_dd_sigmoid_steepness,
             guard_dd_sigmoid_center,
+            arena.config.min_notional.load(Ordering::Relaxed),
         ) {
             swing_valid = false;
         }
@@ -398,11 +404,20 @@ impl RiskEngine {
         // global_max_drawdown era funcionalmente MUERTO (se convertía en cap
         // de margen constante). Ahora es un VETO REAL: si el drawdown desde
         // el pico supera el gen, no se abre nueva posición hasta recuperación.
-        let max_dd = if current_capital <= 15.0 {
-            0.85 // Micro-cuenta ($13 USD): permitir drawdown de hasta 85% para recuperación de crecimiento compuesto
-        } else {
-            arena.config.global_max_drawdown.load(Ordering::Relaxed)
-        };
+        // D-641 (completo): el cortacircuitos de drawdown deja de saltar en $15.
+        // En régimen micro pleno (≤3 operaciones mínimas, p. ej. $13) conserva
+        // la tolerancia de 0,85 diseñada para permitir la recuperación del
+        // crecimiento compuesto; en régimen estándar rige el gen; entre ambos,
+        // transición continua. Antes el gen quedaba anulado en producción.
+        let micro_w = crate::capital_regime::micro_weight(
+            current_capital,
+            arena.config.min_notional.load(Ordering::Relaxed),
+        );
+        let max_dd = crate::capital_regime::lerp(
+            arena.config.global_max_drawdown.load(Ordering::Relaxed),
+            0.85,
+            micro_w,
+        );
         if self.peak_capital > 0.0 && max_dd > 0.0 && max_dd < 1.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
             if dd >= max_dd {
@@ -484,6 +499,13 @@ impl RiskEngine {
         if intent.signal == SignalType::Flat || allocated_capital <= 0.0 {
             return ValidatedOrder::rejected();
         }
+        // D-641 (completo): peso del régimen de capital micro para TODA la
+        // evaluación. Un único valor, calculado una vez, del que derivan todas
+        // las transiciones que antes eran escalones en $15 y $20.
+        let micro_w_alloc = crate::capital_regime::micro_weight(
+            allocated_capital,
+            arena.config.min_notional.load(Ordering::Relaxed),
+        );
 
         let dir = match intent.signal {
             SignalType::Long => 1.0,
@@ -501,18 +523,16 @@ impl RiskEngine {
         // En el espectro continuo universal (1 ns a 100 años), evaluamos el SL directamente
         // sobre la curva analítica del genoma sl_at_tau(tau_ms) para normalizar el riesgo
         // de forma suave y C^inf sin buckets discretos ni saltos artificiales.
-        let tau_ms = if intent.expected_duration_ms > 0 {
-            intent.expected_duration_ms as f64
-        } else {
-            let ts = arena
-                .config
-                .temporal_scale
-                .load(Ordering::Relaxed)
-                .clamp(0.0, 1.0);
-            (10_000.0_f64.ln() + ts * (86_400_000.0_f64.ln() - 10_000.0_f64.ln())).exp()
-        };
+        // D-638b: mapeo τ ÚNICO del sistema. Antes este bloque interpolaba entre
+        // 10 s y 24 h mientras el gate de TP/SL lo hacía sobre los extremos del
+        // espectro y la matriz de apalancamiento con otra fórmula: tres
+        // horizontes distintos para la misma intención.
+        let tau_ms = horizon_tau_ms(intent, arena);
         let continuous_sl = arena.config.sl_at_tau(tau_ms).max(1e-6);
-        let fast_anchor_sl = arena.config.sl_at_tau(10_000.0).max(1e-6);
+        let fast_anchor_sl = arena
+            .config
+            .sl_at_tau(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
+            .max(1e-6);
         let risk_normalizer = (fast_anchor_sl / continuous_sl).clamp(0.15, 1.0);
         let kelly_adjusted = kelly_fraction * risk_normalizer;
 
@@ -520,12 +540,12 @@ impl RiskEngine {
         // produce $0.91 de margen (subcrítico, por debajo de Binance $5 min notional a 5x).
         // Escalamos adaptativamente con la convicción Bayesiana para operar entre $1.15 y $1.80 de margen,
         // dentro del límite seguro del 25% del capital ($2.60).
-        let kelly_for_scale = if allocated_capital <= 20.0 {
-            (kelly_adjusted.max(0.12) * (1.0 + (intent.confidence - 0.65).max(0.0) * 1.5))
-                .clamp(0.10, 0.20)
-        } else {
-            kelly_adjusted
-        };
+        // D-641 (completo): el escalador micro de Kelly deja de saltar en $20.
+        let micro_kelly = (kelly_adjusted.max(0.12)
+            * (1.0 + (intent.confidence - 0.65).max(0.0) * 1.5))
+            .clamp(0.10, 0.20);
+        let kelly_for_scale =
+            crate::capital_regime::lerp(kelly_adjusted, micro_kelly, micro_w_alloc);
 
         let raw_exposure = dir * intent.confidence * kelly_for_scale * allocated_capital;
         if raw_exposure == 0.0 {
@@ -551,6 +571,7 @@ impl RiskEngine {
         if correlation_guard::CorrelationGuardEngine::is_continuous_correlation_vetoed(
             same_dir_count,
             current_cap,
+            arena.config.min_notional.load(Ordering::Relaxed),
             max_allowed_cluster.max(2),
         ) {
             return rej(2);
@@ -733,21 +754,22 @@ impl RiskEngine {
         //
         // La magnitud que de verdad importa no es el capital absoluto sino
         // cuántas operaciones de tamaño mínimo caben en la cuenta.
-        let min_notional_ref = spec.min_notional.max(5.0);
-        let trades_of_room = if min_notional_ref > 0.0 {
-            (allocated_capital / min_notional_ref).max(0.0)
-        } else {
-            0.0
-        };
-        // scarcity ∈ (0,1]: 1 cuando la cuenta apenas cubre una operación
-        // mínima, → 0 cuando la cubre muchas veces. Continua y derivable.
-        let scarcity = 1.0 / (1.0 + (trades_of_room / 3.0).max(0.0));
+        // D-641 (completo): `scarcity` pasa a ser el peso del régimen de capital
+        // compartido. La versión anterior, 1/(1+N/3), aplicaba sólo el 54 % del
+        // régimen micro a una cuenta de $13 y cambiaba el comportamiento que se
+        // había diseñado para ella; el peso compartido vale exactamente 1 ahí,
+        // de modo que la barrera de comisiones vuelve a 1,25 y el colchón a 0,98.
+        let scarcity = micro_w_alloc;
         let base_conf_gate = arena
             .config
             .min_confidence_btc
             .load(Ordering::Relaxed)
             .clamp(0.05, 0.95);
-        let min_required_confidence = (base_conf_gate * (1.0 + 0.10 * scarcity)).clamp(0.05, 0.98);
+        // Endurecimiento micro del gate de confianza en la proporción que fijaba
+        // la calibración original (0,66 frente a 0,62), aplicada sobre el gen.
+        let min_required_confidence =
+            crate::capital_regime::lerp(base_conf_gate, base_conf_gate * (0.66 / 0.62), scarcity)
+                .clamp(0.05, 0.98);
         if confidence < min_required_confidence {
             return rej(4);
         }
@@ -802,11 +824,9 @@ impl RiskEngine {
             // rechazos/día con señales sanas de conf 0.7+). El fee_impact
             // check de abajo sigue limitando el costo.
             let candidate_leverage = (dynamic_min_notional / final_margin.max(0.01)) * 1.02;
-            let max_fee_limit = if allocated_capital <= 15.0 {
-                0.035 // Permitir hasta 3.5% fee impact para bootstrap micro-cuentas ($13 USD) para cumplir con el lote mínimo de Binance
-            } else {
-                max_acceptable_fee_pct
-            };
+            // D-641 (completo): tolerancia de impacto de comisión continua.
+            let max_fee_limit =
+                crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc);
             let fee_impact_pct = roundtrip_fee * candidate_leverage;
             if fee_impact_pct > max_fee_limit {
                 if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
@@ -817,17 +837,14 @@ impl RiskEngine {
                 }
                 return rej(5);
             }
-            let max_lev_cap = if allocated_capital <= 20.0 {
-                if intent.confidence >= 0.75 {
-                    6.5
-                } else if intent.confidence >= 0.70 {
-                    5.8
-                } else {
-                    5.0
-                }
-            } else {
-                50.0
-            };
+            // D-641 (completo): el techo micro de apalancamiento es continuo en
+            // la confianza (antes escalones en 0,70 y 0,75) y en el capital
+            // (antes escalón de ~5× a 50× en $20). Interpolación geométrica: el
+            // punto medio natural entre 5× y 50× es ~16×, no 27,5×.
+            let conf_t = ((intent.confidence - 0.65) / 0.10).clamp(0.0, 1.0);
+            let micro_lev_cap = 5.0 + 1.5 * conf_t * conf_t * (3.0 - 2.0 * conf_t);
+            let max_lev_cap =
+                crate::capital_regime::log_lerp(50.0, micro_lev_cap, micro_w_alloc);
             dynamic_leverage = candidate_leverage
                 .min(max_exchange_leverage)
                 .min(max_lev_cap);
@@ -858,23 +875,20 @@ impl RiskEngine {
             return rej(6);
         }
 
-        let safe_limit = if allocated_capital <= 15.0 {
-            // Micro-cuenta ($13 USD): Permitir hasta 20-25% de margen ($1.50 a $2.60)
-            // para que con apalancamiento prudente (2x - 5x) cubra los $5.10 de Binance sin rej(7).
-            (allocated_capital * 0.25).clamp(1.20, 2.60)
-        } else {
-            (allocated_capital * safe_cushion).min(current_cap * 0.90)
-        };
+        // D-641 (completo): límite de margen por operación continuo. En régimen
+        // micro pleno conserva el 20–25 % diseñado para cubrir el notional mínimo
+        // con apalancamiento prudente; en estándar, el colchón genómico.
+        let micro_safe_limit = (allocated_capital * 0.25).clamp(1.20, 2.60);
+        let standard_safe_limit = (allocated_capital * safe_cushion).min(current_cap * 0.90);
+        let safe_limit =
+            crate::capital_regime::lerp(standard_safe_limit, micro_safe_limit, micro_w_alloc);
         if final_margin > safe_limit {
             final_margin = safe_limit;
             if final_margin > 0.0 && final_margin * dynamic_leverage < safe_min_notional {
                 let re_lev = (safe_min_notional / final_margin) * 1.01;
                 let fee_impact = roundtrip_fee * re_lev;
-                let max_fee_lim = if allocated_capital <= 15.0 {
-                    0.035
-                } else {
-                    max_acceptable_fee_pct
-                };
+                let max_fee_lim =
+                    crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc);
                 if fee_impact <= max_fee_lim {
                     dynamic_leverage = re_lev.min(max_exchange_leverage).min(50.0);
                 }
@@ -977,6 +991,12 @@ impl RiskEngine {
 
 /// D-637 — HORIZONTE OPERATIVO EN MILISEGUNDOS.
 ///
+/// D-638b (DÉCIMA OLA): la versión anterior interpolaba sobre los EXTREMOS
+/// del espectro. Al ampliarse éste a 1 ns–146 años, `temporal_scale = 0,05`
+/// producía ~9 ns y 0,95 ~17 años: el gate de TP/SL rechazaba por «no
+/// operable» o dimensionaba stops de décadas. Ahora delega en
+/// `temporal_spectrum::operating_tau_ms`, la fuente única.
+///
 /// Puente temporal mientras `SignalIntent` conserva el enum `TradeHorizon`
 /// (D-602). El orden de preferencia respeta la jerarquía correcta:
 ///   1. la duración esperada que la señal declara — información real;
@@ -986,11 +1006,6 @@ impl RiskEngine {
 /// En ningún caso se consulta la etiqueta discreta para elegir parámetros:
 /// ésta sólo desempata el extremo del continuo cuando no hay nada mejor.
 fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
-    if intent.expected_duration_ms > 0 {
-        return intent.expected_duration_ms as f64;
-    }
-    let scales = quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS;
-    let (lo, hi) = (scales[0], scales[scales.len() - 1]);
     let s = match intent.horizon {
         TradeHorizon::Scalp => 0.0,
         TradeHorizon::Swing => 1.0,
@@ -1000,7 +1015,5 @@ fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
             .load(Ordering::Relaxed)
             .clamp(0.0, 1.0),
     };
-    // Interpolación en log(tau): el espectro es log-espaciado, de modo que el
-    // punto medio del eje debe ser la media GEOMÉTRICA, no la aritmética.
-    (lo.ln() + s * (hi.ln() - lo.ln())).exp()
+    quantum_arena::temporal_spectrum::operating_tau_ms(intent.expected_duration_ms, s)
 }

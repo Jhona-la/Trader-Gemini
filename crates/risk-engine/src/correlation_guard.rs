@@ -81,6 +81,7 @@ impl CorrelationGuardEngine {
     pub fn is_continuous_correlation_vetoed(
         same_dir_count: usize,
         current_capital: f64,
+        min_notional: f64,
         max_allowed_cluster: usize,
     ) -> bool {
         if same_dir_count == 0 {
@@ -91,11 +92,12 @@ impl CorrelationGuardEngine {
         } else {
             13.0
         };
-        let limit = if safe_capital < 30.0 {
-            2.min(max_allowed_cluster.max(2))
-        } else {
-            max_allowed_cluster.max(2)
-        };
+        // D-641 (completo): el límite de posiciones correlacionadas deja de
+        // saltar en $30. Micro pleno ⇒ 2, como se diseñó; estándar ⇒ el cluster
+        // genómico; entre ambos, interpolación redondeada al entero.
+        let w = crate::capital_regime::micro_weight(safe_capital, min_notional);
+        let standard = max_allowed_cluster.max(2) as f64;
+        let limit = crate::capital_regime::lerp(standard, 2.0, w).round().max(2.0) as usize;
         same_dir_count >= limit
     }
 }

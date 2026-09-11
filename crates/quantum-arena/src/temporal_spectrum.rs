@@ -69,6 +69,53 @@ pub const SPECTRUM_SCALES_MS: [f64; 32] = [
 pub const TAU_ANCHOR_FAST_MS: f64 = 30_000.0;
 pub const TAU_ANCHOR_SLOW_MS: f64 = 43_200_000.0;
 
+/// D-638b (DÉCIMA OLA) — MAPEO ÚNICO DEL HORIZONTE OPERATIVO.
+///
+/// Tras ampliar el espectro a 1 ns–146 años convivían TRES conversiones del
+/// horizonte de una intención:
+///   · `risk-engine::horizon_tau_ms` interpolaba sobre los EXTREMOS del
+///     espectro: con el rango nuevo, `temporal_scale = 0,05` daba ~9 ns y
+///     0,95 daba ~17 años, de modo que el gate de TP/SL rechazaba por «no
+///     operable» o dimensionaba stops de décadas;
+///   · el bloque de Kelly interpolaba entre 10 s y 24 h;
+///   · la matriz de apalancamiento invertía otra fórmula sobre 10 s–24 h.
+///
+/// El espectro de OBSERVACIÓN (dónde el sistema mira) y la banda de OPERACIÓN
+/// (dónde mantiene posiciones) son objetos distintos: observar a 1 ns tiene
+/// sentido, mantener una posición un nanosegundo no. La banda de operación de
+/// referencia son las anclas que ya definen la semántica del gen
+/// `temporal_scale` (s = 0 ↔ 30 s, s = 1 ↔ 12 h) y en las que `apply_to_arena`
+/// evalúa las curvas: no se introduce ningún extremo nuevo.
+///
+/// La duración que declara la señal, si existe, tiene prioridad: es
+/// información de mercado, no un parámetro.
+#[inline]
+pub fn tau_from_temporal_scale(s: f64) -> f64 {
+    let s = if s.is_finite() { s.clamp(0.0, 1.0) } else { 0.5 };
+    let (lo, hi) = (TAU_ANCHOR_FAST_MS.ln(), TAU_ANCHOR_SLOW_MS.ln());
+    (lo + s * (hi - lo)).exp()
+}
+
+/// Inversa de `tau_from_temporal_scale`, acotada a [0, 1].
+#[inline]
+pub fn temporal_scale_from_tau(tau_ms: f64) -> f64 {
+    if !tau_ms.is_finite() || tau_ms <= 0.0 {
+        return 0.5;
+    }
+    let (lo, hi) = (TAU_ANCHOR_FAST_MS.ln(), TAU_ANCHOR_SLOW_MS.ln());
+    ((tau_ms.ln() - lo) / (hi - lo)).clamp(0.0, 1.0)
+}
+
+/// Horizonte operativo de una intención, en milisegundos. FUENTE ÚNICA.
+#[inline]
+pub fn operating_tau_ms(expected_duration_ms: u64, temporal_scale: f64) -> f64 {
+    if expected_duration_ms > 0 {
+        expected_duration_ms as f64
+    } else {
+        tau_from_temporal_scale(temporal_scale)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ScaleState {
     pub tau_ms: f64,
@@ -290,6 +337,39 @@ impl HorizonCurve {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D-638b: la conversión τ ↔ s es la misma en ambos sentidos.
+    #[test]
+    fn d638b_tau_y_escala_temporal_son_inversas() {
+        for i in 0..=20 {
+            let s = i as f64 / 20.0;
+            let back = temporal_scale_from_tau(tau_from_temporal_scale(s));
+            assert!((back - s).abs() < 1e-9, "s={s} -> {back}");
+        }
+    }
+
+    /// D-638b: la banda de operación son las anclas del gen, no los extremos
+    /// del espectro de observación (1 ns–146 años).
+    #[test]
+    fn d638b_la_banda_operativa_son_las_anclas_no_el_espectro() {
+        assert!((tau_from_temporal_scale(0.0) - TAU_ANCHOR_FAST_MS).abs() < 1e-6);
+        assert!((tau_from_temporal_scale(1.0) - TAU_ANCHOR_SLOW_MS).abs() < 1e-3);
+        for i in 0..=20 {
+            let tau = tau_from_temporal_scale(i as f64 / 20.0);
+            assert!(
+                tau >= TAU_ANCHOR_FAST_MS - 1e-6 && tau <= TAU_ANCHOR_SLOW_MS + 1e-3,
+                "s={} produjo tau={tau} ms, fuera de la banda operativa",
+                i as f64 / 20.0
+            );
+        }
+    }
+
+    /// La duración declarada por la señal tiene prioridad sobre el gen.
+    #[test]
+    fn d638b_la_duracion_declarada_tiene_prioridad() {
+        assert_eq!(operating_tau_ms(90_000, 0.9), 90_000.0);
+        assert!((operating_tau_ms(0, 0.0) - TAU_ANCHOR_FAST_MS).abs() < 1e-6);
+    }
 
     #[test]
     fn escalas_cubren_el_espectro_sin_huecos() {

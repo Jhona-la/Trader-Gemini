@@ -9,6 +9,7 @@ pub fn check_drawdown_limit(
     base_capital: f64,
     guard_dd_sigmoid_steepness: f64,
     guard_dd_sigmoid_center: f64,
+    min_notional: f64,
 ) -> bool {
     if !current_capital.is_finite() || current_capital <= 0.0 {
         return false; // Total capital loss or corruption -> block
@@ -30,11 +31,15 @@ pub fn check_drawdown_limit(
         0.0
     };
     let sigmoid_val = (1.0 / (1.0 + sigmoid_input.exp())).clamp(0.0, 1.0);
-    let dynamic_max_drawdown = if current_capital <= 50.0 {
-        0.75_f64.max(genome_max_drawdown_pct)
-    } else {
-        (genome_max_drawdown_pct + (0.85 - genome_max_drawdown_pct) * sigmoid_val).clamp(0.02, 0.90)
-    };
+    // D-641 (completo): la tolerancia micro deja de saltar en $50. Régimen micro
+    // pleno ⇒ `max(0,75, gen)` como se diseñó; estándar ⇒ la sigmoide genómica;
+    // entre ambos, transición continua sobre operaciones mínimas que caben.
+    let micro_limit = 0.75_f64.max(genome_max_drawdown_pct);
+    let standard_limit = (genome_max_drawdown_pct
+        + (0.85 - genome_max_drawdown_pct) * sigmoid_val)
+        .clamp(0.02, 0.90);
+    let w = crate::capital_regime::micro_weight(current_capital, min_notional);
+    let dynamic_max_drawdown = crate::capital_regime::lerp(standard_limit, micro_limit, w);
 
     // Si el drawdown actual es mayor o igual al límite duro, BLOQUEAR
     current_drawdown < dynamic_max_drawdown
@@ -47,21 +52,21 @@ mod tests {
     #[test]
     fn test_check_drawdown_limit_immunity_to_overflow() {
         // Test with extreme parameters
-        let res = check_drawdown_limit(13.0, 13.0, 0.05, 13.0, 1000.0, 5.0);
+        let res = check_drawdown_limit(13.0, 13.0, 0.05, 13.0, 1000.0, 5.0, 5.0);
         assert!(res, "Zero drawdown should always be allowed");
 
         // Extreme large capital
-        let res2 = check_drawdown_limit(1_000_000.0, 1_000_000.0, 0.02, 13.0, 100.0, 2.0);
+        let res2 = check_drawdown_limit(1_000_000.0, 1_000_000.0, 0.02, 13.0, 100.0, 2.0, 5.0);
         assert!(res2);
 
         // Heavy drawdown exceeding limit
-        let res3 = check_drawdown_limit(1.0, 100.0, 0.05, 13.0, 1.0, 1.0);
+        let res3 = check_drawdown_limit(1.0, 100.0, 0.05, 13.0, 1.0, 1.0, 5.0);
         assert!(!res3, "99% drawdown must be blocked");
 
         // NaN and zero/negative capital must be blocked
-        assert!(!check_drawdown_limit(f64::NAN, 100.0, 0.05, 13.0, 1.0, 1.0));
-        assert!(!check_drawdown_limit(-5.0, 100.0, 0.05, 13.0, 1.0, 1.0));
-        assert!(!check_drawdown_limit(0.0, 100.0, 0.05, 13.0, 1.0, 1.0));
+        assert!(!check_drawdown_limit(f64::NAN, 100.0, 0.05, 13.0, 1.0, 1.0, 5.0));
+        assert!(!check_drawdown_limit(-5.0, 100.0, 0.05, 13.0, 1.0, 1.0, 5.0));
+        assert!(!check_drawdown_limit(0.0, 100.0, 0.05, 13.0, 1.0, 1.0, 5.0));
     }
 
     #[test]

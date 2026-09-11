@@ -645,26 +645,29 @@ pub unsafe extern "C" fn ffi_run_polars_backtest_mmap(
     let cfg = unsafe { &*config };
     let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, STATS_LEN) };
 
-    if let Ok((final_cap, max_dd, trades, wins)) =
-        vectorized::run_vectorized_hybrid(closes, highs, lows, volumes, cfg)
-    {
-        // FIX #1486: Inicialización completa de los 8 slots del contrato out_stats
-        let win_rate = if trades > 0 {
-            wins as f64 / trades as f64
-        } else {
-            0.0
-        };
-        out_stats[0] = win_rate;
-        out_stats[1] = trades as f64;
-        out_stats[2] = final_cap;
-        out_stats[3] = max_dd;
-        out_stats[4] = 0.0; // Sharpe ratio vectorizado
-        out_stats[5] = 0.0; // Gross PnL sum
-        out_stats[6] = final_cap - 13.0; // Net PnL sum approx
-        out_stats[7] = win_rate; // Gross win rate
-        return trades as usize;
-    }
-    0
+    // D-648/D-669 (DÉCIMA OLA): esta exportación evaluaba con
+    // `run_vectorized_hybrid`, un cruce de EMAs que lee una fracción mínima del
+    // genoma y dimensiona cada operación con todo el capital. Nada en el
+    // repositorio la invoca, pero cualquier consumidor externo obtenía métricas
+    // de un sistema distinto al que se despliega. Ahora usa el mismo motor que
+    // producción y que los promotores de genomas, con el mismo capital por
+    // defecto que las otras dos exportaciones.
+    let initial_capital = std::env::var("INITIAL_CAPITAL")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(13.0);
+    let mut out_pnl = vec![0.0f64; len];
+    run_backtest_native(
+        closes,
+        highs,
+        lows,
+        volumes,
+        cfg,
+        &mut out_pnl,
+        out_stats,
+        "",
+        initial_capital,
+    )
 }
 
 #[cfg(test)]

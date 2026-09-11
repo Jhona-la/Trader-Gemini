@@ -189,10 +189,15 @@ impl RiskEnvelope {
         if capital <= 0.0 {
             return (0.0, false);
         }
-        // FIX #702 / #793: Bootstrap inicial para cuentas micro (capital <= 50 USD).
+        // FIX #702 / #793: Bootstrap inicial para cuentas en régimen micro de capital.
         // Evita el deadlock bayesiano donde LCB produce f <= 0 por muestras pequeñas y bloquea la operativa.
-        if f <= 0.0 && capital <= 50.0 {
-            f = 0.015;
+        // D-641 (completo): el arranque bayesiano de cuentas micro deja de saltar
+        // en $50. Pleno a ≤3 operaciones mínimas y se atenúa hasta desaparecer a
+        // 10: una cuenta que ya cubre el mínimo muchas veces no necesita forzar
+        // una fracción inicial para salir del bloqueo por muestras pequeñas.
+        let micro_w = crate::capital_regime::micro_weight(capital, exchange_min_notional);
+        if f <= 0.0 && micro_w > 0.0 {
+            f = 0.015 * micro_w;
         }
         if f <= 0.0 {
             return (0.0, false);
@@ -207,7 +212,7 @@ impl RiskEnvelope {
         let risk_budget_usd = capital * f;
         let min_risk_with_exchange = exchange_min_notional * stop;
         if risk_budget_usd < min_risk_with_exchange {
-            if capital <= 50.0 && exchange_min_notional <= capital * 5.0 && f >= 0.005 {
+            if micro_w > 0.0 && exchange_min_notional <= capital * 5.0 && f >= 0.005 {
                 let safe_micro_leverage = (exchange_min_notional / capital).max(1.0).min(5.0);
                 return (safe_micro_leverage, true);
             }

@@ -1692,12 +1692,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 1.5)
                                 .max(0.0015)
                         };
-                        let (env_lev, operable) = if cap_now <= 50.0 {
-                            // Calibración adaptativa micro-cuenta ($13 USD bootstrap): z = 0.85, k = 10.0
-                            risk_envelope.max_leverage(cap_now, stop_pct, 5.0, 0.85, 10.0)
-                        } else {
-                            risk_envelope.max_leverage(cap_now, stop_pct, 5.0, 1.64, 50.0)
-                        };
+                        // D-641 (completo): la envolvente deja de cambiar de golpe su
+                        // nivel de confianza (z 0,85 → 1,64) y su contracción
+                        // (k 10 → 50) en $50. Micro pleno a ≤3 operaciones mínimas,
+                        // estándar a ≥10, transición continua entre ambos. A $13
+                        // el resultado es idéntico al anterior (peso micro = 1).
+                        let env_min_notional = 5.0;
+                        let env_w =
+                            risk_engine::capital_regime::micro_weight(cap_now, env_min_notional);
+                        let env_z = risk_engine::capital_regime::lerp(1.64, 0.85, env_w);
+                        let env_k = risk_engine::capital_regime::log_lerp(50.0, 10.0, env_w);
+                        let (env_lev, operable) = risk_envelope
+                            .max_leverage(cap_now, stop_pct, env_min_notional, env_z, env_k);
                         // D-116 (evolucionado por X-022/REHAB-4): la ENVOLVENTE
                         // es AUTORITATIVA. Antes: `.max(core_leverage)` pisaba
                         // el cap bayesiano y `operable=false` ejecutaba igual

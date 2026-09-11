@@ -250,17 +250,13 @@ fn main() {
         test_cfg.survival_capital_threshold += random_f64(-0.05, 0.05) * temp / initial_temp;
 
         // Micro-Capital Adaptive Constraints
-        let max_safe_leverage = if initial_capital < 50.0 {
-            // Si el capital es pequeño, priorizamos supervivencia sobre explosividad extrema
-            (initial_capital / 100.0).max(1.0) * 50.0 // ej: 13 USD -> 50.0 max
-        } else {
-            100.0
-        };
-        let min_required_leverage = if initial_capital < 10.0 {
-            (5.0 / initial_capital) * 1.05 // Para 13 USD, el mínimo es 1.0x (ya que 13 > 5)
-        } else {
-            1.0
-        };
+        // D-641 (completo): techos de apalancamiento del evolver sin escalones en
+        // $10 y $50. El mínimo es el apalancamiento que exige el notional mínimo
+        // —continuo por construcción—; el máximo se funde entre 50× y 100× según
+        // las operaciones mínimas que caben en el capital.
+        let evo_w = risk_engine::capital_regime::micro_weight(initial_capital, 5.0);
+        let max_safe_leverage = risk_engine::capital_regime::log_lerp(100.0, 50.0, evo_w);
+        let min_required_leverage = ((5.0 / initial_capital.max(1e-9)) * 1.05).max(1.0);
 
         test_cfg.global_leverage = test_cfg.global_leverage.clamp(
             min_required_leverage,
