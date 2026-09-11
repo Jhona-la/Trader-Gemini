@@ -260,7 +260,34 @@ async fn main() {
     }
 
     let tick_size = std::mem::size_of::<BinTick>();
-    let total_file_ticks = bytes_len / tick_size;
+    // D-691 (DÉCIMA OLA): el formato versionado lleva la cabecera `TGMTICK1`
+    // (8 bytes) antes de los registros; el legado no. Se mapeaba desde el byte 0
+    // en ambos casos, así que el fichero de aggTrades reales era ilegible y todo
+    // el forense corría sobre velas expandidas. Mismo criterio que
+    // `backtest_engine::tick_replayer`.
+    let magic = backtest_engine::tick_replayer::TICK_MAGIC;
+    let header_len = if bytes_len >= magic.len() && &mmap[..magic.len()] == magic {
+        magic.len()
+    } else {
+        0
+    };
+    let payload_len = bytes_len - header_len;
+    if payload_len % tick_size != 0 {
+        println!(
+            "❌ {}: {} bytes de registros no es múltiplo de {} — formato desconocido",
+            data_path, payload_len, tick_size
+        );
+        return;
+    }
+    println!(
+        "📦 Formato de datos: {}",
+        if header_len > 0 {
+            "versionado TGMTICK1"
+        } else {
+            "legado sin cabecera (velas expandidas, ver D-691)"
+        }
+    );
+    let total_file_ticks = payload_len / tick_size;
     let max_ticks_env = std::env::var("MAX_TICKS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
@@ -281,7 +308,7 @@ async fn main() {
 
     let ticks_slice = unsafe {
         std::slice::from_raw_parts(
-            mmap.as_ptr().add(start_tick * tick_size) as *const BinTick,
+            mmap.as_ptr().add(header_len + start_tick * tick_size) as *const BinTick,
             num_ticks,
         )
     };
