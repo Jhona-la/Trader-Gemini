@@ -26,6 +26,84 @@ pub enum ModelId {
     SwingNN,
 }
 
+/// D-695 (DÉCIMA OLA) — HABILIDAD MEDIDA DEL ENSAMBLE.
+///
+/// El escudo neuronal vetaba intenciones con la opinión del ensamble sin
+/// comprobar que esa opinión predijera algo. Tras D-693 seguía vetando más del
+/// 95 % de los largos con un ensamble sesgado (bosque bajista, red saturada).
+/// Un veto sólo está justificado si el modelo supera a la referencia trivial:
+/// la tasa base de subidas.
+///
+/// Se mide con la puntuación de Brier, estrictamente apropiada, sobre la misma
+/// opinión que califica el Hedge (la del arranque de cada vela):
+/// `d = (tasa_base − y)² − (p − y)²`, positiva cuando el modelo gana. La tasa
+/// base es causal (la estimada antes de ver el resultado). Media y varianza
+/// exponenciales de `d` con la escala de la EMA macro del motor; la habilidad
+/// es significativa si `z = media / (σ / √n_eff)` supera z95, con
+/// `n_eff = (2 − α)/α`, el tamaño efectivo de una media exponencial.
+pub const SKILL_SPAN_BARS: f64 = crate::diffusion::EMA_MACRO_BARS;
+
+#[derive(Debug, Clone, Default)]
+pub struct SkillTracker {
+    base_rate: f64,
+    base_n: u64,
+    mean_d: f64,
+    var_d: f64,
+    n: u64,
+}
+
+impl SkillTracker {
+    fn alpha() -> f64 {
+        2.0 / (SKILL_SPAN_BARS + 1.0)
+    }
+
+    /// Registra una vela: `p` es la probabilidad combinada del arranque y `y`
+    /// el resultado (1 subió, 0 no).
+    pub fn record(&mut self, p: f64, y: f64) {
+        if !p.is_finite() || !y.is_finite() {
+            return;
+        }
+        let a = Self::alpha();
+        if self.base_n > 0 {
+            let reference = self.base_rate;
+            let d = (reference - y).powi(2) - (p - y).powi(2);
+            if self.n == 0 {
+                self.mean_d = d;
+                self.var_d = 0.0;
+            } else {
+                let delta = d - self.mean_d;
+                self.mean_d += a * delta;
+                self.var_d = (1.0 - a) * (self.var_d + a * delta * delta);
+            }
+            self.n += 1;
+            self.base_rate += a * (y - self.base_rate);
+        } else {
+            self.base_rate = y;
+        }
+        self.base_n += 1;
+    }
+
+    /// Estadístico z de la ventaja de Brier sobre la tasa base, o `None` hasta
+    /// haber visto una ventana completa.
+    pub fn z(&self) -> Option<f64> {
+        if (self.n as f64) < SKILL_SPAN_BARS {
+            return None;
+        }
+        let a = Self::alpha();
+        let n_eff = (2.0 - a) / a;
+        let sd = self.var_d.max(0.0).sqrt();
+        if sd <= 0.0 {
+            return None;
+        }
+        Some(self.mean_d / (sd / n_eff.sqrt()))
+    }
+
+    /// ¿Supera el ensamble a la tasa base con significación al 95 %?
+    pub fn is_significant(&self) -> bool {
+        self.z().is_some_and(|z| z > crate::diffusion::Z95)
+    }
+}
+
 pub struct ModelEnsemble {
     /// Pesos en escala logarítmica (log w_i).
     log_weights: [f64; 2],
@@ -37,6 +115,8 @@ pub struct ModelEnsemble {
     /// X-023: primera opinión de cada modelo dentro del bar — la calificada
     /// al cierre (lead real sobre el desenlace).
     bar_open_predictions: [Option<f64>; 2],
+    /// D-695: habilidad medida frente a la tasa base.
+    skill: SkillTracker,
 }
 
 impl Default for ModelEnsemble {
@@ -55,6 +135,7 @@ impl ModelEnsemble {
             // X-023: primera opinión de cada modelo DENTRO del bar actual —
             // la que se califica al cierre (lead real), no la del último tick.
             bar_open_predictions: [None, None],
+            skill: SkillTracker::default(),
         }
     }
 
@@ -81,6 +162,11 @@ impl ModelEnsemble {
     /// p = Σ w_i·p_i / Σ w_i con w_i = softmax(log_weights).
     #[inline(always)]
     pub fn combined(&self) -> Option<f64> {
+        self.combine(&self.predictions)
+    }
+
+    /// Combinación ponderada de un juego de opiniones con los pesos actuales.
+    fn combine(&self, preds: &[Option<f64>; 2]) -> Option<f64> {
         // Softmax estable: restar el máximo antes de exp.
         let max_lw = self
             .log_weights
@@ -89,7 +175,7 @@ impl ModelEnsemble {
             .fold(f64::NEG_INFINITY, f64::max);
         let mut sum_w = 0.0;
         let mut sum_wp = 0.0;
-        for (i, pred) in self.predictions.iter().enumerate() {
+        for (i, pred) in preds.iter().enumerate() {
             if let Some(p) = pred.as_ref() {
                 let p = *p;
                 let w = (self.log_weights[i] - max_lw).exp();
@@ -111,6 +197,11 @@ impl ModelEnsemble {
     /// pesos Hedge aprendían la cantidad equivocada.
     pub fn update_with_outcome(&mut self, y: f64) {
         let graded = self.bar_open_predictions;
+        // D-695: la habilidad se mide con la opinión combinada del arranque y
+        // los pesos vigentes antes de actualizarlos.
+        if let Some(p_open) = self.combine(&graded) {
+            self.skill.record(p_open, y);
+        }
         for (i, pred) in graded.iter().enumerate() {
             if let Some(p) = pred.as_ref() {
                 let p = *p;
@@ -122,6 +213,16 @@ impl ModelEnsemble {
         // Reset: nuevo bar — nueva primera opinión por aprender.
         self.predictions = [None, None];
         self.bar_open_predictions = [None, None];
+    }
+
+    /// D-695: estadístico z de la ventaja de Brier sobre la tasa base.
+    pub fn skill_z(&self) -> Option<f64> {
+        self.skill.z()
+    }
+
+    /// D-695: ¿ha demostrado el ensamble habilidad frente a la tasa base?
+    pub fn has_significant_skill(&self) -> bool {
+        self.skill.is_significant()
     }
 
     /// Pesos normalizados actuales (para telemetría/calibración F6).
@@ -155,6 +256,67 @@ impl ModelEnsemble {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn xorshift(state: &mut u64) -> f64 {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        ((*state >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+    }
+
+    /// D-695: un predictor informativo supera a la tasa base con significación.
+    #[test]
+    fn d695_predictor_informativo_tiene_habilidad() {
+        let mut t = SkillTracker::default();
+        let mut s = 0x9E37_79B9_7F4A_7C15u64;
+        for _ in 0..(SKILL_SPAN_BARS as usize * 4) {
+            let signal = xorshift(&mut s) < 0.5;
+            let p = if signal { 0.8 } else { 0.2 };
+            let y = if xorshift(&mut s) < p { 1.0 } else { 0.0 };
+            t.record(p, y);
+        }
+        assert!(t.is_significant(), "z = {:?}", t.z());
+    }
+
+    /// D-695: un modelo sesgado sin información no gana el derecho a vetar.
+    #[test]
+    fn d695_modelo_sesgado_sin_informacion_no_tiene_habilidad() {
+        let mut t = SkillTracker::default();
+        let mut s = 0x2545_F491_4F6C_DD1Du64;
+        for _ in 0..(SKILL_SPAN_BARS as usize * 4) {
+            let y = if xorshift(&mut s) < 0.5 { 1.0 } else { 0.0 };
+            t.record(0.3, y);
+        }
+        assert!(!t.is_significant(), "z = {:?}", t.z());
+        assert!(t.z().is_some_and(|z| z < 0.0));
+    }
+
+    /// D-695: sin una ventana completa no se publica habilidad.
+    #[test]
+    fn d695_sin_ventana_completa_no_hay_veredicto() {
+        let mut t = SkillTracker::default();
+        for i in 0..(SKILL_SPAN_BARS as usize / 2) {
+            t.record(0.9, if i % 2 == 0 { 1.0 } else { 0.0 });
+        }
+        assert_eq!(t.z(), None);
+        assert!(!t.is_significant());
+    }
+
+    /// D-695: el ensamble mide su habilidad con la opinión del arranque de la vela.
+    #[test]
+    fn d695_el_ensamble_registra_su_habilidad_al_calificar() {
+        let mut e = ModelEnsemble::new();
+        let mut s = 0x1234_5678_9ABC_DEF1u64;
+        for _ in 0..(SKILL_SPAN_BARS as usize * 4) {
+            let signal = xorshift(&mut s) < 0.5;
+            let p = if signal { 0.85 } else { 0.15 };
+            e.submit(ModelId::ScalpForest, p);
+            e.submit(ModelId::SwingNN, p);
+            let y = if xorshift(&mut s) < p { 1.0 } else { 0.0 };
+            e.update_with_outcome(y);
+        }
+        assert!(e.has_significant_skill(), "z = {:?}", e.skill_z());
+    }
 
     #[test]
     fn sin_opiniones_no_hay_combinacion() {

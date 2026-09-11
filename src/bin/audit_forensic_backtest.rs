@@ -188,7 +188,16 @@ async fn main() {
     println!("⚛️  [ARENA] QuantumConfig y GodEngineCore instanciados (Paridad Producción)");
 
     // Configurar fees dinámicamente desde API real o baseline VIP0
-    let (maker_fee, taker_fee) = if !api_key.is_empty() && !api_secret.is_empty() {
+    // D-694 (DÉCIMA OLA): con claves en `.env` el forense consultaba siempre las
+    // comisiones reales de la cuenta (taker 0,04 %) y sin ellas usaba VIP0
+    // (0,05 %): el mismo binario daba resultados distintos según el directorio,
+    // y hacía una llamada autenticada a Binance en cada corrida. Un backtest de
+    // validación fija sus costes de forma explícita: la consulta en vivo sólo
+    // ocurre si se pide con FORENSIC_LIVE_FEES=1.
+    let live_fees_requested = std::env::var("FORENSIC_LIVE_FEES")
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false);
+    let (maker_fee, taker_fee) = if live_fees_requested && !api_key.is_empty() && !api_secret.is_empty() {
         match executor.fetch_commission_rate("BTCUSDT").await {
             Ok((m, t)) if m > 0.0 && t > 0.0 => {
                 println!(

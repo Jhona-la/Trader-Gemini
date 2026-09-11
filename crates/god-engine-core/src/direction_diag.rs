@@ -92,6 +92,10 @@ pub struct DirectionDiag {
     pub council_vetoed: [u64; 2],
     /// Aperturas por dirección.
     pub opened: [u64; 2],
+    /// D-695: evaluaciones en que el modelo iba contra la intención, y cuántas
+    /// con habilidad demostrada (las únicas en que veta).
+    pub neural_against: [u64; 2],
+    pub neural_against_skilled: [u64; 2],
     /// Descomposición de `ml_prob`: base del ensamble y residuo online acotado.
     pub ml_components_n: u64,
     pub ml_base_hist: [u64; ML_BINS],
@@ -260,6 +264,15 @@ impl DirectionDiag {
     }
 
     #[inline]
+    pub fn record_neural_gate(&mut self, is_long: bool, skilled: bool) {
+        let d = if is_long { LONG } else { SHORT };
+        self.neural_against[d] += 1;
+        if skilled {
+            self.neural_against_skilled[d] += 1;
+        }
+    }
+
+    #[inline]
     pub fn record_open(&mut self, is_long: bool) {
         self.opened[if is_long { LONG } else { SHORT }] += 1;
     }
@@ -344,6 +357,13 @@ impl DirectionDiag {
             self.council_vetoed[SHORT],
         ));
         out.push_str(&format!(
+            "DIRECTION_DIAG escudo_neuronal en contra · largo={} (con habilidad {}) · corto={} (con habilidad {})\n",
+            self.neural_against[LONG],
+            self.neural_against_skilled[LONG],
+            self.neural_against[SHORT],
+            self.neural_against_skilled[SHORT],
+        ));
+        out.push_str(&format!(
             "DIRECTION_DIAG aperturas largo={} corto={}",
             self.opened[LONG], self.opened[SHORT]
         ));
@@ -354,6 +374,17 @@ impl DirectionDiag {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn d695_cuenta_el_escudo_con_y_sin_habilidad() {
+        let mut d = DirectionDiag::default();
+        d.record_neural_gate(true, false);
+        d.record_neural_gate(true, true);
+        d.record_neural_gate(false, false);
+        assert_eq!(d.neural_against, [2, 1]);
+        assert_eq!(d.neural_against_skilled, [1, 0]);
+        assert!(d.report().contains("escudo_neuronal en contra · largo=2 (con habilidad 1)"));
+    }
 
     #[test]
     fn diag_cuenta_histogramas_y_fallos_por_direccion() {

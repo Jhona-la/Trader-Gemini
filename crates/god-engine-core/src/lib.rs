@@ -2857,7 +2857,20 @@ impl GodEngineCore {
             // D-688 (DÉCIMA OLA): «en contra» era una banda 0,460/0,540 sin derivación. La regla
             // declarada es que el modelo prediga contra la dirección: P(sube) < ½ para un largo y
             // > ½ para un corto. La excepción de extensión pasa a z95, como el resto del motor.
-            if unified_intent.signal == SignalType::Long && ml_prob < 0.5 {
+            // D-695 (DÉCIMA OLA): el escudo sólo veta si el ensamble ha demostrado
+            // habilidad frente a la tasa base (Brier, z95 sobre la escala macro).
+            // Un modelo sin habilidad medida no puede anular una intención.
+            let neural_skill = if coin_id < self.ensembles.len() {
+                self.ensembles[coin_id].has_significant_skill()
+            } else {
+                self.ensemble.has_significant_skill()
+            };
+            let neural_against_long = unified_intent.signal == SignalType::Long && ml_prob < 0.5;
+            let neural_against_short = unified_intent.signal == SignalType::Short && ml_prob > 0.5;
+            if neural_against_long || neural_against_short {
+                self.diag_dir.record_neural_gate(neural_against_long, neural_skill);
+            }
+            if neural_against_long && neural_skill {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
@@ -2872,7 +2885,7 @@ impl GodEngineCore {
                 if crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) >= -crate::diffusion::Z95 {
                     unified_intent = SignalIntent::flat();
                 }
-            } else if unified_intent.signal == SignalType::Short && ml_prob > 0.5 {
+            } else if neural_against_short && neural_skill {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
