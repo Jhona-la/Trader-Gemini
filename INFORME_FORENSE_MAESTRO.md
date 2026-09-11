@@ -46,7 +46,8 @@
     - [10. Módulo 7: Señales Cuánticas, Orquestación y Confluencia](#️-10-módulo-7--señales-cuánticas-orquestación-y-confluencia)
     - [11. Módulo 8: Backtesting, Auditoría Interna y Gobernanza](#-11-módulo-8--backtesting-auditoría-interna-y-gobernanza)
     - [12. Hoja de Ruta de Rehabilitación L-5 a L-10](#-12-hoja-de-ruta-sistémica-de-rehabilitación--décima-ola)
-18. **[🔁 Décima Ola — Adenda de verificación forense: bisección, atribución y correcciones (D-677 a D-685)](#-décima-ola--adenda-de-verificación-forense-bisección-atribución-correcciones-y-rectificaciones-2026-09-11)** ← *más reciente (2026-09-11)*
+18. **[🔁 Décima Ola — Adenda de verificación forense: bisección, atribución y correcciones (D-677 a D-685)](#-décima-ola--adenda-de-verificación-forense-bisección-atribución-correcciones-y-rectificaciones-2026-09-11)** ← *(2026-09-11)*
+19. **[🧬 Décima Ola — Adenda de ejecución: núcleo de decisión, walk-forward y re-evolución (D-686 a D-690)](#-décima-ola--adenda-de-ejecución-núcleo-de-decisión-walk-forward-y-re-evolución-2026-09-11)** ← *más reciente (2026-09-11)*
 
 ---
 
@@ -5768,3 +5769,149 @@ La rama 0 (`lib.rs`, consenso tensorial) exige tendencia confirmada, EMAs ordena
 - **Genoma de producción:** `config_dir/genomes/prod/active.json` tiene `source = backtest_heritage`; nació de la herencia automática que D-651 eliminó, nunca fue promovido explícitamente y fue seleccionado contra el motor defectuoso. **Debe re-evolucionarse contra el motor corregido** antes de cualquier uso.
 - **Correcciones de esta adenda:** quedan en el árbol de trabajo, con tests en verde, **sin commit**. Commitearlas sin re-evolución empeora el forense con el genoma actual; no commitearlas deja defectos S0 activos. Es una decisión del propietario.
 - **D-685:** contener (desactivar la rama 0 hasta rediseñarla) o rediseñar con validación evolutiva.
+
+---
+
+# 🧬 DÉCIMA OLA — ADENDA DE EJECUCIÓN: NÚCLEO DE DECISIÓN, WALK-FORWARD Y RE-EVOLUCIÓN (2026-09-11)
+
+> Continuación de la adenda de verificación forense. Registra la ejecución de
+> las decisiones que aquella dejaba abiertas —commit de las correcciones, rama
+> de consenso, re-evolución del genoma—, el lote de correcciones del núcleo de
+> decisión y tres defectos nuevos que la propia ejecución destapó (D-688,
+> D-689, D-690). Nada se sustituye: donde una medición contradice una
+> expectativa, se registra la medición.
+
+## B.1 Commits de esta fase
+
+| Commit | Contenido |
+|---|---|
+| 7c23f9ed | Correcciones verificadas en la adenda anterior (D-615b, D-677, D-649b, D-609, D-680, D-681, D-682, D-683, D-684) |
+| b0c73f76 | Adenda de verificación forense |
+| 16f37ccd | Núcleo de decisión (D-625, D-620, D-622, D-676), etiquetas de rama (D-678), forense walk-forward y evolucionador (D-686) |
+| 3f484361 | Literales de decisión (D-621, D-623, D-624, D-634/D-635, D-643, D-687) y módulo de difusión |
+| 9b48fd4f | Calibración de la confianza (D-619), contención de la rama de consenso (D-685) y candidatos proyectados |
+| b9943b1c | Escudos de libro L2 y neuronal sin literales (D-688) |
+| 498cc867 | Probabilidad calibrada sólo para el dimensionado (D-690) y armado explícito de la evolución en vivo (D-689) |
+| 017c26c1 | Bandas de mutación de curvas con las cotas declaradas (D-658) y contrato de vistas en el vector (D-656) |
+| f95e0054 | Capacidad de monedas con fuente única (D-605) y purga inalcanzable retirada (D-633) |
+
+## B.2 Núcleo de decisión (16f37ccd)
+
+- **D-625:** el suelo de `tech_threshold` pasa a los bounds [0,24; 0,30] y el gen se acota al entrar al arena (`clamp_slot`). Se retiran los `.max(0.24)` y `.max(0.52)` de lectura. El comportamiento en vivo es idéntico; la evolución deja de explorar un 76 % de banda sin efecto.
+- **D-620:** se retira el segundo gate de confianza del motor, siempre dominado por el del risk-engine sobre el mismo gen.
+- **D-622:** se retiran los cooldowns binarios scalp/swing; la reentrada la gobierna el guard unificado D-463.
+- **D-676:** el calibrador conformal recibe la probabilidad de ganar en la dirección operada (`1 − ml_prob` para cortos), y el filtro continuo consulta la aceptación por dirección.
+- **D-678:** el camino de tendencia (rama 13) y el consenso tensorial (rama 14) etiquetan sus intenciones; la traza imprime `rama=`.
+
+## B.3 Instrumentación walk-forward (D-686)
+
+- **Forense:** `FORENSIC_START_TICK` desplaza la ventana; `FORENSIC_GENOME_PATH` carga un genoma desde fichero y lo **fija** (generación aplicada máxima) para que `refresh_models`, que relee el almacén cada 1000 ticks, no lo sustituya a mitad de la corrida. Emite una línea `FORENSIC_JSON`.
+- **Hallazgo durante la construcción:** sin esa fijación, cualquier evaluación con un genoma externo medía en realidad el genoma activo del almacén desde el tick 1000. Las corridas anteriores no se vieron afectadas porque cargaban precisamente ese genoma.
+- **`walkforward_evolver`:** evalúa cada candidato ejecutando el forense en paralelo; muta el genoma completo (`mutate_cmaes`); usa la aptitud única de `evolution_engine::fitness`; selecciona sólo con la partición de entrenamiento (ticks [0, 628 992)); valida finalistas y semilla en [628 992, 1 048 320); y sólo promueve si la validación es positiva neta, tiene al menos 15 operaciones y supera a la semilla. Cada candidato se proyecta a los bounds con `from_vector` antes de evaluarse: el almacén valida bounds al promover, las bandas de mutación no siempre coinciden con ellos (D-644) y la semilla de producción ya estaba fuera de banda en tres genes.
+- **Por qué no se reutilizaron los evolucionadores existentes:** `evolver` usa `process_tick` en lugar del camino de producción, inicializa islas scalp/swing, tiene su propia aptitud y puede promover un perdedor (umbral de aptitud ≥ 5,5 alcanzable con pérdidas). `evolution` muta quince genes, varios de ellos vistas sobrescritas, y evalúa con `booktick_replay`, que modela el deslizamiento distinto que el forense.
+
+## B.4 Literales de decisión (3f484361)
+
+Nuevo módulo `god-engine-core::diffusion`: desviaciones estacionarias exactas de la distancia precio−EMA y del diferencial entre EMAs para un paseo aleatorio, con la σ de 1 minuto obtenida del ATR mediante el factor de Parkinson. Las fórmulas se verifican contra simulación Monte Carlo en los tests.
+
+- **D-624:** el escudo macro exigía −3, −8 y −6 pb a tres horizontes: con ATR del 0,10 % son 0,04 σ, 0,24 σ y 0,87 σ. Ahora cada tendencia se estandariza con su propia desviación y se exige significación al 95 % en los tres. Capitulación y euforia pasan de ±2,5 ATR a z95.
+- **D-621:** anti-persecución en z: no comprar sobre la media ni vender bajo ella (la regla que el propio comentario declaraba) y no entrar si el desplazamiento en contra ya es significativo. Antes 0,20 y 1,50 ATR.
+- **D-623:** la confluencia toma el máximo de las dos confianzas, sin ×1,10 ni suelo 0,60. Sumar log-odds tampoco sería válido: ambas intenciones leen el mismo consenso tensorial.
+- **D-634/D-635:** colchón de margen y notional mínimo con fuente única (`capital_regime::margin_cushion`, `effective_min_notional`) compartida por el risk-engine y el núcleo; el núcleo deja de revalidar con 5,05 / 50 000 / 0,98.
+- **D-643 (parcial):** `tensor_min_conf` lee el gen, acotado en la entrada, en lugar de `.max(0.70).clamp(0.70, 0.90)`.
+- **D-687 (nuevo, S1):** `margin_cushion_pct` tenía bounds [1,01; 1,20] mientras su único consumidor lo acotaba a [0,50; 0,98]: **el gen valía siempre 0,98 y la evolución nunca pudo moverlo**. La banda pasa a la del consumidor; los genomas existentes conservan su valor efectivo.
+
+**Efecto medido, sin ocultarlo:** con la rama de consenso contenida en ambos motores, el lote empeora el resultado con el genoma actual (validación −4,84 % → −7,14 %; entrenamiento −5,15 % → −5,62 %). El escudo macro en z bloquea menos entradas a contratendencia. Se mantiene porque elimina umbrales sin fundamento y porque la re-evolución, con su puerta fuera de muestra, es la que debe ajustar los genes a este motor; es una elección de principio, no una mejora medida.
+
+## B.5 Rama de consenso tensorial (D-685)
+
+Regla fijada antes de ver los datos: elegir por aptitud unificada en entrenamiento y adoptar sólo si la validación no empeora.
+
+| Motor | Variante | Entrenamiento | Validación |
+|---|---|---|---|
+| 16f37ccd | activa | −17,92 % · 65 ops · DD 17,9 % · aptitud −0,287 | −5,15 % · 37 ops · aptitud −0,070 |
+| 16f37ccd | guarda z95 | idéntica a la activa: **inerte** | idéntica |
+| 16f37ccd | **contenida** | −5,15 % · 45 ops · DD 6,0 % · aptitud −0,063 | −4,84 % · 36 ops · aptitud −0,061 |
+| 3f484361 | activa | −14,86 % · 64 ops · DD 15,3 % · aptitud −0,226 | −8,04 % · 41 ops · aptitud −0,108 |
+| 3f484361 | **contenida** | −5,62 % · 56 ops · DD 6,7 % · aptitud −0,070 | −7,14 % · 40 ops · aptitud −0,090 |
+
+La guarda de extensión en unidades de difusión no bloqueó ninguna apertura: las de la rama 14 quedan en z ≈ 1,9 o menos. Bajar el umbral hasta que bloquee sería ajustar un literal al backtest, así que no se adopta. La rama queda **contenida** (`CONSENSUS_BRANCH_ENABLED = false`) con la evidencia en su documentación y el código conservado para un rediseño que aporte una medida de ventaja propia. **Incluso contenida, el sistema pierde en ambas ventanas**: la contención retira la fuente de pérdida más clara, no crea ventaja.
+
+## B.6 Calibración de la confianza (D-619) y el bloqueo por etiquetas selectivas (D-690)
+
+Quitar los suelos fabricados de la confianza (0,55, 0,51, 0,70, 0,60) no la convierte en probabilidad y, con los genes evolucionados sobre la confianza inflada, habría cerrado la rama tensorial sin arreglar la semántica. Se implementó lo que el diagnóstico original exigía, una probabilidad calibrada con resultados reales:
+
+- Escalado de Platt `p = σ(a·logit(s) + b)` por máximo a posteriori sobre una ventana de 512 pares.
+- **Prior:** z² pseudo-observaciones con etiqueta suave igual a la propia puntuación, situadas en las puntuaciones observadas. Con una sola puntuación reproduce exactamente la media Beta de D-680 (tres pérdidas a 0,8 → 0,449). Un primer diseño con el prior sobre los coeficientes daba 0,27 y lo detectó un test; la simulación confirmó que el peso efectivo de ese prior depende de dónde caen los datos.
+- Pendiente no negativa, regularización numérica sólo en la dirección no identificada, identidad exacta sin historial.
+
+**D-690 (nuevo, S0) — el primer cableado paralizó el motor.** En 9b48fd4f el risk-engine recibía la probabilidad calibrada en lugar de la puntuación. La medición walk-forward sobre ese commit dio **2 operaciones por ventana, frente a 56 y 40** sin calibrador. Mecanismo: el gate de confianza del risk-engine (0,745 con el genoma actual) está en la escala de la puntuación; tras la primera pérdida el calibrador baja la probabilidad por debajo, se rechaza todo y el calibrador —que sólo aprende de las operaciones ejecutadas— no vuelve a recibir datos. Llevarla sólo al gate de valor esperado no lo evita: con RR 2,25 y 10 pb de fricción, el umbral de equilibrio es p ≳ 0,44, y dos o tres pérdidas seguidas lo cruzan. **Un calibrador entrenado sólo con las operaciones seleccionadas no puede gobernar la selección** sin resultados contrafactuales de las señales rechazadas: es el problema clásico de etiquetas selectivas.
+
+**Corrección:** la probabilidad calibrada viaja en `SignalIntent::win_probability` y sólo alimenta el Kelly de la matriz de apalancamiento, donde reducir el tamaño no crea un estado absorbente. La selección sigue gobernada por la puntuación y sus genes. Calibrar la selección queda pendiente de un registro de resultados contrafactuales.
+
+**Verificación walk-forward sobre 498cc867.** El motor vuelve a operar: 56 operaciones en entrenamiento (−5,62 %) y 40 en validación (−7,14 %). El resultado es **idéntico a seis decimales** al del motor sin calibrador ni D-688 (3f484361 con la rama de consenso contenida): capital final 12,269310 y 12,071426 en ambos. Ni la probabilidad calibrada ni los escudos de D-688 cambiaron una sola decisión en esta muestra. Las trazas muestran por qué, sin atribuir mérito ni daño a ninguno de los dos cambios:
+
+- **Kelly calibrado:** con $13 casi todas las aperturas salen en el techo micro de 4× (D-641), y ese techo absorbe el cambio de probabilidad. El dimensionado calibrado sólo tendrá efecto medible fuera del régimen micro.
+- **Escudo de libro:** las 96 aperturas son cortos, y ninguno con OBI positivo. El escudo veta largos con presión vendedora y cortos con presión compradora, así que no había nada que vetar ni con el umbral antiguo ni con el nuevo.
+- **Escudo neuronal:** `ml_prob` en las trazas ronda 0,23–0,41. Ningún candidato cayó entre el umbral antiguo y el nuevo (0,50–0,54 para cortos).
+
+D-688 queda como corrección de principio sin efecto medido en esta muestra, no como mejora.
+
+## B.7 Promotores en vivo sin validez estadística (D-689)
+
+La re-evolución fuera de muestra sólo tiene sentido si un genoma validado no puede ser sustituido en producción por evidencia de minutos. No era así:
+
+| Promotor en `god_engine` | Condición para cambiar el genoma en vivo | Estado previo |
+|---|---|---|
+| Cosecha del Shadow Forest (cada 5000 mensajes) | Un mutante supera al control en más del 0,5 % del capital: **6,5 céntimos con $13**, sin mínimo de operaciones | Siempre activo |
+| `LiveEvolutionDaemon` | «Confianza bayesiana» `1 − (1/√N)/sharpe` con prior de arranque 0,60 y umbrales literales 0,50–0,75; con N < 10 pasa casi siempre. Además sobrescribe en vivo los umbrales de ML | Siempre activo |
+| `DarwinDaemon` | Aptitud propia `(capital − inicial)·(1 − DD)` | Sólo con variable de entorno |
+
+Todos pasan por la puerta del almacén, pero esa puerta comprueba sanidad (bounds y RR), no rendimiento.
+
+**Corrección:** con la filosofía de D-651 y `MAINNET_ARMED`, ningún proceso en vivo cambia umbrales ni genoma sin `TG_LIVE_GENOME_EVOLUTION_ARMED=1`. El detector de deriva, el kill-switch y el rollback post-promoción siguen siempre activos. Además, la cosecha exige que el universo ganador acumule 15 operaciones cerradas desde la última replantación (la regla de viabilidad de la aptitud unificada); el control no necesita muestra, porque sin operaciones su PnL es exactamente cero.
+
+## B.8 Re-evolución del genoma
+
+**Configuración.** Motor 498cc867, evaluador forense con el genoma fijado, 8 generaciones × 16 candidatos (128 evaluaciones de entrenamiento), élite 4, semilla = genoma de producción proyectado a sus bounds. Selección sólo por la aptitud de entrenamiento; validación de los cuatro finalistas y de la semilla. Duración: 30 minutos (10:27–10:57).
+
+**Trayectoria de la mejor aptitud de entrenamiento:** −0,0483 (G1) → −0,0305 → −0,0267 → −0,0267 → −0,0235 → −0,0235 → −0,0235 → −0,0166 (G8). Negativa en todas las generaciones.
+
+| Genoma | Entrenamiento | Validación | Aptitud combinada |
+|---|---|---|---|
+| Semilla (producción, proyectada) | −5,88 % · 55 ops · acierto 30,9 % · DD 6,38 % | −7,41 % · 40 ops · acierto 22,5 % · DD 7,82 % | −0,0774 |
+| Finalista 0 (mejor en entrenamiento) | −1,58 % · 17 ops · acierto 23,5 % · DD 1,58 % | −0,50 % · 7 ops · acierto 28,6 % · DD 1,25 % | −0,0167 |
+| Finalista 1 | −1,68 % · 16 ops · acierto 31,2 % · DD 3,33 % | +1,54 % · 2 ops · DD 0,03 % | −0,0200 |
+| Finalista 2 | −1,39 % · 24 ops · acierto 33,3 % · DD 4,76 % | −0,56 % · 13 ops · acierto 30,8 % · DD 2,38 % | −0,0204 |
+| Finalista 3 | −2,09 % · 31 ops · acierto 32,3 % · DD 2,92 % | −4,35 % · 26 ops · acierto 19,2 % · DD 4,35 % | −0,0246 |
+
+**Veredicto de la puerta: no se promueve.** El mejor finalista pierde en validación (−$0,065) y, además, no llega a las 15 operaciones.
+
+- **Ningún genoma gana fuera de muestra con una muestra válida.** El único finalista con validación positiva lo consigue con dos operaciones: eso no es evidencia.
+- **La aptitud mejora porque se opera menos, no porque se opere mejor.** El mejor finalista pasa de 55 a 17 operaciones en entrenamiento y de 40 a 7 en validación. Los dos mejores quedan en 17 y 16 operaciones, pegados al mínimo de viabilidad (15): la regla de D-654 impide la parálisis total, pero la búsqueda se acerca a ella todo lo que la regla permite.
+- **El acierto está por debajo del equilibrio.** Con RR 2,25, el SL de referencia de 50 pb y 10 pb de fricción de ida y vuelta, el equilibrio exige `w·(TP − f) ≥ (1 − w)·(SL + f)`, es decir, w ≳ 37 %. La semilla acierta el 30,9 % en entrenamiento y el 22,5 % en validación; ningún finalista con muestra válida supera el 33,3 %.
+- **La semilla no coincide exactamente con el walk-forward de 498cc867** (−5,88 % con 55 operaciones frente a −5,62 % con 56; −7,41 % frente a −7,14 %). El evolucionador proyecta cada genoma a sus bounds antes de evaluarlo, y el de producción tenía tres genes fuera de banda: la diferencia es el efecto de esa proyección.
+
+**Conclusión.** Con este motor y estos datos, 128 evaluaciones no encuentran ventaja. La pérdida no es un desajuste de genes que la evolución pueda corregir: está en la calidad de las entradas. El siguiente paso con sentido es de diseño —medir la ventaja propia de cada rama de entrada antes de evolucionar sus umbrales—, no más generaciones ni más población.
+
+**Promoción:** el evolucionador se ejecutó con `WF_PROMOTE=0`. Armar la promoción automática hacia demo y producción lo bloqueó el sistema de permisos de la sesión, porque cambiar el genoma de un sistema con capital real es decisión del propietario. En cualquier caso **ningún finalista supera la puerta**, así que no hay genoma que promover, y el almacén de genomas no cambió. Forzar una promoción saltándose la puerta no está justificado por ningún dato de esta adenda.
+
+## B.9 Pendiente registrado
+
+- **D-665:** el umbral causal 0,75 es prácticamente inerte, porque `is_aligned_breakout` es siempre verdadero con horizonte `Continuous` y el veto sólo salta con VPIN ≥ 0,88. Un umbral estadístico exige estimar en línea el tamaño efectivo del cubo del VPIN (volúmenes muy heterogéneos).
+- **D-690 (continuación):** calibrar la selección requiere resultados contrafactuales de señales rechazadas.
+- **D-652 (reclasificado):** de los once sitios de promoción, `EvolutionEngine::start_evolution_loop` (dos promotores, incluido el recocido «collapse») y `start_polars_evolver_daemon` **no tienen ningún llamador**: son código muerto, no promotores activos. En vivo quedan tres —cosecha del Shadow Forest, `LiveEvolutionDaemon` y `DarwinDaemon`—, los tres desarmados por defecto (D-689 y variable de entorno de Darwin). El resto son binarios que se ejecutan a mano. La aptitud única sigue pendiente para esos binarios.
+- **D-657:** ya no existe. La normalización logarítmica se sustituyó por `fitness::compute` al corregir D-653/D-654.
+- **D-605 (resuelto, f95e0054):** el arena es un bloque fijo `Box<[CoinArena; 30]>` bloqueado en RAM, y el núcleo dimensionaba once vectores por moneda con su propio literal 30. Ahora ambos leen `quantum_arena::state::MAX_COINS`. Mismo valor, sin cambio de comportamiento; la capacidad dinámica exigiría rediseñar el bloque contiguo del arena.
+- **D-633 (resuelto, f95e0054):** ningún camino abre ya los slots `scalp` y `swing`, así que su purga en la reconciliación (que liberaba margen sin contabilizar PnL) era inalcanzable. Se retira con una nota: un cierre futuro debe pasar por la contabilidad.
+- **D-612:** ya no existe. Los parsers de Binance sólo viven en `src/parsers.rs`, que es el que usa `god_engine`.
+- **D-674 (pendiente de decisión del propietario):** `src/simulation/` (7 ficheros, 595 líneas, uno vacío) **no se compila**: ningún `mod simulation` lo declara en `lib.rs`, `main.rs` ni en los binarios. Es código huérfano, no un duplicado activo. El borrado se intentó y lo bloqueó el sistema de permisos de la sesión; al tratarse de código ajeno a esta ola, queda para el propietario (`git rm -r src/simulation`).
+- **D-660–D-663** (concurrencia y perfil de compilación: `panic="abort"`, `lto`, `codegen-units`): cambian el comportamiento del binario de producción ante fallos y su rendimiento. Es una decisión del propietario y no se toca sin ella.
+- **D-665 (retenido a propósito):** con horizonte siempre `Continuous`, `is_aligned_breakout` se reduce a `VPIN < 0,88` y el veto causal a `VPIN ≥ 0,88`; el 0,75 y la banda [0,60; 0,90] son inertes, y el veto del auditor en 0,92 queda subsumido. La corrección con principio es la de la literatura del VPIN (Easley, López de Prado y O'Hara): comparar con la distribución del propio VPIN, actualizada por cubo cerrado y no por evento. **Cambia decisiones del motor**, y el genoma se estaba re-evolucionando contra 498cc867: introducirla ahora repetiría el error de fondo de esta ola, un genoma ajustado a un motor distinto del que opera. Queda para el siguiente lote de cambios de comportamiento, que debe cerrar con su propio walk-forward y re-evolución.
+- **T-1** y la aptitud única para los binarios manuales (D-652): sin cambios en esta fase.
+- **Test inestable bajo carga (nuevo, sin código D):** `position::tests::t4_apertura_y_cierre_concurrentes_nunca_dejan_posicion_fantasma` falló una vez mientras corrían en paralelo ocho procesos del forense: el hilo vigilante no llegó a observar la posición abierta y el test, por diseño, se niega a pasar sin haber ejercitado la carrera. Repetido cinco veces en solitario, pasó las cinco; volvió a fallar en la suite completa en paralelo, y la suite completa en serie (`--test-threads=1`) pasó 47 de 47 con los mismos cambios. La prueba A/B lo confirma: en 017c26c1, antes de D-605/D-633, la misma suite en paralelo falló también en 1 de 3 rondas con el mismo mensaje. No es una regresión de D-605/D-633 (no tocan `position.rs` y compilan a código idéntico), pero un test que depende de la planificación del sistema operativo debe sincronizar el arranque de sus hilos y reintentar de forma acotada hasta observar la carrera.
+
+## B.10 Optimizador (D-656, D-658)
+
+- **D-658:** `mutate_with_rng` pasaba a `mutate_curve` bandas literales [−9; −2] y [−10; −3], más estrechas que `TP_A_BOUNDS` y `SL_A_BOUNDS`, que se declaran fuente única. Toda mutación de un genoma con `a` en la franja inferior lo empujaba hacia arriba incluso con tasa cero. Ahora lee las cuatro constantes; un test fija que una mutación con tasa cero conserva un intercepto situado en la cota.
+- **D-656:** los slots 13–16 (anclas TP/SL) son vistas que `from_vector` sobrescribe con las curvas. Sin efecto en vivo: el único optimizador en espacio vectorial es el bucle muerto de D-652, y el evolucionador walk-forward muta genes con nombre y copia las anclas como vistas. Un test fija el contrato (alterar esos slots no cambia el genoma reconstruido) para que un optimizador vectorial futuro sepa que debe excluirlos.
