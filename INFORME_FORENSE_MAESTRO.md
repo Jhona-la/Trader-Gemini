@@ -47,7 +47,8 @@
     - [11. Módulo 8: Backtesting, Auditoría Interna y Gobernanza](#-11-módulo-8--backtesting-auditoría-interna-y-gobernanza)
     - [12. Hoja de Ruta de Rehabilitación L-5 a L-10](#-12-hoja-de-ruta-sistémica-de-rehabilitación--décima-ola)
 18. **[🔁 Décima Ola — Adenda de verificación forense: bisección, atribución y correcciones (D-677 a D-685)](#-décima-ola--adenda-de-verificación-forense-bisección-atribución-correcciones-y-rectificaciones-2026-09-11)** ← *(2026-09-11)*
-19. **[🧬 Décima Ola — Adenda de ejecución: núcleo de decisión, walk-forward y re-evolución (D-686 a D-690)](#-décima-ola--adenda-de-ejecución-núcleo-de-decisión-walk-forward-y-re-evolución-2026-09-11)** ← *más reciente (2026-09-11)*
+19. **[🧬 Décima Ola — Adenda de ejecución: núcleo de decisión, walk-forward y re-evolución (D-686 a D-690)](#-décima-ola--adenda-de-ejecución-núcleo-de-decisión-walk-forward-y-re-evolución-2026-09-11)** ← *(2026-09-11)*
+20. **[🔬 Décima Ola — Adenda de validez: ventaja de entrada, datos sintéticos del forense y datos reales (D-691 a D-694)](#-décima-ola--adenda-de-validez-ventaja-de-entrada-datos-sintéticos-del-forense-y-primera-corrida-sobre-datos-reales-2026-09-11)** ← *más reciente (2026-09-11)*
 
 ---
 
@@ -5915,3 +5916,174 @@ Todos pasan por la puerta del almacén, pero esa puerta comprueba sanidad (bound
 
 - **D-658:** `mutate_with_rng` pasaba a `mutate_curve` bandas literales [−9; −2] y [−10; −3], más estrechas que `TP_A_BOUNDS` y `SL_A_BOUNDS`, que se declaran fuente única. Toda mutación de un genoma con `a` en la franja inferior lo empujaba hacia arriba incluso con tasa cero. Ahora lee las cuatro constantes; un test fija que una mutación con tasa cero conserva un intercepto situado en la cota.
 - **D-656:** los slots 13–16 (anclas TP/SL) son vistas que `from_vector` sobrescribe con las curvas. Sin efecto en vivo: el único optimizador en espacio vectorial es el bucle muerto de D-652, y el evolucionador walk-forward muta genes con nombre y copia las anclas como vistas. Un test fija el contrato (alterar esos slots no cambia el genoma reconstruido) para que un optimizador vectorial futuro sepa que debe excluirlos.
+
+---
+
+# 🔬 DÉCIMA OLA — ADENDA DE VALIDEZ: VENTAJA DE ENTRADA, DATOS SINTÉTICOS DEL FORENSE Y PRIMERA CORRIDA SOBRE DATOS REALES (2026-09-11)
+
+> La adenda de ejecución terminó con una recomendación: medir la ventaja propia
+> de cada rama de entrada antes de volver a evolucionar. Esta adenda registra
+> esa medición y lo que destapó: **el fichero de datos sobre el que se midió toda
+> la Décima Ola no son ticks, sino velas de un minuto expandidas a cuatro puntos
+> por un generador antiguo que ve el cierre futuro.** Nada de lo anterior se
+> sustituye; se acota su alcance.
+
+## C.1 Ventaja de entrada por rama
+
+**Método** (`edge_audit.py`, sólo lectura). Para cada apertura del forense se
+mide el retorno logarítmico futuro del precio medio a 1 min, 5 min, 15 min, 1 h,
+4 h y 12 h, con el signo de la dirección operada, y se compara con la deriva:
+el mismo retorno para entradas en la misma dirección tomadas cada minuto dentro
+de la misma ventana. Se miden tres corridas del walk-forward: C0 (498cc867,
+consenso contenido), L0 (3f484361, consenso activo) y V0 (16f37ccd, consenso
+activo).
+
+**Deriva del mercado.** Entrenamiento −24,66 % (diciembre 2025 – marzo 2026);
+validación +4,26 %. A horizonte de 4 h la deriva es de −3,3 pb y +1,0 pb.
+
+| Rama | Corrida · ventana | n | Exceso 1 min | Exceso 15 min | Exceso 1 h | Exceso 4 h | Exceso 12 h |
+|---|---|---|---|---|---|---|---|
+| 11 | C0 · entrenamiento | 54 | −1,3 pb (t −2,19) | −1,7 (t −0,85) | +3,0 (t +0,65) | +19,0 (t +1,19) | +32,7 (t +1,41) |
+| 11 | C0 · validación | 39 | −1,2 (t −1,44) | −0,4 (t −0,14) | +3,0 (t +0,57) | +8,9 (t +0,85) | −0,6 (t −0,03) |
+| 11 | L0 · validación | 35 | −1,9 (t −2,14) | −0,3 (t −0,10) | +1,9 (t +0,39) | +1,9 (t +0,17) | −16,7 (t −0,87) |
+| 14 | L0 · entrenamiento | 16 | −6,3 (t −1,33) | −29,1 (t −1,60) | −37,4 (t −1,15) | −61,3 (t −1,26) | −145,9 (t −1,76) |
+| 14 | V0 · entrenamiento | 21 | −5,4 (t −1,45) | −30,2 (t −2,01) | −38,2 (t −1,49) | −51,3 (t −1,35) | −162,7 (t −2,54) |
+
+- **Rama 11** (la única que opera en el motor actual): en su horizonte real de tenencia (mediana 2–2,7 h) el exceso ronda +3 a +9 pb, sin significación y por debajo de los 10 pb de fricción. Al minuto de entrar el precio va 1–2 pb en contra, con t ≈ −2 en tres de seis muestras. La sección C.2 muestra que ese minuto adverso es un artefacto de los datos.
+- **Rama 14** (consenso, contenida en 9b48fd4f): anti-señal en entrenamiento, −21 a −30 pb a 5–15 min y −146 a −163 pb a 12 h, con acierto del 24–33 %. Confirma con otra medida la contención de D-685. En validación sólo hay 4–5 operaciones.
+- **Rama 8:** 1–3 operaciones por ventana; sin inferencia posible.
+- **Dirección:** un único largo en unas 140 operaciones, también en validación, donde BTC sube.
+
+Límites: los horizontes largos se solapan entre operaciones consecutivas (t optimista), y sólo se miden las entradas ejecutadas; sin un registro de las señales rechazadas no puede medirse la selección completa (D-690).
+
+## C.2 D-691 (nuevo, S0 metodológico) — El forense no es tick a tick: velas expandidas por un generador no causal
+
+**Lo que dice el forense de sí mismo:** «Simulación Forense (tick-by-tick, idéntico a producción)».
+
+**Lo que contiene `data/BTCUSDT_ticks.bin`** (1 048 320 registros, sin cabecera, fechado el 24 de agosto):
+
+- Cada minuto tiene exactamente cuatro registros, en los segundos :00, :15, :35 y :55: apertura, un extremo, el extremo opuesto y cierre. 1 048 320 / 4 = 262 080 minutos ≈ 182 días.
+- **El spread es el rango completo de la vela** (`spread = high − low`; razón spread/rango = 1,0 en la mediana): 5,1 pb de mediana, 14,8 pb en el p90 y 34,7 pb en el p99. El spread real de BTCUSDT perpetuo es de un tick (~0,01 pb). El forense añade además medio spread al precio de entrada, de modo que cada pierna paga un rango completo de la vela.
+- **El OBI toma cinco valores** (0 en la mitad de los registros, ±0,3 y ±0,5), con el patrón exacto [0, s, 0, s] en cada minuto.
+- **El signo del OBI a los 15 segundos coincide al 100 % con el signo de cierre − apertura** del minuto: el fichero revela en :15 una dirección que sólo se conoce en :55. Es una fuga de información de 40 segundos. No llega al minuto siguiente (48,5 % de coincidencia).
+- **En :15 el precio ya está en el extremo que va con ese signo, y en :35 toca siempre el opuesto.** Las entradas del motor exigen OBI alineado con la dirección, así que un corto con OBI negativo entra exactamente en el mínimo del minuto. Ese es el −1 a −2 pb al minuto de C.1.
+
+**Origen.** `src/bin/parquet_to_bin.rs` expande velas de un minuto en cuatro subticks. Su versión actual elige el primer extremo con la apertura previa («causalidad estricta»), usa un desequilibrio de ±15 % y escribe la cabecera `TGMTICK1`. **El fichero en `data/` no tiene cabecera, su OBI es ±0,3/±0,5 y su signo es el del cierre futuro: lo generó una versión anterior, no causal, y nunca se regeneró.** Los mismos cinco ficheros de 41 932 800 bytes existen para BNB, ETH, SOL y XRP.
+
+**Consecuencias.**
+- Toda medición forense de la Décima Ola —bisección, etapas, walk-forward y re-evolución— está condicionada a este dataset.
+- Los componentes que dependen de la microestructura (OBI y su ruido, OFI, CVD, Hawkes, VPIN, deslizamiento por latencia) reciben entradas sintéticas.
+- Los costes están sobrestimados: un rango de vela completo por pierna.
+- El escudo de libro de D-688 no puede dispararse con estos datos: su umbral es z95·σ(OBI) ≈ 1,96 × 0,29 ≈ 0,57, por encima del máximo |OBI| de 0,5.
+- La conclusión «el motor no tiene ventaja» sigue siendo cierta **para estos datos**. No es transferible a producción sin repetirla sobre datos reales.
+- El modelo neuronal sí es el de producción: `models/DarkAlpha_BTCUSDT.json` tiene la misma huella SHA-256 (`6ab785f5…`) en el repositorio y en el worktree forense.
+
+**Datos reales disponibles.** `data/BTCUSDT_ticks_REAL.bin` (9 de septiembre, cabecera `TGMTICK1`) contiene 34 057 419 aggTrades reales de BTCUSDT perpetuo, del 1 al 31 de julio de 2026. Es un periodo posterior a todo el dataset sintético, así que queda fuera de muestra. Precio y tiempo son reales. No hay libro: las cantidades son un pseudolibro derivado del lado agresor (`is_buyer_maker`) y el spread está modelado en 1 pb fijo. **El forense no podía leerlo:** mapeaba registros desde el byte 0 sin saltar la cabecera, mientras que `backtest_engine::tick_replayer` sí la reconoce. **Corregido en 409bf785:** el forense detecta la cabecera con la misma constante, valida la alineación, desplaza el mapeo e imprime qué formato leyó («versionado TGMTICK1» o «legado sin cabecera (velas expandidas, ver D-691)»).
+
+**Instrumentación del embudo por dirección** (sólo telemetría): 051f3be5 (fusión bayesiana, consenso tensorial y gate de la rama 11), 00366fdf (vetos por escudo, rechazos del risk-engine y del consejo) y 341891a5 (descomposición de `ml_prob`: base del ensamble, residuo online, bosque, red y error de entrenamiento del residuo). El forense imprime las líneas `DIRECTION_DIAG` tras `FORENSIC_JSON`. El walk-forward sobre 051f3be5 reprodujo exactamente el capital final de C0 (12,269310 y 12,071426).
+
+## C.3 Embudo de entrada por dirección
+
+**Por qué casi no hay largos.** Las compuertas del núcleo están escritas en espejo, así que el sesgo tenía que venir de sus entradas. La instrumentación (051f3be5 y 00366fdf) lo localiza sin inferencias. Ambos controles reprodujeron exactamente el capital final de C0.
+
+**Entradas de la fusión bayesiana** (entrenamiento · validación):
+
+- `composite_score ≥ 0` en el 46,6 % · 46,5 % de 1,23 M · 0,81 M evaluaciones: casi simétrico.
+- El consenso tensorial propone **más largos que cortos**: 405 875 frente a 320 064 · 262 570 frente a 213 536.
+- **`ml_prob ≥ 0,5` sólo en el 0,5 % · 0,3 %** de las evaluaciones. La masa está entre 0,2 y 0,4, y la contribución media de la red es el único término negativo (−0,028 · −0,030; micro +0,019 · +0,020; tensor +0,002).
+
+**Gate de la rama 11:** pasan más largos que cortos, 574 frente a 496 · 192 frente a 219. La condición que más veces es la única en fallar es `composite_score` (2 755 largos · 1 741 cortos en entrenamiento), seguida de la sobreextensión y del momentum adverso, con cifras parecidas en ambas direcciones.
+
+**Embudo unificado, sin posición abierta** (validación):
+
+| Etapa | Largos vetados | Cortos vetados |
+|---|---|---|
+| Intenciones que entran | 130 | 47 |
+| Escudo macro (D-624) | 0 | 0 |
+| Acondicionamiento espectral (X-016) | 0 | 0 |
+| Anti-whiplash (D-463) | 0 | 0 |
+| Convicción bayesiana (D-472) | 2 | 4 |
+| Racha direccional (D-499) | 0 | 2 |
+| Escudo de libro L2 (D-475/D-688) | 0 | 0 |
+| **Escudo neuronal (D-473/D-688)** | **128** | 1 |
+| Superan el embudo | 0 | 40 |
+| Rechazo del risk-engine · veto del consejo | 0 · 0 | 0 · 0 |
+| **Aperturas** | **0** | **40** |
+
+**Entrenamiento:** entran 180 largos y 165 cortos. El escudo neuronal veta 158 largos y 0 cortos. La convicción bayesiana veta 16 largos y 87 cortos. Superan el embudo 6 largos y 78 cortos, y el risk-engine rechaza los 6 largos y 22 cortos. Aperturas: **0 largos**, 56 cortos. Ni el consejo, ni el escudo macro, ni el anti-whiplash, ni el escudo L2 vetaron nada en ninguna ventana.
+
+**D-692 (nuevo, S0) — El escudo neuronal convierte el motor en sólo-corto.** El motor propone comprar casi tres veces más a menudo que vender en una ventana en la que BTC sube, y el escudo neuronal veta el 98,5 % de esas intenciones. La causa es que `ml_prob` queda por debajo de ½ en el 99,5 % de las evaluaciones. El escudo veta un largo con `ml_prob < ½` (antes de D-688, con `< 0,46`, que también quedaba por encima de esa masa): **el sesgo es anterior a esta ola.** `ml_prob` es la combinación del ensamble (bosque y red), más un residuo online acotado en ±0,15, más el sesgo spot (0 sin datos spot). Queda por separar cuál de esos términos lo produce, y comprobar si persiste con datos reales (C.4).
+
+**Mecanismo en el código.** El residuo online (`metacortex_engine::OnlineLearningModule`) arranca con pesos nulos y se actualiza al cerrar cada operación con el error `realized_ret − ml_at_entry`:
+
+- `realized_ret = net_trade_pnl / notional` es un retorno fraccional, del orden de ±0,005.
+- `ml_at_entry` es el `ml_prob` guardado al abrir: una probabilidad de 0,2–0,5.
+
+Su diferencia es casi siempre del orden de −0,3, gane o pierda la operación. El paso de Kalman mueve los pesos con el signo de ese error, amplificado por un momentum de 0,9, así que la predicción del residuo tiende al suelo de −0,15 con el que el núcleo la suma a `ml_prob`. Una base del ensamble cercana a 0,45–0,5 queda entonces en 0,30–0,35, justo donde está la masa observada. **Es un error de unidades: se resta una probabilidad a un retorno.**
+
+**Confirmación con datos** (341891a5, fichero sintético, entrenamiento · validación):
+
+| Componente de `ml_prob` | Entrenamiento | Validación |
+|---|---|---|
+| Residuo online en el suelo de −0,15 | **99,4 %** (medio −0,1491) | **99,9 %** (medio −0,1498) |
+| Error de entrenamiento del residuo < 0 | **55 de 55 cierres** (medio −0,302) | **40 de 40** (medio −0,303) |
+| Base del ensamble ≥ 0,5 | 34,2 % | 16,4 % |
+| Bosque ≥ 0,5 | 33,0 % | 8,9 % |
+| Red ≥ 0,5 | 94,2 %, casi toda la masa ≥ 0,9 | 89,5 %, casi toda ≥ 0,9 |
+| `ml_prob` ≥ 0,5 | 0,5 % | 0,3 % |
+
+El residuo vale 0 hasta el primer cierre y desde entonces queda en su suelo. **Hay sesgo en tres capas:** el residuo resta 0,15 a todo; el bosque es bajista en estos datos, sobre todo en validación; y la red está saturada cerca de 1. Pero sólo el residuo lleva `ml_prob` por debajo de ½ casi siempre.
+
+**Corregir sólo las unidades no basta.** Una simulación de la misma aritmética de Kalman (12 rasgos correlacionados, momentum 0,9, R ≈ 0,011, 400 cierres equiprobables) reproduce la saturación con el error de unidades mezcladas: predicción −100, suelo el 99,8 % del tiempo. Con el error en unidades de probabilidad la predicción oscila con amplitud de hasta 11,7, muy por encima de la cota de ±0,15, y pasa el 44 % del tiempo en el suelo. **D-693 (nuevo, S0, c97d9944):** el residuo sale de la probabilidad que consumen las decisiones (`calibration::compose_ml_prob`). Se sigue calculando para la telemetría, y reincorporarlo exige un estimador que converja y su propia validación.
+
+**Reproducibilidad del forense.** El control de 341891a5 se corrió en el repositorio principal y no reprodujo el capital de C0 (12,235236 y 12,037029, 55 operaciones en entrenamiento). El binario de 00366fdf, que en el worktree daba exactamente C0, da también 12,235236 y 55 operaciones cuando se ejecuta desde el repositorio principal. La telemetría no cambia decisiones; **el forense depende de estado no versionado del directorio desde el que se ejecuta.** Toda comparación debe hacerse en el worktree limpio.
+
+**D-694 (nuevo, S2 metodológico) — La física del forense cambia según haya credenciales en `.env`.** La comparación de arranque de los dos logs localiza la diferencia:
+
+- En el worktree, sin `.env`, el forense imprime «Modo Offline / Sin claves API: Usando comisiones estándar VIP0 (Maker 0.02%, Taker 0.05%)».
+- En el repositorio principal lee las claves de `.env` y llama a `data_pipeline::api_client::get_commission_rate`, una petición GET firmada a `/fapi/v1/commissionRate`. Usa las comisiones reales de la cuenta: «Maker 0.0200%, Taker 0.0400%».
+
+Un mismo binario da resultados distintos según el directorio desde el que se ejecute. Todas las mediciones de la Décima Ola se hicieron en el worktree, con taker 0,05 %, y sobrestiman en 1 pb por pierna la comisión real de la cuenta. Un backtest de validación debería fijar sus costes de forma explícita, y no depender de la presencia de credenciales ni de la red.
+
+**Registro de actuación:** los dos controles de esta adenda ejecutados desde el repositorio principal (15:49 y 15:54 del 11 de septiembre) hicieron esa consulta autenticada con las claves de la cuenta. Es un endpoint de sólo lectura, que devuelve las comisiones del símbolo, y ninguno de los dos procesos consultó el saldo ni envió órdenes. Fue un error de método: el forense debe ejecutarse sólo desde el worktree sin credenciales.
+
+## C.4 Medición de D-693 (walk-forward sintético)
+
+Worktree limpio `tg_d693` en c97d9944, sin `.env` (comisiones VIP0 offline), con los mismos datos y modelos que el de C0. La primera apertura es idéntica a la de C0, porque el residuo vale 0 hasta el primer cierre: el entorno es equivalente.
+
+| Medida | C0 · entrenamiento | D-693 · entrenamiento | C0 · validación | D-693 · validación |
+|---|---|---|---|---|
+| NET ROI | −5,62 % | −5,57 % | −7,14 % | **−3,81 %** |
+| Operaciones · ganadoras | 56 · 19 | 35 · 10 | 40 · 10 | 31 · 8 |
+| Drawdown máximo | 6,73 % | 7,13 % | 7,56 % | 4,27 % |
+| Aptitud | −0,0704 | −0,0714 | −0,0900 | −0,0439 |
+| Largos · cortos abiertos | 0 · 56 | **11 · 24** | 0 · 40 | **7 · 24** |
+| `ml_prob ≥ 0,5` | 0,5 % | 34,2 % | 0,3 % | 16,4 % |
+| Largos vetados por el escudo neuronal | 158 de 180 | 668 de 697 | 128 de 130 | 491 de 502 |
+| Cortos vetados por el escudo neuronal | 0 | 49 | 1 | 100 |
+
+Aptitud combinada: −0,0756 (C0) → −0,0741 (D-693). Todas las operaciones de D-693 son de la rama 11.
+
+- **El bloqueo a corto desaparece:** 18 largos entre las dos ventanas, frente a 0.
+- **El escudo neuronal sigue vetando más del 95 % de los largos,** y ahora también cortos. Sin el residuo, `ml_prob` es la base del ensamble, que sólo es ≥ 0,5 el 34 % y el 16 % del tiempo. Queda sesgo de modelo (bosque bajista en estos datos, red saturada cerca de 1). No es un error de código: exige reentrenar o condicionar el veto a una habilidad medida del modelo.
+- **Resultado:** entrenamiento prácticamente igual, con más drawdown, y validación mejor. **Sigue perdiendo en ambas ventanas.**
+- **Regla de decisión:** con la regla fijada para las variantes de D-685 (elegir por aptitud de entrenamiento), D-693 no se elegiría: −0,0714 frente a −0,0704. Se adopta igualmente porque corrige un error demostrado, no por su resultado. Además, la medición es sobre datos sintéticos (D-691): la que cuenta es la de datos reales.
+
+## C.5 Primera corrida sobre datos reales
+
+**En curso al anexar esta adenda.** Motor 00366fdf (instrumentado, anterior a D-693), genoma de producción, worktree sin credenciales y `FORENSIC_DATA_PATH` sobre `BTCUSDT_ticks_REAL.bin`, en dos mitades en paralelo:
+
+- 1–15 de julio de 2026: 17 028 709 aggTrades, de 58 602 a 63 212 USD (+7,9 %).
+- 16–31 de julio de 2026: 17 028 710 aggTrades, de 63 212 a 62 857 USD (−0,6 %).
+
+El forense leyó el formato «versionado TGMTICK1». Con el 20 % recorrido llevaba 9 operaciones cerradas en cada mitad. El calentamiento son 15 000 registros, pensados para instantáneas de 20 s. Con aggTrades cubren minutos, así que las medias largas terminan de calentar dentro de la corrida.
+
+Los resultados de esta corrida, y los de D-693 sobre los mismos datos, se anexarán a continuación de esta adenda.
+
+## C.6 Pendiente
+
+- **Datos reales (C.5):** resultados del motor actual y de D-693 sobre julio de 2026.
+- **Sesgo de modelo que queda tras D-693:** el escudo neuronal veta más del 95 % de los largos incluso sin residuo. Hay dos opciones con fundamento: condicionar el veto a la habilidad medida del ensamble en línea (Brier frente a la tasa base), o reentrenar los modelos con datos reales causales. Cambia decisiones, así que necesita su propio walk-forward.
+- **D-691:** regenerar o retirar los ficheros sintéticos (también BNB, ETH, SOL y XRP) y ampliar los datos reales a más meses.
+- **D-694:** fijar explícitamente los costes del forense, sin depender de credenciales ni de la red.
+- **D-665, D-674 y el perfil de compilación:** siguen como en la adenda de ejecución.
