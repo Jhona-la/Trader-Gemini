@@ -180,111 +180,137 @@ fn main() {
     println!("   muestras≤{} horizonte={}ms stride={}ms árboles≤{} lr={} depth={} λ={}",
              max_samples, horizon_ms, stride_ms, n_rounds, lr, max_depth, lambda);
 
-    // ── 1. Cargar ticks ──────────────────────────────────────────────────
-    let file = File::open(&in_path).unwrap_or_else(|e| {
-        eprintln!("❌ no pude abrir {}: {}", in_path, e);
-        std::process::exit(1);
-    });
-    let mmap = unsafe { memmap2::MmapOptions::new().map(&file) }.unwrap();
-    let header_off = if mmap.len() >= 8 && &mmap[..8] == b"TGMTICK1" { 8usize } else { 0 };
-    let sz = std::mem::size_of::<BinTick>();
-    let n_total = (mmap.len() - header_off) / sz;
-    if n_total < 50_000 {
-        eprintln!("❌ datos insuficientes: {} ticks", n_total);
-        std::process::exit(1);
-    }
-    let ptr = unsafe { mmap.as_ptr().add(header_off) } as *const BinTick;
-    let raw = unsafe { std::slice::from_raw_parts(ptr, n_total) };
-    println!("   {} ticks crudos", n_total);
-
-    // ── 2. Features + etiquetas (misma secuencia que la inferencia) ──────
-    let last_ts = raw[n_total - 1].ts;
-    // El stride se adapta si el archivo cubriera tan poco calendario que
-    // las muestras no alczan max_samples (nunca menor a 1s de separación).
-    let span_ms = last_ts.saturating_sub(raw[0].ts);
-    let stride_ms_eff = if span_ms / stride_ms.saturating_sub(0).max(1) < (max_samples as u64) {
-        (span_ms / (max_samples as u64)).max(1_000)
-    } else {
-        stride_ms
-    };
-    println!("   span {:.1} días · stride efectivo {}ms", span_ms as f64 / 86_400_000.0, stride_ms_eff);
-    let mut engine = StatefulEngine::new();
-    let mut feats: Vec<Vec<f32>> = Vec::new();
-    let mut labels: Vec<f64> = Vec::new();
-    let mut neutrals = 0usize;
-    let tp_pct = 0.0036;
-    let sl_pct = 0.0018;
-    let mut next_sample_ts: u64 = 0;
-    let mut warmup = 0usize;
-    for i in 0..n_total {
-        let t = &raw[i];
-        if t.bid <= 0.0 || t.ask <= 0.0 || t.bid > t.ask || t.ts == 0 {
-            continue;
+    // ── 1+2. Muestras: features+etiquetas desde ticks (reutilizable) ────
+    let build = |path: &str| -> (Vec<Vec<f32>>, Vec<f64>) {
+        let file = File::open(path).unwrap_or_else(|e| {
+            eprintln!("❌ no pude abrir {}: {}", path, e);
+            std::process::exit(1);
+        });
+        let mmap = unsafe { memmap2::MmapOptions::new().map(&file) }.unwrap();
+        let header_off = if mmap.len() >= 8 && &mmap[..8] == b"TGMTICK1" { 8usize } else { 0 };
+        let sz = std::mem::size_of::<BinTick>();
+        let n_total = (mmap.len() - header_off) / sz;
+        if n_total < 50_000 {
+            eprintln!("❌ datos insuficientes: {} ticks ({})", n_total, path);
+            std::process::exit(1);
         }
-        let mid = (t.bid + t.ask) / 2.0;
-        let vol = t.bq + t.aq;
-        let pseudo_maker = t.bq > t.aq;
-        engine.process_tick(mid, vol, t.ts);
-        engine.update_trade_flow(vol, pseudo_maker);
-        let _ = engine.update_ofi(t.bid, t.ask, t.bq, t.aq);
-        warmup += 1;
-        if warmup >= 100 && t.ts >= next_sample_ts && t.ts + horizon_ms <= last_ts {
-            next_sample_ts = t.ts + stride_ms_eff;
-            let sf = engine.get_swing_features();
-            if sf.iter().all(|f| f.is_finite()) {
-                // Triple barrera por TIEMPO DE RELOJ dentro de horizon_ms
-                let deadline = t.ts + horizon_ms;
-                let long_tp = mid * (1.0 + tp_pct);
-                let long_sl = mid * (1.0 - sl_pct);
-                let mut label = 0.5f64;
-                'barrier: for f in (i + 1)..n_total {
-                    let ft = &raw[f];
-                    if ft.ts > deadline {
-                        break 'barrier;
+        let ptr = unsafe { mmap.as_ptr().add(header_off) } as *const BinTick;
+        let raw = unsafe { std::slice::from_raw_parts(ptr, n_total) };
+        println!("   [{}] {} ticks crudos", path, n_total);
+
+        let last_ts = raw[n_total - 1].ts;
+        let span_ms = last_ts.saturating_sub(raw[0].ts);
+        let stride_ms_eff = if stride_ms.max(1) as u64 * (max_samples as u64) < span_ms {
+            stride_ms
+        } else {
+            (span_ms / (max_samples as u64)).max(1_000)
+        };
+        println!("   [{}] span {:.1} días · stride efectivo {}ms", path,
+                 span_ms as f64 / 86_400_000.0, stride_ms_eff);
+        let mut engine = StatefulEngine::new();
+        let mut feats: Vec<Vec<f32>> = Vec::new();
+        let mut labels: Vec<f64> = Vec::new();
+        let mut neutrals = 0usize;
+        let tp_pct = 0.0036;
+        let sl_pct = 0.0018;
+        let mut next_sample_ts: u64 = 0;
+        let mut warmup = 0usize;
+        for i in 0..n_total {
+            let t = &raw[i];
+            if t.bid <= 0.0 || t.ask <= 0.0 || t.bid > t.ask || t.ts == 0 {
+                continue;
+            }
+            let mid = (t.bid + t.ask) / 2.0;
+            let vol = t.bq + t.aq;
+            let pseudo_maker = t.bq > t.aq;
+            engine.process_tick(mid, vol, t.ts);
+            engine.update_trade_flow(vol, pseudo_maker);
+            let _ = engine.update_ofi(t.bid, t.ask, t.bq, t.aq);
+            warmup += 1;
+            if warmup >= 100 && t.ts >= next_sample_ts && t.ts + horizon_ms <= last_ts {
+                next_sample_ts = t.ts + stride_ms_eff;
+                // B2.3: vector 44D = swing(34) ⊕ espectral(10) — IDÉNTICO al
+                // input de inferencia en god-engine-core/lib.rs. El bloque
+                // espectral (FFT, Hurst multifractal, momentum de EMAs de
+                // kline) responde al resultado "34 features sin edge".
+                let sf = engine.get_swing_features();
+                let sp = engine.get_spectral_ml_features();
+                let mut full = [0f32; 44];
+                full[..34].copy_from_slice(&sf);
+                full[34..].copy_from_slice(&sp);
+                if full.iter().all(|f| f.is_finite()) {
+                    // Triple barrera por TIEMPO DE RELOJ dentro de horizon_ms
+                    let deadline = t.ts + horizon_ms;
+                    let long_tp = mid * (1.0 + tp_pct);
+                    let long_sl = mid * (1.0 - sl_pct);
+                    let mut label = 0.5f64;
+                    'barrier: for f in (i + 1)..n_total {
+                        let ft = &raw[f];
+                        if ft.ts > deadline {
+                            break 'barrier;
+                        }
+                        if ft.bid <= 0.0 || ft.ask <= 0.0 {
+                            continue;
+                        }
+                        let fut_mid = (ft.bid + ft.ask) / 2.0;
+                        if fut_mid <= long_sl {
+                            label = 0.0;
+                            break 'barrier;
+                        }
+                        if fut_mid >= mid * (1.0 + sl_pct) {
+                            label = 1.0; // la hipótesis corta fracasó primero
+                            break 'barrier;
+                        }
+                        if fut_mid >= long_tp {
+                            label = 1.0;
+                            break 'barrier;
+                        }
+                        if fut_mid <= mid * (1.0 - tp_pct) {
+                            label = 0.0;
+                            break 'barrier;
+                        }
                     }
-                    if ft.bid <= 0.0 || ft.ask <= 0.0 {
-                        continue;
+                    if (label - 0.5).abs() < 1e-9 {
+                        neutrals += 1;
+                    } else {
+                        feats.push(full.to_vec());
+                        labels.push(label);
                     }
-                    let fut_mid = (ft.bid + ft.ask) / 2.0;
-                    if fut_mid <= long_sl {
-                        label = 0.0;
-                        break 'barrier;
-                    }
-                    if fut_mid >= mid * (1.0 + sl_pct) {
-                        label = 1.0; // la hipótesis corta fracasó primero
-                        break 'barrier;
-                    }
-                    if fut_mid >= long_tp {
-                        label = 1.0;
-                        break 'barrier;
-                    }
-                    if fut_mid <= mid * (1.0 - tp_pct) {
-                        label = 0.0;
-                        break 'barrier;
-                    }
-                }
-                if (label - 0.5).abs() < 1e-9 {
-                    neutrals += 1;
-                } else {
-                    feats.push(sf.to_vec());
-                    labels.push(label);
                 }
             }
         }
-    }
+        let n = labels.len();
+        if n < 5_000 {
+            eprintln!("❌ muestras decisivas insuficientes: {} (+{} neutros)", n, neutrals);
+            std::process::exit(1);
+        }
+        let pos_rate = labels.iter().filter(|&&y| y > 0.5).count() as f64 / n as f64;
+        println!("   [{}] {} muestras decisivas ({} neutros) · largo {:.1}%",
+                 path, n, neutrals, pos_rate * 100.0);
+        (feats, labels)
+    };
+    let (feats, labels) = build(&in_path);
     let n = labels.len();
-    if n < 5_000 {
-        eprintln!("❌ muestras decisivas insuficientes: {} (+{} neutros)", n, neutrals);
-        std::process::exit(1);
-    }
     let pos_rate = labels.iter().filter(|&&y| y > 0.5).count() as f64 / n as f64;
-    println!("   {} muestras decisivas ({} neutros descartados, stride {}) · largo {:.1}%",
-             n, neutrals, stride_ms_eff, pos_rate * 100.0);
 
-    // ── 3. Split temporal 80/20 ───────────────────────────────────────────
-    let split = n * 8 / 10;
-    let (tr_feats, va_feats) = (&feats[..split], &feats[split..]);
-    let (tr_y, va_y) = (&labels[..split], &labels[split..]);
+    // ── 3. Split: temporal 80/20, o CRUZADO por archivo con --val-in ────
+    // El split cruzado (train AGO → val SEP) es la validación MÁS dura y
+    // honesta disponible: el edge debe sobrevivir un mes de mercado nuevo.
+    let val_in = arg("--val-in", "");
+    let (tr_feats, va_feats, tr_y, va_y): (Vec<Vec<f32>>, Vec<Vec<f32>>, Vec<f64>, Vec<f64>) =
+        if val_in.is_empty() {
+            let split = n * 8 / 10;
+            (
+                feats[..split].to_vec(),
+                feats[split..].to_vec(),
+                labels[..split].to_vec(),
+                labels[split..].to_vec(),
+            )
+        } else {
+            let (vf, vl) = build(&val_in);
+            (feats, vf, labels, vl)
+        };
+    let split = tr_y.len();
 
     // ── 4. GBDT con early stopping ───────────────────────────────────────
     let p_bar = tr_y.iter().sum::<f64>() / tr_y.len() as f64;
@@ -301,7 +327,7 @@ fn main() {
             / ys.len() as f64
     };
     let mut f_train = vec![init_score as f64; split];
-    let mut f_val = vec![init_score as f64; n - split];
+    let mut f_val = vec![init_score as f64; va_y.len()];
     let mut trees: Vec<Vec<TreeNode>> = Vec::new();
     let mut best_val = f64::INFINITY;
     let mut best_rounds = 0usize;
@@ -344,7 +370,7 @@ fn main() {
         }
         trees.push(nodes);
         if round % 5 == 0 || round == n_rounds - 1 {
-            let vl = logloss(va_feats, va_y, &f_val);
+            let vl = logloss(&va_feats, &va_y, &f_val);
             if vl + 1e-6 < best_val {
                 best_val = vl;
                 best_rounds = trees.len();
@@ -352,7 +378,7 @@ fn main() {
             } else {
                 since_improve += 5;
             }
-            let tl = logloss(tr_feats, tr_y, &f_train);
+            let tl = logloss(&tr_feats, &tr_y, &f_train);
             println!("   ronda {:3} train {:.5} · val {:.5} {}", round, tl, vl,
                      if since_improve == 0 { "★" } else { "" });
             if since_improve >= patience {
@@ -365,7 +391,7 @@ fn main() {
 
     // Baseline honesto: logloss de validación prediciendo la tasa base
     let base_pred = vec![init_score as f64; va_y.len()];
-    let baseline = logloss(va_feats, va_y, &base_pred);
+    let baseline = logloss(&va_feats, &va_y, &base_pred);
     // Varianza de predicción en val (el diagnóstico del forest congelado)
     let val_preds: Vec<f64> = va_feats.iter().zip(f_val.iter()).map(|(_, &f)| sigmoid(f)).collect();
     let mut sorted_p = val_preds.clone();

@@ -1565,7 +1565,15 @@ impl GodEngineCore {
             let mut diag_forest_p: Option<f64> = None;
             let mut diag_nn_p: Option<f64> = None;
             if let Some(f) = &active_forest {
-                if let Some(p) = f.predict(&swing_feats) {
+                // B2.3: el input del forest es swing(34) ⊕ espectral(10) —
+                // idéntico al de train_forest. Los árboles entrenados con el
+                // esquema viejo (splits <34) no se ven afectados; los nuevos
+                // pueden explotar el bloque espectral (F8: el espectro decide).
+                let mut forest_input = [0f32; 44];
+                forest_input[..34].copy_from_slice(&swing_feats);
+                forest_input[34..]
+                    .copy_from_slice(&self.feature_engines[coin_id].get_spectral_ml_features());
+                if let Some(p) = f.predict(&forest_input) {
                     diag_forest_p = Some(p as f64);
                     coin_ensemble.submit(crate::ensemble::ModelId::ScalpForest, p as f64);
                 }

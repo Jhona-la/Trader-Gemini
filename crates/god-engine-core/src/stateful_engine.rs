@@ -55,6 +55,17 @@ pub struct StatefulEngine {
     pub kline_ema_slow: f64,
     pub kline_ema_trend: f64,
     pub kline_ema_macro: f64,
+    /// B2.3 — bloque espectral publicado (antes calculado y descartado):
+    /// frecuencia dominante, potencia y centroide del FFT de 64 retornos;
+    /// Hurst multifractal en 3 escalas. + momentum multiescala vía las EMAs
+    /// de kline. Es el vector que el F8 dice que DECIDE, ahora alcanzable
+    /// por el entrenamiento (train_forest) y por la inferencia, idéntico.
+    pub spectral_bin: f32,
+    pub spectral_power: f32,
+    pub spectral_centroid: f32,
+    pub hurst_micro: f32,
+    pub hurst_meso: f32,
+    pub hurst_macro: f32,
     pub ml_prob_ewma: f64,
     pub ml_prob_var: f64,
     pub last_scalp_exit_tick: u64,
@@ -108,6 +119,12 @@ impl StatefulEngine {
             kline_ema_slow: 0.0,
             kline_ema_trend: 0.0,
             kline_ema_macro: 0.0,
+            spectral_bin: 0.0,
+            spectral_power: 0.0,
+            spectral_centroid: 0.0,
+            hurst_micro: 0.5,
+            hurst_meso: 0.5,
+            hurst_macro: 0.5,
             ml_prob_ewma: 0.0,
             ml_prob_var: 0.01,
             last_scalp_exit_tick: 0,
@@ -235,12 +252,21 @@ impl StatefulEngine {
             self.spectral.push(norm_return);
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
             if self.tick_count % 64 == 0 {
-                let (_dominant_bin, max_power, centroid) = self.spectral.analyze_spectrum();
+                let (dominant_bin, max_power, centroid) = self.spectral.analyze_spectrum();
                 if max_power > 0.0 && centroid.is_finite() {
                     self.a_t = self.a_t * 0.95 + (centroid * 0.001) * 0.05;
                 }
+                // B2.3: el espectro ya se calculaba aquí y se DESCARTABA
+                // (capacidad fantasma). Ahora se publica para el vector ML
+                // — mismas features en vivo y en entrenamiento (paridad 1:1).
+                self.spectral_bin = dominant_bin as f32;
+                self.spectral_power = max_power as f32;
+                self.spectral_centroid = centroid as f32;
             }
-            let (_h_mic, _h_mes, _h_mac, _score, _micro_p, _macro_p) = self.multifractal.update(price);
+            let (h_mic, h_mes, h_mac, _score, _micro_p, _macro_p) = self.multifractal.update(price);
+            self.hurst_micro = h_mic as f32;
+            self.hurst_meso = h_mes as f32;
+            self.hurst_macro = h_mac as f32;
             self.regime = MarketRegime::Continuous;
 
             // Tick-level instantaneous velocity & acceleration
@@ -550,6 +576,41 @@ impl StatefulEngine {
         }
     }
 
+    /// B2.3 — bloque espectral (10D) para el vector ML. Se concatena a las
+    /// 34 swing features TANTO en inferencia como en train_forest: la
+    /// directriz F8 (el espectro DECIDE) entra así al aprendizaje. Los
+    /// árboles existentes no se rompen: sus splits viven en índices <34 y
+    /// los nuevos árboles pueden usar 34..44.
+    ///
+    /// [0..3] FFT de 64 retornos: bin dominante /32, ln(1+potencia),
+    /// centroide /32 — frecuencia y energía del ciclo vivo.
+    /// [3..6] Hurst multifractal micro(10)/meso(25)/macro(50) — persistencia
+    /// por escala: >0.55 tendencial, <0.45 mean-reverting.
+    /// [6..10] momentum multiescala: ln(p/EMA_kline)×100 en 4 escalas
+    /// crecientes (posición del precio dentro de su tendencia por escala).
+    pub fn get_spectral_ml_features(&self) -> [f32; 10] {
+        let p = self.last_price;
+        let dev = |ema: f64| -> f32 {
+            if p > 0.0 && ema > 0.0 {
+                (((p / ema).ln() * 100.0) as f32).clamp(-20.0, 20.0)
+            } else {
+                0.0
+            }
+        };
+        [
+            (self.spectral_bin / 32.0).clamp(0.0, 1.0),
+            (1.0 + self.spectral_power as f64).ln() as f32,
+            (self.spectral_centroid / 32.0).clamp(0.0, 1.0),
+            self.hurst_micro.clamp(0.0, 1.0),
+            self.hurst_meso.clamp(0.0, 1.0),
+            self.hurst_macro.clamp(0.0, 1.0),
+            dev(self.kline_ema_fast),
+            dev(self.kline_ema_slow),
+            dev(self.kline_ema_trend),
+            dev(self.kline_ema_macro),
+        ]
+    }
+
     /// Retorna la pendiente relativa del micro-trend (Tick-level EMA 12 vs 26)
     #[inline(always)]
     pub fn get_micro_trend(&self) -> f64 {
@@ -715,6 +776,35 @@ impl Drop for StatefulEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// B2.3: el bloque espectral debe ser finito, estar en rango y VIVIR
+    /// (cambiar con ticks con estructura cíclica) — la paranoia nace del
+    /// diagnóstico "34 features congeladas sin edge".
+    #[test]
+    fn test_spectral_ml_features_finite_and_alive() {
+        let mut engine = StatefulEngine::new();
+        // Onda lenta + ruido: 8 minutos de ticks de 100ms con ciclo de 64s
+        let mut ts: u64 = 1_789_000_000_000;
+        for i in 0..4800 {
+            let phase = (i as f64) * 0.1; // ~6.28 rad cada 63 ticks
+            let price = 100.0 + (phase).sin() * 2.0;
+            engine.process_tick(price, 1.0, ts);
+            ts += 100;
+        }
+        let f = engine.get_spectral_ml_features();
+        assert_eq!(f.len(), 10);
+        for v in &f {
+            assert!(v.is_finite(), "feature espectral no finita: {:?}", f);
+        }
+        assert!((f[3] >= 0.0) && (f[3] <= 1.0), "hurst micro fuera de rango");
+        // El momentum multiescala debe haberse movido (EMAs de kline vivas):
+        // en el pico de la onda el precio supera su EMA macro.
+        assert!(
+            f[6].abs() + f[7].abs() + f[8].abs() + f[9].abs() > 1e-3,
+            "momentum multiescala muerto: {:?}",
+            f
+        );
+    }
 
     #[test]
     fn test_stateful_engine_reset_and_feature_extraction() {
