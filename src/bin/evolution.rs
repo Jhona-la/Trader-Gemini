@@ -521,13 +521,33 @@ fn evolve_main() {
     let _out_pnl_test = vec![0.0; test_len];
     let mut out_stats_test = [0.0; 10];
 
-    // X-006 (REHAB-2b): OOS sobre el MOTOR HONESTO — los ticks reales
-    // posteriores al corte temporal, jamás tocados por la selección.
+    // X-006 (REHAB-2b): OOS sobre el MOTOR HONESTO con CONTEXTO IS —
+    // el walk-forward estándar usa el final del training como warmup
+    // para que Hurst/EMAs/espectro estén calientes al iniciar el test.
+    // Sin esto: OOS arranca frío → Hurst=0.5 → price-action muerto → 0 trades.
+    let context_ticks: Vec<backtest_engine::booktick_replay::ReplayTick> = ticks
+        [train_len.saturating_sub(50_000)..train_len]
+        .iter()
+        .map(|t| backtest_engine::booktick_replay::ReplayTick {
+            ts_ms: t.timestamp,
+            bid: t.bid_price,
+            ask: t.ask_price,
+            bid_qty: t.bid_qty,
+            ask_qty: t.ask_qty,
+        })
+        .collect();
+    let mut oos_with_context = context_ticks;
+    oos_with_context.extend_from_slice(&oos_replay);
+    let oos_cfg = backtest_engine::booktick_replay::ReplayConfig {
+        initial_capital,
+        warmup_ticks: 50_000, // el contexto IS es warmup (PnL no se cuenta)
+        trade_only: true,
+    };
     let oos_rep = backtest_engine::booktick_replay::run_booktick_replay(
-        &oos_replay,
+        &oos_with_context,
         &best_config,
         omni_hist.as_ref(),
-        &replay_cfg,
+        &oos_cfg,
     );
     out_stats_test[0] = oos_rep.wr_net();
     out_stats_test[1] = oos_rep.trades as f64;

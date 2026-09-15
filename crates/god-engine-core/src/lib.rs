@@ -1947,9 +1947,14 @@ impl GodEngineCore {
                 // Ruta 2: PRICE-ACTION puro (momentum/ATR/Hurst — funciona
                 // SIN ML y SIN libro; computable de precio/volumen solos).
                 if book_absent && scalp_intent.signal == SignalType::Flat && atr_pct > 0.00005 {
+                    // UMBRALES GENÓMICOS (evolucionables por el SA): el fallback
+                    // usa los MISMOS genes que el camino tradicional — así el
+                    // SA puede optimizar la sensibilidad sin código quemado.
+                    let ml_thr_long = self.arena.config.ml_threshold_long.load(Ordering::Relaxed).clamp(0.50, 0.95);
+                    let ml_thr_short = self.arena.config.ml_threshold_short.load(Ordering::Relaxed).clamp(0.05, 0.50);
                     // Ruta 1: ML RE-CENTRADO (sesgo eliminado) con confianza
                     // proporcional a la distancia de la neutralidad.
-                    if ml_prob_adaptive > 0.56 {
+                    if ml_prob_adaptive > ml_thr_long {
                         let conviction = 0.5 + (ml_prob_adaptive - 0.5).abs();
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
@@ -1957,7 +1962,7 @@ impl GodEngineCore {
                             horizon: strategy_core::TradeHorizon::Continuous,
                             ..Default::default()
                         };
-                    } else if ml_prob_adaptive < 0.44 {
+                    } else if ml_prob_adaptive < ml_thr_short {
                         let conviction = 0.5 + (ml_prob_adaptive - 0.5).abs();
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
