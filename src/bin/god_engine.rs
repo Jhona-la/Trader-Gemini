@@ -1951,9 +1951,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 entry_result = exec_clone.load().execute_iceberg_limit(&parsed_sym_str, final_is_long, final_qty, maker_price, iceberg_qty, dyn_step_size, dyn_tick_size, "iceberg_01").await;
                             } else {
                                 let side_tag = if final_is_long { "L" } else { "S" };
-                                let mut client_id = String::with_capacity(40);
+                                let mut client_id = String::with_capacity(36);
                                 use std::fmt::Write as _;
-                                let _ = write!(&mut client_id, "CONT_{}_{}", side_tag, uuid::Uuid::now_v7().simple());
+                                // FIX -4015: Binance exige newClientOrderId < 36 chars.
+                                // "CONT_L_" (7) + UUIDv7 simple (32) = 39 → RECHAZADO.
+                                // Formato corto: "cL" + 32 chars UUID = 34 ✓
+                                let _ = write!(&mut client_id, "c{}_{}", side_tag, uuid::Uuid::now_v7().simple());
                                 entry_result = exec_clone.load().execute_raw_qty_with_client_id(&parsed_sym_str, final_is_long, final_qty, dyn_step_size, &client_id).await;
                             }
 
