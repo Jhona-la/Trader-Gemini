@@ -276,6 +276,49 @@ async fn ensure_position_protected(
     remaining
 }
 
+/// Contexto recuperado de una posición desde el diario de entradas.
+struct RecoveredContext {
+    tau_ms: u64,
+    ml: f64,
+    age_hours: f64,
+}
+
+/// B2.7: lee data/position_journal.jsonl y devuelve el ÚLTIMO registro que
+/// matchea símbolo+lado — la τ espectral y la predicción ML que motivaron la
+/// entrada. Tolerante a diario ausente/corrupto (None ⇒ el llamador usa el
+/// piso espectral conservador).
+fn recover_position_context(symbol: &str, is_long: bool) -> Option<RecoveredContext> {
+    let content = std::fs::read_to_string("data/position_journal.jsonl").ok()?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let mut best: Option<(u64, u64, f64)> = None; // (ts, tau, ml)
+    for line in content.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let sym = v.get("sym").and_then(|x| x.as_str()).unwrap_or("");
+        let long = v.get("long").and_then(|x| x.as_bool()).unwrap_or(false);
+        if sym != symbol || long != is_long {
+            continue;
+        }
+        let ts = v.get("ts").and_then(|x| x.as_u64()).unwrap_or(0);
+        if best.map(|(b, _, _)| ts >= b).unwrap_or(true) {
+            best = Some((
+                ts,
+                v.get("tau_ms").and_then(|x| x.as_u64()).unwrap_or(0),
+                v.get("ml").and_then(|x| x.as_f64()).unwrap_or(0.5),
+            ));
+        }
+    }
+    best.map(|(ts, tau_ms, ml)| RecoveredContext {
+        tau_ms,
+        ml,
+        age_hours: now_ms.saturating_sub(ts) as f64 / 3_600_000.0,
+    })
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 🛠️ [BOOTLOADER] Inicializar el entorno desde .env
@@ -1168,20 +1211,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                     telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (Margen: ${:.2})", pos.symbol, calculated_margin);
 
+                    // B2.7 — RECUPERACIÓN DE CONTEXTO (directriz del operador):
+                    // qué τ y qué predicción ML seguían esta posición vive en
+                    // el diario de entrada; sin él, la re-protección caería al
+                    // ancla rápida (τ=0) perdiendo el rigor espectral.
+                    let ctx = recover_position_context(&pos.symbol, pos.is_long);
+                    if let Some(rc) = &ctx {
+                        if let Some(c) = arena_real.coins.get(coin_idx) {
+                            c.positions.position.entry_tau_ms.store(rc.tau_ms, Ordering::Relaxed);
+                        }
+                        telemetry_server::telemetry_log!(
+                            "   🧠 [CONTEXTO] {} {}: τ_entrada={}ms ({}), ml_entrada={:.3}, edad {:.1}h",
+                            pos.symbol,
+                            if pos.is_long { "LONG" } else { "SHORT" },
+                            rc.tau_ms,
+                            format_tau(rc.tau_ms as f64),
+                            rc.ml,
+                            rc.age_hours
+                        );
+                    } else {
+                        telemetry_server::telemetry_log!(
+                            "   ⚠️ [CONTEXTO] {} sin registro en el diario — τ ancla rápida",
+                            pos.symbol
+                        );
+                    }
                     // FIX #348 → B1.2: re-armar protección remota para
-                    // posiciones restauradas. ANTES: TP/SL hardcodeados
-                    // (±2.5%/±1.5%, violación de cero-hardcoding) y un OCO
-                    // incondicional que sobre-protegía si el bracket original
-                    // sobrevivió al reinicio (qty combinada > posición ⇒
-                    // rechazo). AHORA: curvas del genoma vía
-                    // ensure_position_protected, que audita la cobertura REAL
-                    // por lado y solo rellena el shortfall.
+                    // posiciones restauradas. AHORA: curvas del genoma
+                    // (HorizonCurve) evaluadas en la τ RECUPERADA — el rigor
+                    // matemático completo: la curva evolucionada por SA sobre
+                    // backtest, decidida por el espectro que motivó la entrada.
+                    // Sin diario ⇒ piso espectral (ancla rápida = mínimo de la
+                    // curva por construcción: conservador por diseño).
                     let pos_sym = pos.symbol.clone();
                     let pos_is_long = pos.is_long;
                     let pos_qty = pos.qty.abs();
                     let pos_entry = pos.entry_price;
                     let exec_oco = Arc::clone(&exec_restore);
                     let arena_restore = Arc::clone(&arena_real);
+                    let recovered_tau = ctx.as_ref().map(|c| c.tau_ms).unwrap_or(0);
 
                     rt_handle.spawn(async move {
                         let _ = ensure_position_protected(
@@ -1191,7 +1258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             pos_is_long,
                             pos_qty,
                             pos_entry,
-                            0, // τ de entrada no sobrevive al reinicio ⇒ ancla rápida
+                            recovered_tau,
                             "RESTORE",
                         )
                         .await;
@@ -2431,6 +2498,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             match exec_clone.load().execute_oco_order(&parsed_sym_str, final_is_long, qty_bracket, order_tp_price, order_sl_price, dyn_step_size, dyn_tick_size, &base_id).await {
                                                 Ok(_) => {
                                                     oco_success = true;
+                                                    // B2.7 — DIARIO DE CONTEXTO: persistir qué procesos y
+                                                    // predicciones seguían esta posición (directriz del
+                                                    // operador: al reconectar, recuperar NO solo la posición
+                                                    // sino su contexto). entry_tau_ms del Position NUNCA se
+                                                    // seteaba (capacidad fantasma) — este diario es la única
+                                                    // fuente de τ de entrada y ml de motivación.
+                                                    // ml desde el plano compartido del arena (el
+                                                    // espectro vive en el core, no alcanzable aquí;
+                                                    // τ queda 0 hasta que el core lo persista).
+                                                    let tau_entry = 0u64;
+                                                    let ml_entry = arena_clone
+                                                        .coins
+                                                        .get(coin_id)
+                                                        .map(|c| c.ml_prob.load(Ordering::Relaxed))
+                                                        .unwrap_or(0.5);
+                                                    let jr = format!(
+                                                        "{{\"ts\":{},\"sym\":\"{}\",\"long\":{},\"qty\":{:.8},\"px\":{:.4},\"tau_ms\":{},\"ml\":{:.4}}}\n",
+                                                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),
+                                                        parsed_sym_str, final_is_long, final_qty.abs(), _entry_price, tau_entry, ml_entry
+                                                    );
+                                                    let _ = std::fs::OpenOptions::new()
+                                                        .create(true)
+                                                        .append(true)
+                                                        .open("data/position_journal.jsonl")
+                                                        .and_then(|mut f| std::io::Write::write_all(&mut f, jr.as_bytes()));
                                                     break;
                                                 }
                                                 Err(e) => {
