@@ -1430,14 +1430,14 @@ impl GodEngineCore {
                 }
             }
 
-            // --- 2. EVALUAR ENTRADAS ---
-            // X-012: frontera exacta del bloqueo por latencia — la gestión de
-            // posiciones (sección 1, arriba) corrió COMPLETA antes de llegar
-            // aquí. Con datos obsoletos no se abren posiciones nuevas; las
-            // abiertas ya fueron gestionadas con este mismo tick.
-            if entries_blocked {
-                return (None, None, None);
-            }
+            // --- 2. ANALÍTICA COMPLETA (ML + espectro + registro) ---
+            // X-012 + B2.5-fix: antes, el interlock de entradas retornaba
+            // AQUÍ — antes del bloque ML — y un feed marcado stalled/lento
+            // congelaba TODA la analítica (ml_prob en 0.5 exacto por defecto,
+            // espectro muerto): el síntoma "ml congelado" que perseguíamos
+            // desde la primera auditoría. El interlock debe bloquear
+            // ENTRADAS, jamás análisis. El return se movió a tras el bloque
+            // ML, inmediatamente antes de la maquinaria de señales.
             let tick = self.arena.tick_counter.load(Ordering::Relaxed);
 
             // --- Inteligencia On-Chain (Spot vs Futures Correlation) ---
@@ -1573,10 +1573,38 @@ impl GodEngineCore {
                 forest_input[..34].copy_from_slice(&swing_feats);
                 forest_input[34..]
                     .copy_from_slice(&self.feature_engines[coin_id].get_spectral_ml_features());
+                // Saneo: un feature NaN (p.ej. omni sin feed macro para ese
+                // símbolo) mataba predict() completo → ml congelado en 0.5.
+                // NaN = "sin dato" ⇒ neutro 0.0, el resto del vector sigue
+                // opinando. El trainer descarta esas muestras; aquí el
+                // neutro preserva el flujo de análisis en vivo.
+                for v in forest_input.iter_mut() {
+                    if !v.is_finite() {
+                        *v = 0.0;
+                    }
+                }
                 if let Some(p) = f.predict(&forest_input) {
                     diag_forest_p = Some(p as f64);
                     coin_ensemble.submit(crate::ensemble::ModelId::ScalpForest, p as f64);
+                } else if tick % 100 == 0 {
+                    // Diagnóstico B2.5: en vivo ml=0.5000 exacto — o el modelo
+                    // no está, o un feature no finito mata predict(). Decir CUÁL.
+                    let bad: Vec<usize> = forest_input
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, v)| !v.is_finite())
+                        .map(|(k, _)| k)
+                        .collect();
+                    println!(
+                        "🔬 [ML-DIAG] {} predict=None (modelo {:?}) — features no finitos: {:?}",
+                        sym, coin_model_key, bad
+                    );
                 }
+            } else if tick % 100 == 0 {
+                println!(
+                    "🔬 [ML-DIAG] {} SIN forest activo (key {:?} sin modelo y sin fallback)",
+                    sym, coin_model_key
+                );
             }
             if let Some(nn) = self.swing_nn.as_mut() {
                 let in_dim = nn.layer1.in_features;
@@ -1627,6 +1655,14 @@ impl GodEngineCore {
             set_reg("ml_prob_scalp", ml_prob);
 
             let nn_score: f64 = self.feature_engines[coin_id].update_ml_prediction(ml_prob);
+
+            // X-012 (reubicado por B2.5-fix): frontera REAL del bloqueo —
+            // gestión de posiciones (sección 1) y analítica ML/espectral ya
+            // corrieron completas. Con datos obsoletos no se EVALÚAN ni
+            // abren posiciones nuevas desde aquí hacia abajo.
+            if entries_blocked {
+                return (None, None, None);
+            }
 
             let current_obi = obi_val;
             let dynamic_atr_min = self.arena.config.dynamic_atr_min.load(Ordering::Relaxed);
