@@ -212,5 +212,9 @@ name = "oco_probe"
 path = "src/bin/oco_probe.rs"
 
 [[bin]]
+name = "algo_fetch_probe"
+path = "src/bin/algo_fetch_probe.rs"
+
+[[bin]]
 name = "backtest_windows"
 path = "src/bin/backtest_windows.rs"

@@ -8,6 +8,7 @@ pub mod genome;
 pub mod genome_store;
 pub mod paths;
 pub mod position;
+pub mod protection_health;
 pub mod ring_buffer;
 pub mod state;
 pub mod state_continuity;

@@ -264,8 +264,72 @@ impl UserDataStreamer {
         match ev.e.as_str() {
             "ORDER_TRADE_UPDATE" => self.on_order_trade_update(text),
             "ACCOUNT_UPDATE" => self.on_account_update(text),
+            "ALGO_UPDATE" => self.on_algo_update(text),
             "listenKeyExpired" => self.on_listen_key_expired(),
             _ => {}
+        }
+    }
+
+    /// B1.1: ciclo de vida de los brackets TP/SL (órdenes ALGO, migración
+    /// 2025-12-09). Hasta ahora este evento caía en `_ => {}`: el motor era
+    /// ciego a cancelaciones/expiraciones/rechazos de sus propias
+    /// protecciones y la posición quedaba desnuda sin ninguna señal local.
+    ///
+    /// Estados: NEW | TRIGGERING | TRIGGERED | FINISHED | CANCELED |
+    /// REJECTED | EXPIRED. Los TERMINALES marcan `protection_dirty` para que
+    /// el watchdog del motor audite y re-bracketee en su próximo ciclo.
+    ///
+    /// Parseo defensivo por Value con alias corto/largo: el payload exacto
+    /// del WS no está documentado inline y no se puede asumir el naming.
+    fn on_algo_update(&self, text: &str) {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else {
+            return;
+        };
+        let pick = |keys: &[&str]| -> String {
+            for k in keys {
+                if let Some(s) = v.get(k).and_then(|x| x.as_str()) {
+                    return s.to_string();
+                }
+            }
+            String::new()
+        };
+        let symbol = pick(&["s", "symbol", "S"]);
+        let client_algo_id = pick(&["clientAlgoId", "c", "clientOrderId"]);
+        let order_type = pick(&["orderType", "algoOrderType", "o", "type"]);
+        let algo_status = pick(&["algoStatus", "X", "status"]);
+        if symbol.is_empty() && algo_status.is_empty() && client_algo_id.is_empty() {
+            // Nada reconocible: registrar crudo para el forense del esquema.
+            println!(
+                "📮 [ALGO-UPDATE] payload no reconocido: {}",
+                &text[..text.len().min(240)]
+            );
+            return;
+        }
+        match algo_status.as_str() {
+            "CANCELED" | "EXPIRED" | "REJECTED" => {
+                println!(
+                    "⚠️ [ALGO-UPDATE] {} {} {} TERMINAL ({}) — protección posiblemente revocada",
+                    symbol, order_type, client_algo_id, algo_status
+                );
+                quantum_arena::protection_health::mark_dirty();
+            }
+            "FINISHED" => {
+                // La pierna disparó y llenó/canceló en el matching engine:
+                // la posición correspondiente debió cerrarse (o quedó
+                // parcial). Auditar igual — el fill llegó por ORDER_TRADE_UPDATE.
+                println!(
+                    "✅ [ALGO-UPDATE] {} {} {} FINISHED — disparo completado",
+                    symbol, order_type, client_algo_id
+                );
+                quantum_arena::protection_health::mark_dirty();
+            }
+            "TRIGGERING" | "TRIGGERED" => {
+                println!(
+                    "🔥 [ALGO-UPDATE] {} {} {} {} — salida en curso",
+                    symbol, order_type, client_algo_id, algo_status
+                );
+            }
+            _ => {} // NEW y transiciones internas: silencio (spam por bracket)
         }
     }
 
@@ -651,5 +715,27 @@ mod tests {
         let expired_event = r#"{"e":"listenKeyExpired","E":1700000000000}"#;
         streamer.dispatch(expired_event.as_bytes());
         assert!(streamer.expired_flag.load(Ordering::Relaxed));
+    }
+
+    /// B1.1: un ALGO_UPDATE terminal debe marcar protection_dirty (posición
+    /// posiblemente desnuda) y uno de disparo NO debe marcarlo.
+    #[test]
+    fn test_algo_update_terminal_marks_protection_dirty() {
+        quantum_arena::protection_health::clear_dirty();
+        let registry = Arc::new(OrderRegistry::new());
+        let streamer = UserDataStreamer::new(BinanceClient::new("key".into(), true), registry);
+
+        // Disparo en curso: no marca (la salida ya está corriendo).
+        let triggering = r#"{"e":"ALGO_UPDATE","E":1700000000000,"symbol":"BTCUSDT","clientAlgoId":"wdTP_1","orderType":"TAKE_PROFIT_MARKET","algoStatus":"TRIGGERING"}"#;
+        streamer.dispatch(triggering.as_bytes());
+        assert!(!quantum_arena::protection_health::is_dirty());
+
+        // Cancelación de pierna: marca — la posición puede haber quedado desnuda.
+        let canceled = r#"{"e":"ALGO_UPDATE","E":1700000000001,"symbol":"BTCUSDT","clientAlgoId":"wdTP_1","orderType":"TAKE_PROFIT_MARKET","algoStatus":"CANCELED"}"#;
+        streamer.dispatch(canceled.as_bytes());
+        assert!(quantum_arena::protection_health::is_dirty());
+        assert_eq!(quantum_arena::protection_health::terminal_events_seen(), 1);
+
+        quantum_arena::protection_health::clear_dirty();
     }
 }

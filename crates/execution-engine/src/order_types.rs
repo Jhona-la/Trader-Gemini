@@ -63,11 +63,16 @@ pub struct OpenAlgoOrder {
     pub order_type: String,
     #[serde(rename = "positionSide", default)]
     pub position_side: String,
-    /// NEW | TRIGGERED | CANCELED | FINISHED | …
-    #[serde(default)]
+    /// NEW | TRIGGERING | TRIGGERED | FINISHED | CANCELED | REJECTED | EXPIRED
+    /// B1.3-fix: SIN el rename explícito serde buscaba la clave literal
+    /// "algo_status" y el campo quedaba VACÍO — todo bracket parecía muerto
+    /// y el watchdog duplicaba piernas en cada ciclo.
+    #[serde(rename = "algoStatus", default)]
     pub algo_status: String,
     #[serde(rename = "triggerPrice", deserialize_with = "string_or_f64", default)]
     pub trigger_price: f64,
+    #[serde(deserialize_with = "string_or_f64", default)]
+    pub quantity: f64,
 }
 
 /// Reconocimiento completo de una orden (POST ack, GET query, cancel response).

@@ -22,6 +22,260 @@ use quantum_engine::config::TensorConfig;
 use quantum_engine::env_manager::EnvManager;
 use telemetry_engine::telemetry;
 
+/// B1.2/B1.3: precios de protección desde las CURVAS del genoma — mismo
+/// criterio del camino en vivo (X-030/X-016): curva de horizonte por dos
+/// puntos (bases scalp/swing del arena.config, ambas genes) evaluada en la
+/// τ de ENTRADA de la posición; τ desconocida (posición adoptada tras
+/// reinicio) ⇒ ancla rápida (comportamiento conservador). Sustituye los
+/// ±2.5%/±1.5% hardcodeados del restore de arranque.
+fn genome_protection_prices(
+    arena: &quantum_arena::GlobalArena,
+    is_long: bool,
+    entry_price: f64,
+    entry_tau_ms: u64,
+) -> (f64, f64) {
+    use quantum_arena::temporal_spectrum::{
+        HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS,
+    };
+    let tau_eff = if entry_tau_ms > 0 {
+        entry_tau_ms as f64
+    } else {
+        TAU_ANCHOR_FAST_MS
+    };
+    let o = Ordering::Relaxed;
+    let tp_frac = HorizonCurve::through_two_points(
+        TAU_ANCHOR_FAST_MS,
+        arena.config.scalp_tp_base.load(o),
+        TAU_ANCHOR_SLOW_MS,
+        arena.config.swing_tp_base.load(o),
+    )
+    .eval(tau_eff);
+    let sl_frac = HorizonCurve::through_two_points(
+        TAU_ANCHOR_FAST_MS,
+        arena.config.scalp_sl_base.load(o),
+        TAU_ANCHOR_SLOW_MS,
+        arena.config.swing_sl_base.load(o),
+    )
+    .eval(tau_eff);
+    let tp = if is_long {
+        entry_price * (1.0 + tp_frac)
+    } else {
+        entry_price * (1.0 - tp_frac)
+    };
+    let sl = if is_long {
+        entry_price * (1.0 - sl_frac)
+    } else {
+        entry_price * (1.0 + sl_frac)
+    };
+    (tp, sl)
+}
+
+/// B1.3: audita la cobertura TP/SL de una posición viva contra las algo
+/// orders REALES del exchange y hace top-up QUIRÚRGICO por lado (solo el
+/// lado con shortfall — un OCO completo sobre-protegería el sano y el
+/// exchange rechaza por qty > posición). Devuelve (gap_tp, gap_sl)
+/// restantes tras el intento. `tag` identifica el llamador en telemetría.
+async fn ensure_position_protected(
+    executor: &execution_engine::executor::OrderExecutor,
+    arena: &quantum_arena::GlobalArena,
+    symbol: &str,
+    is_long: bool,
+    pos_qty: f64,
+    entry_price: f64,
+    entry_tau_ms: u64,
+    tag: &str,
+) -> (f64, f64) {
+    let legs = executor.fetch_open_algo_orders(symbol).await.unwrap_or_default();
+    let want_side = if is_long { "LONG" } else { "SHORT" };
+    let mut tp_covered = 0.0f64;
+    let mut sl_covered = 0.0f64;
+    for a in &legs {
+        let side_ok = a.position_side == want_side
+            || a.position_side == "BOTH"
+            || a.position_side.is_empty();
+        let live = matches!(
+            a.algo_status.as_str(),
+            "NEW" | "TRIGGERING" | "TRIGGERED"
+        );
+        if !side_ok || !live {
+            continue;
+        }
+        if a.order_type.contains("TAKE_PROFIT") {
+            tp_covered += a.quantity;
+        } else {
+            // STOP_MARKET y TRAILING_STOP_MARKET cuentan como cobertura de pérdida.
+            sl_covered += a.quantity;
+        }
+    }
+    let Ok(f) = executor.get_symbol_filter(symbol).await else {
+        return (pos_qty - tp_covered, pos_qty - sl_covered);
+    };
+    let tp_gap = (pos_qty - tp_covered).max(0.0);
+    let sl_gap = (pos_qty - sl_covered).max(0.0);
+    if tp_gap < f.step_size && sl_gap < f.step_size {
+        return (0.0, 0.0); // protegida
+    }
+    if entry_price <= 0.0 {
+        telemetry_server::telemetry_log!(
+            "⚠️ [{}] {} sin entryPrice en positionRisk — no se puede re-bracketear",
+            tag,
+            symbol
+        );
+        return (tp_gap, sl_gap);
+    }
+    let (tp_price, sl_price) = genome_protection_prices(arena, is_long, entry_price, entry_tau_ms);
+    let micros = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_micros();
+    let min_notional = f.min_notional.max(5.0);
+    let mut remaining = (tp_gap, sl_gap);
+    // Precio VIVO del arena para el reintento -2021: cuando la posición
+    // deriva más allá del nivel del genoma calculado desde el ENTRY, el
+    // trigger "dispararía inmediatamente". Reposicionar la MISMA fracción
+    // del genoma sobre el precio actual mantiene la semántica (distancia
+    // relativa) sin hardcodes ni clamps arbitrarios.
+    let live_price = quantum_arena::symbol_registry::try_index(symbol)
+        .and_then(|ci| arena.coins.get(ci))
+        .map(|c| c.current_price.load(Ordering::Relaxed))
+        .filter(|p| *p > 0.0);
+    if tp_gap >= f.step_size {
+        if tp_gap * tp_price < min_notional {
+            telemetry_server::telemetry_log!(
+                "⚠️ [{}] top-up TP {} {:.4} < minNotional — posición parcialmente protegida",
+                tag,
+                symbol,
+                tp_gap * tp_price
+            );
+        } else {
+            let mut trig = tp_price;
+            let frac_tp = ((tp_price - entry_price).abs() / entry_price).max(0.0015);
+            for intent in 0..2 {
+                let id = format!("wdTP_{}_{}", micros, intent);
+                match executor
+                    .place_algo_leg(
+                        symbol,
+                        is_long,
+                        "TAKE_PROFIT_MARKET",
+                        tp_gap,
+                        trig,
+                        f.step_size,
+                        f.tick_size,
+                        &id,
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        telemetry_server::telemetry_log!(
+                            "🛡️ [{}] TP re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
+                            tag, symbol, tp_gap, trig, tp_covered, pos_qty
+                        );
+                        remaining.0 = 0.0;
+                        break;
+                    }
+                    Err(e) if intent == 0 && e.contains("-2021") => {
+                        match live_price {
+                            Some(cur) => {
+                                trig = if is_long {
+                                    cur * (1.0 + frac_tp)
+                                } else {
+                                    cur * (1.0 - frac_tp)
+                                };
+                                telemetry_server::telemetry_log!(
+                                    "↪️ [{}] TP de {} reposicionado al precio vivo ({:.4} → {:.4})",
+                                    tag, symbol, tp_price, trig
+                                );
+                            }
+                            None => {
+                                telemetry_server::telemetry_log!(
+                                    "⚠️ [{}] top-up TP {} falló (-2021 sin precio vivo): {}",
+                                    tag, symbol, e
+                                );
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        telemetry_server::telemetry_log!(
+                            "⚠️ [{}] top-up TP {} falló: {}",
+                            tag, symbol, e
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if sl_gap >= f.step_size {
+        if sl_gap * sl_price < min_notional {
+            telemetry_server::telemetry_log!(
+                "⚠️ [{}] top-up SL {} {:.4} < minNotional — posición parcialmente protegida",
+                tag,
+                symbol,
+                sl_gap * sl_price
+            );
+        } else {
+            let mut trig = sl_price;
+            let frac_sl = ((sl_price - entry_price).abs() / entry_price).max(0.0015);
+            for intent in 0..2 {
+                let id = format!("wdSL_{}_{}", micros, intent);
+                match executor
+                    .place_algo_leg(
+                        symbol,
+                        is_long,
+                        "STOP_MARKET",
+                        sl_gap,
+                        trig,
+                        f.step_size,
+                        f.tick_size,
+                        &id,
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        telemetry_server::telemetry_log!(
+                            "🛡️ [{}] SL re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
+                            tag, symbol, sl_gap, trig, sl_covered, pos_qty
+                        );
+                        remaining.1 = 0.0;
+                        break;
+                    }
+                    Err(e) if intent == 0 && e.contains("-2021") => {
+                        match live_price {
+                            Some(cur) => {
+                                trig = if is_long {
+                                    cur * (1.0 - frac_sl)
+                                } else {
+                                    cur * (1.0 + frac_sl)
+                                };
+                                telemetry_server::telemetry_log!(
+                                    "↪️ [{}] SL de {} reposicionado al precio vivo ({:.4} → {:.4})",
+                                    tag, symbol, sl_price, trig
+                                );
+                            }
+                            None => {
+                                telemetry_server::telemetry_log!(
+                                    "⚠️ [{}] top-up SL {} falló (-2021 sin precio vivo): {}",
+                                    tag, symbol, e
+                                );
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        telemetry_server::telemetry_log!(
+                            "⚠️ [{}] top-up SL {} falló: {}",
+                            tag, symbol, e
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    remaining
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 🛠️ [BOOTLOADER] Inicializar el entorno desde .env
@@ -526,24 +780,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 🔍 FETCH FORENSE DE POSICIONES ACTIVAS CON BINANCE API
+    // B1.2-fix: el discriminador es el MODO PAPEL del executor, NO
+    // is_demo_mode del orquestador (que agrupa papel-local y testnet-live).
+    // En testnet las posiciones son exposición REAL con brackets reales:
+    // ignorarlas al arrancar dejaba el arena ciego → riesgo de exposición
+    // duplicada y estado divergente (hallazgo del relanzamiento v7).
     let mut restored_positions = exec.load().fetch_open_positions().await.unwrap_or_default();
-    if orchestrator
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_demo_mode
-    {
-        telemetry_server::telemetry_log!("⚠️ [DEMO MODE] Ignorando reconciliación de posiciones REST para mantener Paper Trading.");
+    if exec.load().is_paper_trading() {
+        telemetry_server::telemetry_log!("⚠️ [PAPER LOCAL] Ignorando posiciones REST — no hay cuenta viva que reconciliar.");
         restored_positions.clear();
     }
 
     // ── F1.11 MODO HEDGE ─────────────────────────────────────────────────────
     // El motor envía positionSide=LONG/SHORT siempre; si la cuenta está en
     // one-way, TODA orden falla con -4061. Verificar/activar antes de operar.
-    if !orchestrator
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_demo_mode
-    {
+    // B1.2-fix: también en testnet (cuenta viva), no solo mainnet.
+    if !exec.load().is_paper_trading() {
         match exec.load().ensure_hedge_mode().await {
             Ok(true) => {
                 telemetry_server::telemetry_log!("🔀 [PRE-FLIGHT] Cuenta migrada a modo HEDGE")
@@ -559,11 +811,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── F1.7 RECONCILIACIÓN AL ARRANQUE ──────────────────────────────────────
     // positionRisk (verdad del exchange) diff contra OrderRegistry (F1.5).
     // Directiva: saber SIEMPRE si hay posiciones abiertas antes de operar.
-    if !orchestrator
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_demo_mode
-    {
+    // B1.2-fix: también en testnet (cuenta viva), no solo mainnet.
+    if !exec.load().is_paper_trading() {
         match exec.load().fetch_position_risk().await {
             Ok(entries) => {
                 let report =
@@ -919,26 +1168,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                     telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (Margen: ${:.2})", pos.symbol, calculated_margin);
 
-                    // FIX #348: Re-armar OCO remoto en Binance para posiciones restauradas
+                    // FIX #348 → B1.2: re-armar protección remota para
+                    // posiciones restauradas. ANTES: TP/SL hardcodeados
+                    // (±2.5%/±1.5%, violación de cero-hardcoding) y un OCO
+                    // incondicional que sobre-protegía si el bracket original
+                    // sobrevivió al reinicio (qty combinada > posición ⇒
+                    // rechazo). AHORA: curvas del genoma vía
+                    // ensure_position_protected, que audita la cobertura REAL
+                    // por lado y solo rellena el shortfall.
                     let pos_sym = pos.symbol.clone();
                     let pos_is_long = pos.is_long;
                     let pos_qty = pos.qty.abs();
                     let pos_entry = pos.entry_price;
                     let exec_oco = Arc::clone(&exec_restore);
-                    let (step_size, tick_size) = {
-                        let spec = quantum_arena::symbol_registry::spec(coin_idx);
-                        (spec.step_size, spec.tick_size)
-                    };
+                    let arena_restore = Arc::clone(&arena_real);
 
                     rt_handle.spawn(async move {
-                        let tp_price = if pos_is_long { pos_entry * 1.025 } else { pos_entry * 0.975 };
-                        let sl_price = if pos_is_long { pos_entry * 0.985 } else { pos_entry * 1.015 };
-                        let base_id = format!("oco_res_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_micros());
-                        if let Err(e) = exec_oco.load().execute_oco_order(&pos_sym, pos_is_long, pos_qty, tp_price, sl_price, step_size, tick_size, &base_id).await {
-                            telemetry_server::telemetry_log!("⚠️ [RESTORE OCO] No se pudo re-armar OCO para posición restaurada {}: {}", pos_sym, e);
-                        } else {
-                            telemetry_server::telemetry_log!("🛡️ [RESTORE OCO] OCO re-armada con éxito en Binance para posición restaurada {}", pos_sym);
-                        }
+                        let _ = ensure_position_protected(
+                            &exec_oco.load(),
+                            &arena_restore,
+                            &pos_sym,
+                            pos_is_long,
+                            pos_qty,
+                            pos_entry,
+                            0, // τ de entrada no sobrevive al reinicio ⇒ ancla rápida
+                            "RESTORE",
+                        )
+                        .await;
                     });
                 }
             }
@@ -1088,6 +1344,89 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => {
                             telemetry_server::telemetry_log!("⚠️ [RECONCILIATION] Error consultando positionRisk: {}", e);
                         }
+                    }
+                }
+            });
+        }
+
+        // B1.3 — WATCHDOG DE POSICIÓN DESNUDA.
+        // "Toda posición tiene TP/SL" pasa de intención a INVARIANTE auditable:
+        // cada 60s (o a los 5s si un ALGO_UPDATE terminal marcó
+        // protection_dirty) cruza positionRisk contra openAlgoOrders y hace
+        // top-up quirúrgico del lado con shortfall. Cubre: pierna cancelada
+        // manualmente, EXPIRED por GTE_GTC, REJECTED por margin check, y el
+        // remanente de fills parciales posteriores al bracket.
+        {
+            let exec_wd = Arc::clone(&exec);
+            let arena_wd = Arc::clone(&arena_real);
+            rt_handle.spawn(async move {
+                telemetry_server::telemetry_log!(
+                    "🐕 [PROTECTION-WATCHDOG] Vigilante de posición desnuda activo (60s nominal, 5s reactivo)"
+                );
+                let mut fast = tokio::time::interval(std::time::Duration::from_secs(5));
+                fast.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                let mut ticks: u32 = 0;
+                loop {
+                    fast.tick().await;
+                    ticks = ticks.wrapping_add(1);
+                    let dirty = quantum_arena::protection_health::is_dirty();
+                    // Cadencia: reactiva si hay señal terminal; nominal cada
+                    // 12 ticks de 5s (=60s, alineado con la reconciliación).
+                    if !dirty && ticks % 12 != 0 {
+                        continue;
+                    }
+                    let executor = exec_wd.load_full();
+                    if executor.is_kill_switch_active() {
+                        quantum_arena::protection_health::clear_dirty();
+                        continue; // kill-switch: no colocar protecciones nuevas
+                    }
+                    let Ok(positions) = executor.fetch_position_risk().await else {
+                        continue;
+                    };
+                    let mut naked_total = 0usize;
+                    for p in positions
+                        .iter()
+                        .filter(|p| p.is_open() && p.position_amt.abs() > 0.0)
+                    {
+                        let is_long = p.position_amt > 0.0;
+                        let qty = p.position_amt.abs();
+                        // τ de entrada: la que recuerda el arena local si el
+                        // símbolo está mapeado; si no, ancla rápida.
+                        let tau = quantum_arena::symbol_registry::try_index(&p.symbol)
+                            .and_then(|ci| {
+                                arena_wd
+                                    .coins
+                                    .get(ci)
+                                    .map(|c| c.positions.position.entry_tau_ms.load(Ordering::Relaxed))
+                            })
+                            .unwrap_or(0);
+                        let (g_tp, g_sl) = ensure_position_protected(
+                            &executor,
+                            &arena_wd,
+                            &p.symbol,
+                            is_long,
+                            qty,
+                            p.entry_price,
+                            tau,
+                            "WATCHDOG",
+                        )
+                        .await;
+                        if g_tp > 0.0 || g_sl > 0.0 {
+                            naked_total += 1;
+                        }
+                    }
+                    if dirty {
+                        if naked_total == 0 {
+                            telemetry_server::telemetry_log!(
+                                "🐕 [PROTECTION-WATCHDOG] Auditoría reactiva: todas las posiciones cubiertas"
+                            );
+                        } else {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [PROTECTION-WATCHDOG] {} posición(es) con gap de protección residual",
+                                naked_total
+                            );
+                        }
+                        quantum_arena::protection_health::clear_dirty();
                     }
                 }
             });

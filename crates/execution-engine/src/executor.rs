@@ -847,6 +847,15 @@ impl OrderExecutor {
         self.is_paper_trading = is_paper;
     }
 
+    /// B1.2-fix: discriminador REAL de papel-vs-exchange. `is_demo_mode` del
+    /// orquestador agrupa papel-local y testnet-live; solo el primero debe
+    /// saltarse reconciliación/adopción (en testnet las posiciones son
+    /// exposición real con brackets reales que el motor DEBE adoptar).
+    #[inline(always)]
+    pub fn is_paper_trading(&self) -> bool {
+        self.is_paper_trading
+    }
+
     pub fn hot_swap_credentials(&self, new_key: String, new_secret: String, is_testnet: bool) {
         self.api_secret.store(Arc::new(new_secret));
         if true {}
@@ -912,6 +921,13 @@ impl OrderExecutor {
             println!("🚨 [KILL SWITCH] HTTP 418: IP baneada por Binance. Freno total.");
         }
         e.to_string()
+    }
+
+    /// B1.3: lector público del kill-switch para el watchdog de protección
+    /// (no colocar brackets nuevos cuando el freno total está activo).
+    #[inline(always)]
+    pub fn is_kill_switch_active(&self) -> bool {
+        self.kill_switch.load(Ordering::Relaxed)
     }
 
     #[inline(always)]
@@ -1391,7 +1407,7 @@ impl OrderExecutor {
     /// GET /fapi/v1/openAlgoOrders — los brackets NO aparecen en
     /// /fapi/v1/openOrders; sin esto, el motor cree que la posición está
     /// desnuda y re-bracketea infinito.
-    async fn fetch_open_algo_orders(
+    pub async fn fetch_open_algo_orders(
         &self,
         symbol: &str,
     ) -> Result<Vec<crate::order_types::OpenAlgoOrder>, String> {
@@ -1435,6 +1451,90 @@ impl OrderExecutor {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// B1.3: pierna ALGO individual (TP o SL) con el esquema validado OCO-F5.
+    /// Para top-ups quirúrgicos del watchdog de protección: colocar SOLO el
+    /// lado con shortfall — un OCO completo sobre-protegería el lado sano y
+    /// el exchange lo rechaza (qty combinada > posición ⇒ -2022).
+    pub async fn place_algo_leg(
+        &self,
+        symbol: &str,
+        is_long_close: bool,
+        order_type: &str, // "STOP_MARKET" | "TAKE_PROFIT_MARKET"
+        quantity: f64,
+        trigger_price: f64,
+        step_size: f64,
+        tick_size: f64,
+        base_client_id: &str,
+    ) -> Result<(), String> {
+        let final_quantity = Self::round_to_step_size(quantity, step_size);
+        if final_quantity == 0.0 {
+            return Err("Volumen 0".to_string());
+        }
+        // SL se aleja de la entrada redondeando hacia el ruido; TP hacia el
+        // objetivo (mismo criterio anti-difusivo D-630/D-636 del OCO).
+        let final_trigger = if order_type == "STOP_MARKET" {
+            Self::round_stop_away_from_entry(trigger_price, tick_size, is_long_close)
+        } else {
+            Self::round_target_away_from_entry(trigger_price, tick_size, is_long_close)
+        };
+
+        if self.is_paper_trading {
+            println!(
+                "📝 [PAPER TRADING LOCAL] Pierna algo {} para {} @ {} — local.",
+                order_type, symbol, final_trigger
+            );
+            return Ok(());
+        }
+
+        let side = if is_long_close { "SELL" } else { "BUY" };
+        let timestamp = self.get_synced_timestamp();
+        self.check_rate_limits(timestamp)?;
+
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/algoOrder?"
+        });
+        let payload_start = buf.as_str().len();
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
+        buf.push_str("&side=");
+        buf.push_str(side);
+        let is_hedge = self.is_hedge_mode.load(Ordering::Relaxed);
+        if is_hedge {
+            buf.push_str("&positionSide=");
+            buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
+        } else {
+            buf.push_str("&reduceOnly=true");
+        }
+        buf.push_str("&algoType=CONDITIONAL");
+        buf.push_str("&type=");
+        buf.push_str(order_type);
+        buf.push_str("&quantity=");
+        buf.push_f64(final_quantity);
+        buf.push_str("&triggerPrice=");
+        buf.push_f64(final_trigger);
+        buf.push_str("&clientAlgoId=");
+        buf.push_str(base_client_id);
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
+
+        let mut sig_buf = [0u8; 64];
+        let payload = &buf.as_str()[payload_start..];
+        let api_secret = self.api_secret.load();
+        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
+        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+        buf.push_str("&signature=");
+        buf.push_str(signature);
+
+        let res = self.client.execute_order_payload(buf.as_str()).await;
+        if let Ok(limits) = &res {
+            self.update_limits(limits);
+        }
+        res.map(|_| ())
     }
 }
 
