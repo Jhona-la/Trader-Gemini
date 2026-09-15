@@ -12,6 +12,23 @@ use quantum_arena::genome::SuperGenotype;
 
 #[tokio::main]
 async fn main() {
+    // El motor necesita stack grande (producción usa 32MB) — el hilo main
+    // de Rust solo tiene 2MB y GodEngineCore::process_event con su anidamiento
+    // provoca stack overflow en backtests largos.
+    let child = std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(run_backtest)
+        .expect("spawn worker");
+    match child.join() {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("❌ worker panic: {:?}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_backtest() {
     let args: Vec<String> = std::env::args().collect();
     let file = args
         .iter()
@@ -19,6 +36,12 @@ async fn main() {
         .and_then(|i| args.get(i + 1))
         .cloned()
         .unwrap_or_else(|| "data/BTCUSDT_ticks_REAL.bin".to_string());
+    let max_ticks: usize = args
+        .iter()
+        .position(|a| a == "--max-ticks")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2_000_000); // 2M default: suficiente densidad sin stack overflow
 
     println!("══════════════════════════════════════════════════════════════════");
     println!("📊 BACKTEST MULTI-VENTANA — MOTOR HONESTO (ticks reales)");
@@ -47,13 +70,24 @@ async fn main() {
         aq: f64,
     }
     let sz = std::mem::size_of::<BinTick>();
-    let n_total = mmap.len() / sz;
+    // Los archivos con magic "TGMTICK1" tienen un header de 8 bytes antes
+    // de los ticks estándar. Detectar y saltar.
+    let header_off = if mmap.len() >= 8 && &mmap[..8] == b"TGMTICK1" {
+        println!("   📎 Formato TGMTICK1 detectado (header 8 bytes saltado)");
+        8usize
+    } else {
+        0
+    };
+    let n_total = (mmap.len() - header_off) / sz;
     if n_total < 10_000 {
         eprintln!("❌ Datos insuficientes: {} ticks", n_total);
         std::process::exit(1);
     }
-    let ptr = mmap.as_ptr() as *const BinTick;
-    let raw = unsafe { std::slice::from_raw_parts(ptr, n_total) };
+    // Limitar a los últimos max_ticks (densidad preservada del final)
+    let start_idx = n_total.saturating_sub(max_ticks);
+    let n_used = n_total - start_idx;
+    let ptr = unsafe { mmap.as_ptr().add(header_off + start_idx * sz) } as *const BinTick;
+    let raw = unsafe { std::slice::from_raw_parts(ptr, n_used) };
 
     // Convertir a ReplayTick (filtrando inválidos)
     let ticks: Vec<ReplayTick> = raw
@@ -75,7 +109,7 @@ async fn main() {
     let p_end = ticks.last().map(|t| t.mid()).unwrap_or(0.0);
     let bh_ret = if p_start > 0.0 { (p_end / p_start - 1.0) * 100.0 } else { 0.0 };
 
-    println!("\n🗂️  Data: {} ticks válidos de {} crudos", ticks.len(), n_total);
+    println!("\n🗂️  Data: {} ticks válidos (últimos {} de {} crudos)", ticks.len(), n_used, n_total);
     println!("   Período: {:.1} días", total_days);
     println!("   BTC: ${:.0} → ${:.0} (buy&hold: {:+.1}%)", p_start, p_end, bh_ret);
 
@@ -85,10 +119,32 @@ async fn main() {
         .unwrap_or_else(|| SuperGenotype::new_baseline(0.0002, 0.0005));
 
     let initial_capital = 1000.0; // USDT estándar para comparabilidad
+    let trade_only = args.iter().any(|a| a == "--trade-only");
     let cfg = ReplayConfig {
         initial_capital,
         warmup_ticks: 500,
+        trade_only,
     };
+    if trade_only {
+        println!("   🔀 MODO TRADE-ONLY (sin bid/ask sintético)");
+    }
+
+    // CRÍTICO: el RiskEngine RECHAZA toda orden sin spec del símbolo
+    // (try_spec=None → rej(3)). Registrar specs antes del replay.
+    quantum_arena::symbol_registry::update_registry(vec![
+        quantum_arena::symbol_registry::SymbolSpec {
+            symbol: "BTCUSDT".to_string(),
+            step_size: 0.001,
+            tick_size: 0.01,
+            min_qty: 0.001,
+            min_notional: 5.0,
+            max_leverage: 20,
+            maker_fee: 0.0002,
+            taker_fee: 0.0005,
+            is_shadow: false,
+        },
+    ]);
+    println!("   📋 Symbol specs registradas (RiskEngine puede evaluar)");
 
     // Cargar omni FRED (si hay red)
     println!("\n🌐 Cargando macro FRED...");

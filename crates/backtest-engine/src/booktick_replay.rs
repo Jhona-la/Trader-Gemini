@@ -107,6 +107,13 @@ pub struct ReplayConfig {
     pub initial_capital: f64,
     /// Ticks de calentamiento de features (sin evaluación de PnL).
     pub warmup_ticks: usize,
+    /// MODO TRADE-ONLY: no enviar eventos depth con bid/ask sintético (las
+    /// features de microestructura del motor se diseñaron para bookTicker
+    /// REAL; con bid/ask derivado de trades producen OBI/OFI plano/artificial
+    /// que contamina las señales). En trade-only, SOLO se envía el evento de
+    /// trade (is_trade=true) — las features de precio/volumen/ATR/Hurst/
+    /// espectral funcionan correctamente sin el libro.
+    pub trade_only: bool,
 }
 
 impl Default for ReplayConfig {
@@ -114,6 +121,7 @@ impl Default for ReplayConfig {
         Self {
             initial_capital: 13.0,
             warmup_ticks: 200,
+            trade_only: false,
         }
     }
 }
@@ -171,6 +179,42 @@ pub fn run_booktick_replay(
     genome.apply_to_arena(&arena);
     let mut core = GodEngineCore::new(arena.clone());
 
+    // FIX AUDIT: Hurst necesita 512 cierres 1m para producir valores ≠ 0.5.
+    // Sin esto, el estimador DFA queda clavado en neutral y TODO el canal
+    // price-action (que depende de hurst > 0.52 o < 0.45) es inalcanzable.
+    // Sintetizamos los klines 1m agregando ticks por minutos:
+    let mut last_minute = 0u64;
+    let mut minute_open = 0.0f64;
+    let mut minute_high = 0.0f64;
+    let mut minute_low = f64::MAX;
+    let mut minute_close = 0.0f64;
+    let mut minute_vol = 0.0f64;
+    for t in ticks.iter().take(cfg.warmup_ticks.max(600).min(ticks.len())) {
+        let minute = t.ts_ms / 60_000;
+        if minute != last_minute && last_minute > 0 {
+            // Cerrar el kline anterior
+            core.feature_engines[0].process_kline(
+                minute_open,
+                minute_high,
+                minute_low,
+                minute_close,
+                minute_vol,
+            );
+            minute_high = 0.0;
+            minute_low = f64::MAX;
+            minute_vol = 0.0;
+        }
+        let mid = t.mid();
+        if minute != last_minute {
+            last_minute = minute;
+            minute_open = mid;
+        }
+        minute_high = minute_high.max(mid);
+        minute_low = minute_low.min(mid);
+        minute_close = mid;
+        minute_vol += t.bid_qty + t.ask_qty;
+    }
+
     // LECCIÓN DE CARRERA (golden X-test): las funciones de biblioteca NO
     // mutan estado global (symbol_registry) — los tests corren en paralelo
     // en el mismo proceso y el golden mide determinismo. El LLAMADOR registra
@@ -192,6 +236,7 @@ pub fn run_booktick_replay(
     let omni_state = data_pipeline::omni_multiplexer::OmniState::new();
     let mut last_day = i64::MIN;
     let mut running_atr = 0.001 * ticks[0].mid();
+    let mut prev_mid = ticks[0].mid();
     const ATR_ALPHA: f64 = 0.02;
 
     let mut pnl_list: Vec<f64> = Vec::new();
@@ -205,8 +250,13 @@ pub fn run_booktick_replay(
         }
 
         // ATR real del stream (TR = rango efectivo del tick).
-        let tr = (t.ask - t.bid).max(mid - running_atr.abs());
+        // FIX AUDIT: la fórmula anterior `max(spread, mid - running_atr)` era
+        // un NIVEL DE PRECIO ($63K), no un rango → running_atr divergía a
+        // mid/2 ≈ $31,500 → slippage del 5% por lado. TR correcto: el spread
+        // o el cambio absoluto del precio vs el tick anterior.
+        let tr = (t.ask - t.bid).max((mid - prev_mid).abs());
         running_atr = ATR_ALPHA * tr + (1.0 - ATR_ALPHA) * running_atr;
+        prev_mid = mid;
         // Slippage institucional: castigo de fills según ATR vivo.
         let slip = running_atr * 0.10;
         let sim_bid = t.bid - slip;
@@ -251,45 +301,76 @@ pub fn run_booktick_replay(
         // calibración del ensamble en replay; los klines 1m reales viven en
         // producción por WS.)
 
-        // Doble evento — patrón del forense (depth + trade).
-        let (o1, c1) = core.process_event(
-            0,
-            false,
-            is_minute_kline,
-            true,
-            mid,
-            vol,
-            sim_bid,
-            sim_ask,
-            t.bid_qty,
-            t.ask_qty,
-            obi,
-            0.0,
-            t.ts_ms,
-            false,
-            &omni_features,
-            false,
-        );
-        let maker_flag = mid <= sim_bid;
-        let (o2, c2) = core.process_event(
-            0,
-            true,
-            false,
-            false,
-            mid,
-            vol,
-            sim_bid,
-            sim_ask,
-            t.bid_qty,
-            t.ask_qty,
-            obi,
-            0.0,
-            t.ts_ms,
-            false,
-            &omni_features,
-            maker_flag,
-        );
-        let _ = (o1, o2);
+        let (c1, c2): (Option<(bool, f64, f64)>, Option<(bool, f64, f64)>);
+        if cfg.trade_only {
+            // MODO TRADE-ONLY (para datos de trades/aggTrades sin libro real):
+            // UN solo evento de trade — el precio/volumen del trade alimenta
+            // las features de precio (ATR, momentum, Hurst, espectral) sin
+            // contaminar OBI/OFI con bid/ask sintético.
+            let (o2, closed) = core.process_event(
+                0,
+                true,          // is_trade
+                is_minute_kline,
+                false,         // is_depth
+                mid,           // precio del trade
+                vol,           // volumen
+                mid * 0.9999,  // bid ~ precio (sin libro real)
+                mid * 1.0001,  // ask ~ precio
+                vol * 0.5,     // qty neutra (sin libro)
+                vol * 0.5,
+                0.0,           // OBI neutro
+                0.0,           // micro_div neutro
+                t.ts_ms,
+                false,
+                &omni_features,
+                t.bid_qty > t.ask_qty, // maker heurístico del propio dato
+            );
+            let _ = o2;
+            c1 = None;
+            c2 = closed;
+        } else {
+            // Doble evento — patrón del forense (depth + trade).
+            let (o1, closed1) = core.process_event(
+                0,
+                false,
+                is_minute_kline,
+                true,
+                mid,
+                vol,
+                sim_bid,
+                sim_ask,
+                t.bid_qty,
+                t.ask_qty,
+                obi,
+                0.0,
+                t.ts_ms,
+                false,
+                &omni_features,
+                false,
+            );
+            let maker_flag = mid <= sim_bid;
+            let (o2, closed2) = core.process_event(
+                0,
+                true,
+                false,
+                false,
+                mid,
+                vol,
+                sim_bid,
+                sim_ask,
+                t.bid_qty,
+                t.ask_qty,
+                obi,
+                0.0,
+                t.ts_ms,
+                false,
+                &omni_features,
+                maker_flag,
+            );
+            let _ = (o1, o2);
+            c1 = closed1;
+            c2 = closed2;
+        }
 
         if i >= warmup {
             if let Some((_, pnl_net, qty)) = c1.or(c2) {

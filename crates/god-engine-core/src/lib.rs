@@ -1764,6 +1764,34 @@ impl GodEngineCore {
             // 70% política PPO aprendida + 30% flujo acumulado CVD
             let micro_score: f64 = (ppo_score * 0.70 + rolling_cvd * 0.30).clamp(-1.0, 1.0);
 
+            // ── BACKTEST ADAPTATIVO (F7-backtest) ─────────────────────────────
+            // Detección de libro ausente: OBI (instantáneo, de cantidades
+            // bid/ask) es el indicador confiable — en trade-only, bid_qty=
+            // ask_qty ⇒ OBI=0.
+            let book_absent = obi_val.abs() < 0.005;
+            let adaptive_micro_score = if book_absent {
+                // Sin libro: CVD del flujo de trades (dirección agresora ×
+                // volumen) ES la señal de microestructura disponible.
+                rolling_cvd.clamp(-1.0, 1.0)
+            } else {
+                micro_score
+            };
+
+            // FIX SESGO ML (auditoría): el forest entrenado con features de
+            // libro predice 0.337-0.476 cuando 5/12 micro-features son cero
+            // — sesgo bearish sistemático que bloquea toda señal Long. Con
+            // libro ausente, RE-CENTRAR la predicción: si el forest dice
+            // "menos de 0.5", eso es su offset, no su señal. Normalizamos
+            // mapeando el rango observado [0.35, 0.50] a [0.30, 0.70] para
+            // restaurar simetría direccional.
+            let ml_prob_adaptive = if book_absent && ml_prob < 0.50 {
+                // Expandir el rango: ml=0.35 → 0.30, ml=0.50 → 0.50
+                // (transformación lineal que dobla la distancia a 0.5)
+                (0.5 + (ml_prob - 0.5) * 2.0).clamp(0.02, 0.98)
+            } else {
+                ml_prob
+            };
+
             let sym = quantum_arena::symbol_registry::try_spec(coin_id)
                 .map(|s| s.symbol)
                 .unwrap_or_else(|| "BTCUSDT".to_string());
@@ -1793,13 +1821,14 @@ impl GodEngineCore {
             let remaining = 1.0 - w_micro;
             let w_nn = remaining * 0.60;
             let w_tensor = remaining * 0.40;
-            let raw_composite = micro_score * w_micro + nn_score * w_nn + tensor_boost * w_tensor;
+            let raw_composite =
+                adaptive_micro_score * w_micro + nn_score * w_nn + tensor_boost * w_tensor;
             let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0);
             self.diag_dir.record_evaluation(
                 composite_score,
                 ml_prob,
                 [
-                    micro_score * w_micro * hebbian_mult,
+                    adaptive_micro_score * w_micro * hebbian_mult,
                     nn_score * w_nn * hebbian_mult,
                     tensor_boost * w_tensor * hebbian_mult,
                 ],
@@ -1884,6 +1913,147 @@ impl GodEngineCore {
                 let short_streak = self.feature_engines[coin_id].get_active_directional_streak(false);
                 let long_streak = self.feature_engines[coin_id].get_active_directional_streak(true);
 
+                // F7-backtest: cuando el libro está AUSENTE, las condiciones
+                // OBI (< -min_obi_trend) son imposibles de satisfacer (OBI=0).
+                // Sustitución honesta: CVD del flujo de trades reemplaza OBI
+                // como confirmación direccional. Con libro real, OBI original.
+                let effective_obi_short = if book_absent { rolling_cvd } else { current_obi };
+                let effective_obi_long = if book_absent { rolling_cvd } else { current_obi };
+
+                // DIAGNÓSTICO (temporal — eliminar tras calibrar): ver por qué
+                // no se generan señales en backtest trade-only.
+                if self.arena.tick_counter.load(Ordering::Relaxed) % 50_000 == 0 {
+                    telemetry_server::telemetry_log!(
+                        "🔍 [DIAG] tick={} atr_pct={:.6} atr_min={:.6} spread_ok={} can_scalp={} hurst={:.3} ema_s={:.2} mid={:.2} ml={:.3} book_absent={} obi={:.3} ofi={:.3} cvd={:.3}",
+                        self.arena.tick_counter.load(Ordering::Relaxed),
+                        atr_pct,
+                        dynamic_atr_min,
+                        spread_ok,
+                        self.feature_engines[coin_id].can_open_scalp(600),
+                        hurst_val,
+                        self.feature_engines[coin_id].ema_slow,
+                        mid_price,
+                        ml_prob,
+                        book_absent,
+                        obi_val,
+                        ofi_value,
+                        rolling_cvd,
+                    );
+                }
+
+                // ── F7-backtest: CANAL ML-ONLY + PRICE-ACTION FALLBACK ──────
+                // Ruta 1: ML directo (umbral reducido cuando libro ausente —
+                // el forest tiende a predecir ~0.5 sin features de libro).
+                // Ruta 2: PRICE-ACTION puro (momentum/ATR/Hurst — funciona
+                // SIN ML y SIN libro; computable de precio/volumen solos).
+                if book_absent && scalp_intent.signal == SignalType::Flat && atr_pct > 0.00005 {
+                    // Ruta 1: ML RE-CENTRADO (sesgo eliminado) con confianza
+                    // proporcional a la distancia de la neutralidad.
+                    if ml_prob_adaptive > 0.56 {
+                        let conviction = 0.5 + (ml_prob_adaptive - 0.5).abs();
+                        scalp_intent = SignalIntent {
+                            signal: SignalType::Long,
+                            confidence: conviction.clamp(0.60, 0.95),
+                            horizon: strategy_core::TradeHorizon::Continuous,
+                            ..Default::default()
+                        };
+                    } else if ml_prob_adaptive < 0.44 {
+                        let conviction = 0.5 + (ml_prob_adaptive - 0.5).abs();
+                        scalp_intent = SignalIntent {
+                            signal: SignalType::Short,
+                            confidence: conviction.clamp(0.60, 0.95),
+                            horizon: strategy_core::TradeHorizon::Continuous,
+                            ..Default::default()
+                        };
+                    }
+                    // Ruta 1b: SEÑAL ESPECTRAL DIRECTA — la fusión por paridad
+                    // de riesgo del espectro temporal (19 escalas) produce un
+                    // score [-1,+1] computado SOLO de precios reales. Si el
+                    // score es fuerte en una dirección Y la persistencia lo
+                    // confirma, es una señal legítima independiente del ML.
+                    if scalp_intent.signal == SignalType::Flat {
+                        if let Some(spec) = self.temporal_spectrum.get(coin_id) {
+                            let fused = spec.fused_score;
+                            let tau = spec.dominant_tau_ms;
+                            let persist = spec.persistence_at(tau);
+                            // Score fuerte (>0.6) + persistencia direccional
+                            if fused > 0.6 && persist > 0.15 {
+                                scalp_intent = SignalIntent {
+                                    signal: SignalType::Long,
+                                    confidence: (0.55 + fused * 0.3).min(0.90),
+                                    horizon: strategy_core::TradeHorizon::Continuous,
+                                    ..Default::default()
+                                };
+                            } else if fused < -0.6 && persist < -0.15 {
+                                scalp_intent = SignalIntent {
+                                    signal: SignalType::Short,
+                                    confidence: (0.55 + fused.abs() * 0.3).min(0.90),
+                                    horizon: strategy_core::TradeHorizon::Continuous,
+                                    ..Default::default()
+                                };
+                            }
+                        }
+                    }
+                    // Ruta 2: PRICE-ACTION (cuando ML sigue neutral)
+                    // FIX AUDIT: Hurst puede estar clavado en 0.5 (DFA sin
+                    // datos suficientes). Rama A: Hurst activo (>0.52 o <0.45).
+                    // Rama B: Hurst neutral — momentum directo sin régimen.
+                    else if self.feature_engines[coin_id].ema_slow > 0.0 {
+                        let ema_s = self.feature_engines[coin_id].ema_slow;
+                        let atr_abs = (atr_pct * mid_price).max(0.01);
+                        let dev_atr = (mid_price - ema_s) / atr_abs;
+                        let hurst_active = hurst_val > 0.51 || hurst_val < 0.49;
+
+                        if hurst_active && hurst_val > 0.52 && dev_atr > 1.5 && dev_atr < 4.0 && rolling_cvd > 0.0 {
+                            scalp_intent = SignalIntent {
+                                signal: SignalType::Long,
+                                confidence: 0.72,
+                                horizon: strategy_core::TradeHorizon::Continuous,
+                                ..Default::default()
+                            };
+                        } else if hurst_active && hurst_val > 0.52 && dev_atr < -1.5 && dev_atr > -4.0 && rolling_cvd < 0.0 {
+                            scalp_intent = SignalIntent {
+                                signal: SignalType::Short,
+                                confidence: 0.72,
+                                horizon: strategy_core::TradeHorizon::Continuous,
+                                ..Default::default()
+                            };
+                        } else if hurst_active && hurst_val < 0.45 && dev_atr > 2.5 {
+                            scalp_intent = SignalIntent {
+                                signal: SignalType::Short,
+                                confidence: 0.68,
+                                horizon: strategy_core::TradeHorizon::Continuous,
+                                ..Default::default()
+                            };
+                        } else if hurst_active && hurst_val < 0.45 && dev_atr < -2.5 {
+                            scalp_intent = SignalIntent {
+                                signal: SignalType::Long,
+                                confidence: 0.68,
+                                horizon: strategy_core::TradeHorizon::Continuous,
+                                ..Default::default()
+                            };
+                        }
+                        // Rama B: Hurst neutral (0.49-0.51) — momentum directo
+                        // sin confirmación de régimen. Requiere desviación mayor
+                        // (+0.5 ATR extra) y CVD alineado como substituto.
+                        else if !hurst_active && dev_atr > 2.0 && dev_atr < 5.0 && rolling_cvd > 0.05 {
+                            scalp_intent = SignalIntent {
+                                signal: SignalType::Long,
+                                confidence: 0.65,
+                                horizon: strategy_core::TradeHorizon::Continuous,
+                                ..Default::default()
+                            };
+                        } else if !hurst_active && dev_atr < -2.0 && dev_atr > -5.0 && rolling_cvd < -0.05 {
+                            scalp_intent = SignalIntent {
+                                signal: SignalType::Short,
+                                confidence: 0.65,
+                                horizon: strategy_core::TradeHorizon::Continuous,
+                                ..Default::default()
+                            };
+                        }
+                    }
+                }
+
                 // D-460 & D-466: Unificación Continua del Generador de Señales (Multiscale Vector Field).
                 // Confluencia de triple escala temporal: Micro (1m ticks), Intermedio (EMA 9 vs 21), y Macro Superior (2-Hour EMA 120).
                 if is_confirmed_downtrend {
@@ -1893,7 +2063,7 @@ impl GodEngineCore {
                     // 1. Tendencial Short: Flujo institucional, confluencia L2 y ML apuntan a la baja
                     if composite_score < -d_tech_thr
                         && not_overextended_short
-                        && current_obi < -d_obi_trend
+                        && effective_obi_short < -d_obi_trend
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
@@ -1910,7 +2080,7 @@ impl GodEngineCore {
                         && higher_trend <= -0.0010
                         && price_stretch >= 0.15
                         && price_stretch <= 1.20
-                        && current_obi < -min_obi_pullback.max(0.20)
+                        && effective_obi_short < -min_obi_pullback.max(0.20)
                         && composite_score <= -d_tech_thr
                         && micro_trend <= 0.0
                     {
@@ -1923,7 +2093,7 @@ impl GodEngineCore {
                         };
                     // 3. Reversión Long: Exclusivamente ante capitulación estadística extrema (pánico masivo con absorción)
                     } else if price_stretch < -2.5
-                        && current_obi > dynamic_obi_thr * 0.8
+                        && effective_obi_long > dynamic_obi_thr * 0.8
                         && composite_score > dynamic_tech_thr
                     {
                         scalp_intent = SignalIntent {
@@ -1941,7 +2111,7 @@ impl GodEngineCore {
                     // 1. Tendencial Long: Flujo institucional, confluencia L2 y ML apuntan al alza
                     if composite_score > u_tech_thr
                         && not_overextended_long
-                        && current_obi > u_obi_trend
+                        && effective_obi_long > u_obi_trend
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
@@ -1958,7 +2128,7 @@ impl GodEngineCore {
                         && higher_trend >= 0.0010
                         && price_stretch <= -0.15
                         && price_stretch >= -1.20
-                        && current_obi > min_obi_pullback.max(0.20)
+                        && effective_obi_long > min_obi_pullback.max(0.20)
                         && composite_score >= u_tech_thr
                         && micro_trend >= 0.0
                     {
@@ -1971,7 +2141,7 @@ impl GodEngineCore {
                         };
                     // 3. Reversión Short: Exclusivamente ante euforia parabólica extrema con ventas masivas L2
                     } else if price_stretch > 2.5
-                        && current_obi < -dynamic_obi_thr * 0.8
+                        && effective_obi_short < -dynamic_obi_thr * 0.8
                         && composite_score < -dynamic_tech_thr
                     {
                         scalp_intent = SignalIntent {
@@ -1986,7 +2156,7 @@ impl GodEngineCore {
                     // RÉGIMEN NEUTRO / RANGO LATERAL (Disciplina de reversión a la media: comprar en soporte, vender en resistencia)
                     let range_thr = dynamic_tech_thr * 1.15;
                     let range_obi = (dynamic_obi_thr * 0.85).clamp(0.12, 0.35);
-                    if composite_score > range_thr && current_obi > range_obi && price_stretch <= -0.15 && micro_trend >= 0.0 {
+                    if composite_score > range_thr && effective_obi_long > range_obi && price_stretch <= -0.15 && micro_trend >= 0.0 {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
@@ -1995,7 +2165,7 @@ impl GodEngineCore {
                             ..Default::default()
                         };
                     } else if composite_score < -range_thr
-                        && current_obi < -range_obi
+                        && effective_obi_short < -range_obi
                         && price_stretch >= 0.15
                         && micro_trend <= 0.0
                     {
@@ -2006,7 +2176,7 @@ impl GodEngineCore {
                             volume_flow_rate: 8.0,
                             ..Default::default()
                         };
-                    } else if short_streak < 2 && price_stretch > 1.0 && current_obi < -range_obi * 1.15 && composite_score <= -0.24 && micro_trend <= 0.0
+                    } else if short_streak < 2 && price_stretch > 1.0 && effective_obi_short < -range_obi * 1.15 && composite_score <= -0.24 && micro_trend <= 0.0
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,

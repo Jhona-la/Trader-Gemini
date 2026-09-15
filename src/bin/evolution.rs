@@ -25,6 +25,22 @@ fn random_f64(min: f64, max: f64) -> f64 {
 }
 
 fn main() {
+    // GodEngineCore necesita stack grande — el hilo main de Rust solo tiene
+    // 2MB y process_event con su anidamiento desborda en backtests largos.
+    let child = std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(evolve_main)
+        .expect("spawn evolution worker");
+    match child.join() {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("❌ evolution worker panic: {:?}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn evolve_main() {
     quantum_arena::symbol_registry::update_registry(vec![
         quantum_arena::symbol_registry::SymbolSpec {
             symbol: "BTCUSDT".to_string(),
@@ -185,6 +201,7 @@ fn main() {
     let replay_cfg = backtest_engine::booktick_replay::ReplayConfig {
         initial_capital,
         warmup_ticks: 200,
+        trade_only: true, // aggTrades: sin libro real, solo eventos de trade
     };
     // El LLAMADOR registra specs del símbolo bajo evaluación (la función de
     // biblioteca no muta globals — lección de la carrera con el golden test).
