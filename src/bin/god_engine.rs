@@ -360,6 +360,64 @@ fn recover_position_context(symbol: &str, is_long: bool) -> Option<RecoveredCont
     })
 }
 
+/// B3.8 — compacta data/position_journal.jsonl al ÚLTIMO registro por
+/// (símbolo, lado) — lo único que `recover_position_context` consulta. Sin
+/// esto el diario crece sin cota y cada reconexión re-lee todo el historial.
+/// Umbral conservador: compactar sólo cuando supera 500 líneas. Escritura
+/// atómica (tmp + rename); líneas corruptas se descartan en la compactación
+/// (la lectura ya era tolerante línea a línea).
+fn compact_position_journal() {
+    const COMPACT_THRESHOLD: usize = 500;
+    let path = "data/position_journal.jsonl";
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return; // diario ausente: primera ejecución — nada que compactar
+    };
+    let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.len() <= COMPACT_THRESHOLD {
+        return;
+    }
+    let mut latest: std::collections::HashMap<(String, bool), (u64, &str)> =
+        std::collections::HashMap::new();
+    let mut discarded = 0usize;
+    for line in &lines {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            discarded += 1;
+            continue;
+        };
+        let key = (
+            v.get("sym").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+            v.get("long").and_then(|x| x.as_bool()).unwrap_or(false),
+        );
+        let ts = v.get("ts").and_then(|x| x.as_u64()).unwrap_or(0);
+        if latest.get(&key).map(|(b, _)| ts >= *b).unwrap_or(true) {
+            latest.insert(key, (ts, line));
+        }
+    }
+    let tmp = "data/position_journal.jsonl.tmp";
+    let Ok(mut f) = std::fs::File::create(tmp) else {
+        return;
+    };
+    use std::io::Write;
+    let mut kept = 0usize;
+    // Orden por ts: el diario queda determinista y legible.
+    let mut ordered: Vec<_> = latest.values().collect();
+    ordered.sort_by_key(|(ts, _)| *ts);
+    for (_, line) in ordered {
+        if writeln!(f, "{line}").is_ok() {
+            kept += 1;
+        }
+    }
+    drop(f);
+    if std::fs::rename(tmp, path).is_ok() {
+        telemetry_server::telemetry_log!(
+            "🧹 [DIARIO] compactado: {} → {} registros ({} corruptos descartados) — rotación B3.8",
+            lines.len(),
+            kept,
+            discarded
+        );
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 🛠️ [BOOTLOADER] Inicializar el entorno desde .env
@@ -1230,6 +1288,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         telemetry_server::telemetry_log!("========================================================");
         telemetry_server::telemetry_log!("🔍 [FASE 5] ADOPCIÓN DE ESTADO (RECONCILIACIÓN DE POSICIONES)");
         telemetry_server::telemetry_log!("========================================================");
+        // B3.8 — ROTACIÓN DEL DIARIO (auditoría del roadmap): la recuperación
+        // sólo necesita el ÚLTIMO registro por (símbolo, lado); sin compactar
+        // el diario crece sin cota y cada reconexión lo re-lee entero.
+        compact_position_journal();
         if restored_positions.is_empty() {
             telemetry_server::telemetry_log!("🔍 [RECONCILIATION] Cero posiciones abiertas en Binance. Arena inicializada limpia.");
         } else {
