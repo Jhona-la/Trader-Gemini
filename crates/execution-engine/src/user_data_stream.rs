@@ -285,18 +285,23 @@ impl UserDataStreamer {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else {
             return;
         };
+        // Esquema REAL (verificado en vivo 2026-09-15, evento BNBUSDT):
+        // {"e":"ALGO_UPDATE","E":...,"o":{"caid","aid","at","o","s","S",
+        //  "ps","f","q","X","ai","tp",...}} — payload envuelto en "o" con
+        // nombres cortos (caid=clientAlgoId, o=orderType, X=algoStatus).
+        let scope = v.get("o").unwrap_or(&v);
         let pick = |keys: &[&str]| -> String {
             for k in keys {
-                if let Some(s) = v.get(k).and_then(|x| x.as_str()) {
+                if let Some(s) = scope.get(k).and_then(|x| x.as_str()) {
                     return s.to_string();
                 }
             }
             String::new()
         };
-        let symbol = pick(&["s", "symbol", "S"]);
-        let client_algo_id = pick(&["clientAlgoId", "c", "clientOrderId"]);
-        let order_type = pick(&["orderType", "algoOrderType", "o", "type"]);
-        let algo_status = pick(&["algoStatus", "X", "status"]);
+        let symbol = pick(&["s", "symbol"]);
+        let client_algo_id = pick(&["caid", "clientAlgoId", "c"]);
+        let order_type = pick(&["o", "orderType"]);
+        let algo_status = pick(&["X", "algoStatus"]);
         if symbol.is_empty() && algo_status.is_empty() && client_algo_id.is_empty() {
             // Nada reconocible: registrar crudo para el forense del esquema.
             println!(
@@ -718,7 +723,8 @@ mod tests {
     }
 
     /// B1.1: un ALGO_UPDATE terminal debe marcar protection_dirty (posición
-    /// posiblemente desnuda) y uno de disparo NO debe marcarlo.
+    /// posiblemente desnuda) y uno de disparo NO debe marcarlo. Esquema REAL
+    /// verificado en vivo: payload envuelto en "o" con nombres cortos.
     #[test]
     fn test_algo_update_terminal_marks_protection_dirty() {
         quantum_arena::protection_health::clear_dirty();
@@ -726,12 +732,12 @@ mod tests {
         let streamer = UserDataStreamer::new(BinanceClient::new("key".into(), true), registry);
 
         // Disparo en curso: no marca (la salida ya está corriendo).
-        let triggering = r#"{"e":"ALGO_UPDATE","E":1700000000000,"symbol":"BTCUSDT","clientAlgoId":"wdTP_1","orderType":"TAKE_PROFIT_MARKET","algoStatus":"TRIGGERING"}"#;
+        let triggering = r#"{"e":"ALGO_UPDATE","E":1700000000000,"o":{"caid":"wdTP_1","o":"TAKE_PROFIT_MARKET","s":"BTCUSDT","X":"TRIGGERING"}}"#;
         streamer.dispatch(triggering.as_bytes());
         assert!(!quantum_arena::protection_health::is_dirty());
 
         // Cancelación de pierna: marca — la posición puede haber quedado desnuda.
-        let canceled = r#"{"e":"ALGO_UPDATE","E":1700000000001,"symbol":"BTCUSDT","clientAlgoId":"wdTP_1","orderType":"TAKE_PROFIT_MARKET","algoStatus":"CANCELED"}"#;
+        let canceled = r#"{"e":"ALGO_UPDATE","E":1700000000001,"o":{"caid":"wdTP_1","o":"TAKE_PROFIT_MARKET","s":"BTCUSDT","X":"CANCELED"}}"#;
         streamer.dispatch(canceled.as_bytes());
         assert!(quantum_arena::protection_health::is_dirty());
         assert_eq!(quantum_arena::protection_health::terminal_events_seen(), 1);

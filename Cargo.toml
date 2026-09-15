@@ -216,5 +216,9 @@ name = "algo_fetch_probe"
 path = "src/bin/algo_fetch_probe.rs"
 
 [[bin]]
+name = "train_forest"
+path = "src/bin/train_forest.rs"
+
+[[bin]]
 name = "backtest_windows"
 path = "src/bin/backtest_windows.rs"
