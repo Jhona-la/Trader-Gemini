@@ -456,6 +456,7 @@ mod tests {
         let cfg = ReplayConfig {
             initial_capital: 1000.0,
             warmup_ticks: 200,
+            trade_only: false,
         };
         let a = run_booktick_replay(&ticks, &genome, None, &cfg);
         let b = run_booktick_replay(&ticks, &genome, None, &cfg);
@@ -465,5 +466,38 @@ mod tests {
         // Sanity: capital no NaN/inf y DD acotado en ruido suave.
         assert!(a.final_capital.is_finite());
         assert!(a.max_dd < 1.0);
+    }
+
+    /// TEST DE WIRING genoma→arena→signal: verifica que los parámetros
+    /// del genoma SÍ llegan al arena config (donde el signal generation
+    /// los lee). La sensibilidad COMPLETA solo es observable con datos
+    /// reales donde el forest produce predicciones direccionales ≠0.5.
+    #[test]
+    fn wiring_genoma_llega_al_signal_generation() {
+        let arena = std::sync::Arc::new(GlobalArena::new(1000.0));
+
+        // Genoma A: umbral amplio
+        let mut g_a = SuperGenotype::new_baseline(0.0002, 0.0005);
+        g_a.ml_threshold_long = 0.52;
+        g_a.ml_threshold_short = 0.48;
+        g_a.apply_to_arena(&arena);
+        let stored_long_a = arena.config.ml_threshold_long.load(Ordering::Relaxed);
+        let stored_short_a = arena.config.ml_threshold_short.load(Ordering::Relaxed);
+
+        // Genoma B: umbral estricto
+        let mut g_b = SuperGenotype::new_baseline(0.0002, 0.0005);
+        g_b.ml_threshold_long = 0.70;
+        g_b.ml_threshold_short = 0.30;
+        g_b.apply_to_arena(&arena);
+        let stored_long_b = arena.config.ml_threshold_long.load(Ordering::Relaxed);
+        let stored_short_b = arena.config.ml_threshold_short.load(Ordering::Relaxed);
+
+        // WIRING: los valores DEL GENOMA deben estar EN EL AREA
+        assert!((stored_long_a - 0.52).abs() < 1e-6, "genome A ml_long {} != 0.52", stored_long_a);
+        assert!((stored_short_a - 0.48).abs() < 1e-6, "genome A ml_short {} != 0.48", stored_short_a);
+        assert!((stored_long_b - 0.70).abs() < 1e-6, "genome B ml_long {} != 0.70", stored_long_b);
+        assert!((stored_short_b - 0.30).abs() < 1e-6, "genome B ml_short {} != 0.30", stored_short_b);
+        // Y deben ser DIFERENTES entre sí
+        assert!(stored_long_a != stored_long_b, "wiring roto: A y B almacenan el mismo valor");
     }
 }
