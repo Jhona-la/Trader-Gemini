@@ -429,10 +429,19 @@ pub async fn run_okx_ws(state: Arc<OmniState>, symbol: String) {
 ///     más fresco que cualquier fix diario).
 /// Éxito actualiza macro_last_success_ms → staleness medible (F4.1 lo
 /// cablea como feature). Fallo LOGUEA (cada 10º) — jamás congelamiento mudo.
+///
+/// B3.4 — PARIDAD MACRO: FRED bloquea el fingerprint TLS de reqwest desde
+/// esta red (sonda 2026-09-15: defaults congelados, 2/7 series). Los TRES
+/// índices que el bloque macro del vector ML usa (VIX/SP500/NASDAQ, dims
+/// 44/45/47 de `macro_ml_features`) se traen de Yahoo v8 vía curl — el
+/// MISMO transporte y los mismos cierres que `macro_history_sync` usa para
+/// entrenar. DXY/US10Y/OIL siguen intentando FRED: dims sin uso actual
+/// (los árboles no parten por series constantes en el entrenamiento).
 pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
     let mut ticker = interval(Duration::from_secs(60));
     let client = reqwest::Client::new();
     let mut fail_count: u64 = 0;
+    let mut cycle_count: u64 = 0;
 
     let fred_series: [(&str, &AtomicU64); 6] = [
         ("SP500", &state.sp500),
@@ -443,9 +452,52 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
         ("DCOILWTICO", &state.oil_wti),
     ];
 
+    // Yahoo v8 chart: último cierre del rango, vía curl subprocess.
+    async fn yahoo_last_close(symbol: &str) -> Option<f64> {
+        let url = format!(
+            "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=5d&interval=1d"
+        );
+        let out = tokio::process::Command::new("curl")
+            .args(["-s", "-m", "20", "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", &url])
+            .output()
+            .await
+            .ok()?;
+        if !out.status.success() || out.stdout.is_empty() {
+            return None;
+        }
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+        let closes = v
+            .get("chart")?
+            .get("result")?
+            .get(0)?
+            .get("indicators")?
+            .get("quote")?
+            .get(0)?
+            .get("close")?
+            .as_array()?;
+        closes
+            .iter()
+            .rev()
+            .find_map(|c| c.as_f64().filter(|x| x.is_finite() && *x > 0.0))
+    }
+
     loop {
         ticker.tick().await;
         let mut updated = 0usize;
+
+        // Paridad de SERIES: ^VIX/^GSPC/^IXIC cierran igual que
+        // VIXCLS/SP500/NASDAQCOM — el trainer usa los mismos valores.
+        let yahoo_index: [(&str, &AtomicU64); 3] = [
+            ("^VIX", &state.vix),
+            ("^GSPC", &state.sp500),
+            ("^IXIC", &state.nasdaq),
+        ];
+        for (sym, slot) in &yahoo_index {
+            if let Some(last) = yahoo_last_close(sym).await {
+                slot.store(last.to_bits(), Ordering::Relaxed);
+                updated += 1;
+            }
+        }
 
         for (series, slot) in &fred_series {
             let url = format!(
@@ -505,6 +557,26 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
                 .as_millis() as u64;
             state.macro_last_success_ms.store(now, Ordering::Relaxed);
             fail_count = 0;
+            // B3.4 — SONDA DE PARIDAD: el bloque macro del vector ML
+            // (macro_ml_features) consume estos átomos; valores congelados
+            // en defaults = columnas muertas en inferencia mientras el
+            // trainer entrena con historia real. Primera lectura y cada
+            // hora: valores vivos a la vista. Yahoo v8 (curl) alimenta
+            // VIX/SP500/NASDAQ — las dims que los árboles usan.
+            cycle_count += 1;
+            if cycle_count == 1 || cycle_count % 60 == 0 {
+                let g = |a: &AtomicU64| f64::from_bits(a.load(Ordering::Relaxed));
+                println!(
+                    "🌍 [MACRO] ciclo {}: SP500={:.1} NASDAQ={:.1} VIX={:.2} DXY={:.2} US10Y={:.2} · series actualizadas: {}/10 (Yahoo-curl + FRED + PAXG)",
+                    cycle_count,
+                    g(&state.sp500),
+                    g(&state.nasdaq),
+                    g(&state.vix),
+                    g(&state.dxy),
+                    g(&state.us10y),
+                    updated + 1
+                );
+            }
         } else {
             fail_count += 1;
             if fail_count % 10 == 1 {

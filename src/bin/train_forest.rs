@@ -145,6 +145,60 @@ fn build_tree(
     nodes[me].right = right_root as i32;
 }
 
+/// B3.4 — carga las series macro reales de data/macro. VIX/SP500/NASDAQ
+/// (Yahoo v8, cierres idénticos a FRED) son OBLIGATORIAS: faltan ⇒ aborto,
+/// porque una columna de ceros constante es capacidad fantasma. DXY
+/// (DTWEXBGS, sólo FRED) se TOLERA ausente con warning: el CDN de FRED
+/// abre y cierra ventanas desde esta red y un re-run del sync lo completa;
+/// mientras tanto la dim queda en 0 neutro y NINGÚN árbol parte por ella
+/// (columna constante = sin splits — no hay ruptura de paridad).
+fn load_macro_series() -> (Vec<(u64, f64)>, Vec<(u64, f64)>, Vec<(u64, f64)>, Vec<(u64, f64)>) {
+    let read = |tag: &str, required: bool| -> Vec<(u64, f64)> {
+        let path = format!("data/macro/{tag}.csv");
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                if required {
+                    eprintln!(
+                        "❌ macro {tag}: falta data/macro/{tag}.csv ({e}) — ejecuta `macro_history_sync` primero."
+                    );
+                    std::process::exit(1);
+                }
+                eprintln!(
+                    "⚠️ macro {tag}: sin data/macro/{tag}.csv ({e}) — dim en 0 neutro, sin splits. Re-ejecuta `macro_history_sync` cuando FRED abra."
+                );
+                return Vec::new();
+            }
+        };
+        let rows: Vec<(u64, f64)> = content
+            .lines()
+            .skip(1)
+            .filter_map(|l| {
+                let mut p = l.split(',');
+                let ms = p.next()?.trim().parse::<u64>().ok()?;
+                let v = p.next()?.trim().parse::<f64>().ok()?;
+                (v.is_finite() && v > 0.0).then_some((ms, v))
+            })
+            .collect();
+        if rows.len() < 100 {
+            if required {
+                eprintln!("❌ macro {tag}: historia irreal ({} filas)", rows.len());
+                std::process::exit(1);
+            }
+            eprintln!("⚠️ macro {tag}: historia irreal ({} filas) — dim en 0 neutro", rows.len());
+            return Vec::new();
+        }
+        println!("   [macro] {tag}: {} días", rows.len());
+        rows
+    };
+    (
+        read("VIX", true),
+        read("SP500", true),
+        read("DXY", false),
+        read("NASDAQ", true),
+    )
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let symbol = if args.len() > 1 && !args[1].starts_with('-') {
@@ -208,6 +262,41 @@ fn main() {
         println!("   [{}] span {:.1} días · stride efectivo {}ms", path,
                  span_ms as f64 / 86_400_000.0, stride_ms_eff);
         let mut engine = StatefulEngine::new();
+        // B3.4 — bloque MACRO real (dims 44..48): series FRED VIXCLS/SP500/
+        // DTWEXBGS/NASDAQCOM de data/macro (macro_history_sync). Join as-of
+        // ESTRICTO: último cierre de un día ANTERIOR al tick — el cierre del
+        // mismo día aún no existe intradía (lookahead). Sin las cuatro series
+        // reales no se entrena: ceros harían columnas muertas, y las columnas
+        // muertas son capacidad fantasma (directriz del operador).
+        let (macro_vix, macro_spx, macro_dxy, macro_ndx) = load_macro_series();
+        let mut c_vix = 0usize;
+        let mut c_spx = 0usize;
+        let mut c_dxy = 0usize;
+        let mut c_ndx = 0usize;
+        let mut macro_asof = |ts: u64| -> Option<[f32; 4]> {
+            let day_start = ts - (ts % 86_400_000);
+            // Serie VACÍA (DXY sin FRED) ⇒ 0 neutro — columna sin splits,
+            // no descarte de muestras. Serie con datos pero tick anterior a
+            // su cobertura ⇒ muestra descartada (honestidad).
+            fn adv(series: &[(u64, f64)], cur: &mut usize, day_start: u64) -> Option<f64> {
+                if series.is_empty() {
+                    return Some(0.0);
+                }
+                while *cur + 1 < series.len() && series[*cur + 1].0 < day_start {
+                    *cur += 1;
+                }
+                match series.get(*cur) {
+                    Some(&(ms, v)) if ms < day_start => Some(v),
+                    _ => None,
+                }
+            }
+            let mut omni = [0.0f64; 54];
+            omni[24] = adv(&macro_vix, &mut c_vix, day_start)?;
+            omni[22] = adv(&macro_spx, &mut c_spx, day_start)?;
+            omni[21] = adv(&macro_dxy, &mut c_dxy, day_start)?;
+            omni[23] = adv(&macro_ndx, &mut c_ndx, day_start)?;
+            Some(god_engine_core::ml_inference::macro_ml_features(&omni))
+        };
         let mut feats: Vec<Vec<f32>> = Vec::new();
         let mut labels: Vec<f64> = Vec::new();
         let mut neutrals = 0usize;
@@ -229,15 +318,22 @@ fn main() {
             warmup += 1;
             if warmup >= 100 && t.ts >= next_sample_ts && t.ts + horizon_ms <= last_ts {
                 next_sample_ts = t.ts + stride_ms_eff;
-                // B2.3: vector 44D = swing(34) ⊕ espectral(10) — IDÉNTICO al
+                // B2.3: vector swing(34) ⊕ espectral(10) — IDÉNTICO al
                 // input de inferencia en god-engine-core/lib.rs. El bloque
                 // espectral (FFT, Hurst multifractal, momentum de EMAs de
                 // kline) responde al resultado "34 features sin edge".
+                // B3.4: ⊕ macro(4) — mismo contrato macro_ml_features del
+                // core, as-of t-1 estricto. Muestra sin contexto macro se
+                // descarta (honestidad), nunca se rellena.
+                let Some(macro_block) = macro_asof(t.ts) else {
+                    continue;
+                };
                 let sf = engine.get_swing_features();
                 let sp = engine.get_spectral_ml_features();
-                let mut full = [0f32; 44];
+                let mut full = [0f32; 48];
                 full[..34].copy_from_slice(&sf);
-                full[34..].copy_from_slice(&sp);
+                full[34..44].copy_from_slice(&sp);
+                full[44..].copy_from_slice(&macro_block);
                 if full.iter().all(|f| f.is_finite()) {
                     // Triple barrera por TIEMPO DE RELOJ dentro de horizon_ms
                     let deadline = t.ts + horizon_ms;

@@ -1,99 +1,177 @@
-use reqwest::blocking::Client;
+//! B3.4 — HISTORIA MACRO REAL (VIX, SP500, NASDAQ, DXY).
+//!
+//! Paridad de SERIES con el feed vivo (`omni_multiplexer.rs`):
+//! - VIX/SP500/NASDAQ: Yahoo v8 chart (^VIX/^GSPC/^IXIC, cierre diario) —
+//!   los MISMOS cierres que VIXCLS/SP500/NASDAQCOM de FRED. El endpoint
+//!   v7 download de Yahoo murió y el reqwest raíz (0.11+rustls) recibe
+//!   connection-reset del CDN de FRED (fingerprint TLS, verificado
+//!   2026-09-15); el v8 chart responde y curl+UA de navegador pasa.
+//! - DXY: DTWEXBGS de FRED vía curl — el dólar trade-weighted de la Fed,
+//!   SIN equivalente en Yahoo (el ICE DX-Y.NYB es otra serie). Se
+//!   reintenta; si FRED no responde, la serie queda pendiente y el exit
+//!   code es 1 — train_forest no entrena sin las cuatro reales.
+//!
+//! Uso: macro_history_sync
+//! Salida: data/macro/{VIX,SP500,DXY,NASDAQ}.csv — date_ms,value ascendente.
+//! Sin fallback sintético: un random-walk etiquetado como VIX contaminaría
+//! el bloque macro del vector ML (lección R2.3).
+
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::time::Duration;
+
+const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/// GET vía curl (stdout del proceso). Transporte verificado contra los
+/// CDNs de Yahoo y FRED desde esta red.
+fn http_get(url: &str) -> Option<String> {
+    let out = std::process::Command::new("curl")
+        .args(["-s", "-m", "30", "-A", UA, url])
+        .output()
+        .ok()?;
+    if !out.status.success() || out.stdout.is_empty() {
+        return None;
+    }
+    String::from_utf8(out.stdout).ok()
+}
+
+fn write_series(tag: &str, rows: &[(u64, f64)]) -> bool {
+    if rows.len() < 500 {
+        println!("   ❌ {tag}: historia demasiado corta ({} filas)", rows.len());
+        return false;
+    }
+    let mut rows = rows.to_vec();
+    rows.sort_unstable_by_key(|r| r.0);
+    rows.dedup_by_key(|r| r.0);
+    let path = Path::new("data/macro").join(format!("{tag}.csv"));
+    let Ok(mut f) = File::create(&path) else {
+        println!("   ❌ {tag}: no pude crear {:?}", path);
+        return false;
+    };
+    let _ = writeln!(f, "date_ms,value");
+    for (ms, v) in &rows {
+        let _ = writeln!(f, "{ms},{v}");
+    }
+    println!(
+        "   ✅ {tag}: {} días · cobertura {} días",
+        rows.len(),
+        (rows[rows.len() - 1].0 - rows[0].0) / 86_400_000
+    );
+    true
+}
+
+/// Yahoo v8 chart: pares (ts_ms, close) del rango pedido.
+fn yahoo_daily(symbol: &str, range: &str) -> Option<Vec<(u64, f64)>> {
+    let url = format!(
+        "https://query1.finance.yahoo.com/v8/finance/chart/{}?range={range}&interval=1d",
+        symbol.replace('%', "%25")
+    );
+    let body = http_get(&url)?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let result = v.get("chart")?.get("result")?.get(0)?;
+    let ts = result.get("timestamp")?.as_array()?;
+    let closes = result
+        .get("indicators")?
+        .get("quote")?
+        .get(0)?
+        .get("close")?
+        .as_array()?;
+    let mut rows = Vec::with_capacity(ts.len());
+    for (t, c) in ts.iter().zip(closes.iter()) {
+        let (Some(sec), Some(close)) = (t.as_u64(), c.as_f64()) else {
+            continue;
+        };
+        if close.is_finite() && close > 0.0 {
+            rows.push((sec * 1000, close));
+        }
+    }
+    Some(rows)
+}
+
+/// FRED fredgraph.csv (curl): (date_ms al mediodía, value).
+fn fred_daily(series: &str) -> Option<Vec<(u64, f64)>> {
+    let url = format!("https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}");
+
+    // "2026-08-14" → ms UTC del mediodía (evita ambigüedad de TZ en el as-of).
+    let parse_date_ms = |s: &str| -> Option<u64> {
+        let mut it = s.split('-');
+        let y: i64 = it.next()?.parse().ok()?;
+        let m: i64 = it.next()?.parse().ok()?;
+        let d: i64 = it.next()?.parse().ok()?;
+        if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+            return None;
+        }
+        let yy = if m <= 2 { y - 1 } else { y };
+        let era = if yy >= 0 { yy } else { yy - 399 } / 400;
+        let yoe = yy - era * 400;
+        let mp = (m + 9) % 12;
+        let doy = (153 * mp + 2) / 5 + d - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        let days = era * 146_097 + doe - 719_468;
+        Some(((days * 86_400 + 43_200) * 1000) as u64)
+    };
+
+    let body = http_get(&url)?;
+    let mut rows = Vec::new();
+    for line in body.lines().skip(1) {
+        let mut parts = line.split(',');
+        let (Some(d), Some(v)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let (Some(ms), Ok(val)) = (parse_date_ms(d.trim()), v.trim().parse::<f64>()) else {
+            continue;
+        };
+        if val.is_finite() && val > 0.0 {
+            rows.push((ms, val));
+        }
+    }
+    Some(rows)
+}
 
 fn main() {
     println!("============================================================");
-    println!("🌍 MACRO ECONOMIC HISTORY DOWNLOADER (SP500, VIX, DXY)");
+    println!("🌍 MACRO HISTORY SYNC — Yahoo v8 (índices) + FRED (DTWEXBGS)");
     println!("============================================================");
+    std::fs::create_dir_all("data/macro").unwrap();
 
-    let client = Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .timeout(Duration::from_secs(10))
-        .build()
-        .unwrap_or_else(|_| Client::new());
+    let mut failures = 0usize;
 
-    let data_dir = Path::new("data/macro");
-    std::fs::create_dir_all(data_dir).unwrap();
-
-    // Macro tickers
-    let symbols = vec![
-        ("^VIX", "VIX_Volatility_Index", 20.0),
-        ("^GSPC", "SP500_Index", 5000.0),
-        ("DX-Y.NYB", "DXY_Dollar_Index", 104.0),
-    ];
-
-    let period1 = 1420070400; // Jan 1 2015
-                              // R2.3: fin de ventana = HOY (antes 1751328000, congelado en jul-2025).
-    let period2 = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(1751328000);
-
-    for (ticker, name, base_val) in symbols {
-        println!("🚀 Descargando historial macro para: {}", name);
-
-        let url = format!(
-            "https://query1.finance.yahoo.com/v7/finance/download/{}?period1={}&period2={}&interval=1d&events=history&includeAdjustedClose=true",
-            ticker, period1, period2
-        );
-
-        let out_path = data_dir.join(format!("{}.csv", name));
-        let mut downloaded = false;
-
-        if let Ok(r) = client.get(&url).send() {
-            if r.status().is_success() {
-                if let Ok(content) = r.text() {
-                    if content.contains("Date,") && content.lines().count() > 10 {
-                        if let Ok(mut file) = File::create(&out_path) {
-                            let _ = file.write_all(content.as_bytes());
-                            println!("   ✅ Descargado y guardado en {:?}", out_path);
-                            downloaded = true;
-                        }
-                    }
+    // Paridad de VALOR con el feed vivo: ^VIX/^GSPC/^IXIC cierran igual
+    // que VIXCLS/SP500/NASDAQCOM — misma serie, distinto transporte.
+    for (yahoo_sym, tag) in [("^VIX", "VIX"), ("^GSPC", "SP500"), ("^IXIC", "NASDAQ")] {
+        println!("🚀 {yahoo_sym} → data/macro/{tag}.csv");
+        match yahoo_daily(yahoo_sym, "10y") {
+            Some(rows) => {
+                if !write_series(tag, &rows) {
+                    failures += 1;
                 }
             }
-        }
-
-        if !downloaded {
-            // R2.3 — DATO SINTÉTICO MARCADO: el fallback se escribe con sufijo
-            // .SYNTHETIC.csv y cabecera marcada, NUNCA como el archivo real.
-            // Un random-walk etiquetado como historia de VIX/SP500/DXY
-            // contaminaría cualquier feature macro que lo ingiriera.
-            let synthetic_path = data_dir.join(format!("{}.SYNTHETIC.csv", name));
-            println!(
-                "   🚨 [R2.3] Endpoint remoto NO disponible para {}. Fallback SINTÉTICO en {:?} — NO es historia real y no debe ingerirse como tal.",
-                ticker,
-                synthetic_path
-            );
-            if let Ok(mut file) = File::create(&synthetic_path) {
-                let _ = writeln!(
-                    file,
-                    "# SYNTHETIC RANDOM-WALK — NOT REAL MARKET DATA — DO NOT INGEST"
-                );
-                let _ = writeln!(file, "Date,Open,High,Low,Close,Adj Close,Volume");
-                let mut price = base_val;
-                for i in 0..1000 {
-                    let seed = (i as u64) ^ 0x5DEECE66D;
-                    let pct = (((seed % 200) as f64) - 100.0) / 5000.0;
-                    price = (price * (1.0 + pct)).max(1.0);
-                    let _ = writeln!(
-                        file,
-                        "2022-01-{:02},{:.2},{:.2},{:.2},{:.2},{:.2},1000000",
-                        (i % 28) + 1,
-                        price * 0.998,
-                        price * 1.005,
-                        price * 0.995,
-                        price,
-                        price
-                    );
-                }
-                println!("   ⚠️ Fallback sintético generado (marcado). El archivo real {}.csv NO fue creado.", name);
+            None => {
+                println!("   ❌ {yahoo_sym}: sin datos");
+                failures += 1;
             }
         }
     }
 
-    println!("✅ Descarga y preparación de datos macroeconómicos completada.");
+    // DTWEXBGS: solo FRED — reintentos con espera (el CDN abre y cierra
+    // ventanas; verificado 200 OK y connection-reset el mismo día).
+    println!("🚀 DTWEXBGS (FRED) → data/macro/DXY.csv");
+    let mut dxy_done = false;
+    for attempt in 1..=4usize {
+        if let Some(rows) = fred_daily("DTWEXBGS") {
+            dxy_done = write_series("DXY", &rows);
+            break;
+        }
+        println!("   ⏳ intento {attempt}/4 falló — esperando 30s");
+        std::thread::sleep(std::time::Duration::from_secs(30));
+    }
+    if !dxy_done {
+        failures += 1;
+    }
+
+    if failures > 0 {
+        eprintln!("🚨 {failures} serie(s) sin sincronizar — train_forest no entrenará sin las cuatro reales.");
+        std::process::exit(1);
+    }
+    println!("✅ Historia macro real completa.");
 }

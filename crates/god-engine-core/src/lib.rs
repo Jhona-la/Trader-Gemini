@@ -1587,10 +1587,17 @@ impl GodEngineCore {
                 // idéntico al de train_forest. Los árboles entrenados con el
                 // esquema viejo (splits <34) no se ven afectados; los nuevos
                 // pueden explotar el bloque espectral (F8: el espectro decide).
-                let mut forest_input = [0f32; 44];
+                // B3.4: + macro(4) — niveles FRED vivos del omni_state con el
+                // MISMO contrato del trainer (macro_ml_features). El vector
+                // vivo es superconjunto 48D: modelos viejos (splits <44)
+                // siguen válidos; los nuevos pueden partir por régimen macro.
+                let mut forest_input = [0f32; 48];
                 forest_input[..34].copy_from_slice(&swing_feats);
-                forest_input[34..]
+                forest_input[34..44]
                     .copy_from_slice(&self.feature_engines[coin_id].get_spectral_ml_features());
+                forest_input[44..].copy_from_slice(&crate::ml_inference::macro_ml_features(
+                    omni_features,
+                ));
                 // Saneo: un feature NaN (p.ej. omni sin feed macro para ese
                 // símbolo) mataba predict() completo → ml congelado en 0.5.
                 // NaN = "sin dato" ⇒ neutro 0.0, el resto del vector sigue

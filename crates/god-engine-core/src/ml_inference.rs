@@ -206,6 +206,33 @@ impl NanoForest {
     }
 }
 
+/// B3.4 — BLOQUE MACRO del vector ML (dims 44..48, tras swing 34 ⊕ espectral 10).
+///
+/// Contrato ÚNICO entre inferencia viva y train_forest: los niveles FRED que
+/// el feed vivo (`macro_feed.rs`) ya publica en `omni_features` —
+/// DXY=DTWEXBGS [21], SP500 [22], NASDAQ=NASDAQCOM [23], VIX=VIXCLS [24] —
+/// y que el trainer junta as-of (cierre t-1) desde `data/macro/*.csv`.
+///
+/// Las constantes son de UNIDADES (centro/escala típicos de cada serie),
+/// no de información: un GBDT es invariante a transformaciones afines
+/// monótonas de sus features — los splits se adaptan. Feed ausente o no
+/// finito ⇒ 0.0 neutro (misma semántica que el saneo B2.5 del bloque 44D).
+pub fn macro_ml_features(omni: &[f64; 54]) -> [f32; 4] {
+    let aff = |x: f64, center: f64, scale: f64| -> f32 {
+        if x.is_finite() && x > 0.0 {
+            ((x - center) / scale) as f32
+        } else {
+            0.0
+        }
+    };
+    [
+        aff(omni[24], 20.0, 10.0), // VIXCLS — nivel de miedo
+        aff(omni[22], 5000.0, 500.0), // SP500 — nivel riesgo global
+        aff(omni[21], 120.0, 10.0), // DTWEXBGS — nivel dólar
+        aff(omni[23], 18000.0, 2000.0), // NASDAQCOM — nivel tech
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
