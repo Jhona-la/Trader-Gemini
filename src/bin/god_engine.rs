@@ -285,6 +285,38 @@ async fn ensure_position_protected(
     remaining
 }
 
+/// B3.6 — CIRCUIT BREAKER POR SÍMBOLO (anti-horno de comisiones).
+///
+/// Criterio (medido en testnet 2026-09-15: SOL 7 trades, 0 wins, fees
+/// −$3.21 vs bruto −$1.23): un símbolo cuyas FEES superan su bruto
+/// ganador con neto negativo NO PUEDE PAGAR SU PROPIA FRICCIÓN — cada
+/// trade lo hunde más, sin importar qué tan bien apunte el modelo. Se
+/// suspenden sus NUEVAS entradas 4h (las posiciones vivas siguen con sus
+/// brackets intocados). Estado en memoria: se reinicia con el motor —
+/// deliberado, el breaker protege la sesión, no es un veto permanente.
+static SYMBOL_SUSPENDED_UNTIL: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, u64>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn suspend_symbol_until(symbol: &str, until_ms: u64) {
+    SYMBOL_SUSPENDED_UNTIL
+        .lock()
+        .unwrap()
+        .insert(symbol.to_string(), until_ms);
+}
+
+fn is_symbol_suspended(symbol: &str) -> bool {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    SYMBOL_SUSPENDED_UNTIL
+        .lock()
+        .unwrap()
+        .get(symbol)
+        .is_some_and(|until| *until > now_ms)
+}
+
 /// Contexto recuperado de una posición desde el diario de entradas.
 struct RecoveredContext {
     tau_ms: u64,
@@ -1425,6 +1457,80 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
+        // B3.6 — EVALUADOR DEL BREAKER DE FEES: cada 5 min, contabilidad
+        // REAL del exchange (/fapi/v1/income desde el arranque). Un símbolo
+        // con ≥3 cierres, neto negativo y fees > bruto ganador queda
+        // suspendido 4h para nuevas entradas (veto en la ruta de entrada).
+        // Detecta tanto el churn sin edge (bruto plano, fees acumulando)
+        // como el anti-edge (bruto negativo). Medición que lo motiva: SOL
+        // 7 trades 0 wins — fees −$3.21 dominaron el −$4.44 neto del día.
+        {
+            let exec_brk = Arc::clone(&exec);
+            rt_handle.spawn(async move {
+                let boot_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let mut tick = tokio::time::interval(std::time::Duration::from_secs(300));
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                tick.tick().await; // primer tick inmediato: alinear al ciclo de 5 min
+                loop {
+                    tick.tick().await;
+                    let executor = exec_brk.load_full();
+                    if executor.is_kill_switch_active() {
+                        continue;
+                    }
+                    let Ok(entries) = executor.fetch_income(&[], boot_ms, 1000).await else {
+                        continue;
+                    };
+                    #[derive(Default)]
+                    struct Agg {
+                        realized: f64,   // REALIZED_PNL + FUNDING_FEE (neto de dirección)
+                        gross_pos: f64,  // suma de cierres GANADORES
+                        fees: f64,       // |COMMISSION|
+                        trades: usize,   // cierres con PnL ≠ 0
+                    }
+                    let mut per: std::collections::HashMap<String, Agg> =
+                        std::collections::HashMap::new();
+                    for e in &entries {
+                        if e.symbol.is_empty() {
+                            continue;
+                        }
+                        let a = per.entry(e.symbol.clone()).or_default();
+                        match e.income_type.as_str() {
+                            "REALIZED_PNL" => {
+                                if e.income != 0.0 {
+                                    a.trades += 1;
+                                }
+                                a.realized += e.income;
+                                if e.income > 0.0 {
+                                    a.gross_pos += e.income;
+                                }
+                            }
+                            "FUNDING_FEE" => a.realized += e.income,
+                            "COMMISSION" => a.fees += e.income.abs(),
+                            _ => {}
+                        }
+                    }
+                    for (sym, a) in per {
+                        let net = a.realized - a.fees;
+                        if a.trades >= 3 && net < 0.0 && a.fees > a.gross_pos {
+                            let until_ms = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64
+                                + 4 * 3_600_000;
+                            suspend_symbol_until(&sym, until_ms);
+                            telemetry_server::telemetry_log!(
+                                "🛑 [FEE-BREAKER] {} suspendido 4h para nuevas entradas: {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
+                                sym, a.trades, a.gross_pos, a.fees, net
+                            );
+                        }
+                    }
+                }
+            });
+        }
+
         // B1.3 — WATCHDOG DE POSICIÓN DESNUDA.
         // "Toda posición tiene TP/SL" pasa de intención a INVARIANTE auditable:
         // cada 60s (o a los 5s si un ALGO_UPDATE terminal marcó
@@ -1434,14 +1540,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // remanente de fills parciales posteriores al bracket.
         {
             let exec_wd = Arc::clone(&exec);
-            let arena_wd = Arc::clone(&arena_real);
-            rt_handle.spawn(async move {
+            let arena_wd = Arc::clone(&arena_real);            rt_handle.spawn(async move {
                 telemetry_server::telemetry_log!(
                     "🐕 [PROTECTION-WATCHDOG] Vigilante de posición desnuda activo (60s nominal, 5s reactivo)"
                 );
                 let mut fast = tokio::time::interval(std::time::Duration::from_secs(5));
                 fast.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 let mut ticks: u32 = 0;
+                // B3.5 — ESCALADO ANTI-DESNUDEZ PERSISTENTE (caso peligroso
+                // del roadmap: SL-REJECTED por margin-check en el disparo
+                // solo generaba telemetría). Si el gap de protección de un
+                // símbolo SOBREVIVE a 3 auditorías consecutivas, el
+                // re-bracket falló 3 veces (margin-check persistente:
+                // reintentar la MISMA orden vuelve a fallar) y el invariante
+                // "toda posición con TP/SL" ya no es exigible vía brackets:
+                // se cierra la posición a mercado — pérdida realizada y
+                // ACOTADA en vez de riesgo desnudo ilimitado. Umbral 3
+                // absorbe los estados transitorios (bracket en vuelo tras
+                // una entrada, 1 auditoría).
+                let mut naked_streak: std::collections::HashMap<String, u32> =
+                    std::collections::HashMap::new();
+                const NAKED_ESCALATION_LIMIT: u32 = 3;
                 loop {
                     fast.tick().await;
                     ticks = ticks.wrapping_add(1);
@@ -1514,6 +1633,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await;
                         if g_tp > 0.0 || g_sl > 0.0 {
                             naked_total += 1;
+                            let streak = naked_streak
+                                .entry(p.symbol.clone())
+                                .and_modify(|c| *c += 1)
+                                .or_insert(1);
+                            if *streak >= NAKED_ESCALATION_LIMIT {
+                                // B3.5 — el bracket es inaplicable; el cierre
+                                // es la única protección que queda. Protocolo
+                                // X-009: cerrar PRIMERO con la qty REAL del
+                                // exchange (reduce-only), purgar brackets
+                                // después. Fallo NO resetea el streak: el
+                                // siguiente ciclo reintenta el cierre.
+                                telemetry_server::telemetry_log!(
+                                    "🚨 [NAKED-ESCALATION] {} desnuda tras {} auditorías (re-bracket inaplicable) — CIERRE DE EMERGENCIA a mercado",
+                                    p.symbol, streak
+                                );
+                                let close_sym = p.symbol.clone();
+                                let close_long = is_long;
+                                let exec_esc = exec_wd.load_full();
+                                let real_qty = exec_esc
+                                    .fetch_position_risk()
+                                    .await
+                                    .ok()
+                                    .and_then(|ps| {
+                                        ps.iter()
+                                            .find(|r| r.symbol == close_sym
+                                                && r.position_amt.abs() > 0.0)
+                                            .map(|r| r.position_amt.abs())
+                                    });
+                                if let Some(rq) = real_qty {
+                                    let close_res = match exec_esc
+                                        .get_symbol_filter(&close_sym)
+                                        .await
+                                    {
+                                        Ok(f) => {
+                                            exec_esc
+                                                .execute_reduce_only_market(
+                                                    &close_sym, close_long, rq, f.step_size,
+                                                )
+                                                .await
+                                        }
+                                        Err(e) => Err(format!("filtro: {e}")),
+                                    };
+                                    match close_res {
+                                        Ok(()) => {
+                                            let _ = exec_esc
+                                                .cancel_position_oco_orders(
+                                                    &close_sym,
+                                                    close_long,
+                                                )
+                                                .await;
+                                            naked_streak.remove(&close_sym);
+                                            telemetry_server::telemetry_log!(
+                                                "🛑 [NAKED-ESCALATION] {} cerrada por emergencia — brackets purgados",
+                                                close_sym
+                                            );
+                                        }
+                                        Err(e) => {
+                                            telemetry_server::telemetry_log!(
+                                                "⚠️ [NAKED-ESCALATION] cierre de {} falló ({}) — reintento en el próximo ciclo",
+                                                close_sym, e
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    // La posición ya no existe (TP disparó o
+                                    // cierre externo): purga de huérfanas la
+                                    // limpiará en esta misma auditoría.
+                                    naked_streak.remove(&close_sym);
+                                }
+                            }
+                        } else {
+                            naked_streak.remove(&p.symbol);
                         }
                     }
                     if dirty {
@@ -2297,7 +2488,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let exec_clone = Arc::clone(&exec);
                         let arena_clone = Arc::clone(&engine_real.arena);
 
-                        let force_maker = false;
+                        // B3.2b — RUTA MAKER ACTIVADA (palanca de fee dormida).
+                        // execute_maker_chase: post-only al mid → 15ms →
+                        // cancela → consulta el fill REAL (anti-double-fill
+                        // F1.3) → mercado SOLO el remanente. Si el post-only
+                        // cruza el libro, rechazo inmediato → taker como hoy.
+                        // Coste: ~15ms. Beneficio: 2 bps por fracción maker.
+                        // El modelo de fricción D-645 (taker+taker) queda
+                        // como cota superior conservadora; el gate y los
+                        // pisos de viabilidad NO se relajan.
+                        let force_maker = true;
                         let maker_price = current_price;
                         let iceberg_threshold = engine_real.arena.config.iceberg_volume_threshold.load(Ordering::Relaxed);
                         let iceberg_slices = engine_real.arena.config.iceberg_slice_count.load(Ordering::Relaxed).max(2.0);
@@ -2330,6 +2530,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if exec_leverage == 0 {
                                 telemetry_engine::telemetry!(
                                     "🛡️ [ENVOLVENTE] Entrada bloqueada: evidencia insuficiente o capital no sostiene el riesgo mínimo (Kelly bayesiano). Ejecutando Rollback de estado."
+                                );
+                                rollback_positions(&arena_clone);
+                                return;
+                            }
+
+                            // B3.6 — veto del breaker de fees: el símbolo
+                            // demostró (contabilidad del exchange) que no
+                            // paga su propia fricción. Posiciones vivas y
+                            // sus brackets NO se tocan; sólo nuevas entradas.
+                            if is_symbol_suspended(&parsed_sym_str) {
+                                telemetry_engine::telemetry!(
+                                    "🛑 [FEE-BREAKER] Entrada de {} vetada (símbolo suspendido — fees > bruto ganador). Rollback de estado.",
+                                    parsed_sym_str
                                 );
                                 rollback_positions(&arena_clone);
                                 return;
