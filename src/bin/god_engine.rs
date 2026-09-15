@@ -2102,16 +2102,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .get(ci)
                             .map(|e| e.weights())
                             .unwrap_or([0.5, 0.5]);
+                        let ml_p = engine_real.arena.coins[ci].ml_prob.load(Ordering::Relaxed);
                         if ci < 3 || spec.fused_score.abs() > 0.5 {
                             telemetry_engine::telemetry!(
-                                "🌈 [ESPECTRO] {} fusión {:+.3} τ_dom {}ms pers[{:.2},{:.2}] ensamble[F:{:.2} NN:{:.2}]",
+                                "🌈 [ESPECTRO] {} fusión {:+.3} τ_dom {}ms pers[{:.2},{:.2}] ensamble[F:{:.2} NN:{:.2}] ml={:.3}",
                                 sym,
                                 spec.fused_score,
                                 format_tau(spec.dominant_tau_ms),
                                 spec.scales[8].persistence,
                                 spec.scales[14].persistence,
                                 ens_w[0],
-                                ens_w[1]
+                                ens_w[1],
+                                ml_p
                             );
                         }
                     }
