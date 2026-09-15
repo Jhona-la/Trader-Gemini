@@ -1757,12 +1757,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let (env_lev, operable) = risk_envelope
                             .max_leverage(cap_now, stop_pct, env_min_notional, env_z, env_k);
                         // D-116 (evolucionado por X-022/REHAB-4): la ENVOLVENTE
-                        // es AUTORITATIVA. Antes: `.max(core_leverage)` pisaba
-                        // el cap bayesiano y `operable=false` ejecutaba igual
-                        // (el bloqueo `== 0` era inalcanzable) — la envolvente
-                        // era consultiva, violando el axioma F5.1. Ahora: el
-                        // apalancamiento del core puede BAJAR del cap, jamás
-                        // subirlo; y operable=false BLOQUEA la orden (0).
+                        // es AUTORITATIVA — PERO con BOOTSTRAP EXPLORATORIO:
+                        // sin evidencia (posterior.n() < 30), el sistema DEBE
+                        // poder operar con riesgo mínimo (leverage 1) para
+                        // GENERAR la evidencia que la envolvente necesita.
+                        // Sin esto: deadlock (0 trades → 0 evidencia → 0 trades).
+                        // Es epsilon-greedy estándar: exploración forzada inicial.
+                        let envelope_n = risk_envelope.posterior.n();
                         let notional_ord = _qty.abs() * entry_price;
                         let pos_margin = engine_real.arena.coins[coin_id].positions.position.margin_used.load(Ordering::Relaxed);
                         let core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
@@ -1770,12 +1771,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             (5.05 / cap_now.max(1.0)).ceil().clamp(1.0, 20.0) as u32
                         };
-                        exec_leverage = if operable {
+                        if envelope_n < 30.0 {
+                            // BOOTSTRAP: riesgo mínimo para acumular evidencia.
+                            // La envolvente told "no" porque no sabe — dejamos
+                            // que el sistema APRENDA con skin in the game mínimo.
+                            exec_leverage = 1;
+                        } else if operable {
                             let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
-                            core_leverage.clamp(1, 20).min(cap)
+                            exec_leverage = core_leverage.clamp(1, 20).min(cap);
                         } else {
-                            0 // SIN ORDEN: la matemática dijo NO OPERAR
-                        };
+                            exec_leverage = 0; // SIN ORDEN: la matemática dijo NO
+                        }
                         let _ = tx_log_worker.try_send((true, is_long, coin_id));
 
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
