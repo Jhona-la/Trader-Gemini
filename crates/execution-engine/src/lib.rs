@@ -12,6 +12,7 @@ pub mod reconciliation;
 pub mod router;
 pub mod shadow;
 pub mod simulator;
+pub mod trade_accounting;
 pub mod user_data_stream;
 pub mod ws_executor;
 

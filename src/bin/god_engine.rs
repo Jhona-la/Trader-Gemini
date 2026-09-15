@@ -2183,6 +2183,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
 
+                    // B3.7 — CIERRES POR BRACKET: contabilidad + aprendizaje.
+                    // Los disparos TP/SL del exchange (la mayoría de los
+                    // cierres) llegan por la cola de trade_accounting; aquí
+                    // alimentan los mismos acumuladores y el posterior de
+                    // Kelly que antes sólo veía los cierres del core.
+                    for bc in execution_engine::trade_accounting::drain_bracket_closes() {
+                        let net_bc = bc.pnl_gross - bc.fees;
+                        if bc.pnl_gross != 0.0 {
+                            if net_bc >= 0.0 {
+                                avg_win_abs = if avg_win_abs == 0.0 { net_bc.abs() } else { avg_win_abs * 0.95 + net_bc.abs() * 0.05 };
+                            } else {
+                                avg_loss_abs = if avg_loss_abs == 0.0 { net_bc.abs() } else { avg_loss_abs * 0.95 + net_bc.abs() * 0.05 };
+                            }
+                            risk_envelope.record_trade(net_bc > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
+                            total_gross_pnl += bc.pnl_gross;
+                            total_net_pnl += net_bc;
+                            total_fees += bc.fees;
+                            total_trades += 1;
+                            if net_bc > 0.0 { total_wins += 1; }
+                        }
+                        telemetry!(
+                            "🎯 [BRACKET CLOSE] {} {} qty {:.6}: entry {:.6} → fill {:.6} (trigger {:.6}, slip {:.1}bps adversos) | bruto {:.4} | fees {:.4} | neto {:.4}{}",
+                            bc.symbol,
+                            bc.trigger,
+                            bc.qty,
+                            bc.entry_price,
+                            bc.exit_price,
+                            bc.stop_price,
+                            bc.slippage_bps,
+                            bc.pnl_gross,
+                            bc.fees,
+                            net_bc,
+                            if bc.pnl_gross == 0.0 { " — sin contexto de entrada local (adoptada)" } else { "" }
+                        );
+                    }
+
                     if let Some((is_long, pnl, qty)) = closed_order {
                         // E-03: alimentar el DriftAuditor con cada cierre
                         // real (shadow aprox = pnl real; cuando el shadow

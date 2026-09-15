@@ -386,6 +386,9 @@ impl UserDataStreamer {
             #[serde(rename = "q")]
             #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
             orig_qty: f64,
+            /// Precio trigger de la pierna (stops/algo); "0" si no aplica.
+            #[serde(rename = "sp", default, deserialize_with = "crate::order_types::string_or_f64")]
+            stop_price: f64,
         }
         #[derive(Deserialize)]
         struct Event {
@@ -437,6 +440,74 @@ impl UserDataStreamer {
             );
         }
         self.registry.apply_trade_update(&update, now);
+
+        // B3.7 — CONTABILIDAD DE CIERRES POR BRACKET: todo fill de pierna de
+        // salida (STOP_MARKET/TAKE_PROFIT_MARKET — convención-independiente)
+        // produce un registro con PnL, fees pro-rata y slippage adverso vs el
+        // trigger, al diario data/trade_fills.jsonl y a la cola que el host
+        // drena para alimentar a Kelly. Antes: los cierres por disparo no
+        // generaban contabilidad ni aprendizaje (10/10 cierres del
+        // 2026-09-15 fueron por bracket — el risk_envelope sólo veía los del
+        // core, que fueron cero).
+        if update.last_filled_qty > 0.0
+            && crate::trade_accounting::is_closing_bracket_order(&update.order_type)
+        {
+            let was_long = update.side.eq_ignore_ascii_case("SELL"); // SELL cierra long
+            let (entry_price, entry_fee, entry_qty) = self
+                .arena
+                .as_deref()
+                .and_then(|arena| {
+                    quantum_arena::symbol_registry::try_index(&update.symbol)
+                        .and_then(|ci| arena.coins.get(ci))
+                })
+                .map(|c| {
+                    let p = &c.positions.position;
+                    (
+                        p.entry_price.load(std::sync::atomic::Ordering::Relaxed),
+                        p.entry_fee.load(std::sync::atomic::Ordering::Relaxed),
+                        p.quantity.load(std::sync::atomic::Ordering::Relaxed),
+                    )
+                })
+                .unwrap_or((0.0, 0.0, 0.0));
+            let qty = update.last_filled_qty;
+            let sign = if was_long { 1.0 } else { -1.0 };
+            let pnl_gross = if entry_price > 0.0 {
+                (entry_price - update.last_filled_price) * qty * sign
+            } else {
+                0.0 // posición adoptada sin contexto local: evidencia sin PnL inventado
+            };
+            let slippage_bps = if o.stop_price > 0.0 {
+                let adverse = if was_long {
+                    o.stop_price - update.last_filled_price // vender más abajo = peor
+                } else {
+                    update.last_filled_price - o.stop_price // comprar más arriba = peor
+                };
+                (adverse / o.stop_price) * 10_000.0
+            } else {
+                0.0
+            };
+            let fees = update.commission.abs()
+                + if entry_qty > 0.0 {
+                    entry_fee * (qty / entry_qty)
+                } else {
+                    0.0
+                };
+            crate::trade_accounting::record_bracket_close(
+                crate::trade_accounting::BracketClose {
+                    ts_ms: update.trade_time_ms,
+                    symbol: update.symbol.clone(),
+                    was_long,
+                    qty,
+                    entry_price,
+                    exit_price: update.last_filled_price,
+                    stop_price: o.stop_price,
+                    pnl_gross,
+                    fees,
+                    trigger: crate::trade_accounting::trigger_kind(&update.order_type),
+                    slippage_bps,
+                },
+            );
+        }
 
         // K-04 / R3.1 / D-179: Motor de cancelación automática de pierna hermana OCO
         // Soporta tanto identificadores estándar (_TP, _SL) como variantes con retry (_TPR, _SLR).
