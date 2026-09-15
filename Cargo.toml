@@ -208,5 +208,9 @@ name = "system_health"
 path = "src/bin/system_health.rs"
 
 [[bin]]
+name = "oco_probe"
+path = "src/bin/oco_probe.rs"
+
+[[bin]]
 name = "backtest_windows"
 path = "src/bin/backtest_windows.rs"

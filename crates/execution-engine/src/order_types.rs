@@ -47,6 +47,29 @@ pub struct Fill {
     pub trade_id: u64,
 }
 
+/// Orden ALGO (condicional) abierta — GET /fapi/v1/openAlgoOrders.
+/// OCO-F5: los brackets TP/SL viven en el servicio de Algo desde la
+/// migración 2025-12-09 y NO aparecen en /fapi/v1/openOrders.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct OpenAlgoOrder {
+    #[serde(rename = "algoId", default)]
+    pub algo_id: u64,
+    #[serde(rename = "clientAlgoId", default)]
+    pub client_algo_id: String,
+    #[serde(default)]
+    pub symbol: String,
+    /// STOP_MARKET | TAKE_PROFIT_MARKET | TRAILING_STOP_MARKET | …
+    #[serde(rename = "orderType", default)]
+    pub order_type: String,
+    #[serde(rename = "positionSide", default)]
+    pub position_side: String,
+    /// NEW | TRIGGERED | CANCELED | FINISHED | …
+    #[serde(default)]
+    pub algo_status: String,
+    #[serde(rename = "triggerPrice", deserialize_with = "string_or_f64", default)]
+    pub trigger_price: f64,
+}
+
 /// Reconocimiento completo de una orden (POST ack, GET query, cancel response).
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct OrderAck {

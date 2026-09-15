@@ -388,13 +388,28 @@ impl BinanceClient {
     /// GET payload (used for fetching balances, etc)
     #[inline(always)]
     pub async fn get_payload(&self, full_url: &str) -> Result<(BinanceRateLimits, String), String> {
+        self.get_payload_with_timeout(full_url, None).await
+    }
+
+    /// GET con presupuesto de tiempo POR REQUEST. El timeout global HFT
+    /// (1.2s) incluye la lectura del body: exchangeInfo (~MBs) no cabe y
+    /// falla intermitentemente según la latencia del momento. Los endpoints
+    /// masivos usan esta variante con presupuesto explícito; los de orden
+    /// siguen con el global (latencia es parte del contrato de ejecución).
+    pub async fn get_payload_with_timeout(
+        &self,
+        full_url: &str,
+        timeout: Option<std::time::Duration>,
+    ) -> Result<(BinanceRateLimits, String), String> {
         let api_key = self.api_key.load();
-        let response = self
+        let mut req = self
             .http
             .get(full_url)
-            .header("X-MBX-APIKEY", api_key.as_ref().clone())
-            .send()
-            .await;
+            .header("X-MBX-APIKEY", api_key.as_ref().clone());
+        if let Some(t) = timeout {
+            req = req.timeout(t);
+        }
+        let response = req.send().await;
 
         match response {
             Ok(resp) => {

@@ -84,7 +84,11 @@ pub(crate) fn passive_join_price(mid: f64, tick: f64, is_sell: bool) -> f64 {
         return 0.0;
     }
     let half = 0.5 * tick;
-    let target = if is_sell { mid + half } else { (mid - half).max(tick) };
+    let target = if is_sell {
+        mid + half
+    } else {
+        (mid - half).max(tick)
+    };
     let inv = exact_inverse(tick);
     let scaled = target * inv;
     if is_sell {
@@ -438,7 +442,7 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-        let (_, body) = self.client.get_payload(buf.as_str()).await?;
+        let (_, body) = self.get_payload_account(buf.as_str()).await?;
         #[derive(serde::Deserialize)]
         struct ModeResp {
             #[serde(rename = "dualSidePosition")]
@@ -504,7 +508,7 @@ impl OrderExecutor {
         sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-        let dual_mode_opt = match self.client.get_payload(buf.as_str()).await {
+        let dual_mode_opt = match self.get_payload_account(buf.as_str()).await {
             Ok((_, mode_body)) => {
                 #[derive(serde::Deserialize)]
                 struct ModeResp {
@@ -545,6 +549,12 @@ impl OrderExecutor {
             buf.push_str("&signature=");
             buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
             if self.client.cancel_order_payload(buf.as_str()).await.is_ok() {
+                cancelled += 1;
+            }
+            // OCO-F5: los brackets TP/SL (algo orders) NO se tocan con
+            // allOpenOrders — purgarlos también o el trigger dispara un
+            // close fantasma tras aplanar.
+            if self.cancel_all_algo_open_orders(sym).await.is_ok() {
                 cancelled += 1;
             }
         }
@@ -769,7 +779,7 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-        match self.client.get_payload(buf.as_str()).await {
+        match self.get_payload_account(buf.as_str()).await {
             Ok((limits, body)) => {
                 self.update_limits(&limits);
                 serde_json::from_str(&body).map_err(|e| {
@@ -811,7 +821,7 @@ impl OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        let res = self.client.get_payload(buf.as_str()).await;
+        let res = self.get_payload_account(buf.as_str()).await;
         match res {
             Ok((limits, body)) => {
                 self.update_limits(&limits);
@@ -1129,6 +1139,30 @@ impl OrderExecutor {
         })
     }
 
+    /// GET de clase CUENTA (positionRisk, account, income, commission):
+    /// respuestas que escalan con el tamaño de la cuenta y NO pertenecen a
+    /// la ruta de órdenes. El timeout HFT global (1.2s) las mataba a
+    /// intermitencia (TEXT_ERR: operation timed out → body vacío → parse
+    /// error). Presupuesto de 5s + 1 reintento. La ruta de órdenes sigue
+    /// con el presupuesto global: ahí la latencia es parte del contrato.
+    async fn get_payload_account(
+        &self,
+        url: &str,
+    ) -> Result<(crate::client::BinanceRateLimits, String), String> {
+        let mut res = self
+            .client
+            .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
+            .await;
+        if res.is_err() {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            res = self
+                .client
+                .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
+                .await;
+        }
+        res
+    }
+
     pub async fn fetch_all_symbol_filters(
         &self,
     ) -> Result<std::collections::HashMap<String, SymbolFilter>, String> {
@@ -1139,7 +1173,20 @@ impl OrderExecutor {
             buf.push_str("https://fapi.binance.com/fapi/v1/exchangeInfo");
         }
 
-        match self.client.get_payload(buf.as_str()).await {
+        // exchangeInfo pesa MBs: el timeout HFT global (1.2s) lo mata
+        // intermitentemente. Presupuesto dedicado + 1 reintento.
+        let mut res = self
+            .client
+            .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
+            .await;
+        if res.is_err() {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            res = self
+                .client
+                .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
+                .await;
+        }
+        match res {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
                 let mut map = std::collections::HashMap::new();
@@ -1255,6 +1302,139 @@ impl OrderExecutor {
         is_long: bool,
     ) -> Result<usize, String> {
         <Self as ExecutionProvider>::cancel_position_oco_orders(self, symbol, is_long).await
+    }
+    /// OCO-F5: cancela una orden ALGO (condicional: TP/SL/trailing) por su
+    /// clientAlgoId. Las piernas del bracket ya NO viven en /fapi/v1/order:
+    /// cancelarlas por la ruta legacy devuelve "order does not exist" y deja
+    /// el trigger vivo en el exchange.
+    #[inline(always)]
+    async fn cancel_algo_order(&self, symbol: &str, client_algo_id: &str) -> Result<(), String> {
+        if self.is_paper_trading {
+            println!(
+                "📝 [PAPER TRADING LOCAL] Algo Orden Cancelada: {} en {}",
+                client_algo_id, symbol
+            );
+            return Ok(());
+        }
+
+        let timestamp = self.get_synced_timestamp();
+        self.check_rate_limits(timestamp)?;
+
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/algoOrder?"
+        });
+        let payload_start = buf.as_str().len();
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
+        buf.push_str("&clientAlgoId=");
+        buf.push_str(client_algo_id);
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
+
+        let mut sig_buf = [0u8; 64];
+        let payload = &buf.as_str()[payload_start..];
+        let api_secret = self.api_secret.load();
+        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
+        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+        buf.push_str("&signature=");
+        buf.push_str(signature);
+
+        let res = self.client.cancel_order_payload(buf.as_str()).await;
+        if let Ok(limits) = &res {
+            self.update_limits(limits);
+        }
+        res.map(|_| ())
+    }
+
+    /// OCO-F5: purga TODAS las órdenes algo abiertas de un símbolo.
+    /// DELETE /fapi/v1/algoOpenOrders — el /fapi/v1/allOpenOrders legacy NO
+    /// las toca: un bracket TP/SL sobreviviría a la purga y dispararía un
+    /// close fantasma sobre una posición ya aplanada.
+    async fn cancel_all_algo_open_orders(&self, symbol: &str) -> Result<(), String> {
+        if self.is_paper_trading {
+            return Ok(());
+        }
+        let timestamp = self.get_synced_timestamp();
+        self.check_rate_limits(timestamp)?;
+
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/algoOpenOrders?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/algoOpenOrders?"
+        });
+        let payload_start = buf.as_str().len();
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
+
+        let mut sig_buf = [0u8; 64];
+        let payload = &buf.as_str()[payload_start..];
+        let api_secret = self.api_secret.load();
+        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
+        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+        buf.push_str("&signature=");
+        buf.push_str(signature);
+
+        let res = self.client.cancel_order_payload(buf.as_str()).await;
+        if let Ok(limits) = &res {
+            self.update_limits(limits);
+        }
+        res.map(|_| ())
+    }
+
+    /// OCO-F5: lista las órdenes algo (TP/SL/trailing) abiertas de un símbolo.
+    /// GET /fapi/v1/openAlgoOrders — los brackets NO aparecen en
+    /// /fapi/v1/openOrders; sin esto, el motor cree que la posición está
+    /// desnuda y re-bracketea infinito.
+    async fn fetch_open_algo_orders(
+        &self,
+        symbol: &str,
+    ) -> Result<Vec<crate::order_types::OpenAlgoOrder>, String> {
+        if self.is_paper_trading {
+            return Ok(Vec::new());
+        }
+        let timestamp = self.get_synced_timestamp();
+        self.check_rate_limits(timestamp)?;
+
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/openAlgoOrders?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/openAlgoOrders?"
+        });
+        let payload_start = buf.as_str().len();
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
+
+        let mut sig_buf = [0u8; 64];
+        let payload = &buf.as_str()[payload_start..];
+        let api_secret = self.api_secret.load();
+        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
+        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+        buf.push_str("&signature=");
+        buf.push_str(signature);
+
+        let res = self.get_payload_account(buf.as_str()).await;
+        match res {
+            Ok((limits, body)) => {
+                self.update_limits(&limits);
+                serde_json::from_str(&body).map_err(|e| {
+                    format!(
+                        "OPEN_ALGO_PARSE: {} body={}",
+                        e,
+                        crate::order_types::truncate(&body, 200)
+                    )
+                })
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -2040,10 +2220,13 @@ impl ExecutionProvider for OrderExecutor {
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
+        // OCO-F5: TRAILING_STOP_MARKET es tipo condicional — bloqueado en
+        // /fapi/v1/order (-4120) desde la migración al servicio de Algo
+        // (2025-12-09). activationPrice/callbackRate mantienen sus nombres.
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
+            "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
         } else {
-            "https://fapi.binance.com/fapi/v1/order?"
+            "https://fapi.binance.com/fapi/v1/algoOrder?"
         });
         let payload_start = buf.as_str().len();
 
@@ -2055,6 +2238,7 @@ impl ExecutionProvider for OrderExecutor {
             buf.push_str("&positionSide=");
             buf.push_str(if is_long { "LONG" } else { "SHORT" });
         }
+        buf.push_str("&algoType=CONDITIONAL");
         buf.push_str("&type=TRAILING_STOP_MARKET");
         buf.push_str("&quantity=");
         buf.push_f64(final_quantity);
@@ -2062,7 +2246,7 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_f64(final_price);
         buf.push_str("&callbackRate=");
         buf.push_f64(safe_callback);
-        buf.push_str("&newClientOrderId=");
+        buf.push_str("&clientAlgoId=");
         buf.push_str(client_order_id);
         buf.push_str("&timestamp=");
         buf.push_u64(timestamp);
@@ -2106,8 +2290,7 @@ impl ExecutionProvider for OrderExecutor {
         // anti-difusivo). La ruta de reintento reutiliza estos dos valores.
         let final_tp =
             Self::round_target_away_from_entry(take_profit_price, tick_size, is_long_close);
-        let final_sl =
-            Self::round_stop_away_from_entry(stop_loss_price, tick_size, is_long_close);
+        let final_sl = Self::round_stop_away_from_entry(stop_loss_price, tick_size, is_long_close);
 
         if self.is_paper_trading {
             println!("📝 [PAPER TRADING LOCAL] OCO Limit/Stop interceptada para {} @ TP: {} / SL: {}. Se maneja localmente.", symbol, final_tp, final_sl);
@@ -2119,9 +2302,9 @@ impl ExecutionProvider for OrderExecutor {
         self.check_rate_limits(timestamp)?;
 
         let base_url = if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
+            "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
         } else {
-            "https://fapi.binance.com/fapi/v1/order?"
+            "https://fapi.binance.com/fapi/v1/algoOrder?"
         };
 
         // R3.1 — modo de posición condicional: en HEDGE, positionSide LONG/SHORT
@@ -2144,6 +2327,15 @@ impl ExecutionProvider for OrderExecutor {
         };
 
         // 1. Build Stop Loss Order (STOP_MARKET)
+        //
+        // OCO-F5 (migración Algo Orders, efectiva 2025-12-09): Binance
+        // bloqueó los tipos condicionales en /fapi/v1/order con -4120
+        // ("Order type not supported for this endpoint"). STOP_MARKET,
+        // TAKE_PROFIT_MARKET, STOP, TAKE_PROFIT y TRAILING_STOP_MARKET
+        // viven ahora en el servicio de Algo: POST /fapi/v1/algoOrder con
+        // algoType=CONDITIONAL, triggerPrice (antes stopPrice) y
+        // clientAlgoId (antes newClientOrderId). Esquema validado
+        // empíricamente contra testnet — ver src/bin/oco_probe.rs.
         let mut sl_buf = ZeroAllocBuffer::new();
         sl_buf.push_str(base_url);
         let sl_payload_start = sl_buf.as_str().len();
@@ -2153,12 +2345,13 @@ impl ExecutionProvider for OrderExecutor {
         sl_buf.push_str(side);
         sl_buf.push_str(&position_side_q);
         sl_buf.push_str(&reduce_only_q);
+        sl_buf.push_str("&algoType=CONDITIONAL");
         sl_buf.push_str("&type=STOP_MARKET");
         sl_buf.push_str("&quantity=");
         sl_buf.push_f64(final_quantity);
-        sl_buf.push_str("&stopPrice=");
+        sl_buf.push_str("&triggerPrice=");
         sl_buf.push_f64(final_sl);
-        sl_buf.push_str("&newClientOrderId=");
+        sl_buf.push_str("&clientAlgoId=");
         sl_buf.push_str(&format!("{}_SL", base_client_id));
         sl_buf.push_str("&timestamp=");
         sl_buf.push_u64(timestamp);
@@ -2173,12 +2366,13 @@ impl ExecutionProvider for OrderExecutor {
         tp_buf.push_str(side);
         tp_buf.push_str(&position_side_q);
         tp_buf.push_str(&reduce_only_q);
+        tp_buf.push_str("&algoType=CONDITIONAL");
         tp_buf.push_str("&type=TAKE_PROFIT_MARKET");
         tp_buf.push_str("&quantity=");
         tp_buf.push_f64(final_quantity);
-        tp_buf.push_str("&stopPrice=");
+        tp_buf.push_str("&triggerPrice=");
         tp_buf.push_f64(final_tp);
-        tp_buf.push_str("&newClientOrderId=");
+        tp_buf.push_str("&clientAlgoId=");
         tp_buf.push_str(&format!("{}_TP", base_client_id));
         tp_buf.push_str("&timestamp=");
         tp_buf.push_u64(timestamp);
@@ -2223,9 +2417,15 @@ impl ExecutionProvider for OrderExecutor {
         if sl_res.is_err() || tp_res.is_err() {
             let sl_down = sl_res.is_err();
             let tp_down = tp_res.is_err();
+            // OCO-F1: antes solo se imprimían los booleanos — el cuerpo real
+            // del rechazo de Binance (código -2022/-1111/-4061...) se perdía
+            // y el diagnóstico forense era imposible.
             println!(
-                "⚠️ [OCO] Pierna(s) fallida(s) (SL={}, TP={}). Reintentando...",
-                sl_down, tp_down
+                "⚠️ [OCO] Pierna(s) fallida(s) (SL={}, TP={}). Reintentando... SL_err={:?} TP_err={:?}",
+                sl_down,
+                tp_down,
+                sl_res.as_ref().err(),
+                tp_res.as_ref().err()
             );
             // D-02 — RETRY CON REGENERACIÓN COMPLETA (5º informe): el retry
             // anterior reenviaba el MISMO buffer firmado — timestamp vencido
@@ -2245,12 +2445,13 @@ impl ExecutionProvider for OrderExecutor {
                 rb.push_str(side);
                 rb.push_str(&position_side_q);
                 rb.push_str(&reduce_only_q);
+                rb.push_str("&algoType=CONDITIONAL");
                 rb.push_str("&type=STOP_MARKET");
                 rb.push_str("&quantity=");
                 rb.push_f64(final_quantity);
-                rb.push_str("&stopPrice=");
+                rb.push_str("&triggerPrice=");
                 rb.push_f64(final_sl);
-                rb.push_str("&newClientOrderId=");
+                rb.push_str("&clientAlgoId=");
                 rb.push_str(&format!("{}_SLR", base_client_id));
                 rb.push_str("&timestamp=");
                 rb.push_u64(ts_retry);
@@ -2274,12 +2475,13 @@ impl ExecutionProvider for OrderExecutor {
                 rb.push_str(side);
                 rb.push_str(&position_side_q);
                 rb.push_str(&reduce_only_q);
+                rb.push_str("&algoType=CONDITIONAL");
                 rb.push_str("&type=TAKE_PROFIT_MARKET");
                 rb.push_str("&quantity=");
                 rb.push_f64(final_quantity);
-                rb.push_str("&stopPrice=");
+                rb.push_str("&triggerPrice=");
                 rb.push_f64(final_tp);
-                rb.push_str("&newClientOrderId=");
+                rb.push_str("&clientAlgoId=");
                 rb.push_str(&format!("{}_TPR", base_client_id));
                 rb.push_str("&timestamp=");
                 rb.push_u64(ts_retry);
@@ -2296,25 +2498,39 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         if sl_res.is_err() && tp_res.is_err() {
-            return Err("Ambas órdenes OCO fallaron.".to_string());
+            // OCO-F1: propagar el rechazo EXACTO de cada pierna al caller
+            // (el retry del motor y el emergency-close necesitan el código
+            // para decidir; el log necesita el cuerpo para el forense).
+            let sl_e = sl_res.as_ref().err().cloned().unwrap_or_default();
+            let tp_e = tp_res.as_ref().err().cloned().unwrap_or_default();
+            return Err(format!(
+                "Ambas órdenes OCO fallaron. SL_err: {} | TP_err: {}",
+                sl_e, tp_e
+            ));
         }
         if sl_res.is_err() || tp_res.is_err() {
             // D-416: Cancelar el client_order_id exacto que fue confirmado en Binance (sea _SL, _SLR, _TP o _TPR)
             let mut cancelled_ids = Vec::new();
             if sl_res.is_ok() {
                 if let Some(ref sl_id) = confirmed_sl_id {
-                    let _ = self.cancel_order(symbol, sl_id).await;
+                    let _ = self.cancel_algo_order(symbol, sl_id).await;
                     cancelled_ids.push(sl_id.clone());
                 }
             }
             if tp_res.is_ok() {
                 if let Some(ref tp_id) = confirmed_tp_id {
-                    let _ = self.cancel_order(symbol, tp_id).await;
+                    let _ = self.cancel_algo_order(symbol, tp_id).await;
                     cancelled_ids.push(tp_id.clone());
                 }
             }
+            let failed_e = if sl_res.is_err() {
+                sl_res.as_ref().err().cloned().unwrap_or_default()
+            } else {
+                tp_res.as_ref().err().cloned().unwrap_or_default()
+            };
             return Err(format!(
-                "OCO PARCIAL: pierna fallida tras retry; pierna(s) confirmada(s) [{}] cancelada(s). Posición SIN protección — aplanar o alertar.",
+                "OCO PARCIAL: pierna fallida tras retry ({}); pierna(s) confirmada(s) [{}] cancelada(s). Posición SIN protección — aplanar o alertar.",
+                failed_e,
                 cancelled_ids.join(", ")
             ));
         }
@@ -2405,10 +2621,21 @@ impl ExecutionProvider for OrderExecutor {
         if let Ok(limits) = &res {
             self.update_limits(limits);
         }
-        res.map(|_| ())
+        res.map(|_| ())?;
+        // OCO-F5: las órdenes TP/SL condicionales viven en el servicio de
+        // Algo y SOBREVIVEN a /fapi/v1/allOpenOrders. Sin esta segunda purga,
+        // todo cierre de posición dejaba triggers vivos que disparaban
+        // closes fantasmas sobre posiciones ya aplanadas.
+        self.cancel_all_algo_open_orders(symbol).await
     }
 
     /// D-371: Cancela quirúrgicamente únicamente las órdenes OCO asociadas a la posición especificada
+    ///
+    /// OCO-F5: los brackets son órdenes ALGO que (a) NO aparecen en
+    /// /fapi/v1/openOrders ni en el order_registry alimentado por
+    /// ORDER_TRADE_UPDATE, y (b) NO se cancelan por DELETE /fapi/v1/order.
+    /// La fuente de verdad es /fapi/v1/openAlgoOrders y el cancel es
+    /// DELETE /fapi/v1/algoOrder por algoId, filtrando por positionSide.
     #[inline(always)]
     async fn cancel_position_oco_orders(
         &self,
@@ -2416,17 +2643,18 @@ impl ExecutionProvider for OrderExecutor {
         is_long: bool,
     ) -> Result<usize, String> {
         let pos_side = if is_long { "LONG" } else { "SHORT" };
-        let active = self.order_registry.active_for_symbol(symbol);
+        let open_algo = self.fetch_open_algo_orders(symbol).await?;
         let mut canceled = 0;
-        for o in active {
-            let is_oco_bracket = o.client_order_id.contains("_SL")
-                || o.client_order_id.contains("_TP")
-                || o.client_order_id.contains("oco_");
-            let matches_side = o.position_side == pos_side
-                || o.position_side == "BOTH"
-                || o.position_side.is_empty();
-            if is_oco_bracket && matches_side {
-                if self.cancel_order(symbol, &o.client_order_id).await.is_ok() {
+        for a in open_algo {
+            let matches_side = a.position_side == pos_side
+                || a.position_side == "BOTH"
+                || a.position_side.is_empty();
+            if matches_side {
+                if self
+                    .cancel_algo_order(symbol, &a.client_algo_id)
+                    .await
+                    .is_ok()
+                {
                     canceled += 1;
                 }
             }
@@ -2528,7 +2756,7 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        let res = self.client.get_payload(buf.as_str()).await;
+        let res = self.get_payload_account(buf.as_str()).await;
         match res {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
@@ -2589,7 +2817,7 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        match self.client.get_payload(buf.as_str()).await {
+        match self.get_payload_account(buf.as_str()).await {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
 
@@ -2679,7 +2907,7 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        match self.client.get_payload(buf.as_str()).await {
+        match self.get_payload_account(buf.as_str()).await {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -2763,11 +2991,22 @@ mod tests_decima_ola {
     fn d630_stops_y_objetivos_se_alejan_de_la_entrada() {
         let t = 0.1;
         // largo: stop hacia abajo, objetivo hacia arriba
-        assert!((OrderExecutor::round_stop_away_from_entry(59_000.05, t, true) - 59_000.0).abs() < 1e-9);
-        assert!((OrderExecutor::round_target_away_from_entry(61_000.05, t, true) - 61_000.1).abs() < 1e-9);
+        assert!(
+            (OrderExecutor::round_stop_away_from_entry(59_000.05, t, true) - 59_000.0).abs() < 1e-9
+        );
+        assert!(
+            (OrderExecutor::round_target_away_from_entry(61_000.05, t, true) - 61_000.1).abs()
+                < 1e-9
+        );
         // corto: stop hacia arriba, objetivo hacia abajo
-        assert!((OrderExecutor::round_stop_away_from_entry(61_000.05, t, false) - 61_000.1).abs() < 1e-9);
-        assert!((OrderExecutor::round_target_away_from_entry(59_000.05, t, false) - 59_000.0).abs() < 1e-9);
+        assert!(
+            (OrderExecutor::round_stop_away_from_entry(61_000.05, t, false) - 61_000.1).abs()
+                < 1e-9
+        );
+        assert!(
+            (OrderExecutor::round_target_away_from_entry(59_000.05, t, false) - 59_000.0).abs()
+                < 1e-9
+        );
     }
 
     /// D-629: pasos o precios inválidos no producen cantidades enviables.
@@ -2775,7 +3014,10 @@ mod tests_decima_ola {
     fn d629_entradas_invalidas_devuelven_cero() {
         assert_eq!(OrderExecutor::round_to_step_size(1.0, 0.0), 0.0);
         assert_eq!(OrderExecutor::round_to_step_size(1.0, f64::NAN), 0.0);
-        assert_eq!(OrderExecutor::round_price_to_tick(60_000.0, f64::NAN, true), 0.0);
+        assert_eq!(
+            OrderExecutor::round_price_to_tick(60_000.0, f64::NAN, true),
+            0.0
+        );
         assert_eq!(passive_join_price(f64::NAN, 0.1, false), 0.0);
     }
 }

@@ -2020,10 +2020,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             tag, parsed_sym_str, order_tp_price, order_sl_price
                                         );
                                         // D-125: Resiliencia OCO con 3 retries y cierre de emergencia si falla
+                                        //
+                                        // OCO-F2 (raza de llenado): el ack del MARKET
+                                        // llega ANTES que los fills asincrónicos del
+                                        // user-stream. Bracketear con la qty teórica
+                                        // cuando la posición real aún es parcial hace
+                                        // que Binance rechace ambas piernas (qty >
+                                        // posición ⇒ -2022 en hedge). Ahora: settle
+                                        // corto de fills + cada intento bracketea
+                                        // min(qty_intentada, posición REAL del exchange).
+                                        // NOTA: si el bracket cubre menos que la
+                                        // posición final, el remanente queda sin
+                                        // protección hasta el siguiente ciclo de
+                                        // reconciliación (arranque) — el settle de
+                                        // 350ms minimiza esa ventana.
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
                                         let mut oco_success = false;
                                         for retry in 1..=3 {
+                                            let qty_intent = final_qty.abs();
+                                            let qty_bracket = exec_clone
+                                                .load()
+                                                .fetch_position_risk()
+                                                .await
+                                                .ok()
+                                                .and_then(|ps| {
+                                                    // HEDGE: DOS registros por símbolo
+                                                    // (LONG/SHORT); el vacío trae amt=0
+                                                    // y puede ordenar primero.
+                                                    ps.iter()
+                                                        .find(|p| {
+                                                            p.symbol == parsed_sym_str
+                                                                && p.position_amt.abs() > 0.0
+                                                        })
+                                                        .map(|p| p.position_amt.abs())
+                                                })
+                                                .filter(|a| *a > 0.0)
+                                                .map(|real| real.min(qty_intent))
+                                                .unwrap_or(qty_intent);
+                                            if qty_bracket < qty_intent {
+                                                telemetry_engine::telemetry!(
+                                                    "⏳ [OCO] {} posición real {:.4} < intent {:.4} — bracketeando lo existente (intento {}/3)",
+                                                    parsed_sym_str, qty_bracket, qty_intent, retry
+                                                );
+                                            }
                                             let base_id = format!("CONT_oco_{}_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_micros(), retry);
-                                            match exec_clone.load().execute_oco_order(&parsed_sym_str, final_is_long, final_qty, order_tp_price, order_sl_price, dyn_step_size, dyn_tick_size, &base_id).await {
+                                            match exec_clone.load().execute_oco_order(&parsed_sym_str, final_is_long, qty_bracket, order_tp_price, order_sl_price, dyn_step_size, dyn_tick_size, &base_id).await {
                                                 Ok(_) => {
                                                     oco_success = true;
                                                     break;
@@ -2044,9 +2085,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             // naked en el exchange con estado local limpio.
                                             telemetry_engine::telemetry_err!("🚨 [EMERGENCY CLOSE] Fallaron 3 intentos OCO para {}. Cerrando posición a mercado ANTES de purgar órdenes.", parsed_sym_str);
                                             let is_long_close = final_is_long;
+                                            // OCO-F2: cerrar la posición REAL del exchange,
+                                            // no la qty teórica (reduceOnly con qty > posición
+                                            // ⇒ rechazo -2022 y posición naked).
+                                            let close_qty = exec_clone
+                                                .load()
+                                                .fetch_position_risk()
+                                                .await
+                                                .ok()
+                                                .and_then(|ps| {
+                                                    ps.iter()
+                                                        .find(|p| {
+                                                            p.symbol == parsed_sym_str
+                                                                && p.position_amt.abs() > 0.0
+                                                        })
+                                                        .map(|p| p.position_amt.abs())
+                                                })
+                                                .filter(|a| *a > 0.0)
+                                                .unwrap_or(final_qty.abs());
                                             let close_res = exec_clone
                                                 .load()
-                                                .execute_reduce_only_market(&parsed_sym_str, is_long_close, final_qty, dyn_step_size)
+                                                .execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)
                                                 .await;
                                             let close_res = match close_res {
                                                 Ok(()) => Ok(()),
@@ -2054,7 +2113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                                                     exec_clone
                                                         .load()
-                                                        .execute_reduce_only_market(&parsed_sym_str, is_long_close, final_qty, dyn_step_size)
+                                                        .execute_reduce_only_market(&parsed_sym_str, is_long_close, close_qty, dyn_step_size)
                                                         .await
                                                         .map_err(|e2| format!("{} / retry: {}", e1, e2))
                                                 }
