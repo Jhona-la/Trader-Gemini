@@ -24,6 +24,19 @@ async fn main() {
         .unwrap_or(7);
     let is_testnet = !args.contains(&"--live".to_string());
 
+    // .env local si existe (dotenv ligero sin dependencia extra) — ANTES de
+    // leer credenciales: el chequeo solía correr primero y el binario moría
+    // con "Credenciales ausentes" aunque el .env las tuviera.
+    if let Ok(env_src) = std::fs::read_to_string(".env") {
+        for line in env_src.lines() {
+            if let Some((k, v)) = line.split_once('=') {
+                if std::env::var(k).is_err() {
+                    std::env::set_var(k.trim(), v.trim());
+                }
+            }
+        }
+    }
+
     // Credenciales canónicas + alias (F0.2)
     let (key, secret) = if is_testnet {
         let k = std::env::var("BINANCE_DEMO_API_KEY")
@@ -42,17 +55,6 @@ async fn main() {
     if key.is_empty() || secret.is_empty() {
         eprintln!("❌ Credenciales ausentes (BINANCE_DEMO_* o BINANCE_API_KEY).");
         std::process::exit(1);
-    }
-
-    // .env local si existe (dotenv ligero sin dependencia extra)
-    if let Ok(env_src) = std::fs::read_to_string(".env") {
-        for line in env_src.lines() {
-            if let Some((k, v)) = line.split_once('=') {
-                if std::env::var(k).is_err() {
-                    std::env::set_var(k.trim(), v.trim());
-                }
-            }
-        }
     }
 
     let mut exec = OrderExecutor::new(key, secret, is_testnet);

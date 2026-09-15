@@ -839,6 +839,24 @@ impl GodEngineCore {
                         .load(Ordering::Relaxed)
                         .clamp(1.0, 10.0);
                     let fallback_tp = tp_base.max(fallback_sl * rr_ratio).clamp(0.0020, 0.0800);
+                    // B3.2: el fallback de gestión tampoco propone salidas que
+                    // no pagan sus comisiones — pisos de viabilidad por
+                    // fricción (mismo invariante que el gate y los brackets).
+                    // Los pisos previos (0,05 % / 0,10 %) eran menores que la
+                    // fricción roundtrip VIP0: TP garantizado en pérdida neta.
+                    let fee_rt_mgmt = 2.0 * self.arena.config.live_taker_fee.load(Ordering::Relaxed)
+                        + 2.0 * self
+                            .arena
+                            .config
+                            .base_slippage_floor
+                            .load(Ordering::Relaxed)
+                            .max(0.00001);
+                    let (fallback_sl, fallback_tp) =
+                        quantum_arena::genome::SuperGenotype::friction_floors(
+                            fee_rt_mgmt,
+                            fallback_sl,
+                            fallback_tp,
+                        );
                     if pos_tp > 0.0 && pos_sl > 0.0 {
                         if entry > 0.0 {
                             (

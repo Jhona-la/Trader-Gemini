@@ -2250,6 +2250,39 @@ impl SuperGenotype {
         (1.0 - w) / w + f / (w * sl_eff)
     }
 
+    /// B3.2 — PISOS DE VIABILIDAD POR FRICCIÓN para cualquier geometría de
+    /// bracket (fallback de entrada, watchdog, restore, adopción, gestión
+    /// temporal). La regla de `risk_engine::tp_sl::compute_tp_sl`
+    /// (D-636/D-681) promulgada como INVARIANTE sobre fracciones ya
+    /// calculadas: el stop nunca baja del mínimo viable frente a la fricción
+    /// y el objetivo nunca baja del stop por el RR que la fricción exige al
+    /// win rate de diseño. Con esto NINGÚN bracket nace con un TP incapaz
+    /// de pagar sus propias comisiones (arrastre medido: fees −108,7 % del
+    /// PnL bruto, 10 trades, testnet 2026-09-15).
+    ///
+    /// Devuelve `(sl_frac, tp_frac)` — fracciones del precio, ambas > 0 y
+    /// con EV ≥ 0 por construcción a `WORST_TOLERATED_WR`.
+    pub fn friction_floors(roundtrip_fee: f64, sl_frac: f64, tp_frac: f64) -> (f64, f64) {
+        let fee = if roundtrip_fee.is_finite() && roundtrip_fee > 0.0 {
+            roundtrip_fee
+        } else {
+            Self::REFERENCE_ROUNDTRIP_FEE
+        };
+        let sl_floor = Self::min_viable_sl(fee);
+        let sl = if sl_frac.is_finite() && sl_frac > 0.0 {
+            sl_frac.max(sl_floor)
+        } else {
+            sl_floor
+        };
+        let tp_floor = sl * Self::min_rr_for(Self::WORST_TOLERATED_WR, fee, sl).max(1.0);
+        let tp = if tp_frac.is_finite() && tp_frac > 0.0 {
+            tp_frac.max(tp_floor)
+        } else {
+            tp_floor
+        };
+        (sl, tp)
+    }
+
     /// Peor win rate que el sistema tolera — el punto de diseño conservador
     /// desde el que se dimensiona el gate.
     pub const WORST_TOLERATED_WR: f64 = 0.40;
@@ -3116,6 +3149,30 @@ impl SuperGenotype {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// B3.2: NINGUNA geometría que pase por `friction_floors` puede tener EV
+    /// negativo al win rate de diseño — el invariante que cierra el arrastre
+    /// de comisiones (−108,7 % del bruto medido en testnet). Cubre fricción
+    /// VIP0 (0,0012), VIP-alto y curvas de genoma degeneradas (cero).
+    #[test]
+    fn b3_2_friction_floors_garantizan_ev_no_negativo() {
+        for fee in [0.0008, 0.0010, 0.0012, 0.0020, 0.0050] {
+            for sl in [0.0, 0.0005, 0.0010, 0.0030, 0.0100] {
+                for tp in [0.0, 0.0005, 0.0010, 0.0020, 0.0100] {
+                    let (sl_f, tp_f) = SuperGenotype::friction_floors(fee, sl, tp);
+                    assert!(sl_f > 0.0 && tp_f > 0.0);
+                    let w = SuperGenotype::WORST_TOLERATED_WR;
+                    let ev = w * (tp_f - fee) - (1.0 - w) * (sl_f + fee);
+                    assert!(
+                        ev >= -1e-12,
+                        "EV negativo con fee={fee} sl={sl} tp={tp} → ({sl_f},{tp_f}): ev={ev}"
+                    );
+                    // El TP resultante siempre paga la fricción con margen.
+                    assert!(tp_f > fee, "tp={tp_f} no cubre fee={fee}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_genome_vector_symmetry_exact_139d() {

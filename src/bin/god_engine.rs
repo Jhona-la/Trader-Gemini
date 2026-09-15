@@ -57,6 +57,15 @@ fn genome_protection_prices(
         arena.config.swing_sl_base.load(o),
     )
     .eval(tau_eff);
+    // B3.2: VIABILIDAD POR FRICCIÓN como invariante de TODA protección
+    // (entrada-fallback, watchdog, restore, adopción). La curva del genoma
+    // decide la forma; la fricción pone el suelo: stop ≥ mínimo viable y
+    // TP ≥ stop · RR_mínimo(fee). Modelo D-645: taker en ambas piernas +
+    // piso de slippage por lado — el mismo que usa el gate del risk-engine.
+    let fee_rt = 2.0 * arena.config.live_taker_fee.load(o)
+        + 2.0 * arena.config.base_slippage_floor.load(o).max(0.00001);
+    let (sl_frac, tp_frac) =
+        quantum_arena::genome::SuperGenotype::friction_floors(fee_rt, sl_frac, tp_frac);
     let tp = if is_long {
         entry_price * (1.0 + tp_frac)
     } else {
@@ -2249,6 +2258,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
                                 engine_real.arena.config.swing_sl_base.load(Ordering::Relaxed),
                             ).eval(tau_eff);
+                            // B3.2: el fallback de entrada también nace viable —
+                            // pisos de fricción idénticos a genome_protection_prices.
+                            let fee_rt_entry = 2.0 * engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed)
+                                + 2.0 * engine_real.arena.config.base_slippage_floor.load(Ordering::Relaxed).max(0.00001);
+                            let (sl_frac, tp_frac) =
+                                quantum_arena::genome::SuperGenotype::friction_floors(fee_rt_entry, sl_frac, tp_frac);
                             order_tp_price = if is_long { entry_price * (1.0 + tp_frac) } else { entry_price * (1.0 - tp_frac) };
                             order_sl_price = if is_long { entry_price * (1.0 - sl_frac) } else { entry_price * (1.0 + sl_frac) };
                         }
@@ -2504,10 +2519,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     // sino su contexto). entry_tau_ms del Position NUNCA se
                                                     // seteaba (capacidad fantasma) — este diario es la única
                                                     // fuente de τ de entrada y ml de motivación.
-                                                    // ml desde el plano compartido del arena (el
-                                                    // espectro vive en el core, no alcanzable aquí;
-                                                    // τ queda 0 hasta que el core lo persista).
-                                                    let tau_entry = 0u64;
+                                                    // B3.1: τ REAL — el core guarda la τ dominante
+                                                    // del espectro en Position.entry_tau_ms al abrir
+                                                    // (REHAB-1b); este spawn alcanza el arena
+                                                    // compartido, que expone ese atomic. La
+                                                    // capacidad fantasma muere aquí: el diario
+                                                    // persiste la τ que motivó la entrada y la
+                                                    // recuperación B2.7 re-protege con rigor
+                                                    // espectral en vez del ancla rápida.
+                                                    let tau_entry = arena_clone
+                                                        .coins
+                                                        .get(coin_id)
+                                                        .map(|c| c.positions.position.entry_tau_ms.load(Ordering::Relaxed))
+                                                        .unwrap_or(0);
                                                     let ml_entry = arena_clone
                                                         .coins
                                                         .get(coin_id)
