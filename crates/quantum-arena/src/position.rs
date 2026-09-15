@@ -463,8 +463,8 @@ mod tests {
     /// versión anterior producía al borrar campos tras publicar el cierre.
     #[test]
     fn t4_apertura_y_cierre_concurrentes_nunca_dejan_posicion_fantasma() {
-        use std::sync::Arc;
         use std::sync::atomic::AtomicUsize;
+        use std::sync::Arc;
 
         let pos = Arc::new(Position::default());
         let corrupciones = Arc::new(AtomicUsize::new(0));
@@ -512,10 +512,7 @@ mod tests {
                         observaciones.fetch_add(1, Ordering::Relaxed);
                         // Posición viva con entrada cero, cantidad cero o sin
                         // stop = el estado que D-659 producía.
-                        if snap.entry_price <= 0.0
-                            || snap.quantity <= 0.0
-                            || snap.sl_price <= 0.0
-                        {
+                        if snap.entry_price <= 0.0 || snap.quantity <= 0.0 || snap.sl_price <= 0.0 {
                             corrupciones.fetch_add(1, Ordering::Relaxed);
                         }
                     }

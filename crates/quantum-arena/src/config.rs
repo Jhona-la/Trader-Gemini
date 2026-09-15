@@ -459,7 +459,10 @@ impl QuantumConfig {
     pub fn update_tp_curve(&self, fast_val: f64, slow_val: f64) {
         use std::sync::atomic::Ordering;
         let curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
-            10_000.0, fast_val, 86_400_000.0, slow_val,
+            10_000.0,
+            fast_val,
+            86_400_000.0,
+            slow_val,
         );
         self.tp_curve_a.store(curve.a, Ordering::Relaxed);
         self.tp_curve_b.store(curve.b, Ordering::Relaxed);
@@ -470,10 +473,12 @@ impl QuantumConfig {
     pub fn update_sl_curve(&self, fast_val: f64, slow_val: f64) {
         use std::sync::atomic::Ordering;
         let curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
-            10_000.0, fast_val, 86_400_000.0, slow_val,
+            10_000.0,
+            fast_val,
+            86_400_000.0,
+            slow_val,
         );
         self.sl_curve_a.store(curve.a, Ordering::Relaxed);
         self.sl_curve_b.store(curve.b, Ordering::Relaxed);
     }
 }
-

@@ -168,10 +168,7 @@ impl GenomeEnvelope {
     /// `TG_GENOME_PROMOTE_ARMED` debe valer "1" y `TG_GENOME_PROMOTE_OPERATOR`
     /// debe identificar a quien autoriza: ambos quedan escritos en el motivo
     /// de promoción, de modo que el linaje registra QUIÉN cruzó la frontera.
-    pub fn promote_across_env(
-        from_env: &str,
-        reason: &str,
-    ) -> Result<GenomeEnvelope, String> {
+    pub fn promote_across_env(from_env: &str, reason: &str) -> Result<GenomeEnvelope, String> {
         let to_env = current_env()?;
         let from = from_env.trim().to_lowercase();
         if !KNOWN_ENVS.contains(&from.as_str()) {
@@ -180,7 +177,11 @@ impl GenomeEnvelope {
         if from == to_env {
             return Err(format!("origen y destino son el mismo entorno ('{from}')"));
         }
-        if std::env::var("TG_GENOME_PROMOTE_ARMED").unwrap_or_default().trim() != "1" {
+        if std::env::var("TG_GENOME_PROMOTE_ARMED")
+            .unwrap_or_default()
+            .trim()
+            != "1"
+        {
             return Err(format!(
                 "promoción {from} → {to_env} BLOQUEADA: exporta                  TG_GENOME_PROMOTE_ARMED=1 para autorizarla explícitamente."
             ));
@@ -195,10 +196,10 @@ impl GenomeEnvelope {
             })?;
 
         let src = format!("config_dir/genomes/{from}/active.json");
-        let data = std::fs::read_to_string(&src)
-            .map_err(|e| format!("no se puede leer {src}: {e}"))?;
-        let src_env: GenomeEnvelope = serde_json::from_str(&data)
-            .map_err(|e| format!("{src} no parsea: {e}"))?;
+        let data =
+            std::fs::read_to_string(&src).map_err(|e| format!("no se puede leer {src}: {e}"))?;
+        let src_env: GenomeEnvelope =
+            serde_json::from_str(&data).map_err(|e| format!("{src} no parsea: {e}"))?;
 
         Self::promote(
             src_env.genome,
@@ -267,8 +268,7 @@ impl GenomeEnvelope {
                     "curvas no finitas en tau={tau} ms: tp={tp}, sl={sl}"
                 ));
             }
-            let required =
-                SuperGenotype::min_rr_for(SuperGenotype::WORST_TOLERATED_WR, fee, sl);
+            let required = SuperGenotype::min_rr_for(SuperGenotype::WORST_TOLERATED_WR, fee, sl);
             if tp < sl * required {
                 return Err(format!(
                     "invariante RR violada en tau={:.0} ms (banda operable                      {:.0}..{:.0} ms): TP {:.6} < {:.3} x SL {:.6} — EV negativo                      tras friccion {:.4}",
@@ -413,10 +413,16 @@ mod tests {
     fn d649b_zombie_se_acota_a_la_banda_de_diseno() {
         use std::sync::atomic::Ordering;
         let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
-        assert_eq!(g.to_vector()[SuperGenotype::SLOT_ZOMBIE_TIMEOUT], g.zombie_timeout_ms);
+        assert_eq!(
+            g.to_vector()[SuperGenotype::SLOT_ZOMBIE_TIMEOUT],
+            g.zombie_timeout_ms
+        );
         g.zombie_timeout_ms = 2_100_140.98;
         let arena = crate::state::GlobalArena::from_genome(13.0, &g);
-        assert_eq!(arena.config.zombie_timeout_ms.load(Ordering::Relaxed), 14_400_000.0);
+        assert_eq!(
+            arena.config.zombie_timeout_ms.load(Ordering::Relaxed),
+            14_400_000.0
+        );
     }
 
     /// D-680: el prior del win rate es el de diseño y una operación no lo destruye.
@@ -436,7 +442,10 @@ mod tests {
         for i in 0..10_000u32 {
             w = SuperGenotype::posterior_win_rate(w, i as f64, i % 4 == 0);
         }
-        assert!((w - 0.25).abs() < 0.01, "debe converger a la frecuencia observada, dio {w}");
+        assert!(
+            (w - 0.25).abs() < 0.01,
+            "debe converger a la frecuencia observada, dio {w}"
+        );
     }
 
     /// D-683: un genoma cargado desde disco sin curvas continuas (serde las
@@ -466,10 +475,22 @@ mod tests {
         g.apply_to_arena(&caliente);
         for (nombre, arena) in [("frío", &frio), ("hot-swap", &caliente)] {
             let c = &arena.config;
-            assert!((c.obi_threshold_at_tau(TAU_ANCHOR_FAST_MS) - 0.45).abs() < 1e-9, "{nombre}: OBI rápido");
-            assert!((c.obi_threshold_at_tau(TAU_ANCHOR_SLOW_MS) - 0.30).abs() < 1e-9, "{nombre}: OBI lento");
-            assert!((c.kelly_at_tau(TAU_ANCHOR_SLOW_MS) - 0.112).abs() < 1e-9, "{nombre}: Kelly lento");
-            assert!((c.trail_params_at_tau(TAU_ANCHOR_FAST_MS).0 - 2.2).abs() < 1e-9, "{nombre}: trailing rápido");
+            assert!(
+                (c.obi_threshold_at_tau(TAU_ANCHOR_FAST_MS) - 0.45).abs() < 1e-9,
+                "{nombre}: OBI rápido"
+            );
+            assert!(
+                (c.obi_threshold_at_tau(TAU_ANCHOR_SLOW_MS) - 0.30).abs() < 1e-9,
+                "{nombre}: OBI lento"
+            );
+            assert!(
+                (c.kelly_at_tau(TAU_ANCHOR_SLOW_MS) - 0.112).abs() < 1e-9,
+                "{nombre}: Kelly lento"
+            );
+            assert!(
+                (c.trail_params_at_tau(TAU_ANCHOR_FAST_MS).0 - 2.2).abs() < 1e-9,
+                "{nombre}: trailing rápido"
+            );
         }
     }
 

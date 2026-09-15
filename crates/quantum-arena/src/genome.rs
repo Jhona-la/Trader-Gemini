@@ -324,9 +324,15 @@ impl SuperGenotype {
             ),
             trail_mult_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
                 crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-                arena.config.scalp_trail_atr_mult_base.load(Ordering::Relaxed),
+                arena
+                    .config
+                    .scalp_trail_atr_mult_base
+                    .load(Ordering::Relaxed),
                 crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-                arena.config.swing_trail_atr_mult_base.load(Ordering::Relaxed),
+                arena
+                    .config
+                    .swing_trail_atr_mult_base
+                    .load(Ordering::Relaxed),
             ),
             trail_act_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
                 crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
@@ -1053,10 +1059,22 @@ impl SuperGenotype {
         arena.config.swing_sl_base.store(slow_sl, Ordering::Relaxed);
 
         // Continuo Universal: almacenamiento atómico de todas las curvas de horizonte
-        arena.config.tp_curve_a.store(self.tp_horizon_curve.a, Ordering::Relaxed);
-        arena.config.tp_curve_b.store(self.tp_horizon_curve.b, Ordering::Relaxed);
-        arena.config.sl_curve_a.store(self.sl_horizon_curve.a, Ordering::Relaxed);
-        arena.config.sl_curve_b.store(self.sl_horizon_curve.b, Ordering::Relaxed);
+        arena
+            .config
+            .tp_curve_a
+            .store(self.tp_horizon_curve.a, Ordering::Relaxed);
+        arena
+            .config
+            .tp_curve_b
+            .store(self.tp_horizon_curve.b, Ordering::Relaxed);
+        arena
+            .config
+            .sl_curve_a
+            .store(self.sl_horizon_curve.a, Ordering::Relaxed);
+        arena
+            .config
+            .sl_curve_b
+            .store(self.sl_horizon_curve.b, Ordering::Relaxed);
         // D-683 (DÉCIMA OLA): las curvas de Kelly, trailing y OBI NO están en el
         // vector de genes; `from_vector`, `mutate` y los constructores las
         // derivan de los genes scalp/swing con `sync_continuous_curves`. Pero el
@@ -1067,16 +1085,46 @@ impl SuperGenotype {
         // umbral de OBI de 0,25 donde sus genes dicen 0,80—. Se derivan aquí,
         // en la entrada al arena, igual que en la evolución.
         let curvas = self.with_synced_continuous_curves();
-        arena.config.kelly_curve_a.store(curvas.kelly_horizon_curve.a, Ordering::Relaxed);
-        arena.config.kelly_curve_b.store(curvas.kelly_horizon_curve.b, Ordering::Relaxed);
-        arena.config.trail_mult_curve_a.store(curvas.trail_mult_horizon_curve.a, Ordering::Relaxed);
-        arena.config.trail_mult_curve_b.store(curvas.trail_mult_horizon_curve.b, Ordering::Relaxed);
-        arena.config.trail_act_curve_a.store(curvas.trail_act_horizon_curve.a, Ordering::Relaxed);
-        arena.config.trail_act_curve_b.store(curvas.trail_act_horizon_curve.b, Ordering::Relaxed);
-        arena.config.trail_step_curve_a.store(curvas.trail_step_horizon_curve.a, Ordering::Relaxed);
-        arena.config.trail_step_curve_b.store(curvas.trail_step_horizon_curve.b, Ordering::Relaxed);
-        arena.config.obi_curve_a.store(curvas.obi_horizon_curve.a, Ordering::Relaxed);
-        arena.config.obi_curve_b.store(curvas.obi_horizon_curve.b, Ordering::Relaxed);
+        arena
+            .config
+            .kelly_curve_a
+            .store(curvas.kelly_horizon_curve.a, Ordering::Relaxed);
+        arena
+            .config
+            .kelly_curve_b
+            .store(curvas.kelly_horizon_curve.b, Ordering::Relaxed);
+        arena
+            .config
+            .trail_mult_curve_a
+            .store(curvas.trail_mult_horizon_curve.a, Ordering::Relaxed);
+        arena
+            .config
+            .trail_mult_curve_b
+            .store(curvas.trail_mult_horizon_curve.b, Ordering::Relaxed);
+        arena
+            .config
+            .trail_act_curve_a
+            .store(curvas.trail_act_horizon_curve.a, Ordering::Relaxed);
+        arena
+            .config
+            .trail_act_curve_b
+            .store(curvas.trail_act_horizon_curve.b, Ordering::Relaxed);
+        arena
+            .config
+            .trail_step_curve_a
+            .store(curvas.trail_step_horizon_curve.a, Ordering::Relaxed);
+        arena
+            .config
+            .trail_step_curve_b
+            .store(curvas.trail_step_horizon_curve.b, Ordering::Relaxed);
+        arena
+            .config
+            .obi_curve_a
+            .store(curvas.obi_horizon_curve.a, Ordering::Relaxed);
+        arena
+            .config
+            .obi_curve_b
+            .store(curvas.obi_horizon_curve.b, Ordering::Relaxed);
 
         arena
             .config
@@ -1102,10 +1150,10 @@ impl SuperGenotype {
             .config
             .global_correlation_threshold
             .store(self.global_correlation_threshold, Ordering::Relaxed);
-        arena
-            .config
-            .trend_threshold
-            .store(Self::clamp_slot(self.trend_threshold, Self::SLOT_TREND_THRESHOLD), Ordering::Relaxed);
+        arena.config.trend_threshold.store(
+            Self::clamp_slot(self.trend_threshold, Self::SLOT_TREND_THRESHOLD),
+            Ordering::Relaxed,
+        );
         arena
             .config
             .range_threshold
@@ -1136,18 +1184,18 @@ impl SuperGenotype {
             .config
             .tp_rr_ratio_btc
             .store(self.tp_rr_ratio_btc, Ordering::Relaxed);
-        arena
-            .config
-            .min_confidence_btc
-            .store(Self::clamp_slot(self.min_confidence_btc, Self::SLOT_MIN_CONFIDENCE), Ordering::Relaxed);
+        arena.config.min_confidence_btc.store(
+            Self::clamp_slot(self.min_confidence_btc, Self::SLOT_MIN_CONFIDENCE),
+            Ordering::Relaxed,
+        );
         arena
             .config
             .veto_threshold_btc
             .store(self.veto_threshold_btc, Ordering::Relaxed);
-        arena
-            .config
-            .tech_threshold
-            .store(Self::clamp_slot(self.tech_threshold, Self::SLOT_TECH_THRESHOLD), Ordering::Relaxed);
+        arena.config.tech_threshold.store(
+            Self::clamp_slot(self.tech_threshold, Self::SLOT_TECH_THRESHOLD),
+            Ordering::Relaxed,
+        );
         arena
             .config
             .ml_threshold_long
@@ -1287,10 +1335,10 @@ impl SuperGenotype {
             .swing_trail_atr_mult_base
             .store(self.swing_trail_atr_mult_base, Ordering::Relaxed);
 
-        arena
-            .config
-            .zombie_timeout_ms
-            .store(Self::clamp_slot(self.zombie_timeout_ms, Self::SLOT_ZOMBIE_TIMEOUT), Ordering::Relaxed);
+        arena.config.zombie_timeout_ms.store(
+            Self::clamp_slot(self.zombie_timeout_ms, Self::SLOT_ZOMBIE_TIMEOUT),
+            Ordering::Relaxed,
+        );
         arena
             .config
             .hurst_trend_threshold
@@ -1460,10 +1508,10 @@ impl SuperGenotype {
             .config
             .ev_fee_multiplier
             .store(self.ev_fee_multiplier, Ordering::Relaxed);
-        arena
-            .config
-            .margin_cushion_pct
-            .store(Self::clamp_slot(self.margin_cushion_pct, Self::SLOT_MARGIN_CUSHION), Ordering::Relaxed);
+        arena.config.margin_cushion_pct.store(
+            Self::clamp_slot(self.margin_cushion_pct, Self::SLOT_MARGIN_CUSHION),
+            Ordering::Relaxed,
+        );
         arena
             .config
             .maker_only_capital_threshold
@@ -1610,19 +1658,54 @@ impl SuperGenotype {
         //
         // El test `t2_simetria_from_genome_vs_apply_to_arena` fija la
         // exhaustividad como contrato: no volverá a reintroducirse por olvido.
-        arena.config.conformal_alpha.store(self.conformal_alpha, Ordering::Relaxed);
-        arena.config.global_learning_rate.store(self.global_learning_rate, Ordering::Relaxed);
-        arena.config.global_momentum.store(self.global_momentum, Ordering::Relaxed);
-        arena.config.min_trades_per_day.store(self.min_trades_per_day, Ordering::Relaxed);
-        arena.config.survival_capital_threshold.store(self.survival_capital_threshold, Ordering::Relaxed);
-        arena.config.vecm_alpha_speed.store(self.vecm_alpha_speed, Ordering::Relaxed);
-        arena.config.vecm_beta_hedge.store(self.vecm_beta_hedge, Ordering::Relaxed);
-        arena.config.ppo_weight_ofi.store(self.ppo_weight_ofi, Ordering::Relaxed);
-        arena.config.ppo_weight_obi.store(self.ppo_weight_obi, Ordering::Relaxed);
-        arena.config.ppo_weight_hawkes.store(self.ppo_weight_hawkes, Ordering::Relaxed);
-        arena.config.ppo_weight_leadlag.store(self.ppo_weight_leadlag, Ordering::Relaxed);
-        arena.config.ppo_weight_regime.store(self.ppo_weight_regime, Ordering::Relaxed);
-
+        arena
+            .config
+            .conformal_alpha
+            .store(self.conformal_alpha, Ordering::Relaxed);
+        arena
+            .config
+            .global_learning_rate
+            .store(self.global_learning_rate, Ordering::Relaxed);
+        arena
+            .config
+            .global_momentum
+            .store(self.global_momentum, Ordering::Relaxed);
+        arena
+            .config
+            .min_trades_per_day
+            .store(self.min_trades_per_day, Ordering::Relaxed);
+        arena
+            .config
+            .survival_capital_threshold
+            .store(self.survival_capital_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .vecm_alpha_speed
+            .store(self.vecm_alpha_speed, Ordering::Relaxed);
+        arena
+            .config
+            .vecm_beta_hedge
+            .store(self.vecm_beta_hedge, Ordering::Relaxed);
+        arena
+            .config
+            .ppo_weight_ofi
+            .store(self.ppo_weight_ofi, Ordering::Relaxed);
+        arena
+            .config
+            .ppo_weight_obi
+            .store(self.ppo_weight_obi, Ordering::Relaxed);
+        arena
+            .config
+            .ppo_weight_hawkes
+            .store(self.ppo_weight_hawkes, Ordering::Relaxed);
+        arena
+            .config
+            .ppo_weight_leadlag
+            .store(self.ppo_weight_leadlag, Ordering::Relaxed);
+        arena
+            .config
+            .ppo_weight_regime
+            .store(self.ppo_weight_regime, Ordering::Relaxed);
     }
 
     pub fn mutate_cmaes(&self, rate: f64) -> Self {
@@ -1925,7 +2008,7 @@ impl SuperGenotype {
     }
 
     pub fn sync_continuous_curves(&mut self) {
-        use crate::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS, HorizonCurve};
+        use crate::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
         self.kelly_horizon_curve = HorizonCurve::through_two_points(
             TAU_ANCHOR_FAST_MS,
             self.scalp_kelly_fraction.max(0.001),
@@ -1964,7 +2047,6 @@ impl SuperGenotype {
     pub const TP_B_BOUNDS: (f64, f64) = (-0.2, 0.35);
     pub const SL_A_BOUNDS: (f64, f64) = (-10.5, -3.0);
     pub const SL_B_BOUNDS: (f64, f64) = (-0.2, 0.35);
-
 
     #[inline]
     pub fn tp_at_tau(&self, tau_ms: f64) -> f64 {
@@ -2103,8 +2185,8 @@ impl SuperGenotype {
                 .map(|&t| required_at(self, t))
                 .fold(Self::MIN_RR_REPAIR, f64::max);
             self.sl_horizon_curve.b = self.tp_horizon_curve.b;
-            self.sl_horizon_curve.a =
-                (self.tp_horizon_curve.a - req.ln()).clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+            self.sl_horizon_curve.a = (self.tp_horizon_curve.a - req.ln())
+                .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
             // Re-garantizar la banda tras el paralelizado.
             if self.tradeable_band_ms(fee).is_none() {
                 let sl_hi = self.sl_horizon_curve.eval(hi_spec).max(1e-12);
@@ -2190,7 +2272,11 @@ impl SuperGenotype {
         } else {
             Self::WORST_TOLERATED_WR
         };
-        let n = if n_prev.is_finite() && n_prev >= 0.0 { n_prev } else { 0.0 };
+        let n = if n_prev.is_finite() && n_prev >= 0.0 {
+            n_prev
+        } else {
+            0.0
+        };
         let x = if is_win { 1.0 } else { 0.0 };
         (cur * (n + k) + x) / (n + 1.0 + k)
     }
@@ -2297,9 +2383,8 @@ impl SuperGenotype {
 
     /// RR mínimo que el GATE de promoción exige, evaluado en el punto de
     /// referencia. Antes 1,5 (equilibrio sin fees); ahora ≈ 2,00.
-    pub const MIN_RR_GATE: f64 =
-        (1.0 - Self::WORST_TOLERATED_WR) / Self::WORST_TOLERATED_WR
-            + Self::REFERENCE_ROUNDTRIP_FEE / (Self::WORST_TOLERATED_WR * Self::REFERENCE_SL);
+    pub const MIN_RR_GATE: f64 = (1.0 - Self::WORST_TOLERATED_WR) / Self::WORST_TOLERATED_WR
+        + Self::REFERENCE_ROUNDTRIP_FEE / (Self::WORST_TOLERATED_WR * Self::REFERENCE_SL);
     /// RR mínimo que la MUTACIÓN exige: el gate + 10 % de holgura por spread
     /// y deslizamiento no modelados, para que el operador de mutación no
     /// produzca sistemáticamente genomas que el gate rechazará.
@@ -3068,8 +3153,14 @@ mod tests {
         g.tp_horizon_curve = crate::temporal_spectrum::HorizonCurve { a: -9.2, b: 0.35 };
         g.sl_horizon_curve = crate::temporal_spectrum::HorizonCurve { a: -10.5, b: 0.35 };
         g.enforce_curve_rr();
-        assert_eq!(g.tp_horizon_curve.a, -9.2, "precondición: el reparo RR no debe mover TP");
-        assert_eq!(g.sl_horizon_curve.a, -10.5, "precondición: el reparo RR no debe mover SL");
+        assert_eq!(
+            g.tp_horizon_curve.a, -9.2,
+            "precondición: el reparo RR no debe mover TP"
+        );
+        assert_eq!(
+            g.sl_horizon_curve.a, -10.5,
+            "precondición: el reparo RR no debe mover SL"
+        );
         let m = g.mutate_cmaes_seeded(0.0, 7);
         assert_eq!(m.tp_horizon_curve.a, g.tp_horizon_curve.a);
         assert_eq!(m.sl_horizon_curve.a, g.sl_horizon_curve.a);
