@@ -1383,6 +1383,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let Ok(positions) = executor.fetch_position_risk().await else {
                         continue;
                     };
+                    // B2.6 — PURGA DE PIERNAS HUÉRFANAS: piernas TP/SL cuya
+                    // posición ya cerró disparan al vacío (REJECTED benigno
+                    // que quema slots algo y ensucia el stream). Cancelarlas.
+                    if let Ok(all_legs) = executor.fetch_all_open_algo_orders().await {
+                        for leg in &all_legs {
+                            let side_open = positions.iter().any(|p| {
+                                p.symbol == leg.symbol
+                                    && p.position_amt.abs() > 0.0
+                                    && (leg.position_side == "BOTH"
+                                        || (p.position_amt > 0.0) == (leg.position_side == "LONG"))
+                            });
+                            if !side_open {
+                                if executor
+                                    .cancel_algo_order(&leg.symbol, &leg.client_algo_id)
+                                    .await
+                                    .is_ok()
+                                {
+                                    telemetry_server::telemetry_log!(
+                                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} {} (posición ya cerrada)",
+                                        leg.symbol, leg.order_type, leg.client_algo_id
+                                    );
+                                }
+                            }
+                        }
+                    }
                     let mut naked_total = 0usize;
                     for p in positions
                         .iter()

@@ -1324,7 +1324,7 @@ impl OrderExecutor {
     /// cancelarlas por la ruta legacy devuelve "order does not exist" y deja
     /// el trigger vivo en el exchange.
     #[inline(always)]
-    async fn cancel_algo_order(&self, symbol: &str, client_algo_id: &str) -> Result<(), String> {
+    pub async fn cancel_algo_order(&self, symbol: &str, client_algo_id: &str) -> Result<(), String> {
         if self.is_paper_trading {
             println!(
                 "📝 [PAPER TRADING LOCAL] Algo Orden Cancelada: {} en {}",
@@ -1407,9 +1407,24 @@ impl OrderExecutor {
     /// GET /fapi/v1/openAlgoOrders — los brackets NO aparecen en
     /// /fapi/v1/openOrders; sin esto, el motor cree que la posición está
     /// desnuda y re-bracketea infinito.
+    /// B2.6: TODAS las algo orders abiertas de la cuenta (sin filtro de
+    /// símbolo) — para purgar piernas huérfanas de posiciones ya cerradas.
+    pub async fn fetch_all_open_algo_orders(
+        &self,
+    ) -> Result<Vec<crate::order_types::OpenAlgoOrder>, String> {
+        self.fetch_open_algo_orders_inner(None).await
+    }
+
     pub async fn fetch_open_algo_orders(
         &self,
         symbol: &str,
+    ) -> Result<Vec<crate::order_types::OpenAlgoOrder>, String> {
+        self.fetch_open_algo_orders_inner(Some(symbol)).await
+    }
+
+    async fn fetch_open_algo_orders_inner(
+        &self,
+        symbol: Option<&str>,
     ) -> Result<Vec<crate::order_types::OpenAlgoOrder>, String> {
         if self.is_paper_trading {
             return Ok(Vec::new());
@@ -1424,9 +1439,12 @@ impl OrderExecutor {
             "https://fapi.binance.com/fapi/v1/openAlgoOrders?"
         });
         let payload_start = buf.as_str().len();
-        buf.push_str("symbol=");
-        buf.push_str(symbol);
-        buf.push_str("&timestamp=");
+        if let Some(s) = symbol {
+            buf.push_str("symbol=");
+            buf.push_str(s);
+            buf.push_str("&");
+        }
+        buf.push_str("timestamp=");
         buf.push_u64(timestamp);
 
         let mut sig_buf = [0u8; 64];
