@@ -168,6 +168,145 @@ struct BinTick {
     ask_qty: f64,
 }
 
+/// Parsea los CSVs dentro de un zip de aggTrades a ticks (mismo esquema
+/// S-01/R2.2/N-09 que el modo mensual). Reutilizado por mensual y diario.
+fn parse_aggtrades_zip(bytes: &[u8], ticks: &mut Vec<BinTick>) -> bool {
+    let Ok(mut archive) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) else {
+        return false;
+    };
+    for i in 0..archive.len() {
+        let mut file = match archive.by_index(i) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        let mut content = String::new();
+        if std::io::Read::read_to_string(&mut file, &mut content).is_err() {
+            continue;
+        }
+        for line in content.lines().skip(1) {
+            let cols: Vec<&str> = line.split(',').collect();
+            if cols.len() < 7 {
+                continue;
+            }
+            // S-01 — cols[5] es transact_time (cols[4] es last_trade_id).
+            let (Ok(price), Ok(qty), Ok(ts), Ok(is_maker)) = (
+                cols[1].parse::<f64>(),
+                cols[2].parse::<f64>(),
+                cols[5].parse::<u64>(),
+                cols[6].parse::<bool>(),
+            ) else {
+                continue;
+            };
+            if !price.is_finite() || price <= 0.0 || !qty.is_finite() || qty <= 0.0 {
+                continue;
+            }
+            // R2.2/N-09: OBI agrupado — bucket de volumen con mezcla base.
+            let base_depth = (qty * 0.25).max(0.1);
+            let (bq, aq) = if is_maker {
+                (base_depth, qty + base_depth)
+            } else {
+                (qty + base_depth, base_depth)
+            };
+            let half = (price * 0.00005).max(0.01);
+            ticks.push(BinTick {
+                timestamp: ts,
+                bid_price: price - half,
+                ask_price: price + half,
+                bid_qty: bq,
+                ask_qty: aq,
+            });
+        }
+    }
+    true
+}
+
+/// B3.17 — descarga los zips DIARIOS oficiales del rango [from, to]
+/// (YYYY-MM-DD, inclusivo) y escribe UN {SYM}_ticks_REAL.bin. Avanza la
+/// fecha con aritmética civil simple (sin deps): días canónicos de 86400s
+/// son suficientes para iterar calendario UTC.
+fn daily_aggtrades(client: &Client, symbol: &str, from: &str, to: &str) {
+    let to_days = |s: &str| -> Option<i64> {
+        let mut it = s.split('-');
+        let y: i64 = it.next()?.parse().ok()?;
+        let m: i64 = it.next()?.parse().ok()?;
+        let d: i64 = it.next()?.parse().ok()?;
+        let yy = if m <= 2 { y - 1 } else { y };
+        let era = if yy >= 0 { yy } else { yy - 399 } / 400;
+        let yoe = yy - era * 400;
+        let mp = (m + 9) % 12;
+        let doy = (153 * mp + 2) / 5 + d - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        Some(era * 146_097 + doe - 719_468)
+    };
+    let (Some(d0), Some(d1)) = (to_days(from), to_days(to)) else {
+        println!("❌ fechas inválidas (usar YYYY-MM-DD): {from}..{to}");
+        return;
+    };
+    if d1 < d0 || d1 - d0 > 45 {
+        println!("❌ rango inválido o >45 días: {from}..{to}");
+        return;
+    }
+    let mut ticks: Vec<BinTick> = Vec::new();
+    for offset in 0..=(d1 - d0) {
+        // d0/d1 son días desde EPOCH (1970-01-01 = 0); el inverso Hinnant
+        // trabaja sobre z = epoch_days + 719_468 (UNA sola vez — el bug del
+        // doble offset producía fechas del año 3996).
+        let z = d0 + offset + 719_468;
+        let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = if m <= 2 { y + 1 } else { y };
+        let date = format!("{y:04}-{m:02}-{d:02}");
+        let url = format!(
+            "https://data.binance.vision/data/futures/um/daily/aggTrades/{symbol}/{symbol}-aggTrades-{date}.zip"
+        );
+        println!("⬇️  {date}");
+        match client.get(&url).send().and_then(|r| r.bytes()) {
+            Ok(b) => {
+                let b = b.to_vec();
+                if !parse_aggtrades_zip(&b, &mut ticks) {
+                    println!("   ⚠️ {date}: zip inválido (¿no publicado?) — omitido");
+                }
+            }
+            Err(e) => println!("   ⚠️ {date}: {e} — omitido"),
+        }
+    }
+    write_ticks(symbol, ticks);
+}
+
+/// Ordena y persiste el bin TGMTICK1 final (compartido mensual/diario).
+fn write_ticks(symbol: &str, mut ticks: Vec<BinTick>) {
+    ticks.sort_unstable_by_key(|t| t.timestamp);
+    ticks.dedup_by_key(|t| t.timestamp);
+    println!("✅ {} ticks reales de aggTrades", ticks.len());
+    let out = Path::new("data").join(format!("{}_ticks_REAL.bin", symbol));
+    let mut f = match std::fs::File::create(&out) {
+        Ok(f) => f,
+        Err(e) => {
+            println!("❌ {}: {}", out.display(), e);
+            return;
+        }
+    };
+    use std::io::Write;
+    if f.write_all(b"TGMTICK1").is_err() {
+        return;
+    }
+    let blen = ticks.len() * std::mem::size_of::<BinTick>();
+    let bslice = unsafe { std::slice::from_raw_parts(ticks.as_ptr() as *const u8, blen) };
+    if f.write_all(bslice).is_ok() {
+        println!(
+            "💾 {} ({} bytes, magic TGMTICK1 REAL)",
+            out.display(),
+            blen + 8
+        );
+    }
+}
+
 fn aggtrades_main() {
     println!("============================================================");
     println!("📡 AGGTRADES DOWNLOADER -> TICKS REALES (magic TGMTICK1)");
@@ -176,8 +315,21 @@ fn aggtrades_main() {
     let data_dir = Path::new("data/vision");
     let _ = std::fs::create_dir_all(data_dir);
 
-    // Un símbolo, un mes por defecto (args: [symbol] [month])
+    // B3.17 — MODO DIARIO: `--daily SYM YYYY-MM-DD YYYY-MM-DD` descarga los
+    // zips diarios oficiales del rango (inclusive) y produce UN
+    // {SYM}_ticks_REAL.bin concatenado. Permite OOS del mes VIVO antes de
+    // que Binance publique el mensual (septiembre a mitad de mes).
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--daily") {
+        let pos = args.iter().position(|a| a == "--daily").unwrap();
+        let symbol = args.get(pos + 1).cloned().unwrap_or_else(|| "BTCUSDT".into());
+        let from = args.get(pos + 2).cloned().unwrap_or_else(|| "2026-09-01".into());
+        let to = args.get(pos + 3).cloned().unwrap_or_else(|| from.clone());
+        daily_aggtrades(&client, &symbol, &from, &to);
+        return;
+    }
+
+    // Un símbolo, un mes por defecto (args: [symbol] [month])
     let symbol = args
         .get(2)
         .cloned()
