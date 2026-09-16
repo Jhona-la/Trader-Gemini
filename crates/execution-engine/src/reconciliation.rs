@@ -291,12 +291,25 @@ pub fn reconcile_arena(
         if remote_net_qty.abs() < 1e-8 {
             // Exchange está plano pero la Arena cree que tiene posiciones abiertas: phantom cleanup
             if cont_open {
-                let exit_price = if remote_price > 0.0 {
-                    remote_price
-                } else {
-                    coin.current_price
-                        .load(std::sync::atomic::Ordering::Relaxed)
-                };
+                // D-716 (DÉCIMA OLA · auditoría integral): NO SE INVENTA EL FILL.
+                //
+                // Aquí se imputaba como precio de salida `coin.current_price`, el
+                // precio de MERCADO de hasta 60 s después del cierre real (la
+                // limpieza corre en el ciclo de reconciliación). Y `remote_price`
+                // es siempre 0 en esta rama —el mapa sólo se rellena con
+                // posiciones ABIERTAS y aquí la remota está plana—, de modo que
+                // la condición era código muerto y el precio inventado, la regla.
+                // Un SL que llenó en 98 mientras el precio rebotaba a 101 se
+                // contabilizaba como GANANCIA, y ese PnL ficticio iba a
+                // `pnl_realized`, `win_rate`, `gross_wins/losses`, `trade_count` y
+                // `unified_capital`: las métricas que alimentan la aptitud de
+                // Darwin y la matriz de apalancamiento.
+                //
+                // La posición se cierra igual (el margen SIEMPRE se libera), pero
+                // sin fill conocido no hay PnL que atribuir: el cierre real llega
+                // por la contabilidad de brackets (D-701/D-702) o por
+                // /fapi/v1/income, que son las fuentes con precio verdadero.
+                let exit_price = remote_price;
                 let (was_long, entry_p, qty, m, entry_fee_paid) =
                     coin.positions.position.close_with_fee();
                 if m > 0.0 {

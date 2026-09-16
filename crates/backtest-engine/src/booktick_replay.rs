@@ -368,7 +368,15 @@ pub fn run_booktick_replay(
                 t.ts_ms,
                 false,
                 &omni_features,
-                t.bid_qty > t.ask_qty, // maker heurístico del propio dato
+                // D-717 (DÉCIMA OLA · auditoría integral): el lado agresor viaja
+                // en el dato con el convenio de `binance_vision_sync` —maker ⇒
+                // (bid = base, ask = qty + base), es decir `bid_qty < ask_qty`—.
+                // Aquí se pasaba la NEGACIÓN de ese convenio: cada compra
+                // agresiva se contabilizaba como venta, `rolling_cvd` salía con
+                // el signo opuesto al flujo real y las ramas de price-action
+                // abrían LARGOS cuando el mercado vendía. Sobre ese motor se
+                // calcula la aptitud de cada genoma que este binario PROMUEVE.
+                t.bid_qty < t.ask_qty,
             );
             let _ = o2;
             c1 = None;
@@ -393,7 +401,11 @@ pub fn run_booktick_replay(
                 &omni_features,
                 false,
             );
-            let maker_flag = mid <= sim_bid;
+            // D-717: en el modo con libro, `mid <= sim_bid` es una tautología
+            // falsa (el mid nunca baja del bid simulado), de modo que el CVD
+            // quedaba clavado en +1 y las dos ramas Short eran inalcanzables. El
+            // lado agresor es el del dato, igual que en el modo trade-only.
+            let maker_flag = t.bid_qty < t.ask_qty;
             let (o2, closed2) = core.process_event(
                 0,
                 true,

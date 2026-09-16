@@ -502,6 +502,19 @@ async fn main() {
     let mut reason_zombie = 0u64;
     let mut reason_toxic = 0u64;
 
+    // D-718: piso del medio spread = medio tick del símbolo registrado (el
+    // mínimo físicamente representable en ese instrumento), no un importe en
+    // dólares. Para BTCUSDT (tick 0,10) vale 0,05, el literal que había; para
+    // cualquier otro símbolo deja de ser una fricción inventada.
+    let min_half_spread = quantum_arena::symbol_registry::try_spec(0)
+        .map(|spec| spec.tick_size * 0.5)
+        .unwrap_or(0.0)
+        .max(0.0);
+    println!(
+        "📐 [FRICCIÓN] Piso de medio spread: {:.8} (medio tick del símbolo registrado)",
+        min_half_spread
+    );
+
     // Precompute ATR for delta-normalization (same logic as backtest-engine/lib.rs)
     let alpha = 2.0 / (14.0 + 1.0);
     let mut running_atr = 0.001 * ticks_slice[warmup_ticks].bid_price;
@@ -516,17 +529,35 @@ async fn main() {
         } else {
             price
         };
-        let is_buyer_maker = if price != prev_price {
-            price < prev_price
-        } else {
-            t.ask_qty > t.bid_qty
-        };
+        // D-717 (DÉCIMA OLA · auditoría integral): EL LADO AGRESOR VIAJA EN EL
+        // DATO, NO SE DEDUCE DEL PRECIO SIMULADO.
+        //
+        // `binance_vision_sync` codifica el `isBuyerMaker` oficial de cada
+        // aggTrade en las cantidades: maker ⇒ (bid = base, ask = qty + base), es
+        // decir `bid_qty < ask_qty`. El calentamiento de este mismo binario ya
+        // lee ese convenio (línea 387); el bucle principal, en cambio, pasaba al
+        // núcleo `price <= sim_bid`, con `price` el punto medio y
+        // `sim_bid = bid − medio spread`: una condición FALSA en todos los ticks
+        // del histórico. Con el flag constante en false, `agg_sell_vol` nunca
+        // crecía y `rolling_cvd` se quedaba en +1,0 desde el primer tick: presión
+        // compradora máxima permanente en el binario que dicta el veredicto y que
+        // alimenta al evolucionador walk-forward, con las ramas Short de
+        // price-action inalcanzables por construcción y un sesgo aditivo de +0,30
+        // en el micro-score.
+        let is_buyer_maker = t.bid_qty < t.ask_qty;
 
         let tr = (price - prev_price).abs();
         running_atr = alpha * tr + (1.0 - alpha) * running_atr;
 
         // Emulación de Slippage Microestructural Realista (Binance L2 Top-of-Book)
-        let half_spread = ((t.ask_price - t.bid_price) / 2.0).max(0.05);
+        // D-718 (DÉCIMA OLA · auditoría integral): el piso del medio spread es
+        // una propiedad del INSTRUMENTO, no un importe en dólares. `0,05` es
+        // exactamente medio tick de BTCUSDT: en XRP (~0,55 $) ese mismo piso
+        // añade un 9 % por lado y toda operación nace con una pérdida
+        // instantánea de ese orden, de modo que el forense era inutilizable
+        // fuera de BTC —y las validaciones cruzadas en XRP/SOL/BNB se midieron
+        // con él—. Ahora sale del `tick_size` del símbolo registrado.
+        let half_spread = ((t.ask_price - t.bid_price) / 2.0).max(min_half_spread);
         let sim_bid = t.bid_price - half_spread;
         let sim_ask = t.ask_price + half_spread;
         let bid_qty = t.bid_qty;
@@ -551,7 +582,16 @@ async fn main() {
 
         // F3.1: features omni con MACRO REAL del día de esta barra.
         // Solo re-consultamos cuando cambia el día (macro es diaria).
-        let day = (ts / 86_400_000) as i64;
+        // D-719 (DÉCIMA OLA · auditoría integral): EL MACRO DISPONIBLE EN t ES
+        // EL CIERRE DE t−1. `macro_lookup` devuelve el valor con fecha ≤ día, es
+        // decir el CIERRE DEL PROPIO DÍA: a las 00:01 UTC el motor ya conocía el
+        // S&P, el Nasdaq, el VIX, el DGS10, el DXY y el WTI de la jornada que aún
+        // no ha ocurrido, y cuatro de esos seis son features directas del bosque.
+        // El evaluador del GA (`booktick_replay`) ya usa t−1 y lo documenta; el
+        // binario que dicta el veredicto y alimenta al walk-forward usaba t, de
+        // modo que medía con información del futuro y además divergía de la
+        // selección y del contrato con el que se entrenó el bosque.
+        let day = ((ts / 86_400_000) as i64 - 1).max(0);
         if day != last_macro_day {
             last_macro_day = day;
             use std::sync::atomic::Ordering as Ord2;
@@ -594,7 +634,9 @@ async fn main() {
             &omni_features,
             false,
         );
-        let sim_trade_buyer_maker = price <= sim_bid;
+        // D-717: el lado agresor es el del dato, no una comparación con el
+        // libro simulado (que era falsa siempre).
+        let sim_trade_buyer_maker = is_buyer_maker;
         let (new_ord_2, closed_ord_2) = core.process_event(
             0,
             true,  // is_trade = true for Trade event
