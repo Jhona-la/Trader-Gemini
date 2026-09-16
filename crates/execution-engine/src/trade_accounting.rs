@@ -128,8 +128,30 @@ pub fn record_bracket_close(rec: BracketClose) {
     if let Ok(mut q) = PENDING.lock() {
         if q.len() < 1024 {
             q.push(rec);
+        } else {
+            // D-710 (DÉCIMA OLA · auditoría integral): el descarte era SILENCIOSO.
+            // Cada cierre perdido es una operación que no alimenta el posterior
+            // de Kelly ni el win-rate, y la muestra queda censurada sin que nadie
+            // pueda saberlo — justo el defecto que esta contabilidad existe para
+            // cerrar. Se cuenta y se informa.
+            let n = DESCARTADOS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if n == 1 || n % 50 == 0 {
+                println!(
+                    "🚨 [CONTABILIDAD] Cola de cierres llena (1024): {} cierres DESCARTADOS — la estadística de Kelly y el win-rate quedan censurados hasta que se drene",
+                    n
+                );
+            }
         }
     }
+}
+
+/// D-710: cierres perdidos por cola llena. Cualquier valor > 0 invalida la
+/// muestra con la que aprende Kelly.
+pub static DESCARTADOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// D-710: cuántos cierres se han descartado por cola llena desde el arranque.
+pub fn cierres_descartados() -> u64 {
+    DESCARTADOS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Drena la cola de cierres pendientes (el host la consume cada tick).
@@ -230,6 +252,31 @@ mod tests {
             let corto = gross_pnl(false, e, x, q);
             assert!((largo + corto).abs() < 1e-9, "largo {largo} corto {corto}");
         }
+    }
+
+
+    #[test]
+    fn d710_la_cola_llena_no_descarta_en_silencio() {
+        let antes = cierres_descartados();
+        for i in 0..1100u64 {
+            record_bracket_close(BracketClose {
+                ts_ms: i,
+                symbol: "FULLUSDT".into(),
+                was_long: true,
+                qty: 1.0,
+                entry_price: 100.0,
+                exit_price: 101.0,
+                stop_price: 101.0,
+                pnl_gross: 1.0,
+                fees: 0.1,
+                trigger: "TP",
+                slippage_bps: 0.0,
+            });
+        }
+        let descartados = cierres_descartados() - antes;
+        let drenados = drain_bracket_closes().len() as u64;
+        assert_eq!(drenados + descartados, 1100, "ni se pierden ni se inventan cierres");
+        assert!(descartados > 0, "con 1100 cierres y cola de 1024 tiene que haber descartes contados");
     }
 
 }

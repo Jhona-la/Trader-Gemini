@@ -171,9 +171,18 @@ impl OFIModel {
         let ofi_norm = ((e_bid - e_ask) / stable_depth).clamp(-10.0, 10.0);
 
         // Actualizar estados pasados
-        self.prev_bid_price = bid_price;
+        // D-709 (DÉCIMA OLA · auditoría integral): se guarda el precio SANEADO
+        // (`b_p`/`a_p`), no el crudo. Las cantidades ya se guardaban saneadas;
+        // los precios no, de modo que un solo evento con `bid_price = NaN` dejaba
+        // `prev_bid_price` en NaN PARA SIEMPRE: a partir de ahí toda comparación
+        // con un precio válido es falsa, `e_bid` cae siempre en la rama
+        // `-prev_bid_qty` y el OFI —dimensión 2 del vector ML y entrada del gate
+        // de flujo— queda clavado en un valor sin relación con el flujo. Con un
+        // cero el defecto se auto-curaba (la guarda de arriba reinicializa), y por
+        // eso pasaba inadvertido.
+        self.prev_bid_price = b_p;
         self.prev_bid_qty = b_qty;
-        self.prev_ask_price = ask_price;
+        self.prev_ask_price = a_p;
         self.prev_ask_qty = a_qty;
         self.prev_depth = current_depth;
 
@@ -252,6 +261,26 @@ impl InstitutionalVolumeTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn d709_un_nan_no_envenena_el_ofi_para_siempre() {
+        let mut ofi = OFIModel::new();
+        // Diez actualizaciones sanas con el bid subiendo: el OFI debe ser positivo.
+        for i in 0..10 {
+            let p = 100.0 + i as f64 * 0.1;
+            ofi.update(p, p + 0.1, 10.0, 10.0);
+        }
+        // Un evento corrupto.
+        ofi.update(f64::NAN, 101.1, 10.0, 10.0);
+        // Y diez más sanas, con el bid subiendo de nuevo.
+        let mut last: f64 = 0.0;
+        for i in 0..10 {
+            let p = 101.0 + i as f64 * 0.1;
+            last = ofi.update(p, p + 0.1, 12.0, 8.0);
+        }
+        assert!(last.is_finite(), "el OFI dejó de ser finito: {last}");
+        assert!(last > 0.0, "tras un NaN el OFI quedó clavado en {last}");
+    }
 
     #[test]
     fn test_order_flow_tracker() {
@@ -662,4 +691,6 @@ impl SpoofingDetector {
 
         self.spoofing_risk_score
     }
+
+
 }
