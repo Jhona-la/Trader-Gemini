@@ -140,6 +140,17 @@ impl NanoForest {
         Ok(())
     }
 
+    /// Inserta un forest YA CONSTRUIDO en el caché global (mismo contrato de
+    /// dimensión que load_model). Uso: oráculos de medición que necesitan un
+    /// predictor sintético (t1: siempre-confiado, para medir expresividad
+    /// genética condicional a la cooperación de la predicción).
+    pub fn store_global(key: &str, forest: NanoForest) {
+        let current_map = crate::ml_inference::GLOBAL_FORESTS.load();
+        let mut new_map = (**current_map).clone();
+        new_map.insert(key.to_string(), Arc::new(forest));
+        crate::ml_inference::GLOBAL_FORESTS.store(Arc::new(new_map));
+    }
+
     /// Predicts using a specific global forest.
     /// F5.4: firma Option ⇒ comportamiento Option. El panic anterior mataba el
     /// proceso (panic=abort) con posiciones abiertas si un modelo no estaba

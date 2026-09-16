@@ -77,52 +77,40 @@ fn difiere(a: &[f64; STATS_LEN], b: &[f64; STATS_LEN]) -> bool {
     })
 }
 
-// B3.18 (2026-09-16) — TEST APARCADO con #[ignore]: desde que LA PREDICCIÓN
-// DECIDE, la cobertura genética del oráculo es 0/144 (medido, con modelos
-// del roster cargados): el gate de ensamble y la envolvente de sizing son
-// gobernadores NO-GENÉTICOS por diseño — si la predicción no coopera, NINGÚN
-// valor de gen produce trades y por tanto ningún gen puede "diferir". El
-// trinquete del 25% medía un sistema donde el genoma era el único gobernador.
-// REDISEÑO PENDIENTE: el oráculo debe medir la expresividad genética
-// CONDICIONAL a la predicción (p.ej. serie sintética con modelo a medida, o
-// neutralización documentada del gate sólo para la medición). NO eliminar:
-// la propiedad que protege (genes muertos = ruido que gobierna) sigue
-// vigente; sólo cambió dónde se puede medir.
+// B3.18 (2026-09-16) — REDISEÑO INTENTADO Y APARCADO (tercera medición):
+// 0/144 con modelos reales, 0/144 con predictor sintético siempre-confiado
+// (init 3.0 ⇒ ml≈0.953 constante, gate neutralizado). El bloqueo NO está
+// (sólo) en el gate de ensamble: el runner NATIVO produce cero trades con
+// cualquier configuración post-B3.18 — el candidato siguiente a
+// instrumentar es la cadena deliberación→ramas→sizing del camino nativo
+// (run_backtest_native no pasa por booktick_replay ni por el host).
+// DIAGNÓSTICO REQUERIDO: un trace de run_backtest_native con los vetos por
+// etapa (deliberación/gate ml/risk-engine/ramas) sobre la serie sintética.
+// El andamiaje queda (store_global + predictor confiado) para el próximo
+// intento. NO eliminar: la propiedad (genes muertos = ruido que gobierna)
+// sigue vigente.
 #[test]
-#[ignore = "B3.18: oráculo requiere rediseño condicional a la predicción — ver comentario"]
+#[ignore = "B3.18: camino nativo produce 0 trades post-gate — requiere trace de vetos por etapa"]
 fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
-    // B3.18 (ajuste del oráculo): desde que LA PREDICCIÓN DECIDE, un core
-    // sin modelos cargados no tradea (gate de ensamble contra un ml≈0.5
-    // sin forest — el fallback cross-símbolo fue retirado a propósito).
-    // Sin trades, NINGÚN gen puede expresarse: 0/144 sensibles (medido
-    // 2026-09-16). El oráculo debe evaluar el sistema en su configuración
-    // REAL: modelos del roster cargados, como el arranque del motor y
-    // backtest_windows (B3.15).
-    if let Ok(entries) = std::fs::read_dir("models") {
-        let mut cargados = 0usize;
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("json") {
-                continue;
-            }
-            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if god_engine_core::ml_inference::NanoForest::load_global(
-                stem,
-                &path.to_string_lossy(),
-            )
-            .is_ok()
-            {
-                cargados += 1;
-            }
-        }
-        assert!(
-            cargados > 0,
-            "el oráculo necesita modelos en models/ para que el gate B3.18 permita operar (cargados: {cargados})"
-        );
-        println!("[T-1] {cargados} modelos cargados para el oráculo");
-    }
+    // Neutralización documentada del gate para la MEDICIÓN (ver comentario
+    // del test): forest sintético siempre-confiado, contrato 48D válido
+    // (sin árboles = modelo all-leaves aceptado por from_data).
+    let confident = god_engine_core::ml_inference::NanoForestData {
+        children_left: vec![],
+        children_right: vec![],
+        feature: vec![],
+        threshold: vec![],
+        value: vec![],
+        tree_offsets: vec![0, 0],
+        init_score: 3.0, // sigmoid(3) ≈ 0.953 — siempre-confiado
+    };
+    let forest = god_engine_core::ml_inference::NanoForest::from_data(confident)
+        .expect("forest sintético del oráculo fuera de contrato");
+    // El runner nativo mapea su serie a coin 0; B3.18b resuelve la clave del
+    // símbolo con default BTCUSDT cuando el registry no lo registra.
+    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_SCALP", forest);
+    println!("[T-1] predictor sintético siempre-confiado cargado (gate neutralizado para medir)");
+
     let datos = serie(3_000);
     let base = SuperGenotype::new_baseline(0.0002, 0.0005);
     let lo = SuperGenotype::get_lower_bounds();
