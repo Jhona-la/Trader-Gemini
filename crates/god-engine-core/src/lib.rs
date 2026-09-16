@@ -3135,54 +3135,41 @@ impl GodEngineCore {
             }
 
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_L2);
-            // D-473 & D-477: Escudo Invariante Neuronal DarkAlpha Universal (Cross-Horizon ML Filter)
-            // Veto estricto si el modelo ML predice activamente en contra de la dirección deseada
-            // D-688 (DÉCIMA OLA): «en contra» era una banda 0,460/0,540 sin derivación. La regla
-            // declarada es que el modelo prediga contra la dirección: P(sube) < ½ para un largo y
-            // > ½ para un corto. La excepción de extensión pasa a z95, como el resto del motor.
-            // D-695 (DÉCIMA OLA): el escudo sólo veta si el ensamble ha demostrado
-            // habilidad frente a la tasa base (Brier, z95 sobre la escala macro).
-            // Un modelo sin habilidad medida no puede anular una intención.
+            // D-696 (DÉCIMA OLA · auditoría integral): UN SOLO SITIO DECIDE SI LA
+            // PREDICCIÓN ESTÁ DE ACUERDO CON LA DIRECCIÓN.
+            //
+            // Aquí vivía el escudo neuronal (D-473/D-477, con su banda D-688 y la
+            // puerta de habilidad D-695): vetaba un largo con `ml_prob < 0,5` y un
+            // corto con `ml_prob > 0,5`. B3.18 puso el mismo juicio —con los
+            // umbrales del GENOMA, no con el literal ½— en el punto único de
+            // entrada. Los dos umbrales salen del mismo `ml_prob` (línea 1717) y
+            // `ml_gate_thresholds` garantiza `largo ≥ ½ ≥ corto`, de modo que todo
+            // lo que este escudo vetaba lo veta después la puerta genómica: era
+            // una segunda fuente de verdad, más laxa, con una excepción de
+            // extensión que no cambiaba ninguna apertura.
+            //
+            // Medición sobre datos reales (junio-julio 2026, 34 M de eventos por
+            // ventana) de la puerta de habilidad D-695 frente al escudo sin
+            // puerta: aptitud media −0,1428 con la puerta y −0,1290 sin ella. La
+            // regla pre-registrada era conservar D-695 sólo si no empeoraba; no la
+            // supera, y al unificar el juicio en la puerta genómica desaparece.
+            // El `SkillTracker` se conserva como TELEMETRÍA: mide si el ensamble
+            // tiene habilidad, sin decidir nada.
             let neural_skill = if coin_id < self.ensembles.len() {
                 self.ensembles[coin_id].has_significant_skill()
             } else {
                 self.ensemble.has_significant_skill()
             };
-            let neural_against_long = unified_intent.signal == SignalType::Long && ml_prob < 0.5;
-            let neural_against_short = unified_intent.signal == SignalType::Short && ml_prob > 0.5;
+            let (ml_gate_long, ml_gate_short) = crate::calibration::ml_gate_thresholds(
+                self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+            );
+            let neural_against_long =
+                unified_intent.signal == SignalType::Long && ml_prob < ml_gate_long;
+            let neural_against_short =
+                unified_intent.signal == SignalType::Short && ml_prob > ml_gate_short;
             if neural_against_long || neural_against_short {
                 self.diag_dir.record_neural_gate(neural_against_long, neural_skill);
-            }
-            if neural_against_long && neural_skill {
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
-                let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
-                    self.feature_engines[coin_id].kline_ema_slow
-                } else {
-                    self.feature_engines[coin_id].ema_slow
-                };
-                let p_stretch = if ema_ref > 0.0 {
-                    (mid_price - ema_ref) / cur_atr
-                } else {
-                    0.0
-                };
-                if crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) >= -crate::diffusion::Z95 {
-                    unified_intent = SignalIntent::flat();
-                }
-            } else if neural_against_short && neural_skill {
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
-                let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
-                    self.feature_engines[coin_id].kline_ema_slow
-                } else {
-                    self.feature_engines[coin_id].ema_slow
-                };
-                let p_stretch = if ema_ref > 0.0 {
-                    (mid_price - ema_ref) / cur_atr
-                } else {
-                    0.0
-                };
-                if crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) <= crate::diffusion::Z95 {
-                    unified_intent = SignalIntent::flat();
-                }
             }
 
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_NEURAL);
@@ -3278,11 +3265,20 @@ impl GodEngineCore {
                     // long ⇒ ml ≥ umbral genómico, short ⇒ ml ≤ umbral.
                     // Con los umbrales baseline (0.5698/0.4302) esto es la
                     // "selección de entradas" que la guerra de fees pedía.
+                    // D-696: los umbrales pasan por `ml_gate_thresholds`, que impone
+                    // `largo ≥ ½ ≥ corto` y neutraliza los no finitos. Con ese
+                    // invariante esta puerta contiene al antiguo escudo neuronal
+                    // (que vetaba con el literal ½), de modo que el juicio «la
+                    // predicción está de acuerdo» vive en un único sitio.
                     let ml_now = coin.ml_prob.load(Ordering::Relaxed);
+                    let (ml_thr_long_gate, ml_thr_short_gate) = crate::calibration::ml_gate_thresholds(
+                        self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                        self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+                    );
                     let ml_gate_ok = if order.signal == SignalType::Long {
-                        ml_now >= self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
+                        ml_now >= ml_thr_long_gate
                     } else {
-                        ml_now <= self.arena.config.ml_threshold_short.load(Ordering::Relaxed)
+                        ml_now <= ml_thr_short_gate
                     };
                     if deliberation.approved && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;

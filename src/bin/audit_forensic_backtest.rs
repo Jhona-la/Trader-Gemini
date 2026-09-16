@@ -170,6 +170,48 @@ async fn main() {
     };
     core.swing_nn = Some(nn);
 
+    // D-699 (DÉCIMA OLA · auditoría integral): EL FORENSE CARGA LOS MISMOS
+    // MODELOS QUE EL BOT VIVO.
+    //
+    // `god_engine` registra al arrancar TODOS los ficheros de `models/` en el
+    // registro global de `NanoForest`, por su nombre de fichero, y el núcleo
+    // busca el bosque del símbolo con la clave `{SÍMBOLO}_SCALP`. El forense no
+    // registraba ninguno: `NanoForest::get_global("BTCUSDT_SCALP")` devolvía
+    // `None` y el ensamble corría sin bosque —sólo red y espectro—. Desde que
+    // «la predicción decide» (gate de ensamble en toda entrada), medir sin el
+    // bosque es medir otro motor. `backtest_windows` y `evolution` ya lo
+    // cargaban; el forense, que es el que valida, no.
+    let mut forests_cargados = 0usize;
+    match std::fs::read_dir("models") {
+        Ok(entries) => {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                let ext = path.extension().and_then(|s| s.to_str());
+                if ext != Some("json") && ext != Some("bin") {
+                    continue;
+                }
+                let (Some(stem), Some(path_str)) =
+                    (path.file_stem().and_then(|s| s.to_str()), path.to_str())
+                else {
+                    continue;
+                };
+                if god_engine_core::ml_inference::NanoForest::load_global(stem, path_str).is_ok() {
+                    forests_cargados += 1;
+                }
+            }
+        }
+        Err(e) => println!("⚠️ [MODELOS] No se pudo leer models/: {}", e),
+    }
+    println!(
+        "🌲 [MODELOS] {} modelos registrados como en producción · bosque BTCUSDT_SCALP: {}",
+        forests_cargados,
+        if god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_SCALP").is_some() {
+            "presente"
+        } else {
+            "AUSENTE (el ensamble corre sin bosque)"
+        }
+    );
+
     // INICIALIZAR EL SYMBOL REGISTRY PARA BTCUSDT (coin_id = 0)
     quantum_arena::symbol_registry::update_registry(vec![
         quantum_arena::symbol_registry::SymbolSpec {
