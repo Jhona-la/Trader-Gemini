@@ -113,13 +113,7 @@ async fn main() {
     // su necesidad de pila depende de cómo el optimizador inlinee la construcción,
     // y con 1 MiB (hilo principal en Windows) un cambio de una línea en `build`
     // bastó para desbordarla. El evolver y el simulador ya seguían este patrón.
-    let arena = std::thread::Builder::new()
-        .name("arena-build".into())
-        .stack_size(32 * 1024 * 1024)
-        .spawn(move || Arc::new(quantum_arena::GlobalArena::new(initial_capital)))
-        .expect("no se pudo crear el hilo de construcción del arena")
-        .join()
-        .expect("la construcción del arena entró en pánico");
+    let arena = quantum_arena::GlobalArena::build_in_own_stack(initial_capital);
     genome.apply_to_arena(&arena);
 
     // Desactivar NanoForest obsoleto para activar DarkAlphaEngine 54D unificado

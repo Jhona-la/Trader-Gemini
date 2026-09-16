@@ -610,13 +610,7 @@ mod tests {
         // arena materializa en línea los anillos de ticks de sus monedas y no cabe
         // en la pila por defecto de un hilo de test; producción y el forense ya lo
         // construyen en un hilo de 32 MiB. Aquí, lo mismo.
-        let arena = std::thread::Builder::new()
-            .name("arena-build-test".into())
-            .stack_size(32 * 1024 * 1024)
-            .spawn(|| quantum_arena::GlobalArena::new(100.0))
-            .expect("no se pudo crear el hilo de construcción del arena")
-            .join()
-            .expect("la construcción del arena entró en pánico");
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
 
         // Simulate phantom position on BTC (arena has it open, but Binance is flat)
         arena.coins[0].positions.position.open_with_horizon(

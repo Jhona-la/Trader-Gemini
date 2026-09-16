@@ -233,7 +233,8 @@ impl DarwinDaemon {
             let mut results: Vec<_> = population
                 .par_iter()
                 .map(|genome| {
-                    let arena = Arc::new(GlobalArena::new(initial_capital));
+                    // D-714: construcción con pila suficiente (este sitio corre en un worker de rayon).
+                    let arena = GlobalArena::build_in_own_stack(initial_capital);
                     genome.apply_to_arena(&arena);
                     arena
                         .config
@@ -428,7 +429,8 @@ impl DarwinDaemon {
 
         let baseline_results = [current_active];
         let baseline_fitness = {
-            let arena = Arc::new(GlobalArena::new(initial_capital));
+            // D-714: construcción con pila suficiente (este sitio corre en un worker de rayon).
+                    let arena = GlobalArena::build_in_own_stack(initial_capital);
             baseline_results[0].apply_to_arena(&arena);
             let mut engine = GodEngineCore::new(arena.clone());
             let mut max_drawdown = 0.0;
@@ -542,7 +544,7 @@ mod tests {
 
     #[test]
     fn test_genotype_random_and_apply_to_arena() {
-        let arena = Arc::new(GlobalArena::new(13.0));
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let genome = Genotype::new_random();
 
         assert!(genome.global_leverage >= 10.0 && genome.global_leverage <= 125.0);
@@ -558,7 +560,7 @@ mod tests {
 
     #[test]
     fn test_genotype_nan_immunity_when_applying_to_arena() {
-        let arena = Arc::new(GlobalArena::new(13.0));
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let nan_genome = Genotype {
             global_leverage: f64::NAN,
             trend_threshold: f64::NAN,
@@ -586,7 +588,7 @@ mod tests {
 
     #[test]
     fn test_darwin_daemon_instantiation() {
-        let arena = Arc::new(GlobalArena::new(13.0));
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let daemon = DarwinDaemon::new(arena);
         assert!(
             daemon
