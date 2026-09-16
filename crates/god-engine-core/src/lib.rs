@@ -1941,13 +1941,25 @@ impl GodEngineCore {
             // "menos de 0.5", eso es su offset, no su señal. Normalizamos
             // mapeando el rango observado [0.35, 0.50] a [0.30, 0.70] para
             // restaurar simetría direccional.
-            let ml_prob_adaptive = if book_absent && ml_prob < 0.50 {
-                // Expandir el rango: ml=0.35 → 0.30, ml=0.50 → 0.50
-                // (transformación lineal que dobla la distancia a 0.5)
-                (0.5 + (ml_prob - 0.5) * 2.0).clamp(0.02, 0.98)
-            } else {
-                ml_prob
-            };
+            // D-735 (DÉCIMA OLA · auditoría integral): SIN AMPLIFICACIÓN
+            // ASIMÉTRICA DE LA PROBABILIDAD.
+            //
+            // Aquí se doblaba la distancia a la neutralidad SÓLO en el lado
+            // bajista (`ml_prob < 0,50`) cuando falta el libro, y el comentario
+            // afirmaba lo contrario —«re-centrar para restaurar simetría
+            // direccional»—: con ml = 0,35 la transformación daba 0,20, no 0,30.
+            // El consumidor largo comparaba el valor CRUDO contra su umbral y el
+            // corto el valor DUPLICADO contra el suyo, de modo que un umbral corto
+            // de 0,30 disparaba en realidad con ml < 0,40. Como sin libro (todo
+            // evento de trade en producción, antes de D-707) esa rama era la
+            // habitual, el efecto era un sesgo estructural a corto en la misma
+            // magnitud que el motor usa para decidir.
+            //
+            // El sesgo del bosque cuando faltan features no se corrige con una
+            // recta ad hoc en el consumidor: se corrige recalibrando el modelo
+            // —`calibration::PlattCalibrator` existe para eso— o no inyectando
+            // features sintéticas de libro (D-707).
+            let ml_prob_adaptive = ml_prob;
 
             let sym = quantum_arena::symbol_registry::try_spec(coin_id)
                 .map(|s| s.symbol)
@@ -2164,7 +2176,22 @@ impl GodEngineCore {
                     // FIX AUDIT: Hurst puede estar clavado en 0.5 (DFA sin
                     // datos suficientes). Rama A: Hurst activo (>0.52 o <0.45).
                     // Rama B: Hurst neutral — momentum directo sin régimen.
-                    else if self.feature_engines[coin_id].ema_slow > 0.0 {
+                    //
+                    // D-737 (DÉCIMA OLA · auditoría integral): este `else` se ligaba
+                    // al `if` de la ruta 1b, no al bloque del ML. Consecuencia
+                    // exactamente contraria a la declarada: si el ML NO opinaba se
+                    // entraba en 1b y la ruta 2 no se evaluaba nunca —el respaldo
+                    // estaba muerto justo en el caso para el que se escribió—, y si
+                    // el ML SÍ opinaba se saltaba 1b y la ruta 2 podía REESCRIBIR la
+                    // intención: un Long del ML con confianza 0,62 se convertía en un
+                    // Short de confianza literal 0,68 cuando el Hurst caía por debajo
+                    // de 0,45. El motor invertía la dirección de su propia señal.
+                    //
+                    // Ahora las tres rutas son una cascada explícita: cada respaldo
+                    // se evalúa sólo si la intención sigue plana.
+                    if scalp_intent.signal == SignalType::Flat
+                        && self.feature_engines[coin_id].ema_slow > 0.0
+                    {
                         let ema_s = self.feature_engines[coin_id].ema_slow;
                         let atr_abs = (atr_pct * mid_price).max(0.01);
                         let dev_atr = (mid_price - ema_s) / atr_abs;
@@ -2346,12 +2373,19 @@ impl GodEngineCore {
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
-                            confidence: sig_conf(current_obi.abs().min(composite_score.abs())),
+                            confidence: sig_conf(effective_obi_long.abs().min(composite_score.abs())),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 9.0,
                             ..Default::default()
                         };
-                    } else if long_streak < 2 && price_stretch < -1.0 && current_obi > range_obi * 1.15 && composite_score >= 0.24 && micro_trend >= 0.0 {
+                    // D-736 (DÉCIMA OLA · auditoría integral): esta rama —reversión
+                    // a la media alcista— leía `current_obi` mientras su espejo
+                    // bajista y las otras ocho ramas del bloque leen
+                    // `effective_obi_*`. Sin libro real, `current_obi` vale
+                    // exactamente 0 y la condición era imposible: la rama alcista
+                    // NUNCA disparaba mientras su simétrica bajista sí. Es una de
+                    // las causas mecánicas del «un solo largo en ~140 operaciones».
+                    } else if long_streak < 2 && price_stretch < -1.0 && effective_obi_long > range_obi * 1.15 && composite_score >= 0.24 && micro_trend >= 0.0 {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(current_obi.abs().min(composite_score.abs())),
