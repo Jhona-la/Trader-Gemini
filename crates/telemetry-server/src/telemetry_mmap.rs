@@ -70,10 +70,10 @@ impl MmapTelemetry {
         let mut total_trades = 0;
 
         for coin in self.arena.coins.iter() {
-            let m_pnl = coin.metrics.pnl_realized.load(Ordering::Relaxed);
-            let leg_pnl = coin.scalp.pnl_realized.load(Ordering::Relaxed)
-                + coin.swing.pnl_realized.load(Ordering::Relaxed);
-            pnl_realized += if m_pnl.abs() > 0.0 { m_pnl } else { leg_pnl };
+            // D-739: el PnL realizado vive en `metrics`. Sumar las dos piernas
+            // duplicaba el resultado mientras el cierre escribía el mismo número
+            // en las tres celdas; ahora sólo se escribe `metrics`.
+            pnl_realized += coin.metrics.pnl_realized.load(Ordering::Relaxed);
 
             ml_prob_sum += coin.ml_prob.load(Ordering::Relaxed);
             hurst_sum += coin.hurst_exponent.load(Ordering::Relaxed);
@@ -189,7 +189,8 @@ mod tests {
         let path = temp_dir.join("test_mmap_telemetry.bin");
         let path_str = path.to_string_lossy().to_string();
 
-        let arena = Arc::new(GlobalArena::new(13.0));
+        // D-714: pila suficiente para construir el arena.
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let mut telemetry = MmapTelemetry::new(arena, &path_str).unwrap();
 
         telemetry.snapshot_to_ram();
@@ -207,7 +208,8 @@ mod tests {
         let path = temp_dir.join(format!("test_mmap_readback_{}.bin", unique_id));
         let path_str = path.to_string_lossy().to_string();
 
-        let arena = Arc::new(GlobalArena::new(13.0));
+        // D-714: pila suficiente para construir el arena.
+        let arena = GlobalArena::build_in_own_stack(13.0);
         arena.unified_capital.store(26.0, Ordering::Relaxed);
         arena.coins[0]
             .scalp

@@ -21,6 +21,18 @@ impl ZeroCopyRing {
         }
     }
 
+    /// D-714 (patrón): construye el anillo en un hilo con pila suficiente. El
+    /// búfer es un array fijo materializado en la pila al construirse, así que
+    /// `new()` desborda cualquier hilo de pila pequeña (tests, workers).
+    pub fn en_pila_grande() -> Box<Self> {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| Box::new(Self::new()))
+            .expect("no se pudo crear el hilo de construcción del anillo")
+            .join()
+            .expect("la construcción del anillo entró en pánico")
+    }
+
     pub fn lock_in_ram(&self) {
         #[cfg(windows)]
         unsafe {
@@ -83,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_zero_copy_ring_push_pop() {
-        let ring = ZeroCopyRing::new();
+        let ring = ZeroCopyRing::en_pila_grande();
         assert!(ring.pop().is_none());
 
         assert!(ring.push(("latency_ns", 42)).is_ok());
@@ -102,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_zero_copy_ring_fifo_order_and_lock_in_ram() {
-        let ring = ZeroCopyRing::new();
+        let ring = ZeroCopyRing::en_pila_grande();
         ring.lock_in_ram();
 
         for i in 0..100 {

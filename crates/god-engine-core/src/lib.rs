@@ -1272,13 +1272,17 @@ impl GodEngineCore {
                     // FASE 23: Métricas continuas unificadas — sin bifurcaciones scalp/swing.
                     // B3.14: SOLO posiciones cuya entrada existió en el exchange.
                     if was_exchange_confirmed {
+                        // D-739 (DÉCIMA OLA · auditoría integral): el MISMO PnL se
+                        // escribía en las tres celdas —`metrics`, `scalp` y
+                        // `swing`—, de modo que una operación de +1,00 USD
+                        // producía 1,00 en cada una: los consumidores que suman
+                        // las dos piernas (el panel, el bus mmap, el simulador
+                        // multiactivo) veían el DOBLE del PnL real, y el desglose
+                        // por horizonte era ficción — dos motores con idéntico
+                        // resultado donde sólo hubo una operación. El motor es
+                        // continuo: la única celda es `metrics`, como ya declaraba
+                        // el comentario de F-014 unas líneas más abajo.
                         coin.metrics
-                            .pnl_realized
-                            .fetch_add(net_trade_pnl, Ordering::Relaxed);
-                        coin.scalp
-                            .pnl_realized
-                            .fetch_add(net_trade_pnl, Ordering::Relaxed);
-                        coin.swing
                             .pnl_realized
                             .fetch_add(net_trade_pnl, Ordering::Relaxed);
                     }
@@ -3334,10 +3338,29 @@ impl GodEngineCore {
                         wr,
                         None,
                     );
-                    if !deliberation.approved {
+                    // D-738 (DÉCIMA OLA · auditoría integral): EL CONSEJO APRUEBA
+                    // UNA OPERACIÓN, NO «TENGO UNA OPINIÓN».
+                    //
+                    // `approved` sólo decía que existía supermayoría de ALGO: su
+                    // dirección viaja en `final_signal`, que no leía nadie en todo
+                    // el repositorio. Con el libro dado la vuelta (OBI −0,40,
+                    // momento −0,35) el Consejo alcanzaba un 92 % de consenso
+                    // BAJISTA, marcaba `approved = true`, y el llamador abría el
+                    // LARGO que traía el risk-engine: el órgano que existe para
+                    // vetar entradas contra la microestructura las bendecía.
+                    // Ahora se exige que el consenso sea del lado que se va a
+                    // operar.
+                    let quiere_largo = order.signal == SignalType::Long;
+                    let consejo_en_la_misma_direccion = if quiere_largo {
+                        deliberation.final_signal > 0.0
+                    } else {
+                        deliberation.final_signal < 0.0
+                    };
+                    let aprobado_por_consejo =
+                        deliberation.approved && consejo_en_la_misma_direccion;
+                    if !aprobado_por_consejo {
                         self.diag_council_vetoes += 1;
-                        self.diag_dir
-                            .record_council(order.signal == SignalType::Long, false);
+                        self.diag_dir.record_council(quiere_largo, false);
                     }
 
                     // B3.18 — LA PREDICCIÓN DECIDE. Descubrimiento 2026-09-15:
@@ -3364,7 +3387,7 @@ impl GodEngineCore {
                     } else {
                         ml_now <= ml_thr_short_gate
                     };
-                    if deliberation.approved && !ml_gate_ok {
+                    if aprobado_por_consejo && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;
                         if self.diag_ml_vetoes % 50 == 1 {
                             telemetry_server::telemetry_log!(
@@ -3377,7 +3400,7 @@ impl GodEngineCore {
                         }
                     }
 
-                    if deliberation.approved && ml_gate_ok {
+                    if aprobado_por_consejo && ml_gate_ok {
                         let is_long = order.signal == SignalType::Long;
                         let total_used = self.arena.used_margin.load(Ordering::Relaxed);
                         let free_cap = (current_cap - total_used).max(0.0);
