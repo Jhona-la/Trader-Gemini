@@ -708,9 +708,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut order_executor =
         execution_engine::executor::OrderExecutor::new(active_key, active_secret, is_testnet);
-    // If we are on Testnet, we want to hit the Testnet API natively, not intercept locally as Paper Trading
-    if is_env_testnet {
-        order_executor.set_paper_trading(false);
+    // D-700 (DÉCIMA OLA · auditoría integral): LA PUERTA HUMANA GOBIERNA EL
+    // FUEGO REAL DESDE EL PRIMER EJECUTOR.
+    //
+    // `is_paper_trading` nace en `false` (executor.rs), y aquí la única línea que
+    // lo tocaba era `if is_env_testnet { set_paper_trading(false) }`, que no hace
+    // nada porque ya vale false. Resultado: arrancar SIN `--force-live`, o con él
+    // pero sin `config_dir/MAINNET_ARMED`, imprimía «MODO DEMO» y sin embargo el
+    // ejecutor inicial disparaba contra la cuenta REAL con las claves de mainnet
+    // —`ensure_hedge_mode` cambia el modo de posición de la cuenta, y las rutas de
+    // restauración y protección colocan órdenes— hasta la transición de fase.
+    //
+    // El discriminador correcto no es el entorno (testnet o mainnet), que es
+    // ortogonal, sino la MISMA puerta de capital que decide `is_demo_mode`: en
+    // testnet se opera nativamente contra su API; en mainnet sin armado humano,
+    // papel local.
+    order_executor.set_paper_trading(is_demo_mode && !is_env_testnet);
+    if is_demo_mode && !is_env_testnet {
+        telemetry_server::telemetry_log!(
+            "🧻 [PUERTA MAINNET] Ejecutor en PAPEL local: sin MAINNET_ARMED no sale ninguna orden a la cuenta real."
+        );
     }
     let exec = Arc::new(arc_swap::ArcSwap::from_pointee(order_executor));
 
@@ -1042,6 +1059,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_sink(std::sync::Arc::new(CapitalBridgeSink {
         unified_capital: Arc::clone(&unified_capital),
     }))
+    // D-702 (DÉCIMA OLA · auditoría integral): este streamer nace ANTES que el
+    // arena (que se construye dentro del hilo del núcleo, con pila de 32 MiB por
+    // D-684), así que no puede recibirlo; el de la era de producción sí lo
+    // recibe. Con la puerta de capital (D-700) esta era es papel local, donde no
+    // hay cierres reales que contabilizar.
     .with_api_secret(exec.load().api_secret())
     .with_shutdown(Arc::clone(&demo_streamer_abort));
     tokio::spawn(async move {
@@ -1723,22 +1745,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // que quema slots algo y ensucia el stream). Cancelarlas.
                     if let Ok(all_legs) = executor.fetch_all_open_algo_orders().await {
                         for leg in &all_legs {
+                            // D-698 (DÉCIMA OLA · auditoría integral): `positionSide`
+                            // vacío es DESCONOCIDO, no «no coincide». Con el
+                            // predicado anterior, una pierna sin ese campo —el mismo
+                            // que ya llegó vacío con `algoStatus` (B1.3-fix)— daba
+                            // `side_open = false` para toda posición LARGA viva, y el
+                            // watchdog purgaba su TP y su SL dejándola desnuda.
+                            let side_unknown = leg.position_side.is_empty();
                             let side_open = positions.iter().any(|p| {
                                 p.symbol == leg.symbol
                                     && p.position_amt.abs() > 0.0
                                     && (leg.position_side == "BOTH"
+                                        || side_unknown
                                         || (p.position_amt > 0.0) == (leg.position_side == "LONG"))
                             });
                             if !side_open {
-                                if executor
-                                    .cancel_algo_order(&leg.symbol, &leg.client_algo_id)
+                                // D-698: se cancela por `algoId` y el fallo se
+                                // reporta: una pierna que sobrevive a la purga
+                                // dispara sobre la posición siguiente.
+                                match executor
+                                    .cancel_algo_order_ids(
+                                        &leg.symbol,
+                                        leg.algo_id,
+                                        &leg.client_algo_id,
+                                    )
                                     .await
-                                    .is_ok()
                                 {
-                                    telemetry_server::telemetry_log!(
-                                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} {} (posición ya cerrada)",
-                                        leg.symbol, leg.order_type, leg.client_algo_id
-                                    );
+                                    Ok(()) => telemetry_server::telemetry_log!(
+                                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} algoId {} (posición ya cerrada)",
+                                        leg.symbol, leg.order_type, leg.algo_id
+                                    ),
+                                    Err(e) => telemetry_engine::telemetry_err!(
+                                        "🚨 [PROTECTION-WATCHDOG] Pierna huérfana VIVA: {} {} algoId {} no se pudo cancelar: {}",
+                                        leg.symbol, leg.order_type, leg.algo_id, e
+                                    ),
                                 }
                             }
                         }
@@ -2293,6 +2333,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .with_sink(std::sync::Arc::new(CapitalBridgeSink {
                             unified_capital: Arc::clone(&unified_capital),
                         }))
+                        // D-702: el streamer de mainnet también necesita el arena
+                        // para atribuir el PnL de los cierres por bracket.
+                        .with_arena(Arc::clone(&arena_real))
                         .with_api_secret(new_exec_arc.api_secret());
                         // X-011: matar el streamer de la era demo ANTES de
                         // spawnear el de mainnet — su ACCOUNT_UPDATE de testnet
@@ -2349,7 +2392,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Kelly que antes sólo veía los cierres del core.
                     for bc in execution_engine::trade_accounting::drain_bracket_closes() {
                         let net_bc = bc.pnl_gross - bc.fees;
-                        if bc.pnl_gross != 0.0 {
+                        // D-702: la condición es «se conoce el contexto de
+                        // entrada», no «el PnL no es cero». Con la guarda
+                        // anterior, un cierre exactamente en el precio de entrada
+                        // (o cualquier cierre de una posición adoptada) quedaba
+                        // fuera de la estadística sin dejar rastro.
+                        if bc.entry_price > 0.0 {
                             if net_bc >= 0.0 {
                                 avg_win_abs = if avg_win_abs == 0.0 { net_bc.abs() } else { avg_win_abs * 0.95 + net_bc.abs() * 0.05 };
                             } else {
