@@ -432,11 +432,15 @@ impl UserDataStreamer {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(o.trade_time_ms);
         if update.last_filled_qty > 0.0 {
+            // B3.7 (repro demo_v26): el log ahora incluye tipo + id de
+            // cliente — sin ellos, un fill de cierre no-matcheado era
+            // indiagnosticable desde el log (el caso BNBUSDT).
             println!(
-                "💧 [FILL] {} {} {} @ {} (acum {}/{} status {:?})",
+                "💧 [FILL] {} {} {} {} @ {} (acum {}/{} status {:?})",
                 update.symbol,
                 update.side,
-                update.last_filled_qty,
+                update.order_type,
+                update.client_order_id,
                 update.last_filled_price,
                 update.cumulative_filled_qty,
                 update.orig_qty,
@@ -453,9 +457,22 @@ impl UserDataStreamer {
         // generaban contabilidad ni aprendizaje (10/10 cierres del
         // 2026-09-15 fueron por bracket — el risk_envelope sólo veía los del
         // core, que fueron cero).
-        if update.last_filled_qty > 0.0
-            && crate::trade_accounting::is_closing_bracket_order(&update.order_type)
-        {
+        //
+        // B3.7 (repro demo_v26): el servicio de Algo puede convertir la
+        // pierna disparada en orden MARKET — el respaldo por clientOrderId
+        // firmado (wdTP_/wdSL_/<base>_TP/_SL/_TPR/_SLR) mantiene la
+        // detección. Los reduce-only de emergencia (UUID simple) NO son
+        // bracket: esos cierres los contabiliza el core.
+        let close_kind = if update.last_filled_qty > 0.0 {
+            if crate::trade_accounting::is_closing_bracket_order(&update.order_type) {
+                Some(crate::trade_accounting::trigger_kind(&update.order_type))
+            } else {
+                crate::trade_accounting::bracket_close_kind_by_client_id(&update.client_order_id)
+            }
+        } else {
+            None
+        };
+        if let Some(trigger) = close_kind {
             let was_long = update.side.eq_ignore_ascii_case("SELL"); // SELL cierra long
             let (entry_price, entry_fee, entry_qty) = self
                 .arena
@@ -507,7 +524,7 @@ impl UserDataStreamer {
                     stop_price: o.stop_price,
                     pnl_gross,
                     fees,
-                    trigger: crate::trade_accounting::trigger_kind(&update.order_type),
+                    trigger,
                     slippage_bps,
                 },
             );
@@ -835,5 +852,41 @@ mod tests {
         assert_eq!(quantum_arena::protection_health::terminal_events_seen(), 1);
 
         quantum_arena::protection_health::clear_dirty();
+    }
+
+    /// B3.7 repro demo_v26 (orden testnet 2643726644): el fill que cerró el
+    /// SHORT BNBUSDT era un MARKET reduce-only con UUID simple — el despacho
+    /// X-008 del propio host, NO una pierna de bracket. Ese cierre lo
+    /// contabiliza el core; el hook B3.7 NO debe encolarlo.
+    #[test]
+    fn test_b37_repro_reduce_only_uuid_no_es_bracket() {
+        let _guard = crate::trade_accounting::TEST_QUEUE_LOCK.lock();
+        let registry = Arc::new(OrderRegistry::new());
+        let streamer = UserDataStreamer::new(BinanceClient::new("key".into(), true), registry);
+        let ev = r#"{"e":"ORDER_TRADE_UPDATE","E":1789544472795,"o":{"s":"BNBUSDT","c":"01a0a929a0af73c28a7822088668d314","S":"BUY","ps":"SHORT","o":"MARKET","f":"GTC","q":"4.37","p":"0","ap":"711.1","sp":"0","X":"FILLED","i":2643726644,"l":"4.37","z":"4.37","L":"711.1","n":"1.24300280","N":"USDT","T":1789544472795,"t":168334583,"m":false}}"#;
+        streamer.dispatch(ev.as_bytes());
+        let drained = crate::trade_accounting::drain_bracket_closes();
+        assert!(
+            drained.iter().all(|bc| bc.symbol != "BNBUSDT"),
+            "un MARKET reduce-only con UUID simple NO es BracketClose (lo cuenta el core)"
+        );
+    }
+
+    /// B3.7 respaldo: si el servicio Algo convierte la pierna disparada en
+    /// MARKET, el clientOrderId firmado (wdTP_) mantiene la contabilidad.
+    #[test]
+    fn test_b37_fill_market_con_id_firmado_si_es_bracket() {
+        let _guard = crate::trade_accounting::TEST_QUEUE_LOCK.lock();
+        let registry = Arc::new(OrderRegistry::new());
+        let streamer = UserDataStreamer::new(BinanceClient::new("key".into(), true), registry);
+        let ev = r#"{"e":"ORDER_TRADE_UPDATE","E":1789544472795,"o":{"s":"REPRO7USDT","c":"wdTP_1789544472_0","S":"BUY","ps":"SHORT","o":"MARKET","f":"GTC","q":"4.37","p":"0","ap":"711.1","sp":"711.0","X":"FILLED","i":99,"l":"4.37","z":"4.37","L":"711.1","n":"1.24","N":"USDT","T":1789544472795,"t":1,"m":false}}"#;
+        streamer.dispatch(ev.as_bytes());
+        let drained = crate::trade_accounting::drain_bracket_closes();
+        let hit = drained
+            .iter()
+            .find(|bc| bc.symbol == "REPRO7USDT")
+            .expect("la pierna convertida a MARKET debe encolar BracketClose vía clientOrderId");
+        assert_eq!(hit.trigger, "TP");
+        assert!(!hit.was_long, "BUY cierra SHORT");
     }
 }

@@ -794,6 +794,51 @@ impl OrderExecutor {
         }
     }
 
+    /// B3.6b (auditoría) — income VENTANA COMPLETA paginada.
+    ///
+    /// /fapi/v1/income sirve máx 1000 entradas por llamada. Un día activo
+    /// genera ~4 entradas por trade (2 COMMISSION + REALIZED_PNL + funding
+    /// ocasional): con ~250 trades la ventana de 24h del fee-breaker se
+    /// trunca SIN aviso, y la truncación silenciosa sub-cuenta fees — falso
+    /// negativo de suspensión justo cuando el churn es peor. Esta rutina
+    /// pagina por cursor de tiempo (re-sirviendo el ms frontera y colapsando
+    /// duplicados por tranId: varias entradas comparten el mismo ms) hasta
+    /// `max_pages` páginas o agotar la ventana, y AVISA si quedó truncada.
+    pub async fn fetch_income_paged(
+        &self,
+        income_types: &[&str],
+        start_ms: u64,
+        max_pages: u32,
+    ) -> Result<Vec<crate::order_types::IncomeEntry>, String> {
+        let max_pages = max_pages.max(1);
+        let mut acc: Vec<crate::order_types::IncomeEntry> = Vec::new();
+        let mut seen: std::collections::HashSet<IncomeKey> = std::collections::HashSet::new();
+        let mut cursor = start_ms;
+        for page_idx in 0..max_pages {
+            let page = self.fetch_income(income_types, cursor, 1000).await?;
+            let full_page = page.len() >= 1000;
+            let last_ts = page.iter().map(|e| e.time).max().unwrap_or(0);
+            let added = merge_income_page(&mut acc, &mut seen, page);
+            if !full_page {
+                return Ok(acc); // ventana agotada: última página parcial
+            }
+            if last_ts <= cursor || added == 0 {
+                // Sin progreso de cursor o puro dedup: no hay más nada nuevo.
+                return Ok(acc);
+            }
+            if page_idx + 1 == max_pages {
+                println!(
+                    "⚠️ [INCOME] ventana truncada tras {} páginas ({} entradas desde ms {}) — la contabilidad de fees puede estar SUB-CONTADA",
+                    max_pages,
+                    acc.len(),
+                    start_ms
+                );
+            }
+            cursor = last_ts;
+        }
+        Ok(acc)
+    }
+
     /// F1.7: GET /fapi/v2/positionRisk — posiciones abiertas según el EXCHANGE.
     /// Fuente de verdad para reconciliación al arranque y periódica.
     pub async fn fetch_position_risk(
@@ -2351,10 +2396,17 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("symbol=");
         buf.push_str(symbol);
         buf.push_str("&side=");
-        buf.push_str(side);
+        buf.push_str(&side);
+        // R3.1 (consistencia con place_algo_leg/execute_oco_order): en HEDGE,
+        // positionSide hace la orden inherentemente reductora; en ONE-WAY,
+        // positionSide está prohibido (-4061) y la protección correcta es
+        // reduceOnly=true — sin él, un trailing sobre qty desincronizada
+        // podría ABRIR/invertir posición en cuentas one-way.
         if self.is_hedge_mode.load(Ordering::Relaxed) {
             buf.push_str("&positionSide=");
             buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        } else {
+            buf.push_str("&reduceOnly=true");
         }
         buf.push_str("&algoType=CONDITIONAL");
         buf.push_str("&type=TRAILING_STOP_MARKET");
@@ -3056,6 +3108,39 @@ impl ExecutionProvider for OrderExecutor {
     }
 }
 
+/// Clave de dedup de una entrada de income (B3.6b paginación). tranId es el
+/// identificador canónico del exchange; cuando viene 0 (payload degradado)
+/// se cae a la tupla completa — dos entradas indistinguibles colapsan a una.
+type IncomeKey = (u64, u64, u64, String, String);
+
+#[inline]
+fn income_key(e: &crate::order_types::IncomeEntry) -> IncomeKey {
+    (
+        e.tran_id,
+        e.time,
+        e.income.to_bits(),
+        e.symbol.clone(),
+        e.income_type.clone(),
+    )
+}
+
+/// Fusiona una página de income en el acumulador deduplicando por clave.
+/// Devuelve cuántas entradas NUEVAS agregó (0 = puro solapamiento de cursor).
+fn merge_income_page(
+    acc: &mut Vec<crate::order_types::IncomeEntry>,
+    seen: &mut std::collections::HashSet<IncomeKey>,
+    page: Vec<crate::order_types::IncomeEntry>,
+) -> usize {
+    let mut added = 0;
+    for e in page {
+        if seen.insert(income_key(&e)) {
+            acc.push(e);
+            added += 1;
+        }
+    }
+    added
+}
+
 #[cfg(test)]
 mod tests_decima_ola {
     use super::*;
@@ -3136,6 +3221,70 @@ mod tests_decima_ola {
             OrderExecutor::round_price_to_tick(60_000.0, f64::NAN, true),
             0.0
         );
-        assert_eq!(passive_join_price(f64::NAN, 0.1, false), 0.0);
+        assert_eq!(passive_join_price(f64::NAN, 0.1, false), 0.0);    }
+}
+
+#[cfg(test)]
+mod tests_b3_audit {
+    use super::*;
+    use crate::order_types::IncomeEntry;
+
+    fn entry(tran: u64, time: u64, sym: &str, itype: &str, income: f64) -> IncomeEntry {
+        IncomeEntry {
+            symbol: sym.into(),
+            income_type: itype.into(),
+            income,
+            asset: "USDT".into(),
+            time,
+            tran_id: tran,
+            trade_id: String::new(),
+        }
+    }
+
+    /// B3.6b-aud: el solapamiento del cursor (entradas re-servidas del ms
+    /// frontera) se colapsa por tranId — ni se pierden entradas nuevas del
+    /// mismo ms ni se duplican las frontera.
+    #[test]
+    fn b36b_merge_page_dedup_por_tranid() {
+        let mut acc = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        // Página 1: tres entradas, dos comparten ms=2000.
+        let p1 = vec![
+            entry(1, 1000, "SOLUSDT", "COMMISSION", -0.01),
+            entry(2, 2000, "SOLUSDT", "REALIZED_PNL", -1.2),
+            entry(3, 2000, "SOLUSDT", "COMMISSION", -0.01),
+        ];
+        assert_eq!(merge_income_page(&mut acc, &mut seen, p1), 3);
+        assert_eq!(acc.len(), 3);
+
+        // Página 2 (cursor=2000): re-sirve las dos del ms 2000 (dupes) y
+        // agrega una nueva del mismo ms 2000 y una posterior.
+        let p2 = vec![
+            entry(2, 2000, "SOLUSDT", "REALIZED_PNL", -1.2),
+            entry(3, 2000, "SOLUSDT", "COMMISSION", -0.01),
+            entry(4, 2000, "SOLUSDT", "COMMISSION", -0.02),
+            entry(5, 3000, "SOLUSDT", "FUNDING_FEE", 0.004),
+        ];
+        assert_eq!(merge_income_page(&mut acc, &mut seen, p2), 2);
+        assert_eq!(acc.len(), 5);
+        // La entrada #4 (mismo ms que las dupes, tranId distinto) sobrevive.
+        assert!(acc.iter().any(|e| e.tran_id == 4));
+        assert!(acc.iter().any(|e| e.tran_id == 5));
+    }
+
+    /// tranId=0 (payload degradado): la tupla completa actúa de clave.
+    #[test]
+    fn b36b_merge_page_dedup_sin_tranid() {
+        let mut acc = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let p1 = vec![entry(0, 1000, "BTCUSDT", "COMMISSION", -0.05)];
+        merge_income_page(&mut acc, &mut seen, p1);
+        // Idéntica re-servida: dup. Distinta income mismo ms: nueva.
+        let p2 = vec![
+            entry(0, 1000, "BTCUSDT", "COMMISSION", -0.05),
+            entry(0, 1000, "BTCUSDT", "REALIZED_PNL", 3.0),
+        ];
+        assert_eq!(merge_income_page(&mut acc, &mut seen, p2), 1);
+        assert_eq!(acc.len(), 2);
     }
 }

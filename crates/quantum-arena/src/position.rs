@@ -265,6 +265,11 @@ impl Position {
         self.ml_prediction.store(safe_ml, Ordering::Relaxed);
         self.confidence.store(safe_conf, Ordering::Relaxed);
         self.entry_fee.store(safe_fee, Ordering::Relaxed);
+        // La τ de entrada es del OCUPANTE, no del slot: sin este reset, una
+        // reapertura sin cierre previo heredaría la τ (y por tanto las
+        // geometrías de gestión temporal) de la posición saliente. El core la
+        // reescribe justo tras la apertura con la τ dominante viva (REHAB-1b).
+        self.entry_tau_ms.store(0, Ordering::Relaxed);
         // B3.14: toda apertura nace SIN confirmación de exchange — el host
         // la setea sólo tras el fill real (o la adopción FASE 5).
         self.exchange_confirmed.store(false, Ordering::Relaxed);
@@ -334,6 +339,11 @@ impl Position {
         let qty = self.quantity.load(Ordering::Relaxed);
         let margin = self.margin_used.load(Ordering::Relaxed);
         let fee = self.entry_fee.load(Ordering::Relaxed);
+        // B3.14: el resultado del último cierre se captura ANTES de tocar el
+        // estado — «true = la posición cerrada tenía entrada real en el
+        // exchange». También para los caminos de cierre que NO pasan por el
+        // swap del host (rollback, emergencia).
+        let was_exchange_confirmed = self.exchange_confirmed.load(Ordering::Relaxed);
 
         self.entry_price.store(0.0, Ordering::Relaxed);
         self.quantity.store(0.0, Ordering::Relaxed);
@@ -349,9 +359,15 @@ impl Position {
         self.ml_prediction.store(0.0, Ordering::Relaxed);
         self.confidence.store(0.0, Ordering::Relaxed);
         self.entry_tau_ms.store(0, Ordering::Relaxed);
-        // B3.14: el cierre consume la confirmación — un slot reabierto nace
-        // sin ella hasta que el host confirme el nuevo fill.
-        self.exchange_confirmed.store(false, Ordering::Relaxed);
+        // B3.14 — CONSUMIDOR ÚNICO. `exchange_confirmed` NO se limpia aquí:
+        // el host la consume con `swap(false)` DESPUÉS del cierre y copia el
+        // resultado a `last_close_confirmed` (god-engine-core). Limpiarla en
+        // el cierre hacía que el swap leyera SIEMPRE false — todo cierre
+        // pasaba por «papel», ni el PnL ni el WR contabilizaban y el host
+        // disparaba un reduce-only de respaldo por cada cierre real. La
+        // higiene del slot queda garantizada por el reset de `open_with_fee`.
+        self.last_close_confirmed
+            .store(was_exchange_confirmed, Ordering::Relaxed);
         // El contador avanza TAMBIÉN al cerrar: así es una secuencia real y
         // `snapshot()` puede detectar cualquier transición ocurrida durante
         // su lectura, no sólo las aperturas.
@@ -557,6 +573,121 @@ mod tests {
     }
 
     use super::*;
+
+    /// B3.14 — contrato de la confirmación de exchange a lo largo del ciclo
+    /// de vida del slot, con el MISMO protocolo que usa el host:
+    ///
+    ///   open_*  → exchange_confirmed = false (nace sin confirmar);
+    ///   fill    → host setea true;
+    ///   close   → captura el valor en last_close_confirmed y NO lo consume;
+    ///   swap    → el host lo consume (false) para su contabilidad.
+    #[test]
+    fn b3_14_ciclo_confirmacion_open_fill_close_swap() {
+        let pos = Position::default();
+        // Estado «heredado» de un ocupante previo confirmado.
+        pos.exchange_confirmed.store(true, Ordering::Relaxed);
+        pos.entry_tau_ms.store(987_654, Ordering::Relaxed);
+
+        // TODO camino de apertura pasa por open_with_fee: nace sin confirmar
+        // y sin la τ del ocupante anterior.
+        pos.open_with_horizon(
+            true,
+            60_000.0,
+            0.1,
+            600.0,
+            1_000,
+            61_200.0,
+            59_100.0,
+            PositionHorizon::Continuous,
+        );
+        assert!(!pos.exchange_confirmed.load(Ordering::Relaxed));
+        assert_eq!(pos.entry_tau_ms.load(Ordering::Relaxed), 0);
+
+        // El fill real llega: el host confirma.
+        pos.exchange_confirmed.store(true, Ordering::Relaxed);
+
+        // Cierre local: captura el resultado y deja la confirmación viva para
+        // el consumidor designado (el swap del host).
+        let _ = pos.close_with_fee();
+        assert!(
+            pos.last_close_confirmed.load(Ordering::Relaxed),
+            "el cierre de una entrada confirmada debe dejar last_close_confirmed = true"
+        );
+        assert!(
+            pos.exchange_confirmed.load(Ordering::Relaxed),
+            "close_with_fee NO consume la confirmación: el swap del host es el consumidor"
+        );
+
+        // Protocolo del host (god-engine-core): swap → contabiliza → false.
+        let was = pos.exchange_confirmed.swap(false, Ordering::Relaxed);
+        pos.last_close_confirmed.store(was, Ordering::Relaxed);
+        assert!(was, "el swap debe ver la confirmación PREVIA al cierre");
+        assert!(pos.last_close_confirmed.load(Ordering::Relaxed));
+        assert!(!pos.exchange_confirmed.load(Ordering::Relaxed));
+    }
+
+    /// B3.14 — un cierre de entrada NUNCA confirmada (vetada/rechazada,
+    /// round-trip de papel) no contabiliza: last_close_confirmed queda false.
+    #[test]
+    fn b3_14_cierre_de_papel_no_confirma() {
+        let pos = Position::default();
+        pos.open_with_fee(
+            true,
+            50_000.0,
+            1.0,
+            5_000.0,
+            1_000,
+            51_000.0,
+            49_000.0,
+            PositionHorizon::Scalping,
+            0.8,
+            0.9,
+            2.5,
+        );
+        // Sin store(true): la entrada fue vetada o rechazada en el exchange.
+        let _ = pos.close_with_fee();
+        assert!(!pos.last_close_confirmed.load(Ordering::Relaxed));
+        // El swap del host tampoco encuentra nada que consumir.
+        assert!(!pos.exchange_confirmed.swap(false, Ordering::Relaxed));
+    }
+
+    /// B3.14/REHAB-1b — la reapertura sin cierre previo no hereda ni la
+    /// confirmación ni la τ del ocupante saliente.
+    #[test]
+    fn b3_14_reapertura_no_hereda_estado_del_ocupante_previo() {
+        let pos = Position::default();
+        pos.open_with_fee(
+            false,
+            30_000.0,
+            0.2,
+            600.0,
+            1_000,
+            30_600.0,
+            29_700.0,
+            PositionHorizon::Swing,
+            0.6,
+            0.7,
+            1.0,
+        );
+        pos.exchange_confirmed.store(true, Ordering::Relaxed);
+        pos.entry_tau_ms.store(555_000, Ordering::Relaxed);
+        // Reapertura DIRECTA (sin cierre): open despublica y reescribe.
+        pos.open_with_full_meta(
+            true,
+            31_000.0,
+            0.3,
+            900.0,
+            2_000,
+            31_900.0,
+            30_400.0,
+            PositionHorizon::Swing,
+            0.65,
+            0.75,
+        );
+        assert!(pos.is_open());
+        assert!(!pos.exchange_confirmed.load(Ordering::Relaxed));
+        assert_eq!(pos.entry_tau_ms.load(Ordering::Relaxed), 0);
+    }
 
     #[test]
     fn test_position_continuous_open_and_close() {

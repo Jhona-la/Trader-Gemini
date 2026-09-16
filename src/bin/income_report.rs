@@ -80,7 +80,10 @@ async fn main() {
     println!("   Fuente: /fapi/v1/income (contabilidad del exchange — hechos, no estimaciones)");
     println!("══════════════════════════════════════════════════════════════");
 
-    let entries = match exec.fetch_income(&[], start_ms, 1000).await {
+    // B3.6b (auditoría): paginado — 1000 entradas por llamada truncaba
+    // ventanas de 7/30 días sin aviso (sub-contando fees). 20 páginas =
+    // hasta 20k entradas.
+    let entries = match exec.fetch_income_paged(&[], start_ms, 20).await {
         Ok(e) => e,
         Err(err) => {
             eprintln!("❌ Income API falló: {}", err);

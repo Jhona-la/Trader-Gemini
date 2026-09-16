@@ -323,6 +323,28 @@ fn is_symbol_suspended(symbol: &str) -> bool {
         .is_some_and(|until| *until > now_ms)
 }
 
+/// B3.6b (auditoría) — persiste las suspensiones VIVAS en
+/// data/fee_breaker.json con escritura ATÓMICA (tmp + rename): un crash a
+/// media escritura dejaba JSON corrupto que la restauración del arranque
+/// descartaba EN SILENCIO — una mañana mala perdonada por corrupción.
+/// Las entradas expiradas se purgan: el archivo no crece sin cota.
+fn persist_fee_breaker(now_ms: u64) {
+    let Ok(guard) = SYMBOL_SUSPENDED_UNTIL.lock() else {
+        return;
+    };
+    let live: Vec<(&String, &u64)> = guard.iter().filter(|(_, u)| **u > now_ms).collect();
+    let file_body = live
+        .iter()
+        .map(|(k, v)| format!("\"{k}\":{v}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    drop(guard);
+    let tmp = "data/fee_breaker.json.tmp";
+    if std::fs::write(tmp, format!("{{{file_body}}}")).is_ok() {
+        let _ = std::fs::rename(tmp, "data/fee_breaker.json");
+    }
+}
+
 /// Contexto recuperado de una posición desde el diario de entradas.
 struct RecoveredContext {
     tau_ms: u64,
@@ -1567,8 +1589,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .as_millis() as u64;
                 // Restaurar suspensiones vivas del disco.
                 if let Ok(content) = std::fs::read_to_string("data/fee_breaker.json") {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                        if let Some(map) = v.as_object() {
+                    match serde_json::from_str::<serde_json::Value>(&content) {
+                        Ok(v) if v.as_object().is_some() => {
+                            let map = v.as_object().unwrap();
                             let restored = map
                                 .iter()
                                 .filter(|(_, x)| x.as_u64().unwrap_or(0) > now0)
@@ -1586,6 +1609,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 );
                             }
                         }
+                        Ok(_) => {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [FEE-BREAKER] data/fee_breaker.json con esquema inesperado — se ignora (fail-safe: sin suspensiones)"
+                            );
+                        }
+                        Err(e) => {
+                            // B3.6b (auditoría): la corrupción ya no es
+                            // silenciosa — se reporta; la próxima suspensión
+                            // reescribe el archivo saneado.
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [FEE-BREAKER] data/fee_breaker.json corrupto ({}) — se ignora y se reescribirá al próximo disparo",
+                                e
+                            );
+                        }
                     }
                 }
                 let mut tick = tokio::time::interval(std::time::Duration::from_secs(300));
@@ -1598,13 +1635,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                     // B3.6b — ventana RODANTE 24h: la evidencia de fees no
-                    // expira con el arranque del motor.
-                    let window_start = std::time::SystemTime::now()
+                    // expira con el arranque del motor. Paginado: el
+                    // endpoint trae máx 1000 entradas y un día activo
+                    // (~4 entradas/trade) puede truncar la ventana —
+                    // truncar sub-cuenta fees (falso negativo).
+                    let now_breaker = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
-                        .as_millis() as u64
-                        - 24 * 3_600_000;
-                    let Ok(entries) = executor.fetch_income(&[], window_start, 1000).await else {
+                        .as_millis() as u64;
+                    let window_start = now_breaker - 24 * 3_600_000;
+                    let Ok(entries) = executor
+                        .fetch_income_paged(&[], window_start, 4)
+                        .await
+                    else {
                         continue;
                     };
                     #[derive(Default)]
@@ -1639,29 +1682,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for (sym, a) in per {
                         let net = a.realized - a.fees;
                         if a.trades >= 3 && net < 0.0 && a.fees > a.gross_pos {
-                            let until_ms = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64
-                                + 4 * 3_600_000;
+                            // B3.6b (auditoría): la condición se re-evalúa cada
+                            // 5min y extiende until_ms en +4h por diseño (una
+                            // mañana mala cuesta el día). ANTES se logueaba y
+                            // re-escribía el archivo EN CADA ciclo — spam cada
+                            // 5min por símbolo suspendido. Ahora: el LOG sólo
+                            // en el PRIMER evento (suspensión nueva o
+                            // re-activación tras expirar); las extensiones
+                            // silenciosas persisten igual.
+                            let was_suspended = SYMBOL_SUSPENDED_UNTIL
+                                .lock()
+                                .map(|g| g.get(&sym).copied().unwrap_or(0))
+                                .unwrap_or(0)
+                                > now_breaker;
+                            let until_ms = now_breaker + 4 * 3_600_000;
                             suspend_symbol_until(&sym, until_ms);
-                            // B3.6b — persistir: la suspensión sobrevive
-                            // reinicios del motor.
-                            if let Ok(guard) = SYMBOL_SUSPENDED_UNTIL.lock() {
-                                let file_body = guard
-                                    .iter()
-                                    .map(|(k, v)| format!("\"{k}\":{v}"))
-                                    .collect::<Vec<_>>()
-                                    .join(",");
-                                let _ = std::fs::write(
-                                    "data/fee_breaker.json",
-                                    format!("{{{file_body}}}"),
+                            // B3.6b — persistir (atómico, purga expirados): la
+                            // suspensión sobrevive reinicios del motor.
+                            persist_fee_breaker(now_breaker);
+                            if !was_suspended {
+                                telemetry_server::telemetry_log!(
+                                    "🛑 [FEE-BREAKER] {} suspendido 4h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
+                                    sym, a.trades, a.gross_pos, a.fees, net
                                 );
                             }
-                            telemetry_server::telemetry_log!(
-                                "🛑 [FEE-BREAKER] {} suspendido 4h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
-                                sym, a.trades, a.gross_pos, a.fees, net
-                            );
                         }
                     }
                 }
@@ -1705,6 +1749,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     fast.tick().await;
                     ticks = ticks.wrapping_add(1);
                     let dirty = quantum_arena::protection_health::is_dirty();
+                    // B3.5b (auditoría) — generación de eventos: un ALGO_UPDATE
+                    // terminal que llegue EN MEDIO de una auditoría se perdía —
+                    // clear_dirty() al final borraba su bandera y la reacción
+                    // caía al ciclo nominal de 60s (hasta 60s desnuda). Con el
+                    // contador de eventos, sólo se limpia la bandera si NO
+                    // llegó evento nuevo durante la auditoría.
+                    let events_at_start = quantum_arena::protection_health::terminal_events_seen();
                     // Cadencia: reactiva si hay señal terminal; nominal cada
                     // 12 ticks de 5s (=60s, alineado con la reconciliación).
                     if !dirty && ticks % 12 != 0 {
@@ -1718,6 +1769,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let Ok(positions) = executor.fetch_position_risk().await else {
                         continue;
                     };
+                    // B3.5b (auditoría) — símbolos con posición ABIERTA en esta
+                    // auditoría: al salir del loop, el streak y el snapshot de
+                    // rechazos de símbolos YA CERRADOS se purgan. Sin esto, un
+                    // streak=2 sobrevivía al cierre de la posición (TP/manual)
+                    // y una RE-ENTRADA horas después heredaba el conteo: 1
+                    // rechazo nuevo → streak 3 → CIERRE DE EMERGENCIA de una
+                    // posición sana cuyo bracket apenas estaba en vuelo.
+                    let mut open_syms: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
                     // B2.6 — PURGA DE PIERNAS HUÉRFANAS: piernas TP/SL cuya
                     // posición ya cerró disparan al vacío (REJECTED benigno
                     // que quema slots algo y ensucia el stream). Cancelarlas.
@@ -1748,6 +1808,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .iter()
                         .filter(|p| p.is_open() && p.position_amt.abs() > 0.0)
                     {
+                        open_syms.insert(p.symbol.clone());
                         let is_long = p.position_amt > 0.0;
                         let qty = p.position_amt.abs();
                         // τ de entrada: la que recuerda el arena local si el
@@ -1809,56 +1870,76 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let close_sym = p.symbol.clone();
                                 let close_long = is_long;
                                 let exec_esc = exec_wd.load_full();
-                                let real_qty = exec_esc
-                                    .fetch_position_risk()
-                                    .await
-                                    .ok()
-                                    .and_then(|ps| {
-                                        ps.iter()
-                                            .find(|r| r.symbol == close_sym
-                                                && r.position_amt.abs() > 0.0)
-                                            .map(|r| r.position_amt.abs())
-                                    });
-                                if let Some(rq) = real_qty {
-                                    let close_res = match exec_esc
-                                        .get_symbol_filter(&close_sym)
-                                        .await
-                                    {
-                                        Ok(f) => {
-                                            exec_esc
-                                                .execute_reduce_only_market(
-                                                    &close_sym, close_long, rq, f.step_size,
-                                                )
+                                // Cantidad REAL re-fetcheada tras la decisión de
+                                // cerrar (protocolo X-009). B3.5 (auditoría):
+                                // (a) match de LADO — en hedge hay DOS registros
+                                //     por símbolo; el find anterior podía tomar
+                                //     el lado OPUESTO y cerrar con la qty
+                                //     equivocada (-2022 eterno);
+                                // (b) Err de red ≠ posición inexistente: el
+                                //     `.ok()` anterior confundía un fallo de
+                                //     fetch con "ya no existe" y RESETEABA el
+                                //     streak — el ciclo siguiente empezaba de
+                                //     cero. Ahora Err conserva el streak y
+                                //     reintenta el cierre.
+                                match exec_esc.fetch_position_risk().await {
+                                    Err(fe) => {
+                                        telemetry_server::telemetry_log!(
+                                            "⚠️ [NAKED-ESCALATION] re-fetch de {} falló ({}) — streak conservado, reintento en el próximo ciclo",
+                                            close_sym, fe
+                                        );
+                                    }
+                                    Ok(ps) => {
+                                        let real_qty = ps
+                                            .iter()
+                                            .find(|r| {
+                                                r.symbol == close_sym
+                                                    && r.position_amt.abs() > 0.0
+                                                    && (r.position_amt > 0.0) == close_long
+                                            })
+                                            .map(|r| r.position_amt.abs());
+                                        if let Some(rq) = real_qty {
+                                            let close_res = match exec_esc
+                                                .get_symbol_filter(&close_sym)
                                                 .await
-                                        }
-                                        Err(e) => Err(format!("filtro: {e}")),
-                                    };
-                                    match close_res {
-                                        Ok(()) => {
-                                            let _ = exec_esc
-                                                .cancel_position_oco_orders(
-                                                    &close_sym,
-                                                    close_long,
-                                                )
-                                                .await;
+                                            {
+                                                Ok(f) => {
+                                                    exec_esc
+                                                        .execute_reduce_only_market(
+                                                            &close_sym, close_long, rq, f.step_size,
+                                                        )
+                                                        .await
+                                                }
+                                                Err(e) => Err(format!("filtro: {e}")),
+                                            };
+                                            match close_res {
+                                                Ok(()) => {
+                                                    let _ = exec_esc
+                                                        .cancel_position_oco_orders(
+                                                            &close_sym,
+                                                            close_long,
+                                                        )
+                                                        .await;
+                                                    naked_streak.remove(&close_sym);
+                                                    telemetry_server::telemetry_log!(
+                                                        "🛑 [NAKED-ESCALATION] {} cerrada por emergencia — brackets purgados",
+                                                        close_sym
+                                                    );
+                                                }
+                                                Err(e) => {
+                                                    telemetry_server::telemetry_log!(
+                                                        "⚠️ [NAKED-ESCALATION] cierre de {} falló ({}) — streak conservado, reintento en el próximo ciclo",
+                                                        close_sym, e
+                                                    );
+                                                }
+                                            }
+                                        } else {
+                                            // La posición ya no existe (TP disparó o
+                                            // cierre externo): purga de huérfanas la
+                                            // limpiará en esta misma auditoría.
                                             naked_streak.remove(&close_sym);
-                                            telemetry_server::telemetry_log!(
-                                                "🛑 [NAKED-ESCALATION] {} cerrada por emergencia — brackets purgados",
-                                                close_sym
-                                            );
-                                        }
-                                        Err(e) => {
-                                            telemetry_server::telemetry_log!(
-                                                "⚠️ [NAKED-ESCALATION] cierre de {} falló ({}) — reintento en el próximo ciclo",
-                                                close_sym, e
-                                            );
                                         }
                                     }
-                                } else {
-                                    // La posición ya no existe (TP disparó o
-                                    // cierre externo): purga de huérfanas la
-                                    // limpiará en esta misma auditoría.
-                                    naked_streak.remove(&close_sym);
                                 }
                             }
                         } else {
@@ -1866,6 +1947,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             naked_rejections.remove(&p.symbol);
                         }
                     }
+                    // B3.5b (auditoría) — purga de estado de símbolos SIN
+                    // posición: streak/snapshot heredados por una re-entrada
+                    // futura eran la receta del falso positivo de escalado.
+                    naked_streak.retain(|k, _| open_syms.contains(k));
+                    naked_rejections.retain(|k, _| open_syms.contains(k));
                     if dirty {
                         if naked_total == 0 {
                             telemetry_server::telemetry_log!(
@@ -1877,7 +1963,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 naked_total
                             );
                         }
-                        quantum_arena::protection_health::clear_dirty();
+                        // B3.5b (auditoría) — sólo limpiar la bandera si NO
+                        // llegó un evento terminal NUEVO durante esta
+                        // auditoría (generación estable); si llegó, dejarla
+                        // sucia para re-auditar en 5s, no en 60s.
+                        if quantum_arena::protection_health::terminal_events_seen()
+                            == events_at_start
+                        {
+                            quantum_arena::protection_health::clear_dirty();
+                        }
                     }
                 }
             });
@@ -1895,6 +1989,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
         let mut avg_win_abs: f64 = 0.0;
         let mut avg_loss_abs: f64 = 0.0;
+        // B3.7 (auditoría) — DEDUP cierre-bracket vs cierre-core: el MISMO
+        // trade económico puede llegar por dos caminos (fill de la pierna en
+        // el user-stream + condición de salida del core en el evento
+        // siguiente). Sin esta ventana simétrica de 120s por símbolo, Kelly,
+        // totales y WR lo contaban DOS veces.
+        let mut last_bracket_close_ms: std::collections::HashMap<String, u64> =
+            std::collections::HashMap::new();
+        let mut last_real_core_close_ms: std::collections::HashMap<String, u64> =
+            std::collections::HashMap::new();
+        const CLOSE_DEDUP_WINDOW_MS: u64 = 120_000;
 
         engine_real.reality.mode = god_engine_core::reality_physics::EngineMode::HyperRealistic;
         engine_real.set_model_rx(rx_real);
@@ -2350,17 +2454,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for bc in execution_engine::trade_accounting::drain_bracket_closes() {
                         let net_bc = bc.pnl_gross - bc.fees;
                         if bc.pnl_gross != 0.0 {
-                            if net_bc >= 0.0 {
-                                avg_win_abs = if avg_win_abs == 0.0 { net_bc.abs() } else { avg_win_abs * 0.95 + net_bc.abs() * 0.05 };
+                            // B3.7 (auditoría) — ¿el core ya contabilizó ESTE
+                            // mismo cierre (condición de salida disparada casi
+                            // simultáneamente al fill de la pierna)? Ventana
+                            // simétrica por símbolo: sin esto, doble cuenta.
+                            let core_ts = last_real_core_close_ms
+                                .get(&bc.symbol)
+                                .copied()
+                                .unwrap_or(0);
+                            if core_ts > 0
+                                && bc.ts_ms.abs_diff(core_ts) <= CLOSE_DEDUP_WINDOW_MS
+                            {
+                                telemetry!(
+                                    "♻️ [BRACKET CLOSE] {} ya contabilizado por cierre del core (Δ{}ms) — sin doble cuenta",
+                                    bc.symbol,
+                                    bc.ts_ms.abs_diff(core_ts)
+                                );
                             } else {
-                                avg_loss_abs = if avg_loss_abs == 0.0 { net_bc.abs() } else { avg_loss_abs * 0.95 + net_bc.abs() * 0.05 };
+                                if net_bc >= 0.0 {
+                                    avg_win_abs = if avg_win_abs == 0.0 { net_bc.abs() } else { avg_win_abs * 0.95 + net_bc.abs() * 0.05 };
+                                } else {
+                                    avg_loss_abs = if avg_loss_abs == 0.0 { net_bc.abs() } else { avg_loss_abs * 0.95 + net_bc.abs() * 0.05 };
+                                }
+                                risk_envelope.record_trade(net_bc > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
+                                total_gross_pnl += bc.pnl_gross;
+                                total_net_pnl += net_bc;
+                                total_fees += bc.fees;
+                                total_trades += 1;
+                                if net_bc > 0.0 { total_wins += 1; }
+                                last_bracket_close_ms.insert(bc.symbol.clone(), bc.ts_ms);
                             }
-                            risk_envelope.record_trade(net_bc > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
-                            total_gross_pnl += bc.pnl_gross;
-                            total_net_pnl += net_bc;
-                            total_fees += bc.fees;
-                            total_trades += 1;
-                            if net_bc > 0.0 { total_wins += 1; }
                         }
                         telemetry!(
                             "🎯 [BRACKET CLOSE] {} {} qty {:.6}: entry {:.6} → fill {:.6} (trigger {:.6}, slip {:.1}bps adversos) | bruto {:.4} | fees {:.4} | neto {:.4}{}",
@@ -2486,6 +2609,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 );
                             }
                         }
+                        // B3.7 (auditoría) — DEDUP dirección inversa: si la
+                        // pierna del bracket ya contabilizó este cierre (fill
+                        // en el user-stream casi simultáneo a la condición de
+                        // salida local), NO re-contabilizar: Kelly, totales y
+                        // WR verían el mismo trade dos veces.
+                        let ev_close_ms = event_time as u64;
+                        let bracket_ts_dedup = last_bracket_close_ms
+                            .get(parsed_sym)
+                            .copied()
+                            .unwrap_or(0);
+                        if bracket_ts_dedup > 0
+                            && ev_close_ms.abs_diff(bracket_ts_dedup) <= CLOSE_DEDUP_WINDOW_MS
+                        {
+                            telemetry_engine::telemetry!(
+                                "♻️ [CONTINUOUS CORE] CLOSE de {} ya contabilizado por BRACKET CLOSE (Δ{}ms) — sin doble cuenta",
+                                parsed_sym,
+                                ev_close_ms.abs_diff(bracket_ts_dedup)
+                            );
+                        } else {
                         let live_maker_fee = engine_real.arena.config.live_maker_fee.load(Ordering::Relaxed);
                         let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
                         let fee = (qty * current_price) * (live_maker_fee + live_taker_fee);
@@ -2503,6 +2645,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         total_fees += fee;
                         total_trades += 1;
                         if net > 0.0 { total_wins += 1; }
+                        last_real_core_close_ms.insert(parsed_sym.to_string(), ev_close_ms);
 
                         let roi_post_fees = if (qty * current_price) > 0.0 { (net / (qty * current_price)) * 100.0 } else { 0.0 };
                         telemetry!("🛑 [CONTINUOUS CORE] CLOSE HIT! Gross PnL: {:.4} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", gross, net, roi_post_fees);
@@ -2517,6 +2660,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             duration_ms: 0,
                             ml_prob,
                         });
+                        } // fin dedup B3.7
 
                         // FIX #590 + X-008 (REHAB-3): despacho de cierre con
                         // protocolo CORRECTO — CERRAR PRIMERO, purgar brackets
@@ -2862,16 +3006,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
 
                             match entry_result {
-                                Err(e) if e.starts_with("AMBIGUOUS") => {
+                                Err(e) if e.starts_with("AMBIGUOUS")
+                                    || e.starts_with("MAKER_CHASE_UNVERIFIED") =>
+                                {
                                     // X-007 (REHAB-3): RECONCILE-THEN-ROLLBACK. Un
                                     // timeout de transporte NO es un rechazo: la orden
                                     // PUEDE existir en el exchange. Antes se hacía
                                     // rollback local a ciegas — posición viva en el
                                     // exchange con estado local "limpio" (fantasma).
                                     // Ahora: consultar la verdad del exchange PRIMERO.
+                                    // B3.7-repro (auditoría): MAKER_CHASE_UNVERIFIED
+                                    // es IGUAL de ambiguo — el post-only pudo llenar
+                                    // (parcial o total) antes de que fallara la
+                                    // consulta de estado; el rollback a ciegas deja
+                                    // la posición real des-confirmada para siempre.
                                     telemetry_engine::telemetry!(
-                                        "⏳ [ENTRY AMBIGUA] {} timeout de transporte — reconciliando con el exchange ANTES de tocar estado local…",
-                                        parsed_sym_str
+                                        "⏳ [ENTRY AMBIGUA] {} timeout/fill no verificable ({}) — reconciliando con el exchange ANTES de tocar estado local…",
+                                        parsed_sym_str, e
                                     );
                                     let adopted = match exec_clone.load().fetch_open_positions().await {
                                         Ok(positions) => {
@@ -2904,13 +3055,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     };
                                     if !adopted {
                                         rollback_positions(&arena_clone);
-                                    } else if let Some(c) = arena_clone.coins.get(coin_id) {
+                                    } else {
                                         // B3.14 — AMBIGUOUS adoptada: la posición
                                         // es real en el exchange ⇒ confirmada.
-                                        c.positions
-                                            .position
-                                            .exchange_confirmed
-                                            .store(true, Ordering::Relaxed);
+                                        if let Some(c) = arena_clone.coins.get(coin_id) {
+                                            c.positions
+                                                .position
+                                                .exchange_confirmed
+                                                .store(true, Ordering::Relaxed);
+                                        }
+                                        // La rama Ok coloca el OCO aquí; la
+                                        // adoptada NO lo hace — sin esto la
+                                        // posición queda hasta 60s sin bracket
+                                        // (ciclo nominal del watchdog). El
+                                        // dirty fuerza auditoría en 5s.
+                                        quantum_arena::protection_health::mark_dirty();
                                     }
                                 }
                                 Err(e) => {

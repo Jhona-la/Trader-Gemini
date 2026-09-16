@@ -15,7 +15,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::File::open("models/BTCUSDT_SCALP.json")?;
     let reader = std::io::BufReader::new(file);
     let json_data: god_engine_core::ml_inference::NanoForestData = serde_json::from_reader(reader)?;
-    let forest_from_json = god_engine_core::ml_inference::NanoForest::from_data(json_data);
+    // B3.9 (auditoría): from_data ahora valida el contrato ML_VECTOR_DIM y
+    // devuelve Result — un modelo incompatible se rechaza ruidoso aquí.
+    let forest_from_json = god_engine_core::ml_inference::NanoForest::from_data(json_data)
+        .expect("modelo fuera de contrato de dimensión");
 
     let forest_from_loader =
         god_engine_core::ml_inference::NanoForest::load_model("models/BTCUSDT_SCALP.json")?;

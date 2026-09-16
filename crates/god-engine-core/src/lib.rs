@@ -1651,17 +1651,14 @@ impl GodEngineCore {
                     diag_forest_p = Some(p as f64);
                     coin_ensemble.submit(crate::ensemble::ModelId::ScalpForest, p as f64);
                 } else if tick % 100 == 0 {
-                    // Diagnóstico B2.5: en vivo ml=0.5000 exacto — o el modelo
-                    // no está, o un feature no finito mata predict(). Decir CUÁL.
-                    let bad: Vec<usize> = forest_input
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, v)| !v.is_finite())
-                        .map(|(k, _)| k)
-                        .collect();
+                    // B2.5-aud: el input ya está saneado arriba (NaN ⇒ 0.0), así
+                    // que predict()=None aquí SÓLO puede ser un modelo
+                    // degenerado (tree_offsets ≤ 1: sin árboles usables). El
+                    // viejo mensaje de "features no finitos" listaba siempre
+                    // un vector vacío y ocultaba la causa real.
                     println!(
-                        "🔬 [ML-DIAG] {} predict=None (modelo {:?}) — features no finitos: {:?}",
-                        sym, coin_model_key, bad
+                        "🔬 [ML-DIAG] {} predict=None (modelo {:?}) — modelo degenerado (tree_offsets ≤ 1), sin splits evaluables; reciclar modelo",
+                        sym, coin_model_key
                     );
                 }
             } else if tick % 100 == 0 {
@@ -3273,12 +3270,23 @@ impl GodEngineCore {
                     // el PnL era INSENSIBLE al forest (BNB sept idéntico al
                     // centavo con modelos distintos) porque las ramas de
                     // entrada gatean con NN/flujo/tendencia y el ensamble
-                    // (forest validado ⊕ NN ⊕ espectro) no consumía nadie.
-                    // Ahora TODA entrada exige el acuerdo del ensamble:
-                    // long ⇒ ml ≥ umbral genómico, short ⇒ ml ≤ umbral.
-                    // Con los umbrales baseline (0.5698/0.4302) esto es la
-                    // "selección de entradas" que la guerra de fees pedía.
-                    let ml_now = coin.ml_prob.load(Ordering::Relaxed);
+                    // (forest validado ⊕ NN) no consumía nadie. Ahora TODA
+                    // entrada exige el acuerdo del ensamble: long ⇒ ml ≥
+                    // umbral genómico, short ⇒ ml ≤ umbral. Con los umbrales
+                    // baseline (0.5698/0.4302) esto es la "selección de
+                    // entradas" que la guerra de fees pedía.
+                    //
+                    // B3.18-aud (FRESCURA): se lee la variable LOCAL ml_prob —
+                    // computada y firmada en coin.ml_prob ~1.5k líneas arriba,
+                    // DENTRO de esta misma invocación, ANTES de las ramas de
+                    // señal/deliberación (orden verificado: bloque ANALÍTICA
+                    // COMPLETA → señales → deliberación → este gate). El
+                    // atomic coin.ml_prob tiene un ÚNICO escritor en todo el
+                    // workspace (ese store), pero leer la local elimina hasta
+                    // la posibilidad teórica de una escritura cruzada entre
+                    // threads: el valor del gate es, por construcción, el del
+                    // tick en curso — nunca stale por 1 tick.
+                    let ml_now = ml_prob;
                     let ml_gate_ok = if order.signal == SignalType::Long {
                         ml_now >= self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
                     } else {
@@ -3599,3 +3607,120 @@ mod tests_d609 {
 /// El código se conserva para su rediseño: una entrada de consenso necesita
 /// una medida de ventaja propia, validada del mismo modo, antes de reactivarse.
 const CONSENSUS_BRANCH_ENABLED: bool = false;
+
+#[cfg(test)]
+mod tests_b3_ml_wiring {
+    //! B3.18-aud — regresiones del cableado ML del core:
+    //! 1. el ml_prob que lee el gate es del MISMO tick (frescura),
+    //! 2. el forest ({SYM}_SCALP) realmente pesa en ese ml_prob vía el
+    //!    ensamble (con el bloque MACRO del contrato 48D en dims 44..48),
+    //! 3. la analítica ML sigue viva con el feed stalled (X-012/B2.5-fix):
+    //!    el bloqueo es de ENTRADAS, jamás de análisis.
+
+    use super::*;
+    use crate::ml_inference::{NanoForest, NanoForestData, GLOBAL_FORESTS};
+    use std::sync::atomic::Ordering;
+
+    /// Forest cuyo ÚNICO split vive en la dim 44 — el primer slot del bloque
+    /// MACRO (B3.4) del vector 48D. VIX<20 ⇒ macro[0]<0 ⇒ hoja -3 (p≈0.047);
+    /// VIX>20 ⇒ macro[0]>0 ⇒ hoja +3 (p≈0.953). Si el vector vivo no llevara
+    /// el bloque macro de ESTE tick, el split leería 0.0 y la predicción no
+    /// podría moverse entre ticks.
+    fn macro_split_forest() -> NanoForestData {
+        NanoForestData {
+            children_left: vec![1, -1, -1],
+            children_right: vec![2, -1, -1],
+            feature: vec![44, -1, -1],
+            threshold: vec![0.0, 0.0, 0.0],
+            value: vec![0.0, -3.0, 3.0],
+            tree_offsets: vec![0, 3],
+            init_score: 0.0,
+        }
+    }
+
+    fn install_testusdt_forest() {
+        quantum_arena::symbol_registry::update_registry(vec![
+            quantum_arena::symbol_registry::get_official_binance_spec("TESTUSDT"),
+        ]);
+        let forest = NanoForest::from_data(macro_split_forest()).unwrap();
+        let current = GLOBAL_FORESTS.load();
+        let mut map = (**current).clone();
+        map.insert("TESTUSDT_SCALP".to_string(), Arc::new(forest));
+        GLOBAL_FORESTS.store(Arc::new(map));
+    }
+
+    fn tick(core: &mut GodEngineCore, omni: &[f64; 54], t_ms: u64) {
+        core.process_event(
+            0, true, false, false, 100.0, 1.0, 99.99, 100.01, 5.0, 5.0, 0.0, 0.0, t_ms, false,
+            omni, false,
+        );
+    }
+
+    #[test]
+    fn b3_18_el_ml_prob_del_gate_es_del_mismo_tick_y_lleva_al_forest() {
+        install_testusdt_forest();
+        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        let mut core = GodEngineCore::new(Arc::clone(&arena));
+        // Ensamble forest-only: sin NN la opinión combinada ES la del forest
+        // (peso Hedge inicial 1.0) — determinista para la aserción.
+        core.swing_nn = None;
+
+        // Tick 1 — VIX=10 ⇒ macro dim44 = (10-20)/10 = -1 ⇒ hoja -3.
+        let mut omni = [0.0f64; 54];
+        omni[24] = 10.0;
+        tick(&mut core, &omni, 1_000);
+        let ml_bear = arena.coins[0].ml_prob.load(Ordering::Relaxed);
+        let exp_bear = 1.0 / (1.0 + (3.0f64).exp()); // sigmoid(-3) ≈ 0.04743
+        assert!(
+            (ml_bear - exp_bear).abs() < 1e-6,
+            "ml_prob={} debía ser la opinión del forest {}",
+            ml_bear,
+            exp_bear
+        );
+        assert_eq!(core.last_ml_prob as f64, ml_bear);
+
+        // Tick 2 — MISMA cadena, VIX=30 ⇒ dim44 = +1 ⇒ hoja +3. El valor que
+        // lee el gate (ml_prob local / coin.ml_prob) debe ser el de ESTE tick:
+        // si el gate leyera el del tick anterior, veríamos 0.047.
+        omni[24] = 30.0;
+        tick(&mut core, &omni, 2_000);
+        let ml_bull = arena.coins[0].ml_prob.load(Ordering::Relaxed);
+        let exp_bull = 1.0 / (1.0 + (-3.0f64).exp()); // sigmoid(+3) ≈ 0.95257
+        assert!(
+            (ml_bull - exp_bull).abs() < 1e-6,
+            "ml_prob={} es stale: el gate habría leído el tick anterior",
+            ml_bull
+        );
+        // El ensamble que alimenta el gate refleja la mezcla de ESTE tick.
+        assert!((core.ensembles[0].combined().unwrap() - exp_bull).abs() < 1e-6);
+    }
+
+    #[test]
+    fn b2_5_ml_prob_sigue_vivo_con_feed_stalled() {
+        install_testusdt_forest();
+        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        let mut core = GodEngineCore::new(Arc::clone(&arena));
+        core.swing_nn = None;
+
+        quantum_arena::feed_health::stall();
+        let mut omni = [0.0f64; 54];
+        omni[24] = 30.0;
+        // Con el feed stalled las ENTRADAS se bloquean (ninguna orden)…
+        let (new_order, closed_order) = core.process_event(
+            0, true, false, false, 100.0, 1.0, 99.99, 100.01, 5.0, 5.0, 0.0, 0.0, 1_000, false,
+            &omni, false,
+        );
+        assert!(new_order.is_none(), "entradas bloqueadas con feed stalled");
+        assert!(closed_order.is_none());
+        // …pero la analítica ML corrió completa: ml_prob fresco del forest,
+        // no el 0.5 por defecto ni un valor stale. Al recuperar el feed, el
+        // PRIMER tick ya decide el gate con predicción viva.
+        let ml = arena.coins[0].ml_prob.load(Ordering::Relaxed);
+        let exp_bull = 1.0 / (1.0 + (-3.0f64).exp());
+        assert!(
+            (ml - exp_bull).abs() < 1e-6,
+            "analítica ML no debe congelarse con feed stalled: ml={ml}"
+        );
+        quantum_arena::feed_health::clear();
+    }
+}

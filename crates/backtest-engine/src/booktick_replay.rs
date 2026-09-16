@@ -16,10 +16,25 @@
 //!        las mismas de producción (F4.1); sin red ⇒ omni neutro documentado.
 //!      - fees: los del genoma/arena (ya piso-realistas post-F3.4).
 //!      - sin relojes falsos: event_time = ts REAL del tick de disco.
+//!      - B3.19 SIZING: cada entrada pasa por la MISMA envolvente Kelly
+//!        bayesiana del host (D-442 stop real + D-116 bootstrap/autoridad +
+//!        D-382 leverage-adapt/margin-guard) — ver `live_envelope_gate`.
+//!
+//! SEMÁNTICA DE SL (auditoría B3.19, tarea 2): el exit del core se evalúa
+//! en CADA `process_event` (depth y trade — dos veces por tick en modo
+//! doble): `pnl_pct <= -sl` corta y el fill se ACOTA a `sl_price`
+//! (`mid.min(sl)` para long) ANTES de la física; `calculate_exit` después
+//! empeora el fill taker (slippage + latencia), igual que un bracket
+//! stop-market real resbala en el exchange. Los ZOMBIE tampoco exceden el
+//! SL en bruto (mismo cap). Única diferencia estructural con el vivo: en
+//! huecos SIN ticks el replay no puede cortar (no hay dato) mientras el
+//! bracket del exchange sí dispararía — inherente al replay por datos, no
+//! un hueco de código (no se "corrige": sería inventar precios).
 
 use god_engine_core::GodEngineCore;
 use quantum_arena::GlobalArena;
 use quantum_arena::genome::SuperGenotype;
+use risk_engine::kelly_envelope::RiskEnvelope;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -179,6 +194,9 @@ pub struct ReplayStats {
     pub sharpe: f64,
     /// true si el omni fue neutro (sin red al cargar FRED).
     pub omni_neutral: bool,
+    /// B3.19 — entradas VETADAS por la envolvente D-442/margin-guards
+    /// (rollback inmediato, paridad con los aborts del host en vivo).
+    pub envelope_vetoes: u64,
 }
 
 impl ReplayStats {
@@ -278,6 +296,13 @@ pub fn run_booktick_replay(
     let mut prev_mid = ticks[0].mid();
     const ATR_ALPHA: f64 = 0.02;
 
+    // B3.19 — envolvente del host replicada (D-442/D-116/D-382): misma
+    // maquinaria que god_engine mantiene vivo entre eventos.
+    let mut risk_envelope = RiskEnvelope::new();
+    let mut avg_win_abs = 0.0f64;
+    let mut avg_loss_abs = 0.0f64;
+    let mut pos_was_open = arena.coins[0].positions.position.is_open();
+
     let mut pnl_list: Vec<f64> = Vec::new();
     let mut peak = cfg.initial_capital;
     let warmup = cfg.warmup_ticks.min(ticks.len() / 10);
@@ -368,6 +393,17 @@ pub fn run_booktick_replay(
                 t.bid_qty > t.ask_qty, // maker heurístico del propio dato
             );
             let _ = o2;
+            // B3.19: envolvente del host sobre la entrada recién abierta.
+            let atr_now = core.feature_engines[0].get_atr_pct();
+            live_envelope_gate(
+                &arena,
+                &mut risk_envelope,
+                mid,
+                atr_now,
+                pos_was_open,
+                &mut stats.envelope_vetoes,
+            );
+            pos_was_open = arena.coins[0].positions.position.is_open();
             c1 = None;
             c2 = closed;
         } else {
@@ -390,6 +426,18 @@ pub fn run_booktick_replay(
                 &omni_features,
                 false,
             );
+            let _ = o1;
+            // B3.19: envolvente del host sobre la entrada recién abierta.
+            let atr_now = core.feature_engines[0].get_atr_pct();
+            live_envelope_gate(
+                &arena,
+                &mut risk_envelope,
+                mid,
+                atr_now,
+                pos_was_open,
+                &mut stats.envelope_vetoes,
+            );
+            pos_was_open = arena.coins[0].positions.position.is_open();
             let maker_flag = mid <= sim_bid;
             let (o2, closed2) = core.process_event(
                 0,
@@ -409,9 +457,44 @@ pub fn run_booktick_replay(
                 &omni_features,
                 maker_flag,
             );
-            let _ = (o1, o2);
+            let _ = o2;
+            // B3.19: el evento de trade también puede abrir — misma envolvente.
+            let atr_now = core.feature_engines[0].get_atr_pct();
+            live_envelope_gate(
+                &arena,
+                &mut risk_envelope,
+                mid,
+                atr_now,
+                pos_was_open,
+                &mut stats.envelope_vetoes,
+            );
+            pos_was_open = arena.coins[0].positions.position.is_open();
             c1 = closed1;
             c2 = closed2;
+        }
+
+        // F5.1 (paridad host): alimentar el posterior del edge con CADA
+        // cierre — mismos EWMAs y mismo record_trade que god_engine. Las
+        // entradas vetadas nunca llegan aquí (rollback ⇒ sin cierre, B3.14).
+        if let Some((_, pnl_net, _)) = c1.or(c2) {
+            if pnl_net >= 0.0 {
+                avg_win_abs = if avg_win_abs == 0.0 {
+                    pnl_net.abs()
+                } else {
+                    avg_win_abs * 0.95 + pnl_net.abs() * 0.05
+                };
+            } else {
+                avg_loss_abs = if avg_loss_abs == 0.0 {
+                    pnl_net.abs()
+                } else {
+                    avg_loss_abs * 0.95 + pnl_net.abs() * 0.05
+                };
+            }
+            risk_envelope.record_trade(
+                pnl_net > 0.0,
+                avg_win_abs.max(1e-9),
+                -avg_loss_abs.max(1e-9),
+            );
         }
 
         if i >= warmup {
@@ -464,6 +547,163 @@ impl ReplayTick {
     #[inline]
     pub fn mid(&self) -> f64 {
         (self.bid + self.ask) * 0.5
+    }
+}
+
+/// B3.19 — PARIDAD DE SIZING LIVE↔REPLAY (D-442 / D-116 / D-382).
+///
+/// HALLAZGO: el host en vivo (`god_engine.rs`, bloque ENVOLVENTE) recalcula
+/// el leverage de CADA entrada que el core abre: envolvente Kelly bayesiana
+/// sobre la distancia real del SL → `exec_leverage`, con bootstrap
+/// exploratorio (leverage 1 mientras posterior.n() < 30) y abort
+/// (`rollback_positions`) cuando la envolvente dice NO o el margin-guard
+/// (-2019) no sostiene el notional. El replay NO hacía nada de esto: cada
+/// orden del core vivía con SU leverage (hasta 50×) → el replay sobrestima
+/// notional/nº de trades en stops anchos y capital chico.
+///
+/// Esta función replica FIELMENTE la cadena del host, en el mismo orden:
+///   1. `stop_pct` = distancia entry→SL real (piso 15 bps), fallback
+///      `scalp_sl_base.max(ATR×1.5).max(0.0015)` — idéntico al vivo.
+///   2. `cap_now` = capital − Σ margins de posiciones ABIERTAS (la posición
+///      recién abierta por el core YA reservó su margen: mismo instante que
+///      el vivo, que decide después de `process_event`).
+///   3. `(env_lev, operable)` = `max_leverage(cap_now, stop_pct, 5, z, k)`
+///      con z/k del régimen micro (D-641).
+///   4. D-116: n<30 ⇒ bootstrap leverage 1; operable ⇒
+///      `min(core_leverage, env_cap)`; no-operable ⇒ VETO.
+///   5. D-382: LEVERAGE-ADAPT (sube a ceil(notional/(0.8·free)) si el
+///      requerido > 85% del margen libre) + MARGIN-GUARD (abort si el
+///      requerido final > 95% del margen libre).
+///   6. Veto = rollback EXACTO del vivo: `close_with_fee`, liberar
+///      `used_margin`, reembolsar `entry_fee` (la entrada nunca existió ⇒
+///      sin PnL, sin fee neto — B3.14: papel que no contamina).
+///
+/// El notional enviado "al exchange" es el qty del core en AMBOS mundos (el
+/// vivo nunca encoge qty); la paridad consiste en que las entradas que el
+/// vivo abortaría NO existan en el replay. Retorna false si la entrada fue
+/// vetada (rollback aplicado).
+#[allow(clippy::too_many_arguments)]
+fn live_envelope_gate(
+    arena: &Arc<GlobalArena>,
+    envelope: &mut RiskEnvelope,
+    mid: f64,
+    atr_pct: f64,
+    prev_open: bool,
+    veto_counter: &mut u64,
+) -> bool {
+    let coin = match arena.coins.first() {
+        Some(c) => c,
+        None => return true,
+    };
+    let pos = &coin.positions.position;
+    if prev_open || !pos.is_open() {
+        return true; // nada nuevo que dictaminar
+    }
+
+    // F5.1/BUG-598: margen libre real = equity − margen retenido en vivas.
+    let total_margin_used: f64 = arena
+        .coins
+        .iter()
+        .map(|c| {
+            if c.positions.position.is_open() {
+                c.positions.position.margin_used.load(Ordering::Relaxed)
+            } else {
+                0.0
+            }
+        })
+        .sum();
+    let cap_now = (arena.unified_capital.load(Ordering::Relaxed) - total_margin_used).max(0.0);
+
+    let entry_price = pos.entry_price.load(Ordering::Relaxed);
+    let qty = pos.quantity.load(Ordering::Relaxed);
+    let core_sl = pos.sl_price.load(Ordering::Relaxed);
+    let pos_margin = pos.margin_used.load(Ordering::Relaxed);
+
+    // D-442: stop real de la orden; fallback = scalp_sl_base ⊔ ATR×1.5, piso 15 bps.
+    let stop_pct = if core_sl > 0.0 && entry_price > 0.0 {
+        ((entry_price - core_sl).abs() / entry_price).max(0.0015)
+    } else {
+        arena
+            .config
+            .scalp_sl_base
+            .load(Ordering::Relaxed)
+            .max(atr_pct * 1.5)
+            .max(0.0015)
+    };
+
+    // D-641: z/k continuos por régimen de capital (mismo literal 5.0 del vivo).
+    let env_min_notional = 5.0;
+    let env_w = risk_engine::capital_regime::micro_weight(cap_now, env_min_notional);
+    let env_z = risk_engine::capital_regime::lerp(1.64, 0.85, env_w);
+    let env_k = risk_engine::capital_regime::log_lerp(50.0, 10.0, env_w);
+    let (env_lev, operable) = envelope.max_leverage(cap_now, stop_pct, env_min_notional, env_z, env_k);
+
+    // D-116: envolvente AUTORITATIVA + bootstrap exploratorio (leverage 1).
+    let envelope_n = envelope.posterior.n();
+    let notional_ord = qty.abs() * entry_price;
+    let core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
+        (notional_ord / pos_margin).round().clamp(1.0, 50.0) as u32
+    } else {
+        (5.05 / cap_now.max(1.0)).ceil().clamp(1.0, 20.0) as u32
+    };
+    let exec_leverage: u32 = if envelope_n < 30.0 {
+        1
+    } else if operable {
+        let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
+        core_leverage.clamp(1, 20).min(cap)
+    } else {
+        0
+    };
+
+    // Veto puro de la envolvente (el host retorna ANTES de los margin guards).
+    if exec_leverage == 0 {
+        *veto_counter += 1;
+        rollback_local_position(arena);
+        return false;
+    }
+
+    // D-382 — LEVERAGE-ADAPT + MARGIN-GUARD (notional al precio de decisión).
+    let notional_volume = qty.abs() * mid;
+    let used_margin = arena.used_margin.load(Ordering::Relaxed);
+    let free_margin = (arena.unified_capital.load(Ordering::Relaxed) - used_margin).max(0.0);
+    let mut effective_leverage = exec_leverage;
+    let required_margin = notional_volume / effective_leverage as f64;
+    if required_margin > free_margin * 0.85 && free_margin > 0.0 {
+        let needed_leverage =
+            (notional_volume / (free_margin * 0.80)).ceil().clamp(1.0, 20.0) as u32;
+        if needed_leverage > effective_leverage {
+            effective_leverage = needed_leverage;
+        }
+    }
+    let final_required_margin = notional_volume / effective_leverage as f64;
+    if final_required_margin > free_margin * 0.95 {
+        *veto_counter += 1;
+        rollback_local_position(arena);
+        return false;
+    }
+    true
+}
+
+/// Rollback EXACTO de `rollback_positions` del host (god_engine.rs): cierra
+/// la posición local, devuelve el margen al pool y REEMBOLSA el entry_fee
+/// (nunca fue coste real). Sin PnL — la entrada vetada no contabiliza (B3.14).
+fn rollback_local_position(arena: &Arc<GlobalArena>) {
+    if let Some(coin) = arena.coins.first() {
+        let pos = &coin.positions.position;
+        if pos.is_open() {
+            let (_, _, _, margin_used, entry_fee) = pos.close_with_fee();
+            if margin_used > 0.0 {
+                let cur = arena.used_margin.load(Ordering::Relaxed);
+                arena
+                    .used_margin
+                    .store((cur - margin_used).max(0.0), Ordering::Relaxed);
+            }
+            if entry_fee > 0.0 {
+                arena
+                    .unified_capital
+                    .fetch_add(entry_fee, Ordering::Relaxed);
+            }
+        }
     }
 }
 
@@ -541,5 +781,186 @@ mod tests {
         assert!((stored_short_b - 0.30).abs() < 1e-6, "genome B ml_short {} != 0.30", stored_short_b);
         // Y deben ser DIFERENTES entre sí
         assert!(stored_long_a != stored_long_b, "wiring roto: A y B almacenan el mismo valor");
+    }
+
+    // ── B3.19: PARIDAD DE SIZING (envolvente D-442/D-116/D-382) ──────────
+
+    fn open_test_position(arena: &Arc<GlobalArena>, entry: f64, qty: f64, margin: f64, fee: f64) {
+        use quantum_arena::position::PositionHorizon;
+        arena.coins[0].positions.position.open_with_fee(
+            true,
+            entry,
+            qty,
+            margin,
+            1_700_000_000_000,
+            entry * 1.01, // tp
+            entry * 0.99, // sl (stop_pct = 1%)
+            PositionHorizon::Continuous,
+            0.6,
+            0.5,
+            fee,
+        );
+        arena.used_margin.fetch_add(margin, Ordering::Relaxed);
+        arena.unified_capital.fetch_add(-fee, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn envelope_bootstrap_mantiene_entrada_que_sostiene_margen() {
+        // n=0 < 30 ⇒ bootstrap exploratorio leverage 1 (D-116): una entrada
+        // cuyo notional cabe en el margen libre NO se veta.
+        let arena = Arc::new(GlobalArena::new(1000.0));
+        let mut env = RiskEnvelope::new();
+        let mut vetoes = 0u64;
+        open_test_position(&arena, 100.0, 1.0, 10.0, 0.05);
+        let kept = live_envelope_gate(&arena, &mut env, 100.0, 0.001, false, &mut vetoes);
+        assert!(kept, "bootstrap no veta entrada sostenible");
+        assert_eq!(vetoes, 0);
+        assert!(arena.coins[0].positions.position.is_open());
+        // El rollback NÓN tocó contabilidad: margen y capital intactos.
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 10.0).abs() < 1e-9);
+        assert!((arena.unified_capital.load(Ordering::Relaxed) - 999.95).abs() < 1e-9);
+    }
+
+    #[test]
+    fn envelope_autoritativa_veta_cuando_no_hay_edge() {
+        // n≥30 y LCB sin edge ⇒ operable=false ⇒ exec=0 ⇒ VETO con rollback
+        // exacto del host: posición cerrada, margen devuelto, fee reembolsado.
+        let arena = Arc::new(GlobalArena::new(1000.0));
+        let mut env = RiskEnvelope::new();
+        for i in 0..500 {
+            env.record_trade(i % 2 == 0, 10.0, -10.0); // 50% WR 1:1 = sin edge
+        }
+        assert!(env.posterior.n() >= 30.0);
+        let mut vetoes = 0u64;
+        open_test_position(&arena, 100.0, 1.0, 10.0, 0.05);
+        let kept = live_envelope_gate(&arena, &mut env, 100.0, 0.001, false, &mut vetoes);
+        assert!(!kept, "la envolvente autoritativa debía vetar");
+        assert_eq!(vetoes, 1);
+        assert!(!arena.coins[0].positions.position.is_open());
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 0.0).abs() < 1e-9);
+        // Reembolso del entry_fee: capital vuelve a 1000 exacto.
+        assert!((arena.unified_capital.load(Ordering::Relaxed) - 1000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn margin_guard_veta_notional_imposible_en_capital_micro() {
+        // Capital 13, margen 12, leverage del core 50 (notional 600): ni a
+        // 20× el margen requerido cabe en el 95% del margen libre ⇒ abort
+        // (paridad con el MARGIN-GUARD -2019 del vivo).
+        let arena = Arc::new(GlobalArena::new(13.0));
+        let mut env = RiskEnvelope::new();
+        let mut vetoes = 0u64;
+        open_test_position(&arena, 100.0, 6.0, 12.0, 0.01); // notional 600
+        let kept = live_envelope_gate(&arena, &mut env, 100.0, 0.001, false, &mut vetoes);
+        assert!(!kept, "margin-guard debía abortar (600/20 > 0.95·1)");
+        assert_eq!(vetoes, 1);
+        assert!(!arena.coins[0].positions.position.is_open());
+        assert!((arena.unified_capital.load(Ordering::Relaxed) - 13.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn envelope_gate_ignora_posicion_ya_evaluada() {
+        // prev_open=true: la posición ya pasó por su dictamen — no se
+        // re-evalúa (idempotencia por apertura, no por tick).
+        let arena = Arc::new(GlobalArena::new(1000.0));
+        let mut env = RiskEnvelope::new();
+        for i in 0..500 {
+            env.record_trade(i % 2 == 0, 10.0, -10.0); // no-operable
+        }
+        let mut vetoes = 0u64;
+        open_test_position(&arena, 100.0, 1.0, 10.0, 0.05);
+        let kept = live_envelope_gate(&arena, &mut env, 100.0, 0.001, true, &mut vetoes);
+        assert!(kept && vetoes == 0);
+        assert!(arena.coins[0].positions.position.is_open());
+    }
+
+    #[test]
+    fn stop_pct_usa_distancia_real_del_sl() {
+        // D-442: con SL al 4% y entry 100, el stop_pct debe ser 0.04 — un SL
+        // amplio REDUCE el leverage de la envolvente (f/stop), no lo ignora.
+        // Lo verificamos a través de max_leverage directamente (misma fórmula).
+        let mut env = RiskEnvelope::new();
+        for i in 0..200 {
+            env.record_trade(i % 3 != 0, 12.0, -10.0); // 67% WR
+        }
+        let (lev_narrow, ok_n) = env.max_leverage(5_000.0, 0.01, 5.0, 1.64, 50.0);
+        let (lev_wide, ok_w) = env.max_leverage(5_000.0, 0.04, 5.0, 1.64, 50.0);
+        assert!(ok_n && ok_w);
+        assert!(
+            lev_wide < lev_narrow,
+            "stop ancho debe reducir leverage: {} !< {}",
+            lev_wide,
+            lev_narrow
+        );
+    }
+
+    #[test]
+    fn replay_con_envolvente_sigue_determinista() {
+        let ticks = synth_ticks(20_000);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let cfg = ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 200,
+            trade_only: false,
+        };
+        let a = run_booktick_replay(&ticks, &genome, None, &cfg);
+        let b = run_booktick_replay(&ticks, &genome, None, &cfg);
+        assert_eq!(a.trades, b.trades);
+        assert_eq!(a.envelope_vetoes, b.envelope_vetoes);
+        assert!((a.net_pnl - b.net_pnl).abs() < 1e-12);
+        assert!(a.final_capital.is_finite() && a.final_capital > 0.0);
+        assert!(a.max_dd < 1.0);
+    }
+
+    // ── B3.16: bordes de OmniHistory (parse, step-function, corte t-1) ────
+
+    fn hist_with(series: Vec<(i64, f64)>) -> OmniHistory {
+        let mut s: [Vec<(i64, f64)>; 6] = Default::default();
+        s[0] = series;
+        OmniHistory { series: s }
+    }
+
+    #[test]
+    fn value_at_primer_dia_exacto_y_hueco() {
+        // Serie con hueco de fin de semana: vie 100, lun 103.
+        let h = hist_with(vec![(100, 1.0), (103, 2.0)]);
+        // Antes del primer dato → primer valor (sin pánico, sin 0 fantasma).
+        assert_eq!(h.value_at(0, 50), 1.0);
+        assert_eq!(h.value_at(0, 99), 1.0);
+        // Golpe exacto.
+        assert_eq!(h.value_at(0, 100), 1.0);
+        // Hueco sábado(101)/domingo(102) → último conocido (viernes).
+        assert_eq!(h.value_at(0, 101), 1.0);
+        assert_eq!(h.value_at(0, 102), 1.0);
+        // Lunes y después.
+        assert_eq!(h.value_at(0, 103), 2.0);
+        assert_eq!(h.value_at(0, 9999), 2.0);
+    }
+
+    #[test]
+    fn corte_t1_no_usa_el_cierre_del_mismo_dia() {
+        // El replay consulta day-1: para un lunes (103) pide el domingo (102)
+        // → debe recibir el VIERNES (100), jamás el propio lunes (103).
+        let h = hist_with(vec![(100, 1.0), (103, 2.0)]);
+        let monday = 103i64;
+        let prev_day = (monday - 1).max(0);
+        assert_eq!(prev_day, 102);
+        assert_eq!(h.value_at(0, prev_day), 1.0, "t-1 debe ver el viernes");
+        // Día 0: el corte jamás baja de 0 (sin underflow de i64).
+        assert_eq!((0i64 - 1).max(0), 0);
+    }
+
+    #[test]
+    fn day_of_es_piso_utc_sin_desborde() {
+        assert_eq!(OmniHistory::day_of(0), 0);
+        assert_eq!(OmniHistory::day_of(86_399_999), 0);
+        assert_eq!(OmniHistory::day_of(86_400_000), 1);
+        assert_eq!(OmniHistory::day_of(1_700_000_000_000), 19_675);
+    }
+
+    #[test]
+    fn serie_vacia_es_neutra_sin_pánico() {
+        let h = hist_with(vec![]);
+        assert_eq!(h.value_at(0, 19_675), 0.0);
     }
 }

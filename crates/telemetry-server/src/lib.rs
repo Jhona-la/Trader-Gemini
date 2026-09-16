@@ -710,8 +710,13 @@ async fn dashboard_html() -> impl IntoResponse {
             <div class="card-value neutral" id="val-ai-prob">0.0 <span class="card-unit">%</span></div>
         </div>
         <div class="card">
+            <div class="card-title">🧟 Sanidad de Marcado (Zombies / Anomalías)</div>
+            <div class="card-value neutral" id="val-marking-health">0 / 0</div>
+            <div class="card-subtitle" style="font-size: 0.8rem; color: #888;">B3.13: unrealized excluido del agregado si |v| &gt; 2× capital</div>
+        </div>
+        <div class="card">
             <div class="card-title">⚖️ Apalancamiento Asintótico</div>
-            <div class="card-value neutral" id="val-leverage">-- / -- <span class="card-unit">x</span></div>
+            <div class="card-value neutral" id="val-leverage">-- <span class="card-unit">x</span></div>
         </div>
         <div class="card">
             <div class="card-title">🛡️ OS Guardian (RAM)</div>
@@ -847,12 +852,18 @@ async fn dashboard_html() -> impl IntoResponse {
                 
                 setHtml('val-ticks', `${data.tick_counter} <span class="card-unit">Events</span>`);
                 
-                const aiProbClass = data.ml_prob_avg > 0.6 ? 'positive' : (data.ml_prob_avg < 0.4 ? 'negative' : 'neutral');
+                let aiProbClass = data.ml_prob_avg > 0.6 ? 'positive' : (data.ml_prob_avg < 0.4 ? 'negative' : 'neutral');
                 setHtml('val-ai-prob', `<span class="${aiProbClass}">${formatNumber(data.ml_prob_avg * 100, 1)}</span> <span class="card-unit">%</span>`);
-                
-                let effectiveLeverage = 1.0; // fallback
-                if (data.effective_max_leverage) effectiveLeverage = data.effective_max_leverage;
-                setHtml('val-leverage', `${formatNumber(data.global_leverage, 0)} / ${formatNumber(effectiveLeverage, 1)} <span class="card-unit">x</span>`);
+
+                // B3.13 — el sanitizador expone marking_anomalies: sin esta
+                // tarjeta el contador era un veneno silencioso (serializado
+                // pero invisible). Zombies y anomalías de marcado en vivo.
+                const anomalies = data.marking_anomalies || 0;
+                const zombies = data.zombie_count || 0;
+                const healthClass = anomalies > 0 ? 'negative' : (zombies > 0 ? 'neutral' : 'positive');
+                setHtml('val-marking-health', `<span class="${healthClass}">${zombies} / ${anomalies}</span>`);
+
+                setHtml('val-leverage', `${formatNumber(data.global_leverage, 0)} <span class="card-unit">x</span>`);
                 
                 const ramPercent = (data.memory_used_mb / data.total_memory_mb) * 100;
                 const ramClass = ramPercent > 80 ? 'negative' : (ramPercent > 60 ? 'neutral' : 'positive');
@@ -1077,5 +1088,36 @@ mod tests {
         let coin_json = serde_json::to_string(&coin).unwrap();
         assert!(coin_json.contains("BTCUSDT"));
         assert!(coin_json.contains("active_scalp"));
+    }
+
+    /// B3.13 — SANITIZADOR DE /api/state: un marcado imposible (|unrealized|
+    /// > 2× capital) se EXCLUYE del agregado y se cuenta en
+    /// marking_anomalies; uno sano pasa íntegro. El campo además debe estar
+    /// serializado (el dashboard lo consume).
+    #[tokio::test]
+    async fn sanitizer_marca_y_excluye_unrealized_imposible() {
+        let arena = std::sync::Arc::new(quantum_arena::GlobalArena::new(2_200.0));
+
+        // Coin 0: marcado roto (glitch medido: +$2.27M en cuenta de $2.2K).
+        arena.coins[0]
+            .metrics
+            .pnl_unrealized
+            .store(2_270_000.0, Ordering::Relaxed);
+        // Coin 1: marcado sano.
+        arena.coins[1]
+            .metrics
+            .pnl_unrealized
+            .store(15.0, Ordering::Relaxed);
+
+        let state = get_state(axum::extract::State(arena)).await;
+
+        // El veneno quedó fuera del agregado; el sano pasó.
+        assert!((state.pnl_unrealized_scalp - 15.0).abs() < 1e-6);
+        // Contado, no silenciado.
+        assert_eq!(state.marking_anomalies, 1);
+        // Serialización expone el contador (wiring al dashboard).
+        let json = serde_json::to_string(&state.0).unwrap();
+        assert!(json.contains("marking_anomalies"));
+        assert!(json.contains("zombie_count"));
     }
 }
