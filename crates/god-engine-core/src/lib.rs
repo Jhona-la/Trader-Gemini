@@ -85,6 +85,9 @@ pub struct GodEngineCore {
     /// DIAG R4 (transitorio): cuello post-orden.
     pub diag_council_vetoes: u64,
     pub diag_opened: u64,
+    /// B3.18 — entradas vetadas por el gate de ensamble (la predicción
+    /// decidió NO): diagnóstico de cuánto consume el sistema la predicción.
+    pub diag_ml_vetoes: u64,
     pub diag_swing_vetoes: u64,
     pub diag_swing_opened: u64,
     pub diag_close_wins: u64,
@@ -247,6 +250,7 @@ impl GodEngineCore {
             confidence_calibrator: calibration::PlattCalibrator::new(),
             diag_council_vetoes: 0,
             diag_opened: 0,
+            diag_ml_vetoes: 0,
             diag_swing_vetoes: 0,
             diag_swing_opened: 0,
             diag_close_wins: 0,
@@ -1597,12 +1601,17 @@ impl GodEngineCore {
             // (Antes: if-else — el NN solo opinaba si el forest NO existía.)
             let combined_tensor =
                 self.build_54d_tensor(coin_id, bid_qty, ask_qty, mid_price, omni_features);
-            // D-406 & D-407: Soporte para modelo por activo ({sym}_SCALP) con fallback a BTCUSDT_SCALP
+            // D-406 & D-407: Soporte para modelo por activo ({sym}_SCALP).
+            // B3.18b — SIN FALLBACK a BTC: los símbolos sin modelo validado
+            // NO heredan la opinión de otro símbolo (transferencia
+            // cross-símbolo jamás validada — ETH la falló; y el BTC rolling
+            // delgado con init sesgado inyectaba sesgo long global como
+            // fallback). El ensamble sigue opinando con NN + espectro; la
+            // entrada además pasa el gate B3.18.
             let sym = quantum_arena::symbol_registry::try_symbol(coin_id)
                 .unwrap_or_else(|| "BTCUSDT".to_string());
             let coin_model_key = format!("{}_SCALP", sym);
-            let active_forest = crate::ml_inference::NanoForest::get_global(&coin_model_key)
-                .or_else(|| self.scalp_forest.clone());
+            let active_forest = crate::ml_inference::NanoForest::get_global(&coin_model_key);
             let coin_ensemble = if coin_id < self.ensembles.len() {
                 &mut self.ensembles[coin_id]
             } else {
@@ -3260,7 +3269,35 @@ impl GodEngineCore {
                             .record_council(order.signal == SignalType::Long, false);
                     }
 
-                    if deliberation.approved {
+                    // B3.18 — LA PREDICCIÓN DECIDE. Descubrimiento 2026-09-15:
+                    // el PnL era INSENSIBLE al forest (BNB sept idéntico al
+                    // centavo con modelos distintos) porque las ramas de
+                    // entrada gatean con NN/flujo/tendencia y el ensamble
+                    // (forest validado ⊕ NN ⊕ espectro) no consumía nadie.
+                    // Ahora TODA entrada exige el acuerdo del ensamble:
+                    // long ⇒ ml ≥ umbral genómico, short ⇒ ml ≤ umbral.
+                    // Con los umbrales baseline (0.5698/0.4302) esto es la
+                    // "selección de entradas" que la guerra de fees pedía.
+                    let ml_now = coin.ml_prob.load(Ordering::Relaxed);
+                    let ml_gate_ok = if order.signal == SignalType::Long {
+                        ml_now >= self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
+                    } else {
+                        ml_now <= self.arena.config.ml_threshold_short.load(Ordering::Relaxed)
+                    };
+                    if deliberation.approved && !ml_gate_ok {
+                        self.diag_ml_vetoes += 1;
+                        if self.diag_ml_vetoes % 50 == 1 {
+                            telemetry_server::telemetry_log!(
+                                "🧠 [ML-GATE] {} entradas vetadas por el ensamble (última: {} ml={:.3}) — la predicción decide",
+                                self.diag_ml_vetoes,
+                                quantum_arena::symbol_registry::try_symbol(coin_id)
+                                    .unwrap_or_default(),
+                                ml_now
+                            );
+                        }
+                    }
+
+                    if deliberation.approved && ml_gate_ok {
                         let is_long = order.signal == SignalType::Long;
                         let total_used = self.arena.used_margin.load(Ordering::Relaxed);
                         let free_cap = (current_cap - total_used).max(0.0);
