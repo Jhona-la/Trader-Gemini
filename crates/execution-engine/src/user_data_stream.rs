@@ -531,7 +531,9 @@ impl UserDataStreamer {
         } else if update.last_filled_qty > 0.0
             && (update.client_order_id.starts_with("cL_")
                 || update.client_order_id.starts_with("cS_")
-                || update.client_order_id.starts_with("mc_"))
+                || update.client_order_id.starts_with("mc_")
+                // B3.10 (auditoría): remanente taker del maker-chase.
+                || update.client_order_id.starts_with("mcT_"))
         {
             // B3.10 — FILL DE ENTRADA al diario: entradas taker ("cL_"/"cS_",
             // FIX -4015) y maker-chase ("mc_"). El flag maker habilita la

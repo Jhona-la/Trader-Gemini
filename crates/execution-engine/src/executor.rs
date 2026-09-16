@@ -2123,8 +2123,21 @@ impl ExecutionProvider for OrderExecutor {
             return Ok(());
         }
 
-        // 4. Ejecutar como Taker SOLO el remanente (Market Order)
-        self.execute_raw_qty(symbol, is_long, remaining, step_size)
+        // 4. Ejecutar como Taker SOLO el remanente (Market Order). B3.10
+        // (auditoría): ID firmado "mcT_" — el remanente taker del maker-chase
+        // antes usaba un ID autogenerado y quedaba fuera del diario de fills,
+        // sesgando la medición de selección adversa (sólo veíamos los "mc_").
+        let mut id_buf = [0u8; 32];
+        id_buf[0..4].copy_from_slice(b"mcT_");
+        let micros = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros();
+        let mut itoa_buf = itoa::Buffer::new();
+        let micros_str = itoa_buf.format(micros);
+        id_buf[4..4 + micros_str.len()].copy_from_slice(micros_str.as_bytes());
+        let remnant_id = std::str::from_utf8(&id_buf[..4 + micros_str.len()]).unwrap_or("mcT_0");
+        self.execute_raw_qty_with_client_id(symbol, is_long, remaining, step_size, remnant_id)
             .await
     }
 

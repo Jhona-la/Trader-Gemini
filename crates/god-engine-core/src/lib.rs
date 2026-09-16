@@ -848,13 +848,30 @@ impl GodEngineCore {
                     // fricción (mismo invariante que el gate y los brackets).
                     // Los pisos previos (0,05 % / 0,10 %) eran menores que la
                     // fricción roundtrip VIP0: TP garantizado en pérdida neta.
+                    // B3.19: + latency_slip (atr·lat/ref), como el gate.
+                    let lat_ref_mgmt = self
+                        .arena
+                        .config
+                        .latency_ms_panic_threshold
+                        .load(Ordering::Relaxed)
+                        .clamp(10.0, 5_000.0);
+                    let lat_slip_mgmt = (atr_pct_live
+                        * (self
+                            .arena
+                            .config
+                            .latency_penalty_ms
+                            .load(Ordering::Relaxed)
+                            .max(0.0)
+                            / lat_ref_mgmt))
+                    .clamp(0.0, 0.05);
                     let fee_rt_mgmt = 2.0 * self.arena.config.live_taker_fee.load(Ordering::Relaxed)
-                        + 2.0 * self
+                        + 2.0 * (self
                             .arena
                             .config
                             .base_slippage_floor
                             .load(Ordering::Relaxed)
-                            .max(0.00001);
+                            .max(0.00001)
+                            + lat_slip_mgmt);
                     let (fallback_sl, fallback_tp) =
                         quantum_arena::genome::SuperGenotype::friction_floors(
                             fee_rt_mgmt,
@@ -1165,6 +1182,12 @@ impl GodEngineCore {
                     } else if force_close_trail {
                         (4u8, "FORCE_TRAIL")
                     } else if is_zombie {
+                        // B3.19 — writer de zombie_promotions (auditoría: el
+                        // contador existía y /api/state lo leía, pero NADIE
+                        // lo escribía — zombie_count siempre 0).
+                        coin.scalp
+                            .zombie_promotions
+                            .fetch_add(1, Ordering::Relaxed);
                         (5u8, "ZOMBIE")
                     } else {
                         (6u8, "TOXIC_FLOW")

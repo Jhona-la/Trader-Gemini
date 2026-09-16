@@ -30,6 +30,7 @@ use telemetry_engine::telemetry;
 /// ±2.5%/±1.5% hardcodeados del restore de arranque.
 fn genome_protection_prices(
     arena: &quantum_arena::GlobalArena,
+    symbol: &str,
     is_long: bool,
     entry_price: f64,
     entry_tau_ms: u64,
@@ -62,8 +63,27 @@ fn genome_protection_prices(
     // decide la forma; la fricción pone el suelo: stop ≥ mínimo viable y
     // TP ≥ stop · RR_mínimo(fee). Modelo D-645: taker en ambas piernas +
     // piso de slippage por lado — el mismo que usa el gate del risk-engine.
+    // B3.19 — + término de LATENCIA (atr_pct·lat/ref): el gate lo incluye y
+    // los brackets no (hallazgo de auditoría: brackets ligeramente menos
+    // conservadores que el gate que los aprueba).
+    let latency_ref_ms = arena
+        .config
+        .latency_ms_panic_threshold
+        .load(o)
+        .clamp(10.0, 5_000.0);
+    let atr_pct = quantum_arena::symbol_registry::try_index(symbol)
+        .and_then(|ci| arena.coins.get(ci))
+        .map(|c| {
+            let px = c.current_price.load(o).max(1e-12);
+            c.current_atr.load(o) / px
+        })
+        .filter(|a| a.is_finite() && *a > 0.0)
+        .unwrap_or(0.0);
+    let latency_slip = (atr_pct
+        * (arena.config.latency_penalty_ms.load(o).max(0.0) / latency_ref_ms))
+        .clamp(0.0, 0.05);
     let fee_rt = 2.0 * arena.config.live_taker_fee.load(o)
-        + 2.0 * arena.config.base_slippage_floor.load(o).max(0.00001);
+        + 2.0 * (arena.config.base_slippage_floor.load(o).max(0.00001) + latency_slip);
     let (sl_frac, tp_frac) =
         quantum_arena::genome::SuperGenotype::friction_floors(fee_rt, sl_frac, tp_frac);
     let tp = if is_long {
@@ -132,7 +152,8 @@ async fn ensure_position_protected(
         );
         return (tp_gap, sl_gap);
     }
-    let (tp_price, sl_price) = genome_protection_prices(arena, is_long, entry_price, entry_tau_ms);
+    let (tp_price, sl_price) =
+        genome_protection_prices(arena, symbol, is_long, entry_price, entry_tau_ms);
     let micros = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -394,6 +415,58 @@ fn recover_position_context(symbol: &str, is_long: bool) -> Option<RecoveredCont
 /// Umbral conservador: compactar sólo cuando supera 500 líneas. Escritura
 /// atómica (tmp + rename); líneas corruptas se descartan en la compactación
 /// (la lectura ya era tolerante línea a línea).
+/// B3.19 — CIERRE DE EMERGENCIA a la contabilidad: los reduce-only de
+/// emergencia (naked-escalation B3.5, X-009 del OCO de entrada) cerraban
+/// posiciones reales que ni el core ni B3.7 veían — invisibles al diario y
+/// al posterior de Kelly (sólo el income del fee-breaker las registraba).
+/// El precio de salida es el vivo del arena (aproximación documentada: el
+/// market reduce-only ejecuta ~ahora); la entrada sale del contexto local,
+/// que aún vive al momento de la llamada.
+fn record_emergency_close(
+    symbol: &str,
+    was_long: bool,
+    qty: f64,
+    arena: &Arc<quantum_arena::GlobalArena>,
+    trigger: &'static str,
+) {
+    let ci = quantum_arena::symbol_registry::try_index(symbol);
+    let (entry_price, entry_fee, exit_price) = ci
+        .and_then(|i| arena.coins.get(i))
+        .map(|c| {
+            let p = &c.positions.position;
+            (
+                p.entry_price.load(Ordering::Relaxed),
+                p.entry_fee.load(Ordering::Relaxed),
+                c.current_price.load(Ordering::Relaxed),
+            )
+        })
+        .unwrap_or((0.0, 0.0, 0.0));
+    let sign = if was_long { 1.0 } else { -1.0 };
+    let pnl_gross = if entry_price > 0.0 && exit_price > 0.0 {
+        (entry_price - exit_price) * qty * sign
+    } else {
+        0.0
+    };
+    execution_engine::trade_accounting::record_bracket_close(
+        execution_engine::trade_accounting::BracketClose {
+            ts_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            symbol: symbol.to_string(),
+            was_long,
+            qty,
+            entry_price,
+            exit_price,
+            stop_price: 0.0,
+            pnl_gross,
+            fees: entry_fee,
+            trigger,
+            slippage_bps: 0.0,
+        },
+    );
+}
+
 fn compact_position_journal() {
     const COMPACT_THRESHOLD: usize = 500;
     let path = "data/position_journal.jsonl";
@@ -819,12 +892,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut forest_timestamps: std::collections::HashMap<String, std::time::SystemTime> =
         std::collections::HashMap::new();
 
-    // Initial load of all models (.bin and .json - FIX #1410)
+    // Initial load of all models (.json es la fuente de verdad; el .bin es
+    // caché del propio loader — B3.19: cargar AMBOS por stem hacía doble
+    // trabajo y dejaba el resultado al orden de read_dir)
     if let Ok(entries) = std::fs::read_dir("models") {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
             let ext = path.extension().and_then(|s| s.to_str());
-            if ext == Some("json") || ext == Some("bin") {
+            // Un .bin sólo se carga si su .json hermano NO existe (stem
+            // legacy sin json); con .json presente, el loader deriva la
+            // pareja y regenera la caché él mismo.
+            let json_hermano = path.with_extension("json");
+            let cargable = ext == Some("json")
+                || (ext == Some("bin") && !json_hermano.exists());
+            if cargable {
                 if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
                     if let Ok(meta) = std::fs::metadata(&path) {
                         if let Ok(modified) = meta.modified() {
@@ -1921,6 +2002,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         )
                                                         .await;
                                                     naked_streak.remove(&close_sym);
+                                                    // B3.19 — la emergencia también
+                                                    // alimenta la contabilidad y el
+                                                    // posterior de Kelly (antes sólo
+                                                    // el income del fee-breaker la
+                                                    // veía: cierres de emergencia
+                                                    // invisibles al aprendizaje).
+                                                    record_emergency_close(
+                                                        &close_sym,
+                                                        close_long,
+                                                        rq,
+                                                        &arena_wd,
+                                                        "NAKED-ESC",
+                                                    );
                                                     telemetry_server::telemetry_log!(
                                                         "🛑 [NAKED-ESCALATION] {} cerrada por emergencia — brackets purgados",
                                                         close_sym
@@ -2671,6 +2765,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let parsed_sym_str = parsed_sym.to_string();
                         let exec_clone = Arc::clone(&exec);
                         let is_long_close = is_long;
+                        let arena_emerg = Arc::clone(&engine_real.arena);
                         rt_handle.spawn(async move {
                             let sym_filter = match exec_clone.load().get_symbol_filter(&parsed_sym_str).await {
                                 Ok(f) => f,
@@ -2837,8 +2932,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ).eval(tau_eff);
                             // B3.2: el fallback de entrada también nace viable —
                             // pisos de fricción idénticos a genome_protection_prices.
+                            // B3.19: + latency_slip (atr·lat/ref), como el gate.
+                            let atr_pct_entry = engine_real
+                                .arena
+                                .coins
+                                .get(coin_id)
+                                .map(|c| {
+                                    let px = c.current_price.load(Ordering::Relaxed).max(1e-12);
+                                    c.current_atr.load(Ordering::Relaxed) / px
+                                })
+                                .filter(|a| a.is_finite() && *a > 0.0)
+                                .unwrap_or(0.0);
+                            let lat_ref = engine_real
+                                .arena
+                                .config
+                                .latency_ms_panic_threshold
+                                .load(Ordering::Relaxed)
+                                .clamp(10.0, 5_000.0);
+                            let lat_slip_entry = (atr_pct_entry
+                                * (engine_real
+                                    .arena
+                                    .config
+                                    .latency_penalty_ms
+                                    .load(Ordering::Relaxed)
+                                    .max(0.0)
+                                    / lat_ref))
+                            .clamp(0.0, 0.05);
                             let fee_rt_entry = 2.0 * engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed)
-                                + 2.0 * engine_real.arena.config.base_slippage_floor.load(Ordering::Relaxed).max(0.00001);
+                                + 2.0 * (engine_real.arena.config.base_slippage_floor.load(Ordering::Relaxed).max(0.00001) + lat_slip_entry);
                             let (sl_frac, tp_frac) =
                                 quantum_arena::genome::SuperGenotype::friction_floors(fee_rt_entry, sl_frac, tp_frac);
                             order_tp_price = if is_long { entry_price * (1.0 + tp_frac) } else { entry_price * (1.0 - tp_frac) };
@@ -3235,6 +3356,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                             match close_res {
                                                 Ok(()) => {
+                                                    // B3.19 — la emergencia alimenta la
+                                                    // contabilidad/Kelly ANTES del rollback
+                                                    // (la entrada FUE real en el exchange;
+                                                    // antes estos cierres eran invisibles
+                                                    // al aprendizaje).
+                                                    record_emergency_close(
+                                                        &parsed_sym_str,
+                                                        is_long_close,
+                                                        close_qty,
+                                                        &arena_clone,
+                                                        "X-009",
+                                                    );
                                                     rollback_positions(&arena_clone);
                                                 }
                                                 Err(es) => {
