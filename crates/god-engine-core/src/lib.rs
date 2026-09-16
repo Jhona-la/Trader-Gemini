@@ -2073,8 +2073,12 @@ impl GodEngineCore {
                     // UMBRALES GENÓMICOS (evolucionables por el SA): el fallback
                     // usa los MISMOS genes que el camino tradicional — así el
                     // SA puede optimizar la sensibilidad sin código quemado.
-                    let ml_thr_long = self.arena.config.ml_threshold_long.load(Ordering::Relaxed).clamp(0.50, 0.95);
-                    let ml_thr_short = self.arena.config.ml_threshold_short.load(Ordering::Relaxed).clamp(0.05, 0.50);
+                    // D-715: misma función que la puerta de entrada y que la rama
+                    // swing — un solo invariante para los mismos dos genes.
+                    let (ml_thr_long, ml_thr_short) = crate::calibration::ml_gate_thresholds(
+                        self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                        self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+                    );
                     // Ruta 1: ML RE-CENTRADO (sesgo eliminado) con confianza
                     // proporcional a la distancia de la neutralidad.
                     if ml_prob_adaptive > ml_thr_long {
@@ -2560,20 +2564,17 @@ impl GodEngineCore {
                 .trend_threshold
                 .load(Ordering::Relaxed);
 
-            let ml_long = self.arena.config.ml_threshold_long.load(Ordering::Relaxed);
-            let ml_short = self.arena.config.ml_threshold_short.load(Ordering::Relaxed);
-            let effective_ml_long = if ml_long <= 0.50 {
-                1.0 - ml_long
-            } else {
-                ml_long
-            }
-            .clamp(0.51, 0.95);
-            let effective_ml_short = if ml_short >= 0.50 {
-                1.0 - ml_short
-            } else {
-                ml_short
-            }
-            .clamp(0.05, 0.49);
+            // D-715: los umbrales de la puerta ML se leen por la MISMA función
+            // que usa la puerta de entrada. Aquí se «reparaba» un genoma
+            // invertido REFLEJÁNDOLO (`1 − ml_long`), de modo que con
+            // `ml_threshold_long = 0,30` esta rama exigía 0,70 mientras la puerta
+            // única de B3.18 exigía 0,50: dos reparaciones incompatibles del
+            // mismo valor inválido, capaces de producir una intención Long que la
+            // puerta veta acto seguido con el mismo `ml_prob` y el mismo genoma.
+            let (effective_ml_long, effective_ml_short) = crate::calibration::ml_gate_thresholds(
+                self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+            );
 
             let raw_base = self.arena.config.base_duration_ms.load(Ordering::Relaxed);
             let swing_duration_ms = if raw_base.is_finite() && raw_base > 0.0 {

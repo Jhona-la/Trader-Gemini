@@ -156,16 +156,22 @@ impl Genotype {
             .config
             .min_confidence_btc
             .store(min_conf, Ordering::Relaxed);
-        let ml_long = (0.50 + (min_conf - 0.50).abs()).clamp(0.51, 0.95);
-        let ml_short = (0.50 - (min_conf - 0.50).abs()).clamp(0.05, 0.49);
-        arena
-            .config
-            .ml_threshold_long
-            .store(ml_long, Ordering::Relaxed);
-        arena
-            .config
-            .ml_threshold_short
-            .store(ml_short, Ordering::Relaxed);
+        // D-715 (DÉCIMA OLA · auditoría integral): UN GENOTIPO NO SOBRESCRIBE
+        // GENES QUE NO LLEVA.
+        //
+        // Aquí se derivaban `ml_threshold_long`/`ml_threshold_short` de
+        // `min_confidence`, que no tiene nada que ver con ellos: `Genotype` sólo
+        // porta doce genes y esos dos no están entre ellos. Como `min_confidence`
+        // vive acotada a [0,50; 0,95], el `.abs()` era inerte y el resultado
+        // exacto era `ml_long = min_confidence`, `ml_short = 1 − min_confidence`:
+        // dos umbrales forzados a ser espejos, sin asimetría posible entre largo
+        // y corto. Con el valor por defecto, la puerta que decide TODAS las
+        // entradas pasaba del par validado cross-month (0,5698 / 0,4302) a
+        // (0,65 / 0,35) cada vez que este daemon aplicaba un genotipo —21 veces
+        // por generación sobre arenas nuevas, y también sobre la arena VIVA—,
+        // sin que ninguna validación hubiera visto ese par.
+        //
+        // Los dos umbrales son genes del `SuperGenotype` y se aplican desde él.
         arena
             .config
             .explosive_leverage_multiplier
