@@ -28,6 +28,27 @@ pub fn run_backtest_native(
     let len = closes.len();
     let target_coin_id = quantum_arena::symbol_registry::try_index(symbol).unwrap_or(0);
 
+    // B3.20 — CAUSA RAÍZ DEL ORÁCULO MUERTO: el registro dinámico nace VACÍO
+    // por diseño (lo puebla el symbol manager del motor en vivo); sin spec,
+    // evaluate_quantum_order rechaza TODA orden con "spec" (medido: 432/432
+    // rechazos, 0 trades, cobertura 0/144) — desde que el registro se hizo
+    // dinámico, no desde B3.18. Registrar un spec estándar para el símbolo
+    // evaluado (idempotente: update_registry preserva los existentes).
+    if quantum_arena::symbol_registry::try_spec(target_coin_id).is_none() {
+        let spec = quantum_arena::symbol_registry::SymbolSpec {
+            symbol: symbol.to_string(),
+            step_size: 0.001,
+            tick_size: 0.1,
+            min_qty: 0.001,
+            min_notional: 5.0,
+            max_leverage: 50,
+            maker_fee: 0.0002,
+            taker_fee: 0.0005,
+            is_shadow: false,
+        };
+        quantum_arena::symbol_registry::update_registry(vec![spec]);
+    }
+
     // F3.4: capital 0/NaN ⇒ arena rota y métricas basura. Rechazo explícito:
     // el caller debe extraer el balance real (API en demo/prod).
     if !initial_capital.is_finite() || initial_capital <= 0.0 {
@@ -444,6 +465,20 @@ pub fn run_backtest_native(
     } else {
         0.0
     };
+
+    // B3.18-diag — contadores de veto del camino nativo: localiza EN QUÉ
+    // etapa mueren los trades (señales jamás disparadas ⇒ todo 0; consejo ⇒
+    // council alto; gate de predicción ⇒ ml_vetoes alto; llegó a abrir ⇒
+    // opened > 0 y el bloque está después).
+    if std::env::var("TG_TRACE_NATIVO")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+    {
+        println!(
+            "[T1-DIAG] opened={} council_vetoes={} ml_vetoes={} closes={}",
+            core.diag_opened, core.diag_council_vetoes, core.diag_ml_vetoes, core.diag_close_total
+        );
+    }
 
     trades
 }
