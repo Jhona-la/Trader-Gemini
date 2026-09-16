@@ -214,7 +214,7 @@ pub fn run_booktick_replay(
         return stats;
     }
 
-    let arena = Arc::new(GlobalArena::new(cfg.initial_capital));
+    let arena = GlobalArena::build_in_own_stack(cfg.initial_capital);
     genome.apply_to_arena(&arena);
     let mut core = GodEngineCore::new(arena.clone());
 
@@ -531,7 +531,7 @@ mod tests {
     /// reales donde el forest produce predicciones direccionales ≠0.5.
     #[test]
     fn wiring_genoma_llega_al_signal_generation() {
-        let arena = std::sync::Arc::new(GlobalArena::new(1000.0));
+        let arena = GlobalArena::build_in_own_stack(1000.0);
 
         // Genoma A: umbral amplio
         let mut g_a = SuperGenotype::new_baseline(0.0002, 0.0005);
