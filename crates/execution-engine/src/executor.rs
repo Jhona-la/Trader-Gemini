@@ -139,6 +139,12 @@ pub struct ActivePosition {
     pub qty: f64,
     pub entry_price: f64,
     pub is_long: bool,
+    /// D-726 (DÉCIMA OLA · auditoría integral): apalancamiento REAL de la
+    /// posición, tal y como lo devuelve `/fapi/v2/positionRisk`. Se descartaba
+    /// al parsear y el restaurador lo sustituía por el literal 10, de modo que
+    /// el margen reconstruido de una posición a 20x era el doble del real.
+    /// 0 = el exchange no lo informó.
+    pub leverage: f64,
 }
 
 #[allow(async_fn_in_trait)]
@@ -2986,10 +2992,17 @@ impl ExecutionProvider for OrderExecutor {
                                             item.get("entryPrice").and_then(|v| v.as_str()),
                                         ) {
                                             if let Ok(entry_price) = price_str.parse::<f64>() {
+                                                let leverage = item
+                                                    .get("leverage")
+                                                    .and_then(|v| v.as_str())
+                                                    .and_then(|v| v.parse::<f64>().ok())
+                                                    .filter(|l| l.is_finite() && *l > 0.0)
+                                                    .unwrap_or(0.0);
                                                 open_positions.push(ActivePosition {
                                                     symbol: sym.to_string(),
                                                     qty: amt.abs(),
                                                     entry_price,
+                                                    leverage,
                                                     is_long: amt > 0.0,
                                                 });
                                             }

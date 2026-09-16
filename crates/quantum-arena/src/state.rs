@@ -402,6 +402,22 @@ impl GlobalArena {
         )
     }
 
+    /// D-714: variante con pila suficiente de `from_genome`, para los llamadores
+    /// que no corren en un hilo de 32 MiB (tests, workers de rayon).
+    pub fn from_genome_in_own_stack(
+        initial_capital: f64,
+        genome: &crate::genome::SuperGenotype,
+    ) -> std::sync::Arc<Self> {
+        let config = QuantumConfig::from_genome(initial_capital, genome);
+        std::thread::Builder::new()
+            .name("arena-build".into())
+            .stack_size(32 * 1024 * 1024)
+            .spawn(move || std::sync::Arc::new(Self::build(initial_capital, config)))
+            .expect("no se pudo crear el hilo de construcción del arena")
+            .join()
+            .expect("la construcción del arena entró en pánico")
+    }
+
     fn build(initial_capital: f64, config: QuantumConfig) -> Self {
         // D-680 (DÉCIMA OLA): el prior del win rate era `maker_obi_threshold`
         // (0,95 en el genoma de producción), un umbral de desequilibrio del

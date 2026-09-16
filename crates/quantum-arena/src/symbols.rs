@@ -30,12 +30,16 @@ pub fn get_active_universe_size() -> usize {
     DYNAMIC_UNIVERSE.load().len()
 }
 
+/// D-725: el id de una moneda es su posición en el UNIVERSO — el mismo índice
+/// con el que el productor de datos escribe en `arena.coins[i]`. Sólo con el
+/// universo vacío (arranque, o binarios que sólo registran specs) se recurre al
+/// registro, que entonces es el único espacio de índices existente.
 pub fn get_coin_id(symbol: &str) -> Option<usize> {
-    if let Some(id) = crate::symbol_registry::try_index(symbol) {
-        return Some(id);
-    }
     let u = DYNAMIC_UNIVERSE.load();
-    u.iter().position(|s| s == symbol)
+    if !u.is_empty() {
+        return u.iter().position(|s| s.eq_ignore_ascii_case(symbol));
+    }
+    crate::symbol_registry::try_index(symbol)
 }
 
 fn get_default_symbols() -> Vec<String> {

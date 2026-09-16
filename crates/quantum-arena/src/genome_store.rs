@@ -418,7 +418,7 @@ mod tests {
             g.zombie_timeout_ms
         );
         g.zombie_timeout_ms = 2_100_140.98;
-        let arena = crate::state::GlobalArena::from_genome(13.0, &g);
+        let arena = crate::state::GlobalArena::from_genome_in_own_stack(13.0, &g);
         assert_eq!(
             arena.config.zombie_timeout_ms.load(Ordering::Relaxed),
             14_400_000.0
@@ -430,7 +430,7 @@ mod tests {
     fn d680_prior_del_win_rate_y_media_posterior() {
         use std::sync::atomic::Ordering;
         let g = SuperGenotype::new_baseline(0.0002, 0.0005);
-        let arena = crate::state::GlobalArena::from_genome(13.0, &g);
+        let arena = crate::state::GlobalArena::from_genome_in_own_stack(13.0, &g);
         let w0 = arena.coins[0].metrics.win_rate.load(Ordering::Relaxed);
         assert_eq!(w0, SuperGenotype::WORST_TOLERATED_WR);
         let tras_perdida = SuperGenotype::posterior_win_rate(w0, 0.0, false);
@@ -470,8 +470,9 @@ mod tests {
         g.trail_mult_horizon_curve =
             HorizonCurve::through_two_points(TAU_ANCHOR_FAST_MS, 2.5, TAU_ANCHOR_SLOW_MS, 3.5);
 
-        let frio = crate::state::GlobalArena::from_genome(13.0, &g);
-        let caliente = crate::state::GlobalArena::new(13.0);
+        let frio = crate::state::GlobalArena::from_genome_in_own_stack(13.0, &g);
+        // D-714: el arena no cabe en la pila por defecto de un hilo de test.
+        let caliente = crate::state::GlobalArena::build_in_own_stack(13.0);
         g.apply_to_arena(&caliente);
         for (nombre, arena) in [("frío", &frio), ("hot-swap", &caliente)] {
             let c = &arena.config;
@@ -507,9 +508,9 @@ mod tests {
 
         // El genoma de producción trae tech_threshold = 0,05.
         g.tech_threshold = 0.05;
-        let frio = GlobalArena::from_genome(13.0, &g);
+        let frio = GlobalArena::from_genome_in_own_stack(13.0, &g);
         assert!((frio.config.tech_threshold.load(Ordering::Relaxed) - 0.24).abs() < 1e-12);
-        let swap = GlobalArena::new(13.0);
+        let swap = GlobalArena::build_in_own_stack(13.0);
         g.apply_to_arena(&swap);
         assert!((swap.config.tech_threshold.load(Ordering::Relaxed) - 0.24).abs() < 1e-12);
     }
@@ -525,10 +526,10 @@ mod tests {
         assert_eq!(v[SuperGenotype::SLOT_MARGIN_CUSHION], g.margin_cushion_pct);
         g.margin_cushion_pct = 1.092_219_631_099_718;
         g.min_confidence_btc = 0.30;
-        let frio = crate::state::GlobalArena::from_genome(13.0, &g);
+        let frio = crate::state::GlobalArena::from_genome_in_own_stack(13.0, &g);
         assert_eq!(frio.config.margin_cushion_pct.load(Ordering::Relaxed), 0.98);
         assert_eq!(frio.config.min_confidence_btc.load(Ordering::Relaxed), 0.50);
-        let swap = crate::state::GlobalArena::new(13.0);
+        let swap = crate::state::GlobalArena::build_in_own_stack(13.0);
         g.apply_to_arena(&swap);
         assert_eq!(swap.config.margin_cushion_pct.load(Ordering::Relaxed), 0.98);
     }
@@ -544,12 +545,12 @@ mod tests {
         let g = SuperGenotype::from_vector(&g.to_vector());
 
         // Camino A: arranque en frío.
-        let arena_frio = GlobalArena::from_genome(13.0, &g);
+        let arena_frio = GlobalArena::from_genome_in_own_stack(13.0, &g);
         let visto_frio = SuperGenotype::current_from_arena(&arena_frio);
 
         // Camino B: arena con OTRO genoma y luego hot-swap al nuestro.
         let otro = SuperGenotype::new_baseline(0.0004, 0.0009);
-        let arena_swap = GlobalArena::from_genome(13.0, &otro);
+        let arena_swap = GlobalArena::from_genome_in_own_stack(13.0, &otro);
         g.apply_to_arena(&arena_swap);
         let visto_swap = SuperGenotype::current_from_arena(&arena_swap);
 

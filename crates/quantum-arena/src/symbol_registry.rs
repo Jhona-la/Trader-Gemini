@@ -81,24 +81,54 @@ pub fn update_registry(new_specs: Vec<SymbolSpec>) {
     DYNAMIC_REGISTRY.store(Arc::new(updated));
 }
 
+// D-725 (DÉCIMA OLA · auditoría integral): UN SOLO ESPACIO DE ÍNDICE.
+//
+// Coexistían dos: el UNIVERSO (`symbols::DYNAMIC_UNIVERSE`, cuya posición usa
+// el productor de datos para escribir en `arena.coins[i]`) y el REGISTRO de
+// specs, que mantiene su propio orden —preserva posiciones y añade al final—.
+// `get_coin_id` prefería el registro, así que en cuanto el ranker publicaba un
+// universo reordenado los dos dejaban de coincidir: un fill de BNB se
+// contabilizaba contra la posición de SOL, con su precio de entrada y su PnL,
+// y el re-bracketeo recolocaba el TP/SL de una moneda sobre el precio de otra.
+//
+// Ahora el índice es SIEMPRE la posición en el universo; el registro es un mapa
+// por símbolo, no un espacio de índices. Con el universo vacío (arranque, o
+// binarios que sólo registran specs, como el forense) se conserva el orden del
+// registro, que entonces es el único espacio existente.
 #[inline(always)]
 pub fn try_spec(coin_id: usize) -> Option<SymbolSpec> {
     // We clone the struct to avoid lifetime issues since it's accessed heavily.
     // The struct is small enough that cloning is practically free.
     let registry = DYNAMIC_REGISTRY.load();
-    registry.get(coin_id).cloned()
+    let universe = crate::symbols::get_active_universe_ref();
+    if universe.is_empty() {
+        return registry.get(coin_id).cloned();
+    }
+    let symbol = universe.get(coin_id)?;
+    registry
+        .iter()
+        .find(|s| s.symbol.eq_ignore_ascii_case(symbol))
+        .cloned()
 }
 
 #[inline(always)]
 pub fn try_symbol(coin_id: usize) -> Option<String> {
+    let universe = crate::symbols::get_active_universe_ref();
+    if !universe.is_empty() {
+        return universe.get(coin_id).cloned();
+    }
     let registry = DYNAMIC_REGISTRY.load();
     registry.get(coin_id).map(|s| s.symbol.clone())
 }
 
 #[inline(always)]
 pub fn try_index(symbol: &str) -> Option<usize> {
-    let registry = DYNAMIC_REGISTRY.load();
+    let universe = crate::symbols::get_active_universe_ref();
     let sym_upper = symbol.to_uppercase();
+    if !universe.is_empty() {
+        return universe.iter().position(|s| s.to_uppercase() == sym_upper);
+    }
+    let registry = DYNAMIC_REGISTRY.load();
     registry
         .iter()
         .position(|s| s.symbol.to_uppercase() == sym_upper)

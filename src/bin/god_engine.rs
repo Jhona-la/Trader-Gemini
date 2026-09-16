@@ -1357,7 +1357,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 telemetry_server::telemetry_log!("   👉 Símbolo activo en exchange: {} (Qty: {})", pos.symbol, pos.qty);
                 if let Some(&coin_idx) = symbol_to_id.get(&pos.symbol) {
                     let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
-                    let calculated_margin = (pos.qty.abs() * pos.entry_price) / 10.0;
+                    // D-726 (DÉCIMA OLA · auditoría integral): EL MARGEN SALE DEL
+                    // APALANCAMIENTO REAL Y SE RESERVA DE VERDAD.
+                    //
+                    // El margen se reconstruía dividiendo el nocional por el
+                    // literal 10 —una posición a 20x quedaba con el doble de
+                    // margen del real y una a 5x, con la mitad— y, peor, NUNCA se
+                    // sumaba a `arena.used_margin`: tras un reinicio con
+                    // posiciones abiertas, `free_margin = capital − used_margin`
+                    // devolvía el capital ENTERO como libre y el motor abría
+                    // posiciones nuevas como si no tuviera ninguna. La rama de
+                    // adopción de `reconcile_arena` sí reserva margen, pero exige
+                    // que la posición NO esté ya abierta en el arena, así que no
+                    // corregía ésta. El apalancamiento real viene en
+                    // `/fapi/v2/positionRisk`; si el exchange no lo informa se usa
+                    // el del genoma para esta moneda, nunca un literal.
+                    let lev_real = if pos.leverage > 0.0 {
+                        pos.leverage
+                    } else {
+                        arena_real
+                            .config
+                            .global_leverage
+                            .load(Ordering::Relaxed)
+                            .clamp(1.0, 125.0)
+                    };
+                    let calculated_margin = (pos.qty.abs() * pos.entry_price) / lev_real;
+                    arena_real
+                        .used_margin
+                        .fetch_add(calculated_margin, Ordering::Relaxed);
                     arena_real.coins[coin_idx].positions.position.open_with_horizon(
                         pos.is_long,
                         pos.entry_price,
@@ -1368,7 +1395,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         0.0,
                         quantum_arena::position::PositionHorizon::Continuous,
                     );
-                    telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (Margen: ${:.2})", pos.symbol, calculated_margin);
+                    telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (Margen: ${:.2} a {:.0}x — reservado en used_margin)", pos.symbol, calculated_margin, lev_real);
 
                     // B2.7 — RECUPERACIÓN DE CONTEXTO (directriz del operador):
                     // qué τ y qué predicción ML seguían esta posición vive en

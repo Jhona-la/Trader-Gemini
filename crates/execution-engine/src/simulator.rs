@@ -139,6 +139,7 @@ impl ExecutionProvider for SimulatedExecutor {
                     symbol: symbol.to_string(),
                     qty: 0.0,
                     entry_price: exec_price,
+                    leverage: 0.0, // D-726: el simulador no modela apalancamiento
                     is_long,
                 });
             entry.qty += order.volume_usd / exec_price.max(1e-6);
@@ -176,6 +177,7 @@ impl ExecutionProvider for SimulatedExecutor {
                     symbol: symbol.to_string(),
                     qty: 0.0,
                     entry_price: 1.0,
+                    leverage: 0.0, // D-726: el simulador no modela apalancamiento
                     is_long,
                 });
             entry.qty += quantity;
