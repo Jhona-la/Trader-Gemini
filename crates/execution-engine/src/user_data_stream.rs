@@ -492,10 +492,19 @@ impl UserDataStreamer {
                 .unwrap_or((0.0, 0.0, 0.0));
             let qty = update.last_filled_qty;
             let sign = if was_long { 1.0 } else { -1.0 };
+            // B3.21 — si la reconciliación consumió la posición local antes
+            // del fill (entry=0), el diario de contexto B3.1 carga la última
+            // entrada registrada del símbolo+lado.
+            let entry_price = if entry_price > 0.0 {
+                entry_price
+            } else {
+                crate::trade_accounting::last_journal_entry_px(&update.symbol, was_long)
+                    .unwrap_or(0.0)
+            };
             let pnl_gross = if entry_price > 0.0 {
                 (entry_price - update.last_filled_price) * qty * sign
             } else {
-                0.0 // posición adoptada sin contexto local: evidencia sin PnL inventado
+                0.0 // sin contexto local NI de diario: evidencia sin PnL inventado
             };
             let slippage_bps = if o.stop_price > 0.0 {
                 let adverse = if was_long {

@@ -156,6 +156,32 @@ pub fn drain_bracket_closes() -> Vec<BracketClose> {
 /// maker se mide la selección adversa de la ruta maker (¿los fills maker
 /// entran en peor precio relativo que los taker?) una vez que existan
 /// ambas poblaciones. `long` = dirección de la posición ABIERTA.
+/// B3.21 — FALLBACK DE CONTEXTO para cierres de bracket: la reconciliación
+/// (ciclo 60s) puede consumir la posición local — y poner entry_price=0 —
+/// ANTES de que el fill del bracket llegue al stream. El diario de entradas
+/// (position_journal.jsonl, B3.1) existe precisamente para cargar ese
+/// contexto: devuelve el ÚLTIMO px de entrada registrado para símbolo+lado.
+pub fn last_journal_entry_px(symbol: &str, was_long: bool) -> Option<f64> {
+    let content = std::fs::read_to_string("data/position_journal.jsonl").ok()?;
+    let mut best: Option<(u64, f64)> = None;
+    for line in content.lines().rev() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let sym = v.get("sym").and_then(|x| x.as_str()).unwrap_or("");
+        let long = v.get("long").and_then(|x| x.as_bool()).unwrap_or(false);
+        if sym != symbol || long != was_long {
+            continue;
+        }
+        let px = v.get("px").and_then(|x| x.as_f64()).unwrap_or(0.0);
+        let ts = v.get("ts").and_then(|x| x.as_u64()).unwrap_or(0);
+        if px > 0.0 && best.map(|(b, _)| ts >= b).unwrap_or(true) {
+            best = Some((ts, px));
+        }
+    }
+    best.map(|(_, px)| px)
+}
+
 pub fn record_entry_fill(
     ts_ms: u64,
     symbol: &str,
