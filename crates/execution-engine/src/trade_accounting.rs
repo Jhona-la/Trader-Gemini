@@ -114,6 +114,32 @@ pub fn drain_bracket_closes() -> Vec<BracketClose> {
         .unwrap_or_default()
 }
 
+/// B3.10 — FILL DE ENTRADA al diario (evidencia, sin cola): con el flag
+/// maker se mide la selección adversa de la ruta maker (¿los fills maker
+/// entran en peor precio relativo que los taker?) una vez que existan
+/// ambas poblaciones. `long` = dirección de la posición ABIERTA.
+pub fn record_entry_fill(
+    ts_ms: u64,
+    symbol: &str,
+    long: bool,
+    qty: f64,
+    price: f64,
+    is_maker: bool,
+    commission: f64,
+) {
+    let line = format!(
+        "{{\"kind\":\"ENTRY\",\"ts\":{ts_ms},\"sym\":\"{symbol}\",\"long\":{long},\"qty\":{qty:.8},\"px\":{price:.6},\"maker\":{is_maker},\"fee\":{commission:.6}}}\n"
+    );
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("data/trade_fills.jsonl")
+    {
+        use std::io::Write;
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

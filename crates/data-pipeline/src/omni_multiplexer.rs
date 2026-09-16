@@ -452,7 +452,11 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
         ("DCOILWTICO", &state.oil_wti),
     ];
 
-    // Yahoo v8 chart: último cierre del rango, vía curl subprocess.
+    // Yahoo v8 chart: último cierre del día ANTERIOR (t-1 estricto) vía
+    // curl subprocess. B3.4b — paridad train/serve exacta: el trainer junta
+    // el cierre t-1 (pureza de labels); el vivo ahora usa el MISMO corte.
+    // La última barra de Yahoo se actualiza intradía y haría la distribución
+    // de inferencia un día más fresca que la de entrenamiento.
     async fn yahoo_last_close(symbol: &str) -> Option<f64> {
         let url = format!(
             "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=5d&interval=1d"
@@ -466,19 +470,28 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
             return None;
         }
         let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-        let closes = v
-            .get("chart")?
-            .get("result")?
-            .get(0)?
+        let result = v.get("chart")?.get("result")?.get(0)?;
+        let ts = result.get("timestamp")?.as_array()?;
+        let closes = result
             .get("indicators")?
             .get("quote")?
             .get(0)?
             .get("close")?
             .as_array()?;
-        closes
-            .iter()
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_millis() as u64;
+        let day_start = now_ms - (now_ms % 86_400_000);
+        // Último cierre cuya barra pertenece a un día ANTERIOR al actual.
+        ts.iter()
+            .zip(closes.iter())
             .rev()
-            .find_map(|c| c.as_f64().filter(|x| x.is_finite() && *x > 0.0))
+            .find_map(|(t, c)| {
+                let bar_day = t.as_u64()? * 1000;
+                let close = c.as_f64()?;
+                (bar_day < day_start && close.is_finite() && close > 0.0).then_some(close)
+            })
     }
 
     loop {

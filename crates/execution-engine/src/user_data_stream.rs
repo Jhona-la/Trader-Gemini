@@ -389,6 +389,10 @@ impl UserDataStreamer {
             /// Precio trigger de la pierna (stops/algo); "0" si no aplica.
             #[serde(rename = "sp", default, deserialize_with = "crate::order_types::string_or_f64")]
             stop_price: f64,
+            /// ¿El fill fue maker? (fill pasivo — medición B3.10 de
+            /// selección adversa de la ruta maker).
+            #[serde(rename = "m", default)]
+            is_maker: bool,
         }
         #[derive(Deserialize)]
         struct Event {
@@ -506,6 +510,23 @@ impl UserDataStreamer {
                     trigger: crate::trade_accounting::trigger_kind(&update.order_type),
                     slippage_bps,
                 },
+            );
+        } else if update.last_filled_qty > 0.0
+            && (update.client_order_id.starts_with("cL_")
+                || update.client_order_id.starts_with("cS_")
+                || update.client_order_id.starts_with("mc_"))
+        {
+            // B3.10 — FILL DE ENTRADA al diario: entradas taker ("cL_"/"cS_",
+            // FIX -4015) y maker-chase ("mc_"). El flag maker habilita la
+            // medición de selección adversa de la ruta maker.
+            crate::trade_accounting::record_entry_fill(
+                update.trade_time_ms,
+                &update.symbol,
+                update.side.eq_ignore_ascii_case("BUY"),
+                update.last_filled_qty,
+                update.last_filled_price,
+                o.is_maker,
+                update.commission.abs(),
             );
         }
 

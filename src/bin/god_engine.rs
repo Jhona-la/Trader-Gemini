@@ -205,6 +205,9 @@ async fn ensure_position_protected(
                         }
                     }
                     Err(e) => {
+                        // B3.5b: evidencia positiva de rechazo para el
+                        // escalado (los fallos de red no cuentan).
+                        let _ = quantum_arena::protection_health::note_rejection(symbol, &e);
                         telemetry_server::telemetry_log!(
                             "⚠️ [{}] top-up TP {} falló: {}",
                             tag, symbol, e
@@ -272,6 +275,9 @@ async fn ensure_position_protected(
                         }
                     }
                     Err(e) => {
+                        // B3.5b: evidencia positiva de rechazo para el
+                        // escalado (los fallos de red no cuentan).
+                        let _ = quantum_arena::protection_health::note_rejection(symbol, &e);
                         telemetry_server::telemetry_log!(
                             "⚠️ [{}] top-up SL {} falló: {}",
                             tag, symbol, e
@@ -732,6 +738,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match exec.load().fetch_commission_rate(first_sym).await {
                 Ok((m, t)) => {
                     telemetry_server::telemetry_log!("🌍 [OMNI-AWARENESS] API Real VIP Fees Extracted: Maker {:.4}%, Taker {:.4}%", m * 100.0, t * 100.0);
+                    // B3.11 — PARIDAD BT/LIVE de fees: el simulador de
+                    // backtest lee este archivo para cobrar las MISMAS
+                    // comisiones que la cuenta viva (antes hardcodeaba VIP0
+                    // 0.05% taker; esta cuenta paga 0.04% — los backtests
+                    // sobreestimaban fricción ~20%).
+                    let now_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let _ = std::fs::write(
+                        "data/live_fees.json",
+                        format!("{{\"maker\":{m},\"taker\":{t},\"ts\":{now_ms}}}"),
+                    );
                     break (m, t);
                 }
                 Err(e) => {
@@ -1520,19 +1539,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // B3.6 — EVALUADOR DEL BREAKER DE FEES: cada 5 min, contabilidad
-        // REAL del exchange (/fapi/v1/income desde el arranque). Un símbolo
-        // con ≥3 cierres, neto negativo y fees > bruto ganador queda
-        // suspendido 4h para nuevas entradas (veto en la ruta de entrada).
-        // Detecta tanto el churn sin edge (bruto plano, fees acumulando)
-        // como el anti-edge (bruto negativo). Medición que lo motiva: SOL
-        // 7 trades 0 wins — fees −$3.21 dominaron el −$4.44 neto del día.
+        // REAL del exchange (/fapi/v1/income). Un símbolo con ≥3 cierres,
+        // neto negativo y fees > bruto ganador queda suspendido 4h para
+        // nuevas entradas (veto en la ruta de entrada). Detecta tanto el
+        // churn sin edge (bruto plano, fees acumulando) como el anti-edge
+        // (bruto negativo). Medición que lo motiva: SOL 7 trades 0 wins —
+        // fees −$3.21 dominaron el −$4.44 neto del día.
+        // B3.6b — VENTANA RODANTE 24h (antes: desde el arranque — un símbolo
+        // que quemó fees ayer amanecía limpio tras cada reinicio) y
+        // SUSPENSIONES PERSISTIDAS en data/fee_breaker.json: sobreviven
+        // reinicios del motor. Una mañana mala ahora cuesta el día entero,
+        // no un arranque.
         {
             let exec_brk = Arc::clone(&exec);
             rt_handle.spawn(async move {
-                let boot_ms = std::time::SystemTime::now()
+                let now0 = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64;
+                // Restaurar suspensiones vivas del disco.
+                if let Ok(content) = std::fs::read_to_string("data/fee_breaker.json") {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if let Some(map) = v.as_object() {
+                            let restored = map
+                                .iter()
+                                .filter(|(_, x)| x.as_u64().unwrap_or(0) > now0)
+                                .count();
+                            for (sym, until) in map {
+                                if let Some(u) = until.as_u64() {
+                                    if u > now0 {
+                                        suspend_symbol_until(sym, u);
+                                    }
+                                }
+                            }
+                            if restored > 0 {
+                                telemetry_server::telemetry_log!(
+                                    "🛑 [FEE-BREAKER] {restored} suspensión(es) restauradas del disco"
+                                );
+                            }
+                        }
+                    }
+                }
                 let mut tick = tokio::time::interval(std::time::Duration::from_secs(300));
                 tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 tick.tick().await; // primer tick inmediato: alinear al ciclo de 5 min
@@ -1542,7 +1589,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if executor.is_kill_switch_active() {
                         continue;
                     }
-                    let Ok(entries) = executor.fetch_income(&[], boot_ms, 1000).await else {
+                    // B3.6b — ventana RODANTE 24h: la evidencia de fees no
+                    // expira con el arranque del motor.
+                    let window_start = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64
+                        - 24 * 3_600_000;
+                    let Ok(entries) = executor.fetch_income(&[], window_start, 1000).await else {
                         continue;
                     };
                     #[derive(Default)]
@@ -1583,8 +1637,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .as_millis() as u64
                                 + 4 * 3_600_000;
                             suspend_symbol_until(&sym, until_ms);
+                            // B3.6b — persistir: la suspensión sobrevive
+                            // reinicios del motor.
+                            if let Ok(guard) = SYMBOL_SUSPENDED_UNTIL.lock() {
+                                let file_body = guard
+                                    .iter()
+                                    .map(|(k, v)| format!("\"{k}\":{v}"))
+                                    .collect::<Vec<_>>()
+                                    .join(",");
+                                let _ = std::fs::write(
+                                    "data/fee_breaker.json",
+                                    format!("{{{file_body}}}"),
+                                );
+                            }
                             telemetry_server::telemetry_log!(
-                                "🛑 [FEE-BREAKER] {} suspendido 4h para nuevas entradas: {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
+                                "🛑 [FEE-BREAKER] {} suspendido 4h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
                                 sym, a.trades, a.gross_pos, a.fees, net
                             );
                         }
@@ -1621,6 +1688,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // absorbe los estados transitorios (bracket en vuelo tras
                 // una entrada, 1 auditoría).
                 let mut naked_streak: std::collections::HashMap<String, u32> =
+                    std::collections::HashMap::new();
+                // B3.5b — snapshot de rechazos por símbolo entre auditorías.
+                let mut naked_rejections: std::collections::HashMap<String, u64> =
                     std::collections::HashMap::new();
                 const NAKED_ESCALATION_LIMIT: u32 = 3;
                 loop {
@@ -1695,6 +1765,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await;
                         if g_tp > 0.0 || g_sl > 0.0 {
                             naked_total += 1;
+                            // B3.5b — el streak SOLO sube con evidencia
+                            // positiva: rechazos NUEVOS del exchange desde la
+                            // auditoría anterior. Un gap sin rechazos nuevos
+                            // = fallo de red o estado transitorio: se loguea,
+                            // no se cuenta (un blip de 3 ciclos ya no cierra
+                            // posiciones sanas a mercado).
+                            let rejections_now =
+                                quantum_arena::protection_health::rejections_of(&p.symbol);
+                            let rejections_prev =
+                                naked_rejections.get(&p.symbol).copied().unwrap_or(0);
+                            naked_rejections.insert(p.symbol.clone(), rejections_now);
+                            if rejections_now <= rejections_prev {
+                                telemetry_server::telemetry_log!(
+                                    "🐕 [WATCHDOG] {} con gap pero sin rechazos nuevos — no escala (¿red?)",
+                                    p.symbol
+                                );
+                                continue;
+                            }
                             let streak = naked_streak
                                 .entry(p.symbol.clone())
                                 .and_modify(|c| *c += 1)
@@ -1767,6 +1855,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         } else {
                             naked_streak.remove(&p.symbol);
+                            naked_rejections.remove(&p.symbol);
                         }
                     }
                     if dirty {

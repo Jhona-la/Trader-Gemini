@@ -38,3 +38,50 @@ pub fn is_dirty() -> bool {
 pub fn terminal_events_seen() -> u64 {
     TERMINAL_EVENTS_SEEN.load(Ordering::Relaxed)
 }
+
+/// B3.5b — CLASIFICACIÓN DE ERRORES DE COLOCACIÓN: distingue un RECHAZO
+/// del exchange (contiene un código de error Binance, p.ej. "-2019",
+/// "-2021", "-4164") de un fallo de transporte ("error sending request",
+/// timeouts). El escalado anti-desnudez sólo debe disparar con evidencia
+/// POSITIVA de rechazo: un blip de red de 3 ciclos no cierra posiciones
+/// sanas a mercado.
+pub fn is_exchange_rejection(msg: &str) -> bool {
+    let b = msg.as_bytes();
+    if b.len() < 5 {
+        return false;
+    }
+    for i in 0..=b.len() - 5 {
+        if b[i] == b'-'
+            && b[i + 1..i + 5].iter().all(u8::is_ascii_digit)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// B3.5b — RECHAZOS DE BRACKET por símbolo (evidencia para el escalado).
+static BRACKET_REJECTIONS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, u64>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Anota un intento de colocación de bracket RECHAZADO por el exchange
+/// (los fallos de transporte se ignoran). Devuelve true si anotó.
+pub fn note_rejection(symbol: &str, err: &str) -> bool {
+    if !is_exchange_rejection(err) {
+        return false;
+    }
+    if let Ok(mut m) = BRACKET_REJECTIONS.lock() {
+        *m.entry(symbol.to_string()).or_insert(0) += 1;
+    }
+    true
+}
+
+/// Rechazos acumulados del símbolo (para comparar entre auditorías).
+pub fn rejections_of(symbol: &str) -> u64 {
+    BRACKET_REJECTIONS
+        .lock()
+        .ok()
+        .and_then(|m| m.get(symbol).copied())
+        .unwrap_or(0)
+}

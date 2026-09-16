@@ -76,6 +76,7 @@ struct SystemState {
     ml_prob_avg: f64,
     hurst_avg: f64,
     zombie_count: usize,
+    marking_anomalies: u32,
     cpu_usage: f32,
     memory_used_mb: f64,
     total_memory_mb: f64,
@@ -277,6 +278,14 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
     let mut active_coins = 0.0;
     let mut active_scalp_coins = 0.0;
     let mut active_swing_coins = 0.0;
+    // B3.13 — SANITIZADOR DE MARCADO: contribuciones de unrealized que
+    // exceden 2× el capital son marcado local roto (glitch de precio
+    // testnet o posición fantasma de rotación — medido +$2.27M en cuenta
+    // de $2.2K, 2026-09-15). Se EXCLUYEN de la suma y se cuentan: el
+    // veneno silencioso se vuelve contador visible.
+    let cap_anchor = arena.unified_capital.load(Ordering::Relaxed).max(1.0);
+    let mark_bound = cap_anchor * 2.0;
+    let mut marking_anomalies: u32 = 0;
 
     for coin in arena.coins.iter() {
         let m_realized = coin.metrics.pnl_realized.load(Ordering::Relaxed);
@@ -322,10 +331,19 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
 
         pnl_realized_scalp += eff_sc_realized;
         pnl_gross_scalp += eff_sc_gross;
-        pnl_unrealized_scalp += eff_sc_unrealized;
+        // B3.13: excluir marcado imposible del agregado y contarlo.
+        if eff_sc_unrealized.abs() > mark_bound {
+            marking_anomalies += 1;
+        } else {
+            pnl_unrealized_scalp += eff_sc_unrealized;
+        }
+        if sw_unrealized.abs() > mark_bound {
+            marking_anomalies += 1;
+        } else {
+            pnl_unrealized_swing += sw_unrealized;
+        }
         pnl_realized_swing += sw_realized;
         pnl_gross_swing += sw_gross;
-        pnl_unrealized_swing += sw_unrealized;
         total_zombies += zombies;
 
         ml_prob_sum += ml;
@@ -402,6 +420,7 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
         ml_prob_avg: avg_ml_prob,
         hurst_avg: avg_hurst,
         zombie_count: total_zombies,
+        marking_anomalies,
         cpu_usage: sys_telem.cpu_usage,
         memory_used_mb: sys_telem.memory_used_mb,
         total_memory_mb: sys_telem.total_memory_mb,
@@ -998,6 +1017,7 @@ mod tests {
             ml_prob_avg: 0.78,
             hurst_avg: 0.65,
             zombie_count: 0,
+            marking_anomalies: 0,
             cpu_usage: 15.0,
             memory_used_mb: 250.0,
             total_memory_mb: 16384.0,

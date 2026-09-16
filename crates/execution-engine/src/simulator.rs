@@ -5,6 +5,36 @@ use std::sync::RwLock;
 use std::time::Duration;
 use tokio::time::sleep;
 
+/// B3.11 — PARIDAD BT/LIVE de fees: taker fee de la cuenta VIVA
+/// (data/live_fees.json, escrito por god_engine al arrancar; frescura 7d).
+/// VIP0 0.05% sólo como último recurso — con esta cuenta (taker 0.04%)
+/// el hardcode sobreestimaba la fricción ~20% en cada fill simulado.
+fn live_taker_fee() -> f64 {
+    if let Ok(content) = std::fs::read_to_string("data/live_fees.json") {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+            let fresh = v
+                .get("ts")
+                .and_then(|t| t.as_u64())
+                .map(|ts| {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    now.saturating_sub(ts) < 7 * 86_400_000
+                })
+                .unwrap_or(false);
+            if fresh {
+                if let Some(t) = v.get("taker").and_then(|x| x.as_f64()) {
+                    if t.is_finite() && t > 0.0 {
+                        return t;
+                    }
+                }
+            }
+        }
+    }
+    0.0005
+}
+
 pub struct SimulatedExecutor {
     pub average_latency_ms: u64,
     pub simulated_capital: RwLock<f64>,
@@ -115,7 +145,7 @@ impl ExecutionProvider for SimulatedExecutor {
             entry.is_long = is_long;
         }
         if let Ok(mut cap) = self.simulated_capital.write() {
-            let fee = order.volume_usd * 0.0005; // 0.05% VIP0 taker fee
+            let fee = order.volume_usd * live_taker_fee(); // B3.11: fee de la cuenta viva
             *cap -= fee;
         }
         println!(
@@ -361,7 +391,8 @@ impl ExecutionProvider for SimulatedExecutor {
 
     async fn fetch_commission_rate(&self, _symbol: &str) -> Result<(f64, f64), String> {
         self.simulate_network_delay().await;
-        Ok((0.0002, 0.0005)) // Default VIP 0
+        // B3.11 — maker VIP0 + taker de la cuenta viva (live_taker_fee).
+        Ok((0.0002, live_taker_fee()))
     }
 
     async fn execute_iceberg_limit(

@@ -30,6 +30,14 @@ impl NanoForest {
         Self { data }
     }
 
+    /// B3.9 — CONTRATO DE DIMENSIÓN del vector ML de inferencia. Un modelo
+    /// entrenado con un vector MÁS ANCHO que el de este binario (p.ej.
+    /// 48D con splits en dims 44-47 corriendo en un binario 44D) haría
+    /// out-of-bounds en `x[feature]`. El cargador RECHAZA cualquier modelo
+    /// que parta por una dim ≥ este contrato — el fallback a BTCUSDT_SCALP
+    /// mantiene el motor vivo. La regresión de binario queda segura.
+    pub const ML_VECTOR_DIM: usize = 48;
+
     pub fn load_model(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let bin_path = path.replace(".json", ".bin");
 
@@ -81,6 +89,17 @@ impl NanoForest {
             }
             parsed
         };
+        // B3.9 — contrato de dimensión: el modelo debe vivir dentro del
+        // vector que ESTE binario construye. Rechazo ruidoso, no silencio.
+        if let Some(&max_feat) = data.feature.iter().filter(|f| **f >= 0).max() {
+            if max_feat as usize >= Self::ML_VECTOR_DIM {
+                return Err(format!(
+                    "modelo {path} parte por dim {max_feat} ≥ contrato ML_VECTOR_DIM={} — binario obsoleto para este modelo; re-compilar",
+                    Self::ML_VECTOR_DIM
+                )
+                .into());
+            }
+        }
         Ok(NanoForest { data })
     }
 

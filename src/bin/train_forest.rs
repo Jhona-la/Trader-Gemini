@@ -330,7 +330,10 @@ fn main() {
                 };
                 let sf = engine.get_swing_features();
                 let sp = engine.get_spectral_ml_features();
-                let mut full = [0f32; 48];
+                // B3.9: mismo contrato de dimensión que la inferencia viva —
+                // un modelo más ancho que el binario sería rechazado al cargar.
+                const FULL_DIM: usize = god_engine_core::ml_inference::NanoForest::ML_VECTOR_DIM;
+                let mut full = [0f32; FULL_DIM];
                 full[..34].copy_from_slice(&sf);
                 full[34..44].copy_from_slice(&sp);
                 full[44..].copy_from_slice(&macro_block);

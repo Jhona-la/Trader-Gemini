@@ -1441,7 +1441,21 @@ impl GodEngineCore {
                     );
                 } else {
                     let notional = qty * entry;
-                    let unrealized = pnl_pct * notional;
+                    let mut unrealized = pnl_pct * notional;
+                    // B3.13 — GUARD DE MARCADO anclado a CAPITAL (no a
+                    // notional: un entry local basura infla el notional con
+                    // él). Medido: +$2.27M en cuenta de $2.2K (2026-09-15).
+                    // El unrealized de UNA posición no puede exceder 2× el
+                    // capital de la cuenta; si lo excede, el marcado local
+                    // está roto (glitch de precio o posición fantasma de
+                    // rotación) y se acota.
+                    let cap_anchor = self.arena.unified_capital.load(Ordering::Relaxed).max(1.0);
+                    let bound = cap_anchor * 2.0;
+                    if !unrealized.is_finite() {
+                        unrealized = 0.0;
+                    } else if unrealized.abs() > bound {
+                        unrealized = unrealized.clamp(-bound, bound);
+                    }
                     coin.metrics
                         .pnl_unrealized
                         .store(unrealized, Ordering::Relaxed);
@@ -1589,9 +1603,10 @@ impl GodEngineCore {
                 // pueden explotar el bloque espectral (F8: el espectro decide).
                 // B3.4: + macro(4) — niveles FRED vivos del omni_state con el
                 // MISMO contrato del trainer (macro_ml_features). El vector
-                // vivo es superconjunto 48D: modelos viejos (splits <44)
+                // vivo es superconjunto: modelos viejos (splits <44)
                 // siguen válidos; los nuevos pueden partir por régimen macro.
-                let mut forest_input = [0f32; 48];
+                const FOREST_INPUT_DIM: usize = crate::ml_inference::NanoForest::ML_VECTOR_DIM;
+                let mut forest_input = [0f32; FOREST_INPUT_DIM];
                 forest_input[..34].copy_from_slice(&swing_feats);
                 forest_input[34..44]
                     .copy_from_slice(&self.feature_engines[coin_id].get_spectral_ml_features());
