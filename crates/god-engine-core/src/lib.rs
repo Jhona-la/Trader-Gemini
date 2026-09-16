@@ -1192,6 +1192,18 @@ impl GodEngineCore {
                     let score_at_entry = pos.confidence.load(Ordering::Relaxed);
                     let (_, _, _, margin_used, entry_fee_paid) = pos.close_with_fee();
 
+                    // B3.14 — ¿la entrada EXISTIÓ en el exchange? La
+                    // posición local nace ANTES de la ejecución asíncrona;
+                    // si la entrada fue vetada/rechazada y aun así el ciclo
+                    // del core la cerró, el PnL es PAPEL y NO contabiliza
+                    // (caso KOMA: +$36 con WR 1.0 jamás operados). El swap
+                    // consume la confirmación; el host lee
+                    // last_close_confirmed para su propia contabilidad.
+                    let was_exchange_confirmed =
+                        pos.exchange_confirmed.swap(false, Ordering::Relaxed);
+                    pos.last_close_confirmed
+                        .store(was_exchange_confirmed, Ordering::Relaxed);
+
                     let net_realized_pnl = gross_pnl - close_fee;
                     let net_trade_pnl = net_realized_pnl - entry_fee_paid;
 
@@ -1204,16 +1216,19 @@ impl GodEngineCore {
                         self.arena.used_margin.store(0.0, Ordering::Relaxed);
                     }
 
-                    // FASE 23: Métricas continuas unificadas — sin bifurcaciones scalp/swing
-                    coin.metrics
-                        .pnl_realized
-                        .fetch_add(net_trade_pnl, Ordering::Relaxed);
-                    coin.scalp
-                        .pnl_realized
-                        .fetch_add(net_trade_pnl, Ordering::Relaxed);
-                    coin.swing
-                        .pnl_realized
-                        .fetch_add(net_trade_pnl, Ordering::Relaxed);
+                    // FASE 23: Métricas continuas unificadas — sin bifurcaciones scalp/swing.
+                    // B3.14: SOLO posiciones cuya entrada existió en el exchange.
+                    if was_exchange_confirmed {
+                        coin.metrics
+                            .pnl_realized
+                            .fetch_add(net_trade_pnl, Ordering::Relaxed);
+                        coin.scalp
+                            .pnl_realized
+                            .fetch_add(net_trade_pnl, Ordering::Relaxed);
+                        coin.swing
+                            .pnl_realized
+                            .fetch_add(net_trade_pnl, Ordering::Relaxed);
+                    }
 
                     self.feature_engines[coin_id].last_scalp_exit_tick =
                         self.feature_engines[coin_id].tick_count;

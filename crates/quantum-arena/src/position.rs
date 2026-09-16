@@ -30,6 +30,16 @@ pub struct Position {
     /// entrada (horizonte continuo VIVO — el atributo real de la posición,
     /// no una etiqueta binaria). 0 = espectro sin opinión aún.
     pub entry_tau_ms: AtomicU64,
+    /// B3.14 — ¿la entrada EXISTE en el exchange? La posición local nace
+    /// en el core ANTES de la ejecución asíncrona; si esa entrada fue
+    /// vetada (envolvente/margen/breaker) o rechazada, todo round-trip
+    /// local es PAPEL y NO contabiliza (caso KOMA: +$36 realizados con
+    /// WR 1.0 jamás operados, 2026-09-15). La confirma el host tras el
+    /// fill real; la adopción FASE 5 también la setea.
+    pub exchange_confirmed: AtomicBool,
+    /// B3.14 — resultado del último cierre, leído por el host para su
+    /// contabilidad/Kelly: true = la posición cerrada tenía entrada real.
+    pub last_close_confirmed: AtomicBool,
     /// D-659 (DÉCIMA OLA) — CONTADOR DE GENERACIÓN. Se incrementa en cada
     /// apertura; sirve para diagnóstico y para distinguir ocupantes sucesivos
     /// del mismo slot en la telemetría.
@@ -71,6 +81,8 @@ impl Default for Position {
             confidence: AtomicF64::new(0.0),
             entry_fee: AtomicF64::new(0.0),
             entry_tau_ms: AtomicU64::new(0),
+            exchange_confirmed: AtomicBool::new(false),
+            last_close_confirmed: AtomicBool::new(false),
         }
     }
 }
@@ -253,6 +265,9 @@ impl Position {
         self.ml_prediction.store(safe_ml, Ordering::Relaxed);
         self.confidence.store(safe_conf, Ordering::Relaxed);
         self.entry_fee.store(safe_fee, Ordering::Relaxed);
+        // B3.14: toda apertura nace SIN confirmación de exchange — el host
+        // la setea sólo tras el fill real (o la adopción FASE 5).
+        self.exchange_confirmed.store(false, Ordering::Relaxed);
         // Publicar la posición completa: todo store previo es visible para
         // cualquier lector que observe is_open con Acquire.
         self.is_open.store(true, Ordering::Release);
@@ -334,6 +349,9 @@ impl Position {
         self.ml_prediction.store(0.0, Ordering::Relaxed);
         self.confidence.store(0.0, Ordering::Relaxed);
         self.entry_tau_ms.store(0, Ordering::Relaxed);
+        // B3.14: el cierre consume la confirmación — un slot reabierto nace
+        // sin ella hasta que el host confirme el nuevo fill.
+        self.exchange_confirmed.store(false, Ordering::Relaxed);
         // El contador avanza TAMBIÉN al cerrar: así es una secuencia real y
         // `snapshot()` puede detectar cualquier transición ocurrida durante
         // su lectura, no sólo las aperturas.

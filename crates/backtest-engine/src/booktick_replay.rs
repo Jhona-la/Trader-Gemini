@@ -40,8 +40,12 @@ pub struct OmniHistory {
 }
 
 impl OmniHistory {
-    /// Descarga las 6 series FRED (histórico COMPLETO). Falla suave: None si
-    /// no hay red — el replay corre con omni neutro (documentado en stats).
+    /// Descarga las 6 series FRED (histórico COMPLETO). B3.16 — FALLBACK A
+    /// ARCHIVO: con FRED bloqueado (fingerprint TLS de esta red), el replay
+    /// corría con omni NEUTRO mientras los modelos entrenaron con macro
+    /// REAL — los splits 44-47 evaluaban en 0. Si la red falla, se leen
+    /// data/macro/{SP500,NASDAQ,VIX,DXY}.csv (macro_history_sync, Yahoo
+    /// v8: mismos cierres). DGS10/OIL quedan neutros (sin fuente local).
     pub fn fetch() -> Option<OmniHistory> {
         let ids = [
             "SP500",
@@ -56,34 +60,69 @@ impl OmniHistory {
             .build()
             .ok()?;
         let mut series: [Vec<(i64, f64)>; 6] = Default::default();
+        let mut net_ok = true;
         for (i, id) in ids.iter().enumerate() {
             let url = format!("https://fred.stlouisfed.org/graph/fredgraph.csv?id={}", id);
-            let csv = client.get(&url).send().ok()?.text().ok()?;
-            let mut parsed: Vec<(i64, f64)> = csv
-                .lines()
-                .skip(1)
-                .filter_map(|l| {
-                    let mut p = l.split(',');
-                    let d = p.next()?.trim();
-                    let v = p.next()?.trim().parse::<f64>().ok()?;
-                    // fecha → días desde epoch ( YYYY-MM-DD )
-                    let mut it = d.split('-');
-                    let y: i64 = it.next()?.parse().ok()?;
-                    let m: i64 = it.next()?.parse().ok()?;
-                    let dd: i64 = it.next()?.parse().ok()?;
-                    // días civiles → epoch (Hinnant, sin deps)
-                    let yy = if m <= 2 { y - 1 } else { y };
-                    let era = if yy >= 0 { yy } else { yy - 399 } / 400;
-                    let yoe = yy - era * 400;
-                    let mp = (m + 9) % 12;
-                    let doy = (153 * mp + 2) / 5 + dd - 1;
-                    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-                    let days = era * 146_097 + doe - 719_468;
-                    Some((days, v))
-                })
-                .collect();
-            parsed.sort_by_key(|(d, _)| *d);
-            series[i] = parsed;
+            match client.get(&url).send().and_then(|r| r.text()) {
+                Ok(csv) => {
+                    let mut parsed: Vec<(i64, f64)> = csv
+                        .lines()
+                        .skip(1)
+                        .filter_map(|l| {
+                            let mut p = l.split(',');
+                            let d = p.next()?.trim();
+                            let v = p.next()?.trim().parse::<f64>().ok()?;
+                            // fecha → días desde epoch ( YYYY-MM-DD )
+                            let mut it = d.split('-');
+                            let y: i64 = it.next()?.parse().ok()?;
+                            let m: i64 = it.next()?.parse().ok()?;
+                            let dd: i64 = it.next()?.parse().ok()?;
+                            // días civiles → epoch (Hinnant, sin deps)
+                            let yy = if m <= 2 { y - 1 } else { y };
+                            let era = if yy >= 0 { yy } else { yy - 399 } / 400;
+                            let yoe = yy - era * 400;
+                            let mp = (m + 9) % 12;
+                            let doy = (153 * mp + 2) / 5 + dd - 1;
+                            let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+                            let days = era * 146_097 + doe - 719_468;
+                            Some((days, v))
+                        })
+                        .collect();
+                    parsed.sort_by_key(|(d, _)| *d);
+                    series[i] = parsed;
+                }
+                Err(_) => {
+                    net_ok = false;
+                    continue;
+                }
+            }
+        }
+        if !net_ok {
+            // Fallback local: (slot FRED, tag de archivo en data/macro).
+            let local: [(usize, &str); 4] = [(0, "SP500"), (1, "NASDAQ"), (2, "VIX"), (4, "DXY")];
+            for (slot, tag) in local {
+                if series[slot].is_empty() {
+                    if let Ok(content) = std::fs::read_to_string(format!("data/macro/{tag}.csv")) {
+                        let parsed: Vec<(i64, f64)> = content
+                            .lines()
+                            .skip(1)
+                            .filter_map(|l| {
+                                let mut p = l.split(',');
+                                let ms: i64 = p.next()?.trim().parse().ok()?;
+                                let v: f64 = p.next()?.trim().parse().ok()?;
+                                Some((ms / 86_400_000, v))
+                            })
+                            .collect();
+                        if !parsed.is_empty() {
+                            series[slot] = parsed;
+                        }
+                    }
+                }
+            }
+            let filled = series.iter().filter(|s| !s.is_empty()).count();
+            println!(
+                "   📎 FRED sin red — omni desde data/macro (Yahoo): {filled}/6 series reales, resto neutro"
+            );
         }
         Some(OmniHistory { series })
     }
@@ -268,29 +307,32 @@ pub fn run_booktick_replay(
             0.0
         };
 
-        // omni REAL por día (FRED); sin red ⇒ neutro.
+        // omni REAL por día; sin red ⇒ neutro. B3.16 — corte t-1: el MISMO
+        // día NO (su cierre no existe intradía — lookahead contra el
+        // contrato del trainer y del poller vivo).
         if let Some(hist) = omni {
             let day = OmniHistory::day_of(t.ts_ms);
             if day != last_day {
                 last_day = day;
+                let prev_day = (day - 1).max(0);
                 omni_state
                     .sp500
-                    .store(hist.value_at(0, day).to_bits(), Ordering::Relaxed);
+                    .store(hist.value_at(0, prev_day).to_bits(), Ordering::Relaxed);
                 omni_state
                     .nasdaq
-                    .store(hist.value_at(1, day).to_bits(), Ordering::Relaxed);
+                    .store(hist.value_at(1, prev_day).to_bits(), Ordering::Relaxed);
                 omni_state
                     .vix
-                    .store(hist.value_at(2, day).to_bits(), Ordering::Relaxed);
+                    .store(hist.value_at(2, prev_day).to_bits(), Ordering::Relaxed);
                 omni_state
                     .us10y
-                    .store(hist.value_at(3, day).to_bits(), Ordering::Relaxed);
+                    .store(hist.value_at(3, prev_day).to_bits(), Ordering::Relaxed);
                 omni_state
                     .dxy
-                    .store(hist.value_at(4, day).to_bits(), Ordering::Relaxed);
+                    .store(hist.value_at(4, prev_day).to_bits(), Ordering::Relaxed);
                 omni_state
                     .oil_wti
-                    .store(hist.value_at(5, day).to_bits(), Ordering::Relaxed);
+                    .store(hist.value_at(5, prev_day).to_bits(), Ordering::Relaxed);
             }
         }
         let omni_features = omni_state.get_features();

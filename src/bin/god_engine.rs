@@ -1338,6 +1338,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // el diario de entrada; sin él, la re-protección caería al
                     // ancla rápida (τ=0) perdiendo el rigor espectral.
                     let ctx = recover_position_context(&pos.symbol, pos.is_long);
+                    // B3.14 — la posición adoptada EXISTE en el exchange:
+                    // sus cierres contabilizan.
+                    if let Some(c) = arena_real.coins.get(coin_idx) {
+                        c.positions
+                            .position
+                            .exchange_confirmed
+                            .store(true, Ordering::Relaxed);
+                    }
                     if let Some(rc) = &ctx {
                         if let Some(c) = arena_real.coins.get(coin_idx) {
                             c.positions.position.entry_tau_ms.store(rc.tau_ms, Ordering::Relaxed);
@@ -2371,6 +2379,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if let Some((is_long, pnl, qty)) = closed_order {
+                        // B3.14 — sólo contabiliza lo que EXISTIÓ en el
+                        // exchange. Cierres de entradas vetadas/rechazadas
+                        // (round-trips locales de papel, caso KOMA) no
+                        // contaminan totales, WR ni el posterior de Kelly.
+                        let close_was_real = engine_real
+                            .arena
+                            .coins
+                            .get(coin_id)
+                            .map(|c| {
+                                c.positions
+                                    .position
+                                    .last_close_confirmed
+                                    .load(Ordering::Relaxed)
+                            })
+                            .unwrap_or(false);
+                        if !close_was_real {
+                            telemetry_engine::telemetry!(
+                                "📝 [PAPER CLOSE] {} {:+.4} — entrada nunca ejecutada en exchange; NO contabiliza",
+                                parsed_sym, pnl
+                            );
+                            // El despacho de cierre igual corre: si algo
+                            // coló en el exchange, X-008 lo aterriza.
+                            let parsed_sym_str_paper = parsed_sym.to_string();
+                            let exec_paper = Arc::clone(&exec);
+                            let long_paper = is_long;
+                            rt_handle.spawn(async move {
+                                if let Ok(f) = exec_paper
+                                    .load()
+                                    .get_symbol_filter(&parsed_sym_str_paper)
+                                    .await
+                                {
+                                    let _ = exec_paper
+                                        .load()
+                                        .execute_reduce_only_market(
+                                            &parsed_sym_str_paper,
+                                            long_paper,
+                                            qty.abs(),
+                                            f.step_size,
+                                        )
+                                        .await;
+                                }
+                            });
+                        }
+                        // B3.14 — TODO el bloque de contabilidad/aprendizaje
+                        // es exclusivo de cierres con entrada REAL.
+                        if close_was_real {
                         // E-03: alimentar el DriftAuditor con cada cierre
                         // real (shadow aprox = pnl real; cuando el shadow
                         // forest esté plenamente vivo, comparará predicción
@@ -2526,6 +2580,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         });
+                        } // B3.14 — fin del bloque close_was_real
                     }
 
                     // BUG-617: Veto de nuevas entradas por pánico de memoria RAM (>85% en OS-Guardian)
@@ -2849,6 +2904,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     };
                                     if !adopted {
                                         rollback_positions(&arena_clone);
+                                    } else if let Some(c) = arena_clone.coins.get(coin_id) {
+                                        // B3.14 — AMBIGUOUS adoptada: la posición
+                                        // es real en el exchange ⇒ confirmada.
+                                        c.positions
+                                            .position
+                                            .exchange_confirmed
+                                            .store(true, Ordering::Relaxed);
                                     }
                                 }
                                 Err(e) => {
@@ -2859,6 +2921,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     rollback_positions(&arena_clone);
                                 }
                                 Ok(()) => {
+                                    // B3.14 — la entrada EXISTE en el exchange:
+                                    // los cierres de esta posición contabilizan
+                                    // (los vetados/rechazados son papel).
+                                    if let Some(c) = arena_clone.coins.get(coin_id) {
+                                        c.positions
+                                            .position
+                                            .exchange_confirmed
+                                            .store(true, Ordering::Relaxed);
+                                    }
                                     if order_tp_price > 0.0 && order_sl_price > 0.0 {
                                         let tag = if is_high_confidence { "🎯 [OCO TENSOR]" } else { "🛡️ [OCO GUARD]" };
                                         telemetry_engine::telemetry!(

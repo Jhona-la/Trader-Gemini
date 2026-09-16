@@ -50,6 +50,37 @@ fn run_backtest() {
     println!("   Slippage: ATR real · Fees: del genoma (pisos realistas)");
     println!("══════════════════════════════════════════════════════════════════");
 
+    // B3.15 — MODELOS PROMOVIDOS al replay: sin esto el backtest mide el
+    // motor SIN la parte ML (los forests viven en GLOBAL_FORESTS, que en
+    // producción carga god_engine al arranque). El cargador valida el
+    // contrato ML_VECTOR_DIM: modelos incompatibles se rechazan ruidoso.
+    // Se carga SIEMPRE el .json cuando existe (fuente de verdad); el .bin
+    // es caché que el propio loader regenera.
+    if let Ok(entries) = std::fs::read_dir("models") {
+        let mut loaded = 0usize;
+        let mut rejected = 0usize;
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            match god_engine_core::ml_inference::NanoForest::load_global(
+                stem,
+                &path.to_string_lossy(),
+            ) {
+                Ok(()) => loaded += 1,
+                Err(e) => {
+                    rejected += 1;
+                    println!("   ⚠️ modelo {stem} rechazado: {e}");
+                }
+            }
+        }
+        println!("   🧠 Modelos: {loaded} cargados, {rejected} rechazados (contrato ML_VECTOR_DIM)");
+    }
+
     // Cargar ticks
     let mmap = match (|| -> Result<memmap2::Mmap, String> {
         let f = std::fs::File::open(&file).map_err(|e| e.to_string())?;
