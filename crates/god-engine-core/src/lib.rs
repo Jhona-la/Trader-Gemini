@@ -901,9 +901,28 @@ impl GodEngineCore {
                     + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
 
                 // D-465, D-472, D-474, D-475 & D-495: Escudo Breakeven Progresivo Calibrado Antiasfixia.
-                // Activa cuando el trade ha alcanzado al menos 2.0 ATR o el 55% de su TP objetivo (mínimo 62 bps).
-                // En cuanto el trade demuestra inercia direccional probada, el stop se ajusta a Entry + buffer (+10 a +18 bps post-fees).
-                let be_activation = (tp * 0.55).max(atr_pct_live * 2.0).clamp(0.0062, 0.0160);
+                // Activa cuando el trade ha alcanzado al menos el 55 % de su TP objetivo.
+                //
+                // D-727 (DÉCIMA OLA · auditoría integral): LA PROTECCIÓN NO PUEDE
+                // ARMARSE POR ENCIMA DEL OBJETIVO.
+                //
+                // Aquí había dos pisos ABSOLUTOS —62 pb para el breakeven y 72 pb
+                // para el trailing— que no dependían del TP, ni del horizonte, ni
+                // de la volatilidad, más un `max(atr_pct_live·2)` sin techo. La
+                // geometría de entrada fija el objetivo en TP = 5,5·f (fricción):
+                // con la fricción de referencia de 10 pb, TP = 0,55 % y el piso de
+                // 62 pb quedaba en el 113 % del objetivo — el TP cierra la posición
+                // antes de que exista protección alguna, y el trailing (77,5 pb,
+                // 141 % del TP) era inalcanzable por construcción. Toda posición de
+                // stop ajustado corría sin breakeven ni trailing.
+                //
+                // Las dos activaciones son ahora fracciones del recorrido REAL al
+                // objetivo, acotadas por debajo por la única magnitud física que
+                // justifica mover el stop: que la ganancia ya cubra la fricción de
+                // ida y vuelta. Nada puede armarse por encima del TP.
+                let be_activation = (tp * 0.55)
+                    .max(live_fee * 2.0)
+                    .min(tp * 0.90);
                 if peak_pnl >= be_activation {
                     let be_buffer = (live_fee * 2.0).clamp(0.0010, 0.0018);
                     let be_stop = if is_long {
@@ -923,9 +942,12 @@ impl GodEngineCore {
                     }
                 }
 
-                // 2. Trailing Stop Ratchet Dinámico: activa cuando el pico alcanza >= 70% de TP (o mínimo 72 bps)
-                let trail_activation_pnl =
-                    (tp * 0.70).max(be_activation * 1.25).clamp(0.0072, 0.0200);
+                // 2. Trailing Stop Ratchet Dinámico: activa cuando el pico alcanza
+                // el 70 % del TP. D-727: siempre por encima del breakeven y siempre
+                // por debajo del objetivo — si se armara en el TP no existiría.
+                let trail_activation_pnl = (tp * 0.70)
+                    .max(be_activation * 1.25)
+                    .min(tp * 0.95);
                 let trail_active = peak_pnl >= trail_activation_pnl;
 
                 let mut force_close_trail = false;

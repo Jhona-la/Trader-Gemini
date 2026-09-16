@@ -108,7 +108,10 @@ impl Genotype {
         } else {
             0.005
         };
-        let sc_z = if self.scalp_z_target.is_finite() {
+        // D-728: `scalp_z_target` ya no se escribe en ningún gen (ver abajo);
+        // se conserva en el genotipo porque la evolución lo muta, pero no tiene
+        // destino en la configuración hasta que tenga su propio atómico.
+        let _sc_z = if self.scalp_z_target.is_finite() {
             self.scalp_z_target
         } else {
             2.0
@@ -144,10 +147,16 @@ impl Genotype {
         arena.config.swing_sl_base.store(sw_sl, Ordering::Relaxed);
         arena.config.update_tp_curve(sc_tp, sw_tp);
         arena.config.update_sl_curve(sc_sl, sw_sl);
-        arena
-            .config
-            .scalp_obi_threshold
-            .store(sc_z, Ordering::Relaxed);
+        // D-728 (DÉCIMA OLA · auditoría integral): UN GENOTIPO NO SOBRESCRIBE
+        // GENES QUE NO LLEVA (la misma regla de D-715).
+        //
+        // Aquí se escribía `scalp_z_target` —una desviación típica, inicializada
+        // en [1; 4] y con respaldo 2,0— dentro de `scalp_obi_threshold`, que es
+        // el gen de desequilibrio del libro y vive en [0,05; 1,0]. Como este
+        // daemon aplica sobre la arena VIVA, la puerta de OBI quedaba clavada en
+        // su cota máxima y `current_from_arena` releía ese 2,0 como si fuera el
+        // gen, corroyendo el genoma en cada lectura. `scalp_z_target` necesita su
+        // propio atómico si ha de evolucionar; no el de otro gen.
         arena
             .config
             .capital_split_scalp
