@@ -295,10 +295,18 @@ impl GodEngineCore {
             let (_is_long, _entry_price, _qty, margin_used, entry_fee) =
                 coin.positions.position.close_with_fee();
             if margin_used > 0.0 {
-                let cur = self.arena.used_margin.load(Ordering::Relaxed);
-                self.arena
-                    .used_margin
-                    .store((cur - margin_used).max(0.0), Ordering::Relaxed);
+                // D-731 (DÉCIMA OLA · auditoría integral): la liberación de margen
+                // era load → resta → store. Entre la carga y el guardado, otro
+                // hilo (el cierre de otra moneda, la reconciliación o la adopción)
+                // puede haber sumado o restado: esa actualización se PIERDE y
+                // `used_margin` queda por encima o por debajo del margen realmente
+                // comprometido — el motor deja de abrir con margen libre, o abre
+                // creyendo que lo tiene. Con `fetch_update` la resta es atómica.
+                let _ = self.arena.used_margin.fetch_update(
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                    |v| Some((v - margin_used).max(0.0)),
+                );
             }
             if entry_fee > 0.0 {
                 self.arena
@@ -689,10 +697,12 @@ impl GodEngineCore {
             );
             let (_, _, _, margin) = coin.positions.position.close();
             if margin > 0.0 {
-                let cur = self.arena.used_margin.load(Ordering::Relaxed);
-                self.arena
-                    .used_margin
-                    .store((cur - margin).max(0.0), Ordering::Relaxed);
+                // D-731: resta atómica, no load→store.
+                let _ = self.arena.used_margin.fetch_update(
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                    |v| Some((v - margin).max(0.0)),
+                );
             }
         }
     }
@@ -1248,14 +1258,16 @@ impl GodEngineCore {
                     let net_realized_pnl = gross_pnl - close_fee;
                     let net_trade_pnl = net_realized_pnl - entry_fee_paid;
 
-                    let current_used = self.arena.used_margin.load(Ordering::Relaxed);
-                    if current_used >= margin_used {
-                        self.arena
-                            .used_margin
-                            .fetch_add(-margin_used, Ordering::Relaxed);
-                    } else {
-                        self.arena.used_margin.store(0.0, Ordering::Relaxed);
-                    }
+                    // D-731: la rama `else` ponía el acumulador GLOBAL a cero
+                    // —borrando el margen de las demás monedas— cuando el
+                    // acumulado era menor que el margen de esta posición, que es
+                    // justo el síntoma de una carrera previa. Resta atómica
+                    // acotada en cero, sin tocar lo ajeno.
+                    let _ = self.arena.used_margin.fetch_update(
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                        |v| Some((v - margin_used).max(0.0)),
+                    );
 
                     // FASE 23: Métricas continuas unificadas — sin bifurcaciones scalp/swing.
                     // B3.14: SOLO posiciones cuya entrada existió en el exchange.

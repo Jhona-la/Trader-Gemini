@@ -743,8 +743,19 @@ impl OrderExecutor {
                     match fresh {
                         Some(f) => {
                             let fq = f.position_amt.abs();
+                            // D-733 (DÉCIMA OLA · auditoría integral): el paso de
+                            // cantidad era 0,001 fijo —el de BTC— para CUALQUIER
+                            // símbolo: en un activo cuyo `stepSize` es 1 (o 0,1) el
+                            // cierre de emergencia se rechaza por precisión y la
+                            // posición se queda abierta. Es D-631 reintroducido en
+                            // la ruta de emergencia. El filtro real ya está en caché.
+                            let step = self
+                                .get_symbol_filter(&p.symbol)
+                                .await
+                                .map(|f2| f2.step_size)
+                                .unwrap_or(0.001);
                             let retry = self
-                                .execute_reduce_only_market(&p.symbol, f.is_long(), fq, 0.001)
+                                .execute_reduce_only_market(&p.symbol, f.is_long(), fq, step)
                                 .await;
                             match retry {
                                 Ok(()) => {
@@ -1662,10 +1673,17 @@ impl ExecutionProvider for OrderExecutor {
 
         if needs_update {
             if let Err(e) = self.set_leverage(symbol, target_leverage).await {
-                println!(
-                    "⚠️ [EXECUTION] Failed to set dynamic leverage for {}: {}",
-                    symbol, e
-                );
+                // D-732 (DÉCIMA OLA · auditoría integral): un fallo al fijar el
+                // apalancamiento sólo se imprimía y la orden salía IGUAL, con el
+                // apalancamiento que la cuenta tuviera de antes —el de otra
+                // operación, u otro símbolo—: el nocional enviado se calculó con
+                // el apalancamiento que el risk-engine decidió, así que el margen
+                // exigido y el riesgo real son otros. Una orden cuya premisa de
+                // apalancamiento no se cumplió no debe enviarse.
+                return Err(format!(
+                    "no se pudo fijar apalancamiento {}x en {}: {} — orden abortada (el nocional se dimensionó con ese apalancamiento)",
+                    target_leverage, symbol, e
+                ));
             } else {
                 let mut cache = (**self.active_leverage.load()).clone();
                 cache.insert(symbol.to_string(), target_leverage);

@@ -417,7 +417,9 @@ pub fn reconcile_arena(
                     10.0
                 };
                 let margin = notional / lev;
-                coin.positions.position.open_with_horizon(
+                // D-729: si la entrada no es válida (precio o cantidad), la
+                // posición NO se abre y tampoco se reserva su margen.
+                let adoptada = coin.positions.position.open_with_horizon(
                     is_long,
                     price,
                     abs_qty,
@@ -427,6 +429,13 @@ pub fn reconcile_arena(
                     0.0,
                     quantum_arena::position::PositionHorizon::Continuous,
                 );
+                if !adoptada {
+                    println!(
+                        "🚨 [RECONCILIACIÓN] {}: posición remota con precio {} y cantidad {} no adoptable — se audita contra el exchange en vez de inventarla",
+                        sym, price, abs_qty
+                    );
+                    continue;
+                }
                 arena
                     .used_margin
                     .fetch_add(margin, std::sync::atomic::Ordering::Relaxed);
@@ -460,8 +469,19 @@ pub fn reconcile_arena(
                         .position
                         .margin_used
                         .load(std::sync::atomic::Ordering::Relaxed);
+                    // D-734 (DÉCIMA OLA · auditoría integral): la rama de DERIVA
+                    // seguía dividiendo por el literal 10 mientras la rama de
+                    // adopción, a 40 líneas de distancia, ya usa el apalancamiento
+                    // REAL del exchange (S-06). Una cuenta a 20x veía su margen
+                    // inflado al doble en cuanto la cantidad derivaba, con la
+                    // falsa escasez de margen que S-06 vino a corregir.
+                    let lev_deriva = remote_lev_map
+                        .get(&sym)
+                        .copied()
+                        .filter(|l| l.is_finite() && *l >= 1.0)
+                        .unwrap_or(10.0);
                     let new_margin = if safe_price > 0.0 {
-                        (target_abs * safe_price) / 10.0
+                        (target_abs * safe_price) / lev_deriva
                     } else {
                         old_margin
                     };
