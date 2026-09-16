@@ -310,12 +310,10 @@ async fn main() {
     // en ambos casos, así que el fichero de aggTrades reales era ilegible y todo
     // el forense corría sobre velas expandidas. Mismo criterio que
     // `backtest_engine::tick_replayer`.
-    let magic = backtest_engine::tick_replayer::TICK_MAGIC;
-    let header_len = if bytes_len >= magic.len() && &mmap[..magic.len()] == magic {
-        magic.len()
-    } else {
-        0
-    };
+    // D-721: la cabecera declara el ORIGEN del dato, no sólo la versión.
+    let (origen, header_len) = backtest_engine::tick_replayer::TickOrigin::from_header(
+        &mmap[..bytes_len.min(8)],
+    );
     let payload_len = bytes_len - header_len;
     if payload_len % tick_size != 0 {
         println!(
@@ -324,14 +322,12 @@ async fn main() {
         );
         return;
     }
-    println!(
-        "📦 Formato de datos: {}",
-        if header_len > 0 {
-            "versionado TGMTICK1"
-        } else {
-            "legado sin cabecera (velas expandidas, ver D-691)"
-        }
-    );
+    println!("📦 Origen de los datos: {}", origen.descripcion());
+    if !origen.es_real() {
+        println!(
+            "⚠️  [VALIDEZ] Este veredicto NO puede sostener conclusiones de microestructura ni de coste: los datos no son ticks del exchange (D-691)."
+        );
+    }
     let total_file_ticks = payload_len / tick_size;
     let max_ticks_env = std::env::var("MAX_TICKS")
         .ok()
