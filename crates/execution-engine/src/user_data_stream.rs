@@ -474,12 +474,16 @@ impl UserDataStreamer {
                 })
                 .unwrap_or((0.0, 0.0, 0.0));
             let qty = update.last_filled_qty;
-            let sign = if was_long { 1.0 } else { -1.0 };
-            let pnl_gross = if entry_price > 0.0 {
-                (entry_price - update.last_filled_price) * qty * sign
-            } else {
-                0.0 // posición adoptada sin contexto local: evidencia sin PnL inventado
-            };
+            // D-701: fuente única del PnL bruto. La fórmula anterior invertía el
+            // signo en ambas direcciones (un TP se apuntaba como pérdida). Sin
+            // contexto de entrada devuelve 0: evidencia del disparo sin PnL
+            // inventado.
+            let pnl_gross = crate::trade_accounting::gross_pnl(
+                was_long,
+                entry_price,
+                update.last_filled_price,
+                qty,
+            );
             let slippage_bps = if o.stop_price > 0.0 {
                 let adverse = if was_long {
                     o.stop_price - update.last_filled_price // vender más abajo = peor

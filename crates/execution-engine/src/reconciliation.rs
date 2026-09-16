@@ -307,11 +307,9 @@ pub fn reconcile_arena(
                 }
 
                 if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
-                    let gross_pnl = if was_long {
-                        (exit_price - entry_p) * qty
-                    } else {
-                        (entry_p - exit_price) * qty
-                    };
+                    // D-701: la misma función que usa la contabilidad de brackets.
+                    let gross_pnl =
+                        crate::trade_accounting::gross_pnl(was_long, entry_p, exit_price, qty);
                     let live_taker = arena
                         .config
                         .live_taker_fee
@@ -606,7 +604,19 @@ mod tests {
         quantum_arena::symbol_registry::update_registry(specs);
         quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into(), "ETHUSDT".into()]);
 
-        let arena = quantum_arena::GlobalArena::new(100.0);
+        // D-703 (DÉCIMA OLA · auditoría integral): este test desbordaba la pila y
+        // hacía abortar TODA la suite del crate (STATUS_STACK_OVERFLOW), de modo
+        // que los demás tests no llegaban a ejecutarse. Es el patrón de D-684: el
+        // arena materializa en línea los anillos de ticks de sus monedas y no cabe
+        // en la pila por defecto de un hilo de test; producción y el forense ya lo
+        // construyen en un hilo de 32 MiB. Aquí, lo mismo.
+        let arena = std::thread::Builder::new()
+            .name("arena-build-test".into())
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| quantum_arena::GlobalArena::new(100.0))
+            .expect("no se pudo crear el hilo de construcción del arena")
+            .join()
+            .expect("la construcción del arena entró en pánico");
 
         // Simulate phantom position on BTC (arena has it open, but Binance is flat)
         arena.coins[0].positions.position.open_with_horizon(

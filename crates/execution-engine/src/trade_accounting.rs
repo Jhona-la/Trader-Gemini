@@ -52,6 +52,32 @@ pub struct BracketClose {
 static PENDING: LazyLock<Mutex<Vec<BracketClose>>> =
     LazyLock::new(|| Mutex::new(Vec::new()));
 
+/// D-701 (DÉCIMA OLA · auditoría integral) — PnL BRUTO DE UN CIERRE, FUENTE ÚNICA.
+///
+/// Un largo gana cuando sale POR ENCIMA de su entrada y un corto cuando sale por
+/// debajo. La contabilidad de brackets lo calculaba como
+/// `(entrada − salida)·qty·signo` con `signo = +1` para el largo: el signo
+/// quedaba invertido en las DOS direcciones, de modo que cada TP se apuntaba
+/// como pérdida y cada SL como ganancia. Estaba latente sólo porque el contexto
+/// de entrada nunca llegaba (`entry_price == 0`); en cuanto se cablea, Kelly y
+/// el win-rate aprenden justo al revés.
+///
+/// `reconciliation.rs` ya tenía la fórmula correcta: aquí vive una sola vez y la
+/// consumen ambos caminos. Devuelve 0 si falta el contexto de entrada (posición
+/// adoptada): PnL desconocido no es PnL cero, y quien lo consuma debe mirar
+/// `entry_price > 0` para distinguirlo.
+#[inline]
+pub fn gross_pnl(was_long: bool, entry_price: f64, exit_price: f64, qty: f64) -> f64 {
+    if !(entry_price > 0.0 && exit_price > 0.0 && qty > 0.0) {
+        return 0.0;
+    }
+    if was_long {
+        (exit_price - entry_price) * qty
+    } else {
+        (entry_price - exit_price) * qty
+    }
+}
+
 /// ¿Es una pierna de cierre? En este sistema las entradas son
 /// MARKET/LIMIT/GTX/ICEBERG; STOP_MARKET, TAKE_PROFIT_MARKET y
 /// TRAILING_STOP_MARKET sólo existen como brackets de salida —
@@ -176,4 +202,34 @@ mod tests {
         assert_eq!(drained[0].symbol, "TESTUSDT");
         assert!(drain_bracket_closes().is_empty());
     }
+
+    #[test]
+    fn d701_el_largo_gana_subiendo_y_el_corto_bajando() {
+        // Largo 100 → 110 con 1 unidad: +10. La fórmula anterior daba −10.
+        assert!((gross_pnl(true, 100.0, 110.0, 1.0) - 10.0).abs() < 1e-9);
+        // Largo 100 → 90: −10.
+        assert!((gross_pnl(true, 100.0, 90.0, 1.0) + 10.0).abs() < 1e-9);
+        // Corto 100 → 90: +10.
+        assert!((gross_pnl(false, 100.0, 90.0, 1.0) - 10.0).abs() < 1e-9);
+        // Corto 100 → 110: −10.
+        assert!((gross_pnl(false, 100.0, 110.0, 1.0) + 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn d701_sin_contexto_de_entrada_no_se_inventa_pnl() {
+        assert_eq!(gross_pnl(true, 0.0, 110.0, 1.0), 0.0);
+        assert_eq!(gross_pnl(true, 100.0, 0.0, 1.0), 0.0);
+        assert_eq!(gross_pnl(true, 100.0, 110.0, 0.0), 0.0);
+        assert_eq!(gross_pnl(false, f64::NAN, 110.0, 1.0), 0.0);
+    }
+
+    #[test]
+    fn d701_es_antisimetrico_entre_direcciones() {
+        for (e, x, q) in [(100.0, 103.5, 0.25), (58_000.0, 57_100.0, 0.003)] {
+            let largo = gross_pnl(true, e, x, q);
+            let corto = gross_pnl(false, e, x, q);
+            assert!((largo + corto).abs() < 1e-9, "largo {largo} corto {corto}");
+        }
+    }
+
 }
