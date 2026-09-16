@@ -538,15 +538,23 @@ impl UserDataStreamer {
         // Soporta tanto identificadores estándar (_TP, _SL) como variantes con retry (_TPR, _SLR).
         // Cancela todas las variantes de la pierna hermana para evitar dobles ejecuciones u órdenes huérfanas.
         if update.status == OrderStatus::Filled {
-            let sister_candidates = if let Some(base) = update.client_order_id.strip_suffix("_TPR")
-            {
+            // D-706 (DÉCIMA OLA · auditoría integral): las piernas que coloca el
+            // watchdog de protección se llaman `wdTP_*` / `wdSL_*`, que no
+            // terminan en `_TP` ni `_SL`: para ellas la lista quedaba VACÍA y ni
+            // se intentaba cancelar la hermana.
+            let coid = update.client_order_id.as_str();
+            let sister_candidates = if let Some(base) = coid.strip_suffix("_TPR") {
                 vec![format!("{}_SL", base), format!("{}_SLR", base)]
-            } else if let Some(base) = update.client_order_id.strip_suffix("_TP") {
+            } else if let Some(base) = coid.strip_suffix("_TP") {
                 vec![format!("{}_SL", base), format!("{}_SLR", base)]
-            } else if let Some(base) = update.client_order_id.strip_suffix("_SLR") {
+            } else if let Some(base) = coid.strip_suffix("_SLR") {
                 vec![format!("{}_TP", base), format!("{}_TPR", base)]
-            } else if let Some(base) = update.client_order_id.strip_suffix("_SL") {
+            } else if let Some(base) = coid.strip_suffix("_SL") {
                 vec![format!("{}_TP", base), format!("{}_TPR", base)]
+            } else if let Some(base) = coid.strip_prefix("wdTP_") {
+                vec![format!("wdSL_{}", base)]
+            } else if let Some(base) = coid.strip_prefix("wdSL_") {
+                vec![format!("wdTP_{}", base)]
             } else {
                 Vec::new()
             };
@@ -563,18 +571,28 @@ impl UserDataStreamer {
                             let ts = crate::executor::current_synced_timestamp_ms(
                                 arena_clone.as_deref(),
                             );
+                            // D-706: las piernas del bracket son órdenes ALGO desde
+                            // la migración por el error -4120 (OCO-F5): se crean
+                            // con POST /fapi/v1/algoOrder y se cancelan con DELETE
+                            // /fapi/v1/algoOrder. Este motor seguía emitiendo
+                            // DELETE /fapi/v1/order?origClientOrderId=…, que el
+                            // exchange rechaza con -2011 («order does not exist»),
+                            // y el log lo enterraba como «ya resuelta»: la pierna
+                            // hermana sobrevivía hasta la purga del watchdog.
+                            // Es la vía rápida; la purga por `algoId` (D-698)
+                            // sigue siendo la red de seguridad.
                             let mut buf = crate::client::ZeroAllocBuffer::new();
                             buf.push_str(
                                 if client.is_testnet.load(std::sync::atomic::Ordering::Relaxed) {
-                                    "https://testnet.binancefuture.com/fapi/v1/order?"
+                                    "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
                                 } else {
-                                    "https://fapi.binance.com/fapi/v1/order?"
+                                    "https://fapi.binance.com/fapi/v1/algoOrder?"
                                 },
                             );
                             let payload_start = buf.as_str().len();
                             buf.push_str("symbol=");
                             buf.push_str(&symbol);
-                            buf.push_str("&origClientOrderId=");
+                            buf.push_str("&clientAlgoId=");
                             buf.push_str(&sister_id);
                             buf.push_str("&timestamp=");
                             buf.push_u64(ts);
@@ -592,7 +610,10 @@ impl UserDataStreamer {
 
                             match client.cancel_order_payload(buf.as_str()).await {
                                 Ok(_) => println!("🎯 [OCO MOTOR] Pierna hermana {} cancelada exitosamente tras fill de {}.", sister_id, filled_id),
-                                Err(e) => println!("ℹ️ [OCO MOTOR] Pierna hermana {} ya resuelta o cancelada: {}", sister_id, e),
+                                // D-706: un fallo aquí deja una pierna ARMADA
+                                // hasta la purga del watchdog; decirlo, en vez de
+                                // darlo por resuelto.
+                                Err(e) => println!("⚠️ [OCO MOTOR] Pierna hermana {} NO cancelada tras el fill de {} ({}): queda a cargo de la purga por algoId", sister_id, filled_id, e),
                             }
                         }
                     });

@@ -599,7 +599,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         streams.push_str(sym);
         streams.push_str("@depth5/");
         streams.push_str(sym);
-        streams.push_str("@kline_1h");
+        // D-705 (DÉCIMA OLA · auditoría integral): EL RELOJ DE CALIBRACIÓN ES EL
+        // MISMO EN CALENTAMIENTO, VALIDACIÓN Y VIVO.
+        //
+        // La vela cerrada es, por diseño del núcleo, el reloj que evalúa las
+        // predicciones del ensamble contra la dirección realizada del bar
+        // (`update_with_outcome`, F4.7) y el que mueve las EMAs de kline del
+        // escudo macro. El calentamiento las llena con velas de 1 MINUTO
+        // (bootloader: `interval=1m`) y el forense marca frontera de vela cada
+        // minuto, pero en vivo se suscribía `@kline_1h`: 24 muestras diarias por
+        // símbolo, con los pesos del ensamble en su valor inicial [0,5; 0,5]
+        // durante la primera hora de cada arranque —y los arranques son
+        // frecuentes—. Desde B3.18 ese ensamble decide TODAS las entradas, así
+        // que su calibración no puede ir 60 veces más lenta que la decisión, ni
+        // el motor vivo puede alimentar con velas horarias unas EMAs calentadas
+        // con velas de un minuto.
+        streams.push_str("@kline_1m");
 
         if i < symbols.len() - 1 {
             streams.push('/');
@@ -2498,9 +2513,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 pnl_pct: real_pnl_pct,
                                 timestamp_ms: ts_now,
                             };
-                            // Shadow = lo que el sistema esperaba (0 en
-                            // ausencia de predicción shadow separada — el
-                            // drift medido es el PnL acumulado vs 0).
+                            // D-704 (DÉCIMA OLA · auditoría integral): UN SHADOW
+                            // CONSTANTE NO ES UNA COMPARACIÓN.
+                            //
+                            // El shadow se fijaba en `pnl_pct = 0`, de modo que
+                            // `drift = −pnl_real` y el criterio `|drift| > 0,05`
+                            // dejaba de significar «el vivo divergió de lo
+                            // esperado» para significar «la operación movió más
+                            // del 5 % del nocional», en CUALQUIER dirección: un
+                            // cierre GANADOR con recorrido grande armaba
+                            // `kill_switch_active` —que nadie vuelve a poner en
+                            // false— y congelaba el motor por haber ganado
+                            // dinero, con un mensaje que afirmaba en falso una
+                            // «divergencia acumulada». Y el modo de fallo que
+                            // este auditor existe para cazar (el backtest predice
+                            // +0,4 % y el vivo entrega −0,4 %) pasaba inadvertido
+                            // mientras el vivo se quedara dentro de ±5 %.
+                            //
+                            // Hasta que exista la contraparte real —el PnL del
+                            // universo de control del ShadowForest, o la
+                            // expectativa del entry: `ml_prediction` de la
+                            // posición con la geometría TP/SL que se comprometió—
+                            // esto es TELEMETRÍA, no un cortacircuitos: se acumula
+                            // y se informa, sin armar nada.
                             let shadow_tr = audit_engine::drift_auditor::TradeResult {
                                 symbol_id: coin_id,
                                 is_long,
@@ -2509,15 +2544,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 pnl_pct: 0.0,
                                 timestamp_ms: ts_now,
                             };
-                            if drift_auditor.audit_execution(&real_tr, &shadow_tr).is_err() {
+                            if let Err(drift) = drift_auditor.audit_execution(&real_tr, &shadow_tr) {
                                 telemetry_engine::telemetry!(
-                                    "🚨 [DRIFT] Divergencia acumulada excede umbral — KILL-SWITCH ARMADO"
+                                    "📐 [DRIFT] Operación de {:.2} % del nocional (|drift| {:.2} % frente a un shadow SIN predicción): telemetría, no cortacircuitos — el auditor sigue sin contraparte",
+                                    real_pnl_pct * 100.0,
+                                    drift.abs() * 100.0
                                 );
-                                // H-1: el drift excedido ARMAR el kill-switch — antes era solo log
-                                engine_real
-                                    .arena
-                                    .kill_switch_active
-                                    .store(true, Ordering::SeqCst);
                             }
                         }
 
