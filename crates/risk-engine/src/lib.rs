@@ -686,6 +686,21 @@ impl RiskEngine {
                 genome_max_leverage,
                 arena,
             );
+        // D-730 (DÉCIMA OLA · auditoría integral): EL APALANCAMIENTO SE CUANTIZA
+        // DONDE SE DECIDE.
+        //
+        // `POST /fapi/v1/leverage` sólo acepta ENTEROS, y el ejecutor envía
+        // `order.leverage as u32`; el nocional, en cambio, se dimensionaba con el
+        // f64 continuo. Con L = 2,9 y 2,40 USD de margen se enviaba un nocional de
+        // 6,96 USD que la cuenta, ya a 2x, exige respaldar con 3,48 USD: un 45 %
+        // más de margen del presupuestado, rechazo -2019 o margen bloqueado que
+        // `used_margin` no registra. El sesgo es sistemático y crece cuanto menor
+        // es el apalancamiento, es decir en régimen micro. Cuantizar aquí, ANTES
+        // de las comprobaciones de nocional mínimo y de margen, hace que toda la
+        // cadena razone con el mismo entero que verá el exchange. La
+        // discretización no es una constante arbitraria: la impone el contrato del
+        // endpoint.
+        dynamic_leverage = dynamic_leverage.floor().max(1.0);
 
         let _maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
         let taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);

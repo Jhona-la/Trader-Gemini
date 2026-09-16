@@ -277,7 +277,8 @@ mod tests {
     /// puntuación cruda sólo cuando no la hay.
     #[test]
     fn d690_kelly_usa_la_probabilidad_calibrada() {
-        let arena = quantum_arena::GlobalArena::new(10_000.0);
+        // D-714: el arena no cabe en la pila por defecto de un hilo de test.
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(10_000.0);
         let uncalibrated = SignalIntent {
             signal: signal_engine::SignalType::Long,
             confidence: 0.9,

@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn test_macro_regime_swing_optimizer_trending_active() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let params =
             MacroRegimeSwingOptimizer::evaluate_swing_regime(0.75, 0.03, 0.5, 120_000.0, &arena);
 
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_macro_regime_swing_optimizer_random_walk_inactive() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         // Hurst = 0.5 (random walk), ATR = 0.0001 (sin volatilidad)
         let params =
             MacroRegimeSwingOptimizer::evaluate_swing_regime(0.50, 0.0001, 0.0, 60_000.0, &arena);
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_macro_regime_swing_optimizer_nan_immunity() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let params = MacroRegimeSwingOptimizer::evaluate_swing_regime(
             f64::NAN,
             f64::NAN,

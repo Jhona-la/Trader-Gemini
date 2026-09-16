@@ -142,7 +142,8 @@ impl Position {
         tp: f64,
         sl: f64,
         horizon: PositionHorizon,
-    ) {
+    ) -> bool {
+        // D-729: propaga el rechazo de una entrada sin precio o sin cantidad.
         self.open_with_full_meta(
             is_long,
             price,
@@ -154,7 +155,7 @@ impl Position {
             horizon,
             0.0,
             0.0,
-        );
+        )
     }
 
     #[inline(always)]
@@ -171,7 +172,8 @@ impl Position {
         horizon: PositionHorizon,
         ml_pred: f64,
         conf: f64,
-    ) {
+    ) -> bool {
+        // D-729: propaga el rechazo.
         self.open_with_fee(
             is_long,
             price,
@@ -184,7 +186,7 @@ impl Position {
             ml_pred,
             conf,
             0.0,
-        );
+        )
     }
 
     #[inline(always)]
@@ -202,17 +204,26 @@ impl Position {
         ml_pred: f64,
         conf: f64,
         entry_fee: f64,
-    ) {
-        let safe_price = if price.is_finite() && price > 0.0 {
-            price
-        } else {
-            1.0
-        };
-        let safe_qty = if qty.is_finite() && qty > 0.0 {
-            qty
-        } else {
-            0.0
-        };
+    ) -> bool {
+        // D-729 (DÉCIMA OLA · auditoría integral): UNA ENTRADA SIN PRECIO NO ES
+        // UNA ENTRADA.
+        //
+        // Un precio no finito o ≤ 0 se sustituía por el literal 1.0 y la posición
+        // se publicaba igual. Binance devuelve `entryPrice: "0.0"` mientras el
+        // margen de una posición recién abierta se liquida, y la ruta de adopción
+        // pasa ese valor sin validar: la posición quedaba viva en el arena con
+        // entrada 1,0 y, al cerrarla, `qty·(salida − 1,0)` producía cientos de
+        // dólares de beneficio FANTASMA que entraban enteros en el win-rate, el
+        // profit factor y Kelly. Ningún guardia aguas abajo lo detecta porque 1,0
+        // es finito y positivo, y el propio test de corrupción exige
+        // `entry_price <= 0`. Con `qty` inválida se publicaba una posición viva
+        // con cantidad cero. Ahora se rechaza la apertura sin tocar un campo; el
+        // llamador debe reconciliar contra el exchange, no inventar.
+        if !(price.is_finite() && price > 0.0) || !(qty.is_finite() && qty > 0.0) {
+            return false;
+        }
+        let safe_price = price;
+        let safe_qty = qty;
         let safe_margin = if margin.is_finite() && margin >= 0.0 {
             margin
         } else {
@@ -272,6 +283,7 @@ impl Position {
         // cualquier lector que observe is_open con Acquire.
         self.is_open.store(true, Ordering::Release);
         self.unlock_transition();
+        true
     }
 
     #[inline(always)]
