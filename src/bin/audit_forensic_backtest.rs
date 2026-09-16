@@ -399,7 +399,7 @@ async fn main() {
             t.ask_qty,
             t.timestamp,
         );
-        core.arena.update_agg_trade(0, is_buyer_maker, vol);
+        // D-708: el flujo agregado lo actualiza el núcleo en `process_event`.
         core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
         core.feature_engines[0].process_tick(price, vol, t.timestamp);
         core.feature_engines[0].update_trade_flow(vol, is_buyer_maker);
@@ -539,7 +539,7 @@ async fn main() {
         let ask_qty = t.ask_qty;
 
         // Update AggTrade and L2 (same as backtest-engine/lib.rs lines 163-165)
-        core.arena.update_agg_trade(0, is_buyer_maker, vol);
+        // D-708: el flujo agregado lo actualiza el núcleo en `process_event`.
         core.arena.update_l2_depth(0, bid_qty, ask_qty);
 
         let ts = t.timestamp;

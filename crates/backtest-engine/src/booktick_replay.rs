@@ -337,11 +337,14 @@ pub fn run_booktick_replay(
         }
         let omni_features = omni_state.get_features();
 
-        let is_minute_kline =
-            i > 0 && OmniHistory::day_of(ticks[i - 1].ts_ms) != OmniHistory::day_of(t.ts_ms);
-        // (kline-close aproximado por frontera de día: suficiente para
-        // calibración del ensamble en replay; los klines 1m reales viven en
-        // producción por WS.)
+        // D-705/D-708 (DÉCIMA OLA · auditoría integral): la frontera de vela es
+        // por MINUTO, como en el forense, en el calentamiento (`interval=1m`) y
+        // ahora en el vivo (`@kline_1m`). Aquí se aproximaba por frontera de DÍA:
+        // el ensamble se calibraba una vez cada 24 h de datos y las EMAs de kline
+        // —que gobiernan el escudo macro— avanzaban un paso por día. La aptitud
+        // que este replay produce decidía promociones de genoma sobre un motor
+        // cuyo reloj de calibración iba 1440 veces más lento que el de decisión.
+        let is_minute_kline = i > 0 && (ticks[i - 1].ts_ms / 60_000) != (t.ts_ms / 60_000);
 
         let (c1, c2): (Option<(bool, f64, f64)>, Option<(bool, f64, f64)>);
         if cfg.trade_only {

@@ -2195,9 +2195,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // L-1: Ingesta de Microestructura Física en la Arena Viva (CVD y Muros L2)
                 // Corrige la ceguera de volumen agresivo y profundidad del libro en vivo (Causa Forense #D117).
-                if is_trade {
-                    engine_real.arena.update_agg_trade(coin_id, is_buyer_maker, qty);
-                } else if is_depth {
+                // D-708: el flujo agregado lo actualiza ahora el núcleo dentro de
+                // `process_event` (misma fuente para vivo, forense y replay).
+                if is_depth {
                     engine_real.arena.update_l2_depth(coin_id, dbq, daq);
                 }
 
@@ -2228,9 +2228,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // F4.1: features omni REALES (macro FRED/PAXG + sentiment vivos).
                 // Antes: &[0.0; 54] — la NN swing evaluaba ceros en producción.
                 let omni_features_hot = omni_state_hot.get_features();
+                // D-707 (DÉCIMA OLA · auditoría integral): EL LIBRO NO DESAPARECE
+                // ENTRE EVENTOS DE DEPTH.
+                //
+                // `dbq`/`daq` sólo se rellenan en un evento @depth5; en un trade o
+                // en una vela llegaban en 0, y el núcleo fabricaba cantidades
+                // SIMÉTRICAS a partir del volumen del trade, de modo que
+                // `obi_val = 0` exactamente y `book_absent` era cierto SIEMPRE en
+                // esos eventos: el bot vivo corría el generador de señales «sin
+                // libro» —el que se escribió para el backtest trade-only, con
+                // confianzas literales— mientras el forense, que sí recibe
+                // cantidades por tick, corría el otro. Era una divergencia
+                // backtest↔producción en la rama de decisión, no en un parámetro.
+                //
+                // El último libro conocido vive en el arena (`update_l2_depth` lo
+                // escribe en cada @depth5). En un evento sin libro propio se usa
+                // ése: el estado del libro es del mercado, no del tipo de evento.
+                let (eff_dbq, eff_daq) = if is_depth || (dbq > 0.0 && daq > 0.0) {
+                    (dbq, daq)
+                } else {
+                    let c = &engine_real.arena.coins[coin_id];
+                    (
+                        c.l2_bid_wall.load(std::sync::atomic::Ordering::Relaxed),
+                        c.l2_ask_wall.load(std::sync::atomic::Ordering::Relaxed),
+                    )
+                };
                 let (mut new_order, closed_order) = engine_real.process_event(
                     coin_id, is_trade, is_kline_closed, is_depth,
-                    current_price, qty, dbp, dap, dbq, daq,
+                    current_price, qty, dbp, dap, eff_dbq, eff_daq,
                     depth_obi, depth_micro_div, event_time as u64, latency_panic, &omni_features_hot,
                     is_buyer_maker,
                 );
@@ -2243,8 +2268,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // el costo por 10.
                 if msg_count % 10 == 0 {
                     shadow_forest.broadcast_tick(
+                        // D-707: los universos sombra ven el mismo libro que el
+                        // motor real, o compararían dos mundos distintos.
                         coin_id, is_trade, is_kline_closed, is_depth,
-                        current_price, qty, dbp, dap, dbq, daq,
+                        current_price, qty, dbp, dap, eff_dbq, eff_daq,
                         depth_obi, depth_micro_div, event_time as u64,
                         &engine_real.arena,
                         &omni_features_hot,

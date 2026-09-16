@@ -632,6 +632,21 @@ impl GodEngineCore {
             if is_trade {
                 // D-220 & D-247: Ingesta física real de microestructura agresora (Taker Buy vs Taker Sell)
                 self.feature_engines[coin_id].update_trade_flow(trade_qty, is_buyer_maker);
+                // D-708 (DÉCIMA OLA · auditoría integral): EL FLUJO AGREGADO ES
+                // ESTADO DEL NÚCLEO, NO DEL LLAMADOR.
+                //
+                // `agg_buy_vol`/`agg_sell_vol` —de donde sale `rolling_cvd`, que
+                // en ausencia de libro SUSTITUYE al micro-score y pesa hasta el
+                // 80 % del `composite_score`— los alimentaban los llamadores:
+                // `god_engine` y el forense sí, `booktick_replay` (el motor de
+                // `backtest_windows` y de `evolution`) NO. Allí el CVD era
+                // idénticamente 0, las ramas que exigen |OBI efectivo| por encima
+                // de su umbral eran inalcanzables y la aptitud se medía sobre un
+                // motor mutilado. Con la actualización aquí, todo llamador
+                // alimenta la misma fuente con el mismo dato; las llamadas
+                // externas se retiran para no contar dos veces.
+                self.arena
+                    .update_agg_trade(coin_id, is_buyer_maker, trade_qty);
                 self.arena.coins[coin_id]
                     .current_price
                     .store(current_price, Ordering::Relaxed);
