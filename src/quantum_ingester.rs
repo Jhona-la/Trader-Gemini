@@ -13,7 +13,8 @@ pub extern "C" fn ingest_raw_ws_frame(
     time_idx: usize,
     asset_idx: usize
 ) -> u8 {
-    if arena_ptr.is_null() || raw_bytes_ptr.is_null() || length == 0 {
+    // FIX #1470: Protección de límites de índice de activos y punteros nulos
+    if arena_ptr.is_null() || raw_bytes_ptr.is_null() || length == 0 || asset_idx >= crate::quantum_arena::RING_CAPACITY {
         return 1; // Error
     }
 
@@ -24,23 +25,18 @@ pub extern "C" fn ingest_raw_ws_frame(
     // Buscamos "b":[[" (bids) y "a":[[" (asks)
     // Patrón: "b":[[" -> bytes: [34, 98, 34, 58, 91, 91, 34]
     
-    let mut bid_price = 0.0f32;
-    let mut bid_qty = 0.0f32;
-    let mut ask_price = 0.0f32;
-    let mut ask_qty = 0.0f32;
-
-    if let Some((bp, bq)) = extract_first_level(buffer, b"\"b\":[[\"") {
-        bid_price = bp;
-        bid_qty = bq;
-    }
-    if let Some((ap, aq)) = extract_first_level(buffer, b"\"a\":[[\"") {
-        ask_price = ap;
-        ask_qty = aq;
-    }
+    let (bid_price, bid_qty) = match extract_first_level(buffer, b"\"b\":[[\"") {
+        Some((p, q)) if p.is_finite() && q.is_finite() && p > 0.0 && q >= 0.0 => (p, q),
+        _ => return 1,
+    };
+    let (ask_price, ask_qty) = match extract_first_level(buffer, b"\"a\":[[\"") {
+        Some((p, q)) if p.is_finite() && q.is_finite() && p > 0.0 && q >= 0.0 => (p, q),
+        _ => return 1,
+    };
 
     // Inyección en la memoria cruda
-    let total_vol = bid_qty + ask_qty + 1e-8;
-    let imbalance = (bid_qty - ask_qty) / total_vol;
+    let total_vol = (bid_qty + ask_qty + 1e-8).max(1e-8);
+    let imbalance = ((bid_qty - ask_qty) / total_vol).clamp(-1.0, 1.0);
     let _micro_price = (bid_price * ask_qty + ask_price * bid_qty) / total_vol;
 
     let seq = arena.begin_write();
@@ -67,10 +63,11 @@ pub extern "C" fn ingest_raw_ws_frame(
     let prev_offset = QuantumStateArena::offset(time_idx.wrapping_sub(1), asset_idx);
     let prev_price = arena.price_returns[prev_offset];
     let mut norm_ret = 0.0;
-    if prev_price > 0.0 {
-        norm_ret = (bid_price - prev_price) / prev_price;
+    // FIX #1525: Verificación de finitud y clamping en retorno normalizado para entropía
+    if prev_price > 0.0 && prev_price.is_finite() && bid_price.is_finite() {
+        norm_ret = ((bid_price - prev_price) / prev_price).clamp(-1.0, 1.0);
     }
-    let entropy_val = math_state.shannon.update(norm_ret as f64);
+    let entropy_val = math_state.shannon.update(norm_ret as f64).unwrap_or(0.0);
     // (El valor de entropía se inyecta en dark_alpha temporalmente o se omite si no hay array explícito)
     
     // 4. Kyle's Lambda
@@ -86,8 +83,8 @@ pub extern "C" fn ingest_raw_ws_frame(
     let acc_obi = vel_obi - prev_vel_obi;
     arena.liquidity_acceleration[offset] = acc_obi;
     
-    // Marcar timestamp
-    arena.timestamps_ns[time_idx % crate::quantum_arena::RING_CAPACITY] = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as i64;
+    // Marcar timestamp (FIX #1423: Inmunidad ante saltos de reloj NTP)
+    arena.timestamps_ns[time_idx % crate::quantum_arena::RING_CAPACITY] = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() as i64;
     
     arena.end_write(seq);
 
@@ -132,8 +129,58 @@ fn parse_f32_until_quote(buffer: &[u8], start: usize) -> Option<(f32, usize)> {
     }
     if end >= buffer.len() { return None; }
     
-    let str_slice = unsafe { str::from_utf8_unchecked(&buffer[start..end]) };
-    let val = str_slice.parse::<f32>().unwrap_or(0.0);
+    // FIX #346 / #1524: Safe UTF-8 parse over network bytes and finite verification
+    let str_slice = std::str::from_utf8(&buffer[start..end]).ok()?;
+    let val = str_slice.parse::<f32>().ok()?;
+    if !val.is_finite() {
+        return None;
+    }
     
     Some((val, end))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_first_level_and_subsequence() {
+        let json_bytes = br#"{"b":[["60000.5","1.2"]],"a":[["60001.0","0.5"]]}"#;
+        let bid = extract_first_level(json_bytes, b"\"b\":[[\"");
+        assert!(bid.is_some());
+        let (bp, bq) = bid.unwrap();
+        assert_eq!(bp, 60000.5);
+        assert_eq!(bq, 1.2);
+
+        let ask = extract_first_level(json_bytes, b"\"a\":[[\"");
+        assert!(ask.is_some());
+        let (ap, aq) = ask.unwrap();
+        assert_eq!(ap, 60001.0);
+        assert_eq!(aq, 0.5);
+    }
+
+    #[test]
+    fn test_parse_f32_until_quote() {
+        let raw = b"123.456\"more_bytes";
+        let parsed = parse_f32_until_quote(raw, 0);
+        assert!(parsed.is_some());
+        let (val, end) = parsed.unwrap();
+        assert_eq!(val, 123.456);
+        assert_eq!(end, 7);
+    }
+
+
+    #[test]
+    fn test_extract_first_level_malformed_and_nan_immunity() {
+        // Missing quote, incomplete frame
+        let incomplete = b"{\"b\":[[\"60000.5";
+        assert!(extract_first_level(incomplete, b"\"b\":[[\"").is_none());
+
+        // Malformed non-numeric string
+        let corrupt = br#"{"b":[["INVALID_PRICE","1.2"]]}"#;
+        let bid = extract_first_level(corrupt, b"\"b\":[[\"");
+        // 0.0 is not > 0.0, so it returns None
+        assert!(bid.is_none());
+    }
+}
+

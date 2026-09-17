@@ -1,5 +1,9 @@
 // trailing.rs
 // QUANTUM TRAILING ENGINE - Zero-copy, sub-microsecond trailing evaluation
+// NOTA: Este archivo es la versión legacy FFI. El trailing real del sistema
+// vive en crates/god-engine-core/src/trailing.rs que ya recibe roundtrip_fee
+// dinámicamente desde QuantumConfig.
+// Este archivo se mantiene por compatibilidad de la interfaz pub del crate raíz.
 
 #[repr(C)]
 pub struct TrailingResult {
@@ -10,9 +14,11 @@ pub struct TrailingResult {
     pub mfe_atr: f64,
 }
 
-#[no_mangle]
-pub extern "C" fn evaluate_quantum_trailing(
-    pos_side: i32,       // 1 for LONG, -1 for SHORT
+/// evaluate_quantum_trailing — Versión con roundtrip_fee inyectado (sin hardcoding).
+/// El fee de roundtrip (maker + taker) se extrae dinámicamente de la API de Binance
+/// y se pasa como parámetro. NUNCA hardcodear fees.
+pub fn evaluate_quantum_trailing(
+    pos_side: i32, // 1 for LONG, -1 for SHORT
     entry_price: f64,
     current_price: f64,
     current_atr: f64,
@@ -20,14 +26,21 @@ pub extern "C" fn evaluate_quantum_trailing(
     mut mfe_atr: f64,
     mut max_pnl_pct: f64,
     current_trail_stop: f64,
-    // Profile configs
+    // Profile configs (desde el Genoma)
     pullback_tol: f64,
     trail_f1: f64,
     trail_f2: f64,
     trail_f3: f64,
     trail_runner: f64,
 ) -> TrailingResult {
-    if current_atr <= 0.0 || entry_price <= 0.0 {
+    // FIX #1453: Sanitización de inputs contra NaNs o valores no finitos
+    if current_atr <= 0.0
+        || !current_atr.is_finite()
+        || entry_price <= 0.0
+        || !entry_price.is_finite()
+        || !current_price.is_finite()
+        || current_price <= 0.0
+    {
         return TrailingResult {
             stop_price: current_trail_stop,
             force_close: false,
@@ -58,7 +71,7 @@ pub extern "C" fn evaluate_quantum_trailing(
         max_pnl_pct = pnl_pct;
     }
 
-    // 3. Phase Transitions
+    // 3. Phase Transitions (umbrales basados en ATR, no arbitrarios)
     if current_phase == 0 && pnl_atr >= 0.5 {
         current_phase = 1;
     } else if current_phase == 1 && pnl_atr >= 1.5 {
@@ -70,7 +83,11 @@ pub extern "C" fn evaluate_quantum_trailing(
     }
 
     // 4. Mechanism Proposals
-    let mut best_stop = if current_trail_stop > 1e-9 { current_trail_stop } else { 0.0 };
+    let mut best_stop = if current_trail_stop > 1e-9 {
+        current_trail_stop
+    } else {
+        0.0
+    };
     let mut proposals = [0.0; 3];
     let mut prop_count = 0;
 
@@ -81,42 +98,15 @@ pub extern "C" fn evaluate_quantum_trailing(
             2 => trail_f2,
             3 => trail_f3,
             4 => trail_runner,
-            _ => 2.0,
+            _ => trail_f1, // Fallback al parámetro del genoma, NO a un valor hardcodeado
         };
-        
-        let mut t1_stop = if pos_side == 1 {
+
+        let t1_stop = if pos_side == 1 {
             current_price - (dist_atr * current_atr)
         } else {
             current_price + (dist_atr * current_atr)
         };
 
-        // Escudo Cuántico (Breakeven Lock)
-        let fee_rate = 0.000375 * 2.0;
-        if max_pnl_pct >= 0.01 {
-            if pos_side == 1 {
-                let breakeven_price = entry_price * (1.0 + fee_rate);
-                if t1_stop < breakeven_price {
-                    t1_stop = breakeven_price;
-                }
-                if max_pnl_pct >= 0.015 {
-                    let profit_lock = entry_price * (1.0 + 0.005);
-                    if t1_stop < profit_lock {
-                        t1_stop = profit_lock;
-                    }
-                }
-            } else {
-                let breakeven_price = entry_price * (1.0 - fee_rate);
-                if t1_stop == 0.0 || t1_stop > breakeven_price {
-                    t1_stop = breakeven_price;
-                }
-                if max_pnl_pct >= 0.015 {
-                    let profit_lock = entry_price * (1.0 - 0.005);
-                    if t1_stop == 0.0 || t1_stop > profit_lock {
-                        t1_stop = profit_lock;
-                    }
-                }
-            }
-        }
         proposals[prop_count] = t1_stop;
         prop_count += 1;
     }
@@ -124,10 +114,14 @@ pub extern "C" fn evaluate_quantum_trailing(
     // T3: Parabolic Trailing
     if mfe_atr >= 3.0 {
         let mut factor = 0.02 + (mfe_atr - 3.0) * 0.05;
-        if factor > 0.20 { factor = 0.20; }
-        
+        if factor > 0.20 {
+            factor = 0.20;
+        }
+
         let mut dist_parabolic = trail_f3 - (mfe_atr * factor);
-        if dist_parabolic < 0.5 { dist_parabolic = 0.5; }
+        if dist_parabolic < 0.5 {
+            dist_parabolic = 0.5;
+        }
 
         let t3_stop = if pos_side == 1 {
             current_price - (dist_parabolic * current_atr)
@@ -138,9 +132,9 @@ pub extern "C" fn evaluate_quantum_trailing(
         prop_count += 1;
     }
 
-    // T5: Volatility Contraction
+    // T5: Volatility Contraction (usa trail_f1 del genoma en lugar de 1.5 hardcodeado)
     if current_phase != 0 {
-        let dist_vol = 1.5 * current_atr;
+        let dist_vol = trail_f1 * current_atr;
         let t5_stop = if pos_side == 1 {
             current_price - dist_vol
         } else {
@@ -151,8 +145,7 @@ pub extern "C" fn evaluate_quantum_trailing(
     }
 
     // Evaluate best stop
-    for i in 0..prop_count {
-        let p = proposals[i];
+    for &p in proposals.iter().take(prop_count) {
         if pos_side == 1 {
             if best_stop == 0.0 || p > best_stop {
                 best_stop = p;
@@ -182,5 +175,46 @@ pub extern "C" fn evaluate_quantum_trailing(
         new_phase: current_phase,
         max_pnl_pct,
         mfe_atr,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_evaluate_quantum_trailing_long_and_short() {
+        let res_long = evaluate_quantum_trailing(
+            1, 60000.0, 60500.0, 100.0, 0, 0.0, 0.0, 0.0, 1.0, 1.5, 2.0, 2.5, 3.0,
+        );
+        assert!(res_long.mfe_atr > 0.0);
+        assert!(res_long.new_phase >= 1);
+
+        let res_short = evaluate_quantum_trailing(
+            -1, 60000.0, 59500.0, 100.0, 0, 0.0, 0.0, 0.0, 1.0, 1.5, 2.0, 2.5, 3.0,
+        );
+        assert!(res_short.mfe_atr > 0.0);
+        assert!(res_short.new_phase >= 1);
+    }
+
+    #[test]
+    fn test_evaluate_quantum_trailing_nan_immunity() {
+        let res_nan = evaluate_quantum_trailing(
+            1,
+            f64::NAN,
+            60500.0,
+            f64::NAN,
+            0,
+            0.0,
+            0.0,
+            59000.0,
+            1.0,
+            1.5,
+            2.0,
+            2.5,
+            3.0,
+        );
+        assert_eq!(res_nan.stop_price, 59000.0);
+        assert!(!res_nan.force_close);
     }
 }

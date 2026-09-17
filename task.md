@@ -1,0 +1,116 @@
+# Lista de Tareas - Telemetría Web, Alertas y Optimización Algorítmica
+
+- [x] Modificar `SystemState` y el endpoint `/api/state` en `telemetry-server/src/lib.rs` para incluir Swing, salud y Kill Switch
+- [x] Reescribir `dashboard_html` en `telemetry-server/src/lib.rs` con estética Cyberpunk Premium
+- [x] Modificar `live.rs` para pasar `omni_state` a la inicialización del servidor
+- [x] Implementar el bucle de alertas asíncronas inmediatas en `telemetry-server/src/telegram_bot.rs`
+- [x] Confirmar compilación del crate `telemetry-server` (`cargo check -p telemetry-server`)
+- [x] Verificar compilación de todo el workspace (`cargo check --all-targets`)
+- [x] Auditar y mejorar `omni_multiplexer.rs` (timeouts en WS de 15s y structs estáticos de deserialización)
+- [x] Verificar compilación y tests del subcrate `data-pipeline`
+- [x] Correr simulación para validar estabilidad del bot unificado
+- [x] Reactivar el simulador de estrés `stress_sim` arreglando el target en `Cargo.toml`
+- [x] Corregir desfases de lectura binaria estructurada (`BinTick`) en el simulador de estrés
+- [x] Corregir desbordamientos de arreglos de estadísticas (`out_stats`) en `stress_sim.rs` y `multi_fidelity.rs`
+- [x] Integrar control de liquidación en tiempo real en los evaluadores genéticos de NEAT (`neat_runner.rs`)
+- [x] Ejecutar la simulación de estrés en modo release, logrando rendimiento sub-microsegundo (756.35 ns/tick) y 100% de WR normal.
+- [x] ### FASE 24: SLIPPAGE MODELING & FEE SLAYER
+- [x] Create `implementation_plan_fee_slayer_v2.md`
+- [x] Expand `ExecutionProvider` trait with `query_order` in `crates/execution-engine/src/executor.rs`
+- [x] Expand `ExecutionProvider` trait with `query_order` in `src/execution/executor.rs` (Root crate dependency)
+- [x] Implement `query_order` in `OrderExecutor`
+- [x] Verify phantom position reversion loop in `god_engine.rs` and `live_trader.rs`
+- [x] Implement `limit_order_pursuit` async loop in `src/bin/live_trader.rs`
+- [x] ### Phase B: Real Evolutionary Mechanics (`online_daemon.rs`)
+- [x] HC-05: Replace `bootstrap_seed` stochastic reset with `mutate_from` perturbative Gaussian mutation.
+- [x] HC-10: Connect `EVT_POSITION_CLOSE` telemetry from `god-engine-core` to `ZeroCopyTelemetryBus` so `online_daemon` receives real PnL feedback.
+- [x] ### Phase C: Kill switch adaptativo y reintento de API
+- [x] HC-08: Adaptive Kill Switch via EWMA (Exponentially Weighted Moving Average) of Sharpe in `online_daemon.rs`.
+- [x] API Retry Logic: Implement exponential backoff for `execute_order_payload` and signed payloads to handle 429 / 5xx limits smoothly.
+- [x] Modificar `god-engine-core/src/lib.rs` para cargar automáticamente modelos de Deep Learning `.onnx` locales
+- [x] Integrar inferencia híbrida síncrona (combinación de NEAT y ONNX) en `GodEngineCore::process_event`
+- [x] Inject `predict_scalp_6d_adaptive` into `GodEngineCore::process_tick` for live execution
+- [x] ### Phase D: Limpieza de código muerto en `risk-engine`
+- [x] Remove unused and dead code stubs (the `epigenetic_*` and others that are not used) in `risk-engine` to ensure clean focus.
+- [x] Inject `predict_scalp_6d_adaptive` into `GodEngineCore::process_tick_shadow` for shadow execution
+- [x] Integrate `SimdFmaFeatureScalerEngine` to dynamically scale confidence scores before sending to tensor predictors
+- [x] Calibrar umbrales mínimos de confianza `ml_threshold` y reducir apalancamiento de simulación en `stress_sim.rs`
+- [x] Compilar y verificar el rendimiento de estrés de la predicción híbrida síncrona en release
+- [x] Activar OnlineMLCalibrator (Welford Z-Score Sigmoid normalizador en caliente) en el hot path
+- [x] Bloqueo preventivo de Swing Trading para cuentas pequeñas (<$50.0 USD de salvaguarda) para evitar drawdown
+- [x] Implementar estimador cuántico del Exponente de Hurst libre de allocations en `strategy-core`
+- [x] ### Fase 4: Pruebas y UI
+- [x] Ejecutar GodEngineCore en Testnet para confirmar comportamiento.
+- [x] Conectar Dashboard UI y actualizar KPI Cards (RANSAC Sharpe y Zero-Alloc).
+- [x] Validar comportamiento de OS-Guardian en Testnet.
+- [x] Conectar la propagación de Hurst al estado atómico de `coin`
+- [x] Calibrar comisiones VIP Maker de Binance (0.00015) y aplicar Veto Asimétrico de Flujo de Órdenes
+- [x] Sincronizar trait de ejecución (`ExecutionProvider`) e implementaciones en simulator y shadow
+- [x] Propagar `newClientOrderId` con etiquetas de horizonte (`SC`, `WC`, `SO`, `WO`) en producción y simulación de la API de Binance
+- [x] Resolver los conflictos de préstamo mutable de `coin` y firmas de calibración en `god-engine-core/src/lib.rs`
+- [x] Compilar el bot de producción `god_engine` y ejecutar con éxito las pruebas unitarias del workspace
+- [x] ### FASE 40: SWING TENSOR & MACRO EVOLUTION
+- [x] Inject `predict_swing_6d_adaptive` into `GodEngineCore::process_tick` for live macro Swing execution
+- [x] Inject `predict_swing_6d_adaptive` into `GodEngineCore::process_tick_shadow` for macro Swing execution
+- [x] Inject `SimdFmaFeatureScalerEngine` scaling logic to swing machine learning inputs (`nn_prob`)
+- [x] Run Release Backtest for `backtest_dark_alpha` to verify Swing Tensor logic and latency stability
+- [x] ### FASE 41: FORENSIC TENSOR LEAKAGE AUDIT
+- [x] Audit `TensorTrajectoryPredictor` input pathways for potential data leakage
+- [x] Ensure Shadow vs Live tick parity is fully isolated and does not leak `target_price`
+- [x] ### FASE 42: ADAPTIVE FRACTIONAL KELLY SIZING
+- [x] Redefine `CapitalCompounderEngine::calculate_compounding_position_notional` to accept `tensor_confidence`, `hurst_exponent` and `current_drawdown`.
+- [x] Implement multi-stage dynamic fractional Kelly rules inside `CapitalCompounderEngine`
+- [x] Update `risk-engine/src/lib.rs` (`evaluate_scalp_order` and `evaluate_swing_order`) to pass the new parameters from `SignalIntent`
+- [x] Verify sizing scaling and compile stability with `cargo check` and run backtest
+- [ ] ### FASE 43: OMNI-DATA SYNAPTIC MESH
+- [x] Add `global_covariance_tensor` inside `GlobalArena` (or `CoinData` struct as cross-feed)
+- [ ] Aggregate momentum & volatility of all coins in `GodEngineCore::process_tick` and `process_shadow_tick` to build global tensor
+- [ ] Expose global tensor multiplier into `TensorTrajectoryPredictor`
+- [ ] ### FASE 44: QUANTUM STRATEGY EPIGENETICS
+- [x] Add atomic `epigenetic_bias` and `epigenetic_threshold_modifier` to `CoinData`
+- [ ] Create function `apply_epigenetic_feedback(pnl, trade_duration)` to mutate bias continuously 
+- [ ] Inject `epigenetic_bias` and `epigenetic_threshold_modifier` dynamically into strategy evaluations
+- [ ] Run release backtests and benchmark latency impact of lock-free mesh
+- [x] ### FASE 28: RESURRECTION PROTOCOL
+- [x] Reordenar el boot sequence para ejecutar resurrect_positions ANTES del cálculo de universo
+- [x] Integrar símbolos forzados (open positions) en Active Universe
+- [x] ### FASE 29: API MASTERY & DYNAMIC SLIPPAGE
+- [x] Integrar leverageBrackets endpoint en account_sync
+- [x] Implementar slippage dinámico usando network_latency_ms (Ping) y volatilidad (ATR)
+- [x] ### FASE 30: FUNDING YIELD SQUEEZE SHIELD
+- [x] Obtener funding rates de Binance al inicio del bot (premiumIndex)
+- [x] Modificar cálculo de PnL no realizado (Unrealized) para absorber Funding Yield
+- [x] ### FASE 31: WINDOWS ZERO-COLLISION HARDWARE OPTIMIZATION
+- [x] Process Priority (Realtime/High) en live_trader.rs startup a través de OS Guardian
+- [x] Core pinning logic integration for the main tokio threads vía core_affinity
+- [x] ### FASE 16: UNDÉCIMA OLA FORENSE — DESMANTELAMIENTO DE LA DICOTOMÍA SCALPING/SWING Y ESPECTRO CONTINUO UNIVERSAL (D-426 A D-450+)
+  - [x] Censo forense exhaustivo de fragmentaciones Scalp/Swing residuales en RAM (`quantum-arena:state.rs`, `position.rs`)
+  - [x] Censo de bifurcaciones en el Genoma 140D (`genome.rs`) y detección de la Falsa Continuidad (Homotopía Discreta)
+  - [x] Detección de colapso booleano incondicional en `RiskEngine::evaluate_quantum_order`
+  - [x] Censo de estrategias segregadas en `strategy-core` y `signal-engine` (0 estrategias con `TradeHorizon::Continuous`)
+  - [x] Descubrimiento de colisión de flujos y contaminación cruzada en `ModelEnsemble` y `process_event:449`
+  - [x] Detección de la guerra concurrente de demonios evolutivos (`DarwinDaemon` vs `LiveEvolutionDaemon`)
+  - [x] Identificación del nodo muerto en `SpectralCycleEngine::analyze_spectrum`
+  - [x] Auditoría matemática de la causa de falla de stops en producción (Teorema Mandelbrot-Bachelier)
+  - [x] Sincronización documental en `INFORME_FORENSE_MAESTRO.md`, `AUDITORIA_FORENSE_SISTEMICA_TOTAL.md`, `task.md` y `walkthrough.md`
+- [x] ### FASE 21: DECIMOCUARTA OLA FORENSE — AUDITORÍA Y REMEDIACIÓN CRÍTICA (F-001 A F-033)
+  - [x] Censo global de restos de bifurcación Scalp/Swing (65+ archivos analizados) y catálogo de 80+ magic numbers
+  - [x] F-003: Determinismo total en `asset_selector.rs` ($1M volumen y 0.1% volatilidad idénticos en testnet y producción)
+  - [x] F-014: Erradicación de la triple duplicación de métricas en `CoinArena` (`coin.metrics` como única fuente de verdad)
+  - [x] F-009: Ponderación continua de probabilidad neuronal `ml_prob` reemplazando switch binario en `god-engine-core/lib.rs`
+  - [x] F-012: Desacoplamiento de modelos a claves universales multiactivo (`UNIVERSAL` con fallback retrocompatible)
+  - [x] F-026: Conexión en tiempo real de `OnlineLearningModule::predict` en el bucle de inferencia activa
+  - [x] Verificación de compilación workspace (`cargo check --workspace --all-targets` 0 errores)
+  - [x] Aprobación de suite de tests unitarios e integración (121 tests pasados al 100%)
+  - [x] Certificación de backtest 1:1 sobre 1,033,320 ticks con `audit_forensic_backtest` (34 trades continuos, 0 hard SL, DD 2.64%)
+- [x] ### FASE 22: ERRADICACIÓN TOTAL DE BIFURCACIÓN SCALP/SWING (ESPECTRO CONTINUO UNIVERSAL)
+  - [x] Paso 1: `strategy-core` — default trait `QuantumStrategy::horizon` a `TradeHorizon::Continuous`
+  - [x] Paso 2: `signal-engine` — 15 estrategias cuánticas migradas a `TradeHorizon::Continuous`
+  - [x] Paso 3: `god-engine-core/src/lib.rs` — erradicar asignaciones y fallbacks de `Scalp` / `Swing` en emisión de `SignalIntent` y `pos_h`
+  - [x] Paso 4: `feature-engine/src/multifractal.rs` — erradicar `is_scalp_viable` e `is_swing_viable`
+  - [x] Paso 5: `data-pipeline/src/state_db.rs` — unificar `HorizonIntent` con `Continuous`
+  - [x] Paso 6: Compilación y verificación con `cargo check` y suites de tests (190+ tests PASS al 100%)
+  - [x] Paso 7: Certificación en backtest 1:1 con `audit_forensic_backtest` (1,033,320 ticks, 100% Continuous, Max DD 1.80%, Gross ROI -0.06%)
+
+
+

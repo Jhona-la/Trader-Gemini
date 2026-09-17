@@ -1,27 +1,75 @@
-# Rust build artifacts — catch ALL variants
+# ============================================================
+# TRADER GEMINI — .gitignore (F0.3: saneamiento git en caliente)
+# Regla: el repo trackea SOLO fuente, configuración y docs.
+# Artefactos de build, datos runtime y vendors viven en disco,
+# fuera de git. Cargo.lock SÍ se trackea (workspace con binarios).
+# ============================================================
+
+# Rust build artifacts — todas las variantes
 /target*
 /**/target*
 **/*.rs.bk
-Cargo.lock
 
-# Environment files
+# Environment files (secretos — JAMÁS al repo)
 .env
 *.env
 !template.env
 !*.env.example
 
-# Logs
+# Logs y outputs de diagnóstico
 *.log
 logs/
+output*.txt
+audit_output.log
+evolver_output.txt
+test_run.log
+check_errors.json
+cargo_warnings.json
+crates_dep_tree.txt
 
-# Data & models (usually shouldn't be in git)
+# Estado runtime / caches de la API (regenerables, linaje en F2.7)
+state*.json
+exchange_info.json
+quantum_ring_buffer.bin
+*_ticks.bin
+*.parquet
+f32/
+
+# Datos y modelos (peso: se gestionan por storage-engine, no por git)
 data/
 models/
-.models/
-wandb/
+.model*/
 results/
 scratch/
+wandb/
 
-# IDE
+# Vendors y experimentos archivados fuera del repo
+monitoring_tools/
+aits_research/
+premium-dashboard/
+sistema_inmune/
+memoria/
+cerebro/
+research/
+optimization/
+hardware/
+
+# Binarios accidentales en raíz
+*.exe
+*.dll
+*.pdb
+*.lib
+*.so
+*.dylib
+
+# IDE / OS
 .vscode/
 .idea/
+Thumbs.db
+.Dependency
+
+# Sesión ZCode (planes internos del agente)
+.zcode/
+
+# Historial del almacén de genomas: ilimitado, runtime-only (active.json SÍ se trackea)
+config_dir/genomes/*/history/

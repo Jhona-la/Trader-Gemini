@@ -9,8 +9,9 @@ pub struct MarketCorrelationHeatmap {
     market_return_ewma: Ewma,
     market_variance_ewma: Ewma,
     covariances: Vec<Ewma>,
-    
+
     last_prices: Vec<f64>,
+    returns_buffer: Vec<f64>,
 }
 
 impl MarketCorrelationHeatmap {
@@ -23,6 +24,7 @@ impl MarketCorrelationHeatmap {
             market_variance_ewma: Ewma::from_period(period),
             covariances: (0..num_assets).map(|_| Ewma::from_period(period)).collect(),
             last_prices: vec![0.0; num_assets],
+            returns_buffer: vec![0.0; num_assets],
         }
     }
 
@@ -34,32 +36,33 @@ impl MarketCorrelationHeatmap {
             return 0.0; // Fail-safe
         }
 
-        let mut current_returns = vec![0.0; self.num_assets];
         let mut market_return = 0.0;
 
-        for i in 0..self.num_assets {
-            let last_price = self.last_prices[i];
-            let current_price = current_prices[i];
-            
-            if last_price > 0.0 {
-                let ret = (current_price - last_price) / last_price;
-                current_returns[i] = ret;
+        for (i, (&current_price, last_price)) in current_prices
+            .iter()
+            .zip(self.last_prices.iter_mut())
+            .enumerate()
+        {
+            if *last_price > 0.0 {
+                let ret = (current_price - *last_price) / *last_price;
+                self.returns_buffer[i] = ret;
                 market_return += ret;
+            } else {
+                self.returns_buffer[i] = 0.0;
             }
-            self.last_prices[i] = current_price;
+            *last_price = current_price;
         }
 
         market_return /= self.num_assets as f64;
         let market_mean = self.market_return_ewma.update(market_return);
-        
+
         let market_dev = market_return - market_mean;
         let market_var = self.market_variance_ewma.update(market_dev * market_dev);
 
         let mut sum_correlation = 0.0;
         let mut valid_assets = 0.0;
 
-        for i in 0..self.num_assets {
-            let ret = current_returns[i];
+        for (i, &ret) in self.returns_buffer.iter().enumerate().take(self.num_assets) {
             if ret == 0.0 && self.last_prices[i] == 0.0 {
                 continue; // No data yet
             }
@@ -67,7 +70,7 @@ impl MarketCorrelationHeatmap {
             let mean_i = self.returns_ewma[i].update(ret);
             let dev_i = ret - mean_i;
             let var_i = self.variance_ewma[i].update(dev_i * dev_i);
-            
+
             let cov_i = self.covariances[i].update(dev_i * market_dev);
 
             if var_i > 0.0 && market_var > 0.0 {

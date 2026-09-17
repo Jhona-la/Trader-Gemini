@@ -10,4 +10,5 @@ crossbeam = "0.8.4"
 reqwest = { version = "0.13.4", features = ["json"] }
 tokio = { version = "1.52.3", features = ["rt", "macros"] }
 serde_json = "1.0.150"
+data-pipeline = { path = "../data-pipeline" }
 

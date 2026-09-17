@@ -1,9 +1,9 @@
+use arc_swap::ArcSwap;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use arc_swap::ArcSwap;
-use std::collections::HashMap;
 
 lazy_static::lazy_static! {
     pub static ref GLOBAL_FORESTS: ArcSwap<HashMap<String, Arc<NanoForest>>> = ArcSwap::from_pointee(HashMap::new());
@@ -30,12 +30,57 @@ impl NanoForest {
         Self { data }
     }
 
+    /// B3.9 — CONTRATO DE DIMENSIÓN del vector ML de inferencia. Un modelo
+    /// entrenado con un vector MÁS ANCHO que el de este binario (p.ej.
+    /// 48D con splits en dims 44-47 corriendo en un binario 44D) haría
+    /// out-of-bounds en `x[feature]`. El cargador RECHAZA cualquier modelo
+    /// que parta por una dim ≥ este contrato — el fallback a BTCUSDT_SCALP
+    /// mantiene el motor vivo. La regresión de binario queda segura.
+    pub const ML_VECTOR_DIM: usize = 48;
+
     pub fn load_model(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let bin_path = path.replace(".json", ".bin");
-        let data: NanoForestData = if let Ok(bin_data) = std::fs::read(&bin_path) {
-            bincode::deserialize(&bin_data)?
+
+        // Verificar frescura: si el JSON es más nuevo que el BIN, el BIN es obsoleto
+        let is_stale = match (std::fs::metadata(path), std::fs::metadata(&bin_path)) {
+            (Ok(m_json), Ok(m_bin)) => {
+                let t_json = m_json
+                    .modified()
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                let t_bin = m_bin
+                    .modified()
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                t_json > t_bin
+            }
+            _ => false,
+        };
+
+        let data: NanoForestData = if !is_stale && std::path::Path::new(&bin_path).exists() {
+            match std::fs::read(&bin_path) {
+                Ok(bin_data) => match bincode::deserialize(&bin_data) {
+                    Ok(parsed) => parsed,
+                    Err(_) => {
+                        let file = File::open(path)?;
+                        let reader = BufReader::new(file);
+                        let parsed: NanoForestData = serde_json::from_reader(reader)?;
+                        if let Ok(encoded) = bincode::serialize(&parsed) {
+                            let _ = std::fs::write(&bin_path, encoded);
+                        }
+                        parsed
+                    }
+                },
+                Err(_) => {
+                    let file = File::open(path)?;
+                    let reader = BufReader::new(file);
+                    let parsed: NanoForestData = serde_json::from_reader(reader)?;
+                    if let Ok(encoded) = bincode::serialize(&parsed) {
+                        let _ = std::fs::write(&bin_path, encoded);
+                    }
+                    parsed
+                }
+            }
         } else {
-            // Fallback to JSON and auto-compile to bin!
+            // Fallback to JSON and auto-compile fresh BIN!
             let file = File::open(path)?;
             let reader = BufReader::new(file);
             let parsed: NanoForestData = serde_json::from_reader(reader)?;
@@ -44,6 +89,17 @@ impl NanoForest {
             }
             parsed
         };
+        // B3.9 — contrato de dimensión: el modelo debe vivir dentro del
+        // vector que ESTE binario construye. Rechazo ruidoso, no silencio.
+        if let Some(&max_feat) = data.feature.iter().filter(|f| **f >= 0).max() {
+            if max_feat as usize >= Self::ML_VECTOR_DIM {
+                return Err(format!(
+                    "modelo {path} parte por dim {max_feat} ≥ contrato ML_VECTOR_DIM={} — binario obsoleto para este modelo; re-compilar",
+                    Self::ML_VECTOR_DIM
+                )
+                .into());
+            }
+        }
         Ok(NanoForest { data })
     }
 
@@ -57,13 +113,13 @@ impl NanoForest {
         Ok(())
     }
 
-    /// Predicts using a specific global forest
-    pub fn predict_global(key: &str, features: &[f32]) -> f32 {
+    /// Predicts using a specific global forest.
+    /// F5.4: firma Option ⇒ comportamiento Option. El panic anterior mataba el
+    /// proceso (panic=abort) con posiciones abiertas si un modelo no estaba
+    /// cargado. Sin modelo: None ⇒ el caller decide (neutral 0.5 o no-trade).
+    pub fn predict_global(key: &str, features: &[f32]) -> Option<f32> {
         let map = crate::ml_inference::GLOBAL_FORESTS.load();
-        if let Some(forest) = map.get(key) {
-            return forest.predict(features);
-        }
-        panic!("Axioma VII Violado: NanoForest '{}' no cargado.", key);
+        map.get(key).and_then(|forest| forest.predict(features))
     }
 
     /// Fetches a clone of the global forest for hot-path use without RwLock
@@ -75,34 +131,69 @@ impl NanoForest {
         None
     }
 
-    /// Evaluates a single tree. Returns the leaf value.
+    /// Evaluates a single tree. Returns the leaf value with bounds protection.
     #[inline(always)]
     fn evaluate_tree(&self, features: &[f32], tree_idx: usize) -> f32 {
         let start_node = self.data.tree_offsets[tree_idx] as usize;
         let mut current_node = start_node;
 
         loop {
-            let left_child = self.data.children_left[current_node];
-            let right_child = self.data.children_right[current_node];
+            let left_child = self
+                .data
+                .children_left
+                .get(current_node)
+                .copied()
+                .unwrap_or(-1);
+            let right_child = self
+                .data
+                .children_right
+                .get(current_node)
+                .copied()
+                .unwrap_or(-1);
 
             if left_child == -1 && right_child == -1 {
                 // Leaf node
-                return self.data.value[current_node];
+                return self.data.value.get(current_node).copied().unwrap_or(0.0);
             }
 
-            let feat_idx = self.data.feature[current_node] as usize;
-            let threshold = self.data.threshold[current_node];
+            let feat_idx = self.data.feature.get(current_node).copied().unwrap_or(-1);
+            if feat_idx < 0 || (feat_idx as usize) >= features.len() {
+                // Out of bounds feature protection: fallback to left leaf or 0.0
+                return 0.0;
+            }
+            let threshold = self
+                .data
+                .threshold
+                .get(current_node)
+                .copied()
+                .unwrap_or(0.0);
 
-            if features[feat_idx] <= threshold {
+            if features[feat_idx as usize] <= threshold {
+                if left_child < 0 {
+                    return 0.0;
+                }
                 current_node = left_child as usize;
             } else {
+                if right_child < 0 {
+                    return 0.0;
+                }
                 current_node = right_child as usize;
             }
         }
     }
 
     /// Predicts the probability for the given features.
-    pub fn predict(&self, features: &[f32]) -> f32 {
+    pub fn predict(&self, features: &[f32]) -> Option<f32> {
+        if self.data.tree_offsets.len() <= 1 || features.is_empty() {
+            return None;
+        }
+        // FIX #688: Validar finitud de todos los features
+        for &f in features {
+            if !f.is_finite() {
+                return None;
+            }
+        }
+
         let n_trees = self.data.tree_offsets.len() - 1;
         let mut sum = self.data.init_score;
 
@@ -110,7 +201,134 @@ impl NanoForest {
             sum += self.evaluate_tree(features, i);
         }
 
-        // Apply sigmoid for GradientBoostingClassifier
-        1.0 / (1.0 + (-sum).exp())
+        // Apply sigmoid with clamping for numerical stability [-50, +50]
+        let safe_sum = if sum.is_finite() { sum } else { 0.0 };
+        let clamped_sum = (-safe_sum).clamp(-50.0, 50.0);
+        let prob = 1.0 / (1.0 + clamped_sum.exp());
+        Some(if prob.is_finite() {
+            prob.clamp(0.0, 1.0)
+        } else {
+            0.5
+        })
+    }
+
+    pub fn predict_raw(&self, features: &[f32]) -> (f32, f32) {
+        let n_trees = self.data.tree_offsets.len().saturating_sub(1);
+        let mut sum = self.data.init_score;
+        for i in 0..n_trees {
+            sum += self.evaluate_tree(features, i);
+        }
+        let safe_sum = if sum.is_finite() { sum } else { 0.0 };
+        let clamped_sum = (-safe_sum).clamp(-50.0, 50.0);
+        let prob = 1.0 / (1.0 + clamped_sum.exp());
+        (sum, prob)
+    }
+}
+
+/// B3.4 — BLOQUE MACRO del vector ML (dims 44..48, tras swing 34 ⊕ espectral 10).
+///
+/// Contrato ÚNICO entre inferencia viva y train_forest: los niveles FRED que
+/// el feed vivo (`macro_feed.rs`) ya publica en `omni_features` —
+/// DXY=DTWEXBGS [21], SP500 [22], NASDAQ=NASDAQCOM [23], VIX=VIXCLS [24] —
+/// y que el trainer junta as-of (cierre t-1) desde `data/macro/*.csv`.
+///
+/// Las constantes son de UNIDADES (centro/escala típicos de cada serie),
+/// no de información: un GBDT es invariante a transformaciones afines
+/// monótonas de sus features — los splits se adaptan. Feed ausente o no
+/// finito ⇒ 0.0 neutro (misma semántica que el saneo B2.5 del bloque 44D).
+pub fn macro_ml_features(omni: &[f64; 54]) -> [f32; 4] {
+    let aff = |x: f64, center: f64, scale: f64| -> f32 {
+        if x.is_finite() && x > 0.0 {
+            ((x - center) / scale) as f32
+        } else {
+            0.0
+        }
+    };
+    [
+        aff(omni[24], 20.0, 10.0), // VIXCLS — nivel de miedo
+        aff(omni[22], 5000.0, 500.0), // SP500 — nivel riesgo global
+        aff(omni[21], 120.0, 10.0), // DTWEXBGS — nivel dólar
+        aff(omni[23], 18000.0, 2000.0), // NASDAQCOM — nivel tech
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nano_forest_synthetic_prediction() {
+        let data = NanoForestData {
+            children_left: vec![1, -1, -1],
+            children_right: vec![2, -1, -1],
+            feature: vec![0, -1, -1],
+            threshold: vec![0.5, 0.0, 0.0],
+            value: vec![0.0, -0.5, 0.8],
+            tree_offsets: vec![0, 3],
+            init_score: 0.0,
+        };
+        let forest = NanoForest::from_data(data);
+
+        // Feature 0 <= 0.5 -> leaf value -0.5 -> prob < 0.50
+        let prob_low = forest.predict(&[0.2]).unwrap();
+        assert!(prob_low < 0.50);
+
+        // Feature 0 > 0.5 -> leaf value 0.8 -> prob > 0.50
+        let prob_high = forest.predict(&[0.9]).unwrap();
+        assert!(prob_high > 0.50);
+
+        // Empty features -> None
+        assert!(forest.predict(&[]).is_none());
+    }
+
+    #[test]
+    fn test_nano_forest_nan_and_out_of_bounds_features() {
+        let data = NanoForestData {
+            children_left: vec![1, -1, -1],
+            children_right: vec![2, -1, -1],
+            feature: vec![5, -1, -1], // Index 5 out of bounds for 1-element input
+            threshold: vec![0.5, 0.0, 0.0],
+            value: vec![0.0, -0.5, 0.8],
+            tree_offsets: vec![0, 3],
+            init_score: 0.0,
+        };
+        let forest = NanoForest::from_data(data);
+
+        // NaN feature -> None
+        assert!(forest.predict(&[f32::NAN]).is_none());
+
+        // Out of bounds feature index falls back safely
+        let prob = forest.predict(&[0.2]);
+        assert!(prob.is_some());
+    }
+
+    #[test]
+    fn test_nano_forest_global_cache_and_clone() {
+        let data = NanoForestData {
+            children_left: vec![1, -1, -1],
+            children_right: vec![2, -1, -1],
+            feature: vec![0, -1, -1],
+            threshold: vec![0.5, 0.0, 0.0],
+            value: vec![0.0, -0.5, 0.8],
+            tree_offsets: vec![0, 3],
+            init_score: 0.0,
+        };
+        let forest = NanoForest::from_data(data);
+
+        // Store directly in GLOBAL_FORESTS
+        let current_map = GLOBAL_FORESTS.load();
+        let mut new_map = (**current_map).clone();
+        new_map.insert("TEST_MODEL".to_string(), Arc::new(forest));
+        GLOBAL_FORESTS.store(Arc::new(new_map));
+
+        let retrieved = NanoForest::get_global("TEST_MODEL");
+        assert!(retrieved.is_some());
+
+        let prob = NanoForest::predict_global("TEST_MODEL", &[0.8]);
+        assert!(prob.is_some());
+        assert!(prob.unwrap() > 0.50);
+
+        let non_existent = NanoForest::predict_global("NON_EXISTENT", &[0.8]);
+        assert!(non_existent.is_none());
     }
 }

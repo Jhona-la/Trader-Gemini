@@ -1,5 +1,5 @@
-use std::sync::atomic::Ordering;
 use quantum_arena::GlobalArena;
+use std::sync::atomic::Ordering;
 
 /// FASE 8: Portfolio Orchestrator (Capa 3)
 /// Responsable de analizar la exposición cruzada (correlación direccional) en todo el portafolio
@@ -16,76 +16,112 @@ impl<'a> PortfolioOrchestrator<'a> {
     /// Calcula la asignación dinámica de capital (Fase 8: Redistribución basada en rendimiento)
     #[inline(always)]
     pub fn calculate_dynamic_allocation(&self, coin_id: usize, base_leverage: f64) -> f64 {
+        if coin_id >= self.arena.coins.len() || !base_leverage.is_finite() || base_leverage <= 0.0 {
+            return 1.0;
+        }
         let coin = &self.arena.coins[coin_id];
-        
-        let win_rate = coin.scalp.win_rate.load(Ordering::Relaxed);
-        let profit_factor = coin.scalp.profit_factor.load(Ordering::Relaxed);
-        
-        // Pseudo-Sharpe Ratio (Rendimiento ajustado al riesgo)
-        // Si el win_rate es alto y el PF es alto, multiplicamos la confianza
-        let performance_multiplier = if win_rate > 0.55 && profit_factor > 1.2 {
-            1.5 // Sinergia positiva, asignar más capital
-        } else if win_rate < 0.45 || profit_factor < 0.9 {
-            0.5 // Degradación, reducir capital
+
+        let win_rate = coin.metrics.win_rate.load(Ordering::Relaxed);
+        let profit_factor = coin.metrics.profit_factor.load(Ordering::Relaxed);
+
+        // CONTINUOUS Performance Multiplier (sigmoid-based, no step functions)
+        // Maps WR×PF product into a smooth [0.3, 2.0] range via generalized logistic
+        // Center at WR=0.50, PF=1.0 (breakeven point)
+        let safe_wr = if win_rate.is_finite() && win_rate >= 0.0 {
+            win_rate.clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        let safe_pf = if profit_factor.is_finite() && profit_factor > 0.0 {
+            profit_factor.max(0.1)
         } else {
             1.0
         };
+        let performance_score = safe_wr * safe_pf;
+        let portfolio_perf_mult_steepness = self
+            .arena
+            .config
+            .portfolio_perf_mult_steepness
+            .load(Ordering::Relaxed);
+        let portfolio_perf_mult_min = self
+            .arena
+            .config
+            .portfolio_perf_mult_min
+            .load(Ordering::Relaxed);
+        let portfolio_perf_mult_max = self
+            .arena
+            .config
+            .portfolio_perf_mult_max
+            .load(Ordering::Relaxed);
+        let portfolio_perf_mult_center = self
+            .arena
+            .config
+            .portfolio_perf_mult_center
+            .load(Ordering::Relaxed);
 
-        // Drawdown concurrente (Fase 8)
-        // Calculamos el PnL no realizado global del portafolio
+        let range = portfolio_perf_mult_max - portfolio_perf_mult_min;
+        let performance_multiplier = portfolio_perf_mult_min
+            + range
+                / (1.0
+                    + (-portfolio_perf_mult_steepness
+                        * (performance_score - portfolio_perf_mult_center))
+                        .exp());
+
+        // CONTINUOUS Drawdown Penalty (exponential decay, no step functions)
         let mut global_unrealized: f64 = 0.0;
         for c in self.arena.coins.iter() {
-            global_unrealized += c.scalp.pnl_unrealized.load(Ordering::Relaxed);
-            global_unrealized += c.swing.pnl_unrealized.load(Ordering::Relaxed);
+            global_unrealized += c.metrics.pnl_unrealized.load(Ordering::Relaxed);
         }
-        
+
         let capital = self.arena.unified_capital.load(Ordering::Relaxed);
+        let portfolio_dd_penalty_decay = self
+            .arena
+            .config
+            .portfolio_dd_penalty_decay
+            .load(Ordering::Relaxed);
         let drawdown_penalty = if capital > 0.0 && global_unrealized < 0.0 {
             let dd_pct = (global_unrealized.abs() / capital).clamp(0.0, 1.0);
-            if dd_pct > 0.05 { // Si el portafolio entero está en -5% DD
-                0.2 // Cortamos severamente la nueva exposición
-            } else if dd_pct > 0.02 {
-                0.5 // Reducción conservadora
-            } else {
-                1.0
-            }
+            // Smooth exponential decay: at 0% DD = 1.0, at 5% DD ≈ 0.47, at 10% DD ≈ 0.22
+            (-dd_pct * portfolio_dd_penalty_decay).exp()
         } else {
             1.0
         };
 
-        base_leverage * performance_multiplier * drawdown_penalty
+        let raw_alloc = base_leverage * performance_multiplier * drawdown_penalty;
+        if raw_alloc.is_finite() && raw_alloc > 0.0 {
+            raw_alloc
+        } else {
+            1.0
+        }
     }
 
     /// Evalúa si el portafolio permite la apertura de una nueva posición direccional
     #[inline(always)]
-    pub fn allow_trade(&self, intent_is_long: bool, required_margin: f64, regime: crate::regime::MarketRegime) -> bool {
+    pub fn allow_trade(
+        &self,
+        intent_is_long: bool,
+        required_margin: f64,
+        regime: crate::regime::MarketRegime,
+    ) -> bool {
+        if !required_margin.is_finite() || required_margin <= 0.0 {
+            return false;
+        }
         // Regime Orchestration (Fase 13: Kill-Switch macro)
         if regime == crate::regime::MarketRegime::Crash && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
         }
-        if regime == crate::regime::MarketRegime::BullRun && !intent_is_long {
-            return false; // Bloqueo absoluto de cortos en pleno Bull Run.
-        }
+        // D-403: Permitir operaciones Short durante BullRun (scalping contratendencia con stops ceñidos)
+        // en cumplimiento del mandato supremo: operar Long y Short simétricamente.
 
         let mut total_long_margin = 0.0;
         let mut total_short_margin = 0.0;
-        
+
         // O(1) lock-free iteration over 30 coins to calculate net delta and exposure
         for coin in self.arena.coins.iter() {
-            let scalp_pos = &coin.positions.scalp_position;
-            if scalp_pos.is_open() {
-                let margin = scalp_pos.margin_used.load(Ordering::Relaxed);
-                if scalp_pos.is_long.load(Ordering::Relaxed) {
-                    total_long_margin += margin;
-                } else {
-                    total_short_margin += margin;
-                }
-            }
-            
-            let swing_pos = &coin.positions.swing_position;
-            if swing_pos.is_open() {
-                let margin = swing_pos.margin_used.load(Ordering::Relaxed);
-                if swing_pos.is_long.load(Ordering::Relaxed) {
+            let pos = &coin.positions.position;
+            if pos.is_open() {
+                let margin = pos.margin_used.load(Ordering::Relaxed);
+                if pos.is_long.load(Ordering::Relaxed) {
                     total_long_margin += margin;
                 } else {
                     total_short_margin += margin;
@@ -99,30 +135,30 @@ impl<'a> PortfolioOrchestrator<'a> {
         }
 
         let total_exposure = total_long_margin + total_short_margin + required_margin;
-        
-        // 1. Max Gross Exposure limit
-        let exposure_limit = if regime == crate::regime::MarketRegime::BullRun {
-            0.95 // En Bull Run permitimos desplegar hasta el 95% del capital
-        } else if regime == crate::regime::MarketRegime::Crash {
-            0.40 // En Crash somos conservadores
-        } else {
-            0.80
-        };
+
+        // Max Margin Allocation limit: Allow up to 95% of unified capital to be allocated as collateral
+        let exposure_limit = (1.0
+            - self
+                .arena
+                .config
+                .global_max_drawdown
+                .load(Ordering::Relaxed)
+                .min(0.20))
+        .clamp(0.80, 1.0);
 
         if total_exposure > capital * exposure_limit {
             return false;
         }
 
-        // 2. Net Delta / Correlation Limit
+        // Net Delta / Directional Limit: Smooth continuous check
+        // Allow full directional exposure but respect capital limits
         if intent_is_long {
-            let delta_limit = if regime == crate::regime::MarketRegime::BullRun { 0.90 } else { 0.50 };
-            if (total_long_margin + required_margin) > capital * delta_limit {
-                return false; 
+            if (total_long_margin + required_margin) > capital * exposure_limit {
+                return false;
             }
         } else {
-            let delta_limit = if regime == crate::regime::MarketRegime::Crash { 0.80 } else { 0.50 };
-            if (total_short_margin + required_margin) > capital * delta_limit {
-                return false; 
+            if (total_short_margin + required_margin) > capital * exposure_limit {
+                return false;
             }
         }
 

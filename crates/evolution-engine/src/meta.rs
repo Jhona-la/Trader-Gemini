@@ -1,6 +1,6 @@
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use quantum_arena::GlobalArena;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// FASE 9: Meta-Evolución y Auto-Arquitectura
 /// Módulo que monitorea el rendimiento sistémico e infiere si los fallos
@@ -21,9 +21,9 @@ impl MetaEvolver {
         let mut stagnant_coins = 0;
 
         for coin in self.arena.coins.iter() {
-            let pnl = coin.scalp.pnl_realized.load(Ordering::Relaxed);
-            let wr = coin.scalp.win_rate.load(Ordering::Relaxed);
-            total_trades += coin.scalp.trade_count.load(Ordering::Relaxed);
+            let pnl = coin.metrics.pnl_realized.load(Ordering::Relaxed);
+            let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
+            total_trades += coin.metrics.trade_count.load(Ordering::Relaxed);
 
             if pnl < 0.0 && wr < 0.35 {
                 stagnant_coins += 1;
@@ -34,24 +34,65 @@ impl MetaEvolver {
         println!("🧠 [META-EVOLVER] Iniciando Reflexión Estructural...");
 
         if current_best_sharpe < 0.5 {
-            println!("🚨 ANOMALÍA ESTRUCTURAL: El CMA-ES no logra converger en rentabilidad (Mejor Sharpe: {:.2}).", current_best_sharpe);
+            println!(
+                "🚨 ANOMALÍA ESTRUCTURAL: El CMA-ES no logra converger en rentabilidad (Mejor Sharpe: {:.2}).",
+                current_best_sharpe
+            );
             println!("⚠️ SUGERENCIA AUTO-GENERADA (Refactorización):");
-            println!("   -> La dimensionalidad del Feature Engine es insuficiente o tiene ruido excesivo.");
-            println!("   -> ACCIÓN: Dividir 'OmniStrategyEngine' en dos features ortogonales (ej. Micro-Imbalance y Macro-Tendencia).");
-            println!("   -> ACCIÓN: Eliminar las señales basadas estrictamente en RSI (Capa de Ruido).");
+            println!(
+                "   -> La dimensionalidad del Feature Engine es insuficiente o tiene ruido excesivo."
+            );
+            println!(
+                "   -> ACCIÓN: Dividir 'OmniStrategyEngine' en dos features ortogonales (ej. Micro-Imbalance y Macro-Tendencia)."
+            );
+            println!(
+                "   -> ACCIÓN: Eliminar las señales basadas estrictamente en RSI (Capa de Ruido)."
+            );
         } else if stagnant_coins > 15 {
-            println!("🚨 ANOMALÍA SISTÉMICA: Más del 50% de las monedas están estancadas en pérdidas.");
+            println!(
+                "🚨 ANOMALÍA SISTÉMICA: Más del 50% de las monedas están estancadas en pérdidas."
+            );
             println!("⚠️ SUGERENCIA AUTO-GENERADA (Refactorización de Risk):");
-            println!("   -> El PortfolioOrchestrator está fallando en cortar la correlación cruzada.");
-            println!("   -> ACCIÓN: Implementar una matriz lock-free de covarianza en tiempo real para bloquear entradas direccionales síncronas.");
+            println!(
+                "   -> El PortfolioOrchestrator está fallando en cortar la correlación cruzada."
+            );
+            println!(
+                "   -> ACCIÓN: Implementar una matriz lock-free de covarianza en tiempo real para bloquear entradas direccionales síncronas."
+            );
         } else if total_trades == 0 {
             println!("🚨 ANOMALÍA DE EJECUCIÓN: El bot está completamente en 'Standby'.");
             println!("⚠️ SUGERENCIA AUTO-GENERADA (Sensibilidad):");
-            println!("   -> Los umbrales de disparo (Z-Score) son matemáticamente inalcanzables en el régimen de volatilidad actual.");
-            println!("   -> ACCIÓN: Incorporar normalización dinámica del umbral basado en ATR (Average True Range).");
+            println!(
+                "   -> Los umbrales de disparo (Z-Score) son matemáticamente inalcanzables en el régimen de volatilidad actual."
+            );
+            println!(
+                "   -> ACCIÓN: Incorporar normalización dinámica del umbral basado en ATR (Average True Range)."
+            );
         } else {
-            println!("✅ SALUD ESTRUCTURAL ÓPTIMA: La arquitectura soporta la presión del mercado. El motor CMA-ES es suficiente.");
+            println!(
+                "✅ SALUD ESTRUCTURAL ÓPTIMA: La arquitectura soporta la presión del mercado. El motor CMA-ES es suficiente."
+            );
         }
         println!("============================================================");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_meta_evolver_audit_system_architecture_nominal_and_stagnant() {
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let evolver = MetaEvolver::new(arena.clone());
+
+        // Test with low sharpe
+        evolver.audit_system_architecture(0.2);
+
+        // Test with high sharpe
+        evolver.audit_system_architecture(2.5);
+
+        // Test with NaN sharpe
+        evolver.audit_system_architecture(f64::NAN);
     }
 }

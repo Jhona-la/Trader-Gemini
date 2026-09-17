@@ -8,7 +8,7 @@ async fn main() {
 
     // 1. Escanear el workspace
     let root_dir = Path::new("../../crates"); // Asumiendo que se ejecuta desde crates/graph-architecture
-    
+
     // Ruta alternativa si se ejecuta desde el root de Trader Gemini
     let scan_dir = if Path::new("./crates").exists() {
         Path::new("./crates")
@@ -18,10 +18,13 @@ async fn main() {
 
     println!("🔍 Escaneando AST en: {:?}", scan_dir);
     let graph = scan_workspace(scan_dir);
-    
+
     let total_nodes = graph.nodes.len();
     let total_edges = graph.edges.len();
-    println!("✅ Escaneo completado. Nodos: {} | Aristas: {}", total_nodes, total_edges);
+    println!(
+        "✅ Escaneo completado. Nodos: {} | Aristas: {}",
+        total_nodes, total_edges
+    );
 
     // 2. Definir la ruta API que retorna el JSON
     let graph_filter = warp::any().map(move || graph.clone());
@@ -41,8 +44,7 @@ async fn main() {
         "../../crates/graph-architecture/index.html"
     };
 
-    let static_route = warp::path::end()
-        .and(warp::fs::file(index_path));
+    let static_route = warp::path::end().and(warp::fs::file(index_path));
 
     let routes = api_route.or(static_route);
 

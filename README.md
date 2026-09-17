@@ -1,72 +1,72 @@
-# 🏦 TRADER GEMINI: INSTITUTIONAL HFT SYSTEM
-**Version**: 5.0.0 (Fuerza Delta Certified) | **Architecture**: Metal-Core (Nano-Latency)
+# 🏦 TRADER GEMINI v5 — Sistema de Trading Algorítmico en Rust
 
-Trader Gemini es un sistema de trading de Alta Frecuencia (HFT) de Grado Institucional, optimizado para la ejecución de nano-latencia en Binance Futures. Utiliza una arquitectura de **Metal Puro** que minimiza la sobrecarga de Python mediante el uso de kernels JIT y estructuras de datos Zero-Copy.
+**Stack**: Rust puro (workspace de 23 crates) · Binance Futures (testnet + mainnet)
+**Estado**: FASE 0 del Plan Maestro completada. **NO operar en mainnet hasta Fase 7.4.**
 
-> 📘 **DEPLOYMENT GUIDE**: See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for production setup.
+> 📘 Este README describe el sistema REAL (Rust). El histórico del proyecto
+> (era Python) está archivado en `../TraderGemini_archivo/`.
 
----
+## Qué es
 
-## 🚀 ESTATUS DE CERTIFICACIÓN OMEGA
-- **Latencia Tick-to-Order**: **2.30 μs** (Avg).
-- **Determinismo de Riesgo**: 100% (Validación en memoria).
-- **Throughput**: 20,000 decisiones/burst por flota.
-- **Arquitectura**: Metal-Core Zero-Pandas Compliance.
+Sistema de trading cuantitativo para Binance USDT-M Futures con dos motores
+coordinados (scalping + swing), evolución genética de parámetros (genoma),
+inferencia ML en el hot-path (forests + MLP) y telemetría de baja latencia.
 
----
+**Principio de diseño (Plan Maestro)**: paridad total backtest ↔ demo(testnet)
+↔ producción; decisiones de riesgo derivadas de matemática (Kelly fraccional
+bayesiano con cota de ruina), no de constantes; fees como función objetivo
+(expectancy NETO); demo-certificación obligatoria antes de mainnet.
 
-## 🧠 LA TRINIDAD EVOLUTIVA
-El sistema opera mediante tres capas de inteligencia interconectadas:
-1.  **Capa Genética (ADN)**: Optimización semanal de parámetros mediante algoritmos evolutivos en Numba.
-2.  **Capa de Refuerzo (RL)**: Gestión táctica impulsada por redes neuronales (Neural Bridge) para control de salidas y paciencia.
-3.  **Capa de Aprendizaje Online (OL)**: Ajuste de pesos en tiempo real mediante SGD (Stochastic Gradient Descent) para adaptación instantánea a cambios de régimen.
+## Arquitectura (resumen)
 
----
-
-## 🏗️ ARQUITECTURA "METAL-CORE"
-- **Deep Kernel Fusion**: Los indicadores, la construcción de estado y la inferencia neural se fusionan en un único kernel Numba `FASE 65`.
-- **Zero-Copy Data Flow**: Eliminación total de Pandas en el hot-path. Uso de `Structured Arrays` y `Ring Buffers` para máxima localidad de cache.
-- **Asincronía Extrema**: Uso de `uvloop` y colas ring-buffer (`AsyncBoundedQueue`) para evitar bloqueos del event loop.
-- **Risk In-Memory**: Validación de riesgo sub-microsegundo sin acceso a disco.
-
----
-
-## 🛠️ STACK TECNOLÓGICO
-- **Core**: Python 3.10+ con `uvloop` (Networking Acelerado).
-- **Computación**: `Numba JIT` (LLVM) & `Polars` (Rust Engine).
-- **Serialización**: `orjson` & `MessagePack` (Binario rápida).
-- **Persistencia**: SQLite WAL Mode (Atómica & Concurrente).
-- **Auditoría**: God-Mode Pre-Flight Check.
-
----
-
-## 🚦 QUICKSTART INSTITUCIONAL
-
-### 1. Preparación de Pista
-Asegura que tu entorno está optimizado (Windows High Priority habilitado en los scripts `.bat`).
-```bash
-pip install -r requirements.txt
+```
+data-pipeline (WS/REST) ──► feature-engine ──► god-engine-core ──► risk-engine
+        │                        │                (scalp+swing+ML)       │
+        ▼                        ▼                     ▼                 ▼
+  storage-engine (lakehouse)  models/           quantum-arena      execution-engine
+                                                     ▲                 │
+                                              evolution-engine ──► Binance API
+                                              (genoma hot-swap)   (orders+fills)
 ```
 
-### 2. Despegue (God Mode)
-Para máxima prioridad y optimización de bytecode:
+Mapa completo: [`docs/INVENTORY.md`](docs/INVENTORY.md) (censo por crate,
+binarios, código muerto, linaje de archivos runtime, mapa de hardcode).
+
+## Quickstart (desarrollo)
+
 ```bash
-.\LAUNCH_GOD_MODE.bat
+cargo check --workspace --all-targets   # debe estar GREEN
+cargo test --workspace --lib            # 17/17 tests
 ```
 
-### 3. Monitoreo Institucional
-- **Dashboard Web**: `http://localhost:8501` (STREAMLIT).
-- **Oráculo de Consola**: `python check_oracle.py`.
-- **Métricas Prometheus**: Puerto `8000`.
+## Quickstart (demo/testnet — ÚNICO modo permitido por ahora)
 
----
+```bash
+cp template.env .env    # rellenar BINANCE_TESTNET_API_KEY / BINANCE_TESTNET_SECRET_KEY
+./LAUNCHER.bat          # elegir modo DEMO
+```
 
-## 🛡️ PROTOCOLOS DE SEGURIDAD
-1.  **Kill Switch de Latencia**: Si el jitter supera los 5ms, el sistema entra en modo defensivo.
-2.  **Expectativa Viability**: Auditoría en tiempo real de la esperanza matemática por símbolo.
-3.  **Sovereign Context**: Sincronización global del régimen de mercado para evitar operaciones en "choppiness" extremo.
+⚠️ `--force-live` está deshabilitado por directiva del Plan Maestro hasta que
+la certificación demo (Fase 7) se complete con gates estadísticos + gateo humano.
 
----
-**Desarrollado por**: Protocolo Metal-Core Omega Team
-**Certificación**: 100% SUCCESS (Fuerza Delta Level VI Certified)
+## Métricas de latencia
 
+Las cifras de la era anterior ("2.30 μs tick-to-order") se consideran **sin
+evidencia** hasta re-medirlas con el pipeline de telemetría de la Fase 6
+(histogramas p50/p99/p999 por etapa, artefactos reproducibles).
+
+## Estructura del repo
+
+- `crates/` — 23 crates del workspace (ver INVENTORY §1)
+- `src/bin/` — 20 binarios (god_engine es el principal)
+- `config_dir/` — genomas activos (hot-cargados)
+- `models/` — forests + MLP entrenados (hot-reload por mtime)
+- `data/` — histórico parquet/ticks (no trackeado en git)
+- `docs/` — documentación viva (INVENTORY.md es la fuente de verdad)
+
+## Seguridad
+
+- Credenciales SOLO por env (`template.env` de plantilla; `.env` gitignored).
+- Nunca se loguean URLs firmadas ni bodies de cuenta (fix F0.2).
+- `STOP_TRADING.LOCK` en raíz: apagar el sistema (la lectura por el motor
+  se implementa en F5.2).

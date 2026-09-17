@@ -1,15 +1,15 @@
-use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::fs;
-use tokio::sync::broadcast;
 use serde::Serialize;
+use std::fs;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::sync::broadcast;
 
 #[derive(Clone, Serialize, Debug)]
 pub enum TelemetryEvent {
-    LatencyUpdate(u64),      // Nanoseconds
-    LogUpdate(String, String), // (type, message) e.g., ("info", "Connected...")
-    CapitalUpdate(f64),      // Current capital
-    TensorUpdate([f32; 12]), // 12D State Vector (Scalp)
+    LatencyUpdate(u64),          // Nanoseconds
+    LogUpdate(String, String),   // (type, message) e.g., ("info", "Connected...")
+    CapitalUpdate(f64),          // Current capital
+    TensorUpdate([f32; 12]),     // 12D State Vector (Scalp)
     SwingTensorUpdate(Vec<f32>), // 34D State Vector (Swing)
     OmniUpdate {
         latency_ms: u64,
@@ -17,26 +17,40 @@ pub enum TelemetryEvent {
         dark_alpha: f64,
         scalp_pnl: f64,
         swing_pnl: f64,
+        gross_pnl: f64,
+        net_pnl: f64,
+        win_rate: f64,
+        trade_duration_avg: f64,
     },
+    GenomeUpdate(Box<quantum_arena::genome::SuperGenotype>), // FASE 17: Non-blocking Genome Telemetry
+    ShadowLeaderboard(Vec<f64>), // FASE 13: Live competition leaderboard
 }
 
-pub async fn start_server(tx: broadcast::Sender<TelemetryEvent>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_server(
+    tx: broadcast::Sender<TelemetryEvent>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = 8080;
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    println!("🌐 [DASHBOARD] Embedded Rust Dashboard running on http://localhost:{}", port);
+    println!(
+        "🌐 [DASHBOARD] Embedded Rust Dashboard running on http://localhost:{}",
+        port
+    );
 
     loop {
         let (mut socket, _) = listener.accept().await?;
         let tx = tx.clone();
-        
+
         tokio::spawn(async move {
             let mut buf = [0; 1024];
             if let Ok(n) = socket.read(&mut buf).await {
-                if n == 0 { return; }
+                if n == 0 {
+                    return;
+                }
                 let request = String::from_utf8_lossy(&buf[..n]);
-                
+
                 if request.starts_with("GET /api/stats") {
-                    let config_str = fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
+                    let config_str = fs::read_to_string("data/dynamic_config.json")
+                        .unwrap_or_else(|_| "{}".to_string());
                     let response = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\n\r\n{}",
                         config_str
@@ -51,10 +65,72 @@ pub async fn start_server(tx: broadcast::Sender<TelemetryEvent>) -> Result<(), B
                     if socket.write_all(response.as_bytes()).await.is_err() {
                         return;
                     }
-                    
+
                     let mut rx = tx.subscribe();
                     loop {
-                        if let Ok(event) = rx.recv().await {
+                        if let Ok(mut event) = rx.recv().await {
+                            // FIX #1469: Sanitización de flotantes en eventos de telemetría para prevenir caídas de SSE por NaNs
+                            match &mut event {
+                                TelemetryEvent::CapitalUpdate(cap) => {
+                                    if !cap.is_finite() {
+                                        *cap = 0.0;
+                                    }
+                                }
+                                TelemetryEvent::OmniUpdate {
+                                    dark_alpha,
+                                    scalp_pnl,
+                                    swing_pnl,
+                                    gross_pnl,
+                                    net_pnl,
+                                    win_rate,
+                                    trade_duration_avg,
+                                    ..
+                                } => {
+                                    if !dark_alpha.is_finite() {
+                                        *dark_alpha = 0.0;
+                                    }
+                                    if !scalp_pnl.is_finite() {
+                                        *scalp_pnl = 0.0;
+                                    }
+                                    if !swing_pnl.is_finite() {
+                                        *swing_pnl = 0.0;
+                                    }
+                                    if !gross_pnl.is_finite() {
+                                        *gross_pnl = 0.0;
+                                    }
+                                    if !net_pnl.is_finite() {
+                                        *net_pnl = 0.0;
+                                    }
+                                    if !win_rate.is_finite() {
+                                        *win_rate = 0.0;
+                                    }
+                                    if !trade_duration_avg.is_finite() {
+                                        *trade_duration_avg = 0.0;
+                                    }
+                                }
+                                TelemetryEvent::TensorUpdate(tensor) => {
+                                    for v in tensor.iter_mut() {
+                                        if !v.is_finite() {
+                                            *v = 0.0;
+                                        }
+                                    }
+                                }
+                                TelemetryEvent::SwingTensorUpdate(tensor) => {
+                                    for v in tensor.iter_mut() {
+                                        if !v.is_finite() {
+                                            *v = 0.0;
+                                        }
+                                    }
+                                }
+                                TelemetryEvent::ShadowLeaderboard(scores) => {
+                                    for s in scores.iter_mut() {
+                                        if !s.is_finite() {
+                                            *s = 0.0;
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
                             if let Ok(json) = serde_json::to_string(&event) {
                                 let sse_msg = format!("data: {}\n\n", json);
                                 if socket.write_all(sse_msg.as_bytes()).await.is_err() {
@@ -64,22 +140,58 @@ pub async fn start_server(tx: broadcast::Sender<TelemetryEvent>) -> Result<(), B
                         }
                     }
                 } else if request.starts_with("GET /style.css") {
-                    let css = fs::read_to_string("static/style.css").unwrap_or_else(|_| "".to_string());
-                    let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/css\r\n\r\n{}", css);
+                    let css =
+                        fs::read_to_string("static/style.css").unwrap_or_else(|_| "".to_string());
+                    let response =
+                        format!("HTTP/1.1 200 OK\r\nContent-Type: text/css\r\n\r\n{}", css);
                     let _ = socket.write_all(response.as_bytes()).await;
                 } else if request.starts_with("GET /app.js") {
                     let js = fs::read_to_string("static/app.js").unwrap_or_else(|_| "".to_string());
-                    let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\n\r\n{}", js);
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\n\r\n{}",
+                        js
+                    );
                     let _ = socket.write_all(response.as_bytes()).await;
                 } else {
-                    let html = fs::read_to_string("static/index.html").unwrap_or_else(|_| "<h1>Error: static/index.html not found</h1>".to_string());
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n{}",
-                        html
-                    );
+                    let html = fs::read_to_string("static/index.html").unwrap_or_else(|_| {
+                        "<h1>Error: static/index.html not found</h1>".to_string()
+                    });
+                    let response =
+                        format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n{}", html);
                     let _ = socket.write_all(response.as_bytes()).await;
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_telemetry_event_enum_serialization() {
+        let ev1 = TelemetryEvent::LatencyUpdate(5000);
+        let s1 = serde_json::to_string(&ev1).unwrap();
+        assert!(s1.contains("5000"));
+
+        let ev2 = TelemetryEvent::CapitalUpdate(13.50);
+        let s2 = serde_json::to_string(&ev2).unwrap();
+        assert!(s2.contains("13.5"));
+
+        let ev3 = TelemetryEvent::OmniUpdate {
+            latency_ms: 12,
+            latency_panic: false,
+            dark_alpha: 0.75,
+            scalp_pnl: 0.50,
+            swing_pnl: 0.0,
+            gross_pnl: 0.50,
+            net_pnl: 0.45,
+            win_rate: 0.80,
+            trade_duration_avg: 120.0,
+        };
+        let s3 = serde_json::to_string(&ev3).unwrap();
+        assert!(s3.contains("0.75"));
+        assert!(s3.contains("0.45"));
     }
 }

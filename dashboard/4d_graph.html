@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trader Gemini V5 - 4D Graph Architecture</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Fira+Code:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #0b0c10;
+            color: #c5c6c7;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        #mynetwork {
+            width: 100%;
+            height: 100vh;
+            border: none;
+            background: radial-gradient(circle at center, #1f2833 0%, #0b0c10 100%);
+        }
+        #overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            background: rgba(31, 40, 51, 0.85);
+            backdrop-filter: blur(10px);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid rgba(102, 252, 241, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            max-width: 350px;
+        }
+        h1 {
+            color: #66fcf1;
+            margin-top: 0;
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        p {
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: #c5c6c7;
+        }
+        .stats {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(197, 198, 199, 0.2);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .stat-val {
+            color: #45a29e;
+            font-weight: 700;
+        }
+        .legend {
+            margin-top: 20px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #66fcf1;
+            font-size: 1.2rem;
+            font-family: 'Fira Code', monospace;
+            z-index: 900;
+        }
+    </style>
+</head>
+<body>
+    <div id="overlay">
+        <h1>Quantum 4D Graph</h1>
+        <p>AST Parser interactivo de la topología HFT de Trader Gemini V5.</p>
+        
+        <div class="stats">
+            <div class="stat-row"><span>Nodos Detectados:</span> <span id="stat-nodes" class="stat-val">0</span></div>
+            <div class="stat-row"><span>Conexiones (Aristas):</span> <span id="stat-edges" class="stat-val">0</span></div>
+            <div class="stat-row"><span>Latencia de Render:</span> <span id="stat-render" class="stat-val">0 ms</span></div>
+        </div>
+        
+        <div class="legend">
+            <div class="legend-item"><div class="legend-color" style="background: #45a29e;"></div> Workspace (Root)</div>
+            <div class="legend-item"><div class="legend-color" style="background: #66fcf1;"></div> Crate / Módulo</div>
+            <div class="legend-item"><div class="legend-color" style="background: #e8a87c;"></div> Struct (Estado/Memoria)</div>
+            <div class="legend-item"><div class="legend-color" style="background: #c38d9e;"></div> Función / Feature</div>
+            <div class="legend-item"><div class="legend-color" style="background: #e27d60;"></div> Función Huérfana</div>
+        </div>
+    </div>
+    
+    <div id="loading" class="loading">Iniciando Escáner Cuántico...</div>
+    <div id="mynetwork"></div>
+
+    <script>
+        const renderStart = performance.now();
+        
+        // Cargar el JSON generado por el AST (syn)
+        fetch('graph.json')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("No se pudo cargar graph.json. Asegúrate de ejecutar 'cargo run --bin render_graph' primero.");
+                }
+                return response.json();
+            })
+            .then(data => {
+                document.getElementById('loading').style.display = 'none';
+                
+                const nodesData = Object.values(data.nodes).map(n => {
+                    let color = '#c38d9e'; // Default function
+                    let shape = 'dot';
+                    let size = 15;
+                    
+                    if (n.node_type === 'workspace') { color = '#45a29e'; shape = 'diamond'; size = 30; }
+                    else if (n.node_type === 'module') { color = '#66fcf1'; shape = 'hexagon'; size = 25; }
+                    else if (n.node_type === 'struct') { color = '#e8a87c'; shape = 'box'; size = 20; }
+                    else if (n.node_type === 'feature') { color = '#85dcba'; size = 18; }
+                    
+                    if (n.is_orphan) {
+                        color = '#e27d60';
+                    }
+
+                    return {
+                        id: n.id,
+                        label: n.label,
+                        title: `ID: ${n.id}\nType: ${n.node_type}\nFile: ${n.file_path}:${n.line_number}\nOrphan: ${n.is_orphan}`,
+                        color: color,
+                        shape: shape,
+                        size: size,
+                        font: { color: '#c5c6c7', face: 'Fira Code' }
+                    };
+                });
+                
+                const edgesData = data.edges.map(e => {
+                    return {
+                        from: e.source,
+                        to: e.target,
+                        title: e.edge_type,
+                        color: { color: 'rgba(102, 252, 241, 0.2)', highlight: '#66fcf1' }
+                    };
+                });
+
+                document.getElementById('stat-nodes').innerText = nodesData.length;
+                document.getElementById('stat-edges').innerText = edgesData.length;
+
+                const container = document.getElementById('mynetwork');
+                const networkData = {
+                    nodes: new vis.DataSet(nodesData),
+                    edges: new vis.DataSet(edgesData)
+                };
+                
+                const options = {
+                    physics: {
+                        forceAtlas2Based: {
+                            gravitationalConstant: -100,
+                            centralGravity: 0.01,
+                            springLength: 100,
+                            springConstant: 0.08
+                        },
+                        maxVelocity: 50,
+                        solver: 'forceAtlas2Based',
+                        timestep: 0.35,
+                        stabilization: { iterations: 150 }
+                    },
+                    edges: {
+                        smooth: { type: 'continuous' }
+                    },
+                    interaction: {
+                        hover: true,
+                        tooltipDelay: 200,
+                        zoomView: true
+                    }
+                };
+
+                new vis.Network(container, networkData, options);
+                
+                const renderEnd = performance.now();
+                document.getElementById('stat-render').innerText = (renderEnd - renderStart).toFixed(2) + ' ms';
+            })
+            .catch(error => {
+                document.getElementById('loading').innerText = 'Error: ' + error.message;
+                document.getElementById('loading').style.color = '#e27d60';
+            });
+    </script>
+</body>
+</html>

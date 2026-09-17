@@ -1,30 +1,15 @@
-use quantum_arena::{GlobalArena, TickEvent};
 use god_engine_core::GodEngineCore;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use std::fs::File;
-use rayon::prelude::*;
-use serde::{Serialize, Deserialize};
+use quantum_arena::genome::SuperGenotype;
+use quantum_arena::{GlobalArena, TickEvent};
 use rand::RngExt;
-use std::time::Duration;
-use memmap2::MmapOptions;
-use std::mem::size_of;
+use rayon::prelude::*;
+use std::fs::File;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Genotype {
-    pub global_leverage: f64,
-    pub trend_threshold: f64,
-    pub maker_spread_pct: f64,
-    pub maker_obi_threshold: f64,
-    pub scalp_tp: f64,
-    pub scalp_sl: f64,
-    pub swing_tp: f64,
-    pub swing_sl: f64,
-    pub scalp_z_target: f64,
-    pub capital_split_scalp: f64,
-    pub min_confidence: f64,
-    pub explosive_leverage_multiplier: f64,
-}
+use memmap2::MmapOptions;
+use std::env;
+use std::mem::size_of;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -36,258 +21,582 @@ struct BinTick {
     pub ask_qty: f64,
 }
 
+#[derive(Clone)]
+struct IslandResult {
+    pub island_idx: usize,
+    pub genome: SuperGenotype,
+    pub final_capital: f64,
+    pub total_trades: usize,
+    pub fitness: f64,
+    pub win_rate: f64,
+    pub max_drawdown: f64,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), String> {
     println!("============================================================");
-    println!("🧬 TRADER GEMINI V5 - TICK-LEVEL REALITY EVOLVER");
+    println!("🧬 TRADER GEMINI V5 - TICK-LEVEL REALITY EVOLVER (SuperGenotype)");
+    println!("🏛️ TOPOLOGÍA: 4 ISLAS SEGREGADAS CON RING MIGRATION (CERO CONTAMINACIÓN)");
     println!("============================================================");
 
-    let arena_for_cap = std::thread::Builder::new()
+    let initial_capital_str = env::var("INITIAL_CAPITAL").unwrap_or_else(|_| "13.0".to_string());
+    // FIX #1519: Sanitización estricta de capital inicial finito
+    let mut initial_capital: f64 = initial_capital_str.parse().unwrap_or(13.0);
+    if !initial_capital.is_finite() || initial_capital <= 0.0 {
+        println!(
+            "⚠️ INITIAL_CAPITAL inválido o <= 0.0 detectado. Usando $13.00 como capital base."
+        );
+        initial_capital = 13.0;
+    }
+
+    let _arena_for_cap = std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024)
-        .spawn(|| Arc::new(GlobalArena::default()))
+        .spawn(move || Arc::new(GlobalArena::new(initial_capital)))
         .unwrap()
         .join()
         .unwrap();
-        
-    let initial_capital = arena_for_cap.config.base_capital.load(Ordering::Relaxed);
+
     println!("💰 Initial Capital: ${:.2}", initial_capital);
 
-    let bin_path = "data/BTCUSDT_ticks.bin";
-    println!("📥 Cargando datos REALES de alta frecuencia: {}", bin_path);
-    
-    let file = File::open(bin_path).expect("❌ Archivo BTCUSDT_ticks.bin no encontrado. Ejecuta los simuladores anteriores primero.");
-    let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
-    
-    let tick_size = size_of::<BinTick>();
-    let num_ticks = mmap.len() / tick_size;
-    println!("📊 Ticks reales cargados (Cero Fricción simulada): {}", num_ticks);
-    
-    let mut master_stream = Vec::with_capacity(num_ticks);
-    
-    for i in 0..num_ticks {
-        let start = i * tick_size;
-        let end = start + tick_size;
-        let bytes = &mmap[start..end];
-        let tick: BinTick = unsafe { std::ptr::read(bytes.as_ptr() as *const _) };
-        
-        // Filter out bad ticks just in case
-        if tick.bid_price > 0.0 && tick.ask_price > tick.bid_price {
-            master_stream.push(TickEvent {
-                coin_id: 0, // BTCUSDT is index 0
-                timestamp: tick.timestamp,
-                bid_price: tick.bid_price,
-                ask_price: tick.ask_price,
-                bid_qty: tick.bid_qty,
-                ask_qty: tick.ask_qty,
-            });
+    // INICIALIZAR EL SYMBOL REGISTRY PARA LOS 5 ACTIVOS PRINCIPALES
+    quantum_arena::symbol_registry::update_registry(vec![
+        quantum_arena::symbol_registry::SymbolSpec {
+            symbol: "BTCUSDT".to_string(),
+            step_size: 0.001,
+            tick_size: 0.10,
+            min_qty: 0.001,
+            min_notional: 5.0,
+            max_leverage: 125,
+            maker_fee: 0.0002,
+            taker_fee: 0.0005,
+            is_shadow: false,
+        },
+        quantum_arena::symbol_registry::SymbolSpec {
+            symbol: "ETHUSDT".to_string(),
+            step_size: 0.01,
+            tick_size: 0.01,
+            min_qty: 0.01,
+            min_notional: 5.0,
+            max_leverage: 100,
+            maker_fee: 0.0002,
+            taker_fee: 0.0005,
+            is_shadow: false,
+        },
+        quantum_arena::symbol_registry::SymbolSpec {
+            symbol: "SOLUSDT".to_string(),
+            step_size: 0.1,
+            tick_size: 0.01,
+            min_qty: 0.1,
+            min_notional: 5.0,
+            max_leverage: 50,
+            maker_fee: 0.0002,
+            taker_fee: 0.0005,
+            is_shadow: false,
+        },
+        quantum_arena::symbol_registry::SymbolSpec {
+            symbol: "BNBUSDT".to_string(),
+            step_size: 0.01,
+            tick_size: 0.01,
+            min_qty: 0.01,
+            min_notional: 5.0,
+            max_leverage: 50,
+            maker_fee: 0.0002,
+            taker_fee: 0.0005,
+            is_shadow: false,
+        },
+        quantum_arena::symbol_registry::SymbolSpec {
+            symbol: "XRPUSDT".to_string(),
+            step_size: 1.0,
+            tick_size: 0.0001,
+            min_qty: 1.0,
+            min_notional: 5.0,
+            max_leverage: 75,
+            maker_fee: 0.0002,
+            taker_fee: 0.0005,
+            is_shadow: false,
+        },
+    ]);
+
+    let symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"];
+    let mut master_stream = Vec::new();
+
+    for (coin_id, symbol) in symbols.iter().enumerate() {
+        let bin_path = format!("data/{}_ticks.bin", symbol);
+        println!("📥 Cargando ticks multiactivo [{}]: {}", symbol, bin_path);
+
+        if let Ok(file) = File::open(&bin_path) {
+            if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
+                let tick_size = size_of::<BinTick>();
+                let num_ticks = mmap.len() / tick_size;
+                for i in 0..num_ticks {
+                    let start = i * tick_size;
+                    let end = start + tick_size;
+                    let bytes = &mmap[start..end];
+                    let tick: BinTick = unsafe { std::ptr::read(bytes.as_ptr() as *const _) };
+                    if tick.bid_price > 0.0 && tick.ask_price > tick.bid_price {
+                        master_stream.push(TickEvent {
+                            coin_id,
+                            timestamp: tick.timestamp,
+                            bid_price: tick.bid_price,
+                            ask_price: tick.ask_price,
+                            bid_qty: tick.bid_qty,
+                            ask_qty: tick.ask_qty,
+                        });
+                    }
+                }
+            }
         }
     }
-    
-    println!("✅ Ticks válidos en memoria: {}", master_stream.len());
 
-    let pop_size = 50;
-    let generations = 20;
-    let mutation_rate = 0.3;
-    let mut population: Vec<Genotype> = (0..pop_size).map(|_| {
-        Genotype {
-            global_leverage: rand::rng().random_range(10.0..50.0),
-            trend_threshold: rand::rng().random_range(0.4..0.8),
-            maker_spread_pct: rand::rng().random_range(0.0001..0.0010),
-            maker_obi_threshold: rand::rng().random_range(0.4..0.8),
-            scalp_tp: rand::rng().random_range(0.001..0.005),
-            scalp_sl: rand::rng().random_range(0.0005..0.002),
-            swing_tp: rand::rng().random_range(0.005..0.020),
-            swing_sl: rand::rng().random_range(0.002..0.008),
-            scalp_z_target: rand::rng().random_range(1.5..3.5),
-            capital_split_scalp: rand::rng().random_range(0.5..0.9), // Prioritize scalp for 100% WR
-            min_confidence: rand::rng().random_range(0.6..0.9),
-            explosive_leverage_multiplier: rand::rng().random_range(1.5..4.0),
+    // Ordenar cronológicamente el stream multiactivo para simulación temporal estricta
+    master_stream.sort_by_key(|t| t.timestamp);
+    println!("✅ Stream multiactivo ordenado en memoria: {} ticks totales (100% Ticks Reales - Sin Submuestreo)", master_stream.len());
+
+    // Inicializar Ghost Flusher Lock-Free para evitar bloqueos de consola
+    telemetry_server::macros::init_telemetry_logger();
+
+    // --- CONFIGURACIÓN EVOLUTIVA AVANZADA: TOPOLOGÍA DE 4 ISLAS SEGREGADAS ---
+    let num_islands = 4;
+    let island_size = 4; // 4 individuos por isla = 16 individuos totales
+    let pop_size = num_islands * island_size;
+    let generations = 6;
+
+    let island_names = [
+        "Isla 0 (Scalp L2)",
+        "Isla 1 (Swing Macro)",
+        "Isla 2 (Mean Reversion)",
+        "Isla 3 (Híbrido Cuántico)",
+    ];
+
+    // Inicializar 4 islas segregadas:
+    // Isla 0: Especialistas Scalping L2 (altos OBI/OFI, TP/SL micro, capital split scalp alto)
+    // Isla 1: Especialistas Swing Macro (alta persistencia macro, Hurst > 0.55, RR >= 3:1, capital swing alto)
+    // Isla 2: Especialistas Mean Reversion & SMR (Z-Score y bandas de Bollinger, balance 50/50)
+    // Isla 3: Especialistas Híbridos Cuánticos (Equilibrio de Confluencia, Mínimo DD, Semilla Campeón)
+    let current_champion = SuperGenotype::load_or_default();
+    let mut islands: Vec<Vec<SuperGenotype>> = Vec::with_capacity(num_islands);
+
+    // Isla 0: Especialistas Scalping L2 de Alta Velocidad (OBI/OFI dinámicos [0.18, 0.38])
+    let mut island_0 = Vec::with_capacity(island_size);
+    for _ in 0..island_size {
+        let mut ind = current_champion.mutate_cmaes(0.15);
+        ind.dynamic_obi_threshold = rand::random_range(0.18..0.38);
+        ind.dynamic_ofi_threshold = rand::random_range(0.20..0.45);
+        ind.dynamic_ema_trend = rand::random_range(0.00003..0.00012);
+        ind.ml_threshold_long = rand::random_range(0.52..0.65);
+        ind.ml_threshold_short = rand::random_range(0.52..0.65);
+        ind.scalp_sl_base = rand::random_range(0.0012..0.0022);
+        ind.scalp_tp_base = ind.scalp_sl_base * rand::random_range(2.0..3.0);
+        ind.capital_split_scalp = rand::random_range(0.55..0.75);
+        ind.global_leverage = rand::random_range(25.0..35.0);
+        island_0.push(ind);
+    }
+    islands.push(island_0);
+
+    // Isla 1: Especialistas Swing Macro Trend (Hurst > 0.55, TP/SL > 3.0:1)
+    let mut island_1 = Vec::with_capacity(island_size);
+    for _ in 0..island_size {
+        let mut ind = current_champion.mutate_cmaes(0.15);
+        ind.trend_threshold = rand::random_range(0.20..0.40);
+        ind.hurst_trend_threshold = rand::random_range(0.55..0.70);
+        ind.swing_sl_base = rand::random_range(0.006..0.015);
+        ind.swing_tp_base = ind.swing_sl_base * rand::random_range(3.0..5.0);
+        ind.capital_split_scalp = rand::random_range(0.20..0.40);
+        ind.global_leverage = rand::random_range(15.0..25.0);
+        island_1.push(ind);
+    }
+    islands.push(island_1);
+
+    // Isla 2: Especialistas Mean Reversion & SMR
+    let mut island_2 = Vec::with_capacity(island_size);
+    for _ in 0..island_size {
+        let mut ind = current_champion.mutate_cmaes(0.15);
+        ind.dynamic_ema_trend = rand::random_range(0.00002..0.00008);
+        ind.scalp_sl_base = rand::random_range(0.0012..0.0020);
+        ind.scalp_tp_base = ind.scalp_sl_base * rand::random_range(2.0..2.8);
+        ind.dynamic_obi_threshold = rand::random_range(0.20..0.35);
+        ind.range_threshold = rand::random_range(0.40..0.70);
+        ind.capital_split_scalp = 0.50;
+        island_2.push(ind);
+    }
+    islands.push(island_2);
+
+    // Isla 3: Especialistas Híbridos Cuánticos & Kelly Adaptive (Semilla con Campeón Actual)
+    let mut island_3 = Vec::with_capacity(island_size);
+    island_3.push(current_champion.clone());
+    for _ in 1..island_size {
+        island_3.push(current_champion.mutate_cmaes(0.10));
+    }
+    islands.push(island_3);
+
+    println!(
+        "🚀 Iniciando Co-Evolución por Islas: {} Individuos ({} islas x {}) x {} Generaciones...",
+        pop_size, num_islands, island_size, generations
+    );
+
+    let mut best_all_time: Option<(SuperGenotype, f64, usize, f64)> = None; // (genome, capital, trades, fitness)
+
+    // Cargar modelo DarkAlphaEngine 54D para co-evolución simbiótica
+    let trained_nn = match dark_alpha_engine::DarkAlphaEngine::load_json(
+        "models/DarkAlpha_BTCUSDT.json",
+    ) {
+        Ok(mut m) => {
+            let is_corrupt = m
+                .layer1
+                .weights
+                .iter()
+                .any(|&w| w.is_nan() || w.is_infinite());
+            if is_corrupt {
+                println!("⚠️ [EVOLVER] Modelo en disco corrupto. Usando default_model 54D.");
+                let mut def = dark_alpha_engine::DarkAlphaEngine::default_model();
+                def.init_buffers();
+                def
+            } else {
+                m.init_buffers();
+                println!(
+                    "🧠 [EVOLVER] DarkAlphaEngine 54D cargado exitosamente para co-evolución."
+                );
+                m
+            }
         }
-    }).collect();
-
-    println!("🚀 Iniciando Evolución de Supervivencia: {} Individuos x {} Generaciones...", pop_size, generations);
-
-    let mut best_all_time = (population[0].clone(), 0.0_f64, 0);
+        Err(_) => {
+            println!("ℹ️ [EVOLVER] models/DarkAlpha_BTCUSDT.json no encontrado. Usando default_model 54D.");
+            let mut def = dark_alpha_engine::DarkAlphaEngine::default_model();
+            def.init_buffers();
+            def
+        }
+    };
 
     for gen in 1..=generations {
-        println!("== GENERACIÓN {} ==", gen);
-        
-        let mut results: Vec<_> = population
+        let progress = (gen as f64 - 1.0) / (generations as f64 - 1.0).max(1.0);
+        let mutation_rate = 0.04 + (0.35 - 0.04) * (1.0 - progress).powf(1.5);
+
+        println!(
+            "== GENERACIÓN {}/{} (Temp/Mut: {:.4}) ==",
+            gen, generations, mutation_rate
+        );
+
+        // Aplanar tareas de evaluación conservando identidad de isla
+        let eval_tasks: Vec<(usize, SuperGenotype)> = islands
+            .iter()
+            .enumerate()
+            .flat_map(|(isl_idx, isl)| isl.iter().map(move |ind| (isl_idx, ind.clone())))
+            .collect();
+
+        let raw_results: Vec<IslandResult> = eval_tasks
             .par_iter()
-            .map(|genome| {
-                let arena = std::thread::Builder::new()
-                    .stack_size(64 * 1024 * 1024)
-                    .spawn(|| Arc::new(GlobalArena::default()))
-                    .unwrap()
-                    .join()
-                    .unwrap();
-                let initial_capital = arena.config.base_capital.load(Ordering::Relaxed);
-                
-                arena.config.global_leverage.store(genome.global_leverage, Ordering::Relaxed);
-                arena.config.trend_threshold.store(genome.trend_threshold, Ordering::Relaxed);
-                arena.config.scalp_obi_threshold.store(genome.scalp_z_target, Ordering::Relaxed);
-                arena.config.maker_spread_pct.store(genome.maker_spread_pct, Ordering::Relaxed);
-                arena.config.maker_obi_threshold.store(genome.maker_obi_threshold, Ordering::Relaxed);
-                arena.config.scalp_tp_base.store(genome.scalp_tp, Ordering::Relaxed);
-                arena.config.scalp_sl_base.store(genome.scalp_sl, Ordering::Relaxed);
-                arena.config.swing_tp_base.store(genome.swing_tp, Ordering::Relaxed);
-                arena.config.swing_sl_base.store(genome.swing_sl, Ordering::Relaxed);
-                arena.config.capital_split_scalp.store(genome.capital_split_scalp, Ordering::Relaxed);
-                arena.config.min_confidence_btc.store(genome.min_confidence, Ordering::Relaxed);
-                arena.config.explosive_leverage_multiplier.store(genome.explosive_leverage_multiplier, Ordering::Relaxed);
-                
-                // Allow extreme compounding - accept 90% drawdown max
-                arena.config.global_max_drawdown.store(0.90, Ordering::Relaxed);
-                
+            .map(|(isl_idx, genome)| {
+                let arena = Arc::new(GlobalArena::new(initial_capital));
+                genome.apply_to_arena(&arena);
+                arena
+                    .config
+                    .global_max_drawdown
+                    .store(0.90, Ordering::Relaxed);
+
                 let mut engine = GodEngineCore::new(arena.clone());
-                let mut total_trades = 0;
-                let mut max_drawdown = 0.0;
+                let mut local_nn = trained_nn.clone();
+                local_nn.init_buffers();
+                engine.swing_nn = Some(local_nn);
+
+                let mut total_trades: usize = 0;
+                let mut wins: usize = 0;
+                let mut max_drawdown: f64 = 0.0;
                 let mut peak_capital = initial_capital;
 
-                for tick in &master_stream {
-                    arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty);
-                    let (_new_sc, _new_sw, closed_sc, closed_sw, _) = engine.process_tick(
+                // Microestructura 100% exacta: Procesamiento de todos los ticks sin step_by
+                for tick in master_stream.iter() {
+                    arena.update_market_data(
                         tick.coin_id,
                         tick.bid_price,
                         tick.ask_price,
                         tick.bid_qty,
                         tick.ask_qty,
-                        tick.timestamp, &[0.0; 54]);
-                    
-                    if closed_sc.is_some() || closed_sw.is_some() {
+                        tick.timestamp,
+                    );
+                    let mut omni = [0.0f64; 54];
+                    let swing_feats = engine.feature_engines[tick.coin_id].get_swing_features();
+                    for (idx, &f) in swing_feats.iter().enumerate() {
+                        if idx < 54 {
+                            omni[idx] = f as f64;
+                        }
+                    }
+                    let total_qty = tick.bid_qty + tick.ask_qty;
+                    let mid = (tick.bid_price + tick.ask_price) / 2.0;
+                    if total_qty > 0.0 && mid > 0.0 {
+                        omni[0] = tick.bid_price;
+                        omni[1] = tick.ask_price;
+                        omni[30] = tick.bid_qty - tick.ask_qty;
+                        omni[31] = (tick.bid_qty - tick.ask_qty) * 1.2;
+                        omni[39] = (tick.bid_qty - tick.ask_qty) / total_qty;
+                    }
+                    let (_new_pos, closed_pos, _) = engine.process_tick(
+                        tick.coin_id,
+                        tick.bid_price,
+                        tick.ask_price,
+                        tick.bid_qty,
+                        tick.ask_qty,
+                        tick.timestamp,
+                        &omni,
+                    );
+
+                    if let Some((_, pnl, _qty)) = closed_pos {
                         total_trades += 1;
+                        if pnl > 0.0 {
+                            wins += 1;
+                        }
+
                         let current_cap = arena.unified_capital.load(Ordering::Relaxed);
                         if current_cap > peak_capital {
                             peak_capital = current_cap;
-                        }
-                        let dd = (peak_capital - current_cap) / peak_capital.max(0.001);
-                        if dd > max_drawdown {
-                            max_drawdown = dd;
+                        } else {
+                            let dd = (peak_capital - current_cap) / peak_capital.max(0.001);
+                            if dd > max_drawdown {
+                                max_drawdown = dd;
+                            }
                         }
                     }
                 }
 
-                let final_capital = arena.unified_capital.load(Ordering::Relaxed);
+                let mut final_capital = arena.unified_capital.load(Ordering::Relaxed);
                 
-                // Fitness heavily penalizes negative expectancy and low trades
-                let fitness = if max_drawdown > 0.90 || final_capital < initial_capital {
+                // Aplicar Slippage Estricto de Realidad al Capital Final
+                let raw_pnl = final_capital - initial_capital;
+                // Asumiendo fee de 0.0004 y notional promedio de 35.0
+                let penalized_pnl = evolution_engine::entropy_fitness::EntropyFitness::reality_slippage_penalty_with_notional(raw_pnl, total_trades, 0.0004, 35.0);
+                final_capital = initial_capital + penalized_pnl;
+
+                let win_rate = if total_trades > 0 {
+                    wins as f64 / total_trades as f64
+                } else {
+                    0.0
+                };
+
+                // FITNESS CUANTITATIVO MULTIOBJETIVO (Tolerante a Micro-Cuentas)
+                let fitness = if max_drawdown > 0.85 {
                     0.0
                 } else {
-                    // Reward high final capital, but penalize drawdown. Also reward high trade count for statistical significance.
-                    (final_capital - initial_capital) * (1.0 - max_drawdown) * (total_trades as f64).ln().max(1.0)
+                    let pnl = final_capital - initial_capital;
+                    let growth = pnl / initial_capital;
+                    let dd_penalty = (1.0 - max_drawdown).powf(2.0).max(0.001);
+                    let trade_factor = if total_trades >= 20 && total_trades <= 500 {
+                        2.5
+                    } else if total_trades >= 10 {
+                        1.5
+                    } else {
+                        (total_trades as f64 / 10.0).max(0.01)
+                    };
+                    let wr_factor = (1.0 + win_rate).powf(3.0); // Premia consistencia
+
+                    if total_trades < 5 {
+                        0.001 // Penalización de inactividad
+                    } else if pnl > 0.0 {
+                        // Premia el crecimiento exponencial (x^1.5) para forzar configuraciones que multipliquen
+                        10.0 + (growth.powf(1.5).max(growth) * dd_penalty * trade_factor * wr_factor * 100.0)
+                    } else {
+                        let loss_pct = pnl.abs() / initial_capital;
+                        (10.0 - (loss_pct * 20.0) - (2.0 / (total_trades as f64).max(1.0))).max(0.001)
+                    }
                 };
-                (genome.clone(), final_capital, total_trades, fitness)
+
+                IslandResult {
+                    island_idx: *isl_idx,
+                    genome: genome.clone(),
+                    final_capital,
+                    total_trades,
+                    fitness,
+                    win_rate,
+                    max_drawdown,
+                }
             })
             .collect();
-            
-        results.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
-        
-        let best_gen = &results[0];
-        if best_gen.1 > best_all_time.1 {
-            best_all_time = (best_gen.0.clone(), best_gen.1, best_gen.2);
+
+        // Agrupar resultados por isla segregada
+        let mut island_results: Vec<Vec<IslandResult>> =
+            vec![Vec::with_capacity(island_size); num_islands];
+        for res in raw_results {
+            island_results[res.island_idx].push(res);
         }
-        
-        println!("   Mejor de G{}: Cap ${:.2} (Fitness: {:.2}, Trades: {})", gen, best_gen.1, best_gen.3, best_gen.2);
-        
+
+        // Ordenar internamente cada isla por fitness decreciente
+        for isl in 0..num_islands {
+            island_results[isl].sort_by(|a, b| {
+                b.fitness
+                    .partial_cmp(&a.fitness)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+
+        // Telemetría por Isla y Detección de Mejor Histórico
+        let mut global_gen_best: Option<&IslandResult> = None;
+
+        for isl in 0..num_islands {
+            let best_i = &island_results[isl][0];
+            let growth_pct = ((best_i.final_capital - initial_capital) / initial_capital) * 100.0;
+            println!("   🏝️  {} | Mejor: Cap ${:.2} ({:+.1}%) | WR: {:.0}% | Trades: {} | DD: {:.1}% | Fit: {:.2}",
+                island_names[isl], best_i.final_capital, growth_pct, best_i.win_rate * 100.0, best_i.total_trades, best_i.max_drawdown * 100.0, best_i.fitness);
+
+            if global_gen_best.is_none() || best_i.fitness > global_gen_best.unwrap().fitness {
+                global_gen_best = Some(best_i);
+            }
+        }
+
+        if let Some(best_gen) = global_gen_best {
+            if best_all_time.is_none() || best_gen.fitness > best_all_time.as_ref().unwrap().3 {
+                best_all_time = Some((
+                    best_gen.genome.clone(),
+                    best_gen.final_capital,
+                    best_gen.total_trades,
+                    best_gen.fitness,
+                ));
+            }
+            let growth_pct = ((best_gen.final_capital - initial_capital) / initial_capital) * 100.0;
+            println!("   ⭐ Campeón Global G{}: Cap ${:.2} ({:+.1}%) | WR: {:.0}% | Trades: {} | DD: {:.1}% | Fitness: {:.2}", 
+                gen, best_gen.final_capital, growth_pct, best_gen.win_rate * 100.0, best_gen.total_trades, best_gen.max_drawdown * 100.0, best_gen.fitness);
+            println!(
+                "      🧬 Scalp TP={:.3}% SL={:.3}% | Swing TP={:.2}% SL={:.2}% | Lev={:.1}x | OBI_thr={:.3} OFI_thr={:.3}",
+                best_gen.genome.scalp_tp_base * 100.0,
+                best_gen.genome.scalp_sl_base * 100.0,
+                best_gen.genome.swing_tp_base * 100.0,
+                best_gen.genome.swing_sl_base * 100.0,
+                best_gen.genome.global_leverage,
+                best_gen.genome.dynamic_obi_threshold,
+                best_gen.genome.dynamic_ofi_threshold
+            );
+        }
+
         if gen == generations {
             break;
         }
-        
-        let mut next_gen = Vec::with_capacity(pop_size);
-        let elites_count = pop_size / 5; // 20% elites
-        for i in 0..elites_count {
-            next_gen.push(results[i].0.clone());
+
+        // --- REPRODUCCIÓN INTRA-ISLA (PRESERVA ESPECIALIZACIÓN) ---
+        let mut next_islands: Vec<Vec<SuperGenotype>> = Vec::with_capacity(num_islands);
+
+        for k in 0..num_islands {
+            let mut next_island = Vec::with_capacity(island_size);
+            // Elitismo intra-isla: Preservar el mejor individuo de la isla
+            next_island.push(island_results[k][0].genome.clone());
+
+            // Reproducción dentro de la propia isla con mutación CMA-ES
+            while next_island.len() < island_size {
+                let parent_idx = rand::rng().random_range(0..(island_size / 2).max(1));
+                let parent = &island_results[k][parent_idx].genome;
+                let mut child = parent.mutate_cmaes(mutation_rate);
+
+                // Reforzar la especialización fenotípica por nicho de isla
+                match k {
+                    0 => {
+                        // Isla 0: Scalp L2
+                        child.capital_split_scalp = child.capital_split_scalp.clamp(0.50, 0.85);
+                        child.dynamic_obi_threshold = child.dynamic_obi_threshold.clamp(0.15, 0.45);
+                        child.dynamic_ofi_threshold = child.dynamic_ofi_threshold.clamp(0.18, 0.50);
+                        child.global_leverage = child.global_leverage.clamp(25.0, 35.0);
+                    }
+                    1 => {
+                        // Isla 1: Swing Macro
+                        child.capital_split_scalp = child.capital_split_scalp.clamp(0.15, 0.45);
+                        child.trend_threshold = child.trend_threshold.clamp(0.15, 0.45);
+                        if child.swing_tp_base < child.swing_sl_base * 2.5 {
+                            child.swing_tp_base = child.swing_sl_base * 3.5;
+                        }
+                    }
+                    2 => {
+                        // Isla 2: Mean Reversion
+                        child.capital_split_scalp = 0.50;
+                        child.dynamic_ema_trend = child.dynamic_ema_trend.clamp(0.00001, 0.00010);
+                        child.range_threshold = child.range_threshold.clamp(0.35, 0.75);
+                    }
+                    _ => {} // Isla 3: Híbrido Cuántico (Espacio libre sin restricciones rígidas)
+                }
+
+                next_island.push(child);
+            }
+            next_islands.push(next_island);
         }
-        
-        while next_gen.len() < pop_size {
-            let p1 = &results[rand::rng().random_range(0..(pop_size/2))].0;
-            let p2 = &results[rand::rng().random_range(0..(pop_size/2))].0;
-            
-            let mut child = Genotype {
-                global_leverage: if rand::rng().random_bool(0.5) { p1.global_leverage } else { p2.global_leverage },
-                trend_threshold: if rand::rng().random_bool(0.5) { p1.trend_threshold } else { p2.trend_threshold },
-                maker_spread_pct: if rand::rng().random_bool(0.5) { p1.maker_spread_pct } else { p2.maker_spread_pct },
-                maker_obi_threshold: if rand::rng().random_bool(0.5) { p1.maker_obi_threshold } else { p2.maker_obi_threshold },
-                scalp_tp: if rand::rng().random_bool(0.5) { p1.scalp_tp } else { p2.scalp_tp },
-                scalp_sl: if rand::rng().random_bool(0.5) { p1.scalp_sl } else { p2.scalp_sl },
-                swing_tp: if rand::rng().random_bool(0.5) { p1.swing_tp } else { p2.swing_tp },
-                swing_sl: if rand::rng().random_bool(0.5) { p1.swing_sl } else { p2.swing_sl },
-                scalp_z_target: if rand::rng().random_bool(0.5) { p1.scalp_z_target } else { p2.scalp_z_target },
-                capital_split_scalp: if rand::rng().random_bool(0.5) { p1.capital_split_scalp } else { p2.capital_split_scalp },
-                min_confidence: if rand::rng().random_bool(0.5) { p1.min_confidence } else { p2.min_confidence },
-                explosive_leverage_multiplier: if rand::rng().random_bool(0.5) { p1.explosive_leverage_multiplier } else { p2.explosive_leverage_multiplier },
-            };
-            
-            if rand::rng().random_bool(mutation_rate) { child.global_leverage *= rand::rng().random_range(0.8..1.2); }
-            if rand::rng().random_bool(mutation_rate) { child.trend_threshold *= rand::rng().random_range(0.9..1.1); }
-            if rand::rng().random_bool(mutation_rate) { child.maker_spread_pct *= rand::rng().random_range(0.5..2.0); }
-            if rand::rng().random_bool(mutation_rate) { child.maker_obi_threshold *= rand::rng().random_range(0.8..1.2); }
-            if rand::rng().random_bool(mutation_rate) { child.scalp_tp *= rand::rng().random_range(0.7..1.5); }
-            if rand::rng().random_bool(mutation_rate) { child.scalp_sl *= rand::rng().random_range(0.7..1.5); }
-            if rand::rng().random_bool(mutation_rate) { child.swing_tp *= rand::rng().random_range(0.7..1.5); }
-            if rand::rng().random_bool(mutation_rate) { child.swing_sl *= rand::rng().random_range(0.7..1.5); }
-            if rand::rng().random_bool(mutation_rate) { child.scalp_z_target *= rand::rng().random_range(0.8..1.2); }
-            if rand::rng().random_bool(mutation_rate) { child.capital_split_scalp *= rand::rng().random_range(0.8..1.2); }
-            if rand::rng().random_bool(mutation_rate) { child.min_confidence *= rand::rng().random_range(0.9..1.1); }
-            if rand::rng().random_bool(mutation_rate) { child.explosive_leverage_multiplier *= rand::rng().random_range(0.5..2.0); }
-            
-            child.global_leverage = child.global_leverage.clamp(1.0, 100.0);
-            child.trend_threshold = child.trend_threshold.clamp(0.1, 0.9);
-            child.maker_spread_pct = child.maker_spread_pct.clamp(0.0001, 0.05);
-            child.maker_obi_threshold = child.maker_obi_threshold.clamp(0.1, 0.95);
-            child.scalp_tp = child.scalp_tp.clamp(0.0005, 0.02);
-            child.scalp_sl = child.scalp_sl.clamp(0.0005, 0.01);
-            child.swing_tp = child.swing_tp.clamp(0.001, 0.05);
-            child.swing_sl = child.swing_sl.clamp(0.0005, 0.02);
-            child.scalp_z_target = child.scalp_z_target.clamp(0.5, 5.0);
-            child.capital_split_scalp = child.capital_split_scalp.clamp(0.1, 1.0);
-            child.min_confidence = child.min_confidence.clamp(0.5, 0.99);
-            child.explosive_leverage_multiplier = child.explosive_leverage_multiplier.clamp(1.0, 10.0);
-            
-            next_gen.push(child);
+
+        // --- TOPOLOGÍA RING MIGRATION (MIGRACIÓN EN ANILLO) ---
+        // El campeón de la Isla K migra a la Isla (K + 1) % 4, reemplazando al peor individuo
+        let champions_to_migrate: Vec<SuperGenotype> = (0..num_islands)
+            .map(|k| island_results[k][0].genome.clone())
+            .collect();
+
+        for k in 0..num_islands {
+            let dest_island = (k + 1) % num_islands;
+            let worst_idx = next_islands[dest_island].len() - 1;
+            // El migrante de la isla k ocupa el puesto inferior de dest_island sin desplazar a su propio elite
+            next_islands[dest_island][worst_idx] = champions_to_migrate[k].clone();
         }
-        population = next_gen;
+
+        println!("   🔄 [RING MIGRATION] Campeones transferidos en anillo: Isla 0 → Isla 1 → Isla 2 → Isla 3 → Isla 0");
+
+        islands = next_islands;
     }
 
     println!("============================================================");
     println!("🏆 MEJOR CONFIGURACIÓN DE TODA LA EVOLUCIÓN:");
-    if best_all_time.1 > 0.0 {
-        let (ref params, best_pnl, best_trades) = best_all_time;
-        let pnl_pct = ((best_pnl - initial_capital) / initial_capital) * 100.0;
-        println!("Leverage: {:.2}x (Explosive Mult: {:.2}x)", params.global_leverage, params.explosive_leverage_multiplier);
-        println!("Capital Split Scalp: {:.1}%", params.capital_split_scalp * 100.0);
-        println!("Min Confidence: {:.2}", params.min_confidence);
-        println!("Trend Threshold: {:.2}", params.trend_threshold);
-        println!("Scalp TP: {:.3}% | SL: {:.3}% | RR: {:.1}:1", params.scalp_tp*100.0, params.scalp_sl*100.0, params.scalp_tp/params.scalp_sl);
-        println!("Swing TP: {:.3}% | SL: {:.3}% | RR: {:.1}:1", params.swing_tp*100.0, params.swing_sl*100.0, params.swing_tp/params.swing_sl);
-        println!("Scalp Z-Target: {:.2}", params.scalp_z_target);
+    if let Some((ref genome, best_cap, best_trades, best_fitness)) = best_all_time {
+        let pnl_pct = ((best_cap - initial_capital) / initial_capital) * 100.0;
+        println!("Leverage: {:.2}x", genome.global_leverage);
+        println!(
+            "Capital Split Scalp: {:.1}%",
+            genome.capital_split_scalp * 100.0
+        );
+        println!("Min Confidence: {:.3}", genome.min_confidence_btc);
+        println!("Dynamic ATR Min: {:.6}", genome.dynamic_atr_min);
+        println!("Dynamic OBI Threshold: {:.4}", genome.dynamic_obi_threshold);
+        println!("Dynamic EMA Trend: {:.6}", genome.dynamic_ema_trend);
+        println!("Dynamic OFI Threshold: {:.4}", genome.dynamic_ofi_threshold);
+        println!(
+            "Scalp TP: {:.3}% | SL: {:.3}% | RR: {:.1}:1",
+            genome.scalp_tp_base * 100.0,
+            genome.scalp_sl_base * 100.0,
+            genome.scalp_tp_base / genome.scalp_sl_base.max(0.0001)
+        );
+        println!(
+            "Swing TP: {:.3}% | SL: {:.3}% | RR: {:.1}:1",
+            genome.swing_tp_base * 100.0,
+            genome.swing_sl_base * 100.0,
+            genome.swing_tp_base / genome.swing_sl_base.max(0.0001)
+        );
+        println!("Trend Threshold: {:.3}", genome.trend_threshold);
+        println!(
+            "CVD Veto: {:.3} | Wall Veto: {:.2}",
+            genome.cvd_veto_threshold, genome.wall_veto_threshold
+        );
         println!("Trades: {}", best_trades);
-        println!("Capital Final: ${:.2} ({:.2}% Crecimiento)", best_pnl, pnl_pct);
+        println!("Fitness: {:.4}", best_fitness);
+        println!(
+            "Capital Final: ${:.2} ({:+.2}% Crecimiento)",
+            best_cap, pnl_pct
+        );
+
+        // Save as SuperGenotype JSON
+        if best_cap > initial_capital || best_fitness >= 5.5 {
+            // F4.3: embudo único — envelope versionado con linaje (generación,
+            // fuente, métricas) + historia inmutable + espejo legacy atómico.
+            // El write directo a active_genome.json queda abolido: sin versión
+            // ni auditoría era imposible saber quién promovió qué ni revertir.
+            match quantum_arena::genome_store::GenomeEnvelope::promote(
+                genome.clone(),
+                "ring_island_evolver",
+                &format!(
+                    "capital {:.2} → {:.2} ({:+.2}%) | fit: {:.2}",
+                    initial_capital, best_cap, pnl_pct, best_fitness
+                ),
+            ) {
+                Ok(env) => println!(
+                    "🧬 ✅ Genoma generación {} promovido (padre {}). Envelope + historia + espejo legacy escritos.",
+                    env.generation, env.parent_generation
+                ),
+                Err(e) => println!("❌ Error promoviendo genoma al almacén: {}", e),
+            }
+        } else {
+            println!(
+                "⚠️ Ninguna configuración superó el umbral de viabilidad. No se promueve genoma."
+            );
+        }
     } else {
         println!("Ninguna configuración sobrevivió.");
     }
     println!("============================================================");
-
-    // Escribir active_genome.json si tuvimos éxito
-    if best_all_time.1 > initial_capital {
-        let (ref best_genome, _, _) = best_all_time;
-        match serde_json::to_string_pretty(best_genome) {
-            Ok(json_str) => {
-                let dir_path = "config_dir/genotypes";
-                let _ = std::fs::create_dir_all(dir_path);
-                let file_path = format!("{}/active_genome.json", dir_path);
-                
-                if let Err(e) = std::fs::write(&file_path, json_str) {
-                    println!("❌ Error al escribir active_genome.json en {}: {}", file_path, e);
-                } else {
-                    println!("🧬 ✅ active_genome.json actualizado en {}. Live Trader lo cargará en <60s.", file_path);
-                }
-            }
-            Err(e) => println!("❌ Error serializando genome: {}", e),
-        }
-    }
-    
     Ok(())
 }
-
-

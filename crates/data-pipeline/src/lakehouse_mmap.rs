@@ -1,0 +1,157 @@
+use memmap2::{MmapMut, MmapOptions};
+use std::fs::OpenOptions;
+use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
+/// FASE 13: Zero-Copy Memory-Mapped Tensor Dumper
+/// Permite volcar tensores de la red neuronal al Data Lakehouse en O(1) sin syscalls.
+pub struct LakehouseMmap {
+    mmap: Arc<MmapMut>,
+    offset: AtomicUsize,
+    capacity: usize,
+}
+
+// We need unsafe impls because MmapMut pointers are raw inside our structure, but we only mutate atomically.
+// Note: MmapMut does not implement Clone, but we wrapped it in Arc. We cannot mutate it safely through Arc
+// without unsafe code, but we guarantee disjoint writes via atomic offset.
+unsafe impl Send for LakehouseMmap {}
+unsafe impl Sync for LakehouseMmap {}
+
+impl LakehouseMmap {
+    pub fn new<P: AsRef<Path>>(path: P, size_mb: usize) -> Result<Self, String> {
+        let capacity = size_mb * 1024 * 1024;
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)
+            .map_err(|e| format!("Failed to open mmap file: {}", e))?;
+
+        if let Ok(metadata) = file.metadata() {
+            if (metadata.len() as usize) < capacity {
+                file.set_len(capacity as u64)
+                    .map_err(|e| format!("Failed to set file size: {}", e))?;
+            }
+        } else {
+            file.set_len(capacity as u64)
+                .map_err(|e| format!("Failed to set file size: {}", e))?;
+        }
+
+        let mmap = unsafe {
+            MmapOptions::new()
+                .map_mut(&file)
+                .map_err(|e| format!("Failed to mmap: {}", e))?
+        };
+
+        // FASE 2 FIX: Pre-faulting agresivo de memoria (Zero-Copy lock-in)
+        // El OS normalmente reserva direcciones virtuales pero retrasa la asignación física hasta
+        // que el HFT escribe, lo que causa un page fault bloqueante (milisegundos).
+        // Al recorrer y leer de manera volátil cada página de 4KB, obligamos al SO (Windows/Linux)
+        // a traer la memoria al L1/L2/RAM *ahora*, antes de entrar en producción HFT.
+        for i in (0..capacity).step_by(4096) {
+            unsafe {
+                let ptr = mmap.as_ptr().add(i);
+                let _val = std::ptr::read_volatile(ptr);
+            }
+        }
+
+        Ok(Self {
+            mmap: Arc::new(mmap),
+            offset: AtomicUsize::new(0),
+            capacity,
+        })
+    }
+
+    /// Escribe un tensor float al lakehouse crudo con rotación circular lock-free
+    #[inline(always)]
+    pub fn append_tensor(
+        &self,
+        timestamp: u64,
+        features: &[f64],
+        probabilities: &[f64],
+    ) -> Result<(), &'static str> {
+        // Calculate needed bytes
+        // 8 bytes (timestamp) + 4 bytes (features len) + 4 bytes (probs len) + arrays
+        let needed = 8 + 4 + 4 + (features.len() * 8) + (probabilities.len() * 8);
+        if needed > self.capacity {
+            return Err("Tensor size exceeds entire lakehouse mmap capacity");
+        }
+
+        // D-409: Rotación circular lock-free sin asfixia permanente
+        let mut current_offset = self.offset.load(Ordering::Relaxed);
+        let write_offset = loop {
+            let next_offset = if current_offset + needed > self.capacity {
+                0
+            } else {
+                current_offset
+            };
+            match self.offset.compare_exchange_weak(
+                current_offset,
+                next_offset + needed,
+                Ordering::SeqCst,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break next_offset,
+                Err(actual) => current_offset = actual,
+            }
+        };
+
+        // Get mutable reference to the slice in memory without locking (since offset is unique to this caller)
+        let ptr = self.mmap.as_ptr() as *mut u8;
+        let mut cursor = write_offset;
+
+        unsafe {
+            // Write timestamp
+            std::ptr::copy_nonoverlapping(
+                &timestamp as *const u64 as *const u8,
+                ptr.add(cursor),
+                8,
+            );
+            cursor += 8;
+
+            // Write features len
+            let f_len = features.len() as u32;
+            std::ptr::copy_nonoverlapping(&f_len as *const u32 as *const u8, ptr.add(cursor), 4);
+            cursor += 4;
+
+            // Write features
+            let f_bytes = features.len() * 8;
+            std::ptr::copy_nonoverlapping(features.as_ptr() as *const u8, ptr.add(cursor), f_bytes);
+            cursor += f_bytes;
+
+            // Write probs len
+            let p_len = probabilities.len() as u32;
+            std::ptr::copy_nonoverlapping(&p_len as *const u32 as *const u8, ptr.add(cursor), 4);
+            cursor += 4;
+
+            // Write probs
+            let p_bytes = probabilities.len() * 8;
+            std::ptr::copy_nonoverlapping(
+                probabilities.as_ptr() as *const u8,
+                ptr.add(cursor),
+                p_bytes,
+            );
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lakehouse_mmap_append_and_capacity_limit() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_lakehouse_mmap_small.bin");
+
+        let mmap = LakehouseMmap::new(&file_path, 1).unwrap();
+        let feats = [1.0, 2.0, 3.0];
+        let probs = [0.7, 0.3];
+
+        assert!(mmap.append_tensor(1672531200000, &feats, &probs).is_ok());
+        let _ = std::fs::remove_file(file_path);
+    }
+}

@@ -20,7 +20,10 @@ members = [
     "crates/strategy-core",
     "crates/data-ingest",
     "crates/graph-4d",
-    "crates/audit-engine"
+    "crates/audit-engine",
+    "crates/telemetry-engine",
+    "crates/storage-engine",
+    "crates/metacortex-engine"
 ]
 
 [package]
@@ -52,6 +55,7 @@ strategy-core = { path = "crates/strategy-core" }
 data-ingest = { path = "crates/data-ingest" }
 graph-4d = { path = "crates/graph-4d" }
 audit-engine = { path = "crates/audit-engine" }
+telemetry-engine = { path = "crates/telemetry-engine" }
 
 syn = { version = "2.0", features = ["full", "visit"] }
 petgraph = "0.6.4"
@@ -90,6 +94,7 @@ core_affinity = "0.8.3"
 polars = { version = "0.43.1", features = ["parquet", "lazy"] }
 mimalloc = "0.1.52"
 backtest-engine = { version = "0.1.0", path = "crates/backtest-engine" }
+libm = "0.2"
 
 [[bin]]
 name = "config_compiler"
@@ -115,9 +120,6 @@ path = "src/bin/evolver.rs"
 name = "download_history"
 path = "src/bin/download_history.rs"
 
-[[bin]]
-name = "live_trader"
-path = "src/bin/live_trader.rs"
 
 [[bin]]
 name = "graph_server"
@@ -136,8 +138,20 @@ name = "evolution"
 path = "src/bin/evolution.rs"
 
 [[bin]]
+name = "walkforward_evolver"
+path = "src/bin/walkforward_evolver.rs"
+
+[[bin]]
+name = "continuous_evolution_backtest"
+path = "crates/backtest-engine/src/bin/continuous_evolution_backtest.rs"
+
+[[bin]]
 name = "feature_exporter"
 path = "src/bin/feature_exporter.rs"
+
+[[bin]]
+name = "latency_flow_audit"
+path = "src/bin/latency_flow_audit.rs"
 
 [[bin]]
 name = "binance_vision_sync"
@@ -166,3 +180,49 @@ path = "src/bin/train_dark_alpha.rs"
 [[bin]]
 name = "auto_trainer_daemon"
 path = "src/bin/auto_trainer_daemon.rs"
+
+[[bin]]
+name = "dashboard"
+path = "src/bin/dashboard.rs"
+
+[[bin]]
+name = "audit_forensic_backtest"
+path = "src/bin/audit_forensic_backtest.rs"
+
+
+
+[[bin]]
+name = "test_forest"
+path = "src/bin/test_forest.rs"
+
+[[bin]]
+name = "test_forest2"
+path = "src/bin/test_forest2.rs"
+
+[[bin]]
+name = "income_report"
+path = "src/bin/income_report.rs"
+
+[[bin]]
+name = "system_health"
+path = "src/bin/system_health.rs"
+
+[[bin]]
+name = "oco_probe"
+path = "src/bin/oco_probe.rs"
+
+[[bin]]
+name = "algo_fetch_probe"
+path = "src/bin/algo_fetch_probe.rs"
+
+[[bin]]
+name = "train_forest"
+path = "src/bin/train_forest.rs"
+
+[[bin]]
+name = "ml_path_probe"
+path = "src/bin/ml_path_probe.rs"
+
+[[bin]]
+name = "backtest_windows"
+path = "src/bin/backtest_windows.rs"

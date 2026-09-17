@@ -1,29 +1,22 @@
 use crate::atomic_float::AtomicF64;
 
-
 /// Axioma V: El Config Omnisciente (5 Capas Adaptativas)
 /// Todo expuesto como atómicos para mutación lock-free (O(1)) desde el Evolver.
 /// Alineado a 64-bytes para evitar False Sharing entre núcleos.
 #[repr(C, align(64))]
 pub struct QuantumConfig {
-    // 1. Capa GLOBAL (Límites de supervivencia)
     pub base_capital: AtomicF64,
     pub global_max_drawdown: AtomicF64,
     pub global_leverage: AtomicF64,
     pub min_notional: AtomicF64,
-
-    // 2. Capa ASSET CLASS
     pub btc_volatility_multiplier: AtomicF64,
     pub eth_volatility_multiplier: AtomicF64,
-
-    // 3. Capa ASSET INDIVIDUAL (Ej: BTCUSDT)
+    pub min_trades_per_day: AtomicF64,
+    pub survival_capital_threshold: AtomicF64,
     pub funding_rate_sensitivity: AtomicF64,
-    
-    // 4. Capa RÉGIMEN DE MERCADO (Trend, Range, Volatile)
+    pub global_correlation_threshold: AtomicF64,
     pub trend_threshold: AtomicF64,
     pub range_threshold: AtomicF64,
-    
-    // 5. Capa ESTRATEGIA (Scalp / Swing)
     pub scalp_kelly_fraction: AtomicF64,
     pub swing_kelly_fraction: AtomicF64,
     pub scalp_obi_threshold: AtomicF64,
@@ -31,8 +24,6 @@ pub struct QuantumConfig {
     pub scalp_sl_base: AtomicF64,
     pub swing_tp_base: AtomicF64,
     pub swing_sl_base: AtomicF64,
-
-    // --- Umbrales Dinámicos (Extraídos del Genoma) ---
     pub sl_atr_mult_btc: AtomicF64,
     pub tp_rr_ratio_btc: AtomicF64,
     pub min_confidence_btc: AtomicF64,
@@ -40,74 +31,454 @@ pub struct QuantumConfig {
     pub tech_threshold: AtomicF64,
     pub ml_threshold_long: AtomicF64,
     pub ml_threshold_short: AtomicF64,
-
-    // --- Maker Engine (Phase 69) ---
     pub maker_spread_pct: AtomicF64,
     pub maker_obi_threshold: AtomicF64,
-
-    // --- Umbrales Dinámicos de Micro-Estructura (Evolution Engine) ---
+    pub target_volatility: AtomicF64,
     pub dynamic_atr_min: AtomicF64,
     pub dynamic_obi_threshold: AtomicF64,
     pub dynamic_ema_trend: AtomicF64,
     pub dynamic_ofi_threshold: AtomicF64,
-
-    // --- Hardcoding Eradication (Phase 67) ---
-    pub capital_split_scalp: AtomicF64, // 0.0 to 1.0 (remainder is Swing)
+    pub capital_split_scalp: AtomicF64,
     pub kelly_clamp_min: AtomicF64,
     pub kelly_clamp_max: AtomicF64,
+    pub explosive_leverage_multiplier: AtomicF64,
+    pub quantum_mutation_rate: AtomicF64,
+    pub temporal_memory_decay: AtomicF64,
     pub leverage_cap: AtomicF64,
     pub explosive_confidence_threshold: AtomicF64,
-    pub explosive_leverage_multiplier: AtomicF64,
-    pub sim_fee_rate: AtomicF64,
+    pub live_maker_fee: AtomicF64,
+    pub live_taker_fee: AtomicF64,
+    pub weight_obi: AtomicF64,
+    pub weight_ofi: AtomicF64,
+    pub weight_vpin: AtomicF64,
+    pub regime_duration_ms: AtomicF64,
+    pub regime_atr_multiplier: AtomicF64,
+    pub scalp_trail_act_atr: AtomicF64,
+    pub scalp_trail_step_atr: AtomicF64,
+    pub scalp_trail_max_atr: AtomicF64,
+    pub scalp_trail_min_pnl: AtomicF64,
+    pub scalp_trail_atr_mult_base: AtomicF64,
+    pub swing_trail_act_atr: AtomicF64,
+    pub swing_trail_step_atr: AtomicF64,
+    pub swing_trail_max_atr: AtomicF64,
+    pub swing_trail_min_pnl: AtomicF64,
+    pub swing_trail_atr_mult_base: AtomicF64,
+    pub zombie_timeout_ms: AtomicF64,
+    pub hurst_trend_threshold: AtomicF64,
+    pub cvd_veto_threshold: AtomicF64,
+    pub wall_veto_threshold: AtomicF64,
+    pub flash_crash_jump_pct: AtomicF64,
+    pub latency_ms_panic_threshold: AtomicF64,
+    pub ema_fast_period: AtomicF64,
+    pub ema_slow_period: AtomicF64,
+    pub hurst_scalp_threshold: AtomicF64,
+    pub hurst_swing_threshold: AtomicF64,
+    pub synergy_exposure_boost: AtomicF64,
+    pub synergy_leverage_boost: AtomicF64,
+    pub max_fee_pct: AtomicF64,
+    pub kelly_bootstrap_cold: AtomicF64,
+    pub latency_penalty_ms: AtomicF64,
+    pub base_slippage_floor: AtomicF64,
+    pub spot_spread_threshold: AtomicF64,
+    pub spot_bias_value: AtomicF64,
+    pub obi_confidence_fallback: AtomicF64,
+    pub ml_clip_lower: AtomicF64,
+    pub ml_clip_upper: AtomicF64,
+    pub tensor_poly_a: AtomicF64,
+    pub tensor_poly_b: AtomicF64,
+    pub fractional_alpha_order: AtomicF64,
+    pub fractional_clip_max: AtomicF64,
+    pub bft_consensus_tolerance: AtomicF64,
+    pub turbo_coherence_threshold: AtomicF64,
+    pub turbo_z_score_stdev: AtomicF64,
+    pub sl_atr_multiplier: AtomicF64,
+    pub coaxial_squeeze_threshold: AtomicF64,
+    pub tensor_op_add_bias: AtomicF64,
+    pub tensor_op_mul_weight: AtomicF64,
+    pub topo_layer_1_activation: AtomicF64,
+    pub topo_layer_2_activation: AtomicF64,
+    pub tensor_dropout_rate: AtomicF64,
+    pub quantum_entropy_seed: AtomicF64,
+    pub global_learning_rate: AtomicF64,
+    pub global_momentum: AtomicF64,
+    pub vecm_alpha_speed: AtomicF64,
+    pub vecm_beta_hedge: AtomicF64,
+    pub conformal_alpha: AtomicF64,
+    pub ppo_weight_ofi: AtomicF64,
+    pub ppo_weight_obi: AtomicF64,
+    pub ppo_weight_hawkes: AtomicF64,
+    pub ppo_weight_leadlag: AtomicF64,
+    pub ppo_weight_regime: AtomicF64,
+    pub ppo_clip_eps: AtomicF64,
+    pub ppo_weight_min_clip: AtomicF64,
+    pub hard_stop_decay_factor: AtomicF64,
+    pub hard_stop_base_limit: AtomicF64,
+    pub kelly_bootstrap_ratio_threshold: AtomicF64,
+    pub kelly_bootstrap_min_exposure: AtomicF64,
+    pub ev_fee_multiplier: AtomicF64,
+    pub margin_cushion_pct: AtomicF64,
+    pub maker_only_capital_threshold: AtomicF64,
+    pub hawkes_scalp_threshold: AtomicF64,
+    pub obi_zscore_threshold: AtomicF64,
+
+    // FASE 14: Erradicación Matemática de Capital Fijo (13 USD vs 10k USD)
+    pub hawkes_volume_norm: AtomicF64,
+    pub base_duration_ms: AtomicF64,
+
+    // FASE 3: Kelly, Guard & Orchestrator Evolutive Parameters
+    pub kelly_survival_cap_ratio: AtomicF64,
+    pub kelly_expansion_mult: AtomicF64,
+    pub guard_dd_sigmoid_steepness: AtomicF64,
+    pub guard_dd_sigmoid_center: AtomicF64,
+    pub portfolio_perf_mult_steepness: AtomicF64,
+    pub portfolio_dd_penalty_decay: AtomicF64,
+    pub portfolio_perf_mult_min: AtomicF64,
+    pub portfolio_perf_mult_max: AtomicF64,
+    pub portfolio_perf_mult_center: AtomicF64,
+
+    // FASE 15: Optimizador Macro-Regime Genómico
+    pub macro_hurst_confidence_offset: AtomicF64,
+    pub macro_hurst_confidence_scale: AtomicF64,
+    pub macro_vol_confidence_scale: AtomicF64,
+    pub macro_min_cooldown_ratio: AtomicF64,
+    pub macro_max_cooldown_ratio: AtomicF64,
+    pub macro_cooldown_reduction_factor: AtomicF64,
+    pub macro_leverage_momentum_scale: AtomicF64,
+    pub lev_matrix_vol_clamp_min: AtomicF64,
+    pub lev_matrix_growth_scalar: AtomicF64,
+    pub lev_matrix_log_cap_divisor: AtomicF64,
+    pub scalp_accel_min_samples: AtomicF64,
+    pub executor_max_orders_10s: AtomicF64,
+    pub executor_max_weight_1m: AtomicF64,
+
+    // --- FASE 6: Iceberg & IOC Limits ---
+    pub iceberg_volume_threshold: AtomicF64,
+    pub iceberg_slice_count: AtomicF64,
+
+    // --- Swing OBI & Aceleración ---
+    pub swing_obi_threshold: AtomicF64,
+    pub swing_accel_min_samples: AtomicF64,
+
+    /// F3-2 — eje temporal continuo (ver genome.rs).
+    pub temporal_scale: AtomicF64,
+
+    // --- FASE 23: Curvas de Horizonte Continuas (1 ns a 100 años) ---
+    pub tp_curve_a: AtomicF64,
+    pub tp_curve_b: AtomicF64,
+    pub sl_curve_a: AtomicF64,
+    pub sl_curve_b: AtomicF64,
+    pub kelly_curve_a: AtomicF64,
+    pub kelly_curve_b: AtomicF64,
+    pub trail_mult_curve_a: AtomicF64,
+    pub trail_mult_curve_b: AtomicF64,
+    pub trail_act_curve_a: AtomicF64,
+    pub trail_act_curve_b: AtomicF64,
+    pub trail_step_curve_a: AtomicF64,
+    pub trail_step_curve_b: AtomicF64,
+    pub obi_curve_a: AtomicF64,
+    pub obi_curve_b: AtomicF64,
 }
 
-impl Default for QuantumConfig {
-    fn default() -> Self {
+impl QuantumConfig {
+    pub fn new(initial_capital: f64) -> Self {
+        let genome = crate::genome::SuperGenotype::load_or_default();
+        Self::from_genome(initial_capital, &genome)
+    }
+
+    /// D-650 (DÉCIMA OLA) — CONSTRUCTOR EXPLÍCITO DESDE UN GENOMA.
+    ///
+    /// Antes el arranque en frío cargaba el genoma de disco DENTRO de `new()`,
+    /// de modo que no existía forma de construir una configuración a partir de
+    /// un genoma dado. Eso hacía imposible comparar este camino con el del
+    /// hot-swap (`apply_to_arena`) y es la razón por la que los 12 genes que
+    /// sólo se inicializaban aquí pasaron desapercibidos.
+    ///
+    /// Con el constructor explícito, el test T-2 puede exigir que ambos
+    /// caminos produzcan el MISMO estado gen a gen.
+    pub fn from_genome(initial_capital: f64, genome: &crate::genome::SuperGenotype) -> Self {
+        // D-683: curvas continuas derivadas de los genes (ver `apply_to_arena`).
+        let curvas = genome.with_synced_continuous_curves();
+        let genome = genome.clone();
         Self {
-            base_capital: AtomicF64::new(13.0),
-            global_max_drawdown: AtomicF64::new(0.95), // GA needs survival room
-            global_leverage: AtomicF64::new(30.0), // Reduced from 100 to survive 1-min synthetic candle gaps compounding with tight TP
-            min_notional: AtomicF64::new(5.05),
+            base_capital: AtomicF64::new(initial_capital),
+            min_notional: AtomicF64::new(5.0),
+            live_maker_fee: AtomicF64::new(0.0002), // Binance VIP0 Maker: 0.02%
+            live_taker_fee: AtomicF64::new(0.0005), // Binance VIP0 Taker: 0.05%
+            global_max_drawdown: AtomicF64::new(genome.global_max_drawdown),
+            global_leverage: AtomicF64::new(genome.global_leverage),
+            btc_volatility_multiplier: AtomicF64::new(genome.btc_volatility_multiplier),
+            eth_volatility_multiplier: AtomicF64::new(genome.eth_volatility_multiplier),
+            min_trades_per_day: AtomicF64::new(genome.min_trades_per_day),
+            survival_capital_threshold: AtomicF64::new(genome.survival_capital_threshold),
+            funding_rate_sensitivity: AtomicF64::new(genome.funding_rate_sensitivity),
+            global_correlation_threshold: AtomicF64::new(genome.global_correlation_threshold),
+            trend_threshold: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
+                genome.trend_threshold,
+                crate::genome::SuperGenotype::SLOT_TREND_THRESHOLD,
+            )),
+            range_threshold: AtomicF64::new(genome.range_threshold),
+            scalp_kelly_fraction: AtomicF64::new(genome.scalp_kelly_fraction),
+            swing_kelly_fraction: AtomicF64::new(genome.swing_kelly_fraction),
+            scalp_obi_threshold: AtomicF64::new(genome.scalp_obi_threshold),
+            scalp_tp_base: AtomicF64::new(genome.scalp_tp_base),
+            scalp_sl_base: AtomicF64::new(genome.scalp_sl_base),
+            swing_tp_base: AtomicF64::new(genome.swing_tp_base),
+            swing_sl_base: AtomicF64::new(genome.swing_sl_base),
+            sl_atr_mult_btc: AtomicF64::new(genome.sl_atr_mult_btc),
+            tp_rr_ratio_btc: AtomicF64::new(genome.tp_rr_ratio_btc),
+            min_confidence_btc: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
+                genome.min_confidence_btc,
+                crate::genome::SuperGenotype::SLOT_MIN_CONFIDENCE,
+            )),
+            veto_threshold_btc: AtomicF64::new(genome.veto_threshold_btc),
+            tech_threshold: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
+                genome.tech_threshold,
+                crate::genome::SuperGenotype::SLOT_TECH_THRESHOLD,
+            )),
+            ml_threshold_long: AtomicF64::new(genome.ml_threshold_long),
+            ml_threshold_short: AtomicF64::new(genome.ml_threshold_short),
+            maker_spread_pct: AtomicF64::new(genome.maker_spread_pct),
+            maker_obi_threshold: AtomicF64::new(genome.maker_obi_threshold),
+            target_volatility: AtomicF64::new(genome.target_volatility),
+            dynamic_atr_min: AtomicF64::new(genome.dynamic_atr_min),
+            dynamic_obi_threshold: AtomicF64::new(genome.dynamic_obi_threshold),
+            dynamic_ema_trend: AtomicF64::new(genome.dynamic_ema_trend),
+            dynamic_ofi_threshold: AtomicF64::new(genome.dynamic_ofi_threshold),
+            capital_split_scalp: AtomicF64::new(genome.capital_split_scalp),
+            kelly_clamp_min: AtomicF64::new(genome.kelly_clamp_min),
+            kelly_clamp_max: AtomicF64::new(genome.kelly_clamp_max),
+            explosive_leverage_multiplier: AtomicF64::new(genome.explosive_leverage_multiplier),
+            quantum_mutation_rate: AtomicF64::new(genome.quantum_mutation_rate),
+            temporal_memory_decay: AtomicF64::new(genome.temporal_memory_decay),
+            leverage_cap: AtomicF64::new(genome.leverage_cap),
+            explosive_confidence_threshold: AtomicF64::new(genome.explosive_confidence_threshold),
+            weight_obi: AtomicF64::new(genome.weight_obi),
+            weight_ofi: AtomicF64::new(genome.weight_ofi),
+            weight_vpin: AtomicF64::new(genome.weight_vpin),
+            regime_duration_ms: AtomicF64::new(genome.regime_duration_ms),
+            regime_atr_multiplier: AtomicF64::new(genome.regime_atr_multiplier),
+            scalp_trail_act_atr: AtomicF64::new(genome.scalp_trail_act_atr),
+            scalp_trail_step_atr: AtomicF64::new(genome.scalp_trail_step_atr),
+            scalp_trail_max_atr: AtomicF64::new(genome.scalp_trail_max_atr),
+            scalp_trail_min_pnl: AtomicF64::new(genome.scalp_trail_min_pnl),
+            scalp_trail_atr_mult_base: AtomicF64::new(genome.scalp_trail_atr_mult_base),
+            swing_trail_act_atr: AtomicF64::new(genome.swing_trail_act_atr),
+            swing_trail_step_atr: AtomicF64::new(genome.swing_trail_step_atr),
+            swing_trail_max_atr: AtomicF64::new(genome.swing_trail_max_atr),
+            swing_trail_min_pnl: AtomicF64::new(genome.swing_trail_min_pnl),
+            swing_trail_atr_mult_base: AtomicF64::new(genome.swing_trail_atr_mult_base),
+            zombie_timeout_ms: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
+                genome.zombie_timeout_ms,
+                crate::genome::SuperGenotype::SLOT_ZOMBIE_TIMEOUT,
+            )),
+            hurst_trend_threshold: AtomicF64::new(genome.hurst_trend_threshold),
+            cvd_veto_threshold: AtomicF64::new(genome.cvd_veto_threshold),
+            wall_veto_threshold: AtomicF64::new(genome.wall_veto_threshold),
+            flash_crash_jump_pct: AtomicF64::new(genome.flash_crash_jump_pct),
+            latency_ms_panic_threshold: AtomicF64::new(genome.latency_ms_panic_threshold),
+            ema_fast_period: AtomicF64::new(genome.ema_fast_period),
+            ema_slow_period: AtomicF64::new(genome.ema_slow_period),
+            hurst_scalp_threshold: AtomicF64::new(genome.hurst_scalp_threshold),
+            hurst_swing_threshold: AtomicF64::new(genome.hurst_swing_threshold),
+            synergy_exposure_boost: AtomicF64::new(genome.synergy_exposure_boost),
+            synergy_leverage_boost: AtomicF64::new(genome.synergy_leverage_boost),
+            max_fee_pct: AtomicF64::new(genome.max_fee_pct),
+            kelly_bootstrap_cold: AtomicF64::new(genome.kelly_bootstrap_cold),
+            latency_penalty_ms: AtomicF64::new(genome.latency_penalty_ms),
+            base_slippage_floor: AtomicF64::new(genome.base_slippage_floor),
+            spot_spread_threshold: AtomicF64::new(genome.spot_spread_threshold),
+            spot_bias_value: AtomicF64::new(genome.spot_bias_value),
+            obi_confidence_fallback: AtomicF64::new(genome.obi_confidence_fallback),
+            ml_clip_lower: AtomicF64::new(genome.ml_clip_lower),
+            ml_clip_upper: AtomicF64::new(genome.ml_clip_upper),
+            tensor_poly_a: AtomicF64::new(genome.tensor_poly_a),
+            tensor_poly_b: AtomicF64::new(genome.tensor_poly_b),
+            fractional_alpha_order: AtomicF64::new(genome.fractional_alpha_order),
+            fractional_clip_max: AtomicF64::new(genome.fractional_clip_max),
+            bft_consensus_tolerance: AtomicF64::new(genome.bft_consensus_tolerance),
+            turbo_coherence_threshold: AtomicF64::new(genome.turbo_coherence_threshold),
+            turbo_z_score_stdev: AtomicF64::new(genome.turbo_z_score_stdev),
+            sl_atr_multiplier: AtomicF64::new(genome.sl_atr_multiplier),
+            coaxial_squeeze_threshold: AtomicF64::new(genome.coaxial_squeeze_threshold),
+            tensor_op_add_bias: AtomicF64::new(genome.tensor_op_add_bias),
+            tensor_op_mul_weight: AtomicF64::new(genome.tensor_op_mul_weight),
+            topo_layer_1_activation: AtomicF64::new(genome.topo_layer_1_activation),
+            topo_layer_2_activation: AtomicF64::new(genome.topo_layer_2_activation),
+            tensor_dropout_rate: AtomicF64::new(genome.tensor_dropout_rate),
+            quantum_entropy_seed: AtomicF64::new(genome.quantum_entropy_seed),
+            global_learning_rate: AtomicF64::new(genome.global_learning_rate),
+            global_momentum: AtomicF64::new(genome.global_momentum),
+            vecm_alpha_speed: AtomicF64::new(genome.vecm_alpha_speed),
+            vecm_beta_hedge: AtomicF64::new(genome.vecm_beta_hedge),
+            conformal_alpha: AtomicF64::new(genome.conformal_alpha),
+            ppo_weight_ofi: AtomicF64::new(genome.ppo_weight_ofi),
+            ppo_weight_obi: AtomicF64::new(genome.ppo_weight_obi),
+            ppo_weight_hawkes: AtomicF64::new(genome.ppo_weight_hawkes),
+            ppo_weight_leadlag: AtomicF64::new(genome.ppo_weight_leadlag),
+            ppo_weight_regime: AtomicF64::new(genome.ppo_weight_regime),
+            ppo_clip_eps: AtomicF64::new(genome.ppo_clip_eps),
+            ppo_weight_min_clip: AtomicF64::new(genome.ppo_weight_min_clip),
+            hard_stop_decay_factor: AtomicF64::new(genome.hard_stop_decay_factor),
+            hard_stop_base_limit: AtomicF64::new(genome.hard_stop_base_limit),
+            kelly_bootstrap_ratio_threshold: AtomicF64::new(genome.kelly_bootstrap_ratio_threshold),
+            kelly_bootstrap_min_exposure: AtomicF64::new(genome.kelly_bootstrap_min_exposure),
+            ev_fee_multiplier: AtomicF64::new(genome.ev_fee_multiplier),
+            margin_cushion_pct: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
+                genome.margin_cushion_pct,
+                crate::genome::SuperGenotype::SLOT_MARGIN_CUSHION,
+            )),
+            maker_only_capital_threshold: AtomicF64::new(genome.maker_only_capital_threshold),
+            hawkes_scalp_threshold: AtomicF64::new(genome.hawkes_scalp_threshold),
+            obi_zscore_threshold: AtomicF64::new(genome.obi_zscore_threshold),
 
-            btc_volatility_multiplier: AtomicF64::new(1.0),
-            eth_volatility_multiplier: AtomicF64::new(1.2),
+            hawkes_volume_norm: AtomicF64::new(genome.hawkes_volume_norm),
+            base_duration_ms: AtomicF64::new(genome.base_duration_ms),
 
-            funding_rate_sensitivity: AtomicF64::new(0.5),
+            kelly_survival_cap_ratio: AtomicF64::new(genome.kelly_survival_cap_ratio),
+            kelly_expansion_mult: AtomicF64::new(genome.kelly_expansion_mult),
+            guard_dd_sigmoid_steepness: AtomicF64::new(genome.guard_dd_sigmoid_steepness),
+            guard_dd_sigmoid_center: AtomicF64::new(genome.guard_dd_sigmoid_center),
+            portfolio_perf_mult_steepness: AtomicF64::new(genome.portfolio_perf_mult_steepness),
+            portfolio_dd_penalty_decay: AtomicF64::new(genome.portfolio_dd_penalty_decay),
+            portfolio_perf_mult_min: AtomicF64::new(genome.portfolio_perf_mult_min),
+            portfolio_perf_mult_max: AtomicF64::new(genome.portfolio_perf_mult_max),
+            portfolio_perf_mult_center: AtomicF64::new(genome.portfolio_perf_mult_center),
 
-            trend_threshold: AtomicF64::new(0.3), // GA Supreme
-            range_threshold: AtomicF64::new(0.45),
+            macro_hurst_confidence_offset: AtomicF64::new(genome.macro_hurst_confidence_offset),
+            macro_hurst_confidence_scale: AtomicF64::new(genome.macro_hurst_confidence_scale),
+            macro_vol_confidence_scale: AtomicF64::new(genome.macro_vol_confidence_scale),
+            macro_min_cooldown_ratio: AtomicF64::new(genome.macro_min_cooldown_ratio),
+            macro_max_cooldown_ratio: AtomicF64::new(genome.macro_max_cooldown_ratio),
+            macro_cooldown_reduction_factor: AtomicF64::new(genome.macro_cooldown_reduction_factor),
+            macro_leverage_momentum_scale: AtomicF64::new(genome.macro_leverage_momentum_scale),
+            lev_matrix_vol_clamp_min: AtomicF64::new(genome.lev_matrix_vol_clamp_min),
+            lev_matrix_growth_scalar: AtomicF64::new(genome.lev_matrix_growth_scalar),
+            lev_matrix_log_cap_divisor: AtomicF64::new(genome.lev_matrix_log_cap_divisor),
+            scalp_accel_min_samples: AtomicF64::new(genome.scalp_accel_min_samples),
+            executor_max_orders_10s: AtomicF64::new(genome.executor_max_orders_10s),
+            executor_max_weight_1m: AtomicF64::new(genome.executor_max_weight_1m),
+            iceberg_volume_threshold: AtomicF64::new(genome.iceberg_volume_threshold),
+            iceberg_slice_count: AtomicF64::new(genome.iceberg_slice_count),
+            swing_obi_threshold: AtomicF64::new(genome.swing_obi_threshold),
+            swing_accel_min_samples: AtomicF64::new(genome.swing_accel_min_samples),
+            // D-603 (DÉCIMA OLA) — FUENTE ÚNICA PARA `temporal_scale`.
+            //
+            // Antes el arranque en frío lo derivaba de `1 − capital_split_scalp`
+            // —una fracción de ASIGNACIÓN DE CAPITAL— mientras el hot-swap
+            // escribía el gen `temporal_scale`. Dos expresiones distintas para
+            // el mismo eje según el camino de código.
+            //
+            // Peor: `current_from_arena()` lee de vuelta este valor HACIA el
+            // gen, de modo que el ciclo Genoma → from_genome → current_from_arena
+            // DESTRUÍA irreversiblemente `temporal_scale`, sustituyéndolo por
+            // una función de otro gen. La evolución de ese gen era inútil:
+            // cada ciclo lo borraba. Y como el backtest construye arenas
+            // frescas y producción hace hot-swap, ambos entornos operaban con
+            // valores de `s` distintos para el mismo genoma.
+            //
+            // El acoplamiento con `capital_split_scalp` era además un error de
+            // categoría: una fracción de capital no es un horizonte temporal.
+            temporal_scale: AtomicF64::new(genome.temporal_scale.clamp(0.05, 0.95)),
 
-            scalp_kelly_fraction: AtomicF64::new(1.0),  // G-01: Full Kelly for Exponential Growth
-            swing_kelly_fraction: AtomicF64::new(0.10), 
-            scalp_obi_threshold: AtomicF64::new(0.18), // G-01: Increased from 0.08 to filter low conviction trades
-            scalp_tp_base: AtomicF64::new(0.0060),    // 0.60% (30% ROE at 50x)
-            scalp_sl_base: AtomicF64::new(0.0030),   // 0.30% (15% ROE at 50x)
-            swing_tp_base: AtomicF64::new(0.045),    // 4.5%
-            swing_sl_base: AtomicF64::new(0.015),    // 1.5%
-
-            sl_atr_mult_btc: AtomicF64::new(1.0),
-            tp_rr_ratio_btc: AtomicF64::new(4.0), // Swing RR ratio ~4.0
-            min_confidence_btc: AtomicF64::new(0.58), // GA Supreme
-            veto_threshold_btc: AtomicF64::new(0.65),
-            tech_threshold: AtomicF64::new(0.005),
-            ml_threshold_long: AtomicF64::new(0.72),
-            ml_threshold_short: AtomicF64::new(0.71),
-
-            maker_spread_pct: AtomicF64::new(0.001671), // 0.16% GA Supreme
-            maker_obi_threshold: AtomicF64::new(0.59),  // GA Supreme
-
-            dynamic_atr_min: AtomicF64::new(0.0005),
-            dynamic_obi_threshold: AtomicF64::new(0.35),
-            dynamic_ema_trend: AtomicF64::new(0.0002),
-            dynamic_ofi_threshold: AtomicF64::new(0.20),
-
-            capital_split_scalp: AtomicF64::new(0.90), // 90% to Scalp
-            kelly_clamp_min: AtomicF64::new(0.01),
-            kelly_clamp_max: AtomicF64::new(0.30), // Max 30% of account per trade
-            leverage_cap: AtomicF64::new(100.0),
-            explosive_confidence_threshold: AtomicF64::new(0.95),
-            explosive_leverage_multiplier: AtomicF64::new(1.0), // No need to multiply if cap is 100
-            sim_fee_rate: AtomicF64::new(0.0001), // Maker fee simulation (1 bp) for post-only
+            // FASE 23: Curvas de Horizonte Continuas (1 ns a 100 años)
+            tp_curve_a: AtomicF64::new(genome.tp_horizon_curve.a),
+            tp_curve_b: AtomicF64::new(genome.tp_horizon_curve.b),
+            sl_curve_a: AtomicF64::new(genome.sl_horizon_curve.a),
+            sl_curve_b: AtomicF64::new(genome.sl_horizon_curve.b),
+            kelly_curve_a: AtomicF64::new(curvas.kelly_horizon_curve.a),
+            kelly_curve_b: AtomicF64::new(curvas.kelly_horizon_curve.b),
+            trail_mult_curve_a: AtomicF64::new(curvas.trail_mult_horizon_curve.a),
+            trail_mult_curve_b: AtomicF64::new(curvas.trail_mult_horizon_curve.b),
+            trail_act_curve_a: AtomicF64::new(curvas.trail_act_horizon_curve.a),
+            trail_act_curve_b: AtomicF64::new(curvas.trail_act_horizon_curve.b),
+            trail_step_curve_a: AtomicF64::new(curvas.trail_step_horizon_curve.a),
+            trail_step_curve_b: AtomicF64::new(curvas.trail_step_horizon_curve.b),
+            obi_curve_a: AtomicF64::new(curvas.obi_horizon_curve.a),
+            obi_curve_b: AtomicF64::new(curvas.obi_horizon_curve.b),
         }
+    }
+
+    /// Evalúa el TP objetivo continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
+    #[inline(always)]
+    pub fn tp_at_tau(&self, tau_ms: f64) -> f64 {
+        use std::sync::atomic::Ordering;
+        let a = self.tp_curve_a.load(Ordering::Relaxed);
+        let b = self.tp_curve_b.load(Ordering::Relaxed);
+        (a + b * tau_ms.max(1e-6).ln()).exp()
+    }
+
+    /// Evalúa el SL continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
+    #[inline(always)]
+    pub fn sl_at_tau(&self, tau_ms: f64) -> f64 {
+        use std::sync::atomic::Ordering;
+        let a = self.sl_curve_a.load(Ordering::Relaxed);
+        let b = self.sl_curve_b.load(Ordering::Relaxed);
+        (a + b * tau_ms.max(1e-6).ln()).exp()
+    }
+
+    /// Evalúa la fracción Kelly continua en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
+    #[inline(always)]
+    pub fn kelly_at_tau(&self, tau_ms: f64) -> f64 {
+        use std::sync::atomic::Ordering;
+        let a = self.kelly_curve_a.load(Ordering::Relaxed);
+        let b = self.kelly_curve_b.load(Ordering::Relaxed);
+        (a + b * tau_ms.max(1e-6).ln()).exp().clamp(0.05, 0.40)
+    }
+
+    /// Evalúa los parámetros del Trailing Stop continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años]:
+    /// Retorna `(trail_mult, trail_act_atr, trail_step_atr, trail_max_atr)`.
+    #[inline(always)]
+    pub fn trail_params_at_tau(&self, tau_ms: f64) -> (f64, f64, f64, f64) {
+        use std::sync::atomic::Ordering;
+        let mult_a = self.trail_mult_curve_a.load(Ordering::Relaxed);
+        let mult_b = self.trail_mult_curve_b.load(Ordering::Relaxed);
+        let act_a = self.trail_act_curve_a.load(Ordering::Relaxed);
+        let act_b = self.trail_act_curve_b.load(Ordering::Relaxed);
+        let step_a = self.trail_step_curve_a.load(Ordering::Relaxed);
+        let step_b = self.trail_step_curve_b.load(Ordering::Relaxed);
+
+        let ln_t = tau_ms.max(1e-6).ln();
+        let mult = (mult_a + mult_b * ln_t).exp().clamp(1.5, 6.0);
+        let act = (act_a + act_b * ln_t).exp().clamp(1.5, 6.0);
+        let step = (step_a + step_b * ln_t).exp().clamp(0.5, 4.0);
+        let max = (act * 1.5).clamp(2.0, 7.0);
+        (mult, act, step, max)
+    }
+
+    /// Evalúa el umbral OBI continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
+    #[inline(always)]
+    pub fn obi_threshold_at_tau(&self, tau_ms: f64) -> f64 {
+        use std::sync::atomic::Ordering;
+        let a = self.obi_curve_a.load(Ordering::Relaxed);
+        let b = self.obi_curve_b.load(Ordering::Relaxed);
+        (a + b * tau_ms.max(1e-6).ln()).exp().clamp(0.10, 0.60)
+    }
+
+    /// Actualiza la curva continua de TP a partir de anclas rápida y lenta
+    #[inline(always)]
+    pub fn update_tp_curve(&self, fast_val: f64, slow_val: f64) {
+        use std::sync::atomic::Ordering;
+        let curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
+            10_000.0,
+            fast_val,
+            86_400_000.0,
+            slow_val,
+        );
+        self.tp_curve_a.store(curve.a, Ordering::Relaxed);
+        self.tp_curve_b.store(curve.b, Ordering::Relaxed);
+    }
+
+    /// Actualiza la curva continua de SL a partir de anclas rápida y lenta
+    #[inline(always)]
+    pub fn update_sl_curve(&self, fast_val: f64, slow_val: f64) {
+        use std::sync::atomic::Ordering;
+        let curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
+            10_000.0,
+            fast_val,
+            86_400_000.0,
+            slow_val,
+        );
+        self.sl_curve_a.store(curve.a, Ordering::Relaxed);
+        self.sl_curve_b.store(curve.b, Ordering::Relaxed);
     }
 }

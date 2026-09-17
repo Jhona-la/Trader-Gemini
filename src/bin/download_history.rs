@@ -1,22 +1,58 @@
 use data_pipeline::historical::Kline;
 use data_pipeline::macro_data::MacroFetcher;
 use data_pipeline::market_context::MarketContextFetcher;
-use std::fs::File;
-use std::path::Path;
 use polars::prelude::*;
 use reqwest::Client;
+use std::fs::File;
 use std::io::{Cursor, Read};
+use std::path::Path;
 
 const SYMBOLS: [&str; 40] = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "DOTUSDT", "LINKUSDT",
-    "TRXUSDT", "LTCUSDT", "BCHUSDT", "XLMUSDT", "ATOMUSDT", "UNIUSDT", "XMRUSDT", "ETCUSDT", "FILUSDT", "ICPUSDT",
-    "VETUSDT", "NEARUSDT", "AAVEUSDT", "ALGOUSDT", "EGLDUSDT", "SANDUSDT", "THETAUSDT", "AXSUSDT", "MANAUSDT", "FTMUSDT",
-    "APEUSDT", "GALAUSDT", "RUNEUSDT", "CHZUSDT", "CRVUSDT", "MKRUSDT", "GRTUSDT", "LDOUSDT", "OPUSDT", "ARBUSDT"
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "ADAUSDT",
+    "AVAXUSDT",
+    "DOGEUSDT",
+    "DOTUSDT",
+    "LINKUSDT",
+    "TRXUSDT",
+    "LTCUSDT",
+    "BCHUSDT",
+    "XLMUSDT",
+    "ATOMUSDT",
+    "UNIUSDT",
+    "XMRUSDT",
+    "ETCUSDT",
+    "FILUSDT",
+    "ICPUSDT",
+    "VETUSDT",
+    "NEARUSDT",
+    "AAVEUSDT",
+    "ALGOUSDT",
+    "EGLDUSDT",
+    "SANDUSDT",
+    "THETAUSDT",
+    "AXSUSDT",
+    "MANAUSDT",
+    "FTMUSDT",
+    "APEUSDT",
+    "GALAUSDT",
+    "RUNEUSDT",
+    "CHZUSDT",
+    "CRVUSDT",
+    "MKRUSDT",
+    "GRTUSDT",
+    "LDOUSDT",
+    "OPUSDT",
+    "ARBUSDT",
 ];
 
-// Descargar los 6 meses más recientes
+// Descargar histórico consolidado de meses pasados
 const MONTHS: [&str; 6] = [
-    "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05"
+    "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01",
 ];
 
 #[tokio::main]
@@ -52,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "https://data.binance.vision/data/futures/um/monthly/klines/{}/1m/{}-1m-{}.zip",
                 symbol, symbol, month
             );
-            
+
             println!("Descargando {}...", url);
             let response = match client.get(&url).send().await {
                 Ok(resp) => resp,
@@ -76,20 +112,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if archive.len() == 0 {
                     continue;
                 }
-                
+
                 let mut csv_file = archive.by_index(0)?;
                 let mut csv_content = String::new();
                 csv_file.read_to_string(&mut csv_content)?;
 
-                let mut rdr = csv::ReaderBuilder::new().has_headers(false).from_reader(csv_content.as_bytes());
+                let mut rdr = csv::ReaderBuilder::new()
+                    .has_headers(false)
+                    .from_reader(csv_content.as_bytes());
                 for result in rdr.records() {
                     let record = match result {
                         Ok(r) => r,
                         Err(_) => continue,
                     };
-                    
-                    if record.len() < 8 { continue; }
-                    
+
+                    if record.len() < 8 {
+                        continue;
+                    }
+
                     let open_time = record[0].parse::<u64>().unwrap_or(0);
                     let open = record[1].parse::<f64>().unwrap_or(0.0);
                     let high = record[2].parse::<f64>().unwrap_or(0.0);
@@ -98,8 +138,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let volume = record[5].parse::<f64>().unwrap_or(0.0);
                     let close_time = record[6].parse::<u64>().unwrap_or(0);
 
+                    // FIX #1527: Validar que los precios y volumenes sean finitos y validos (> 0.0)
+                    if open <= 0.0
+                        || high <= 0.0
+                        || low <= 0.0
+                        || close <= 0.0
+                        || volume < 0.0
+                        || !open.is_finite()
+                        || !high.is_finite()
+                        || !low.is_finite()
+                        || !close.is_finite()
+                        || !volume.is_finite()
+                    {
+                        continue;
+                    }
+
                     all_klines.push(Kline {
-                        open_time, open, high, low, close, volume, close_time
+                        open_time,
+                        open,
+                        high,
+                        low,
+                        close,
+                        volume,
+                        close_time,
                     });
                 }
             } else {
@@ -116,17 +177,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         all_klines.sort_by_key(|k| k.open_time);
 
         // Guardar a Parquet
-        let open_time_series = Series::new("open_time".into(), all_klines.iter().map(|k| k.open_time).collect::<Vec<_>>());
-        let open_series = Series::new("open".into(), all_klines.iter().map(|k| k.open).collect::<Vec<_>>());
-        let high_series = Series::new("high".into(), all_klines.iter().map(|k| k.high).collect::<Vec<_>>());
-        let low_series = Series::new("low".into(), all_klines.iter().map(|k| k.low).collect::<Vec<_>>());
-        let close_series = Series::new("close".into(), all_klines.iter().map(|k| k.close).collect::<Vec<_>>());
-        let volume_series = Series::new("volume".into(), all_klines.iter().map(|k| k.volume).collect::<Vec<_>>());
-        let close_time_series = Series::new("close_time".into(), all_klines.iter().map(|k| k.close_time).collect::<Vec<_>>());
+        let open_time_series = Series::new(
+            "open_time".into(),
+            all_klines.iter().map(|k| k.open_time).collect::<Vec<_>>(),
+        );
+        let open_series = Series::new(
+            "open".into(),
+            all_klines.iter().map(|k| k.open).collect::<Vec<_>>(),
+        );
+        let high_series = Series::new(
+            "high".into(),
+            all_klines.iter().map(|k| k.high).collect::<Vec<_>>(),
+        );
+        let low_series = Series::new(
+            "low".into(),
+            all_klines.iter().map(|k| k.low).collect::<Vec<_>>(),
+        );
+        let close_series = Series::new(
+            "close".into(),
+            all_klines.iter().map(|k| k.close).collect::<Vec<_>>(),
+        );
+        let volume_series = Series::new(
+            "volume".into(),
+            all_klines.iter().map(|k| k.volume).collect::<Vec<_>>(),
+        );
+        let close_time_series = Series::new(
+            "close_time".into(),
+            all_klines.iter().map(|k| k.close_time).collect::<Vec<_>>(),
+        );
 
         let mut df = DataFrame::new(vec![
-            open_time_series, open_series, high_series, low_series,
-            close_series, volume_series, close_time_series
+            open_time_series,
+            open_series,
+            high_series,
+            low_series,
+            close_series,
+            volume_series,
+            close_time_series,
         ])?;
 
         let mut file = File::create(&file_path)?;
@@ -134,7 +221,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_compression(ParquetCompression::Zstd(None))
             .finish(&mut df)?;
 
-        println!("✅ Guardado Parquet para {} ({} velas)", symbol, all_klines.len());
+        println!(
+            "✅ Guardado Parquet para {} ({} velas)",
+            symbol,
+            all_klines.len()
+        );
     }
 
     Ok(())

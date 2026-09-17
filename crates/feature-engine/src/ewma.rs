@@ -10,7 +10,7 @@ pub struct Ewma {
 }
 
 impl Ewma {
-    /// Crea un nuevo EWMA. 
+    /// Crea un nuevo EWMA.
     /// `alpha` determina la velocidad de decaimiento (0 < alpha <= 1).
     #[inline(always)]
     pub fn new(alpha: f64) -> Self {
@@ -32,6 +32,9 @@ impl Ewma {
     /// Actualiza el valor con la nueva observación en O(1)
     #[inline(always)]
     pub fn update(&mut self, new_val: f64) -> f64 {
+        if !new_val.is_finite() {
+            return self.value;
+        }
         if !self.is_initialized {
             self.value = new_val;
             self.is_initialized = true;

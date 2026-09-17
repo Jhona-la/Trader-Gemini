@@ -1,0 +1,43 @@
+thread 'rustc' panicked at /rustc-dev/096694416a41840709140eb0fd0ca193d1a3e6ba/compiler\rustc_metadata\src\rmeta\encoder.rs:2474:51:
+no entry found for key
+stack backtrace:
+   0:     0x7ffcc59efe8e - std::backtrace_rs::backtrace::win64::trace
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\std\src\..\..\backtrace\src\backtrace\win64.rs:85
+   1:     0x7ffcc59efe8e - std::backtrace_rs::backtrace::trace_unsynchronized
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\std\src\..\..\backtrace\src\backtrace\mod.rs:66
+   2:     0x7ffcc59efe8e - std::backtrace::Backtrace::create
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\std\src\backtrace.rs:331
+   3:     0x7ffcc59efdca - std::backtrace::Backtrace::force_capture
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\std\src\backtrace.rs:312
+   4:     0x7ffc5b070525 - core[3db32a19899cf8da]::slice::sort::unstable::heapsort::heapsort::<((rustc_lint_defs[3838511cb1405889]::Level, &str), usize), <((rustc_lint_defs[3838511cb1405889]::Level, &str), usize) as core[3db32a19899cf8da]::cmp::PartialOrd>::lt>
+   5:     0x7ffcc5a04004 - std::panicking::panic_with_hook
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\std\src\panicking.rs:823
+   6:     0x7ffcc59e834e - std::panicking::panic_handler::closure$0
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\std\src\panicking.rs:688
+   7:     0x7ffcc59e57bf - std::sys::backtrace::__rust_end_short_backtrace<std::panicking::panic_handler::closure_env$0,never$>
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\std\src\sys\backtrace.rs:182
+   8:     0x7ffcc59e8e9e - std::panicking::panic_handler
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\std\src\panicking.rs:679
+   9:     0x7ffcc5a5e30d - core::panicking::panic_fmt
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\core\src\panicking.rs:80
+  10:     0x7ffcc5a5df25 - core::panicking::panic_display
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\core\src\panicking.rs:259
+  11:     0x7ffcc5a5df25 - core::option::expect_failed
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\core\src\option.rs:2260
+  12:     0x7ffc594f9a39 - rustc_metadata[2150388b1b136f1a]::rmeta::encoder::encode_metadata
+  13:     0x7ffc594f3fe3 - rustc_metadata[2150388b1b136f1a]::fs::encode_and_write_metadata
+  14:     0x7ffc56bde1ae - <rustc_interface[ed226a92f8cf49bc]::queries::Linker>::codegen_and_build_linker
+  15:     0x7ffc56bb09b9 - std[221e59a347d5f0cc]::sys::backtrace::__rust_begin_short_backtrace::<std[221e59a347d5f0cc]::thread::lifecycle::spawn_unchecked<ctrlc[2e32d33efaff01bf]::set_handler_inner<rustc_driver_impl[404e27dea51b5191]::install_ctrlc_handler::{closure#0}>::{closure#0}, ()>::{closure#1}::{closure#0}::{closure#0}, ()>
+  16:     0x7ffc56ba8965 - RINvNtNtCs2VBXyREYq9Q_3std3sys9backtrace28___rust_begin_short_backtraceNCNCINvNtCskmgbubOL2Pg_15rustc_interface4util26run_in_thread_with_globalsNCINvB1e_31run_in_thread_pool_with_globalsNCINvNtB1g_9interface12run_compileruNCNvCs5wikddx7SpN_17rustc_driver_i
+  17:     0x7ffc56bb49f7 - std[221e59a347d5f0cc]::sys::backtrace::__rust_begin_short_backtrace::<std[221e59a347d5f0cc]::thread::lifecycle::spawn_unchecked<ctrlc[2e32d33efaff01bf]::set_handler_inner<rustc_driver_impl[404e27dea51b5191]::install_ctrlc_handler::{closure#0}>::{closure#0}, ()>::{closure#1}::{closure#0}::{closure#0}, ()>
+  18:     0x7ffcc5a0e6d3 - std::sys::thread::windows::impl$0::new::thread_start
+                               at /rustc/096694416a41840709140eb0fd0ca193d1a3e6ba/library\std\src\sys\thread\windows.rs:58
+  19:     0x7ffd4ccdccb7 - BaseThreadInitThunk
+  20:     0x7ffd4e00caec - RtlUserThreadStart
+
+
+rustc version: 1.98.0-nightly (096694416 2026-06-29)
+platform: x86_64-pc-windows-msvc
+
+query stack during panic:
+end of query stack

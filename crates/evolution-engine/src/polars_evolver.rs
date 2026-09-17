@@ -1,9 +1,10 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use backtest_engine::run_backtest_native;
+use quantum_arena::genome::SuperGenotype as Genotype;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::time::sleep;
-use backtest_engine::{UnifiedConfig, run_backtest_native};
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Genome {
@@ -31,12 +32,12 @@ pub fn start_polars_evolver_daemon(
     highs: Arc<Vec<f64>>,
     lows: Arc<Vec<f64>>,
     volumes: Arc<Vec<f64>>,
-    base_config: UnifiedConfig,
+    base_config: Genotype,
 ) {
     if EVOLUTION_RUNNING.swap(true, Ordering::SeqCst) {
         return; // Ya está corriendo
     }
-    
+
     // Configuramos este hilo con prioridad muy baja (Idle) usando OS-Guardian / Windows API
     #[cfg(windows)]
     unsafe {
@@ -46,80 +47,144 @@ pub fn start_polars_evolver_daemon(
             windows::Win32::System::Threading::THREAD_PRIORITY_IDLE,
         );
     }
-    
+
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
-            
+
         rt.block_on(async {
             loop {
                 // Dormir 1 hora entre evoluciones masivas
                 sleep(Duration::from_secs(3600)).await;
-                
+
                 println!("[EVOLVER] 🧬 Iniciando mutación cuántica (Polars Vectorized)...");
-                
+
                 let mut best_sharpe = 0.0;
                 let mut best_cfg = base_config.clone();
-                
-                // Simular variaciones de hiperparámetros de microestructura
-                for atr in [0.00005, 0.0001, 0.0002] {
-                    for obi in [0.05, 0.10, 0.15] {
-                        for ema in [0.00002, 0.00005, 0.00010] {
-                            let mut test_cfg = base_config.clone();
-                            test_cfg.dyn_atr_min = atr;
-                            test_cfg.dyn_obi = obi;
-                            test_cfg.dyn_ema = ema;
-                            test_cfg.dyn_ofi = 0.05; // fixed for now to keep grid small
-                            
-                            let mut pnl = vec![0.0];
-                            let mut stats = vec![0.0; 4];
-                            let final_cap = run_backtest_native(
-                                &closes, &highs, &lows, &volumes, &test_cfg, &mut pnl, &mut stats, "SIM"
-                            );
-                            
-                            // Native backtest returns length of output or something, stats[0] is final cap
-                            let trades = stats[1] as f64;
-                            let wins = stats[2] as f64;
-                            let final_capital = stats[0];
-                            
-                            let wr = if trades > 0.0 { wins / trades } else { 0.0 };
-                            let sharpe = (final_capital - test_cfg.starting_capital) * wr; // Pseudo-Sharpe
-                            
-                            if sharpe > best_sharpe {
-                                best_sharpe = sharpe;
-                                best_cfg = test_cfg.clone();
-                            }
-                        }
+
+                // Simular variaciones de hiperparámetros estocásticos (1000 iteraciones cuánticas)
+                for _ in 0..1000 {
+                    let test_cfg = Genotype::new_random();
+                    // Merge some base properties or rely entirely on random
+
+                    // F3.3: buffers según el CONTRATO del motor (antes: pnl de
+                    // tamaño 1 y stats de 4 → OOB garantizado al primer trade).
+                    let n = closes.len();
+                    // FIX #718: Guarda de series vacías o insuficientes (<10 velas)
+                    if n < 10 || highs.len() < n || lows.len() < n || volumes.len() < n {
+                        continue;
+                    }
+                    let initial_cap = std::env::var("INITIAL_CAPITAL")
+                        .ok()
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .unwrap_or(13.0);
+                    let mut pnl = vec![0.0; n];
+                    let mut stats = vec![0.0; backtest_engine::STATS_LEN];
+                    let _final_cap = run_backtest_native(
+                        &closes,
+                        &highs,
+                        &lows,
+                        &volumes,
+                        &test_cfg,
+                        &mut pnl,
+                        &mut stats,
+                        "SIM",
+                        initial_cap,
+                    );
+
+                    // Native backtest populates stats exactly as follows:
+                    // 0: net_win_rate, 1: trades, 2: final_cap, 3: max_dd, 4: sharpe
+                    let trades = stats[1];
+                    let final_capital = stats[2];
+                    let max_dd = stats[3];
+                    let wr = stats[0];
+
+                    // Penalización severa por Drawdown
+                    let dd_penalty =
+                        crate::entropy_fitness::EntropyFitness::drawdown_adversarial_penalty(
+                            max_dd,
+                            test_cfg.global_max_drawdown,
+                        );
+
+                    // Penalización por significancia estadística (Cero ghost code)
+                    let min_trades_penalty = if trades < 15.0 {
+                        (trades / 15.0).max(0.1)
+                    } else {
+                        1.0
+                    };
+
+                    // Pseudo-Sharpe Cuántico con Penalización (Normalizado a retorno relativo - FIX #1408)
+                    let ret_pct = (final_capital - initial_cap) / initial_cap.max(1.0);
+                    let raw_sharpe = ret_pct * wr * dd_penalty * min_trades_penalty;
+                    let sharpe = if raw_sharpe.is_finite() {
+                        raw_sharpe
+                    } else {
+                        0.0
+                    };
+
+                    if sharpe > best_sharpe {
+                        best_sharpe = sharpe;
+                        best_cfg = test_cfg.clone();
                     }
                 }
-                
-                println!("[EVOLVER] 🏆 Nuevo genotipo élite encontrado (Pseudo-Sharpe: {:.2})", best_sharpe);
-                
-                // Sobrescribir active_genome.json
-                let new_genome = Genome {
-                    scalp_tp: best_cfg.tp_pct,
-                    scalp_sl: best_cfg.sl_pct,
-                    swing_tp: best_cfg.tp_pct * 2.0,
-                    swing_sl: best_cfg.sl_pct * 2.0,
-                    ml_threshold: 0.1,
-                    dyn_atr_min: best_cfg.dyn_atr_min,
-                    dyn_obi: best_cfg.dyn_obi,
-                    dyn_ema: best_cfg.dyn_ema,
-                    dyn_ofi: best_cfg.dyn_ofi,
-                    sharpe_ratio: best_sharpe,
-                    win_rate: 0.0,
-                    max_drawdown: 0.0,
-                    generation: 1,
-                    fitness: best_sharpe,
-                };
-                
-                if let Ok(json) = serde_json::to_string_pretty(&new_genome) {
-                    let _ = tokio::fs::write("config_dir/genotypes/active_genome.json", json).await;
-                    println!("[EVOLVER] 💾 active_genome.json actualizado en caliente.");
-                }
-            }
-        });
-    });
+
+                if best_sharpe > 0.0 {
+                    println!(
+                        "[EVOLVER] 🏆 Nuevo genotipo élite encontrado (Pseudo-Sharpe: {:.2})",
+                        best_sharpe
+                    );
+
+                    // F4.3 — FIX CORRUPCIÓN DE SCHEMA: este bloque escribía un
+                    // struct REPORT legacy (14 campos) sobre active_genome.json,
+                    // donde el loader espera el SuperGenotype completo (100+ genes)
+                    // — la siguiente promo habría dejado el motor en baseline
+                    // silencioso. Ahora: embudo único con linaje y espejo atómico.
+                    match quantum_arena::genome_store::GenomeEnvelope::promote(
+                        best_cfg.clone(),
+                        "polars_evolver",
+                        &format!("pseudo-sharpe {:.4}", best_sharpe),
+                    ) {
+                        Ok(env) => println!(
+                            "[EVOLVER] 💾 Genoma generación {} promovido (padre {}).",
+                            env.generation, env.parent_generation
+                        ),
+                        Err(e) => println!("[EVOLVER] ❌ promo falló: {}", e),
+                    }
+                } // Cierra if best_sharpe > 0.0
+            } // Cierra loop
+        }); // Cierra rt.block_on
+    }); // Cierra thread::spawn
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_genome_struct_serialization() {
+        let g = Genome {
+            scalp_tp: 0.01,
+            scalp_sl: 0.005,
+            swing_tp: 0.05,
+            swing_sl: 0.02,
+            ml_threshold: 0.65,
+            dyn_atr_min: 0.001,
+            dyn_obi: 0.2,
+            dyn_ema: 0.1,
+            dyn_ofi: 0.3,
+            sharpe_ratio: 2.1,
+            win_rate: 0.68,
+            max_drawdown: 0.03,
+            generation: 1,
+            fitness: 15.2,
+        };
+
+        let json = serde_json::to_string(&g).unwrap();
+        let de: Genome = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.generation, 1);
+        assert_eq!(de.sharpe_ratio, 2.1);
+    }
+}
+// Cierra fn

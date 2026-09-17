@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "net", "sync", "time", "process"] }
 tokio-tungstenite = { version = "0.21.0", features = ["native-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -19,6 +19,14 @@ polars = { version = "0.43.1", features = ["parquet"] }
 zip = "8.6.0"
 csv = "1.4.0"
 yahoo_finance_api = "4.1.1"
-
-
-
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+socket2 = "0.5"
+hickory-resolver = "0.24.1"
+storage-engine = { path = "../storage-engine" }
+memmap2 = "0.9.11"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+bytemuck = "1.21"
+lazy_static = "1.5"

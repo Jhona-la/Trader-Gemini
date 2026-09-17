@@ -1,17 +1,29 @@
-
-
-pub mod omni_multiplexer;
-pub mod parser;
-pub mod ws_client;
-pub mod multiplexer;
-pub mod historical;
+pub mod api_client;
+pub mod asset_selector;
 pub mod bypass;
+pub mod chaos_monkey;
+pub mod dynamic_ranker;
+pub mod feature_vm;
+pub mod historical;
+pub mod lakehouse_mmap;
 pub mod macro_data;
+pub mod macro_feed;
 pub mod market_context;
+pub mod multiplexer;
+pub mod omni_multiplexer;
+pub mod onchain_feed;
+pub mod parser;
+pub mod persistence;
+pub mod resilient_stream;
+pub mod state_db;
+pub mod storage;
+pub mod telemetry_bus;
+pub mod teleonomia;
+pub mod validation;
+pub mod ws_client;
 
-// Exportar la conexión
-pub use ws_client::BinanceStreamer;
+// Re-exports principales
 pub use macro_data::MacroFetcher;
 pub use market_context::MarketContextFetcher;
-
-
+pub use resilient_stream::ResilientStreamManager;
+pub use ws_client::BinanceStreamer;

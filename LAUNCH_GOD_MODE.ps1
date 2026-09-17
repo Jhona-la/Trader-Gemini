@@ -4,7 +4,7 @@ Write-Host "========================================================" -Foregroun
 Write-Host "Initializing God Engine natively..." -ForegroundColor Green
 
 Write-Host "[1/2] Compiling Quantum Engine (Rust)..." -ForegroundColor Yellow
-$compile = Start-Process -FilePath "cargo" -ArgumentList "build", "--release", "-j", "1" -Wait -NoNewWindow -PassThru
+$compile = Start-Process -FilePath "cargo" -ArgumentList "build", "--release", "-j", "3" -Wait -NoNewWindow -PassThru
 if ($compile.ExitCode -ne 0) {
     Write-Host "❌ Compilation failed!" -ForegroundColor Red
     exit 1

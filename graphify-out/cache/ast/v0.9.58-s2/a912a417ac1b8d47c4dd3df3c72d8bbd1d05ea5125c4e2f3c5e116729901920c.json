@@ -1,0 +1,1 @@
+{"nodes": [{"id": "pkg_flight_recorder", "label": "flight-recorder", "file_type": "code", "type": "package", "ecosystem": "cargo", "source_file": "crates/flight-recorder/Cargo.toml", "source_location": "L1", "version": "0.1.0"}], "edges": []}

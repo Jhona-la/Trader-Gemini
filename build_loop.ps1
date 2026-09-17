@@ -1,0 +1,17 @@
+$max_retries = 20
+$retry_count = 0
+while ($retry_count -lt $max_retries) {
+    Write-Host "Attempt $($retry_count + 1) of $max_retries..."
+    cargo run --bin multi_coin_simulator -j 1 --target-dir target-sim-3
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 0) {
+        Write-Host "Build and run succeeded!"
+        exit 0
+    } else {
+        Write-Host "Build failed. Waiting 2 seconds..."
+        Start-Sleep -Seconds 2
+        $retry_count++
+    }
+}
+Write-Host "Max retries reached."
+exit 1
