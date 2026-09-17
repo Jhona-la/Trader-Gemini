@@ -282,7 +282,11 @@ fn daily_aggtrades(client: &Client, symbol: &str, from: &str, to: &str) {
 /// Ordena y persiste el bin TGMTICK1 final (compartido mensual/diario).
 fn write_ticks(symbol: &str, mut ticks: Vec<BinTick>) {
     ticks.sort_unstable_by_key(|t| t.timestamp);
-    ticks.dedup_by_key(|t| t.timestamp);
+    // HOST-008 (auditoría DEC-14): dedup por timestamp EXACTO destruía los
+    // aggTrades del mismo ms (normal en bursts — Binance colapsa a 1ms).
+    // El modo mensual NO deduplica; el daily tampoco desde este fix.
+    // El sort basta: si hay duplicados exactos (mismo ts+precio+qty),
+    // son re-envíos del exchange que el parser filtra naturalmente.
     println!("✅ {} ticks reales de aggTrades", ticks.len());
     let out = Path::new("data").join(format!("{}_ticks_REAL.bin", symbol));
     let mut f = match std::fs::File::create(&out) {
