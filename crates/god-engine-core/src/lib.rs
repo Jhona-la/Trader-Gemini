@@ -1635,6 +1635,13 @@ impl GodEngineCore {
                 .unwrap_or_else(|| "BTCUSDT".to_string());
             let coin_model_key = format!("{}_SCALP", sym);
             let active_forest = crate::ml_inference::NanoForest::get_global(&coin_model_key);
+            // B3.25 — DISCIPLINA DE ROSTER: hueco medido en vivo (SOL, modelo
+            // retirado, abrió posición nueva): sin forest, el NN SOLO puede
+            // empujar el ml sobre el umbral del gate — el ensamble nunca es
+            // neutral de verdad. La regla estructural: SIN MODELO VALIDADO
+            // del roster, NO se opera (el gate B3.18 exigirá además este
+            // flag). La opinión NN sigue viva para análisis/telemetría.
+            let has_roster_model = active_forest.is_some();
             let coin_ensemble = if coin_id < self.ensembles.len() {
                 &mut self.ensembles[coin_id]
             } else {
@@ -3313,21 +3320,25 @@ impl GodEngineCore {
                     // B3.19 (auditoría A3-rec3): clamp uniforme — el camino
                     // swing ya clampea (l.2081-2082); un genoma fuera de banda
                     // no puede cegar ni abrir de par en par el gate.
-                    let ml_gate_ok = if order.signal == SignalType::Long {
-                        ml_now >= self
-                            .arena
-                            .config
-                            .ml_threshold_long
-                            .load(Ordering::Relaxed)
-                            .clamp(0.50, 0.95)
-                    } else {
-                        ml_now <= self
-                            .arena
-                            .config
-                            .ml_threshold_short
-                            .load(Ordering::Relaxed)
-                            .clamp(0.05, 0.50)
-                    };
+                    // B3.25 — además del acuerdo del ensamble, el símbolo
+                    // DEBE tener modelo validado del roster: el NN solo no
+                    // autoriza entradas (hueco medido: SOL sin modelo abrió).
+                    let ml_gate_ok = has_roster_model
+                        && if order.signal == SignalType::Long {
+                            ml_now >= self
+                                .arena
+                                .config
+                                .ml_threshold_long
+                                .load(Ordering::Relaxed)
+                                .clamp(0.50, 0.95)
+                        } else {
+                            ml_now <= self
+                                .arena
+                                .config
+                                .ml_threshold_short
+                                .load(Ordering::Relaxed)
+                                .clamp(0.05, 0.50)
+                        };
                     if deliberation.approved && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;
                         if self.diag_ml_vetoes % 50 == 1 {

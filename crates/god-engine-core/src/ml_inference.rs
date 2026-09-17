@@ -500,13 +500,13 @@ mod tests {
     fn b34_macro_ml_features_mapea_el_omni_vivo() {
         let mut omni = [0.0f64; 54];
         omni[24] = 30.0; // VIXCLS
-        omni[21] = 130.0; // DTWEXBGS
+        omni[21] = 105.0; // ICE DXY (DX-Y.NYB — B3.23)
         omni[22] = 5500.0; // SP500
         omni[23] = 20000.0; // NASDAQCOM
         let m = macro_ml_features(&omni);
         assert!((m[0] - 1.0).abs() < 1e-6, "VIX (30-20)/10 = +1");
         assert!((m[1] - 1.0).abs() < 1e-6, "SP500 (5500-5000)/500 = +1");
-        assert!((m[2] - 1.0).abs() < 1e-6, "DXY (130-120)/10 = +1");
+        assert!((m[2] - 1.0).abs() < 1e-6, "ICE DXY (105-100)/5 = +1");
         assert!((m[3] - 1.0).abs() < 1e-6, "NASDAQ (20000-18000)/2000 = +1");
 
         // Feed ausente / degenerado ⇒ neutro 0.0 (mismo saneo del bloque 44D)
