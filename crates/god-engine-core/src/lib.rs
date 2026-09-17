@@ -3310,10 +3310,23 @@ impl GodEngineCore {
                     // threads: el valor del gate es, por construcción, el del
                     // tick en curso — nunca stale por 1 tick.
                     let ml_now = ml_prob;
+                    // B3.19 (auditoría A3-rec3): clamp uniforme — el camino
+                    // swing ya clampea (l.2081-2082); un genoma fuera de banda
+                    // no puede cegar ni abrir de par en par el gate.
                     let ml_gate_ok = if order.signal == SignalType::Long {
-                        ml_now >= self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
+                        ml_now >= self
+                            .arena
+                            .config
+                            .ml_threshold_long
+                            .load(Ordering::Relaxed)
+                            .clamp(0.50, 0.95)
                     } else {
-                        ml_now <= self.arena.config.ml_threshold_short.load(Ordering::Relaxed)
+                        ml_now <= self
+                            .arena
+                            .config
+                            .ml_threshold_short
+                            .load(Ordering::Relaxed)
+                            .clamp(0.05, 0.50)
                     };
                     if deliberation.approved && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;
