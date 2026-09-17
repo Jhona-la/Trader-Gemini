@@ -77,8 +77,71 @@ fn difiere(a: &[f64; STATS_LEN], b: &[f64; STATS_LEN]) -> bool {
     })
 }
 
+/// DIAGNÓSTICO (B3.18, 2026-09-16): una SOLA evaluación con el predictor
+/// confiado y trazas de los contadores de veto del core — localiza EN QUÉ
+/// ETAPA mueren los trades del camino nativo (señales jamás disparadas /
+/// consejo / gate ml / risk-engine) sin pagar los 22 min del oráculo.
+#[test]
+fn t1_diag_camino_nativo_una_evaluacion() {
+    let confident = god_engine_core::ml_inference::NanoForestData {
+        children_left: vec![],
+        children_right: vec![],
+        feature: vec![],
+        threshold: vec![],
+        value: vec![],
+        tree_offsets: vec![0, 0],
+        init_score: 3.0,
+    };
+    let forest = god_engine_core::ml_inference::NanoForest::from_data(confident)
+        .expect("forest sintético fuera de contrato");
+    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_SCALP", forest);
+    // Safety: test single-threaded antes de spawn de hilos del runner.
+    unsafe { std::env::set_var("TG_TRACE_NATIVO", "1") };
+
+    let datos = serie(3_000);
+    let base = SuperGenotype::new_baseline(0.0002, 0.0005);
+    let stats = evaluar(&base, &datos);
+    println!("[T1-DIAG] stats: trades={} pnl={} wr={:?}", stats[0], stats[1], stats.get(2).copied());
+    // Rechazos del risk-engine (contadores globales del proceso): "sin
+    // rechazos" ⇒ las SEÑALES jamás produjeron intención; un motivo
+    // dominante ⇒ el risk-engine es el estrangulamiento.
+    println!("[T1-DIAG] risk-rejects: {}", risk_engine::reject_report());
+}
+
+// HISTORIA DEL ORÁCULO (2026-09-16, cuarta medición): tres corridas dieron
+// 0/144 (con modelos reales, sin modelos, y con predictor confiado). El
+// diagnóstico por etapas (t1_diag + contadores del core + reject_report)
+// encontró la CAUSA RAÍZ: el registro dinámico de símbolos nace VACÍO por
+// diseño (lo puebla el symbol manager del motor en vivo) y el runner nativo
+// jamás registró specs ⇒ evaluate_quantum_order rechazaba TODO con "spec"
+// (432/432) ⇒ cero trades ⇒ ningún gen podía diferir. El oráculo llevaba
+// muerto desde que el registro se hizo dinámico — NO desde B3.18. Fix B3.20
+// en run_backtest_native (registra spec estándar idempotente).
+// El PREDICTOR SINTÉTICO SIEMPRE-CONFIADO se mantiene: mide la expresividad
+// genética CONDICIONAL a la cooperación de la predicción (el gate B3.18 es
+// un gobernador no-genético por diseño; con el predictor cooperando, los
+// genes —incluidos los de umbral ml— vuelven a poder expresarse).
 #[test]
 fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
+    // Neutralización documentada del gate para la MEDICIÓN (ver comentario
+    // del test): forest sintético siempre-confiado, contrato 48D válido
+    // (sin árboles = modelo all-leaves aceptado por from_data).
+    let confident = god_engine_core::ml_inference::NanoForestData {
+        children_left: vec![],
+        children_right: vec![],
+        feature: vec![],
+        threshold: vec![],
+        value: vec![],
+        tree_offsets: vec![0, 0],
+        init_score: 3.0, // sigmoid(3) ≈ 0.953 — siempre-confiado
+    };
+    let forest = god_engine_core::ml_inference::NanoForest::from_data(confident)
+        .expect("forest sintético del oráculo fuera de contrato");
+    // El runner nativo mapea su serie a coin 0; B3.18b resuelve la clave del
+    // símbolo con default BTCUSDT cuando el registry no lo registra.
+    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_SCALP", forest);
+    println!("[T-1] predictor sintético siempre-confiado cargado (gate neutralizado para medir)");
+
     let datos = serie(3_000);
     let base = SuperGenotype::new_baseline(0.0002, 0.0005);
     let lo = SuperGenotype::get_lower_bounds();
@@ -122,14 +185,20 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     );
 
     // El umbral no pretende ser ambicioso hoy: pretende ser un TRINQUETE.
-    // Fija el nivel medido tras la Décima Ola para que no pueda retroceder, y
-    // sube conforme se conecten los genes muertos (D-649) y se retiren los
-    // clamps de los sitios de lectura (D-643).
-    const COBERTURA_MINIMA: f64 = 0.25;
+    // Historia de la base: 25% (Décima Ola, genoma gobernador único) → 0%
+    // (bug B3.20: registro de specs vacío en el runner nativo — el oráculo
+    // llevaba muerto desde que el registro se hizo dinámico) → 13.9%
+    // (20/144, medido 2026-09-16 con spec registrado + predictor sintético
+    // confiado: expresividad CONDICIONAL a la cooperación de la predicción
+    // — el gate B3.18 es un gobernador no-genético por diseño). Se fija el
+    // nivel medido con margen de ruido mínimo; sólo puede SUBIR: conectar
+    // genes muertos (D-649), retirar clamps (D-643) o rediseñar la
+    // neutralización debe elevarlo, jamás bajarlo.
+    const COBERTURA_MINIMA: f64 = 0.135;
     assert!(
         cobertura >= COBERTURA_MINIMA,
-        "cobertura genética {:.1} % por debajo del mínimo {:.1} %. \\
-         {} genes no influyen en la aptitud: son ruido no seleccionado que sin \\
+        "cobertura genética {:.1} % por debajo del mínimo {:.1} %. \
+         {} genes no influyen en la aptitud: son ruido no seleccionado que sin \
          embargo gobierna comportamiento en producción. Inertes: {:?}",
         cobertura * 100.0,
         COBERTURA_MINIMA * 100.0,

@@ -138,7 +138,16 @@ fn main() {
 
     // Paridad de VALOR con el feed vivo: ^VIX/^GSPC/^IXIC cierran igual
     // que VIXCLS/SP500/NASDAQCOM — misma serie, distinto transporte.
-    for (yahoo_sym, tag) in [("^VIX", "VIX"), ("^GSPC", "SP500"), ("^IXIC", "NASDAQ")] {
+    // B3.23 — DXY también por Yahoo (DX-Y.NYB, ICE Dollar Index): FRED
+    // bloquea esta red desde hace días y la directriz es SOLUCIONAR — la
+    // paridad exige MISMA SERIE en trainer y vivo, no una serie concreta:
+    // ambos lados usan ahora DX-Y.NYB (~99-105) y la dim 46 despierta.
+    for (yahoo_sym, tag) in [
+        ("^VIX", "VIX"),
+        ("^GSPC", "SP500"),
+        ("^IXIC", "NASDAQ"),
+        ("DX-Y.NYB", "DXY"),
+    ] {
         println!("🚀 {yahoo_sym} → data/macro/{tag}.csv");
         match yahoo_daily(yahoo_sym, "10y") {
             Some(rows) => {
@@ -151,22 +160,6 @@ fn main() {
                 failures += 1;
             }
         }
-    }
-
-    // DTWEXBGS: solo FRED — reintentos con espera (el CDN abre y cierra
-    // ventanas; verificado 200 OK y connection-reset el mismo día).
-    println!("🚀 DTWEXBGS (FRED) → data/macro/DXY.csv");
-    let mut dxy_done = false;
-    for attempt in 1..=4usize {
-        if let Some(rows) = fred_daily("DTWEXBGS") {
-            dxy_done = write_series("DXY", &rows);
-            break;
-        }
-        println!("   ⏳ intento {attempt}/4 falló — esperando 30s");
-        std::thread::sleep(std::time::Duration::from_secs(30));
-    }
-    if !dxy_done {
-        failures += 1;
     }
 
     if failures > 0 {

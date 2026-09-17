@@ -26,8 +26,14 @@ pub struct NanoForest {
 }
 
 impl NanoForest {
-    pub fn from_data(data: NanoForestData) -> Self {
-        Self { data }
+    /// B3.9-aud — el contrato de dimensión aplica a TODA construcción, no
+    /// sólo a `load_model`: `from_data` es la vía de tests y de trainers
+    /// in-proc; un modelo más ancho que el binario vivo haría OOB en
+    /// `x[feature]` (la protección de `evaluate_tree` lo neutraliza a 0.0,
+    /// pero mejor rechazar en la frontera que silenciar en el hot loop).
+    pub fn from_data(data: NanoForestData) -> Result<Self, String> {
+        Self::validate_dim_contract(&data, "<from_data>")?;
+        Ok(NanoForest { data })
     }
 
     /// B3.9 — CONTRATO DE DIMENSIÓN del vector ML de inferencia. Un modelo
@@ -38,11 +44,50 @@ impl NanoForest {
     /// mantiene el motor vivo. La regresión de binario queda segura.
     pub const ML_VECTOR_DIM: usize = 48;
 
+    /// Valida que ningún split del modelo parta por una dimensión fuera del
+    /// vector que ESTE binario construye. Índices negativos (hojas: -1/-2)
+    /// y un vector `feature` vacío (modelo sin splits) no violan el
+    /// contrato: `evaluate_tree` los trata como hoja, sin acceso a memoria.
+    fn validate_dim_contract(data: &NanoForestData, origen: &str) -> Result<(), String> {
+        if let Some(&max_feat) = data.feature.iter().filter(|f| **f >= 0).max() {
+            if max_feat as usize >= Self::ML_VECTOR_DIM {
+                return Err(format!(
+                    "modelo {origen} parte por dim {max_feat} ≥ contrato ML_VECTOR_DIM={} — binario obsoleto para este modelo; re-compilar",
+                    Self::ML_VECTOR_DIM
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Parsea el JSON fuente y (best-effort) recompila el .bin de caché.
+    /// B3.9-aud: la compilación del .bin la decide el CALLER, después de
+    /// validar el contrato — un modelo rechazado no debe envenenar la caché.
+    fn parse_json(json_path: &str) -> Result<NanoForestData, Box<dyn std::error::Error>> {
+        let file = File::open(json_path)?;
+        let reader = BufReader::new(file);
+        Ok(serde_json::from_reader(reader)?)
+    }
+
     pub fn load_model(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let bin_path = path.replace(".json", ".bin");
+        // B3.9-aud — PAREJA (json, bin) EXPLÍCITA. El host (god_engine.rs)
+        // carga del directorio models/ TANTO el .json como el .bin (clave =
+        // file stem). Si el caller pasa el .bin directamente, el
+        // `path.replace(".json", ".bin")` anterior era un no-op y la prueba
+        // de frescura comparaba el archivo consigo mismo (nunca stale): un
+        // .bin obsoleto podía PISAR la recarga de un .json más nuevo según
+        // el orden de read_dir. Ahora el .bin pasado como path se valida
+        // contra su .json hermano.
+        let (json_path, bin_path) = if path.ends_with(".json") {
+            (path.to_string(), path.replace(".json", ".bin"))
+        } else if path.ends_with(".bin") {
+            (path.replace(".bin", ".json"), path.to_string())
+        } else {
+            (path.to_string(), path.replace(".json", ".bin"))
+        };
 
         // Verificar frescura: si el JSON es más nuevo que el BIN, el BIN es obsoleto
-        let is_stale = match (std::fs::metadata(path), std::fs::metadata(&bin_path)) {
+        let is_stale = match (std::fs::metadata(&json_path), std::fs::metadata(&bin_path)) {
             (Ok(m_json), Ok(m_bin)) => {
                 let t_json = m_json
                     .modified()
@@ -55,49 +100,31 @@ impl NanoForest {
             _ => false,
         };
 
-        let data: NanoForestData = if !is_stale && std::path::Path::new(&bin_path).exists() {
-            match std::fs::read(&bin_path) {
-                Ok(bin_data) => match bincode::deserialize(&bin_data) {
-                    Ok(parsed) => parsed,
-                    Err(_) => {
-                        let file = File::open(path)?;
-                        let reader = BufReader::new(file);
-                        let parsed: NanoForestData = serde_json::from_reader(reader)?;
-                        if let Ok(encoded) = bincode::serialize(&parsed) {
-                            let _ = std::fs::write(&bin_path, encoded);
-                        }
-                        parsed
-                    }
-                },
-                Err(_) => {
-                    let file = File::open(path)?;
-                    let reader = BufReader::new(file);
-                    let parsed: NanoForestData = serde_json::from_reader(reader)?;
-                    if let Ok(encoded) = bincode::serialize(&parsed) {
-                        let _ = std::fs::write(&bin_path, encoded);
-                    }
-                    parsed
-                }
+        let (data, from_bin) = if !is_stale && std::path::Path::new(&bin_path).exists() {
+            match std::fs::read(&bin_path)
+                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
+                .and_then(|bin_data| {
+                    bincode::deserialize(&bin_data)
+                        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
+                }) {
+                Ok(parsed) => (parsed, true),
+                Err(_) => (Self::parse_json(&json_path)?, false),
             }
         } else {
-            // Fallback to JSON and auto-compile fresh BIN!
-            let file = File::open(path)?;
-            let reader = BufReader::new(file);
-            let parsed: NanoForestData = serde_json::from_reader(reader)?;
-            if let Ok(encoded) = bincode::serialize(&parsed) {
-                let _ = std::fs::write(&bin_path, encoded);
-            }
-            parsed
+            // Fallback to JSON (fresh compile below)
+            (Self::parse_json(&json_path)?, false)
         };
         // B3.9 — contrato de dimensión: el modelo debe vivir dentro del
         // vector que ESTE binario construye. Rechazo ruidoso, no silencio.
-        if let Some(&max_feat) = data.feature.iter().filter(|f| **f >= 0).max() {
-            if max_feat as usize >= Self::ML_VECTOR_DIM {
-                return Err(format!(
-                    "modelo {path} parte por dim {max_feat} ≥ contrato ML_VECTOR_DIM={} — binario obsoleto para este modelo; re-compilar",
-                    Self::ML_VECTOR_DIM
-                )
-                .into());
+        // Aplica IGUAL al camino del .bin (caché) — y el .bin sólo se
+        // escribe DESPUÉS de validar: un modelo rechazado no contamina la
+        // caché para el próximo arranque.
+        Self::validate_dim_contract(&data, path).map_err(|e| -> Box<dyn std::error::Error> {
+            e.into()
+        })?;
+        if !from_bin {
+            if let Ok(encoded) = bincode::serialize(&data) {
+                let _ = std::fs::write(&bin_path, encoded);
             }
         }
         Ok(NanoForest { data })
@@ -111,6 +138,17 @@ impl NanoForest {
         new_map.insert(key.to_string(), Arc::new(forest));
         crate::ml_inference::GLOBAL_FORESTS.store(Arc::new(new_map));
         Ok(())
+    }
+
+    /// Inserta un forest YA CONSTRUIDO en el caché global (mismo contrato de
+    /// dimensión que load_model). Uso: oráculos de medición que necesitan un
+    /// predictor sintético (t1: siempre-confiado, para medir expresividad
+    /// genética condicional a la cooperación de la predicción).
+    pub fn store_global(key: &str, forest: NanoForest) {
+        let current_map = crate::ml_inference::GLOBAL_FORESTS.load();
+        let mut new_map = (**current_map).clone();
+        new_map.insert(key.to_string(), Arc::new(forest));
+        crate::ml_inference::GLOBAL_FORESTS.store(Arc::new(new_map));
     }
 
     /// Predicts using a specific global forest.
@@ -247,7 +285,10 @@ pub fn macro_ml_features(omni: &[f64; 54]) -> [f32; 4] {
     [
         aff(omni[24], 20.0, 10.0), // VIXCLS — nivel de miedo
         aff(omni[22], 5000.0, 500.0), // SP500 — nivel riesgo global
-        aff(omni[21], 120.0, 10.0), // DTWEXBGS — nivel dólar
+        // B3.23: ICE DXY (DX-Y.NYB ~99-105) en trainer y vivo — la serie
+        // Fed DTWEXBGS (~120) quedó fuera (FRED bloquea la red); paridad
+        // por MISMA SERIE en ambos lados del contrato.
+        aff(omni[21], 100.0, 5.0),  // ICE DXY — nivel dólar
         aff(omni[23], 18000.0, 2000.0), // NASDAQCOM — nivel tech
     ]
 }
@@ -267,7 +308,7 @@ mod tests {
             tree_offsets: vec![0, 3],
             init_score: 0.0,
         };
-        let forest = NanoForest::from_data(data);
+        let forest = NanoForest::from_data(data).unwrap();
 
         // Feature 0 <= 0.5 -> leaf value -0.5 -> prob < 0.50
         let prob_low = forest.predict(&[0.2]).unwrap();
@@ -292,7 +333,7 @@ mod tests {
             tree_offsets: vec![0, 3],
             init_score: 0.0,
         };
-        let forest = NanoForest::from_data(data);
+        let forest = NanoForest::from_data(data).unwrap();
 
         // NaN feature -> None
         assert!(forest.predict(&[f32::NAN]).is_none());
@@ -313,7 +354,7 @@ mod tests {
             tree_offsets: vec![0, 3],
             init_score: 0.0,
         };
-        let forest = NanoForest::from_data(data);
+        let forest = NanoForest::from_data(data).unwrap();
 
         // Store directly in GLOBAL_FORESTS
         let current_map = GLOBAL_FORESTS.load();
@@ -330,5 +371,149 @@ mod tests {
 
         let non_existent = NanoForest::predict_global("NON_EXISTENT", &[0.8]);
         assert!(non_existent.is_none());
+    }
+
+    // ── B3.9-aud: contrato ML_VECTOR_DIM en TODAS las vías ──────────────
+
+    fn synthetic(leaf: f32) -> NanoForestData {
+        NanoForestData {
+            children_left: vec![1, -1, -1],
+            children_right: vec![2, -1, -1],
+            feature: vec![0, -1, -1],
+            threshold: vec![0.5, 0.0, 0.0],
+            value: vec![0.0, leaf, -leaf],
+            tree_offsets: vec![0, 3],
+            init_score: 0.0,
+        }
+    }
+
+    fn temp_pair(tag: &str) -> (String, String) {
+        let base = std::env::temp_dir()
+            .join(format!(
+                "tg_b39_{}_{}_{}",
+                tag,
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            ))
+            .to_string_lossy()
+            .to_string();
+        (format!("{base}.json"), format!("{base}.bin"))
+    }
+
+    /// Un modelo que parte por dim ≥ ML_VECTOR_DIM se rechaza SIEMPRE:
+    /// from_data, load_model(.json) y load_model(.bin) — incluida la caché.
+    #[test]
+    fn b39_rechaza_dim_fuera_de_contrato_en_todas_las_vias() {
+        let mut wide = synthetic(1.0);
+        wide.feature = vec![NanoForest::ML_VECTOR_DIM as i32, -1, -1];
+
+        // from_data (vía de tests/trainers in-proc)
+        assert!(NanoForest::from_data(wide.clone()).is_err());
+
+        let (json, bin) = temp_pair("wide");
+        std::fs::write(&json, serde_json::to_string(&wide).unwrap()).unwrap();
+
+        // load_model(.json): rechazado Y sin envenenar la caché .bin
+        assert!(NanoForest::load_model(&json).is_err());
+        assert!(
+            !std::path::Path::new(&bin).exists(),
+            "un modelo rechazado no debe compilar .bin"
+        );
+
+        // Caché .bin manual (simula un bin viejo de un binario anterior):
+        // el camino del .bin TAMBIÉN valida el contrato.
+        std::fs::write(&bin, bincode::serialize(&wide).unwrap()).unwrap();
+        assert!(NanoForest::load_model(&bin).is_err());
+        assert!(NanoForest::load_model(&json).is_err());
+
+        // Dim ML_VECTOR_DIM-1: dentro del contrato, aceptado en ambas vías.
+        let mut edge = synthetic(1.0);
+        edge.feature = vec![(NanoForest::ML_VECTOR_DIM - 1) as i32, -1, -1];
+        assert!(NanoForest::from_data(edge.clone()).is_ok());
+        let (json_ok, _bin_ok) = temp_pair("edge");
+        std::fs::write(&json_ok, serde_json::to_string(&edge).unwrap()).unwrap();
+        assert!(NanoForest::load_model(&json_ok).is_ok());
+        // y el .bin compilado por esa carga valida en recargas posteriores
+        let bin_ok = json_ok.replace(".json", ".bin");
+        assert!(NanoForest::load_model(&bin_ok).is_ok());
+    }
+
+    /// Sin features (o sólo índices de hoja negativos) no hay violación de
+    /// contrato: son modelos triviales/all-leaves, seguros en evaluate_tree.
+    #[test]
+    fn b39_modelo_sin_splits_o_con_hojas_negativas_es_valido() {
+        let mut no_split = synthetic(1.0);
+        no_split.feature = vec![-1, -1, -1];
+        let f = NanoForest::from_data(no_split).unwrap();
+        assert!(f.predict(&[0.3]).is_some());
+
+        let mut empty = synthetic(1.0);
+        empty.feature = Vec::new();
+        let f2 = NanoForest::from_data(empty).unwrap();
+        // feature vacío ⇒ feat_idx OOB se lee como -1 ⇒ hoja segura.
+        assert!(f2.predict(&[0.3]).is_some());
+
+        let mut negative = synthetic(1.0);
+        negative.feature = vec![-7, -1, -1];
+        assert!(NanoForest::from_data(negative).is_ok());
+    }
+
+    /// Frescura real de la caché: .json más nuevo que el .bin ⇒ se sirve el
+    /// .json y se recompila el .bin — incluso cuando el caller pasa el
+    /// .bin directo (lo que hace god_engine.rs con models/*.bin).
+    #[test]
+    fn b39_bin_obsoleto_se_recompila_del_json_nuevo() {
+        let (json, bin) = temp_pair("stale");
+
+        // v1: hoja izquierda +2 (p>0.5). Carga ⇒ compila .bin v1.
+        std::fs::write(&json, serde_json::to_string(&synthetic(2.0)).unwrap()).unwrap();
+        let v1 = NanoForest::load_model(&json).unwrap();
+        assert!(v1.predict(&[0.1]).unwrap() > 0.5);
+        assert!(std::path::Path::new(&bin).exists());
+
+        // v2 llega después (mtime mayor): hoja izquierda -2 (p<0.5).
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        std::fs::write(&json, serde_json::to_string(&synthetic(-2.0)).unwrap()).unwrap();
+
+        // Pasando el .json: sirve v2 y recompila el .bin.
+        let via_json = NanoForest::load_model(&json).unwrap();
+        assert!(via_json.predict(&[0.1]).unwrap() < 0.5, "json nuevo debe ganar");
+
+        // Pasando el .BIN directo (caso del host): el hermano .json más
+        // nuevo también gana — antes el .bin se comparaba consigo mismo y
+        // servía v1 obsoleto para siempre.
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        std::fs::write(&json, serde_json::to_string(&synthetic(2.0)).unwrap()).unwrap();
+        let via_bin = NanoForest::load_model(&bin).unwrap();
+        assert!(
+            via_bin.predict(&[0.1]).unwrap() > 0.5,
+            ".bin directo debe respetar el .json hermano más nuevo"
+        );
+    }
+
+    /// B3.4: el bloque MACRO del vector 48D mapea el omni vivo con la
+    /// semántica neutra documentada (sin feed ⇒ 0.0, no NaN).
+    #[test]
+    fn b34_macro_ml_features_mapea_el_omni_vivo() {
+        let mut omni = [0.0f64; 54];
+        omni[24] = 30.0; // VIXCLS
+        omni[21] = 105.0; // ICE DXY (DX-Y.NYB — B3.23)
+        omni[22] = 5500.0; // SP500
+        omni[23] = 20000.0; // NASDAQCOM
+        let m = macro_ml_features(&omni);
+        assert!((m[0] - 1.0).abs() < 1e-6, "VIX (30-20)/10 = +1");
+        assert!((m[1] - 1.0).abs() < 1e-6, "SP500 (5500-5000)/500 = +1");
+        assert!((m[2] - 1.0).abs() < 1e-6, "ICE DXY (105-100)/5 = +1");
+        assert!((m[3] - 1.0).abs() < 1e-6, "NASDAQ (20000-18000)/2000 = +1");
+
+        // Feed ausente / degenerado ⇒ neutro 0.0 (mismo saneo del bloque 44D)
+        let cold = macro_ml_features(&[0.0; 54]);
+        assert_eq!(cold, [0.0; 4]);
+        let mut nan_omni = [0.0f64; 54];
+        nan_omni[24] = f64::NAN;
+        assert_eq!(macro_ml_features(&nan_omni)[0], 0.0);
     }
 }

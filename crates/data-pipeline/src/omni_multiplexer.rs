@@ -498,12 +498,14 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
         ticker.tick().await;
         let mut updated = 0usize;
 
-        // Paridad de SERIES: ^VIX/^GSPC/^IXIC cierran igual que
-        // VIXCLS/SP500/NASDAQCOM — el trainer usa los mismos valores.
-        let yahoo_index: [(&str, &AtomicU64); 3] = [
+        // Paridad de SERIES con el trainer: ^VIX/^GSPC/^IXIC cierran igual
+        // que las FRED, y B3.23 suma DX-Y.NYB (ICE DXY) — la dim 46 viva en
+        // ambos lados; FRED queda fuera del ciclo (bloquea esta red).
+        let yahoo_index: [(&str, &AtomicU64); 4] = [
             ("^VIX", &state.vix),
             ("^GSPC", &state.sp500),
             ("^IXIC", &state.nasdaq),
+            ("DX-Y.NYB", &state.dxy),
         ];
         for (sym, slot) in &yahoo_index {
             if let Some(last) = yahoo_last_close(sym).await {

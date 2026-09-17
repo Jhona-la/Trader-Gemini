@@ -339,8 +339,10 @@ impl ExecutionProvider for SimulatedExecutor {
                     } else {
                         (pos.entry_price - exit_price) * quantity
                     };
-                    // FIX #699: Comisión en nocional USD (quantity * exit_price * 0.0004)
-                    fee = quantity * exit_price * 0.0004;
+                    // FIX #699: Comisión en nocional USD — B3.11: taker de la
+                    // cuenta VIVA (live_taker_fee), no el hardcode 0.0004 que
+                    // desalineaba el PnL simulado del real ~20% por cierre.
+                    fee = quantity * exit_price * live_taker_fee();
                 }
             }
         }
