@@ -6,12 +6,19 @@ use metacortex_engine::{
 #[test]
 fn test_quantum_organism_components() {
     // 1. Test Council of Seniors Deliberation
+    // MOD2/7-006: payload diverso — cada asiento recibe SU dato independiente
+    // (ml/espectro/ATR/racha aparte del OBI; graph_correlation retirado).
     let consejo = ConsejoDeliberacion::new();
     let healthy_payload = MarketSnapshotPayload {
         horizon: metacortex_engine::consejo_seniors::TradingHorizon::Scalping,
         book_imbalance: 0.1,
         hurst_exponent: 0.7,
-        graph_correlation: 0.5,
+        ml_prob: 0.62,
+        fused_score: 0.45,
+        persistence: 0.55,
+        atr_pct: 0.0012,
+        loss_streak: 0,
+        intended_direction: 1.0,
         do_calculus_risk: 0.05,
         causal_veto_threshold: 0.80,
         current_drawdown_pct: 0.02,

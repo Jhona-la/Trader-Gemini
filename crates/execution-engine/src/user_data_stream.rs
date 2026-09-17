@@ -111,6 +111,9 @@ impl UserDataStreamer {
         };
 
         let mut backoff_ms = 500u64;
+        // MOD1/4-009: distingue la PRIMERA conexión de las reconexiones —
+        // el catch-up sólo aplica tras un gap (desconexión previa).
+        let mut connected_once = false;
         loop {
             // X-011: apagado cooperativo — el streamer reemplazado muere en la
             // PRÓXIMA iteración (nunca spawnea listenKeys de credenciales viejas).
@@ -173,6 +176,13 @@ impl UserDataStreamer {
             let ws_stream = match connect_async(url.as_str()).await {
                 Ok((stream, _)) => {
                     println!("✅ [USER-STREAM] Conectado. Escuchando fills y updates de cuenta.");
+                    // MOD1/4-009 (DEC-14): tras RE-conectar hay un gap de
+                    // eventos perdidos (fills, ACCOUNT_UPDATE, ALGO_UPDATE)
+                    // que jamás llegarán por este stream — catch-up mínimo.
+                    if connected_once {
+                        self.reconcile_after_reconnect();
+                    }
+                    connected_once = true;
                     stream
                 }
                 Err(e) => {
@@ -243,6 +253,26 @@ impl UserDataStreamer {
             println!("🔌 [USER-STREAM] Desconectado. Reanudando en 1s...");
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
+    }
+
+    /// MOD1/4-009 (DEC-14) — catch-up tras reconexión. El loop de `start()`
+    /// re-crea el listenKey SIN re-consultar openOrders/estado del exchange:
+    /// todo ORDER_TRADE_UPDATE caído en el gap se pierde para siempre y los
+    /// fills no se journalean (B3.7/B3.10 agujereados justo en tormenta de
+    /// red). Este crate NO tiene acceso al executor, así que no puede
+    /// disparar la reconciliación REST completa; lo que SÍ puede garantizar
+    /// es que el gap se detecte lo antes posible:
+    ///   1. `protection_dirty` → el watchdog B2.6 del host audita y
+    ///      re-bracketea en ≤5s en vez de esperar su ciclo completo (60s).
+    ///   2. `cached_positions` se limpia → durante el gap no llegaron los
+    ///      ACCOUNT_UPDATE de cierre: el cache habría seguido reportando
+    ///      posiciones ya cerradas y equidad falsa hasta el próximo update.
+    fn reconcile_after_reconnect(&self) {
+        if let Ok(mut cache) = self.cached_positions.lock() {
+            cache.clear();
+        }
+        quantum_arena::protection_health::mark_dirty();
+        println!("🔄 [UDS] Reconectado — reconciliation pendiente: el watchdog de 60s cubrirá el gap (protection_dirty forzará auditoría en ≤5s)");
     }
 
     /// Rutea según bytes crudos del WebSocket.
@@ -864,6 +894,40 @@ mod tests {
         let expired_event = r#"{"e":"listenKeyExpired","E":1700000000000}"#;
         streamer.dispatch(expired_event.as_bytes());
         assert!(streamer.expired_flag.load(Ordering::Relaxed));
+    }
+
+    /// MOD1/4-009: tras una reconexión hay un gap de ACCOUNT_UPDATE — el
+    /// cache de posiciones debe vaciarse (no reportar posiciones cerradas
+    /// durante el gap) y debe marcarse protection_dirty para que el
+    /// watchdog audite en ≤5s en vez de 60s.
+    #[test]
+    fn test_reconcile_after_reconnect_clears_cache_and_marks_dirty() {
+        quantum_arena::protection_health::clear_dirty();
+        let registry = Arc::new(OrderRegistry::new());
+        let streamer = UserDataStreamer::new(BinanceClient::new("key".into(), true), registry);
+        streamer
+            .cached_positions
+            .lock()
+            .unwrap()
+            .insert(("BTCUSDT".into(), "BOTH".into()), 1.5);
+        streamer
+            .cached_positions
+            .lock()
+            .unwrap()
+            .insert(("ETHUSDT".into(), "BOTH".into()), -0.4);
+
+        streamer.reconcile_after_reconnect();
+
+        assert!(
+            streamer.cached_positions.lock().unwrap().is_empty(),
+            "el cache de posiciones debe vaciarse tras reconexión"
+        );
+        assert!(
+            quantum_arena::protection_health::is_dirty(),
+            "protection_dirty debe marcarse para forzar la auditoría en ≤5s"
+        );
+
+        quantum_arena::protection_health::clear_dirty();
     }
 
     /// B1.1: un ALGO_UPDATE terminal debe marcar protection_dirty (posición

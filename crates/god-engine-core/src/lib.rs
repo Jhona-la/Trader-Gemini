@@ -327,14 +327,19 @@ impl GodEngineCore {
         omni_features: &[f64; 54],
     ) -> [f64; 54] {
         // C-02 (DEC-14) — MAPA DE FEATURES VIVAS vs MUERTAS del bloque
-        // omni[34..54]. Los "else" con literales (1.04, 1.02, 0.75...) son
-        // los defaults para features SIN PRODUCTOR en vivo — el tensor
-        // constantemente sirve estos valores mientras el trainer puede
-        // haber visto datos reales. Productores vivos confirmados:
-        //   omni[11] funding (premiumIndex poller) · omni[14] fear&greed
-        //   (alternative.me) · omni[21-24] VIX/SP500/DXY/NASDAQ (Yahoo
-        //   B3.23) · omni[26] gold (PAXG Binance). TODO lo demás está
-        //   muerto (44/54) hasta cablear productores cross-exchange.
+        // omni[34..54] y CONTRATO DE SERVIDO: toda feature SIN PRODUCTOR
+        // en vivo se sirve como 0.0 (centinela "sin dato"), NUNCA como un
+        // literal plausible (1.05, 1.00…). El NN fue entrenado con cierto
+        // rango de valores: un literal que parece dato real contamina la
+        // inferencia de forma silenciosa; el cero al menos señala ausencia.
+        // Productores vivos confirmados: omni[11] funding (premiumIndex
+        // poller) · omni[14] fear&greed (alternative.me) · omni[21-24]
+        // VIX/SP500/DXY/NASDAQ (Yahoo B3.23) · omni[26] gold (PAXG
+        // Binance). OJO: los defaults del constructor del multiplexer
+        // (us10y=4.2, oil=80, fed=5.5…) son NO-cero, así que el guard
+        // `> 0.0` los dejaba pasar por la rama "con datos" — por eso las
+        // muertas se zeran aquí incondicionalmente. Para re-activar un
+        // canal: cablear su productor y restaurar la lectura del slot.
         let stateful_feats = self.feature_engines[coin_id].get_swing_features();
         let mut combined = [0.0; 54];
         for j in 0..34 {
@@ -355,7 +360,9 @@ impl GodEngineCore {
         combined[37] = cur_obi;
         combined[38] = (combined[34] * 10.0).tanh();
         combined[39] = (combined[35] * 100.0).min(5.0);
-        combined[40] = 0.50;
+        // [40] MUERTA (segunda slot fear_greed sin productor) — era el
+        // literal 0.50: servía "neutralidad" inventada al NN.
+        combined[40] = 0.0;
         combined[41] = if omni_features.len() > 21 && omni_features[21] > 0.0 {
             (omni_features[21] / 100.0).clamp(0.5, 2.0)
         } else {
@@ -376,36 +383,39 @@ impl GodEngineCore {
         } else {
             0.75
         };
-        combined[45] = if omni_features.len() > 25 && omni_features[25] > 0.0 {
-            (omni_features[25] / 4.0).clamp(0.1, 5.0)
-        } else {
-            1.05
-        };
+        // [45] MUERTA (us10Y): omni[25] no tiene productor — el slot carga
+        // el literal 4.2 del constructor y el guard `> 0.0` lo servía como
+        // dato real (1.05 plausible). Cero incondicional.
+        combined[45] = 0.0;
+        // [46] gold: VIVA vía PAXG Binance (omni[26]). El fallback pasa a
+        // 0.0: si PAXG aún no entregó, "sin dato" — no el 1.0 de antes.
         combined[46] = if omni_features.len() > 26 && omni_features[26] > 0.0 {
             (omni_features[26] / 2500.0).clamp(0.5, 2.0)
         } else {
-            1.0
+            0.0
         };
-        combined[47] = if omni_features.len() > 27 && omni_features[27] > 0.0 {
-            (omni_features[27] / 80.0).clamp(0.2, 3.0)
-        } else {
-            1.00
-        };
+        // [47] MUERTA (oil WTI): omni[27] sin productor — literal 80.0 del
+        // constructor servido como 1.00 plausible. Cero incondicional.
+        combined[47] = 0.0;
         combined[48] = if omni_features.len() > 11 {
             (omni_features[11] * 1000.0).clamp(-5.0, 5.0)
         } else {
             0.0
         };
-        combined[49] = if omni_features.len() > 29 && omni_features[29] > 0.0 {
-            (omni_features[29] / 5.25).clamp(0.0, 3.0)
-        } else {
-            1.0
-        };
+        // [49] MUERTA (fed_rate): omni[29] sin productor — literal 5.5 del
+        // constructor servido como ~1.05 plausible. Cero incondicional.
+        combined[49] = 0.0;
         combined[50] = if omni_features.len() > 14 && omni_features[14] > 0.0 {
             (omni_features[14] / 50.0).clamp(0.0, 2.0)
         } else {
             1.0
         };
+        // [51]/[52]/[53] MUERTAS (CVD spot/futuros y basis premium: sin
+        // productor). Los slots por defecto valen 0.0 en el multiplexer y
+        // tanh(0)=0 / clamp(0)=0, así que HOY ya sirven exactamente 0.0 —
+        // se conserva la lectura para que un productor futuro cablee solo,
+        // pero cualquier default no-cero del multiplexer contaminaría el
+        // tensor de nuevo (ver nota C-02 arriba).
         combined[51] = if omni_features.len() > 30 {
             (omni_features[30] / 100.0).tanh()
         } else {
@@ -3323,8 +3333,6 @@ impl GodEngineCore {
                         .cvpin
                         .current_vpin()
                         .clamp(0.0, 1.0);
-                    let (impulse_mom, _) = self.lead_lag_engine.predict_altcoin_impulse(obi);
-                    let graph_corr = impulse_mom.clamp(-1.0, 1.0);
 
                     let current_spread_bps = if mid_price > 1e-8 && ask >= bid {
                         ((ask - bid) / mid_price) * 10_000.0
@@ -3336,12 +3344,54 @@ impl GodEngineCore {
                     let council_horizon =
                         metacortex_engine::consejo_seniors::TradingHorizon::Continuous;
 
+                    // MOD2/7-006 (INFORME DECIMOCUARTO): el consejo delibera
+                    // ahora sobre perspectivas GENUINAMENTE diversas, cada una
+                    // con su propio dato crudo. El asiento "grafos" leía
+                    // impulse_mom del lead_lag_engine — computado A PARTIR del
+                    // OBI, colineal por construcción — y fue retirado del
+                    // payload. Fuentes nuevas, todas ya en scope del tick:
+                    //   - fused_score/persistence: espectro temporal (X-016);
+                    //   - atr_pct: v_t relativo al precio;
+                    //   - loss_streak: racha de pérdidas de la dirección;
+                    //   - ml_prob: ensamble PURO (sin spot_bias, MOD2/7-029) —
+                    //     un despegue del spot no puede mover al asiento ML;
+                    //   - intended_direction: la entrada bajo deliberación
+                    //     (contexto de los moduladores Riesgo/Volatilidad).
+                    let (council_fused, council_persistence) = self
+                        .temporal_spectrum
+                        .get(coin_id)
+                        .map(|spec| {
+                            (
+                                spec.fused_score.clamp(-1.0, 1.0),
+                                spec.persistence_at(spec.dominant_tau_ms).clamp(-1.0, 1.0),
+                            )
+                        })
+                        .unwrap_or((0.0, 0.0));
+                    let council_atr_pct = if mid_price > 1e-8 {
+                        (self.feature_engines[coin_id].v_t / mid_price).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let council_loss_streak = self
+                        .feature_engines[coin_id]
+                        .get_active_directional_streak(order.signal == SignalType::Long);
+                    let council_intended_dir = match order.signal {
+                        SignalType::Long => 1.0,
+                        SignalType::Short => -1.0,
+                        SignalType::Flat => 0.0,
+                    };
+
                     let council_snapshot =
                         metacortex_engine::consejo_seniors::MarketSnapshotPayload {
                             horizon: council_horizon,
                             book_imbalance: obi,
                             hurst_exponent: hurst_val.clamp(0.0, 1.0),
-                            graph_correlation: graph_corr,
+                            ml_prob: ml_prob_pure.clamp(0.0, 1.0),
+                            fused_score: council_fused,
+                            persistence: council_persistence,
+                            atr_pct: council_atr_pct,
+                            loss_streak: council_loss_streak,
+                            intended_direction: council_intended_dir,
                             do_calculus_risk: vpin_risk,
                             causal_veto_threshold: 0.75,
                             current_drawdown_pct: drawdown,
