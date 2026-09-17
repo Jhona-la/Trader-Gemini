@@ -41,6 +41,7 @@ pub fn evaluate_quantum_trailing(
         trail_f3,
         trail_runner,
         0.0006, // Fallback fee rate (0.02% maker + 0.04% taker roundtrip VIP0)
+        0.012,  // B3.27 — TP fallback nominal 1.2%
     )
 }
 
@@ -60,6 +61,7 @@ pub fn evaluate_quantum_trailing_with_fee(
     trail_f3: f64,
     trail_runner: f64,
     fee_rate: f64,
+    tp_frac: f64, // B3.27 — distancia al TP como fracción del precio
 ) -> TrailingResult {
     if current_atr <= 0.0
         || !current_atr.is_finite()
@@ -138,9 +140,9 @@ pub fn evaluate_quantum_trailing_with_fee(
         max_pnl_pct = pnl_pct;
     }
 
-    // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - D-472)
-    let effective_fee = fee_rate.max(0.0004);
-    let be_trigger = (effective_fee * 8.0).clamp(0.0065, 0.0180);
+    // Escudo Cuántico — B3.27: transición de fase relativa al TP (no fee×8)
+    let effective_tp_phase = if tp_frac.is_finite() && tp_frac > 0.001 { tp_frac } else { 0.012 };
+    let be_trigger = effective_tp_phase * 0.40;
 
     // 3. Phase Transitions (Desasfixiadas: permiten que el trade desarrolle su ciclo hasta TP)
     if current_phase == 0 && (pnl_atr >= 1.5 || max_pnl_pct >= be_trigger) {
@@ -192,17 +194,28 @@ pub fn evaluate_quantum_trailing_with_fee(
             current_price + (dist_atr * current_atr)
         };
 
-        // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - D-472, D-474, D-485 & D-495)
-        // El breakeven garantiza beneficio NETO post-fees (+10 a +18 bps) con 40-45 bps de respiración.
+        // B3.27 — ESCALERA RELATIVA AL TP (no al fee). Hallazgo diario:
+        // 73% WR pero RRR 0.30 porque la escalera ×fee disparaba TODA dentro
+        // del rango del TP (con VIP0: be a 0.65%, half a 0.94%, profit a
+        // 1.05% — y el TP a 0.66-1.2%). Los winners se decapitaban antes de
+        // correr. Ahora cada nivel es FRACCIÓN del TP: breakeven al 40%,
+        // half al 60%, profit al 80%, runner al 95%. El ATR-trailing (T1
+        // arriba) sigue dando la distancia de respiración; esta escalera
+        // sólo pone SUELOS progresivos — el trade respira hasta su TP.
+        let effective_tp = if tp_frac.is_finite() && tp_frac > 0.001 {
+            tp_frac
+        } else {
+            0.012 // fallback: TP nominal 1.2% cuando no se pasa
+        };
         let effective_fee = fee_rate.max(0.0004);
-        let be_trigger = (effective_fee * 8.0).clamp(0.0055, 0.0160);
-        let be_buffer = (effective_fee * 2.0).clamp(0.0010, 0.0018);
-        let half_lock_trigger = (be_trigger * 1.45).clamp(0.0080, 0.0200);
-        let half_lock_gain = (effective_fee * 6.0).clamp(0.0036, 0.0055);
-        let profit_lock_trigger = (effective_fee * 18.0).clamp(0.0105, 0.0250);
-        let profit_lock_gain = (effective_fee * 11.0).clamp(0.0068, 0.0110);
-        let runner_lock_trigger = (effective_fee * 25.0).clamp(0.0140, 0.0300);
-        let runner_lock_gain = (effective_fee * 17.0).clamp(0.0100, 0.0180);
+        let be_buffer = (effective_fee * 2.0).clamp(0.0010, 0.0018); // costo neto post-fees — SÍ relativo al fee (es un costo)
+        let be_trigger = effective_tp * 0.40; // 40% del recorrido
+        let half_lock_trigger = effective_tp * 0.60;
+        let half_lock_gain = effective_tp * 0.25;
+        let profit_lock_trigger = effective_tp * 0.80;
+        let profit_lock_gain = effective_tp * 0.50;
+        let runner_lock_trigger = effective_tp * 0.95;
+        let runner_lock_gain = effective_tp * 0.70;
 
         if max_pnl_pct >= be_trigger {
             if pos_side == 1 {

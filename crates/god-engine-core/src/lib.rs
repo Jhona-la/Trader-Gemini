@@ -984,6 +984,7 @@ impl GodEngineCore {
                         trail_max,
                         trail_atr_mult,
                         live_fee,
+                        tp, // B3.27 — escalera relativa al TP
                     );
 
                     let sl_floor = if is_long {
