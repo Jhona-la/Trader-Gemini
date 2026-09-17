@@ -285,7 +285,10 @@ pub fn macro_ml_features(omni: &[f64; 54]) -> [f32; 4] {
     [
         aff(omni[24], 20.0, 10.0), // VIXCLS — nivel de miedo
         aff(omni[22], 5000.0, 500.0), // SP500 — nivel riesgo global
-        aff(omni[21], 120.0, 10.0), // DTWEXBGS — nivel dólar
+        // B3.23: ICE DXY (DX-Y.NYB ~99-105) en trainer y vivo — la serie
+        // Fed DTWEXBGS (~120) quedó fuera (FRED bloquea la red); paridad
+        // por MISMA SERIE en ambos lados del contrato.
+        aff(omni[21], 100.0, 5.0),  // ICE DXY — nivel dólar
         aff(omni[23], 18000.0, 2000.0), // NASDAQCOM — nivel tech
     ]
 }

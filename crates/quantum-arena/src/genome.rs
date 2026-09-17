@@ -2269,17 +2269,33 @@ impl SuperGenotype {
             Self::REFERENCE_ROUNDTRIP_FEE
         };
         let sl_floor = Self::min_viable_sl(fee);
-        let sl = if sl_frac.is_finite() && sl_frac > 0.0 {
+        let mut sl = if sl_frac.is_finite() && sl_frac > 0.0 {
             sl_frac.max(sl_floor)
         } else {
             sl_floor
         };
         let tp_floor = sl * Self::min_rr_for(Self::WORST_TOLERATED_WR, fee, sl).max(1.0);
-        let tp = if tp_frac.is_finite() && tp_frac > 0.0 {
+        let mut tp = if tp_frac.is_finite() && tp_frac > 0.0 {
             tp_frac.max(tp_floor)
         } else {
             tp_floor
         };
+        // B3.24 — CAP DE ASIMETRÍA REALIZADA (RR geométrico ≥ 2 SIEMPRE).
+        // Medido en OOS jun+sep: stops difusivos escalaban a 3-6% con el
+        // ATR mientras el trailing tomaba los wins a 0.6-2% — la asimetría
+        // win/loss REALIZADA invertía el RR de diseño (BNB WR 57% con neto
+        // negativo). El suelo de viabilidad acota el MÍNIMO del SL; esto
+        // acota el MÁXIMO: jamás arriesgar más de la mitad del objetivo.
+        // Orden: primero se encoge el SL al cap, después el TP se re-asegura
+        // ≥ SL·RR_min(fee) — converge en una pasada porque el SL sólo baja
+        // (y al bajar, su RR_min baja con él).
+        if sl > tp * 0.5 {
+            sl = tp * 0.5;
+            let rr_min = Self::min_rr_for(Self::WORST_TOLERATED_WR, fee, sl).max(1.0);
+            if tp < sl * rr_min {
+                tp = sl * rr_min;
+            }
+        }
         (sl, tp)
     }
 
@@ -3169,6 +3185,11 @@ mod tests {
                     );
                     // El TP resultante siempre paga la fricción con margen.
                     assert!(tp_f > fee, "tp={tp_f} no cubre fee={fee}");
+                    // B3.24: RR geométrico ≥ 2 SIEMPRE (cap de asimetría).
+                    assert!(
+                        sl_f <= tp_f * 0.5 + 1e-15,
+                        "SL {sl_f} > TP/2 {tp_f} — cap de asimetría violado (fee={fee}, in sl={sl} tp={tp})"
+                    );
                 }
             }
         }
