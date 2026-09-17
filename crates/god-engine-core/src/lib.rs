@@ -88,6 +88,10 @@ pub struct GodEngineCore {
     /// B3.18 — entradas vetadas por el gate de ensamble (la predicción
     /// decidió NO): diagnóstico de cuánto consume el sistema la predicción.
     pub diag_ml_vetoes: u64,
+    /// MOD2/7-010 (DEC-14): declarados, exportados al backtest de evolución
+    /// y JAMÁS incrementados — telemetría estructuralmente falsa (siempre 0).
+    /// Conservados por compatibilidad del struct; su eliminación pertenece
+    /// a la FASE 2 de erradicación swing/scalp.
     pub diag_swing_vetoes: u64,
     pub diag_swing_opened: u64,
     pub diag_close_wins: u64,
@@ -322,6 +326,15 @@ impl GodEngineCore {
         current_price: f64,
         omni_features: &[f64; 54],
     ) -> [f64; 54] {
+        // C-02 (DEC-14) — MAPA DE FEATURES VIVAS vs MUERTAS del bloque
+        // omni[34..54]. Los "else" con literales (1.04, 1.02, 0.75...) son
+        // los defaults para features SIN PRODUCTOR en vivo — el tensor
+        // constantemente sirve estos valores mientras el trainer puede
+        // haber visto datos reales. Productores vivos confirmados:
+        //   omni[11] funding (premiumIndex poller) · omni[14] fear&greed
+        //   (alternative.me) · omni[21-24] VIX/SP500/DXY/NASDAQ (Yahoo
+        //   B3.23) · omni[26] gold (PAXG Binance). TODO lo demás está
+        //   muerto (44/54) hasta cablear productores cross-exchange.
         let stateful_feats = self.feature_engines[coin_id].get_swing_features();
         let mut combined = [0.0; 54];
         for j in 0..34 {

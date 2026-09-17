@@ -385,15 +385,16 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
         active_coins += 1.0;
     }
 
+    // MOD6/8-021: 0.55 era ficción mostrada como estado — sin datos, 0.0.
     let avg_win_rate_scalp = if active_scalp_coins > 0.0 {
         win_rate_scalp_sum / active_scalp_coins
     } else {
-        0.55
+        0.0
     };
     let avg_win_rate_swing = if active_swing_coins > 0.0 {
         win_rate_swing_sum / active_swing_coins
     } else {
-        0.55
+        0.0
     };
     let avg_ml_prob = if active_coins > 0.0 {
         ml_prob_sum / active_coins
