@@ -136,7 +136,8 @@ mod tests {
 
     #[test]
     fn test_multi_asset_orchestrator_on_tick_btc_and_eth() {
-        let arena = Arc::new(GlobalArena::new(13.0));
+        // D-714: pila suficiente para construir el arena.
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let mut orch = MultiAssetOrchestrator::new(arena);
 
         let (q_btc, arb1) = orch.on_tick("BTCUSDT", 60000.0, 60001.0, 1.0, 1.0);
@@ -149,7 +150,8 @@ mod tests {
 
     #[test]
     fn test_multi_asset_orchestrator_nan_immunity() {
-        let arena = Arc::new(GlobalArena::new(13.0));
+        // D-714: pila suficiente para construir el arena.
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let mut orch = MultiAssetOrchestrator::new(arena);
 
         let (q_nan, arb_nan) = orch.on_tick("BTCUSDT", f64::NAN, 60001.0, 1.0, 1.0);
