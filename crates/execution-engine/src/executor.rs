@@ -2083,9 +2083,15 @@ impl ExecutionProvider for OrderExecutor {
                 .await;
         }
 
-        // 2. Espera adaptativa de baja latencia con sondeo de order_registry (D-361)
-        for _ in 0..5 {
-            tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+        // 2. Espera adaptativa con sondeo de order_registry (D-361).
+        // B3.26 — ventana 15ms → 400ms: medido en vivo, el post-only al mid
+        // NUNCA llenó pasivo en 15ms (32/32 entradas cayeron al remnant
+        // taker mcT_ — cero ahorro de maker). Con horizonte de barrera de 5
+        // MINUTOS, 400ms de latencia son irrelevantes para la tesis; para el
+        // estado, B3.14 (exchange_confirmed) ya domestica los parciales.
+        // Early-exit en cuanto la orden deja de estar activa (llenó/canceló).
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(4)).await;
             if let Some(order) = self.order_registry.get(client_order_id) {
                 if !order.status.is_active() {
                     break;
