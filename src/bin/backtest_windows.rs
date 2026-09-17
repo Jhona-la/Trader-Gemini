@@ -161,10 +161,22 @@ fn run_backtest() {
     }
 
     // CRÍTICO: el RiskEngine RECHAZA toda orden sin spec del símbolo
-    // (try_spec=None → rej(3)). Registrar specs antes del replay.
+    // (try_spec=None → rej(3)). Y B3.25 (disciplina de roster) exige que
+    // el símbolo del replay TENGA un modelo en models/ — si el archivo
+    // es BNBUSDT pero registramos BTCUSDT, el gate veta TODO.
+    // Derivar el símbolo del nombre del archivo de datos.
+    let replay_symbol = file
+        .split('/')
+        .next_back()
+        .unwrap_or("BTCUSDT")
+        .split('_')
+        .next()
+        .unwrap_or("BTCUSDT")
+        .to_string();
+    println!("   📋 Símbolo del replay: {replay_symbol} (derivado de {file})");
     quantum_arena::symbol_registry::update_registry(vec![
         quantum_arena::symbol_registry::SymbolSpec {
-            symbol: "BTCUSDT".to_string(),
+            symbol: replay_symbol.clone(),
             step_size: 0.001,
             tick_size: 0.01,
             min_qty: 0.001,
