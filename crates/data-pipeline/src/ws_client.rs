@@ -7,6 +7,15 @@ use std::sync::Arc;
 use tokio_tungstenite::client_async_tls;
 use url::Url;
 
+/// C-01 (INFORME 14, FASE 0): ticks anómalos CONSECUTIVOS tras los que un
+/// movimiento extremo (>20% vs `last_valid`) se acepta como nivel legítimo.
+/// A ~10 ticks/s son ~1s de confirmación continua: suficiente para distinguir
+/// un glitch de 1-2 ticks de un crash real. Sin este escape, el
+/// `is_extreme_glitch` rechazaba TODOS los ticks para siempre en un crash
+/// real (los ticks rechazados jamás entran al ring ⇒ `last_valid` congelado
+/// en el precio pre-crash) y el motor operaba contra un precio muerto.
+const EXTREME_GLITCH_CONFIRM_TICKS: usize = 10;
+
 pub struct BinanceStreamer {
     pub coin_id: usize,
     pub symbol: String,
@@ -338,16 +347,36 @@ impl BinanceStreamer {
 
                                                         if is_outlier {
                                                             consecutive_anomalies += 1;
-                                                            // FIX #385: Si llegan 3 ticks consecutivos en el nuevo nivel, es un movimiento de mercado legítimo
-                                                            if consecutive_anomalies < 3
-                                                                || is_extreme_glitch
+                                                            // C-01 (INFORME 14, FASE 0): el escape de
+                                                            // FIX #385 (3 ticks) NO se aplicaba a los
+                                                            // glitches extremos, y como los ticks
+                                                            // rechazados nunca entran al ring,
+                                                            // `last_valid` quedaba congelado en el
+                                                            // precio pre-crash: en un crash REAL (>20%)
+                                                            // el filtro rechazaba TODOS los ticks PARA
+                                                            // SIEMPRE. Escape: tras
+                                                            // EXTREME_GLITCH_CONFIRM_TICKS ticks
+                                                            // anómalos CONSECUTIVOS (~1s de
+                                                            // confirmación continua a ~10 ticks/s) se
+                                                            // ACEPTA el tick — entra al ring y
+                                                            // `last_valid` recalibra al nuevo nivel.
+                                                            // Un crash real no debe congelar el motor.
+                                                            if is_extreme_glitch
+                                                                && consecutive_anomalies
+                                                                    < EXTREME_GLITCH_CONFIRM_TICKS
                                                             {
-                                                                // D-423: Erradicado println! bloqueante en hot path para garantizar latencia determinista en nanosegundos
-                                                                continue; // Glitch aislado, descartar
-                                                            } else {
-                                                                // Transición de régimen de precio confirmada: resetear contador y aceptar
-                                                                consecutive_anomalies = 0;
+                                                                // Glitch extremo aislado, descartar
+                                                                continue;
                                                             }
+                                                            // FIX #385: si llegan 3 ticks consecutivos
+                                                            // en el nuevo nivel, es un movimiento de
+                                                            // mercado legítimo
+                                                            if consecutive_anomalies < 3 {
+                                                                continue; // Glitch aislado, descartar
+                                                            }
+                                                            // Transición de régimen de precio
+                                                            // confirmada: resetear contador y aceptar
+                                                            consecutive_anomalies = 0;
                                                         } else {
                                                             consecutive_anomalies = 0;
                                                         }

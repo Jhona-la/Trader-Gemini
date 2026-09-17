@@ -139,6 +139,8 @@ pub struct TemporalSpectrum {
     /// Score espectral fusionado (paridad de riesgo 1/vol) ∈ ~[-1,1].
     pub fused_score: f64,
     /// Escala dominante (mayor |w·señal|) en ms — información, no decisión.
+    /// C-05 (INFORME 14, FASE 0): acotada a la banda operativa
+    /// [TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS] — ver `update`.
     pub dominant_tau_ms: f64,
 }
 
@@ -252,7 +254,23 @@ impl TemporalSpectrum {
         } else {
             0.0
         };
-        self.dominant_tau_ms = dominant;
+        // C-05 (INFORME 14, FASE 0) — τ DEGENERADA. La fusión por paridad de
+        // riesgo (w ∝ 1/ewma_dev_vol) degenera: la vol de sorpresa de las
+        // escalas lentas es sistemáticamente menor, así que SIEMPRE pesan más
+        // y la escala dominante cruda queda pegada al extremo lento del
+        // espectro — escala 31 ≈ 146 años (verificado en vivo:
+        // data/position_journal.jsonl con tau_ms = 4611686018427 en 2/3 de
+        // las entradas), llevando a HorizonCurve.eval a extrapolar brackets
+        // absurdos (+65%/−32%).
+        //
+        // FIX: la τ que sale del espectro hacia la DECISIÓN se acota al
+        // espectro físico Y a la banda operativa de las anclas [30s, 12h].
+        // El espectro de OBSERVACIÓN sigue completo (las 32 escalas siguen
+        // alimentando fused_score/señales): el espectro puede VER más allá
+        // de la banda, pero la DECISIÓN opera en la banda.
+        self.dominant_tau_ms = dominant
+            .clamp(SPECTRUM_SCALES_MS[0], SPECTRUM_SCALES_MS[31])
+            .clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
     }
 
     /// Señal de la escala más cercana a τ (interpolación log-lineal entre
@@ -476,5 +494,40 @@ mod tests {
         let mid = curve.eval((TAU_ANCHOR_FAST_MS * TAU_ANCHOR_SLOW_MS).sqrt());
         assert!(mid > 0.01 && mid < 0.05);
         assert!(curve.b > 0.0, "TP crece con horizonte: pendiente positiva");
+    }
+
+    /// C-05 (INFORME 14, FASE 0): la τ dominante que sale hacia la DECISIÓN
+    /// queda SIEMPRE dentro de la banda operativa [30s, 12h], aunque la
+    /// fusión 1/vol degenerada corone a una escala ultra-lenta del espectro
+    /// (el espectro puede VER más allá de la banda; la decisión no). Antes:
+    /// dominant_tau_ms = 4.61e12 ms (≈146 años) en producción.
+    #[test]
+    fn c05_dominant_tau_opera_dentro_de_la_banda_operativa() {
+        let mut spec = TemporalSpectrum::new();
+        let mut t = 1_700_000_000_000u64;
+        // Rampa alcista de 60 días a ticks de 1 min: el régimen donde la
+        // paridad 1/vol degenera hacia las escalas más lentas.
+        for i in 0..86_400u64 {
+            spec.update(60_000.0 * (1.0 + 0.00005 * i as f64), t);
+            t += 60_000;
+        }
+        assert!(
+            spec.dominant_tau_ms >= TAU_ANCHOR_FAST_MS,
+            "τ dominante {} por debajo de la banda rápida",
+            spec.dominant_tau_ms
+        );
+        assert!(
+            spec.dominant_tau_ms <= TAU_ANCHOR_SLOW_MS,
+            "τ dominante {} por encima de la banda lenta (degeneración 1/vol)",
+            spec.dominant_tau_ms
+        );
+
+        // Sin contribuciones todavía (arranque): default de banda, no 0 ni
+        // 146 años.
+        let mut spec2 = TemporalSpectrum::new();
+        spec2.update(60_000.0, 1_700_000_000_000);
+        spec2.update(60_001.0, 1_700_000_001_000);
+        assert!(spec2.dominant_tau_ms >= TAU_ANCHOR_FAST_MS);
+        assert!(spec2.dominant_tau_ms <= TAU_ANCHOR_SLOW_MS);
     }
 }

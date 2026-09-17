@@ -379,6 +379,10 @@ impl UserDataStreamer {
             commission: f64,
             #[serde(rename = "N")]
             commission_asset: Option<String>,
+            /// MOD1/4-015: tradeId del exchange — deduplica el mismo fill
+            /// reportado por REST y WS en el OrderRegistry.
+            #[serde(rename = "t", default)]
+            trade_id: u64,
             #[serde(rename = "T")]
             trade_time_ms: u64,
             #[serde(rename = "ps", default)]
@@ -425,6 +429,7 @@ impl UserDataStreamer {
             },
             commission: o.commission,
             commission_asset: o.commission_asset.unwrap_or_default(),
+            trade_id: o.trade_id,
             trade_time_ms: o.trade_time_ms,
         };
         let now = std::time::SystemTime::now()
@@ -561,6 +566,16 @@ impl UserDataStreamer {
         // K-04 / R3.1 / D-179: Motor de cancelación automática de pierna hermana OCO
         // Soporta tanto identificadores estándar (_TP, _SL) como variantes con retry (_TPR, _SLR).
         // Cancela todas las variantes de la pierna hermana para evitar dobles ejecuciones u órdenes huérfanas.
+        //
+        // MOD1/4-006 (INFORME-14): las piernas hermana son órdenes ALGO — viven
+        // en DELETE /fapi/v1/algoOrder por clientAlgoId, NO en /fapi/v1/order.
+        // El DELETE legacy devolvía "order does not exist" sin tocar el trigger:
+        // el SL quedaba ARMADO hasta 60s tras un TP lleno. Ahora se firma el
+        // mismo esquema de payload que place_algo_leg/cancel_algo_order del
+        // executor (symbol + clientAlgoId + timestamp + HMAC). Si el DELETE
+        // falla, se marca protection_dirty: la hermana la purga/re-bracketea el
+        // watchdog B2.6 en ≤5s — resolución confirmada por el exchange, no por
+        // este log.
         if update.status == OrderStatus::Filled {
             let sister_candidates = if let Some(base) = update.client_order_id.strip_suffix("_TPR")
             {
@@ -590,15 +605,15 @@ impl UserDataStreamer {
                             let mut buf = crate::client::ZeroAllocBuffer::new();
                             buf.push_str(
                                 if client.is_testnet.load(std::sync::atomic::Ordering::Relaxed) {
-                                    "https://testnet.binancefuture.com/fapi/v1/order?"
+                                    "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
                                 } else {
-                                    "https://fapi.binance.com/fapi/v1/order?"
+                                    "https://fapi.binance.com/fapi/v1/algoOrder?"
                                 },
                             );
                             let payload_start = buf.as_str().len();
                             buf.push_str("symbol=");
                             buf.push_str(&symbol);
-                            buf.push_str("&origClientOrderId=");
+                            buf.push_str("&clientAlgoId=");
                             buf.push_str(&sister_id);
                             buf.push_str("&timestamp=");
                             buf.push_u64(ts);
@@ -615,8 +630,17 @@ impl UserDataStreamer {
                             buf.push_str(sig);
 
                             match client.cancel_order_payload(buf.as_str()).await {
-                                Ok(_) => println!("🎯 [OCO MOTOR] Pierna hermana {} cancelada exitosamente tras fill de {}.", sister_id, filled_id),
-                                Err(e) => println!("ℹ️ [OCO MOTOR] Pierna hermana {} ya resuelta o cancelada: {}", sister_id, e),
+                                Ok(_) => println!("🎯 [OCO MOTOR] Pierna hermana ALGO {} cancelada exitosamente tras fill de {}.", sister_id, filled_id),
+                                Err(e) => {
+                                    // La hermana puede seguir ARMADA en el
+                                    // exchange: marcar protection_dirty para que
+                                    // el watchdog B2.6 la purgue en ≤5s.
+                                    quantum_arena::protection_health::mark_dirty();
+                                    println!(
+                                        "ℹ️ [OCO MOTOR] Pierna hermana ALGO {} no cancelada ({}): protection_dirty marcado — el watchdog la resuelve en ≤5s.",
+                                        sister_id, e
+                                    );
+                                }
                             }
                         }
                     });

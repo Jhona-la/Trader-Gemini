@@ -66,8 +66,6 @@ pub struct StatefulEngine {
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
-    pub ml_prob_ewma: f64,
-    pub ml_prob_var: f64,
     pub last_scalp_exit_tick: u64,
     pub last_scalp_was_loss: bool,
     pub scalp_loss_streak: u32,
@@ -125,8 +123,6 @@ impl StatefulEngine {
             hurst_micro: 0.5,
             hurst_meso: 0.5,
             hurst_macro: 0.5,
-            ml_prob_ewma: 0.0,
-            ml_prob_var: 0.01,
             last_scalp_exit_tick: 0,
             last_scalp_was_loss: false,
             scalp_loss_streak: 0,
@@ -187,7 +183,11 @@ impl StatefulEngine {
         }
     }
 
-    /// Normaliza adaptativamente las predicciones ML en O(1) centradas en 0.50 con rango [-1.0, 1.0]
+    /// Centra las predicciones ML en 0.50 con rango [-1.0, 1.0] en O(1).
+    /// MOD2/7-002 (INFORME DECIMOCUARTO): los campos `ml_prob_ewma`/`ml_prob_var`
+    /// (la supuesta "normalización adaptativa") se eliminaron — declarados,
+    /// inicializados y jamás leídos: estado fantasma con contrato falsamente
+    /// documentado. Este mapeo es estático por diseño.
     #[inline(always)]
     pub fn update_ml_prediction(&mut self, ml_prob: f64) -> f64 {
         if !ml_prob.is_finite() || ml_prob < 0.0 || ml_prob > 1.0 {

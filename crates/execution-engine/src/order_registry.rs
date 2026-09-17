@@ -73,6 +73,16 @@ pub struct TrackedOrder {
     pub total_commission: f64,
     pub ack_commission: f64,
     pub ws_commission: f64,
+    /// MOD1/4-015 (INFORME-14): comisión por tradeId — la UNIÓN REST∪WS.
+    /// REST y WS tienen cobertura de fills DISJUNTA en la práctica (WS pierde
+    /// eventos en reconexiones; los GET traen snapshots): max(ack, ws)
+    /// sub-contaba ~43% cuando cada canal veía fills distintos. El tradeId
+    /// deduplica el solapamiento SIN perder la cobertura disjunta.
+    pub fees_by_trade: HashMap<u64, f64>,
+    /// Comisión de fills cuyo payload vino SIN tradeId (degradado), por canal:
+    /// sin id no hay dedup exacto, se conserva el max() histórico.
+    pub ack_fee_no_id: f64,
+    pub ws_fee_no_id: f64,
     pub status: OrderStatus,
     pub order_id: u64,
     pub created_ms: u64,
@@ -86,6 +96,16 @@ impl TrackedOrder {
     #[inline(always)]
     pub fn remaining_qty(&self) -> f64 {
         (self.orig_qty - self.executed_qty).max(0.0)
+    }
+
+    /// MOD1/4-015 (INFORME-14): total = Σ(comisiones por tradeId deduplicadas)
+    /// + max(por-canalsin-id). La unión por tradeId recupera los fills de
+    /// cobertura DISJUNTA entre REST y WS que el max(ack, ws) anterior
+    /// descartaba (sub-cuenta ~43%); el max() sólo sobrevive para payloads
+    /// degradados sin tradeId, donde no existe clave de dedup.
+    fn recompute_total_commission(&mut self) {
+        let by_id: f64 = self.fees_by_trade.values().sum();
+        self.total_commission = by_id + self.ack_fee_no_id.max(self.ws_fee_no_id);
     }
 }
 
@@ -161,6 +181,10 @@ pub struct TradeUpdate {
     pub avg_price: f64,
     pub commission: f64,
     pub commission_asset: String,
+    /// tradeId del exchange (`t` en ORDER_TRADE_UPDATE): deduplica el mismo
+    /// fill reportado por REST y WS sin perder la cobertura disjunta
+    /// (MOD1/4-015). 0 = payload degradado.
+    pub trade_id: u64,
     pub trade_time_ms: u64,
 }
 
@@ -221,6 +245,9 @@ impl OrderRegistry {
                 total_commission: 0.0,
                 ack_commission: 0.0,
                 ws_commission: 0.0,
+                fees_by_trade: HashMap::new(),
+                ack_fee_no_id: 0.0,
+                ws_fee_no_id: 0.0,
                 status: OrderStatus::New,
                 order_id: 0,
                 created_ms: now_ms,
@@ -249,6 +276,9 @@ impl OrderRegistry {
                 total_commission: 0.0,
                 ack_commission: 0.0,
                 ws_commission: 0.0,
+                fees_by_trade: HashMap::new(),
+                ack_fee_no_id: 0.0,
+                ws_fee_no_id: 0.0,
                 status: OrderStatus::New,
                 order_id: 0,
                 created_ms: now_ms,
@@ -277,7 +307,21 @@ impl OrderRegistry {
         if fills_commission > entry.ack_commission {
             entry.ack_commission = fills_commission;
         }
-        entry.total_commission = entry.ack_commission.max(entry.ws_commission);
+        // MOD1/4-015 (INFORME-14): además del canal acumulado, cada fill con
+        // tradeId entra al mapa de unión — deduplica el solapamiento con WS y
+        // conserva los fills que SOLO este canal vio.
+        let mut no_id_sum = 0.0f64;
+        for f in &ack.fills {
+            if f.trade_id != 0 {
+                entry.fees_by_trade.insert(f.trade_id, f.commission.abs());
+            } else {
+                no_id_sum += f.commission.abs();
+            }
+        }
+        if no_id_sum > entry.ack_fee_no_id {
+            entry.ack_fee_no_id = no_id_sum;
+        }
+        entry.recompute_total_commission();
 
         // R3.4: Monotonic status guard — impedir que acks tardíos o de retries degraden estados terminales
         let new_status = OrderStatus::parse(&ack.status);
@@ -312,6 +356,9 @@ impl OrderRegistry {
                 total_commission: 0.0,
                 ack_commission: 0.0,
                 ws_commission: 0.0,
+                fees_by_trade: HashMap::new(),
+                ack_fee_no_id: 0.0,
+                ws_fee_no_id: 0.0,
                 status: OrderStatus::New,
                 order_id: u.order_id,
                 created_ms: now_ms,
@@ -340,8 +387,16 @@ impl OrderRegistry {
         // R3.4: Comisión acumulativa por fill WS + deduplicación con ACK REST
         if u.last_filled_qty > 0.0 && u.commission > 0.0 {
             entry.ws_commission += u.commission;
+            // MOD1/4-015 (INFORME-14): fill con tradeId → unión por id (el
+            // mismo fill que REST ya reportó SOBRESCRIBE, no duplica; un fill
+            // que REST NO vio se SUMA — antes el max() lo descartaba).
+            if u.trade_id != 0 {
+                entry.fees_by_trade.insert(u.trade_id, u.commission.abs());
+            } else {
+                entry.ws_fee_no_id += u.commission.abs();
+            }
         }
-        entry.total_commission = entry.ack_commission.max(entry.ws_commission);
+        entry.recompute_total_commission();
 
         if u.execution_type.is_empty() || u.execution_type == "TRADE" || u.last_filled_qty > 0.0 {
             entry.last_fill_qty = u.last_filled_qty;
@@ -498,6 +553,7 @@ mod tests {
                 avg_price: 60050.0,
                 commission: 0.0001,
                 commission_asset: "BNB".into(),
+                trade_id: 0,
                 trade_time_ms: 1200,
             },
             1200,
@@ -529,6 +585,7 @@ mod tests {
                 avg_price: 3000.0,
                 commission: 0.0002,
                 commission_asset: "USDT".into(),
+                trade_id: 0,
                 trade_time_ms: 1,
             },
             1,
@@ -601,6 +658,7 @@ mod tests {
                 avg_price: 65000.0,
                 commission: 0.05,
                 commission_asset: "USDT".into(),
+                trade_id: 0,
                 trade_time_ms: 200,
             },
             200,
@@ -665,6 +723,7 @@ mod tests {
                 avg_price: 60000.0,
                 commission: 0.04,
                 commission_asset: "USDT".into(),
+                trade_id: 1,
                 trade_time_ms: 205,
             },
             205,
@@ -696,6 +755,7 @@ mod tests {
                 avg_price: 60050.0,
                 commission: 0.03,
                 commission_asset: "USDT".into(),
+                trade_id: 2,
                 trade_time_ms: 210,
             },
             210,
@@ -704,5 +764,57 @@ mod tests {
         let o = reg.get("f1").unwrap();
         assert!((o.ws_commission - 0.07).abs() < 1e-12);
         assert!((o.total_commission - 0.07).abs() < 1e-12);
+    }
+
+    /// MOD1/4-015 (INFORME-14): REST y WS con cobertura DISJUNTA de fills —
+    /// el ack REST vio el fill A (0.04) y el stream WS sólo reportó el fill B
+    /// (0.03). La comisión real es 0.07; el max(ack, ws) anterior devolvía
+    /// 0.04 (sub-cuenta del 43% del fee real). La unión por tradeId la recupera.
+    #[test]
+    fn test_mod1_4_015_disjoint_fill_coverage_sums() {
+        let reg = OrderRegistry::new();
+        reg.register_intent("d1", "BTCUSDT", "BUY", "LONG", "LIMIT", 2.0, 100);
+
+        // REST: fill A (tradeId 1) con comisión 0.04 — WS no lo vio (gap de
+        // reconexión del stream privado).
+        let mut ack_msg = ack("d1", "PARTIALLY_FILLED", 1.0, 60000.0);
+        ack_msg.fills = vec![crate::order_types::Fill {
+            price: 60000.0,
+            qty: 1.0,
+            commission: 0.04,
+            commission_asset: "USDT".into(),
+            trade_id: 1,
+        }];
+        reg.apply_ack(&ack_msg, 200);
+
+        // WS: fill B (tradeId 2) con comisión 0.03 — REST no lo trajo.
+        reg.apply_trade_update(
+            &TradeUpdate {
+                client_order_id: "d1".into(),
+                symbol: "BTCUSDT".into(),
+                side: "BUY".into(),
+                position_side: "LONG".into(),
+                order_type: "LIMIT".into(),
+                execution_type: "TRADE".into(),
+                order_id: 101,
+                status: OrderStatus::Filled,
+                orig_qty: 2.0,
+                cumulative_filled_qty: 2.0,
+                last_filled_qty: 1.0,
+                last_filled_price: 60100.0,
+                avg_price: 60050.0,
+                commission: 0.03,
+                commission_asset: "USDT".into(),
+                trade_id: 2,
+                trade_time_ms: 210,
+            },
+            210,
+        );
+
+        let o = reg.get("d1").unwrap();
+        assert!(
+            (o.total_commission - 0.07).abs() < 1e-12,
+            "la unión REST∪WS por tradeId debe sumar la cobertura disjunta (0.07), no max() (0.04)"
+        );
     }
 }

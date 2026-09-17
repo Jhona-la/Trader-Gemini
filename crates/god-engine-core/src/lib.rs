@@ -1243,16 +1243,16 @@ impl GodEngineCore {
                         self.arena.used_margin.store(0.0, Ordering::Relaxed);
                     }
 
-                    // FASE 23: Métricas continuas unificadas — sin bifurcaciones scalp/swing.
+                    // FASE 23 / F-014 / C-07 (INFORME DECIMOCUARTO): métricas
+                    // continuas unificadas — el PnL se escribe SOLO en
+                    // coin.metrics (fuente única de verdad). Las escrituras
+                    // gemelas a coin.scalp/coin.swing contaban cada trade TRES
+                    // veces y hacían mentir el comentario F-014 de arriba;
+                    // quedan en 0 (los readers D-441 de telemetría ya caen al
+                    // fallback contra coin.metrics cuando scalp == 0).
                     // B3.14: SOLO posiciones cuya entrada existió en el exchange.
                     if was_exchange_confirmed {
                         coin.metrics
-                            .pnl_realized
-                            .fetch_add(net_trade_pnl, Ordering::Relaxed);
-                        coin.scalp
-                            .pnl_realized
-                            .fetch_add(net_trade_pnl, Ordering::Relaxed);
-                        coin.swing
                             .pnl_realized
                             .fetch_add(net_trade_pnl, Ordering::Relaxed);
                     }
@@ -1400,15 +1400,14 @@ impl GodEngineCore {
 
                     let notional = (qty * entry).max(1.0);
                     let realized_ret = net_trade_pnl / notional;
+                    // C-07 (INFORME DECIMOCUARTO): record_outcome UNA VEZ por
+                    // cierre. Antes se registraba con las señales scalp Y swing
+                    // — idénticas tras la unificación— duplicando cada trade en
+                    // el tracker (los pesos adaptativos aprendían de un dataset
+                    // con cada observación repetida).
                     if coin_id < self.last_scalp_senior_signals.len() {
                         self.consejo_deliberacion.record_outcome(
                             &self.last_scalp_senior_signals[coin_id],
-                            realized_ret,
-                        );
-                    }
-                    if coin_id < self.last_swing_senior_signals.len() {
-                        self.consejo_deliberacion.record_outcome(
-                            &self.last_swing_senior_signals[coin_id],
                             realized_ret,
                         );
                     }
@@ -1517,16 +1516,20 @@ impl GodEngineCore {
             // --- Inteligencia On-Chain (Spot vs Futures Correlation) ---
             let spot_bid = coin.spot_bid.load(Ordering::Relaxed);
             let spot_ask = coin.spot_ask.load(Ordering::Relaxed);
+            // MOD2/7-028 (INFORME DECIMOCUARTO): el salto ±0.15 ABSOLUTO al
+            // cruzar 1.5 bps no tenía base — 15 puntos de probabilidad por
+            // 1.5 bps de spread podían mover el gate sin opinión de modelo.
+            // Ahora el sesgo escala con la magnitud REAL del spread:
+            // 10 bps ⇒ ±0.05 (la mitad del efecto anterior, proporcional al
+            // fenómeno), con clamp simétrico ±0.05. Además (MOD2/7-029) el
+            // gate B3.18 lee el ensamble PURO — este sesgo sólo ajusta las
+            // ramas de señal.
             let mut spot_bias = 0.0;
 
             if spot_bid > 0.0 && spot_ask > 0.0 {
                 let spot_mid = (spot_bid + spot_ask) / 2.0;
                 let spread_bps = ((spot_mid - mid_price) / mid_price) * 10000.0;
-                if spread_bps > 1.5 {
-                    spot_bias = 0.15;
-                } else if spread_bps < -1.5 {
-                    spot_bias = -0.15;
-                }
+                spot_bias = (spread_bps / 10.0).clamp(-0.05, 0.05);
             }
 
             let hurst_val = coin.hurst_exponent.load(Ordering::Relaxed);
@@ -1698,21 +1701,34 @@ impl GodEngineCore {
                 );
             }
             if let Some(nn) = self.swing_nn.as_mut() {
+                // C-06 (INFORME DECIMOCUARTO): el swing_nn (DarkAlpha) es UN
+                // modelo entrenado con datos de BTC; antes votaba en el
+                // ensamble de TODAS las monedas vía predict_for_coin — la
+                // entrada en un alt la podía decidir el modelo de BTC.
+                // NN restringido a BTC hasta que exista un modelo por símbolo
+                // (paridad con B3.18b del forest): fuera de su símbolo de
+                // entrenamiento el voto es NEUTRAL (0.5) — no se evalúa la
+                // inferencia, el modelo simplemente no opina.
+                let nn_trained_for_symbol = sym == "BTCUSDT";
                 let in_dim = nn.layer1.in_features;
-                let p_opt = if in_dim == 34 {
-                    let mut swing_feats_f64 = [0.0; 34];
-                    for idx in 0..34 {
-                        swing_feats_f64[idx] = swing_feats[idx] as f64;
+                let p_opt = if nn_trained_for_symbol {
+                    if in_dim == 34 {
+                        let mut swing_feats_f64 = [0.0; 34];
+                        for idx in 0..34 {
+                            swing_feats_f64[idx] = swing_feats[idx] as f64;
+                        }
+                        nn.predict_for_coin(coin_id, &swing_feats_f64)
+                    } else if in_dim == 12 {
+                        let mut micro_f64 = [0.0; 12];
+                        for idx in 0..12 {
+                            micro_f64[idx] = features[idx] as f64;
+                        }
+                        nn.predict_for_coin(coin_id, &micro_f64)
+                    } else {
+                        nn.predict_for_coin(coin_id, &combined_tensor)
                     }
-                    nn.predict_for_coin(coin_id, &swing_feats_f64)
-                } else if in_dim == 12 {
-                    let mut micro_f64 = [0.0; 12];
-                    for idx in 0..12 {
-                        micro_f64[idx] = features[idx] as f64;
-                    }
-                    nn.predict_for_coin(coin_id, &micro_f64)
                 } else {
-                    nn.predict_for_coin(coin_id, &combined_tensor)
+                    Some(0.5)
                 };
                 if let Some(p) = p_opt {
                     diag_nn_p = Some(p);
@@ -1733,6 +1749,13 @@ impl GodEngineCore {
             // D-693 (DÉCIMA OLA): el residuo online ya no entra en la probabilidad
             // (ver `calibration::compose_ml_prob`). Se sigue calculando para que el
             // diagnóstico muestre lo que habría sumado.
+            // MOD2/7-029 (INFORME DECIMOCUARTO): `ml_prob_pure` es la opinión del
+            // ensamble SIN el sesgo spot — el valor que evalúa el gate B3.18. El
+            // spot_bias es una corrección de microestructura, no un modelo: con
+            // ±0.15 absolutos podía cruzar el umbral B3.18 él solo, sin opinión de
+            // modelo. Las ramas de señal (p.ej. la 13) siguen consumiendo la
+            // versión con sesgo (`ml_prob`), que es la publicada en coin.ml_prob.
+            let ml_prob_pure = base_ml_prob;
             let ml_prob = crate::calibration::compose_ml_prob(base_ml_prob, spot_bias);
             self.diag_dir.record_ml_components(
                 base_ml_prob,
@@ -3279,11 +3302,15 @@ impl GodEngineCore {
                     let senior_sigs = self
                         .consejo_deliberacion
                         .extract_senior_signals(&council_snapshot, wr);
+                    // C-07 (INFORME DECIMOCUARTO): la deliberación es UNA por
+                    // trade. Antes se guardaban las MISMAS señales en los slots
+                    // scalp y swing y el cierre llamaba record_outcome con AMBOS
+                    // → cada trade duplicado en el tracker de pesos adaptativos
+                    // (dataset 2×, window_size al 50% de historia real). El
+                    // swing queda zeroed (la erradicación swing/scalp es
+                    // cosmética; sólo queda el slot scalp, ahora "la" señal).
                     if coin_id < self.last_scalp_senior_signals.len() {
                         self.last_scalp_senior_signals[coin_id] = senior_sigs;
-                    }
-                    if coin_id < self.last_swing_senior_signals.len() {
-                        self.last_swing_senior_signals[coin_id] = senior_sigs;
                     }
                     let deliberation = self.consejo_deliberacion.deliberar_with_weights(
                         &council_snapshot,
@@ -3306,20 +3333,31 @@ impl GodEngineCore {
                     // baseline (0.5698/0.4302) esto es la "selección de
                     // entradas" que la guerra de fees pedía.
                     //
-                    // B3.18-aud (FRESCURA): se lee la variable LOCAL ml_prob —
-                    // computada y firmada en coin.ml_prob ~1.5k líneas arriba,
-                    // DENTRO de esta misma invocación, ANTES de las ramas de
-                    // señal/deliberación (orden verificado: bloque ANALÍTICA
-                    // COMPLETA → señales → deliberación → este gate). El
-                    // atomic coin.ml_prob tiene un ÚNICO escritor en todo el
+                    // B3.18-aud (FRESCURA): se lee la variable LOCAL ml_prob_pure
+                    // — computada en el bloque de ANALÍTICA COMPLETA ~1.5k
+                    // líneas arriba, DENTRO de esta misma invocación, ANTES de
+                    // las ramas de señal/deliberación (orden verificado: bloque
+                    // ANALÍTICA COMPLETA → señales → deliberación → este gate).
+                    // El atomic coin.ml_prob tiene un ÚNICO escritor en todo el
                     // workspace (ese store), pero leer la local elimina hasta
                     // la posibilidad teórica de una escritura cruzada entre
                     // threads: el valor del gate es, por construcción, el del
                     // tick en curso — nunca stale por 1 tick.
-                    let ml_now = ml_prob;
+                    // MOD2/7-029 (INFORME DECIMOCUARTO): el gate lee el
+                    // ensamble PURO (sin spot_bias) — un despegue del spot no
+                    // puede cruzar el umbral por sí solo; sólo lo cruza un
+                    // modelo. La versión con sesgo (ml_prob/coin.ml_prob)
+                    // siguen alimentando las ramas de señal.
+                    let ml_now = ml_prob_pure;
                     // B3.19 (auditoría A3-rec3): clamp uniforme — el camino
                     // swing ya clampea (l.2081-2082); un genoma fuera de banda
                     // no puede cegar ni abrir de par en par el gate.
+                    // MOD2/7-024 (INFORME DECIMOCUARTO): el techo baja de 0.95
+                    // a 0.75 — un GBDT de 40 árboles "rara vez supera 0.75", así
+                    // que un GA que evolucione ml_threshold a 0.95 vetaría TODO
+                    // sin feedback que lo corrija (y el espejo del short sube su
+                    // suelo de 0.05 a 0.25 = 1−0.75). El baseline genómico
+                    // (0.5698/0.4302) queda lejos de ambas cotas.
                     // B3.25 — además del acuerdo del ensamble, el símbolo
                     // DEBE tener modelo validado del roster: el NN solo no
                     // autoriza entradas (hueco medido: SOL sin modelo abrió).
@@ -3330,14 +3368,14 @@ impl GodEngineCore {
                                 .config
                                 .ml_threshold_long
                                 .load(Ordering::Relaxed)
-                                .clamp(0.50, 0.95)
+                                .clamp(0.50, 0.75)
                         } else {
                             ml_now <= self
                                 .arena
                                 .config
                                 .ml_threshold_short
                                 .load(Ordering::Relaxed)
-                                .clamp(0.05, 0.50)
+                                .clamp(0.25, 0.50)
                         };
                     if deliberation.approved && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;

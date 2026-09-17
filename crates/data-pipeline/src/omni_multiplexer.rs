@@ -443,14 +443,14 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
     let mut fail_count: u64 = 0;
     let mut cycle_count: u64 = 0;
 
-    let fred_series: [(&str, &AtomicU64); 6] = [
-        ("SP500", &state.sp500),
-        ("NASDAQCOM", &state.nasdaq),
-        ("VIXCLS", &state.vix),
-        ("DGS10", &state.us10y),
-        ("DTWEXBGS", &state.dxy),
-        ("DCOILWTICO", &state.oil_wti),
-    ];
+    // MOD1/4-005 (INFORME 14): aquí seguía un `fred_series` con 6 series que,
+    // DESPUÉS del ciclo de Yahoo, sobrescribía los mismos slots (`sp500`,
+    // `nasdaq`, `vix`, `dxy`) con DTWEXBGS (otra serie) y el cierre de HOY
+    // (sin corte t-1): en una red donde FRED respondiera, la paridad B3.4b
+    // se rompía silenciosamente y `dxy` cambiaba de semántica según qué
+    // fetch ganara ese minuto. Loop ELIMINADO: B3.23 ya resolvió DXY por
+    // Yahoo (DX-Y.NYB) y FRED queda fuera del ciclo, como el comentario
+    // siempre dijo.
 
     // Yahoo v8 chart: último cierre del día ANTERIOR (t-1 estricto) vía
     // curl subprocess. B3.4b — paridad train/serve exacta: el trainer junta
@@ -500,7 +500,9 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
 
         // Paridad de SERIES con el trainer: ^VIX/^GSPC/^IXIC cierran igual
         // que las FRED, y B3.23 suma DX-Y.NYB (ICE DXY) — la dim 46 viva en
-        // ambos lados; FRED queda fuera del ciclo (bloquea esta red).
+        // ambos lados. Los 4 slots vienen SOLO de Yahoo (corte t-1 estricto);
+        // FRED queda fuera del ciclo (MOD1/4-005: su loop residual pisaba
+        // estos slots y rompía la paridad cuando la red respondía).
         let yahoo_index: [(&str, &AtomicU64); 4] = [
             ("^VIX", &state.vix),
             ("^GSPC", &state.sp500),
@@ -511,33 +513,6 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
             if let Some(last) = yahoo_last_close(sym).await {
                 slot.store(last.to_bits(), Ordering::Relaxed);
                 updated += 1;
-            }
-        }
-
-        for (series, slot) in &fred_series {
-            let url = format!(
-                "https://fred.stlouisfed.org/graph/fredgraph.csv?id={}",
-                series
-            );
-            if let Ok(res) = client.get(&url).send().await {
-                if let Ok(csv) = res.text().await {
-                    // Última fila con valor válido ("." = sin dato ese día).
-                    if let Some((_, val)) = csv
-                        .lines()
-                        .skip(1)
-                        .filter_map(|l| {
-                            let mut parts = l.split(',');
-                            let d = parts.next()?.trim();
-                            let v = parts.next()?.trim();
-                            let f = v.parse::<f64>().ok()?;
-                            Some((d, f))
-                        })
-                        .last()
-                    {
-                        slot.store(val.to_bits(), Ordering::Relaxed);
-                        updated += 1;
-                    }
-                }
             }
         }
 
@@ -582,21 +557,21 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
             if cycle_count == 1 || cycle_count % 60 == 0 {
                 let g = |a: &AtomicU64| f64::from_bits(a.load(Ordering::Relaxed));
                 println!(
-                    "🌍 [MACRO] ciclo {}: SP500={:.1} NASDAQ={:.1} VIX={:.2} DXY={:.2} US10Y={:.2} · series actualizadas: {}/10 (Yahoo-curl + FRED + PAXG)",
+                    "🌍 [MACRO] ciclo {}: SP500={:.1} NASDAQ={:.1} VIX={:.2} DXY={:.2} US10Y={:.2} · series actualizadas: {}/5 (Yahoo-curl + PAXG)",
                     cycle_count,
                     g(&state.sp500),
                     g(&state.nasdaq),
                     g(&state.vix),
                     g(&state.dxy),
                     g(&state.us10y),
-                    updated + 1
+                    updated
                 );
             }
         } else {
             fail_count += 1;
             if fail_count % 10 == 1 {
                 println!(
-                    "⚠️ [MACRO] FRED/PAXG sin datos utilizables (fallo #{fail_count}) — features macro con staleness creciente"
+                    "⚠️ [MACRO] Yahoo/PAXG sin datos utilizables (fallo #{fail_count}) — features macro con staleness creciente"
                 );
             }
         }

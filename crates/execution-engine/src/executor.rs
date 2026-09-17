@@ -703,8 +703,27 @@ impl OrderExecutor {
                     match fresh {
                         Some(f) => {
                             let fq = f.position_amt.abs();
+                            // MOD1/4-008 (INFORME-14): step REAL del símbolo.
+                            // El literal 0.001 es el paso de BTCUSDT: truncaba
+                            // la qty de emergencia en símbolos con paso mayor
+                            // (DOGE/SHIB step=1) y el exchange rechazaba el
+                            // cierre justamente cuando la posición ardía. Si
+                            // ni exchangeInfo ni el registro aportan filtro, se
+                            // cuantiza a 1e-9: preserva la qty TAL CUAL la
+                            // sirvió el exchange (ya múltiplo válido del paso
+                            // real) en vez de imponer el paso de otro activo.
+                            let step = match self.get_symbol_filter(&p.symbol).await {
+                                Ok(flt) => flt.step_size,
+                                Err(e) => {
+                                    println!(
+                                        "⚠️ [X-026] {} sin filtro de precisión ({}): qty fresca sin re-cuantizar (paso 1e-9)",
+                                        p.symbol, e
+                                    );
+                                    1e-9
+                                }
+                            };
                             let retry = self
-                                .execute_reduce_only_market(&p.symbol, f.is_long(), fq, 0.001)
+                                .execute_reduce_only_market(&p.symbol, f.is_long(), fq, step)
                                 .await;
                             match retry {
                                 Ok(()) => {
@@ -2099,9 +2118,42 @@ impl ExecutionProvider for OrderExecutor {
             }
         }
 
-        // 3. Cancelar la orden límite. Si ya se llenó, Binance responde con
-        //    error benigno — el fill YA ocurrió y no se puede deshacer.
-        let _ = self.cancel_order(symbol, client_order_id).await;
+        // 3. Cancelar la orden límite. C-03 (INFORME-14): el resultado del
+        //    DELETE ya NO se descarta — se CLASIFICA.
+        //    · Benigno (-2011 "Unknown order" / -4002 / CANCELED): la GTX ya
+        //      no existe en el exchange (llenó o fue resuelta); el fill YA
+        //      ocurrió y no se puede deshacer — el query_order de abajo fija
+        //      el remanente real.
+        //    · Red (timeout/conexión/429): la GTX puede seguir VIVA en el
+        //      libro. El remnant SOLO se mercadoa si el query_order posterior
+        //      confirma executedQty < qty; si ese query también falla, se
+        //      aborta con el código ambiguo que el host enruta a la rama X-007
+        //      (reconcile-then-rollback). Antes, mercadear a ciegas tras un
+        //      cancel fallido producía sobre-exposición hasta 2×qty cuando la
+        //      límite llenaba DESPUÉS del market.
+        let mut cancel_net_failed = false;
+        match self.cancel_order(symbol, client_order_id).await {
+            Ok(()) => {}
+            Err(e) => {
+                let benign = e.contains("-2011")
+                    || e.contains("-4002")
+                    || e.contains("Unknown order")
+                    || e.contains("CANCELLED")
+                    || e.contains("CANCELED");
+                if benign {
+                    println!(
+                        "🛡️ [MAKER-CHASE] cancel de {} benigno ({}): la GTX ya no existe en el exchange — el query fija el remanente.",
+                        client_order_id, e
+                    );
+                } else {
+                    cancel_net_failed = true;
+                    println!(
+                        "⚠️ [MAKER-CHASE] cancel de {} falló por RED ({}): la GTX puede seguir VIVA — verificando estado real ANTES de mercadoar el remnant.",
+                        client_order_id, e
+                    );
+                }
+            }
+        }
 
         // F1.3 — FIX DOUBLE-FILL: consultar el estado REAL de la orden tras el
         // cancel y mercadear ÚNICAMENTE el remanente (origQty - executedQty).
@@ -2113,6 +2165,16 @@ impl ExecutionProvider for OrderExecutor {
                 // Sin estado verificable NO se mercadea nada: a ciegas es el bug
                 // original. El remanente se materializa vía reconciliación (F1.7).
                 println!("🛑 [MAKER-CHASE] No se pudo verificar estado de {} ({}). Abortando chase SIN market de respaldo para evitar doble-fill.", client_order_id, e);
+                if cancel_net_failed {
+                    // C-03: el cancel TAMBIÉN falló por red — doble incertidumbre.
+                    // El prefijo MAKER_CHASE_UNVERIFIED es el que el host trata en
+                    // la rama X-007 (AMBIGUA, god_engine.rs); el token
+                    // CANCEL_UNVERIFIED distingue este caso en el forense.
+                    return Err(format!(
+                        "MAKER_CHASE_UNVERIFIED (CANCEL_UNVERIFIED): {}",
+                        e
+                    ));
+                }
                 return Err(format!("MAKER_CHASE_UNVERIFIED: {}", e));
             }
         };

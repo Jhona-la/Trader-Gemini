@@ -470,7 +470,18 @@ pub fn reconcile_arena(
                         .margin_used
                         .load(std::sync::atomic::Ordering::Relaxed);
                     let new_margin = if safe_price > 0.0 {
-                        (target_abs * safe_price) / 10.0
+                        // C-04 (INFORME-14): leverage REAL del exchange
+                        // (remote_lev_map), igual que la adopción de arriba
+                        // (S-06). El /10.0 hardcodeado inflaba used_margin
+                        // 2-5x en cuentas 20x/50x → falsa escasez de margen
+                        // → vetos contra capital que sí existe.
+                        let lev = remote_lev_map.get(&sym).copied().unwrap_or(10.0);
+                        let lev = if lev.is_finite() && lev >= 1.0 {
+                            lev
+                        } else {
+                            10.0
+                        };
+                        (target_abs * safe_price) / lev
                     } else {
                         old_margin
                     };
