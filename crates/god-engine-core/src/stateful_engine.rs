@@ -7,6 +7,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub static DROP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// C-02 — índices del vector 34D (`get_swing_features`) cuya fuente de datos
+/// está MUERTA en producción: hoy sólo [9] (dark_alpha / dex_severity, sin
+/// productor MEV-DEX en vivo: `update_macro_features` la recibe como 0.0
+/// constante). Contrato del trainer: estos índices van a 0.0 TAMBIÉN en
+/// entrenamiento (train_forest) — el modelo no puede aprender a depender de
+/// una columna que en serve es constante. Si un productor dex revive la
+/// fuente, actualizar este slice y re-entrenar en el mismo cambio.
+pub const SWING_FEATURES_DEAD_IN_SERVE: &[usize] = &[9];
+
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum MarketRegime {
     #[default]
@@ -543,7 +552,14 @@ impl StatefulEngine {
         ]
     }
 
-    /// Extracts Omni ML Features (SWING - 34D Macro+Micro)
+    /// C-02 (INFORME DECIMOCUARTO) — mapa vivo/muerto del contrato 34D:
+    /// VIVAS en train y serve (microestructura/precio del PROPIO símbolo):
+    /// [0..4], [6..9), [10..12) y las 22 omni [12..34] (RSI/MACD/BB/ATR/Fib
+    /// de precio — NO del tensor 54D del omni_multiplexer).
+    /// MUERTA en serve y en train: [9] dark_alpha (dex_severity=0.0, sin
+    /// productor). VIVAS en serve (libro real vía update_macro_features),
+    /// muertas en train salvo que el trainer llame update_macro_features:
+    /// [4], [5], [10] (obi_accel). Ver SWING_FEATURES_DEAD_IN_SERVE.
     pub fn get_swing_features(&self) -> [f32; 34] {
         let micro = self.get_features();
         let omni_feats = self.omni.extract_features();
@@ -895,6 +911,51 @@ mod tests {
             "FFT no se republica ante cambio de régimen: {:?} vs {:?}",
             &post_live[0..3],
             &post_regime[0..3]
+        );
+    }
+
+    /// C-02 (INFORME DECIMOCUARTO): el mapa vivo/muerto del contrato 34D es
+    /// verificable, no documentación muerta. [9] (dark_alpha) sirve 0.0
+    /// constante en producción (dex_severity sin productor) — y el trainer
+    /// la fuerza a 0 vía SWING_FEATURES_DEAD_IN_SERVE. Las dims de obi_accel
+    /// [4],[5],[10] VIVEN en serve: se mueven con el obi real del libro que
+    /// `update_macro_features` recibe por evento.
+    #[test]
+    fn c02_mapa_vivo_muerto_del_vector_34d() {
+        // Contrato del slice: índices dentro de las 34, únicos y ordenados.
+        let mut sorted = SWING_FEATURES_DEAD_IN_SERVE.to_vec();
+        sorted.sort_unstable();
+        assert!(
+            sorted.windows(2).all(|w| w[0] < w[1]),
+            "SWING_FEATURES_DEAD_IN_SERVE con índices repetidos: {:?}",
+            sorted
+        );
+        assert!(
+            sorted.iter().all(|&i| i < 34),
+            "índice fuera del contrato 34D: {:?}",
+            sorted
+        );
+
+        // Serve: sin productor dex, dim [9] sirve exactamente 0.0.
+        let mut e = StatefulEngine::new();
+        let mut ts: u64 = 1_789_000_000_000;
+        for i in 0..600u64 {
+            let p = 100.0 + ((i % 37) as f64).sin();
+            e.process_tick(p, 1.0, ts);
+            let obi = 0.3 * (((i % 11) as f64) - 5.0) / 5.0;
+            e.update_macro_features(obi, 0.0, 0.0, ts);
+            ts += 100;
+        }
+        // Determinismo: dos obis distintos y no nulos al final.
+        e.update_macro_features(0.25, 0.0, 0.0, ts);
+        e.update_macro_features(0.35, 0.0, 0.0, ts + 100);
+        let f = e.get_swing_features();
+        assert_eq!(f.len(), 34);
+        assert_eq!(f[9], 0.0, "dark_alpha debe servir 0.0 sin productor dex");
+        assert!(
+            f[5] != 0.0 && f[4] != 0.0,
+            "obi_accel ([4],[5],[10]) debe vivir en serve: {:?}",
+            &f[4..=5]
         );
     }
 

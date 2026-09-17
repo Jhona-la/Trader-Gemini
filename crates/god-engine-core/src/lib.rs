@@ -2041,11 +2041,17 @@ impl GodEngineCore {
             let dynamic_max_spread = (atr_pct * 0.25).clamp(0.0006, 0.0025);
             let spread_ok = spread_pct <= dynamic_max_spread;
 
+            // MOD2/7-014: clasificación canónica de Hurst — UNA definición
+            // (consts HURST_*) usada por TODAS las ramas de señal de abajo.
+            let is_anti_persistent = hurst_val < HURST_ANTI_PERSISTENT;
+            let is_persistent = hurst_val > HURST_PERSISTENT;
+
             if atr_pct > dynamic_atr_min
                 && spread_ok
                 && self.feature_engines[coin_id].can_open_scalp(600)
             {
-                let is_mean_reverting = hurst_val < 0.45;
+                // (misma banda canónica: reversión a la media ≡ anti-persistencia)
+                let is_mean_reverting = is_anti_persistent;
 
                 let ema_slow = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
@@ -2084,7 +2090,8 @@ impl GodEngineCore {
                     (0.50 + 0.40 * score.abs().clamp(0.0, 1.0)).clamp(0.51, 0.90)
                 };
 
-                let is_anti_persistent = hurst_val < 0.42;
+                // MOD2/7-014: antes `hurst_val < 0.42` — un tercer literal
+                // de banda que contradecía las demás ramas. Banda canónica.
                 let mut dynamic_tech_thr = self
                     .arena
                     .config
@@ -2198,36 +2205,38 @@ impl GodEngineCore {
                     }
                     // Ruta 2: PRICE-ACTION (cuando ML sigue neutral)
                     // FIX AUDIT: Hurst puede estar clavado en 0.5 (DFA sin
-                    // datos suficientes). Rama A: Hurst activo (>0.52 o <0.45).
+                    // datos suficientes). Rama A: Hurst activo (anti-persistente
+                    // O persistente, bandas canónicas MOD2/7-014 — antes el
+                    // par 0.49/0.51 creaba una tercera clasificación ad hoc).
                     // Rama B: Hurst neutral — momentum directo sin régimen.
                     else if self.feature_engines[coin_id].ema_slow > 0.0 {
                         let ema_s = self.feature_engines[coin_id].ema_slow;
                         let atr_abs = (atr_pct * mid_price).max(0.01);
                         let dev_atr = (mid_price - ema_s) / atr_abs;
-                        let hurst_active = hurst_val > 0.51 || hurst_val < 0.49;
+                        let hurst_active = is_anti_persistent || is_persistent;
 
-                        if hurst_active && hurst_val > 0.52 && dev_atr > 1.5 && dev_atr < 4.0 && rolling_cvd > 0.0 {
+                        if hurst_active && is_persistent && dev_atr > 1.5 && dev_atr < 4.0 && rolling_cvd > 0.0 {
                             scalp_intent = SignalIntent {
                                 signal: SignalType::Long,
                                 confidence: 0.72,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 ..Default::default()
                             };
-                        } else if hurst_active && hurst_val > 0.52 && dev_atr < -1.5 && dev_atr > -4.0 && rolling_cvd < 0.0 {
+                        } else if hurst_active && is_persistent && dev_atr < -1.5 && dev_atr > -4.0 && rolling_cvd < 0.0 {
                             scalp_intent = SignalIntent {
                                 signal: SignalType::Short,
                                 confidence: 0.72,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 ..Default::default()
                             };
-                        } else if hurst_active && hurst_val < 0.45 && dev_atr > 2.5 {
+                        } else if hurst_active && is_anti_persistent && dev_atr > 2.5 {
                             scalp_intent = SignalIntent {
                                 signal: SignalType::Short,
                                 confidence: 0.68,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 ..Default::default()
                             };
-                        } else if hurst_active && hurst_val < 0.45 && dev_atr < -2.5 {
+                        } else if hurst_active && is_anti_persistent && dev_atr < -2.5 {
                             scalp_intent = SignalIntent {
                                 signal: SignalType::Long,
                                 confidence: 0.68,
@@ -2235,9 +2244,10 @@ impl GodEngineCore {
                                 ..Default::default()
                             };
                         }
-                        // Rama B: Hurst neutral (0.49-0.51) — momentum directo
-                        // sin confirmación de régimen. Requiere desviación mayor
-                        // (+0.5 ATR extra) y CVD alineado como substituto.
+                        // Rama B: Hurst neutral (banda canónica [0.45, 0.52]) —
+                        // momentum directo sin confirmación de régimen. Requiere
+                        // desviación mayor (+0.5 ATR extra) y CVD alineado como
+                        // substituto.
                         else if !hurst_active && dev_atr > 2.0 && dev_atr < 5.0 && rolling_cvd > 0.05 {
                             scalp_intent = SignalIntent {
                                 signal: SignalType::Long,
@@ -2293,18 +2303,18 @@ impl GodEngineCore {
                             volume_flow_rate: 2.0,
                             ..Default::default()
                         };
-                    // 3. Reversión Long: Exclusivamente ante capitulación estadística extrema (pánico masivo con absorción)
-                    } else if price_stretch < -2.5
-                        && effective_obi_long > dynamic_obi_thr * 0.8
-                        && composite_score > dynamic_tech_thr
-                    {
-                        scalp_intent = SignalIntent {
-                            signal: SignalType::Long,
-                            confidence: sig_conf(composite_score),
-                            horizon: strategy_core::TradeHorizon::Continuous,
-                            volume_flow_rate: 3.0,
-                            ..Default::default()
-                        };
+                    // 3. Reversión Long — ELIMINADA (MOD2/7-011, INFORME
+                    // DECIMOCUARTO): esta rama duplicaba la excepción de
+                    // capitulación extrema que el escudo macro (D-467/D-624,
+                    // aguas abajo del flujo) ya evalúa de forma más tardía y
+                    // mejor informada (z-secular/z-higher/z-macro de difusión
+                    // + z95 sobre la distancia a la EMA de 21 velas, en vez
+                    // del stretch ATR crudo −2,5). Dos implementaciones
+                    // independientes de la misma tautología derivaban en
+                    // bandas mutuamente excluyentes; la excepción vive AHORA
+                    // SOLO en el escudo macro. Una capitulación Long debe
+                    // nacer de otra rama (ML-only/price-action, neutra) y
+                    // superar el escudo con `extreme_capitulation`.
                     }
                 } else if is_confirmed_uptrend {
                     // RÉGIMEN ALCISTA CONFIRMADO (MULTISCALE UPTREND)
@@ -2341,18 +2351,10 @@ impl GodEngineCore {
                             volume_flow_rate: 5.0,
                             ..Default::default()
                         };
-                    // 3. Reversión Short: Exclusivamente ante euforia parabólica extrema con ventas masivas L2
-                    } else if price_stretch > 2.5
-                        && effective_obi_short < -dynamic_obi_thr * 0.8
-                        && composite_score < -dynamic_tech_thr
-                    {
-                        scalp_intent = SignalIntent {
-                            signal: SignalType::Short,
-                            confidence: sig_conf(composite_score.abs()),
-                            horizon: strategy_core::TradeHorizon::Continuous,
-                            volume_flow_rate: 6.0,
-                            ..Default::default()
-                        };
+                    // 3. Reversión Short — ELIMINADA (MOD2/7-011): espejo
+                    // exacto de la rama 3 de downtrend; la excepción de
+                    // euforia parabólica extrema (`extreme_blowoff`) vive
+                    // SOLO en el escudo macro, más tardío y mejor informado.
                     }
                 } else {
                     // RÉGIMEN NEUTRO / RANGO LATERAL (Disciplina de reversión a la media: comprar en soporte, vender en resistencia)
@@ -2672,7 +2674,10 @@ impl GodEngineCore {
             } else {
                 0.0
             };
-            let is_trend_candidate = hurst_exponent >= 0.48
+            // MOD2/7-014: antes `hurst_exponent >= 0.48` — quinto literal de
+            // banda. Candidato a tendencia = NO anti-persistente (banda
+            // canónica 0.45; el umbral fino lo pone trend_threshold/EMA).
+            let is_trend_candidate = hurst_exponent >= HURST_ANTI_PERSISTENT
                 && (hurst_exponent >= trend_threshold || ma_trend_strength > 0.0020);
 
             if is_trend_candidate {
@@ -2988,6 +2993,9 @@ impl GodEngineCore {
                     .tech_threshold
                     .load(Ordering::Relaxed);
                 // D-624: capitulación = desplazamiento significativo bajo la EMA de 21 velas.
+                // MOD2/7-011: tras eliminar la rama 3 de downtrend, esta es la
+                // ÚNICA excepción de capitulación extrema del motor (la más
+                // tardía y mejor informada del flujo).
                 let extreme_capitulation = crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) < -z95
                     && current_obi > dynamic_obi_thr * 0.8
                     && composite_score > dynamic_tech_thr;
@@ -3014,6 +3022,8 @@ impl GodEngineCore {
                     .tech_threshold
                     .load(Ordering::Relaxed);
                 // D-624: euforia = desplazamiento significativo sobre la EMA de 21 velas.
+                // MOD2/7-011: única excepción de blow-off tras eliminar la
+                // rama 3 de uptrend.
                 let extreme_blowoff = crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) > z95
                     && current_obi < -dynamic_obi_thr * 0.8
                     && composite_score < -dynamic_tech_thr;
@@ -3139,14 +3149,14 @@ impl GodEngineCore {
             }
 
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_WHIPLASH);
-            // D-472: Invariante Bayesiano Absoluto Universal (Cross-Horizon)
-            // Ninguna orden unificada puede entrar si contradice la convicción Bayesiana (composite_score)
-            if unified_intent.signal == SignalType::Long && composite_score < 0.0 {
-                unified_intent = SignalIntent::flat();
-            } else if unified_intent.signal == SignalType::Short && composite_score > 0.0 {
-                unified_intent = SignalIntent::flat();
-            }
-
+            // MOD2/7-011 (INFORME DECIMOCUARTO, FOCO 2 «Rigidez de filtros»):
+            // aquí existía una SEGUNDA evaluación del veto Bayesiano D-472 —
+            // la repetición literal de la que ya aplicó al `scalp_intent`
+            // aguas arriba (misma condición: Long ⇒ composite ≥ 0, Short ⇒
+            // composite ≤ 0). Tautología serial: cualquier intención que la
+            // primera ya mató no llega aquí, y la que pasa la primera no
+            // aporta información nueva al flujo. Se elimina la segunda
+            // evaluación; la única vive junto a la generación de señales.
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_BAYES);
             // D-499: Invariante de Convicción Post-Racha Direccional Universal (Cross-Horizon Directional Loss Streak Firewall)
             // Si el activo acumula una racha de 2 o más pérdidas consecutivas activas en su dirección (short/long),
@@ -3709,6 +3719,16 @@ mod tests_d609 {
         assert_eq!(hurst_duration_modulation(10_000, 0.40), 10_000);
     }
 }
+
+/// MOD2/7-014 (INFORME DECIMOCUARTO, FOCO 2 «Rigidez de filtros»):
+/// definición CANÓNICA única de las bandas del exponente de Hurst.
+/// Antes convivían seis literales (0.42/0.45/0.48/0.49/0.51/0.52)
+/// clasificando el MISMO estimador con solapes mutuamente excluyentes
+/// según la rama (p.ej. H=0.43 era «anti-persistente» para el fallback
+/// price-action pero «neutral» para el gate de OBI). Una sola semántica:
+/// anti-persistente = H < 0.45 · persistente = H > 0.52 · neutral = [0.45, 0.52].
+pub const HURST_ANTI_PERSISTENT: f64 = 0.45;
+pub const HURST_PERSISTENT: f64 = 0.52;
 
 /// D-685 (DÉCIMA OLA) — CONTENCIÓN DE LA RAMA DE CONSENSO TENSORIAL (rama 14).
 ///

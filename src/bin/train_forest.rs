@@ -315,6 +315,19 @@ fn main() {
             engine.process_tick(mid, vol, t.ts);
             engine.update_trade_flow(vol, pseudo_maker);
             let _ = engine.update_ofi(t.bid, t.ask, t.bq, t.aq);
+            // C-02 — PARIDAD OBI: en vivo `update_macro_features` corre en
+            // CADA evento (camino per-tick de god-engine-core/lib.rs:
+            // update_macro_features(obi, funding, 0.0, ts)) y alimenta
+            // obi_accel → dims [4],[5],[10] del vector 34D con el
+            // desequilibrio REAL del libro. El trainer jamás la llamaba:
+            // esas 3 dims eran columna 0.0 constante en train y señal viva
+            // en serve (paridad rota al revés — modelo ciego al 9% del
+            // vector). Misma fórmula de obi del libro que el vivo:
+            // (bq−aq)/(bq+aq). funding=0.0: sólo alimenta fr_elasticity,
+            // que NO está en el contrato 48D. dex=0.0: sin productor en
+            // vivo — paridad exacta con el serve.
+            let obi = if vol > 0.0 { (t.bq - t.aq) / vol } else { 0.0 };
+            engine.update_macro_features(obi, 0.0, 0.0, t.ts);
             warmup += 1;
             if warmup >= 100 && t.ts >= next_sample_ts && t.ts + horizon_ms <= last_ts {
                 next_sample_ts = t.ts + stride_ms_eff;
@@ -335,6 +348,16 @@ fn main() {
                 const FULL_DIM: usize = god_engine_core::ml_inference::NanoForest::ML_VECTOR_DIM;
                 let mut full = [0f32; FULL_DIM];
                 full[..34].copy_from_slice(&sf);
+                // C-02 — features MUERTAS en serve ⇒ 0.0 también en train.
+                // SWING_FEATURES_DEAD_IN_SERVE (stateful_engine) es la única
+                // fuente de verdad del mapa vivo/muerto del contrato 34D.
+                // Hoy [9] dark_alpha: ya sale 0.0 porque el trainer alimenta
+                // dex_severity=0.0; el borrado explícito mantiene el
+                // invariante train≡serve aunque alguien cablee después una
+                // historia dex que el vivo no sirve.
+                for &d in god_engine_core::stateful_engine::SWING_FEATURES_DEAD_IN_SERVE {
+                    full[d] = 0.0;
+                }
                 full[34..44].copy_from_slice(&sp);
                 full[44..].copy_from_slice(&macro_block);
                 if full.iter().all(|f| f.is_finite()) {

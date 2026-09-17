@@ -607,11 +607,20 @@ impl ConsejoDeliberacion {
             }
         }
 
+        // MOD2/7-013 (INFORME DECIMOCUARTO, FOCO 2 «Rigidez de filtros»): el
+        // umbral de aprobación baja de 0.50 (mayoría absoluta) a 0.35
+        // (minoría sustancial). Con un libro equilibrado, 5/6 seniors
+        // direccionales son transformadas colineales de {OBI, f(OBI), Hurst}
+        // que emiten ≈ 0 → long_consensus_pct rondaba 0.5-ε y el consejo
+        // rechazaba TODO aunque el final_signal fuese positivo. No hace falta
+        // mayoría absoluta de seniors para deliberar: el ML (B3.18) y el
+        // risk-engine ya gatearon la entrada; el consejo es la última
+        // deliberación cualitativa, no un segundo embudo cuantitativo.
         let (approved, consensus_pct) = if vetoed_by.is_some() {
             (false, 0.0)
-        } else if long_consensus_pct >= 0.50 && final_signal > 0.0 {
+        } else if long_consensus_pct >= 0.35 && final_signal > 0.0 {
             (true, long_consensus_pct)
-        } else if short_consensus_pct >= 0.50 && final_signal < 0.0 {
+        } else if short_consensus_pct >= 0.35 && final_signal < 0.0 {
             (true, short_consensus_pct)
         } else if total_directional_capacity == 0.0 {
             // D-165: Con cero capacidad direccional de los seniors, rechazar para evitar operaciones a ciegas
