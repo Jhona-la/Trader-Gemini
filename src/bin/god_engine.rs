@@ -3289,16 +3289,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let exec_clone = Arc::clone(&exec);
                         let arena_clone = Arc::clone(&engine_real.arena);
 
-                        // B3.2b — RUTA MAKER ACTIVADA (palanca de fee dormida).
-                        // execute_maker_chase: post-only al mid → 15ms →
-                        // cancela → consulta el fill REAL (anti-double-fill
-                        // F1.3) → mercado SOLO el remanente. Si el post-only
-                        // cruza el libro, rechazo inmediato → taker como hoy.
-                        // Coste: ~15ms. Beneficio: 2 bps por fracción maker.
-                        // El modelo de fricción D-645 (taker+taker) queda
-                        // como cota superior conservadora; el gate y los
-                        // pisos de viabilidad NO se relajan.
-                        let force_maker = true;
+                        // B3.29 — MAKER DESACTIVADO PARA MOMENTUM (adverse
+                        // selection estructural). Medido en 39 entradas: 0%
+                        // fills pasivos con ventanas de 15ms Y 400ms, con
+                        // mid Y con bid/ask. Causa: las entradas por momentum
+                        // compran cuando el precio YA se mueve a favor — una
+                        // orden pasiva al bid sólo llena si el precio RETRO-
+                        // CEDE (contradiciendo la señal). Es adverse selection
+                        // clásico: maker fills = señal equivocada, taker fills
+                        // = señal correcta. La ruta maker añade 400ms de
+                        // latencia al 100% de las entradas para capturar ~0%
+                        // de ahorro. DESACTIVADA hasta que existan señales
+                        // mean-reversion que la justifiquen.
+                        let force_maker = false;
                         // B3.28 — PRECIO PASIVO AL LIBRO VIVO, no al mid
                         // congelado. Con maker_price = mid del tick
                         // desencadenante, el post-only a 400ms después o
