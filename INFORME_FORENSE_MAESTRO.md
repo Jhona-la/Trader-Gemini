@@ -48,7 +48,8 @@
     - [12. Hoja de Ruta de Rehabilitación L-5 a L-10](#-12-hoja-de-ruta-sistémica-de-rehabilitación--décima-ola)
 18. **[🔁 Décima Ola — Adenda de verificación forense: bisección, atribución y correcciones (D-677 a D-685)](#-décima-ola--adenda-de-verificación-forense-bisección-atribución-correcciones-y-rectificaciones-2026-09-11)** ← *(2026-09-11)*
 19. **[🧬 Décima Ola — Adenda de ejecución: núcleo de decisión, walk-forward y re-evolución (D-686 a D-690)](#-décima-ola--adenda-de-ejecución-núcleo-de-decisión-walk-forward-y-re-evolución-2026-09-11)** ← *(2026-09-11)*
-20. **[🔬 Décima Ola — Adenda de validez: ventaja de entrada, datos sintéticos del forense y datos reales (D-691 a D-694)](#-décima-ola--adenda-de-validez-ventaja-de-entrada-datos-sintéticos-del-forense-y-primera-corrida-sobre-datos-reales-2026-09-11)** ← *más reciente (2026-09-11)*
+20. **[🔬 Décima Ola — Adenda de validez: ventaja de entrada, datos sintéticos del forense y datos reales (D-691 a D-694)](#-décima-ola--adenda-de-validez-ventaja-de-entrada-datos-sintéticos-del-forense-y-primera-corrida-sobre-datos-reales-2026-09-11)** ← *(2026-09-11)*
+21. **[🔭 Décima Ola — Adenda de auditoría integral: el medidor mentía y el fuego real no estaba cerrado (D-696 a D-740)](#-décima-ola--adenda-de-auditoría-integral-el-medidor-mentía-el-fuego-real-no-estaba-cerrado-d-696-a-d-740)** ← *más reciente (2026-09-16)*
 
 ---
 
@@ -6087,3 +6088,113 @@ Los resultados de esta corrida, y los de D-693 sobre los mismos datos, se anexar
 - **D-691:** regenerar o retirar los ficheros sintéticos (también BNB, ETH, SOL y XRP) y ampliar los datos reales a más meses.
 - **D-694:** fijar explícitamente los costes del forense, sin depender de credenciales ni de la red.
 - **D-665, D-674 y el perfil de compilación:** siguen como en la adenda de ejecución.
+
+---
+
+## 🔭 Décima Ola — Adenda de auditoría integral: el medidor mentía y el fuego real no estaba cerrado (D-696 a D-740)
+
+*(2026-09-15/16 · auditoría de los 14 ejes en cinco olas de tres auditores · rama `claude/decima-ola-auditoria-2` sobre `main` 71358566 · esta adenda se agrega sin modificar el contenido histórico)*
+
+**203 defectos nuevos** —19 S0, 82 S1, 90 S2, 12 S3—, ninguno de ellos en el censo D-600 a D-693. **Los 19 S0 están corregidos**, con tests, en la rama `claude/decima-ola-auditoria-2`.
+
+### 0. Qué cambió el método
+
+Las adendas anteriores auditaban **consumo real** (¿alguien lee lo que este componente produce?). Esta parte del método se conserva, pero la ola añade una pregunta nueva: **¿el instrumento con el que medimos dice la verdad?** La respuesta resultó ser no, y eso reordena todo lo demás: tres defectos del backtest forense y del evaluador del algoritmo genético invalidan las cifras de rendimiento de las secciones 07, 08 y 09 y las de la propia primera mitad de esta ola.
+
+El trabajo se ejecutó en un worktree aislado (`.claude/worktrees/decima-auditoria`), con el grafo de código de `graphify` (5 924 nodos, 9 642 aristas, 393 comunidades) como mapa de llamadores, sin compilar ni ejecutar nada durante la lectura. Cada hallazgo se verificó después leyendo el código en su commit, y los que cambian decisiones se midieron con el backtest forense sobre datos reales.
+
+### 1. Los tres defectos que invalidaban la medición
+
+| Código | Dónde | Qué medía en realidad |
+|---|---|---|
+| **D-717** | `audit_forensic_backtest.rs:597` y `booktick_replay.rs:368, 393` | El **lado agresor** de cada trade. `binance_vision_sync` codifica el `isBuyerMaker` oficial en las cantidades (maker ⇒ `bid_qty < ask_qty`). El forense pasaba al núcleo `price <= sim_bid` —con `price` el punto medio y `sim_bid = bid − medio spread`—, condición **falsa en todos los ticks**: `agg_sell_vol` nunca crecía y `rolling_cvd` valía **+1,0 desde el primer tick hasta el último**. El evaluador del GA pasaba `bid_qty > ask_qty`, la **negación** del convenio: el CVD con el signo cambiado. Consecuencias: sesgo aditivo de +0,30 en el micro-score, ramas Short de price-action inalcanzables por construcción, y el genoma de producción seleccionado contra una microestructura espejada. |
+| **D-719** | `audit_forensic_backtest.rs:571` | El **macro del futuro**. Las seis series FRED se alineaban al MISMO día, y `macro_lookup` devuelve el cierre de ese día: a las 00:01 UTC el motor ya conocía el cierre de S&P, Nasdaq, VIX, DGS10, DXY y WTI de una jornada que no había ocurrido. Cuatro de esas seis son features directas del bosque. El evaluador del GA ya usaba t−1 y lo documentaba: el binario que dicta el veredicto divergía de la selección y del contrato con el que se entrenó el modelo. |
+| **D-718** | `audit_forensic_backtest.rs:546` | La **fricción**. `half_spread = ((ask−bid)/2).max(0,05)` es medio tick de BTCUSDT escrito como importe en dólares: en XRP (~0,55 $) añade un 9 % por lado y toda operación nace perdiendo eso. Las validaciones cruzadas en XRP/SOL/BNB se midieron con ese piso. |
+
+A ellos se suma **D-699**: el forense no registraba **ningún** modelo. `god_engine` carga al arrancar todos los ficheros de `models/` en el registro global de `NanoForest` y el núcleo busca el bosque por la clave `{SÍMBOLO}_SCALP`; en el forense `get_global("BTCUSDT_SCALP")` devolvía `None` y el ensamble corría sin bosque. Desde que «la predicción decide» (B3.18, gate de ensamble en TODAS las entradas), validar sin el bosque es validar otro motor.
+
+### 2. Los defectos de dinero del camino vivo
+
+| Código | Sev. | Defecto |
+|---|---|---|
+| **D-700** | S0 | `is_demo_mode` **nunca llegaba** a `set_paper_trading`. El ejecutor nace en `is_paper_trading = false` y la única línea que lo tocaba era `if is_env_testnet { set_paper_trading(false) }`, un no-op. Arrancar sin `--force-live`, o con él pero sin `config_dir/MAINNET_ARMED`, imprimía «MODO DEMO» y disparaba contra la cuenta REAL con las claves de mainnet hasta la transición de fase: `ensure_hedge_mode` cambia el modo de posición de la cuenta y las rutas de restauración y protección colocan órdenes. |
+| **D-701** | S0 | El PnL bruto de **todo** cierre por bracket se calculaba como `(entrada − salida)·qty·signo` con `signo = +1` para el largo: signo invertido en las DOS direcciones. Un largo 100 → 110 se apuntaba como −10. Ese valor alimenta el posterior de Kelly, `total_wins` y el diario. Latente sólo porque el contexto de entrada nunca llegaba (D-702). |
+| **D-702** | S0 | `with_arena` no lo llamaba nadie: todo cierre por bracket llegaba sin contexto de entrada, con `pnl_gross = 0`, y la guarda del drenaje lo descartaba. Ni Kelly ni el win-rate veían los disparos TP/SL, que son la mayoría de los cierres. |
+| **D-697** | S0 | `flatten_all_positions` contaba como CERRADA toda posición despachada por WebSocket: `send_order_payload` sólo confirma el envío, y el `continue` saltaba los fail-safes −4061 y −2022. El kill-switch podía informar «N cerradas» con las posiciones vivas y sin TP/SL tras purgar las algo orders. |
+| **D-698** | S0 | Todas las cancelaciones de piernas iban por `clientAlgoId` aunque el doc-comment declara `algoId` —que `OpenAlgoOrder` parsea y nadie leía— y los tres llamadores se tragaban el error con `is_ok()`. Una pierna vieja sobrevive y dispara sobre la posición SIGUIENTE. Además, `positionSide` vacío se trataba como coincidencia: en el watchdog de huérfanas eso purgaba el TP y el SL de toda posición LARGA viva. |
+| **D-704** | S1 | El DriftAuditor comparaba contra un shadow con `pnl_pct = 0`: `drift = −pnl_real` y el umbral del 5 % significaba «la operación movió más del 5 % del nocional» en cualquier dirección. Un cierre GANADOR grande armaba `kill_switch_active` —que nadie vuelve a poner en false— y congelaba el motor por haber ganado dinero, mientras el modo de fallo que el auditor existe para cazar pasaba inadvertido. |
+| **D-716** | S1 | La limpieza de posiciones fantasma imputaba como precio de salida el precio de MERCADO de hasta 60 s después, y `remote_price` era siempre 0 en esa rama: el precio inventado era la regla. Un SL que llenó en 98 con el precio de vuelta en 101 se contabilizaba como GANANCIA, y ese PnL ficticio alimentaba `win_rate`, `trade_count` y `unified_capital` — las métricas de la aptitud de Darwin y de la matriz de apalancamiento. |
+| **D-720** | S0 | El gate de evidencia del entrenador GBDT estaba invertido: al fallar sólo retornaba **sin** `--promote`, es decir, continuaba justo cuando escribía el modelo VIVO. `train_forest BTCUSDT --promote` sobre un mes sin edge imprimía «el modelo vivo NO se toca» y lo sobrescribía; el watcher lo hot-swapea en ≤10 s y, desde B3.18, ese modelo decide todas las entradas. |
+
+| **D-725** | S0 | **Dos espacios de índice de moneda.** El id salía del UNIVERSO (cuya posición usa el productor de datos para escribir en `arena.coins[i]`) o del REGISTRO de specs, que mantiene su propio orden y prefería `get_coin_id`. En cuanto el ranker publica un universo reordenado —a la primera hora de sesión— dejan de coincidir: un fill de BNB se contabiliza contra la posición de SOL, con su precio de entrada, y el re-bracketeo recoloca el TP/SL de una moneda sobre el precio de otra. |
+| **D-726** | S0 | Las posiciones restauradas al arranque usaban apalancamiento **10x literal** y NUNCA sumaban a `used_margin`: tras un reinicio con posiciones abiertas, `free_margin = capital − used_margin` devolvía el capital ENTERO como libre y el motor abría como si no tuviera nada. El apalancamiento real viene en `/fapi/v2/positionRisk` y se descartaba al parsear. |
+| **D-727** | S0 | El breakeven y el trailing se armaban con pisos ABSOLUTOS (62 pb y 72 pb) ajenos al TP. Con la fricción de referencia el objetivo es 0,55 %, de modo que el breakeven quedaba en el **113 % del TP** y el trailing en el 141 %: el objetivo cierra la posición antes de que exista protección. Toda posición de stop ajustado corría sin breakeven ni trailing. |
+| **D-728** | S0 | `DarwinDaemon` escribía `scalp_z_target` —una desviación típica de [1; 4]— dentro de `scalp_obi_threshold`, el gen de desequilibrio del libro, que vive en [0,05; 1,0]. Sobre la arena VIVA: la puerta de OBI quedaba clavada en su cota máxima y `current_from_arena` releía ese 2,0 como si fuera el gen, corroyendo el genoma en cada lectura. |
+| **D-729** | S0 | `Position::open_with_fee` sustituía un precio no finito o ≤ 0 por el literal **1.0** y publicaba la posición igual. Binance devuelve `entryPrice: "0.0"` mientras el margen se liquida: la posición quedaba viva con entrada 1,0 y al cerrarla producía cientos de dólares de **beneficio fantasma** que entraban enteros en el win-rate y en Kelly. |
+| **D-730** | S0 | El nocional se dimensionaba con apalancamiento f64 mientras el exchange recibe el entero truncado: con L = 2,9 y 2,40 USD de margen se enviaba un nocional que la cuenta, ya a 2x, exige respaldar con un **45 % más** de margen — rechazo -2019 o margen bloqueado que `used_margin` no registra. |
+| **D-738** | S1 | El **Consejo aprobaba sin mirar la dirección**: `approved` sólo decía que había supermayoría de algo, y su signo (`final_signal`) no lo leía nadie. Con el libro dado la vuelta, un 92 % de consenso BAJISTA bendecía la apertura de un LARGO. |
+| **D-739** | S1 | El cierre escribía el MISMO PnL en `metrics`, `scalp` y `swing`: los consumidores que suman las dos piernas veían el **doble** del PnL real y un desglose por horizonte que era ficción. |
+| **D-731** | S1 | La liberación de margen era `load → resta → store` en tres sitios: la actualización concurrente se pierde, y una rama ponía el acumulador GLOBAL a cero, borrando el margen de las demás monedas. |
+| **D-732** | S1 | Un fallo al fijar el apalancamiento sólo se imprimía y la orden salía igual, con el apalancamiento de otra operación: el nocional ya estaba dimensionado con el que se pidió. |
+| **D-735/D-736/D-737** | S1 | El **sesgo a corto era estructural**: la probabilidad se amplificaba sólo en su mitad bajista; la rama de reversión alcista leía un OBI que sin libro vale 0 y por tanto nunca disparaba mientras su espejo bajista sí; y un `else` mal ligado dejaba muerto el respaldo de price-action y, cuando el ML sí opinaba, le permitía **invertir la dirección** de la señal. |
+
+### 3. Paridad y fuentes de verdad
+
+| Código | Defecto |
+|---|---|
+| **D-707** | En el bot vivo, `bid_qty`/`ask_qty` sólo se rellenan en un evento `@depth5`; en un trade o una vela llegaban en 0 y el núcleo fabricaba cantidades simétricas, de modo que `obi_val = 0` exacto y `book_absent` era cierto SIEMPRE en esos eventos. **Producción corría el generador de señales «sin libro»** —escrito para el backtest trade-only, con confianzas literales 0,72/0,68/0,65 y el filtro de spread inerte— mientras el forense corría el otro. Ahora se usa el último libro conocido del arena. |
+| **D-708** | El flujo agregado (CVD) lo alimentaba cada llamador: `god_engine` y el forense sí, `booktick_replay` —el motor de `backtest_windows` y `evolution`— no. Allí el CVD era idénticamente 0 y las ramas que exigen OBI efectivo eran inalcanzables. La actualización pasa al núcleo: una sola fuente para vivo, forense y replay. En el mismo replay, la «frontera de vela» era por DÍA; pasa a minuto. |
+| **D-705** | El reloj de la vela cerrada calibra el ensamble y mueve las EMAs de kline. El calentamiento usa velas de 1 minuto y el forense marca frontera cada minuto, pero el vivo se suscribía `@kline_1h`: 24 muestras diarias por símbolo, con los pesos del ensamble en su valor inicial durante la primera hora de cada arranque. Ahora `@kline_1m`. |
+| **D-696** | El escudo neuronal vetaba con el literal ½ mientras B3.18 pone el mismo juicio, con umbrales del genoma, en el punto único de entrada: dos fuentes de verdad para «la predicción está de acuerdo». Se unifican, con el invariante largo ≥ ½ ≥ corto en `calibration::ml_gate_thresholds`. |
+| **D-715** | Esos mismos dos genes tenían **cuatro** reparaciones divergentes: la puerta, un clamp en la ruta sin libro, una **reflexión** en la rama swing (con `ml_long = 0,30` una exigía 0,50 y otra 0,70) y el daemon Darwin, que los derivaba de `min_confidence` y los escribía en la arena viva 21 veces por generación aunque su genotipo de doce genes no los lleve. |
+| **D-711** | El disparador de breakeven se calculaba dos veces con bandas distintas (0,65 % y 0,55 %), y la rama larga no tenía la guarda que sí tiene la corta: un bloqueo inalcanzable se fijaba igual y la acotación final lo aplastaba a un punto básico bajo el mercado. El largo salía al primer tick adverso mientras su corto espejo conservaba un stop a distancia ATR. |
+| **D-714** | La construcción del arena con pila de 32 MiB estaba replicada a mano en los binarios y **omitida** en dos tests —que desbordaban la pila y abortaban sus suites enteras— y en el daemon Darwin, que construye un arena por candidato dentro de un `par_iter`. Ahora vive en `GlobalArena::build_in_own_stack`. |
+
+### 4. Estimadores que no medían nada
+
+| Código | Defecto |
+|---|---|
+| **D-709** | `OFIModel` saneaba sus entradas pero guardaba el precio CRUDO en el estado previo: un solo evento con `bid_price = NaN` dejaba `prev_bid_price` en NaN **para siempre** y el OFI —dimensión 2 del vector ML— quedaba clavado. Con un cero el defecto se auto-curaba, y por eso no se veía. |
+| **D-712** | El bucket del VPIN sólo crecía: una ráfaga lo fijaba en el máximo de la sesión y el VPIN se aplanaba justo después del evento que debía detectar. Ahora sigue al volumen vivo en ambas direcciones, con el dólar de construcción como piso estricto. |
+| **D-713** | La entropía de Shannon repartía diez bins sobre ±5 % **por evento**: con retornos de 1e-5 a 1e-4 toda la masa caía en un bin y la entropía valía exactamente 0 de forma permanente. Era una constante disfrazada de medida de ruido, y el GBDT no puede partir por una constante. Ahora los bins se dimensionan con la dispersión medida (±z95). |
+| **D-710** | La cola de cierres descartaba en silencio a partir de 1024: cada cierre perdido censura la muestra con la que aprende Kelly. Ahora se cuenta y se informa. |
+| **D-703** | Un test de `execution-engine` desbordaba la pila y abortaba el proceso: **ningún** test del crate llegaba a ejecutarse, de modo que la suite parecía cubrir la ejecución y no cubría nada. |
+
+### 5. Lo que mide el motor sobre datos reales
+
+Datos: `BTCUSDT_2026-06_REAL.bin` (34 057 419 aggTrades de junio de 2026, cabecera TGMTICK1), dos mitades de 17 028 709 ticks; capital 13 USD; taker 0,05 %; worktree sin credenciales. Aptitud unificada `F = ln(final/inicial) − 4·ln2·DD²`.
+
+Todas las corridas usan el forense YA corregido (lado agresor del dato, macro de t−1, piso de spread por tick, modelos cargados como en producción). Aptitud `F = ln(final/inicial) − 4·ln2·DD²`.
+
+| Motor | Ventana | NET ROI | Drawdown | Operaciones | Aciertos | Aptitud |
+|---|---|---|---|---|---|---|
+| `main` 71358566 | entrenamiento | −11,15 % | 12,78 % | 57 | 28 % | −0,1635 |
+| `main` 71358566 | validación | −5,63 % | 7,50 % | 63 | 41 % | −0,0736 |
+| correcciones D-696…D-719 | entrenamiento | −8,56 % | 9,15 % | 73 | 32 % | −0,1127 |
+| correcciones D-696…D-719 | validación | −10,45 % | 13,45 % | 82 | 34 % | −0,1606 |
+| correcciones D-696…D-740 | entrenamiento | −9,44 % | 10,00 % | 81 | 38 % | −0,1269 |
+| correcciones D-696…D-740 | validación | −11,38 % | 14,83 % | 90 | 34 % | −0,1818 |
+
+Aptitud media: **`main` −0,1185**, **D-696…D-719 −0,1366**, **D-696…D-740 −0,1544**.
+
+**Los tres motores pierden en las dos ventanas, y el corregido pierde MÁS en media** (−0,1544 frente a −0,1185). El detalle importa: con las correcciones el motor opera más (57 → 81 y 63 → 90 operaciones) y acierta más en entrenamiento (28 % → 38 %), pero su drawdown crece y la validación empeora. La lectura honesta es que las correcciones **destaparon actividad que antes estaba amortiguada por defectos** —ramas alcistas imposibles, un escudo neuronal que vetaba casi todo, una protección que nunca se armaba— y que, con el genoma actual, más actividad sin ventaja es más fricción pagada.
+
+**Ninguna cifra de esta adenda sostiene una afirmación de rendimiento.** Las correcciones se conservan porque cada una arregla un defecto demostrado —una cancelación que no cancela, un signo invertido, una condición imposible de satisfacer, una entrada sin precio—, no por su resultado. Y porque sin ellas la medición misma no significaba nada: el genoma vigente se seleccionó con el flujo agresor invertido, el macro del día en curso y un reloj de calibración que ticteaba una vez al día.
+
+Corolario sobre D-695 (puerta de habilidad del escudo neuronal): su regla pre-registrada —conservarla sólo si no empeora sobre datos reales— se resolvió en contra (aptitud media −0,1428 con puerta frente a −0,1290 sin ella), pero esa medición se tomó con el CVD clavado en +1. La puerta desaparece de todos modos al unificar el juicio de la predicción en D-696.
+
+### 6. Lo que queda
+
+Confirmado y **sin corregir** (el censo completo, con fichero y línea, vive en la tabla de la sección 7):
+
+- **Riesgo**: la compuerta de EV trata `confidence` como probabilidad de acierto mientras el TP lo fija un gen de RR —el EV modelado crece con el RR y el real decrece—; el escalador D-494 anula el Kelly aprendido en régimen micro; el límite de exposición del orquestador es la constante 0,80 para todo genoma; el cupo de posiciones correlacionadas sale de multiplicar un umbral de correlación por 5; el techo de margen micro supera el 25 % del capital por debajo de 4,80 USD; el régimen de capital se clasifica con una constante mientras la orden usa el mínimo real del símbolo; el cortacircuitos de drawdown ignora su gen en producción.
+- **Ejecución**: 429 y 418 no se procesan en las rutas de algo orders, OCO, cancelación, IOC, iceberg, trailing ni reduce-only; el tope local de 20 operaciones por segundo bloquea también cancelaciones y purgas de protección; el reintento del OCO reenvía la pierna caída sin consultar su estado.
+- **Estado**: la equidad real del exchange nunca llega al capital que dimensiona las posiciones; el kill-switch se pierde en el hot-swap demo→producción; el volcado de emergencia existe y nadie lo instala, con `panic = "abort"` activo.
+- **Modelos**: las tres features Hurst del vector ML vienen del estimador declarado matemáticamente inválido (D-615/D-616); el Hedge del ensamble sólo penaliza al modelo que opinó; el calentamiento de 1000 velas no alimenta las EMAs de kline que gobiernan el escudo macro.
+- **Evolución**: el shadow forest empareja el PnL de una moneda con las features de otra; su «auto-calibración de umbrales óptimos» es un bucle degenerado que siempre devuelve 0,50/0,50; y el espejo legacy del almacén de genomas atraviesa la barrera de entornos que D-651 declaró cerrada. (El daemon vivo que promovía sin comparar contra el genoma en curso queda corregido en D-740.)
+
+**Decisiones del propietario** (ninguna cifra de esta adenda autoriza a operar en demo ni en producción):
+
+1. **Re-evolucionar el genoma** con el evaluador corregido. El actual se seleccionó con el CVD invertido, el macro del futuro y el reloj de calibración a un día: su ventaja medida no existía.
+2. **Reentrenar los modelos** con el mismo corte temporal que ahora usa el forense (macro de t−1) y con el gate de evidencia gobernando el destino (D-720).
+3. Los pendientes de riesgo de la sección 6 cambian decisiones: van en lotes medibles, no en bloque.
