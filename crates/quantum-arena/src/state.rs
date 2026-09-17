@@ -424,6 +424,17 @@ impl GlobalArena {
         self.tick_counter.fetch_add(1, Ordering::Relaxed)
     }
 
+    /// MOD6/8-010 (INFORME DECIMOCUARTO): lector saturado de `used_margin`.
+    /// Con `fetch_sub` atómico, un drift contable (p. ej. doble liberación
+    /// de margen tras reconciliación) puede dejar el átomo levemente
+    /// NEGATIVO. Un lector que viera el negativo inflamaría `free_margin`
+    /// y autorizaría sobre-exposición — todos los lectores de margen
+    /// deben saturar a cero por el camino de la orden.
+    #[inline(always)]
+    pub fn used_margin_saturated(&self) -> f64 {
+        self.used_margin.load(Ordering::Relaxed).max(0.0)
+    }
+
     #[inline(always)]
     pub fn update_market_data(
         &self,

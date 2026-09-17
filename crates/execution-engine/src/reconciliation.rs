@@ -300,10 +300,12 @@ pub fn reconcile_arena(
                 let (was_long, entry_p, qty, m, entry_fee_paid) =
                     coin.positions.position.close_with_fee();
                 if m > 0.0 {
-                    let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
+                    // MOD6/8-010: resta atómica — el RMW load→store perdía
+                    // actualizaciones concurrentes del cierre del core y de
+                    // los rollbacks async del host.
                     arena
                         .used_margin
-                        .store((cur_u - m).max(0.0), std::sync::atomic::Ordering::Relaxed);
+                        .fetch_sub(m, std::sync::atomic::Ordering::Relaxed);
                 }
 
                 if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
@@ -435,11 +437,10 @@ pub fn reconcile_arena(
                 if target_abs <= 1e-6 {
                     let (_, _, _, old_margin, _) = coin.positions.position.close_with_fee();
                     if old_margin > 0.0 {
-                        let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
-                        arena.used_margin.store(
-                            (cur_u - old_margin).max(0.0),
-                            std::sync::atomic::Ordering::Relaxed,
-                        );
+                        // MOD6/8-010: resta atómica (idem phantom cleanup).
+                        arena
+                            .used_margin
+                            .fetch_sub(old_margin, std::sync::atomic::Ordering::Relaxed);
                     }
                 } else {
                     // B3.14 (auditoría/repro demo_v26): el drift confirma que

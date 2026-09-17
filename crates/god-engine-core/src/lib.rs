@@ -295,10 +295,13 @@ impl GodEngineCore {
             let (_is_long, _entry_price, _qty, margin_used, entry_fee) =
                 coin.positions.position.close_with_fee();
             if margin_used > 0.0 {
-                let cur = self.arena.used_margin.load(Ordering::Relaxed);
+                // MOD6/8-010: resta atómica (fetch_sub) — el RMW
+                // load→compute→store perdía actualizaciones concurrentes
+                // de los otros escritores (cierre core, reconciliación,
+                // rollback async del host). El lector satura a 0.
                 self.arena
                     .used_margin
-                    .store((cur - margin_used).max(0.0), Ordering::Relaxed);
+                    .fetch_sub(margin_used, Ordering::Relaxed);
             }
             if entry_fee > 0.0 {
                 self.arena
@@ -307,16 +310,6 @@ impl GodEngineCore {
                 // D-180: No sumar entry_fee a pnl_realized (nunca fue ganancia)
             }
         }
-    }
-
-    /// Rollback local scalp position (alias hacia rollback_position unificado)
-    pub fn rollback_scalp_position(&self, coin_id: usize) {
-        self.rollback_position(coin_id);
-    }
-
-    /// Rollback local swing position (alias hacia rollback_position unificado)
-    pub fn rollback_swing_position(&self, coin_id: usize) {
-        self.rollback_position(coin_id);
     }
 
     /// Construye el tensor unificado de 54 dimensiones para la Red Neuronal Dark Alpha (Swing)
@@ -464,7 +457,10 @@ impl GodEngineCore {
         bid_qty: f64,
         ask_qty: f64,
         depth_obi: f64,
-        depth_micro_div: f64,
+        // MOD2/7-004: era el "funding" falso del camino depth (semántica
+        // cruzada); el funding real viaja en omni_features[11]. Se conserva
+        // el slot para no romper la firma pública del evento unificado.
+        _depth_micro_div: f64,
         event_time_ms: u64,
         latency_panic: bool,
         omni_features: &[f64; 54],
@@ -563,9 +559,21 @@ impl GodEngineCore {
             };
 
             if is_depth {
+                // MOD2/7-004 (INFORME DECIMOCUARTO): funding_rate REAL — el
+                // omni slot 11 (`agg_funding_rate`) lo produce el poller
+                // REST /fapi/v1/premiumIndex (clamp [-1,1], saneado a
+                // finito por OmniState::get_features). Antes este camino
+                // pasaba `depth_micro_div` como "funding" (semántica
+                // cruzada) y el camino por-tick pasaba 0.0 constante:
+                // columna muerta del vector. TODO: el productor es
+                // BTC-only (premiumIndex?symbol=BTCUSDT) — cablear funding
+                // per-símbolo cuando el poller lo publique.
+                // dex_severity: SIN productor en vivo (feed MEV/DEX no
+                // existe) — se documenta el 0.0 en vez de falsificar señal.
+                let funding_rate_live = omni_features[11];
                 self.feature_engines[coin_id].update_macro_features(
                     depth_obi,
-                    depth_micro_div,
+                    funding_rate_live,
                     0.0,
                     event_time_ms,
                 );
@@ -674,10 +682,8 @@ impl GodEngineCore {
             );
             let (_, _, _, margin) = coin.positions.position.close();
             if margin > 0.0 {
-                let cur = self.arena.used_margin.load(Ordering::Relaxed);
-                self.arena
-                    .used_margin
-                    .store((cur - margin).max(0.0), Ordering::Relaxed);
+                // MOD6/8-010: resta atómica — idem rollback_position.
+                self.arena.used_margin.fetch_sub(margin, Ordering::Relaxed);
             }
         }
     }
@@ -778,7 +784,12 @@ impl GodEngineCore {
             } else {
                 0.0
             };
-            feature_engine.update_macro_features(obi, 0.0, 0.0, event_time_ms);
+            // MOD2/7-004 (INFORME DECIMOCUARTO): funding_rate REAL del omni
+            // slot 11 (poller premiumIndex, ver camino is_depth arriba) —
+            // antes 0.0 constante: columna muerta del vector 34D/48D.
+            // TODO: funding per-símbolo (el productor hoy es BTC-only).
+            // dex_severity: sin productor en vivo — 0.0 documentado.
+            feature_engine.update_macro_features(obi, omni_features[11], 0.0, event_time_ms);
             let raw_atr_pct = feature_engine.get_atr_pct();
             let hurst_val = feature_engine.hurst.current();
             let coin = &self.arena.coins[coin_id];
@@ -1234,14 +1245,17 @@ impl GodEngineCore {
                     let net_realized_pnl = gross_pnl - close_fee;
                     let net_trade_pnl = net_realized_pnl - entry_fee_paid;
 
-                    let current_used = self.arena.used_margin.load(Ordering::Relaxed);
-                    if current_used >= margin_used {
-                        self.arena
-                            .used_margin
-                            .fetch_add(-margin_used, Ordering::Relaxed);
-                    } else {
-                        self.arena.used_margin.store(0.0, Ordering::Relaxed);
-                    }
+                    // MOD6/8-010 (INFORME DECIMOCUARTO): resta atómica
+                    // INCONDICIONAL. El viejo `else store(0.0)` borraba el
+                    // margen de TODAS las monedas ante un drift contable de
+                    // UNA (current < margin) → free_margin inflado →
+                    // sobre-exposición autorizada. Si la resta deja el átomo
+                    // levemente negativo (doble liberación), el lector
+                    // (`used_margin_saturated`) lo satura a 0 — nunca
+                    // propaga el negativo al camino de la orden.
+                    self.arena
+                        .used_margin
+                        .fetch_sub(margin_used, Ordering::Relaxed);
 
                     // FASE 23 / F-014 / C-07 (INFORME DECIMOCUARTO): métricas
                     // continuas unificadas — el PnL se escribe SOLO en
@@ -1393,7 +1407,10 @@ impl GodEngineCore {
                     coin.last_close_was_win.store(is_win, Ordering::Relaxed);
                     coin.last_close_reason.store(reason_code, Ordering::Relaxed);
                     coin.last_scalp_close_ts.store(event_time_ms, Ordering::Relaxed);
-                    coin.last_swing_close_ts.store(event_time_ms, Ordering::Relaxed);
+                    // MOD2/7-021 (INFORME DECIMOCUARTO): `last_swing_close_ts`
+                    // se escribía con el MISMO valor que el scalp (timestamps
+                    // gemelos — residuo de la bifurcación swing/scalp). Sin
+                    // lectores en todo el workspace: se deja en 0 para siempre.
 
                     // D-181: closed_order debe reflejar el PnL neto definitivo deduciendo ambas comisiones (entry + close)
                     closed_order = Some((is_long, net_trade_pnl, qty));
@@ -1612,10 +1629,18 @@ impl GodEngineCore {
                 (atr_pct * 0.1).max(0.00001),
             );
 
+            // MOD2/7-005 (INFORME DECIMOCUARTO): key-mismatch — el cierre
+            // escribe `{sym}_hebbian_weight` (ver bloque de cierre arriba)
+            // pero aquí se leía `{sym}_perceptron_hebbian_weight`, clave que
+            // NADIE escribió: la resolución caía SIEMPRE al global y el
+            // aislamiento per-símbolo era inoperante (la racha perdedora de
+            // DOGE reducía la convicción de BTC). Ahora se lee la clave que
+            // el cierre realmente escribe; sin historia propia el símbolo
+            // obtiene el neutro 1.0 — jamás el peso aprendido por otro.
             let hebbian_mult = self
                 .arena
                 .registry
-                .get_scoped_value_or(&sym, "perceptron_hebbian_weight", 1.0)
+                .get_scoped_value_or(&sym, "hebbian_weight", 1.0)
                 .clamp(0.5, 2.0);
 
             // 34D Macro+Micro Features for NanoForest (Indices 0..24 used by trained trees)
@@ -3392,7 +3417,11 @@ impl GodEngineCore {
 
                     if deliberation.approved && ml_gate_ok {
                         let is_long = order.signal == SignalType::Long;
-                        let total_used = self.arena.used_margin.load(Ordering::Relaxed);
+                        // MOD6/8-010: lector saturado — un used_margin
+                        // levemente negativo (drift de doble liberación)
+                        // NO puede inflamar free_cap ni el chequeo de
+                        // colchón.
+                        let total_used = self.arena.used_margin_saturated();
                         let free_cap = (current_cap - total_used).max(0.0);
 
                         let eff_leverage = order.leverage.clamp(1.0, 50.0);

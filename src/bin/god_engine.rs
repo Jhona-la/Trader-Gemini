@@ -698,6 +698,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     telemetry_server::telemetry_log!("🛡️ OS Guardian active: strict resource isolation.");
     telemetry_server::telemetry_log!("========================================================");
 
+    // HOST-012 (INFORME DECIMOCUARTO): run_god_engine.ps1 inyecta
+    // BINANCE_API_KEY="shadow" ANTES de arrancar; dotenvy NO sobreescribe
+    // variables ya presentes en el proceso, así que la clave "shadow"
+    // TIENE PRIORIDAD sobre el .env real. Identidad demo: si se detecta,
+    // telemetría roja — jamás debe llegar a mainnet (para producción:
+    // LAUNCH_PRODUCTION.bat sin ese script).
+    if env::var("BINANCE_API_KEY").unwrap_or_default() == "shadow" {
+        eprintln!("\x1b[31m🔴 [HOST-012][SHADOW-KEY] BINANCE_API_KEY=='shadow' detectada tras dotenvy — CLAVE 'shadow' CON PRIORIDAD SOBRE .env (identidad demo inyectada por run_god_engine.ps1). ESTE ENTORNO NO ES PRODUCCIÓN. NUNCA usar para mainnet: usar LAUNCH_PRODUCTION.bat sin ese script.\x1b[0m");
+        telemetry_server::telemetry_log!(
+            "🔴 [HOST-012][SHADOW-KEY] BINANCE_API_KEY=='shadow' tiene prioridad sobre .env — entorno DEMO inyectado por run_god_engine.ps1. NUNCA usar para mainnet: usar LAUNCH_PRODUCTION.bat sin ese script."
+        );
+    }
+
     telemetry_server::telemetry_log!("\n========================================================");
     let args: Vec<String> = env::args().collect();
     // FASE 28 + F5.2: El calentamiento cuántico es obligatorio. Siempre inicia en
@@ -3153,8 +3166,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // que el sistema APRENDA con skin in the game mínimo.
                             exec_leverage = 1;
                         } else if operable {
+                            // C-08 (INFORME 14): la envolvente bayesiana
+                            // (LCB + shrinkage + guard de ruina) es ahora
+                            // AUTORITATIVA en vivo — paridad C-08 con
+                            // booktick_replay. Antes era un veto binario: el
+                            // sizing real salía del core_leverage clampeado y
+                            // la envolvente sólo lo tapaba con el techo env_lev
+                            // — los tamaños que la evolución midió no eran los
+                            // que producción ejecutaba. Ahora la fracción de
+                            // Kelly bayesiana ESCALA el sizing del core
+                            // (×20·f: f=5% de riesgo por trade lo deja intacto;
+                            // evidencia débil lo contrae) y la envolvente sigue
+                            // siendo el TECHO (min con env_lev). (z, k) son los
+                            // MISMOS del régimen de capital que alimentaron
+                            // max_leverage arriba — una sola cadena de decisión.
+                            let kelly_frac = risk_envelope.risk_fraction(env_z, env_k);
                             let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
-                            exec_leverage = core_leverage.clamp(1, 20).min(cap);
+                            exec_leverage = ((core_leverage as f64 * kelly_frac * 20.0)
+                                .clamp(1.0, 20.0) as u32)
+                                .min(cap);
                         } else {
                             exec_leverage = 0; // SIN ORDEN: la matemática dijo NO
                         }
@@ -3281,13 +3311,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if coin.positions.position.is_open() {
                                     let (_, _, _, margin_used, entry_fee) = coin.positions.position.close_with_fee();
                                     if margin_used > 0.0 {
-                                        // X-027 (REHAB-3): clamp como el core —
-                                        // fetch_add negativo podía dejar margen <0
-                                        // (margen libre inflado ⇒ sobre-exposición).
-                                        let cur = arena.used_margin.load(Ordering::Relaxed);
+                                        // MOD6/8-010 (sustituye X-027): resta
+                                        // atómica fetch_sub — el RMW load→store
+                                        // NO era atómico y perdía liberaciones
+                                        // concurrentes (cierre core, reconciliación).
+                                        // Si queda levemente negativo por drift, el
+                                        // lector satura a 0 (never inflar free_margin).
                                         arena
                                             .used_margin
-                                            .store((cur - margin_used).max(0.0), Ordering::Relaxed);
+                                            .fetch_sub(margin_used, Ordering::Relaxed);
                                     }
                                     if entry_fee > 0.0 {
                                         arena.unified_capital.fetch_add(entry_fee, Ordering::Relaxed);
@@ -3320,7 +3352,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
 
                             // Sincronización Binance Leverage con Core Sizing y protección -2019 (D-382)
-                            let used_margin = arena_clone.used_margin.load(Ordering::Relaxed);
+                            // MOD6/8-010: lector saturado — ver GlobalArena::used_margin_saturated.
+                            let used_margin = arena_clone.used_margin.load(Ordering::Relaxed).max(0.0);
                             let free_margin = (arena_clone.unified_capital.load(Ordering::Relaxed) - used_margin).max(0.0);
                             let required_margin = notional_volume / exec_leverage as f64;
                             let mut effective_leverage = exec_leverage;

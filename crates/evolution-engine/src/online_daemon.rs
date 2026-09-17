@@ -30,6 +30,16 @@ impl Default for QuantumHotSwapState {
 use quantum_arena::GlobalArena;
 use quantum_arena::genome::SuperGenotype;
 
+/// Capital inicial de la simulación walk-forward del daemon (micro-capital
+/// $13 — misma cifra que la simulación previa al fix C-10).
+const WF_INITIAL_CAPITAL: f64 = 13.0;
+
+/// C-10 / MOD3/5-012 (INFORME 14): mínimo estadístico de operaciones en la
+/// ventana OOS del daemon. 3 trades en la partición fuera de muestra es el
+/// mínimo para una señal direccional; por debajo, el genoma es INVIABLE
+/// (D-654), no mediocre — la inacción no puede puntuar mejor que operar.
+const WF_MIN_TRADES: u32 = 3;
+
 /// D-689 (DÉCIMA OLA) — ARMADO EXPLÍCITO DE LA EVOLUCIÓN EN VIVO.
 ///
 /// Los promotores en vivo cambiaban umbrales y genoma con evidencia de minutos:
@@ -461,6 +471,12 @@ impl LiveEvolutionDaemon {
         // E-04 — FRICCIÓN COHERENTE CON EL EV GATE: antes fee fijo
         // 0.0008 mientras el gate real incluye maker+taker+2×slip.
         // Leído ANTES del closure para evitar borrow de self.
+        // C-10 (INFORME 14): el daemon seguía con fricción pre-D-645 —
+        // maker+taker (el roundtrip real de una entrada de mercado es
+        // TAKER×2), ATR literal 0.002 y latencia normalizada contra un
+        // 150ms literal. Ahora replica la fórmula del gate de entrada del
+        // host (god_engine.rs `fee_rt_entry`, B3.19): 2×taker (D-645) +
+        // 2×(slippage_floor + atr_del_gen·latencia_del_gen/umbral_pánico).
         let slip_floor_g = self
             .arena
             .config
@@ -473,22 +489,25 @@ impl LiveEvolutionDaemon {
             .latency_penalty_ms
             .load(Ordering::Relaxed)
             .max(0.0);
-        let atr_g = 0.002_f64;
-        let lat_slip_g = atr_g * (lat_g / 150.0);
-        let maker_g = self
+        let lat_ref_g = self
             .arena
             .config
-            .live_maker_fee
+            .latency_ms_panic_threshold
             .load(Ordering::Relaxed)
-            .max(0.0002);
+            .clamp(10.0, 5_000.0);
+        // ATR del GEN (dynamic_atr_min), no un literal — el genoma decide el
+        // piso de volatilidad con el que se cotiza la fricción.
+        let atr_g = current_genome.dynamic_atr_min.max(0.0005);
+        let lat_slip_g = (atr_g * (lat_g / lat_ref_g)).clamp(0.0, 0.01);
         let taker_g = self
             .arena
             .config
             .live_taker_fee
             .load(Ordering::Relaxed)
             .max(0.0004);
+        // D-645: roundtrip completo a taker — idéntico al EV gate del vivo.
         let roundtrip_fee =
-            (maker_g + taker_g) + 2.0 * (slip_floor_g + lat_slip_g).clamp(0.0, 0.01);
+            (taker_g * 2.0) + 2.0 * (slip_floor_g + lat_slip_g).clamp(0.0, 0.01);
 
         let best_genome = tokio::task::spawn_blocking(move || {
             let mut best = current_genome.clone();
@@ -516,9 +535,28 @@ impl LiveEvolutionDaemon {
                 candidate.swing_kelly_fraction +=
                     (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
 
-                // SL/TP se contraen o expanden según volatilidad/búsqueda RL
-                candidate.scalp_tp_base *= 1.0 + (rng.random::<f64>() - 0.5) * 0.1;
-                candidate.scalp_sl_base *= 1.0 + (rng.random::<f64>() - 0.5) * 0.1;
+                // C-10 (INFORME 14) — MUTAR LAS CURVAS, NO LAS ANCLAS: el
+                // roundtrip to_vector/from_vector re-deriva las anclas desde
+                // los coeficientes (X-004/X-005: `derive_anchors_from_curves`
+                // al final de from_vector) — mutar `scalp_tp_base`/`swing_*`
+                // se AUTODESTRUÍA ahí y la geometría TP/SL JAMÁS evolucionaba
+                // en vivo. Los coeficientes (a,b) de las curvas son la fuente
+                // de verdad (slots 140-143 del vector genético). Una
+                // perturbación aditiva en `a` (param(τ)=exp(a+b·lnτ)) equivale
+                // a la contracción/expansión ±5% multiplicativa que antes se
+                // intentaba sobre las anclas — pero en TODOS los horizontes a
+                // la vez; `enforce_curve_rr` del roundtrip mantiene el
+                // invariante RR y los bounds de (a,b) acotan la mutación.
+                candidate.tp_horizon_curve.a +=
+                    (rng.random::<f64>() - 0.5) * 0.1_f64.ln_1p(); // ≈ ±ln(1.05)
+                candidate.sl_horizon_curve.a +=
+                    (rng.random::<f64>() - 0.5) * 0.1_f64.ln_1p();
+                // La pendiente b — cómo escala TP/SL con el horizonte τ —
+                // también evoluciona (bandas TP_B/SL_B_BOUNDS del genoma).
+                candidate.tp_horizon_curve.b +=
+                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                candidate.sl_horizon_curve.b +=
+                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
 
                 candidate.ml_threshold_long +=
                     (rng.random::<f64>() - 0.5) * (dynamic_mutation_rate * 0.5);
@@ -546,8 +584,8 @@ impl LiveEvolutionDaemon {
                     (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
                 candidate.trend_threshold +=
                     (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.1;
-                candidate.swing_tp_base *= 1.0 + (rng.random::<f64>() - 0.5) * 0.1;
-                candidate.swing_sl_base *= 1.0 + (rng.random::<f64>() - 0.5) * 0.1;
+                // (swing_tp_base/swing_sl_base: ya no se mutan — son VISTAS de
+                // las curvas mutadas arriba; ver C-10 arriba.)
                 candidate.sl_atr_multiplier +=
                     (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.2;
                 candidate.tp_rr_ratio_btc +=
@@ -590,7 +628,12 @@ impl LiveEvolutionDaemon {
                 let mut wf_wins = 0usize;
                 let mut wf_losses = 0usize;
                 let mut wf_pnl = 0.0f64;
-                let mut wf_capital = 13.0; // Starting capital
+                let mut wf_capital = WF_INITIAL_CAPITAL; // Starting capital
+                // C-10: la aptitud única (fitness::compute) exige el drawdown
+                // máximo de la trayectoria — se mide pico-a-valle del capital
+                // walk-forward simulado.
+                let mut wf_peak = WF_INITIAL_CAPITAL;
+                let mut wf_dd = 0.0f64;
 
                 // T-10 — WALK-FORWARD POR MONEDA: cada serie conserva su
                 // propio momentum (el retorno previo de LA MISMA moneda
@@ -661,6 +704,12 @@ impl LiveEvolutionDaemon {
                             net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);
                         wf_capital +=
                             net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);
+                        if wf_capital > wf_peak {
+                            wf_peak = wf_capital;
+                        }
+                        if wf_peak > 0.0 {
+                            wf_dd = wf_dd.max((wf_peak - wf_capital) / wf_peak);
+                        }
                         if net_ret > 0.0 {
                             wf_wins += 1;
                         } else {
@@ -670,20 +719,28 @@ impl LiveEvolutionDaemon {
                 }
 
                 let wf_trades = wf_wins + wf_losses;
-                let wf_wr = if wf_trades > 0 {
-                    wf_wins as f64 / wf_trades as f64
-                } else {
-                    0.0
-                };
 
-                // Fitness = PnL walk-forward * sqrt(trades) * penalización OOS
-                let fitness = if wf_trades >= 2 && wf_pnl > 0.0 {
-                    wf_pnl * (wf_trades as f64).sqrt() * wf_wr
-                } else if wf_pnl < 0.0 {
-                    wf_pnl * 2.0 // Penalizar pérdidas extra
-                } else {
-                    -0.5 // Sin trades = ligeramente negativo
-                };
+                // C-10 (INFORME 14): FUNCIÓN ÚNICA DE APTITUD (D-652/D-653/
+                // D-654/D-655). La fórmula anterior `wf_pnl × sqrt(trades) ×
+                // wf_wr` era de la familia ERRADICADA por D-652: crecía con el
+                // número de operaciones y con el tamaño de la apuesta sin
+                // penalizar drawdown ni ruina. Todo promotor de genomas debe
+                // llamar a `fitness::compute` — crecimiento logarítmico
+                // (utilidad de Kelly) penalizado por drawdown². La simulación
+                // corre SOLO sobre la partición OOS (train_end..n): no hay un
+                // par IS/OOS de capitales separado que reportar, de modo que
+                // oos_start == oos_end (factor 1.0, sin doble penalización).
+                // trades < WF_MIN_TRADES ⇒ INVIABLE (−∞): jamás seleccionado.
+                let fitness = crate::fitness::compute(&crate::fitness::FitnessInputs {
+                    initial_capital: WF_INITIAL_CAPITAL,
+                    final_capital: wf_capital,
+                    max_drawdown_pct: wf_dd,
+                    total_trades: wf_trades as u32,
+                    min_trades_required: WF_MIN_TRADES,
+                    oos_start_capital: wf_capital,
+                    oos_end_capital: wf_capital,
+                });
+                let _ = wf_pnl; // conservado como telemetría futura del ciclo
 
                 if fitness > best_score {
                     best_score = fitness;

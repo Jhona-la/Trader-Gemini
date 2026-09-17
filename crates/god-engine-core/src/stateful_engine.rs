@@ -229,6 +229,16 @@ impl StatefulEngine {
         self.kline_ema_slow = 0.0;
         self.kline_ema_trend = 0.0;
         self.kline_ema_macro = 0.0;
+        // D7 / MOD6/8-004: el bloque espectral publicado también se limpia —
+        // tras un reset (reconexión WS) los buffers del espectro quedaron
+        // vacíos y servir los valores del período anterior es servir historia
+        // congelada. Neutro hasta que 64 retornos nuevos llenen el anillo.
+        self.spectral_bin = 0.0;
+        self.spectral_power = 0.0;
+        self.spectral_centroid = 0.0;
+        self.hurst_micro = 0.5;
+        self.hurst_meso = 0.5;
+        self.hurst_macro = 0.5;
     }
 
     /// Processes a new tick internally in f64
@@ -249,6 +259,16 @@ impl StatefulEngine {
             let diff = (price - self.last_price).abs();
             let norm_return = (price - self.last_price) / self.last_price;
             self.last_entropy = self.entropy.update(norm_return);
+            // D7 / MOD6/8-004 (INFORME DECIMOCUARTO) — ESPECTRO VIVO EN
+            // process_tick: en producción ESTE es el camino que corre
+            // (process_event → process_tick_dual → process_tick);
+            // process_kline sólo alimenta el warmup REST de arranque. El
+            // SpectralCycleEngine acumula AQUÍ el RETORNO de cada tick y el
+            // FFT Radix-2 se re-analiza cada 64 retornos (contador
+            // tick_count); el multifractal se actualiza con el PRECIO de
+            // cada tick. Las 6 features espectrales [0..6] del vector ML
+            // (bin/potencia/centroide FFT + Hurst micro/meso/macro) viven
+            // por esta vía — no dependen de klines cerrados.
             self.spectral.push(norm_return);
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
             if self.tick_count % 64 == 0 {
@@ -803,6 +823,78 @@ mod tests {
             f[6].abs() + f[7].abs() + f[8].abs() + f[9].abs() > 1e-3,
             "momentum multiescala muerto: {:?}",
             f
+        );
+    }
+
+    /// D7 / MOD6/8-004 (INFORME DECIMOCUARTO): el espectro debe seguir VIVO
+    /// tras el arranque con SOLO ticks — en vivo `process_kline` corre
+    /// únicamente en el warmup REST inicial; todo lo demás es process_tick.
+    /// Warmup con klines → tramo de ticks con ciclo rápido → las features
+    /// espectrales deben REPUBLICARSE (moverse de sus valores post-warmup),
+    /// y un cambio de régimen del ciclo bajo ticks debe volver a moverlas.
+    #[test]
+    fn d7_espectro_vivo_tras_warmup_solo_con_ticks() {
+        let mut engine = StatefulEngine::new();
+        // Warmup REST de arranque: 120 klines de 1m con ciclo lento (~51 velas).
+        let mut ts: u64 = 1_789_000_000_000;
+        for i in 0..120u64 {
+            let o = 100.0 + ((i % 51) as f64).sin() * 3.0;
+            let c = 100.0 + (((i + 1) % 51) as f64).sin() * 3.0;
+            let h = o.max(c) + 0.4;
+            let l = o.min(c) - 0.4;
+            engine.process_kline(o, h, l, c, 50.0);
+        }
+        let post_warmup = engine.get_spectral_ml_features();
+
+        // VIVO: SOLO process_tick. Ciclo rápido de 8 ticks (~2 ventanas de
+        // FFT completas: 128 retornos nuevos).
+        for i in 0..128 {
+            let phase = (i as f64) * (std::f64::consts::TAU / 8.0);
+            let price = 100.0 + phase.sin() * 2.0;
+            engine.process_tick(price, 1.0, ts);
+            ts += 100;
+        }
+        let post_live = engine.get_spectral_ml_features();
+
+        // El bloque FFT [0..3] debe haberse republicado con el ciclo nuevo.
+        let fft_changed = (0..3).any(|i| {
+            (post_warmup[i] - post_live[i]).abs() > 1e-6
+        });
+        assert!(
+            fft_changed,
+            "FFT congelado post-arranque: {:?} vs {:?}",
+            &post_warmup[0..3],
+            &post_live[0..3]
+        );
+        // El bloque multifractal [3..6] debe estar en rango y vivir (alguna
+        // escala movida respecto al warmup por tick, no por kline).
+        let hurst_changed = (3..6).any(|i| {
+            (post_warmup[i] - post_live[i]).abs() > 1e-6
+        });
+        assert!(
+            hurst_changed,
+            "Hurst multifractal congelado post-arranque: {:?} vs {:?}",
+            &post_warmup[3..6],
+            &post_live[3..6]
+        );
+
+        // Cambio de régimen EN VIVO (solo ticks): ciclo lento de 64 ticks —
+        // el FFT debe volver a moverse, probando republicación continua.
+        for i in 0..128 {
+            let phase = (i as f64) * (std::f64::consts::TAU / 48.0);
+            let price = 100.0 + phase.sin() * 2.0;
+            engine.process_tick(price, 1.0, ts);
+            ts += 100;
+        }
+        let post_regime = engine.get_spectral_ml_features();
+        let fft_changed_again = (0..3).any(|i| {
+            (post_live[i] - post_regime[i]).abs() > 1e-6
+        });
+        assert!(
+            fft_changed_again,
+            "FFT no se republica ante cambio de régimen: {:?} vs {:?}",
+            &post_live[0..3],
+            &post_regime[0..3]
         );
     }
 

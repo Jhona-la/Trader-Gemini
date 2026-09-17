@@ -225,14 +225,6 @@ impl TensorVoteOrchestrator {
         }
     }
 
-    pub fn evaluate_scalp_consensus(&self) -> TensorDecision {
-        self.evaluate_continuous_consensus()
-    }
-
-    pub fn evaluate_swing_consensus(&self) -> TensorDecision {
-        self.evaluate_continuous_consensus()
-    }
-
     /// D-117: Consenso de Scalp escopado por activo real
     pub fn evaluate_scalp_consensus_for_coin(
         &self,

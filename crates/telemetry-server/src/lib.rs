@@ -285,6 +285,13 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
     // veneno silencioso se vuelve contador visible.
     let cap_anchor = arena.unified_capital.load(Ordering::Relaxed).max(1.0);
     let mark_bound = cap_anchor * 2.0;
+    // MOD6/8-019 (INFORME DECIMOCUARTO): el WRITER (god-engine-core, guard
+    // B3.13) clampa el unrealized a ±mark_bound y LO ALMACENA. Excluir en el
+    // reader solo si > bound (estricto) dejaba pasar EXACTAMENTE el valor
+    // clamped (== bound): $4.4K fantasma agregado con `marking_anomalies: 0`.
+    // Con margen del 1% (>= bound*0.99), todo valor que el writer clamped
+    // (o que esté a un paso de clamp) también se excluye y se cuenta.
+    let mark_bound_exclude = mark_bound * 0.99;
     let mut marking_anomalies: u32 = 0;
 
     for coin in arena.coins.iter() {
@@ -329,15 +336,26 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
             wr_scalp
         };
 
-        pnl_realized_scalp += eff_sc_realized;
+        // MOD6/8-019: el sanitizer era CIEGO a pnl_realized envenenado — un
+        // realized que excede 10× el capital es contabilidad rota (doble
+        // contabilización, glitch de rotación), no edge: se cuenta como
+        // anomalía y NO se agrega.
+        if eff_sc_realized.abs() > mark_bound * 10.0 {
+            marking_anomalies += 1;
+            pnl_realized_scalp += 0.0;
+        } else {
+            pnl_realized_scalp += eff_sc_realized;
+        }
         pnl_gross_scalp += eff_sc_gross;
         // B3.13: excluir marcado imposible del agregado y contarlo.
-        if eff_sc_unrealized.abs() > mark_bound {
+        // MOD6/8-019: `>= bound*0.99` (no `> bound`) para cerrar el hueco del
+        // pase-exacto del valor clamped por el writer.
+        if eff_sc_unrealized.abs() >= mark_bound_exclude {
             marking_anomalies += 1;
         } else {
             pnl_unrealized_scalp += eff_sc_unrealized;
         }
-        if sw_unrealized.abs() > mark_bound {
+        if sw_unrealized.abs() >= mark_bound_exclude {
             marking_anomalies += 1;
         } else {
             pnl_unrealized_swing += sw_unrealized;
