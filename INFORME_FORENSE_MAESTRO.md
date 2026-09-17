@@ -6193,6 +6193,23 @@ Confirmado y **sin corregir** (el censo completo, con fichero y línea, vive en 
 - **Modelos**: las tres features Hurst del vector ML vienen del estimador declarado matemáticamente inválido (D-615/D-616); el Hedge del ensamble sólo penaliza al modelo que opinó; el calentamiento de 1000 velas no alimenta las EMAs de kline que gobiernan el escudo macro.
 - **Evolución**: el shadow forest empareja el PnL de una moneda con las features de otra; su «auto-calibración de umbrales óptimos» es un bucle degenerado que siempre devuelve 0,50/0,50; y el espejo legacy del almacén de genomas atraviesa la barrera de entornos que D-651 declaró cerrada. (El daemon vivo que promovía sin comparar contra el genoma en curso queda corregido en D-740.)
 
+
+### 7. Re-evolución con el evaluador corregido (2026-09-17)
+
+Primera re-evolución del genoma con el forense ya honesto: tres generaciones de ocho candidatos sobre ticks REALES de junio de 2026 —corte de 8 500 000 ticks, entrenamiento `[0; 5 100 000)` y validación `[5 100 000; 8 500 000)`—, semilla el genoma de producción, mínimo muestral de 15 operaciones (regla X-014) y **sin promoción** (`WF_PROMOTE=0`).
+
+| Genoma | Entrenamiento | Validación | Aptitud combinada |
+|---|---|---|---|
+| semilla (producción) | −1,13 % · 14 ops · 42,9 % | −0,66 % · 18 ops · 50,0 % | **inviable** (14 < 15 ops) |
+| finalista 0 | **+2,81 %** · 15 ops · 60,0 % · DD 0,91 % | **−3,00 %** · 17 ops · 35,3 % | +0,0267 |
+| finalista 1 | +1,37 % · 19 ops · 52,6 % | −2,74 % · 15 ops · 40,0 % | +0,0128 |
+| finalista 2 | −0,69 % · 23 ops · 39,1 % | −4,25 % · 20 ops · 30,0 % | −0,0092 |
+| finalista 3 | −1,29 % · 18 ops · 44,4 % | −3,35 % · 16 ops · 37,5 % | −0,0148 |
+
+**Ningún finalista supera la puerta fuera de muestra y el almacén de genomas no cambió.** La firma es la del sobreajuste, no la de una ventaja: el candidato que mejor entrena (+2,81 % con un 60 % de acierto) es el que peor valida (−3,00 % con un 35 %), y el acierto de cada finalista cae entre 12 y 20 puntos al cruzar la frontera. La semilla de producción ni siquiera alcanza el mínimo muestral en entrenamiento.
+
+Lo que esto cierra: la sospecha de que la ventaja del genoma vigente era un artefacto del evaluador queda confirmada por ausencia — con el evaluador corregido no aparece ventaja ALGUNA, ni en el genoma vigente ni en cuarenta candidatos mutados a su alrededor. **El problema no está en los genes**: buscar más fuerte en el mismo espacio no lo resuelve.
+
 **Decisiones del propietario** (ninguna cifra de esta adenda autoriza a operar en demo ni en producción):
 
 1. **Re-evolucionar el genoma** con el evaluador corregido. El actual se seleccionó con el CVD invertido, el macro del futuro y el reloj de calibración a un día: su ventaja medida no existía.
