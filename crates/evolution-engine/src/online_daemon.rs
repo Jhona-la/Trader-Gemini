@@ -503,9 +503,21 @@ impl LiveEvolutionDaemon {
             let mut rng = rand::rng();
             // FIX BLOQUEO #2: Reducir de 10,000 a 2,000 candidatos para micro-capital
             // Con CPU limitada (16GB RAM, no GPU), 2K iteraciones son suficientes.
-            for _i in 0..2_000 {
+            // D-740 (DÉCIMA OLA · auditoría integral): EL INCUMBENTE COMPITE.
+            //
+            // `best_score` arrancaba en −999 y la aptitud de cualquier candidato
+            // es finita, así que el PRIMER mutante superaba siempre el arranque:
+            // el genoma en curso —cuya aptitud no se evaluaba nunca— era
+            // sustituido incondicionalmente, aunque los 2 000 mutantes fueran
+            // peores que él. Se promovía «el menos malo» y se instalaba en el
+            // motor vivo. Ahora la iteración 0 evalúa el genoma ACTIVO con la
+            // misma simulación walk-forward, de modo que su aptitud es la cota
+            // que un mutante debe superar para reemplazarlo.
+            for _i in 0..=2_000 {
+                let es_incumbente = _i == 0;
                 let mut candidate = current_genome.clone();
                 use rand::RngExt;
+                if !es_incumbente {
 
                 // Mutación Vectorial de Tensores (DL/RL Vivo)
                 // FASE 9: Ajuste Adaptativo por Régimen de Mercado (Drift Recovery)
@@ -572,6 +584,7 @@ impl LiveEvolutionDaemon {
                     candidate.quantum_entropy_seed = rng.random::<f64>() * 1000.0;
                 }
 
+                }
                 // Clamping automático delegando a la estructura cuántica central (SuperGenotype)
                 let vec = candidate.to_vector();
                 candidate = SuperGenotype::from_vector(&vec);
@@ -685,7 +698,9 @@ impl LiveEvolutionDaemon {
                     -0.5 // Sin trades = ligeramente negativo
                 };
 
-                if fitness > best_score {
+                // D-740: la iteración 0 fija la cota (el incumbente); a partir de
+                // ahí sólo se adopta un mutante que la SUPERE.
+                if es_incumbente || fitness > best_score {
                     best_score = fitness;
                     best = candidate;
                 }
