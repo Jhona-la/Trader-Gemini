@@ -3299,7 +3299,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // como cota superior conservadora; el gate y los
                         // pisos de viabilidad NO se relajan.
                         let force_maker = true;
-                        let maker_price = current_price;
+                        // B3.28 — PRECIO PASIVO AL LIBRO VIVO, no al mid
+                        // congelado. Con maker_price = mid del tick
+                        // desencadenante, el post-only a 400ms después o
+                        // cruza (→taker con RTT extra) o queda lejos del
+                        // libro movido (0% pasivo medido en 38 entradas).
+                        // Pasivo al BID (para long) o ASK (para short): si
+                        // el libro no se movió, descansa en top of book y
+                        // llena con el próximo agresor opuesto.
+                        let maker_price = if dbp > 0.0 && dap > 0.0 && dbp <= dap {
+                            if final_is_long { dbp } else { dap }
+                        } else {
+                            current_price
+                        };
                         let iceberg_threshold = engine_real.arena.config.iceberg_volume_threshold.load(Ordering::Relaxed);
                         let iceberg_slices = engine_real.arena.config.iceberg_slice_count.load(Ordering::Relaxed).max(2.0);
                         let notional_volume = final_qty.abs() * current_price;
