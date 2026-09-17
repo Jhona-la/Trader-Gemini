@@ -76,19 +76,22 @@ mod tests {
 
     #[test]
     fn test_state_validator_parity_nominal() {
-        let arena = GlobalArena::new(13.0);
+        // D-714: pila suficiente para construir el arena.
+        let arena = GlobalArena::build_in_own_stack(13.0);
         StateValidator::validate_parity(&arena, 13.0);
     }
 
     #[test]
     fn test_state_validator_nan_immunity() {
-        let arena = GlobalArena::new(13.0);
+        // D-714: pila suficiente para construir el arena.
+        let arena = GlobalArena::build_in_own_stack(13.0);
         StateValidator::validate_parity(&arena, f64::NAN);
     }
 
     #[test]
     fn test_state_validator_with_realized_pnl_and_divergence() {
-        let arena = GlobalArena::new(13.0);
+        // D-714: pila suficiente para construir el arena.
+        let arena = GlobalArena::build_in_own_stack(13.0);
         // Simulate realized profits in coin 0 (BTC)
         arena.coins[0]
             .scalp

@@ -37,7 +37,7 @@ impl ShadowForest {
         let mut genomes = Vec::with_capacity(num_trees);
 
         for i in 0..num_trees {
-            let arena = Arc::new(GlobalArena::new(initial_capital));
+            let arena = GlobalArena::build_in_own_stack(initial_capital);
 
             // FASE 7: Lock parallel universe memory (Zero Swapping)
             unsafe {
@@ -271,7 +271,7 @@ mod tests {
     fn test_shadow_forest_replant_and_broadcast_tick() {
         let base_genome = SuperGenotype::default();
         let mut forest = ShadowForest::new(13.0, base_genome.clone(), 2);
-        let main_arena = Arc::new(GlobalArena::new(13.0));
+        let main_arena = GlobalArena::build_in_own_stack(13.0);
 
         forest.broadcast_tick(
             0,

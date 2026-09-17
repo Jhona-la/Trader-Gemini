@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_binance_streamer_initialization() {
-        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let streamer = BinanceStreamer::new(0, "BTCUSDT", arena.clone(), true);
 
         assert_eq!(streamer.coin_id, 0);
@@ -493,7 +493,7 @@ mod tests {
 
     #[test]
     fn test_binance_streamer_mainnet_symbol_normalization() {
-        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let streamer = BinanceStreamer::new(5, "SolUsdt", arena.clone(), false);
 
         assert_eq!(streamer.coin_id, 5);
