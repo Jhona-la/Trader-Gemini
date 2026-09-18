@@ -70,10 +70,9 @@ impl MmapTelemetry {
         let mut total_trades = 0;
 
         for coin in self.arena.coins.iter() {
-            let m_pnl = coin.metrics.pnl_realized.load(Ordering::Relaxed);
-            let leg_pnl = coin.scalp.pnl_realized.load(Ordering::Relaxed)
-                + coin.swing.pnl_realized.load(Ordering::Relaxed);
-            pnl_realized += if m_pnl.abs() > 0.0 { m_pnl } else { leg_pnl };
+            // U-1 (MOTOR UNIVERSAL): métrica ÚNICA — los slots leg
+            // scalp/swing (zombis desde F-014) extirpados del CoinArena.
+            pnl_realized += coin.metrics.pnl_realized.load(Ordering::Relaxed);
 
             ml_prob_sum += coin.ml_prob.load(Ordering::Relaxed);
             hurst_sum += coin.hurst_exponent.load(Ordering::Relaxed);
@@ -85,20 +84,6 @@ impl MmapTelemetry {
             if m_trades > 0 && m_wr.is_finite() {
                 wr_weighted_sum += m_wr * (m_trades as f64);
                 total_trades += m_trades;
-            } else {
-                let sc_trades = coin.scalp.trade_count.load(Ordering::Relaxed);
-                let sw_trades = coin.swing.trade_count.load(Ordering::Relaxed);
-                let sc_wr = coin.scalp.win_rate.load(Ordering::Relaxed);
-                let sw_wr = coin.swing.win_rate.load(Ordering::Relaxed);
-
-                if sc_trades > 0 && sc_wr.is_finite() {
-                    wr_weighted_sum += sc_wr * (sc_trades as f64);
-                    total_trades += sc_trades;
-                }
-                if sw_trades > 0 && sw_wr.is_finite() {
-                    wr_weighted_sum += sw_wr * (sw_trades as f64);
-                    total_trades += sw_trades;
-                }
             }
         }
 
@@ -209,13 +194,13 @@ mod tests {
 
         let arena = Arc::new(GlobalArena::new(13.0));
         arena.unified_capital.store(26.0, Ordering::Relaxed);
+        // U-1: métrica unificada del motor continuo (los slots gemelos
+        // scalp/swing ya no existen).
         arena.coins[0]
-            .scalp
+            .metrics
             .trade_count
-            .store(10, Ordering::Relaxed);
-        arena.coins[0].scalp.win_rate.store(0.80, Ordering::Relaxed);
-        arena.coins[0].swing.trade_count.store(5, Ordering::Relaxed);
-        arena.coins[0].swing.win_rate.store(0.60, Ordering::Relaxed);
+            .store(15, Ordering::Relaxed);
+        arena.coins[0].metrics.win_rate.store(11.0 / 15.0, Ordering::Relaxed);
 
         let mut telemetry = MmapTelemetry::new(arena, &path_str).unwrap();
         telemetry.snapshot_to_ram();
@@ -228,7 +213,7 @@ mod tests {
         assert_eq!(snap.unified_capital, 26.0);
         // ROI = ((26 - 13) / 13) * 100 = 100%
         assert!((snap.global_roi - 100.0).abs() < 1e-4);
-        // Weighted WR: (0.80 * 10 + 0.60 * 5) / 15 = (8.0 + 3.0) / 15 = 11.0 / 15 = 0.733333
+        // WR ponderado sobre la métrica unificada: 11/15 ≈ 0.7333
         assert!((snap.win_rate - (11.0 / 15.0)).abs() < 1e-4);
 
         drop(telemetry);

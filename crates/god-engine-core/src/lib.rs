@@ -1219,8 +1219,9 @@ impl GodEngineCore {
                     } else if is_zombie {
                         // B3.19 — writer de zombie_promotions (auditoría: el
                         // contador existía y /api/state lo leía, pero NADIE
-                        // lo escribía — zombie_count siempre 0).
-                        coin.scalp
+                        // lo escribía — zombie_count siempre 0). U-1: métrica
+                        // unificada (el slot gemelo scalp ya no existe).
+                        coin.metrics
                             .zombie_promotions
                             .fetch_add(1, Ordering::Relaxed);
                         (5u8, "ZOMBIE")

@@ -51,40 +51,9 @@ impl ScalpState {
     }
 }
 
-#[repr(C, align(64))]
-pub struct SwingState {
-    pub pnl_realized: AtomicF64,
-    pub pnl_unrealized: AtomicF64,
-    pub pnl_gross: AtomicF64,
-    pub gross_wins: AtomicF64,
-    pub gross_losses: AtomicF64,
-    pub active_positions: AtomicUsize,
-    pub win_rate: AtomicF64,
-    pub profit_factor: AtomicF64,
-    pub kelly_fraction: AtomicF64,
-    pub roi_pre_fee: AtomicF64,
-    pub roi_post_fee: AtomicF64,
-    pub trade_count: AtomicUsize,
-}
-
-impl SwingState {
-    pub fn new(w_base: f64) -> Self {
-        Self {
-            pnl_realized: AtomicF64::new(0.0),
-            pnl_unrealized: AtomicF64::new(0.0),
-            pnl_gross: AtomicF64::new(0.0),
-            gross_wins: AtomicF64::new(0.0),
-            gross_losses: AtomicF64::new(0.0),
-            active_positions: AtomicUsize::new(0),
-            win_rate: AtomicF64::new(w_base),
-            profit_factor: AtomicF64::new(1.50), // Prior Bayesiano Swing
-            kelly_fraction: AtomicF64::new(0.25), // Prior Bayesiano (Quarter-Kelly)
-            roi_pre_fee: AtomicF64::new(0.0),
-            roi_post_fee: AtomicF64::new(0.0),
-            trade_count: AtomicUsize::new(0),
-        }
-    }
-}
+/// U-1 (MOTOR UNIVERSAL): `SwingState` EXTIRPADO — gemelo de `ScalpState`
+/// cuyo único slot vivía en el campo zombi `coin.swing` (sin escritores
+/// desde F-014). La métrica del motor continuo es `coin.metrics`.
 
 /// Pre-allocated ring buffer size. Power of 2 for branchless modulo via bitmask.
 pub const TICK_RING_SIZE: usize = 32768; // 2^15 = 32K ticks (~1MB per coin)
@@ -215,9 +184,12 @@ impl Default for LockFreeTickRing {
 /// Estado aislado por moneda
 #[repr(C, align(64))]
 pub struct CoinArena {
+    /// U-1 (MOTOR UNIVERSAL): métrica ÚNICA por moneda. Los slots gemelos
+    /// `scalp`/`swing` eran ZOMBIES desde F-014 (sin escritores) mientras
+    /// 52 lectores (dashboards, shadow_certifier, mmap) seguían sumando
+    /// contadores muertos — win rates y PnL mostrados estructuralmente en
+    /// cero. Extirpados: el compilador es el inventario.
     pub metrics: ScalpState,
-    pub scalp: ScalpState,
-    pub swing: SwingState,
     pub positions: crate::position::PositionManager,
     pub current_price: AtomicF64,
     pub ml_prob: AtomicF64,
@@ -310,8 +282,6 @@ impl CoinArena {
     pub fn new(w_base: f64) -> Self {
         Self {
             metrics: ScalpState::new(w_base),
-            scalp: ScalpState::new(w_base),
-            swing: SwingState::new(w_base),
             positions: crate::position::PositionManager::default(),
             current_price: AtomicF64::new(0.0),
             ml_prob: AtomicF64::new(w_base),

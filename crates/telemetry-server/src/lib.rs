@@ -214,10 +214,14 @@ async fn get_tensor(
             coin.spot_ask_qty.load(Ordering::Relaxed) as f32,
             coin.agg_buy_vol.load(Ordering::Relaxed) as f32,
             coin.agg_sell_vol.load(Ordering::Relaxed) as f32,
-            coin.scalp.win_rate.load(Ordering::Relaxed) as f32,
-            coin.scalp.pnl_realized.load(Ordering::Relaxed) as f32,
-            coin.swing.win_rate.load(Ordering::Relaxed) as f32,
-            coin.swing.pnl_realized.load(Ordering::Relaxed) as f32,
+            // U-1 (MOTOR UNIVERSAL): el tensor sirve la métrica ÚNICA del
+            // motor continuo. Las posiciones 16-17 preservan el valor; las
+            // 18-19 (antes slots swing zombis) sirven 0 — formato de wire
+            // estable para los dashboards legacy.
+            coin.metrics.win_rate.load(Ordering::Relaxed) as f32,
+            coin.metrics.pnl_realized.load(Ordering::Relaxed) as f32,
+            0.0f32,
+            0.0f32,
         ]
     } else {
         vec![]
@@ -295,46 +299,24 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
     let mut marking_anomalies: u32 = 0;
 
     for coin in arena.coins.iter() {
+        // U-1 (MOTOR UNIVERSAL): métrica ÚNICA. Los slots zombis coin.scalp/
+        // coin.swing quedaron extirpados del CoinArena: este agregado leía
+        // contadores MUERTOS desde F-014 y los dashboards mostraban ceros
+        // estructurales. Los acumuladores *_swing del wire se conservan a 0
+        // (formato estable) — todo el PnL/WR vive en los campos unificados.
         let m_realized = coin.metrics.pnl_realized.load(Ordering::Relaxed);
         let m_gross = coin.metrics.pnl_gross.load(Ordering::Relaxed);
         let m_unrealized = coin.metrics.pnl_unrealized.load(Ordering::Relaxed);
         let m_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
 
-        let sc_realized = coin.scalp.pnl_realized.load(Ordering::Relaxed);
-        let sw_realized = coin.swing.pnl_realized.load(Ordering::Relaxed);
-        let sc_gross = coin.scalp.pnl_gross.load(Ordering::Relaxed);
-        let sw_gross = coin.swing.pnl_gross.load(Ordering::Relaxed);
-        let sc_unrealized = coin.scalp.pnl_unrealized.load(Ordering::Relaxed);
-        let sw_unrealized = coin.swing.pnl_unrealized.load(Ordering::Relaxed);
-        let wr_scalp = coin.scalp.win_rate.load(Ordering::Relaxed);
-        let wr_swing = coin.swing.win_rate.load(Ordering::Relaxed);
-
         let ml = coin.ml_prob.load(Ordering::Relaxed); // Phase 22: ml_prob
         let hurst = coin.hurst_exponent.load(Ordering::Relaxed);
-        let zombies = coin.scalp.zombie_promotions.load(Ordering::Relaxed)
-            + coin.metrics.zombie_promotions.load(Ordering::Relaxed);
+        let zombies = coin.metrics.zombie_promotions.load(Ordering::Relaxed);
 
-        // D-441: Unificar telemetría con coin.metrics
-        let eff_sc_realized = if m_realized.abs() > 0.0 && sc_realized == 0.0 {
-            m_realized
-        } else {
-            sc_realized
-        };
-        let eff_sc_gross = if m_gross.abs() > 0.0 && sc_gross == 0.0 {
-            m_gross
-        } else {
-            sc_gross
-        };
-        let eff_sc_unrealized = if m_unrealized.abs() > 0.0 && sc_unrealized == 0.0 {
-            m_unrealized
-        } else {
-            sc_unrealized
-        };
-        let eff_wr_scalp = if m_wr > 0.0 && wr_scalp == 0.0 {
-            m_wr
-        } else {
-            wr_scalp
-        };
+        let eff_sc_realized = m_realized;
+        let eff_sc_gross = m_gross;
+        let eff_sc_unrealized = m_unrealized;
+        let eff_wr_scalp = m_wr;
 
         // MOD6/8-019: el sanitizer era CIEGO a pnl_realized envenenado — un
         // realized que excede 10× el capital es contabilidad rota (doble
@@ -355,13 +337,9 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
         } else {
             pnl_unrealized_scalp += eff_sc_unrealized;
         }
-        if sw_unrealized.abs() >= mark_bound_exclude {
-            marking_anomalies += 1;
-        } else {
-            pnl_unrealized_swing += sw_unrealized;
-        }
-        pnl_realized_swing += sw_realized;
-        pnl_gross_swing += sw_gross;
+        // U-1: sin slots swing — los acumuladores del wire quedan en 0.
+        pnl_realized_swing += 0.0;
+        pnl_gross_swing += 0.0;
         total_zombies += zombies;
 
         ml_prob_sum += ml;
@@ -369,18 +347,10 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
 
         if eff_sc_realized != 0.0
             || eff_sc_unrealized != 0.0
-            || coin.scalp.active_positions.load(Ordering::Relaxed) > 0
             || coin.metrics.active_positions.load(Ordering::Relaxed) > 0
         {
             win_rate_scalp_sum += eff_wr_scalp;
             active_scalp_coins += 1.0;
-        }
-        if sw_realized != 0.0
-            || sw_unrealized != 0.0
-            || coin.swing.active_positions.load(Ordering::Relaxed) > 0
-        {
-            win_rate_swing_sum += wr_swing;
-            active_swing_coins += 1.0;
         }
         active_coins += 1.0;
     }
@@ -466,13 +436,15 @@ async fn get_coins(State(arena): State<Arc<GlobalArena>>) -> Json<Vec<CoinState>
         coins_data.push(CoinState {
             id: i,
             symbol: symbol_name,
-            scalp_pnl: coin.scalp.pnl_realized.load(Ordering::Relaxed),
-            swing_pnl: coin.swing.pnl_realized.load(Ordering::Relaxed),
-            win_rate: coin.scalp.win_rate.load(Ordering::Relaxed),
+            // U-1: métrica unificada del motor continuo; swing_pnl/active_swing
+            // se conservan en el wire (dashboards legacy) servidos a 0.
+            scalp_pnl: coin.metrics.pnl_realized.load(Ordering::Relaxed),
+            swing_pnl: 0.0,
+            win_rate: coin.metrics.win_rate.load(Ordering::Relaxed),
             ml_prob: coin.ml_prob.load(Ordering::Relaxed),
             hurst: coin.hurst_exponent.load(Ordering::Relaxed),
-            active_scalp: coin.scalp.active_positions.load(Ordering::Relaxed) > 0,
-            active_swing: coin.swing.active_positions.load(Ordering::Relaxed) > 0,
+            active_scalp: coin.metrics.active_positions.load(Ordering::Relaxed) > 0,
+            active_swing: false,
         });
     }
     Json(coins_data)

@@ -23,5 +23,5 @@ pub mod zero_copy_stream;
 pub use atomic_float::AtomicF64;
 pub use config::QuantumConfig;
 pub use position::{Position, PositionManager};
-pub use state::{GlobalArena, ScalpState, SwingState};
+pub use state::{GlobalArena, ScalpState};
 pub use tick_source::{TickEvent, TickSource};

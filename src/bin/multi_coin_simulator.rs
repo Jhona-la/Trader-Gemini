@@ -512,8 +512,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let mut total_pnl_realized = 0.0;
             for c in arena.coins.iter() {
-                let realized = c.scalp.pnl_realized.load(Ordering::Relaxed) + c.swing.pnl_realized.load(Ordering::Relaxed);
-                total_pnl_realized += realized;
+                // U-1: métrica unificada del motor continuo.
+                total_pnl_realized += c.metrics.pnl_realized.load(Ordering::Relaxed);
             }
 
             let final_capital = arena.unified_capital.load(Ordering::Relaxed);
