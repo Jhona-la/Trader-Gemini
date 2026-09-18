@@ -23,6 +23,7 @@ fn test_quantum_organism_components() {
         causal_veto_threshold: 0.80,
         current_drawdown_pct: 0.02,
         estimated_slippage_bps: 0.001,
+        dominant_tau_ms: 1_138_000.0,
     };
     let result = consejo.deliberar(&healthy_payload, 0.65);
     assert!(

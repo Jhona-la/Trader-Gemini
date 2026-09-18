@@ -67,9 +67,29 @@ pub struct MarketSnapshotPayload {
     pub causal_veto_threshold: f64,
     pub current_drawdown_pct: f64,
     pub estimated_slippage_bps: f64,
+    /// U-4 (MOTOR UNIVERSAL CONTINUO): τ dominante del espectro (ms) del
+    /// símbolo bajo deliberación. Los asientos que arbitraban por horizonte
+    /// (Riesgo: caps de DD 0.95/0.90/0.85; Ejecución: slippage 35/65/100
+    /// bps) ahora interpolan LOG-LINEALMENTE en τ sobre la banda operativa
+    /// [30 s, 12 h] — misma semántica, sin saltos, sin etiquetas.
+    pub dominant_tau_ms: f64,
 }
 
 impl MarketSnapshotPayload {
+    /// U-4 — posición espectral s∈[0,1] de τ en la banda operativa
+    /// (log-lineal): 0 = banda rápida (30 s), 1 = banda lenta (12 h).
+    /// τ fuera de banda se clampa a los extremos.
+    pub fn spectral_s(&self) -> f64 {
+        const TAU_FAST: f64 = 30_000.0;
+        const TAU_SLOW: f64 = 43_200_000.0;
+        let tau = if self.dominant_tau_ms.is_finite() && self.dominant_tau_ms > 0.0 {
+            self.dominant_tau_ms
+        } else {
+            (TAU_FAST * TAU_SLOW).sqrt()
+        };
+        ((tau / TAU_FAST).ln() / (TAU_SLOW / TAU_FAST).ln()).clamp(0.0, 1.0)
+    }
+
     /// Validates data integrity: fails explicitly on NaN, Inf, or out-of-bound anomalies
     pub fn validate(&self) -> Result<(), String> {
         let metrics = [
@@ -295,8 +315,10 @@ impl SeniorAgent for SeniorCausal {
         // D-112: El umbral causal protege contra toxicidad extrema (>0.85) sin asfixiar
         // los breakouts institucionales legítimos (VPIN entre 0.60 y 0.80).
         let effective_threshold = payload.causal_veto_threshold.clamp(0.60, 0.90);
-        let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25
-            || matches!(payload.horizon, TradingHorizon::Continuous | TradingHorizon::Scalping))
+        // U-4: el breakout alineado antes dependía de etiquetas de horizonte
+        // — en el continuo, un libro alineado O una τ de banda rápida (la
+        // microestructura lidera los breakouts) califican igual.
+        let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25 || payload.spectral_s() < 0.5)
             && do_calculus_risk < 0.88;
         let is_veto = do_calculus_risk > effective_threshold && !is_aligned_breakout;
         SeniorOpinion {
@@ -327,12 +349,12 @@ impl SeniorAgent for SeniorRiesgo {
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let drawdown = payload.current_drawdown_pct;
 
-        // FIX #1280: Umbral adaptativo para micro-cuentas ($13 USD bootstrap).
-        let max_drawdown = match payload.horizon {
-            TradingHorizon::Continuous => 0.90,
-            TradingHorizon::Scalping => 0.95, // Scalping es más arriesgado pero permite mayor drawdown para recovery
-            TradingHorizon::Swing => 0.85,
-        };
+        // U-4 (MOTOR UNIVERSAL CONTINUO): cap de DD continuo en τ — antes
+        // escalones por horizonte (Scalping 0.95 / Continuous 0.90 / Swing
+        // 0.85). Misma semántica (banda rápida tolera más DD para recovery,
+        // banda lenta menos), sin saltos ni etiquetas: s=0 (τ 30s) ⇒ 0.95,
+        // s=1 (τ 12h) ⇒ 0.85.
+        let max_drawdown = 0.95 - 0.10 * payload.spectral_s();
 
         let is_veto = drawdown > max_drawdown;
 
@@ -367,12 +389,11 @@ impl SeniorAgent for SeniorEjecucion {
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         // FIX #387: estimated_slippage_bps ya está expresado en puntos básicos (bps)
         let slippage_bps = payload.estimated_slippage_bps.max(0.0);
-        // D-113: Umbral dinámico adaptado a la volatilidad de altcoins
-        let max_slippage = match payload.horizon {
-            TradingHorizon::Continuous => 65.0, // Altcoins con spread normal de 10-35 bps no son vetadas
-            TradingHorizon::Scalping => 35.0,
-            TradingHorizon::Swing => 100.0,
-        };
+        // U-4: umbral de slippage continuo en τ — antes escalones por
+        // horizonte (Scalping 35 / Continuous 65 / Swing 100 bps). Un trade
+        // de τ corto no puede pagar 100 bps; uno de 12 h puede absorberlos.
+        // D-113: extremo rápido conserva la tolerancia estrecha de altcoins.
+        let max_slippage = 35.0 + 65.0 * payload.spectral_s();
         let is_veto = slippage_bps > max_slippage;
         SeniorOpinion {
             role: self.role(),
@@ -530,12 +551,10 @@ impl SeniorAgent for SeniorAuditorInterno {
         SeniorRole::AuditorInterno
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        // Umbral de drawdown adaptativo alineado con SeniorRiesgo para evitar vetos contradictorios (D-343)
-        let max_dd = match payload.horizon {
-            TradingHorizon::Continuous => 0.95,
-            TradingHorizon::Scalping => 0.95,
-            TradingHorizon::Swing => 0.85,
-        };
+        // Umbral de drawdown continuo en τ alineado con SeniorRiesgo para
+        // evitar vetos contradictorios (D-343, U-4: antes escalones
+        // Scalping/Continuous/Swing — misma curva que SeniorRiesgo).
+        let max_dd = 0.95 - 0.10 * payload.spectral_s();
         let is_veto = payload.do_calculus_risk > 0.92 || payload.current_drawdown_pct > max_dd;
         SeniorOpinion {
             role: self.role(),
@@ -944,6 +963,7 @@ mod tests {
             current_drawdown_pct: 0.05,
             // 20 bps: bajo el límite de 35 bps de SeniorEjecucion para Scalping.
             estimated_slippage_bps: 20.0,
+            dominant_tau_ms: 1_138_000.0,
         }
     }
 
@@ -978,6 +998,7 @@ mod tests {
             causal_veto_threshold: 0.80,
             current_drawdown_pct: 0.01,
             estimated_slippage_bps: 0.0005,
+            dominant_tau_ms: 1_138_000.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -1048,6 +1069,7 @@ mod tests {
             causal_veto_threshold: 0.80,
             current_drawdown_pct: -0.05,
             estimated_slippage_bps: 10.0,
+            dominant_tau_ms: 1_138_000.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);

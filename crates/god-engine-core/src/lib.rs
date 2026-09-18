@@ -3424,6 +3424,13 @@ impl GodEngineCore {
                             causal_veto_threshold: 0.75,
                             current_drawdown_pct: drawdown,
                             estimated_slippage_bps: slip_bps,
+                            // U-4: τ dominante — los asientos interpolan sus
+                            // umbrales en el continuo, sin etiquetas de horizonte.
+                            dominant_tau_ms: self
+                                .temporal_spectrum
+                                .get(coin_id)
+                                .map(|s| s.dominant_tau_ms)
+                                .unwrap_or(1_138_000.0),
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let senior_sigs = self

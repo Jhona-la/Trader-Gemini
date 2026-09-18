@@ -206,30 +206,31 @@ use std::sync::Arc;
 use storage_engine::MmapTelemetryReader;
 use tokio::sync::Mutex;
 
-use crate::consejo_seniors::TradingHorizon;
 
+/// U-4 (MOTOR UNIVERSAL CONTINUO): consumidor de telemetría mmap para el
+/// aprendizaje online — UN módulo, UN buffer. La versión gemela
+/// (scalping_module/swing_module con buffers duplicados y el MISMO net_pnl
+/// entrenando dos predictores) duplicaba cada observación del dataset
+/// cuando el horizonte era Continuous. El horizonte del frame ya no bifurca
+/// NADA: una sola cabeza aprende del PnL real del motor continuo.
+/// (El consumidor aún no está cableado al god_engine — firma lista.)
 pub fn spawn_telemetry_consumer<P: AsRef<std::path::Path> + Send + 'static>(
-    scalping_module: Arc<Mutex<OnlineLearningModule>>,
-    swing_module: Arc<Mutex<OnlineLearningModule>>,
+    learning_module: Arc<Mutex<OnlineLearningModule>>,
     mmap_path: P,
 ) {
     tokio::spawn(async move {
         let mut reader = MmapTelemetryReader::new(mmap_path.as_ref());
 
-        // FASE 23: Stateful Correlation Buffer for True PnL Online Learning
-        // Correlate Decision features (Frame 1) with their actual market results (Frame 13)
-        let mut last_features_scalping = [[0.0_f32; 64]; 30];
-        let mut last_features_swing = [[0.0_f32; 64]; 30];
-        let mut last_entropy_scalping = [1.0_f32; 30];
-        let mut last_entropy_swing = [1.0_f32; 30];
+        // FASE 23: buffer de correlación decisión→resultado por moneda.
+        let mut last_features = [[0.0_f32; 64]; 30];
+        let mut last_entropy = [1.0_f32; 30];
 
         loop {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
             if let Ok(frames) = reader.read_latest_frames() {
                 if !frames.is_empty() {
-                    let mut s_mod = scalping_module.lock().await;
-                    let mut sw_mod = swing_module.lock().await;
+                    let mut module = learning_module.lock().await;
 
                     for frame in frames {
                         let coin_id = frame.payload[0] as usize;
@@ -237,95 +238,26 @@ pub fn spawn_telemetry_consumer<P: AsRef<std::path::Path> + Send + 'static>(
                             continue;
                         }
 
-                        // Infer horizon from payload if possible, for now we will simulate split by bit flag or payload[6] if added.
-                        // Assuming payload[6] has the horizon flag (0 = Scalping, 1 = Swing)
-                        let horizon = if frame.payload.len() > 6 {
-                            let h_val = frame.payload[6] as i64;
-                            match h_val {
-                                1 => TradingHorizon::Scalping,
-                                2 => TradingHorizon::Swing,
-                                _ => TradingHorizon::Continuous,
-                            }
-                        } else {
-                            TradingHorizon::Continuous
-                        };
-
                         // Frame type 1 = Decision Trace (Features)
                         if frame.frame_type == 1 {
-                            // Extraer payload: [coin_id, latency, holistic, hawkes, entropy, ml_prob, horizon]
                             let hawkes = frame.payload[3] as f32;
                             let entropy = frame.payload[4] as f32;
                             let ml_prob = frame.payload[5] as f32;
-
-                            match horizon {
-                                TradingHorizon::Continuous => {
-                                    last_features_scalping[coin_id][0] = hawkes;
-                                    last_features_scalping[coin_id][1] = entropy;
-                                    last_features_scalping[coin_id][2] = ml_prob;
-                                    last_entropy_scalping[coin_id] = entropy;
-                                    last_features_swing[coin_id][0] = hawkes;
-                                    last_features_swing[coin_id][1] = entropy;
-                                    last_features_swing[coin_id][2] = ml_prob;
-                                    last_entropy_swing[coin_id] = entropy;
-                                }
-                                TradingHorizon::Scalping => {
-                                    last_features_scalping[coin_id][0] = hawkes;
-                                    last_features_scalping[coin_id][1] = entropy;
-                                    last_features_scalping[coin_id][2] = ml_prob;
-                                    last_entropy_scalping[coin_id] = entropy;
-                                }
-                                TradingHorizon::Swing => {
-                                    last_features_swing[coin_id][0] = hawkes;
-                                    last_features_swing[coin_id][1] = entropy;
-                                    last_features_swing[coin_id][2] = ml_prob;
-                                    last_entropy_swing[coin_id] = entropy;
-                                }
-                            }
+                            last_features[coin_id][0] = hawkes;
+                            last_features[coin_id][1] = entropy;
+                            last_features[coin_id][2] = ml_prob;
+                            last_entropy[coin_id] = entropy;
                         }
                         // Frame type 13 = ROI Metrics (Real Reward)
                         else if frame.frame_type == 13 {
-                            // Extraer payload: [coin_id, gross_pnl, net_pnl, maker_fee, taker_fee, win_flag, horizon]
                             let net_pnl = frame.payload[2] as f32;
-
-                            match horizon {
-                                TradingHorizon::Continuous => {
-                                    let prior_pred_s =
-                                        s_mod.predict(&last_features_scalping[coin_id]);
-                                    let td_error_s = net_pnl - prior_pred_s;
-                                    s_mod.update_weights_with_kalman(
-                                        &last_features_scalping[coin_id],
-                                        td_error_s,
-                                        last_entropy_scalping[coin_id],
-                                    );
-                                    let prior_pred_sw =
-                                        sw_mod.predict(&last_features_swing[coin_id]);
-                                    let td_error_sw = net_pnl - prior_pred_sw;
-                                    sw_mod.update_weights_with_kalman(
-                                        &last_features_swing[coin_id],
-                                        td_error_sw,
-                                        last_entropy_swing[coin_id],
-                                    );
-                                }
-                                TradingHorizon::Scalping => {
-                                    let prior_pred =
-                                        s_mod.predict(&last_features_scalping[coin_id]);
-                                    let td_error = net_pnl - prior_pred;
-                                    s_mod.update_weights_with_kalman(
-                                        &last_features_scalping[coin_id],
-                                        td_error,
-                                        last_entropy_scalping[coin_id],
-                                    );
-                                }
-                                TradingHorizon::Swing => {
-                                    let prior_pred = sw_mod.predict(&last_features_swing[coin_id]);
-                                    let td_error = net_pnl - prior_pred;
-                                    sw_mod.update_weights_with_kalman(
-                                        &last_features_swing[coin_id],
-                                        td_error,
-                                        last_entropy_swing[coin_id],
-                                    );
-                                }
-                            }
+                            let prior_pred = module.predict(&last_features[coin_id]);
+                            let td_error = net_pnl - prior_pred;
+                            module.update_weights_with_kalman(
+                                &last_features[coin_id],
+                                td_error,
+                                last_entropy[coin_id],
+                            );
                         }
                     }
                 }
