@@ -7,7 +7,6 @@ pub mod guard;
 pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;
-pub mod macro_regime_swing_optimizer;
 pub mod orchestrator;
 pub mod regime;
 pub mod tp_sl;
@@ -143,276 +142,24 @@ pub fn reject_report() -> String {
 
 pub struct RiskEngine {
     pub peak_capital: f64,
-    pub scalp_peak_capital: f64,
-    pub swing_peak_capital: f64,
-    /// R1.3 — split de capital suavizado (Robbins-Monro).
-    pub smoothed_split: Option<f64>,
 }
 
 impl RiskEngine {
     pub fn new(initial_capital: f64) -> Self {
         Self {
             peak_capital: initial_capital,
-            scalp_peak_capital: initial_capital,
-            swing_peak_capital: initial_capital,
-            smoothed_split: None,
         }
     }
 
     pub fn reset(&mut self, initial_capital: f64) {
         self.peak_capital = initial_capital;
-        self.scalp_peak_capital = initial_capital;
-        self.swing_peak_capital = initial_capital;
-        self.smoothed_split = None;
     }
 
-    /// Evalúa la intención de señal combinada de Scalp y Swing y retorna la Exposición Neta (Net Delta).
-    pub fn evaluate_order(
-        &mut self,
-        coin_id: usize,
-        scalp_intent: SignalIntent,
-        swing_intent: SignalIntent,
-        arena: &GlobalArena,
-    ) -> (ValidatedOrder, ValidatedOrder) {
-        if coin_id >= arena.coins.len() {
-            return (ValidatedOrder::rejected(), ValidatedOrder::rejected());
-        }
-
-        let current_capital = arena.unified_capital.load(Ordering::Relaxed);
-        if !current_capital.is_finite() || current_capital <= 0.0 {
-            return (ValidatedOrder::rejected(), ValidatedOrder::rejected());
-        }
-
-        // 0. Partición de capital por horizonte — R1.3: posterior bayesiano
-        // con crecimiento de evidencia en √n (la información estadística
-        // sobre "qué bucket tiene edge" crece con la raíz del número de
-        // trades, como todo estadístico). El gen capital_split_scalp actúa
-        // como prior de peso 1 (una pseudo-observación): manda hasta que la
-        // evidencia lo desplace. A diferencia de la versión lineal en n
-        // (que saturaba al clamp con n≥10 y mataba el otro horizonte al
-        // piso 0.1), con √n el límite asintótico es el COCIENTE de edges
-        // — un bucket sin edge colapsa suyo, no por acumulación de muestras.
-        // El split efectivo se suaviza además con paso 1/√n (Robbins-Monro)
-        // para que hard-stops y picos de drawdown no respiren con cada tick.
-        let genome_split = arena
-            .config
-            .capital_split_scalp
-            .load(Ordering::Relaxed)
-            .clamp(0.1, 0.9);
-        let coin = &arena.coins[coin_id];
-        let unified_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
-        let unified_kelly = coin.metrics.kelly_fraction.load(Ordering::Relaxed);
-        let unified_n = coin.metrics.trade_count.load(Ordering::Relaxed) as f64;
-        // Las métricas por bucket scalp/swing ya no se escriben en ningún punto
-        // de producción (sólo un test de telemetría y un certificador de
-        // simulación las tocan): valen 0, y el `.max(unificado)` anterior
-        // equivalía a leer el unificado. Se lee directamente para eliminar un
-        // sesgo optimista latente: si algo volviera a escribir los buckets,
-        // `max` tomaría siempre el mejor de dos estimadores e inflaría el tamaño.
-        let unified_edge = (unified_wr * unified_kelly).max(0.0);
-        let scalp_edge = unified_edge;
-        let swing_edge = unified_edge;
-        let scalp_n = unified_n;
-        let swing_n = unified_n;
-        let posterior_scalp = scalp_edge * scalp_n.sqrt() + genome_split;
-        let posterior_swing = swing_edge * swing_n.sqrt() + (1.0 - genome_split);
-        let target_split = if posterior_scalp + posterior_swing > 1e-12 {
-            (posterior_scalp / (posterior_scalp + posterior_swing)).clamp(0.1, 0.9)
-        } else {
-            genome_split
-        };
-        // Suavizado con tasa decreciente 1/√(n_total): cambio grande con
-        // poca evidencia, refinamiento fino con mucha — sin constantes.
-        let n_total = scalp_n + swing_n;
-        let alpha = 1.0 / (n_total + 1.0).sqrt();
-        let split = match self.smoothed_split {
-            Some(prev) => prev + (target_split - prev) * alpha,
-            None => target_split,
-        };
-        self.smoothed_split = Some(split);
-        let scalp_capital = current_capital * split;
-        let swing_capital = current_capital * (1.0 - split);
-
-        // 1. Actualizar picos de capital independientes
-        if scalp_capital > self.scalp_peak_capital {
-            self.scalp_peak_capital = scalp_capital;
-        }
-        if swing_capital > self.swing_peak_capital {
-            self.swing_peak_capital = swing_capital;
-        }
-
-        // 2. Comprobar cortafuegos (Drawdown) aislados por TradeHorizon
-        let max_dd = arena.config.global_max_drawdown.load(Ordering::Relaxed);
-
-        let scalp_drawdown = if self.scalp_peak_capital > 0.0 {
-            (self.scalp_peak_capital - scalp_capital) / self.scalp_peak_capital
-        } else {
-            0.0
-        };
-        let swing_drawdown = if self.swing_peak_capital > 0.0 {
-            (self.swing_peak_capital - swing_capital) / self.swing_peak_capital
-        } else {
-            0.0
-        };
-
-        let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
-        let hard_stop_base = arena.config.hard_stop_base_limit.load(Ordering::Relaxed);
-        let hard_stop_decay = arena.config.hard_stop_decay_factor.load(Ordering::Relaxed);
-        let scalp_hard_stop_limit = {
-            let capital_ratio =
-                (self.scalp_peak_capital / (base_capital * split).max(1.0)).max(1.0);
-            (hard_stop_base / (1.0 + capital_ratio.ln() * hard_stop_decay)).clamp(0.20, 0.95)
-        };
-
-        let swing_hard_stop_limit = {
-            let capital_ratio =
-                (self.swing_peak_capital / (base_capital * (1.0 - split)).max(1.0)).max(1.0);
-            (hard_stop_base / (1.0 + capital_ratio.ln() * hard_stop_decay)).clamp(0.20, 0.95)
-        };
-
-        // D-126: Seguimiento real del peak capital y validación de drawdown
-        self.scalp_peak_capital = self.scalp_peak_capital.max(scalp_capital);
-        self.swing_peak_capital = self.swing_peak_capital.max(swing_capital);
-
-        let mut scalp_valid = scalp_drawdown < scalp_hard_stop_limit;
-        let mut swing_valid = swing_drawdown < swing_hard_stop_limit;
-
-        let guard_dd_sigmoid_steepness = arena
-            .config
-            .guard_dd_sigmoid_steepness
-            .load(Ordering::Relaxed);
-        let guard_dd_sigmoid_center = arena.config.guard_dd_sigmoid_center.load(Ordering::Relaxed);
-
-        if !guard::check_drawdown_limit(
-            scalp_capital,
-            self.scalp_peak_capital,
-            max_dd,
-            base_capital * split,
-            guard_dd_sigmoid_steepness,
-            guard_dd_sigmoid_center,
-            arena.config.min_notional.load(Ordering::Relaxed),
-        ) {
-            scalp_valid = false;
-        }
-
-        if !guard::check_drawdown_limit(
-            swing_capital,
-            self.swing_peak_capital,
-            max_dd,
-            base_capital * (1.0 - split),
-            guard_dd_sigmoid_steepness,
-            guard_dd_sigmoid_center,
-            arena.config.min_notional.load(Ordering::Relaxed),
-        ) {
-            swing_valid = false;
-        }
-
-        let coin = &arena.coins[coin_id];
-        let scalp_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
-        let scalp_pf = coin.metrics.profit_factor.load(Ordering::Relaxed);
-        let swing_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
-        let swing_pf = coin.metrics.profit_factor.load(Ordering::Relaxed);
-
-        let kelly_survival_cap_ratio = arena
-            .config
-            .kelly_survival_cap_ratio
-            .load(Ordering::Relaxed);
-        let kelly_expansion_mult = arena.config.kelly_expansion_mult.load(Ordering::Relaxed);
-
-        let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed);
-        let clamp_max = arena.config.kelly_clamp_max.load(Ordering::Relaxed);
-        let scalp_base_frac = arena.config.scalp_kelly_fraction.load(Ordering::Relaxed);
-        let swing_base_frac = arena.config.swing_kelly_fraction.load(Ordering::Relaxed);
-
-        let mut scalp_kelly = kelly::calculate_kelly_fraction(
-            scalp_wr,
-            scalp_pf,
-            scalp_capital,
-            base_capital * split,
-            kelly_survival_cap_ratio,
-            kelly_expansion_mult,
-            clamp_min,
-            clamp_max,
-            scalp_base_frac,
-        );
-        let mut swing_kelly = kelly::calculate_kelly_fraction(
-            swing_wr,
-            swing_pf,
-            swing_capital,
-            base_capital * (1.0 - split),
-            kelly_survival_cap_ratio,
-            kelly_expansion_mult,
-            clamp_min,
-            clamp_max,
-            swing_base_frac,
-        );
-
-        let current_ratio = current_capital / base_capital.max(1.0);
-        let kelly_cold = arena.config.kelly_bootstrap_cold.load(Ordering::Relaxed);
-        let kelly_bootstrap_ratio_threshold = arena
-            .config
-            .kelly_bootstrap_ratio_threshold
-            .load(Ordering::Relaxed);
-        let kelly_bootstrap_min_exposure = arena
-            .config
-            .kelly_bootstrap_min_exposure
-            .load(Ordering::Relaxed);
-
-        if current_ratio < kelly_bootstrap_ratio_threshold {
-            scalp_kelly = (kelly_cold * split.max(0.1)).clamp(0.05, 0.35);
-            swing_kelly = (kelly_cold * (1.0 - split).max(0.1)).clamp(0.05, 0.35);
-        } else {
-            let spec = match quantum_arena::symbol_registry::try_spec(coin_id) {
-                Some(s) => s,
-                None => return (ValidatedOrder::rejected(), ValidatedOrder::rejected()),
-            };
-            let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
-
-            let safe_bootstrap_scalp = (dynamic_min_notional / scalp_capital.max(1.0))
-                .clamp(kelly_bootstrap_min_exposure * 0.5, 0.4);
-            let safe_bootstrap_swing = (dynamic_min_notional / swing_capital.max(1.0))
-                .clamp(kelly_bootstrap_min_exposure, 0.5);
-            if scalp_kelly <= 0.0 {
-                scalp_kelly = safe_bootstrap_scalp * split.max(0.1);
-            }
-            if swing_kelly <= 0.0 {
-                swing_kelly = safe_bootstrap_swing * (1.0 - split).max(0.1);
-            }
-        }
-
-        let scalp_order = if scalp_valid {
-            self.evaluate_single_intent(
-                coin_id,
-                &scalp_intent,
-                scalp_kelly,
-                scalp_capital,
-                base_capital * split,
-                scalp_pf,
-                0.0,
-                arena,
-            )
-        } else {
-            ValidatedOrder::rejected()
-        };
-
-        let swing_order = if swing_valid {
-            self.evaluate_single_intent(
-                coin_id,
-                &swing_intent,
-                swing_kelly,
-                swing_capital,
-                base_capital * (1.0 - split),
-                swing_pf,
-                1.0,
-                arena,
-            )
-        } else {
-            ValidatedOrder::rejected()
-        };
-
-        (scalp_order, swing_order)
-    }
-
+    /// U-3 (MOTOR UNIVERSAL CONTINUO): la API dual `evaluate_order`
+    /// (scalp+swing → dos órdenes, split de capital por horizonte, picos y
+    /// Kelly envelopes gemelos) fue EXTIRPADA — el camino de producción es
+    /// y era esta función: una intención, un pico, Kelly con
+    /// `temporal_scale` s∈[0,1] continuo (D-427).
     /// Evalúa la intención unificada de señal cuántica continua sobre el 100% del capital disponible.
     pub fn evaluate_quantum_order(
         &mut self,
@@ -433,12 +180,7 @@ impl RiskEngine {
         if current_capital > self.peak_capital {
             self.peak_capital = current_capital;
         }
-        if current_capital > self.scalp_peak_capital {
-            self.scalp_peak_capital = current_capital;
-        }
-        if current_capital > self.swing_peak_capital {
-            self.swing_peak_capital = current_capital;
-        }
+        // U-3: los picos espejo scalp/swing (sin lectores) extirpados.
 
         // O-04 — CIRCUIT BREAKER DE DRAWDOWN en el path cuántico: el gen
         // global_max_drawdown era funcionalmente MUERTO (se convertía en cap

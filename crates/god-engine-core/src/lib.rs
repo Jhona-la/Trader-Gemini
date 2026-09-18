@@ -59,10 +59,11 @@ pub struct GodEngineCore {
     pub last_ml_prob: f32,
     pub flight_recorder: Option<Arc<telemetry_server::FlightRecorder>>,
     pub reality: reality_physics::RealityPhysics,
-    pub last_scalp_intent: Vec<SignalIntent>,
-    pub last_swing_intent: Vec<SignalIntent>,
-    pub last_scalp_senior_signals: Vec<[f64; 10]>,
-    pub last_swing_senior_signals: Vec<[f64; 10]>,
+    pub last_fast_intent: Vec<SignalIntent>,
+    pub last_slow_intent: Vec<SignalIntent>,
+    /// U-2: señales del consejo que acompañan la ÚLTIMA intención evaluada
+    /// (la del motor continuo — ya no hay dualidad de slots por horizonte).
+    pub last_senior_signals: Vec<[f64; 10]>,
     pub lakehouse: Option<Arc<storage_engine::LakehouseWarehouse>>,
     pub consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion,
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
@@ -239,10 +240,9 @@ impl GodEngineCore {
             last_ml_prob: 0.5,
             flight_recorder: None,
             reality: reality_physics::RealityPhysics::default(),
-            last_scalp_intent: vec![SignalIntent::flat(); n_coins],
-            last_swing_intent: vec![SignalIntent::flat(); n_coins],
-            last_scalp_senior_signals: vec![[0.0; 10]; n_coins],
-            last_swing_senior_signals: vec![[0.0; 10]; n_coins],
+            last_fast_intent: vec![SignalIntent::flat(); n_coins],
+            last_slow_intent: vec![SignalIntent::flat(); n_coins],
+            last_senior_signals: vec![[0.0; 10]; n_coins],
             lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
@@ -1447,9 +1447,9 @@ impl GodEngineCore {
                     // — idénticas tras la unificación— duplicando cada trade en
                     // el tracker (los pesos adaptativos aprendían de un dataset
                     // con cada observación repetida).
-                    if coin_id < self.last_scalp_senior_signals.len() {
+                    if coin_id < self.last_senior_signals.len() {
                         self.consejo_deliberacion.record_outcome(
-                            &self.last_scalp_senior_signals[coin_id],
+                            &self.last_senior_signals[coin_id],
                             realized_ret,
                         );
                     }
@@ -2070,7 +2070,14 @@ impl GodEngineCore {
                 tensor_cont.signal,
             );
 
-            let mut scalp_intent = SignalIntent::flat();
+            // U-2 (MOTOR UNIVERSAL CONTINUO): lo que fue la rama "scalp" es la
+            // LECTURA DE BANDA RÁPIDA del continuo (τ corto: microestructura,
+            // flujo del libro, triggers de sub-segundo). Lo que fue "swing" es
+            // la LECTURA DE BANDA LENTA (τ largo: tendencia, EMAs, stretch).
+            // No son estrategias: son dos vistas del MISMO espectro temporal
+            // (doctrina F8). La fusión final arbitra el ESPECTRO (banda más
+            // cercana a τ dominante), no una etiqueta de horizonte.
+            let mut fast_intent = SignalIntent::flat();
             let spread_pct = if mid_price > 0.0 {
                 (ask - bid) / mid_price
             } else {
@@ -2188,7 +2195,7 @@ impl GodEngineCore {
                 // el forest tiende a predecir ~0.5 sin features de libro).
                 // Ruta 2: PRICE-ACTION puro (momentum/ATR/Hurst — funciona
                 // SIN ML y SIN libro; computable de precio/volumen solos).
-                if book_absent && scalp_intent.signal == SignalType::Flat && atr_pct > 0.00005 {
+                if book_absent && fast_intent.signal == SignalType::Flat && atr_pct > 0.00005 {
                     // B3.36 — mismos gates POR LIFT que el camino vivo: el
                     // fallback usa los MISMOS genes (ml_threshold_long
                     // reinterpretado como lift sobre la base del modelo), así
@@ -2202,7 +2209,7 @@ impl GodEngineCore {
                     if ml_prob_adaptive > ml_model_base + ml_lift {
                         let conviction =
                             0.5 + (ml_prob_adaptive - ml_model_base).abs().min(0.45);
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: conviction.clamp(0.60, 0.95),
                             horizon: strategy_core::TradeHorizon::Continuous,
@@ -2211,7 +2218,7 @@ impl GodEngineCore {
                     } else if ml_prob_adaptive < ml_model_base - ml_lift {
                         let conviction =
                             0.5 + (ml_prob_adaptive - ml_model_base).abs().min(0.45);
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: conviction.clamp(0.60, 0.95),
                             horizon: strategy_core::TradeHorizon::Continuous,
@@ -2223,21 +2230,21 @@ impl GodEngineCore {
                     // score [-1,+1] computado SOLO de precios reales. Si el
                     // score es fuerte en una dirección Y la persistencia lo
                     // confirma, es una señal legítima independiente del ML.
-                    if scalp_intent.signal == SignalType::Flat {
+                    if fast_intent.signal == SignalType::Flat {
                         if let Some(spec) = self.temporal_spectrum.get(coin_id) {
                             let fused = spec.fused_score;
                             let tau = spec.dominant_tau_ms;
                             let persist = spec.persistence_at(tau);
                             // Score fuerte (>0.6) + persistencia direccional
                             if fused > 0.6 && persist > 0.15 {
-                                scalp_intent = SignalIntent {
+                                fast_intent = SignalIntent {
                                     signal: SignalType::Long,
                                     confidence: (0.55 + fused * 0.3).min(0.90),
                                     horizon: strategy_core::TradeHorizon::Continuous,
                                     ..Default::default()
                                 };
                             } else if fused < -0.6 && persist < -0.15 {
-                                scalp_intent = SignalIntent {
+                                fast_intent = SignalIntent {
                                     signal: SignalType::Short,
                                     confidence: (0.55 + fused.abs() * 0.3).min(0.90),
                                     horizon: strategy_core::TradeHorizon::Continuous,
@@ -2259,28 +2266,28 @@ impl GodEngineCore {
                         let hurst_active = is_anti_persistent || is_persistent;
 
                         if hurst_active && is_persistent && dev_atr > 1.5 && dev_atr < 4.0 && rolling_cvd > 0.0 {
-                            scalp_intent = SignalIntent {
+                            fast_intent = SignalIntent {
                                 signal: SignalType::Long,
                                 confidence: 0.72,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 ..Default::default()
                             };
                         } else if hurst_active && is_persistent && dev_atr < -1.5 && dev_atr > -4.0 && rolling_cvd < 0.0 {
-                            scalp_intent = SignalIntent {
+                            fast_intent = SignalIntent {
                                 signal: SignalType::Short,
                                 confidence: 0.72,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 ..Default::default()
                             };
                         } else if hurst_active && is_anti_persistent && dev_atr > 2.5 {
-                            scalp_intent = SignalIntent {
+                            fast_intent = SignalIntent {
                                 signal: SignalType::Short,
                                 confidence: 0.68,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 ..Default::default()
                             };
                         } else if hurst_active && is_anti_persistent && dev_atr < -2.5 {
-                            scalp_intent = SignalIntent {
+                            fast_intent = SignalIntent {
                                 signal: SignalType::Long,
                                 confidence: 0.68,
                                 horizon: strategy_core::TradeHorizon::Continuous,
@@ -2292,14 +2299,14 @@ impl GodEngineCore {
                         // desviación mayor (+0.5 ATR extra) y CVD alineado como
                         // substituto.
                         else if !hurst_active && dev_atr > 2.0 && dev_atr < 5.0 && rolling_cvd > 0.05 {
-                            scalp_intent = SignalIntent {
+                            fast_intent = SignalIntent {
                                 signal: SignalType::Long,
                                 confidence: 0.65,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 ..Default::default()
                             };
                         } else if !hurst_active && dev_atr < -2.0 && dev_atr > -5.0 && rolling_cvd < -0.05 {
-                            scalp_intent = SignalIntent {
+                            fast_intent = SignalIntent {
                                 signal: SignalType::Short,
                                 confidence: 0.65,
                                 horizon: strategy_core::TradeHorizon::Continuous,
@@ -2320,7 +2327,7 @@ impl GodEngineCore {
                         && not_overextended_short
                         && effective_obi_short < -d_obi_trend
                     {
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Continuous,
@@ -2339,7 +2346,7 @@ impl GodEngineCore {
                         && composite_score <= -d_tech_thr
                         && micro_trend <= 0.0
                     {
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score.abs()),
                             horizon: strategy_core::TradeHorizon::Continuous,
@@ -2368,7 +2375,7 @@ impl GodEngineCore {
                         && not_overextended_long
                         && effective_obi_long > u_obi_trend
                     {
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Continuous,
@@ -2387,7 +2394,7 @@ impl GodEngineCore {
                         && composite_score >= u_tech_thr
                         && micro_trend >= 0.0
                     {
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Continuous,
@@ -2404,7 +2411,7 @@ impl GodEngineCore {
                     let range_thr = dynamic_tech_thr * 1.15;
                     let range_obi = (dynamic_obi_thr * 0.85).clamp(0.12, 0.35);
                     if composite_score > range_thr && effective_obi_long > range_obi && price_stretch <= -0.15 && micro_trend >= 0.0 {
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Continuous,
@@ -2416,7 +2423,7 @@ impl GodEngineCore {
                         && price_stretch >= 0.15
                         && micro_trend <= 0.0
                     {
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Continuous,
@@ -2425,7 +2432,7 @@ impl GodEngineCore {
                         };
                     } else if short_streak < 2 && price_stretch > 1.0 && effective_obi_short < -range_obi * 1.15 && composite_score <= -0.24 && micro_trend <= 0.0
                     {
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(current_obi.abs().min(composite_score.abs())),
                             horizon: strategy_core::TradeHorizon::Continuous,
@@ -2433,7 +2440,7 @@ impl GodEngineCore {
                             ..Default::default()
                         };
                     } else if long_streak < 2 && price_stretch < -1.0 && current_obi > range_obi * 1.15 && composite_score >= 0.24 && micro_trend >= 0.0 {
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(current_obi.abs().min(composite_score.abs())),
                             horizon: strategy_core::TradeHorizon::Continuous,
@@ -2444,7 +2451,7 @@ impl GodEngineCore {
                 }
 
                 let tensor_cutoff = ((tensor_min_conf - 0.50) * 2.0).clamp(0.35, 0.80);
-                if scalp_intent.signal == SignalType::Flat
+                if fast_intent.signal == SignalType::Flat
                     && tensor_scalp.signal != SignalType::Flat
                     && !is_anti_persistent
                     && tensor_scalp.net_confidence.abs() >= tensor_cutoff
@@ -2502,7 +2509,7 @@ impl GodEngineCore {
                         SignalType::Flat => false,
                     };
                     if tensor_allowed {
-                        scalp_intent = SignalIntent {
+                        fast_intent = SignalIntent {
                             signal: tensor_scalp.signal,
                             confidence: tensor_scalp
                                 .net_confidence
@@ -2515,7 +2522,7 @@ impl GodEngineCore {
                     }
                 }
 
-                if scalp_intent.signal == SignalType::Flat {
+                if fast_intent.signal == SignalType::Flat {
                     let hawkes_r = self.feature_engines[coin_id].cvpin.current_vpin();
                     if let Some(mut turbo_intent) =
                         signal_engine::turbo_scalper::TurboScalpEngine::evaluate_turbo_scalp(
@@ -2557,16 +2564,16 @@ impl GodEngineCore {
                                     && not_overextended_short))
                         {
                             turbo_intent.volume_flow_rate = 12.0;
-                            scalp_intent = turbo_intent;
+                            fast_intent = turbo_intent;
                         }
                     }
                 }
 
                 // D-472: Invariante Bayesiano Absoluto — Prohibir cualquier scalp que contradiga el composite score
-                if scalp_intent.signal == SignalType::Long && composite_score < 0.0 {
-                    scalp_intent = SignalIntent::flat();
-                } else if scalp_intent.signal == SignalType::Short && composite_score > 0.0 {
-                    scalp_intent = SignalIntent::flat();
+                if fast_intent.signal == SignalType::Long && composite_score < 0.0 {
+                    fast_intent = SignalIntent::flat();
+                } else if fast_intent.signal == SignalType::Short && composite_score > 0.0 {
+                    fast_intent = SignalIntent::flat();
                 }
 
                 // F-009 FIX: Continuous ML Probability Weighting (replaces binary switch)
@@ -2575,7 +2582,7 @@ impl GodEngineCore {
                 // direction, the more the confidence is amplified. Against the signal,
                 // confidence is reduced proportionally.
                 {
-                    let ml_directional = match scalp_intent.signal {
+                    let ml_directional = match fast_intent.signal {
                         SignalType::Long => (ml_prob - 0.5) * 2.0,   // [-1, +1] where +1 = strong bullish
                         SignalType::Short => (0.5 - ml_prob) * 2.0,  // [-1, +1] where +1 = strong bearish
                         _ => 0.0,
@@ -2583,14 +2590,14 @@ impl GodEngineCore {
                     // If ML contradicts signal (ml_directional < 0) AND no extreme price action,
                     // reduce confidence. If ml_directional < -0.5, kill signal entirely.
                     if ml_directional < -0.50 && price_stretch.abs() < 2.5 {
-                        scalp_intent = SignalIntent::flat();
+                        fast_intent = SignalIntent::flat();
                     } else if ml_directional < 0.0 && price_stretch.abs() < 2.5 {
                         // Soft penalty: scale confidence by (1 + ml_directional) where ml_directional is [-0.5, 0)
-                        scalp_intent.confidence *= (1.0 + ml_directional).max(0.1);
+                        fast_intent.confidence *= (1.0 + ml_directional).max(0.1);
                     } else if ml_directional > 0.0 {
                         // ML confirms signal direction: boost confidence proportionally
-                        scalp_intent.confidence *= 1.0 + ml_directional * 0.5;
-                        scalp_intent.confidence = scalp_intent.confidence.min(0.99);
+                        fast_intent.confidence *= 1.0 + ml_directional * 0.5;
+                        fast_intent.confidence = fast_intent.confidence.min(0.99);
                     }
                 }
 
@@ -2602,7 +2609,7 @@ impl GodEngineCore {
             }
 
             // --- CVD & L2 Wall HARD FILTERS (VETOS) ---
-            if scalp_intent.signal != SignalType::Flat {
+            if fast_intent.signal != SignalType::Flat {
                 let buy_vol = coin.agg_buy_vol.load(Ordering::Relaxed);
                 let sell_vol = coin.agg_sell_vol.load(Ordering::Relaxed);
                 let cvd = buy_vol - sell_vol;
@@ -2629,17 +2636,17 @@ impl GodEngineCore {
                     .wall_veto_threshold
                     .load(Ordering::Relaxed);
 
-                if scalp_intent.signal == SignalType::Long {
+                if fast_intent.signal == SignalType::Long {
                     if cvd_ratio < -cvd_veto {
-                        scalp_intent = SignalIntent::flat();
+                        fast_intent = SignalIntent::flat();
                     } else if wall_imbalance < -wall_veto {
-                        scalp_intent = SignalIntent::flat();
+                        fast_intent = SignalIntent::flat();
                     }
-                } else if scalp_intent.signal == SignalType::Short {
+                } else if fast_intent.signal == SignalType::Short {
                     if cvd_ratio > cvd_veto {
-                        scalp_intent = SignalIntent::flat();
+                        fast_intent = SignalIntent::flat();
                     } else if wall_imbalance > wall_veto {
-                        scalp_intent = SignalIntent::flat();
+                        fast_intent = SignalIntent::flat();
                     }
                 }
             }
@@ -2672,7 +2679,7 @@ impl GodEngineCore {
             }
 
             // --- EVALUACIÓN DE SEÑAL SWING / TENDENCIAL NATIVA (MOTOR UNIFICADO CONTINUO) ---
-            let mut swing_intent = SignalIntent::flat();
+            let mut slow_intent = SignalIntent::flat();
             let trend_threshold = self
                 .arena
                 .config
@@ -2755,7 +2762,7 @@ impl GodEngineCore {
                         } else {
                             0.55
                         };
-                        swing_intent = SignalIntent {
+                        slow_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence,
                             expected_duration_ms: swing_duration_ms,
@@ -2776,7 +2783,7 @@ impl GodEngineCore {
                         } else {
                             0.55
                         };
-                        swing_intent = SignalIntent {
+                        slow_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence,
                             expected_duration_ms: swing_duration_ms,
@@ -2791,7 +2798,7 @@ impl GodEngineCore {
 
             // D-685: rama de consenso tensorial contenida (ver
             // `CONSENSUS_BRANCH_ENABLED`).
-            if CONSENSUS_BRANCH_ENABLED && swing_intent.signal == SignalType::Flat {
+            if CONSENSUS_BRANCH_ENABLED && slow_intent.signal == SignalType::Flat {
                 let ema_fast = if self.feature_engines[coin_id].kline_ema_fast > 0.0 {
                     self.feature_engines[coin_id].kline_ema_fast
                 } else {
@@ -2827,7 +2834,7 @@ impl GodEngineCore {
                     && not_chasing_long
                     && tensor_swing.net_confidence.abs() > tensor_min_conf * 0.95
                 {
-                    swing_intent = SignalIntent {
+                    slow_intent = SignalIntent {
                         signal: tensor_swing.signal,
                         confidence: tensor_swing
                             .net_confidence
@@ -2843,7 +2850,7 @@ impl GodEngineCore {
                     && not_chasing_short
                     && tensor_swing.net_confidence.abs() > tensor_min_conf * 0.95
                 {
-                    swing_intent = SignalIntent {
+                    slow_intent = SignalIntent {
                         signal: tensor_swing.signal,
                         confidence: tensor_swing
                             .net_confidence
@@ -2859,7 +2866,7 @@ impl GodEngineCore {
                     && not_chasing_long
                     && tensor_cont.net_confidence.abs() > tensor_min_conf * 0.95
                 {
-                    swing_intent = SignalIntent {
+                    slow_intent = SignalIntent {
                         signal: tensor_cont.signal,
                         confidence: tensor_cont
                             .net_confidence
@@ -2875,7 +2882,7 @@ impl GodEngineCore {
                     && not_chasing_short
                     && tensor_cont.net_confidence.abs() > tensor_min_conf * 0.95
                 {
-                    swing_intent = SignalIntent {
+                    slow_intent = SignalIntent {
                         signal: tensor_cont.signal,
                         confidence: tensor_cont
                             .net_confidence
@@ -2894,76 +2901,69 @@ impl GodEngineCore {
             // bloqueaba una tesis de horas. Contaminación cruzada entre horizontes
             // que el sistema declara unificados. Lo cubre el guard D-463.
 
-            if coin_id < self.last_scalp_intent.len() {
-                self.last_scalp_intent[coin_id] = scalp_intent;
+            if coin_id < self.last_fast_intent.len() {
+                self.last_fast_intent[coin_id] = fast_intent;
             }
-            if coin_id < self.last_swing_intent.len() {
-                self.last_swing_intent[coin_id] = swing_intent;
+            if coin_id < self.last_slow_intent.len() {
+                self.last_slow_intent[coin_id] = slow_intent;
             }
 
             // D-431: Composición de onda multiescala no destructiva (Continuous Wave Mechanics).
             // Evita el canibalismo ciego donde una discrepancia de 0.01 abre operaciones contratendencia.
             let mut unified_intent = SignalIntent::flat();
-            if scalp_intent.signal != SignalType::Flat && swing_intent.signal != SignalType::Flat {
-                if scalp_intent.signal == swing_intent.signal {
+            if fast_intent.signal != SignalType::Flat && slow_intent.signal != SignalType::Flat {
+                if fast_intent.signal == slow_intent.signal {
                     // D-623 (DÉCIMA OLA): antes `máx(p₁, p₂)·1,10` con suelo 0,60. Dos
                     // evidencias sólo se combinan sumando log-odds si son
                     // condicionalmente independientes, y éstas no lo son: ambas leen el
                     // mismo consenso tensorial (`tensor_scalp` y `tensor_swing` son copias
                     // de `tensor_cont`). Con evidencia dependiente, la combinación que no
                     // inventa certeza es el máximo.
-                    let boosted_conf = scalp_intent.confidence.max(swing_intent.confidence);
+                    let boosted_conf = fast_intent.confidence.max(slow_intent.confidence);
                     unified_intent = SignalIntent {
-                        signal: scalp_intent.signal,
+                        signal: fast_intent.signal,
                         confidence: boosted_conf,
                         horizon: strategy_core::TradeHorizon::Continuous,
-                        ..scalp_intent
+                        ..fast_intent
                     };
                 } else {
-                    // Señales opuestas (conflicto de frecuencia):
-                    // La tendencia mayor confirmada decide la dirección en el continuo temporal universal
-                    if is_confirmed_downtrend {
-                        if scalp_intent.signal == SignalType::Short {
-                            unified_intent = SignalIntent {
-                                horizon: strategy_core::TradeHorizon::Continuous,
-                                ..scalp_intent
-                            };
-                        } else if swing_intent.signal == SignalType::Short {
-                            unified_intent = SignalIntent {
-                                horizon: strategy_core::TradeHorizon::Continuous,
-                                ..swing_intent
-                            };
-                        } else {
-                            unified_intent = SignalIntent::flat();
-                        }
-                    } else if is_confirmed_uptrend {
-                        if scalp_intent.signal == SignalType::Long {
-                            unified_intent = SignalIntent {
-                                horizon: strategy_core::TradeHorizon::Continuous,
-                                ..scalp_intent
-                            };
-                        } else if swing_intent.signal == SignalType::Long {
-                            unified_intent = SignalIntent {
-                                horizon: strategy_core::TradeHorizon::Continuous,
-                                ..swing_intent
-                            };
-                        } else {
-                            unified_intent = SignalIntent::flat();
-                        }
+                    // U-2 (MOTOR UNIVERSAL CONTINUO): conflicto de banda — la
+                    // banda cuya escala está MÁS CERCA de τ dominante lleva la
+                    // energía del mercado AHORA y decide la dirección. Antes
+                    // arbitraba una "tendencia confirmada" fija (sesgo lento
+                    // estructural: en transiciones rápidas el motor seguía a
+                    // la banda lenta contra el flujo vivo). τ_mid = media
+                    // geométrica de la banda operativa [30s, 12h] ≈ 19 min:
+                    // τ_dom < τ_mid ⇒ manda la banda rápida, si no la lenta.
+                    // Los escudos macro (D-467+) siguen vetando contratendencia
+                    // del régimen mayor DESPUÉS — la arbitración espectral no
+                    // los reemplaza, los precede.
+                    let tau_dom_now = self
+                        .temporal_spectrum
+                        .get(coin_id)
+                        .map(|s| s.dominant_tau_ms)
+                        .unwrap_or(30_000.0);
+                    const TAU_MID_MS: f64 = 1_138_000.0; // √(30_000 × 43_200_000)
+                    let fast_band_governs = tau_dom_now < TAU_MID_MS;
+                    let winner = if fast_band_governs {
+                        fast_intent
                     } else {
-                        // Conflicto sin tendencia dominante confirmada: preservar capital -> Flat
-                        unified_intent = SignalIntent::flat();
-                    }
+                        slow_intent
+                    };
+                    unified_intent = SignalIntent {
+                        horizon: strategy_core::TradeHorizon::Continuous,
+                        ..winner
+                    };
                 }
-            } else if scalp_intent.signal != SignalType::Flat {
+            } else if fast_intent.signal != SignalType::Flat {
                 unified_intent = SignalIntent {
                     horizon: strategy_core::TradeHorizon::Continuous,
-                    ..scalp_intent
+                    ..fast_intent
                 };
-            } else if swing_intent.signal != SignalType::Flat {
+            } else if slow_intent.signal != SignalType::Flat {
                 unified_intent = SignalIntent {
                     horizon: strategy_core::TradeHorizon::Continuous,
-                    ..swing_intent
+                    ..slow_intent
                 };
             }
 
@@ -3189,7 +3189,7 @@ impl GodEngineCore {
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_WHIPLASH);
             // MOD2/7-011 (INFORME DECIMOCUARTO, FOCO 2 «Rigidez de filtros»):
             // aquí existía una SEGUNDA evaluación del veto Bayesiano D-472 —
-            // la repetición literal de la que ya aplicó al `scalp_intent`
+            // la repetición literal de la que ya aplicó al `fast_intent`
             // aguas arriba (misma condición: Long ⇒ composite ≥ 0, Short ⇒
             // composite ≤ 0). Tautología serial: cualquier intención que la
             // primera ya mató no llega aquí, y la que pasa la primera no
@@ -3436,8 +3436,8 @@ impl GodEngineCore {
                     // (dataset 2×, window_size al 50% de historia real). El
                     // swing queda zeroed (la erradicación swing/scalp es
                     // cosmética; sólo queda el slot scalp, ahora "la" señal).
-                    if coin_id < self.last_scalp_senior_signals.len() {
-                        self.last_scalp_senior_signals[coin_id] = senior_sigs;
+                    if coin_id < self.last_senior_signals.len() {
+                        self.last_senior_signals[coin_id] = senior_sigs;
                     }
                     let deliberation = self.consejo_deliberacion.deliberar_with_weights(
                         &council_snapshot,

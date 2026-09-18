@@ -42,41 +42,10 @@ impl CorrelationGuardEngine {
         same_direction_active_count >= limit
     }
 
-    /// Determina si vetar una orden considerando de forma desacoplada los horizontes Scalp y Swing
-    pub fn is_correlation_vetoed_by_horizon(
-        is_scalp: bool,
-        same_horizon_same_dir_count: usize,
-        current_capital: f64,
-        max_allowed_cluster: usize,
-    ) -> bool {
-        if same_horizon_same_dir_count == 0 {
-            return false;
-        }
-        // FIX #704: Sanitización defensiva de capital a micro-cuenta ($13 USD) ante NaN
-        let safe_capital = if current_capital.is_finite() && current_capital > 0.0 {
-            current_capital
-        } else {
-            13.0
-        };
-        // Scalping tiene un turnover ultra-rápido (< 60s) por lo que el cluster permitido es independiente de Swing
-        let limit = if is_scalp {
-            if safe_capital < 30.0 {
-                // Cuenta de $13 USD permite hasta 2 micro-scalps concurrentes
-                2.min(max_allowed_cluster.max(2))
-            } else {
-                max_allowed_cluster.max(2)
-            }
-        } else {
-            // Swing holding de horas: límite más estricto en micro cuentas (1 posición swing activa)
-            if safe_capital < 30.0 {
-                1.min(max_allowed_cluster.max(1))
-            } else {
-                (max_allowed_cluster / 2).max(1)
-            }
-        };
-        same_horizon_same_dir_count >= limit
-    }
-
+    /// U-3 (MOTOR UNIVERSAL CONTINUO): `is_correlation_vetoed_by_horizon`
+    /// (límites de clúster bifurcados por is_scalp) EXTIRPADA — el camino
+    /// vivo es `is_continuous_correlation_vetoed`, continuo en capital y
+    /// agnóstico de horizonte.
     /// Determina si vetar una orden cuántica continua unificada
     pub fn is_continuous_correlation_vetoed(
         same_dir_count: usize,
@@ -137,21 +106,12 @@ mod tests {
 
     #[test]
     fn test_horizon_decoupled_correlation_veto() {
-        // Micro cuenta ($13 USD): Scalp permite hasta 2 micro-scalps
-        assert!(!CorrelationGuardEngine::is_correlation_vetoed_by_horizon(
-            true, 1, 13.0, 5
-        ));
-        assert!(CorrelationGuardEngine::is_correlation_vetoed_by_horizon(
-            true, 2, 13.0, 5
-        ));
-
-        // Swing permite 1 en micro-cuenta
-        assert!(!CorrelationGuardEngine::is_correlation_vetoed_by_horizon(
-            false, 0, 13.0, 5
-        ));
-        assert!(CorrelationGuardEngine::is_correlation_vetoed_by_horizon(
-            false, 1, 13.0, 5
-        ));
+        // U-3: la variante bifurcada por horizonte fue extirpada; su semántica
+        // viva (límites de clúster continuos en capital) la cubre
+        // is_correlation_vetoed_dynamic — este test verifica que la micro
+        // cuenta sigue permitiendo 2 posiciones concurrentes.
+        assert!(!CorrelationGuardEngine::is_correlation_vetoed_dynamic(1, 13.0, 5));
+        assert!(CorrelationGuardEngine::is_correlation_vetoed_dynamic(2, 13.0, 5));
     }
 
     #[test]

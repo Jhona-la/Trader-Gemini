@@ -543,8 +543,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // DIAGNÓSTICO SIGNAL-PATH: post-engine.
             {
                 use signal_engine::SignalType;
-                let si = &engine.last_scalp_intent[cid];
-                let wi = &engine.last_swing_intent[cid];
+                // U-2: bandas del continuo (antes intents scalp/swing).
+                let si = &engine.last_fast_intent[cid];
+                let wi = &engine.last_slow_intent[cid];
                 if si.signal != SignalType::Flat {
                     diag.intents_scalp += 1;
                 }
