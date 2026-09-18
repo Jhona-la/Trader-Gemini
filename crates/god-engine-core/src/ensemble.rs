@@ -145,10 +145,16 @@ impl ModelEnsemble {
     /// guard existía en el camino viejo y se perdió en la migración F4.7).
     #[inline(always)]
     pub fn submit(&mut self, id: ModelId, prob: f64) {
-        let mut p = prob.clamp(0.0, 1.0);
-        if p >= 0.9999 || p <= 0.0001 {
-            p = 0.5; // degenerado ⇒ neutral, no extremo
-        }
+        // B3.38b — CLAMP en vez de neutralizar. El neutralizador (p≥0.9999
+        // ⇒ 0.5) mataba señal LEGÍTIMA: con el etiquetado honesto HOST-010
+        // (barrera asimétrica RR 2:1, base ~20-30%) un GBDT fuerte satura a
+        // 1.0/0.0 en estados extremos — NEAR medido en vivo prediciendo 1.0
+        // y el ensamble sirviendo 0.5 neutral. Un modelo DEGENERADO de
+        // verdad (constante en el extremo) lo castiga el propio Hedge:
+        // update_with_outcome gradúa sus predicciones cada vela y su peso
+        // decae exponencialmente — autocorrectivo, sin código que adivine
+        // la intención del modelo.
+        let p = prob.clamp(0.001, 0.999);
         let slot = id as usize;
         self.predictions[slot] = Some(p);
         // X-023: si es la PRIMERA opinión del bar, es la del arranque — la

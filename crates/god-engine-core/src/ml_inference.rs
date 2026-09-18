@@ -44,6 +44,16 @@ impl NanoForest {
     /// mantiene el motor vivo. La regresión de binario queda segura.
     pub const ML_VECTOR_DIM: usize = 48;
 
+    /// B3.36 — tasa base del PROPIO modelo: sigmoid(init_score). Con el
+    /// etiquetado honesto (HOST-010: SL −sl_pct vs TP +tp_pct, RR≥2) la
+    /// base ya NO es ~50% sino ~30% (NEAR ago→sep: base 0.232) — los gates
+    /// absolutos (≥0.50 long) quedaban inalcanzables y los espejos del
+    /// short siempre abiertos. Todo gate de entrada se expresa ahora como
+    /// LIFT sobre ESTA base: p ≥ base+lift (largo), p ≤ base−lift (corto).
+    pub fn base_prob(&self) -> f64 {
+        1.0 / (1.0 + (-(self.data.init_score as f64)).exp())
+    }
+
     /// Valida que ningún split del modelo parta por una dimensión fuera del
     /// vector que ESTE binario construye. Índices negativos (hojas: -1/-2)
     /// y un vector `feature` vacío (modelo sin splits) no violan el

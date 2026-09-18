@@ -1694,6 +1694,16 @@ impl GodEngineCore {
             // del roster, NO se opera (el gate B3.18 exigirá además este
             // flag). La opinión NN sigue viva para análisis/telemetría.
             let has_roster_model = active_forest.is_some();
+            // B3.36 — base del PROPIO modelo (sigmoid(init_score)). Con el
+            // etiquetado honesto HOST-010 la base es ~30%, no 50%: los gates
+            // de entrada (B3.18, fallback F7, rama swing) se expresan como
+            // LIFT sobre esta base, no como umbral absoluto — así un cambio
+            // de geometría de labels NO cambia la selectividad del sistema.
+            let ml_model_base = active_forest
+                .as_ref()
+                .map(|f| f.base_prob())
+                .unwrap_or(0.5)
+                .clamp(0.05, 0.95);
             let coin_ensemble = if coin_id < self.ensembles.len() {
                 &mut self.ensembles[coin_id]
             } else {
@@ -1816,6 +1826,23 @@ impl GodEngineCore {
             coin.ml_prob.store(ml_prob, Ordering::Relaxed);
             set_reg("ml_prob", ml_prob);
             set_reg("ml_prob_scalp", ml_prob);
+            // B3.37-diag — latido del camino ML completo para los símbolos
+            // con modelo: forest→ensamble→store. Si este línea imprime
+            // valores vivos pero ESPECTRO sigue en 0.5000, el defecto está
+            // en el LECTOR; si imprime 0.5 vacío, está en el CAMINO.
+            if matches!(sym.as_str(), "NEARUSDT" | "ATOMUSDT" | "BNBUSDT")
+                && self.arena.tick_counter.load(Ordering::Relaxed) % 5_000 < 26
+            {
+                telemetry_server::telemetry_log!(
+                    "🫀 [ML-HEARTBEAT] {} forest={:?} base={:.4} combined={:.4} stored={:.4} roster={}",
+                    sym,
+                    diag_forest_p,
+                    ml_model_base,
+                    base_ml_prob,
+                    ml_prob,
+                    has_roster_model
+                );
+            }
 
             let nn_score: f64 = self.feature_engines[coin_id].update_ml_prediction(ml_prob);
 
@@ -2161,23 +2188,28 @@ impl GodEngineCore {
                 // Ruta 2: PRICE-ACTION puro (momentum/ATR/Hurst — funciona
                 // SIN ML y SIN libro; computable de precio/volumen solos).
                 if book_absent && scalp_intent.signal == SignalType::Flat && atr_pct > 0.00005 {
-                    // UMBRALES GENÓMICOS (evolucionables por el SA): el fallback
-                    // usa los MISMOS genes que el camino tradicional — así el
-                    // SA puede optimizar la sensibilidad sin código quemado.
-                    let ml_thr_long = self.arena.config.ml_threshold_long.load(Ordering::Relaxed).clamp(0.50, 0.95);
-                    let ml_thr_short = self.arena.config.ml_threshold_short.load(Ordering::Relaxed).clamp(0.05, 0.50);
+                    // B3.36 — mismos gates POR LIFT que el camino vivo: el
+                    // fallback usa los MISMOS genes (ml_threshold_long
+                    // reinterpretado como lift sobre la base del modelo), así
+                    // el SA optimiza una sola sensibilidad, no dos escalas
+                    // incompatibles (absoluta aquí, relativa allá).
+                    let ml_lift = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
+                        - 0.50)
+                        .clamp(0.02, 0.25);
                     // Ruta 1: ML RE-CENTRADO (sesgo eliminado) con confianza
-                    // proporcional a la distancia de la neutralidad.
-                    if ml_prob_adaptive > ml_thr_long {
-                        let conviction = 0.5 + (ml_prob_adaptive - 0.5).abs();
+                    // proporcional al LIFT sobre la base del modelo.
+                    if ml_prob_adaptive > ml_model_base + ml_lift {
+                        let conviction =
+                            0.5 + (ml_prob_adaptive - ml_model_base).abs().min(0.45);
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: conviction.clamp(0.60, 0.95),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             ..Default::default()
                         };
-                    } else if ml_prob_adaptive < ml_thr_short {
-                        let conviction = 0.5 + (ml_prob_adaptive - 0.5).abs();
+                    } else if ml_prob_adaptive < ml_model_base - ml_lift {
+                        let conviction =
+                            0.5 + (ml_prob_adaptive - ml_model_base).abs().min(0.45);
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: conviction.clamp(0.60, 0.95),
@@ -2646,20 +2678,15 @@ impl GodEngineCore {
                 .trend_threshold
                 .load(Ordering::Relaxed);
 
-            let ml_long = self.arena.config.ml_threshold_long.load(Ordering::Relaxed);
-            let ml_short = self.arena.config.ml_threshold_short.load(Ordering::Relaxed);
-            let effective_ml_long = if ml_long <= 0.50 {
-                1.0 - ml_long
-            } else {
-                ml_long
-            }
-            .clamp(0.51, 0.95);
-            let effective_ml_short = if ml_short >= 0.50 {
-                1.0 - ml_short
-            } else {
-                ml_short
-            }
-            .clamp(0.05, 0.49);
+            // B3.36 — la rama swing TAMBIÉN gatea por LIFT sobre la base del
+            // modelo (ml_model_base): los umbrales absolutos (≥0.51/≤0.49)
+            // mataban los largos y sobre-aprobaban los cortos con la base
+            // ~30% del etiquetado honesto. Mismo gen, misma interpretación
+            // que el gate B3.18.
+            let ml_lift = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed) - 0.50)
+                .clamp(0.02, 0.25);
+            let effective_ml_long = ml_model_base + ml_lift;
+            let effective_ml_short = ml_model_base - ml_lift;
 
             let raw_base = self.arena.config.base_duration_ms.load(Ordering::Relaxed);
             let swing_duration_ms = if raw_base.is_finite() && raw_base > 0.0 {
@@ -2721,7 +2748,7 @@ impl GodEngineCore {
                         && not_chasing_swing_long
                     {
                         let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
-                            .max((swing_nn_pred - 0.5).max(0.0) * 2.0);
+                            .max((swing_nn_pred - ml_model_base).max(0.0) * 2.0);
                         let confidence = if raw_conf.is_finite() {
                             raw_conf.tanh().clamp(0.55, 0.95)
                         } else {
@@ -2742,7 +2769,7 @@ impl GodEngineCore {
                         && not_chasing_swing_short
                     {
                         let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
-                            .max((0.5 - swing_nn_pred).max(0.0) * 2.0);
+                            .max((ml_model_base - swing_nn_pred).max(0.0) * 2.0);
                         let confidence = if raw_conf.is_finite() {
                             raw_conf.tanh().clamp(0.55, 0.95)
                         } else {
@@ -3448,33 +3475,29 @@ impl GodEngineCore {
                     // modelo. La versión con sesgo (ml_prob/coin.ml_prob)
                     // siguen alimentando las ramas de señal.
                     let ml_now = ml_prob_pure;
-                    // B3.19 (auditoría A3-rec3): clamp uniforme — el camino
-                    // swing ya clampea (l.2081-2082); un genoma fuera de banda
-                    // no puede cegar ni abrir de par en par el gate.
-                    // MOD2/7-024 (INFORME DECIMOCUARTO): el techo baja de 0.95
-                    // a 0.75 — un GBDT de 40 árboles "rara vez supera 0.75", así
-                    // que un GA que evolucione ml_threshold a 0.95 vetaría TODO
-                    // sin feedback que lo corrija (y el espejo del short sube su
-                    // suelo de 0.05 a 0.25 = 1−0.75). El baseline genómico
-                    // (0.5698/0.4302) queda lejos de ambas cotas.
-                    // B3.25 — además del acuerdo del ensamble, el símbolo
-                    // DEBE tener modelo validado del roster: el NN solo no
-                    // autoriza entradas (hueco medido: SOL sin modelo abrió).
+                    // B3.36 — GATE POR LIFT, no absoluto. El etiquetado
+                    // honesto (HOST-010) movió la base a ~30%: con el gate
+                    // absoluto (≥0.50 largo / ≤0.50 corto) los largos jamás
+                    // pasaban (p90=0.33) y los cortos casi siempre — el
+                    // sistema se volvía short-only por artefacto de escala.
+                    // El genoma ml_threshold_long se REINTERPRETA como lift:
+                    // baseline 0.5698 ⇒ lift 0.0698 ("7 puntos sobre la
+                    // base", los mismos "7 puntos sobre 50%" originales).
+                    // El GA evoluciona lift ∈ [0.02, 0.25]: con suelo 0.02
+                    // no puede abrir de par en par ni con techo 0.25 cegar
+                    // todo (un GBDT de 40 árboles rara vez levanta 25
+                    // puntos de base). La base es la del modelo del SÍMBOLO
+                    // (sigmoid(init_score)), no una constante global.
+                    // B3.25 sigue intacto: sin modelo validado del roster,
+                    // no se opera.
+                    let ml_lift = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
+                        - 0.50)
+                        .clamp(0.02, 0.25);
                     let ml_gate_ok = has_roster_model
                         && if order.signal == SignalType::Long {
-                            ml_now >= self
-                                .arena
-                                .config
-                                .ml_threshold_long
-                                .load(Ordering::Relaxed)
-                                .clamp(0.50, 0.75)
+                            ml_now >= ml_model_base + ml_lift
                         } else {
-                            ml_now <= self
-                                .arena
-                                .config
-                                .ml_threshold_short
-                                .load(Ordering::Relaxed)
-                                .clamp(0.25, 0.50)
+                            ml_now <= ml_model_base - ml_lift
                         };
                     if deliberation.approved && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;

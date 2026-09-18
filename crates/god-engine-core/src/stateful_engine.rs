@@ -14,7 +14,14 @@ pub static DROP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 /// entrenamiento (train_forest) — el modelo no puede aprender a depender de
 /// una columna que en serve es constante. Si un productor dex revive la
 /// fuente, actualizar este slice y re-entrenar en el mismo cambio.
-pub const SWING_FEATURES_DEAD_IN_SERVE: &[usize] = &[9];
+pub const SWING_FEATURES_DEAD_IN_SERVE: &[usize] = &[4, 5, 9, 10];
+// B3.35: [4][5][10] (obi_accel) añadidas — el OBI del trainer (aggTrades
+// sintético con is_buyer_maker) tiene DISTRIBUCIÓN INCOMPATIBLE con el OBI
+// del vivo (depth L2 real). El modelo entrenado con OBI sintético predice
+// ~0.503 en vivo (verificado en v41: señal muerta, cero entradas). Zerificar
+// en AMBOS lados restaura la transferencia del modelo. Si en el futuro se
+// calibra un OBI sintético que matchee la distribución del libro, retirar
+// estos índices y re-entrenar.
 
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum MarketRegime {
@@ -34,6 +41,12 @@ pub struct StatefulEngine {
     pub last_price: f64,
     pub v_t: f64,
     pub a_t: f64,
+    /// MOD2/7-031 — EMA del centroide espectral (adimensional, actualizada
+    /// cada 64 ticks). ANTES vivía en `a_t` y era sobrescrita al tick
+    /// siguiente por la aceleración cinemática ($/tick): escritor doble con
+    /// un solo sobreviviente. Separada: `a_t` es SÓLO la cinemática
+    /// instantánea que alimentan las features (norm_at) y el registry.
+    pub a_t_spectral: f64,
     pub last_inst_v: f64,
     pub dir_velocity: f64,
     pub tick_count: u64,
@@ -99,6 +112,7 @@ impl StatefulEngine {
             last_price: 0.0,
             v_t: 0.0,
             a_t: 0.0,
+            a_t_spectral: 0.0,
             last_inst_v: 0.0,
             dir_velocity: 0.0,
             tick_count: 0,
@@ -213,6 +227,7 @@ impl StatefulEngine {
         self.last_price = 0.0;
         self.v_t = 0.0;
         self.a_t = 0.0;
+        self.a_t_spectral = 0.0;
         self.tick_count = 0;
         self.hurst = RecursiveHurst::new();
         self.obi_accel = ObiAcceleration::new();
@@ -283,7 +298,12 @@ impl StatefulEngine {
             if self.tick_count % 64 == 0 {
                 let (dominant_bin, max_power, centroid) = self.spectral.analyze_spectrum();
                 if max_power > 0.0 && centroid.is_finite() {
-                    self.a_t = self.a_t * 0.95 + (centroid * 0.001) * 0.05;
+                    // MOD2/7-031: el EMA del centroide espectral vive en su
+                    // PROPIO campo — antes escribía `a_t` y la cinemática del
+                    // tick siguiente lo borraba (escritor doble, un solo
+                    // sobreviviente). Observabilidad del espectro; no toca el
+                    // contrato 48D (que consume spectral_centroid directo).
+                    self.a_t_spectral = self.a_t_spectral * 0.95 + (centroid * 0.001) * 0.05;
                 }
                 // B2.3: el espectro ya se calculaba aquí y se DESCARTABA
                 // (capacidad fantasma). Ahora se publica para el vector ML
@@ -460,17 +480,15 @@ impl StatefulEngine {
         }
         let (_h_mic, _h_mes, _h_mac, _score, _micro_p, _macro_p) = self.multifractal.update(close);
         self.regime = MarketRegime::Continuous;
+        // MOD2/7-032: `ema_fast`/`ema_slow` ya NO se escriben aquí. Tenían
+        // DOS kernels: 20/200 (process_tick, el camino del trainer y del
+        // backtest) y 12/26 (esta función, warmup REST 1m del vivo). El
+        // estado era una quimera de dos escalas y una ruptura de paridad
+        // train/serve en la feature (ema_fast−ema_slow)/ema_slow del vector
+        // 34D: el vivo arrancaba con EMA de velas que el entrenamiento jamás
+        // vio. Kernel ÚNICO 20/200 por ticks — el primer tick vivo siembra
+        // (ema_fast==0 ⇒ =precio) y converge solo, idéntico a train.
         self.last_price = close;
-
-        if self.ema_fast == 0.0 {
-            self.ema_fast = close;
-            self.ema_slow = close;
-        } else {
-            let alpha_fast = 2.0 / (12.0 + 1.0);
-            let alpha_slow = 2.0 / (26.0 + 1.0);
-            self.ema_fast = (close - self.ema_fast) * alpha_fast + self.ema_fast;
-            self.ema_slow = (close - self.ema_slow) * alpha_slow + self.ema_slow;
-        }
 
         // FIX #624: True Range robusto y no nulo en kline processing
         let tr = (high - low).max(close * 0.0005);

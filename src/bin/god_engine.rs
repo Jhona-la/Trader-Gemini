@@ -789,6 +789,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     quantum_arena::symbols::update_dynamic_universe(symbols.clone());
 
+    // B3.38 — IDENTIDAD coin_id↔símbolo. El registry arranca VACÍO
+    // (get_default_specs = []) y nada lo poblaba con la lista del
+    // bootloader: el primer update_registry en correr era el del daemon
+    // (pool de momentum del escáner), cuyo ORDEN no tiene nada que ver con
+    // `symbols_clone`/`symbol_to_id` del handler. Resultado medido en vivo
+    // (v41-v46): el slot 2 streameaba bnbusdt pero el core creía que era
+    // el 3er símbolo del pool — coin_model_key equivocado ⇒ forest jamás
+    // encontrado ⇒ ml_prob clavado en 0.5000 y el gate B3.25 vetando TODO
+    // con modelos sanos (el NN BTC-only y el lead-lag BTC/ETH también
+    // leían identidades falsas). v40 funcionó por ALINEACIÓN LUCKY del
+    // pool con la lista del bootloader. FIX: registrar la lista del
+    // bootloader COMO LAS PRIMERAS ENTRADAS del registry, EN ORDEN — el
+    // merge append-only (FIX #905) del daemon respeta esas posiciones.
+    let boot_specs: Vec<quantum_arena::symbol_registry::SymbolSpec> = symbols
+        .iter()
+        .map(|s| quantum_arena::symbol_registry::get_official_binance_spec(&s.to_uppercase()))
+        .collect();
+    quantum_arena::symbol_registry::update_registry(boot_specs);
+    telemetry_server::telemetry_log!(
+        "🧬 [B3.38] Identidad registrada: {} símbolos del bootloader en orden de slot (core≡handler)",
+        symbols.len()
+    );
+
     let dynamic_config_bin_path = EnvManager::data_path("dynamic_config.bin");
     let dynamic_config_json_path = EnvManager::data_path("dynamic_config.json");
     let config_bytes = std::fs::read(&dynamic_config_bin_path).unwrap_or_default();

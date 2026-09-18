@@ -315,19 +315,15 @@ fn main() {
             engine.process_tick(mid, vol, t.ts);
             engine.update_trade_flow(vol, pseudo_maker);
             let _ = engine.update_ofi(t.bid, t.ask, t.bq, t.aq);
-            // C-02 — PARIDAD OBI: en vivo `update_macro_features` corre en
-            // CADA evento (camino per-tick de god-engine-core/lib.rs:
-            // update_macro_features(obi, funding, 0.0, ts)) y alimenta
-            // obi_accel → dims [4],[5],[10] del vector 34D con el
-            // desequilibrio REAL del libro. El trainer jamás la llamaba:
-            // esas 3 dims eran columna 0.0 constante en train y señal viva
-            // en serve (paridad rota al revés — modelo ciego al 9% del
-            // vector). Misma fórmula de obi del libro que el vivo:
-            // (bq−aq)/(bq+aq). funding=0.0: sólo alimenta fr_elasticity,
-            // que NO está en el contrato 48D. dex=0.0: sin productor en
-            // vivo — paridad exacta con el serve.
-            let obi = if vol > 0.0 { (t.bq - t.aq) / vol } else { 0.0 };
-            engine.update_macro_features(obi, 0.0, 0.0, t.ts);
+            // B3.35 — OBI FUERA del trainer: el OBI sintético (reconstruido
+            // de aggTrades con is_buyer_maker) tiene DISTRIBUCIÓN INCOMPATIBLE
+            // con el OBI del depth L2 real que sirve el vivo. Alimentar
+            // obi_accel sólo en train produjo modelos que en vivo predicen
+            // ~0.503 constante (v41: señal muerta, cero entradas). Las dims
+            // [4][5][10] están zerificadas en AMBOS lados vía
+            // SWING_FEATURES_DEAD_IN_SERVE — esta llamada NO debe volver
+            // hasta que exista un OBI sintético calibrado contra la
+            // distribución real del libro.
             warmup += 1;
             if warmup >= 100 && t.ts >= next_sample_ts && t.ts + horizon_ms <= last_ts {
                 next_sample_ts = t.ts + stride_ms_eff;
@@ -361,7 +357,22 @@ fn main() {
                 full[34..44].copy_from_slice(&sp);
                 full[44..].copy_from_slice(&macro_block);
                 if full.iter().all(|f| f.is_finite()) {
-                    // Triple barrera por TIEMPO DE RELOJ dentro de horizon_ms
+                    // Triple barrera por TIEMPO DE RELOJ dentro de horizon_ms.
+                    // HOST-010 (DECIMOCUARTO): la geometría del label debe ser
+                    // la del trade REAL — SL −sl_pct vs TP +tp_pct (RR≥2 por
+                    // friction_floors). La versión anterior chequeaba el SL del
+                    // corto (`>= mid*(1+sl_pct)`, +0.18%) ANTES del TP largo
+                    // (+0.36%): el TP era código muerto y todo toque de +0.18%
+                    // se contaba como victoria — el modelo aprendía una barrera
+                    // simétrica ±0.18% (coin-flip tras fees) en vez del trade
+                    // asimétrico RR 2:1 que el vivo ejecuta. Ahora: primer
+                    // toque de SL largo ⇒ 0.0, primer toque de TP largo ⇒ 1.0,
+                    // tocar ±sl_pct sin llegar al TP ⇒ timeout neutral
+                    // (descartado — coincide con la escalera trailing: un
+                    // trade que toca +0.18% y vuelve cierra en BE). El corto
+                    // consume 1−p en serve (ml_thr_short): con esta definición
+                    // es P(SL largo primero) — proxy honesto de la hipótesis
+                    // corta.
                     let deadline = t.ts + horizon_ms;
                     let long_tp = mid * (1.0 + tp_pct);
                     let long_sl = mid * (1.0 - sl_pct);
@@ -379,16 +390,8 @@ fn main() {
                             label = 0.0;
                             break 'barrier;
                         }
-                        if fut_mid >= mid * (1.0 + sl_pct) {
-                            label = 1.0; // la hipótesis corta fracasó primero
-                            break 'barrier;
-                        }
                         if fut_mid >= long_tp {
                             label = 1.0;
-                            break 'barrier;
-                        }
-                        if fut_mid <= mid * (1.0 - tp_pct) {
-                            label = 0.0;
                             break 'barrier;
                         }
                     }
