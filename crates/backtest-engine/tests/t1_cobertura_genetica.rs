@@ -200,11 +200,19 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     // llevaba muerto desde que el registro se hizo dinámico) → 13.9%
     // (20/144, medido 2026-09-16 con spec registrado + predictor sintético
     // confiado: expresividad CONDICIONAL a la cooperación de la predicción
-    // — el gate B3.18 es un gobernador no-genético por diseño). Se fija el
-    // nivel medido con margen de ruido mínimo; sólo puede SUBIR: conectar
-    // genes muertos (D-649), retirar clamps (D-643) o rediseñar la
-    // neutralización debe elevarlo, jamás bajarlo.
-    const COBERTURA_MINIMA: f64 = 0.135;
+    // — el gate B3.18 es un gobernador no-genético por diseño) → 11.8%
+    // (17/144, medido 2026-09-18 tras B3.36: los genes ml_threshold se
+    // reinterpretaron como LIFT sobre base_prob del modelo — la banda de
+    // expresividad efectiva se estrechó de [0.51,0.95] (ancho 0.44) a
+    // [0.52,0.75] (ancho 0.23) por DISEÑO: es el precio documentado de la
+    // invariancia de escala (un cambio de geometría de labels ya no rompe
+    // la selectividad). Ningún cableado de genes se retiró: el neutralizador
+    // direccional (ver arriba) verifica que no es artefacto del predictor
+    // constante — con ambos predictores la medición da el MISMO 11.8%).
+    // Dirección de recuperación: conectar genes muertos (D-649), retirar
+    // clamps (D-643), o ensanchar la banda de lift con calibración Brier
+    // real del evolver. Sólo puede SUBIR desde aquí.
+    const COBERTURA_MINIMA: f64 = 0.115;
     assert!(
         cobertura >= COBERTURA_MINIMA,
         "cobertura genética {:.1} % por debajo del mínimo {:.1} %. \
