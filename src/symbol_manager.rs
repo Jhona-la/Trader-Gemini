@@ -229,12 +229,15 @@ mod tests {
             &current,
             &candidates,
             limit,
-            &roster_of(&["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]),
+            &roster_of(&["BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT"]),
         );
         assert_eq!(merged.len(), 3);
+        // B3.37: el asiento de ROSTER manda — BNB (modelado) entra por
+        // prioridad 1 y desplaza al incumbente SIN modelo (SOL).
         assert!(merged.contains(&"BTCUSDT".to_string()));
         assert!(merged.contains(&"ETHUSDT".to_string()));
-        assert!(merged.contains(&"SOLUSDT".to_string()));
+        assert!(merged.contains(&"BNBUSDT".to_string()));
+        assert!(!merged.contains(&"SOLUSDT".to_string()));
     }
 
     /// B3.37 — regresión del caso medido en vivo (v41/v42): el escáner rota
@@ -256,7 +259,7 @@ mod tests {
             "XRPUSDT",  // modelado, puesto 8
         ]
         .iter()
-        .map(|s| format!("{}USDT", s))
+        .map(|s| s.to_string())
         .collect();
         let roster = roster_of(&["NEARUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT"]);
         let limit = 5;

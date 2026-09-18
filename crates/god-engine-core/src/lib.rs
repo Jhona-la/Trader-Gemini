@@ -8,6 +8,7 @@ pub mod diffusion;
 pub mod direction_diag;
 pub mod ensemble;
 pub mod latency_accelerator;
+pub mod liquidation_feed;
 pub mod math_kernels;
 pub mod ml_inference;
 pub mod orchestrator;
@@ -590,10 +591,12 @@ impl GodEngineCore {
                 // dex_severity: SIN productor en vivo (feed MEV/DEX no
                 // existe) — se documenta el 0.0 en vez de falsificar señal.
                 let funding_rate_live = omni_features[11];
+                // P-4: severidad de liquidación VIVA (event-driven, swap).
+                let liq_severity = crate::liquidation_feed::take_pending();
                 self.feature_engines[coin_id].update_macro_features(
                     depth_obi,
                     funding_rate_live,
-                    0.0,
+                    liq_severity,
                     event_time_ms,
                 );
                 let mid_price = (eff_bid + eff_ask) / 2.0;
@@ -808,7 +811,9 @@ impl GodEngineCore {
             // antes 0.0 constante: columna muerta del vector 34D/48D.
             // TODO: funding per-símbolo (el productor hoy es BTC-only).
             // dex_severity: sin productor en vivo — 0.0 documentado.
-            feature_engine.update_macro_features(obi, omni_features[11], 0.0, event_time_ms);
+            // P-4: severidad de liquidación viva (el camino per-tick también).
+            let liq_sev_tick = crate::liquidation_feed::take_pending();
+            feature_engine.update_macro_features(obi, omni_features[11], liq_sev_tick, event_time_ms);
             let raw_atr_pct = feature_engine.get_atr_pct();
             let hurst_val = feature_engine.hurst.current();
             let coin = &self.arena.coins[coin_id];
@@ -816,6 +821,31 @@ impl GodEngineCore {
             coin.current_atr
                 .store(raw_atr_pct * mid_price, Ordering::Relaxed);
             coin.hurst_exponent.store(hurst_val, Ordering::Relaxed);
+            // S-7 — Hurst multifractal SELECCIONADO POR τ: micro (<2min),
+            // meso (<1h), macro (≥1h). La geometría TP/SL consume el H del
+            // horizonte que el motor opera, no el escalar global.
+            {
+                let tau_dom_h = self
+                    .temporal_spectrum
+                    .get(coin_id)
+                    .map(|s| s.dominant_tau_ms)
+                    .unwrap_or(600_000.0);
+                let fe_h = &self.feature_engines[coin_id];
+                let h_scale = if tau_dom_h < 120_000.0 {
+                    fe_h.hurst_micro
+                } else if tau_dom_h < 3_600_000.0 {
+                    fe_h.hurst_meso
+                } else {
+                    fe_h.hurst_macro
+                };
+                let h_val = if h_scale.is_finite() && h_scale > 0.0 {
+                    h_scale
+                } else {
+                    hurst_val as f32
+                };
+                coin.hurst_scale_matched
+                    .store(h_val as f64, Ordering::Relaxed);
+            }
 
             let mut closed_order = None;
 
@@ -935,7 +965,22 @@ impl GodEngineCore {
                 // D-465, D-472, D-474, D-475 & D-495: Escudo Breakeven Progresivo Calibrado Antiasfixia.
                 // Activa cuando el trade ha alcanzado al menos 2.0 ATR o el 55% de su TP objetivo (mínimo 62 bps).
                 // En cuanto el trade demuestra inercia direccional probada, el stop se ajusta a Entry + buffer (+10 a +18 bps post-fees).
-                let be_activation = (tp * 0.55).max(atr_pct_live * 2.0).clamp(0.0062, 0.0160);
+                // S-3 (ESPECTRALIZACIÓN): las activaciones de BE y trailing
+                // respiran con la persistencia de la escala dominante —
+                // tendencial (pers→+1) activa TARDE (deja correr), mean-
+                // revert (pers→−1) activa PRONTO (asegura el retroceso).
+                // Fracción del TP: BE lerp(0.45,0.65), trail lerp(0.60,0.80);
+                // pers=0 ⇒ 0.55/0.70 exactos (comportamiento B3.27).
+                let pers_dom = self
+                    .temporal_spectrum
+                    .get(coin_id)
+                    .map(|spec| spec.persistence_at(spec.dominant_tau_ms).clamp(-1.0, 1.0))
+                    .unwrap_or(0.0);
+                let s_t = (pers_dom + 1.0) * 0.5;
+                let be_frac = 0.45 + 0.20 * s_t;
+                let trail_frac = 0.60 + 0.20 * s_t;
+                let be_activation =
+                    (tp * be_frac).max(atr_pct_live * 2.0).clamp(0.0062, 0.0160);
                 if peak_pnl >= be_activation {
                     let be_buffer = (live_fee * 2.0).clamp(0.0010, 0.0018);
                     let be_stop = if is_long {
@@ -955,9 +1000,9 @@ impl GodEngineCore {
                     }
                 }
 
-                // 2. Trailing Stop Ratchet Dinámico: activa cuando el pico alcanza >= 70% de TP (o mínimo 72 bps)
+                // 2. Trailing Stop Ratchet Dinámico: activa en trail_frac del TP
                 let trail_activation_pnl =
-                    (tp * 0.70).max(be_activation * 1.25).clamp(0.0072, 0.0200);
+                    (tp * trail_frac).max(be_activation * 1.25).clamp(0.0072, 0.0200);
                 let trail_active = peak_pnl >= trail_activation_pnl;
 
                 let mut force_close_trail = false;
@@ -991,6 +1036,15 @@ impl GodEngineCore {
                         trail_atr_mult,
                         live_fee,
                         tp, // B3.27 — escalera relativa al TP
+                        // S-2: persistencia de la escala dominante — la
+                        // escalera respira con el régimen (tendencial corre,
+                        // mean-revert cosecha).
+                        self.temporal_spectrum
+                            .get(coin_id)
+                            .map(|spec| {
+                                spec.persistence_at(spec.dominant_tau_ms).clamp(-1.0, 1.0)
+                            })
+                            .unwrap_or(0.0),
                     );
 
                     let sl_floor = if is_long {
@@ -1409,6 +1463,19 @@ impl GodEngineCore {
                         .arena
                         .config
                         .kelly_at_tau(if tau_pos > 0.0 { tau_pos } else { 30_000.0 });
+                    // S-1: confianza espectral — persistencia de la escala
+                    // dominante mapeada de [-1,1] a [0,1] (0.5 = browniano
+                    // neutral). La banda de Kelly respira con el régimen.
+                    let spectral_conf = self
+                        .temporal_spectrum
+                        .get(coin_id)
+                        .map(|spec| {
+                            let pers = spec
+                                .persistence_at(spec.dominant_tau_ms)
+                                .clamp(-1.0, 1.0);
+                            (0.5 + pers * 0.5).clamp(0.0, 1.0)
+                        })
+                        .unwrap_or(0.5);
                     let kelly_f = risk_engine::kelly::calculate_kelly_fraction(
                         new_wr,
                         new_pf,
@@ -1419,6 +1486,7 @@ impl GodEngineCore {
                         clamp_min,
                         clamp_max,
                         strategy_base,
+                        spectral_conf,
                     );
                     coin.metrics
                         .kelly_fraction
@@ -1701,6 +1769,39 @@ impl GodEngineCore {
                 .map(|f| f.base_prob())
                 .unwrap_or(0.5)
                 .clamp(0.05, 0.95);
+            // P-1 (PREDICTORES) — VOLATILIDAD FUTURA {SYM}_VOL: regresión
+            // entrenada con --label vol (RMS de retornos a horizonte, ×100).
+            // Se sirve con predict_raw (SIN sigmoid — es una σ, no una
+            // probabilidad) sobre el MISMO vector 48D del motor. Publicada
+            // al registry como `vol_forecast_pct`: los consumidores de
+            // sizing/cooldowns/telemetría leen esa clave; 0.0 = sin modelo
+            // (el gate del trainer ya bloqueó los símbolos sin edge).
+            {
+                let vol_key = format!("{}_VOL", sym);
+                let vol_forecast = crate::ml_inference::NanoForest::get_global(&vol_key)
+                    .and_then(|m| {
+                        const VD: usize = crate::ml_inference::NanoForest::ML_VECTOR_DIM;
+                        let mut vin = [0f32; VD];
+                        vin[..34].copy_from_slice(&swing_feats);
+                        vin[34..44].copy_from_slice(
+                            &self.feature_engines[coin_id].get_spectral_ml_features(),
+                        );
+                        vin[44..]
+                            .copy_from_slice(&crate::ml_inference::macro_ml_features(omni_features));
+                        for v in vin.iter_mut() {
+                            if !v.is_finite() {
+                                *v = 0.0;
+                            }
+                        }
+                        let (raw, _) = m.predict_raw(&vin);
+                        if raw.is_finite() && raw > 0.0 {
+                            Some(raw as f64)
+                        } else {
+                            None
+                        }
+                    });
+                set_reg("vol_forecast_pct", vol_forecast.unwrap_or(0.0));
+            }
             let coin_ensemble = if coin_id < self.ensembles.len() {
                 &mut self.ensembles[coin_id]
             } else {
@@ -3497,11 +3598,22 @@ impl GodEngineCore {
                     let ml_lift = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
                         - 0.50)
                         .clamp(0.02, 0.25);
+                    // S-6 (ESPECTRALIZACIÓN): el lift exigido respira con el
+                    // ACUERDO espectral — cuando la fusión del espectro apunta
+                    // en la MISMA dirección que el modelo, la exigencia baja
+                    // (×0.7: dos fuentes independientes alineadas); cuando
+                    // divergen, sube (×1.3: el modelo contra el continuo
+                    // necesita más margen). agree ∈ [-1,1]: signo(fused) ×
+                    // signo(desplazamiento del modelo sobre su base).
+                    let agree = (council_fused
+                        * (ml_now - ml_model_base).signum())
+                        .clamp(-1.0, 1.0);
+                    let lift_eff = (ml_lift * (1.0 - 0.3 * agree)).clamp(0.01, 0.30);
                     let ml_gate_ok = has_roster_model
                         && if order.signal == SignalType::Long {
-                            ml_now >= ml_model_base + ml_lift
+                            ml_now >= ml_model_base + lift_eff
                         } else {
-                            ml_now <= ml_model_base - ml_lift
+                            ml_now <= ml_model_base - lift_eff
                         };
                     if deliberation.approved && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;

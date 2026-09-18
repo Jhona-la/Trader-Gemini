@@ -42,6 +42,7 @@ pub fn evaluate_quantum_trailing(
         trail_runner,
         0.0006, // Fallback fee rate (0.02% maker + 0.04% taker roundtrip VIP0)
         0.012,  // B3.27 — TP fallback nominal 1.2%
+        0.0,    // S-2 — persistencia neutral (browniano) para el wrapper legado
     )
 }
 
@@ -62,6 +63,12 @@ pub fn evaluate_quantum_trailing_with_fee(
     trail_runner: f64,
     fee_rate: f64,
     tp_frac: f64, // B3.27 — distancia al TP como fracción del precio
+    // S-2 (ESPECTRALIZACIÓN): persistencia de la escala dominante [-1,+1].
+    // +1 (tendencial) ⇒ la escalera se EXTIENDE (be 50%, half 70%, profit
+    // 85%, runner 100%: el trade corre hasta el TP — la tendencia sostiene).
+    // −1 (mean-revert) ⇒ se COMPRIME (30/45/60/80%: cosecha temprana — la
+    // ganancia no se sostiene). 0 (browniano) ⇒ 40/60/80/95% (B3.27 exacto).
+    spectral_persistence: f64,
 ) -> TrailingResult {
     if current_atr <= 0.0
         || !current_atr.is_finite()
@@ -209,13 +216,21 @@ pub fn evaluate_quantum_trailing_with_fee(
         };
         let effective_fee = fee_rate.max(0.0004);
         let be_buffer = (effective_fee * 2.0).clamp(0.0010, 0.0018); // costo neto post-fees — SÍ relativo al fee (es un costo)
-        let be_trigger = effective_tp * 0.40; // 40% del recorrido
-        let half_lock_trigger = effective_tp * 0.60;
-        let half_lock_gain = effective_tp * 0.25;
-        let profit_lock_trigger = effective_tp * 0.80;
-        let profit_lock_gain = effective_tp * 0.50;
-        let runner_lock_trigger = effective_tp * 0.95;
-        let runner_lock_gain = effective_tp * 0.70;
+        // S-2 — escalera interpolada por persistencia espectral (t∈[0,1]):
+        // t=1 tendencial / t=0 mean-revert. Cada nivel es lerp(MR, TEND).
+        let t = if spectral_persistence.is_finite() {
+            ((spectral_persistence + 1.0) * 0.5).clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        let lvl = |mr: f64, tend: f64| mr + (tend - mr) * t;
+        let be_trigger = effective_tp * lvl(0.30, 0.50);
+        let half_lock_trigger = effective_tp * lvl(0.45, 0.70);
+        let half_lock_gain = effective_tp * lvl(0.15, 0.35);
+        let profit_lock_trigger = effective_tp * lvl(0.60, 0.85);
+        let profit_lock_gain = effective_tp * lvl(0.40, 0.60);
+        let runner_lock_trigger = effective_tp * lvl(0.80, 1.00);
+        let runner_lock_gain = effective_tp * lvl(0.60, 0.85);
 
         if max_pnl_pct >= be_trigger {
             if pos_side == 1 {

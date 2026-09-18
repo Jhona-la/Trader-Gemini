@@ -229,6 +229,13 @@ fn main() {
     let lambda: f64 = arg("--lambda", "1.0").parse().unwrap();
     let patience: usize = arg("--patience", "40").parse().unwrap();
     let promote = args.iter().any(|a| a == "--promote");
+    // P-1/P-2 — objetivo: dir (barrera triple HOST-010) | vol (σ futura,
+    // regresión) | volu (profundidad media, regresión).
+    let label_mode = arg("--label", "dir");
+    if !matches!(label_mode.as_str(), "dir" | "vol" | "volu") {
+        eprintln!("❌ --label inválido: {} (dir|vol|volu)", label_mode);
+        std::process::exit(1);
+    }
 
     println!("🌲 [TRAIN-FOREST] {} ← {}", symbol, in_path);
     println!("   muestras≤{} horizonte={}ms stride={}ms árboles≤{} lr={} depth={} λ={}",
@@ -357,6 +364,48 @@ fn main() {
                 full[34..44].copy_from_slice(&sp);
                 full[44..].copy_from_slice(&macro_block);
                 if full.iter().all(|f| f.is_finite()) {
+                    // P-1/P-2 (MOTOR UNIVERSAL): modos de PREDICCIÓN además de
+                    // dirección. `--label vol` ⇒ RMS de retornos de mid sobre
+                    // el horizonte (×100, %/tick) — σ futura; `--label volu`
+                    // ⇒ profundidad media del libro (bq+aq)/tick — actividad
+                    // de dinero. REGRESIÓN (grad = f−y, hess = 1, init = media;
+                    // serving por predict_raw SIN sigmoid). `dir` ⇒ barrera
+                    // triple HOST-010 (clasificación, como siempre).
+                    if label_mode != "dir" {
+                        let deadline = t.ts + horizon_ms;
+                        let mut sum_sq = 0.0f64;
+                        let mut n_rt = 0usize;
+                        let mut qty_sum = 0.0f64;
+                        let mut prev = mid;
+                        for f in (i + 1)..n_total {
+                            let ft = &raw[f];
+                            if ft.ts > deadline {
+                                break;
+                            }
+                            if ft.bid <= 0.0 || ft.ask <= 0.0 {
+                                continue;
+                            }
+                            let fm = (ft.bid + ft.ask) / 2.0;
+                            if prev > 0.0 {
+                                let r = (fm - prev) / prev;
+                                sum_sq += r * r;
+                                n_rt += 1;
+                            }
+                            qty_sum += ft.bq + ft.aq;
+                            prev = fm;
+                        }
+                        let label = if n_rt == 0 {
+                            continue;
+                        } else if label_mode == "vol" {
+                            (sum_sq / n_rt as f64).sqrt() * 100.0
+                        } else {
+                            qty_sum / n_rt as f64
+                        };
+                        if label.is_finite() {
+                            feats.push(full.to_vec());
+                            labels.push(label);
+                        }
+                    } else {
                     // Triple barrera por TIEMPO DE RELOJ dentro de horizon_ms.
                     // HOST-010 (DECIMOCUARTO): la geometría del label debe ser
                     // la del trade REAL — SL −sl_pct vs TP +tp_pct (RR≥2 por
@@ -401,17 +450,23 @@ fn main() {
                         feats.push(full.to_vec());
                         labels.push(label);
                     }
+                    } // fin modo dir
                 }
             }
         }
         let n = labels.len();
         if n < 5_000 {
-            eprintln!("❌ muestras decisivas insuficientes: {} (+{} neutros)", n, neutrals);
+            eprintln!("❌ muestras insuficientes: {} (+{} neutros)", n, neutrals);
             std::process::exit(1);
         }
-        let pos_rate = labels.iter().filter(|&&y| y > 0.5).count() as f64 / n as f64;
-        println!("   [{}] {} muestras decisivas ({} neutros) · largo {:.1}%",
-                 path, n, neutrals, pos_rate * 100.0);
+        if label_mode == "dir" {
+            let pos_rate = labels.iter().filter(|&&y| y > 0.5).count() as f64 / n as f64;
+            println!("   [{}] {} muestras decisivas ({} neutros) · largo {:.1}%",
+                     path, n, neutrals, pos_rate * 100.0);
+        } else {
+            let mean_y = labels.iter().sum::<f64>() / n as f64;
+            println!("   [{}] {} muestras · label[{}] media {:.6}", path, n, label_mode, mean_y);
+        }
         (feats, labels)
     };
     let (feats, labels) = build(&in_path);
@@ -438,8 +493,14 @@ fn main() {
     let split = tr_y.len();
 
     // ── 4. GBDT con early stopping ───────────────────────────────────────
+    let is_regression = label_mode != "dir";
     let p_bar = tr_y.iter().sum::<f64>() / tr_y.len() as f64;
-    let init_score = (p_bar / (1.0 - p_bar)).ln() as f32;
+    // Regresión: init = media (predicción cruda); clasificación: logit.
+    let init_score = if is_regression {
+        p_bar as f32
+    } else {
+        (p_bar / (1.0 - p_bar)).ln() as f32
+    };
     let logloss = |fs: &[Vec<f32>], ys: &[f64], f_pred: &[f64]| -> f64 {
         fs.iter()
             .zip(ys.iter())
@@ -451,6 +512,14 @@ fn main() {
             .sum::<f64>()
             / ys.len() as f64
     };
+    // P-1/P-2: MSE sobre la predicción CRUDA (sin sigmoid) — regresión.
+    let mse = |ys: &[f64], f_pred: &[f64]| -> f64 {
+        ys.iter()
+            .zip(f_pred.iter())
+            .map(|(&y, &f)| (y - f) * (y - f))
+            .sum::<f64>()
+            / ys.len().max(1) as f64
+    };
     let mut f_train = vec![init_score as f64; split];
     let mut f_val = vec![init_score as f64; va_y.len()];
     let mut trees: Vec<Vec<TreeNode>> = Vec::new();
@@ -461,14 +530,20 @@ fn main() {
     let n_feat = tr_feats[0].len();
 
     for round in 0..n_rounds {
-        // grad/hess de la logloss por muestra de train (XGBoost-style)
+        // grad/hess por muestra de train (XGBoost-style):
+        // clasificación: logloss (y−σ(f), σ(1−σ)); regresión: squared loss
+        // (f−y, 1) — P-1/P-2.
         let mut data: Vec<(Vec<f32>, f64, f64)> = tr_feats
             .iter()
             .zip(f_train.iter())
             .zip(tr_y.iter())
             .map(|((x, &f), &y)| {
-                let p = sigmoid(f);
-                (x.clone(), y - p, p * (1.0 - p))
+                if is_regression {
+                    (x.clone(), f - y, 1.0)
+                } else {
+                    let p = sigmoid(f);
+                    (x.clone(), y - p, p * (1.0 - p))
+                }
             })
             .collect();
         // Subconjunto de features (70%) por árbol para diversidad
@@ -495,16 +570,19 @@ fn main() {
         }
         trees.push(nodes);
         if round % 5 == 0 || round == n_rounds - 1 {
-            let vl = logloss(&va_feats, &va_y, &f_val);
-            if vl + 1e-6 < best_val {
+            let (vl, tl) = if is_regression {
+                (mse(&va_y, &f_val), mse(&tr_y, &f_train))
+            } else {
+                (logloss(&va_feats, &va_y, &f_val), logloss(&tr_feats, &tr_y, &f_train))
+            };
+            if vl + 1e-9 < best_val {
                 best_val = vl;
                 best_rounds = trees.len();
                 since_improve = 0;
             } else {
                 since_improve += 5;
             }
-            let tl = logloss(&tr_feats, &tr_y, &f_train);
-            println!("   ronda {:3} train {:.5} · val {:.5} {}", round, tl, vl,
+            println!("   ronda {:3} train {:.6} · val {:.6} {}", round, tl, vl,
                      if since_improve == 0 { "★" } else { "" });
             if since_improve >= patience {
                 println!("   early stopping (paciencia {})", patience);
@@ -514,27 +592,51 @@ fn main() {
     }
     trees.truncate(best_rounds.max(1));
 
-    // Baseline honesto: logloss de validación prediciendo la tasa base
+    // Baseline honesto: el modelo debe vencer al predictor constante
+    // (tasa base en clasificación; media en regresión).
     let base_pred = vec![init_score as f64; va_y.len()];
-    let baseline = logloss(&va_feats, &va_y, &base_pred);
-    // Varianza de predicción en val (el diagnóstico del forest congelado)
-    let val_preds: Vec<f64> = va_feats.iter().zip(f_val.iter()).map(|(_, &f)| sigmoid(f)).collect();
+    let baseline = if is_regression {
+        mse(&va_y, &base_pred)
+    } else {
+        logloss(&va_feats, &va_y, &base_pred)
+    };
+    // Diagnóstico: predicciones (sigmoid en clasificación; crudas en regresión)
+    let val_preds: Vec<f64> = va_feats
+        .iter()
+        .zip(f_val.iter())
+        .map(|(_, &f)| if is_regression { f } else { sigmoid(f) })
+        .collect();
     let mut sorted_p = val_preds.clone();
     sorted_p.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let var = val_preds.iter().map(|p| (p - 0.5) * (p - 0.5)).sum::<f64>() / val_preds.len() as f64;
+    let p_mean = val_preds.iter().sum::<f64>() / val_preds.len() as f64;
+    let var = val_preds
+        .iter()
+        .map(|p| (p - p_mean) * (p - p_mean))
+        .sum::<f64>()
+        / val_preds.len() as f64;
+    let metric_name = if is_regression { "MSE" } else { "logloss" };
     println!("═══ VEREDICTO ═══");
-    println!("   val logloss modelo: {:.5} · baseline: {:.5} (Δ {:+.5})", best_val, baseline,
-             baseline - best_val);
-    println!("   p10={:.3} p50={:.3} p90={:.3} · varianza={:.5}",
+    println!("   val {} modelo: {:.6} · baseline: {:.6} (mejora {:+.6})",
+             metric_name, best_val, baseline, baseline - best_val);
+    println!("   p10={:.6} p50={:.6} p90={:.6} · varianza={:.6}",
              sorted_p[sorted_p.len() / 10], sorted_p[sorted_p.len() / 2],
              sorted_p[9 * sorted_p.len() / 10], var);
 
-    // Margen anti-empate: una diferencia de 1e-5 es ruido numérico, no
-    // edge (hallazgo real: un empate exacto se coló como 'gate superado').
+    // Margen anti-empate. Clasificación: Δ absoluto de logloss ≥ 0.001.
+    // Regresión: el margen se interpreta RELATIVO (fracción de varianza
+    // explicada, R²): default 0.001 = 0.1% de la varianza — vol/volumen
+    // tienen señal modesta pero accionable mucho antes que 2%.
     let gate_margin: f64 = arg("--gate-margin", "0.001").parse().unwrap();
-    if baseline - best_val < gate_margin {
-        println!("🚫 GATE: Δ {:+.5} < margen {} — sin evidencia real de edge. El modelo vivo NO se toca.",
-                 baseline - best_val, gate_margin);
+    let gate_pass = if is_regression {
+        let r2 = if baseline > 1e-12 { (baseline - best_val) / baseline } else { 0.0 };
+        println!("   R² = {:.4}", r2);
+        r2 >= gate_margin
+    } else {
+        baseline - best_val >= gate_margin
+    };
+    if !gate_pass {
+        println!("🚫 GATE: mejora < margen {} — sin evidencia real. El modelo vivo NO se toca.",
+                 gate_margin);
         if !promote {
             return;
         }
@@ -567,16 +669,26 @@ fn main() {
         tree_offsets,
         init_score,
     };
+    // P-1/P-2: el sufijo del modelo declara su objetivo — {SYM}_MOTOR
+    // (dirección), {SYM}_VOL (σ futura), {SYM}_VOLU (profundidad media).
+    // El watcher del host auto-carga cualquier models/{KEY}.json bajo esa
+    // key; los predictores de regresión se sirven con predict_raw (sin
+    // sigmoid).
+    let suffix = match label_mode.as_str() {
+        "vol" => "_VOL",
+        "volu" => "_VOLU",
+        _ => "_MOTOR",
+    };
     let out = if promote {
-        format!("models/{}_MOTOR.json", symbol)
+        format!("models/{}{}.json", symbol, suffix)
     } else {
-        format!("models/{}_MOTOR_CANDIDATE.json", symbol)
+        format!("models/{}{}_CANDIDATE.json", symbol, suffix)
     };
     let mut f = File::create(&out).unwrap();
     serde_json::to_writer_pretty(&mut f, &model).unwrap();
     println!("💾 {} ({} árboles, init {:.4}){}", out, trees.len(), init_score,
-             if best_val >= baseline { " — [gate NO superado, revisar antes de promover]" } else { "" });
-    if !promote && best_val < baseline {
+             if !gate_pass { " — [gate NO superado, revisar antes de promover]" } else { "" });
+    if !promote && gate_pass {
         println!("   para promover al vivo: re-ejecuta con --promote (hot-swap lo recoge en ≤10s)");
     }
 }

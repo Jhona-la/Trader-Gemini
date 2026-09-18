@@ -145,8 +145,11 @@ mod tests {
 
         assert!(store.write_tensor_block_64(&tensor).is_ok());
         assert!(store.write_tensor_block_64(&tensor).is_ok());
-        // 3rd block must fail with capacity exceeded
-        assert!(store.write_tensor_block_64(&tensor).is_err());
+        // D-517: rotación circular PERMANENTE — el 3er bloque NO falla:
+        // envuelve al inicio del buffer (ring 24/7, sin agotamiento). La
+        // aserción vieja (is_err en el 3er bloque) era la semántica
+        // pre-D-517 que el diseño actual reemplazó deliberadamente.
+        assert!(store.write_tensor_block_64(&tensor).is_ok());
 
         let _ = std::fs::remove_file(path);
     }

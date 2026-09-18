@@ -506,6 +506,19 @@ impl RiskEngine {
         // Ahora ambos caminos llaman a la MISMA función pura con las MISMAS
         // entradas: la identidad es estructural, no disciplinaria.
         let tau_for_sizing = horizon_tau_ms(intent, arena);
+        // S-7: Hurst DE LA ESCALA OPERADA — hurst_scale_matched es el H(τ)
+        // multifractal que el core selecciona por τ dominante; fallback al
+        // escalar global si aún no fue escrito (0.0).
+        let hurst_for_geometry = {
+            let h_scale = arena.coins[coin_id]
+                .hurst_scale_matched
+                .load(Ordering::Relaxed);
+            if h_scale.is_finite() && (0.05..=0.95).contains(&h_scale) {
+                h_scale
+            } else {
+                hurst_exponent
+            }
+        };
         // D-682 (DÉCIMA OLA): el gate evaluaba `compute_tp_sl` (TP = SL·RR_req)
         // mientras la orden usaba `compute_tp_sl_with_target_rr` (TP = SL·RR
         // genómico, mayor): la identidad que D-637 prometía seguía rota. Ahora
@@ -514,7 +527,7 @@ impl RiskEngine {
             crate::tp_sl::TpSlInputs {
                 tau_ms: tau_for_sizing,
                 atr_ratio: atr_pct,
-                hurst: hurst_exponent,
+                hurst: hurst_for_geometry,
                 roundtrip_fee,
                 sl_atr_multiplier: arena
                     .config

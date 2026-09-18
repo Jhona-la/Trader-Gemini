@@ -593,6 +593,12 @@ pub async fn run_sentiment_onchain_poller(state: Arc<OmniState>) {
         "https://fapi.binance.com"
     };
     let funding_url = format!("{}/fapi/v1/premiumIndex?symbol=BTCUSDT", base_url);
+    // P-3 (PREDICTORES): OPEN INTEREST — el dinero apalancado dentro del
+    // mercado. omni[12] llevaba sin productor desde el origen. BTC como
+    // proxy de régimen global de apalancamiento (normalizado log contra
+    // $1B: OI $100M≈0.67, $1B=1.0, cap); per-símbolo queda documentado
+    // como extensión del mismo patrón.
+    let oi_url = format!("{}/fapi/v1/openInterest?symbol=BTCUSDT", base_url);
 
     loop {
         ticker.tick().await;
@@ -623,6 +629,20 @@ pub async fn run_sentiment_onchain_poller(state: Arc<OmniState>) {
                             state
                                 .agg_funding_rate
                                 .store(safe_funding.to_bits(), Ordering::Relaxed);
+                        }
+                    }
+                }
+            }
+        }
+        if let Ok(res) = client.get(&oi_url).send().await {
+            if let Ok(json) = res.json::<Value>().await {
+                if let Some(oi_str) = json.get("openInterest").and_then(|v| v.as_str()) {
+                    if let Ok(oi) = oi_str.parse::<f64>() {
+                        if oi.is_finite() && oi > 0.0 {
+                            let safe_oi = (oi.ln() / 1.0e9f64.ln()).clamp(0.0, 1.0);
+                            state
+                                .agg_open_interest
+                                .store(safe_oi.to_bits(), Ordering::Relaxed);
                         }
                     }
                 }

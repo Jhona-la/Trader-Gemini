@@ -889,6 +889,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             streams.push('/');
         }
     }
+    // P-4 (PREDICTORES): stream de LIQUIDACIONES de todo el mercado. Cada
+    // forceOrder alimenta liquidation_feed::bump → dex_severity viva en el
+    // tensor dark_alpha (decae con la constante genómica) + omni[10].
+    streams.push_str("/!forceOrder@arr");
     let streams_str = streams.clone();
     let initial_ws_host = if let Ok(ep) = env::var("BEST_WS_ENDPOINT") {
         ep
@@ -1885,6 +1889,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // no un arranque.
         {
             let exec_brk = Arc::clone(&exec);
+            let arena_brk = Arc::clone(&arena_real);
             rt_handle.spawn(async move {
                 let now0 = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -1937,16 +1942,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if executor.is_kill_switch_active() {
                         continue;
                     }
-                    // B3.6b — ventana RODANTE 24h: la evidencia de fees no
-                    // expira con el arranque del motor. Paginado: el
-                    // endpoint trae máx 1000 entradas y un día activo
-                    // (~4 entradas/trade) puede truncar la ventana —
-                    // truncar sub-cuenta fees (falso negativo).
+                    // B3.6b — ventana RODANTE: la evidencia de fees no expira
+                    // con el arranque del motor. S-5 (ESPECTRALIZACIÓN): la
+                    // ventana escala con la τ dominante del SÍMBOLO — un
+                    // símbolo de τ 5min es juzgado en su propia escala de
+                    // evidencia (24×τ, clamp [1h, 48h]; τ~1h ⇒ 24h como
+                    // antes), no en un día de reloj arbitrario. Paginado: el
+                    // endpoint trae máx 1000 entradas.
                     let now_breaker = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64;
-                    let window_start = now_breaker - 24 * 3_600_000;
+                    // S-5: τ de la escala que el genoma opera (temporal_scale
+                    // s∈[0,1] → τ log-lineal) — el breaker corre en su propio
+                    // daemon sin acceso al espectro vivo del core; el genoma
+                    // es la escala estable de referencia para la ventana.
+                    let l_fast = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();
+                    let l_slow = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS.ln();
+                    let s_gen = arena_brk
+                        .config
+                        .temporal_scale
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        .clamp(0.0, 1.0);
+                    let tau_scale = (l_fast + s_gen * (l_slow - l_fast))
+                        .exp()
+                        .clamp(30_000.0, 43_200_000.0);
+                    let window_ms = (24.0 * tau_scale).clamp(3_600_000.0, 48.0 * 3_600_000.0) as u64;
+                    let window_start = now_breaker.saturating_sub(window_ms);
                     let Ok(entries) = executor
                         .fetch_income_paged(&[], window_start, 4)
                         .await
@@ -1998,15 +2020,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .map(|g| g.get(&sym).copied().unwrap_or(0))
                                 .unwrap_or(0)
                                 > now_breaker;
-                            let until_ms = now_breaker + 4 * 3_600_000;
+                            // S-5: suspensión proporcional a la ofensa —
+                            // fees/gross mide cuánta fricción paga el símbolo
+                            // por unidad de ganancia bruta: ratio 1.0 ⇒ 4h
+                            // (histórico), ratio 3.0 ⇒ 12h, clamp [1h, 12h].
+                            let offense = (a.fees / a.gross_pos.max(1e-9)).clamp(0.25, 3.0);
+                            let suspend_hours = (offense * 4.0).clamp(1.0, 12.0) as u64;
+                            let until_ms = now_breaker + suspend_hours * 3_600_000;
                             suspend_symbol_until(&sym, until_ms);
                             // B3.6b — persistir (atómico, purga expirados): la
                             // suspensión sobrevive reinicios del motor.
                             persist_fee_breaker(now_breaker);
                             if !was_suspended {
                                 telemetry_server::telemetry_log!(
-                                    "🛑 [FEE-BREAKER] {} suspendido 4h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
-                                    sym, a.trades, a.gross_pos, a.fees, net
+                                    "🛑 [FEE-BREAKER] {} suspendido {}h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
+                                    sym, suspend_hours, a.trades, a.gross_pos, a.fees, net
                                 );
                             }
                         }
@@ -2409,6 +2437,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|s| quantum_engine::orderbook::OrderBook::new(s.clone()))
             .collect();
+        // P-5 (PREDICTORES / ENTES): tracker de volumen institucional por
+        // símbolo — z-score de burst sobre el flujo @trade REAL (la clase
+        // estaba exportada con CERO call sites). `whale_burst_z` al registry.
+        let mut whale_trackers: Vec<feature_engine::InstitutionalVolumeTracker> = symbols_clone
+            .iter()
+            .map(|_| feature_engine::InstitutionalVolumeTracker::default())
+            .collect();
         let mut msg_count: u64 = 0;
         // D-610: guardia de secuencia del libro, un estado por símbolo del
         // universo (misma indexación que `local_orderbooks`).
@@ -2424,6 +2459,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let is_trade = memchr::memmem::find(&msg_bytes, b"\"e\":\"trade\"").is_some();
             let is_kline = memchr::memmem::find(&msg_bytes, b"\"e\":\"kline\"").is_some();
             let is_depth = memchr::memmem::find(&msg_bytes, b"\"e\":\"depthUpdate\"").is_some();
+            // P-4: liquidaciones del mercado completo (stream de arreglo:
+            // [{e:forceOrder, o:{s,S,q,p,...}}, ...]). Severidad por evento
+            // = |precio×qty| log-normalizado; el tensor dark_alpha decae.
+            // Estos mensajes son RAROS (docenas/hora) — un parse JSON
+            // ligero por evento no toca el hot path de trade/depth.
+            let is_force_order = memchr::memmem::find(&msg_bytes, b"forceOrder").is_some();
+            if is_force_order && !is_trade && !is_kline && !is_depth {
+                if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&msg_bytes) {
+                    let items: Vec<&serde_json::Value> = v
+                        .as_array()
+                        .map(|a| a.iter().collect())
+                        .unwrap_or_else(|| vec![&v]);
+                    for it in items {
+                        let o = it.get("o").unwrap_or(it);
+                        let p = o.get("p").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok());
+                        let q = o.get("q").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok());
+                        if let (Some(p), Some(q)) = (p, q) {
+                            let notional = (p * q).abs();
+                            god_engine_core::liquidation_feed::bump(
+                                god_engine_core::liquidation_feed::severity_from_notional(notional),
+                            );
+                        }
+                    }
+                }
+                msg_count += 1;
+                continue;
+            }
             let is_reconnect = msg_bytes == b"[SYSTEM:RECONNECT]";
 
             if is_reconnect {
@@ -2594,6 +2656,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Corrige la ceguera de volumen agresivo y profundidad del libro en vivo (Causa Forense #D117).
                 if is_trade {
                     engine_real.arena.update_agg_trade(coin_id, is_buyer_maker, qty);
+                    // P-5 — ENTE BALLENA: z-score de burst sobre el volumen
+                    // del trade real; publicado al registry por símbolo.
+                    if coin_id < whale_trackers.len() {
+                        let notional = qty * current_price;
+                        if notional.is_finite() && notional > 0.0 {
+                            let (z, _accel, is_burst) = whale_trackers[coin_id].update(notional);
+                            if is_burst {
+                                let sym_scoped = symbol_to_id
+                                    .iter()
+                                    .find(|(_, &v)| v == coin_id)
+                                    .map(|(k, _)| k.to_uppercase())
+                                    .unwrap_or_default();
+                                engine_real.arena.registry.set_scoped(
+                                    &sym_scoped,
+                                    "whale_burst_z",
+                                    z.clamp(0.0, 10.0),
+                                );
+                            }
+                        }
+                    }
                 } else if is_depth {
                     engine_real.arena.update_l2_depth(coin_id, dbq, daq);
                 }
@@ -3205,9 +3287,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // max_leverage arriba — una sola cadena de decisión.
                             let kelly_frac = risk_envelope.risk_fraction(env_z, env_k);
                             let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
-                            exec_leverage = ((core_leverage as f64 * kelly_frac * 20.0)
-                                .clamp(1.0, 20.0) as u32)
-                                .min(cap);
+                            // S-4 (ESPECTRALIZACIÓN): el ×20 codificaba "5% del
+                            // margen en riesgo" INDEPENDIENTE del stop — un
+                            // trade de banda lenta con SL de 1.5% arriesgaba
+                            // 30% del margen. Ahora el presupuesto de riesgo
+                            // (5% · kelly_frac) se divide por la DISTANCIA REAL
+                            // del stop a τ de entrada: leverage = riesgo/SL.
+                            // SL 0.25% (banda rápida) ⇒ ×20 como antes; SL
+                            // 1.5% (banda lenta) ⇒ ×6.7 — misma $ en riesgo.
+                            let tau_entry = engine_real.arena.coins[coin_id]
+                                .positions
+                                .position
+                                .entry_tau_ms
+                                .load(Ordering::Relaxed)
+                                as f64;
+                            let sl_frac = engine_real.arena.config.sl_at_tau(
+                                if tau_entry > 0.0 { tau_entry } else { 30_000.0 },
+                            );
+                            let risk_budget = 0.05 * kelly_frac; // fracción del margen por trade
+                            let lev_from_risk =
+                                (risk_budget / sl_frac.max(1e-4)).clamp(1.0, 20.0);
+                            exec_leverage =
+                                (lev_from_risk as u32).min(cap).max(1);
                         } else {
                             exec_leverage = 0; // SIN ORDEN: la matemática dijo NO
                         }

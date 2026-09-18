@@ -195,6 +195,12 @@ pub struct CoinArena {
     pub ml_prob: AtomicF64,
     pub current_atr: AtomicF64,
     pub hurst_exponent: AtomicF64,
+    /// S-7 (ESPECTRALIZACIÓN): Hurst multifractal SELECCIONADO POR τ — el
+    /// H de la escala que el motor opera AHORA (micro si τ<2min, meso si
+    /// τ<1h, macro después). `hurst_exponent` sigue siendo el escalar
+    /// global; `compute_tp_sl` consume ESTE: la geometría del trade usa la
+    /// persistencia del horizonte que realmente tradea.
+    pub hurst_scale_matched: AtomicF64,
     /// Epigenetic Multipliers (Memory of past success/failure)
     pub epigenetic_bias: AtomicF64,
     pub epigenetic_threshold_modifier: AtomicF64,
@@ -287,6 +293,7 @@ impl CoinArena {
             ml_prob: AtomicF64::new(w_base),
             current_atr: AtomicF64::new(0.0),
             hurst_exponent: AtomicF64::new(0.5),
+            hurst_scale_matched: AtomicF64::new(0.5),
             epigenetic_bias: AtomicF64::new(1.0),
             epigenetic_threshold_modifier: AtomicF64::new(1.0),
             spot_bid: AtomicF64::new(0.0),
