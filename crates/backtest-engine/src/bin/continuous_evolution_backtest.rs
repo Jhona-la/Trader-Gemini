@@ -710,11 +710,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         println!(
-            "🔬 [SIGNAL-PATH] council_vetoes={} opened={} swing_vetoes={} swing_opened={} | intents={} (scalp={} swing={}) orders={} max_intent_conf={:.4} max_obi={:.4} tech_thr={:.6} max_micro_trend={:.6}",
+            "🔬 [SIGNAL-PATH] council_vetoes={} opened={} | intents={} (fast={} slow={}) orders={} max_intent_conf={:.4} max_obi={:.4} tech_thr={:.6} max_micro_trend={:.6}",
             engine.diag_council_vetoes,
             engine.diag_opened,
-            engine.diag_swing_vetoes,
-            engine.diag_swing_opened,
             diag.intents,
             diag.intents_scalp,
             diag.intents_swing,

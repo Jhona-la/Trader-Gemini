@@ -12,7 +12,7 @@
 //!   - Cota superior ~2 años: los ciclos macro relevantes para futuros
 //!     USDT-M (halving ≈ 4y queda como contexto macro, no como horizonte
 //!     operable con data de 2019+).
-//!   - Entre ambas: ESPECTRO CONTINUO log-espaciado base-4: 19 escalas de
+//!   - Entre ambas: ESPECTRO CONTINUO log-espaciado base-4: 32 escalas de
 //!     1ms a 68_719_476_736ms (≈2.18 años) sin huecos ni bandas prohibidas.
 //!
 //! QUÉ calcula CADA TICK (todo junto, nanosegundo a nanosegundo de proceso):
@@ -22,7 +22,7 @@
 //!   RIESGO entre escalas (cada horizonte aporta según su Sharpe potencial
 //!   inverso a su ruido). Nada de "scalp manda aquí, swing allá".
 //!
-//! COSTE: O(S)=19 escalas × ~6 FLOPs = ~120 FLOPs/tick — despreciable frente
+//! COSTE: O(S)=32 escalas × ~6 FLOPs = ~120 FLOPs/tick — despreciable frente
 //! al proceso del evento本身.
 
 /// Escalas del espectro: 10^-6 ms * 4^i para i∈0..32 → 1 ns (10^-6 ms) … ≈146.15 años (4.61*10^12 ms).

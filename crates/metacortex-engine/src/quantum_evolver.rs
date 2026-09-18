@@ -39,16 +39,12 @@ impl QuantumState {
             }
         }
 
-        // Base window calculation adaptativo para modo
-        let window_size = match mode {
-            TradingHorizon::Scalping => 16 + (amplitudes[0].abs() * 64.0) as usize, // ventanas pequeñas, respuesta nano
-            TradingHorizon::Swing => 256 + (amplitudes[0].abs() * 1024.0) as usize, // ventanas muy grandes
-            // U-F: interpolación geométrica del continuo (media de los extremos)
-            TradingHorizon::Continuous => {
-                let s = 16 + (amplitudes[0].abs() * 64.0) as usize;
-                let l = 256 + (amplitudes[0].abs() * 1024.0) as usize;
-                ((s as f64 * l as f64).sqrt()) as usize
-            }
+        // Base window calculation — U-6: motor continuo; interpolación
+        // geométrica de los extremos del continuo (sin modos binarios).
+        let window_size = {
+            let s = 16 + (amplitudes[0].abs() * 64.0) as usize;
+            let l = 256 + (amplitudes[0].abs() * 1024.0) as usize;
+            ((s as f64 * l as f64).sqrt()) as usize
         };
         let threshold = 1.0 + amplitudes[1].abs() * 2.5;
         let funding_weight = amplitudes[2] * 2.0;
@@ -73,15 +69,10 @@ impl QuantumState {
             f64::MAX
         };
 
-        let complexity_penalty = match self.mode {
-            TradingHorizon::Scalping => (self.window_size as f64 / 64.0) * 0.1, // Penaltis estrictos por lentitud
-            TradingHorizon::Swing => (self.window_size as f64 / 1024.0) * 0.02,
-            // U-F: media de los extremos del continuo
-            TradingHorizon::Continuous => {
-                ((self.window_size as f64 / 64.0) * 0.1 + (self.window_size as f64 / 1024.0) * 0.02)
-                    / 2.0
-            }
-        };
+        // U-6: media de los extremos del continuo — sin modos binarios.
+        let complexity_penalty =
+            ((self.window_size as f64 / 64.0) * 0.1 + (self.window_size as f64 / 1024.0) * 0.02)
+                / 2.0;
         let stability_cost = (self.threshold - 2.0).powi(2) * 0.02;
         let total = err + complexity_penalty + stability_cost;
         self.energy = if total.is_finite() { total } else { f64::MAX };

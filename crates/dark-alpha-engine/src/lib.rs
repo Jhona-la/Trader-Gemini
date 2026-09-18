@@ -638,7 +638,7 @@ impl DarkAlphaEngine {
         }
     }
 
-    /// Crear modelo con tamaños por defecto correspondientes a get_swing_features (34)
+    /// Crear modelo con tamaños por defecto correspondientes a get_universal_features (34)
     pub fn default_model() -> Self {
         Self::new(34, 64, 32)
     }

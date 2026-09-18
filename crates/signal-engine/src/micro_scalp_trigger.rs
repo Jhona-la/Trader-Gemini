@@ -137,7 +137,7 @@ impl QuantumStrategy for MicroScalpTriggerEngine {
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let ml_prob = r
-            .get_scoped_parameter(sym_opt, cid_opt, "ml_prob_scalp", "MicroScalpTriggerEngine")
+            .get_scoped_parameter(sym_opt, cid_opt, "ml_prob_motor", "MicroScalpTriggerEngine")
             .map(|p| p.get_value())
             .unwrap_or(0.5);
 
@@ -220,7 +220,7 @@ mod tests {
         let registry = Arc::new(OmniscientRegistry::new());
         registry.set("hawkes_intensity", 2.0);
         registry.set("order_book_imbalance", 0.5);
-        registry.set("ml_prob_scalp", 0.85);
+        registry.set("ml_prob_motor", 0.85);
 
         let mut engine = MicroScalpTriggerEngine::new();
         assert!(engine.init(registry).is_ok());

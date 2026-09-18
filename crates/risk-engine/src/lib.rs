@@ -785,15 +785,14 @@ impl RiskEngine {
 /// En ningún caso se consulta la etiqueta discreta para elegir parámetros:
 /// ésta sólo desempata el extremo del continuo cuando no hay nada mejor.
 fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
-    let s = match intent.horizon {
-        TradeHorizon::Scalp => 0.0,
-        TradeHorizon::Swing => 1.0,
-        TradeHorizon::Continuous => arena
-            .config
-            .temporal_scale
-            .load(Ordering::Relaxed)
-            .clamp(0.0, 1.0),
-    };
+    // U-6: el motor continuo sólo produce TradeHorizon::Continuous — el eje
+    // temporal es el `temporal_scale` del arena (log-lineal sobre el espectro).
+    let _ = intent.horizon;
+    let s = arena
+        .config
+        .temporal_scale
+        .load(Ordering::Relaxed)
+        .clamp(0.0, 1.0);
     quantum_arena::temporal_spectrum::operating_tau_ms(intent.expected_duration_ms, s)
 }
 

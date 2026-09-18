@@ -601,8 +601,8 @@ impl EvolutionEngine {
                 // FIX BLOQUEO #7: Colapso cuántico para salir del pozo de estancamiento local
                 let latest_ts = all_ticks.last().map(|t| t.timestamp).unwrap_or(42);
                 use metacortex_engine::consejo_seniors::TradingHorizon;
-                // Add mode depending on the context, defaulting to Scalping if not specified.
-                let mode = TradingHorizon::Scalping; // Or extract from context if available
+                // U-6: motor continuo — un solo modo.
+                let mode = TradingHorizon::Continuous;
                 let q_state = quantum_evolver.anneal_and_collapse(latest_ts, 0.25, mode);
                 println!(
                     "⚛️ [QUANTUM-EVOLVER] Recocido cuántico activado. Energy: {:.4} | Window: {} | Thresh: {:.2} | VolMult: {:.2}",

@@ -6,12 +6,15 @@ pub enum SignalType {
     Flat,
 }
 
+/// U-6 (MOTOR UNIVERSAL CONTINUO): el horizonte de un trade NO es una
+/// etiqueta binaria — es una posición τ en el continuo espectral. Este enum
+/// conserva sólo `Continuous` como marcador de "el eje temporal vive en
+/// `expected_duration_ms` + `temporal_scale`"; las variantes Scalp/Swing
+/// fueron extirpadas (con sus mapas duplicados a 0.0/1.0).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TradeHorizon {
     #[default]
     Continuous,
-    Scalp,
-    Swing,
 }
 
 #[derive(Debug, Clone, Copy, Default)]

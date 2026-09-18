@@ -8,7 +8,7 @@
 //! replica ese contrato EXACTO.
 //!
 //! PARIDAD 1:1 con inferencia: los features salen del MISMO
-//! `StatefulEngine::get_swing_features()` que alimenta al motor en vivo
+//! `StatefulEngine::get_universal_features()` que alimenta al motor en vivo
 //! (misma secuencia process_tick/update_trade_flow/update_ofi que
 //! feature_exporter). Etiquetas: triple-barrera (López de Prado) con los
 //! pisos institucionales TP 0.36% / SL 0.18%; los neutros se DESCARTAN
@@ -321,7 +321,7 @@ fn main() {
             // obi_accel sólo en train produjo modelos que en vivo predicen
             // ~0.503 constante (v41: señal muerta, cero entradas). Las dims
             // [4][5][10] están zerificadas en AMBOS lados vía
-            // SWING_FEATURES_DEAD_IN_SERVE — esta llamada NO debe volver
+            // FEATURES_DEAD_IN_SERVE — esta llamada NO debe volver
             // hasta que exista un OBI sintético calibrado contra la
             // distribución real del libro.
             warmup += 1;
@@ -337,7 +337,7 @@ fn main() {
                 let Some(macro_block) = macro_asof(t.ts) else {
                     continue;
                 };
-                let sf = engine.get_swing_features();
+                let sf = engine.get_universal_features();
                 let sp = engine.get_spectral_ml_features();
                 // B3.9: mismo contrato de dimensión que la inferencia viva —
                 // un modelo más ancho que el binario sería rechazado al cargar.
@@ -345,13 +345,13 @@ fn main() {
                 let mut full = [0f32; FULL_DIM];
                 full[..34].copy_from_slice(&sf);
                 // C-02 — features MUERTAS en serve ⇒ 0.0 también en train.
-                // SWING_FEATURES_DEAD_IN_SERVE (stateful_engine) es la única
+                // FEATURES_DEAD_IN_SERVE (stateful_engine) es la única
                 // fuente de verdad del mapa vivo/muerto del contrato 34D.
                 // Hoy [9] dark_alpha: ya sale 0.0 porque el trainer alimenta
                 // dex_severity=0.0; el borrado explícito mantiene el
                 // invariante train≡serve aunque alguien cablee después una
                 // historia dex que el vivo no sirve.
-                for &d in god_engine_core::stateful_engine::SWING_FEATURES_DEAD_IN_SERVE {
+                for &d in god_engine_core::stateful_engine::FEATURES_DEAD_IN_SERVE {
                     full[d] = 0.0;
                 }
                 full[34..44].copy_from_slice(&sp);
@@ -568,9 +568,9 @@ fn main() {
         init_score,
     };
     let out = if promote {
-        format!("models/{}_SCALP.json", symbol)
+        format!("models/{}_MOTOR.json", symbol)
     } else {
-        format!("models/{}_SCALP_CANDIDATE.json", symbol)
+        format!("models/{}_MOTOR_CANDIDATE.json", symbol)
     };
     let mut f = File::create(&out).unwrap();
     serde_json::to_writer_pretty(&mut f, &model).unwrap();

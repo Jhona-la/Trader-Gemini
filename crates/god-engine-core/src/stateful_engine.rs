@@ -7,14 +7,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub static DROP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-/// C-02 — índices del vector 34D (`get_swing_features`) cuya fuente de datos
+/// C-02 — índices del vector 34D (`get_universal_features`) cuya fuente de datos
 /// está MUERTA en producción: hoy sólo [9] (dark_alpha / dex_severity, sin
 /// productor MEV-DEX en vivo: `update_macro_features` la recibe como 0.0
 /// constante). Contrato del trainer: estos índices van a 0.0 TAMBIÉN en
 /// entrenamiento (train_forest) — el modelo no puede aprender a depender de
 /// una columna que en serve es constante. Si un productor dex revive la
 /// fuente, actualizar este slice y re-entrenar en el mismo cambio.
-pub const SWING_FEATURES_DEAD_IN_SERVE: &[usize] = &[4, 5, 9, 10];
+pub const FEATURES_DEAD_IN_SERVE: &[usize] = &[4, 5, 9, 10];
 // B3.35: [4][5][10] (obi_accel) añadidas — el OBI del trainer (aggTrades
 // sintético con is_buyer_maker) tiene DISTRIBUCIÓN INCOMPATIBLE con el OBI
 // del vivo (depth L2 real). El modelo entrenado con OBI sintético predice
@@ -24,11 +24,12 @@ pub const SWING_FEATURES_DEAD_IN_SERVE: &[usize] = &[4, 5, 9, 10];
 // estos índices y re-entrenar.
 
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
+/// U-6 (MOTOR UNIVERSAL CONTINUO): variantes Scalping/Swing extirpadas —
+/// el régimen del motor continuo es Continuous/Neutral (el régimen MACRO
+/// mayor vive en risk_engine::regime::MarketRegime, ortogonal).
 pub enum MarketRegime {
     #[default]
     Continuous,
-    Scalping,
-    Swing,
     Neutral,
 }
 
@@ -157,7 +158,7 @@ impl StatefulEngine {
 
     /// Smart cooldown per asset con decaimiento temporal: evita parálisis eterna por rachas pasadas
     #[inline(always)]
-    pub fn can_open_scalp(&self, min_cooldown: u64) -> bool {
+    pub fn can_open_position(&self, min_cooldown: u64) -> bool {
         let elapsed = self.tick_count.saturating_sub(self.last_scalp_exit_tick);
         let active_streak = if elapsed > 18_000 {
             0
@@ -180,12 +181,6 @@ impl StatefulEngine {
             _ => min_cooldown * 30,  // ~18,000 ticks (~1.5 horas)
         };
         elapsed >= required
-    }
-
-    /// Smart cooldown universal para posiciones en el espectro continuo
-    #[inline(always)]
-    pub fn can_open_position(&self, min_cooldown: u64) -> bool {
-        self.can_open_scalp(min_cooldown)
     }
 
     /// Obtiene la racha de pérdidas activa para una dirección (long/short), considerando el decaimiento temporal
@@ -577,8 +572,8 @@ impl StatefulEngine {
     /// MUERTA en serve y en train: [9] dark_alpha (dex_severity=0.0, sin
     /// productor). VIVAS en serve (libro real vía update_macro_features),
     /// muertas en train salvo que el trainer llame update_macro_features:
-    /// [4], [5], [10] (obi_accel). Ver SWING_FEATURES_DEAD_IN_SERVE.
-    pub fn get_swing_features(&self) -> [f32; 34] {
+    /// [4], [5], [10] (obi_accel). Ver FEATURES_DEAD_IN_SERVE.
+    pub fn get_universal_features(&self) -> [f32; 34] {
         let micro = self.get_features();
         let omni_feats = self.omni.extract_features();
 
@@ -935,17 +930,17 @@ mod tests {
     /// C-02 (INFORME DECIMOCUARTO): el mapa vivo/muerto del contrato 34D es
     /// verificable, no documentación muerta. [9] (dark_alpha) sirve 0.0
     /// constante en producción (dex_severity sin productor) — y el trainer
-    /// la fuerza a 0 vía SWING_FEATURES_DEAD_IN_SERVE. Las dims de obi_accel
+    /// la fuerza a 0 vía FEATURES_DEAD_IN_SERVE. Las dims de obi_accel
     /// [4],[5],[10] VIVEN en serve: se mueven con el obi real del libro que
     /// `update_macro_features` recibe por evento.
     #[test]
     fn c02_mapa_vivo_muerto_del_vector_34d() {
         // Contrato del slice: índices dentro de las 34, únicos y ordenados.
-        let mut sorted = SWING_FEATURES_DEAD_IN_SERVE.to_vec();
+        let mut sorted = FEATURES_DEAD_IN_SERVE.to_vec();
         sorted.sort_unstable();
         assert!(
             sorted.windows(2).all(|w| w[0] < w[1]),
-            "SWING_FEATURES_DEAD_IN_SERVE con índices repetidos: {:?}",
+            "FEATURES_DEAD_IN_SERVE con índices repetidos: {:?}",
             sorted
         );
         assert!(
@@ -967,7 +962,7 @@ mod tests {
         // Determinismo: dos obis distintos y no nulos al final.
         e.update_macro_features(0.25, 0.0, 0.0, ts);
         e.update_macro_features(0.35, 0.0, 0.0, ts + 100);
-        let f = e.get_swing_features();
+        let f = e.get_universal_features();
         assert_eq!(f.len(), 34);
         assert_eq!(f[9], 0.0, "dark_alpha debe servir 0.0 sin productor dex");
         assert!(
@@ -988,7 +983,7 @@ mod tests {
             assert!(f.is_finite(), "Micro feature debe ser finita");
         }
 
-        let swing_feats = engine.get_swing_features();
+        let swing_feats = engine.get_universal_features();
         assert_eq!(swing_feats.len(), 34);
         for f in &swing_feats {
             assert!(f.is_finite(), "Swing feature debe ser finita");
@@ -999,13 +994,8 @@ mod tests {
     fn test_stateful_engine_market_regime_classification() {
         let engine = StatefulEngine::new();
         let regime = engine.get_market_regime();
-        assert!(matches!(
-            regime,
-            MarketRegime::Continuous
-                | MarketRegime::Scalping
-                | MarketRegime::Swing
-                | MarketRegime::Neutral
-        ));
+        // U-6: el continuo no tiene variantes Scalping/Swing.
+        assert!(matches!(regime, MarketRegime::Continuous | MarketRegime::Neutral));
 
         let atr_pct = engine.get_atr_pct();
         assert!(atr_pct.is_finite());

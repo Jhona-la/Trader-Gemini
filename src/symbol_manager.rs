@@ -116,7 +116,7 @@ pub async fn evolve_symbols_daemon() {
     }
 }
 
-/// B3.37 — ROSTER de modelos validados: símbolos con `models/{SYM}_SCALP.json`
+/// B3.37 — ROSTER de modelos validados: símbolos con `models/{SYM}_MOTOR.json`
 /// activo (los `_SCALP_CANDIDATE.json` NO cuentan — aún no pasaron el gate
 /// cross-month). Se lee del FILESYSTEM (no de GLOBAL_FORESTS) porque el
 /// daemon rota el universo ANTES de que el motor caliente los modelos:
@@ -126,8 +126,8 @@ fn load_model_roster() -> std::collections::HashSet<String> {
     if let Ok(entries) = std::fs::read_dir("models") {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.ends_with("_SCALP.json") && !name.contains("_CANDIDATE") {
-                let sym = name.trim_end_matches("_SCALP.json").to_string();
+            if name.ends_with("_MOTOR.json") && !name.contains("_CANDIDATE") {
+                let sym = name.trim_end_matches("_MOTOR.json").to_string();
                 if !sym.is_empty() {
                     roster.insert(sym);
                 }

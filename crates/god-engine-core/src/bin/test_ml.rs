@@ -1,7 +1,7 @@
 use god_engine_core::ml_inference::NanoForest;
 
 fn main() {
-    let forest = NanoForest::load_model("../../models/BTCUSDT_SCALP.json").unwrap();
+    let forest = NanoForest::load_model("../../models/BTCUSDT_MOTOR.json").unwrap();
     println!("Loaded forest.");
 
     // Test with all zeros

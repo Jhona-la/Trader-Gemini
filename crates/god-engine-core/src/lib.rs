@@ -47,7 +47,7 @@ pub struct GodEngineCore {
     /// D-432: Ensamble bayesiano escopado por símbolo (1 por moneda) para evitar
     /// contaminación cruzada causal entre activos del universo.
     pub ensembles: Vec<crate::ensemble::ModelEnsemble>,
-    /// F8 — ESPECTRO TEMPORAL CONTINUO por símbolo: 19 escalas log-espaciadas
+    /// F8 — ESPECTRO TEMPORAL CONTINUO por símbolo: 32 escalas log-espaciadas
     /// (1ms → ~2.18 años) actualizadas en CADA evento. Reemplaza la visión
     /// binaria scalp/swing: el motor observa todas las escalas a la vez, con
     /// fusión por paridad de riesgo (w ∝ 1/vol_de_desviación).
@@ -93,8 +93,6 @@ pub struct GodEngineCore {
     /// y JAMÁS incrementados — telemetría estructuralmente falsa (siempre 0).
     /// Conservados por compatibilidad del struct; su eliminación pertenece
     /// a la FASE 2 de erradicación swing/scalp.
-    pub diag_swing_vetoes: u64,
-    pub diag_swing_opened: u64,
     pub diag_close_wins: u64,
     pub diag_close_total: u64,
     pub diag_notional_sum: f64,
@@ -118,7 +116,7 @@ impl GodEngineCore {
                     return crate::ml_inference::NanoForest::get_global("UNIVERSAL");
                 }
                 // Fallback: legacy BTCUSDT_SCALP model (backward compatible)
-                let legacy_path = "models/BTCUSDT_SCALP.json";
+                let legacy_path = "models/BTCUSDT_MOTOR.json";
                 if std::path::Path::new(legacy_path).exists() {
                     let _ = crate::ml_inference::NanoForest::load_global("UNIVERSAL", legacy_path);
                     crate::ml_inference::NanoForest::get_global("UNIVERSAL")
@@ -255,8 +253,6 @@ impl GodEngineCore {
             diag_council_vetoes: 0,
             diag_opened: 0,
             diag_ml_vetoes: 0,
-            diag_swing_vetoes: 0,
-            diag_swing_opened: 0,
             diag_close_wins: 0,
             diag_close_total: 0,
             diag_notional_sum: 0.0,
@@ -340,7 +336,7 @@ impl GodEngineCore {
         // `> 0.0` los dejaba pasar por la rama "con datos" — por eso las
         // muertas se zeran aquí incondicionalmente. Para re-activar un
         // canal: cablear su productor y restaurar la lectura del slot.
-        let stateful_feats = self.feature_engines[coin_id].get_swing_features();
+        let stateful_feats = self.feature_engines[coin_id].get_universal_features();
         let mut combined = [0.0; 54];
         for j in 0..34 {
             combined[j] = stateful_feats[j] as f64;
@@ -1670,7 +1666,7 @@ impl GodEngineCore {
 
             // 34D Macro+Micro Features for NanoForest (Indices 0..24 used by trained trees)
             let features = self.feature_engines[coin_id].get_features();
-            let swing_feats = self.feature_engines[coin_id].get_swing_features();
+            let swing_feats = self.feature_engines[coin_id].get_universal_features();
 
             // F4.7 — ENSAMBLE REAL: ambos modelos opinan; la probabilidad es
             // el promedio ponderado con pesos que evolucionan por Brier real.
@@ -1686,7 +1682,7 @@ impl GodEngineCore {
             // entrada además pasa el gate B3.18.
             let sym = quantum_arena::symbol_registry::try_symbol(coin_id)
                 .unwrap_or_else(|| "BTCUSDT".to_string());
-            let coin_model_key = format!("{}_SCALP", sym);
+            let coin_model_key = format!("{}_MOTOR", sym); // U-7: contrato migrado
             let active_forest = crate::ml_inference::NanoForest::get_global(&coin_model_key);
             // B3.25 — DISCIPLINA DE ROSTER: hueco medido en vivo (SOL, modelo
             // retirado, abrió posición nueva): sin forest, el NN SOLO puede
@@ -1742,7 +1738,7 @@ impl GodEngineCore {
                 }
                 if let Some(p) = f.predict(&forest_input) {
                     diag_forest_p = Some(p as f64);
-                    coin_ensemble.submit(crate::ensemble::ModelId::ScalpForest, p as f64);
+                    coin_ensemble.submit(crate::ensemble::ModelId::MotorForest, p as f64);
                 } else if tick % 100 == 0 {
                     // B2.5-aud: el input ya está saneado arriba (NaN ⇒ 0.0), así
                     // que predict()=None aquí SÓLO puede ser un modelo
@@ -1792,7 +1788,7 @@ impl GodEngineCore {
                 };
                 if let Some(p) = p_opt {
                     diag_nn_p = Some(p);
-                    coin_ensemble.submit(crate::ensemble::ModelId::SwingNN, p);
+                    coin_ensemble.submit(crate::ensemble::ModelId::DarkAlphaNN, p);
                 }
             }
             let mut online_feat = [0.0f32; 64];
@@ -1826,7 +1822,7 @@ impl GodEngineCore {
             self.last_ml_prob = ml_prob as f32;
             coin.ml_prob.store(ml_prob, Ordering::Relaxed);
             set_reg("ml_prob", ml_prob);
-            set_reg("ml_prob_scalp", ml_prob);
+            set_reg("ml_prob_motor", ml_prob);
             // B3.37-diag — latido del camino ML completo para los símbolos
             // con modelo: forest→ensamble→store. Si este línea imprime
             // valores vivos pero ESPECTRO sigue en 0.5000, el defecto está
@@ -2093,7 +2089,7 @@ impl GodEngineCore {
 
             if atr_pct > dynamic_atr_min
                 && spread_ok
-                && self.feature_engines[coin_id].can_open_scalp(600)
+                && self.feature_engines[coin_id].can_open_position(600)
             {
                 // (misma banda canónica: reversión a la media ≡ anti-persistencia)
                 let is_mean_reverting = is_anti_persistent;
@@ -2178,7 +2174,7 @@ impl GodEngineCore {
                         atr_pct,
                         dynamic_atr_min,
                         spread_ok,
-                        self.feature_engines[coin_id].can_open_scalp(600),
+                        self.feature_engines[coin_id].can_open_position(600),
                         hurst_val,
                         self.feature_engines[coin_id].ema_slow,
                         mid_price,
@@ -3874,7 +3870,7 @@ mod tests_b3_ml_wiring {
         let forest = NanoForest::from_data(macro_split_forest()).unwrap();
         let current = GLOBAL_FORESTS.load();
         let mut map = (**current).clone();
-        map.insert("TESTUSDT_SCALP".to_string(), Arc::new(forest));
+        map.insert("TESTUSDT_MOTOR".to_string(), Arc::new(forest));
         GLOBAL_FORESTS.store(Arc::new(map));
     }
 

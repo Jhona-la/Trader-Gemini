@@ -31,12 +31,13 @@
 
 use serde::{Deserialize, Serialize};
 
+/// U-6 (MOTOR UNIVERSAL CONTINUO): variantes Scalping/Swing extirpadas —
+/// el eje temporal del consejo es `dominant_tau_ms` del payload (continuo).
+/// `Continuous` se conserva como único valor del contrato serde.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum TradingHorizon {
     #[default]
     Continuous,
-    Scalping,
-    Swing,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -949,7 +950,7 @@ mod tests {
     /// al alza (flujo, espectro, ML) en un mercado tranquilo sin racha.
     fn diverse_bullish_payload() -> MarketSnapshotPayload {
         MarketSnapshotPayload {
-            horizon: TradingHorizon::Scalping,
+            horizon: TradingHorizon::Continuous,
             book_imbalance: 0.85,
             hurst_exponent: 0.72,
             ml_prob: 0.70,
@@ -985,7 +986,7 @@ mod tests {
     fn test_consejo_deliberacion_short_approval() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
-            horizon: TradingHorizon::Scalping,
+            horizon: TradingHorizon::Continuous,
             book_imbalance: -0.85,
             hurst_exponent: 0.35,
             ml_prob: 0.28,
@@ -1056,7 +1057,7 @@ mod tests {
     fn test_consejo_deliberacion_nan_payload_immunity() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
-            horizon: TradingHorizon::Scalping,
+            horizon: TradingHorizon::Continuous,
             book_imbalance: f64::NAN,
             hurst_exponent: f64::NAN,
             ml_prob: f64::NAN,

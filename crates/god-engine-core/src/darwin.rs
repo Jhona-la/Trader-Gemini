@@ -254,7 +254,7 @@ impl DarwinDaemon {
                             tick.timestamp,
                         );
                         let mut dynamic_omni = [0.0f64; 54];
-                        let swing_feats = engine.feature_engines[tick.coin_id].get_swing_features();
+                        let swing_feats = engine.feature_engines[tick.coin_id].get_universal_features();
                         for (i, &f) in swing_feats.iter().enumerate() {
                             dynamic_omni[i] = f as f64;
                         }
@@ -443,7 +443,7 @@ impl DarwinDaemon {
                     tick.timestamp,
                 );
                 let mut dynamic_omni = [0.0f64; 54];
-                let swing_feats = engine.feature_engines[tick.coin_id].get_swing_features();
+                let swing_feats = engine.feature_engines[tick.coin_id].get_universal_features();
                 for (i, &f) in swing_feats.iter().enumerate() {
                     dynamic_omni[i] = f as f64;
                 }

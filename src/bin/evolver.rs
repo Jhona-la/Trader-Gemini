@@ -367,7 +367,7 @@ async fn main() -> Result<(), String> {
                         tick.timestamp,
                     );
                     let mut omni = [0.0f64; 54];
-                    let swing_feats = engine.feature_engines[tick.coin_id].get_swing_features();
+                    let swing_feats = engine.feature_engines[tick.coin_id].get_universal_features();
                     for (idx, &f) in swing_feats.iter().enumerate() {
                         if idx < 54 {
                             omni[idx] = f as f64;

@@ -94,7 +94,7 @@ fn t1_diag_camino_nativo_una_evaluacion() {
     };
     let forest = god_engine_core::ml_inference::NanoForest::from_data(confident)
         .expect("forest sintético fuera de contrato");
-    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_SCALP", forest);
+    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_MOTOR", forest);
     // Safety: test single-threaded antes de spawn de hilos del runner.
     unsafe { std::env::set_var("TG_TRACE_NATIVO", "1") };
 
@@ -149,7 +149,7 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
         .expect("forest sintético del oráculo fuera de contrato");
     // El runner nativo mapea su serie a coin 0; B3.18b resuelve la clave del
     // símbolo con default BTCUSDT cuando el registry no lo registra.
-    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_SCALP", forest);
+    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_MOTOR", forest);
     println!("[T-1] predictor sintético direccional cargado (gate por lift neutralizado para medir)");
 
     let datos = serie(3_000);

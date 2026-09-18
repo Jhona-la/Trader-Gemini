@@ -20,10 +20,10 @@
 /// Identificador estable de cada predictor del ensamble.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ModelId {
-    /// NanoForest de scalping (features microestructura).
-    ScalpForest,
-    /// DarkAlpha NN de swing (features macro+micro).
-    SwingNN,
+    /// NanoForest del motor continuo (features universales 48D).
+    MotorForest,
+    /// DarkAlpha NN (features macro+micro, BTC-only por diseño).
+    DarkAlphaNN,
 }
 
 /// D-695 (DÉCIMA OLA) — HABILIDAD MEDIDA DEL ENSAMBLE.
@@ -316,8 +316,8 @@ mod tests {
         for _ in 0..(SKILL_SPAN_BARS as usize * 4) {
             let signal = xorshift(&mut s) < 0.5;
             let p = if signal { 0.85 } else { 0.15 };
-            e.submit(ModelId::ScalpForest, p);
-            e.submit(ModelId::SwingNN, p);
+            e.submit(ModelId::MotorForest, p);
+            e.submit(ModelId::DarkAlphaNN, p);
             let y = if xorshift(&mut s) < p { 1.0 } else { 0.0 };
             e.update_with_outcome(y);
         }
@@ -328,15 +328,15 @@ mod tests {
     fn sin_opiniones_no_hay_combinacion() {
         let mut e = ModelEnsemble::new();
         assert_eq!(e.combined(), None);
-        e.submit(ModelId::ScalpForest, 0.7);
+        e.submit(ModelId::MotorForest, 0.7);
         assert!((e.combined().unwrap() - 0.7).abs() < 1e-12);
     }
 
     #[test]
     fn promedio_ponderado_inicial_es_uniforme() {
         let mut e = ModelEnsemble::new();
-        e.submit(ModelId::ScalpForest, 0.8);
-        e.submit(ModelId::SwingNN, 0.4);
+        e.submit(ModelId::MotorForest, 0.8);
+        e.submit(ModelId::DarkAlphaNN, 0.4);
         // Pesos iguales al inicio: media simple.
         assert!((e.combined().unwrap() - 0.6).abs() < 1e-12);
     }
@@ -347,19 +347,19 @@ mod tests {
         // 200 eventos: forest siempre acierta (p=0.9 cuando y=1), NN siempre
         // en contra (p=0.2 cuando y=1).
         for _ in 0..200 {
-            e.submit(ModelId::ScalpForest, 0.9);
-            e.submit(ModelId::SwingNN, 0.2);
+            e.submit(ModelId::MotorForest, 0.9);
+            e.submit(ModelId::DarkAlphaNN, 0.2);
             e.update_with_outcome(1.0);
         }
         let w = e.weights();
         assert!(
-            w[ModelId::ScalpForest as usize] > 0.9,
+            w[ModelId::MotorForest as usize] > 0.9,
             "forest calibrado debe dominar: {:?}",
             w
         );
         // La combinación debe acercarse a la opinión del bueno.
-        e.submit(ModelId::ScalpForest, 0.9);
-        e.submit(ModelId::SwingNN, 0.2);
+        e.submit(ModelId::MotorForest, 0.9);
+        e.submit(ModelId::DarkAlphaNN, 0.2);
         assert!(e.combined().unwrap() > 0.7);
     }
 
@@ -368,20 +368,20 @@ mod tests {
         let mut e = ModelEnsemble::new();
         // El forest arraca pésimo y el NN perfecto...
         for _ in 0..50 {
-            e.submit(ModelId::ScalpForest, 0.9);
-            e.submit(ModelId::SwingNN, 0.6);
+            e.submit(ModelId::MotorForest, 0.9);
+            e.submit(ModelId::DarkAlphaNN, 0.6);
             e.update_with_outcome(0.0); // siempre cae: forest muy mal, NN mal
         }
         let w_bad_start = e.weights();
         // ...luego el forest se calibra de verdad por 300 eventos.
         for _ in 0..300 {
-            e.submit(ModelId::ScalpForest, 0.1);
-            e.submit(ModelId::SwingNN, 0.6);
+            e.submit(ModelId::MotorForest, 0.1);
+            e.submit(ModelId::DarkAlphaNN, 0.6);
             e.update_with_outcome(0.0);
         }
         let w_recovered = e.weights();
         assert!(
-            w_recovered[ModelId::ScalpForest as usize] > w_bad_start[ModelId::ScalpForest as usize],
+            w_recovered[ModelId::MotorForest as usize] > w_bad_start[ModelId::MotorForest as usize],
             "shrink permite recuperación: {:?} → {:?}",
             w_bad_start,
             w_recovered
@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn outcome_resetea_predicciones_del_evento() {
         let mut e = ModelEnsemble::new();
-        e.submit(ModelId::ScalpForest, 0.7);
+        e.submit(ModelId::MotorForest, 0.7);
         e.update_with_outcome(1.0);
         assert_eq!(
             e.combined(),

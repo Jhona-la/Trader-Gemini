@@ -89,15 +89,11 @@ mod tests {
     #[test]
     fn test_state_validator_with_realized_pnl_and_divergence() {
         let arena = GlobalArena::new(13.0);
-        // Simulate realized profits in coin 0 (BTC)
+        // Simulate realized profits in coin 0 (BTC) — U-1: métrica unificada.
         arena.coins[0]
-            .scalp
+            .metrics
             .pnl_realized
-            .store(2.5, Ordering::Relaxed);
-        arena.coins[0]
-            .swing
-            .pnl_realized
-            .store(1.5, Ordering::Relaxed);
+            .store(4.0, Ordering::Relaxed);
 
         // Set unified capital correctly to 13.0 + 4.0 = 17.0
         arena.unified_capital.store(17.0, Ordering::Relaxed);

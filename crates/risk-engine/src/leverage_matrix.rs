@@ -213,19 +213,14 @@ impl QuantumLeverageMatrix {
                 .load(Ordering::Relaxed)
                 .clamp(0.0, 1.0)
         };
-        let s = match signal.horizon {
-            signal_engine::TradeHorizon::Continuous => {
-                // D-638b: misma conversión τ ↔ s que el resto del sistema.
-                if signal.expected_duration_ms > 0 {
-                    quantum_arena::temporal_spectrum::temporal_scale_from_tau(
-                        signal.expected_duration_ms as f64,
-                    )
-                } else {
-                    effective_temporal_scale
-                }
-            }
-            signal_engine::TradeHorizon::Scalp => 0.0,
-            signal_engine::TradeHorizon::Swing => 1.0,
+        // U-6: motor continuo — sólo existe TradeHorizon::Continuous; la
+        // escala s viene de la τ declarada o del arena (D-638b).
+        let s = if signal.expected_duration_ms > 0 {
+            quantum_arena::temporal_spectrum::temporal_scale_from_tau(
+                signal.expected_duration_ms as f64,
+            )
+        } else {
+            effective_temporal_scale
         };
 
         // D-338: Homotopía continua y diferenciable s in [0, 1].

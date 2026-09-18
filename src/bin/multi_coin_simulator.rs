@@ -296,9 +296,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Carga de modelos NanoForest para todos los símbolos disponibles (.bin y .json)
             for symbol in COINS.iter() {
-                let bin_path = format!("models/{}_SCALP.bin", symbol);
-                let json_path = format!("models/{}_SCALP.json", symbol);
-                let key = format!("{}_SCALP", symbol);
+                let bin_path = format!("models/{}_MOTOR.bin", symbol);
+                let json_path = format!("models/{}_MOTOR.json", symbol);
+                let key = format!("{}_MOTOR", symbol);
                 if std::path::Path::new(&bin_path).exists() {
                     let _ = god_engine_core::ml_inference::NanoForest::load_global(&key, &bin_path);
                 } else if std::path::Path::new(&json_path).exists() {
@@ -404,7 +404,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut omni = omni_state.get_features();
                 // FIX #1520: Verificación de límites de coin_id para acceso seguro a feature_engines
                 if tick.coin_id < engine.feature_engines.len() {
-                    let swing_feats = engine.feature_engines[tick.coin_id].get_swing_features();
+                    let swing_feats = engine.feature_engines[tick.coin_id].get_universal_features();
                     for (idx, &f) in swing_feats.iter().enumerate() {
                         if idx < 34 && f.is_finite() {
                             omni[idx] = f as f64;
