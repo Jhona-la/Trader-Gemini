@@ -223,13 +223,21 @@ impl QuantumKellyRiskEngine {
             1.0
         };
 
-        let optimal_kelly = raw_kelly
+        // QO-M0.5 (auditoría matemática): el stack de multiplicadores
+        // (streak hasta 2.5×, neural hasta 2.45×, regime 1.25×) podía
+        // EMPUJAR POR ENCIMA del Kelly crudo — super-Kelly es exactamente
+        // lo que la teoría prohíbe (máxima ruina, no máximo crecimiento).
+        // Los multiplicadores ahora sólo PUEDEN REDUCIR: el producto se
+        // topea a 1× raw_kelly. Des-riesgar tras drawdown/corrupción de
+        // topología sigue vivo; acelerar sobre Kelly muere.
+        let optimal_kelly = (raw_kelly
             * dd_de_risk_factor
             * capital_derisk_factor
             * regime_mult
             * streak_mult
             * topology_attenuation
-            * neural_mult;
+            * neural_mult)
+            .min(raw_kelly);
         let safe_expectancy = if expectancy_bps.is_finite() {
             expectancy_bps
         } else {

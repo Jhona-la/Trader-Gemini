@@ -96,16 +96,20 @@ impl KahanSummation {
     }
 }
 
-/// Kyle's Lambda (Market Impact): ∂P / ∂V.
-/// Computed online. Returns log(1 + lambda) to domesticate fat tails.
+/// QO-M0.7 (auditoría matemática) — RAZÓN DE AMIHUD (iliquidez), no Kyle.
+/// Lo que calcula es Σ|Δp| / Σv: la razón de iliquidez de Amihud (2002),
+/// correcta para lo que hace. El Kyle-λ REAL es el coeficiente de la
+/// regresión Δp = λ·v + ε (cov/var del volumen firmado) — atribución
+/// corregida; si algún consumidor exige Kyle de verdad, implementar OLS
+/// rodante. Devuelve ln(1+λ) para domar colas pesadas.
 #[derive(Debug, Clone, Default)]
-pub struct KylesLambda {
+pub struct AmihudIlliquidity {
     pub delta_p_kahan: KahanSummation,
     pub delta_v_kahan: KahanSummation,
     pub last_price: f64,
 }
 
-impl KylesLambda {
+impl AmihudIlliquidity {
     #[inline(always)]
     pub fn new() -> Self {
         Self {
@@ -359,10 +363,14 @@ impl DynamicKelly {
         let kelly = wr - ((1.0 - wr) / r);
         let adjusted_kelly = kelly * mult;
 
+        // QO-M0.2 (auditoría matemática): el clamp inferior 0.01 FORZABA
+        // una apuesta del 1% con edge NEGATIVO (Kelly<0 = el sistema dice
+        // NO apostar). Sin edge ⇒ 0: la fracción multiplica tamaños, no
+        // fabrica convicción. El fallback no-finito también baja a 0.
         if adjusted_kelly.is_finite() {
-            adjusted_kelly.clamp(0.01, 1.0)
+            adjusted_kelly.clamp(0.0, 1.0)
         } else {
-            0.10
+            0.0
         }
     }
 }
@@ -573,7 +581,10 @@ pub fn extract_kelly_stats(pnl_array: &[f64], is_win_array: &[bool]) -> (f64, f6
             sum_losses += pnl_array[i].abs();
         }
     }
-    let p = if wins > 0.0 { wins / n } else { 0.5 };
+    // QO-M0.3 (auditoría matemática): wins=0 ⇒ p = 0/n = 0 (cero victorias
+    // es INFORMACIÓN: edge malo), no una moneda justa fabricada (0.5). Con
+    // p=0 el Kelly downstream colapsa a 0 — el comportamiento correcto.
+    let p = wins / n;
     let avg_win = if wins > 0.0 { sum_wins / wins } else { 0.01 };
     let avg_loss = if losses > 0.0 {
         sum_losses / losses
@@ -967,14 +978,20 @@ impl FundingRateElasticity {
 
     #[inline(always)]
     pub fn update(&mut self, funding_rate: f64, price: f64) -> f64 {
+        // QO-M0.4 (auditoría matemática): prev_price se sobrescribía ANTES
+        // del guard — la primera llamada emitía basura (delta_p=0 ⇒ guard
+        // muerto) y la condición usaba el precio NUEVO como denominador.
+        // Orden correcto: capturar previos, actualizar, dividir por el
+        // precio ANTERIOR.
         let delta_fr = funding_rate - self.prev_funding_rate;
         let delta_p = price - self.prev_price;
+        let prev_price = self.prev_price;
 
         self.prev_funding_rate = funding_rate;
         self.prev_price = price;
 
-        if delta_p.abs() > f64::EPSILON && self.prev_price > 0.0 {
-            let pct_delta_p = delta_p / self.prev_price;
+        if delta_p.abs() > f64::EPSILON && prev_price > 0.0 {
+            let pct_delta_p = delta_p / prev_price;
             if pct_delta_p.abs() > f64::EPSILON {
                 return delta_fr / pct_delta_p;
             }

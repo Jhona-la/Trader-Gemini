@@ -70,14 +70,20 @@ impl RealityPhysics {
         }
 
         // --- HYPER REALISTIC PHYSICS ---
-        // 1. Orderbook impact: Asumimos que 1 Millón de dólares mueve el precio 0.05% en activos ultra-líquidos.
-        // Pero el impacto es cuadrático para castigar tamaños absurdos (ej: si mete 10M, el impacto no es 10x, sino 100x).
-        let impact_multiplier = (safe_nominal / 1_000_000.0).powf(1.2);
+        // 1. Orderbook impact: ley raíz cuadrada EMPÍRICA del mercado (la
+        // forma funcional que miden los datos institucionales): impacto ∝
+        // √Q. La versión anterior usaba potencia 1.2 CONTRADICIENDO su
+        // propio comentario "cuadrático 100×" (1.2 ⇒ 10M→15.8×, no 100×).
+        // Calibración: $1M mueve ~5 bps en ultra-líquidos ⇒ constante 5bps.
+        let impact_multiplier = (safe_nominal / 1_000_000.0).sqrt();
         let slippage_impact_pct = impact_multiplier * 0.0005;
 
-        // 2. Latency slippage: Durante latency_penalty_ms el precio pudo haberse movido a nuestro favor o en contra.
-        // Asumiremos el peor caso (movimiento adverso igual a la volatilidad del tick proporcional a la latencia).
-        let latency_slippage = safe_vol * (latency_penalty_ms / 150.0);
+        // 2. Latency slippage: el precio es BROWNIANO — la dispersión
+        // crece con la RAÍZ del tiempo, no linealmente. La versión lineal
+        // SOBRESTIMABA el costo de latencias cortas y SUBRESTIMaba el de
+        // largas: sesgo sistemático en todo fill simulado. τ=150ms es la
+        // escala de referencia de la calibración.
+        let latency_slippage = safe_vol * (latency_penalty_ms / 150.0).sqrt();
 
         let total_slippage_pct = (slippage_impact_pct + latency_slippage)
             .max(base_slippage_floor)
