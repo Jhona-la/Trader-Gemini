@@ -2578,6 +2578,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // circuit breaker debe dispararse (exactamente el modo de fallo
         // backtest→live que este auditor existe para detectar).
         let drift_auditor = audit_engine::drift_auditor::DriftAuditor::new(0.05);
+        // CERT-M4-C02: contadores para el AUTO-REARME del kill-switch por
+        // drift — el drift es heurístico, no una condición permanente.
+        let drift_kill_armed_at: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let drift_clean_closes: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
         // F4.8 — TrajectoryAuditor CONECTADO (era fantasma: solo sus tests lo
         // usaban): track por posición viva de la coherencia entre la
@@ -2840,11 +2844,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if let Some(parsed_sym) = parsed_sym_opt {
+                // CERT-M1-C01: symbol_to_id está CONGELADO al arranque —
+                // cuando el universe manager rota símbolos, los NUEVOS
+                // llegan por el WS pero el HashMap no los conoce y son
+                // silenciosamente descartados (universo fantasma en el
+                // CONSUMIDOR). Ahora: primero el HashMap (rápido), y si
+                // no está, el REGISTRY DINÁMICO (que SÍ se actualiza en
+                // vivo por update_registry). Si el registry lo conoce,
+                // procesarlo; si no, descartar como antes.
                 let coin_id = match symbol_to_id.get(parsed_sym).copied() {
                     Some(id) => id,
                     None => {
-                        msg_count += 1;
-                        continue;
+                        // Fallback dinámico: el registry se actualiza al rotar
+                        match quantum_arena::symbol_registry::try_index(parsed_sym) {
+                            Some(id) if id < engine_real.arena.coins.len() => {
+                                id
+                            }
+                            _ => {
+                                msg_count += 1;
+                                continue;
+                            }
+                        }
                     }
                 };
 
@@ -3272,15 +3292,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 pnl_pct: real_pnl_pct * 0.95,
                                 timestamp_ms: ts_now,
                             };
-                            if drift_auditor.audit_execution(&real_tr, &shadow_tr).is_err() {
-                                telemetry_engine::telemetry!(
-                                    "🚨 [DRIFT] Divergencia acumulada excede umbral — KILL-SWITCH ARMADO"
-                                );
-                                // H-1: el drift excedido ARMAR el kill-switch — antes era solo log
-                                engine_real
-                                    .arena
-                                    .kill_switch_active
-                                    .store(true, Ordering::SeqCst);
+                            match drift_auditor.audit_execution(&real_tr, &shadow_tr) {
+                                Err(_) => {                                    telemetry_engine::telemetry!(
+                                        "🚨 [DRIFT] Divergencia excede umbral — kill-switch ARMADO (auto-rearme en 10 cierres limpios)"
+                                    );
+                                    engine_real
+                                        .arena
+                                        .kill_switch_active
+                                        .store(true, Ordering::SeqCst);
+                                    // CERT-M4-C02: contar el trigger para auto-rearme
+                                    drift_kill_armed_at.fetch_add(1, Ordering::SeqCst);
+                                }
+                                Ok(_) => {
+                                    // CERT-M4-C02: AUTO-REARME — si el drift auditor
+                                    // reporta sano DESPUÉS de un kill por drift, y ya
+                                    // pasaron ≥10 cierres limpios consecutivos, liberar.
+                                    // El drift es HEURÍSTICO (real*0.95 vs real), no una
+                                    // condición permanente como el immune latch.
+                                    if drift_kill_armed_at.load(Ordering::SeqCst) > 0 {
+                                        let clean = drift_clean_closes.fetch_add(1, Ordering::SeqCst);
+                                        if clean >= 10 {
+                                            drift_kill_armed_at.store(0, Ordering::SeqCst);
+                                            drift_clean_closes.store(0, Ordering::SeqCst);
+                                            engine_real
+                                                .arena
+                                                .kill_switch_active
+                                                .store(false, Ordering::SeqCst);
+                                            telemetry_engine::telemetry!(
+                                                "✅ [DRIFT-REARM] 10 cierres limpios consecutivos — kill-switch LIBERADO"
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         }
 

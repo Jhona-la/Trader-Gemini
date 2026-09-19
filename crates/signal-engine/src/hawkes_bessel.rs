@@ -25,12 +25,13 @@ use strategy_core::QuantumStrategy;
 /// La intensidad λ(t) mide el RITMO esperido de próximos eventos dado el
 /// pasado: alta λ = cascada en curso (liquidaciones auto-excitándose);
 /// el decay hacia μ mide cuánto queda de la cascada.
-#[derive(Clone)]
 pub struct HawkesBesselEngine {
     registry: Option<Arc<OmniscientRegistry>>,
-    /// Historia de eventos (timestamps relativos en segundos): máx 128
-    /// eventos — λ converge con ~5/β eventos recientes.
-    events: VecDeque<f64>,
+    /// CERT-M2-C02: historia con INTERIOR MUTABILITY — el trait da &self,
+    /// así que record_event necesita Mutex para funcionar a través del
+    /// orchestrator. Antes sin Mutex: record_event era INCALLABLE desde
+    /// el trait, y el QO-M2.2 entero era código muerto.
+    events: std::sync::Mutex<VecDeque<f64>>,
     /// Intensidad base μ.
     mu: f64,
     /// Auto-excitación α.
@@ -39,6 +40,21 @@ pub struct HawkesBesselEngine {
     beta: f64,
     /// Último timestamp (para compute_dt entre eventos).
     last_ts: f64,
+}
+
+impl Clone for HawkesBesselEngine {
+    fn clone(&self) -> Self {
+        Self {
+            registry: self.registry.clone(),
+            events: std::sync::Mutex::new(
+                self.events.lock().map(|e| e.clone()).unwrap_or_default()
+            ),
+            mu: self.mu,
+            alpha: self.alpha,
+            beta: self.beta,
+            last_ts: self.last_ts,
+        }
+    }
 }
 
 impl Default for HawkesBesselEngine {
@@ -53,7 +69,7 @@ impl std::fmt::Debug for HawkesBesselEngine {
             .field("mu", &self.mu)
             .field("alpha", &self.alpha)
             .field("beta", &self.beta)
-            .field("n_events", &self.events.len())
+            .field("n_events", &self.events.lock().map(|e| e.len()).unwrap_or(0))
             .finish()
     }
 }
@@ -69,7 +85,7 @@ impl HawkesBesselEngine {
     pub fn new() -> Self {
         Self {
             registry: None,
-            events: VecDeque::with_capacity(MAX_EVENTS),
+            events: std::sync::Mutex::new(VecDeque::with_capacity(MAX_EVENTS)),
             mu: DEFAULT_MU,
             alpha: DEFAULT_ALPHA,
             beta: DEFAULT_BETA,
@@ -83,15 +99,17 @@ impl HawkesBesselEngine {
         if !ts.is_finite() || ts < self.last_ts {
             return; // monotonicidad estricta
         }
-        self.events.push_back(ts);
+        if let Ok(mut e) = self.events.lock() { e.push_back(ts); }
         self.last_ts = self.last_ts.max(ts);
         // Purga: eventos con contribución < e^-5 son ruido computacional
         let cutoff = ts - 5.0 / self.beta.max(0.01);
-        while let Some(&oldest) = self.events.front() {
-            if oldest < cutoff {
-                self.events.pop_front();
-            } else {
-                break;
+        if let Ok(mut e) = self.events.lock() {
+            while let Some(&oldest) = e.front() {
+                if oldest < cutoff {
+                    e.pop_front();
+                } else {
+                    break;
+                }
             }
         }
     }
@@ -101,7 +119,8 @@ impl HawkesBesselEngine {
     #[inline]
     pub fn intensity(&self, t: f64) -> f64 {
         let mut lambda = self.mu;
-        for &ti in &self.events {
+        let events_snapshot = self.events.lock().map(|e| e.clone()).unwrap_or_default();
+        for &ti in &events_snapshot {
             let dt = t - ti;
             if dt >= 0.0 {
                 lambda += self.alpha * (-self.beta * dt).exp();
@@ -201,11 +220,23 @@ impl QuantumStrategy for HawkesBesselEngine {
             return 0.0;
         }
 
-        // La intensidad NORMALIZADA contra μ: λ/μ. La cascada activa
-        // (λ/μ alto) AMPLIFICA la señal direccional del flujo — es el
-        // comportamiento auto-excitado que el nombre promete.
-        let ratio = self.intensity_ratio(self.last_ts);
-        direction.signum() * ratio.tanh().clamp(0.0, 1.0)
+        // CERT-M2-C02: leer la intensidad PUBLICADA por el core (que
+        // ya computa el proceso de Hawkes con su propia historia de
+        // trades y la escribe al registry como 'hawkes_intensity').
+        // Esto conecta el QO-M2.2 al camino de decisión SIN necesitar
+        // record_event desde el orchestrator (que es &self).
+        let core_intensity = r
+            .get_scoped_parameter(
+                sym_opt,
+                if symbol.is_empty() { None } else { Some(_coin_id) },
+                "hawkes_intensity",
+                "HawkesBesselEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(1.0);
+
+        direction.signum() * core_intensity.tanh().clamp(0.0, 1.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
@@ -262,7 +293,7 @@ mod tests {
         let mut h = HawkesBesselEngine::new();
         h.record_event(0.0);
         h.record_event(100.0); // t=100 con β=0.5 ⇒ cutoff = 100-10 = 90
-        assert!(h.events.len() <= 2, "purga mantiene ≤ cutoff");
+        assert!(h.events.lock().unwrap().len() <= 2, "purga mantiene ≤ cutoff");
         // El evento de t=0 fue purgado (contribución < e^-50)
         assert!(h.intensity(100.0) < DEFAULT_MU + DEFAULT_ALPHA * 1.01);
     }
