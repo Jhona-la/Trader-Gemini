@@ -224,16 +224,19 @@ impl CmaEsOptimizer {
             // FASE VII: Penalización bayesiana si el sistema colapsa en producción respecto al backtest
             let reality_gap = EntropyFitness::reality_gap_adversarial_score(stat.4, stat.5, stat.3);
 
-            // FASE 17 (Tuning Genómico Profundo): No dar fitness "0" exacto si hay 0 trades.
-            // Si hay 0 trades, damos una puntuación negativa que empeora a medida que
-            // los umbrales del genoma (asumimos que están codificados en la población) son más restrictivos.
-            // Para simplificar y no romper dependencias, si hay 0 trades penalizamos levemente
-            // para que los CMA-ES bounds no colapsen a una planicie.
+            // CERT-M8-C04: el código ANTERIOR SOBRESCRIBÍA `stat.1` (el
+            // fitness canónico D-652 que el caller computó con
+            // fitness::compute) con `real_pnl * reality_gap` (pnl-based).
+            // El caller ordenaba por stat.1 DESPUÉS de esta sobrescritura:
+            // la utilidad Kelly era decorativa, D-653/D-654 re-rotos. Ahora
+            // la penalización de reality-gap SE APLICA como factor
+            // multiplicativo ≤ 1.0 SOBRE el fitness canónico (sólo puede
+            // REDUCIRLO, jamás reemplazarlo por una pnl-utility diferente).
             if stat.3 > 0 {
                 if real_pnl >= 0.0 {
-                    stat.1 = real_pnl * reality_gap;
+                    stat.1 *= reality_gap.clamp(0.0, 1.0);
                 } else {
-                    stat.1 = real_pnl / reality_gap.clamp(0.05, 1.0);
+                    stat.1 *= reality_gap.clamp(0.05, 1.0);
                 }
             } else {
                 // Penalidad suave: la distancia a la media ayuda a evitar que todos tengan la misma puntuación (planicie)

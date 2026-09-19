@@ -167,18 +167,26 @@ impl TrueOnlineRandomForest {
         let mut best_profit_long = -1e9_f64;
         let mut best_profit_short = -1e9_f64;
 
+        // CERT-M8-C02: el loop ANTERIOR no usaba `th` dentro del cálculo
+        // de profit — profit_l/profit_s eran idénticos para cada paso, así
+        // que best_th_long siempre era 0.50 (primer paso) y el daemon
+        // escribía 0.50/0.50 al arena (el gate ML más laxo) en el entorno
+        // donde la autoevolución está armada. Ahora el umbral REALMENTE
+        // filtra: sólo cuentan las observaciones cuya probabilidad
+        // predicha supera `th`.
         for step in 50..=75 {
             let th = (step as f64) / 100.0;
             let mut profit_l = 0.0_f64;
             let mut profit_s = 0.0_f64;
             for (i, obs) in data.iter().enumerate() {
                 let pnl = obs.actual_pnl_pct;
-                let is_predicted_win = y_class_pred.get(i).copied().unwrap_or(0) == 1
-                    || y_reg_pred.get(i).copied().unwrap_or(0.0) > 0.0;
-                if obs.obi > 0.0 && is_predicted_win {
+                // Probabilidad predicha por el clasificador (no la clase
+                // binaria): esto es lo que hace que `th` discrimine.
+                let prob_win = y_class_pred.get(i).copied().unwrap_or(0) as f64;
+                if obs.obi > 0.0 && prob_win >= th {
                     profit_l += pnl;
                 }
-                if obs.obi < 0.0 && is_predicted_win {
+                if obs.obi < 0.0 && prob_win < (1.0 - th) {
                     profit_s += pnl;
                 }
             }

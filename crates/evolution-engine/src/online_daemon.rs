@@ -586,6 +586,7 @@ impl LiveEvolutionDaemon {
         let best_genome = tokio::task::spawn_blocking(move || {
             let mut best = current_genome.clone();
             let mut best_score = -999.0;
+            let mut best_candidate_returns: Vec<f64> = Vec::new();
             // FASE 2: roundtrip completo a taker (0.04% x 2 piernas),
             // consistente con el simulador y con el costo real de una
             // entrada de mercado + salida no-maker.
@@ -708,6 +709,10 @@ impl LiveEvolutionDaemon {
                 // walk-forward simulado.
                 let mut wf_peak = WF_INITIAL_CAPITAL;
                 let mut wf_dd = 0.0f64;
+                // CERT-M8-C03: colectar los retornos NETOS del CANDIDATO —
+                // el DSR gate debe evaluar ESTA serie (la del mutante que
+                // se promueve), no los returns del incumbente.
+                let mut candidate_net_returns: Vec<f64> = Vec::new();
 
                 // T-10 — WALK-FORWARD POR MONEDA: cada serie conserva su
                 // propio momentum (el retorno previo de LA MISMA moneda
@@ -789,6 +794,7 @@ impl LiveEvolutionDaemon {
                         } else {
                             wf_losses += 1;
                         }
+                        candidate_net_returns.push(net_ret);
                     }
                 }
 
@@ -819,12 +825,13 @@ impl LiveEvolutionDaemon {
                 if fitness > best_score {
                     best_score = fitness;
                     best = candidate;
+                    best_candidate_returns = candidate_net_returns;
                 }
             }
-            best
+            (best, best_candidate_returns)
         })
         .await
-        .unwrap_or(fallback_genome);
+        .unwrap_or((fallback_genome, Vec::new()));
 
         // FASE 6 / L-0: Estasis de Probabilidad Adaptativa por Tamaño Muestral con Prior Bayesiano Bootstrap.
         // Para cuentas micro ($13 USD) en fase de arranque (N < 15), incorpora un prior exploratorio suave
@@ -867,9 +874,14 @@ impl LiveEvolutionDaemon {
         // con 2000 candidatos por ronda, el mejor por pura suerte supera
         // cualquier umbral fijo. El DSR corrige por multiplicidad y
         // curtosis: sólo un edge que SOBREVIVE es estadísticamente real.
-        // Esta es la puerta que la auditoría matemática exigía.
+        // CERT-M8-C03: el DSR ANTERIOR evaluaba `self.returns_history` (los
+        // returns del INCUMBENTE), no los del CANDIDATO mutante que se
+        // promueve — cuando el incumbente estaba caliente, cualquier ruido
+        // pasaba. Ahora evalúa los returns SIMULADOS del candidato que el
+        // walk-forward produjo.
+        let (best_genome, candidate_returns) = best_genome; // destructure tuple
         let dsr_verdict =
-            crate::selection_stats::edge_survives_multiplicity(&self.returns_history, 2_000);
+            crate::selection_stats::edge_survives_multiplicity(&candidate_returns, 2_000);
         if !dsr_verdict.passes {
             println!(
                 "🚫 [QO-M1 DSR] {:.3} < {:.2} con {} pruebas — {}",

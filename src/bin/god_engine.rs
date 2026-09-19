@@ -2982,6 +2982,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if msg_count > 0 && msg_count.is_multiple_of(5000) {
                         telemetry_server::telemetry_log!("🔥 [ORCHESTRATOR] Syncing buffers... {} ticks (Fase: {:?}).", msg_count, current_phase);
                     }
+                    // CERT-M6-H02: drenar cierres de bracket INCONDICIONALMENTE.
+                    // Antes sólo se drenaban dentro del else (trading permitido) —
+                    // durante warmup/vetos, los fills del exchange se acumulaban
+                    // (cap 1024, overflow silencioso) y Kelly nunca los veía.
+                    for bc in execution_engine::trade_accounting::drain_bracket_closes() {
+                        let net_bc = bc.pnl_gross - bc.fees;
+                        if bc.pnl_gross != 0.0 {
+                            unified_capital.fetch_add(net_bc.to_bits(), Ordering::Relaxed);
+                        }
+                    }
                 } else {
                     if newly_transitioned {
                         telemetry_server::telemetry_log!("✅ [WARMUP COMPLETE] System state synchronized & Darwin Approved. Transitioning to {:?}", current_phase);

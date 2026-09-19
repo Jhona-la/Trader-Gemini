@@ -158,9 +158,15 @@ impl RealityPhysics {
         }
 
         // Si somos Taker, cruzamos el libro al salir.
-        let impact_multiplier = (safe_nominal / 1_000_000.0).powf(1.2);
+        // CERT-M3-H02: la SALIDA retiene potencia-1.2 e impacto LINEAL en
+        // latencia — exactamente los dos defectos que M0.6 corrigió en la
+        // ENTRADA. Cada fill de cierre simulado pagaba física diferente a
+        // su apertura: asimetría sistemática que favorecía stop-heavy
+        // genomes en backtest. Unificado al mismo kernel: √Q impacto y
+        // √latency dispersión browniana.
+        let impact_multiplier = (safe_nominal / 1_000_000.0).sqrt();
         let slippage_impact_pct = impact_multiplier * 0.0005;
-        let latency_slippage = safe_vol * (latency_penalty_ms / 150.0);
+        let latency_slippage = safe_vol * (latency_penalty_ms / 150.0).sqrt();
         let total_slippage_pct = (slippage_impact_pct + latency_slippage)
             .max(base_slippage_floor)
             .clamp(0.0, 0.05);

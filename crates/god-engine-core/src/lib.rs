@@ -2042,8 +2042,14 @@ impl GodEngineCore {
             // gestión de posiciones (sección 1) y analítica ML/espectral ya
             // corrieron completas. Con datos obsoletos no se EVALÚAN ni
             // abren posiciones nuevas desde aquí hacia abajo.
+            // CERT-M2-C01: el return anterior `(None, None, None)`
+            // DESCARTABA el `closed_order` ya computado en la sección 1
+            // (~1200 líneas arriba) — durante tormentas de latencia/stalls
+            // (exactamente cuando las salidas defensivas son VITALES), el
+            // host nunca recibía el evento de cierre: estado divergente,
+            // OCO rancio, contabilidad perdida. Ahora el cierre viaja.
             if entries_blocked {
-                return (None, None, None);
+                return (None, closed_order, None);
             }
 
             let current_obi = obi_val;
@@ -3679,6 +3685,7 @@ impl GodEngineCore {
                                 .arena
                                 .registry
                                 .get_scoped_value_or(&sym, "taker_ratio", 1.0),
+                            ml_model_base,
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let senior_sigs = self

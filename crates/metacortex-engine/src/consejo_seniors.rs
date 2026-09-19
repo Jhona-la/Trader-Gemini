@@ -88,6 +88,8 @@ pub struct MarketSnapshotPayload {
     /// ratio (flujo agresivo). Exclusivos del asiento Ente.
     pub crowd_ls_ratio: f64,
     pub crowd_taker_ratio: f64,
+    /// CERT-M2-C04: base del modelo ML del símbolo
+    pub ml_model_base: f64,
 }
 
 impl MarketSnapshotPayload {
@@ -224,8 +226,11 @@ fn spectral_opinion(fused_score: f64, persistence: f64) -> f64 {
 /// alcista, < 0.45 → bajista, neutral en la banda muerta (±0.05 alrededor de
 /// 0.5). Convicción plena con |edge| ≥ 0.20 (ml 0.70/0.30 — el techo B3.19).
 #[inline(always)]
-fn ml_opinion(ml_prob: f64) -> f64 {
-    let edge = ml_prob - 0.5;
+/// CERT-M2-C04: centrada en la BASE del modelo (no en 0.5). El centro
+/// absoluto creaba sesgo short estructural en 3 de 5 asientos
+/// direccionales cuando la base del etiquetado honesto es ~0.30.
+fn ml_opinion(ml_prob: f64, ml_base: f64) -> f64 {
+    let edge = ml_prob - ml_base;
     const DEAD_ZONE: f64 = 0.05;
     const FULL_EDGE: f64 = 0.20;
     if edge.abs() < DEAD_ZONE {
@@ -433,10 +438,15 @@ impl SeniorAgent for SeniorCausal {
         // D-112: El umbral causal protege contra toxicidad extrema (>0.85) sin asfixiar
         // los breakouts institucionales legítimos (VPIN entre 0.60 y 0.80).
         let effective_threshold = payload.causal_veto_threshold.clamp(0.60, 0.90);
-        // U-4: el breakout alineado antes dependía de etiquetas de horizonte
-        // — en el continuo, un libro alineado O una τ de banda rápida (la
-        // microestructura lidera los breakouts) califican igual.
-        let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25 || payload.spectral_s() < 0.5)
+        // CERT-M7-C01: el OR anterior hacía spectral_s()<0.5 (cierto para
+        // τ<19min = la mayoría de la banda operativa) suficiente para
+        // calificar como "breakout alineado" — el veto quedaba
+        // efectivamente DESARMADO para toda entrada de banda rápida sin
+        // importar el VPIN hasta 0.88. Ahora exige CONJUNCIÓN: libro
+        // alineado Y banda rápida (la microestructura que lidera breakouts
+        // reales tiene ambas características).
+        let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25
+            && payload.spectral_s() < 0.5)
             && do_calculus_risk < 0.88;
         let is_veto = do_calculus_risk > effective_threshold && !is_aligned_breakout;
         SeniorOpinion {
@@ -543,7 +553,7 @@ impl SeniorAgent for SeniorML {
         } else {
             0.5 // Falla segura: sin modelo no hay opinión
         };
-        let signal = ml_opinion(p);
+        let signal = ml_opinion(p, payload.ml_model_base);
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal,
@@ -576,7 +586,7 @@ impl SeniorAgent for SeniorMetacognitivo {
         let adjusted_confidence = (effective_wr - dd_penalty).clamp(0.05, 1.0);
 
         // Las tres perspectivas independientes, cada una con su propio dato:
-        let ml_sig = ml_opinion(payload.ml_prob.clamp(0.0, 1.0));
+        let ml_sig = ml_opinion(payload.ml_prob.clamp(0.0, 1.0), payload.ml_model_base);
         let spec_sig = spectral_opinion(payload.fused_score, payload.persistence);
         let flow_sig = payload.book_imbalance.clamp(-1.0, 1.0);
 
@@ -1105,6 +1115,7 @@ mod tests {
             spoof_score: 0.0,
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
+            ml_model_base: 0.5,
         }
     }
 
@@ -1146,6 +1157,7 @@ mod tests {
             spoof_score: 0.0,
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
+            ml_model_base: 0.5,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -1223,6 +1235,7 @@ mod tests {
             spoof_score: 0.0,
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
+            ml_model_base: 0.5,
         };
 
         let result = consejo.deliberar(&payload, 0.70);

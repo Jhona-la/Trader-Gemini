@@ -422,7 +422,7 @@ impl QuantumConfig {
         use std::sync::atomic::Ordering;
         let a = self.kelly_curve_a.load(Ordering::Relaxed);
         let b = self.kelly_curve_b.load(Ordering::Relaxed);
-        (a + b * tau_ms.max(1e-6).ln()).exp().clamp(0.05, 0.40)
+        (a + b * tau_ms.max(1e-6).ln()).exp().clamp(0.01, 3.0)
     }
 
     /// Evalúa los parámetros del Trailing Stop continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años]:
@@ -463,10 +463,12 @@ impl QuantumConfig {
     #[inline(always)]
     pub fn update_tp_curve(&self, fast_val: f64, slow_val: f64) {
         use std::sync::atomic::Ordering;
+        // CERT-M5-C03: anclas CANÓNICAS 30s/12h (antes 10s/24h — Darwin
+        // reconstruía curvas sobre un eje diferente al del genoma store).
         let curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
-            10_000.0,
+            crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
             fast_val,
-            86_400_000.0,
+            crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
             slow_val,
         );
         self.tp_curve_a.store(curve.a, Ordering::Relaxed);
@@ -477,10 +479,12 @@ impl QuantumConfig {
     #[inline(always)]
     pub fn update_sl_curve(&self, fast_val: f64, slow_val: f64) {
         use std::sync::atomic::Ordering;
+        // CERT-M5-C03: anclas CANÓNICAS 30s/12h (antes 10s/24h — Darwin
+        // reconstruía curvas sobre un eje diferente al del genoma store).
         let curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
-            10_000.0,
+            crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
             fast_val,
-            86_400_000.0,
+            crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
             slow_val,
         );
         self.sl_curve_a.store(curve.a, Ordering::Relaxed);

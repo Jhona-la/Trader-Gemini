@@ -146,14 +146,28 @@ impl QuantumStrategy for MicroScalpTriggerEngine {
             return 0.0;
         }
 
+        // CERT-M2-C03: el gate anterior usaba `ml_prob >= 0.5` absoluto —
+        // con el etiquetado honesto HOST-010 (base ~0.30), la pata long
+        // casi nunca disparaba y la short casi siempre: sesgo short
+        // estructural en el consenso tensorial. Ahora usa LIFT sobre la
+        // base del modelo (misma doctrina que B3.18/B3.36): gatea en
+        // `ml_prob >= base + lift` / `ml_prob <= base − lift` con lift
+        // mínimo de 0.05 (5 puntos sobre la base, no sobre 0.5).
+        let ml_base = r
+            .get_scoped_parameter(sym_opt, cid_opt, "ml_model_base", "MicroScalpTriggerEngine")
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && *v > 0.0 && *v < 1.0)
+            .unwrap_or(0.5);
+        const LIFT: f64 = 0.05;
+
         if hawkes >= 1.2 && obi.abs() >= 0.2 {
-            let is_long = obi > 0.0 && ml_prob >= 0.5;
-            let is_short = obi < 0.0 && ml_prob <= 0.5;
+            let is_long = obi > 0.0 && ml_prob >= ml_base + LIFT;
+            let is_short = obi < 0.0 && ml_prob <= ml_base - LIFT;
 
             if is_long {
-                (obi * (ml_prob - 0.5) * 4.0 * (hawkes / 2.0).min(2.0)).clamp(0.0, 1.0)
+                (obi * (ml_prob - ml_base) * 4.0 * (hawkes / 2.0).min(2.0)).clamp(0.0, 1.0)
             } else if is_short {
-                (obi * (0.5 - ml_prob) * 4.0 * (hawkes / 2.0).min(2.0)).clamp(-1.0, 0.0)
+                (obi * (ml_base - ml_prob) * 4.0 * (hawkes / 2.0).min(2.0)).clamp(-1.0, 0.0)
             } else {
                 0.0
             }
