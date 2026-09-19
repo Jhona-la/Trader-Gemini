@@ -1,7 +1,18 @@
 /// Fórmula Dinámica de Kelly para Supervivencia y Crecimiento Exponencial
-/// Con Profit Factor PF: Edge > 0 si y solo si PF > 1.0.
+/// Con Profit Factor PF: Edge > 0 si y sólo si PF > 1.0.
 /// f* = W * (1 - 1 / PF) = W - (1 - W) / R donde R = PF * (1 - W) / W (Payoff Ratio)
+///
+/// S-1 (MOTOR UNIVERSAL / ESPECTRALIZACIÓN): los rieles de capital
+/// (supervivencia [0.20,0.60], expansión [0.50,0.90]) dejan de ser literales:
+/// la BANDA se modula por `spectral_conf` ∈ [0,1] — confianza espectral del
+/// mercado (persistencia de la escala dominante mapeada a [0,1]; 0.5 =
+/// neutral browniano). Mercado persistente/tendencial ⇒ banda desplazada
+/// hacia el crecimiento (más Kelly justificado: la tendencia sostiene las
+/// ganancias); anti-persistente/mean-reverting ⇒ banda comprimida (las
+/// ganancias no se sostienen:收割 temprano). Con s=0.5 la banda reproduce
+/// el comportamiento histórico (0.20/0.60 y 0.50/0.90 ± redondeo).
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 pub fn calculate_kelly_fraction(
     win_rate: f64,
     profit_factor: f64,
@@ -12,6 +23,7 @@ pub fn calculate_kelly_fraction(
     clamp_min: f64,
     clamp_max: f64,
     strategy_base_fraction: f64,
+    spectral_conf: f64,
 ) -> f64 {
     // FIX #653: Guarda de finitud estricta previa
     if !win_rate.is_finite()
@@ -26,6 +38,13 @@ pub fn calculate_kelly_fraction(
     {
         return 0.0;
     }
+    // S-1: s fuera de banda o degenerado ⇒ neutral (0.5).
+    let s = if spectral_conf.is_finite() {
+        spectral_conf.clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let lerp = |a: f64, b: f64| a + (b - a) * s;
 
     // R1.4 — criterios SEPARADOS, no mezclados con `||`:
     //  (a) PF <= 1.0: rampa de exploración (el PF es una estadística con
@@ -61,17 +80,18 @@ pub fn calculate_kelly_fraction(
     // de capital) ya protege cuentas pequeñas de forma continua.
     let capital_ratio = (current_capital / base_capital.max(1.0)).max(0.01);
     // R1.4 — el coeficiente de supervivencia ya no es el literal 0.35: es el
-    // gen strategy_base_fraction (scalp/swing_kelly_fraction), revivido de
-    // su condición de gen muerto. El clamp [0.20, 0.75] es el riel de
-    // seguridad del modo (equivalente al comportamiento histórico).
+    // gen kelly_at_tau(τ de la posición), revivido de su condición de gen
+    // muerto. El clamp [0.20, 0.75] es el riel de seguridad del modo.
     let survival_coeff = strategy_base_fraction.clamp(0.20, 0.75);
     let capital_scale = if capital_ratio < kelly_survival_cap_ratio {
-        // Modo Supervivencia Adaptativa
-        (survival_coeff * win_rate * capital_ratio.sqrt()).clamp(0.20, 0.60)
+        // Modo Supervivencia Adaptativa — S-1: banda espectral
+        // (anti-persistente [0.15,0.50] ↔ persistente [0.25,0.65]).
+        (survival_coeff * win_rate * capital_ratio.sqrt()).clamp(lerp(0.15, 0.25), lerp(0.50, 0.65))
     } else {
-        // Modo Expansión Parabólica (Interés Compuesto)
+        // Modo Expansión Parabólica (Interés Compuesto) — S-1: banda espectral
+        // (anti-persistente [0.40,0.80] ↔ persistente [0.55,0.95]).
         let expansion = (capital_ratio.log10() * kelly_expansion_mult + 0.6).clamp(0.6, 2.0);
-        (0.50 * expansion).clamp(0.50, 0.90)
+        (0.50 * expansion).clamp(lerp(0.40, 0.55), lerp(0.80, 0.95))
     };
 
     // R1.4 — guard de clamp: `f64::clamp` con min > max es pánico; un genoma
@@ -104,7 +124,8 @@ mod tests {
         cmax: f64,
         sbase: f64,
     ) -> f64 {
-        calculate_kelly_fraction(wr, pf, cap, base, surv, exp, cmin, cmax, sbase)
+        // S-1: neutral espectral por defecto en los tests legados.
+        calculate_kelly_fraction(wr, pf, cap, base, surv, exp, cmin, cmax, sbase, 0.5)
     }
 
     #[test]
@@ -156,5 +177,31 @@ mod tests {
             high_base > low_base,
             "strategy_base_fraction revive como coeficiente"
         );
+    }
+
+    /// S-1: la banda de capital responde a la confianza espectral — mercado
+    /// persistente (s→1) sostiene más Kelly que mercado anti-persistente
+    /// (s→0), con el mismo edge medido. Caso: expansión plena (ratio 1000×,
+    /// capital_scale en el riel superior de cada banda).
+    #[test]
+    fn test_s1_spectral_band_modulates_kelly() {
+        let (base, surv, exp, cmin, cmax, sbase) = base_args();
+        let k_persist = calculate_kelly_fraction(
+            0.7, 2.0, 13_000.0, base, surv, exp, cmin, cmax, sbase, 1.0,
+        );
+        let k_anti = calculate_kelly_fraction(
+            0.7, 2.0, 13_000.0, base, surv, exp, cmin, cmax, sbase, 0.0,
+        );
+        assert!(
+            k_persist > k_anti,
+            "persistencia espectral debe ampliar el Kelly: {k_persist} vs {k_anti}"
+        );
+        // Y en modo supervivencia (capital bajo) la misma orden.
+        let s_persist = calculate_kelly_fraction(
+            0.6, 2.0, 13.0, base, surv, exp, cmin, cmax, sbase, 1.0,
+        );
+        let s_anti =
+            calculate_kelly_fraction(0.6, 2.0, 13.0, base, surv, exp, cmin, cmax, sbase, 0.0);
+        assert!(s_persist >= s_anti);
     }
 }

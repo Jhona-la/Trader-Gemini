@@ -8,7 +8,7 @@
 //! replica ese contrato EXACTO.
 //!
 //! PARIDAD 1:1 con inferencia: los features salen del MISMO
-//! `StatefulEngine::get_swing_features()` que alimenta al motor en vivo
+//! `StatefulEngine::get_universal_features()` que alimenta al motor en vivo
 //! (misma secuencia process_tick/update_trade_flow/update_ofi que
 //! feature_exporter). Etiquetas: triple-barrera (López de Prado) con los
 //! pisos institucionales TP 0.36% / SL 0.18%; los neutros se DESCARTAN
@@ -229,11 +229,52 @@ fn main() {
     let lambda: f64 = arg("--lambda", "1.0").parse().unwrap();
     let patience: usize = arg("--patience", "40").parse().unwrap();
     let promote = args.iter().any(|a| a == "--promote");
+    // P-1/P-2/P-3c — objetivo: dir (barrera triple HOST-010) | vol (σ futura,
+    // regresión) | volu (profundidad media, regresión) | oi (ΔOI% a horizonte,
+    // regresión con join as-of del histórico horario).
+    let label_mode = arg("--label", "dir");
+    if !matches!(label_mode.as_str(), "dir" | "vol" | "volu" | "oi") {
+        eprintln!("❌ --label inválido: {} (dir|vol|volu|oi)", label_mode);
+        std::process::exit(1);
+    }
+
+    // P-3c — serie histórica de OI para `--label oi` (join as-of estricto:
+    // la última fila con ts ≤ t). El endpoint sólo conserva ~30 días: la
+    // validación es DENTRO de la ventana (split temporal del subconjunto
+    // con label), documentado en la salida.
+    let oi_series: Vec<(u64, f64)> = if label_mode == "oi" {
+        let path = format!("data/oihist/{}.csv", symbol);
+        let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            eprintln!("❌ --label oi sin histórico: {} ({}) — ejecuta oi_history_sync", path, e);
+            std::process::exit(1);
+        });
+        let mut rows: Vec<(u64, f64)> = content
+            .lines()
+            .skip(1)
+            .filter_map(|ln| {
+                let mut it = ln.split(',');
+                let ts = it.next()?.trim().parse::<u64>().ok()?;
+                let oi = it.next()?.trim().parse::<f64>().ok()?;
+                (ts > 0 && oi.is_finite() && oi > 0.0).then_some((ts, oi))
+            })
+            .collect();
+        rows.sort_unstable_by_key(|(ts, _)| *ts);
+        if rows.len() < 48 {
+            eprintln!("❌ histórico OI demasiado corto: {} filas", rows.len());
+            std::process::exit(1);
+        }
+        println!("   [oi] {} filas · span {:.1} días (validación DENTRO de ventana)", rows.len(),
+            (rows.last().unwrap().0 - rows[0].0) as f64 / 86_400_000.0);
+        rows
+    } else {
+        Vec::new()
+    };
 
     println!("🌲 [TRAIN-FOREST] {} ← {}", symbol, in_path);
     println!("   muestras≤{} horizonte={}ms stride={}ms árboles≤{} lr={} depth={} λ={}",
              max_samples, horizon_ms, stride_ms, n_rounds, lr, max_depth, lambda);
 
+    let oi_series_ref = &oi_series;
     // ── 1+2. Muestras: features+etiquetas desde ticks (reutilizable) ────
     let build = |path: &str| -> (Vec<Vec<f32>>, Vec<f64>) {
         let file = File::open(path).unwrap_or_else(|e| {
@@ -315,6 +356,15 @@ fn main() {
             engine.process_tick(mid, vol, t.ts);
             engine.update_trade_flow(vol, pseudo_maker);
             let _ = engine.update_ofi(t.bid, t.ask, t.bq, t.aq);
+            // B3.35 — OBI FUERA del trainer: el OBI sintético (reconstruido
+            // de aggTrades con is_buyer_maker) tiene DISTRIBUCIÓN INCOMPATIBLE
+            // con el OBI del depth L2 real que sirve el vivo. Alimentar
+            // obi_accel sólo en train produjo modelos que en vivo predicen
+            // ~0.503 constante (v41: señal muerta, cero entradas). Las dims
+            // [4][5][10] están zerificadas en AMBOS lados vía
+            // FEATURES_DEAD_IN_SERVE — esta llamada NO debe volver
+            // hasta que exista un OBI sintético calibrado contra la
+            // distribución real del libro.
             warmup += 1;
             if warmup >= 100 && t.ts >= next_sample_ts && t.ts + horizon_ms <= last_ts {
                 next_sample_ts = t.ts + stride_ms_eff;
@@ -328,17 +378,128 @@ fn main() {
                 let Some(macro_block) = macro_asof(t.ts) else {
                     continue;
                 };
-                let sf = engine.get_swing_features();
+                let sf = engine.get_universal_features();
                 let sp = engine.get_spectral_ml_features();
                 // B3.9: mismo contrato de dimensión que la inferencia viva —
                 // un modelo más ancho que el binario sería rechazado al cargar.
                 const FULL_DIM: usize = god_engine_core::ml_inference::NanoForest::ML_VECTOR_DIM;
                 let mut full = [0f32; FULL_DIM];
                 full[..34].copy_from_slice(&sf);
+                // C-02 — features MUERTAS en serve ⇒ 0.0 también en train.
+                // FEATURES_DEAD_IN_SERVE (stateful_engine) es la única
+                // fuente de verdad del mapa vivo/muerto del contrato 34D.
+                // Hoy [9] dark_alpha: ya sale 0.0 porque el trainer alimenta
+                // dex_severity=0.0; el borrado explícito mantiene el
+                // invariante train≡serve aunque alguien cablee después una
+                // historia dex que el vivo no sirve.
+                for &d in god_engine_core::stateful_engine::FEATURES_DEAD_IN_SERVE {
+                    full[d] = 0.0;
+                }
                 full[34..44].copy_from_slice(&sp);
                 full[44..].copy_from_slice(&macro_block);
                 if full.iter().all(|f| f.is_finite()) {
-                    // Triple barrera por TIEMPO DE RELOJ dentro de horizon_ms
+                    // P-1/P-2 (MOTOR UNIVERSAL): modos de PREDICCIÓN además de
+                    // dirección. `--label vol` ⇒ RMS de retornos de mid sobre
+                    // el horizonte (×100, %/tick) — σ futura; `--label volu`
+                    // ⇒ profundidad media del libro (bq+aq)/tick — actividad
+                    // de dinero. REGRESIÓN (grad = f−y, hess = 1, init = media;
+                    // serving por predict_raw SIN sigmoid). `dir` ⇒ barrera
+                    // triple HOST-010 (clasificación, como siempre).
+                    if label_mode != "dir" {
+                        if label_mode == "oi" {
+                            // P-3c — ΔOI% a horizonte por join as-of de la
+                            // serie horaria (última fila con ts ≤ t). Sin
+                            // label válido (fuera de ventana o horizonte
+                            // incompleto) la muestra se DESCARTA — nunca se
+                            // rellena.
+                            let oi_asof = |ts: u64| -> Option<f64> {
+                                let idx = oi_series_ref
+                                    .binary_search_by(|(ots, _)| ots.cmp(&ts))
+                                    .unwrap_or_else(|i| i);
+                                if idx == 0 {
+                                    // ts anterior a la primera fila: sin valor
+                                    if oi_series_ref.first().map(|(ots, _)| *ots > ts).unwrap_or(true) {
+                                        return None;
+                                    }
+                                }
+                                if idx >= oi_series_ref.len() {
+                                    oi_series_ref.last().map(|(_, oi)| *oi)
+                                } else if oi_series_ref[idx].0 == ts {
+                                    Some(oi_series_ref[idx].1)
+                                } else if idx > 0 {
+                                    Some(oi_series_ref[idx - 1].1)
+                                } else {
+                                    None
+                                }
+                            };
+                            let deadline = t.ts + horizon_ms;
+                            let (Some(oi_now), Some(oi_fut)) = (oi_asof(t.ts), oi_asof(deadline))
+                            else {
+                                continue;
+                            };
+                            // honestidad: el futuro debe ser una fila REAL del
+                            // histórico (deadline ≤ última fila), no el último
+                            // valor colado por el as-of del borde.
+                            if deadline > oi_series_ref.last().unwrap().0 {
+                                continue;
+                            }
+                            let label = (oi_fut - oi_now) / oi_now * 100.0;
+                            if label.is_finite() {
+                                feats.push(full.to_vec());
+                                labels.push(label);
+                            }
+                        } else {
+                        let deadline = t.ts + horizon_ms;
+                        let mut sum_sq = 0.0f64;
+                        let mut n_rt = 0usize;
+                        let mut qty_sum = 0.0f64;
+                        let mut prev = mid;
+                        for f in (i + 1)..n_total {
+                            let ft = &raw[f];
+                            if ft.ts > deadline {
+                                break;
+                            }
+                            if ft.bid <= 0.0 || ft.ask <= 0.0 {
+                                continue;
+                            }
+                            let fm = (ft.bid + ft.ask) / 2.0;
+                            if prev > 0.0 {
+                                let r = (fm - prev) / prev;
+                                sum_sq += r * r;
+                                n_rt += 1;
+                            }
+                            qty_sum += ft.bq + ft.aq;
+                            prev = fm;
+                        }
+                        let label = if n_rt == 0 {
+                            continue;
+                        } else if label_mode == "vol" {
+                            (sum_sq / n_rt as f64).sqrt() * 100.0
+                        } else {
+                            qty_sum / n_rt as f64
+                        };
+                        if label.is_finite() {
+                            feats.push(full.to_vec());
+                            labels.push(label);
+                        }
+                        }
+                    } else {
+                    // Triple barrera por TIEMPO DE RELOJ dentro de horizon_ms.
+                    // HOST-010 (DECIMOCUARTO): la geometría del label debe ser
+                    // la del trade REAL — SL −sl_pct vs TP +tp_pct (RR≥2 por
+                    // friction_floors). La versión anterior chequeaba el SL del
+                    // corto (`>= mid*(1+sl_pct)`, +0.18%) ANTES del TP largo
+                    // (+0.36%): el TP era código muerto y todo toque de +0.18%
+                    // se contaba como victoria — el modelo aprendía una barrera
+                    // simétrica ±0.18% (coin-flip tras fees) en vez del trade
+                    // asimétrico RR 2:1 que el vivo ejecuta. Ahora: primer
+                    // toque de SL largo ⇒ 0.0, primer toque de TP largo ⇒ 1.0,
+                    // tocar ±sl_pct sin llegar al TP ⇒ timeout neutral
+                    // (descartado — coincide con la escalera trailing: un
+                    // trade que toca +0.18% y vuelve cierra en BE). El corto
+                    // consume 1−p en serve (ml_thr_short): con esta definición
+                    // es P(SL largo primero) — proxy honesto de la hipótesis
+                    // corta.
                     let deadline = t.ts + horizon_ms;
                     let long_tp = mid * (1.0 + tp_pct);
                     let long_sl = mid * (1.0 - sl_pct);
@@ -356,16 +517,8 @@ fn main() {
                             label = 0.0;
                             break 'barrier;
                         }
-                        if fut_mid >= mid * (1.0 + sl_pct) {
-                            label = 1.0; // la hipótesis corta fracasó primero
-                            break 'barrier;
-                        }
                         if fut_mid >= long_tp {
                             label = 1.0;
-                            break 'barrier;
-                        }
-                        if fut_mid <= mid * (1.0 - tp_pct) {
-                            label = 0.0;
                             break 'barrier;
                         }
                     }
@@ -375,17 +528,23 @@ fn main() {
                         feats.push(full.to_vec());
                         labels.push(label);
                     }
+                    } // fin modo dir
                 }
             }
         }
         let n = labels.len();
         if n < 5_000 {
-            eprintln!("❌ muestras decisivas insuficientes: {} (+{} neutros)", n, neutrals);
+            eprintln!("❌ muestras insuficientes: {} (+{} neutros)", n, neutrals);
             std::process::exit(1);
         }
-        let pos_rate = labels.iter().filter(|&&y| y > 0.5).count() as f64 / n as f64;
-        println!("   [{}] {} muestras decisivas ({} neutros) · largo {:.1}%",
-                 path, n, neutrals, pos_rate * 100.0);
+        if label_mode == "dir" {
+            let pos_rate = labels.iter().filter(|&&y| y > 0.5).count() as f64 / n as f64;
+            println!("   [{}] {} muestras decisivas ({} neutros) · largo {:.1}%",
+                     path, n, neutrals, pos_rate * 100.0);
+        } else {
+            let mean_y = labels.iter().sum::<f64>() / n as f64;
+            println!("   [{}] {} muestras · label[{}] media {:.6}", path, n, label_mode, mean_y);
+        }
         (feats, labels)
     };
     let (feats, labels) = build(&in_path);
@@ -412,8 +571,14 @@ fn main() {
     let split = tr_y.len();
 
     // ── 4. GBDT con early stopping ───────────────────────────────────────
+    let is_regression = label_mode != "dir";
     let p_bar = tr_y.iter().sum::<f64>() / tr_y.len() as f64;
-    let init_score = (p_bar / (1.0 - p_bar)).ln() as f32;
+    // Regresión: init = media (predicción cruda); clasificación: logit.
+    let init_score = if is_regression {
+        p_bar as f32
+    } else {
+        (p_bar / (1.0 - p_bar)).ln() as f32
+    };
     let logloss = |fs: &[Vec<f32>], ys: &[f64], f_pred: &[f64]| -> f64 {
         fs.iter()
             .zip(ys.iter())
@@ -425,6 +590,14 @@ fn main() {
             .sum::<f64>()
             / ys.len() as f64
     };
+    // P-1/P-2: MSE sobre la predicción CRUDA (sin sigmoid) — regresión.
+    let mse = |ys: &[f64], f_pred: &[f64]| -> f64 {
+        ys.iter()
+            .zip(f_pred.iter())
+            .map(|(&y, &f)| (y - f) * (y - f))
+            .sum::<f64>()
+            / ys.len().max(1) as f64
+    };
     let mut f_train = vec![init_score as f64; split];
     let mut f_val = vec![init_score as f64; va_y.len()];
     let mut trees: Vec<Vec<TreeNode>> = Vec::new();
@@ -435,14 +608,20 @@ fn main() {
     let n_feat = tr_feats[0].len();
 
     for round in 0..n_rounds {
-        // grad/hess de la logloss por muestra de train (XGBoost-style)
+        // grad/hess por muestra de train (XGBoost-style):
+        // clasificación: logloss (y−σ(f), σ(1−σ)); regresión: squared loss
+        // (f−y, 1) — P-1/P-2.
         let mut data: Vec<(Vec<f32>, f64, f64)> = tr_feats
             .iter()
             .zip(f_train.iter())
             .zip(tr_y.iter())
             .map(|((x, &f), &y)| {
-                let p = sigmoid(f);
-                (x.clone(), y - p, p * (1.0 - p))
+                if is_regression {
+                    (x.clone(), f - y, 1.0)
+                } else {
+                    let p = sigmoid(f);
+                    (x.clone(), y - p, p * (1.0 - p))
+                }
             })
             .collect();
         // Subconjunto de features (70%) por árbol para diversidad
@@ -469,16 +648,19 @@ fn main() {
         }
         trees.push(nodes);
         if round % 5 == 0 || round == n_rounds - 1 {
-            let vl = logloss(&va_feats, &va_y, &f_val);
-            if vl + 1e-6 < best_val {
+            let (vl, tl) = if is_regression {
+                (mse(&va_y, &f_val), mse(&tr_y, &f_train))
+            } else {
+                (logloss(&va_feats, &va_y, &f_val), logloss(&tr_feats, &tr_y, &f_train))
+            };
+            if vl + 1e-9 < best_val {
                 best_val = vl;
                 best_rounds = trees.len();
                 since_improve = 0;
             } else {
                 since_improve += 5;
             }
-            let tl = logloss(&tr_feats, &tr_y, &f_train);
-            println!("   ronda {:3} train {:.5} · val {:.5} {}", round, tl, vl,
+            println!("   ronda {:3} train {:.6} · val {:.6} {}", round, tl, vl,
                      if since_improve == 0 { "★" } else { "" });
             if since_improve >= patience {
                 println!("   early stopping (paciencia {})", patience);
@@ -488,23 +670,40 @@ fn main() {
     }
     trees.truncate(best_rounds.max(1));
 
-    // Baseline honesto: logloss de validación prediciendo la tasa base
+    // Baseline honesto: el modelo debe vencer al predictor constante
+    // (tasa base en clasificación; media en regresión).
     let base_pred = vec![init_score as f64; va_y.len()];
-    let baseline = logloss(&va_feats, &va_y, &base_pred);
-    // Varianza de predicción en val (el diagnóstico del forest congelado)
-    let val_preds: Vec<f64> = va_feats.iter().zip(f_val.iter()).map(|(_, &f)| sigmoid(f)).collect();
+    let baseline = if is_regression {
+        mse(&va_y, &base_pred)
+    } else {
+        logloss(&va_feats, &va_y, &base_pred)
+    };
+    // Diagnóstico: predicciones (sigmoid en clasificación; crudas en regresión)
+    let val_preds: Vec<f64> = va_feats
+        .iter()
+        .zip(f_val.iter())
+        .map(|(_, &f)| if is_regression { f } else { sigmoid(f) })
+        .collect();
     let mut sorted_p = val_preds.clone();
     sorted_p.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let var = val_preds.iter().map(|p| (p - 0.5) * (p - 0.5)).sum::<f64>() / val_preds.len() as f64;
+    let p_mean = val_preds.iter().sum::<f64>() / val_preds.len() as f64;
+    let var = val_preds
+        .iter()
+        .map(|p| (p - p_mean) * (p - p_mean))
+        .sum::<f64>()
+        / val_preds.len() as f64;
+    let metric_name = if is_regression { "MSE" } else { "logloss" };
     println!("═══ VEREDICTO ═══");
-    println!("   val logloss modelo: {:.5} · baseline: {:.5} (Δ {:+.5})", best_val, baseline,
-             baseline - best_val);
-    println!("   p10={:.3} p50={:.3} p90={:.3} · varianza={:.5}",
+    println!("   val {} modelo: {:.6} · baseline: {:.6} (mejora {:+.6})",
+             metric_name, best_val, baseline, baseline - best_val);
+    println!("   p10={:.6} p50={:.6} p90={:.6} · varianza={:.6}",
              sorted_p[sorted_p.len() / 10], sorted_p[sorted_p.len() / 2],
              sorted_p[9 * sorted_p.len() / 10], var);
 
-    // Margen anti-empate: una diferencia de 1e-5 es ruido numérico, no
-    // edge (hallazgo real: un empate exacto se coló como 'gate superado').
+    // Margen anti-empate. Clasificación: Δ absoluto de logloss ≥ 0.001.
+    // Regresión: el margen se interpreta RELATIVO (fracción de varianza
+    // explicada, R²): default 0.001 = 0.1% de la varianza — vol/volumen
+    // tienen señal modesta pero accionable mucho antes que 2%.
     let gate_margin: f64 = arg("--gate-margin", "0.001").parse().unwrap();
     // D-720 (DÉCIMA OLA · auditoría integral): EL GATE GOBIERNA EL DESTINO.
     //
@@ -517,11 +716,19 @@ fn main() {
     // lo hot-swapea en ≤10 s y, desde B3.18, ese modelo decide TODAS las
     // entradas. Ahora un gate no superado nunca escribe el modelo vivo: va al
     // candidato y el proceso termina con código 2 para que cualquier
-    // automatización lo detecte.
-    let gate_ok = baseline - best_val >= gate_margin;
+    // automatización lo detecte. Vale igual para los predictores de regresión
+    // (P-1/P-2: _VOL, _VOLU, _OI), cuyo gate es R² ≥ margen.
+    let gate_pass = if is_regression {
+        let r2 = if baseline > 1e-12 { (baseline - best_val) / baseline } else { 0.0 };
+        println!("   R² = {:.4}", r2);
+        r2 >= gate_margin
+    } else {
+        baseline - best_val >= gate_margin
+    };
+    let gate_ok = gate_pass;
     if !gate_ok {
-        println!("🚫 GATE: Δ {:+.5} < margen {} — sin evidencia real de edge. El modelo vivo NO se toca.",
-                 baseline - best_val, gate_margin);
+        println!("🚫 GATE: mejora < margen {} — sin evidencia real. El modelo vivo NO se toca.",
+                 gate_margin);
     }
     let promote = promote && gate_ok;
 
@@ -552,16 +759,27 @@ fn main() {
         tree_offsets,
         init_score,
     };
+    // P-1/P-2: el sufijo del modelo declara su objetivo — {SYM}_MOTOR
+    // (dirección), {SYM}_VOL (σ futura), {SYM}_VOLU (profundidad media).
+    // El watcher del host auto-carga cualquier models/{KEY}.json bajo esa
+    // key; los predictores de regresión se sirven con predict_raw (sin
+    // sigmoid).
+    let suffix = match label_mode.as_str() {
+        "vol" => "_VOL",
+        "volu" => "_VOLU",
+        "oi" => "_OI",
+        _ => "_MOTOR",
+    };
     let out = if promote {
-        format!("models/{}_SCALP.json", symbol)
+        format!("models/{}{}.json", symbol, suffix)
     } else {
-        format!("models/{}_SCALP_CANDIDATE.json", symbol)
+        format!("models/{}{}_CANDIDATE.json", symbol, suffix)
     };
     let mut f = File::create(&out).unwrap();
     serde_json::to_writer_pretty(&mut f, &model).unwrap();
     println!("💾 {} ({} árboles, init {:.4}){}", out, trees.len(), init_score,
-             if best_val >= baseline { " — [gate NO superado, revisar antes de promover]" } else { "" });
-    if !promote && best_val < baseline {
+             if !gate_pass { " — [gate NO superado, revisar antes de promover]" } else { "" });
+    if !promote && gate_pass {
         println!("   para promover al vivo: re-ejecuta con --promote (hot-swap lo recoge en ≤10s)");
     }
     // D-720: sin evidencia, salida distinta de cero — el fichero escrito es el

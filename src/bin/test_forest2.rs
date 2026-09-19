@@ -14,7 +14,7 @@ pub struct NanoForestData {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let file = File::open("models/BTCUSDT_SCALP.json")?;
+    let file = File::open("models/BTCUSDT_MOTOR.json")?;
     let reader = BufReader::new(file);
     let data: NanoForestData = serde_json::from_reader(reader)?;
 

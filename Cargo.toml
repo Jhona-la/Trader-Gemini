@@ -161,6 +161,10 @@ path = "src/bin/binance_vision_sync.rs"
 name = "macro_history_sync"
 path = "src/bin/macro_history_sync.rs"
 
+[[bin]]
+name = "oi_history_sync"
+path = "src/bin/oi_history_sync.rs"
+
 [profile.release]
 opt-level = 3
 lto = false

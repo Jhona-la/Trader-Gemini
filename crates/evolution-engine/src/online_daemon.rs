@@ -30,6 +30,16 @@ impl Default for QuantumHotSwapState {
 use quantum_arena::GlobalArena;
 use quantum_arena::genome::SuperGenotype;
 
+/// Capital inicial de la simulación walk-forward del daemon (micro-capital
+/// $13 — misma cifra que la simulación previa al fix C-10).
+const WF_INITIAL_CAPITAL: f64 = 13.0;
+
+/// C-10 / MOD3/5-012 (INFORME 14): mínimo estadístico de operaciones en la
+/// ventana OOS del daemon. 3 trades en la partición fuera de muestra es el
+/// mínimo para una señal direccional; por debajo, el genoma es INVIABLE
+/// (D-654), no mediocre — la inacción no puede puntuar mejor que operar.
+const WF_MIN_TRADES: u32 = 3;
+
 /// D-689 (DÉCIMA OLA) — ARMADO EXPLÍCITO DE LA EVOLUCIÓN EN VIVO.
 ///
 /// Los promotores en vivo cambiaban umbrales y genoma con evidencia de minutos:
@@ -44,6 +54,33 @@ pub fn live_evolution_armed() -> bool {
     std::env::var("TG_LIVE_GENOME_EVOLUTION_ARMED")
         .map(|v| v.trim() == "1")
         .unwrap_or(false)
+}
+
+/// QO-E1 (QUINTA OLA): armado POR ENTORNO. El hallazgo central de la
+/// auditoría evolutiva: `TG_LIVE_GENOME_EVOLUTION_ARMED` jamás se fijaba —
+/// prod/history tenía 0 generaciones: el organismo NUNCA evolucionó pese
+/// a tener los tres lazos cableados y sus redes de seguridad (rollback
+/// t≤−2.0, kill-switch EWMA, validación de bounds/RR) vivas.
+///
+/// Semántica nueva:
+/// - La variable explícita `TG_LIVE_GENOME_EVOLUTION_ARMED=1|0` MANDA
+///   (siempre respetada — un operador puede armar prod a propósito).
+/// - Sin variable: DEMO (TG_GENOME_ENV=demo) arma POR DEFECTO — es el
+///   entorno de evaporación segura con capital de papel. Un kill-switch
+///   de arming (`TG_LIVE_GENOME_EVOLUTION_DISARM=1`) permite apagarlo en
+///   demo para A/B sin tocar el default.
+/// - PROD sigue DESARMADO por defecto: la promoción demo→prod conserva el
+///   paso humano (TG_GENOME_PROMOTE_ARMED) — doctrina D-651 intacta.
+pub fn live_evolution_armed_for_env() -> bool {
+    if let Ok(v) = std::env::var("TG_LIVE_GENOME_EVOLUTION_ARMED") {
+        return v.trim() == "1";
+    }
+    if let Ok(v) = std::env::var("TG_LIVE_GENOME_EVOLUTION_DISARM") {
+        if v.trim() == "1" {
+            return false;
+        }
+    }
+    std::env::var("TG_GENOME_ENV").map(|e| e.trim() == "demo").unwrap_or(false)
 }
 
 pub struct LiveEvolutionDaemon {
@@ -177,7 +214,7 @@ impl LiveEvolutionDaemon {
             // Aplicar thresholds óptimos del Shadow Forest a la Arena ÚNICAMENTE cuando está entrenado
             // D-689: y sólo con la evolución en vivo armada; sin armar, el bosque
             // aprende pero no sobrescribe los umbrales del genoma validado.
-            if self.forest.is_trained() && live_evolution_armed() {
+            if self.forest.is_trained() && live_evolution_armed_for_env() {
                 let (opt_l, opt_s) = self.forest.get_optimal_thresholds();
                 self.arena
                     .config
@@ -187,6 +224,46 @@ impl LiveEvolutionDaemon {
                     .config
                     .ml_threshold_short
                     .store(opt_s as f64, Ordering::Relaxed);
+            }
+
+            // QO-E2a — EL APRENDIZAJE QUE DECIDE: el forest entrenado
+            // PREDICE por símbolo (predict_6d, antes cero callers) y
+            // publica al registry `forest6_prob`/`forest6_acc`. El core
+            // modula la confianza de las entradas cuando el forest está
+            // entrenado (acc > 0.55) y en DESACUERDO con la intención —
+            // el aprendizaje deja de ser espectador de su propia señal.
+            if self.forest.is_trained() {
+                let acc = *self.forest.last_accuracy.read().unwrap_or_else(|e| e.into_inner());
+                if acc.is_finite() && acc > 0.0 {
+                    let reg = &self.arena.registry;
+                    for coin_id in 0..self.arena.coins.len() {
+                        let coin = &self.arena.coins[coin_id];
+                        let spot_bid = coin.spot_bid.load(std::sync::atomic::Ordering::Relaxed);
+                        let spot_ask = coin.spot_ask.load(std::sync::atomic::Ordering::Relaxed);
+                        let spread_bps = if spot_bid > 0.0 && spot_ask > spot_bid {
+                            ((spot_ask - spot_bid) / spot_bid * 10_000.0).clamp(0.0, 500.0)
+                        } else {
+                            1.0
+                        };
+                        let features = [
+                            reg.get_for_coin_or(coin_id, "orderbook_imbalance", 0.0)
+                                .clamp(-1.0, 1.0),
+                            reg.get_for_coin_or(coin_id, "price_acceleration", 0.0)
+                                .clamp(-10.0, 10.0),
+                            spread_bps,
+                            reg.get_for_coin_or(coin_id, "atr_pct", 0.002).clamp(0.0, 1.0),
+                            coin.hurst_exponent
+                                .load(std::sync::atomic::Ordering::Relaxed)
+                                .clamp(0.0, 1.0),
+                            reg.get_for_coin_or(coin_id, "price_velocity", 0.0)
+                                .clamp(-10.0, 10.0),
+                        ];
+                        if let Some((prob, _pnl)) = self.forest.predict_6d(features) {
+                            reg.set_for_coin(coin_id, "forest6_prob", prob);
+                            reg.set_for_coin(coin_id, "forest6_acc", acc);
+                        }
+                    }
+                }
             }
 
             // FASE 3: AST Mutator checking
@@ -325,6 +402,13 @@ impl LiveEvolutionDaemon {
                         "✅ [ROLLBACK WATCHDOG] Padre {} restaurado y aplicado al arena (nueva generación {}).",
                         parent, env.generation
                     );
+                    // QO-E2d — LEDGER: el rollback también se registra.
+                    self.ledger.save_weight(
+                        0,
+                        format!("gen_rollback_{}", parent),
+                        "rollback".to_string(),
+                        -1.0,
+                    );
                 }
                 Err(e) => println!(
                     "⚠️ [ROLLBACK WATCHDOG] Rollback al padre {} falló: {}. El genoma degradado sigue activo — INTERVENCIÓN MANUAL.",
@@ -412,7 +496,7 @@ impl LiveEvolutionDaemon {
 
         // D-689: la deriva y el kill-switch de arriba son protección y siguen
         // siempre activos; la búsqueda y promoción de mutaciones en vivo no.
-        if !live_evolution_armed() {
+        if !live_evolution_armed_for_env() {
             return;
         }
 
@@ -461,6 +545,12 @@ impl LiveEvolutionDaemon {
         // E-04 — FRICCIÓN COHERENTE CON EL EV GATE: antes fee fijo
         // 0.0008 mientras el gate real incluye maker+taker+2×slip.
         // Leído ANTES del closure para evitar borrow de self.
+        // C-10 (INFORME 14): el daemon seguía con fricción pre-D-645 —
+        // maker+taker (el roundtrip real de una entrada de mercado es
+        // TAKER×2), ATR literal 0.002 y latencia normalizada contra un
+        // 150ms literal. Ahora replica la fórmula del gate de entrada del
+        // host (god_engine.rs `fee_rt_entry`, B3.19): 2×taker (D-645) +
+        // 2×(slippage_floor + atr_del_gen·latencia_del_gen/umbral_pánico).
         let slip_floor_g = self
             .arena
             .config
@@ -473,22 +563,25 @@ impl LiveEvolutionDaemon {
             .latency_penalty_ms
             .load(Ordering::Relaxed)
             .max(0.0);
-        let atr_g = 0.002_f64;
-        let lat_slip_g = atr_g * (lat_g / 150.0);
-        let maker_g = self
+        let lat_ref_g = self
             .arena
             .config
-            .live_maker_fee
+            .latency_ms_panic_threshold
             .load(Ordering::Relaxed)
-            .max(0.0002);
+            .clamp(10.0, 5_000.0);
+        // ATR del GEN (dynamic_atr_min), no un literal — el genoma decide el
+        // piso de volatilidad con el que se cotiza la fricción.
+        let atr_g = current_genome.dynamic_atr_min.max(0.0005);
+        let lat_slip_g = (atr_g * (lat_g / lat_ref_g)).clamp(0.0, 0.01);
         let taker_g = self
             .arena
             .config
             .live_taker_fee
             .load(Ordering::Relaxed)
             .max(0.0004);
+        // D-645: roundtrip completo a taker — idéntico al EV gate del vivo.
         let roundtrip_fee =
-            (maker_g + taker_g) + 2.0 * (slip_floor_g + lat_slip_g).clamp(0.0, 0.01);
+            (taker_g * 2.0) + 2.0 * (slip_floor_g + lat_slip_g).clamp(0.0, 0.01);
 
         let best_genome = tokio::task::spawn_blocking(move || {
             let mut best = current_genome.clone();
@@ -528,9 +621,28 @@ impl LiveEvolutionDaemon {
                 candidate.swing_kelly_fraction +=
                     (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
 
-                // SL/TP se contraen o expanden según volatilidad/búsqueda RL
-                candidate.scalp_tp_base *= 1.0 + (rng.random::<f64>() - 0.5) * 0.1;
-                candidate.scalp_sl_base *= 1.0 + (rng.random::<f64>() - 0.5) * 0.1;
+                // C-10 (INFORME 14) — MUTAR LAS CURVAS, NO LAS ANCLAS: el
+                // roundtrip to_vector/from_vector re-deriva las anclas desde
+                // los coeficientes (X-004/X-005: `derive_anchors_from_curves`
+                // al final de from_vector) — mutar `scalp_tp_base`/`swing_*`
+                // se AUTODESTRUÍA ahí y la geometría TP/SL JAMÁS evolucionaba
+                // en vivo. Los coeficientes (a,b) de las curvas son la fuente
+                // de verdad (slots 140-143 del vector genético). Una
+                // perturbación aditiva en `a` (param(τ)=exp(a+b·lnτ)) equivale
+                // a la contracción/expansión ±5% multiplicativa que antes se
+                // intentaba sobre las anclas — pero en TODOS los horizontes a
+                // la vez; `enforce_curve_rr` del roundtrip mantiene el
+                // invariante RR y los bounds de (a,b) acotan la mutación.
+                candidate.tp_horizon_curve.a +=
+                    (rng.random::<f64>() - 0.5) * 0.1_f64.ln_1p(); // ≈ ±ln(1.05)
+                candidate.sl_horizon_curve.a +=
+                    (rng.random::<f64>() - 0.5) * 0.1_f64.ln_1p();
+                // La pendiente b — cómo escala TP/SL con el horizonte τ —
+                // también evoluciona (bandas TP_B/SL_B_BOUNDS del genoma).
+                candidate.tp_horizon_curve.b +=
+                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                candidate.sl_horizon_curve.b +=
+                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
 
                 candidate.ml_threshold_long +=
                     (rng.random::<f64>() - 0.5) * (dynamic_mutation_rate * 0.5);
@@ -558,8 +670,8 @@ impl LiveEvolutionDaemon {
                     (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
                 candidate.trend_threshold +=
                     (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.1;
-                candidate.swing_tp_base *= 1.0 + (rng.random::<f64>() - 0.5) * 0.1;
-                candidate.swing_sl_base *= 1.0 + (rng.random::<f64>() - 0.5) * 0.1;
+                // (swing_tp_base/swing_sl_base: ya no se mutan — son VISTAS de
+                // las curvas mutadas arriba; ver C-10 arriba.)
                 candidate.sl_atr_multiplier +=
                     (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.2;
                 candidate.tp_rr_ratio_btc +=
@@ -603,7 +715,12 @@ impl LiveEvolutionDaemon {
                 let mut wf_wins = 0usize;
                 let mut wf_losses = 0usize;
                 let mut wf_pnl = 0.0f64;
-                let mut wf_capital = 13.0; // Starting capital
+                let mut wf_capital = WF_INITIAL_CAPITAL; // Starting capital
+                // C-10: la aptitud única (fitness::compute) exige el drawdown
+                // máximo de la trayectoria — se mide pico-a-valle del capital
+                // walk-forward simulado.
+                let mut wf_peak = WF_INITIAL_CAPITAL;
+                let mut wf_dd = 0.0f64;
 
                 // T-10 — WALK-FORWARD POR MONEDA: cada serie conserva su
                 // propio momentum (el retorno previo de LA MISMA moneda
@@ -674,6 +791,12 @@ impl LiveEvolutionDaemon {
                             net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);
                         wf_capital +=
                             net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);
+                        if wf_capital > wf_peak {
+                            wf_peak = wf_capital;
+                        }
+                        if wf_peak > 0.0 {
+                            wf_dd = wf_dd.max((wf_peak - wf_capital) / wf_peak);
+                        }
                         if net_ret > 0.0 {
                             wf_wins += 1;
                         } else {
@@ -683,20 +806,28 @@ impl LiveEvolutionDaemon {
                 }
 
                 let wf_trades = wf_wins + wf_losses;
-                let wf_wr = if wf_trades > 0 {
-                    wf_wins as f64 / wf_trades as f64
-                } else {
-                    0.0
-                };
 
-                // Fitness = PnL walk-forward * sqrt(trades) * penalización OOS
-                let fitness = if wf_trades >= 2 && wf_pnl > 0.0 {
-                    wf_pnl * (wf_trades as f64).sqrt() * wf_wr
-                } else if wf_pnl < 0.0 {
-                    wf_pnl * 2.0 // Penalizar pérdidas extra
-                } else {
-                    -0.5 // Sin trades = ligeramente negativo
-                };
+                // C-10 (INFORME 14): FUNCIÓN ÚNICA DE APTITUD (D-652/D-653/
+                // D-654/D-655). La fórmula anterior `wf_pnl × sqrt(trades) ×
+                // wf_wr` era de la familia ERRADICADA por D-652: crecía con el
+                // número de operaciones y con el tamaño de la apuesta sin
+                // penalizar drawdown ni ruina. Todo promotor de genomas debe
+                // llamar a `fitness::compute` — crecimiento logarítmico
+                // (utilidad de Kelly) penalizado por drawdown². La simulación
+                // corre SOLO sobre la partición OOS (train_end..n): no hay un
+                // par IS/OOS de capitales separado que reportar, de modo que
+                // oos_start == oos_end (factor 1.0, sin doble penalización).
+                // trades < WF_MIN_TRADES ⇒ INVIABLE (−∞): jamás seleccionado.
+                let fitness = crate::fitness::compute(&crate::fitness::FitnessInputs {
+                    initial_capital: WF_INITIAL_CAPITAL,
+                    final_capital: wf_capital,
+                    max_drawdown_pct: wf_dd,
+                    total_trades: wf_trades as u32,
+                    min_trades_required: WF_MIN_TRADES,
+                    oos_start_capital: wf_capital,
+                    oos_end_capital: wf_capital,
+                });
+                let _ = wf_pnl; // conservado como telemetría futura del ciclo
 
                 // D-740: la iteración 0 fija la cota (el incumbente); a partir de
                 // ahí sólo se adopta un mutante que la SUPERE.
@@ -747,6 +878,24 @@ impl LiveEvolutionDaemon {
             return;
         }
 
+        // QO-M1.1 — DEFLATED SHARPE RATIO (Bailey & López de Prado 2014):
+        // con 2000 candidatos por ronda, el mejor por pura suerte supera
+        // cualquier umbral fijo. El DSR corrige por multiplicidad y
+        // curtosis: sólo un edge que SOBREVIVE es estadísticamente real.
+        // Esta es la puerta que la auditoría matemática exigía.
+        let dsr_verdict =
+            crate::selection_stats::edge_survives_multiplicity(&self.returns_history, 2_000);
+        if !dsr_verdict.passes {
+            println!(
+                "🚫 [QO-M1 DSR] {:.3} < {:.2} con {} pruebas — {}",
+                dsr_verdict.dsr,
+                crate::selection_stats::DSR_THRESHOLD,
+                dsr_verdict.n_trials,
+                dsr_verdict.note
+            );
+            return;
+        }
+
         // 🔥 ACTUALIZACIÓN EN VIVO (HOT-SWAP) AL GOD ENGINE
         // FASE 3: primero el EMBUDO (promote con gate de validación), y
         // solo si el almacén acepta se aplica al arena. Antes el orden
@@ -771,6 +920,15 @@ impl LiveEvolutionDaemon {
                 println!(
                     "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado.",
                     env.generation, env.parent_generation
+                );
+                // QO-E2d — LEDGER: cada promoción queda en el WAL consultable
+                // (responde "qué aprendió el sistema esta semana"; antes el
+                // ledger se creaba y jamás se escribía).
+                self.ledger.save_weight(
+                    0,
+                    format!("gen_{}", env.generation),
+                    "promote".to_string(),
+                    current_shadow_sharpe,
                 );
             }
             Err(e) => println!(

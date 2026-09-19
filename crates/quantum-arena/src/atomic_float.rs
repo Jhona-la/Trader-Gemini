@@ -58,6 +58,28 @@ impl AtomicF64 {
         }
     }
 
+    /// MOD6/8-010 (INFORME DECIMOCUARTO): resta atómica RMW. Reemplaza el
+    /// patrón enfermo `load → (cur - val) → store`, que NO es atómico y
+    /// perdía actualizaciones cuando ≥3 hilos mutaban `used_margin`
+    /// simultáneamente (cierre del core, rollback async, reconciliación,
+    /// replay). Mismo CAS-loop de `fetch_add`.
+    #[inline(always)]
+    pub fn fetch_sub(&self, val: f64, order: Ordering) -> f64 {
+        let mut current = self.0.load(Ordering::Relaxed);
+        loop {
+            let current_f = f64::from_bits(current);
+            let new_val = current_f - val;
+            let new_bits = canonical_bits(new_val);
+            match self
+                .0
+                .compare_exchange_weak(current, new_bits, order, Ordering::Relaxed)
+            {
+                Ok(v) => return f64::from_bits(v),
+                Err(v) => current = v,
+            }
+        }
+    }
+
     #[inline(always)]
     pub fn compare_exchange(
         &self,

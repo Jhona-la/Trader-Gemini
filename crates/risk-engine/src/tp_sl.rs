@@ -60,7 +60,8 @@ pub struct TpSlInputs {
 }
 
 /// Resultado. `tp_pct` y `sl_pct` son fracciones del precio, siempre
-/// positivas, y satisfacen por construcción `tp_pct ≥ sl_pct · rr_required`.
+/// positivas, y satisfacen por construcción `tp_pct ≥ sl_pct · rr_required`
+/// y el cap B3.24 `sl_pct ≤ tp_pct · 0.5` (RR ≥ 2) en TODOS los caminos.
 #[derive(Debug, Clone, Copy)]
 pub struct TpSl {
     pub tp_pct: f64,
@@ -147,18 +148,41 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
     //    y se informa de si el horizonte pedido caía por debajo.
     let sl_floor = SuperGenotype::min_viable_sl(fee);
     let below_floor = sl_diffusive < sl_floor;
-    let sl_pct = sl_diffusive.max(sl_floor);
+    let mut sl_pct = sl_diffusive.max(sl_floor);
 
     // 4) RR EXIGIDO POR LA FRICCIÓN AL NIVEL DE STOP RESULTANTE (D-636).
     //    Crece cuando el stop se estrecha: la comisión pesa más sobre un
     //    riesgo menor.
-    let rr_required = SuperGenotype::min_rr_for(w, fee, sl_pct);
+    let mut rr_required = SuperGenotype::min_rr_for(w, fee, sl_pct);
 
     // 5) OBJETIVO. El RR genómico puede ser MÁS ambicioso que el mínimo,
     //    nunca menor: el mínimo es una restricción de rentabilidad, no una
     //    preferencia.
-    let rr_applied = rr_required.max(1.0);
-    let tp_pct = sl_pct * rr_applied;
+    let mut rr_applied = rr_required.max(1.0);
+    let mut tp_pct = sl_pct * rr_applied;
+
+    // 6) CAP B3.24 (friction_floors) — SL ≤ TP/2 EN LA FUNCIÓN PURA.
+    //    MOD3/5-019 (INFORME 14): `compute_tp_sl` garantizaba RR ≥ rr_required
+    //    pero NO el cap B3.24; solo lo aplicaba el gestor al re-geometrizar a
+    //    RR ≥ 2 en el tick siguiente — dos geometrías coherentes por separado,
+    //    incoherentes entre sí (gate/orden decían una cosa, gestión/brackets
+    //    ejecutaban otra). Aplicándolo AQUÍ, el cap es consistente en TODOS
+    //    los caminos por construcción.
+    if sl_pct > tp_pct * 0.5 {
+        sl_pct = tp_pct * 0.5;
+        // El stop estrechado encarece la fricción RELATIVA: re-derivar el RR
+        // mínimo al nivel nuevo (min_rr_for crece cuando el stop se estrecha)
+        // y re-asegurar tp ≥ sl·rr_min. Si rr_min ≤ 2, el objetivo YA lo
+        // cubre (tp = 2·sl tras el cap) y no se toca.
+        rr_required = SuperGenotype::min_rr_for(w, fee, sl_pct);
+        let rr_min = rr_required.max(1.0);
+        if tp_pct < sl_pct * rr_min {
+            rr_applied = rr_min;
+            tp_pct = sl_pct * rr_min;
+        } else {
+            rr_applied = tp_pct / sl_pct; // = 2.0: RR efectivo tras el cap
+        }
+    }
 
     TpSl {
         tp_pct,
@@ -172,7 +196,12 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
 /// Variante que respeta un RR genómico más ambicioso que el mínimo exigido.
 pub fn compute_tp_sl_with_target_rr(input: TpSlInputs, target_rr: f64) -> TpSl {
     let mut out = compute_tp_sl(input);
-    if target_rr.is_finite() && target_rr > out.rr_required {
+    // B3.24 (MOD3/5-019): el objetivo genómico solo puede AMPLIAR el
+    // recorrido, nunca romper el cap SL ≤ TP/2 que la función pura garantiza
+    // (rr_applied ≥ 2 tras el cap): se aplica únicamente si supera el RR ya
+    // aplicado. Antes, un target ∈ (rr_required, 2) volvía a dejar el SL por
+    // encima de TP/2 justo después de que la base lo respetara.
+    if target_rr.is_finite() && target_rr > out.rr_applied {
         out.rr_applied = target_rr;
         out.tp_pct = out.sl_pct * target_rr;
     }
@@ -207,6 +236,10 @@ mod tests {
 
     /// D-639: el stop DEBE seguir a la volatilidad. Antes, con ATR del 2 %, el
     /// piso difusivo salía a 300 bps y un clamp posterior lo devolvía a 60.
+    /// B3.24 (MOD3/5-019): cuando la fricción solo exige RR < 2, el cap
+    /// SL ≤ TP/2 recorta parte del crecimiento (el stop queda en
+    /// σ·rr_req/2), pero SIGUE escalando con la vol — el factor 4× de vol
+    /// entrega ~3.35× de stop, no la compresión a 60 bps del bug original.
     #[test]
     fn d639_el_stop_escala_con_la_volatilidad_sin_techo() {
         let mut lo = base();
@@ -216,9 +249,14 @@ mod tests {
         let r_lo = compute_tp_sl(lo);
         let r_hi = compute_tp_sl(hi);
         assert!(
-            r_hi.sl_pct > r_lo.sl_pct * 3.5,
+            r_hi.sl_pct > r_lo.sl_pct * 3.0,
             "el stop debe crecer con la vol: {} vs {}",
             r_lo.sl_pct,
+            r_hi.sl_pct
+        );
+        assert!(
+            r_hi.sl_pct > 0.010,
+            "con ATR del 2 % el stop no puede volver a la banda de 60 bps, dio {}",
             r_hi.sl_pct
         );
     }
@@ -274,6 +312,10 @@ mod tests {
     /// D-677: a la escala en la que se mide el ATR, la dispersión ES el ATR; y
     /// bajo difusión browniana cuatro veces el horizonte es el doble de
     /// dispersión. Fija las unidades de la ley de escala.
+    /// B3.24 (MOD3/5-019): a 4 min la fricción solo exige RR 1,75 < 2, así que
+    /// el cap SL ≤ TP/2 recorta el stop a σ·rr_req/2 = 0,00875 — la ley de
+    /// escala sigue viva (el stop CRECE con τ), solo que el cap le pone el
+    /// techo de geometría que antes aplicaba el gestor un tick después.
     #[test]
     fn d677_la_referencia_temporal_es_la_escala_del_atr() {
         let mut i = base();
@@ -290,10 +332,42 @@ mod tests {
         i.tau_ms = 240_000.0;
         let a_4m = compute_tp_sl(i);
         assert!(
-            (a_4m.sl_pct - 0.010).abs() < 1e-12,
-            "a 4 minutos y H = 0,5 la dispersión debe duplicarse, dio {}",
+            (a_4m.sl_pct - 0.00875).abs() < 1e-9,
+            "a 4 minutos: dispersión 2× (0.010) con RR_req 1.75, cap B3.24 a TP/2 ⇒ 0.00875, dio {}",
             a_4m.sl_pct
         );
+        assert!(
+            a_4m.sl_pct > a_1m.sl_pct,
+            "el stop sigue creciendo con tau pese al cap"
+        );
+    }
+
+    /// MOD3/5-019 — B3.24 en TODOS los caminos: la función pura garantiza
+    /// SL ≤ TP/2 (RR ≥ 2) por sí misma, y el target genómico solo puede
+    /// ampliar el recorrido, nunca romper el cap. El gestor ya no
+    /// re-geometriza nada al tick siguiente.
+    #[test]
+    fn b324_el_cap_sl_mitad_de_tp_se_garantiza_en_la_funcion_pura() {
+        for atr in [0.002, 0.005, 0.02, 0.05] {
+            for tau in [30_000.0, 300_000.0, 3_600_000.0, 43_200_000.0] {
+                for target in [0.0, 1.6, 1.9, 2.0, 2.5, 3.0] {
+                    let mut i = base();
+                    i.atr_ratio = atr;
+                    i.tau_ms = tau;
+                    let r = compute_tp_sl_with_target_rr(i, target);
+                    assert!(
+                        r.sl_pct <= r.tp_pct * 0.5 + 1e-12,
+                        "cap B3.24 violado: atr={atr} tau={tau} target={target} sl={} tp={}",
+                        r.sl_pct,
+                        r.tp_pct
+                    );
+                    assert!(
+                        r.tp_pct >= r.sl_pct * r.rr_required.max(1.0) - 1e-12,
+                        "RR mínimo roto tras el cap: atr={atr} tau={tau} target={target}",
+                    );
+                }
+            }
+        }
     }
 
     /// D-681: la geometría de la orden no depende del desempeño observado. El

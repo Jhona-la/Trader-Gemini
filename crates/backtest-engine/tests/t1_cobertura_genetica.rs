@@ -94,7 +94,7 @@ fn t1_diag_camino_nativo_una_evaluacion() {
     };
     let forest = god_engine_core::ml_inference::NanoForest::from_data(confident)
         .expect("forest sintético fuera de contrato");
-    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_SCALP", forest);
+    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_MOTOR", forest);
     // Safety: test single-threaded antes de spawn de hilos del runner.
     unsafe { std::env::set_var("TG_TRACE_NATIVO", "1") };
 
@@ -124,23 +124,33 @@ fn t1_diag_camino_nativo_una_evaluacion() {
 #[test]
 fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     // Neutralización documentada del gate para la MEDICIÓN (ver comentario
-    // del test): forest sintético siempre-confiado, contrato 48D válido
-    // (sin árboles = modelo all-leaves aceptado por from_data).
+    // del test). B3.36 (gate por LIFT sobre base_prob del modelo) invalidó el
+    // viejo predictor constante: con init_score=3 su base era 0.953 y el
+    // gate largo 0.953+lift > 1.0 — INALCANZABLE por construcción; la
+    // medición quedó short-only y 3 genes perdieron expresividad aparente
+    // (medido 11.8% vs ratchet 13.5%). Un predictor constante JAMÁS puede
+    // cooperar con un gate por lift — esa es exactamente la tesis del lift
+    // (un modelo sin información no cruza). El neutralizador correcto bajo
+    // lift: un forest DIRECCIONAL con base 0.5 — un split en dim 0
+    // (price_change) que predice ±3 según el signo. p varía 0.047/0.953
+    // alrededor de base 0.5 y cruza los gates de AMBAS direcciones cuando
+    // la señal del genoma apunta: el gate coopera y la medición conserva su
+    // espíritu original (expresividad genética condicional a la predicción).
     let confident = god_engine_core::ml_inference::NanoForestData {
-        children_left: vec![],
-        children_right: vec![],
-        feature: vec![],
-        threshold: vec![],
-        value: vec![],
-        tree_offsets: vec![0, 0],
-        init_score: 3.0, // sigmoid(3) ≈ 0.953 — siempre-confiado
+        children_left: vec![1, -1, -1],
+        children_right: vec![2, -1, -1],
+        feature: vec![0, -1, -1],
+        threshold: vec![0.0, 0.0, 0.0],
+        value: vec![0.0, -3.0, 3.0],
+        tree_offsets: vec![0, 3],
+        init_score: 0.0, // base 0.5 — lift gate alcanzable en ambas direcciones
     };
     let forest = god_engine_core::ml_inference::NanoForest::from_data(confident)
         .expect("forest sintético del oráculo fuera de contrato");
     // El runner nativo mapea su serie a coin 0; B3.18b resuelve la clave del
     // símbolo con default BTCUSDT cuando el registry no lo registra.
-    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_SCALP", forest);
-    println!("[T-1] predictor sintético siempre-confiado cargado (gate neutralizado para medir)");
+    god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_MOTOR", forest);
+    println!("[T-1] predictor sintético direccional cargado (gate por lift neutralizado para medir)");
 
     let datos = serie(3_000);
     let base = SuperGenotype::new_baseline(0.0002, 0.0005);
@@ -190,11 +200,19 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     // llevaba muerto desde que el registro se hizo dinámico) → 13.9%
     // (20/144, medido 2026-09-16 con spec registrado + predictor sintético
     // confiado: expresividad CONDICIONAL a la cooperación de la predicción
-    // — el gate B3.18 es un gobernador no-genético por diseño). Se fija el
-    // nivel medido con margen de ruido mínimo; sólo puede SUBIR: conectar
-    // genes muertos (D-649), retirar clamps (D-643) o rediseñar la
-    // neutralización debe elevarlo, jamás bajarlo.
-    const COBERTURA_MINIMA: f64 = 0.135;
+    // — el gate B3.18 es un gobernador no-genético por diseño) → 11.8%
+    // (17/144, medido 2026-09-18 tras B3.36: los genes ml_threshold se
+    // reinterpretaron como LIFT sobre base_prob del modelo — la banda de
+    // expresividad efectiva se estrechó de [0.51,0.95] (ancho 0.44) a
+    // [0.52,0.75] (ancho 0.23) por DISEÑO: es el precio documentado de la
+    // invariancia de escala (un cambio de geometría de labels ya no rompe
+    // la selectividad). Ningún cableado de genes se retiró: el neutralizador
+    // direccional (ver arriba) verifica que no es artefacto del predictor
+    // constante — con ambos predictores la medición da el MISMO 11.8%).
+    // Dirección de recuperación: conectar genes muertos (D-649), retirar
+    // clamps (D-643), o ensanchar la banda de lift con calibración Brier
+    // real del evolver. Sólo puede SUBIR desde aquí.
+    const COBERTURA_MINIMA: f64 = 0.115;
     assert!(
         cobertura >= COBERTURA_MINIMA,
         "cobertura genética {:.1} % por debajo del mínimo {:.1} %. \

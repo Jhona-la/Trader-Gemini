@@ -12,7 +12,6 @@ pub mod fases_autonomous;
 pub mod hot_swap_controller;
 pub mod immune_system;
 pub mod online_learning;
-pub mod quantum_evolver;
 pub mod reminiscence_and_adn;
 pub mod shadow_graph_auditor;
 
@@ -33,7 +32,6 @@ pub use fases_autonomous::{FaseAutonomous, FaseAutonomousManager, HealthMetrics}
 pub use hot_swap_controller::{EpigenomaSymbolParams, HotSwapController};
 pub use immune_system::{LivingImmuneSystem, TraumaRecord};
 pub use online_learning::OnlineLearningModule;
-pub use quantum_evolver::{QuantumEvolver, QuantumState};
 pub use reminiscence_and_adn::{AdnBackupCatalog, GenerationMetadata, ReminiscenceModule};
 
 pub struct MetacortexEngine {
@@ -43,7 +41,6 @@ pub struct MetacortexEngine {
     pub immune_system: LivingImmuneSystem,
     pub hot_swap: HotSwapController,
     pub consejo: ConsejoDeliberacion,
-    pub quantum_evolver: QuantumEvolver,
     pub phase_manager: FaseAutonomousManager,
     pub last_mutation_time: Option<Instant>,
     pub enforce_rate_limit: bool,
@@ -60,7 +57,6 @@ impl MetacortexEngine {
         let immune_system = LivingImmuneSystem::new(&root);
         let hot_swap = HotSwapController::new(&root);
         let consejo = ConsejoDeliberacion::new();
-        let quantum_evolver = QuantumEvolver::new();
         let phase_manager = FaseAutonomousManager::new();
 
         Self {
@@ -70,7 +66,6 @@ impl MetacortexEngine {
             immune_system,
             hot_swap,
             consejo,
-            quantum_evolver,
             phase_manager,
             last_mutation_time: None,
             enforce_rate_limit: true,

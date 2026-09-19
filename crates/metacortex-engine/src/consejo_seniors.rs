@@ -1,45 +1,120 @@
 //! # Council of Seniors — Distributed Adversarial Deliberation Engine
 //!
-//! Implements a 9-member council of specialized senior agents in `cerebro/consejo/`:
-//! 1. SeniorMicroestructura — Orderbook & trade flow agression
-//! 2. SeniorSeriesTemporales — Wavelet, HMM, state-space cycles
-//! 3. SeniorGrafos — GNN & correlation breakdown
-//! 4. SeniorCausal — Do-calculus & manipulation filter (VETO)
-//! 5. SeniorRiesgo — VaR, CVaR, Kelly & drawdown limit (VETO)
-//! 6. SeniorEjecucion — Market impact & micro-timing (VETO)
-//! 7. SeniorCuantico — Combinatorial portfolio allocation
-//! 8. SeniorMetacognitivo — Dynamic weight recalibration over 1000 decisions
-//! 9. SeniorTeleonomia — Future utility & understanding (VETO)
+//! Implements a 10-member council of specialized senior agents in `cerebro/consejo/`.
+//!
+//! MOD2/7-006 (INFORME DECIMOCUARTO) — DIVERSIFICACIÓN DEL CONSEJO:
+//! antes, 5 de 6 seniors direccionales eran transformadas colineales de
+//! {OBI, f(OBI), Hurst} (grafos = sign(impulse_mom) que ES OBI del
+//! lead_lag_engine; cuántico = promedio de micro+grafos; metacognitivo =
+//! f(micro, grafos); series = tanh(Hurst)·dirección de grafos/OBI). El
+//! consejo era un eco de cámara de 3 señales ya gateadas ≥6 veces aguas
+//! arriba. Ahora cada asiento opina desde una PERSPECTIVA DISTINTA con su
+//! PROPIO dato crudo e independiente del `MarketSnapshotPayload`:
+//!
+//! | # | Asiento | Dato único | Papel |
+//! |---|---------|-----------|-------|
+//! | 0 | SeniorMicroestructura (Flujo) | `book_imbalance` (OBI L2) | direccional — la única señal real de microestructura |
+//! | 1 | SeniorSeriesTemporales (Espectral) | `fused_score` + `persistence` | direccional — momentum sostenible vs mean-reversion |
+//! | 2 | SeniorVolatilidad | `atr_pct` + `intended_direction` | modulador de convicción — mercados tranquilos vs peligrosos |
+//! | 3 | SeniorCausal | `do_calculus_risk` (VPIN) | VETO de manipulación |
+//! | 4 | SeniorRiesgo | `current_drawdown_pct` + `loss_streak` + `intended_direction` | VETO de drawdown + modulador de convicción por racha |
+//! | 5 | SeniorEjecucion | `estimated_slippage_bps` | VETO de impacto |
+//! | 6 | SeniorML | `ml_prob` | direccional — ¿el ensamble apoya esta dirección? |
+//! | 7 | SeniorMetacognitivo | divergencia entre {ml, espectral, flujo} + win_rate | direccional — calidad/divergencia de las otras opiniones |
+//! | 8 | SeniorTeleonomia | `hurst` + `fused_score` + `ml_prob` + fricción | VETO de utilidad esperada |
+//! | 9 | SeniorAuditorInterno | `do_calculus_risk` + drawdown | VETO del abogado del diablo |
+//!
+//! `graph_correlation` fue RETIRADO del payload: era `impulse_mom` del
+//! lead_lag_engine, computado A PARTIR del OBI — un duplicado colineal, no
+//! una perspectiva. El consenso 0.35 (B3.31) con este consejo significa
+//! "al menos 2-3 perspectivas independientes alineadas".
 
 use serde::{Deserialize, Serialize};
 
+/// U-6 (MOTOR UNIVERSAL CONTINUO): variantes Scalping/Swing extirpadas —
+/// el eje temporal del consejo es `dominant_tau_ms` del payload (continuo).
+/// `Continuous` se conserva como único valor del contrato serde.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum TradingHorizon {
     #[default]
     Continuous,
-    Scalping,
-    Swing,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketSnapshotPayload {
     pub horizon: TradingHorizon,
+    /// OBI del libro L2 — dato EXCLUSIVO del asiento Flujo (Microestructura).
     pub book_imbalance: f64,
+    /// Hurst — usado SOLO por Teleonomia como escala de predictibilidad.
     pub hurst_exponent: f64,
-    pub graph_correlation: f64,
+    /// MOD2/7-006: probabilidades del ensamble ML [0,1] — dato EXCLUSIVO del
+    /// asiento ML. >0.55 alcista, <0.45 bajista, neutral en la banda muerta.
+    pub ml_prob: f64,
+    /// Score espectral fusionado [-1,1] — dato EXCLUSIVO del asiento Espectral.
+    pub fused_score: f64,
+    /// Persistencia de la escala dominante [-1,1] (>0 momentum sostenible,
+    /// <0 mean-reversion probable) — dato EXCLUSIVO del asiento Espectral.
+    pub persistence: f64,
+    /// ATR relativo al precio (v_t/mid) — dato EXCLUSIVO del asiento Volatilidad.
+    pub atr_pct: f64,
+    /// Racha de pérdidas reciente de la dirección bajo deliberación — dato
+    /// EXCLUSIVO del asiento Riesgo.
+    pub loss_streak: u32,
+    /// Dirección de la entrada bajo deliberación (-1/0/+1). NO es una opinión:
+    /// es el contexto que los asientos de convicción (Riesgo, Volatilidad)
+    /// modulan sin generar dirección propia.
+    pub intended_direction: f64,
     pub do_calculus_risk: f64,
     pub causal_veto_threshold: f64,
     pub current_drawdown_pct: f64,
     pub estimated_slippage_bps: f64,
+    /// U-4 (MOTOR UNIVERSAL CONTINUO): τ dominante del espectro (ms) del
+    /// símbolo bajo deliberación. Los asientos que arbitraban por horizonte
+    /// (Riesgo: caps de DD 0.95/0.90/0.85; Ejecución: slippage 35/65/100
+    /// bps) ahora interpolan LOG-LINEALMENTE en τ sobre la banda operativa
+    /// [30 s, 12 h] — misma semántica, sin saltos, sin etiquetas.
+    pub dominant_tau_ms: f64,
+    /// P-5b — datos EXCLUSIVOS del asiento Ente del Mercado (ningún otro
+    /// asiento los lee): z-score de burst ballena del flujo @trade real,
+    /// severidad de cascada de liquidaciones VIVA (peek, no consume), OI
+    /// per-símbolo normalizado [0,1], y score de spoofing (evaporación de
+    /// muros L2 — el flujo que motivó la señal puede ser teatro).
+    pub whale_burst_z: f64,
+    pub liquidation_severity: f64,
+    pub open_interest_norm: f64,
+    pub spoof_score: f64,
+    /// QO-U2 — SENTIMIENTO CONTRARIAN de masas: L/S account ratio (la
+    /// multitud minorista; >3 muy long, <0.3 muy short) y taker buy/sell
+    /// ratio (flujo agresivo). Exclusivos del asiento Ente.
+    pub crowd_ls_ratio: f64,
+    pub crowd_taker_ratio: f64,
 }
 
 impl MarketSnapshotPayload {
+    /// U-4 — posición espectral s∈[0,1] de τ en la banda operativa
+    /// (log-lineal): 0 = banda rápida (30 s), 1 = banda lenta (12 h).
+    /// τ fuera de banda se clampa a los extremos.
+    pub fn spectral_s(&self) -> f64 {
+        const TAU_FAST: f64 = 30_000.0;
+        const TAU_SLOW: f64 = 43_200_000.0;
+        let tau = if self.dominant_tau_ms.is_finite() && self.dominant_tau_ms > 0.0 {
+            self.dominant_tau_ms
+        } else {
+            (TAU_FAST * TAU_SLOW).sqrt()
+        };
+        ((tau / TAU_FAST).ln() / (TAU_SLOW / TAU_FAST).ln()).clamp(0.0, 1.0)
+    }
+
     /// Validates data integrity: fails explicitly on NaN, Inf, or out-of-bound anomalies
     pub fn validate(&self) -> Result<(), String> {
         let metrics = [
             ("book_imbalance", self.book_imbalance),
             ("hurst_exponent", self.hurst_exponent),
-            ("graph_correlation", self.graph_correlation),
+            ("ml_prob", self.ml_prob),
+            ("fused_score", self.fused_score),
+            ("persistence", self.persistence),
+            ("atr_pct", self.atr_pct),
+            ("intended_direction", self.intended_direction),
             ("do_calculus_risk", self.do_calculus_risk),
             ("current_drawdown_pct", self.current_drawdown_pct),
             ("estimated_slippage_bps", self.estimated_slippage_bps),
@@ -57,6 +132,21 @@ impl MarketSnapshotPayload {
                 self.hurst_exponent
             ));
         }
+        if !(0.0..=1.0).contains(&self.ml_prob) {
+            return Err(format!("Out-of-bounds ml_prob: {}", self.ml_prob));
+        }
+        if !(-1.0..=1.0).contains(&self.persistence) {
+            return Err(format!("Out-of-bounds persistence: {}", self.persistence));
+        }
+        if self.atr_pct < 0.0 {
+            return Err(format!("Out-of-bounds atr_pct: {}", self.atr_pct));
+        }
+        if !(-1.0..=1.0).contains(&self.intended_direction) {
+            return Err(format!(
+                "Out-of-bounds intended_direction: {}",
+                self.intended_direction
+            ));
+        }
 
         Ok(())
     }
@@ -66,14 +156,23 @@ impl MarketSnapshotPayload {
 pub enum SeniorRole {
     Microestructura,
     SeriesTemporales,
-    Grafos,
+    /// MOD2/7-006: asiento de VOLATILIDAD (antes Grafos: leía impulse_mom
+    /// del lead_lag_engine, que ES OBI — colineal por construcción).
+    Volatilidad,
     Causal,
     Riesgo,
     Ejecucion,
-    Cuantico,
+    /// MOD2/7-006: asiento ML (antes Cuántico: era el promedio de OBI+grafos).
+    Ml,
     Metacognitivo,
     Teleonomia,
     AuditorInterno,
+    /// P-5b — ENTE DEL MERCADO: quién opera AHORA (ballenas: z de burst del
+    /// flujo real; cascadas: severidad de liquidaciones vivas; apalancamiento:
+    /// open interest per-símbolo). MODULADOR no direccional (como
+    /// Volatilidad): no genera dirección ni cuenta en el consenso direccional
+    /// — modula la convicción y veta SOLO ante cascada mayor en curso.
+    EnteMercado,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,7 +210,33 @@ pub fn safe_signum(val: f64) -> f64 {
     }
 }
 
-// 1. Senior Microestructura
+/// MOD2/7-006: opinión espectral pura a partir de los observables INDEPENDIENTES
+/// del espectro temporal (fused_score y persistence). No toca OBI ni Hurst.
+/// - persistence > 0 → momentum sostenible: CONFIRMA la dirección de fused_score.
+/// - persistence < 0 → mean-reversion probable: FADEA la dirección de fused_score.
+/// - persistence ≈ 0 → ruido: la transición tanh es C^inf y anula la opinión.
+#[inline(always)]
+fn spectral_opinion(fused_score: f64, persistence: f64) -> f64 {
+    (fused_score * (persistence * 2.0).tanh()).clamp(-1.0, 1.0)
+}
+
+/// MOD2/7-006: opinión del ensamble ML con banda muerta. ml_prob > 0.55 →
+/// alcista, < 0.45 → bajista, neutral en la banda muerta (±0.05 alrededor de
+/// 0.5). Convicción plena con |edge| ≥ 0.20 (ml 0.70/0.30 — el techo B3.19).
+#[inline(always)]
+fn ml_opinion(ml_prob: f64) -> f64 {
+    let edge = ml_prob - 0.5;
+    const DEAD_ZONE: f64 = 0.05;
+    const FULL_EDGE: f64 = 0.20;
+    if edge.abs() < DEAD_ZONE {
+        0.0
+    } else {
+        ((edge - DEAD_ZONE * edge.signum()) / (FULL_EDGE - DEAD_ZONE)).clamp(-1.0, 1.0)
+    }
+}
+
+// 1. Senior Microestructura (Flujo) — MOD2/7-006: MANTIENE el OBI actual:
+// es la ÚNICA señal real de microestructura del consejo (presión del libro L2).
 pub struct SeniorMicroestructura;
 impl SeniorAgent for SeniorMicroestructura {
     fn role(&self) -> SeniorRole {
@@ -125,12 +250,15 @@ impl SeniorAgent for SeniorMicroestructura {
             confidence: imbalance.abs().clamp(0.0, 1.0),
             weight: 1.0,
             is_veto: false,
-            justification: format!("Book imbalance: {:.4}", imbalance),
+            justification: format!("Flujo L2 (OBI): {:.4}", imbalance),
         }
     }
 }
 
-// 2. Senior Series Temporales
+// 2. Senior Series Temporales (Espectral) — MOD2/7-006: ya NO lee Hurst·OBI
+// (colineal). Opina desde el espectro temporal: fused_score direcciona y
+// persistence decide si el momentum es sostenible (>0) o si impera la
+// mean-reversion (<0, se fadea la señal espectral).
 pub struct SeniorSeriesTemporales;
 impl SeniorAgent for SeniorSeriesTemporales {
     fn role(&self) -> SeniorRole {
@@ -138,26 +266,13 @@ impl SeniorAgent for SeniorSeriesTemporales {
     }
     #[inline(always)]
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let hurst = payload.hurst_exponent;
-        // D-512: Desacoplar colinealidad. La dirección tendencial temporal de largo plazo
-        // proviene del impulso del grafo temporal (graph_correlation), no del libro L2.
-        let trend_dir = if payload.graph_correlation.abs() > 1e-4 {
-            safe_signum(payload.graph_correlation)
+        let signal = spectral_opinion(payload.fused_score, payload.persistence);
+        let confidence = signal.abs().clamp(0.0, 1.0);
+        let regime = if payload.persistence >= 0.0 {
+            "momentum"
         } else {
-            safe_signum(payload.book_imbalance)
+            "mean-reversion"
         };
-
-        // D-438: Transición continua y suave C^inf mediante activación sigmoide/tanh,
-        // eliminando los saltos escalonados artificiales y modulando la sensibilidad por horizonte.
-        let sensitivity = match payload.horizon {
-            TradingHorizon::Continuous => 25.0,
-            TradingHorizon::Scalping => 20.0,
-            TradingHorizon::Swing => 10.0,
-        };
-        let hurst_dev = hurst - 0.50;
-        let smooth_activation = (hurst_dev * sensitivity).tanh();
-        let signal = smooth_activation * trend_dir;
-        let confidence = ((hurst - 0.5).abs() * 2.0).clamp(0.0, 1.0);
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal,
@@ -165,28 +280,140 @@ impl SeniorAgent for SeniorSeriesTemporales {
             weight: 1.0,
             is_veto: false,
             justification: format!(
-                "Hurst exponent: {:.4} (dir={:.3}, trend_dir={:.1}, mode={:?})",
-                hurst, signal, trend_dir, payload.horizon
+                "Espectral: fused={:.4}, persistence={:.4} ({}) → sig={:.3}",
+                payload.fused_score, payload.persistence, regime, signal
             ),
         }
     }
 }
 
-// 3. Senior Grafos
-pub struct SeniorGrafos;
-impl SeniorAgent for SeniorGrafos {
+// 3. Senior Volatilidad (antes Grafos) — MOD2/7-006: el asiento "grafos" leía
+// impulse_mom del lead_lag_engine, computado A PARTIR del OBI (colinealidad
+// literal). Ahora opina desde el ATR relativo: mercados tranquilos autorizan
+// convicción plena; mercados peligrosos la reducen. NO genera dirección:
+// modula la convicción de la entrada bajo deliberación.
+pub struct SeniorVolatilidad;
+impl SeniorAgent for SeniorVolatilidad {
     fn role(&self) -> SeniorRole {
-        SeniorRole::Grafos
+        SeniorRole::Volatilidad
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let correlation = payload.graph_correlation;
+        let atr_pct = payload.atr_pct.max(0.0);
+        // Bandas de referencia crypto (scalp 1m): calma ≤ 10 bps del precio,
+        // peligro ≥ 40 bps. La convicción decae linealmente hasta un piso de
+        // 0.4 — nunca cero: la volatilidad es riesgo, no veto direccional.
+        const CALM_ATR_PCT: f64 = 0.0010;
+        const DANGER_ATR_PCT: f64 = 0.0040;
+        let regime_factor =
+            1.0 - 0.6 * ((atr_pct - CALM_ATR_PCT) / (DANGER_ATR_PCT - CALM_ATR_PCT)).clamp(0.0, 1.0);
+        let dir = safe_signum(payload.intended_direction);
         SeniorOpinion {
             role: self.role(),
-            signal_direction: safe_signum(correlation),
-            confidence: correlation.abs().clamp(0.0, 1.0),
+            signal_direction: dir,
+            confidence: if dir != 0.0 { regime_factor } else { 0.0 },
             weight: 0.9,
             is_veto: false,
-            justification: format!("Graph correlation score: {:.4}", correlation),
+            justification: format!(
+                "Volatilidad: ATR%={:.4} → convicción {:.2} (dir={:+.0})",
+                atr_pct, regime_factor, dir
+            ),
+        }
+    }
+}
+
+// P-5b — Senior Ente del Mercado (MODULADOR: quién opera AHORA)
+pub struct SeniorEnteMercado;
+impl SeniorAgent for SeniorEnteMercado {
+    fn role(&self) -> SeniorRole {
+        SeniorRole::EnteMercado
+    }
+    fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
+        let whale_z = if payload.whale_burst_z.is_finite() {
+            payload.whale_burst_z.clamp(0.0, 10.0)
+        } else {
+            0.0
+        };
+        let liq = if payload.liquidation_severity.is_finite() {
+            payload.liquidation_severity.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let oi = if payload.open_interest_norm.is_finite() {
+            payload.open_interest_norm.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let spoof = if payload.spoof_score.is_finite() {
+            payload.spoof_score.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        // VETO sólo ante cascada MAYOR en curso (sev > 0.85): no se entra
+        // contra un tsunami de liquidaciones — ni a favor: el path es
+        // caótico en ambos sentidos hasta que la cascada se agote.
+        let is_veto = liq > 0.85;
+        // Convicción: los entes grandes (ballena burst z>4) y el calor de
+        // cascada activa (sev>0.6) reducen la confianza en el desenlace
+        // limpio de la entrada — el precio en ese momento lo mueven ELLOS,
+        // no el flujo que motivó la señal. OI alto (apalancamiento denso)
+        // amplifica movimientos: misma modulación.
+        let mut entity_factor = 1.0f64;
+        if whale_z > 4.0 {
+            entity_factor *= 0.7;
+        }
+        if liq > 0.6 {
+            entity_factor *= 0.5;
+        }
+        if oi > 0.8 {
+            entity_factor *= 0.85;
+        }
+        if spoof > 0.7 {
+            entity_factor *= 0.85; // muro que se evapora: el libro miente
+        }
+        // QO-U2 — CONTRARIAN: la multitud MUY a favor de nuestra dirección
+        // es riesgo de squeeze (todos saliendo por la misma puerta). L/S>3
+        // y entramos long: ×0.8; L/S<0.33 y entramos short: ×0.8. El flujo
+        // taker extremo (>2.5 o <0.4) en NUESTRA dirección: ya llegó tarde.
+        let ls = if payload.crowd_ls_ratio.is_finite() {
+            payload.crowd_ls_ratio.clamp(0.0, 20.0)
+        } else {
+            1.0
+        };
+        let tk = if payload.crowd_taker_ratio.is_finite() {
+            payload.crowd_taker_ratio.clamp(0.0, 20.0)
+        } else {
+            1.0
+        };
+        let dir_sign = safe_signum(payload.intended_direction);
+        if dir_sign > 0.0 && ls > 3.0 {
+            entity_factor *= 0.8; // multitud ya long: squeeze risk
+        }
+        if dir_sign < 0.0 && ls < 0.33 {
+            entity_factor *= 0.8; // multitud ya short: squeeze risk
+        }
+        if dir_sign > 0.0 && tk > 2.5 {
+            entity_factor *= 0.85; // takers ya compraron: llegamos tarde
+        }
+        if dir_sign < 0.0 && tk < 0.4 {
+            entity_factor *= 0.85; // takers ya vendieron: llegamos tarde
+        }
+        let entity_factor = entity_factor.max(0.3); // piso: nunca anula solo
+        let dir = safe_signum(payload.intended_direction);
+        SeniorOpinion {
+            role: self.role(),
+            signal_direction: dir, // hereda la dirección: modula, no genera
+            confidence: if dir != 0.0 { entity_factor } else { 0.0 },
+            weight: 1.0,
+            is_veto,
+            justification: format!(
+                "EnteMercado: ballena_z={:.1} cascada={:.2} OI={:.2} spoof={:.2} → convicción {:.2}{}",
+                whale_z,
+                liq,
+                oi,
+                spoof,
+                entity_factor,
+                if is_veto { " [VETO CASCADA]" } else { "" }
+            ),
         }
     }
 }
@@ -206,8 +433,10 @@ impl SeniorAgent for SeniorCausal {
         // D-112: El umbral causal protege contra toxicidad extrema (>0.85) sin asfixiar
         // los breakouts institucionales legítimos (VPIN entre 0.60 y 0.80).
         let effective_threshold = payload.causal_veto_threshold.clamp(0.60, 0.90);
-        let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25
-            || matches!(payload.horizon, TradingHorizon::Continuous | TradingHorizon::Scalping))
+        // U-4: el breakout alineado antes dependía de etiquetas de horizonte
+        // — en el continuo, un libro alineado O una τ de banda rápida (la
+        // microestructura lidera los breakouts) califican igual.
+        let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25 || payload.spectral_s() < 0.5)
             && do_calculus_risk < 0.88;
         let is_veto = do_calculus_risk > effective_threshold && !is_aligned_breakout;
         SeniorOpinion {
@@ -224,7 +453,11 @@ impl SeniorAgent for SeniorCausal {
     }
 }
 
-// 5. Senior Riesgo (VETO ON VAR/DRAWDOWN)
+// 5. Senior Riesgo — MOD2/7-006: conserva el VETO de drawdown extremo, y su
+// voto pasa a ser un MODULADOR DE CONVICCIÓN direccional: opina sobre la
+// entrada bajo deliberación (`intended_direction`) con la convicción que
+// merecen el drawdown reciente y la racha de pérdidas de esa dirección.
+// streak = 0 → convicción plena; streak > 2 → convicción claramente reducida.
 pub struct SeniorRiesgo;
 impl SeniorAgent for SeniorRiesgo {
     fn role(&self) -> SeniorRole {
@@ -234,23 +467,31 @@ impl SeniorAgent for SeniorRiesgo {
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let drawdown = payload.current_drawdown_pct;
 
-        // FIX #1280: Umbral adaptativo para micro-cuentas ($13 USD bootstrap).
-        let max_drawdown = match payload.horizon {
-            TradingHorizon::Continuous => 0.90,
-            TradingHorizon::Scalping => 0.95, // Scalping es más arriesgado pero permite mayor drawdown para recovery
-            TradingHorizon::Swing => 0.85,
-        };
+        // U-4 (MOTOR UNIVERSAL CONTINUO): cap de DD continuo en τ — antes
+        // escalones por horizonte (Scalping 0.95 / Continuous 0.90 / Swing
+        // 0.85). Misma semántica (banda rápida tolera más DD para recovery,
+        // banda lenta menos), sin saltos ni etiquetas: s=0 (τ 30s) ⇒ 0.95,
+        // s=1 (τ 12h) ⇒ 0.85.
+        let max_drawdown = 0.95 - 0.10 * payload.spectral_s();
 
         let is_veto = drawdown > max_drawdown;
+
+        // MOD2/7-006: convicción por racha — 1/(1 + 0.5·streak): plena con
+        // streak 0, ~0.67 con 1, 0.5 con 2, ≤0.4 cuando streak > 2.
+        let streak = payload.loss_streak;
+        let streak_factor = 1.0 / (1.0 + 0.5 * streak as f64);
+        let conviction = (streak_factor * (1.0 - drawdown.clamp(0.0, 1.0))).clamp(0.05, 1.0);
+        let dir = safe_signum(payload.intended_direction);
+
         SeniorOpinion {
             role: self.role(),
-            signal_direction: 0.0, // Neutral permission agent
-            confidence: (1.0 - drawdown).clamp(0.0, 1.0),
+            signal_direction: dir, // Modula la entrada bajo deliberación
+            confidence: if dir != 0.0 { conviction } else { 0.0 },
             weight: 1.5,
             is_veto,
             justification: format!(
-                "Risk drawdown assessment: {:.4} (mode={:?})",
-                drawdown, payload.horizon
+                "Riesgo: DD={:.4}, racha={} → convicción {:.2} (dir={:+.0})",
+                drawdown, streak, conviction, dir
             ),
         }
     }
@@ -266,12 +507,11 @@ impl SeniorAgent for SeniorEjecucion {
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         // FIX #387: estimated_slippage_bps ya está expresado en puntos básicos (bps)
         let slippage_bps = payload.estimated_slippage_bps.max(0.0);
-        // D-113: Umbral dinámico adaptado a la volatilidad de altcoins
-        let max_slippage = match payload.horizon {
-            TradingHorizon::Continuous => 65.0, // Altcoins con spread normal de 10-35 bps no son vetadas
-            TradingHorizon::Scalping => 35.0,
-            TradingHorizon::Swing => 100.0,
-        };
+        // U-4: umbral de slippage continuo en τ — antes escalones por
+        // horizonte (Scalping 35 / Continuous 65 / Swing 100 bps). Un trade
+        // de τ corto no puede pagar 100 bps; uno de 12 h puede absorberlos.
+        // D-113: extremo rápido conserva la tolerancia estrecha de altcoins.
+        let max_slippage = 35.0 + 65.0 * payload.spectral_s();
         let is_veto = slippage_bps > max_slippage;
         SeniorOpinion {
             role: self.role(),
@@ -287,39 +527,44 @@ impl SeniorAgent for SeniorEjecucion {
     }
 }
 
-// 7. Senior Cuantico — Analiza la superposición cuántica entre microestructura (L2)
-// y el estado topológico de grafo (macro), penalizando la decoherencia por impacto y toxicidad.
-pub struct SeniorCuantico;
-impl SeniorAgent for SeniorCuantico {
+// 7. Senior ML (antes Cuántico) — MOD2/7-006: la "superposición cuántica"
+// era (OBI + f(OBI))/√2 — el promedio de dos seniors previos, cero
+// información nueva. Ahora es la opinión del ENSAMBLE ML: ml_prob > 0.55 →
+// alcista, < 0.45 → bajista, banda muerta neutral en medio. Dato 100%
+// independiente del OBI (el ensamble forest⊕NN no ve el libro L2).
+pub struct SeniorML;
+impl SeniorAgent for SeniorML {
     fn role(&self) -> SeniorRole {
-        SeniorRole::Cuantico
+        SeniorRole::Ml
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let slippage_bps = payload.estimated_slippage_bps.max(0.0);
-        let slippage_impact = slippage_bps / 100.0;
-        // D-512: Superposición cuántica |psi> = (micro + macro) / sqrt(2)
-        // Interferencia constructiva si tienen el mismo signo; destructiva si colisionan.
-        let psi = (payload.book_imbalance + payload.graph_correlation) / std::f64::consts::SQRT_2;
-        let decoherence = (slippage_impact + payload.do_calculus_risk * 0.30).clamp(0.0, 1.0);
-        let coherence = (1.0 - decoherence).max(0.0);
-        let signal = (psi * coherence).clamp(-1.0, 1.0);
-        let confidence = (signal.abs() * 1.5).clamp(0.0, 1.0);
+        let p = if payload.ml_prob.is_finite() {
+            payload.ml_prob.clamp(0.0, 1.0)
+        } else {
+            0.5 // Falla segura: sin modelo no hay opinión
+        };
+        let signal = ml_opinion(p);
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal,
-            confidence,
+            confidence: signal.abs().clamp(0.0, 1.0),
             weight: 1.0,
             is_veto: false,
-            justification: format!(
-                "Quantum superposition: psi={:.4}, coherence={:.4}, signal={:.4}",
-                psi, coherence, signal
-            ),
+            justification: format!("ML ensemble: ml_prob={:.4} → sig={:.3}", p, signal),
         }
     }
 }
 
-// 8. Senior Metacognitivo — Evalúa la resonancia y consistencia cognitiva entre modelos,
-// moderando la convicción según el rendimiento histórico y la humildad epistémica.
+// 8. Senior Metacognitivo — MOD2/7-006: MANTIENE su papel de evaluador de la
+// CALIDAD de las otras opiniones, pero la "resonancia" ya no es OBI·f(OBI)
+// (eco de cámara). Ahora mide la DIVERGENCIA entre las tres perspectivas
+// direccionales genuinamente independientes del consejo — ML (modelo),
+// Espectral (régimen) y Flujo (libro L2) — y modera su convicción por el
+// rendimiento histórico (win rate) y la humildad epistémica:
+//   - unánimidad (3/3)  → convicción plena en la dirección media;
+//   - mayoría (2/3, sin disenso) → convicción moderada;
+//   - evidencia fina (1/3)  → convicción reducida;
+//   - divergencia real (≥1 vs ≥1) → ABSTENCIÓN: incertidumbre.
 pub struct SeniorMetacognitivo;
 impl SeniorAgent for SeniorMetacognitivo {
     fn role(&self) -> SeniorRole {
@@ -330,35 +575,54 @@ impl SeniorAgent for SeniorMetacognitivo {
         let effective_wr = if wr > 0.0 { wr.clamp(0.20, 1.0) } else { 0.50 };
         let adjusted_confidence = (effective_wr - dd_penalty).clamp(0.05, 1.0);
 
-        // D-512: Resonancia cognitiva rho = micro * macro.
-        // Si micro y macro apuntan a la misma dirección, hay resonancia cognitiva (rho > 0).
-        // Si se contradicen (rho <= 0), impera la humildad epistémica: voto neutral (0.0).
-        let resonance = payload.book_imbalance * payload.graph_correlation;
-        let signal_dir = if resonance > 0.0 {
-            safe_signum(payload.book_imbalance + payload.graph_correlation)
-                * resonance.abs().sqrt().clamp(0.1, 1.0)
+        // Las tres perspectivas independientes, cada una con su propio dato:
+        let ml_sig = ml_opinion(payload.ml_prob.clamp(0.0, 1.0));
+        let spec_sig = spectral_opinion(payload.fused_score, payload.persistence);
+        let flow_sig = payload.book_imbalance.clamp(-1.0, 1.0);
+
+        let dirs = [
+            safe_signum(ml_sig),
+            safe_signum(spec_sig),
+            safe_signum(flow_sig),
+        ];
+        let pos = dirs.iter().filter(|&&d| d > 0.0).count();
+        let neg = dirs.iter().filter(|&&d| d < 0.0).count();
+        let mean = (ml_sig + spec_sig + flow_sig) / 3.0;
+
+        let (signal_dir, divergence) = if pos == 3 || neg == 3 {
+            (mean, false) // Unanimidad de las 3 perspectivas
+        } else if (pos >= 2 && neg == 0) || (neg >= 2 && pos == 0) {
+            (mean * 0.7, false) // Mayoría sin disenso
+        } else if pos + neg == 1 {
+            (mean * 0.4, false) // Una sola voz: evidencia fina
         } else {
-            0.0 // Disonancia cognitiva: abstención / neutralidad
+            (0.0, true) // Disonancia genuina: abstención / humildad epistémica
         };
 
         let weight = (1.0 + (effective_wr - 0.20) / 0.80).clamp(1.0, 2.0);
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal_dir,
-            confidence: adjusted_confidence,
+            confidence: if divergence { 0.0 } else { adjusted_confidence },
             weight,
             is_veto: false,
             justification: format!(
-                "Metacognitive WR={:.4}, resonance={:.4}, sig={:.4}, weight={:.1}",
-                wr, resonance, signal_dir, weight
+                "Metacognitivo: ml={:.2}, spec={:.2}, flujo={:.2} → {} (wr={:.3})",
+                ml_sig,
+                spec_sig,
+                flow_sig,
+                if divergence { "divergencia → abstención" } else { "consenso de perspectivas" },
+                wr
             ),
         }
     }
 }
 
 // 9. Senior Teleonomia (VETO ON UTILITY)
-// Evalúa la función de utilidad teleonómica futura esperada J(pi) considerando
-// fricción, memoria fractal y confluencia macro/micro.
+// MOD2/7-006: descolinearizado — la utilidad ya NO se compone de
+// graph_correlation (OBI) y book_imbalance (OBI). Ahora: contribución
+// espectral escalada por la predictibilidad fractal (Hurst) + contribución
+// del ensamble ML, penalizadas por fricción de ejecución y toxicidad.
 pub struct SeniorTeleonomia;
 impl SeniorAgent for SeniorTeleonomia {
     fn role(&self) -> SeniorRole {
@@ -368,13 +632,13 @@ impl SeniorAgent for SeniorTeleonomia {
         let slippage_penalty = (payload.estimated_slippage_bps / 50.0).clamp(0.0, 1.0);
         let execution_quality = 1.0 - slippage_penalty;
 
-        // D-512: Utilidad teleonómica sintética con signo intrínseco:
-        // Contribución macro guiada por predictabilidad de Hurst + flujo micro penalizado por toxicidad.
-        let macro_contribution =
-            payload.graph_correlation * ((payload.hurst_exponent - 0.5).abs() * 2.0);
-        let micro_contribution = payload.book_imbalance * (1.0 - payload.do_calculus_risk);
-        let expected_utility =
-            (macro_contribution * 0.5 + micro_contribution * 0.5) * execution_quality;
+        let predictability = ((payload.hurst_exponent - 0.5).abs() * 2.0).clamp(0.0, 1.0);
+        let spectral = spectral_opinion(payload.fused_score, payload.persistence);
+        let ml_edge = ((payload.ml_prob.clamp(0.0, 1.0) - 0.5) * 2.0).clamp(-1.0, 1.0);
+        let toxicity_penalty = 1.0 - 0.30 * payload.do_calculus_risk.clamp(0.0, 1.0);
+        let expected_utility = (spectral * predictability * 0.6 + ml_edge * 0.4)
+            * execution_quality
+            * toxicity_penalty;
 
         let is_veto = expected_utility.abs() < 0.02 && wr < 0.35;
         let signal = if is_veto {
@@ -391,7 +655,7 @@ impl SeniorAgent for SeniorTeleonomia {
             weight: 1.0,
             is_veto,
             justification: format!(
-                "Teleonomic utility={:.4}, signal={:.4}, wr={:.4}, veto={}",
+                "Teleonomia: utilidad={:.4}, sig={:.4}, wr={:.4}, veto={}",
                 expected_utility, signal, wr, is_veto
             ),
         }
@@ -405,12 +669,10 @@ impl SeniorAgent for SeniorAuditorInterno {
         SeniorRole::AuditorInterno
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        // Umbral de drawdown adaptativo alineado con SeniorRiesgo para evitar vetos contradictorios (D-343)
-        let max_dd = match payload.horizon {
-            TradingHorizon::Continuous => 0.95,
-            TradingHorizon::Scalping => 0.95,
-            TradingHorizon::Swing => 0.85,
-        };
+        // Umbral de drawdown continuo en τ alineado con SeniorRiesgo para
+        // evitar vetos contradictorios (D-343, U-4: antes escalones
+        // Scalping/Continuous/Swing — misma curva que SeniorRiesgo).
+        let max_dd = 0.95 - 0.10 * payload.spectral_s();
         let is_veto = payload.do_calculus_risk > 0.92 || payload.current_drawdown_pct > max_dd;
         SeniorOpinion {
             role: self.role(),
@@ -437,14 +699,18 @@ impl Default for ConsejoDeliberacion {
             agents: vec![
                 Box::new(SeniorMicroestructura),
                 Box::new(SeniorSeriesTemporales),
-                Box::new(SeniorGrafos),
+                Box::new(SeniorVolatilidad),
                 Box::new(SeniorCausal),
                 Box::new(SeniorRiesgo),
                 Box::new(SeniorEjecucion),
-                Box::new(SeniorCuantico),
+                Box::new(SeniorML),
                 Box::new(SeniorMetacognitivo),
                 Box::new(SeniorTeleonomia),
                 Box::new(SeniorAuditorInterno),
+                // P-5b: el mercado tiene QUIENES operándolo — el asiento Ente
+                // ve ballenas (z de burst), cascadas (liquidaciones vivas) y
+                // apalancamiento (OI). Modulador como Volatilidad.
+                Box::new(SeniorEnteMercado),
             ],
             tracker: std::sync::RwLock::new(SeniorPerformanceTracker::new(500)),
         }
@@ -461,7 +727,7 @@ impl ConsejoDeliberacion {
         &self,
         payload: &MarketSnapshotPayload,
         win_rate: f64,
-        weight_multipliers: Option<&[f64; 10]>,
+        weight_multipliers: Option<&[f64; 11]>,
     ) -> ConsensusResult {
         // R-06 — SHRINKAGE BAYESIANO del win rate: wr=0 con n=0 significa
         // "sin datos", NO "sistema fallando". Mezcla con prior Beta(1,1)
@@ -542,30 +808,41 @@ impl ConsejoDeliberacion {
             0.0
         };
 
-        // El denominador es la capacidad ponderada de todos los miembros con voto direccional
+        // MOD2/7-006: el denominador del consenso es la capacidad ponderada de
+        // los asientos con PERSPECTIVA DIRECCIONAL PROPIA (Flujo, Espectral,
+        // ML, Metacognitivo, Teleonomia). Riesgo y Volatilidad son MODULADORES
+        // de convicción: heredan `intended_direction` (no generan dirección) —
+        // cuentan en `final_signal` pero NO en el consenso, o el consejo
+        // rubber-stamp-earía su propia entrada. Causal/Ejecución/Auditor son
+        // asientos de permiso/veto. El MISMO filtro se aplica al numerador
+        // (positive/negative capacity) o el consenso excedería 1.0.
+        let is_directional_seat = |o: &SeniorOpinion| {
+            !matches!(
+                o.role,
+                SeniorRole::Causal
+                    | SeniorRole::Riesgo
+                    | SeniorRole::Ejecucion
+                    | SeniorRole::Volatilidad
+                    | SeniorRole::AuditorInterno
+                    | SeniorRole::EnteMercado
+            )
+        };
+
         let total_directional_capacity: f64 = opinions
             .iter()
-            .filter(|o| {
-                !matches!(
-                    o.role,
-                    SeniorRole::Causal
-                        | SeniorRole::Riesgo
-                        | SeniorRole::Ejecucion
-                        | SeniorRole::AuditorInterno
-                )
-            })
+            .filter(|o| is_directional_seat(o))
             .map(|o| o.weight * o.confidence.clamp(0.0, 1.0))
             .sum();
 
         let positive_capacity: f64 = opinions
             .iter()
-            .filter(|o| o.signal_direction > 0.0)
+            .filter(|o| is_directional_seat(o) && o.signal_direction > 0.0)
             .map(|o| o.weight * o.confidence.clamp(0.0, 1.0))
             .sum();
 
         let negative_capacity: f64 = opinions
             .iter()
-            .filter(|o| o.signal_direction < 0.0)
+            .filter(|o| is_directional_seat(o) && o.signal_direction < 0.0)
             .map(|o| o.weight * o.confidence.clamp(0.0, 1.0))
             .sum();
 
@@ -594,24 +871,44 @@ impl ConsejoDeliberacion {
         // D-342: Quórum Bayesiano ponderado contra Veto Deadlock.
         // Si hay vetoes:
         // - Si >= 2 seniors vetan: veto absoluto e irrevocable.
-        // - Si 1 senior veta pero los otros 9 seniors tienen supermayoría (> 80% consenso) y señal fuerte (>= 0.35),
-        //   se aprueba aplicando penalización bayesiana del 25% al final_signal en lugar de un bloqueo irreversible.
+        // - Si 1 senior veta pero los otros seniors tienen supermayoría
+        //   (> 80% consenso) y señal fuerte (>= 0.35), se aprueba aplicando
+        //   penalización bayesiana del 25% al final_signal en lugar de un
+        //   bloqueo irreversible.
+        // - P-5b EXCEPCIÓN: el veto de CASCADA del Ente del Mercado
+        //   (severidad > 0.85) es un CORTACIRCUITOS, no una disidencia — el
+        //   quórum bayesiano existe para desempatar OPINIONES; una cascada
+        //   mayor de liquidaciones no es opinión, es condición de mercado
+        //   (familia kill-switch). No sobreescribible por supermayoría.
         let mut vetoed_by = None;
         if !vetoes.is_empty() {
             let top_consensus = long_consensus_pct.max(short_consensus_pct);
-            // D-342 & D-425: Quórum Bayesiano con escala alineada a la convicción continua del tensor (>= 0.28)
-            if vetoes.len() == 1 && top_consensus >= 0.80 && final_signal.abs() >= 0.28 {
+            let cascade_breaker = vetoes
+                .iter()
+                .any(|v| v.role == SeniorRole::EnteMercado && v.is_veto);
+            if cascade_breaker && payload.liquidation_severity > 0.85 {
+                vetoed_by = Some(SeniorRole::EnteMercado);
+            } else if vetoes.len() == 1 && top_consensus >= 0.80 && final_signal.abs() >= 0.28 {
+                // D-342 & D-425: escala alineada a la convicción continua (>= 0.28)
                 final_signal *= 0.75; // Penalización del 25% por disenso de 1 senior
             } else {
                 vetoed_by = Some(vetoes[0].role);
             }
         }
 
+        // MOD2/7-013 (INFORME DECIMOCUARTO, FOCO 2 «Rigidez de filtros»): el
+        // umbral de aprobación baja de 0.50 (mayoría absoluta) a 0.35
+        // (minoría sustancial). MOD2/7-006: con el consejo ahora DIVERSO
+        // (Flujo/Espectral/ML/Metacognitivo/Teleonomia como perspectivas
+        // independientes), consenso 0.35 significa «al menos 2-3 perspectivas
+        // independientes alineadas», no «el mismo OBI visto desde 5 ángulos».
+        // El ML (B3.18) y el risk-engine ya gatearon la entrada; el consejo es
+        // la última deliberación cualitativa, no un segundo embudo cuantitativo.
         let (approved, consensus_pct) = if vetoed_by.is_some() {
             (false, 0.0)
-        } else if long_consensus_pct >= 0.50 && final_signal > 0.0 {
+        } else if long_consensus_pct >= 0.35 && final_signal > 0.0 {
             (true, long_consensus_pct)
-        } else if short_consensus_pct >= 0.50 && final_signal < 0.0 {
+        } else if short_consensus_pct >= 0.35 && final_signal < 0.0 {
             (true, short_consensus_pct)
         } else if total_directional_capacity == 0.0 {
             // D-165: Con cero capacidad direccional de los seniors, rechazar para evitar operaciones a ciegas
@@ -663,13 +960,13 @@ impl ConsejoDeliberacion {
         &self,
         payload: &MarketSnapshotPayload,
         win_rate: f64,
-    ) -> [f64; 10] {
+    ) -> [f64; 11] {
         let safe_wr = if win_rate.is_finite() {
             win_rate.clamp(0.0, 1.0)
         } else {
             0.5
         };
-        let mut signals = [0.0; 10];
+        let mut signals = [0.0; 11];
         for (idx, agent) in self.agents.iter().enumerate() {
             signals[idx] = agent.evaluate(payload, safe_wr).signal_direction;
         }
@@ -677,7 +974,7 @@ impl ConsejoDeliberacion {
     }
 
     /// N-12: Registra el retorno realizado de una operación para actualizar los pesos adaptativos
-    pub fn record_outcome(&self, senior_signals: &[f64; 10], realized_return: f64) {
+    pub fn record_outcome(&self, senior_signals: &[f64; 11], realized_return: f64) {
         if let Ok(mut tracker) = self.tracker.write() {
             tracker.record_outcome(senior_signals, realized_return);
         }
@@ -688,9 +985,9 @@ impl ConsejoDeliberacion {
 #[derive(Debug, Clone)]
 pub struct SeniorPerformanceTracker {
     pub window_size: usize,
-    pub correct_counts: [usize; 10],
-    pub total_counts: [usize; 10],
-    pub history: std::collections::VecDeque<([f64; 10], f64)>,
+    pub correct_counts: [usize; 11],
+    pub total_counts: [usize; 11],
+    pub history: std::collections::VecDeque<([f64; 11], f64)>,
 }
 
 impl SeniorPerformanceTracker {
@@ -702,21 +999,21 @@ impl SeniorPerformanceTracker {
     pub fn new(window_size: usize) -> Self {
         Self {
             window_size: window_size.max(10).min(1000),
-            correct_counts: [0; 10],
-            total_counts: [0; 10],
+            correct_counts: [0; 11],
+            total_counts: [0; 11],
             history: std::collections::VecDeque::with_capacity(window_size.max(10).min(1000)),
         }
     }
 
     /// Registra el resultado observado tras la decisión del Consejo
-    pub fn record_outcome(&mut self, senior_signals: &[f64; 10], realized_return: f64) {
+    pub fn record_outcome(&mut self, senior_signals: &[f64; 11], realized_return: f64) {
         if !realized_return.is_finite() {
             return;
         }
 
         if self.history.len() >= self.window_size {
             if let Some((old_signals, old_ret)) = self.history.pop_front() {
-                for i in 0..10 {
+                for i in 0..11 {
                     let old_sig = old_signals[i];
                     self.total_counts[i] = self.total_counts[i].saturating_sub(1);
                     let was_correct = if old_sig != 0.0 {
@@ -731,7 +1028,7 @@ impl SeniorPerformanceTracker {
             }
         }
 
-        for i in 0..10 {
+        for i in 0..11 {
             let sig = senior_signals[i];
             self.total_counts[i] += 1;
             let was_correct = if sig != 0.0 {
@@ -750,13 +1047,13 @@ impl SeniorPerformanceTracker {
     }
 
     /// Calcula multiplicadores adaptativos normalizados en el rango [0.5, 2.0]
-    pub fn compute_weights(&self) -> [f64; 10] {
-        let mut weights = [1.0; 10];
+    pub fn compute_weights(&self) -> [f64; 11] {
+        let mut weights = [1.0; 11];
         let mut sum_acc = 0.0;
         let mut active_seniors = 0;
 
-        let mut accuracies = [0.5; 10];
-        for i in 0..10 {
+        let mut accuracies = [0.5; 11];
+        for i in 0..11 {
             if self.total_counts[i] >= 5 {
                 let acc = self.correct_counts[i] as f64 / self.total_counts[i] as f64;
                 accuracies[i] = acc.clamp(0.01, 0.99);
@@ -767,7 +1064,7 @@ impl SeniorPerformanceTracker {
 
         if active_seniors >= 2 && sum_acc > 0.0 {
             let mean_acc = sum_acc / active_seniors as f64;
-            for i in 0..10 {
+            for i in 0..11 {
                 if self.total_counts[i] >= 5 {
                     let relative = accuracies[i] / mean_acc.max(0.01);
                     weights[i] = relative.clamp(0.5, 2.0);
@@ -783,22 +1080,38 @@ impl SeniorPerformanceTracker {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_consejo_deliberacion_long_approval() {
-        let consejo = ConsejoDeliberacion::new();
-        let payload = MarketSnapshotPayload {
-            horizon: TradingHorizon::Scalping,
+    /// Payload base diverso: todas las perspectivas independientes alineadas
+    /// al alza (flujo, espectro, ML) en un mercado tranquilo sin racha.
+    fn diverse_bullish_payload() -> MarketSnapshotPayload {
+        MarketSnapshotPayload {
+            horizon: TradingHorizon::Continuous,
             book_imbalance: 0.85,
             hurst_exponent: 0.72,
-            graph_correlation: 0.5,
+            ml_prob: 0.70,
+            fused_score: 0.50,
+            persistence: 0.60,
+            atr_pct: 0.0010,
+            loss_streak: 0,
+            intended_direction: 1.0,
             do_calculus_risk: 0.5,
             causal_veto_threshold: 0.80,
             current_drawdown_pct: 0.05,
-            // 20 bps: bajo el límite de 25 bps de SeniorEjecucion para
-            // Scalping (30 disparaba el veto y contradecía la intención
-            // del caso: payload alcista fuerte DEBE aprobarse).
+            // 20 bps: bajo el límite de 35 bps de SeniorEjecucion para Scalping.
             estimated_slippage_bps: 20.0,
-        };
+            dominant_tau_ms: 1_138_000.0,
+            whale_burst_z: 0.0,
+            liquidation_severity: 0.0,
+            open_interest_norm: 0.0,
+            spoof_score: 0.0,
+            crowd_ls_ratio: 1.0,
+            crowd_taker_ratio: 1.0,
+        }
+    }
+
+    #[test]
+    fn test_consejo_deliberacion_long_approval() {
+        let consejo = ConsejoDeliberacion::new();
+        let payload = diverse_bullish_payload();
 
         let result = consejo.deliberar(&payload, 0.70);
         assert!(
@@ -813,14 +1126,26 @@ mod tests {
     fn test_consejo_deliberacion_short_approval() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
-            horizon: TradingHorizon::Scalping,
+            horizon: TradingHorizon::Continuous,
             book_imbalance: -0.85,
             hurst_exponent: 0.35,
-            graph_correlation: -0.80,
+            ml_prob: 0.28,
+            fused_score: -0.55,
+            persistence: 0.50,
+            atr_pct: 0.0010,
+            loss_streak: 0,
+            intended_direction: -1.0,
             do_calculus_risk: 0.05,
             causal_veto_threshold: 0.80,
             current_drawdown_pct: 0.01,
             estimated_slippage_bps: 0.0005,
+            dominant_tau_ms: 1_138_000.0,
+            whale_burst_z: 0.0,
+            liquidation_severity: 0.0,
+            open_interest_norm: 0.0,
+            spoof_score: 0.0,
+            crowd_ls_ratio: 1.0,
+            crowd_taker_ratio: 1.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -835,16 +1160,8 @@ mod tests {
     #[test]
     fn test_consejo_deliberacion_veto() {
         let consejo = ConsejoDeliberacion::new();
-        let payload = MarketSnapshotPayload {
-            horizon: TradingHorizon::Scalping,
-            book_imbalance: 0.90,
-            hurst_exponent: 0.75,
-            graph_correlation: 0.85,
-            do_calculus_risk: 0.95, // High manipulation risk triggering VETO
-            causal_veto_threshold: 0.80,
-            current_drawdown_pct: 0.01,
-            estimated_slippage_bps: 0.0005,
-        };
+        let mut payload = diverse_bullish_payload();
+        payload.do_calculus_risk = 0.95; // Doble veto: Causal (>0.80) + Auditor (>0.92)
 
         let result = consejo.deliberar(&payload, 0.70);
         assert!(!result.approved, "Trade must be rejected due to VETO");
@@ -854,19 +1171,10 @@ mod tests {
     #[test]
     fn test_consejo_deliberacion_with_custom_weights() {
         let consejo = ConsejoDeliberacion::new();
-        let payload = MarketSnapshotPayload {
-            horizon: TradingHorizon::Scalping,
-            book_imbalance: 0.85,
-            hurst_exponent: 0.72,
-            graph_correlation: 0.80,
-            do_calculus_risk: 0.05,
-            causal_veto_threshold: 0.80,
-            current_drawdown_pct: 0.01,
-            estimated_slippage_bps: 0.0005,
-        };
+        let payload = diverse_bullish_payload();
 
-        // Multiplicadores que potencian a Microestructura y Series Temporales
-        let weights = [2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        // Multiplicadores que potencian a Flujo y Espectral
+        let weights = [2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         let result = consejo.deliberar_with_weights(&payload, 0.70, Some(&weights));
         assert!(result.approved);
         assert!(result.final_signal > 0.0);
@@ -876,9 +1184,9 @@ mod tests {
     #[test]
     fn test_senior_performance_tracker_adaptation() {
         let mut tracker = SeniorPerformanceTracker::new(50);
-        // Simular 10 trades ganadores donde el Senior 0 (Microestructura) acertó
+        // Simular 10 trades ganadores donde el Senior 0 (Flujo) acertó
         for _ in 0..10 {
-            let signals = [1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+            let signals = [1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
             tracker.record_outcome(&signals, 0.01);
         }
 
@@ -895,18 +1203,205 @@ mod tests {
     fn test_consejo_deliberacion_nan_payload_immunity() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
-            horizon: TradingHorizon::Scalping,
+            horizon: TradingHorizon::Continuous,
             book_imbalance: f64::NAN,
             hurst_exponent: f64::NAN,
-            graph_correlation: f64::NAN,
+            ml_prob: f64::NAN,
+            fused_score: f64::INFINITY,
+            persistence: f64::NAN,
+            atr_pct: f64::NAN,
+            loss_streak: 0,
+            intended_direction: f64::NAN,
             do_calculus_risk: f64::INFINITY,
             causal_veto_threshold: 0.80,
             current_drawdown_pct: -0.05,
             estimated_slippage_bps: 10.0,
+            dominant_tau_ms: 1_138_000.0,
+            whale_burst_z: 0.0,
+            liquidation_severity: 0.0,
+            open_interest_norm: 0.0,
+            spoof_score: 0.0,
+            crowd_ls_ratio: 1.0,
+            crowd_taker_ratio: 1.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
         assert!(result.final_signal.is_finite());
         assert!(result.total_consensus_pct.is_finite());
+    }
+
+    /// MOD2/7-006 (INFORME DECIMOCUARTO): test de DIVERSIDAD REAL del consejo.
+    /// Antes, 5 de 6 seniors direccionales eran transformadas colineales de
+    /// {OBI, f(OBI), Hurst}: cambiar OBI movía TODO el consejo y cambiar
+    /// ml/espectro/ATR no movía NADA. Ahora:
+    ///   1. Cambiar OBI (sin tocar ml/espectro/ATR) cambia el output del
+    ///      consejo — pero SOLO mediante los asientos que legítimamente leen
+    ///      flujo (Flujo y Metacognitivo).
+    ///   2. Cambiar ml_prob cambia el output — mediante ML y Metacognitivo,
+    ///      SIN mover a Flujo.
+    ///   3. Los asientos independientes (ML, Espectral, Volatilidad, Riesgo)
+    ///      son INVARIANTES a cambios de OBI: no son funciones del OBI.
+    #[test]
+    fn test_consejo_diversidad_no_colinealidad_mod2_7_006() {
+        let consejo = ConsejoDeliberacion::new();
+
+        // Consejo diverso: ML y espectro alcistas, flujo ALCISTA fuerte.
+        let base = diverse_bullish_payload();
+
+        // (1) Flip de OBI: +0.85 → −0.85 con ml/espectro/ATR/racha intactos.
+        let obi_flip = MarketSnapshotPayload {
+            book_imbalance: -0.85,
+            ..base.clone()
+        };
+
+        let res_base = consejo.deliberar(&base, 0.70);
+        let res_obi = consejo.deliberar(&obi_flip, 0.70);
+
+        // Output del consejo DISTINTO al cambiar OBI (diversidad real: el
+        // consejo sigue sensible al flujo L2)...
+        assert_ne!(
+            res_base.final_signal, res_obi.final_signal,
+            "cambiar OBI debe cambiar el final_signal del consejo"
+        );
+        assert!(
+            (res_base.final_signal - res_obi.final_signal).abs() > 0.10,
+            "el cambio debe ser material (>0.10), no cosmético: base={:.3} vs obi_flip={:.3}",
+            res_base.final_signal,
+            res_obi.final_signal
+        );
+        assert_ne!(
+            res_base.total_consensus_pct, res_obi.total_consensus_pct,
+            "cambiar OBI debe cambiar el consenso del consejo"
+        );
+
+        // ...pero SOLO los asientos que legítimamente leen OBI se mueven.
+        // Índices: 0=Flujo, 1=Espectral, 2=Volatilidad, 3=Causal, 4=Riesgo,
+        //          5=Ejecución, 6=ML, 7=Metacognitivo, 8=Teleonomia,
+        //          9=Auditor, 10=Ente del Mercado.
+        let sigs_base = consejo.extract_senior_signals(&base, 0.70);
+        let sigs_obi = consejo.extract_senior_signals(&obi_flip, 0.70);
+        for (idx, (a, b)) in sigs_base.iter().zip(sigs_obi.iter()).enumerate() {
+            let moved = (a - b).abs() > 1e-9;
+            let reads_obi = matches!(idx, 0 | 7); // Flujo y Metacognitivo
+            assert_eq!(
+                moved,
+                reads_obi,
+                "asiento {} {} ante flip de OBI (antes: TODO el consejo era f(OBI))",
+                idx,
+                if moved { "se movió" } else { "no se movió" }
+            );
+        }
+
+        // (2) Flip de ml_prob: 0.70 → 0.30 con OBI/espectro/ATR intactos.
+        let ml_flip = MarketSnapshotPayload {
+            ml_prob: 0.30,
+            ..base.clone()
+        };
+        let res_ml = consejo.deliberar(&ml_flip, 0.70);
+        assert_ne!(
+            res_base.final_signal, res_ml.final_signal,
+            "cambiar ml_prob debe cambiar el final_signal del consejo"
+        );
+
+        let sigs_ml = consejo.extract_senior_signals(&ml_flip, 0.70);
+        for (idx, (a, b)) in sigs_base.iter().zip(sigs_ml.iter()).enumerate() {
+            let moved = (a - b).abs() > 1e-9;
+            let reads_ml = matches!(idx, 6 | 7 | 8); // ML, Metacognitivo, Teleonomia
+            assert_eq!(
+                moved, reads_ml,
+                "asiento {} {} ante flip de ml_prob",
+                idx,
+                if moved { "se movió" } else { "no se movió" }
+            );
+        }
+
+        // (3) Colinealidad estructural imposible: el asiento ML NO es función
+        // del OBI ni el asiento Flujo es función del ml_prob.
+        let senior_ml = SeniorML;
+        assert_eq!(
+            senior_ml.evaluate(&base, 0.5).signal_direction,
+            senior_ml.evaluate(&obi_flip, 0.5).signal_direction,
+            "SeniorML no debe leer OBI"
+        );
+        let senior_flujo = SeniorMicroestructura;
+        assert_eq!(
+            senior_flujo.evaluate(&base, 0.5).signal_direction,
+            senior_flujo.evaluate(&ml_flip, 0.5).signal_direction,
+            "SeniorFlujo no debe leer ml_prob"
+        );
+
+        // (4) Independencia de los moduladores: Riesgo responde a la RACHA
+        // (streak 0 vs 3 con mismo OBI/ml/espectro) y Volatilidad al ATR
+        // (calma vs peligro), sin tocar ninguna señal direccional.
+        let streak3 = MarketSnapshotPayload {
+            loss_streak: 3,
+            ..base.clone()
+        };
+        let senior_riesgo = SeniorRiesgo;
+        let conf0 = senior_riesgo.evaluate(&base, 0.5).confidence;
+        let conf3 = senior_riesgo.evaluate(&streak3, 0.5).confidence;
+        assert!(
+            conf0 > conf3,
+            "racha 3 debe reducir la convicción del SeniorRiesgo ({:.2} > {:.2})",
+            conf0,
+            conf3
+        );
+
+        let high_atr = MarketSnapshotPayload {
+            atr_pct: 0.0040, // ≥ 40 bps: mercado peligroso
+            ..base.clone()
+        };
+        let senior_vol = SeniorVolatilidad;
+        assert!(
+            senior_vol.evaluate(&base, 0.5).confidence
+                > senior_vol.evaluate(&high_atr, 0.5).confidence,
+            "ATR alto debe reducir la convicción del SeniorVolatilidad"
+        );
+    }
+
+    /// P-5b — diversidad del asiento ENTE DEL MERCADO: sus fuentes (ballena
+    /// z, cascada de liquidaciones, OI) no las lee NINGÚN otro asiento, y
+    /// él no lee las de nadie más. Ante un shock de entes (cascada mayor +
+    /// burst ballena) SOLO el asiento 10 se mueve; y su modulación es real
+    /// (convicción menor) con VETO activado en cascada extrema.
+    #[test]
+    fn test_p5b_asiento_ente_mercado_independiente_y_modula() {
+        let consejo = ConsejoDeliberacion::new();
+        let base = diverse_bullish_payload();
+
+        let entity_shock = MarketSnapshotPayload {
+            whale_burst_z: 6.0,
+            liquidation_severity: 0.9,
+            open_interest_norm: 0.9,
+            ..base.clone()
+        };
+
+        let sigs_base = consejo.extract_senior_signals(&base, 0.70);
+        let sigs_shock = consejo.extract_senior_signals(&entity_shock, 0.70);
+        // Señal DIRECCIONAL: los asientos 0..=9 no leen entes — inmunes al
+        // shock (independencia estructural). El asiento 10 modula por
+        // CONVICCIÓN (su dirección es heredada): su movimiento no aparece
+        // en signal_direction — se verifica por evaluate() directo abajo.
+        for (idx, (a, b)) in sigs_base.iter().zip(sigs_shock.iter()).enumerate() {
+            let moved = (a - b).abs() > 1e-9;
+            assert!(
+                !moved,
+                "asiento {} se movió ante shock de entes — nadie más lee ballena/cascada/OI",
+                idx
+            );
+        }
+
+        // Modulación real: convicción del Ente menor bajo shock, y VETO por
+        // cascada mayor (sev 0.9 > 0.85).
+        let ente = SeniorEnteMercado;
+        let calm = ente.evaluate(&base, 0.5);
+        let shock = ente.evaluate(&entity_shock, 0.5);
+        assert!(calm.confidence > shock.confidence, "shock de entes debe reducir convicción");
+        assert!(!calm.is_veto, "mercado calmado: sin veto");
+        assert!(shock.is_veto, "cascada severa 0.9 debe VETAR");
+
+        // Y el veto llega a la deliberación completa.
+        let res_shock = consejo.deliberar(&entity_shock, 0.70);
+        assert!(!res_shock.approved, "cascada mayor en curso: no se aprueba entrada");
     }
 }

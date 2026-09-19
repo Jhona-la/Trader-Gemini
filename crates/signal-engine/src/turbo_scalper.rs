@@ -104,7 +104,29 @@ impl TurboScalpEngine {
                 ..Default::default()
             });
         }
-        None
+            None
+    }
+
+    /// Voto puro a partir de microestructura saneada (compartido por el
+    /// camino global legado de `evaluate` y el escopado por moneda de
+    /// `evaluate_for_coin`).
+    #[inline(always)]
+    pub fn vote(obi: f64, ofi: f64, hawkes: f64) -> f64 {
+        // FIX #683: Sanitizar lecturas de registros
+        let safe_obi = if obi.is_finite() { obi } else { 0.0 };
+        let safe_ofi = if ofi.is_finite() { ofi } else { 0.0 };
+        let safe_hawkes = if hawkes.is_finite() && hawkes >= 0.0 {
+            hawkes
+        } else {
+            1.0
+        };
+
+        if safe_hawkes >= 1.2 && (safe_obi.abs() >= 0.2 || safe_ofi.abs() >= 0.2) {
+            let flow = safe_obi * 0.6 + safe_ofi * 0.4;
+            (flow * (safe_hawkes / 2.0).min(2.0)).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
     }
 }
 
@@ -144,20 +166,37 @@ impl strategy_core::QuantumStrategy for TurboScalpEngine {
             .map(|p| p.get_value())
             .unwrap_or(1.0);
 
-        // FIX #683: Sanitizar lecturas de registros
-        let safe_obi = if obi.is_finite() { obi } else { 0.0 };
-        let safe_ofi = if ofi.is_finite() { ofi } else { 0.0 };
-        let safe_hawkes = if hawkes.is_finite() && hawkes >= 0.0 {
-            hawkes
-        } else {
-            1.0
+        Self::vote(obi, ofi, hawkes)
+    }
+
+    /// MOD2/7-009 (INFORME DECIMOCUARTO): esta estrategia no sobreescribía
+    /// `evaluate_for_coin` y delegaba en `evaluate()`, que lee el registry
+    /// GLOBAL — el voto de la moneda N se computaba con los datos de la
+    /// ÚLTIMA moneda que escribió el global. Ahora: el voto usa los datos
+    /// PER-COIN que el core publica en cada tick (`{sym}_key` / `c{id}:key`,
+    /// ver `set_reg` en GodEngineCore::process_tick_dual). Sin datos
+    /// per-coin, el slot 0 (BTC, escritor convencional del global) conserva
+    /// el camino legado; cualquier otra moneda devuelve NEUTRO — voto
+    /// neutralizado para no contaminar cross-coin (MOD2/7-009).
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let Some(r) = self.registry.as_ref() else {
+            return 0.0;
+        };
+        let scoped = |key: &str| -> Option<f64> {
+            r.get(&format!("{}_{}", symbol, key), "TurboScalpEngine")
+                .or_else(|| r.get(&format!("c{}:{}", coin_id, key), "TurboScalpEngine"))
+                .map(|p| p.get_value())
+                .filter(|v| v.is_finite())
         };
 
-        if safe_hawkes >= 1.2 && (safe_obi.abs() >= 0.2 || safe_ofi.abs() >= 0.2) {
-            let flow = safe_obi * 0.6 + safe_ofi * 0.4;
-            (flow * (safe_hawkes / 2.0).min(2.0)).clamp(-1.0, 1.0)
-        } else {
-            0.0
+        let obi = scoped("order_book_imbalance").or_else(|| scoped("orderbook_imbalance"));
+        let ofi = scoped("order_flow_imbalance");
+        let hawkes = scoped("hawkes_intensity");
+
+        match (obi, ofi, hawkes) {
+            (Some(o), Some(f), Some(h)) => Self::vote(o, f, h),
+            _ if coin_id == 0 => self.evaluate(),
+            _ => 0.0, // voto neutralizado para no contaminar cross-coin (MOD2/7-009)
         }
     }
 }
@@ -229,5 +268,52 @@ mod tests {
             "Flujo e intensidad alcista deben generar señal positiva"
         );
         assert!(eval <= 1.0);
+    }
+
+    /// MOD2/7-009: una moneda sin datos per-coin NO hereda el global (que
+    /// contiene los datos de la última moneda que escribió): voto NEUTRO.
+    #[test]
+    fn mod2_7_009_coin_sin_datos_per_coin_vota_neutral() {
+        let registry = std::sync::Arc::new(omniscient_registry::OmniscientRegistry::new());
+        // Sólo claves GLOBALES (p.ej. escritas por otra moneda):
+        registry.set("order_book_imbalance", -0.9);
+        registry.set("order_flow_imbalance", -0.8);
+        registry.set("hawkes_intensity", 2.0);
+
+        let mut engine = TurboScalpEngine::default();
+        assert!(strategy_core::QuantumStrategy::init(&mut engine, registry).is_ok());
+
+        let v = strategy_core::QuantumStrategy::evaluate_for_coin(&engine, 3, "SOLUSDT");
+        assert_eq!(
+            v, 0.0,
+            "voto neutralizado para no contaminar cross-coin (MOD2/7-009)"
+        );
+        // El slot 0 (BTC) conserva el camino global legado.
+        let v0 = strategy_core::QuantumStrategy::evaluate_for_coin(&engine, 0, "BTCUSDT");
+        assert!(v0 < 0.0, "BTC sigue leyendo el global legado");
+    }
+
+    /// MOD2/7-009: con datos per-coin publicados, el voto usa los de SU
+    /// símbolo aunque el global contenga otra cosa.
+    #[test]
+    fn mod2_7_009_voto_usa_datos_del_propio_simbolo() {
+        let registry = std::sync::Arc::new(omniscient_registry::OmniscientRegistry::new());
+        // El global quedó en manos de un vendedor fuerte (otra moneda):
+        registry.set("order_book_imbalance", -0.9);
+        registry.set("order_flow_imbalance", -0.8);
+        registry.set("hawkes_intensity", 2.0);
+        // El core escribe el contexto de SOL (set_scoped + set_for_coin):
+        registry.set_scoped("SOLUSDT", "order_book_imbalance", 0.8);
+        registry.set_scoped("SOLUSDT", "order_flow_imbalance", 0.6);
+        registry.set_scoped("SOLUSDT", "hawkes_intensity", 1.6);
+
+        let mut engine = TurboScalpEngine::default();
+        assert!(strategy_core::QuantumStrategy::init(&mut engine, registry).is_ok());
+
+        let v = strategy_core::QuantumStrategy::evaluate_for_coin(&engine, 3, "SOLUSDT");
+        assert!(
+            v > 0.0,
+            "SOL debe votar con SU flujo alcista, no con el global vendedor ({v})"
+        );
     }
 }

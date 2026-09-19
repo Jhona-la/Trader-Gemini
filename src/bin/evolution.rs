@@ -90,8 +90,8 @@ fn evolve_main() {
     println!("🌌 RUST QUANTUM EVOLUTION ENGINE (SIMULATED ANNEALING)");
     println!("============================================================");
 
-    let path = format!("models/{}_SCALP.json", symbol);
-    if let Err(_) = NanoForest::load_global(&format!("{}_SCALP", symbol), &path) {
+    let path = format!("models/{}_MOTOR.json", symbol);
+    if let Err(_) = NanoForest::load_global(&format!("{}_MOTOR", symbol), &path) {
         println!(
             "⚠️ Failed to load NanoForest from {}. It might not exist yet.",
             path

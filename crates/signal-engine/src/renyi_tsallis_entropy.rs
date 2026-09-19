@@ -135,6 +135,27 @@ impl RenyiTsallisEntropyEngine {
 
         ((1.0 / (1.0 - self.alpha_renyi)) * sum_p_alpha.ln()).max(0.0)
     }
+
+    /// Voto puro (compartido por el camino global legado de `evaluate` y el
+    /// escopado por moneda de `evaluate_for_coin`).
+    #[inline(always)]
+    fn vote(tsallis_q: f64, obi: f64) -> f64 {
+        // FIX #681: Sanitizar lecturas de registro
+        let safe_tsallis = if tsallis_q.is_finite() && tsallis_q >= 0.0 {
+            tsallis_q
+        } else {
+            0.5
+        };
+        let safe_obi = if obi.is_finite() { obi } else { 0.0 };
+
+        // Si la entropía es baja (orden estructurado en el flujo) y hay desequilibrio direccional, amplificar
+        if safe_tsallis < 0.60 && safe_obi.abs() > 0.15 {
+            let conviction = (1.0 - safe_tsallis) * safe_obi;
+            conviction.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    }
 }
 
 impl Default for RenyiTsallisEntropyEngine {
@@ -170,20 +191,33 @@ impl strategy_core::QuantumStrategy for RenyiTsallisEntropyEngine {
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 
-        // FIX #681: Sanitizar lecturas de registro
-        let safe_tsallis = if tsallis_q.is_finite() && tsallis_q >= 0.0 {
-            tsallis_q
-        } else {
-            0.5
-        };
-        let safe_obi = if obi.is_finite() { obi } else { 0.0 };
+        Self::vote(tsallis_q, obi)
+    }
 
-        // Si la entropía es baja (orden estructurado en el flujo) y hay desequilibrio direccional, amplificar
-        if safe_tsallis < 0.60 && safe_obi.abs() > 0.15 {
-            let conviction = (1.0 - safe_tsallis) * safe_obi;
-            conviction.clamp(-1.0, 1.0)
-        } else {
-            0.0
+    /// MOD2/7-009 (INFORME DECIMOCUARTO): esta estrategia no sobreescribía
+    /// `evaluate_for_coin` y delegaba en `evaluate()`, que lee el registry
+    /// GLOBAL — el voto de la moneda N se computaba con los datos de la
+    /// ÚLTIMA moneda que escribió el global. Ahora: el voto usa los datos
+    /// PER-COIN que el core publica en cada tick (`{sym}_key` / `c{id}:key`,
+    /// ver `set_reg` en GodEngineCore::process_tick_dual). Sin datos
+    /// per-coin, el slot 0 (BTC, escritor convencional del global) conserva
+    /// el camino legado; cualquier otra moneda devuelve NEUTRO — voto
+    /// neutralizado para no contaminar cross-coin (MOD2/7-009).
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let Some(r) = self.registry.as_ref() else {
+            return 0.0;
+        };
+        let scoped = |key: &str| -> Option<f64> {
+            r.get(&format!("{}_{}", symbol, key), "RenyiTsallisEntropyEngine")
+                .or_else(|| r.get(&format!("c{}:{}", coin_id, key), "RenyiTsallisEntropyEngine"))
+                .map(|p| p.get_value())
+                .filter(|v| v.is_finite())
+        };
+
+        match (scoped("tsallis_q_entropy"), scoped("order_book_imbalance")) {
+            (Some(t), Some(o)) => Self::vote(t, o),
+            _ if coin_id == 0 => self.evaluate(),
+            _ => 0.0, // voto neutralizado para no contaminar cross-coin (MOD2/7-009)
         }
     }
 
@@ -256,5 +290,49 @@ mod tests {
 
         let eval = strategy_core::QuantumStrategy::evaluate(&engine);
         assert!(eval.is_finite());
+    }
+
+    /// MOD2/7-009: una moneda sin datos per-coin NO hereda el global (que
+    /// contiene los datos de la última moneda que escribió): voto NEUTRO.
+    #[test]
+    fn mod2_7_009_coin_sin_datos_per_coin_vota_neutral() {
+        let registry = std::sync::Arc::new(omniscient_registry::OmniscientRegistry::new());
+        // Sólo claves GLOBALES (p.ej. escritas por otra moneda):
+        registry.set("tsallis_q_entropy", 0.2);
+        registry.set("order_book_imbalance", -0.9);
+
+        let mut engine = RenyiTsallisEntropyEngine::default();
+        assert!(strategy_core::QuantumStrategy::init(&mut engine, registry).is_ok());
+
+        let v = strategy_core::QuantumStrategy::evaluate_for_coin(&engine, 5, "DOGEUSDT");
+        assert_eq!(
+            v, 0.0,
+            "voto neutralizado para no contaminar cross-coin (MOD2/7-009)"
+        );
+        // El slot 0 (BTC) conserva el camino global legado.
+        let v0 = strategy_core::QuantumStrategy::evaluate_for_coin(&engine, 0, "BTCUSDT");
+        assert!(v0 < 0.0, "BTC sigue leyendo el global legado");
+    }
+
+    /// MOD2/7-009: con datos per-coin publicados, el voto usa los de SU
+    /// símbolo aunque el global contenga otra cosa.
+    #[test]
+    fn mod2_7_009_voto_usa_datos_del_propio_simbolo() {
+        let registry = std::sync::Arc::new(omniscient_registry::OmniscientRegistry::new());
+        // El global quedó en manos de un vendedor con entropía baja:
+        registry.set("tsallis_q_entropy", 0.2);
+        registry.set("order_book_imbalance", -0.9);
+        // El core escribe el contexto de DOGE (set_scoped + set_for_coin):
+        registry.set_scoped("DOGEUSDT", "tsallis_q_entropy", 0.3);
+        registry.set_scoped("DOGEUSDT", "order_book_imbalance", 0.7);
+
+        let mut engine = RenyiTsallisEntropyEngine::default();
+        assert!(strategy_core::QuantumStrategy::init(&mut engine, registry).is_ok());
+
+        let v = strategy_core::QuantumStrategy::evaluate_for_coin(&engine, 5, "DOGEUSDT");
+        assert!(
+            v > 0.0,
+            "DOGE debe votar con SU desequilibrio alcista, no con el global vendedor ({v})"
+        );
     }
 }

@@ -12,7 +12,7 @@ pub struct NanoForestData {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let file = std::fs::File::open("models/BTCUSDT_SCALP.json")?;
+    let file = std::fs::File::open("models/BTCUSDT_MOTOR.json")?;
     let reader = std::io::BufReader::new(file);
     let json_data: god_engine_core::ml_inference::NanoForestData = serde_json::from_reader(reader)?;
     // B3.9 (auditoría): from_data ahora valida el contrato ML_VECTOR_DIM y
@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("modelo fuera de contrato de dimensión");
 
     let forest_from_loader =
-        god_engine_core::ml_inference::NanoForest::load_model("models/BTCUSDT_SCALP.json")?;
+        god_engine_core::ml_inference::NanoForest::load_model("models/BTCUSDT_MOTOR.json")?;
 
     let zero_34 = [0.0f32; 34];
     let (s_json, p_json) = forest_from_json.predict_raw(&zero_34);

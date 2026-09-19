@@ -135,7 +135,7 @@ fn main() {
             }
 
             // Generar features idénticas a GodEngineCore (34 micro+omni + 20 macro/cross-exchange proxies)
-            let stateful_feats = feature_engine.get_swing_features();
+            let stateful_feats = feature_engine.get_universal_features();
 
             let mut features = [0.0; 54];
             for j in 0..34 {

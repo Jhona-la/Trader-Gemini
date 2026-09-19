@@ -19,7 +19,7 @@ use windows::Win32::System::JobObjects::{
 use windows::Win32::System::Threading::{
     GetCurrentProcess, GetCurrentThread, SetPriorityClass, SetProcessAffinityMask,
     SetProcessWorkingSetSize, SetThreadAffinityMask, SetThreadIdealProcessor, SetThreadPriority,
-    HIGH_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, THREAD_PRIORITY_TIME_CRITICAL,
+    HIGH_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, THREAD_PRIORITY_HIGHEST,
 };
 
 use std::ffi::c_void;
@@ -157,16 +157,24 @@ pub fn set_current_thread_time_critical() {
     #[cfg(windows)]
     unsafe {
         let thread = GetCurrentThread();
-        // Pin to a specific physical core (e.g., Core 1) for L3 cache hit guarantee
-        let _ = SetThreadIdealProcessor(thread, 1);
+        // MOD6/8-025 (INFORME DECIMOCUARTO): SetThreadIdealProcessor es un
+        // HINT blando, no pinning — el scheduler puede migrar el hilo de
+        // todos modos; el "anclaje a L3 con garantía" era un comentario
+        // falso. Hint blando, no pinning — MOD6/8-025.
+        // let _ = SetThreadIdealProcessor(thread, 1);
 
-        if let Err(e) = SetThreadPriority(thread, THREAD_PRIORITY_TIME_CRITICAL) {
+        // MOD6/8-025: THREAD_PRIORITY_TIME_CRITICAL en el hilo de DECISIÓN
+        // podía STARVAR los hilos tokio que EJECUTAN el maker-chase — el
+        // hilo que decide postergaba al hilo que ejecuta (prioridades
+        // invertidas). HIGHEST sigue POR ENCIMA de normal, pero ya no
+        // puede monopolizar el scheduler.
+        if let Err(e) = SetThreadPriority(thread, THREAD_PRIORITY_HIGHEST) {
             eprintln!(
-                "⚠️ [OS-GUARDIAN] No se pudo asignar THREAD_PRIORITY_TIME_CRITICAL: {:?}",
+                "⚠️ [OS-GUARDIAN] No se pudo asignar THREAD_PRIORITY_HIGHEST: {:?}",
                 e
             );
         } else {
-            println!("⚡ [OS-GUARDIAN] Hilo promocionado a THREAD_PRIORITY_TIME_CRITICAL (Latencia 0) y anclado a L3 Caché.");
+            println!("⚡ [OS-GUARDIAN] Hilo de decisión en THREAD_PRIORITY_HIGHEST (sin monopolizar el scheduler — MOD6/8-025).");
         }
     }
 }

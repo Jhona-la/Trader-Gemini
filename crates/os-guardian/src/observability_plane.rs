@@ -39,6 +39,18 @@ impl ObservabilityPlane {
                     }
                 }
 
+                // MOD6/8-026 (INFORME DECIMOCUARTO): en Windows el pinning es
+                // cfg(linux) y PMU/eBPF son MOCKS — el hilo flotaba libre
+                // despertando 1000×/s para alimentar un detector EWMA con
+                // constantes: telemetría fantasma Y fuente de jitter para el
+                // hot path. mock data — polling reducido para no injectar
+                // jitter (MOD6/8-026): 10 Hz en Windows, 1 kHz donde hay
+                // sensores reales + core aislado.
+                #[cfg(target_os = "windows")]
+                let poll_interval = Duration::from_millis(100);
+                #[cfg(not(target_os = "windows"))]
+                let poll_interval = Duration::from_millis(1);
+
                 // Polling loop inside the isolated core
                 loop {
                     let pmu_vec = self.pmu.sample();
@@ -56,8 +68,7 @@ impl ObservabilityPlane {
                         // Aquí se inyectaría la mitigación en el genoma o se activaría un kill switch en el engine
                     }
 
-                    // Dormir 1 milisegundo para no saturar el core aislado (resolución de 1ms)
-                    thread::sleep(Duration::from_millis(1));
+                    thread::sleep(poll_interval);
                 }
             })
             .expect("Failed to spawn ObservabilityPlane");

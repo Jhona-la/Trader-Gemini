@@ -630,6 +630,15 @@ impl NormalizedOrderBookL2 {
 
 /// Detector de Spoofing de Muros de Liquidez L2 (Punto #025)
 /// Mide la tasa de cancelación rápida de muros de órdenes (<250ms) mediante decaimiento exponencial.
+///
+/// P-5-DECISIÓN (2026-09-18): SIGUE DESCONECTADO deliberadamente. Su API
+/// (`update_from_raw_depth(bids: &[(f64,f64)], asks: &[(f64,f64)])`) exige
+/// el libro L2 COMPLETO, pero el parser del stream @depth5 extrae sólo el
+/// BEST level (bp/bq/ap/aq) — alimentarlo con un único nivel es ruido
+/// disfrazado de señal (un "muro" de un nivel es el spread). PRERREQUISITO
+/// para cablearlo: extender `parse_binance_depth` a los 5 niveles del
+/// stream con buffers por símbolo fuera del camino caliente, y sólo
+/// entonces instanciar por símbolo como InstitutionalVolumeTracker.
 #[derive(Debug, Clone)]
 pub struct SpoofingDetector {
     pub prev_max_bid_wall: f64,

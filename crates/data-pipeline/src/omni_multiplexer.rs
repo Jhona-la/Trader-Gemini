@@ -63,6 +63,18 @@ pub struct OmniState {
     /// features macro están CONGELADAS y deben exponerse como staleness,
     /// jamás usarse en silencio como si estuvieran vivas.
     pub macro_last_success_ms: AtomicU64,
+    /// QO-U1c — funding PER-SÍMBOLO (premiumIndex all-market, 120s): el
+    /// TODO BTC-only del core queda cerrado. RwLock: escritor único (el
+    /// poller), lectores por símbolo en el hot path per-event del core.
+    pub funding_by_symbol: std::sync::RwLock<std::collections::HashMap<String, f64>>,
+    /// Bandera del primer sync (sólo log).
+    pub first_funding_sync: std::sync::atomic::AtomicBool,
+    /// QO-U2 — SENTIMIENTO DE MASAS per-símbolo: long/short account ratio
+    /// (la MULTITUD: cuentas minoristas) y taker buy/sell ratio (flujo
+    /// agresivo real). Endpoints /futures/data/* SIN auth, 5m, 30d de
+    /// historia. Contrarian: multitud muy long = riesgo de squeeze.
+    pub ls_account_by_symbol: std::sync::RwLock<std::collections::HashMap<String, f64>>,
+    pub taker_ratio_by_symbol: std::sync::RwLock<std::collections::HashMap<String, f64>>,
 }
 
 impl Default for OmniState {
@@ -129,6 +141,10 @@ impl OmniState {
             wb_us_real_interest: AtomicU64::new(2.3_f64.to_bits()),
             wb_global_gdp_growth: AtomicU64::new(2.5_f64.to_bits()),
             macro_last_success_ms: AtomicU64::new(0),
+            funding_by_symbol: std::sync::RwLock::new(std::collections::HashMap::new()),
+            first_funding_sync: std::sync::atomic::AtomicBool::new(true),
+            ls_account_by_symbol: std::sync::RwLock::new(std::collections::HashMap::new()),
+            taker_ratio_by_symbol: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
     }
 
@@ -443,14 +459,14 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
     let mut fail_count: u64 = 0;
     let mut cycle_count: u64 = 0;
 
-    let fred_series: [(&str, &AtomicU64); 6] = [
-        ("SP500", &state.sp500),
-        ("NASDAQCOM", &state.nasdaq),
-        ("VIXCLS", &state.vix),
-        ("DGS10", &state.us10y),
-        ("DTWEXBGS", &state.dxy),
-        ("DCOILWTICO", &state.oil_wti),
-    ];
+    // MOD1/4-005 (INFORME 14): aquí seguía un `fred_series` con 6 series que,
+    // DESPUÉS del ciclo de Yahoo, sobrescribía los mismos slots (`sp500`,
+    // `nasdaq`, `vix`, `dxy`) con DTWEXBGS (otra serie) y el cierre de HOY
+    // (sin corte t-1): en una red donde FRED respondiera, la paridad B3.4b
+    // se rompía silenciosamente y `dxy` cambiaba de semántica según qué
+    // fetch ganara ese minuto. Loop ELIMINADO: B3.23 ya resolvió DXY por
+    // Yahoo (DX-Y.NYB) y FRED queda fuera del ciclo, como el comentario
+    // siempre dijo.
 
     // Yahoo v8 chart: último cierre del día ANTERIOR (t-1 estricto) vía
     // curl subprocess. B3.4b — paridad train/serve exacta: el trainer junta
@@ -500,7 +516,9 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
 
         // Paridad de SERIES con el trainer: ^VIX/^GSPC/^IXIC cierran igual
         // que las FRED, y B3.23 suma DX-Y.NYB (ICE DXY) — la dim 46 viva en
-        // ambos lados; FRED queda fuera del ciclo (bloquea esta red).
+        // ambos lados. Los 4 slots vienen SOLO de Yahoo (corte t-1 estricto);
+        // FRED queda fuera del ciclo (MOD1/4-005: su loop residual pisaba
+        // estos slots y rompía la paridad cuando la red respondía).
         let yahoo_index: [(&str, &AtomicU64); 4] = [
             ("^VIX", &state.vix),
             ("^GSPC", &state.sp500),
@@ -511,33 +529,6 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
             if let Some(last) = yahoo_last_close(sym).await {
                 slot.store(last.to_bits(), Ordering::Relaxed);
                 updated += 1;
-            }
-        }
-
-        for (series, slot) in &fred_series {
-            let url = format!(
-                "https://fred.stlouisfed.org/graph/fredgraph.csv?id={}",
-                series
-            );
-            if let Ok(res) = client.get(&url).send().await {
-                if let Ok(csv) = res.text().await {
-                    // Última fila con valor válido ("." = sin dato ese día).
-                    if let Some((_, val)) = csv
-                        .lines()
-                        .skip(1)
-                        .filter_map(|l| {
-                            let mut parts = l.split(',');
-                            let d = parts.next()?.trim();
-                            let v = parts.next()?.trim();
-                            let f = v.parse::<f64>().ok()?;
-                            Some((d, f))
-                        })
-                        .last()
-                    {
-                        slot.store(val.to_bits(), Ordering::Relaxed);
-                        updated += 1;
-                    }
-                }
             }
         }
 
@@ -582,21 +573,21 @@ pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
             if cycle_count == 1 || cycle_count % 60 == 0 {
                 let g = |a: &AtomicU64| f64::from_bits(a.load(Ordering::Relaxed));
                 println!(
-                    "🌍 [MACRO] ciclo {}: SP500={:.1} NASDAQ={:.1} VIX={:.2} DXY={:.2} US10Y={:.2} · series actualizadas: {}/10 (Yahoo-curl + FRED + PAXG)",
+                    "🌍 [MACRO] ciclo {}: SP500={:.1} NASDAQ={:.1} VIX={:.2} DXY={:.2} US10Y={:.2} · series actualizadas: {}/5 (Yahoo-curl + PAXG)",
                     cycle_count,
                     g(&state.sp500),
                     g(&state.nasdaq),
                     g(&state.vix),
                     g(&state.dxy),
                     g(&state.us10y),
-                    updated + 1
+                    updated
                 );
             }
         } else {
             fail_count += 1;
             if fail_count % 10 == 1 {
                 println!(
-                    "⚠️ [MACRO] FRED/PAXG sin datos utilizables (fallo #{fail_count}) — features macro con staleness creciente"
+                    "⚠️ [MACRO] Yahoo/PAXG sin datos utilizables (fallo #{fail_count}) — features macro con staleness creciente"
                 );
             }
         }
@@ -618,6 +609,12 @@ pub async fn run_sentiment_onchain_poller(state: Arc<OmniState>) {
         "https://fapi.binance.com"
     };
     let funding_url = format!("{}/fapi/v1/premiumIndex?symbol=BTCUSDT", base_url);
+    // P-3 (PREDICTORES): OPEN INTEREST — el dinero apalancado dentro del
+    // mercado. omni[12] llevaba sin productor desde el origen. BTC como
+    // proxy de régimen global de apalancamiento (normalizado log contra
+    // $1B: OI $100M≈0.67, $1B=1.0, cap); per-símbolo queda documentado
+    // como extensión del mismo patrón.
+    let oi_url = format!("{}/fapi/v1/openInterest?symbol=BTCUSDT", base_url);
 
     loop {
         ticker.tick().await;
@@ -648,6 +645,111 @@ pub async fn run_sentiment_onchain_poller(state: Arc<OmniState>) {
                             state
                                 .agg_funding_rate
                                 .store(safe_funding.to_bits(), Ordering::Relaxed);
+                        }
+                    }
+                }
+            }
+        }
+        // QO-U1c — FUNDING PER-SÍMBOLO (premiumIndex ALL-MARKET, una sola
+        // llamada peso-10): el TODO BTC-only del core queda cerrado. Se
+        // publica en el registry scoped por símbolo (`funding_rate`); el
+        // core lo lee por coin en el camino per-tick en lugar del slot
+        // global omni[11] cuando existe.
+        let all_prem_url = format!("{}/fapi/v1/premiumIndex", base_url);
+        if let Ok(res) = client.get(&all_prem_url).send().await {
+            if let Ok(json) = res.json::<Value>().await {
+                if let Some(arr) = json.as_array() {
+                    let mut n_pub = 0usize;
+                    for it in arr {
+                        let sym = it.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                        let fr = it
+                            .get("lastFundingRate")
+                            .and_then(|v| v.as_str())
+                            .and_then(|v| v.parse::<f64>().ok());
+                        if !sym.is_empty() {
+                            if let Some(f) = fr {
+                                if f.is_finite() {
+                                    if let Ok(mut m) = state.funding_by_symbol.write() {
+                                        m.insert(sym.to_string(), f.clamp(-1.0, 1.0));
+                                    }
+                                    n_pub += 1;
+                                }
+                            }
+                        }
+                    }
+                    if n_pub > 0 && state.first_funding_sync.swap(false, Ordering::SeqCst) {
+                        println!("💰 [QO-U1c] funding per-símbolo: {} símbolos", n_pub);
+                    }
+                }
+            }
+        }
+        if let Ok(res) = client.get(&oi_url).send().await {
+            if let Ok(json) = res.json::<Value>().await {
+                if let Some(oi_str) = json.get("openInterest").and_then(|v| v.as_str()) {
+                    if let Ok(oi) = oi_str.parse::<f64>() {
+                        if oi.is_finite() && oi > 0.0 {
+                            let safe_oi = (oi.ln() / 1.0e9f64.ln()).clamp(0.0, 1.0);
+                            state
+                                .agg_open_interest
+                                .store(safe_oi.to_bits(), Ordering::Relaxed);
+                        }
+                    }
+                }
+            }
+        }
+        // QO-U2 — SENTIMIENTO DE MASAS: L/S account ratio + taker ratio
+        // para los símbolos del roster. Endpoints /futures/data/* SIN auth
+        // (5m, ~30d). La MULTITUD muy long = contrarian: riesgo de squeeze.
+        // Los símbolos se leen del mapa de funding (ya rotado por el
+        // universe manager): ~26 requests × 2 endpoints × peso 1 = barato.
+        let roster_syms: Vec<String> = state
+            .funding_by_symbol
+            .read()
+            .map(|m| m.keys().cloned().take(30).collect())
+            .unwrap_or_default();
+        for sym in &roster_syms {
+            let ls_url = format!(
+                "{}/futures/data/topLongShortAccountRatio?symbol={}&period=5m&limit=1",
+                base_url, sym
+            );
+            if let Ok(res) = client.get(&ls_url).send().await {
+                if let Ok(json) = res.json::<Value>().await {
+                    if let Some(arr) = json.as_array() {
+                        if let Some(last) = arr.last() {
+                            if let Some(ratio_str) =
+                                last.get("longShortRatio").and_then(|v| v.as_str())
+                            {
+                                if let Ok(r) = ratio_str.parse::<f64>() {
+                                    if r.is_finite() && r > 0.0 {
+                                        if let Ok(mut m) = state.ls_account_by_symbol.write() {
+                                            m.insert(sym.clone(), r.clamp(0.01, 20.0));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let tk_url = format!(
+                "{}/futures/data/takerlongshortRatio?symbol={}&period=5m&limit=1",
+                base_url, sym
+            );
+            if let Ok(res) = client.get(&tk_url).send().await {
+                if let Ok(json) = res.json::<Value>().await {
+                    if let Some(arr) = json.as_array() {
+                        if let Some(last) = arr.last() {
+                            if let Some(ratio_str) =
+                                last.get("buySellRatio").and_then(|v| v.as_str())
+                            {
+                                if let Ok(r) = ratio_str.parse::<f64>() {
+                                    if r.is_finite() && r > 0.0 {
+                                        if let Ok(mut m) = state.taker_ratio_by_symbol.write() {
+                                            m.insert(sym.clone(), r.clamp(0.01, 20.0));
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

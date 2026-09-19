@@ -41,6 +41,8 @@ pub fn evaluate_quantum_trailing(
         trail_f3,
         trail_runner,
         0.0006, // Fallback fee rate (0.02% maker + 0.04% taker roundtrip VIP0)
+        0.012,  // B3.27 — TP fallback nominal 1.2%
+        0.0,    // S-2 — persistencia neutral (browniano) para el wrapper legado
     )
 }
 
@@ -60,6 +62,13 @@ pub fn evaluate_quantum_trailing_with_fee(
     trail_f3: f64,
     trail_runner: f64,
     fee_rate: f64,
+    tp_frac: f64, // B3.27 — distancia al TP como fracción del precio
+    // S-2 (ESPECTRALIZACIÓN): persistencia de la escala dominante [-1,+1].
+    // +1 (tendencial) ⇒ la escalera se EXTIENDE (be 50%, half 70%, profit
+    // 85%, runner 100%: el trade corre hasta el TP — la tendencia sostiene).
+    // −1 (mean-revert) ⇒ se COMPRIME (30/45/60/80%: cosecha temprana — la
+    // ganancia no se sostiene). 0 (browniano) ⇒ 40/60/80/95% (B3.27 exacto).
+    spectral_persistence: f64,
 ) -> TrailingResult {
     if current_atr <= 0.0
         || !current_atr.is_finite()
@@ -138,21 +147,31 @@ pub fn evaluate_quantum_trailing_with_fee(
         max_pnl_pct = pnl_pct;
     }
 
-    // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - D-472)
-    // D-711 (DÉCIMA OLA · auditoría integral): UN SOLO `be_trigger`.
+    // Escudo Cuántico — B3.27 + S-2 + D-711: UNA SOLA ESCALERA, relativa al TP.
     //
-    // La misma magnitud —el recorrido a partir del cual el trade ya cubre su
-    // fricción y merece proteger el beneficio— se calculaba DOS veces con la
-    // misma fórmula y bandas distintas: aquí `clamp(0,0065; 0,0180)` y dentro
-    // del escudo `clamp(0,0055; 0,0160)`. Con la comisión por defecto valía
-    // 0,65 % arriba y 0,55 % abajo: una posición con +0,60 % de MFE cumplía el
-    // disparador del escudo pero no el de transición de fase, y como el escudo
-    // sólo corre con `current_phase != 0`, la protección quedaba en un limbo que
-    // dependía de cuál de las dos cotas se hubiera alcanzado. Se conserva la
-    // banda del ESCUDO, que es donde se decide el dinero; la transición de fase
-    // existe para habilitarlo, no para fijar otro umbral.
+    // B3.27 midió la transición de fase y la escalera en fracciones del TP (no
+    // en múltiplos del fee, que decapitaban los ganadores dentro del rango del
+    // propio TP) y S-2 interpoló cada escalón por persistencia espectral. Pero
+    // la transición de fase quedó en 0,40·TP fijo mientras el breakeven del
+    // escudo vive en lerp(0,30; 0,50)·TP: con persistencia baja (t < 0,5) el
+    // escudo pedía proteger a 0,30·TP y la fase seguía en 0 hasta 0,40·TP —el
+    // mismo limbo que D-711 cerró cuando las dos cotas salían del fee—. El
+    // escudo sólo corre con `current_phase != 0`, así que la transición existe
+    // para HABILITARLO: un único `be_trigger`, calculado aquí, sirve a ambos.
+    let effective_tp = if tp_frac.is_finite() && tp_frac > 0.001 {
+        tp_frac
+    } else {
+        0.012 // fallback: TP nominal 1.2% cuando no se pasa
+    };
     let effective_fee = fee_rate.max(0.0004);
-    let be_trigger = (effective_fee * 8.0).clamp(0.0055, 0.0160);
+    // S-2 — t∈[0,1]: t=1 tendencial / t=0 mean-revert. Cada nivel es lerp(MR, TEND).
+    let t = if spectral_persistence.is_finite() {
+        ((spectral_persistence + 1.0) * 0.5).clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let lvl = |mr: f64, tend: f64| mr + (tend - mr) * t;
+    let be_trigger = effective_tp * lvl(0.30, 0.50);
 
     // 3. Phase Transitions (Desasfixiadas: permiten que el trade desarrolle su ciclo hasta TP)
     if current_phase == 0 && (pnl_atr >= 1.5 || max_pnl_pct >= be_trigger) {
@@ -204,16 +223,22 @@ pub fn evaluate_quantum_trailing_with_fee(
             current_price + (dist_atr * current_atr)
         };
 
-        // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - D-472, D-474, D-485 & D-495)
-        // El breakeven garantiza beneficio NETO post-fees (+10 a +18 bps) con 40-45 bps de respiración.
-        // D-711: `be_trigger` y `effective_fee` son los de arriba — fuente única.
-        let be_buffer = (effective_fee * 2.0).clamp(0.0010, 0.0018);
-        let half_lock_trigger = (be_trigger * 1.45).clamp(0.0080, 0.0200);
-        let half_lock_gain = (effective_fee * 6.0).clamp(0.0036, 0.0055);
-        let profit_lock_trigger = (effective_fee * 18.0).clamp(0.0105, 0.0250);
-        let profit_lock_gain = (effective_fee * 11.0).clamp(0.0068, 0.0110);
-        let runner_lock_trigger = (effective_fee * 25.0).clamp(0.0140, 0.0300);
-        let runner_lock_gain = (effective_fee * 17.0).clamp(0.0100, 0.0180);
+        // B3.27 — ESCALERA RELATIVA AL TP (no al fee). Hallazgo diario:
+        // 73% WR pero RRR 0.30 porque la escalera ×fee disparaba TODA dentro
+        // del rango del TP (con VIP0: be a 0.65%, half a 0.94%, profit a
+        // 1.05% — y el TP a 0.66-1.2%). Los winners se decapitaban antes de
+        // correr. Ahora cada nivel es FRACCIÓN del TP, interpolada por la
+        // persistencia espectral (S-2). El ATR-trailing (T1 arriba) sigue
+        // dando la distancia de respiración; esta escalera sólo pone SUELOS
+        // progresivos — el trade respira hasta su TP. `be_trigger`,
+        // `effective_tp`, `effective_fee`, `t` y `lvl` son los de arriba (D-711).
+        let be_buffer = (effective_fee * 2.0).clamp(0.0010, 0.0018); // costo neto post-fees — SÍ relativo al fee (es un costo)
+        let half_lock_trigger = effective_tp * lvl(0.45, 0.70);
+        let half_lock_gain = effective_tp * lvl(0.15, 0.35);
+        let profit_lock_trigger = effective_tp * lvl(0.60, 0.85);
+        let profit_lock_gain = effective_tp * lvl(0.40, 0.60);
+        let runner_lock_trigger = effective_tp * lvl(0.80, 1.00);
+        let runner_lock_gain = effective_tp * lvl(0.60, 0.85);
 
         if max_pnl_pct >= be_trigger {
             if pos_side == 1 {

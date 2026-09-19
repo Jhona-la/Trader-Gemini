@@ -16,6 +16,18 @@ use std::sync::atomic::Ordering;
 ///   T3 = Volatility Brake (tanh friction, SIEMPRE activo incluso en scalp)
 ///   T4 = Growth Pressure (relativo a base_capital, no a $50)
 ///   T5 = Hurst Predictability Bonus
+/// QO-M0.1 — Kelly desde probabilidad y profit factor como FUNCIÓN PURA
+/// (testeable): f* = W·(1 − 1/PF) — identidad exacta con kelly.rs:69.
+/// La versión anterior usaba PF como el pago b (K = p − q/PF): b = PF·q/p,
+/// no PF — misestimación sistemática. Piso 0: sin edge, sin fracción.
+#[inline(always)]
+pub fn kelly_from_pf(prob_win: f64, profit_factor: f64) -> f64 {
+    if !prob_win.is_finite() || !profit_factor.is_finite() || profit_factor <= 1.0 {
+        return 0.0;
+    }
+    (prob_win * (1.0 - 1.0 / profit_factor)).max(0.0)
+}
+
 pub struct QuantumLeverageMatrix;
 
 impl QuantumLeverageMatrix {
@@ -94,7 +106,12 @@ impl QuantumLeverageMatrix {
             signal_probability.clamp(0.10, 0.95)
         };
         let pf = safe_pf; // PF real, fallback si no hay historial
-        let kelly = (prob_win - (1.0 - prob_win) / pf).max(0.01);
+        // QO-M0.1 (auditoría matemática): la fórmula anterior usaba el PF
+        // como el pago b de Kelly — K = p − (1−p)/PF — pero b = PF·q/p, no
+        // PF: sistemáticamente MISestimaba Kelly. La identidad correcta
+        // (misma que kelly.rs:69): f* = W·(1 − 1/PF). Y el piso .max(0.01)
+        // forzaba apuesta con edge negativo — abajo 0: sin edge, sin size.
+        let kelly = kelly_from_pf(prob_win, pf);
 
         // Fracción adaptativa: Hurst × confidence determinan agresividad
         let fraction_multiplier =
@@ -213,19 +230,14 @@ impl QuantumLeverageMatrix {
                 .load(Ordering::Relaxed)
                 .clamp(0.0, 1.0)
         };
-        let s = match signal.horizon {
-            signal_engine::TradeHorizon::Continuous => {
-                // D-638b: misma conversión τ ↔ s que el resto del sistema.
-                if signal.expected_duration_ms > 0 {
-                    quantum_arena::temporal_spectrum::temporal_scale_from_tau(
-                        signal.expected_duration_ms as f64,
-                    )
-                } else {
-                    effective_temporal_scale
-                }
-            }
-            signal_engine::TradeHorizon::Scalp => 0.0,
-            signal_engine::TradeHorizon::Swing => 1.0,
+        // U-6: motor continuo — sólo existe TradeHorizon::Continuous; la
+        // escala s viene de la τ declarada o del arena (D-638b).
+        let s = if signal.expected_duration_ms > 0 {
+            quantum_arena::temporal_spectrum::temporal_scale_from_tau(
+                signal.expected_duration_ms as f64,
+            )
+        } else {
+            effective_temporal_scale
         };
 
         // D-338: Homotopía continua y diferenciable s in [0, 1].
@@ -273,8 +285,10 @@ mod tests {
         )
     }
 
-    /// D-690: el Kelly usa la probabilidad calibrada cuando existe y la
-    /// puntuación cruda sólo cuando no la hay.
+    /// D-690 + QO-M0.1: el Kelly usa la probabilidad (calibrada si existe)
+    /// y la identidad correcta W·(1−1/PF). A nivel de matriz el techo de
+    /// leverage puede saturar ambas ramas (comportamiento legítimo), así
+    /// que la propiedad monótona se verifica en la función pura.
     #[test]
     fn d690_kelly_usa_la_probabilidad_calibrada() {
         // D-714: el arena no cabe en la pila por defecto de un hilo de test.
@@ -288,15 +302,22 @@ mod tests {
             win_probability: 0.9,
             ..uncalibrated
         };
-        let calibrated_low = SignalIntent {
-            win_probability: 0.3,
-            ..uncalibrated
-        };
         let base = leverage_for(&uncalibrated, &arena);
         assert_eq!(base, leverage_for(&calibrated_same, &arena));
+
+        // QO-M0.1 — identidad exacta y monotonía en W.
+        assert!((kelly_from_pf(0.62, 1.5) - 0.62 * (1.0 - 1.0 / 1.5)).abs() < 1e-12);
         assert!(
-            leverage_for(&calibrated_low, &arena) < base,
-            "una probabilidad calibrada baja debe reducir el apalancamiento"
+            kelly_from_pf(0.44, 1.5) < kelly_from_pf(0.62, 1.5),
+            "probabilidad baja ⇒ Kelly menor"
         );
+        // Sin edge (PF ≤ 1): fracción 0, jamás negativa.
+        assert_eq!(kelly_from_pf(0.9, 1.0), 0.0);
+        assert_eq!(kelly_from_pf(0.9, 0.5), 0.0);
+        // La identidad con kelly.rs: W·(1−1/PF) = W − (1−W)/R con R=PF·q/p.
+        let w = 0.62f64;
+        let pf = 1.5f64;
+        let r = pf * (1.0 - w) / w;
+        assert!((kelly_from_pf(w, pf) - (w - (1.0 - w) / r)).abs() < 1e-12);
     }
 }

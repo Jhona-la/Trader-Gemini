@@ -7,12 +7,29 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub static DROP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// C-02 — índices del vector 34D (`get_universal_features`) cuya fuente de datos
+/// está MUERTA en producción: hoy sólo [9] (dark_alpha / dex_severity, sin
+/// productor MEV-DEX en vivo: `update_macro_features` la recibe como 0.0
+/// constante). Contrato del trainer: estos índices van a 0.0 TAMBIÉN en
+/// entrenamiento (train_forest) — el modelo no puede aprender a depender de
+/// una columna que en serve es constante. Si un productor dex revive la
+/// fuente, actualizar este slice y re-entrenar en el mismo cambio.
+pub const FEATURES_DEAD_IN_SERVE: &[usize] = &[4, 5, 9, 10];
+// B3.35: [4][5][10] (obi_accel) añadidas — el OBI del trainer (aggTrades
+// sintético con is_buyer_maker) tiene DISTRIBUCIÓN INCOMPATIBLE con el OBI
+// del vivo (depth L2 real). El modelo entrenado con OBI sintético predice
+// ~0.503 en vivo (verificado en v41: señal muerta, cero entradas). Zerificar
+// en AMBOS lados restaura la transferencia del modelo. Si en el futuro se
+// calibra un OBI sintético que matchee la distribución del libro, retirar
+// estos índices y re-entrenar.
+
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
+/// U-6 (MOTOR UNIVERSAL CONTINUO): variantes Scalping/Swing extirpadas —
+/// el régimen del motor continuo es Continuous/Neutral (el régimen MACRO
+/// mayor vive en risk_engine::regime::MarketRegime, ortogonal).
 pub enum MarketRegime {
     #[default]
     Continuous,
-    Scalping,
-    Swing,
     Neutral,
 }
 
@@ -25,6 +42,12 @@ pub struct StatefulEngine {
     pub last_price: f64,
     pub v_t: f64,
     pub a_t: f64,
+    /// MOD2/7-031 — EMA del centroide espectral (adimensional, actualizada
+    /// cada 64 ticks). ANTES vivía en `a_t` y era sobrescrita al tick
+    /// siguiente por la aceleración cinemática ($/tick): escritor doble con
+    /// un solo sobreviviente. Separada: `a_t` es SÓLO la cinemática
+    /// instantánea que alimentan las features (norm_at) y el registry.
+    pub a_t_spectral: f64,
     pub last_inst_v: f64,
     pub dir_velocity: f64,
     pub tick_count: u64,
@@ -66,8 +89,6 @@ pub struct StatefulEngine {
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
-    pub ml_prob_ewma: f64,
-    pub ml_prob_var: f64,
     pub last_scalp_exit_tick: u64,
     pub last_scalp_was_loss: bool,
     pub scalp_loss_streak: u32,
@@ -92,6 +113,7 @@ impl StatefulEngine {
             last_price: 0.0,
             v_t: 0.0,
             a_t: 0.0,
+            a_t_spectral: 0.0,
             last_inst_v: 0.0,
             dir_velocity: 0.0,
             tick_count: 0,
@@ -125,8 +147,6 @@ impl StatefulEngine {
             hurst_micro: 0.5,
             hurst_meso: 0.5,
             hurst_macro: 0.5,
-            ml_prob_ewma: 0.0,
-            ml_prob_var: 0.01,
             last_scalp_exit_tick: 0,
             last_scalp_was_loss: false,
             scalp_loss_streak: 0,
@@ -138,7 +158,7 @@ impl StatefulEngine {
 
     /// Smart cooldown per asset con decaimiento temporal: evita parálisis eterna por rachas pasadas
     #[inline(always)]
-    pub fn can_open_scalp(&self, min_cooldown: u64) -> bool {
+    pub fn can_open_position(&self, min_cooldown: u64) -> bool {
         let elapsed = self.tick_count.saturating_sub(self.last_scalp_exit_tick);
         let active_streak = if elapsed > 18_000 {
             0
@@ -163,12 +183,6 @@ impl StatefulEngine {
         elapsed >= required
     }
 
-    /// Smart cooldown universal para posiciones en el espectro continuo
-    #[inline(always)]
-    pub fn can_open_position(&self, min_cooldown: u64) -> bool {
-        self.can_open_scalp(min_cooldown)
-    }
-
     /// Obtiene la racha de pérdidas activa para una dirección (long/short), considerando el decaimiento temporal
     #[inline(always)]
     pub fn get_active_directional_streak(&self, is_long: bool) -> u32 {
@@ -187,7 +201,11 @@ impl StatefulEngine {
         }
     }
 
-    /// Normaliza adaptativamente las predicciones ML en O(1) centradas en 0.50 con rango [-1.0, 1.0]
+    /// Centra las predicciones ML en 0.50 con rango [-1.0, 1.0] en O(1).
+    /// MOD2/7-002 (INFORME DECIMOCUARTO): los campos `ml_prob_ewma`/`ml_prob_var`
+    /// (la supuesta "normalización adaptativa") se eliminaron — declarados,
+    /// inicializados y jamás leídos: estado fantasma con contrato falsamente
+    /// documentado. Este mapeo es estático por diseño.
     #[inline(always)]
     pub fn update_ml_prediction(&mut self, ml_prob: f64) -> f64 {
         if !ml_prob.is_finite() || ml_prob < 0.0 || ml_prob > 1.0 {
@@ -204,6 +222,7 @@ impl StatefulEngine {
         self.last_price = 0.0;
         self.v_t = 0.0;
         self.a_t = 0.0;
+        self.a_t_spectral = 0.0;
         self.tick_count = 0;
         self.hurst = RecursiveHurst::new();
         self.obi_accel = ObiAcceleration::new();
@@ -229,6 +248,16 @@ impl StatefulEngine {
         self.kline_ema_slow = 0.0;
         self.kline_ema_trend = 0.0;
         self.kline_ema_macro = 0.0;
+        // D7 / MOD6/8-004: el bloque espectral publicado también se limpia —
+        // tras un reset (reconexión WS) los buffers del espectro quedaron
+        // vacíos y servir los valores del período anterior es servir historia
+        // congelada. Neutro hasta que 64 retornos nuevos llenen el anillo.
+        self.spectral_bin = 0.0;
+        self.spectral_power = 0.0;
+        self.spectral_centroid = 0.0;
+        self.hurst_micro = 0.5;
+        self.hurst_meso = 0.5;
+        self.hurst_macro = 0.5;
     }
 
     /// Processes a new tick internally in f64
@@ -240,6 +269,16 @@ impl StatefulEngine {
             self.ema_fast = price;
             self.ema_slow = price;
         } else {
+            // S-8 — DECISIÓN DOCUMENTADA: los genes ema_fast_period /
+            // ema_slow_period (~12.5/~25.1) NO se cablean aquí aunque
+            // existan. Estos 20/200 alimentan la feature [0] del contrato
+            // 34D del vector universal: cambiarlos SOLO en vivo rompería la
+            // paridad train/serve que B3.30 y B3.35 pagaron caro por
+            // restaurar (distribución de la feature distinta ⇒ el modelo
+            // sirve ruido). Condición para activarlos: trainer leyendo el
+            // MISMO genoma del símbolo + retrain completo del roster en el
+            // MISMO cambio. Sustituir el ladder por signal_at(τ) del
+            // espectro exige lo mismo.
             let alpha_fast = 2.0 / (20.0 + 1.0);
             let alpha_slow = 2.0 / (200.0 + 1.0);
 
@@ -249,12 +288,27 @@ impl StatefulEngine {
             let diff = (price - self.last_price).abs();
             let norm_return = (price - self.last_price) / self.last_price;
             self.last_entropy = self.entropy.update(norm_return);
+            // D7 / MOD6/8-004 (INFORME DECIMOCUARTO) — ESPECTRO VIVO EN
+            // process_tick: en producción ESTE es el camino que corre
+            // (process_event → process_tick_dual → process_tick);
+            // process_kline sólo alimenta el warmup REST de arranque. El
+            // SpectralCycleEngine acumula AQUÍ el RETORNO de cada tick y el
+            // FFT Radix-2 se re-analiza cada 64 retornos (contador
+            // tick_count); el multifractal se actualiza con el PRECIO de
+            // cada tick. Las 6 features espectrales [0..6] del vector ML
+            // (bin/potencia/centroide FFT + Hurst micro/meso/macro) viven
+            // por esta vía — no dependen de klines cerrados.
             self.spectral.push(norm_return);
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
             if self.tick_count % 64 == 0 {
                 let (dominant_bin, max_power, centroid) = self.spectral.analyze_spectrum();
                 if max_power > 0.0 && centroid.is_finite() {
-                    self.a_t = self.a_t * 0.95 + (centroid * 0.001) * 0.05;
+                    // MOD2/7-031: el EMA del centroide espectral vive en su
+                    // PROPIO campo — antes escribía `a_t` y la cinemática del
+                    // tick siguiente lo borraba (escritor doble, un solo
+                    // sobreviviente). Observabilidad del espectro; no toca el
+                    // contrato 48D (que consume spectral_centroid directo).
+                    self.a_t_spectral = self.a_t_spectral * 0.95 + (centroid * 0.001) * 0.05;
                 }
                 // B2.3: el espectro ya se calculaba aquí y se DESCARTABA
                 // (capacidad fantasma). Ahora se publica para el vector ML
@@ -431,17 +485,15 @@ impl StatefulEngine {
         }
         let (_h_mic, _h_mes, _h_mac, _score, _micro_p, _macro_p) = self.multifractal.update(close);
         self.regime = MarketRegime::Continuous;
+        // MOD2/7-032: `ema_fast`/`ema_slow` ya NO se escriben aquí. Tenían
+        // DOS kernels: 20/200 (process_tick, el camino del trainer y del
+        // backtest) y 12/26 (esta función, warmup REST 1m del vivo). El
+        // estado era una quimera de dos escalas y una ruptura de paridad
+        // train/serve en la feature (ema_fast−ema_slow)/ema_slow del vector
+        // 34D: el vivo arrancaba con EMA de velas que el entrenamiento jamás
+        // vio. Kernel ÚNICO 20/200 por ticks — el primer tick vivo siembra
+        // (ema_fast==0 ⇒ =precio) y converge solo, idéntico a train.
         self.last_price = close;
-
-        if self.ema_fast == 0.0 {
-            self.ema_fast = close;
-            self.ema_slow = close;
-        } else {
-            let alpha_fast = 2.0 / (12.0 + 1.0);
-            let alpha_slow = 2.0 / (26.0 + 1.0);
-            self.ema_fast = (close - self.ema_fast) * alpha_fast + self.ema_fast;
-            self.ema_slow = (close - self.ema_slow) * alpha_slow + self.ema_slow;
-        }
 
         // FIX #624: True Range robusto y no nulo en kline processing
         let tr = (high - low).max(close * 0.0005);
@@ -523,8 +575,15 @@ impl StatefulEngine {
         ]
     }
 
-    /// Extracts Omni ML Features (SWING - 34D Macro+Micro)
-    pub fn get_swing_features(&self) -> [f32; 34] {
+    /// C-02 (INFORME DECIMOCUARTO) — mapa vivo/muerto del contrato 34D:
+    /// VIVAS en train y serve (microestructura/precio del PROPIO símbolo):
+    /// [0..4], [6..9), [10..12) y las 22 omni [12..34] (RSI/MACD/BB/ATR/Fib
+    /// de precio — NO del tensor 54D del omni_multiplexer).
+    /// MUERTA en serve y en train: [9] dark_alpha (dex_severity=0.0, sin
+    /// productor). VIVAS en serve (libro real vía update_macro_features),
+    /// muertas en train salvo que el trainer llame update_macro_features:
+    /// [4], [5], [10] (obi_accel). Ver FEATURES_DEAD_IN_SERVE.
+    pub fn get_universal_features(&self) -> [f32; 34] {
         let micro = self.get_features();
         let omni_feats = self.omni.extract_features();
 
@@ -806,6 +865,123 @@ mod tests {
         );
     }
 
+    /// D7 / MOD6/8-004 (INFORME DECIMOCUARTO): el espectro debe seguir VIVO
+    /// tras el arranque con SOLO ticks — en vivo `process_kline` corre
+    /// únicamente en el warmup REST inicial; todo lo demás es process_tick.
+    /// Warmup con klines → tramo de ticks con ciclo rápido → las features
+    /// espectrales deben REPUBLICARSE (moverse de sus valores post-warmup),
+    /// y un cambio de régimen del ciclo bajo ticks debe volver a moverlas.
+    #[test]
+    fn d7_espectro_vivo_tras_warmup_solo_con_ticks() {
+        let mut engine = StatefulEngine::new();
+        // Warmup REST de arranque: 120 klines de 1m con ciclo lento (~51 velas).
+        let mut ts: u64 = 1_789_000_000_000;
+        for i in 0..120u64 {
+            let o = 100.0 + ((i % 51) as f64).sin() * 3.0;
+            let c = 100.0 + (((i + 1) % 51) as f64).sin() * 3.0;
+            let h = o.max(c) + 0.4;
+            let l = o.min(c) - 0.4;
+            engine.process_kline(o, h, l, c, 50.0);
+        }
+        let post_warmup = engine.get_spectral_ml_features();
+
+        // VIVO: SOLO process_tick. Ciclo rápido de 8 ticks (~2 ventanas de
+        // FFT completas: 128 retornos nuevos).
+        for i in 0..128 {
+            let phase = (i as f64) * (std::f64::consts::TAU / 8.0);
+            let price = 100.0 + phase.sin() * 2.0;
+            engine.process_tick(price, 1.0, ts);
+            ts += 100;
+        }
+        let post_live = engine.get_spectral_ml_features();
+
+        // El bloque FFT [0..3] debe haberse republicado con el ciclo nuevo.
+        let fft_changed = (0..3).any(|i| {
+            (post_warmup[i] - post_live[i]).abs() > 1e-6
+        });
+        assert!(
+            fft_changed,
+            "FFT congelado post-arranque: {:?} vs {:?}",
+            &post_warmup[0..3],
+            &post_live[0..3]
+        );
+        // El bloque multifractal [3..6] debe estar en rango y vivir (alguna
+        // escala movida respecto al warmup por tick, no por kline).
+        let hurst_changed = (3..6).any(|i| {
+            (post_warmup[i] - post_live[i]).abs() > 1e-6
+        });
+        assert!(
+            hurst_changed,
+            "Hurst multifractal congelado post-arranque: {:?} vs {:?}",
+            &post_warmup[3..6],
+            &post_live[3..6]
+        );
+
+        // Cambio de régimen EN VIVO (solo ticks): ciclo lento de 64 ticks —
+        // el FFT debe volver a moverse, probando republicación continua.
+        for i in 0..128 {
+            let phase = (i as f64) * (std::f64::consts::TAU / 48.0);
+            let price = 100.0 + phase.sin() * 2.0;
+            engine.process_tick(price, 1.0, ts);
+            ts += 100;
+        }
+        let post_regime = engine.get_spectral_ml_features();
+        let fft_changed_again = (0..3).any(|i| {
+            (post_live[i] - post_regime[i]).abs() > 1e-6
+        });
+        assert!(
+            fft_changed_again,
+            "FFT no se republica ante cambio de régimen: {:?} vs {:?}",
+            &post_live[0..3],
+            &post_regime[0..3]
+        );
+    }
+
+    /// C-02 (INFORME DECIMOCUARTO): el mapa vivo/muerto del contrato 34D es
+    /// verificable, no documentación muerta. [9] (dark_alpha) sirve 0.0
+    /// constante en producción (dex_severity sin productor) — y el trainer
+    /// la fuerza a 0 vía FEATURES_DEAD_IN_SERVE. Las dims de obi_accel
+    /// [4],[5],[10] VIVEN en serve: se mueven con el obi real del libro que
+    /// `update_macro_features` recibe por evento.
+    #[test]
+    fn c02_mapa_vivo_muerto_del_vector_34d() {
+        // Contrato del slice: índices dentro de las 34, únicos y ordenados.
+        let mut sorted = FEATURES_DEAD_IN_SERVE.to_vec();
+        sorted.sort_unstable();
+        assert!(
+            sorted.windows(2).all(|w| w[0] < w[1]),
+            "FEATURES_DEAD_IN_SERVE con índices repetidos: {:?}",
+            sorted
+        );
+        assert!(
+            sorted.iter().all(|&i| i < 34),
+            "índice fuera del contrato 34D: {:?}",
+            sorted
+        );
+
+        // Serve: sin productor dex, dim [9] sirve exactamente 0.0.
+        let mut e = StatefulEngine::new();
+        let mut ts: u64 = 1_789_000_000_000;
+        for i in 0..600u64 {
+            let p = 100.0 + ((i % 37) as f64).sin();
+            e.process_tick(p, 1.0, ts);
+            let obi = 0.3 * (((i % 11) as f64) - 5.0) / 5.0;
+            e.update_macro_features(obi, 0.0, 0.0, ts);
+            ts += 100;
+        }
+        // Determinismo: dos obis distintos y no nulos al final.
+        e.update_macro_features(0.25, 0.0, 0.0, ts);
+        e.update_macro_features(0.35, 0.0, 0.0, ts + 100);
+        let f = e.get_universal_features();
+        assert_eq!(f.len(), 34);
+        assert_eq!(f[9], 0.0, "dark_alpha debe servir 0.0 sin productor dex");
+        assert!(
+            f[5] != 0.0 && f[4] != 0.0,
+            "obi_accel ([4],[5],[10]) debe vivir en serve: {:?}",
+            &f[4..=5]
+        );
+    }
+
     #[test]
     fn test_stateful_engine_reset_and_feature_extraction() {
         let mut engine = StatefulEngine::new();
@@ -817,7 +993,7 @@ mod tests {
             assert!(f.is_finite(), "Micro feature debe ser finita");
         }
 
-        let swing_feats = engine.get_swing_features();
+        let swing_feats = engine.get_universal_features();
         assert_eq!(swing_feats.len(), 34);
         for f in &swing_feats {
             assert!(f.is_finite(), "Swing feature debe ser finita");
@@ -828,13 +1004,8 @@ mod tests {
     fn test_stateful_engine_market_regime_classification() {
         let engine = StatefulEngine::new();
         let regime = engine.get_market_regime();
-        assert!(matches!(
-            regime,
-            MarketRegime::Continuous
-                | MarketRegime::Scalping
-                | MarketRegime::Swing
-                | MarketRegime::Neutral
-        ));
+        // U-6: el continuo no tiene variantes Scalping/Swing.
+        assert!(matches!(regime, MarketRegime::Continuous | MarketRegime::Neutral));
 
         let atr_pct = engine.get_atr_pct();
         assert!(atr_pct.is_finite());

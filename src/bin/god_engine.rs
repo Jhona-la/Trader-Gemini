@@ -38,11 +38,15 @@ fn genome_protection_prices(
     use quantum_arena::temporal_spectrum::{
         HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS,
     };
-    let tau_eff = if entry_tau_ms > 0 {
-        entry_tau_ms as f64
-    } else {
-        TAU_ANCHOR_FAST_MS
-    };
+    // C-05 (informe decimocuarto) — CLAMP AL DOMINIO DE LAS ANCLAS: la
+    // fusión espectral viva puede degenerar (journal con tau_ms =
+    // 4 611 686 018 427 ≈ 146 años) y `HorizonCurve::eval` extrapola
+    // EXPONENCIALMENTE fuera de banda ⇒ brackets a +65%/−32%: el
+    // invariante de protección producía desnudez. La curva sólo tiene
+    // validez ENTRE sus anclas: τ≤0 (adoptada sin diario) colapsa al
+    // ancla rápida — igual que antes — y τ degenerada colapsa al ancla
+    // lenta (máximo de la curva, jamás más allá).
+    let tau_eff = (entry_tau_ms as f64).clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
     let o = Ordering::Relaxed;
     let tp_frac = HorizonCurve::through_two_points(
         TAU_ANCHOR_FAST_MS,
@@ -99,11 +103,25 @@ fn genome_protection_prices(
     (tp, sl)
 }
 
+/// Resultado de una auditoría de cobertura (B1.3 + HOST-024).
+struct ProtectionAudit {
+    /// Gap TP/SL restante tras el intento de top-up (unidades del activo).
+    tp_gap: f64,
+    sl_gap: f64,
+    /// HOST-024 (informe decimocuarto) — piernas omitidas porque el gap
+    /// está por debajo del minNotional del exchange: cobertura IMPOSIBLE
+    /// de colocar (no es un blip de red — el exchange JAMÁS aceptará esa
+    /// orden). Evidencia determinística de riesgo real que el watchdog
+    /// debe contar para el streak de escalado: la posición queda
+    /// parcialmente protegida de forma permanente.
+    min_notional_skips: u8,
+}
+
 /// B1.3: audita la cobertura TP/SL de una posición viva contra las algo
 /// orders REALES del exchange y hace top-up QUIRÚRGICO por lado (solo el
 /// lado con shortfall — un OCO completo sobre-protegería el sano y el
-/// exchange rechaza por qty > posición). Devuelve (gap_tp, gap_sl)
-/// restantes tras el intento. `tag` identifica el llamador en telemetría.
+/// exchange rechaza por qty > posición). Devuelve el estado de la
+/// cobertura tras el intento. `tag` identifica el llamador en telemetría.
 async fn ensure_position_protected(
     executor: &execution_engine::executor::OrderExecutor,
     arena: &quantum_arena::GlobalArena,
@@ -113,7 +131,7 @@ async fn ensure_position_protected(
     entry_price: f64,
     entry_tau_ms: u64,
     tag: &str,
-) -> (f64, f64) {
+) -> ProtectionAudit {
     let legs = executor.fetch_open_algo_orders(symbol).await.unwrap_or_default();
     let want_side = if is_long { "LONG" } else { "SHORT" };
     let mut tp_covered = 0.0f64;
@@ -137,12 +155,20 @@ async fn ensure_position_protected(
         }
     }
     let Ok(f) = executor.get_symbol_filter(symbol).await else {
-        return (pos_qty - tp_covered, pos_qty - sl_covered);
+        return ProtectionAudit {
+            tp_gap: pos_qty - tp_covered,
+            sl_gap: pos_qty - sl_covered,
+            min_notional_skips: 0,
+        };
     };
     let tp_gap = (pos_qty - tp_covered).max(0.0);
     let sl_gap = (pos_qty - sl_covered).max(0.0);
     if tp_gap < f.step_size && sl_gap < f.step_size {
-        return (0.0, 0.0); // protegida
+        return ProtectionAudit {
+            tp_gap: 0.0,
+            sl_gap: 0.0,
+            min_notional_skips: 0,
+        }; // protegida
     }
     if entry_price <= 0.0 {
         telemetry_server::telemetry_log!(
@@ -150,7 +176,11 @@ async fn ensure_position_protected(
             tag,
             symbol
         );
-        return (tp_gap, sl_gap);
+        return ProtectionAudit {
+            tp_gap,
+            sl_gap,
+            min_notional_skips: 0,
+        };
     }
     let (tp_price, sl_price) =
         genome_protection_prices(arena, symbol, is_long, entry_price, entry_tau_ms);
@@ -159,7 +189,11 @@ async fn ensure_position_protected(
         .unwrap_or_default()
         .as_micros();
     let min_notional = f.min_notional.max(5.0);
-    let mut remaining = (tp_gap, sl_gap);
+    let mut audit = ProtectionAudit {
+        tp_gap,
+        sl_gap,
+        min_notional_skips: 0,
+    };
     // Precio VIVO del arena para el reintento -2021: cuando la posición
     // deriva más allá del nivel del genoma calculado desde el ENTRY, el
     // trigger "dispararía inmediatamente". Reposicionar la MISMA fracción
@@ -171,8 +205,13 @@ async fn ensure_position_protected(
         .filter(|p| *p > 0.0);
     if tp_gap >= f.step_size {
         if tp_gap * tp_price < min_notional {
+            // HOST-024 — el gap es real pero el exchange jamás aceptará la
+            // orden (< minNotional): se cuenta como evidencia determinística
+            // para el streak del watchdog (antes sólo warning ⇒ riesgo
+            // perpetuo invisible al escalado).
+            audit.min_notional_skips += 1;
             telemetry_server::telemetry_log!(
-                "⚠️ [{}] top-up TP {} {:.4} < minNotional — posición parcialmente protegida",
+                "⚠️ [{}] top-up TP {} {:.4} < minNotional — posición parcialmente protegida (cuenta para escalado)",
                 tag,
                 symbol,
                 tp_gap * tp_price
@@ -200,7 +239,7 @@ async fn ensure_position_protected(
                             "🛡️ [{}] TP re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
                             tag, symbol, tp_gap, trig, tp_covered, pos_qty
                         );
-                        remaining.0 = 0.0;
+                        audit.tp_gap = 0.0;
                         break;
                     }
                     Err(e) if intent == 0 && e.contains("-2021") => {
@@ -241,8 +280,11 @@ async fn ensure_position_protected(
     }
     if sl_gap >= f.step_size {
         if sl_gap * sl_price < min_notional {
+            // HOST-024 — ídem TP: gap bajo minNotional = riesgo real que
+            // ninguna orden puede cubrir; alimenta el streak del watchdog.
+            audit.min_notional_skips += 1;
             telemetry_server::telemetry_log!(
-                "⚠️ [{}] top-up SL {} {:.4} < minNotional — posición parcialmente protegida",
+                "⚠️ [{}] top-up SL {} {:.4} < minNotional — posición parcialmente protegida (cuenta para escalado)",
                 tag,
                 symbol,
                 sl_gap * sl_price
@@ -270,7 +312,7 @@ async fn ensure_position_protected(
                             "🛡️ [{}] SL re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
                             tag, symbol, sl_gap, trig, sl_covered, pos_qty
                         );
-                        remaining.1 = 0.0;
+                        audit.sl_gap = 0.0;
                         break;
                     }
                     Err(e) if intent == 0 && e.contains("-2021") => {
@@ -309,7 +351,7 @@ async fn ensure_position_protected(
             }
         }
     }
-    remaining
+    audit
 }
 
 /// B3.6 — CIRCUIT BREAKER POR SÍMBOLO (anti-horno de comisiones).
@@ -364,6 +406,117 @@ fn persist_fee_breaker(now_ms: u64) {
     if std::fs::write(tmp, format!("{{{file_body}}}")).is_ok() {
         let _ = std::fs::rename(tmp, "data/fee_breaker.json");
     }
+}
+
+/// HOST-005 (informe decimocuarto) — PERSISTENCIA DE LA ENVOLVENTE KELLY.
+/// 32 reinicios = 32 bootstraps del posterior de Jeffreys: el motor vivía
+/// re-aprendiendo su edge desde cero en cada lanzamiento (n<3 ⇒ f=0 ⇒
+/// sesgo de sizing sistemático de arranque). Se persisten los contadores
+/// que alimentan el posterior (α/β ≡ wins/losses sobre el prior de
+/// Jeffreys) y los payoffs medios; `payoff_ratio` se re-deriva al restaurar
+/// (es función de los anteriores). Escritura atómica (tmp + rename).
+fn persist_kelly_envelope(env: &risk_engine::kelly_envelope::RiskEnvelope) {
+    let body = serde_json::json!({
+        "alpha": env.posterior.alpha,
+        "beta": env.posterior.beta,
+        "avg_win": env.avg_win,
+        "avg_loss": env.avg_loss,
+    });
+    let tmp = "data/kelly_envelope.json.tmp";
+    if std::fs::write(tmp, body.to_string()).is_ok() {
+        let _ = std::fs::rename(tmp, "data/kelly_envelope.json");
+    }
+}
+
+/// HOST-005 — restaura la envolvente desde data/kelly_envelope.json.
+/// Tolerante a archivo ausente/corrupto/incompleto (false ⇒ el llamador
+/// continúa con el posterior fresco de Jeffreys — degradación, no pánico).
+fn restore_kelly_envelope(env: &mut risk_engine::kelly_envelope::RiskEnvelope) -> bool {
+    let Ok(content) = std::fs::read_to_string("data/kelly_envelope.json") else {
+        return false; // primera ejecución — nada que restaurar
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) else {
+        telemetry_server::telemetry_log!(
+            "⚠️ [KELLY] data/kelly_envelope.json corrupto — envolvente fresca"
+        );
+        return false;
+    };
+    let g = |k: &str| v.get(k).and_then(|x| x.as_f64());
+    let (Some(alpha), Some(beta), Some(avg_win), Some(avg_loss)) =
+        (g("alpha"), g("beta"), g("avg_win"), g("avg_loss"))
+    else {
+        telemetry_server::telemetry_log!(
+            "⚠️ [KELLY] data/kelly_envelope.json incompleto — envolvente fresca"
+        );
+        return false;
+    };
+    // Saneo: el posterior jamás baja del prior de Jeffreys (0.5/0.5) y los
+    // payoffs son magnitudes finitas no negativas — un archivo manipulado
+    // o de otra era no inyecta un edge fantasma.
+    if !alpha.is_finite()
+        || !beta.is_finite()
+        || alpha < 0.5
+        || beta < 0.5
+        || !avg_win.is_finite()
+        || !avg_loss.is_finite()
+        || avg_win < 0.0
+        || avg_loss < 0.0
+    {
+        telemetry_server::telemetry_log!(
+            "⚠️ [KELLY] data/kelly_envelope.json con valores inválidos — envolvente fresca"
+        );
+        return false;
+    }
+    env.posterior.alpha = alpha;
+    env.posterior.beta = beta;
+    env.avg_win = avg_win;
+    env.avg_loss = avg_loss;
+    env.payoff_ratio = (avg_win + 1e-3) / (avg_loss + 1e-3);
+    true
+}
+
+/// HOST-016 (informe decimocuarto) — UN SOLO sincronizador NTP vivo.
+/// El spawn de la transición demo→mainnet dejaba DOS loops NTP infinitos
+/// compitiendo por `server_time_offset_ms` (el offset oscilaba cada 15s
+/// según qué loop ganara el fetch). Generación monótona: al lanzar un
+/// sincronizador nuevo, todos los anteriores observan su generación
+/// obsoleta en su guardia y salen — el equivalente al
+/// `if ntp_abort.load() { break; }` del loop, implementado como guardia
+/// en el host porque el loop vive en execution-engine::ntp.
+static NTP_SYNC_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+fn spawn_ntp_synchronizer(
+    handle: &tokio::runtime::Handle,
+    client: Arc<execution_engine::client::BinanceClient>,
+    arena: Arc<quantum_arena::GlobalArena>,
+) {
+    let my_gen = NTP_SYNC_GENERATION.fetch_add(1, Ordering::AcqRel);
+    if my_gen > 0 {
+        telemetry_server::telemetry_log!(
+            "🔁 [NTP-SYNC] Generación {} — sincronizadores anteriores abortados (HOST-016: un solo loop vivo)",
+            my_gen + 1
+        );
+    }
+    handle.spawn(async move {
+        let sync = execution_engine::ntp::start_ntp_synchronizer(client, arena);
+        let superseded = async {
+            loop {
+                if NTP_SYNC_GENERATION.load(Ordering::Acquire) > my_gen {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        };
+        tokio::select! {
+            _ = sync => {}
+            _ = superseded => {
+                telemetry_server::telemetry_log!(
+                    "🛑 [NTP-SYNC] Sincronizador de generación {} superseded — loop detenido (HOST-016)",
+                    my_gen + 1
+                );
+            }
+        }
+    });
 }
 
 /// Contexto recuperado de una posición desde el diario de entradas.
@@ -545,6 +698,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     telemetry_server::telemetry_log!("🛡️ OS Guardian active: strict resource isolation.");
     telemetry_server::telemetry_log!("========================================================");
 
+    // HOST-012 (INFORME DECIMOCUARTO): run_god_engine.ps1 inyecta
+    // BINANCE_API_KEY="shadow" ANTES de arrancar; dotenvy NO sobreescribe
+    // variables ya presentes en el proceso, así que la clave "shadow"
+    // TIENE PRIORIDAD sobre el .env real. Identidad demo: si se detecta,
+    // telemetría roja — jamás debe llegar a mainnet (para producción:
+    // LAUNCH_PRODUCTION.bat sin ese script).
+    if env::var("BINANCE_API_KEY").unwrap_or_default() == "shadow" {
+        eprintln!("\x1b[31m🔴 [HOST-012][SHADOW-KEY] BINANCE_API_KEY=='shadow' detectada tras dotenvy — CLAVE 'shadow' CON PRIORIDAD SOBRE .env (identidad demo inyectada por run_god_engine.ps1). ESTE ENTORNO NO ES PRODUCCIÓN. NUNCA usar para mainnet: usar LAUNCH_PRODUCTION.bat sin ese script.\x1b[0m");
+        telemetry_server::telemetry_log!(
+            "🔴 [HOST-012][SHADOW-KEY] BINANCE_API_KEY=='shadow' tiene prioridad sobre .env — entorno DEMO inyectado por run_god_engine.ps1. NUNCA usar para mainnet: usar LAUNCH_PRODUCTION.bat sin ese script."
+        );
+    }
+
     telemetry_server::telemetry_log!("\n========================================================");
     let args: Vec<String> = env::args().collect();
     // FASE 28 + F5.2: El calentamiento cuántico es obligatorio. Siempre inicia en
@@ -623,6 +789,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     quantum_arena::symbols::update_dynamic_universe(symbols.clone());
 
+    // B3.38 — IDENTIDAD coin_id↔símbolo. El registry arranca VACÍO
+    // (get_default_specs = []) y nada lo poblaba con la lista del
+    // bootloader: el primer update_registry en correr era el del daemon
+    // (pool de momentum del escáner), cuyo ORDEN no tiene nada que ver con
+    // `symbols_clone`/`symbol_to_id` del handler. Resultado medido en vivo
+    // (v41-v46): el slot 2 streameaba bnbusdt pero el core creía que era
+    // el 3er símbolo del pool — coin_model_key equivocado ⇒ forest jamás
+    // encontrado ⇒ ml_prob clavado en 0.5000 y el gate B3.25 vetando TODO
+    // con modelos sanos (el NN BTC-only y el lead-lag BTC/ETH también
+    // leían identidades falsas). v40 funcionó por ALINEACIÓN LUCKY del
+    // pool con la lista del bootloader. FIX: registrar la lista del
+    // bootloader COMO LAS PRIMERAS ENTRADAS del registry, EN ORDEN — el
+    // merge append-only (FIX #905) del daemon respeta esas posiciones.
+    let boot_specs: Vec<quantum_arena::symbol_registry::SymbolSpec> = symbols
+        .iter()
+        .map(|s| quantum_arena::symbol_registry::get_official_binance_spec(&s.to_uppercase()))
+        .collect();
+    quantum_arena::symbol_registry::update_registry(boot_specs);
+    telemetry_server::telemetry_log!(
+        "🧬 [B3.38] Identidad registrada: {} símbolos del bootloader en orden de slot (core≡handler)",
+        symbols.len()
+    );
+
     let dynamic_config_bin_path = EnvManager::data_path("dynamic_config.bin");
     let dynamic_config_json_path = EnvManager::data_path("dynamic_config.json");
     let config_bytes = std::fs::read(&dynamic_config_bin_path).unwrap_or_default();
@@ -681,10 +870,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Spawn Dynamic Symbol Manager (Top 10 Evolver)
-    tokio::spawn(async move {
-        quantum_engine::symbol_manager::evolve_symbols_daemon().await;
-    });
 
     let mut streams = String::new();
     for (i, sym) in symbols.iter().enumerate() {
@@ -715,6 +900,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             streams.push('/');
         }
     }
+    // P-4 (PREDICTORES): stream de LIQUIDACIONES de todo el mercado. Cada
+    // forceOrder alimenta liquidation_feed::bump → dex_severity viva en el
+    // tensor dark_alpha (decae con la constante genómica) + omni[10].
+    streams.push_str("/!forceOrder@arr");
     let streams_str = streams.clone();
     let initial_ws_host = if let Ok(ep) = env::var("BEST_WS_ENDPOINT") {
         ep
@@ -775,6 +964,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )));
 
     let (tx_ws_control, mut rx_ws_control) = tokio::sync::mpsc::channel::<()>(1);
+
+    // Spawn Dynamic Symbol Manager (Top 10 Evolver)
+    // QO-U1b — UNIVERSO FANTASMA: el WS jamás re-suscribía al rotar el
+    // universo — los símbolos rotados entraban al arena/registry pero
+    // NUNCA recibían ticks (streams congelados al arranque). Ahora el
+    // daemon recibe el ArcSwap de la URL del WS y el canal de control:
+    // al rotar, re-construye la lista de streams y fuerza re-conexión.
+    {
+        let ws_url_for_sm = Arc::clone(&ws_url);
+        let ws_ctrl_for_sm = tx_ws_control.clone();
+        tokio::spawn(async move {
+            quantum_engine::symbol_manager::evolve_symbols_daemon_with_resubscribe(
+                ws_url_for_sm,
+                ws_ctrl_for_sm,
+            )
+            .await;
+        });
+    }
+
     let (tx_events, rx_events) = crossbeam_channel::bounded::<Vec<u8>>(5_000);
     let rx_events_dropper = rx_events.clone();
 
@@ -1086,6 +1294,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         telemetry_server::telemetry_log!("⚠️ [PAPER LOCAL] Ignorando posiciones REST — no hay cuenta viva que reconciliar.");
         restored_positions.clear();
     }
+
+    // HOST-013 (informe decimocuarto) — LEVERAGE REAL para el margen de
+    // adopción de FASE 5: el código dividía el notional entre 10.0
+    // hardcodeado — en cuentas 20×/50× el margen adoptado quedaba inflado
+    // 2-5× (falsa escasez ⇒ vetos de entrada contra capital que sí
+    // existe). El leverage vivo por símbolo vive en positionRisk. Fallback
+    // conservador 10× (comportamiento anterior) si el fetch falla.
+    let restore_lev_map: std::collections::HashMap<String, f64> = if exec.load().is_paper_trading() {
+        std::collections::HashMap::new()
+    } else {
+        exec.load()
+            .fetch_position_risk()
+            .await
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter(|e| e.leverage.is_finite() && e.leverage >= 1.0)
+                    .map(|e| (e.symbol.clone(), e.leverage))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
 
     // ── F1.11 MODO HEDGE ─────────────────────────────────────────────────────
     // El motor envía positionSide=LONG/SHORT siempre; si la cuenta está en
@@ -1432,10 +1662,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         exec.load().arena.store(Some(Arc::clone(&arena_real)));
 
         // Spawn NTP Synchronizer for live timestamp drift correction
-        rt_handle_for_thread.spawn(execution_engine::ntp::start_ntp_synchronizer(
+        // HOST-016 — vía spawn_ntp_synchronizer: guardia de generación que
+        // garantiza UN solo loop NTP vivo a la vez.
+        spawn_ntp_synchronizer(
+            &rt_handle_for_thread,
             Arc::new(exec.load().client().clone()),
             Arc::clone(&arena_real),
-        ));
+        );
 
         // Reality Physics: Shadow Simulator uses identical dynamic fees extracted from exchange
 
@@ -1460,8 +1693,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 telemetry_server::telemetry_log!("   👉 Símbolo activo en exchange: {} (Qty: {})", pos.symbol, pos.qty);
                 if let Some(&coin_idx) = symbol_to_id.get(&pos.symbol) {
                     let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
-                    // D-726 (DÉCIMA OLA · auditoría integral): EL MARGEN SALE DEL
-                    // APALANCAMIENTO REAL Y SE RESERVA DE VERDAD.
+                    // D-726 + HOST-013: EL MARGEN SALE DEL APALANCAMIENTO REAL Y
+                    // SE RESERVA DE VERDAD.
                     //
                     // El margen se reconstruía dividiendo el nocional por el
                     // literal 10 —una posición a 20x quedaba con el doble de
@@ -1472,17 +1705,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // posiciones nuevas como si no tuviera ninguna. La rama de
                     // adopción de `reconcile_arena` sí reserva margen, pero exige
                     // que la posición NO esté ya abierta en el arena, así que no
-                    // corregía ésta. El apalancamiento real viene en
-                    // `/fapi/v2/positionRisk`; si el exchange no lo informa se usa
-                    // el del genoma para esta moneda, nunca un literal.
-                    let lev_real = if pos.leverage > 0.0 {
+                    // corregía ésta. El apalancamiento real viene de
+                    // `/fapi/v2/positionRisk`, por la posición misma o por el
+                    // mapa de HOST-013; si el exchange no lo informa se usa el del
+                    // genoma, nunca un literal.
+                    let lev_real = if pos.leverage.is_finite() && pos.leverage >= 1.0 {
                         pos.leverage
                     } else {
-                        arena_real
-                            .config
-                            .global_leverage
-                            .load(Ordering::Relaxed)
-                            .clamp(1.0, 125.0)
+                        restore_lev_map
+                            .get(&pos.symbol)
+                            .copied()
+                            .filter(|l| l.is_finite() && *l >= 1.0)
+                            .unwrap_or_else(|| {
+                                arena_real
+                                    .config
+                                    .global_leverage
+                                    .load(Ordering::Relaxed)
+                                    .clamp(1.0, 125.0)
+                            })
                     };
                     let calculated_margin = (pos.qty.abs() * pos.entry_price) / lev_real;
                     arena_real
@@ -1649,9 +1889,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &ledger_path,
                 "config_dir/genotypes/online_champion.json",
             );
-            if !evolution_engine::online_daemon::live_evolution_armed() {
+            if !evolution_engine::online_daemon::live_evolution_armed_for_env() {
                 telemetry_server::telemetry_log!(
                     "🔒 [D-689] Evolución en vivo DESARMADA: umbrales ML y genoma sólo cambian por promoción validada (TG_LIVE_GENOME_EVOLUTION_ARMED=1 para armarla). Deriva, kill-switch y rollback siguen activos."
+                );
+            } else {
+                // QO-E1: primera vez que la autoevolución vive ARMADA — la
+                // auditoría halló prod/history con 0 generaciones: los tres
+                // lazos jamás corrieron. Las redes de seguridad (rollback
+                // t≤−2.0, kill EWMA, validación bounds/RR) están SIEMPRE.
+                telemetry_server::telemetry_log!(
+                    "🧬 [QO-E1] Autoevolución en vivo ARMADA (entorno demo): mutación 2000-candidatos sobre returns reales + cosecha shadow-forest (≥15 trades) + umbrales del forest online. Rollback y kill-switch activos. Prod desarmado (paso humano)."
                 );
             }
             rt_for_darwin.spawn(async move {
@@ -1660,6 +1908,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 online_daemon.run_online_learning_loop().await;
             });
+        }
+
+        // QO-E2b — AUTO-TRAINER NN como proceso hijo (demo): el bin
+        // auto_trainer_daemon existía con su gate val-BCE pero estaba
+        // doble-muerto (nadie lo lanzaba Y su dataset no tenía productor).
+        // El productor ya vive en el core (tensor congelado a la apertura +
+        // fila al cierre); este spawn cierra la segunda mitad. El MODEL
+        // WATCHER hot-recarga models/DarkAlpha_BTCUSDT.json (mtime) cuando
+        // el trainer lo re-escribe. TG_NN_TRAINER=0 lo apaga.
+        if std::env::var("TG_NN_TRAINER").map(|v| v.trim() == "0").unwrap_or(false) {
+            telemetry_server::telemetry_log!(
+                "⏸️ [QO-E2b] Auto-trainer NN desactivado por TG_NN_TRAINER=0"
+            );
+        } else {
+            let exe = std::env::current_exe().ok();
+            let trainer_path = exe
+                .as_ref()
+                .and_then(|p| p.parent().map(|d| d.join("auto_trainer_daemon.exe")))
+                .filter(|p| p.exists());
+            match trainer_path {
+                Some(tp) => {
+                    match std::process::Command::new(&tp)
+                        .arg("BTCUSDT")
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                    {
+                        Ok(child) => {
+                            telemetry_server::telemetry_log!(
+                                "🤖 [QO-E2b] Auto-trainer NN lanzado (pid {}, dataset data/dark_alpha_dataset_BTCUSDT.csv)"
+                                , child.id()
+                            );
+                        }
+                        Err(e) => {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [QO-E2b] Auto-trainer NN no pudo lanzarse: {}", e
+                            );
+                        }
+                    }
+                }
+                None => {
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [QO-E2b] auto_trainer_daemon.exe no encontrado junto al binario — compílalo para cerrar el lazo NN"
+                    );
+                }
+            }
         }
 
         // R3.5 — RECONCILIACIÓN PERIÓDICA OMNISCIENTE (cada 60s)
@@ -1727,6 +2021,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // no un arranque.
         {
             let exec_brk = Arc::clone(&exec);
+            let arena_brk = Arc::clone(&arena_real);
             rt_handle.spawn(async move {
                 let now0 = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -1779,16 +2074,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if executor.is_kill_switch_active() {
                         continue;
                     }
-                    // B3.6b — ventana RODANTE 24h: la evidencia de fees no
-                    // expira con el arranque del motor. Paginado: el
-                    // endpoint trae máx 1000 entradas y un día activo
-                    // (~4 entradas/trade) puede truncar la ventana —
-                    // truncar sub-cuenta fees (falso negativo).
+                    // B3.6b — ventana RODANTE: la evidencia de fees no expira
+                    // con el arranque del motor. S-5 (ESPECTRALIZACIÓN): la
+                    // ventana escala con la τ dominante del SÍMBOLO — un
+                    // símbolo de τ 5min es juzgado en su propia escala de
+                    // evidencia (24×τ, clamp [1h, 48h]; τ~1h ⇒ 24h como
+                    // antes), no en un día de reloj arbitrario. Paginado: el
+                    // endpoint trae máx 1000 entradas.
                     let now_breaker = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64;
-                    let window_start = now_breaker - 24 * 3_600_000;
+                    // S-5: τ de la escala que el genoma opera (temporal_scale
+                    // s∈[0,1] → τ log-lineal) — el breaker corre en su propio
+                    // daemon sin acceso al espectro vivo del core; el genoma
+                    // es la escala estable de referencia para la ventana.
+                    let l_fast = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();
+                    let l_slow = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS.ln();
+                    let s_gen = arena_brk
+                        .config
+                        .temporal_scale
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        .clamp(0.0, 1.0);
+                    let tau_scale = (l_fast + s_gen * (l_slow - l_fast))
+                        .exp()
+                        .clamp(30_000.0, 43_200_000.0);
+                    let window_ms = (24.0 * tau_scale).clamp(3_600_000.0, 48.0 * 3_600_000.0) as u64;
+                    let window_start = now_breaker.saturating_sub(window_ms);
                     let Ok(entries) = executor
                         .fetch_income_paged(&[], window_start, 4)
                         .await
@@ -1840,16 +2152,112 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .map(|g| g.get(&sym).copied().unwrap_or(0))
                                 .unwrap_or(0)
                                 > now_breaker;
-                            let until_ms = now_breaker + 4 * 3_600_000;
+                            // S-5: suspensión proporcional a la ofensa —
+                            // fees/gross mide cuánta fricción paga el símbolo
+                            // por unidad de ganancia bruta: ratio 1.0 ⇒ 4h
+                            // (histórico), ratio 3.0 ⇒ 12h, clamp [1h, 12h].
+                            let offense = (a.fees / a.gross_pos.max(1e-9)).clamp(0.25, 3.0);
+                            let suspend_hours = (offense * 4.0).clamp(1.0, 12.0) as u64;
+                            let until_ms = now_breaker + suspend_hours * 3_600_000;
                             suspend_symbol_until(&sym, until_ms);
                             // B3.6b — persistir (atómico, purga expirados): la
                             // suspensión sobrevive reinicios del motor.
                             persist_fee_breaker(now_breaker);
                             if !was_suspended {
                                 telemetry_server::telemetry_log!(
-                                    "🛑 [FEE-BREAKER] {} suspendido 4h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
-                                    sym, a.trades, a.gross_pos, a.fees, net
+                                    "🛑 [FEE-BREAKER] {} suspendido {}h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
+                                    sym, suspend_hours, a.trades, a.gross_pos, a.fees, net
                                 );
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // P-3b — POLLER DE OPEN INTEREST PER-SÍMBOLO: el dinero apalancado
+        // DENTRO de cada moneda (/fapi/v1/openInterest, 120s, fuera del hot
+        // path). Normalización log contra $100M de contratos abiertos por
+        // símbolo (BTC global vive en omni[12] como proxy de régimen).
+        // Alimenta el asiento Ente del Mercado vía coin.open_interest_norm.
+        {
+            let arena_oi = Arc::clone(&arena_real);
+            let omni_for_funding = Arc::clone(&omni_state_hot);
+            let syms_oi: Vec<(String, usize)> = symbols_clone
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (s.to_uppercase(), i))
+                .collect();
+            rt_handle.spawn(async move {
+                let is_testnet = EnvManager::is_demo_env();
+                let base_url = if is_testnet {
+                    "https://testnet.binancefuture.com"
+                } else {
+                    "https://fapi.binance.com"
+                };
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(8))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new());
+                let mut ticker = tokio::time::interval(std::time::Duration::from_secs(120));
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                telemetry_server::telemetry_log!(
+                    "👁️ [OI-POLLER] open interest per-símbolo activo ({} símbolos, 120s)",
+                    syms_oi.len()
+                );
+                loop {
+                    ticker.tick().await;
+                    // QO-U1c — funding per-símbolo al registry (el poller de
+                    // omni lo llena en funding_by_symbol cada 120s; aquí se
+                    // publica por símbolo, fuera del hot path). El core lee
+                    // `funding_rate` scoped; sin valor cae al global omni[11].
+                    if let Ok(fmap) = omni_for_funding.funding_by_symbol.read() {
+                        for (sym, _cid) in syms_oi.iter() {
+                            if let Some(f) = fmap.get(sym) {
+                                arena_oi.registry.set_scoped(sym, "funding_rate", *f);
+                            }
+                        }
+                    }
+                    // QO-U2 — sentimiento de masas al registry (contrarian):
+                    // multitud muy long (L/S alto) o takers comprando
+                    /// desesperadamente (ratio alto) = riesgo de squeeze.
+                    if let Ok(lsmap) = omni_for_funding.ls_account_by_symbol.read() {
+                        for (sym, _cid) in syms_oi.iter() {
+                            if let Some(r) = lsmap.get(sym) {
+                                arena_oi.registry.set_scoped(sym, "ls_account_ratio", *r);
+                            }
+                        }
+                    }
+                    if let Ok(tkmap) = omni_for_funding.taker_ratio_by_symbol.read() {
+                        for (sym, _cid) in syms_oi.iter() {
+                            if let Some(r) = tkmap.get(sym) {
+                                arena_oi.registry.set_scoped(sym, "taker_ratio", *r);
+                            }
+                        }
+                    }
+                    for (sym, coin_id) in syms_oi.iter() {
+                        if *coin_id >= arena_oi.coins.len() {
+                            continue;
+                        }
+                        let url = format!("{}/fapi/v1/openInterest?symbol={}", base_url, sym);
+                        if let Ok(res) = client.get(&url).send().await {
+                            if let Ok(json) = res.json::<serde_json::Value>().await {
+                                if let Some(oi_str) =
+                                    json.get("openInterest").and_then(|v| v.as_str())
+                                {
+                                    if let Ok(oi) = oi_str.parse::<f64>() {
+                                        if oi.is_finite() && oi > 0.0 {
+                                            // Contratos abiertos × precio ≈ notional:
+                                            // el OI del endpoint es en unidades de la
+                                            // base — se normaliza tal cual contra 1e8
+                                            // (orden de magnitud típico en majors).
+                                            let norm = (oi.ln() / 1.0e8f64.ln()).clamp(0.0, 1.0);
+                                            arena_oi.coins[*coin_id]
+                                                .open_interest_norm
+                                                .store(norm, std::sync::atomic::Ordering::Relaxed);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1984,7 +2392,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .map(|c| c.positions.position.entry_tau_ms.load(Ordering::Relaxed))
                             })
                             .unwrap_or(0);
-                        let (g_tp, g_sl) = ensure_position_protected(
+                        let prot = ensure_position_protected(
                             &executor,
                             &arena_wd,
                             &p.symbol,
@@ -1995,6 +2403,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "WATCHDOG",
                         )
                         .await;
+                        let (g_tp, g_sl) = (prot.tp_gap, prot.sl_gap);
                         if g_tp > 0.0 || g_sl > 0.0 {
                             naked_total += 1;
                             // B3.5b — el streak SOLO sube con evidencia
@@ -2003,12 +2412,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // = fallo de red o estado transitorio: se loguea,
                             // no se cuenta (un blip de 3 ciclos ya no cierra
                             // posiciones sanas a mercado).
+                            // HOST-024 — EXCEPCIÓN: gaps bajo minNotional sí
+                            // cuentan SIN rechazos: el exchange jamás aceptará
+                            // esa orden (evidencia determinística, no red) —
+                            // la posición queda parcialmente protegida para
+                            // siempre y el riesgo es real.
                             let rejections_now =
                                 quantum_arena::protection_health::rejections_of(&p.symbol);
                             let rejections_prev =
                                 naked_rejections.get(&p.symbol).copied().unwrap_or(0);
                             naked_rejections.insert(p.symbol.clone(), rejections_now);
-                            if rejections_now <= rejections_prev {
+                            if rejections_now <= rejections_prev && prot.min_notional_skips == 0 {
                                 telemetry_server::telemetry_log!(
                                     "🐕 [WATCHDOG] {} con gap pero sin rechazos nuevos — no escala (¿red?)",
                                     p.symbol
@@ -2165,16 +2579,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
         let mut avg_win_abs: f64 = 0.0;
         let mut avg_loss_abs: f64 = 0.0;
+        // HOST-005 — RESTAURAR la envolvente persistida: sin esto cada
+        // reinicio borraba el posterior del edge (bootstrap perpetuo). Las
+        // EMAs locales de payoff arrancan desde la memoria restaurada, no
+        // desde 0 — continuidad de aprendizaje entre sesiones.
+        if restore_kelly_envelope(&mut risk_envelope) {
+            avg_win_abs = risk_envelope.avg_win;
+            avg_loss_abs = risk_envelope.avg_loss;
+            telemetry_server::telemetry_log!(
+                "🧬 [KELLY] Envolvente restaurada de disco: n={:.0} trades (α={:.1}/β={:.1}), avg_win=${:.4}, avg_loss=${:.4} — sin bootstrap (HOST-005)",
+                risk_envelope.posterior.n(),
+                risk_envelope.posterior.alpha,
+                risk_envelope.posterior.beta,
+                risk_envelope.avg_win,
+                risk_envelope.avg_loss
+            );
+        } else {
+            telemetry_server::telemetry_log!(
+                "🧬 [KELLY] Sin envolvente previa — posterior fresco de Jeffreys (HOST-005)"
+            );
+        }
         // B3.7 (auditoría) — DEDUP cierre-bracket vs cierre-core: el MISMO
         // trade económico puede llegar por dos caminos (fill de la pierna en
         // el user-stream + condición de salida del core en el evento
-        // siguiente). Sin esta ventana simétrica de 120s por símbolo, Kelly,
+        // siguiente). Sin esta ventana simétrica por símbolo, Kelly,
         // totales y WR lo contaban DOS veces.
+        // HOST-003 (informe decimocuarto) — la ventana de 120s TRAGABA
+        // TRADES LEGÍTIMOS: la carrera real core-vs-bracket es de
+        // MILISEGUNDOS (logs B3.7), no 2 minutos — un scalp legítimo del
+        // mismo símbolo hasta 2 min después era silenciado como duplicado.
+        // 5s cubre la carrera de la pierna vs el cierre del core; los
+        // trades legítimos subsiguientes ya no se tragan.
         let mut last_bracket_close_ms: std::collections::HashMap<String, u64> =
             std::collections::HashMap::new();
         let mut last_real_core_close_ms: std::collections::HashMap<String, u64> =
             std::collections::HashMap::new();
-        const CLOSE_DEDUP_WINDOW_MS: u64 = 120_000;
+        const CLOSE_DEDUP_WINDOW_MS: u64 = 5_000;
 
         engine_real.reality.mode = god_engine_core::reality_physics::EngineMode::HyperRealistic;
         engine_real.set_model_rx(rx_real);
@@ -2237,6 +2677,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|s| quantum_engine::orderbook::OrderBook::new(s.clone()))
             .collect();
+        // P-5 (PREDICTORES / ENTES): tracker de volumen institucional por
+        // símbolo — z-score de burst sobre el flujo @trade REAL (la clase
+        // estaba exportada con CERO call sites). `whale_burst_z` al registry.
+        let mut whale_trackers: Vec<feature_engine::InstitutionalVolumeTracker> = symbols_clone
+            .iter()
+            .map(|_| feature_engine::InstitutionalVolumeTracker::default())
+            .collect();
+        // P-6 — detector de spoofing por símbolo: evaporación de muros L2
+        // (los 5 niveles del stream alimentan evaluate_wall_decay).
+        let mut spoof_detectors: Vec<feature_engine::SpoofingDetector> = symbols_clone
+            .iter()
+            .map(|_| feature_engine::SpoofingDetector::default())
+            .collect();
         let mut msg_count: u64 = 0;
         // D-610: guardia de secuencia del libro, un estado por símbolo del
         // universo (misma indexación que `local_orderbooks`).
@@ -2252,6 +2705,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let is_trade = memchr::memmem::find(&msg_bytes, b"\"e\":\"trade\"").is_some();
             let is_kline = memchr::memmem::find(&msg_bytes, b"\"e\":\"kline\"").is_some();
             let is_depth = memchr::memmem::find(&msg_bytes, b"\"e\":\"depthUpdate\"").is_some();
+            // P-4: liquidaciones del mercado completo (stream de arreglo:
+            // [{e:forceOrder, o:{s,S,q,p,...}}, ...]). Severidad por evento
+            // = |precio×qty| log-normalizado; el tensor dark_alpha decae.
+            // Estos mensajes son RAROS (docenas/hora) — un parse JSON
+            // ligero por evento no toca el hot path de trade/depth.
+            let is_force_order = memchr::memmem::find(&msg_bytes, b"forceOrder").is_some();
+            if is_force_order && !is_trade && !is_kline && !is_depth {
+                if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&msg_bytes) {
+                    let items: Vec<&serde_json::Value> = v
+                        .as_array()
+                        .map(|a| a.iter().collect())
+                        .unwrap_or_else(|| vec![&v]);
+                    for it in items {
+                        let o = it.get("o").unwrap_or(it);
+                        let p = o.get("p").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok());
+                        let q = o.get("q").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok());
+                        if let (Some(p), Some(q)) = (p, q) {
+                            let notional = (p * q).abs();
+                            god_engine_core::liquidation_feed::bump(
+                                god_engine_core::liquidation_feed::severity_from_notional(notional),
+                            );
+                        }
+                    }
+                }
+                msg_count += 1;
+                continue;
+            }
             let is_reconnect = msg_bytes == b"[SYSTEM:RECONNECT]";
 
             if is_reconnect {
@@ -2313,7 +2793,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     is_kline_closed = c;
                 }
             } else if is_depth {
-                if let Some((e, sym, update_id, bp, bq, ap, aq)) = parsers::parse_binance_depth(msg_str) {
+                // P-6 — UN solo parse con TODOS los niveles (@depth5): el
+                // best se deriva del nivel 0 y los muros máximos alimentan
+                // el SpoofingDetector por símbolo (mismo costo: un parse
+                // simd_json, arrays del caller, zero-alloc).
+                let mut lvl_bids = [(0.0f64, 0.0f64); 5];
+                let mut lvl_asks = [(0.0f64, 0.0f64); 5];
+                if let Some((e, sym, update_id, n_lv)) =
+                    parsers::parse_binance_depth5_levels(msg_str, &mut lvl_bids, &mut lvl_asks)
+                {
+                    let (bp, bq) = lvl_bids[0];
+                    let (ap, aq) = lvl_asks[0];
                     // D-610 (DÉCIMA OLA): el `u` del libro se extraía y se descartaba.
                     // Un mensaje no posterior al último aceptado —rancio tras una
                     // reconexión, reordenado o duplicado— ya no actualiza el libro
@@ -2356,6 +2846,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let microprice = (bp * aq + ap * bq) / total_q;
                         let midprice = (bp + ap) / 2.0;
                         depth_micro_div = if midprice > 0.0 { (microprice - midprice) / midprice } else { 0.0 };
+                    }
+                    // P-6 — ENTE SPOOFING: muros máximos por lado (notional
+                    // del peor nivel lleno) → detector de evaporación por
+                    // símbolo; score publicado al registry. Fuera del camino
+                    // de decisión: sólo computa y publica.
+                    if n_lv >= 2 {
+                        if let Some(sym_id) = symbol_to_id.get(sym).copied() {
+                            if sym_id < spoof_detectors.len() {
+                                let mut max_bid_wall = 0.0f64;
+                                let mut max_ask_wall = 0.0f64;
+                                for &(p, q) in lvl_bids.iter().take(n_lv) {
+                                    max_bid_wall = max_bid_wall.max(p * q);
+                                }
+                                for &(p, q) in lvl_asks.iter().take(n_lv) {
+                                    max_ask_wall = max_ask_wall.max(p * q);
+                                }
+                                let score = spoof_detectors[sym_id].evaluate_wall_decay(
+                                    max_bid_wall,
+                                    max_ask_wall,
+                                    e as u64,
+                                );
+                                if score.is_finite() && score > 0.05 {
+                                    engine_real.arena.registry.set_scoped(
+                                        &sym.to_uppercase(),
+                                        "spoof_score",
+                                        score.clamp(0.0, 1.0),
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2420,9 +2940,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // L-1: Ingesta de Microestructura Física en la Arena Viva (CVD y Muros L2)
                 // Corrige la ceguera de volumen agresivo y profundidad del libro en vivo (Causa Forense #D117).
-                // D-708: el flujo agregado lo actualiza ahora el núcleo dentro de
-                // `process_event` (misma fuente para vivo, forense y replay).
-                if is_depth {
+                // D-708: el flujo agregado (CVD) lo actualiza el núcleo dentro de
+                // `process_event` —misma fuente para vivo, forense y replay—;
+                // llamarlo también aquí lo contaría DOS veces. Al host le queda
+                // lo que es sólo del host.
+                if is_trade {
+                    // P-5 — ENTE BALLENA: z-score de burst sobre el volumen
+                    // del trade real; publicado al registry por símbolo.
+                    if coin_id < whale_trackers.len() {
+                        let notional = qty * current_price;
+                        if notional.is_finite() && notional > 0.0 {
+                            let (z, _accel, is_burst) = whale_trackers[coin_id].update(notional);
+                            if is_burst {
+                                let sym_scoped = symbol_to_id
+                                    .iter()
+                                    .find(|(_, &v)| v == coin_id)
+                                    .map(|(k, _)| k.to_uppercase())
+                                    .unwrap_or_default();
+                                engine_real.arena.registry.set_scoped(
+                                    &sym_scoped,
+                                    "whale_burst_z",
+                                    z.clamp(0.0, 10.0),
+                                );
+                            }
+                        }
+                    }
+                } else if is_depth {
                     engine_real.arena.update_l2_depth(coin_id, dbq, daq);
                 }
 
@@ -2619,10 +3162,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
 
                         // Re-spawn NTP synchronizer con el nuevo cliente para mantener sincronizado el reloj en mainnet
-                        rt_handle.spawn(execution_engine::ntp::start_ntp_synchronizer(
+                        // HOST-016 — el guard de generación aborta el loop de la era demo: sin esto quedaban DOS loops infinitos compitiendo por server_time_offset_ms.
+                        spawn_ntp_synchronizer(
+                            &rt_handle,
                             Arc::new(new_exec_arc.client().clone()),
                             Arc::clone(&arena_real),
-                        ));
+                        );
 
                         let base_ws_url = if is_env_testnet { "wss://stream.binancefuture.com/stream" } else { "wss://fstream.binance.com/stream" };
                         loop_ws_url.store(Arc::new(format!("{}?streams={}", base_ws_url, loop_streams_str)));
@@ -2687,6 +3232,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     avg_loss_abs = if avg_loss_abs == 0.0 { net_bc.abs() } else { avg_loss_abs * 0.95 + net_bc.abs() * 0.05 };
                                 }
                                 risk_envelope.record_trade(net_bc > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
+                                // HOST-005 — persistir el posterior tras cada
+                                // cierre limpio contabilizado: el próximo
+                                // reinicio arranca con esta evidencia.
+                                persist_kelly_envelope(&risk_envelope);
                                 total_gross_pnl += bc.pnl_gross;
                                 total_net_pnl += net_bc;
                                 total_fees += bc.fees;
@@ -2732,28 +3281,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "📝 [PAPER CLOSE] {} {:+.4} — entrada nunca ejecutada en exchange; NO contabiliza",
                                 parsed_sym, pnl
                             );
-                            // El despacho de cierre igual corre: si algo
-                            // coló en el exchange, X-008 lo aterriza.
-                            let parsed_sym_str_paper = parsed_sym.to_string();
-                            let exec_paper = Arc::clone(&exec);
-                            let long_paper = is_long;
-                            rt_handle.spawn(async move {
-                                if let Ok(f) = exec_paper
-                                    .load()
-                                    .get_symbol_filter(&parsed_sym_str_paper)
-                                    .await
-                                {
-                                    let _ = exec_paper
+                            // HOST-004 (informe decimocuarto) — el reduce-only
+                            // de respaldo usa la qty de este cierre de PAPEL:
+                            // si el core re-abrió y la posición ACTUAL del
+                            // arena está confirmada por el exchange (fill real
+                            // o adopción), dispararlo cerraría la posición
+                            // NUEVA legítima. El "papel" ya fue resuelto —
+                            // el respaldo sólo corre contra una posición que
+                            // NADIE confirmó.
+                            let current_pos_confirmed = engine_real
+                                .arena
+                                .coins
+                                .get(coin_id)
+                                .map(|c| {
+                                    c.positions
+                                        .position
+                                        .exchange_confirmed
+                                        .load(Ordering::Relaxed)
+                                })
+                                .unwrap_or(false);
+                            if current_pos_confirmed {
+                                telemetry_engine::telemetry!(
+                                    "📝 [PAPER CLOSE] {} respaldo OMITIDO: posición actual confirmada por exchange (re-entrada legítima vive) — HOST-004",
+                                    parsed_sym
+                                );
+                            } else {
+                                // El despacho de cierre igual corre: si algo
+                                // coló en el exchange, X-008 lo aterriza.
+                                let parsed_sym_str_paper = parsed_sym.to_string();
+                                let exec_paper = Arc::clone(&exec);
+                                let long_paper = is_long;
+                                rt_handle.spawn(async move {
+                                    if let Ok(f) = exec_paper
                                         .load()
-                                        .execute_reduce_only_market(
-                                            &parsed_sym_str_paper,
-                                            long_paper,
-                                            qty.abs(),
-                                            f.step_size,
-                                        )
-                                        .await;
-                                }
-                            });
+                                        .get_symbol_filter(&parsed_sym_str_paper)
+                                        .await
+                                    {
+                                        let _ = exec_paper
+                                            .load()
+                                            .execute_reduce_only_market(
+                                                &parsed_sym_str_paper,
+                                                long_paper,
+                                                qty.abs(),
+                                                f.step_size,
+                                            )
+                                            .await;
+                                    }
+                                });
+                            }
                         }
                         // B3.14 — TODO el bloque de contabilidad/aprendizaje
                         // es exclusivo de cierres con entrada REAL.
@@ -2783,35 +3358,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 pnl_pct: real_pnl_pct,
                                 timestamp_ms: ts_now,
                             };
-                            // D-704 (DÉCIMA OLA · auditoría integral): UN SHADOW
-                            // CONSTANTE NO ES UNA COMPARACIÓN.
+                            // D-704 + C-11: UN SHADOW CONSTANTE NO ES UNA
+                            // COMPARACIÓN.
                             //
                             // El shadow se fijaba en `pnl_pct = 0`, de modo que
                             // `drift = −pnl_real` y el criterio `|drift| > 0,05`
-                            // dejaba de significar «el vivo divergió de lo
-                            // esperado» para significar «la operación movió más
-                            // del 5 % del nocional», en CUALQUIER dirección: un
-                            // cierre GANADOR con recorrido grande armaba
-                            // `kill_switch_active` —que nadie vuelve a poner en
-                            // false— y congelaba el motor por haber ganado
-                            // dinero, con un mensaje que afirmaba en falso una
-                            // «divergencia acumulada». Y el modo de fallo que
-                            // este auditor existe para cazar (el backtest predice
-                            // +0,4 % y el vivo entrega −0,4 %) pasaba inadvertido
-                            // mientras el vivo se quedara dentro de ±5 %.
+                            // significaba «la operación movió más del 5 % del
+                            // nocional», en CUALQUIER dirección: un cierre
+                            // GANADOR grande armaba `kill_switch_active` y
+                            // congelaba el motor por haber ganado dinero. C-11
+                            // lo sustituyó por un shadow = 0,95·real, que sólo
+                            // cruza el umbral si |real| > 100 % del nocional
+                            // (contabilidad podrida, p. ej. una adoptada con
+                            // entry roto): un centinela útil, pero NO una
+                            // expectativa —el modo de fallo que este auditor
+                            // existe para cazar (el backtest predice +0,4 % y
+                            // el vivo entrega −0,4 %) sigue invisible—.
                             //
                             // Hasta que exista la contraparte real —el PnL del
                             // universo de control del ShadowForest, o la
                             // expectativa del entry: `ml_prediction` de la
-                            // posición con la geometría TP/SL que se comprometió—
-                            // esto es TELEMETRÍA, no un cortacircuitos: se acumula
-                            // y se informa, sin armar nada.
+                            // posición con la geometría TP/SL comprometida—
+                            // esto es TELEMETRÍA, no un cortacircuitos.
                             let shadow_tr = audit_engine::drift_auditor::TradeResult {
                                 symbol_id: coin_id,
                                 is_long,
                                 entry_price: 0.0,
                                 exit_price: current_price,
-                                pnl_pct: 0.0,
+                                pnl_pct: real_pnl_pct * 0.95,
                                 timestamp_ms: ts_now,
                             };
                             if let Err(drift) = drift_auditor.audit_execution(&real_tr, &shadow_tr) {
@@ -2867,6 +3441,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             avg_loss_abs = if avg_loss_abs == 0.0 { net.abs() } else { avg_loss_abs * 0.95 + net.abs() * 0.05 };
                         }
                         risk_envelope.record_trade(net > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
+                        // HOST-005 — persistir el posterior tras cada cierre
+                        // limpio contabilizado (sin doble cuenta del dedup).
+                        persist_kelly_envelope(&risk_envelope);
                         total_gross_pnl += gross;
                         total_net_pnl += net;
                         total_fees += fee;
@@ -3022,8 +3599,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // que el sistema APRENDA con skin in the game mínimo.
                             exec_leverage = 1;
                         } else if operable {
+                            // C-08 (INFORME 14): la envolvente bayesiana
+                            // (LCB + shrinkage + guard de ruina) es ahora
+                            // AUTORITATIVA en vivo — paridad C-08 con
+                            // booktick_replay. Antes era un veto binario: el
+                            // sizing real salía del core_leverage clampeado y
+                            // la envolvente sólo lo tapaba con el techo env_lev
+                            // — los tamaños que la evolución midió no eran los
+                            // que producción ejecutaba. Ahora la fracción de
+                            // Kelly bayesiana ESCALA el sizing del core
+                            // (×20·f: f=5% de riesgo por trade lo deja intacto;
+                            // evidencia débil lo contrae) y la envolvente sigue
+                            // siendo el TECHO (min con env_lev). (z, k) son los
+                            // MISMOS del régimen de capital que alimentaron
+                            // max_leverage arriba — una sola cadena de decisión.
+                            let kelly_frac = risk_envelope.risk_fraction(env_z, env_k);
                             let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
-                            exec_leverage = core_leverage.clamp(1, 20).min(cap);
+                            // S-4 (ESPECTRALIZACIÓN): el ×20 codificaba "5% del
+                            // margen en riesgo" INDEPENDIENTE del stop — un
+                            // trade de banda lenta con SL de 1.5% arriesgaba
+                            // 30% del margen. Ahora el presupuesto de riesgo
+                            // (5% · kelly_frac) se divide por la DISTANCIA REAL
+                            // del stop a τ de entrada: leverage = riesgo/SL.
+                            // SL 0.25% (banda rápida) ⇒ ×20 como antes; SL
+                            // 1.5% (banda lenta) ⇒ ×6.7 — misma $ en riesgo.
+                            let tau_entry = engine_real.arena.coins[coin_id]
+                                .positions
+                                .position
+                                .entry_tau_ms
+                                .load(Ordering::Relaxed)
+                                as f64;
+                            let sl_frac = engine_real.arena.config.sl_at_tau(
+                                if tau_entry > 0.0 { tau_entry } else { 30_000.0 },
+                            );
+                            let risk_budget = 0.05 * kelly_frac; // fracción del margen por trade
+                            // P-1b — VOL-BRAKE: el predictor {SYM}_VOL encoge el
+                            // presupuesto cuando la σ pronosticada supera ×1.25
+                            // la del régimen en que el modelo se entrenó (base =
+                            // init del modelo, unidades exactas). UNILATERAL:
+                            // sólo encoge (piso ×0.4), nunca amplifica — primer
+                            // despliegue del predictor, la calle es una sola.
+                            let vol_fc = engine_real
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "vol_forecast_pct", 0.0);
+                            let vol_base = engine_real
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "vol_forecast_base", 0.0);
+                            let mut vol_brake = 1.0;
+                            if vol_base > 1e-9 && vol_fc > 1e-9 {
+                                let ratio = vol_fc / vol_base;
+                                if ratio > 1.25 {
+                                    vol_brake = ((1.25 / ratio).max(0.4)).min(1.0);
+                                    telemetry_server::telemetry_log!(
+                                        "🛑 [VOL-BRAKE] coin {} σ_pronosticada {:.4} = ×{:.2} la base {:.4} — riesgo ×{:.2}",
+                                        coin_id, vol_fc, ratio, vol_base, vol_brake
+                                    );
+                                }
+                            }
+                            let lev_from_risk =
+                                (risk_budget * vol_brake / sl_frac.max(1e-4)).clamp(1.0, 20.0);
+                            exec_leverage =
+                                (lev_from_risk as u32).min(cap).max(1);
                         } else {
                             exec_leverage = 0; // SIN ORDEN: la matemática dijo NO
                         }
@@ -3128,17 +3766,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let exec_clone = Arc::clone(&exec);
                         let arena_clone = Arc::clone(&engine_real.arena);
 
-                        // B3.2b — RUTA MAKER ACTIVADA (palanca de fee dormida).
-                        // execute_maker_chase: post-only al mid → 15ms →
-                        // cancela → consulta el fill REAL (anti-double-fill
-                        // F1.3) → mercado SOLO el remanente. Si el post-only
-                        // cruza el libro, rechazo inmediato → taker como hoy.
-                        // Coste: ~15ms. Beneficio: 2 bps por fracción maker.
-                        // El modelo de fricción D-645 (taker+taker) queda
-                        // como cota superior conservadora; el gate y los
-                        // pisos de viabilidad NO se relajan.
-                        let force_maker = true;
-                        let maker_price = current_price;
+                        // B3.29 — MAKER DESACTIVADO PARA MOMENTUM (adverse
+                        // selection estructural). Medido en 39 entradas: 0%
+                        // fills pasivos con ventanas de 15ms Y 400ms, con
+                        // mid Y con bid/ask. Causa: las entradas por momentum
+                        // compran cuando el precio YA se mueve a favor — una
+                        // orden pasiva al bid sólo llena si el precio RETRO-
+                        // CEDE (contradiciendo la señal). Es adverse selection
+                        // clásico: maker fills = señal equivocada, taker fills
+                        // = señal correcta. La ruta maker añade 400ms de
+                        // latencia al 100% de las entradas para capturar ~0%
+                        // de ahorro. DESACTIVADA hasta que existan señales
+                        // mean-reversion que la justifiquen.
+                        let force_maker = false;
+                        // B3.28 — PRECIO PASIVO AL LIBRO VIVO, no al mid
+                        // congelado. Con maker_price = mid del tick
+                        // desencadenante, el post-only a 400ms después o
+                        // cruza (→taker con RTT extra) o queda lejos del
+                        // libro movido (0% pasivo medido en 38 entradas).
+                        // Pasivo al BID (para long) o ASK (para short): si
+                        // el libro no se movió, descansa en top of book y
+                        // llena con el próximo agresor opuesto.
+                        let maker_price = if dbp > 0.0 && dap > 0.0 && dbp <= dap {
+                            if final_is_long { dbp } else { dap }
+                        } else {
+                            current_price
+                        };
                         let iceberg_threshold = engine_real.arena.config.iceberg_volume_threshold.load(Ordering::Relaxed);
                         let iceberg_slices = engine_real.arena.config.iceberg_slice_count.load(Ordering::Relaxed).max(2.0);
                         let notional_volume = final_qty.abs() * current_price;
@@ -3150,13 +3803,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if coin.positions.position.is_open() {
                                     let (_, _, _, margin_used, entry_fee) = coin.positions.position.close_with_fee();
                                     if margin_used > 0.0 {
-                                        // X-027 (REHAB-3): clamp como el core —
-                                        // fetch_add negativo podía dejar margen <0
-                                        // (margen libre inflado ⇒ sobre-exposición).
-                                        let cur = arena.used_margin.load(Ordering::Relaxed);
+                                        // MOD6/8-010 (sustituye X-027): resta
+                                        // atómica fetch_sub — el RMW load→store
+                                        // NO era atómico y perdía liberaciones
+                                        // concurrentes (cierre core, reconciliación).
+                                        // Si queda levemente negativo por drift, el
+                                        // lector satura a 0 (never inflar free_margin).
                                         arena
                                             .used_margin
-                                            .store((cur - margin_used).max(0.0), Ordering::Relaxed);
+                                            .fetch_sub(margin_used, Ordering::Relaxed);
                                     }
                                     if entry_fee > 0.0 {
                                         arena.unified_capital.fetch_add(entry_fee, Ordering::Relaxed);
@@ -3189,7 +3844,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
 
                             // Sincronización Binance Leverage con Core Sizing y protección -2019 (D-382)
-                            let used_margin = arena_clone.used_margin.load(Ordering::Relaxed);
+                            // MOD6/8-010: lector saturado — ver GlobalArena::used_margin_saturated.
+                            let used_margin = arena_clone.used_margin.load(Ordering::Relaxed).max(0.0);
                             let free_margin = (arena_clone.unified_capital.load(Ordering::Relaxed) - used_margin).max(0.0);
                             let required_margin = notional_volume / exec_leverage as f64;
                             let mut effective_leverage = exec_leverage;
@@ -3635,7 +4291,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::ShadowLeaderboard(leaderboard));
                 // D-689: la cosecha sólo cambia el genoma de producción con la
                 // evolución en vivo armada explícitamente.
-                let winner = winner.filter(|_| evolution_engine::online_daemon::live_evolution_armed());
+                let winner = winner.filter(|_| evolution_engine::online_daemon::live_evolution_armed_for_env());
 
                 if let Some((new_alpha, pnl_gained)) = winner {
                     telemetry!("🧬 [SHADOW FOREST] ¡Cosecha Exitosa! Universo Mutante generó +${:.2} extra. Aplicando Hot-Swap...", pnl_gained);

@@ -1,16 +1,16 @@
 //! Sonda B2.5: reproduce el camino EXACTO de inferencia en vivo para
-//! BTCUSDT_SCALP y diagnostica por qué el motor vivo ml=0.5000 constante.
+//! BTCUSDT_MOTOR y diagnostica por qué el motor vivo ml=0.5000 constante.
 use god_engine_core::stateful_engine::StatefulEngine;
 
 #[tokio::main]
 async fn main() {
     // 1. Cargar como el motor (orden real del filesystem)
     println!("── load_global json:");
-    match god_engine_core::ml_inference::NanoForest::load_global("BTCUSDT_SCALP", "models/BTCUSDT_SCALP.json") {
+    match god_engine_core::ml_inference::NanoForest::load_global("BTCUSDT_MOTOR", "models/BTCUSDT_MOTOR.json") {
         Ok(()) => println!("   ok"),
         Err(e) => println!("   ❌ {}", e),
     }
-    let g = god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_SCALP");
+    let g = god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR");
     println!("   get_global tras json: {}", g.is_some());
 
     // 2. Motor de features con ticks REALES del archivo de julio (mmap):
@@ -41,12 +41,12 @@ async fn main() {
         engine.update_trade_flow(vol, t.bq > t.aq);
         let _ = engine.update_ofi(t.bid, t.ask, t.bq, t.aq);
         if i % 137 == 0 && i > 200 {
-            let swing = engine.get_swing_features();
+            let swing = engine.get_universal_features();
             let spectral = engine.get_spectral_ml_features();
             let mut input = [0f32; 44];
             input[..34].copy_from_slice(&swing);
             input[34..].copy_from_slice(&spectral);
-            if let Some(fr) = god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_SCALP") {
+            if let Some(fr) = god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR") {
                 match fr.predict(&input) {
                     Some(p) => preds.push(p),
                     None => {

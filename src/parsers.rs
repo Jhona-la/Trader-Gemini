@@ -56,6 +56,62 @@ pub fn parse_binance_depth<'a>(
     Some((e, s, last_update_id, bp, bq, ap, aq))
 }
 
+/// P-6 — Parser de TODOS los niveles del stream @depth5 (hasta 5 por lado).
+/// Rellena arrays del caller (zero-alloc) y devuelve
+/// (event_time, symbol, last_update_id, n_levels_válidos).
+/// Prerrequisito del SpoofingDetector: los muros viven más allá del best.
+pub fn parse_binance_depth5_levels<'a>(
+    json_str: &'a mut str,
+    bids_out: &mut [(f64, f64); 5],
+    asks_out: &mut [(f64, f64); 5],
+) -> Option<(i64, &'a str, i64, usize)> {
+    let bytes: &'a mut [u8] = unsafe { json_str.as_bytes_mut() };
+    let parsed = simd_json::to_borrowed_value(bytes).ok()?;
+    let data = if let Some(d) = parsed.get("data") {
+        d
+    } else {
+        &parsed
+    };
+    let e = data.get("E")?.as_i64()?;
+    let s_temp = data.get("s")?.as_str()?;
+    let s: &'a str = unsafe { std::mem::transmute(s_temp) };
+    let last_update_id = data.get("u")?.as_i64()?;
+
+    let fill = |arr: &simd_json::BorrowedValue<'a>, out: &mut [(f64, f64); 5]| -> usize {
+        let mut n = 0usize;
+        if let Some(levels) = arr.as_array() {
+            for lv in levels.iter().take(5) {
+                let Some(pair) = lv.as_array() else { continue };
+                let (Some(p), Some(q)) = (pair.get(0).and_then(|v| v.as_str()), pair.get(1).and_then(|v| v.as_str()))
+                else {
+                    continue;
+                };
+                let (Ok(p), Ok(q)) = (p.parse::<f64>(), q.parse::<f64>()) else {
+                    continue;
+                };
+                if p > 0.0 && q >= 0.0 && p.is_finite() && q.is_finite() {
+                    out[n] = (p, q);
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+
+    let bids = data.get("b")?;
+    let asks = data.get("a")?;
+    let nb = fill(bids, bids_out);
+    let na = fill(asks, asks_out);
+    if nb == 0 || na == 0 {
+        return None;
+    }
+    // FIX #1417: libro cruzado al mejor nivel ⇒ corrupto.
+    if bids_out[0].0 >= asks_out[0].0 {
+        return None;
+    }
+    Some((e, s, last_update_id, nb.min(na)))
+}
+
 /// Parses a Binance Trade JSON string.
 /// Returns (Event_time, trade_time, price, qty, is_buyer_maker, symbol)
 pub fn parse_binance_trade<'a>(
@@ -207,6 +263,47 @@ impl BookSequenceGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// P-6 — el parser multi-nivel extrae TODOS los niveles del @depth5 en
+    /// orden, con el best en [0] idéntico al parser L1, y rechaza libros
+    /// cruzados.
+    #[test]
+    fn p6_parse_depth5_levels_extrae_los_cinco_niveles() {
+        let mut msg = String::from(
+            r#"{"e":"depthUpdate","E":1700000000123,"s":"NEARUSDT","U":1,"u":42,
+                "b":[["3.10","100.0"],["3.09","500.0"],["3.08","50.0"],["3.07","10.0"],["3.06","90000.0"]],
+                "a":[["3.11","80.0"],["3.12","700.0"],["3.13","20.0"],["3.14","5.0"],["3.15","60000.0"]]}"#,
+        );
+        let mut bids = [(0.0f64, 0.0f64); 5];
+        let mut asks = [(0.0f64, 0.0f64); 5];
+        let (e, sym, uid, n) =
+            parse_binance_depth5_levels(&mut msg, &mut bids, &mut asks).expect("payload válido");
+        assert_eq!(e, 1700000000123);
+        assert_eq!(sym, "NEARUSDT");
+        assert_eq!(uid, 42);
+        assert_eq!(n, 5);
+        // Best idéntico al camino L1.
+        assert_eq!(bids[0], (3.10, 100.0));
+        assert_eq!(asks[0], (3.11, 80.0));
+        // El muro máximo del bid vive en el nivel 4 (90000 × 3.06): SOLO
+        // visible con el parser multi-nivel — el motivo de P-6.
+        let max_bid_wall = bids.iter().map(|&(p, q)| p * q).fold(0.0, f64::max);
+        assert!((max_bid_wall - 3.06 * 90000.0).abs() < 1e-6);
+        let max_ask_wall = asks.iter().map(|&(p, q)| p * q).fold(0.0, f64::max);
+        assert!((max_ask_wall - 3.15 * 60000.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn p6_parse_depth5_rechaza_libro_cruzado() {
+        let mut msg = String::from(
+            r#"{"e":"depthUpdate","E":1,"s":"XUSDT","U":1,"u":2,
+                "b":[["5.0","1.0"],["4.9","1.0"]],
+                "a":[["4.99","1.0"],["5.0","1.0"]]}"#,
+        );
+        let mut bids = [(0.0f64, 0.0f64); 5];
+        let mut asks = [(0.0f64, 0.0f64); 5];
+        assert!(parse_binance_depth5_levels(&mut msg, &mut bids, &mut asks).is_none());
+    }
 
     #[test]
     fn d610_acepta_secuencia_creciente_y_descarta_rancios() {

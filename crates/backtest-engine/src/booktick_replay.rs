@@ -679,7 +679,8 @@ fn live_envelope_gate(
 
     // D-382 — LEVERAGE-ADAPT + MARGIN-GUARD (notional al precio de decisión).
     let notional_volume = qty.abs() * mid;
-    let used_margin = arena.used_margin.load(Ordering::Relaxed);
+    // MOD6/8-010: lector saturado — ver GlobalArena::used_margin_saturated.
+    let used_margin = arena.used_margin.load(Ordering::Relaxed).max(0.0);
     let free_margin = (arena.unified_capital.load(Ordering::Relaxed) - used_margin).max(0.0);
     let mut effective_leverage = exec_leverage;
     let required_margin = notional_volume / effective_leverage as f64;
@@ -708,10 +709,11 @@ fn rollback_local_position(arena: &Arc<GlobalArena>) {
         if pos.is_open() {
             let (_, _, _, margin_used, entry_fee) = pos.close_with_fee();
             if margin_used > 0.0 {
-                let cur = arena.used_margin.load(Ordering::Relaxed);
+                // MOD6/8-010: resta atómica — mismo criterio que el host:
+                // el RMW load→store no es atómico.
                 arena
                     .used_margin
-                    .store((cur - margin_used).max(0.0), Ordering::Relaxed);
+                    .fetch_sub(margin_used, Ordering::Relaxed);
             }
             if entry_fee > 0.0 {
                 arena

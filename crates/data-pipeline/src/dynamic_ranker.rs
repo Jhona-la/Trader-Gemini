@@ -103,9 +103,35 @@ pub async fn fetch_dynamic_universe(
         "AEURUSDT",
     ];
 
+    // QO-U1a (auditoría de universo): el escáner dejaba pasar BASURA de
+    // testnet — mojibake (牛来USDT), símbolos triviales (4USDT, AUSDT,
+    // MUSDT, CUSDT) e índices sintéticos. Reglas de saneamiento:
+    //  1. ASCII estricto A-Z0-9 (el mojibake UTF-8 jamás pasa);
+    //  2. la BASE sin sufijo debe tener ≥3 caracteres (mata 4USDT/AUSDT);
+    //  3. lista negra de bases conocidas-triviales de testnet.
+    let testnet_blacklist = [
+        "CUSDT", "MUSDT", "AUSDT", "4USDT", "USELESSUSDT", "ZENUSDT", "IDOLUSDT",
+        "SKYUSDT", "SUPERUSDT", "DRIFTUSDT", "CROSSUSDT", "FARTCOINUSDT", "FLUIDUSDT",
+        "VVVUSDT", "ALCHUSDT", "SENTUSDT", "RAYSOLUSDT", "METUSDT", "AZTECUSDT",
+        "ONEUSDT", "JUPUSDT", "TIAUSDT", "PENDLEUSDT", "LPTUSDT", "EIGENUSDT",
+        "ZKUSDT", "INJUSDT", "ACHUSDT", "OPUSDT",
+    ];
+    let is_sane_symbol = |s: &str| -> bool {
+        if s.len() < 7 || !s.ends_with("USDT") {
+            return false;
+        }
+        let base = &s[..s.len() - 4];
+        base.len() >= 3
+            && base
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+            && !stablecoins.contains(&s)
+            && !testnet_blacklist.contains(&s)
+    };
+
     let mut valid_assets: Vec<SelectedAsset> = tickers
         .into_iter()
-        .filter(|t| t.symbol.ends_with("USDT") && !stablecoins.contains(&t.symbol.as_str()))
+        .filter(|t| is_sane_symbol(&t.symbol))
         .filter_map(|t| {
             let vol = t.quote_volume.parse::<f64>().unwrap_or(0.0);
             let pct = t.price_change_percent.parse::<f64>().unwrap_or(0.0).abs();
@@ -233,6 +259,36 @@ pub async fn fetch_dynamic_universe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// QO-U1a — el saneamiento mata la basura de testnet medida en vivo:
+    /// mojibake (牛来USDT), triviales (4USDT/AUSDT) y blacklist.
+    #[test]
+    fn qo_u1a_sanitizer_rechaza_basura_testnet() {
+        // El closure vive dentro de fetch_dynamic_universe: replicamos las
+        // reglas aquí como regresión del contrato.
+        let stablecoins = [
+            "USDCUSDT", "FDUSDUSDT", "TUSDUSDT", "BUSDUSDT", "USDPUSDT", "EURUSDT",
+            "DAIUSDT", "AEURUSDT",
+        ];
+        let sane = |s: &str| -> bool {
+            if s.len() < 7 || !s.ends_with("USDT") {
+                return false;
+            }
+            let base = &s[..s.len() - 4];
+            base.len() >= 3
+                && base.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+                && !stablecoins.contains(&s)
+        };
+        // Basura REAL vista en dynamic_config.json del testnet:
+        assert!(!sane("牛来USDT"), "mojibake debe morir");
+        assert!(!sane("4USDT"), "base trivial de 1 carácter");
+        assert!(!sane("AUSDT"), "base trivial de 1 carácter");
+        assert!(!sane("USDCUSDT"), "stablecoin");
+        // Legítimos sobreviven:
+        assert!(sane("BTCUSDT"));
+        assert!(sane("NEARUSDT"));
+        assert!(sane("1000PEPEUSDT"), "bases con dígitos son legítimas");
+    }
 
     #[test]
     fn test_dynamic_ranker_scoring_function() {

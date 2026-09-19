@@ -7,6 +7,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 pub mod fitness;
+pub mod selection_stats;
 pub mod anti_bias_governor;
 pub mod ast_mutator;
 pub mod cma_es;
@@ -24,6 +25,30 @@ pub use crossover_cauchy::EvolutionaryOperators;
 use meta::MetaEvolver;
 pub use moe_neat_arena::{ParetoCandidate, fast_non_dominated_sort};
 use quantum_arena::genome::SuperGenotype as Genotype;
+
+/// MOD3/5-011 (INFORME 14) — macro CMA-ES CONGELADA: fallbacks de los slots
+/// macro del tensor 54D que la evaluación viva inyecta a `process_event`.
+///
+/// Antes eran literales 2024 duplicados inline en DOS bloques (train y OOS)
+/// — el entrenamiento servía un mercado macro que ya no existe y ningún
+/// cambio aquí era visible. Se parametrizan como ÚNICO punto de verdad,
+/// alineados con los defaults de `OmniState::new()` (data-pipeline).
+///
+/// TODO: cablear a omni_state real (MOD3/5-011). Este loop solo recibe
+/// `Arc<GlobalArena>`, cuyo registry NO expone índices macro (nadie los
+/// escribe ahí) — hace falta pasar el `Arc<OmniState>` del host
+/// (god_engine.rs) a `start_evolution_loop` y reemplazar estas consts por
+/// `omni_state.get_features()` en vivo.
+pub mod frozen_macro {
+    pub const DXY: f64 = 104.2;
+    pub const SP500: f64 = 5120.0;
+    pub const NASDAQ: f64 = 18100.0;
+    pub const VIX: f64 = 18.5;
+    pub const US10Y: f64 = 4.25;
+    pub const GOLD: f64 = 2320.0;
+    pub const OIL_WTI: f64 = 81.0;
+    pub const FED_RATE: f64 = 5.25;
+}
 
 pub struct EvolutionEngine {
     arena: Arc<GlobalArena>,
@@ -44,7 +69,6 @@ impl EvolutionEngine {
             .quantum_mutation_rate
             .load(Ordering::Relaxed);
         let meta_evolver = MetaEvolver::new(self.arena.clone());
-        let quantum_evolver = metacortex_engine::QuantumEvolver::new();
         let mut cma_es_optimizer: Option<crate::cma_es::CmaEsOptimizer> = None;
 
         loop {
@@ -255,14 +279,14 @@ impl EvolutionEngine {
                             omni_live[5] = 50.0;
                             omni_live[10] = live_vol * live_ofi.abs();
                             omni_live[11] = 0.0001;
-                            omni_live[21] = 104.2; // dxy
-                            omni_live[22] = 5120.0; // sp500
-                            omni_live[23] = 18100.0; // nasdaq
-                            omni_live[24] = 18.5; // vix
-                            omni_live[25] = 4.25; // us10y
-                            omni_live[26] = 2320.0; // gold
-                            omni_live[27] = 81.0; // oil_wti
-                            omni_live[29] = 5.25; // fed_rate
+                            omni_live[21] = frozen_macro::DXY;
+                            omni_live[22] = frozen_macro::SP500;
+                            omni_live[23] = frozen_macro::NASDAQ;
+                            omni_live[24] = frozen_macro::VIX;
+                            omni_live[25] = frozen_macro::US10Y;
+                            omni_live[26] = frozen_macro::GOLD;
+                            omni_live[27] = frozen_macro::OIL_WTI;
+                            omni_live[29] = frozen_macro::FED_RATE;
                             omni_live[30] = tick.bid_qty - tick.ask_qty;
                             omni_live[31] = (tick.bid_qty - tick.ask_qty) * 1.2;
                             omni_live[39] = live_ofi;
@@ -349,14 +373,14 @@ impl EvolutionEngine {
                             omni_oos[5] = 50.0;
                             omni_oos[10] = live_vol * live_ofi.abs();
                             omni_oos[11] = 0.0001;
-                            omni_oos[21] = 104.2; // dxy
-                            omni_oos[22] = 5120.0; // sp500
-                            omni_oos[23] = 18100.0; // nasdaq
-                            omni_oos[24] = 18.5; // vix
-                            omni_oos[25] = 4.25; // us10y
-                            omni_oos[26] = 2320.0; // gold
-                            omni_oos[27] = 81.0; // oil_wti
-                            omni_oos[29] = 5.25; // fed_rate
+                            omni_oos[21] = frozen_macro::DXY;
+                            omni_oos[22] = frozen_macro::SP500;
+                            omni_oos[23] = frozen_macro::NASDAQ;
+                            omni_oos[24] = frozen_macro::VIX;
+                            omni_oos[25] = frozen_macro::US10Y;
+                            omni_oos[26] = frozen_macro::GOLD;
+                            omni_oos[27] = frozen_macro::OIL_WTI;
+                            omni_oos[29] = frozen_macro::FED_RATE;
                             omni_oos[30] = tick.bid_qty - tick.ask_qty;
                             omni_oos[31] = (tick.bid_qty - tick.ask_qty) * 1.2;
                             omni_oos[39] = live_ofi;
@@ -459,12 +483,21 @@ impl EvolutionEngine {
                             }
                             worst.clamp(0.0, 1.0)
                         };
+                        // MOD3/5-012 (INFORME 14): 3 trades en una ventana de
+                        // 4096 ticks (minutos de mercado) es el mínimo
+                        // estadístico para una señal direccional. El gen
+                        // `min_trades_per_day` del campeón (50.0) exigía aquí
+                        // un ritmo IMPOSIBLE en la ventana corta ⇒ todo genoma
+                        // era INVIABLE ⇒ estancamiento crónico → recocido
+                        // cuántico sin evaluación real. El gen sigue gobernando
+                        // el ritmo DIARIO del motor; en ESTE loop el mínimo se
+                        // acota a 3 para que la aptitud mida y no filtre.
                         let min_trades_required = self
                             .arena
                             .config
                             .min_trades_per_day
                             .load(Ordering::Relaxed)
-                            .max(1.0) as u32;
+                            .clamp(1.0, 3.0) as u32;
                         let normalized_fitness =
                             crate::fitness::compute(&crate::fitness::FitnessInputs {
                                 initial_capital,
@@ -568,20 +601,13 @@ impl EvolutionEngine {
                 // FIX BLOQUEO #7: Colapso cuántico para salir del pozo de estancamiento local
                 let latest_ts = all_ticks.last().map(|t| t.timestamp).unwrap_or(42);
                 use metacortex_engine::consejo_seniors::TradingHorizon;
-                // Add mode depending on the context, defaulting to Scalping if not specified.
-                let mode = TradingHorizon::Scalping; // Or extract from context if available
-                let q_state = quantum_evolver.anneal_and_collapse(latest_ts, 0.25, mode);
-                println!(
-                    "⚛️ [QUANTUM-EVOLVER] Recocido cuántico activado. Energy: {:.4} | Window: {} | Thresh: {:.2} | VolMult: {:.2}",
-                    q_state.energy,
-                    q_state.window_size,
-                    q_state.threshold,
-                    q_state.volume_multiplier
-                );
-                current_alpha.dynamic_atr_min = (q_state.threshold * 0.0005).clamp(0.0001, 0.005);
+                // U-6: motor continuo — un solo modo.
+                let mode = TradingHorizon::Continuous;
+                // QO-M2.1: quantum_evolver DELETED — valor neutro del genoma
+                current_alpha.dynamic_atr_min = 0.0012;
                 current_alpha.target_volatility =
-                    (q_state.volume_multiplier * 0.01).clamp(0.005, 0.08);
-                current_alpha.funding_rate_sensitivity = q_state.funding_weight.clamp(0.0, 3.0);
+                    (1.0f64 * 0.01).clamp(0.005, 0.08);
+                current_alpha.funding_rate_sensitivity = 0.5f64.clamp(0.0, 3.0);
                 // N-02: la micro-mutación del recocido también pasa por el
                 // embudo — nada toca el arena sin sanción del almacén.
                 match quantum_arena::genome_store::GenomeEnvelope::promote(

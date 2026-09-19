@@ -49,32 +49,16 @@ impl QuantumOrderRouter {
         // Reglas de Ruteo Avanzadas (FASE 15)
 
         // 1. Condición de Pánico / Alta Latencia: Si la red es inestable (>500ms)
-        // o el spread es enorme, USAR POST-ONLY O IOC para proteger el capital (Evita Slippage Mortal).
+        // o el spread es enorme, ir directo a MARKET — la velocidad de
+        // aterrizaje es la protección. MOD1/4-016 (auditoría DEC-14): antes
+        // ruteaba a maker-chase (400ms + cancel + query = la ruta MÁS LENTA
+        // justo cuando la red está degradada).
         if latency_ms > 500 || spread_pct > 0.005 {
-            let offset_ticks = if is_long { -2.0 } else { 2.0 };
-            let raw_limit_price = current_price + (offset_ticks * tick_size);
-            // FIX #606 & #739: Cuantizar al múltiplo de tick_size y garantizar precio estrictamente positivo
-            let min_price = tick_size.max(1e-8);
-            let limit_price = if tick_size > 0.0 {
-                ((raw_limit_price / tick_size).round() * tick_size).max(min_price)
-            } else {
-                raw_limit_price.max(min_price)
-            };
-
-            // Tratamos de inyectar liquidez sin cruzar el spread (Maker).
-            println!("🛡️ [QUANTUM ROUTER] High Latency ({}ms) / Spread ({:.2}%). Routing to MAKER CHASE to avoid slippage.", latency_ms, spread_pct * 100.0);
+            println!("🛡️ [QUANTUM ROUTER] High Latency ({}ms) / Spread ({:.2}%). MARKET directo: velocidad de aterrizaje.", latency_ms, spread_pct * 100.0);
             return self
                 .executor
                 .load()
-                .execute_maker_chase(
-                    symbol,
-                    is_long,
-                    quantity,
-                    limit_price,
-                    step_size,
-                    tick_size,
-                    client_order_id,
-                )
+                .execute_raw_qty(symbol, is_long, quantity, step_size)
                 .await;
         }
 

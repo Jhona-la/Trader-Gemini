@@ -141,25 +141,13 @@ impl TensorVoteOrchestrator {
             30_000
         };
 
-        let expected_lifetime_ms = match target_horizon {
-            TradeHorizon::Continuous => {
-                // Sistema continuo universal: la vida esperada de la posición
-                // se interpola por confianza entre el horizonte corto (1x base)
-                // y el extendido (10x base), en vez de fijarse por modo binario.
-                let conf = net_confidence.abs().clamp(0.0, 1.0);
-                let scale = 1.0 + 9.0 * conf;
-                ((base_duration as f64) * scale).max(30_000.0) as u64
-            }
-            TradeHorizon::Scalp => {
-                if net_confidence.abs() > confidence_cutoff {
-                    (base_duration / 2).max(15_000)
-                } else {
-                    base_duration.max(30_000)
-                }
-            }
-            TradeHorizon::Swing => {
-                (base_duration * 10).max(3_600_000)
-            }
+        let expected_lifetime_ms = {
+            // U-6 (MOTOR UNIVERSAL CONTINUO): la vida esperada de la posición
+            // se interpola por confianza entre el horizonte corto (1x base)
+            // y el extendido (10x base) — sin modos binarios de horizonte.
+            let conf = net_confidence.abs().clamp(0.0, 1.0);
+            let scale = 1.0 + 9.0 * conf;
+            ((base_duration as f64) * scale).max(30_000.0) as u64
         };
 
         let raw_long = self
@@ -189,12 +177,18 @@ impl TensorVoteOrchestrator {
         // 0.5). Se deriva del gen propio de confianza mínima
         // (`min_confidence_btc`): el edge mínimo operable es coherente con la
         // confianza mínima que el genoma exige en su gen más conservador.
+        // MOD2/7-012 (INFORME DECIMOCUARTO): el factor ×2 convertía el gen en
+        // SUPERMAYORÍA — con min_conf 0.70 exigía |net| > 0.40 entre 15
+        // estrategias heterogéneas (≈ 70-30) y el consenso era Flat casi
+        // siempre. Pendiente unitaria ×1.0 y techo 0.45: min_conf 0.70 ⇒
+        // cutoff 0.20 (mayoría simple ≈ 60-40). El ML (B3.18) ya gatea la
+        // entrada aguas abajo; el consenso no necesita repetir la supermayoría.
         let min_conf_gene = self
             .arena
             .config
             .min_confidence_btc
             .load(std::sync::atomic::Ordering::Relaxed);
-        let cutoff_floor = ((min_conf_gene - 0.50) * 2.0).clamp(0.0, 0.90);
+        let cutoff_floor = ((min_conf_gene - 0.50) * 1.0).clamp(0.0, 0.45);
         let long_cutoff = (long_dist * 2.0).clamp(cutoff_floor, 0.95);
         let short_cutoff = (short_dist * 2.0).clamp(cutoff_floor, 0.95);
 
@@ -223,14 +217,6 @@ impl TensorVoteOrchestrator {
                 horizon: target_horizon,
             }
         }
-    }
-
-    pub fn evaluate_scalp_consensus(&self) -> TensorDecision {
-        self.evaluate_continuous_consensus()
-    }
-
-    pub fn evaluate_swing_consensus(&self) -> TensorDecision {
-        self.evaluate_continuous_consensus()
     }
 
     /// D-117: Consenso de Scalp escopado por activo real
@@ -348,7 +334,10 @@ impl TensorVoteOrchestrator {
             .arena
             .registry
             .get_value_or(&format!("{}_min_confidence", symbol), base_min_conf);
-        let cutoff_floor = ((min_conf_gene - 0.50) * 2.0).clamp(0.0, 0.90);
+        // MOD2/7-012: misma corrección que en evaluate_horizon_consensus —
+        // ×1.0 (no ×2) y techo 0.45: mayoría simple, no supermayoría. Con
+        // min_conf 0.70 ⇒ cutoff 0.20 en vez de 0.40.
+        let cutoff_floor = ((min_conf_gene - 0.50) * 1.0).clamp(0.0, 0.45);
         let raw_base = self
             .arena
             .config

@@ -543,8 +543,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // DIAGNÓSTICO SIGNAL-PATH: post-engine.
             {
                 use signal_engine::SignalType;
-                let si = &engine.last_scalp_intent[cid];
-                let wi = &engine.last_swing_intent[cid];
+                // U-2: bandas del continuo (antes intents scalp/swing).
+                let si = &engine.last_fast_intent[cid];
+                let wi = &engine.last_slow_intent[cid];
                 if si.signal != SignalType::Flat {
                     diag.intents_scalp += 1;
                 }
@@ -709,11 +710,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         println!(
-            "🔬 [SIGNAL-PATH] council_vetoes={} opened={} swing_vetoes={} swing_opened={} | intents={} (scalp={} swing={}) orders={} max_intent_conf={:.4} max_obi={:.4} tech_thr={:.6} max_micro_trend={:.6}",
+            "🔬 [SIGNAL-PATH] council_vetoes={} opened={} | intents={} (fast={} slow={}) orders={} max_intent_conf={:.4} max_obi={:.4} tech_thr={:.6} max_micro_trend={:.6}",
             engine.diag_council_vetoes,
             engine.diag_opened,
-            engine.diag_swing_vetoes,
-            engine.diag_swing_opened,
             diag.intents,
             diag.intents_scalp,
             diag.intents_swing,

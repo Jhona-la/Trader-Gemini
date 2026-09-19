@@ -2048,32 +2048,62 @@ impl SuperGenotype {
     pub const SL_A_BOUNDS: (f64, f64) = (-10.5, -3.0);
     pub const SL_B_BOUNDS: (f64, f64) = (-0.2, 0.35);
 
+    /// C-05 (INFORME 14, FASE 0): τ de DECISIÓN acotada a la banda operativa
+    /// [TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS] (30s–12h). Con la τ degenerada
+    /// de la fusión espectral (escala 31 ≈ 146 años), la extrapolación
+    /// exponencial de `HorizonCurve::eval` fuera de banda EXPLOTA (SL/TP de
+    /// más del 100% del precio: los brackets +65%/−32% del informe). El
+    /// espectro puede VER más allá de la banda; NINGÚN lector del genoma
+    /// evalúa las curvas fuera de ella.
+    #[inline]
+    fn tau_in_operating_band(tau_ms: f64) -> f64 {
+        use crate::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+        if tau_ms.is_finite() && tau_ms > 0.0 {
+            tau_ms.clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS)
+        } else {
+            TAU_ANCHOR_FAST_MS
+        }
+    }
+
     #[inline]
     pub fn tp_at_tau(&self, tau_ms: f64) -> f64 {
-        self.tp_horizon_curve.eval(tau_ms)
+        self.tp_horizon_curve
+            .eval(Self::tau_in_operating_band(tau_ms))
     }
 
     #[inline]
     pub fn sl_at_tau(&self, tau_ms: f64) -> f64 {
-        self.sl_horizon_curve.eval(tau_ms)
+        self.sl_horizon_curve
+            .eval(Self::tau_in_operating_band(tau_ms))
     }
 
     #[inline]
     pub fn kelly_at_tau(&self, tau_ms: f64) -> f64 {
-        self.kelly_horizon_curve.eval(tau_ms).clamp(0.01, 3.0)
+        self.kelly_horizon_curve
+            .eval(Self::tau_in_operating_band(tau_ms))
+            .clamp(0.01, 3.0)
     }
 
     #[inline]
     pub fn trail_params_at_tau(&self, tau_ms: f64) -> (f64, f64, f64) {
-        let mult = self.trail_mult_horizon_curve.eval(tau_ms).clamp(0.01, 20.0);
-        let act = self.trail_act_horizon_curve.eval(tau_ms).clamp(0.01, 20.0);
-        let step = self.trail_step_horizon_curve.eval(tau_ms).clamp(0.01, 20.0);
+        // C-05: las tres curvas se evalúan en la MISMA τ de banda — sin el
+        // clamp, un τ degenerado separaba mult/act/step a decades de distancia.
+        let tau = Self::tau_in_operating_band(tau_ms);
+        let mult = self.trail_mult_horizon_curve.eval(tau).clamp(0.01, 20.0);
+        let act = self.trail_act_horizon_curve.eval(tau).clamp(0.01, 20.0);
+        let step = self.trail_step_horizon_curve.eval(tau).clamp(0.01, 20.0);
         (mult, act, step)
     }
 
     #[inline]
     pub fn obi_threshold_at_tau(&self, tau_ms: f64) -> f64 {
-        self.obi_horizon_curve.eval(tau_ms).clamp(0.01, 1.0)
+        // MOD3/5-005 (INFORME 14, C-09): el techo del lector es 0.95, igual
+        // que la banda evolutiva del gen (mutate 0.05..1.0). Un techo de 0.60
+        // hacía invisible el 25% superior de la banda — el campeón con OBI
+        // 0.797 se leía como 0.60.
+        self.obi_horizon_curve
+            .eval(Self::tau_in_operating_band(tau_ms))
+            .clamp(0.05, 0.95)
     }
 
     /// X-005 (REHAB-1): invariante RR SOBRE CURVAS — TP(τ) ≥ SL(τ)·MIN_RR_MUTATION

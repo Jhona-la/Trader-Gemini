@@ -161,22 +161,74 @@ async fn main() -> Result<(), String> {
     let pop_size = num_islands * island_size;
     let generations = 6;
 
+    // U-5 (MOTOR UNIVERSAL CONTINUO): islas por BANDA del continuo temporal,
+    // no por estrategia. La especialización fija el EXTREMO de su banda en
+    // las CURVAS TP/SL (autoritativas desde C-10: fijar `scalp_tp_base`/
+    // `swing_tp_base` se AUTODESTRUÍA en el roundtrip to_vector/from_vector
+    // que re-deriva las anclas — la evolución de islas llevaba ese bug).
     let island_names = [
-        "Isla 0 (Scalp L2)",
-        "Isla 1 (Swing Macro)",
-        "Isla 2 (Mean Reversion)",
+        "Isla 0 (Banda Rápida τ<19m — microestructura)",
+        "Isla 1 (Banda Lenta τ>19m — tendencia macro)",
+        "Isla 2 (Mean Reversion & SMR)",
         "Isla 3 (Híbrido Cuántico)",
     ];
 
+    /// Fija el extremo `fast` o `slow` de las curvas TP/SL con el RR dado,
+    /// preservando el otro extremo del campeón, y re-deriva las anclas.
+    fn specialize_band_tp_sl(ind: &mut SuperGenotype, fast: bool, sl_base: f64, rr: f64) {
+        use quantum_arena::temporal_spectrum::{
+            HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS,
+        };
+        let (keep_sl, keep_tp) = if fast {
+            (
+                ind.sl_horizon_curve.eval(TAU_ANCHOR_SLOW_MS),
+                ind.tp_horizon_curve.eval(TAU_ANCHOR_SLOW_MS),
+            )
+        } else {
+            (
+                ind.sl_horizon_curve.eval(TAU_ANCHOR_FAST_MS),
+                ind.tp_horizon_curve.eval(TAU_ANCHOR_FAST_MS),
+            )
+        };
+        if fast {
+            ind.sl_horizon_curve = HorizonCurve::through_two_points(
+                TAU_ANCHOR_FAST_MS,
+                sl_base,
+                TAU_ANCHOR_SLOW_MS,
+                keep_sl,
+            );
+            ind.tp_horizon_curve = HorizonCurve::through_two_points(
+                TAU_ANCHOR_FAST_MS,
+                sl_base * rr,
+                TAU_ANCHOR_SLOW_MS,
+                keep_tp,
+            );
+        } else {
+            ind.sl_horizon_curve = HorizonCurve::through_two_points(
+                TAU_ANCHOR_FAST_MS,
+                keep_sl,
+                TAU_ANCHOR_SLOW_MS,
+                sl_base,
+            );
+            ind.tp_horizon_curve = HorizonCurve::through_two_points(
+                TAU_ANCHOR_FAST_MS,
+                keep_tp,
+                TAU_ANCHOR_SLOW_MS,
+                sl_base * rr,
+            );
+        }
+        ind.derive_anchors_from_curves();
+    }
+
     // Inicializar 4 islas segregadas:
-    // Isla 0: Especialistas Scalping L2 (altos OBI/OFI, TP/SL micro, capital split scalp alto)
-    // Isla 1: Especialistas Swing Macro (alta persistencia macro, Hurst > 0.55, RR >= 3:1, capital swing alto)
-    // Isla 2: Especialistas Mean Reversion & SMR (Z-Score y bandas de Bollinger, balance 50/50)
-    // Isla 3: Especialistas Híbridos Cuánticos (Equilibrio de Confluencia, Mínimo DD, Semilla Campeón)
+    // Isla 0: Banda Rápida (microestructura: OBI/OFI altos, TP/SL micro en τ corto)
+    // Isla 1: Banda Lenta (persistencia macro, Hurst > 0.55, RR >= 3:1 en τ largo)
+    // Isla 2: Mean Reversion & SMR (Z-Score y bandas de Bollinger, balance 50/50)
+    // Isla 3: Híbridos Cuánticos (Equilibrio de Confluencia, Mínimo DD, Semilla Campeón)
     let current_champion = SuperGenotype::load_or_default();
     let mut islands: Vec<Vec<SuperGenotype>> = Vec::with_capacity(num_islands);
 
-    // Isla 0: Especialistas Scalping L2 de Alta Velocidad (OBI/OFI dinámicos [0.18, 0.38])
+    // Isla 0: Banda Rápida — microestructura de alta velocidad (OBI/OFI [0.18, 0.38])
     let mut island_0 = Vec::with_capacity(island_size);
     for _ in 0..island_size {
         let mut ind = current_champion.mutate_cmaes(0.15);
@@ -185,35 +237,36 @@ async fn main() -> Result<(), String> {
         ind.dynamic_ema_trend = rand::random_range(0.00003..0.00012);
         ind.ml_threshold_long = rand::random_range(0.52..0.65);
         ind.ml_threshold_short = rand::random_range(0.52..0.65);
-        ind.scalp_sl_base = rand::random_range(0.0012..0.0022);
-        ind.scalp_tp_base = ind.scalp_sl_base * rand::random_range(2.0..3.0);
+        let sl_fast = rand::random_range(0.0012..0.0022);
+        specialize_band_tp_sl(&mut ind, true, sl_fast, rand::random_range(2.0..3.0));
         ind.capital_split_scalp = rand::random_range(0.55..0.75);
         ind.global_leverage = rand::random_range(25.0..35.0);
         island_0.push(ind);
     }
     islands.push(island_0);
 
-    // Isla 1: Especialistas Swing Macro Trend (Hurst > 0.55, TP/SL > 3.0:1)
+    // Isla 1: Banda Lenta — tendencia macro (Hurst > 0.55, RR ≥ 3:1 en τ largo)
     let mut island_1 = Vec::with_capacity(island_size);
     for _ in 0..island_size {
         let mut ind = current_champion.mutate_cmaes(0.15);
         ind.trend_threshold = rand::random_range(0.20..0.40);
         ind.hurst_trend_threshold = rand::random_range(0.55..0.70);
-        ind.swing_sl_base = rand::random_range(0.006..0.015);
-        ind.swing_tp_base = ind.swing_sl_base * rand::random_range(3.0..5.0);
+        let sl_slow = rand::random_range(0.006..0.015);
+        specialize_band_tp_sl(&mut ind, false, sl_slow, rand::random_range(3.0..5.0));
         ind.capital_split_scalp = rand::random_range(0.20..0.40);
         ind.global_leverage = rand::random_range(15.0..25.0);
         island_1.push(ind);
     }
     islands.push(island_1);
 
-    // Isla 2: Especialistas Mean Reversion & SMR
+    // Isla 2: Mean Reversion & SMR (banda rápida con RR moderado — la reversión
+    // vive en τ corto)
     let mut island_2 = Vec::with_capacity(island_size);
     for _ in 0..island_size {
         let mut ind = current_champion.mutate_cmaes(0.15);
         ind.dynamic_ema_trend = rand::random_range(0.00002..0.00008);
-        ind.scalp_sl_base = rand::random_range(0.0012..0.0020);
-        ind.scalp_tp_base = ind.scalp_sl_base * rand::random_range(2.0..2.8);
+        let sl_fast = rand::random_range(0.0012..0.0020);
+        specialize_band_tp_sl(&mut ind, true, sl_fast, rand::random_range(2.0..2.8));
         ind.dynamic_obi_threshold = rand::random_range(0.20..0.35);
         ind.range_threshold = rand::random_range(0.40..0.70);
         ind.capital_split_scalp = 0.50;
@@ -314,7 +367,7 @@ async fn main() -> Result<(), String> {
                         tick.timestamp,
                     );
                     let mut omni = [0.0f64; 54];
-                    let swing_feats = engine.feature_engines[tick.coin_id].get_swing_features();
+                    let swing_feats = engine.feature_engines[tick.coin_id].get_universal_features();
                     for (idx, &f) in swing_feats.iter().enumerate() {
                         if idx < 54 {
                             omni[idx] = f as f64;

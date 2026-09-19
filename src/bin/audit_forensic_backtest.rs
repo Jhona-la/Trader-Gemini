@@ -661,12 +661,12 @@ async fn main() {
             let features = core.feature_engines[0].get_features();
             let ml_prob = core.last_ml_prob;
             let regime = core.feature_engines[0].get_market_regime();
-            let scalp_intent = core.last_scalp_intent[0];
+            let fast_intent = core.last_fast_intent[0]; // U-2: banda rápida del continuo
             let current_cap = arena.unified_capital.load(Ordering::Relaxed);
             let ml_threshold = arena.config.ml_threshold_long.load(Ordering::Relaxed);
 
-            println!("🔍 [DEEP TRACE] i={}: atr={:.8} ml_prob={:.4} ml_thresh={:.4} regime={:?} scalp_sig={:?} cap={:.2} obi={:.4} hurst={:.4}", 
-                i, atr_pct, ml_prob, ml_threshold, regime, scalp_intent.signal, current_cap, real_obi, features[1]);
+            println!("🔍 [DEEP TRACE] i={}: atr={:.8} ml_prob={:.4} ml_thresh={:.4} regime={:?} fast_sig={:?} cap={:.2} obi={:.4} hurst={:.4}",
+                i, atr_pct, ml_prob, ml_threshold, regime, fast_intent.signal, current_cap, real_obi, features[1]);
         }
 
         // Count opens

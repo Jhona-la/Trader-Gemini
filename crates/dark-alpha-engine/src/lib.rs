@@ -638,7 +638,7 @@ impl DarkAlphaEngine {
         }
     }
 
-    /// Crear modelo con tamaños por defecto correspondientes a get_swing_features (34)
+    /// Crear modelo con tamaños por defecto correspondientes a get_universal_features (34)
     pub fn default_model() -> Self {
         Self::new(34, 64, 32)
     }
@@ -806,10 +806,23 @@ impl DarkAlphaEngine {
                 // Si el normalizador per-coin aún no acumuló 500 observaciones:
                 // - Si el canal global entrenado está disponible (count >= 20), usar transform del canal global mientras se actualiza el local.
                 // - Si no hay canal global disponible, usar normalize() en el normalizador local hasta completar 500 ticks.
-                // Una vez alcanzado count >= 500, se congela estrictamente con transform() garantizando cero drift.
+                // MOD2/7-035 (DEC-14): alcanzado el count >= 500, se transforma con los
+                // estadísticos del ENTRENAMIENTO (channel_normalizers) — el input
+                // distribution shift del vivo es estructural: el NN debe ver el MISMO
+                // rango de features para el que fue entrenado. Los estadísticos
+                // per-coin acumulados en vivo se desvinculan del modelo (media/std
+                // divergen del espacio que los pesos aprendieron → paridad
+                // train/serve rota). El per-coin queda sólo como fallback de
+                // cold-start cuando el canal entrenado no existe.
                 self.buf_scaled[i] = if self.freeze_normalizers {
                     if normalizers[i].count >= 500.0 {
-                        normalizers[i].transform(raw)
+                        if i < self.channel_normalizers.len()
+                            && self.channel_normalizers[i].count >= 20.0
+                        {
+                            self.channel_normalizers[i].transform(raw)
+                        } else {
+                            normalizers[i].transform(raw)
+                        }
                     } else if i < self.channel_normalizers.len()
                         && self.channel_normalizers[i].count >= 20.0
                     {

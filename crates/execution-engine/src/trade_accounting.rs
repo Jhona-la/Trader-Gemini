@@ -25,6 +25,11 @@
 use std::sync::LazyLock;
 use std::sync::Mutex;
 
+/// Ruta del diario persistente de fills/entradas.
+const FILLS_JOURNAL_PATH: &str = "data/trade_fills.jsonl";
+/// Ruta del diario de contexto de posiciones (B3.1).
+const POSITION_JOURNAL_PATH: &str = "data/position_journal.jsonl";
+
 /// Un cierre por pierna de bracket, con todo el contexto disponible.
 #[derive(Debug, Clone)]
 pub struct BracketClose {
@@ -135,7 +140,83 @@ pub fn is_bracket_close_fill(order_type: &str, client_order_id: &str) -> bool {
         || bracket_close_kind_by_client_id(client_order_id).is_some()
 }
 
-/// Registra un cierre: append al diario persistente + cola para Kelly.
+/// MOD1/4-012 (INFORME-14): escritura de diario en hilo de FONDO.
+///
+/// Los handlers del user-data stream corrían `std::fs` write DENTRO del hilo
+/// del WebSocket privado — cada disparo de TP/SL y cada fill de entrada
+/// bloqueaba el runtime que debe procesar fills en microsegundos. Ahora las
+/// líneas formateadas se envían por un canal mpsc que un hilo dedicado
+/// (`trade-fills-io`) drena y escribe. El handle del archivo se abre UNA vez
+/// y se conserva (antes se re-abría por línea). Si el hilo drenador muere
+/// (imposible en práctica: sólo termina si el Sender se cae), se cae a la
+/// escritura síncrona vieja — la evidencia nunca se pierde por esta vía.
+static FILLS_LINE_TX: LazyLock<std::sync::mpsc::Sender<String>> =
+    LazyLock::new(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        // Hilo demonio por diseño: el proceso vive mientras el motor viva.
+        let spawned = std::thread::Builder::new()
+            .name("trade-fills-io".to_string())
+            .spawn(move || drain_fills_journal(rx));
+        if let Err(ref e) = spawned {
+            println!(
+                "⚠️ [TRADE-FILLS] no se pudo spawn del hilo de I/O ({}): las escrituras del diario volverán al hilo llamador",
+                e
+            );
+        }
+        tx
+    });
+
+fn drain_fills_journal(rx: std::sync::mpsc::Receiver<String>) {
+    use std::io::Write;
+    let _ = std::fs::create_dir_all("data");
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(FILLS_JOURNAL_PATH)
+        .ok();
+    while let Ok(line) = rx.recv() {
+        if file.is_none() {
+            // Disco/directorio reapareció: reabrir antes de soltar la línea.
+            let _ = std::fs::create_dir_all("data");
+            file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(FILLS_JOURNAL_PATH)
+                .ok();
+        }
+        match file.as_mut() {
+            Some(f) => {
+                let _ = f.write_all(line.as_bytes());
+            }
+            None => {
+                // Sin handle: escritura directa de emergencia.
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(FILLS_JOURNAL_PATH)
+                {
+                    let _ = f.write_all(line.as_bytes());
+                }
+            }
+        }
+    }
+}
+
+/// Envía una línea al hilo de I/O; cae a escritura síncrona si el canal murió.
+fn journal_append(line: String) {
+    if FILLS_LINE_TX.send(line.clone()).is_err() {
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(FILLS_JOURNAL_PATH)
+        {
+            let _ = f.write_all(line.as_bytes());
+        }
+    }
+}
+
+/// Registra un cierre: append al diario persistente (hilo de fondo) + cola para Kelly.
 pub fn record_bracket_close(rec: BracketClose) {
     // Diario primero: la evidencia sobrevive aunque el motor caiga.
     let net = rec.pnl_gross - rec.fees;
@@ -154,14 +235,7 @@ pub fn record_bracket_close(rec: BracketClose) {
         net,
         rec.slippage_bps
     );
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("data/trade_fills.jsonl")
-    {
-        use std::io::Write;
-        let _ = f.write_all(line.as_bytes());
-    }
+    journal_append(line);
     if let Ok(mut q) = PENDING.lock() {
         if q.len() < 1024 {
             q.push(rec);
@@ -208,22 +282,59 @@ pub fn drain_bracket_closes() -> Vec<BracketClose> {
 /// ANTES de que el fill del bracket llegue al stream. El diario de entradas
 /// (position_journal.jsonl, B3.1) existe precisamente para cargar ese
 /// contexto: devuelve el ÚLTIMO px de entrada registrado para símbolo+lado.
+/// MOD1/4-012 (INFORME-14): caché del diario de contexto con firma
+/// (mtime, len). Antes, cada disparo de TP/SL re-leía y re-parseaba el
+/// position_journal.jsonl COMPLETO dentro del hilo del WebSocket — a 10k
+/// entradas eran 10k parses serde bloqueando el procesamiento de fills.
+/// Ahora: un `metadata` barato por llamada; sólo si la firma cambió (append
+/// nuevo o compactación del host) se re-lee y re-parsea.
+struct JournalCache {
+    loaded: bool,
+    sig: Option<(std::time::SystemTime, u64)>,
+    /// (sym, was_long, ts, px) en orden de archivo.
+    entries: Vec<(String, bool, u64, f64)>,
+}
+
+static JOURNAL_CACHE: LazyLock<Mutex<JournalCache>> = LazyLock::new(|| {
+    Mutex::new(JournalCache {
+        loaded: false,
+        sig: None,
+        entries: Vec::new(),
+    })
+});
+
 pub fn last_journal_entry_px(symbol: &str, was_long: bool) -> Option<f64> {
-    let content = std::fs::read_to_string("data/position_journal.jsonl").ok()?;
-    let mut best: Option<(u64, f64)> = None;
-    for line in content.lines().rev() {
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        let sym = v.get("sym").and_then(|x| x.as_str()).unwrap_or("");
-        let long = v.get("long").and_then(|x| x.as_bool()).unwrap_or(false);
-        if sym != symbol || long != was_long {
-            continue;
+    let sig = std::fs::metadata(POSITION_JOURNAL_PATH)
+        .ok()
+        .and_then(|m| m.modified().ok().map(|t| (t, m.len())));
+    let mut cache = JOURNAL_CACHE
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    if !cache.loaded || cache.sig != sig {
+        let content = std::fs::read_to_string(POSITION_JOURNAL_PATH).unwrap_or_default();
+        let mut entries = Vec::new();
+        for line in content.lines() {
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let sym = v.get("sym").and_then(|x| x.as_str()).unwrap_or("");
+            let long = v.get("long").and_then(|x| x.as_bool()).unwrap_or(false);
+            let px = v.get("px").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            let ts = v.get("ts").and_then(|x| x.as_u64()).unwrap_or(0);
+            if px > 0.0 {
+                entries.push((sym.to_string(), long, ts, px));
+            }
         }
-        let px = v.get("px").and_then(|x| x.as_f64()).unwrap_or(0.0);
-        let ts = v.get("ts").and_then(|x| x.as_u64()).unwrap_or(0);
-        if px > 0.0 && best.map(|(b, _)| ts >= b).unwrap_or(true) {
-            best = Some((ts, px));
+        cache.sig = sig;
+        cache.entries = entries;
+        cache.loaded = true;
+    }
+    // Último px por ts (empate → el más tardío en orden de archivo), idéntico
+    // a la semántica del escaneo .rev() original.
+    let mut best: Option<(u64, f64)> = None;
+    for (sym, long, ts, px) in cache.entries.iter() {
+        if sym == symbol && *long == was_long && best.map(|(b, _)| *ts >= b).unwrap_or(true) {
+            best = Some((*ts, *px));
         }
     }
     best.map(|(_, px)| px)
@@ -238,17 +349,11 @@ pub fn record_entry_fill(
     is_maker: bool,
     commission: f64,
 ) {
+    // MOD1/4-012: el append va al canal del hilo de I/O, no al hilo del WS.
     let line = format!(
         "{{\"kind\":\"ENTRY\",\"ts\":{ts_ms},\"sym\":\"{symbol}\",\"long\":{long},\"qty\":{qty:.8},\"px\":{price:.6},\"maker\":{is_maker},\"fee\":{commission:.6}}}\n"
     );
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("data/trade_fills.jsonl")
-    {
-        use std::io::Write;
-        let _ = f.write_all(line.as_bytes());
-    }
+    journal_append(line);
 }
 
 #[cfg(test)]

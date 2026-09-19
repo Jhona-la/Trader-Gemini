@@ -451,7 +451,12 @@ impl QuantumConfig {
         use std::sync::atomic::Ordering;
         let a = self.obi_curve_a.load(Ordering::Relaxed);
         let b = self.obi_curve_b.load(Ordering::Relaxed);
-        (a + b * tau_ms.max(1e-6).ln()).exp().clamp(0.10, 0.60)
+        // MOD3/5-005 (INFORME 14, C-09): techo 0.95, igual que la banda
+        // evolutiva del gen (0.05..1.0). El techo anterior de 0.60 hacía
+        // invisible el 25% superior de la banda: el campeón con OBI 0.797
+        // llegaba al gate leído como 0.60 — el genoma evaluado no era el
+        // operado.
+        (a + b * tau_ms.max(1e-6).ln()).exp().clamp(0.10, 0.95)
     }
 
     /// Actualiza la curva continua de TP a partir de anclas rápida y lenta

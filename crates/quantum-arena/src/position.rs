@@ -24,6 +24,11 @@ pub struct Position {
     pub tp_price: AtomicF64,
     pub sl_price: AtomicF64,
     pub ml_prediction: AtomicF64,
+    /// QO-E2b — tensor 54D congelado EN LA APERTURA: el productor del
+    /// dataset NN lo llena al abrir y lo consume el cierre (target =
+    /// retorno neto realizado) — SIN snapshot de entrada el label sería
+    /// fuga (features post-hoc prediciendo su propio pasado).
+    pub nn_entry_tensor: std::sync::Mutex<Vec<f64>>,
     pub confidence: AtomicF64,
     pub entry_fee: AtomicF64,
     /// REHAB-1b: τ DOMINANTE del espectro temporal en el instante de la
@@ -78,6 +83,7 @@ impl Default for Position {
             tp_price: AtomicF64::new(0.0),
             sl_price: AtomicF64::new(0.0),
             ml_prediction: AtomicF64::new(0.0),
+            nn_entry_tensor: std::sync::Mutex::new(Vec::new()),
             confidence: AtomicF64::new(0.0),
             entry_fee: AtomicF64::new(0.0),
             entry_tau_ms: AtomicU64::new(0),

@@ -313,10 +313,12 @@ pub fn reconcile_arena(
                 let (was_long, entry_p, qty, m, entry_fee_paid) =
                     coin.positions.position.close_with_fee();
                 if m > 0.0 {
-                    let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
+                    // MOD6/8-010: resta atómica — el RMW load→store perdía
+                    // actualizaciones concurrentes del cierre del core y de
+                    // los rollbacks async del host.
                     arena
                         .used_margin
-                        .store((cur_u - m).max(0.0), std::sync::atomic::Ordering::Relaxed);
+                        .fetch_sub(m, std::sync::atomic::Ordering::Relaxed);
                 }
 
                 if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
@@ -332,14 +334,9 @@ pub fn reconcile_arena(
                     let net_realized_pnl = gross_pnl - close_fee;
                     let net_trade_pnl = net_realized_pnl - entry_fee_paid;
 
-                    // D-447: coin.metrics es la fuente unificada para el espectro continuo
+                    // D-447: coin.metrics es la fuente unificada para el espectro continuo.
+                    // U-1: los espejos swing/scalp (triple contabilización) extirpados.
                     coin.metrics
-                        .pnl_realized
-                        .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                    coin.swing
-                        .pnl_realized
-                        .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                    coin.scalp
                         .pnl_realized
                         .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
                     arena
@@ -353,12 +350,6 @@ pub fn reconcile_arena(
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                         as f64
                         + 1.0;
-                    coin.swing
-                        .trade_count
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    coin.scalp
-                        .trade_count
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                     let old_wr = coin
                         .metrics
@@ -366,12 +357,6 @@ pub fn reconcile_arena(
                         .load(std::sync::atomic::Ordering::Relaxed);
                     let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
                     coin.metrics
-                        .win_rate
-                        .store(new_wr, std::sync::atomic::Ordering::Relaxed);
-                    coin.swing
-                        .win_rate
-                        .store(new_wr, std::sync::atomic::Ordering::Relaxed);
-                    coin.scalp
                         .win_rate
                         .store(new_wr, std::sync::atomic::Ordering::Relaxed);
 
@@ -455,11 +440,10 @@ pub fn reconcile_arena(
                 if target_abs <= 1e-6 {
                     let (_, _, _, old_margin, _) = coin.positions.position.close_with_fee();
                     if old_margin > 0.0 {
-                        let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
-                        arena.used_margin.store(
-                            (cur_u - old_margin).max(0.0),
-                            std::sync::atomic::Ordering::Relaxed,
-                        );
+                        // MOD6/8-010: resta atómica (idem phantom cleanup).
+                        arena
+                            .used_margin
+                            .fetch_sub(old_margin, std::sync::atomic::Ordering::Relaxed);
                     }
                 } else {
                     // B3.14 (auditoría/repro demo_v26): el drift confirma que
