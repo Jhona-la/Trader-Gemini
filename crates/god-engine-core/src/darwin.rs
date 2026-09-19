@@ -173,6 +173,116 @@ impl Genotype {
     }
 }
 
+/// CERT-M2-H05 — Sintetizador OMNI causal para el GA de Darwin.
+///
+/// El GA copiaba `get_universal_features()[0..34]` en `omni[0..34]`:
+/// el slot de funding recibía aceleración (micro[11]) y el bloque macro
+/// quedaba en 0 — el GA optimizaba genes contra un tensor que producción
+/// JAMÁS ve. Este sintetizador deriva el 54D del PROPIO tick de forma
+/// causal (mismo contrato y convenciones que run_backtest_native::omni_sim
+/// y que producción con feeds secundarios offline):
+///   - spreads: sólo la venue local (binance futures) — el resto 0.0
+///     (paridad con "secondary WS feeds offline")
+///   - OFI/CVD/taker del imbalance bid/ask REAL del tick
+///   - funding/L&S/F&G/VIX/skew/micro_vol derivados del retorno PREVIO
+///     (causal: calculado con el mid anterior, nunca el futuro)
+///   - anclas macro estáticas neutras (idénticas al nativo)
+/// Las swing-features NO se inyectan: el core las computa internamente
+/// desde los ticks (feature_engines) — inyectarlas era doble conteo.
+pub(crate) struct OmniSynth {
+    prev_mid: Vec<f64>,
+    ewma_turnover: Vec<f64>,
+}
+
+impl OmniSynth {
+    pub(crate) fn new(n_coins: usize) -> Self {
+        Self {
+            prev_mid: vec![0.0; n_coins],
+            ewma_turnover: vec![0.0; n_coins],
+        }
+    }
+
+    pub(crate) fn tick(
+        &mut self,
+        coin_id: usize,
+        bid: f64,
+        ask: f64,
+        bid_qty: f64,
+        ask_qty: f64,
+    ) -> [f64; 54] {
+        let mut omni = [0.0f64; 54];
+        let mid = if bid > 0.0 && ask > 0.0 { (bid + ask) * 0.5 } else { 0.0 };
+        let prev_mid = self.prev_mid[coin_id];
+        let prev_ret = if mid > 0.0 && prev_mid > 0.0 {
+            ((mid - prev_mid) / prev_mid).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+
+        let spread_pct = if mid > 0.0 { (ask - bid) / mid } else { 0.0 };
+        let ofi = if bid_qty + ask_qty > 0.0 {
+            (bid_qty - ask_qty) / (bid_qty + ask_qty)
+        } else {
+            0.0
+        };
+        let turnover = (bid_qty + ask_qty) * mid;
+        self.ewma_turnover[coin_id] = if self.ewma_turnover[coin_id] <= 0.0 {
+            turnover
+        } else {
+            self.ewma_turnover[coin_id] * 0.98 + turnover * 0.02
+        };
+        let cvd_unit = if self.ewma_turnover[coin_id] > 1e-12 {
+            (bid_qty - ask_qty) * mid / self.ewma_turnover[coin_id]
+        } else {
+            0.0
+        };
+
+        // 0..10 — cotizaciones cross-exchange (sólo venue local viva)
+        omni[0] = 0.0;
+        omni[1] = (spread_pct * 10.0).clamp(-5.0, 5.0); // binance_futures
+        // 2..10 = 0.0 — paridad feeds secundarios offline
+        omni[10] = ofi.abs() * 10.0; // liquidaciones proxy
+
+        // 11..30 — sentiment/tasas/macro dinámicos del retorno PREVIO
+        omni[11] = (prev_ret * 0.005).clamp(-0.001, 0.001); // funding
+        omni[12] = (self.ewma_turnover[coin_id] / 1.0e6).clamp(0.0, 100.0); // OI proxy
+        omni[13] = (1.0 + prev_ret * 5.0).clamp(0.5, 2.5); // long/short
+        omni[14] = (50.0 + prev_ret * 500.0).clamp(10.0, 90.0); // fear&greed
+        omni[18] = cvd_unit.clamp(-5.0, 5.0); // exchange inflows
+        omni[19] = (-cvd_unit).clamp(-5.0, 5.0); // exchange outflows
+        omni[21] = 104.2; // dxy (ancla estática — paridad nativo)
+        omni[22] = 5120.0; // sp500
+        omni[23] = 18100.0; // nasdaq
+        omni[24] = (15.0 + prev_ret.abs() * 200.0).clamp(10.0, 80.0); // vix
+        omni[25] = 4.25; // us10y
+        omni[26] = 2320.0; // gold
+        omni[27] = 81.0; // oil_wti
+        omni[29] = 5.5; // fed funds
+
+        // 30..54 — derivados y flujo
+        omni[30] = cvd_unit.clamp(-10.0, 10.0); // spot_cvd (normalizado)
+        omni[31] = omni[30] * 1.2; // futures_cvd (convención nativa)
+        omni[32] = if ask_qty > 0.0 {
+            (bid_qty / ask_qty).clamp(0.1, 10.0)
+        } else {
+            1.0
+        };
+        omni[33] = prev_ret * mid * 0.001; // basis premium
+        omni[34] = mid * 1.01; // liq cluster shorts
+        omni[35] = mid * 0.99; // liq cluster longs
+        omni[39] = ofi; // order_flow_imbalance
+        omni[40] = (15.0 + prev_ret.abs() * 300.0).clamp(20.0, 150.0); // dvol
+        omni[41] = (-prev_ret * 2.0).clamp(-0.25, 0.25); // 25Δ skew
+        omni[43] = mid; // max pain
+        omni[49] = prev_ret.abs() * 100.0; // micro_volatility
+
+        if mid > 0.0 {
+            self.prev_mid[coin_id] = mid;
+        }
+        omni
+    }
+}
+
 pub struct DarwinDaemon {
     pub live_arena: Arc<GlobalArena>,
 }
@@ -243,6 +353,11 @@ impl DarwinDaemon {
                     let mut engine = GodEngineCore::new(arena.clone());
                     let mut max_drawdown = 0.0;
                     let mut peak_capital = initial_capital;
+                    // CERT-M2-H05: tensor 54D CAUSAL del propio tick — mismo
+                    // contrato que producción/nativo (ver OmniSynth). Antes:
+                    // copia de swing-features en omni[0..34] con funding=
+                    // aceleración y macro=0.
+                    let mut synth = OmniSynth::new(active_coins);
 
                     for tick in &master_stream {
                         arena.update_market_data(
@@ -253,11 +368,13 @@ impl DarwinDaemon {
                             tick.ask_qty,
                             tick.timestamp,
                         );
-                        let mut dynamic_omni = [0.0f64; 54];
-                        let swing_feats = engine.feature_engines[tick.coin_id].get_universal_features();
-                        for (i, &f) in swing_feats.iter().enumerate() {
-                            dynamic_omni[i] = f as f64;
-                        }
+                        let dynamic_omni = synth.tick(
+                            tick.coin_id,
+                            tick.bid_price,
+                            tick.ask_price,
+                            tick.bid_qty,
+                            tick.ask_qty,
+                        );
 
                         let (_new_pos, closed_pos, _) = engine.process_tick(
                             tick.coin_id,

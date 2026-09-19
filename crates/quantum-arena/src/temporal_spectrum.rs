@@ -235,12 +235,24 @@ impl TemporalSpectrum {
             s.momentum_z = z;
             s.signal = z.clamp(-5.0, 5.0).tanh();
 
-            // Fusión paridad-de-riesgo: w ∝ 1/vol_de_desviación.
-            let w = if s.ewma_dev_vol > 1e-12 {
-                1.0 / s.ewma_dev_vol
-            } else {
-                0.0
-            };
+            // CERT-M3-H01 — FUSIÓN POR CONTENIDO INFORMATIVO (|Hurst−0.5|).
+            //
+            // La paridad-de-riesgo anterior (w ∝ 1/ewma_dev_vol) degeneraba:
+            // la vol de sorpresa de las escalas lentas es sistemáticamente
+            // menor ⇒ SIEMPRE pesaban más (el sesgo que el propio comentario
+            // C-05 documentaba abajo para la τ dominante, replicado aquí en
+            // la fusión que consumen arbitración/consejo/teleonomía).
+            //
+            // DERIVACIÓN: cada escala ya entrega su señal z-normalizada
+            // (comparables entre sí). Bajo H0 (martingala) TODAS aportan ruido
+            // idéntico — el peso correcto es el contenido de información de
+            // cada escala, y `persistence` ∈ [0,1] (EMA de persistencia de
+            // signo de la desviación) es su medida directa: el análogo
+            // discreto de |Hurst − 0.5| para procesos fraccionalmente
+            // integrados. persistence=0.5 ⇒ puro ruido ⇒ peso suelo (5%,
+            // conserva diversificación del promedio de ensamble); 1.0 ⇒
+            // tendencia pura ⇒ peso pleno.
+            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
             w_sum += w;
             let contrib = w * s.signal;
             w_sig_sum += contrib;
@@ -249,10 +261,13 @@ impl TemporalSpectrum {
                 dominant = s.tau_ms;
             }
         }
-        self.fused_score = if w_sum > 0.0 {
+        self.fused_score = if w_sum > 1e-12 {
             (w_sig_sum / w_sum).clamp(-1.0, 1.0)
         } else {
-            0.0
+            // H0-correcto: sin información medible, promedio uniforme de las
+            // señales (ruido promediado, varianza ↓ por CLT) — jamás 0 plano.
+            let n = self.scales.len() as f64;
+            (self.scales.iter().map(|s| s.signal).sum::<f64>() / n).clamp(-1.0, 1.0)
         };
         // C-05 (INFORME 14, FASE 0) — τ DEGENERADA. La fusión por paridad de
         // riesgo (w ∝ 1/ewma_dev_vol) degenera: la vol de sorpresa de las

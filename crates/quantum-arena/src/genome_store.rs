@@ -79,8 +79,16 @@ fn history_dir() -> String {
 /// X-001 (REHAB-2): se escribe SIEMPRE — es una VISTA de compatibilidad, no
 /// un linaje. Antes solo en entorno compartido: con default demo, los
 /// loaders legacy habrían quedado congelados en el último estado compartido.
-fn legacy_mirror() -> Option<String> {
-    Some("config_dir/genotypes/active_genome.json".to_string())
+///
+/// CERT-F-14: la ruta era COMPARTIDA entre entornos — el fallback de
+/// emergencia de `genome.rs` podía cargar en producción lo que demo
+/// escribió en el espejo (herencia cross-env silenciosa, exactamente lo
+/// que D-651 prohibió para active.json). Ahora el espejo también es
+/// per-env; sin entorno válido, no se escribe NI lee espejo alguno.
+pub fn legacy_mirror() -> Option<String> {
+    current_env()
+        .ok()
+        .map(|env| format!("config_dir/genotypes/active_genome.{}.json", env))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
