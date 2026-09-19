@@ -391,13 +391,19 @@ pub fn reconcile_arena(
                     10.0
                 };
                 let margin = notional / lev;
+                // CERT-M4-H05: imputar entry_fee de la adopción con el fee
+                // taker estándar (0.04% VIP default — el arena config no es
+                // accesible desde aquí sin refactor de firma; el fee exacto
+                // se corrige en la primera reconciliación con tradeId).
+                // Antes entry_fee=0 → Kelly sobreestimaba en adoptadas.
+                let adopted_entry_fee = notional * 0.0004;
                 coin.positions.position.open_with_horizon(
                     is_long,
                     price,
                     abs_qty,
                     margin,
                     now_ms,
-                    0.0,
+                    adopted_entry_fee,
                     0.0,
                     quantum_arena::position::PositionHorizon::Continuous,
                 );

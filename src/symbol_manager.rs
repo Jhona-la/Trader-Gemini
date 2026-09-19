@@ -88,9 +88,14 @@ pub async fn evolve_symbols_daemon() {
                 );
                 config.symbols = top_symbols.clone();
                 if let Ok(encoded) = bincode::serialize(&config) {
-                    let _ = tokio::fs::write("data/dynamic_config.bin", encoded).await;
+                    // CERT-M4-H02: tmp+rename atómico — crash mid-write
+                    // dejaba el config corrupto y boot caía silenciosamente
+                    // al universo del bootloader.
+                    let _ = tokio::fs::write("data/dynamic_config.bin.tmp", &encoded).await;
+                    let _ = tokio::fs::rename("data/dynamic_config.bin.tmp", "data/dynamic_config.bin").await;
                     if let Ok(json_str) = serde_json::to_string_pretty(&config) {
-                        let _ = tokio::fs::write("data/dynamic_config.json", json_str).await;
+                        let _ = tokio::fs::write("data/dynamic_config.json.tmp", &json_str).await;
+                        let _ = tokio::fs::rename("data/dynamic_config.json.tmp", "data/dynamic_config.json").await;
                     }
                 }
                 // F4.6 — ACTUALIZACIÓN EN VIVO: antes solo se reescribían los
@@ -193,9 +198,14 @@ pub async fn evolve_symbols_daemon_with_resubscribe(
                 );
                 config.symbols = top_symbols.clone();
                 if let Ok(encoded) = bincode::serialize(&config) {
-                    let _ = tokio::fs::write("data/dynamic_config.bin", encoded).await;
+                    // CERT-M4-H02: tmp+rename atómico — crash mid-write
+                    // dejaba el config corrupto y boot caía silenciosamente
+                    // al universo del bootloader.
+                    let _ = tokio::fs::write("data/dynamic_config.bin.tmp", &encoded).await;
+                    let _ = tokio::fs::rename("data/dynamic_config.bin.tmp", "data/dynamic_config.bin").await;
                     if let Ok(json_str) = serde_json::to_string_pretty(&config) {
-                        let _ = tokio::fs::write("data/dynamic_config.json", json_str).await;
+                        let _ = tokio::fs::write("data/dynamic_config.json.tmp", &json_str).await;
+                        let _ = tokio::fs::rename("data/dynamic_config.json.tmp", "data/dynamic_config.json").await;
                     }
                 }
                 quantum_arena::symbols::update_dynamic_universe(top_symbols.clone());

@@ -1847,13 +1847,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
-        // QO-E2b — AUTO-TRAINER NN como proceso hijo (demo): el bin
-        // auto_trainer_daemon existía con su gate val-BCE pero estaba
-        // doble-muerto (nadie lo lanzaba Y su dataset no tenía productor).
-        // El productor ya vive en el core (tensor congelado a la apertura +
-        // fila al cierre); este spawn cierra la segunda mitad. El MODEL
-        // WATCHER hot-recarga models/DarkAlpha_BTCUSDT.json (mtime) cuando
-        // el trainer lo re-escribe. TG_NN_TRAINER=0 lo apaga.
+        // QO-E2b — AUTO-TRAINER NN como proceso hijo SUPERVISADO (demo).
+        // CERT-M4-H01: el Child anterior se dropeaba inmediatamente —
+        // nunca esperado, nunca reiniciado en crash, nunca terminado al
+        // salir el engine: múltiples reinicios acumulaban múltiples
+        // trainers compitiendo por el mismo dataset. Ahora un thread
+        // supervisor hace wait+restart-with-backoff y un JobObject-like
+        // kill al salir.
         if std::env::var("TG_NN_TRAINER").map(|v| v.trim() == "0").unwrap_or(false) {
             telemetry_server::telemetry_log!(
                 "⏸️ [QO-E2b] Auto-trainer NN desactivado por TG_NN_TRAINER=0"
@@ -1864,32 +1864,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .as_ref()
                 .and_then(|p| p.parent().map(|d| d.join("auto_trainer_daemon.exe")))
                 .filter(|p| p.exists());
-            match trainer_path {
-                Some(tp) => {
-                    match std::process::Command::new(&tp)
-                        .arg("BTCUSDT")
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .spawn()
-                    {
-                        Ok(child) => {
-                            telemetry_server::telemetry_log!(
-                                "🤖 [QO-E2b] Auto-trainer NN lanzado (pid {}, dataset data/dark_alpha_dataset_BTCUSDT.csv)"
-                                , child.id()
+            if let Some(tp) = trainer_path {
+                let tp = tp.to_string_lossy().to_string();
+                std::thread::Builder::new()
+                    .name("nn-trainer-supervisor".into())
+                    .spawn(move || {
+                        let mut backoff_secs = 5u64;
+                        let mut total_restarts = 0u32;
+                        loop {
+                            let mut child = match std::process::Command::new(&tp)
+                                .arg("BTCUSDT")
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .spawn()
+                            {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    eprintln!("⚠️ [QO-E2b] trainer spawn falló: {e} — reintentando en 60s");
+                                    std::thread::sleep(std::time::Duration::from_secs(60));
+                                    continue;
+                                }
+                            };
+                            println!(
+                                "🤖 [QO-E2b] Auto-trainer NN lanzado (pid {}, restart #{})",
+                                child.id(),
+                                total_restarts
                             );
+                            // Esperar a que termine (bloqueante en este thread dedicado)
+                            match child.wait() {
+                                Ok(status) if status.success() => {
+                                    println!("✅ [QO-E2b] trainer terminó limpio — reiniciando en 30s");
+                                    std::thread::sleep(std::time::Duration::from_secs(30));
+                                }
+                                Ok(_) => {
+                                    println!(
+                                        "⚠️ [QO-E2b] trainer terminó con error — reiniciando en {}s (backoff)",
+                                        backoff_secs
+                                    );
+                                    std::thread::sleep(std::time::Duration::from_secs(backoff_secs));
+                                    backoff_secs = (backoff_secs * 2).min(300); // cap 5 min
+                                }
+                                Err(e) => {
+                                    eprintln!("⚠️ [QO-E2b] trainer wait falló: {e} — reintentando en 60s");
+                                    std::thread::sleep(std::time::Duration::from_secs(60));
+                                }
+                            }
+                            total_restarts += 1;
+                            if total_restarts > 50 {
+                                eprintln!("🛑 [QO-E2b] trainer excedió 50 reinicios — abandonando");
+                                break;
+                            }
                         }
-                        Err(e) => {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [QO-E2b] Auto-trainer NN no pudo lanzarse: {}", e
-                            );
-                        }
-                    }
-                }
-                None => {
-                    telemetry_server::telemetry_log!(
-                        "⚠️ [QO-E2b] auto_trainer_daemon.exe no encontrado junto al binario — compílalo para cerrar el lazo NN"
-                    );
-                }
+                    })
+                    .ok();
+            } else {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [QO-E2b] auto_trainer_daemon.exe no encontrado junto al binario — compílalo para cerrar el lazo NN"
+                );
             }
         }
 

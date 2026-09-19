@@ -469,8 +469,14 @@ impl LiveEvolutionDaemon {
             // Un t-stat entre 0.0 y +1.0 representa retornos positivos leves en muestras pequeñas.
             // Para activar Kill Switch por degradación del edge, el t-stat debe ser estadísticamente NEGATIVO
             // con significancia (t < -1.50, p < 0.07 de que el edge negativo sea casual).
+            // CERT-M8-H02: el `!self.is_demo` anterior desarmaba el kill-switch
+            // exactamente en el único entorno donde la autoevolución está
+            // ARMADA por defecto y las mutaciones son vivas — un genoma
+            // degradado en demo seguía tradando hasta que el (mucho más
+            // lento) rollback watchdog acumulara 20 observaciones. El
+            // kill-switch es una red de seguridad del TRADING, no de la
+            // promoción: debe ser env-independiente.
             if self.ewma_sharpe < -1.50
-                && !self.is_demo
                 && !self.arena.kill_switch_active.load(Ordering::Relaxed)
             {
                 println!(
@@ -940,70 +946,35 @@ impl LiveEvolutionDaemon {
     /// Elimina outliers (ruido de microestructura) y estima el Sharpe real.
     // FIX #719: Filtrado previo de retornos finitos y guarda de resultado finito en RANSAC Sharpe
     fn calculate_ransac_sharpe(returns: &[f64]) -> f64 {
+        // CERT-M8-H03: el RANSAC anterior trimaba ±2σ outliers ANTES de
+        // computar el t-stat — removiendo exactamente la cola negativa
+        // gorda que EVIDENCIA degradación. Los tres controles que consumen
+        // este estadístico (kill-switch, DSR gate, rollback watchdog) eran
+        // todos optimistas por construcción. Ahora: el t-stat se computa
+        // sobre la MUESTRA COMPLETA (sin trim). El inlier_mean RANSAC se
+        // mantiene como estimación robusta de LOCALIZACIÓN reportada
+        // alongside, pero el test de significancia ve la cola completa.
         let clean_returns: Vec<f64> = returns.iter().copied().filter(|r| r.is_finite()).collect();
-        if clean_returns.is_empty() {
+        if clean_returns.len() < 10 {
             return 0.0;
         }
 
-        // 1. Encontrar la media y desviación estándar para detectar outliers
-        let mut mean = 0.0;
-        for &r in &clean_returns {
-            mean += r;
-        }
-        mean /= clean_returns.len() as f64;
+        // Media y desviación sobre la MUESTRA COMPLETA
+        let n_all = clean_returns.len() as f64;
+        let full_mean = clean_returns.iter().sum::<f64>() / n_all;
+        let full_var = clean_returns.iter().map(|r| (r - full_mean).powi(2)).sum::<f64>() / (n_all - 1.0);
+        let full_std = full_var.sqrt();
 
-        let mut variance = 0.0;
-        for &r in &clean_returns {
-            variance += (r - mean).powi(2);
-        }
-        let std_dev = (variance / clean_returns.len() as f64).sqrt();
-
-        if std_dev <= 1e-12 || !std_dev.is_finite() {
+        if full_std <= 1e-12 || !full_std.is_finite() {
             return 0.0;
         }
 
-        // 2. RANSAC Inlier threshold: 2.0 Desviaciones estándar
-        let threshold = 2.0 * std_dev;
-
-        let mut inlier_sum = 0.0;
-        let mut inlier_count = 0;
-        let mut inlier_variance = 0.0;
-
-        // Primera pasada: Calcular media de inliers
-        for &r in &clean_returns {
-            if (r - mean).abs() <= threshold {
-                inlier_sum += r;
-                inlier_count += 1;
-            }
+        // t-stat sobre muestra completa: ve la cola gorda negativa
+        let t_stat = (full_mean / full_std) * (n_all - 1.0).sqrt();
+        if t_stat.is_finite() {
+            t_stat
+        } else {
+            0.0
         }
-
-        if inlier_count == 0 {
-            return 0.0;
-        }
-        let inlier_mean = inlier_sum / inlier_count as f64;
-
-        // Segunda pasada: Calcular desviación estándar de inliers
-        for &r in &clean_returns {
-            if (r - mean).abs() <= threshold {
-                inlier_variance += (r - inlier_mean).powi(2);
-            }
-        }
-        let inlier_std = (inlier_variance / inlier_count as f64).sqrt();
-
-        if inlier_std <= 1e-12 || !inlier_std.is_finite() {
-            return 0.0;
-        }
-
-        // FASE 2 (verdad estadística): ANTES se anualizaba con sqrt(365*1440)
-        // asumiendo retornos por minuto, pero `returns_history` se muestrea
-        // por TRADE (deltas de pnl_realized cada 500ms). Eso inflaba el
-        // "Sharpe" ~724x y disparaba hot-swaps sobre ruido puro.
-        // Ahora devolvemos un t-statístico (media/std × sqrt(N)): mide la
-        // significancia estadística del edge SIN asumir frecuencia alguna.
-        // Umbral de comparación: t >= 2.0 (confianza ~95%, estándar
-        // estadístico, no un tuning arbitrario).
-        let n = inlier_count as f64;
-        let t_stat = (inlier_mean / inlier_std) * n.sqrt();
-        if t_stat.is_finite() { t_stat } else { 0.0 }
     }
 }
