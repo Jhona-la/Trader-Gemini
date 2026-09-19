@@ -870,10 +870,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Spawn Dynamic Symbol Manager (Top 10 Evolver)
-    tokio::spawn(async move {
-        quantum_engine::symbol_manager::evolve_symbols_daemon().await;
-    });
 
     let mut streams = String::new();
     for (i, sym) in symbols.iter().enumerate() {
@@ -953,6 +949,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )));
 
     let (tx_ws_control, mut rx_ws_control) = tokio::sync::mpsc::channel::<()>(1);
+
+    // Spawn Dynamic Symbol Manager (Top 10 Evolver)
+    // QO-U1b — UNIVERSO FANTASMA: el WS jamás re-suscribía al rotar el
+    // universo — los símbolos rotados entraban al arena/registry pero
+    // NUNCA recibían ticks (streams congelados al arranque). Ahora el
+    // daemon recibe el ArcSwap de la URL del WS y el canal de control:
+    // al rotar, re-construye la lista de streams y fuerza re-conexión.
+    {
+        let ws_url_for_sm = Arc::clone(&ws_url);
+        let ws_ctrl_for_sm = tx_ws_control.clone();
+        tokio::spawn(async move {
+            quantum_engine::symbol_manager::evolve_symbols_daemon_with_resubscribe(
+                ws_url_for_sm,
+                ws_ctrl_for_sm,
+            )
+            .await;
+        });
+    }
+
     let (tx_events, rx_events) = crossbeam_channel::bounded::<Vec<u8>>(5_000);
     let rx_events_dropper = rx_events.clone();
 
@@ -2137,6 +2152,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         for (sym, _cid) in syms_oi.iter() {
                             if let Some(f) = fmap.get(sym) {
                                 arena_oi.registry.set_scoped(sym, "funding_rate", *f);
+                            }
+                        }
+                    }
+                    // QO-U2 — sentimiento de masas al registry (contrarian):
+                    // multitud muy long (L/S alto) o takers comprando
+                    /// desesperadamente (ratio alto) = riesgo de squeeze.
+                    if let Ok(lsmap) = omni_for_funding.ls_account_by_symbol.read() {
+                        for (sym, _cid) in syms_oi.iter() {
+                            if let Some(r) = lsmap.get(sym) {
+                                arena_oi.registry.set_scoped(sym, "ls_account_ratio", *r);
+                            }
+                        }
+                    }
+                    if let Ok(tkmap) = omni_for_funding.taker_ratio_by_symbol.read() {
+                        for (sym, _cid) in syms_oi.iter() {
+                            if let Some(r) = tkmap.get(sym) {
+                                arena_oi.registry.set_scoped(sym, "taker_ratio", *r);
                             }
                         }
                     }

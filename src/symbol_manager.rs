@@ -116,6 +116,135 @@ pub async fn evolve_symbols_daemon() {
     }
 }
 
+/// QO-U1b — Daemon del symbol manager CON re-suscripción del WS.
+///
+/// HALLAZGO (auditoría de APIs): `loop_streams_str` se congelaba al
+/// arranque — al rotar el universo, los símbolos nuevos entraban al
+/// arena/registry pero JAMÁS recibían ticks: la conexión WS seguía
+/// suscrita a los streams viejos (universo fantasma). El loop de
+/// re-conexión ya relee `ws_url.load()` fresco en cada reconnect y
+/// `tx_ws_control` fuerza la señal — sólo faltaba que ALGUIEN actualizara
+/// la URL al rotar.
+///
+/// Al confirmar `changed`: reconstruye la lista de streams para el nuevo
+/// universo (mismo formato que el arranque: `{sym}@trade/depth5/kline_1h`
+/// + `!forceOrder@arr`), actualiza el ArcSwap y dispara la re-conexión.
+pub async fn evolve_symbols_daemon_with_resubscribe(
+    ws_url: std::sync::Arc<arc_swap::ArcSwap<String>>,
+    tx_ws_control: tokio::sync::mpsc::Sender<()>,
+) {
+    println!("🌍 [SYMBOL MANAGER] Radar Cuántico Global activo (con re-suscripción WS, 1H)...");
+
+    let mut interval = tokio::time::interval(Duration::from_secs(3600));
+
+    loop {
+        interval.tick().await;
+
+        println!(
+            "🔄 [SYMBOL MANAGER] Recalculando Top Dinámico usando métricas reales (REST API)..."
+        );
+        let limit = quantum_arena::symbols::get_active_universe_size();
+        let is_testnet = crate::env_manager::EnvManager::is_demo_env();
+
+        let pool_limit = 1000;
+        let specs_res =
+            data_pipeline::dynamic_ranker::fetch_dynamic_universe(pool_limit, is_testnet).await;
+
+        if let Ok(specs) = specs_res {
+            let current: Vec<String> = quantum_arena::symbols::get_active_universe();
+            let raw_top_symbols: Vec<String> = specs.iter().map(|s| s.symbol.clone()).collect();
+            let roster = load_model_roster();
+            let top_symbols =
+                merge_universe_with_hysteresis(&current, &raw_top_symbols, limit, &roster);
+
+            let is_testnet_env = crate::env_manager::EnvManager::is_demo_env();
+            let config_bytes = tokio::fs::read("data/dynamic_config.bin")
+                .await
+                .unwrap_or_default();
+            let mut config: TensorConfig = match bincode::deserialize(&config_bytes) {
+                Ok(cfg) => cfg,
+                Err(_) => {
+                    let config_str = tokio::fs::read_to_string("data/dynamic_config.json")
+                        .await
+                        .unwrap_or_else(|_| "".to_string());
+                    serde_json::from_str(&config_str).unwrap_or_else(|_| TensorConfig {
+                        symbols: top_symbols.clone(),
+                        is_testnet: is_testnet_env,
+                    })
+                }
+            };
+
+            let mut changed = false;
+            if config.symbols.len() != top_symbols.len() {
+                changed = true;
+            } else {
+                for (a, b) in config.symbols.iter().zip(top_symbols.iter()) {
+                    if a != b {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
+            if changed && !top_symbols.is_empty() {
+                println!(
+                    "🔄 [SYMBOL MANAGER] Cambio de Régimen! Nuevos símbolos: {:?}",
+                    top_symbols
+                );
+                config.symbols = top_symbols.clone();
+                if let Ok(encoded) = bincode::serialize(&config) {
+                    let _ = tokio::fs::write("data/dynamic_config.bin", encoded).await;
+                    if let Ok(json_str) = serde_json::to_string_pretty(&config) {
+                        let _ = tokio::fs::write("data/dynamic_config.json", json_str).await;
+                    }
+                }
+                quantum_arena::symbols::update_dynamic_universe(top_symbols.clone());
+                quantum_arena::symbol_registry::update_registry(specs);
+                println!(
+                    "✅ [SYMBOL MANAGER] Universo vivo + registro actualizados ({} símbolos)",
+                    top_symbols.len()
+                );
+
+                // ══ QO-U1b: RE-SUSCRIPCIÓN DEL WEBSOCKET ═════════════════
+                // Reconstruir la lista de streams para el NUEVO universo y
+                // actualizar la URL que el loop de reconnect lee fresco.
+                let mut streams = String::new();
+                for (i, sym) in top_symbols.iter().enumerate() {
+                    streams.push_str(sym);
+                    streams.push_str("@trade/");
+                    streams.push_str(sym);
+                    streams.push_str("@depth5/");
+                    streams.push_str(sym);
+                    streams.push_str("@kline_1h");
+                    if i < top_symbols.len() - 1 {
+                        streams.push('/');
+                    }
+                }
+                streams.push_str("/!forceOrder@arr");
+                let base_ws = if is_testnet_env {
+                    "wss://stream.binancefuture.com/stream"
+                } else {
+                    "wss://fstream.binance.com/stream"
+                };
+                let new_url = format!("{}?streams={}", base_ws, streams);
+                ws_url.store(std::sync::Arc::new(new_url));
+                // Forzar re-conexión: el loop aborta la conexión actual y
+                // relee la URL fresca (ya actualizada arriba).
+                let _ = tx_ws_control.try_send(());
+                println!(
+                    "🔌 [QO-U1b] WS re-suscripción: {} símbolos — el universo fantasma muere aquí",
+                    top_symbols.len()
+                );
+            }
+        } else if let Err(e) = specs_res {
+            println!(
+                "⚠️ [SYMBOL MANAGER] Fallo al recuperar universo dinámico: {}",
+                e
+            );
+        }
+    }
+}
+
 /// B3.37 — ROSTER de modelos validados: símbolos con `models/{SYM}_MOTOR.json`
 /// activo (los `_SCALP_CANDIDATE.json` NO cuentan — aún no pasaron el gate
 /// cross-month). Se lee del FILESYSTEM (no de GLOBAL_FORESTS) porque el

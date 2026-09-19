@@ -83,6 +83,11 @@ pub struct MarketSnapshotPayload {
     pub liquidation_severity: f64,
     pub open_interest_norm: f64,
     pub spoof_score: f64,
+    /// QO-U2 — SENTIMIENTO CONTRARIAN de masas: L/S account ratio (la
+    /// multitud minorista; >3 muy long, <0.3 muy short) y taker buy/sell
+    /// ratio (flujo agresivo). Exclusivos del asiento Ente.
+    pub crowd_ls_ratio: f64,
+    pub crowd_taker_ratio: f64,
 }
 
 impl MarketSnapshotPayload {
@@ -364,6 +369,33 @@ impl SeniorAgent for SeniorEnteMercado {
         }
         if spoof > 0.7 {
             entity_factor *= 0.85; // muro que se evapora: el libro miente
+        }
+        // QO-U2 — CONTRARIAN: la multitud MUY a favor de nuestra dirección
+        // es riesgo de squeeze (todos saliendo por la misma puerta). L/S>3
+        // y entramos long: ×0.8; L/S<0.33 y entramos short: ×0.8. El flujo
+        // taker extremo (>2.5 o <0.4) en NUESTRA dirección: ya llegó tarde.
+        let ls = if payload.crowd_ls_ratio.is_finite() {
+            payload.crowd_ls_ratio.clamp(0.0, 20.0)
+        } else {
+            1.0
+        };
+        let tk = if payload.crowd_taker_ratio.is_finite() {
+            payload.crowd_taker_ratio.clamp(0.0, 20.0)
+        } else {
+            1.0
+        };
+        let dir_sign = safe_signum(payload.intended_direction);
+        if dir_sign > 0.0 && ls > 3.0 {
+            entity_factor *= 0.8; // multitud ya long: squeeze risk
+        }
+        if dir_sign < 0.0 && ls < 0.33 {
+            entity_factor *= 0.8; // multitud ya short: squeeze risk
+        }
+        if dir_sign > 0.0 && tk > 2.5 {
+            entity_factor *= 0.85; // takers ya compraron: llegamos tarde
+        }
+        if dir_sign < 0.0 && tk < 0.4 {
+            entity_factor *= 0.85; // takers ya vendieron: llegamos tarde
         }
         let entity_factor = entity_factor.max(0.3); // piso: nunca anula solo
         let dir = safe_signum(payload.intended_direction);
@@ -1071,6 +1103,8 @@ mod tests {
             liquidation_severity: 0.0,
             open_interest_norm: 0.0,
             spoof_score: 0.0,
+            crowd_ls_ratio: 1.0,
+            crowd_taker_ratio: 1.0,
         }
     }
 
@@ -1110,6 +1144,8 @@ mod tests {
             liquidation_severity: 0.0,
             open_interest_norm: 0.0,
             spoof_score: 0.0,
+            crowd_ls_ratio: 1.0,
+            crowd_taker_ratio: 1.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -1185,6 +1221,8 @@ mod tests {
             liquidation_severity: 0.0,
             open_interest_norm: 0.0,
             spoof_score: 0.0,
+            crowd_ls_ratio: 1.0,
+            crowd_taker_ratio: 1.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);

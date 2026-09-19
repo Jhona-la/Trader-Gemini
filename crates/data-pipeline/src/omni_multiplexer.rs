@@ -69,6 +69,12 @@ pub struct OmniState {
     pub funding_by_symbol: std::sync::RwLock<std::collections::HashMap<String, f64>>,
     /// Bandera del primer sync (sólo log).
     pub first_funding_sync: std::sync::atomic::AtomicBool,
+    /// QO-U2 — SENTIMIENTO DE MASAS per-símbolo: long/short account ratio
+    /// (la MULTITUD: cuentas minoristas) y taker buy/sell ratio (flujo
+    /// agresivo real). Endpoints /futures/data/* SIN auth, 5m, 30d de
+    /// historia. Contrarian: multitud muy long = riesgo de squeeze.
+    pub ls_account_by_symbol: std::sync::RwLock<std::collections::HashMap<String, f64>>,
+    pub taker_ratio_by_symbol: std::sync::RwLock<std::collections::HashMap<String, f64>>,
 }
 
 impl Default for OmniState {
@@ -137,6 +143,8 @@ impl OmniState {
             macro_last_success_ms: AtomicU64::new(0),
             funding_by_symbol: std::sync::RwLock::new(std::collections::HashMap::new()),
             first_funding_sync: std::sync::atomic::AtomicBool::new(true),
+            ls_account_by_symbol: std::sync::RwLock::new(std::collections::HashMap::new()),
+            taker_ratio_by_symbol: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
     }
 
@@ -684,6 +692,64 @@ pub async fn run_sentiment_onchain_poller(state: Arc<OmniState>) {
                             state
                                 .agg_open_interest
                                 .store(safe_oi.to_bits(), Ordering::Relaxed);
+                        }
+                    }
+                }
+            }
+        }
+        // QO-U2 — SENTIMIENTO DE MASAS: L/S account ratio + taker ratio
+        // para los símbolos del roster. Endpoints /futures/data/* SIN auth
+        // (5m, ~30d). La MULTITUD muy long = contrarian: riesgo de squeeze.
+        // Los símbolos se leen del mapa de funding (ya rotado por el
+        // universe manager): ~26 requests × 2 endpoints × peso 1 = barato.
+        let roster_syms: Vec<String> = state
+            .funding_by_symbol
+            .read()
+            .map(|m| m.keys().cloned().take(30).collect())
+            .unwrap_or_default();
+        for sym in &roster_syms {
+            let ls_url = format!(
+                "{}/futures/data/topLongShortAccountRatio?symbol={}&period=5m&limit=1",
+                base_url, sym
+            );
+            if let Ok(res) = client.get(&ls_url).send().await {
+                if let Ok(json) = res.json::<Value>().await {
+                    if let Some(arr) = json.as_array() {
+                        if let Some(last) = arr.last() {
+                            if let Some(ratio_str) =
+                                last.get("longShortRatio").and_then(|v| v.as_str())
+                            {
+                                if let Ok(r) = ratio_str.parse::<f64>() {
+                                    if r.is_finite() && r > 0.0 {
+                                        if let Ok(mut m) = state.ls_account_by_symbol.write() {
+                                            m.insert(sym.clone(), r.clamp(0.01, 20.0));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let tk_url = format!(
+                "{}/futures/data/takerlongshortRatio?symbol={}&period=5m&limit=1",
+                base_url, sym
+            );
+            if let Ok(res) = client.get(&tk_url).send().await {
+                if let Ok(json) = res.json::<Value>().await {
+                    if let Some(arr) = json.as_array() {
+                        if let Some(last) = arr.last() {
+                            if let Some(ratio_str) =
+                                last.get("buySellRatio").and_then(|v| v.as_str())
+                            {
+                                if let Ok(r) = ratio_str.parse::<f64>() {
+                                    if r.is_finite() && r > 0.0 {
+                                        if let Ok(mut m) = state.taker_ratio_by_symbol.write() {
+                                            m.insert(sym.clone(), r.clamp(0.01, 20.0));
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

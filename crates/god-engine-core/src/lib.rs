@@ -3670,6 +3670,15 @@ impl GodEngineCore {
                                 .arena
                                 .registry
                                 .get_for_coin_or(coin_id, "spoof_score", 0.0),
+                            // QO-U2: sentimiento de masas contrarian
+                            crowd_ls_ratio: self
+                                .arena
+                                .registry
+                                .get_scoped_value_or(&sym, "ls_account_ratio", 1.0),
+                            crowd_taker_ratio: self
+                                .arena
+                                .registry
+                                .get_scoped_value_or(&sym, "taker_ratio", 1.0),
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let senior_sigs = self

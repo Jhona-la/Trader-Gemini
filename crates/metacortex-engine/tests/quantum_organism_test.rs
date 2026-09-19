@@ -28,6 +28,8 @@ fn test_quantum_organism_components() {
             liquidation_severity: 0.0,
             open_interest_norm: 0.0,
             spoof_score: 0.0,
+            crowd_ls_ratio: 1.0,
+            crowd_taker_ratio: 1.0,
     };
     let result = consejo.deliberar(&healthy_payload, 0.65);
     assert!(
