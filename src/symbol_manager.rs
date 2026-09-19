@@ -225,7 +225,7 @@ pub async fn evolve_symbols_daemon_with_resubscribe(
                     streams.push_str(sym);
                     streams.push_str("@depth5/");
                     streams.push_str(sym);
-                    streams.push_str("@kline_1h");
+                    streams.push_str("@kline_1m");
                     if i < top_symbols.len() - 1 {
                         streams.push('/');
                     }

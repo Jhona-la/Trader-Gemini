@@ -879,7 +879,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         streams.push_str(sym);
         streams.push_str("@depth5/");
         streams.push_str(sym);
-        streams.push_str("@kline_1h");
+        streams.push_str("@kline_1m");
 
         if i < symbols.len() - 1 {
             streams.push('/');
@@ -1583,8 +1583,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // X-010: la rama incluye el flag global del watchdog —
                     // muerte silenciosa del feed (5s sin datos) cuenta como
                     // strike aunque la última latencia medida estuviera sana.
-                    if lat > lat_thresh || quantum_arena::feed_health::is_stalled() {
+                    // CERT-M4-H04: el stall flag POR SÍ SOLO ya NO basta para
+                    // el strike 3/3 — una desconexión transitoria de red (WS
+                    // backoff capped 5s pero DNS+reconnect >15s) convertía
+                    // en flatten-all-at-market en el peor spread. Ahora el
+                    // stall cuenta strike SÓLO si la latencia MEDIDA también
+                    // está breach (evidencia de degradación real, no sólo
+                    // transport). El flag puro genera WARNING, no strike.
+                    let stalled = quantum_arena::feed_health::is_stalled();
+                    if lat > lat_thresh {
                         latency_strikes += 1;
+                    } else if stalled && lat > lat_thresh / 2 {
+                        // stall + latencia media elevada: degradación parcial
+                        latency_strikes += 1;
+                    } else if stalled {
+                        // stall puro: warning sin strike (transport, no datos)
+                        if latency_strikes == 0 {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [IMMUNE] WS stalled pero latencia medida OK ({:.0}ms) — strike NO aplicado (sólo transport)"
+                            , lat);
+                        }
+                        // no reset ni increment: mantener estado
                     } else {
                         latency_strikes = 0;
                     }

@@ -650,7 +650,20 @@ fn live_envelope_gate(
         1
     } else if operable {
         let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
-        core_leverage.clamp(1, 20).min(cap)
+        // CERT-M8-C01 — PARIDAD SIZING BT↔VIVO: el host (god_engine.rs
+        // ~3512) computa `lev_from_risk = (0.05 · kelly_frac) / sl_at_
+        // tau(τ_entry)` y luego `.min(cap)`. El replay ANTES usaba
+        // `core_leverage.clamp(1,20).min(cap)` (pre-C-08) — sin kelly_frac
+        // scaling, sin stop-distance normalization: un genoma certificado
+        // a leverage L tradearía a OTRO L en demo. Ahora la MISMA fórmula.
+        let kelly_frac = envelope.risk_fraction(env_z, env_k);
+        let tau_entry = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
+        let sl_frac = arena
+            .config
+            .sl_at_tau(if tau_entry > 0.0 { tau_entry } else { 30_000.0 });
+        let risk_budget = 0.05 * kelly_frac;
+        let lev_from_risk = (risk_budget / sl_frac.max(1e-4)).clamp(1.0, 20.0);
+        ((lev_from_risk as u32).min(cap)).max(1)
     } else {
         0
     };
