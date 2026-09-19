@@ -63,6 +63,12 @@ pub struct OmniState {
     /// features macro están CONGELADAS y deben exponerse como staleness,
     /// jamás usarse en silencio como si estuvieran vivas.
     pub macro_last_success_ms: AtomicU64,
+    /// QO-U1c — funding PER-SÍMBOLO (premiumIndex all-market, 120s): el
+    /// TODO BTC-only del core queda cerrado. RwLock: escritor único (el
+    /// poller), lectores por símbolo en el hot path per-event del core.
+    pub funding_by_symbol: std::sync::RwLock<std::collections::HashMap<String, f64>>,
+    /// Bandera del primer sync (sólo log).
+    pub first_funding_sync: std::sync::atomic::AtomicBool,
 }
 
 impl Default for OmniState {
@@ -129,6 +135,8 @@ impl OmniState {
             wb_us_real_interest: AtomicU64::new(2.3_f64.to_bits()),
             wb_global_gdp_growth: AtomicU64::new(2.5_f64.to_bits()),
             macro_last_success_ms: AtomicU64::new(0),
+            funding_by_symbol: std::sync::RwLock::new(std::collections::HashMap::new()),
+            first_funding_sync: std::sync::atomic::AtomicBool::new(true),
         }
     }
 
@@ -630,6 +638,39 @@ pub async fn run_sentiment_onchain_poller(state: Arc<OmniState>) {
                                 .agg_funding_rate
                                 .store(safe_funding.to_bits(), Ordering::Relaxed);
                         }
+                    }
+                }
+            }
+        }
+        // QO-U1c — FUNDING PER-SÍMBOLO (premiumIndex ALL-MARKET, una sola
+        // llamada peso-10): el TODO BTC-only del core queda cerrado. Se
+        // publica en el registry scoped por símbolo (`funding_rate`); el
+        // core lo lee por coin en el camino per-tick en lugar del slot
+        // global omni[11] cuando existe.
+        let all_prem_url = format!("{}/fapi/v1/premiumIndex", base_url);
+        if let Ok(res) = client.get(&all_prem_url).send().await {
+            if let Ok(json) = res.json::<Value>().await {
+                if let Some(arr) = json.as_array() {
+                    let mut n_pub = 0usize;
+                    for it in arr {
+                        let sym = it.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                        let fr = it
+                            .get("lastFundingRate")
+                            .and_then(|v| v.as_str())
+                            .and_then(|v| v.parse::<f64>().ok());
+                        if !sym.is_empty() {
+                            if let Some(f) = fr {
+                                if f.is_finite() {
+                                    if let Ok(mut m) = state.funding_by_symbol.write() {
+                                        m.insert(sym.to_string(), f.clamp(-1.0, 1.0));
+                                    }
+                                    n_pub += 1;
+                                }
+                            }
+                        }
+                    }
+                    if n_pub > 0 && state.first_funding_sync.swap(false, Ordering::SeqCst) {
+                        println!("💰 [QO-U1c] funding per-símbolo: {} símbolos", n_pub);
                     }
                 }
             }

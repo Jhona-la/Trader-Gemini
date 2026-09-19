@@ -590,7 +590,20 @@ impl GodEngineCore {
                 // per-símbolo cuando el poller lo publique.
                 // dex_severity: SIN productor en vivo (feed MEV/DEX no
                 // existe) — se documenta el 0.0 en vez de falsificar señal.
-                let funding_rate_live = omni_features[11];
+                // QO-U1c: funding PER-SÍMBOLO del registry (escrito por el
+                // poller cada 120s); fallback al global omni[11] (BTC).
+                let sym_funding = quantum_arena::symbol_registry::try_symbol(coin_id)
+                    .map(|s| {
+                        self.arena
+                            .registry
+                            .get_scoped_value_or(&s, "funding_rate", f64::NAN)
+                    })
+                    .unwrap_or(f64::NAN);
+                let funding_rate_live = if sym_funding.is_finite() {
+                    sym_funding
+                } else {
+                    omni_features[11]
+                };
                 // P-4: severidad de liquidación VIVA (event-driven, swap).
                 let liq_severity = crate::liquidation_feed::take_pending();
                 self.feature_engines[coin_id].update_macro_features(

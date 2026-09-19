@@ -2104,6 +2104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Alimenta el asiento Ente del Mercado vía coin.open_interest_norm.
         {
             let arena_oi = Arc::clone(&arena_real);
+            let omni_for_funding = Arc::clone(&omni_state_hot);
             let syms_oi: Vec<(String, usize)> = symbols_clone
                 .iter()
                 .enumerate()
@@ -2128,6 +2129,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 loop {
                     ticker.tick().await;
+                    // QO-U1c — funding per-símbolo al registry (el poller de
+                    // omni lo llena en funding_by_symbol cada 120s; aquí se
+                    // publica por símbolo, fuera del hot path). El core lee
+                    // `funding_rate` scoped; sin valor cae al global omni[11].
+                    if let Ok(fmap) = omni_for_funding.funding_by_symbol.read() {
+                        for (sym, _cid) in syms_oi.iter() {
+                            if let Some(f) = fmap.get(sym) {
+                                arena_oi.registry.set_scoped(sym, "funding_rate", *f);
+                            }
+                        }
+                    }
                     for (sym, coin_id) in syms_oi.iter() {
                         if *coin_id >= arena_oi.coins.len() {
                             continue;
