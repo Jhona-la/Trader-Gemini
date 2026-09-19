@@ -95,8 +95,14 @@ pub fn run_backtest_native(
     let mut net_pnl_sum = 0.0;
     let mut fees_est_sum = 0.0;
     // Fee estimado por trade: qty × precio_barra × fee medio.
-    // D-394: Binance VIP0 Taker roundtrip real (0.05% in + 0.05% out = 0.10% total).
-    let avg_fee_est = 0.0010;
+    // R7-8 (des-rigidización por DERIVACIÓN): el literal D-394 (0.0010,
+    // VIP0 taker roundtrip) se deriva ahora del SPEC REGISTRADO del
+    // símbolo — roundtrip taker = taker_fee × 2. Con el spec sintético
+    // estándar (taker 0.05%) reproduce exactamente 0.0010; si el registry
+    // trae el tier VIP real de la cuenta, la estimación lo sigue.
+    let avg_fee_est = quantum_arena::symbol_registry::try_spec(target_coin_id)
+        .map(|spec| (spec.taker_fee * 2.0).max(0.0002))
+        .unwrap_or(0.0010);
 
     let mut peak_capital = initial_capital;
     let mut max_dd = 0.0;
