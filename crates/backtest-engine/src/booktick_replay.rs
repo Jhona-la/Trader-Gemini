@@ -232,7 +232,7 @@ pub fn run_booktick_replay(
         return stats;
     }
 
-    let arena = Arc::new(GlobalArena::new(cfg.initial_capital));
+    let arena = GlobalArena::build_in_own_stack(cfg.initial_capital);
     genome.apply_to_arena(&arena);
     let mut core = GodEngineCore::new(arena.clone());
 
@@ -362,11 +362,14 @@ pub fn run_booktick_replay(
         }
         let omni_features = omni_state.get_features();
 
-        let is_minute_kline =
-            i > 0 && OmniHistory::day_of(ticks[i - 1].ts_ms) != OmniHistory::day_of(t.ts_ms);
-        // (kline-close aproximado por frontera de día: suficiente para
-        // calibración del ensamble en replay; los klines 1m reales viven en
-        // producción por WS.)
+        // D-705/D-708 (DÉCIMA OLA · auditoría integral): la frontera de vela es
+        // por MINUTO, como en el forense, en el calentamiento (`interval=1m`) y
+        // ahora en el vivo (`@kline_1m`). Aquí se aproximaba por frontera de DÍA:
+        // el ensamble se calibraba una vez cada 24 h de datos y las EMAs de kline
+        // —que gobiernan el escudo macro— avanzaban un paso por día. La aptitud
+        // que este replay produce decidía promociones de genoma sobre un motor
+        // cuyo reloj de calibración iba 1440 veces más lento que el de decisión.
+        let is_minute_kline = i > 0 && (ticks[i - 1].ts_ms / 60_000) != (t.ts_ms / 60_000);
 
         let (c1, c2): (Option<(bool, f64, f64)>, Option<(bool, f64, f64)>);
         if cfg.trade_only {
@@ -390,7 +393,15 @@ pub fn run_booktick_replay(
                 t.ts_ms,
                 false,
                 &omni_features,
-                t.bid_qty > t.ask_qty, // maker heurístico del propio dato
+                // D-717 (DÉCIMA OLA · auditoría integral): el lado agresor viaja
+                // en el dato con el convenio de `binance_vision_sync` —maker ⇒
+                // (bid = base, ask = qty + base), es decir `bid_qty < ask_qty`—.
+                // Aquí se pasaba la NEGACIÓN de ese convenio: cada compra
+                // agresiva se contabilizaba como venta, `rolling_cvd` salía con
+                // el signo opuesto al flujo real y las ramas de price-action
+                // abrían LARGOS cuando el mercado vendía. Sobre ese motor se
+                // calcula la aptitud de cada genoma que este binario PROMUEVE.
+                t.bid_qty < t.ask_qty,
             );
             let _ = o2;
             // B3.19: envolvente del host sobre la entrada recién abierta.
@@ -440,7 +451,11 @@ pub fn run_booktick_replay(
                 &mut stats.envelope_vetoes,
             );
             pos_was_open = arena.coins[0].positions.position.is_open();
-            let maker_flag = mid <= sim_bid;
+            // D-717: en el modo con libro, `mid <= sim_bid` es una tautología
+            // falsa (el mid nunca baja del bid simulado), de modo que el CVD
+            // quedaba clavado en +1 y las dos ramas Short eran inalcanzables. El
+            // lado agresor es el del dato, igual que en el modo trade-only.
+            let maker_flag = t.bid_qty < t.ask_qty;
             let (o2, closed2) = core.process_event(
                 0,
                 true,
@@ -777,7 +792,7 @@ mod tests {
     /// reales donde el forest produce predicciones direccionales ≠0.5.
     #[test]
     fn wiring_genoma_llega_al_signal_generation() {
-        let arena = std::sync::Arc::new(GlobalArena::new(1000.0));
+        let arena = GlobalArena::build_in_own_stack(1000.0);
 
         // Genoma A: umbral amplio
         let mut g_a = SuperGenotype::new_baseline(0.0002, 0.0005);
@@ -829,7 +844,8 @@ mod tests {
     fn envelope_bootstrap_mantiene_entrada_que_sostiene_margen() {
         // n=0 < 30 ⇒ bootstrap exploratorio leverage 1 (D-116): una entrada
         // cuyo notional cabe en el margen libre NO se veta.
-        let arena = Arc::new(GlobalArena::new(1000.0));
+        // D-714: pila suficiente para construir el arena.
+        let arena = GlobalArena::build_in_own_stack(1000.0);
         let mut env = RiskEnvelope::new();
         let mut vetoes = 0u64;
         open_test_position(&arena, 100.0, 1.0, 10.0, 0.05);
@@ -846,7 +862,8 @@ mod tests {
     fn envelope_autoritativa_veta_cuando_no_hay_edge() {
         // n≥30 y LCB sin edge ⇒ operable=false ⇒ exec=0 ⇒ VETO con rollback
         // exacto del host: posición cerrada, margen devuelto, fee reembolsado.
-        let arena = Arc::new(GlobalArena::new(1000.0));
+        // D-714: pila suficiente para construir el arena.
+        let arena = GlobalArena::build_in_own_stack(1000.0);
         let mut env = RiskEnvelope::new();
         for i in 0..500 {
             env.record_trade(i % 2 == 0, 10.0, -10.0); // 50% WR 1:1 = sin edge
@@ -868,7 +885,7 @@ mod tests {
         // Capital 13, margen 12, leverage del core 50 (notional 600): ni a
         // 20× el margen requerido cabe en el 95% del margen libre ⇒ abort
         // (paridad con el MARGIN-GUARD -2019 del vivo).
-        let arena = Arc::new(GlobalArena::new(13.0));
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let mut env = RiskEnvelope::new();
         let mut vetoes = 0u64;
         open_test_position(&arena, 100.0, 6.0, 12.0, 0.01); // notional 600
@@ -883,7 +900,8 @@ mod tests {
     fn envelope_gate_ignora_posicion_ya_evaluada() {
         // prev_open=true: la posición ya pasó por su dictamen — no se
         // re-evalúa (idempotencia por apertura, no por tick).
-        let arena = Arc::new(GlobalArena::new(1000.0));
+        // D-714: pila suficiente para construir el arena.
+        let arena = GlobalArena::build_in_own_stack(1000.0);
         let mut env = RiskEnvelope::new();
         for i in 0..500 {
             env.record_trade(i % 2 == 0, 10.0, -10.0); // no-operable

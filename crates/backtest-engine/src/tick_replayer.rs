@@ -21,7 +21,61 @@ pub struct BinTick {
 }
 
 /// Magic + versión del formato en un solo literal de 8 bytes.
+///
+/// D-721 (DÉCIMA OLA · auditoría integral): EL MAGIC DICE EL ORIGEN, NO SÓLO LA
+/// VERSIÓN. La corrección de D-691 hizo que el forense distinguiera «datos
+/// reales» de «velas expandidas» POR LA CABECERA, pero `parquet_to_bin` —el
+/// generador sintético cuyo no-causalidad motivó D-691— escribía exactamente el
+/// mismo literal que el tape de aggTrades reales. Hoy acierta por accidente
+/// (los ficheros sintéticos en disco son legado sin cabecera); en cuanto se
+/// regeneren —y el propio lector se lo pide al operador— el forense declararía
+/// «versionado» un fichero sintético y toda la advertencia de D-691 se apagaría.
+/// Ahora hay dos magics del mismo tamaño y los lectores aceptan ambos.
 pub const TICK_MAGIC: &[u8; 8] = b"TGMTICK1";
+
+/// Tape de aggTrades REALES del exchange (alias explícito de `TICK_MAGIC`, que
+/// es el que ya escribe `binance_vision_sync`).
+pub const TICK_MAGIC_REAL: &[u8; 8] = TICK_MAGIC;
+
+/// Velas expandidas a subticks por `parquet_to_bin`: NO son ticks (D-691).
+pub const TICK_MAGIC_SYNTH: &[u8; 8] = b"TGMSYNT1";
+
+/// Origen declarado por la cabecera de un fichero de ticks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TickOrigin {
+    /// aggTrades reales del exchange.
+    Real,
+    /// Velas expandidas: microestructura fabricada (D-691).
+    Sintetico,
+    /// Legado sin cabecera: origen desconocido, se trata como sintético.
+    LegadoSinCabecera,
+}
+
+impl TickOrigin {
+    /// Lee el origen de los primeros bytes de un fichero de ticks.
+    pub fn from_header(bytes: &[u8]) -> (TickOrigin, usize) {
+        if bytes.len() >= 8 && &bytes[..8] == TICK_MAGIC_REAL {
+            (TickOrigin::Real, 8)
+        } else if bytes.len() >= 8 && &bytes[..8] == TICK_MAGIC_SYNTH {
+            (TickOrigin::Sintetico, 8)
+        } else {
+            (TickOrigin::LegadoSinCabecera, 0)
+        }
+    }
+
+    pub fn descripcion(self) -> &'static str {
+        match self {
+            TickOrigin::Real => "aggTrades REALES del exchange (TGMTRAW/TGMTICK1)",
+            TickOrigin::Sintetico => "VELAS EXPANDIDAS por parquet_to_bin — microestructura fabricada (D-691)",
+            TickOrigin::LegadoSinCabecera => "legado SIN cabecera: origen desconocido, se asume sintético (D-691)",
+        }
+    }
+
+    /// ¿Sirve para dictar un veredicto sobre microestructura?
+    pub fn es_real(self) -> bool {
+        matches!(self, TickOrigin::Real)
+    }
+}
 
 fn validate_alignment(len: usize, path: &Path) -> std::io::Result<()> {
     let tick_size = std::mem::size_of::<BinTick>();
@@ -45,7 +99,7 @@ pub fn load_binary_ticks(path: &Path, coin_id: usize) -> std::io::Result<Vec<Tic
     let tick_size = std::mem::size_of::<BinTick>();
 
     let (data_ptr, data_len, legacy): (usize, usize, bool) =
-        if mmap.len() >= TICK_MAGIC.len() && &mmap[..8] == TICK_MAGIC {
+        if mmap.len() >= 8 && TickOrigin::from_header(&mmap[..8]).1 == 8 {
             // Formato versionado: header de 8 bytes + registros alineados.
             validate_alignment(mmap.len() - 8, path)?;
             (8, mmap.len() - 8, false)

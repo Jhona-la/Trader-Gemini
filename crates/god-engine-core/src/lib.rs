@@ -323,13 +323,18 @@ impl GodEngineCore {
             let (_is_long, _entry_price, _qty, margin_used, entry_fee) =
                 coin.positions.position.close_with_fee();
             if margin_used > 0.0 {
-                // MOD6/8-010: resta atómica (fetch_sub) — el RMW
-                // load→compute→store perdía actualizaciones concurrentes
-                // de los otros escritores (cierre core, reconciliación,
-                // rollback async del host). El lector satura a 0.
-                self.arena
-                    .used_margin
-                    .fetch_sub(margin_used, Ordering::Relaxed);
+                // D-731 (DÉCIMA OLA · auditoría integral): la liberación de margen
+                // era load → resta → store. Entre la carga y el guardado, otro
+                // hilo (el cierre de otra moneda, la reconciliación o la adopción)
+                // puede haber sumado o restado: esa actualización se PIERDE y
+                // `used_margin` queda por encima o por debajo del margen realmente
+                // comprometido — el motor deja de abrir con margen libre, o abre
+                // creyendo que lo tiene. Con `fetch_update` la resta es atómica.
+                let _ = self.arena.used_margin.fetch_update(
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                    |v| Some((v - margin_used).max(0.0)),
+                );
             }
             if entry_fee > 0.0 {
                 self.arena
@@ -744,6 +749,21 @@ impl GodEngineCore {
             if is_trade {
                 // D-220 & D-247: Ingesta física real de microestructura agresora (Taker Buy vs Taker Sell)
                 self.feature_engines[coin_id].update_trade_flow(trade_qty, is_buyer_maker);
+                // D-708 (DÉCIMA OLA · auditoría integral): EL FLUJO AGREGADO ES
+                // ESTADO DEL NÚCLEO, NO DEL LLAMADOR.
+                //
+                // `agg_buy_vol`/`agg_sell_vol` —de donde sale `rolling_cvd`, que
+                // en ausencia de libro SUSTITUYE al micro-score y pesa hasta el
+                // 80 % del `composite_score`— los alimentaban los llamadores:
+                // `god_engine` y el forense sí, `booktick_replay` (el motor de
+                // `backtest_windows` y de `evolution`) NO. Allí el CVD era
+                // idénticamente 0, las ramas que exigen |OBI efectivo| por encima
+                // de su umbral eran inalcanzables y la aptitud se medía sobre un
+                // motor mutilado. Con la actualización aquí, todo llamador
+                // alimenta la misma fuente con el mismo dato; las llamadas
+                // externas se retiran para no contar dos veces.
+                self.arena
+                    .update_agg_trade(coin_id, is_buyer_maker, trade_qty);
                 self.arena.coins[coin_id]
                     .current_price
                     .store(current_price, Ordering::Relaxed);
@@ -787,8 +807,12 @@ impl GodEngineCore {
             );
             let (_, _, _, margin) = coin.positions.position.close();
             if margin > 0.0 {
-                // MOD6/8-010: resta atómica — idem rollback_position.
-                self.arena.used_margin.fetch_sub(margin, Ordering::Relaxed);
+                // D-731: resta atómica, no load→store.
+                let _ = self.arena.used_margin.fetch_update(
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                    |v| Some((v - margin).max(0.0)),
+                );
             }
         }
     }
@@ -1056,14 +1080,20 @@ impl GodEngineCore {
                     + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
 
                 // D-465, D-472, D-474, D-475 & D-495: Escudo Breakeven Progresivo Calibrado Antiasfixia.
-                // Activa cuando el trade ha alcanzado al menos 2.0 ATR o el 55% de su TP objetivo (mínimo 62 bps).
-                // En cuanto el trade demuestra inercia direccional probada, el stop se ajusta a Entry + buffer (+10 a +18 bps post-fees).
-                // S-3 (ESPECTRALIZACIÓN): las activaciones de BE y trailing
+                // Activa cuando el recorrido ya cubre la fricción de ida y
+                // vuelta y una fracción espectral del objetivo. S-3
+                // (ESPECTRALIZACIÓN): las activaciones de BE y trailing
                 // respiran con la persistencia de la escala dominante —
                 // tendencial (pers→+1) activa TARDE (deja correr), mean-
                 // revert (pers→−1) activa PRONTO (asegura el retroceso).
                 // Fracción del TP: BE lerp(0.45,0.65), trail lerp(0.60,0.80);
                 // pers=0 ⇒ 0.55/0.70 exactos (comportamiento B3.27).
+                // D-727: NADA se arma por encima del objetivo — los pisos
+                // absolutos (62/72 pb) podían quedar en >100% del TP con
+                // fricción de 10 pb (TP=0.55%): el TP cerraba la posición
+                // antes de que existiera protección alguna. Piso = fricción
+                // de ida y vuelta (la única magnitud física que justifica
+                // mover el stop); techo = fracción del TP.
                 let pers_dom = self
                     .temporal_spectrum
                     .get(coin_id)
@@ -1072,8 +1102,9 @@ impl GodEngineCore {
                 let s_t = (pers_dom + 1.0) * 0.5;
                 let be_frac = 0.45 + 0.20 * s_t;
                 let trail_frac = 0.60 + 0.20 * s_t;
-                let be_activation =
-                    (tp * be_frac).max(atr_pct_live * 2.0).clamp(0.0062, 0.0160);
+                let be_activation = (tp * be_frac)
+                    .max(live_fee * 2.0)
+                    .min(tp * 0.90);
                 if peak_pnl >= be_activation {
                     let be_buffer = (live_fee * 2.0).clamp(0.0010, 0.0018);
                     let be_stop = if is_long {
@@ -1093,9 +1124,13 @@ impl GodEngineCore {
                     }
                 }
 
-                // 2. Trailing Stop Ratchet Dinámico: activa en trail_frac del TP
-                let trail_activation_pnl =
-                    (tp * trail_frac).max(be_activation * 1.25).clamp(0.0072, 0.0200);
+                // 2. Trailing Stop Ratchet Dinámico: activa en trail_frac
+                // (espectral) del TP. D-727: siempre por encima del
+                // breakeven y siempre por debajo del objetivo — si se armara
+                // en el TP no existiría.
+                let trail_activation_pnl = (tp * trail_frac)
+                    .max(be_activation * 1.25)
+                    .min(tp * 0.95);
                 let trail_active = peak_pnl >= trail_activation_pnl;
 
                 let mut force_close_trail = false;
@@ -1413,17 +1448,16 @@ impl GodEngineCore {
                     let net_realized_pnl = gross_pnl - close_fee;
                     let net_trade_pnl = net_realized_pnl - entry_fee_paid;
 
-                    // MOD6/8-010 (INFORME DECIMOCUARTO): resta atómica
-                    // INCONDICIONAL. El viejo `else store(0.0)` borraba el
-                    // margen de TODAS las monedas ante un drift contable de
-                    // UNA (current < margin) → free_margin inflado →
-                    // sobre-exposición autorizada. Si la resta deja el átomo
-                    // levemente negativo (doble liberación), el lector
-                    // (`used_margin_saturated`) lo satura a 0 — nunca
-                    // propaga el negativo al camino de la orden.
-                    self.arena
-                        .used_margin
-                        .fetch_sub(margin_used, Ordering::Relaxed);
+                    // D-731: la rama `else` ponía el acumulador GLOBAL a cero
+                    // —borrando el margen de las demás monedas— cuando el
+                    // acumulado era menor que el margen de esta posición, que es
+                    // justo el síntoma de una carrera previa. Resta atómica
+                    // acotada en cero, sin tocar lo ajeno.
+                    let _ = self.arena.used_margin.fetch_update(
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                        |v| Some((v - margin_used).max(0.0)),
+                    );
 
                     // FASE 23 / F-014 / C-07 (INFORME DECIMOCUARTO): métricas
                     // continuas unificadas — el PnL se escribe SOLO en
@@ -1434,6 +1468,16 @@ impl GodEngineCore {
                     // fallback contra coin.metrics cuando scalp == 0).
                     // B3.14: SOLO posiciones cuya entrada existió en el exchange.
                     if was_exchange_confirmed {
+                        // D-739 (DÉCIMA OLA · auditoría integral): el MISMO PnL se
+                        // escribía en las tres celdas —`metrics`, `scalp` y
+                        // `swing`—, de modo que una operación de +1,00 USD
+                        // producía 1,00 en cada una: los consumidores que suman
+                        // las dos piernas (el panel, el bus mmap, el simulador
+                        // multiactivo) veían el DOBLE del PnL real, y el desglose
+                        // por horizonte era ficción — dos motores con idéntico
+                        // resultado donde sólo hubo una operación. El motor es
+                        // continuo: la única celda es `metrics`, como ya declaraba
+                        // el comentario de F-014 unas líneas más abajo.
                         coin.metrics
                             .pnl_realized
                             .fetch_add(net_trade_pnl, Ordering::Relaxed);
@@ -2320,13 +2364,25 @@ impl GodEngineCore {
             // "menos de 0.5", eso es su offset, no su señal. Normalizamos
             // mapeando el rango observado [0.35, 0.50] a [0.30, 0.70] para
             // restaurar simetría direccional.
-            let ml_prob_adaptive = if book_absent && ml_prob < 0.50 {
-                // Expandir el rango: ml=0.35 → 0.30, ml=0.50 → 0.50
-                // (transformación lineal que dobla la distancia a 0.5)
-                (0.5 + (ml_prob - 0.5) * 2.0).clamp(0.02, 0.98)
-            } else {
-                ml_prob
-            };
+            // D-735 (DÉCIMA OLA · auditoría integral): SIN AMPLIFICACIÓN
+            // ASIMÉTRICA DE LA PROBABILIDAD.
+            //
+            // Aquí se doblaba la distancia a la neutralidad SÓLO en el lado
+            // bajista (`ml_prob < 0,50`) cuando falta el libro, y el comentario
+            // afirmaba lo contrario —«re-centrar para restaurar simetría
+            // direccional»—: con ml = 0,35 la transformación daba 0,20, no 0,30.
+            // El consumidor largo comparaba el valor CRUDO contra su umbral y el
+            // corto el valor DUPLICADO contra el suyo, de modo que un umbral corto
+            // de 0,30 disparaba en realidad con ml < 0,40. Como sin libro (todo
+            // evento de trade en producción, antes de D-707) esa rama era la
+            // habitual, el efecto era un sesgo estructural a corto en la misma
+            // magnitud que el motor usa para decidir.
+            //
+            // El sesgo del bosque cuando faltan features no se corrige con una
+            // recta ad hoc en el consumidor: se corrige recalibrando el modelo
+            // —`calibration::PlattCalibrator` existe para eso— o no inyectando
+            // features sintéticas de libro (D-707).
+            let ml_prob_adaptive = ml_prob;
 
             let sym = quantum_arena::symbol_registry::try_spec(coin_id)
                 .map(|s| s.symbol)
@@ -2498,13 +2554,18 @@ impl GodEngineCore {
                 // SIN ML y SIN libro; computable de precio/volumen solos).
                 if book_absent && fast_intent.signal == SignalType::Flat && atr_pct > 0.00005 {
                     // B3.36 — mismos gates POR LIFT que el camino vivo: el
-                    // fallback usa los MISMOS genes (ml_threshold_long
-                    // reinterpretado como lift sobre la base del modelo), así
-                    // el SA optimiza una sola sensibilidad, no dos escalas
-                    // incompatibles (absoluta aquí, relativa allá).
-                    let ml_lift = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
-                        - 0.50)
-                        .clamp(0.02, 0.25);
+                    // fallback usa los MISMOS genes reinterpretados como lift
+                    // sobre la base del modelo del símbolo.
+                    // D-715 (unión): los genes pasan ANTES por
+                    // ml_gate_thresholds — la reparación canónica (largo ≥ ½
+                    // ≥ corto, no finitos neutralizados) — y el umbral YA
+                    // reparado es el que se reinterpreta como lift. Un solo
+                    // invariante para los mismos dos genes en todo el motor.
+                    let (ml_thr_long, _ml_thr_short) = crate::calibration::ml_gate_thresholds(
+                        self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                        self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+                    );
+                    let ml_lift = (ml_thr_long - 0.50).clamp(0.02, 0.25);
                     // Ruta 1: ML RE-CENTRADO (sesgo eliminado) con confianza
                     // proporcional al LIFT sobre la base del modelo.
                     if ml_prob_adaptive > ml_model_base + ml_lift {
@@ -2560,7 +2621,22 @@ impl GodEngineCore {
                     // O persistente, bandas canónicas MOD2/7-014 — antes el
                     // par 0.49/0.51 creaba una tercera clasificación ad hoc).
                     // Rama B: Hurst neutral — momentum directo sin régimen.
-                    else if self.feature_engines[coin_id].ema_slow > 0.0 {
+                    //
+                    // D-737 (DÉCIMA OLA · auditoría integral): este `else` se ligaba
+                    // al `if` de la ruta 1b, no al bloque del ML. Consecuencia
+                    // exactamente contraria a la declarada: si el ML NO opinaba se
+                    // entraba en 1b y la ruta 2 no se evaluaba nunca —el respaldo
+                    // estaba muerto justo en el caso para el que se escribió—, y si
+                    // el ML SÍ opinaba se saltaba 1b y la ruta 2 podía REESCRIBIR la
+                    // intención: un Long del ML con confianza 0,62 se convertía en un
+                    // Short de confianza literal 0,68 cuando el Hurst caía por debajo
+                    // de 0,45. El motor invertía la dirección de su propia señal.
+                    //
+                    // Ahora las tres rutas son una cascada explícita: cada respaldo
+                    // se evalúa sólo si la intención sigue plana.
+                    if fast_intent.signal == SignalType::Flat
+                        && self.feature_engines[coin_id].ema_slow > 0.0
+                    {
                         let ema_s = self.feature_engines[coin_id].ema_slow;
                         let atr_abs = (atr_pct * mid_price).max(0.01);
                         let dev_atr = (mid_price - ema_s) / atr_abs;
@@ -2735,12 +2811,19 @@ impl GodEngineCore {
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
-                            confidence: sig_conf(current_obi.abs().min(composite_score.abs())),
+                            confidence: sig_conf(effective_obi_long.abs().min(composite_score.abs())),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 9.0,
                             ..Default::default()
                         };
-                    } else if long_streak < 2 && price_stretch < -1.0 && current_obi > range_obi * 1.15 && composite_score >= 0.24 && micro_trend >= 0.0 {
+                    // D-736 (DÉCIMA OLA · auditoría integral): esta rama —reversión
+                    // a la media alcista— leía `current_obi` mientras su espejo
+                    // bajista y las otras ocho ramas del bloque leen
+                    // `effective_obi_*`. Sin libro real, `current_obi` vale
+                    // exactamente 0 y la condición era imposible: la rama alcista
+                    // NUNCA disparaba mientras su simétrica bajista sí. Es una de
+                    // las causas mecánicas del «un solo largo en ~140 operaciones».
+                    } else if long_streak < 2 && price_stretch < -1.0 && effective_obi_long > range_obi * 1.15 && composite_score >= 0.24 && micro_trend >= 0.0 {
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(current_obi.abs().min(composite_score.abs())),
@@ -2987,15 +3070,20 @@ impl GodEngineCore {
                 .trend_threshold
                 .load(Ordering::Relaxed);
 
-            // B3.36 — la rama swing TAMBIÉN gatea por LIFT sobre la base del
-            // modelo (ml_model_base): los umbrales absolutos (≥0.51/≤0.49)
-            // mataban los largos y sobre-aprobaban los cortos con la base
-            // ~30% del etiquetado honesto. Mismo gen, misma interpretación
-            // que el gate B3.18.
-            let ml_lift = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed) - 0.50)
-                .clamp(0.02, 0.25);
-            let effective_ml_long = ml_model_base + ml_lift;
-            let effective_ml_short = ml_model_base - ml_lift;
+            // B3.36 + D-715 (unión): la rama swing gatea por LIFT sobre la
+            // base del modelo (ml_model_base) — los umbrales absolutos
+            // mataban los largos con la base ~30% del etiquetado honesto.
+            // Los genes se reparan por la MISMA función que la puerta de
+            // entrada (ml_gate_thresholds): un solo invariante, sin la doble
+            // reparación divergente (reflejar 1−ml_long) que D-715 extirpó.
+            let (ml_thr_long, ml_thr_short) = crate::calibration::ml_gate_thresholds(
+                self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+            );
+            let ml_lift_long = (ml_thr_long - 0.50).clamp(0.02, 0.25);
+            let ml_lift_short = (0.50 - ml_thr_short).clamp(0.02, 0.25);
+            let effective_ml_long = ml_model_base + ml_lift_long;
+            let effective_ml_short = ml_model_base - ml_lift_short;
 
             let raw_base = self.arena.config.base_duration_ms.load(Ordering::Relaxed);
             let swing_duration_ms = if raw_base.is_finite() && raw_base > 0.0 {
@@ -3604,54 +3692,41 @@ impl GodEngineCore {
             }
 
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_L2);
-            // D-473 & D-477: Escudo Invariante Neuronal DarkAlpha Universal (Cross-Horizon ML Filter)
-            // Veto estricto si el modelo ML predice activamente en contra de la dirección deseada
-            // D-688 (DÉCIMA OLA): «en contra» era una banda 0,460/0,540 sin derivación. La regla
-            // declarada es que el modelo prediga contra la dirección: P(sube) < ½ para un largo y
-            // > ½ para un corto. La excepción de extensión pasa a z95, como el resto del motor.
-            // D-695 (DÉCIMA OLA): el escudo sólo veta si el ensamble ha demostrado
-            // habilidad frente a la tasa base (Brier, z95 sobre la escala macro).
-            // Un modelo sin habilidad medida no puede anular una intención.
+            // D-696 (DÉCIMA OLA · auditoría integral): UN SOLO SITIO DECIDE SI LA
+            // PREDICCIÓN ESTÁ DE ACUERDO CON LA DIRECCIÓN.
+            //
+            // Aquí vivía el escudo neuronal (D-473/D-477, con su banda D-688 y la
+            // puerta de habilidad D-695): vetaba un largo con `ml_prob < 0,5` y un
+            // corto con `ml_prob > 0,5`. B3.18 puso el mismo juicio —con los
+            // umbrales del GENOMA, no con el literal ½— en el punto único de
+            // entrada. Los dos umbrales salen del mismo `ml_prob` (línea 1717) y
+            // `ml_gate_thresholds` garantiza `largo ≥ ½ ≥ corto`, de modo que todo
+            // lo que este escudo vetaba lo veta después la puerta genómica: era
+            // una segunda fuente de verdad, más laxa, con una excepción de
+            // extensión que no cambiaba ninguna apertura.
+            //
+            // Medición sobre datos reales (junio-julio 2026, 34 M de eventos por
+            // ventana) de la puerta de habilidad D-695 frente al escudo sin
+            // puerta: aptitud media −0,1428 con la puerta y −0,1290 sin ella. La
+            // regla pre-registrada era conservar D-695 sólo si no empeoraba; no la
+            // supera, y al unificar el juicio en la puerta genómica desaparece.
+            // El `SkillTracker` se conserva como TELEMETRÍA: mide si el ensamble
+            // tiene habilidad, sin decidir nada.
             let neural_skill = if coin_id < self.ensembles.len() {
                 self.ensembles[coin_id].has_significant_skill()
             } else {
                 self.ensemble.has_significant_skill()
             };
-            let neural_against_long = unified_intent.signal == SignalType::Long && ml_prob < 0.5;
-            let neural_against_short = unified_intent.signal == SignalType::Short && ml_prob > 0.5;
+            let (ml_gate_long, ml_gate_short) = crate::calibration::ml_gate_thresholds(
+                self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+            );
+            let neural_against_long =
+                unified_intent.signal == SignalType::Long && ml_prob < ml_gate_long;
+            let neural_against_short =
+                unified_intent.signal == SignalType::Short && ml_prob > ml_gate_short;
             if neural_against_long || neural_against_short {
                 self.diag_dir.record_neural_gate(neural_against_long, neural_skill);
-            }
-            if neural_against_long && neural_skill {
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
-                let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
-                    self.feature_engines[coin_id].kline_ema_slow
-                } else {
-                    self.feature_engines[coin_id].ema_slow
-                };
-                let p_stretch = if ema_ref > 0.0 {
-                    (mid_price - ema_ref) / cur_atr
-                } else {
-                    0.0
-                };
-                if crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) >= -crate::diffusion::Z95 {
-                    unified_intent = SignalIntent::flat();
-                }
-            } else if neural_against_short && neural_skill {
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
-                let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
-                    self.feature_engines[coin_id].kline_ema_slow
-                } else {
-                    self.feature_engines[coin_id].ema_slow
-                };
-                let p_stretch = if ema_ref > 0.0 {
-                    (mid_price - ema_ref) / cur_atr
-                } else {
-                    0.0
-                };
-                if crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) <= crate::diffusion::Z95 {
-                    unified_intent = SignalIntent::flat();
-                }
             }
 
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_NEURAL);
@@ -3810,74 +3885,76 @@ impl GodEngineCore {
                         wr,
                         None,
                     );
-                    if !deliberation.approved {
+                    // D-738 (DÉCIMA OLA · auditoría integral): EL CONSEJO APRUEBA
+                    // UNA OPERACIÓN, NO «TENGO UNA OPINIÓN».
+                    //
+                    // `approved` sólo decía que existía supermayoría de ALGO: su
+                    // dirección viaja en `final_signal`, que no leía nadie en todo
+                    // el repositorio. Con el libro dado la vuelta (OBI −0,40,
+                    // momento −0,35) el Consejo alcanzaba un 92 % de consenso
+                    // BAJISTA, marcaba `approved = true`, y el llamador abría el
+                    // LARGO que traía el risk-engine: el órgano que existe para
+                    // vetar entradas contra la microestructura las bendecía.
+                    // Ahora se exige que el consenso sea del lado que se va a
+                    // operar.
+                    let quiere_largo = order.signal == SignalType::Long;
+                    let consejo_en_la_misma_direccion = if quiere_largo {
+                        deliberation.final_signal > 0.0
+                    } else {
+                        deliberation.final_signal < 0.0
+                    };
+                    let aprobado_por_consejo =
+                        deliberation.approved && consejo_en_la_misma_direccion;
+                    if !aprobado_por_consejo {
                         self.diag_council_vetoes += 1;
-                        self.diag_dir
-                            .record_council(order.signal == SignalType::Long, false);
+                        self.diag_dir.record_council(quiere_largo, false);
                     }
 
                     // B3.18 — LA PREDICCIÓN DECIDE. Descubrimiento 2026-09-15:
                     // el PnL era INSENSIBLE al forest (BNB sept idéntico al
                     // centavo con modelos distintos) porque las ramas de
                     // entrada gatean con NN/flujo/tendencia y el ensamble
-                    // (forest validado ⊕ NN) no consumía nadie. Ahora TODA
-                    // entrada exige el acuerdo del ensamble: long ⇒ ml ≥
-                    // umbral genómico, short ⇒ ml ≤ umbral. Con los umbrales
-                    // baseline (0.5698/0.4302) esto es la "selección de
-                    // entradas" que la guerra de fees pedía.
+                    // (forest validado ⊕ NN ⊕ espectro) no consumía nadie.
+                    // Ahora TODA entrada exige el acuerdo del ensamble:
+                    // long ⇒ ml ≥ umbral genómico, short ⇒ ml ≤ umbral.
                     //
                     // B3.18-aud (FRESCURA): se lee la variable LOCAL ml_prob_pure
                     // — computada en el bloque de ANALÍTICA COMPLETA ~1.5k
                     // líneas arriba, DENTRO de esta misma invocación, ANTES de
-                    // las ramas de señal/deliberación (orden verificado: bloque
-                    // ANALÍTICA COMPLETA → señales → deliberación → este gate).
-                    // El atomic coin.ml_prob tiene un ÚNICO escritor en todo el
-                    // workspace (ese store), pero leer la local elimina hasta
-                    // la posibilidad teórica de una escritura cruzada entre
-                    // threads: el valor del gate es, por construcción, el del
-                    // tick en curso — nunca stale por 1 tick.
-                    // MOD2/7-029 (INFORME DECIMOCUARTO): el gate lee el
-                    // ensamble PURO (sin spot_bias) — un despegue del spot no
-                    // puede cruzar el umbral por sí solo; sólo lo cruza un
-                    // modelo. La versión con sesgo (ml_prob/coin.ml_prob)
-                    // siguen alimentando las ramas de señal.
+                    // las ramas de señal/deliberación (orden verificado).
+                    // MOD2/7-029: el gate lee el ensamble PURO (sin
+                    // spot_bias); la versión con sesgo alimenta las ramas de
+                    // señal. B3.25: sin modelo validado del roster, no se opera.
+                    // B3.36 — GATE POR LIFT sobre la base del SÍMBOLO: con el
+                    // etiquetado honesto (base ~30%) el gate absoluto volvía
+                    // el sistema short-only por artefacto de escala.
+                    // D-715 (unión): los genes se reparan ANTES por
+                    // ml_gate_thresholds (largo ≥ ½ ≥ corto, finitud) — la
+                    // ÚNICA reparación de esos dos genes en el motor — y el
+                    // umbral YA reparado es el que se reinterpreta como lift.
                     let ml_now = ml_prob_pure;
-                    // B3.36 — GATE POR LIFT, no absoluto. El etiquetado
-                    // honesto (HOST-010) movió la base a ~30%: con el gate
-                    // absoluto (≥0.50 largo / ≤0.50 corto) los largos jamás
-                    // pasaban (p90=0.33) y los cortos casi siempre — el
-                    // sistema se volvía short-only por artefacto de escala.
-                    // El genoma ml_threshold_long se REINTERPRETA como lift:
-                    // baseline 0.5698 ⇒ lift 0.0698 ("7 puntos sobre la
-                    // base", los mismos "7 puntos sobre 50%" originales).
-                    // El GA evoluciona lift ∈ [0.02, 0.25]: con suelo 0.02
-                    // no puede abrir de par en par ni con techo 0.25 cegar
-                    // todo (un GBDT de 40 árboles rara vez levanta 25
-                    // puntos de base). La base es la del modelo del SÍMBOLO
-                    // (sigmoid(init_score)), no una constante global.
-                    // B3.25 sigue intacto: sin modelo validado del roster,
-                    // no se opera.
-                    let ml_lift = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
-                        - 0.50)
-                        .clamp(0.02, 0.25);
+                    let (ml_thr_long_gate, ml_thr_short_gate) = crate::calibration::ml_gate_thresholds(
+                        self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                        self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+                    );
+                    let ml_lift_long = (ml_thr_long_gate - 0.50).clamp(0.02, 0.25);
+                    let ml_lift_short = (0.50 - ml_thr_short_gate).clamp(0.02, 0.25);
                     // S-6 (ESPECTRALIZACIÓN): el lift exigido respira con el
                     // ACUERDO espectral — cuando la fusión del espectro apunta
                     // en la MISMA dirección que el modelo, la exigencia baja
-                    // (×0.7: dos fuentes independientes alineadas); cuando
-                    // divergen, sube (×1.3: el modelo contra el continuo
-                    // necesita más margen). agree ∈ [-1,1]: signo(fused) ×
-                    // signo(desplazamiento del modelo sobre su base).
+                    // (×0.7); cuando divergen, sube (×1.3). agree ∈ [-1,1].
                     let agree = (council_fused
                         * (ml_now - ml_model_base).signum())
                         .clamp(-1.0, 1.0);
-                    let lift_eff = (ml_lift * (1.0 - 0.3 * agree)).clamp(0.01, 0.30);
+                    let lift_eff_long = (ml_lift_long * (1.0 - 0.3 * agree)).clamp(0.01, 0.30);
+                    let lift_eff_short = (ml_lift_short * (1.0 - 0.3 * agree)).clamp(0.01, 0.30);
                     let ml_gate_ok = has_roster_model
                         && if order.signal == SignalType::Long {
-                            ml_now >= ml_model_base + lift_eff
+                            ml_now >= ml_model_base + lift_eff_long
                         } else {
-                            ml_now <= ml_model_base - lift_eff
+                            ml_now <= ml_model_base - lift_eff_short
                         };
-                    if deliberation.approved && !ml_gate_ok {
+                    if aprobado_por_consejo && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;
                         if self.diag_ml_vetoes % 50 == 1 {
                             telemetry_server::telemetry_log!(
@@ -3890,7 +3967,7 @@ impl GodEngineCore {
                         }
                     }
 
-                    if deliberation.approved && ml_gate_ok {
+                    if aprobado_por_consejo && ml_gate_ok {
                         let is_long = order.signal == SignalType::Long;
                         // MOD6/8-010: lector saturado — un used_margin
                         // levemente negativo (drift de doble liberación)
@@ -4280,7 +4357,8 @@ mod tests_b3_ml_wiring {
     #[test]
     fn b3_18_el_ml_prob_del_gate_es_del_mismo_tick_y_lleva_al_forest() {
         install_testusdt_forest();
-        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        // D-714: pila suficiente para construir el arena.
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let mut core = GodEngineCore::new(Arc::clone(&arena));
         // Ensamble forest-only: sin NN la opinión combinada ES la del forest
         // (peso Hedge inicial 1.0) — determinista para la aserción.
@@ -4319,7 +4397,8 @@ mod tests_b3_ml_wiring {
     #[test]
     fn b2_5_ml_prob_sigue_vivo_con_feed_stalled() {
         install_testusdt_forest();
-        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        // D-714: pila suficiente para construir el arena.
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let mut core = GodEngineCore::new(Arc::clone(&arena));
         core.swing_nn = None;
 

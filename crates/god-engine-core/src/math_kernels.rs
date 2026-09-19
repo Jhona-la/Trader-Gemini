@@ -156,6 +156,9 @@ pub struct ContinuousVPIN {
     /// VPIN-FIX: EWMA del notional por tick, para calibrar el bucket al
     /// reloj de volumen (N trades por bucket) en vez de un dólar fijo.
     pub ewma_tick_notional: f64,
+    /// D-712: dólar de construcción, piso ESTRICTO del bucket. Antes el piso y
+    /// el valor vivo eran el mismo campo, de modo que el bucket no podía bajar.
+    pub initial_bucket_size: f64,
 }
 
 impl ContinuousVPIN {
@@ -173,6 +176,7 @@ impl ContinuousVPIN {
             sell_volume: 0.0,
             bucket_size,
             ewma_tick_notional: 0.0,
+            initial_bucket_size: bucket_size,
         }
     }
 
@@ -191,10 +195,22 @@ impl ContinuousVPIN {
         } else {
             self.ewma_tick_notional = 0.98 * self.ewma_tick_notional + 0.02 * volume;
         }
+        // D-712 (DÉCIMA OLA · auditoría integral): EL BUCKET SIGUE AL VOLUMEN
+        // VIVO, NO A SU MÁXIMO HISTÓRICO.
+        //
+        // `bucket_size` sólo se actualizaba HACIA ARRIBA: un único episodio de
+        // nocionales grandes (apertura de Nueva York, cascada de liquidaciones,
+        // vela de noticia) lo fijaba en el máximo de la sesión y ahí se quedaba.
+        // A partir de ese momento el reloj de volumen deja de cerrar buckets, el
+        // desequilibrio se acumula sobre una ventana cada vez más larga y el VPIN
+        // se aplana justo DESPUÉS del evento que debía detectar — con el veto
+        // causal y la telemetría de riesgo leyendo esa medida aplanada.
+        //
+        // El reloj de volumen de Easley/López de Prado sigue al volumen típico
+        // vivo: `bucket_size` acompaña a `calibrated` en ambas direcciones, con
+        // el dólar de construcción como piso estricto (no como valor mutable).
         let calibrated = self.ewma_tick_notional * Self::TICKS_PER_BUCKET;
-        if calibrated > self.bucket_size {
-            self.bucket_size = calibrated;
-        }
+        self.bucket_size = calibrated.max(self.initial_bucket_size);
         if is_buyer_maker {
             self.sell_volume += volume;
         } else {
@@ -380,6 +396,9 @@ impl DynamicKelly {
 pub struct ShannonEntropy {
     bins: [f64; 10], // Simple 10-bin histogram approximation
     total_count: f64,
+    /// D-713: dispersión viva de la propia entrada, para que los bins midan
+    /// la FORMA de la distribución y no un rango fijo en tanto por uno.
+    disp: WelfordVariance,
 }
 
 impl Default for ShannonEntropy {
@@ -393,6 +412,7 @@ impl ShannonEntropy {
         Self {
             bins: [0.0; 10],
             total_count: 0.0,
+            disp: WelfordVariance::new(),
         }
     }
 
@@ -408,8 +428,30 @@ impl ShannonEntropy {
             *b *= decay;
         }
 
-        // Map norm_return (-0.05 to 0.05) to bin 0-9
-        let bin_idx = (norm_return * 100.0 + 5.0).clamp(0.0, 9.99) as usize;
+        // D-713 (DÉCIMA OLA · auditoría integral): LOS BINS SE DIMENSIONAN CON
+        // LA DISPERSIÓN MEDIDA, NO CON UN RANGO LITERAL.
+        //
+        // El mapeo anterior, `5 + 100·r`, repartía diez bins sobre ±5 % POR
+        // EVENTO: con retornos entre eventos del orden de 1e-5 a 1e-4, toda la
+        // masa caía en el bin 5, p = 1 y la entropía valía −1·ln(1) = 0 de forma
+        // permanente. La dimensión 8 del vector ML y el registro
+        // `shannon_entropy` eran una constante cero disfrazada de medida de
+        // ruido: el GBDT no podía partir por ella y cualquier consumidor que
+        // modulase por entropía modulaba por una constante.
+        //
+        // Ahora el bin sale del z de la propia serie (Welford en línea) repartido
+        // sobre ±z95, el mismo criterio de cobertura que usa el resto del motor.
+        // Hasta tener dispersión medible (σ = 0, arranque) la entrada cae al bin
+        // central, que es lo correcto: sin variación medida no hay información.
+        self.disp.update(norm_return);
+        let sigma = self.disp.std_dev();
+        let z = if sigma > 0.0 {
+            (norm_return - self.disp.mean) / sigma
+        } else {
+            0.0
+        };
+        let span = crate::diffusion::Z95;
+        let bin_idx = (((z + span) / (2.0 * span)) * 10.0).clamp(0.0, 9.99) as usize;
         self.bins[bin_idx] += 1.0;
         self.total_count += 1.0;
 
@@ -1117,4 +1159,50 @@ mod tests {
         let decayed = tensor.decay_to(2000);
         assert!((decayed - 50.0).abs() < 1e-3);
     }
+
+    #[test]
+    fn d712_el_bucket_del_vpin_vuelve_a_bajar_tras_una_rafaga() {
+        let mut v = ContinuousVPIN::new(10_000.0);
+        for i in 0..1000 {
+            v.update(10.0, i % 2 == 0);
+        }
+        let tranquilo = v.bucket_size;
+        for i in 0..20 {
+            v.update(500_000.0, i % 2 == 0);
+        }
+        let en_rafaga = v.bucket_size;
+        assert!(en_rafaga > tranquilo, "el bucket debe crecer con la ráfaga");
+        for i in 0..1000 {
+            v.update(10.0, i % 2 == 0);
+        }
+        let despues = v.bucket_size;
+        assert!(
+            despues < en_rafaga * 0.1,
+            "tras la ráfaga el bucket debe volver al volumen vivo: {despues} frente a {en_rafaga}"
+        );
+        assert!(despues >= 10_000.0, "el dólar de construcción es piso estricto: {despues}");
+    }
+
+
+    #[test]
+    fn d713_la_entropia_mide_la_forma_y_no_es_cero_constante() {
+        let mut e = ShannonEntropy::new();
+        // Serie gaussiana de sigma 5e-5: el rango literal anterior la metía
+        // entera en un bin y devolvía 0,0.
+        let mut x: f64 = 0.0;
+        let mut ultimo = 0.0;
+        for i in 0..10_000 {
+            // Generador determinista con forma de campana (suma de uniformes).
+            let i = i as u64;
+            let u = (i.wrapping_mul(7919) % 1000) as f64 / 1000.0 - 0.5;
+            let v = (i.wrapping_mul(104_729) % 997) as f64 / 997.0 - 0.5;
+            let w = (i.wrapping_mul(15_485_863) % 991) as f64 / 991.0 - 0.5;
+            x = (u + v + w) * 5e-5;
+            ultimo = e.update(x);
+        }
+        assert!(ultimo > 1.5, "una distribución extendida sobre diez bins debe dar entropía alta: {ultimo}");
+        assert!(ultimo <= (10.0f64).ln() + 1e-9, "la entropía no puede superar ln(10): {ultimo}");
+        let _ = x;
+    }
+
 }

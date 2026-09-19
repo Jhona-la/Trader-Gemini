@@ -139,6 +139,12 @@ pub struct ActivePosition {
     pub qty: f64,
     pub entry_price: f64,
     pub is_long: bool,
+    /// D-726 (DÉCIMA OLA · auditoría integral): apalancamiento REAL de la
+    /// posición, tal y como lo devuelve `/fapi/v2/positionRisk`. Se descartaba
+    /// al parsear y el restaurador lo sustituía por el literal 10, de modo que
+    /// el margen reconstruido de una posición a 20x era el doble del real.
+    /// 0 = el exchange no lo informó.
+    pub leverage: f64,
 }
 
 #[allow(async_fn_in_trait)]
@@ -769,9 +775,43 @@ impl OrderExecutor {
                 ) {
                     println!("⚠️ [WS-EXECUTOR] Failed to send close position order, falling back to REST: {}", e);
                 } else {
-                    println!("🧹 [FLATTEN] {} close request via WS dispatched", p.symbol);
-                    closed += 1;
-                    continue; // Skip REST fallback since WS sent successfully
+                    // D-697 (DÉCIMA OLA · auditoría integral): DESPACHAR NO ES CERRAR.
+                    //
+                    // `send_order_payload` sólo confirma que el payload salió por el
+                    // socket; el rechazo del exchange (-4061 por modo de posición,
+                    // -2022 porque un TP llenó entre el snapshot y el cierre) llega
+                    // después por el stream. Antes se contaba la posición como
+                    // cerrada y el `continue` saltaba los dos fail-safes de la ruta
+                    // REST: el kill-switch informaba «N cerradas» mientras las
+                    // posiciones seguían vivas y —si ya se habían purgado las algo
+                    // orders— SIN TP ni SL.
+                    //
+                    // Ahora se espera la confirmación con el mismo sondeo del
+                    // registro que usa `execute_maker_chase` (D-361) y sólo cuenta
+                    // como cerrada la orden que el exchange reconoce ejecutada. Sin
+                    // confirmación se cae a la ruta REST, que sí tiene los
+                    // fail-safes; si el cierre por WS sí había llenado, el
+                    // reduceOnly devuelve -2022 y la rama X-026 lo resuelve con un
+                    // snapshot fresco, de modo que no hay doble cierre.
+                    let mut ws_filled = false;
+                    for _ in 0..5 {
+                        tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+                        if let Some(order) = self.order_registry.get(&coid) {
+                            if !order.status.is_active() {
+                                ws_filled = order.executed_qty > 0.0;
+                                break;
+                            }
+                        }
+                    }
+                    if ws_filled {
+                        println!("🧹 [FLATTEN] {} cerrada por WS (ejecución confirmada)", p.symbol);
+                        closed += 1;
+                        continue;
+                    }
+                    println!(
+                        "⚠️ [FLATTEN] {} despachada por WS SIN confirmación de ejecución: se reintenta por REST con los fail-safes",
+                        p.symbol
+                    );
                 }
             }
 
@@ -1590,16 +1630,43 @@ impl OrderExecutor {
     ) -> Result<usize, String> {
         <Self as ExecutionProvider>::cancel_position_oco_orders(self, symbol, is_long).await
     }
-    /// OCO-F5: cancela una orden ALGO (condicional: TP/SL/trailing) por su
-    /// clientAlgoId. Las piernas del bracket ya NO viven en /fapi/v1/order:
-    /// cancelarlas por la ruta legacy devuelve "order does not exist" y deja
-    /// el trigger vivo en el exchange.
+    /// OCO-F5: cancela una orden ALGO (condicional: TP/SL/trailing). Las piernas
+    /// del bracket ya NO viven en /fapi/v1/order: cancelarlas por la ruta legacy
+    /// devuelve "order does not exist" y deja el trigger vivo en el exchange.
+    ///
+    /// D-698 (DÉCIMA OLA · auditoría integral): SE CANCELA POR `algoId`.
+    /// `fetch_open_algo_orders` ya parsea el identificador numérico que el
+    /// exchange asigna (`OpenAlgoOrder::algo_id`) y ningún sitio lo leía: todas
+    /// las cancelaciones iban por `clientAlgoId`, el identificador que fija el
+    /// cliente. Cuando se conoce el `algoId` (el caso de las purgas, que parten
+    /// de la lista abierta del exchange) se usa ése; el `clientAlgoId` queda
+    /// como respaldo para las rutas que sólo tienen el identificador propio
+    /// —el rollback de un bracket a medio colocar, donde el algoId aún no se
+    /// ha leído—.
     #[inline(always)]
     pub async fn cancel_algo_order(&self, symbol: &str, client_algo_id: &str) -> Result<(), String> {
+        self.cancel_algo_order_ids(symbol, 0, client_algo_id).await
+    }
+
+    /// D-698: cancela una pierna algo por `algoId` (preferente) o por
+    /// `clientAlgoId` cuando el numérico no se conoce (`algo_id == 0`).
+    pub async fn cancel_algo_order_ids(
+        &self,
+        symbol: &str,
+        algo_id: u64,
+        client_algo_id: &str,
+    ) -> Result<(), String> {
+        if algo_id == 0 && client_algo_id.is_empty() {
+            return Err(format!(
+                "{}: pierna algo sin algoId ni clientAlgoId — no se puede cancelar",
+                symbol
+            ));
+        }
         if self.is_paper_trading {
             println!(
                 "📝 [PAPER TRADING LOCAL] Algo Orden Cancelada: {} en {}",
-                client_algo_id, symbol
+                if algo_id > 0 { algo_id.to_string() } else { client_algo_id.to_string() },
+                symbol
             );
             return Ok(());
         }
@@ -1616,8 +1683,13 @@ impl OrderExecutor {
         let payload_start = buf.as_str().len();
         buf.push_str("symbol=");
         buf.push_str(symbol);
-        buf.push_str("&clientAlgoId=");
-        buf.push_str(client_algo_id);
+        if algo_id > 0 {
+            buf.push_str("&algoId=");
+            buf.push_u64(algo_id);
+        } else {
+            buf.push_str("&clientAlgoId=");
+            buf.push_str(client_algo_id);
+        }
         buf.push_str("&timestamp=");
         buf.push_u64(timestamp);
 
@@ -1861,10 +1933,17 @@ impl ExecutionProvider for OrderExecutor {
 
         if needs_update {
             if let Err(e) = self.set_leverage(symbol, target_leverage).await {
-                println!(
-                    "⚠️ [EXECUTION] Failed to set dynamic leverage for {}: {}",
-                    symbol, e
-                );
+                // D-732 (DÉCIMA OLA · auditoría integral): un fallo al fijar el
+                // apalancamiento sólo se imprimía y la orden salía IGUAL, con el
+                // apalancamiento que la cuenta tuviera de antes —el de otra
+                // operación, u otro símbolo—: el nocional enviado se calculó con
+                // el apalancamiento que el risk-engine decidió, así que el margen
+                // exigido y el riesgo real son otros. Una orden cuya premisa de
+                // apalancamiento no se cumplió no debe enviarse.
+                return Err(format!(
+                    "no se pudo fijar apalancamiento {}x en {}: {} — orden abortada (el nocional se dimensionó con ese apalancamiento)",
+                    target_leverage, symbol, e
+                ));
             } else {
                 let mut cache = (**self.active_leverage.load()).clone();
                 cache.insert(symbol.to_string(), target_leverage);
@@ -3110,20 +3189,49 @@ impl ExecutionProvider for OrderExecutor {
     ) -> Result<usize, String> {
         let pos_side = if is_long { "LONG" } else { "SHORT" };
         let open_algo = self.fetch_open_algo_orders(symbol).await?;
+        let hedge = self.is_hedge_mode.load(Ordering::SeqCst);
         let mut canceled = 0;
+        let mut fallidas: Vec<String> = Vec::new();
         for a in open_algo {
+            // D-698: `positionSide` vacío no es «coincide». En modo one-way el
+            // exchange no lo informa y sólo existe una posición por símbolo, así
+            // que la pierna es nuestra; en modo hedge un vacío es DESCONOCIDO y
+            // cancelarlo podía dejar desnuda la posición del lado contrario.
             let matches_side = a.position_side == pos_side
                 || a.position_side == "BOTH"
-                || a.position_side.is_empty();
+                || (a.position_side.is_empty() && !hedge);
+            if a.position_side.is_empty() && hedge {
+                fallidas.push(format!(
+                    "{} sin positionSide en modo hedge (algoId {}) — no se cancela a ciegas",
+                    symbol, a.algo_id
+                ));
+                continue;
+            }
             if matches_side {
-                if self
-                    .cancel_algo_order(symbol, &a.client_algo_id)
+                // D-698: el fallo YA NO se traga. Antes `is_ok()` descartaba el
+                // error y la función devolvía `Ok(0)`: los tres llamadores
+                // (rollback del bracket, purga tras cierre y purga de huérfanas)
+                // informaban «brackets purgados» con las piernas vivas, y una
+                // pierna vieja disparaba sobre la posición SIGUIENTE.
+                match self
+                    .cancel_algo_order_ids(symbol, a.algo_id, &a.client_algo_id)
                     .await
-                    .is_ok()
                 {
-                    canceled += 1;
+                    Ok(()) => canceled += 1,
+                    Err(e) => fallidas.push(format!(
+                        "{} algoId {} clientAlgoId {}: {}",
+                        symbol, a.algo_id, a.client_algo_id, e
+                    )),
                 }
             }
+        }
+        if !fallidas.is_empty() {
+            return Err(format!(
+                "cancelaciones de piernas fallidas ({} ok, {} pendientes): {}",
+                canceled,
+                fallidas.len(),
+                fallidas.join(" · ")
+            ));
         }
         Ok(canceled)
     }
@@ -3239,10 +3347,17 @@ impl ExecutionProvider for OrderExecutor {
                                             item.get("entryPrice").and_then(|v| v.as_str()),
                                         ) {
                                             if let Ok(entry_price) = price_str.parse::<f64>() {
+                                                let leverage = item
+                                                    .get("leverage")
+                                                    .and_then(|v| v.as_str())
+                                                    .and_then(|v| v.parse::<f64>().ok())
+                                                    .filter(|l| l.is_finite() && *l > 0.0)
+                                                    .unwrap_or(0.0);
                                                 open_positions.push(ActivePosition {
                                                     symbol: sym.to_string(),
                                                     qty: amt.abs(),
                                                     entry_price,
+                                                    leverage,
                                                     is_long: amt > 0.0,
                                                 });
                                             }

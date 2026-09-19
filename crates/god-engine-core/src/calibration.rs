@@ -186,9 +186,46 @@ pub fn compose_ml_prob(ensemble_prob: f64, spot_bias: f64) -> f64 {
     (p + b).clamp(0.0, 1.0)
 }
 
+/// D-696 (DÉCIMA OLA) — UMBRALES DE ACUERDO DE LA PREDICCIÓN, FUENTE ÚNICA.
+///
+/// `ml_threshold_long` y `ml_threshold_short` son genes (bandas de mutación
+/// [0,50; 0,95] y [0,05; 0,49]). La regla que el motor declara es que la
+/// predicción esté DE ACUERDO con la dirección: un largo exige P(sube) por
+/// encima del umbral largo y un corto, por debajo del corto. Esa regla sólo
+/// tiene sentido si el umbral largo no baja de ½ ni el corto lo supera: con
+/// `largo < ½` el sistema abriría largos que su propio modelo considera más
+/// probables a la baja.
+///
+/// Un genoma escrito a mano (o cargado de un almacén antiguo) puede violar las
+/// bandas, porque `apply_to_arena` almacena estos dos genes sin acotar. Aquí se
+/// impone el invariante una sola vez, para que todos los consumidores lean los
+/// MISMOS umbrales: el valor no finito cae al neutro ½.
+pub fn ml_gate_thresholds(long_threshold: f64, short_threshold: f64) -> (f64, f64) {
+    let long = if long_threshold.is_finite() { long_threshold } else { 0.5 };
+    let short = if short_threshold.is_finite() { short_threshold } else { 0.5 };
+    (long.clamp(0.5, 1.0), short.clamp(0.0, 0.5))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn d696_los_umbrales_de_la_puerta_nunca_cruzan_el_neutro() {
+        // Genoma normal: se respetan tal cual.
+        assert_eq!(ml_gate_thresholds(0.5698, 0.4302), (0.5698, 0.4302));
+        // Genoma inválido: un largo jamás exige menos de ½ ni un corto más.
+        assert_eq!(ml_gate_thresholds(0.30, 0.70), (0.5, 0.5));
+        // No finitos: neutro.
+        assert_eq!(ml_gate_thresholds(f64::NAN, f64::INFINITY), (0.5, 0.5));
+        // Invariante: para cualquier par, largo ≥ ½ ≥ corto.
+        for l in [-1.0, 0.0, 0.49, 0.5, 0.7, 0.95, 2.0] {
+            for s in [-1.0, 0.0, 0.2, 0.5, 0.51, 0.9, 2.0] {
+                let (gl, gs) = ml_gate_thresholds(l, s);
+                assert!(gl >= 0.5 && gs <= 0.5, "largo {gl} corto {gs} para ({l}, {s})");
+            }
+        }
+    }
 
     #[test]
     fn d693_ml_prob_es_el_ensamble_mas_el_sesgo_spot() {

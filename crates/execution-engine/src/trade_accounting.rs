@@ -57,6 +57,31 @@ pub struct BracketClose {
 static PENDING: LazyLock<Mutex<Vec<BracketClose>>> =
     LazyLock::new(|| Mutex::new(Vec::new()));
 
+/// D-701 (DÉCIMA OLA · auditoría integral) — PnL BRUTO DE UN CIERRE, FUENTE ÚNICA.
+///
+/// Un largo gana cuando sale POR ENCIMA de su entrada y un corto cuando sale por
+/// debajo. La contabilidad de brackets lo calculaba como
+/// `(entrada − salida)·qty·signo` con `signo = +1` para el largo: el signo
+/// quedaba invertido en las DOS direcciones, de modo que cada TP se apuntaba
+/// como pérdida y cada SL como ganancia. Estaba latente sólo porque el contexto
+/// de entrada nunca llegaba (`entry_price == 0`); en cuanto se cablea, Kelly y
+/// el win-rate aprenden justo al revés.
+///
+/// `reconciliation.rs` ya tenía la fórmula correcta: aquí vive una sola vez y la
+/// consumen ambos caminos. Devuelve 0 si falta el contexto de entrada (posición
+/// adoptada): PnL desconocido no es PnL cero, y quien lo consuma debe mirar
+/// `entry_price > 0` para distinguirlo.
+#[inline]
+pub fn gross_pnl(was_long: bool, entry_price: f64, exit_price: f64, qty: f64) -> f64 {
+    if !(entry_price > 0.0 && exit_price > 0.0 && qty > 0.0) {
+        return 0.0;
+    }
+    if was_long {
+        (exit_price - entry_price) * qty
+    } else {
+        (entry_price - exit_price) * qty
+    }
+}
 /// Serializa los tests que tocan la cola global PENDING (cargo test corre
 /// los módulos en paralelo dentro del mismo binario).
 #[cfg(test)]
@@ -214,8 +239,30 @@ pub fn record_bracket_close(rec: BracketClose) {
     if let Ok(mut q) = PENDING.lock() {
         if q.len() < 1024 {
             q.push(rec);
+        } else {
+            // D-710 (DÉCIMA OLA · auditoría integral): el descarte era SILENCIOSO.
+            // Cada cierre perdido es una operación que no alimenta el posterior
+            // de Kelly ni el win-rate, y la muestra queda censurada sin que nadie
+            // pueda saberlo — justo el defecto que esta contabilidad existe para
+            // cerrar. Se cuenta y se informa.
+            let n = DESCARTADOS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if n == 1 || n % 50 == 0 {
+                println!(
+                    "🚨 [CONTABILIDAD] Cola de cierres llena (1024): {} cierres DESCARTADOS — la estadística de Kelly y el win-rate quedan censurados hasta que se drene",
+                    n
+                );
+            }
         }
     }
+}
+
+/// D-710: cierres perdidos por cola llena. Cualquier valor > 0 invalida la
+/// muestra con la que aprende Kelly.
+pub static DESCARTADOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// D-710: cuántos cierres se han descartado por cola llena desde el arranque.
+pub fn cierres_descartados() -> u64 {
+    DESCARTADOS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Drena la cola de cierres pendientes (el host la consume cada tick).
@@ -383,4 +430,62 @@ mod tests {
         assert_eq!(drained[0].symbol, "TESTUSDT");
         assert!(drain_bracket_closes().is_empty());
     }
+
+    #[test]
+    fn d701_el_largo_gana_subiendo_y_el_corto_bajando() {
+        // Largo 100 → 110 con 1 unidad: +10. La fórmula anterior daba −10.
+        assert!((gross_pnl(true, 100.0, 110.0, 1.0) - 10.0).abs() < 1e-9);
+        // Largo 100 → 90: −10.
+        assert!((gross_pnl(true, 100.0, 90.0, 1.0) + 10.0).abs() < 1e-9);
+        // Corto 100 → 90: +10.
+        assert!((gross_pnl(false, 100.0, 90.0, 1.0) - 10.0).abs() < 1e-9);
+        // Corto 100 → 110: −10.
+        assert!((gross_pnl(false, 100.0, 110.0, 1.0) + 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn d701_sin_contexto_de_entrada_no_se_inventa_pnl() {
+        assert_eq!(gross_pnl(true, 0.0, 110.0, 1.0), 0.0);
+        assert_eq!(gross_pnl(true, 100.0, 0.0, 1.0), 0.0);
+        assert_eq!(gross_pnl(true, 100.0, 110.0, 0.0), 0.0);
+        assert_eq!(gross_pnl(false, f64::NAN, 110.0, 1.0), 0.0);
+    }
+
+    #[test]
+    fn d701_es_antisimetrico_entre_direcciones() {
+        for (e, x, q) in [(100.0, 103.5, 0.25), (58_000.0, 57_100.0, 0.003)] {
+            let largo = gross_pnl(true, e, x, q);
+            let corto = gross_pnl(false, e, x, q);
+            assert!((largo + corto).abs() < 1e-9, "largo {largo} corto {corto}");
+        }
+    }
+
+
+    #[test]
+    fn d710_la_cola_llena_no_descarta_en_silencio() {
+        // B3.x: la cola PENDING es global; los tests que la tocan se serializan.
+        let _guard = TEST_QUEUE_LOCK.lock();
+        let _ = drain_bracket_closes();
+        let antes = cierres_descartados();
+        for i in 0..1100u64 {
+            record_bracket_close(BracketClose {
+                ts_ms: i,
+                symbol: "FULLUSDT".into(),
+                was_long: true,
+                qty: 1.0,
+                entry_price: 100.0,
+                exit_price: 101.0,
+                stop_price: 101.0,
+                pnl_gross: 1.0,
+                fees: 0.1,
+                trigger: "TP",
+                slippage_bps: 0.0,
+            });
+        }
+        let descartados = cierres_descartados() - antes;
+        let drenados = drain_bracket_closes().len() as u64;
+        assert_eq!(drenados + descartados, 1100, "ni se pierden ni se inventan cierres");
+        assert!(descartados > 0, "con 1100 cierres y cola de 1024 tiene que haber descartes contados");
+    }
+
 }

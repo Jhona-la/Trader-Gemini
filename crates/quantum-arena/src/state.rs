@@ -350,6 +350,27 @@ pub struct GlobalArena {
 }
 
 impl GlobalArena {
+    /// D-714 (DÉCIMA OLA · auditoría integral) — CONSTRUCCIÓN CON PILA SUFICIENTE,
+    /// EN UN SOLO SITIO.
+    ///
+    /// `CoinArena` lleva en línea el anillo de ticks de cada moneda y la
+    /// construcción materializa temporales de ese tamaño: no cabe en la pila por
+    /// defecto (1–2 MiB en un hilo de Windows, de un test o de un worker de
+    /// rayon). D-684 lo resolvió a mano en los binarios, pero cada sitio nuevo
+    /// que construye un arena vuelve a tropezar: dos tests desbordaban la pila y
+    /// mataban su suite entera, y el daemon Darwin lo construye dentro de un
+    /// `par_iter` —con `panic = "abort"`, eso es el proceso muerto con posiciones
+    /// abiertas—. Aquí vive la única forma segura de construirlo.
+    pub fn build_in_own_stack(initial_capital: f64) -> std::sync::Arc<Self> {
+        std::thread::Builder::new()
+            .name("arena-build".into())
+            .stack_size(32 * 1024 * 1024)
+            .spawn(move || std::sync::Arc::new(Self::new(initial_capital)))
+            .expect("no se pudo crear el hilo de construcción del arena")
+            .join()
+            .expect("la construcción del arena entró en pánico")
+    }
+
     pub fn new(initial_capital: f64) -> Self {
         Self::build(initial_capital, QuantumConfig::new(initial_capital))
     }
@@ -362,6 +383,22 @@ impl GlobalArena {
             initial_capital,
             QuantumConfig::from_genome(initial_capital, genome),
         )
+    }
+
+    /// D-714: variante con pila suficiente de `from_genome`, para los llamadores
+    /// que no corren en un hilo de 32 MiB (tests, workers de rayon).
+    pub fn from_genome_in_own_stack(
+        initial_capital: f64,
+        genome: &crate::genome::SuperGenotype,
+    ) -> std::sync::Arc<Self> {
+        let config = QuantumConfig::from_genome(initial_capital, genome);
+        std::thread::Builder::new()
+            .name("arena-build".into())
+            .stack_size(32 * 1024 * 1024)
+            .spawn(move || std::sync::Arc::new(Self::build(initial_capital, config)))
+            .expect("no se pudo crear el hilo de construcción del arena")
+            .join()
+            .expect("la construcción del arena entró en pánico")
     }
 
     fn build(initial_capital: f64, config: QuantumConfig) -> Self {

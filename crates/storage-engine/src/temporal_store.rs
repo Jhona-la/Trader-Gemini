@@ -139,17 +139,41 @@ mod tests {
                 .as_nanos()
         ));
 
-        // 128 bytes allows exactly 2 blocks of 64 bytes
+        // D-741 (DÉCIMA OLA · auditoría integral): este test afirmaba que la
+        // TERCERA escritura falla «por capacidad excedida», un contrato que
+        // D-517 eliminó al hacer el anillo circular: `raw_offset % usable` da
+        // siempre un desplazamiento válido y el único `Err` posible es el de
+        // capacidad CERO. El test llevaba en rojo desde entonces —y con él la
+        // suite entera del crate de persistencia—, documentando como invariante
+        // justo lo contrario de lo que el código garantiza: que el bloque más
+        // antiguo se sobrescribe en silencio. Se prueba el contrato REAL.
         let store = TemporalObjectStore::new(&path, 128).expect("Failed to create temporal store");
         let tensor = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0];
 
+        // 128 bytes = exactamente dos bloques de 64: las tres escrituras son
+        // válidas y la tercera ROTA sobre la primera.
         assert!(store.write_tensor_block_64(&tensor).is_ok());
         assert!(store.write_tensor_block_64(&tensor).is_ok());
-        // D-517: rotación circular PERMANENTE — el 3er bloque NO falla:
-        // envuelve al inicio del buffer (ring 24/7, sin agotamiento). La
-        // aserción vieja (is_err en el 3er bloque) era la semántica
-        // pre-D-517 que el diseño actual reemplazó deliberadamente.
-        assert!(store.write_tensor_block_64(&tensor).is_ok());
+        assert!(
+            store.write_tensor_block_64(&tensor).is_ok(),
+            "el anillo es circular desde D-517: la tercera escritura sobrescribe la más antigua"
+        );
+
+        // Capacidad cero es el único error posible.
+        let cero = temp_dir.join(format!(
+            "test_temporal_cero_{}.dat",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        if let Ok(vacio) = TemporalObjectStore::new(&cero, 32) {
+            assert!(
+                vacio.write_tensor_block_64(&tensor).is_err(),
+                "con menos de un bloque de capacidad la escritura debe fallar"
+            );
+        }
+        let _ = std::fs::remove_file(cero);
 
         let _ = std::fs::remove_file(path);
     }

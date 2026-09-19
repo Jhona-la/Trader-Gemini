@@ -705,20 +705,24 @@ fn main() {
     // explicada, R²): default 0.001 = 0.1% de la varianza — vol/volumen
     // tienen señal modesta pero accionable mucho antes que 2%.
     let gate_margin: f64 = arg("--gate-margin", "0.001").parse().unwrap();
-    let gate_pass = if is_regression {
-        let r2 = if baseline > 1e-12 { (baseline - best_val) / baseline } else { 0.0 };
-        println!("   R² = {:.4}", r2);
-        r2 >= gate_margin
-    } else {
-        baseline - best_val >= gate_margin
-    };
-    if !gate_pass {
-        println!("🚫 GATE: mejora < margen {} — sin evidencia real. El modelo vivo NO se toca.",
-                 gate_margin);
-        if !promote {
-            return;
-        }
+    // D-720 (DÉCIMA OLA · auditoría integral): EL GATE GOBIERNA EL DESTINO.
+    //
+    // La condición estaba invertida respecto al docstring de este fichero
+    // («Sin gate: jamás sobrescribir el modelo vivo con ruido»): al fallar el
+    // gate sólo se retornaba SIN `--promote`, es decir, se retornaba cuando el
+    // modelo iba al candidato y se CONTINUABA cuando iba al modelo VIVO. Un
+    // `train_forest BTCUSDT --promote` sobre un mes sin edge imprimía «el modelo
+    // vivo NO se toca» y acto seguido lo sobrescribía; el watcher de god_engine
+    // lo hot-swapea en ≤10 s y, desde B3.18, ese modelo decide TODAS las
+    // entradas. Ahora un gate no superado nunca escribe el modelo vivo: va al
+    // candidato y el proceso termina con código 2 para que cualquier
+    // automatización lo detecte.
+    let gate_ok = baseline - best_val >= gate_margin;
+    if !gate_ok {
+        println!("🚫 GATE: Δ {:+.5} < margen {} — sin evidencia real de edge. El modelo vivo NO se toca.",
+                 baseline - best_val, gate_margin);
     }
+    let promote = promote && gate_ok;
 
     // ── 5. Serializar al formato NanoForestData ──────────────────────────
     let mut children_left: Vec<i32> = Vec::new();
@@ -766,9 +770,14 @@ fn main() {
     let mut f = File::create(&out).unwrap();
     serde_json::to_writer_pretty(&mut f, &model).unwrap();
     println!("💾 {} ({} árboles, init {:.4}){}", out, trees.len(), init_score,
-             if !gate_pass { " — [gate NO superado, revisar antes de promover]" } else { "" });
-    if !promote && gate_pass {
+             if !gate_ok { " — [gate NO superado, revisar antes de promover]" } else { "" });
+    if !promote && gate_ok {
         println!("   para promover al vivo: re-ejecuta con --promote (hot-swap lo recoge en ≤10s)");
+    }
+    // D-720: sin evidencia, salida distinta de cero — el fichero escrito es el
+    // candidato, no el vivo.
+    if !gate_ok {
+        std::process::exit(2);
     }
 }
 

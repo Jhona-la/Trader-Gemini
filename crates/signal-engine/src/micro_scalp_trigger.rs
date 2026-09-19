@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_micro_scalp_trigger() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         // Condición Long completa: hawkes alto, obi positivo alto, ml_prob alcista
         let should_trigger =
             MicroScalpTriggerEngine::should_trigger_micro_scalp(&arena, 3.0, 2.5, 0.85, true);
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn test_micro_scalp_trigger_conformal() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         // Conformal p-value suficiente (0.85 >= 0.70)
         let ok = MicroScalpTriggerEngine::should_trigger_micro_scalp_conformal(
             &arena, 3.0, 2.5, 0.85, 0.85, true,
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn test_micro_scalp_trigger_short_symmetry() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         // Short con OBI negativo
         let should_trigger_short =
             MicroScalpTriggerEngine::should_trigger_micro_scalp(&arena, 3.0, -2.5, 0.15, false);

@@ -297,7 +297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // MOTOR MAESTRO CONTINUO (Paridad 1:1 Estricta con Producción Real):
     // La arena y el motor se instancian una sola vez para mantener vivos los filtros wavelets,
     // promedios exponenciales, modelos L2 y posiciones activas sin reseteos artificiales a medianoche.
-    let arena = Arc::new(GlobalArena::new(current_capital));
+    let arena = GlobalArena::build_in_own_stack(current_capital);
     arena.config.live_maker_fee.store(0.0002, Ordering::Relaxed);
     arena.config.live_taker_fee.store(0.0005, Ordering::Relaxed);
     arena
@@ -339,7 +339,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let deterministic_seed: u64 = 0x5EED_0000_0000_0000u64
                 .wrapping_add((day_idx as u64) << 32)
                 .wrapping_add(i as u64);
-            let mutant_arena = Arc::new(GlobalArena::new(current_capital));
+            let mutant_arena = GlobalArena::build_in_own_stack(current_capital);
             mutant_arena
                 .config
                 .live_maker_fee

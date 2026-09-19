@@ -291,12 +291,25 @@ pub fn reconcile_arena(
         if remote_net_qty.abs() < 1e-8 {
             // Exchange está plano pero la Arena cree que tiene posiciones abiertas: phantom cleanup
             if cont_open {
-                let exit_price = if remote_price > 0.0 {
-                    remote_price
-                } else {
-                    coin.current_price
-                        .load(std::sync::atomic::Ordering::Relaxed)
-                };
+                // D-716 (DÉCIMA OLA · auditoría integral): NO SE INVENTA EL FILL.
+                //
+                // Aquí se imputaba como precio de salida `coin.current_price`, el
+                // precio de MERCADO de hasta 60 s después del cierre real (la
+                // limpieza corre en el ciclo de reconciliación). Y `remote_price`
+                // es siempre 0 en esta rama —el mapa sólo se rellena con
+                // posiciones ABIERTAS y aquí la remota está plana—, de modo que
+                // la condición era código muerto y el precio inventado, la regla.
+                // Un SL que llenó en 98 mientras el precio rebotaba a 101 se
+                // contabilizaba como GANANCIA, y ese PnL ficticio iba a
+                // `pnl_realized`, `win_rate`, `gross_wins/losses`, `trade_count` y
+                // `unified_capital`: las métricas que alimentan la aptitud de
+                // Darwin y la matriz de apalancamiento.
+                //
+                // La posición se cierra igual (el margen SIEMPRE se libera), pero
+                // sin fill conocido no hay PnL que atribuir: el cierre real llega
+                // por la contabilidad de brackets (D-701/D-702) o por
+                // /fapi/v1/income, que son las fuentes con precio verdadero.
+                let exit_price = remote_price;
                 let (was_long, entry_p, qty, m, entry_fee_paid) =
                     coin.positions.position.close_with_fee();
                 if m > 0.0 {
@@ -309,11 +322,9 @@ pub fn reconcile_arena(
                 }
 
                 if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
-                    let gross_pnl = if was_long {
-                        (exit_price - entry_p) * qty
-                    } else {
-                        (entry_p - exit_price) * qty
-                    };
+                    // D-701: la misma función que usa la contabilidad de brackets.
+                    let gross_pnl =
+                        crate::trade_accounting::gross_pnl(was_long, entry_p, exit_price, qty);
                     let live_taker = arena
                         .config
                         .live_taker_fee
@@ -391,18 +402,18 @@ pub fn reconcile_arena(
                     10.0
                 };
                 let margin = notional / lev;
-                // CERT-M4-H05: imputar entry_fee de la adopción con el fee
+// CERT-M4-H05: imputar entry_fee de la adopción con el fee
                 // taker estándar (0.04% VIP default — el arena config no es
                 // accesible desde aquí sin refactor de firma; el fee exacto
                 // se corrige en la primera reconciliación con tradeId).
                 // Antes entry_fee=0 → Kelly sobreestimaba en adoptadas.
                 // FIX R7-0 (CRÍTICO): el fee iba en el slot TP de
-                // open_with_horizon (firma `..., tp, sl, horizon`) —
-                // instalaba un take-profit en ~$0.04 (disparo instantáneo
-                // en longs) y el fee jamás llegaba al modelo. open_with_fee
-                // es la firma que acepta entry_fee como último parámetro.
+                // open_with_horizon — instalaba un TP en ~$0.04 y el fee
+                // jamás llegaba al modelo. open_with_fee es la firma correcta.
+                // D-729 (unión): además, si la entrada no es válida (precio o
+                // cantidad), la posición NO se abre y tampoco se reserva margen.
                 let adopted_entry_fee = notional * 0.0004;
-                coin.positions.position.open_with_fee(
+                let adoptada = coin.positions.position.open_with_fee(
                     is_long,
                     price,
                     abs_qty,
@@ -415,6 +426,13 @@ pub fn reconcile_arena(
                     0.0,
                     adopted_entry_fee,
                 );
+                if !adoptada {
+                    println!(
+                        "🚨 [RECONCILIACIÓN] {}: posición remota con precio {} y cantidad {} no adoptable — se audita contra el exchange en vez de inventarla",
+                        sym, price, abs_qty
+                    );
+                    continue;
+                }
                 // B3.14 (auditoría): la posición adoptada EXISTE en el
                 // exchange — sin este flag sus cierres NO contabilizan
                 // (sub-cuenta silenciosa en Kelly tras toda adopción del
@@ -467,19 +485,19 @@ pub fn reconcile_arena(
                         .position
                         .margin_used
                         .load(std::sync::atomic::Ordering::Relaxed);
+                    // D-734 (DÉCIMA OLA · auditoría integral): la rama de DERIVA
+                    // seguía dividiendo por el literal 10 mientras la rama de
+                    // adopción, a 40 líneas de distancia, ya usa el apalancamiento
+                    // REAL del exchange (S-06). Una cuenta a 20x veía su margen
+                    // inflado al doble en cuanto la cantidad derivaba, con la
+                    // falsa escasez de margen que S-06 vino a corregir.
+                    let lev_deriva = remote_lev_map
+                        .get(&sym)
+                        .copied()
+                        .filter(|l| l.is_finite() && *l >= 1.0)
+                        .unwrap_or(10.0);
                     let new_margin = if safe_price > 0.0 {
-                        // C-04 (INFORME-14): leverage REAL del exchange
-                        // (remote_lev_map), igual que la adopción de arriba
-                        // (S-06). El /10.0 hardcodeado inflaba used_margin
-                        // 2-5x en cuentas 20x/50x → falsa escasez de margen
-                        // → vetos contra capital que sí existe.
-                        let lev = remote_lev_map.get(&sym).copied().unwrap_or(10.0);
-                        let lev = if lev.is_finite() && lev >= 1.0 {
-                            lev
-                        } else {
-                            10.0
-                        };
-                        (target_abs * safe_price) / lev
+                        (target_abs * safe_price) / lev_deriva
                     } else {
                         old_margin
                     };
@@ -635,7 +653,13 @@ mod tests {
         quantum_arena::symbol_registry::update_registry(specs);
         quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into(), "ETHUSDT".into()]);
 
-        let arena = quantum_arena::GlobalArena::new(100.0);
+        // D-703 (DÉCIMA OLA · auditoría integral): este test desbordaba la pila y
+        // hacía abortar TODA la suite del crate (STATUS_STACK_OVERFLOW), de modo
+        // que los demás tests no llegaban a ejecutarse. Es el patrón de D-684: el
+        // arena materializa en línea los anillos de ticks de sus monedas y no cabe
+        // en la pila por defecto de un hilo de test; producción y el forense ya lo
+        // construyen en un hilo de 32 MiB. Aquí, lo mismo.
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
 
         // Simulate phantom position on BTC (arena has it open, but Binance is flat)
         arena.coins[0].positions.position.open_with_horizon(

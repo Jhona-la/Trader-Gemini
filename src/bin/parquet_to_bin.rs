@@ -78,7 +78,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 open
             };
             let initial_trend_up = open >= prev_open;
-            let spread = (high - low).max(close * 0.0001);
+            // D-722 (DÉCIMA OLA · auditoría integral): EL SPREAD TAMBIÉN TIENE QUE
+            // SER CAUSAL.
+            //
+            // El spread de los cuatro subticks era el rango `high − low` de la
+            // vela que AÚN NO HA OCURRIDO, y el subtick estampado en la apertura
+            // ya lo llevaba: el backtest ejecuta contra bid/ask, de modo que una
+            // entrada en la apertura de una vela que luego recorre un 3 % se
+            // llenaba un 1,5 % fuera del `open`, y una entrada en una vela plana
+            // se llenaba al `open`. El motor «sabía» en t+0 cuánto iba a moverse
+            // la vela, y cualquier feature de spread, microprecio u OFI de ese
+            // subtick era función del futuro. La corrección de D-691 arregló el
+            // ORDEN de los extremos, no esto. Ahora el spread sale del rango
+            // REALIZADO de la vela anterior, que a `ts` ya está cerrada.
+            let prev_high = if i > 0 {
+                highs.get(i - 1).unwrap_or(high)
+            } else {
+                high
+            };
+            let prev_low = if i > 0 {
+                lows.get(i - 1).unwrap_or(low)
+            } else {
+                low
+            };
+            let prev_range = (prev_high - prev_low).max(0.0);
+            let spread = if prev_range.is_finite() && prev_range > 0.0 {
+                prev_range
+            } else {
+                close * 0.0001
+            }
+            .max(close * 0.0001);
             let quarter_vol = (volume * 0.25).max(0.001);
 
             // Sub-tick 1: Apertura (t + 0s)
@@ -150,7 +179,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // R2.4 — header magic+version: permite al lector validar formato y
         // rechazar ruidosamente archivos de otra versión (antes: basura
         // deserializada en silencio).
-        bin_file.write_all(backtest_engine::tick_replayer::TICK_MAGIC)?;
+        // D-721: este generador expande VELAS a cuatro subticks; su cabecera lo
+        // declara, para que ningún lector confunda esto con ticks del exchange.
+        bin_file.write_all(backtest_engine::tick_replayer::TICK_MAGIC_SYNTH)?;
         let byte_len = ticks.len() * std::mem::size_of::<BinTick>();
         let bytes = unsafe { std::slice::from_raw_parts(ticks.as_ptr() as *const u8, byte_len) };
         bin_file.write_all(bytes)?;

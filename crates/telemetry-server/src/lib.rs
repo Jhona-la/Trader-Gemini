@@ -1087,7 +1087,7 @@ mod tests {
     /// serializado (el dashboard lo consume).
     #[tokio::test]
     async fn sanitizer_marca_y_excluye_unrealized_imposible() {
-        let arena = std::sync::Arc::new(quantum_arena::GlobalArena::new(2_200.0));
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(2_200.0);
 
         // Coin 0: marcado roto (glitch medido: +$2.27M en cuenta de $2.2K).
         arena.coins[0]

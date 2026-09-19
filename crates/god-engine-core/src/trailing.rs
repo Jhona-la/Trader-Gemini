@@ -234,25 +234,33 @@ pub fn evaluate_quantum_trailing_with_fee(
 
         if max_pnl_pct >= be_trigger {
             if pos_side == 1 {
+                // D-711: el largo recibe la MISMA guarda que ya tenía el corto
+                // (`&& lock < current_price`). Sin ella, un bloqueo que quedaría
+                // POR ENCIMA del mercado se fijaba igual y la acotación final
+                // (`best_stop.min(current_price·(1 − 1 pb))`) lo aplastaba a un
+                // punto básico bajo el precio: el largo salía al primer tick
+                // adverso mientras su corto espejo conservaba un stop a distancia
+                // ATR. Misma geometría, dos comportamientos de salida según la
+                // dirección. Un bloqueo inalcanzable se OMITE, como en el corto.
                 let breakeven_price = entry_price * (1.0 + be_buffer);
-                if t1_stop < breakeven_price {
+                if t1_stop < breakeven_price && breakeven_price < current_price {
                     t1_stop = breakeven_price;
                 }
                 if max_pnl_pct >= half_lock_trigger {
                     let half_lock = entry_price * (1.0 + half_lock_gain);
-                    if t1_stop < half_lock {
+                    if t1_stop < half_lock && half_lock < current_price {
                         t1_stop = half_lock;
                     }
                 }
                 if max_pnl_pct >= profit_lock_trigger {
                     let profit_lock = entry_price * (1.0 + profit_lock_gain);
-                    if t1_stop < profit_lock {
+                    if t1_stop < profit_lock && profit_lock < current_price {
                         t1_stop = profit_lock;
                     }
                 }
                 if max_pnl_pct >= runner_lock_trigger {
                     let runner_lock = entry_price * (1.0 + runner_lock_gain);
-                    if t1_stop < runner_lock {
+                    if t1_stop < runner_lock && runner_lock < current_price {
                         t1_stop = runner_lock;
                     }
                 }
@@ -477,4 +485,24 @@ mod tests {
         assert_eq!(res_nan.stop_price, 59000.0);
         assert!(!res_nan.force_close);
     }
+
+    #[test]
+    fn d711_largo_y_corto_protegen_igual_de_lejos() {
+        // Espejo exacto: misma entrada, mismo recorrido a favor, mismo ATR y fase.
+        let atr = 100.0;
+        let entry = 60_000.0;
+        let largo = evaluate_quantum_trailing(
+            1, entry, entry + 0.005 * entry, atr, 2, 0.0, 0.02, 0.0, 0.0006, 1.0, 1.5, 2.0, 3.0,
+        );
+        let corto = evaluate_quantum_trailing(
+            -1, entry, entry - 0.005 * entry, atr, 2, 0.0, 0.02, 0.0, 0.0006, 1.0, 1.5, 2.0, 3.0,
+        );
+        let d_largo = (entry + 0.005 * entry - largo.stop_price).abs();
+        let d_corto = (corto.stop_price - (entry - 0.005 * entry)).abs();
+        assert!(
+            (d_largo - d_corto).abs() < entry * 1e-4,
+            "el stop del largo queda a {d_largo} y el del corto a {d_corto}: la protección debe ser simétrica"
+        );
+    }
+
 }

@@ -82,7 +82,7 @@ pub fn run_backtest_native(
     use quantum_arena::GlobalArena;
     use std::sync::atomic::Ordering;
 
-    let arena = Arc::new(GlobalArena::new(initial_capital)); // Dynamic capital for absolute GA evaluation
+    let arena = GlobalArena::build_in_own_stack(initial_capital); // Dynamic capital for absolute GA evaluation
     // Apply configs from Evolution to GlobalArena
     cfg.apply_to_arena(&arena);
 

@@ -213,7 +213,7 @@ impl EvolutionEngine {
                     .map(|(local_i, genome)| {
                         let i = chunk_idx * chunk_size + local_i;
                         let genome_clone = genome.clone();
-                        let test_arena = Arc::new(GlobalArena::new(initial_capital));
+                        let test_arena = GlobalArena::build_in_own_stack(initial_capital);
 
                         genome_clone.apply_to_arena(&test_arena);
                         // Note: apply_to_arena already stores global_max_drawdown — no duplicate needed

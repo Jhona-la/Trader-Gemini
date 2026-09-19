@@ -896,6 +896,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         streams.push_str(sym);
         streams.push_str("@depth5/");
         streams.push_str(sym);
+        // D-705 (DÉCIMA OLA · auditoría integral): EL RELOJ DE CALIBRACIÓN ES EL
+        // MISMO EN CALENTAMIENTO, VALIDACIÓN Y VIVO.
+        //
+        // La vela cerrada es, por diseño del núcleo, el reloj que evalúa las
+        // predicciones del ensamble contra la dirección realizada del bar
+        // (`update_with_outcome`, F4.7) y el que mueve las EMAs de kline del
+        // escudo macro. El calentamiento las llena con velas de 1 MINUTO
+        // (bootloader: `interval=1m`) y el forense marca frontera de vela cada
+        // minuto, pero en vivo se suscribía `@kline_1h`: 24 muestras diarias por
+        // símbolo, con los pesos del ensamble en su valor inicial [0,5; 0,5]
+        // durante la primera hora de cada arranque —y los arranques son
+        // frecuentes—. Desde B3.18 ese ensamble decide TODAS las entradas, así
+        // que su calibración no puede ir 60 veces más lenta que la decisión, ni
+        // el motor vivo puede alimentar con velas horarias unas EMAs calentadas
+        // con velas de un minuto.
         streams.push_str("@kline_1m");
 
         if i < symbols.len() - 1 {
@@ -1069,9 +1084,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut order_executor =
         execution_engine::executor::OrderExecutor::new(active_key, active_secret, is_testnet);
-    // If we are on Testnet, we want to hit the Testnet API natively, not intercept locally as Paper Trading
-    if is_env_testnet {
-        order_executor.set_paper_trading(false);
+    // D-700 (DÉCIMA OLA · auditoría integral): LA PUERTA HUMANA GOBIERNA EL
+    // FUEGO REAL DESDE EL PRIMER EJECUTOR.
+    //
+    // `is_paper_trading` nace en `false` (executor.rs), y aquí la única línea que
+    // lo tocaba era `if is_env_testnet { set_paper_trading(false) }`, que no hace
+    // nada porque ya vale false. Resultado: arrancar SIN `--force-live`, o con él
+    // pero sin `config_dir/MAINNET_ARMED`, imprimía «MODO DEMO» y sin embargo el
+    // ejecutor inicial disparaba contra la cuenta REAL con las claves de mainnet
+    // —`ensure_hedge_mode` cambia el modo de posición de la cuenta, y las rutas de
+    // restauración y protección colocan órdenes— hasta la transición de fase.
+    //
+    // El discriminador correcto no es el entorno (testnet o mainnet), que es
+    // ortogonal, sino la MISMA puerta de capital que decide `is_demo_mode`: en
+    // testnet se opera nativamente contra su API; en mainnet sin armado humano,
+    // papel local.
+    order_executor.set_paper_trading(is_demo_mode && !is_env_testnet);
+    if is_demo_mode && !is_env_testnet {
+        telemetry_server::telemetry_log!(
+            "🧻 [PUERTA MAINNET] Ejecutor en PAPEL local: sin MAINNET_ARMED no sale ninguna orden a la cuenta real."
+        );
     }
     let exec = Arc::new(arc_swap::ArcSwap::from_pointee(order_executor));
 
@@ -1433,6 +1465,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_sink(std::sync::Arc::new(CapitalBridgeSink {
         unified_capital: Arc::clone(&unified_capital),
     }))
+    // D-702 (DÉCIMA OLA · auditoría integral): este streamer nace ANTES que el
+    // arena (que se construye dentro del hilo del núcleo, con pila de 32 MiB por
+    // D-684), así que no puede recibirlo; el de la era de producción sí lo
+    // recibe. Con la puerta de capital (D-700) esta era es papel local, donde no
+    // hay cierres reales que contabilizar.
     .with_api_secret(exec.load().api_secret())
     .with_shutdown(Arc::clone(&demo_streamer_abort));
     tokio::spawn(async move {
@@ -1734,15 +1771,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 telemetry_server::telemetry_log!("   👉 Símbolo activo en exchange: {} (Qty: {})", pos.symbol, pos.qty);
                 if let Some(&coin_idx) = symbol_to_id.get(&pos.symbol) {
                     let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
-                    // HOST-013 — margen con el leverage REAL del positionRisk
-                    // (antes /10.0 hardcodeado: cuentas 20×/50× adoptaban
-                    // margen inflado 2-5× ⇒ falsa escasez de capital).
-                    let pos_leverage = restore_lev_map
-                        .get(&pos.symbol)
-                        .copied()
-                        .filter(|l| l.is_finite() && *l >= 1.0)
-                        .unwrap_or(10.0);
-                    let calculated_margin = (pos.qty.abs() * pos.entry_price) / pos_leverage;
+                    // D-726 (DÉCIMA OLA · auditoría integral): EL MARGEN SALE DEL
+                    // APALANCAMIENTO REAL Y SE RESERVA DE VERDAD.
+                    //
+                    // El margen se reconstruía dividiendo el nocional por el
+                    // literal 10 —una posición a 20x quedaba con el doble de
+                    // margen del real y una a 5x, con la mitad— y, peor, NUNCA se
+                    // sumaba a `arena.used_margin`: tras un reinicio con
+                    // posiciones abiertas, `free_margin = capital − used_margin`
+                    // devolvía el capital ENTERO como libre y el motor abría
+                    // posiciones nuevas como si no tuviera ninguna. La rama de
+                    // adopción de `reconcile_arena` sí reserva margen, pero exige
+                    // que la posición NO esté ya abierta en el arena, así que no
+                    // corregía ésta. El apalancamiento real viene en
+                    // `/fapi/v2/positionRisk`; si el exchange no lo informa se usa
+                    // el del genoma para esta moneda, nunca un literal.
+                    let lev_real = if pos.leverage > 0.0 {
+                        pos.leverage
+                    } else {
+                        arena_real
+                            .config
+                            .global_leverage
+                            .load(Ordering::Relaxed)
+                            .clamp(1.0, 125.0)
+                    };
+                    let calculated_margin = (pos.qty.abs() * pos.entry_price) / lev_real;
+                    arena_real
+                        .used_margin
+                        .fetch_add(calculated_margin, Ordering::Relaxed);
                     arena_real.coins[coin_idx].positions.position.open_with_horizon(
                         pos.is_long,
                         pos.entry_price,
@@ -1753,7 +1809,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         0.0,
                         quantum_arena::position::PositionHorizon::Continuous,
                     );
-                    telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (Margen: ${:.2}, lev {:.0}×)", pos.symbol, calculated_margin, pos_leverage);
+                    telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (Margen: ${:.2} a {:.0}x — reservado en used_margin)", pos.symbol, calculated_margin, lev_real);
 
                     // B2.7 — RECUPERACIÓN DE CONTEXTO (directriz del operador):
                     // qué τ y qué predicción ML seguían esta posición vive en
@@ -2382,22 +2438,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // que quema slots algo y ensucia el stream). Cancelarlas.
                     if let Ok(all_legs) = executor.fetch_all_open_algo_orders().await {
                         for leg in &all_legs {
+                            // D-698 (DÉCIMA OLA · auditoría integral): `positionSide`
+                            // vacío es DESCONOCIDO, no «no coincide». Con el
+                            // predicado anterior, una pierna sin ese campo —el mismo
+                            // que ya llegó vacío con `algoStatus` (B1.3-fix)— daba
+                            // `side_open = false` para toda posición LARGA viva, y el
+                            // watchdog purgaba su TP y su SL dejándola desnuda.
+                            let side_unknown = leg.position_side.is_empty();
                             let side_open = positions.iter().any(|p| {
                                 p.symbol == leg.symbol
                                     && p.position_amt.abs() > 0.0
                                     && (leg.position_side == "BOTH"
+                                        || side_unknown
                                         || (p.position_amt > 0.0) == (leg.position_side == "LONG"))
                             });
                             if !side_open {
-                                if executor
-                                    .cancel_algo_order(&leg.symbol, &leg.client_algo_id)
+                                // D-698: se cancela por `algoId` y el fallo se
+                                // reporta: una pierna que sobrevive a la purga
+                                // dispara sobre la posición siguiente.
+                                match executor
+                                    .cancel_algo_order_ids(
+                                        &leg.symbol,
+                                        leg.algo_id,
+                                        &leg.client_algo_id,
+                                    )
                                     .await
-                                    .is_ok()
                                 {
-                                    telemetry_server::telemetry_log!(
-                                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} {} (posición ya cerrada)",
-                                        leg.symbol, leg.order_type, leg.client_algo_id
-                                    );
+                                    Ok(()) => telemetry_server::telemetry_log!(
+                                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} algoId {} (posición ya cerrada)",
+                                        leg.symbol, leg.order_type, leg.algo_id
+                                    ),
+                                    Err(e) => telemetry_engine::telemetry_err!(
+                                        "🚨 [PROTECTION-WATCHDOG] Pierna huérfana VIVA: {} {} algoId {} no se pudo cancelar: {}",
+                                        leg.symbol, leg.order_type, leg.algo_id, e
+                                    ),
                                 }
                             }
                         }
@@ -2998,10 +3072,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // L-1: Ingesta de Microestructura Física en la Arena Viva (CVD y Muros L2)
                 // Corrige la ceguera de volumen agresivo y profundidad del libro en vivo (Causa Forense #D117).
+                // D-708 (unión): el flujo agregado lo actualiza ahora el
+                // núcleo dentro de `process_event` (misma fuente para vivo,
+                // forense y replay) — el host YA NO llama update_agg_trade.
+                // P-5 (ENTE BALLENA) se conserva: z-score de burst sobre el
+                // volumen del trade real; publicado al registry por símbolo.
                 if is_trade {
-                    engine_real.arena.update_agg_trade(coin_id, is_buyer_maker, qty);
-                    // P-5 — ENTE BALLENA: z-score de burst sobre el volumen
-                    // del trade real; publicado al registry por símbolo.
                     if coin_id < whale_trackers.len() {
                         let notional = qty * current_price;
                         if notional.is_finite() && notional > 0.0 {
@@ -3051,9 +3127,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // F4.1: features omni REALES (macro FRED/PAXG + sentiment vivos).
                 // Antes: &[0.0; 54] — la NN swing evaluaba ceros en producción.
                 let omni_features_hot = omni_state_hot.get_features();
+                // D-707 (DÉCIMA OLA · auditoría integral): EL LIBRO NO DESAPARECE
+                // ENTRE EVENTOS DE DEPTH.
+                //
+                // `dbq`/`daq` sólo se rellenan en un evento @depth5; en un trade o
+                // en una vela llegaban en 0, y el núcleo fabricaba cantidades
+                // SIMÉTRICAS a partir del volumen del trade, de modo que
+                // `obi_val = 0` exactamente y `book_absent` era cierto SIEMPRE en
+                // esos eventos: el bot vivo corría el generador de señales «sin
+                // libro» —el que se escribió para el backtest trade-only, con
+                // confianzas literales— mientras el forense, que sí recibe
+                // cantidades por tick, corría el otro. Era una divergencia
+                // backtest↔producción en la rama de decisión, no en un parámetro.
+                //
+                // El último libro conocido vive en el arena (`update_l2_depth` lo
+                // escribe en cada @depth5). En un evento sin libro propio se usa
+                // ése: el estado del libro es del mercado, no del tipo de evento.
+                let (eff_dbq, eff_daq) = if is_depth || (dbq > 0.0 && daq > 0.0) {
+                    (dbq, daq)
+                } else {
+                    let c = &engine_real.arena.coins[coin_id];
+                    (
+                        c.l2_bid_wall.load(std::sync::atomic::Ordering::Relaxed),
+                        c.l2_ask_wall.load(std::sync::atomic::Ordering::Relaxed),
+                    )
+                };
                 let (mut new_order, closed_order) = engine_real.process_event(
                     coin_id, is_trade, is_kline_closed, is_depth,
-                    current_price, qty, dbp, dap, dbq, daq,
+                    current_price, qty, dbp, dap, eff_dbq, eff_daq,
                     depth_obi, depth_micro_div, event_time as u64, latency_panic, &omni_features_hot,
                     is_buyer_maker,
                 );
@@ -3066,8 +3167,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // el costo por 10.
                 if msg_count % 10 == 0 {
                     shadow_forest.broadcast_tick(
+                        // D-707: los universos sombra ven el mismo libro que el
+                        // motor real, o compararían dos mundos distintos.
                         coin_id, is_trade, is_kline_closed, is_depth,
-                        current_price, qty, dbp, dap, dbq, daq,
+                        current_price, qty, dbp, dap, eff_dbq, eff_daq,
                         depth_obi, depth_micro_div, event_time as u64,
                         &engine_real.arena,
                         &omni_features_hot,
@@ -3188,6 +3291,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .with_sink(std::sync::Arc::new(CapitalBridgeSink {
                             unified_capital: Arc::clone(&unified_capital),
                         }))
+                        // D-702: el streamer de mainnet también necesita el arena
+                        // para atribuir el PnL de los cierres por bracket.
+                        .with_arena(Arc::clone(&arena_real))
                         .with_api_secret(new_exec_arc.api_secret());
                         // X-011: matar el streamer de la era demo ANTES de
                         // spawnear el de mainnet — su ACCOUNT_UPDATE de testnet
@@ -3245,7 +3351,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Kelly que antes sólo veía los cierres del core.
                     for bc in execution_engine::trade_accounting::drain_bracket_closes() {
                         let net_bc = bc.pnl_gross - bc.fees;
-                        if bc.pnl_gross != 0.0 {
+                        // D-702: la condición es «se conoce el contexto de
+                        // entrada», no «el PnL no es cero». Con la guarda
+                        // anterior, un cierre exactamente en el precio de entrada
+                        // quedaba fuera de la estadística sin dejar rastro.
+                        if bc.entry_price > 0.0 {
                             // B3.7 (auditoría) — ¿el core ya contabilizó ESTE
                             // mismo cierre (condición de salida disparada casi
                             // simultáneamente al fill de la pierna)? Ventana

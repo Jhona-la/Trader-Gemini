@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_turbo_scalper_neutral_flow_returns_none() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         // Flujo neutro (obi = 0, ofi = 0) debe retornar None (no forzar Long)
         let signal = TurboScalpEngine::evaluate_turbo_scalp(
             &arena, 0.0, 0.0, 1.0, 0.1, 60000.0, 0.005, 1000,
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn test_turbo_scalper_symmetric_short_signal() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         // Flujo fuertemente vendedor con excitación hawkes bajista de alta intensidad
         let signal = TurboScalpEngine::evaluate_turbo_scalp(
             &arena, -0.9, -0.9, -3.0, 0.01, 60000.0, 0.005, 1000,
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_turbo_scalper_nan_immunity() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let signal = TurboScalpEngine::evaluate_turbo_scalp(
             &arena,
             f64::NAN,

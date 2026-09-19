@@ -113,13 +113,7 @@ async fn main() {
     // su necesidad de pila depende de cómo el optimizador inlinee la construcción,
     // y con 1 MiB (hilo principal en Windows) un cambio de una línea en `build`
     // bastó para desbordarla. El evolver y el simulador ya seguían este patrón.
-    let arena = std::thread::Builder::new()
-        .name("arena-build".into())
-        .stack_size(32 * 1024 * 1024)
-        .spawn(move || Arc::new(quantum_arena::GlobalArena::new(initial_capital)))
-        .expect("no se pudo crear el hilo de construcción del arena")
-        .join()
-        .expect("la construcción del arena entró en pánico");
+    let arena = quantum_arena::GlobalArena::build_in_own_stack(initial_capital);
     genome.apply_to_arena(&arena);
 
     // Desactivar NanoForest obsoleto para activar DarkAlphaEngine 54D unificado
@@ -169,6 +163,48 @@ async fn main() {
         }
     };
     core.swing_nn = Some(nn);
+
+    // D-699 (DÉCIMA OLA · auditoría integral): EL FORENSE CARGA LOS MISMOS
+    // MODELOS QUE EL BOT VIVO.
+    //
+    // `god_engine` registra al arrancar TODOS los ficheros de `models/` en el
+    // registro global de `NanoForest`, por su nombre de fichero, y el núcleo
+    // busca el bosque del símbolo con la clave `{SÍMBOLO}_SCALP`. El forense no
+    // registraba ninguno: `NanoForest::get_global("BTCUSDT_SCALP")` devolvía
+    // `None` y el ensamble corría sin bosque —sólo red y espectro—. Desde que
+    // «la predicción decide» (gate de ensamble en toda entrada), medir sin el
+    // bosque es medir otro motor. `backtest_windows` y `evolution` ya lo
+    // cargaban; el forense, que es el que valida, no.
+    let mut forests_cargados = 0usize;
+    match std::fs::read_dir("models") {
+        Ok(entries) => {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                let ext = path.extension().and_then(|s| s.to_str());
+                if ext != Some("json") && ext != Some("bin") {
+                    continue;
+                }
+                let (Some(stem), Some(path_str)) =
+                    (path.file_stem().and_then(|s| s.to_str()), path.to_str())
+                else {
+                    continue;
+                };
+                if god_engine_core::ml_inference::NanoForest::load_global(stem, path_str).is_ok() {
+                    forests_cargados += 1;
+                }
+            }
+        }
+        Err(e) => println!("⚠️ [MODELOS] No se pudo leer models/: {}", e),
+    }
+    println!(
+        "🌲 [MODELOS] {} modelos registrados como en producción · bosque BTCUSDT_SCALP: {}",
+        forests_cargados,
+        if god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_SCALP").is_some() {
+            "presente"
+        } else {
+            "AUSENTE (el ensamble corre sin bosque)"
+        }
+    );
 
     // INICIALIZAR EL SYMBOL REGISTRY PARA BTCUSDT (coin_id = 0)
     quantum_arena::symbol_registry::update_registry(vec![
@@ -274,12 +310,10 @@ async fn main() {
     // en ambos casos, así que el fichero de aggTrades reales era ilegible y todo
     // el forense corría sobre velas expandidas. Mismo criterio que
     // `backtest_engine::tick_replayer`.
-    let magic = backtest_engine::tick_replayer::TICK_MAGIC;
-    let header_len = if bytes_len >= magic.len() && &mmap[..magic.len()] == magic {
-        magic.len()
-    } else {
-        0
-    };
+    // D-721: la cabecera declara el ORIGEN del dato, no sólo la versión.
+    let (origen, header_len) = backtest_engine::tick_replayer::TickOrigin::from_header(
+        &mmap[..bytes_len.min(8)],
+    );
     let payload_len = bytes_len - header_len;
     if payload_len % tick_size != 0 {
         println!(
@@ -288,14 +322,12 @@ async fn main() {
         );
         return;
     }
-    println!(
-        "📦 Formato de datos: {}",
-        if header_len > 0 {
-            "versionado TGMTICK1"
-        } else {
-            "legado sin cabecera (velas expandidas, ver D-691)"
-        }
-    );
+    println!("📦 Origen de los datos: {}", origen.descripcion());
+    if !origen.es_real() {
+        println!(
+            "⚠️  [VALIDEZ] Este veredicto NO puede sostener conclusiones de microestructura ni de coste: los datos no son ticks del exchange (D-691)."
+        );
+    }
     let total_file_ticks = payload_len / tick_size;
     let max_ticks_env = std::env::var("MAX_TICKS")
         .ok()
@@ -357,7 +389,7 @@ async fn main() {
             t.ask_qty,
             t.timestamp,
         );
-        core.arena.update_agg_trade(0, is_buyer_maker, vol);
+        // D-708: el flujo agregado lo actualiza el núcleo en `process_event`.
         core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
         core.feature_engines[0].process_tick(price, vol, t.timestamp);
         core.feature_engines[0].update_trade_flow(vol, is_buyer_maker);
@@ -466,6 +498,19 @@ async fn main() {
     let mut reason_zombie = 0u64;
     let mut reason_toxic = 0u64;
 
+    // D-718: piso del medio spread = medio tick del símbolo registrado (el
+    // mínimo físicamente representable en ese instrumento), no un importe en
+    // dólares. Para BTCUSDT (tick 0,10) vale 0,05, el literal que había; para
+    // cualquier otro símbolo deja de ser una fricción inventada.
+    let min_half_spread = quantum_arena::symbol_registry::try_spec(0)
+        .map(|spec| spec.tick_size * 0.5)
+        .unwrap_or(0.0)
+        .max(0.0);
+    println!(
+        "📐 [FRICCIÓN] Piso de medio spread: {:.8} (medio tick del símbolo registrado)",
+        min_half_spread
+    );
+
     // Precompute ATR for delta-normalization (same logic as backtest-engine/lib.rs)
     let alpha = 2.0 / (14.0 + 1.0);
     let mut running_atr = 0.001 * ticks_slice[warmup_ticks].bid_price;
@@ -480,24 +525,42 @@ async fn main() {
         } else {
             price
         };
-        let is_buyer_maker = if price != prev_price {
-            price < prev_price
-        } else {
-            t.ask_qty > t.bid_qty
-        };
+        // D-717 (DÉCIMA OLA · auditoría integral): EL LADO AGRESOR VIAJA EN EL
+        // DATO, NO SE DEDUCE DEL PRECIO SIMULADO.
+        //
+        // `binance_vision_sync` codifica el `isBuyerMaker` oficial de cada
+        // aggTrade en las cantidades: maker ⇒ (bid = base, ask = qty + base), es
+        // decir `bid_qty < ask_qty`. El calentamiento de este mismo binario ya
+        // lee ese convenio (línea 387); el bucle principal, en cambio, pasaba al
+        // núcleo `price <= sim_bid`, con `price` el punto medio y
+        // `sim_bid = bid − medio spread`: una condición FALSA en todos los ticks
+        // del histórico. Con el flag constante en false, `agg_sell_vol` nunca
+        // crecía y `rolling_cvd` se quedaba en +1,0 desde el primer tick: presión
+        // compradora máxima permanente en el binario que dicta el veredicto y que
+        // alimenta al evolucionador walk-forward, con las ramas Short de
+        // price-action inalcanzables por construcción y un sesgo aditivo de +0,30
+        // en el micro-score.
+        let is_buyer_maker = t.bid_qty < t.ask_qty;
 
         let tr = (price - prev_price).abs();
         running_atr = alpha * tr + (1.0 - alpha) * running_atr;
 
         // Emulación de Slippage Microestructural Realista (Binance L2 Top-of-Book)
-        let half_spread = ((t.ask_price - t.bid_price) / 2.0).max(0.05);
+        // D-718 (DÉCIMA OLA · auditoría integral): el piso del medio spread es
+        // una propiedad del INSTRUMENTO, no un importe en dólares. `0,05` es
+        // exactamente medio tick de BTCUSDT: en XRP (~0,55 $) ese mismo piso
+        // añade un 9 % por lado y toda operación nace con una pérdida
+        // instantánea de ese orden, de modo que el forense era inutilizable
+        // fuera de BTC —y las validaciones cruzadas en XRP/SOL/BNB se midieron
+        // con él—. Ahora sale del `tick_size` del símbolo registrado.
+        let half_spread = ((t.ask_price - t.bid_price) / 2.0).max(min_half_spread);
         let sim_bid = t.bid_price - half_spread;
         let sim_ask = t.ask_price + half_spread;
         let bid_qty = t.bid_qty;
         let ask_qty = t.ask_qty;
 
         // Update AggTrade and L2 (same as backtest-engine/lib.rs lines 163-165)
-        core.arena.update_agg_trade(0, is_buyer_maker, vol);
+        // D-708: el flujo agregado lo actualiza el núcleo en `process_event`.
         core.arena.update_l2_depth(0, bid_qty, ask_qty);
 
         let ts = t.timestamp;
@@ -515,7 +578,16 @@ async fn main() {
 
         // F3.1: features omni con MACRO REAL del día de esta barra.
         // Solo re-consultamos cuando cambia el día (macro es diaria).
-        let day = (ts / 86_400_000) as i64;
+        // D-719 (DÉCIMA OLA · auditoría integral): EL MACRO DISPONIBLE EN t ES
+        // EL CIERRE DE t−1. `macro_lookup` devuelve el valor con fecha ≤ día, es
+        // decir el CIERRE DEL PROPIO DÍA: a las 00:01 UTC el motor ya conocía el
+        // S&P, el Nasdaq, el VIX, el DGS10, el DXY y el WTI de la jornada que aún
+        // no ha ocurrido, y cuatro de esos seis son features directas del bosque.
+        // El evaluador del GA (`booktick_replay`) ya usa t−1 y lo documenta; el
+        // binario que dicta el veredicto y alimenta al walk-forward usaba t, de
+        // modo que medía con información del futuro y además divergía de la
+        // selección y del contrato con el que se entrenó el bosque.
+        let day = ((ts / 86_400_000) as i64 - 1).max(0);
         if day != last_macro_day {
             last_macro_day = day;
             use std::sync::atomic::Ordering as Ord2;
@@ -558,7 +630,9 @@ async fn main() {
             &omni_features,
             false,
         );
-        let sim_trade_buyer_maker = price <= sim_bid;
+        // D-717: el lado agresor es el del dato, no una comparación con el
+        // libro simulado (que era falsa siempre).
+        let sim_trade_buyer_maker = is_buyer_maker;
         let (new_ord_2, closed_ord_2) = core.process_event(
             0,
             true,  // is_trade = true for Trade event

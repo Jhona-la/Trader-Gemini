@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_meta_evolver_audit_system_architecture_nominal_and_stagnant() {
-        let arena = Arc::new(GlobalArena::new(13.0));
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let evolver = MetaEvolver::new(arena.clone());
 
         // Test with low sharpe

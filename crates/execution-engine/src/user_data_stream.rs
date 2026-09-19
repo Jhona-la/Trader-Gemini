@@ -526,7 +526,6 @@ impl UserDataStreamer {
                 })
                 .unwrap_or((0.0, 0.0, 0.0));
             let qty = update.last_filled_qty;
-            let sign = if was_long { 1.0 } else { -1.0 };
             // B3.21 — si la reconciliación consumió la posición local antes
             // del fill (entry=0), el diario de contexto B3.1 carga la última
             // entrada registrada del símbolo+lado.
@@ -536,11 +535,17 @@ impl UserDataStreamer {
                 crate::trade_accounting::last_journal_entry_px(&update.symbol, was_long)
                     .unwrap_or(0.0)
             };
-            let pnl_gross = if entry_price > 0.0 {
-                (entry_price - update.last_filled_price) * qty * sign
-            } else {
-                0.0 // sin contexto local NI de diario: evidencia sin PnL inventado
-            };
+            // D-701: fuente única del PnL bruto. La fórmula que había aquí
+            // —`(entrada − salida)·qty·signo` con `signo = +1` para el largo—
+            // invertía el signo en AMBAS direcciones: cada TP se apuntaba como
+            // pérdida y cada SL como ganancia. Sin contexto de entrada (ni local
+            // ni de diario) devuelve 0: evidencia del disparo sin PnL inventado.
+            let pnl_gross = crate::trade_accounting::gross_pnl(
+                was_long,
+                entry_price,
+                update.last_filled_price,
+                qty,
+            );
             let slippage_bps = if o.stop_price > 0.0 {
                 let adverse = if was_long {
                     o.stop_price - update.last_filled_price // vender más abajo = peor
@@ -607,15 +612,23 @@ impl UserDataStreamer {
         // watchdog B2.6 en ≤5s — resolución confirmada por el exchange, no por
         // este log.
         if update.status == OrderStatus::Filled {
-            let sister_candidates = if let Some(base) = update.client_order_id.strip_suffix("_TPR")
-            {
+            // D-706 (DÉCIMA OLA · auditoría integral): las piernas que coloca el
+            // watchdog de protección se llaman `wdTP_*` / `wdSL_*`, que no
+            // terminan en `_TP` ni `_SL`: para ellas la lista quedaba VACÍA y ni
+            // se intentaba cancelar la hermana.
+            let coid = update.client_order_id.as_str();
+            let sister_candidates = if let Some(base) = coid.strip_suffix("_TPR") {
                 vec![format!("{}_SL", base), format!("{}_SLR", base)]
-            } else if let Some(base) = update.client_order_id.strip_suffix("_TP") {
+            } else if let Some(base) = coid.strip_suffix("_TP") {
                 vec![format!("{}_SL", base), format!("{}_SLR", base)]
-            } else if let Some(base) = update.client_order_id.strip_suffix("_SLR") {
+            } else if let Some(base) = coid.strip_suffix("_SLR") {
                 vec![format!("{}_TP", base), format!("{}_TPR", base)]
-            } else if let Some(base) = update.client_order_id.strip_suffix("_SL") {
+            } else if let Some(base) = coid.strip_suffix("_SL") {
                 vec![format!("{}_TP", base), format!("{}_TPR", base)]
+            } else if let Some(base) = coid.strip_prefix("wdTP_") {
+                vec![format!("wdSL_{}", base)]
+            } else if let Some(base) = coid.strip_prefix("wdSL_") {
+                vec![format!("wdTP_{}", base)]
             } else {
                 Vec::new()
             };
@@ -632,6 +645,16 @@ impl UserDataStreamer {
                             let ts = crate::executor::current_synced_timestamp_ms(
                                 arena_clone.as_deref(),
                             );
+                            // D-706: las piernas del bracket son órdenes ALGO desde
+                            // la migración por el error -4120 (OCO-F5): se crean
+                            // con POST /fapi/v1/algoOrder y se cancelan con DELETE
+                            // /fapi/v1/algoOrder. Este motor seguía emitiendo
+                            // DELETE /fapi/v1/order?origClientOrderId=…, que el
+                            // exchange rechaza con -2011 («order does not exist»),
+                            // y el log lo enterraba como «ya resuelta»: la pierna
+                            // hermana sobrevivía hasta la purga del watchdog.
+                            // Es la vía rápida; la purga por `algoId` (D-698)
+                            // sigue siendo la red de seguridad.
                             let mut buf = crate::client::ZeroAllocBuffer::new();
                             buf.push_str(
                                 if client.is_testnet.load(std::sync::atomic::Ordering::Relaxed) {

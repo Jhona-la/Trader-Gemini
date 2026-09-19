@@ -108,7 +108,10 @@ impl Genotype {
         } else {
             0.005
         };
-        let sc_z = if self.scalp_z_target.is_finite() {
+        // D-728: `scalp_z_target` ya no se escribe en ningún gen (ver abajo);
+        // se conserva en el genotipo porque la evolución lo muta, pero no tiene
+        // destino en la configuración hasta que tenga su propio atómico.
+        let _sc_z = if self.scalp_z_target.is_finite() {
             self.scalp_z_target
         } else {
             2.0
@@ -144,10 +147,16 @@ impl Genotype {
         arena.config.swing_sl_base.store(sw_sl, Ordering::Relaxed);
         arena.config.update_tp_curve(sc_tp, sw_tp);
         arena.config.update_sl_curve(sc_sl, sw_sl);
-        arena
-            .config
-            .scalp_obi_threshold
-            .store(sc_z, Ordering::Relaxed);
+        // D-728 (DÉCIMA OLA · auditoría integral): UN GENOTIPO NO SOBRESCRIBE
+        // GENES QUE NO LLEVA (la misma regla de D-715).
+        //
+        // Aquí se escribía `scalp_z_target` —una desviación típica, inicializada
+        // en [1; 4] y con respaldo 2,0— dentro de `scalp_obi_threshold`, que es
+        // el gen de desequilibrio del libro y vive en [0,05; 1,0]. Como este
+        // daemon aplica sobre la arena VIVA, la puerta de OBI quedaba clavada en
+        // su cota máxima y `current_from_arena` releía ese 2,0 como si fuera el
+        // gen, corroyendo el genoma en cada lectura. `scalp_z_target` necesita su
+        // propio atómico si ha de evolucionar; no el de otro gen.
         arena
             .config
             .capital_split_scalp
@@ -156,16 +165,22 @@ impl Genotype {
             .config
             .min_confidence_btc
             .store(min_conf, Ordering::Relaxed);
-        let ml_long = (0.50 + (min_conf - 0.50).abs()).clamp(0.51, 0.95);
-        let ml_short = (0.50 - (min_conf - 0.50).abs()).clamp(0.05, 0.49);
-        arena
-            .config
-            .ml_threshold_long
-            .store(ml_long, Ordering::Relaxed);
-        arena
-            .config
-            .ml_threshold_short
-            .store(ml_short, Ordering::Relaxed);
+        // D-715 (DÉCIMA OLA · auditoría integral): UN GENOTIPO NO SOBRESCRIBE
+        // GENES QUE NO LLEVA.
+        //
+        // Aquí se derivaban `ml_threshold_long`/`ml_threshold_short` de
+        // `min_confidence`, que no tiene nada que ver con ellos: `Genotype` sólo
+        // porta doce genes y esos dos no están entre ellos. Como `min_confidence`
+        // vive acotada a [0,50; 0,95], el `.abs()` era inerte y el resultado
+        // exacto era `ml_long = min_confidence`, `ml_short = 1 − min_confidence`:
+        // dos umbrales forzados a ser espejos, sin asimetría posible entre largo
+        // y corto. Con el valor por defecto, la puerta que decide TODAS las
+        // entradas pasaba del par validado cross-month (0,5698 / 0,4302) a
+        // (0,65 / 0,35) cada vez que este daemon aplicaba un genotipo —21 veces
+        // por generación sobre arenas nuevas, y también sobre la arena VIVA—,
+        // sin que ninguna validación hubiera visto ese par.
+        //
+        // Los dos umbrales son genes del `SuperGenotype` y se aplican desde él.
         arena
             .config
             .explosive_leverage_multiplier
@@ -343,7 +358,8 @@ impl DarwinDaemon {
             let mut results: Vec<_> = population
                 .par_iter()
                 .map(|genome| {
-                    let arena = Arc::new(GlobalArena::new(initial_capital));
+                    // D-714: construcción con pila suficiente (este sitio corre en un worker de rayon).
+                    let arena = GlobalArena::build_in_own_stack(initial_capital);
                     genome.apply_to_arena(&arena);
                     arena
                         .config
@@ -552,7 +568,8 @@ impl DarwinDaemon {
 
         let baseline_results = [current_active];
         let baseline_fitness = {
-            let arena = Arc::new(GlobalArena::new(initial_capital));
+            // D-714: construcción con pila suficiente (este sitio corre en un worker de rayon).
+                    let arena = GlobalArena::build_in_own_stack(initial_capital);
             baseline_results[0].apply_to_arena(&arena);
             let mut engine = GodEngineCore::new(arena.clone());
             let mut max_drawdown = 0.0;
@@ -671,7 +688,7 @@ mod tests {
 
     #[test]
     fn test_genotype_random_and_apply_to_arena() {
-        let arena = Arc::new(GlobalArena::new(13.0));
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let genome = Genotype::new_random();
 
         assert!(genome.global_leverage >= 10.0 && genome.global_leverage <= 125.0);
@@ -687,7 +704,7 @@ mod tests {
 
     #[test]
     fn test_genotype_nan_immunity_when_applying_to_arena() {
-        let arena = Arc::new(GlobalArena::new(13.0));
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let nan_genome = Genotype {
             global_leverage: f64::NAN,
             trend_threshold: f64::NAN,
@@ -715,7 +732,7 @@ mod tests {
 
     #[test]
     fn test_darwin_daemon_instantiation() {
-        let arena = Arc::new(GlobalArena::new(13.0));
+        let arena = GlobalArena::build_in_own_stack(13.0);
         let daemon = DarwinDaemon::new(arena);
         assert!(
             daemon

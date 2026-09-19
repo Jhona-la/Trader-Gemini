@@ -207,7 +207,19 @@ fn parse_aggtrades_zip(bytes: &[u8], ticks: &mut Vec<BinTick>) -> bool {
             } else {
                 (qty + base_depth, base_depth)
             };
-            let half = (price * 0.00005).max(0.01);
+            // D-723 (DÉCIMA OLA · auditoría integral): EL SUELO DEL SEMI-SPREAD
+            // ES RELATIVO, NO UN IMPORTE EN DÓLARES.
+            //
+            // `max(0,01)` domina en cuanto el precio baja de 200 $: a 20 $ da
+            // 10 pb, a 2 $ 100 pb, a 0,45 $ un 4,4 % y a 0,05 $ un 40 %. El tape
+            // que este binario etiqueta como REAL alimenta el entrenamiento y la
+            // promoción de los modelos de todo el roster —VET, ZIL, GALA, ALGO,
+            // SAND, XLM, ADA…—, de modo que el gate que decide si un modelo se
+            // promueve veía un libro con un spread inventado de hasta el 40 %.
+            // El suelo físico del spread es medio tick del instrumento; sin
+            // registro de símbolos en este binario, la cota relativa (1 pb) ya es
+            // el mínimo razonable y no depende del precio del activo.
+            let half = price * 0.00005;
             ticks.push(BinTick {
                 timestamp: ts,
                 bid_price: price - half,
@@ -281,12 +293,21 @@ fn daily_aggtrades(client: &Client, symbol: &str, from: &str, to: &str) {
 
 /// Ordena y persiste el bin TGMTICK1 final (compartido mensual/diario).
 fn write_ticks(symbol: &str, mut ticks: Vec<BinTick>) {
-    ticks.sort_unstable_by_key(|t| t.timestamp);
-    // HOST-008 (auditoría DEC-14): dedup por timestamp EXACTO destruía los
-    // aggTrades del mismo ms (normal en bursts — Binance colapsa a 1ms).
-    // El modo mensual NO deduplica; el daily tampoco desde este fix.
-    // El sort basta: si hay duplicados exactos (mismo ts+precio+qty),
-    // son re-envíos del exchange que el parser filtra naturalmente.
+    // D-724 (DÉCIMA OLA · auditoría integral): EL TIMESTAMP NO ES UNA IDENTIDAD.
+    //
+    // En un tape real de aggTrades varios trades comparten el mismo milisegundo
+    // —medido sobre el fichero de ETHUSDT: 94 315 milisegundos distintos en los
+    // primeros 200 000 registros, es decir un 53 % de ticks eliminados— y
+    // `dedup_by_key` conservaba uno arbitrario de cada racha, porque
+    // `sort_unstable` no preserva el orden de llegada. El precio de cada
+    // milisegundo dejaba de ser el del burst y el modo mensual, que NO
+    // deduplica, divergía del diario: dos ficheros «reales» distintos para el
+    // mismo mercado, y el OOS del mes vivo se medía sobre el mutilado.
+    //
+    // Se ordena de forma ESTABLE (conserva el orden de llegada dentro del ms) y
+    // no se deduplica: la deduplicación real exigiría el `aggTrade_id`, que hoy
+    // no se persiste.
+    ticks.sort_by_key(|t| t.timestamp);
     println!("✅ {} ticks reales de aggTrades", ticks.len());
     let out = Path::new("data").join(format!("{}_ticks_REAL.bin", symbol));
     let mut f = match std::fs::File::create(&out) {
@@ -406,7 +427,19 @@ fn aggtrades_main() {
                     };
                     // Spread mínimo modelado (aggTrades no traen book):
                     // 1 tick del activo ~ 0.1 bps, piso 0.5 bps.
-                    let half = (price * 0.00005).max(0.01);
+                    // D-723 (DÉCIMA OLA · auditoría integral): EL SUELO DEL SEMI-SPREAD
+            // ES RELATIVO, NO UN IMPORTE EN DÓLARES.
+            //
+            // `max(0,01)` domina en cuanto el precio baja de 200 $: a 20 $ da
+            // 10 pb, a 2 $ 100 pb, a 0,45 $ un 4,4 % y a 0,05 $ un 40 %. El tape
+            // que este binario etiqueta como REAL alimenta el entrenamiento y la
+            // promoción de los modelos de todo el roster —VET, ZIL, GALA, ALGO,
+            // SAND, XLM, ADA…—, de modo que el gate que decide si un modelo se
+            // promueve veía un libro con un spread inventado de hasta el 40 %.
+            // El suelo físico del spread es medio tick del instrumento; sin
+            // registro de símbolos en este binario, la cota relativa (1 pb) ya es
+            // el mínimo razonable y no depende del precio del activo.
+            let half = price * 0.00005;
                     ticks.push(BinTick {
                         timestamp: ts,
                         bid_price: price - half,
