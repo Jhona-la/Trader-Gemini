@@ -282,7 +282,14 @@ impl DarwinDaemon {
                     }
 
                     let final_cap = arena.unified_capital.load(Ordering::Relaxed);
-                    let fitness = (final_cap - initial_capital) * (1.0 - max_drawdown);
+                    // CERT-M5-H01: fitness UNIFICADO — antes (final−initial)×(1−dd):
+                    // PnL crudo sin log-utility, sin INVIABLE para inacción, escalado
+                    // por dólares (no por crecimiento relativo). Era la 5ª fn compitiendo.
+                    let fitness = crate::fitness_compute(
+                        initial_capital,
+                        final_cap,
+                        max_drawdown,
+                    );
                     (genome.clone(), final_cap, fitness)
                 })
                 .collect();
@@ -473,7 +480,12 @@ impl DarwinDaemon {
                 }
             }
             let final_cap = arena.unified_capital.load(Ordering::Relaxed);
-            let raw_fitness = (final_cap - initial_capital) * (1.0 - max_drawdown);
+            // CERT-M5-H01: fitness UNIFICADO (baseline también)
+            let raw_fitness = crate::fitness_compute(
+                initial_capital,
+                final_cap,
+                max_drawdown,
+            );
             if raw_fitness.is_finite() {
                 raw_fitness
             } else {

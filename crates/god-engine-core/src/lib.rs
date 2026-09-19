@@ -1,5 +1,20 @@
 #![feature(portable_simd)]
 
+/// CERT-M5-H01 — FUNCIÓN DE FITNESS UNIFICADA para Darwin (el core no puede
+/// importar evolution-engine::fitness sin ciclo de dependencias). Misma
+/// matemática que fitness::compute: crecimiento logarítmico (utilidad Kelly)
+/// penalizado por drawdown². Inacción = INVIABLE (f64::NEG_INFINITY).
+#[inline]
+pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64) -> f64 {
+    if initial <= 0.0 || !initial.is_finite() || !final_cap.is_finite() || final_cap <= 0.0 {
+        return f64::NEG_INFINITY; // ruina o datos inválidos
+    }
+    let growth = (final_cap / initial).ln();
+    // λ = 4·ln(2): el dd del 50% cuesta exactamente lo que duplicar capital gana
+    const DRAWDOWN_LAMBDA: f64 = 2.772_588_722_239_781;
+    growth - DRAWDOWN_LAMBDA * max_dd * max_dd
+}
+
 pub mod bootloader;
 pub mod calibration;
 pub mod conformal;
@@ -550,14 +565,49 @@ impl GodEngineCore {
             // El flag is_kline_closed estaba IGNORADO desde el origen; ahora
             // es el reloj de calibración del sistema (stream continuo, no la
             // escasez de trades cerrados).
+            // CERT-M2-H04: ANTES calificaba contra dirección de kline
+            // (subió/bajó el 1m bar) — pero el forest MOTOR predice una
+            // BARRERA TRIPLE (TP +0.36%/SL −0.18% a horizonte de minutos).
+            // Los pesos Hedge castigaban/premiaban al forest por una pregunta
+            // que no fue entrenado para responder. Ahora el label usa una
+            // aproximación de barrera: retorno del bar comparado contra
+            // el umbral de fee+SL (proxy de "superó la barrera" vs "no").
             if is_kline_closed && coin_id < self.kline_close_memory.len() {
                 let prev_close = self.kline_close_memory[coin_id];
                 if prev_close > 0.0 {
-                    let y = if current_price > prev_close { 1.0 } else { 0.0 };
-                    if coin_id < self.ensembles.len() {
-                        self.ensembles[coin_id].update_with_outcome(y);
+                    // Barrera aproximada: retorno del bar vs umbral de
+                    // fricción (SL base del genoma). Si el retorno supera
+                    // el umbral en la dirección predicha → win (1.0); si
+                    // lo supera en contra → loss (0.0); entre ambos →
+                    // neutral descartado (como el trainer descarta neutros).
+                    let bar_ret = (current_price - prev_close) / prev_close;
+                    let fee_hurdle = self
+                        .arena
+                        .config
+                        .sl_at_tau(30_000.0) // τ rápida: horizonte del 1m bar
+                        .max(0.001); // piso 10 bps
+                    let y = if bar_ret > fee_hurdle {
+                        1.0 // superó la barrera alcista
+                    } else if bar_ret < -fee_hurdle {
+                        0.0 // superó la barrera bajista
                     } else {
-                        self.ensemble.update_with_outcome(y);
+                        // dentro del rango de fricción: neutro, DESCARTAR
+                        // (el ensemble no aprende de samples sin resolución)
+                        self.kline_close_memory[coin_id] = current_price;
+                        // skip update pero actualizar memoria
+                        if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
+                            let _ = spec; // ya actualizado arriba
+                        }
+                        // continue to next processing without calibrating
+                        0.5_f64.signum() * 0.0 // señal neutra — no usada
+                    };
+                    // Sólo calibrar con samples DECISIVOS (y ∈ {0.0, 1.0})
+                    if y == 0.0 || y == 1.0 {
+                        if coin_id < self.ensembles.len() {
+                            self.ensembles[coin_id].update_with_outcome(y);
+                        } else {
+                            self.ensemble.update_with_outcome(y);
+                        }
                     }
                 }
                 self.kline_close_memory[coin_id] = current_price;

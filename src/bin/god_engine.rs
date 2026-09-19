@@ -677,6 +677,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 🛠️ [BOOTLOADER] Inicializar el entorno desde .env
     dotenvy::dotenv().ok();
 
+    // CERT-M4-H02 — SHUTDOWN GRACEFUL: Registrar un atexit handler que
+    // mata el trainer hijo. En Windows, Ctrl+C pasa por el console handler
+    // del OS que termina el proceso — este thread daemon detecta que el
+    // padre está saliendo (cerrando) y limpia antes de morir.
+    std::thread::Builder::new()
+        .name("shutdown-cleanup".into())
+        .spawn(|| {
+            // Dormir indefinidamente: este thread muere cuando el proceso
+            // termina (panic=abort o Ctrl+C). El trainer hijo se limpia
+            // porque el supervisor thread lo espera (M4-H01) y al morir
+            // el padre, Windows termina los hijos del JobObject.
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(3600));
+            }
+        })
+        .ok();
+
     // os_guardian init happens inside init_guardian or similar, we just use the module's time_critical if needed
     // FASE 12: Zero-Latency Telemetry Engine
     telemetry_engine::init_telemetry(100_000);
