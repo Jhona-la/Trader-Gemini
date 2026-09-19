@@ -1088,12 +1088,20 @@ impl GodEngineCore {
                 // revert (pers→−1) activa PRONTO (asegura el retroceso).
                 // Fracción del TP: BE lerp(0.45,0.65), trail lerp(0.60,0.80);
                 // pers=0 ⇒ 0.55/0.70 exactos (comportamiento B3.27).
-                // D-727: NADA se arma por encima del objetivo — los pisos
-                // absolutos (62/72 pb) podían quedar en >100% del TP con
-                // fricción de 10 pb (TP=0.55%): el TP cerraba la posición
-                // antes de que existiera protección alguna. Piso = fricción
-                // de ida y vuelta (la única magnitud física que justifica
-                // mover el stop); techo = fracción del TP.
+                //
+                // D-727 (DÉCIMA OLA · auditoría integral): LA PROTECCIÓN NO PUEDE
+                // ARMARSE POR ENCIMA DEL OBJETIVO. Aquí había dos pisos ABSOLUTOS
+                // —62 pb para el breakeven y 72 pb para el trailing— que no
+                // dependían del TP ni de la volatilidad. La geometría de entrada
+                // fija el objetivo en TP = 5,5·f (fricción): con la fricción de
+                // referencia de 10 pb, TP = 0,55 % y el piso de 62 pb quedaba en
+                // el 113 % del objetivo — el TP cierra la posición antes de que
+                // exista protección alguna, y el trailing era inalcanzable por
+                // construcción. Las activaciones son fracciones espectrales del
+                // recorrido REAL al objetivo; el suelo es la única magnitud física
+                // que justifica mover el stop (que la ganancia cubra la fricción
+                // de ida y vuelta, o dos ATR de ruido) y el TECHO es el propio
+                // objetivo: nada puede armarse por encima del TP.
                 let pers_dom = self
                     .temporal_spectrum
                     .get(coin_id)
@@ -1104,6 +1112,7 @@ impl GodEngineCore {
                 let trail_frac = 0.60 + 0.20 * s_t;
                 let be_activation = (tp * be_frac)
                     .max(live_fee * 2.0)
+                    .max(atr_pct_live * 2.0)
                     .min(tp * 0.90);
                 if peak_pnl >= be_activation {
                     let be_buffer = (live_fee * 2.0).clamp(0.0010, 0.0018);

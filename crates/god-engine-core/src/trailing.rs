@@ -147,9 +147,31 @@ pub fn evaluate_quantum_trailing_with_fee(
         max_pnl_pct = pnl_pct;
     }
 
-    // Escudo Cuántico — B3.27: transición de fase relativa al TP (no fee×8)
-    let effective_tp_phase = if tp_frac.is_finite() && tp_frac > 0.001 { tp_frac } else { 0.012 };
-    let be_trigger = effective_tp_phase * 0.40;
+    // Escudo Cuántico — B3.27 + S-2 + D-711: UNA SOLA ESCALERA, relativa al TP.
+    //
+    // B3.27 midió la transición de fase y la escalera en fracciones del TP (no
+    // en múltiplos del fee, que decapitaban los ganadores dentro del rango del
+    // propio TP) y S-2 interpoló cada escalón por persistencia espectral. Pero
+    // la transición de fase quedó en 0,40·TP fijo mientras el breakeven del
+    // escudo vive en lerp(0,30; 0,50)·TP: con persistencia baja (t < 0,5) el
+    // escudo pedía proteger a 0,30·TP y la fase seguía en 0 hasta 0,40·TP —el
+    // mismo limbo que D-711 cerró cuando las dos cotas salían del fee—. El
+    // escudo sólo corre con `current_phase != 0`, así que la transición existe
+    // para HABILITARLO: un único `be_trigger`, calculado aquí, sirve a ambos.
+    let effective_tp = if tp_frac.is_finite() && tp_frac > 0.001 {
+        tp_frac
+    } else {
+        0.012 // fallback: TP nominal 1.2% cuando no se pasa
+    };
+    let effective_fee = fee_rate.max(0.0004);
+    // S-2 — t∈[0,1]: t=1 tendencial / t=0 mean-revert. Cada nivel es lerp(MR, TEND).
+    let t = if spectral_persistence.is_finite() {
+        ((spectral_persistence + 1.0) * 0.5).clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let lvl = |mr: f64, tend: f64| mr + (tend - mr) * t;
+    let be_trigger = effective_tp * lvl(0.30, 0.50);
 
     // 3. Phase Transitions (Desasfixiadas: permiten que el trade desarrolle su ciclo hasta TP)
     if current_phase == 0 && (pnl_atr >= 1.5 || max_pnl_pct >= be_trigger) {
@@ -205,26 +227,12 @@ pub fn evaluate_quantum_trailing_with_fee(
         // 73% WR pero RRR 0.30 porque la escalera ×fee disparaba TODA dentro
         // del rango del TP (con VIP0: be a 0.65%, half a 0.94%, profit a
         // 1.05% — y el TP a 0.66-1.2%). Los winners se decapitaban antes de
-        // correr. Ahora cada nivel es FRACCIÓN del TP: breakeven al 40%,
-        // half al 60%, profit al 80%, runner al 95%. El ATR-trailing (T1
-        // arriba) sigue dando la distancia de respiración; esta escalera
-        // sólo pone SUELOS progresivos — el trade respira hasta su TP.
-        let effective_tp = if tp_frac.is_finite() && tp_frac > 0.001 {
-            tp_frac
-        } else {
-            0.012 // fallback: TP nominal 1.2% cuando no se pasa
-        };
-        let effective_fee = fee_rate.max(0.0004);
+        // correr. Ahora cada nivel es FRACCIÓN del TP, interpolada por la
+        // persistencia espectral (S-2). El ATR-trailing (T1 arriba) sigue
+        // dando la distancia de respiración; esta escalera sólo pone SUELOS
+        // progresivos — el trade respira hasta su TP. `be_trigger`,
+        // `effective_tp`, `effective_fee`, `t` y `lvl` son los de arriba (D-711).
         let be_buffer = (effective_fee * 2.0).clamp(0.0010, 0.0018); // costo neto post-fees — SÍ relativo al fee (es un costo)
-        // S-2 — escalera interpolada por persistencia espectral (t∈[0,1]):
-        // t=1 tendencial / t=0 mean-revert. Cada nivel es lerp(MR, TEND).
-        let t = if spectral_persistence.is_finite() {
-            ((spectral_persistence + 1.0) * 0.5).clamp(0.0, 1.0)
-        } else {
-            0.5
-        };
-        let lvl = |mr: f64, tend: f64| mr + (tend - mr) * t;
-        let be_trigger = effective_tp * lvl(0.30, 0.50);
         let half_lock_trigger = effective_tp * lvl(0.45, 0.70);
         let half_lock_gain = effective_tp * lvl(0.15, 0.35);
         let profit_lock_trigger = effective_tp * lvl(0.60, 0.85);

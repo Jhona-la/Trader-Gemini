@@ -716,11 +716,19 @@ fn main() {
     // lo hot-swapea en ≤10 s y, desde B3.18, ese modelo decide TODAS las
     // entradas. Ahora un gate no superado nunca escribe el modelo vivo: va al
     // candidato y el proceso termina con código 2 para que cualquier
-    // automatización lo detecte.
-    let gate_ok = baseline - best_val >= gate_margin;
+    // automatización lo detecte. Vale igual para los predictores de regresión
+    // (P-1/P-2: _VOL, _VOLU, _OI), cuyo gate es R² ≥ margen.
+    let gate_pass = if is_regression {
+        let r2 = if baseline > 1e-12 { (baseline - best_val) / baseline } else { 0.0 };
+        println!("   R² = {:.4}", r2);
+        r2 >= gate_margin
+    } else {
+        baseline - best_val >= gate_margin
+    };
+    let gate_ok = gate_pass;
     if !gate_ok {
-        println!("🚫 GATE: Δ {:+.5} < margen {} — sin evidencia real de edge. El modelo vivo NO se toca.",
-                 baseline - best_val, gate_margin);
+        println!("🚫 GATE: mejora < margen {} — sin evidencia real. El modelo vivo NO se toca.",
+                 gate_margin);
     }
     let promote = promote && gate_ok;
 

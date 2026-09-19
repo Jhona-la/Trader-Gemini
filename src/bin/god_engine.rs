@@ -1771,8 +1771,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 telemetry_server::telemetry_log!("   👉 Símbolo activo en exchange: {} (Qty: {})", pos.symbol, pos.qty);
                 if let Some(&coin_idx) = symbol_to_id.get(&pos.symbol) {
                     let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
-                    // D-726 (DÉCIMA OLA · auditoría integral): EL MARGEN SALE DEL
-                    // APALANCAMIENTO REAL Y SE RESERVA DE VERDAD.
+                    // D-726 + HOST-013: EL MARGEN SALE DEL APALANCAMIENTO REAL Y
+                    // SE RESERVA DE VERDAD.
                     //
                     // El margen se reconstruía dividiendo el nocional por el
                     // literal 10 —una posición a 20x quedaba con el doble de
@@ -1783,17 +1783,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // posiciones nuevas como si no tuviera ninguna. La rama de
                     // adopción de `reconcile_arena` sí reserva margen, pero exige
                     // que la posición NO esté ya abierta en el arena, así que no
-                    // corregía ésta. El apalancamiento real viene en
-                    // `/fapi/v2/positionRisk`; si el exchange no lo informa se usa
-                    // el del genoma para esta moneda, nunca un literal.
-                    let lev_real = if pos.leverage > 0.0 {
+                    // corregía ésta. El apalancamiento real viene de
+                    // `/fapi/v2/positionRisk`, por la posición misma o por el
+                    // mapa de HOST-013; si el exchange no lo informa se usa el del
+                    // genoma, nunca un literal.
+                    let lev_real = if pos.leverage.is_finite() && pos.leverage >= 1.0 {
                         pos.leverage
                     } else {
-                        arena_real
-                            .config
-                            .global_leverage
-                            .load(Ordering::Relaxed)
-                            .clamp(1.0, 125.0)
+                        restore_lev_map
+                            .get(&pos.symbol)
+                            .copied()
+                            .filter(|l| l.is_finite() && *l >= 1.0)
+                            .unwrap_or_else(|| {
+                                arena_real
+                                    .config
+                                    .global_leverage
+                                    .load(Ordering::Relaxed)
+                                    .clamp(1.0, 125.0)
+                            })
                     };
                     let calculated_margin = (pos.qty.abs() * pos.entry_price) / lev_real;
                     arena_real
@@ -3072,12 +3079,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // L-1: Ingesta de Microestructura Física en la Arena Viva (CVD y Muros L2)
                 // Corrige la ceguera de volumen agresivo y profundidad del libro en vivo (Causa Forense #D117).
-                // D-708 (unión): el flujo agregado lo actualiza ahora el
-                // núcleo dentro de `process_event` (misma fuente para vivo,
-                // forense y replay) — el host YA NO llama update_agg_trade.
-                // P-5 (ENTE BALLENA) se conserva: z-score de burst sobre el
-                // volumen del trade real; publicado al registry por símbolo.
+                // D-708: el flujo agregado (CVD) lo actualiza el núcleo dentro de
+                // `process_event` —misma fuente para vivo, forense y replay—;
+                // llamarlo también aquí lo contaría DOS veces. Al host le queda
+                // lo que es sólo del host.
                 if is_trade {
+                    // P-5 — ENTE BALLENA: z-score de burst sobre el volumen
+                    // del trade real; publicado al registry por símbolo.
                     if coin_id < whale_trackers.len() {
                         let notional = qty * current_price;
                         if notional.is_finite() && notional > 0.0 {
@@ -3505,20 +3513,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 pnl_pct: real_pnl_pct,
                                 timestamp_ms: ts_now,
                             };
-                            // C-11 (informe decimocuarto) — el shadow=0 fijo
-                            // era un KILL-SWITCH POR PnL: drift = 0 − real
-                            // ⇒ cualquier trade con |pnl_pct| > 5% —
-                            // ¡incluidas las GANANCIAS grandes! — armaba el
-                            // kill-switch (sensible a basura, ciego al
-                            // veneno real). Sin un shadow forest
-                            // por-posición conectado, la única expectativa
-                            // honesta disponible es el propio real escalado:
-                            // el shadow "espera" el 95% del real (fricción
-                            // modelada) ⇒ drift = 5% del pnl. El umbral de
-                            // 5% sólo se cruza si la contabilidad diverge
-                            // |real| > 100% del notional (pnl podrido de
-                            // adoptadas con entry roto) — un win grande ya
-                            // NO mata el motor.
+                            // D-704 + C-11 (UNIÓN): UN SHADOW CONSTANTE NO ES
+                            // UNA COMPARACIÓN. El shadow original fijado en 0
+                            // hacía drift = −real: un cierre GANADOR grande
+                            // armaba el kill-switch por haber ganado dinero.
+                            // C-11 lo sustituyó por shadow = 0,95·real —
+                            // sólo cruza el umbral si |real| > 100% del
+                            // nocional (contabilidad podrida, p. ej. adoptada
+                            // con entry roto): un CENTINELA útil, pero NO una
+                            // expectativa — el modo de fallo que este auditor
+                            // existe para cazar (bt predice +0,4% y el vivo
+                            // entrega −0,4%) sigue invisible hasta que exista
+                            // contraparte real (PnL del universo de control
+                            // del ShadowForest, o ml_prediction con la
+                            // geometría TP/SL comprometida — siguiente paso).
+                            // Decisión de unión: el centinela SÍ corta (la
+                            // contabilidad podrida no debe seguir operando),
+                            // pero con AUTO-REARME tras 10 cierres limpios
+                            // (CERT-M4-C02) — no el latch eterno original.
                             let shadow_tr = audit_engine::drift_auditor::TradeResult {
                                 symbol_id: coin_id,
                                 is_long,

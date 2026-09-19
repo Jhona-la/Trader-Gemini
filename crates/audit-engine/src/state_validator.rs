@@ -92,7 +92,7 @@ mod tests {
     fn test_state_validator_with_realized_pnl_and_divergence() {
         // D-714: pila suficiente para construir el arena.
         let arena = GlobalArena::build_in_own_stack(13.0);
-        // Simulate realized profits in coin 0 (BTC)
+        // Simulate realized profits in coin 0 (BTC) — U-1: métrica unificada.
         arena.coins[0]
             .metrics
             .pnl_realized
