@@ -17,6 +17,7 @@ pub mod user_data_stream;
 pub mod ws_executor;
 
 pub use dynamic_symbols::DynamicSymbolSelector;
+pub use executor::OrderResolution;
 pub use hot_swap::HotSwapController;
 pub use ntp::start_ntp_synchronizer;
 pub use order_registry::{OrderRegistry, OrderStatus, TrackedOrder};

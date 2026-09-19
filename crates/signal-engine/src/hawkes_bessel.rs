@@ -220,11 +220,34 @@ impl QuantumStrategy for HawkesBesselEngine {
             return 0.0;
         }
 
-        // CERT-M2-C02: leer la intensidad PUBLICADA por el core (que
-        // ya computa el proceso de Hawkes con su propia historia de
-        // trades y la escribe al registry como 'hawkes_intensity').
-        // Esto conecta el QO-M2.2 al camino de decisión SIN necesitar
-        // record_event desde el orchestrator (que es &self).
+        // M2-C02 — SIGUE ABIERTO (el "fix" CERT-M2-C02 es un MISLABEL, no
+        // cerrar este hallazgo confiando en el comentario anterior).
+        //
+        // Lo que realmente pasa: este evaluate lee el param de registry
+        // 'hawkes_intensity', pero el ÚNICO escritor en producción
+        // (god-engine-core/src/lib.rs:1856-1859) publica
+        //     (1.0 + (a_t.abs()/atr_abs).clamp(0,4)).clamp(0.1,5)
+        // = `1 + |aceleración|/ATR`: un proxy de aceleración de
+        // volatilidad. NO es un proceso de Hawkes — no hay historia de
+        // eventos, ni suma de auto-excitación Σα·e^(−β·(t−tᵢ)), ni
+        // branching ratio. El comentario CERT anterior afirmaba que "el
+        // core ya computa el proceso de Hawkes con su propia historia de
+        // trades": FALSO.
+        //
+        // Consecuencia: la matemática Hawkes correcta de este engine
+        // (record_event / intensity / intensity_ratio / branching_ratio)
+        // es CÓDIGO MUERTO en producción — record_event sigue siendo
+        // &mut self (incallable vía el trait QuantumStrategy::evaluate que
+        // da &self) y tiene CERO llamadores de producción. La detección de
+        // cascadas de liquidación (auto-excitación con memoria) que motivó
+        // QO-M2.2 fue degradada en silencio a un proxy de aceleración.
+        // Otros consumidores del mismo proxy: micro_scalp_trigger.rs:109,
+        // turbo_scalper.rs:165.
+        //
+        // FIX REAL (pendiente, NO hecho — requiere tocar el core, archivo
+        // caliente): cablear una fuente de eventos (trades/liquidaciones)
+        // hacia un HawkesBesselEngine por moneda y publicar
+        // intensity_ratio(now) como 'hawkes_intensity', en vez del proxy.
         let core_intensity = r
             .get_scoped_parameter(
                 sym_opt,
