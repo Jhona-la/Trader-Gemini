@@ -76,11 +76,13 @@ pub struct MarketSnapshotPayload {
     pub dominant_tau_ms: f64,
     /// P-5b — datos EXCLUSIVOS del asiento Ente del Mercado (ningún otro
     /// asiento los lee): z-score de burst ballena del flujo @trade real,
-    /// severidad de cascada de liquidaciones VIVA (peek, no consume), y OI
-    /// per-símbolo normalizado [0,1].
+    /// severidad de cascada de liquidaciones VIVA (peek, no consume), OI
+    /// per-símbolo normalizado [0,1], y score de spoofing (evaporación de
+    /// muros L2 — el flujo que motivó la señal puede ser teatro).
     pub whale_burst_z: f64,
     pub liquidation_severity: f64,
     pub open_interest_norm: f64,
+    pub spoof_score: f64,
 }
 
 impl MarketSnapshotPayload {
@@ -336,6 +338,11 @@ impl SeniorAgent for SeniorEnteMercado {
         } else {
             0.0
         };
+        let spoof = if payload.spoof_score.is_finite() {
+            payload.spoof_score.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         // VETO sólo ante cascada MAYOR en curso (sev > 0.85): no se entra
         // contra un tsunami de liquidaciones — ni a favor: el path es
         // caótico en ambos sentidos hasta que la cascada se agote.
@@ -355,6 +362,9 @@ impl SeniorAgent for SeniorEnteMercado {
         if oi > 0.8 {
             entity_factor *= 0.85;
         }
+        if spoof > 0.7 {
+            entity_factor *= 0.85; // muro que se evapora: el libro miente
+        }
         let entity_factor = entity_factor.max(0.3); // piso: nunca anula solo
         let dir = safe_signum(payload.intended_direction);
         SeniorOpinion {
@@ -364,10 +374,11 @@ impl SeniorAgent for SeniorEnteMercado {
             weight: 1.0,
             is_veto,
             justification: format!(
-                "EnteMercado: ballena_z={:.1} cascada={:.2} OI={:.2} → convicción {:.2}{}",
+                "EnteMercado: ballena_z={:.1} cascada={:.2} OI={:.2} spoof={:.2} → convicción {:.2}{}",
                 whale_z,
                 liq,
                 oi,
+                spoof,
                 entity_factor,
                 if is_veto { " [VETO CASCADA]" } else { "" }
             ),
@@ -1059,6 +1070,7 @@ mod tests {
             whale_burst_z: 0.0,
             liquidation_severity: 0.0,
             open_interest_norm: 0.0,
+            spoof_score: 0.0,
         }
     }
 
@@ -1097,6 +1109,7 @@ mod tests {
             whale_burst_z: 0.0,
             liquidation_severity: 0.0,
             open_interest_norm: 0.0,
+            spoof_score: 0.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -1171,6 +1184,7 @@ mod tests {
             whale_burst_z: 0.0,
             liquidation_severity: 0.0,
             open_interest_norm: 0.0,
+            spoof_score: 0.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);

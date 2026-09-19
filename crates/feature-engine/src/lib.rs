@@ -23,7 +23,7 @@ pub use kalman::KalmanFilter1D;
 pub use lead_lag::LeadLagAlphaEngine;
 pub use microstructure::{
     obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,
-    InstitutionalVolumeTracker, OFIModel, OrderFlowTracker,
+    InstitutionalVolumeTracker, OFIModel, OrderFlowTracker, SpoofingDetector,
 };
 pub use multifractal::{MultiScaleHurstConfluence, MultifractalSpectrumEngine};
 pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};

@@ -27,6 +27,7 @@ fn test_quantum_organism_components() {
             whale_burst_z: 0.0,
             liquidation_severity: 0.0,
             open_interest_norm: 0.0,
+            spoof_score: 0.0,
     };
     let result = consejo.deliberar(&healthy_payload, 0.65);
     assert!(

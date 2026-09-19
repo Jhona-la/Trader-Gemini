@@ -2505,6 +2505,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|_| feature_engine::InstitutionalVolumeTracker::default())
             .collect();
+        // P-6 — detector de spoofing por símbolo: evaporación de muros L2
+        // (los 5 niveles del stream alimentan evaluate_wall_decay).
+        let mut spoof_detectors: Vec<feature_engine::SpoofingDetector> = symbols_clone
+            .iter()
+            .map(|_| feature_engine::SpoofingDetector::default())
+            .collect();
         let mut msg_count: u64 = 0;
         // D-610: guardia de secuencia del libro, un estado por símbolo del
         // universo (misma indexación que `local_orderbooks`).
@@ -2608,7 +2614,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     is_kline_closed = c;
                 }
             } else if is_depth {
-                if let Some((e, sym, update_id, bp, bq, ap, aq)) = parsers::parse_binance_depth(msg_str) {
+                // P-6 — UN solo parse con TODOS los niveles (@depth5): el
+                // best se deriva del nivel 0 y los muros máximos alimentan
+                // el SpoofingDetector por símbolo (mismo costo: un parse
+                // simd_json, arrays del caller, zero-alloc).
+                let mut lvl_bids = [(0.0f64, 0.0f64); 5];
+                let mut lvl_asks = [(0.0f64, 0.0f64); 5];
+                if let Some((e, sym, update_id, n_lv)) =
+                    parsers::parse_binance_depth5_levels(msg_str, &mut lvl_bids, &mut lvl_asks)
+                {
+                    let (bp, bq) = lvl_bids[0];
+                    let (ap, aq) = lvl_asks[0];
                     // D-610 (DÉCIMA OLA): el `u` del libro se extraía y se descartaba.
                     // Un mensaje no posterior al último aceptado —rancio tras una
                     // reconexión, reordenado o duplicado— ya no actualiza el libro
@@ -2651,6 +2667,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let microprice = (bp * aq + ap * bq) / total_q;
                         let midprice = (bp + ap) / 2.0;
                         depth_micro_div = if midprice > 0.0 { (microprice - midprice) / midprice } else { 0.0 };
+                    }
+                    // P-6 — ENTE SPOOFING: muros máximos por lado (notional
+                    // del peor nivel lleno) → detector de evaporación por
+                    // símbolo; score publicado al registry. Fuera del camino
+                    // de decisión: sólo computa y publica.
+                    if n_lv >= 2 {
+                        if let Some(sym_id) = symbol_to_id.get(sym).copied() {
+                            if sym_id < spoof_detectors.len() {
+                                let mut max_bid_wall = 0.0f64;
+                                let mut max_ask_wall = 0.0f64;
+                                for &(p, q) in lvl_bids.iter().take(n_lv) {
+                                    max_bid_wall = max_bid_wall.max(p * q);
+                                }
+                                for &(p, q) in lvl_asks.iter().take(n_lv) {
+                                    max_ask_wall = max_ask_wall.max(p * q);
+                                }
+                                let score = spoof_detectors[sym_id].evaluate_wall_decay(
+                                    max_bid_wall,
+                                    max_ask_wall,
+                                    e as u64,
+                                );
+                                if score.is_finite() && score > 0.05 {
+                                    engine_real.arena.registry.set_scoped(
+                                        &sym.to_uppercase(),
+                                        "spoof_score",
+                                        score.clamp(0.0, 1.0),
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -229,18 +229,52 @@ fn main() {
     let lambda: f64 = arg("--lambda", "1.0").parse().unwrap();
     let patience: usize = arg("--patience", "40").parse().unwrap();
     let promote = args.iter().any(|a| a == "--promote");
-    // P-1/P-2 — objetivo: dir (barrera triple HOST-010) | vol (σ futura,
-    // regresión) | volu (profundidad media, regresión).
+    // P-1/P-2/P-3c — objetivo: dir (barrera triple HOST-010) | vol (σ futura,
+    // regresión) | volu (profundidad media, regresión) | oi (ΔOI% a horizonte,
+    // regresión con join as-of del histórico horario).
     let label_mode = arg("--label", "dir");
-    if !matches!(label_mode.as_str(), "dir" | "vol" | "volu") {
-        eprintln!("❌ --label inválido: {} (dir|vol|volu)", label_mode);
+    if !matches!(label_mode.as_str(), "dir" | "vol" | "volu" | "oi") {
+        eprintln!("❌ --label inválido: {} (dir|vol|volu|oi)", label_mode);
         std::process::exit(1);
     }
+
+    // P-3c — serie histórica de OI para `--label oi` (join as-of estricto:
+    // la última fila con ts ≤ t). El endpoint sólo conserva ~30 días: la
+    // validación es DENTRO de la ventana (split temporal del subconjunto
+    // con label), documentado en la salida.
+    let oi_series: Vec<(u64, f64)> = if label_mode == "oi" {
+        let path = format!("data/oihist/{}.csv", symbol);
+        let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+            eprintln!("❌ --label oi sin histórico: {} ({}) — ejecuta oi_history_sync", path, e);
+            std::process::exit(1);
+        });
+        let mut rows: Vec<(u64, f64)> = content
+            .lines()
+            .skip(1)
+            .filter_map(|ln| {
+                let mut it = ln.split(',');
+                let ts = it.next()?.trim().parse::<u64>().ok()?;
+                let oi = it.next()?.trim().parse::<f64>().ok()?;
+                (ts > 0 && oi.is_finite() && oi > 0.0).then_some((ts, oi))
+            })
+            .collect();
+        rows.sort_unstable_by_key(|(ts, _)| *ts);
+        if rows.len() < 48 {
+            eprintln!("❌ histórico OI demasiado corto: {} filas", rows.len());
+            std::process::exit(1);
+        }
+        println!("   [oi] {} filas · span {:.1} días (validación DENTRO de ventana)", rows.len(),
+            (rows.last().unwrap().0 - rows[0].0) as f64 / 86_400_000.0);
+        rows
+    } else {
+        Vec::new()
+    };
 
     println!("🌲 [TRAIN-FOREST] {} ← {}", symbol, in_path);
     println!("   muestras≤{} horizonte={}ms stride={}ms árboles≤{} lr={} depth={} λ={}",
              max_samples, horizon_ms, stride_ms, n_rounds, lr, max_depth, lambda);
 
+    let oi_series_ref = &oi_series;
     // ── 1+2. Muestras: features+etiquetas desde ticks (reutilizable) ────
     let build = |path: &str| -> (Vec<Vec<f32>>, Vec<f64>) {
         let file = File::open(path).unwrap_or_else(|e| {
@@ -372,6 +406,49 @@ fn main() {
                     // serving por predict_raw SIN sigmoid). `dir` ⇒ barrera
                     // triple HOST-010 (clasificación, como siempre).
                     if label_mode != "dir" {
+                        if label_mode == "oi" {
+                            // P-3c — ΔOI% a horizonte por join as-of de la
+                            // serie horaria (última fila con ts ≤ t). Sin
+                            // label válido (fuera de ventana o horizonte
+                            // incompleto) la muestra se DESCARTA — nunca se
+                            // rellena.
+                            let oi_asof = |ts: u64| -> Option<f64> {
+                                let idx = oi_series_ref
+                                    .binary_search_by(|(ots, _)| ots.cmp(&ts))
+                                    .unwrap_or_else(|i| i);
+                                if idx == 0 {
+                                    // ts anterior a la primera fila: sin valor
+                                    if oi_series_ref.first().map(|(ots, _)| *ots > ts).unwrap_or(true) {
+                                        return None;
+                                    }
+                                }
+                                if idx >= oi_series_ref.len() {
+                                    oi_series_ref.last().map(|(_, oi)| *oi)
+                                } else if oi_series_ref[idx].0 == ts {
+                                    Some(oi_series_ref[idx].1)
+                                } else if idx > 0 {
+                                    Some(oi_series_ref[idx - 1].1)
+                                } else {
+                                    None
+                                }
+                            };
+                            let deadline = t.ts + horizon_ms;
+                            let (Some(oi_now), Some(oi_fut)) = (oi_asof(t.ts), oi_asof(deadline))
+                            else {
+                                continue;
+                            };
+                            // honestidad: el futuro debe ser una fila REAL del
+                            // histórico (deadline ≤ última fila), no el último
+                            // valor colado por el as-of del borde.
+                            if deadline > oi_series_ref.last().unwrap().0 {
+                                continue;
+                            }
+                            let label = (oi_fut - oi_now) / oi_now * 100.0;
+                            if label.is_finite() {
+                                feats.push(full.to_vec());
+                                labels.push(label);
+                            }
+                        } else {
                         let deadline = t.ts + horizon_ms;
                         let mut sum_sq = 0.0f64;
                         let mut n_rt = 0usize;
@@ -404,6 +481,7 @@ fn main() {
                         if label.is_finite() {
                             feats.push(full.to_vec());
                             labels.push(label);
+                        }
                         }
                     } else {
                     // Triple barrera por TIEMPO DE RELOJ dentro de horizon_ms.
@@ -677,6 +755,7 @@ fn main() {
     let suffix = match label_mode.as_str() {
         "vol" => "_VOL",
         "volu" => "_VOLU",
+        "oi" => "_OI",
         _ => "_MOTOR",
     };
     let out = if promote {

@@ -1811,6 +1811,32 @@ impl GodEngineCore {
                     .unwrap_or((0.0, 0.0));
                 set_reg("vol_forecast_pct", vol_forecast);
                 set_reg("vol_forecast_base", vol_base);
+                // P-3c — delta de OI pronosticado ({SYM}_OI, regresión del
+                // histórico acumulativo). Hoy NINGÚN símbolo pasó el gate
+                // (21d de ventana horaria: sin edge medible) — el serving
+                // existe para que el predictor se ENCIENDA solo el día que
+                // el gate lo permita; sin modelo ⇒ 0.0.
+                let oi_key = format!("{}_OI", sym);
+                let oi_delta = crate::ml_inference::NanoForest::get_global(&oi_key)
+                    .and_then(|m| {
+                        const VD: usize = crate::ml_inference::NanoForest::ML_VECTOR_DIM;
+                        let mut vin = [0f32; VD];
+                        vin[..34].copy_from_slice(&swing_feats);
+                        vin[34..44].copy_from_slice(
+                            &self.feature_engines[coin_id].get_spectral_ml_features(),
+                        );
+                        vin[44..]
+                            .copy_from_slice(&crate::ml_inference::macro_ml_features(omni_features));
+                        for v in vin.iter_mut() {
+                            if !v.is_finite() {
+                                *v = 0.0;
+                            }
+                        }
+                        let (raw, _) = m.predict_raw(&vin);
+                        raw.is_finite().then_some(raw as f64)
+                    })
+                    .unwrap_or(0.0);
+                set_reg("oi_delta_forecast_pct", oi_delta);
             }
             let coin_ensemble = if coin_id < self.ensembles.len() {
                 &mut self.ensembles[coin_id]
@@ -3551,6 +3577,10 @@ impl GodEngineCore {
                             open_interest_norm: coin
                                 .open_interest_norm
                                 .load(Ordering::Relaxed),
+                            spoof_score: self
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "spoof_score", 0.0),
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let senior_sigs = self
