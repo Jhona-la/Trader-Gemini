@@ -74,6 +74,13 @@ pub struct MarketSnapshotPayload {
     /// bps) ahora interpolan LOG-LINEALMENTE en τ sobre la banda operativa
     /// [30 s, 12 h] — misma semántica, sin saltos, sin etiquetas.
     pub dominant_tau_ms: f64,
+    /// P-5b — datos EXCLUSIVOS del asiento Ente del Mercado (ningún otro
+    /// asiento los lee): z-score de burst ballena del flujo @trade real,
+    /// severidad de cascada de liquidaciones VIVA (peek, no consume), y OI
+    /// per-símbolo normalizado [0,1].
+    pub whale_burst_z: f64,
+    pub liquidation_severity: f64,
+    pub open_interest_norm: f64,
 }
 
 impl MarketSnapshotPayload {
@@ -153,6 +160,12 @@ pub enum SeniorRole {
     Metacognitivo,
     Teleonomia,
     AuditorInterno,
+    /// P-5b — ENTE DEL MERCADO: quién opera AHORA (ballenas: z de burst del
+    /// flujo real; cascadas: severidad de liquidaciones vivas; apalancamiento:
+    /// open interest per-símbolo). MODULADOR no direccional (como
+    /// Volatilidad): no genera dirección ni cuenta en el consenso direccional
+    /// — modula la convicción y veta SOLO ante cascada mayor en curso.
+    EnteMercado,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -296,6 +309,67 @@ impl SeniorAgent for SeniorVolatilidad {
             justification: format!(
                 "Volatilidad: ATR%={:.4} → convicción {:.2} (dir={:+.0})",
                 atr_pct, regime_factor, dir
+            ),
+        }
+    }
+}
+
+// P-5b — Senior Ente del Mercado (MODULADOR: quién opera AHORA)
+pub struct SeniorEnteMercado;
+impl SeniorAgent for SeniorEnteMercado {
+    fn role(&self) -> SeniorRole {
+        SeniorRole::EnteMercado
+    }
+    fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
+        let whale_z = if payload.whale_burst_z.is_finite() {
+            payload.whale_burst_z.clamp(0.0, 10.0)
+        } else {
+            0.0
+        };
+        let liq = if payload.liquidation_severity.is_finite() {
+            payload.liquidation_severity.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let oi = if payload.open_interest_norm.is_finite() {
+            payload.open_interest_norm.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        // VETO sólo ante cascada MAYOR en curso (sev > 0.85): no se entra
+        // contra un tsunami de liquidaciones — ni a favor: el path es
+        // caótico en ambos sentidos hasta que la cascada se agote.
+        let is_veto = liq > 0.85;
+        // Convicción: los entes grandes (ballena burst z>4) y el calor de
+        // cascada activa (sev>0.6) reducen la confianza en el desenlace
+        // limpio de la entrada — el precio en ese momento lo mueven ELLOS,
+        // no el flujo que motivó la señal. OI alto (apalancamiento denso)
+        // amplifica movimientos: misma modulación.
+        let mut entity_factor = 1.0f64;
+        if whale_z > 4.0 {
+            entity_factor *= 0.7;
+        }
+        if liq > 0.6 {
+            entity_factor *= 0.5;
+        }
+        if oi > 0.8 {
+            entity_factor *= 0.85;
+        }
+        let entity_factor = entity_factor.max(0.3); // piso: nunca anula solo
+        let dir = safe_signum(payload.intended_direction);
+        SeniorOpinion {
+            role: self.role(),
+            signal_direction: dir, // hereda la dirección: modula, no genera
+            confidence: if dir != 0.0 { entity_factor } else { 0.0 },
+            weight: 1.0,
+            is_veto,
+            justification: format!(
+                "EnteMercado: ballena_z={:.1} cascada={:.2} OI={:.2} → convicción {:.2}{}",
+                whale_z,
+                liq,
+                oi,
+                entity_factor,
+                if is_veto { " [VETO CASCADA]" } else { "" }
             ),
         }
     }
@@ -590,6 +664,10 @@ impl Default for ConsejoDeliberacion {
                 Box::new(SeniorMetacognitivo),
                 Box::new(SeniorTeleonomia),
                 Box::new(SeniorAuditorInterno),
+                // P-5b: el mercado tiene QUIENES operándolo — el asiento Ente
+                // ve ballenas (z de burst), cascadas (liquidaciones vivas) y
+                // apalancamiento (OI). Modulador como Volatilidad.
+                Box::new(SeniorEnteMercado),
             ],
             tracker: std::sync::RwLock::new(SeniorPerformanceTracker::new(500)),
         }
@@ -606,7 +684,7 @@ impl ConsejoDeliberacion {
         &self,
         payload: &MarketSnapshotPayload,
         win_rate: f64,
-        weight_multipliers: Option<&[f64; 10]>,
+        weight_multipliers: Option<&[f64; 11]>,
     ) -> ConsensusResult {
         // R-06 — SHRINKAGE BAYESIANO del win rate: wr=0 con n=0 significa
         // "sin datos", NO "sistema fallando". Mezcla con prior Beta(1,1)
@@ -703,6 +781,7 @@ impl ConsejoDeliberacion {
                     | SeniorRole::Ejecucion
                     | SeniorRole::Volatilidad
                     | SeniorRole::AuditorInterno
+                    | SeniorRole::EnteMercado
             )
         };
 
@@ -749,13 +828,25 @@ impl ConsejoDeliberacion {
         // D-342: Quórum Bayesiano ponderado contra Veto Deadlock.
         // Si hay vetoes:
         // - Si >= 2 seniors vetan: veto absoluto e irrevocable.
-        // - Si 1 senior veta pero los otros 9 seniors tienen supermayoría (> 80% consenso) y señal fuerte (>= 0.35),
-        //   se aprueba aplicando penalización bayesiana del 25% al final_signal en lugar de un bloqueo irreversible.
+        // - Si 1 senior veta pero los otros seniors tienen supermayoría
+        //   (> 80% consenso) y señal fuerte (>= 0.35), se aprueba aplicando
+        //   penalización bayesiana del 25% al final_signal en lugar de un
+        //   bloqueo irreversible.
+        // - P-5b EXCEPCIÓN: el veto de CASCADA del Ente del Mercado
+        //   (severidad > 0.85) es un CORTACIRCUITOS, no una disidencia — el
+        //   quórum bayesiano existe para desempatar OPINIONES; una cascada
+        //   mayor de liquidaciones no es opinión, es condición de mercado
+        //   (familia kill-switch). No sobreescribible por supermayoría.
         let mut vetoed_by = None;
         if !vetoes.is_empty() {
             let top_consensus = long_consensus_pct.max(short_consensus_pct);
-            // D-342 & D-425: Quórum Bayesiano con escala alineada a la convicción continua del tensor (>= 0.28)
-            if vetoes.len() == 1 && top_consensus >= 0.80 && final_signal.abs() >= 0.28 {
+            let cascade_breaker = vetoes
+                .iter()
+                .any(|v| v.role == SeniorRole::EnteMercado && v.is_veto);
+            if cascade_breaker && payload.liquidation_severity > 0.85 {
+                vetoed_by = Some(SeniorRole::EnteMercado);
+            } else if vetoes.len() == 1 && top_consensus >= 0.80 && final_signal.abs() >= 0.28 {
+                // D-342 & D-425: escala alineada a la convicción continua (>= 0.28)
                 final_signal *= 0.75; // Penalización del 25% por disenso de 1 senior
             } else {
                 vetoed_by = Some(vetoes[0].role);
@@ -826,13 +917,13 @@ impl ConsejoDeliberacion {
         &self,
         payload: &MarketSnapshotPayload,
         win_rate: f64,
-    ) -> [f64; 10] {
+    ) -> [f64; 11] {
         let safe_wr = if win_rate.is_finite() {
             win_rate.clamp(0.0, 1.0)
         } else {
             0.5
         };
-        let mut signals = [0.0; 10];
+        let mut signals = [0.0; 11];
         for (idx, agent) in self.agents.iter().enumerate() {
             signals[idx] = agent.evaluate(payload, safe_wr).signal_direction;
         }
@@ -840,7 +931,7 @@ impl ConsejoDeliberacion {
     }
 
     /// N-12: Registra el retorno realizado de una operación para actualizar los pesos adaptativos
-    pub fn record_outcome(&self, senior_signals: &[f64; 10], realized_return: f64) {
+    pub fn record_outcome(&self, senior_signals: &[f64; 11], realized_return: f64) {
         if let Ok(mut tracker) = self.tracker.write() {
             tracker.record_outcome(senior_signals, realized_return);
         }
@@ -851,9 +942,9 @@ impl ConsejoDeliberacion {
 #[derive(Debug, Clone)]
 pub struct SeniorPerformanceTracker {
     pub window_size: usize,
-    pub correct_counts: [usize; 10],
-    pub total_counts: [usize; 10],
-    pub history: std::collections::VecDeque<([f64; 10], f64)>,
+    pub correct_counts: [usize; 11],
+    pub total_counts: [usize; 11],
+    pub history: std::collections::VecDeque<([f64; 11], f64)>,
 }
 
 impl SeniorPerformanceTracker {
@@ -865,21 +956,21 @@ impl SeniorPerformanceTracker {
     pub fn new(window_size: usize) -> Self {
         Self {
             window_size: window_size.max(10).min(1000),
-            correct_counts: [0; 10],
-            total_counts: [0; 10],
+            correct_counts: [0; 11],
+            total_counts: [0; 11],
             history: std::collections::VecDeque::with_capacity(window_size.max(10).min(1000)),
         }
     }
 
     /// Registra el resultado observado tras la decisión del Consejo
-    pub fn record_outcome(&mut self, senior_signals: &[f64; 10], realized_return: f64) {
+    pub fn record_outcome(&mut self, senior_signals: &[f64; 11], realized_return: f64) {
         if !realized_return.is_finite() {
             return;
         }
 
         if self.history.len() >= self.window_size {
             if let Some((old_signals, old_ret)) = self.history.pop_front() {
-                for i in 0..10 {
+                for i in 0..11 {
                     let old_sig = old_signals[i];
                     self.total_counts[i] = self.total_counts[i].saturating_sub(1);
                     let was_correct = if old_sig != 0.0 {
@@ -894,7 +985,7 @@ impl SeniorPerformanceTracker {
             }
         }
 
-        for i in 0..10 {
+        for i in 0..11 {
             let sig = senior_signals[i];
             self.total_counts[i] += 1;
             let was_correct = if sig != 0.0 {
@@ -913,13 +1004,13 @@ impl SeniorPerformanceTracker {
     }
 
     /// Calcula multiplicadores adaptativos normalizados en el rango [0.5, 2.0]
-    pub fn compute_weights(&self) -> [f64; 10] {
-        let mut weights = [1.0; 10];
+    pub fn compute_weights(&self) -> [f64; 11] {
+        let mut weights = [1.0; 11];
         let mut sum_acc = 0.0;
         let mut active_seniors = 0;
 
-        let mut accuracies = [0.5; 10];
-        for i in 0..10 {
+        let mut accuracies = [0.5; 11];
+        for i in 0..11 {
             if self.total_counts[i] >= 5 {
                 let acc = self.correct_counts[i] as f64 / self.total_counts[i] as f64;
                 accuracies[i] = acc.clamp(0.01, 0.99);
@@ -930,7 +1021,7 @@ impl SeniorPerformanceTracker {
 
         if active_seniors >= 2 && sum_acc > 0.0 {
             let mean_acc = sum_acc / active_seniors as f64;
-            for i in 0..10 {
+            for i in 0..11 {
                 if self.total_counts[i] >= 5 {
                     let relative = accuracies[i] / mean_acc.max(0.01);
                     weights[i] = relative.clamp(0.5, 2.0);
@@ -965,6 +1056,9 @@ mod tests {
             // 20 bps: bajo el límite de 35 bps de SeniorEjecucion para Scalping.
             estimated_slippage_bps: 20.0,
             dominant_tau_ms: 1_138_000.0,
+            whale_burst_z: 0.0,
+            liquidation_severity: 0.0,
+            open_interest_norm: 0.0,
         }
     }
 
@@ -1000,6 +1094,9 @@ mod tests {
             current_drawdown_pct: 0.01,
             estimated_slippage_bps: 0.0005,
             dominant_tau_ms: 1_138_000.0,
+            whale_burst_z: 0.0,
+            liquidation_severity: 0.0,
+            open_interest_norm: 0.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -1028,7 +1125,7 @@ mod tests {
         let payload = diverse_bullish_payload();
 
         // Multiplicadores que potencian a Flujo y Espectral
-        let weights = [2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let weights = [2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         let result = consejo.deliberar_with_weights(&payload, 0.70, Some(&weights));
         assert!(result.approved);
         assert!(result.final_signal > 0.0);
@@ -1040,7 +1137,7 @@ mod tests {
         let mut tracker = SeniorPerformanceTracker::new(50);
         // Simular 10 trades ganadores donde el Senior 0 (Flujo) acertó
         for _ in 0..10 {
-            let signals = [1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+            let signals = [1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
             tracker.record_outcome(&signals, 0.01);
         }
 
@@ -1071,6 +1168,9 @@ mod tests {
             current_drawdown_pct: -0.05,
             estimated_slippage_bps: 10.0,
             dominant_tau_ms: 1_138_000.0,
+            whale_burst_z: 0.0,
+            liquidation_severity: 0.0,
+            open_interest_norm: 0.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -1124,7 +1224,8 @@ mod tests {
 
         // ...pero SOLO los asientos que legítimamente leen OBI se mueven.
         // Índices: 0=Flujo, 1=Espectral, 2=Volatilidad, 3=Causal, 4=Riesgo,
-        //          5=Ejecución, 6=ML, 7=Metacognitivo, 8=Teleonomia, 9=Auditor.
+        //          5=Ejecución, 6=ML, 7=Metacognitivo, 8=Teleonomia,
+        //          9=Auditor, 10=Ente del Mercado.
         let sigs_base = consejo.extract_senior_signals(&base, 0.70);
         let sigs_obi = consejo.extract_senior_signals(&obi_flip, 0.70);
         for (idx, (a, b)) in sigs_base.iter().zip(sigs_obi.iter()).enumerate() {
@@ -1204,5 +1305,51 @@ mod tests {
                 > senior_vol.evaluate(&high_atr, 0.5).confidence,
             "ATR alto debe reducir la convicción del SeniorVolatilidad"
         );
+    }
+
+    /// P-5b — diversidad del asiento ENTE DEL MERCADO: sus fuentes (ballena
+    /// z, cascada de liquidaciones, OI) no las lee NINGÚN otro asiento, y
+    /// él no lee las de nadie más. Ante un shock de entes (cascada mayor +
+    /// burst ballena) SOLO el asiento 10 se mueve; y su modulación es real
+    /// (convicción menor) con VETO activado en cascada extrema.
+    #[test]
+    fn test_p5b_asiento_ente_mercado_independiente_y_modula() {
+        let consejo = ConsejoDeliberacion::new();
+        let base = diverse_bullish_payload();
+
+        let entity_shock = MarketSnapshotPayload {
+            whale_burst_z: 6.0,
+            liquidation_severity: 0.9,
+            open_interest_norm: 0.9,
+            ..base.clone()
+        };
+
+        let sigs_base = consejo.extract_senior_signals(&base, 0.70);
+        let sigs_shock = consejo.extract_senior_signals(&entity_shock, 0.70);
+        // Señal DIRECCIONAL: los asientos 0..=9 no leen entes — inmunes al
+        // shock (independencia estructural). El asiento 10 modula por
+        // CONVICCIÓN (su dirección es heredada): su movimiento no aparece
+        // en signal_direction — se verifica por evaluate() directo abajo.
+        for (idx, (a, b)) in sigs_base.iter().zip(sigs_shock.iter()).enumerate() {
+            let moved = (a - b).abs() > 1e-9;
+            assert!(
+                !moved,
+                "asiento {} se movió ante shock de entes — nadie más lee ballena/cascada/OI",
+                idx
+            );
+        }
+
+        // Modulación real: convicción del Ente menor bajo shock, y VETO por
+        // cascada mayor (sev 0.9 > 0.85).
+        let ente = SeniorEnteMercado;
+        let calm = ente.evaluate(&base, 0.5);
+        let shock = ente.evaluate(&entity_shock, 0.5);
+        assert!(calm.confidence > shock.confidence, "shock de entes debe reducir convicción");
+        assert!(!calm.is_veto, "mercado calmado: sin veto");
+        assert!(shock.is_veto, "cascada severa 0.9 debe VETAR");
+
+        // Y el veto llega a la deliberación completa.
+        let res_shock = consejo.deliberar(&entity_shock, 0.70);
+        assert!(!res_shock.approved, "cascada mayor en curso: no se aprueba entrada");
     }
 }

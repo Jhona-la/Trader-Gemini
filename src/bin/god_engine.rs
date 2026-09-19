@@ -2043,6 +2043,67 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
+        // P-3b — POLLER DE OPEN INTEREST PER-SÍMBOLO: el dinero apalancado
+        // DENTRO de cada moneda (/fapi/v1/openInterest, 120s, fuera del hot
+        // path). Normalización log contra $100M de contratos abiertos por
+        // símbolo (BTC global vive en omni[12] como proxy de régimen).
+        // Alimenta el asiento Ente del Mercado vía coin.open_interest_norm.
+        {
+            let arena_oi = Arc::clone(&arena_real);
+            let syms_oi: Vec<(String, usize)> = symbols_clone
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (s.to_uppercase(), i))
+                .collect();
+            rt_handle.spawn(async move {
+                let is_testnet = EnvManager::is_demo_env();
+                let base_url = if is_testnet {
+                    "https://testnet.binancefuture.com"
+                } else {
+                    "https://fapi.binance.com"
+                };
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(8))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new());
+                let mut ticker = tokio::time::interval(std::time::Duration::from_secs(120));
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                telemetry_server::telemetry_log!(
+                    "👁️ [OI-POLLER] open interest per-símbolo activo ({} símbolos, 120s)",
+                    syms_oi.len()
+                );
+                loop {
+                    ticker.tick().await;
+                    for (sym, coin_id) in syms_oi.iter() {
+                        if *coin_id >= arena_oi.coins.len() {
+                            continue;
+                        }
+                        let url = format!("{}/fapi/v1/openInterest?symbol={}", base_url, sym);
+                        if let Ok(res) = client.get(&url).send().await {
+                            if let Ok(json) = res.json::<serde_json::Value>().await {
+                                if let Some(oi_str) =
+                                    json.get("openInterest").and_then(|v| v.as_str())
+                                {
+                                    if let Ok(oi) = oi_str.parse::<f64>() {
+                                        if oi.is_finite() && oi > 0.0 {
+                                            // Contratos abiertos × precio ≈ notional:
+                                            // el OI del endpoint es en unidades de la
+                                            // base — se normaliza tal cual contra 1e8
+                                            // (orden de magnitud típico en majors).
+                                            let norm = (oi.ln() / 1.0e8f64.ln()).clamp(0.0, 1.0);
+                                            arena_oi.coins[*coin_id]
+                                                .open_interest_norm
+                                                .store(norm, std::sync::atomic::Ordering::Relaxed);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         // B1.3 — WATCHDOG DE POSICIÓN DESNUDA.
         // "Toda posición tiene TP/SL" pasa de intención a INVARIANTE auditable:
         // cada 60s (o a los 5s si un ALGO_UPDATE terminal marcó
@@ -3305,8 +3366,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if tau_entry > 0.0 { tau_entry } else { 30_000.0 },
                             );
                             let risk_budget = 0.05 * kelly_frac; // fracción del margen por trade
+                            // P-1b — VOL-BRAKE: el predictor {SYM}_VOL encoge el
+                            // presupuesto cuando la σ pronosticada supera ×1.25
+                            // la del régimen en que el modelo se entrenó (base =
+                            // init del modelo, unidades exactas). UNILATERAL:
+                            // sólo encoge (piso ×0.4), nunca amplifica — primer
+                            // despliegue del predictor, la calle es una sola.
+                            let vol_fc = engine_real
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "vol_forecast_pct", 0.0);
+                            let vol_base = engine_real
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "vol_forecast_base", 0.0);
+                            let mut vol_brake = 1.0;
+                            if vol_base > 1e-9 && vol_fc > 1e-9 {
+                                let ratio = vol_fc / vol_base;
+                                if ratio > 1.25 {
+                                    vol_brake = ((1.25 / ratio).max(0.4)).min(1.0);
+                                    telemetry_server::telemetry_log!(
+                                        "🛑 [VOL-BRAKE] coin {} σ_pronosticada {:.4} = ×{:.2} la base {:.4} — riesgo ×{:.2}",
+                                        coin_id, vol_fc, ratio, vol_base, vol_brake
+                                    );
+                                }
+                            }
                             let lev_from_risk =
-                                (risk_budget / sl_frac.max(1e-4)).clamp(1.0, 20.0);
+                                (risk_budget * vol_brake / sl_frac.max(1e-4)).clamp(1.0, 20.0);
                             exec_leverage =
                                 (lev_from_risk as u32).min(cap).max(1);
                         } else {

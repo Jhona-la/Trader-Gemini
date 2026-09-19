@@ -54,6 +54,14 @@ impl NanoForest {
         1.0 / (1.0 + (-(self.data.init_score as f64)).exp())
     }
 
+    /// P-1b — valor CRUDO del init_score: para modelos de REGRESIÓN
+    /// ({SYM}_VOL, {SYM}_VOLU) el init es la MEDIA del label del mes de
+    /// entrenamiento (no una probabilidad — sigmoid NO aplica). El freno
+    /// de sizing compara el pronóstico contra esta base: unidades exactas.
+    pub fn init_value(&self) -> f64 {
+        self.data.init_score as f64
+    }
+
     /// Valida que ningún split del modelo parta por una dimensión fuera del
     /// vector que ESTE binario construye. Índices negativos (hojas: -1/-2)
     /// y un vector `feature` vacío (modelo sin splits) no violan el

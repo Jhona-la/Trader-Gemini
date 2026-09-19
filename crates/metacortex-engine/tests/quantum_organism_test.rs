@@ -24,6 +24,9 @@ fn test_quantum_organism_components() {
         current_drawdown_pct: 0.02,
         estimated_slippage_bps: 0.001,
         dominant_tau_ms: 1_138_000.0,
+            whale_burst_z: 0.0,
+            liquidation_severity: 0.0,
+            open_interest_norm: 0.0,
     };
     let result = consejo.deliberar(&healthy_payload, 0.65);
     assert!(

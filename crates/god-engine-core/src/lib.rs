@@ -64,7 +64,7 @@ pub struct GodEngineCore {
     pub last_slow_intent: Vec<SignalIntent>,
     /// U-2: señales del consejo que acompañan la ÚLTIMA intención evaluada
     /// (la del motor continuo — ya no hay dualidad de slots por horizonte).
-    pub last_senior_signals: Vec<[f64; 10]>,
+    pub last_senior_signals: Vec<[f64; 11]>,
     pub lakehouse: Option<Arc<storage_engine::LakehouseWarehouse>>,
     pub consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion,
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
@@ -241,7 +241,7 @@ impl GodEngineCore {
             reality: reality_physics::RealityPhysics::default(),
             last_fast_intent: vec![SignalIntent::flat(); n_coins],
             last_slow_intent: vec![SignalIntent::flat(); n_coins],
-            last_senior_signals: vec![[0.0; 10]; n_coins],
+            last_senior_signals: vec![[0.0; 11]; n_coins],
             lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
@@ -1778,8 +1778,8 @@ impl GodEngineCore {
             // (el gate del trainer ya bloqueó los símbolos sin edge).
             {
                 let vol_key = format!("{}_VOL", sym);
-                let vol_forecast = crate::ml_inference::NanoForest::get_global(&vol_key)
-                    .and_then(|m| {
+                let (vol_forecast, vol_base) = crate::ml_inference::NanoForest::get_global(&vol_key)
+                    .map(|m| {
                         const VD: usize = crate::ml_inference::NanoForest::ML_VECTOR_DIM;
                         let mut vin = [0f32; VD];
                         vin[..34].copy_from_slice(&swing_feats);
@@ -1794,13 +1794,23 @@ impl GodEngineCore {
                             }
                         }
                         let (raw, _) = m.predict_raw(&vin);
-                        if raw.is_finite() && raw > 0.0 {
-                            Some(raw as f64)
-                        } else {
-                            None
-                        }
-                    });
-                set_reg("vol_forecast_pct", vol_forecast.unwrap_or(0.0));
+                        // P-1b: la BASE del modelo de regresión es su init
+                        // (media del mes de entrenamiento) — el freno de
+                        // sizing compara pronóstico contra base en unidades
+                        // exactas (σ del régimen en que se entrenó).
+                        let base = m.init_value();
+                        (
+                            if raw.is_finite() && raw > 0.0 {
+                                raw as f64
+                            } else {
+                                0.0
+                            },
+                            if base.is_finite() && base > 0.0 { base } else { 0.0 },
+                        )
+                    })
+                    .unwrap_or((0.0, 0.0));
+                set_reg("vol_forecast_pct", vol_forecast);
+                set_reg("vol_forecast_base", vol_base);
             }
             let coin_ensemble = if coin_id < self.ensembles.len() {
                 &mut self.ensembles[coin_id]
@@ -3528,6 +3538,19 @@ impl GodEngineCore {
                                 .get(coin_id)
                                 .map(|s| s.dominant_tau_ms)
                                 .unwrap_or(1_138_000.0),
+                            // P-5b: datos EXCLUSIVOS del asiento Ente del
+                            // Mercado — ballena (z de burst del @trade real),
+                            // cascada (PEEK: observa sin robarle el evento al
+                            // camino per-tick), apalancamiento (OI per-símbolo).
+                            whale_burst_z: self
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "whale_burst_z", 0.0),
+                            liquidation_severity:
+                                crate::liquidation_feed::peek_pending(),
+                            open_interest_norm: coin
+                                .open_interest_norm
+                                .load(Ordering::Relaxed),
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let senior_sigs = self

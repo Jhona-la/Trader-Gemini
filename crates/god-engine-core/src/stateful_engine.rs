@@ -269,6 +269,16 @@ impl StatefulEngine {
             self.ema_fast = price;
             self.ema_slow = price;
         } else {
+            // S-8 — DECISIÓN DOCUMENTADA: los genes ema_fast_period /
+            // ema_slow_period (~12.5/~25.1) NO se cablean aquí aunque
+            // existan. Estos 20/200 alimentan la feature [0] del contrato
+            // 34D del vector universal: cambiarlos SOLO en vivo rompería la
+            // paridad train/serve que B3.30 y B3.35 pagaron caro por
+            // restaurar (distribución de la feature distinta ⇒ el modelo
+            // sirve ruido). Condición para activarlos: trainer leyendo el
+            // MISMO genoma del símbolo + retrain completo del roster en el
+            // MISMO cambio. Sustituir el ladder por signal_at(τ) del
+            // espectro exige lo mismo.
             let alpha_fast = 2.0 / (20.0 + 1.0);
             let alpha_slow = 2.0 / (200.0 + 1.0);
 
