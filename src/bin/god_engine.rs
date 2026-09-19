@@ -970,6 +970,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (tx_events, rx_events) = crossbeam_channel::bounded::<Vec<u8>>(5_000);
     let rx_events_dropper = rx_events.clone();
+    // CERT-M1-H01: contador de eventos descartados por backpressure —
+    // antes los ticks se perdían silenciosamente sin evidencia forense.
+    let dropped_events = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    {
+        let dropped_events = Arc::clone(&dropped_events);
+        std::thread::Builder::new().name("ws-backpressure-monitor".into()).spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(60));
+                let d = dropped_events.load(std::sync::atomic::Ordering::Relaxed);
+                if d > 0 {
+                    println!("⚠️ [BACKPRESSURE] {} eventos WS descartados (drop-oldest) — throughput del lector insuficiente", d);
+                }
+            }
+        }).ok();
+    }
 
     // FASE 3A: FETCH CLAVES Y CONEXIÓN API REST PARA CHEQUEO DE COMISIONES Y CAPITAL ANTES DEL WARMUP Y ENTRENAMIENTO
     let mut testnet_key = env::var("TESTNET_API_KEY").unwrap_or_default();
@@ -2694,7 +2709,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for ob in local_orderbooks.iter_mut() {
                     ob.clear();
                 }
-                telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed. Entering Warmup Phase (50 ticks).");
+                // CERT-M1-H02: resetear el guard de secuencia del libro —
+                // sin esto, cada símbolo descartaba hasta 50 mensajes depth
+                // consecutivos tras la reconexión (>1300 actualizaciones de
+                // libro perdidas por reconnect con 26+ símbolos).
+                book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
+                telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed + book sequence guard reset. Entering Warmup Phase (50 ticks).");
 
                 let rx_rest = Arc::clone(&exec);
                 rt_handle.spawn(async move {
@@ -4409,7 +4429,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match tx_events.try_send(sys_data.clone()) {
                             Ok(_) => break,
                             Err(crossbeam_channel::TrySendError::Full(_)) => {
-                                let _ = rx_events_dropper.try_recv(); // Bounded Drop Oldest
+                                { let _ = rx_events_dropper.try_recv(); dropped_events.fetch_add(1, std::sync::atomic::Ordering::Relaxed); } // CERT-M1-H01: contar
                             }
                             Err(crossbeam_channel::TrySendError::Disconnected(_)) => break,
                         }

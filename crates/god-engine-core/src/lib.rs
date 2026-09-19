@@ -707,6 +707,7 @@ impl GodEngineCore {
                 eff_ask_qty,
                 event_time_ms,
                 omni_features,
+                is_depth, // CERT-M2-H01: el depth path ya actualizó macro arriba
             );
 
             // Si hay pánico de latencia, no abrimos nuevas órdenes pero permitimos cierres defensivos
@@ -754,6 +755,7 @@ impl GodEngineCore {
         ask_qty: f64,
         event_time_ms: u64,
         omni_features: &[f64; 54],
+        _skip_macro_update: bool,
     ) -> (
         Option<(bool, f64, f64, f64, f64)>,
         Option<(bool, f64, f64)>,
@@ -843,9 +845,18 @@ impl GodEngineCore {
             // antes 0.0 constante: columna muerta del vector 34D/48D.
             // TODO: funding per-símbolo (el productor hoy es BTC-only).
             // dex_severity: sin productor en vivo — 0.0 documentado.
-            // P-4: severidad de liquidación viva (el camino per-tick también).
-            let liq_sev_tick = crate::liquidation_feed::take_pending();
-            feature_engine.update_macro_features(obi, omni_features[11], liq_sev_tick, event_time_ms);
+            // CERT-M2-H01: ANTES el camino per-tick llamaba
+            // update_macro_features SIEMPRE, duplicando la llamada que el
+            // branch is_depth ya hizo arriba (~600) — obi_noise,
+            // obi_accel, fr_elasticity se actualizaban al DOBLE en
+            // eventos depth pero una vez en trades. Ahora: el per-tick
+            // SÓLO actualiza si el camino is_depth NO corrió (para trades
+            // y klines); los depth events ya fueron actualizados arriba
+            // con el funding per-símbolo (mejor dato).
+            if !_skip_macro_update {
+                let liq_sev_tick = crate::liquidation_feed::take_pending();
+                feature_engine.update_macro_features(obi, omni_features[11], liq_sev_tick, event_time_ms);
+            }
             let raw_atr_pct = feature_engine.get_atr_pct();
             let hurst_val = feature_engine.hurst.current();
             let coin = &self.arena.coins[coin_id];
@@ -4072,6 +4083,7 @@ impl GodEngineCore {
             ask_qty,
             event_time_ms,
             omni_features,
+            false, // CERT-M2-H01: wrapper legacy — siempre actualiza macro
         )
     }
 }

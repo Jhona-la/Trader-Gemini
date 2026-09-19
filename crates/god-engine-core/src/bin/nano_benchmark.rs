@@ -33,6 +33,7 @@ fn main() {
             1.0,
             1000 + i * 100,
             &features_54,
+            false,
         ));
     }
 
@@ -51,6 +52,7 @@ fn main() {
             1.0,
             10_000 + i * 100,
             &features_54,
+            false,
         ));
     }
     let end_cycles = rdtsc();
