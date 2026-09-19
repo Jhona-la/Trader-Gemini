@@ -987,6 +987,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (tx_events, rx_events) = crossbeam_channel::bounded::<Vec<u8>>(5_000);
     let rx_events_dropper = rx_events.clone();
+    // CERT-M4-H02 — SHUTDOWN GRACEFUL: ^C #1 despierta el event loop con un
+    // centinela para que drene ordenado (flatten-all + persistir estado);
+    // ^C #2 fuerza la salida. Antes: un Ctrl+C con posiciones abiertas
+    // mataba el proceso y la posición quedaba huérfana hasta la
+    // reconciliación del siguiente arranque.
+    let shutdown_requested = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let flag = Arc::clone(&shutdown_requested);
+        let wake = tx_events.clone();
+        tokio::spawn(async move {
+            loop {
+                if tokio::signal::ctrl_c().await.is_ok() {
+                    if flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                        telemetry_server::telemetry_log!(
+                            "🛑 [SHUTDOWN] Segundo ^C — salida forzada."
+                        );
+                        std::process::exit(130);
+                    }
+                    telemetry_server::telemetry_log!(
+                        "🛑 [SHUTDOWN] ^C recibido — drenando posiciones y estado..."
+                    );
+                    let _ = wake.try_send(vec![0xFF]); // despierta el event loop
+                }
+            }
+        });
+    }
     // CERT-M1-H01: contador de eventos descartados por backpressure —
     // antes los ticks se perdían silenciosamente sin evidencia forense.
     let dropped_events = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -1485,6 +1511,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let historical_klines = historical_klines.clone();
         let omni_state_hot = Arc::clone(&omni_state_live);
         let rt_handle_for_thread = rt_handle.clone();
+        let shutdown_flag = Arc::clone(&shutdown_requested);
         move || {
         if let Some(core_ids) = core_affinity::get_core_ids() {
             if core_ids.len() > 1 {
@@ -2705,6 +2732,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
 
         while let Ok(mut msg_bytes) = rx_events.recv() {
+            // CERT-M4-H02: el centinela de shutdown despierta el recv; el
+            // flag ordena el drenaje (el mensaje mismo se descarta).
+            if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
             let start = Instant::now();
 
             let is_trade = memchr::memmem::find(&msg_bytes, b"\"e\":\"trade\"").is_some();
@@ -3094,11 +3126,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Antes sólo se drenaban dentro del else (trading permitido) —
                     // durante warmup/vetos, los fills del exchange se acumulaban
                     // (cap 1024, overflow silencioso) y Kelly nunca los veía.
+                    // FIX (auditoría 2026-09-19): este drenaje era un fetch_add
+                    // sobre to_bits() — suma de representaciones de bits
+                    // (bits(a)+bits(b) ≠ bits(a+b)) que corrompía el plano
+                    // exchange de X-013 (valores astronómicos/NaN ⇒ el
+                    // kill-switch quedaba ciego al plano real). Además era
+                    // redundante: el mismo fill dispara ACCOUNT_UPDATE y
+                    // on_capital ya guarda la verdad (wallet+unrealized).
+                    // El plano exchange queda con ESCRITOR ÚNICO (on_capital),
+                    // igual que el drenaje vivo B3.7 que nunca toca capital.
                     for bc in execution_engine::trade_accounting::drain_bracket_closes() {
-                        let net_bc = bc.pnl_gross - bc.fees;
-                        if bc.pnl_gross != 0.0 {
-                            unified_capital.fetch_add(net_bc.to_bits(), Ordering::Relaxed);
-                        }
+                        let _ = bc;
                     }
                 } else {
                     if newly_transitioned {
@@ -3177,13 +3215,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         loop_ws_url.store(Arc::new(format!("{}?streams={}", base_ws_url, loop_streams_str)));
                         let _ = tx_ws_control.try_send(());
                         let exec_clone = Arc::clone(&exec);
-                        let cap_clone = Arc::clone(&unified_capital);
                         let db_tx_clone = db_tx.clone();
                         let arena_real_clone = Arc::clone(&engine_real.arena);
                         rt_handle.spawn(async move {
                             if let Ok(bal) = exec_clone.load().fetch_account_balance().await {
                                 telemetry_server::telemetry_log!("🌍 [TRANSITION] Mainnet API Real Balance Extracted: ${:.4}", bal);
-                                cap_clone.store(bal.to_bits(), Ordering::Relaxed);
+                                arena_real_clone.unified_capital.store(bal, Ordering::Relaxed);
                                 arena_real_clone.config.base_capital.store(bal, Ordering::Relaxed);
                                 let _ = db_tx_clone.send((bal, 0.0)).await;
                             }
@@ -4369,6 +4406,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         telemetry_server::telemetry_log!("✅ [UNIFIED CORE] Unified Event Loop safely terminated.");
+
+        // CERT-M4-H02 — DRENAJE GRACEFUL: kill-switch + flatten-all de TODO
+        // lo vivo + persistencia del estado aprendido, ANTES de salir.
+        // (El bucle normal nunca termina: sólo se llega aquí por shutdown.)
+        {
+            let executor = exec.load_full();
+            engine_real
+                .arena
+                .kill_switch_active
+                .store(true, Ordering::SeqCst);
+            executor.trigger_kill_switch();
+            match rt_handle_for_thread.block_on(executor.flatten_all_positions()) {
+                Ok((closed, skipped)) => telemetry_server::telemetry_log!(
+                    "🛑 [SHUTDOWN] Flatten-all completado: {} cerradas, {} ya planas.",
+                    closed,
+                    skipped
+                ),
+                Err(e) => telemetry_server::telemetry_log!(
+                    "🛑 [SHUTDOWN] Flatten-all con error: {:?} — el arranque próximo reconciliará.",
+                    e
+                ),
+            }
+            persist_kelly_envelope(&risk_envelope);
+            telemetry_server::telemetry_log!(
+                "🛑 [SHUTDOWN] Estado persistido. Cierre limpio completo."
+            );
+            std::process::exit(0);
+        }
         }
     }).unwrap();
 
