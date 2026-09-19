@@ -84,6 +84,12 @@ pub struct GodEngineCore {
     /// D-619 (DÉCIMA OLA): mapa aprendido de la puntuación de confianza a la
     /// probabilidad real de acierto (escalado de Platt con prior identidad).
     pub confidence_calibrator: calibration::PlattCalibrator,
+    /// CERT-M2-H03 — calibradores PER-SÍMBOLO: los globales arriba eran
+    /// alimentados por TODAS las monedas (exchangeability rota cross-asset:
+    /// el conformal aprendía un blend BTC+NEAR+ATOM). El índice es coin_id;
+    /// si el slot no existe, se cae al global (compat).
+    pub conformal_by_coin: Vec<conformal::ConformalCalibrator>,
+    pub calibrator_by_coin: Vec<calibration::PlattCalibrator>,
     /// DIAG R4 (transitorio): cuello post-orden.
     pub diag_council_vetoes: u64,
     pub diag_opened: u64,
@@ -251,6 +257,12 @@ impl GodEngineCore {
             genomes_mtime: None,
             conformal: conformal::ConformalCalibrator::new(),
             confidence_calibrator: calibration::PlattCalibrator::new(),
+            conformal_by_coin: (0..n_coins)
+                .map(|_| conformal::ConformalCalibrator::new())
+                .collect(),
+            calibrator_by_coin: (0..n_coins)
+                .map(|_| calibration::PlattCalibrator::new())
+                .collect(),
             diag_council_vetoes: 0,
             diag_opened: 0,
             diag_ml_vetoes: 0,
@@ -449,11 +461,18 @@ impl GodEngineCore {
         if changed {
             self.genomes_mtime = mtime_now;
             if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
-                let last = self.applied_generation.load(Ordering::Relaxed);
+                let last = self.applied_generation.load(Ordering::SeqCst);
                 if env.generation > last {
+                    // CERT-M5-H02: WRITER PROTOCOL — incrementar la generación
+                    // ANTES de aplicar (seqlock write-begin). Un reader que
+                    // capture la generación ANTES y la re-verifique DESPUÉS
+                    // de computar su decisión detectará el swap si la gen
+                    // cambió, evitando mezclar leverage viejo con SL nueva.
+                    self.applied_generation
+                        .store(env.generation + 1, Ordering::SeqCst);
                     env.genome.apply_to_arena(&self.arena);
                     self.applied_generation
-                        .store(env.generation, Ordering::Relaxed);
+                        .store(env.generation, Ordering::SeqCst);
                 }
                 // Generación <= ya aplicada: los hot-swaps en vivo permanecen
                 // hasta que el almacén sancione una generación superior.
@@ -1415,12 +1434,20 @@ impl GodEngineCore {
                         // cortos entraban invertidos y contaminaban la calibración
                         // de todas las operaciones.
                         let p_win_at_entry = if is_long { ml_at_entry } else { 1.0 - ml_at_entry };
+                        if coin_id < self.conformal_by_coin.len() {
+                        self.conformal_by_coin[coin_id].update(p_win_at_entry, is_win);
+                    } else {
                         self.conformal.update(p_win_at_entry, is_win);
+                    }
                     }
                     // D-619: el calibrador aprende de la puntuación CRUDA y del
                     // resultado neto de comisiones. Nunca de su propia salida.
                     if score_at_entry > 0.0 {
+                        if coin_id < self.calibrator_by_coin.len() {
+                        self.calibrator_by_coin[coin_id].update(score_at_entry, is_win);
+                    } else {
                         self.confidence_calibrator.update(score_at_entry, is_win);
+                    }
                     }
 
                     // D-680 (DÉCIMA OLA): media posterior con prior de diseño. Antes
@@ -2119,10 +2146,26 @@ impl GodEngineCore {
             let ml_prob_now = coin.ml_prob.load(Ordering::Relaxed);
             // D-676: la aceptación depende de la dirección — un largo gana si el
             // precio sube (p = ml_prob) y un corto si baja (p = 1 − ml_prob).
-            let conformal_p = self.conformal.p_value(ml_prob_now);
-            let conformal_p_short = self.conformal.p_value(1.0 - ml_prob_now);
-            let accept_long = self.conformal.accepts(ml_prob_now);
-            let accept_short = self.conformal.accepts(1.0 - ml_prob_now);
+            let conformal_p = if coin_id < self.conformal_by_coin.len() {
+                self.conformal_by_coin[coin_id].p_value(ml_prob_now)
+            } else {
+                self.conformal.p_value(ml_prob_now)
+            };
+            let conformal_p_short = if coin_id < self.conformal_by_coin.len() {
+                self.conformal_by_coin[coin_id].p_value(1.0 - ml_prob_now)
+            } else {
+                self.conformal.p_value(1.0 - ml_prob_now)
+            };
+            let accept_long = if coin_id < self.conformal_by_coin.len() {
+                            self.conformal_by_coin[coin_id].accepts(ml_prob_now)
+                        } else {
+                            self.conformal.accepts(ml_prob_now)
+                        };
+            let accept_short = if coin_id < self.conformal_by_coin.len() {
+                            self.conformal_by_coin[coin_id].accepts(1.0 - ml_prob_now)
+                        } else {
+                            self.conformal.accepts(1.0 - ml_prob_now)
+                        };
             set_reg("conformal_p_value", conformal_p);
             set_reg("conformal_p_value_short", conformal_p_short);
             set_reg("conformal_alpha", conf_alpha);

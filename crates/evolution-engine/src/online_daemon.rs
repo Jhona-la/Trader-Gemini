@@ -38,7 +38,11 @@ const WF_INITIAL_CAPITAL: f64 = 13.0;
 /// ventana OOS del daemon. 3 trades en la partición fuera de muestra es el
 /// mínimo para una señal direccional; por debajo, el genoma es INVIABLE
 /// (D-654), no mediocre — la inacción no puede puntuar mejor que operar.
-const WF_MIN_TRADES: u32 = 3;
+/// CERT-M8-H01: el mínimo era 3 — best-of-2000 sobre ≥3 OOS trades es
+/// selección pura de estadística de orden (el mejor de 2000 tiradas de
+/// 3 monedas supera cualquier umbral por azar). 30 es el mínimo de la
+/// regla X-014 para significancia muestral básica.
+const WF_MIN_TRADES: u32 = 30;
 
 /// D-689 (DÉCIMA OLA) — ARMADO EXPLÍCITO DE LA EVOLUCIÓN EN VIVO.
 ///

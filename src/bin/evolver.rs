@@ -424,32 +424,26 @@ async fn main() -> Result<(), String> {
                     0.0
                 };
 
-                // FITNESS CUANTITATIVO MULTIOBJETIVO (Tolerante a Micro-Cuentas)
-                let fitness = if max_drawdown > 0.85 {
-                    0.0
-                } else {
-                    let pnl = final_capital - initial_capital;
-                    let growth = pnl / initial_capital;
-                    let dd_penalty = (1.0 - max_drawdown).powf(2.0).max(0.001);
-                    let trade_factor = if total_trades >= 20 && total_trades <= 500 {
-                        2.5
-                    } else if total_trades >= 10 {
-                        1.5
-                    } else {
-                        (total_trades as f64 / 10.0).max(0.01)
-                    };
-                    let wr_factor = (1.0 + win_rate).powf(3.0); // Premia consistencia
-
-                    if total_trades < 5 {
-                        0.001 // Penalización de inactividad
-                    } else if pnl > 0.0 {
-                        // Premia el crecimiento exponencial (x^1.5) para forzar configuraciones que multipliquen
-                        10.0 + (growth.powf(1.5).max(growth) * dd_penalty * trade_factor * wr_factor * 100.0)
-                    } else {
-                        let loss_pct = pnl.abs() / initial_capital;
-                        (10.0 - (loss_pct * 20.0) - (2.0 / (total_trades as f64).max(1.0))).max(0.001)
-                    }
-                };
+                // CERT-M5-H01 — FITNESS UNIFICADO (D-652/D-653/D-654):
+                // La fórmula anterior `10 + growth^1.5 × (1−dd)² × trade_factor ×
+                // (1+wr)³ × 100` era exactamente la patología que D-653
+                // documentó: crecimiento CONVEXO en leverage y win-rate al cubo
+                // premiaban tamaño de apuesta sobre calidad. Además daba +10
+                // gratis a cualquier genoma rentable y scoreaba 0.001 la
+                // inacción (D-654: inacción es INVIABLE, no intermedia).
+                // Ahora TODO promotor usa la MISMA función: fitness::compute
+                // (utilidad Kelly log − λ·dd², inacción = INVIABLE).
+                let fitness = evolution_engine::fitness::compute(
+                    &evolution_engine::fitness::FitnessInputs {
+                        initial_capital,
+                        final_capital,
+                        max_drawdown_pct: max_drawdown,
+                        total_trades: total_trades as u32,
+                        min_trades_required: 5,
+                        oos_start_capital: final_capital, // mismo período (sin split IS/OOS aquí)
+                        oos_end_capital: final_capital,
+                    },
+                );
 
                 IslandResult {
                     island_idx: *isl_idx,
@@ -623,7 +617,11 @@ async fn main() -> Result<(), String> {
         );
 
         // Save as SuperGenotype JSON
-        if best_cap > initial_capital || best_fitness >= 5.5 {
+        // CERT-M5-H01: umbral en la NUEVA escala de fitness::compute (log
+        // utility). La escala antigua daba +10 gratis; la nueva: 0 = sin
+        // crecimiento, >0 = crecimiento log positivo. Umbral 0.01 = cualquier
+        // crecimiento neto positivo tras la penalización de drawdown.
+        if best_cap > initial_capital || best_fitness > 0.01 {
             // F4.3: embudo único — envelope versionado con linaje (generación,
             // fuente, métricas) + historia inmutable + espejo legacy atómico.
             // El write directo a active_genome.json queda abolido: sin versión

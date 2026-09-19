@@ -3984,6 +3984,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
                                         let mut oco_success = false;
                                         for retry in 1..=3 {
+                                            // CERT-M4-H03: verificar que la posición SIGUE ABIERTA
+                                            // antes de cada retry — si el TP bracket llenó mientras
+                                            // el entry task estaba entre ack y OCO, colocar brackets
+                                            // sobre posición flat genera -2022 → retry ×3 → X-009
+                                            // emergency-close sobre nada → falsa escalada.
+                                            {
+                                                let still_open = exec_clone
+                                                    .load()
+                                                    .fetch_position_risk()
+                                                    .await
+                                                    .map(|ps| {
+                                                        ps.iter().any(|p| {
+                                                            p.symbol == parsed_sym_str
+                                                                && p.position_amt.abs() > 0.0
+                                                        })
+                                                    })
+                                                    .unwrap_or(true); // si fetch falla, no bloquear
+                                                if !still_open {
+                                                    telemetry_engine::telemetry!(
+                                                        "✅ [OCO-SKIP] {} posición ya cerrada antes de bracket retry {}/3 — TP llenó durante entry task",
+                                                        parsed_sym_str, retry
+                                                    );
+                                                    oco_success = true; // no más retries
+                                                    break;
+                                                }
+                                            }
                                             let qty_intent = final_qty.abs();
                                             let qty_bracket = exec_clone
                                                 .load()
