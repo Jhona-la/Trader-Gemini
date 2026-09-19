@@ -3040,6 +3040,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &engine_real.arena,
                         &omni_features_hot,
                         is_buyer_maker,
+                        latency_panic, // CERT-M8-H04: paridad de física con el motor real
                     );
                 }
 

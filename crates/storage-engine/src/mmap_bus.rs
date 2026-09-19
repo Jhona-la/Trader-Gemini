@@ -15,7 +15,12 @@ pub struct TelemetryFrame {
     pub timestamp_ns: u64, // 8 bytes
     pub subsystem_id: u8,  // 1 byte (Ej: 0 = Risk, 1 = ML, 2 = Execution, 3 = OS Memory)
     pub frame_type: u8,    // 1 byte (Ej: 0 = Base, 1 = Tensor State, 2 = Quant Stats, 3 = OS Meta)
-    pub padding: [u8; 6],  // 6 bytes (total 16)
+    pub padding: [u8; 2],  // 2 bytes
+    /// CERT-M6-H01 — SEQLOCK por frame: escritor marca seq impar antes de
+    /// modificar el slot y seq par al commit; lector descarta si seq cambió
+    /// o quedó impar (frame rasgado en reuso de slot). Vive en bytes 12-15
+    /// (bits 32-63 de meta_u64), antes padding muerto.
+    pub seq: u32,         // 4 bytes (total 16)
     pub payload: [f64; 6], // 48 bytes (total 64). Multiplexado según frame_type.
 }
 
@@ -138,28 +143,42 @@ impl MmapTelemetryBus {
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0);
 
-        let frame = TelemetryFrame {
-            timestamp_ns,
-            subsystem_id: subsystem,
-            frame_type,
-            padding: [0; 6],
-            payload: safe_payload,
-        };
-
         unsafe {
             let mmap = &mut *self.mmap.get();
             let base_ptr = mmap.as_mut_ptr().add(HEADER_SIZE);
             let frame_ptr = (base_ptr as *mut TelemetryFrame).add(current_idx);
+
+            // CERT-M6-H01 — El truco "commit al final" (FIX #1002) NO ordena
+            // non-temporal stores: sin fence intermedio, el lector podía ver
+            // chunk1 (commit) ANTES que el payload — frame rasgado invisible
+            // al filtro timestamp != 0. Seqlock clásico por frame:
+            //   (1) invalidate  → seq IMPAR visible,
+            //   (2) payload,
+            //   (3) commit      → seq PAR + timestamp/meta.
+            // Lector: seq par e igual antes/después ⇒ frame íntegro.
+            let seq_ptr = (frame_ptr as *mut u8).add(12) as *const u32;
+            let seq_begin = seq_ptr.read_volatile() | 1; // impar SIEMPRE
+            let seq_end = seq_begin.wrapping_add(1); // par
+            let meta_base = (subsystem as u64) | ((frame_type as u64) << 8);
 
             // FASE XLII: Zero-Latency Telemetry (Non-Temporal Store)
             // Evitamos golpear el Caché L1/L2 del procesador usando intrínsecos SIMD
             #[cfg(target_arch = "x86_64")]
             {
                 let ptr = frame_ptr as *mut __m128i;
-                let payload_ptr = frame.payload.as_ptr();
 
-                // Chunk 2, 3, 4: payload [f64; 6] (Preservar bits IEEE-754 exactos sin truncamiento a entero)
-                // FIX #1002: Escribir el payload PRIMERO para evitar lecturas sucias (tearing) si el lector ve timestamp != 0
+                // (1) INVALIDATE: chunk1 con seq impar — el slot queda "en obra".
+                let chunk1_odd = _mm_set_epi64x(
+                    (meta_base | ((seq_begin as u64) << 32)) as i64,
+                    timestamp_ns as i64,
+                );
+                _mm_stream_si128(ptr, chunk1_odd);
+                // CRITICAL: seq impar debe ser visible ANTES del payload —
+                // los NT stores entre sí NO están ordenados (núcleo de M6-H01).
+                std::arch::x86_64::_mm_sfence();
+
+                // (2) PAYLOAD: chunks 2-4 [f64; 6] (bits IEEE-754 exactos).
+                let payload_ptr = safe_payload.as_ptr();
                 let chunk2 = _mm_set_epi64x(
                     payload_ptr.add(1).read().to_bits() as i64,
                     payload_ptr.read().to_bits() as i64,
@@ -178,17 +197,29 @@ impl MmapTelemetryBus {
                 );
                 _mm_stream_si128(ptr.add(3), chunk4);
 
-                // Chunk 1: timestamp (u64) + metadata (u64) - Escribir al final como commit del frame
-                let meta_u64 = (frame.subsystem_id as u64) | ((frame.frame_type as u64) << 8);
-                let chunk1 = _mm_set_epi64x(meta_u64 as i64, frame.timestamp_ns as i64);
-                _mm_stream_si128(ptr, chunk1);
-
-                // CRITICAL: Memory fence to ensure non-temporal stores reach memory BEFORE read
+                // (3) COMMIT: timestamp + metadata + seq par.
+                let chunk1_commit = _mm_set_epi64x(
+                    (meta_base | ((seq_end as u64) << 32)) as i64,
+                    timestamp_ns as i64,
+                );
+                _mm_stream_si128(ptr, chunk1_commit);
                 std::arch::x86_64::_mm_sfence();
             }
             #[cfg(not(target_arch = "x86_64"))]
             {
+                let seq_mut = (frame_ptr as *mut u8).add(12) as *mut u32;
+                seq_mut.write_volatile(seq_begin);
+                std::sync::atomic::fence(Ordering::Release);
+                let frame = TelemetryFrame {
+                    timestamp_ns,
+                    subsystem_id: subsystem,
+                    frame_type,
+                    padding: [0; 2],
+                    seq: seq_end,
+                    payload: safe_payload,
+                };
                 std::ptr::write_volatile(frame_ptr, frame);
+                std::sync::atomic::fence(Ordering::Release);
             }
         }
     }
@@ -262,11 +293,22 @@ impl MmapTelemetryReader {
 
         while self.last_read_idx < current_head {
             let slot = self.last_read_idx % RING_CAPACITY;
-            let frame = unsafe { std::ptr::read_volatile(ring_ptr.add(slot)) };
 
-            // FIX #602: Descartar frames no inicializados (timestamp_ns == 0)
-            if frame.timestamp_ns != 0 {
-                frames.push(frame);
+            // CERT-M6-H01 — validación seqlock: el frame sólo es íntegro si
+            // seq estaba PAR (escritor no en medio) y NO cambió durante la
+            // copia (reuso de slot por wraparound del anillo). El filtro
+            // timestamp != 0 (FIX #602) SOLO cubría slots jamás inicializados,
+            // no tearing en reuso.
+            unsafe {
+                let frame_ptr = ring_ptr.add(slot);
+                let seq_ptr = (frame_ptr as *const u8).add(12) as *const u32;
+                let seq_before = seq_ptr.read_volatile();
+                let frame = std::ptr::read_volatile(frame_ptr);
+                let seq_after = seq_ptr.read_volatile();
+
+                if (seq_before & 1) == 0 && seq_before == seq_after && frame.timestamp_ns != 0 {
+                    frames.push(frame);
+                }
             }
             self.last_read_idx += 1;
         }
@@ -342,6 +384,52 @@ mod tests {
             assert_eq!(frames[0].payload[1], 0.0); // Sanitized Inf -> 0.0
             assert_eq!(frames[0].payload[2], 0.0); // Sanitized -Inf -> 0.0
             assert_eq!(frames[0].payload[3], 0.75);
+            drop(reader);
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// CERT-M6-H01 — regresión del seqlock: un slot con seq IMPAR (escritor
+    /// a mitad de update, estado que el filtro timestamp != 0 dejaba pasar
+    /// como frame "válido" con payload viejo) DEBE ser descartado por el
+    /// lector. Y un frame comprometido correctamente lleva seq PAR.
+    #[test]
+    fn test_mmap_seqlock_discards_torn_frames() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(99999);
+        let path = temp_dir.join(format!("test_mmap_seqlock_{}.dat", unique_id));
+
+        {
+            let bus = MmapTelemetryBus::new(&path).expect("Failed to create mmap bus");
+            bus.write_trace(SUBSYSTEM_RISK_KELLY, FRAME_TYPE_BAYESIAN_PROB, [1.5, 2.5, 3.5, 4.5, 5.5, 6.5]);
+            bus.write_trace(SUBSYSTEM_TENSOR_ML, FRAME_TYPE_TENSOR_ENTROPY, [9.9; 6]);
+
+            // Simular escritor interrumpido en el slot 1: seq impar in-place
+            // (segundo mapping del mismo archivo, mismo mecanismo que un
+            // segundo proceso escritor).
+            let corruptor = MmapTelemetryBus::new(&path).expect("Failed to reopen mmap bus");
+            unsafe {
+                let mmap = &*corruptor.mmap.get();
+                let base_ptr = mmap.as_ptr().add(HEADER_SIZE) as *const u8;
+                let seq_ptr = base_ptr.add(1 * std::mem::size_of::<TelemetryFrame>() + 12) as *mut u32;
+                let cur = seq_ptr.read_volatile();
+                assert_eq!(cur % 2, 0, "frame comprometido debe tener seq PAR");
+                seq_ptr.write_volatile(cur | 1); // escritor "congelado" a mitad
+            }
+        }
+
+        {
+            let mut reader = MmapTelemetryReader::new(&path);
+            let frames = reader.read_latest_frames().expect("Failed to read frames");
+            // Slot 0 íntegro; slot 1 rasgado (seq impar) → descartado.
+            assert_eq!(frames.len(), 1, "frame rasgado NO debe pasar el lector");
+            assert_eq!(frames[0].subsystem_id, SUBSYSTEM_RISK_KELLY);
+            assert_eq!(frames[0].seq % 2, 0);
+            assert_eq!(frames[0].payload[0], 1.5);
             drop(reader);
         }
 

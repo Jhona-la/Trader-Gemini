@@ -101,6 +101,17 @@ pub fn run_backtest_native(
     let mut peak_capital = initial_capital;
     let mut max_dd = 0.0;
 
+    // CERT-M8-C05 — PARIDAD DE ENVELOPE BT↔VIVO: el camino nativo certificaba
+    // trades que el host ABORTARÍA (envolvente Bayesiana + margin guards sólo
+    // existían en god_engine/booktick_replay). GA optimizando contra un mundo
+    // sin fricción de riesgo = genomas sobre-apalancados que mueren al salir a
+    // demo. Misma envolvente, mismo record_trade, mismo rollback.
+    let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
+    let mut pos_was_open = false;
+    let mut envelope_vetoes: u64 = 0;
+    let mut avg_win_abs = 0.0;
+    let mut avg_loss_abs = 0.0;
+
     // F3.2 — FIX LOOK-AHEAD: el OFI sintético se deriva ahora del delta de la
     // vela ANTERIOR (información disponible al abrir la vela actual). Antes:
     // delta de la vela COMPLETA — el motor "veía" el resultado del bar antes
@@ -340,6 +351,48 @@ pub fn run_backtest_native(
                 &omni_sim,
                 sim_is_buyer_maker,
             );
+
+            // CERT-M8-C05: envolvente del host sobre CADA entrada abierta.
+            if target_coin_id < core.feature_engines.len() {
+                let atr_now = core.feature_engines[target_coin_id].get_atr_pct();
+                booktick_replay::live_envelope_gate(
+                    &arena,
+                    &mut risk_envelope,
+                    target_coin_id,
+                    sim_price,
+                    atr_now,
+                    pos_was_open,
+                    &mut envelope_vetoes,
+                );
+            }
+            pos_was_open = arena.coins[target_coin_id.min(arena.coins.len().saturating_sub(1))]
+                .positions
+                .position
+                .is_open();
+
+            // F5.1 (paridad host): alimentar el posterior del edge con cada
+            // cierre — mismos EWMAs y mismo record_trade que el replay/vivo.
+            if let Some((_, pnl_net, _)) = &closed_order {
+                let pnl_net = *pnl_net;
+                if pnl_net >= 0.0 {
+                    avg_win_abs = if avg_win_abs == 0.0 {
+                        pnl_net.abs()
+                    } else {
+                        avg_win_abs * 0.95 + pnl_net.abs() * 0.05
+                    };
+                } else {
+                    avg_loss_abs = if avg_loss_abs == 0.0 {
+                        pnl_net.abs()
+                    } else {
+                        avg_loss_abs * 0.95 + pnl_net.abs() * 0.05
+                    };
+                }
+                risk_envelope.record_trade(
+                    pnl_net > 0.0,
+                    avg_win_abs.max(1e-9),
+                    -avg_loss_abs.max(1e-9),
+                );
+            }
 
             if let Some((_is_long, net_pnl, qty)) = closed_order {
                 if trades < out_pnl.len() {
