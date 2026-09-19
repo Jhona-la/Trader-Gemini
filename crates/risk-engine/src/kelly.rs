@@ -101,8 +101,29 @@ pub fn calculate_kelly_fraction(
     } else {
         (clamp_max, clamp_min)
     };
-    // Retornamos el Kelly ajustado asimétricamente acotado al tope seguro
-    (kelly * capital_scale).clamp(mn, mx)
+
+    // QO-M1.2 — RIESGO-DE-RUINA ANALÍTICO como TOPE global (Chriss/Thorp):
+    //   P(ruina) ≈ ((1−f)/(1+f))^(C/r)
+    // donde f = fracción de Kelly, C = capital, r = riesgo por trade = C·f.
+    // El exponente C/r = 1/f (número de trades de pérdida consecutivos
+    // hasta agotar capital). Si P(ruina) > umbral (5%), reducir f.
+    // Este tope vive DESPUÉS del clamp del genoma: NINGÚN multiplicador
+    // (streak, neural, régimen — los stacks de quantum_kelly_risk) puede
+    // empujar por encima de este límite.
+    let kelly_prelim = (kelly * capital_scale).clamp(mn, mx);
+    const MAX_RUIN_PROB: f64 = 0.05;
+    if kelly_prelim > 0.0 && kelly_prelim < 1.0 {
+        let n_to_ruin = 1.0 / kelly_prelim;
+        let ruin_prob = ((1.0 - kelly_prelim) / (1.0 + kelly_prelim)).powf(n_to_ruin);
+        if ruin_prob.is_finite() && ruin_prob > MAX_RUIN_PROB {
+            // f_cap de ((1−f)/(1+f))^(1/f) = MAX_RUIN:
+            // para P=0.05 ⇒ f ≈ 0.736; aproximación cerrada −ln(P)/2 = 1.498
+            // es el límite superior — el Kelly queda acotado por la ruina.
+            let f_cap = (-MAX_RUIN_PROB.ln() / 2.0).min(mx).max(mn);
+            return kelly_prelim.min(f_cap);
+        }
+    }
+    kelly_prelim
 }
 
 #[cfg(test)]
