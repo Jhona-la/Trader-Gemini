@@ -19,6 +19,10 @@ pub struct ShadowForest {
     pub genomes: Vec<SuperGenotype>,
     /// D-689: operaciones cerradas de cada universo en la última replantación.
     pub trades_at_replant: Vec<usize>,
+    /// QO-E2c — pico de capital por universo: alimenta el término de
+    /// drawdown del fitness unificado (antes la cosecha comparaba PnL
+    /// crudo — el único promotor fuera del objetivo D-652).
+    pub peak_capital: Vec<f64>,
 }
 
 /// Operaciones cerradas acumuladas por un universo (todas las monedas).
@@ -70,12 +74,14 @@ impl ShadowForest {
         }
 
         let trades_at_replant = engines.iter().map(closed_trades).collect();
+        let peak_capital = vec![initial_capital; engines.len()];
 
         Self {
             initial_capital,
             engines,
             genomes,
             trades_at_replant,
+            peak_capital,
         }
     }
 
@@ -146,38 +152,59 @@ impl ShadowForest {
 
     /// Evalúa todos los genomas y devuelve el mejor si superó al de control,
     /// además devuelve el Leaderboard (PnL de todos los universos).
-    pub fn harvest_best_genome(&self) -> (Option<(SuperGenotype, f64)>, Vec<f64>) {
-        let mut best_pnl = -999999.0;
-        let mut best_idx = 0;
-        let mut leaderboard = Vec::with_capacity(self.engines.len());
-
-        let control_cap = self.engines[0]
-            .arena
-            .unified_capital
-            .load(Ordering::Relaxed);
-        let control_pnl = control_cap - self.initial_capital;
-
+    pub fn harvest_best_genome(&mut self) -> (Option<(SuperGenotype, f64)>, Vec<f64>) {
+        // QO-E2c — OBJETIVO UNIFICADO: la cosecha comparaba PnL CRUDO (el
+        // único promotor fuera del fitness D-652 — divergencia de objetivos
+        // que la auditoría señaló). Ahora cada universo se puntúa con
+        /// fitness::compute (crecimiento log penalizado por drawdown²,
+        /// inacción INVIABLE) y el ganador debe superar al CONTROL en
+        /// fitness, no en dólares: un mutante con $1 más y +40% de
+        /// drawdown YA NO gana.
         for (i, engine) in self.engines.iter().enumerate() {
             let cap = engine.arena.unified_capital.load(Ordering::Relaxed);
-            let pnl = cap - self.initial_capital;
-            let safe_pnl = if pnl.is_finite() { pnl } else { -999999.0 };
-            leaderboard.push(safe_pnl);
-            if safe_pnl > best_pnl {
-                best_pnl = safe_pnl;
-                best_idx = i;
+            if i < self.peak_capital.len() && cap > self.peak_capital[i] {
+                self.peak_capital[i] = cap;
             }
         }
 
-        // Axioma de Inercia: Solo proponemos cambio si la mutación venció al control
-        // significativamente (> 0.5% del capital base) y tiene PnL positivo para evitar inestabilidad del sistema.
-        // D-689: y si el ganador acumula una muestra mínima de operaciones cerradas.
-        let enough_sample = self.closed_since_replant(best_idx) >= MIN_HARVEST_TRADES;
+        let fitness_of = |i: usize| -> f64 {
+            let engine = &self.engines[i];
+            let cap = engine.arena.unified_capital.load(Ordering::Relaxed);
+            let peak = self.peak_capital.get(i).copied().unwrap_or(cap.max(self.initial_capital));
+            let dd = if peak > 0.0 { (peak - cap) / peak } else { 0.0 };
+            crate::fitness::compute(&crate::fitness::FitnessInputs {
+                initial_capital: self.initial_capital,
+                final_capital: cap,
+                max_drawdown_pct: dd,
+                total_trades: closed_trades(engine) as u32,
+                min_trades_required: MIN_HARVEST_TRADES as u32,
+                oos_start_capital: self.initial_capital,
+                oos_end_capital: cap,
+            })
+        };
+
+        let mut leaderboard = Vec::with_capacity(self.engines.len());
+        let mut best_fit = f64::NEG_INFINITY;
+        let mut best_idx = 0usize;
+        for i in 0..self.engines.len() {
+            let f = fitness_of(i);
+            leaderboard.push(f);
+            if f > best_fit {
+                best_fit = f;
+                best_idx = i;
+            }
+        }
+        let control_fit = fitness_of(0);
+        let best_trades = self.closed_since_replant(best_idx);
+
+        // Puerta: muestra mínima (D-689) y superioridad en el MISMO
+        // objetivo que los otros promotores (fitness, no pnl crudo).
         let winner = if best_idx != 0
-            && enough_sample
-            && (best_pnl - control_pnl > self.initial_capital * 0.005)
-            && best_pnl > 0.0
+            && best_trades >= MIN_HARVEST_TRADES
+            && best_fit.is_finite()
+            && best_fit > control_fit
         {
-            Some((self.genomes[best_idx].clone(), best_pnl))
+            Some((self.genomes[best_idx].clone(), best_fit))
         } else {
             None
         };
@@ -224,7 +251,7 @@ mod tests {
     #[test]
     fn test_shadow_forest_instantiation_and_harvest() {
         let base_genome = SuperGenotype::default();
-        let forest = ShadowForest::new(13.0, base_genome, 3);
+        let mut forest = ShadowForest::new(13.0, base_genome, 3);
         assert_eq!(forest.engines.len(), 3);
         assert_eq!(forest.genomes.len(), 3);
 

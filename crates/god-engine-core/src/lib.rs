@@ -1444,6 +1444,51 @@ impl GodEngineCore {
                     coin.metrics.profit_factor.store(new_pf, Ordering::Relaxed);
                     // F-014 FIX: Removed bifurcated profit_factor writes to coin.scalp/coin.swing.
 
+                    // QO-E2b — EMISOR: aparear el tensor congelado en la
+                    // APERTURA con el retorno neto REALIZADO y appendar la
+                    // fila al dataset del auto-trainer NN. Append directo:
+                    // los cierres son eventos raros (segundos-minutos), el
+                    // costo de abrir el archivo es irrelevante fuera del
+                    // hot path de ticks.
+                    {
+                        let tensor_ready = pos
+                            .nn_entry_tensor
+                            .lock()
+                            .map(|t| !t.is_empty() && t.len() == 54)
+                            .unwrap_or(false);
+                        if tensor_ready {
+                            let notional = (qty * entry).max(1.0);
+                            let target_ret = net_trade_pnl / notional;
+                            if target_ret.is_finite() {
+                                let sym_ds = quantum_arena::symbol_registry::try_symbol(coin_id)
+                                    .unwrap_or_default();
+                                if !sym_ds.is_empty() {
+                                    let path =
+                                        format!("data/dark_alpha_dataset_{}.csv", sym_ds);
+                                    let need_header = !std::path::Path::new(&path).exists();
+                                    use std::io::Write as _;
+                                    if let (Ok(mut f), Ok(t)) = (
+                                        std::fs::OpenOptions::new().create(true).append(true).open(&path),
+                                        pos.nn_entry_tensor.lock(),
+                                    ) {
+                                        if need_header {
+                                            let _ = writeln!(
+                                                f,
+                                                "target_return,{}",
+                                                (0..54).map(|i| format!("f{i}")).collect::<Vec<_>>().join(",")
+                                            );
+                                        }
+                                        let mut row = format!("{:.8}", target_ret);
+                                        for v in t.iter() {
+                                            row.push_str(&format!(",{:.8}", v));
+                                        }
+                                        let _ = writeln!(f, "{}", row);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let curr_cap = self.arena.unified_capital.load(Ordering::Relaxed);
                     let base_cap = self.arena.config.base_capital.load(Ordering::Relaxed);
                     let survival_ratio = self
@@ -3116,6 +3161,37 @@ impl GodEngineCore {
             );
             unified_intent.horizon = strategy_core::TradeHorizon::Continuous;
 
+            // QO-E2a — EL APRENDIZAJE MODULA: el forest online (entrenado
+            // con los resultados REALES de cierres previos vía telemetry
+            // mmap) opinaba sólo sobre 2 umbrales — su predictor predict_6d
+            // no lo llamaba nadie. Ahora: cuando está entrenado (acc>0.55)
+            // y predice DESACUERDO fuerte con la intención (prob<0.40 para
+            // largo / >0.60 para corto), la confianza se reduce ×0.8.
+            // UNILATERAL: el forest nunca AMPLÍA confianza (su acc de
+            // clasificación binaria no justifica más agresividad) — sólo
+            // puede frenar. Sin desacuerdo o sin entrenamiento: intacto.
+            if unified_intent.signal != SignalType::Flat {
+                let f6_acc = self
+                    .arena
+                    .registry
+                    .get_for_coin_or(coin_id, "forest6_acc", 0.0);
+                if f6_acc > 0.55 {
+                    let f6_prob = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "forest6_prob", 0.5);
+                    let disagrees = match unified_intent.signal {
+                        SignalType::Long => f6_prob < 0.40,
+                        SignalType::Short => f6_prob > 0.60,
+                        SignalType::Flat => false,
+                    };
+                    if disagrees && unified_intent.confidence.is_finite() {
+                        unified_intent.confidence =
+                            (unified_intent.confidence * 0.8).clamp(0.0, 1.0);
+                    }
+                }
+            }
+
             // D-467, D-472, D-488 & D-496: Escudo Invariante Macro Multiescala (Secular 12h, Superior 2h y Macro 1m/15m).
             // Erradica operaciones a contratendencia del régimen mayor (e.g. comprar Longs en caída o vender Shorts en rally)
             // D-624 (DÉCIMA OLA): antes −3, −8 y −6 pb para tres horizontes (0,04 σ,
@@ -3787,6 +3863,27 @@ impl GodEngineCore {
                                     raw_confidence_score,
                                     fee_paid,
                                 );
+                                // QO-E2b — PRODUCTOR DEL DATASET NN: congelar
+                                // el tensor 54D de la APERTURA. El cierre lo
+                                // empareja con el retorno neto realizado y
+                                // appenda la fila a data/dark_alpha_dataset_
+                                // {SYM}.csv — el auto-trainer NN esperaba ese
+                                // archivo desde su creación y NADIE lo
+                                // escribía (lazo doble-muerto).
+                                {
+                                    let tensor_snapshot = self.build_54d_tensor(
+                                        coin_id,
+                                        bid_qty,
+                                        ask_qty,
+                                        mid_price,
+                                        omni_features,
+                                    );
+                                    if let Ok(mut t) =
+                                        coin.positions.position.nn_entry_tensor.lock()
+                                    {
+                                        *t = tensor_snapshot.to_vec();
+                                    }
+                                }
                                 // REHAB-1b: la posición NACE con su τ dominante
                                 // VIVA del espectro — horizonte continuo real,
                                 // no etiqueta. Los cierres (temporal_s lerp)

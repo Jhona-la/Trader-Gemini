@@ -29,6 +29,11 @@ pub struct TrueOnlineRandomForest {
     // Compatibilidad
     pub shadow_threshold_long: RwLock<f32>,
     pub shadow_threshold_short: RwLock<f32>,
+    /// QO-E2a — exactitud del ÚLTIMO reentrenamiento: el gate de consumo
+    /// (modulación de confianza en el core) la exige >0.55 antes de
+    /// dejar opinar al forest. Sin esto, un forest degenerado modularía
+    /// entradas con ruido.
+    pub last_accuracy: RwLock<f64>,
 }
 
 impl TrueOnlineRandomForest {
@@ -40,6 +45,7 @@ impl TrueOnlineRandomForest {
             max_memory_size,
             shadow_threshold_long: RwLock::new(0.60),
             shadow_threshold_short: RwLock::new(0.60),
+            last_accuracy: RwLock::new(0.0),
         }
     }
 
@@ -192,7 +198,10 @@ impl TrueOnlineRandomForest {
         *self.classifier.write().unwrap() = Some(Arc::new(classifier));
         *self.regressor.write().unwrap() = Some(Arc::new(regressor));
 
-        Ok((acc, mse))
+        {
+                *self.last_accuracy.write().unwrap() = acc;
+                Ok((acc, mse))
+            }
     }
 
     pub fn predict_6d(&self, features: [f64; 6]) -> Option<(f64, f64)> {

@@ -1832,6 +1832,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
+        // QO-E2b — AUTO-TRAINER NN como proceso hijo (demo): el bin
+        // auto_trainer_daemon existía con su gate val-BCE pero estaba
+        // doble-muerto (nadie lo lanzaba Y su dataset no tenía productor).
+        // El productor ya vive en el core (tensor congelado a la apertura +
+        // fila al cierre); este spawn cierra la segunda mitad. El MODEL
+        // WATCHER hot-recarga models/DarkAlpha_BTCUSDT.json (mtime) cuando
+        // el trainer lo re-escribe. TG_NN_TRAINER=0 lo apaga.
+        if std::env::var("TG_NN_TRAINER").map(|v| v.trim() == "0").unwrap_or(false) {
+            telemetry_server::telemetry_log!(
+                "⏸️ [QO-E2b] Auto-trainer NN desactivado por TG_NN_TRAINER=0"
+            );
+        } else {
+            let exe = std::env::current_exe().ok();
+            let trainer_path = exe
+                .as_ref()
+                .and_then(|p| p.parent().map(|d| d.join("auto_trainer_daemon.exe")))
+                .filter(|p| p.exists());
+            match trainer_path {
+                Some(tp) => {
+                    match std::process::Command::new(&tp)
+                        .arg("BTCUSDT")
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                    {
+                        Ok(child) => {
+                            telemetry_server::telemetry_log!(
+                                "🤖 [QO-E2b] Auto-trainer NN lanzado (pid {}, dataset data/dark_alpha_dataset_BTCUSDT.csv)"
+                                , child.id()
+                            );
+                        }
+                        Err(e) => {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [QO-E2b] Auto-trainer NN no pudo lanzarse: {}", e
+                            );
+                        }
+                    }
+                }
+                None => {
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [QO-E2b] auto_trainer_daemon.exe no encontrado junto al binario — compílalo para cerrar el lazo NN"
+                    );
+                }
+            }
+        }
+
         // R3.5 — RECONCILIACIÓN PERIÓDICA OMNISCIENTE (cada 60s)
         // Detecta y corrige discrepancias entre el Exchange y el estado local:
         // - Adopta posiciones abiertas en OrderRegistry y GlobalArena (Swing)

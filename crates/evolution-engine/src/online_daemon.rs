@@ -226,6 +226,46 @@ impl LiveEvolutionDaemon {
                     .store(opt_s as f64, Ordering::Relaxed);
             }
 
+            // QO-E2a — EL APRENDIZAJE QUE DECIDE: el forest entrenado
+            // PREDICE por símbolo (predict_6d, antes cero callers) y
+            // publica al registry `forest6_prob`/`forest6_acc`. El core
+            // modula la confianza de las entradas cuando el forest está
+            // entrenado (acc > 0.55) y en DESACUERDO con la intención —
+            // el aprendizaje deja de ser espectador de su propia señal.
+            if self.forest.is_trained() {
+                let acc = *self.forest.last_accuracy.read().unwrap_or_else(|e| e.into_inner());
+                if acc.is_finite() && acc > 0.0 {
+                    let reg = &self.arena.registry;
+                    for coin_id in 0..self.arena.coins.len() {
+                        let coin = &self.arena.coins[coin_id];
+                        let spot_bid = coin.spot_bid.load(std::sync::atomic::Ordering::Relaxed);
+                        let spot_ask = coin.spot_ask.load(std::sync::atomic::Ordering::Relaxed);
+                        let spread_bps = if spot_bid > 0.0 && spot_ask > spot_bid {
+                            ((spot_ask - spot_bid) / spot_bid * 10_000.0).clamp(0.0, 500.0)
+                        } else {
+                            1.0
+                        };
+                        let features = [
+                            reg.get_for_coin_or(coin_id, "orderbook_imbalance", 0.0)
+                                .clamp(-1.0, 1.0),
+                            reg.get_for_coin_or(coin_id, "price_acceleration", 0.0)
+                                .clamp(-10.0, 10.0),
+                            spread_bps,
+                            reg.get_for_coin_or(coin_id, "atr_pct", 0.002).clamp(0.0, 1.0),
+                            coin.hurst_exponent
+                                .load(std::sync::atomic::Ordering::Relaxed)
+                                .clamp(0.0, 1.0),
+                            reg.get_for_coin_or(coin_id, "price_velocity", 0.0)
+                                .clamp(-10.0, 10.0),
+                        ];
+                        if let Some((prob, _pnl)) = self.forest.predict_6d(features) {
+                            reg.set_for_coin(coin_id, "forest6_prob", prob);
+                            reg.set_for_coin(coin_id, "forest6_acc", acc);
+                        }
+                    }
+                }
+            }
+
             // FASE 3: AST Mutator checking
             if std::path::Path::new(".forensic_violation").exists() {
                 println!("🧬 [DAEMON] Señal forense detectada! Invocando AST-Mutator...");
@@ -361,6 +401,13 @@ impl LiveEvolutionDaemon {
                     println!(
                         "✅ [ROLLBACK WATCHDOG] Padre {} restaurado y aplicado al arena (nueva generación {}).",
                         parent, env.generation
+                    );
+                    // QO-E2d — LEDGER: el rollback también se registra.
+                    self.ledger.save_weight(
+                        0,
+                        format!("gen_rollback_{}", parent),
+                        "rollback".to_string(),
+                        -1.0,
                     );
                 }
                 Err(e) => println!(
@@ -840,6 +887,15 @@ impl LiveEvolutionDaemon {
                 println!(
                     "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado.",
                     env.generation, env.parent_generation
+                );
+                // QO-E2d — LEDGER: cada promoción queda en el WAL consultable
+                // (responde "qué aprendió el sistema esta semana"; antes el
+                // ledger se creaba y jamás se escribía).
+                self.ledger.save_weight(
+                    0,
+                    format!("gen_{}", env.generation),
+                    "promote".to_string(),
+                    current_shadow_sharpe,
                 );
             }
             Err(e) => println!(
