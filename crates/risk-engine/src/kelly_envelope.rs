@@ -23,6 +23,18 @@
 //!      el camino suicida del código antiguo). Capital chico se protege solo.
 //!   6. leverage = f_final / stop_distance (sizing clásico: el riesgo
 //!      fraccional dividido por la distancia del stop define el apalancamiento).
+//!
+//! # CÓMO LEER SUS VALORES (guía operativa)
+//!
+//! * `posterior.n() < 30` ⇒ sizing de bootstrap (leverage 1): NO es timidez,
+//!   es que aún NO HAY evidencia estadística — la envolvente converge sola.
+//! * `risk_fraction` CHICO con historial bueno = la racha esperada o el LCB
+//!   están apretando: leer q_lcb y streak, no «tocar» el número.
+//! * `max_leverage → 0` con operable=false = el capital no sostiene NI UNA
+//!   unidad de riesgo mínima del exchange: la orden correcta es NO operar.
+//! * El z de LCB BAJA (1.64→0.85) en cuentas micro POR DISEÑO (capital_regime):
+//!   menos capital exige menos certeza para una unidad — pero el axioma 25%
+//!   y el streak-bound de ruina siguen intactos en TODA escala.
 
 /// Piso de supervivencia tras la peor racha estadística (axioma F5.1).
 pub const SURVIVAL_FLOOR: f64 = 0.05;

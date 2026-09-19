@@ -25,6 +25,20 @@
 //! COSTE: O(S)=32 escalas × ~6 FLOPs = ~120 FLOPs/tick — despreciable frente
 //! al proceso del evento本身.
 
+//! # CÓMO LEER SUS VALORES (guía operativa)
+//!
+//! * `persistence` por escala: 0.5 = RUIDO puro (signo aleatorio, H=0.5);
+//!   →1 = tendencia que se auto-confirma (deja correr); →0 = reversión
+//!   perfecta (asegurar pronto). Es EL dial de régimen del motor: todos los
+//!   lerp espectrales (S-2/S-3) lo usan como t∈[0,1].
+//! * `fused_score` alto = las escalas QUE SABEN (persistencia alta) están
+//!   alineadas direccionalmente; alto con persistencias bajas = ruido
+//!   promediado — el peso suelo 5% evita que una escala impredecible domine.
+//! * `dominant_tau_ms`: 30 s→12 h es la BANDA OPERATIVA; τ corta = micro
+//!   impulso (brackets estrechos, trailing rápido), τ larga = tendencia de
+//!   banda (respiración amplia). El espectro OBSERVA más allá de la banda,
+//!   pero la DECISIÓN jamás sale de ella (C-05).
+
 /// Escalas del espectro: 10^-6 ms * 4^i para i∈0..32 → 1 ns (10^-6 ms) … ≈146.15 años (4.61*10^12 ms).
 /// Log-espaciadas base 4 (≈4.15 escalas/década): resolución uniforme en
 /// log(τ), cubriendo desde microestructura en nanosegundos hasta tendencias seculares de más de 100 años.
