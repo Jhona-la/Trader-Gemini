@@ -7,6 +7,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 pub mod fitness;
+pub mod selection_stats;
 pub mod anti_bias_governor;
 pub mod ast_mutator;
 pub mod cma_es;
@@ -68,7 +69,6 @@ impl EvolutionEngine {
             .quantum_mutation_rate
             .load(Ordering::Relaxed);
         let meta_evolver = MetaEvolver::new(self.arena.clone());
-        let quantum_evolver = metacortex_engine::QuantumEvolver::new();
         let mut cma_es_optimizer: Option<crate::cma_es::CmaEsOptimizer> = None;
 
         loop {
@@ -603,18 +603,11 @@ impl EvolutionEngine {
                 use metacortex_engine::consejo_seniors::TradingHorizon;
                 // U-6: motor continuo — un solo modo.
                 let mode = TradingHorizon::Continuous;
-                let q_state = quantum_evolver.anneal_and_collapse(latest_ts, 0.25, mode);
-                println!(
-                    "⚛️ [QUANTUM-EVOLVER] Recocido cuántico activado. Energy: {:.4} | Window: {} | Thresh: {:.2} | VolMult: {:.2}",
-                    q_state.energy,
-                    q_state.window_size,
-                    q_state.threshold,
-                    q_state.volume_multiplier
-                );
-                current_alpha.dynamic_atr_min = (q_state.threshold * 0.0005).clamp(0.0001, 0.005);
+                // QO-M2.1: quantum_evolver DELETED — valor neutro del genoma
+                current_alpha.dynamic_atr_min = 0.0012;
                 current_alpha.target_volatility =
-                    (q_state.volume_multiplier * 0.01).clamp(0.005, 0.08);
-                current_alpha.funding_rate_sensitivity = q_state.funding_weight.clamp(0.0, 3.0);
+                    (1.0f64 * 0.01).clamp(0.005, 0.08);
+                current_alpha.funding_rate_sensitivity = 0.5f64.clamp(0.0, 3.0);
                 // N-02: la micro-mutación del recocido también pasa por el
                 // embudo — nada toca el arena sin sanción del almacén.
                 match quantum_arena::genome_store::GenomeEnvelope::promote(

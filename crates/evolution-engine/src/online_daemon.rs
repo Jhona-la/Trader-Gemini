@@ -863,6 +863,24 @@ impl LiveEvolutionDaemon {
             return;
         }
 
+        // QO-M1.1 — DEFLATED SHARPE RATIO (Bailey & López de Prado 2014):
+        // con 2000 candidatos por ronda, el mejor por pura suerte supera
+        // cualquier umbral fijo. El DSR corrige por multiplicidad y
+        // curtosis: sólo un edge que SOBREVIVE es estadísticamente real.
+        // Esta es la puerta que la auditoría matemática exigía.
+        let dsr_verdict =
+            crate::selection_stats::edge_survives_multiplicity(&self.returns_history, 2_000);
+        if !dsr_verdict.passes {
+            println!(
+                "🚫 [QO-M1 DSR] {:.3} < {:.2} con {} pruebas — {}",
+                dsr_verdict.dsr,
+                crate::selection_stats::DSR_THRESHOLD,
+                dsr_verdict.n_trials,
+                dsr_verdict.note
+            );
+            return;
+        }
+
         // 🔥 ACTUALIZACIÓN EN VIVO (HOT-SWAP) AL GOD ENGINE
         // FASE 3: primero el EMBUDO (promote con gate de validación), y
         // solo si el almacén acepta se aplica al arena. Antes el orden

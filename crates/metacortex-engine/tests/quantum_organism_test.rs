@@ -1,6 +1,6 @@
 use metacortex_engine::{
     read_epigenoma_gene, set_epigenoma_gene, CazadorConstantes, ConsejoDeliberacion,
-    FaseAutonomous, FaseAutonomousManager, HealthMetrics, MarketSnapshotPayload, QuantumEvolver,
+    FaseAutonomous, FaseAutonomousManager, HealthMetrics, MarketSnapshotPayload,
 };
 
 #[test]
@@ -76,30 +76,7 @@ fn test_quantum_organism_components() {
     set_epigenoma_gene("gene_global_idx_1", 0.08);
     assert_eq!(read_epigenoma_gene("gene_global_idx_1", 0.05), 0.08);
 
-    // 3. Test Quantum State Annealing
-    let evolver = QuantumEvolver::new();
-    use metacortex_engine::consejo_seniors::TradingHorizon;
-    let best_state = evolver.anneal_and_collapse(42, 0.02, TradingHorizon::Continuous);
-    assert!(best_state.energy < f64::MAX);
-    assert!(best_state.window_size >= 16);
-
-    // 4. Test Autonomous Phase Machine Transitions
-    let mut phase_manager = FaseAutonomousManager::new();
-    assert_eq!(phase_manager.current_phase, FaseAutonomous::Fase0Genesis);
-
-    let metrics = HealthMetrics {
-        concept_drift_score: 0.80, // High drift -> Mutacion
-        real_drawdown_pct: 0.01,
-        sharpe_30d: 1.5,
-        execution_latency_us: 100,
-        data_checksum_ok: true,
-        compilation_success: true,
-        immune_tests_pass: true,
-        auditor_discrepancy_pct: 0.0,
-        self_deception_detected: false,
-    };
-
-    // Transition Genesis -> Exploracion
-    let phase1 = phase_manager.evaluate_transition(100, &metrics);
-    assert_eq!(phase1, FaseAutonomous::Fase2Exploracion);
+    // QO-M2.1: QuantumEvolver DELETED — era teatro puro (el error residual
+    // era idéntico para todos los candidatos: sin SPSA, sin Hamiltoniano,
+    // sin evaluación real). El test que lo ejercitaba se retiró con él.
 }
