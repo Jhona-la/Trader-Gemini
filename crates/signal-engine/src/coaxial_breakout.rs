@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_coaxial_breakout_detection() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         // Fuerte compresión multiescala: 1s << 5s << 1m
         let signal = CoaxialBreakoutEngine::evaluate_coaxial_breakout(
             &arena, 0.0005, 0.005, 0.050, 60000.0, true,
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn test_coaxial_breakout_symmetric_short_and_nan_immunity() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         // Short con compresión
         let signal_short = CoaxialBreakoutEngine::evaluate_coaxial_breakout(
             &arena, 0.0005, 0.005, 0.050, 60000.0, false,

@@ -436,6 +436,15 @@ pub fn reconcile_arena(
                     );
                     continue;
                 }
+                // B3.14 (auditoría): la posición adoptada EXISTE en el
+                // exchange — sin este flag sus cierres NO contabilizan
+                // (sub-cuenta silenciosa en Kelly tras toda adopción del
+                // ciclo de 60s: remanentes de maker-chase parcial, fills
+                // tras rollback, posiciones abiertas fuera del motor).
+                coin.positions
+                    .position
+                    .exchange_confirmed
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 arena
                     .used_margin
                     .fetch_add(margin, std::sync::atomic::Ordering::Relaxed);
@@ -453,6 +462,17 @@ pub fn reconcile_arena(
                         );
                     }
                 } else {
+                    // B3.14 (auditoría/repro demo_v26): el drift confirma que
+                    // el slot local Y el exchange sostienen la MISMA posición
+                    // — sin este flag, un slot abierto-local/percibido-como-
+                    // papel (entrada aterrizada tras rollback/veto) quedaba
+                    // des-confirmado PARA SIEMPRE: el core lo cerraba como
+                    // [PAPER CLOSE] y su despacho X-008 cerraba la posición
+                    // REAL sin contabilizar (caso BNBUSDT +$57.90).
+                    coin.positions
+                        .position
+                        .exchange_confirmed
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                     let price = coin
                         .positions
                         .position
@@ -690,6 +710,24 @@ mod tests {
                 .quantity
                 .load(std::sync::atomic::Ordering::Relaxed),
             0.5
+        );
+        // B3.14 (auditoría): toda posición adoptada del exchange nace
+        // confirmada — sus cierres contabilizan en Kelly.
+        assert!(
+            arena.coins[1]
+                .positions
+                .position
+                .exchange_confirmed
+                .load(std::sync::atomic::Ordering::Relaxed),
+            "la adopción de reconcile_arena debe marcar exchange_confirmed"
+        );
+        // Y el fantasma cerrado consume su confirmación (slot limpio).
+        assert!(
+            !arena.coins[0]
+                .positions
+                .position
+                .exchange_confirmed
+                .load(std::sync::atomic::Ordering::Relaxed)
         );
     }
 }

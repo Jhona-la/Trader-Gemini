@@ -90,14 +90,14 @@ mod tests {
 
     #[test]
     fn test_momentum_booster_neutral_and_negative_pnl() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let boost = VolatileMomentumBooster::calculate_tp_extension(1.0, -0.01, 1.0, 0.01, &arena);
         assert_eq!(boost, 1.0, "PnL negativo no debe dilatar el TP");
     }
 
     #[test]
     fn test_momentum_booster_strong_aligned_momentum_expansion() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let boost = VolatileMomentumBooster::calculate_tp_extension(1.0, 0.05, 3.0, 0.01, &arena);
         assert!(
             boost >= 1.0,
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn test_momentum_booster_nan_and_negative_inputs_immunity() {
-        let arena = quantum_arena::GlobalArena::new(13.0);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let boost = VolatileMomentumBooster::calculate_tp_extension(
             f64::NAN,
             f64::NAN,

@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_tensor_vote_orchestrator_consensus() {
-        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         arena
             .config
             .ml_threshold_long
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn test_tensor_vote_orchestrator_nan_and_flat_immunity() {
-        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let mut orch = TensorVoteOrchestrator::new(arena);
         orch.add_strategy(Box::new(MockStrategy {
             name: "NaN_Strat",
@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn test_tensor_vote_orchestrator_continuous_consensus() {
-        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         arena
             .config
             .min_confidence_btc

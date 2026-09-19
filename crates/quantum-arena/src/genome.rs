@@ -2269,17 +2269,33 @@ impl SuperGenotype {
             Self::REFERENCE_ROUNDTRIP_FEE
         };
         let sl_floor = Self::min_viable_sl(fee);
-        let sl = if sl_frac.is_finite() && sl_frac > 0.0 {
+        let mut sl = if sl_frac.is_finite() && sl_frac > 0.0 {
             sl_frac.max(sl_floor)
         } else {
             sl_floor
         };
         let tp_floor = sl * Self::min_rr_for(Self::WORST_TOLERATED_WR, fee, sl).max(1.0);
-        let tp = if tp_frac.is_finite() && tp_frac > 0.0 {
+        let mut tp = if tp_frac.is_finite() && tp_frac > 0.0 {
             tp_frac.max(tp_floor)
         } else {
             tp_floor
         };
+        // B3.24 — CAP DE ASIMETRÍA REALIZADA (RR geométrico ≥ 2 SIEMPRE).
+        // Medido en OOS jun+sep: stops difusivos escalaban a 3-6% con el
+        // ATR mientras el trailing tomaba los wins a 0.6-2% — la asimetría
+        // win/loss REALIZADA invertía el RR de diseño (BNB WR 57% con neto
+        // negativo). El suelo de viabilidad acota el MÍNIMO del SL; esto
+        // acota el MÁXIMO: jamás arriesgar más de la mitad del objetivo.
+        // Orden: primero se encoge el SL al cap, después el TP se re-asegura
+        // ≥ SL·RR_min(fee) — converge en una pasada porque el SL sólo baja
+        // (y al bajar, su RR_min baja con él).
+        if sl > tp * 0.5 {
+            sl = tp * 0.5;
+            let rr_min = Self::min_rr_for(Self::WORST_TOLERATED_WR, fee, sl).max(1.0);
+            if tp < sl * rr_min {
+                tp = sl * rr_min;
+            }
+        }
         (sl, tp)
     }
 
@@ -3169,7 +3185,83 @@ mod tests {
                     );
                     // El TP resultante siempre paga la fricción con margen.
                     assert!(tp_f > fee, "tp={tp_f} no cubre fee={fee}");
+                    // B3.24: RR geométrico ≥ 2 SIEMPRE (cap de asimetría).
+                    assert!(
+                        sl_f <= tp_f * 0.5 + 1e-15,
+                        "SL {sl_f} > TP/2 {tp_f} — cap de asimetría violado (fee={fee}, in sl={sl} tp={tp})"
+                    );
                 }
+            }
+        }
+    }
+
+    /// B3.2 (auditoría) — PROPIEDAD EN TODA LA FRONTERA CONTINUA, no sólo en
+    /// la rejilla: barre la fricción en (0, 0,01] con muestreo log-uniforme y
+    /// evalúa el EV en los puntos críticos de cada nivel — el SL exactamente
+    /// en el piso (`f/0,50`, el peor caso por construcción) y por encima
+    /// (donde el término `f/(w·sl)` decae y el EV sólo puede mejorar) — con
+    /// TP adversarial (cero) y TP en su propio piso.
+    ///
+    /// La cota analítica: en el piso doble (sl = f/0,5 y tp = sl·RR_min) el
+    /// EV es EXACTAMENTE 0 — `0,4·(5,5f − f) = 0,6·(2f + f) = 1,8f` — así que
+    /// cualquier tolerancia debe ser ε puro de coma flotante, no holgura.
+    #[test]
+    fn b3_2_ev_no_negativo_en_toda_la_frontera_continua() {
+        let w = SuperGenotype::WORST_TOLERATED_WR;
+        for k in 0..60 {
+            // fee ∈ [1e-5, 0.01] log-espaciado (incluye el 0,0012 VIP0 real).
+            let fee = 1e-5 * (1000.0f64).powf(k as f64 / 59.0);
+            let floor = SuperGenotype::min_viable_sl(fee);
+            assert!((floor - fee / 0.50).abs() < 1e-15, "piso mal derivado");
+
+            for &sl_mult in &[0.0, 1.0, 1.37, 2.0, 10.0] {
+                let sl_in = floor * sl_mult;
+                for &tp_in in &[0.0, fee, floor * 0.01, floor * 3.0] {
+                    let (sl_f, tp_f) = SuperGenotype::friction_floors(fee, sl_in, tp_in);
+                    assert!(sl_f >= floor - 1e-15, "SL bajo el piso");
+                    let ev = w * (tp_f - fee) - (1.0 - w) * (sl_f + fee);
+                    assert!(
+                        ev >= -1e-12,
+                        "EV={ev} con fee={fee} sl_in={sl_in} tp_in={tp_in} → ({sl_f},{tp_f})"
+                    );
+                    // Monotonía: dar MÁS geometría de entrada nunca empeora
+                    // el resultado (los pisos son max(), no mezclas).
+                    let (sl_g, tp_g) = SuperGenotype::friction_floors(fee, sl_in * 1.5, tp_in * 1.5);
+                    assert!(sl_g >= sl_f - 1e-15 && tp_g >= tp_f - 1e-15);
+                }
+            }
+        }
+        // Caso degenerado documentado: fee inválido → fricción de referencia.
+        let (sl_f, tp_f) = SuperGenotype::friction_floors(0.0, 0.0, 0.0);
+        assert!((sl_f - SuperGenotype::REFERENCE_ROUNDTRIP_FEE / 0.50).abs() < 1e-15);
+        assert!(tp_f > sl_f);
+    }
+
+    /// B3.2/D-645 — el fee que pasan los llamadores es 2×taker + 2×piso de
+    /// slippage; con taker 5 bps y el piso derivado del baseline (taker/5 =
+    /// 1 bp) la fricción efectiva es 0,0012 y el piso de SL resultante
+    /// (24 bps) queda por ENCIMA del de referencia (20 bps): el fallback
+    /// `REFERENCE_ROUNDTRIP_FEE` nunca es más permisivo que la fricción real.
+    #[test]
+    fn b3_2_friccion_de_llamadores_domina_al_fallback_de_referencia() {
+        let slip_floor = 0.0005_f64 / 5.0; // derivación del baseline: taker/5 = 1 bp
+        let live_fee = 2.0 * 0.0005 + 2.0 * slip_floor;
+        assert!((live_fee - 0.0012).abs() < 1e-9);
+        assert!(SuperGenotype::min_viable_sl(live_fee) > SuperGenotype::min_viable_sl(0.0));
+        // El RR exigido al SL vivo también es mayor o igual que al de
+        // referencia en todo el rango útil de stops (el fee del genoma activo
+        // en producción, 2×0,0005 + 2×5,68e-05 ≈ 0,00111, domina igualmente).
+        let prod_fee = 2.0 * 0.0005 + 2.0 * 5.683_610_778_189_746e-05;
+        for fee in [live_fee, prod_fee] {
+            for sl in [0.0024, 0.005, 0.01, 0.05] {
+                assert!(
+                    SuperGenotype::min_rr_for(SuperGenotype::WORST_TOLERATED_WR, fee, sl)
+                        >= SuperGenotype::min_rr_for(
+                            SuperGenotype::WORST_TOLERATED_WR,
+                            SuperGenotype::REFERENCE_ROUNDTRIP_FEE,
+                            sl
+                        ) - 1e-12
+                );
             }
         }
     }
