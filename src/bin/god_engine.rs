@@ -1811,9 +1811,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &ledger_path,
                 "config_dir/genotypes/online_champion.json",
             );
-            if !evolution_engine::online_daemon::live_evolution_armed() {
+            if !evolution_engine::online_daemon::live_evolution_armed_for_env() {
                 telemetry_server::telemetry_log!(
                     "🔒 [D-689] Evolución en vivo DESARMADA: umbrales ML y genoma sólo cambian por promoción validada (TG_LIVE_GENOME_EVOLUTION_ARMED=1 para armarla). Deriva, kill-switch y rollback siguen activos."
+                );
+            } else {
+                // QO-E1: primera vez que la autoevolución vive ARMADA — la
+                // auditoría halló prod/history con 0 generaciones: los tres
+                // lazos jamás corrieron. Las redes de seguridad (rollback
+                // t≤−2.0, kill EWMA, validación bounds/RR) están SIEMPRE.
+                telemetry_server::telemetry_log!(
+                    "🧬 [QO-E1] Autoevolución en vivo ARMADA (entorno demo): mutación 2000-candidatos sobre returns reales + cosecha shadow-forest (≥15 trades) + umbrales del forest online. Rollback y kill-switch activos. Prod desarmado (paso humano)."
                 );
             }
             rt_for_darwin.spawn(async move {
@@ -4070,7 +4078,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::ShadowLeaderboard(leaderboard));
                 // D-689: la cosecha sólo cambia el genoma de producción con la
                 // evolución en vivo armada explícitamente.
-                let winner = winner.filter(|_| evolution_engine::online_daemon::live_evolution_armed());
+                let winner = winner.filter(|_| evolution_engine::online_daemon::live_evolution_armed_for_env());
 
                 if let Some((new_alpha, pnl_gained)) = winner {
                     telemetry!("🧬 [SHADOW FOREST] ¡Cosecha Exitosa! Universo Mutante generó +${:.2} extra. Aplicando Hot-Swap...", pnl_gained);

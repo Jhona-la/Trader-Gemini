@@ -56,6 +56,33 @@ pub fn live_evolution_armed() -> bool {
         .unwrap_or(false)
 }
 
+/// QO-E1 (QUINTA OLA): armado POR ENTORNO. El hallazgo central de la
+/// auditoría evolutiva: `TG_LIVE_GENOME_EVOLUTION_ARMED` jamás se fijaba —
+/// prod/history tenía 0 generaciones: el organismo NUNCA evolucionó pese
+/// a tener los tres lazos cableados y sus redes de seguridad (rollback
+/// t≤−2.0, kill-switch EWMA, validación de bounds/RR) vivas.
+///
+/// Semántica nueva:
+/// - La variable explícita `TG_LIVE_GENOME_EVOLUTION_ARMED=1|0` MANDA
+///   (siempre respetada — un operador puede armar prod a propósito).
+/// - Sin variable: DEMO (TG_GENOME_ENV=demo) arma POR DEFECTO — es el
+///   entorno de evaporación segura con capital de papel. Un kill-switch
+///   de arming (`TG_LIVE_GENOME_EVOLUTION_DISARM=1`) permite apagarlo en
+///   demo para A/B sin tocar el default.
+/// - PROD sigue DESARMADO por defecto: la promoción demo→prod conserva el
+///   paso humano (TG_GENOME_PROMOTE_ARMED) — doctrina D-651 intacta.
+pub fn live_evolution_armed_for_env() -> bool {
+    if let Ok(v) = std::env::var("TG_LIVE_GENOME_EVOLUTION_ARMED") {
+        return v.trim() == "1";
+    }
+    if let Ok(v) = std::env::var("TG_LIVE_GENOME_EVOLUTION_DISARM") {
+        if v.trim() == "1" {
+            return false;
+        }
+    }
+    std::env::var("TG_GENOME_ENV").map(|e| e.trim() == "demo").unwrap_or(false)
+}
+
 pub struct LiveEvolutionDaemon {
     pub state: QuantumHotSwapState,
     pub arena: Arc<GlobalArena>,
@@ -187,7 +214,7 @@ impl LiveEvolutionDaemon {
             // Aplicar thresholds óptimos del Shadow Forest a la Arena ÚNICAMENTE cuando está entrenado
             // D-689: y sólo con la evolución en vivo armada; sin armar, el bosque
             // aprende pero no sobrescribe los umbrales del genoma validado.
-            if self.forest.is_trained() && live_evolution_armed() {
+            if self.forest.is_trained() && live_evolution_armed_for_env() {
                 let (opt_l, opt_s) = self.forest.get_optimal_thresholds();
                 self.arena
                     .config
@@ -422,7 +449,7 @@ impl LiveEvolutionDaemon {
 
         // D-689: la deriva y el kill-switch de arriba son protección y siguen
         // siempre activos; la búsqueda y promoción de mutaciones en vivo no.
-        if !live_evolution_armed() {
+        if !live_evolution_armed_for_env() {
             return;
         }
 
