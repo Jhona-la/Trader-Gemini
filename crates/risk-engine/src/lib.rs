@@ -9,6 +9,7 @@ pub mod kelly_envelope;
 pub mod leverage_matrix;
 pub mod orchestrator;
 pub mod regime;
+pub mod ruin;
 pub mod tp_sl;
 
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
@@ -252,7 +253,19 @@ impl RiskEngine {
         } else {
             raw_kelly.clamp(clamp_min, clamp_max)
         };
-
+        // CERT-M5-H03: el camino bootstrap/micro YA NO bypassa el tope de
+        // ruina — mismo streak-bound + axioma 25% que kelly/envelope. q del
+        // win-rate del coin si existe; conservador si no.
+        let wr_coin = arena.coins[coin_id]
+            .metrics
+            .win_rate
+            .load(Ordering::Relaxed);
+        let q = if wr_coin > 0.0 && wr_coin < 1.0 {
+            1.0 - wr_coin
+        } else {
+            crate::ruin::CONSERVATIVE_Q
+        };
+        let kelly_frac = crate::ruin::clamp_ruin(kelly_frac, q);
         let temporal_scale = arena
             .config
             .temporal_scale
@@ -355,6 +368,12 @@ impl RiskEngine {
         let micro_kelly = (kelly_adjusted.max(micro_min_viable)
             * (1.0 + (intent.confidence - 0.65).max(0.0) * 1.5))
             .clamp(micro_min_viable.min(0.10), 0.20);
+        // CERT-M5-H03: el escalador micro tampoco escapa al tope de ruina.
+        // El piso de viabilidad (micro_min_viable) puede EXCEDER el cap cuando
+        // la cuenta es diminuta vs min_notional: en ese caso la orden es
+        // inviable-by-design (el host la vetará por margen) — preservamos el
+        // cap y no la fracción inflada.
+        let micro_kelly = crate::ruin::clamp_ruin(micro_kelly, crate::ruin::CONSERVATIVE_Q).max(0.0);
         let kelly_for_scale =
             crate::capital_regime::lerp(kelly_adjusted, micro_kelly, micro_w_alloc);
 

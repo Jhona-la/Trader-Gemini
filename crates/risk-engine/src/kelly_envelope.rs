@@ -160,18 +160,11 @@ impl RiskEnvelope {
         // Shrinkage por evidencia: n/(n+k) — con pocos trades, fracción minúscula.
         let shrunk = kelly * (n / (n + shrinkage_k));
 
-        // FIX #593: Guard de ruina: racha máxima esperada sobre TRADE_HORIZON trades con q_lcb acotado
+        // FIX #593 / CERT-M5-H03: streak-bound extraído a `ruin` — la MISMA
+        // función que ahora acota bootstrap/micro/leverage_matrix (antes este
+        // era el único path con protección de ruina).
         let q_lcb = (1.0 - self.posterior.lcb(z)).clamp(0.01, 0.99);
-        let raw_streak = (TRADE_HORIZON.ln() / q_lcb.ln()).abs();
-        let streak = if raw_streak.is_finite() {
-            raw_streak.min(TRADE_HORIZON).max(3.0)
-        } else {
-            TRADE_HORIZON
-        };
-        // f tal que (1-f)^streak >= SURVIVAL_FLOOR ⇒ f <= 1 - floor^(1/streak)
-        let f_ruina = (1.0 - SURVIVAL_FLOOR.powf(1.0 / streak)).clamp(0.001, 0.50);
-
-        shrunk.min(f_ruina).min(0.25) // tope absoluto de riesgo por trade: 25% (axioma)
+        shrunk.min(crate::ruin::streak_ruin_cap(q_lcb)).min(0.25) // axioma 25%
     }
 
     /// Apalancamiento máximo (paso 6) + bloqueo por notional mínimo (paso 5).

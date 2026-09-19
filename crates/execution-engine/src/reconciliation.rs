@@ -396,16 +396,24 @@ pub fn reconcile_arena(
                 // accesible desde aquí sin refactor de firma; el fee exacto
                 // se corrige en la primera reconciliación con tradeId).
                 // Antes entry_fee=0 → Kelly sobreestimaba en adoptadas.
+                // FIX R7-0 (CRÍTICO): el fee iba en el slot TP de
+                // open_with_horizon (firma `..., tp, sl, horizon`) —
+                // instalaba un take-profit en ~$0.04 (disparo instantáneo
+                // en longs) y el fee jamás llegaba al modelo. open_with_fee
+                // es la firma que acepta entry_fee como último parámetro.
                 let adopted_entry_fee = notional * 0.0004;
-                coin.positions.position.open_with_horizon(
+                coin.positions.position.open_with_fee(
                     is_long,
                     price,
                     abs_qty,
                     margin,
                     now_ms,
-                    adopted_entry_fee,
+                    0.0,
                     0.0,
                     quantum_arena::position::PositionHorizon::Continuous,
+                    0.0,
+                    0.0,
+                    adopted_entry_fee,
                 );
                 // B3.14 (auditoría): la posición adoptada EXISTE en el
                 // exchange — sin este flag sus cierres NO contabilizan

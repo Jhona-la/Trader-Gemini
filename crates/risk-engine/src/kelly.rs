@@ -102,28 +102,17 @@ pub fn calculate_kelly_fraction(
         (clamp_max, clamp_min)
     };
 
-    // QO-M1.2 — RIESGO-DE-RUINA ANALÍTICO como TOPE global (Chriss/Thorp):
-    //   P(ruina) ≈ ((1−f)/(1+f))^(C/r)
-    // donde f = fracción de Kelly, C = capital, r = riesgo por trade = C·f.
-    // El exponente C/r = 1/f (número de trades de pérdida consecutivos
-    // hasta agotar capital). Si P(ruina) > umbral (5%), reducir f.
-    // Este tope vive DESPUÉS del clamp del genoma: NINGÚN multiplicador
-    // (streak, neural, régimen — los stacks de quantum_kelly_risk) puede
-    // empujar por encima de este límite.
+    // CERT-M5-H03 — CONTROL DE RUINA CENTRALIZADO. El bloque QO-M1.2
+    // anterior estaba ROTO como tope: la exponencial P(f)=((1−f)/(1+f))^(1/f)
+    // es monótona DECRECIENTE en f (piso asintótico e⁻²≈13.5%), y su
+    // "f_cap" −ln(P)/2 ≈ 1.50 jamás vinculaba — código muerto disfrazado de
+    // protección. El tope VIGENTE (mismo que envelope/bootstrap/micro desde
+    // esta auditoría) es el streak-bound FIX #593 + axioma 25%:
+    //   f_cap = 1 − SURVIVAL_FLOOR^(1/streak(q)),  streak = ln(200)/ln(q)
+    // Vive DESPUÉS del clamp del genoma: ningún multiplicador (streak,
+    // neural, régimen) puede empujar por encima.
     let kelly_prelim = (kelly * capital_scale).clamp(mn, mx);
-    const MAX_RUIN_PROB: f64 = 0.05;
-    if kelly_prelim > 0.0 && kelly_prelim < 1.0 {
-        let n_to_ruin = 1.0 / kelly_prelim;
-        let ruin_prob = ((1.0 - kelly_prelim) / (1.0 + kelly_prelim)).powf(n_to_ruin);
-        if ruin_prob.is_finite() && ruin_prob > MAX_RUIN_PROB {
-            // f_cap de ((1−f)/(1+f))^(1/f) = MAX_RUIN:
-            // para P=0.05 ⇒ f ≈ 0.736; aproximación cerrada −ln(P)/2 = 1.498
-            // es el límite superior — el Kelly queda acotado por la ruina.
-            let f_cap = (-MAX_RUIN_PROB.ln() / 2.0).min(mx).max(mn);
-            return kelly_prelim.min(f_cap);
-        }
-    }
-    kelly_prelim
+    crate::ruin::clamp_ruin(kelly_prelim, 1.0 - win_rate.clamp(0.0, 1.0))
 }
 
 #[cfg(test)]
@@ -204,14 +193,18 @@ mod tests {
     /// persistente (s→1) sostiene más Kelly que mercado anti-persistente
     /// (s→0), con el mismo edge medido. Caso: expansión plena (ratio 1000×,
     /// capital_scale en el riel superior de cada banda).
+    /// CERT-M5-H03: edge moderado (wr=0.55, pf=1.3) para que el preliminar
+    /// quede DEBAJO del tope de ruina (axioma 25%) — con edge grande
+    /// (wr=0.7/pf=2.0) el tope vinculaba en ambos regímenes y la modulación
+    /// quedaba plana por diseño del AXIOMA, no por bug.
     #[test]
     fn test_s1_spectral_band_modulates_kelly() {
         let (base, surv, exp, cmin, cmax, sbase) = base_args();
         let k_persist = calculate_kelly_fraction(
-            0.7, 2.0, 13_000.0, base, surv, exp, cmin, cmax, sbase, 1.0,
+            0.55, 1.3, 13_000.0, base, surv, exp, cmin, cmax, sbase, 1.0,
         );
         let k_anti = calculate_kelly_fraction(
-            0.7, 2.0, 13_000.0, base, surv, exp, cmin, cmax, sbase, 0.0,
+            0.55, 1.3, 13_000.0, base, surv, exp, cmin, cmax, sbase, 0.0,
         );
         assert!(
             k_persist > k_anti,
@@ -219,10 +212,10 @@ mod tests {
         );
         // Y en modo supervivencia (capital bajo) la misma orden.
         let s_persist = calculate_kelly_fraction(
-            0.6, 2.0, 13.0, base, surv, exp, cmin, cmax, sbase, 1.0,
+            0.55, 1.3, 13.0, base, surv, exp, cmin, cmax, sbase, 1.0,
         );
         let s_anti =
-            calculate_kelly_fraction(0.6, 2.0, 13.0, base, surv, exp, cmin, cmax, sbase, 0.0);
+            calculate_kelly_fraction(0.55, 1.3, 13.0, base, surv, exp, cmin, cmax, sbase, 0.0);
         assert!(s_persist >= s_anti);
     }
 }
