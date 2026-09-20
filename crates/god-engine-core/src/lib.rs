@@ -2589,9 +2589,28 @@ impl GodEngineCore {
             // no esté en enfriamiento— es una condición del MERCADO, no de la
             // banda que produjo la señal. Se calcula aquí, una vez, y la
             // comparten las dos lecturas del espectro (ver `puertas_del_continuo`).
-            let viable_para_entrar = atr_pct > dynamic_atr_min
-                && spread_ok
-                && self.feature_engines[coin_id].can_open_position(600);
+            let cooldown_ok = self.feature_engines[coin_id].can_open_position(600);
+            let atr_ok = atr_pct > dynamic_atr_min;
+            let viable_para_entrar = atr_ok && spread_ok && cooldown_ok;
+            // D-750: cuando el motor pasa un mes entero sin evaluar una sola
+            // señal, hay que poder decir POR CUÁL de las tres condiciones. El
+            // diagnóstico de abajo vive dentro del bloque viable, así que
+            // guarda silencio justo en el caso que hay que explicar.
+            if !viable_para_entrar
+                && self.arena.tick_counter.load(Ordering::Relaxed) % 50_000 == 0
+            {
+                telemetry_server::telemetry_log!(
+                    "🚧 [VIABILIDAD] tick={} INVIABLE · atr {:.6} > min {:.6}? {} · spread {:.6} ≤ max {:.6}? {} · enfriamiento? {}",
+                    self.arena.tick_counter.load(Ordering::Relaxed),
+                    atr_pct,
+                    dynamic_atr_min,
+                    atr_ok,
+                    spread_pct,
+                    dynamic_max_spread,
+                    spread_ok,
+                    cooldown_ok
+                );
+            }
             let ema_slow_continuo = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                 self.feature_engines[coin_id].kline_ema_slow
             } else {
