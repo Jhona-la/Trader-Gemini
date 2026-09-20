@@ -599,9 +599,20 @@ async fn main() {
         // instantánea de ese orden, de modo que el forense era inutilizable
         // fuera de BTC —y las validaciones cruzadas en XRP/SOL/BNB se midieron
         // con él—. Ahora sale del `tick_size` del símbolo registrado.
+        //
+        // D-752 — EL FORENSE COBRABA EL SPREAD DOS VECES. El tape YA trae el
+        // libro: `bid_price` y `ask_price` son las dos puntas. Restar otro
+        // medio spread al bid y sumárselo al ask no aplica un suelo: DUPLICA
+        // la horquilla (spread simulado = spread del fichero + 2·medio = 2×).
+        // Toda la fricción medida por este binario —y con ella las aptitudes
+        // de −0,12 a −0,15 con las que se declaró que el motor pierde— se
+        // calculó pagando el doble de horquilla en cada entrada y cada salida.
+        // El suelo se aplica donde debe: sobre el semi-spread, alrededor del
+        // punto medio.
+        let mid_tape = (t.bid_price + t.ask_price) * 0.5;
         let half_spread = ((t.ask_price - t.bid_price) / 2.0).max(min_half_spread);
-        let sim_bid = t.bid_price - half_spread;
-        let sim_ask = t.ask_price + half_spread;
+        let sim_bid = mid_tape - half_spread;
+        let sim_ask = mid_tape + half_spread;
         let bid_qty = t.bid_qty;
         let ask_qty = t.ask_qty;
 
