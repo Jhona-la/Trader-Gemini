@@ -73,11 +73,24 @@ fn main() {
     for i in 0..num_ticks {
         let t = &ticks[i];
         let mid_price = (t.bid_price + t.ask_price) / 2.0;
-        let total_vol = t.bid_qty + t.ask_qty;
-        let pseudo_maker = t.bid_qty > t.ask_qty;
+        // D-747 — LA CANTIDAD Y EL LADO DEL AGRESOR SALEN DEL CONVENIO DEL
+        // CODIFICADOR, NO DE UNA SUMA NI DE SU INVERSA.
+        //
+        // `binance_vision_sync` codifica cada aggTrade así: el lado del
+        // AGRESOR lleva `qty + base` y el pasivo sólo `base`, con
+        // `base = max(0,25·qty; 0,1)`. Por tanto la cantidad real es
+        // `|bq − aq|` y `is_buyer_maker` (el comprador era el pasivo) es
+        // `aq > bq`. Aquí se venía pasando `bq + aq` como volumen —≈1,5·qty,
+        // con un suelo absoluto que distorsiona no linealmente los trades
+        // pequeños— y `bq > aq` como `is_buyer_maker`, que es exactamente
+        // su NEGACIÓN: el flujo agregado del entrenamiento salía espejado
+        // respecto al del motor vivo, que recibe la cantidad real y el flag
+        // oficial. Los modelos aprendían un CVD invertido.
+        let total_vol = (t.bid_qty - t.ask_qty).abs();
+        let is_buyer_maker = t.ask_qty > t.bid_qty;
 
         feature_engine.process_tick(mid_price, total_vol, t.timestamp);
-        feature_engine.update_trade_flow(total_vol, pseudo_maker);
+        feature_engine.update_trade_flow(total_vol, is_buyer_maker);
         let _ = feature_engine.update_ofi(t.bid_price, t.ask_price, t.bid_qty, t.ask_qty);
 
         // Triple Barrier Labeling Method (Marcos López de Prado)

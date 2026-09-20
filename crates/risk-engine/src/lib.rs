@@ -29,6 +29,13 @@ pub struct ValidatedOrder {
     pub tp_target: f64,
     pub sl_target: f64,
     pub fee_buffer_multiplier: f64,
+    /// D-745 — HORIZONTE CON EL QUE SE DIMENSIONÓ ESTA ORDEN (ms). El núcleo
+    /// lo guarda tal cual en `entry_tau_ms`, de modo que la geometría, el
+    /// trailing, la caducidad, el Kelly del cierre y el apalancamiento del
+    /// host razonan sobre el MISMO horizonte con el que se calculó el tamaño.
+    /// Antes, el núcleo lo recalculaba desde la τ dominante del espectro y la
+    /// misma posición se dimensionaba a un horizonte y se gestionaba en otro.
+    pub tau_ms: f64,
 }
 
 impl ValidatedOrder {
@@ -41,6 +48,7 @@ impl ValidatedOrder {
             tp_target: 0.0,
             sl_target: 0.0,
             fee_buffer_multiplier: 1.01,
+            tau_ms: 0.0,
         }
     }
 }
@@ -348,7 +356,7 @@ impl RiskEngine {
         // 10 s y 24 h mientras el gate de TP/SL lo hacía sobre los extremos del
         // espectro y la matriz de apalancamiento con otra fórmula: tres
         // horizontes distintos para la misma intención.
-        let tau_ms = horizon_tau_ms(intent, arena);
+        let tau_ms = horizon_tau_ms_coin(intent, arena, coin_id);
         let continuous_sl = arena.config.sl_at_tau(tau_ms).max(1e-6);
         let fast_anchor_sl = arena
             .config
@@ -577,7 +585,7 @@ impl RiskEngine {
         //
         // Ahora ambos caminos llaman a la MISMA función pura con las MISMAS
         // entradas: la identidad es estructural, no disciplinaria.
-        let tau_for_sizing = horizon_tau_ms(intent, arena);
+        let tau_for_sizing = horizon_tau_ms_coin(intent, arena, coin_id);
         // S-7: Hurst DE LA ESCALA OPERADA — hurst_scale_matched es el H(τ)
         // multifractal que el core selecciona por τ dominante; fallback al
         // escalar global si aún no fue escrito (0.0).
@@ -866,6 +874,8 @@ impl RiskEngine {
             tp_target: safe_tp,
             sl_target: safe_sl,
             fee_buffer_multiplier: ev_fee_multiplier,
+            // D-745: la orden se lleva el horizonte con el que fue dimensionada.
+            tau_ms: tau_for_sizing,
         }
     }
 }
@@ -887,9 +897,32 @@ impl RiskEngine {
 /// En ningún caso se consulta la etiqueta discreta para elegir parámetros:
 /// ésta sólo desempata el extremo del continuo cuando no hay nada mejor.
 fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
-    // U-6: el motor continuo sólo produce TradeHorizon::Continuous — el eje
-    // temporal es el `temporal_scale` del arena (log-lineal sobre el espectro).
+    horizon_tau_ms_coin(intent, arena, usize::MAX)
+}
+
+/// D-745 — EL HORIZONTE DE LA ORDEN ES EL QUE EL MERCADO MUESTRA, NO UN GEN.
+///
+/// Si la señal declara una duración, manda ella: es información de la rama que
+/// la produjo. Si no, el respaldo era el gen estático `temporal_scale` —el
+/// mismo para las 30 monedas y para todo el mes—, mientras el núcleo abría la
+/// posición con la τ DOMINANTE medida del espectro de ESA moneda. Dimensionar
+/// a 19 minutos y gestionar a 30 segundos es el defecto, no el gen. Ahora el
+/// respaldo es esa misma τ medida, y el gen sólo entra mientras el espectro no
+/// ha arrancado (arranque en frío).
+fn horizon_tau_ms_coin(intent: &SignalIntent, arena: &GlobalArena, coin_id: usize) -> f64 {
     let _ = intent.horizon;
+    if intent.expected_duration_ms > 0 {
+        return intent.expected_duration_ms as f64;
+    }
+    if coin_id < arena.coins.len() {
+        let medida = arena.coins[coin_id].dominant_tau_ms.load(Ordering::Relaxed);
+        if medida.is_finite() && medida > 0.0 {
+            return medida.clamp(
+                quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+            );
+        }
+    }
     let s = arena
         .config
         .temporal_scale

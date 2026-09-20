@@ -30,8 +30,12 @@ impl Default for QuantumHotSwapState {
 use quantum_arena::GlobalArena;
 use quantum_arena::genome::SuperGenotype;
 
-/// Capital inicial de la simulación walk-forward del daemon (micro-capital
-/// $13 — misma cifra que la simulación previa al fix C-10).
+/// Numerario de capital del PRE-SCREEN. No es una constante de decisión: la
+/// simulación del pre-screen es puramente multiplicativa
+/// (`cap += net_ret · cap · kelly`), de modo que `cap_final/cap_inicial` —y
+/// con él `fitness::compute`, que sólo lee ese cociente en logaritmo— es
+/// INVARIANTE frente a este valor. Cambiarlo no reordena a ningún candidato.
+/// El JUEZ (`wf_evaluate_real`) no lo usa: arranca del capital VIVO del arena.
 const WF_INITIAL_CAPITAL: f64 = 13.0;
 
 /// C-10 / MOD3/5-012 (INFORME 14): mínimo estadístico de operaciones en la
@@ -229,8 +233,12 @@ pub fn armar_vigilancia(
     parent: u64,
 ) -> bool {
     if es_mismo_genoma {
-        // Primera promoción de este genoma: hay que armar el watchdog, pero la
-        // evidencia ya recogida (si la hay) se conserva.
+        // El genoma que opera NO ha cambiado: la evidencia post-promoción
+        // sigue describiéndolo y se conserva íntegra. Sólo si el watchdog no
+        // estaba armado todavía (primera vez que se registra este genoma) se
+        // arma ahora — sin borrar las observaciones ya recogidas — y se
+        // conserva el par (generación, padre) original, que es el que el
+        // rollback debe restaurar.
         if promoted_generation.is_none() {
             *promoted_generation = Some((generation, parent));
         }
@@ -866,8 +874,27 @@ impl LiveEvolutionDaemon {
             if let Some(&prev) = self.last_realized_by_coin.get(&coin_id) {
                 let delta = realized - prev;
                 if delta.abs() > 0.0 && capital > 0.0 {
-                    let ret = delta / capital;
-                    if ret.is_finite() {
+                    // D-744 — MISMA NORMALIZACIÓN QUE EL EXAMEN. `capital` es
+                    // el saldo leído DESPUÉS de contabilizar `delta`, así que
+                    // dividir por él medía el retorno contra un capital que ya
+                    // incluye la propia ganancia (lo infravalora) o del que ya
+                    // se restó la propia pérdida (la sobrevalora). El
+                    // denominador correcto es el capital EN RIESGO al abrir:
+                    // `capital − delta`. Con micro-capital ($13) el sesgo no
+                    // es despreciable — una operación de +1 USD daba 7,7 % en
+                    // vez del 8,3 % real — y estos retornos alimentan el
+                    // Sharpe RANSAC y el watchdog de rollback.
+                    //
+                    // Aproximación declarada: si varias monedas cierran entre
+                    // dos muestreos, `capital − delta` sólo es exacto para la
+                    // última; el resto queda con el mismo error de signo que
+                    // tenía antes, más pequeño. No se inventa un reparto que
+                    // los datos del arena no permiten reconstruir.
+                    let Some(ret) = trade_return_on_equity(delta, capital) else {
+                        self.last_realized_by_coin.insert(coin_id, realized);
+                        continue;
+                    };
+                    {
                         self.returns_history.push(ret);
                         let coin_window = self.returns_by_coin.entry(coin_id).or_default();
                         coin_window.push(ret);
@@ -1775,6 +1802,46 @@ mod tests {
         let r1 = trade_return_on_equity(1.0, 11.0).unwrap();
         let r2 = trade_return_on_equity(1.1, 12.1).unwrap();
         assert!((r1 - r2).abs() < 1e-12, "{r1} vs {r2}");
+    }
+
+    /// D-744 (muestreo VIVO) — `sample_realized_returns` dividía el PnL de la
+    /// operación por el capital leído DESPUÉS de contabilizarla. Ese
+    /// denominador contiene la propia ganancia (o le falta la propia
+    /// pérdida), de modo que la serie que alimenta el Sharpe RANSAC y el
+    /// watchdog de rollback venía sesgada: las ganancias se infravaloraban y
+    /// las pérdidas se sobrevaloraban, y el sesgo crece con el tamaño de la
+    /// operación frente a la cuenta — justo el régimen de micro-capital en el
+    /// que este daemon opera. Este test falla con la fórmula vieja.
+    #[test]
+    fn d744_el_muestreo_vivo_no_divide_por_el_capital_post_operacion() {
+        // Cuenta de 12 USD que cierra una ganancia de 1 USD ⇒ saldo 13.
+        let capital_post = 13.0;
+        let delta = 1.0;
+        let correcto = trade_return_on_equity(delta, capital_post).unwrap();
+        let viejo = delta / capital_post; // fórmula anterior
+        assert!((correcto - 1.0 / 12.0).abs() < 1e-12, "correcto = {correcto}");
+        assert!(
+            correcto > viejo,
+            "la ganancia estaba INFRAVALORADA: {correcto:.6} vs {viejo:.6}"
+        );
+
+        // Y en pérdida el sesgo va al revés: −1 sobre 13 que quedan en 12.
+        let correcto_p = trade_return_on_equity(-1.0, 12.0).unwrap();
+        let viejo_p = -1.0 / 12.0;
+        assert!((correcto_p + 1.0 / 13.0).abs() < 1e-12, "correcto_p = {correcto_p}");
+        assert!(
+            correcto_p > viejo_p,
+            "la pérdida estaba SOBREVALORADA: {correcto_p:.6} vs {viejo_p:.6}"
+        );
+
+        // Ida y vuelta al mismo punto ⇒ los dos retornos se cancelan en
+        // logaritmos, que es la propiedad que el viejo denominador rompía.
+        let ida = trade_return_on_equity(1.0, 13.0).unwrap();
+        let vuelta = trade_return_on_equity(-1.0, 12.0).unwrap();
+        assert!(
+            ((1.0 + ida) * (1.0 + vuelta) - 1.0).abs() < 1e-12,
+            "ida {ida} y vuelta {vuelta} deben componer a capital idéntico"
+        );
     }
 
     /// D-746 — la multiplicidad se ACUMULA entre rondas. Con el literal

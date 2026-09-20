@@ -194,6 +194,13 @@ pub struct CoinArena {
     pub current_price: AtomicF64,
     pub ml_prob: AtomicF64,
     pub current_atr: AtomicF64,
+    /// D-745 — τ DOMINANTE MEDIDA del espectro temporal de esta moneda (ms).
+    /// El núcleo la publica en cada tick; el risk-engine la usa como horizonte
+    /// de la orden cuando la señal no declara duración propia. Antes ese
+    /// respaldo era el gen estático `temporal_scale`, de modo que el
+    /// dimensionado y la gestión de la MISMA posición vivían en horizontes
+    /// distintos. 0 = el espectro aún no ha arrancado.
+    pub dominant_tau_ms: AtomicF64,
     pub hurst_exponent: AtomicF64,
     /// S-7 (ESPECTRALIZACIÓN): Hurst multifractal SELECCIONADO POR τ — el
     /// H de la escala que el motor opera AHORA (micro si τ<2min, meso si
@@ -297,6 +304,7 @@ impl CoinArena {
             current_price: AtomicF64::new(0.0),
             ml_prob: AtomicF64::new(w_base),
             current_atr: AtomicF64::new(0.0),
+            dominant_tau_ms: AtomicF64::new(0.0),
             hurst_exponent: AtomicF64::new(0.5),
             hurst_scale_matched: AtomicF64::new(0.5),
             open_interest_norm: AtomicF64::new(0.0),

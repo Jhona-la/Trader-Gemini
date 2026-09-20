@@ -197,22 +197,61 @@ async fn main() {
         Err(e) => println!("⚠️ [MODELOS] No se pudo leer models/: {}", e),
     }
     println!(
-        "🌲 [MODELOS] {} modelos registrados como en producción · bosque BTCUSDT_SCALP: {}",
+        "🌲 [MODELOS] {} modelos registrados como en producción · bosque {}_MOTOR: {}",
         forests_cargados,
-        if god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_SCALP").is_some() {
+        std::env::var("FORENSIC_SYMBOL").unwrap_or_else(|_| "BTCUSDT".to_string()).trim().to_uppercase(),
+        if god_engine_core::ml_inference::NanoForest::get_global(&format!(
+            "{}_MOTOR",
+            std::env::var("FORENSIC_SYMBOL")
+                .unwrap_or_else(|_| "BTCUSDT".to_string())
+                .trim()
+                .to_uppercase()
+        ))
+        .is_some() {
             "presente"
         } else {
             "AUSENTE (el ensamble corre sin bosque)"
         }
     );
 
-    // INICIALIZAR EL SYMBOL REGISTRY PARA BTCUSDT (coin_id = 0)
+    // D-748 — EL SÍMBOLO DEL FORENSE ES UN PARÁMETRO, NO UN LITERAL.
+    //
+    // El binario fijaba «BTCUSDT» en el registro, en la clave del modelo y en la
+    // consulta de comisiones, así que medir cualquier otra moneda era imposible
+    // aunque su tape y su modelo existieran. Y hoy eso importa: desde que la
+    // puerta de entrada exige modelo validado del roster (B3.25) y los modelos
+    // pasaron a llamarse {SÍMBOLO}_MOTOR, BTCUSDT —que nunca se reentrenó con
+    // ese nombre— no puede abrir una sola posición: en la corrida de junio la
+    // puerta vetó 99 351 entradas. Un medidor que sólo sabe mirar a la moneda
+    // paralizada no mide nada.
+    //
+    // FORENSIC_SYMBOL fija el símbolo; los filtros (paso, tick, mínimos) salen
+    // del registro si el binario los conoce, y si no, de los del instrumento
+    // declarado en el propio entorno. El resto del motor es idéntico.
+    let forensic_symbol =
+        std::env::var("FORENSIC_SYMBOL").unwrap_or_else(|_| "BTCUSDT".to_string());
+    let forensic_symbol = forensic_symbol.trim().to_uppercase();
+    let (spec_step, spec_tick, spec_min_qty) = match forensic_symbol.as_str() {
+        "BTCUSDT" => (0.001, 0.10, 0.001),
+        "ETHUSDT" => (0.001, 0.01, 0.001),
+        "BNBUSDT" => (0.01, 0.01, 0.01),
+        "SOLUSDT" => (1.0, 0.001, 1.0),
+        "ATOMUSDT" => (0.01, 0.001, 0.01),
+        "NEARUSDT" => (1.0, 0.0001, 1.0),
+        // Sin ficha conocida: se declara la rejilla más fina que el tape puede
+        // resolver (un paso de 1e-3 y un tick de 1e-5 relativo) y se dice.
+        _ => (0.001, 0.00001, 0.001),
+    };
+    println!(
+        "🪙 [SÍMBOLO] Forense sobre {} (paso {}, tick {})",
+        forensic_symbol, spec_step, spec_tick
+    );
     quantum_arena::symbol_registry::update_registry(vec![
         quantum_arena::symbol_registry::SymbolSpec {
-            symbol: "BTCUSDT".to_string(),
-            step_size: 0.001,
-            tick_size: 0.10,
-            min_qty: 0.001,
+            symbol: forensic_symbol.clone(),
+            step_size: spec_step,
+            tick_size: spec_tick,
+            min_qty: spec_min_qty,
             min_notional: 5.0,
             max_leverage: 125,
             maker_fee: 0.0002,
@@ -234,7 +273,7 @@ async fn main() {
         .map(|v| v.trim() == "1")
         .unwrap_or(false);
     let (maker_fee, taker_fee) = if live_fees_requested && !api_key.is_empty() && !api_secret.is_empty() {
-        match executor.fetch_commission_rate("BTCUSDT").await {
+        match executor.fetch_commission_rate(&forensic_symbol).await {
             Ok((m, t)) if m > 0.0 && t > 0.0 => {
                 println!(
                     "🌍 [API] Comisiones Reales de Binance Extraídas: Maker {:.4}%, Taker {:.4}%",
@@ -379,7 +418,10 @@ async fn main() {
     for i in 0..warmup_ticks {
         let t = &ticks_slice[i];
         let price = (t.bid_price + t.ask_price) / 2.0;
-        let vol = t.bid_qty + t.ask_qty;
+        // D-747: la cantidad del aggTrade es |bq − aq| (el lado del agresor
+        // lleva qty + base y el pasivo sólo base), no su suma. El lado ya se
+        // leía bien desde D-717.
+        let vol = (t.bid_qty - t.ask_qty).abs();
         let is_buyer_maker = t.ask_qty > t.bid_qty;
         core.arena.update_market_data(
             0,
@@ -519,7 +561,11 @@ async fn main() {
     for i in warmup_ticks..num_ticks {
         let t = &ticks_slice[i];
         let price = (t.bid_price + t.ask_price) / 2.0;
-        let vol = t.bid_qty + t.ask_qty;
+        // D-747: la cantidad del aggTrade es |bq − aq|. La suma (≈1,5·qty con
+        // el suelo del codificador) inflaba el tamaño de CADA trade que el
+        // núcleo ve en el forense —CVD, VPIN, detección de bloques— frente al
+        // vivo, que recibe la cantidad real del exchange.
+        let vol = (t.bid_qty - t.ask_qty).abs();
         let prev_price = if i > 0 {
             (ticks_slice[i - 1].bid_price + ticks_slice[i - 1].ask_price) / 2.0
         } else {

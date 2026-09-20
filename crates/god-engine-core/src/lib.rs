@@ -581,26 +581,26 @@ impl GodEngineCore {
         };
         let bid_wall = coin.l2_bid_wall.load(Ordering::Relaxed);
         let ask_wall = coin.l2_ask_wall.load(Ordering::Relaxed);
-        let total_wall = bid_wall + ask_wall;
-        let wall_imbalance = if total_wall > 0.0 {
-            (bid_wall - ask_wall) / total_wall
-        } else {
-            0.0
-        };
         let cvd_veto = self.arena.config.cvd_veto_threshold.load(Ordering::Relaxed);
+        // D-749: el veto del muro se decide en el espacio del gen —una RAZÓN
+        // entre muros— y no contrastando esa razón contra un desequilibrio
+        // normalizado en [−1, 1], donde nunca podía dispararse.
         let wall_veto = self
             .arena
             .config
             .wall_veto_threshold
             .load(Ordering::Relaxed);
+        let es_largo = out.signal == SignalType::Long;
         match out.signal {
-            SignalType::Long => {
-                if cvd_ratio < -cvd_veto || wall_imbalance < -wall_veto {
-                    return SignalIntent::flat();
-                }
-            }
-            SignalType::Short => {
-                if cvd_ratio > cvd_veto || wall_imbalance > wall_veto {
+            SignalType::Long | SignalType::Short => {
+                let cvd_en_contra = if es_largo {
+                    cvd_ratio < -cvd_veto
+                } else {
+                    cvd_ratio > cvd_veto
+                };
+                if cvd_en_contra
+                    || crate::calibration::muro_en_contra(bid_wall, ask_wall, wall_veto, es_largo)
+                {
                     return SignalIntent::flat();
                 }
             }
@@ -800,6 +800,14 @@ impl GodEngineCore {
                 self.arena.coins[coin_id]
                     .current_atr
                     .store(raw_atr_pct * mid_price, Ordering::Relaxed);
+                // D-745: la τ dominante MEDIDA se publica al arena para que el
+                // risk-engine dimensione en el mismo horizonte en el que el
+                // núcleo gestionará la posición.
+                if let Some(spec) = self.temporal_spectrum.get(coin_id) {
+                    self.arena.coins[coin_id]
+                        .dominant_tau_ms
+                        .store(spec.dominant_tau_ms, Ordering::Relaxed);
+                }
                 self.arena.update_market_data(
                     coin_id,
                     eff_bid,
@@ -4179,15 +4187,24 @@ impl GodEngineCore {
                                         *t = tensor_snapshot.to_vec();
                                     }
                                 }
-                                // REHAB-1b: la posición NACE con su τ dominante
-                                // VIVA del espectro — horizonte continuo real,
-                                // no etiqueta. Los cierres (temporal_s lerp)
-                                // podrán leerla directamente.
-                                let tau_entry = self
-                                    .temporal_spectrum
-                                    .get(coin_id)
-                                    .map(|s| s.dominant_tau_ms as u64)
-                                    .unwrap_or(0);
+                                // D-745: la posición NACE con el horizonte CON
+                                // EL QUE SE DIMENSIONÓ (`order.tau_ms`), no con
+                                // una segunda lectura del espectro. Mientras se
+                                // recalculaba aquí, el risk-engine podía
+                                // dimensionar a 2 h una posición que el núcleo
+                                // gestionaba a 30 s: TP/SL de respaldo,
+                                // trailing, caducidad, Kelly de cierre y
+                                // apalancamiento del host razonaban sobre un
+                                // horizonte que nadie había usado para calcular
+                                // el tamaño. Respaldo: la τ dominante viva.
+                                let tau_entry = if order.tau_ms.is_finite() && order.tau_ms > 0.0 {
+                                    order.tau_ms as u64
+                                } else {
+                                    self.temporal_spectrum
+                                        .get(coin_id)
+                                        .map(|s| s.dominant_tau_ms as u64)
+                                        .unwrap_or(0)
+                                };
                                 coin.positions
                                     .position
                                     .entry_tau_ms

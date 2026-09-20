@@ -36,9 +36,22 @@ async fn main() {
         let t = &raw[i];
         if t.bid <= 0.0 || t.ask <= 0.0 || t.bid > t.ask { continue; }
         let mid = (t.bid + t.ask) / 2.0;
-        let vol = t.bq + t.aq;
+        // D-747 — LA CANTIDAD Y EL LADO DEL AGRESOR SALEN DEL CONVENIO DEL
+        // CODIFICADOR, NO DE UNA SUMA NI DE SU INVERSA.
+        //
+        // `binance_vision_sync` codifica cada aggTrade así: el lado del
+        // AGRESOR lleva `qty + base` y el pasivo sólo `base`, con
+        // `base = max(0,25·qty; 0,1)`. Por tanto la cantidad real es
+        // `|bq − aq|` y `is_buyer_maker` (el comprador era el pasivo) es
+        // `aq > bq`. Aquí se venía pasando `bq + aq` como volumen —≈1,5·qty,
+        // con un suelo absoluto que distorsiona no linealmente los trades
+        // pequeños— y `bq > aq` como `is_buyer_maker`, que es exactamente
+        // su NEGACIÓN: el flujo agregado del entrenamiento salía espejado
+        // respecto al del motor vivo, que recibe la cantidad real y el flag
+        // oficial. Los modelos aprendían un CVD invertido.
+        let vol = (t.bq - t.aq).abs();
         engine.process_tick(mid, vol, t.ts);
-        engine.update_trade_flow(vol, t.bq > t.aq);
+        engine.update_trade_flow(vol, t.aq > t.bq);
         let _ = engine.update_ofi(t.bid, t.ask, t.bq, t.aq);
         if i % 137 == 0 && i > 200 {
             let swing = engine.get_universal_features();

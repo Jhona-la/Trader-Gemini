@@ -441,9 +441,15 @@ fn main() {
     let lambda: f64 = arg("--lambda", "1.0").parse().unwrap();
     let patience: usize = arg("--patience", "40").parse().unwrap();
     let promote = args.iter().any(|a| a == "--promote");
-    // P-1/P-2/P-3c — objetivo: dir (barrera triple HOST-010) | vol (σ futura,
-    // regresión) | volu (profundidad media, regresión) | oi (ΔOI% a horizonte,
-    // regresión con join as-of del histórico horario).
+    // P-1/P-2/P-3c — objetivo: dir (barrera triple HOST-010) | vol (σ(τ)
+    // REALIZADA del horizonte, % de precio, regresión) | volu (NOCIONAL
+    // negociado del horizonte, Σ|qty|·precio en quote, regresión) | oi (ΔOI% a
+    // horizonte, regresión con join as-of del histórico horario).
+    // D-731/D-732: este comentario decía «σ futura» y «profundidad media»
+    // describiendo las etiquetas VIEJAS (ambas divididas por el número de
+    // ticks, y la segunda sobre un par de libro que el tape de aggTrades no
+    // tiene). Se corrige aquí porque un comentario que miente sobre las
+    // unidades es cómo se promueven modelos de escalas incompatibles.
     let label_mode = arg("--label", "dir");
     if !matches!(label_mode.as_str(), "dir" | "vol" | "volu" | "oi") {
         eprintln!("❌ --label inválido: {} (dir|vol|volu|oi)", label_mode);
@@ -613,10 +619,23 @@ fn main() {
                 first_ts = t.ts;
             }
             let mid = (t.bid + t.ask) / 2.0;
-            let vol = t.bq + t.aq;
-            let pseudo_maker = t.bq > t.aq;
+            // D-747 — LA CANTIDAD Y EL LADO DEL AGRESOR SALEN DEL CONVENIO DEL
+            // CODIFICADOR, NO DE UNA SUMA NI DE SU INVERSA.
+            //
+            // `binance_vision_sync` codifica cada aggTrade así: el lado del
+            // AGRESOR lleva `qty + base` y el pasivo sólo `base`, con
+            // `base = max(0,25·qty; 0,1)`. Por tanto la cantidad real es
+            // `|bq − aq|` y `is_buyer_maker` (el comprador era el pasivo) es
+            // `aq > bq`. Aquí se venía pasando `bq + aq` como volumen —≈1,5·qty,
+            // con un suelo absoluto que distorsiona no linealmente los trades
+            // pequeños— y `bq > aq` como `is_buyer_maker`, que es exactamente
+            // su NEGACIÓN: el flujo agregado del entrenamiento salía espejado
+            // respecto al del motor vivo, que recibe la cantidad real y el flag
+            // oficial. Los modelos aprendían un CVD invertido.
+            let vol = (t.bq - t.aq).abs();
+            let is_buyer_maker = t.aq > t.bq;
             engine.process_tick(mid, vol, t.ts);
-            engine.update_trade_flow(vol, pseudo_maker);
+            engine.update_trade_flow(vol, is_buyer_maker);
             let _ = engine.update_ofi(t.bid, t.ask, t.bq, t.aq);
             // B3.35 — OBI FUERA del trainer: el OBI sintético (reconstruido
             // de aggTrades con is_buyer_maker) tiene DISTRIBUCIÓN INCOMPATIBLE
@@ -1007,6 +1026,21 @@ fn main() {
         }
     }
     trees.truncate(best_rounds.max(1));
+    // EL DIAGNÓSTICO DEBE DESCRIBIR EL MODELO QUE SE GUARDA.
+    //
+    // `f_val` venía acumulando TODOS los árboles aplicados en el bucle,
+    // incluidos los `patience` últimos que el early stopping acaba de
+    // descartar con `truncate`. Las percentiles p10/p50/p90 y la varianza que
+    // se imprimen abajo son precisamente el detector de «modelo cuantizado /
+    // señal muerta» (ver la cabecera de este fichero): describirlas sobre un
+    // bosque que NO es el serializado es medir otra cosa. Se recalcula la
+    // puntuación cruda sobre el bosque truncado — la misma composición que
+    // `predict_raw` sirve en vivo. `best_val` NO se toca: por construcción ya
+    // es la métrica de estos `best_rounds` árboles.
+    let f_val: Vec<f64> = va_feats
+        .iter()
+        .map(|x| forest_raw(init_score, lr, &trees, x))
+        .collect();
 
     // Baseline CONSTANTE: tasa base en clasificación, media del train en
     // regresión. En clasificación es el baseline correcto (no hay «clase
@@ -1070,6 +1104,15 @@ fn main() {
     // PERSISTENCIA. Batir a la media no demuestra nada en magnitudes que se
     // autocorrelacionan; batir al «mañana será como hoy» sí. El R² contra la
     // media se sigue imprimiendo, etiquetado como informativo.
+    //
+    // OPTIMISMO RESIDUAL — CONOCIDO Y NO CORREGIDO AQUÍ: `best_rounds` se elige
+    // minimizando la métrica de ESTA MISMA partición de validación, y luego el
+    // gate juzga al modelo con ella. El modelo está, por tanto, ajustado a la
+    // validación a través del número de árboles; la PERSISTENCIA no está
+    // ajustada a nada. El skill que sale de aquí es un techo, no una medida
+    // limpia. Cerrarlo exige una TERCERA partición (early stopping en una,
+    // gate en otra), lo que reparte el presupuesto de datos y es una decisión
+    // del operador, no del entrenador: no se cambia por iniciativa propia.
     let gate_pass = if is_regression {
         let (r2_mean, skill, pass) = regression_gate(best_val, baseline, mse_persist, gate_margin);
         println!("   MSE persistencia (σ/volumen recientes en (t−τ,t]): {:.6}", mse_persist);
@@ -1162,6 +1205,18 @@ fn main() {
     if !gate_ok {
         std::process::exit(2);
     }
+}
+
+/// Puntuación CRUDA del bosque sobre un vector: `init_score + Σ lr·hoja(árbol)`.
+///
+/// Es la MISMA composición que sirve `NanoForest::predict_raw` en vivo, y toma
+/// los árboles por rodaja: evaluarla sobre el bosque ya TRUNCADO devuelve
+/// exactamente lo que se escribe en el JSON, sin arrastrar los árboles que el
+/// early stopping descartó.
+fn forest_raw(init_score: f32, lr: f64, trees: &[Vec<TreeNode>], x: &[f32]) -> f64 {
+    trees
+        .iter()
+        .fold(init_score as f64, |acc, t| acc + lr * eval_tree(t, x) as f64)
 }
 
 fn eval_tree(nodes: &[TreeNode], x: &[f32]) -> f32 {
@@ -1361,6 +1416,43 @@ mod tests {
         // El ancla es un mid ANTERIOR a la ventana, nunca uno futuro.
         let mid_ancla = (raw[lo - 1].bid + raw[lo - 1].ask) / 2.0;
         assert!((ancla - mid_ancla).abs() < 1e-12);
+    }
+
+    /// El diagnóstico (p10/p50/p90, varianza) debe salir del bosque TRUNCADO,
+    /// que es el que se serializa. Acumular la puntuación a lo largo del bucle
+    /// deja dentro los `patience` árboles que el early stopping descarta, y
+    /// entonces las percentiles impresas describen un modelo que no existe en
+    /// disco. Aquí se fija la diferencia: dos rodajas distintas del mismo
+    /// bosque dan puntuaciones distintas, luego la rodaja importa.
+    #[test]
+    fn la_puntuacion_solo_cuenta_los_arboles_que_se_guardan() {
+        let hoja = |v: f32| {
+            vec![TreeNode { feature: -1, threshold: 0.0, left: -1, right: -1, value: v }]
+        };
+        // Bosque completo: 3 árboles. Truncado por early stopping: los 2
+        // primeros. El tercero es el que la paciencia descartó.
+        let bosque = vec![hoja(1.0), hoja(2.0), hoja(-10.0)];
+        let x = [0.0f32; 4];
+        let init = 0.25f32;
+        let lr = 0.1f64;
+
+        let guardado = forest_raw(init, lr, &bosque[..2], &x);
+        let acumulado = forest_raw(init, lr, &bosque, &x);
+        assert!(
+            (guardado - (0.25 + 0.1 * 3.0)).abs() < 1e-12,
+            "el bosque guardado vale init + lr*(1+2): {guardado}"
+        );
+        assert!(
+            (acumulado - (0.25 + 0.1 * (-7.0))).abs() < 1e-12,
+            "el acumulado arrastra el árbol descartado: {acumulado}"
+        );
+        assert!(
+            (guardado - acumulado).abs() > 0.5,
+            "los árboles descartados mueven la puntuación, así que el \
+             diagnóstico NO puede salir del acumulado: {guardado} vs {acumulado}"
+        );
+        // Bosque vacío ⇒ la puntuación es exactamente el init_score.
+        assert!((forest_raw(init, lr, &[], &x) - 0.25).abs() < 1e-12);
     }
 
     /// D-734 — las muestras solapan τ/stride veces: sin purga, la etiqueta de

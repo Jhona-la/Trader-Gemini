@@ -3833,9 +3833,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .entry_tau_ms
                                 .load(Ordering::Relaxed)
                                 as f64;
-                            let sl_frac = engine_real.arena.config.sl_at_tau(
-                                if tau_entry > 0.0 { tau_entry } else { 30_000.0 },
-                            );
+                            // D-745b: el apalancamiento se divide por el stop
+                            // REAL DE ESTA ORDEN, no por la curva genómica
+                            // evaluada en τ. `compute_tp_sl` fija el stop por
+                            // difusión σ(τ) —no por la curva—, así que el host
+                            // estaba dimensionando contra una distancia que la
+                            // orden no tiene: con un stop real más ancho que el
+                            // de la curva, el riesgo por operación sale mayor
+                            // que el presupuestado, y al revés. La curva queda
+                            // como respaldo sólo si la orden no trae stop.
+                            let sl_frac = if core_sl > 0.0 && entry_price > 0.0 {
+                                ((entry_price - core_sl).abs() / entry_price).max(1e-4)
+                            } else {
+                                engine_real.arena.config.sl_at_tau(
+                                    if tau_entry > 0.0 { tau_entry } else { 30_000.0 },
+                                )
+                            };
                             let risk_budget = 0.05 * kelly_frac; // fracción del margen por trade
                             // P-1b — VOL-BRAKE: el predictor {SYM}_VOL encoge el
                             // presupuesto cuando la σ pronosticada supera ×1.25

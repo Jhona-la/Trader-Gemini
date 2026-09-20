@@ -128,14 +128,50 @@ impl QuantumLeverageMatrix {
         // ═══════════════════════════════════════════════════════
         // TENSOR 2: Convicción de la Señal (Bayesian Proxy Adaptativo)
         // ═══════════════════════════════════════════════════════
-        let conviction_scale = volatility_multiplier.max(1.0);
-        let conviction = (0.40 + signal.confidence.clamp(0.1, 1.0) * 0.60) * conviction_scale;
+        // D-746 — LA VOLATILIDAD NO ES CONVICCIÓN.
+        //
+        // `conviction_scale = volatility_multiplier.max(1.0)` multiplicaba la
+        // convicción de la señal por el multiplicador de volatilidad del
+        // genoma, que en el risk-engine llega ya escalado por la volatilidad
+        // RELATIVA de la moneda frente a BTC (`eth_mult · clamp(atr/btc_atr,
+        // 0.5, 3.0)`). Es decir: cuanto MÁS volátil el activo, MÁS
+        // apalancamiento. Con una alt a 0,6 % de ATR frente a 0,2 % de BTC, la
+        // convicción se multiplicaba por ~4 y el apalancamiento subía hasta el
+        // techo del régimen — y como el stop también se ensancha con σ, la
+        // pérdida en dólares al tocarlo escalaba con σ². El riesgo por unidad
+        // de margen crecía con el cuadrado de la volatilidad exactamente en
+        // los activos donde debía encogerse.
+        //
+        // La convicción es de la SEÑAL. La volatilidad ya gobierna el tamaño
+        // por donde debe: la distancia del stop (`compute_tp_sl`, σ(τ)) y el
+        // apalancamiento derivado del riesgo entre esa distancia (S-4/D-745b
+        // en el host).
+        let conviction = 0.40 + signal.confidence.clamp(0.1, 1.0) * 0.60;
 
         // ═══════════════════════════════════════════════════════
         // TENSOR 3: Freno de Volatilidad (SIEMPRE activo)
         // ═══════════════════════════════════════════════════════
-        let vol_sensitivity = safe_vol_mult.max(1.0); // Minimum 1.0, genome dictates
-        let vol_brake = 1.0 - (safe_tick_vol * vol_sensitivity).tanh();
+        // D-746 — EL FRENO DE VOLATILIDAD FRENABA UN 0,2 %.
+        //
+        // `1 − tanh(atr_pct · vol_mult)` con `atr_pct` ∈ [0,002; 0,01] y un
+        // multiplicador de orden 1 daba 0,998: un freno inerte, decorativo. La
+        // magnitud que de verdad dice si la volatilidad amenaza a la posición
+        // no es el ATR en abstracto, sino el ATR MEDIDO CONTRA LA DISTANCIA
+        // DEL STOP que esa misma volatilidad produce: si un recorrido típico
+        // de la escala se come el stop, el tamaño debe encogerse. Con
+        // `sl ≈ k·σ(τ)`, ese cociente es ~1/k y el freno se vuelve una función
+        // real del régimen en vez de un cero a la izquierda.
+        let tau_para_sl = quantum_arena::temporal_spectrum::operating_tau_ms(
+            signal.expected_duration_ms,
+            arena
+                .config
+                .temporal_scale
+                .load(Ordering::Relaxed)
+                .clamp(0.0, 1.0),
+        );
+        let sl_esperado = arena.config.sl_at_tau(tau_para_sl).max(1e-6);
+        let amenaza = (safe_tick_vol / sl_esperado.max(1e-6)).clamp(0.0, 4.0);
+        let vol_brake = 1.0 / (1.0 + amenaza);
 
         // ═══════════════════════════════════════════════════════
         // TENSOR 4: Micro-Capital Acceleration (Curva Logarítmica)
