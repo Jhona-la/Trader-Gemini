@@ -589,6 +589,143 @@ impl HorizonForecaster {
     }
 }
 
+/// Banco de pronóstico de un símbolo: el tape y un pronosticador por escala
+/// ancla dentro de la banda OPERATIVA (30 s … 12 h, las anclas del genoma).
+/// Entre anclas se interpola en log τ, porque el espectro es continuo: se
+/// pregunta por el horizonte REAL de la posición, no por un bucket.
+#[derive(Clone, Debug)]
+pub struct SpectralForecastBank {
+    pub tape: SpectralTape,
+    varianza: Vec<HorizonForecaster>,
+    volumen: Vec<HorizonForecaster>,
+    anclas_ms: Vec<f64>,
+}
+
+impl Default for SpectralForecastBank {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SpectralForecastBank {
+    /// Anclas: las escalas del espectro global que cubren la banda operativa
+    /// con margen (≈17 s … 19,5 h). La banda del tape añade dos escalas por
+    /// debajo y tres por encima, que es la ventana que cada pronosticador
+    /// mira (h/16 … 64·h).
+    pub fn new() -> Self {
+        let anclas_ms: Vec<f64> = SPECTRUM_SCALES_MS[17..=23].to_vec();
+        let tape = SpectralTape::with_band(SPECTRUM_SCALES_MS[15], SPECTRUM_SCALES_MS[26]);
+        let varianza = anclas_ms
+            .iter()
+            .map(|&h| HorizonForecaster::new(&tape, ForecastTarget::Variance, h))
+            .collect();
+        let volumen = anclas_ms
+            .iter()
+            .map(|&h| HorizonForecaster::new(&tape, ForecastTarget::Volume, h))
+            .collect();
+        Self {
+            tape,
+            varianza,
+            volumen,
+            anclas_ms,
+        }
+    }
+
+    /// Un trade real: madura los objetivos vencidos, absorbe el evento y
+    /// toma las muestras que toquen. El orden importa — un objetivo se
+    /// cierra ANTES de que el evento que lo excede entre al tape.
+    pub fn on_trade(&mut self, ts_ms: u64, price: f64, qty: f64, buyer_aggressor: bool) {
+        for f in self.varianza.iter_mut().chain(self.volumen.iter_mut()) {
+            f.before_trade(&self.tape, ts_ms);
+        }
+        self.tape.on_trade(ts_ms, price, qty, buyer_aggressor);
+        for f in self.varianza.iter_mut().chain(self.volumen.iter_mut()) {
+            f.after_trade(&self.tape, ts_ms);
+        }
+    }
+
+    fn interpola(&self, bancada: &[HorizonForecaster], tau_ms: f64, now_ms: u64) -> Option<f64> {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 || !self.tape.is_started() {
+            return None;
+        }
+        let lt = tau_ms.ln();
+        let primero = self.anclas_ms[0].ln();
+        let ultimo = self.anclas_ms[self.anclas_ms.len() - 1].ln();
+        if lt <= primero {
+            return bancada[0].predict(&self.tape, now_ms);
+        }
+        if lt >= ultimo {
+            return bancada[bancada.len() - 1].predict(&self.tape, now_ms);
+        }
+        let mut i = 0;
+        while i + 1 < self.anclas_ms.len() && self.anclas_ms[i + 1].ln() < lt {
+            i += 1;
+        }
+        let (l0, l1) = (self.anclas_ms[i].ln(), self.anclas_ms[i + 1].ln());
+        let f = ((lt - l0) / (l1 - l0)).clamp(0.0, 1.0);
+        let a = bancada[i].predict(&self.tape, now_ms)?;
+        let b = bancada[i + 1].predict(&self.tape, now_ms)?;
+        Some(a * (1.0 - f) + b * f)
+    }
+
+    /// σ pronosticada para el horizonte τ: desviación típica del retorno
+    /// acumulado en (ahora, ahora+τ], en fracción de precio. `None` mientras
+    /// ninguna ancla tenga muestras maduras.
+    pub fn sigma_at(&self, tau_ms: f64, now_ms: u64) -> Option<f64> {
+        let ln_var = self.interpola(&self.varianza, tau_ms, now_ms)?;
+        let v = ln_var.exp();
+        if v.is_finite() && v > 0.0 {
+            Some(v.sqrt())
+        } else {
+            None
+        }
+    }
+
+    /// Nocional pronosticado para el horizonte τ (unidades de cotización).
+    pub fn notional_at(&self, tau_ms: f64, now_ms: u64) -> Option<f64> {
+        let ln_v = self.interpola(&self.volumen, tau_ms, now_ms)?;
+        let v = ln_v.exp();
+        if v.is_finite() && v > 0.0 {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    /// Concentración de entes a la escala más cercana a τ (observación, no
+    /// pronóstico: el pronóstico lineal de R no bate a su propia media).
+    pub fn concentracion_at(&self, tau_ms: f64, now_ms: u64) -> f64 {
+        let k = self.tape.nearest_scale(tau_ms);
+        self.tape.concentration(k, now_ms)
+    }
+
+    /// Desequilibrio del flujo de dinero a la escala más cercana a τ.
+    pub fn flujo_at(&self, tau_ms: f64, now_ms: u64) -> f64 {
+        let k = self.tape.nearest_scale(tau_ms);
+        self.tape.flow_imbalance(k, now_ms)
+    }
+
+    /// ¿Hay ya evidencia fuera de muestra de que el pronóstico de volatilidad
+    /// bate a la climatología en las anclas maduras? (media de las que ya
+    /// puntúan). Sin muestras devuelve `None` — el llamador no debe usarlo.
+    pub fn habilidad_volatilidad(&self) -> Option<f64> {
+        let maduras: Vec<&HorizonForecaster> =
+            self.varianza.iter().filter(|f| f.score.n >= 30).collect();
+        if maduras.is_empty() {
+            return None;
+        }
+        let s: f64 = maduras
+            .iter()
+            .map(|f| f.score.skill_vs_climatology())
+            .sum();
+        Some(s / maduras.len() as f64)
+    }
+
+    pub fn anclas_ms(&self) -> &[f64] {
+        &self.anclas_ms
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

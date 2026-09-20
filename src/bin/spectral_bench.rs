@@ -1,14 +1,14 @@
 //! BANCO DEL ESPECTRO — mide, sobre un tape REAL de aggTrades, dos cosas:
 //!
-//! 1. La salud del `TemporalSpectrum` que gobierna el motor continuo: qué
-//!    parte del peso de su fusión recae en escalas que los datos todavía no
-//!    han llenado, cuánto se parece `fused_score` a «el precio está por
-//!    encima o por debajo del de arranque», y cuánto predice el retorno
-//!    siguiente (coeficiente de información).
+//! 1. Las cinco formas de fusionar el espectro temporal que han existido en
+//!    el motor: cuánto peso recae en escalas que los datos todavía no han
+//!    llenado, cuánto se parece cada `fused_score` a «el precio está por
+//!    encima o por debajo del de arranque», y sobre todo cuánto PREDICE el
+//!    retorno siguiente (coeficiente de información a tres horizontes).
 //! 2. La habilidad fuera de muestra del pronóstico espectral
 //!    (`quantum_arena::spectral_tape`) de volatilidad, volumen, intensidad,
-//!    flujo de dinero y concentración de entes, frente a la persistencia y
-//!    a la climatología, a varios horizontes.
+//!    flujo de dinero y concentración de entes, frente a la persistencia y a
+//!    la climatología, a varios horizontes.
 //!
 //! Sólo lee el fichero de ticks: no toca credenciales, red ni estado.
 //!
@@ -28,77 +28,43 @@ struct BinTick {
     ask_qty: f64,
 }
 
-/// Réplica literal de la fusión del espectro ANTERIOR a D-742 (semilla 1e-7
-/// en la vol de desviación y peso 1/vol sin masa ni resolución), para medir
-/// en la misma pasada el antes y el después.
-struct LegacyFusion {
+/// Réplicas de las fusiones que han gobernado el motor, calculadas en la
+/// MISMA pasada para poder decidir por evidencia y no por teoría.
+struct Fusiones {
     ewma: [f64; 32],
-    dev_vol: [f64; 32],
-    last_ts: u64,
-    fused: f64,
-}
-
-impl LegacyFusion {
-    fn new() -> Self {
-        Self { ewma: [0.0; 32], dev_vol: [0.0; 32], last_ts: 0, fused: 0.0 }
-    }
-    fn update(&mut self, price: f64, ts: u64) {
-        if self.last_ts == 0 {
-            self.ewma = [price; 32];
-            self.dev_vol = [1e-7; 32];
-            self.last_ts = ts;
-            return;
-        }
-        if ts <= self.last_ts {
-            return;
-        }
-        let dt = (ts - self.last_ts) as f64;
-        self.last_ts = ts;
-        let (mut ws, mut wss) = (0.0, 0.0);
-        for i in 0..32 {
-            let alpha = 1.0 - (-dt / SPECTRUM_SCALES_MS[i]).exp();
-            let prev = self.ewma[i];
-            let dev = (price - prev) / prev;
-            self.ewma[i] += alpha * (price - prev);
-            self.dev_vol[i] += alpha * (dev.abs() - self.dev_vol[i]);
-            let z = if self.dev_vol[i] > 1e-12 { dev / self.dev_vol[i] } else { 0.0 };
-            let sig = z.clamp(-5.0, 5.0).tanh();
-            let w = if self.dev_vol[i] > 1e-12 { 1.0 / self.dev_vol[i] } else { 0.0 };
-            ws += w;
-            wss += w * sig;
-        }
-        self.fused = if ws > 0.0 { (wss / ws).clamp(-1.0, 1.0) } else { 0.0 };
-    }
-}
-
-/// Réplica literal de la fusión CERT-M3-H01 (peso por contenido informativo
-/// `max((persistence − 0,5)·2, 0,05)` sobre la vol de desviación sembrada),
-/// que es la que vivía en origin/main antes de esta rama.
-struct CertFusion {
-    ewma: [f64; 32],
-    dev_vol: [f64; 32],
+    /// EWMA de |desviación| con la semilla histórica de 1e-7.
+    dev_vol_semilla: [f64; 32],
+    /// Suma del núcleo de |desviación| SIN semilla (D-742).
+    raw_dev: [f64; 32],
     persistence: [f64; 32],
     prev_dev: [f64; 32],
     last_ts: u64,
-    fused: f64,
+    first_ts: u64,
+    /// [0] 1/vol original · [1] CERT-M3-H01 informativo · [2] informativo ×
+    /// observable · [3] 1/vol × observable · [4] uniforme sobre lo observable.
+    fused: [f64; 5],
 }
 
-impl CertFusion {
+impl Fusiones {
     fn new() -> Self {
         Self {
             ewma: [0.0; 32],
-            dev_vol: [0.0; 32],
+            dev_vol_semilla: [0.0; 32],
+            raw_dev: [0.0; 32],
             persistence: [0.0; 32],
             prev_dev: [0.0; 32],
             last_ts: 0,
-            fused: 0.0,
+            first_ts: 0,
+            fused: [0.0; 5],
         }
     }
-    fn update(&mut self, price: f64, ts: u64) {
+
+    fn update(&mut self, price: f64, ts: u64, updates: u64) {
         if self.last_ts == 0 {
             self.ewma = [price; 32];
-            self.dev_vol = [1e-7; 32];
+            self.dev_vol_semilla = [1e-7; 32];
             self.last_ts = ts;
+            self.first_ts = ts;
             return;
         }
         if ts <= self.last_ts {
@@ -106,33 +72,104 @@ impl CertFusion {
         }
         let dt = (ts - self.last_ts) as f64;
         self.last_ts = ts;
-        let (mut ws, mut wss) = (0.0, 0.0);
+        let elapsed = (ts - self.first_ts) as f64;
+        let updates_f = updates.max(1) as f64;
+        let mean_dt = (elapsed / updates_f).max(1e-9);
+
+        let mut acc = [(0.0f64, 0.0f64); 5]; // (Σw, Σw·señal)
         for i in 0..32 {
-            let alpha = 1.0 - (-dt / SPECTRUM_SCALES_MS[i]).exp();
+            let tau = SPECTRUM_SCALES_MS[i];
+            let alpha = 1.0 - (-dt / tau).exp();
             let prev = self.ewma[i];
             let dev = (price - prev) / prev;
             self.ewma[i] += alpha * (price - prev);
-            self.dev_vol[i] += alpha * (dev.abs() - self.dev_vol[i]);
-            let z = if self.dev_vol[i] > 1e-12 { dev / self.dev_vol[i] } else { 0.0 };
-            let sig = z.clamp(-5.0, 5.0).tanh();
+
+            self.dev_vol_semilla[i] += alpha * (dev.abs() - self.dev_vol_semilla[i]);
+            self.raw_dev[i] = self.raw_dev[i] * (1.0 - alpha) + alpha * dev.abs();
+            let mass = 1.0 - (-elapsed / tau).exp();
+            let dev_vol_obs = if mass > 0.0 { self.raw_dev[i] / mass } else { 0.0 };
+
             let agree = (dev * self.prev_dev[i]).signum()
-                * (if dev.abs() > 1e-12 && self.prev_dev[i].abs() > 1e-12 { 1.0 } else { 0.0 });
+                * (if dev.abs() > 1e-12 && self.prev_dev[i].abs() > 1e-12 {
+                    1.0
+                } else {
+                    0.0
+                });
             self.persistence[i] += alpha * (agree - self.persistence[i]);
             self.prev_dev[i] = dev;
-            let w = ((self.persistence[i] - 0.5) * 2.0).max(0.05);
-            ws += w;
-            wss += w * sig;
+
+            // Señal con la vol sembrada (fusiones 0 y 1) y con la vol
+            // observada sin semilla (fusiones 2, 3 y 4).
+            let sig_semilla = if self.dev_vol_semilla[i] > 1e-12 {
+                (dev / self.dev_vol_semilla[i]).clamp(-5.0, 5.0).tanh()
+            } else {
+                0.0
+            };
+            let sig_obs = if dev_vol_obs > 1e-12 {
+                (dev / dev_vol_obs).clamp(-5.0, 5.0).tanh()
+            } else {
+                0.0
+            };
+
+            let resolution = 1.0 - (-tau / 1.0f64).exp();
+            let observable = mass * resolution;
+            let n_eff = (tau / mean_dt).min(updates_f).max(1.0);
+            let info = (self.persistence[i].abs() - 1.0 / n_eff.sqrt()).max(0.0);
+
+            let pesos = [
+                if self.dev_vol_semilla[i] > 1e-12 {
+                    1.0 / self.dev_vol_semilla[i]
+                } else {
+                    0.0
+                },
+                ((self.persistence[i] - 0.5) * 2.0).max(0.05),
+                observable * info,
+                if dev_vol_obs > 1e-12 {
+                    observable / dev_vol_obs
+                } else {
+                    0.0
+                },
+                observable,
+            ];
+            let senales = [sig_semilla, sig_semilla, sig_obs, sig_obs, sig_obs];
+            for f in 0..5 {
+                acc[f].0 += pesos[f];
+                acc[f].1 += pesos[f] * senales[f];
+            }
         }
-        self.fused = if ws > 1e-12 {
-            (wss / ws).clamp(-1.0, 1.0)
+        for f in 0..5 {
+            self.fused[f] = if acc[f].0 > 1e-12 {
+                (acc[f].1 / acc[f].0).clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
+        }
+    }
+
+    /// Peso que la fusión 1/vol original da a las escalas más largas que el
+    /// tiempo observado.
+    fn peso_escalas_frias(&self, now: u64) -> f64 {
+        let elapsed = (now.saturating_sub(self.first_ts)) as f64;
+        let (mut all, mut cold) = (0.0, 0.0);
+        for i in 0..32 {
+            if self.dev_vol_semilla[i] > 1e-12 {
+                let w = 1.0 / self.dev_vol_semilla[i];
+                all += w;
+                if SPECTRUM_SCALES_MS[i] > elapsed {
+                    cold += w;
+                }
+            }
+        }
+        if all > 0.0 {
+            cold / all
         } else {
-            (self.fused * 0.0) + 0.0
-        };
+            0.0
+        }
     }
 }
 
 /// Correlación de Pearson acumulada.
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 struct Corr {
     n: f64,
     sx: f64,
@@ -183,7 +220,10 @@ fn main() {
     let file = File::open(path).expect("no se pudo abrir el fichero de ticks");
     let mmap = unsafe { memmap2::MmapOptions::new().map(&file).expect("mmap") };
     if mmap.len() < 8 || &mmap[..8] != b"TGMTICK1" {
-        eprintln!("❌ {} no es un tape REAL (cabecera TGMTICK1): este banco sólo mide datos reales", path);
+        eprintln!(
+            "❌ {} no es un tape REAL (cabecera TGMTICK1): este banco sólo mide datos reales",
+            path
+        );
         std::process::exit(2);
     }
     let rec = std::mem::size_of::<BinTick>();
@@ -193,27 +233,22 @@ fn main() {
         unsafe { std::slice::from_raw_parts(mmap.as_ptr().add(8) as *const BinTick, n_total) };
     println!("📼 {} — {} trades reales (se leen {})", path, n_total, n);
 
-    // ── 1. Salud del espectro temporal del motor ───────────────────────────
+    // ── 1. Fusiones del espectro ───────────────────────────────────────────
     let mut spec = TemporalSpectrum::new();
+    let mut fus = Fusiones::new();
+    let mut updates = 0u64;
     let mut first_price = 0.0f64;
     let mut first_ts = 0u64;
     let mut next_probe = 0u64;
     let probe_ms = 60_000u64;
-    let mut corr_boot = Corr::default();
-    let mut cold_share_sum = 0.0;
-    let mut cold_share_n = 0.0;
-    // Coeficiente de información a 5 min: fused_score(t) frente a ln(P(t+5m)/P(t)).
-    let ic_h = 300_000u64;
-    let mut ic_pending: std::collections::VecDeque<(u64, f64, f64)> = Default::default();
-    let mut ic = Corr::default();
-    let mut legacy = LegacyFusion::new();
-    let mut corr_boot_legacy = Corr::default();
-    let mut ic_legacy = Corr::default();
-    let mut ic_pending_legacy: std::collections::VecDeque<(u64, f64, f64)> = Default::default();
-    let mut cert = CertFusion::new();
-    let mut corr_boot_cert = Corr::default();
-    let mut ic_cert = Corr::default();
-    let mut ic_pending_cert: std::collections::VecDeque<(u64, f64, f64)> = Default::default();
+    let mut corr_boot: [Corr; 5] = Default::default();
+    let mut cold_share_sum: f64 = 0.0;
+    let mut cold_share_n: f64 = 0.0;
+    // El IC de una sola ventana no decide nada: tres horizontes.
+    let ic_hs: [u64; 3] = [60_000, 300_000, 1_800_000];
+    let mut ic: [[Corr; 3]; 5] = Default::default();
+    let mut pend: std::collections::VecDeque<(u64, [f64; 5], f64)> = Default::default();
+    let mut pend_head = [0usize; 3];
 
     // ── 2. Pronóstico espectral ────────────────────────────────────────────
     let mut tape = SpectralTape::with_band(16.0, 1.2e9);
@@ -232,7 +267,7 @@ fn main() {
         }
         let price = (t.bid_price + t.ask_price) * 0.5;
         let qty = (t.bid_qty - t.ask_qty).abs();
-        // binance_vision_sync: el lado del agresor lleva qty + base.
+        // binance_vision_sync: el lado del AGRESOR lleva qty + profundidad base.
         let buyer = t.bid_qty > t.ask_qty;
         let ts = t.timestamp;
         if first_ts == 0 {
@@ -240,58 +275,44 @@ fn main() {
             first_price = price;
         }
 
+        updates += 1;
         spec.update(price, ts);
-        legacy.update(price, ts);
-        cert.update(price, ts);
-        while let Some(&(t0, s0, p0)) = ic_pending_cert.front() {
-            if t0 + ic_h > ts {
-                break;
-            }
-            ic_pending_cert.pop_front();
-            ic_cert.add(s0, (price / p0).ln());
-        }
-        while let Some(&(t0, s0, p0)) = ic_pending_legacy.front() {
-            if t0 + ic_h > ts {
-                break;
-            }
-            ic_pending_legacy.pop_front();
-            ic_legacy.add(s0, (price / p0).ln());
-        }
+        fus.update(price, ts, updates);
 
-        while let Some(&(t0, s0, p0)) = ic_pending.front() {
-            if t0 + ic_h > ts {
-                break;
+        // Puntuación por horizonte: cada muestra se evalúa en los tres.
+        for (hi, &h) in ic_hs.iter().enumerate() {
+            while let Some(&(t0, scores, p0)) = pend.get(pend_head[hi]) {
+                if t0 + h > ts {
+                    break;
+                }
+                let fwd = (price / p0).ln();
+                for (fi, sc) in scores.iter().enumerate() {
+                    ic[fi][hi].add(*sc, fwd);
+                }
+                pend_head[hi] += 1;
             }
-            ic_pending.pop_front();
-            ic.add(s0, (price / p0).ln());
+        }
+        let done = pend_head.iter().copied().min().unwrap_or(0);
+        if done > 0 {
+            for _ in 0..done {
+                pend.pop_front();
+            }
+            for h in pend_head.iter_mut() {
+                *h -= done;
+            }
         }
 
         if ts >= next_probe {
             next_probe = ts + probe_ms;
-            let elapsed = (ts - first_ts) as f64;
-            // Peso que la fusión ANTERIOR daba a cada escala (1/vol con semilla).
-            let mut w_all = 0.0;
-            let mut w_cold = 0.0;
-            for (i, dv) in legacy.dev_vol.iter().enumerate() {
-                let s_tau = SPECTRUM_SCALES_MS[i];
-                if *dv > 1e-12 {
-                    let w = 1.0 / dv;
-                    w_all += w;
-                    if s_tau > elapsed {
-                        w_cold += w;
-                    }
-                }
-            }
-            if w_all > 0.0 && elapsed > 0.0 {
-                cold_share_sum += w_cold / w_all;
+            if ts > first_ts {
+                cold_share_sum += fus.peso_escalas_frias(ts);
                 cold_share_n += 1.0;
             }
-            corr_boot.add(spec.fused_score, (price / first_price).ln().signum());
-            ic_pending.push_back((ts, spec.fused_score, price));
-            corr_boot_legacy.add(legacy.fused, (price / first_price).ln().signum());
-            ic_pending_legacy.push_back((ts, legacy.fused, price));
-            corr_boot_cert.add(cert.fused, (price / first_price).ln().signum());
-            ic_pending_cert.push_back((ts, cert.fused, price));
+            let boot = (price / first_price).ln().signum();
+            for f in 0..5 {
+                corr_boot[f].add(fus.fused[f], boot);
+            }
+            pend.push_back((ts, fus.fused, price));
         }
 
         for f in forecasters.iter_mut() {
@@ -302,40 +323,46 @@ fn main() {
             f.after_trade(&tape, ts);
         }
 
-        if i > 0 && i % 5_000_000 == 0 {
+        if i > 0 && i % 10_000_000 == 0 {
             println!("   … {} trades ({:.0}s)", i, t_start.elapsed().as_secs_f64());
         }
     }
     let days = (tape.last_ts().saturating_sub(first_ts)) as f64 / 86_400_000.0;
+    // La fusión VIVA del motor corre en la misma pasada (misma entrada que la
+    // réplica [2]); se lee para que el compilador no la elimine.
+    let _ = spec.fused_score;
 
     println!();
-    println!("═══ 1. ESPECTRO TEMPORAL DEL MOTOR ({:.1} días) ═══", days);
+    println!("═══ 1. FUSIONES DEL ESPECTRO ({:.1} días) ═══", days);
     println!(
-        "   peso medio que la fusión anterior a D-742 daba a escalas MÁS LARGAS que lo observado: {:.1} %",
+        "   peso que la fusión 1/vol da a escalas MÁS LARGAS que lo observado: {:.1} %",
         100.0 * cold_share_sum / cold_share_n.max(1.0)
     );
-    println!("   {:<44} {:>12} {:>14}", "fusión", "corr(arranque)", "IC 5 min");
-    println!(
-        "   {:<44} {:>+12.3} {:>+14.4}",
+    let nombres = [
         "1/vol original (paridad de riesgo)",
-        corr_boot_legacy.r(),
-        ic_legacy.r()
-    );
-    println!(
-        "   {:<44} {:>+12.3} {:>+14.4}",
         "CERT-M3-H01 (contenido informativo)",
-        corr_boot_cert.r(),
-        ic_cert.r()
-    );
+        "informativo × observable",
+        "1/vol × observable (D-742)",
+        "uniforme sobre lo observable",
+    ];
     println!(
-        "   {:<44} {:>+12.3} {:>+14.4}",
-        "D-742 (informativo × observable)",
-        corr_boot.r(),
-        ic.r()
+        "   {:<38} {:>9} {:>9} {:>9} {:>10}",
+        "IC con el retorno siguiente a", "1 min", "5 min", "30 min", "corr(ini)"
     );
+    for (i, nombre) in nombres.iter().enumerate() {
+        println!(
+            "   {:<38} {:>+9.4} {:>+9.4} {:>+9.4} {:>+10.3}",
+            nombre,
+            ic[i][0].r(),
+            ic[i][1].r(),
+            ic[i][2].r(),
+            corr_boot[i].r()
+        );
+    }
     println!(
-        "   corr(arranque) = correlación con signo(precio − precio de arranque); IC = correlación con el retorno de los 5 min siguientes (n = {})",
-        ic.n
+        "   n = {} muestras · error típico del IC ≈ ±{:.4} · corr(ini) = correlación con signo(precio − precio de arranque)",
+        ic[0][1].n as u64,
+        1.0 / ic[0][1].n.max(1.0).sqrt()
     );
 
     println!();

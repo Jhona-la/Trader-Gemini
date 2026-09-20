@@ -225,9 +225,6 @@ impl TemporalSpectrum {
         self.last_ts_ms = ts_ms;
         let elapsed = (ts_ms - self.first_ts_ms) as f64;
         self.updates += 1;
-        let updates_f = self.updates as f64;
-        // Intervalo medio entre eventos observado (≥ dt del propio evento).
-        let mean_dt = (elapsed / updates_f).max(1e-9);
 
         let mut w_sum = 0.0;
         let mut w_sig_sum = 0.0;
@@ -291,39 +288,40 @@ impl TemporalSpectrum {
             s.momentum_z = z;
             s.signal = z.clamp(-5.0, 5.0).tanh();
 
-            // FUSIÓN POR CONTENIDO INFORMATIVO **OBSERVABLE** (CERT-M3-H01 +
-            // D-742).
+            // FUSIÓN POR PARIDAD DE RIESGO **OBSERVABLE** (D-742, medido).
             //
-            // La paridad-de-riesgo original (w ∝ 1/ewma_dev_vol) degeneraba:
-            // la vol de sorpresa de las escalas lentas es sistemáticamente
-            // menor ⇒ SIEMPRE pesaban más (el sesgo que C-05 documenta abajo
-            // para la τ dominante, replicado en la fusión que consumen
-            // arbitración, consejo y teleonomía). CERT-M3-H01 la sustituyó por
-            // el contenido de información de cada escala, que es lo correcto
-            // —las señales ya vienen z-normalizadas y son comparables—, pero
-            // con dos defectos: `persistence` aquí NO vive en [0,1] sino en
-            // [−1,1] (es la EWMA del acuerdo de signos), de modo que
-            // `(p − 0,5)·2` centra el cero en 0,5 —un valor que la EWMA casi
-            // nunca alcanza— y deja en el SUELO a las escalas de reversión a
-            // la media, que informan exactamente tanto como las tendenciales:
-            // |H − ½| es simétrico. Con |p| típicos < 0,2 la fusión quedaba en
-            // el promedio uniforme de las 32 escalas, incluidas las diez
-            // sub-milisegundo (copias del mismo ruido) y las vacías (señal
-            // saturada = «el precio está sobre o bajo el de arranque»).
+            // Tres pesos han gobernado esta fusión: 1/vol (paridad de riesgo),
+            // el contenido informativo de CERT-M3-H01 —`max((p−0,5)·2; 0,05)`,
+            // que además asume `persistence ∈ [0,1]` cuando aquí vive en
+            // [−1,1]— y la combinación de ambos. Se midieron los cinco
+            // candidatos sobre tape REAL con `spectral_bench` (BTCUSDT junio,
+            // 34 M trades; SOLUSDT julio, 6,7 M), puntuando el IC del
+            // `fused_score` contra el retorno de los 1, 5 y 30 minutos
+            // siguientes y su correlación con el signo del precio respecto del
+            // de arranque:
             //
-            // Contenido de información observable de una escala:
-            //   · |persistence| (análogo discreto y SIMÉTRICO de |H − ½|),
-            //     menos lo que el puro azar produce en una EWMA con n_eff
-            //     actualizaciones dentro del núcleo: 1/√n_eff;
-            //   · por la masa del núcleo que los datos han llenado (D-742);
-            //   · por la resolución del reloj del feed (D-742).
-            // Una escala sin exceso sobre el ruido no opina; si NINGUNA lo
-            // tiene, la fusión cae al promedio de lo observable (abajo).
+            //   · el término informativo EMPEORA el IC en los dos símbolos y
+            //     en los tres horizontes (BTC 5 min: +0,0117 → +0,0026; SOL
+            //     5 min: −0,0128 → −0,0249) y dispara el anclaje al precio de
+            //     arranque en SOL (corr 0,150 → 0,245);
+            //   · la corrección de observabilidad —masa del núcleo llenada ×
+            //     resolución del reloj— elimina ese anclaje en ambos (BTC
+            //     0,050 → 0,007; SOL 0,150 → 0,014) sin coste de IC, y es la
+            //     única que impide que escalas sin datos pesen: en SOL, la
+            //     fusión 1/vol daba el 18,4 % de su peso a escalas MÁS LARGAS
+            //     que todo el tape.
+            //
+            // Queda, por tanto, paridad de riesgo sobre lo observable. (El
+            // valor DIRECCIONAL del `fused_score` no está establecido: su IC
+            // es positivo en BTC y negativo en SOL; eso lo decide quien lo
+            // consuma, no esta ponderación.)
             let resolution = 1.0 - (-s.tau_ms / FEED_CLOCK_RESOLUTION_MS).exp();
-            let n_eff = (s.tau_ms / mean_dt).min(updates_f).max(1.0);
-            let info = (s.persistence.abs() - 1.0 / n_eff.sqrt()).max(0.0);
             let observable = mass * resolution;
-            let w = observable * info;
+            let w = if s.ewma_dev_vol > 1e-12 {
+                observable / s.ewma_dev_vol
+            } else {
+                0.0
+            };
             obs_sum += observable;
             obs_sig_sum += observable * s.signal;
             w_sum += w;

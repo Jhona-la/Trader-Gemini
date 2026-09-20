@@ -68,6 +68,12 @@ pub struct GodEngineCore {
     /// binaria scalp/swing: el motor observa todas las escalas a la vez, con
     /// fusión por paridad de riesgo (w ∝ 1/vol_de_desviación).
     pub temporal_spectrum: Vec<quantum_arena::temporal_spectrum::TemporalSpectrum>,
+    /// ESPECTRO PREDICTIVO por símbolo (D-742b): el tape a todas las escalas
+    /// y el pronóstico en línea de volatilidad y volumen a cualquier
+    /// horizonte, con su habilidad medida fuera de muestra. Observación pura
+    /// por ahora: se publica al registry y NADIE decide todavía con ello —
+    /// primero se mide en el forense, después se conecta.
+    pub spectral_forecast: Vec<quantum_arena::spectral_tape::SpectralForecastBank>,
     /// F4.7: último precio de kline CERRADO por coin — para calibrar el
     /// ensamble con la dirección realizada de cada vela.
     kline_close_memory: Vec<f64>,
@@ -254,6 +260,9 @@ impl GodEngineCore {
                 .collect(),
             temporal_spectrum: (0..n_coins)
                 .map(|_| quantum_arena::temporal_spectrum::TemporalSpectrum::new())
+                .collect(),
+            spectral_forecast: (0..n_coins)
+                .map(|_| quantum_arena::spectral_tape::SpectralForecastBank::new())
                 .collect(),
             kline_close_memory: vec![0.0; n_coins],
             model_rx: None,
@@ -764,6 +773,13 @@ impl GodEngineCore {
                 // externas se retiran para no contar dos veces.
                 self.arena
                     .update_agg_trade(coin_id, is_buyer_maker, trade_qty);
+                // ESPECTRO PREDICTIVO (D-742b): el mismo trade alimenta las
+                // tasas de todas las escalas y madura los pronósticos cuyo
+                // horizonte acaba de vencer. `is_buyer_maker` = el comprador
+                // era el pasivo ⇒ el AGRESOR fue el vendedor.
+                if let Some(bank) = self.spectral_forecast.get_mut(coin_id) {
+                    bank.on_trade(event_time_ms, (eff_bid + eff_ask) * 0.5, trade_qty, !is_buyer_maker);
+                }
                 self.arena.coins[coin_id]
                     .current_price
                     .store(current_price, Ordering::Relaxed);

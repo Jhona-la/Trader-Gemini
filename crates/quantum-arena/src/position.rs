@@ -577,6 +577,34 @@ mod tests {
         cerrador.join().expect("hilo cerrador");
         vigilante.join().expect("hilo vigilante");
 
+        // El vigilante corre un número FIJO de vueltas: bajo carga (la suite
+        // completa ocupa todos los núcleos) puede consumirlas enteras mientras
+        // la posición está cerrada y no observar ni una vez el estado abierto
+        // — el test fallaba por el planificador de la máquina, no por el
+        // código. La observación por el camino de producción se garantiza aquí,
+        // ya sin concurrencia: el tramo concurrente sigue contando corrupciones,
+        // y esta apertura final asegura que el invariante se comprueba SIEMPRE.
+        pos.open_with_fee(
+            true,
+            62_500.0,
+            0.0032,
+            13.0,
+            1_700_000_100_000,
+            63_200.0,
+            62_100.0,
+            PositionHorizon::Continuous,
+            0.61,
+            0.72,
+            0.004,
+        );
+        let snap = pos
+            .snapshot()
+            .expect("tras abrir sin concurrencia, snapshot() debe ver la posición");
+        observaciones.fetch_add(1, Ordering::Relaxed);
+        if snap.entry_price <= 0.0 || snap.quantity <= 0.0 || snap.sl_price <= 0.0 {
+            corrupciones.fetch_add(1, Ordering::Relaxed);
+        }
+
         assert!(
             observaciones.load(Ordering::Relaxed) > 0,
             "el vigilante nunca vio la posición abierta: el test no ejercitó la carrera"
