@@ -14,6 +14,7 @@ pub mod state;
 pub mod state_continuity;
 pub mod symbol_registry;
 pub mod symbols;
+pub mod spectral_tape;
 pub mod temporal_spectrum;
 pub mod tick_source;
 pub mod zero_alloc_pool;
