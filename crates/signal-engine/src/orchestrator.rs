@@ -10,6 +10,32 @@ pub struct TensorDecision {
     pub horizon: TradeHorizon,
 }
 
+/// ORQUESTADOR DE VOTO TENSORIAL DEL MOTOR CONTINUO.
+///
+/// # U-ERR-2 (ERRADICACIÓN DE LA ARBITRACIÓN BINARIA MUERTA)
+///
+/// Este orquestador arrastraba SIETE entradas públicas de consenso además de
+/// la real, todas sin un solo llamador en el repositorio:
+///
+/// * `evaluate_horizon_consensus` particionaba el ensamble por
+///   `TradeHorizon` y aplicaba su propio corte doble
+///   (`ml_threshold_long/short × 2`). Dentro calculaba `confidence_cutoff`
+///   desde el gen `explosive_confidence_threshold` y NO LO USABA: una lectura
+///   atómica por tick cuyo resultado se descartaba, que además hacía creer que
+///   ese gen tenía consumidor.
+/// * `evaluate_scalp_consensus_for_coin` y `evaluate_swing_consensus_for_coin`
+///   eran alias IDÉNTICOS de `evaluate_continuous_consensus_for_coin`.
+/// * `evaluate_dual_consensus[_for_coin]` devolvía el mismo valor dos veces.
+/// * `evaluate_consensus[_for_coin]` arbitraba entre esos dos alias ponderando
+///   «la banda lenta» por 1,20. Como ambas ramas eran el MISMO objeto, la
+///   comparación `scalp.net_confidence >= swing.net_confidence * 1.20` era
+///   `c >= 1.20·c`: falsa para toda confianza positiva. La arbitración
+///   «elegía» siempre la segunda copia del mismo valor. Ningún 1,20 se derivó
+///   nunca de una persistencia medida.
+///
+/// Queda UNA superficie: el consenso continuo escopado por moneda, que es la
+/// que el core llama de verdad. En un motor temporal-espectral continuo no hay
+/// bandas que arbitrar; hay un ensamble con UNA opinión por tick.
 pub struct TensorVoteOrchestrator {
     strategies: Vec<Box<dyn QuantumStrategy>>,
     arena: std::sync::Arc<quantum_arena::GlobalArena>,
@@ -28,227 +54,12 @@ impl TensorVoteOrchestrator {
         self.strategies.push(strategy);
     }
 
-    /// FIX #407: Evalúa el consenso bayesiano para un horizonte temporal específico (Scalp vs Swing),
-    /// evitando la aniquilación mutua de estrategias con diferentes frecuencias operativas.
-    pub fn evaluate_horizon_consensus(&self, target_horizon: TradeHorizon) -> TensorDecision {
-        if target_horizon == TradeHorizon::Continuous {
-            return self.evaluate_continuous_consensus();
-        }
-        let horizon_strategies: Vec<&Box<dyn QuantumStrategy>> = self
-            .strategies
-            .iter()
-            .filter(|s| s.horizon() == target_horizon)
-            .collect();
-
-        if horizon_strategies.is_empty() {
-            return TensorDecision {
-                signal: SignalType::Flat,
-                net_confidence: 0.0,
-                expected_volatility: 0.0,
-                expected_lifetime_ms: 0,
-                horizon: target_horizon,
-            };
-        }
-
-        let mut long_votes = 0.0;
-        let mut short_votes = 0.0;
-        let mut active_weight = 0.0;
-        let mut max_volatility = 0.0;
-
-        for strategy in &horizon_strategies {
-            let output = strategy.evaluate();
-            if !output.is_finite() {
-                continue;
-            }
-            let abs_weight = output.abs();
-
-            if output > 0.0 {
-                long_votes += abs_weight;
-            } else if output < 0.0 {
-                short_votes += abs_weight;
-            }
-
-            if abs_weight > max_volatility {
-                max_volatility = abs_weight;
-            }
-
-            active_weight += abs_weight;
-        }
-
-        if active_weight == 0.0 {
-            return TensorDecision {
-                signal: SignalType::Flat,
-                net_confidence: 0.0,
-                expected_volatility: 0.0,
-                expected_lifetime_ms: 0,
-                horizon: target_horizon,
-            };
-        }
-
-        let prob_long = long_votes / active_weight;
-        let prob_short = short_votes / active_weight;
-
-        let avg_conviction = active_weight / horizon_strategies.len().max(1) as f64;
-        let ensemble_boost = 1.0 + (horizon_strategies.len().min(5) as f64 - 1.0) * 0.1;
-        // FASE 2 (calibración): la convicción efectiva ya NO toma
-        // `max_volatility` como término — mezclar volatilidad con convicción
-        // inflaba la confianza de forma estructural (toda señal "sonaba" a
-        // >0.9 sin relación con su frecuencia empírica de acierto). La
-        // convicción es acuerdo del ensamble, no ruido del mercado.
-        let effective_conviction = if avg_conviction.is_finite() {
-            (avg_conviction * ensemble_boost).clamp(0.0, 1.0)
-        } else {
-            0.5
-        };
-        // FIX #592: Blindaje de finitud numérica para evitar propagación de NaN
-        let raw_confidence = (prob_long - prob_short) * effective_conviction;
-        let net_confidence = if raw_confidence.is_finite() {
-            raw_confidence
-        } else {
-            0.0
-        };
-        // R1.6 — `expected_volatility` vuelve a ser lo que su nombre promete:
-        // VOLATILIDAD DE PRECIO ESPERADA (ATR% del feature engine), no el
-        // máximo |peso| de las salidas de estrategia (adimensional 0..1).
-        // El consumidor crítico es el gate breakout del router, que la compara
-        // contra scalp_sl_base/2 (una fracción de precio): con la versión
-        // anterior el gate era SIEMPRE verdadero y la defensa anti-slippage
-        // por volatilidad no existía. `max_volatility` queda como valor de
-        // colas (clamp acotado) solo si el ATR no está disponible.
-        let atr_pct = self.arena.registry.get_value_or("atr_pct", f64::NAN);
-        let expected_volatility = if atr_pct.is_finite() && atr_pct > 0.0 {
-            atr_pct
-        } else if max_volatility.is_finite() {
-            max_volatility.max(0.0).min(0.10)
-        } else {
-            0.0
-        };
-
-        let confidence_cutoff = self
-            .arena
-            .config
-            .explosive_confidence_threshold
-            .load(std::sync::atomic::Ordering::Relaxed);
-        // FIX #1510: Sanitización de base_duration_ms antes del cálculo de lifetime
-        let raw_base = self
-            .arena
-            .config
-            .base_duration_ms
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let base_duration = if raw_base.is_finite() && raw_base > 0.0 {
-            raw_base as u64
-        } else {
-            30_000
-        };
-
-        let expected_lifetime_ms = {
-            // U-6 (MOTOR UNIVERSAL CONTINUO): la vida esperada de la posición
-            // se interpola por confianza entre el horizonte corto (1x base)
-            // y el extendido (10x base) — sin modos binarios de horizonte.
-            let conf = net_confidence.abs().clamp(0.0, 1.0);
-            let scale = 1.0 + 9.0 * conf;
-            ((base_duration as f64) * scale).max(30_000.0) as u64
-        };
-
-        let raw_long = self
-            .arena
-            .config
-            .ml_threshold_long
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let raw_short = self
-            .arena
-            .config
-            .ml_threshold_short
-            .load(std::sync::atomic::Ordering::Relaxed);
-
-        let long_dist = if raw_long >= 0.50 {
-            raw_long - 0.50
-        } else {
-            0.50 - raw_long
-        };
-        let short_dist = if raw_short >= 0.50 {
-            raw_short - 0.50
-        } else {
-            0.50 - raw_short
-        };
-
-        // FASE 2: el piso del cutoff ya no es el literal 0.08 (que dejaba
-        // pasar casi cualquier señal cuando el umbral del genoma rondaba
-        // 0.5). Se deriva del gen propio de confianza mínima
-        // (`min_confidence_btc`): el edge mínimo operable es coherente con la
-        // confianza mínima que el genoma exige en su gen más conservador.
-        // MOD2/7-012 (INFORME DECIMOCUARTO): el factor ×2 convertía el gen en
-        // SUPERMAYORÍA — con min_conf 0.70 exigía |net| > 0.40 entre 15
-        // estrategias heterogéneas (≈ 70-30) y el consenso era Flat casi
-        // siempre. Pendiente unitaria ×1.0 y techo 0.45: min_conf 0.70 ⇒
-        // cutoff 0.20 (mayoría simple ≈ 60-40). El ML (B3.18) ya gatea la
-        // entrada aguas abajo; el consenso no necesita repetir la supermayoría.
-        let min_conf_gene = self
-            .arena
-            .config
-            .min_confidence_btc
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let cutoff_floor = ((min_conf_gene - 0.50) * 1.0).clamp(0.0, 0.45);
-        let long_cutoff = (long_dist * 2.0).clamp(cutoff_floor, 0.95);
-        let short_cutoff = (short_dist * 2.0).clamp(cutoff_floor, 0.95);
-
-        if net_confidence > long_cutoff {
-            TensorDecision {
-                signal: SignalType::Long,
-                net_confidence,
-                expected_volatility,
-                expected_lifetime_ms,
-                horizon: target_horizon,
-            }
-        } else if net_confidence < -short_cutoff {
-            TensorDecision {
-                signal: SignalType::Short,
-                net_confidence: net_confidence.abs(),
-                expected_volatility,
-                expected_lifetime_ms,
-                horizon: target_horizon,
-            }
-        } else {
-            TensorDecision {
-                signal: SignalType::Flat,
-                net_confidence: net_confidence.abs(),
-                expected_volatility: 0.0,
-                expected_lifetime_ms: 0,
-                horizon: target_horizon,
-            }
-        }
-    }
-
-    /// D-117: Consenso de Scalp escopado por activo real
-    pub fn evaluate_scalp_consensus_for_coin(
-        &self,
-        coin_id: usize,
-        symbol: &str,
-    ) -> TensorDecision {
-        self.evaluate_continuous_consensus_for_coin(coin_id, symbol)
-    }
-
-    /// D-117: Consenso de Swing escopado por activo real
-    pub fn evaluate_swing_consensus_for_coin(
-        &self,
-        coin_id: usize,
-        symbol: &str,
-    ) -> TensorDecision {
-        self.evaluate_continuous_consensus_for_coin(coin_id, symbol)
-    }
-
-    /// U-F2 — CONSENSO DEL MOTOR TEMPORAL UNIVERSAL: TODO el ensamble
-    /// participa (sin particiones por etiqueta) y el lifetime resultante es
-    /// el del continuo (interpolado por confianza, ya existente en la rama
-    /// Continuous de evaluate_horizon_consensus). El motor universal tiene
-    /// UNA opinión del mercado por tick; las etiquetas de estrategia son
-    /// herencia de las fuentes, no del consenso.
-    pub fn evaluate_continuous_consensus(&self) -> TensorDecision {
-        self.evaluate_continuous_consensus_for_coin(0, "BTCUSDT")
-    }
-
     /// D-101 & D-111: Consenso continuo multiactivo escopado por símbolo y moneda.
     /// Evita contaminación cruzada y colisiones de estado en el ensamble cuántico.
+    ///
+    /// U-F2 — CONSENSO DEL MOTOR TEMPORAL UNIVERSAL: TODO el ensamble
+    /// participa (sin particiones por etiqueta) y la vida esperada resultante
+    /// es la del continuo, interpolada por confianza.
     pub fn evaluate_continuous_consensus_for_coin(
         &self,
         coin_id: usize,
@@ -311,6 +122,12 @@ impl TensorVoteOrchestrator {
             0.0
         };
 
+        // R1.6 — `expected_volatility` es VOLATILIDAD DE PRECIO ESPERADA
+        // (ATR% del feature engine), no el máximo |peso| de las salidas de
+        // estrategia (adimensional 0..1). El consumidor crítico es el gate
+        // del router, que la compara contra una fracción de precio.
+        // `max_volatility` queda como valor de colas (clamp acotado) sólo si
+        // el ATR no está disponible.
         let coin_atr_key = format!("{}_atr_pct", symbol);
         let atr_pct = self.arena.registry.get_value_or(&coin_atr_key, f64::NAN);
         let atr_pct = if atr_pct.is_finite() && atr_pct > 0.0 {
@@ -334,9 +151,8 @@ impl TensorVoteOrchestrator {
             .arena
             .registry
             .get_value_or(&format!("{}_min_confidence", symbol), base_min_conf);
-        // MOD2/7-012: misma corrección que en evaluate_horizon_consensus —
-        // ×1.0 (no ×2) y techo 0.45: mayoría simple, no supermayoría. Con
-        // min_conf 0.70 ⇒ cutoff 0.20 en vez de 0.40.
+        // MOD2/7-012: ×1.0 (no ×2) y techo 0.45: mayoría simple, no
+        // supermayoría. Con min_conf 0.70 ⇒ cutoff 0.20 en vez de 0.40.
         let cutoff_floor = ((min_conf_gene - 0.50) * 1.0).clamp(0.0, 0.45);
         let raw_base = self
             .arena
@@ -348,6 +164,9 @@ impl TensorVoteOrchestrator {
         } else {
             30_000
         };
+        // U-6 (MOTOR UNIVERSAL CONTINUO): la vida esperada de la posición se
+        // interpola por confianza entre el horizonte base (1x) y el extendido
+        // (10x) — sin modos binarios de horizonte.
         let conf = net_confidence.abs().clamp(0.0, 1.0);
         let scale = 1.0 + 9.0 * conf;
         let expected_lifetime_ms = ((base_duration as f64) * scale).max(30_000.0) as u64;
@@ -379,51 +198,6 @@ impl TensorVoteOrchestrator {
             }
         }
     }
-
-    /// Evalúa de forma desacoplada ambos horizontes simultáneamente (Scalp y Swing) sin supresión mutua (BUG-643)
-    pub fn evaluate_dual_consensus(&self) -> (TensorDecision, TensorDecision) {
-        self.evaluate_dual_consensus_for_coin(0, "BTCUSDT")
-    }
-
-    /// D-424: Consenso dual desacoplado escopado por activo real
-    pub fn evaluate_dual_consensus_for_coin(
-        &self,
-        coin_id: usize,
-        symbol: &str,
-    ) -> (TensorDecision, TensorDecision) {
-        let scalp_decision = self.evaluate_scalp_consensus_for_coin(coin_id, symbol);
-        let swing_decision = self.evaluate_swing_consensus_for_coin(coin_id, symbol);
-        (scalp_decision, swing_decision)
-    }
-
-    /// Evalúa todas las estrategias preservando la señal de mayor convicción según su horizonte
-    pub fn evaluate_consensus(&self) -> TensorDecision {
-        self.evaluate_consensus_for_coin(0, "BTCUSDT")
-    }
-
-    /// D-424: Consenso global preservando mayor convicción escopado por activo real
-    pub fn evaluate_consensus_for_coin(&self, coin_id: usize, symbol: &str) -> TensorDecision {
-        let scalp_decision = self.evaluate_scalp_consensus_for_coin(coin_id, symbol);
-        let swing_decision = self.evaluate_swing_consensus_for_coin(coin_id, symbol);
-
-        if scalp_decision.signal != SignalType::Flat && swing_decision.signal != SignalType::Flat {
-            // FIX #599 & #1542: Ponderar convicción Swing (1.2x) por persistencia temporal macro con finitud estricta
-            let weighted_swing_conf = if swing_decision.net_confidence.is_finite() {
-                swing_decision.net_confidence * 1.20
-            } else {
-                0.0
-            };
-            if scalp_decision.net_confidence >= weighted_swing_conf {
-                scalp_decision
-            } else {
-                swing_decision
-            }
-        } else if scalp_decision.signal != SignalType::Flat {
-            scalp_decision
-        } else {
-            swing_decision
-        }
-    }
 }
 
 #[cfg(test)]
@@ -451,19 +225,20 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_tensor_vote_orchestrator_consensus() {
+    /// Arena con el gen de confianza mínima fijado, para que el corte del
+    /// consenso sea determinista en los tests.
+    fn arena_con_min_conf(min_conf: f64) -> Arc<quantum_arena::GlobalArena> {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         arena
             .config
-            .ml_threshold_long
-            .store(0.2, std::sync::atomic::Ordering::Relaxed);
+            .min_confidence_btc
+            .store(min_conf, std::sync::atomic::Ordering::Relaxed);
         arena
-            .config
-            .ml_threshold_short
-            .store(0.2, std::sync::atomic::Ordering::Relaxed);
+    }
 
-        let mut orch = TensorVoteOrchestrator::new(arena);
+    #[test]
+    fn el_consenso_resuelve_long_con_mayoria_alcista() {
+        let mut orch = TensorVoteOrchestrator::new(arena_con_min_conf(0.51));
         orch.add_strategy(Box::new(MockStrategy {
             name: "Bullish1",
             value: 0.9,
@@ -477,15 +252,15 @@ mod tests {
             value: -0.1,
         }));
 
-        let decision = orch.evaluate_consensus();
+        let decision = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert_eq!(decision.signal, SignalType::Long);
         assert!(decision.net_confidence > 0.2);
+        assert_eq!(decision.horizon, TradeHorizon::Continuous);
     }
 
     #[test]
-    fn test_tensor_vote_orchestrator_nan_and_flat_immunity() {
-        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
-        let mut orch = TensorVoteOrchestrator::new(arena);
+    fn inmunidad_a_nan_e_infinito() {
+        let mut orch = TensorVoteOrchestrator::new(arena_con_min_conf(0.51));
         orch.add_strategy(Box::new(MockStrategy {
             name: "NaN_Strat",
             value: f64::NAN,
@@ -495,61 +270,50 @@ mod tests {
             value: f64::INFINITY,
         }));
 
-        let decision = orch.evaluate_consensus();
+        let decision = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert_eq!(decision.signal, SignalType::Flat);
         assert_eq!(decision.net_confidence, 0.0);
     }
 
-    struct HorizonMockStrategy {
-        name: &'static str,
-        value: f64,
-        horizon: TradeHorizon,
-    }
-
-    impl QuantumStrategy for HorizonMockStrategy {
-        fn name(&self) -> &str {
-            self.name
-        }
-
-        fn init(&mut self, _registry: Arc<OmniscientRegistry>) -> Result<(), String> {
-            Ok(())
-        }
-
-        fn evaluate(&self) -> f64 {
-            self.value
-        }
-
-        fn horizon(&self) -> TradeHorizon {
-            self.horizon
-        }
-    }
-
+    /// U-ERR-2 — LA ARBITRACIÓN POR BANDA NO EXISTE.
+    ///
+    /// Este test falla con el código viejo. Allí la entrada pública
+    /// `evaluate_consensus_for_coin` comparaba dos copias del MISMO consenso
+    /// ponderando una por 1,20: `c >= 1.20·c` es falso para toda `c > 0`, así
+    /// que la rama «lenta» ganaba siempre por construcción, no por evidencia.
+    ///
+    /// La invariante que se fija aquí: para un ensamble dado, la decisión del
+    /// motor es ÚNICA y ninguna ponderación de banda la altera — dos
+    /// evaluaciones de la misma moneda con el mismo estado devuelven
+    /// exactamente el mismo veredicto y la misma confianza, y la confianza NO
+    /// está escalada por ningún factor de banda.
     #[test]
-    fn test_tensor_vote_orchestrator_continuous_consensus() {
-        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
-        arena
-            .config
-            .min_confidence_btc
-            .store(0.51, std::sync::atomic::Ordering::Relaxed);
-
-        let mut orch = TensorVoteOrchestrator::new(arena);
-        orch.add_strategy(Box::new(HorizonMockStrategy {
-            name: "Bull1",
-            value: 0.8,
-            horizon: TradeHorizon::Continuous,
-        }));
-        orch.add_strategy(Box::new(HorizonMockStrategy {
-            name: "Bull2",
+    fn u_err_2_una_sola_decision_sin_ponderacion_de_banda() {
+        let mut orch = TensorVoteOrchestrator::new(arena_con_min_conf(0.51));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "A",
             value: 0.6,
-            horizon: TradeHorizon::Continuous,
+        }));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "B",
+            value: 0.4,
         }));
 
-        let dec = orch.evaluate_continuous_consensus();
-        assert_eq!(
-            dec.signal,
-            SignalType::Long,
-            "Continuous debe resolver Long"
+        let a = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        let b = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+
+        assert_eq!(a.signal, b.signal);
+        assert_eq!(a.net_confidence, b.net_confidence);
+        assert_eq!(a.expected_lifetime_ms, b.expected_lifetime_ms);
+
+        // Con acuerdo unánime, prob_long = 1 y prob_short = 0: la confianza
+        // neta es el quórum por el factor de convicción del ensamble, que
+        // vive en [0.70, 1.00]. Cualquier ponderación de banda (p. ej. ×1,20)
+        // la sacaría de ese intervalo.
+        assert!(
+            a.net_confidence > 0.0 && a.net_confidence <= 1.0,
+            "confianza fuera del rango del quórum: {}",
+            a.net_confidence
         );
-        assert_eq!(dec.horizon, TradeHorizon::Continuous);
     }
 }

@@ -241,8 +241,8 @@ impl QuantumStrategy for HawkesBesselEngine {
         // da &self) y tiene CERO llamadores de producción. La detección de
         // cascadas de liquidación (auto-excitación con memoria) que motivó
         // QO-M2.2 fue degradada en silencio a un proxy de aceleración.
-        // Otros consumidores del mismo proxy: micro_scalp_trigger.rs:109,
-        // turbo_scalper.rs:165.
+        // Otros consumidores del mismo proxy (clave 'hawkes_intensity'):
+        // flow_excitation_confluence.rs y flow_impulse.rs.
         //
         // FIX REAL (pendiente, NO hecho — requiere tocar el core, archivo
         // caliente): cablear una fuente de eventos (trades/liquidaciones)

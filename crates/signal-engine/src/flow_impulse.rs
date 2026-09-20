@@ -1,25 +1,38 @@
 use strategy_core::{SignalIntent, SignalType};
 
-/// 🚀 ALGORITMO #28: MOTOR DE POTENCIACIÓN ULTRA-RÁPIDA DE SCALPING (TURBO-SCALP ENGINE)
-/// Multiplica la densidad de operaciones de Scalping capturando micro-impulsos de flujo en nanosegundos.
-/// Garantiza la máxima frecuencia operativa manteniendo un 100% de tasa de acierto y retención de beneficios.
+/// MOTOR DE IMPULSO DE FLUJO.
+///
+/// Convierte microestructura cruda —desequilibrio del libro (OBI),
+/// desequilibrio de flujo de órdenes (OFI), intensidad de auto-excitación de
+/// Hawkes y entropía— en una opinión direccional continua con su confianza.
+///
+/// # U-ERR-1 (ERRADICACIÓN DEL BINARIO DE HORIZONTE)
+///
+/// Se llamaba `TurboScalpEngine` (`turbo_scalper.rs`) y su documentación
+/// prometía «máxima frecuencia operativa manteniendo un 100% de tasa de
+/// acierto»: una etiqueta de banda de horizonte más una afirmación de
+/// rendimiento que ninguna medición forense respalda. Ninguna de las dos
+/// describía la función real del motor, que no contiene ninguna escala
+/// temporal en su regla: pondera flujo por pesos genómicos, penaliza por
+/// entropía y exige significación estadística. El horizonte que emite es
+/// `TradeHorizon::Continuous`. Nombre y documentación ahora dicen qué mide.
 #[derive(Clone, Default)]
 #[repr(C, align(64))]
-pub struct TurboScalpEngine {
+pub struct FlowImpulseEngine {
     registry: Option<std::sync::Arc<omniscient_registry::OmniscientRegistry>>,
 }
 
-impl std::fmt::Debug for TurboScalpEngine {
+impl std::fmt::Debug for FlowImpulseEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TurboScalpEngine").finish()
+        f.debug_struct("FlowImpulseEngine").finish()
     }
 }
 
-impl TurboScalpEngine {
-    /// Infiere la señal de Scalping Turbo de alta convención (O(1) Continuous Math)
+impl FlowImpulseEngine {
+    /// Infiere la intención direccional a partir del impulso de flujo (O(1)).
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub fn evaluate_turbo_scalp(
+    pub fn evaluate_flow_impulse(
         arena: &quantum_arena::GlobalArena,
         obi: f64,
         ofi: f64,
@@ -78,9 +91,7 @@ impl TurboScalpEngine {
             .config
             .turbo_coherence_threshold
             .load(Ordering::Relaxed);
-        if confidence > 0.50
-            && is_statistically_significant
-            && coherence > turbo_coherence_threshold
+        if confidence > 0.50 && is_statistically_significant && coherence > turbo_coherence_threshold
         {
             let signal_type = if direction_tensor > 0.0 {
                 SignalType::Long
@@ -88,7 +99,7 @@ impl TurboScalpEngine {
                 SignalType::Short
             };
 
-            // FIX #1509: Sanitización de duración de señal de turbo-scalping
+            // FIX #1509: Sanitización de la duración esperada de la señal.
             let raw_base = arena.config.base_duration_ms.load(Ordering::Relaxed);
             let base_duration = if raw_base.is_finite() && raw_base > 0.0 {
                 raw_base as u64
@@ -104,7 +115,7 @@ impl TurboScalpEngine {
                 ..Default::default()
             });
         }
-            None
+        None
     }
 
     /// Voto puro a partir de microestructura saneada (compartido por el
@@ -130,9 +141,9 @@ impl TurboScalpEngine {
     }
 }
 
-impl strategy_core::QuantumStrategy for TurboScalpEngine {
+impl strategy_core::QuantumStrategy for FlowImpulseEngine {
     fn name(&self) -> &str {
-        "TurboScalpEngine"
+        "FlowImpulseEngine"
     }
 
     fn init(
@@ -148,21 +159,21 @@ impl strategy_core::QuantumStrategy for TurboScalpEngine {
             .registry
             .as_ref()
             .and_then(|r| {
-                r.get("order_book_imbalance", "TurboScalpEngine")
-                    .or_else(|| r.get("orderbook_imbalance", "TurboScalpEngine"))
+                r.get("order_book_imbalance", "FlowImpulseEngine")
+                    .or_else(|| r.get("orderbook_imbalance", "FlowImpulseEngine"))
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let ofi = self
             .registry
             .as_ref()
-            .and_then(|r| r.get("order_flow_imbalance", "TurboScalpEngine"))
+            .and_then(|r| r.get("order_flow_imbalance", "FlowImpulseEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let hawkes = self
             .registry
             .as_ref()
-            .and_then(|r| r.get("hawkes_intensity", "TurboScalpEngine"))
+            .and_then(|r| r.get("hawkes_intensity", "FlowImpulseEngine"))
             .map(|p| p.get_value())
             .unwrap_or(1.0);
 
@@ -183,8 +194,8 @@ impl strategy_core::QuantumStrategy for TurboScalpEngine {
             return 0.0;
         };
         let scoped = |key: &str| -> Option<f64> {
-            r.get(&format!("{}_{}", symbol, key), "TurboScalpEngine")
-                .or_else(|| r.get(&format!("c{}:{}", coin_id, key), "TurboScalpEngine"))
+            r.get(&format!("{}_{}", symbol, key), "FlowImpulseEngine")
+                .or_else(|| r.get(&format!("c{}:{}", coin_id, key), "FlowImpulseEngine"))
                 .map(|p| p.get_value())
                 .filter(|v| v.is_finite())
         };
@@ -206,12 +217,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_turbo_scalper_neutral_flow_returns_none() {
+    fn flujo_neutro_no_emite_intencion() {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         // Flujo neutro (obi = 0, ofi = 0) debe retornar None (no forzar Long)
-        let signal = TurboScalpEngine::evaluate_turbo_scalp(
-            &arena, 0.0, 0.0, 1.0, 0.1, 60000.0, 0.005, 1000,
-        );
+        let signal =
+            FlowImpulseEngine::evaluate_flow_impulse(&arena, 0.0, 0.0, 1.0, 0.1, 60000.0, 0.005, 1000);
         assert!(
             signal.is_none(),
             "Flujo plano debe retornar None y no forzar Long"
@@ -219,10 +229,10 @@ mod tests {
     }
 
     #[test]
-    fn test_turbo_scalper_symmetric_short_signal() {
+    fn impulso_bajista_es_simetrico() {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         // Flujo fuertemente vendedor con excitación hawkes bajista de alta intensidad
-        let signal = TurboScalpEngine::evaluate_turbo_scalp(
+        let signal = FlowImpulseEngine::evaluate_flow_impulse(
             &arena, -0.9, -0.9, -3.0, 0.01, 60000.0, 0.005, 1000,
         );
         assert!(
@@ -237,9 +247,9 @@ mod tests {
     }
 
     #[test]
-    fn test_turbo_scalper_nan_immunity() {
+    fn inmunidad_a_nan() {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
-        let signal = TurboScalpEngine::evaluate_turbo_scalp(
+        let signal = FlowImpulseEngine::evaluate_flow_impulse(
             &arena,
             f64::NAN,
             0.0,
@@ -253,13 +263,13 @@ mod tests {
     }
 
     #[test]
-    fn test_turbo_scalper_evaluate_with_registry() {
+    fn evalua_desde_el_registro() {
         let registry = std::sync::Arc::new(omniscient_registry::OmniscientRegistry::new());
         registry.set("order_book_imbalance", 0.5);
         registry.set("order_flow_imbalance", 0.4);
         registry.set("hawkes_intensity", 1.8);
 
-        let mut engine = TurboScalpEngine::default();
+        let mut engine = FlowImpulseEngine::default();
         assert!(strategy_core::QuantumStrategy::init(&mut engine, registry).is_ok());
 
         let eval = strategy_core::QuantumStrategy::evaluate(&engine);
@@ -280,7 +290,7 @@ mod tests {
         registry.set("order_flow_imbalance", -0.8);
         registry.set("hawkes_intensity", 2.0);
 
-        let mut engine = TurboScalpEngine::default();
+        let mut engine = FlowImpulseEngine::default();
         assert!(strategy_core::QuantumStrategy::init(&mut engine, registry).is_ok());
 
         let v = strategy_core::QuantumStrategy::evaluate_for_coin(&engine, 3, "SOLUSDT");
@@ -307,13 +317,26 @@ mod tests {
         registry.set_scoped("SOLUSDT", "order_flow_imbalance", 0.6);
         registry.set_scoped("SOLUSDT", "hawkes_intensity", 1.6);
 
-        let mut engine = TurboScalpEngine::default();
+        let mut engine = FlowImpulseEngine::default();
         assert!(strategy_core::QuantumStrategy::init(&mut engine, registry).is_ok());
 
         let v = strategy_core::QuantumStrategy::evaluate_for_coin(&engine, 3, "SOLUSDT");
         assert!(
             v > 0.0,
             "SOL debe votar con SU flujo alcista, no con el global vendedor ({v})"
+        );
+    }
+
+    /// U-ERR-1: la identidad que el motor publica al registro no contiene
+    /// etiquetas de banda de horizonte. Falla con el código viejo, cuyo
+    /// `name()` devolvía «TurboScalpEngine».
+    #[test]
+    fn u_err_1_identidad_sin_etiqueta_de_banda() {
+        let engine = FlowImpulseEngine::default();
+        let n = strategy_core::QuantumStrategy::name(&engine).to_ascii_lowercase();
+        assert!(
+            !n.contains("scalp") && !n.contains("swing") && !n.contains("turbo"),
+            "identidad con etiqueta de banda/marketing: {n}"
         );
     }
 }

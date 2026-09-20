@@ -9,6 +9,7 @@ pub mod kelly_envelope;
 pub mod leverage_matrix;
 pub mod orchestrator;
 pub mod regime;
+pub mod drawdown;
 pub mod ruin;
 pub mod tp_sl;
 
@@ -192,19 +193,28 @@ impl RiskEngine {
         // la tolerancia de 0,85 diseñada para permitir la recuperación del
         // crecimiento compuesto; en régimen estándar rige el gen; entre ambos,
         // transición continua. Antes el gen quedaba anulado en producción.
-        let micro_w = crate::capital_regime::micro_weight(
-            current_capital,
-            arena.config.min_notional.load(Ordering::Relaxed),
-        );
-        let max_dd = crate::capital_regime::lerp(
-            arena.config.global_max_drawdown.load(Ordering::Relaxed),
-            0.85,
-            micro_w,
-        );
-        if self.peak_capital > 0.0 && max_dd > 0.0 && max_dd < 1.0 {
+        // D-744: el umbral ya no es el gen crudo (0,95 en el genoma base)
+        // mezclado con un 0,85 literal en régimen micro, sino la caída máxima
+        // COMPATIBLE con el riesgo que el motor toma de verdad y con su tasa
+        // de pérdida observada; el gen pasa a ser la confianza de esa prueba.
+        // Es el MISMO número que usa el sistema inmune del host: una sola
+        // fuente para el mismo concepto.
+        if self.peak_capital > 0.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
-            if dd >= max_dd {
-                return rej(REJ_DRAWDOWN);
+            let q_perdida = 1.0
+                - arena.coins[coin_id]
+                    .metrics
+                    .win_rate
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0, 1.0);
+            if let Some(max_dd) = crate::drawdown::drawdown_compatible(
+                arena.riesgo_por_operacion.load(Ordering::Relaxed),
+                q_perdida,
+                arena.config.global_max_drawdown.load(Ordering::Relaxed),
+            ) {
+                if dd >= max_dd {
+                    return rej(REJ_DRAWDOWN);
+                }
             }
         }
 
@@ -824,6 +834,23 @@ impl RiskEngine {
         } else {
             1.0
         };
+
+        // D-744: el RIESGO REALMENTE TOMADO por esta orden —lo que se pierde
+        // si su stop se toca, en fracción del capital— alimenta la media móvil
+        // que convierte una caída observada en evidencia. Sin esta medida, el
+        // cortacircuitos de drawdown es una opinión sobre un número inventado.
+        if safe_vol > 0.0 && sl_pct > 0.0 && current_cap > 0.0 {
+            let riesgo = (safe_vol * safe_lev * sl_pct) / current_cap;
+            let previo = arena.riesgo_por_operacion.load(Ordering::Relaxed);
+            arena.riesgo_por_operacion.store(
+                crate::drawdown::actualizar_riesgo_ewma(
+                    previo,
+                    riesgo.clamp(0.0, 1.0),
+                    crate::drawdown::TRADE_HORIZON / 10.0,
+                ),
+                Ordering::Relaxed,
+            );
+        }
 
         if safe_vol <= 0.0
             || (intent.signal != SignalType::Flat && (safe_tp <= 0.0 || safe_sl <= 0.0))

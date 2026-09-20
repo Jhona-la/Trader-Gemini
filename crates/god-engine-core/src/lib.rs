@@ -175,7 +175,7 @@ impl GodEngineCore {
             signal_engine::hawkes_bessel::HawkesBesselEngine::new(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
-            signal_engine::micro_scalp_trigger::MicroScalpTriggerEngine::default(),
+            signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::default(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
             signal_engine::perceptron_gate::PerceptronGateEngine::new(),
@@ -196,13 +196,13 @@ impl GodEngineCore {
             signal_engine::supersonic_shockwave::SupersonicShockwaveEngine::new(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
-            signal_engine::swing_conformal_filter::SwingConformalFilterEngine::default(),
+            signal_engine::conformal_reversion_filter::ConformalReversionFilterEngine::default(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
             signal_engine::trend_runner::HighPayoffTrendRunner::new(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
-            signal_engine::turbo_scalper::TurboScalpEngine::default(),
+            signal_engine::flow_impulse::FlowImpulseEngine::default(),
         ));
         // FIX #781: Registrar JohansenVecmEngine en el orquestador central
         tensor_orchestrator.add_strategy(Box::new(
@@ -512,6 +512,103 @@ impl GodEngineCore {
     /// Procesa un evento unificado continuo (trade, kline, depth) y devuelve las órdenes generadas.
     /// Retorna: (NuevoOrden, CerradoOrden) en arquitectura universal continua.
     #[inline(always)]
+    /// PUERTAS DEL CONTINUO (D-743) — lo que invalida una entrada es del
+    /// MERCADO, no de la banda que la produjo.
+    ///
+    /// El motor lee el espectro por dos ventanas —la rápida (microestructura,
+    /// flujo del libro) y la lenta (tendencia, EMAs, stretch)— y arbitra entre
+    /// ellas. Pero los filtros duros vivían sólo en el camino de la rápida: la
+    /// lectura lenta podía abrir con el spread por encima del recorrido, sin
+    /// volatilidad que recorrer, dentro del enfriamiento de reentrada, contra
+    /// el consenso del tick, contra el modelo y contra el muro del libro. Con
+    /// τ dominante por encima de la media geométrica de la banda operativa, la
+    /// arbitración le entrega la decisión a esa lectura: el veto que el
+    /// operador cree tener armado no existe en la mitad de los regímenes.
+    ///
+    /// Aquí están las cuatro puertas, aplicadas por igual a cualquier lectura:
+    ///   1. viabilidad del mercado (ATR mínimo, spread, enfriamiento);
+    ///   2. invariante bayesiano D-472 (nada contradice al consenso del tick);
+    ///   3. ponderación continua del modelo F-009 (veta si lo contradice con
+    ///      fuerza y no hay acción de precio extrema; si no, modula confianza);
+    ///   4. vetos de flujo agregado (CVD) y de muro del libro (L2).
+    fn puertas_del_continuo(
+        &self,
+        coin_id: usize,
+        intent: SignalIntent,
+        viable: bool,
+        composite_score: f64,
+        ml_prob: f64,
+        price_stretch: f64,
+    ) -> SignalIntent {
+        if intent.signal == SignalType::Flat {
+            return intent;
+        }
+        if !viable {
+            return SignalIntent::flat();
+        }
+        let mut out = intent;
+
+        // 2. Invariante bayesiano absoluto (D-472).
+        if (out.signal == SignalType::Long && composite_score < 0.0)
+            || (out.signal == SignalType::Short && composite_score > 0.0)
+        {
+            return SignalIntent::flat();
+        }
+
+        // 3. Ponderación continua por el modelo (F-009).
+        let ml_directional = match out.signal {
+            SignalType::Long => (ml_prob - 0.5) * 2.0,
+            SignalType::Short => (0.5 - ml_prob) * 2.0,
+            _ => 0.0,
+        };
+        if ml_directional < -0.50 && price_stretch.abs() < 2.5 {
+            return SignalIntent::flat();
+        } else if ml_directional < 0.0 && price_stretch.abs() < 2.5 {
+            out.confidence *= (1.0 + ml_directional).max(0.1);
+        } else if ml_directional > 0.0 {
+            out.confidence = (out.confidence * (1.0 + ml_directional * 0.5)).min(0.99);
+        }
+
+        // 4. Vetos duros de flujo agregado y muro del libro.
+        let coin = &self.arena.coins[coin_id];
+        let buy_vol = coin.agg_buy_vol.load(Ordering::Relaxed);
+        let sell_vol = coin.agg_sell_vol.load(Ordering::Relaxed);
+        let total_vol_cvd = buy_vol + sell_vol;
+        let cvd_ratio = if total_vol_cvd > 0.0 {
+            (buy_vol - sell_vol) / total_vol_cvd
+        } else {
+            0.0
+        };
+        let bid_wall = coin.l2_bid_wall.load(Ordering::Relaxed);
+        let ask_wall = coin.l2_ask_wall.load(Ordering::Relaxed);
+        let total_wall = bid_wall + ask_wall;
+        let wall_imbalance = if total_wall > 0.0 {
+            (bid_wall - ask_wall) / total_wall
+        } else {
+            0.0
+        };
+        let cvd_veto = self.arena.config.cvd_veto_threshold.load(Ordering::Relaxed);
+        let wall_veto = self
+            .arena
+            .config
+            .wall_veto_threshold
+            .load(Ordering::Relaxed);
+        match out.signal {
+            SignalType::Long => {
+                if cvd_ratio < -cvd_veto || wall_imbalance < -wall_veto {
+                    return SignalIntent::flat();
+                }
+            }
+            SignalType::Short => {
+                if cvd_ratio > cvd_veto || wall_imbalance > wall_veto {
+                    return SignalIntent::flat();
+                }
+            }
+            _ => {}
+        }
+        out
+    }
+
     pub fn process_event(
         &mut self,
         coin_id: usize,
@@ -2473,24 +2570,33 @@ impl GodEngineCore {
             let is_anti_persistent = hurst_val < HURST_ANTI_PERSISTENT;
             let is_persistent = hurst_val > HURST_PERSISTENT;
 
-            if atr_pct > dynamic_atr_min
+            // D-743: la VIABILIDAD de una entrada —que haya volatilidad que
+            // recorrer, que el spread no se coma el recorrido y que la reentrada
+            // no esté en enfriamiento— es una condición del MERCADO, no de la
+            // banda que produjo la señal. Se calcula aquí, una vez, y la
+            // comparten las dos lecturas del espectro (ver `puertas_del_continuo`).
+            let viable_para_entrar = atr_pct > dynamic_atr_min
                 && spread_ok
-                && self.feature_engines[coin_id].can_open_position(600)
-            {
+                && self.feature_engines[coin_id].can_open_position(600);
+            let ema_slow_continuo = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
+                self.feature_engines[coin_id].kline_ema_slow
+            } else {
+                self.feature_engines[coin_id].ema_slow
+            };
+            let cur_atr_continuo = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+            let price_stretch_continuo = if ema_slow_continuo > 0.0 {
+                (mid_price - ema_slow_continuo) / cur_atr_continuo
+            } else {
+                0.0
+            };
+
+            if viable_para_entrar {
                 // (misma banda canónica: reversión a la media ≡ anti-persistencia)
                 let is_mean_reverting = is_anti_persistent;
 
-                let ema_slow = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
-                    self.feature_engines[coin_id].kline_ema_slow
-                } else {
-                    self.feature_engines[coin_id].ema_slow
-                };
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
-                let price_stretch = if ema_slow > 0.0 {
-                    (mid_price - ema_slow) / cur_atr
-                } else {
-                    0.0
-                };
+                let ema_slow = ema_slow_continuo;
+                let cur_atr = cur_atr_continuo;
+                let price_stretch = price_stretch_continuo;
                 // D-472, D-474 & D-478: Disciplina Antiextensión y Cero Persecución (No Chasing Law)
                 // Prohibido vender por debajo de la media (price_stretch < 0.0) o comprar por encima (price_stretch > 0.0).
                 // En tendencia, entrar exclusivamente en o por encima de la EMA slow para cortos (y en o por debajo para largos).
@@ -2933,8 +3039,8 @@ impl GodEngineCore {
 
                 if fast_intent.signal == SignalType::Flat {
                     let hawkes_r = self.feature_engines[coin_id].cvpin.current_vpin();
-                    if let Some(mut turbo_intent) =
-                        signal_engine::turbo_scalper::TurboScalpEngine::evaluate_turbo_scalp(
+                    if let Some(mut impulso_intent) =
+                        signal_engine::flow_impulse::FlowImpulseEngine::evaluate_flow_impulse(
                             &self.arena,
                             current_obi,
                             ofi,
@@ -2945,68 +3051,36 @@ impl GodEngineCore {
                             event_time_ms,
                         )
                     {
-                        let turbo_streak = if turbo_intent.signal == SignalType::Long {
+                        let impulso_streak = if impulso_intent.signal == SignalType::Long {
                             long_streak
                         } else {
                             short_streak
                         };
-                        let turbo_aligned_with_regime = if is_confirmed_downtrend {
-                            turbo_intent.signal == SignalType::Short
+                        let impulso_alineado_con_regimen = if is_confirmed_downtrend {
+                            impulso_intent.signal == SignalType::Short
                         } else if is_confirmed_uptrend {
-                            turbo_intent.signal == SignalType::Long
+                            impulso_intent.signal == SignalType::Long
                         } else if is_mean_reverting {
-                            (turbo_intent.signal == SignalType::Long
+                            (impulso_intent.signal == SignalType::Long
                                 && price_stretch < -0.5
                                 && macro_trend >= -dynamic_ema_thr)
-                                || (turbo_intent.signal == SignalType::Short
+                                || (impulso_intent.signal == SignalType::Short
                                     && price_stretch > 0.5
                                     && macro_trend <= dynamic_ema_thr)
                         } else {
-                            (turbo_intent.signal == SignalType::Long && macro_trend >= 0.0)
-                                || (turbo_intent.signal == SignalType::Short && macro_trend <= 0.0)
+                            (impulso_intent.signal == SignalType::Long && macro_trend >= 0.0)
+                                || (impulso_intent.signal == SignalType::Short && macro_trend <= 0.0)
                         };
 
-                        if turbo_streak < 2
-                            && turbo_aligned_with_regime
-                            && ((turbo_intent.signal == SignalType::Long && not_overextended_long)
-                                || (turbo_intent.signal == SignalType::Short
+                        if impulso_streak < 2
+                            && impulso_alineado_con_regimen
+                            && ((impulso_intent.signal == SignalType::Long && not_overextended_long)
+                                || (impulso_intent.signal == SignalType::Short
                                     && not_overextended_short))
                         {
-                            turbo_intent.volume_flow_rate = 12.0;
-                            fast_intent = turbo_intent;
+                            impulso_intent.volume_flow_rate = 12.0;
+                            fast_intent = impulso_intent;
                         }
-                    }
-                }
-
-                // D-472: Invariante Bayesiano Absoluto — Prohibir cualquier scalp que contradiga el composite score
-                if fast_intent.signal == SignalType::Long && composite_score < 0.0 {
-                    fast_intent = SignalIntent::flat();
-                } else if fast_intent.signal == SignalType::Short && composite_score > 0.0 {
-                    fast_intent = SignalIntent::flat();
-                }
-
-                // F-009 FIX: Continuous ML Probability Weighting (replaces binary switch)
-                // Instead of killing signals when ml_prob crosses 0.51/0.49, modulate
-                // confidence continuously. The farther ml_prob is from 0.5 in the signal's
-                // direction, the more the confidence is amplified. Against the signal,
-                // confidence is reduced proportionally.
-                {
-                    let ml_directional = match fast_intent.signal {
-                        SignalType::Long => (ml_prob - 0.5) * 2.0,   // [-1, +1] where +1 = strong bullish
-                        SignalType::Short => (0.5 - ml_prob) * 2.0,  // [-1, +1] where +1 = strong bearish
-                        _ => 0.0,
-                    };
-                    // If ML contradicts signal (ml_directional < 0) AND no extreme price action,
-                    // reduce confidence. If ml_directional < -0.5, kill signal entirely.
-                    if ml_directional < -0.50 && price_stretch.abs() < 2.5 {
-                        fast_intent = SignalIntent::flat();
-                    } else if ml_directional < 0.0 && price_stretch.abs() < 2.5 {
-                        // Soft penalty: scale confidence by (1 + ml_directional) where ml_directional is [-0.5, 0)
-                        fast_intent.confidence *= (1.0 + ml_directional).max(0.1);
-                    } else if ml_directional > 0.0 {
-                        // ML confirms signal direction: boost confidence proportionally
-                        fast_intent.confidence *= 1.0 + ml_directional * 0.5;
-                        fast_intent.confidence = fast_intent.confidence.min(0.99);
                     }
                 }
 
@@ -3017,48 +3091,20 @@ impl GodEngineCore {
                 // mayores, y sin distinguir de qué «motor» vino la señal.
             }
 
-            // --- CVD & L2 Wall HARD FILTERS (VETOS) ---
-            if fast_intent.signal != SignalType::Flat {
-                let buy_vol = coin.agg_buy_vol.load(Ordering::Relaxed);
-                let sell_vol = coin.agg_sell_vol.load(Ordering::Relaxed);
-                let cvd = buy_vol - sell_vol;
-                let total_vol_cvd = buy_vol + sell_vol;
-                let cvd_ratio = if total_vol_cvd > 0.0 {
-                    cvd / total_vol_cvd
-                } else {
-                    0.0
-                };
-
-                let bid_wall = coin.l2_bid_wall.load(Ordering::Relaxed);
-                let ask_wall = coin.l2_ask_wall.load(Ordering::Relaxed);
-                let total_wall = bid_wall + ask_wall;
-                let wall_imbalance = if total_wall > 0.0 {
-                    (bid_wall - ask_wall) / total_wall
-                } else {
-                    0.0
-                };
-
-                let cvd_veto = self.arena.config.cvd_veto_threshold.load(Ordering::Relaxed);
-                let wall_veto = self
-                    .arena
-                    .config
-                    .wall_veto_threshold
-                    .load(Ordering::Relaxed);
-
-                if fast_intent.signal == SignalType::Long {
-                    if cvd_ratio < -cvd_veto {
-                        fast_intent = SignalIntent::flat();
-                    } else if wall_imbalance < -wall_veto {
-                        fast_intent = SignalIntent::flat();
-                    }
-                } else if fast_intent.signal == SignalType::Short {
-                    if cvd_ratio > cvd_veto {
-                        fast_intent = SignalIntent::flat();
-                    } else if wall_imbalance > wall_veto {
-                        fast_intent = SignalIntent::flat();
-                    }
-                }
-            }
+            // D-743 — PUERTAS DEL CONTINUO sobre la banda rápida. Los vetos de
+            // flujo agregado y muro del libro, el invariante bayesiano y la
+            // ponderación continua del modelo vivían aquí, aplicados SÓLO a esta
+            // banda: la lectura lenta del mismo espectro entraba sin pasar por
+            // ninguno. Ahora son una función única que se aplica a las DOS
+            // lecturas antes de arbitrar.
+            fast_intent = self.puertas_del_continuo(
+                coin_id,
+                fast_intent,
+                viable_para_entrar,
+                composite_score,
+                ml_prob,
+                price_stretch_continuo,
+            );
 
             if let Some(fr) = &self.flight_recorder {
                 let mut payload = [0u8; 47];
@@ -3314,6 +3360,20 @@ impl GodEngineCore {
             // ÚLTIMO CIERRE SCALP hubiera perdido — una pérdida de 30 segundos
             // bloqueaba una tesis de horas. Contaminación cruzada entre horizontes
             // que el sistema declara unificados. Lo cubre el guard D-463.
+
+            // D-743: la lectura LENTA pasa por las MISMAS puertas que la rápida
+            // —viabilidad de mercado, invariante bayesiano, ponderación del
+            // modelo y vetos de flujo y muro— antes de competir en la
+            // arbitración. Hasta aquí entraba sin ninguna: un motor universal
+            // con una puerta para cada mitad no es un motor universal.
+            slow_intent = self.puertas_del_continuo(
+                coin_id,
+                slow_intent,
+                viable_para_entrar,
+                composite_score,
+                ml_prob,
+                price_stretch_continuo,
+            );
 
             if coin_id < self.last_fast_intent.len() {
                 self.last_fast_intent[coin_id] = fast_intent;
@@ -4447,5 +4507,82 @@ mod tests_b3_ml_wiring {
             "analítica ML no debe congelarse con feed stalled: ml={ml}"
         );
         quantum_arena::feed_health::clear();
+    }
+}
+
+#[cfg(test)]
+mod tests_d743_puertas_del_continuo {
+    use super::*;
+    use signal_engine::{SignalIntent, SignalType};
+    use std::sync::Arc;
+
+    fn intencion_larga() -> SignalIntent {
+        SignalIntent {
+            signal: SignalType::Long,
+            confidence: 0.80,
+            horizon: strategy_core::TradeHorizon::Continuous,
+            ..Default::default()
+        }
+    }
+
+    /// D-743: las cuatro puertas valen para CUALQUIER lectura del espectro.
+    /// Antes vivían sólo en el camino de la banda rápida y la lenta —que gana
+    /// la arbitración siempre que τ dominante supera la media geométrica de la
+    /// banda operativa— entraba sin pasar por ninguna.
+    #[test]
+    fn d743_una_intencion_no_viable_queda_plana_venga_de_donde_venga() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let core = GodEngineCore::new(Arc::clone(&arena));
+        let i = intencion_larga();
+
+        // 1. Mercado inviable (spread, ATR o enfriamiento).
+        assert_eq!(
+            core.puertas_del_continuo(0, i, false, 0.5, 0.60, 0.0).signal,
+            SignalType::Flat
+        );
+        // 2. Consenso del tick en contra (invariante bayesiano D-472).
+        assert_eq!(
+            core.puertas_del_continuo(0, i, true, -0.20, 0.60, 0.0).signal,
+            SignalType::Flat
+        );
+        // 3. El modelo la contradice con fuerza y no hay acción de precio extrema.
+        assert_eq!(
+            core.puertas_del_continuo(0, i, true, 0.50, 0.20, 0.0).signal,
+            SignalType::Flat
+        );
+        // Con acción de precio extrema, el veto del modelo cede (F-009).
+        assert_eq!(
+            core.puertas_del_continuo(0, i, true, 0.50, 0.20, 3.0).signal,
+            SignalType::Long
+        );
+        // 4. Flujo agregado en contra: veto duro.
+        arena.coins[0].agg_buy_vol.store(1.0, Ordering::Relaxed);
+        arena.coins[0].agg_sell_vol.store(99.0, Ordering::Relaxed);
+        assert_eq!(
+            core.puertas_del_continuo(0, i, true, 0.50, 0.60, 0.0).signal,
+            SignalType::Flat
+        );
+        arena.coins[0].agg_buy_vol.store(50.0, Ordering::Relaxed);
+        arena.coins[0].agg_sell_vol.store(50.0, Ordering::Relaxed);
+        // 4b. Muro del libro en contra: veto duro.
+        arena.coins[0].l2_bid_wall.store(1.0, Ordering::Relaxed);
+        arena.coins[0].l2_ask_wall.store(99.0, Ordering::Relaxed);
+        assert_eq!(
+            core.puertas_del_continuo(0, i, true, 0.50, 0.60, 0.0).signal,
+            SignalType::Flat
+        );
+    }
+
+    /// Una intención que pasa las cuatro conserva su dirección, y el modelo a
+    /// favor sólo puede modular la confianza dentro de [0, 0.99].
+    #[test]
+    fn d743_lo_que_pasa_las_puertas_conserva_direccion_y_confianza_acotada() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let core = GodEngineCore::new(Arc::clone(&arena));
+        arena.coins[0].agg_buy_vol.store(50.0, Ordering::Relaxed);
+        arena.coins[0].agg_sell_vol.store(50.0, Ordering::Relaxed);
+        let out = core.puertas_del_continuo(0, intencion_larga(), true, 0.50, 0.95, 0.0);
+        assert_eq!(out.signal, SignalType::Long);
+        assert!(out.confidence > 0.80 && out.confidence <= 0.99, "{}", out.confidence);
     }
 }

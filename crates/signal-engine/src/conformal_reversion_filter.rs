@@ -9,6 +9,17 @@ use strategy_core::QuantumStrategy;
 /// va a favor de la tendencia macro y (3) el calibrador conformal del motor
 /// acepta la predicción.
 ///
+/// # U-ERR-1 (ERRADICACIÓN DEL BINARIO DE HORIZONTE)
+///
+/// El motor se llamaba `SwingConformalFilterEngine` y vivía en
+/// `swing_conformal_filter.rs`. El prefijo «swing» era una ETIQUETA DE BANDA
+/// DE HORIZONTE que este motor no decide: su horizonte declarado es
+/// `TradeHorizon::Continuous` y su regla no contiene ninguna escala temporal
+/// —sólo significación estadística (α), dirección de tendencia y aceptación
+/// conformal—. El nombre ahora describe lo que mide. La clave de registro
+/// `ema_trend_swing` se conserva porque su PRODUCTOR vive fuera de este
+/// ámbito (ver informe): renombrarla desde aquí rompería el productor.
+///
 /// # D-618 / D-626 / D-627 (DÉCIMA OLA)
 ///
 /// * **D-618**: la aceptación conformal comparaba `p ≥ 1 − α`, que no es la
@@ -25,13 +36,13 @@ use strategy_core::QuantumStrategy;
 ///   desviaciones estándar. No tenía llamadores; se elimina.
 #[derive(Clone, Default)]
 #[repr(C, align(64))]
-pub struct SwingConformalFilterEngine {
+pub struct ConformalReversionFilterEngine {
     registry: Option<Arc<OmniscientRegistry>>,
 }
 
-impl std::fmt::Debug for SwingConformalFilterEngine {
+impl std::fmt::Debug for ConformalReversionFilterEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SwingConformalFilterEngine").finish()
+        f.debug_struct("ConformalReversionFilterEngine").finish()
     }
 }
 
@@ -68,7 +79,7 @@ pub(crate) fn significance_strength(z: f64, alpha: f64) -> f64 {
     (1.0 - two_sided_normal_p(z) / a).clamp(0.0, 1.0)
 }
 
-impl SwingConformalFilterEngine {
+impl ConformalReversionFilterEngine {
     pub fn new() -> Self {
         Self { registry: None }
     }
@@ -104,9 +115,9 @@ impl SwingConformalFilterEngine {
     }
 }
 
-impl QuantumStrategy for SwingConformalFilterEngine {
+impl QuantumStrategy for ConformalReversionFilterEngine {
     fn name(&self) -> &str {
-        "SwingConformalFilterEngine"
+        "ConformalReversionFilterEngine"
     }
 
     fn init(&mut self, registry: Arc<OmniscientRegistry>) -> Result<(), String> {
@@ -126,12 +137,16 @@ impl QuantumStrategy for SwingConformalFilterEngine {
             None => return 0.0,
         };
         let get = |key: &str| {
-            r.get_scoped_parameter(sym_opt, cid_opt, key, "SwingConformalFilterEngine")
+            r.get_scoped_parameter(sym_opt, cid_opt, key, "ConformalReversionFilterEngine")
                 .map(|p| p.get_value())
         };
         let z = get("vecm_zscore")
             .or_else(|| get("cointegration_zscore"))
             .unwrap_or(0.0);
+        // `ema_trend_swing` es el nombre de la clave que publica el core (su
+        // productor está fuera de este ámbito); `trend_direction` es el
+        // respaldo. Ambas transportan la MISMA magnitud: dirección de la
+        // tendencia macro.
         let trend = get("ema_trend_swing")
             .or_else(|| get("trend_direction"))
             .unwrap_or(0.0);
@@ -162,27 +177,42 @@ mod tests {
     /// D-626: el umbral lo fija el α del genoma, no un literal.
     #[test]
     fn d626_el_umbral_sigue_al_alpha_del_genoma() {
-        assert_eq!(SwingConformalFilterEngine::score(-1.5, 1.0, true, true, 0.10), 0.0);
-        assert!(SwingConformalFilterEngine::score(-1.7, 1.0, true, true, 0.10) > 0.0);
-        assert!(SwingConformalFilterEngine::score(-1.5, 1.0, true, true, 0.20) > 0.0);
+        assert_eq!(
+            ConformalReversionFilterEngine::score(-1.5, 1.0, true, true, 0.10),
+            0.0
+        );
+        assert!(ConformalReversionFilterEngine::score(-1.7, 1.0, true, true, 0.10) > 0.0);
+        assert!(ConformalReversionFilterEngine::score(-1.5, 1.0, true, true, 0.20) > 0.0);
     }
 
     /// D-626: sin salto en el umbral.
     #[test]
     fn d626_la_puntuacion_es_continua_en_el_umbral() {
-        let just_above = SwingConformalFilterEngine::score(-1.646, 1.0, true, true, 0.10);
-        assert!(just_above > 0.0 && just_above < 0.01, "salto en el umbral: {just_above}");
+        let just_above = ConformalReversionFilterEngine::score(-1.646, 1.0, true, true, 0.10);
+        assert!(
+            just_above > 0.0 && just_above < 0.01,
+            "salto en el umbral: {just_above}"
+        );
     }
 
     #[test]
     fn direccion_tendencia_y_rechazo_conformal() {
-        assert!(SwingConformalFilterEngine::score(-2.5, 1.0, true, true, 0.10) > 0.5);
-        assert!(SwingConformalFilterEngine::score(2.5, -1.0, true, true, 0.10) < -0.5);
-        assert_eq!(SwingConformalFilterEngine::score(-2.5, -1.0, true, true, 0.10), 0.0);
+        assert!(ConformalReversionFilterEngine::score(-2.5, 1.0, true, true, 0.10) > 0.5);
+        assert!(ConformalReversionFilterEngine::score(2.5, -1.0, true, true, 0.10) < -0.5);
+        assert_eq!(
+            ConformalReversionFilterEngine::score(-2.5, -1.0, true, true, 0.10),
+            0.0
+        );
         // D-676: cada dirección consulta su propia aceptación.
-        assert_eq!(SwingConformalFilterEngine::score(-2.5, 1.0, false, true, 0.10), 0.0);
-        assert!(SwingConformalFilterEngine::score(-2.5, 1.0, true, false, 0.10) > 0.5);
-        assert_eq!(SwingConformalFilterEngine::score(2.5, -1.0, true, false, 0.10), 0.0);
+        assert_eq!(
+            ConformalReversionFilterEngine::score(-2.5, 1.0, false, true, 0.10),
+            0.0
+        );
+        assert!(ConformalReversionFilterEngine::score(-2.5, 1.0, true, false, 0.10) > 0.5);
+        assert_eq!(
+            ConformalReversionFilterEngine::score(2.5, -1.0, true, false, 0.10),
+            0.0
+        );
     }
 
     #[test]
@@ -193,11 +223,27 @@ mod tests {
         registry.set("conformal_accept_long", 1.0);
         registry.set("conformal_accept_short", 1.0);
         registry.set("conformal_alpha", 0.10);
-        let mut engine = SwingConformalFilterEngine::new();
+        let mut engine = ConformalReversionFilterEngine::new();
         assert!(engine.init(registry.clone()).is_ok());
         assert_eq!(engine.horizon(), strategy_core::TradeHorizon::Continuous);
         assert!(engine.evaluate() > 0.0);
         registry.set("conformal_accept_long", 0.0);
         assert_eq!(engine.evaluate(), 0.0);
+    }
+
+    /// U-ERR-1: el motor se identifica por lo que MIDE, no por una banda de
+    /// horizonte. Falla con el código viejo, que se anunciaba como
+    /// «SwingConformalFilterEngine» — una etiqueta de horizonte para un motor
+    /// cuyo horizonte declarado es el continuo.
+    #[test]
+    fn u_err_1_el_nombre_describe_la_medida_no_la_banda() {
+        let engine = ConformalReversionFilterEngine::new();
+        let n = engine.name();
+        assert!(
+            !n.to_ascii_lowercase().contains("swing")
+                && !n.to_ascii_lowercase().contains("scalp"),
+            "el nombre publicado al registro arrastra una etiqueta de banda: {n}"
+        );
+        assert_eq!(engine.horizon(), strategy_core::TradeHorizon::Continuous);
     }
 }

@@ -2,12 +2,26 @@ use crossbeam_channel::{Receiver, Sender};
 use rusqlite::{params, Connection};
 use std::thread;
 
-/// Un evento de posesión para actualizar el Ledger Local
+/// Un evento de posesión para actualizar el Ledger Local.
+///
+/// # U-ERR-7 (ERRADICACIÓN DEL BINARIO DE HORIZONTE EN EL ESQUEMA)
+///
+/// El evento llevaba `strategy: String` con los valores "scalp" o "swing", y
+/// esa cadena formaba parte de la CLAVE PRIMARIA de la tabla: el esquema
+/// afirmaba que una misma moneda y lado podían tener dos propiedades
+/// simultáneas, una por banda. El motor no opera bandas; opera un continuo de
+/// horizontes. La etiqueta se sustituye por el dato que sí describe la
+/// operación en ese continuo: `tau_ms`, el horizonte τ esperado en
+/// milisegundos. τ es un atributo de la posición, no parte de su identidad,
+/// así que la clave primaria pasa a ser (símbolo, lado).
 #[derive(Debug, Clone)]
 pub struct LedgerEvent {
     pub symbol: String,
-    pub position_side: String,      // "LONG" o "SHORT"
-    pub strategy: String,           // "scalp" o "swing"
+    pub position_side: String, // "LONG" o "SHORT"
+    /// Horizonte τ esperado de la operación en ms. `0` significa «τ
+    /// desconocida» — es el valor que reciben los registros migrados desde el
+    /// esquema antiguo, que no guardaba ningún horizonte.
+    pub tau_ms: u64,
     pub qty_delta: f64,             // Positivo (abrir) o Negativo (cerrar)
     pub price: f64,                 // Precio promedio
     pub is_absolute_override: bool, // Si es true, sobrescribe en vez de sumar (útil para conciliación)
@@ -15,6 +29,61 @@ pub struct LedgerEvent {
 
 pub struct PositionLedger {
     tx: Sender<LedgerEvent>,
+}
+
+/// Migra una base escrita con el esquema antiguo —el que llevaba la columna
+/// `strategy` dentro de la clave primaria— al esquema del continuo.
+///
+/// COMPATIBILIDAD DE LECTURA: `CREATE TABLE IF NOT EXISTS` no altera una tabla
+/// existente, así que sin esta migración toda escritura nueva apuntaría a una
+/// columna inexistente y se perdería. Las filas ya escritas NO se descartan:
+/// las bandas de un mismo (símbolo, lado) se colapsan sumando cantidades y
+/// promediando el precio de entrada PONDERADO POR CANTIDAD, que es el precio
+/// medio real de esa posesión agregada. Su τ queda a 0 («desconocida»), que es
+/// la verdad: el registro antiguo nunca guardó un horizonte.
+fn migrar_esquema_legado(conn: &Connection) {
+    // La forma más barata y fiable de detectar el esquema antiguo es
+    // preguntar por la columna que sólo él tiene.
+    let es_legado = conn
+        .prepare("SELECT strategy FROM position_ownership LIMIT 1")
+        .is_ok();
+    if !es_legado {
+        return;
+    }
+
+    if let Err(e) = conn.execute_batch(
+        "BEGIN IMMEDIATE;
+         CREATE TABLE position_ownership_tau (
+             symbol TEXT NOT NULL,
+             position_side TEXT NOT NULL,
+             tau_ms INTEGER NOT NULL,
+             qty REAL NOT NULL,
+             entry_price REAL NOT NULL,
+             updated_at INTEGER NOT NULL,
+             PRIMARY KEY(symbol, position_side)
+         );
+         INSERT INTO position_ownership_tau
+             (symbol, position_side, tau_ms, qty, entry_price, updated_at)
+         SELECT symbol,
+                position_side,
+                0,
+                SUM(qty),
+                CASE WHEN SUM(qty) > 0.0
+                     THEN SUM(qty * entry_price) / SUM(qty)
+                     ELSE 0.0 END,
+                MAX(updated_at)
+         FROM position_ownership
+         GROUP BY symbol, position_side;
+         DROP TABLE position_ownership;
+         ALTER TABLE position_ownership_tau RENAME TO position_ownership;
+         COMMIT;",
+    ) {
+        let _ = conn.execute_batch("ROLLBACK;");
+        telemetry_engine::telemetry_err!(
+            "⚠️ [LEDGER] Migración del esquema legado fallida (la base antigua queda intacta): {}",
+            e
+        );
+    }
 }
 
 impl PositionLedger {
@@ -44,15 +113,21 @@ impl PositionLedger {
                  PRAGMA synchronous = NORMAL;
                  PRAGMA temp_store = MEMORY;
                  PRAGMA mmap_size = 67108864;
-                 PRAGMA cache_size = -32000;
-                 CREATE TABLE IF NOT EXISTS position_ownership (
+                 PRAGMA cache_size = -32000;"
+            );
+
+            // U-ERR-7: primero migrar lo ya escrito, después asegurar el esquema.
+            migrar_esquema_legado(&conn);
+
+            let _ = conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS position_ownership (
                      symbol TEXT NOT NULL,
                      position_side TEXT NOT NULL,
-                     strategy TEXT NOT NULL,
+                     tau_ms INTEGER NOT NULL,
                      qty REAL NOT NULL,
                      entry_price REAL NOT NULL,
                      updated_at INTEGER NOT NULL,
-                     PRIMARY KEY(symbol, position_side, strategy)
+                     PRIMARY KEY(symbol, position_side)
                  );"
             );
 
@@ -75,24 +150,26 @@ impl PositionLedger {
                             // FIX #1535: Sanitización de cantidad y precio
                             let safe_qty = if event.qty_delta.is_finite() { event.qty_delta } else { 0.0 };
                             let safe_price = if event.price.is_finite() && event.price > 0.0 { event.price } else { 0.0 };
+                            let tau = (event.tau_ms.min(i64::MAX as u64)) as i64;
 
                             if event.is_absolute_override {
                                 if safe_qty <= 1e-8 {
                                     if let Err(e) = tx.execute(
-                                        "DELETE FROM position_ownership WHERE symbol=?1 AND position_side=?2 AND strategy=?3",
-                                        params![event.symbol, event.position_side, event.strategy],
+                                        "DELETE FROM position_ownership WHERE symbol=?1 AND position_side=?2",
+                                        params![event.symbol, event.position_side],
                                     ) {
                                         telemetry_engine::telemetry_err!("⚠️ [LEDGER] Delete failed: {}", e);
                                     }
                                 } else {
                                     if let Err(e) = tx.execute(
-                                        "INSERT INTO position_ownership (symbol, position_side, strategy, qty, entry_price, updated_at)
+                                        "INSERT INTO position_ownership (symbol, position_side, tau_ms, qty, entry_price, updated_at)
                                          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                                         ON CONFLICT(symbol, position_side, strategy) DO UPDATE SET
+                                         ON CONFLICT(symbol, position_side) DO UPDATE SET
+                                             tau_ms=excluded.tau_ms,
                                              qty=excluded.qty,
                                              entry_price=excluded.entry_price,
                                              updated_at=excluded.updated_at",
-                                        params![event.symbol, event.position_side, event.strategy, safe_qty, safe_price, ts as i64],
+                                        params![event.symbol, event.position_side, tau, safe_qty, safe_price, ts as i64],
                                     ) {
                                         telemetry_engine::telemetry_err!("⚠️ [LEDGER] Insert override failed: {}", e);
                                     }
@@ -101,29 +178,31 @@ impl PositionLedger {
                                 // Update del delta
                                 // 1. Intentamos insertar nuevo si no existe
                                 if let Err(e) = tx.execute(
-                                    "INSERT OR IGNORE INTO position_ownership (symbol, position_side, strategy, qty, entry_price, updated_at)
+                                    "INSERT OR IGNORE INTO position_ownership (symbol, position_side, tau_ms, qty, entry_price, updated_at)
                                      VALUES (?1, ?2, ?3, 0.0, ?4, ?5)",
-                                    params![event.symbol, event.position_side, event.strategy, safe_price, ts as i64],
+                                    params![event.symbol, event.position_side, tau, safe_price, ts as i64],
                                 ) {
                                     telemetry_engine::telemetry_err!("⚠️ [LEDGER] Insert delta ignore failed: {}", e);
                                 }
 
-                                // 2. Actualizamos el delta de la cantidad y hacemos promedio del entry_price si qty sube
+                                // 2. Actualizamos el delta de la cantidad y hacemos promedio del entry_price si qty sube.
+                                //    U-ERR-7: la τ de la posesión es la del ÚLTIMO evento que la movió.
                                 if let Err(e) = tx.execute(
                                     "UPDATE position_ownership SET
                                         entry_price = CASE WHEN ?4 > 0.0 AND (qty + ?4) > 0.0 AND ?5 > 0.0 THEN ((qty * entry_price) + (?4 * ?5)) / (qty + ?4) ELSE entry_price END,
                                         qty = qty + ?4,
+                                        tau_ms = ?3,
                                         updated_at = ?6
-                                     WHERE symbol=?1 AND position_side=?2 AND strategy=?3",
-                                    params![event.symbol, event.position_side, event.strategy, safe_qty, safe_price, ts as i64],
+                                     WHERE symbol=?1 AND position_side=?2",
+                                    params![event.symbol, event.position_side, tau, safe_qty, safe_price, ts as i64],
                                 ) {
                                     telemetry_engine::telemetry_err!("⚠️ [LEDGER] Update delta failed: {}", e);
                                 }
 
                                 // 3. Limpiamos si bajó a cero (o negativo por dust)
                                 if let Err(e) = tx.execute(
-                                    "DELETE FROM position_ownership WHERE qty <= 1e-8 AND symbol=?1 AND position_side=?2 AND strategy=?3",
-                                    params![event.symbol, event.position_side, event.strategy],
+                                    "DELETE FROM position_ownership WHERE qty <= 1e-8 AND symbol=?1 AND position_side=?2",
+                                    params![event.symbol, event.position_side],
                                 ) {
                                     telemetry_engine::telemetry_err!("⚠️ [LEDGER] Delete dust failed: {}", e);
                                 }
@@ -154,38 +233,35 @@ impl PositionLedger {
         let _ = self.tx.try_send(event); // No bloqueante para el hot path
     }
 
-    /// Método síncrono para inicialización: Leer estado del Ledger
+    /// Método síncrono para inicialización: lee la posesión de un símbolo y
+    /// lado. Devuelve `(qty, entry_price, tau_ms)`.
+    ///
+    /// U-ERR-7: devolvía la cuádrupla `(scalp_qty, scalp_price, swing_qty,
+    /// swing_price)` construida comparando la columna `strategy` con los
+    /// literales "scalp" y "swing". Una moneda y un lado tienen UNA posesión;
+    /// lo que la describe en el continuo es su τ.
     pub fn get_ownership(
         db_path: &str,
         symbol: &str,
         position_side: &str,
-    ) -> Option<(f64, f64, f64, f64)> {
+    ) -> Option<(f64, f64, u64)> {
         let conn = Connection::open(db_path).ok()?;
         let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
 
-        // Retornamos (scalp_qty, scalp_price, swing_qty, swing_price)
-        let mut scalp_qty = 0.0;
-        let mut scalp_price = 0.0;
-        let mut swing_qty = 0.0;
-        let mut swing_price = 0.0;
-
-        let mut stmt = conn.prepare("SELECT strategy, qty, entry_price FROM position_ownership WHERE symbol=?1 AND position_side=?2").ok()?;
-        let mut rows = stmt.query(params![symbol, position_side]).ok()?;
-
-        while let Ok(Some(row)) = rows.next() {
-            let strat: String = row.get(0).unwrap_or_default();
-            let q: f64 = row.get(1).unwrap_or(0.0);
-            let p: f64 = row.get(2).unwrap_or(0.0);
-            if strat == "scalp" {
-                scalp_qty = q;
-                scalp_price = p;
-            } else if strat == "swing" {
-                swing_qty = q;
-                swing_price = p;
-            }
-        }
-
-        Some((scalp_qty, scalp_price, swing_qty, swing_price))
+        let mut stmt = conn
+            .prepare(
+                "SELECT qty, entry_price, tau_ms FROM position_ownership
+                 WHERE symbol=?1 AND position_side=?2",
+            )
+            .ok()?;
+        stmt.query_row(params![symbol, position_side], |row| {
+            Ok((
+                row.get::<_, f64>(0).unwrap_or(0.0),
+                row.get::<_, f64>(1).unwrap_or(0.0),
+                row.get::<_, i64>(2).unwrap_or(0).max(0) as u64,
+            ))
+        })
+        .ok()
     }
 }
 
@@ -193,23 +269,27 @@ impl PositionLedger {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_position_ledger_crud() {
-        let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!(
-            "ledger_test_{}.db",
+    fn ruta_temporal(prefijo: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "{}_{}.db",
+            prefijo,
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        ));
+        ))
+    }
+
+    #[test]
+    fn el_ledger_persiste_la_posesion_con_su_tau() {
+        let db_path = ruta_temporal("ledger_test");
         let db_str = db_path.to_str().unwrap();
 
         let ledger = PositionLedger::new(db_str);
         ledger.push_event(LedgerEvent {
             symbol: "BTCUSDT".into(),
             position_side: "LONG".into(),
-            strategy: "scalp".into(),
+            tau_ms: 45_000,
             qty_delta: 0.1,
             price: 60000.0,
             is_absolute_override: true,
@@ -229,66 +309,115 @@ mod tests {
             ownership.is_some(),
             "PositionLedger debe haber persistido la propiedad"
         );
-        let (scalp_qty, scalp_price, _, _) = ownership.unwrap();
-        assert!((scalp_qty - 0.1).abs() < 1e-6);
-        assert!((scalp_price - 60000.0).abs() < 1e-6);
+        let (qty, price, tau_ms) = ownership.unwrap();
+        assert!((qty - 0.1).abs() < 1e-6);
+        assert!((price - 60000.0).abs() < 1e-6);
+        assert_eq!(tau_ms, 45_000, "el horizonte τ debe persistirse tal cual");
 
         let _ = std::fs::remove_file(db_path);
     }
 
     #[test]
-    fn test_position_ledger_incremental_delta_and_nan_immunity() {
-        let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!(
-            "ledger_delta_test_{}.db",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+    fn los_deltas_se_acumulan_y_el_nan_se_rechaza() {
+        let db_path = ruta_temporal("ledger_delta_test");
         let db_str = db_path.to_str().unwrap();
 
         let ledger = PositionLedger::new(db_str);
-        // Push event with NaN price (rejected by push_event safety filter)
+        // Evento con precio NaN: lo rechaza el filtro de push_event.
         ledger.push_event(LedgerEvent {
             symbol: "ETHUSDT".into(),
             position_side: "SHORT".into(),
-            strategy: "swing".into(),
+            tau_ms: 120_000,
             qty_delta: 0.5,
             price: f64::NAN,
             is_absolute_override: false,
         });
 
-        // Push two valid delta events
-        ledger.push_event(LedgerEvent {
-            symbol: "ETHUSDT".into(),
-            position_side: "SHORT".into(),
-            strategy: "swing".into(),
-            qty_delta: 0.5,
-            price: 3000.0,
-            is_absolute_override: false,
-        });
-
-        ledger.push_event(LedgerEvent {
-            symbol: "ETHUSDT".into(),
-            position_side: "SHORT".into(),
-            strategy: "swing".into(),
-            qty_delta: 0.5,
-            price: 3100.0,
-            is_absolute_override: false,
-        });
+        for precio in [3000.0, 3100.0] {
+            ledger.push_event(LedgerEvent {
+                symbol: "ETHUSDT".into(),
+                position_side: "SHORT".into(),
+                tau_ms: 120_000,
+                qty_delta: 0.5,
+                price: precio,
+                is_absolute_override: false,
+            });
+        }
 
         let mut persisted = false;
         for _ in 0..30 {
             std::thread::sleep(std::time::Duration::from_millis(25));
-            if let Some(res) = PositionLedger::get_ownership(db_str, "ETHUSDT", "SHORT") {
-                if (res.2 - 1.0).abs() < 1e-5 && (res.3 - 3050.0).abs() < 1.0 {
+            if let Some((qty, price, tau)) =
+                PositionLedger::get_ownership(db_str, "ETHUSDT", "SHORT")
+            {
+                if (qty - 1.0).abs() < 1e-5 && (price - 3050.0).abs() < 1.0 && tau == 120_000 {
                     persisted = true;
                     break;
                 }
             }
         }
-        assert!(persisted, "Debe acumular los deltas incrementales correctamente a 1.0 ETH y precio promedio 3050.0");
+        assert!(
+            persisted,
+            "Debe acumular los deltas a 1.0 ETH con precio medio 3050.0 y conservar τ"
+        );
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    /// U-ERR-7 — MIGRACIÓN DESDE EL ESQUEMA DE BANDAS.
+    ///
+    /// Este test FALLA con el código viejo, que no tenía migración alguna: allí
+    /// la identidad de una posesión incluía la cadena "scalp"/"swing", de modo
+    /// que un mismo (símbolo, lado) podía tener dos filas simultáneas y la
+    /// lectura devolvía las dos por separado.
+    ///
+    /// Aquí se comprueba que una base ya escrita con el esquema antiguo se
+    /// convierte sin perder nada: las dos filas de banda se colapsan en UNA
+    /// con la cantidad sumada y el precio de entrada ponderado por cantidad
+    /// (0,1 @ 100 y 0,3 @ 200 ⇒ 0,4 @ 175), y su τ queda marcada como
+    /// desconocida porque el registro antiguo nunca la guardó.
+    #[test]
+    fn u_err_7_una_base_con_bandas_se_colapsa_sin_perder_cantidad() {
+        let db_path = ruta_temporal("ledger_legacy_test");
+        let db_str = db_path.to_str().unwrap();
+
+        {
+            let conn = Connection::open(db_str).expect("crear base legada");
+            conn.execute_batch(
+                "CREATE TABLE position_ownership (
+                     symbol TEXT NOT NULL,
+                     position_side TEXT NOT NULL,
+                     strategy TEXT NOT NULL,
+                     qty REAL NOT NULL,
+                     entry_price REAL NOT NULL,
+                     updated_at INTEGER NOT NULL,
+                     PRIMARY KEY(symbol, position_side, strategy)
+                 );
+                 INSERT INTO position_ownership VALUES ('SOLUSDT','LONG','scalp',0.1,100.0,10);
+                 INSERT INTO position_ownership VALUES ('SOLUSDT','LONG','swing',0.3,200.0,20);",
+            )
+            .expect("poblar base legada");
+        }
+
+        // Abrir con el ledger nuevo dispara la migración en su hilo de escritura.
+        let _ledger = PositionLedger::new(db_str);
+
+        let mut migrado = None;
+        for _ in 0..40 {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            if let Some(res) = PositionLedger::get_ownership(db_str, "SOLUSDT", "LONG") {
+                migrado = Some(res);
+                break;
+            }
+        }
+
+        let (qty, price, tau) = migrado.expect("la posesión histórica debe sobrevivir a la migración");
+        assert!((qty - 0.4).abs() < 1e-9, "cantidad colapsada incorrecta: {qty}");
+        assert!(
+            (price - 175.0).abs() < 1e-9,
+            "el precio debe ser el medio ponderado por cantidad: {price}"
+        );
+        assert_eq!(tau, 0, "un registro antiguo no tenía τ: debe quedar marcada como desconocida");
+
         let _ = std::fs::remove_file(db_path);
     }
 }

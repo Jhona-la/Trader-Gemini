@@ -1646,7 +1646,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         0.0
                     };
-                    let max_dd = arena_imm.config.global_max_drawdown.load(Ordering::Relaxed);
+                    // D-744: el sistema inmune deja de leer el gen CRUDO (0,95
+                    // en el genoma base: con $13 esperaba a $0,65 para actuar)
+                    // y usa la MISMA prueba que el veto de entradas del
+                    // risk-engine — la caída máxima compatible con el riesgo
+                    // que el motor toma de verdad y con su tasa de pérdida
+                    // observada, con el gen como confianza de la prueba.
+                    let q_perdida_global = {
+                        let (mut wins, mut total) = (0.0f64, 0.0f64);
+                        for c in arena_imm.coins.iter() {
+                            let w = c.metrics.win_rate.load(Ordering::Relaxed);
+                            let t = c.metrics.trade_count.load(Ordering::Relaxed) as f64;
+                            if t > 0.0 && w.is_finite() {
+                                wins += w.clamp(0.0, 1.0) * t;
+                                total += t;
+                            }
+                        }
+                        if total > 0.0 {
+                            1.0 - (wins / total)
+                        } else {
+                            0.5
+                        }
+                    };
+                    let max_dd = risk_engine::drawdown::drawdown_compatible(
+                        arena_imm.riesgo_por_operacion.load(Ordering::Relaxed),
+                        q_perdida_global,
+                        arena_imm.config.global_max_drawdown.load(Ordering::Relaxed),
+                    )
+                    .unwrap_or(f64::INFINITY);
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único
@@ -3192,24 +3219,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // alerta ANTES de que el SL la cobre (VolumeStarvation /
                 // MomentumReversal / TimeExhaustion).
                 {
+                    // U-ERR-1: UNA trayectoria por posición. El auditor tenía
+                    // dos ranuras por moneda y el host sólo escribía en la
+                    // «scalp»: la mitad de la herramienta vivía vacía y la otra
+                    // mitad se consultaba dos veces por tick.
                     let ts_traj = event_time as u64;
-                    for is_scalp in [true, false] {
-                        let status = trajectory_auditor.evaluate_tick(
-                            coin_id,
-                            is_scalp,
-                            current_price,
-                            qty * current_price,
-                            ts_traj,
+                    let status = trajectory_auditor.evaluate_tick(
+                        coin_id,
+                        current_price,
+                        qty * current_price,
+                        ts_traj,
+                    );
+                    if let audit_engine::trajectory_auditor::TrajectoryStatus::Divergent { reason, score } = status {
+                        telemetry_engine::telemetry!(
+                            "📉 [TRAYECTORIA] {} divergente ({:?}, score {:.2}) — la tesis se está rompiendo EN VIVO",
+                            parsed_sym,
+                            reason,
+                            score
                         );
-                        if let audit_engine::trajectory_auditor::TrajectoryStatus::Divergent { reason, score } = status {
-                            telemetry_engine::telemetry!(
-                                "📉 [TRAYECTORIA] {} {} divergente ({:?}, score {:.2}) — la tesis se está rompiendo EN VIVO",
-                                parsed_sym,
-                                if is_scalp { "scalp" } else { "swing" },
-                                reason,
-                                score
-                            );
-                        }
                     }
                 }
 
@@ -3578,9 +3605,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // resume cuán fiel fue la realidad a la tesis del entry.
                         {
                             let ts_exit = event_time as u64;
-                            let s_scalp = trajectory_auditor.record_exit(coin_id, true, current_price, ts_exit);
-                            let s_swing = trajectory_auditor.record_exit(coin_id, false, current_price, ts_exit);
-                            if let Some(s) = s_scalp.or(s_swing) {
+                            if let Some(s) =
+                                trajectory_auditor.record_exit(coin_id, current_price, ts_exit)
+                            {
                                 telemetry_engine::telemetry!(
                                     "🎯 [TRAYECTORIA CIERRE] {} score fidelidad {:.2} (1.0 = la realidad siguió la tesis)",
                                     parsed_sym, s
@@ -3928,7 +3955,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             trajectory_auditor.record_entry(
                                 coin_id,
                                 is_long,
-                                true,
                                 entry_price,
                                 event_time as u64,
                                 expected_mag,
@@ -4474,8 +4500,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     latency_ms: if event_time > 0 { latency_ms as u64 } else { 0 },
                     latency_panic,
                     dark_alpha: dark_router_unified.get_liquidation_cascade_risk(),
-                    scalp_pnl: total_unrealized_pnl,
-                    swing_pnl: 0.0,
+                    unrealized_pnl: total_unrealized_pnl,
                     gross_pnl: total_gross_pnl,
                     net_pnl: total_net_pnl,
                     win_rate,

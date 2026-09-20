@@ -14,8 +14,8 @@ pub struct StreamEvent {
     pub z_score: f32,
     pub cvd: f32,
     pub ofi: f32,
-    pub pnl_realized_scalp: f32,
-    pub pnl_unrealized_scalp: f32,
+    pub pnl_realized: f32,
+    pub pnl_unrealized: f32,
 }
 
 // Zero-latency lock-free bus for passing events from GodEngine to the Telemetry background thread
@@ -61,8 +61,8 @@ mod tests {
             z_score: 1.5,
             cvd: 120.0,
             ofi: 45.0,
-            pnl_realized_scalp: 0.25,
-            pnl_unrealized_scalp: 0.05,
+            pnl_realized: 0.25,
+            pnl_unrealized: 0.05,
         };
         let json = serde_json::to_string(&ev).unwrap();
         assert!(json.contains("0.85"));
@@ -78,8 +78,8 @@ mod tests {
             z_score: 2.1,
             cvd: 300.0,
             ofi: 15.0,
-            pnl_realized_scalp: 1.20,
-            pnl_unrealized_scalp: 0.40,
+            pnl_realized: 1.20,
+            pnl_unrealized: 0.40,
         };
         TICK_STREAM_BUS.push(ev1);
 

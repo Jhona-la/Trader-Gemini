@@ -27,6 +27,10 @@ impl ForensicAuditor {
         .expect("Fallo al configurar PRAGMA de SQLite");
 
         // Tabla de métricas globales (OmniUpdate)
+        //
+        // U-ERR-6: el esquema tenía `scalp_pnl` y `swing_pnl`. El productor
+        // vivo escribía el PnL NO REALIZADO total en la primera y un 0.0 fijo
+        // en la segunda: una columna con nombre falso y otra de ceros.
         conn.execute(
             "CREATE TABLE IF NOT EXISTS global_metrics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,8 +38,7 @@ impl ForensicAuditor {
                 latency_ms INTEGER,
                 latency_panic BOOLEAN,
                 dark_alpha REAL,
-                scalp_pnl REAL,
-                swing_pnl REAL,
+                unrealized_pnl REAL,
                 gross_pnl REAL,
                 net_pnl REAL,
                 win_rate REAL,
@@ -44,6 +47,18 @@ impl ForensicAuditor {
             [],
         )
         .expect("Fallo al crear tabla global_metrics");
+
+        // COMPATIBILIDAD DE LECTURA: una base ya escrita conserva su esquema
+        // antiguo (el CREATE IF NOT EXISTS no lo toca), así que la columna
+        // nueva se añade con ALTER. Las filas históricas mantienen intactos
+        // sus valores en `scalp_pnl`/`swing_pnl` y siguen siendo legibles; las
+        // nuevas escriben en `unrealized_pnl`. El error se ignora porque en
+        // una base recién creada la columna YA existe y el ALTER falla — es el
+        // resultado esperado, no un fallo.
+        let _ = conn.execute(
+            "ALTER TABLE global_metrics ADD COLUMN unrealized_pnl REAL",
+            [],
+        );
 
         // Tabla de genomas (Guardar snapshots genéticos)
         conn.execute(
@@ -97,8 +112,7 @@ impl ForensicAuditor {
                     latency_ms,
                     latency_panic,
                     dark_alpha,
-                    scalp_pnl,
-                    swing_pnl,
+                    unrealized_pnl,
                     gross_pnl,
                     net_pnl,
                     win_rate,
@@ -109,13 +123,8 @@ impl ForensicAuditor {
                     } else {
                         0.0
                     };
-                    let safe_scalp = if scalp_pnl.is_finite() {
-                        scalp_pnl
-                    } else {
-                        0.0
-                    };
-                    let safe_swing = if swing_pnl.is_finite() {
-                        swing_pnl
+                    let safe_unrealized = if unrealized_pnl.is_finite() {
+                        unrealized_pnl
                     } else {
                         0.0
                     };
@@ -134,15 +143,14 @@ impl ForensicAuditor {
 
                     let _ = self.conn.execute(
                         "INSERT INTO global_metrics (
-                            latency_ms, latency_panic, dark_alpha, scalp_pnl, swing_pnl, 
+                            latency_ms, latency_panic, dark_alpha, unrealized_pnl,
                             gross_pnl, net_pnl, win_rate, trade_duration_avg
-                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                         params![
                             latency_ms as i64,
                             latency_panic,
                             safe_dark,
-                            safe_scalp,
-                            safe_swing,
+                            safe_unrealized,
                             safe_gross,
                             safe_net,
                             safe_wr,
@@ -228,8 +236,7 @@ mod tests {
             latency_ms: 15,
             latency_panic: false,
             dark_alpha: f64::NAN,
-            scalp_pnl: 0.5,
-            swing_pnl: 1.2,
+            unrealized_pnl: 0.5,
             gross_pnl: 1.7,
             net_pnl: 1.65,
             win_rate: 0.85,
@@ -239,7 +246,7 @@ mod tests {
         // Send TradeClosed
         let _ = tx.send(TelemetryEvent::TradeClosed {
             coin_id: 1,
-            trade_type: "SCALP".to_string(),
+            trade_type: "CONTINUOUS".to_string(),
             pnl: 0.25,
             roi_pct: 1.92,
             duration_ms: 5000,
@@ -258,6 +265,96 @@ mod tests {
 
         assert_eq!(count_metrics, 1);
         assert_eq!(count_trades, 1);
+
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    /// U-ERR-6 — COMPATIBILIDAD DE LECTURA CON BASES YA ESCRITAS.
+    ///
+    /// Una base forense creada con el esquema viejo (`scalp_pnl`/`swing_pnl`)
+    /// no se recrea al abrirla: `CREATE TABLE IF NOT EXISTS` es un no-op. Sin
+    /// la migración, todo `INSERT` nuevo apuntaría a una columna inexistente y
+    /// se perdería EN SILENCIO, porque el insert descarta su error.
+    ///
+    /// Este test comprueba las dos mitades del contrato: las filas históricas
+    /// siguen legibles con sus valores intactos, y las filas nuevas aterrizan.
+    #[tokio::test]
+    async fn u_err_6_base_con_esquema_viejo_migra_y_conserva_lo_escrito() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = temp_dir.join(format!("test_forensic_legacy_{}.db", unique_id));
+        let db_path_str = db_path.to_string_lossy().to_string();
+
+        // Base con el esquema ANTIGUO y una fila histórica.
+        {
+            let conn = Connection::open(&db_path_str).expect("crear base legada");
+            conn.execute(
+                "CREATE TABLE global_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    latency_ms INTEGER,
+                    latency_panic BOOLEAN,
+                    dark_alpha REAL,
+                    scalp_pnl REAL,
+                    swing_pnl REAL,
+                    gross_pnl REAL,
+                    net_pnl REAL,
+                    win_rate REAL,
+                    trade_duration_avg REAL
+                )",
+                [],
+            )
+            .expect("crear tabla legada");
+            conn.execute(
+                "INSERT INTO global_metrics (latency_ms, dark_alpha, scalp_pnl, swing_pnl, net_pnl)
+                 VALUES (7, 0.3, 4.25, 0.0, 4.20)",
+                [],
+            )
+            .expect("insertar fila histórica");
+        }
+
+        let auditor = ForensicAuditor::new(&db_path_str);
+        let (tx, rx) = tokio::sync::broadcast::channel(16);
+        tokio::spawn(async move {
+            auditor.start(rx).await;
+        });
+
+        let _ = tx.send(TelemetryEvent::OmniUpdate {
+            latency_ms: 11,
+            latency_panic: false,
+            dark_alpha: 0.42,
+            unrealized_pnl: 9.75,
+            gross_pnl: 10.0,
+            net_pnl: 9.5,
+            win_rate: 0.6,
+            trade_duration_avg: 30.0,
+        });
+        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+
+        let conn = Connection::open(&db_path_str).expect("reabrir base");
+
+        // La fila histórica conserva su valor en la columna vieja.
+        let historico: f64 = conn
+            .query_row(
+                "SELECT scalp_pnl FROM global_metrics WHERE latency_ms = 7",
+                [],
+                |r| r.get(0),
+            )
+            .expect("la fila histórica debe seguir siendo legible");
+        assert!((historico - 4.25).abs() < 1e-9);
+
+        // La fila nueva aterrizó en la columna unificada.
+        let nuevo: f64 = conn
+            .query_row(
+                "SELECT unrealized_pnl FROM global_metrics WHERE latency_ms = 11",
+                [],
+                |r| r.get(0),
+            )
+            .expect("la fila nueva debe existir en la columna migrada");
+        assert!((nuevo - 9.75).abs() < 1e-9);
 
         let _ = std::fs::remove_file(db_path);
     }

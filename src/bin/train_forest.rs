@@ -19,6 +19,43 @@
 //! validación del baseline (tasa base constante). Sin gate: jamás
 //! sobrescribir el modelo vivo con ruido.
 //!
+//! ── UNIDADES DE LAS ETIQUETAS DE REGRESIÓN (revisión D-731/D-732) ───────
+//!
+//! `--label vol` YA NO es «RMS de retornos por tick». Era
+//! `sqrt(Σ r² / n_ticks) · 100`, es decir la volatilidad DIVIDIDA por la
+//! intensidad de ticks: un tramo con muchos trades pequeños salía MENOS
+//! volátil que uno tranquilo con pocos saltos, justo al revés de lo que
+//! mide el mercado. Ahora la etiqueta es la VOLATILIDAD REALIZADA DEL
+//! HORIZONTE, `sqrt(Σ r²) · 100` sobre (t, t+τ] — es decir σ(τ) en % de
+//! precio, la misma magnitud que el VOL-BRAKE compara contra la base del
+//! modelo. CONSECUENCIA: los `models/{SYM}_VOL.json` entrenados antes de
+//! este cambio quedan OBSOLETOS — su `init_score` (la media del label) y
+//! sus hojas están en la escala vieja (÷ sqrt(n_ticks)); hay que
+//! reentrenarlos. El serving NO cambia: el freno usa el COCIENTE
+//! pronóstico/base y ese cociente es invariante de escala, pero mezclar un
+//! modelo viejo con uno nuevo sí compara manzanas con peras.
+//!
+//! `--label volu` YA NO es «profundidad media del libro». Sumaba
+//! `(bid_qty + ask_qty)` y lo dividía por el número de ticks, pero en el
+//! tape de aggTrades ese par NO es un libro: `binance_vision_sync` lo
+//! fabrica como `qty + base` en el lado del agresor y `base` en el otro,
+//! con `base = max(0,25·qty; 0,1)`. La suma valía ≈1,5·qty con un suelo
+//! artificial y la media por tick volvía a dividir por la intensidad: la
+//! etiqueta era «tamaño medio de trade inflado un 50%», no volumen. Ahora
+//! es el NOCIONAL NEGOCIADO del horizonte, `Σ |qty| · precio` sobre
+//! (t, t+τ], con `|qty| = |bid_qty − ask_qty|` (la diferencia CANCELA la
+//! base fabricada y recupera el `qty` exacto del aggTrade). Si el tape no
+//! procede de aggTrades el binario aborta en vez de etiquetar ruido.
+//!
+//! ── BASELINE DEL GATE EN REGRESIÓN ──────────────────────────────────────
+//!
+//! El baseline honesto de una magnitud persistente NO es su media: es la
+//! PERSISTENCIA (σ futura ≈ σ reciente, volumen futuro ≈ volumen reciente).
+//! Contra la media, un R² de 0,1 no demuestra nada porque la persistencia
+//! ya explica bastante más. El gate exige ahora batir el MSE de la
+//! persistencia medida sobre la MISMA partición de validación; el R² contra
+//! la media sigue imprimiéndose, etiquetado como lo que es (informativo).
+//!
 //! Uso: train_forest BTCUSDT [--in data/BTCUSDT_SEP26.bin] [--max-samples 400000]
 //!      [--horizon 500] [--trees 300] [--lr 0.1] [--depth 5] [--promote]
 
@@ -36,6 +73,181 @@ struct BinTick {
     ask: f64,
     bq: f64,
     aq: f64,
+}
+
+// ── Magnitudes físicas del tape y ventanas CAUSALES ──────────────────────
+//
+// Todo lo que sigue es aritmética pura sobre ticks: se aísla aquí para que
+// las pruebas puedan fijar la geometría de las ventanas (rasgos con
+// información ≤ t, etiqueta en (t, t+τ], persistencia en (t−τ, t]) sin
+// levantar el motor ni leer un fichero.
+
+/// Muestras construidas desde un tape: rasgos (información ≤ t), etiqueta
+/// (ventana (t, t+τ]), baseline de PERSISTENCIA (misma magnitud en (t−τ, t],
+/// información ≤ t) y la marca temporal t de cada muestra, que la purga del
+/// solape train/val necesita.
+struct Samples {
+    feats: Vec<Vec<f32>>,
+    labels: Vec<f64>,
+    persist: Vec<f64>,
+    ts: Vec<u64>,
+}
+
+/// Acumuladores de UNA ventana temporal de ticks.
+#[derive(Default, Clone, Copy, PartialEq, Debug)]
+struct WindowStats {
+    /// Σ r² de los retornos de mid dentro de la ventana — varianza realizada.
+    sum_sq: f64,
+    /// Σ |qty| · precio — nocional negociado dentro de la ventana.
+    notional: f64,
+    /// Nº de retornos observados (0 ⇒ ventana sin información de precio).
+    n_ret: usize,
+}
+
+/// Cantidad NEGOCIADA de un tick del tape de aggTrades.
+///
+/// POR QUÉ: `binance_vision_sync` no tiene libro, así que fabrica el par
+/// (bid_qty, ask_qty) a partir del `qty` del aggTrade: un lado recibe
+/// `qty + base` y el otro `base`. La SUMA arrastra `2·base` (≈ ×1,5 el qty,
+/// con un suelo absoluto), pero la DIFERENCIA cancela la base y devuelve el
+/// `qty` exacto, sea cual sea la fórmula de `base`. Ésta es la única
+/// cantidad negociada realmente medible en este tape.
+fn agg_trade_qty(bq: f64, aq: f64) -> f64 {
+    (bq - aq).abs()
+}
+
+/// ¿El par (bid_qty, ask_qty) procede de la fabricación de aggTrades?
+///
+/// Espejo EXACTO del contrato de `src/bin/binance_vision_sync.rs`:
+/// `base = max(0,25·qty; 0,1)`, lado agresor = `qty + base`. De ahí la
+/// identidad `min = max(0,25·(max − min); 0,1)`, que se cumple tick a tick
+/// en ese tape y NO se cumple en el tape sintético de klines
+/// (`parquet_to_bin`, donde ambos lados son fracciones del volumen de vela).
+/// Si el productor cambiara su fórmula esta comprobación debe romperse
+/// RUIDOSAMENTE: etiquetar «nocional» sobre un par que no es de aggTrades
+/// sería inventar la magnitud.
+fn is_aggtrades_pair(bq: f64, aq: f64) -> bool {
+    if !bq.is_finite() || !aq.is_finite() {
+        return false;
+    }
+    let (lo, hi) = if bq <= aq { (bq, aq) } else { (aq, bq) };
+    let qty = hi - lo;
+    if !(qty.is_finite() && qty > 0.0) {
+        return false;
+    }
+    let expected = (qty * 0.25).max(0.1);
+    // Tolerancia NUMÉRICA, no de decisión: 1e-9 relativo queda siete órdenes
+    // por encima del épsilon de f64 (2,2e-16) que acumula el round-trip
+    // cálculo→fichero→mmap, y varios órdenes por debajo de cualquier
+    // desviación estructural (el tape de klines da directamente qty = 0).
+    (lo - expected).abs() <= expected * 1e-9
+}
+
+/// σ REALIZADA de la ventana, en % de precio: `sqrt(Σ r²) · 100`.
+///
+/// No se divide por el número de ticks: eso convertiría la volatilidad en
+/// «volatilidad por tick» y haría que un tramo con mucha actividad pareciera
+/// más tranquilo. Con τ fijo (el horizonte del muestreo) esto ES σ(τ), la
+/// magnitud que compara el VOL-BRAKE.
+fn realized_vol_pct(sum_sq: f64) -> f64 {
+    sum_sq.max(0.0).sqrt() * 100.0
+}
+
+/// Recorre `ticks` acumulando retornos² y nocional, anclando el primer
+/// retorno en `anchor_mid` (el mid del borde izquierdo de la ventana).
+/// `anchor_mid ≤ 0` ⇒ el primer tick sólo fija el ancla y no genera retorno.
+fn accumulate_window(ticks: &[BinTick], anchor_mid: f64) -> WindowStats {
+    let mut st = WindowStats::default();
+    let mut prev = anchor_mid;
+    for tk in ticks {
+        if tk.bid <= 0.0 || tk.ask <= 0.0 || tk.bid > tk.ask {
+            continue;
+        }
+        let m = (tk.bid + tk.ask) / 2.0;
+        if prev > 0.0 {
+            let r = (m - prev) / prev;
+            st.sum_sq += r * r;
+            st.n_ret += 1;
+        }
+        st.notional += agg_trade_qty(tk.bq, tk.aq) * m;
+        prev = m;
+    }
+    st
+}
+
+/// Fin EXCLUSIVO de la ventana futura: primer índice > `i` con `ts > deadline`.
+/// La ventana resultante `i+1 .. fin` es estrictamente (t, t+τ]: nunca incluye
+/// el propio tick t ni nada posterior al vencimiento.
+fn forward_window_end(raw: &[BinTick], i: usize, deadline: u64) -> usize {
+    let mut hi = i + 1;
+    while hi < raw.len() && raw[hi].ts <= deadline {
+        hi += 1;
+    }
+    hi
+}
+
+/// Inicio de la ventana pasada (t−τ, t] y mid de anclaje (último mid válido
+/// con `ts ≤ start`). La ventana `inicio ..= i` sólo contiene información
+/// disponible en t — es el baseline de persistencia, no puede mirar futuro.
+/// Ancla 0.0 ⇒ el tape no cubre τ hacia atrás desde `i`.
+fn trailing_window_start(raw: &[BinTick], i: usize, start: u64) -> (usize, f64) {
+    let mut lo = i;
+    while lo > 0 && raw[lo - 1].ts > start {
+        lo -= 1;
+    }
+    let mut a = lo;
+    let mut anchor = 0.0;
+    while a > 0 {
+        a -= 1;
+        let tk = &raw[a];
+        if tk.bid > 0.0 && tk.ask > 0.0 && tk.bid <= tk.ask {
+            anchor = (tk.bid + tk.ask) / 2.0;
+            break;
+        }
+    }
+    (lo, anchor)
+}
+
+/// PURGA (López de Prado) del solape entre train y validación.
+///
+/// POR QUÉ: con τ = 300 s y stride = 50 s las muestras se solapan 6×, así que
+/// la etiqueta de las últimas muestras de train se resuelve DENTRO del tramo
+/// de validación — el modelo «ya vio» ese futuro y la métrica de validación
+/// sale optimista. Devuelve el fin (exclusivo) del train: la última muestra
+/// cuya ventana de etiqueta (t, t+τ] termina antes de la primera muestra de
+/// validación. El número de muestras descartadas no es una constante: lo fija
+/// el propio horizonte τ contra la densidad real del muestreo.
+fn purge_end(ts: &[u64], split: usize, horizon_ms: u64) -> usize {
+    if split == 0 || split >= ts.len() {
+        return split.min(ts.len());
+    }
+    let first_val_ts = ts[split];
+    ts[..split]
+        .iter()
+        .position(|&t| t.saturating_add(horizon_ms) > first_val_ts)
+        .unwrap_or(split)
+}
+
+/// Veredicto del gate de REGRESIÓN. Devuelve
+/// `(R² contra la media, skill contra la persistencia, pasa)`.
+///
+/// POR QUÉ: la media constante es un baseline de juguete para magnitudes
+/// persistentes (σ, volumen). Un R² de 0,1 contra la media puede convivir con
+/// un modelo PEOR que repetir el valor reciente. El gate exige batir la
+/// persistencia por `margin` (fracción del MSE de la persistencia); el R²
+/// contra la media queda como diagnóstico. Persistencia degenerada (MSE nulo
+/// o no finito) ⇒ no hay baseline comparable ⇒ NO pasa.
+fn regression_gate(mse_model: f64, mse_mean: f64, mse_persist: f64, margin: f64) -> (f64, f64, bool) {
+    let r2_mean = if mse_mean.is_finite() && mse_mean > 0.0 {
+        (mse_mean - mse_model) / mse_mean
+    } else {
+        0.0
+    };
+    if !(mse_persist.is_finite() && mse_persist > 0.0) || !mse_model.is_finite() {
+        return (r2_mean, 0.0, false);
+    }
+    let skill = (mse_persist - mse_model) / mse_persist;
+    (r2_mean, skill, skill >= margin)
 }
 
 // ── GBDT núcleo ──────────────────────────────────────────────────────────
@@ -276,7 +488,7 @@ fn main() {
 
     let oi_series_ref = &oi_series;
     // ── 1+2. Muestras: features+etiquetas desde ticks (reutilizable) ────
-    let build = |path: &str| -> (Vec<Vec<f32>>, Vec<f64>) {
+    let build = |path: &str| -> Samples {
         let file = File::open(path).unwrap_or_else(|e| {
             eprintln!("❌ no pude abrir {}: {}", path, e);
             std::process::exit(1);
@@ -302,6 +514,37 @@ fn main() {
         };
         println!("   [{}] span {:.1} días · stride efectivo {}ms", path,
                  span_ms as f64 / 86_400_000.0, stride_ms_eff);
+        // D-732 — `--label volu` etiqueta NOCIONAL NEGOCIADO, y eso exige que
+        // (bid_qty, ask_qty) venga de la fabricación de aggTrades: sólo ahí la
+        // diferencia de los dos lados recupera el `qty` del trade. En un tape
+        // sintético de klines la diferencia es una fracción del volumen de vela
+        // y la etiqueta mediría una invención. Una pasada aritmética sobre los
+        // ticks válidos (despreciable frente al O(n·ventana) del bucle
+        // principal) decide: si ALGÚN tick incumple la identidad del productor,
+        // se aborta en vez de entrenar sobre ruido.
+        if label_mode == "volu" {
+            let (mut n_valid, mut n_bad) = (0usize, 0usize);
+            for tk in raw.iter() {
+                if tk.bid <= 0.0 || tk.ask <= 0.0 || tk.bid > tk.ask || tk.ts == 0 {
+                    continue;
+                }
+                n_valid += 1;
+                if !is_aggtrades_pair(tk.bq, tk.aq) {
+                    n_bad += 1;
+                }
+            }
+            if n_valid == 0 || n_bad > 0 {
+                eprintln!(
+                    "❌ --label volu sobre un tape que NO es de aggTrades: {}/{} ticks incumplen \
+                     la identidad min = max(0,25·qty; 0,1) de binance_vision_sync ({}). \
+                     El nocional negociado no es medible en este fichero — usa el tape de \
+                     aggTrades o no entrenes este predictor.",
+                    n_bad, n_valid, path
+                );
+                std::process::exit(1);
+            }
+            println!("   [{}] tape aggTrades verificado: qty recuperable en {} ticks", path, n_valid);
+        }
         let mut engine = StatefulEngine::new();
         // B3.4 — bloque MACRO real (dims 44..48): series FRED VIXCLS/SP500/
         // DTWEXBGS/NASDAQCOM de data/macro (macro_history_sync). Join as-of
@@ -340,15 +583,34 @@ fn main() {
         };
         let mut feats: Vec<Vec<f32>> = Vec::new();
         let mut labels: Vec<f64> = Vec::new();
+        // D-733 — baseline de PERSISTENCIA: la misma magnitud de la etiqueta
+        // medida en la ventana ANTERIOR (t−τ, t]. Se guarda por muestra para
+        // poder evaluarla EXACTAMENTE sobre la partición de validación.
+        let mut persist: Vec<f64> = Vec::new();
+        // Marca temporal de cada muestra: la purga del solape train/val
+        // necesita saber cuándo se resuelve cada etiqueta.
+        let mut sample_ts: Vec<u64> = Vec::new();
         let mut neutrals = 0usize;
+        // Sin contexto temporal COMPLETO (ventana (t−τ, t] dentro del tape, o
+        // fila de OI anterior a t−τ) no hay persistencia medible ⇒ la muestra
+        // se descarta en los modos de regresión, nunca se rellena con un
+        // sustituto inventado.
+        let mut sin_contexto = 0usize;
         let tp_pct = 0.0036;
         let sl_pct = 0.0018;
+        // Primer tick UTILIZABLE del tape (no `raw[0].ts`: la cabecera puede ir
+        // seguida de ticks inválidos con ts = 0). Marca el borde por debajo del
+        // cual la ventana (t−τ, t] dejaría de estar cubierta por datos.
+        let mut first_ts: u64 = 0;
         let mut next_sample_ts: u64 = 0;
         let mut warmup = 0usize;
         for i in 0..n_total {
             let t = &raw[i];
             if t.bid <= 0.0 || t.ask <= 0.0 || t.bid > t.ask || t.ts == 0 {
                 continue;
+            }
+            if first_ts == 0 {
+                first_ts = t.ts;
             }
             let mid = (t.bid + t.ask) / 2.0;
             let vol = t.bq + t.aq;
@@ -399,12 +661,21 @@ fn main() {
                 full[44..].copy_from_slice(&macro_block);
                 if full.iter().all(|f| f.is_finite()) {
                     // P-1/P-2 (MOTOR UNIVERSAL): modos de PREDICCIÓN además de
-                    // dirección. `--label vol` ⇒ RMS de retornos de mid sobre
-                    // el horizonte (×100, %/tick) — σ futura; `--label volu`
-                    // ⇒ profundidad media del libro (bq+aq)/tick — actividad
-                    // de dinero. REGRESIÓN (grad = f−y, hess = 1, init = media;
-                    // serving por predict_raw SIN sigmoid). `dir` ⇒ barrera
-                    // triple HOST-010 (clasificación, como siempre).
+                    // dirección, todos funciones del MISMO horizonte τ =
+                    // horizon_ms (no hay bandas ni pares de valores: τ es el
+                    // único parámetro de escala).
+                    //   `--label vol`  ⇒ σ(τ) realizada = sqrt(Σ r²)·100  [% de
+                    //                    precio sobre (t, t+τ]]  (D-731)
+                    //   `--label volu` ⇒ nocional negociado Σ |qty|·precio en
+                    //                    (t, t+τ]                        (D-732)
+                    //   `--label oi`   ⇒ ΔOI% en (t, t+τ] por join as-of
+                    // REGRESIÓN (grad = f−y, hess = 1, init = media; serving por
+                    // predict_raw SIN sigmoid). `dir` ⇒ barrera triple HOST-010
+                    // (clasificación, como siempre).
+                    //
+                    // Cada muestra de regresión lleva además su PERSISTENCIA:
+                    // la misma magnitud medida en (t−τ, t], información
+                    // estrictamente ≤ t. Es el baseline que el gate exige batir.
                     if label_mode != "dir" {
                         if label_mode == "oi" {
                             // P-3c — ΔOI% a horizonte por join as-of de la
@@ -433,8 +704,13 @@ fn main() {
                                 }
                             };
                             let deadline = t.ts + horizon_ms;
-                            let (Some(oi_now), Some(oi_fut)) = (oi_asof(t.ts), oi_asof(deadline))
+                            // D-733 — persistencia del ΔOI: el ΔOI% del
+                            // horizonte ANTERIOR (t−τ, t], todo con ts ≤ t.
+                            let past = t.ts.saturating_sub(horizon_ms);
+                            let (Some(oi_now), Some(oi_fut), Some(oi_past)) =
+                                (oi_asof(t.ts), oi_asof(deadline), oi_asof(past))
                             else {
+                                sin_contexto += 1;
                                 continue;
                             };
                             // honestidad: el futuro debe ser una fila REAL del
@@ -443,44 +719,60 @@ fn main() {
                             if deadline > oi_series_ref.last().unwrap().0 {
                                 continue;
                             }
+                            // …y el pasado debe estar DENTRO del histórico: si
+                            // t−τ precede a la primera fila, el as-of no tiene
+                            // valor que devolver y la persistencia sería una
+                            // invención.
+                            if past < oi_series_ref[0].0 || oi_past <= 0.0 {
+                                sin_contexto += 1;
+                                continue;
+                            }
                             let label = (oi_fut - oi_now) / oi_now * 100.0;
-                            if label.is_finite() {
+                            let pers = (oi_now - oi_past) / oi_past * 100.0;
+                            if label.is_finite() && pers.is_finite() {
                                 feats.push(full.to_vec());
                                 labels.push(label);
+                                persist.push(pers);
+                                sample_ts.push(t.ts);
                             }
                         } else {
                         let deadline = t.ts + horizon_ms;
-                        let mut sum_sq = 0.0f64;
-                        let mut n_rt = 0usize;
-                        let mut qty_sum = 0.0f64;
-                        let mut prev = mid;
-                        for f in (i + 1)..n_total {
-                            let ft = &raw[f];
-                            if ft.ts > deadline {
-                                break;
-                            }
-                            if ft.bid <= 0.0 || ft.ask <= 0.0 {
-                                continue;
-                            }
-                            let fm = (ft.bid + ft.ask) / 2.0;
-                            if prev > 0.0 {
-                                let r = (fm - prev) / prev;
-                                sum_sq += r * r;
-                                n_rt += 1;
-                            }
-                            qty_sum += ft.bq + ft.aq;
-                            prev = fm;
-                        }
-                        let label = if n_rt == 0 {
+                        // Ventana FUTURA (t, t+τ]: arranca en i+1 (nunca en el
+                        // propio tick t) y corta en el primer ts > vencimiento.
+                        let fwd_end = forward_window_end(raw, i, deadline);
+                        let fwd = accumulate_window(&raw[i + 1..fwd_end], mid);
+                        if fwd.n_ret == 0 {
                             continue;
-                        } else if label_mode == "vol" {
-                            (sum_sq / n_rt as f64).sqrt() * 100.0
+                        }
+                        // Ventana PASADA (t−τ, t]: mismo ancho τ, información
+                        // estrictamente ≤ t. Sin τ completo hacia atrás (arranque
+                        // del fichero) no hay persistencia y la muestra se cae.
+                        let past = t.ts.saturating_sub(horizon_ms);
+                        if past < first_ts {
+                            sin_contexto += 1;
+                            continue;
+                        }
+                        let (lo, anchor) = trailing_window_start(raw, i, past);
+                        let back = accumulate_window(&raw[lo..=i], anchor);
+                        if back.n_ret == 0 {
+                            sin_contexto += 1;
+                            continue;
+                        }
+                        // D-731/D-732 — unidades: σ(τ) en % de precio y nocional
+                        // negociado del horizonte. Ninguna de las dos se divide
+                        // por el número de ticks: esa división convertía la
+                        // magnitud en «por tick» y la hacía DECRECER cuando el
+                        // mercado se activaba, justo al revés de lo que mide.
+                        let (label, pers) = if label_mode == "vol" {
+                            (realized_vol_pct(fwd.sum_sq), realized_vol_pct(back.sum_sq))
                         } else {
-                            qty_sum / n_rt as f64
+                            (fwd.notional, back.notional)
                         };
-                        if label.is_finite() {
+                        if label.is_finite() && pers.is_finite() {
                             feats.push(full.to_vec());
                             labels.push(label);
+                            persist.push(pers);
+                            sample_ts.push(t.ts);
                         }
                         }
                     } else {
@@ -527,6 +819,11 @@ fn main() {
                     } else {
                         feats.push(full.to_vec());
                         labels.push(label);
+                        // Clasificación: el baseline es la tasa base del propio
+                        // modelo, no una persistencia — se rellena con la tasa
+                        // base más adelante y NUNCA se usa en el gate `dir`.
+                        persist.push(0.5);
+                        sample_ts.push(t.ts);
                     }
                     } // fin modo dir
                 }
@@ -534,7 +831,8 @@ fn main() {
         }
         let n = labels.len();
         if n < 5_000 {
-            eprintln!("❌ muestras insuficientes: {} (+{} neutros)", n, neutrals);
+            eprintln!("❌ muestras insuficientes: {} (+{} neutros, +{} sin contexto temporal)",
+                      n, neutrals, sin_contexto);
             std::process::exit(1);
         }
         if label_mode == "dir" {
@@ -543,31 +841,71 @@ fn main() {
                      path, n, neutrals, pos_rate * 100.0);
         } else {
             let mean_y = labels.iter().sum::<f64>() / n as f64;
-            println!("   [{}] {} muestras · label[{}] media {:.6}", path, n, label_mode, mean_y);
+            let mean_p = persist.iter().sum::<f64>() / n as f64;
+            println!("   [{}] {} muestras ({} sin contexto temporal) · label[{}] media {:.6} \
+                      · persistencia media {:.6}",
+                     path, n, sin_contexto, label_mode, mean_y, mean_p);
         }
-        (feats, labels)
+        Samples { feats, labels, persist, ts: sample_ts }
     };
-    let (feats, labels) = build(&in_path);
+    let s_train = build(&in_path);
+    let (feats, labels, persist_all, sample_ts) =
+        (s_train.feats, s_train.labels, s_train.persist, s_train.ts);
     let n = labels.len();
-    let pos_rate = labels.iter().filter(|&&y| y > 0.5).count() as f64 / n as f64;
 
-    // ── 3. Split: temporal 80/20, o CRUZADO por archivo con --val-in ────
+    // ── 3. Split: temporal 80/20 CON PURGA, o CRUZADO por archivo ────────
     // El split cruzado (train AGO → val SEP) es la validación MÁS dura y
     // honesta disponible: el edge debe sobrevivir un mes de mercado nuevo.
+    //
+    // D-734 — PURGA DEL SOLAPE (López de Prado). Con τ = 300 s y stride
+    // efectivo de 50 s las ventanas de etiqueta se solapan 6×: las últimas
+    // muestras de train resuelven su barrera/su σ DENTRO del tramo de
+    // validación. Eso es fuga: la validación deja de medir mercado nuevo. Se
+    // descartan del train las muestras cuya ventana (t, t+τ] alcanza la
+    // primera muestra de validación. El recorte no es un número elegido: lo
+    // fija τ contra la densidad real del muestreo.
     let val_in = arg("--val-in", "");
-    let (tr_feats, va_feats, tr_y, va_y): (Vec<Vec<f32>>, Vec<Vec<f32>>, Vec<f64>, Vec<f64>) =
-        if val_in.is_empty() {
-            let split = n * 8 / 10;
-            (
-                feats[..split].to_vec(),
-                feats[split..].to_vec(),
-                labels[..split].to_vec(),
-                labels[split..].to_vec(),
-            )
-        } else {
-            let (vf, vl) = build(&val_in);
-            (feats, vf, labels, vl)
-        };
+    let (tr_feats, va_feats, tr_y, va_y, va_persist): (
+        Vec<Vec<f32>>,
+        Vec<Vec<f32>>,
+        Vec<f64>,
+        Vec<f64>,
+        Vec<f64>,
+    ) = if val_in.is_empty() {
+        let split = n * 8 / 10;
+        let tr_end = purge_end(&sample_ts, split, horizon_ms);
+        // Mínimo FÍSICO del entrenador, no un número elegido: un árbol no
+        // puede partir con menos de 2·min_child filas, así que por debajo de
+        // ese tamaño el GBDT sólo puede devolver la hoja raíz (= la media).
+        if tr_end < 2 * min_child {
+            eprintln!(
+                "❌ tras purgar el solape de horizonte quedan {} muestras de train \
+                 (de {}), menos de 2·min_child={}: el horizonte {}ms cubre casi toda \
+                 la partición — reduce --horizon-ms o amplía el tape.",
+                tr_end, split, 2 * min_child, horizon_ms
+            );
+            std::process::exit(1);
+        }
+        println!(
+            "   split temporal {}/{} · purga de solape: −{} muestras de train (τ={}ms)",
+            tr_end,
+            n - split,
+            split - tr_end,
+            horizon_ms
+        );
+        (
+            feats[..tr_end].to_vec(),
+            feats[split..].to_vec(),
+            labels[..tr_end].to_vec(),
+            labels[split..].to_vec(),
+            persist_all[split..].to_vec(),
+        )
+    } else {
+        // Validación en OTRO fichero (otro mes): no hay solape que purgar —
+        // ninguna etiqueta de train se resuelve dentro del tape de validación.
+        let s_val = build(&val_in);
+        (feats, s_val.feats, labels, s_val.labels, s_val.persist)
+    };
     let split = tr_y.len();
 
     // ── 4. GBDT con early stopping ───────────────────────────────────────
@@ -670,14 +1008,23 @@ fn main() {
     }
     trees.truncate(best_rounds.max(1));
 
-    // Baseline honesto: el modelo debe vencer al predictor constante
-    // (tasa base en clasificación; media en regresión).
+    // Baseline CONSTANTE: tasa base en clasificación, media del train en
+    // regresión. En clasificación es el baseline correcto (no hay «clase
+    // reciente» que repetir). En regresión es sólo DIAGNÓSTICO — ver abajo.
     let base_pred = vec![init_score as f64; va_y.len()];
     let baseline = if is_regression {
         mse(&va_y, &base_pred)
     } else {
         logloss(&va_feats, &va_y, &base_pred)
     };
+    // D-733 — BASELINE DE PERSISTENCIA (sólo regresión): predecir la magnitud
+    // futura con la MISMA magnitud medida en la ventana anterior (t−τ, t].
+    // σ futura ≈ σ reciente y volumen futuro ≈ volumen reciente son ciertos
+    // en cualquier tape, así que la media constante es un rival de paja: un
+    // R² de 0,1 contra la media puede esconder un modelo PEOR que repetir el
+    // último valor. Se evalúa sobre la MISMA partición de validación y en las
+    // MISMAS unidades que la etiqueta.
+    let mse_persist = if is_regression { mse(&va_y, &va_persist) } else { f64::NAN };
     // Diagnóstico: predicciones (sigmoid en clasificación; crudas en regresión)
     let val_preds: Vec<f64> = va_feats
         .iter()
@@ -694,16 +1041,16 @@ fn main() {
         / val_preds.len() as f64;
     let metric_name = if is_regression { "MSE" } else { "logloss" };
     println!("═══ VEREDICTO ═══");
-    println!("   val {} modelo: {:.6} · baseline: {:.6} (mejora {:+.6})",
+    println!("   val {} modelo: {:.6} · baseline constante: {:.6} (mejora {:+.6})",
              metric_name, best_val, baseline, baseline - best_val);
     println!("   p10={:.6} p50={:.6} p90={:.6} · varianza={:.6}",
              sorted_p[sorted_p.len() / 10], sorted_p[sorted_p.len() / 2],
              sorted_p[9 * sorted_p.len() / 10], var);
 
     // Margen anti-empate. Clasificación: Δ absoluto de logloss ≥ 0.001.
-    // Regresión: el margen se interpreta RELATIVO (fracción de varianza
-    // explicada, R²): default 0.001 = 0.1% de la varianza — vol/volumen
-    // tienen señal modesta pero accionable mucho antes que 2%.
+    // Regresión: el margen se interpreta RELATIVO — fracción del MSE de la
+    // PERSISTENCIA que el modelo debe recortar (skill score). Default 0.001 =
+    // 0,1% de mejora sobre repetir el valor reciente.
     let gate_margin: f64 = arg("--gate-margin", "0.001").parse().unwrap();
     // D-720 (DÉCIMA OLA · auditoría integral): EL GATE GOBIERNA EL DESTINO.
     //
@@ -716,19 +1063,33 @@ fn main() {
     // lo hot-swapea en ≤10 s y, desde B3.18, ese modelo decide TODAS las
     // entradas. Ahora un gate no superado nunca escribe el modelo vivo: va al
     // candidato y el proceso termina con código 2 para que cualquier
-    // automatización lo detecte. Vale igual para los predictores de regresión
-    // (P-1/P-2: _VOL, _VOLU, _OI), cuyo gate es R² ≥ margen.
+    // automatización lo detecte.
+    //
+    // D-733 — para los predictores de regresión (P-1/P-2: _VOL, _VOLU, _OI)
+    // el gate YA NO es el R² contra la media: es el SKILL contra la
+    // PERSISTENCIA. Batir a la media no demuestra nada en magnitudes que se
+    // autocorrelacionan; batir al «mañana será como hoy» sí. El R² contra la
+    // media se sigue imprimiendo, etiquetado como informativo.
     let gate_pass = if is_regression {
-        let r2 = if baseline > 1e-12 { (baseline - best_val) / baseline } else { 0.0 };
-        println!("   R² = {:.4}", r2);
-        r2 >= gate_margin
+        let (r2_mean, skill, pass) = regression_gate(best_val, baseline, mse_persist, gate_margin);
+        println!("   MSE persistencia (σ/volumen recientes en (t−τ,t]): {:.6}", mse_persist);
+        println!("   skill vs PERSISTENCIA = {:.4}  ← ESTE es el gate (margen {})",
+                 skill, gate_margin);
+        println!("   R² vs media constante = {:.4}  (informativo: NO es el gate)", r2_mean);
+        pass
     } else {
         baseline - best_val >= gate_margin
     };
     let gate_ok = gate_pass;
     if !gate_ok {
-        println!("🚫 GATE: mejora < margen {} — sin evidencia real. El modelo vivo NO se toca.",
-                 gate_margin);
+        if is_regression {
+            println!("🚫 GATE: el modelo no bate a la PERSISTENCIA por el margen {} — \
+                      repetir el valor reciente es igual o mejor. El modelo vivo NO se toca.",
+                     gate_margin);
+        } else {
+            println!("🚫 GATE: mejora < margen {} — sin evidencia real. El modelo vivo NO se toca.",
+                     gate_margin);
+        }
     }
     let promote = promote && gate_ok;
 
@@ -760,10 +1121,24 @@ fn main() {
         init_score,
     };
     // P-1/P-2: el sufijo del modelo declara su objetivo — {SYM}_MOTOR
-    // (dirección), {SYM}_VOL (σ futura), {SYM}_VOLU (profundidad media).
-    // El watcher del host auto-carga cualquier models/{KEY}.json bajo esa
-    // key; los predictores de regresión se sirven con predict_raw (sin
-    // sigmoid).
+    // (dirección), {SYM}_VOL (σ(τ) realizada del horizonte, % de precio),
+    // {SYM}_VOLU (nocional negociado del horizonte, en quote). El watcher del
+    // host auto-carga cualquier models/{KEY}.json bajo esa key; los
+    // predictores de regresión se sirven con predict_raw (sin sigmoid).
+    //
+    // D-731 — CAMBIO DE ESCALA: los {SYM}_VOL anteriores a esta revisión
+    // están en la escala vieja (σ dividida por sqrt(n_ticks)) y quedan
+    // OBSOLETOS: su `init_score` y sus hojas no son comparables con los
+    // nuevos. Hay que reentrenar antes de promover. El VOL-BRAKE del host usa
+    // el COCIENTE pronóstico/base, que es invariante de escala, así que el
+    // serving no necesita cambios — pero un models/ con modelos de las dos
+    // épocas mezcladas compararía magnitudes distintas entre símbolos.
+    //
+    // D-732 — {SYM}_VOLU no tiene HOY ningún consumidor en el host (sólo
+    // _VOL alimenta el freno de sizing). Se conserva porque el nocional del
+    // horizonte SÍ es una magnitud física medible en el tape, pero mientras
+    // nadie lo lea sigue siendo un predictor sin uso: pasar su gate no
+    // cambia ninguna decisión del motor.
     let suffix = match label_mode.as_str() {
         "vol" => "_VOL",
         "volu" => "_VOLU",
@@ -798,5 +1173,219 @@ fn eval_tree(nodes: &[TreeNode], x: &[f32]) -> f32 {
         }
         let v = x.get(nd.feature as usize).copied().unwrap_or(0.0);
         cur = if v <= nd.threshold { nd.left as usize } else { nd.right as usize };
+    }
+}
+
+// ── PRUEBAS ──────────────────────────────────────────────────────────────
+//
+// Cada prueba fija un invariante que el código ANTERIOR violaba: la etiqueta
+// de volatilidad dividida por la intensidad de ticks, la etiqueta `volu`
+// construida sobre un par fabricado, el gate contra la media constante y el
+// solape de horizonte entre train y validación.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reproduce la fabricación de `binance_vision_sync`: un aggTrade de
+    /// `qty` al precio `price` se escribe como (bid_qty, ask_qty) con la
+    /// base `max(0,25·qty; 0,1)` en el lado pasivo.
+    fn agg_tick(ts: u64, price: f64, qty: f64, is_maker: bool) -> BinTick {
+        let base = (qty * 0.25).max(0.1);
+        let (bq, aq) = if is_maker { (base, qty + base) } else { (qty + base, base) };
+        let half = price * 0.00005;
+        BinTick { ts, bid: price - half, ask: price + half, bq, aq }
+    }
+
+    /// D-731 — la σ del horizonte NO puede depender de cuántos ticks lo
+    /// partan. Dos caminos con la misma varianza realizada acumulada sobre la
+    /// MISMA ventana deben etiquetarse igual. La fórmula vieja
+    /// `sqrt(Σr²/n_ticks)·100` daba a la ruta de 8 pasos la MITAD de σ que a
+    /// la de 2 pasos: un mercado más activo parecía más tranquilo.
+    #[test]
+    fn vol_es_sigma_del_horizonte_no_media_por_tick() {
+        // Camino A: 2 retornos de +r. Camino B: 8 retornos de +r/2.
+        // Sigma r^2 (A) = 2r^2;  (B) = 8*(r/2)^2 = 2r^2. Misma varianza realizada.
+        let p0 = 100.0f64;
+        let r = 0.002f64;
+        let mut a = Vec::new();
+        let mut p = p0;
+        for k in 0..2u64 {
+            p *= 1.0 + r;
+            a.push(agg_tick(1_000 + k * 1_000, p, 1.0, false));
+        }
+        let mut b = Vec::new();
+        let mut q = p0;
+        for k in 0..8u64 {
+            q *= 1.0 + r / 2.0;
+            b.push(agg_tick(1_000 + k * 250, q, 1.0, false));
+        }
+        let sa = accumulate_window(&a, p0);
+        let sb = accumulate_window(&b, p0);
+        assert_eq!(sa.n_ret, 2);
+        assert_eq!(sb.n_ret, 8);
+
+        let vol_a = realized_vol_pct(sa.sum_sq);
+        let vol_b = realized_vol_pct(sb.sum_sq);
+        // Tolerancia: los retornos compuestos no son exactamente r, así que
+        // se comparan en relativo con holgura de capitalización (2e-3).
+        assert!(
+            ((vol_a - vol_b) / vol_a).abs() < 2e-3,
+            "sigma(tau) debe ser independiente de la intensidad de ticks: A={vol_a} B={vol_b}"
+        );
+
+        // Y la fórmula VIEJA (media por tick) las separaba un factor ~2.
+        let viejo_a = (sa.sum_sq / sa.n_ret as f64).sqrt() * 100.0;
+        let viejo_b = (sb.sum_sq / sb.n_ret as f64).sqrt() * 100.0;
+        assert!(
+            viejo_a / viejo_b > 1.9,
+            "la etiqueta vieja hacía parecer MENOS volátil al tramo más activo: {viejo_a} vs {viejo_b}"
+        );
+    }
+
+    /// D-732 — `|bid_qty − ask_qty|` recupera el `qty` EXACTO del aggTrade,
+    /// también cuando el suelo absoluto de la base (0,1) domina.
+    #[test]
+    fn agg_trade_qty_recupera_la_cantidad_exacta() {
+        for &q in &[0.05f64, 0.4, 1.0, 37.25, 1_234.5] {
+            let tk = agg_tick(0, 100.0, q, false);
+            assert!(
+                (agg_trade_qty(tk.bq, tk.aq) - q).abs() <= q * 1e-12,
+                "qty={q} no recuperado: {}",
+                agg_trade_qty(tk.bq, tk.aq)
+            );
+            let tk2 = agg_tick(0, 100.0, q, true);
+            assert!((agg_trade_qty(tk2.bq, tk2.aq) - q).abs() <= q * 1e-12);
+            assert!(is_aggtrades_pair(tk.bq, tk.aq));
+        }
+        // Tape sintético de klines (parquet_to_bin): los dos lados son
+        // fracciones del volumen de vela, no un aggTrade.
+        assert!(!is_aggtrades_pair(2.5, 2.5), "bq==aq no es un aggTrade");
+        assert!(
+            !is_aggtrades_pair(1.15 * 3.0, 0.85 * 3.0),
+            "el par de klines no cumple la identidad del productor"
+        );
+    }
+
+    /// D-732 — `volu` es el NOCIONAL negociado de la ventana, no la media
+    /// inflada de `(bq + aq)`. La etiqueta vieja valía ≈1,5× la cantidad
+    /// MEDIA por tick (sin precio y con suelo artificial): ni volumen, ni
+    /// profundidad, ni nocional.
+    #[test]
+    fn volu_es_nocional_negociado_no_media_inflada() {
+        let qtys = [2.0f64, 5.0, 0.05, 11.0];
+        let precios = [100.0f64, 100.5, 99.5, 101.0];
+        let ticks: Vec<BinTick> = qtys
+            .iter()
+            .zip(precios.iter())
+            .enumerate()
+            .map(|(k, (&q, &p))| agg_tick(1_000 + k as u64 * 100, p, q, k % 2 == 0))
+            .collect();
+        let st = accumulate_window(&ticks, precios[0]);
+
+        let esperado: f64 = qtys
+            .iter()
+            .zip(ticks.iter())
+            .map(|(&q, tk)| q * ((tk.bid + tk.ask) / 2.0))
+            .sum();
+        assert!(
+            (st.notional - esperado).abs() <= esperado * 1e-12,
+            "nocional {} != suma qty*precio {}",
+            st.notional,
+            esperado
+        );
+
+        // La etiqueta vieja: media de (bq+aq) por tick — sin precio, con la
+        // base fabricada dentro. Debe diferir en ÓRDENES de magnitud.
+        let viejo: f64 = ticks.iter().map(|tk| tk.bq + tk.aq).sum::<f64>() / ticks.len() as f64;
+        assert!(
+            st.notional > viejo * 100.0,
+            "la etiqueta vieja ({viejo}) no medía nocional ({})",
+            st.notional
+        );
+    }
+
+    /// D-733 — un modelo puede batir holgadamente a la MEDIA y aun así ser
+    /// peor que repetir el valor reciente. Con el gate viejo (R² vs media)
+    /// ese modelo se promovía al vivo.
+    #[test]
+    fn el_gate_exige_batir_la_persistencia_no_la_media() {
+        let margen = 0.001;
+        // MSE media 1.0, modelo 0.85 ⇒ R² = 0.15 (el gate viejo pasaba),
+        // pero la persistencia da 0.50: el modelo es PEOR que no hacer nada.
+        let (r2, skill, pasa) = regression_gate(0.85, 1.0, 0.50, margen);
+        assert!((r2 - 0.15).abs() < 1e-12, "R2 vs media informativo: {r2}");
+        assert!(skill < 0.0, "skill vs persistencia debe ser negativo: {skill}");
+        assert!(!pasa, "un modelo peor que la persistencia NO puede pasar el gate");
+
+        // Modelo que sí bate a la persistencia.
+        let (_, skill2, pasa2) = regression_gate(0.40, 1.0, 0.50, margen);
+        assert!(skill2 > margen && pasa2, "skill {skill2} debería pasar");
+
+        // Persistencia degenerada ⇒ sin baseline comparable ⇒ no pasa.
+        assert!(!regression_gate(0.1, 1.0, 0.0, margen).2);
+        assert!(!regression_gate(0.1, 1.0, f64::NAN, margen).2);
+    }
+
+    /// Las ventanas son CAUSALES: la de etiqueta vive en (t, t+τ] y la de
+    /// persistencia en (t−τ, t]. Ninguna puede tocar el otro lado de t.
+    #[test]
+    fn las_ventanas_no_cruzan_el_instante_t() {
+        // Ticks cada 100 ms durante 10 s.
+        let raw: Vec<BinTick> = (0..100u64)
+            .map(|k| agg_tick(k * 100, 100.0 + k as f64 * 0.01, 1.0, false))
+            .collect();
+        let i = 50usize; // t = 5000 ms
+        let tau = 2_000u64;
+        let t = raw[i].ts;
+
+        let end = forward_window_end(&raw, i, t + tau);
+        for tk in &raw[i + 1..end] {
+            assert!(
+                tk.ts > t && tk.ts <= t + tau,
+                "ventana futura fuera de (t, t+tau]: {}",
+                tk.ts
+            );
+        }
+        assert!(end < raw.len() && raw[end].ts > t + tau, "el corte es el primer ts > t+tau");
+
+        let (lo, ancla) = trailing_window_start(&raw, i, t - tau);
+        for tk in &raw[lo..=i] {
+            assert!(
+                tk.ts > t - tau && tk.ts <= t,
+                "ventana pasada fuera de (t-tau, t]: {}",
+                tk.ts
+            );
+        }
+        assert!(lo > 0 && raw[lo - 1].ts <= t - tau, "el inicio es el primer ts > t-tau");
+        assert!(ancla > 0.0, "el ancla existe cuando el tape cubre tau hacia atrás");
+        // El ancla es un mid ANTERIOR a la ventana, nunca uno futuro.
+        let mid_ancla = (raw[lo - 1].bid + raw[lo - 1].ask) / 2.0;
+        assert!((ancla - mid_ancla).abs() < 1e-12);
+    }
+
+    /// D-734 — las muestras solapan τ/stride veces: sin purga, la etiqueta de
+    /// las últimas muestras de train se resuelve DENTRO de la validación.
+    #[test]
+    fn la_purga_elimina_el_solape_de_horizonte() {
+        let stride = 50_000u64;
+        let tau = 300_000u64;
+        let ts: Vec<u64> = (0..100u64).map(|k| k * stride).collect();
+        let split = 80usize;
+        let tr_end = purge_end(&ts, split, tau);
+
+        // Con tau/stride = 6, la muestra situada EXACTAMENTE tau antes del
+        // borde resuelve su etiqueta en el instante de la primera muestra de
+        // validación, y ese instante todavía no pertenece a la ventana de
+        // etiqueta de la validación —que es (t_val, t_val+tau]—, así que no
+        // invade: se purgan las 5 posteriores, no 6. El número lo fija la
+        // geometría de las ventanas, no una constante elegida.
+        assert_eq!(split - tr_end, 5, "purgadas {} muestras", split - tr_end);
+        for &t in &ts[..tr_end] {
+            assert!(t + tau <= ts[split], "muestra de train que resuelve en validación: {t}");
+        }
+        assert!(ts[tr_end] + tau > ts[split], "la primera purgada debe invadir");
+
+        // Sin solape (tau < stride) no se purga nada.
+        assert_eq!(purge_end(&ts, split, 10_000), split);
     }
 }

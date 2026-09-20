@@ -334,6 +334,12 @@ pub struct GlobalArena {
     // Portfolio & Risk
     pub unified_capital: AtomicF64,
     pub used_margin: AtomicF64,
+    /// D-744 — RIESGO POR OPERACIÓN REALMENTE TOMADO (fracción del capital
+    /// que se pierde si el stop de la orden se toca), como media móvil
+    /// exponencial de las órdenes dimensionadas. Es la magnitud que convierte
+    /// una caída observada en evidencia: sin ella, un tope de drawdown es una
+    /// opinión. 0 = todavía no se ha dimensionado ninguna orden.
+    pub riesgo_por_operacion: AtomicF64,
     pub scalp_used_margin: AtomicF64,
     pub swing_used_margin: AtomicF64,
     pub tick_counter: AtomicU64,
@@ -421,6 +427,7 @@ impl GlobalArena {
             coins,
             unified_capital: AtomicF64::new(initial_capital),
             used_margin: AtomicF64::new(0.0),
+            riesgo_por_operacion: AtomicF64::new(0.0),
             scalp_used_margin: AtomicF64::new(0.0),
             swing_used_margin: AtomicF64::new(0.0),
             tick_counter: AtomicU64::new(0),

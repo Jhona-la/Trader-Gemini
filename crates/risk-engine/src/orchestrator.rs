@@ -136,15 +136,21 @@ impl<'a> PortfolioOrchestrator<'a> {
 
         let total_exposure = total_long_margin + total_short_margin + required_margin;
 
-        // Max Margin Allocation limit: Allow up to 95% of unified capital to be allocated as collateral
-        let exposure_limit = (1.0
-            - self
-                .arena
-                .config
-                .global_max_drawdown
-                .load(Ordering::Relaxed)
-                .min(0.20))
-        .clamp(0.80, 1.0);
+        // D-744: el tope de margen ya NO se deriva del gen de drawdown. Eran
+        // dos conceptos distintos leyendo el mismo número: con el gen base
+        // (0,95) el `min(0,20)` lo aplastaba a 0,20 y el colchón quedaba
+        // clavado en 0,80 pasara lo que pasara — evolucionar el drawdown
+        // movía, de paso y sin decirlo, cuánto capital podía comprometerse.
+        // El colchón tiene su propio gen (`margin_cushion_pct`) y su propia
+        // fuente única, la misma que usa el núcleo al comprobar margen libre.
+        let escasez = crate::capital_regime::micro_weight(
+            capital,
+            self.arena.config.min_notional.load(Ordering::Relaxed),
+        );
+        let exposure_limit = crate::capital_regime::margin_cushion(
+            self.arena.config.margin_cushion_pct.load(Ordering::Relaxed),
+            escasez,
+        );
 
         if total_exposure > capital * exposure_limit {
             return false;

@@ -27,19 +27,31 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 pub use telegram_bot::TelegramBot;
 
+/// Eventos que el motor publica por WebSocket.
+///
+/// # U-ERR-6 (ERRADICACIÓN DE LAS DOS MITADES DE TELEMETRÍA)
+///
+/// Este enum llevaba dos variantes de tensor partidas por banda de horizonte,
+/// `TensorUpdate([f32; 12])` («Scalp») y `SwingTensorUpdate(Vec<f32>)`
+/// («Swing»). NINGUNA de las dos tenía productor en el repositorio: nadie las
+/// construía y nadie las consumía. Se eliminan.
+///
+/// `OmniUpdate` estaba partido en `scalp_pnl` y `swing_pnl`. El único
+/// productor vivo enviaba el PnL NO REALIZADO total en `scalp_pnl` y un
+/// literal `0.0` en `swing_pnl`: un nombre que mentía sobre su contenido más
+/// una mitad clavada a cero. Ahora hay UNA serie con el nombre de lo que
+/// transporta.
 #[derive(Clone, Serialize, Debug)]
 pub enum TelemetryEvent {
-    LatencyUpdate(u64),          // Nanoseconds
-    LogUpdate(String, String),   // (type, message) e.g., ("info", "Connected...")
-    CapitalUpdate(f64),          // Current capital
-    TensorUpdate([f32; 12]),     // 12D State Vector (Scalp)
-    SwingTensorUpdate(Vec<f32>), // 34D State Vector (Swing)
+    LatencyUpdate(u64),        // Nanoseconds
+    LogUpdate(String, String), // (type, message) e.g., ("info", "Connected...")
+    CapitalUpdate(f64),        // Current capital
     OmniUpdate {
         latency_ms: u64,
         latency_panic: bool,
         dark_alpha: f64,
-        scalp_pnl: f64,
-        swing_pnl: f64,
+        /// PnL NO REALIZADO agregado del motor. Se llamaba `scalp_pnl`.
+        unrealized_pnl: f64,
         gross_pnl: f64,
         net_pnl: f64,
         win_rate: f64,
@@ -49,7 +61,9 @@ pub enum TelemetryEvent {
     ShadowLeaderboard(Vec<f64>), // FASE 13: Live competition leaderboard
     TradeClosed {
         coin_id: usize,
-        trade_type: String, // "SCALP" | "SWING"
+        /// Etiqueta libre del régimen de la operación. El productor vivo
+        /// emite "CONTINUOUS": el motor no clasifica por banda.
+        trade_type: String,
         pnl: f64,
         roi_pct: f64,
         duration_ms: u64,
@@ -59,18 +73,23 @@ pub enum TelemetryEvent {
 
 // use quantum_arena::genome::SuperGenotype;
 
+/// Estado global servido en `/api/state`.
+///
+/// U-ERR-6: llevaba CUATRO métricas duplicadas por banda
+/// (`pnl_realized_*`, `pnl_gross_*`, `pnl_unrealized_*`, `win_rate_*` con
+/// sufijos `_scalp` y `_swing`). Desde que los slots por banda del `CoinArena`
+/// desaparecieron (F-014), la mitad `_swing` se serializaba clavada a `0.0` y
+/// la mitad `_scalp` transportaba el TOTAL del motor continuo — un nombre que
+/// mentía y una mitad vacía que el panel sumaba y mostraba como «x / y». Una
+/// serie por métrica.
 #[derive(Serialize)]
 struct SystemState {
     tick_counter: u64,
     unified_capital: f64,
-    pnl_realized_scalp: f64,
-    pnl_gross_scalp: f64,
-    pnl_unrealized_scalp: f64,
-    win_rate_scalp: f64,
-    pnl_realized_swing: f64,
-    pnl_gross_swing: f64,
-    pnl_unrealized_swing: f64,
-    win_rate_swing: f64,
+    pnl_realized: f64,
+    pnl_gross: f64,
+    pnl_unrealized: f64,
+    win_rate: f64,
     global_leverage: f64,
     global_max_drawdown: f64,
     ml_prob_avg: f64,
@@ -85,17 +104,20 @@ struct SystemState {
     fees_paid: f64,
 }
 
+/// Estado por moneda servido en `/api/coins`.
+///
+/// U-ERR-6: `swing_pnl` se servía clavado a `0.0` y `active_swing` a `false`;
+/// el panel sumaba `scalp_pnl + swing_pnl` y mostraba `scalp_pnl`. Una serie
+/// por métrica.
 #[derive(Serialize)]
 struct CoinState {
     id: usize,
     symbol: String,
-    scalp_pnl: f64,
-    swing_pnl: f64,
+    pnl_realized: f64,
     win_rate: f64,
     ml_prob: f64,
     hurst: f64,
-    active_scalp: bool,
-    active_swing: bool,
+    is_active: bool,
 }
 
 /// Inicia el servidor web en background.
@@ -214,14 +236,13 @@ async fn get_tensor(
             coin.spot_ask_qty.load(Ordering::Relaxed) as f32,
             coin.agg_buy_vol.load(Ordering::Relaxed) as f32,
             coin.agg_sell_vol.load(Ordering::Relaxed) as f32,
-            // U-1 (MOTOR UNIVERSAL): el tensor sirve la métrica ÚNICA del
-            // motor continuo. Las posiciones 16-17 preservan el valor; las
-            // 18-19 (antes slots swing zombis) sirven 0 — formato de wire
-            // estable para los dashboards legacy.
+            // U-1 / U-ERR-6 (MOTOR UNIVERSAL): el tensor sirve la métrica
+            // ÚNICA del motor continuo. Las dos últimas posiciones eran los
+            // antiguos slots por banda y se servían clavadas a 0.0 — dos
+            // columnas de ceros que ningún consumidor del repositorio lee
+            // (este endpoint no tiene ni un solo cliente en el árbol). Fuera.
             coin.metrics.win_rate.load(Ordering::Relaxed) as f32,
             coin.metrics.pnl_realized.load(Ordering::Relaxed) as f32,
-            0.0f32,
-            0.0f32,
         ]
     } else {
         vec![]
@@ -268,20 +289,15 @@ async fn handle_socket(mut socket: WebSocket, tx: tokio::sync::broadcast::Sender
 
 /// Endpoint JSON O(1): Lee de la Arena y responde en microsegundos
 async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
-    let mut pnl_realized_scalp = 0.0;
-    let mut pnl_gross_scalp = 0.0;
-    let mut pnl_unrealized_scalp = 0.0;
-    let mut pnl_realized_swing = 0.0;
-    let mut pnl_gross_swing = 0.0;
-    let mut pnl_unrealized_swing = 0.0;
-    let mut win_rate_scalp_sum = 0.0;
-    let mut win_rate_swing_sum = 0.0;
+    let mut pnl_realized = 0.0;
+    let mut pnl_gross = 0.0;
+    let mut pnl_unrealized = 0.0;
+    let mut win_rate_sum = 0.0;
     let mut ml_prob_sum = 0.0;
     let mut hurst_sum = 0.0;
     let mut total_zombies = 0;
     let mut active_coins = 0.0;
-    let mut active_scalp_coins = 0.0;
-    let mut active_swing_coins = 0.0;
+    let mut coins_with_activity = 0.0;
     // B3.13 — SANITIZADOR DE MARCADO: contribuciones de unrealized que
     // exceden 2× el capital son marcado local roto (glitch de precio
     // testnet o posición fantasma de rotación — medido +$2.27M en cuenta
@@ -299,11 +315,11 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
     let mut marking_anomalies: u32 = 0;
 
     for coin in arena.coins.iter() {
-        // U-1 (MOTOR UNIVERSAL): métrica ÚNICA. Los slots zombis coin.scalp/
-        // coin.swing quedaron extirpados del CoinArena: este agregado leía
-        // contadores MUERTOS desde F-014 y los dashboards mostraban ceros
-        // estructurales. Los acumuladores *_swing del wire se conservan a 0
-        // (formato estable) — todo el PnL/WR vive en los campos unificados.
+        // U-1 / U-ERR-6 (MOTOR UNIVERSAL): métrica ÚNICA. Los slots zombis
+        // coin.scalp/coin.swing quedaron extirpados del CoinArena: este
+        // agregado leía contadores MUERTOS desde F-014. Ya no se mantienen
+        // acumuladores de banda: todo el PnL/WR vive en los campos unificados
+        // que el motor continuo escribe de verdad.
         let m_realized = coin.metrics.pnl_realized.load(Ordering::Relaxed);
         let m_gross = coin.metrics.pnl_gross.load(Ordering::Relaxed);
         let m_unrealized = coin.metrics.pnl_unrealized.load(Ordering::Relaxed);
@@ -313,56 +329,42 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
         let hurst = coin.hurst_exponent.load(Ordering::Relaxed);
         let zombies = coin.metrics.zombie_promotions.load(Ordering::Relaxed);
 
-        let eff_sc_realized = m_realized;
-        let eff_sc_gross = m_gross;
-        let eff_sc_unrealized = m_unrealized;
-        let eff_wr_scalp = m_wr;
-
         // MOD6/8-019: el sanitizer era CIEGO a pnl_realized envenenado — un
         // realized que excede 10× el capital es contabilidad rota (doble
         // contabilización, glitch de rotación), no edge: se cuenta como
         // anomalía y NO se agrega.
-        if eff_sc_realized.abs() > mark_bound * 10.0 {
+        if m_realized.abs() > mark_bound * 10.0 {
             marking_anomalies += 1;
-            pnl_realized_scalp += 0.0;
         } else {
-            pnl_realized_scalp += eff_sc_realized;
+            pnl_realized += m_realized;
         }
-        pnl_gross_scalp += eff_sc_gross;
+        pnl_gross += m_gross;
         // B3.13: excluir marcado imposible del agregado y contarlo.
         // MOD6/8-019: `>= bound*0.99` (no `> bound`) para cerrar el hueco del
         // pase-exacto del valor clamped por el writer.
-        if eff_sc_unrealized.abs() >= mark_bound_exclude {
+        if m_unrealized.abs() >= mark_bound_exclude {
             marking_anomalies += 1;
         } else {
-            pnl_unrealized_scalp += eff_sc_unrealized;
+            pnl_unrealized += m_unrealized;
         }
-        // U-1: sin slots swing — los acumuladores del wire quedan en 0.
-        pnl_realized_swing += 0.0;
-        pnl_gross_swing += 0.0;
         total_zombies += zombies;
 
         ml_prob_sum += ml;
         hurst_sum += hurst;
 
-        if eff_sc_realized != 0.0
-            || eff_sc_unrealized != 0.0
+        if m_realized != 0.0
+            || m_unrealized != 0.0
             || coin.metrics.active_positions.load(Ordering::Relaxed) > 0
         {
-            win_rate_scalp_sum += eff_wr_scalp;
-            active_scalp_coins += 1.0;
+            win_rate_sum += m_wr;
+            coins_with_activity += 1.0;
         }
         active_coins += 1.0;
     }
 
     // MOD6/8-021: 0.55 era ficción mostrada como estado — sin datos, 0.0.
-    let avg_win_rate_scalp = if active_scalp_coins > 0.0 {
-        win_rate_scalp_sum / active_scalp_coins
-    } else {
-        0.0
-    };
-    let avg_win_rate_swing = if active_swing_coins > 0.0 {
-        win_rate_swing_sum / active_swing_coins
+    let avg_win_rate = if coins_with_activity > 0.0 {
+        win_rate_sum / coins_with_activity
     } else {
         0.0
     };
@@ -377,8 +379,8 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
         0.5
     };
 
-    let total_net_pnl = pnl_realized_scalp + pnl_realized_swing;
-    let total_gross_pnl = pnl_gross_scalp + pnl_gross_swing;
+    let total_net_pnl = pnl_realized;
+    let total_gross_pnl = pnl_gross;
     let fees_paid = total_gross_pnl - total_net_pnl;
 
     let current_cap = arena.unified_capital.load(Ordering::Relaxed);
@@ -396,14 +398,10 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
     let state = SystemState {
         tick_counter: arena.tick_counter.load(Ordering::Relaxed),
         unified_capital: current_cap,
-        pnl_realized_scalp,
-        pnl_gross_scalp,
-        pnl_unrealized_scalp,
-        win_rate_scalp: avg_win_rate_scalp,
-        pnl_realized_swing,
-        pnl_gross_swing,
-        pnl_unrealized_swing,
-        win_rate_swing: avg_win_rate_swing,
+        pnl_realized,
+        pnl_gross,
+        pnl_unrealized,
+        win_rate: avg_win_rate,
         global_leverage: arena.config.global_leverage.load(Ordering::Relaxed),
         global_max_drawdown: arena.config.global_max_drawdown.load(Ordering::Relaxed),
         ml_prob_avg: avg_ml_prob,
@@ -436,15 +434,13 @@ async fn get_coins(State(arena): State<Arc<GlobalArena>>) -> Json<Vec<CoinState>
         coins_data.push(CoinState {
             id: i,
             symbol: symbol_name,
-            // U-1: métrica unificada del motor continuo; swing_pnl/active_swing
-            // se conservan en el wire (dashboards legacy) servidos a 0.
-            scalp_pnl: coin.metrics.pnl_realized.load(Ordering::Relaxed),
-            swing_pnl: 0.0,
+            // U-1 / U-ERR-6: métrica unificada del motor continuo. Ya no se
+            // sirven mitades de banda clavadas a 0.
+            pnl_realized: coin.metrics.pnl_realized.load(Ordering::Relaxed),
             win_rate: coin.metrics.win_rate.load(Ordering::Relaxed),
             ml_prob: coin.ml_prob.load(Ordering::Relaxed),
             hurst: coin.hurst_exponent.load(Ordering::Relaxed),
-            active_scalp: coin.metrics.active_positions.load(Ordering::Relaxed) > 0,
-            active_swing: false,
+            is_active: coin.metrics.active_positions.load(Ordering::Relaxed) > 0,
         });
     }
     Json(coins_data)
@@ -689,8 +685,8 @@ async fn dashboard_html() -> impl IntoResponse {
             <div class="card-value negative" id="val-fees">0.00 <span class="card-unit">USD</span></div>
         </div>
         <div class="card">
-            <div class="card-title">🎯 Tasa de Aciertos (Scalp / Swing)</div>
-            <div class="card-value neutral" id="val-win-rate">0.0 / 0.0 <span class="card-unit">%</span></div>
+            <div class="card-title">🎯 Tasa de Aciertos</div>
+            <div class="card-value neutral" id="val-win-rate">0.0 <span class="card-unit">%</span></div>
         </div>
         <div class="card">
             <div class="card-title">⏱️ Motor HFT</div>
@@ -819,9 +815,10 @@ async fn dashboard_html() -> impl IntoResponse {
                 const res = await fetch('/api/state');
                 const data = await res.json();
                 
-                // Calculate aggregations dynamically
-                data.pnl_post_fees = data.pnl_realized_scalp + data.pnl_realized_swing;
-                data.pnl_pre_fees = data.pnl_gross_scalp + data.pnl_gross_swing;
+                // U-ERR-6: una serie por metrica. Antes se sumaban dos mitades
+                // (_scalp + _swing) de las que la segunda siempre valia 0.
+                data.pnl_post_fees = data.pnl_realized;
+                data.pnl_pre_fees = data.pnl_gross;
                 data.total_fees_paid = data.pnl_pre_fees - data.pnl_post_fees;
                 data.roi_post_fees = (data.pnl_post_fees / (data.unified_capital - data.pnl_post_fees)) * 100 || 0;
                 data.roi_pre_fees = (data.pnl_pre_fees / (data.unified_capital - data.pnl_post_fees)) * 100 || 0;
@@ -838,8 +835,8 @@ async fn dashboard_html() -> impl IntoResponse {
                 
                 setHtml('val-fees', `${formatNumber(data.total_fees_paid)} <span class="card-unit">USD</span>`);
                 
-                const wrClass = data.win_rate_scalp > 0.5 ? 'positive' : (data.win_rate_scalp < 0.4 ? 'negative' : 'neutral');
-                setHtml('val-win-rate', `<span class="${wrClass}">${formatNumber(data.win_rate_scalp * 100, 1)} / ${formatNumber(data.win_rate_swing * 100, 1)}</span> <span class="card-unit">%</span>`);
+                const wrClass = data.win_rate > 0.5 ? 'positive' : (data.win_rate < 0.4 ? 'negative' : 'neutral');
+                setHtml('val-win-rate', `<span class="${wrClass}">${formatNumber(data.win_rate * 100, 1)}</span> <span class="card-unit">%</span>`);
                 
                 setHtml('val-ticks', `${data.tick_counter} <span class="card-unit">Events</span>`);
                 
@@ -863,8 +860,8 @@ async fn dashboard_html() -> impl IntoResponse {
                 // 4D Graph Update
                 traceData.x.push(data.tick_counter);
                 traceData.y.push(data.unified_capital);
-                traceData.z.push(data.pnl_realized_scalp);
-                traceData.marker.color.push(data.win_rate_scalp * 100);
+                traceData.z.push(data.pnl_realized);
+                traceData.marker.color.push(data.win_rate * 100);
                 traceData.marker.size.push(Math.max(4, data.global_leverage * 1.5));
 
                 if (traceData.x.length > historyLength) {
@@ -887,16 +884,16 @@ async fn dashboard_html() -> impl IntoResponse {
                     // Use the dynamic symbol extracted from the backend
                     const symbol = coin.symbol || `COIN_${coin.id}`;
                     
-                    const totalPnl = coin.scalp_pnl + coin.swing_pnl;
+                    const totalPnl = coin.pnl_realized;
                     const pClass = totalPnl > 0 ? 'positive' : (totalPnl < 0 ? 'negative' : 'neutral');
                     const probClass = coin.ml_prob > 0.55 ? 'positive' : (coin.ml_prob < 0.45 ? 'negative' : 'neutral');
-                    const isActive = coin.active_scalp || coin.active_swing ? 'active-target' : '';
+                    const isActive = coin.is_active ? 'active-target' : '';
                     
                     htmlStr += `
                         <div class="card coin-card ${isActive}">
                             <div class="coin-title">${symbol}</div>
                             <div style="font-size: 0.8rem; color: #888; margin-bottom: 0.5rem;">IA Prob: <span class="${probClass}">${formatNumber(coin.ml_prob * 100, 1)}%</span></div>
-                            <div class="card-value coin-value ${pClass}">${formatNumber(coin.scalp_pnl)} <span class="card-unit">USD</span></div>
+                            <div class="card-value coin-value ${pClass}">${formatNumber(coin.pnl_realized)} <span class="card-unit">USD</span></div>
                         </div>
                     `;
                 });
@@ -1006,14 +1003,10 @@ mod tests {
         let state = SystemState {
             tick_counter: 100,
             unified_capital: 13.0,
-            pnl_realized_scalp: 0.5,
-            pnl_gross_scalp: 0.6,
-            pnl_unrealized_scalp: 0.1,
-            win_rate_scalp: 0.85,
-            pnl_realized_swing: 1.0,
-            pnl_gross_swing: 1.2,
-            pnl_unrealized_swing: 0.2,
-            win_rate_swing: 0.75,
+            pnl_realized: 0.5,
+            pnl_gross: 0.6,
+            pnl_unrealized: 0.1,
+            win_rate: 0.85,
             global_leverage: 10.0,
             global_max_drawdown: 0.02,
             ml_prob_avg: 0.78,
@@ -1037,14 +1030,14 @@ mod tests {
     fn test_telemetry_event_trade_closed_serialization() {
         let ev = TelemetryEvent::TradeClosed {
             coin_id: 1,
-            trade_type: "SCALP".to_string(),
+            trade_type: "CONTINUOUS".to_string(),
             pnl: 0.45,
             roi_pct: 3.46,
             duration_ms: 12000,
             ml_prob: 0.82,
         };
         let json = serde_json::to_string(&ev).unwrap();
-        assert!(json.contains("SCALP"));
+        assert!(json.contains("CONTINUOUS"));
         assert!(json.contains("0.45"));
     }
 
@@ -1054,8 +1047,7 @@ mod tests {
             latency_ms: 12,
             latency_panic: false,
             dark_alpha: 0.88,
-            scalp_pnl: 2.5,
-            swing_pnl: 4.1,
+            unrealized_pnl: 2.5,
             gross_pnl: 6.6,
             net_pnl: 6.55,
             win_rate: 0.72,
@@ -1068,17 +1060,73 @@ mod tests {
         let coin = CoinState {
             id: 0,
             symbol: "BTCUSDT".to_string(),
-            scalp_pnl: 1.2,
-            swing_pnl: 2.3,
+            pnl_realized: 1.2,
             win_rate: 0.80,
             ml_prob: 0.75,
             hurst: 0.62,
-            active_scalp: true,
-            active_swing: false,
+            is_active: true,
         };
         let coin_json = serde_json::to_string(&coin).unwrap();
         assert!(coin_json.contains("BTCUSDT"));
-        assert!(coin_json.contains("active_scalp"));
+        assert!(coin_json.contains("is_active"));
+    }
+
+    /// U-ERR-6 — UNA SERIE POR MÉTRICA EN EL WIRE.
+    ///
+    /// Falla con el código viejo: allí `/api/state` serializaba ocho campos
+    /// (cuatro métricas × dos bandas) de los que los cuatro `_swing` salían
+    /// clavados a 0.0, y `/api/coins` servía `swing_pnl: 0.0` y
+    /// `active_swing: false` para cada moneda. El panel sumaba las dos
+    /// mitades y presentaba «x / y» con la `y` siempre a cero.
+    ///
+    /// La invariante que se fija: ningún campo del protocolo lleva sufijo de
+    /// banda de horizonte, ni en el estado global ni en el de moneda.
+    #[test]
+    fn u_err_6_el_wire_no_lleva_sufijos_de_banda() {
+        let state = SystemState {
+            tick_counter: 1,
+            unified_capital: 13.0,
+            pnl_realized: 0.5,
+            pnl_gross: 0.6,
+            pnl_unrealized: 0.1,
+            win_rate: 0.85,
+            global_leverage: 10.0,
+            global_max_drawdown: 0.02,
+            ml_prob_avg: 0.78,
+            hurst_avg: 0.65,
+            zombie_count: 0,
+            marking_anomalies: 0,
+            cpu_usage: 15.0,
+            memory_used_mb: 250.0,
+            total_memory_mb: 16384.0,
+            net_roi_pct: 11.5,
+            gross_roi_pct: 13.8,
+            fees_paid: 0.03,
+        };
+        let coin = CoinState {
+            id: 0,
+            symbol: "BTCUSDT".to_string(),
+            pnl_realized: 1.2,
+            win_rate: 0.80,
+            ml_prob: 0.75,
+            hurst: 0.62,
+            is_active: true,
+        };
+
+        for json in [
+            serde_json::to_string(&state).unwrap(),
+            serde_json::to_string(&coin).unwrap(),
+        ] {
+            let bajo = json.to_ascii_lowercase();
+            assert!(
+                !bajo.contains("scalp") && !bajo.contains("swing"),
+                "el wire sigue partido por banda: {json}"
+            );
+        }
+
+        // Y la métrica unificada es exactamente una: el agregado de PnL
+        // realizado no se reconstruye sumando mitades.
+        assert_eq!(state.pnl_realized, 0.5);
     }
 
     /// B3.13 — SANITIZADOR DE /api/state: un marcado imposible (|unrealized|
@@ -1103,7 +1151,7 @@ mod tests {
         let state = get_state(axum::extract::State(arena)).await;
 
         // El veneno quedó fuera del agregado; el sano pasó.
-        assert!((state.pnl_unrealized_scalp - 15.0).abs() < 1e-6);
+        assert!((state.pnl_unrealized - 15.0).abs() < 1e-6);
         // Contado, no silenciado.
         assert_eq!(state.marking_anomalies, 1);
         // Serialización expone el contador (wiring al dashboard).
