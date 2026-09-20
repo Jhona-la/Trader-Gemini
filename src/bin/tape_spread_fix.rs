@@ -71,6 +71,35 @@ fn main() {
     let ticks: &[BinTick] =
         unsafe { std::slice::from_raw_parts(datos.as_ptr() as *const BinTick, n) };
 
+    // TICK INFERIDO DEL PROPIO TAPE. Si no se pasa, la rejilla del instrumento
+    // se mide: la menor diferencia positiva entre precios medios consecutivos
+    // ES el tick (en un mes de datos, un movimiento de un solo tick ocurre
+    // miles de veces). Derivarlo de los datos evita meter una constante nueva.
+    let tick_size = if tick_size > 0.0 {
+        tick_size
+    } else {
+        let mut menor = f64::INFINITY;
+        let mut previo = 0.0f64;
+        for t in ticks.iter() {
+            let mid = (t.bid_price + t.ask_price) * 0.5;
+            if previo > 0.0 {
+                let d = (mid - previo).abs();
+                // Se ignoran diferencias por debajo del épsilon relativo de
+                // f64 acumulado: ruido de coma flotante, no rejilla.
+                if d > mid * 1e-12 && d < menor {
+                    menor = d;
+                }
+            }
+            previo = mid;
+        }
+        if menor.is_finite() {
+            println!("📏 [TICK] inferido del tape: {}", menor);
+            menor
+        } else {
+            0.0
+        }
+    };
+
     let mut salida = BufWriter::new(File::create(&args[2]).expect("no se pudo crear la salida"));
     salida.write_all(MAGIC).expect("cabecera de salida");
 
