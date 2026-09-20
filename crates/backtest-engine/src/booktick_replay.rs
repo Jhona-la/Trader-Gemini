@@ -672,18 +672,30 @@ pub fn live_envelope_gate(
     } else if operable {
         let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
         // CERT-M8-C01 — PARIDAD SIZING BT↔VIVO: el host (god_engine.rs
-        // ~3512) computa `lev_from_risk = (0.05 · kelly_frac) / sl_at_
-        // tau(τ_entry)` y luego `.min(cap)`. El replay ANTES usaba
+        // ~3857) computa `lev_from_risk = (0.05 · kelly_frac · vol_brake)
+        // / sl_at_tau(τ_entry)` y luego `.min(cap)`. El replay ANTES usaba
         // `core_leverage.clamp(1,20).min(cap)` (pre-C-08) — sin kelly_frac
         // scaling, sin stop-distance normalization: un genoma certificado
-        // a leverage L tradearía a OTRO L en demo. Ahora la MISMA fórmula.
+        // a leverage L tradearía a OTRO L en demo. Ahora la MISMA fórmula,
+        // INCLUIDO el vol_brake (P-1b) que antes faltaba — ver abajo.
         let kelly_frac = envelope.risk_fraction(env_z, env_k);
         let tau_entry = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
         let sl_frac = arena
             .config
             .sl_at_tau(if tau_entry > 0.0 { tau_entry } else { 30_000.0 });
         let risk_budget = 0.05 * kelly_frac;
-        let lev_from_risk = (risk_budget / sl_frac.max(1e-4)).clamp(1.0, 20.0);
+        // P-1b — VOL-BRAKE (paridad con god_engine.rs:3838-3858): el predictor
+        // {SYM}_VOL encoge el presupuesto cuando la σ pronosticada supera ×1.25
+        // la base del régimen de entrenamiento. Sin modelo ⇒ brake = 1.0 (paridad
+        // trivial). MISMAS claves de registry y MISMA fórmula que el host vivo.
+        let vol_fc = arena
+            .registry
+            .get_for_coin_or(coin_id, "vol_forecast_pct", 0.0);
+        let vol_base = arena
+            .registry
+            .get_for_coin_or(coin_id, "vol_forecast_base", 0.0);
+        let vol_brake = vol_brake_factor(vol_fc, vol_base);
+        let lev_from_risk = (risk_budget * vol_brake / sl_frac.max(1e-4)).clamp(1.0, 20.0);
         ((lev_from_risk as u32).min(cap)).max(1)
     } else {
         0
@@ -717,6 +729,21 @@ pub fn live_envelope_gate(
         return false;
     }
     true
+}
+
+/// P-1b — VOL-BRAKE: réplica EXACTA de god_engine.rs:3846-3858 (el host vivo).
+/// Cuando la σ pronosticada por {SYM}_VOL supera ×1.25 la base del régimen de
+/// entrenamiento, encoge el presupuesto de riesgo UNILATERALMENTE (piso ×0.4,
+/// nunca amplifica). Sin modelo (vol_fc o vol_base ≈ 0) ⇒ 1.0 = paridad trivial.
+/// Ambos lados DEBEN usar esta misma curva; si el vivo cambia, cambiar aquí.
+fn vol_brake_factor(vol_fc: f64, vol_base: f64) -> f64 {
+    if vol_base > 1e-9 && vol_fc > 1e-9 {
+        let ratio = vol_fc / vol_base;
+        if ratio > 1.25 {
+            return ((1.25 / ratio).max(0.4)).min(1.0);
+        }
+    }
+    1.0
 }
 
 /// Rollback EXACTO de `rollback_positions` del host (god_engine.rs): cierra
@@ -931,6 +958,25 @@ mod tests {
             lev_wide,
             lev_narrow
         );
+    }
+
+    #[test]
+    fn vol_brake_factor_replica_curva_del_vivo() {
+        // M8-C01 — paridad BT↔vivo: esta curva DEBE coincidir con
+        // god_engine.rs:3846-3858. Si un lado deriva, este test falla.
+        // Sin modelo {SYM}_VOL ⇒ 1.0 (paridad trivial: símbolos sin VOL).
+        assert_eq!(vol_brake_factor(0.0, 0.0), 1.0);
+        assert_eq!(vol_brake_factor(0.0, 2.0), 1.0);
+        assert_eq!(vol_brake_factor(2.0, 0.0), 1.0);
+        // ratio ≤ 1.25 ⇒ sin freno (nunca amplifica).
+        assert_eq!(vol_brake_factor(1.0, 1.0), 1.0);
+        assert_eq!(vol_brake_factor(1.25, 1.0), 1.0);
+        assert_eq!(vol_brake_factor(0.5, 1.0), 1.0);
+        // ratio = 2.5 ⇒ 1.25/2.5 = 0.5.
+        assert!((vol_brake_factor(2.5, 1.0) - 0.5).abs() < 1e-12);
+        // piso ×0.4: ratio = 10 ⇒ 1.25/10 = 0.125 → clamp 0.4.
+        assert!((vol_brake_factor(10.0, 1.0) - 0.4).abs() < 1e-12);
+        assert!((vol_brake_factor(1000.0, 1.0) - 0.4).abs() < 1e-12);
     }
 
     #[test]
