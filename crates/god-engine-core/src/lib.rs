@@ -4,15 +4,32 @@
 /// importar evolution-engine::fitness sin ciclo de dependencias). Misma
 /// matemática que fitness::compute: crecimiento logarítmico (utilidad Kelly)
 /// penalizado por drawdown². Inacción = INVIABLE (f64::NEG_INFINITY).
+///
+/// M5-H01 (2026-09-19): alineado con el canónico en los DOS mecanismos que
+/// faltaban —
+/// (1) gate min_trades: <30 cierres ⇒ evidencia insuficiente ⇒ INVIABLE
+///     (D-654). 30 = WF_MIN_TRADES (online_daemon), el mismo estándar que la
+///     promoción walk-forward exige al candidato vivo. Antes, un genoma con
+///     1-2 trades de suerte podía liderar el leaderboard de Darwin.
+/// (2) dd.clamp(0,1): λ·dd² no crece más allá del ancla "dd 50% = duplicar
+///     capital" (paridad fitness::compute).
+/// El factor OOS del canónico NO se replica: los evaluadores de período
+/// único lo desactivan por convención (oos_start == oos_end ⇒ factor 1.0;
+/// ver evolver.rs:443 "sin split IS/OOS aquí").
 #[inline]
-pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64) -> f64 {
+pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64, total_trades: u32) -> f64 {
     if initial <= 0.0 || !initial.is_finite() || !final_cap.is_finite() || final_cap <= 0.0 {
         return f64::NEG_INFINITY; // ruina o datos inválidos
+    }
+    const MIN_TRADES: u32 = 30;
+    if total_trades < MIN_TRADES {
+        return f64::NEG_INFINITY; // D-654: poca actividad = ruido, no edge
     }
     let growth = (final_cap / initial).ln();
     // λ = 4·ln(2): el dd del 50% cuesta exactamente lo que duplicar capital gana
     const DRAWDOWN_LAMBDA: f64 = 2.772_588_722_239_781;
-    growth - DRAWDOWN_LAMBDA * max_dd * max_dd
+    let dd = max_dd.clamp(0.0, 1.0);
+    growth - DRAWDOWN_LAMBDA * dd * dd
 }
 
 pub mod bootloader;
@@ -2843,7 +2860,7 @@ impl GodEngineCore {
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
-                            confidence: sig_conf(effective_obi_long.abs().min(composite_score.abs())),
+                            confidence: sig_conf(effective_obi_short.abs().min(composite_score.abs())),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 9.0,
                             ..Default::default()
@@ -2858,7 +2875,7 @@ impl GodEngineCore {
                     } else if long_streak < 2 && price_stretch < -1.0 && effective_obi_long > range_obi * 1.15 && composite_score >= 0.24 && micro_trend >= 0.0 {
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
-                            confidence: sig_conf(current_obi.abs().min(composite_score.abs())),
+                            confidence: sig_conf(effective_obi_long.abs().min(composite_score.abs())),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 10.0,
                             ..Default::default()
@@ -2899,7 +2916,7 @@ impl GodEngineCore {
                         !(price_stretch < -0.80 && secular_trend < 0.0010),
                         higher_trend >= -0.0008,
                         composite_score >= tensor_tech_thr,
-                        current_obi > range_obi,
+                        effective_obi_long > range_obi,
                         not_overextended_long,
                     ];
                     let short_conditions = [
@@ -2910,7 +2927,7 @@ impl GodEngineCore {
                         !(price_stretch > 0.80 && secular_trend > -0.0010),
                         higher_trend <= 0.0008,
                         composite_score <= -tensor_tech_thr,
-                        current_obi < -range_obi,
+                        effective_obi_short < -range_obi,
                         not_overextended_short,
                     ];
                     let tensor_allowed = match tensor_scalp.signal {
@@ -2994,22 +3011,27 @@ impl GodEngineCore {
 
                 // F-009 FIX: Continuous ML Probability Weighting (replaces binary switch)
                 // Instead of killing signals when ml_prob crosses 0.51/0.49, modulate
-                // confidence continuously. The farther ml_prob is from 0.5 in the signal's
-                // direction, the more the confidence is amplified. Against the signal,
-                // confidence is reduced proportionally.
+                // confidence continuously relative to the model's baseline (ml_model_base).
+                // The farther ml_prob is from ml_base in the signal's direction, the more
+                // confidence is amplified. Against the signal, confidence is reduced smoothly.
                 {
+                    let ml_base = if ml_model_base > 0.05 && ml_model_base < 0.95 {
+                        ml_model_base
+                    } else {
+                        0.5
+                    };
                     let ml_directional = match fast_intent.signal {
-                        SignalType::Long => (ml_prob - 0.5) * 2.0,   // [-1, +1] where +1 = strong bullish
-                        SignalType::Short => (0.5 - ml_prob) * 2.0,  // [-1, +1] where +1 = strong bearish
+                        SignalType::Long => (ml_prob - ml_base) * 2.0,   // [-1, +1] where +1 = strong bullish
+                        SignalType::Short => (ml_base - ml_prob) * 2.0,  // [-1, +1] where +1 = strong bearish
                         _ => 0.0,
                     };
-                    // If ML contradicts signal (ml_directional < 0) AND no extreme price action,
-                    // reduce confidence. If ml_directional < -0.5, kill signal entirely.
-                    if ml_directional < -0.50 && price_stretch.abs() < 2.5 {
+                    // If ML strongly contradicts signal (ml_directional < -0.80) AND no extreme price action,
+                    // kill signal entirely. Otherwise, softly penalize confidence.
+                    if ml_directional < -0.80 && price_stretch.abs() < 2.5 {
                         fast_intent = SignalIntent::flat();
                     } else if ml_directional < 0.0 && price_stretch.abs() < 2.5 {
-                        // Soft penalty: scale confidence by (1 + ml_directional) where ml_directional is [-0.5, 0)
-                        fast_intent.confidence *= (1.0 + ml_directional).max(0.1);
+                        // Soft penalty: scale confidence smoothly, preserving non-zero conviction
+                        fast_intent.confidence *= (1.0 + ml_directional * 0.5).clamp(0.20, 1.0);
                     } else if ml_directional > 0.0 {
                         // ML confirms signal direction: boost confidence proportionally
                         fast_intent.confidence *= 1.0 + ml_directional * 0.5;
@@ -4090,7 +4112,13 @@ impl GodEngineCore {
 
                                 let qty = nominal_size / real_entry_price;
 
-                                let pos_h = quantum_arena::position::PositionHorizon::Continuous;
+                                let pos_h = if calibrated_intent.volume_flow_rate >= 13.0
+                                    || calibrated_intent.expected_duration_ms >= 1_800_000
+                                {
+                                    quantum_arena::position::PositionHorizon::Swing
+                                } else {
+                                    quantum_arena::position::PositionHorizon::Scalping
+                                };
 
                                 coin.positions.position.open_with_fee(
                                     is_long,
@@ -4454,5 +4482,40 @@ mod tests_b3_ml_wiring {
             "analítica ML no debe congelarse con feed stalled: ml={ml}"
         );
         quantum_arena::feed_health::clear();
+    }
+}
+
+#[cfg(test)]
+mod tests_m5_h01 {
+    //! M5-H01 — paridad del fitness de Darwin con el canónico
+    //! (evolution-engine::fitness::compute). El core no puede importarlo
+    //! (ciclo de deps), así que este módulo CLAVA el contrato: gate
+    //! min_trades=30, clamp de dd∈[0,1], curva base growth − λ·dd².
+
+    use super::fitness_compute;
+
+    #[test]
+    fn m5_h01_gate_min_trades() {
+        // <30 cierres ⇒ INVIABLE aunque el crecimiento sea espectacular:
+        // 1-2 trades de suerte no pueden liderar el leaderboard de Darwin.
+        assert_eq!(fitness_compute(100.0, 200.0, 0.0, 0), f64::NEG_INFINITY);
+        assert_eq!(fitness_compute(100.0, 200.0, 0.0, 29), f64::NEG_INFINITY);
+        // Exactamente 30 ⇒ viable, y sin dd el fitness es el crecimiento log.
+        let f = fitness_compute(100.0, 200.0, 0.0, 30);
+        assert!((f - std::f64::consts::LN_2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn m5_h01_dd_clamp_y_lambda() {
+        // Ancla λ=4·ln2: dd 50% con crecimiento 0 cuesta exactamente ln(2).
+        let f = fitness_compute(100.0, 100.0, 0.5, 100);
+        assert!((f + std::f64::consts::LN_2).abs() < 1e-12);
+        // dd>100% se clampa a 1: el castigo no crece más allá del ancla.
+        let f_clamped = fitness_compute(100.0, 100.0, 1.7, 100);
+        let f_full = fitness_compute(100.0, 100.0, 1.0, 100);
+        assert!((f_clamped - f_full).abs() < 1e-12);
+        // Ruina / datos inválidos siguen siendo INVIABLE con trades de sobra.
+        assert_eq!(fitness_compute(0.0, 100.0, 0.0, 100), f64::NEG_INFINITY);
+        assert_eq!(fitness_compute(100.0, -1.0, 0.0, 100), f64::NEG_INFINITY);
     }
 }

@@ -352,7 +352,12 @@ impl DarwinDaemon {
         population[0] = current_active.clone();
 
         let initial_capital = self.live_arena.unified_capital.load(Ordering::Relaxed); // Dynamic fitness baseline
-        let mut best_all_time = (population[0].clone(), 0.0_f64);
+        // M5-H01: arranca en INVIABLE, no en 0.0 — con 0.0, una corrida donde
+        // ningún genoma aclara el gate min_trades (todos -inf) o donde todos
+        // pierden deja este valor FANTASMA, y FIX#412 lo leería como "mejor
+        // que cualquier baseline negativo/gateado" promoviendo population[0]
+        // sin evidencia. Con -inf, sólo un fitness real lo reemplaza.
+        let mut best_all_time = (population[0].clone(), f64::NEG_INFINITY);
 
         for generation in 1..=generations {
             let mut results: Vec<_> = population
@@ -369,6 +374,9 @@ impl DarwinDaemon {
                     let mut engine = GodEngineCore::new(arena.clone());
                     let mut max_drawdown = 0.0;
                     let mut peak_capital = initial_capital;
+                    // M5-H01: cierres completados — alimenta el gate min_trades
+                    // del fitness unificado (30 = WF_MIN_TRADES).
+                    let mut trades: u32 = 0;
                     // CERT-M2-H05: tensor 54D CAUSAL del propio tick — mismo
                     // contrato que producción/nativo (ver OmniSynth). Antes:
                     // copia de swing-features en omni[0..34] con funding=
@@ -403,6 +411,7 @@ impl DarwinDaemon {
                         );
 
                         if closed_pos.is_some() {
+                            trades += 1;
                             let current_cap = arena.unified_capital.load(Ordering::Relaxed);
                             if current_cap > peak_capital {
                                 peak_capital = current_cap;
@@ -422,6 +431,7 @@ impl DarwinDaemon {
                         initial_capital,
                         final_cap,
                         max_drawdown,
+                        trades,
                     );
                     (genome.clone(), final_cap, fitness)
                 })
@@ -574,6 +584,7 @@ impl DarwinDaemon {
             let mut engine = GodEngineCore::new(arena.clone());
             let mut max_drawdown = 0.0;
             let mut peak_capital = initial_capital;
+            let mut baseline_trades: u32 = 0;
             for tick in &master_stream {
                 arena.update_market_data(
                     tick.coin_id,
@@ -599,6 +610,7 @@ impl DarwinDaemon {
                     &dynamic_omni,
                 );
                 if closed_pos.is_some() {
+                    baseline_trades += 1;
                     let cap = arena.unified_capital.load(Ordering::Relaxed);
                     if cap > peak_capital {
                         peak_capital = cap;
@@ -619,6 +631,7 @@ impl DarwinDaemon {
                 initial_capital,
                 final_cap,
                 max_drawdown,
+                baseline_trades,
             );
             if raw_fitness.is_finite() {
                 raw_fitness
@@ -631,7 +644,12 @@ impl DarwinDaemon {
         println!("         Current Active Fitness: {:.4}", baseline_fitness);
         println!("         Evolved Genome Fitness: {:.4}", best_all_time.1);
 
-        // FIX #412: El nuevo genoma debe ser estrictamente mejor y superar un margen del 5% sin inversión de signo
+        // FIX #412: El nuevo genoma debe ser estrictamente mejor y superar un margen del 5% sin inversión de signo.
+        // M5-H01: si el baseline no alcanzó min_trades (30), raw_fitness es
+        // NEG_INFINITY → aquí -999999.0 ⇒ cualquier genoma evolucionado que sí
+        // aclare el gate promueve (la inacción del incumbente no es evidencia
+        // de bondad). Si NADIE lo aclara, no hay promoción: NEG_INFINITY no
+        // es > -999999.0.
         let is_significantly_better = if baseline_fitness >= 0.0 {
             best_all_time.1 > (baseline_fitness * 1.05).max(baseline_fitness + 1e-4)
         } else {

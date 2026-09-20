@@ -33,7 +33,7 @@
     },
     "sl_atr_mult_btc": 2.5,
     "tp_rr_ratio_btc": 2.25,
-    "min_confidence_btc": 0.7,
+    "min_confidence_btc": 0.62,
     "veto_threshold_btc": 0.546013609820926,
     "tech_threshold": 0.05,
     "ml_threshold_long": 0.62,

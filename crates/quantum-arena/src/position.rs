@@ -423,6 +423,7 @@ impl Position {
             let snap = PositionSnapshot {
                 generation: seq_before,
                 is_long: self.is_long.load(Ordering::Relaxed),
+                horizon: self.horizon.load(Ordering::Relaxed),
                 entry_price: self.entry_price.load(Ordering::Relaxed),
                 quantity: self.quantity.load(Ordering::Relaxed),
                 margin_used: self.margin_used.load(Ordering::Relaxed),
@@ -455,6 +456,7 @@ impl Position {
 pub struct PositionSnapshot {
     pub generation: u64,
     pub is_long: bool,
+    pub horizon: u8, // 0 = Continuous, 1 = Scalping, 2 = Swing
     pub entry_price: f64,
     pub quantity: f64,
     pub margin_used: f64,

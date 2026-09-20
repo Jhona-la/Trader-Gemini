@@ -436,10 +436,10 @@ impl Scaler {
                 } else {
                     0.0
                 };
-                let scaled = if s > 1e-8 { (feat - m) / s } else { feat - m };
-                // Limitar sólo por seguridad matemática (f64 exp overflow) no heurística
+                let scaled = if s > 1e-4 { (feat - m) / s } else { 0.0 };
+                // D-411: Preservar Z-scores causales individuales acotados en [-3.0, 3.0]
                 features[i] = if scaled.is_finite() {
-                    scaled.clamp(-700.0, 700.0)
+                    scaled.clamp(-3.0, 3.0)
                 } else {
                     0.0
                 };

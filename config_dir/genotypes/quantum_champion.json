@@ -18,7 +18,7 @@
   "swing_sl_base": 0.0150,
   "sl_atr_mult_btc": 2.50,
   "tp_rr_ratio_btc": 2.25,
-  "min_confidence_btc": 0.70,
+  "min_confidence_btc": 0.62,
   "veto_threshold_btc": 0.546013609820926,
   "tech_threshold": 0.018325377501964554,
   "ml_threshold_long": 0.62,
