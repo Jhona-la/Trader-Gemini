@@ -891,11 +891,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut streams = String::new();
     for (i, sym) in symbols.iter().enumerate() {
         // Flujo pesado para TODO el universo dinámico (30 activos), permitiendo paralelismo masivo
-        streams.push_str(sym);
+        let sym_lower = sym.to_lowercase();
+        streams.push_str(&sym_lower);
         streams.push_str("@trade/");
-        streams.push_str(sym);
+        streams.push_str(&sym_lower);
         streams.push_str("@depth5/");
-        streams.push_str(sym);
+        streams.push_str(&sym_lower);
         // D-705 (DÉCIMA OLA · auditoría integral): EL RELOJ DE CALIBRACIÓN ES EL
         // MISMO EN CALENTAMIENTO, VALIDACIÓN Y VIVO.
         //

@@ -220,11 +220,12 @@ pub async fn evolve_symbols_daemon_with_resubscribe(
                 // actualizar la URL que el loop de reconnect lee fresco.
                 let mut streams = String::new();
                 for (i, sym) in top_symbols.iter().enumerate() {
-                    streams.push_str(sym);
+                    let sym_lower = sym.to_lowercase();
+                    streams.push_str(&sym_lower);
                     streams.push_str("@trade/");
-                    streams.push_str(sym);
+                    streams.push_str(&sym_lower);
                     streams.push_str("@depth5/");
-                    streams.push_str(sym);
+                    streams.push_str(&sym_lower);
                     streams.push_str("@kline_1m");
                     if i < top_symbols.len() - 1 {
                         streams.push('/');
