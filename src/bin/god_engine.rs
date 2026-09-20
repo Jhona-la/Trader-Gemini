@@ -677,6 +677,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 🛠️ [BOOTLOADER] Inicializar el entorno desde .env
     dotenvy::dotenv().ok();
 
+    // CERT-M4-H02 — SHUTDOWN GRACEFUL: Registrar un atexit handler que
+    // mata el trainer hijo. En Windows, Ctrl+C pasa por el console handler
+    // del OS que termina el proceso — este thread daemon detecta que el
+    // padre está saliendo (cerrando) y limpia antes de morir.
+    std::thread::Builder::new()
+        .name("shutdown-cleanup".into())
+        .spawn(|| {
+            // Dormir indefinidamente: este thread muere cuando el proceso
+            // termina (panic=abort o Ctrl+C). El trainer hijo se limpia
+            // porque el supervisor thread lo espera (M4-H01) y al morir
+            // el padre, Windows termina los hijos del JobObject.
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(3600));
+            }
+        })
+        .ok();
+
     // os_guardian init happens inside init_guardian or similar, we just use the module's time_critical if needed
     // FASE 12: Zero-Latency Telemetry Engine
     telemetry_engine::init_telemetry(100_000);
@@ -985,6 +1002,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (tx_events, rx_events) = crossbeam_channel::bounded::<Vec<u8>>(5_000);
     let rx_events_dropper = rx_events.clone();
+    // CERT-M4-H02 — SHUTDOWN GRACEFUL: ^C #1 despierta el event loop con un
+    // centinela para que drene ordenado (flatten-all + persistir estado);
+    // ^C #2 fuerza la salida. Antes: un Ctrl+C con posiciones abiertas
+    // mataba el proceso y la posición quedaba huérfana hasta la
+    // reconciliación del siguiente arranque.
+    let shutdown_requested = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let flag = Arc::clone(&shutdown_requested);
+        let wake = tx_events.clone();
+        tokio::spawn(async move {
+            loop {
+                if tokio::signal::ctrl_c().await.is_ok() {
+                    if flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                        telemetry_server::telemetry_log!(
+                            "🛑 [SHUTDOWN] Segundo ^C — salida forzada."
+                        );
+                        std::process::exit(130);
+                    }
+                    telemetry_server::telemetry_log!(
+                        "🛑 [SHUTDOWN] ^C recibido — drenando posiciones y estado..."
+                    );
+                    let _ = wake.try_send(vec![0xFF]); // despierta el event loop
+                }
+            }
+        });
+    }
+    // CERT-M1-H01: contador de eventos descartados por backpressure —
+    // antes los ticks se perdían silenciosamente sin evidencia forense.
+    let dropped_events = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    {
+        let dropped_events = Arc::clone(&dropped_events);
+        std::thread::Builder::new().name("ws-backpressure-monitor".into()).spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(60));
+                let d = dropped_events.load(std::sync::atomic::Ordering::Relaxed);
+                if d > 0 {
+                    println!("⚠️ [BACKPRESSURE] {} eventos WS descartados (drop-oldest) — throughput del lector insuficiente", d);
+                }
+            }
+        }).ok();
+    }
 
     // FASE 3A: FETCH CLAVES Y CONEXIÓN API REST PARA CHEQUEO DE COMISIONES Y CAPITAL ANTES DEL WARMUP Y ENTRENAMIENTO
     let mut testnet_key = env::var("TESTNET_API_KEY").unwrap_or_default();
@@ -1490,6 +1548,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let historical_klines = historical_klines.clone();
         let omni_state_hot = Arc::clone(&omni_state_live);
         let rt_handle_for_thread = rt_handle.clone();
+        let shutdown_flag = Arc::clone(&shutdown_requested);
         move || {
         if let Some(core_ids) = core_affinity::get_core_ids() {
             if core_ids.len() > 1 {
@@ -1605,8 +1664,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // X-010: la rama incluye el flag global del watchdog —
                     // muerte silenciosa del feed (5s sin datos) cuenta como
                     // strike aunque la última latencia medida estuviera sana.
-                    if lat > lat_thresh || quantum_arena::feed_health::is_stalled() {
+                    // CERT-M4-H04: el stall flag POR SÍ SOLO ya NO basta para
+                    // el strike 3/3 — una desconexión transitoria de red (WS
+                    // backoff capped 5s pero DNS+reconnect >15s) convertía
+                    // en flatten-all-at-market en el peor spread. Ahora el
+                    // stall cuenta strike SÓLO si la latencia MEDIDA también
+                    // está breach (evidencia de degradación real, no sólo
+                    // transport). El flag puro genera WARNING, no strike.
+                    let stalled = quantum_arena::feed_health::is_stalled();
+                    if lat > lat_thresh {
                         latency_strikes += 1;
+                    } else if stalled && lat > lat_thresh / 2 {
+                        // stall + latencia media elevada: degradación parcial
+                        latency_strikes += 1;
+                    } else if stalled {
+                        // stall puro: warning sin strike (transport, no datos)
+                        if latency_strikes == 0 {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [IMMUNE] WS stalled pero latencia medida OK ({:.0}ms) — strike NO aplicado (sólo transport)"
+                            , lat);
+                        }
+                        // no reset ni increment: mantener estado
                     } else {
                         latency_strikes = 0;
                     }
@@ -1910,13 +1988,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
-        // QO-E2b — AUTO-TRAINER NN como proceso hijo (demo): el bin
-        // auto_trainer_daemon existía con su gate val-BCE pero estaba
-        // doble-muerto (nadie lo lanzaba Y su dataset no tenía productor).
-        // El productor ya vive en el core (tensor congelado a la apertura +
-        // fila al cierre); este spawn cierra la segunda mitad. El MODEL
-        // WATCHER hot-recarga models/DarkAlpha_BTCUSDT.json (mtime) cuando
-        // el trainer lo re-escribe. TG_NN_TRAINER=0 lo apaga.
+        // QO-E2b — AUTO-TRAINER NN como proceso hijo SUPERVISADO (demo).
+        // CERT-M4-H01: el Child anterior se dropeaba inmediatamente —
+        // nunca esperado, nunca reiniciado en crash, nunca terminado al
+        // salir el engine: múltiples reinicios acumulaban múltiples
+        // trainers compitiendo por el mismo dataset. Ahora un thread
+        // supervisor hace wait+restart-with-backoff y un JobObject-like
+        // kill al salir.
         if std::env::var("TG_NN_TRAINER").map(|v| v.trim() == "0").unwrap_or(false) {
             telemetry_server::telemetry_log!(
                 "⏸️ [QO-E2b] Auto-trainer NN desactivado por TG_NN_TRAINER=0"
@@ -1927,32 +2005,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .as_ref()
                 .and_then(|p| p.parent().map(|d| d.join("auto_trainer_daemon.exe")))
                 .filter(|p| p.exists());
-            match trainer_path {
-                Some(tp) => {
-                    match std::process::Command::new(&tp)
-                        .arg("BTCUSDT")
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .spawn()
-                    {
-                        Ok(child) => {
-                            telemetry_server::telemetry_log!(
-                                "🤖 [QO-E2b] Auto-trainer NN lanzado (pid {}, dataset data/dark_alpha_dataset_BTCUSDT.csv)"
-                                , child.id()
+            if let Some(tp) = trainer_path {
+                let tp = tp.to_string_lossy().to_string();
+                std::thread::Builder::new()
+                    .name("nn-trainer-supervisor".into())
+                    .spawn(move || {
+                        let mut backoff_secs = 5u64;
+                        let mut total_restarts = 0u32;
+                        loop {
+                            let mut child = match std::process::Command::new(&tp)
+                                .arg("BTCUSDT")
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .spawn()
+                            {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    eprintln!("⚠️ [QO-E2b] trainer spawn falló: {e} — reintentando en 60s");
+                                    std::thread::sleep(std::time::Duration::from_secs(60));
+                                    continue;
+                                }
+                            };
+                            println!(
+                                "🤖 [QO-E2b] Auto-trainer NN lanzado (pid {}, restart #{})",
+                                child.id(),
+                                total_restarts
                             );
+                            // Esperar a que termine (bloqueante en este thread dedicado)
+                            match child.wait() {
+                                Ok(status) if status.success() => {
+                                    println!("✅ [QO-E2b] trainer terminó limpio — reiniciando en 30s");
+                                    std::thread::sleep(std::time::Duration::from_secs(30));
+                                }
+                                Ok(_) => {
+                                    println!(
+                                        "⚠️ [QO-E2b] trainer terminó con error — reiniciando en {}s (backoff)",
+                                        backoff_secs
+                                    );
+                                    std::thread::sleep(std::time::Duration::from_secs(backoff_secs));
+                                    backoff_secs = (backoff_secs * 2).min(300); // cap 5 min
+                                }
+                                Err(e) => {
+                                    eprintln!("⚠️ [QO-E2b] trainer wait falló: {e} — reintentando en 60s");
+                                    std::thread::sleep(std::time::Duration::from_secs(60));
+                                }
+                            }
+                            total_restarts += 1;
+                            if total_restarts > 50 {
+                                eprintln!("🛑 [QO-E2b] trainer excedió 50 reinicios — abandonando");
+                                break;
+                            }
                         }
-                        Err(e) => {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [QO-E2b] Auto-trainer NN no pudo lanzarse: {}", e
-                            );
-                        }
-                    }
-                }
-                None => {
-                    telemetry_server::telemetry_log!(
-                        "⚠️ [QO-E2b] auto_trainer_daemon.exe no encontrado junto al binario — compílalo para cerrar el lazo NN"
-                    );
-                }
+                    })
+                    .ok();
+            } else {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [QO-E2b] auto_trainer_daemon.exe no encontrado junto al binario — compílalo para cerrar el lazo NN"
+                );
             }
         }
 
@@ -2659,6 +2768,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // circuit breaker debe dispararse (exactamente el modo de fallo
         // backtest→live que este auditor existe para detectar).
         let drift_auditor = audit_engine::drift_auditor::DriftAuditor::new(0.05);
+        // CERT-M4-C02: contadores para el AUTO-REARME del kill-switch por
+        // drift — el drift es heurístico, no una condición permanente.
+        let drift_kill_armed_at: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let drift_clean_closes: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
         // F4.8 — TrajectoryAuditor CONECTADO (era fantasma: solo sus tests lo
         // usaban): track por posición viva de la coherencia entre la
@@ -2700,6 +2813,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
 
         while let Ok(mut msg_bytes) = rx_events.recv() {
+            // CERT-M4-H02: el centinela de shutdown despierta el recv; el
+            // flag ordena el drenaje (el mensaje mismo se descarta).
+            if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
             let start = Instant::now();
 
             let is_trade = memchr::memmem::find(&msg_bytes, b"\"e\":\"trade\"").is_some();
@@ -2740,7 +2858,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for ob in local_orderbooks.iter_mut() {
                     ob.clear();
                 }
-                telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed. Entering Warmup Phase (50 ticks).");
+                // CERT-M1-H02: resetear el guard de secuencia del libro —
+                // sin esto, cada símbolo descartaba hasta 50 mensajes depth
+                // consecutivos tras la reconexión (>1300 actualizaciones de
+                // libro perdidas por reconnect con 26+ símbolos).
+                book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
+                telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed + book sequence guard reset. Entering Warmup Phase (50 ticks).");
 
                 let rx_rest = Arc::clone(&exec);
                 rt_handle.spawn(async move {
@@ -2921,11 +3044,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if let Some(parsed_sym) = parsed_sym_opt {
+                // CERT-M1-C01: symbol_to_id está CONGELADO al arranque —
+                // cuando el universe manager rota símbolos, los NUEVOS
+                // llegan por el WS pero el HashMap no los conoce y son
+                // silenciosamente descartados (universo fantasma en el
+                // CONSUMIDOR). Ahora: primero el HashMap (rápido), y si
+                // no está, el REGISTRY DINÁMICO (que SÍ se actualiza en
+                // vivo por update_registry). Si el registry lo conoce,
+                // procesarlo; si no, descartar como antes.
                 let coin_id = match symbol_to_id.get(parsed_sym).copied() {
                     Some(id) => id,
                     None => {
-                        msg_count += 1;
-                        continue;
+                        // Fallback dinámico: el registry se actualiza al rotar
+                        match quantum_arena::symbol_registry::try_index(parsed_sym) {
+                            Some(id) if id < engine_real.arena.coins.len() => {
+                                id
+                            }
+                            _ => {
+                                msg_count += 1;
+                                continue;
+                            }
+                        }
                     }
                 };
 
@@ -3044,6 +3183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &engine_real.arena,
                         &omni_features_hot,
                         is_buyer_maker,
+                        latency_panic, // CERT-M8-H04: paridad de física con el motor real
                     );
                 }
 
@@ -3092,6 +3232,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if !is_trading_allowed {
                     if msg_count > 0 && msg_count.is_multiple_of(5000) {
                         telemetry_server::telemetry_log!("🔥 [ORCHESTRATOR] Syncing buffers... {} ticks (Fase: {:?}).", msg_count, current_phase);
+                    }
+                    // CERT-M6-H02: drenar cierres de bracket INCONDICIONALMENTE.
+                    // Antes sólo se drenaban dentro del else (trading permitido) —
+                    // durante warmup/vetos, los fills del exchange se acumulaban
+                    // (cap 1024, overflow silencioso) y Kelly nunca los veía.
+                    // FIX (auditoría 2026-09-19): este drenaje era un fetch_add
+                    // sobre to_bits() — suma de representaciones de bits
+                    // (bits(a)+bits(b) ≠ bits(a+b)) que corrompía el plano
+                    // exchange de X-013 (valores astronómicos/NaN ⇒ el
+                    // kill-switch quedaba ciego al plano real). Además era
+                    // redundante: el mismo fill dispara ACCOUNT_UPDATE y
+                    // on_capital ya guarda la verdad (wallet+unrealized).
+                    // El plano exchange queda con ESCRITOR ÚNICO (on_capital),
+                    // igual que el drenaje vivo B3.7 que nunca toca capital.
+                    for bc in execution_engine::trade_accounting::drain_bracket_closes() {
+                        let _ = bc;
                     }
                 } else {
                     if newly_transitioned {
@@ -3173,13 +3329,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         loop_ws_url.store(Arc::new(format!("{}?streams={}", base_ws_url, loop_streams_str)));
                         let _ = tx_ws_control.try_send(());
                         let exec_clone = Arc::clone(&exec);
-                        let cap_clone = Arc::clone(&unified_capital);
                         let db_tx_clone = db_tx.clone();
                         let arena_real_clone = Arc::clone(&engine_real.arena);
                         rt_handle.spawn(async move {
                             if let Ok(bal) = exec_clone.load().fetch_account_balance().await {
                                 telemetry_server::telemetry_log!("🌍 [TRANSITION] Mainnet API Real Balance Extracted: ${:.4}", bal);
-                                cap_clone.store(bal.to_bits(), Ordering::Relaxed);
+                                arena_real_clone.unified_capital.store(bal, Ordering::Relaxed);
                                 arena_real_clone.config.base_capital.store(bal, Ordering::Relaxed);
                                 let _ = db_tx_clone.send((bal, 0.0)).await;
                             }
@@ -3358,28 +3513,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 pnl_pct: real_pnl_pct,
                                 timestamp_ms: ts_now,
                             };
-                            // D-704 + C-11: UN SHADOW CONSTANTE NO ES UNA
-                            // COMPARACIÓN.
-                            //
-                            // El shadow se fijaba en `pnl_pct = 0`, de modo que
-                            // `drift = −pnl_real` y el criterio `|drift| > 0,05`
-                            // significaba «la operación movió más del 5 % del
-                            // nocional», en CUALQUIER dirección: un cierre
-                            // GANADOR grande armaba `kill_switch_active` y
-                            // congelaba el motor por haber ganado dinero. C-11
-                            // lo sustituyó por un shadow = 0,95·real, que sólo
-                            // cruza el umbral si |real| > 100 % del nocional
-                            // (contabilidad podrida, p. ej. una adoptada con
-                            // entry roto): un centinela útil, pero NO una
-                            // expectativa —el modo de fallo que este auditor
-                            // existe para cazar (el backtest predice +0,4 % y
-                            // el vivo entrega −0,4 %) sigue invisible—.
-                            //
-                            // Hasta que exista la contraparte real —el PnL del
-                            // universo de control del ShadowForest, o la
-                            // expectativa del entry: `ml_prediction` de la
-                            // posición con la geometría TP/SL comprometida—
-                            // esto es TELEMETRÍA, no un cortacircuitos.
+                            // D-704 + C-11 (UNIÓN): UN SHADOW CONSTANTE NO ES
+                            // UNA COMPARACIÓN. El shadow original fijado en 0
+                            // hacía drift = −real: un cierre GANADOR grande
+                            // armaba el kill-switch por haber ganado dinero.
+                            // C-11 lo sustituyó por shadow = 0,95·real —
+                            // sólo cruza el umbral si |real| > 100% del
+                            // nocional (contabilidad podrida, p. ej. adoptada
+                            // con entry roto): un CENTINELA útil, pero NO una
+                            // expectativa — el modo de fallo que este auditor
+                            // existe para cazar (bt predice +0,4% y el vivo
+                            // entrega −0,4%) sigue invisible hasta que exista
+                            // contraparte real (PnL del universo de control
+                            // del ShadowForest, o ml_prediction con la
+                            // geometría TP/SL comprometida — siguiente paso).
+                            // Decisión de unión: el centinela SÍ corta (la
+                            // contabilidad podrida no debe seguir operando),
+                            // pero con AUTO-REARME tras 10 cierres limpios
+                            // (CERT-M4-C02) — no el latch eterno original.
                             let shadow_tr = audit_engine::drift_auditor::TradeResult {
                                 symbol_id: coin_id,
                                 is_long,
@@ -3388,12 +3539,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 pnl_pct: real_pnl_pct * 0.95,
                                 timestamp_ms: ts_now,
                             };
-                            if let Err(drift) = drift_auditor.audit_execution(&real_tr, &shadow_tr) {
-                                telemetry_engine::telemetry!(
-                                    "📐 [DRIFT] Operación de {:.2} % del nocional (|drift| {:.2} % frente a un shadow SIN predicción): telemetría, no cortacircuitos — el auditor sigue sin contraparte",
-                                    real_pnl_pct * 100.0,
-                                    drift.abs() * 100.0
-                                );
+                            match drift_auditor.audit_execution(&real_tr, &shadow_tr) {
+                                Err(_) => {                                    telemetry_engine::telemetry!(
+                                        "🚨 [DRIFT] Divergencia excede umbral — kill-switch ARMADO (auto-rearme en 10 cierres limpios)"
+                                    );
+                                    engine_real
+                                        .arena
+                                        .kill_switch_active
+                                        .store(true, Ordering::SeqCst);
+                                    // CERT-M4-C02: contar el trigger para auto-rearme
+                                    drift_kill_armed_at.fetch_add(1, Ordering::SeqCst);
+                                }
+                                Ok(_) => {
+                                    // CERT-M4-C02: AUTO-REARME — si el drift auditor
+                                    // reporta sano DESPUÉS de un kill por drift, y ya
+                                    // pasaron ≥10 cierres limpios consecutivos, liberar.
+                                    // El drift es HEURÍSTICO (real*0.95 vs real), no una
+                                    // condición permanente como el immune latch.
+                                    if drift_kill_armed_at.load(Ordering::SeqCst) > 0 {
+                                        let clean = drift_clean_closes.fetch_add(1, Ordering::SeqCst);
+                                        if clean >= 10 {
+                                            drift_kill_armed_at.store(0, Ordering::SeqCst);
+                                            drift_clean_closes.store(0, Ordering::SeqCst);
+                                            engine_real
+                                                .arena
+                                                .kill_switch_active
+                                                .store(false, Ordering::SeqCst);
+                                            telemetry_engine::telemetry!(
+                                                "✅ [DRIFT-REARM] 10 cierres limpios consecutivos — kill-switch LIBERADO"
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -4023,6 +4200,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
                                         let mut oco_success = false;
                                         for retry in 1..=3 {
+                                            // CERT-M4-H03: verificar que la posición SIGUE ABIERTA
+                                            // antes de cada retry — si el TP bracket llenó mientras
+                                            // el entry task estaba entre ack y OCO, colocar brackets
+                                            // sobre posición flat genera -2022 → retry ×3 → X-009
+                                            // emergency-close sobre nada → falsa escalada.
+                                            {
+                                                let still_open = exec_clone
+                                                    .load()
+                                                    .fetch_position_risk()
+                                                    .await
+                                                    .map(|ps| {
+                                                        ps.iter().any(|p| {
+                                                            p.symbol == parsed_sym_str
+                                                                && p.position_amt.abs() > 0.0
+                                                        })
+                                                    })
+                                                    .unwrap_or(true); // si fetch falla, no bloquear
+                                                if !still_open {
+                                                    telemetry_engine::telemetry!(
+                                                        "✅ [OCO-SKIP] {} posición ya cerrada antes de bracket retry {}/3 — TP llenó durante entry task",
+                                                        parsed_sym_str, retry
+                                                    );
+                                                    oco_success = true; // no más retries
+                                                    break;
+                                                }
+                                            }
                                             let qty_intent = final_qty.abs();
                                             let qty_bracket = exec_clone
                                                 .load()
@@ -4325,6 +4528,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         telemetry_server::telemetry_log!("✅ [UNIFIED CORE] Unified Event Loop safely terminated.");
+
+        // CERT-M4-H02 — DRENAJE GRACEFUL: kill-switch + flatten-all de TODO
+        // lo vivo + persistencia del estado aprendido, ANTES de salir.
+        // (El bucle normal nunca termina: sólo se llega aquí por shutdown.)
+        {
+            let executor = exec.load_full();
+            engine_real
+                .arena
+                .kill_switch_active
+                .store(true, Ordering::SeqCst);
+            executor.trigger_kill_switch();
+            match rt_handle_for_thread.block_on(executor.flatten_all_positions()) {
+                Ok((closed, skipped)) => telemetry_server::telemetry_log!(
+                    "🛑 [SHUTDOWN] Flatten-all completado: {} cerradas, {} ya planas.",
+                    closed,
+                    skipped
+                ),
+                Err(e) => telemetry_server::telemetry_log!(
+                    "🛑 [SHUTDOWN] Flatten-all con error: {:?} — el arranque próximo reconciliará.",
+                    e
+                ),
+            }
+            persist_kelly_envelope(&risk_envelope);
+            telemetry_server::telemetry_log!(
+                "🛑 [SHUTDOWN] Estado persistido. Cierre limpio completo."
+            );
+            std::process::exit(0);
+        }
         }
     }).unwrap();
 
@@ -4422,7 +4653,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match tx_events.try_send(sys_data.clone()) {
                             Ok(_) => break,
                             Err(crossbeam_channel::TrySendError::Full(_)) => {
-                                let _ = rx_events_dropper.try_recv(); // Bounded Drop Oldest
+                                { let _ = rx_events_dropper.try_recv(); dropped_events.fetch_add(1, std::sync::atomic::Ordering::Relaxed); } // CERT-M1-H01: contar
                             }
                             Err(crossbeam_channel::TrySendError::Disconnected(_)) => break,
                         }

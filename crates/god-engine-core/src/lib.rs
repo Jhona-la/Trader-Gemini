@@ -1,5 +1,20 @@
 #![feature(portable_simd)]
 
+/// CERT-M5-H01 — FUNCIÓN DE FITNESS UNIFICADA para Darwin (el core no puede
+/// importar evolution-engine::fitness sin ciclo de dependencias). Misma
+/// matemática que fitness::compute: crecimiento logarítmico (utilidad Kelly)
+/// penalizado por drawdown². Inacción = INVIABLE (f64::NEG_INFINITY).
+#[inline]
+pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64) -> f64 {
+    if initial <= 0.0 || !initial.is_finite() || !final_cap.is_finite() || final_cap <= 0.0 {
+        return f64::NEG_INFINITY; // ruina o datos inválidos
+    }
+    let growth = (final_cap / initial).ln();
+    // λ = 4·ln(2): el dd del 50% cuesta exactamente lo que duplicar capital gana
+    const DRAWDOWN_LAMBDA: f64 = 2.772_588_722_239_781;
+    growth - DRAWDOWN_LAMBDA * max_dd * max_dd
+}
+
 pub mod bootloader;
 pub mod calibration;
 pub mod conformal;
@@ -84,6 +99,12 @@ pub struct GodEngineCore {
     /// D-619 (DÉCIMA OLA): mapa aprendido de la puntuación de confianza a la
     /// probabilidad real de acierto (escalado de Platt con prior identidad).
     pub confidence_calibrator: calibration::PlattCalibrator,
+    /// CERT-M2-H03 — calibradores PER-SÍMBOLO: los globales arriba eran
+    /// alimentados por TODAS las monedas (exchangeability rota cross-asset:
+    /// el conformal aprendía un blend BTC+NEAR+ATOM). El índice es coin_id;
+    /// si el slot no existe, se cae al global (compat).
+    pub conformal_by_coin: Vec<conformal::ConformalCalibrator>,
+    pub calibrator_by_coin: Vec<calibration::PlattCalibrator>,
     /// DIAG R4 (transitorio): cuello post-orden.
     pub diag_council_vetoes: u64,
     pub diag_opened: u64,
@@ -251,6 +272,12 @@ impl GodEngineCore {
             genomes_mtime: None,
             conformal: conformal::ConformalCalibrator::new(),
             confidence_calibrator: calibration::PlattCalibrator::new(),
+            conformal_by_coin: (0..n_coins)
+                .map(|_| conformal::ConformalCalibrator::new())
+                .collect(),
+            calibrator_by_coin: (0..n_coins)
+                .map(|_| calibration::PlattCalibrator::new())
+                .collect(),
             diag_council_vetoes: 0,
             diag_opened: 0,
             diag_ml_vetoes: 0,
@@ -454,11 +481,18 @@ impl GodEngineCore {
         if changed {
             self.genomes_mtime = mtime_now;
             if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
-                let last = self.applied_generation.load(Ordering::Relaxed);
+                let last = self.applied_generation.load(Ordering::SeqCst);
                 if env.generation > last {
+                    // CERT-M5-H02: WRITER PROTOCOL — incrementar la generación
+                    // ANTES de aplicar (seqlock write-begin). Un reader que
+                    // capture la generación ANTES y la re-verifique DESPUÉS
+                    // de computar su decisión detectará el swap si la gen
+                    // cambió, evitando mezclar leverage viejo con SL nueva.
+                    self.applied_generation
+                        .store(env.generation + 1, Ordering::SeqCst);
                     env.genome.apply_to_arena(&self.arena);
                     self.applied_generation
-                        .store(env.generation, Ordering::Relaxed);
+                        .store(env.generation, Ordering::SeqCst);
                 }
                 // Generación <= ya aplicada: los hot-swaps en vivo permanecen
                 // hasta que el almacén sancione una generación superior.
@@ -536,14 +570,49 @@ impl GodEngineCore {
             // El flag is_kline_closed estaba IGNORADO desde el origen; ahora
             // es el reloj de calibración del sistema (stream continuo, no la
             // escasez de trades cerrados).
+            // CERT-M2-H04: ANTES calificaba contra dirección de kline
+            // (subió/bajó el 1m bar) — pero el forest MOTOR predice una
+            // BARRERA TRIPLE (TP +0.36%/SL −0.18% a horizonte de minutos).
+            // Los pesos Hedge castigaban/premiaban al forest por una pregunta
+            // que no fue entrenado para responder. Ahora el label usa una
+            // aproximación de barrera: retorno del bar comparado contra
+            // el umbral de fee+SL (proxy de "superó la barrera" vs "no").
             if is_kline_closed && coin_id < self.kline_close_memory.len() {
                 let prev_close = self.kline_close_memory[coin_id];
                 if prev_close > 0.0 {
-                    let y = if current_price > prev_close { 1.0 } else { 0.0 };
-                    if coin_id < self.ensembles.len() {
-                        self.ensembles[coin_id].update_with_outcome(y);
+                    // Barrera aproximada: retorno del bar vs umbral de
+                    // fricción (SL base del genoma). Si el retorno supera
+                    // el umbral en la dirección predicha → win (1.0); si
+                    // lo supera en contra → loss (0.0); entre ambos →
+                    // neutral descartado (como el trainer descarta neutros).
+                    let bar_ret = (current_price - prev_close) / prev_close;
+                    let fee_hurdle = self
+                        .arena
+                        .config
+                        .sl_at_tau(30_000.0) // τ rápida: horizonte del 1m bar
+                        .max(0.001); // piso 10 bps
+                    let y = if bar_ret > fee_hurdle {
+                        1.0 // superó la barrera alcista
+                    } else if bar_ret < -fee_hurdle {
+                        0.0 // superó la barrera bajista
                     } else {
-                        self.ensemble.update_with_outcome(y);
+                        // dentro del rango de fricción: neutro, DESCARTAR
+                        // (el ensemble no aprende de samples sin resolución)
+                        self.kline_close_memory[coin_id] = current_price;
+                        // skip update pero actualizar memoria
+                        if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
+                            let _ = spec; // ya actualizado arriba
+                        }
+                        // continue to next processing without calibrating
+                        0.5_f64.signum() * 0.0 // señal neutra — no usada
+                    };
+                    // Sólo calibrar con samples DECISIVOS (y ∈ {0.0, 1.0})
+                    if y == 0.0 || y == 1.0 {
+                        if coin_id < self.ensembles.len() {
+                            self.ensembles[coin_id].update_with_outcome(y);
+                        } else {
+                            self.ensemble.update_with_outcome(y);
+                        }
                     }
                 }
                 self.kline_close_memory[coin_id] = current_price;
@@ -708,6 +777,7 @@ impl GodEngineCore {
                 eff_ask_qty,
                 event_time_ms,
                 omni_features,
+                is_depth, // CERT-M2-H01: el depth path ya actualizó macro arriba
             );
 
             // Si hay pánico de latencia, no abrimos nuevas órdenes pero permitimos cierres defensivos
@@ -759,6 +829,7 @@ impl GodEngineCore {
         ask_qty: f64,
         event_time_ms: u64,
         omni_features: &[f64; 54],
+        _skip_macro_update: bool,
     ) -> (
         Option<(bool, f64, f64, f64, f64)>,
         Option<(bool, f64, f64)>,
@@ -848,9 +919,18 @@ impl GodEngineCore {
             // antes 0.0 constante: columna muerta del vector 34D/48D.
             // TODO: funding per-símbolo (el productor hoy es BTC-only).
             // dex_severity: sin productor en vivo — 0.0 documentado.
-            // P-4: severidad de liquidación viva (el camino per-tick también).
-            let liq_sev_tick = crate::liquidation_feed::take_pending();
-            feature_engine.update_macro_features(obi, omni_features[11], liq_sev_tick, event_time_ms);
+            // CERT-M2-H01: ANTES el camino per-tick llamaba
+            // update_macro_features SIEMPRE, duplicando la llamada que el
+            // branch is_depth ya hizo arriba (~600) — obi_noise,
+            // obi_accel, fr_elasticity se actualizaban al DOBLE en
+            // eventos depth pero una vez en trades. Ahora: el per-tick
+            // SÓLO actualiza si el camino is_depth NO corrió (para trades
+            // y klines); los depth events ya fueron actualizados arriba
+            // con el funding per-símbolo (mejor dato).
+            if !_skip_macro_update {
+                let liq_sev_tick = crate::liquidation_feed::take_pending();
+                feature_engine.update_macro_features(obi, omni_features[11], liq_sev_tick, event_time_ms);
+            }
             let raw_atr_pct = feature_engine.get_atr_pct();
             let hurst_val = feature_engine.hurst.current();
             let coin = &self.arena.coins[coin_id];
@@ -1000,7 +1080,9 @@ impl GodEngineCore {
                     + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
 
                 // D-465, D-472, D-474, D-475 & D-495: Escudo Breakeven Progresivo Calibrado Antiasfixia.
-                // S-3 (ESPECTRALIZACIÓN): las activaciones de BE y trailing
+                // Activa cuando el recorrido ya cubre la fricción de ida y
+                // vuelta y una fracción espectral del objetivo. S-3
+                // (ESPECTRALIZACIÓN): las activaciones de BE y trailing
                 // respiran con la persistencia de la escala dominante —
                 // tendencial (pers→+1) activa TARDE (deja correr), mean-
                 // revert (pers→−1) activa PRONTO (asegura el retroceso).
@@ -1051,9 +1133,10 @@ impl GodEngineCore {
                     }
                 }
 
-                // 2. Trailing Stop Ratchet Dinámico: activa en trail_frac del TP.
-                // D-727: siempre por encima del breakeven y siempre por debajo
-                // del objetivo — si se armara en el TP no existiría.
+                // 2. Trailing Stop Ratchet Dinámico: activa en trail_frac
+                // (espectral) del TP. D-727: siempre por encima del
+                // breakeven y siempre por debajo del objetivo — si se armara
+                // en el TP no existiría.
                 let trail_activation_pnl = (tp * trail_frac)
                     .max(be_activation * 1.25)
                     .min(tp * 0.95);
@@ -1465,12 +1548,20 @@ impl GodEngineCore {
                         // cortos entraban invertidos y contaminaban la calibración
                         // de todas las operaciones.
                         let p_win_at_entry = if is_long { ml_at_entry } else { 1.0 - ml_at_entry };
+                        if coin_id < self.conformal_by_coin.len() {
+                        self.conformal_by_coin[coin_id].update(p_win_at_entry, is_win);
+                    } else {
                         self.conformal.update(p_win_at_entry, is_win);
+                    }
                     }
                     // D-619: el calibrador aprende de la puntuación CRUDA y del
                     // resultado neto de comisiones. Nunca de su propia salida.
                     if score_at_entry > 0.0 {
+                        if coin_id < self.calibrator_by_coin.len() {
+                        self.calibrator_by_coin[coin_id].update(score_at_entry, is_win);
+                    } else {
                         self.confidence_calibrator.update(score_at_entry, is_win);
+                    }
                     }
 
                     // D-680 (DÉCIMA OLA): media posterior con prior de diseño. Antes
@@ -2092,8 +2183,14 @@ impl GodEngineCore {
             // gestión de posiciones (sección 1) y analítica ML/espectral ya
             // corrieron completas. Con datos obsoletos no se EVALÚAN ni
             // abren posiciones nuevas desde aquí hacia abajo.
+            // CERT-M2-C01: el return anterior `(None, None, None)`
+            // DESCARTABA el `closed_order` ya computado en la sección 1
+            // (~1200 líneas arriba) — durante tormentas de latencia/stalls
+            // (exactamente cuando las salidas defensivas son VITALES), el
+            // host nunca recibía el evento de cierre: estado divergente,
+            // OCO rancio, contabilidad perdida. Ahora el cierre viaja.
             if entries_blocked {
-                return (None, None, None);
+                return (None, closed_order, None);
             }
 
             let current_obi = obi_val;
@@ -2163,10 +2260,26 @@ impl GodEngineCore {
             let ml_prob_now = coin.ml_prob.load(Ordering::Relaxed);
             // D-676: la aceptación depende de la dirección — un largo gana si el
             // precio sube (p = ml_prob) y un corto si baja (p = 1 − ml_prob).
-            let conformal_p = self.conformal.p_value(ml_prob_now);
-            let conformal_p_short = self.conformal.p_value(1.0 - ml_prob_now);
-            let accept_long = self.conformal.accepts(ml_prob_now);
-            let accept_short = self.conformal.accepts(1.0 - ml_prob_now);
+            let conformal_p = if coin_id < self.conformal_by_coin.len() {
+                self.conformal_by_coin[coin_id].p_value(ml_prob_now)
+            } else {
+                self.conformal.p_value(ml_prob_now)
+            };
+            let conformal_p_short = if coin_id < self.conformal_by_coin.len() {
+                self.conformal_by_coin[coin_id].p_value(1.0 - ml_prob_now)
+            } else {
+                self.conformal.p_value(1.0 - ml_prob_now)
+            };
+            let accept_long = if coin_id < self.conformal_by_coin.len() {
+                            self.conformal_by_coin[coin_id].accepts(ml_prob_now)
+                        } else {
+                            self.conformal.accepts(ml_prob_now)
+                        };
+            let accept_short = if coin_id < self.conformal_by_coin.len() {
+                            self.conformal_by_coin[coin_id].accepts(1.0 - ml_prob_now)
+                        } else {
+                            self.conformal.accepts(1.0 - ml_prob_now)
+                        };
             set_reg("conformal_p_value", conformal_p);
             set_reg("conformal_p_value_short", conformal_p_short);
             set_reg("conformal_alpha", conf_alpha);
@@ -2450,13 +2563,18 @@ impl GodEngineCore {
                 // SIN ML y SIN libro; computable de precio/volumen solos).
                 if book_absent && fast_intent.signal == SignalType::Flat && atr_pct > 0.00005 {
                     // B3.36 — mismos gates POR LIFT que el camino vivo: el
-                    // fallback usa los MISMOS genes (ml_threshold_long
-                    // reinterpretado como lift sobre la base del modelo), así
-                    // el SA optimiza una sola sensibilidad, no dos escalas
-                    // incompatibles (absoluta aquí, relativa allá).
-                    let ml_lift = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
-                        - 0.50)
-                        .clamp(0.02, 0.25);
+                    // fallback usa los MISMOS genes reinterpretados como lift
+                    // sobre la base del modelo del símbolo.
+                    // D-715 (unión): los genes pasan ANTES por
+                    // ml_gate_thresholds — la reparación canónica (largo ≥ ½
+                    // ≥ corto, no finitos neutralizados) — y el umbral YA
+                    // reparado es el que se reinterpreta como lift. Un solo
+                    // invariante para los mismos dos genes en todo el motor.
+                    let (ml_thr_long, _ml_thr_short) = crate::calibration::ml_gate_thresholds(
+                        self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                        self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+                    );
+                    let ml_lift = (ml_thr_long - 0.50).clamp(0.02, 0.25);
                     // Ruta 1: ML RE-CENTRADO (sesgo eliminado) con confianza
                     // proporcional al LIFT sobre la base del modelo.
                     if ml_prob_adaptive > ml_model_base + ml_lift {
@@ -2961,15 +3079,20 @@ impl GodEngineCore {
                 .trend_threshold
                 .load(Ordering::Relaxed);
 
-            // B3.36 — la rama swing TAMBIÉN gatea por LIFT sobre la base del
-            // modelo (ml_model_base): los umbrales absolutos (≥0.51/≤0.49)
-            // mataban los largos y sobre-aprobaban los cortos con la base
-            // ~30% del etiquetado honesto. Mismo gen, misma interpretación
-            // que el gate B3.18.
-            let ml_lift = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed) - 0.50)
-                .clamp(0.02, 0.25);
-            let effective_ml_long = ml_model_base + ml_lift;
-            let effective_ml_short = ml_model_base - ml_lift;
+            // B3.36 + D-715 (unión): la rama swing gatea por LIFT sobre la
+            // base del modelo (ml_model_base) — los umbrales absolutos
+            // mataban los largos con la base ~30% del etiquetado honesto.
+            // Los genes se reparan por la MISMA función que la puerta de
+            // entrada (ml_gate_thresholds): un solo invariante, sin la doble
+            // reparación divergente (reflejar 1−ml_long) que D-715 extirpó.
+            let (ml_thr_long, ml_thr_short) = crate::calibration::ml_gate_thresholds(
+                self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+            );
+            let ml_lift_long = (ml_thr_long - 0.50).clamp(0.02, 0.25);
+            let ml_lift_short = (0.50 - ml_thr_short).clamp(0.02, 0.25);
+            let effective_ml_long = ml_model_base + ml_lift_long;
+            let effective_ml_short = ml_model_base - ml_lift_short;
 
             let raw_base = self.arena.config.base_duration_ms.load(Ordering::Relaxed);
             let swing_duration_ms = if raw_base.is_finite() && raw_base > 0.0 {
@@ -3750,6 +3873,7 @@ impl GodEngineCore {
                                 .arena
                                 .registry
                                 .get_scoped_value_or(&sym, "taker_ratio", 1.0),
+                            ml_model_base,
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let senior_sigs = self
@@ -3806,53 +3930,38 @@ impl GodEngineCore {
                     // B3.18-aud (FRESCURA): se lee la variable LOCAL ml_prob_pure
                     // — computada en el bloque de ANALÍTICA COMPLETA ~1.5k
                     // líneas arriba, DENTRO de esta misma invocación, ANTES de
-                    // las ramas de señal/deliberación (orden verificado: bloque
-                    // ANALÍTICA COMPLETA → señales → deliberación → este gate).
-                    // El atomic coin.ml_prob tiene un ÚNICO escritor en todo el
-                    // workspace (ese store), pero leer la local elimina hasta
-                    // la posibilidad teórica de una escritura cruzada entre
-                    // threads: el valor del gate es, por construcción, el del
-                    // tick en curso — nunca stale por 1 tick.
-                    // MOD2/7-029 (INFORME DECIMOCUARTO): el gate lee el
-                    // ensamble PURO (sin spot_bias) — un despegue del spot no
-                    // puede cruzar el umbral por sí solo; sólo lo cruza un
-                    // modelo. La versión con sesgo (ml_prob/coin.ml_prob)
-                    // siguen alimentando las ramas de señal.
+                    // las ramas de señal/deliberación (orden verificado).
+                    // MOD2/7-029: el gate lee el ensamble PURO (sin
+                    // spot_bias); la versión con sesgo alimenta las ramas de
+                    // señal. B3.25: sin modelo validado del roster, no se opera.
+                    // B3.36 — GATE POR LIFT sobre la base del SÍMBOLO: con el
+                    // etiquetado honesto (base ~30%) el gate absoluto volvía
+                    // el sistema short-only por artefacto de escala.
+                    // D-715 (unión): los genes se reparan ANTES por
+                    // ml_gate_thresholds (largo ≥ ½ ≥ corto, finitud) — la
+                    // ÚNICA reparación de esos dos genes en el motor — y el
+                    // umbral YA reparado es el que se reinterpreta como lift.
                     let ml_now = ml_prob_pure;
-                    // B3.36 — GATE POR LIFT, no absoluto. El etiquetado
-                    // honesto (HOST-010) movió la base a ~30%: con el gate
-                    // absoluto (≥0.50 largo / ≤0.50 corto) los largos jamás
-                    // pasaban (p90=0.33) y los cortos casi siempre — el
-                    // sistema se volvía short-only por artefacto de escala.
-                    // El genoma ml_threshold_long se REINTERPRETA como lift:
-                    // baseline 0.5698 ⇒ lift 0.0698 ("7 puntos sobre la
-                    // base", los mismos "7 puntos sobre 50%" originales).
-                    // El GA evoluciona lift ∈ [0.02, 0.25]: con suelo 0.02
-                    // no puede abrir de par en par ni con techo 0.25 cegar
-                    // todo (un GBDT de 40 árboles rara vez levanta 25
-                    // puntos de base). La base es la del modelo del SÍMBOLO
-                    // (sigmoid(init_score)), no una constante global.
-                    // B3.25 sigue intacto: sin modelo validado del roster,
-                    // no se opera.
-                    let ml_lift = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed)
-                        - 0.50)
-                        .clamp(0.02, 0.25);
+                    let (ml_thr_long_gate, ml_thr_short_gate) = crate::calibration::ml_gate_thresholds(
+                        self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
+                        self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
+                    );
+                    let ml_lift_long = (ml_thr_long_gate - 0.50).clamp(0.02, 0.25);
+                    let ml_lift_short = (0.50 - ml_thr_short_gate).clamp(0.02, 0.25);
                     // S-6 (ESPECTRALIZACIÓN): el lift exigido respira con el
                     // ACUERDO espectral — cuando la fusión del espectro apunta
                     // en la MISMA dirección que el modelo, la exigencia baja
-                    // (×0.7: dos fuentes independientes alineadas); cuando
-                    // divergen, sube (×1.3: el modelo contra el continuo
-                    // necesita más margen). agree ∈ [-1,1]: signo(fused) ×
-                    // signo(desplazamiento del modelo sobre su base).
+                    // (×0.7); cuando divergen, sube (×1.3). agree ∈ [-1,1].
                     let agree = (council_fused
                         * (ml_now - ml_model_base).signum())
                         .clamp(-1.0, 1.0);
-                    let lift_eff = (ml_lift * (1.0 - 0.3 * agree)).clamp(0.01, 0.30);
+                    let lift_eff_long = (ml_lift_long * (1.0 - 0.3 * agree)).clamp(0.01, 0.30);
+                    let lift_eff_short = (ml_lift_short * (1.0 - 0.3 * agree)).clamp(0.01, 0.30);
                     let ml_gate_ok = has_roster_model
                         && if order.signal == SignalType::Long {
-                            ml_now >= ml_model_base + lift_eff
+                            ml_now >= ml_model_base + lift_eff_long
                         } else {
-                            ml_now <= ml_model_base - lift_eff
+                            ml_now <= ml_model_base - lift_eff_short
                         };
                     if aprobado_por_consejo && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;
@@ -4110,6 +4219,7 @@ impl GodEngineCore {
             ask_qty,
             event_time_ms,
             omni_features,
+            false, // CERT-M2-H01: wrapper legacy — siempre actualiza macro
         )
     }
 }

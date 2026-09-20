@@ -329,11 +329,37 @@ pub struct OrderExecutor {
     cooldown_until_ms: AtomicU64,
     /// F1.8: 429s consecutivos — >=3 sugiere ban inminente → kill-switch real.
     consecutive_429: AtomicUsize,
+    /// FIX M4-C02 (quinta ola, CRITICAL): freno TEMPORAL por rate-limit
+    /// (3×429 escalado o HTTP 418). A diferencia de `kill_switch` —permanente y
+    /// reservado para incidentes reales (immune/X-009/insolvencia)— este freno
+    /// AUTO-EXPIRA en este timestamp, porque un 429/418 es transitorio (Binance
+    /// indica retry_after). Antes: trigger_kill_switch() latcheaba la ejecución
+    /// PARA SIEMPRE por un burst de rate-limit, dejando posiciones vivas sin
+    /// poder cerrarse (riesgo de liquidación) hasta reiniciar el proceso.
+    rate_brake_until_ms: AtomicU64,
     /// Cache en RAM de filtros de símbolos (tickSize, stepSize, minNotional) O(1) < 5ns
     symbol_filters: ArcSwap<std::collections::HashMap<String, SymbolFilter>>,
     pub arena: ArcSwapOption<quantum_arena::GlobalArena>,
     pub ws: std::sync::Arc<crate::ws_executor::WsExecutor>,
     pub is_hedge_mode: AtomicBool,
+}
+
+/// FIX M4-C01 (quinta ola, CRITICAL): resultado del lazo de confirmación de
+/// órdenes. En la ruta WS, `send_order_payload` retorna Ok(()) cuando el
+/// kernel acepta los bytes — SIN ack del exchange. La confirmación real llega
+/// por ORDER_TRADE_UPDATE (user-data stream → OrderRegistry) o por consulta
+/// REST acotada (NUNCA re-envío: riesgo de duplicación).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderResolution {
+    /// El exchange aceptó la orden (NEW/PARTIALLY_FILLED/FILLED con orderId)
+    /// o hubo fill real antes de un estado terminal.
+    Accepted,
+    /// Terminal con cero fills y confirmación del exchange, u orden
+    /// inexistente (-2013 "Order does not exist").
+    Rejected,
+    /// Sin verificación concluyente (red caída en ambos planos). El llamador
+    /// conserva el estado local y reconcilia contra positionRisk (X-007).
+    Timeout,
 }
 
 impl OrderExecutor {
@@ -355,6 +381,7 @@ impl OrderExecutor {
             order_registry: std::sync::Arc::new(crate::order_registry::OrderRegistry::new()),
             cooldown_until_ms: AtomicU64::new(0),
             consecutive_429: AtomicUsize::new(0),
+            rate_brake_until_ms: AtomicU64::new(0),
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
             arena: ArcSwapOption::empty(),
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
@@ -391,6 +418,7 @@ impl OrderExecutor {
             order_registry,
             cooldown_until_ms: AtomicU64::new(0),
             consecutive_429: AtomicUsize::new(0),
+            rate_brake_until_ms: AtomicU64::new(0),
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
             arena: ArcSwapOption::new(arena),
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
@@ -403,6 +431,131 @@ impl OrderExecutor {
     /// Registro de órdenes (F1.5) — para spawn del user-data stream y queries.
     pub fn registry(&self) -> std::sync::Arc<crate::order_registry::OrderRegistry> {
         self.order_registry.clone()
+    }
+
+    /// FIX M4-C01: espera la resolución de una orden por clientOrderId.
+    /// Invariante: `register_intent` escribe status=New y order_id=0 ANTES del
+    /// envío — solo cuenta como confirmación lo que llega DEL exchange:
+    /// order_id > 0 (asignado por apply_ack / apply_trade_update) o fills
+    /// reales (executed_qty > 0). Intents sin confirmar siguen esperando
+    /// hasta el deadline.
+    pub async fn await_resolution(
+        &self,
+        client_order_id: &str,
+        timeout_ms: u64,
+    ) -> OrderResolution {
+        if self.is_paper_trading {
+            return OrderResolution::Accepted;
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+        loop {
+            if let Some(o) = self.order_registry.get(client_order_id) {
+                if o.executed_qty > 0.0 {
+                    return OrderResolution::Accepted;
+                }
+                let exchange_confirmed = o.order_id > 0;
+                match o.status {
+                    crate::order_registry::OrderStatus::New
+                    | crate::order_registry::OrderStatus::PartiallyFilled
+                    | crate::order_registry::OrderStatus::Filled => {
+                        if exchange_confirmed {
+                            return OrderResolution::Accepted;
+                        }
+                    }
+                    crate::order_registry::OrderStatus::Rejected
+                    | crate::order_registry::OrderStatus::Expired
+                    | crate::order_registry::OrderStatus::Canceled => {
+                        if exchange_confirmed {
+                            return OrderResolution::Rejected;
+                        }
+                    }
+                    crate::order_registry::OrderStatus::Unknown => {}
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                return OrderResolution::Timeout;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    }
+
+    /// FIX M4-C01: resolución por consulta REST (respaldo cuando el
+    /// user-data stream no entrega ORDER_TRADE_UPDATE). -2013 ("Order does
+    /// not exist") ⇒ la orden NUNCA llegó al exchange ⇒ Rejected. Otros
+    /// errores de red ⇒ Timeout (inconcluso, el llamador reconcilia).
+    pub async fn resolve_via_rest(&self, symbol: &str, client_order_id: &str) -> OrderResolution {
+        if self.is_paper_trading {
+            return OrderResolution::Accepted;
+        }
+        match self.query_order(symbol, client_order_id).await {
+            Ok(ack) => {
+                let now = self.get_synced_timestamp();
+                self.order_registry.apply_ack(&ack, now);
+                if ack.executed_qty > 0.0 {
+                    return OrderResolution::Accepted;
+                }
+                match crate::order_registry::OrderStatus::parse(&ack.status) {
+                    crate::order_registry::OrderStatus::Rejected
+                    | crate::order_registry::OrderStatus::Expired
+                    | crate::order_registry::OrderStatus::Canceled => OrderResolution::Rejected,
+                    _ => {
+                        if ack.order_id > 0 {
+                            OrderResolution::Accepted
+                        } else {
+                            OrderResolution::Rejected
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                if e.contains("-2013") {
+                    OrderResolution::Rejected
+                } else {
+                    println!(
+                        "⚠️ [M4-C01] resolve_via_rest {} inconcluso: {}",
+                        client_order_id, e
+                    );
+                    OrderResolution::Timeout
+                }
+            }
+        }
+    }
+
+    /// FIX M4-C01: gate de confirmación para envíos WS. Retorna Ok(()) SOLO
+    /// con confirmación del exchange. Err clasificado para el host:
+    /// · "WS_ORDER_REJECTED…" → la orden no existe → rama Err genérica
+    ///   (rollback local seguro: no hay posición real).
+    /// · "AMBIGUOUS…" → inconcluso → rama X-007 (reconcile-then-rollback:
+    ///   consultar positionRisk ANTES de tocar el estado local).
+    /// Latencia happy-path: el ORDER_TRADE_UPDATE del fill llega en <500ms
+    /// típicos; el timeout de 8s + 3 queries REST solo corre cuando el
+    /// user-data stream falló.
+    async fn confirm_ws_dispatch(
+        &self,
+        symbol: &str,
+        client_order_id: &str,
+    ) -> Result<(), String> {
+        let mut resolution = self.await_resolution(client_order_id, 8_000).await;
+        if resolution == OrderResolution::Timeout {
+            for attempt in 1..=3u64 {
+                tokio::time::sleep(std::time::Duration::from_millis(400 * attempt)).await;
+                resolution = self.resolve_via_rest(symbol, client_order_id).await;
+                if resolution != OrderResolution::Timeout {
+                    break;
+                }
+            }
+        }
+        match resolution {
+            OrderResolution::Accepted => Ok(()),
+            OrderResolution::Rejected => Err(format!(
+                "WS_ORDER_REJECTED: {} sin ack del exchange (rechazada/inexistente)",
+                client_order_id
+            )),
+            OrderResolution::Timeout => Err(format!(
+                "AMBIGUOUS: {} sin confirmación concluyente tras WS + 3 consultas REST",
+                client_order_id
+            )),
+        }
     }
 
     pub fn client(&self) -> &BinanceClient {
@@ -1017,14 +1170,56 @@ impl OrderExecutor {
                 n, retry_after_s, until
             );
             if n >= 3 {
-                self.trigger_kill_switch();
-                println!("🚨 [KILL SWITCH] 3+ rate limits consecutivos — freno total preventivo.");
+                // FIX M4-C02: freno TEMPORAL escalado, NO kill-switch permanente.
+                // Un burst de 429 es transitorio; latchear para siempre dejaba
+                // posiciones vivas sin cierre (liquidación) hasta reiniciar.
+                // Ventana = cooldown actual + 60s de margen de seguridad.
+                let brake_until = until.saturating_add(60_000);
+                self.extend_rate_brake(brake_until);
+                println!(
+                    "🚨 [RATE BRAKE] 3+ rate limits consecutivos — freno temporal hasta ms {} (auto-rearme).",
+                    brake_until
+                );
             }
         } else if e.starts_with("HTTP_418_IP_BANNED") {
-            self.trigger_kill_switch();
-            println!("🚨 [KILL SWITCH] HTTP 418: IP baneada por Binance. Freno total.");
+            // FIX M4-C02: el ban de IP es temporal (Binance lo levanta). Freno
+            // por la ventana indicada (o 5 min por defecto) — si sigue banneado
+            // al expirar, el próximo 418 re-latchea. Nunca permanente.
+            let ban_s: u64 = e
+                .split("retry_after=")
+                .nth(1)
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(300);
+            let arena_guard = self.arena.load_full();
+            let now = current_synced_timestamp_ms(arena_guard.as_deref());
+            drop(arena_guard);
+            let brake_until = now.saturating_add(ban_s.saturating_mul(1000));
+            self.extend_rate_brake(brake_until);
+            println!(
+                "🚨 [RATE BRAKE] HTTP 418: IP baneada — freno temporal {}s (auto-rearme hasta ms {}).",
+                ban_s, brake_until
+            );
         }
         e.to_string()
+    }
+
+    /// FIX M4-C02: extiende el freno temporal por rate-limit (máximo atómico —
+    /// nunca acorta una ventana ya activa). Auto-expira: check_rate_limits lo
+    /// libera cuando timestamp_ms >= rate_brake_until_ms.
+    #[inline(always)]
+    fn extend_rate_brake(&self, until_ms: u64) {
+        let mut cur = self.rate_brake_until_ms.load(Ordering::Relaxed);
+        while until_ms > cur {
+            match self.rate_brake_until_ms.compare_exchange(
+                cur,
+                until_ms,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(v) => cur = v,
+            }
+        }
     }
 
     /// B1.3: lector público del kill-switch para el watchdog de protección
@@ -1038,6 +1233,18 @@ impl OrderExecutor {
     fn check_rate_limits(&self, timestamp_ms: u64) -> Result<(), String> {
         if self.kill_switch.load(Ordering::Relaxed) {
             return Err("KILL SWITCH ACTIVE. Execution blocked.".to_string());
+        }
+
+        // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
+        // A diferencia del kill_switch permanente (incidentes reales), este
+        // auto-expira: cuando timestamp_ms >= rate_brake_until_ms la ejecución
+        // se libera sola, sin reinicio de proceso.
+        let brake_until = self.rate_brake_until_ms.load(Ordering::Relaxed);
+        if timestamp_ms < brake_until {
+            return Err(format!(
+                "RATE_BRAKE: freno temporal activo hasta {} (ahora {})",
+                brake_until, timestamp_ms
+            ));
         }
 
         // F1.8: cooldown post-429 — Binance ya nos frenó; respetar la ventana.
@@ -1800,8 +2007,14 @@ impl ExecutionProvider for OrderExecutor {
                         e
                     );
                 } else {
-                    // Orden disparada con éxito vía WS. El UserDataStream procesará el ACK real.
-                    return Ok(());
+                    // FIX M4-C01: el Ok(()) del write WS sólo significaba
+                    // "bytes al buffer del kernel" — SIN ack del exchange.
+                    // Confirmar la resolución real antes de prometer éxito
+                    // (ORDER_TRADE_UPDATE vía registry; respaldo REST acotado;
+                    // NUNCA re-envío — riesgo de duplicación).
+                    return self
+                        .confirm_ws_dispatch(symbol, &payload.client_order_id)
+                        .await;
                 }
             }
 
@@ -1993,7 +2206,9 @@ impl ExecutionProvider for OrderExecutor {
                     e
                 );
             } else {
-                return Ok(());
+                // FIX M4-C01: confirmar con el exchange antes de retornar Ok —
+                // el write WS no es un ack (ver confirm_ws_dispatch).
+                return self.confirm_ws_dispatch(symbol, &client_order_id).await;
             }
         }
 
@@ -3482,5 +3697,155 @@ mod tests_b3_audit {
         ];
         assert_eq!(merge_income_page(&mut acc, &mut seen, p2), 1);
         assert_eq!(acc.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod tests_m4_c01 {
+    use super::*;
+    use crate::order_types::OrderAck;
+
+    fn executor() -> OrderExecutor {
+        OrderExecutor::new("test_key".to_string(), "test_secret".to_string(), true)
+    }
+
+    /// apply_ack se keyea por ack.client_order_id — DEBE coincidir con la clave
+    /// de register_intent o el ack aterriza en una entrada separada del registry.
+    fn ack(coid: &str, status: &str, order_id: u64, executed: f64) -> OrderAck {
+        OrderAck {
+            client_order_id: coid.to_string(),
+            status: status.to_string(),
+            order_id,
+            executed_qty: executed,
+            ..Default::default()
+        }
+    }
+
+    /// M4-C01 núcleo: un intent registrado (status=New, order_id=0) NO es una
+    /// confirmación del exchange. Antes del fix la ruta WS retornaba Ok(()) en
+    /// este punto (fire-and-forget: la orden podía perderse en silencio si la
+    /// conexión moría). Ahora debe agotar el deadline y reportar Timeout.
+    #[tokio::test]
+    async fn m4c01_intent_only_never_confirms() {
+        let ex = executor();
+        ex.registry()
+            .register_intent("c1", "BTCUSDT", "BUY", "LONG", "MARKET", 1.0, 1000);
+        assert_eq!(
+            ex.await_resolution("c1", 200).await,
+            OrderResolution::Timeout
+        );
+    }
+
+    /// Solo un ack DEL exchange (order_id > 0) resuelve: NEW ⇒ Accepted,
+    /// REJECTED ⇒ Rejected.
+    #[tokio::test]
+    async fn m4c01_exchange_ack_accepts_and_rejects() {
+        let ex = executor();
+        ex.registry()
+            .register_intent("c2", "BTCUSDT", "BUY", "LONG", "MARKET", 1.0, 1000);
+        ex.registry().apply_ack(&ack("c2", "NEW", 1234, 0.0), 1100);
+        assert_eq!(
+            ex.await_resolution("c2", 200).await,
+            OrderResolution::Accepted
+        );
+
+        ex.registry()
+            .register_intent("c3", "BTCUSDT", "BUY", "LONG", "MARKET", 1.0, 1000);
+        ex.registry().apply_ack(&ack("c3", "REJECTED", 1235, 0.0), 1100);
+        assert_eq!(
+            ex.await_resolution("c3", 200).await,
+            OrderResolution::Rejected
+        );
+    }
+
+    /// Fill parcial antes de un terminal ⇒ existe posición real ⇒ Accepted
+    /// (executed_qty > 0 domina sobre el estado CANCELED: el remanente cancelado
+    /// no borra la qty ya ejecutada que el host debe bracketear).
+    #[tokio::test]
+    async fn m4c01_partial_fill_before_terminal_is_accepted() {
+        let ex = executor();
+        ex.registry()
+            .register_intent("c4", "BTCUSDT", "BUY", "LONG", "MARKET", 1.0, 1000);
+        ex.registry().apply_ack(&ack("c4", "CANCELED", 1236, 0.4), 1100);
+        assert_eq!(
+            ex.await_resolution("c4", 200).await,
+            OrderResolution::Accepted
+        );
+    }
+
+    /// Paper trading: sin exchange que consultar ⇒ el gate no debe bloquear ni
+    /// falsear rechazos. await_resolution y resolve_via_rest cortocircuitan a
+    /// Accepted, y confirm_ws_dispatch retorna Ok(()).
+    #[tokio::test]
+    async fn m4c01_paper_trading_short_circuits() {
+        let mut ex = executor();
+        ex.set_paper_trading(true);
+        assert_eq!(
+            ex.await_resolution("whatever", 60_000).await,
+            OrderResolution::Accepted
+        );
+        assert_eq!(
+            ex.resolve_via_rest("BTCUSDT", "whatever").await,
+            OrderResolution::Accepted
+        );
+        assert!(ex.confirm_ws_dispatch("BTCUSDT", "whatever").await.is_ok());
+    }
+}
+
+#[cfg(test)]
+mod tests_m4_c02 {
+    use super::*;
+
+    fn executor() -> OrderExecutor {
+        OrderExecutor::new("test_key".to_string(), "test_secret".to_string(), true)
+    }
+
+    /// M4-C02 path #3: el freno por rate-limit debe ser TEMPORAL, no permanente.
+    /// Antes: 3×429 (transitorio, ya cubierto por cooldown) llamaba
+    /// trigger_kill_switch() → kill_switch latcheado PARA SIEMPRE →
+    /// check_rate_limits bloqueaba TODA ejecución (incluido el cierre de
+    /// posiciones) hasta reiniciar el proceso → riesgo de liquidación.
+    /// Ahora: freno con auto-expiración; el flag permanente NO se arma.
+    #[test]
+    fn m4c02_rate_brake_is_time_bound_not_permanent() {
+        let ex = executor();
+        let now = current_synced_timestamp_ms(None);
+        for _ in 0..3 {
+            ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=1");
+        }
+        // El kill-switch permanente (incidentes reales) NO se arma por rate-limit.
+        assert!(!ex.is_kill_switch_active());
+        // Dentro de la ventana (brake ≈ now + 1s + 60s): bloqueado por RATE_BRAKE.
+        let blocked = ex.check_rate_limits(now);
+        assert!(
+            matches!(&blocked, Err(e) if e.starts_with("RATE_BRAKE")),
+            "esperado RATE_BRAKE dentro de la ventana, got {:?}",
+            blocked
+        );
+        // Tras la ventana (+120s > 61s): el freno AUTO-EXPIRA (antes: permanente).
+        let cleared = ex.check_rate_limits(now + 120_000);
+        assert!(
+            !matches!(&cleared, Err(e) if e.starts_with("RATE_BRAKE")),
+            "el freno no expiró tras la ventana: {:?}",
+            cleared
+        );
+    }
+
+    /// HTTP 418 (IP ban) tampoco debe latchear permanentemente: freno por la
+    /// ventana de ban, auto-expira. Si el ban persiste, el próximo 418 re-latchea.
+    #[test]
+    fn m4c02_http_418_brake_expires() {
+        let ex = executor();
+        let now = current_synced_timestamp_ms(None);
+        ex.handle_rate_limit_error("HTTP_418_IP_BANNED retry_after=1");
+        assert!(!ex.is_kill_switch_active());
+        // ban_s=1 → brake = now + 1s. Dentro: bloqueado.
+        assert!(
+            matches!(ex.check_rate_limits(now), Err(e) if e.starts_with("RATE_BRAKE"))
+        );
+        // +10s: expirado.
+        assert!(
+            !matches!(ex.check_rate_limits(now + 10_000), Err(e) if e.starts_with("RATE_BRAKE"))
+        );
     }
 }

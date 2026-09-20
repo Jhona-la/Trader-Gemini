@@ -25,6 +25,20 @@
 //! COSTE: O(S)=32 escalas × ~6 FLOPs = ~120 FLOPs/tick — despreciable frente
 //! al proceso del evento本身.
 
+//! # CÓMO LEER SUS VALORES (guía operativa)
+//!
+//! * `persistence` por escala: 0.5 = RUIDO puro (signo aleatorio, H=0.5);
+//!   →1 = tendencia que se auto-confirma (deja correr); →0 = reversión
+//!   perfecta (asegurar pronto). Es EL dial de régimen del motor: todos los
+//!   lerp espectrales (S-2/S-3) lo usan como t∈[0,1].
+//! * `fused_score` alto = las escalas QUE SABEN (persistencia alta) están
+//!   alineadas direccionalmente; alto con persistencias bajas = ruido
+//!   promediado — el peso suelo 5% evita que una escala impredecible domine.
+//! * `dominant_tau_ms`: 30 s→12 h es la BANDA OPERATIVA; τ corta = micro
+//!   impulso (brackets estrechos, trailing rápido), τ larga = tendencia de
+//!   banda (respiración amplia). El espectro OBSERVA más allá de la banda,
+//!   pero la DECISIÓN jamás sale de ella (C-05).
+
 /// Escalas del espectro: 10^-6 ms * 4^i para i∈0..32 → 1 ns (10^-6 ms) … ≈146.15 años (4.61*10^12 ms).
 /// Log-espaciadas base 4 (≈4.15 escalas/década): resolución uniforme en
 /// log(τ), cubriendo desde microestructura en nanosegundos hasta tendencias seculares de más de 100 años.
@@ -147,6 +161,9 @@ pub struct TemporalSpectrum {
     /// Primer instante observado: define la masa del núcleo que los datos ya
     /// llenaron en cada escala (D-742).
     first_ts_ms: u64,
+    /// Actualizaciones absorbidas: con el tiempo observado da el intervalo
+    /// medio entre eventos, y con él las muestras efectivas de cada escala.
+    updates: u64,
     /// Score espectral fusionado (paridad de riesgo 1/vol) ∈ ~[-1,1].
     pub fused_score: f64,
     /// Escala dominante (mayor |w·señal|) en ms — información, no decisión.
@@ -171,6 +188,7 @@ impl TemporalSpectrum {
             scales,
             last_ts_ms: 0,
             first_ts_ms: 0,
+            updates: 0,
             fused_score: 0.0,
             dominant_tau_ms: 0.0,
         }
@@ -206,9 +224,17 @@ impl TemporalSpectrum {
         let dt = (ts_ms - self.last_ts_ms) as f64;
         self.last_ts_ms = ts_ms;
         let elapsed = (ts_ms - self.first_ts_ms) as f64;
+        self.updates += 1;
+        let updates_f = self.updates as f64;
+        // Intervalo medio entre eventos observado (≥ dt del propio evento).
+        let mean_dt = (elapsed / updates_f).max(1e-9);
 
         let mut w_sum = 0.0;
         let mut w_sig_sum = 0.0;
+        // Respaldo H0: promedio de las señales ponderado sólo por lo que cada
+        // escala puede observar (masa del núcleo × resolución del reloj).
+        let mut obs_sum = 0.0;
+        let mut obs_sig_sum = 0.0;
         let mut best_contrib = 0.0f64;
         let mut dominant = 0.0f64;
 
@@ -265,17 +291,41 @@ impl TemporalSpectrum {
             s.momentum_z = z;
             s.signal = z.clamp(-5.0, 5.0).tanh();
 
-            // Fusión paridad-de-riesgo: w ∝ 1/vol_de_desviación, ponderada por
-            // lo que la escala puede saber (D-742): la masa del núcleo que los
-            // datos ya llenaron y la resolución del reloj del feed —milisegundos:
-            // una escala de 1 ns es indistinguible de la de 1 ms, y las diez
-            // escalas sub-milisegundo eran diez copias del mismo ruido—.
+            // FUSIÓN POR CONTENIDO INFORMATIVO **OBSERVABLE** (CERT-M3-H01 +
+            // D-742).
+            //
+            // La paridad-de-riesgo original (w ∝ 1/ewma_dev_vol) degeneraba:
+            // la vol de sorpresa de las escalas lentas es sistemáticamente
+            // menor ⇒ SIEMPRE pesaban más (el sesgo que C-05 documenta abajo
+            // para la τ dominante, replicado en la fusión que consumen
+            // arbitración, consejo y teleonomía). CERT-M3-H01 la sustituyó por
+            // el contenido de información de cada escala, que es lo correcto
+            // —las señales ya vienen z-normalizadas y son comparables—, pero
+            // con dos defectos: `persistence` aquí NO vive en [0,1] sino en
+            // [−1,1] (es la EWMA del acuerdo de signos), de modo que
+            // `(p − 0,5)·2` centra el cero en 0,5 —un valor que la EWMA casi
+            // nunca alcanza— y deja en el SUELO a las escalas de reversión a
+            // la media, que informan exactamente tanto como las tendenciales:
+            // |H − ½| es simétrico. Con |p| típicos < 0,2 la fusión quedaba en
+            // el promedio uniforme de las 32 escalas, incluidas las diez
+            // sub-milisegundo (copias del mismo ruido) y las vacías (señal
+            // saturada = «el precio está sobre o bajo el de arranque»).
+            //
+            // Contenido de información observable de una escala:
+            //   · |persistence| (análogo discreto y SIMÉTRICO de |H − ½|),
+            //     menos lo que el puro azar produce en una EWMA con n_eff
+            //     actualizaciones dentro del núcleo: 1/√n_eff;
+            //   · por la masa del núcleo que los datos han llenado (D-742);
+            //   · por la resolución del reloj del feed (D-742).
+            // Una escala sin exceso sobre el ruido no opina; si NINGUNA lo
+            // tiene, la fusión cae al promedio de lo observable (abajo).
             let resolution = 1.0 - (-s.tau_ms / FEED_CLOCK_RESOLUTION_MS).exp();
-            let w = if s.ewma_dev_vol > 1e-12 {
-                mass * resolution / s.ewma_dev_vol
-            } else {
-                0.0
-            };
+            let n_eff = (s.tau_ms / mean_dt).min(updates_f).max(1.0);
+            let info = (s.persistence.abs() - 1.0 / n_eff.sqrt()).max(0.0);
+            let observable = mass * resolution;
+            let w = observable * info;
+            obs_sum += observable;
+            obs_sig_sum += observable * s.signal;
             w_sum += w;
             let contrib = w * s.signal;
             w_sig_sum += contrib;
@@ -284,8 +334,14 @@ impl TemporalSpectrum {
                 dominant = s.tau_ms;
             }
         }
-        self.fused_score = if w_sum > 0.0 {
+        self.fused_score = if w_sum > 1e-12 {
             (w_sig_sum / w_sum).clamp(-1.0, 1.0)
+        } else if obs_sum > 1e-12 {
+            // H0-correcto: sin información medible por encima del azar, el
+            // promedio de las señales OBSERVABLES (ruido promediado, varianza
+            // ↓ por CLT) — jamás 0 plano, y jamás el promedio uniforme de 32
+            // escalas de las que diez son la misma y ocho no han visto nada.
+            (obs_sig_sum / obs_sum).clamp(-1.0, 1.0)
         } else {
             0.0
         };

@@ -30,6 +30,7 @@ fn test_quantum_organism_components() {
             spoof_score: 0.0,
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
+            ml_model_base: 0.5,
     };
     let result = consejo.deliberar(&healthy_payload, 0.65);
     assert!(

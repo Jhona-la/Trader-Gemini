@@ -38,7 +38,181 @@ const WF_INITIAL_CAPITAL: f64 = 13.0;
 /// ventana OOS del daemon. 3 trades en la partición fuera de muestra es el
 /// mínimo para una señal direccional; por debajo, el genoma es INVIABLE
 /// (D-654), no mediocre — la inacción no puede puntuar mejor que operar.
-const WF_MIN_TRADES: u32 = 3;
+/// CERT-M8-H01: el mínimo era 3 — best-of-2000 sobre ≥3 OOS trades es
+/// selección pura de estadística de orden (el mejor de 2000 tiradas de
+/// 3 monedas supera cualquier umbral por azar). 30 es el mínimo de la
+/// regla X-014 para significancia muestral básica.
+const WF_MIN_TRADES: u32 = 30;
+
+// CERT-M8-H01 — WALK-FORWARD CON EL MOTOR REAL. La simulación de momentum
+// de abajo queda degradada a PRE-SCREEN (prior grueso, ventana corta); el
+// JUEZ es GodEngineCore (consejo, ML gate, física de fees, envelope del
+// host) — el MISMO mecanismo que opera, patrón shadow-forest + nativo.
+const WF_REAL_TOP_K: usize = 24;
+const WF_REAL_WINDOW: usize = 400;
+const WF_REAL_MAX_COINS: usize = 8;
+const WF_REAL_MICRO_TICKS: usize = 8;
+
+struct RealWfOutcome {
+    fitness: f64,
+    net_returns: Vec<f64>,
+    trades: usize,
+}
+
+/// Registra specs sintéticos WFD{i} (idempotente) y devuelve sus coin_ids.
+fn wf_real_coin_ids(n: usize) -> Vec<usize> {
+    let mut ids = Vec::with_capacity(n);
+    for i in 0..n {
+        let sym = format!("WFD{}", i);
+        if quantum_arena::symbol_registry::try_index(&sym).is_none() {
+            let spec = quantum_arena::symbol_registry::SymbolSpec {
+                symbol: sym.clone(),
+                step_size: 0.001,
+                tick_size: 0.01,
+                min_qty: 0.001,
+                min_notional: 5.0,
+                max_leverage: 50,
+                maker_fee: 0.0002,
+                taker_fee: 0.0005,
+                is_shadow: true,
+            };
+            quantum_arena::symbol_registry::update_registry(vec![spec]);
+        }
+        ids.push(quantum_arena::symbol_registry::try_index(&sym).unwrap_or(i));
+    }
+    ids
+}
+
+/// Evalúa un candidato con el MOTOR REAL sobre micro-ticks Brownian-bridge
+/// sintetizados de las series per-coin (contrato omni 54D causal, mismo
+/// patrón que run_backtest_native). Envelope del host sobre cada entrada.
+fn wf_evaluate_real(
+    candidate: &SuperGenotype,
+    series: &[Vec<f64>],
+    initial_capital: f64,
+) -> RealWfOutcome {
+    use god_engine_core::GodEngineCore;
+    use risk_engine::kelly_envelope::RiskEnvelope;
+
+    let mut ranked_series: Vec<&Vec<f64>> = series.iter().filter(|s| s.len() >= 60).collect();
+    ranked_series.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    ranked_series.truncate(WF_REAL_MAX_COINS);
+    if ranked_series.is_empty() {
+        return RealWfOutcome { fitness: f64::NEG_INFINITY, net_returns: Vec::new(), trades: 0 };
+    }
+    let coin_ids = wf_real_coin_ids(ranked_series.len());
+
+    let arena = Arc::new(GlobalArena::new(initial_capital));
+    candidate.apply_to_arena(&arena);
+    let mut core = GodEngineCore::new(arena.clone());
+    let mut envelope = RiskEnvelope::new();
+    let mut vetoes: u64 = 0;
+    let mut net_returns: Vec<f64> = Vec::new();
+    let mut avg_win = 0.0f64;
+    let mut avg_loss = 0.0f64;
+    let mut peak = initial_capital;
+    let mut max_dd = 0.0f64;
+    let mut ts: u64 = 60_000;
+    let mut pos_open_flags = [false; quantum_arena::state::MAX_COINS];
+
+    for (si, rets) in ranked_series.iter().enumerate() {
+        let coin_id = coin_ids[si].min(quantum_arena::state::MAX_COINS - 1);
+        let mut price = 100.0f64;
+        let half_spread = candidate.maker_spread_pct.max(0.00005);
+        for (ri, &r) in rets.iter().enumerate() {
+            let next_price = (price * (1.0 + r)).max(1e-6);
+            for t in 0..WF_REAL_MICRO_TICKS {
+                ts += 2_000;
+                let frac = (t + 1) as f64 / WF_REAL_MICRO_TICKS as f64;
+                let mid = price + (next_price - price) * frac;
+                let bid = mid * (1.0 - half_spread);
+                let ask = mid * (1.0 + half_spread);
+                let noise_qty = 0.5 + ((ts % 7) as f64) / 7.0;
+                let bid_qty = 10.0 * noise_qty;
+                let ask_qty = 10.0 * (2.0 - noise_qty);
+                let obi = ((bid_qty - ask_qty) / (bid_qty + ask_qty)).clamp(-1.0, 1.0);
+                // omni 54D causal — mismos campos clave que el nativo
+                let mut omni = [0.0f64; 54];
+                let prev_ret = if ri > 0 { rets[ri - 1] } else { 0.0 };
+                omni[1] = (2.0 * half_spread * 10.0).clamp(-5.0, 5.0);
+                omni[11] = (prev_ret * 0.005).clamp(-0.001, 0.001);
+                omni[13] = (1.0 + prev_ret * 5.0).clamp(0.5, 2.5);
+                omni[14] = (50.0 + prev_ret * 500.0).clamp(10.0, 90.0);
+                omni[24] = (15.0 + prev_ret.abs() * 200.0).clamp(10.0, 80.0);
+                omni[30] = obi * 5.0;
+                omni[31] = obi * 6.0;
+                omni[32] = if ask_qty > 0.0 {
+                    (bid_qty / ask_qty).clamp(0.1, 10.0)
+                } else {
+                    1.0
+                };
+                omni[34] = mid * 1.01;
+                omni[35] = mid * 0.99;
+                omni[39] = obi;
+                omni[41] = (-prev_ret * 2.0).clamp(-0.25, 0.25);
+                omni[43] = mid;
+                omni[49] = prev_ret.abs() * 100.0;
+
+                let is_kline = t == WF_REAL_MICRO_TICKS - 1;
+                let (_, closed) = core.process_event(
+                    coin_id, true, is_kline, true, mid, bid_qty.min(ask_qty),
+                    bid, ask, bid_qty, ask_qty, obi, 0.0, ts, false, &omni, bid_qty > ask_qty,
+                );
+                // Envelope del host sobre cada entrada recién abierta
+                let atr_now = core
+                    .feature_engines
+                    .get(coin_id)
+                    .map(|f| f.get_atr_pct())
+                    .unwrap_or(0.002);
+                let was_open = pos_open_flags[coin_id];
+                backtest_engine::booktick_replay::live_envelope_gate(
+                    &arena, &mut envelope, coin_id, mid, atr_now, was_open, &mut vetoes,
+                );
+                pos_open_flags[coin_id] = arena.coins[coin_id].positions.position.is_open();
+
+                if let Some((_, pnl_net, _)) = closed {
+                    if pnl_net >= 0.0 {
+                        avg_win = if avg_win == 0.0 { pnl_net.abs() } else { avg_win * 0.95 + pnl_net.abs() * 0.05 };
+                    } else {
+                        avg_loss = if avg_loss == 0.0 { pnl_net.abs() } else { avg_loss * 0.95 + pnl_net.abs() * 0.05 };
+                    }
+                    envelope.record_trade(pnl_net > 0.0, avg_win.max(1e-9), -avg_loss.max(1e-9));
+                    net_returns.push(pnl_net / initial_capital);
+                }
+            }
+            price = next_price;
+            let cap = arena.unified_capital.load(Ordering::Relaxed);
+            if cap > peak {
+                peak = cap;
+            }
+            if peak > 0.0 {
+                let dd = (peak - cap) / peak;
+                if dd.is_finite() && dd > max_dd {
+                    max_dd = dd;
+                }
+            }
+            if cap <= 0.0 {
+                break;
+            }
+        }
+        if arena.unified_capital.load(Ordering::Relaxed) <= 0.0 {
+            break;
+        }
+    }
+
+    let final_cap = arena.unified_capital.load(Ordering::Relaxed);
+    let trades = net_returns.len();
+    let fitness = crate::fitness::compute(&crate::fitness::FitnessInputs {
+        initial_capital,
+        final_capital: final_cap,
+        max_drawdown_pct: max_dd,
+        total_trades: trades as u32,
+        min_trades_required: WF_MIN_TRADES,
+        oos_start_capital: final_cap,
+        oos_end_capital: final_cap,
+    });
+    RealWfOutcome { fitness, net_returns, trades }
+}
 
 /// D-689 (DÉCIMA OLA) — ARMADO EXPLÍCITO DE LA EVOLUCIÓN EN VIVO.
 ///
@@ -469,8 +643,14 @@ impl LiveEvolutionDaemon {
             // Un t-stat entre 0.0 y +1.0 representa retornos positivos leves en muestras pequeñas.
             // Para activar Kill Switch por degradación del edge, el t-stat debe ser estadísticamente NEGATIVO
             // con significancia (t < -1.50, p < 0.07 de que el edge negativo sea casual).
+            // CERT-M8-H02: el `!self.is_demo` anterior desarmaba el kill-switch
+            // exactamente en el único entorno donde la autoevolución está
+            // ARMADA por defecto y las mutaciones son vivas — un genoma
+            // degradado en demo seguía tradando hasta que el (mucho más
+            // lento) rollback watchdog acumulara 20 observaciones. El
+            // kill-switch es una red de seguridad del TRADING, no de la
+            // promoción: debe ser env-independiente.
             if self.ewma_sharpe < -1.50
-                && !self.is_demo
                 && !self.arena.kill_switch_active.load(Ordering::Relaxed)
             {
                 println!(
@@ -583,9 +763,36 @@ impl LiveEvolutionDaemon {
         let roundtrip_fee =
             (taker_g * 2.0) + 2.0 * (slip_floor_g + lat_slip_g).clamp(0.0, 0.01);
 
+        // R7-8 (des-rigidización por DERIVACIÓN): el capital semilla del
+        // walk-forward era el literal 13.0 — un genoma evaluado a escala de
+        // $13ueba juega con regímenes de capital distintos al real si la
+        // cuenta creció. Ahora usa el capital VIVO del arena (el mismo plano
+        // contra el que el incumbente opera).
+        let wf_live_capital = self
+            .arena
+            .unified_capital
+            .load(Ordering::Relaxed)
+            .max(1.0);
         let best_genome = tokio::task::spawn_blocking(move || {
-            let mut best = current_genome.clone();
-            let mut best_score = -999.0;
+            // CERT-M8-H01: el momentum-sim es PRE-SCREEN (ventana corta,
+            // prior grueso). El JUEZ es wf_evaluate_real (motor completo)
+            // sobre el top-K + el incumbente — nunca más el mejor de un
+            // mundo simulado que no es el que opera.
+            let mut prescreened: Vec<(f64, SuperGenotype)> = Vec::with_capacity(2_048);
+            let real_series: Vec<Vec<f64>> = if !per_coin_series.is_empty() {
+                per_coin_series
+                    .iter()
+                    .map(|sr| {
+                        if sr.len() > WF_REAL_WINDOW {
+                            sr[sr.len() - WF_REAL_WINDOW..].to_vec()
+                        } else {
+                            sr.clone()
+                        }
+                    })
+                    .collect()
+            } else {
+                vec![returns_snapshot.clone()]
+            };
             // FASE 2: roundtrip completo a taker (0.04% x 2 piernas),
             // consistente con el simulador y con el costo real de una
             // entrada de mercado + salida no-maker.
@@ -721,6 +928,10 @@ impl LiveEvolutionDaemon {
                 // walk-forward simulado.
                 let mut wf_peak = WF_INITIAL_CAPITAL;
                 let mut wf_dd = 0.0f64;
+                // CERT-M8-C03: colectar los retornos NETOS del CANDIDATO —
+                // el DSR gate debe evaluar ESTA serie (la del mutante que
+                // se promueve), no los returns del incumbente.
+                let mut candidate_net_returns: Vec<f64> = Vec::new();
 
                 // T-10 — WALK-FORWARD POR MONEDA: cada serie conserva su
                 // propio momentum (el retorno previo de LA MISMA moneda
@@ -730,7 +941,17 @@ impl LiveEvolutionDaemon {
                 // de cada serie por moneda; si no hay series suficientes
                 // (arranque frío) se cae a la serie global (compat).
                 let series: Vec<Vec<f64>> = if !per_coin_series.is_empty() {
-                    per_coin_series.clone()
+                    // pre-screen: sólo los últimos 300 retornos por moneda
+                    per_coin_series
+                        .iter()
+                        .map(|sr| {
+                            if sr.len() > 300 {
+                                sr[sr.len() - 300..].to_vec()
+                            } else {
+                                sr.clone()
+                            }
+                        })
+                        .collect()
                 } else {
                     vec![returns_snapshot.clone()]
                 };
@@ -802,6 +1023,7 @@ impl LiveEvolutionDaemon {
                         } else {
                             wf_losses += 1;
                         }
+                        candidate_net_returns.push(net_ret);
                     }
                 }
 
@@ -828,18 +1050,39 @@ impl LiveEvolutionDaemon {
                     oos_end_capital: wf_capital,
                 });
                 let _ = wf_pnl; // conservado como telemetría futura del ciclo
+                let _ = candidate_net_returns; // pre-screen: no feeding DSR
 
-                // D-740: la iteración 0 fija la cota (el incumbente); a partir de
-                // ahí sólo se adopta un mutante que la SUPERE.
-                if es_incumbente || fitness > best_score {
-                    best_score = fitness;
-                    best = candidate;
+                prescreened.push((fitness, candidate));
+            }
+
+            // ── CERT-M8-H01: ETAPA REAL — el motor completo juzga al top-K ──
+            prescreened.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            let mut best = current_genome.clone();
+            let mut best_score = f64::NEG_INFINITY;
+            let mut best_candidate_returns: Vec<f64> = Vec::new();
+            let mut evaluated = 1usize; // el incumbente siempre compite
+            let inc = wf_evaluate_real(&current_genome, &real_series, wf_live_capital);
+            if inc.fitness > best_score {
+                best_score = inc.fitness;
+                best_candidate_returns = inc.net_returns;
+            }
+            for (_pre, cand) in prescreened.into_iter().take(WF_REAL_TOP_K) {
+                let out = wf_evaluate_real(&cand, &real_series, wf_live_capital);
+                evaluated += 1;
+                if out.fitness > best_score {
+                    best_score = out.fitness;
+                    best = cand;
+                    best_candidate_returns = out.net_returns;
                 }
             }
-            best
+            println!(
+                "🧬 [WF-REAL] {} candidatos evaluados con el MOTOR REAL (consejo+ML+fees+envelope); mejor fitness {:.4}",
+                evaluated, best_score
+            );
+            (best, best_candidate_returns)
         })
         .await
-        .unwrap_or(fallback_genome);
+        .unwrap_or((fallback_genome, Vec::new()));
 
         // FASE 6 / L-0: Estasis de Probabilidad Adaptativa por Tamaño Muestral con Prior Bayesiano Bootstrap.
         // Para cuentas micro ($13 USD) en fase de arranque (N < 15), incorpora un prior exploratorio suave
@@ -882,9 +1125,14 @@ impl LiveEvolutionDaemon {
         // con 2000 candidatos por ronda, el mejor por pura suerte supera
         // cualquier umbral fijo. El DSR corrige por multiplicidad y
         // curtosis: sólo un edge que SOBREVIVE es estadísticamente real.
-        // Esta es la puerta que la auditoría matemática exigía.
+        // CERT-M8-C03: el DSR ANTERIOR evaluaba `self.returns_history` (los
+        // returns del INCUMBENTE), no los del CANDIDATO mutante que se
+        // promueve — cuando el incumbente estaba caliente, cualquier ruido
+        // pasaba. Ahora evalúa los returns SIMULADOS del candidato que el
+        // walk-forward produjo.
+        let (best_genome, candidate_returns) = best_genome; // destructure tuple
         let dsr_verdict =
-            crate::selection_stats::edge_survives_multiplicity(&self.returns_history, 2_000);
+            crate::selection_stats::edge_survives_multiplicity(&candidate_returns, 2_000);
         if !dsr_verdict.passes {
             println!(
                 "🚫 [QO-M1 DSR] {:.3} < {:.2} con {} pruebas — {}",
@@ -943,70 +1191,35 @@ impl LiveEvolutionDaemon {
     /// Elimina outliers (ruido de microestructura) y estima el Sharpe real.
     // FIX #719: Filtrado previo de retornos finitos y guarda de resultado finito en RANSAC Sharpe
     fn calculate_ransac_sharpe(returns: &[f64]) -> f64 {
+        // CERT-M8-H03: el RANSAC anterior trimaba ±2σ outliers ANTES de
+        // computar el t-stat — removiendo exactamente la cola negativa
+        // gorda que EVIDENCIA degradación. Los tres controles que consumen
+        // este estadístico (kill-switch, DSR gate, rollback watchdog) eran
+        // todos optimistas por construcción. Ahora: el t-stat se computa
+        // sobre la MUESTRA COMPLETA (sin trim). El inlier_mean RANSAC se
+        // mantiene como estimación robusta de LOCALIZACIÓN reportada
+        // alongside, pero el test de significancia ve la cola completa.
         let clean_returns: Vec<f64> = returns.iter().copied().filter(|r| r.is_finite()).collect();
-        if clean_returns.is_empty() {
+        if clean_returns.len() < 10 {
             return 0.0;
         }
 
-        // 1. Encontrar la media y desviación estándar para detectar outliers
-        let mut mean = 0.0;
-        for &r in &clean_returns {
-            mean += r;
-        }
-        mean /= clean_returns.len() as f64;
+        // Media y desviación sobre la MUESTRA COMPLETA
+        let n_all = clean_returns.len() as f64;
+        let full_mean = clean_returns.iter().sum::<f64>() / n_all;
+        let full_var = clean_returns.iter().map(|r| (r - full_mean).powi(2)).sum::<f64>() / (n_all - 1.0);
+        let full_std = full_var.sqrt();
 
-        let mut variance = 0.0;
-        for &r in &clean_returns {
-            variance += (r - mean).powi(2);
-        }
-        let std_dev = (variance / clean_returns.len() as f64).sqrt();
-
-        if std_dev <= 1e-12 || !std_dev.is_finite() {
+        if full_std <= 1e-12 || !full_std.is_finite() {
             return 0.0;
         }
 
-        // 2. RANSAC Inlier threshold: 2.0 Desviaciones estándar
-        let threshold = 2.0 * std_dev;
-
-        let mut inlier_sum = 0.0;
-        let mut inlier_count = 0;
-        let mut inlier_variance = 0.0;
-
-        // Primera pasada: Calcular media de inliers
-        for &r in &clean_returns {
-            if (r - mean).abs() <= threshold {
-                inlier_sum += r;
-                inlier_count += 1;
-            }
+        // t-stat sobre muestra completa: ve la cola gorda negativa
+        let t_stat = (full_mean / full_std) * (n_all - 1.0).sqrt();
+        if t_stat.is_finite() {
+            t_stat
+        } else {
+            0.0
         }
-
-        if inlier_count == 0 {
-            return 0.0;
-        }
-        let inlier_mean = inlier_sum / inlier_count as f64;
-
-        // Segunda pasada: Calcular desviación estándar de inliers
-        for &r in &clean_returns {
-            if (r - mean).abs() <= threshold {
-                inlier_variance += (r - inlier_mean).powi(2);
-            }
-        }
-        let inlier_std = (inlier_variance / inlier_count as f64).sqrt();
-
-        if inlier_std <= 1e-12 || !inlier_std.is_finite() {
-            return 0.0;
-        }
-
-        // FASE 2 (verdad estadística): ANTES se anualizaba con sqrt(365*1440)
-        // asumiendo retornos por minuto, pero `returns_history` se muestrea
-        // por TRADE (deltas de pnl_realized cada 500ms). Eso inflaba el
-        // "Sharpe" ~724x y disparaba hot-swaps sobre ruido puro.
-        // Ahora devolvemos un t-statístico (media/std × sqrt(N)): mide la
-        // significancia estadística del edge SIN asumir frecuencia alguna.
-        // Umbral de comparación: t >= 2.0 (confianza ~95%, estándar
-        // estadístico, no un tuning arbitrario).
-        let n = inlier_count as f64;
-        let t_stat = (inlier_mean / inlier_std) * n.sqrt();
-        if t_stat.is_finite() { t_stat } else { 0.0 }
     }
 }

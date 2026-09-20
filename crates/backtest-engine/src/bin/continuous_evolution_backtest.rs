@@ -526,8 +526,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tick.ask_qty,
                 tick.timestamp,
                 &omni,
+                false,
             );
-
             let new_order = new_ord.is_some();
             let closed_order = closed_ord.is_some();
 
@@ -613,6 +613,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tick.ask_qty,
                     tick.timestamp,
                     &omni,
+                    false,
                 );
             });
 

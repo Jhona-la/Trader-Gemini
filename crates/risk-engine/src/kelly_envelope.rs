@@ -23,6 +23,18 @@
 //!      el camino suicida del código antiguo). Capital chico se protege solo.
 //!   6. leverage = f_final / stop_distance (sizing clásico: el riesgo
 //!      fraccional dividido por la distancia del stop define el apalancamiento).
+//!
+//! # CÓMO LEER SUS VALORES (guía operativa)
+//!
+//! * `posterior.n() < 30` ⇒ sizing de bootstrap (leverage 1): NO es timidez,
+//!   es que aún NO HAY evidencia estadística — la envolvente converge sola.
+//! * `risk_fraction` CHICO con historial bueno = la racha esperada o el LCB
+//!   están apretando: leer q_lcb y streak, no «tocar» el número.
+//! * `max_leverage → 0` con operable=false = el capital no sostiene NI UNA
+//!   unidad de riesgo mínima del exchange: la orden correcta es NO operar.
+//! * El z de LCB BAJA (1.64→0.85) en cuentas micro POR DISEÑO (capital_regime):
+//!   menos capital exige menos certeza para una unidad — pero el axioma 25%
+//!   y el streak-bound de ruina siguen intactos en TODA escala.
 
 /// Piso de supervivencia tras la peor racha estadística (axioma F5.1).
 pub const SURVIVAL_FLOOR: f64 = 0.05;
@@ -160,18 +172,11 @@ impl RiskEnvelope {
         // Shrinkage por evidencia: n/(n+k) — con pocos trades, fracción minúscula.
         let shrunk = kelly * (n / (n + shrinkage_k));
 
-        // FIX #593: Guard de ruina: racha máxima esperada sobre TRADE_HORIZON trades con q_lcb acotado
+        // FIX #593 / CERT-M5-H03: streak-bound extraído a `ruin` — la MISMA
+        // función que ahora acota bootstrap/micro/leverage_matrix (antes este
+        // era el único path con protección de ruina).
         let q_lcb = (1.0 - self.posterior.lcb(z)).clamp(0.01, 0.99);
-        let raw_streak = (TRADE_HORIZON.ln() / q_lcb.ln()).abs();
-        let streak = if raw_streak.is_finite() {
-            raw_streak.min(TRADE_HORIZON).max(3.0)
-        } else {
-            TRADE_HORIZON
-        };
-        // f tal que (1-f)^streak >= SURVIVAL_FLOOR ⇒ f <= 1 - floor^(1/streak)
-        let f_ruina = (1.0 - SURVIVAL_FLOOR.powf(1.0 / streak)).clamp(0.001, 0.50);
-
-        shrunk.min(f_ruina).min(0.25) // tope absoluto de riesgo por trade: 25% (axioma)
+        shrunk.min(crate::ruin::streak_ruin_cap(q_lcb)).min(0.25) // axioma 25%
     }
 
     /// Apalancamiento máximo (paso 6) + bloqueo por notional mínimo (paso 5).

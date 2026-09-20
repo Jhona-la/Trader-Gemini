@@ -111,6 +111,7 @@ impl ShadowForest {
         main_arena: &Arc<GlobalArena>,
         omni_features: &[f64; 54],
         is_buyer_maker: bool,
+        latency_panic: bool,
     ) {
         // FASE 14: Suspensión Cuántica por OS Guardian.
         // Si Windows está asfixiado en RAM, no malgastamos ciclos en los clones de sombra.
@@ -143,7 +144,7 @@ impl ShadowForest {
                 depth_obi,
                 depth_micro_div,
                 event_time,
-                false, // No panic latency in shadow
+                latency_panic, // CERT-M8-H04: forward the REAL flag
                 omni_features,
                 is_buyer_maker,
             );
@@ -220,6 +221,12 @@ impl ShadowForest {
                 .arena
                 .unified_capital
                 .store(self.initial_capital, Ordering::Relaxed);
+            // CERT-F-56: reset peak TAMBIÉN — sin esto, el fitness post-replant
+            // computa drawdown contra peaks pre-replant, castigando sistemáticamente
+            // a los universos que alguna vez tuvieron un high watermark alto.
+            if let Some(p) = self.peak_capital.get_mut(i) {
+                *p = self.initial_capital;
+            }
             engine
                 .arena
                 .config
@@ -317,6 +324,7 @@ mod tests {
             &main_arena,
             &[0.0; 54],
             false,
+            false, // CERT-M8-H04: sin pánico de latencia en el test
         );
 
         forest.replant(base_genome);

@@ -62,31 +62,29 @@ fn main() {
     if let Ok(data) = std::fs::read_to_string("config_dir/genotypes/quantum_champion.json") {
         if let Ok(genome) = serde_json::from_str::<quantum_arena::genome::SuperGenotype>(&data) {
             let sanitized = quantum_arena::genome::SuperGenotype::from_vector(&genome.to_vector());
-            // 1. Entorno default (escribe active.json y active_genome.json)
-            std::env::remove_var("TG_GENOME_ENV");
-            match quantum_arena::genome_store::GenomeEnvelope::promote(
-                sanitized.clone(),
-                "quantum_champion_sync",
-                "Sincronización de genoma calibrado sin ruido browniano (RR >= 2.25, SL 0.80%)",
-            ) {
-                Ok(env) => println!(
-                    "✅ Default GenomeEnvelope promovido a generación {}",
-                    env.generation
-                ),
-                Err(e) => eprintln!("❌ Error promoviendo genoma default: {}", e),
-            }
-            // 2. Entorno backtest
-            std::env::set_var("TG_GENOME_ENV", "backtest");
-            match quantum_arena::genome_store::GenomeEnvelope::promote(
-                sanitized,
-                "quantum_champion_sync",
-                "Sincronización de genoma calibrado para backtest forense 1:1",
-            ) {
-                Ok(env) => println!(
-                    "✅ Backtest GenomeEnvelope promovido a generación {}",
-                    env.generation
-                ),
-                Err(e) => eprintln!("❌ Error promoviendo genoma backtest: {}", e),
+            // CERT-F-14: el "entorno default" hacía remove_var(TG_GENOME_ENV)
+            // + promote — que desde D-651 escribe a config_dir/genomes/
+            // __UNSET__/ y FALLA silenciosamente (o peor, sin atomic_write
+            // crearían un silo basura). Sincronización EXPLÍCITA por entorno
+            // de la lista cerrada: demo y backtest. prod NO se toca aquí —
+            // la promoción a producción sigue siendo un paso humano
+            // deliberado (promote_across_env).
+            for target_env in ["demo", "backtest"] {
+                std::env::set_var("TG_GENOME_ENV", target_env);
+                match quantum_arena::genome_store::GenomeEnvelope::promote(
+                    sanitized.clone(),
+                    "quantum_champion_sync",
+                    &format!(
+                        "Sincronización de genoma calibrado sin ruido browniano (RR >= 2.25, SL 0.80%) → {}",
+                        target_env
+                    ),
+                ) {
+                    Ok(env) => println!(
+                        "✅ [{}] GenomeEnvelope promovido a generación {}",
+                        target_env, env.generation
+                    ),
+                    Err(e) => eprintln!("❌ [{}] Error promoviendo genoma: {}", target_env, e),
+                }
             }
         } else {
             eprintln!("⚠️ quantum_champion.json no pudo deserializarse como SuperGenotype.");

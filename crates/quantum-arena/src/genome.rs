@@ -575,12 +575,16 @@ impl SuperGenotype {
             );
             return envelope.genome;
         }
-        // D-507: Fallback de emergencia a active_genome.json si el envelope del entorno no resolvió.
-        // Previene que producción (TG_GENOME_ENV=prod) caiga a new_baseline si prod/active.json
-        // no se ha creado aún, garantizando que el genoma validado en backtest opere siempre.
-        let legacy_data = std::fs::read_to_string("config_dir/genotypes/active_genome.json")
-            .or_else(|_| std::fs::read_to_string("config_dir/genotypes/quantum_champion.json"))
-            .ok();
+        // D-507 / CERT-F-14: fallback de emergencia al ESPEJO DEL PROPIO
+        // ENTORNO si el envelope no resolvió. Antes leía la ruta compartida
+        // `active_genome.json`: un boot de prod con prod/active.json
+        // ausente cargaba silenciosamente lo que demo escribió en el
+        // espejo — herencia cross-env que D-651 prohibió para el linaje
+        // principal. quantum_champion.json (artefacto deliberado del
+        // config_compiler) sigue siendo válido como última instancia.
+        let legacy_data = crate::genome_store::legacy_mirror()
+            .and_then(|mirror| std::fs::read_to_string(mirror).ok())
+            .or_else(|| std::fs::read_to_string("config_dir/genotypes/quantum_champion.json").ok());
         if let Some(data) = legacy_data {
             if let Ok(genome) = serde_json::from_str::<Self>(&data) {
                 telemetry_engine::telemetry!("🧬 [GENOMA] Loaded evolved SuperGenotype from config_dir/genotypes/active_genome.json (Emergency Fallback)");

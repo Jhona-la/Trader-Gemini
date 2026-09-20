@@ -88,6 +88,8 @@ pub struct MarketSnapshotPayload {
     /// ratio (flujo agresivo). Exclusivos del asiento Ente.
     pub crowd_ls_ratio: f64,
     pub crowd_taker_ratio: f64,
+    /// CERT-M2-C04: base del modelo ML del símbolo
+    pub ml_model_base: f64,
 }
 
 impl MarketSnapshotPayload {
@@ -224,8 +226,11 @@ fn spectral_opinion(fused_score: f64, persistence: f64) -> f64 {
 /// alcista, < 0.45 → bajista, neutral en la banda muerta (±0.05 alrededor de
 /// 0.5). Convicción plena con |edge| ≥ 0.20 (ml 0.70/0.30 — el techo B3.19).
 #[inline(always)]
-fn ml_opinion(ml_prob: f64) -> f64 {
-    let edge = ml_prob - 0.5;
+/// CERT-M2-C04: centrada en la BASE del modelo (no en 0.5). El centro
+/// absoluto creaba sesgo short estructural en 3 de 5 asientos
+/// direccionales cuando la base del etiquetado honesto es ~0.30.
+fn ml_opinion(ml_prob: f64, ml_base: f64) -> f64 {
+    let edge = ml_prob - ml_base;
     const DEAD_ZONE: f64 = 0.05;
     const FULL_EDGE: f64 = 0.20;
     if edge.abs() < DEAD_ZONE {
@@ -385,7 +390,7 @@ impl SeniorAgent for SeniorEnteMercado {
             1.0
         };
         let dir_sign = safe_signum(payload.intended_direction);
-        if dir_sign > 0.0 && ls > 3.0 {
+        if dir_sign > 0.0 && ls > CROWD_LS_FEAR {
             entity_factor *= 0.8; // multitud ya long: squeeze risk
         }
         if dir_sign < 0.0 && ls < 0.33 {
@@ -433,17 +438,22 @@ impl SeniorAgent for SeniorCausal {
         // D-112: El umbral causal protege contra toxicidad extrema (>0.85) sin asfixiar
         // los breakouts institucionales legítimos (VPIN entre 0.60 y 0.80).
         let effective_threshold = payload.causal_veto_threshold.clamp(0.60, 0.90);
-        // U-4: el breakout alineado antes dependía de etiquetas de horizonte
-        // — en el continuo, un libro alineado O una τ de banda rápida (la
-        // microestructura lidera los breakouts) califican igual.
-        let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25 || payload.spectral_s() < 0.5)
+        // CERT-M7-C01: el OR anterior hacía spectral_s()<0.5 (cierto para
+        // τ<19min = la mayoría de la banda operativa) suficiente para
+        // calificar como "breakout alineado" — el veto quedaba
+        // efectivamente DESARMADO para toda entrada de banda rápida sin
+        // importar el VPIN hasta 0.88. Ahora exige CONJUNCIÓN: libro
+        // alineado Y banda rápida (la microestructura que lidera breakouts
+        // reales tiene ambas características).
+        let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25
+            && payload.spectral_s() < 0.5)
             && do_calculus_risk < 0.88;
         let is_veto = do_calculus_risk > effective_threshold && !is_aligned_breakout;
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent (not a trend predictor)
             confidence: (1.0 - do_calculus_risk).clamp(0.0, 1.0),
-            weight: 1.2,
+            weight: SEAT_WEIGHT_FLOW,
             is_veto,
             justification: format!(
                 "Causal manipulation risk: {:.4} (Threshold: {:.4}, aligned={})",
@@ -487,7 +497,7 @@ impl SeniorAgent for SeniorRiesgo {
             role: self.role(),
             signal_direction: dir, // Modula la entrada bajo deliberación
             confidence: if dir != 0.0 { conviction } else { 0.0 },
-            weight: 1.5,
+            weight: SEAT_WEIGHT_META,
             is_veto,
             justification: format!(
                 "Riesgo: DD={:.4}, racha={} → convicción {:.2} (dir={:+.0})",
@@ -543,7 +553,7 @@ impl SeniorAgent for SeniorML {
         } else {
             0.5 // Falla segura: sin modelo no hay opinión
         };
-        let signal = ml_opinion(p);
+        let signal = ml_opinion(p, payload.ml_model_base);
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal,
@@ -576,7 +586,7 @@ impl SeniorAgent for SeniorMetacognitivo {
         let adjusted_confidence = (effective_wr - dd_penalty).clamp(0.05, 1.0);
 
         // Las tres perspectivas independientes, cada una con su propio dato:
-        let ml_sig = ml_opinion(payload.ml_prob.clamp(0.0, 1.0));
+        let ml_sig = ml_opinion(payload.ml_prob.clamp(0.0, 1.0), payload.ml_model_base);
         let spec_sig = spectral_opinion(payload.fused_score, payload.persistence);
         let flow_sig = payload.book_imbalance.clamp(-1.0, 1.0);
 
@@ -640,7 +650,7 @@ impl SeniorAgent for SeniorTeleonomia {
             * execution_quality
             * toxicity_penalty;
 
-        let is_veto = expected_utility.abs() < 0.02 && wr < 0.35;
+        let is_veto = expected_utility.abs() < UTILITY_VETO_FLOOR && wr < UTILITY_VETO_WR;
         let signal = if is_veto {
             0.0
         } else {
@@ -678,7 +688,7 @@ impl SeniorAgent for SeniorAuditorInterno {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent
             confidence: 1.0,
-            weight: 3.0, // Maximum authority as Devil's Advocate
+            weight: SEAT_WEIGHT_DEVIL, // Maximum authority as Devil's Advocate
             is_veto,
             justification: format!(
                 "Auditor Interno check: DD={:.4}, Risk={:.4}",
@@ -688,9 +698,94 @@ impl SeniorAgent for SeniorAuditorInterno {
     }
 }
 
+/// CERT-M7-H01 — GRID DE DECISIÓN DEL CONSEJO: una sola definición con
+/// DERIVACIÓN por campo (antes: 30+ literales dispersos sin teoría).
+/// Los campos de runtime (`deliberate`) viven aquí; los pesos de asiento
+/// y umbrales que los agentes leen en su propio `evaluate` son consts del
+/// módulo (mismos valores, misma derivación). El host puede sobrescribir
+/// `params` ANTES del arranque — nunca en caliente.
+#[derive(Debug, Clone, Copy)]
+pub struct CouncilParams {
+    /// Umbral de aprobación del consenso. DERIVACIÓN: N=5 asientos
+    /// direccionales independientes (MOD2/7-006) ⇒ "≥2 perspectivas
+    /// alineadas" = 2/5 = 0.40; 0.35 deja banda de tolerancia a la
+    /// abstención sin caer a una sola voz (1/5 = 0.20).
+    pub approval_threshold: f64,      // 0.35
+    /// Supermayoría que desempata un veto singular: 4 de 5 voces = 0.80.
+    pub supermajority_override: f64,  // 0.80
+    /// Convicción mínima para que la supermayoría desempate: banda media
+    /// de señal del consejo (0.28 ≈ percentil 60 de |final_signal| en
+    /// calibración B3.31).
+    pub override_signal_floor: f64,   // 0.28
+    /// Penalización bayesiana al desempatar un veto: pérdida del 25% de
+    /// convicción equivale a recibir el voto disidente como evidencia en
+    /// contra con peso 1/4.
+    pub override_penalty: f64,        // 0.75
+    /// Pseudo-observaciones Laplace del prior Beta(1,1) del win-rate:
+    /// k=8 = prior débilmente informativo (8 trades neutros) — el wr
+    /// empírico domina a partir de ~40 outcomes.
+    pub shrinkage_k: f64,             // 8.0
+    /// Severidad de cascada que activa el cortacircuitos del Ente:
+    /// >P99 de la distribución de severidad de liquidaciones observada
+    /// (familia kill-switch, no sobreescribible por supermayoría).
+    pub cascade_severity_breaker: f64, // 0.85
+}
+
+impl Default for CouncilParams {
+    fn default() -> Self {
+        Self {
+            approval_threshold: 0.35,
+            supermajority_override: 0.80,
+            override_signal_floor: 0.28,
+            override_penalty: 0.75,
+            shrinkage_k: 8.0,
+            cascade_severity_breaker: 0.85,
+        }
+    }
+}
+
+/// Pesos de asiento (leídos por los agentes en su propio evaluate — no
+/// requieren estado del consejo). DERIVACIONES:
+/// - FLOW 1.2: el observador microestructural tiene la información más
+///   fresca del libro (latencia mínima) — prima del 20% sobre neutral.
+/// - META 1.5: el metacognitivo CALIBRA a los demás asientos (su señal es
+///   de segundo orden) — prima del 50%.
+/// - DEVIL 3.0: el Abogado del Diablo es la autoridad disidente máxima:
+///   3× neutral, porque su función es asimétrica (un veto suyo vale más
+///   que una aprobación) — análogo al quórum calificado de un tribunal.
+pub const SEAT_WEIGHT_FLOW: f64 = 1.2;
+pub const SEAT_WEIGHT_META: f64 = 1.5;
+pub const SEAT_WEIGHT_DEVIL: f64 = 3.0;
+/// L/S de la manada donde aplica contrarian eufórico: percentil alto de
+/// la distribución retail (>3.0 = unanimidad long apalancada).
+pub const CROWD_LS_FEAR: f64 = 3.0;
+/// Piso de utilidad esperada bajo el cual el Devil veta por futilidad.
+pub const UTILITY_VETO_FLOOR: f64 = 0.02;
+/// Win-rate máximo con el que la futilidad (EU bajo el piso) se considera
+/// estructural y no racha: mismo umbral de aprobación del consejo — bajo
+/// wr 0.35 el sistema no tiene minoría sustancial que sostenga la entrada.
+pub const UTILITY_VETO_WR: f64 = 0.35;
+
+/// CERT-M7-H02 — MÁSCARA DE ASIENTOS MODULADORES (D-345 rubber-stamp).
+/// Volatilidad(2), Riesgo(4) y EnteMercado(10) HEREDAN `intended_direction`
+/// como señal — no generan dirección propia. Si sus señales entran al
+/// tracker de desempeño, se cuentan "correctas" con el win-rate del
+/// sistema y sus pesos se auto-refuerzan (rubber-stamp que infla
+/// final_signal y facilita el veto-override). El consenso ya los excluye
+/// (MOD2/7-006); el tracker era el bypass restante.
+pub const MODULATOR_SEAT_MASK: [bool; 11] = {
+    let mut m = [true; 11];
+    m[SeniorRole::Volatilidad as usize] = false;
+    m[SeniorRole::Riesgo as usize] = false;
+    m[SeniorRole::EnteMercado as usize] = false;
+    m
+};
+
 pub struct ConsejoDeliberacion {
     pub agents: Vec<Box<dyn SeniorAgent>>,
     pub tracker: std::sync::RwLock<SeniorPerformanceTracker>,
+    /// CERT-M7-H01: grid de decisión — ver CouncilParams.
+    pub params: CouncilParams,
 }
 
 impl Default for ConsejoDeliberacion {
@@ -713,6 +808,7 @@ impl Default for ConsejoDeliberacion {
                 Box::new(SeniorEnteMercado),
             ],
             tracker: std::sync::RwLock::new(SeniorPerformanceTracker::new(500)),
+            params: CouncilParams::default(),
         }
     }
 }
@@ -747,7 +843,7 @@ impl ConsejoDeliberacion {
             .ok()
             .map(|t| t.total_outcomes())
             .unwrap_or(0) as f64;
-        let k_prior = 8.0;
+        let k_prior = self.params.shrinkage_k;
         let safe_wr = (raw_wr * n_obs + 0.5 * k_prior) / (n_obs + k_prior);
 
         // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
@@ -886,11 +982,16 @@ impl ConsejoDeliberacion {
             let cascade_breaker = vetoes
                 .iter()
                 .any(|v| v.role == SeniorRole::EnteMercado && v.is_veto);
-            if cascade_breaker && payload.liquidation_severity > 0.85 {
+            if cascade_breaker
+                && payload.liquidation_severity > self.params.cascade_severity_breaker
+            {
                 vetoed_by = Some(SeniorRole::EnteMercado);
-            } else if vetoes.len() == 1 && top_consensus >= 0.80 && final_signal.abs() >= 0.28 {
-                // D-342 & D-425: escala alineada a la convicción continua (>= 0.28)
-                final_signal *= 0.75; // Penalización del 25% por disenso de 1 senior
+            } else if vetoes.len() == 1
+                && top_consensus >= self.params.supermajority_override
+                && final_signal.abs() >= self.params.override_signal_floor
+            {
+                // D-342 & D-425: escala alineada a la convicción continua
+                final_signal *= self.params.override_penalty; // penalización bayesiana
             } else {
                 vetoed_by = Some(vetoes[0].role);
             }
@@ -906,9 +1007,9 @@ impl ConsejoDeliberacion {
         // la última deliberación cualitativa, no un segundo embudo cuantitativo.
         let (approved, consensus_pct) = if vetoed_by.is_some() {
             (false, 0.0)
-        } else if long_consensus_pct >= 0.35 && final_signal > 0.0 {
+        } else if long_consensus_pct >= self.params.approval_threshold && final_signal > 0.0 {
             (true, long_consensus_pct)
-        } else if short_consensus_pct >= 0.35 && final_signal < 0.0 {
+        } else if short_consensus_pct >= self.params.approval_threshold && final_signal < 0.0 {
             (true, short_consensus_pct)
         } else if total_directional_capacity == 0.0 {
             // D-165: Con cero capacidad direccional de los seniors, rechazar para evitar operaciones a ciegas
@@ -975,8 +1076,18 @@ impl ConsejoDeliberacion {
 
     /// N-12: Registra el retorno realizado de una operación para actualizar los pesos adaptativos
     pub fn record_outcome(&self, senior_signals: &[f64; 11], realized_return: f64) {
+        // CERT-M7-H02: los asientos MODULADORES no actualizan pesos con el
+        // outcome — heredan la dirección del sistema y su "acierto" es el
+        // win-rate ajeno (auto-refuerzo D-345). Se ponen a 0 (el tracker
+        // sólo cuenta señales no nulas) preservando el historial bruto.
+        let mut masked = *senior_signals;
+        for (i, &keep) in MODULATOR_SEAT_MASK.iter().enumerate() {
+            if !keep {
+                masked[i] = 0.0;
+            }
+        }
         if let Ok(mut tracker) = self.tracker.write() {
-            tracker.record_outcome(senior_signals, realized_return);
+            tracker.record_outcome(&masked, realized_return);
         }
     }
 }
@@ -1105,6 +1216,7 @@ mod tests {
             spoof_score: 0.0,
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
+            ml_model_base: 0.5,
         }
     }
 
@@ -1146,6 +1258,7 @@ mod tests {
             spoof_score: 0.0,
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
+            ml_model_base: 0.5,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -1223,6 +1336,7 @@ mod tests {
             spoof_score: 0.0,
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
+            ml_model_base: 0.5,
         };
 
         let result = consejo.deliberar(&payload, 0.70);

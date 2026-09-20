@@ -21,11 +21,13 @@ use std::sync::atomic::Ordering;
 /// La versión anterior usaba PF como el pago b (K = p − q/PF): b = PF·q/p,
 /// no PF — misestimación sistemática. Piso 0: sin edge, sin fracción.
 #[inline(always)]
+/// CERT-M5-H03: productor PURO de fracción — también pasa por el tope de
+/// ruina central (streak-bound + axioma), como todos los demás.
 pub fn kelly_from_pf(prob_win: f64, profit_factor: f64) -> f64 {
     if !prob_win.is_finite() || !profit_factor.is_finite() || profit_factor <= 1.0 {
         return 0.0;
     }
-    (prob_win * (1.0 - 1.0 / profit_factor)).max(0.0)
+    crate::ruin::clamp_ruin((prob_win * (1.0 - 1.0 / profit_factor)).max(0.0), 1.0 - prob_win.clamp(0.0, 1.0))
 }
 
 pub struct QuantumLeverageMatrix;

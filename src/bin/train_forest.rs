@@ -778,8 +778,8 @@ fn main() {
     let mut f = File::create(&out).unwrap();
     serde_json::to_writer_pretty(&mut f, &model).unwrap();
     println!("💾 {} ({} árboles, init {:.4}){}", out, trees.len(), init_score,
-             if !gate_pass { " — [gate NO superado, revisar antes de promover]" } else { "" });
-    if !promote && gate_pass {
+             if !gate_ok { " — [gate NO superado, revisar antes de promover]" } else { "" });
+    if !promote && gate_ok {
         println!("   para promover al vivo: re-ejecuta con --promote (hot-swap lo recoge en ≤10s)");
     }
     // D-720: sin evidencia, salida distinta de cero — el fichero escrito es el

@@ -409,6 +409,7 @@ pub fn run_booktick_replay(
             live_envelope_gate(
                 &arena,
                 &mut risk_envelope,
+                0,
                 mid,
                 atr_now,
                 pos_was_open,
@@ -443,6 +444,7 @@ pub fn run_booktick_replay(
             live_envelope_gate(
                 &arena,
                 &mut risk_envelope,
+                0,
                 mid,
                 atr_now,
                 pos_was_open,
@@ -478,6 +480,7 @@ pub fn run_booktick_replay(
             live_envelope_gate(
                 &arena,
                 &mut risk_envelope,
+                0,
                 mid,
                 atr_now,
                 pos_was_open,
@@ -598,15 +601,18 @@ impl ReplayTick {
 /// vivo abortaría NO existan en el replay. Retorna false si la entrada fue
 /// vetada (rollback aplicado).
 #[allow(clippy::too_many_arguments)]
-fn live_envelope_gate(
+pub fn live_envelope_gate(
     arena: &Arc<GlobalArena>,
     envelope: &mut RiskEnvelope,
+    coin_id: usize,
     mid: f64,
     atr_pct: f64,
     prev_open: bool,
     veto_counter: &mut u64,
 ) -> bool {
-    let coin = match arena.coins.first() {
+    // CERT-M8-C05: coin_id parametrizado — run_backtest_native opera sobre
+    // target_coin_id (registro dinámico), no sobre el asiento 0.
+    let coin = match arena.coins.get(coin_id) {
         Some(c) => c,
         None => return true,
     };
@@ -665,7 +671,20 @@ fn live_envelope_gate(
         1
     } else if operable {
         let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
-        core_leverage.clamp(1, 20).min(cap)
+        // CERT-M8-C01 — PARIDAD SIZING BT↔VIVO: el host (god_engine.rs
+        // ~3512) computa `lev_from_risk = (0.05 · kelly_frac) / sl_at_
+        // tau(τ_entry)` y luego `.min(cap)`. El replay ANTES usaba
+        // `core_leverage.clamp(1,20).min(cap)` (pre-C-08) — sin kelly_frac
+        // scaling, sin stop-distance normalization: un genoma certificado
+        // a leverage L tradearía a OTRO L en demo. Ahora la MISMA fórmula.
+        let kelly_frac = envelope.risk_fraction(env_z, env_k);
+        let tau_entry = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
+        let sl_frac = arena
+            .config
+            .sl_at_tau(if tau_entry > 0.0 { tau_entry } else { 30_000.0 });
+        let risk_budget = 0.05 * kelly_frac;
+        let lev_from_risk = (risk_budget / sl_frac.max(1e-4)).clamp(1.0, 20.0);
+        ((lev_from_risk as u32).min(cap)).max(1)
     } else {
         0
     };
@@ -673,7 +692,7 @@ fn live_envelope_gate(
     // Veto puro de la envolvente (el host retorna ANTES de los margin guards).
     if exec_leverage == 0 {
         *veto_counter += 1;
-        rollback_local_position(arena);
+        rollback_local_position(arena, coin_id);
         return false;
     }
 
@@ -694,7 +713,7 @@ fn live_envelope_gate(
     let final_required_margin = notional_volume / effective_leverage as f64;
     if final_required_margin > free_margin * 0.95 {
         *veto_counter += 1;
-        rollback_local_position(arena);
+        rollback_local_position(arena, coin_id);
         return false;
     }
     true
@@ -703,8 +722,8 @@ fn live_envelope_gate(
 /// Rollback EXACTO de `rollback_positions` del host (god_engine.rs): cierra
 /// la posición local, devuelve el margen al pool y REEMBOLSA el entry_fee
 /// (nunca fue coste real). Sin PnL — la entrada vetada no contabiliza (B3.14).
-fn rollback_local_position(arena: &Arc<GlobalArena>) {
-    if let Some(coin) = arena.coins.first() {
+pub fn rollback_local_position(arena: &Arc<GlobalArena>, coin_id: usize) {
+    if let Some(coin) = arena.coins.get(coin_id) {
         let pos = &coin.positions.position;
         if pos.is_open() {
             let (_, _, _, margin_used, entry_fee) = pos.close_with_fee();
@@ -830,7 +849,7 @@ mod tests {
         let mut env = RiskEnvelope::new();
         let mut vetoes = 0u64;
         open_test_position(&arena, 100.0, 1.0, 10.0, 0.05);
-        let kept = live_envelope_gate(&arena, &mut env, 100.0, 0.001, false, &mut vetoes);
+        let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes);
         assert!(kept, "bootstrap no veta entrada sostenible");
         assert_eq!(vetoes, 0);
         assert!(arena.coins[0].positions.position.is_open());
@@ -852,7 +871,7 @@ mod tests {
         assert!(env.posterior.n() >= 30.0);
         let mut vetoes = 0u64;
         open_test_position(&arena, 100.0, 1.0, 10.0, 0.05);
-        let kept = live_envelope_gate(&arena, &mut env, 100.0, 0.001, false, &mut vetoes);
+        let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes);
         assert!(!kept, "la envolvente autoritativa debía vetar");
         assert_eq!(vetoes, 1);
         assert!(!arena.coins[0].positions.position.is_open());
@@ -870,7 +889,7 @@ mod tests {
         let mut env = RiskEnvelope::new();
         let mut vetoes = 0u64;
         open_test_position(&arena, 100.0, 6.0, 12.0, 0.01); // notional 600
-        let kept = live_envelope_gate(&arena, &mut env, 100.0, 0.001, false, &mut vetoes);
+        let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes);
         assert!(!kept, "margin-guard debía abortar (600/20 > 0.95·1)");
         assert_eq!(vetoes, 1);
         assert!(!arena.coins[0].positions.position.is_open());
@@ -889,7 +908,7 @@ mod tests {
         }
         let mut vetoes = 0u64;
         open_test_position(&arena, 100.0, 1.0, 10.0, 0.05);
-        let kept = live_envelope_gate(&arena, &mut env, 100.0, 0.001, true, &mut vetoes);
+        let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, true, &mut vetoes);
         assert!(kept && vetoes == 0);
         assert!(arena.coins[0].positions.position.is_open());
     }

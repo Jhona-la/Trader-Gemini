@@ -587,7 +587,15 @@ impl StatefulEngine {
         let micro = self.get_features();
         let omni_feats = self.omni.extract_features();
 
-        [
+        // CERT-M2-H02: zerificar las dims MUERTAS en SERVE también (no
+        // sólo en el trainer). B3.35 comentaba "zerificadas en AMBOS
+        // lados" pero el serve seguía alimentando obi_accel vivo en dims
+        // [4][5][10] mientras el trainer las zerificaba — cualquier
+        // modelo pre-B3.35 con splits en esas dims servía una
+        // distribución que nunca vio en entrenamiento. FEATURES_DEAD_IN_
+        // SERVE es la fuente única de verdad del mapa vivo/muerto.
+        let mut result = [0f32; 34];
+        let mut raw: [f32; 34] = [
             micro[0],
             micro[1],
             micro[2],
@@ -623,7 +631,15 @@ impl StatefulEngine {
             omni_feats[19],
             omni_feats[20],
             omni_feats[21],
-        ]
+        ];
+        // CERT-M2-H02: aplicar el zerificado del contrato EN SERVE.
+        for &d in FEATURES_DEAD_IN_SERVE {
+            if d < 34 {
+                raw[d] = 0.0;
+            }
+        }
+        result = raw;
+        result
     }
 
     /// Returns ATR as a percentage of last price for Stop Loss scaling
@@ -974,12 +990,14 @@ mod tests {
         e.update_macro_features(0.35, 0.0, 0.0, ts + 100);
         let f = e.get_universal_features();
         assert_eq!(f.len(), 34);
+        // CERT-M2-H02: dims [4][5][9][10] AHORA zerificadas en AMBOS lados
+        // (serve incluido). El test anterior verificaba que obi_accel
+        // vivía en serve — eso era EXACTAMENTE el defecto: el trainer
+        // zerificaba pero el serve no, rompiendo la paridad.
         assert_eq!(f[9], 0.0, "dark_alpha debe servir 0.0 sin productor dex");
-        assert!(
-            f[5] != 0.0 && f[4] != 0.0,
-            "obi_accel ([4],[5],[10]) debe vivir en serve: {:?}",
-            &f[4..=5]
-        );
+        assert_eq!(f[4], 0.0, "obi_accel [4] zerificado en serve (paridad B3.35)");
+        assert_eq!(f[5], 0.0, "obi_accel [5] zerificado en serve (paridad B3.35)");
+        assert_eq!(f[10], 0.0, "obi_accel [10] zerificado en serve (paridad B3.35)");
     }
 
     #[test]

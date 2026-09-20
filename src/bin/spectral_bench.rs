@@ -71,6 +71,66 @@ impl LegacyFusion {
     }
 }
 
+/// Réplica literal de la fusión CERT-M3-H01 (peso por contenido informativo
+/// `max((persistence − 0,5)·2, 0,05)` sobre la vol de desviación sembrada),
+/// que es la que vivía en origin/main antes de esta rama.
+struct CertFusion {
+    ewma: [f64; 32],
+    dev_vol: [f64; 32],
+    persistence: [f64; 32],
+    prev_dev: [f64; 32],
+    last_ts: u64,
+    fused: f64,
+}
+
+impl CertFusion {
+    fn new() -> Self {
+        Self {
+            ewma: [0.0; 32],
+            dev_vol: [0.0; 32],
+            persistence: [0.0; 32],
+            prev_dev: [0.0; 32],
+            last_ts: 0,
+            fused: 0.0,
+        }
+    }
+    fn update(&mut self, price: f64, ts: u64) {
+        if self.last_ts == 0 {
+            self.ewma = [price; 32];
+            self.dev_vol = [1e-7; 32];
+            self.last_ts = ts;
+            return;
+        }
+        if ts <= self.last_ts {
+            return;
+        }
+        let dt = (ts - self.last_ts) as f64;
+        self.last_ts = ts;
+        let (mut ws, mut wss) = (0.0, 0.0);
+        for i in 0..32 {
+            let alpha = 1.0 - (-dt / SPECTRUM_SCALES_MS[i]).exp();
+            let prev = self.ewma[i];
+            let dev = (price - prev) / prev;
+            self.ewma[i] += alpha * (price - prev);
+            self.dev_vol[i] += alpha * (dev.abs() - self.dev_vol[i]);
+            let z = if self.dev_vol[i] > 1e-12 { dev / self.dev_vol[i] } else { 0.0 };
+            let sig = z.clamp(-5.0, 5.0).tanh();
+            let agree = (dev * self.prev_dev[i]).signum()
+                * (if dev.abs() > 1e-12 && self.prev_dev[i].abs() > 1e-12 { 1.0 } else { 0.0 });
+            self.persistence[i] += alpha * (agree - self.persistence[i]);
+            self.prev_dev[i] = dev;
+            let w = ((self.persistence[i] - 0.5) * 2.0).max(0.05);
+            ws += w;
+            wss += w * sig;
+        }
+        self.fused = if ws > 1e-12 {
+            (wss / ws).clamp(-1.0, 1.0)
+        } else {
+            (self.fused * 0.0) + 0.0
+        };
+    }
+}
+
 /// Correlación de Pearson acumulada.
 #[derive(Default)]
 struct Corr {
@@ -150,6 +210,10 @@ fn main() {
     let mut corr_boot_legacy = Corr::default();
     let mut ic_legacy = Corr::default();
     let mut ic_pending_legacy: std::collections::VecDeque<(u64, f64, f64)> = Default::default();
+    let mut cert = CertFusion::new();
+    let mut corr_boot_cert = Corr::default();
+    let mut ic_cert = Corr::default();
+    let mut ic_pending_cert: std::collections::VecDeque<(u64, f64, f64)> = Default::default();
 
     // ── 2. Pronóstico espectral ────────────────────────────────────────────
     let mut tape = SpectralTape::with_band(16.0, 1.2e9);
@@ -178,6 +242,14 @@ fn main() {
 
         spec.update(price, ts);
         legacy.update(price, ts);
+        cert.update(price, ts);
+        while let Some(&(t0, s0, p0)) = ic_pending_cert.front() {
+            if t0 + ic_h > ts {
+                break;
+            }
+            ic_pending_cert.pop_front();
+            ic_cert.add(s0, (price / p0).ln());
+        }
         while let Some(&(t0, s0, p0)) = ic_pending_legacy.front() {
             if t0 + ic_h > ts {
                 break;
@@ -218,6 +290,8 @@ fn main() {
             ic_pending.push_back((ts, spec.fused_score, price));
             corr_boot_legacy.add(legacy.fused, (price / first_price).ln().signum());
             ic_pending_legacy.push_back((ts, legacy.fused, price));
+            corr_boot_cert.add(cert.fused, (price / first_price).ln().signum());
+            ic_pending_cert.push_back((ts, cert.fused, price));
         }
 
         for f in forecasters.iter_mut() {
@@ -240,15 +314,27 @@ fn main() {
         "   peso medio que la fusión anterior a D-742 daba a escalas MÁS LARGAS que lo observado: {:.1} %",
         100.0 * cold_share_sum / cold_share_n.max(1.0)
     );
+    println!("   {:<44} {:>12} {:>14}", "fusión", "corr(arranque)", "IC 5 min");
     println!(
-        "   corr(fused_score, signo(precio − precio de arranque)): antes de D-742 {:+.3} · ahora {:+.3}",
+        "   {:<44} {:>+12.3} {:>+14.4}",
+        "1/vol original (paridad de riesgo)",
         corr_boot_legacy.r(),
-        corr_boot.r()
+        ic_legacy.r()
     );
     println!(
-        "   IC a 5 min, corr(fused_score, retorno siguiente): antes de D-742 {:+.4} · ahora {:+.4} (n = {})",
-        ic_legacy.r(),
-        ic.r(),
+        "   {:<44} {:>+12.3} {:>+14.4}",
+        "CERT-M3-H01 (contenido informativo)",
+        corr_boot_cert.r(),
+        ic_cert.r()
+    );
+    println!(
+        "   {:<44} {:>+12.3} {:>+14.4}",
+        "D-742 (informativo × observable)",
+        corr_boot.r(),
+        ic.r()
+    );
+    println!(
+        "   corr(arranque) = correlación con signo(precio − precio de arranque); IC = correlación con el retorno de los 5 min siguientes (n = {})",
         ic.n
     );
 

@@ -402,9 +402,18 @@ pub fn reconcile_arena(
                     10.0
                 };
                 let margin = notional / lev;
-                // D-729: si la entrada no es válida (precio o cantidad), la
-                // posición NO se abre y tampoco se reserva su margen.
-                let adoptada = coin.positions.position.open_with_horizon(
+// CERT-M4-H05: imputar entry_fee de la adopción con el fee
+                // taker estándar (0.04% VIP default — el arena config no es
+                // accesible desde aquí sin refactor de firma; el fee exacto
+                // se corrige en la primera reconciliación con tradeId).
+                // Antes entry_fee=0 → Kelly sobreestimaba en adoptadas.
+                // FIX R7-0 (CRÍTICO): el fee iba en el slot TP de
+                // open_with_horizon — instalaba un TP en ~$0.04 y el fee
+                // jamás llegaba al modelo. open_with_fee es la firma correcta.
+                // D-729 (unión): además, si la entrada no es válida (precio o
+                // cantidad), la posición NO se abre y tampoco se reserva margen.
+                let adopted_entry_fee = notional * 0.0004;
+                let adoptada = coin.positions.position.open_with_fee(
                     is_long,
                     price,
                     abs_qty,
@@ -413,6 +422,9 @@ pub fn reconcile_arena(
                     0.0,
                     0.0,
                     quantum_arena::position::PositionHorizon::Continuous,
+                    0.0,
+                    0.0,
+                    adopted_entry_fee,
                 );
                 if !adoptada {
                     println!(
