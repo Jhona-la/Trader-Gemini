@@ -2207,7 +2207,13 @@ impl GodEngineCore {
                         sym, coin_model_key
                     );
                 }
-            } else if tick % 100 == 0 {
+            } else if tick % 100_000 == 0 {
+                // D-748b: este diagnóstico se emitía cada 100 ticks. En una
+                // corrida forense de 17 M de ticks sobre un símbolo sin modelo
+                // son 170 000 líneas idénticas —37 807 en la primera media
+                // hora— que ahogan el log donde vive el veredicto y frenan la
+                // corrida por E/S. La ausencia de modelo es un estado, no un
+                // evento: basta recordarlo de cuando en cuando.
                 println!(
                     "🔬 [ML-DIAG] {} SIN forest activo (key {:?} sin modelo y sin fallback)",
                     sym, coin_model_key
