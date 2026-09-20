@@ -2356,11 +2356,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 {
                                     if let Ok(oi) = oi_str.parse::<f64>() {
                                         if oi.is_finite() && oi > 0.0 {
-                                            // Contratos abiertos × precio ≈ notional:
-                                            // el OI del endpoint es en unidades de la
-                                            // base — se normaliza tal cual contra 1e8
-                                            // (orden de magnitud típico en majors).
-                                            let norm = (oi.ln() / 1.0e8f64.ln()).clamp(0.0, 1.0);
+                                            // CERT-M1-M02 — OI EN NOTIONAL USD,
+                                            // cross-comparable. El endpoint da
+                                            // unidades de la BASE: con la vieja
+                                            // normalización ln(oi)/ln(1e8), DOGE
+                                            // (billones de unidades) saturaba a 1.0
+                                            // permanente y BTC (~100k) leía ~0.63 —
+                                            // una tabla de lookup por símbolo, no
+                                            // una señal. Ahora: notional = oi ×
+                                            // precio vivo del coin, escala log
+                                            // [$100M … $10B] (ln 11.51→23.03) que
+                                            // cubre el rango real de futuros perp.
+                                            // El asiento Ente lee apalancamiento
+                                            // REAL comparado entre símbolos.
+                                            let px = arena_oi.coins[*coin_id]
+                                                .current_price
+                                                .load(std::sync::atomic::Ordering::Relaxed);
+                                            let oi_usd = oi * px.max(0.0);
+                                            let norm = if oi_usd > 0.0 {
+                                                ((oi_usd.ln() - 11.5129_f64)
+                                                    / (23.0259_f64 - 11.5129_f64))
+                                                    .clamp(0.0, 1.0)
+                                            } else {
+                                                0.0
+                                            };
                                             arena_oi.coins[*coin_id]
                                                 .open_interest_norm
                                                 .store(norm, std::sync::atomic::Ordering::Relaxed);
@@ -4660,9 +4679,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let (_, mut read) = ws_stream.split();
 
+                    let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+                    let watchdog_secs: u64 = std::env::var("BINANCE_WS_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(if is_testnet { 30 } else { 15 });
+
                     loop {
                         tokio::select! {
-                            msg_opt = tokio::time::timeout(std::time::Duration::from_secs(5), read.next()) => {
+                            msg_opt = tokio::time::timeout(std::time::Duration::from_secs(watchdog_secs), read.next()) => {
                                 match msg_opt {
                                     Ok(Some(Ok(msg))) => {
                                         let data = msg.into_data();
@@ -4685,7 +4710,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         break;
                                     }
                                     Err(_) => {
-                                        telemetry_server::telemetry_log!("🚨 [WS] Watchdog Timeout: No data received for 5 seconds! Forcing reconnect to prevent Zombie Stream.");
+                                        telemetry_server::telemetry_log!(
+                                            "🚨 [WS] Watchdog Timeout: No data received for {} seconds! Forcing reconnect to prevent Zombie Stream.",
+                                            watchdog_secs
+                                        );
                                         // X-010: el inmune y el interlock SABEN que el
                                         // feed murió (antes la latencia quedaba
                                         // congelada en el último latido sano).

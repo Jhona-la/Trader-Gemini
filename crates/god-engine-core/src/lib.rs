@@ -105,6 +105,12 @@ pub struct GodEngineCore {
     /// si el slot no existe, se cae al global (compat).
     pub conformal_by_coin: Vec<conformal::ConformalCalibrator>,
     pub calibrator_by_coin: Vec<calibration::PlattCalibrator>,
+    /// CERT-M2-C02 — proceso de Hawkes POR SÍMBOLO. Cada TRADE real excita
+    /// el proceso (record_event); λ/μ verdadero se publica al registry.
+    /// Antes el slot 'hawkes_intensity' llevaba un proxy de aceleración/ATR
+    /// (mislabel documentado por la auditoría décima) y la matemática
+    /// Σα·e^(−βΔt) de hawkes_bessel.rs vivía muerta sin callers.
+    pub hawkes_by_coin: Vec<signal_engine::hawkes_bessel::HawkesBesselEngine>,
     /// DIAG R4 (transitorio): cuello post-orden.
     pub diag_council_vetoes: u64,
     pub diag_opened: u64,
@@ -277,6 +283,9 @@ impl GodEngineCore {
                 .collect(),
             calibrator_by_coin: (0..n_coins)
                 .map(|_| calibration::PlattCalibrator::new())
+                .collect(),
+            hawkes_by_coin: (0..n_coins)
+                .map(|_| signal_engine::hawkes_bessel::HawkesBesselEngine::new())
                 .collect(),
             diag_council_vetoes: 0,
             diag_opened: 0,
@@ -747,6 +756,11 @@ impl GodEngineCore {
             }
 
             if is_trade {
+                // CERT-M2-C02: cada trade real EXCITA el proceso de Hawkes
+                // del símbolo (λ(t) = μ + Σα·e^(−β(t−tᵢ)) vivo, por fin).
+                if let Some(hk) = self.hawkes_by_coin.get_mut(coin_id) {
+                    hk.record_event(event_time_ms as f64 / 1000.0);
+                }
                 // D-220 & D-247: Ingesta física real de microestructura agresora (Taker Buy vs Taker Sell)
                 self.feature_engines[coin_id].update_trade_flow(trade_qty, is_buyer_maker);
                 // D-708 (DÉCIMA OLA · auditoría integral): EL FLUJO AGREGADO ES
@@ -1859,6 +1873,15 @@ impl GodEngineCore {
             let tsallis_ent = ((1.0 - (p_bid.powf(1.5) + p_ask.powf(1.5))) / 0.5).clamp(0.0, 1.0);
 
             let micro_v = (v_t.abs() / mid_price.max(1e-8)).clamp(atr_pct * 0.1, atr_pct * 5.0);
+            // CERT-M2-C02 — λ/μ verdadero del proceso excitado por TRADES
+            // (la excitación ocurre en process_event::is_trade, que llama a
+            // este dual en el MISMO evento — la lectura es fresca; los
+            // callers directos de dual sin trades previos leen ratio 1.0).
+            let hawkes_ev_s = event_time_ms as f64 / 1000.0;
+            let (hawkes_ratio_real, hawkes_eta_real) = match self.hawkes_by_coin.get(coin_id) {
+                Some(hk) => (hk.intensity_ratio(hawkes_ev_s), hk.branching_ratio()),
+                None => (1.0, 0.0),
+            };
             let set_reg = |key: &str, val: f64| {
                 self.arena.registry.set(key, val);
                 self.arena.registry.set_for_coin(coin_id, key, val);
@@ -1905,11 +1928,11 @@ impl GodEngineCore {
             set_reg("vpin_toxicity", vpin_val);
             set_reg("cvpin", vpin_val);
             set_reg("order_flow_vpin", vpin_val);
-            let atr_abs = (atr_pct * mid_price).max(1e-8);
-            set_reg(
-                "hawkes_intensity",
-                (1.0 + (a_t.abs() / atr_abs).clamp(0.0, 4.0)).clamp(0.1, 5.0),
-            );
+            // CERT-M2-C02: λ/μ VERDADERO del proceso excitado por trades
+            // (antes: proxy 1+|a_t|/ATR — aceleración, no intensidad).
+            // Clamp [0.1, 10] sólo acota telemetría: ≈1 calma, >3 cascada.
+            set_reg("hawkes_intensity", hawkes_ratio_real.clamp(0.1, 10.0));
+            set_reg("hawkes_branching", hawkes_eta_real);
             set_reg("bessel_alpha", 1.5);
             set_reg("hawkes_dt", 0.05);
             set_reg(

@@ -220,8 +220,10 @@ impl QuantumStrategy for HawkesBesselEngine {
             return 0.0;
         }
 
-        // M2-C02 — SIGUE ABIERTO (el "fix" CERT-M2-C02 es un MISLABEL, no
-        // cerrar este hallazgo confiando en el comentario anterior).
+        // M2-C02 — CERRADO (R9, 2026-09-19): el core AHORA excita el
+        // proceso real (record_event por trade en process_event) y publica
+        // λ/μ VERDADERO al registry — el proxy de aceleración fue retirado.
+        // El historial del mislabel se conserva abajo como advertencia.
         //
         // Lo que realmente pasa: este evaluate lee el param de registry
         // 'hawkes_intensity', pero el ÚNICO escritor en producción
