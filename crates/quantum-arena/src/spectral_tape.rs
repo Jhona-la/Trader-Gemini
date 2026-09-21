@@ -607,13 +607,27 @@ impl Default for SpectralForecastBank {
     }
 }
 
+/// Anclas del pronóstico: las escalas del espectro que cubren la banda
+/// operativa con margen (≈17 s … 19,5 h). Se publican al arena para que
+/// cualquier consumidor —la geometría de la orden, el dimensionado— pregunte
+/// por el horizonte REAL de su posición interpolando en log τ.
+pub const ANCLAS_PRONOSTICO: [f64; 7] = [
+    SPECTRUM_SCALES_MS[17],
+    SPECTRUM_SCALES_MS[18],
+    SPECTRUM_SCALES_MS[19],
+    SPECTRUM_SCALES_MS[20],
+    SPECTRUM_SCALES_MS[21],
+    SPECTRUM_SCALES_MS[22],
+    SPECTRUM_SCALES_MS[23],
+];
+
 impl SpectralForecastBank {
     /// Anclas: las escalas del espectro global que cubren la banda operativa
     /// con margen (≈17 s … 19,5 h). La banda del tape añade dos escalas por
     /// debajo y tres por encima, que es la ventana que cada pronosticador
     /// mira (h/16 … 64·h).
     pub fn new() -> Self {
-        let anclas_ms: Vec<f64> = SPECTRUM_SCALES_MS[17..=23].to_vec();
+        let anclas_ms: Vec<f64> = ANCLAS_PRONOSTICO.to_vec();
         let tape = SpectralTape::with_band(SPECTRUM_SCALES_MS[15], SPECTRUM_SCALES_MS[26]);
         let varianza = anclas_ms
             .iter()
@@ -723,6 +737,16 @@ impl SpectralForecastBank {
 
     pub fn anclas_ms(&self) -> &[f64] {
         &self.anclas_ms
+    }
+
+    /// σ pronosticada en CADA ancla (fracción de precio), para publicarla al
+    /// arena. `None` en las anclas que aún no tienen pronóstico.
+    pub fn sigmas_en_anclas(&self, now_ms: u64) -> [Option<f64>; 7] {
+        let mut out = [None; 7];
+        for (i, &h) in self.anclas_ms.iter().enumerate().take(7) {
+            out[i] = self.sigma_at(h, now_ms);
+        }
+        out
     }
 }
 

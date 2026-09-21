@@ -725,6 +725,11 @@ impl RiskEngine {
                     .config
                     .sl_atr_multiplier
                     .load(Ordering::Relaxed),
+                // D-754: la σ que el espectro predictivo pronostica PARA ESTE
+                // horizonte, si ha demostrado habilidad fuera de muestra. El
+                // arena publica ceros mientras no la tenga, y entonces la
+                // geometría sigue con la ley de escala sobre el ATR medido.
+                sigma_forecast: arena.coins[coin_id].sigma_forecast_at(tau_for_sizing),
             },
             // El RR genómico puede ser MÁS ambicioso que el mínimo exigido por
             // la fricción, nunca menor.

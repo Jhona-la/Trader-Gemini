@@ -57,6 +57,17 @@ pub struct TpSlInputs {
     pub roundtrip_fee: f64,
     /// Multiplicador genómico del stop sobre la dispersión difusiva.
     pub sl_atr_multiplier: f64,
+    /// D-754 — σ PRONOSTICADA para ESTE horizonte (fracción de precio), si el
+    /// espectro predictivo ha demostrado habilidad fuera de muestra. `None`
+    /// ⇒ se usa la ley de escala sobre la volatilidad medida hacia atrás.
+    ///
+    /// Por qué importa: el stop debe cubrir la volatilidad que OCURRIRÁ
+    /// mientras la posición viva, no la que acaba de ocurrir. `atr · (τ/τ_ref)^H`
+    /// es una extrapolación de la volatilidad pasada; el pronóstico espectral
+    /// mide, fuera de muestra, entre un 11 % y un 18 % de la varianza del
+    /// logaritmo de la varianza realizada futura a horizontes de 1 a 18
+    /// minutos. Cuando existe con evidencia, es la magnitud correcta.
+    pub sigma_forecast: Option<f64>,
 }
 
 /// Resultado. `tp_pct` y `sl_pct` son fracciones del precio, siempre
@@ -183,7 +194,12 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
     //    anómala: sigma(tau) = sigma_ref · (tau/tau_ref)^H. Aquí `tau` SÍ es
     //    tiempo — a diferencia de D-604, donde se usaba una fracción de
     //    capital dentro de esta misma ley.
-    let sigma_tau = atr * (tau / TAU_REFERENCE_MS).powf(h);
+    // D-754: si hay pronóstico CON EVIDENCIA para este horizonte, la
+    // dispersión esperada es esa; si no, la ley de escala sobre lo medido.
+    let sigma_tau = match input.sigma_forecast {
+        Some(s) if s.is_finite() && s > 0.0 => s,
+        _ => atr * (tau / TAU_REFERENCE_MS).powf(h),
+    };
 
     // 2) STOP DIFUSIVO. El stop cubre k veces la dispersión del horizonte.
     //    Este es el piso REAL y ya no se destruye con un clamp posterior
@@ -267,7 +283,33 @@ mod tests {
             hurst: 0.5,
             roundtrip_fee: 0.0010,
             sl_atr_multiplier: 1.0,
+            sigma_forecast: None,
         }
+    }
+
+    /// D-754: con pronóstico CON EVIDENCIA, la dispersión del horizonte es la
+    /// pronosticada y no la extrapolada del pasado. Sin él, nada cambia.
+    #[test]
+    fn d754_el_pronostico_manda_sobre_la_extrapolacion_del_pasado() {
+        let sin = compute_tp_sl(base());
+        let mut con = base();
+        // El doble de dispersión esperada que la que el pasado extrapola.
+        let sigma_pasado = base().atr_ratio * (base().tau_ms / TAU_REFERENCE_MS).powf(0.5);
+        con.sigma_forecast = Some(sigma_pasado * 2.0);
+        let salida = compute_tp_sl(con);
+        assert!(
+            salida.sl_pct > sin.sl_pct,
+            "con el doble de σ pronosticada el stop debe ser más ancho: {} vs {}",
+            salida.sl_pct,
+            sin.sl_pct
+        );
+        // Y un pronóstico no utilizable no puede cambiar nada.
+        let mut basura = base();
+        basura.sigma_forecast = Some(f64::NAN);
+        assert_eq!(compute_tp_sl(basura).sl_pct, sin.sl_pct);
+        let mut cero = base();
+        cero.sigma_forecast = Some(0.0);
+        assert_eq!(compute_tp_sl(cero).sl_pct, sin.sl_pct);
     }
 
     /// D-637: el gate de EV y la orden deben ver EXACTAMENTE lo mismo. Al ser

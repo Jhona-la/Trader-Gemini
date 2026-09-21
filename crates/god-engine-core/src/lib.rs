@@ -1095,6 +1095,29 @@ impl GodEngineCore {
                 // era el pasivo ⇒ el AGRESOR fue el vendedor.
                 if let Some(bank) = self.spectral_forecast.get_mut(coin_id) {
                     bank.on_trade(event_time_ms, (eff_bid + eff_ask) * 0.5, trade_qty, !is_buyer_maker);
+                    // D-754 — EL PRONÓSTICO SÓLO SALE AL MOTOR SI HA
+                    // DEMOSTRADO HABILIDAD. `habilidad_volatilidad` es el R²
+                    // fuera de muestra frente a la climatología, acumulado
+                    // prequencialmente: cada muestra se puntúa ANTES de que el
+                    // modelo vea su objetivo. Mientras sea None (sin muestras
+                    // maduras) o ≤ 0 (no bate a su propia media), el arena
+                    // conserva ceros y la geometría sigue usando el ATR hacia
+                    // atrás de siempre. Publicar un pronóstico sin evidencia
+                    // sería exactamente el pecado que esta ola vino a cerrar.
+                    let habilidad = bank.habilidad_volatilidad();
+                    if habilidad.map(|h| h > 0.0).unwrap_or(false) {
+                        let sigmas = bank.sigmas_en_anclas(event_time_ms);
+                        for (slot, s) in self.arena.coins[coin_id]
+                            .sigma_forecast
+                            .iter()
+                            .zip(sigmas.iter())
+                        {
+                            slot.store(
+                                s.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(0.0),
+                                Ordering::Relaxed,
+                            );
+                        }
+                    }
                 }
                 self.arena.coins[coin_id]
                     .current_price
