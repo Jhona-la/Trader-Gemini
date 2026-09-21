@@ -47,6 +47,18 @@ impl QuantumLeverageMatrix {
         real_profit_factor: f64, // PF REAL del coin (de arena.coins[id].scalp/swing.profit_factor)
         real_win_rate: f64,      // Win Rate REAL histórico del coin
         genome_max_leverage: f64, // Límite del genoma (de config.global_leverage)
+        // D-750 — NOCIONAL MÍNIMO DEL SÍMBOLO, no el literal congelado.
+        //
+        // El techo de apalancamiento se funde entre el régimen micro y el
+        // estándar según cuántas órdenes mínimas caben en el capital. Esa
+        // cuenta se hacía contra `arena.config.min_notional`, que nace con el
+        // literal 5,0 y que NADIE escribe jamás en todo el repositorio: un
+        // número congelado gobernando el riesgo por operación. El mínimo real
+        // lo publica el exchange por símbolo (`exchangeInfo` →
+        // `symbol_registry`) y varía entre símbolos; con uno de 20 $ el cálculo
+        // antiguo creía que en 13 $ caben 2,6 órdenes cuando no cabe ninguna, y
+        // abría el techo de apalancamiento en consecuencia.
+        min_notional_simbolo: f64,
         arena: &GlobalArena,
     ) -> f64 {
         // FIX #651: Sanitizar parámetros entrantes asegurando robustez numérica total
@@ -223,9 +235,12 @@ impl QuantumLeverageMatrix {
         // techo micro de 4× rige pleno a ≤3 operaciones mínimas y se funde
         // geométricamente con el estándar hasta 10.
         let standard_ceiling = 50.0 * (1.0 - (log_cap / (log_divisor * 2.0)).min(0.8));
+        // D-750: la escasez se mide contra el mínimo DEL SÍMBOLO que se va a
+        // operar. `effective_min_notional` ya sanea el valor del spec y cae al
+        // mínimo universal del exchange cuando el registro aún no lo publica.
         let micro_w = crate::capital_regime::micro_weight(
             safe_curr_cap,
-            arena.config.min_notional.load(Ordering::Relaxed),
+            crate::capital_regime::effective_min_notional(min_notional_simbolo),
         );
         let raw_ceiling = crate::capital_regime::log_lerp(standard_ceiling, 4.0, micro_w);
         let dynamic_ceiling = if raw_ceiling.is_finite() {
@@ -319,8 +334,41 @@ mod tests {
 
     fn leverage_for(signal: &SignalIntent, arena: &GlobalArena) -> f64 {
         QuantumLeverageMatrix::calculate_dynamic_leverage(
-            signal, 0.0, 10_000.0, 10_000.0, 0.001, 1.0, 0.5, 1.0, 0.0, 20.0, arena,
+            signal, 0.0, 10_000.0, 10_000.0, 0.001, 1.0, 0.5, 1.0, 0.0, 20.0, 5.0, arena,
         )
+    }
+
+    /// D-750 — EL TECHO DE APALANCAMIENTO DEPENDE DEL MÍNIMO DEL SÍMBOLO.
+    ///
+    /// Con el código viejo este test no podía ni escribirse: el mínimo era un
+    /// literal congelado en la configuración, idéntico para todos los símbolos,
+    /// así que el mismo capital producía SIEMPRE el mismo techo. La escasez es
+    /// «cuántas órdenes mínimas caben en el capital», y eso cambia por símbolo:
+    /// 60 $ son doce órdenes de 5 $ (régimen estándar) pero sólo tres de 20 $
+    /// (régimen micro pleno, techo 4×).
+    #[test]
+    fn el_techo_de_apalancamiento_sale_del_minimo_del_simbolo() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(60.0);
+        let signal = SignalIntent {
+            signal: signal_engine::SignalType::Long,
+            confidence: 0.9,
+            win_probability: 0.9,
+            ..Default::default()
+        };
+        let lev = |mn: f64| {
+            QuantumLeverageMatrix::calculate_dynamic_leverage(
+                &signal, 0.0, 60.0, 60.0, 0.001, 1.0, 0.5, 2.0, 0.6, 50.0, mn, &arena,
+            )
+        };
+        let barato = lev(5.0);
+        let caro = lev(20.0);
+        assert!(
+            caro < barato,
+            "un símbolo con nocional mínimo mayor deja menos margen de \
+             maniobra y debe recibir MENOS apalancamiento: {caro} vs {barato}"
+        );
+        // En micro pleno el techo es 4×, no el del genoma.
+        assert!(caro <= 4.0 + 1e-9, "techo micro violado: {caro}");
     }
 
     /// D-690 + QO-M0.1: el Kelly usa la probabilidad (calibrada si existe)

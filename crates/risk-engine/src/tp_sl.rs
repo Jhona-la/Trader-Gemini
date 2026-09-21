@@ -89,7 +89,55 @@ pub struct TpSl {
 /// que la difusión justifica, y a H = 0,5 hasta 7,7 veces. El objetivo quedaba
 /// fuera del alcance del horizonte (0 salidas por TP en el backtest forense)
 /// y las posiciones terminaban por stop o por caducidad.
-const TAU_REFERENCE_MS: f64 = 60_000.0;
+pub const TAU_REFERENCE_MS: f64 = 60_000.0;
+
+/// D-747 — DESLIZAMIENTO POR LATENCIA: UNA SOLA LEY, LA DE LA DIFUSIÓN.
+///
+/// # Qué estaba mal
+///
+/// La misma magnitud tenía DOS fórmulas incompatibles:
+///
+/// * la física de ejecución (`god-engine-core::reality_physics`) cobra
+///   `σ · √(latencia / τ_ref)` — difusión: el desplazamiento esperado en un
+///   tiempo `t` escala con `√t`;
+/// * la compuerta de expectativa del risk-engine estimaba
+///   `σ · (latencia / umbral_de_pánico)` — **lineal**, y normalizada además
+///   contra un gen (`latency_ms_panic_threshold`) que no es una escala de
+///   volatilidad sino el umbral a partir del cual el enlace se considera
+///   roto.
+///
+/// La ley lineal subestima el coste de las latencias cortas y sobreestima el
+/// de las largas frente a la browniana; peor, el gate y la ejecución cobraban
+/// números distintos por el mismo evento, de modo que el gate certificaba como
+/// rentables operaciones que la física del propio motor volvía negativas.
+///
+/// # La derivación
+///
+/// Entre la decisión y el fill transcurre `t`. Bajo difusión el desplazamiento
+/// esperado del precio es `σ(t) = σ(τ_ref) · √(t/τ_ref)`. La dispersión
+/// disponible es `atr_ratio` y se MIDE sobre la vela interna de 1 minuto
+/// ([`TAU_REFERENCE_MS`]), de modo que `τ_ref = 60 000 ms`. Ni la escala ni el
+/// exponente son parámetros: la escala es aquella en la que se estima la
+/// volatilidad y el exponente ½ es el de la difusión.
+///
+/// Esta es la FUENTE ÚNICA del término de latencia. `reality_physics` debe
+/// llamarla para que la ejecución y la compuerta cobren el mismo número.
+#[inline]
+pub fn latency_slippage_pct(atr_ratio: f64, latency_ms: f64) -> f64 {
+    if !atr_ratio.is_finite() || atr_ratio <= 0.0 {
+        return 0.0;
+    }
+    if !latency_ms.is_finite() || latency_ms <= 0.0 {
+        return 0.0;
+    }
+    let r = (latency_ms / TAU_REFERENCE_MS).sqrt();
+    let s = atr_ratio * r;
+    if s.is_finite() {
+        s
+    } else {
+        0.0
+    }
+}
 
 /// FUNCIÓN PURA ÚNICA. La invocan, con las MISMAS entradas, tanto el gate de
 /// expectativa como el constructor de la orden: es imposible por construcción
@@ -397,5 +445,25 @@ mod tests {
             );
             prev = r.sl_pct;
         }
+    }
+
+    /// D-747: el deslizamiento por latencia obedece a la difusión. Cuadruplicar
+    /// la latencia DUPLICA el desplazamiento esperado (√4 = 2); la fórmula
+    /// lineal que usaba el gate lo cuadruplicaba.
+    #[test]
+    fn el_deslizamiento_por_latencia_escala_con_la_raiz_del_tiempo() {
+        let atr = 0.005;
+        let s1 = latency_slippage_pct(atr, 15.0);
+        let s4 = latency_slippage_pct(atr, 60.0);
+        assert!(
+            (s4 / s1 - 2.0).abs() < 1e-9,
+            "×4 latencia ⇒ ×2 desplazamiento, no ×4: {s1} {s4}"
+        );
+        // A la escala en la que se MIDE la volatilidad, el desplazamiento
+        // esperado es exactamente esa volatilidad.
+        assert!((latency_slippage_pct(atr, TAU_REFERENCE_MS) - atr).abs() < 1e-12);
+        // Entradas degeneradas no inventan fricción.
+        assert_eq!(latency_slippage_pct(atr, 0.0), 0.0);
+        assert_eq!(latency_slippage_pct(f64::NAN, 10.0), 0.0);
     }
 }

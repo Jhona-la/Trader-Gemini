@@ -95,7 +95,56 @@ pub struct StatefulEngine {
     pub scalp_short_loss_streak: u32,
     pub scalp_long_loss_streak: u32,
     pub last_trade_is_sell: bool,
+    /// D-753 — CANTIDAD REAL DEL ÚLTIMO TRADE (activo base), o 0 si el evento
+    /// en curso NO es un trade. La escribe `process_event` con el `trade_qty`
+    /// que ya recibía de todos los llamadores (vivo, `booktick_replay`,
+    /// forense) y la consume `process_tick_dual` para alimentar el VPIN.
+    /// Antes se fabricaba un «volumen» del 0,5 % de la PROFUNDIDAD del libro
+    /// acotado a [0,01; 10] — una cifra que no es el volumen negociado ni
+    /// guarda relación monótona con él.
+    pub ultima_cantidad_trade: f64,
+    /// D-754 — RELOJ DEL ÚLTIMO CIERRE, en milisegundos de evento. El
+    /// enfriamiento se medía en CUENTA DE TICKS: 600 ticks son segundos en un
+    /// tape denso y horas en uno ralo, de modo que la misma regla significaba
+    /// cosas distintas según el símbolo, la hora y el entorno (vivo vs
+    /// forense). El enfriamiento es TIEMPO.
+    pub last_scalp_exit_ms: u64,
+    /// Reloj de evento más reciente visto por el motor de features. Permite
+    /// medir el enfriamiento sin cambiar la firma pública de
+    /// `can_open_position`.
+    pub last_event_ms: u64,
+    /// D-754 — HORIZONTE τ CON EL QUE SE DIMENSIONÓ LA POSICIÓN QUE ACABA DE
+    /// CERRARSE. Es la base natural del enfriamiento: tras salir de una
+    /// operación de horizonte τ, reentrar antes de que pase τ es reentrar
+    /// DENTRO del mismo movimiento que se acaba de abandonar. 0 = todavía no
+    /// hubo cierre.
+    pub tau_ultimo_cierre_ms: u64,
+    /// D-758 — DESVIACIÓN TÍPICA MEDIDA DEL RETORNO POR TICK.
+    ///
+    /// QUÉ FALTABA: el núcleo comparaba `micro_trend` —el diferencial relativo
+    /// de las EMAs de 20 y 200 TICKS— contra fracciones crudas (0,00005;
+    /// 0,00010; 0,00040; 0,015). Para tipificar ese diferencial hace falta la
+    /// σ del retorno POR TICK, y el motor sólo tenía la σ por VELA DE 1 MINUTO
+    /// (vía ATR). Usar la segunda para juzgar la primera es un error de
+    /// unidades de varios órdenes de magnitud, así que el literal era la única
+    /// salida disponible. Aquí se mide la que faltaba.
+    ///
+    /// `ObiNoise` es un estimador EWMA genérico de media y varianza (el nombre
+    /// viene de su primer uso); se reutiliza tal cual, con su mismo
+    /// calentamiento, en vez de duplicar la aritmética.
+    pub ruido_retorno_tick: ObiNoise,
 }
+
+/// D-758 — PERIODOS DE LAS EMAs POR TICK, como constantes nombradas.
+///
+/// Son los 20/200 que `process_tick` ya usaba escritos a mano (ver la decisión
+/// S-8 documentada ahí: están atados al contrato 34D del vector universal y no
+/// se cablean a los genes sin reentrenar). Se nombran para que quien tipifique
+/// `micro_trend` use EXACTAMENTE los periodos con los que se calculó, y no una
+/// copia que pueda desincronizarse.
+pub const TICK_EMA_FAST_BARS: f64 = 20.0;
+/// Periodo lento de las EMAs por tick — ver [`TICK_EMA_FAST_BARS`].
+pub const TICK_EMA_SLOW_BARS: f64 = 200.0;
 
 impl Default for StatefulEngine {
     fn default() -> Self {
@@ -153,52 +202,110 @@ impl StatefulEngine {
             scalp_short_loss_streak: 0,
             scalp_long_loss_streak: 0,
             last_trade_is_sell: false,
+            ultima_cantidad_trade: 0.0,
+            last_scalp_exit_ms: 0,
+            last_event_ms: 0,
+            tau_ultimo_cierre_ms: 0,
+            ruido_retorno_tick: ObiNoise::new(),
         }
     }
 
-    /// Smart cooldown per asset con decaimiento temporal: evita parálisis eterna por rachas pasadas
-    #[inline(always)]
-    pub fn can_open_position(&self, min_cooldown: u64) -> bool {
-        let elapsed = self.tick_count.saturating_sub(self.last_scalp_exit_tick);
-        let active_streak = if elapsed > 18_000 {
-            0
-        } else if elapsed > 7_200 {
-            self.scalp_loss_streak.saturating_sub(1)
-        } else {
-            self.scalp_loss_streak
-        };
-        let required = match active_streak {
-            0 => min_cooldown,
-            1 => {
-                if self.v_t > 0.0015 {
-                    min_cooldown * 4
-                } else {
-                    min_cooldown * 2
-                }
-            }
-            2 => min_cooldown * 6,   // ~3,600 ticks (~15-20 min)
-            3 => min_cooldown * 15,  // ~9,000 ticks (~40 min)
-            _ => min_cooldown * 30,  // ~18,000 ticks (~1.5 horas)
-        };
-        elapsed >= required
+    /// D-758 — σ MEDIDA DEL RETORNO POR TICK, o `None` durante el
+    /// calentamiento. Sin ella no hay forma honesta de tipificar `micro_trend`
+    /// —que vive en la escala del TICK— y el núcleo tenía que compararlo
+    /// contra fracciones escritas a mano.
+    #[inline]
+    pub fn sigma_retorno_tick(&self) -> Option<f64> {
+        self.ruido_retorno_tick.sd().filter(|s| s.is_finite() && *s > 0.0)
     }
 
-    /// Obtiene la racha de pérdidas activa para una dirección (long/short), considerando el decaimiento temporal
+    /// D-754 — CUÁNTAS VECES HA CABIDO UNA DUPLICACIÓN DEL ENFRIAMIENTO BASE
+    /// EN EL TIEMPO TRANSCURRIDO.
+    ///
+    /// Es la inversa del retroceso binario: si una racha de `k` exige esperar
+    /// `base·2^k`, entonces haber esperado `base·2^m` amortiza `m` niveles de
+    /// racha. No hay ventana de olvido inventada (antes: 7 200 y 18 000
+    /// TICKS); el olvido es la propia escalera, leída al revés.
     #[inline(always)]
-    pub fn get_active_directional_streak(&self, is_long: bool) -> u32 {
-        let elapsed = self.tick_count.saturating_sub(self.last_scalp_exit_tick);
-        let raw = if is_long {
+    fn niveles_amortizados(transcurrido_ms: f64, base_ms: f64) -> u32 {
+        if !(transcurrido_ms > 0.0) || !(base_ms > 0.0) || !transcurrido_ms.is_finite() {
+            return 0;
+        }
+        let m = (1.0 + transcurrido_ms / base_ms).log2().floor();
+        if m.is_finite() && m > 0.0 {
+            m.min(u32::MAX as f64) as u32
+        } else {
+            0
+        }
+    }
+
+    /// Racha efectiva tras amortizar por el tiempo transcurrido desde el
+    /// último cierre.
+    #[inline(always)]
+    fn racha_amortizada(&self, cruda: u32, base_ms: f64) -> u32 {
+        if self.last_scalp_exit_ms == 0 {
+            return 0;
+        }
+        let transcurrido =
+            self.last_event_ms.saturating_sub(self.last_scalp_exit_ms) as f64;
+        cruda.saturating_sub(Self::niveles_amortizados(transcurrido, base_ms))
+    }
+
+    /// D-754 — ENFRIAMIENTO MEDIDO EN TIEMPO, NO EN CUENTA DE EVENTOS.
+    ///
+    /// QUÉ ESTABA MAL: el enfriamiento se contaba en TICKS (600 de base, con
+    /// ventanas de olvido de 7 200 y 18 000). En un tape denso —BTC en hora
+    /// americana, o el forense leyendo aggTrades— 600 ticks son segundos; en
+    /// uno ralo son horas. La MISMA regla producía enfriamientos que diferían
+    /// en tres órdenes de magnitud según el símbolo, la hora y el entorno, y
+    /// el backtest medía por tanto una política distinta de la que corre en
+    /// vivo. Además, el escalón `v_t > 0,0015` comparaba un True Range en
+    /// UNIDADES DE PRECIO contra una fracción: para cualquier activo de más de
+    /// 1,5 USD era verdadero siempre, así que la rama «×2» no existía.
+    ///
+    /// QUÉ GARANTIZA: el enfriamiento es un múltiplo del horizonte dominante
+    /// τ que el llamador mide —el tiempo que el propio mercado tarda en
+    /// descorrelacionarse a la escala en la que el motor opera— y crece por
+    /// retroceso binario (`base·2^racha`), que es la escalera canónica y no
+    /// tiene escalones inventados. El techo es `TAU_ANCHOR_SLOW_MS`: más allá
+    /// del horizonte más lento que el motor tiene permitido operar, esperar ya
+    /// no es enfriarse sino estar apagado.
+    #[inline(always)]
+    pub fn can_open_position_ms(&self, enfriamiento_base_ms: f64) -> bool {
+        if !enfriamiento_base_ms.is_finite() || enfriamiento_base_ms <= 0.0 {
+            // Sin horizonte medido no hay enfriamiento que imponer: negar la
+            // entrada sería inventar una regla con datos que no existen.
+            return true;
+        }
+        if self.last_scalp_exit_ms == 0 {
+            return true; // aún no hubo cierre del que enfriarse
+        }
+        let transcurrido =
+            self.last_event_ms.saturating_sub(self.last_scalp_exit_ms) as f64;
+        let racha = self.racha_amortizada(self.scalp_loss_streak, enfriamiento_base_ms);
+        let requerido = (enfriamiento_base_ms * (racha as f64).exp2())
+            .min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS);
+        transcurrido >= requerido
+    }
+
+    /// Racha de pérdidas ACTIVA en una dirección, amortizada por el tiempo
+    /// transcurrido (D-754: antes por cuenta de ticks, con el mismo defecto de
+    /// escala que el enfriamiento).
+    #[inline(always)]
+    pub fn get_active_directional_streak_ms(
+        &self,
+        is_long: bool,
+        enfriamiento_base_ms: f64,
+    ) -> u32 {
+        let cruda = if is_long {
             self.scalp_long_loss_streak
         } else {
             self.scalp_short_loss_streak
         };
-        if elapsed > 18_000 {
-            0
-        } else if elapsed > 7_200 {
-            raw.saturating_sub(1)
-        } else {
-            raw
+        if !enfriamiento_base_ms.is_finite() || enfriamiento_base_ms <= 0.0 {
+            return cruda;
         }
+        self.racha_amortizada(cruda, enfriamiento_base_ms)
     }
 
     /// Centra las predicciones ML en 0.50 con rango [-1.0, 1.0] en O(1).
@@ -258,12 +365,28 @@ impl StatefulEngine {
         self.hurst_micro = 0.5;
         self.hurst_meso = 0.5;
         self.hurst_macro = 0.5;
+        // D-753/D-754: el volumen del último trade y los relojes de
+        // enfriamiento también son estado del feed. Tras una reconexión no
+        // hay trade reciente ni continuidad temporal que defender.
+        self.ultima_cantidad_trade = 0.0;
+        self.last_scalp_exit_ms = 0;
+        self.last_event_ms = 0;
+        self.tau_ultimo_cierre_ms = 0;
+        // D-758: la σ por tick es una propiedad del feed vivo. Tras una
+        // reconexión vuelve a calentarse desde cero, igual que el resto de
+        // estimadores, para no tipificar con una escala de otro tramo.
+        self.ruido_retorno_tick = ObiNoise::new();
     }
 
     /// Processes a new tick internally in f64
     pub fn process_tick(&mut self, price: f64, _volume: f64, event_time_ms: u64) {
         if price <= 0.0 || !price.is_finite() {
             return;
+        }
+        // D-754: el reloj del motor de features. El enfriamiento y el olvido
+        // de rachas se miden contra ÉL, no contra `tick_count`.
+        if event_time_ms > self.last_event_ms {
+            self.last_event_ms = event_time_ms;
         }
         if self.last_price == 0.0 {
             self.ema_fast = price;
@@ -279,14 +402,20 @@ impl StatefulEngine {
             // MISMO genoma del símbolo + retrain completo del roster en el
             // MISMO cambio. Sustituir el ladder por signal_at(τ) del
             // espectro exige lo mismo.
-            let alpha_fast = 2.0 / (20.0 + 1.0);
-            let alpha_slow = 2.0 / (200.0 + 1.0);
+            // D-758: los mismos 20/200, ahora nombrados, para que quien
+            // tipifique `micro_trend` use los periodos REALES de estas EMAs.
+            let alpha_fast = 2.0 / (TICK_EMA_FAST_BARS + 1.0);
+            let alpha_slow = 2.0 / (TICK_EMA_SLOW_BARS + 1.0);
 
             self.ema_fast = (price - self.ema_fast) * alpha_fast + self.ema_fast;
             self.ema_slow = (price - self.ema_slow) * alpha_slow + self.ema_slow;
 
             let diff = (price - self.last_price).abs();
             let norm_return = (price - self.last_price) / self.last_price;
+            // D-758: la σ del retorno POR TICK se mide aquí, sobre el mismo
+            // retorno que alimenta la entropía. Es la escala que faltaba para
+            // poder juzgar `micro_trend` sin literales.
+            self.ruido_retorno_tick.update(norm_return);
             self.last_entropy = self.entropy.update(norm_return);
             // D7 / MOD6/8-004 (INFORME DECIMOCUARTO) — ESPECTRO VIVO EN
             // process_tick: en producción ESTE es el camino que corre
@@ -355,7 +484,19 @@ impl StatefulEngine {
         } else {
             false
         };
-        self.cvpin.update(notional_usd, is_sell);
+        // D-753 — EL RELOJ DE VOLUMEN DEL VPIN SÓLO AVANZA CON VOLUMEN
+        // NEGOCIADO. `_volume` es ahora la cantidad REAL del trade (0 cuando
+        // el evento es un depth o un kline). Antes llegaba una cifra
+        // fabricada —el 0,5 % de la PROFUNDIDAD del libro, acotada a
+        // [0,01; 10]—, de modo que cada snapshot del libro cerraba buckets de
+        // un VPIN que se supone construido sobre desequilibrio de flujo
+        // NEGOCIADO: el indicador medía la frecuencia de actualización del
+        // libro, no la toxicidad del flujo. Con volumen 0 el bucket no avanza
+        // y el VPIN conserva su último valor, que es lo correcto: entre dos
+        // trades no hay información nueva de flujo.
+        if notional_usd > 0.0 {
+            self.cvpin.update(notional_usd, is_sell);
+        }
 
         if self.kline_start_ms == 0 {
             self.kline_start_ms = event_time_ms;
@@ -1088,5 +1229,323 @@ mod tests {
         for val in &buffer[0..5] {
             assert!(val.is_finite());
         }
+    }
+}
+
+/// Tests de los defectos D-753 (volumen del VPIN) y D-754 (enfriamiento en
+/// tiempo). Cada uno afirma la propiedad que el código ANTERIOR violaba, de
+/// modo que un retroceso a la versión por cuenta de ticks o al «volumen»
+/// fabricado los rompe.
+#[cfg(test)]
+mod tests_d753_d754 {
+    use super::*;
+
+    /// Alimenta `n` ticks separados `paso_ms`, con el mismo recorrido de
+    /// precio y sin volumen negociado, partiendo de `t0`. Devuelve el reloj
+    /// del último evento.
+    fn alimentar(engine: &mut StatefulEngine, n: u64, paso_ms: u64, t0: u64) -> u64 {
+        let mut ts = t0;
+        for i in 0..n {
+            // Precio con recorrido idéntico en ambas cadencias: lo único que
+            // cambia entre los dos motores es CUÁNTOS eventos median.
+            let p = 100.0 + ((i % 9) as f64 - 4.0) * 0.01;
+            engine.process_tick(p, 0.0, ts);
+            ts += paso_ms;
+        }
+        ts.saturating_sub(paso_ms)
+    }
+
+    /// D-754 — EL ENFRIAMIENTO NO PUEDE DEPENDER DE LA DENSIDAD DEL TAPE.
+    ///
+    /// QUÉ ESTABA MAL: `can_open_position(600)` contaba 600 EVENTOS. Dos
+    /// motores que han visto pasar el MISMO tiempo de mercado —30 s— daban
+    /// respuestas opuestas por el solo hecho de que uno recibía ticks cada
+    /// 10 ms (tape denso: 3 000 eventos, «enfriado») y el otro cada segundo
+    /// (tape ralo: 30 eventos, «en enfriamiento»). El backtest forense, que
+    /// lee aggTrades a una cadencia distinta de la del WebSocket en vivo,
+    /// medía por tanto una POLÍTICA DISTINTA de la que corre en producción.
+    ///
+    /// QUÉ GARANTIZA ESTE TEST: con el mismo tiempo transcurrido y la misma
+    /// base de enfriamiento, la decisión es la misma cualquiera que sea la
+    /// cadencia del feed. Con el código viejo `denso` devolvía `true` y
+    /// `ralo` `false` para la misma ventana de 30 s.
+    #[test]
+    fn d754_enfriamiento_es_tiempo_y_no_cuenta_de_eventos() {
+        let t0: u64 = 1_800_000_000_000;
+        // Base de enfriamiento: un horizonte τ de 60 s. Los 30 s de mercado
+        // transcurridos NO lo cubren, así que ambos motores deben negar.
+        let base_ms = 60_000.0;
+
+        // 30 s exactos de mercado en ambos, con cadencias que difieren ×100.
+        let mut denso = StatefulEngine::new();
+        denso.last_scalp_exit_ms = t0;
+        alimentar(&mut denso, 3_001, 10, t0); // 30 s a 10 ms → 3 001 eventos
+
+        let mut ralo = StatefulEngine::new();
+        ralo.last_scalp_exit_ms = t0;
+        alimentar(&mut ralo, 31, 1_000, t0); // 30 s a 1 s → 31 eventos
+
+        assert_eq!(
+            denso.last_event_ms.saturating_sub(denso.last_scalp_exit_ms),
+            30_000,
+            "el motor denso debe haber visto 30 s"
+        );
+        assert_eq!(
+            denso.last_event_ms.saturating_sub(denso.last_scalp_exit_ms),
+            ralo.last_event_ms.saturating_sub(ralo.last_scalp_exit_ms),
+            "los dos motores deben haber visto el MISMO tiempo de mercado"
+        );
+        assert_ne!(
+            denso.tick_count, ralo.tick_count,
+            "el test carece de sentido si ambos vieron el mismo nº de eventos"
+        );
+
+        // LA PROPIEDAD: misma decisión, pese a 100× de diferencia en eventos.
+        assert_eq!(
+            denso.can_open_position_ms(base_ms),
+            ralo.can_open_position_ms(base_ms),
+            "la densidad del tape cambió la decisión de enfriamiento"
+        );
+        assert!(
+            !denso.can_open_position_ms(base_ms),
+            "30 s transcurridos no pueden cubrir un enfriamiento base de 60 s"
+        );
+
+        // Y con una base que SÍ cabe en lo transcurrido, ambos abren.
+        assert!(denso.can_open_position_ms(10_000.0));
+        assert!(ralo.can_open_position_ms(10_000.0));
+    }
+
+    /// D-754 — LA ESCALERA DE RACHA ES BINARIA Y SE AMORTIZA CON EL TIEMPO.
+    ///
+    /// El olvido de rachas tenía dos ventanas inventadas (7 200 y 18 000
+    /// TICKS) que además sólo descontaban UN nivel. Ahora el olvido es la
+    /// propia escalera leída al revés: haber esperado `base·(2^m − 1)`
+    /// amortiza `m` niveles de racha, sin ninguna ventana aparte.
+    #[test]
+    fn d754_la_racha_exige_retroceso_binario_y_se_amortiza_sola() {
+        let t0: u64 = 1_800_000_000_000;
+        let base_ms = 1_000.0;
+
+        // Racha de 3 recién cerrada: exige base·2³ = 8 s. Pero la espera que
+        // transcurre AMORTIZA niveles mientras corre, así que el punto de
+        // corte real es el primer instante en que lo esperado alcanza a lo
+        // exigido por la racha que queda. A 2,5 s se han amortizado
+        // log₂(1+2,5) = 1 nivel: quedan 2 y se exigen 4 s ⇒ todavía no.
+        let mut e = StatefulEngine::new();
+        e.scalp_loss_streak = 3;
+        e.last_scalp_exit_ms = t0;
+        e.last_event_ms = t0 + 2_500;
+        assert!(
+            !e.can_open_position_ms(base_ms),
+            "2,5 s no cubren los 4 s que exige la racha aún no amortizada"
+        );
+        // A 3 s se amortizan log₂(1+3) = 2 niveles: queda 1 y se exigen 2 s.
+        e.last_event_ms = t0 + 3_000;
+        assert!(
+            e.can_open_position_ms(base_ms),
+            "3 s sí cubren la exigencia que queda tras amortizar 2 niveles"
+        );
+
+        // Monotonía en la racha: más pérdidas seguidas ⇒ más espera.
+        let espera_minima = |racha: u32| -> u64 {
+            let mut ms = 0u64;
+            loop {
+                let mut m = StatefulEngine::new();
+                m.scalp_loss_streak = racha;
+                m.last_scalp_exit_ms = t0;
+                m.last_event_ms = t0 + ms;
+                if m.can_open_position_ms(base_ms) {
+                    return ms;
+                }
+                ms += 250;
+                assert!(ms < 200_000, "racha {racha} sin convergencia");
+            }
+        };
+        let (e1, e2, e3) = (espera_minima(1), espera_minima(2), espera_minima(3));
+        assert!(
+            e1 < e2 && e2 < e3,
+            "la escalera de racha no es monótona: {e1} / {e2} / {e3}"
+        );
+
+        // Amortización: la racha DIRECCIONAL efectiva baja al pasar el tiempo,
+        // sin ninguna ventana de olvido escrita a mano.
+        let mut d = StatefulEngine::new();
+        d.scalp_long_loss_streak = 3;
+        d.last_scalp_exit_ms = t0;
+        d.last_event_ms = t0 + 1; // nada transcurrido
+        assert_eq!(d.get_active_directional_streak_ms(true, base_ms), 3);
+        d.last_event_ms = t0 + 1_000; // 1·base ⇒ log₂(2) = 1 nivel amortizado
+        assert_eq!(d.get_active_directional_streak_ms(true, base_ms), 2);
+        d.last_event_ms = t0 + 7_000; // 7·base ⇒ log₂(8) = 3 niveles
+        assert_eq!(d.get_active_directional_streak_ms(true, base_ms), 0);
+    }
+
+    /// D-754 — SIN CIERRE PREVIO NO HAY ENFRIAMIENTO QUE IMPONER, y una base
+    /// no medida (τ ausente, NaN o cero) no puede inventar un veto.
+    #[test]
+    fn d754_sin_cierre_ni_base_medida_no_hay_veto() {
+        let e = StatefulEngine::new();
+        assert!(
+            e.can_open_position_ms(60_000.0),
+            "sin cierre previo no puede haber enfriamiento"
+        );
+
+        let mut c = StatefulEngine::new();
+        c.last_scalp_exit_ms = 1_800_000_000_000;
+        c.last_event_ms = c.last_scalp_exit_ms; // cero transcurrido
+        assert!(
+            c.can_open_position_ms(f64::NAN),
+            "una base no medida no puede vetar"
+        );
+        assert!(c.can_open_position_ms(0.0), "base nula no puede vetar");
+    }
+
+    /// D-753 — EL RELOJ DE VOLUMEN DEL VPIN SÓLO AVANZA CON VOLUMEN NEGOCIADO.
+    ///
+    /// QUÉ ESTABA MAL: el camino per-tick fabricaba el «volumen» como el
+    /// 0,5 % de la PROFUNDIDAD del libro acotado a [0,01; 10] y se lo pasaba
+    /// al VPIN en CADA evento, snapshots de libro incluidos. El VPIN es un
+    /// reloj de VOLUMEN NEGOCIADO: alimentarlo con la profundidad hacía que
+    /// midiera la cadencia de actualización del libro, no la toxicidad del
+    /// flujo. Y el VPIN gobierna el corte tóxico, el asiento causal del
+    /// consejo y `vpin_risk` en el dimensionado.
+    ///
+    /// QUÉ GARANTIZA ESTE TEST: un evento sin cantidad negociada deja el
+    /// estado del VPIN —incluido su calibrador de bucket— EXACTAMENTE igual;
+    /// sólo un trade real lo mueve. Con el código viejo, `update` se llamaba
+    /// igualmente y `ewma_tick_notional` quedaba contaminado.
+    #[test]
+    fn d753_el_vpin_no_avanza_sin_cantidad_negociada() {
+        let t0: u64 = 1_800_000_000_000;
+        let mut e = StatefulEngine::new();
+
+        // 500 eventos de libro (cantidad negociada = 0).
+        for i in 0..500u64 {
+            e.process_tick(100.0 + ((i % 7) as f64 - 3.0) * 0.01, 0.0, t0 + i * 100);
+        }
+        assert_eq!(
+            e.cvpin.buy_volume + e.cvpin.sell_volume,
+            0.0,
+            "un snapshot de libro no es volumen negociado"
+        );
+        assert_eq!(
+            e.cvpin.ewma_tick_notional, 0.0,
+            "el calibrador del bucket no puede contaminarse con eventos sin volumen"
+        );
+
+        // Un trade REAL sí mueve el reloj, y lo hace por su nocional.
+        let ts = t0 + 500 * 100;
+        e.process_tick(100.0, 3.0, ts);
+        let total = e.cvpin.buy_volume + e.cvpin.sell_volume;
+        assert!(
+            (total - 300.0).abs() < 1e-9,
+            "el VPIN debe recibir cantidad×precio = 300, recibió {total}"
+        );
+        assert!(
+            (e.cvpin.ewma_tick_notional - 300.0).abs() < 1e-9,
+            "el bucket debe calibrarse con el nocional del trade real"
+        );
+    }
+
+    /// D-758 — LA ESCALA QUE FALTABA: σ DEL RETORNO POR TICK.
+    ///
+    /// Sin ella, `micro_trend` —un diferencial de EMAs por TICK— sólo podía
+    /// compararse contra fracciones escritas a mano (0,00005 … 0,00040;
+    /// 0,015), porque la única σ que el motor medía era la de la vela de
+    /// 1 minuto, varios órdenes de magnitud mayor. Este test fija las dos
+    /// propiedades del estimador: NO publica durante el calentamiento —
+    /// tipificar con una σ a medio estimar es peor que no tipificar— y
+    /// converge a la σ real del ruido que se le da.
+    #[test]
+    fn d758_la_sigma_por_tick_se_mide_y_espera_al_calentamiento() {
+        let mut e = StatefulEngine::new();
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut price = 100.0_f64;
+        let mut ts: u64 = 1_800_000_000_000;
+
+        e.process_tick(price, 0.0, ts);
+        ts += 100;
+        assert!(
+            e.sigma_retorno_tick().is_none(),
+            "no puede publicarse una σ con un solo tick"
+        );
+
+        for i in 0..8_000u32 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let u = ((state >> 11) as f64 + 0.5) / (1u64 << 53) as f64;
+            // Retorno uniforme en [−0,003; 0,003]: σ = 0,006/√12 ≈ 0,0017321.
+            let r = -0.003 + 0.006 * u;
+            price *= 1.0 + r;
+            e.process_tick(price, 0.0, ts);
+            ts += 100;
+            if i + 2 < OBI_NOISE_EVENTS {
+                assert!(
+                    e.sigma_retorno_tick().is_none(),
+                    "publicó σ antes de calentar, en el tick {i}"
+                );
+            }
+        }
+
+        let sd = e.sigma_retorno_tick().expect("calentada");
+        assert!(
+            (sd - 0.001_732_1).abs() < 3.5e-4,
+            "σ por tick estimada {sd}, esperada ≈ 0,0017321"
+        );
+    }
+
+    /// D-758 — LAS CONSTANTES NOMBRADAS SON LAS QUE `process_tick` USA.
+    ///
+    /// La tipificación de `micro_trend` depende de que los periodos con los
+    /// que se calcula la escala sean EXACTAMENTE los de las EMAs que producen
+    /// la magnitud. Si alguien cambia los 20/200 de `process_tick` sin tocar
+    /// las constantes, la escala queda desincronizada y el z miente en
+    /// silencio; este test lo impide.
+    #[test]
+    fn d758_las_constantes_de_ema_por_tick_son_las_que_el_motor_aplica() {
+        let t0: u64 = 1_800_000_000_000;
+        let mut e = StatefulEngine::new();
+        e.process_tick(100.0, 0.0, t0); // siembra: ambas EMAs = 100
+        e.process_tick(110.0, 0.0, t0 + 100); // salto de 10
+
+        let alpha_fast = 2.0 / (TICK_EMA_FAST_BARS + 1.0);
+        let alpha_slow = 2.0 / (TICK_EMA_SLOW_BARS + 1.0);
+        assert!(
+            (e.ema_fast - (100.0 + 10.0 * alpha_fast)).abs() < 1e-9,
+            "TICK_EMA_FAST_BARS no describe la EMA rápida real: {}",
+            e.ema_fast
+        );
+        assert!(
+            (e.ema_slow - (100.0 + 10.0 * alpha_slow)).abs() < 1e-9,
+            "TICK_EMA_SLOW_BARS no describe la EMA lenta real: {}",
+            e.ema_slow
+        );
+    }
+
+    /// D-753/D-754 — `reset` (reconexión del feed) borra también los relojes
+    /// de enfriamiento y la última cantidad negociada: tras una desconexión no
+    /// hay continuidad temporal ni trade reciente que defender.
+    #[test]
+    fn d753_d754_reset_borra_relojes_y_cantidad() {
+        let mut e = StatefulEngine::new();
+        e.ultima_cantidad_trade = 7.0;
+        e.last_scalp_exit_ms = 123;
+        e.last_event_ms = 456;
+        e.tau_ultimo_cierre_ms = 789;
+        for i in 0..(OBI_NOISE_EVENTS + 10) {
+            e.process_tick(100.0 + (i % 5) as f64 * 0.1, 0.0, 1_000 + i as u64 * 100);
+        }
+        assert!(e.sigma_retorno_tick().is_some(), "premisa: σ calentada");
+        e.reset();
+        assert_eq!(e.ultima_cantidad_trade, 0.0);
+        assert_eq!(e.last_scalp_exit_ms, 0);
+        assert_eq!(e.last_event_ms, 0);
+        assert_eq!(e.tau_ultimo_cierre_ms, 0);
+        assert!(
+            e.sigma_retorno_tick().is_none(),
+            "la σ por tick debe volver a calentarse tras una reconexión"
+        );
     }
 }

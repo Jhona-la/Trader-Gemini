@@ -83,7 +83,19 @@ impl RealityPhysics {
         // SOBRESTIMABA el costo de latencias cortas y SUBRESTIMaba el de
         // largas: sesgo sistemático en todo fill simulado. τ=150ms es la
         // escala de referencia de la calibración.
-        let latency_slippage = safe_vol * (latency_penalty_ms / 150.0).sqrt();
+        // D-753 — UNA SOLA FÍSICA PARA EL MISMO EVENTO. La raíz era correcta
+        // (el precio difunde: la dispersión crece con √t), pero la referencia
+        // NO: 150 ms es una escala inventada, mientras `safe_vol` es el ATR
+        // relativo medido sobre la ventana de un minuto. Escalar un ATR de 60 s
+        // como si fuera de 150 ms multiplica el deslizamiento por √(60 000/150)
+        // = 20. Con 13,6 ms de latencia y un ATR del 0,2 %, la física cobraba
+        // 6,0 pb donde la difusión da 0,30 pb: el simulador penalizaba cada
+        // fill con veinte veces el coste real de la latencia. Ahora llama a la
+        // MISMA función pura que el gate de expectativa y el constructor de la
+        // orden (`tp_sl::latency_slippage_pct`), cuya referencia temporal es la
+        // de la propia medida de volatilidad.
+        let latency_slippage =
+            risk_engine::tp_sl::latency_slippage_pct(safe_vol, latency_penalty_ms);
 
         let total_slippage_pct = (slippage_impact_pct + latency_slippage)
             .max(base_slippage_floor)
@@ -166,7 +178,19 @@ impl RealityPhysics {
         // √latency dispersión browniana.
         let impact_multiplier = (safe_nominal / 1_000_000.0).sqrt();
         let slippage_impact_pct = impact_multiplier * 0.0005;
-        let latency_slippage = safe_vol * (latency_penalty_ms / 150.0).sqrt();
+        // D-753 — UNA SOLA FÍSICA PARA EL MISMO EVENTO. La raíz era correcta
+        // (el precio difunde: la dispersión crece con √t), pero la referencia
+        // NO: 150 ms es una escala inventada, mientras `safe_vol` es el ATR
+        // relativo medido sobre la ventana de un minuto. Escalar un ATR de 60 s
+        // como si fuera de 150 ms multiplica el deslizamiento por √(60 000/150)
+        // = 20. Con 13,6 ms de latencia y un ATR del 0,2 %, la física cobraba
+        // 6,0 pb donde la difusión da 0,30 pb: el simulador penalizaba cada
+        // fill con veinte veces el coste real de la latencia. Ahora llama a la
+        // MISMA función pura que el gate de expectativa y el constructor de la
+        // orden (`tp_sl::latency_slippage_pct`), cuya referencia temporal es la
+        // de la propia medida de volatilidad.
+        let latency_slippage =
+            risk_engine::tp_sl::latency_slippage_pct(safe_vol, latency_penalty_ms);
         let total_slippage_pct = (slippage_impact_pct + latency_slippage)
             .max(base_slippage_floor)
             .clamp(0.0, 0.05);
