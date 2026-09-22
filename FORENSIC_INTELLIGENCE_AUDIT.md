@@ -32,15 +32,18 @@
 ```
 ESTADO CONSOLIDADO DE AUDITORÍA FORENSE Y REHABILITACIÓN SISTÉMICA:
 
-  🟢 REVISADOS A PROFUNDIDAD Y RESUELTOS EN SU TOTALIDAD: 225 Puntos Certificados (42.13%)
+  🟢 REVISADOS A PROFUNDIDAD Y RESUELTOS EN SU TOTALIDAD: 228 Puntos Certificados (42.70%)
      ├── #1: Desalineación 54D vs 34D en DarkAlphaEngine
      ├── #2: Warmup con velas sintéticas corregido en GodEngineCore
      ├── #3: Aislamiento de libros L2 por activo
      ├── #4: Router de símbolos con coin_id estricto
+     ├── #5: Normalización de profundidad estable en OFIModel para invariancia de escala nominal BTC vs Altcoins
      ├── #6: Decaimiento continuo exponencial (λ=0.995) en ShannonEntropyEngine para erradicar saturación y congelamiento
+     ├── #8: Invariancia de escala logarítmica en MultifractalSpectrumEngine sin saturación de Hurst
      ├── #14: Preservación de convicción asintótica (0.0001 .. 0.9999)
      ├── #15: Conexión viva de ShadowGraphAuditor en GodEngineCore para detección lock-free de Concept Drift
      ├── #16: Cableado e integración en caliente de HawkesProcessEngine en StatefulEngine para micro-aceleración de flujo
+     ├── #17: Inyección predictiva de LeadLagAlphaEngine (BTC/ETH líderes -> Altcoins) en registry y PPO
      ├── #18: Cableado O(1) de KalmanFilter1D en StatefulEngine para micro-precio justo suavizado
      ├── #19: Conexión de QuantumTensorStore y TensorRing para derivadas cinemáticas multiescala (Jerk)
      ├── #20: Inferencia ultraligera SimdNeuralNet sobre vector universal 34D en registros SIMD AVX2
@@ -522,18 +525,20 @@ graph TD
 
 ---
 
-### 🚨 5. Falta de Normalización de Volumen en el Modelo OFI (`OFIModel`)
-- **📍 DÓNDE:** [`crates/feature-engine/src/microstructure.rs:133-144`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/feature-engine/src/microstructure.rs#L133-L144).
+### ✅ 5. Normalización de Volumen en el Modelo OFI (`OFIModel`) Integrada
+- **📍 DÓNDE:** [`crates/feature-engine/src/microstructure.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/feature-engine/src/microstructure.rs).
 - **👤 QUIÉN:** `OFIModel::update`.
-- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 3 (Colisión de Escala Nominal / Desfase de Unidades)**.
-- **❓ QUÉ:** OFI produce valores en órdenes de magnitud incompatibles según el activo ($\pm 5.0$ en BTC vs $\pm 10^7$ en memecoins como PEPE/SHIB).
-- **💡 POR QUÉ:** Se calcula en unidades brutas de contratos sin normalización por volumen promedio o liquidez del libro.
-- **⚙️ CÓMO:** El Order Flow Imbalance se define como $OFI = \Delta Q_{bid} - \Delta Q_{ask}$. En BTC, $\Delta Q \sim 0.1$ a $5.0$ contratos; en SHIB, $\Delta Q \sim 10^7$ contratos. Al evaluar `dynamic_ofi_threshold` con un umbral genómico común, el modelo falla en altcoins.
+- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 3 (Colisión de Escala Nominal / Desfase de Unidades) — 🟢 RESUELTO Y CERTIFICADO**.
+- **❓ QUÉ:** En modelos sin normalización, el Order Flow Imbalance produce valores con desfases colosales de magnitud ($\pm 2.0$ contratos en BTC vs $\pm 10^7$ en memecoins como PEPE/SHIB), invalidando los umbrales genómicos compartidos.
+- **💡 POR QUÉ:** Diferencias nominales de volumen sin ponderar por la profundidad de liquidez activa del libro.
+- **⚙️ CÓMO:** Se implementó en `OFIModel::update` la normalización por la profundidad estable del libro `stable_depth = current_depth.max(prev_depth).max(1e-6)`:
+  $$OFI_{\text{norm}} = \left( \frac{e_{\text{bid}} - e_{\text{ask}}}{\max(Q_{\text{bid}} + Q_{\text{ask}}, Q_{\text{bid, prev}} + Q_{\text{ask, prev}}, 10^{-6})} \right).\text{clamp}(-10.0, 10.0)$$
+  Seguido de suavizado EWMA ($\alpha = 0.10$). Al dividir por la profundidad del libro, la escala nominal del token se anula algebraicamente.
 - **📐 DEMOSTRACIÓN MATEMÁTICA:**
-  $$OFI_{\text{BTC}} \in [-10, 10] \quad \text{vs} \quad OFI_{\text{PEPE}} \in [-10^8, 10^8] \implies \text{Threshold } \theta = 2.5 \text{ saturado en Altcoins}$$
-- **⏱️ CUÁNDO:** Al evaluar condiciones de entrada en cualquier moneda distinta de Bitcoin.
-- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Bloqueo total de entradas válidas en BTC o sobre-excitación errática en altcoins.
-- **🛠️ REMEDIACIÓN ARQUITECTÓNICA:** Normalizar OFI dividiendo por el volumen total en los mejores $K$ niveles: $OFI_{\text{norm}} = \frac{OFI}{\sum (Q_{bid} + Q_{ask})}$.
+  $$OFI_{\text{norm}}(\text{BTC}) = \frac{4.0}{6.0} \approx 0.666 \quad \equiv \quad OFI_{\text{norm}}(\text{PEPE}) = \frac{40\times 10^6}{60\times 10^6} \approx 0.666 \implies \text{Invariancia de Escala}$$
+- **⏱️ CUÁNDO:** En cada actualización del libro de órdenes L2 para cualquier par del universo.
+- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Permite que los mismos umbrales de OFI operen indistintamente y con paridad matemática rigurosa en BTC, ETH, Solana o memecoins sin falsos positivos.
+- **🛠️ VERIFICACIÓN:** Test unitario `test_ofi_scale_invariance_btc_vs_altcoin` validado al 100% en `microstructure.rs`.
 
 ---
 
@@ -565,18 +570,20 @@ graph TD
 
 ---
 
-### 🚨 8. Distorsión de Hölder y Hurst Monolítico en `MultifractalSpectrumEngine`
-- **📍 DÓNDE:** [`crates/feature-engine/src/multifractal.rs:42-72`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/feature-engine/src/multifractal.rs#L42-L72).
+### ✅ 8. Invariancia de Escala Logarítmica en `MultifractalSpectrumEngine` Integrada
+- **📍 DÓNDE:** [`crates/feature-engine/src/multifractal.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/feature-engine/src/multifractal.rs).
 - **👤 QUIÉN:** `MultifractalSpectrumEngine::update`.
-- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 3 (Error Matemático en Escala Fractal)**.
-- **❓ QUÉ:** El exponente de Hurst queda bloqueado en `0.1000` (BTC/ETH) o `0.9000` (Altcoins).
-- **💡 POR QUÉ:** Calcula diferencias nominales de precio en dólares ($|p_t - p_{t-\tau}|$) en lugar de retornos porcentuales logarítmicos ($|\ln(p_t / p_{t-\tau})|$).
-- **⚙️ CÓMO:** En Bitcoin, variaciones de $\$100$ sobre $\$64,000$ son tratadas como fluctuaciones colosales; en altcoins de $\$0.10$, variaciones de $\$0.001$ son tratadas como cero, saturando la regresión lineal fractal en los extremos.
+- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 3 (Error Matemático en Escala Fractal) — 🟢 RESUELTO Y CERTIFICADO**.
+- **❓ QUÉ:** Si se utilizan diferencias nominales de precio en dólares ($|p_t - p_{t-\tau}|$), el exponente de Hurst queda saturado en $0.1000$ (BTC/ETH por escala masiva) o $0.9000$ (Altcoins por variaciones submilenarias).
+- **💡 POR QUÉ:** Regresión fractal calculada sobre precios absolutos en vez de retornos logarítmicos relativos invariantes de escala.
+- **⚙️ CÓMO:** Se implementó el cálculo sobre retornos logarítmicos continuos $r_t = \left|\ln(p_t / p_{t-1})\right|$ con momentos estadísticos normalizados por la constante gaussiana base $\sqrt{2/\pi} \approx 0.797884$:
+  $$\Delta H = \frac{\ln\left( \frac{\mu_{q1}}{\sigma_{q2} \cdot 0.797884} \right)}{\ln(N)}, \quad H_{q1} = (0.50 + \Delta H).\text{clamp}(0.05, 0.95)$$
+  Garantizando que una variación de $0.5\%$ en Bitcoin produzca el mismo espectro de singularidad que un $0.5\%$ en Solana o PEPE.
 - **📐 DEMOSTRACIÓN MATEMÁTICA:**
-  $$\ln \langle |p_t - p_{t-\tau}|^q \rangle \quad \text{vs} \quad \ln \langle |\ln(p_t / p_{t-\tau})|^q \rangle \implies \text{Pendiente } H \text{ distorsionada por escala nominal}$$
-- **⏱️ CUÁNDO:** En cada cálculo del espectro de singularidad multifractal.
-- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Clasificación errónea de persistencia de mercado (tendencia vs reversión).
-- **🛠️ REMEDIACIÓN ARQUITECTÓNICA:** Reemplazar diferencias brutas por retornos relativos logarítmicos: $r_t = \ln(p_t / p_{t-1})$.
+  $$r_t(\text{BTC}) = \ln\left(\frac{60300}{60000}\right) = \ln(1.005) \equiv r_t(\text{PEPE}) = \ln\left(\frac{0.0603}{0.0600}\right) = \ln(1.005) \implies H_{\text{BTC}} = H_{\text{PEPE}}$$
+- **⏱️ CUÁNDO:** En cada actualización del espectro multifractal de klines y ticks.
+- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Clasificación fidedigna de persistencia de mercado (tendencia persistente vs mean-reversion) idéntica para todo el universo de activos.
+- **🛠️ VERIFICACIÓN:** Test unitario `test_multifractal_scale_invariance_log_returns` validado al 100% en `multifractal.rs`.
 
 ---
 
@@ -687,15 +694,16 @@ graph TD
 
 ---
 
-### 🚨 17. Motor Lead-Lag Cross-Asset (`LeadLagAlphaEngine`) Huérfano
-- **📍 DÓNDE:** [`crates/feature-engine/src/lead_lag.rs:8-50`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/feature-engine/src/lead_lag.rs#L8-L50).
-- **👤 QUIÉN:** `FeatureEngine / LeadLagAlphaEngine`.
-- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 1 (Arista Muerta)**.
-- **❓ QUÉ:** Señal predictiva de retardo cross-asset (BTC lidera, Altcoin sigue) no conectada al generador de señales.
-- **💡 POR QUÉ:** Implementa correlación cruzada desplazada en el tiempo pero jamás es consultado por `ScalpEngine` o `SwingEngine`.
-- **⏱️ CUÁNDO:** Tras impulsos violentos en Bitcoin.
-- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Entradas tardías en altcoins en vez de anticipar el movimiento propagado.
-- **🛠️ REMEDIACIÓN ARQUITECTÓNICA:** Inyectar la señal `lead_lag_score` en la evaluación de entradas de las altcoins del Top 10.
+### ✅ 17. Motor Lead-Lag Cross-Asset (`LeadLagAlphaEngine`) Operativo
+- **📍 DÓNDE:** [`crates/feature-engine/src/lead_lag.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/feature-engine/src/lead_lag.rs) y [`crates/god-engine-core/src/lib.rs:938-944`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/god-engine-core/src/lib.rs#L938-L944).
+- **👤 QUIÉN:** `FeatureEngine / GodEngineCore / LeadLagAlphaEngine`.
+- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 1 (Arista Muerta) — 🟢 RESUELTO Y CERTIFICADO**.
+- **❓ QUÉ:** La señal predictiva de retardo cross-asset (BTC/ETH impulsan, las altcoins reaccionan con lag) requería cableado vivo hacia el pipeline de señales y el registro global.
+- **💡 POR QUÉ:** Para anticipar el desborde de liquidez de BTC/ETH hacia altcoins antes de que el libro L2 de la altcoin absorba el impacto.
+- **⚙️ CÓMO:** En `GodEngineCore::process_event`, los flujos agresores de BTC y ETH alimentan continuamente `lead_lag_engine.update_leader(is_btc, ofi_value)`. Para cada altcoin se computa `(leader_mom, lead_lag_div) = predict_altcoin_impulse(ofi_value)`, el cual se inyecta en `OmniscientRegistry` (`leader_momentum`, `lead_lag_divergence`) y en el vector continuo de `ppo_close_features` y `last_senior_signals` para ponderar la convicción direccional.
+- **⏱️ CUÁNDO:** En cada impulso agresor registrado en BTC/ETH y cada trade evaluado en altcoins.
+- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Captura de movimientos direccionales en altcoins con anticipación temporal frente a operadores lentos.
+- **🛠️ VERIFICACIÓN:** Tests unitarios `test_lead_lag_divergence_prediction` y `test_lead_lag_nan_and_empty_buffer_immunity` validados con 100% de éxito.
 
 ---
 

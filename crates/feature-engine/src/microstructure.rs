@@ -321,6 +321,28 @@ mod tests {
     }
 
     #[test]
+    fn test_ofi_scale_invariance_btc_vs_altcoin() {
+        // En BTC: cantidades pequeñas (2.0 a 4.0)
+        let mut ofi_btc = OFIModel::new();
+        ofi_btc.update(60000.0, 60001.0, 2.0, 2.0);
+        let val_btc = ofi_btc.update(60000.5, 60001.0, 4.0, 2.0);
+
+        // En PEPE/SHIB: cantidades gigantescas (20M a 40M)
+        let mut ofi_alt = OFIModel::new();
+        ofi_alt.update(0.00001, 0.000011, 20_000_000.0, 20_000_000.0);
+        let val_alt = ofi_alt.update(0.0000105, 0.000011, 40_000_000.0, 20_000_000.0);
+
+        // Gracias a la normalización por stable_depth, ambos valores son idénticos e invariantes de escala
+        assert!(
+            (val_btc - val_alt).abs() < 1e-4,
+            "OFI debe ser estrictamente invariante de escala nominal: btc={}, alt={}",
+            val_btc,
+            val_alt
+        );
+        assert!(val_btc.abs() <= 10.0 && val_alt.abs() <= 10.0);
+    }
+
+    #[test]
     fn test_institutional_volume_tracker() {
         let mut tracker = InstitutionalVolumeTracker::new(2.0);
         for _ in 0..50 {

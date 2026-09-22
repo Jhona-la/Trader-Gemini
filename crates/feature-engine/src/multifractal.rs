@@ -254,4 +254,32 @@ mod tests {
         assert_eq!(scalp, false);
         assert_eq!(swing, false);
     }
+
+    #[test]
+    fn test_multifractal_scale_invariance_log_returns() {
+        let mut engine_btc = MultifractalSpectrumEngine::new(30);
+        let mut engine_alt = MultifractalSpectrumEngine::new(30);
+
+        let mut p_btc = 60000.0;
+        let mut p_alt = 0.06;
+
+        let mut h_btc = 0.50;
+        let mut h_alt = 0.50;
+
+        for i in 0..35 {
+            let ret = (i as f64 * 0.1).sin() * 0.005; // 0.5% de variación relativa
+            p_btc *= 1.0 + ret;
+            p_alt *= 1.0 + ret;
+            h_btc = engine_btc.update(p_btc).0;
+            h_alt = engine_alt.update(p_alt).0;
+        }
+
+        assert!(
+            (h_btc - h_alt).abs() < 1e-4,
+            "El espectro multifractal debe ser invariante de escala por retornos logarítmicos: btc={}, alt={}",
+            h_btc,
+            h_alt
+        );
+        assert!(h_btc > 0.10 && h_btc < 0.90, "Hurst no debe estar bloqueado en extremos 0.10/0.90: {}", h_btc);
+    }
 }
