@@ -102,6 +102,8 @@ pub struct GodEngineCore {
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
     pub ppo_engine: dark_alpha_engine::online_ppo::OnlinePpoPolicyEngine,
     pub online_learner: metacortex_engine::online_learning::OnlineLearningModule,
+    /// #26: Sistema inmune vivo para registro y amortiguación de traumas de predicción
+    pub immune_system: metacortex_engine::immune_system::LivingImmuneSystem,
     /// Cache de generación del genoma aplicado: refresh_models solo
     /// re-aplica el envelope de disco si su generación es MÁS NUEVA que la
     /// última aplicada. Antes re-aplicaba ciegamente cada 1000 ticks y PISABA
@@ -291,6 +293,7 @@ impl GodEngineCore {
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
             ppo_engine,
             online_learner,
+            immune_system: metacortex_engine::immune_system::LivingImmuneSystem::new("."),
             applied_generation: std::sync::atomic::AtomicU64::new(0),
             genomes_mtime: None,
             conformal: conformal::ConformalCalibrator::new(),
@@ -1785,6 +1788,25 @@ impl GodEngineCore {
                             &self.last_senior_signals[coin_id],
                             realized_ret,
                         );
+                    }
+
+                    // #26: Registrar trauma en el sistema inmune vivo si la pérdida excede 1.5%
+                    if realized_ret < -0.015 {
+                        let record = metacortex_engine::immune_system::TraumaRecord {
+                            id: format!("trauma_{}_{}", sym, event_time_ms),
+                            timestamp: chrono::Utc::now(),
+                            symbol: sym.clone(),
+                            regime: format!("{:?}", self.feature_engines[coin_id].regime),
+                            expected_pnl_pct: 0.01,
+                            actual_pnl_pct: realized_ret,
+                            predictor_name: "GodEngineCore".to_string(),
+                            inputs_snapshot: self.feature_engines[coin_id]
+                                .get_universal_features()
+                                .iter()
+                                .map(|&x| x as f64)
+                                .collect(),
+                        };
+                        let _ = self.immune_system.record_trauma(&record);
                     }
 
                     // D-190: Evitar contaminación cruzada en Hebbian. Escopar por símbolo con fallback global.

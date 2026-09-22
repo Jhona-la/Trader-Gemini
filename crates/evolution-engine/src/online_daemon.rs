@@ -443,8 +443,11 @@ impl LiveEvolutionDaemon {
 
             // FASE 3: AST Mutator checking
             if std::path::Path::new(".forensic_violation").exists() {
-                println!("🧬 [DAEMON] Señal forense detectada! Invocando AST-Mutator...");
+                println!("🧬 [DAEMON] Señal forense detectada! Invocando AST-Mutator en RAM...");
                 let mutator = crate::ast_mutator::ASTMutator::new();
+                // #24: Mutación atómica directa en RAM sobre QuantumConfig
+                let _ = mutator.mutate_atomic_config(&self.arena.config, "ml_threshold_long", 0.60);
+                let _ = mutator.mutate_atomic_config(&self.arena.config, "ml_threshold_short", 0.40);
 
                 let config_path = "dynamic_config.json";
                 if std::path::Path::new(config_path).exists() {
@@ -1040,16 +1043,31 @@ impl LiveEvolutionDaemon {
                 // corre SOLO sobre la partición OOS (train_end..n): no hay un
                 // par IS/OOS de capitales separado que reportar, de modo que
                 // oos_start == oos_end (factor 1.0, sin doble penalización).
-                // trades < WF_MIN_TRADES ⇒ INVIABLE (−∞): jamás seleccionado.
-                let fitness = crate::fitness::compute(&crate::fitness::FitnessInputs {
-                    initial_capital: WF_INITIAL_CAPITAL,
-                    final_capital: wf_capital,
-                    max_drawdown_pct: wf_dd,
-                    total_trades: wf_trades as u32,
-                    min_trades_required: WF_MIN_TRADES,
-                    oos_start_capital: wf_capital,
-                    oos_end_capital: wf_capital,
-                });
+                // #22: trades < WF_MIN_TRADES usa regularización Bayesiana suave hacia el prior para no bloquear en frío
+                let fitness = if wf_trades > 0 && (wf_trades as u32) < WF_MIN_TRADES {
+                    crate::fitness::compute_with_bayesian_prior(
+                        &crate::fitness::FitnessInputs {
+                            initial_capital: WF_INITIAL_CAPITAL,
+                            final_capital: wf_capital,
+                            max_drawdown_pct: wf_dd,
+                            total_trades: wf_trades as u32,
+                            min_trades_required: WF_MIN_TRADES,
+                            oos_start_capital: wf_capital,
+                            oos_end_capital: wf_capital,
+                        },
+                        -0.05,
+                    )
+                } else {
+                    crate::fitness::compute(&crate::fitness::FitnessInputs {
+                        initial_capital: WF_INITIAL_CAPITAL,
+                        final_capital: wf_capital,
+                        max_drawdown_pct: wf_dd,
+                        total_trades: wf_trades as u32,
+                        min_trades_required: WF_MIN_TRADES,
+                        oos_start_capital: wf_capital,
+                        oos_end_capital: wf_capital,
+                    })
+                };
                 let _ = wf_pnl; // conservado como telemetría futura del ciclo
                 let _ = candidate_net_returns; // pre-screen: no feeding DSR
 

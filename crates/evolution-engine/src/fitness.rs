@@ -141,6 +141,29 @@ pub fn compute(inputs: &FitnessInputs) -> f64 {
     if base >= 0.0 { base / oos } else { base * oos }
 }
 
+/// Calcula la aptitud con regularización Bayesiana hacia un prior para muestras reducidas (#22).
+/// Previene el bloqueo en frío donde candidatos con N < min_trades_required reciben -inf,
+/// contrayendo suavemente el fitness observado hacia el prior en lugar de descartarlo.
+pub fn compute_with_bayesian_prior(inputs: &FitnessInputs, prior_fitness: f64) -> f64 {
+    if inputs.total_trades == 0 || inputs.initial_capital <= 0.0 || inputs.final_capital <= 0.0 {
+        return INVIABLE;
+    }
+    let req = inputs.min_trades_required.max(1);
+    if inputs.total_trades >= req {
+        return compute(inputs);
+    }
+    // Regularización Bayesiana suave: peso proporcional al soporte muestral N / N_req
+    let weight = inputs.total_trades as f64 / req as f64;
+    let mut modified_inputs = inputs.clone();
+    modified_inputs.min_trades_required = inputs.total_trades;
+    let raw_fitness = compute(&modified_inputs);
+    if raw_fitness == INVIABLE {
+        INVIABLE
+    } else {
+        weight * raw_fitness + (1.0 - weight) * prior_fitness
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,5 +293,23 @@ mod tests {
             (a + b - total).abs() < 1e-9,
             "ln es aditivo: {a} + {b} debe ser {total}"
         );
+    }
+
+    /// #22: Prueba de regularización Bayesiana en arranque en frío (N < min_trades)
+    #[test]
+    fn test_compute_with_bayesian_prior_cold_start() {
+        let mut cold = base();
+        cold.total_trades = 5;
+        cold.min_trades_required = 30;
+        cold.final_capital = 14.0;
+
+        // Con compute regular es INVIABLE
+        assert_eq!(compute(&cold), INVIABLE);
+
+        // Con compute_with_bayesian_prior es FINITO y contraído hacia el prior
+        let prior = -0.10;
+        let bayesian_fit = compute_with_bayesian_prior(&cold, prior);
+        assert!(bayesian_fit.is_finite());
+        assert!(bayesian_fit > INVIABLE);
     }
 }

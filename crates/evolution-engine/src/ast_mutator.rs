@@ -86,6 +86,60 @@ impl ASTMutator {
 
         Ok(())
     }
+
+    /// Mutación Atómica Directa en Memoria RAM sobre QuantumConfig (#24)
+    /// Aplica mutaciones de parámetros genómicos en nanosegundos directamente
+    /// sobre los campos atómicos de la configuración activa en caliente, sin tocar disco.
+    pub fn mutate_atomic_config(
+        &self,
+        config: &quantum_arena::QuantumConfig,
+        param_name: &str,
+        new_val: f64,
+    ) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        match param_name {
+            "ml_threshold_long" => {
+                config.ml_threshold_long.store(new_val, Ordering::Release);
+                Ok(())
+            }
+            "ml_threshold_short" => {
+                config.ml_threshold_short.store(new_val, Ordering::Release);
+                Ok(())
+            }
+            "scalp_sl_base" => {
+                config.scalp_sl_base.store(new_val, Ordering::Release);
+                Ok(())
+            }
+            "scalp_tp_base" => {
+                config.scalp_tp_base.store(new_val, Ordering::Release);
+                Ok(())
+            }
+            "scalp_kelly_fraction" => {
+                config.scalp_kelly_fraction.store(new_val, Ordering::Release);
+                Ok(())
+            }
+            "global_max_drawdown" => {
+                config.global_max_drawdown.store(new_val, Ordering::Release);
+                Ok(())
+            }
+            "min_trades_per_day" => {
+                config.min_trades_per_day.store(new_val, Ordering::Release);
+                Ok(())
+            }
+            "dynamic_obi_threshold" => {
+                config.dynamic_obi_threshold.store(new_val, Ordering::Release);
+                Ok(())
+            }
+            "dynamic_ofi_threshold" => {
+                config.dynamic_ofi_threshold.store(new_val, Ordering::Release);
+                Ok(())
+            }
+            _ => Err(format!(
+                "Atomic parameter '{}' not found in QuantumConfig",
+                param_name
+            )),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -127,5 +181,27 @@ mod tests {
         assert!(updated_content.contains("pub const KELLY_FRACTION: f64 = 0.50;"));
 
         let _ = fs::remove_file(&rs_file);
+    }
+
+    #[test]
+    fn test_ast_mutator_mutate_atomic_config() {
+        use std::sync::atomic::Ordering;
+        let config = quantum_arena::QuantumConfig::new(13.0);
+        let mutator = ASTMutator::new();
+
+        let initial_val = config.ml_threshold_long.load(Ordering::Relaxed);
+        mutator
+            .mutate_atomic_config(&config, "ml_threshold_long", 0.62)
+            .expect("atomic mutation must succeed");
+        assert_eq!(config.ml_threshold_long.load(Ordering::Relaxed), 0.62);
+        assert_ne!(config.ml_threshold_long.load(Ordering::Relaxed), initial_val);
+
+        mutator
+            .mutate_atomic_config(&config, "scalp_kelly_fraction", 0.35)
+            .expect("atomic mutation must succeed");
+        assert_eq!(config.scalp_kelly_fraction.load(Ordering::Relaxed), 0.35);
+
+        // Unknown parameter returns error
+        assert!(mutator.mutate_atomic_config(&config, "unknown_gene", 1.0).is_err());
     }
 }

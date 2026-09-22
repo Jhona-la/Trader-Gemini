@@ -56,6 +56,7 @@ data-ingest = { path = "crates/data-ingest" }
 graph-4d = { path = "crates/graph-4d" }
 audit-engine = { path = "crates/audit-engine" }
 telemetry-engine = { path = "crates/telemetry-engine" }
+metacortex-engine = { path = "crates/metacortex-engine" }
 
 syn = { version = "2.0", features = ["full", "visit"] }
 petgraph = "0.6.4"

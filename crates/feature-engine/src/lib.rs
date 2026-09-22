@@ -28,7 +28,9 @@ pub use microstructure::{
 pub use multifractal::{MultiScaleHurstConfluence, MultifractalSpectrumEngine};
 pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};
 pub use omni_strategies::OmniStrategyEngine;
+pub use quantum_tensor_store::{QuantumTensorStore, NUM_FEATURES, NUM_TIMEFRAMES};
 pub use shannon_entropy::ShannonEntropyEngine;
 pub use simd_neural_network::SimdNeuralNet;
 pub use spectral::SpectralCycleEngine;
+pub use tensor_ring::TensorRing;
 pub use welford::WelfordOnline;

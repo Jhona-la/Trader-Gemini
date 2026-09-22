@@ -100,6 +100,12 @@ pub struct StatefulEngine {
     pub fair_price: f64,
     /// #21: Motor de cuantiles adaptativos P^2 para estimación de percentiles sin alocar
     pub quantiles: quantum_arena::AdaptiveQuantileEngine,
+    /// #19: Anillo tensorial de precios para cálculo O(1) de derivadas cinemáticas multiescala
+    pub price_ring: feature_engine::TensorRing<16>,
+    /// #19: Jerk cinemático instantáneo (3ra derivada del precio: d(a_t)/dt)
+    pub jerk_t: f64,
+    /// #20: Red neuronal SIMD MLP ultraligera para inferencia vectorial AVX2 en L1 cache
+    pub simd_nn: feature_engine::SimdNeuralNet,
 }
 
 impl Default for StatefulEngine {
@@ -161,6 +167,9 @@ impl StatefulEngine {
             kalman: feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1),
             fair_price: 0.0,
             quantiles: quantum_arena::AdaptiveQuantileEngine::new(),
+            price_ring: feature_engine::TensorRing::new(),
+            jerk_t: 0.0,
+            simd_nn: feature_engine::SimdNeuralNet::default(),
         }
     }
 
@@ -269,6 +278,9 @@ impl StatefulEngine {
         self.kalman = feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1);
         self.fair_price = 0.0;
         self.quantiles = quantum_arena::AdaptiveQuantileEngine::new();
+        self.price_ring = feature_engine::TensorRing::new();
+        self.jerk_t = 0.0;
+        self.simd_nn = feature_engine::SimdNeuralNet::default();
     }
 
     /// Processes a new tick internally in f64
@@ -346,6 +358,9 @@ impl StatefulEngine {
             self.last_inst_v = inst_v;
             // Velocidad direccional suavizada (EMA de 10 ticks)
             self.dir_velocity = self.dir_velocity * 0.85 + inst_v * 0.15;
+            // #19: Actualización del anillo tensorial de precios y extracción de derivadas cinemáticas
+            self.price_ring.push(self.fair_price);
+            self.jerk_t = self.price_ring.jerk();
             // #21: Actualización de cuantiles adaptativos P^2 en O(1)
             self.quantiles.update(self.ofi_model.ema_ofi, self.obi_accel.prev_obi, self.a_t, self.v_t / price.max(1e-6));
         }
@@ -793,6 +808,28 @@ impl StatefulEngine {
         out[3] = self.last_price as f32;
         // Read Hurst for external observability — NO mutation (use current(), not update())
         out[4] = self.hurst.current() as f32;
+    }
+
+    /// #20: Inferencia SIMD ultraligera sobre el vector de características universales 34D en registros AVX2
+    #[inline(always)]
+    pub fn infer_simd_alpha(&self) -> [f64; 2] {
+        let f32_feats = self.get_universal_features();
+        let mut f64_feats = [0.0; 34];
+        for (dst, &src) in f64_feats.iter_mut().zip(f32_feats.iter()) {
+            *dst = src as f64;
+        }
+        self.simd_nn.infer(&f64_feats)
+    }
+
+    /// #20: Aprendizaje online SIMD en microsegundos con clipping de gradientes y decaimiento L2
+    #[inline(always)]
+    pub fn train_simd_step(&mut self, target_idx: usize, lr: f64) {
+        let f32_feats = self.get_universal_features();
+        let mut f64_feats = [0.0; 34];
+        for (dst, &src) in f64_feats.iter_mut().zip(f32_feats.iter()) {
+            *dst = src as f64;
+        }
+        self.simd_nn.train_step(&f64_feats, target_idx, lr);
     }
 }
 

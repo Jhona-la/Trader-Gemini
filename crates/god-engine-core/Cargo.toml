@@ -25,6 +25,7 @@ data-pipeline = { path = "../data-pipeline" }
 strategy-core = { path = "../strategy-core" }
 storage-engine = { path = "../storage-engine" }
 metacortex-engine = { path = "../metacortex-engine" }
+chrono = { version = "0.4", features = ["serde"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["memoryapi", "minwindef", "basetsd", "winnt", "processthreadsapi"] }
