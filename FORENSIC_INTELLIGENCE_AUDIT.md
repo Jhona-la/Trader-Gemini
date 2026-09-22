@@ -32,12 +32,16 @@
 ```
 ESTADO CONSOLIDADO DE AUDITORÍA FORENSE Y REHABILITACIÓN SISTÉMICA:
 
-  🟢 REVISADOS A PROFUNDIDAD Y RESUELTOS EN SU TOTALIDAD: 213 Puntos Certificados (39.30%)
+  🟢 REVISADOS A PROFUNDIDAD Y RESUELTOS EN SU TOTALIDAD: 217 Puntos Certificados (40.04%)
      ├── #1: Desalineación 54D vs 34D en DarkAlphaEngine
      ├── #2: Warmup con velas sintéticas corregido en GodEngineCore
      ├── #3: Aislamiento de libros L2 por activo
      ├── #4: Router de símbolos con coin_id estricto
      ├── #14: Preservación de convicción asintótica (0.0001 .. 0.9999)
+     ├── #18: Cableado O(1) de KalmanFilter1D en StatefulEngine para micro-precio justo suavizado
+     ├── #21: Re-exportación e integración de AdaptiveQuantileEngine P^2 en StatefulEngine
+     ├── #23: Inyección de features reales en mmap_bus (write_prediction_vs_reality_ext) y Shadow Forest
+     ├── #25: Re-exportación y conexión de OnlinePpoPolicyEngine y NeuroPlasticityEngine en cierre de órdenes
      ├── #27: Hurst independiente por cada altcoin
      ├── #37 / #522: Erradicación de alpha=14.0 en Ewma::from_period(14.0)
      ├── #40: Soporte nativo Dual-Position Hedge mode en execution-engine
@@ -685,15 +689,13 @@ graph TD
 
 ---
 
-### 🚨 18. Filtro de Kalman 1D (`KalmanFilter1D`) Huérfano y Desconectado
-- **📍 DÓNDE:** [`crates/feature-engine/src/kalman.rs:6-47`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/feature-engine/src/kalman.rs#L6-L47).
-- **👤 QUIÉN:** `FeatureEngine / KalmanFilter1D`.
-- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 1 (Arista Muerta)**.
-- **❓ QUÉ:** Filtro de micro-precio de estado $O(1)$ no cableado; las estrategias procesan precios ruidosos.
-- **💡 POR QUÉ:** El struct `KalmanFilter1D` existe de forma aislada sin ser invocado en `process_trade`.
-- **⏱️ CUÁNDO:** En cada estimación de fair value de microestructura.
-- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Señales espurias causadas por micro-ruido de ticks individuales.
-- **🛠️ REMEDIACIÓN ARQUITECTÓNICA:** Filtrar el micro-precio con `KalmanFilter1D::update(price)` antes de calcular spreads y aceleraciones.
+### ✅ 18. Filtro de Kalman 1D (`KalmanFilter1D`) Integrado en Flujo Caliente
+- **📍 DÓNDE:** [`crates/god-engine-core/src/stateful_engine.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/god-engine-core/src/stateful_engine.rs).
+- **👤 QUIÉN:** `StatefulEngine / KalmanFilter1D`.
+- **🏷️ ESTADO:** **🟢 RESUELTO Y CERTIFICADO**.
+- **❓ QUÉ:** Filtro de micro-precio de estado $O(1)$ cableado en `process_tick` con modulación de varianza de ruido $R$ adaptativa en tiempo real.
+- **💡 SOLUCIÓN:** En cada evento tick, `kalman.update_with_dynamic_r(price, (price * 0.0005).max(1e-6))` calcula el micro-precio justo libre de rebotes de spread bid-ask.
+- **🎯 IMPACTO OPERATIVO:** Erradica señales espurias causadas por el micro-ruido de libros de órdenes delgados.
 
 ---
 
@@ -721,15 +723,13 @@ graph TD
 
 ---
 
-### 🚨 21. Motor de Cuantiles Adaptativos $P^2$ (`AdaptiveQuantileEngine`) Huérfano
-- **📍 DÓNDE:** [`crates/quantum-arena/src/adaptive_quantiles.rs:134-173`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/quantum-arena/src/adaptive_quantiles.rs#L134-L173).
-- **👤 QUIÉN:** `QuantumArena / AdaptiveQuantileEngine`.
-- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 1 (Arista Muerta)**.
-- **❓ QUÉ:** Algoritmo Jain & Chlamtac ($P^2$) para estimar cuantiles en $O(1)$ sin alocar memoria no se usa en vivo.
-- **💡 POR QUÉ:** Las estrategias recurren a umbrales estáticos hardcodeados en lugar de consultar los cuantiles dinámicos calculados.
-- **⏱️ CUÁNDO:** Al evaluar filtros de entrada de OFI, OBI y aceleración.
-- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Incapacidad de adaptarse a la expansión y contracción de la volatilidad intradía.
-- **🛠️ REMEDIACIÓN ARQUITECTÓNICA:** Alimentar cada variable al motor $P^2$ y usar `engine.get_p85()` como umbral adaptativo.
+### ✅ 21. Motor de Cuantiles Adaptativos $P^2$ (`AdaptiveQuantileEngine`) Conectado en $O(1)$
+- **📍 DÓNDE:** [`crates/quantum-arena/src/lib.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/quantum-arena/src/lib.rs), [`crates/god-engine-core/src/stateful_engine.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/god-engine-core/src/stateful_engine.rs).
+- **👤 QUIÉN:** `QuantumArena / StatefulEngine / AdaptiveQuantileEngine`.
+- **🏷️ ESTADO:** **🟢 RESUELTO Y CERTIFICADO**.
+- **❓ QUÉ:** Algoritmo Jain & Chlamtac ($P^2$) para estimar cuantiles continuos sin memoria dinámica ahora opera en el bucle caliente.
+- **💡 SOLUCIÓN:** Re-exportado en `quantum-arena` y cableado en `StatefulEngine`. En cada tick rastrea los cuantiles P80/P85 de OFI, OBI y aceleración cinemática sin alocaciones en el heap.
+- **🎯 IMPACTO OPERATIVO:** Des-rigidización total de umbrales estáticos, adaptando la sensibilidad del bot a la volatilidad de cada activo.
 
 ---
 
@@ -745,15 +745,13 @@ graph TD
 
 ---
 
-### 🚨 23. Inyección de Observaciones Ficticias Constantes y Umbrales Hardcodeados en `TrueOnlineRandomForest`
-- **📍 DÓNDE:** [`crates/evolution-engine/src/online_random_forest.rs:48-69`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/evolution-engine/src/online_random_forest.rs#L48-L69).
-- **👤 QUIÉN:** `TrueOnlineRandomForest::shadow_evaluate` y `get_optimal_thresholds`.
-- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 3 (Datos Sintéticos Falsos y Heurística Hardcodeada)**.
-- **❓ QUÉ:** `shadow_evaluate` alimenta el Random Forest con variables estáticas hardcodeadas (`vol_accel: 0.1`, `spread_bps: 2.0`, `atr_pct: 0.005`, `hurst_exp: 0.55`, `macro_momentum: 0.0`), entrenando modelos sobre ruido artificial. Además, `get_optimal_thresholds` ignora el modelo entrenado y retorna tuplas estáticas fijas `(0.55, 0.55)`.
-- **💡 POR QUÉ:** Código placeholder dejado durante el prototipado inicial que nunca fue conectado al flujo real de datos de mercado.
-- **⏱️ CUÁNDO:** En cada ciclo de evaluación de sombra y actualización de umbrales.
-- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Generación de modelos de bosque aleatorio entrenados sobre datos completamente espurios.
-- **🛠️ REMEDIACIÓN ARQUITECTÓNICA:** Inyectar las variables normalizadas reales del mercado y retornar los umbrales predichos por el ensamble de árboles.
+### ✅ 23. Inyección de Observaciones Reales en `mmap_bus` y `TrueOnlineRandomForest`
+- **📍 DÓNDE:** [`crates/storage-engine/src/mmap_bus.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/storage-engine/src/mmap_bus.rs), [`crates/god-engine-core/src/lib.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/god-engine-core/src/lib.rs), [`crates/evolution-engine/src/online_daemon.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/evolution-engine/src/online_daemon.rs).
+- **👤 QUIÉN:** `StorageEngine / OnlineDaemon / TrueOnlineRandomForest`.
+- **🏷️ ESTADO:** **🟢 RESUELTO Y CERTIFICADO**.
+- **❓ QUÉ:** El bus mmap transmitía solo 4 variables dejando 2 slots en 0.0, y el daemon alimentaba el bosque aleatorio con constantes fijas artificiales.
+- **💡 SOLUCIÓN:** Implementación de `write_prediction_vs_reality_ext` multiplexando las 6 dimensiones completas (OBI, ATR, Hurst, PnL, dirección). `online_daemon.rs` conecta `shadow_evaluate_with_features` con datos reales observados de mercado.
+- **🎯 IMPACTO OPERATIVO:** Reentrenamiento online del bosque sobre la física real del libro de órdenes, garantizando modelos válidos.
 
 ---
 
@@ -769,15 +767,13 @@ graph TD
 
 ---
 
-### 🚨 25. Motores de Refuerzo en Línea `OnlinePpoPolicyEngine` y `NeuroPlasticityEngine` Huérfanos en `dark-alpha-engine`
-- **📍 DÓNDE:** [`crates/dark-alpha-engine/src/online_ppo.rs:29-111`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/dark-alpha-engine/src/online_ppo.rs#L29-L111), [`crates/dark-alpha-engine/src/neuro_plasticity.rs:6-103`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/dark-alpha-engine/src/neuro_plasticity.rs#L6-L103).
-- **👤 QUIÉN:** `DarkAlphaEngine / OnlinePpoPolicyEngine & NeuroPlasticityEngine`.
-- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 1 (Arista Muerta / Código Huérfano)**.
-- **❓ QUÉ:** Se implementaron motores de optimización por políticas proximales (PPO) lock-free sobre 5 tensores y reconexión sináptica por RDTSC ante drift.
-- **💡 POR QUÉ:** Ninguno de los dos módulos está exportado en `crates/dark-alpha-engine/src/lib.rs`, ni son instanciados por `GodEngineCore`.
-- **⏱️ CUÁNDO:** En cada recepción de recompensa (reward) post-trade.
-- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Anula la capacidad del bot de adaptar sus ponderaciones de features en tiempo real según el éxito de cada trade.
-- **🛠️ REMEDIACIÓN ARQUITECTÓNICA:** Exportar ambos módulos en `lib.rs` y conectar la actualización PPO al ciclo de cierre de órdenes.
+### ✅ 25. Conexión Viva de `OnlinePpoPolicyEngine` y `NeuroPlasticityEngine`
+- **📍 DÓNDE:** [`crates/dark-alpha-engine/src/lib.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/dark-alpha-engine/src/lib.rs), [`crates/god-engine-core/src/lib.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/god-engine-core/src/lib.rs).
+- **👤 QUIÉN:** `DarkAlphaEngine / GodEngineCore / OnlinePpoPolicyEngine`.
+- **🏷️ ESTADO:** **🟢 RESUELTO Y CERTIFICADO**.
+- **❓ QUÉ:** Motores de optimización por políticas proximales (PPO) lock-free sobre 5 tensores estaban huérfanos sin exportar ni invocar.
+- **💡 SOLUCIÓN:** Re-exportados formalmente en `dark-alpha-engine/src/lib.rs` y conectados directamente en la rutina de cierre de órdenes en `GodEngineCore` (`self.ppo_engine.update_policy`), ajustando en nanosegundos los pesos de (OFI, OBI, Hawkes, LeadLag, Cinemática) con el gradiente de Sharpe.
+- **🎯 IMPACTO OPERATIVO:** El sistema aprende en vivo de cada operación cerrada, reforzando las señales exitosas y amortiguando las erráticas.
 
 ---
 

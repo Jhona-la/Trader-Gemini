@@ -31,6 +31,9 @@
 pub mod neuro_plasticity;
 pub mod online_ppo;
 
+pub use neuro_plasticity::NeuroPlasticityEngine;
+pub use online_ppo::OnlinePpoPolicyEngine;
+
 use serde::{Deserialize, Serialize};
 
 /// Pesos de una capa lineal en layout contiguo (row-major).

@@ -273,15 +273,15 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
     let mut pnl_unrealized_scalp = 0.0;
     let mut pnl_realized_swing = 0.0;
     let mut pnl_gross_swing = 0.0;
-    let mut pnl_unrealized_swing = 0.0;
+    let pnl_unrealized_swing = 0.0;
     let mut win_rate_scalp_sum = 0.0;
-    let mut win_rate_swing_sum = 0.0;
+    let win_rate_swing_sum = 0.0;
     let mut ml_prob_sum = 0.0;
     let mut hurst_sum = 0.0;
     let mut total_zombies = 0;
     let mut active_coins = 0.0;
     let mut active_scalp_coins = 0.0;
-    let mut active_swing_coins = 0.0;
+    let active_swing_coins = 0.0;
     // B3.13 — SANITIZADOR DE MARCADO: contribuciones de unrealized que
     // exceden 2× el capital son marcado local roto (glitch de precio
     // testnet o posición fantasma de rotación — medido +$2.27M en cuenta

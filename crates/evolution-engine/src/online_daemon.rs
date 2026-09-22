@@ -343,23 +343,24 @@ impl LiveEvolutionDaemon {
                     for f in frames {
                         // SUBSYSTEM_TENSOR_PREDICTOR = 12, FRAME_PREDICTION_VS_REALITY = 30
                         if f.subsystem_id == 12 && f.frame_type == 30 {
-                            // E-02 — FIX ÍNDICE: el productor pone ml_prob
-                            // en payload[0]; payload[1] contiene is_long (0/1).
-                            // Antes: el forest aprendía "los longs ganan".
+                            // E-02 / #23: Inyectar variables reales leídas del bus mmap
+                            // payload[0]=ml_prob, [1]=is_long, [2]=obi, [3]=net_pnl_pct, [4]=atr_pct, [5]=hurst
                             let ml_prob = f.payload[0];
-                            let net_pnl_pct = f.payload[3];
-                            // If we are evaluating a long or short based on the prob:
-                            // G-03: leer is_long del payload[1] donde el
-                            // productor lo escribe — antes se derivaba de
-                            // ml_prob>0.5, etiquetando todos los trades de
-                            // prob alta como "long" y sesgando las features.
                             let is_long = f.payload[1] > 0.5;
-                            self.forest.shadow_evaluate(
-                                ml_prob as f32,
-                                net_pnl_pct as f32,
+                            let obi = f.payload[2];
+                            let net_pnl_pct = f.payload[3];
+                            let atr_pct = f.payload[4];
+                            let hurst = if f.payload[5] > 0.0 { f.payload[5] } else { 0.50 };
+
+                            let features = [
+                                obi,
                                 0.0,
-                                is_long,
-                            );
+                                1.0,
+                                atr_pct,
+                                hurst,
+                                if is_long { ml_prob - 0.50 } else { 0.50 - ml_prob },
+                            ];
+                            self.forest.shadow_evaluate_with_features(features, net_pnl_pct);
                             pending_new_obs += 1;
                         }
                     }

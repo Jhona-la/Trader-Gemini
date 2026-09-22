@@ -95,6 +95,11 @@ pub struct StatefulEngine {
     pub scalp_short_loss_streak: u32,
     pub scalp_long_loss_streak: u32,
     pub last_trade_is_sell: bool,
+    /// #18: Filtro de Kalman 1D para estimar el micro-precio justo en O(1)
+    pub kalman: feature_engine::KalmanFilter1D,
+    pub fair_price: f64,
+    /// #21: Motor de cuantiles adaptativos P^2 para estimación de percentiles sin alocar
+    pub quantiles: quantum_arena::AdaptiveQuantileEngine,
 }
 
 impl Default for StatefulEngine {
@@ -153,6 +158,9 @@ impl StatefulEngine {
             scalp_short_loss_streak: 0,
             scalp_long_loss_streak: 0,
             last_trade_is_sell: false,
+            kalman: feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1),
+            fair_price: 0.0,
+            quantiles: quantum_arena::AdaptiveQuantileEngine::new(),
         }
     }
 
@@ -258,6 +266,9 @@ impl StatefulEngine {
         self.hurst_micro = 0.5;
         self.hurst_meso = 0.5;
         self.hurst_macro = 0.5;
+        self.kalman = feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1);
+        self.fair_price = 0.0;
+        self.quantiles = quantum_arena::AdaptiveQuantileEngine::new();
     }
 
     /// Processes a new tick internally in f64
@@ -268,7 +279,11 @@ impl StatefulEngine {
         if self.last_price == 0.0 {
             self.ema_fast = price;
             self.ema_slow = price;
+            self.kalman = feature_engine::KalmanFilter1D::new(price, 1.0, 1e-4, 0.1);
+            self.fair_price = price;
         } else {
+            // #18: Filtro de Kalman 1D actualizando el precio justo suavizado con R dinámico
+            self.fair_price = self.kalman.update_with_dynamic_r(price, (price * 0.0005).max(1e-6));
             // S-8 — DECISIÓN DOCUMENTADA: los genes ema_fast_period /
             // ema_slow_period (~12.5/~25.1) NO se cablean aquí aunque
             // existan. Estos 20/200 alimentan la feature [0] del contrato
@@ -331,6 +346,8 @@ impl StatefulEngine {
             self.last_inst_v = inst_v;
             // Velocidad direccional suavizada (EMA de 10 ticks)
             self.dir_velocity = self.dir_velocity * 0.85 + inst_v * 0.15;
+            // #21: Actualización de cuantiles adaptativos P^2 en O(1)
+            self.quantiles.update(self.ofi_model.ema_ofi, self.obi_accel.prev_obi, self.a_t, self.v_t / price.max(1e-6));
         }
 
         // D-615b: el Hurst YA NO se alimenta por evento (ver el cierre de la
@@ -594,7 +611,6 @@ impl StatefulEngine {
         // modelo pre-B3.35 con splits en esas dims servía una
         // distribución que nunca vio en entrenamiento. FEATURES_DEAD_IN_
         // SERVE es la fuente única de verdad del mapa vivo/muerto.
-        let mut result = [0f32; 34];
         let mut raw: [f32; 34] = [
             micro[0],
             micro[1],
@@ -638,8 +654,7 @@ impl StatefulEngine {
                 raw[d] = 0.0;
             }
         }
-        result = raw;
-        result
+        raw
     }
 
     /// Returns ATR as a percentage of last price for Stop Loss scaling

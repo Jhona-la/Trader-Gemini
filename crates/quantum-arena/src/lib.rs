@@ -20,6 +20,7 @@ pub mod zero_alloc_pool;
 pub mod zero_copy_stream;
 
 // Re-exportamos los componentes principales
+pub use adaptive_quantiles::{AdaptiveQuantileEngine, P2Quantile};
 pub use atomic_float::AtomicF64;
 pub use config::QuantumConfig;
 pub use position::{Position, PositionManager};

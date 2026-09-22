@@ -1571,11 +1571,15 @@ impl GodEngineCore {
                         } else {
                             0.0
                         };
-                        storage_engine::mmap_bus::write_prediction_vs_reality(
+                        let obi_val = self.feature_engines[coin_id].obi_accel.prev_obi;
+                        let hurst_val = self.feature_engines[coin_id].hurst_macro as f64;
+                        storage_engine::mmap_bus::write_prediction_vs_reality_ext(
                             ml_at_entry,
                             is_long,
                             cap_pct,
                             atr_pct,
+                            obi_val,
+                            hurst_val,
                         );
                     }
                     self.diag_close_wins += is_win as u64;
@@ -1593,20 +1597,42 @@ impl GodEngineCore {
                         // de todas las operaciones.
                         let p_win_at_entry = if is_long { ml_at_entry } else { 1.0 - ml_at_entry };
                         if coin_id < self.conformal_by_coin.len() {
-                        self.conformal_by_coin[coin_id].update(p_win_at_entry, is_win);
-                    } else {
-                        self.conformal.update(p_win_at_entry, is_win);
-                    }
+                            self.conformal_by_coin[coin_id].update(p_win_at_entry, is_win);
+                        } else {
+                            self.conformal.update(p_win_at_entry, is_win);
+                        }
                     }
                     // D-619: el calibrador aprende de la puntuación CRUDA y del
                     // resultado neto de comisiones. Nunca de su propia salida.
                     if score_at_entry > 0.0 {
                         if coin_id < self.calibrator_by_coin.len() {
-                        self.calibrator_by_coin[coin_id].update(score_at_entry, is_win);
-                    } else {
-                        self.confidence_calibrator.update(score_at_entry, is_win);
+                            self.calibrator_by_coin[coin_id].update(score_at_entry, is_win);
+                        } else {
+                            self.confidence_calibrator.update(score_at_entry, is_win);
+                        }
                     }
-                    }
+
+                    // #25: Actualización del motor de refuerzo continuo PPO (OnlinePpoPolicyEngine)
+                    let ppo_reward = net_trade_pnl / (entry * qty).max(1e-8);
+                    let action_sign = if is_long { 1.0 } else { -1.0 };
+                    let fe_c = &self.feature_engines[coin_id];
+                    let state_feats = [
+                        fe_c.ofi_model.ema_ofi,
+                        fe_c.obi_accel.prev_obi,
+                        fe_c.cvpin.current_vpin(),
+                        0.0,
+                        fe_c.a_t,
+                    ];
+                    self.ppo_engine.update_policy(
+                        ppo_reward,
+                        &state_feats,
+                        action_sign,
+                        1.0,
+                        0.05,
+                        0.01,
+                        0.20,
+                        0.01,
+                    );
 
                     // D-680 (DÉCIMA OLA): media posterior con prior de diseño. Antes
                     // `n` empezaba en 1 y la primera operación sobrescribía el
@@ -2500,9 +2526,9 @@ impl GodEngineCore {
             let mut fast_intent = SignalIntent::flat();
             let raw_fast_base = self.arena.config.base_duration_ms.load(Ordering::Relaxed);
             let fast_duration_ms = if raw_fast_base.is_finite() && raw_fast_base > 0.0 {
-                (raw_fast_base as u64).clamp(15_000, 120_000)
+                (raw_fast_base as u64).clamp(180_000, 300_000)
             } else {
-                60_000
+                180_000
             };
             let spread_pct = if mid_price > 0.0 {
                 (ask - bid) / mid_price
@@ -4172,10 +4198,19 @@ impl GodEngineCore {
                                     .get(coin_id)
                                     .map(|s| s.dominant_tau_ms)
                                     .unwrap_or(60_000.0);
-                                // #542: Derivación dinámica de horizonte basada en espectro tau continuo
-                                let pos_h = if calibrated_intent.expected_duration_ms >= 1_800_000
-                                    || tau_coin >= 1_800_000.0
+                                // #542 / #543: Derivación estricta de horizonte basada en la intención del trade.
+                                // La intención de scalping (ramas 1 a 12, volume_flow_rate < 13.0) opera en microestructura
+                                // y NUNCA debe sobreescribirse a Swing por la escala macro del activo.
+                                let pos_h = if calibrated_intent.volume_flow_rate >= 13.0
+                                    || calibrated_intent.expected_duration_ms >= 1_800_000
                                 {
+                                    quantum_arena::position::PositionHorizon::Swing
+                                } else if calibrated_intent.volume_flow_rate > 0.0
+                                    || (calibrated_intent.expected_duration_ms > 0
+                                        && calibrated_intent.expected_duration_ms < 1_800_000)
+                                {
+                                    quantum_arena::position::PositionHorizon::Scalping
+                                } else if tau_coin >= 1_800_000.0 {
                                     quantum_arena::position::PositionHorizon::Swing
                                 } else {
                                     quantum_arena::position::PositionHorizon::Scalping
@@ -4223,13 +4258,13 @@ impl GodEngineCore {
                                     calibrated_intent.expected_duration_ms
                                 } else {
                                     match pos_h {
-                                        quantum_arena::position::PositionHorizon::Scalping => 60_000,
+                                        quantum_arena::position::PositionHorizon::Scalping => 180_000,
                                         quantum_arena::position::PositionHorizon::Swing => 3_600_000,
                                         _ => self
                                             .temporal_spectrum
                                             .get(coin_id)
                                             .map(|s| s.dominant_tau_ms as u64)
-                                            .unwrap_or(60_000),
+                                            .unwrap_or(180_000),
                                     }
                                 };
                                 coin.positions

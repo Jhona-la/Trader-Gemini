@@ -864,10 +864,10 @@ fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
     if intent.expected_duration_ms > 0 {
         return intent.expected_duration_ms as f64;
     }
-    // D-740: Si la intención no declaró duración explícita, diferenciar por flujo:
-    // Scalp rápido (ramas 1 a 12, volume_flow_rate < 13.0) opera en banda rápida (~60s).
+    // D-740 / #543: Si la intención no declaró duración explícita, diferenciar por flujo:
+    // Scalp rápido (ramas 1 a 12, volume_flow_rate < 13.0) opera en banda rápida (180s = 3m).
     if intent.volume_flow_rate > 0.0 && intent.volume_flow_rate < 13.0 {
-        quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.max(60_000.0)
+        quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.max(180_000.0)
     } else {
         let s = arena
             .config

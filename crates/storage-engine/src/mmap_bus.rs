@@ -54,6 +54,18 @@ pub fn init_global_telemetry(path: &str) {
 /// Escribe un frame de predicción-vs-realidad al bus global (si inicializado).
 /// No-op si el bus no existe (compatible con tests y backtests sin telemetría).
 pub fn write_prediction_vs_reality(ml_prob: f64, is_long: bool, net_pnl_pct: f64, atr_pct: f64) {
+    write_prediction_vs_reality_ext(ml_prob, is_long, net_pnl_pct, atr_pct, 0.0, 0.50);
+}
+
+/// #23: Escribe predicción-vs-realidad con el vector completo de 6 variables microestructurales
+pub fn write_prediction_vs_reality_ext(
+    ml_prob: f64,
+    is_long: bool,
+    net_pnl_pct: f64,
+    atr_pct: f64,
+    obi: f64,
+    hurst: f64,
+) {
     if let Some(Some(bus)) = GLOBAL_TELEMETRY_WRITER.get() {
         bus.write_trace(
             SUBSYSTEM_TENSOR_PREDICTOR,
@@ -61,10 +73,10 @@ pub fn write_prediction_vs_reality(ml_prob: f64, is_long: bool, net_pnl_pct: f64
             [
                 ml_prob,
                 if is_long { 1.0 } else { 0.0 },
-                0.0,
+                obi,
                 net_pnl_pct,
                 atr_pct,
-                0.0,
+                hurst,
             ],
         );
     }
