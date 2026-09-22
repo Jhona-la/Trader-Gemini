@@ -268,7 +268,7 @@ impl Position {
             PositionHorizon::Scalping => 1,
             PositionHorizon::Swing => 2,
         };
-        self.horizon.store(h_val, Ordering::Relaxed);
+        self.horizon.store(h_val, Ordering::Release);
         self.entry_price.store(safe_price, Ordering::Relaxed);
         self.quantity.store(safe_qty, Ordering::Relaxed);
         self.margin_used.store(safe_margin, Ordering::Relaxed);

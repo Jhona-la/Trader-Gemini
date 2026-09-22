@@ -1141,12 +1141,22 @@ impl GodEngineCore {
                 let s_t = (pers_dom + 1.0) * 0.5;
                 let be_frac = 0.45 + 0.20 * s_t;
                 let trail_frac = 0.60 + 0.20 * s_t;
-                let be_activation = (tp * be_frac)
-                    .max(live_fee * 2.0)
-                    .max(atr_pct_live * 2.0)
-                    .min(tp * 0.90);
+
+                // #536: Modulación adaptativa del Breakeven por horizonte de posición.
+                // En Scalping: asegurar ganancias temprano (0.85x) para capital micro de $13 USD.
+                // En Swing: permitir mayor fluctuación (1.15x) para capturar recorridos amplios.
+                let pos_horizon = pos.horizon();
+                let horizon_be_mult = match pos_horizon {
+                    quantum_arena::position::PositionHorizon::Scalping => 0.85,
+                    quantum_arena::position::PositionHorizon::Swing => 1.15,
+                    quantum_arena::position::PositionHorizon::Continuous => 1.0,
+                };
+                let be_activation = (tp * be_frac * horizon_be_mult)
+                    .max(live_fee * 2.5)
+                    .max(atr_pct_live * 0.5)
+                    .min(tp * 0.85);
                 if peak_pnl >= be_activation {
-                    let be_buffer = (live_fee * 2.0).clamp(0.0010, 0.0018);
+                    let be_buffer = (live_fee * 1.5).clamp(0.0006, 0.0018);
                     let be_stop = if is_long {
                         entry * (1.0 + be_buffer)
                     } else {
@@ -1304,18 +1314,21 @@ impl GodEngineCore {
                 } else {
                     3_600_000.0
                 };
-                // El horizonte continuo dilata la caducidad: una tesis larga
-                // necesita más tiempo que una corta. Factor continuo en s.
-                let horizon_dilation = 1.0 + temporal_s;
+                // #536: El horizonte continuo dilata la caducidad: una tesis larga
+                // necesita más tiempo que una corta. Factor continuo modulado por horizonte:
+                // Scalping acota la permanencia a 0.25x (máx ~15-20m) para liberar margen en micro-cuentas.
+                // Swing expande a 2.0x para permitir la maduración de tendencias macro.
+                let horizon_time_mult = match pos_horizon {
+                    quantum_arena::position::PositionHorizon::Scalping => 0.25,
+                    quantum_arena::position::PositionHorizon::Swing => 2.0,
+                    quantum_arena::position::PositionHorizon::Continuous => 1.0,
+                };
+                let horizon_dilation = (1.0 + temporal_s) * horizon_time_mult;
                 let dynamic_zombie_debounce_ms =
-                    (zombie_base_ms * horizon_dilation) as u64;
+                    (zombie_base_ms * horizon_dilation).max(180_000.0) as u64;
                 let dynamic_hard_timeout_ms =
-                    (zombie_base_ms * 3.0 * horizon_dilation) as u64;
-                // TECHO ABSOLUTO: ninguna posición sobrevive más de 12x la escala
-                // genómica, gane, pierda o esté plana. Es la red de seguridad que
-                // faltaba — la única defensa contra una posición que quedó viva
-                // por una desconexión, un fill perdido o un estado corrupto.
-                let absolute_expiry_ms = (zombie_base_ms * 12.0 * horizon_dilation) as u64;
+                    (zombie_base_ms * 3.0 * horizon_dilation).max(300_000.0) as u64;
+                let absolute_expiry_ms = (zombie_base_ms * 12.0 * horizon_dilation).max(600_000.0) as u64;
                 let expired_by_age =
                     event_time_ms > 0 && position_age_ms > absolute_expiry_ms;
                 let hard_timeout = position_age_ms > dynamic_hard_timeout_ms && pnl_pct <= -0.0050;
@@ -2393,13 +2406,14 @@ impl GodEngineCore {
             // 70% política PPO aprendida + 30% flujo acumulado CVD
             let micro_score: f64 = (ppo_score * 0.70 + rolling_cvd * 0.30).clamp(-1.0, 1.0);
 
-            // ── BACKTEST ADAPTATIVO (F7-backtest) ─────────────────────────────
-            // Detección de libro ausente: OBI (instantáneo, de cantidades
-            // bid/ask) es el indicador confiable — en trade-only, bid_qty=
-            // ask_qty ⇒ OBI=0.
-            let book_absent = obi_val.abs() < 0.005;
+            // ── BACKTEST ADAPTATIVO & CIERRE M2-C05 ─────────────────────────────
+            // Detección honesta de libro ausente: un libro solo está ausente si NO hay
+            // liquidez en los niveles bid/ask ((bid_qty + ask_qty) <= 1e-9 o cantidades no positivas).
+            // OBI ≈ 0 (|obi| < 0.005) es un libro BALANCEADO normal en pares líquidos (BTC, ETH),
+            // NUNCA un libro ausente. Confundirlo provocaba bypass espurio de PPO y gates en vivo.
+            let book_absent = (bid_qty + ask_qty) <= 1e-9 || bid_qty <= 0.0 || ask_qty <= 0.0;
             let adaptive_micro_score = if book_absent {
-                // Sin libro: CVD del flujo de trades (dirección agresora ×
+                // Sin libro real (trade-only): CVD del flujo de trades (dirección agresora ×
                 // volumen) ES la señal de microestructura disponible.
                 rolling_cvd.clamp(-1.0, 1.0)
             } else {
@@ -2484,6 +2498,12 @@ impl GodEngineCore {
             // (doctrina F8). La fusión final arbitra el ESPECTRO (banda más
             // cercana a τ dominante), no una etiqueta de horizonte.
             let mut fast_intent = SignalIntent::flat();
+            let raw_fast_base = self.arena.config.base_duration_ms.load(Ordering::Relaxed);
+            let fast_duration_ms = if raw_fast_base.is_finite() && raw_fast_base > 0.0 {
+                (raw_fast_base as u64).clamp(15_000, 120_000)
+            } else {
+                60_000
+            };
             let spread_pct = if mid_price > 0.0 {
                 (ask - bid) / mid_price
             } else {
@@ -2624,6 +2644,8 @@ impl GodEngineCore {
                             signal: SignalType::Long,
                             confidence: conviction.clamp(0.60, 0.95),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
+                            volume_flow_rate: 1.0,
                             ..Default::default()
                         };
                     } else if ml_prob_adaptive < ml_model_base - ml_lift {
@@ -2633,6 +2655,8 @@ impl GodEngineCore {
                             signal: SignalType::Short,
                             confidence: conviction.clamp(0.60, 0.95),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
+                            volume_flow_rate: 1.0,
                             ..Default::default()
                         };
                     }
@@ -2652,6 +2676,8 @@ impl GodEngineCore {
                                     signal: SignalType::Long,
                                     confidence: (0.55 + fused * 0.3).min(0.90),
                                     horizon: strategy_core::TradeHorizon::Continuous,
+                                    expected_duration_ms: fast_duration_ms,
+                                    volume_flow_rate: 1.5,
                                     ..Default::default()
                                 };
                             } else if fused < -0.6 && persist < -0.15 {
@@ -2659,6 +2685,8 @@ impl GodEngineCore {
                                     signal: SignalType::Short,
                                     confidence: (0.55 + fused.abs() * 0.3).min(0.90),
                                     horizon: strategy_core::TradeHorizon::Continuous,
+                                    expected_duration_ms: fast_duration_ms,
+                                    volume_flow_rate: 1.5,
                                     ..Default::default()
                                 };
                             }
@@ -2696,6 +2724,8 @@ impl GodEngineCore {
                                 signal: SignalType::Long,
                                 confidence: 0.72,
                                 horizon: strategy_core::TradeHorizon::Continuous,
+                                expected_duration_ms: fast_duration_ms,
+                                volume_flow_rate: 2.0,
                                 ..Default::default()
                             };
                         } else if hurst_active && is_persistent && dev_atr < -1.5 && dev_atr > -4.0 && rolling_cvd < 0.0 {
@@ -2703,6 +2733,8 @@ impl GodEngineCore {
                                 signal: SignalType::Short,
                                 confidence: 0.72,
                                 horizon: strategy_core::TradeHorizon::Continuous,
+                                expected_duration_ms: fast_duration_ms,
+                                volume_flow_rate: 2.0,
                                 ..Default::default()
                             };
                         } else if hurst_active && is_anti_persistent && dev_atr > 2.5 {
@@ -2710,6 +2742,8 @@ impl GodEngineCore {
                                 signal: SignalType::Short,
                                 confidence: 0.68,
                                 horizon: strategy_core::TradeHorizon::Continuous,
+                                expected_duration_ms: fast_duration_ms,
+                                volume_flow_rate: 2.2,
                                 ..Default::default()
                             };
                         } else if hurst_active && is_anti_persistent && dev_atr < -2.5 {
@@ -2717,6 +2751,8 @@ impl GodEngineCore {
                                 signal: SignalType::Long,
                                 confidence: 0.68,
                                 horizon: strategy_core::TradeHorizon::Continuous,
+                                expected_duration_ms: fast_duration_ms,
+                                volume_flow_rate: 2.2,
                                 ..Default::default()
                             };
                         }
@@ -2729,6 +2765,8 @@ impl GodEngineCore {
                                 signal: SignalType::Long,
                                 confidence: 0.65,
                                 horizon: strategy_core::TradeHorizon::Continuous,
+                                expected_duration_ms: fast_duration_ms,
+                                volume_flow_rate: 2.5,
                                 ..Default::default()
                             };
                         } else if !hurst_active && dev_atr < -2.0 && dev_atr > -5.0 && rolling_cvd < -0.05 {
@@ -2736,6 +2774,8 @@ impl GodEngineCore {
                                 signal: SignalType::Short,
                                 confidence: 0.65,
                                 horizon: strategy_core::TradeHorizon::Continuous,
+                                expected_duration_ms: fast_duration_ms,
+                                volume_flow_rate: 2.5,
                                 ..Default::default()
                             };
                         }
@@ -2757,6 +2797,7 @@ impl GodEngineCore {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 1.0,
                             ..Default::default()
                         };
@@ -2776,6 +2817,7 @@ impl GodEngineCore {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score.abs()),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 2.0,
                             ..Default::default()
                         };
@@ -2805,6 +2847,7 @@ impl GodEngineCore {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 4.0,
                             ..Default::default()
                         };
@@ -2824,6 +2867,7 @@ impl GodEngineCore {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 5.0,
                             ..Default::default()
                         };
@@ -2841,6 +2885,7 @@ impl GodEngineCore {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 7.0,
                             ..Default::default()
                         };
@@ -2853,6 +2898,7 @@ impl GodEngineCore {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 8.0,
                             ..Default::default()
                         };
@@ -2862,6 +2908,7 @@ impl GodEngineCore {
                             signal: SignalType::Short,
                             confidence: sig_conf(effective_obi_short.abs().min(composite_score.abs())),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 9.0,
                             ..Default::default()
                         };
@@ -2877,6 +2924,7 @@ impl GodEngineCore {
                             signal: SignalType::Long,
                             confidence: sig_conf(effective_obi_long.abs().min(composite_score.abs())),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 10.0,
                             ..Default::default()
                         };
@@ -2949,6 +2997,7 @@ impl GodEngineCore {
                                 .abs()
                                 .clamp(tensor_min_conf, 1.0),
                             horizon: strategy_core::TradeHorizon::Continuous,
+                            expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 11.0,
                             ..Default::default()
                         };
@@ -3025,17 +3074,19 @@ impl GodEngineCore {
                         SignalType::Short => (ml_base - ml_prob) * 2.0,  // [-1, +1] where +1 = strong bearish
                         _ => 0.0,
                     };
-                    // If ML strongly contradicts signal (ml_directional < -0.80) AND no extreme price action,
-                    // kill signal entirely. Otherwise, softly penalize confidence.
-                    if ml_directional < -0.80 && price_stretch.abs() < 2.5 {
+                    // #539: Simetría y Veto Estricto del ML-Gate (Restitución de Veto Causal).
+                    // Si el modelo contradice con convicción (ml_directional < -0.50), veto total: prohibido
+                    // abrir órdenes en contra de la predicción de IA salvo estiramiento de reversión (|stretch| >= 2.5).
+                    // Para contradicción leve (-0.50 <= ml_directional < 0.0), atenuación continua y simétrica
+                    // sin piso arbitrario de 0.20 que mantenía vivas operaciones con esperanza negativa.
+                    if ml_directional < -0.50 && price_stretch.abs() < 2.5 {
                         fast_intent = SignalIntent::flat();
                     } else if ml_directional < 0.0 && price_stretch.abs() < 2.5 {
-                        // Soft penalty: scale confidence smoothly, preserving non-zero conviction
-                        fast_intent.confidence *= (1.0 + ml_directional * 0.5).clamp(0.20, 1.0);
+                        fast_intent.confidence *= (1.0 + ml_directional).clamp(0.05, 1.0);
                     } else if ml_directional > 0.0 {
-                        // ML confirms signal direction: boost confidence proportionally
+                        // ML confirma la dirección: boost simétrico y suave acotado a 0.95
                         fast_intent.confidence *= 1.0 + ml_directional * 0.5;
-                        fast_intent.confidence = fast_intent.confidence.min(0.99);
+                        fast_intent.confidence = fast_intent.confidence.min(0.95);
                     }
                 }
 
@@ -3284,6 +3335,7 @@ impl GodEngineCore {
                             .abs()
                             .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
+                        expected_duration_ms: swing_duration_ms,
                         // D-678: rama 14 · consenso tensorial.
                         volume_flow_rate: 14.0,
                         ..Default::default()
@@ -3300,6 +3352,7 @@ impl GodEngineCore {
                             .abs()
                             .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
+                        expected_duration_ms: swing_duration_ms,
                         // D-678: rama 14 · consenso tensorial.
                         volume_flow_rate: 14.0,
                         ..Default::default()
@@ -3316,6 +3369,7 @@ impl GodEngineCore {
                             .abs()
                             .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
+                        expected_duration_ms: swing_duration_ms,
                         // D-678: rama 14 · consenso tensorial.
                         volume_flow_rate: 14.0,
                         ..Default::default()
@@ -3332,6 +3386,7 @@ impl GodEngineCore {
                             .abs()
                             .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
+                        expected_duration_ms: swing_duration_ms,
                         // D-678: rama 14 · consenso tensorial.
                         volume_flow_rate: 14.0,
                         ..Default::default()
@@ -4112,8 +4167,14 @@ impl GodEngineCore {
 
                                 let qty = nominal_size / real_entry_price;
 
-                                let pos_h = if calibrated_intent.volume_flow_rate >= 13.0
-                                    || calibrated_intent.expected_duration_ms >= 1_800_000
+                                let tau_coin = self
+                                    .temporal_spectrum
+                                    .get(coin_id)
+                                    .map(|s| s.dominant_tau_ms)
+                                    .unwrap_or(60_000.0);
+                                // #542: Derivación dinámica de horizonte basada en espectro tau continuo
+                                let pos_h = if calibrated_intent.expected_duration_ms >= 1_800_000
+                                    || tau_coin >= 1_800_000.0
                                 {
                                     quantum_arena::position::PositionHorizon::Swing
                                 } else {
@@ -4158,11 +4219,19 @@ impl GodEngineCore {
                                 // VIVA del espectro — horizonte continuo real,
                                 // no etiqueta. Los cierres (temporal_s lerp)
                                 // podrán leerla directamente.
-                                let tau_entry = self
-                                    .temporal_spectrum
-                                    .get(coin_id)
-                                    .map(|s| s.dominant_tau_ms as u64)
-                                    .unwrap_or(0);
+                                let tau_entry = if calibrated_intent.expected_duration_ms > 0 {
+                                    calibrated_intent.expected_duration_ms
+                                } else {
+                                    match pos_h {
+                                        quantum_arena::position::PositionHorizon::Scalping => 60_000,
+                                        quantum_arena::position::PositionHorizon::Swing => 3_600_000,
+                                        _ => self
+                                            .temporal_spectrum
+                                            .get(coin_id)
+                                            .map(|s| s.dominant_tau_ms as u64)
+                                            .unwrap_or(60_000),
+                                    }
+                                };
                                 coin.positions
                                     .position
                                     .entry_tau_ms

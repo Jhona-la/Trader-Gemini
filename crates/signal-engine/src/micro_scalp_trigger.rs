@@ -41,7 +41,17 @@ impl MicroScalpTriggerEngine {
         let ml_long_thresh = arena.config.ml_threshold_long.load(Ordering::Relaxed);
         let ml_short_thresh = arena.config.ml_threshold_short.load(Ordering::Relaxed);
 
-        let hawkes_ok = hawkes_ratio >= hawkes_thresh;
+        // #535: Recalibración adaptativa del umbral de Hawkes contra el proceso Hawkes real (λ/μ).
+        // En el proceso auto-excitado real, la línea base es 1.0. Si hawkes_thresh está en el rango
+        // genético [0.50, 0.95], se mapea a exceso de excitación sobre la línea base:
+        // [1.00, 1.90] (0.50 => 1.0x baseline, 0.55 default => 1.10x baseline, 10% excitación).
+        // Si hawkes_thresh >= 1.0, se consume directamente como ratio absoluto.
+        let effective_hawkes_thresh = if hawkes_thresh < 1.0 {
+            1.0 + (hawkes_thresh - 0.50).max(0.0) * 2.0
+        } else {
+            hawkes_thresh
+        };
+        let hawkes_ok = hawkes_ratio >= effective_hawkes_thresh;
         let obi_ok = if is_long {
             obi_zscore >= obi_thresh
         } else {

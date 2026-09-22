@@ -749,19 +749,19 @@ impl LiveEvolutionDaemon {
             .latency_ms_panic_threshold
             .load(Ordering::Relaxed)
             .clamp(10.0, 5_000.0);
-        // ATR del GEN (dynamic_atr_min), no un literal — el genoma decide el
-        // piso de volatilidad con el que se cotiza la fricción.
-        let atr_g = current_genome.dynamic_atr_min.max(0.0005);
-        let lat_slip_g = (atr_g * (lat_g / lat_ref_g)).clamp(0.0, 0.01);
+        // D-645 / CERT-PARIDAD: unificación estricta de fricción con el host vivo (god_engine.rs:3920-3931).
+        // 1. Usar volatilidad real observada de la ventana bounded por el dynamic_atr_min del genoma.
+        let atr_g = volatility.max(current_genome.dynamic_atr_min.max(0.0005));
+        // 2. lat_slip_g clamp a 0.05 (idéntico a god_engine.rs:3928 y lib.rs:1074, antes 0.01).
+        let lat_slip_g = (atr_g * (lat_g / lat_ref_g)).clamp(0.0, 0.05);
         let taker_g = self
             .arena
             .config
             .live_taker_fee
             .load(Ordering::Relaxed)
-            .max(0.0004);
-        // D-645: roundtrip completo a taker — idéntico al EV gate del vivo.
-        let roundtrip_fee =
-            (taker_g * 2.0) + 2.0 * (slip_floor_g + lat_slip_g).clamp(0.0, 0.01);
+            .max(0.0001);
+        // 3. Fricción roundtrip: idéntica a la del host vivo (sin techo artificial de suma que subestimaba el slippage).
+        let roundtrip_fee = (taker_g * 2.0) + 2.0 * (slip_floor_g + lat_slip_g);
 
         // R7-8 (des-rigidización por DERIVACIÓN): el capital semilla del
         // walk-forward era el literal 13.0 — un genoma evaluado a escala de

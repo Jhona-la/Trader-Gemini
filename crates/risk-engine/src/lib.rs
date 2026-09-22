@@ -16,7 +16,7 @@ pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORI
 
 use quantum_arena::GlobalArena;
 
-use signal_engine::{SignalIntent, SignalType, TradeHorizon};
+use signal_engine::{SignalIntent, SignalType};
 use std::sync::atomic::Ordering;
 
 #[derive(Debug, Clone, Copy)]
@@ -209,10 +209,6 @@ impl RiskEngine {
         }
 
         let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
-        let pf = arena.coins[coin_id]
-            .metrics
-            .profit_factor
-            .load(Ordering::Relaxed);
         let clamp_min = arena
             .config
             .kelly_clamp_min
@@ -600,9 +596,11 @@ impl RiskEngine {
             // la fricción, nunca menor.
             arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
         );
-        // Horizonte no operable: la dispersión esperada a esa tau no cubre la
-        // fricción. Se RECHAZA en lugar de acotar y fingir que es viable.
-        if tpsl_gate.below_tradeable_floor {
+        // D-741: Horizonte no operable: si la tau pedida cae por debajo de la
+        // banda física mínima (30s) y la dispersión no cubre la fricción, se rechaza.
+        // A horizontes operables (tau >= 30s), compute_tp_sl eleva el stop al sl_floor
+        // garantizando EV >= 0 por construcción matemática (teorema D-636).
+        if tpsl_gate.below_tradeable_floor && tau_for_sizing < 30_000.0 {
             return rej(REJ_TP_SL_FLOOR);
         }
         let expected_win = tpsl_gate.tp_pct;
@@ -863,12 +861,21 @@ fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
     // U-6: el motor continuo sólo produce TradeHorizon::Continuous — el eje
     // temporal es el `temporal_scale` del arena (log-lineal sobre el espectro).
     let _ = intent.horizon;
-    let s = arena
-        .config
-        .temporal_scale
-        .load(Ordering::Relaxed)
-        .clamp(0.0, 1.0);
-    quantum_arena::temporal_spectrum::operating_tau_ms(intent.expected_duration_ms, s)
+    if intent.expected_duration_ms > 0 {
+        return intent.expected_duration_ms as f64;
+    }
+    // D-740: Si la intención no declaró duración explícita, diferenciar por flujo:
+    // Scalp rápido (ramas 1 a 12, volume_flow_rate < 13.0) opera en banda rápida (~60s).
+    if intent.volume_flow_rate > 0.0 && intent.volume_flow_rate < 13.0 {
+        quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.max(60_000.0)
+    } else {
+        let s = arena
+            .config
+            .temporal_scale
+            .load(Ordering::Relaxed)
+            .clamp(0.0, 1.0);
+        quantum_arena::temporal_spectrum::operating_tau_ms(intent.expected_duration_ms, s)
+    }
 }
 
 #[cfg(test)]

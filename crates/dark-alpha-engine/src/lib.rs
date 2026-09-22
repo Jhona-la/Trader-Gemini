@@ -412,6 +412,23 @@ pub struct Scaler {
     pub std_dev: Vec<f64>,
 }
 
+/// #540: Winsorización hiperbólica suave en colas extremas (|z| > 3.0).
+/// Preserva la identidad exacta en la región normal (|z| <= 3.0) para mantener paridad
+/// matemática con features estándar (evitando distorsión en z ordinarios),
+/// y comprime suavemente las colas (|z| > 3.0) con continuidad C1:
+/// f(z) = sign(z) * (3.0 + tanh(|z| - 3.0)), acotando asintóticamente en (-4.0, 4.0) sin discontinuidades
+/// ni destrucción de gradientes por truncamiento plano.
+#[inline(always)]
+pub fn soft_tail_winsorize(z: f64) -> f64 {
+    if !z.is_finite() {
+        0.0
+    } else if z.abs() <= 3.0 {
+        z
+    } else {
+        z.signum() * (3.0 + (z.abs() - 3.0).tanh())
+    }
+}
+
 impl Scaler {
     pub fn new(mean: Vec<f64>, std_dev: Vec<f64>) -> Self {
         Self { mean, std_dev }
@@ -436,13 +453,15 @@ impl Scaler {
                 } else {
                     0.0
                 };
-                let scaled = if s > 1e-4 { (feat - m) / s } else { 0.0 };
-                // D-411: Preservar Z-scores causales individuales acotados en [-3.0, 3.0]
-                features[i] = if scaled.is_finite() {
-                    scaled.clamp(-3.0, 3.0)
+                let scaled = if s > 1e-4 {
+                    (feat - m) / s
+                } else if s > 1e-6 {
+                    (feat - m) / 1e-4
                 } else {
                     0.0
                 };
+                // #540: Winsorización suave C1 con preservación de identidad en [-3.0, 3.0]
+                features[i] = soft_tail_winsorize(scaled);
             }
         }
     }
@@ -736,10 +755,9 @@ impl DarkAlphaEngine {
                     };
                 }
 
-                // D-411: Preservar Z-scores causales individuales por canal Welford acotados en [-3.0, 3.0]
-                // sin contaminación espacial transversal que comprima canales técnicos ante picos de volumen.
+                // #540: Winsorización suave C1 por canal Welford acotada en (-4.0, 4.0) sin truncar colas
                 for v in self.buf_scaled[..in_dim].iter_mut() {
-                    *v = (*v).clamp(-3.0, 3.0);
+                    *v = soft_tail_winsorize(*v);
                 }
             }
 
@@ -836,10 +854,9 @@ impl DarkAlphaEngine {
                 };
             }
 
-            // D-411: Preservar Z-scores causales individuales por canal Welford acotados en [-3.0, 3.0]
-            // sin contaminación espacial transversal que comprima canales técnicos ante picos de volumen.
+            // #540: Winsorización suave C1 por canal Welford acotada en (-4.0, 4.0) sin truncar colas
             for v in self.buf_scaled[..in_dim].iter_mut() {
-                *v = (*v).clamp(-3.0, 3.0);
+                *v = soft_tail_winsorize(*v);
             }
         }
 
@@ -928,9 +945,9 @@ impl DarkAlphaEngine {
                         };
                         scaled_features[i] = self.channel_normalizers[i].normalize(raw);
                     }
-                    // D-411: Preservar Z-scores causales individuales por canal Welford acotados en [-3.0, 3.0]
+                    // #540: Winsorización suave C1 por canal Welford acotada en (-4.0, 4.0) sin truncar colas
                     for v in scaled_features[..in_dim].iter_mut() {
-                        *v = (*v).clamp(-3.0, 3.0);
+                        *v = soft_tail_winsorize(*v);
                     }
                 }
 
