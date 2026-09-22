@@ -104,6 +104,8 @@ pub struct GodEngineCore {
     pub online_learner: metacortex_engine::online_learning::OnlineLearningModule,
     /// #26: Sistema inmune vivo para registro y amortiguación de traumas de predicción
     pub immune_system: metacortex_engine::immune_system::LivingImmuneSystem,
+    /// #15: Auditor forense ShadowGraph para detección lock-free de concept drift
+    pub shadow_auditor: std::sync::Arc<metacortex_engine::shadow_graph_auditor::ShadowGraphAuditor>,
     /// Cache de generación del genoma aplicado: refresh_models solo
     /// re-aplica el envelope de disco si su generación es MÁS NUEVA que la
     /// última aplicada. Antes re-aplicaba ciegamente cada 1000 ticks y PISABA
@@ -294,6 +296,9 @@ impl GodEngineCore {
             ppo_engine,
             online_learner,
             immune_system: metacortex_engine::immune_system::LivingImmuneSystem::new("."),
+            shadow_auditor: std::sync::Arc::new(
+                metacortex_engine::shadow_graph_auditor::ShadowGraphAuditor::new(),
+            ),
             applied_generation: std::sync::atomic::AtomicU64::new(0),
             genomes_mtime: None,
             conformal: conformal::ConformalCalibrator::new(),
@@ -329,6 +334,11 @@ impl GodEngineCore {
         }
         let init_cap = self.arena.config.base_capital.load(Ordering::Relaxed);
         self.risk_engine.reset(init_cap);
+    }
+
+    /// #15: Evalúa si el drift de predicción o las anomalías acumuladas requieren reentrenamiento urgente
+    pub fn evaluate_system_drift(&self) -> bool {
+        self.shadow_auditor.evaluate_system_drift()
     }
 
     pub fn set_model_rx(
@@ -1808,6 +1818,23 @@ impl GodEngineCore {
                         };
                         let _ = self.immune_system.record_trauma(&record);
                     }
+
+                    // #15: Auditor forense ShadowGraph (Metacórtex Concept Drift)
+                    let pnl_drift = realized_ret - (ml_at_entry - 0.5) * 2.0 * 0.01;
+                    let actual_slippage = if mid_price > 0.0 {
+                        (exit_price - mid_price).abs() / mid_price
+                    } else {
+                        0.0
+                    };
+                    self.shadow_auditor.record_event(
+                        metacortex_engine::shadow_graph_auditor::ShadowEvent {
+                            tick_id: event_time_ms,
+                            expected_prob: ml_at_entry,
+                            actual_slippage,
+                            latency_ms: 0,
+                            pnl_drift,
+                        },
+                    );
 
                     // D-190: Evitar contaminación cruzada en Hebbian. Escopar por símbolo con fallback global.
                     let hebb_key = format!("{}_hebbian_weight", sym);

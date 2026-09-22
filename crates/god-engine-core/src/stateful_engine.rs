@@ -106,6 +106,9 @@ pub struct StatefulEngine {
     pub jerk_t: f64,
     /// #20: Red neuronal SIMD MLP ultraligera para inferencia vectorial AVX2 en L1 cache
     pub simd_nn: feature_engine::SimdNeuralNet,
+    /// #16: Motor estocástico Hawkes de auto-excitación y clustering de flujo de órdenes
+    pub hawkes: feature_engine::HawkesProcessEngine,
+    pub last_hawkes_ratio: f64,
 }
 
 impl Default for StatefulEngine {
@@ -170,6 +173,8 @@ impl StatefulEngine {
             price_ring: feature_engine::TensorRing::new(),
             jerk_t: 0.0,
             simd_nn: feature_engine::SimdNeuralNet::default(),
+            hawkes: feature_engine::HawkesProcessEngine::new(0.05, 0.35, 1.5),
+            last_hawkes_ratio: 0.0,
         }
     }
 
@@ -281,6 +286,8 @@ impl StatefulEngine {
         self.price_ring = feature_engine::TensorRing::new();
         self.jerk_t = 0.0;
         self.simd_nn = feature_engine::SimdNeuralNet::default();
+        self.hawkes = feature_engine::HawkesProcessEngine::new(0.05, 0.35, 1.5);
+        self.last_hawkes_ratio = 0.0;
     }
 
     /// Processes a new tick internally in f64
@@ -469,8 +476,32 @@ impl StatefulEngine {
             }
         }
 
+        // #16: Auto-excitación estocástica de Hawkes (clustering de flujo)
+        let vol_usd = _volume.max(0.0) * price;
+        let (_, _, hawkes_r) = self.hawkes.update(
+            event_time_ms,
+            self.ofi_model.ema_ofi,
+            vol_usd,
+            10_000.0,
+        );
+        self.last_hawkes_ratio = hawkes_r;
+
         self.last_price = price;
         self.tick_count += 1;
+    }
+
+    /// #16: Actualiza el proceso de auto-excitación de Hawkes con timestamps y OFI
+    #[inline(always)]
+    pub fn update_hawkes(
+        &mut self,
+        timestamp_ms: u64,
+        delta_ofi: f64,
+        volume_usd: f64,
+        volume_norm: f64,
+    ) -> (f64, f64, f64) {
+        let res = self.hawkes.update(timestamp_ms, delta_ofi, volume_usd, volume_norm);
+        self.last_hawkes_ratio = res.2;
+        res
     }
 
     pub fn update_trade_flow(&mut self, volume: f64, is_buyer_maker: bool) {
@@ -1140,5 +1171,28 @@ mod tests {
         for val in &buffer[0..5] {
             assert!(val.is_finite());
         }
+    }
+
+    #[test]
+    fn test_hawkes_integration_in_stateful_engine() {
+        let mut engine = StatefulEngine::new();
+        assert_eq!(engine.last_hawkes_ratio, 0.0);
+
+        // Actualizar con un tick normal
+        engine.process_tick(50000.0, 0.5, 1000);
+        assert!(engine.last_hawkes_ratio.is_finite());
+
+        // Inyectar ráfagas alcistas intensas con OFI positivo
+        for i in 1..=10 {
+            let ts = 1000 + i * 50;
+            engine.update_hawkes(ts, 0.8, 25000.0, 10000.0);
+        }
+        assert!(engine.last_hawkes_ratio > 0.0, "La ráfaga alcista debe inducir Hawkes ratio positivo: {}", engine.last_hawkes_ratio);
+        assert!(engine.hawkes.intensity_bull > engine.hawkes.intensity_bear);
+
+        // Reset
+        engine.reset();
+        assert_eq!(engine.last_hawkes_ratio, 0.0);
+        assert_eq!(engine.hawkes.last_update_ms, 0);
     }
 }

@@ -33,6 +33,7 @@ pub use hot_swap_controller::{EpigenomaSymbolParams, HotSwapController};
 pub use immune_system::{LivingImmuneSystem, TraumaRecord};
 pub use online_learning::OnlineLearningModule;
 pub use reminiscence_and_adn::{AdnBackupCatalog, GenerationMetadata, ReminiscenceModule};
+pub use shadow_graph_auditor::{ShadowEvent, ShadowGraphAuditor};
 
 pub struct MetacortexEngine {
     pub workspace_root: PathBuf,
@@ -42,6 +43,7 @@ pub struct MetacortexEngine {
     pub hot_swap: HotSwapController,
     pub consejo: ConsejoDeliberacion,
     pub phase_manager: FaseAutonomousManager,
+    pub shadow_auditor: std::sync::Arc<ShadowGraphAuditor>,
     pub last_mutation_time: Option<Instant>,
     pub enforce_rate_limit: bool,
 }
@@ -58,6 +60,7 @@ impl MetacortexEngine {
         let hot_swap = HotSwapController::new(&root);
         let consejo = ConsejoDeliberacion::new();
         let phase_manager = FaseAutonomousManager::new();
+        let shadow_auditor = std::sync::Arc::new(ShadowGraphAuditor::new());
 
         Self {
             workspace_root: root,
@@ -67,6 +70,7 @@ impl MetacortexEngine {
             hot_swap,
             consejo,
             phase_manager,
+            shadow_auditor,
             last_mutation_time: None,
             enforce_rate_limit: true,
         }

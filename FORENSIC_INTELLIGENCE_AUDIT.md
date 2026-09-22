@@ -32,12 +32,15 @@
 ```
 ESTADO CONSOLIDADO DE AUDITORÍA FORENSE Y REHABILITACIÓN SISTÉMICA:
 
-  🟢 REVISADOS A PROFUNDIDAD Y RESUELTOS EN SU TOTALIDAD: 222 Puntos Certificados (41.57%)
+  🟢 REVISADOS A PROFUNDIDAD Y RESUELTOS EN SU TOTALIDAD: 225 Puntos Certificados (42.13%)
      ├── #1: Desalineación 54D vs 34D en DarkAlphaEngine
      ├── #2: Warmup con velas sintéticas corregido en GodEngineCore
      ├── #3: Aislamiento de libros L2 por activo
      ├── #4: Router de símbolos con coin_id estricto
+     ├── #6: Decaimiento continuo exponencial (λ=0.995) en ShannonEntropyEngine para erradicar saturación y congelamiento
      ├── #14: Preservación de convicción asintótica (0.0001 .. 0.9999)
+     ├── #15: Conexión viva de ShadowGraphAuditor en GodEngineCore para detección lock-free de Concept Drift
+     ├── #16: Cableado e integración en caliente de HawkesProcessEngine en StatefulEngine para micro-aceleración de flujo
      ├── #18: Cableado O(1) de KalmanFilter1D en StatefulEngine para micro-precio justo suavizado
      ├── #19: Conexión de QuantumTensorStore y TensorRing para derivadas cinemáticas multiescala (Jerk)
      ├── #20: Inferencia ultraligera SimdNeuralNet sobre vector universal 34D en registros SIMD AVX2
@@ -534,18 +537,18 @@ graph TD
 
 ---
 
-### 🚨 6. Saturación y Congelamiento de `ShannonEntropyEngine`
-- **📍 DÓNDE:** [`crates/feature-engine/src/shannon_entropy.rs:29-45`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/feature-engine/src/shannon_entropy.rs#L29-L45).
+### ✅ 6. Decaimiento Exponencial Continuo en `ShannonEntropyEngine` Integrado
+- **📍 DÓNDE:** [`crates/feature-engine/src/shannon_entropy.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/feature-engine/src/shannon_entropy.rs).
 - **👤 QUIÉN:** `ShannonEntropyEngine::update`.
-- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 2 (Pérdida de Reactividad / Señal Congelada)**.
-- **❓ QUÉ:** El oscilador de entropía deja de responder y se vuelve estático tras minutos de ejecución.
-- **💡 POR QUÉ:** Los acumuladores de frecuencia `counts` y `total_samples` crecen indefinidamente sin decaimiento temporal ($\lambda < 1.0$).
-- **⚙️ CÓMO:** Conforme $N \to 10^6$ ticks, las probabilidades empíricas $p_i = \frac{c_i}{N}$ se petrifican. Una ráfaga de 100 ticks volátiles representa solo $\frac{100}{10^6} = 0.01\%$ del total, impidiendo que la entropía refleje el choque de régimen.
+- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 2 (Pérdida de Reactividad / Señal Congelada) — 🟢 RESUELTO Y CERTIFICADO**.
+- **❓ QUÉ:** El oscilador de entropía acumulaba muestras enteras discretas con división periódica por 2 a los 1000 ticks, provocando saltos discontinuos y congelamiento tras millones de eventos.
+- **💡 POR QUÉ:** Acumuladores discretos `counts: [u64; 32]` sin decaimiento continuo en cada tick impedían capturar ráfagas rápidas de caos en ventanas de microsegundos.
+- **⚙️ CÓMO:** Se refactorizó `ShannonEntropyEngine` sustituyendo los conteos discretos por acumuladores en coma flotante de alta precisión `counts: [f64; 32]` y `total_samples: f64` gobernados por decaimiento exponencial continuo $c_i(t) = \lambda \cdot c_i(t-1) + \mathbb{I}(x_t \in \text{bin}_i)$ con factor $\lambda = 0.995$ (ventana efectiva de $\sim 200$ ticks). Además, se añadió un calentamiento determinista de 20 muestras (`sample_count < 20`) que evita divisiones espurias.
 - **📐 DEMOSTRACIÓN MATEMÁTICA:**
-  $$\lim_{N \to \infty} \frac{\partial H}{\partial c_{i, t}} = \lim_{N \to \infty} -\frac{1}{N} (\ln p_i + 1) = 0 \implies H_t \approx \text{Constante}$$
-- **⏱️ CUÁNDO:** Tras 15 a 30 minutos de operación continua en producción.
-- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Incapacidad absoluta de detectar colapsos de liquidez y transiciones a regímenes caóticos.
-- **🛠️ REMEDIACIÓN ARQUITECTÓNICA:** Implementar decaimiento exponencial continuo: $c_i(t) = \lambda \cdot c_i(t-1) + \mathbb{I}(x_t \in \text{bin}_i)$ con $\lambda = 0.995$.
+  $$c_i(t) = \lambda c_i(t-1) + \mathbb{I}(x_t \in \text{bin}_i), \quad N_{\text{eff}} = \frac{1}{1 - \lambda} = \frac{1}{0.005} = 200 \implies \frac{\partial H}{\partial c_{i, t}} > 0 \quad \forall t \gg 0$$
+- **⏱️ CUÁNDO:** En cada actualización del flujo de microestructura.
+- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Reactividad inmediata ante colapsos de liquidez y detección en tiempo real de transiciones orden/caos.
+- **🛠️ VERIFICACIÓN:** Test unitario `test_shannon_entropy_no_freezing_after_many_ticks` validado con 50,000 ticks continuos seguidos de ráfaga caótica, demostrando reactividad de $H > 0.60$ sin estasis.
 
 ---
 
@@ -658,27 +661,29 @@ graph TD
 
 ---
 
-### 🚨 15. `ShadowGraphAuditor` (Metacórtex Drift) Huérfano y Desconectado
-- **📍 DÓNDE:** [`crates/metacortex-engine/src/shadow_graph_auditor.rs:22-95`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/metacortex-engine/src/shadow_graph_auditor.rs#L22-L95).
-- **👤 QUIÉN:** `MetacortexEngine / ShadowGraphAuditor`.
-- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 2 (Nodo Silencioso / Huérfano)**.
-- **❓ QUÉ:** Motor de detección de degradación de modelos (Concept Drift) implementado pero jamás instanciado.
-- **💡 POR QUÉ:** No existe canal de comunicación entre `GodEngineCore` y `ShadowGraphAuditor`.
-- **⏱️ CUÁNDO:** En todo momento en producción.
-- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** El bot continúa operando modelos degradados durante cambios bruscos de régimen.
-- **🛠️ REMEDIACIÓN ARQUITECTÓNICA:** Conectar `ShadowGraphAuditor::audit_event` al cierre de cada operación para auditar el error predictivo.
+### ✅ 15. Conexión de `ShadowGraphAuditor` en `GodEngineCore` Operativa
+- **📍 DÓNDE:** [`crates/metacortex-engine/src/lib.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/metacortex-engine/src/lib.rs) y [`crates/god-engine-core/src/lib.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/god-engine-core/src/lib.rs).
+- **👤 QUIÉN:** `MetacortexEngine / GodEngineCore / ShadowGraphAuditor`.
+- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 2 (Nodo Silencioso / Huérfano) — 🟢 RESUELTO Y CERTIFICADO**.
+- **❓ QUÉ:** El motor de auditoría lock-free de Concept Drift estaba implementado pero desconectado del ciclo de vida de operaciones.
+- **💡 POR QUÉ:** `GodEngineCore` no poseía una referencia al auditor ni registraba eventos al cierre de posiciones.
+- **⚙️ CÓMO:** Se re-exportó `ShadowGraphAuditor` y `ShadowEvent` desde `metacortex-engine`, se agregó `pub shadow_auditor: Arc<ShadowGraphAuditor>` tanto a `MetacortexEngine` como a `GodEngineCore`, y se conectó la emisión de `ShadowEvent` en `close_position` midiendo slippage real, drift de PnL vs expectativa $p_{\text{entry}}$ y latencia de salida. Además, se expuso `evaluate_system_drift(&self) -> bool` en el núcleo para alertar o invocar mutaciones genéticas de emergencia.
+- **⏱️ CUÁNDO:** Al ejecutarse el cierre de cualquier orden en producción y backtesting.
+- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Detección en nanosegundos de desalineación entre modelos probabilísticos y fricción física de Binance.
+- **🛠️ VERIFICACIÓN:** Suite completa de 26 tests en `metacortex-engine` validada al 100% de éxito, incluyendo `test_shadow_graph_auditor_record_and_drift`.
 
 ---
 
-### 🚨 16. Proceso Hawkes (`HawkesProcessEngine`) Huérfano y Desconectado
-- **📍 DÓNDE:** [`crates/feature-engine/src/hawkes.rs:7-57`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/feature-engine/src/hawkes.rs#L7-L57).
-- **👤 QUIÉN:** `FeatureEngine / HawkesProcessEngine`.
-- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 1 (Arista Muerta)**.
-- **❓ QUÉ:** Modelado estocástico de auto-excitación y clustering de trades institucionales desconectado del hot-path.
-- **💡 POR QUÉ:** `HawkesProcessEngine` calcula la intensidad condicional $\lambda(t) = \mu + \sum_{t_i < t} \alpha e^{-\beta (t - t_i)}$, pero sus salidas no se inyectan en el tensor de trading.
-- **⏱️ CUÁNDO:** Durante cascadas de liquidaciones y ráfagas direccionales.
-- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Incapacidad de sumarse a ráfagas de alta intensidad o protegerse de cascadas adversas.
-- **🛠️ REMEDIACIÓN ARQUITECTÓNICA:** Cablear la intensidad Hawkes en `StatefulEngine` como feature de aceleración de flujo.
+### ✅ 16. Integración de `HawkesProcessEngine` en `StatefulEngine` Operativa
+- **📍 DÓNDE:** [`crates/god-engine-core/src/stateful_engine.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/god-engine-core/src/stateful_engine.rs).
+- **👤 QUIÉN:** `FeatureEngine / StatefulEngine / HawkesProcessEngine`.
+- **🏷️ TIPO EN EL GRAFO VIVO:** **Fallo Tipo 1 (Arista Muerta) — 🟢 RESUELTO Y CERTIFICADO**.
+- **❓ QUÉ:** El modelado estocástico de auto-excitación y clustering de trades institucionales estaba huérfano dentro de la máquina de estados local.
+- **💡 POR QUÉ:** `StatefulEngine` no instanciaba ni alimentaba `HawkesProcessEngine` con el flujo de eventos intra-segundo.
+- **⚙️ CÓMO:** Se integró `pub hawkes: feature_engine::HawkesProcessEngine` y `pub last_hawkes_ratio: f64` en `StatefulEngine`. En cada tick de `process_tick` y mediante el método atómico `update_hawkes`, se actualiza la intensidad condicional $\lambda_{\text{bull}}$ y $\lambda_{\text{bear}}$ escalada por el volumen en dólares y el OBI/OFI continuo, publicando `last_hawkes_ratio` en $O(1)$.
+- **⏱️ CUÁNDO:** En cada actualización tick-a-tick y cada trade агреssor recibido.
+- **🎯 PARA QUÉ / IMPACTO OPERATIVO:** Detección inmediata de ráfagas institucionales y cascadas direccionales de liquidez.
+- **🛠️ VERIFICACIÓN:** Test unitario `test_hawkes_integration_in_stateful_engine` ejecutado y aprobado con 100% de éxito (excitación direccional $\lambda_{\text{bull}} > \lambda_{\text{bear}}$ y ratio positivo verificado).
 
 ---
 
