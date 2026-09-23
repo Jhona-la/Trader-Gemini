@@ -798,9 +798,9 @@
     "semantic_hash": "3819bf0fcc99c84f0cd51fc69c208867"
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1790130063.8169918,
-    "seen": 1790130748.1335301,
-    "ast_hash": "abeab125cb8bf278d4e1cf2d3f239907",
+    "mtime": 1790133035.074088,
+    "seen": 1790133481.9434214,
+    "ast_hash": "be733a905a52b9338d49db16ba93ebda",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/math_kernels.rs": {
@@ -852,9 +852,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/trailing.rs": {
-    "mtime": 1790121470.9734251,
-    "seen": 1790123147.970943,
-    "ast_hash": "c0fc2b59b2bf0da2625c3e0873c7f9b6",
+    "mtime": 1790131292.7324069,
+    "seen": 1790133481.9434214,
+    "ast_hash": "7116ec26b9d51bd544cbbf8389d476eb",
     "semantic_hash": ""
   },
   "crates/graph-4d/Cargo.toml": {
@@ -2004,9 +2004,9 @@
     "semantic_hash": ""
   },
   "FORENSIC_INTELLIGENCE_AUDIT.md": {
-    "mtime": 1790123043.6639512,
-    "seen": 1790123147.9719489,
-    "ast_hash": "1ab0e97df417605edaba2eaba44612c4",
+    "mtime": 1790133164.5531702,
+    "seen": 1790133481.9434214,
+    "ast_hash": "9740a777655376198790a7d2da45c45a",
     "semantic_hash": ""
   },
   "INFORME_ASEGURAMIENTO_CUARTO.md": {

@@ -54319,7 +54319,7 @@
       "file_type": "code",
       "norm_label": "b2_5_ml_prob_sigue_vivo_con_feed_stalled()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4729"
+      "source_location": "L4741"
     },
     {
       "id": "crates_god_engine_core_src_lib_b3_18_el_ml_prob_del_gate_es_del_mismo_tick_y_lleva_al_forest",
@@ -54330,7 +54330,7 @@
       "file_type": "code",
       "norm_label": "b3_18_el_ml_prob_del_gate_es_del_mismo_tick_y_lleva_al_forest()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4689"
+      "source_location": "L4701"
     },
     {
       "id": "crates_god_engine_core_src_lib_consensus_branch_enabled",
@@ -54341,7 +54341,7 @@
       "file_type": "code",
       "norm_label": "consensus_branch_enabled",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4638"
+      "source_location": "L4650"
     },
     {
       "id": "crates_god_engine_core_src_lib_conserva_los_extremos_calibrados",
@@ -54352,7 +54352,7 @@
       "file_type": "code",
       "norm_label": "conserva_los_extremos_calibrados()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4577"
+      "source_location": "L4589"
     },
     {
       "id": "crates_god_engine_core_src_lib_es_continua_alrededor_de_los_antiguos_escalones",
@@ -54363,7 +54363,7 @@
       "file_type": "code",
       "norm_label": "es_continua_alrededor_de_los_antiguos_escalones()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4584"
+      "source_location": "L4596"
     },
     {
       "id": "crates_god_engine_core_src_lib_fitness_compute",
@@ -54418,7 +54418,7 @@
       "file_type": "code",
       "norm_label": "hurst_anti_persistent",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4611"
+      "source_location": "L4623"
     },
     {
       "id": "crates_god_engine_core_src_lib_hurst_duration_modulation",
@@ -54429,7 +54429,7 @@
       "file_type": "code",
       "norm_label": "hurst_duration_modulation()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4557"
+      "source_location": "L4569"
     },
     {
       "id": "crates_god_engine_core_src_lib_hurst_persistent",
@@ -54440,7 +54440,7 @@
       "file_type": "code",
       "norm_label": "hurst_persistent",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4612"
+      "source_location": "L4624"
     },
     {
       "id": "crates_god_engine_core_src_lib_install_testusdt_forest",
@@ -54451,7 +54451,7 @@
       "file_type": "code",
       "norm_label": "install_testusdt_forest()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4670"
+      "source_location": "L4682"
     },
     {
       "id": "crates_god_engine_core_src_lib_m5_h01_dd_clamp_y_lambda",
@@ -54462,7 +54462,7 @@
       "file_type": "code",
       "norm_label": "m5_h01_dd_clamp_y_lambda()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4780"
+      "source_location": "L4792"
     },
     {
       "id": "crates_god_engine_core_src_lib_m5_h01_gate_min_trades",
@@ -54473,7 +54473,7 @@
       "file_type": "code",
       "norm_label": "m5_h01_gate_min_trades()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4769"
+      "source_location": "L4781"
     },
     {
       "id": "crates_god_engine_core_src_lib_macro_split_forest",
@@ -54484,7 +54484,7 @@
       "file_type": "code",
       "norm_label": "macro_split_forest()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4658"
+      "source_location": "L4670"
     },
     {
       "id": "crates_god_engine_core_src_lib_no_inventa_duracion_para_intenciones_sin_duracion",
@@ -54495,7 +54495,7 @@
       "file_type": "code",
       "norm_label": "no_inventa_duracion_para_intenciones_sin_duracion()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4593"
+      "source_location": "L4605"
     },
     {
       "id": "crates_god_engine_core_src_lib_respeta_los_limites_solo_en_la_direccion_del_cambio",
@@ -54506,7 +54506,7 @@
       "file_type": "code",
       "norm_label": "respeta_los_limites_solo_en_la_direccion_del_cambio()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4598"
+      "source_location": "L4610"
     },
     {
       "id": "crates_god_engine_core_src_lib_rs_self",
@@ -54528,7 +54528,7 @@
       "file_type": "code",
       "norm_label": "tick()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4681"
+      "source_location": "L4693"
     },
     {
       "id": "nanoforestdata",
@@ -55804,7 +55804,7 @@
       "file_type": "code",
       "norm_label": ".process_tick()",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4522"
+      "source_location": "L4534"
     },
     {
       "id": "crates_god_engine_core_src_lib_godenginecore_process_tick_dual",
@@ -86498,7 +86498,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4730",
+      "source_location": "L4742",
       "weight": 1.0
     },
     {
@@ -86510,7 +86510,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4733",
+      "source_location": "L4745",
       "weight": 1.0
     },
     {
@@ -86522,7 +86522,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4740",
+      "source_location": "L4752",
       "weight": 1.0
     },
     {
@@ -86534,7 +86534,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4690",
+      "source_location": "L4702",
       "weight": 1.0
     },
     {
@@ -86546,7 +86546,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4693",
+      "source_location": "L4705",
       "weight": 1.0
     },
     {
@@ -86558,7 +86558,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4701",
+      "source_location": "L4713",
       "weight": 1.0
     },
     {
@@ -86570,7 +86570,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4586",
+      "source_location": "L4598",
       "weight": 1.0
     },
     {
@@ -86582,7 +86582,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4536",
+      "source_location": "L4548",
       "weight": 1.0
     },
     {
@@ -86618,7 +86618,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4674",
+      "source_location": "L4686",
       "weight": 1.0
     },
     {
@@ -86630,7 +86630,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4677",
+      "source_location": "L4689",
       "weight": 1.0
     },
     {
@@ -86642,7 +86642,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4782",
+      "source_location": "L4794",
       "weight": 1.0
     },
     {
@@ -86654,7 +86654,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4775",
+      "source_location": "L4787",
       "weight": 1.0
     },
     {
@@ -86666,7 +86666,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4682",
+      "source_location": "L4694",
       "weight": 1.0
     },
     {
@@ -111782,7 +111782,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4522",
+      "source_location": "L4534",
       "weight": 1.0
     },
     {
@@ -117650,7 +117650,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4650",
+      "source_location": "L4662",
       "weight": 1.0
     },
     {
@@ -117662,7 +117662,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4766",
+      "source_location": "L4778",
       "weight": 1.0
     },
     {
@@ -122390,7 +122390,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4681",
+      "source_location": "L4693",
       "weight": 1.0
     },
     {
@@ -130106,7 +130106,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4522",
+      "source_location": "L4534",
       "weight": 1.0
     },
     {
@@ -130130,7 +130130,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4658",
+      "source_location": "L4670",
       "weight": 1.0
     },
     {
@@ -145774,7 +145774,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4557",
+      "source_location": "L4569",
       "weight": 1.0
     },
     {
@@ -145785,7 +145785,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4577",
+      "source_location": "L4589",
       "weight": 1.0
     },
     {
@@ -145796,7 +145796,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4584",
+      "source_location": "L4596",
       "weight": 1.0
     },
     {
@@ -145807,7 +145807,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4593",
+      "source_location": "L4605",
       "weight": 1.0
     },
     {
@@ -145818,7 +145818,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4598",
+      "source_location": "L4610",
       "weight": 1.0
     },
     {
@@ -145829,7 +145829,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4611",
+      "source_location": "L4623",
       "weight": 1.0
     },
     {
@@ -145840,7 +145840,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4612",
+      "source_location": "L4624",
       "weight": 1.0
     },
     {
@@ -145851,7 +145851,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4638",
+      "source_location": "L4650",
       "weight": 1.0
     },
     {
@@ -145862,7 +145862,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4658",
+      "source_location": "L4670",
       "weight": 1.0
     },
     {
@@ -145873,7 +145873,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4670",
+      "source_location": "L4682",
       "weight": 1.0
     },
     {
@@ -145884,7 +145884,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4681",
+      "source_location": "L4693",
       "weight": 1.0
     },
     {
@@ -145895,7 +145895,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4689",
+      "source_location": "L4701",
       "weight": 1.0
     },
     {
@@ -145906,7 +145906,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4729",
+      "source_location": "L4741",
       "weight": 1.0
     },
     {
@@ -145917,7 +145917,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4769",
+      "source_location": "L4781",
       "weight": 1.0
     },
     {
@@ -145928,7 +145928,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4780",
+      "source_location": "L4792",
       "weight": 1.0
     },
     {
@@ -182976,7 +182976,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "crates/god-engine-core/src/lib.rs",
-      "source_location": "L4522",
+      "source_location": "L4534",
       "weight": 1.0
     },
     {
@@ -191942,5 +191942,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "c94cc7d3c874f308ad105a4f6509b9277feaa7ad"
+  "built_at_commit": "e1dd53d349658b1da1f305e50c1f6b8a0ff98ce2"
 }
