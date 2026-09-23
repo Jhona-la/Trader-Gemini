@@ -2747,23 +2747,28 @@ impl GodEngineCore {
                             let fused = spec.fused_score;
                             let tau = spec.dominant_tau_ms;
                             let persist = spec.persistence_at(tau);
-                            // Score fuerte (>0.6) + persistencia direccional
+                            let expected_tau = (tau.clamp(500.0, 3_600_000.0)).round() as u64;
+                            let dyn_flow = (1.0 + fused.abs() * 2.0).clamp(1.0, 5.0);
+                            // Score fuerte (>0.6) + persistencia direccional (>0.15)
+                            // En tendencias sostenidas (subida o bajada), la autocorrelación
+                            // dev*prev_dev > 0 produce persistencia POSITIVA (+1.0).
+                            // El signo direccional está en fused_score.
                             if fused > 0.6 && persist > 0.15 {
                                 fast_intent = SignalIntent {
                                     signal: SignalType::Long,
                                     confidence: (0.55 + fused * 0.3).min(0.90),
                                     horizon: strategy_core::TradeHorizon::Continuous,
-                                    expected_duration_ms: fast_duration_ms,
-                                    volume_flow_rate: 1.5,
+                                    expected_duration_ms: expected_tau,
+                                    volume_flow_rate: dyn_flow,
                                     ..Default::default()
                                 };
-                            } else if fused < -0.6 && persist < -0.15 {
+                            } else if fused < -0.6 && persist > 0.15 {
                                 fast_intent = SignalIntent {
                                     signal: SignalType::Short,
                                     confidence: (0.55 + fused.abs() * 0.3).min(0.90),
                                     horizon: strategy_core::TradeHorizon::Continuous,
-                                    expected_duration_ms: fast_duration_ms,
-                                    volume_flow_rate: 1.5,
+                                    expected_duration_ms: expected_tau,
+                                    volume_flow_rate: dyn_flow,
                                     ..Default::default()
                                 };
                             }
@@ -3712,15 +3717,26 @@ impl GodEngineCore {
             // (medida: autocorrelación de sorpresas — tendencia +1, reversión
             // −1, ruido 0) modula la confianza: tendencia confirmada la
             // preserva (×1), ruido la modula suavemente, reversión la castiga si es tendencial.
+            // X-016 plenitud (REHAB-1b) & #562: ACONDICIONAMIENTO ESPECTRAL MULTIVARIANTE CONTINUO
+            // Evalúa la resonancia armónica de todo el espectro temporal (táctico, swing y secular).
+            // Si la coherencia espectral es negativa (< -0.10), el trade está en interferencia
+            // destructiva contra la corriente multiescala del mercado: se veta inmediatamente en STAGE_SPECTRAL.
             if unified_intent.signal != SignalType::Flat {
                 if let Some(spec) = self.temporal_spectrum.get(coin_id) {
+                    let is_long = unified_intent.signal == SignalType::Long;
+                    let coherence = spec.spectral_coherence(is_long);
                     let tau_dom = spec.dominant_tau_ms;
                     let persist = spec.persistence_at(tau_dom);
-                    let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
-                    let directional_persist = if is_trending_mode { persist } else { -persist };
-                    let factor = (1.0 + 0.25 * directional_persist).clamp(0.70, 1.30);
-                    unified_intent.confidence =
-                        (unified_intent.confidence * factor).clamp(0.10, 0.99);
+
+                    if coherence < -0.10 {
+                        unified_intent.signal = SignalType::Flat;
+                    } else {
+                        let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
+                        let directional_persist = if is_trending_mode { persist } else { -persist };
+                        let spectral_factor = (1.0 + 0.20 * directional_persist + 0.25 * coherence).clamp(0.65, 1.40);
+                        unified_intent.confidence =
+                            (unified_intent.confidence * spectral_factor).clamp(0.10, 0.99);
+                    }
                 }
             }
 
@@ -4291,23 +4307,10 @@ impl GodEngineCore {
                                     .get(coin_id)
                                     .map(|s| s.dominant_tau_ms)
                                     .unwrap_or(60_000.0);
-                                // #542 / #543: Derivación estricta de horizonte basada en la intención del trade.
-                                // La intención de scalping (ramas 1 a 12, volume_flow_rate < 13.0) opera en microestructura
-                                // y NUNCA debe sobreescribirse a Swing por la escala macro del activo.
-                                let pos_h = if calibrated_intent.volume_flow_rate >= 13.0
-                                    || calibrated_intent.expected_duration_ms >= 1_800_000
-                                {
-                                    quantum_arena::position::PositionHorizon::Swing
-                                } else if calibrated_intent.volume_flow_rate > 0.0
-                                    || (calibrated_intent.expected_duration_ms > 0
-                                        && calibrated_intent.expected_duration_ms < 1_800_000)
-                                {
-                                    quantum_arena::position::PositionHorizon::Scalping
-                                } else if tau_coin >= 1_800_000.0 {
-                                    quantum_arena::position::PositionHorizon::Swing
-                                } else {
-                                    quantum_arena::position::PositionHorizon::Scalping
-                                };
+                                // #560 / #561: Unificación bajo el Universo Continuo Temporal Espectral.
+                                // La posición nace y vive en el horizonte continuo; su física temporal viva
+                                // se almacena en entry_tau_ms a partir del espectro y la intención del trade.
+                                let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 
                                 coin.positions.position.open_with_fee(
                                     is_long,

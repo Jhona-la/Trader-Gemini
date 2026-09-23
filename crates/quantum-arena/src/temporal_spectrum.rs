@@ -344,6 +344,71 @@ impl TemporalSpectrum {
         }
         (v, self.fused_score as f32)
     }
+
+    /// Score fusionado de la banda táctica rápida (escalas 15..=20: 1.07 s a 18.33 min).
+    #[inline]
+    pub fn tactical_score(&self) -> f64 {
+        let mut w_sum = 0.0;
+        let mut w_sig = 0.0;
+        for s in &self.scales[15..=20] {
+            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
+            w_sum += w;
+            w_sig += w * s.signal;
+        }
+        if w_sum > 1e-12 {
+            (w_sig / w_sum).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// Score fusionado de la banda swing / intermedia (escalas 21..=24: 1.22 h a 3.26 días).
+    #[inline]
+    pub fn swing_score(&self) -> f64 {
+        let mut w_sum = 0.0;
+        let mut w_sig = 0.0;
+        for s in &self.scales[21..=24] {
+            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
+            w_sum += w;
+            w_sig += w * s.signal;
+        }
+        if w_sum > 1e-12 {
+            (w_sig / w_sum).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// Score fusionado de la banda secular / macro (escalas 25..=31: 13 días a 146 años).
+    #[inline]
+    pub fn secular_score(&self) -> f64 {
+        let mut w_sum = 0.0;
+        let mut w_sig = 0.0;
+        for s in &self.scales[25..=31] {
+            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
+            w_sum += w;
+            w_sig += w * s.signal;
+        }
+        if w_sum > 1e-12 {
+            (w_sig / w_sum).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// Coherencia Espectral Multivariante: evalúa el grado de alineación armónica
+    /// de todas las escalas espectrales en una dirección dada.
+    /// Retorna un valor en [-1.0, 1.0]:
+    /// +1.0 = resonancia armónica plena (todas las partes espectrales confirman la dirección).
+    /// -1.0 = contradicción armónica severa (el macro-espectro empuja en contra).
+    #[inline]
+    pub fn spectral_coherence(&self, is_long: bool) -> f64 {
+        let sign = if is_long { 1.0 } else { -1.0 };
+        let s_tactical = self.tactical_score() * sign;
+        let s_swing = self.swing_score() * sign;
+        let s_secular = self.secular_score() * sign;
+        (s_tactical * 0.40 + s_swing * 0.35 + s_secular * 0.25).clamp(-1.0, 1.0)
+    }
 }
 
 /// CURVAS DE PARÁMETROS DEL GENOMA EN FUNCIÓN DEL HORIZONTE (F8):

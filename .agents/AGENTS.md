@@ -3,7 +3,7 @@
 <RULE[growth_over_wr]>
 - NO ES NECESARIO UN WIN RATE (WR) DEL 100%.
 - El objetivo principal, único y fundamental que debe superar el 100% es el **crecimiento exponencial y el interés compuesto cada 3 días**.
-- El sistema debe estar optimizado para maximizar la curva de capital y lograr duplicar la cuenta (13 USD) exponencialmente, aceptando pérdidas y asumiendo un Win Rate realista (ej. 60-80%), siempre y cuando la esperanza matemática y el crecimiento compuesto resulten en la meta financiera.
+- El sistema debe estar optimizado para maximizar la curva de capital y lograr duplicar la cuenta (13 USD) exponencialmente, aceptando pérdidas y asumiendo un Win Rate realista (ej. 60-80%), siempre y cuando la esperanza matemática y el crecimiento compuesto resulten en la meta financiera. Sigues pensando como scalping y swing, y debes pensar como un universo multivariante continuo temporal espectral sobre el cual debemos de entender en todas sus partes espectrales.
 </RULE[growth_over_wr]>
 
 <RULE[sesiones_concurrentes]>
