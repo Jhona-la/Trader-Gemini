@@ -1311,16 +1311,23 @@ impl GodEngineCore {
                 // #548, #556 & #560: Alpha Decay y Peak Harvest Continuo Multivariante
                 // La predictibilidad de microestructura y flujo se extingue continuamente
                 // según la longitud de onda tau_trade_ms y su coordenada espectral temporal_s.
-                let harvest_age_ms = (tau_trade_ms * (1.2 + 1.3 * temporal_s)).clamp(240_000.0, 7_200_000.0) as u64;
+                let harvest_age_ms = (tau_trade_ms * (0.8 + 1.0 * temporal_s)).clamp(120_000.0, 7_200_000.0) as u64;
                 let peak_harvest_thresh = 0.0013 + 0.0035 * temporal_s;
                 let min_stagnant_ms = (tau_trade_ms * (2.5 + 2.5 * temporal_s)).clamp(420_000.0, 14_400_000.0) as u64;
                 let hard_stagnant_ms = (tau_trade_ms * (4.5 + 3.5 * temporal_s)).clamp(900_000.0, 28_800_000.0) as u64;
                 let absolute_trade_life_ms = (tau_trade_ms * (8.0 + 8.0 * temporal_s)).clamp(1_500_000.0, 86_400_000.0) as u64;
 
                 let alpha_decay_exit = if event_time_ms > 0 {
+                    let harvest_ratio = if peak_pnl >= 0.0030 {
+                        0.78
+                    } else if peak_pnl >= 0.0020 {
+                        0.70
+                    } else {
+                        0.60
+                    };
                     let peak_harvest_decay = position_age_ms > harvest_age_ms
                         && peak_pnl >= peak_harvest_thresh
-                        && pnl_pct <= (peak_pnl * 0.58).max(be_buffer * 0.80);
+                        && pnl_pct <= (peak_pnl * harvest_ratio).max(be_buffer * 0.85);
 
                     let time_stagnant_decay = if position_age_ms > min_stagnant_ms {
                         let ema_ofi_adverse = (is_long && ema_ofi < -0.25) || (!is_long && ema_ofi > 0.25);
@@ -2744,28 +2751,29 @@ impl GodEngineCore {
                     // confirma, es una señal legítima independiente del ML.
                     if fast_intent.signal == SignalType::Flat {
                         if let Some(spec) = self.temporal_spectrum.get(coin_id) {
+                            let field_long = spec.spectral_field(true);
+                            let field_short = spec.spectral_field(false);
                             let fused = spec.fused_score;
-                            let tau = spec.dominant_tau_ms;
-                            let persist = spec.persistence_at(tau);
-                            let expected_tau = (tau.clamp(500.0, 3_600_000.0)).round() as u64;
+                            let tau_star = field_long.resonant_tau_ms;
+                            let expected_tau = (tau_star.clamp(500.0, 3_600_000.0)).round() as u64;
                             let dyn_flow = (1.0 + fused.abs() * 2.0).clamp(1.0, 5.0);
-                            // Score fuerte (>0.6) + persistencia direccional (>0.15)
-                            // En tendencias sostenidas (subida o bajada), la autocorrelación
-                            // dev*prev_dev > 0 produce persistencia POSITIVA (+1.0).
-                            // El signo direccional está en fused_score.
-                            if fused > 0.6 && persist > 0.15 {
+
+                            // Señal Directa del Campo Espectral Continuo (#563):
+                            // Se activa cuando el momento espectral unificado y la coherencia armónica
+                            // sobre las 32 partes espectrales están firmemente alineados.
+                            if fused > 0.60 && field_long.global_coherence > 0.15 {
                                 fast_intent = SignalIntent {
                                     signal: SignalType::Long,
-                                    confidence: (0.55 + fused * 0.3).min(0.90),
+                                    confidence: (0.55 + field_long.global_coherence * 0.35).min(0.92),
                                     horizon: strategy_core::TradeHorizon::Continuous,
                                     expected_duration_ms: expected_tau,
                                     volume_flow_rate: dyn_flow,
                                     ..Default::default()
                                 };
-                            } else if fused < -0.6 && persist > 0.15 {
+                            } else if fused < -0.60 && field_short.global_coherence > 0.15 {
                                 fast_intent = SignalIntent {
                                     signal: SignalType::Short,
-                                    confidence: (0.55 + fused.abs() * 0.3).min(0.90),
+                                    confidence: (0.55 + field_short.global_coherence * 0.35).min(0.92),
                                     horizon: strategy_core::TradeHorizon::Continuous,
                                     expected_duration_ms: expected_tau,
                                     volume_flow_rate: dyn_flow,
@@ -3717,23 +3725,28 @@ impl GodEngineCore {
             // (medida: autocorrelación de sorpresas — tendencia +1, reversión
             // −1, ruido 0) modula la confianza: tendencia confirmada la
             // preserva (×1), ruido la modula suavemente, reversión la castiga si es tendencial.
-            // X-016 plenitud (REHAB-1b) & #562: ACONDICIONAMIENTO ESPECTRAL MULTIVARIANTE CONTINUO
-            // Evalúa la resonancia armónica de todo el espectro temporal (táctico, swing y secular).
-            // Si la coherencia espectral es negativa (< -0.10), el trade está en interferencia
-            // destructiva contra la corriente multiescala del mercado: se veta inmediatamente en STAGE_SPECTRAL.
+            // X-016 & #563: ACONDICIONAMIENTO BAJO EL CAMPO MULTIVARIANTE CONTINUO TEMPORAL ESPECTRAL
+            // El mercado se comprende en todas sus 32 partes espectrales (1 ns a 146 años) como un campo continuo.
+            // Se evalúa: coherencia armónica global (todas las frecuencias), entropía de Shannon y resonancia cuántica.
             if unified_intent.signal != SignalType::Flat {
                 if let Some(spec) = self.temporal_spectrum.get(coin_id) {
                     let is_long = unified_intent.signal == SignalType::Long;
-                    let coherence = spec.spectral_coherence(is_long);
+                    let field = spec.spectral_field(is_long);
                     let tau_dom = spec.dominant_tau_ms;
                     let persist = spec.persistence_at(tau_dom);
 
-                    if coherence < -0.10 {
+                    // LEY DE RESONANCIA CUÁNTICA DEL CAMPO ESPECTRAL:
+                    // 1. Prohibido abrir cuando la coherencia armónica global de las 32 partes es destructiva (< 0.00).
+                    // 2. Prohibido abrir cuando la entropía espectral supera 0.94 (ruido térmico desordenado sin información).
+                    if field.global_coherence < 0.00 || field.spectral_entropy > 0.94 {
                         unified_intent.signal = SignalType::Flat;
                     } else {
                         let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
                         let directional_persist = if is_trending_mode { persist } else { -persist };
-                        let spectral_factor = (1.0 + 0.20 * directional_persist + 0.25 * coherence).clamp(0.65, 1.40);
+                        let coherence_boost = 0.25 * field.global_coherence;
+                        let entropy_boost = 0.10 * (1.0 - field.spectral_entropy).max(0.0);
+                        let persist_boost = 0.15 * directional_persist;
+                        let spectral_factor = (1.0 + coherence_boost + entropy_boost + persist_boost).clamp(0.65, 1.45);
                         unified_intent.confidence =
                             (unified_intent.confidence * spectral_factor).clamp(0.10, 0.99);
                     }

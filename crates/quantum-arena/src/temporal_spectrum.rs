@@ -344,70 +344,207 @@ impl TemporalSpectrum {
         }
         (v, self.fused_score as f32)
     }
+}
 
-    /// Score fusionado de la banda táctica rápida (escalas 15..=20: 1.07 s a 18.33 min).
-    #[inline]
-    pub fn tactical_score(&self) -> f64 {
-        let mut w_sum = 0.0;
-        let mut w_sig = 0.0;
-        for s in &self.scales[15..=20] {
-            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
-            w_sum += w;
-            w_sig += w * s.signal;
+/// Estado y caracterización completa del Campo Multivariante Continuo Temporal Espectral.
+/// Analiza e integra formalmente TODAS las 32 escalas espectrales (desde 1 ns hasta 146.15 años).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SpectralFieldState {
+    /// Masa o energía informacional total integrada sobre las 32 escalas.
+    pub total_energy: f64,
+    /// Wavelength o escala resonante central continua τ* (centro de masa espectral en ms).
+    pub resonant_tau_ms: f64,
+    /// Dispersión o ancho de banda espectral σ_ln(τ) (en unidades logarítmicas naturales).
+    pub spectral_bandwidth: f64,
+    /// Entropía espectral de Shannon normalizada ∈ [0.0, 1.0] (0 = láser armónico, 1 = ruido blanco térmico).
+    pub spectral_entropy: f64,
+    /// Gradiente o inclinación espectral continua ∂s/∂ln(τ) (flujo de fase entre micro y macro).
+    pub spectral_tilt: f64,
+    /// Coherencia armónica de fase global evaluada en TODAS las 32 partes espectrales ∈ [-1.0, 1.0].
+    pub global_coherence: f64,
+    /// Proporción de confluencia: fracción de escalas con alineación favorable ∈ [0.0, 1.0].
+    pub confluence_ratio: f64,
+}
+
+impl TemporalSpectrum {
+    /// Volatilidad de sorpresa continua interpolada log-linealmente a τ.
+    pub fn volatility_at(&self, tau_ms: f64) -> f64 {
+        if tau_ms <= 0.0 {
+            return 0.0;
         }
-        if w_sum > 1e-12 {
-            (w_sig / w_sum).clamp(-1.0, 1.0)
-        } else {
-            0.0
-        }
+        let ln_tau = tau_ms.max(1e-6).ln();
+        let ln_min = (1e-6_f64).ln();
+        let step = 4f64.ln();
+        let idx_f = (ln_tau - ln_min) / step;
+        let i0 = idx_f.floor().clamp(0.0, 30.0) as usize;
+        let i1 = (i0 + 1).min(31);
+        let frac = (idx_f - i0 as f64).clamp(0.0, 1.0);
+        self.scales[i0].ewma_dev_vol * (1.0 - frac) + self.scales[i1].ewma_dev_vol * frac
     }
 
-    /// Score fusionado de la banda swing / intermedia (escalas 21..=24: 1.22 h a 3.26 días).
-    #[inline]
-    pub fn swing_score(&self) -> f64 {
-        let mut w_sum = 0.0;
-        let mut w_sig = 0.0;
-        for s in &self.scales[21..=24] {
-            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
-            w_sum += w;
-            w_sig += w * s.signal;
-        }
-        if w_sum > 1e-12 {
-            (w_sig / w_sum).clamp(-1.0, 1.0)
-        } else {
-            0.0
-        }
-    }
+    /// Caracterización cuántica e integral del Campo Multivariante Continuo Temporal Espectral.
+    /// Comprende y unifica TODAS Y CADA UNA de las 32 partes espectrales (desde 1 ns hasta 146.15 años).
+    pub fn spectral_field(&self, is_long: bool) -> SpectralFieldState {
+        let sign = if is_long { 1.0 } else { -1.0 };
+        let mut total_w = 0.0;
+        let mut total_energy = 0.0;
+        let mut weighted_ln_tau = 0.0;
+        let mut coherent_signal_sum = 0.0;
+        let mut aligned_scales_count = 0.0;
 
-    /// Score fusionado de la banda secular / macro (escalas 25..=31: 13 días a 146 años).
-    #[inline]
-    pub fn secular_score(&self) -> f64 {
-        let mut w_sum = 0.0;
-        let mut w_sig = 0.0;
-        for s in &self.scales[25..=31] {
+        let mut weights = [0.0f64; 32];
+        let mut ln_taus = [0.0f64; 32];
+
+        // 1. Integración armónica de las 32 partes espectrales
+        for (i, s) in self.scales.iter().enumerate() {
+            let ln_t = s.tau_ms.max(1e-6).ln();
+            ln_taus[i] = ln_t;
             let w = ((s.persistence - 0.5) * 2.0).max(0.05);
-            w_sum += w;
-            w_sig += w * s.signal;
+            weights[i] = w;
+            total_w += w;
+
+            let energy_i = w * s.signal.abs();
+            total_energy += energy_i;
+            weighted_ln_tau += energy_i * ln_t;
+
+            let align = s.signal * sign;
+            coherent_signal_sum += w * align;
+            if align > 0.05 {
+                aligned_scales_count += 1.0;
+            }
         }
-        if w_sum > 1e-12 {
-            (w_sig / w_sum).clamp(-1.0, 1.0)
+
+        // 2. Centro de masa espectral continuo (Escala resonante τ*)
+        let ln_tau_star = if total_energy > 1e-12 {
+            weighted_ln_tau / total_energy
+        } else {
+            (TAU_ANCHOR_FAST_MS.ln() + TAU_ANCHOR_SLOW_MS.ln()) * 0.5
+        };
+        let resonant_tau_ms = ln_tau_star.exp();
+
+        // 3. Dispersión espectral (ancho de banda) y Entropía de Shannon
+        let mut var_ln_tau = 0.0;
+        let mut entropy = 0.0;
+        let ln_32 = 32.0f64.ln();
+
+        for i in 0..32 {
+            let p_i = if total_energy > 1e-12 {
+                (weights[i] * self.scales[i].signal.abs()) / total_energy
+            } else {
+                1.0 / 32.0
+            };
+            if p_i > 1e-15 {
+                entropy -= p_i * p_i.ln();
+            }
+            let diff = ln_taus[i] - ln_tau_star;
+            var_ln_tau += p_i * diff * diff;
+        }
+        let spectral_bandwidth = var_ln_tau.sqrt();
+        let spectral_entropy = (entropy / ln_32).clamp(0.0, 1.0);
+
+        // 4. Inclinación / Gradiente Espectral Continuo ∂s/∂ln(τ) (Regresión lineal sobre las 32 escalas)
+        let mean_ln_t = ln_taus.iter().sum::<f64>() / 32.0;
+        let mean_s = self.scales.iter().map(|s| s.signal).sum::<f64>() / 32.0;
+        let mut cov_ts = 0.0;
+        let mut var_t = 0.0;
+        for i in 0..32 {
+            let dt = ln_taus[i] - mean_ln_t;
+            let ds = self.scales[i].signal - mean_s;
+            cov_ts += dt * ds;
+            var_t += dt * dt;
+        }
+        let spectral_tilt = if var_t > 1e-12 { cov_ts / var_t } else { 0.0 };
+
+        // 5. Coherencia armónica de fase global
+        let global_coherence = if total_w > 1e-12 {
+            (coherent_signal_sum / total_w).clamp(-1.0, 1.0)
         } else {
             0.0
+        };
+
+        let confluence_ratio = aligned_scales_count / 32.0;
+
+        SpectralFieldState {
+            total_energy,
+            resonant_tau_ms,
+            spectral_bandwidth,
+            spectral_entropy,
+            spectral_tilt,
+            global_coherence,
+            confluence_ratio,
         }
     }
 
     /// Coherencia Espectral Multivariante: evalúa el grado de alineación armónica
-    /// de todas las escalas espectrales en una dirección dada.
+    /// de TODAS las 32 escalas espectrales en una dirección dada.
     /// Retorna un valor en [-1.0, 1.0]:
-    /// +1.0 = resonancia armónica plena (todas las partes espectrales confirman la dirección).
-    /// -1.0 = contradicción armónica severa (el macro-espectro empuja en contra).
+    /// +1.0 = resonancia armónica plena (todas las 32 partes confirman la dirección).
+    /// -1.0 = contradicción armónica severa (el espectro empuja en contra).
     #[inline]
     pub fn spectral_coherence(&self, is_long: bool) -> f64 {
         let sign = if is_long { 1.0 } else { -1.0 };
-        let s_tactical = self.tactical_score() * sign;
-        let s_swing = self.swing_score() * sign;
-        let s_secular = self.secular_score() * sign;
-        (s_tactical * 0.40 + s_swing * 0.35 + s_secular * 0.25).clamp(-1.0, 1.0)
+        let mut total_w = 0.0;
+        let mut coherent_sig = 0.0;
+        for s in &self.scales {
+            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
+            total_w += w;
+            coherent_sig += w * (s.signal * sign);
+        }
+        if total_w > 1e-12 {
+            (coherent_sig / total_w).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// Entropía espectral de Shannon normalizada ∈ [0.0, 1.0].
+    pub fn spectral_entropy(&self) -> f64 {
+        self.spectral_field(true).spectral_entropy
+    }
+
+    /// Wavelength o escala resonante continua central τ* (ms).
+    pub fn spectral_resonance_tau(&self) -> f64 {
+        self.spectral_field(true).resonant_tau_ms
+    }
+
+    /// Proyección armónica continua con filtro gaussiano logarítmico alrededor de tau_center.
+    /// Sin cortes discretos de slice: el kernel abarca todo el continuo espectral de 32 escalas.
+    pub fn continuous_band_projection(&self, center_tau_ms: f64, bandwidth_octaves: f64) -> f64 {
+        let ln_center = center_tau_ms.max(1e-6).ln();
+        let sigma = bandwidth_octaves * 2.0_f64.ln();
+        let mut w_sum = 0.0;
+        let mut w_sig = 0.0;
+        for s in &self.scales {
+            let ln_t = s.tau_ms.max(1e-6).ln();
+            let dist = (ln_t - ln_center) / sigma;
+            let kernel = (-0.5 * dist * dist).exp();
+            let w = ((s.persistence - 0.5) * 2.0).max(0.05) * kernel;
+            w_sum += w;
+            w_sig += w * s.signal;
+        }
+        if w_sum > 1e-12 {
+            (w_sig / w_sum).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// Banda táctica rápida (~1 minuto) mediante kernel gaussiano continuo.
+    #[inline]
+    pub fn tactical_score(&self) -> f64 {
+        self.continuous_band_projection(60_000.0, 2.0)
+    }
+
+    /// Banda intermedia (~4 horas) mediante kernel gaussiano continuo.
+    #[inline]
+    pub fn swing_score(&self) -> f64 {
+        self.continuous_band_projection(14_400_000.0, 2.5)
+    }
+
+    /// Banda macro / secular (~30 días) mediante kernel gaussiano continuo.
+    #[inline]
+    pub fn secular_score(&self) -> f64 {
+        self.continuous_band_projection(2_592_000_000.0, 3.0)
     }
 }
 
