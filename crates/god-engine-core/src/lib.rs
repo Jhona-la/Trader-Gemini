@@ -1041,21 +1041,28 @@ impl GodEngineCore {
                     0
                 };
 
+                // #560: Espectro Continuo Universal Multivariante — longitud de onda tau_trade_ms y coordenada s in [0, 1]
+                let tau_entry = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
+                let tau_trade_ms = if tau_entry > 0.0 {
+                    tau_entry
+                } else {
+                    self.temporal_spectrum
+                        .get(coin_id)
+                        .map(|s| s.dominant_tau_ms)
+                        .filter(|&t| t > 0.0)
+                        .unwrap_or_else(|| {
+                            quantum_arena::temporal_spectrum::tau_from_temporal_scale(
+                                self.arena.config.temporal_scale.load(Ordering::Relaxed),
+                            )
+                        })
+                };
+                let temporal_s = quantum_arena::temporal_spectrum::temporal_scale_from_tau(tau_trade_ms);
+
                 let (sl, tp) = {
                     let pos_tp = pos.tp_price.load(Ordering::Relaxed);
                     let pos_sl = pos.sl_price.load(Ordering::Relaxed);
-                    // FASE 23: Espectro Continuo Universal — evaluación continua a tau dominante
-                    let tau_entry = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
-                    let tau = if tau_entry > 0.0 {
-                        tau_entry
-                    } else {
-                        let l_fast = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();
-                        let l_slow = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS.ln();
-                        let s = self.arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.05, 0.95);
-                        (l_fast + s * (l_slow - l_fast)).exp()
-                    };
-                    let sl_base = self.arena.config.sl_at_tau(tau).clamp(0.0005, 0.0500);
-                    let tp_base = self.arena.config.tp_at_tau(tau).clamp(0.0010, 0.1000);
+                    let sl_base = self.arena.config.sl_at_tau(tau_trade_ms).clamp(0.0005, 0.0500);
+                    let tp_base = self.arena.config.tp_at_tau(tau_trade_ms).clamp(0.0010, 0.1000);
                     let fallback_sl = sl_base.max(atr_pct * 1.5).clamp(0.0010, 0.0300);
                     let rr_ratio = self
                         .arena
@@ -1149,22 +1156,11 @@ impl GodEngineCore {
                 let pers_dom = self
                     .temporal_spectrum
                     .get(coin_id)
-                    .map(|spec| spec.persistence_at(spec.dominant_tau_ms).clamp(-1.0, 1.0))
+                    .map(|spec| spec.persistence_at(tau_trade_ms).clamp(-1.0, 1.0))
                     .unwrap_or(0.0);
                 let s_t = (pers_dom + 1.0) * 0.5;
                 let be_frac = 0.45 + 0.20 * s_t;
                 let trail_frac = 0.60 + 0.20 * s_t;
-
-                // #536: Modulación adaptativa del Breakeven por horizonte de posición.
-                let pos_horizon = pos.horizon();
-                let is_scalp_pos = matches!(
-                    pos_horizon,
-                    quantum_arena::position::PositionHorizon::Scalping
-                );
-                let is_swing_pos = matches!(
-                    pos_horizon,
-                    quantum_arena::position::PositionHorizon::Swing
-                );
 
                 let slip_floor = self
                     .arena
@@ -1173,28 +1169,22 @@ impl GodEngineCore {
                     .load(Ordering::Relaxed)
                     .max(0.0001);
 
-                // #544, #548, #555 & #559: Breakeven Físico con Garantía EV >= 0 Especializado por Horizonte
-                // En Scalping: buffer ágil (7-11 bps) que garantiza ganancia neta post-fees sin redundancia,
-                // activándose limpiamente a 12-16 bps (buf + 3.5 bps) para capturar los micro-impulsos de ruptura
-                // y blindar el capital de $13 USD contra decaimiento sin exigir una doble barrera artificial.
-                // En Swing: buffer amplio (22-35 bps) que permite que las tendencias macro respiren.
-                let (be_buffer, be_activation) = if is_scalp_pos {
-                    let buf = (live_fee * 1.15 + slip_floor * 1.0).clamp(0.0007, 0.0011);
-                    let act = (buf + 0.00035).clamp(0.0012, 0.0016);
-                    (buf, act)
-                } else if is_swing_pos {
-                    let buf = (live_fee * 2.5 + slip_floor * 2.0).clamp(0.0022, 0.0035);
-                    let act = (tp * be_frac * 1.15)
-                        .max(buf + live_fee * 1.5 + atr_pct_live * 0.50)
-                        .min(tp * 0.85);
-                    (buf, act)
-                } else {
-                    let buf = (live_fee * 1.8 + slip_floor * 1.5).clamp(0.0012, 0.0024);
-                    let act = (tp * 0.28)
-                        .max(buf + live_fee + atr_pct_live * 0.25)
-                        .min(tp * 0.60);
-                    (buf, act)
-                };
+                // #544, #548, #555, #559 & #560: Breakeven Físico con Garantía EV >= 0 en Espectro Continuo Multivariante
+                // Erradicada la dicotomía discreta (scalping vs swing).
+                // A escala rápida (s=0, tau=30s): buffer ágil (7-11 bps) que garantiza ganancia neta post-fees sin redundancia,
+                // activándose limpiamente a 12-16 bps (buf + 3.5 bps) para capturar micro-impulsos y blindar los $13 USD.
+                // A escala lenta (s=1, tau=12h): buffer amplio (22-35 bps) y activación escalada con el objetivo TP.
+                // En todo el continuo s in [0, 1]: interpolación suave lerp(fast, slow, s) sin escalones ni acantilados.
+                let buf_fast = (live_fee * 1.15 + slip_floor * 1.0).clamp(0.0007, 0.0011);
+                let act_fast = (buf_fast + 0.00035).clamp(0.0012, 0.0016);
+
+                let buf_slow = (live_fee * 2.50 + slip_floor * 2.0).clamp(0.0022, 0.0035);
+                let act_slow = (tp * be_frac * 1.15)
+                    .max(buf_slow + live_fee * 1.5 + atr_pct_live * 0.50)
+                    .min(tp * 0.85);
+
+                let be_buffer = (1.0 - temporal_s) * buf_fast + temporal_s * buf_slow;
+                let be_activation = (1.0 - temporal_s) * act_fast + temporal_s * act_slow;
 
                 if peak_pnl >= be_activation {
                     let be_stop = if is_long {
@@ -1214,28 +1204,17 @@ impl GodEngineCore {
                     }
                 }
 
-                // 2. Trailing Stop Ratchet Dinámico (#559)
-                let trail_activation_pnl = if is_scalp_pos {
-                    (be_activation * 1.15).clamp(0.0015, 0.0024)
-                } else {
-                    (tp * trail_frac).max(be_activation * 1.25).min(tp * 0.95)
-                };
+                // 2. Trailing Stop Ratchet Espectral Continuo (#559, #560)
+                let trail_act_fast = (be_activation * 1.15).clamp(0.0015, 0.0024);
+                let trail_act_slow = (tp * trail_frac).max(be_activation * 1.25).min(tp * 0.95);
+                let trail_activation_pnl = (1.0 - temporal_s) * trail_act_fast + temporal_s * trail_act_slow;
                 let trail_active = peak_pnl >= trail_activation_pnl;
 
                 let mut force_close_trail = false;
 
                 if trail_active {
-                    let tau_entry = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
-                    let tau = if tau_entry > 0.0 {
-                        tau_entry
-                    } else {
-                        let l_fast = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();
-                        let l_slow = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS.ln();
-                        let s = self.arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.05, 0.95);
-                        (l_fast + s * (l_slow - l_fast)).exp()
-                    };
                     let (trail_atr_mult, trail_act, trail_step, trail_max) =
-                        self.arena.config.trail_params_at_tau(tau);
+                        self.arena.config.trail_params_at_tau(tau_trade_ms);
 
                     let trail_res = crate::trailing::evaluate_quantum_trailing_with_fee(
                         side_int,
@@ -1253,13 +1232,11 @@ impl GodEngineCore {
                         trail_atr_mult,
                         live_fee,
                         tp, // B3.27 — escalera relativa al TP
-                        // S-2: persistencia de la escala dominante — la
-                        // escalera respira con el régimen (tendencial corre,
-                        // mean-revert cosecha).
+                        // S-2 / #560: persistencia continua de la longitud de onda tau_trade_ms
                         self.temporal_spectrum
                             .get(coin_id)
                             .map(|spec| {
-                                spec.persistence_at(spec.dominant_tau_ms).clamp(-1.0, 1.0)
+                                spec.persistence_at(tau_trade_ms).clamp(-1.0, 1.0)
                             })
                             .unwrap_or(0.0),
                     );
@@ -1310,40 +1287,6 @@ impl GodEngineCore {
                     false
                 };
 
-                let tau_exit = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
-                let temporal_s = if tau_exit > 0.0 {
-                    let l_fast = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();
-                    let l_slow = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS.ln();
-                    ((tau_exit.ln() - l_fast) / (l_slow - l_fast)).clamp(0.0, 1.0)
-                } else {
-                    self.arena
-                        .config
-                        .temporal_scale
-                        .load(Ordering::Relaxed)
-                        .clamp(0.0, 1.0)
-                };
-
-                let is_scalp = matches!(
-                    pos_horizon,
-                    quantum_arena::position::PositionHorizon::Scalping
-                );
-                let is_swing = matches!(
-                    pos_horizon,
-                    quantum_arena::position::PositionHorizon::Swing
-                );
-
-                let tau_trade_ms = if tau_exit > 0.0 {
-                    tau_exit
-                } else if is_scalp {
-                    180_000.0
-                } else if is_swing {
-                    3_600_000.0
-                } else {
-                    let l_fast = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();
-                    let l_slow = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS.ln();
-                    (l_fast + temporal_s * (l_slow - l_fast)).exp()
-                };
-
                 let macro_t = self.feature_engines[coin_id].get_macro_trend();
                 // D-455: Inversión de tendencia genuina (45 bps de pendiente EMA) en escala macro
                 let trend_reversed =
@@ -1365,71 +1308,42 @@ impl GodEngineCore {
                 let toxic_flow_exit = (pnl_pct <= -toxic_cut_sl && ofi_adverse && trend_adverse)
                     || (pnl_pct <= -toxic_cut_sl && cur_vpin > 0.65 && ofi_adverse);
 
-                // #548: Alpha Decay & Micro-Stagnation Cutoff para Scalping
-                // #546 & #556: Alpha Decay Exit y Peak Harvest Decay en Scalping
-                // La predictibilidad de microestructura L2 se extingue rápidamente.
-                // 1. Peak Harvest: si el trade alcanzó un pico favorable (>= 13 bps) pero devuelve más del 40% del pico
-                //    tras al menos 240s (4 min), cosechar ganancia neta antes de que degenere en pérdida.
-                // 2. Stagnant Decay: si tras 7-15 min no despega y el flujo se torna adverso, salir en scratch.
-                let alpha_decay_exit = if is_scalp || tau_trade_ms < 1_800_000.0 {
-                    let min_stagnant_ms = (tau_trade_ms * 2.5).clamp(420_000.0, 900_000.0) as u64; // 7 a 15 min
-                    let hard_stagnant_ms = (tau_trade_ms * 4.5).clamp(900_000.0, 1_500_000.0) as u64; // 15 a 25 min
-                    let absolute_scalp_life_ms = (tau_trade_ms * 8.0).clamp(1_500_000.0, 2_400_000.0) as u64; // 25 a 40 min
+                // #548, #556 & #560: Alpha Decay y Peak Harvest Continuo Multivariante
+                // La predictibilidad de microestructura y flujo se extingue continuamente
+                // según la longitud de onda tau_trade_ms y su coordenada espectral temporal_s.
+                let harvest_age_ms = (tau_trade_ms * (1.2 + 1.3 * temporal_s)).clamp(240_000.0, 7_200_000.0) as u64;
+                let peak_harvest_thresh = 0.0013 + 0.0035 * temporal_s;
+                let min_stagnant_ms = (tau_trade_ms * (2.5 + 2.5 * temporal_s)).clamp(420_000.0, 14_400_000.0) as u64;
+                let hard_stagnant_ms = (tau_trade_ms * (4.5 + 3.5 * temporal_s)).clamp(900_000.0, 28_800_000.0) as u64;
+                let absolute_trade_life_ms = (tau_trade_ms * (8.0 + 8.0 * temporal_s)).clamp(1_500_000.0, 86_400_000.0) as u64;
 
-                    if event_time_ms > 0 {
-                        let peak_harvest_decay = position_age_ms > 240_000
-                            && peak_pnl >= 0.0013
-                            && pnl_pct <= (peak_pnl * 0.58).max(0.0006);
+                let alpha_decay_exit = if event_time_ms > 0 {
+                    let peak_harvest_decay = position_age_ms > harvest_age_ms
+                        && peak_pnl >= peak_harvest_thresh
+                        && pnl_pct <= (peak_pnl * 0.58).max(be_buffer * 0.80);
 
-                        let time_stagnant_decay = if position_age_ms > min_stagnant_ms {
-                            let ema_ofi_adverse = (is_long && ema_ofi < -0.25) || (!is_long && ema_ofi > 0.25);
-                            let thesis_broken = pnl_pct < -0.0005 && ema_ofi_adverse && trend_adverse;
-                            let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct <= -0.0002;
-                            let absolute_expired = position_age_ms > absolute_scalp_life_ms;
+                    let time_stagnant_decay = if position_age_ms > min_stagnant_ms {
+                        let ema_ofi_adverse = (is_long && ema_ofi < -0.25) || (!is_long && ema_ofi > 0.25);
+                        let thesis_broken = pnl_pct < -0.0005 && ema_ofi_adverse && trend_adverse;
+                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct <= -0.0002;
+                        let absolute_expired = position_age_ms > absolute_trade_life_ms;
 
-                            thesis_broken || time_expired || absolute_expired
-                        } else {
-                            false
-                        };
-
-                        peak_harvest_decay || time_stagnant_decay
+                        thesis_broken || time_expired || absolute_expired
                     } else {
                         false
-                    }
+                    };
+
+                    peak_harvest_decay || time_stagnant_decay
                 } else {
                     false
                 };
 
-                // D-649 (DÉCIMA OLA) & #548: Timeout y Zombi adaptativo por horizonte
-                let zombie_gene_ms = self
-                    .arena
-                    .config
-                    .zombie_timeout_ms
-                    .load(Ordering::Relaxed);
-                let zombie_base_ms = if zombie_gene_ms.is_finite() && zombie_gene_ms > 0.0 {
-                    zombie_gene_ms
-                } else {
-                    3_600_000.0
-                };
-
-                let (dynamic_zombie_debounce_ms, dynamic_hard_timeout_ms, absolute_expiry_ms, z_loss_hard, z_loss_trend) = if is_scalp {
-                    (
-                        (tau_trade_ms * 2.5).clamp(300_000.0, 600_000.0) as u64,
-                        (tau_trade_ms * 4.0).clamp(600_000.0, 1_200_000.0) as u64,
-                        (tau_trade_ms * 8.0).clamp(1_200_000.0, 2_400_000.0) as u64,
-                        (sl * 0.60).max(live_fee * 1.5),
-                        (sl * 0.50).max(live_fee * 1.5),
-                    )
-                } else {
-                    let horizon_dilation = (1.0 + temporal_s) * (if is_swing { 2.0 } else { 1.0 });
-                    (
-                        (zombie_base_ms * horizon_dilation).max(1_800_000.0) as u64,
-                        (zombie_base_ms * 3.0 * horizon_dilation).max(5_400_000.0) as u64,
-                        (zombie_base_ms * 12.0 * horizon_dilation).max(21_600_000.0) as u64,
-                        (sl * 0.75).max(0.0050),
-                        (sl * 0.65).max(0.0060),
-                    )
-                };
+                // D-649 (DÉCIMA OLA), #548 & #560: Timeout y Zombi adaptativo continuo por escala espectral
+                let dynamic_zombie_debounce_ms = (tau_trade_ms * (2.5 + 1.5 * temporal_s)).clamp(300_000.0, 7_200_000.0) as u64;
+                let dynamic_hard_timeout_ms = (tau_trade_ms * (4.0 + 4.0 * temporal_s)).clamp(600_000.0, 21_600_000.0) as u64;
+                let absolute_expiry_ms = (tau_trade_ms * (8.0 + 8.0 * temporal_s)).clamp(1_200_000.0, 43_200_000.0) as u64;
+                let z_loss_hard = (sl * (0.60 + 0.15 * temporal_s)).max(live_fee * 1.5);
+                let z_loss_trend = (sl * (0.50 + 0.15 * temporal_s)).max(live_fee * 1.5);
 
                 let expired_by_age =
                     event_time_ms > 0 && position_age_ms > absolute_expiry_ms;
@@ -4429,22 +4343,17 @@ impl GodEngineCore {
                                         *t = tensor_snapshot.to_vec();
                                     }
                                 }
-                                // REHAB-1b: la posición NACE con su τ dominante
-                                // VIVA del espectro — horizonte continuo real,
-                                // no etiqueta. Los cierres (temporal_s lerp)
-                                // podrán leerla directamente.
+                                // REHAB-1b & #560: la posición NACE con su τ dominante
+                                // VIVA del espectro continuo — horizonte físico real, no etiqueta discreta.
                                 let tau_entry = if calibrated_intent.expected_duration_ms > 0 {
                                     calibrated_intent.expected_duration_ms
                                 } else {
-                                    match pos_h {
-                                        quantum_arena::position::PositionHorizon::Scalping => 180_000,
-                                        quantum_arena::position::PositionHorizon::Swing => 3_600_000,
-                                        _ => self
-                                            .temporal_spectrum
-                                            .get(coin_id)
-                                            .map(|s| s.dominant_tau_ms as u64)
-                                            .unwrap_or(180_000),
-                                    }
+                                    tau_coin
+                                        .clamp(
+                                            quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                                            quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                                        )
+                                        .round() as u64
                                 };
                                 coin.positions
                                     .position
