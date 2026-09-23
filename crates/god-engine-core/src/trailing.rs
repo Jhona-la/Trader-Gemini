@@ -171,16 +171,16 @@ pub fn evaluate_quantum_trailing_with_fee(
         0.5
     };
     let lvl = |mr: f64, tend: f64| mr + (tend - mr) * t;
-    let be_trigger = (effective_tp * lvl(0.40, 0.60)).max(effective_fee * 3.5);
+    let be_trigger = (effective_tp * lvl(0.28, 0.48)).max(effective_fee * 2.8);
 
     // 3. Phase Transitions (Desasfixiadas: permiten que el trade desarrolle su ciclo hasta TP)
-    if current_phase == 0 && (pnl_atr >= 1.5 || max_pnl_pct >= be_trigger) {
+    if current_phase == 0 && (pnl_atr >= 1.2 || max_pnl_pct >= be_trigger) {
         current_phase = 1;
-    } else if current_phase == 1 && (pnl_atr >= 2.5 || max_pnl_pct >= be_trigger * 1.5) {
+    } else if current_phase == 1 && (pnl_atr >= 2.2 || max_pnl_pct >= be_trigger * 1.4) {
         current_phase = 2;
-    } else if current_phase == 2 && pnl_atr >= 4.0 {
+    } else if current_phase == 2 && pnl_atr >= 3.5 {
         current_phase = 3;
-    } else if current_phase == 3 && mfe_atr >= 5.0 {
+    } else if current_phase == 3 && mfe_atr >= 4.5 {
         current_phase = 4;
     }
 

@@ -1173,15 +1173,15 @@ impl GodEngineCore {
                     .load(Ordering::Relaxed)
                     .max(0.0001);
 
-                // #544 & #548: Breakeven Físico con Garantía EV >= 0 Especializado por Horizonte
-                // En Scalping: buffer ágil (9-18 bps) que cubre comisiones y deslizamiento real con ganancia neta,
-                // activándose a ~38% del TP (16-22 bps) para blindar el capital micro de $13 USD.
+                // #544, #548 & #555: Breakeven Físico con Garantía EV >= 0 Especializado por Horizonte
+                // En Scalping: buffer ágil (8-16 bps) que cubre comisiones y deslizamiento real con ganancia neta,
+                // activándose a ~22% del TP (14-18 bps) para blindar el capital micro de $13 USD contra decaimiento.
                 // En Swing: buffer amplio (22-35 bps) que permite que las tendencias macro respiren.
                 let (be_buffer, be_activation) = if is_scalp_pos {
-                    let buf = (live_fee * 1.5 + slip_floor * 1.5).clamp(0.0009, 0.0020);
-                    let act = (tp * 0.38)
-                        .max(buf + live_fee + atr_pct_live * 0.25)
-                        .min(tp * 0.70);
+                    let buf = (live_fee * 1.3 + slip_floor * 1.2).clamp(0.0008, 0.0016);
+                    let act = (tp * 0.22)
+                        .max(buf + live_fee * 0.8 + 0.0002)
+                        .min(tp * 0.45);
                     (buf, act)
                 } else if is_swing_pos {
                     let buf = (live_fee * 2.5 + slip_floor * 2.0).clamp(0.0022, 0.0035);
@@ -1190,10 +1190,10 @@ impl GodEngineCore {
                         .min(tp * 0.85);
                     (buf, act)
                 } else {
-                    let buf = (live_fee * 2.0 + slip_floor * 1.8).clamp(0.0015, 0.0028);
-                    let act = (tp * be_frac)
-                        .max(buf + live_fee * 1.2 + atr_pct_live * 0.35)
-                        .min(tp * 0.80);
+                    let buf = (live_fee * 1.8 + slip_floor * 1.5).clamp(0.0012, 0.0024);
+                    let act = (tp * 0.28)
+                        .max(buf + live_fee + atr_pct_live * 0.25)
+                        .min(tp * 0.60);
                     (buf, act)
                 };
 
@@ -1217,7 +1217,7 @@ impl GodEngineCore {
 
                 // 2. Trailing Stop Ratchet Dinámico
                 let trail_activation_pnl = if is_scalp_pos {
-                    (tp * 0.58).max(be_activation * 1.15).min(tp * 0.88)
+                    (tp * 0.35).max(be_activation * 1.08).min(tp * 0.70)
                 } else {
                     (tp * trail_frac).max(be_activation * 1.25).min(tp * 0.95)
                 };
@@ -1367,21 +1367,33 @@ impl GodEngineCore {
                     || (pnl_pct <= -toxic_cut_sl && cur_vpin > 0.65 && ofi_adverse);
 
                 // #548: Alpha Decay & Micro-Stagnation Cutoff para Scalping
-                // La predictibilidad de microestructura L2 se extingue tras 4-6 tau (12-20 min).
-                // Si la posición no despega y el flujo se torna adverso, se cierra en scratch/micro-loss
-                // en vez de permitir que la difusión browniana toque el micro-stop de 0.28%.
+                // #546 & #556: Alpha Decay Exit y Peak Harvest Decay en Scalping
+                // La predictibilidad de microestructura L2 se extingue rápidamente.
+                // 1. Peak Harvest: si el trade alcanzó un pico favorable (>= 13 bps) pero devuelve más del 40% del pico
+                //    tras al menos 240s (4 min), cosechar ganancia neta antes de que degenere en pérdida.
+                // 2. Stagnant Decay: si tras 7-15 min no despega y el flujo se torna adverso, salir en scratch.
                 let alpha_decay_exit = if is_scalp || tau_trade_ms < 1_800_000.0 {
-                    let min_stagnant_ms = (tau_trade_ms * 4.0).clamp(720_000.0, 1_200_000.0) as u64; // 12 a 20 min
-                    let hard_stagnant_ms = (tau_trade_ms * 6.0).clamp(1_200_000.0, 1_800_000.0) as u64; // 20 a 30 min
-                    let absolute_scalp_life_ms = (tau_trade_ms * 10.0).clamp(1_800_000.0, 2_700_000.0) as u64; // 30 a 45 min
+                    let min_stagnant_ms = (tau_trade_ms * 2.5).clamp(420_000.0, 900_000.0) as u64; // 7 a 15 min
+                    let hard_stagnant_ms = (tau_trade_ms * 4.5).clamp(900_000.0, 1_500_000.0) as u64; // 15 a 25 min
+                    let absolute_scalp_life_ms = (tau_trade_ms * 8.0).clamp(1_500_000.0, 2_400_000.0) as u64; // 25 a 40 min
 
-                    if event_time_ms > 0 && position_age_ms > min_stagnant_ms {
-                        let ema_ofi_adverse = (is_long && ema_ofi < -0.25) || (!is_long && ema_ofi > 0.25);
-                        let thesis_broken = pnl_pct < -0.0005 && ema_ofi_adverse && trend_adverse;
-                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct <= -0.0002;
-                        let absolute_expired = position_age_ms > absolute_scalp_life_ms;
+                    if event_time_ms > 0 {
+                        let peak_harvest_decay = position_age_ms > 240_000
+                            && peak_pnl >= 0.0013
+                            && pnl_pct <= (peak_pnl * 0.58).max(0.0006);
 
-                        thesis_broken || time_expired || absolute_expired
+                        let time_stagnant_decay = if position_age_ms > min_stagnant_ms {
+                            let ema_ofi_adverse = (is_long && ema_ofi < -0.25) || (!is_long && ema_ofi > 0.25);
+                            let thesis_broken = pnl_pct < -0.0005 && ema_ofi_adverse && trend_adverse;
+                            let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct <= -0.0002;
+                            let absolute_expired = position_age_ms > absolute_scalp_life_ms;
+
+                            thesis_broken || time_expired || absolute_expired
+                        } else {
+                            false
+                        };
+
+                        peak_harvest_decay || time_stagnant_decay
                     } else {
                         false
                     }
