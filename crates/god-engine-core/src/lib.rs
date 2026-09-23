@@ -1346,7 +1346,16 @@ impl GodEngineCore {
                         let ema_ofi_adverse = (is_long && ema_ofi < -0.30) || (!is_long && ema_ofi > 0.30);
                         let thesis_broken = pnl_pct < -sl * 0.70 && ema_ofi_adverse && trend_adverse;
                         let stillborn_cut = peak_pnl <= 0.0001 && pnl_pct < -sl * 0.75 && ema_ofi_adverse;
-                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.50;
+                        // F8 / CUÁNTICO: Extinción de energía espectral.
+                        // La posición retiene su derecho a desarrollarse si la longitud de onda tau_trade_ms
+                        // aún preserva coherencia direccional y persistencia de memoria espectral (≥ 0.20).
+                        let spec_alive = self.temporal_spectrum.get(coin_id).map(|spec| {
+                            let sig = spec.signal_at(tau_trade_ms);
+                            let pers = spec.persistence_at(tau_trade_ms);
+                            let sig_aligned = if is_long { sig >= -0.15 } else { sig <= 0.15 };
+                            sig_aligned && pers >= 0.20
+                        }).unwrap_or(false);
+                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.50 && !spec_alive;
                         let absolute_expired = position_age_ms > absolute_trade_life_ms;
 
                         thesis_broken || stillborn_cut || time_expired || absolute_expired
@@ -1635,13 +1644,14 @@ impl GodEngineCore {
                         }
                     }
                     // D-619: el calibrador aprende de la puntuación CRUDA y del
-                    // resultado neto de comisiones. Nunca de su propia salida.
+                    // resultado neto de comisiones. Se actualizan SIEMPRE el calibrador
+                    // específico de la moneda (para sesgos locales) Y el calibrador global
+                    // (para transferencia de aprendizaje cross-asset).
                     if score_at_entry > 0.0 {
                         if coin_id < self.calibrator_by_coin.len() {
                             self.calibrator_by_coin[coin_id].update(score_at_entry, is_win);
-                        } else {
-                            self.confidence_calibrator.update(score_at_entry, is_win);
                         }
+                        self.confidence_calibrator.update(score_at_entry, is_win);
                     }
 
                     // #25: Actualización del motor de refuerzo continuo PPO (OnlinePpoPolicyEngine)
@@ -1916,10 +1926,19 @@ impl GodEngineCore {
                     for (idx, &f) in cur_features.iter().enumerate().take(64) {
                         online_feat[idx] = f;
                     }
-                    self.diag_dir.record_online_update(realized_ret - ml_at_entry);
+                    // F8 / CUÁNTICO: Corrección de coherencia dimensional en innovación online.
+                    // Antes: (realized_ret - ml_at_entry) restaba una probabilidad (~0.50) de un retorno
+                    // (~+0.0014), produciendo un sesgo sistemático de -0.4986 en el 100% de los casos.
+                    // Ahora: Innovación en el espacio canónico de probabilidad de acierto direccional:
+                    //   td_error = (if is_win { 1.0 } else { 0.0 }) - p_win_at_entry
+                    // con esperanza matemática E[td_error] = 0.0 bajo calibración neutral.
+                    let p_win_at_entry = if is_long { ml_at_entry } else { 1.0 - ml_at_entry };
+                    let outcome = if is_win { 1.0 } else { 0.0 };
+                    let td_error = outcome - p_win_at_entry;
+                    self.diag_dir.record_online_update(td_error);
                     self.online_learner.update_weights_with_kalman_adaptive_vol(
                         &online_feat,
-                        (realized_ret - ml_at_entry) as f32,
+                        td_error as f32,
                         (hurst_val as f32 - 0.5).abs(),
                         raw_atr_pct as f32,
                     );
@@ -3579,14 +3598,19 @@ impl GodEngineCore {
                 } else {
                     // Conflicto de banda:
                     // 1. Si sólo un slot está libre, despachar la banda que tiene su slot disponible.
-                    // 2. Si ambos están libres, arbitrar por resonancia energética espectral viva.
-                    let tau_dom_now = self
+                    // 2. Si ambos están libres, arbitrar por balance continuo de energía espectral viva
+                    //    entre la escala micro-resonante y la macro-resonante del tensor de 32 partes.
+                    let (fast_energy, slow_energy) = self
                         .temporal_spectrum
                         .get(coin_id)
-                        .map(|s| s.dominant_tau_ms)
-                        .unwrap_or(30_000.0);
-                    const TAU_MID_MS: f64 = 1_138_000.0;
-                    let fast_band_governs = tau_dom_now < TAU_MID_MS;
+                        .map(|s| {
+                            let e_fast = s.continuous_energy_density(s.micro_resonant_tau_ms());
+                            let e_slow = s.continuous_energy_density(s.macro_resonant_tau_ms());
+                            (e_fast, e_slow)
+                        })
+                        .unwrap_or((1.0, 1.0));
+
+                    let fast_band_governs = fast_energy >= slow_energy;
 
                     let winner = if scalp_free && !swing_free {
                         fast_intent
@@ -4071,20 +4095,24 @@ impl GodEngineCore {
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_NEURAL);
             let mut new_order = None;
 
-            let is_scalp_candidate = unified_intent.expected_duration_ms > 0
-                && unified_intent.expected_duration_ms <= 300_000;
-            let is_swing_candidate = unified_intent.expected_duration_ms > 300_000;
-
-            // Especialización física continua por longitud de onda espectral:
-            // Cada intención se despacha a su propio slot especializado sin canibalismo ni mezclas.
-            // Si el slot primario está ocupado, el slot continuo universal absorbe el flujo armónico si está disponible.
-            let (target_pos_slot, pos_h, slot_available) = if is_scalp_candidate {
-                (0usize, quantum_arena::position::PositionHorizon::Scalping, !coin.positions.scalp.is_open())
-            } else if is_swing_candidate {
-                (1usize, quantum_arena::position::PositionHorizon::Swing, !coin.positions.swing.is_open())
+            let is_long_intent = unified_intent.signal == SignalType::Long;
+            let tau_intent_ms = if unified_intent.expected_duration_ms > 0 {
+                unified_intent.expected_duration_ms as f64
             } else {
-                (2usize, quantum_arena::position::PositionHorizon::Continuous, !coin.positions.position.is_open())
+                self.temporal_spectrum
+                    .get(coin_id)
+                    .map(|s| s.dominant_tau_ms)
+                    .unwrap_or(30_000.0)
             };
+
+            // Despacho Espectral Continuo Universal Multivariante:
+            // En lugar de cortes discretos arbitrarios (<= 300s vs > 300s),
+            // la escala característica tau_ms busca una ranura armónica disponible que no
+            // entre en interferencia destructiva con posiciones en la misma dirección.
+            let maybe_slot = coin.positions.find_resonant_slot(tau_intent_ms, is_long_intent);
+            let slot_available = maybe_slot.is_some();
+            let target_pos_slot = maybe_slot.unwrap_or(0);
+            let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 
             // --- APERTURA MULTI-HORIZONTE CONTINUA INTEGRAL ---
             if unified_intent.signal != SignalType::Flat && slot_available {
@@ -4100,8 +4128,15 @@ impl GodEngineCore {
                 // absorbente. Calibrar la selección exige resultados contrafactuales.
                 let raw_confidence_score = unified_intent.confidence;
                 let mut calibrated_intent = unified_intent;
-                calibrated_intent.win_probability =
-                    self.confidence_calibrator.calibrate(raw_confidence_score);
+                // Cierre del lazo adaptativo por moneda con fallback bayesiano al calibrador global:
+                let cal_prob = if coin_id < self.calibrator_by_coin.len()
+                    && self.calibrator_by_coin[coin_id].observations() >= 5
+                {
+                    self.calibrator_by_coin[coin_id].calibrate(raw_confidence_score)
+                } else {
+                    self.confidence_calibrator.calibrate(raw_confidence_score)
+                };
+                calibrated_intent.win_probability = cal_prob;
                 let order =
                     self.risk_engine
                         .evaluate_quantum_order(coin_id, &calibrated_intent, &self.arena);
@@ -4418,11 +4453,7 @@ impl GodEngineCore {
                                     .get(coin_id)
                                     .map(|s| s.dominant_tau_ms)
                                     .unwrap_or(60_000.0);
-                                let target_pos = match target_pos_slot {
-                                    0 => &coin.positions.scalp,
-                                    1 => &coin.positions.swing,
-                                    _ => &coin.positions.position,
-                                };
+                                let target_pos = coin.positions.get_slot(target_pos_slot);
 
                                 target_pos.open_with_fee(
                                     is_long,
@@ -4436,6 +4467,10 @@ impl GodEngineCore {
                                     ml_prob,
                                     raw_confidence_score,
                                     fee_paid,
+                                );
+                                target_pos.entry_tau_ms.store(
+                                    (tau_intent_ms.round() as u64).max(10),
+                                    Ordering::Relaxed,
                                 );
                                 // QO-E2b — PRODUCTOR DEL DATASET NN: congelar
                                 // el tensor 54D de la APERTURA. El cierre lo

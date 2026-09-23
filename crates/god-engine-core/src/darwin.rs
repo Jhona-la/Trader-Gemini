@@ -17,10 +17,10 @@ pub struct Genotype {
     pub trend_threshold: f64,
     pub maker_spread_pct: f64,
     pub maker_obi_threshold: f64,
-    pub scalp_tp: f64,
-    pub scalp_sl: f64,
-    pub swing_tp: f64,
-    pub swing_sl: f64,
+    pub tp_curve_a: f64,
+    pub tp_curve_b: f64,
+    pub sl_curve_a: f64,
+    pub sl_curve_b: f64,
     pub scalp_z_target: f64,
     pub capital_split_scalp: f64,
     pub min_confidence: f64,
@@ -28,17 +28,29 @@ pub struct Genotype {
 }
 
 impl Genotype {
+    #[inline]
+    pub fn scalp_tp(&self) -> f64 {
+        quantum_arena::temporal_spectrum::HorizonCurve { a: self.tp_curve_a, b: self.tp_curve_b }
+            .eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
+    }
+
+    #[inline]
+    pub fn scalp_sl(&self) -> f64 {
+        quantum_arena::temporal_spectrum::HorizonCurve { a: self.sl_curve_a, b: self.sl_curve_b }
+            .eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
+    }
+
     pub fn new_random() -> Self {
         Self {
             global_leverage: rand::rng().random_range(10.0..125.0),
             trend_threshold: rand::rng().random_range(0.3..0.8),
             maker_spread_pct: rand::rng().random_range(0.0001..0.0020),
             maker_obi_threshold: rand::rng().random_range(0.3..0.9),
-            // FIX #1505: Rango asimétrico favorable (R:R >= 2:1 a 5:1) en genomas iniciales
-            scalp_tp: rand::rng().random_range(0.003..0.012),
-            scalp_sl: rand::rng().random_range(0.0005..0.0025),
-            swing_tp: rand::rng().random_range(0.006..0.025),
-            swing_sl: rand::rng().random_range(0.0015..0.0060),
+            // Curvas continuas espectrales: TP(τ) = exp(a + b·ln(τ))
+            tp_curve_a: rand::rng().random_range(-7.5..-4.0),
+            tp_curve_b: rand::rng().random_range(0.01..0.25),
+            sl_curve_a: rand::rng().random_range(-8.5..-5.0),
+            sl_curve_b: rand::rng().random_range(0.01..0.25),
             scalp_z_target: rand::rng().random_range(1.0..4.0),
             capital_split_scalp: rand::rng().random_range(0.1..1.0),
             min_confidence: rand::rng().random_range(0.5..0.95),
@@ -52,10 +64,10 @@ impl Genotype {
             trend_threshold: arena.config.trend_threshold.load(Ordering::Relaxed),
             maker_spread_pct: arena.config.maker_spread_pct.load(Ordering::Relaxed),
             maker_obi_threshold: arena.config.maker_obi_threshold.load(Ordering::Relaxed),
-            scalp_tp: arena.config.scalp_tp_base.load(Ordering::Relaxed),
-            scalp_sl: arena.config.scalp_sl_base.load(Ordering::Relaxed),
-            swing_tp: arena.config.swing_tp_base.load(Ordering::Relaxed),
-            swing_sl: arena.config.swing_sl_base.load(Ordering::Relaxed),
+            tp_curve_a: arena.config.tp_curve_a.load(Ordering::Relaxed),
+            tp_curve_b: arena.config.tp_curve_b.load(Ordering::Relaxed),
+            sl_curve_a: arena.config.sl_curve_a.load(Ordering::Relaxed),
+            sl_curve_b: arena.config.sl_curve_b.load(Ordering::Relaxed),
             scalp_z_target: arena.config.scalp_obi_threshold.load(Ordering::Relaxed),
             capital_split_scalp: arena.config.capital_split_scalp.load(Ordering::Relaxed),
             min_confidence: arena.config.min_confidence_btc.load(Ordering::Relaxed),
@@ -67,7 +79,7 @@ impl Genotype {
     }
 
     pub fn apply_to_arena(&self, arena: &GlobalArena) {
-        // FIX #685: Sanitizar parámetros de genoma antes de almacenar en atómicos
+        // Sanitizar parámetros de genoma antes de almacenar en atómicos
         let g_lev = if self.global_leverage.is_finite() && self.global_leverage >= 1.0 {
             self.global_leverage
         } else {
@@ -88,34 +100,27 @@ impl Genotype {
         } else {
             0.5
         };
-        let sc_tp = if self.scalp_tp.is_finite() && self.scalp_tp > 0.0 {
-            self.scalp_tp
+        let tp_a = if self.tp_curve_a.is_finite() {
+            self.tp_curve_a.clamp(-9.5, -2.0)
         } else {
-            0.003
+            -5.8
         };
-        let sc_sl = if self.scalp_sl.is_finite() && self.scalp_sl > 0.0 {
-            self.scalp_sl
+        let tp_b = if self.tp_curve_b.is_finite() {
+            self.tp_curve_b.clamp(-0.2, 0.35)
         } else {
-            0.002
+            0.12
         };
-        let sw_tp = if self.swing_tp.is_finite() && self.swing_tp > 0.0 {
-            self.swing_tp
+        let sl_a = if self.sl_curve_a.is_finite() {
+            self.sl_curve_a.clamp(-10.5, -3.0)
         } else {
-            0.010
+            -6.5
         };
-        let sw_sl = if self.swing_sl.is_finite() && self.swing_sl > 0.0 {
-            self.swing_sl
+        let sl_b = if self.sl_curve_b.is_finite() {
+            self.sl_curve_b.clamp(-0.2, 0.35)
         } else {
-            0.005
+            0.10
         };
-        // D-728: `scalp_z_target` ya no se escribe en ningún gen (ver abajo);
-        // se conserva en el genotipo porque la evolución lo muta, pero no tiene
-        // destino en la configuración hasta que tenga su propio atómico.
-        let _sc_z = if self.scalp_z_target.is_finite() {
-            self.scalp_z_target
-        } else {
-            2.0
-        };
+
         let cap_sp = if self.capital_split_scalp.is_finite() {
             self.capital_split_scalp
         } else {
@@ -141,12 +146,18 @@ impl Genotype {
             .config
             .maker_obi_threshold
             .store(m_obi, Ordering::Relaxed);
-        arena.config.scalp_tp_base.store(sc_tp, Ordering::Relaxed);
-        arena.config.scalp_sl_base.store(sc_sl, Ordering::Relaxed);
-        arena.config.swing_tp_base.store(sw_tp, Ordering::Relaxed);
-        arena.config.swing_sl_base.store(sw_sl, Ordering::Relaxed);
-        arena.config.update_tp_curve(sc_tp, sw_tp);
-        arena.config.update_sl_curve(sc_sl, sw_sl);
+        arena.config.tp_curve_a.store(tp_a, Ordering::Relaxed);
+        arena.config.tp_curve_b.store(tp_b, Ordering::Relaxed);
+        arena.config.sl_curve_a.store(sl_a, Ordering::Relaxed);
+        arena.config.sl_curve_b.store(sl_b, Ordering::Relaxed);
+
+        // Actualizar anclas derivadas para módulos legacy y observabilidad
+        let tp_c = quantum_arena::temporal_spectrum::HorizonCurve { a: tp_a, b: tp_b };
+        let sl_c = quantum_arena::temporal_spectrum::HorizonCurve { a: sl_a, b: sl_b };
+        arena.config.scalp_tp_base.store(tp_c.eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS), Ordering::Relaxed);
+        arena.config.swing_tp_base.store(tp_c.eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS), Ordering::Relaxed);
+        arena.config.scalp_sl_base.store(sl_c.eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS), Ordering::Relaxed);
+        arena.config.swing_sl_base.store(sl_c.eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS), Ordering::Relaxed);
         // D-728 (DÉCIMA OLA · auditoría integral): UN GENOTIPO NO SOBRESCRIBE
         // GENES QUE NO LLEVA (la misma regla de D-715).
         //
@@ -478,25 +489,25 @@ impl DarwinDaemon {
                     } else {
                         p2.maker_obi_threshold
                     },
-                    scalp_tp: if rand::rng().random_bool(0.5) {
-                        p1.scalp_tp
+                    tp_curve_a: if rand::rng().random_bool(0.5) {
+                        p1.tp_curve_a
                     } else {
-                        p2.scalp_tp
+                        p2.tp_curve_a
                     },
-                    scalp_sl: if rand::rng().random_bool(0.5) {
-                        p1.scalp_sl
+                    tp_curve_b: if rand::rng().random_bool(0.5) {
+                        p1.tp_curve_b
                     } else {
-                        p2.scalp_sl
+                        p2.tp_curve_b
                     },
-                    swing_tp: if rand::rng().random_bool(0.5) {
-                        p1.swing_tp
+                    sl_curve_a: if rand::rng().random_bool(0.5) {
+                        p1.sl_curve_a
                     } else {
-                        p2.swing_tp
+                        p2.sl_curve_a
                     },
-                    swing_sl: if rand::rng().random_bool(0.5) {
-                        p1.swing_sl
+                    sl_curve_b: if rand::rng().random_bool(0.5) {
+                        p1.sl_curve_b
                     } else {
-                        p2.swing_sl
+                        p2.sl_curve_b
                     },
                     scalp_z_target: if rand::rng().random_bool(0.5) {
                         p1.scalp_z_target
@@ -533,16 +544,16 @@ impl DarwinDaemon {
                     child.maker_obi_threshold *= rand::rng().random_range(0.8..1.2);
                 }
                 if rand::rng().random_bool(mutation_rate) {
-                    child.scalp_tp *= rand::rng().random_range(0.7..1.5);
+                    child.tp_curve_a += rand::rng().random_range(-0.25..0.25);
                 }
                 if rand::rng().random_bool(mutation_rate) {
-                    child.scalp_sl *= rand::rng().random_range(0.7..1.5);
+                    child.tp_curve_b += rand::rng().random_range(-0.02..0.02);
                 }
                 if rand::rng().random_bool(mutation_rate) {
-                    child.swing_tp *= rand::rng().random_range(0.7..1.5);
+                    child.sl_curve_a += rand::rng().random_range(-0.25..0.25);
                 }
                 if rand::rng().random_bool(mutation_rate) {
-                    child.swing_sl *= rand::rng().random_range(0.7..1.5);
+                    child.sl_curve_b += rand::rng().random_range(-0.02..0.02);
                 }
                 if rand::rng().random_bool(mutation_rate) {
                     child.scalp_z_target *= rand::rng().random_range(0.8..1.2);
@@ -561,10 +572,10 @@ impl DarwinDaemon {
                 child.trend_threshold = child.trend_threshold.clamp(0.1, 0.9);
                 child.maker_spread_pct = child.maker_spread_pct.clamp(0.0001, 0.05);
                 child.maker_obi_threshold = child.maker_obi_threshold.clamp(0.1, 0.95);
-                child.scalp_tp = child.scalp_tp.clamp(0.0005, 0.02);
-                child.scalp_sl = child.scalp_sl.clamp(0.0005, 0.01);
-                child.swing_tp = child.swing_tp.clamp(0.001, 0.03);
-                child.swing_sl = child.swing_sl.clamp(0.0005, 0.01);
+                child.tp_curve_a = child.tp_curve_a.clamp(-9.5, -2.0);
+                child.tp_curve_b = child.tp_curve_b.clamp(-0.2, 0.35);
+                child.sl_curve_a = child.sl_curve_a.clamp(-10.5, -3.0);
+                child.sl_curve_b = child.sl_curve_b.clamp(-0.2, 0.35);
                 child.scalp_z_target = child.scalp_z_target.clamp(0.5, 5.0);
                 child.capital_split_scalp = child.capital_split_scalp.clamp(0.1, 1.0);
                 child.min_confidence = child.min_confidence.clamp(0.50, 0.95);
@@ -579,12 +590,13 @@ impl DarwinDaemon {
         let baseline_results = [current_active];
         let baseline_fitness = {
             // D-714: construcción con pila suficiente (este sitio corre en un worker de rayon).
-                    let arena = GlobalArena::build_in_own_stack(initial_capital);
+            let arena = GlobalArena::build_in_own_stack(initial_capital);
             baseline_results[0].apply_to_arena(&arena);
             let mut engine = GodEngineCore::new(arena.clone());
             let mut max_drawdown = 0.0;
             let mut peak_capital = initial_capital;
             let mut baseline_trades: u32 = 0;
+            let mut synth = OmniSynth::new(active_coins);
             for tick in &master_stream {
                 arena.update_market_data(
                     tick.coin_id,
@@ -594,11 +606,13 @@ impl DarwinDaemon {
                     tick.ask_qty,
                     tick.timestamp,
                 );
-                let mut dynamic_omni = [0.0f64; 54];
-                let swing_feats = engine.feature_engines[tick.coin_id].get_universal_features();
-                for (i, &f) in swing_feats.iter().enumerate() {
-                    dynamic_omni[i] = f as f64;
-                }
+                let dynamic_omni = synth.tick(
+                    tick.coin_id,
+                    tick.bid_price,
+                    tick.ask_price,
+                    tick.bid_qty,
+                    tick.ask_qty,
+                );
 
                 let (_new_pos, closed_pos, _) = engine.process_tick(
                     tick.coin_id,
@@ -670,11 +684,15 @@ impl DarwinDaemon {
             full_genotype.trend_threshold = best_all_time.0.trend_threshold;
             full_genotype.maker_spread_pct = best_all_time.0.maker_spread_pct;
             full_genotype.maker_obi_threshold = best_all_time.0.maker_obi_threshold;
-            full_genotype.scalp_tp_base = best_all_time.0.scalp_tp;
-            full_genotype.scalp_sl_base = best_all_time.0.scalp_sl;
-            full_genotype.swing_tp_base = best_all_time.0.swing_tp;
-            full_genotype.swing_sl_base = best_all_time.0.swing_sl;
-            full_genotype.scalp_obi_threshold = best_all_time.0.scalp_z_target;
+            full_genotype.tp_horizon_curve = quantum_arena::temporal_spectrum::HorizonCurve {
+                a: best_all_time.0.tp_curve_a,
+                b: best_all_time.0.tp_curve_b,
+            };
+            full_genotype.sl_horizon_curve = quantum_arena::temporal_spectrum::HorizonCurve {
+                a: best_all_time.0.sl_curve_a,
+                b: best_all_time.0.sl_curve_b,
+            };
+            full_genotype.derive_anchors_from_curves();
             full_genotype.capital_split_scalp = best_all_time.0.capital_split_scalp;
             full_genotype.min_confidence_btc = best_all_time.0.min_confidence;
             full_genotype.explosive_leverage_multiplier =
@@ -710,14 +728,14 @@ mod tests {
         let genome = Genotype::new_random();
 
         assert!(genome.global_leverage >= 10.0 && genome.global_leverage <= 125.0);
-        assert!(genome.scalp_tp > 0.0);
-        assert!(genome.scalp_sl > 0.0);
+        assert!(genome.scalp_tp() > 0.0);
+        assert!(genome.scalp_sl() > 0.0);
 
         genome.apply_to_arena(&arena);
 
         let roundtrip = Genotype::current_from_arena(&arena);
         assert_eq!(roundtrip.global_leverage, genome.global_leverage);
-        assert_eq!(roundtrip.scalp_tp, genome.scalp_tp);
+        assert!((roundtrip.scalp_tp() - genome.scalp_tp()).abs() < 1e-6);
     }
 
     #[test]
@@ -728,10 +746,10 @@ mod tests {
             trend_threshold: f64::NAN,
             maker_spread_pct: f64::NAN,
             maker_obi_threshold: f64::NAN,
-            scalp_tp: f64::NAN,
-            scalp_sl: f64::NAN,
-            swing_tp: f64::NAN,
-            swing_sl: f64::NAN,
+            tp_curve_a: f64::NAN,
+            tp_curve_b: f64::NAN,
+            sl_curve_a: f64::NAN,
+            sl_curve_b: f64::NAN,
             scalp_z_target: f64::NAN,
             capital_split_scalp: f64::NAN,
             min_confidence: f64::NAN,
@@ -743,8 +761,8 @@ mod tests {
         let safe_genome = Genotype::current_from_arena(&arena);
         assert!(safe_genome.global_leverage.is_finite());
         assert!(safe_genome.trend_threshold.is_finite());
-        assert!(safe_genome.scalp_tp.is_finite());
-        assert!(safe_genome.scalp_sl.is_finite());
+        assert!(safe_genome.scalp_tp().is_finite());
+        assert!(safe_genome.scalp_sl().is_finite());
         assert!(safe_genome.min_confidence.is_finite());
     }
 

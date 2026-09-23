@@ -1,5 +1,8 @@
 pub struct CapitalRegimeMetrics {
     pub max_concurrent_positions: usize,
+    /// Fracción continua de energía espectral asignada a escalas reactivas
+    pub spectral_energy_split: f64,
+    /// Alias legacy de compatibilidad
     pub scalp_capital_split: f64,
     pub wealth_factor: f64,
 }
@@ -45,10 +48,12 @@ impl CapitalCompounderEngine {
         // Drawdown continuously penalizes the capital split: 0% penalty at 0 drawdown (ATH)
         // High drawdown (e.g. 0.10+) smoothly suppresses scalp split towards conservative bounds
         let dd_penalty = (safe_dd / 0.10).clamp(0.0, 1.0).powi(2);
-        let scalp_capital_split = (0.95 * (1.0 - 0.85 * dd_penalty)).clamp(0.1, 0.95);
+        let spectral_energy_split = (0.95 * (1.0 - 0.85 * dd_penalty)).clamp(0.1, 0.95);
+        let scalp_capital_split = spectral_energy_split;
 
         CapitalRegimeMetrics {
             max_concurrent_positions,
+            spectral_energy_split,
             scalp_capital_split,
             wealth_factor: wealth_ratio,
         }

@@ -469,6 +469,8 @@ pub struct PositionSnapshot {
     pub ml_prediction: f64,
 }
 
+pub const MAX_SPECTRAL_SLOTS: usize = 3;
+
 #[repr(C, align(64))]
 #[derive(Default)]
 pub struct PositionManager {
@@ -500,6 +502,67 @@ impl PositionManager {
             PositionHorizon::Swing => &self.swing,
             PositionHorizon::Continuous => &self.position,
         }
+    }
+
+    #[inline(always)]
+    pub fn slots(&self) -> [&Position; MAX_SPECTRAL_SLOTS] {
+        [&self.scalp, &self.swing, &self.position]
+    }
+
+    #[inline(always)]
+    pub fn get_slot(&self, idx: usize) -> &Position {
+        match idx {
+            0 => &self.scalp,
+            1 => &self.swing,
+            _ => &self.position,
+        }
+    }
+
+    /// Despacho por resonancia y desacoplamiento espectral continuo (sin cortes discretos).
+    ///
+    /// Evalúa si existe una ranura libre cuya longitud de onda `tau_ms` no entre en interferencia destructiva
+    /// con otra posición abierta en la misma dirección (|ln(tau_target) - ln(tau_open)| < 0.6).
+    /// Si dos ondas están suficientemente separadas en escala (|Δ ln τ| >= 0.6), coexisten armónicamente.
+    pub fn find_resonant_slot(&self, tau_ms: f64, is_long: bool) -> Option<usize> {
+        let slots = [&self.scalp, &self.swing, &self.position];
+        let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
+            tau_ms
+        } else {
+            30_000.0
+        };
+        let ln_target = safe_tau.ln();
+
+        // 1. Verificar si hay colisión / interferencia destructiva con posiciones en la misma dirección
+        for pos in slots.iter() {
+            if pos.is_open() {
+                let open_is_long = pos.is_long.load(Ordering::Relaxed);
+                if open_is_long == is_long {
+                    let open_tau = (pos.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
+                    let diff_ln = (ln_target - open_tau.ln()).abs();
+                    // Escalas muy cercanas en la misma dirección (|Δ ln τ| < 0.60): interferencia destructiva
+                    if diff_ln < 0.60 {
+                        return None;
+                    }
+                }
+            }
+        }
+
+        // 2. Asignación armónica continua según la escala temporal:
+        // - Frecuencias altas (tau < 60s): orden preferente [0, 2, 1]
+        // - Frecuencias medias/bajas (tau >= 60s): orden preferente [1, 2, 0]
+        let preference = if safe_tau < 60_000.0 {
+            [0usize, 2usize, 1usize]
+        } else {
+            [1usize, 2usize, 0usize]
+        };
+
+        for &slot_idx in &preference {
+            if !slots[slot_idx].is_open() {
+                return Some(slot_idx);
+            }
+        }
+
+        None
     }
 }
 
@@ -846,6 +909,42 @@ mod tests {
         assert_eq!(q_sw, 0.1);
         assert!(!mgr.is_swing_open());
         assert!(!mgr.is_any_open());
+    }
+
+    #[test]
+    fn test_position_spectral_resonance_and_decoupling() {
+        let mgr = PositionManager::default();
+
+        // 1. Con manager vacío, onda rápida (15s) ocupa ranura 0
+        let slot_fast = mgr.find_resonant_slot(15_000.0, true);
+        assert_eq!(slot_fast, Some(0));
+
+        // Abrir la ranura 0 con tau = 15s Long
+        mgr.scalp.open_with_fee(
+            true, 50_000.0, 0.01, 10.0, 1000, 50_500.0, 49_800.0,
+            PositionHorizon::Continuous, 0.7, 0.8, 0.05,
+        );
+        mgr.scalp.entry_tau_ms.store(15_000, Ordering::Relaxed);
+
+        // 2. Misma dirección Long con escala idéntica (16s): INTERFERENCIA DESTRUCTIVA -> Rechazo (None)
+        let slot_interf = mgr.find_resonant_slot(16_000.0, true);
+        assert_eq!(slot_interf, None, "Debe rechazar por interferencia espectral en la misma escala y dirección");
+
+        // 3. Misma dirección Long pero escala ortogonal/desacoplada (1 hora = 3,600,000 ms):
+        // |ln(3,600,000) - ln(15,000)| = 5.48 >= 0.60 -> COEXISTENCIA ARMÓNICA en ranura 1
+        let slot_macro = mgr.find_resonant_slot(3_600_000.0, true);
+        assert_eq!(slot_macro, Some(1), "Debe permitir coexistencia espectral armónica");
+
+        // Abrir la ranura 1 con tau = 1 hora
+        mgr.swing.open_with_fee(
+            true, 50_000.0, 0.02, 10.0, 1000, 52_000.0, 49_000.0,
+            PositionHorizon::Continuous, 0.75, 0.85, 0.10,
+        );
+        mgr.swing.entry_tau_ms.store(3_600_000, Ordering::Relaxed);
+
+        // 4. Dirección opuesta Short con cualquier tau no colisiona por dirección
+        let slot_short = mgr.find_resonant_slot(15_000.0, false);
+        assert_eq!(slot_short, Some(2), "Dirección contraria puede usar ranura universal sin interferencia");
     }
 
     fn qty_or_eq(a: f64, b: f64) -> bool {
