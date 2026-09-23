@@ -208,3 +208,27 @@ Para maximizar el crecimiento compuesto sobre el capital de $13 USD y evitar sto
 - **DÓNDE**: En la clase `SophiaExitOracle` dentro de [exit_oracle.py](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/sophia/exit_oracle.py).
 - **QUIÉN**: `SophiaExitOracle`.
 
+
+---
+
+## 📊 XIII. ESTRATEGIA ESPECTRAL CONTINUA Y COSECHA ARMÓNICA (RUST METAL-CORE)
+
+Para erradicar la asfixia por fricción y materializar el crecimiento compuesto en micro-cuentas de  USD:
+
+### 1. Desasfixia de Breakeven y Trailing
+- **QUÉ**: Calibración matemática del breakeven (e_buffer) entre 18.5 y 24.0 bps, con margen de respiración browniana (min_breathing) de 8.0 a 15.0 bps y disparo (e_trigger) condicionado al 70–80% del TP.
+- **POR QUÉ**: El breakeven anterior a 13.0 bps generaba pérdidas netas sistemáticas (-2 bps) tras pagar comisiones taker y slippage (~15-16 bps) en Binance VIP0, y el margen de 5 bps asfixiaba los trades por ruido aleatorio de microestructura.
+- **PARA QUÉ**: Asegurar que cada trade que active protección de capital cierre con ganancia neta post-fees estrictamente positiva (EV $> 0$).
+- **CÓMO**: En valuate_quantum_trailing_with_fee, oundtrip_taker_friction modela  \times live\_fee + 2 \times slip$, y e_buffer añade un margen neto garantizado de +3.5 bps.
+- **CUÁNDO**: En cada evaluación submilisegundo de posición activa en GodEngineCore.
+- **DÓNDE**: crates/god-engine-core/src/trailing.rs y crates/god-engine-core/src/lib.rs.
+- **QUIÉN**: Motor de trailing cuántico TrailingEngine.
+
+### 2. Cosecha Armónica de Pico (PEAK_HARVEST)
+- **QUÉ**: Mecanismo de toma de beneficios dinámico que detecta el agotamiento del impulso cuando el trade alcanza $\ge 18.0\text{ bps}$ de ganancia y retrocede un 15% tras superar la edad media de predictibilidad (harvest_age_ms).
+- **POR QUÉ**: Los impulsos de alta frecuencia a menudo oscilan hasta +20 bps sin llegar al TP completo de +30 bps antes de revertirse por decaimiento del flujo de órdenes (OFI).
+- **PARA QUÉ**: Capturar y acumular ganancias netas (+1.1 a +3.9 dólares/milésimas por trade) en lugar de permitir que un ganador se convierta en perdedor.
+- **CÓMO**: Se verifica peak_pnl >= peak_harvest_thresh && pnl_pct >= net_profit_min && pnl_pct <= (peak_pnl * 0.85). Si se cumple, se liquida a mercado con ganancia neta asegurada.
+- **CUÁNDO**: Continuamente durante el ciclo de vida de la posición en la ruta caliente del motor.
+- **DÓNDE**: crates/god-engine-core/src/lib.rs.
+- **QUIÉN**: Evaluador de Alpha Decay y Cosecha de GodEngineCore.

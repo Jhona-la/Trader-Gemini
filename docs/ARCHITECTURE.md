@@ -782,3 +782,35 @@ La posición física en Binance es el NETO de ambas. El `RiskManager.check_stops
 ## Exclusión Mutua de Capital (Micro-Capital)
 
 El sistema cuenta con una exclusión mutua de nivel atómico diseñada específicamente para escenarios de micro-capital (ej. 13 USD). Cuando el capital total es insuficiente para sostener simultáneamente una posición Scalp y una Swing (capital menor a 3 veces el margen mínimo requerido por Binance), el motor GodEngineCore evalúa ambos SignalIntents y ejecuta EXCLUSIVAMENTE el que posea el confidence_score más alto. Esta resolución ocurre en picosegundos, evitando el bloqueo en la API de Binance (Margin is insufficient) y permitiendo que la cuenta pequeña crezca sin interrupciones.
+
+---
+
+### 6. Universo Multivariante Continuo Temporal Espectral y Salidas Calibradas (Rust Nativo)
+
+**QUÉ:** Extinción definitiva de la dicotomía binaria rígida ("scalping" vs "swing") sustituida por un **Universo Continuo Temporal Espectral** sobre 32 escalas ($\tau_i \in [1\text{ ns}, 146.15\text{ años}]$) implementado 100% en Rust de alto rendimiento (god-engine-core, quantum-arena). Integra el mecanismo de cosecha armónica (PEAK_HARVEST) y desasfixia de breakeven con garantía matemática de EV $> 0$ post-comisiones.
+
+**POR QUÉ:**
+1. Los temporizadores discretos ciegos (como bsolute_expired a 900s o breakeven apresurado a 13.0 bps) liquidaban posiciones ganadoras prematuramente o salían en negativo tras comisiones taker y slippage (~15-16 bps roundtrip).
+2. La fórmula de persistencia espectral saturaba al piso por un cálculo erróneo de la autocorrelación centrada en 0.5 en lugar de 0.0.
+3. El micro-capital (\ USD) colapsaba si se apilaban múltiples posiciones en la misma dirección sin estar aseguradas en beneficio.
+
+**PARA QUÉ:**
+1. Lograr esperanza matemática positiva estricta en cada salida, erradicando salidas "breakeven" que resultaban en pérdidas por fricción.
+2. Permitir que los trades respiren contra el ruido browniano de la microestructura ($\ge 0.85\text{ ATR}$) para alcanzar su Target de Ganancia (TP).
+3. Preservar la cuenta de \ USD con un Max Drawdown $< 1.0\%$ mientras el capital crece exponencialmente.
+
+**CÓMO:**
+* **Persistencia Espectral Verdadera:** Autocorrelación de sorpresas centrada en cero,  = (|s.\text{persistence}| \times 2.0).\text{clamp}(0.05, 1.0)$.
+* **Breakeven Buffer Calibrado:** e_buffer fijado entre 18.5 y 24.0 bps, garantizando que todo cierre por breakeven supere la fricción taker de ida y vuelta ( \times live\_fee + 2 \times slip$).
+* **Breathing Room Antiasfixia:** min_breathing expandido a 8.0–15.0 bps y e_trigger reubicado al 70–80% del TP para evitar que el ruido natural del libro liquide la posición.
+* **Cosecha Armónica (PEAK_HARVEST):** Si un impulso alcanza $\ge 18.0\text{ bps}$ y se estanca o retrocede un 15%, el motor cosecha la ganancia neta en verde antes de que se extinga la predictibilidad.
+* **Escudo Antiapilamiento (same_dir_unsecured):** Impide abrir posiciones redundantes en la misma dirección a menos que las existentes estén aseguradas en ganancia ($\ge 12\text{ bps}$).
+
+**CUÁNDO:** En cada microevento de booktick y actualización del libro L2 a frecuencias de sub-milisegundo.
+
+**DÓNDE:**
+* crates/quantum-arena/src/temporal_spectrum.rs (32 escalas continuas).
+* crates/god-engine-core/src/trailing.rs (Escalera de trailing y breakeven garantizado).
+* crates/god-engine-core/src/lib.rs (Física de ejecución, Peak Harvest y Alpha Decay).
+
+**QUIÉN:** QuantumArena (registro espectral), GodEngineCore (motor de ejecución), RealityPhysics (fricción hiperrealista).
