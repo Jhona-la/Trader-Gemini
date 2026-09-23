@@ -525,8 +525,12 @@ mod tests {
         let observaciones = Arc::new(AtomicUsize::new(0));
         const ITERS: usize = 20_000;
 
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
         let abridor = {
             let pos = Arc::clone(&pos);
+            let done = Arc::clone(&done);
+            let observaciones = Arc::clone(&observaciones);
             std::thread::spawn(move || {
                 for i in 0..ITERS {
                     pos.open_with_fee(
@@ -544,6 +548,23 @@ mod tests {
                     );
                     std::hint::spin_loop();
                 }
+                while observaciones.load(Ordering::Relaxed) == 0 {
+                    pos.open_with_fee(
+                        true,
+                        62_500.0,
+                        0.0032,
+                        13.0,
+                        1_700_000_000_000,
+                        63_200.0,
+                        62_100.0,
+                        PositionHorizon::Continuous,
+                        0.61,
+                        0.72,
+                        0.004,
+                    );
+                    std::thread::yield_now();
+                }
+                done.store(true, Ordering::Release);
             })
         };
         let cerrador = {
@@ -559,8 +580,9 @@ mod tests {
             let pos = Arc::clone(&pos);
             let corrupciones = Arc::clone(&corrupciones);
             let observaciones = Arc::clone(&observaciones);
+            let done = Arc::clone(&done);
             std::thread::spawn(move || {
-                for _ in 0..ITERS * 4 {
+                while !done.load(Ordering::Acquire) {
                     // Lectura por el camino que producción debe usar.
                     if let Some(snap) = pos.snapshot() {
                         observaciones.fetch_add(1, Ordering::Relaxed);
@@ -571,6 +593,13 @@ mod tests {
                         }
                     }
                     std::hint::spin_loop();
+                }
+                // Si la posición quedó abierta al terminar, registrarla
+                if let Some(snap) = pos.snapshot() {
+                    observaciones.fetch_add(1, Ordering::Relaxed);
+                    if snap.entry_price <= 0.0 || snap.quantity <= 0.0 || snap.sl_price <= 0.0 {
+                        corrupciones.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             })
         };

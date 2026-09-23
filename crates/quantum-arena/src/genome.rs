@@ -2337,6 +2337,9 @@ impl SuperGenotype {
     /// desde el que se dimensiona el gate.
     pub const WORST_TOLERATED_WR: f64 = 0.40;
 
+    /// Win rate realista de diseño en régimen espectral continuo (55%).
+    pub const DESIGN_WIN_RATE: f64 = 0.55;
+
     /// D-680 (DÉCIMA OLA): peso del prior del win rate, en operaciones
     /// equivalentes. Es `z²` con `z = 1,959964` (95 %): la misma corrección que
     /// centra el intervalo de Wilson / Agresti–Coull, aquí hacia el win rate de
@@ -2396,7 +2399,7 @@ impl SuperGenotype {
     ///
     /// El espectro sigue OBSERVÁNDOSE completo (las 19 escalas alimentan el
     /// score espectral); lo que la banda acota es dónde se ABRE posición.
-    pub const MAX_FRICTION_SHARE_OF_RISK: f64 = 0.50;
+    pub const MAX_FRICTION_SHARE_OF_RISK: f64 = 0.65;
 
     /// SL mínimo con el que una operación puede ser rentable dada la fricción.
     /// Derivado, no elegido: `SL_min = f / MAX_FRICTION_SHARE_OF_RISK`.
@@ -3246,7 +3249,7 @@ mod tests {
             // fee ∈ [1e-5, 0.01] log-espaciado (incluye el 0,0012 VIP0 real).
             let fee = 1e-5 * (1000.0f64).powf(k as f64 / 59.0);
             let floor = SuperGenotype::min_viable_sl(fee);
-            assert!((floor - fee / 0.50).abs() < 1e-15, "piso mal derivado");
+            assert!((floor - fee / SuperGenotype::MAX_FRICTION_SHARE_OF_RISK).abs() < 1e-15, "piso mal derivado");
 
             for &sl_mult in &[0.0, 1.0, 1.37, 2.0, 10.0] {
                 let sl_in = floor * sl_mult;
@@ -3267,7 +3270,7 @@ mod tests {
         }
         // Caso degenerado documentado: fee inválido → fricción de referencia.
         let (sl_f, tp_f) = SuperGenotype::friction_floors(0.0, 0.0, 0.0);
-        assert!((sl_f - SuperGenotype::REFERENCE_ROUNDTRIP_FEE / 0.50).abs() < 1e-15);
+        assert!((sl_f - SuperGenotype::REFERENCE_ROUNDTRIP_FEE / SuperGenotype::MAX_FRICTION_SHARE_OF_RISK).abs() < 1e-15);
         assert!(tp_f > sl_f);
     }
 

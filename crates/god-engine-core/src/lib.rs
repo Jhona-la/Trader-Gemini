@@ -3793,31 +3793,41 @@ impl GodEngineCore {
                         macro_trend <= 0.0 || (micro_trend < -0.00012 && ofi_value < -0.20)
                     };
 
+                    let phase_res = spec.phase_resonance(60_000.0, 14_400_000.0);
+                    let spec_grad = spec.spectral_gradient_at(field.resonant_tau_ms);
+                    let spec_grad_ok = if is_long {
+                        spec_grad >= -0.05
+                    } else {
+                        spec_grad <= 0.05
+                    };
+
                     if macro_tide < 0.00
-                        || coherence < 0.05
+                        || coherence < 0.12
                         || tactical_align < 0.00
                         || !micro_rebound_ok
                         || !wave_phase_ok
-                        || field.spectral_entropy > 0.93
+                        || field.spectral_entropy > 0.92
+                        || field.confluence_ratio < 0.42
+                        || phase_res < 0.0
+                        || !spec_grad_ok
                     {
                         unified_intent.signal = SignalType::Flat;
                     } else {
-                        let is_fast = unified_intent.expected_duration_ms > 0
-                            && unified_intent.expected_duration_ms <= 180_000;
-                        if is_fast {
-                            let micro_tau = spec.micro_resonant_tau_ms();
-                            unified_intent.expected_duration_ms = micro_tau.clamp(30_000.0, 180_000.0) as u64;
+                        // Mapeo armónico continuo en el Universo Multivariante Continuo Temporal Espectral:
+                        // Elimina la discretización binaria rígida y converge continuamente hacia el centro de masa tau*.
+                        let base_tau = if unified_intent.expected_duration_ms > 0 {
+                            unified_intent.expected_duration_ms as f64
                         } else {
-                            let macro_tau = spec.macro_resonant_tau_ms();
-                            unified_intent.expected_duration_ms = macro_tau.clamp(180_000.0, 43_200_000.0) as u64;
-                        }
+                            field.resonant_tau_ms
+                        };
+                        let continuous_tau = (base_tau.ln() * 0.60 + field.resonant_tau_ms.ln() * 0.40).exp();
+                        unified_intent.expected_duration_ms = continuous_tau.clamp(30_000.0, 43_200_000.0) as u64;
+
                         let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
                         let directional_persist = if is_trending_mode { persist } else { -persist };
                         let coherence_boost = 0.25 * coherence;
                         let entropy_boost = 0.10 * (1.0 - field.spectral_entropy).max(0.0);
                         let persist_boost = 0.15 * directional_persist;
-                        // Modulación de fase armónica: resonancia continua entre la banda rápida (1m) y la portadora (4h)
-                        let phase_res = spec.phase_resonance(60_000.0, 14_400_000.0);
                         let phase_boost = 0.10 * phase_res;
                         let spectral_factor = (1.0 + coherence_boost + entropy_boost + persist_boost + phase_boost).clamp(0.65, 1.45);
                         unified_intent.confidence =
@@ -4062,11 +4072,12 @@ impl GodEngineCore {
             let mut new_order = None;
 
             let is_scalp_candidate = unified_intent.expected_duration_ms > 0
-                && unified_intent.expected_duration_ms <= 180_000;
-            let is_swing_candidate = unified_intent.expected_duration_ms > 180_000;
+                && unified_intent.expected_duration_ms <= 300_000;
+            let is_swing_candidate = unified_intent.expected_duration_ms > 300_000;
 
             // Especialización física continua por longitud de onda espectral:
             // Cada intención se despacha a su propio slot especializado sin canibalismo ni mezclas.
+            // Si el slot primario está ocupado, el slot continuo universal absorbe el flujo armónico si está disponible.
             let (target_pos_slot, pos_h, slot_available) = if is_scalp_candidate {
                 (0usize, quantum_arena::position::PositionHorizon::Scalping, !coin.positions.scalp.is_open())
             } else if is_swing_candidate {

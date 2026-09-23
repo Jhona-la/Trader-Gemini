@@ -110,15 +110,8 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
     } else {
         SuperGenotype::REFERENCE_ROUNDTRIP_FEE
     };
-    // D-681 (DÉCIMA OLA): el RR mínimo se evalúa en el win rate de DISEÑO, no
-    // en el observado. Con el observado la geometría era autorreferente: cada
-    // pérdida bajaba `w`, subía `RR_req = (1−w)/w + f/(w·SL)`, alejaba el TP y
-    // reducía la probabilidad de alcanzarlo, lo que producía más pérdidas. Con
-    // `w = 0` tras una primera pérdida (acotado a 0,05) el TP quedaba a 19
-    // stops o más: 0 salidas por TP en el backtest forense desde 220b7433, y el
-    // breakeven y el trailing —que se arman en fracción del TP— dejaban de
-    // activarse. La evidencia observada pertenece al gate y al Kelly, no a la
-    // geometría de la orden.
+    // El RR mínimo se evalúa en el win rate conservador tolerado (0.40)
+    // para garantizar EV >= 0 en el peor escenario de supervivencia extrema (D-636/D-681).
     let w = SuperGenotype::WORST_TOLERATED_WR;
     let k = if input.sl_atr_multiplier.is_finite() && input.sl_atr_multiplier > 0.0 {
         input.sl_atr_multiplier
@@ -196,12 +189,18 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
 /// Variante que respeta un RR genómico más ambicioso que el mínimo exigido.
 pub fn compute_tp_sl_with_target_rr(input: TpSlInputs, target_rr: f64) -> TpSl {
     let mut out = compute_tp_sl(input);
-    // B3.24 (MOD3/5-019): el objetivo genómico solo puede AMPLIAR el
-    // recorrido, nunca romper el cap SL ≤ TP/2 que la función pura garantiza
-    // (rr_applied ≥ 2 tras el cap): se aplica únicamente si supera el RR ya
-    // aplicado. Antes, un target ∈ (rr_required, 2) volvía a dejar el SL por
-    // encima de TP/2 justo después de que la base lo respetara.
-    if target_rr.is_finite() && target_rr > out.rr_applied {
+    let fee = if input.roundtrip_fee.is_finite() && input.roundtrip_fee > 0.0 {
+        input.roundtrip_fee
+    } else {
+        SuperGenotype::REFERENCE_ROUNDTRIP_FEE
+    };
+    let rr_design = SuperGenotype::min_rr_for(SuperGenotype::DESIGN_WIN_RATE, fee, out.sl_pct);
+    let min_allowed_rr = rr_design.max(2.0); // B3.24: RR >= 2 siempre (SL <= TP/2)
+    if target_rr.is_finite() && target_rr >= min_allowed_rr {
+        out.rr_applied = target_rr;
+        out.rr_required = rr_design;
+        out.tp_pct = out.sl_pct * target_rr;
+    } else if target_rr.is_finite() && target_rr > out.rr_applied {
         out.rr_applied = target_rr;
         out.tp_pct = out.sl_pct * target_rr;
     }

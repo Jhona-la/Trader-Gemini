@@ -514,6 +514,7 @@ async fn main() {
     let mut reason_zombie = 0u64;
     let mut reason_toxic = 0u64;
     let mut reason_decay = 0u64;
+    let mut reason_harvest = 0u64;
 
     // D-718: piso del medio spread = medio tick del símbolo registrado (el
     // mínimo físicamente representable en ese instrumento), no un importe en
@@ -669,8 +670,12 @@ async fn main() {
             sim_trade_buyer_maker,
         );
 
-        let new_ord = new_ord_1.or(new_ord_2);
-        let closed_ord = closed_ord_1.or(closed_ord_2);
+        let new_ords: [Option<(bool, f64, f64, f64, f64)>; 2] = [new_ord_1, new_ord_2];
+        for _new_ord in new_ords.into_iter().flatten() {
+            total_opens += 1;
+        }
+
+        let closed_ords: [Option<(bool, f64, f64)>; 2] = [closed_ord_1, closed_ord_2];
 
         // DEEP DIAGNOSTIC: Log ML predictions, features, and signal flow every 100k ticks
         if i < warmup_ticks + 5 || (i % 100_000 == 0) {
@@ -686,23 +691,8 @@ async fn main() {
                 i, atr_pct, ml_prob, ml_threshold, regime, fast_intent.signal, current_cap, real_obi, features[1]);
         }
 
-        // Count opens
-        if new_ord.is_some() {
-            if total_opens < 5 {
-                let atr_pct = core.feature_engines[0].get_atr_pct();
-                let dyn_atr = arena.config.dynamic_atr_min.load(Ordering::Relaxed);
-                let live_maker = arena.config.live_maker_fee.load(Ordering::Relaxed);
-                let live_taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
-                println!(
-                    "🔍 [OPEN TRACE] Trade {}: ATR={:.6}, dyn_atr={:.6}, maker={:.6}, taker={:.6}",
-                    total_opens, atr_pct, dyn_atr, live_maker, live_taker
-                );
-            }
-            total_opens += 1;
-        }
-
         // Count closes and PnL
-        if let Some((is_long, net_close_pnl, qty)) = closed_ord {
+        for (is_long, net_close_pnl, qty) in closed_ords.into_iter().flatten() {
             total_closes += 1;
             total_trades += 1;
 
@@ -728,10 +718,11 @@ async fn main() {
                 5 => "ZOMBIE",
                 6 => "TOXIC",
                 7 => "DECAY",
+                8 => "HARVEST",
                 _ => "OTHER",
             };
             println!(
-                "🚪 [TRADE #{:02}] dir={:5} reason={:6} net=${:+.4} gross=${:+.4} cap=${:.4}",
+                "🚪 [TRADE #{:02}] dir={:5} reason={:7} net=${:+.4} gross=${:+.4} cap=${:.4}",
                 total_trades,
                 if is_long { "LONG" } else { "SHORT" },
                 r_name,
@@ -746,6 +737,7 @@ async fn main() {
                 5 => reason_zombie += 1,
                 6 => reason_toxic += 1,
                 7 => reason_decay += 1,
+                8 => reason_harvest += 1,
                 _ => {},
             }
             if is_long {
@@ -917,8 +909,8 @@ async fn main() {
         short_pnl
     );
     println!(
-        "  🎯 Exit Reasons:      TP: {} | SL: {} | TRAIL: {} | ZOMBIE: {} | TOXIC: {} | DECAY: {}",
-        reason_tp, reason_sl, reason_trail, reason_zombie, reason_toxic, reason_decay
+        "  🎯 Exit Reasons:      TP: {} | SL: {} | TRAIL: {} | HARVEST: {} | ZOMBIE: {} | TOXIC: {} | DECAY: {}",
+        reason_tp, reason_sl, reason_trail, reason_harvest, reason_zombie, reason_toxic, reason_decay
     );
     println!("  📉 Max Drawdown:      {:.2}%", max_drawdown * 100.0);
     println!("  📐 Sharpe Ratio:      {:.4}", sharpe);
