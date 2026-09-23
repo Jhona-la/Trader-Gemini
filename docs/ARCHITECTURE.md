@@ -787,30 +787,37 @@ El sistema cuenta con una exclusión mutua de nivel atómico diseñada específi
 
 ### 6. Universo Multivariante Continuo Temporal Espectral y Salidas Calibradas (Rust Nativo)
 
-**QUÉ:** Extinción definitiva de la dicotomía binaria rígida ("scalping" vs "swing") sustituida por un **Universo Continuo Temporal Espectral** sobre 32 escalas ($\tau_i \in [1\text{ ns}, 146.15\text{ años}]$) implementado 100% en Rust de alto rendimiento (god-engine-core, quantum-arena). Integra el mecanismo de cosecha armónica (PEAK_HARVEST) y desasfixia de breakeven con garantía matemática de EV $> 0$ post-comisiones.
+**QUÉ:** Extinción definitiva de la dicotomía binaria rígida ("scalping" vs "swing") sustituida por un **Universo Continuo Temporal Espectral** sobre 32 escalas ($\tau_i \in [1\text{ ns}, 146.15\text{ años}]$) implementado 100% en Rust de alto rendimiento (`god-engine-core`, `quantum-arena`). Integra el mecanismo de cosecha armónica (`PEAK_HARVEST`), desasfixia profunda de decaimiento temporal y trailing adaptativo con garantía matemática de $EV > 0$ post-comisiones.
 
 **POR QUÉ:**
-1. Los temporizadores discretos ciegos (como bsolute_expired a 900s o breakeven apresurado a 13.0 bps) liquidaban posiciones ganadoras prematuramente o salían en negativo tras comisiones taker y slippage (~15-16 bps roundtrip).
+1. Los temporizadores discretos ciegos (como `absolute_expired` rígido a 900s o breakeven apresurado a 13.0 bps) liquidaban posiciones ganadoras prematuramente o salían en pérdida neta tras comisiones taker y slippage (~15-16 bps roundtrip).
 2. La fórmula de persistencia espectral saturaba al piso por un cálculo erróneo de la autocorrelación centrada en 0.5 en lugar de 0.0.
-3. El micro-capital (\ USD) colapsaba si se apilaban múltiples posiciones en la misma dirección sin estar aseguradas en beneficio.
+3. El micro-capital ($13.00 USD) se asfixiaba si pérdidas en microescalas ($\tau \sim 5\text{s}$) bloqueaban trades macro prometedores ($\tau \sim 1\text{h}$) mediante un cooldown ciego acumulado.
+4. Las salidas por `time_stagnant_decay` cerraban al 60% de SL simplemente porque el reloj avanzaba, aún cuando el trade no estaba perdiendo ni la energía espectral había colapsado.
 
 **PARA QUÉ:**
-1. Lograr esperanza matemática positiva estricta en cada salida, erradicando salidas "breakeven" que resultaban en pérdidas por fricción.
-2. Permitir que los trades respiren contra el ruido browniano de la microestructura ($\ge 0.85\text{ ATR}$) para alcanzar su Target de Ganancia (TP).
-3. Preservar la cuenta de \ USD con un Max Drawdown $< 1.0\%$ mientras el capital crece exponencialmente.
+1. Lograr esperanza matemática positiva ($EV > 0$) estricta en cada salida, erradicando salidas "breakeven" que resultaban en pérdidas por fricción.
+2. Permitir que los trades respiren contra el ruido browniano de la microestructura ($\ge 0.85\text{ ATR}$, $60-75\%\text{ TP}$) para alcanzar su Target de Ganancia (TP) completo.
+3. Permitir que micro-impulsos de alta frecuencia y tendencias de largo alcance coexistan en el mismo símbolo sin anularse ni pisarse.
+4. Preservar la cuenta micro de $13.00 USD con un Max Drawdown estrictamente $< 1.0\%$ mientras el capital crece por interés compuesto.
 
 **CÓMO:**
-* **Persistencia Espectral Verdadera:** Autocorrelación de sorpresas centrada en cero,  = (|s.\text{persistence}| \times 2.0).\text{clamp}(0.05, 1.0)$.
-* **Breakeven Buffer Calibrado:** e_buffer fijado entre 18.5 y 24.0 bps, garantizando que todo cierre por breakeven supere la fricción taker de ida y vuelta ( \times live\_fee + 2 \times slip$).
-* **Breathing Room Antiasfixia:** min_breathing expandido a 8.0–15.0 bps y e_trigger reubicado al 70–80% del TP para evitar que el ruido natural del libro liquide la posición.
-* **Cosecha Armónica (PEAK_HARVEST):** Si un impulso alcanza $\ge 18.0\text{ bps}$ y se estanca o retrocede un 15%, el motor cosecha la ganancia neta en verde antes de que se extinga la predictibilidad.
-* **Escudo Antiapilamiento (same_dir_unsecured):** Impide abrir posiciones redundantes en la misma dirección a menos que las existentes estén aseguradas en ganancia ($\ge 12\text{ bps}$).
+* **Persistencia Espectral Verdadera:** Autocorrelación de sorpresas centrada en cero, $P = (|s.\text{persistence}| \times 2.0).\text{clamp}(0.05, 1.0)$.
+* **Breakeven Buffer Calibrado:** `be_buffer` fijado entre 16.0 y 21.0 bps, garantizando que todo cierre por breakeven supere la fricción taker de ida y vuelta ($2 \times \text{fee} + \text{slippage}$).
+* **Breathing Room Antiasfixia:** `min_breathing` expandido a 8.0–15.0 bps y `be_trigger` calibrado al $60–75\%\text{ TP}$ para evitar que el micro-ruido decapite la operación antes de la expansión tendencial.
+* **Cosecha Armónica (PEAK_HARVEST):** Elevado a $\max(0.60\cdot\text{TP}, 1.15\cdot\text{SL}, 28.0\text{ bps})$. Si un impulso fuerte se estanca o retrocede, el motor cosecha la ganancia neta en verde sin decapitar trades jóvenes.
+* **Desasfixia de Decaimiento (`time_stagnant_decay`):** `time_expired` ya no liquida al 60% de SL por simple tiempo estático, sino que exige pérdida profunda ($\ge 85\%\text{ SL}$) y colapso de energía espectral (`!spec_alive`). `absolute_expired` exige pérdida neta post-fees ($< -2\text{ fees}$) y muerte espectral.
+* **Desacoplamiento de Cooldown Armónico (`can_open_at_tau`):** Las rachas de pérdidas se aíslan por banda espectral ($|\Delta \ln \tau| < 0.60$). Si una pérdida ocurrió en $\tau = 5\text{s}$, la escala $\tau = 1\text{h}$ no queda congelada. El cooldown se modula armónicamente con $\tau$ clamped a $[0.20, 5.0]$.
+* **Desacoplamiento Antiapilamiento (`same_dir_unsecured`):** El bloqueo de abrir en la misma dirección solo aplica a ondas dentro de la misma banda armónica ($|\Delta \ln \tau| < 1.20$), permitiendo coexistencia ortogonal (ej. micro-scalp + macro-swing).
+* **Despacho Concurrente Multivariante:** El event loop de `lib.rs` no arbitra un único "ganador" excluyente; evalúa concurrentemente `fast_intent` ($\tau \sim 30\text{s}$) y `slow_intent` ($\tau \sim 1\text{h}-12\text{h}$) verificando la disponibilidad de ranuras resonantes libres en `PositionManager`.
 
-**CUÁNDO:** En cada microevento de booktick y actualización del libro L2 a frecuencias de sub-milisegundo.
+**CUÁNDO:** En cada microevento de booktick y actualización del libro L2 a frecuencias de submilisegundo / nanosegundo.
 
 **DÓNDE:**
-* crates/quantum-arena/src/temporal_spectrum.rs (32 escalas continuas).
-* crates/god-engine-core/src/trailing.rs (Escalera de trailing y breakeven garantizado).
-* crates/god-engine-core/src/lib.rs (Física de ejecución, Peak Harvest y Alpha Decay).
+* `crates/quantum-arena/src/temporal_spectrum.rs` (32 escalas continuas).
+* `crates/quantum-arena/src/position.rs` (Ranuras armónicas ortogonales `find_resonant_slot`).
+* `crates/god-engine-core/src/stateful_engine.rs` (`can_open_at_tau`, cooldown modulado).
+* `crates/god-engine-core/src/trailing.rs` (Escalera de trailing y breakeven garantizado).
+* `crates/god-engine-core/src/lib.rs` (Despacho multivariante, Peak Harvest y desasfixia de decaimiento).
 
-**QUIÉN:** QuantumArena (registro espectral), GodEngineCore (motor de ejecución), RealityPhysics (fricción hiperrealista).
+**QUIÉN:** `QuantumArena` (registro espectral), `StatefulEngine` (estado multivariante), `GodEngineCore` (motor de ejecución), `RealityPhysics` (fricción hiperrealista).

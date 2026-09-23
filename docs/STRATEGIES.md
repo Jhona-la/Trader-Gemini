@@ -213,22 +213,40 @@ Para maximizar el crecimiento compuesto sobre el capital de $13 USD y evitar sto
 
 ## 📊 XIII. ESTRATEGIA ESPECTRAL CONTINUA Y COSECHA ARMÓNICA (RUST METAL-CORE)
 
-Para erradicar la asfixia por fricción y materializar el crecimiento compuesto en micro-cuentas de  USD:
+Para erradicar la asfixia por fricción y materializar el crecimiento compuesto en micro-cuentas de $13.00 USD:
 
 ### 1. Desasfixia de Breakeven y Trailing
-- **QUÉ**: Calibración matemática del breakeven (e_buffer) entre 18.5 y 24.0 bps, con margen de respiración browniana (min_breathing) de 8.0 a 15.0 bps y disparo (e_trigger) condicionado al 70–80% del TP.
-- **POR QUÉ**: El breakeven anterior a 13.0 bps generaba pérdidas netas sistemáticas (-2 bps) tras pagar comisiones taker y slippage (~15-16 bps) en Binance VIP0, y el margen de 5 bps asfixiaba los trades por ruido aleatorio de microestructura.
-- **PARA QUÉ**: Asegurar que cada trade que active protección de capital cierre con ganancia neta post-fees estrictamente positiva (EV $> 0$).
-- **CÓMO**: En valuate_quantum_trailing_with_fee, oundtrip_taker_friction modela  \times live\_fee + 2 \times slip$, y e_buffer añade un margen neto garantizado de +3.5 bps.
-- **CUÁNDO**: En cada evaluación submilisegundo de posición activa en GodEngineCore.
-- **DÓNDE**: crates/god-engine-core/src/trailing.rs y crates/god-engine-core/src/lib.rs.
-- **QUIÉN**: Motor de trailing cuántico TrailingEngine.
+- **QUÉ**: Calibración matemática del breakeven (`be_buffer`) entre 16.0 y 21.0 bps, con margen de respiración browniana (`min_breathing`) de 8.0 a 15.0 bps y disparo (`be_trigger`) condicionado al 60–75% del TP.
+- **POR QUÉ**: El breakeven prematuro a 13.0 bps generaba pérdidas netas sistemáticas tras pagar comisiones taker y slippage (~15-16 bps) en Binance VIP0, y sofocaba los trades por ruido aleatorio de microestructura impidiéndoles correr hacia el Take Profit.
+- **PARA QUÉ**: Asegurar que cada trade que active protección de capital cierre con ganancia neta post-fees estrictamente positiva ($EV > 0$), y dar margen suficiente para que los trades ganadores desarrollen su ciclo completo hacia el TP.
+- **CÓMO**: En `evaluate_quantum_trailing_with_fee`, `roundtrip_taker_friction` modela $2 \times \text{live\_fee} + \text{slip}$, y `be_buffer` añade un margen neto garantizado de +2.5 a +3.5 bps.
+- **CUÁNDO**: En cada evaluación submilisegundo de posición activa en `GodEngineCore`.
+- **DÓNDE**: `crates/god-engine-core/src/trailing.rs` y `crates/god-engine-core/src/lib.rs`.
+- **QUIÉN**: Motor de trailing cuántico `TrailingEngine`.
 
 ### 2. Cosecha Armónica de Pico (PEAK_HARVEST)
-- **QUÉ**: Mecanismo de toma de beneficios dinámico que detecta el agotamiento del impulso cuando el trade alcanza $\ge 18.0\text{ bps}$ de ganancia y retrocede un 15% tras superar la edad media de predictibilidad (harvest_age_ms).
-- **POR QUÉ**: Los impulsos de alta frecuencia a menudo oscilan hasta +20 bps sin llegar al TP completo de +30 bps antes de revertirse por decaimiento del flujo de órdenes (OFI).
-- **PARA QUÉ**: Capturar y acumular ganancias netas (+1.1 a +3.9 dólares/milésimas por trade) en lugar de permitir que un ganador se convierta en perdedor.
-- **CÓMO**: Se verifica peak_pnl >= peak_harvest_thresh && pnl_pct >= net_profit_min && pnl_pct <= (peak_pnl * 0.85). Si se cumple, se liquida a mercado con ganancia neta asegurada.
+- **QUÉ**: Mecanismo de toma de beneficios dinámico que detecta el agotamiento del impulso cuando el trade alcanza $\ge \max(0.60\cdot\text{TP}, 1.15\cdot\text{SL}, 28.0\text{ bps})$ y retrocede un 15% tras superar la edad media de predictibilidad (`harvest_age_ms`).
+- **POR QUÉ**: Los impulsos a menudo expanden significativamente sin tocar el tick exacto del TP antes de revertirse por decaimiento del flujo de órdenes (OFI). Cosechar a 18 bps prematuramente cortaba trades que iban directo al TP; elevar el umbral a 28 bps protege el recorrido completo.
+- **PARA QUÉ**: Capturar y acumular ganancias netas sustanciales en lugar de permitir que un impulso fuerte se desvanezca en ruido lateral.
+- **CÓMO**: Se verifica `peak_pnl >= peak_harvest_thresh && pnl_pct >= net_profit_min && pnl_pct <= (peak_pnl * 0.85)`. Si se cumple, se liquida a mercado con ganancia neta asegurada.
 - **CUÁNDO**: Continuamente durante el ciclo de vida de la posición en la ruta caliente del motor.
-- **DÓNDE**: crates/god-engine-core/src/lib.rs.
-- **QUIÉN**: Evaluador de Alpha Decay y Cosecha de GodEngineCore.
+- **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+- **QUIÉN**: Evaluador de Alpha Decay y Cosecha de `GodEngineCore`.
+
+### 3. Coexistencia Concurrente Multi-Escala (32 Escalas Espectrales $\tau$)
+- **QUÉ**: Reemplazo de la dicotomía fija scalping vs swing por un continuo espectral temporal de 32 escalas ($\tau \in [1\text{ ns}, 146.15\text{ años}]$). Dos ondas de diferente horizonte ($|\Delta \ln \tau| \ge 1.20$) pueden operar concurrentemente en el mismo símbolo sin pisarse.
+- **POR QUÉ**: El mercado no es discreto. Movimientos de micro-impulso de 15 segundos coexisten dentro de expansiones tendenciales de 4 horas. Prohibir operaciones simultáneas anulaba el valor del análisis multivariante continuo.
+- **PARA QUÉ**: Multiplicar la frecuencia de captura y diversificar el riesgo en micro-cuentas de $13.00 USD aprovechando tanto el flujo micro como las tendencias macro.
+- **CÓMO**: `PositionManager` asigna ranuras resonantes ortogonales (`find_resonant_slot`). El despachador de señales no fuerza un ganador único, sino que evalúa concurrentemente `fast_intent` y `slow_intent`.
+- **CUÁNDO**: En cada evaluación de señales del motor en tiempo real o backtest.
+- **DÓNDE**: `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/src/position.rs`.
+- **QUIÉN**: `GodEngineCore`, `PositionManager`.
+
+### 4. Desacoplamiento Espectral de Cooldown y Escudo Antiapilamiento
+- **QUÉ**: La penalización por racha de pérdidas (`can_open_at_tau`) y el bloqueo de misma dirección (`same_dir_unsecured`) se aíslan espectralmente por banda armónica.
+- **POR QUÉ**: Si una operación micro de 5 segundos sufre un stop loss, no debe congelar el sistema durante 1 hora para una oportunidad macro de escala horaria.
+- **PARA QUÉ**: Evitar la parálisis operativa del bot tras pérdidas menores en escalas ultra-rápidas.
+- **CÓMO**: Se compara $|\Delta \ln \tau| < 0.60$. Solo las ondas dentro de la misma banda armónica heredan la racha. Además, el tiempo de cooldown escala armónicamente con $\tau$.
+- **CUÁNDO**: Al validar condiciones de entrada para cada candidato de señal.
+- **DÓNDE**: `crates/god-engine-core/src/stateful_engine.rs`, `crates/god-engine-core/src/lib.rs`.
+- **QUIÉN**: `StatefulEngine`.
