@@ -1173,15 +1173,14 @@ impl GodEngineCore {
                     .load(Ordering::Relaxed)
                     .max(0.0001);
 
-                // #544, #548 & #555: Breakeven Físico con Garantía EV >= 0 Especializado por Horizonte
-                // En Scalping: buffer ágil (8-16 bps) que cubre comisiones y deslizamiento real con ganancia neta,
-                // activándose a ~22% del TP (14-18 bps) para blindar el capital micro de $13 USD contra decaimiento.
+                // #544, #548, #555 & #559: Breakeven Físico con Garantía EV >= 0 Especializado por Horizonte
+                // En Scalping: buffer ágil (7-11 bps) que garantiza ganancia neta post-fees sin redundancia,
+                // activándose limpiamente a 12-16 bps (buf + 3.5 bps) para capturar los micro-impulsos de ruptura
+                // y blindar el capital de $13 USD contra decaimiento sin exigir una doble barrera artificial.
                 // En Swing: buffer amplio (22-35 bps) que permite que las tendencias macro respiren.
                 let (be_buffer, be_activation) = if is_scalp_pos {
-                    let buf = (live_fee * 1.3 + slip_floor * 1.2).clamp(0.0008, 0.0016);
-                    let act = (tp * 0.22)
-                        .max(buf + live_fee * 0.8 + 0.0002)
-                        .min(tp * 0.45);
+                    let buf = (live_fee * 1.15 + slip_floor * 1.0).clamp(0.0007, 0.0011);
+                    let act = (buf + 0.00035).clamp(0.0012, 0.0016);
                     (buf, act)
                 } else if is_swing_pos {
                     let buf = (live_fee * 2.5 + slip_floor * 2.0).clamp(0.0022, 0.0035);
@@ -1215,9 +1214,9 @@ impl GodEngineCore {
                     }
                 }
 
-                // 2. Trailing Stop Ratchet Dinámico
+                // 2. Trailing Stop Ratchet Dinámico (#559)
                 let trail_activation_pnl = if is_scalp_pos {
-                    (tp * 0.35).max(be_activation * 1.08).min(tp * 0.70)
+                    (be_activation * 1.15).clamp(0.0015, 0.0024)
                 } else {
                     (tp * trail_frac).max(be_activation * 1.25).min(tp * 0.95)
                 };
