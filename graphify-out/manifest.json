@@ -798,9 +798,9 @@
     "semantic_hash": "3819bf0fcc99c84f0cd51fc69c208867"
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1790141606.8141127,
-    "seen": 1790142136.53182,
-    "ast_hash": "7f9898bcb5808aeade35a94ef98690dd",
+    "mtime": 1790145098.7326703,
+    "seen": 1790145263.3411918,
+    "ast_hash": "8c3df71bd5d9be29edbe0cad5a0dda26",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/math_kernels.rs": {
@@ -1200,9 +1200,9 @@
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/temporal_spectrum.rs": {
-    "mtime": 1789854708.655703,
-    "seen": 1789876924.7582126,
-    "ast_hash": "b46c6d8e8d7ca2594e16227f440301be",
+    "mtime": 1790144649.4126346,
+    "seen": 1790145263.3411918,
+    "ast_hash": "d0b0404da32664bc3413a858494b320d",
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/tick_source.rs": {
@@ -1956,9 +1956,9 @@
     "semantic_hash": ""
   },
   ".agents/AGENTS.md": {
-    "mtime": 1789512526.3142736,
-    "seen": 1789876924.7587578,
-    "ast_hash": "fbe4b0011e5928c1fef4fbad8074ea59",
+    "mtime": 1790144383.1218038,
+    "seen": 1790145263.3411918,
+    "ast_hash": "c79cf12e71d4b10095d09f29acffac3b",
     "semantic_hash": ""
   },
   ".agents/rules/contexto-arquitectonico.md": {
@@ -2004,9 +2004,9 @@
     "semantic_hash": ""
   },
   "FORENSIC_INTELLIGENCE_AUDIT.md": {
-    "mtime": 1790142059.0214226,
-    "seen": 1790142136.5333989,
-    "ast_hash": "7238fc589546621593028ec4a77202c9",
+    "mtime": 1790145198.6740272,
+    "seen": 1790145263.3411918,
+    "ast_hash": "788f978a93e2fd525cec5a401729f713",
     "semantic_hash": ""
   },
   "INFORME_ASEGURAMIENTO_CUARTO.md": {
