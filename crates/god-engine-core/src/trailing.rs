@@ -171,13 +171,17 @@ pub fn evaluate_quantum_trailing_with_fee(
         0.5
     };
     let lvl = |mr: f64, tend: f64| mr + (tend - mr) * t;
-    // B568: be_buffer garantiza ganancia neta post-fees VIP0 (13.0 bps)
-    let be_buffer = (effective_fee * 1.25 + 0.0003).clamp(0.00130, 0.00165);
+    // B568 / F-025: be_buffer debe garantizar ganancia neta post-fees VIP0 reales.
+    // Fee taker ida y vuelta: 2 * fee_rate (~10 bps) + 2 * slippage (~6-8 bps) + margen neto positivo (3-5 bps) = 19.5 a 24.0 bps.
+    // Antes: (effective_fee * 1.25 + 0.0003).clamp(0.00130, 0.00165) producía 13.0 bps,
+    // que es estrictamente menor a la fricción de 15.0 bps, condenando al trade a pérdida neta al tocar breakeven.
+    let roundtrip_taker_friction = effective_fee * 2.0 + 0.0006;
+    let be_buffer = (roundtrip_taker_friction + 0.00035).clamp(0.00185, 0.00240);
     let atr_frac = if entry_price > 1e-8 { current_atr / entry_price } else { 0.0010 };
-    let min_breathing = (atr_frac * 0.60).clamp(0.00040, 0.00080);
-    let be_trigger = (effective_tp * lvl(0.35, 0.55))
+    let min_breathing = (atr_frac * 0.85).clamp(0.00080, 0.00150);
+    let be_trigger = (effective_tp * lvl(0.65, 0.80))
         .max(be_buffer + min_breathing)
-        .max(effective_fee * 2.5);
+        .max(effective_fee * 3.5);
 
     // 3. Phase Transitions (Desasfixiadas: permiten que el trade desarrolle su ciclo hasta TP)
     if current_phase == 0 && (pnl_atr >= 1.5 || max_pnl_pct >= be_trigger) {

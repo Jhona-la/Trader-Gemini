@@ -2229,6 +2229,19 @@ impl SuperGenotype {
                     .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
                 self.tp_horizon_curve.a = (self.sl_horizon_curve.a + req.ln())
                     .clamp(Self::TP_A_BOUNDS.0, Self::TP_A_BOUNDS.1);
+                if self.tp_horizon_curve.a - self.sl_horizon_curve.a < req.ln() {
+                    self.sl_horizon_curve.a = (self.tp_horizon_curve.a - req.ln())
+                        .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+                }
+            }
+            // Invariante armónica final garantizada: acoplamiento simétrico entre cotas
+            if self.tp_horizon_curve.a - self.sl_horizon_curve.a < req.ln() {
+                self.tp_horizon_curve.a = (self.sl_horizon_curve.a + req.ln())
+                    .clamp(Self::TP_A_BOUNDS.0, Self::TP_A_BOUNDS.1);
+                if self.tp_horizon_curve.a - self.sl_horizon_curve.a < req.ln() {
+                    self.sl_horizon_curve.a = (self.tp_horizon_curve.a - req.ln())
+                        .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+                }
             }
         }
     }

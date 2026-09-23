@@ -266,7 +266,7 @@ impl TemporalSpectrum {
             // integrados. persistence=0.5 ⇒ puro ruido ⇒ peso suelo (5%,
             // conserva diversificación del promedio de ensamble); 1.0 ⇒
             // tendencia pura ⇒ peso pleno.
-            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
+            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0);
             w_sum += w;
             let contrib = w * s.signal;
             w_sig_sum += contrib;
@@ -492,7 +492,7 @@ impl TemporalSpectrum {
         for (i, s) in self.scales.iter().enumerate() {
             let ln_t = s.tau_ms.max(1e-6).ln();
             ln_taus[i] = ln_t;
-            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
+            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0);
             weights[i] = w;
             total_w += w;
 
@@ -579,7 +579,7 @@ impl TemporalSpectrum {
         let mut total_w = 0.0;
         let mut coherent_sig = 0.0;
         for s in &self.scales {
-            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
+            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0);
             total_w += w;
             coherent_sig += w * (s.signal * sign);
         }
@@ -611,7 +611,7 @@ impl TemporalSpectrum {
             let ln_t = s.tau_ms.max(1e-6).ln();
             let dist = (ln_t - ln_center) / sigma;
             let kernel = (-0.5 * dist * dist).exp();
-            let w = ((s.persistence - 0.5) * 2.0).max(0.05) * kernel;
+            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0) * kernel;
             w_sum += w;
             w_sig += w * s.signal;
         }
@@ -640,39 +640,66 @@ impl TemporalSpectrum {
         self.continuous_band_projection(2_592_000_000.0, 3.0)
     }
 
-    /// Escala resonante de alta frecuencia τ*_micro en la banda rápida [1 ms, 180 s].
-    pub fn micro_resonant_tau_ms(&self) -> f64 {
+    /// Escala resonante continua universal tau* (centroide logarítmico del espectro de 32 partes).
+    pub fn continuous_resonant_tau_ms(&self) -> f64 {
         let mut total_e = 0.0;
         let mut weighted_ln = 0.0;
         for s in &self.scales {
-            if s.tau_ms >= 1.0 && s.tau_ms <= 180_000.0 {
-                let w = ((s.persistence - 0.5) * 2.0).max(0.05);
-                let e = w * s.signal.abs();
-                total_e += e;
-                weighted_ln += e * s.tau_ms.ln();
-            }
+            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0);
+            let e = w * s.signal.abs();
+            total_e += e;
+            weighted_ln += e * s.tau_ms.max(1e-6).ln();
         }
         if total_e > 1e-12 {
-            (weighted_ln / total_e).exp().clamp(1_000.0, 180_000.0)
+            (weighted_ln / total_e).exp().clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS)
+        } else {
+            self.dominant_tau_ms.max(30_000.0)
+        }
+    }
+
+    /// Escala resonante continua de alta frecuencia (modo reactivo del espectro continuo sin cortes fijos).
+    pub fn micro_resonant_tau_ms(&self) -> f64 {
+        let pivot_ln = self.continuous_resonant_tau_ms().ln();
+        let mut total_e = 0.0;
+        let mut weighted_ln = 0.0;
+        for s in &self.scales {
+            let ln_tau = s.tau_ms.max(1e-6).ln();
+            let weight_fast = if ln_tau <= pivot_ln {
+                1.0
+            } else {
+                (-0.5 * (ln_tau - pivot_ln).powi(2)).exp()
+            };
+            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0) * weight_fast;
+            let e = w * s.signal.abs();
+            total_e += e;
+            weighted_ln += e * ln_tau;
+        }
+        if total_e > 1e-12 {
+            (weighted_ln / total_e).exp().clamp(1_000.0, TAU_ANCHOR_SLOW_MS)
         } else {
             30_000.0
         }
     }
 
-    /// Escala resonante de baja frecuencia τ*_macro en la banda lenta [180 s, 43 200 s].
+    /// Escala resonante continua de baja frecuencia (modo portador del espectro continuo sin cortes fijos).
     pub fn macro_resonant_tau_ms(&self) -> f64 {
+        let pivot_ln = self.continuous_resonant_tau_ms().ln();
         let mut total_e = 0.0;
         let mut weighted_ln = 0.0;
         for s in &self.scales {
-            if s.tau_ms >= 180_000.0 && s.tau_ms <= 43_200_000.0 {
-                let w = ((s.persistence - 0.5) * 2.0).max(0.05);
-                let e = w * s.signal.abs();
-                total_e += e;
-                weighted_ln += e * s.tau_ms.ln();
-            }
+            let ln_tau = s.tau_ms.max(1e-6).ln();
+            let weight_slow = if ln_tau >= pivot_ln {
+                1.0
+            } else {
+                (-0.5 * (pivot_ln - ln_tau).powi(2)).exp()
+            };
+            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0) * weight_slow;
+            let e = w * s.signal.abs();
+            total_e += e;
+            weighted_ln += e * ln_tau;
         }
         if total_e > 1e-12 {
-            (weighted_ln / total_e).exp().clamp(180_000.0, 43_200_000.0)
+            (weighted_ln / total_e).exp().clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS)
         } else {
             14_400_000.0
         }

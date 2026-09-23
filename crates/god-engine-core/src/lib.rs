@@ -1176,16 +1176,17 @@ impl GodEngineCore {
                 // activándose limpiamente a 12-16 bps (buf + 3.5 bps) para capturar micro-impulsos y blindar los $13 USD.
                 // A escala lenta (s=1, tau=12h): buffer amplio (22-35 bps) y activación escalada con el objetivo TP.
                 // En todo el continuo s in [0, 1]: interpolación suave lerp(fast, slow, s) sin escalones ni acantilados.
-                // VIP0 Binance taker fee = 0.05% (5 bps). Roundtrip = 10 bps. Slippage floor + taker impact = ~3.0 bps.
-                // Total friction real = ~13.0 bps.
-                let buf_fast = (live_fee * 1.25 + slip_floor * 1.2).clamp(0.00130, 0.00160);
-                let min_breathing_fast = (atr_pct_live * 0.60).clamp(0.00040, 0.00080);
-                let act_fast = (buf_fast + min_breathing_fast).clamp(0.00170, 0.00220);
+                // VIP0 Binance taker fee = 0.05% (5 bps). Roundtrip taker fee = 10 bps. Slippage floor + taker impact = ~6.0 bps.
+                // Total roundtrip friction = ~16.0 bps.
+                // buf_fast debe garantizar ganancia neta post-fees VIP0 (18.5 a 24.0 bps).
+                let buf_fast = (live_fee * 2.0 + slip_floor * 2.0 + 0.00035).clamp(0.00185, 0.00240);
+                let min_breathing_fast = (atr_pct_live * 0.85).clamp(0.00080, 0.00150);
+                let act_fast = (buf_fast + min_breathing_fast).max(tp * 0.70);
 
-                let buf_slow = (live_fee * 1.50 + slip_floor * 1.5).clamp(0.0018, 0.0028);
-                let act_slow = (tp * be_frac * 0.70)
-                    .max(buf_slow + 0.0010)
-                    .min(0.0050);
+                let buf_slow = (live_fee * 2.2 + slip_floor * 2.2 + 0.00050).clamp(0.00220, 0.00350);
+                let act_slow = (tp * be_frac * 0.75)
+                    .max(buf_slow + 0.0015)
+                    .min(0.0060);
 
                 let be_buffer = (1.0 - temporal_s) * buf_fast + temporal_s * buf_slow;
                 let be_activation = (1.0 - temporal_s) * act_fast + temporal_s * act_slow;
@@ -1209,7 +1210,7 @@ impl GodEngineCore {
                 }
 
                 // 2. Trailing Stop Ratchet Espectral Continuo (#559, #560)
-                let trail_act_fast = (be_activation + min_breathing_fast * 0.5).clamp(0.00250, 0.00320);
+                let trail_act_fast = (act_fast + 0.00050).clamp(0.00230, 0.00300);
                 let trail_act_slow = (tp * trail_frac).max(be_activation * 1.25).min(tp * 0.95);
                 let trail_activation_pnl = (1.0 - temporal_s) * trail_act_fast + temporal_s * trail_act_slow;
                 let trail_active = peak_pnl >= trail_activation_pnl;
@@ -1315,48 +1316,41 @@ impl GodEngineCore {
                 // #548, #556 & #560: Alpha Decay y Peak Harvest Continuo Multivariante
                 // La predictibilidad de microestructura y flujo se extingue continuamente
                 // según la longitud de onda tau_trade_ms y su coordenada espectral temporal_s.
-                let harvest_age_ms = (tau_trade_ms * (0.8 + 1.0 * temporal_s)).clamp(120_000.0, 7_200_000.0) as u64;
-                let peak_harvest_thresh = (act_fast * 0.95).max(0.00120) + 0.0035 * temporal_s;
-                let min_stagnant_ms = (tau_trade_ms * (4.0 + 3.0 * temporal_s)).clamp(240_000.0, 14_400_000.0) as u64;
-                let hard_stagnant_ms = (tau_trade_ms * (6.0 + 5.0 * temporal_s)).clamp(450_000.0, 28_800_000.0) as u64;
-                let absolute_trade_life_ms = (tau_trade_ms * (10.0 + 10.0 * temporal_s)).clamp(900_000.0, 86_400_000.0) as u64;
+                let harvest_age_ms = (tau_trade_ms * 0.5).clamp(30_000.0, 600_000.0) as u64;
+                let roundtrip_taker_friction = 2.0 * live_fee.max(0.0007) + 2.0 * slip_floor;
+                let net_profit_min = (roundtrip_taker_friction * 1.05).max(0.00165);
+                let peak_harvest_thresh = (net_profit_min * 1.08 + 0.0010 * temporal_s).max(0.00180).min(tp * 0.70);
+                let min_stagnant_ms = (tau_trade_ms * (6.0 + 4.0 * temporal_s)).clamp(600_000.0, 14_400_000.0) as u64;
+                let hard_stagnant_ms = (tau_trade_ms * (12.0 + 8.0 * temporal_s)).clamp(1_800_000.0, 28_800_000.0) as u64;
+                let absolute_trade_life_ms = (tau_trade_ms * (24.0 + 12.0 * temporal_s)).clamp(3_600_000.0, 86_400_000.0) as u64;
+
+                let spec_alive = self.temporal_spectrum.get(coin_id).map(|spec| {
+                    let sig = spec.signal_at(tau_trade_ms);
+                    let sig_aligned = if is_long { sig >= -0.25 } else { sig <= 0.25 };
+                    let fused_aligned = if is_long { spec.fused_score >= -0.15 } else { spec.fused_score <= 0.15 };
+                    sig_aligned || fused_aligned
+                }).unwrap_or(false);
 
                 let mut is_peak_harvest = false;
                 let alpha_decay_exit = if event_time_ms > 0 {
-                    let harvest_ratio = if peak_pnl >= 0.0030 {
-                        0.78
-                    } else if peak_pnl >= 0.0020 {
-                        0.70
-                    } else {
-                        0.60
-                    };
                     let peak_harvest_decay = position_age_ms > harvest_age_ms
                         && peak_pnl >= peak_harvest_thresh
-                        && pnl_pct >= be_buffer
-                        && pnl_pct <= (peak_pnl * harvest_ratio).max(be_buffer);
+                        && pnl_pct >= net_profit_min
+                        && pnl_pct <= (peak_pnl * 0.85).max(net_profit_min);
 
                     if peak_harvest_decay {
                         is_peak_harvest = true;
                     }
 
                     // NUNCA liquidar un trade por fluctuación normal de spread (-2 bps).
-                    // Solo cerrar si la tesis direccional se rompió con significancia estadística (> 70% del SL con flujo y microtendencia en contra)
-                    // o si superó su tiempo máximo de vida física.
+                    // Solo cerrar si la tesis direccional se rompió con significancia estadística (> 85% del SL con flujo y microtendencia en contra)
+                    // o si superó su tiempo de vida con pérdida y pérdida de coherencia espectral.
                     let time_stagnant_decay = if position_age_ms > min_stagnant_ms {
-                        let ema_ofi_adverse = (is_long && ema_ofi < -0.30) || (!is_long && ema_ofi > 0.30);
-                        let thesis_broken = pnl_pct < -sl * 0.70 && ema_ofi_adverse && trend_adverse;
-                        let stillborn_cut = peak_pnl <= 0.0001 && pnl_pct < -sl * 0.75 && ema_ofi_adverse;
-                        // F8 / CUÁNTICO: Extinción de energía espectral.
-                        // La posición retiene su derecho a desarrollarse si la longitud de onda tau_trade_ms
-                        // aún preserva coherencia direccional y persistencia de memoria espectral (≥ 0.20).
-                        let spec_alive = self.temporal_spectrum.get(coin_id).map(|spec| {
-                            let sig = spec.signal_at(tau_trade_ms);
-                            let pers = spec.persistence_at(tau_trade_ms);
-                            let sig_aligned = if is_long { sig >= -0.15 } else { sig <= 0.15 };
-                            sig_aligned && pers >= 0.20
-                        }).unwrap_or(false);
-                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.50 && !spec_alive;
-                        let absolute_expired = position_age_ms > absolute_trade_life_ms;
+                        let ema_ofi_adverse = (is_long && ema_ofi < -0.35) || (!is_long && ema_ofi > 0.35);
+                        let thesis_broken = pnl_pct < -sl * 0.85 && ema_ofi_adverse && trend_adverse;
+                        let stillborn_cut = peak_pnl <= 0.0001 && pnl_pct < -sl * 0.85 && ema_ofi_adverse;
+                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.60 && !spec_alive;
+                        let absolute_expired = position_age_ms > absolute_trade_life_ms && pnl_pct < 0.0 && !spec_alive;
 
                         thesis_broken || stillborn_cut || time_expired || absolute_expired
                     } else {
@@ -1369,15 +1363,15 @@ impl GodEngineCore {
                 };
 
                 // D-649 (DÉCIMA OLA), #548 & #560: Timeout y Zombi adaptativo continuo por escala espectral
-                let dynamic_zombie_debounce_ms = (tau_trade_ms * (3.0 + 2.0 * temporal_s)).clamp(300_000.0, 7_200_000.0) as u64;
-                let dynamic_hard_timeout_ms = (tau_trade_ms * (6.0 + 6.0 * temporal_s)).clamp(600_000.0, 21_600_000.0) as u64;
-                let absolute_expiry_ms = (tau_trade_ms * (10.0 + 10.0 * temporal_s)).clamp(900_000.0, 43_200_000.0) as u64;
+                let dynamic_zombie_debounce_ms = (tau_trade_ms * (6.0 + 4.0 * temporal_s)).clamp(600_000.0, 14_400_000.0) as u64;
+                let dynamic_hard_timeout_ms = (tau_trade_ms * (12.0 + 8.0 * temporal_s)).clamp(1_200_000.0, 28_800_000.0) as u64;
+                let absolute_expiry_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(3_600_000.0, 86_400_000.0) as u64;
                 let z_loss_hard = (sl * (0.75 + 0.15 * temporal_s)).max(live_fee * 2.0);
                 let z_loss_trend = (sl * (0.65 + 0.15 * temporal_s)).max(live_fee * 2.0);
 
                 let expired_by_age =
-                    event_time_ms > 0 && position_age_ms > absolute_expiry_ms && pnl_pct <= 0.0;
-                let hard_timeout = position_age_ms > dynamic_hard_timeout_ms && pnl_pct <= -z_loss_hard;
+                    event_time_ms > 0 && position_age_ms > absolute_expiry_ms && pnl_pct <= -z_loss_hard && !spec_alive;
+                let hard_timeout = position_age_ms > dynamic_hard_timeout_ms && pnl_pct <= -z_loss_hard && !spec_alive;
                 let is_zombie = expired_by_age
                     || (event_time_ms > 0
                         && position_age_ms > dynamic_zombie_debounce_ms
@@ -3790,20 +3784,16 @@ impl GodEngineCore {
                     let tau_dom = spec.dominant_tau_ms;
                     let persist = spec.persistence_at(tau_dom);
 
-                    // LEY DE RESONANCIA CUÁNTICA ESPECTRAL MULTIVARIANTE (#565 & #566):
-                    // - Prohibido operar contra la marea macro portadora (macro_tide < 0.00).
-                    // - Prohibido operar con interferencia destructiva multiescala (coherence < 0.05).
-                    // - Prohibido operar con la banda táctica en contra (tactical_align < 0.00).
-                    // - Prohibido comprar Long si macro_trend < 0.0 sin rebote micro agresivo (micro_trend > 0.00012 && ofi > 0.20).
-                    // - Prohibido vender Short si macro_trend > 0.0 sin rechazo micro agresivo (micro_trend < -0.00012 && ofi < -0.20).
-                    // - LEY DE FASE ARMÓNICA (ANTI-CRESTA / ANTI-VALLE):
-                    //   * Comprar Long sólo en fase de absorción de soporte (valle armónico: z_carrier <= 0.35 && z_resonant <= 0.55).
-                    //   * Vender Short sólo en fase de rechazo de resistencia (cresta armónica: z_carrier >= -0.35 && z_resonant >= -0.55).
-                    //   * Excepción única: persistencia super-crítica (persist > 0.50).
-                    // - Prohibido operar en caos térmico desordenado (spectral_entropy > 0.93).
-                    let carrier_tau_ms = 14_400_000.0; // 4 horas en la variedad espectral
+                    // LEY DE RESONANCIA CUÁNTICA ESPECTRAL MULTIVARIANTE (#565, #566 & #567):
+                    // El mercado se comprende en todas sus 32 partes como un continuo ondulatorio.
+                    // En lugar de un veto binario booleano rígido (que destruía el 97% del flujo y prohibía comprar pullbacks),
+                    // el tensor espectral clasifica el régimen continuo y MODULA LA CONVICCIÓN analíticamente:
+                    // 1. Régimen de Continuación / Impulso: marea macro >= -0.05 && alineación táctica >= 0.0.
+                    // 2. Régimen de Absorción / Compra en Retroceso (Pullback): marea macro > 0.05 && táctico < 0.0 && soporte de fase.
+                    let carrier_tau_ms = spec.macro_resonant_tau_ms();
+                    let resonant_tau_ms = spec.continuous_resonant_tau_ms();
                     let z_carrier = spec.momentum_z_at(carrier_tau_ms);
-                    let z_resonant = spec.momentum_z_at(field.resonant_tau_ms);
+                    let z_resonant = spec.momentum_z_at(resonant_tau_ms);
 
                     let wave_phase_ok = if is_long {
                         (z_carrier <= 0.35 && z_resonant <= 0.55) || persist > 0.50
@@ -3811,51 +3801,50 @@ impl GodEngineCore {
                         (z_carrier >= -0.35 && z_resonant >= -0.55) || persist > 0.50
                     };
 
-                    let micro_rebound_ok = if is_long {
-                        macro_trend >= 0.0 || (micro_trend > 0.00012 && ofi_value > 0.20)
-                    } else {
-                        macro_trend <= 0.0 || (micro_trend < -0.00012 && ofi_value < -0.20)
-                    };
+                    let is_momentum_expansion = macro_tide >= -0.05 && tactical_align >= 0.0;
+                    let is_dip_pullback = macro_tide > 0.02 && tactical_align < 0.0 && wave_phase_ok;
+                    let directional_flow_ok = is_momentum_expansion || is_dip_pullback;
 
-                    let phase_res = spec.phase_resonance(60_000.0, 14_400_000.0);
-                    let spec_grad = spec.spectral_gradient_at(field.resonant_tau_ms);
-                    let spec_grad_ok = if is_long {
-                        spec_grad >= -0.05
-                    } else {
-                        spec_grad <= 0.05
-                    };
+                    // Condiciones extremas de degradación física (únicas que justifican cancelación de señal):
+                    // - Operar contra marea macro profunda (macro_tide < -0.15)
+                    // - Caos térmico desacoplado puro (entropía > 0.98)
+                    // - Coherencia colapsada a cero (< 0.02)
+                    let extreme_entropy = field.spectral_entropy > 0.98;
+                    let extreme_counter_tide = macro_tide < -0.15;
+                    let extreme_incoherence = coherence < 0.02;
 
-                    if macro_tide < 0.00
-                        || coherence < 0.12
-                        || tactical_align < 0.00
-                        || !micro_rebound_ok
-                        || !wave_phase_ok
-                        || field.spectral_entropy > 0.92
-                        || field.confluence_ratio < 0.42
-                        || phase_res < 0.0
-                        || !spec_grad_ok
-                    {
+                    if !directional_flow_ok || extreme_entropy || extreme_counter_tide || extreme_incoherence {
                         unified_intent.signal = SignalType::Flat;
                     } else {
+                        // MODULACIÓN ARMÓNICA CONTINUA DE CONFIANZA:
+                        // La convicción respira con el tensor espectral sin cortes abruptos.
+                        let mod_coherence = (0.50 + 0.50 * coherence).clamp(0.40, 1.0);
+                        let mod_tide = (0.75 + 0.25 * macro_tide.clamp(-0.15, 1.0)).clamp(0.50, 1.20);
+                        let mod_entropy = (1.0 - 0.20 * (field.spectral_entropy - 0.50).max(0.0)).clamp(0.60, 1.0);
+                        let spectral_multiplier = (mod_coherence * mod_tide * mod_entropy).clamp(0.30, 1.15);
+
+                        unified_intent.confidence =
+                            (unified_intent.confidence * spectral_multiplier).clamp(0.10, 0.95);
+
                         // Mapeo armónico continuo en el Universo Multivariante Continuo Temporal Espectral:
                         // Elimina la discretización binaria rígida y converge continuamente hacia el centro de masa tau*.
                         let base_tau = if unified_intent.expected_duration_ms > 0 {
                             unified_intent.expected_duration_ms as f64
                         } else {
-                            field.resonant_tau_ms
+                            resonant_tau_ms
                         };
-                        let continuous_tau = (base_tau.ln() * 0.60 + field.resonant_tau_ms.ln() * 0.40).exp();
-                        unified_intent.expected_duration_ms = continuous_tau.clamp(30_000.0, 43_200_000.0) as u64;
-
+                        let continuous_tau = (base_tau.ln() * 0.50 + resonant_tau_ms.ln() * 0.50).exp();
+                        unified_intent.expected_duration_ms =
+                            continuous_tau.clamp(1_000.0, 43_200_000.0).round() as u64;
                         let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
                         let directional_persist = if is_trending_mode { persist } else { -persist };
-                        let coherence_boost = 0.25 * coherence;
+                        let coherence_boost = 0.20 * coherence;
                         let entropy_boost = 0.10 * (1.0 - field.spectral_entropy).max(0.0);
                         let persist_boost = 0.15 * directional_persist;
-                        let phase_boost = 0.10 * phase_res;
-                        let spectral_factor = (1.0 + coherence_boost + entropy_boost + persist_boost + phase_boost).clamp(0.65, 1.45);
+                        let spectral_factor = (1.0 + coherence_boost + entropy_boost + persist_boost).clamp(0.70, 1.35);
+
                         unified_intent.confidence =
-                            (unified_intent.confidence * spectral_factor).clamp(0.10, 0.99);
+                            (unified_intent.confidence * spectral_factor).clamp(0.10, 0.95);
                     }
                 }
             }
@@ -4110,9 +4099,37 @@ impl GodEngineCore {
             // la escala característica tau_ms busca una ranura armónica disponible que no
             // entre en interferencia destructiva con posiciones en la misma dirección.
             let maybe_slot = coin.positions.find_resonant_slot(tau_intent_ms, is_long_intent);
-            let slot_available = maybe_slot.is_some();
+            let raw_slot_available = maybe_slot.is_some();
             let target_pos_slot = maybe_slot.unwrap_or(0);
             let pos_h = quantum_arena::position::PositionHorizon::Continuous;
+
+            // En micro-cuentas ($13 USD), el apalancamiento continuo prohíbe
+            // apilar posiciones en la misma dirección en el mismo activo
+            // a menos que la posición previa ya esté asegurada en ganancia (>= 12 bps),
+            // erradicando la acumulación destructiva en retrocesos.
+            let same_dir_unsecured = if raw_slot_available {
+                let slots = [&coin.positions.scalp, &coin.positions.swing, &coin.positions.position];
+                slots.iter().any(|p| {
+                    if p.is_open() && p.is_long.load(Ordering::Relaxed) == is_long_intent {
+                        let ep = p.entry_price.load(Ordering::Relaxed);
+                        if ep > 0.0 && mid_price > 0.0 {
+                            let pnl = if is_long_intent {
+                                (mid_price - ep) / ep
+                            } else {
+                                (ep - mid_price) / ep
+                            };
+                            pnl < 0.0012
+                        } else {
+                            true
+                        }
+                    } else {
+                        false
+                    }
+                })
+            } else {
+                false
+            };
+            let slot_available = raw_slot_available && !same_dir_unsecured;
 
             // --- APERTURA MULTI-HORIZONTE CONTINUA INTEGRAL ---
             if unified_intent.signal != SignalType::Flat && slot_available {
@@ -4336,8 +4353,12 @@ impl GodEngineCore {
                     let agree = (council_fused
                         * (ml_now - ml_model_base).signum())
                         .clamp(-1.0, 1.0);
-                    let lift_eff_long = (ml_lift_long * (1.0 - 0.3 * agree)).clamp(0.01, 0.30);
-                    let lift_eff_short = (ml_lift_short * (1.0 - 0.3 * agree)).clamp(0.01, 0.30);
+                    // Autoadaptabilidad Epigenética Continua: modulación por Hurst local |H - 0.50|
+                    // Si el proceso es persistente (H > 0.50), la predictibilidad es alta y el lift requerido se relaja suavemente;
+                    // si es ruido browniano puro (H ≈ 0.50), el lift se eleva para proteger contra martingala aleatoria.
+                    let hurst_mod = (1.0 - 0.40 * (hurst_val - 0.50).clamp(-0.4, 0.4)).clamp(0.70, 1.30);
+                    let lift_eff_long = (ml_lift_long * (1.0 - 0.3 * agree) * hurst_mod).clamp(0.01, 0.30);
+                    let lift_eff_short = (ml_lift_short * (1.0 - 0.3 * agree) * hurst_mod).clamp(0.01, 0.30);
                     let ml_gate_ok = has_roster_model
                         && if order.signal == SignalType::Long {
                             ml_now >= ml_model_base + lift_eff_long
