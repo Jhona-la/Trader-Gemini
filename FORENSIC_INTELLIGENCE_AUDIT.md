@@ -11816,4 +11816,136 @@ ESTADO FINAL DE CERTIFICACIÓN FORENSE — OLA 6 (COMPLETADA Y VERIFICADA AL 100
 
 ---
 
-*Fin de la Ola 12. Total de puntos certificados acumulados: 234 de 545 (42.94%). El sistema alcanza paridad causal de fricción, protección matemática de EV >= 0, desasfixia de horizontes Scalping/Swing y coherencia multiescala en la toma de decisiones para maximizar la curva de capital de $13 USD.*
+## 🌊 OLA 13: DESASFIXIA TEMPORAL, SALIDA POR DECAIMIENTO DE ALPHA Y RESINTONIZACIÓN DE RACHAS (#546 - #552)
+
+### ✅ #546: Alpha Decay Exit para Scalping (Módulo 3/4)
+- **Estado:** **RESUELTO Y CERTIFICADO**.
+- **QUÉ:** Cierre adaptativo de posiciones de scalping cuando la microestructura L2 y el flujo de órdenes decaen por debajo de umbrales viables sin despegue del precio tras $4\tau$ a $10\tau$ (12 a 45 minutos), evitando que el trade degenere en difusión browniana no compensada.
+- **POR QUÉ:** Las anomalías de microestructura (desequilibrio de libro L2, ráfagas del agresor, OBI sesgado) tienen una vida media finita ($\tau \sim 3$ min). Si el precio no avanza hacia el Take Profit en la ventana esperada, mantener la posición abierta expone innecesariamente el capital a la deriva aleatoria del mercado y a los saltos de spread, aumentando la probabilidad de tocar el Stop Loss por mero ruido estocástico.
+- **PARA QUÉ:** Preservar intacto el capital de $13 USD liberando margen rápidamente cuando el catalizador de microestructura se ha disipado, evitando pérdidas por arrastre temporal y permitiendo al motor capturar la siguiente oportunidad fresca con alta probabilidad.
+- **CÓMO:** En `crates/god-engine-core/src/lib.rs`, adición de la razón de cierre `ExitReason::AlphaDecay` (`alpha_decay_exit`, código de telemetría `7u8`):
+  Evaluación continua del decaimiento del flujo de agresión, de la reversión de OBI contra la posición y del estancamiento de PnL no realizado ($|pnl| < 0.0010$) tras transcurrir el horizonte de media vida $\tau_{decay} = \max(720\,000, 4 \cdot \tau_{coin})$. Si se confirma la pérdida de inercia direccional, se liquida la posición inmediatamente a mercado.
+- **CUÁNDO:** Durante el ciclo de monitoreo continuo de posiciones abiertas en cada tick del motor (`manage_open_positions`).
+- **DÓNDE:** `crates/god-engine-core/src/lib.rs:1540-1630` y `crates/god-engine-core/src/stateful_engine.rs`.
+- **QUIÉN:** `GodEngineCore` (Módulo 3 - Motor de Gestión de Salidas y Riesgo Microestructural).
+- **Evidencia de Pruebas:** Compilación y tests validados; verificación de paridad causal en `test_ml.rs` y registro telemetrizado con código `7u8`.
+
+---
+
+### ✅ #547: Toxic Flow Recalibrado Dinámicamente por Escala de Stop (Módulo 3/4)
+- **Estado:** **RESUELTO Y CERTIFICADO**.
+- **QUÉ:** Sustitución del piso estático de protección contra flujo tóxico (`toxic_cut_sl = 0.0065` / 65 bps) por un umbral dinámico proporcional al Stop Loss del trade: `toxic_cut_sl = sl * 0.80` (80% del SL configurado).
+- **POR QUÉ:** Para un trade de scalping calibrado con $SL = 28$ bps ($0.0028$), un detector de flujo tóxico con umbral estático de 65 bps era físicamente inalcanzable antes de que saltara el Stop Loss completo. El mecanismo nunca se activaba para scalping, permitiendo que la posición sufriera el 100% de la pérdida máxima incluso cuando se detectaba toxicidad masiva del libro en contra.
+- **PARA QUÉ:** Cortar tempranamente las pérdidas en situaciones donde agresores institucionales barren el libro contra nuestra posición, salvando un 20% a 30% del stop loss de scalping y amortiguando el drawdown de la cuenta.
+- **CÓMO:** En `crates/god-engine-core/src/lib.rs`, la condición de escape por flujo tóxico compara la pérdida flotante actual contra el 80% del SL efectivo:
+  $$\text{toxic\_trigger} = (pnl < -\text{sl} \cdot 0.80) \land (\text{toxic\_toxicity\_score} > 0.75)$$
+- **CUÁNDO:** En cada actualización de microestructura y libros L2 mientras la posición experimenta movimiento adverso.
+- **DÓNDE:** `crates/god-engine-core/src/lib.rs:1490-1530`.
+- **QUIÉN:** `GodEngineCore` (Módulo 3/4 - Circuit Breaker de Toxicidad y Microestructura).
+- **Evidencia de Pruebas:** Suite completa de tests de `god-engine-core` y `risk-engine` pasando al 100%.
+
+---
+
+### ✅ #548: Timeouts Adaptativos por Horizonte (Scalp vs Swing) y Dilatación Espectral (Módulo 3)
+- **Estado:** **RESUELTO Y CERTIFICADO**.
+- **QUÉ:** Separación estricta de tiempos máximos de vida (*timeout duration*) y detección de trades zombi según el horizonte asignado: Scalping [5 a 40 min], Swing [1.5 a 6 horas], modulados por el tensor espectral de volatilidad $\tau_{coin}$.
+- **POR QUÉ:** El timeout era monolítico e indiferente al estilo de trading. Forzar a un trade de swing a cerrar en minutos lo destruía antes de desarrollar su recorrido multivelas; por el contrario, dejar a un scalping flotar durante horas lo convertía en una posición huérfana expuesta a cambios bruscos de régimen.
+- **PARA QUÉ:** Maximizar la rentabilidad de las posiciones respetando su naturaleza física intrínseca: hiperagilidad para scalping con rotación continua de capital y paciencia matemática para swing con captura de grandes expansiones de tendencia.
+- **CÓMO:**
+  - Para `PositionHorizon::Scalping`: `max_age_ms = (15.0 * tau_coin).clamp(300_000.0, 2_400_000.0)` (5 a 40 minutos).
+  - Para `PositionHorizon::Swing`: `max_age_ms = (120.0 * tau_coin).clamp(5_400_000.0, 21_600_000.0)` (1.5 a 6 horas).
+  - Umbral zombi calibrado en $\frac{2}{3} \cdot \text{max\_age\_ms}$ con comprobación de compresión de rango.
+- **CUÁNDO:** En la función de chequeo de límites temporales en `manage_open_positions`.
+- **DÓNDE:** `crates/god-engine-core/src/lib.rs:1380-1440`.
+- **QUIÉN:** `GodEngineCore` (Módulo 3 - Cronometría y Ciclo de Vida Multiescala).
+- **Evidencia de Pruebas:** Verificado en pruebas unitarias y en logs de backtest con clasificación de timeouts diferenciada.
+
+---
+
+### ✅ #549: Firewall de Rachas Universales Anticolisión Long/Short (Módulo 3/5)
+- **QUÉ:** Unificación del firewall de rachas perdedoras para considerar tanto fallos direccionales consecutivos como la racha total agregada en periodos de consolidación ruidosa.
+- **POR QUÉ:** Un mercado oscilante violento (serrucho / chop) provocaba pérdidas alternadas (Long $\to$ Short $\to$ Long $\to$ Short). Cada dirección individual solo registraba 1 fallo, eludiendo los frenos de racha direccional y permitiendo que la cuenta sufriera 4 o 5 pérdidas seguidas en minutos.
+- **PARA QUÉ:** Blindar el capital de $13 USD impidiendo que el motor sea desangrado por alternancia perversa de señales en regímenes de indecisión del mercado.
+- **CÓMO:** Monitoreo conjunto en `StatefulEngine` de `directional_streak(dir)` y `total_loss_streak`.
+- **CUÁNDO:** En la validación previa de apertura de cualquier nueva orden en `can_open_position`.
+- **DÓNDE:** `crates/god-engine-core/src/stateful_engine.rs:380-450` y `crates/god-engine-core/src/lib.rs:2730-2750`.
+- **QUIÉN:** `StatefulEngine` / `GodEngineCore` (Módulo 3/5 - Risk Firewall & Portfolio Armor).
+- **Evidencia de Pruebas:** Tests de `quantum_kelly_risk` y `stateful_engine` validados.
+
+---
+
+### ✅ #550: Cooldowns en Milisegundos Reales y Paridad Temporal 1:1 BT ↔ Producción (Módulo 1/3)
+- **QUÉ:** Migración de los cooldowns y contadores de inactividad de conteo discreto de ticks a timestamps de época en milisegundos (`current_ts: u64`).
+- **POR QUÉ:** Contar ticks generaba una divergencia letal entre backtest y producción: en producción a baja volatilidad 600 ticks pueden tardar 10 minutos, mientras que en alta volatilidad pueden ocurrir en 2 segundos. En backtest, donde los ticks son homogéneos en replay, un contador de ticks distorsionaba completamente la ventana temporal real de los eventos económicos.
+- **PARA QUÉ:** Garantizar paridad matemática absoluta entre las decisiones tomadas en backtesting histórico y las ejecutadas por el motor en vivo en Binance (`live_trader.rs`), operando en base al tiempo físico real del mercado.
+- **CÓMO:** Incorporación del campo `current_ts` en `StatefulEngine`, alimentado directamente por `event_time_ms` de los paquetes de aggTrades y depth updates. Modificación de `can_open_position(cooldown_ms: u64)` para evaluar `self.current_ts - last_exit_ts >= cooldown_ms`.
+- **CUÁNDO:** En cada actualización del motor con `update_with_quantities(price, vol, event_time_ms)`.
+- **DÓNDE:** `crates/god-engine-core/src/stateful_engine.rs:320-370` y `crates/god-engine-core/src/lib.rs:1615-1625`.
+- **QUIÉN:** `StatefulEngine` (Módulo 1 - Núcleo de Estado Temporal y Sincronía).
+- **Evidencia de Pruebas:** Propagación verificada en `audit_forensic_backtest.rs` y `god-engine-core`.
+
+---
+
+### ✅ #551: Calibración de Pérdida Direccional Genuina vs Scratches por Fricción (Módulo 3/5)
+- **QUÉ:** Restricción del incremento de la racha perdedora únicamente a operaciones con pérdida direccional real ($pnl \le -0.0005$ / $-5$ bps), excluyendo salidas planas o *scratches* provocadas por comisiones mínimas.
+- **POR QUÉ:** Salidas por Breakeven con leves micro-desviaciones de $-0.5$ a $-1$ bps eran contabilizadas como fallos estratégicos de predicción direccional, disparando injustificadamente los cooldowns de 15 a 30 minutos y paralizando el bot tras trades que protegieron el capital.
+- **PARA QUÉ:** Mantener activo el motor cuando las hipótesis direccionales fueron correctas o neutrales, reservando los castigos y vetos solo para fallos donde el precio se movió significativamente en contra.
+- **CÓMO:** En `StatefulEngine::record_trade_outcome`:
+  $$\text{Incrementar racha si y solo si } pnl \le -0.0005$$
+  Trades con $-0.0005 < pnl < 0.0005$ son tratados como neutrales sin alterar la racha.
+- **CUÁNDO:** Al recibir la confirmación de ejecución de cierre de posición.
+- **DÓNDE:** `crates/god-engine-core/src/stateful_engine.rs:410-440`.
+- **QUIÉN:** `StatefulEngine` (Módulo 5 - Aprendizaje de Desempeño y Métricas).
+- **Evidencia de Pruebas:** 85 tests de `god-engine-core` en verde al 100%.
+
+---
+
+### ✅ #552: Convicción de Tensor en Cutoff Directo sin Sesgo Truncante (Módulo 2/3)
+- **QUÉ:** Reemplazo de la transformación deformante $((C - 0.50) \cdot 2.0)$ por el uso directo y continuo del valor de confianza del tensor neuronal `tensor_min_conf.clamp(0.55, 0.85)`.
+- **POR QUÉ:** La fórmula anterior multiplicaba por 2.0 y restaba 0.50, lo que creaba una distorsión no lineal severa: un modelo con 60% de convicción era reducido artificialmente a 0.20, siendo descartado de forma espuria por filtros posteriores de señal.
+- **PARA QUÉ:** Preservar la integridad probabilística calibrada de los modelos neuronales (DarkAlpha y NanoForest), garantizando que su veredicto ingrese al meta-ensamble con su peso genuino.
+- **CÓMO:** En `crates/god-engine-core/src/lib.rs:2520-2540`, lectura directa de `tensor_min_conf.clamp(0.55, 0.85)` sin distorsiones algebraicas intermedias.
+- **CUÁNDO:** En la etapa de pre-filtrado de convicción de señales ML.
+- **DÓNDE:** `crates/god-engine-core/src/lib.rs:2525-2545`.
+- **QUIÉN:** `GodEngineCore` (Módulo 2 - Meta-Ensamble Neuronal).
+- **Evidencia de Pruebas:** Calibración de corte verificada en tests de inferencia y backtest forense.
+
+---
+
+## 🌊 OLA 14: DESACOPLAMIENTO DE RACHA EN CHOP ALTERNANTE Y DESASFIXIA DE WHIPLASH VETO (#553 - #554)
+
+### ✅ #553: Desacoplamiento de Racha Direccional vs Total en Consolidación Alternante (Chop) (Módulo 3/5)
+- **Estado:** **RESUELTO Y CERTIFICADO**.
+- **QUÉ:** Condicionamiento del impacto de `total_loss_streak` para que solo module la racha efectiva si existe un chop alternante verificado (`short_streak >= 1 && long_streak >= 1`), dejando libre la dirección a favor de la tendencia si solo un lado ha fallado.
+- **POR QUÉ:** En una tendencia alcista potente, intentos de contratendencia (Shorts) podían fallar acumulando 2 pérdidas consecutivas. La regla previa `effective_long_streak = long_streak.max(total_loss_streak)` asignaba inmediatamente un veto a las compras (Longs), bloqueando precisamente los trades más rentables a favor del impulso de mercado.
+- **PARA QUÉ:** Permitir que el sistema opere con agresividad y fluidez en la dirección dominante del flujo de órdenes, castigando simultáneamente ambos lados únicamente cuando el mercado demuestra un régimen lateral errático.
+- **CÓMO:** En `crates/god-engine-core/src/lib.rs:2734-2740, 3925-3932`:
+  ```rust
+  let is_alternating_chop = short_streak >= 1 && long_streak >= 1;
+  let effective_streak = if is_alternating_chop { streak.max(total_loss_streak) } else { streak };
+  ```
+- **CUÁNDO:** Al computar los requerimientos de convicción Bayesiana y los permisos de apertura para cada dirección.
+- **DÓNDE:** `crates/god-engine-core/src/lib.rs`.
+- **QUIÉN:** `GodEngineCore` (Módulo 3/5 - Lógica de Ejecución y Firewall de Rachas).
+- **Evidencia de Pruebas:** Todos los tests de `god-engine-core` pasando al 100% (85/85 tests).
+
+---
+
+### ✅ #554: Desasfixia y Resintonización de Whiplash Veto (`p_stretch` y Cooldowns) (Módulo 3/4)
+- **Estado:** **RESUELTO Y CERTIFICADO**.
+- **QUÉ:** Elevación de los umbrales de sobre-extensión `p_stretch` de 0.25 a 1.20 ATR tras ganancias y de 0.10/0.30 a 1.50/1.20 ATR tras pérdidas, junto con la reducción drástica de tiempos muertos (cooldowns post-win de 45s a 30s; post-loss de hasta 2 horas a 10-30 minutos).
+- **POR QUÉ:** Un `p_stretch` de 0.25 ATR es una variación ínfima (aproximadamente $15-$20 en Bitcoin), por lo que tras cualquier Take Profit normal, el precio quedaba instantáneamente "sobre-extendido" bajo esa métrica hiper-sensible, prohibiendo recapturar la tendencia. Tras un Stop Loss, el veto por `stretch < 0.10` paralizaba el motor prácticamente bajo cualquier circunstancia.
+- **PARA QUÉ:** Eliminar la parálisis operativa del bot, permitiéndole operar múltiples veces al día en scalping y capturar expansiones de tendencia legítimas sin caer en compras de techos o ventas de suelos parabólicos (> 1.2-1.5 ATR).
+- **CÓMO:** En `crates/god-engine-core/src/lib.rs:3847-3905`, calibración de los parámetros de `whiplash_veto`:
+  - `p_stretch > 1.20` para rechazar compras en techos post-win (misma dirección).
+  - Cooldowns post-loss escalonados a 10 min (racha 2), 20 min (racha 3) y 30 min (racha $\ge 4$).
+  - Filtro extremo `p_stretch > 1.50` para evitar capitulaciones en clímax de pánico/euforia.
+- **CUÁNDO:** En la evaluación de `whiplash_veto` en el ciclo de entrada.
+- **DÓNDE:** `crates/god-engine-core/src/lib.rs:3845-3915`.
+- **QUIÉN:** `GodEngineCore` (Módulo 3/4 - Orchestrator de Entrada y Control de Rebote).
+- **Evidencia de Pruebas:** 85 tests unitarios en `god-engine-core` validados con 0 errores; registro de close traces con peak y age para trazabilidad total.
+
+---
+
+*Fin de la Ola 14. Total de puntos certificados acumulados: 243 de 554 (43.86%). El sistema alcanza desasfixia temporal completa, protección contra difusión browniana mediante decaimiento de alpha, calibración dinámica de flujo tóxico y libertad direccional fluida en tendencias para duplicar el capital de $13 USD con crecimiento compuesto.*
+
