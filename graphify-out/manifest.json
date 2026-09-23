@@ -750,9 +750,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/bin/test_ml.rs": {
-    "mtime": 1789911520.0492358,
-    "seen": 1789912068.9703658,
-    "ast_hash": "9ba6a72abe31a98c68b0e15636d544a9",
+    "mtime": 1790123951.765228,
+    "seen": 1790130748.1335301,
+    "ast_hash": "50dffb90586eb1a531eabc52dcbf1dfd",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/bootloader.rs": {
@@ -798,9 +798,9 @@
     "semantic_hash": "3819bf0fcc99c84f0cd51fc69c208867"
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1790121988.3170507,
-    "seen": 1790123147.970943,
-    "ast_hash": "5e889172a2e052ebdeb82e6bf527295f",
+    "mtime": 1790130063.8169918,
+    "seen": 1790130748.1335301,
+    "ast_hash": "abeab125cb8bf278d4e1cf2d3f239907",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/math_kernels.rs": {
@@ -846,9 +846,9 @@
     "semantic_hash": "922a17292a43deafbcd9f277641578e9"
   },
   "crates/god-engine-core/src/stateful_engine.rs": {
-    "mtime": 1790116675.4808407,
-    "seen": 1790123147.970943,
-    "ast_hash": "138f710c55c7a62718cd61820e7df64a",
+    "mtime": 1790126960.3953733,
+    "seen": 1790130748.1351075,
+    "ast_hash": "16e1eda7b23fe0f25d5353ad1b2d2258",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/trailing.rs": {
@@ -1488,10 +1488,10 @@
     "semantic_hash": "79ccd08cc557c9b276d6473e29aee5b7"
   },
   "crates/strategy-core/src/stat_arb.rs": {
-    "mtime": 1789093392.3407724,
-    "seen": 1789146881.559777,
-    "ast_hash": "58e7f95cb9ad16a6543cf75e8158fc5a",
-    "semantic_hash": "58e7f95cb9ad16a6543cf75e8158fc5a"
+    "mtime": 1790124944.2919984,
+    "seen": 1790130748.1351075,
+    "ast_hash": "443338a63e4c873c64828ab9e8512286",
+    "semantic_hash": ""
   },
   "crates/strategy-core/src/strategy_telemetry.rs": {
     "mtime": 1788963453.6919563,
@@ -1656,9 +1656,9 @@
     "semantic_hash": "3eadd0f3f1409fa372c48974ff9ae988"
   },
   "src/bin/audit_forensic_backtest.rs": {
-    "mtime": 1790121481.0748043,
-    "seen": 1790123147.970943,
-    "ast_hash": "ddcd2ec45075172340b07df9257c87db",
+    "mtime": 1790127851.004759,
+    "seen": 1790130748.1351075,
+    "ast_hash": "a02cdebb3cd2d797fe37aada91262c92",
     "semantic_hash": ""
   },
   "src/bin/auto_trainer_daemon.rs": {
@@ -1716,9 +1716,9 @@
     "semantic_hash": ""
   },
   "src/bin/feature_exporter.rs": {
-    "mtime": 1789768851.013401,
-    "seen": 1789876924.7582126,
-    "ast_hash": "e262dfb9da3677981b040f7b073935d6",
+    "mtime": 1790124371.849309,
+    "seen": 1790130748.1351075,
+    "ast_hash": "2ab0056576033d2776522228873f5e09",
     "semantic_hash": ""
   },
   "src/bin/feature_validator.rs": {
@@ -1788,10 +1788,10 @@
     "semantic_hash": ""
   },
   "src/bin/train_dark_alpha.rs": {
-    "mtime": 1788990199.5387342,
-    "seen": 1789146881.559777,
-    "ast_hash": "dc1f18bc2f003a019e66d3e6b5fc482f",
-    "semantic_hash": "dc1f18bc2f003a019e66d3e6b5fc482f"
+    "mtime": 1790124144.6253626,
+    "seen": 1790130748.1351075,
+    "ast_hash": "ddec11cb12b5059ff6e9aebb97bf78de",
+    "semantic_hash": ""
   },
   "src/bin/walkforward_evolver.rs": {
     "mtime": 1789138719.2358222,
