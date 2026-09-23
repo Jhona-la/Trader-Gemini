@@ -3,6 +3,8 @@ pub mod tensor_parser;
 pub mod world_bank;
 
 pub use data_pipeline::ResilientStreamManager;
+pub use dynamic_selector::{AssetScore, DynamicSelector};
+pub use tensor_parser::TensorParser;
 use memmap2::MmapOptions;
 use polars::prelude::LazyFileListReader;
 use std::fs::File;

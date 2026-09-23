@@ -320,6 +320,43 @@ async fn main() -> Result<(), String> {
         }
     };
 
+    // FASE AI HONESTA: Cargar todos los modelos NanoForest en el registro global para co-evolución de IA (Punto #11)
+    println!("🌲 [EVOLVER] Cargando modelos NanoForest para co-evolución honesta...");
+    if let Ok(entries) = std::fs::read_dir("models") {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            let ext = path.extension().and_then(|s| s.to_str());
+            if ext == Some("json") || ext == Some("bin") {
+                if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if file_stem.contains("MOTOR") {
+                        if let Ok(_) = god_engine_core::ml_inference::NanoForest::load_global(
+                            file_stem,
+                            path.to_str().unwrap(),
+                        ) {
+                            println!("🌲 [EVOLVER] NanoForest Brain cargado: {}", file_stem);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Asegurar que cada símbolo del universo cuente con un modelo de roster activo
+    for sym in &symbols {
+        let key = format!("{}_MOTOR", sym);
+        if god_engine_core::ml_inference::NanoForest::get_global(&key).is_none() {
+            // Fallback a versión FDUSD si existe
+            let base = sym.trim_end_matches("USDT");
+            let fdusd_key = format!("{}FDUSD_MOTOR", base);
+            if let Some(forest) = god_engine_core::ml_inference::NanoForest::get_global(&fdusd_key) {
+                god_engine_core::ml_inference::NanoForest::store_global(&key, (*forest).clone());
+                println!("🌲 [EVOLVER] NanoForest aliased {} -> {}", fdusd_key, key);
+            } else if let Some(btc_forest) = god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR") {
+                god_engine_core::ml_inference::NanoForest::store_global(&key, (*btc_forest).clone());
+                println!("🌲 [EVOLVER] NanoForest base asignado para {}: BTCUSDT_MOTOR", key);
+            }
+        }
+    }
+
     for gen in 1..=generations {
         let progress = (gen as f64 - 1.0) / (generations as f64 - 1.0).max(1.0);
         let mutation_rate = 0.04 + (0.35 - 0.04) * (1.0 - progress).powf(1.5);
@@ -350,6 +387,8 @@ async fn main() -> Result<(), String> {
                 let mut local_nn = trained_nn.clone();
                 local_nn.init_buffers();
                 engine.swing_nn = Some(local_nn);
+                engine.scalp_forest = god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR")
+                    .or_else(|| god_engine_core::ml_inference::NanoForest::get_global("UNIVERSAL"));
 
                 let mut total_trades: usize = 0;
                 let mut wins: usize = 0;
@@ -367,9 +406,15 @@ async fn main() -> Result<(), String> {
                         tick.timestamp,
                     );
                     let mut omni = [0.0f64; 54];
+                    // Inyectar features macroeconómicos de referencia (DXY, SP500, NASDAQ, VIX, Gold)
+                    omni[21] = 104.0; // DXY
+                    omni[22] = 5100.0; // SP500
+                    omni[23] = 18000.0; // NASDAQ
+                    omni[24] = 15.0; // VIX
+                    omni[26] = 2300.0; // Gold
                     let swing_feats = engine.feature_engines[tick.coin_id].get_universal_features();
                     for (idx, &f) in swing_feats.iter().enumerate() {
-                        if idx < 54 {
+                        if idx < 34 {
                             omni[idx] = f as f64;
                         }
                     }

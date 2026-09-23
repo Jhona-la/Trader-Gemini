@@ -2866,23 +2866,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // ligero por evento no toca el hot path de trade/depth.
             let is_force_order = memchr::memmem::find(&msg_bytes, b"forceOrder").is_some();
             if is_force_order && !is_trade && !is_kline && !is_depth {
-                if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&msg_bytes) {
-                    let items: Vec<&serde_json::Value> = v
-                        .as_array()
-                        .map(|a| a.iter().collect())
-                        .unwrap_or_else(|| vec![&v]);
-                    for it in items {
-                        let o = it.get("o").unwrap_or(it);
-                        let p = o.get("p").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok());
-                        let q = o.get("q").and_then(|x| x.as_str()).and_then(|x| x.parse::<f64>().ok());
-                        if let (Some(p), Some(q)) = (p, q) {
-                            let notional = (p * q).abs();
-                            god_engine_core::liquidation_feed::bump(
-                                god_engine_core::liquidation_feed::severity_from_notional(notional),
-                            );
-                        }
-                    }
-                }
+                // FASE ZERO-ALLOCATION INGEST: Escáner in-place de bytes de liquidaciones (Punto #9)
+                data_ingest::TensorParser::parse_force_orders(&msg_bytes, |p, q| {
+                    let notional = (p * q).abs();
+                    god_engine_core::liquidation_feed::bump(
+                        god_engine_core::liquidation_feed::severity_from_notional(notional),
+                    );
+                });
                 msg_count += 1;
                 continue;
             }

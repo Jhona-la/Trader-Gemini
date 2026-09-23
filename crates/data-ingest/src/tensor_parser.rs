@@ -97,6 +97,45 @@ impl TensorParser {
 
         [price, qty]
     }
+    /// Decodifica de forma zero-allocation todas las liquidaciones (p, q) en un payload crudo de Binance
+    /// sin instanciar objetos JSON en el heap (Zero-allocation Byte-Scanner).
+    #[inline]
+    pub fn parse_force_orders<F: FnMut(f64, f64)>(payload: &[u8], mut callback: F) {
+        if payload.is_empty() || !payload.contains(&b'{') {
+            return;
+        }
+        let mut depth: u32 = 0;
+        let mut obj_start: Option<usize> = None;
+        let len = payload.len();
+
+        for i in 0..len {
+            let b = payload[i];
+            if b == b'{' {
+                if depth == 0 {
+                    obj_start = Some(i);
+                }
+                depth += 1;
+            } else if b == b'}' {
+                if depth > 0 {
+                    depth -= 1;
+                    if depth == 0 {
+                        if let Some(start) = obj_start {
+                            let block = &payload[start..=i];
+                            // Extraer p (precio) y q (cantidad) dentro del bloque del evento
+                            let p_opt = Self::extract_tensor_feature(block, b"\"p\":");
+                            let q_opt = Self::extract_tensor_feature(block, b"\"q\":");
+                            if let (Some(p), Some(q)) = (p_opt, q_opt) {
+                                if p.is_finite() && q.is_finite() && p > 0.0 && q > 0.0 {
+                                    callback(p, q);
+                                }
+                            }
+                        }
+                        obj_start = None;
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -145,5 +184,37 @@ mod tests {
         let json_segment = br#"{"price":1234.56, "qty":0.5}"#;
         let price = TensorParser::extract_tensor_feature(json_segment, b"\"price\":");
         assert_eq!(price, Some(1234.56));
+    }
+
+    #[test]
+    fn test_tensor_parser_parse_force_orders() {
+        // 1. Single nested forceOrder
+        let single_payload = br#"{"e":"forceOrder","E":1568014460893,"o":{"s":"BTCUSDT","S":"SELL","q":"0.014","p":"9910.50"}}"#;
+        let mut results = Vec::new();
+        TensorParser::parse_force_orders(single_payload, |p, q| {
+            results.push((p, q));
+        });
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], (9910.50, 0.014));
+
+        // 2. Array of force orders
+        let array_payload = br#"[
+            {"e":"forceOrder","o":{"s":"ETHUSDT","p":"3100.25","q":"2.50"}},
+            {"e":"forceOrder","o":{"s":"SOLUSDT","p":"145.00","q":"50.0"}}
+        ]"#;
+        let mut arr_results = Vec::new();
+        TensorParser::parse_force_orders(array_payload, |p, q| {
+            arr_results.push((p, q));
+        });
+        assert_eq!(arr_results.len(), 2);
+        assert_eq!(arr_results[0], (3100.25, 2.50));
+        assert_eq!(arr_results[1], (145.00, 50.0));
+
+        // 3. Malformed/empty payload
+        let mut empty_results = Vec::new();
+        TensorParser::parse_force_orders(b"[]", |p, q| {
+            empty_results.push((p, q));
+        });
+        assert_eq!(empty_results.len(), 0);
     }
 }

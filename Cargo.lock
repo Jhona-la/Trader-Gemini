@@ -971,6 +971,7 @@ dependencies = [
  "data-pipeline",
  "memmap2 0.9.11",
  "polars",
+ "quantum-arena",
  "reqwest 0.13.4",
  "serde_json",
  "tokio",
