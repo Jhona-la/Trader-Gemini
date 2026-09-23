@@ -3948,12 +3948,13 @@ impl GodEngineCore {
                 } else {
                     (0.28, 0.18)
                 };
+                let eff_obi = if book_absent { rolling_cvd } else { current_obi };
                 if unified_intent.signal == SignalType::Short {
-                    if composite_score > -min_score || current_obi > -min_obi {
+                    if composite_score > -min_score || eff_obi > -min_obi {
                         unified_intent = SignalIntent::flat();
                     }
                 } else if unified_intent.signal == SignalType::Long {
-                    if composite_score < min_score || current_obi < min_obi {
+                    if composite_score < min_score || eff_obi < min_obi {
                         unified_intent = SignalIntent::flat();
                     }
                 }
