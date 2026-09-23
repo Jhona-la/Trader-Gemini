@@ -1156,27 +1156,47 @@ impl GodEngineCore {
                 let trail_frac = 0.60 + 0.20 * s_t;
 
                 // #536: Modulación adaptativa del Breakeven por horizonte de posición.
-                // En Scalping: asegurar ganancias temprano (0.85x) para capital micro de $13 USD.
-                // En Swing: permitir mayor fluctuación (1.15x) para capturar recorridos amplios.
                 let pos_horizon = pos.horizon();
-                let horizon_be_mult = match pos_horizon {
-                    quantum_arena::position::PositionHorizon::Scalping => 0.85,
-                    quantum_arena::position::PositionHorizon::Swing => 1.15,
-                    quantum_arena::position::PositionHorizon::Continuous => 1.0,
-                };
+                let is_scalp_pos = matches!(
+                    pos_horizon,
+                    quantum_arena::position::PositionHorizon::Scalping
+                );
+                let is_swing_pos = matches!(
+                    pos_horizon,
+                    quantum_arena::position::PositionHorizon::Swing
+                );
+
                 let slip_floor = self
                     .arena
                     .config
                     .base_slippage_floor
                     .load(Ordering::Relaxed)
                     .max(0.0001);
-                // #544: Breakeven Físico con Garantía EV >= 0 (Cierre de Asfixia por Fricción)
-                // be_buffer debe cubrir holgadamente comisiones de entrada (taker) + salida (taker) + deslizamiento (roundtrip)
-                // para que cualquier salida por Breakeven resulte en PnL NETO estrictamente positivo.
-                let be_buffer = (live_fee * 2.5 + slip_floor * 2.0).clamp(0.0022, 0.0035);
-                let be_activation = (tp * be_frac * horizon_be_mult)
-                    .max(be_buffer + live_fee * 1.5 + atr_pct_live * 0.50)
-                    .min(tp * 0.85);
+
+                // #544 & #548: Breakeven Físico con Garantía EV >= 0 Especializado por Horizonte
+                // En Scalping: buffer ágil (9-18 bps) que cubre comisiones y deslizamiento real con ganancia neta,
+                // activándose a ~38% del TP (16-22 bps) para blindar el capital micro de $13 USD.
+                // En Swing: buffer amplio (22-35 bps) que permite que las tendencias macro respiren.
+                let (be_buffer, be_activation) = if is_scalp_pos {
+                    let buf = (live_fee * 1.5 + slip_floor * 1.5).clamp(0.0009, 0.0020);
+                    let act = (tp * 0.38)
+                        .max(buf + live_fee + atr_pct_live * 0.25)
+                        .min(tp * 0.70);
+                    (buf, act)
+                } else if is_swing_pos {
+                    let buf = (live_fee * 2.5 + slip_floor * 2.0).clamp(0.0022, 0.0035);
+                    let act = (tp * be_frac * 1.15)
+                        .max(buf + live_fee * 1.5 + atr_pct_live * 0.50)
+                        .min(tp * 0.85);
+                    (buf, act)
+                } else {
+                    let buf = (live_fee * 2.0 + slip_floor * 1.8).clamp(0.0015, 0.0028);
+                    let act = (tp * be_frac)
+                        .max(buf + live_fee * 1.2 + atr_pct_live * 0.35)
+                        .min(tp * 0.80);
+                    (buf, act)
+                };
+
                 if peak_pnl >= be_activation {
                     let be_stop = if is_long {
                         entry * (1.0 + be_buffer)
@@ -1195,13 +1215,12 @@ impl GodEngineCore {
                     }
                 }
 
-                // 2. Trailing Stop Ratchet Dinámico: activa en trail_frac
-                // (espectral) del TP. D-727: siempre por encima del
-                // breakeven y siempre por debajo del objetivo — si se armara
-                // en el TP no existiría.
-                let trail_activation_pnl = (tp * trail_frac)
-                    .max(be_activation * 1.25)
-                    .min(tp * 0.95);
+                // 2. Trailing Stop Ratchet Dinámico
+                let trail_activation_pnl = if is_scalp_pos {
+                    (tp * 0.58).max(be_activation * 1.15).min(tp * 0.88)
+                } else {
+                    (tp * trail_frac).max(be_activation * 1.25).min(tp * 0.95)
+                };
                 let trail_active = peak_pnl >= trail_activation_pnl;
 
                 let mut force_close_trail = false;
@@ -1305,26 +1324,72 @@ impl GodEngineCore {
                         .clamp(0.0, 1.0)
                 };
 
+                let is_scalp = matches!(
+                    pos_horizon,
+                    quantum_arena::position::PositionHorizon::Scalping
+                );
+                let is_swing = matches!(
+                    pos_horizon,
+                    quantum_arena::position::PositionHorizon::Swing
+                );
+
+                let tau_trade_ms = if tau_exit > 0.0 {
+                    tau_exit
+                } else if is_scalp {
+                    180_000.0
+                } else if is_swing {
+                    3_600_000.0
+                } else {
+                    let l_fast = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();
+                    let l_slow = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS.ln();
+                    (l_fast + temporal_s * (l_slow - l_fast)).exp()
+                };
+
                 let macro_t = self.feature_engines[coin_id].get_macro_trend();
-                // D-455: Inversión de tendencia genuina (45 bps de pendiente EMA) en lugar de ruido browniano
+                // D-455: Inversión de tendencia genuina (45 bps de pendiente EMA) en escala macro
                 let trend_reversed =
                     (is_long && macro_t < -0.0045) || (!is_long && macro_t > 0.0045);
 
-                // D-649b: el gen entra acotado a [4 h, 8 h] (ver
-                // SuperGenotype::SLOT_ZOMBIE_TIMEOUT). En su suelo, debounce y
-                // hard-timeout reproducen exactamente las fórmulas anteriores.
-                // D-649 (DÉCIMA OLA) — EL GEN `zombie_timeout_ms` ENTRA EN SERVICIO.
-                //
-                // El gen existía, se escribía en el arena y NINGÚN consumidor lo
-                // leía: la caducidad de posiciones se regía por dos literales
-                // (43_200_000 y 14_400_000). Peor: toda la lógica de zombi estaba
-                // condicionada a `pnl_pct <= -0.0050` o a inversión de tendencia,
-                // de modo que **una posición plana y antigua no expiraba nunca**.
-                // Eso dejaba al sistema sin red de seguridad frente a posiciones
-                // huérfanas tras una desconexión.
-                //
-                // Ahora el gen define la escala temporal de caducidad y existe un
-                // TECHO ABSOLUTO independiente del PnL.
+                // D-492: Dynamic Adverse Order Flow Stop Cutting (Toxic Flow Cutoff)
+                let micro_t = self.feature_engines[coin_id].get_micro_trend();
+                let ema_ofi = self.feature_engines[coin_id].ofi_model.ema_ofi;
+                let cur_vpin = self.feature_engines[coin_id].cvpin.current_vpin();
+
+                let ofi_adverse = (is_long && (ofi_value < -0.25 || ema_ofi < -0.20))
+                    || (!is_long && (ofi_value > 0.25 || ema_ofi > 0.20));
+                let trend_adverse = (is_long && micro_t < -0.00045)
+                    || (!is_long && micro_t > 0.00045);
+
+                // D-492 / #548: toxic_cut_sl relativo al SL de la posición (80% del SL, o min 2x live fee)
+                // Se eliminó el suelo estático de 0.0065 que superaba al stop loss de scalping (0.0028)
+                let toxic_cut_sl = (sl * 0.80).max(live_fee * 2.0);
+                let toxic_flow_exit = (pnl_pct <= -toxic_cut_sl && ofi_adverse && trend_adverse)
+                    || (pnl_pct <= -toxic_cut_sl && cur_vpin > 0.65 && ofi_adverse);
+
+                // #548: Alpha Decay & Micro-Stagnation Cutoff para Scalping
+                // La predictibilidad de microestructura L2 se extingue tras 4-6 tau (12-20 min).
+                // Si la posición no despega y el flujo se torna adverso, se cierra en scratch/micro-loss
+                // en vez de permitir que la difusión browniana toque el micro-stop de 0.28%.
+                let alpha_decay_exit = if is_scalp || tau_trade_ms < 1_800_000.0 {
+                    let min_stagnant_ms = (tau_trade_ms * 4.0).clamp(720_000.0, 1_200_000.0) as u64; // 12 a 20 min
+                    let hard_stagnant_ms = (tau_trade_ms * 6.0).clamp(1_200_000.0, 1_800_000.0) as u64; // 20 a 30 min
+                    let absolute_scalp_life_ms = (tau_trade_ms * 10.0).clamp(1_800_000.0, 2_700_000.0) as u64; // 30 a 45 min
+
+                    if event_time_ms > 0 && position_age_ms > min_stagnant_ms {
+                        let ema_ofi_adverse = (is_long && ema_ofi < -0.25) || (!is_long && ema_ofi > 0.25);
+                        let thesis_broken = pnl_pct < -0.0005 && ema_ofi_adverse && trend_adverse;
+                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct <= -0.0002;
+                        let absolute_expired = position_age_ms > absolute_scalp_life_ms;
+
+                        thesis_broken || time_expired || absolute_expired
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                // D-649 (DÉCIMA OLA) & #548: Timeout y Zombi adaptativo por horizonte
                 let zombie_gene_ms = self
                     .arena
                     .config
@@ -1335,45 +1400,33 @@ impl GodEngineCore {
                 } else {
                     3_600_000.0
                 };
-                // #536: El horizonte continuo dilata la caducidad: una tesis larga
-                // necesita más tiempo que una corta. Factor continuo modulado por horizonte:
-                // Scalping acota la permanencia a 0.25x (máx ~15-20m) para liberar margen en micro-cuentas.
-                // Swing expande a 2.0x para permitir la maduración de tendencias macro.
-                let horizon_time_mult = match pos_horizon {
-                    quantum_arena::position::PositionHorizon::Scalping => 0.25,
-                    quantum_arena::position::PositionHorizon::Swing => 2.0,
-                    quantum_arena::position::PositionHorizon::Continuous => 1.0,
+
+                let (dynamic_zombie_debounce_ms, dynamic_hard_timeout_ms, absolute_expiry_ms, z_loss_hard, z_loss_trend) = if is_scalp {
+                    (
+                        (tau_trade_ms * 2.5).clamp(300_000.0, 600_000.0) as u64,
+                        (tau_trade_ms * 4.0).clamp(600_000.0, 1_200_000.0) as u64,
+                        (tau_trade_ms * 8.0).clamp(1_200_000.0, 2_400_000.0) as u64,
+                        (sl * 0.60).max(live_fee * 1.5),
+                        (sl * 0.50).max(live_fee * 1.5),
+                    )
+                } else {
+                    let horizon_dilation = (1.0 + temporal_s) * (if is_swing { 2.0 } else { 1.0 });
+                    (
+                        (zombie_base_ms * horizon_dilation).max(1_800_000.0) as u64,
+                        (zombie_base_ms * 3.0 * horizon_dilation).max(5_400_000.0) as u64,
+                        (zombie_base_ms * 12.0 * horizon_dilation).max(21_600_000.0) as u64,
+                        (sl * 0.75).max(0.0050),
+                        (sl * 0.65).max(0.0060),
+                    )
                 };
-                let horizon_dilation = (1.0 + temporal_s) * horizon_time_mult;
-                let dynamic_zombie_debounce_ms =
-                    (zombie_base_ms * horizon_dilation).max(180_000.0) as u64;
-                let dynamic_hard_timeout_ms =
-                    (zombie_base_ms * 3.0 * horizon_dilation).max(300_000.0) as u64;
-                let absolute_expiry_ms = (zombie_base_ms * 12.0 * horizon_dilation).max(600_000.0) as u64;
+
                 let expired_by_age =
                     event_time_ms > 0 && position_age_ms > absolute_expiry_ms;
-                let hard_timeout = position_age_ms > dynamic_hard_timeout_ms && pnl_pct <= -0.0050;
+                let hard_timeout = position_age_ms > dynamic_hard_timeout_ms && pnl_pct <= -z_loss_hard;
                 let is_zombie = expired_by_age
                     || (event_time_ms > 0
                         && position_age_ms > dynamic_zombie_debounce_ms
-                        && ((trend_reversed && pnl_pct <= -0.0060) || hard_timeout)); // D-649b: umbral original
-
-                // D-492: Dynamic Adverse Order Flow Stop Cutting (Toxic Flow Cutoff)
-                // Se activa únicamente cuando el trade ha consumido la gran mayoría de su stop loss continuo
-                // (pnl_pct <= -0.85 * sl) y el flujo L2 y micro-tendencia confirman toxicidad adversa terminal,
-                // salvando el 15% restante del SL sin asfixiar trades en retrocesos normales de mercado.
-                let micro_t = self.feature_engines[coin_id].get_micro_trend();
-                let ema_ofi = self.feature_engines[coin_id].ofi_model.ema_ofi;
-                let cur_vpin = self.feature_engines[coin_id].cvpin.current_vpin();
-
-                let ofi_adverse = (is_long && (ofi_value < -0.30 || ema_ofi < -0.25))
-                    || (!is_long && (ofi_value > 0.30 || ema_ofi > 0.25));
-                let trend_adverse = (is_long && micro_t < -0.00060)
-                    || (!is_long && micro_t > 0.00060);
-
-                let toxic_cut_sl = (sl * 0.85).max(0.0065);
-                let toxic_flow_exit = (pnl_pct <= -toxic_cut_sl && ofi_adverse && trend_adverse)
-                    || (pnl_pct <= -toxic_cut_sl && cur_vpin > 0.65 && ofi_adverse);
+                        && ((trend_reversed && pnl_pct <= -z_loss_trend) || hard_timeout));
 
                 let tp_traded_through = if is_long {
                     bid >= entry * (1.0 + tp)
@@ -1385,6 +1438,7 @@ impl GodEngineCore {
                     || pnl_pct <= -sl
                     || trail_hit
                     || force_close_trail
+                    || alpha_decay_exit
                     || is_zombie
                     || toxic_flow_exit
                 {
@@ -1477,8 +1531,10 @@ impl GodEngineCore {
                             .zombie_promotions
                             .fetch_add(1, Ordering::Relaxed);
                         (5u8, "ZOMBIE")
-                    } else {
+                    } else if toxic_flow_exit {
                         (6u8, "TOXIC_FLOW")
+                    } else {
+                        (7u8, "ALPHA_DECAY")
                     };
 
                     if self.diag_close_total < 100 {
@@ -1559,16 +1615,21 @@ impl GodEngineCore {
 
                     self.feature_engines[coin_id].last_scalp_exit_tick =
                         self.feature_engines[coin_id].tick_count;
-                    let was_loss = net_trade_pnl <= 0.0;
-                    self.feature_engines[coin_id].last_scalp_was_loss = was_loss;
-                    if was_loss {
+                    self.feature_engines[coin_id].last_scalp_exit_ts = event_time_ms;
+                    // #548: Calibración de racha direccional
+                    // Un cierre por decaimiento de alfa plano o scratch de comisiones (-0.0005 < pnl_pct <= 0)
+                    // es un evento neutro de rango, no una falla direccional tóxica de tendencia contraria.
+                    // Solo pérdidas direccionales genuinas (pnl_pct <= -0.0005) incrementan la racha de pérdidas.
+                    let is_directional_loss = net_trade_pnl < 0.0 && pnl_pct <= -0.0005;
+                    self.feature_engines[coin_id].last_scalp_was_loss = is_directional_loss;
+                    if is_directional_loss {
                         self.feature_engines[coin_id].scalp_loss_streak += 1;
                         if is_long {
                             self.feature_engines[coin_id].scalp_long_loss_streak += 1;
                         } else {
                             self.feature_engines[coin_id].scalp_short_loss_streak += 1;
                         }
-                    } else {
+                    } else if net_trade_pnl > 0.0 {
                         self.feature_engines[coin_id].scalp_loss_streak = 0;
                         if is_long {
                             self.feature_engines[coin_id].scalp_long_loss_streak = 0;
@@ -2602,7 +2663,7 @@ impl GodEngineCore {
 
             if atr_pct > dynamic_atr_min
                 && spread_ok
-                && self.feature_engines[coin_id].can_open_position(600)
+                && self.feature_engines[coin_id].can_open_position(60_000)
             {
                 // (misma banda canónica: reversión a la media ≡ anti-persistencia)
                 let is_mean_reverting = is_anti_persistent;
@@ -2670,6 +2731,9 @@ impl GodEngineCore {
                 // D-500: Anti-Chop & Post-Loss Conviction Firewall con Direccionalidad y Decaimiento Temporal
                 let short_streak = self.feature_engines[coin_id].get_active_directional_streak(false);
                 let long_streak = self.feature_engines[coin_id].get_active_directional_streak(true);
+                let total_loss_streak = self.feature_engines[coin_id].get_active_total_loss_streak();
+                let effective_short_streak = short_streak.max(total_loss_streak);
+                let effective_long_streak = long_streak.max(total_loss_streak);
 
                 // F7-backtest: cuando el libro está AUSENTE, las condiciones
                 // OBI (< -min_obi_trend) son imposibles de satisfacer (OBI=0).
@@ -2687,7 +2751,7 @@ impl GodEngineCore {
                         atr_pct,
                         dynamic_atr_min,
                         spread_ok,
-                        self.feature_engines[coin_id].can_open_position(600),
+                        self.feature_engines[coin_id].can_open_position(60_000),
                         hurst_val,
                         self.feature_engines[coin_id].ema_slow,
                         mid_price,
@@ -2869,8 +2933,8 @@ impl GodEngineCore {
                 // Confluencia de triple escala temporal: Micro (1m ticks), Intermedio (EMA 9 vs 21), y Macro Superior (2-Hour EMA 120).
                 if is_confirmed_downtrend {
                     // RÉGIMEN BAJISTA CONFIRMADO (MULTISCALE DOWNTREND)
-                    let d_tech_thr = if short_streak >= 2 { dynamic_tech_thr.max(0.30) } else { dynamic_tech_thr };
-                    let d_obi_trend = if short_streak >= 2 { min_obi_trend.max(0.22) } else { min_obi_trend };
+                    let d_tech_thr = if effective_short_streak >= 2 { dynamic_tech_thr.max(0.30) } else { dynamic_tech_thr };
+                    let d_obi_trend = if effective_short_streak >= 2 { min_obi_trend.max(0.22) } else { min_obi_trend };
                     // 1. Tendencial Short: Flujo institucional, confluencia L2 y ML apuntan a la baja
                     if composite_score < -d_tech_thr
                         && not_overextended_short
@@ -2888,7 +2952,7 @@ impl GodEngineCore {
                     // D-500 & D-501: Convicción analítica plena (composite_score <= -d_tech_thr),
                     // filtro de tendencia superior (higher_trend <= -0.0010 para evitar vender en rallies)
                     // y desbalance de libro sólido (current_obi < -0.20)
-                    } else if short_streak < 2
+                    } else if effective_short_streak < 2
                         && higher_trend <= -0.0010
                         && price_stretch >= 0.15
                         && price_stretch <= 1.20
@@ -2919,8 +2983,8 @@ impl GodEngineCore {
                     }
                 } else if is_confirmed_uptrend {
                     // RÉGIMEN ALCISTA CONFIRMADO (MULTISCALE UPTREND)
-                    let u_tech_thr = if long_streak >= 2 { dynamic_tech_thr.max(0.30) } else { dynamic_tech_thr };
-                    let u_obi_trend = if long_streak >= 2 { min_obi_trend.max(0.22) } else { min_obi_trend };
+                    let u_tech_thr = if effective_long_streak >= 2 { dynamic_tech_thr.max(0.30) } else { dynamic_tech_thr };
+                    let u_obi_trend = if effective_long_streak >= 2 { min_obi_trend.max(0.22) } else { min_obi_trend };
                     // 1. Tendencial Long: Flujo institucional, confluencia L2 y ML apuntan al alza
                     if composite_score > u_tech_thr
                         && not_overextended_long
@@ -2938,7 +3002,7 @@ impl GodEngineCore {
                     // D-500 & D-501: Convicción analítica plena (composite_score >= u_tech_thr),
                     // filtro de tendencia superior (higher_trend >= 0.0010)
                     // y desbalance de libro sólido (current_obi > min_obi_pullback.max(0.20))
-                    } else if long_streak < 2
+                    } else if effective_long_streak < 2
                         && higher_trend >= 0.0010
                         && price_stretch <= -0.15
                         && price_stretch >= -1.20
@@ -3004,7 +3068,7 @@ impl GodEngineCore {
                             volume_flow_rate: 8.0,
                             ..Default::default()
                         };
-                    } else if short_streak < 2
+                    } else if effective_short_streak < 2
                         && price_stretch > 1.0
                         && effective_obi_short < -range_obi * 1.15
                         && composite_score <= -0.24
@@ -3026,7 +3090,7 @@ impl GodEngineCore {
                     // exactamente 0 y la condición era imposible: la rama alcista
                     // NUNCA disparaba mientras su simétrica bajista sí. Es una de
                     // las causas mecánicas del «un solo largo en ~140 operaciones».
-                    } else if long_streak < 2
+                    } else if effective_long_streak < 2
                         && price_stretch < -1.0
                         && effective_obi_long > range_obi * 1.15
                         && composite_score >= 0.24
@@ -3044,7 +3108,7 @@ impl GodEngineCore {
                     }
                 }
 
-                let tensor_cutoff = ((tensor_min_conf - 0.50) * 2.0).clamp(0.35, 0.80);
+                let tensor_cutoff = tensor_min_conf.clamp(0.55, 0.85);
                 if fast_intent.signal == SignalType::Flat
                     && tensor_scalp.signal != SignalType::Flat
                     && !is_anti_persistent
@@ -3070,7 +3134,7 @@ impl GodEngineCore {
                     // sola vez y el diagnóstico cuenta cuál falla. La semántica es la de la
                     // conjunción anterior: comparaciones puras, sin efectos laterales.
                     let long_conditions = [
-                        long_streak < 2,
+                        effective_long_streak < 2,
                         !is_confirmed_downtrend,
                         !is_adverse_momentum_long,
                         !(higher_trend < -0.0002 && secular_trend < 0.0),
@@ -3081,7 +3145,7 @@ impl GodEngineCore {
                         not_overextended_long,
                     ];
                     let short_conditions = [
-                        short_streak < 2,
+                        effective_short_streak < 2,
                         !is_confirmed_uptrend,
                         !is_adverse_momentum_short,
                         !(higher_trend > 0.0002 && secular_trend > 0.0),
@@ -3108,7 +3172,7 @@ impl GodEngineCore {
                             confidence: tensor_scalp
                                 .net_confidence
                                 .abs()
-                                .clamp(tensor_min_conf, 1.0),
+                                .clamp(0.50, 0.95),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 11.0,
@@ -3132,9 +3196,9 @@ impl GodEngineCore {
                         )
                     {
                         let turbo_streak = if turbo_intent.signal == SignalType::Long {
-                            long_streak
+                            effective_long_streak
                         } else {
-                            short_streak
+                            effective_short_streak
                         };
                         let turbo_aligned_with_regime = if is_confirmed_downtrend {
                             turbo_intent.signal == SignalType::Short
@@ -3792,8 +3856,25 @@ impl GodEngineCore {
                     } else {
                         // POST-LOSS (SL): El trade fue liquidado por movimiento adverso brusco.
                         // Prohibido vender en capitulación tras saltar stop de Long o comprar en euforia tras stop de Short.
+                        let is_scalp_long = unified_intent.signal == SignalType::Long;
+                        let dir_streak = self.feature_engines[coin_id].get_active_directional_streak(is_scalp_long);
+                        let tot_streak = self.feature_engines[coin_id].get_active_total_loss_streak();
+                        let effective_streak = dir_streak.max(tot_streak);
+
                         if !is_same_dir {
-                            if elapsed_ms < 180_000 {
+                            if effective_streak >= 2 {
+                                // Racha de pérdidas consecutivas alternantes: la consolidación/ruido
+                                // rechaza ambos lados. Cooldown exponencial obligatorio antes de revertir.
+                                let required_ms = match effective_streak {
+                                    2 => 900_000,    // 15 minutos
+                                    3 => 1_800_000,  // 30 minutos
+                                    _ => 3_600_000,  // 1 hora
+                                };
+                                let time_veto = elapsed_ms < required_ms;
+                                let stretch_veto = (unified_intent.signal == SignalType::Short && p_stretch < 0.10)
+                                    || (unified_intent.signal == SignalType::Long && p_stretch > -0.10);
+                                time_veto || stretch_veto
+                            } else if elapsed_ms < 180_000 {
                                 true
                             } else {
                                 (unified_intent.signal == SignalType::Short && p_stretch < -0.30)
@@ -3803,16 +3884,14 @@ impl GodEngineCore {
                         } else {
                             // En la MISMA DIRECCIÓN: si hay racha de pérdidas consecutivas,
                             // aplicar retroceso exponencial para cortar la hemorragia de trades repetidos
-                            let is_scalp_long = unified_intent.signal == SignalType::Long;
-                            let streak = self.feature_engines[coin_id].get_active_directional_streak(is_scalp_long);
-                            let required_ms = match streak {
+                            let required_ms = match effective_streak {
                                 0 | 1 => 180_000,    // 3 minutos
                                 2 => 1_200_000,      // 20 minutos (antes 30 min)
                                 3 => 3_600_000,      // 1 hora (antes 2 horas)
                                 _ => 7_200_000,      // 2 horas (antes 4 horas)
                             };
                             let time_veto = elapsed_ms < required_ms;
-                            let stretch_veto = if streak >= 2 {
+                            let stretch_veto = if effective_streak >= 2 {
                                 (unified_intent.signal == SignalType::Short && p_stretch < 0.10)
                                     || (unified_intent.signal == SignalType::Long && p_stretch > -0.10)
                             } else {
@@ -3838,30 +3917,26 @@ impl GodEngineCore {
             // aporta información nueva al flujo. Se elimina la segunda
             // evaluación; la única vive junto a la generación de señales.
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_BAYES);
-            // D-499: Invariante de Convicción Post-Racha Direccional Universal (Cross-Horizon Directional Loss Streak Firewall)
-            // Si el activo acumula una racha de 2 o más pérdidas consecutivas activas en su dirección (short/long),
+            // D-499: Invariante de Convicción Post-Racha Universal (Cross-Horizon Loss Streak Firewall)
+            // Si el activo acumula una racha de 2 o más pérdidas consecutivas activas (direccionales o totales),
             // se exige convicción Bayesiana institucional (|score| >= 0.28, |current_obi| >= 0.18).
             // Si la racha es >= 3, se exige convicción superlativa (|score| >= 0.32, |current_obi| >= 0.22).
-            if unified_intent.signal == SignalType::Short {
-                let streak = self.feature_engines[coin_id].get_active_directional_streak(false);
-                if streak >= 2 {
-                    let (min_score, min_obi) = if streak >= 3 {
-                        (0.32, 0.22)
-                    } else {
-                        (0.28, 0.18)
-                    };
+            let is_short_intent = unified_intent.signal == SignalType::Short;
+            let dir_streak = self.feature_engines[coin_id].get_active_directional_streak(!is_short_intent);
+            let tot_streak = self.feature_engines[coin_id].get_active_total_loss_streak();
+            let effective_streak = dir_streak.max(tot_streak);
+
+            if effective_streak >= 2 {
+                let (min_score, min_obi) = if effective_streak >= 3 {
+                    (0.32, 0.22)
+                } else {
+                    (0.28, 0.18)
+                };
+                if unified_intent.signal == SignalType::Short {
                     if composite_score > -min_score || current_obi > -min_obi {
                         unified_intent = SignalIntent::flat();
                     }
-                }
-            } else if unified_intent.signal == SignalType::Long {
-                let streak = self.feature_engines[coin_id].get_active_directional_streak(true);
-                if streak >= 2 {
-                    let (min_score, min_obi) = if streak >= 3 {
-                        (0.32, 0.22)
-                    } else {
-                        (0.28, 0.18)
-                    };
+                } else if unified_intent.signal == SignalType::Long {
                     if composite_score < min_score || current_obi < min_obi {
                         unified_intent = SignalIntent::flat();
                     }
@@ -4031,7 +4106,8 @@ impl GodEngineCore {
                     };
                     let council_loss_streak = self
                         .feature_engines[coin_id]
-                        .get_active_directional_streak(order.signal == SignalType::Long);
+                        .get_active_directional_streak(order.signal == SignalType::Long)
+                        .max(self.feature_engines[coin_id].get_active_total_loss_streak());
                     let council_intended_dir = match order.signal {
                         SignalType::Long => 1.0,
                         SignalType::Short => -1.0,

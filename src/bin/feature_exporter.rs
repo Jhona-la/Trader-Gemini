@@ -17,8 +17,24 @@ fn main() {
     println!("🌌 RUST QUANTUM FEATURE EXPORTER (1:1 ALIGNMENT)");
     println!("============================================================");
 
-    let symbol = "BTCUSDT";
-    let input_path = format!("data/{}_ticks.bin", symbol);
+    let symbol = std::env::args().nth(1).unwrap_or_else(|| "BTCUSDT".to_string());
+    let input_path = std::env::args().nth(2).unwrap_or_else(|| {
+        let aug_real = format!("data/{}_AUG_REAL.bin", symbol);
+        let ticks_real = format!("data/{}_ticks_REAL.bin", symbol);
+        let ticks_legacy = format!("data/{}_ticks.bin", symbol);
+        if std::path::Path::new(&aug_real).exists() {
+            aug_real
+        } else if std::path::Path::new(&ticks_real).exists() {
+            ticks_real
+        } else {
+            ticks_legacy
+        }
+    });
+    let max_ticks: usize = std::env::args()
+        .nth(3)
+        .and_then(|s| s.parse().ok())
+        .or_else(|| std::env::var("MAX_TICKS").ok().and_then(|s| s.parse().ok()))
+        .unwrap_or(1_000_000);
 
     let file = match File::open(&input_path) {
         Ok(f) => f,
@@ -36,16 +52,28 @@ fn main() {
         }
     };
 
+    let bytes_len = mmap.len();
+    let (origen, header_len) = backtest_engine::tick_replayer::TickOrigin::from_header(
+        &mmap[..bytes_len.min(8)],
+    );
+    let payload_len = bytes_len - header_len;
     let tick_size = std::mem::size_of::<BinTick>();
-    let num_ticks = mmap.len() / tick_size;
+    let total_file_ticks = payload_len / tick_size;
+    let num_ticks = total_file_ticks.min(max_ticks);
 
     if num_ticks == 0 {
         println!("❌ No data loaded or file is empty.");
         return;
     }
 
-    let ticks = unsafe { std::slice::from_raw_parts(mmap.as_ptr() as *const BinTick, num_ticks) };
-    println!("✅ Loaded {} BinTicks for {}", num_ticks, symbol);
+    println!("📦 Origen de los datos: {}", origen.descripcion());
+    let ticks = unsafe {
+        std::slice::from_raw_parts(
+            mmap.as_ptr().add(header_len) as *const BinTick,
+            num_ticks,
+        )
+    };
+    println!("✅ Loaded {}/{} BinTicks from {} for {}", num_ticks, total_file_ticks, input_path, symbol);
 
     let out_path = format!("data/{}_FEATURES.csv", symbol);
     let out_file = match File::create(&out_path) {
@@ -122,9 +150,9 @@ fn main() {
             if barrier_label == 0.5 {
                 let end_mid = (ticks[i + 500].bid_price + ticks[i + 500].ask_price) / 2.0;
                 let end_ret = (end_mid - mid_price) / mid_price;
-                if end_ret > 0.0010 {
+                if end_ret > 0.0004 {
                     barrier_label = 1.0;
-                } else if end_ret < -0.0010 {
+                } else if end_ret < -0.0004 {
                     barrier_label = 0.0;
                 }
             }
@@ -155,20 +183,21 @@ fn main() {
             }; // Realized OBI
             features[38] = (features[34] * 10.0).tanh(); // Momentum Proxy
             features[39] = (features[35] * 100.0).min(5.0); // Parkinson Vol Proxy
-            features[40] = 0.50; // Fear & Greed Proxy
+            // Sincronización 1:1 estricta con build_54d_tensor (crates/god-engine-core/src/lib.rs:433-485)
+            features[40] = 0.0; // MUERTA (sin productor vivo)
             features[41] = 1.04; // DXY Index Baseline (~104.0 / 100.0)
             features[42] = 1.02; // SP500 Index Baseline (~5100.0 / 5000.0)
             features[43] = 1.00; // Nasdaq Baseline (~18000.0 / 18000.0)
             features[44] = 0.75; // VIX Baseline (~15.0 / 20.0)
-            features[45] = 1.05; // US10Y Yield Baseline (~4.2 / 4.0)
-            features[46] = 1.00; // Gold Baseline (~2300.0 / 2300.0)
-            features[47] = 1.00; // Oil Baseline (~80.0 / 80.0)
-            features[48] = 0.0; // Econ Impact
-            features[49] = 1.00; // Fed Rate Normalized (~5.25 / 5.25 baseline)
-            features[50] = 1.0; // Taker buy/sell
-            features[51] = 0.0; // Basis premium
-            features[52] = 0.0; // Liq cluster short
-            features[53] = 0.0; // Liq cluster long
+            features[45] = 0.0; // MUERTA (us10y sin productor vivo)
+            features[46] = 0.0; // Gold PAXG fallback (0.0 "sin dato")
+            features[47] = 0.0; // MUERTA (oil WTI sin productor vivo)
+            features[48] = 0.0; // Funding / Econ Impact
+            features[49] = 0.0; // MUERTA (fed_rate sin productor vivo)
+            features[50] = 1.0; // Taker buy/sell baseline
+            features[51] = 0.0; // MUERTA (basis premium sin productor vivo)
+            features[52] = 0.0; // MUERTA (liq cluster short sin productor vivo)
+            features[53] = 0.0; // MUERTA (liq cluster long sin productor vivo)
 
             let mut row = format!("{:.1}", barrier_label);
             for f in &features {

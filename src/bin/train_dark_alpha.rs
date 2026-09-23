@@ -50,13 +50,13 @@ fn shuffle(indices: &mut [usize], prng: &mut XorShift) {
 }
 
 fn main() {
-    let symbol = "BTCUSDT";
-    let input_csv = format!("data/{}_FEATURES.csv", symbol);
+    let symbol = std::env::args().nth(1).unwrap_or_else(|| "BTCUSDT".to_string());
+    let input_csv = std::env::args().nth(2).unwrap_or_else(|| format!("data/{}_FEATURES.csv", symbol));
 
     println!("============================================================");
     println!("🧠 RUST NATIVE TRAINER: DARK ALPHA ENGINE");
     println!("============================================================");
-    println!("📥 Loading {}...", input_csv);
+    println!("📥 Loading {} for symbol {}...", input_csv, symbol);
 
     let file = match File::open(&input_csv) {
         Ok(f) => f,
@@ -149,7 +149,7 @@ fn main() {
         }
     }
 
-    let scaler = dark_alpha_engine::Scaler::new(mean, std_dev);
+    let scaler = dark_alpha_engine::Scaler::new(mean.clone(), std_dev.clone());
 
     // Normalize inputs
     for x in &mut inputs {
@@ -163,6 +163,17 @@ fn main() {
 
     let mut engine = DarkAlphaEngine::new(input_dim, 64, 32);
     engine.scaler = Some(scaler);
+    for i in 0..input_dim {
+        engine.channel_normalizers[i].count = num_samples as f64;
+        engine.channel_normalizers[i].mean = mean[i];
+        let var = std_dev[i] * std_dev[i];
+        engine.channel_normalizers[i].m2 = var * (num_samples as f64 - 1.0).max(1.0);
+    }
+    if !engine.per_coin_normalizers.is_empty() {
+        for i in 0..input_dim {
+            engine.per_coin_normalizers[0][i] = engine.channel_normalizers[i];
+        }
+    }
 
     // Initialize Adam States
     let mut adam1 = AdamState::new(input_dim, 64);
@@ -346,6 +357,9 @@ fn main() {
         "⏱️ Training finished in {:.2}s",
         start_time.elapsed().as_secs_f64()
     );
+
+    // Sanitizar números subnormales antes de guardar el modelo
+    engine.sanitize_denormals();
 
     // FIX #1481: Creación de directorio y guardado resiliente de modelo JSON
     if let Err(e) = std::fs::create_dir_all("models") {

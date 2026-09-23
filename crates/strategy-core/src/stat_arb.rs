@@ -165,4 +165,31 @@ mod tests {
         let flat_signal = engine.update(100.0, 100.0);
         assert_eq!(flat_signal.signal, SignalType::Flat);
     }
+
+    #[test]
+    fn test_stat_arb_numerical_stability_large_prices() {
+        // Validación contra cancelación catastrófica (Punto #36)
+        // Con precios del orden de $65,000 (BTC), la fórmula ingenua (E[x^2] - E[x]^2)
+        // produce varianzas negativas o colapso por pérdida de precisión IEEE 754.
+        // La formulación centrada de StatArbEngine garantiza varianza no negativa y z-score finito.
+        let mut engine = StatArbEngine::new(20, 2.0);
+        let base_btc = 65_432.10;
+        let base_eth = 3_456.78;
+
+        for i in 0..19 {
+            let p_a = base_btc + (i as f64 * 1.5);
+            let p_b = base_eth + (i as f64 * 0.1);
+            let intent = engine.update(p_a, p_b);
+            assert_eq!(intent.signal, SignalType::Flat);
+        }
+
+        // Pequeño desplazamiento que no rompe Z-Score
+        let intent_normal = engine.update(base_btc + 20.0, base_eth + 1.0);
+        assert_eq!(intent_normal.signal, SignalType::Flat);
+
+        // Dislocación grande
+        let intent_dislocated = engine.update(base_btc + 1500.0, base_eth);
+        assert_eq!(intent_dislocated.signal, SignalType::Short);
+        assert!(intent_dislocated.confidence > 0.0 && intent_dislocated.confidence <= 1.0);
+    }
 }

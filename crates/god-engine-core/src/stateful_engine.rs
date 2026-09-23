@@ -90,6 +90,8 @@ pub struct StatefulEngine {
     pub hurst_meso: f32,
     pub hurst_macro: f32,
     pub last_scalp_exit_tick: u64,
+    pub last_scalp_exit_ts: u64,
+    pub current_ts: u64,
     pub last_scalp_was_loss: bool,
     pub scalp_loss_streak: u32,
     pub scalp_short_loss_streak: u32,
@@ -162,6 +164,8 @@ impl StatefulEngine {
             hurst_meso: 0.5,
             hurst_macro: 0.5,
             last_scalp_exit_tick: 0,
+            last_scalp_exit_ts: 0,
+            current_ts: 0,
             last_scalp_was_loss: false,
             scalp_loss_streak: 0,
             scalp_short_loss_streak: 0,
@@ -178,45 +182,64 @@ impl StatefulEngine {
         }
     }
 
-    /// Smart cooldown per asset con decaimiento temporal: evita parálisis eterna por rachas pasadas
+    /// Smart cooldown per asset con decaimiento temporal en milisegundos: evita parálisis eterna por rachas pasadas
     #[inline(always)]
-    pub fn can_open_position(&self, min_cooldown: u64) -> bool {
-        let elapsed = self.tick_count.saturating_sub(self.last_scalp_exit_tick);
-        let active_streak = if elapsed > 18_000 {
+    pub fn can_open_position(&self, min_cooldown_ms: u64) -> bool {
+        let elapsed_ms = if self.current_ts > 0 && self.last_scalp_exit_ts > 0 {
+            self.current_ts.saturating_sub(self.last_scalp_exit_ts)
+        } else {
+            self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
+        };
+        let active_streak = self.get_active_total_loss_streak();
+        let required_ms = match active_streak {
+            0 => min_cooldown_ms,
+            1 => {
+                if self.v_t > 0.0015 {
+                    min_cooldown_ms * 4
+                } else {
+                    min_cooldown_ms * 2
+                }
+            }
+            2 => 900_000,    // 15 minutos
+            3 => 1_800_000,  // 30 minutos
+            _ => 3_600_000,  // 1 hora
+        };
+        elapsed_ms >= required_ms
+    }
+
+    /// Obtiene la racha total de pérdidas activa considerando el decaimiento temporal en milisegundos
+    #[inline(always)]
+    pub fn get_active_total_loss_streak(&self) -> u32 {
+        let elapsed_ms = if self.current_ts > 0 && self.last_scalp_exit_ts > 0 {
+            self.current_ts.saturating_sub(self.last_scalp_exit_ts)
+        } else {
+            self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
+        };
+        if elapsed_ms > 3_600_000 { // 1 hora
             0
-        } else if elapsed > 7_200 {
+        } else if elapsed_ms > 1_800_000 { // 30 minutos
             self.scalp_loss_streak.saturating_sub(1)
         } else {
             self.scalp_loss_streak
-        };
-        let required = match active_streak {
-            0 => min_cooldown,
-            1 => {
-                if self.v_t > 0.0015 {
-                    min_cooldown * 4
-                } else {
-                    min_cooldown * 2
-                }
-            }
-            2 => min_cooldown * 6,   // ~3,600 ticks (~15-20 min)
-            3 => min_cooldown * 15,  // ~9,000 ticks (~40 min)
-            _ => min_cooldown * 30,  // ~18,000 ticks (~1.5 horas)
-        };
-        elapsed >= required
+        }
     }
 
-    /// Obtiene la racha de pérdidas activa para una dirección (long/short), considerando el decaimiento temporal
+    /// Obtiene la racha de pérdidas activa para una dirección (long/short), considerando el decaimiento temporal en milisegundos
     #[inline(always)]
     pub fn get_active_directional_streak(&self, is_long: bool) -> u32 {
-        let elapsed = self.tick_count.saturating_sub(self.last_scalp_exit_tick);
+        let elapsed_ms = if self.current_ts > 0 && self.last_scalp_exit_ts > 0 {
+            self.current_ts.saturating_sub(self.last_scalp_exit_ts)
+        } else {
+            self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
+        };
         let raw = if is_long {
             self.scalp_long_loss_streak
         } else {
             self.scalp_short_loss_streak
         };
-        if elapsed > 18_000 {
+        if elapsed_ms > 3_600_000 { // 1 hora
             0
-        } else if elapsed > 7_200 {
+        } else if elapsed_ms > 1_800_000 { // 30 minutos
             raw.saturating_sub(1)
         } else {
             raw
@@ -246,6 +269,13 @@ impl StatefulEngine {
         self.a_t = 0.0;
         self.a_t_spectral = 0.0;
         self.tick_count = 0;
+        self.last_scalp_exit_tick = 0;
+        self.last_scalp_exit_ts = 0;
+        self.current_ts = 0;
+        self.last_scalp_was_loss = false;
+        self.scalp_loss_streak = 0;
+        self.scalp_short_loss_streak = 0;
+        self.scalp_long_loss_streak = 0;
         self.hurst = RecursiveHurst::new();
         self.obi_accel = ObiAcceleration::new();
         self.obi_noise = ObiNoise::new();
@@ -295,6 +325,7 @@ impl StatefulEngine {
         if price <= 0.0 || !price.is_finite() {
             return;
         }
+        self.current_ts = event_time_ms;
         if self.last_price == 0.0 {
             self.ema_fast = price;
             self.ema_slow = price;

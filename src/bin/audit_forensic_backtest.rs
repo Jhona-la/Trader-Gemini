@@ -331,15 +331,17 @@ async fn main() {
         );
     }
     let total_file_ticks = payload_len / tick_size;
-    let max_ticks_env = std::env::var("MAX_TICKS")
-        .ok()
+    let max_ticks_env = std::env::args()
+        .nth(2)
         .and_then(|v| v.parse::<usize>().ok())
+        .or_else(|| std::env::var("MAX_TICKS").ok().and_then(|v| v.parse::<usize>().ok()))
         .unwrap_or(total_file_ticks);
     // D-686: FORENSIC_START_TICK desplaza el inicio de la ventana, de modo que
     // las particiones de entrenamiento y validación se evalúan sin copiar datos.
-    let start_tick = std::env::var("FORENSIC_START_TICK")
-        .ok()
+    let start_tick = std::env::args()
+        .nth(3)
         .and_then(|v| v.parse::<usize>().ok())
+        .or_else(|| std::env::var("FORENSIC_START_TICK").ok().and_then(|v| v.parse::<usize>().ok()))
         .unwrap_or(0)
         .min(total_file_ticks);
     let num_ticks = (total_file_ticks - start_tick).min(max_ticks_env);
@@ -499,6 +501,7 @@ async fn main() {
     let mut reason_trail = 0u64;
     let mut reason_zombie = 0u64;
     let mut reason_toxic = 0u64;
+    let mut reason_decay = 0u64;
 
     // D-718: piso del medio spread = medio tick del símbolo registrado (el
     // mínimo físicamente representable en ese instrumento), no un importe en
@@ -711,7 +714,9 @@ async fn main() {
                 2 => "SL",
                 3 | 4 => "TRAIL",
                 5 => "ZOMBIE",
-                _ => "TOXIC",
+                6 => "TOXIC",
+                7 => "DECAY",
+                _ => "OTHER",
             };
             println!(
                 "🚪 [TRADE #{:02}] dir={:5} reason={:6} net=${:+.4} gross=${:+.4} cap=${:.4}",
@@ -727,7 +732,9 @@ async fn main() {
                 2 => reason_sl += 1,
                 3 | 4 => reason_trail += 1,
                 5 => reason_zombie += 1,
-                _ => reason_toxic += 1,
+                6 => reason_toxic += 1,
+                7 => reason_decay += 1,
+                _ => {},
             }
             if is_long {
                 long_trades += 1;
@@ -898,8 +905,8 @@ async fn main() {
         short_pnl
     );
     println!(
-        "  🎯 Exit Reasons:      TP: {} | SL: {} | TRAIL: {} | ZOMBIE: {} | TOXIC: {}",
-        reason_tp, reason_sl, reason_trail, reason_zombie, reason_toxic
+        "  🎯 Exit Reasons:      TP: {} | SL: {} | TRAIL: {} | ZOMBIE: {} | TOXIC: {} | DECAY: {}",
+        reason_tp, reason_sl, reason_trail, reason_zombie, reason_toxic, reason_decay
     );
     println!("  📉 Max Drawdown:      {:.2}%", max_drawdown * 100.0);
     println!("  📐 Sharpe Ratio:      {:.4}", sharpe);
