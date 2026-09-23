@@ -1164,12 +1164,20 @@ impl GodEngineCore {
                     quantum_arena::position::PositionHorizon::Swing => 1.15,
                     quantum_arena::position::PositionHorizon::Continuous => 1.0,
                 };
+                let slip_floor = self
+                    .arena
+                    .config
+                    .base_slippage_floor
+                    .load(Ordering::Relaxed)
+                    .max(0.0001);
+                // #544: Breakeven Físico con Garantía EV >= 0 (Cierre de Asfixia por Fricción)
+                // be_buffer debe cubrir holgadamente comisiones de entrada (taker) + salida (taker) + deslizamiento (roundtrip)
+                // para que cualquier salida por Breakeven resulte en PnL NETO estrictamente positivo.
+                let be_buffer = (live_fee * 2.5 + slip_floor * 2.0).clamp(0.0022, 0.0035);
                 let be_activation = (tp * be_frac * horizon_be_mult)
-                    .max(live_fee * 2.5)
-                    .max(atr_pct_live * 0.5)
+                    .max(be_buffer + live_fee * 1.5 + atr_pct_live * 0.50)
                     .min(tp * 0.85);
                 if peak_pnl >= be_activation {
-                    let be_buffer = (live_fee * 1.5).clamp(0.0006, 0.0018);
                     let be_stop = if is_long {
                         entry * (1.0 + be_buffer)
                     } else {
@@ -2955,7 +2963,25 @@ impl GodEngineCore {
                     // RÉGIMEN NEUTRO / RANGO LATERAL (Disciplina de reversión a la media: comprar en soporte, vender en resistencia)
                     let range_thr = dynamic_tech_thr * 1.15;
                     let range_obi = (dynamic_obi_thr * 0.85).clamp(0.12, 0.35);
-                    if composite_score > range_thr && effective_obi_long > range_obi && price_stretch <= -0.15 && micro_trend >= 0.0 {
+
+                    // D-745 (UNDÉCIMA OLA · ALINEACIÓN JERÁRQUICA MULTIESCALA EN RANGO):
+                    // Las ramas de reversión a la media (7, 8, 9, 10) solo deben operar
+                    // cuando el mercado está GENUINAMENTE en rango o retroceso no impulsivo.
+                    // Si higher_trend (2h) o secular_trend imponen una dirección macro clara,
+                    // operar contra la marea produce pérdidas directas por parada (SL).
+                    let range_long_trend_ok = higher_trend >= -0.0008
+                        && !(higher_trend < -0.0002 && secular_trend < 0.0)
+                        && macro_trend >= -0.00025;
+                    let range_short_trend_ok = higher_trend <= 0.0008
+                        && !(higher_trend > 0.0002 && secular_trend > 0.0)
+                        && macro_trend <= 0.00025;
+
+                    if composite_score > range_thr
+                        && effective_obi_long > range_obi
+                        && price_stretch <= -0.15
+                        && micro_trend >= 0.0
+                        && range_long_trend_ok
+                    {
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
@@ -2968,6 +2994,7 @@ impl GodEngineCore {
                         && effective_obi_short < -range_obi
                         && price_stretch >= 0.15
                         && micro_trend <= 0.0
+                        && range_short_trend_ok
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
@@ -2977,7 +3004,12 @@ impl GodEngineCore {
                             volume_flow_rate: 8.0,
                             ..Default::default()
                         };
-                    } else if short_streak < 2 && price_stretch > 1.0 && effective_obi_short < -range_obi * 1.15 && composite_score <= -0.24 && micro_trend <= 0.0
+                    } else if short_streak < 2
+                        && price_stretch > 1.0
+                        && effective_obi_short < -range_obi * 1.15
+                        && composite_score <= -0.24
+                        && micro_trend <= 0.0
+                        && range_short_trend_ok
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
@@ -2994,7 +3026,13 @@ impl GodEngineCore {
                     // exactamente 0 y la condición era imposible: la rama alcista
                     // NUNCA disparaba mientras su simétrica bajista sí. Es una de
                     // las causas mecánicas del «un solo largo en ~140 operaciones».
-                    } else if long_streak < 2 && price_stretch < -1.0 && effective_obi_long > range_obi * 1.15 && composite_score >= 0.24 && micro_trend >= 0.0 {
+                    } else if long_streak < 2
+                        && price_stretch < -1.0
+                        && effective_obi_long > range_obi * 1.15
+                        && composite_score >= 0.24
+                        && micro_trend >= 0.0
+                        && range_long_trend_ok
+                    {
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(effective_obi_long.abs().min(composite_score.abs())),

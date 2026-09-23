@@ -197,9 +197,11 @@ async fn main() {
         Err(e) => println!("⚠️ [MODELOS] No se pudo leer models/: {}", e),
     }
     println!(
-        "🌲 [MODELOS] {} modelos registrados como en producción · bosque BTCUSDT_SCALP: {}",
+        "🌲 [MODELOS] {} modelos registrados como en producción · bosque BTCUSDT (MOTOR/SCALP): {}",
         forests_cargados,
-        if god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_SCALP").is_some() {
+        if god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR").is_some()
+            || god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_SCALP").is_some()
+        {
             "presente"
         } else {
             "AUSENTE (el ensamble corre sin bosque)"

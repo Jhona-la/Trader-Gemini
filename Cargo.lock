@@ -3472,9 +3472,11 @@ dependencies = [
  "lazy_static",
  "omniscient-registry",
  "rand 0.9.4",
+ "reqwest 0.11.27",
  "serde",
  "serde_json",
  "telemetry-engine",
+ "tokio",
 ]
 
 [[package]]

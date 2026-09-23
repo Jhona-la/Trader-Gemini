@@ -12,6 +12,7 @@ pub mod protection_health;
 pub mod ring_buffer;
 pub mod state;
 pub mod state_continuity;
+pub mod symbol_ranker_engine;
 pub mod symbol_registry;
 pub mod symbols;
 pub mod temporal_spectrum;

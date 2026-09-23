@@ -171,7 +171,7 @@ pub fn evaluate_quantum_trailing_with_fee(
         0.5
     };
     let lvl = |mr: f64, tend: f64| mr + (tend - mr) * t;
-    let be_trigger = effective_tp * lvl(0.30, 0.50);
+    let be_trigger = (effective_tp * lvl(0.40, 0.60)).max(effective_fee * 3.5);
 
     // 3. Phase Transitions (Desasfixiadas: permiten que el trade desarrolle su ciclo hasta TP)
     if current_phase == 0 && (pnl_atr >= 1.5 || max_pnl_pct >= be_trigger) {
@@ -232,13 +232,13 @@ pub fn evaluate_quantum_trailing_with_fee(
         // dando la distancia de respiración; esta escalera sólo pone SUELOS
         // progresivos — el trade respira hasta su TP. `be_trigger`,
         // `effective_tp`, `effective_fee`, `t` y `lvl` son los de arriba (D-711).
-        let be_buffer = (effective_fee * 2.0).clamp(0.0010, 0.0018); // costo neto post-fees — SÍ relativo al fee (es un costo)
-        let half_lock_trigger = effective_tp * lvl(0.45, 0.70);
-        let half_lock_gain = effective_tp * lvl(0.15, 0.35);
-        let profit_lock_trigger = effective_tp * lvl(0.60, 0.85);
-        let profit_lock_gain = effective_tp * lvl(0.40, 0.60);
+        let be_buffer = (effective_fee * 2.5 + 0.0008).clamp(0.0022, 0.0035); // costo neto post-fees — SÍ relativo al fee (es un costo)
+        let half_lock_trigger = effective_tp * lvl(0.50, 0.75);
+        let half_lock_gain = (effective_tp * lvl(0.20, 0.35)).max(be_buffer + 0.0008);
+        let profit_lock_trigger = effective_tp * lvl(0.65, 0.85);
+        let profit_lock_gain = (effective_tp * lvl(0.40, 0.60)).max(half_lock_gain + 0.0008);
         let runner_lock_trigger = effective_tp * lvl(0.80, 1.00);
-        let runner_lock_gain = effective_tp * lvl(0.60, 0.85);
+        let runner_lock_gain = (effective_tp * lvl(0.60, 0.85)).max(profit_lock_gain + 0.0008);
 
         if max_pnl_pct >= be_trigger {
             if pos_side == 1 {

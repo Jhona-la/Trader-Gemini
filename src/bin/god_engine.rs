@@ -2764,6 +2764,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         engine_real.reality.mode = god_engine_core::reality_physics::EngineMode::HyperRealistic;
         engine_real.set_model_rx(rx_real);
 
+        // FASE AI ACTIVA: Carga de modelo inicial DarkAlpha 54D para inferencia inmediata en arranque (Punto #12)
+        if let Ok(mut initial_nn) = dark_alpha_engine::DarkAlphaEngine::load_json("models/DarkAlpha_BTCUSDT.json") {
+            let is_corrupt = initial_nn
+                .layer1
+                .weights
+                .iter()
+                .any(|&w| w.is_nan() || w.is_infinite());
+            if !is_corrupt {
+                initial_nn.init_buffers();
+                engine_real.swing_nn = Some(initial_nn);
+                telemetry_server::telemetry_log!("🧠 [GOD_ENGINE] DarkAlphaEngine 54D inicial cargado y activo desde el arranque (Punto #12).");
+            }
+        }
+
         // --- PHASE 3 WARMUP INJECTION ---
         telemetry_server::telemetry_log!("📥 [PHASE 3] Inyectando historial REST K-lines para calentar SwingState...");
         for (_i, sym) in symbols_clone.iter().enumerate() {
