@@ -1,16 +1,16 @@
 # Graph Report - Trader Gemini  (2026-09-23)
 
 ## Corpus Check
-- 473 files · ~2,307,656 words
+- 473 files · ~2,310,958 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 6358 nodes · 10448 edges · 417 communities (376 shown, 17 thin omitted)
+- 6364 nodes · 10457 edges · 414 communities (373 shown, 17 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 40 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a78c0070`
+- Built from commit: `1cc9b1bb`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -21,7 +21,7 @@
 - TrueOnlineRandomForest
 - telemetry-server/src/lib.rs
 - validation.rs
-- .new
+- mmap_bus.rs
 - SuperGenotype
 - .new
 - OmniscientRegistry
@@ -31,7 +31,7 @@
 - TensorVoteOrchestrator
 - zero_copy_bus.rs
 - atomic_telemetry.rs
-- os-guardian/src/lib.rs
+- EmergencyCrashDump
 - Position
 - SwingConformalFilterEngine
 - String
@@ -40,7 +40,7 @@
 - SimulatedExecutor
 - flight-recorder/src/lib.rs
 - QuantumTensorStore
-- SignalType
+- kelly_envelope.rs
 - multivariate_coint.rs
 - 🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA
 - ShadowExecutor
@@ -198,9 +198,9 @@
 - correlation_guard.rs
 - EpigeneticCapitalAllocEngine
 - MarketRegime
-- online_daemon.rs
+- parsers.rs
 - forensic_auditor.rs
-- LiveEvolutionDaemon
+- risk-engine/src/lib.rs
 - normalizer.rs
 - quantum_ingester.rs
 - ChaosMonkey
@@ -228,7 +228,7 @@
 - 🔬 DETALLE FORENSE EXHAUSTIVO DE LA DÉCIMA OLA (MODO PROFESOR)
 - main
 - main
-- 🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI
+- ValidatedOrder
 - state_validator.rs
 - evolution-engine/src/lib.rs
 - latency_accelerator.rs
@@ -289,7 +289,7 @@
 - Diagnóstico Profundo de Raíz a Cima · Paradigma del Grafo Vivo · Consejo de 10 Roles Senior · 100% Pure Rust
 - 1. PARADIGMA CONTINUO CUÁNTICO UNIFICADO (ZERO DUALITY)
 - 4. Auditoría de Configuración, Bootloader y Hardcoding Eliminado (Fase 3 Completa)
-- EvolutionLedger
+- os-guardian/src/lib.rs
 - 🚀 Comandos Principales
 - 10. CATÁLOGO DE ESTRATEGIAS Y FEATURES
 - 6. AUDITORÍA DEL SISTEMA (Feb 2026)
@@ -329,7 +329,7 @@
 - 9. GESTIÓN DE FUTUROS PERPETUOS — BINANCE ESPECÍFICO
 - PROJECT_BIBLE.md
 - 1. VISIÓN Y ARQUITECTURA
-- ⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA
+- 🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI
 - 🔬 DECIMOTERCER INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA
 - 🔬 ONCEAVO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA
 - 🌊 DÉCIMA OLA FORENSE — AUDITORÍA DE RAÍZ A CIMA POST-REHABILITACIÓN F8/REHAB-7
@@ -356,7 +356,7 @@
 - 14. 🎯 Hoja de Ruta Sistémica de Rehabilitación 1-a-1 (Niveles L-0 a L-4)
 - binance_vision_sync.rs
 - Fase 7: Reporte de Latencia Live Data
-- .new
+- stat_arb.rs
 - .new
 - 13. GESTIÓN DE PORTAFOLIO AVANZADA
 - 💱 TRADER GEMINI: GESTIÓN DE SÍMBOLOS DINÁMICA
@@ -372,17 +372,17 @@
 - rules/graphify.md
 - workflows/graphify.md
 - summary_table.md
-- PositionLedger
-- mmap_bus.rs
-- train_dark_alpha.rs
+- SignalIntent
+- memory_compaction.rs
+- ruin.rs
 - oi_history_sync.rs
 - testnet_integration.rs
 - 🧠 MÓDULO 2: INFERENCIA DE IA, MODELOS PREDICTIVOS Y SEÑALES
 - binance_api.rs
-- LakehouseWarehouse
+- TelemetryEvent
 - macro_history_sync.rs
 - train_forest.rs
-- MmapTelemetryBus
+- SYMBOL_SUSPENDED_UNTIL
 - 🧪 MÓDULO 8: BACKTESTING, EVOLUCIÓN Y GOBERNANZA
 - I. MICROESTRUCTURA Y FLUJO — «quién está empujando ahora»
 - 🔬 NOVENO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA
@@ -405,9 +405,6 @@
 - 📈 MÓDULO 3: ESTRATEGIA MULTIACTIVO, RÉGIMEN Y HORIZONTES TEMPORALES
 - 🔒 MÓDULO 6: ESTADO ATÓMICO, MEMORIA MMAP, TELEMETRÍA Y SO
 - ⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA
-- .retrain_models
-- memory_audit.rs
-- PositionManager
 
 ## God Nodes (most connected - your core abstractions)
 1. `🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA` - 207 edges
@@ -436,35 +433,35 @@
 ## Import Cycles
 - None detected.
 
-## Communities (417 total, 17 thin omitted)
+## Communities (414 total, 17 thin omitted)
 
 ### Community 0 - "consejo_seniors.rs"
 Cohesion: 0.06
 Nodes (50): ConsejoDeliberacion, ConsensusResult, CouncilParams, CROWD_LS_FEAR, diverse_bullish_payload(), MarketSnapshotPayload, ml_opinion(), MODULATOR_SEAT_MASK (+42 more)
 
 ### Community 1 - "DarkAlphaEngine"
-Cohesion: 0.08
-Nodes (34): ChannelWelfordStats, d613_modelo_con_pesos_truncados_no_infiere_ni_aborta(), d613_modelo_valido_sigue_prediciendo(), d614_dimensiones_incoherentes_no_abortan_el_proceso(), DarkAlphaEngine, DenseLayer, QuantizedDenseLayer, Box (+26 more)
+Cohesion: 0.06
+Nodes (40): ChannelWelfordStats, d613_modelo_con_pesos_truncados_no_infiere_ni_aborta(), d613_modelo_valido_sigue_prediciendo(), d614_dimensiones_incoherentes_no_abortan_el_proceso(), DarkAlphaEngine, DenseLayer, QuantizedDenseLayer, Box (+32 more)
 
 ### Community 2 - "BinanceClient"
 Cohesion: 0.08
 Nodes (31): BINANCE_BASE_URL, BINANCE_TESTNET_URL, BinanceClient, BinanceErrorResponse, BinanceRateLimits, extract_limits(), extract_retry_after(), Arc (+23 more)
 
 ### Community 3 - "TrueOnlineRandomForest"
-Cohesion: 0.17
-Nodes (9): Arc, Option, RwLock, Vec, TradeObservation, TrueOnlineRandomForest, DenseMatrix, RandomForestClassifier (+1 more)
+Cohesion: 0.06
+Nodes (35): live_evolution_armed_for_env(), LiveEvolutionDaemon, QuantumHotSwapState, RealWfOutcome, Arc, AtomicBool, AtomicUsize, Default (+27 more)
 
 ### Community 4 - "telemetry-server/src/lib.rs"
-Cohesion: 0.14
-Nodes (25): CoinState, dashboard_html(), get_coins(), get_genome(), get_state(), get_tensor(), handle_socket(), Arc (+17 more)
+Cohesion: 0.18
+Nodes (16): CoinState, get_coins(), get_genome(), get_state(), get_tensor(), Arc, Extension, Path (+8 more)
 
 ### Community 5 - "validation.rs"
 Cohesion: 0.08
 Nodes (22): AggTradeEvent, BookTickerEvent, DepthEvent, OnlineNormalizer, Default, Option, Self, test_agg_trade_event_parse_from_json() (+14 more)
 
-### Community 6 - ".new"
-Cohesion: 0.23
-Nodes (11): MmapTelemetryReader, Mmap, P, Path, PathBuf, Result, Self, Vec (+3 more)
+### Community 6 - "mmap_bus.rs"
+Cohesion: 0.08
+Nodes (35): FRAME_PREDICTION_VS_REALITY, FRAME_TYPE_BAYESIAN_PROB, FRAME_TYPE_HURST_EXPONENT, FRAME_TYPE_TENSOR_ENTROPY, GLOBAL_TELEMETRY_WRITER, HEADER_SIZE, init_global_telemetry(), MmapTelemetryBus (+27 more)
 
 ### Community 7 - "SuperGenotype"
 Cohesion: 0.06
@@ -487,8 +484,8 @@ Cohesion: 0.08
 Nodes (28): GraphNode, Box, Default, DiGraph, Error, HashMap, NodeIndex, P (+20 more)
 
 ### Community 12 - "LockFreeTickRing"
-Cohesion: 0.16
-Nodes (10): CompactTick, LockFreeTickRing, MAX_COINS, Default, Send, Sync, UnsafeCell, Vec (+2 more)
+Cohesion: 0.12
+Nodes (18): CoinArena, CoinTensorArena, CompactTick, LockFreeTickRing, MAX_COINS, AtomicBool, AtomicF64, AtomicU64 (+10 more)
 
 ### Community 13 - "TensorVoteOrchestrator"
 Cohesion: 0.12
@@ -502,13 +499,13 @@ Nodes (32): EVT_FIDELITY_PENALTY, EVT_GHOST_REVERT, EVT_HORIZON_CLASH, EVT_LATEN
 Cohesion: 0.10
 Nodes (32): BINARY_QUEUE, init_binary_telemetry(), init_stats_telemetry(), pop_binary_telemetry(), pop_trade_stats(), push_binary_telemetry(), push_trade_stats(), ArrayQueue (+24 more)
 
-### Community 16 - "os-guardian/src/lib.rs"
-Cohesion: 0.10
-Nodes (29): c_void, EmergencyCrashDump, PositionDumpEntry, P, Result, Self, String, Vec (+21 more)
+### Community 16 - "EmergencyCrashDump"
+Cohesion: 0.27
+Nodes (10): EmergencyCrashDump, PositionDumpEntry, P, Result, Self, String, Vec, test_emergency_crash_dump_atomic_file_write() (+2 more)
 
 ### Community 17 - "Position"
-Cohesion: 0.12
-Nodes (20): b3_14_ciclo_confirmacion_open_fill_close_swap(), b3_14_cierre_de_papel_no_confirma(), b3_14_reapertura_no_hereda_estado_del_ocupante_previo(), Position, PositionHorizon, PositionSnapshot, AtomicBool, AtomicF64 (+12 more)
+Cohesion: 0.11
+Nodes (21): b3_14_ciclo_confirmacion_open_fill_close_swap(), b3_14_cierre_de_papel_no_confirma(), b3_14_reapertura_no_hereda_estado_del_ocupante_previo(), Position, PositionHorizon, PositionManager, PositionSnapshot, AtomicBool (+13 more)
 
 ### Community 18 - "SwingConformalFilterEngine"
 Cohesion: 0.08
@@ -538,12 +535,12 @@ Nodes (26): DEFAULT_CAPACITY, EVENT_ARBITRAGE_FIRED, EVENT_KILL_SWITCH_TRIPPED, 
 Cohesion: 0.10
 Nodes (16): NUM_FEATURES, NUM_TIMEFRAMES, QuantumTensorStore, AtomicU64, Box, Self, test_quantum_tensor_store_extract_feature_vector(), test_quantum_tensor_store_lyapunov_chaos() (+8 more)
 
-### Community 25 - "SignalType"
+### Community 25 - "kelly_envelope.rs"
 Cohesion: 0.19
-Nodes (9): bin(), diag_atribuye_cada_veto_a_la_etapa_que_lo_produce(), diag_cuenta_histogramas_y_fallos_por_direccion(), diag_descompone_ml_prob_y_el_error_del_residuo(), dir_index(), DirectionDiag, Option, String (+1 more)
+Nodes (12): capital_chico_no_explota_leverage(), EdgePosterior, fraccion_crece_con_evidencia(), guardia_de_racha_limita_fraccion(), kelly_lcb_rechaza_edge_fantasma(), posterior_converge_y_lcb_es_conservador(), RiskEnvelope, Default (+4 more)
 
 ### Community 26 - "multivariate_coint.rs"
-Cohesion: 0.23
+Cohesion: 0.21
 Nodes (9): MAX_ASSETS, MultivariateCointegrationEngine, Option, Self, test_multivariate_cointegration_basket_allocations(), test_multivariate_cointegration_custom_decay(), test_multivariate_cointegration_nan_immunity(), test_multivariate_cointegration_ou_reversion() (+1 more)
 
 ### Community 27 - "🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA"
@@ -551,8 +548,8 @@ Cohesion: 0.01
 Nodes (207): 🚨 100. Detección Falsa de Nodos Huérfanos en Escáner de Arquitectura (`Graph4D`), 🚨 101. Crate Fantasma Vacío `flight-recorder` Duplicado, 🚨 102. Simulador de Fases Falso en `PhaseExecutor`, 🚨 103. Medición de Latencia Falsa y Sin Conexión TCP en `DnsOptimizer`, 🚨 104. Asignación de Dimensiones Incoherente en Fallback de Red Neuronal `DarkAlphaEngine`, 🚨 105. `OmniscientRegistry` y `StrategyOrchestrator` Desconectados y Sin Estrategias Implementando `QuantumStrategy`, 🚨 106. `crates/graph-4d` Duplica `graph-architecture` y Omite Dependencias `use`, 🚨 107. Telemetría Tensorial de `telemetry-engine` Silenciosa por Falta de Inicialización (+199 more)
 
 ### Community 28 - "ShadowExecutor"
-Cohesion: 0.05
-Nodes (42): HashMap, Result, RwLock, Self, String, Vec, ShadowExecutor, test_shadow_executor_leverage_and_balance() (+34 more)
+Cohesion: 0.16
+Nodes (9): HashMap, Result, RwLock, Self, String, Vec, ShadowExecutor, test_shadow_executor_leverage_and_balance() (+1 more)
 
 ### Community 29 - "verify_segment"
 Cohesion: 0.15
@@ -567,8 +564,8 @@ Cohesion: 0.14
 Nodes (19): correr(), d615_la_estimacion_no_deriva_con_el_numero_de_muestras(), d616_las_escalas_discriminan_estructura_real(), DFA_SCALES, el_ajuste_log_log_es_bueno_en_series_con_escalamiento(), HurstDfa, inmunidad_a_entradas_no_finitas(), MAX_HISTORY (+11 more)
 
 ### Community 32 - "GlobalArena"
-Cohesion: 0.12
-Nodes (16): AtomicI64, MetaEvolver, Arc, Self, test_meta_evolver_audit_system_architecture_nominal_and_stagnant(), CoinArena, GlobalArena, AtomicBool (+8 more)
+Cohesion: 0.13
+Nodes (13): AtomicI64, MetaEvolver, Arc, Self, test_meta_evolver_audit_system_architecture_nominal_and_stagnant(), get_memory_usage_mb(), Arc, start_memory_auditor() (+5 more)
 
 ### Community 33 - "OrderBook"
 Cohesion: 0.15
@@ -587,8 +584,8 @@ Cohesion: 0.13
 Nodes (18): DynamicSymbolSelector, Client, Eq, Option, Ord, Ordering, PartialOrd, Result (+10 more)
 
 ### Community 37 - "lakehouse.rs"
-Cohesion: 0.19
-Nodes (11): CompressedTickBatch, DROPPED_LAKEHOUSE_EVENTS, AtomicU64, Default, Option, P, Self, test_compressed_tick_batch_empty_and_oob() (+3 more)
+Cohesion: 0.07
+Nodes (34): EvolutionLedger, GenomeUpdateEvent, HashMap, Option, Self, Sender, String, test_evolution_ledger_dual_horizon_and_nan_immunity() (+26 more)
 
 ### Community 38 - "order_registry.rs"
 Cohesion: 0.21
@@ -615,8 +612,8 @@ Cohesion: 0.05
 Nodes (39): 1. Decoradores Centralizados (`utils/common.py`), 1. El Circuito de Retroalimentación de Atribución, 1. Numba Structured Array (El "OhlcvStruct"), 2. Corrección BUG #12: NameError `tf` en WebSocket Live (`data/binance_loader.py`), 2. Flujo de Datos de Telemetría Cognitiva, 2. Market Ring Buffer (Numba JIT Class), 3. El Puente Neural y Auditoría Multiverso, 3. Forensic Fill Anatomy (V5.88) (+31 more)
 
 ### Community 44 - "temporal_spectrum.rs"
-Cohesion: 0.10
-Nodes (17): c05_dominant_tau_opera_dentro_de_la_banda_operativa(), curva_horizonte_pasa_por_los_anchos_legacy(), d638b_la_banda_operativa_son_las_anclas_no_el_espectro(), d638b_tau_y_escala_temporal_son_inversas(), operating_tau_ms(), Default, Self, ruido_puro_no_genera_conviccion_persistente() (+9 more)
+Cohesion: 0.08
+Nodes (18): c05_dominant_tau_opera_dentro_de_la_banda_operativa(), curva_horizonte_pasa_por_los_anchos_legacy(), d638b_la_banda_operativa_son_las_anclas_no_el_espectro(), d638b_tau_y_escala_temporal_son_inversas(), operating_tau_ms(), Default, Self, ruido_puro_no_genera_conviccion_persistente() (+10 more)
 
 ### Community 45 - "GodEngineCore"
 Cohesion: 0.14
@@ -671,8 +668,8 @@ Cohesion: 0.18
 Nodes (13): AuditorInterno, CognitiveBiasReport, DailyTribunalReport, ExchangeFillRecord, IndependentMetrics, Default, Self, String (+5 more)
 
 ### Community 58 - "booktick_replay.rs"
-Cohesion: 0.05
-Nodes (44): corte_t1_no_usa_el_cierre_del_mismo_dia(), envelope_autoritativa_veta_cuando_no_hay_edge(), envelope_bootstrap_mantiene_entrada_que_sostiene_margen(), envelope_gate_ignora_posicion_ya_evaluada(), hist_with(), live_envelope_gate(), margin_guard_veta_notional_imposible_en_capital_micro(), OmniHistory (+36 more)
+Cohesion: 0.10
+Nodes (27): corte_t1_no_usa_el_cierre_del_mismo_dia(), envelope_autoritativa_veta_cuando_no_hay_edge(), envelope_bootstrap_mantiene_entrada_que_sostiene_margen(), envelope_gate_ignora_posicion_ya_evaluada(), hist_with(), live_envelope_gate(), margin_guard_veta_notional_imposible_en_capital_micro(), OmniHistory (+19 more)
 
 ### Community 59 - "OmniState"
 Cohesion: 0.21
@@ -727,7 +724,7 @@ Cohesion: 0.14
 Nodes (12): Arc, Debug, Formatter, Option, Result, Self, String, SolitonWaveEngine (+4 more)
 
 ### Community 72 - "SupersonicShockwaveEngine"
-Cohesion: 0.15
+Cohesion: 0.16
 Nodes (11): Arc, Debug, Formatter, Option, Result, Self, String, SupersonicShockwaveEngine (+3 more)
 
 ### Community 73 - "DarkAlphaRouter"
@@ -755,7 +752,7 @@ Cohesion: 0.15
 Nodes (11): HighPayoffTrendRunner, Arc, Debug, Formatter, Option, Result, Self, String (+3 more)
 
 ### Community 79 - "QuantumStrategy"
-Cohesion: 0.16
+Cohesion: 0.18
 Nodes (11): QuantumStrategy, Arc, Box, Option, Result, Self, Send, String (+3 more)
 
 ### Community 80 - "strategy_telemetry.rs"
@@ -771,7 +768,7 @@ Cohesion: 0.20
 Nodes (14): Child, CompilationConfig, CompilationResult, CompilerSandbox, extract_error_summary(), kill_child_tree(), Arc, Default (+6 more)
 
 ### Community 83 - "TickEvent"
-Cohesion: 0.13
+Cohesion: 0.14
 Nodes (16): multiplex_ticks(), Vec, block_on(), dummy_waker(), MockTickSource, F, Option, Send (+8 more)
 
 ### Community 84 - "epigenoma_store.rs"
@@ -1166,17 +1163,17 @@ Nodes (5): EpigeneticCapitalAllocEngine, Vec, test_epigenetic_capital_allocation
 Cohesion: 0.27
 Nodes (5): MarketRegime, RegimeDetector, Into, Self, From
 
-### Community 183 - "online_daemon.rs"
-Cohesion: 0.23
-Nodes (10): RealWfOutcome, Vec, wf_evaluate_real(), WF_INITIAL_CAPITAL, WF_MIN_TRADES, wf_real_coin_ids(), WF_REAL_MAX_COINS, WF_REAL_MICRO_TICKS (+2 more)
+### Community 183 - "parsers.rs"
+Cohesion: 0.13
+Nodes (19): KlineData, BookSequenceGuard, .RESYNC_AFTER, d610_acepta_secuencia_creciente_y_descarta_rancios(), d610_cada_simbolo_tiene_su_propia_secuencia(), d610_resincroniza_tras_un_reinicio_de_la_secuencia(), d610_simbolo_fuera_del_universo_no_se_bloquea(), p6_parse_depth5_levels_extrae_los_cinco_niveles() (+11 more)
 
 ### Community 184 - "forensic_auditor.rs"
 Cohesion: 0.31
 Nodes (7): ForensicAuditor, Connection, Receiver, Self, test_forensic_auditor_db_creation(), test_forensic_auditor_event_processing_and_nan_immunity(), TelemetryEvent
 
-### Community 185 - "LiveEvolutionDaemon"
-Cohesion: 0.31
-Nodes (6): live_evolution_armed_for_env(), LiveEvolutionDaemon, HashMap, Instant, Option, String
+### Community 185 - "risk-engine/src/lib.rs"
+Cohesion: 0.21
+Nodes (13): format_reject_counters(), REJ_CONFIDENCE, REJ_DRAWDOWN, REJ_TP_SL_FLOOR, REJECT_COUNTERS, REJECT_COUNTERS_DIR, REJECT_NAMES, reject_report() (+5 more)
 
 ### Community 186 - "normalizer.rs"
 Cohesion: 0.27
@@ -1195,8 +1192,8 @@ Cohesion: 0.28
 Nodes (4): Option, Self, test_zero_copy_bin_tick_parsing_and_metrics(), ZeroCopyBinTick
 
 ### Community 190 - "god_engine.rs"
-Cohesion: 0.05
-Nodes (52): Handle, KlineData, CAPITAL_TABLE, compact_position_journal(), ensure_position_protected(), format_tau(), genome_protection_prices(), GLOBAL (+44 more)
+Cohesion: 0.11
+Nodes (27): Handle, CAPITAL_TABLE, compact_position_journal(), ensure_position_protected(), genome_protection_prices(), GLOBAL, is_symbol_suspended(), main() (+19 more)
 
 ### Community 191 - "maker.rs"
 Cohesion: 0.42
@@ -1274,9 +1271,9 @@ Nodes (6): main(), NanoForestData, Box, Error, Result, Vec
 Cohesion: 0.29
 Nodes (6): main(), NanoForestData, Box, Error, Result, Vec
 
-### Community 213 - "🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI"
+### Community 213 - "ValidatedOrder"
 Cohesion: 0.29
-Nodes (6): Diagnóstico de Grafo Vivo: Inteligencia Artificial, Microestructura, Ejecución HFT, Genoma Evolutivo, Señales Cuánticas y Conectividad Binance (534 Puntos de Fallo Analizados al Máximo Rigor Forense), 🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI, 📊 MATRIZ MAESTRA CONSOLIDADA (136 PUNTOS DE FALLO ESTRUCTURALES Y CUÁNTICOS), 🗺️ PARADIGMA DE GRAFO VIVO Y TOPOLOGY DEL SISTEMA, 🚦 RESUMEN DE ESTADO DE RESOLUCIÓN, 📑 ÍNDICE DE AUDITORÍA INTEGRAL
+Nodes (6): rechazos_se_atribuyen_a_la_direccion_evaluada(), rej(), RiskEngine, Self, set_reject_direction(), ValidatedOrder
 
 ### Community 214 - "state_validator.rs"
 Cohesion: 0.53
@@ -1387,8 +1384,8 @@ Cohesion: 0.10
 Nodes (20): 0. Principios rectores (constitución del plan), E1. Telemetría viva para el Shadow Forest, E2. Herencia correcta, E3. Gobernanza de promoción unificada, E4. Espacio de mutación unificado, E5. Certificación estadística de promociones, E6. Epigenética y consejo senior evolutivo (mejora estructural solicitada), FASE C — SISTEMA UNIVERSAL CONTINUO (migración completa) (+12 more)
 
 ### Community 263 - "direction_diag.rs"
-Cohesion: 0.09
-Nodes (20): BRANCH11_CONDITIONS, COMPOSITE_BINS, d695_cuenta_el_escudo_con_y_sin_habilidad(), FUNNEL_STAGES, LONG, ML_BINS, N_BRANCH11_CONDITIONS, N_FUNNEL_STAGES (+12 more)
+Cohesion: 0.07
+Nodes (29): bin(), BRANCH11_CONDITIONS, COMPOSITE_BINS, d695_cuenta_el_escudo_con_y_sin_habilidad(), diag_atribuye_cada_veto_a_la_etapa_que_lo_produce(), diag_cuenta_histogramas_y_fallos_por_direccion(), diag_descompone_ml_prob_y_el_error_del_residuo(), dir_index() (+21 more)
 
 ### Community 264 - "🛡️ MÓDULO 5: GESTIÓN DE RIESGO, ECUACIÓN DE KELLY Y GENOMAS EVOLUTIVOS"
 Cohesion: 0.10
@@ -1490,9 +1487,9 @@ Nodes (12): 1. PARADIGMA CONTINUO CUÁNTICO UNIFICADO (ZERO DUALITY), 2. ENSAMBL
 Cohesion: 0.15
 Nodes (12): 4. Auditoría de Configuración, Bootloader y Hardcoding Eliminado (Fase 3 Completa), 5. Auditoría Sistémica Forense: Zero-Fee Divergence & Optimization (Fase 4 Completa), 7. Auditoría Forense y Resurrección del Metacortex Engine (Fase 47), 👨‍🏫 Desglose Metodológico (Modo Profesor):, ✅ Estado de Compilación Final, Fase 18: Auditoria y Pruebas Cero, Problemas Encontrados (Malo y Por Qué):, Problemas Encontrados (Malo y Por Qué): (+4 more)
 
-### Community 289 - "EvolutionLedger"
+### Community 289 - "os-guardian/src/lib.rs"
 Cohesion: 0.26
-Nodes (9): EvolutionLedger, GenomeUpdateEvent, HashMap, Option, Self, Sender, String, test_evolution_ledger_dual_horizon_and_nan_immunity() (+1 more)
+Nodes (11): c_void, init_guardian(), INITIALIZED, lock_memory_region(), pin_current_thread_to_core(), Arc, AtomicBool, Uuid (+3 more)
 
 ### Community 290 - "🚀 Comandos Principales"
 Cohesion: 0.17
@@ -1650,9 +1647,9 @@ Nodes (7): 4. TROUBLESHOOTING Y ANÁLISIS FORENSE, A. Estructura de Archivos, �
 Cohesion: 0.25
 Nodes (8): 1.1 Narrativa del Sistema, 1.2 Diagrama de Flujo de Datos, 1.3 Ciclo de Vida de un Evento, 1.4 Decisiones de Diseño y Justificación, 1. VISIÓN Y ARQUITECTURA, Arquitectura Híbrida: python-binance + CCXT, Multi-Timeframe Data Support (Dic 2025), Persistencia: SQLite para Crash Recovery
 
-### Community 329 - "⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA"
-Cohesion: 0.25
-Nodes (8): 🚨 91. 12 Algoritmos Especializados en `crates/signal-engine` Huérfanos y Desconectados del Hot-Path, 🚨 92. Motor de Auditoría Interna Dual (`AuditorInterno`) Huérfano y Desconectado, 🚨 93. Auditor de Trayectorias en Tiempo Real (`TrajectoryAuditor`) Huérfano y Desconectado, 🚨 94. Predictor de Slippage por Profundidad de Libro de Kyle (`BookDepthSlippagePredictor`) Huérfano, 🚨 95. Inyección de Datos Sintéticos Constantes en Sniffer de Liquidaciones Hyperliquid, 🚨 96. Orquestador de Arbitraje Multiactivo Maker/StatArb (`MultiAssetOrchestrator`) Huérfano, 🚨 97. Inyector Zero-Allocation (`quantum_ingester.rs`) Atado a Estructura Legacy Desconectada, ⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA
+### Community 329 - "🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI"
+Cohesion: 0.13
+Nodes (14): 🚨 91. 12 Algoritmos Especializados en `crates/signal-engine` Huérfanos y Desconectados del Hot-Path, 🚨 92. Motor de Auditoría Interna Dual (`AuditorInterno`) Huérfano y Desconectado, 🚨 93. Auditor de Trayectorias en Tiempo Real (`TrajectoryAuditor`) Huérfano y Desconectado, 🚨 94. Predictor de Slippage por Profundidad de Libro de Kyle (`BookDepthSlippagePredictor`) Huérfano, 🚨 95. Inyección de Datos Sintéticos Constantes en Sniffer de Liquidaciones Hyperliquid, 🚨 96. Orquestador de Arbitraje Multiactivo Maker/StatArb (`MultiAssetOrchestrator`) Huérfano, 🚨 97. Inyector Zero-Allocation (`quantum_ingester.rs`) Atado a Estructura Legacy Desconectada, Diagnóstico de Grafo Vivo: Inteligencia Artificial, Microestructura, Ejecución HFT, Genoma Evolutivo, Señales Cuánticas y Conectividad Binance (534 Puntos de Fallo Analizados al Máximo Rigor Forense) (+6 more)
 
 ### Community 330 - "🔬 DECIMOTERCER INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA"
 Cohesion: 0.33
@@ -1758,13 +1755,9 @@ Nodes (10): aggtrades_main(), BinTick, daily_aggtrades(), main(), MONTHS, parse_
 Cohesion: 0.40
 Nodes (4): Análisis, Fase 7: Reporte de Latencia Live Data, Latencias E2E (Milisegundos), Resultados
 
-### Community 356 - ".new"
-Cohesion: 0.31
-Nodes (7): QuantumHotSwapState, Arc, AtomicBool, AtomicUsize, Default, RwLock, Self
-
-### Community 357 - ".new"
-Cohesion: 0.33
-Nodes (3): CoinTensorArena, Arc, Self
+### Community 356 - "stat_arb.rs"
+Cohesion: 0.35
+Nodes (7): Self, Vec, StatArbEngine, test_stat_arb_numerical_stability_large_prices(), test_stat_arb_spread_and_signal(), test_stat_arb_symmetric_long_and_flat_reversion(), test_stat_arb_zero_window_and_nan_immunity()
 
 ### Community 358 - "13. GESTIÓN DE PORTAFOLIO AVANZADA"
 Cohesion: 0.40
@@ -1806,17 +1799,17 @@ Nodes (4): ⚛️ 10. MÓDULO 7 — SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUE
 Cohesion: 0.50
 Nodes (4): 🔬 4. MÓDULO 1 — INGESTIÓN, PARSERS, LIBROS L2 Y NORMALIZACIÓN, D-610 — `last_update_id` se parsea y jamás se valida: no existe detección de huecos de secuencia · **S1**, D-611 — `depth10@100ms` no es un libro L2: la afirmación de microestructura no está sostenida por la fuente de datos · **S2**, D-612 — Parsers y motores duplicados entre `src/` y `crates/` · **S3**
 
-### Community 378 - "PositionLedger"
-Cohesion: 0.29
-Nodes (8): LedgerEvent, PositionLedger, Option, Self, Sender, String, test_position_ledger_crud(), test_position_ledger_incremental_delta_and_nan_immunity()
+### Community 378 - "SignalIntent"
+Cohesion: 0.31
+Nodes (7): d690_kelly_usa_la_probabilidad_calibrada(), kelly_from_pf(), leverage_for(), QuantumLeverageMatrix, horizon_tau_ms(), Self, SignalIntent
 
-### Community 379 - "mmap_bus.rs"
-Cohesion: 0.13
-Nodes (15): FRAME_PREDICTION_VS_REALITY, FRAME_TYPE_BAYESIAN_PROB, FRAME_TYPE_HURST_EXPONENT, FRAME_TYPE_TENSOR_ENTROPY, HEADER_SIZE, init_global_telemetry(), RING_CAPACITY, SUBSYSTEM_OS_MEM (+7 more)
+### Community 379 - "memory_compaction.rs"
+Cohesion: 0.42
+Nodes (8): ensure_working_set_size(), force_working_set_compaction(), lock_critical_memory(), lock_critical_memory_slice(), T, test_expand_working_set_hardcap(), test_memory_compaction_and_lock_slice(), test_memory_lock_single_structure()
 
-### Community 380 - "train_dark_alpha.rs"
-Cohesion: 0.29
-Nodes (6): AdamState, main(), Self, Vec, shuffle(), XorShift
+### Community 380 - "ruin.rs"
+Cohesion: 0.31
+Nodes (5): clamp_ruin(), CONSERVATIVE_Q, expected_loss_streak(), streak_cap_binds_harder_with_worse_quality(), streak_ruin_cap()
 
 ### Community 381 - "oi_history_sync.rs"
 Cohesion: 0.23
@@ -1834,9 +1827,9 @@ Nodes (11): [M2-C01] entries_blocked descarta closed_order ya computado — el h
 Cohesion: 0.20
 Nodes (9): ORDER_TYPE_LIMIT, ORDER_TYPE_MARKET, SIDE_BUY, SIDE_SELL, test_sign_payload_different_queries_differ(), test_sign_payload_to_buffer_deterministic(), TIME_IN_FORCE_GTC, TIME_IN_FORCE_GTX (+1 more)
 
-### Community 385 - "LakehouseWarehouse"
-Cohesion: 0.31
-Nodes (6): LakehouseEvent, LakehouseWarehouse, Sender, String, Vec, test_lakehouse_in_memory_or_temp()
+### Community 385 - "TelemetryEvent"
+Cohesion: 0.28
+Nodes (9): dashboard_html(), handle_socket(), Box, IntoResponse, Sender, WebSocket, WebSocketUpgrade, TelemetryEvent (+1 more)
 
 ### Community 386 - "macro_history_sync.rs"
 Cohesion: 0.36
@@ -1846,9 +1839,9 @@ Nodes (9): fred_daily(), http_get(), main(), Option, String, Vec, UA, write_seri
 Cohesion: 0.38
 Nodes (9): BinTick, build_tree(), eval_tree(), load_macro_series(), main(), Vec, sigmoid(), TreeNode (+1 more)
 
-### Community 388 - "MmapTelemetryBus"
-Cohesion: 0.20
-Nodes (9): GLOBAL_TELEMETRY_WRITER, MmapTelemetryBus, AtomicUsize, MmapMut, OnceLock, Option, Send, Sync (+1 more)
+### Community 388 - "SYMBOL_SUSPENDED_UNTIL"
+Cohesion: 0.33
+Nodes (6): format_tau(), HashMap, LazyLock, Mutex, String, SYMBOL_SUSPENDED_UNTIL
 
 ### Community 389 - "🧪 MÓDULO 8: BACKTESTING, EVOLUCIÓN Y GOBERNANZA"
 Cohesion: 0.22
@@ -1934,33 +1927,25 @@ Nodes (4): [M6-H01] mmap bus: frames TROZADOS en reuso de slot, [M6-H02] Bracket
 Cohesion: 0.50
 Nodes (4): [M7-C01] SeniorCausal veto DESARMADO por OR permisivo, [M7-H01] Consejo: 30+ literales fijos sin derivación, [M7-H02] D-345 rubber-stamp: asientos moduladores auto-refuerzan, ⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA
 
-### Community 414 - ".retrain_models"
-Cohesion: 0.40
-Nodes (3): Result, Self, String
-
-### Community 415 - "memory_audit.rs"
-Cohesion: 0.60
-Nodes (4): get_memory_usage_mb(), Arc, start_memory_auditor(), test_get_memory_usage_mb()
-
 ## Knowledge Gaps
 - **1575 isolated node(s):** `build.sh script`, `RUSTFLAGS`, `COINS`, `SignalPathDiag`, `STATS_LEN` (+1570 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2586 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2588 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **17 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `GlobalArena` connect `GlobalArena` to `BinanceClient`, `telemetry-server/src/lib.rs`, `OmniscientRegistry`, `darwin.rs`, `LockFreeTickRing`, `QuantumConfig`, `TensorVoteOrchestrator`, `os-guardian/src/lib.rs`, `UserDataStreamer`, `genome_store.rs`, `SystemBootloader`, `Self`, `ShadowExecutor`, `memory_audit.rs`, `BinanceStreamer`, `telemetry_mmap.rs`, `god-engine-core/src/lib.rs`, `GodEngineCore`, `online_daemon.rs`, `LiveEvolutionDaemon`, `booktick_replay.rs`, `god_engine.rs`, `MultiAssetOrchestrator`, `MicroScalpTriggerEngine`, `executor.rs`, `state_validator.rs`, `evolution-engine/src/lib.rs`, `CoaxialBreakoutEngine`, `PortfolioOrchestrator<'a>`, `.calculate_tp_extension`, `OrderExecutor`, `.new`, `.new`, `reconciliation.rs`, `TurboScalpEngine`, `random_forest.rs`, `SymbolRankerEngine`, `genome.rs`?**
-  _High betweenness centrality (0.126) - this node is a cross-community bridge._
-- **Why does `GodEngineCore` connect `GodEngineCore` to `consejo_seniors.rs`, `DarkAlphaEngine`, `LakehouseWarehouse`, `TensorVoteOrchestrator`, `SystemBootloader`, `SignalType`, `RealityPhysics`, `ShadowExecutor`, `GlobalArena`, `LeadLagAlphaEngine`, `god-engine-core/src/lib.rs`, `StatefulEngine`, `temporal_spectrum.rs`, `calibration.rs`, `OnlinePpoPolicyEngine`, `ConformalCalibrator`, `maker.rs`, `evolution.rs`, `HawkesBesselEngine`, `LivingImmuneSystem`, `ModelEnsemble`, `OnlineLearningModule`, `ShadowGraphAuditor`, `random_forest.rs`?**
-  _High betweenness centrality (0.102) - this node is a cross-community bridge._
+- **Why does `GlobalArena` connect `GlobalArena` to `BinanceClient`, `TrueOnlineRandomForest`, `telemetry-server/src/lib.rs`, `OmniscientRegistry`, `darwin.rs`, `LockFreeTickRing`, `QuantumConfig`, `TensorVoteOrchestrator`, `UserDataStreamer`, `genome_store.rs`, `SystemBootloader`, `Self`, `os-guardian/src/lib.rs`, `BinanceStreamer`, `telemetry_mmap.rs`, `god-engine-core/src/lib.rs`, `GodEngineCore`, `risk-engine/src/lib.rs`, `booktick_replay.rs`, `god_engine.rs`, `MultiAssetOrchestrator`, `MicroScalpTriggerEngine`, `executor.rs`, `ValidatedOrder`, `state_validator.rs`, `evolution-engine/src/lib.rs`, `CoaxialBreakoutEngine`, `PortfolioOrchestrator<'a>`, `.calculate_tp_extension`, `OrderExecutor`, `.new`, `reconciliation.rs`, `TurboScalpEngine`, `random_forest.rs`, `SymbolRankerEngine`, `SignalIntent`, `genome.rs`?**
+  _High betweenness centrality (0.127) - this node is a cross-community bridge._
+- **Why does `GodEngineCore` connect `GodEngineCore` to `consejo_seniors.rs`, `DarkAlphaEngine`, `direction_diag.rs`, `TensorVoteOrchestrator`, `SystemBootloader`, `RealityPhysics`, `GlobalArena`, `LeadLagAlphaEngine`, `lakehouse.rs`, `god-engine-core/src/lib.rs`, `StatefulEngine`, `temporal_spectrum.rs`, `calibration.rs`, `OnlinePpoPolicyEngine`, `ConformalCalibrator`, `maker.rs`, `evolution.rs`, `HawkesBesselEngine`, `LivingImmuneSystem`, `ValidatedOrder`, `ModelEnsemble`, `OnlineLearningModule`, `ShadowGraphAuditor`, `random_forest.rs`, `SignalIntent`?**
+  _High betweenness centrality (0.110) - this node is a cross-community bridge._
 - **Why does `StatefulEngine` connect `StatefulEngine` to `math_kernels.rs`, `SpectralCycleEngine`, `train_forest.rs`, `LeadLagAlphaEngine`, `god-engine-core/src/lib.rs`, `.new`, `.default`, `stateful_engine.rs`, `GodEngineCore`, `HawkesProcessEngine`, `KalmanFilter1D`, `ShannonEntropy`, `File`, `AdaptiveQuantileEngine`, `QuantumTensorStore`, `Self`?**
-  _High betweenness centrality (0.050) - this node is a cross-community bridge._
+  _High betweenness centrality (0.051) - this node is a cross-community bridge._
 - **What connects `build.sh script`, `RUSTFLAGS`, `COINS` to the rest of the system?**
   _1575 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `consejo_seniors.rs` be split into smaller, more focused modules?**
   _Cohesion score 0.05616509926854754 - nodes in this community are weakly interconnected._
 - **Should `DarkAlphaEngine` be split into smaller, more focused modules?**
-  _Cohesion score 0.07550860719874804 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06233062330623306 - nodes in this community are weakly interconnected._
 - **Should `BinanceClient` be split into smaller, more focused modules?**
   _Cohesion score 0.07644110275689223 - nodes in this community are weakly interconnected._
