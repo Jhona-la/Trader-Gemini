@@ -587,22 +587,20 @@ impl RiskEngine {
                 atr_ratio: atr_pct,
                 hurst: hurst_for_geometry,
                 roundtrip_fee,
-                sl_atr_multiplier: arena
-                    .config
-                    .sl_atr_multiplier
-                    .load(Ordering::Relaxed),
+                sl_atr_multiplier: if coin_id == 0 {
+                    arena.config.sl_atr_mult_btc.load(Ordering::Relaxed)
+                } else {
+                    arena.config.sl_atr_multiplier.load(Ordering::Relaxed)
+                },
             },
             // El RR genómico puede ser MÁS ambicioso que el mínimo exigido por
             // la fricción, nunca menor.
             arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
         );
-        // D-741: Horizonte no operable: si la tau pedida cae por debajo de la
-        // banda física mínima (30s) y la dispersión no cubre la fricción, se rechaza.
-        // A horizontes operables (tau >= 30s), compute_tp_sl eleva el stop al sl_floor
-        // garantizando EV >= 0 por construcción matemática (teorema D-636).
-        if tpsl_gate.below_tradeable_floor && tau_for_sizing < 30_000.0 {
-            return rej(REJ_TP_SL_FLOOR);
-        }
+        // Continuo Espectral Integral: compute_tp_sl eleva el stop al sl_floor
+        // garantizando EV >= 0 por construcción matemática (teorema D-636) tanto para micro
+        // como para macro. Las escalas rápidas de microestructura (1 ms..30 s) quedan desbloqueadas
+        // y protegidas por el suelo físico de viabilidad y la barrera estricta de EV posterior.
         let expected_win = tpsl_gate.tp_pct;
         let expected_loss = tpsl_gate.sl_pct;
 
@@ -858,24 +856,18 @@ impl RiskEngine {
 /// En ningún caso se consulta la etiqueta discreta para elegir parámetros:
 /// ésta sólo desempata el extremo del continuo cuando no hay nada mejor.
 fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
-    // U-6: el motor continuo sólo produce TradeHorizon::Continuous — el eje
-    // temporal es el `temporal_scale` del arena (log-lineal sobre el espectro).
-    let _ = intent.horizon;
+    // Espectro Continuo Temporal Universal:
+    // La duración declarada físicamente por la intención define la escala operativa tau.
+    // Si no se declara duración (>0), se interpola sobre la escala continua del arena.
     if intent.expected_duration_ms > 0 {
-        return intent.expected_duration_ms as f64;
+        return (intent.expected_duration_ms as f64).clamp(1_000.0, 43_200_000.0);
     }
-    // D-740 / #543: Si la intención no declaró duración explícita, diferenciar por flujo:
-    // Scalp rápido (ramas 1 a 12, volume_flow_rate < 13.0) opera en banda rápida (180s = 3m).
-    if intent.volume_flow_rate > 0.0 && intent.volume_flow_rate < 13.0 {
-        quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.max(180_000.0)
-    } else {
-        let s = arena
-            .config
-            .temporal_scale
-            .load(Ordering::Relaxed)
-            .clamp(0.0, 1.0);
-        quantum_arena::temporal_spectrum::operating_tau_ms(intent.expected_duration_ms, s)
-    }
+    let s = arena
+        .config
+        .temporal_scale
+        .load(Ordering::Relaxed)
+        .clamp(0.0, 1.0);
+    quantum_arena::temporal_spectrum::operating_tau_ms(intent.expected_duration_ms, s)
 }
 
 #[cfg(test)]

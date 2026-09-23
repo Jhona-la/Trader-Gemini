@@ -358,28 +358,22 @@ impl GodEngineCore {
             return;
         }
         let coin = &self.arena.coins[coin_id];
-        if coin.positions.position.is_open() {
-            let (_is_long, _entry_price, _qty, margin_used, entry_fee) =
-                coin.positions.position.close_with_fee();
-            if margin_used > 0.0 {
-                // D-731 (DÉCIMA OLA · auditoría integral): la liberación de margen
-                // era load → resta → store. Entre la carga y el guardado, otro
-                // hilo (el cierre de otra moneda, la reconciliación o la adopción)
-                // puede haber sumado o restado: esa actualización se PIERDE y
-                // `used_margin` queda por encima o por debajo del margen realmente
-                // comprometido — el motor deja de abrir con margen libre, o abre
-                // creyendo que lo tiene. Con `fetch_update` la resta es atómica.
-                let _ = self.arena.used_margin.fetch_update(
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                    |v| Some((v - margin_used).max(0.0)),
-                );
-            }
-            if entry_fee > 0.0 {
-                self.arena
-                    .unified_capital
-                    .fetch_add(entry_fee, Ordering::Relaxed);
-                // D-180: No sumar entry_fee a pnl_realized (nunca fue ganancia)
+        for p in [&coin.positions.scalp, &coin.positions.swing, &coin.positions.position] {
+            if p.is_open() {
+                let (_is_long, _entry_price, _qty, margin_used, entry_fee) =
+                    p.close_with_fee();
+                if margin_used > 0.0 {
+                    let _ = self.arena.used_margin.fetch_update(
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                        |v| Some((v - margin_used).max(0.0)),
+                    );
+                }
+                if entry_fee > 0.0 {
+                    self.arena
+                        .unified_capital
+                        .fetch_add(entry_fee, Ordering::Relaxed);
+                }
             }
         }
     }
@@ -827,8 +821,9 @@ impl GodEngineCore {
                 is_depth, // CERT-M2-H01: el depth path ya actualizó macro arriba
             );
 
-            // Si hay pánico de latencia, no abrimos nuevas órdenes pero permitimos cierres defensivos
-            if latency_panic {
+            // Si hay pánico de latencia o es un evento puro de profundidad sin trade,
+            // no abrimos nuevas órdenes pero permitimos cierres defensivos (SL/TP/trailing)
+            if latency_panic || (is_depth && !is_trade) {
                 (None, closed_order)
             } else {
                 (new_order, closed_order)
@@ -847,19 +842,20 @@ impl GodEngineCore {
             return;
         }
         let coin = &self.arena.coins[coin_id];
-        if coin.positions.position.is_open() {
-            telemetry_server::telemetry_log!(
-                "👻 [GHOST REVERT] Revertiendo posición cuántica continua fantasma para coin {}",
-                coin_id
-            );
-            let (_, _, _, margin) = coin.positions.position.close();
-            if margin > 0.0 {
-                // D-731: resta atómica, no load→store.
-                let _ = self.arena.used_margin.fetch_update(
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                    |v| Some((v - margin).max(0.0)),
+        for p in [&coin.positions.scalp, &coin.positions.swing, &coin.positions.position] {
+            if p.is_open() {
+                telemetry_server::telemetry_log!(
+                    "👻 [GHOST REVERT] Revertiendo posición cuántica fantasma para coin {}",
+                    coin_id
                 );
+                let (_, _, _, margin) = p.close();
+                if margin > 0.0 {
+                    let _ = self.arena.used_margin.fetch_update(
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                        |v| Some((v - margin).max(0.0)),
+                    );
+                }
             }
         }
     }
@@ -1022,9 +1018,11 @@ impl GodEngineCore {
                 .max(0.001);
             let atr_pct_live = atr_pct.max(min_atr_pct);
 
-            // --- 1. GESTIÓN DE POSICIÓN CONTINUA UNIFICADA (TRAILING STOPS, HIGH-FREQUENCY COMPOUNDING) ---
-            if coin.positions.position.is_open() {
-                let pos = &coin.positions.position;
+            // --- 1. GESTIÓN MULTI-HORIZONTE CONTINUA INTEGRAL (SCALP, SWING & CONTINUOUS) ---
+            for pos in [&coin.positions.scalp, &coin.positions.swing, &coin.positions.position] {
+                if !pos.is_open() {
+                    continue;
+                }
                 let is_long = pos.is_long.load(Ordering::Relaxed);
                 let entry = pos.entry_price.load(Ordering::Relaxed);
                 let qty = pos.quantity.load(Ordering::Relaxed);
@@ -1178,13 +1176,16 @@ impl GodEngineCore {
                 // activándose limpiamente a 12-16 bps (buf + 3.5 bps) para capturar micro-impulsos y blindar los $13 USD.
                 // A escala lenta (s=1, tau=12h): buffer amplio (22-35 bps) y activación escalada con el objetivo TP.
                 // En todo el continuo s in [0, 1]: interpolación suave lerp(fast, slow, s) sin escalones ni acantilados.
-                let buf_fast = (live_fee * 1.15 + slip_floor * 1.0).clamp(0.0007, 0.0011);
-                let act_fast = (buf_fast + 0.00035).clamp(0.0012, 0.0016);
+                // VIP0 Binance taker fee = 0.05% (5 bps). Roundtrip = 10 bps. Slippage floor + taker impact = ~3.0 bps.
+                // Total friction real = ~13.0 bps.
+                let buf_fast = (live_fee * 1.25 + slip_floor * 1.2).clamp(0.00130, 0.00160);
+                let min_breathing_fast = (atr_pct_live * 0.60).clamp(0.00040, 0.00080);
+                let act_fast = (buf_fast + min_breathing_fast).clamp(0.00170, 0.00220);
 
-                let buf_slow = (live_fee * 2.50 + slip_floor * 2.0).clamp(0.0022, 0.0035);
-                let act_slow = (tp * be_frac * 1.15)
-                    .max(buf_slow + live_fee * 1.5 + atr_pct_live * 0.50)
-                    .min(tp * 0.85);
+                let buf_slow = (live_fee * 1.50 + slip_floor * 1.5).clamp(0.0018, 0.0028);
+                let act_slow = (tp * be_frac * 0.70)
+                    .max(buf_slow + 0.0010)
+                    .min(0.0050);
 
                 let be_buffer = (1.0 - temporal_s) * buf_fast + temporal_s * buf_slow;
                 let be_activation = (1.0 - temporal_s) * act_fast + temporal_s * act_slow;
@@ -1208,7 +1209,7 @@ impl GodEngineCore {
                 }
 
                 // 2. Trailing Stop Ratchet Espectral Continuo (#559, #560)
-                let trail_act_fast = (be_activation * 1.15).clamp(0.0015, 0.0024);
+                let trail_act_fast = (be_activation + min_breathing_fast * 0.5).clamp(0.00250, 0.00320);
                 let trail_act_slow = (tp * trail_frac).max(be_activation * 1.25).min(tp * 0.95);
                 let trail_activation_pnl = (1.0 - temporal_s) * trail_act_fast + temporal_s * trail_act_slow;
                 let trail_active = peak_pnl >= trail_activation_pnl;
@@ -1305,21 +1306,22 @@ impl GodEngineCore {
                 let trend_adverse = (is_long && micro_t < -0.00045)
                     || (!is_long && micro_t > 0.00045);
 
-                // D-492 / #548: toxic_cut_sl relativo al SL de la posición (80% del SL, o min 2x live fee)
-                // Se eliminó el suelo estático de 0.0065 que superaba al stop loss de scalping (0.0028)
-                let toxic_cut_sl = (sl * 0.80).max(live_fee * 2.0);
-                let toxic_flow_exit = (pnl_pct <= -toxic_cut_sl && ofi_adverse && trend_adverse)
-                    || (pnl_pct <= -toxic_cut_sl && cur_vpin > 0.65 && ofi_adverse);
+                // D-492 / #548: toxic_cut_sl relativo al SL de la posición (95% del SL, o min 3.0x live fee)
+                // Evita cortes apresurados a -24 bps dentro del ruido difusivo natural.
+                // Exige VPIN severo (> 0.85) y desbalance real de OFI adverso.
+                let toxic_cut_sl = (sl * 0.95).max(live_fee * 3.0);
+                let toxic_flow_exit = pnl_pct <= -toxic_cut_sl && cur_vpin > 0.85 && ofi_adverse;
 
                 // #548, #556 & #560: Alpha Decay y Peak Harvest Continuo Multivariante
                 // La predictibilidad de microestructura y flujo se extingue continuamente
                 // según la longitud de onda tau_trade_ms y su coordenada espectral temporal_s.
                 let harvest_age_ms = (tau_trade_ms * (0.8 + 1.0 * temporal_s)).clamp(120_000.0, 7_200_000.0) as u64;
-                let peak_harvest_thresh = 0.0013 + 0.0035 * temporal_s;
-                let min_stagnant_ms = (tau_trade_ms * (2.5 + 2.5 * temporal_s)).clamp(420_000.0, 14_400_000.0) as u64;
-                let hard_stagnant_ms = (tau_trade_ms * (4.5 + 3.5 * temporal_s)).clamp(900_000.0, 28_800_000.0) as u64;
-                let absolute_trade_life_ms = (tau_trade_ms * (8.0 + 8.0 * temporal_s)).clamp(1_500_000.0, 86_400_000.0) as u64;
+                let peak_harvest_thresh = (act_fast * 0.95).max(0.00120) + 0.0035 * temporal_s;
+                let min_stagnant_ms = (tau_trade_ms * (4.0 + 3.0 * temporal_s)).clamp(240_000.0, 14_400_000.0) as u64;
+                let hard_stagnant_ms = (tau_trade_ms * (6.0 + 5.0 * temporal_s)).clamp(450_000.0, 28_800_000.0) as u64;
+                let absolute_trade_life_ms = (tau_trade_ms * (10.0 + 10.0 * temporal_s)).clamp(900_000.0, 86_400_000.0) as u64;
 
+                let mut is_peak_harvest = false;
                 let alpha_decay_exit = if event_time_ms > 0 {
                     let harvest_ratio = if peak_pnl >= 0.0030 {
                         0.78
@@ -1330,15 +1332,24 @@ impl GodEngineCore {
                     };
                     let peak_harvest_decay = position_age_ms > harvest_age_ms
                         && peak_pnl >= peak_harvest_thresh
-                        && pnl_pct <= (peak_pnl * harvest_ratio).max(be_buffer * 0.85);
+                        && pnl_pct >= be_buffer
+                        && pnl_pct <= (peak_pnl * harvest_ratio).max(be_buffer);
 
+                    if peak_harvest_decay {
+                        is_peak_harvest = true;
+                    }
+
+                    // NUNCA liquidar un trade por fluctuación normal de spread (-2 bps).
+                    // Solo cerrar si la tesis direccional se rompió con significancia estadística (> 70% del SL con flujo y microtendencia en contra)
+                    // o si superó su tiempo máximo de vida física.
                     let time_stagnant_decay = if position_age_ms > min_stagnant_ms {
-                        let ema_ofi_adverse = (is_long && ema_ofi < -0.25) || (!is_long && ema_ofi > 0.25);
-                        let thesis_broken = pnl_pct < -0.0005 && ema_ofi_adverse && trend_adverse;
-                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct <= -0.0002;
+                        let ema_ofi_adverse = (is_long && ema_ofi < -0.30) || (!is_long && ema_ofi > 0.30);
+                        let thesis_broken = pnl_pct < -sl * 0.70 && ema_ofi_adverse && trend_adverse;
+                        let stillborn_cut = peak_pnl <= 0.0001 && pnl_pct < -sl * 0.75 && ema_ofi_adverse;
+                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.50;
                         let absolute_expired = position_age_ms > absolute_trade_life_ms;
 
-                        thesis_broken || time_expired || absolute_expired
+                        thesis_broken || stillborn_cut || time_expired || absolute_expired
                     } else {
                         false
                     };
@@ -1349,14 +1360,14 @@ impl GodEngineCore {
                 };
 
                 // D-649 (DÉCIMA OLA), #548 & #560: Timeout y Zombi adaptativo continuo por escala espectral
-                let dynamic_zombie_debounce_ms = (tau_trade_ms * (2.5 + 1.5 * temporal_s)).clamp(300_000.0, 7_200_000.0) as u64;
-                let dynamic_hard_timeout_ms = (tau_trade_ms * (4.0 + 4.0 * temporal_s)).clamp(600_000.0, 21_600_000.0) as u64;
-                let absolute_expiry_ms = (tau_trade_ms * (8.0 + 8.0 * temporal_s)).clamp(1_200_000.0, 43_200_000.0) as u64;
-                let z_loss_hard = (sl * (0.60 + 0.15 * temporal_s)).max(live_fee * 1.5);
-                let z_loss_trend = (sl * (0.50 + 0.15 * temporal_s)).max(live_fee * 1.5);
+                let dynamic_zombie_debounce_ms = (tau_trade_ms * (3.0 + 2.0 * temporal_s)).clamp(300_000.0, 7_200_000.0) as u64;
+                let dynamic_hard_timeout_ms = (tau_trade_ms * (6.0 + 6.0 * temporal_s)).clamp(600_000.0, 21_600_000.0) as u64;
+                let absolute_expiry_ms = (tau_trade_ms * (10.0 + 10.0 * temporal_s)).clamp(900_000.0, 43_200_000.0) as u64;
+                let z_loss_hard = (sl * (0.75 + 0.15 * temporal_s)).max(live_fee * 2.0);
+                let z_loss_trend = (sl * (0.65 + 0.15 * temporal_s)).max(live_fee * 2.0);
 
                 let expired_by_age =
-                    event_time_ms > 0 && position_age_ms > absolute_expiry_ms;
+                    event_time_ms > 0 && position_age_ms > absolute_expiry_ms && pnl_pct <= 0.0;
                 let hard_timeout = position_age_ms > dynamic_hard_timeout_ms && pnl_pct <= -z_loss_hard;
                 let is_zombie = expired_by_age
                     || (event_time_ms > 0
@@ -1468,6 +1479,8 @@ impl GodEngineCore {
                         (5u8, "ZOMBIE")
                     } else if toxic_flow_exit {
                         (6u8, "TOXIC_FLOW")
+                    } else if is_peak_harvest {
+                        (8u8, "PEAK_HARVEST")
                     } else {
                         (7u8, "ALPHA_DECAY")
                     };
@@ -1930,6 +1943,9 @@ impl GodEngineCore {
                     coin.metrics
                         .pnl_unrealized
                         .store(unrealized, Ordering::Relaxed);
+                }
+                if closed_order.is_some() {
+                    break;
                 }
             }
 
@@ -2579,12 +2595,12 @@ impl GodEngineCore {
             // (doctrina F8). La fusión final arbitra el ESPECTRO (banda más
             // cercana a τ dominante), no una etiqueta de horizonte.
             let mut fast_intent = SignalIntent::flat();
-            let raw_fast_base = self.arena.config.base_duration_ms.load(Ordering::Relaxed);
-            let fast_duration_ms = if raw_fast_base.is_finite() && raw_fast_base > 0.0 {
-                (raw_fast_base as u64).clamp(180_000, 300_000)
-            } else {
-                180_000
-            };
+            let micro_tau = self
+                .temporal_spectrum
+                .get(coin_id)
+                .map(|s| s.micro_resonant_tau_ms())
+                .unwrap_or(30_000.0);
+            let fast_duration_ms = (micro_tau.clamp(1_000.0, 180_000.0)).round() as u64;
             let spread_pct = if mid_price > 0.0 {
                 (ask - bid) / mid_price
             } else {
@@ -3086,9 +3102,10 @@ impl GodEngineCore {
                         effective_long_streak < 2,
                         !is_confirmed_downtrend,
                         !is_adverse_momentum_long,
-                        !(higher_trend < -0.0002 && (secular_trend < 0.0 || macro_trend < -0.0002)),
+                        !(higher_trend < -0.0001 && (secular_trend < 0.0 || macro_trend < -0.0001))
+                            && !(secular_trend < -0.0002 && macro_trend < 0.0),
                         !(price_stretch < -0.80 && secular_trend < 0.0010),
-                        higher_trend >= -0.0002 && long_macro_slope_ok,
+                        higher_trend >= -0.0001 && long_macro_slope_ok,
                         composite_score >= tensor_tech_thr,
                         effective_obi_long > range_obi,
                         not_overextended_long,
@@ -3097,9 +3114,10 @@ impl GodEngineCore {
                         effective_short_streak < 2,
                         !is_confirmed_uptrend,
                         !is_adverse_momentum_short,
-                        !(higher_trend > 0.0002 && (secular_trend > 0.0 || macro_trend > 0.0002)),
+                        !(higher_trend > 0.0001 && (secular_trend > 0.0 || macro_trend > 0.0001))
+                            && !(secular_trend > 0.0002 && macro_trend > 0.0),
                         !(price_stretch > 0.80 && secular_trend > -0.0010),
-                        higher_trend <= 0.0002 && short_macro_slope_ok,
+                        higher_trend <= 0.0001 && short_macro_slope_ok,
                         composite_score <= -tensor_tech_thr,
                         effective_obi_short < -range_obi,
                         not_overextended_short,
@@ -3316,13 +3334,12 @@ impl GodEngineCore {
             let effective_ml_long = ml_model_base + ml_lift_long;
             let effective_ml_short = ml_model_base - ml_lift_short;
 
-            let raw_base = self.arena.config.base_duration_ms.load(Ordering::Relaxed);
-            let swing_duration_ms = if raw_base.is_finite() && raw_base > 0.0 {
-                (raw_base * 60.0) as u64
-            } else {
-                3_600_000
-            }
-            .max(1_800_000);
+            let macro_tau = self
+                .temporal_spectrum
+                .get(coin_id)
+                .map(|s| s.macro_resonant_tau_ms())
+                .unwrap_or(3_600_000.0);
+            let swing_duration_ms = (macro_tau.clamp(180_000.0, 43_200_000.0)).round() as u64;
 
             let ema_fast = if self.feature_engines[coin_id].kline_ema_fast > 0.0 {
                 self.feature_engines[coin_id].kline_ema_fast
@@ -3532,44 +3549,50 @@ impl GodEngineCore {
                 self.last_slow_intent[coin_id] = slow_intent;
             }
 
-            // D-431: Composición de onda multiescala no destructiva (Continuous Wave Mechanics).
-            // Evita el canibalismo ciego donde una discrepancia de 0.01 abre operaciones contratendencia.
+            // D-431 & #565: Despacho Concurrente Integral Multi-Banda (Sin Canibalismo ni Anulación Ciega).
+            // Si ambas bandas ven oportunidades, el sistema preserva la especialización por slot:
+            // - fast_intent opera sobre la banda microestructura/rápida (scalp).
+            // - slow_intent opera sobre la banda de régimen/portadora (swing).
+            // Ambas pueden coexistir en la misma moneda sin pisarse.
+            let scalp_free = !coin.positions.scalp.is_open();
+            let swing_free = !coin.positions.swing.is_open();
+
             let mut unified_intent = SignalIntent::flat();
             if fast_intent.signal != SignalType::Flat && slow_intent.signal != SignalType::Flat {
                 if fast_intent.signal == slow_intent.signal {
-                    // D-623 (DÉCIMA OLA): antes `máx(p₁, p₂)·1,10` con suelo 0,60. Dos
-                    // evidencias sólo se combinan sumando log-odds si son
-                    // condicionalmente independientes, y éstas no lo son: ambas leen el
-                    // mismo consenso tensorial (`tensor_scalp` y `tensor_swing` son copias
-                    // de `tensor_cont`). Con evidencia dependiente, la combinación que no
-                    // inventa certeza es el máximo.
                     let boosted_conf = fast_intent.confidence.max(slow_intent.confidence);
+                    // Ambas bandas alineadas direccionalmente: si scalp está libre, capturar micro-impulso;
+                    // si scalp ya está ocupado pero swing está libre, reforzar marea macro en swing.
+                    let winner_intent = if scalp_free {
+                        fast_intent
+                    } else if swing_free {
+                        slow_intent
+                    } else {
+                        fast_intent
+                    };
                     unified_intent = SignalIntent {
                         signal: fast_intent.signal,
                         confidence: boosted_conf,
                         horizon: strategy_core::TradeHorizon::Continuous,
-                        ..fast_intent
+                        ..winner_intent
                     };
                 } else {
-                    // U-2 (MOTOR UNIVERSAL CONTINUO): conflicto de banda — la
-                    // banda cuya escala está MÁS CERCA de τ dominante lleva la
-                    // energía del mercado AHORA y decide la dirección. Antes
-                    // arbitraba una "tendencia confirmada" fija (sesgo lento
-                    // estructural: en transiciones rápidas el motor seguía a
-                    // la banda lenta contra el flujo vivo). τ_mid = media
-                    // geométrica de la banda operativa [30s, 12h] ≈ 19 min:
-                    // τ_dom < τ_mid ⇒ manda la banda rápida, si no la lenta.
-                    // Los escudos macro (D-467+) siguen vetando contratendencia
-                    // del régimen mayor DESPUÉS — la arbitración espectral no
-                    // los reemplaza, los precede.
+                    // Conflicto de banda:
+                    // 1. Si sólo un slot está libre, despachar la banda que tiene su slot disponible.
+                    // 2. Si ambos están libres, arbitrar por resonancia energética espectral viva.
                     let tau_dom_now = self
                         .temporal_spectrum
                         .get(coin_id)
                         .map(|s| s.dominant_tau_ms)
                         .unwrap_or(30_000.0);
-                    const TAU_MID_MS: f64 = 1_138_000.0; // √(30_000 × 43_200_000)
+                    const TAU_MID_MS: f64 = 1_138_000.0;
                     let fast_band_governs = tau_dom_now < TAU_MID_MS;
-                    let winner = if fast_band_governs {
+
+                    let winner = if scalp_free && !swing_free {
+                        fast_intent
+                    } else if swing_free && !scalp_free {
+                        slow_intent
+                    } else if fast_band_governs {
                         fast_intent
                     } else {
                         slow_intent
@@ -3595,17 +3618,10 @@ impl GodEngineCore {
             // En el espectro continuo universal, la duración esperada se modula continuamente por Hurst:
             // Hurst < 0.48 (anti-persistente) comprime la duración hacia la microestructura (tau bajo);
             // Hurst >= 0.52 (persistente/trending) expande la duración temporal para capturar la tendencia.
-            // D-609 (DÉCIMA OLA): antes escalones en H = 0,48 y 0,52 (duración ×½ o
-            // ×2). Ahora la misma modulación es continua en H, y sólo actúa sobre
-            // duraciones DECLARADAS: la versión anterior asignaba 15 s a cualquier
-            // intención sin duración en régimen anti-persistente por un artefacto
-            // de `(0 / 2).max(15_000)` — las entradas del consenso tensorial, que no
-            // declaran duración, recibían un horizonte de 15 segundos.
             unified_intent.expected_duration_ms = hurst_duration_modulation(
                 unified_intent.expected_duration_ms,
                 hurst_exponent,
             );
-            unified_intent.horizon = strategy_core::TradeHorizon::Continuous;
 
             // QO-E2a — EL APRENDIZAJE MODULA: el forest online (entrenado
             // con los resultados REALES de cierres previos vía telemetry
@@ -3786,13 +3802,24 @@ impl GodEngineCore {
                     {
                         unified_intent.signal = SignalType::Flat;
                     } else {
-                        unified_intent.expected_duration_ms = field.resonant_tau_ms.clamp(30_000.0, 43_200_000.0) as u64;
+                        let is_fast = unified_intent.expected_duration_ms > 0
+                            && unified_intent.expected_duration_ms <= 180_000;
+                        if is_fast {
+                            let micro_tau = spec.micro_resonant_tau_ms();
+                            unified_intent.expected_duration_ms = micro_tau.clamp(30_000.0, 180_000.0) as u64;
+                        } else {
+                            let macro_tau = spec.macro_resonant_tau_ms();
+                            unified_intent.expected_duration_ms = macro_tau.clamp(180_000.0, 43_200_000.0) as u64;
+                        }
                         let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
                         let directional_persist = if is_trending_mode { persist } else { -persist };
                         let coherence_boost = 0.25 * coherence;
                         let entropy_boost = 0.10 * (1.0 - field.spectral_entropy).max(0.0);
                         let persist_boost = 0.15 * directional_persist;
-                        let spectral_factor = (1.0 + coherence_boost + entropy_boost + persist_boost).clamp(0.65, 1.45);
+                        // Modulación de fase armónica: resonancia continua entre la banda rápida (1m) y la portadora (4h)
+                        let phase_res = spec.phase_resonance(60_000.0, 14_400_000.0);
+                        let phase_boost = 0.10 * phase_res;
+                        let spectral_factor = (1.0 + coherence_boost + entropy_boost + persist_boost + phase_boost).clamp(0.65, 1.45);
                         unified_intent.confidence =
                             (unified_intent.confidence * spectral_factor).clamp(0.10, 0.99);
                     }
@@ -4034,8 +4061,22 @@ impl GodEngineCore {
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_NEURAL);
             let mut new_order = None;
 
-            // --- APERTURA CONTINUA UNIFICADA (100% CAPITAL ALLOCATION) ---
-            if unified_intent.signal != SignalType::Flat && !coin.positions.position.is_open() {
+            let is_scalp_candidate = unified_intent.expected_duration_ms > 0
+                && unified_intent.expected_duration_ms <= 180_000;
+            let is_swing_candidate = unified_intent.expected_duration_ms > 180_000;
+
+            // Especialización física continua por longitud de onda espectral:
+            // Cada intención se despacha a su propio slot especializado sin canibalismo ni mezclas.
+            let (target_pos_slot, pos_h, slot_available) = if is_scalp_candidate {
+                (0usize, quantum_arena::position::PositionHorizon::Scalping, !coin.positions.scalp.is_open())
+            } else if is_swing_candidate {
+                (1usize, quantum_arena::position::PositionHorizon::Swing, !coin.positions.swing.is_open())
+            } else {
+                (2usize, quantum_arena::position::PositionHorizon::Continuous, !coin.positions.position.is_open())
+            };
+
+            // --- APERTURA MULTI-HORIZONTE CONTINUA INTEGRAL ---
+            if unified_intent.signal != SignalType::Flat && slot_available {
                 // D-619 (DÉCIMA OLA): la confianza que entra en el Kelly era una
                 // puntuación heurística tratada como probabilidad. La posición guarda
                 // la puntuación cruda para que el calibrador aprenda de ella.
@@ -4366,12 +4407,13 @@ impl GodEngineCore {
                                     .get(coin_id)
                                     .map(|s| s.dominant_tau_ms)
                                     .unwrap_or(60_000.0);
-                                // #560 / #561: Unificación bajo el Universo Continuo Temporal Espectral.
-                                // La posición nace y vive en el horizonte continuo; su física temporal viva
-                                // se almacena en entry_tau_ms a partir del espectro y la intención del trade.
-                                let pos_h = quantum_arena::position::PositionHorizon::Continuous;
+                                let target_pos = match target_pos_slot {
+                                    0 => &coin.positions.scalp,
+                                    1 => &coin.positions.swing,
+                                    _ => &coin.positions.position,
+                                };
 
-                                coin.positions.position.open_with_fee(
+                                target_pos.open_with_fee(
                                     is_long,
                                     real_entry_price,
                                     qty,
@@ -4400,7 +4442,7 @@ impl GodEngineCore {
                                         omni_features,
                                     );
                                     if let Ok(mut t) =
-                                        coin.positions.position.nn_entry_tensor.lock()
+                                        target_pos.nn_entry_tensor.lock()
                                     {
                                         *t = tensor_snapshot.to_vec();
                                     }
@@ -4417,8 +4459,7 @@ impl GodEngineCore {
                                         )
                                         .round() as u64
                                 };
-                                coin.positions
-                                    .position
+                                target_pos
                                     .entry_tau_ms
                                     .store(tau_entry, Ordering::Relaxed);
 

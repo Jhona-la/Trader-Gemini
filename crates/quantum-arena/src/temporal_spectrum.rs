@@ -384,7 +384,24 @@ pub struct SpectralFieldState {
 }
 
 impl TemporalSpectrum {
+    /// Consenso de precio continuo EWMA interpolado log-linealmente a τ.
+    #[inline]
+    pub fn ewma_price_at(&self, tau_ms: f64) -> f64 {
+        if tau_ms <= 0.0 {
+            return 0.0;
+        }
+        let ln_tau = tau_ms.max(1e-6).ln();
+        let ln_min = (1e-6_f64).ln();
+        let step = 4f64.ln();
+        let idx_f = (ln_tau - ln_min) / step;
+        let i0 = idx_f.floor().clamp(0.0, 30.0) as usize;
+        let i1 = (i0 + 1).min(31);
+        let frac = (idx_f - i0 as f64).clamp(0.0, 1.0);
+        self.scales[i0].ewma_price * (1.0 - frac) + self.scales[i1].ewma_price * frac
+    }
+
     /// Volatilidad de sorpresa continua interpolada log-linealmente a τ.
+    #[inline]
     pub fn volatility_at(&self, tau_ms: f64) -> f64 {
         if tau_ms <= 0.0 {
             return 0.0;
@@ -397,6 +414,65 @@ impl TemporalSpectrum {
         let i1 = (i0 + 1).min(31);
         let frac = (idx_f - i0 as f64).clamp(0.0, 1.0);
         self.scales[i0].ewma_dev_vol * (1.0 - frac) + self.scales[i1].ewma_dev_vol * frac
+    }
+
+    /// Desviación continua normalizada del precio respecto al consenso a escala τ.
+    #[inline]
+    pub fn deviation_at(&self, tau_ms: f64, price: f64) -> f64 {
+        let p_ewma = self.ewma_price_at(tau_ms);
+        if p_ewma > 1e-12 {
+            (price - p_ewma) / p_ewma
+        } else {
+            0.0
+        }
+    }
+
+    /// Exponente de Hurst continuo H(τ) ∈ [0.0, 1.0] evaluado analíticamente a cualquier escala τ.
+    #[inline]
+    pub fn hurst_at(&self, tau_ms: f64) -> f64 {
+        let p = self.persistence_at(tau_ms);
+        ((p + 1.0) * 0.5).clamp(0.0, 1.0)
+    }
+
+    /// Densidad de energía informacional espectral continua E(τ) = w(τ) · |s(τ)| a escala τ.
+    #[inline]
+    pub fn continuous_energy_density(&self, tau_ms: f64) -> f64 {
+        let sig = self.signal_at(tau_ms);
+        let p = self.persistence_at(tau_ms);
+        let w = ((p - 0.5) * 2.0).max(0.05);
+        w * sig.abs()
+    }
+
+    /// Gradiente o derivada espectral local ∂s/∂ln(τ) evaluada por diferencias finitas continuas.
+    #[inline]
+    pub fn spectral_gradient_at(&self, tau_ms: f64) -> f64 {
+        let tau_plus = tau_ms * 2.0;
+        let tau_minus = (tau_ms * 0.5).max(1e-6);
+        let s_plus = self.signal_at(tau_plus);
+        let s_minus = self.signal_at(tau_minus);
+        (s_plus - s_minus) / (2.0 * 2.0_f64.ln())
+    }
+
+    /// Resonancia de fase armónica entre dos frecuencias temporales continuas τ_fast y τ_slow.
+    /// Retorna en [-1.0, 1.0]: +1.0 = en fase perfecta, -1.0 = oposición de fase destructiva.
+    #[inline]
+    pub fn phase_resonance(&self, tau_fast_ms: f64, tau_slow_ms: f64) -> f64 {
+        let s_fast = self.signal_at(tau_fast_ms);
+        let s_slow = self.signal_at(tau_slow_ms);
+        (s_fast * s_slow).clamp(-1.0, 1.0)
+    }
+
+    /// Estado espectral continuo interpolado completo ScaleState a escala τ.
+    pub fn state_at(&self, tau_ms: f64) -> ScaleState {
+        ScaleState {
+            tau_ms,
+            ewma_price: self.ewma_price_at(tau_ms),
+            ewma_dev_vol: self.volatility_at(tau_ms),
+            momentum_z: self.momentum_z_at(tau_ms),
+            signal: self.signal_at(tau_ms),
+            persistence: self.persistence_at(tau_ms),
+            prev_dev: 0.0,
+        }
     }
 
     /// Caracterización cuántica e integral del Campo Multivariante Continuo Temporal Espectral.
@@ -562,6 +638,44 @@ impl TemporalSpectrum {
     #[inline]
     pub fn secular_score(&self) -> f64 {
         self.continuous_band_projection(2_592_000_000.0, 3.0)
+    }
+
+    /// Escala resonante de alta frecuencia τ*_micro en la banda rápida [1 ms, 180 s].
+    pub fn micro_resonant_tau_ms(&self) -> f64 {
+        let mut total_e = 0.0;
+        let mut weighted_ln = 0.0;
+        for s in &self.scales {
+            if s.tau_ms >= 1.0 && s.tau_ms <= 180_000.0 {
+                let w = ((s.persistence - 0.5) * 2.0).max(0.05);
+                let e = w * s.signal.abs();
+                total_e += e;
+                weighted_ln += e * s.tau_ms.ln();
+            }
+        }
+        if total_e > 1e-12 {
+            (weighted_ln / total_e).exp().clamp(1_000.0, 180_000.0)
+        } else {
+            30_000.0
+        }
+    }
+
+    /// Escala resonante de baja frecuencia τ*_macro en la banda lenta [180 s, 43 200 s].
+    pub fn macro_resonant_tau_ms(&self) -> f64 {
+        let mut total_e = 0.0;
+        let mut weighted_ln = 0.0;
+        for s in &self.scales {
+            if s.tau_ms >= 180_000.0 && s.tau_ms <= 43_200_000.0 {
+                let w = ((s.persistence - 0.5) * 2.0).max(0.05);
+                let e = w * s.signal.abs();
+                total_e += e;
+                weighted_ln += e * s.tau_ms.ln();
+            }
+        }
+        if total_e > 1e-12 {
+            (weighted_ln / total_e).exp().clamp(180_000.0, 43_200_000.0)
+        } else {
+            14_400_000.0
+        }
     }
 }
 
