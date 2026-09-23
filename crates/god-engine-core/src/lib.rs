@@ -3727,23 +3727,34 @@ impl GodEngineCore {
             // preserva (×1), ruido la modula suavemente, reversión la castiga si es tendencial.
             // X-016 & #563: ACONDICIONAMIENTO BAJO EL CAMPO MULTIVARIANTE CONTINUO TEMPORAL ESPECTRAL
             // El mercado se comprende en todas sus 32 partes espectrales (1 ns a 146 años) como un campo continuo.
-            // Se evalúa: coherencia armónica global (todas las frecuencias), entropía de Shannon y resonancia cuántica.
+            // X-016 & #564: ACONDICIONAMIENTO INTEGRAL DEL CAMPO CONTINUO TEMPORAL ESPECTRAL
+            // Evalúa el tensor espectral en todas sus dimensiones físicas:
+            // 1. Marea macro (swing 60% + secular 40%): portadora de energía de fondo.
+            // 2. Coherencia espectral multiescala (táctico 40% + swing 35% + secular 25%).
+            // 3. Alineación táctica inmediata (no entrar en cuchillo cayendo o clímax).
+            // 4. Entropía de Shannon del campo (rechazar desorden térmico).
             if unified_intent.signal != SignalType::Flat {
                 if let Some(spec) = self.temporal_spectrum.get(coin_id) {
                     let is_long = unified_intent.signal == SignalType::Long;
+                    let sign = if is_long { 1.0 } else { -1.0 };
+                    let coherence = spec.spectral_coherence(is_long);
+                    let macro_tide = (spec.swing_score() * 0.60 + spec.secular_score() * 0.40) * sign;
+                    let tactical_align = spec.tactical_score() * sign;
                     let field = spec.spectral_field(is_long);
                     let tau_dom = spec.dominant_tau_ms;
                     let persist = spec.persistence_at(tau_dom);
 
-                    // LEY DE RESONANCIA CUÁNTICA DEL CAMPO ESPECTRAL:
-                    // 1. Prohibido abrir cuando la coherencia armónica global de las 32 partes es destructiva (< 0.00).
-                    // 2. Prohibido abrir cuando la entropía espectral supera 0.94 (ruido térmico desordenado sin información).
-                    if field.global_coherence < 0.00 || field.spectral_entropy > 0.94 {
+                    // LEY DE RESONANCIA CUÁNTICA ESPECTRAL MULTIVARIANTE:
+                    // - Prohibido operar contra la marea macro portadora (macro_tide < -0.01).
+                    // - Prohibido operar con interferencia destructiva multiescala (coherence < 0.00).
+                    // - Prohibido operar en micro-colapso táctico adverso (tactical_align < -0.12).
+                    // - Prohibido operar en caos térmico desordenado (spectral_entropy > 0.94).
+                    if macro_tide < -0.01 || coherence < 0.00 || tactical_align < -0.12 || field.spectral_entropy > 0.94 {
                         unified_intent.signal = SignalType::Flat;
                     } else {
                         let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
                         let directional_persist = if is_trending_mode { persist } else { -persist };
-                        let coherence_boost = 0.25 * field.global_coherence;
+                        let coherence_boost = 0.25 * coherence;
                         let entropy_boost = 0.10 * (1.0 - field.spectral_entropy).max(0.0);
                         let persist_boost = 0.15 * directional_persist;
                         let spectral_factor = (1.0 + coherence_boost + entropy_boost + persist_boost).clamp(0.65, 1.45);
