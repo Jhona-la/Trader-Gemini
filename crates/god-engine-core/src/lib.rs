@@ -1539,10 +1539,12 @@ impl GodEngineCore {
 
                     if self.diag_close_total < 100 {
                         println!(
-                            "🚪 [CLOSE TRACE] #{} reason={} pnl_pct={:.4}% gross_pnl=${:.4} exit={:.2} entry={:.2} h={:?} ts={}",
+                            "🚪 [CLOSE TRACE] #{} reason={} pnl_pct={:.4}% peak={:.4}% age={}s gross_pnl=${:.4} exit={:.2} entry={:.2} h={:?} ts={}",
                             self.diag_close_total,
                             reason,
                             pnl_pct * 100.0,
+                            pos.max_pnl_pct.load(Ordering::Relaxed) * 100.0,
+                            position_age_ms / 1000,
                             gross_pnl,
                             exit_price,
                             entry,
@@ -2732,8 +2734,11 @@ impl GodEngineCore {
                 let short_streak = self.feature_engines[coin_id].get_active_directional_streak(false);
                 let long_streak = self.feature_engines[coin_id].get_active_directional_streak(true);
                 let total_loss_streak = self.feature_engines[coin_id].get_active_total_loss_streak();
-                let effective_short_streak = short_streak.max(total_loss_streak);
-                let effective_long_streak = long_streak.max(total_loss_streak);
+                // Si ambas direcciones han fallado recientemente (chop alternante), total_loss_streak modula.
+                // Si solo una dirección falla mientras el mercado se mueve en la otra, la dirección a favor del flujo permanece libre.
+                let is_alternating_chop = short_streak >= 1 && long_streak >= 1;
+                let effective_short_streak = if is_alternating_chop { short_streak.max(total_loss_streak) } else { short_streak };
+                let effective_long_streak = if is_alternating_chop { long_streak.max(total_loss_streak) } else { long_streak };
 
                 // F7-backtest: cuando el libro está AUSENTE, las condiciones
                 // OBI (< -min_obi_trend) son imposibles de satisfacer (OBI=0).
@@ -3842,20 +3847,19 @@ impl GodEngineCore {
                         // Prohibido comprar el techo del rally o vender el piso del dump recién tomado.
                         if is_same_dir {
                             if elapsed_ms < 180_000 {
-                                (unified_intent.signal == SignalType::Long && p_stretch > 0.25)
+                                (unified_intent.signal == SignalType::Long && p_stretch > 1.20)
                                     || (unified_intent.signal == SignalType::Short
-                                        && p_stretch < -0.25)
-                                    || elapsed_ms < 45_000
+                                        && p_stretch < -1.20)
+                                    || elapsed_ms < 30_000
                             } else {
                                 false
                             }
                         } else {
-                            // Giro a contratendencia post-win: requiere al menos 60s de confirmación
-                            elapsed_ms < 60_000
+                            // Giro a contratendencia post-win: requiere al menos 45s de confirmación
+                            elapsed_ms < 45_000
                         }
                     } else {
-                        // POST-LOSS (SL): El trade fue liquidado por movimiento adverso brusco.
-                        // Prohibido vender en capitulación tras saltar stop de Long o comprar en euforia tras stop de Short.
+                        // POST-LOSS: Prohibido capitular al final de extensiones extremas (> 1.5 ATR)
                         let is_scalp_long = unified_intent.signal == SignalType::Long;
                         let dir_streak = self.feature_engines[coin_id].get_active_directional_streak(is_scalp_long);
                         let tot_streak = self.feature_engines[coin_id].get_active_total_loss_streak();
@@ -3863,41 +3867,39 @@ impl GodEngineCore {
 
                         if !is_same_dir {
                             if effective_streak >= 2 {
-                                // Racha de pérdidas consecutivas alternantes: la consolidación/ruido
-                                // rechaza ambos lados. Cooldown exponencial obligatorio antes de revertir.
+                                // Racha de pérdidas consecutivas alternantes: cooldown exponencial antes de revertir
                                 let required_ms = match effective_streak {
-                                    2 => 900_000,    // 15 minutos
-                                    3 => 1_800_000,  // 30 minutos
-                                    _ => 3_600_000,  // 1 hora
+                                    2 => 600_000,    // 10 minutos
+                                    3 => 1_200_000,  // 20 minutos
+                                    _ => 1_800_000,  // 30 minutos
                                 };
                                 let time_veto = elapsed_ms < required_ms;
-                                let stretch_veto = (unified_intent.signal == SignalType::Short && p_stretch < 0.10)
-                                    || (unified_intent.signal == SignalType::Long && p_stretch > -0.10);
-                                time_veto || stretch_veto
-                            } else if elapsed_ms < 180_000 {
+                                let extreme_stretch_veto = (unified_intent.signal == SignalType::Short && p_stretch < -1.50)
+                                    || (unified_intent.signal == SignalType::Long && p_stretch > 1.50);
+                                time_veto || extreme_stretch_veto
+                            } else if elapsed_ms < 60_000 {
                                 true
                             } else {
-                                (unified_intent.signal == SignalType::Short && p_stretch < -0.30)
+                                (unified_intent.signal == SignalType::Short && p_stretch < -1.20)
                                     || (unified_intent.signal == SignalType::Long
-                                        && p_stretch > 0.30)
+                                        && p_stretch > 1.20)
                             }
                         } else {
-                            // En la MISMA DIRECCIÓN: si hay racha de pérdidas consecutivas,
-                            // aplicar retroceso exponencial para cortar la hemorragia de trades repetidos
+                            // En la MISMA DIRECCIÓN: cooldown si hay racha de pérdidas consecutivas
                             let required_ms = match effective_streak {
-                                0 | 1 => 180_000,    // 3 minutos
-                                2 => 1_200_000,      // 20 minutos (antes 30 min)
-                                3 => 3_600_000,      // 1 hora (antes 2 horas)
-                                _ => 7_200_000,      // 2 horas (antes 4 horas)
+                                0 | 1 => 60_000,     // 1 minuto
+                                2 => 600_000,       // 10 minutos
+                                3 => 1_200_000,     // 20 minutos
+                                _ => 1_800_000,     // 30 minutos
                             };
                             let time_veto = elapsed_ms < required_ms;
-                            let stretch_veto = if effective_streak >= 2 {
-                                (unified_intent.signal == SignalType::Short && p_stretch < 0.10)
-                                    || (unified_intent.signal == SignalType::Long && p_stretch > -0.10)
+                            let extreme_stretch_veto = if effective_streak >= 2 {
+                                (unified_intent.signal == SignalType::Short && p_stretch < -1.50)
+                                    || (unified_intent.signal == SignalType::Long && p_stretch > 1.50)
                             } else {
                                 false
                             };
-                            time_veto || stretch_veto
+                            time_veto || extreme_stretch_veto
                         }
                     };
 
@@ -3923,8 +3925,10 @@ impl GodEngineCore {
             // Si la racha es >= 3, se exige convicción superlativa (|score| >= 0.32, |current_obi| >= 0.22).
             let is_short_intent = unified_intent.signal == SignalType::Short;
             let dir_streak = self.feature_engines[coin_id].get_active_directional_streak(!is_short_intent);
+            let other_streak = self.feature_engines[coin_id].get_active_directional_streak(is_short_intent);
             let tot_streak = self.feature_engines[coin_id].get_active_total_loss_streak();
-            let effective_streak = dir_streak.max(tot_streak);
+            let is_alternating_chop = dir_streak >= 1 && other_streak >= 1;
+            let effective_streak = if is_alternating_chop { dir_streak.max(tot_streak) } else { dir_streak };
 
             if effective_streak >= 2 {
                 let (min_score, min_obi) = if effective_streak >= 3 {
