@@ -2421,7 +2421,7 @@ impl GodEngineCore {
                 .config
                 .dynamic_ema_trend
                 .load(Ordering::Relaxed)
-                .clamp(0.0008, 0.0040);
+                .clamp(0.0003, 0.0040);
             let dynamic_ofi_thr = self
                 .arena
                 .config
@@ -3154,9 +3154,9 @@ impl GodEngineCore {
                         effective_long_streak < 2,
                         !is_confirmed_downtrend,
                         !is_adverse_momentum_long,
-                        !(higher_trend < -0.0002 && secular_trend < 0.0),
+                        !(higher_trend < -0.0002 && (secular_trend < 0.0 || macro_trend < -0.0002)),
                         !(price_stretch < -0.80 && secular_trend < 0.0010),
-                        higher_trend >= -0.0008,
+                        higher_trend >= -0.0004 && macro_trend >= -0.00035,
                         composite_score >= tensor_tech_thr,
                         effective_obi_long > range_obi,
                         not_overextended_long,
@@ -3165,9 +3165,9 @@ impl GodEngineCore {
                         effective_short_streak < 2,
                         !is_confirmed_uptrend,
                         !is_adverse_momentum_short,
-                        !(higher_trend > 0.0002 && secular_trend > 0.0),
+                        !(higher_trend > 0.0002 && (secular_trend > 0.0 || macro_trend > 0.0002)),
                         !(price_stretch > 0.80 && secular_trend > -0.0010),
-                        higher_trend <= 0.0008,
+                        higher_trend <= 0.0004 && macro_trend <= 0.00035,
                         composite_score <= -tensor_tech_thr,
                         effective_obi_short < -range_obi,
                         not_overextended_short,
