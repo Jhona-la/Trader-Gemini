@@ -21,7 +21,7 @@ pub struct Genotype {
     pub tp_curve_b: f64,
     pub sl_curve_a: f64,
     pub sl_curve_b: f64,
-    pub scalp_z_target: f64,
+    pub scalp_obi_threshold: f64,
     pub capital_split_scalp: f64,
     pub min_confidence: f64,
     pub explosive_leverage_multiplier: f64,
@@ -51,7 +51,7 @@ impl Genotype {
             tp_curve_b: rand::rng().random_range(0.01..0.25),
             sl_curve_a: rand::rng().random_range(-8.5..-5.0),
             sl_curve_b: rand::rng().random_range(0.01..0.25),
-            scalp_z_target: rand::rng().random_range(1.0..4.0),
+            scalp_obi_threshold: rand::rng().random_range(0.20..0.80),
             capital_split_scalp: rand::rng().random_range(0.1..1.0),
             min_confidence: rand::rng().random_range(0.5..0.95),
             explosive_leverage_multiplier: rand::rng().random_range(1.0..5.0),
@@ -68,7 +68,7 @@ impl Genotype {
             tp_curve_b: arena.config.tp_curve_b.load(Ordering::Relaxed),
             sl_curve_a: arena.config.sl_curve_a.load(Ordering::Relaxed),
             sl_curve_b: arena.config.sl_curve_b.load(Ordering::Relaxed),
-            scalp_z_target: arena.config.scalp_obi_threshold.load(Ordering::Relaxed),
+            scalp_obi_threshold: arena.config.scalp_obi_threshold.load(Ordering::Relaxed),
             capital_split_scalp: arena.config.capital_split_scalp.load(Ordering::Relaxed),
             min_confidence: arena.config.min_confidence_btc.load(Ordering::Relaxed),
             explosive_leverage_multiplier: arena
@@ -158,16 +158,12 @@ impl Genotype {
         arena.config.swing_tp_base.store(tp_c.eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS), Ordering::Relaxed);
         arena.config.scalp_sl_base.store(sl_c.eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS), Ordering::Relaxed);
         arena.config.swing_sl_base.store(sl_c.eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS), Ordering::Relaxed);
-        // D-728 (DÉCIMA OLA · auditoría integral): UN GENOTIPO NO SOBRESCRIBE
-        // GENES QUE NO LLEVA (la misma regla de D-715).
-        //
-        // Aquí se escribía `scalp_z_target` —una desviación típica, inicializada
-        // en [1; 4] y con respaldo 2,0— dentro de `scalp_obi_threshold`, que es
-        // el gen de desequilibrio del libro y vive en [0,05; 1,0]. Como este
-        // daemon aplica sobre la arena VIVA, la puerta de OBI quedaba clavada en
-        // su cota máxima y `current_from_arena` releía ese 2,0 como si fuera el
-        // gen, corroyendo el genoma en cada lectura. `scalp_z_target` necesita su
-        // propio atómico si ha de evolucionar; no el de otro gen.
+        let s_obi = if self.scalp_obi_threshold.is_finite() {
+            self.scalp_obi_threshold.clamp(0.05, 0.95)
+        } else {
+            0.55
+        };
+        arena.config.scalp_obi_threshold.store(s_obi, Ordering::Relaxed);
         arena
             .config
             .capital_split_scalp
@@ -509,10 +505,10 @@ impl DarwinDaemon {
                     } else {
                         p2.sl_curve_b
                     },
-                    scalp_z_target: if rand::rng().random_bool(0.5) {
-                        p1.scalp_z_target
+                    scalp_obi_threshold: if rand::rng().random_bool(0.5) {
+                        p1.scalp_obi_threshold
                     } else {
-                        p2.scalp_z_target
+                        p2.scalp_obi_threshold
                     },
                     capital_split_scalp: if rand::rng().random_bool(0.5) {
                         p1.capital_split_scalp
@@ -556,7 +552,7 @@ impl DarwinDaemon {
                     child.sl_curve_b += rand::rng().random_range(-0.02..0.02);
                 }
                 if rand::rng().random_bool(mutation_rate) {
-                    child.scalp_z_target *= rand::rng().random_range(0.8..1.2);
+                    child.scalp_obi_threshold *= rand::rng().random_range(0.9..1.1);
                 }
                 if rand::rng().random_bool(mutation_rate) {
                     child.capital_split_scalp *= rand::rng().random_range(0.8..1.2);
@@ -576,7 +572,7 @@ impl DarwinDaemon {
                 child.tp_curve_b = child.tp_curve_b.clamp(-0.2, 0.35);
                 child.sl_curve_a = child.sl_curve_a.clamp(-10.5, -3.0);
                 child.sl_curve_b = child.sl_curve_b.clamp(-0.2, 0.35);
-                child.scalp_z_target = child.scalp_z_target.clamp(0.5, 5.0);
+                child.scalp_obi_threshold = child.scalp_obi_threshold.clamp(0.05, 0.95);
                 child.capital_split_scalp = child.capital_split_scalp.clamp(0.1, 1.0);
                 child.min_confidence = child.min_confidence.clamp(0.50, 0.95);
                 child.explosive_leverage_multiplier =
@@ -684,6 +680,7 @@ impl DarwinDaemon {
             full_genotype.trend_threshold = best_all_time.0.trend_threshold;
             full_genotype.maker_spread_pct = best_all_time.0.maker_spread_pct;
             full_genotype.maker_obi_threshold = best_all_time.0.maker_obi_threshold;
+            full_genotype.scalp_obi_threshold = best_all_time.0.scalp_obi_threshold;
             full_genotype.tp_horizon_curve = quantum_arena::temporal_spectrum::HorizonCurve {
                 a: best_all_time.0.tp_curve_a,
                 b: best_all_time.0.tp_curve_b,
@@ -750,7 +747,7 @@ mod tests {
             tp_curve_b: f64::NAN,
             sl_curve_a: f64::NAN,
             sl_curve_b: f64::NAN,
-            scalp_z_target: f64::NAN,
+            scalp_obi_threshold: f64::NAN,
             capital_split_scalp: f64::NAN,
             min_confidence: f64::NAN,
             explosive_leverage_multiplier: f64::NAN,

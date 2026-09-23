@@ -91,6 +91,7 @@ pub struct StatefulEngine {
     pub hurst_macro: f32,
     pub last_scalp_exit_tick: u64,
     pub last_scalp_exit_ts: u64,
+    pub last_exit_tau_ms: u64,
     pub current_ts: u64,
     pub last_scalp_was_loss: bool,
     pub scalp_loss_streak: u32,
@@ -165,6 +166,7 @@ impl StatefulEngine {
             hurst_macro: 0.5,
             last_scalp_exit_tick: 0,
             last_scalp_exit_ts: 0,
+            last_exit_tau_ms: 0,
             current_ts: 0,
             last_scalp_was_loss: false,
             scalp_loss_streak: 0,
@@ -185,24 +187,61 @@ impl StatefulEngine {
     /// Smart cooldown per asset con decaimiento temporal en milisegundos: evita parálisis eterna por rachas pasadas
     #[inline(always)]
     pub fn can_open_position(&self, min_cooldown_ms: u64) -> bool {
+        self.can_open_at_tau(30_000.0, min_cooldown_ms)
+    }
+
+    /// Smart cooldown espectral continuo por escala armónica tau_candidate_ms.
+    /// Si la racha de pérdidas activa ocurrió en una escala ortogonal (|Δ ln τ| >= 0.60),
+    /// la nueva escala candidata NO hereda la penalización de una banda diferente.
+    /// Además, el tiempo de cooldown se modula armónicamente por tau_candidate_ms para
+    /// evitar que pérdidas en microsegundos congelen el motor durante 1 hora.
+    #[inline(always)]
+    pub fn can_open_at_tau(&self, tau_candidate_ms: f64, min_cooldown_ms: u64) -> bool {
         let elapsed_ms = if self.current_ts > 0 && self.last_scalp_exit_ts > 0 {
             self.current_ts.saturating_sub(self.last_scalp_exit_ts)
         } else {
             self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
         };
-        let active_streak = self.get_active_total_loss_streak();
+
+        // Desacoplamiento espectral: si la última salida ocurrió en una escala muy lejana (|Δ ln τ| >= 0.60),
+        // no se aplica la penalización de racha acumulada de esa banda diferente.
+        let same_spectral_band = if self.last_exit_tau_ms > 0 && tau_candidate_ms > 10.0 {
+            let ln_cand = tau_candidate_ms.ln();
+            let ln_last = (self.last_exit_tau_ms as f64).ln();
+            (ln_cand - ln_last).abs() < 0.60
+        } else {
+            true
+        };
+
+        let active_streak = if same_spectral_band {
+            self.get_active_total_loss_streak()
+        } else {
+            0
+        };
+
+        // Modulación armónica del cooldown por escala temporal tau:
+        // En microescalas (tau ~ 5-15s), el cooldown requerido se relaja armónicamente.
+        // En macroescalas (tau ~ 1-4h), el cooldown respira con el ciclo macro.
+        let safe_tau = if tau_candidate_ms.is_finite() && tau_candidate_ms > 10.0 {
+            tau_candidate_ms
+        } else {
+            30_000.0
+        };
+        let scale_factor = (safe_tau / 30_000.0).clamp(0.20, 5.0);
+
         let required_ms = match active_streak {
             0 => min_cooldown_ms,
             1 => {
-                if self.v_t > 0.0015 {
+                let base = if self.v_t > 0.0015 {
                     min_cooldown_ms * 4
                 } else {
                     min_cooldown_ms * 2
-                }
+                };
+                ((base as f64) * scale_factor).round() as u64
             }
-            2 => 900_000,    // 15 minutos
-            3 => 1_800_000,  // 30 minutos
-            _ => 3_600_000,  // 1 hora
+            2 => ((900_000.0 * scale_factor).clamp(60_000.0, 900_000.0)).round() as u64,
+            3 => ((1_800_000.0 * scale_factor).clamp(120_000.0, 1_800_000.0)).round() as u64,
+            _ => ((3_600_000.0 * scale_factor).clamp(300_000.0, 3_600_000.0)).round() as u64,
         };
         elapsed_ms >= required_ms
     }
@@ -271,6 +310,7 @@ impl StatefulEngine {
         self.tick_count = 0;
         self.last_scalp_exit_tick = 0;
         self.last_scalp_exit_ts = 0;
+        self.last_exit_tau_ms = 0;
         self.current_ts = 0;
         self.last_scalp_was_loss = false;
         self.scalp_loss_streak = 0;
@@ -1225,5 +1265,31 @@ mod tests {
         engine.reset();
         assert_eq!(engine.last_hawkes_ratio, 0.0);
         assert_eq!(engine.hawkes.last_update_ms, 0);
+    }
+
+    #[test]
+    fn test_can_open_at_tau_spectral_decoupling() {
+        let mut engine = StatefulEngine::new();
+        engine.current_ts = 1_000_000;
+        engine.last_scalp_exit_ts = 1_000_000;
+        engine.last_exit_tau_ms = 5_000; // Micro-scalp de 5 segundos
+        engine.scalp_loss_streak = 3;    // Racha severa de 3 pérdidas en micro-escala
+
+        // 1. A los 70 segundos (70_000 ms):
+        // - El cooldown base min_cooldown_ms (60_000 ms) ya transcurrió.
+        // - Para la escala micro (5s), la racha 3 impone un cooldown de 360_000 ms (> 70_000 ms) -> BLOQUEADO
+        engine.current_ts = 1_000_000 + 70_000;
+        assert!(!engine.can_open_at_tau(5_000.0, 60_000));
+        assert!(!engine.can_open_at_tau(7_000.0, 60_000));
+
+        // 2. Para la escala macro (τ = 1 hora = 3_600_000 ms, |Δ ln τ| = 6.57 >= 0.60):
+        // Por desacoplamiento espectral, active_streak = 0 (no hereda la racha micro).
+        // Cooldown requerido = min_cooldown_ms (60_000 ms).
+        // 70_000 ms >= 60_000 ms -> DESBLOQUEADO (captura la onda macro sin parálisis)
+        assert!(engine.can_open_at_tau(3_600_000.0, 60_000));
+
+        // 3. A los 400 segundos (400_000 ms > 360_000 ms), el cooldown micro expira y se reabre
+        engine.current_ts = 1_000_000 + 400_000;
+        assert!(engine.can_open_at_tau(5_000.0, 60_000));
     }
 }

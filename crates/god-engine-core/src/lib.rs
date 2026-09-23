@@ -1177,16 +1177,16 @@ impl GodEngineCore {
                 // A escala lenta (s=1, tau=12h): buffer amplio (22-35 bps) y activación escalada con el objetivo TP.
                 // En todo el continuo s in [0, 1]: interpolación suave lerp(fast, slow, s) sin escalones ni acantilados.
                 // VIP0 Binance taker fee = 0.05% (5 bps). Roundtrip taker fee = 10 bps. Slippage floor + taker impact = ~6.0 bps.
-                // Total roundtrip friction = ~16.0 bps.
-                // buf_fast debe garantizar ganancia neta post-fees VIP0 (18.5 a 24.0 bps).
-                let buf_fast = (live_fee * 2.0 + slip_floor * 2.0 + 0.00035).clamp(0.00185, 0.00240);
-                let min_breathing_fast = (atr_pct_live * 0.85).clamp(0.00080, 0.00150);
+                // Total roundtrip friction = ~14.0 bps.
+                // buf_fast garantiza ganancia neta post-fees VIP0 (16.0 a 21.0 bps).
+                let buf_fast = (live_fee * 2.0 + slip_floor * 2.0 + 0.00025).clamp(0.00160, 0.00210);
+                let min_breathing_fast = (atr_pct_live * 0.40).clamp(0.00040, 0.00085);
                 let act_fast = (buf_fast + min_breathing_fast).max(tp * 0.70);
 
-                let buf_slow = (live_fee * 2.2 + slip_floor * 2.2 + 0.00050).clamp(0.00220, 0.00350);
-                let act_slow = (tp * be_frac * 0.75)
-                    .max(buf_slow + 0.0015)
-                    .min(0.0060);
+                let buf_slow = (live_fee * 2.0 + slip_floor * 2.0 + 0.00040).clamp(0.00190, 0.00280);
+                let act_slow = (tp * be_frac * 0.70)
+                    .max(buf_slow + 0.0010)
+                    .min(0.0050);
 
                 let be_buffer = (1.0 - temporal_s) * buf_fast + temporal_s * buf_slow;
                 let be_activation = (1.0 - temporal_s) * act_fast + temporal_s * act_slow;
@@ -1210,8 +1210,8 @@ impl GodEngineCore {
                 }
 
                 // 2. Trailing Stop Ratchet Espectral Continuo (#559, #560)
-                let trail_act_fast = (act_fast + 0.00050).clamp(0.00230, 0.00300);
-                let trail_act_slow = (tp * trail_frac).max(be_activation * 1.25).min(tp * 0.95);
+                let trail_act_fast = (act_fast + 0.00040).clamp(0.00230, 0.00300);
+                let trail_act_slow = (tp * trail_frac).max(be_activation * 1.20).min(tp * 0.95);
                 let trail_activation_pnl = (1.0 - temporal_s) * trail_act_fast + temporal_s * trail_act_slow;
                 let trail_active = peak_pnl >= trail_activation_pnl;
 
@@ -1307,19 +1307,18 @@ impl GodEngineCore {
                 let trend_adverse = (is_long && micro_t < -0.00045)
                     || (!is_long && micro_t > 0.00045);
 
-                // D-492 / #548: toxic_cut_sl relativo al SL de la posición (95% del SL, o min 3.0x live fee)
-                // Evita cortes apresurados a -24 bps dentro del ruido difusivo natural.
-                // Exige VPIN severo (> 0.85) y desbalance real de OFI adverso.
-                let toxic_cut_sl = (sl * 0.95).max(live_fee * 3.0);
+                // D-492 / #548: toxic_cut_sl relativo al SL de la posición (75% del SL, o min 3.0x live fee)
+                // Corta pérdidas tempranamente ante toxicidad de libro confirmada (VPIN > 0.85 y OFI adverso).
+                let toxic_cut_sl = (sl * 0.75).max(live_fee * 3.0);
                 let toxic_flow_exit = pnl_pct <= -toxic_cut_sl && cur_vpin > 0.85 && ofi_adverse;
 
                 // #548, #556 & #560: Alpha Decay y Peak Harvest Continuo Multivariante
-                // La predictibilidad de microestructura y flujo se extingue continuamente
-                // según la longitud de onda tau_trade_ms y su coordenada espectral temporal_s.
+                // Cosecha ganancias significativas cuando el pico superó el 60% del TP (min 28 bps)
+                // permitiendo que los trades ganadores corran hacia el TP completo y capturen beneficios netos reales.
                 let harvest_age_ms = (tau_trade_ms * 0.5).clamp(30_000.0, 600_000.0) as u64;
                 let roundtrip_taker_friction = 2.0 * live_fee.max(0.0007) + 2.0 * slip_floor;
-                let net_profit_min = (roundtrip_taker_friction * 1.05).max(0.00165);
-                let peak_harvest_thresh = (net_profit_min * 1.08 + 0.0010 * temporal_s).max(0.00180).min(tp * 0.70);
+                let net_profit_min = (roundtrip_taker_friction * 1.15).max(0.00185);
+                let peak_harvest_thresh = (tp * 0.60).max(sl * 1.15).max(0.00280);
                 let min_stagnant_ms = (tau_trade_ms * (6.0 + 4.0 * temporal_s)).clamp(600_000.0, 14_400_000.0) as u64;
                 let hard_stagnant_ms = (tau_trade_ms * (12.0 + 8.0 * temporal_s)).clamp(1_800_000.0, 28_800_000.0) as u64;
                 let absolute_trade_life_ms = (tau_trade_ms * (24.0 + 12.0 * temporal_s)).clamp(3_600_000.0, 86_400_000.0) as u64;
@@ -1349,8 +1348,8 @@ impl GodEngineCore {
                         let ema_ofi_adverse = (is_long && ema_ofi < -0.35) || (!is_long && ema_ofi > 0.35);
                         let thesis_broken = pnl_pct < -sl * 0.85 && ema_ofi_adverse && trend_adverse;
                         let stillborn_cut = peak_pnl <= 0.0001 && pnl_pct < -sl * 0.85 && ema_ofi_adverse;
-                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.60 && !spec_alive;
-                        let absolute_expired = position_age_ms > absolute_trade_life_ms && pnl_pct < 0.0 && !spec_alive;
+                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.85 && !spec_alive;
+                        let absolute_expired = position_age_ms > absolute_trade_life_ms && pnl_pct < -live_fee * 2.0 && !spec_alive;
 
                         thesis_broken || stillborn_cut || time_expired || absolute_expired
                     } else {
@@ -1569,6 +1568,8 @@ impl GodEngineCore {
                     self.feature_engines[coin_id].last_scalp_exit_tick =
                         self.feature_engines[coin_id].tick_count;
                     self.feature_engines[coin_id].last_scalp_exit_ts = event_time_ms;
+                    self.feature_engines[coin_id].last_exit_tau_ms =
+                        (tau_trade_ms.max(10.0)).round() as u64;
                     // #548: Calibración de racha direccional
                     // Un cierre por decaimiento de alfa plano o scratch de comisiones (-0.0005 < pnl_pct <= 0)
                     // es un evento neutro de rango, no una falla direccional tóxica de tendencia contraria.
@@ -2629,7 +2630,7 @@ impl GodEngineCore {
 
             if atr_pct > dynamic_atr_min
                 && spread_ok
-                && self.feature_engines[coin_id].can_open_position(60_000)
+                && self.feature_engines[coin_id].can_open_at_tau(micro_tau, 60_000)
             {
                 // (misma banda canónica: reversión a la media ≡ anti-persistencia)
                 let is_mean_reverting = is_anti_persistent;
@@ -2715,12 +2716,12 @@ impl GodEngineCore {
                 // no se generan señales en backtest trade-only.
                 if self.arena.tick_counter.load(Ordering::Relaxed) % 50_000 == 0 {
                     telemetry_server::telemetry_log!(
-                        "🔍 [DIAG] tick={} atr_pct={:.6} atr_min={:.6} spread_ok={} can_scalp={} hurst={:.3} ema_s={:.2} mid={:.2} ml={:.3} book_absent={} obi={:.3} ofi={:.3} cvd={:.3}",
+                        "🔍 [DIAG] tick={} atr_pct={:.6} atr_min={:.6} spread_ok={} can_tau={} hurst={:.3} ema_s={:.2} mid={:.2} ml={:.3} book_absent={} obi={:.3} ofi={:.3} cvd={:.3}",
                         self.arena.tick_counter.load(Ordering::Relaxed),
                         atr_pct,
                         dynamic_atr_min,
                         spread_ok,
-                        self.feature_engines[coin_id].can_open_position(60_000),
+                        self.feature_engines[coin_id].can_open_at_tau(micro_tau, 60_000),
                         hurst_val,
                         self.feature_engines[coin_id].ema_slow,
                         mid_price,
@@ -3373,7 +3374,8 @@ impl GodEngineCore {
             // banda. Candidato a tendencia = NO anti-persistente (banda
             // canónica 0.45; el umbral fino lo pone trend_threshold/EMA).
             let is_trend_candidate = hurst_exponent >= HURST_ANTI_PERSISTENT
-                && (hurst_exponent >= trend_threshold || ma_trend_strength > 0.0020);
+                && (hurst_exponent >= trend_threshold || ma_trend_strength > 0.0020)
+                && self.feature_engines[coin_id].can_open_at_tau(macro_tau, 120_000);
 
             if is_trend_candidate {
                 if ema_slow > 0.0 {
@@ -3563,74 +3565,80 @@ impl GodEngineCore {
             }
 
             // D-431 & #565: Despacho Concurrente Integral Multi-Banda (Sin Canibalismo ni Anulación Ciega).
-            // Si ambas bandas ven oportunidades, el sistema preserva la especialización por slot:
-            // - fast_intent opera sobre la banda microestructura/rápida (scalp).
-            // - slow_intent opera sobre la banda de régimen/portadora (swing).
-            // Ambas pueden coexistir en la misma moneda sin pisarse.
-            let scalp_free = !coin.positions.scalp.is_open();
-            let swing_free = !coin.positions.swing.is_open();
+            // El universo multivariante continuo temporal espectral de 32 partes reconoce que
+            // ondas en escalas desacopladas (|Δ ln τ| >= 0.60) transportan energía de forma ortogonal.
+            // Por lo tanto, no se canibalizan ni se fuerza un "winner-take-all":
+            // - Si ambas bandas ven oportunidades en escalas ortogonales, ambas se preparan como candidatas
+            //   para ser evaluadas y despachadas a sus respectivas ranuras armónicas independientes.
+            // - Si compiten por la misma banda de frecuencia (|Δ ln τ| < 0.60), la interferencia destructiva
+            //   se resuelve seleccionando la de mayor densidad de energía espectral viva.
+            let mut candidates = [SignalIntent::flat(), SignalIntent::flat()];
+            let mut num_candidates = 0;
 
-            let mut unified_intent = SignalIntent::flat();
             if fast_intent.signal != SignalType::Flat && slow_intent.signal != SignalType::Flat {
-                if fast_intent.signal == slow_intent.signal {
-                    let boosted_conf = fast_intent.confidence.max(slow_intent.confidence);
-                    // Ambas bandas alineadas direccionalmente: si scalp está libre, capturar micro-impulso;
-                    // si scalp ya está ocupado pero swing está libre, reforzar marea macro en swing.
-                    let winner_intent = if scalp_free {
-                        fast_intent
-                    } else if swing_free {
-                        slow_intent
-                    } else {
-                        fast_intent
-                    };
-                    unified_intent = SignalIntent {
-                        signal: fast_intent.signal,
-                        confidence: boosted_conf,
-                        horizon: strategy_core::TradeHorizon::Continuous,
-                        ..winner_intent
-                    };
+                let tau_f = if fast_intent.expected_duration_ms > 0 {
+                    fast_intent.expected_duration_ms as f64
                 } else {
-                    // Conflicto de banda:
-                    // 1. Si sólo un slot está libre, despachar la banda que tiene su slot disponible.
-                    // 2. Si ambos están libres, arbitrar por balance continuo de energía espectral viva
-                    //    entre la escala micro-resonante y la macro-resonante del tensor de 32 partes.
-                    let (fast_energy, slow_energy) = self
-                        .temporal_spectrum
-                        .get(coin_id)
-                        .map(|s| {
-                            let e_fast = s.continuous_energy_density(s.micro_resonant_tau_ms());
-                            let e_slow = s.continuous_energy_density(s.macro_resonant_tau_ms());
-                            (e_fast, e_slow)
-                        })
-                        .unwrap_or((1.0, 1.0));
+                    micro_tau
+                };
+                let tau_s = if slow_intent.expected_duration_ms > 0 {
+                    slow_intent.expected_duration_ms as f64
+                } else {
+                    macro_tau
+                };
+                let diff_ln = ((tau_f.max(10.0)).ln() - (tau_s.max(10.0)).ln()).abs();
 
-                    let fast_band_governs = fast_energy >= slow_energy;
-
-                    let winner = if scalp_free && !swing_free {
-                        fast_intent
-                    } else if swing_free && !scalp_free {
-                        slow_intent
-                    } else if fast_band_governs {
-                        fast_intent
+                if diff_ln >= 0.60 {
+                    // DESACOPLAMIENTO ARMÓNICO CONTINUO:
+                    // Frecuencias ortogonales (|Δ ln τ| >= 0.60) representan dinámicas físicas independientes.
+                    // Ambas ondas pueden coexistir simultáneamente en ranuras armónicas separadas.
+                    candidates[0] = fast_intent;
+                    candidates[1] = slow_intent;
+                    num_candidates = 2;
+                } else {
+                    // Mismo armónico: colisión de frecuencias. Arbitrar por coherencia y energía.
+                    if fast_intent.signal == slow_intent.signal {
+                        let boosted_conf = fast_intent.confidence.max(slow_intent.confidence);
+                        candidates[0] = SignalIntent {
+                            confidence: boosted_conf,
+                            horizon: strategy_core::TradeHorizon::Continuous,
+                            ..fast_intent
+                        };
+                        num_candidates = 1;
                     } else {
-                        slow_intent
-                    };
-                    unified_intent = SignalIntent {
-                        horizon: strategy_core::TradeHorizon::Continuous,
-                        ..winner
-                    };
+                        let (fast_energy, slow_energy) = self
+                            .temporal_spectrum
+                            .get(coin_id)
+                            .map(|s| {
+                                (
+                                    s.continuous_energy_density(tau_f),
+                                    s.continuous_energy_density(tau_s),
+                                )
+                            })
+                            .unwrap_or((1.0, 1.0));
+                        candidates[0] = if fast_energy >= slow_energy {
+                            fast_intent
+                        } else {
+                            slow_intent
+                        };
+                        num_candidates = 1;
+                    }
                 }
             } else if fast_intent.signal != SignalType::Flat {
-                unified_intent = SignalIntent {
-                    horizon: strategy_core::TradeHorizon::Continuous,
-                    ..fast_intent
-                };
+                candidates[0] = fast_intent;
+                num_candidates = 1;
             } else if slow_intent.signal != SignalType::Flat {
-                unified_intent = SignalIntent {
-                    horizon: strategy_core::TradeHorizon::Continuous,
-                    ..slow_intent
-                };
+                candidates[0] = slow_intent;
+                num_candidates = 1;
             }
+
+            let mut new_order = None;
+
+            for c_idx in 0..num_candidates {
+                let mut unified_intent = candidates[c_idx];
+                if unified_intent.signal == SignalType::Flat {
+                    continue;
+                }
 
             // D-474: Invariante Fractal Universal de Horizonte Continuo (Persistencia Browniana Hurst)
             // En el espectro continuo universal, la duración esperada se modula continuamente por Hurst:
@@ -4082,7 +4090,6 @@ impl GodEngineCore {
             }
 
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_NEURAL);
-            let mut new_order = None;
 
             let is_long_intent = unified_intent.signal == SignalType::Long;
             let tau_intent_ms = if unified_intent.expected_duration_ms > 0 {
@@ -4104,23 +4111,30 @@ impl GodEngineCore {
             let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 
             // En micro-cuentas ($13 USD), el apalancamiento continuo prohíbe
-            // apilar posiciones en la misma dirección en el mismo activo
-            // a menos que la posición previa ya esté asegurada en ganancia (>= 12 bps),
-            // erradicando la acumulación destructiva en retrocesos.
+            // apilar posiciones en la misma dirección dentro de la misma banda armónica (|Δ ln τ| < 1.20)
+            // a menos que la posición previa ya esté asegurada en ganancia (>= 12 bps).
+            // Ondas ortogonales (ej. micro-scalp 30s conviviendo con macro-swing 4h) coexisten armónicamente.
             let same_dir_unsecured = if raw_slot_available {
                 let slots = [&coin.positions.scalp, &coin.positions.swing, &coin.positions.position];
+                let ln_target = tau_intent_ms.max(10.0).ln();
                 slots.iter().any(|p| {
                     if p.is_open() && p.is_long.load(Ordering::Relaxed) == is_long_intent {
-                        let ep = p.entry_price.load(Ordering::Relaxed);
-                        if ep > 0.0 && mid_price > 0.0 {
-                            let pnl = if is_long_intent {
-                                (mid_price - ep) / ep
+                        let open_tau = (p.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
+                        let diff_ln = (ln_target - open_tau.ln()).abs();
+                        if diff_ln < 1.20 {
+                            let ep = p.entry_price.load(Ordering::Relaxed);
+                            if ep > 0.0 && mid_price > 0.0 {
+                                let pnl = if is_long_intent {
+                                    (mid_price - ep) / ep
+                                } else {
+                                    (ep - mid_price) / ep
+                                };
+                                pnl < 0.0012
                             } else {
-                                (ep - mid_price) / ep
-                            };
-                            pnl < 0.0012
+                                true
+                            }
                         } else {
-                            true
+                            false
                         }
                     } else {
                         false
@@ -4563,6 +4577,7 @@ impl GodEngineCore {
                     }
                 }
             }
+            } // Fin de iteración concurrente de candidatos espectrales
 
             // --- 3. MARKET MAKING ---
             let mut final_maker_quote = None;
