@@ -509,6 +509,9 @@ impl GodEngineCore {
     /// un stat() barato y parse solo si el archivo cambió.
     pub fn refresh_models(&mut self) {
         self.scalp_forest = crate::ml_inference::NanoForest::get_global("UNIVERSAL");
+        if std::env::var_os("GOD_NO_HOT_RELOAD").is_some() {
+            return;
+        }
         let mtime_now = std::fs::metadata(quantum_arena::genome_store::active_json_path())
             .and_then(|m| m.modified())
             .ok();
@@ -3073,6 +3076,9 @@ impl GodEngineCore {
                     let tensor_tech_thr = (dynamic_tech_thr * 0.90).max(0.22);
                     let range_obi = (dynamic_obi_thr * 0.85).clamp(0.12, 0.35);
 
+                    let long_macro_slope_ok = macro_trend >= 0.0 || (higher_trend > 0.00020 && micro_trend > 0.00015);
+                    let short_macro_slope_ok = macro_trend <= 0.0 || (higher_trend < -0.00020 && micro_trend < -0.00015);
+
                     // Diagnóstico por dirección: las condiciones del gate se nombran una
                     // sola vez y el diagnóstico cuenta cuál falla. La semántica es la de la
                     // conjunción anterior: comparaciones puras, sin efectos laterales.
@@ -3082,7 +3088,7 @@ impl GodEngineCore {
                         !is_adverse_momentum_long,
                         !(higher_trend < -0.0002 && (secular_trend < 0.0 || macro_trend < -0.0002)),
                         !(price_stretch < -0.80 && secular_trend < 0.0010),
-                        higher_trend >= -0.0004 && macro_trend >= -0.00035,
+                        higher_trend >= -0.0002 && long_macro_slope_ok,
                         composite_score >= tensor_tech_thr,
                         effective_obi_long > range_obi,
                         not_overextended_long,
@@ -3093,7 +3099,7 @@ impl GodEngineCore {
                         !is_adverse_momentum_short,
                         !(higher_trend > 0.0002 && (secular_trend > 0.0 || macro_trend > 0.0002)),
                         !(price_stretch > 0.80 && secular_trend > -0.0010),
-                        higher_trend <= 0.0004 && macro_trend <= 0.00035,
+                        higher_trend <= 0.0002 && short_macro_slope_ok,
                         composite_score <= -tensor_tech_thr,
                         effective_obi_short < -range_obi,
                         not_overextended_short,
@@ -3744,14 +3750,43 @@ impl GodEngineCore {
                     let tau_dom = spec.dominant_tau_ms;
                     let persist = spec.persistence_at(tau_dom);
 
-                    // LEY DE RESONANCIA CUÁNTICA ESPECTRAL MULTIVARIANTE:
-                    // - Prohibido operar contra la marea macro portadora (macro_tide < -0.01).
-                    // - Prohibido operar con interferencia destructiva multiescala (coherence < 0.00).
-                    // - Prohibido operar en micro-colapso táctico adverso (tactical_align < -0.12).
-                    // - Prohibido operar en caos térmico desordenado (spectral_entropy > 0.94).
-                    if macro_tide < -0.01 || coherence < 0.00 || tactical_align < -0.12 || field.spectral_entropy > 0.94 {
+                    // LEY DE RESONANCIA CUÁNTICA ESPECTRAL MULTIVARIANTE (#565 & #566):
+                    // - Prohibido operar contra la marea macro portadora (macro_tide < 0.00).
+                    // - Prohibido operar con interferencia destructiva multiescala (coherence < 0.05).
+                    // - Prohibido operar con la banda táctica en contra (tactical_align < 0.00).
+                    // - Prohibido comprar Long si macro_trend < 0.0 sin rebote micro agresivo (micro_trend > 0.00012 && ofi > 0.20).
+                    // - Prohibido vender Short si macro_trend > 0.0 sin rechazo micro agresivo (micro_trend < -0.00012 && ofi < -0.20).
+                    // - LEY DE FASE ARMÓNICA (ANTI-CRESTA / ANTI-VALLE):
+                    //   * Comprar Long sólo en fase de absorción de soporte (valle armónico: z_carrier <= 0.35 && z_resonant <= 0.55).
+                    //   * Vender Short sólo en fase de rechazo de resistencia (cresta armónica: z_carrier >= -0.35 && z_resonant >= -0.55).
+                    //   * Excepción única: persistencia super-crítica (persist > 0.50).
+                    // - Prohibido operar en caos térmico desordenado (spectral_entropy > 0.93).
+                    let carrier_tau_ms = 14_400_000.0; // 4 horas en la variedad espectral
+                    let z_carrier = spec.momentum_z_at(carrier_tau_ms);
+                    let z_resonant = spec.momentum_z_at(field.resonant_tau_ms);
+
+                    let wave_phase_ok = if is_long {
+                        (z_carrier <= 0.35 && z_resonant <= 0.55) || persist > 0.50
+                    } else {
+                        (z_carrier >= -0.35 && z_resonant >= -0.55) || persist > 0.50
+                    };
+
+                    let micro_rebound_ok = if is_long {
+                        macro_trend >= 0.0 || (micro_trend > 0.00012 && ofi_value > 0.20)
+                    } else {
+                        macro_trend <= 0.0 || (micro_trend < -0.00012 && ofi_value < -0.20)
+                    };
+
+                    if macro_tide < 0.00
+                        || coherence < 0.05
+                        || tactical_align < 0.00
+                        || !micro_rebound_ok
+                        || !wave_phase_ok
+                        || field.spectral_entropy > 0.93
+                    {
                         unified_intent.signal = SignalType::Flat;
                     } else {
+                        unified_intent.expected_duration_ms = field.resonant_tau_ms.clamp(30_000.0, 43_200_000.0) as u64;
                         let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
                         let directional_persist = if is_trending_mode { persist } else { -persist };
                         let coherence_boost = 0.25 * coherence;

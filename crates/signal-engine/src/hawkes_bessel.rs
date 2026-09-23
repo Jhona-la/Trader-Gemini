@@ -40,6 +40,8 @@ pub struct HawkesBesselEngine {
     beta: f64,
     /// Último timestamp (para compute_dt entre eventos).
     last_ts: f64,
+    /// #535 — eventos observados (para el seeding de μ̂).
+    n_seen: u64,
 }
 
 impl Clone for HawkesBesselEngine {
@@ -53,6 +55,7 @@ impl Clone for HawkesBesselEngine {
             alpha: self.alpha,
             beta: self.beta,
             last_ts: self.last_ts,
+            n_seen: self.n_seen,
         }
     }
 }
@@ -76,10 +79,26 @@ impl std::fmt::Debug for HawkesBesselEngine {
 
 /// Parámetros por defecto calibrados a liquidaciones de crypto:
 /// cada liquidación excita la siguiente dentro de ~2 segundos.
-pub const DEFAULT_MU: f64 = 0.5; // evento exógeno cada ~2s
+pub const DEFAULT_MU: f64 = 0.5; // evento exógeno cada ~2s (prior inicial de μ̂)
 pub const DEFAULT_ALPHA: f64 = 0.3; // cada evento suma 0.3 a λ
 pub const DEFAULT_BETA: f64 = 0.5; // decae con τ = 2s
 pub const MAX_EVENTS: usize = 128;
+
+/// #535 — Ancla del estado estacionario del proceso: con ritmo constante r,
+/// λ_ss = μ + α·r/β y μ̂ → r, así que λ/μ → 1 + α/β. Éste es el "ritmo
+/// normal" del símbolo en unidades del propio proceso; las ráfagas lo
+/// superan, las pausas quedan por debajo (piso 1.0 con ventana vacía).
+pub const STEADY_STATE_RATIO: f64 = 1.0 + DEFAULT_ALPHA / DEFAULT_BETA;
+
+/// #535 — Memoria del estimador de μ (EWMA de la tasa de llegada). τ = 60 s
+/// separa la banda de adaptación (minutos) de la banda del kernel (τ = 2 s):
+/// una ráfaga de ≤10 s mueve μ̂ a lo sumo ~15 %, preservando la señal de
+/// excitación en lugar de absorberla en la línea base.
+const MU_TAU_S: f64 = 60.0;
+const MU_FLOOR: f64 = 0.05;
+const MU_INST_MIN: f64 = 0.01;
+const MU_INST_MAX: f64 = 200.0;
+const MU_SEED_MAX: f64 = 50.0;
 
 impl HawkesBesselEngine {
     pub fn new() -> Self {
@@ -90,7 +109,25 @@ impl HawkesBesselEngine {
             alpha: DEFAULT_ALPHA,
             beta: DEFAULT_BETA,
             last_ts: 0.0,
+            n_seen: 0,
         }
+    }
+
+    /// #535 — μ̂ EMPÍRICO: la base de normalización λ/μ debe ser el ritmo
+    /// exógeno OBSERVADO del símbolo, no una constante. Con μ = 0.5 fijo y
+    /// símbolos líquidos (10-50 trades/s excitando el proceso por cada
+    /// trade), el estado estacionario de λ/μ era 1 + α·r/(β·μ) ≈ 7-25:
+    /// ningún umbral genético en [1.0, 1.9] podía discriminar — el gate era
+    /// tautológico precisamente en los pares que el sistema opera. Con μ̂
+    /// convergido al ritmo real, λ/μ → 1 + α/β (= STEADY_STATE_RATIO) en
+    /// régimen normal para TODOS los símbolos: escala-libre.
+    ///
+    /// Estimación: siembra con la primera tasa observada (2º evento) para
+    /// converger instantáneamente en streams regulares, luego EWMA con
+    /// τ = 60 s (ver MU_TAU_S).
+    #[inline]
+    pub fn base_rate(&self) -> f64 {
+        self.mu
     }
 
     /// Registra un evento (timestamp en segundos desde epoch o relativo).
@@ -99,6 +136,21 @@ impl HawkesBesselEngine {
         if !ts.is_finite() || ts < self.last_ts {
             return; // monotonicidad estricta
         }
+        if self.n_seen >= 1 && ts > self.last_ts {
+            let dt = ts - self.last_ts;
+            if dt.is_finite() && dt > 0.0 {
+                let inst = (1.0 / dt).clamp(MU_INST_MIN, MU_INST_MAX);
+                if self.n_seen == 1 {
+                    // Siembra: un solo salto al primer estimador — evita ~τ
+                    // de warmup en el que el ratio seguiría inflado.
+                    self.mu = inst.min(MU_SEED_MAX).max(MU_FLOOR);
+                } else {
+                    let w = (-dt / MU_TAU_S).exp();
+                    self.mu = (self.mu * w + inst * (1.0 - w)).max(MU_FLOOR);
+                }
+            }
+        }
+        self.n_seen = self.n_seen.saturating_add(1);
         if let Ok(mut e) = self.events.lock() { e.push_back(ts); }
         self.last_ts = self.last_ts.max(ts);
         // Purga: eventos con contribución < e^-5 son ruido computacional
@@ -119,11 +171,14 @@ impl HawkesBesselEngine {
     #[inline]
     pub fn intensity(&self, t: f64) -> f64 {
         let mut lambda = self.mu;
-        let events_snapshot = self.events.lock().map(|e| e.clone()).unwrap_or_default();
-        for &ti in &events_snapshot {
-            let dt = t - ti;
-            if dt >= 0.0 {
-                lambda += self.alpha * (-self.beta * dt).exp();
+        // #535 (perf): iterar BAJO el lock — el clone del deque era una
+        // asignación por llamada en el hot path (una por trade).
+        if let Ok(events) = self.events.lock() {
+            for &ti in events.iter() {
+                let dt = t - ti;
+                if dt >= 0.0 {
+                    lambda += self.alpha * (-self.beta * dt).exp();
+                }
             }
         }
         if lambda.is_finite() {
@@ -149,8 +204,10 @@ impl HawkesBesselEngine {
         self.branching_ratio() < 1.0
     }
 
-    /// Intensidad NORMALIZADA contra μ: λ/μ > 1 = cascada activa.
-    /// Un valor de 3.0 significa "3× el ritmo base de eventos".
+    /// Intensidad NORMALIZADA contra μ̂: λ/μ > STEADY_STATE_RATIO = cascada
+    /// activa sobre el ritmo normal DEL SÍMBOLO. Un valor de 3.0 significa
+    /// "3× el ritmo base observado". Con μ̂ empírico (#535) la cantidad es
+    /// escala-libre: 1.6 ≈ régimen normal tanto a 30 tps como a 0.3 tps.
     #[inline]
     pub fn intensity_ratio(&self, t: f64) -> f64 {
         let lambda = self.intensity(t);
@@ -288,21 +345,119 @@ mod tests {
     #[test]
     fn qo_m22_intensidad_con_historia_de_eventos() {
         let mut h = HawkesBesselEngine::new();
-        // Sin eventos: λ = μ
+        // Sin eventos: λ = μ (prior inicial)
         assert!((h.intensity(0.0) - DEFAULT_MU).abs() < 1e-6);
 
-        // Un evento en t=0: λ(0) = μ + α (contribución plena)
+        // Un evento en t=0: λ(0) = μ + α (contribución plena). El 1er evento
+        // no actualiza μ̂ (necesita un dt previo).
         h.record_event(0.0);
         assert!((h.intensity(0.0) - (DEFAULT_MU + DEFAULT_ALPHA)).abs() < 1e-6);
 
-        // 3 eventos: λ(0) = μ + 3α
+        // 3 eventos: λ(0) = μ̂ + Σα — μ̂ ya aprendió la tasa (dt=0.1s ⇒ 10 tps)
         h.record_event(0.1);
         h.record_event(0.2);
         let i = h.intensity(0.2);
         assert!(i > DEFAULT_MU + 2.0 * DEFAULT_ALPHA, "3 eventos suman: {i}");
-        // La contribución decahe: en t=10 (5/β), ≈ μ
+        // La contribución decae: en t=10 (5/β), ≈ μ̂ APRENDIDO (no DEFAULT_MU)
         let i_far = h.intensity(10.0);
-        assert!(i_far < DEFAULT_MU + 0.1, "decay a μ en 5/β: {i_far}");
+        assert!(
+            i_far < h.base_rate() + 0.1,
+            "decay a μ̂ en 5/β: {i_far} vs μ̂={}",
+            h.base_rate()
+        );
+    }
+
+    #[test]
+    fn qo_535_mu_empirico_es_escala_libre() {
+        // La invariante teórica es ERGÓDICA: E[λ/μ̂] = 1 + α/β sobre la fase
+        // uniforme de evaluación. El motor responde "λ AHORA" (el purge sigue
+        // al último evento), así que el muestreo debe ser FORWARD-ONLY —
+        // exactamente el patrón vivo: registrar evento y evaluar entre
+        // llegadas, nunca retroactivamente.
+        fn avg_ratio_forward(
+            h: &mut HawkesBesselEngine,
+            dt_event: f64,
+            cycles: usize,
+            n_sub: usize,
+        ) -> f64 {
+            let mut t = 0.0_f64;
+            let mut sum = 0.0_f64;
+            let mut n = 0.0_f64;
+            for _ in 0..cycles {
+                h.record_event(t);
+                let sub = dt_event / (n_sub as f64);
+                for k in 0..=n_sub {
+                    sum += h.intensity_ratio(t + sub * (k as f64));
+                    n += 1.0;
+                }
+                t += dt_event;
+            }
+            sum / n
+        }
+
+        // Régimen normal a 10 tps: E[λ/μ̂] → 1 + α/β = STEADY_STATE_RATIO
+        let mut h = HawkesBesselEngine::new();
+        let r_liquido = avg_ratio_forward(&mut h, 0.1, 600, 4);
+        assert!(
+            (r_liquido - STEADY_STATE_RATIO).abs() < 0.1,
+            "10 tps estacionario ⇒ ~1.6, got {r_liquido}"
+        );
+
+        // Régimen normal a 0.5 tps (alt tranquilo): MISMO ratio estacionario
+        let mut h2 = HawkesBesselEngine::new();
+        let r_quieto = avg_ratio_forward(&mut h2, 2.0, 60, 4);
+        assert!(
+            (r_quieto - STEADY_STATE_RATIO).abs() < 0.15,
+            "0.5 tps estacionario ⇒ ~1.6, got {r_quieto}"
+        );
+        // La diferencia absoluta de escala NO debe trasladarse al ratio:
+        // sin μ̂ empírico, el motor a 10 tps habría dado λ/μ ≈ 13.
+        assert!((r_liquido - r_quieto).abs() < 0.2);
+    }
+
+    #[test]
+    fn qo_535_tautologia_muerta_en_simbolo_liquido() {
+        // 30 tps CONSTANTES (BTCUSDT en horas pico): antes λ/μ ≈ 37 con
+        // μ=0.5 fijo — el gate pasaba SIEMPRE (tautología #535). Ahora el
+        // stream constante es "ritmo normal del símbolo": ratio ≈ 1.6.
+        let mut h = HawkesBesselEngine::new();
+        let mut t = 0.0;
+        while t < 90.0 {
+            h.record_event(t);
+            t += 1.0 / 30.0;
+        }
+        let r = h.intensity_ratio(90.0);
+        assert!(
+            r < STEADY_STATE_RATIO + 0.15,
+            "30 tps constantes NO es cascada: {r}"
+        );
+        // Y una ráfaga de 4× sobre ese ritmo SÍ debe superar el ancla
+        let mut tb = t;
+        while tb < t + 3.0 {
+            h.record_event(tb);
+            tb += 1.0 / 120.0;
+        }
+        let r_burst = h.intensity_ratio(tb);
+        assert!(
+            r_burst > STEADY_STATE_RATIO + 0.3,
+            "ráfaga 4× ⇒ excitación genuina: {r_burst}"
+        );
+    }
+
+    #[test]
+    fn qo_535_siembra_de_mu_con_segundo_evento() {
+        let mut h = HawkesBesselEngine::new();
+        h.record_event(0.0);
+        assert!((h.base_rate() - DEFAULT_MU).abs() < 1e-9, "1er evento: prior");
+        h.record_event(0.1); // dt = 0.1s ⇒ 10 tps
+        assert!(
+            (h.base_rate() - 10.0).abs() < 1e-9,
+            "siembra inmediata: μ̂=10, got {}",
+            h.base_rate()
+        );
+        // EWMA posterior: sin deriva si la tasa se mantiene
+        h.record_event(0.2);
+        assert!((h.base_rate() - 10.0).abs() < 1e-6);
     }
 
     #[test]

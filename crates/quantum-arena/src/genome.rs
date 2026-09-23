@@ -1013,7 +1013,7 @@ impl SuperGenotype {
             macro_max_cooldown_ratio: rand::rng().random_range(10.0..500.0),
             macro_cooldown_reduction_factor: rand::rng().random_range(0.1..2.0),
             macro_leverage_momentum_scale: rand::rng().random_range(0.1..2.0),
-            hawkes_scalp_threshold: rand::rng().random_range(0.1..1.0),
+            hawkes_scalp_threshold: rand::rng().random_range(0.50..0.95),
             obi_zscore_threshold: rand::rng().random_range(0.1..3.0),
 
             hawkes_volume_norm: rand::rng().random_range(100.0..10_000_000.0),
@@ -1921,7 +1921,7 @@ impl SuperGenotype {
             ev_fee_multiplier: mutate_val(self.ev_fee_multiplier, 1.0, 5.0),
             margin_cushion_pct: mutate_val(self.margin_cushion_pct, 0.50, 0.98),
             maker_only_capital_threshold: 50.0,
-            hawkes_scalp_threshold: mutate_val(self.hawkes_scalp_threshold, 0.1, 1.0),
+            hawkes_scalp_threshold: mutate_val(self.hawkes_scalp_threshold, 0.50, 0.95),
             obi_zscore_threshold: mutate_val(self.obi_zscore_threshold, 0.1, 3.0),
 
             hawkes_volume_norm: mutate_val(self.hawkes_volume_norm, 100.0, 10_000_000.0),
@@ -3002,7 +3002,7 @@ impl SuperGenotype {
             1.0,
             0.50, // D-687: fracción del capital comprometible
             10.0,
-            0.1,
+            0.50, // #535: hawkes_scalp_threshold (slot 109) — piso = ritmo normal del símbolo
             0.1,
             10.0,
             10000.0,
@@ -3156,7 +3156,7 @@ impl SuperGenotype {
             5.0,
             0.98, // D-687: MAX_MARGIN_UTILIZATION
             5000.0,
-            1.0,
+            0.95, // #535: hawkes_scalp_threshold (slot 109) — techo = +90% de excitación
             3.0,
             10000000.0,
             120000.0,

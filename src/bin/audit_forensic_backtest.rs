@@ -37,6 +37,7 @@ async fn main() {
     // PASO 1: Cargar Genoma de Producción (IDÉNTICO a live_trader.rs línea 26)
     // ═══════════════════════════════════════════════════════════════════════
     dotenvy::dotenv().ok();
+    std::env::set_var("GOD_NO_HOT_RELOAD", "1");
     let is_testnet = std::env::var("USE_TESTNET")
         .unwrap_or("true".to_string())
         .trim()
@@ -433,27 +434,38 @@ async fn main() {
         .unwrap_or_default();
     let mut macro_hist: Vec<Vec<(i64, f64)>> = Vec::new(); // (días desde epoch, valor)
     for (series, _) in &fred_series {
-        let url = format!(
-            "https://fred.stlouisfed.org/graph/fredgraph.csv?id={}&cosd={}",
-            series, cosd
-        );
-        let parsed: Vec<(i64, f64)> = match http.get(&url).send().await {
-            Ok(res) if res.status().is_success() => match res.text().await {
-                Ok(csv) => csv
-                    .lines()
-                    .skip(1)
-                    .filter_map(|l| {
-                        let mut p = l.split(',');
-                        let d = p.next()?.trim();
-                        let v = p.next()?.trim().parse::<f64>().ok()?;
-                        let date = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()?;
-                        Some((date.and_hms_opt(0, 0, 0)?.and_utc().timestamp() / 86_400, v))
-                    })
-                    .collect(),
-                Err(_) => Vec::new(),
-            },
-            _ => Vec::new(),
+        let cache_path = format!("data/fred_{}_{}.csv", series, cosd);
+        let csv_text = if let Ok(cached) = std::fs::read_to_string(&cache_path) {
+            println!("   {} → cargado desde caché local {}", series, cache_path);
+            cached
+        } else {
+            let url = format!(
+                "https://fred.stlouisfed.org/graph/fredgraph.csv?id={}&cosd={}",
+                series, cosd
+            );
+            match http.get(&url).send().await {
+                Ok(res) if res.status().is_success() => {
+                    let text = res.text().await.unwrap_or_default();
+                    if !text.is_empty() {
+                        let _ = std::fs::write(&cache_path, &text);
+                    }
+                    text
+                }
+                _ => String::new(),
+            }
         };
+
+        let parsed: Vec<(i64, f64)> = csv_text
+            .lines()
+            .skip(1)
+            .filter_map(|l| {
+                let mut p = l.split(',');
+                let d = p.next()?.trim();
+                let v = p.next()?.trim().parse::<f64>().ok()?;
+                let date = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()?;
+                Some((date.and_hms_opt(0, 0, 0)?.and_utc().timestamp() / 86_400, v))
+            })
+            .collect();
         println!("   {} → {} puntos", series, parsed.len());
         macro_hist.push(parsed);
     }

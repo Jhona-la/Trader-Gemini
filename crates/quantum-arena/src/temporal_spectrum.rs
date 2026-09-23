@@ -336,6 +336,23 @@ impl TemporalSpectrum {
         self.scales[i0].persistence * (1.0 - frac) + self.scales[i1].persistence * frac
     }
 
+    /// Z-score de momentum e interpolación continua de desviación a escala τ.
+    /// Cuantifica analíticamente la posición de fase del precio relativo a la media de la escala.
+    #[inline]
+    pub fn momentum_z_at(&self, tau_ms: f64) -> f64 {
+        if tau_ms <= 0.0 {
+            return 0.0;
+        }
+        let ln_tau = tau_ms.max(1e-6).ln();
+        let ln_min = (1e-6_f64).ln();
+        let step = 4f64.ln();
+        let idx_f = (ln_tau - ln_min) / step;
+        let i0 = idx_f.floor().clamp(0.0, 30.0) as usize;
+        let i1 = (i0 + 1).min(31);
+        let frac = (idx_f - i0 as f64).clamp(0.0, 1.0);
+        self.scales[i0].momentum_z * (1.0 - frac) + self.scales[i1].momentum_z * frac
+    }
+
     /// Snapshot compacto para modelos/telemetría: 32 señales + fusión.
     pub fn signals_vector(&self) -> ([f32; 32], f32) {
         let mut v = [0.0f32; 32];

@@ -41,16 +41,22 @@ impl MicroScalpTriggerEngine {
         let ml_long_thresh = arena.config.ml_threshold_long.load(Ordering::Relaxed);
         let ml_short_thresh = arena.config.ml_threshold_short.load(Ordering::Relaxed);
 
-        // #535: Recalibración adaptativa del umbral de Hawkes contra el proceso Hawkes real (λ/μ).
-        // En el proceso auto-excitado real, la línea base es 1.0. Si hawkes_thresh está en el rango
-        // genético [0.50, 0.95], se mapea a exceso de excitación sobre la línea base:
-        // [1.00, 1.90] (0.50 => 1.0x baseline, 0.55 default => 1.10x baseline, 10% excitación).
-        // Si hawkes_thresh >= 1.0, se consume directamente como ratio absoluto.
-        let effective_hawkes_thresh = if hawkes_thresh < 1.0 {
-            1.0 + (hawkes_thresh - 0.50).max(0.0) * 2.0
-        } else {
-            hawkes_thresh
-        };
+        // #535 (cierre genuino, 2ª iteración): el umbral se ancla en el
+        // ESTADO ESTACIONARIO del propio proceso (1 + α/β =
+        // STEADY_STATE_RATIO ≈ 1.6), no en 1.0. Con μ̂ empírico por símbolo
+        // (hawkes_bessel.rs), λ/μ̂ converge a 1+α/β en régimen normal y sólo
+        // las ráfagas lo superan: el gen [0.50, 0.95] exige entre 0% y +90%
+        // de excitación sobre el ritmo normal DEL SÍMBOLO — escala-libre
+        // (mismo significado en BTC a 30 tps y en un alt a 0.3 tps).
+        // Anclar en 1.0 (1ª iteración de este cierre) medía "ventana vacía",
+        // un estado que un stream activo jamás visita.
+        //
+        // El mapeo es CONTINUO y MONÓTONO en todo el rango: sin el acantilado
+        // de la 1ª iteración (gen→1.0⁻ mapeaba a 2.0 pero gen=1.0 a 1.0 —
+        // discontinuidad de 100% en la exigencia, alcanzable por mutación) y
+        // sin zona muerta con gradiente evolutivo nulo.
+        let excitation = (hawkes_thresh - 0.50).max(0.0) * 2.0;
+        let effective_hawkes_thresh = crate::hawkes_bessel::STEADY_STATE_RATIO + excitation;
         let hawkes_ok = hawkes_ratio >= effective_hawkes_thresh;
         let obi_ok = if is_long {
             obi_zscore >= obi_thresh
@@ -237,6 +243,106 @@ mod tests {
         let should_trigger_short =
             MicroScalpTriggerEngine::should_trigger_micro_scalp(&arena, 3.0, -2.5, 0.15, false);
         assert!(should_trigger_short);
+    }
+
+    #[test]
+    fn test_535_umbral_anclado_al_estado_estacionario() {
+        use std::sync::atomic::Ordering;
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        arena
+            .config
+            .hawkes_scalp_threshold
+            .store(0.55, Ordering::Relaxed); // gen default
+        // Exigencia efectiva = 1.6 + (0.55−0.50)·2 = 1.70 (+10% sobre ritmo normal)
+        let anchor = crate::hawkes_bessel::STEADY_STATE_RATIO;
+
+        // Régimen normal del símbolo (λ/μ̂ = ancla): NO dispara
+        assert!(!MicroScalpTriggerEngine::should_trigger_micro_scalp(
+            &arena,
+            anchor,
+            2.5,
+            0.85,
+            true
+        ));
+        // Excitación moderada (+12%): dispara
+        assert!(MicroScalpTriggerEngine::should_trigger_micro_scalp(
+            &arena,
+            anchor + 0.12,
+            2.5,
+            0.85,
+            true
+        ));
+        // Un stream LIQUIDO constante (antes ratio ≈ 37, tautología) queda
+        // en el ancla: el gate LO CIERRA en régimen normal.
+        assert!(!MicroScalpTriggerEngine::should_trigger_micro_scalp(
+            &arena,
+            anchor + 0.02,
+            2.5,
+            0.85,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_535_mapeo_continuo_sin_acantilado_en_gen_1() {
+        use std::sync::atomic::Ordering;
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        // La 1ª iteración mapeaba gen→1.0⁻ a 2.0 pero gen=1.0 a 1.0 (cliff).
+        // El mapeo aditivo es continuo: gen 0.999 ⇒ 1.6+0.998 = 2.598;
+        // gen 1.0 ⇒ 2.6. Ambos deben comportarse IGUAL ante ratio 2.7
+        // (pasa) y ante ratio 2.5 (no pasa).
+        arena
+            .config
+            .hawkes_scalp_threshold
+            .store(0.999, Ordering::Relaxed);
+        assert!(MicroScalpTriggerEngine::should_trigger_micro_scalp(
+            &arena, 2.7, 2.5, 0.85, true
+        ));
+        assert!(!MicroScalpTriggerEngine::should_trigger_micro_scalp(
+            &arena, 2.5, 2.5, 0.85, true
+        ));
+        arena
+            .config
+            .hawkes_scalp_threshold
+            .store(1.0, Ordering::Relaxed);
+        assert!(MicroScalpTriggerEngine::should_trigger_micro_scalp(
+            &arena, 2.7, 2.5, 0.85, true
+        ));
+        assert!(!MicroScalpTriggerEngine::should_trigger_micro_scalp(
+            &arena, 2.5, 2.5, 0.85, true
+        ));
+        // Regresión del cliff: gen=1.0 con ratio 1.5 (que la 1ª iteración
+        // dejaba pasar vía umbral 1.0) debe NO disparar.
+        assert!(!MicroScalpTriggerEngine::should_trigger_micro_scalp(
+            &arena, 1.5, 2.5, 0.85, true
+        ));
+    }
+
+    #[test]
+    fn test_535_gen_minimo_exige_ritmo_normal() {
+        use std::sync::atomic::Ordering;
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        arena
+            .config
+            .hawkes_scalp_threshold
+            .store(0.50, Ordering::Relaxed);
+        let anchor = crate::hawkes_bessel::STEADY_STATE_RATIO;
+        // gen 0.50 ⇒ exigencia = ancla exacta: pasa en el ritmo normal
+        assert!(MicroScalpTriggerEngine::should_trigger_micro_scalp(
+            &arena,
+            anchor,
+            2.5,
+            0.85,
+            true
+        ));
+        // y no pasa por debajo (pausa del símbolo)
+        assert!(!MicroScalpTriggerEngine::should_trigger_micro_scalp(
+            &arena,
+            anchor - 0.05,
+            2.5,
+            0.85,
+            true
+        ));
     }
 
     #[test]
