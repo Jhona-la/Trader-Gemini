@@ -378,7 +378,13 @@ impl RiskEngine {
         let kelly_for_scale =
             crate::capital_regime::lerp(kelly_adjusted, micro_kelly, micro_w_alloc);
 
-        let raw_exposure = dir * intent.confidence * kelly_for_scale * allocated_capital;
+        let epi_bias = if coin_id < arena.coins.len() {
+            arena.coins[coin_id].epigenetic_bias.load(Ordering::Relaxed)
+        } else {
+            1.0
+        };
+        let effective_confidence = (intent.confidence * epi_bias.clamp(0.60, 1.40)).clamp(0.05, 0.98);
+        let raw_exposure = dir * effective_confidence * kelly_for_scale * allocated_capital;
         if raw_exposure == 0.0 {
             return rej(1);
         }
@@ -387,9 +393,10 @@ impl RiskEngine {
         let is_long = intent.signal == SignalType::Long;
         let mut same_dir_count = 0;
         for c in arena.coins.iter() {
-            let pos = &c.positions.position;
-            if pos.is_open() && (pos.is_long.load(Ordering::Relaxed) == is_long) {
-                same_dir_count += 1;
+            for pos in c.positions.slots() {
+                if pos.is_open() && (pos.is_long.load(Ordering::Relaxed) == is_long) {
+                    same_dir_count += 1;
+                }
             }
         }
         let corr_thresh = arena
@@ -663,9 +670,17 @@ impl RiskEngine {
         let base_micro_ratio = 0.66 / 0.62;
         let effective_micro_ratio = base_micro_ratio - (base_micro_ratio - 1.0) * coh_benefit;
 
-        let min_required_confidence =
-            crate::capital_regime::lerp(base_conf_gate, base_conf_gate * effective_micro_ratio, scarcity)
-                .clamp(0.05, 0.98);
+        let epi_thresh = if coin_id < arena.coins.len() {
+            arena.coins[coin_id].epigenetic_threshold_modifier.load(Ordering::Relaxed)
+        } else {
+            1.0
+        };
+        let min_required_confidence = (crate::capital_regime::lerp(
+            base_conf_gate,
+            base_conf_gate * effective_micro_ratio,
+            scarcity,
+        ) * epi_thresh.clamp(0.75, 1.35))
+        .clamp(0.05, 0.98);
         if confidence < min_required_confidence {
             return rej(REJ_CONFIDENCE);
         }

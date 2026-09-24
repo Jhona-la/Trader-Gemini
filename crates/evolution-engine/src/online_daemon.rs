@@ -168,7 +168,7 @@ fn wf_evaluate_real(
                 backtest_engine::booktick_replay::live_envelope_gate(
                     &arena, &mut envelope, coin_id, mid, atr_now, was_open, &mut vetoes,
                 );
-                pos_open_flags[coin_id] = arena.coins[coin_id].positions.position.is_open();
+                pos_open_flags[coin_id] = arena.coins[coin_id].positions.is_any_open();
 
                 if let Some((_, pnl_net, _)) = closed {
                     if pnl_net >= 0.0 {

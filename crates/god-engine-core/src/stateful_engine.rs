@@ -97,6 +97,8 @@ pub struct StatefulEngine {
     pub scalp_loss_streak: u32,
     pub scalp_short_loss_streak: u32,
     pub scalp_long_loss_streak: u32,
+    pub spectral_loss_streaks: [u32; 3], // [0: Micro (<60s), 1: Meso (60s..30m), 2: Macro (>=30m)]
+    pub spectral_exit_ts: [u64; 3],
     pub last_trade_is_sell: bool,
     /// #18: Filtro de Kalman 1D para estimar el micro-precio justo en O(1)
     pub kalman: feature_engine::KalmanFilter1D,
@@ -172,6 +174,8 @@ impl StatefulEngine {
             scalp_loss_streak: 0,
             scalp_short_loss_streak: 0,
             scalp_long_loss_streak: 0,
+            spectral_loss_streaks: [0; 3],
+            spectral_exit_ts: [0; 3],
             last_trade_is_sell: false,
             kalman: feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1),
             fair_price: 0.0,
@@ -181,6 +185,53 @@ impl StatefulEngine {
             simd_nn: feature_engine::SimdNeuralNet::default(),
             hawkes: feature_engine::HawkesProcessEngine::new(0.05, 0.35, 1.5),
             last_hawkes_ratio: 0.0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn spectral_band_index(tau_ms: f64) -> usize {
+        if tau_ms < 60_000.0 {
+            0
+        } else if tau_ms < 1_800_000.0 {
+            1
+        } else {
+            2
+        }
+    }
+
+    /// Registra el resultado de un trade desacoplado en la banda espectral correspondiente
+    #[inline(always)]
+    pub fn record_trade_outcome(
+        &mut self,
+        tau_ms: f64,
+        is_directional_loss: bool,
+        is_long: bool,
+        tick: u64,
+        ts: u64,
+    ) {
+        let band = Self::spectral_band_index(tau_ms);
+        self.last_exit_tau_ms = (tau_ms.max(10.0)).round() as u64;
+        self.spectral_exit_ts[band] = ts;
+        self.last_scalp_exit_tick = tick;
+        self.last_scalp_exit_ts = ts;
+        self.last_scalp_was_loss = is_directional_loss;
+
+        if is_directional_loss {
+            self.spectral_loss_streaks[band] += 1;
+            self.scalp_loss_streak += 1;
+            if is_long {
+                self.scalp_long_loss_streak += 1;
+            } else {
+                self.scalp_short_loss_streak += 1;
+            }
+        } else {
+            self.spectral_loss_streaks[band] = 0;
+            self.scalp_loss_streak = 0;
+            if is_long {
+                self.scalp_long_loss_streak = 0;
+            } else {
+                self.scalp_short_loss_streak = 0;
+            }
         }
     }
 
@@ -197,14 +248,7 @@ impl StatefulEngine {
     /// evitar que pérdidas en microsegundos congelen el motor durante 1 hora.
     #[inline(always)]
     pub fn can_open_at_tau(&self, tau_candidate_ms: f64, min_cooldown_ms: u64) -> bool {
-        let elapsed_ms = if self.current_ts > 0 && self.last_scalp_exit_ts > 0 {
-            self.current_ts.saturating_sub(self.last_scalp_exit_ts)
-        } else {
-            self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
-        };
-
-        // Desacoplamiento espectral: si la última salida ocurrió en una escala muy lejana (|Δ ln τ| >= 0.60),
-        // no se aplica la penalización de racha acumulada de esa banda diferente.
+        let band = Self::spectral_band_index(tau_candidate_ms);
         let same_spectral_band = if self.last_exit_tau_ms > 0 && tau_candidate_ms > 10.0 {
             let ln_cand = tau_candidate_ms.ln();
             let ln_last = (self.last_exit_tau_ms as f64).ln();
@@ -213,10 +257,28 @@ impl StatefulEngine {
             true
         };
 
-        let active_streak = if same_spectral_band {
-            self.get_active_total_loss_streak()
+        let last_band_ts = if self.spectral_exit_ts[band] > 0 {
+            self.spectral_exit_ts[band]
         } else {
+            self.last_scalp_exit_ts
+        };
+        let elapsed_ms = if self.current_ts > 0 && last_band_ts > 0 {
+            self.current_ts.saturating_sub(last_band_ts)
+        } else {
+            self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
+        };
+
+        let raw_streak = if same_spectral_band {
+            self.spectral_loss_streaks[band].max(self.scalp_loss_streak)
+        } else {
+            self.spectral_loss_streaks[band]
+        };
+        let active_streak = if elapsed_ms > 3_600_000 {
             0
+        } else if elapsed_ms > 1_800_000 {
+            raw_streak.saturating_sub(1)
+        } else {
+            raw_streak
         };
 
         // Modulación armónica del cooldown por escala temporal tau:
@@ -316,6 +378,8 @@ impl StatefulEngine {
         self.scalp_loss_streak = 0;
         self.scalp_short_loss_streak = 0;
         self.scalp_long_loss_streak = 0;
+        self.spectral_loss_streaks = [0; 3];
+        self.spectral_exit_ts = [0; 3];
         self.hurst = RecursiveHurst::new();
         self.obi_accel = ObiAcceleration::new();
         self.obi_noise = ObiNoise::new();

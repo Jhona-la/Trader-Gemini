@@ -29,11 +29,13 @@ impl StateValidator {
                 total_realized_pnl += m_pnl;
             }
 
-            if coin.positions.position.is_open() {
-                active_positions += 1;
-                let fee = coin.positions.position.entry_fee.load(Ordering::Relaxed);
-                if fee.is_finite() && fee > 0.0 {
-                    open_entry_fees += fee;
+            for pos in coin.positions.slots() {
+                if pos.is_open() {
+                    active_positions += 1;
+                    let fee = pos.entry_fee.load(Ordering::Relaxed);
+                    if fee.is_finite() && fee > 0.0 {
+                        open_entry_fees += fee;
+                    }
                 }
             }
         }

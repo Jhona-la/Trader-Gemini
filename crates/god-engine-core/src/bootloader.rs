@@ -206,20 +206,20 @@ impl SystemBootloader {
         let mut total_open = 0;
 
         for (id, coin) in self.arena.coins.iter().enumerate() {
-            let pos = &coin.positions.position;
-
-            if pos.is_open() {
-                total_open += 1;
-                let chk =
-                    quantum_arena::state_continuity::StateContinuityEngine::compute_state_checksum(
-                        id,
-                        pos.quantity.load(std::sync::atomic::Ordering::Relaxed),
-                        pos.entry_price.load(std::sync::atomic::Ordering::Relaxed),
+            for (slot_idx, pos) in coin.positions.slots().iter().enumerate() {
+                if pos.is_open() {
+                    total_open += 1;
+                    let chk =
+                        quantum_arena::state_continuity::StateContinuityEngine::compute_state_checksum(
+                            id,
+                            pos.quantity.load(std::sync::atomic::Ordering::Relaxed),
+                            pos.entry_price.load(std::sync::atomic::Ordering::Relaxed),
+                        );
+                    println!(
+                        "   -> [UNIVERSAL] Posición abierta en ID {} Slot {} detectada (Checksum: {:016X})",
+                        id, slot_idx, chk
                     );
-                println!(
-                    "   -> [UNIVERSAL] Posición abierta en ID {} detectada (Checksum: {:016X})",
-                    id, chk
-                );
+                }
             }
         }
         println!(

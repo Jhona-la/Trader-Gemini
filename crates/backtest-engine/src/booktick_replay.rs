@@ -625,13 +625,7 @@ pub fn live_envelope_gate(
     let total_margin_used: f64 = arena
         .coins
         .iter()
-        .map(|c| {
-            if c.positions.position.is_open() {
-                c.positions.position.margin_used.load(Ordering::Relaxed)
-            } else {
-                0.0
-            }
-        })
+        .map(|c| c.positions.total_margin_used())
         .sum();
     let cap_now = (arena.unified_capital.load(Ordering::Relaxed) - total_margin_used).max(0.0);
 

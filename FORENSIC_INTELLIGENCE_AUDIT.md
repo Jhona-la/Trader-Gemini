@@ -12336,3 +12336,100 @@ let adaptive_micro_score = if book_absent { rolling_cvd.clamp(-1.0, 1.0) } else 
 - **Cero Python / Solo Rust:** Todos los componentes fueron construidos y verificados con Rust puro, garantizando tiempos de respuesta en nanosegundos y ejecución de 6,501 ticks por segundo sobre hardware modesto de 16GB RAM sin GPU dedicada.
 - **Estado de Certificación:** CERRADO GENUINO. Todos los tests de la suite pasan al 100% (`quantum-arena`: 57/57, `god-engine-core`: 85/85, `risk-engine`: 49/49, `backtest-engine`: 31/31).
 
+
+
+---
+
+## OLA 8 — CIERRE #535: ERRADICACIÓN DE LA TAUTOLOGÍA HAWKES (μ̂ EMPÍRICO + UMBRAL ANCLADO AL ESTADO ESTACIONARIO)
+
+**Fecha:** 2026-09-23 · **Ejecutor:** Consejo de Seniors · **Autorización:** explícita del usuario ("corrige el eslabón #535 primero").
+**Contexto:** el eslabón abierto más antiguo del sistema (descubierto en Ola 6 como #535, re-certificado abierto en Ola 7 como #550). Al llegar a este punto, la sesión externa había desembarcado un candidato de cierre propio en Ola 20 (mapeo gen `[0.50,0.95]` → umbral efectivo `[1.00,1.90]`). La verificación previa (lección M2-C02) determinó que ese candidato era **matemáticamente insuficiente**: corregía la semántica del umbral pero NO la del denominador.
+
+### #551 — ANATOMÍA COMPLETA DEL DEFECTO (verificación del candidato externo + raíz)
+**Defecto de fondo (la raíz, más profunda que lo documentado en #535):** `HawkesBesselEngine` documenta μ como "intensidad base (llegada exógena de eventos)" pero la implementa como la CONSTANTE `DEFAULT_MU = 0.5` (hawkes_bessel.rs:79) mientras el core excita el proceso con **CADA trade** (lib.rs:788-793, CERT-M2-C02: `is_trade → record_event`). Con ritmos de llegada reales r = 10-50 trades/s en los pares líquidos que el sistema opera:
+- Estado estacionario de λ/μ = 1 + α·r/(β·μ) = 1 + 0.3·r/(0.5·0.5) ≈ **7-25** (a 10-20 tps).
+- El umbral efectivo del candidato externo vivía en [1.00, 1.90]: **el gate seguía siendo tautológico exactamente en los pares que importan** — un stream constante a 30 tps producía ratio ≈ 37 y cruzaba cualquier umbral del rango con 20× de margen. La "recalibración" cambió el número pero no la discriminación: la conclusión de #550 (gene sin presión de selección) permanecía válida.
+- **Defectos formales adicionales del candidato:** (a) ACANTILADO en gen = 1.0: la rama lineal mapea gen→1.0⁻ a 2.0, pero la rama `else` consumía gen=1.0 directamente como 1.0 — discontinuidad del 100% en la exigencia, ALCANZABLE por mutación Darwin (bounds reales 0.1-1.0, ver (c)); (b) ZONA MUERTA: gens [0.10, 0.50) colapsaban todos a umbral 1.00 vía `.max(0.0)` — 44% del rango de init aleatorio (`random_range(0.1..1.0)`, genome.rs:1016) sin gradiente evolutivo; (c) MISLABEL DE RANGO: el comentario afirmaba "rango genético [0.50, 0.95]" pero los bounds reales eran (0.1, 1.0) en mutación (genome.rs:1924), init (L1016) y CMA-ES (lo[109]=0.1, hi[109]=1.0 — genome.rs:3005/3159 verificado por extracción token a token).
+
+### #552 — ✅ CIERRE GENUINO IMPLEMENTADO (3 archivos, 0 colisiones con sesión externa)
+**Diseño (doctrina: espectros calculados, cero arbitrariedad):** la cantidad λ/μ̂ con **μ̂ = ritmo exógeno observado del símbolo** es el invariante de escala del proceso de Hawkes. Teoría: con ritmo constante r, λ_ss = μ̂ + α·r/β y μ̂ → r, luego λ/μ̂ → **1 + α/β = 1.6** (= `STEADY_STATE_RATIO`, nueva constante pública) para TODO símbolo — 30 tps o 0.3 tps. Las ráfagas superan el ancla; las pausas quedan entre 1.0 (ventana vacía) y el ancla. El ancla 1.0 del candidato externo medía "ventana vacía", un estado que un stream activo jamás visita.
+
+**1. crates/signal-engine/src/hawkes_bessel.rs — μ̂ empírico:**
+- Estimación de μ̂ por EWMA de la tasa de llegada inter-evento: siembra con la primera tasa observada (2º evento, clamps [0.05, 50]) para convergencia instantánea en streams regulares, luego EWMA con τ = 60 s (`MU_TAU_S`) — separación 30× de la banda del kernel (τ = 2 s): una ráfaga de ≤10 s mueve μ̂ a lo sumo ~15%, preservando la señal de excitación en vez de absorberla en la línea base.
+- `pub const STEADY_STATE_RATIO: f64 = 1.0 + DEFAULT_ALPHA / DEFAULT_BETA;` — el ancla teórica, exportada para todos los consumidores.
+- `pub fn base_rate()` — accessor de μ̂ (telemetría/tests).
+- **Perf (bonus):** `intensity()` iteraba sobre un CLONE del deque — una asignación heap por llamada en el hot path (una por trade). Ahora itera bajo el lock, cero asignaciones.
+
+**2. crates/signal-engine/src/micro_scalp_trigger.rs — umbral continuo anclado:**
+```rust
+let excitation = (hawkes_thresh - 0.50).max(0.0) * 2.0;
+let effective_hawkes_thresh = STEADY_STATE_RATIO + excitation;
+```
+- gen [0.50, 0.95] ⇒ exigencia [1.60, 2.50] = **0% a +90% de excitación sobre el ritmo normal DEL SÍMBOLO**. Default 0.55 ⇒ 1.70 (+10%).
+- CONTINUO y MONÓTONO en todo ℝ: mata el acantilado gen=1.0 (ahora 1.0 → 2.6, adyacente a 0.999 → 2.598) y deja la zona muerta irrelevante (fuera de bounds).
+
+**3. crates/quantum-arena/src/genome.rs — prior informado (4 sitios):**
+- Init aleatorio: `random_range(0.50..0.95)` (era 0.1..1.0).
+- Mutación Darwin: `mutate_val(..., 0.50, 0.95)` (era 0.1, 1.0).
+- CMA-ES: lo[109] = 0.50, hi[109] = 0.95 (eran 0.1 / 1.0), con comentario de slot para mantenibilidad.
+- El gen por defecto 0.55 se conserva: su semántica pasa de "umbral tautológico jamás calibrado" a "+10% de excitación sobre el ritmo normal del símbolo".
+
+**Verificación (tests nuevos, 6):** `qo_535_mu_empirico_es_escala_libre` (E[λ/μ̂] → 1.6 tanto a 10 tps como a 0.5 tps, muestreo forward-only — el motor responde "λ ahora", el purge sigue al último evento, la evaluación retroactiva es inválida por diseño); `qo_535_tautologia_muerta_en_simbolo_liquido` (30 tps constantes ⇒ ratio ≈ 1.6, gate CERRADO en régimen normal — antes 37, siempre abierto; ráfaga 4× ⇒ ratio > 1.9, gate ABIERTO); `qo_535_siembra_de_mu_con_segundo_evento`; `test_535_umbral_anclado_al_estado_estacionario` (ancla no dispara; +12% dispara); `test_535_mapeo_continuo_sin_acantilado_en_gen_1` (regresión del cliff: gen=1.0 con ratio 1.5 NO dispara); `test_535_gen_minimo_exige_ritmo_normal` (gen 0.50 = piso = ritmo normal, no "discapacitado"). **Suites completas: signal-engine 61/61 ✓, quantum-arena 57/57 ✓, god-engine-core 85/85 ✓ (203 tests, 0 fallos, exit codes reales 0).** Test preexistente `qo_m22_intensidad_con_historia_de_eventos` actualizado: el decay converge al μ̂ APRENDIDO, no a la constante (su semántica anterior era parte del defecto). Consumidores del registry ('hawkes_intensity' → turbo_scalper 1.2, micro_scalp evaluate_for_coin 1.2): heredan la escala libre sin cambios; el multiplicador `(hawkes/2).min(2)` de turbo_scalper, antes SATURADO en 2.0 con valores 7-37, ahora modula (0.8-1.5) — expresividad recuperada de propina.
+
+**Paridad BT↔vivo (mapa #541):** el backtest alimenta el MISMO process_event (D-708) ⇒ mismo record_event ⇒ misma μ̂ ⇒ mismo ratio: la calibración es estructuralmente idéntica en ambos mundos. La evolución (Darwin + CMA-ES + walk-forward) ahora opera sobre un gen con gradiente real: 0.50 = filtro al ritmo normal, 0.95 = exige ráfagas +90% — y TODOS los puntos intermedios discriminan en cualquier símbolo.
+
+### #553 — 🟡 NUEVO (BAJO, documentado): sesgo de fase-0 en símbolos dispersos
+El consumidor vivo evalúa `intensity_ratio(event_time)` — siempre en fase 0 (instante del evento). En símbolos densos, ratio(fase 0) ≈ 1.61 ≈ ancla. En símbolos dispersos (r·τ_kernel ≪ 1), ratio(fase 0) ≈ 1 + α/μ̂ + α/β ≈ 2.2 con μ̂ = 0.5: cada trade individual ES un spike local 2.2× del ritmo del símbolo — el gate queda permanentemente abierto en alts quietos (la discriminación recae en los gates OBI-z y ML, que siguen ANDados). **No es un bug del ratio** (un trade aislado en un libro quieto genuinamente duplica el mundo local); es una propiedad de fase que el usuario de la señal debe conocer. Mitigación futura opcional: muestrear el ratio en sub-fases y comparar el máximo contra el ancla + excitation·(1+α/μ̂)... o simplemente dejar que la evolución del gen (ahora con gradiente) fije el compromiso. Documentado, sin acción inmediata.
+
+### #554 — 🟡 NUEVO (MEDIO, residuo en lib.rs SUCIO): pseudo-hawkes de OBI en el PPO-state
+**Evidencia:** lib.rs:2452 `let hawkes_intensity = (1.0 + current_obi.abs() * 2.0).clamp(0.1, 5.0) / 5.0;` → L2460 `dir_hawkes = hawkes_intensity * dir_flow_sign` → L2472 `ppo_state = [ofi, obi, dir_hawkes, ...]`. El estado del PPO consume una variable llamada "hawkes_intensity" que NO es el proceso de Hawkes — es OBI reciclado con otro nombre. El proceso REAL se publica al registry como 'hawkes_intensity' (lib.rs:2042, clamp [0.1,10]) y lo consumen micro_scalp_trigger/turbo_scalper vía registry. **Colisión de nombres con semánticas divergentes en el mismo archivo:** un mantenedor que "unifique" ambas fuentes introduciría un cambio de comportamiento silencioso en el PPO (cuya política fue entrenada —si fue entrenada— contra el OBI-pseudo-hawkes). **Acción:** renombrar la variable local (p.ej. `obi_directional_momentum`) cuando lib.rs esté limpio — cambio cosmético, cero comportamiento, que desactiva la trampa. NO ejecutado: lib.rs está siendo editado por la sesión externa (M en git status).
+
+### RESUMEN DE ESTADO TRAS OLA 8
+| Ítem | Estado |
+|---|---|
+| #535/#550 tautología Hawkes | ✅ CERRADO genuino (μ̂ empírico + ancla estacionaria + prior [0.50,0.95], #552) |
+| #553 sesgo fase-0 dispersos | 🟡 Documentado (BAJO) |
+| #554 pseudo-hawkes OBI en PPO-state | 🟡 Pendiente rename (lib.rs sucio) |
+| Acantilado + zona muerta + mislabel de rango del candidato externo | ✅ Erradicados (#551-#552) |
+| M5-H02 seqlock reader / M6-H02 bracket-veto / #538-#540 | 🔴 Abiertos (sin cambios) |
+
+**Conclusión:** el gate de micro-scalp pasó de "siempre verdadero en pares líquidos" a "detector de ráfagas relativas al ritmo propio de cada símbolo", con el gen de la evolución finalmente operando sobre un gradiente real en todo su rango. Este era el eslabón abierto más antiguo del mapa #541 (genoma-BT-vs-vivo); su cierre elimina la última tautología estructural del pipeline de triggers.
+
+*(Fin de la Ola 8 — append solamente, conforme al mandato de documentación.)*
+
+
+## OLA 9 — CIERRE M6-H02 (2026-09-24): los fills de bracket durante veto SON dinero real
+
+### #555 — ✅ CIERRE IMPLEMENTADO: bracket closes contabilizados INCONDICIONALMENTE (veto incluido)
+
+**Anatomía del defecto (pre-fix, verificado en HEAD ddf8c8bd):** el drenaje con contabilidad de `drain_bracket_closes()` —la cola por donde llegan los disparos TP/SL del exchange, es decir, la mayoría de los cierres reales— vivía EXCLUSIVAMENTE en la rama `else` (trading permitido) del lazo del host. La rama de veto (`if !is_trading_allowed`) hacía `for bc in drain_bracket_closes() { let _ = bc; }`: drenaba la cola y DESCARTABA su contenido. Un veto por drawdown es, por definición, el intervalo en que el sistema está perdiendo; las posiciones abiertas ANTES del veto conservan sus TP/SL descansando en el exchange —órdenes reales que el veto no puede revocar— y se disparan DURANTE el veto. Esos fills son dinero real (bruto, fees, neto) y jamás llegaban a: `avg_win_abs`/`avg_loss_abs` (EWMA 0.95/0.05), `risk_envelope.record_trade` (posterior de Kelly), `persist_kelly_envelope` (HOST-005), ni a los totales (`total_net_pnl`, `total_trades`, `total_wins`, `total_fees`, `total_gross_pnl`). Consecuencia precisa: la racha de pérdidas que CAUSÓ el veto era invisible para el posterior de Kelly; al levantarse el veto el envelope seguía inflado → sizing agresivo inmediatamente después de un drawdown, exactamente el momento en que el sizing debe ser más conservador. El defecto era un amplificador procíclico de riesgo en el peor punto del ciclo.
+
+**Asimetría doctrinal (B3.14 leída a su lado correcto):** los cierres del CORE durante veto SON papel — el veto prohíbe despachos, no existe nada en el exchange, y el guard B3.14 (`last_close_confirmed`) correctamente los excluye. Los cierres de BRACKET son el caso simétrico opuesto: existen en el exchange precisamente porque descansan allí desde ANTES del veto. El código viejo trataba ambas clases como descartables; sólo una de ellas era correcto descartar. El comentario CERT-M6-H02 original defendía el drain-discard como protección del plano de capital (histórico X-013: el fetch_add sobre to_bits() corrupto) — pero esa protección exige no TOCAR capital, no descartar la CONTABILIDAD. El bloque B3.7 nunca escribió el plano de capital; el descuento era un guard incorrectamente ampliado.
+
+**El fix (quirúrgico, 2 edits, 1 archivo — src/bin/god_engine.rs, sin colisión con sesión externa):**
+1. **Hoist del bloque completo de contabilidad a INCONDICIONAL**, colocado inmediatamente antes del `if !is_trading_allowed` (post-fix: god_engine.rs:3272-3343). El bloque conservado ÍNTEGRO y byte-a-byte en su lógica: guarda D-702 (`entry_price > 0.0` = «se conoce el contexto de entrada», no «PnL ≠ 0»), dedup simétrico vs `last_real_core_close_ms` con ventana `CLOSE_DEDUP_WINDOW_MS = 5_000` ms por símbolo, EWMA de win/loss promedio, `risk_envelope.record_trade`, `persist_kelly_envelope` (HOST-005), totales, y siembra del dedup inverso (`last_bracket_close_ms.insert`).
+2. **Rama de veto reducida** al log periódico (cada 5000 msgs) + comentario que apunta al bloque hoisted.
+3. **Bloque duplicado del `else` ELIMINADO** (no dejado muerto): grep post-fix muestra UN solo call site de `drain_bracket_closes()` en el binario (antes: 2).
+
+**Verificación:**
+- `cargo check -p trader-gemini-v5 --bin god_engine` (CARGO_TARGET_DIR=target-verify): MARKER:0. Las 3 advertencias del binario (unused doc comment :2349; `arena_emerg` :3693; `core_leverage` :3806) son preexistentes de Ola-26 — confirmadas contra `git show HEAD:` (3695/3808, delta −2 consistente con la edición neta) — ninguna en la región tocada.
+- **Orden de dedup preservado:** en ticks con trading permitido, el drain de brackets sigue ocurriendo ANTES del procesamiento de `closed_order` (el bloque ya precedía al `if let` en el diseño original); el accounting del core —que consulta `last_bracket_close_ms`— sigue viendo el mapa actualizado del MISMO tick. En ticks de veto ahora también se siembra `last_bracket_close_ms`, así un eventual eco de cierre core→bracket dentro de la ventana de 5s tras el levantamiento del veto queda cubierto por el dedup inverso preexistente.
+- **Cierres del core durante veto: SIN CAMBIO** — siguen sin contabilizarse (papel sin despacho, B3.14). El fix no toca esa ruta.
+- **Tick de transición (levantamiento del veto):** antes el drain corría después del hot-swap del executor; ahora antes. Inocuo: `drain_bracket_closes()` es una función estática sobre la cola global de trade_accounting, no depende del executor vivo.
+- El binario no tiene tests (0 `#[test]` en god_engine.rs); `drain_bracket_closes` (crates/execution-engine/src/trade_accounting.rs:269) no fue modificada y conserva su batería propia. La verificación del host-loop es compilación + revisión estructural (el lazo del host no tiene arnés de test — limitación documentada desde Ola 3).
+
+**Impacto esperado en producción:** el posterior de Kelly ahora observa las pérdidas que ocurren DURANTE el veto (que antes eran exactamente las invisibles), de modo que (a) el fraction post-levantamiento refleja la racha real — desinflándolo; (b) HOST-005 persiste esa evidencia — un reinicio durante la era de veto ya no borra la lección; (c) WR y totales del reporte incluyen los fills reales de la era de veto. Paridad BT↔vivo: sin claim — este es un camino de contabilidad exclusivo del host (el backtest no simula vetos del orchestrator); el fix no introduce divergencia porque no altera ninguna ruta de decisión, sólo la observabilidad estadística del dinero ya perdido.
+
+**Estado del árbol:** `M src/bin/god_engine.rs` (este fix, sin commitear — pendiente de absorción por la próxima ola externa, patrón ya observado con #535 → c8b4cfee). `M FORENSIC_INTELLIGENCE_AUDIT.md` (este append + appends de sesión externa).
+
+### RESUMEN DE ESTADO TRAS OLA 9
+| Ítem | Estado |
+|---|---|
+| M6-H02 bracket closes durante veto | ✅ CERRADO (#555 — hoist incondicional, dedup preservado, compila limpio) |
+| #535/#550 tautología Hawkes | ✅ CERRADO genuino (Ola 8, #552; absorbido en c8b4cfee) |
+| #553 sesgo fase-0 dispersos / #554 pseudo-hawkes PPO | 🟡 Documentados (renames/cambios pendientes) |
+| M5-H02 seqlock reader / #538 / #539 / #540 / #548 | 🔴 Abiertos (sin cambios) |
+
+**Conclusión:** cerrado el segundo eslabón de la cadena autorizada («corrige el eslabón #535 primero» — #535 en Ola 8, M6-H02 aquí). El sistema ya no olvida las pérdidas que él mismo sufre durante sus propias pausas defensivas: el posterior de Kelly ve ahora el ciclo completo, incluida su peor parte. Quedan en la cadena: M5-H02 (seqlock reader) y el trío #538-#540 (arbitrariedades del ML-gate).
+
+*(Fin de la Ola 9 — append solamente, conforme al mandato de documentación.)*

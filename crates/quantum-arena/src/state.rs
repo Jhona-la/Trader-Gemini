@@ -262,37 +262,52 @@ impl CoinArena {
     /// **CUÁNDO:** Se llama al cerrar cada posición (scalp o swing) en process_tick y process_tick_shadow.
     /// **DÓNDE:** CoinArena (crates/quantum-arena/src/state.rs).
     /// **QUIÉN:** GodEngineCore invoca esto tras cada cierre de posición.
+    /// Retroalimentación Epigenética Adaptativa Multivariante Espectral.
+    ///
+    /// Integra la escala temporal de operación `tau_trade_ms` para sincronizar
+    /// la adaptación de la moneda con su física de onda correspondiente.
     #[inline(always)]
-    pub fn apply_epigenetic_feedback(&self, pnl_pct: f64, trade_duration_ms: u64) {
-        // Bias shift: PnL drives confidence multiplier.
-        // A +2% trade shifts bias by +0.10, a -2% trade shifts by -0.10. Clamped for stability.
-        let pnl_shift = (pnl_pct * 5.0).clamp(-0.1, 0.1);
+    pub fn apply_spectral_epigenetic_feedback(&self, pnl_pct: f64, trade_duration_ms: u64, tau_trade_ms: f64) {
+        let safe_tau = if tau_trade_ms.is_finite() && tau_trade_ms > 10.0 {
+            tau_trade_ms
+        } else {
+            30_000.0
+        };
+        // Las ondas rápidas (tau bajo) operan con mayor agilidad; las ondas lentas poseen inercia secular
+        let tau_inertia = (safe_tau / 3_600_000.0).clamp(0.10, 2.0);
+        let pnl_shift = (pnl_pct * (4.0 / tau_inertia)).clamp(-0.15, 0.15);
 
         let old_bias = self.epigenetic_bias.load(Ordering::Relaxed);
         let new_bias = (old_bias + pnl_shift).clamp(0.5, 2.0);
         self.epigenetic_bias.store(new_bias, Ordering::Relaxed);
 
-        // Threshold modifier: Controls how strict entry requirements become.
-        // threshold_modifier multiplies min_confidence_cutoff:
-        //   > 1.0 = needs MORE confidence to enter (defensive after losses)
-        //   < 1.0 = allows lower confidence entries (aggressive after wins)
-        //
-        // Duration-aware: Fast wins get a stronger relaxation (the strategy is working well
-        // in current conditions). Slow wins get less relaxation.
-        let duration_factor = 1.0 - (trade_duration_ms as f64 / 3_600_000.0).clamp(0.0, 1.0);
-
+        // Modificador de umbral adaptativo continuo
+        let duration_factor = 1.0 - (trade_duration_ms as f64 / (safe_tau * 3.0)).clamp(0.0, 1.0);
         let threshold_shift = if pnl_pct > 0.0 {
-            // Win: Relax threshold. Fast wins relax more (-0.02), slow wins relax less (-0.005).
-            -0.005 - 0.015 * duration_factor
+            -0.008 - 0.020 * duration_factor
         } else {
-            // Loss: Tighten threshold. Require MORE confidence next time.
-            0.05
+            0.040 * (1.0 / tau_inertia.sqrt()).clamp(0.5, 2.0)
         };
 
         let old_threshold = self.epigenetic_threshold_modifier.load(Ordering::Relaxed);
-        let new_threshold = (old_threshold + threshold_shift).clamp(0.8, 1.5);
+        let new_threshold = (old_threshold + threshold_shift).clamp(0.75, 1.50);
         self.epigenetic_threshold_modifier
             .store(new_threshold, Ordering::Relaxed);
+
+        // Actualizar métricas universales de cierre
+        let now_ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        self.last_close_ts.store(now_ts, Ordering::Relaxed);
+        self.last_scalp_close_ts.store(now_ts, Ordering::Relaxed);
+        self.last_swing_close_ts.store(now_ts, Ordering::Relaxed);
+        self.last_close_was_win.store(pnl_pct > 0.0, Ordering::Relaxed);
+    }
+
+    #[inline(always)]
+    pub fn apply_epigenetic_feedback(&self, pnl_pct: f64, trade_duration_ms: u64) {
+        self.apply_spectral_epigenetic_feedback(pnl_pct, trade_duration_ms, 30_000.0);
     }
 }
 

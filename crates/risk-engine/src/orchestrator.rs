@@ -116,15 +116,16 @@ impl<'a> PortfolioOrchestrator<'a> {
         let mut total_long_margin = 0.0;
         let mut total_short_margin = 0.0;
 
-        // O(1) lock-free iteration over 30 coins to calculate net delta and exposure
+        // Lock-free iteration over all coins and spectral slots to calculate net delta and exposure
         for coin in self.arena.coins.iter() {
-            let pos = &coin.positions.position;
-            if pos.is_open() {
-                let margin = pos.margin_used.load(Ordering::Relaxed);
-                if pos.is_long.load(Ordering::Relaxed) {
-                    total_long_margin += margin;
-                } else {
-                    total_short_margin += margin;
+            for pos in coin.positions.slots() {
+                if pos.is_open() {
+                    let margin = pos.margin_used.load(Ordering::Relaxed);
+                    if pos.is_long.load(Ordering::Relaxed) {
+                        total_long_margin += margin;
+                    } else {
+                        total_short_margin += margin;
+                    }
                 }
             }
         }

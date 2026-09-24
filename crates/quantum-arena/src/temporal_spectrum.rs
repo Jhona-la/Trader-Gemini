@@ -144,6 +144,8 @@ pub struct ScaleState {
     pub momentum_z: f64,
     pub signal: f64,      // tanh(z): opinión direccional ∈ [-1,1]
     pub persistence: f64, // EWMA de sign(dev)·sign(prev_dev) — autocorrelación de sorpresas
+    /// Factor adaptativo epigenético por escala armónica (0.20..3.00, inicial 1.0)
+    pub epigenetic_gain: f64,
     prev_dev: f64,
 }
 
@@ -169,6 +171,7 @@ impl TemporalSpectrum {
         let mut scales = [ScaleState::default(); 32];
         for (i, s) in scales.iter_mut().enumerate() {
             s.tau_ms = SPECTRUM_SCALES_MS[i];
+            s.epigenetic_gain = 1.0;
         }
         Self {
             scales,
@@ -266,7 +269,12 @@ impl TemporalSpectrum {
             // integrados. persistence=0.5 ⇒ puro ruido ⇒ peso suelo (5%,
             // conserva diversificación del promedio de ensamble); 1.0 ⇒
             // tendencia pura ⇒ peso pleno.
-            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0);
+            let gain = if s.epigenetic_gain.is_finite() && s.epigenetic_gain > 0.0 {
+                s.epigenetic_gain
+            } else {
+                1.0
+            };
+            let w = (s.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0);
             w_sum += w;
             let contrib = w * s.signal;
             w_sig_sum += contrib;
@@ -351,6 +359,61 @@ impl TemporalSpectrum {
         let i1 = (i0 + 1).min(31);
         let frac = (idx_f - i0 as f64).clamp(0.0, 1.0);
         self.scales[i0].momentum_z * (1.0 - frac) + self.scales[i1].momentum_z * frac
+    }
+
+    /// Ganancia epigenética adaptativa interpolada log-linealmente a escala tau.
+    #[inline]
+    pub fn scale_gain_at(&self, tau_ms: f64) -> f64 {
+        if tau_ms <= 0.0 {
+            return 1.0;
+        }
+        let ln_tau = tau_ms.max(1e-6).ln();
+        let ln_min = (1e-6_f64).ln();
+        let step = 4f64.ln();
+        let idx_f = (ln_tau - ln_min) / step;
+        let i0 = idx_f.floor().clamp(0.0, 30.0) as usize;
+        let i1 = (i0 + 1).min(31);
+        let frac = (idx_f - i0 as f64).clamp(0.0, 1.0);
+        let g0 = if self.scales[i0].epigenetic_gain > 0.0 {
+            self.scales[i0].epigenetic_gain
+        } else {
+            1.0
+        };
+        let g1 = if self.scales[i1].epigenetic_gain > 0.0 {
+            self.scales[i1].epigenetic_gain
+        } else {
+            1.0
+        };
+        g0 * (1.0 - frac) + g1 * frac
+    }
+
+    /// Retroalimentación Epigenética Adaptativa Multivariante Espectral por Escala.
+    ///
+    /// Modula continuamente la ganancia informacional (`epigenetic_gain`) de las 32 escalas
+    /// basándose en los resultados reales de trading en la longitud de onda `tau_trade_ms`.
+    ///
+    /// - Escalas en resonancia con un trade exitoso reciben amplificación epigenética.
+    /// - Escalas en resonancia con un trade perdedor son amortiguadas defensivamente.
+    pub fn apply_epigenetic_outcome(&mut self, tau_trade_ms: f64, is_win: bool, pnl_pct: f64) {
+        if !tau_trade_ms.is_finite() || tau_trade_ms <= 0.0 {
+            return;
+        }
+        let ln_trade = tau_trade_ms.max(1e-6).ln();
+        for s in self.scales.iter_mut() {
+            let ln_scale = s.tau_ms.max(1e-6).ln();
+            let delta_ln = (ln_scale - ln_trade).abs();
+            // Núcleo de resonancia espectral gaussiano con ancho sigma = 0.8
+            let kernel = (-0.5 * (delta_ln / 0.8).powi(2)).exp();
+            if kernel > 0.05 {
+                if is_win {
+                    let boost = 0.06 * kernel * (1.0 + (pnl_pct.max(0.0) * 20.0).min(2.0));
+                    s.epigenetic_gain = (s.epigenetic_gain + boost).clamp(0.20, 3.00);
+                } else {
+                    let penalty = 0.10 * kernel * (1.0 + ((-pnl_pct).max(0.0) * 15.0).min(2.0));
+                    s.epigenetic_gain = (s.epigenetic_gain - penalty).clamp(0.20, 3.00);
+                }
+            }
+        }
     }
 
     /// Snapshot compacto para modelos/telemetría: 32 señales + fusión.
@@ -471,6 +534,7 @@ impl TemporalSpectrum {
             momentum_z: self.momentum_z_at(tau_ms),
             signal: self.signal_at(tau_ms),
             persistence: self.persistence_at(tau_ms),
+            epigenetic_gain: self.scale_gain_at(tau_ms),
             prev_dev: 0.0,
         }
     }

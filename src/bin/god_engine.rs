@@ -3269,26 +3269,87 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     has_transitioned = true;
                 }
 
+                // M6-H02 (CIERRE 2026-09-24) — CIERRES POR BRACKET:
+                // contabilidad + aprendizaje, INCONDICIONAL. Este bloque
+                // vivía sólo en la rama `else` (trading permitido) y el veto
+                // drenaba la cola con `let _ = bc` — descartando fills
+                // REALES del exchange. Doctrina B3.14 aplicada a su lado
+                // correcto: los cierres del CORE durante veto son papel (sin
+                // despacho — no contabilizan, correcto); pero los TP/SL del
+                // bracket DESCANSAN en el exchange y se disparan aunque el
+                // core esté vetado: son dinero real. Un veto por drawdown es
+                // por definición una racha de pérdidas — cada SL que dispara
+                // durante el veto es exactamente la evidencia que el
+                // posterior de Kelly MÁS necesita para desinflar el sizing;
+                // descartarla mantenía el envelope inflado al levantarse el
+                // veto. (Histórico X-013: este drenaje nunca toca el plano
+                // de capital — escritor único on_capital.)
+                for bc in execution_engine::trade_accounting::drain_bracket_closes() {
+                    let net_bc = bc.pnl_gross - bc.fees;
+                    // D-702: la condición es «se conoce el contexto de
+                    // entrada», no «el PnL no es cero». Con la guarda
+                    // anterior, un cierre exactamente en el precio de entrada
+                    // quedaba fuera de la estadística sin dejar rastro.
+                    if bc.entry_price > 0.0 {
+                        // B3.7 (auditoría) — ¿el core ya contabilizó ESTE
+                        // mismo cierre (condición de salida disparada casi
+                        // simultáneamente al fill de la pierna)? Ventana
+                        // simétrica por símbolo: sin esto, doble cuenta.
+                        let core_ts = last_real_core_close_ms
+                            .get(&bc.symbol)
+                            .copied()
+                            .unwrap_or(0);
+                        if core_ts > 0
+                            && bc.ts_ms.abs_diff(core_ts) <= CLOSE_DEDUP_WINDOW_MS
+                        {
+                            telemetry!(
+                                "♻️ [BRACKET CLOSE] {} ya contabilizado por cierre del core (Δ{}ms) — sin doble cuenta",
+                                bc.symbol,
+                                bc.ts_ms.abs_diff(core_ts)
+                            );
+                        } else {
+                            if net_bc >= 0.0 {
+                                avg_win_abs = if avg_win_abs == 0.0 { net_bc.abs() } else { avg_win_abs * 0.95 + net_bc.abs() * 0.05 };
+                            } else {
+                                avg_loss_abs = if avg_loss_abs == 0.0 { net_bc.abs() } else { avg_loss_abs * 0.95 + net_bc.abs() * 0.05 };
+                            }
+                            risk_envelope.record_trade(net_bc > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
+                            // HOST-005 — persistir el posterior tras cada
+                            // cierre limpio contabilizado: el próximo
+                            // reinicio arranca con esta evidencia.
+                            persist_kelly_envelope(&risk_envelope);
+                            total_gross_pnl += bc.pnl_gross;
+                            total_net_pnl += net_bc;
+                            total_fees += bc.fees;
+                            total_trades += 1;
+                            if net_bc > 0.0 { total_wins += 1; }
+                            last_bracket_close_ms.insert(bc.symbol.clone(), bc.ts_ms);
+                        }
+                    }
+                    telemetry!(
+                        "🎯 [BRACKET CLOSE] {} {} qty {:.6}: entry {:.6} → fill {:.6} (trigger {:.6}, slip {:.1}bps adversos) | bruto {:.4} | fees {:.4} | neto {:.4}{}",
+                        bc.symbol,
+                        bc.trigger,
+                        bc.qty,
+                        bc.entry_price,
+                        bc.exit_price,
+                        bc.stop_price,
+                        bc.slippage_bps,
+                        bc.pnl_gross,
+                        bc.fees,
+                        net_bc,
+                        if bc.pnl_gross == 0.0 { " — sin contexto de entrada local (adoptada)" } else { "" }
+                    );
+                }
+
                 if !is_trading_allowed {
                     if msg_count > 0 && msg_count.is_multiple_of(5000) {
                         telemetry_server::telemetry_log!("🔥 [ORCHESTRATOR] Syncing buffers... {} ticks (Fase: {:?}).", msg_count, current_phase);
                     }
-                    // CERT-M6-H02: drenar cierres de bracket INCONDICIONALMENTE.
-                    // Antes sólo se drenaban dentro del else (trading permitido) —
-                    // durante warmup/vetos, los fills del exchange se acumulaban
-                    // (cap 1024, overflow silencioso) y Kelly nunca los veía.
-                    // FIX (auditoría 2026-09-19): este drenaje era un fetch_add
-                    // sobre to_bits() — suma de representaciones de bits
-                    // (bits(a)+bits(b) ≠ bits(a+b)) que corrompía el plano
-                    // exchange de X-013 (valores astronómicos/NaN ⇒ el
-                    // kill-switch quedaba ciego al plano real). Además era
-                    // redundante: el mismo fill dispara ACCOUNT_UPDATE y
-                    // on_capital ya guarda la verdad (wallet+unrealized).
-                    // El plano exchange queda con ESCRITOR ÚNICO (on_capital),
-                    // igual que el drenaje vivo B3.7 que nunca toca capital.
-                    for bc in execution_engine::trade_accounting::drain_bracket_closes() {
-                        let _ = bc;
-                    }
+                    // M6-H02: los cierres de bracket ya fueron drenados y
+                    // contabilizados ARRIBA, incondicionalmente. Los cierres
+                    // del core durante veto siguen SIN contarse: son papel
+                    // sin despacho (B3.14).
                 } else {
                     if newly_transitioned {
                         telemetry_server::telemetry_log!("✅ [WARMUP COMPLETE] System state synchronized & Darwin Approved. Transitioning to {:?}", current_phase);
@@ -3391,69 +3452,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
-
-                    // B3.7 — CIERRES POR BRACKET: contabilidad + aprendizaje.
-                    // Los disparos TP/SL del exchange (la mayoría de los
-                    // cierres) llegan por la cola de trade_accounting; aquí
-                    // alimentan los mismos acumuladores y el posterior de
-                    // Kelly que antes sólo veía los cierres del core.
-                    for bc in execution_engine::trade_accounting::drain_bracket_closes() {
-                        let net_bc = bc.pnl_gross - bc.fees;
-                        // D-702: la condición es «se conoce el contexto de
-                        // entrada», no «el PnL no es cero». Con la guarda
-                        // anterior, un cierre exactamente en el precio de entrada
-                        // quedaba fuera de la estadística sin dejar rastro.
-                        if bc.entry_price > 0.0 {
-                            // B3.7 (auditoría) — ¿el core ya contabilizó ESTE
-                            // mismo cierre (condición de salida disparada casi
-                            // simultáneamente al fill de la pierna)? Ventana
-                            // simétrica por símbolo: sin esto, doble cuenta.
-                            let core_ts = last_real_core_close_ms
-                                .get(&bc.symbol)
-                                .copied()
-                                .unwrap_or(0);
-                            if core_ts > 0
-                                && bc.ts_ms.abs_diff(core_ts) <= CLOSE_DEDUP_WINDOW_MS
-                            {
-                                telemetry!(
-                                    "♻️ [BRACKET CLOSE] {} ya contabilizado por cierre del core (Δ{}ms) — sin doble cuenta",
-                                    bc.symbol,
-                                    bc.ts_ms.abs_diff(core_ts)
-                                );
-                            } else {
-                                if net_bc >= 0.0 {
-                                    avg_win_abs = if avg_win_abs == 0.0 { net_bc.abs() } else { avg_win_abs * 0.95 + net_bc.abs() * 0.05 };
-                                } else {
-                                    avg_loss_abs = if avg_loss_abs == 0.0 { net_bc.abs() } else { avg_loss_abs * 0.95 + net_bc.abs() * 0.05 };
-                                }
-                                risk_envelope.record_trade(net_bc > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
-                                // HOST-005 — persistir el posterior tras cada
-                                // cierre limpio contabilizado: el próximo
-                                // reinicio arranca con esta evidencia.
-                                persist_kelly_envelope(&risk_envelope);
-                                total_gross_pnl += bc.pnl_gross;
-                                total_net_pnl += net_bc;
-                                total_fees += bc.fees;
-                                total_trades += 1;
-                                if net_bc > 0.0 { total_wins += 1; }
-                                last_bracket_close_ms.insert(bc.symbol.clone(), bc.ts_ms);
-                            }
-                        }
-                        telemetry!(
-                            "🎯 [BRACKET CLOSE] {} {} qty {:.6}: entry {:.6} → fill {:.6} (trigger {:.6}, slip {:.1}bps adversos) | bruto {:.4} | fees {:.4} | neto {:.4}{}",
-                            bc.symbol,
-                            bc.trigger,
-                            bc.qty,
-                            bc.entry_price,
-                            bc.exit_price,
-                            bc.stop_price,
-                            bc.slippage_bps,
-                            bc.pnl_gross,
-                            bc.fees,
-                            net_bc,
-                            if bc.pnl_gross == 0.0 { " — sin contexto de entrada local (adoptada)" } else { "" }
-                        );
-                    }
 
                     if let Some((is_long, pnl, qty)) = closed_order {
                         // B3.14 — sólo contabiliza lo que EXISTIÓ en el

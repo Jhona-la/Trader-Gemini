@@ -197,7 +197,7 @@ impl Position {
 
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub fn open_with_fee(
+    pub fn open_with_tau_and_fee(
         &self,
         is_long: bool,
         price: f64,
@@ -210,6 +210,7 @@ impl Position {
         ml_pred: f64,
         conf: f64,
         entry_fee: f64,
+        entry_tau_ms: u64,
     ) -> bool {
         // D-729 (DÉCIMA OLA · auditoría integral): UNA ENTRADA SIN PRECIO NO ES
         // UNA ENTRADA.
@@ -282,11 +283,10 @@ impl Position {
         self.ml_prediction.store(safe_ml, Ordering::Relaxed);
         self.confidence.store(safe_conf, Ordering::Relaxed);
         self.entry_fee.store(safe_fee, Ordering::Relaxed);
-        // La τ de entrada es del OCUPANTE, no del slot: sin este reset, una
-        // reapertura sin cierre previo heredaría la τ (y por tanto las
-        // geometrías de gestión temporal) de la posición saliente. El core la
-        // reescribe justo tras la apertura con la τ dominante viva (REHAB-1b).
-        self.entry_tau_ms.store(0, Ordering::Relaxed);
+        // Publicación ATÓMICA e inmutable de la escala espectral tau:
+        // Se almacena ANTES de publicar is_open(true), eliminando la ventana de carrera ABA
+        // donde lectores observaban entry_tau_ms == 0.
+        self.entry_tau_ms.store(entry_tau_ms, Ordering::Relaxed);
         // B3.14: toda apertura nace SIN confirmación de exchange — el host
         // la setea sólo tras el fill real (o la adopción FASE 5).
         self.exchange_confirmed.store(false, Ordering::Relaxed);
@@ -295,6 +295,38 @@ impl Position {
         self.is_open.store(true, Ordering::Release);
         self.unlock_transition();
         true
+    }
+
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_with_fee(
+        &self,
+        is_long: bool,
+        price: f64,
+        qty: f64,
+        margin: f64,
+        current_time_ms: u64,
+        tp: f64,
+        sl: f64,
+        horizon: PositionHorizon,
+        ml_pred: f64,
+        conf: f64,
+        entry_fee: f64,
+    ) -> bool {
+        self.open_with_tau_and_fee(
+            is_long,
+            price,
+            qty,
+            margin,
+            current_time_ms,
+            tp,
+            sl,
+            horizon,
+            ml_pred,
+            conf,
+            entry_fee,
+            0,
+        )
     }
 
     #[inline(always)]
@@ -518,6 +550,28 @@ impl PositionManager {
         }
     }
 
+    #[inline(always)]
+    pub fn total_margin_used(&self) -> f64 {
+        let mut sum = 0.0;
+        for p in self.slots() {
+            if p.is_open() {
+                sum += p.margin_used.load(Ordering::Relaxed);
+            }
+        }
+        sum
+    }
+
+    #[inline(always)]
+    pub fn open_positions_count(&self) -> usize {
+        let mut count = 0;
+        for p in self.slots() {
+            if p.is_open() {
+                count += 1;
+            }
+        }
+        count
+    }
+
     /// Despacho por resonancia y desacoplamiento espectral continuo (sin cortes discretos).
     ///
     /// Evalúa si existe una ranura libre cuya longitud de onda `tau_ms` no entre en interferencia destructiva
@@ -539,8 +593,8 @@ impl PositionManager {
                 if open_is_long == is_long {
                     let open_tau = (pos.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
                     let diff_ln = (ln_target - open_tau.ln()).abs();
-                    // Escalas muy cercanas en la misma dirección (|Δ ln τ| < 0.60): interferencia destructiva
-                    if diff_ln < 0.60 {
+                    // Escalas muy cercanas en la misma dirección (|Δ ln τ| < 1.50, factor ~4.5x): interferencia destructiva
+                    if diff_ln < 1.50 {
                         return None;
                     }
                 }
