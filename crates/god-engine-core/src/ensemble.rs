@@ -184,7 +184,17 @@ impl ModelEnsemble {
         for (i, pred) in preds.iter().enumerate() {
             if let Some(p) = pred.as_ref() {
                 let p = *p;
-                let w = (self.log_weights[i] - max_lw).exp();
+                let mut lw = self.log_weights[i];
+                // Si el modelo secundario (DarkAlphaNN, slot 1) muestra z adverso frente a la tasa base,
+                // atenuar su ponderación en escala logarítmica para no canibalizar al bosque validado
+                if i == ModelId::DarkAlphaNN as usize {
+                    if let Some(z) = self.skill.z() {
+                        if z < 0.0 {
+                            lw += z.clamp(-4.0, 0.0);
+                        }
+                    }
+                }
+                let w = (lw - max_lw).exp();
                 sum_w += w;
                 sum_wp += w * p;
             }
@@ -219,6 +229,36 @@ impl ModelEnsemble {
         // Reset: nuevo bar — nueva primera opinión por aprender.
         self.predictions = [None, None];
         self.bar_open_predictions = [None, None];
+    }
+
+    /// Retroalimentación epigenética directa de cada trade cerrado real.
+    ///
+    /// QUÉ: Ajusta los pesos logarítmicos del ensamble directamente en función
+    ///      de si las predicciones de los modelos acertaron la dirección del trade cerrado.
+    /// POR QUÉ: Las barras de 1 minuto tardan en acumularse y muchas son filtradas como
+    ///      ruido neutro (|ret| < 10 bps). El desenlace financiero de un trade cerrado
+    ///      es evidencia empírica directa y sin ambigüedad sobre qué modelos acertaron.
+    /// CÓMO: Si el trade fue Long y ganó (o Short y perdió), la dirección real fue alcista (y = 1.0).
+    ///      Si el trade fue Short y ganó (o Long y perdió), la dirección real fue bajista (y = 0.0).
+    ///      Cada modelo presente es penalizado por su error cuadrático de Brier con una tasa adaptativa
+    ///      proporcional a la magnitud del trade sin aplicar shrink que borre el aprendizaje.
+    pub fn update_with_trade_outcome(&mut self, is_long: bool, is_win: bool, pnl_pct: f64) {
+        let y = match (is_long, is_win) {
+            (true, true) => 1.0,
+            (true, false) => 0.0,
+            (false, true) => 0.0,
+            (false, false) => 1.0,
+        };
+        // Escala adaptativa por el retorno del trade
+        let eta_trade = (0.20 * (pnl_pct.abs() / 0.001).clamp(0.5, 3.0)).clamp(0.05, 0.60);
+        for (i, pred) in self.predictions.iter().enumerate() {
+            if let Some(p) = pred.as_ref() {
+                let p = *p;
+                let brier = (p - y) * (p - y);
+                // Sin shrink aquí: la evidencia del PnL real es persistente
+                self.log_weights[i] -= eta_trade * brier;
+            }
+        }
     }
 
     /// D-695: estadístico z de la ventaja de Brier sobre la tasa base.

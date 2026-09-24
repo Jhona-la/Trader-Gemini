@@ -1621,6 +1621,13 @@ impl GodEngineCore {
                         spec.apply_epigenetic_outcome(tau_trade_ms, is_win, pnl_pct);
                     }
 
+                    // 3. Retroalimentación epigenética directa de trade cerrado al ensamble de modelos predictivos:
+                    if coin_id < self.ensembles.len() {
+                        self.ensembles[coin_id].update_with_trade_outcome(is_long, is_win, pnl_pct);
+                    } else {
+                        self.ensemble.update_with_trade_outcome(is_long, is_win, pnl_pct);
+                    }
+
                     // MMAP TELEMETRY BUS — PRODUCTOR CONECTADO (el feedback
                     // de autoevolución estaba muerto: el daemon leía un bus
                     // que nadie escribía). Cada cierre emite predicción-vs-
@@ -2608,8 +2615,6 @@ impl GodEngineCore {
             let tensor_cont = self
                 .tensor_orchestrator
                 .evaluate_continuous_consensus_for_coin(coin_id, &sym);
-            let tensor_scalp = tensor_cont;
-            let tensor_swing = tensor_cont;
 
             let tensor_boost = match tensor_cont.signal {
                 SignalType::Long => tensor_cont.net_confidence.clamp(0.0, 1.0),
@@ -3141,9 +3146,9 @@ impl GodEngineCore {
 
                 let tensor_cutoff = tensor_min_conf.clamp(0.55, 0.85);
                 if fast_intent.signal == SignalType::Flat
-                    && tensor_scalp.signal != SignalType::Flat
+                    && tensor_cont.signal != SignalType::Flat
                     && !is_anti_persistent
-                    && tensor_scalp.net_confidence.abs() >= tensor_cutoff
+                    && tensor_cont.net_confidence.abs() >= tensor_cutoff
                 {
                     // Autoadaptabilidad Espectral Continua (Erradicación del 0.48 fijo):
                     // Modulación analítica por persistencia Browniana (Hurst), flujo tóxico (VPIN) y entropía informacional:
@@ -3185,7 +3190,7 @@ impl GodEngineCore {
                         effective_obi_short < -range_obi,
                         not_overextended_short,
                     ];
-                    let tensor_allowed = match tensor_scalp.signal {
+                    let tensor_allowed = match tensor_cont.signal {
                         SignalType::Long => {
                             self.diag_dir.record_gate(true, &long_conditions);
                             long_conditions.iter().all(|&ok| ok)
@@ -3198,8 +3203,8 @@ impl GodEngineCore {
                     };
                     if tensor_allowed {
                         fast_intent = SignalIntent {
-                            signal: tensor_scalp.signal,
-                            confidence: tensor_scalp
+                            signal: tensor_cont.signal,
+                            confidence: tensor_cont
                                 .net_confidence
                                 .abs()
                                 .clamp(0.50, 0.95),
@@ -3593,41 +3598,7 @@ impl GodEngineCore {
                     consensus_stretch_z >= 0.0 && consensus_stretch_z <= crate::diffusion::Z95;
 
                 // D-458 & D-462: Desbloquear consenso continuo evitando la persecución tardía (anti-chase guard)
-                if tensor_swing.signal == SignalType::Long
-                    && is_bull
-                    && not_chasing_long
-                    && tensor_swing.net_confidence.abs() > tensor_min_conf * 0.95
-                {
-                    slow_intent = SignalIntent {
-                        signal: tensor_swing.signal,
-                        confidence: tensor_swing
-                            .net_confidence
-                            .abs()
-                            .clamp(tensor_min_conf * 0.95, 1.0),
-                        horizon: strategy_core::TradeHorizon::Continuous,
-                        expected_duration_ms: swing_duration_ms,
-                        // D-678: rama 14 · consenso tensorial.
-                        volume_flow_rate: 14.0,
-                        ..Default::default()
-                    };
-                } else if tensor_swing.signal == SignalType::Short
-                    && is_bear
-                    && not_chasing_short
-                    && tensor_swing.net_confidence.abs() > tensor_min_conf * 0.95
-                {
-                    slow_intent = SignalIntent {
-                        signal: tensor_swing.signal,
-                        confidence: tensor_swing
-                            .net_confidence
-                            .abs()
-                            .clamp(tensor_min_conf * 0.95, 1.0),
-                        horizon: strategy_core::TradeHorizon::Continuous,
-                        expected_duration_ms: swing_duration_ms,
-                        // D-678: rama 14 · consenso tensorial.
-                        volume_flow_rate: 14.0,
-                        ..Default::default()
-                    };
-                } else if tensor_cont.signal == SignalType::Long
+                if tensor_cont.signal == SignalType::Long
                     && is_bull
                     && not_chasing_long
                     && tensor_cont.net_confidence.abs() > tensor_min_conf * 0.95
@@ -3958,14 +3929,18 @@ impl GodEngineCore {
                         unified_intent.signal = SignalType::Flat;
                     } else {
                         // MODULACIÓN ARMÓNICA CONTINUA DE CONFIANZA:
-                        // La convicción respira con el tensor espectral sin cortes abruptos.
-                        let mod_coherence = (0.50 + 0.50 * coherence).clamp(0.40, 1.0);
-                        let mod_tide = (0.75 + 0.25 * macro_tide.clamp(-0.15, 1.0)).clamp(0.50, 1.20);
-                        let mod_entropy = (1.0 - 0.20 * (field.spectral_entropy - 0.50).max(0.0)).clamp(0.60, 1.0);
-                        let spectral_multiplier = (mod_coherence * mod_tide * mod_entropy).clamp(0.30, 1.15);
+                        // La convicción respira armónicamente con el tensor espectral (coherencia, marea macro y entropía)
+                        // en un solo paso canónico, evitando la colisión de doble atenuación parásita.
+                        let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
+                        let directional_persist = if is_trending_mode { persist } else { -persist };
+                        let mod_coherence = (0.80 + 0.20 * coherence).clamp(0.70, 1.10);
+                        let mod_tide = (0.90 + 0.10 * macro_tide.clamp(-0.50, 1.0)).clamp(0.80, 1.15);
+                        let mod_entropy = (1.0 - 0.10 * (field.spectral_entropy - 0.50).max(0.0)).clamp(0.85, 1.05);
+                        let mod_persist = (1.0 + 0.10 * directional_persist).clamp(0.85, 1.15);
+                        let spectral_multiplier = (mod_coherence * mod_tide * mod_entropy * mod_persist).clamp(0.65, 1.25);
 
                         unified_intent.confidence =
-                            (unified_intent.confidence * spectral_multiplier).clamp(0.10, 0.95);
+                            (unified_intent.confidence * spectral_multiplier).clamp(0.45, 0.95);
 
                         // Mapeo armónico continuo en el Universo Multivariante Continuo Temporal Espectral:
                         // Elimina la discretización binaria rígida y converge continuamente hacia el centro de masa tau*.
@@ -3977,15 +3952,6 @@ impl GodEngineCore {
                         let continuous_tau = (base_tau.ln() * 0.50 + resonant_tau_ms.ln() * 0.50).exp();
                         unified_intent.expected_duration_ms =
                             continuous_tau.clamp(1_000.0, 43_200_000.0).round() as u64;
-                        let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
-                        let directional_persist = if is_trending_mode { persist } else { -persist };
-                        let coherence_boost = 0.20 * coherence;
-                        let entropy_boost = 0.10 * (1.0 - field.spectral_entropy).max(0.0);
-                        let persist_boost = 0.15 * directional_persist;
-                        let spectral_factor = (1.0 + coherence_boost + entropy_boost + persist_boost).clamp(0.70, 1.35);
-
-                        unified_intent.confidence =
-                            (unified_intent.confidence * spectral_factor).clamp(0.10, 0.95);
                     }
                 }
             }
@@ -4246,9 +4212,25 @@ impl GodEngineCore {
             }
 
             // F8-P11: Invariante de Alineación Predictiva Neural y Ensamble ML
-            // Prohibido abrir Long si el ensamble neuronal predice caída (ml_prob < 0.50).
-            // Prohibido abrir Short si el ensamble neuronal predice subida (ml_prob > 0.50).
-            if unified_intent.signal == SignalType::Long && ml_prob < 0.50 {
+            // Si el ensamble completo ha demostrado habilidad estadística (neural_skill):
+            // aplicar estrictamente los umbrales de puerta del genoma (ml_gate_long / ml_gate_short).
+            // Si el ensamble aún no demuestra habilidad (cold start / red descalibrada) pero existe
+            // un bosque del roster validado (has_roster_model), la alineación la dicta la convicción
+            // del propio bosque (diag_forest_p vs ml_model_base), impidiendo que una red fría inhiba al bosque.
+            if neural_skill {
+                if unified_intent.signal == SignalType::Long && ml_prob < ml_gate_long {
+                    unified_intent = SignalIntent::flat();
+                } else if unified_intent.signal == SignalType::Short && ml_prob > ml_gate_short {
+                    unified_intent = SignalIntent::flat();
+                }
+            } else if has_roster_model {
+                let forest_p = diag_forest_p.unwrap_or(0.5);
+                if unified_intent.signal == SignalType::Long && forest_p < ml_model_base {
+                    unified_intent = SignalIntent::flat();
+                } else if unified_intent.signal == SignalType::Short && forest_p > ml_model_base {
+                    unified_intent = SignalIntent::flat();
+                }
+            } else if unified_intent.signal == SignalType::Long && ml_prob < 0.50 {
                 unified_intent = SignalIntent::flat();
             } else if unified_intent.signal == SignalType::Short && ml_prob > 0.50 {
                 unified_intent = SignalIntent::flat();

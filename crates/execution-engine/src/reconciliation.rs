@@ -264,110 +264,86 @@ pub fn reconcile_arena(
         let remote_price = remote_price_map.get(&sym).copied().unwrap_or(0.0);
         let coin = &arena.coins[coin_idx];
 
-        let cont_open = coin.positions.position.is_open();
+        let cont_open = coin.positions.is_any_open();
 
-        let cont_qty = if cont_open {
-            let q = coin
-                .positions
-                .position
-                .quantity
-                .load(std::sync::atomic::Ordering::Relaxed);
-            if coin
-                .positions
-                .position
-                .is_long
-                .load(std::sync::atomic::Ordering::Relaxed)
-            {
-                q
-            } else {
-                -q
-            }
-        } else {
-            0.0
-        };
-
-        let arena_net_qty = cont_qty;
+        let arena_net_qty: f64 = coin
+            .positions
+            .slots()
+            .iter()
+            .filter(|p| p.is_open())
+            .map(|p| {
+                let q = p.quantity.load(std::sync::atomic::Ordering::Relaxed);
+                if p.is_long.load(std::sync::atomic::Ordering::Relaxed) {
+                    q
+                } else {
+                    -q
+                }
+            })
+            .sum();
 
         if remote_net_qty.abs() < 1e-8 {
             // Exchange está plano pero la Arena cree que tiene posiciones abiertas: phantom cleanup
             if cont_open {
-                // D-716 (DÉCIMA OLA · auditoría integral): NO SE INVENTA EL FILL.
-                //
-                // Aquí se imputaba como precio de salida `coin.current_price`, el
-                // precio de MERCADO de hasta 60 s después del cierre real (la
-                // limpieza corre en el ciclo de reconciliación). Y `remote_price`
-                // es siempre 0 en esta rama —el mapa sólo se rellena con
-                // posiciones ABIERTAS y aquí la remota está plana—, de modo que
-                // la condición era código muerto y el precio inventado, la regla.
-                // Un SL que llenó en 98 mientras el precio rebotaba a 101 se
-                // contabilizaba como GANANCIA, y ese PnL ficticio iba a
-                // `pnl_realized`, `win_rate`, `gross_wins/losses`, `trade_count` y
-                // `unified_capital`: las métricas que alimentan la aptitud de
-                // Darwin y la matriz de apalancamiento.
-                //
-                // La posición se cierra igual (el margen SIEMPRE se libera), pero
-                // sin fill conocido no hay PnL que atribuir: el cierre real llega
-                // por la contabilidad de brackets (D-701/D-702) o por
-                // /fapi/v1/income, que son las fuentes con precio verdadero.
-                let exit_price = remote_price;
-                let (was_long, entry_p, qty, m, entry_fee_paid) =
-                    coin.positions.position.close_with_fee();
-                if m > 0.0 {
-                    // MOD6/8-010: resta atómica — el RMW load→store perdía
-                    // actualizaciones concurrentes del cierre del core y de
-                    // los rollbacks async del host.
-                    arena
-                        .used_margin
-                        .fetch_sub(m, std::sync::atomic::Ordering::Relaxed);
-                }
+                for slot in coin.positions.slots() {
+                    if !slot.is_open() {
+                        continue;
+                    }
+                    let exit_price = remote_price;
+                    let (was_long, entry_p, qty, m, entry_fee_paid) =
+                        slot.close_with_fee();
+                    if m > 0.0 {
+                        arena
+                            .used_margin
+                            .fetch_sub(m, std::sync::atomic::Ordering::Relaxed);
+                    }
 
-                if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
-                    // D-701: la misma función que usa la contabilidad de brackets.
-                    let gross_pnl =
-                        crate::trade_accounting::gross_pnl(was_long, entry_p, exit_price, qty);
-                    let live_taker = arena
-                        .config
-                        .live_taker_fee
-                        .load(std::sync::atomic::Ordering::Relaxed)
-                        .max(0.0004);
-                    let close_fee = (qty * exit_price) * live_taker;
-                    let net_realized_pnl = gross_pnl - close_fee;
-                    let net_trade_pnl = net_realized_pnl - entry_fee_paid;
+                    if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
+                        let gross_pnl =
+                            crate::trade_accounting::gross_pnl(was_long, entry_p, exit_price, qty);
+                        let live_taker = arena
+                            .config
+                            .live_taker_fee
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                            .max(0.0004);
+                        let close_fee = (qty * exit_price) * live_taker;
+                        let net_realized_pnl = gross_pnl - close_fee;
+                        let net_trade_pnl = net_realized_pnl - entry_fee_paid;
 
-                    // D-447: coin.metrics es la fuente unificada para el espectro continuo.
-                    // U-1: los espejos swing/scalp (triple contabilización) extirpados.
-                    coin.metrics
-                        .pnl_realized
-                        .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                    arena
-                        .unified_capital
-                        .fetch_add(net_realized_pnl, std::sync::atomic::Ordering::Relaxed);
-
-                    let is_win = net_trade_pnl > 0.0;
-                    let n = coin
-                        .metrics
-                        .trade_count
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                        as f64
-                        + 1.0;
-
-                    let old_wr = coin
-                        .metrics
-                        .win_rate
-                        .load(std::sync::atomic::Ordering::Relaxed);
-                    let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
-                    coin.metrics
-                        .win_rate
-                        .store(new_wr, std::sync::atomic::Ordering::Relaxed);
-
-                    if is_win {
+                        // D-447: coin.metrics es la fuente unificada para el espectro continuo.
+                        // U-1: los espejos swing/scalp (triple contabilización) extirpados.
                         coin.metrics
-                            .gross_wins
+                            .pnl_realized
                             .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                    } else {
+                        arena
+                            .unified_capital
+                            .fetch_add(net_realized_pnl, std::sync::atomic::Ordering::Relaxed);
+
+                        let is_win = net_trade_pnl > 0.0;
+                        let n = coin
+                            .metrics
+                            .trade_count
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                            as f64
+                            + 1.0;
+
+                        let old_wr = coin
+                            .metrics
+                            .win_rate
+                            .load(std::sync::atomic::Ordering::Relaxed);
+                        let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
                         coin.metrics
-                            .gross_losses
-                            .fetch_add(net_trade_pnl.abs(), std::sync::atomic::Ordering::Relaxed);
+                            .win_rate
+                            .store(new_wr, std::sync::atomic::Ordering::Relaxed);
+
+                        if is_win {
+                            coin.metrics
+                                .gross_wins
+                                .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                        } else {
+                            coin.metrics
+                                .gross_losses
+                                .fetch_add(net_trade_pnl.abs(), std::sync::atomic::Ordering::Relaxed);
+                        }
                     }
                 }
                 adjustments += 1;
@@ -447,31 +423,33 @@ pub fn reconcile_arena(
                     .fetch_add(margin, std::sync::atomic::Ordering::Relaxed);
                 adjustments += 1;
             } else if (arena_net_qty - remote_net_qty).abs() > 1e-6 {
-                // Drift en cantidad: actualizar posición continua para reflejar el tamaño real
+                // Drift en cantidad: actualizar posición continua o slot abierto para reflejar el tamaño real
                 let target_abs = remote_net_qty.abs();
                 if target_abs <= 1e-6 {
-                    let (_, _, _, old_margin, _) = coin.positions.position.close_with_fee();
-                    if old_margin > 0.0 {
-                        // MOD6/8-010: resta atómica (idem phantom cleanup).
-                        arena
-                            .used_margin
-                            .fetch_sub(old_margin, std::sync::atomic::Ordering::Relaxed);
+                    for slot in coin.positions.slots() {
+                        if slot.is_open() {
+                            let (_, _, _, old_margin, _) = slot.close_with_fee();
+                            if old_margin > 0.0 {
+                                arena
+                                    .used_margin
+                                    .fetch_sub(old_margin, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }
                     }
                 } else {
-                    // B3.14 (auditoría/repro demo_v26): el drift confirma que
-                    // el slot local Y el exchange sostienen la MISMA posición
-                    // — sin este flag, un slot abierto-local/percibido-como-
-                    // papel (entrada aterrizada tras rollback/veto) quedaba
-                    // des-confirmado PARA SIEMPRE: el core lo cerraba como
-                    // [PAPER CLOSE] y su despacho X-008 cerraba la posición
-                    // REAL sin contabilizar (caso BNBUSDT +$57.90).
-                    coin.positions
-                        .position
+                    let is_remote_long = remote_net_qty > 0.0;
+                    let target_slot = coin
+                        .positions
+                        .slots()
+                        .into_iter()
+                        .find(|p| p.is_open() && p.is_long.load(std::sync::atomic::Ordering::Relaxed) == is_remote_long)
+                        .or_else(|| coin.positions.slots().into_iter().find(|p| p.is_open()))
+                        .unwrap_or(&coin.positions.position);
+
+                    target_slot
                         .exchange_confirmed
                         .store(true, std::sync::atomic::Ordering::Relaxed);
-                    let price = coin
-                        .positions
-                        .position
+                    let price = target_slot
                         .entry_price
                         .load(std::sync::atomic::Ordering::Relaxed);
                     let safe_price = if price > 0.0 {
@@ -480,17 +458,9 @@ pub fn reconcile_arena(
                         coin.current_price
                             .load(std::sync::atomic::Ordering::Relaxed)
                     };
-                    let old_margin = coin
-                        .positions
-                        .position
+                    let old_margin = target_slot
                         .margin_used
                         .load(std::sync::atomic::Ordering::Relaxed);
-                    // D-734 (DÉCIMA OLA · auditoría integral): la rama de DERIVA
-                    // seguía dividiendo por el literal 10 mientras la rama de
-                    // adopción, a 40 líneas de distancia, ya usa el apalancamiento
-                    // REAL del exchange (S-06). Una cuenta a 20x veía su margen
-                    // inflado al doble en cuanto la cantidad derivaba, con la
-                    // falsa escasez de margen que S-06 vino a corregir.
                     let lev_deriva = remote_lev_map
                         .get(&sym)
                         .copied()
@@ -503,12 +473,10 @@ pub fn reconcile_arena(
                     };
                     let margin_diff = new_margin - old_margin;
 
-                    coin.positions
-                        .position
+                    target_slot
                         .quantity
                         .store(target_abs, std::sync::atomic::Ordering::Relaxed);
-                    coin.positions
-                        .position
+                    target_slot
                         .margin_used
                         .store(new_margin, std::sync::atomic::Ordering::Relaxed);
                     arena
