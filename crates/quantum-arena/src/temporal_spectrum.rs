@@ -207,12 +207,17 @@ impl TemporalSpectrum {
         let dt = (ts_ms - self.last_ts_ms) as f64;
         self.last_ts_ms = ts_ms;
 
+        // Relajación homeostática continua de las 32 escalas epigenéticas hacia 1.0 (tau_homeo = 30 min):
+        // Erradica la histeresis no-ergódica donde ganancias infladas o penalizadas se petrificaban sin disipación.
+        let homeo_decay = (-dt / 1_800_000.0).exp();
+
         let mut w_sum = 0.0;
         let mut w_sig_sum = 0.0;
         let mut best_contrib = 0.0f64;
         let mut dominant = 0.0f64;
 
         for s in self.scales.iter_mut() {
+            s.epigenetic_gain = 1.0 + (s.epigenetic_gain - 1.0) * homeo_decay;
             // α de la escala para el dt transcurrido: el horizonte τ_i define
             // cuánto pesa ESTE tick en esa escala. Continuo en dt y τ.
             let alpha = 1.0 - (-dt / s.tau_ms).exp();
@@ -709,7 +714,12 @@ impl TemporalSpectrum {
         let mut total_e = 0.0;
         let mut weighted_ln = 0.0;
         for s in &self.scales {
-            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0);
+            let gain = if s.epigenetic_gain.is_finite() && s.epigenetic_gain > 0.0 {
+                s.epigenetic_gain
+            } else {
+                1.0
+            };
+            let w = (s.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0);
             let e = w * s.signal.abs();
             total_e += e;
             weighted_ln += e * s.tau_ms.max(1e-6).ln();
@@ -733,7 +743,12 @@ impl TemporalSpectrum {
             } else {
                 (-0.5 * (ln_tau - pivot_ln).powi(2)).exp()
             };
-            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0) * weight_fast;
+            let gain = if s.epigenetic_gain.is_finite() && s.epigenetic_gain > 0.0 {
+                s.epigenetic_gain
+            } else {
+                1.0
+            };
+            let w = (s.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0) * weight_fast;
             let e = w * s.signal.abs();
             total_e += e;
             weighted_ln += e * ln_tau;
@@ -757,7 +772,12 @@ impl TemporalSpectrum {
             } else {
                 (-0.5 * (pivot_ln - ln_tau).powi(2)).exp()
             };
-            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0) * weight_slow;
+            let gain = if s.epigenetic_gain.is_finite() && s.epigenetic_gain > 0.0 {
+                s.epigenetic_gain
+            } else {
+                1.0
+            };
+            let w = (s.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0) * weight_slow;
             let e = w * s.signal.abs();
             total_e += e;
             weighted_ln += e * ln_tau;

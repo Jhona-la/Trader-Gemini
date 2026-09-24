@@ -330,11 +330,10 @@ impl StatefulEngine {
             self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
         };
         let raw = self.spectral_loss_streaks[band];
-        let decay_window_ms = match band {
-            0 => 300_000,    // 5 minutos para micro (<60s)
-            1 => 1_800_000,  // 30 minutos para meso (60s..30m)
-            _ => 7_200_000,  // 2 horas para macro (>=30m)
-        };
+        // Decaimiento analítico continuo proporcional a la escala física tau:
+        // Una perturbación a escala tau se disipa naturalmente en ~4 periodos de su frecuencia fundamental,
+        // acotada entre 60 segundos (piso físico micro) y 2 horas (techo macro).
+        let decay_window_ms = (4.0 * tau_ms.max(10.0)).clamp(60_000.0, 7_200_000.0) as u64;
         if elapsed_ms > decay_window_ms {
             0
         } else if elapsed_ms > decay_window_ms / 2 {
@@ -362,11 +361,7 @@ impl StatefulEngine {
             self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
         };
         let raw = self.spectral_directional_loss_streaks[band][dir_idx];
-        let decay_window_ms = match band {
-            0 => 300_000,    // 5 minutos para micro (<60s)
-            1 => 1_800_000,  // 30 minutos para meso (60s..30m)
-            _ => 7_200_000,  // 2 horas para macro (>=30m)
-        };
+        let decay_window_ms = (4.0 * tau_ms.max(10.0)).clamp(60_000.0, 7_200_000.0) as u64;
         if elapsed_ms > decay_window_ms {
             0
         } else if elapsed_ms > decay_window_ms / 2 {

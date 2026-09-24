@@ -3168,6 +3168,24 @@ impl GodEngineCore {
                     let long_macro_slope_ok = macro_trend >= 0.0 || (higher_trend > 0.00020 && micro_trend > 0.00015);
                     let short_macro_slope_ok = macro_trend <= 0.0 || (higher_trend < -0.00020 && micro_trend < -0.00015);
 
+                    let (spec_coh_long, spec_coh_short) = if let Some(spec) = self.temporal_spectrum.get(coin_id) {
+                        (spec.spectral_coherence(true), spec.spectral_coherence(false))
+                    } else {
+                        (0.0, 0.0)
+                    };
+
+                    // Autoadaptabilidad Espectral Continua (#579):
+                    // En lugar de exigir un umbral rígido estático de higher_trend >= 0.00030 (que vetaba 54,052 intenciones),
+                    // la confluencia macro se valida armónicamente si la coherencia de fase de las 32 escalas espectrales
+                    // confirma la dirección (spec_coh > 0.08) sin colapso secular, o si la tendencia superior confirma la pendiente.
+                    let higher_trend_long_harmonic_ok = (higher_trend >= 0.00015 && long_macro_slope_ok)
+                        || (spec_coh_long > 0.08 && secular_trend > -0.0015)
+                        || (higher_trend >= -0.00010 && micro_trend > 0.00010 && long_macro_slope_ok);
+
+                    let higher_trend_short_harmonic_ok = (higher_trend <= -0.00015 && short_macro_slope_ok)
+                        || (spec_coh_short > 0.08 && secular_trend < 0.0015)
+                        || (higher_trend <= 0.00010 && micro_trend < -0.00010 && short_macro_slope_ok);
+
                     // Diagnóstico por dirección: las condiciones del gate se nombran una
                     // sola vez y el diagnóstico cuenta cuál falla. La semántica es la de la
                     // conjunción anterior: comparaciones puras, sin efectos laterales.
@@ -3178,7 +3196,7 @@ impl GodEngineCore {
                         !(higher_trend < -0.0001 && (secular_trend < 0.0 || macro_trend < -0.0001))
                             && !(secular_trend < -0.0002 && macro_trend < 0.0),
                         !(price_stretch < -0.80 && secular_trend < 0.0010),
-                        higher_trend >= 0.00030 && long_macro_slope_ok,
+                        higher_trend_long_harmonic_ok,
                         composite_score >= tensor_tech_thr,
                         effective_obi_long > range_obi,
                         not_overextended_long,
@@ -3190,7 +3208,7 @@ impl GodEngineCore {
                         !(higher_trend > 0.0001 && (secular_trend > 0.0 || macro_trend > 0.0001))
                             && !(secular_trend > 0.0002 && macro_trend > 0.0),
                         !(price_stretch > 0.80 && secular_trend > -0.0010),
-                        higher_trend <= -0.00030 && short_macro_slope_ok,
+                        higher_trend_short_harmonic_ok,
                         composite_score <= -tensor_tech_thr,
                         effective_obi_short < -range_obi,
                         not_overextended_short,

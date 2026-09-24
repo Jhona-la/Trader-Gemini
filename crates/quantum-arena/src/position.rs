@@ -593,8 +593,10 @@ impl PositionManager {
                 if open_is_long == is_long {
                     let open_tau = (pos.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
                     let diff_ln = (ln_target - open_tau.ln()).abs();
-                    // Escalas muy cercanas en la misma dirección (|Δ ln τ| < 1.50, factor ~4.5x): interferencia destructiva
-                    if diff_ln < 1.50 {
+                    // Escalas muy cercanas en la misma dirección (|Δ ln τ| < 0.80, factor ~2.2x): interferencia destructiva.
+                    // Si |Δ ln τ| >= 0.80 (más de 1.15 octavas de separación), las ondas son armónicamente ortogonales
+                    // y pueden coexistir simultáneamente en ranuras independientes sin canibalizarse.
+                    if diff_ln < 0.80 {
                         return None;
                     }
                 }
