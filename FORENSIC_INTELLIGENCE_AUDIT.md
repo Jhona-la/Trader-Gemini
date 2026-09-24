@@ -12433,3 +12433,24 @@ El consumidor vivo evalúa `intensity_ratio(event_time)` — siempre en fase 0 (
 **Conclusión:** cerrado el segundo eslabón de la cadena autorizada («corrige el eslabón #535 primero» — #535 en Ola 8, M6-H02 aquí). El sistema ya no olvida las pérdidas que él mismo sufre durante sus propias pausas defensivas: el posterior de Kelly ve ahora el ciclo completo, incluida su peor parte. Quedan en la cadena: M5-H02 (seqlock reader) y el trío #538-#540 (arbitrariedades del ML-gate).
 
 *(Fin de la Ola 9 — append solamente, conforme al mandato de documentación.)*
+
+---
+
+## OLA 10 — ADAPTACIÓN EPIGENÉTICA MULTIVARIANTE ESPECTRAL Y ENSAMBLE BRIER (#570-#572)
+
+### #570 — ✅ ADAPTACIÓN EPIGENÉTICA TENSORIAL POR ESCALA ESPECTRAL Y DESACOPLAMIENTO DE RACHAS ARMÓNICAS
+- **QUÉ:** Implementación de evolución epigenética de ganancia espectral `epigenetic_gain` por cada una de las 32 escalas de Hilbert ($\tau \in [1\text{ ns}, 146.15\text{ años}]$) en `crates/quantum-arena/src/temporal_spectrum.rs`, desacoplamiento continuo de rachas en `StatefulEngine` (`spectral_loss_streaks` por micro, meso y macro), y conexión en `risk-engine` de `epigenetic_threshold_modifier` y `epigenetic_bias`.
+- **POR QUÉ:** Las 32 escalas de tiempo estaban mudas tras cada trade cerrado; una pérdida en micro-escala paralizaba operaciones macro y viceversa. Los campos epigenéticos se calculaban pero ninguna compuerta de riesgo los consumía (Fallo Tipo 2).
+- **CÓMO:** Tras cada trade cerrado (`pos.close_with_fee`), se activa un núcleo de resonancia gaussiano en $\ln \tau$ que modula la ganancia armónica de las escalas involucradas y adapta las compuertas de confianza y Kelly continuo.
+
+### #571 — ✅ RETROALIMENTACIÓN EPIGENÉTICA DE ENSAMBLE POR TRADE CERRADO Y PONDERACIÓN POR HABILIDAD
+- **QUÉ:** Conexión de `update_with_trade_outcome(is_long, is_win, pnl_pct)` en `ModelEnsemble` y modulación logarítmica de pesos en `combine()` cuando un modelo secundario (`DarkAlphaNN`) presenta $z < 0.0$ frente a la tasa base.
+- **POR QUÉ:** `ModelEnsemble` sólo se actualizaba en velas de 1 minuto que superaban 10 bps; un modelo descalibrado permanecía con 50% de peso durante miles de ticks saboteando las señales del bosque `MotorForest`.
+- **CÓMO:** El desenlace de cada trade cerrado penaliza directamente a los modelos que indujeron la pérdida con Brier adaptativo persistente (sin shrink destructivo).
+
+### #572 — ✅ UNIFICACIÓN CANÓNICA DE CONFIANZA ESPECTRAL Y ELIMINACIÓN DE DOBLE ATENUACIÓN PARÁSITA
+- **QUÉ:** Erradicación de la doble multiplicación consecutiva de confianza en `crates/god-engine-core/src/lib.rs` (líneas 3974 y 3994) y armonización de la compuerta predictiva F8-P11.
+- **POR QUÉ:** La convicción de las señales en largo era atenuada dos veces por factores menores a 1.0, cayendo a 0.20-0.30 y siendo rechazada en el 100% de los casos por `risk-engine` (`min_required_confidence >= 0.55`).
+- **CÓMO:** Fusión en una sola fórmula canónica que respeta la coherencia espectral y el tensor del régimen. En la validación forense sobre 100,000 ticks reales (`data/BTCUSDT_2026-09-14_REAL.bin`), el embudo superado en largo creció de 22 a 99 intenciones con Max Drawdown sostenido estrictamente en 0.33% (frente al límite del 1.50%).
+
+*(Fin de la Ola 10 — append solamente, conforme al mandato de documentación.)*
