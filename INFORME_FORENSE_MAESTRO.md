@@ -6215,3 +6215,42 @@ Lo que esto cierra: la sospecha de que la ventaja del genoma vigente era un arte
 1. **Re-evolucionar el genoma** con el evaluador corregido. El actual se seleccionó con el CVD invertido, el macro del futuro y el reloj de calibración a un día: su ventaja medida no existía.
 2. **Reentrenar los modelos** con el mismo corte temporal que ahora usa el forense (macro de t−1) y con el gate de evidencia gobernando el destino (D-720).
 3. Los pendientes de riesgo de la sección 6 cambian decisiones: van en lotes medibles, no en bloque.
+
+---
+
+## Adenda 2026-09-24 — Continuidad espectral y causalidad del aprendizaje (CES-001 a CES-017)
+
+Se agrega la [auditoría detallada de continuidad, cálculo y aprendizaje](docs/AUDITORIA_CONTINUIDAD_ESPECTRAL_2026-09-24.md),
+con evidencia por función, mecanismos de fallo, consecuencias, criterios de
+cierre y topología causal de raíz a terminal. Se conserva íntegro el historial
+anterior y no se renumeran los censos D/X.
+
+El corte examinó el contrato entre banco espectral, genoma, ensamble,
+evaluación evolutiva, decisiones y riesgo. No constituye revisión exhaustiva
+de todos los archivos. Sobre 289 archivos Rust versionados, la búsqueda de
+texto legacy produjo 77 coincidencias por archivo; se distingue la
+compatibilidad nominal de las restricciones que siguen cambiando decisiones.
+
+Hay 17 hallazgos documentados: 6 corregidos localmente, 1 parcialmente
+corregido y 10 abiertos. La corrección concentra los pesos del campo,
+propaga ganancias aprendidas a sus lectores, refresca la fusión tras cierres,
+admite timestamp cero, rechaza entradas no finitas y estabiliza el coeficiente
+temporal con expm1. Se añadieron ocho pruebas; seis fallaron en la primera
+ejecución. Tras corregir, pasaron las 66 pruebas de quantum-arena y el check
+de todos los targets de god-engine-core.
+
+Verificación adicional de consumidores: las 86 pruebas de biblioteca de
+god-engine-core también pasaron, sin pruebas omitidas.
+
+Los pendientes principales son: entropía entre escalas usada como veto de
+ruido; ausencia de soporte observacional por escala; bandas históricas en
+curvas y decisiones; crédito a predicciones del instante equivocado;
+etiquetas que confunden pérdida neta con dirección; escenarios sintéticos
+dependientes del candidato; y separación de horizontes tratada como
+independencia de riesgo. Ninguno queda certificado por pasar tests de otro
+componente.
+
+La revisión de ramas también se actualiza: main tenía 43 commits locales
+no publicados y la rama de auditoría 13 commits exclusivos; la simulación
+de integración mostró conflictos en 11 archivos sin alterar el índice.
+La unión general y su validación permanecen pendientes.

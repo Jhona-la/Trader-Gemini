@@ -1,5 +1,11 @@
 # ATLAS ANALÍTICO DEL MOTOR — Qué calcula, para qué existe, cómo se interpreta
 
+> **Actualización 2026-09-24:** las secciones históricas se conservan. La
+> [adenda de continuidad y causalidad](docs/AUDITORIA_CONTINUIDAD_ESPECTRAL_2026-09-24.md)
+> corrige la interpretación de persistencia, pesos, entropía, Hurst y resolución
+> temporal; también actualiza el estado de ramas. Las afirmaciones anteriores
+> de certificación no sustituyen ese corte verificable.
+
 > Compendio central de TODA la matemática del sistema. Cada componente se
 > documenta con: **(F)** la fórmula que computa, **(P)** el propósito — qué
 > decisión alimenta —, **(I)** cómo interpretar sus valores, y **(∩)** dónde
@@ -473,3 +479,74 @@
 
 *Generado en R8 (2026-09-19). Mantener junto a los doc-comments de cada
 módulo: este atlas es el índice interpretativo; el módulo es la fuente.*
+
+---
+
+## IX. ADENDA 2026-09-24 — Qué mide realmente el estado espectral
+
+Esta sección añade precisión al historial sin eliminarlo. Su fuente es el
+código inspeccionado sobre `edb7194e` y la corrección local del contrato
+temporal. El detalle, las reproducciones y pendientes están en la
+[auditoría CES-001 a CES-017](docs/AUDITORIA_CONTINUIDAD_ESPECTRAL_2026-09-24.md).
+
+### Tiempo, resolución y evidencia
+
+- **Fórmula:** `τ_i = 10^-6 ms · 4^i`, i=0…31. La malla representa 1 ns–146
+  años; la actualización recibe timestamps enteros en ms. Hay aproximadamente
+  1.66 intervalos por década. El coste del banco es O(32).
+- **Propósito:** mantener un conjunto de filtros de respuesta temporal
+  distinta e interpolar consultas en log(τ).
+- **Interpretación:** representar 1 ns no permite distinguir eventos de 1 ns;
+  representar 100 años no aporta historia secular. Hacen falta resolución,
+  cobertura e incertidumbre por escala. Los nodos no son muestras independientes.
+
+### Normalización de sorpresa y persistencia de signo
+
+- **Fórmula:** `α=-expm1(-Δt/τ)`; `dev=(precio-EWMA_previa)/EWMA_previa`;
+  `v←v+α(|dev|-v)`; `s=tanh(dev/v)` con las protecciones del módulo.
+- **Propósito:** comparar amplitudes relativas de desviación sin dejar que
+  el precio nominal determine la escala de la señal.
+- **Interpretación:** v es una media suavizada de desviación absoluta. El
+  campo llamado `momentum_z` no usa una desviación típica y no implica un
+  p-valor gaussiano. La señal tampoco es una probabilidad.
+- **Persistencia:** `p←p+α(agree-p)`, con `agree` en {-1,0,1}. El dominio de p
+  es [-1,1], no [0,1]. `hurst_at` devuelve `(p+1)/2` por compatibilidad:
+  debe leerse como índice reescalado, no como estimación de Hurst.
+
+### Una medida común para el aprendizaje y sus consumidores
+
+- **Fórmula vigente:** `w=clamp(2·|p|·g,0.02,3)`; `F=Σw·s/Σw`;
+  `e=w·|s|`; `τ*=exp(Σe·lnτ/Σe)` cuando existe masa.
+- **Propósito:** fusión, coherencia, densidad, proyecciones y centroides deben
+  describir el mismo estado aprendido. El cierre de un trade refresca F sin
+  esperar al siguiente evento.
+- **Interpretación:** g es una ganancia adaptativa, no evidencia de habilidad
+  por sí misma. Las constantes conservadas son política heredada pendiente
+  de calibración. El centroide no es necesariamente un máximo ni un horizonte
+  ejecutable. Las salidas operativas y las curvas aún conservan recortes
+  históricos; esta adenda no los declara eliminados.
+
+### Entropía de masa y dirección son análisis diferentes
+
+- **Fórmula:** `q_i=e_i/Σe`; `H=-Σq_i ln(q_i)/ln(32)`.
+- **Propósito:** describir cuánto se reparte la masa entre nodos.
+- **Interpretación:** H=1 es masa uniforme, H=0 concentración en un nodo.
+  Treinta y dos señales +1 con iguales pesos tienen H=1 y consenso alcista
+  perfecto. Por ello «H alta = caos térmico» no es una inferencia válida.
+  El veto que usa esa interpretación sigue abierto como CES-007.
+
+### Aprendizaje y trazabilidad
+
+La calificación predictiva debe utilizar la predicción de entrada y su
+objetivo exacto. Pérdida neta por costes no implica movimiento adverso del
+precio. El evaluador de un candidato debe mantener fija la evidencia de
+mercado; que use el motor real no vuelve real un tape sintético. Estos
+contratos siguen abiertos y están descritos en CES-010 a CES-012.
+
+### Estado de integración en este corte
+
+Tras fetch: main 43 commits por delante de origin/main. La rama activa de
+auditoría aporta 13 commits no contenidos; main aporta 46 no contenidos en
+esa rama. Una simulación de merge encontró conflictos en 11 archivos.
+El inventario del 19 de septiembre es histórico: no acredita unificación
+del estado actual. No se publicaron estos cambios durante esta revisión.

@@ -1,46 +1,32 @@
-//! ESPECTRO TEMPORAL CONTINUO (F8) — un solo sistema, todas las escalas.
+//! Banco temporal de 32 filtros EWMA con interpolación en log(τ).
 //!
-//! PROBLEMA (directriz del operador): el binario scalp/swing es un CORTE
-//! ARBITRARIO del espectro temporal que contamina genoma, motor, posiciones
-//! y 66 archivos. El mercado no tiene "dos modos": tiene estructuras en
-//! TODAS las escalas simultáneamente.
+//! La malla representa τ desde 1 ns hasta unos 146 años. `update` recibe
+//! eventos con reloj entero en MILISEGUNDOS: la malla no crea observaciones
+//! submilisegundo ni evidencia secular. Se actualiza por evento aceptado,
+//! con coste O(32); no existe aquí un bucle ejecutado cada nanosegundo.
 //!
-//! DISEÑO FÍSICO-HONESTO (fronteras reales, no marketing):
-//!   - Cota inferior ~1ms: el inter-arribo de ticks de Binance futures y el
-//!     RTT de red. Por debajo, "horizonte" solo existe DENTRO del motor
-//!     (procesamos cada evento a cadencia de nanosegundo — eso ya ocurre).
-//!   - Cota superior ~2 años: los ciclos macro relevantes para futuros
-//!     USDT-M (halving ≈ 4y queda como contexto macro, no como horizonte
-//!     operable con data de 2019+).
-//!   - Entre ambas: ESPECTRO CONTINUO log-espaciado base-4: 32 escalas de
-//!     1ms a 68_719_476_736ms (≈2.18 años) sin huecos ni bandas prohibidas.
+//! Por escala se calcula α = -expm1(-Δt/τ), desviación relativa del precio
+//! respecto a la EWMA previa, EWMA de |desviación| y señal tanh(desviación /
+//! EWMA de |desviación|). Este cociente no es un z-score estadístico
+//! estándar: el denominador no es la desviación típica de una distribución.
 //!
-//! QUÉ calcula CADA TICK (todo junto, nanosegundo a nanosegundo de proceso):
-//!   Por escala τ_i: precio EWMA(τ_i), volatilidad EWMA(τ_i), momentum
-//!   z-scoreado, señal tanh(z) ∈ [-1,1] y persistencia (acuerdo de signo).
-//!   Fusión: score espectral = Σ w_i·señal_i con w_i ∝ 1/vol_i — PARIDAD DE
-//!   RIESGO entre escalas (cada horizonte aporta según su Sharpe potencial
-//!   inverso a su ruido). Nada de "scalp manda aquí, swing allá".
+//! `persistence` es una EWMA del producto de signos, en [-1,1]: +1 indica
+//! signos repetidos; -1, alternantes; 0, balance o ausencia de evidencia.
+//! No estima por sí sola Hurst ni habilidad predictiva fuera de muestra.
 //!
-//! COSTE: O(S)=32 escalas × ~6 FLOPs = ~120 FLOPs/tick — despreciable frente
-//! al proceso del evento本身.
-
-//! # CÓMO LEER SUS VALORES (guía operativa)
+//! La política heredada usa w = clamp(2·|persistence|·epigenetic_gain,
+//! 0.02, 3). Fusión, coherencia, proyecciones y masa |señal|·w comparten
+//! ese mismo peso. Sus cotas son parámetros existentes, no leyes físicas.
+//! La entropía de esa masa mide dispersión ENTRE ESCALAS, no incertidumbre
+//! direccional. Consenso perfecto en 32 escalas puede tener entropía 1.
 //!
-//! * `persistence` por escala: 0.5 = RUIDO puro (signo aleatorio, H=0.5);
-//!   →1 = tendencia que se auto-confirma (deja correr); →0 = reversión
-//!   perfecta (asegurar pronto). Es EL dial de régimen del motor: todos los
-//!   lerp espectrales (S-2/S-3) lo usan como t∈[0,1].
-//! * `fused_score` alto = las escalas QUE SABEN (persistencia alta) están
-//!   alineadas direccionalmente; alto con persistencias bajas = ruido
-//!   promediado — el peso suelo 5% evita que una escala impredecible domine.
-//! * `dominant_tau_ms`: 30 s→12 h es la BANDA OPERATIVA; τ corta = micro
-//!   impulso (brackets estrechos, trailing rápido), τ larga = tendencia de
-//!   banda (respiración amplia). El espectro OBSERVA más allá de la banda,
-//!   pero la DECISIÓN jamás sale de ella (C-05).
+//! El centroide del campo no tiene recorte operativo. Las salidas heredadas
+//! `dominant_tau_ms` y `continuous_resonant_tau_ms` conservan [30 s,12 h]
+//! por compatibilidad con las curvas del genoma. Esto sigue siendo una
+//! restricción pendiente de migración; no acredita universalidad operativa.
 
 /// Escalas del espectro: 10^-6 ms * 4^i para i∈0..32 → 1 ns (10^-6 ms) … ≈146.15 años (4.61*10^12 ms).
-/// Log-espaciadas base 4 (≈4.15 escalas/década): resolución uniforme en
+/// Log-espaciadas base 4 (≈1.66 intervalos/década): resolución uniforme en
 /// log(τ), cubriendo desde microestructura en nanosegundos hasta tendencias seculares de más de 100 años.
 pub const SPECTRUM_SCALES_MS: [f64; 32] = [
     1.0e-6,                   // 1 ns
@@ -138,8 +124,8 @@ pub fn operating_tau_ms(expected_duration_ms: u64, temporal_scale: f64) -> f64 {
 pub struct ScaleState {
     pub tau_ms: f64,
     pub ewma_price: f64,
-    /// EWMA de |desviación a ESTA escala| — el denominador estadísticamente
-    /// correcto del z: caminata aleatoria ⇒ z ~ O(1); deriva ⇒ z crece.
+    /// EWMA de la desviación relativa absoluta respecto a la media previa.
+    /// No es una desviación típica ni corrige por sí sola el sesgo de arranque.
     pub ewma_dev_vol: f64,
     pub momentum_z: f64,
     pub signal: f64,      // tanh(z): opinión direccional ∈ [-1,1]
@@ -149,10 +135,28 @@ pub struct ScaleState {
     prev_dev: f64,
 }
 
+impl ScaleState {
+    /// Peso heredado compartido por todos los lectores del mismo campo.
+    /// No representa probabilidad, información mutua ni precisión calibrada.
+    #[inline]
+    fn fusion_weight(&self) -> f64 {
+        if !self.persistence.is_finite() || !self.signal.is_finite() {
+            return 0.0;
+        }
+        let gain = if self.epigenetic_gain.is_finite() && self.epigenetic_gain > 0.0 {
+            self.epigenetic_gain
+        } else {
+            1.0
+        };
+        (self.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0)
+    }
+}
+
 pub struct TemporalSpectrum {
     pub scales: [ScaleState; 32],
     last_ts_ms: u64,
-    /// Score espectral fusionado (paridad de riesgo 1/vol) ∈ ~[-1,1].
+    initialized: bool,
+    /// Media ponderada de las señales, con los pesos de `ScaleState::fusion_weight`.
     pub fused_score: f64,
     /// Escala dominante (mayor |w·señal|) en ms — información, no decisión.
     /// C-05 (INFORME 14, FASE 0): acotada a la banda operativa
@@ -176,18 +180,18 @@ impl TemporalSpectrum {
         Self {
             scales,
             last_ts_ms: 0,
+            initialized: false,
             fused_score: 0.0,
             dominant_tau_ms: 0.0,
         }
     }
 
-    /// Actualiza TODAS las escalas con un tick. Cadencia: cada evento del
-    /// motor (nanosegundo-a-nanosegundo en proceso). O(19).
+    /// Actualiza las 32 escalas por evento con timestamp estrictamente creciente.
     pub fn update(&mut self, price: f64, ts_ms: u64) {
         if !price.is_finite() || price <= 0.0 {
             return;
         }
-        if self.last_ts_ms == 0 {
+        if !self.initialized {
             // Primer tick: inicializar EWMAs al precio observado.
             for s in self.scales.iter_mut() {
                 s.ewma_price = price;
@@ -195,6 +199,7 @@ impl TemporalSpectrum {
                 s.signal = 0.0;
             }
             self.last_ts_ms = ts_ms;
+            self.initialized = true;
             return;
         }
         // Idempotencia parcial de X-035: dt=0 (mismo evento por dos caminos,
@@ -211,16 +216,12 @@ impl TemporalSpectrum {
         // Erradica la histeresis no-ergódica donde ganancias infladas o penalizadas se petrificaban sin disipación.
         let homeo_decay = (-dt / 1_800_000.0).exp();
 
-        let mut w_sum = 0.0;
-        let mut w_sig_sum = 0.0;
-        let mut best_contrib = 0.0f64;
-        let mut dominant = 0.0f64;
-
         for s in self.scales.iter_mut() {
             s.epigenetic_gain = 1.0 + (s.epigenetic_gain - 1.0) * homeo_decay;
             // α de la escala para el dt transcurrido: el horizonte τ_i define
             // cuánto pesa ESTE tick en esa escala. Continuo en dt y τ.
-            let alpha = 1.0 - (-dt / s.tau_ms).exp();
+            // exp_m1 preserva precisión cuando Δt/τ es pequeño (p.ej. 1 ms / 146 años).
+            let alpha = -(-dt / s.tau_ms).exp_m1();
             let prev_ewma = s.ewma_price;
             if prev_ewma <= 0.0 {
                 s.ewma_price = price;
@@ -230,10 +231,8 @@ impl TemporalSpectrum {
             // EWMA(τ_i) ANTES de absorber este tick.
             let dev = (price - prev_ewma) / prev_ewma;
             s.ewma_price += alpha * (price - prev_ewma);
-            // La vol DE LA DESVIACIÓN (no del retorno por tick): es el único
-            // denominador que mantiene z ~ O(1) ante caminata aleatoria en
-            // TODAS las escalas — de lo contrario la deriva √N espuria satura
-            // tanh con convicción de mentira (bug que el test de ruido cazó).
+            // Normalizar por la sorpresa de la MISMA escala. No sustituye
+            // la validación de soporte temporal ni la corrección de arranque.
             s.ewma_dev_vol += alpha * (dev.abs() - s.ewma_dev_vol);
 
             let z = if s.ewma_dev_vol > 1e-12 {
@@ -256,30 +255,21 @@ impl TemporalSpectrum {
             s.prev_dev = dev;
             s.momentum_z = z;
             s.signal = z.clamp(-5.0, 5.0).tanh();
+        }
+        self.refresh_fusion();
+    }
 
-            // CERT-M3-H01 — FUSIÓN POR CONTENIDO INFORMATIVO (|Hurst−0.5|).
-            //
-            // La paridad-de-riesgo anterior (w ∝ 1/ewma_dev_vol) degeneraba:
-            // la vol de sorpresa de las escalas lentas es sistemáticamente
-            // menor ⇒ SIEMPRE pesaban más (el sesgo que el propio comentario
-            // C-05 documentaba abajo para la τ dominante, replicado aquí en
-            // la fusión que consumen arbitración/consejo/teleonomía).
-            //
-            // DERIVACIÓN: cada escala ya entrega su señal z-normalizada
-            // (comparables entre sí). Bajo H0 (martingala) TODAS aportan ruido
-            // idéntico — el peso correcto es el contenido de información de
-            // cada escala, y `persistence` ∈ [0,1] (EMA de persistencia de
-            // signo de la desviación) es su medida directa: el análogo
-            // discreto de |Hurst − 0.5| para procesos fraccionalmente
-            // integrados. persistence=0.5 ⇒ puro ruido ⇒ peso suelo (5%,
-            // conserva diversificación del promedio de ensamble); 1.0 ⇒
-            // tendencia pura ⇒ peso pleno.
-            let gain = if s.epigenetic_gain.is_finite() && s.epigenetic_gain > 0.0 {
-                s.epigenetic_gain
-            } else {
-                1.0
-            };
-            let w = (s.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0);
+    /// Actualiza el agregado también cuando cambia el aprendizaje sin tick nuevo.
+    fn refresh_fusion(&mut self) {
+        let mut w_sum = 0.0;
+        let mut w_sig_sum = 0.0;
+        let mut best_contrib = 0.0f64;
+        let mut dominant = 0.0f64;
+        for s in &self.scales {
+            let w = s.fusion_weight();
+            if w == 0.0 {
+                continue;
+            }
             w_sum += w;
             let contrib = w * s.signal;
             w_sig_sum += contrib;
@@ -291,10 +281,7 @@ impl TemporalSpectrum {
         self.fused_score = if w_sum > 1e-12 {
             (w_sig_sum / w_sum).clamp(-1.0, 1.0)
         } else {
-            // H0-correcto: sin información medible, promedio uniforme de las
-            // señales (ruido promediado, varianza ↓ por CLT) — jamás 0 plano.
-            let n = self.scales.len() as f64;
-            (self.scales.iter().map(|s| s.signal).sum::<f64>() / n).clamp(-1.0, 1.0)
+            0.0
         };
         // C-05 (INFORME 14, FASE 0) — τ DEGENERADA. La fusión por paridad de
         // riesgo (w ∝ 1/ewma_dev_vol) degenera: la vol de sorpresa de las
@@ -315,10 +302,10 @@ impl TemporalSpectrum {
             .clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
     }
 
-    /// Señal de la escala más cercana a τ (interpolación log-lineal entre
-    /// escalas vecinas — el espectro es CONTINUO, no una lista discreta).
+    /// Interpolante continuo por tramos en log(τ) entre las señales de la malla.
+    /// La continuidad del interpolante no añade observaciones entre nodos.
     pub fn signal_at(&self, tau_ms: f64) -> f64 {
-        if tau_ms <= 0.0 {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
             return 0.0;
         }
         let ln_tau = tau_ms.max(1e-6).ln();
@@ -336,7 +323,7 @@ impl TemporalSpectrum {
     /// Persistencia interpolada log-linealmente a τ (como signal_at — el
     /// espectro es función continua en TODAS sus observables).
     pub fn persistence_at(&self, tau_ms: f64) -> f64 {
-        if tau_ms <= 0.0 {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
             return 0.0;
         }
         let ln_tau = tau_ms.max(1e-6).ln();
@@ -349,11 +336,11 @@ impl TemporalSpectrum {
         self.scales[i0].persistence * (1.0 - frac) + self.scales[i1].persistence * frac
     }
 
-    /// Z-score de momentum e interpolación continua de desviación a escala τ.
-    /// Cuantifica analíticamente la posición de fase del precio relativo a la media de la escala.
+    /// Sorpresa relativa normalizada e interpolada a τ (nombre histórico z).
+    /// No estima una fase ni utiliza una desviación típica gaussiana.
     #[inline]
     pub fn momentum_z_at(&self, tau_ms: f64) -> f64 {
-        if tau_ms <= 0.0 {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
             return 0.0;
         }
         let ln_tau = tau_ms.max(1e-6).ln();
@@ -369,7 +356,7 @@ impl TemporalSpectrum {
     /// Ganancia epigenética adaptativa interpolada log-linealmente a escala tau.
     #[inline]
     pub fn scale_gain_at(&self, tau_ms: f64) -> f64 {
-        if tau_ms <= 0.0 {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
             return 1.0;
         }
         let ln_tau = tau_ms.max(1e-6).ln();
@@ -379,12 +366,16 @@ impl TemporalSpectrum {
         let i0 = idx_f.floor().clamp(0.0, 30.0) as usize;
         let i1 = (i0 + 1).min(31);
         let frac = (idx_f - i0 as f64).clamp(0.0, 1.0);
-        let g0 = if self.scales[i0].epigenetic_gain > 0.0 {
+        let g0 = if self.scales[i0].epigenetic_gain.is_finite()
+            && self.scales[i0].epigenetic_gain > 0.0
+        {
             self.scales[i0].epigenetic_gain
         } else {
             1.0
         };
-        let g1 = if self.scales[i1].epigenetic_gain > 0.0 {
+        let g1 = if self.scales[i1].epigenetic_gain.is_finite()
+            && self.scales[i1].epigenetic_gain > 0.0
+        {
             self.scales[i1].epigenetic_gain
         } else {
             1.0
@@ -400,7 +391,7 @@ impl TemporalSpectrum {
     /// - Escalas en resonancia con un trade exitoso reciben amplificación epigenética.
     /// - Escalas en resonancia con un trade perdedor son amortiguadas defensivamente.
     pub fn apply_epigenetic_outcome(&mut self, tau_trade_ms: f64, is_win: bool, pnl_pct: f64) {
-        if !tau_trade_ms.is_finite() || tau_trade_ms <= 0.0 {
+        if !tau_trade_ms.is_finite() || tau_trade_ms <= 0.0 || !pnl_pct.is_finite() {
             return;
         }
         let ln_trade = tau_trade_ms.max(1e-6).ln();
@@ -419,6 +410,7 @@ impl TemporalSpectrum {
                 }
             }
         }
+        self.refresh_fusion();
     }
 
     /// Snapshot compacto para modelos/telemetría: 32 señales + fusión.
@@ -431,23 +423,25 @@ impl TemporalSpectrum {
     }
 }
 
-/// Estado y caracterización completa del Campo Multivariante Continuo Temporal Espectral.
-/// Analiza e integra formalmente TODAS las 32 escalas espectrales (desde 1 ns hasta 146.15 años).
+/// Descriptores del banco de 32 filtros temporales sobre el precio.
+/// No incorpora por sí solo otras variables de mercado ni evidencia por escala.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SpectralFieldState {
-    /// Masa o energía informacional total integrada sobre las 32 escalas.
+    /// Suma adimensional de w·|señal| sobre la malla; no energía física ni información mutua.
     pub total_energy: f64,
     /// Wavelength o escala resonante central continua τ* (centro de masa espectral en ms).
     pub resonant_tau_ms: f64,
     /// Dispersión o ancho de banda espectral σ_ln(τ) (en unidades logarítmicas naturales).
     pub spectral_bandwidth: f64,
-    /// Entropía espectral de Shannon normalizada ∈ [0.0, 1.0] (0 = láser armónico, 1 = ruido blanco térmico).
+    /// Entropía de la masa entre escalas, en [0,1]: 0 concentrada, 1 uniforme.
+    /// No mide desacuerdo direccional; todas las señales pueden coincidir con entropía 1.
     pub spectral_entropy: f64,
-    /// Gradiente o inclinación espectral continua ∂s/∂ln(τ) (flujo de fase entre micro y macro).
+    /// Pendiente de regresión lineal de señal contra ln(τ) sobre toda la malla.
+    /// No es la derivada local que devuelve `spectral_gradient_at`.
     pub spectral_tilt: f64,
-    /// Coherencia armónica de fase global evaluada en TODAS las 32 partes espectrales ∈ [-1.0, 1.0].
+    /// Media direccional ponderada de señales, en [-1,1], orientada al lado consultado.
     pub global_coherence: f64,
-    /// Proporción de confluencia: fracción de escalas con alineación favorable ∈ [0.0, 1.0].
+    /// Fracción no ponderada de nodos cuya señal en el lado consultado supera 0.05.
     pub confluence_ratio: f64,
 }
 
@@ -455,7 +449,7 @@ impl TemporalSpectrum {
     /// Consenso de precio continuo EWMA interpolado log-linealmente a τ.
     #[inline]
     pub fn ewma_price_at(&self, tau_ms: f64) -> f64 {
-        if tau_ms <= 0.0 {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
             return 0.0;
         }
         let ln_tau = tau_ms.max(1e-6).ln();
@@ -471,7 +465,7 @@ impl TemporalSpectrum {
     /// Volatilidad de sorpresa continua interpolada log-linealmente a τ.
     #[inline]
     pub fn volatility_at(&self, tau_ms: f64) -> f64 {
-        if tau_ms <= 0.0 {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
             return 0.0;
         }
         let ln_tau = tau_ms.max(1e-6).ln();
@@ -495,7 +489,8 @@ impl TemporalSpectrum {
         }
     }
 
-    /// Exponente de Hurst continuo H(τ) ∈ [0.0, 1.0] evaluado analíticamente a cualquier escala τ.
+    /// Índice de persistencia de signo reescalado a [0,1].
+    /// Nombre conservado por compatibilidad: NO es un estimador del exponente de Hurst.
     #[inline]
     pub fn hurst_at(&self, tau_ms: f64) -> f64 {
         let p = self.persistence_at(tau_ms);
@@ -505,10 +500,23 @@ impl TemporalSpectrum {
     /// Densidad de energía informacional espectral continua E(τ) = w(τ) · |s(τ)| a escala τ.
     #[inline]
     pub fn continuous_energy_density(&self, tau_ms: f64) -> f64 {
-        let sig = self.signal_at(tau_ms);
-        let p = self.persistence_at(tau_ms);
-        let w = ((p - 0.5) * 2.0).max(0.05);
-        w * sig.abs()
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
+            return 0.0;
+        }
+        let idx = (tau_ms.max(SPECTRUM_SCALES_MS[0]).ln() - SPECTRUM_SCALES_MS[0].ln()) / 4f64.ln();
+        let i0 = idx.floor().clamp(0.0, 30.0) as usize;
+        let i1 = i0 + 1;
+        let frac = (idx - i0 as f64).clamp(0.0, 1.0);
+        let energy = |s: &ScaleState| {
+            let w = s.fusion_weight();
+            if w > 0.0 {
+                w * s.signal.abs()
+            } else {
+                0.0
+            }
+        };
+        // Interpolar la MISMA masa de la malla preserva su contrato en cada nodo.
+        energy(&self.scales[i0]) * (1.0 - frac) + energy(&self.scales[i1]) * frac
     }
 
     /// Gradiente o derivada espectral local ∂s/∂ln(τ) evaluada por diferencias finitas continuas.
@@ -521,8 +529,8 @@ impl TemporalSpectrum {
         (s_plus - s_minus) / (2.0 * 2.0_f64.ln())
     }
 
-    /// Resonancia de fase armónica entre dos frecuencias temporales continuas τ_fast y τ_slow.
-    /// Retorna en [-1.0, 1.0]: +1.0 = en fase perfecta, -1.0 = oposición de fase destructiva.
+    /// Producto de dos señales reales, en [-1,1]. Conserva el nombre histórico.
+    /// Su magnitud depende de ambas amplitudes; no estima fase ni coherencia normalizada.
     #[inline]
     pub fn phase_resonance(&self, tau_fast_ms: f64, tau_slow_ms: f64) -> f64 {
         let s_fast = self.signal_at(tau_fast_ms);
@@ -544,8 +552,8 @@ impl TemporalSpectrum {
         }
     }
 
-    /// Caracterización cuántica e integral del Campo Multivariante Continuo Temporal Espectral.
-    /// Comprende y unifica TODAS Y CADA UNA de las 32 partes espectrales (desde 1 ns hasta 146.15 años).
+    /// Descriptores de la distribución de masa w·|señal| sobre la malla.
+    /// Comparten el peso de la fusión; su precisión predictiva requiere evaluación aparte.
     pub fn spectral_field(&self, is_long: bool) -> SpectralFieldState {
         let sign = if is_long { 1.0 } else { -1.0 };
         let mut total_w = 0.0;
@@ -561,8 +569,11 @@ impl TemporalSpectrum {
         for (i, s) in self.scales.iter().enumerate() {
             let ln_t = s.tau_ms.max(1e-6).ln();
             ln_taus[i] = ln_t;
-            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0);
+            let w = s.fusion_weight();
             weights[i] = w;
+            if w == 0.0 {
+                continue;
+            }
             total_w += w;
 
             let energy_i = w * s.signal.abs();
@@ -591,7 +602,11 @@ impl TemporalSpectrum {
 
         for i in 0..32 {
             let p_i = if total_energy > 1e-12 {
-                (weights[i] * self.scales[i].signal.abs()) / total_energy
+                if weights[i] > 0.0 {
+                    (weights[i] * self.scales[i].signal.abs()) / total_energy
+                } else {
+                    0.0
+                }
             } else {
                 1.0 / 32.0
             };
@@ -637,18 +652,20 @@ impl TemporalSpectrum {
         }
     }
 
-    /// Coherencia Espectral Multivariante: evalúa el grado de alineación armónica
-    /// de TODAS las 32 escalas espectrales en una dirección dada.
+    /// Media ponderada de las 32 señales orientadas a la dirección consultada.
     /// Retorna un valor en [-1.0, 1.0]:
-    /// +1.0 = resonancia armónica plena (todas las 32 partes confirman la dirección).
-    /// -1.0 = contradicción armónica severa (el espectro empuja en contra).
+    /// +1.0 = todas las señales con peso apuntan al lado consultado con amplitud 1.
+    /// -1.0 = todas apuntan al lado opuesto con amplitud 1.
     #[inline]
     pub fn spectral_coherence(&self, is_long: bool) -> f64 {
         let sign = if is_long { 1.0 } else { -1.0 };
         let mut total_w = 0.0;
         let mut coherent_sig = 0.0;
         for s in &self.scales {
-            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0);
+            let w = s.fusion_weight();
+            if w == 0.0 {
+                continue;
+            }
             total_w += w;
             coherent_sig += w * (s.signal * sign);
         }
@@ -672,6 +689,13 @@ impl TemporalSpectrum {
     /// Proyección armónica continua con filtro gaussiano logarítmico alrededor de tau_center.
     /// Sin cortes discretos de slice: el kernel abarca todo el continuo espectral de 32 escalas.
     pub fn continuous_band_projection(&self, center_tau_ms: f64, bandwidth_octaves: f64) -> f64 {
+        if !center_tau_ms.is_finite()
+            || center_tau_ms <= 0.0
+            || !bandwidth_octaves.is_finite()
+            || bandwidth_octaves <= 0.0
+        {
+            return 0.0;
+        }
         let ln_center = center_tau_ms.max(1e-6).ln();
         let sigma = bandwidth_octaves * 2.0_f64.ln();
         let mut w_sum = 0.0;
@@ -680,7 +704,10 @@ impl TemporalSpectrum {
             let ln_t = s.tau_ms.max(1e-6).ln();
             let dist = (ln_t - ln_center) / sigma;
             let kernel = (-0.5 * dist * dist).exp();
-            let w = (s.persistence.abs() * 2.0).clamp(0.05, 1.0) * kernel;
+            let w = s.fusion_weight() * kernel;
+            if w == 0.0 {
+                continue;
+            }
             w_sum += w;
             w_sig += w * s.signal;
         }
@@ -714,18 +741,18 @@ impl TemporalSpectrum {
         let mut total_e = 0.0;
         let mut weighted_ln = 0.0;
         for s in &self.scales {
-            let gain = if s.epigenetic_gain.is_finite() && s.epigenetic_gain > 0.0 {
-                s.epigenetic_gain
-            } else {
-                1.0
-            };
-            let w = (s.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0);
+            let w = s.fusion_weight();
+            if w == 0.0 {
+                continue;
+            }
             let e = w * s.signal.abs();
             total_e += e;
             weighted_ln += e * s.tau_ms.max(1e-6).ln();
         }
         if total_e > 1e-12 {
-            (weighted_ln / total_e).exp().clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS)
+            (weighted_ln / total_e)
+                .exp()
+                .clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS)
         } else {
             self.dominant_tau_ms.max(30_000.0)
         }
@@ -743,18 +770,18 @@ impl TemporalSpectrum {
             } else {
                 (-0.5 * (ln_tau - pivot_ln).powi(2)).exp()
             };
-            let gain = if s.epigenetic_gain.is_finite() && s.epigenetic_gain > 0.0 {
-                s.epigenetic_gain
-            } else {
-                1.0
-            };
-            let w = (s.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0) * weight_fast;
+            let w = s.fusion_weight() * weight_fast;
+            if w == 0.0 {
+                continue;
+            }
             let e = w * s.signal.abs();
             total_e += e;
             weighted_ln += e * ln_tau;
         }
         if total_e > 1e-12 {
-            (weighted_ln / total_e).exp().clamp(1_000.0, TAU_ANCHOR_SLOW_MS)
+            (weighted_ln / total_e)
+                .exp()
+                .clamp(1_000.0, TAU_ANCHOR_SLOW_MS)
         } else {
             30_000.0
         }
@@ -772,18 +799,18 @@ impl TemporalSpectrum {
             } else {
                 (-0.5 * (pivot_ln - ln_tau).powi(2)).exp()
             };
-            let gain = if s.epigenetic_gain.is_finite() && s.epigenetic_gain > 0.0 {
-                s.epigenetic_gain
-            } else {
-                1.0
-            };
-            let w = (s.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0) * weight_slow;
+            let w = s.fusion_weight() * weight_slow;
+            if w == 0.0 {
+                continue;
+            }
             let e = w * s.signal.abs();
             total_e += e;
             weighted_ln += e * ln_tau;
         }
         if total_e > 1e-12 {
-            (weighted_ln / total_e).exp().clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS)
+            (weighted_ln / total_e)
+                .exp()
+                .clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS)
         } else {
             14_400_000.0
         }
@@ -832,6 +859,126 @@ impl HorizonCurve {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn opposed_scales() -> TemporalSpectrum {
+        let mut spec = TemporalSpectrum::new();
+        spec.scales[18].signal = 0.8;
+        spec.scales[18].persistence = 0.5;
+        spec.scales[18].epigenetic_gain = 2.0;
+        spec.scales[20].signal = -0.8;
+        spec.scales[20].persistence = -0.5;
+        spec
+    }
+
+    #[test]
+    fn spectral_contract_learning_reaches_field_and_projection() {
+        let spec = opposed_scales();
+        let field = spec.spectral_field(true);
+        // Dos escalas con igual amplitud y ganancias 2:1: masas 1.6 y 0.8.
+        let expected_ln_tau =
+            (2.0 * SPECTRUM_SCALES_MS[18].ln() + SPECTRUM_SCALES_MS[20].ln()) / 3.0;
+        assert!((field.total_energy - 2.4).abs() < 1e-12);
+        assert!((field.resonant_tau_ms.ln() - expected_ln_tau).abs() < 1e-12);
+        assert!((field.global_coherence - 0.8 / 3.6).abs() < 1e-12);
+        assert!((spec.spectral_coherence(false) + field.global_coherence).abs() < 1e-12);
+        assert!(
+            spec.continuous_band_projection(
+                (SPECTRUM_SCALES_MS[18] * SPECTRUM_SCALES_MS[20]).sqrt(),
+                2.0
+            ) > 0.0,
+            "la proyección debe incorporar la ganancia aprendida"
+        );
+    }
+
+    #[test]
+    fn spectral_contract_energy_is_consistent_at_grid_nodes() {
+        let spec = opposed_scales();
+        let energy: f64 = SPECTRUM_SCALES_MS
+            .iter()
+            .map(|tau| spec.continuous_energy_density(*tau))
+            .sum();
+        assert!((energy - 2.4).abs() < 1e-12);
+        assert!((energy - spec.spectral_field(true).total_energy).abs() < 1e-12);
+    }
+
+    #[test]
+    fn spectral_contract_timestamp_zero_is_a_valid_origin() {
+        let mut zero = TemporalSpectrum::new();
+        let mut shifted = TemporalSpectrum::new();
+        for (ts, price) in [(0, 100.0), (1, 101.0), (2, 99.0)] {
+            zero.update(price, ts);
+            shifted.update(price, ts + 1000);
+        }
+        for (left, right) in zero.scales.iter().zip(&shifted.scales) {
+            assert_eq!(left.ewma_price, right.ewma_price);
+            assert_eq!(left.signal, right.signal);
+        }
+    }
+
+    #[test]
+    fn spectral_contract_long_scale_retains_small_elapsed_mass() {
+        let mut spec = TemporalSpectrum::new();
+        spec.update(100.0, 1000);
+        spec.update(101.0, 1001);
+        let alpha = -(-1.0 / SPECTRUM_SCALES_MS[31]).exp_m1();
+        let expected = 1e-7 + alpha * (0.01 - 1e-7);
+        assert!((spec.scales[31].ewma_dev_vol - expected).abs() < 1e-23);
+    }
+
+    #[test]
+    fn spectral_contract_invalid_queries_are_neutral() {
+        let mut spec = opposed_scales();
+        for s in &mut spec.scales {
+            s.signal = 0.25;
+            s.persistence = 0.5;
+            s.momentum_z = 0.8;
+            s.ewma_price = 100.0;
+            s.ewma_dev_vol = 0.01;
+            s.epigenetic_gain = 2.0;
+        }
+        for tau in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
+            assert_eq!(spec.signal_at(tau), 0.0);
+            assert_eq!(spec.persistence_at(tau), 0.0);
+            assert_eq!(spec.momentum_z_at(tau), 0.0);
+            assert_eq!(spec.ewma_price_at(tau), 0.0);
+            assert_eq!(spec.volatility_at(tau), 0.0);
+            assert_eq!(spec.scale_gain_at(tau), 1.0);
+            assert_eq!(spec.continuous_energy_density(tau), 0.0);
+        }
+    }
+
+    #[test]
+    fn spectral_contract_invalid_outcomes_cannot_train() {
+        for pnl in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut spec = opposed_scales();
+            let before: Vec<_> = spec.scales.iter().map(|s| s.epigenetic_gain).collect();
+            spec.apply_epigenetic_outcome(SPECTRUM_SCALES_MS[18], true, pnl);
+            let after: Vec<_> = spec.scales.iter().map(|s| s.epigenetic_gain).collect();
+            assert_eq!(before, after);
+        }
+    }
+
+    #[test]
+    fn spectral_contract_learning_refreshes_fusion_without_new_tick() {
+        let mut spec = TemporalSpectrum::new();
+        for i in 0..40 {
+            spec.update(100.0 + (i as f64 * 0.4).sin(), 1000 + i * 1000);
+        }
+        spec.apply_epigenetic_outcome(SPECTRUM_SCALES_MS[18], true, 0.01);
+        assert!((spec.fused_score - spec.spectral_coherence(true)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn spectral_contract_maximum_energy_entropy_can_have_full_agreement() {
+        let mut spec = TemporalSpectrum::new();
+        for s in &mut spec.scales {
+            s.signal = 1.0;
+            s.persistence = 0.5;
+        }
+        let field = spec.spectral_field(true);
+        assert!((field.spectral_entropy - 1.0).abs() < 1e-12);
+        assert!((field.global_coherence - 1.0).abs() < 1e-12);
+    }
 
     /// D-638b: la conversión τ ↔ s es la misma en ambos sentidos.
     #[test]
