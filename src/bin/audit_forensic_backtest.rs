@@ -98,8 +98,12 @@ async fn run_forensic_backtest() {
             let parsed = std::fs::read_to_string(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|data| {
-                    serde_json::from_str::<quantum_arena::genome::SuperGenotype>(&data)
-                        .map_err(|e| e.to_string())
+                    if let Ok(envelope) = serde_json::from_str::<quantum_arena::genome_store::GenomeEnvelope>(&data) {
+                        Ok(envelope.genome)
+                    } else {
+                        serde_json::from_str::<quantum_arena::genome::SuperGenotype>(&data)
+                            .map_err(|e| e.to_string())
+                    }
                 });
             match parsed {
                 Ok(g) => g,
@@ -401,11 +405,28 @@ async fn run_forensic_backtest() {
         warmup_ticks
     );
 
+    let mut prev_is_buyer_maker = false;
     for i in 0..warmup_ticks {
         let t = &ticks_slice[i];
         let price = (t.bid_price + t.ask_price) / 2.0;
         let vol = t.bid_qty + t.ask_qty;
-        let is_buyer_maker = t.ask_qty > t.bid_qty;
+        let prev_price = if i > 0 {
+            (ticks_slice[i - 1].bid_price + ticks_slice[i - 1].ask_price) / 2.0
+        } else {
+            price
+        };
+        let is_buyer_maker = if (t.bid_qty - t.ask_qty).abs() < 1e-9 {
+            if price < prev_price {
+                true
+            } else if price > prev_price {
+                false
+            } else {
+                prev_is_buyer_maker
+            }
+        } else {
+            t.bid_qty < t.ask_qty
+        };
+        prev_is_buyer_maker = is_buyer_maker;
         core.arena.update_market_data(
             0,
             t.bid_price,
@@ -553,6 +574,7 @@ async fn run_forensic_backtest() {
     let alpha = 2.0 / (14.0 + 1.0);
     let mut running_atr = 0.001 * ticks_slice[warmup_ticks].bid_price;
     let mut prev_ts: u64 = 0;
+    let mut prev_is_buyer_maker = false;
 
     for i in warmup_ticks..num_ticks {
         let t = &ticks_slice[i];
@@ -568,17 +590,22 @@ async fn run_forensic_backtest() {
         //
         // `binance_vision_sync` codifica el `isBuyerMaker` oficial de cada
         // aggTrade en las cantidades: maker ⇒ (bid = base, ask = qty + base), es
-        // decir `bid_qty < ask_qty`. El calentamiento de este mismo binario ya
-        // lee ese convenio (línea 387); el bucle principal, en cambio, pasaba al
-        // núcleo `price <= sim_bid`, con `price` el punto medio y
-        // `sim_bid = bid − medio spread`: una condición FALSA en todos los ticks
-        // del histórico. Con el flag constante en false, `agg_sell_vol` nunca
-        // crecía y `rolling_cvd` se quedaba en +1,0 desde el primer tick: presión
-        // compradora máxima permanente en el binario que dicta el veredicto y que
-        // alimenta al evolucionador walk-forward, con las ramas Short de
-        // price-action inalcanzables por construcción y un sesgo aditivo de +0,30
-        // en el micro-score.
-        let is_buyer_maker = t.bid_qty < t.ask_qty;
+        // decir `bid_qty < ask_qty`.
+        // Si las cantidades son simétricas (|bid_qty - ask_qty| < 1e-9, común en sub-ticks
+        // de apertura de velas sintéticas), se desambigua bilateralmente con el signo de delta P
+        // (tick rule canónica), eliminando el sesgo artificial alcista que asfixiaba los Shorts.
+        let is_buyer_maker = if (t.bid_qty - t.ask_qty).abs() < 1e-9 {
+            if price < prev_price {
+                true // Downtick: agresor vendedor (buyer maker)
+            } else if price > prev_price {
+                false // Uptick: agresor comprador (seller maker)
+            } else {
+                prev_is_buyer_maker
+            }
+        } else {
+            t.bid_qty < t.ask_qty
+        };
+        prev_is_buyer_maker = is_buyer_maker;
 
         let tr = (price - prev_price).abs();
         running_atr = alpha * tr + (1.0 - alpha) * running_atr;

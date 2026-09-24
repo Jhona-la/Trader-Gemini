@@ -781,9 +781,9 @@ impl TemporalSpectrum {
         if total_e > 1e-12 {
             (weighted_ln / total_e)
                 .exp()
-                .clamp(1_000.0, TAU_ANCHOR_SLOW_MS)
+                .clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS)
         } else {
-            30_000.0
+            TAU_ANCHOR_FAST_MS
         }
     }
 

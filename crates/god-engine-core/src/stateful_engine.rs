@@ -278,9 +278,20 @@ impl StatefulEngine {
         } else {
             self.spectral_loss_streaks[band]
         };
-        let active_streak = if elapsed_ms > 3_600_000 {
+
+        let safe_tau = if tau_candidate_ms.is_finite() && tau_candidate_ms > 10.0 {
+            tau_candidate_ms
+        } else {
+            30_000.0
+        };
+
+        // Decaimiento analítico continuo proporcional a la escala física tau:
+        // Una racha de pérdidas a escala tau se disipa naturalmente en función de los ciclos de la onda,
+        // acotada entre 3 minutos (piso para absorber rachas adversas) y 2 horas (techo macro).
+        let decay_window_ms = ((raw_streak.max(1) as f64) * 4.0 * safe_tau).clamp(180_000.0, 7_200_000.0) as u64;
+        let active_streak = if elapsed_ms > decay_window_ms {
             0
-        } else if elapsed_ms > 1_800_000 {
+        } else if elapsed_ms > decay_window_ms / 2 {
             raw_streak.saturating_sub(1)
         } else {
             raw_streak
@@ -289,26 +300,21 @@ impl StatefulEngine {
         // Modulación armónica del cooldown por escala temporal tau:
         // En microescalas (tau ~ 5-15s), el cooldown requerido se relaja armónicamente.
         // En macroescalas (tau ~ 1-4h), el cooldown respira con el ciclo macro.
-        let safe_tau = if tau_candidate_ms.is_finite() && tau_candidate_ms > 10.0 {
-            tau_candidate_ms
-        } else {
-            30_000.0
-        };
         let scale_factor = (safe_tau / 30_000.0).clamp(0.20, 5.0);
 
         let required_ms = match active_streak {
             0 => min_cooldown_ms,
             1 => {
                 let base = if self.v_t > 0.0015 {
-                    min_cooldown_ms * 4
+                    min_cooldown_ms * 3
                 } else {
                     min_cooldown_ms * 2
                 };
-                ((base as f64) * scale_factor).round() as u64
+                ((base as f64) * scale_factor).clamp(min_cooldown_ms as f64, 300_000.0).round() as u64
             }
-            2 => ((900_000.0 * scale_factor).clamp(60_000.0, 900_000.0)).round() as u64,
-            3 => ((1_800_000.0 * scale_factor).clamp(120_000.0, 1_800_000.0)).round() as u64,
-            _ => ((3_600_000.0 * scale_factor).clamp(300_000.0, 3_600_000.0)).round() as u64,
+            2 => ((300_000.0 * scale_factor).clamp(min_cooldown_ms as f64 * 1.5, 600_000.0)).round() as u64,
+            3 => ((600_000.0 * scale_factor).clamp(min_cooldown_ms as f64 * 2.0, 1_200_000.0)).round() as u64,
+            _ => ((1_200_000.0 * scale_factor).clamp(min_cooldown_ms as f64 * 3.0, 2_400_000.0)).round() as u64,
         };
         elapsed_ms >= required_ms
     }

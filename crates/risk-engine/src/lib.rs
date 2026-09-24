@@ -605,14 +605,15 @@ impl RiskEngine {
                     arena.config.sl_atr_multiplier.load(Ordering::Relaxed)
                 },
             },
-            // El RR genómico puede ser MÁS ambicioso que el mínimo exigido por
-            // la fricción, nunca menor.
             arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
         );
-        // Continuo Espectral Integral: compute_tp_sl eleva el stop al sl_floor
-        // garantizando EV >= 0 por construcción matemática (teorema D-636) tanto para micro
-        // como para macro. Las escalas rápidas de microestructura (1 ms..30 s) quedan desbloqueadas
-        // y protegidas por el suelo físico de viabilidad y la barrera estricta de EV posterior.
+        // D-636b & #585: Rechazo Físico Invariante de Suelo Operable (below_tradeable_floor).
+        // Si la dispersión difusiva esperada sigma(tau) no cubre el SL mínimo viable frente
+        // a la fricción de ida y vuelta, la operación es matemáticamente inviable (EV < 0 neto).
+        // Se rechaza limpiamente con REJ_TP_SL_FLOOR en lugar de inflar artificialmente el stop.
+        if tpsl_gate.below_tradeable_floor {
+            return rej(REJ_TP_SL_FLOOR);
+        }
         let expected_win = tpsl_gate.tp_pct;
         let expected_loss = tpsl_gate.sl_pct;
 

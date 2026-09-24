@@ -1195,14 +1195,14 @@ impl GodEngineCore {
                 // VIP0 Binance taker fee = 0.05% (5 bps). Roundtrip taker fee = 10 bps. Slippage floor + taker impact = ~6.0 bps.
                 // Total roundtrip friction garantizada: cubre tarifa maker entry + taker stop exit + doble slippage floor.
                 let roundtrip_friction = (live_fee * 1.5 + slip_floor * 2.0).max(0.00145);
-                let buf_fast = (roundtrip_friction + 0.00035).clamp(0.00180, 0.00220);
-                let min_breathing_fast = (atr_pct_live * 0.25).clamp(0.00025, 0.00050);
-                let act_fast = (buf_fast + min_breathing_fast).max(tp * 0.52).min(0.00220);
+                let buf_fast = (roundtrip_friction + 0.00035).clamp(0.00180, 0.00250);
+                // El espacio de respiración (breathing room) debe ser proporcional a la volatilidad real ATR(tau):
+                let min_breathing_fast = (atr_pct_live * 1.25).max(0.00150);
+                let act_fast = (buf_fast + min_breathing_fast).max(tp * 0.48);
 
-                let buf_slow = (roundtrip_friction + 0.00060).clamp(0.00200, 0.00260);
-                let act_slow = (tp * be_frac * 0.70)
-                    .max(buf_slow + 0.0008)
-                    .min(0.0040);
+                let buf_slow = (roundtrip_friction + 0.00060).clamp(0.00200, 0.00300);
+                let min_breathing_slow = (atr_pct_live * 1.75).max(0.00250);
+                let act_slow = (buf_slow + min_breathing_slow).max(tp * be_frac * 0.70);
 
                 let be_buffer = (1.0 - temporal_s) * buf_fast + temporal_s * buf_slow;
                 let be_activation = (1.0 - temporal_s) * act_fast + temporal_s * act_slow;
@@ -1236,10 +1236,10 @@ impl GodEngineCore {
                     }
                 }
 
-                // 2. Trailing Stop Ratchet Espectral Continuo (#559, #560)
-                // SOLO se activa si Breakeven ya está asegurado y el trade expande hacia TP.
-                let trail_act_fast = (act_fast + 0.00035).clamp(0.00215, 0.00280);
-                let trail_act_slow = (tp * trail_frac).max(be_activation * 1.20).min(tp * 0.95);
+                // 2. Trailing Stop Ratchet Espectral Continuo (#559, #560, #584)
+                // Se activa en cuanto Breakeven está asegurado y el trade expande hacia TP (>= 50% TP):
+                let trail_act_fast = (be_activation + min_breathing_fast * 0.25).max(tp * 0.50);
+                let trail_act_slow = (tp * trail_frac).max(be_activation * 1.10).min(tp * 0.90);
                 let trail_activation_pnl = (1.0 - temporal_s) * trail_act_fast + temporal_s * trail_act_slow;
                 let trail_active = be_triggered && peak_pnl >= trail_activation_pnl;
 
@@ -1352,8 +1352,9 @@ impl GodEngineCore {
                 // permitiendo que los trades ganadores corran hacia el TP completo y capturen beneficios netos reales.
                 let harvest_age_ms = (tau_trade_ms * 8.0).clamp(720_000.0, 3_600_000.0) as u64;
                 let roundtrip_taker_friction = live_fee.max(0.0007) + 2.0 * slip_floor;
-                let net_profit_min = (roundtrip_taker_friction * 1.25).max(0.00180);
-                let peak_harvest_thresh = (tp * 0.60).max(net_profit_min);
+                // Garantía de ganancia neta sustancial en cosechas: al menos 70% del SL o 2.5x la fricción total
+                let net_profit_min = (sl * 0.70).max(roundtrip_taker_friction * 2.5).max(0.00280);
+                let peak_harvest_thresh = (tp * 0.75).max(net_profit_min * 1.20);
                 let min_stagnant_ms = (tau_trade_ms * (5.0 + 3.0 * temporal_s)).clamp(480_000.0, 14_400_000.0) as u64;
                 let hard_stagnant_ms = (tau_trade_ms * (10.0 + 6.0 * temporal_s)).clamp(1_200_000.0, 28_800_000.0) as u64;
                 let absolute_trade_life_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(3_000_000.0, 86_400_000.0) as u64;
@@ -1370,23 +1371,22 @@ impl GodEngineCore {
                     let peak_harvest_decay = position_age_ms > harvest_age_ms
                         && peak_pnl >= peak_harvest_thresh
                         && pnl_pct >= net_profit_min
-                        && pnl_pct <= (peak_pnl * 0.75).max(net_profit_min);
+                        && pnl_pct <= (peak_pnl * 0.80).max(net_profit_min);
 
                     if peak_harvest_decay {
                         is_peak_harvest = true;
                     }
 
                     // NUNCA liquidar un trade por fluctuación normal de spread (-2 bps).
-                    // Solo cerrar si la tesis direccional se rompió con significancia estadística (> 65% del SL con flujo y microtendencia en contra)
+                    // Solo cerrar si la tesis direccional se rompió con significancia estadística (> 50% del SL con flujo y microtendencia en contra)
                     // o si superó su tiempo de vida con pérdida y pérdida de coherencia espectral.
                     let time_stagnant_decay = if position_age_ms > min_stagnant_ms {
                         let ema_ofi_adverse = (is_long && ema_ofi < -0.20) || (!is_long && ema_ofi > 0.20);
-                        let thesis_broken = pnl_pct < -sl * 0.65 && ema_ofi_adverse && trend_adverse;
-                        let stillborn_cut = peak_pnl <= 0.0006 && pnl_pct < -sl * 0.60 && (ema_ofi_adverse || trend_adverse);
-                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.65 && !spec_alive;
+                        let thesis_broken = pnl_pct < -sl * 0.85 && ema_ofi_adverse && trend_adverse;
+                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.75 && !spec_alive;
                         let absolute_expired = position_age_ms > absolute_trade_life_ms && pnl_pct < -live_fee * 2.0 && !spec_alive;
 
-                        thesis_broken || stillborn_cut || time_expired || absolute_expired
+                        thesis_broken || time_expired || absolute_expired
                     } else {
                         false
                     };
@@ -1397,11 +1397,12 @@ impl GodEngineCore {
                 };
 
                 // D-649 (DÉCIMA OLA), #548 & #560: Timeout y Zombi adaptativo continuo por escala espectral
-                let dynamic_zombie_debounce_ms = (tau_trade_ms * (5.0 + 3.0 * temporal_s)).clamp(480_000.0, 14_400_000.0) as u64;
-                let dynamic_hard_timeout_ms = (tau_trade_ms * (10.0 + 6.0 * temporal_s)).clamp(900_000.0, 28_800_000.0) as u64;
-                let absolute_expiry_ms = (tau_trade_ms * (18.0 + 8.0 * temporal_s)).clamp(2_700_000.0, 86_400_000.0) as u64;
-                let z_loss_hard = (sl * (0.60 + 0.15 * temporal_s)).max(live_fee * 2.0);
-                let z_loss_trend = (sl * (0.50 + 0.15 * temporal_s)).max(live_fee * 2.0);
+                // Una onda de mercado completa (30-60 min) requiere respirar sin ser estrangulada a los 15 minutos:
+                let dynamic_zombie_debounce_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(1_800_000.0, 28_800_000.0) as u64;
+                let dynamic_hard_timeout_ms = (tau_trade_ms * (40.0 + 20.0 * temporal_s)).clamp(3_600_000.0, 57_600_000.0) as u64;
+                let absolute_expiry_ms = (tau_trade_ms * (60.0 + 30.0 * temporal_s)).clamp(7_200_000.0, 86_400_000.0) as u64;
+                let z_loss_hard = (sl * 0.90).max(live_fee * 3.0);
+                let z_loss_trend = (sl * 0.80).max(live_fee * 3.0);
 
                 let expired_by_age =
                     event_time_ms > 0 && position_age_ms > absolute_expiry_ms && pnl_pct <= -z_loss_hard && !spec_alive;
@@ -2664,8 +2665,8 @@ impl GodEngineCore {
                 .get(coin_id)
                 .map(|s| s.micro_resonant_tau_ms())
                 .unwrap_or(30_000.0);
-            // Modo Espectral de Alta Frecuencia / Onda Micro (τ continuo sin corte discreto en 180s):
-            let fast_duration_ms = (micro_tau.clamp(500.0, 1_800_000.0)).round() as u64;
+            // Modo Espectral de Alta Frecuencia / Onda Micro (τ continuo acotado al suelo de viabilidad física TAU_ANCHOR_FAST_MS):
+            let fast_duration_ms = (micro_tau.clamp(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS, 1_800_000.0)).round() as u64;
             let spread_pct = if mid_price > 0.0 {
                 (ask - bid) / mid_price
             } else {
@@ -3160,9 +3161,9 @@ impl GodEngineCore {
                     let vpin_local = self.feature_engines[coin_id].cvpin.current_vpin().clamp(0.0, 1.0);
                     let hurst_noise = ((0.50 - hurst_val) / 0.50).max(0.0);
                     let entropy_norm = (shannon_ent / 3.0).clamp(0.0, 1.0);
-                    let tensor_tech_thr = (dynamic_tech_thr
+                    let tensor_tech_thr = (dynamic_tech_thr * 0.50
                         * (1.0 + hurst_noise + 0.25 * vpin_local + 0.15 * entropy_norm))
-                        .clamp(dynamic_tech_thr * 0.80, 0.65);
+                        .clamp(0.08, 0.28);
                     let range_obi = (dynamic_obi_thr * 0.85).clamp(0.12, 0.35);
 
                     let long_macro_slope_ok = macro_trend >= 0.0 || (higher_trend > 0.00020 && micro_trend > 0.00015);
@@ -3555,31 +3556,46 @@ impl GodEngineCore {
                 }
             }
 
-            // Ruta Macro-Espectral Directa: resonancia armónica en la banda portadora (tau >= macro_tau)
+            // Ruta de Resonancia Cuántica Espectral Continua (Centroide de Hilbert tau* de 32 Escalas)
             if slow_intent.signal == SignalType::Flat {
                 if let Some(spec) = self.temporal_spectrum.get(coin_id) {
+                    let tau_star = spec.continuous_resonant_tau_ms();
                     let field_long = spec.spectral_field(true);
                     let field_short = spec.spectral_field(false);
                     let fused = spec.fused_score;
-                    let macro_persist = spec.persistence_at(macro_tau);
+                    let tau_star_persist = spec.persistence_at(tau_star);
+                    let tau_star_duration = (tau_star.clamp(5_000.0, 86_400_000.0)).round() as u64;
 
-                    // Si la coherencia espectral global está alineada con persistencia macro y momentum confirmatorio:
-                    if fused > 0.55 && field_long.global_coherence > 0.15 && macro_persist >= 0.52 && macro_trend >= 0.0 {
-                        let conf = (0.55 + field_long.global_coherence * 0.30 + (macro_persist - 0.50) * 0.40).clamp(0.55, 0.92);
+                    // Confluencia armónica constructiva en el centroide espectral tau*:
+                    // Exige resonancia nítida en el tensor de 32 escalas:
+                    // 1. Fused score significativo (|fused| >= 0.38) o confluencia moderada (|fused| >= 0.22)
+                    //    con persistencia direccional estricta (|persist - 0.50| >= 0.02).
+                    // 2. Coherencia espectral global constructiva (> 0.12) en la fase correcta.
+                    // 3. Marea macro no adversa.
+                    let long_confluent = (fused > 0.38 || (fused > 0.22 && tau_star_persist >= 0.52))
+                        && field_long.global_coherence > 0.12
+                        && macro_trend >= -0.00020;
+
+                    let short_confluent = (fused < -0.38 || (fused < -0.22 && tau_star_persist <= 0.48))
+                        && field_short.global_coherence > 0.12
+                        && macro_trend <= 0.00020;
+
+                    if long_confluent {
+                        let conf = (0.58 + field_long.global_coherence * 0.35 + (tau_star_persist - 0.50).max(0.0) * 0.50).clamp(0.58, 0.95);
                         slow_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: conf,
-                            expected_duration_ms: swing_duration_ms,
+                            expected_duration_ms: tau_star_duration,
                             horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 15.0,
                             ..Default::default()
                         };
-                    } else if fused < -0.55 && field_short.global_coherence > 0.15 && macro_persist <= 0.48 && macro_trend <= 0.0 {
-                        let conf = (0.55 + field_short.global_coherence * 0.30 + (0.50 - macro_persist) * 0.40).clamp(0.55, 0.92);
+                    } else if short_confluent {
+                        let conf = (0.58 + field_short.global_coherence * 0.35 + (0.50 - tau_star_persist).max(0.0) * 0.50).clamp(0.58, 0.95);
                         slow_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: conf,
-                            expected_duration_ms: swing_duration_ms,
+                            expected_duration_ms: tau_star_duration,
                             horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 15.0,
                             ..Default::default()
@@ -3974,7 +3990,7 @@ impl GodEngineCore {
                         };
                         let continuous_tau = (base_tau.ln() * 0.50 + resonant_tau_ms.ln() * 0.50).exp();
                         unified_intent.expected_duration_ms =
-                            continuous_tau.clamp(1_000.0, 43_200_000.0).round() as u64;
+                            continuous_tau.clamp(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS, 43_200_000.0).round() as u64;
                     }
                 }
             }
@@ -4200,9 +4216,9 @@ impl GodEngineCore {
             // La cinta de transacciones ejecutadas reales (CVD) es la huella digital inmutable del capital agresor.
             // Prohibido comprar (Long) si el volumen agresor neto es fuertemente vendedor (rolling_cvd < -0.12).
             // Prohibido vender (Short) si el volumen agresor neto es fuertemente comprador (rolling_cvd > 0.12).
-            if unified_intent.signal == SignalType::Long && rolling_cvd < -0.05 {
+            if unified_intent.signal == SignalType::Long && rolling_cvd < -0.12 {
                 unified_intent = SignalIntent::flat();
-            } else if unified_intent.signal == SignalType::Short && rolling_cvd > 0.05 {
+            } else if unified_intent.signal == SignalType::Short && rolling_cvd > 0.12 {
                 unified_intent = SignalIntent::flat();
             }
 
