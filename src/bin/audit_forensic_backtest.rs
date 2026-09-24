@@ -24,8 +24,28 @@ use std::time::Instant;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    let child = std::thread::Builder::new()
+        .name("forensic_backtest".into())
+        .stack_size(64 * 1024 * 1024)
+        .spawn(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build tokio runtime");
+            rt.block_on(run_forensic_backtest());
+        })
+        .expect("spawn forensic worker");
+    match child.join() {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("❌ forensic worker panic: {:?}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+async fn run_forensic_backtest() {
     println!("🛡️ ═══════════════════════════════════════════════════════════════");
     println!("🛡️  AUDIT FORENSIC BACKTEST — Paridad 1:1 con LAUNCH_GOD_MODE.bat");
     println!("🛡️ ═══════════════════════════════════════════════════════════════");

@@ -184,18 +184,18 @@ impl QuantumLeverageMatrix {
         // Con el divisor genómico en su banda [3, 10], el techo estándar a $20,01
         // valía 50·(1 − log10(20)/(2·d)) ≈ 39–47×, frente a 4× un centavo antes:
         // un salto de un orden de magnitud en el riesgo por operación. Ahora el
-        // techo micro de 4× rige pleno a ≤3 operaciones mínimas y se funde
+        // techo micro de 5× rige pleno a ≤3 operaciones mínimas y se funde
         // geométricamente con el estándar hasta 10.
         let standard_ceiling = 50.0 * (1.0 - (log_cap / (log_divisor * 2.0)).min(0.8));
         let micro_w = crate::capital_regime::micro_weight(
             safe_curr_cap,
             arena.config.min_notional.load(Ordering::Relaxed),
         );
-        let raw_ceiling = crate::capital_regime::log_lerp(standard_ceiling, 4.0, micro_w);
+        let raw_ceiling = crate::capital_regime::log_lerp(standard_ceiling, 5.0, micro_w);
         let dynamic_ceiling = if raw_ceiling.is_finite() {
             raw_ceiling.clamp(1.0, 50.0)
         } else {
-            4.0
+            5.0
         };
         let effective_max_leverage = safe_max_lev.clamp(1.0, dynamic_ceiling);
 

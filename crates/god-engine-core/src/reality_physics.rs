@@ -100,6 +100,32 @@ impl RealityPhysics {
         (executed_price, fee_usd)
     }
 
+    /// Calcula el costo real de entrar con orden Maker (Post-Only)
+    /// Para órdenes de horizonte más pausado (tau >= 60s), se coloca en el mejor bid/ask
+    /// ejecutando sin slippage adverso y pagando tarifa Maker VIP0 (0.0002).
+    pub fn calculate_maker_entry(
+        &self,
+        base_price: f64,
+        _is_long: bool,
+        nominal_usd_size: f64,
+    ) -> (f64, f64) {
+        if base_price <= 0.0 || !base_price.is_finite() {
+            return (0.0, 0.0);
+        }
+        let safe_nominal = if nominal_usd_size.is_finite() {
+            nominal_usd_size.max(0.0)
+        } else {
+            0.0
+        };
+        let safe_maker_fee = if self.base_maker_fee.is_finite() && self.base_maker_fee >= 0.0 {
+            self.base_maker_fee
+        } else {
+            0.0002
+        };
+        let fee_usd = safe_nominal * safe_maker_fee;
+        (base_price, fee_usd)
+    }
+
     /// Calcula el costo real de salir (Taker o Maker según trailing stop)
     pub fn calculate_exit(
         &self,

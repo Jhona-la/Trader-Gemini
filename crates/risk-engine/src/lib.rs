@@ -219,6 +219,10 @@ impl RiskEngine {
             .kelly_clamp_max
             .load(Ordering::Relaxed)
             .clamp(clamp_min, 1.0);
+        let trades_n = arena.coins[coin_id]
+            .metrics
+            .trade_count
+            .load(Ordering::Relaxed);
         let raw_kelly = arena.coins[coin_id]
             .metrics
             .kelly_fraction
@@ -227,9 +231,10 @@ impl RiskEngine {
         // CERT-M5-C01: el bootstrap anterior clampeaba a [0.05, 0.35] con
         // baseline 0.5 → 0.35. Con PF ≤ 1 (probado SIN edge), una moneda
         // tradearía al 35% Kelly — bypassando la protección de kelly.rs
-        // (PF≤1 → exploración ≤ ¼ del piso). Ahora: PF ≤ 1 ⇒ ≤ ¼ del
-        // clamp_min del genoma (la MISMA regla que kelly.rs aplica una
-        // capa abajo); PF > 1 sin historial ⇒ bootstrap del genoma.
+        // (PF≤1 → exploración ≤ ¼ del piso). Ahora: PF ≤ 1 o trades_n == 0
+        // (arranque frío sin historial) ⇒ ≤ ¼ del clamp_min del genoma
+        // (la MISMA regla que kelly.rs aplica una capa abajo); PF > 1 con
+        // historial probado ⇒ bootstrap del genoma.
         let pf = arena.coins[coin_id]
             .metrics
             .profit_factor
@@ -238,13 +243,13 @@ impl RiskEngine {
             .config
             .kelly_bootstrap_cold
             .load(Ordering::Relaxed);
-        let kelly_cold = if pf <= 1.0 {
-            // Sin edge probado: exploración ultra-conservadora (¼ del piso)
+        let kelly_cold = if trades_n == 0 || pf <= 1.0 {
+            // Sin edge probado empíricamente en la sesión: exploración ultra-conservadora (¼ del piso)
             (clamp_min.max(0.0) * 0.25).clamp(0.0, 0.05)
         } else {
             kelly_cold_raw.clamp(0.05, 0.35)
         };
-        let kelly_frac = if raw_kelly <= 0.0 {
+        let kelly_frac = if trades_n == 0 || raw_kelly <= 0.0 {
             kelly_cold
         } else {
             raw_kelly.clamp(clamp_min, clamp_max)
@@ -355,15 +360,15 @@ impl RiskEngine {
         // el min_notional, jamás un % fijo del capital.
         let micro_min_viable = if allocated_capital > 0.0 {
             // Fracción mínima para que margin = notional/leverage ≥
-            // min_notional en micro-cuenta: ~(min_notional × lev) / capital
+            // min_notional en micro-cuenta: (min_notional / lev) / capital
             let mn = arena.config.min_notional.load(Ordering::Relaxed).max(1.0);
-            (mn * 5.0 / allocated_capital).clamp(0.0, 0.10)
+            (mn / (5.0 * allocated_capital)).clamp(0.0, 0.10)
         } else {
             0.0
         };
         let micro_kelly = (kelly_adjusted.max(micro_min_viable)
             * (1.0 + (intent.confidence - 0.65).max(0.0) * 1.5))
-            .clamp(micro_min_viable.min(0.10), 0.20);
+            .clamp(micro_min_viable, 0.20);
         // CERT-M5-H03: el escalador micro tampoco escapa al tope de ruina.
         // El piso de viabilidad (micro_min_viable) puede EXCEDER el cap cuando
         // la cuenta es diminuta vs min_notional: en ese caso la orden es

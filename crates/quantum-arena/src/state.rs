@@ -229,6 +229,7 @@ pub struct CoinArena {
     pub last_close_is_long: AtomicBool,
     pub last_close_was_win: AtomicBool,
     pub last_close_reason: AtomicU8,
+    pub last_close_exit_price: AtomicF64,
 }
 
 impl CoinArena {
@@ -318,6 +319,7 @@ impl CoinArena {
             last_close_is_long: AtomicBool::new(false),
             last_close_was_win: AtomicBool::new(false),
             last_close_reason: AtomicU8::new(0),
+            last_close_exit_price: AtomicF64::new(0.0),
         }
     }
 }

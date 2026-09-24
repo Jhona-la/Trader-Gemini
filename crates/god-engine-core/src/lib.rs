@@ -1177,26 +1177,37 @@ impl GodEngineCore {
                 // A escala lenta (s=1, tau=12h): buffer amplio (22-35 bps) y activación escalada con el objetivo TP.
                 // En todo el continuo s in [0, 1]: interpolación suave lerp(fast, slow, s) sin escalones ni acantilados.
                 // VIP0 Binance taker fee = 0.05% (5 bps). Roundtrip taker fee = 10 bps. Slippage floor + taker impact = ~6.0 bps.
-                // Total roundtrip friction = ~14.0 bps.
-                // buf_fast garantiza ganancia neta post-fees VIP0 (16.0 a 21.0 bps).
-                let buf_fast = (live_fee * 2.0 + slip_floor * 2.0 + 0.00025).clamp(0.00160, 0.00210);
-                let min_breathing_fast = (atr_pct_live * 0.40).clamp(0.00040, 0.00085);
-                let act_fast = (buf_fast + min_breathing_fast).max(tp * 0.70);
+                // Total roundtrip friction garantizada: cubre tarifa maker entry + taker stop exit + doble slippage floor.
+                let roundtrip_friction = (live_fee * 1.5 + slip_floor * 2.0).max(0.00145);
+                let buf_fast = (roundtrip_friction + 0.00035).clamp(0.00180, 0.00220);
+                let min_breathing_fast = (atr_pct_live * 0.25).clamp(0.00025, 0.00050);
+                let act_fast = (buf_fast + min_breathing_fast).max(tp * 0.52).min(0.00220);
 
-                let buf_slow = (live_fee * 2.0 + slip_floor * 2.0 + 0.00040).clamp(0.00190, 0.00280);
+                let buf_slow = (roundtrip_friction + 0.00060).clamp(0.00200, 0.00260);
                 let act_slow = (tp * be_frac * 0.70)
-                    .max(buf_slow + 0.0010)
-                    .min(0.0050);
+                    .max(buf_slow + 0.0008)
+                    .min(0.0040);
 
                 let be_buffer = (1.0 - temporal_s) * buf_fast + temporal_s * buf_slow;
                 let be_activation = (1.0 - temporal_s) * act_fast + temporal_s * act_slow;
 
-                if peak_pnl >= be_activation {
-                    let be_stop = if is_long {
-                        entry * (1.0 + be_buffer)
-                    } else {
-                        entry * (1.0 - be_buffer)
-                    };
+                let be_triggered = peak_pnl >= be_activation;
+                let be_stop = if is_long {
+                    entry * (1.0 + be_buffer)
+                } else {
+                    entry * (1.0 - be_buffer)
+                };
+
+                // COTA INVIOLABLE ANTI-TRAMPA RETROACTIVA (#564):
+                // be_stop SOLO se arma si el precio actual de mercado está EN GANANCIA por delante de be_stop.
+                // Si el mercado ya retrocedió por detrás de be_stop, NO se arma retroactivamente para evitar una salida inmediata a peor precio.
+                let price_ahead_of_be = if is_long {
+                    mid_price > be_stop
+                } else {
+                    mid_price < be_stop
+                };
+
+                if be_triggered && price_ahead_of_be {
                     let cur_stop = pos.trail_stop.load(Ordering::Relaxed);
                     if is_long {
                         if cur_stop == 0.0 || be_stop > cur_stop {
@@ -1210,10 +1221,11 @@ impl GodEngineCore {
                 }
 
                 // 2. Trailing Stop Ratchet Espectral Continuo (#559, #560)
-                let trail_act_fast = (act_fast + 0.00040).clamp(0.00230, 0.00300);
+                // SOLO se activa si Breakeven ya está asegurado y el trade expande hacia TP.
+                let trail_act_fast = (act_fast + 0.00035).clamp(0.00215, 0.00280);
                 let trail_act_slow = (tp * trail_frac).max(be_activation * 1.20).min(tp * 0.95);
                 let trail_activation_pnl = (1.0 - temporal_s) * trail_act_fast + temporal_s * trail_act_slow;
-                let trail_active = peak_pnl >= trail_activation_pnl;
+                let trail_active = be_triggered && peak_pnl >= trail_activation_pnl;
 
                 let mut force_close_trail = false;
 
@@ -1252,34 +1264,41 @@ impl GodEngineCore {
                         entry * (1.0 + sl)
                     };
                     let safe_stop = if is_long {
-                        trail_res.stop_price.max(sl_floor)
+                        trail_res.stop_price.max(sl_floor).max(be_stop)
                     } else {
                         if trail_res.stop_price > 0.0 {
-                            trail_res.stop_price.min(sl_floor)
+                            trail_res.stop_price.min(sl_floor).min(be_stop)
                         } else {
-                            sl_floor
+                            be_stop
                         }
                     };
 
                     let current_stored = pos.trail_stop.load(Ordering::Relaxed);
                     let final_stop = if is_long {
                         if current_stored > 0.0 {
-                            safe_stop.max(current_stored)
+                            safe_stop.max(current_stored).max(be_stop)
                         } else {
-                            safe_stop
+                            safe_stop.max(be_stop)
                         }
                     } else {
                         if current_stored > 0.0 {
-                            safe_stop.min(current_stored)
+                            safe_stop.min(current_stored).min(be_stop)
                         } else {
-                            safe_stop
+                            safe_stop.min(be_stop)
                         }
                     };
 
-                    pos.trail_stop.store(final_stop, Ordering::Relaxed);
-                    pos.trailing_phase
-                        .store(trail_res.new_phase as u8, Ordering::Relaxed);
-                    pos.mfe_atr.store(trail_res.mfe_atr, Ordering::Relaxed);
+                    let final_stop_valid = if is_long {
+                        final_stop < mid_price
+                    } else {
+                        final_stop > mid_price
+                    };
+                    if final_stop_valid {
+                        pos.trail_stop.store(final_stop, Ordering::Relaxed);
+                        pos.trailing_phase
+                            .store(trail_res.new_phase as u8, Ordering::Relaxed);
+                        pos.mfe_atr.store(trail_res.mfe_atr, Ordering::Relaxed);
+                    }
                     force_close_trail = trail_res.force_close;
                 }
 
@@ -1315,13 +1334,13 @@ impl GodEngineCore {
                 // #548, #556 & #560: Alpha Decay y Peak Harvest Continuo Multivariante
                 // Cosecha ganancias significativas cuando el pico superó el 60% del TP (min 28 bps)
                 // permitiendo que los trades ganadores corran hacia el TP completo y capturen beneficios netos reales.
-                let harvest_age_ms = (tau_trade_ms * 0.5).clamp(30_000.0, 600_000.0) as u64;
-                let roundtrip_taker_friction = 2.0 * live_fee.max(0.0007) + 2.0 * slip_floor;
-                let net_profit_min = (roundtrip_taker_friction * 1.15).max(0.00185);
-                let peak_harvest_thresh = (tp * 0.60).max(sl * 1.15).max(0.00280);
-                let min_stagnant_ms = (tau_trade_ms * (6.0 + 4.0 * temporal_s)).clamp(600_000.0, 14_400_000.0) as u64;
-                let hard_stagnant_ms = (tau_trade_ms * (12.0 + 8.0 * temporal_s)).clamp(1_800_000.0, 28_800_000.0) as u64;
-                let absolute_trade_life_ms = (tau_trade_ms * (24.0 + 12.0 * temporal_s)).clamp(3_600_000.0, 86_400_000.0) as u64;
+                let harvest_age_ms = (tau_trade_ms * 8.0).clamp(720_000.0, 3_600_000.0) as u64;
+                let roundtrip_taker_friction = live_fee.max(0.0007) + 2.0 * slip_floor;
+                let net_profit_min = (roundtrip_taker_friction * 1.25).max(0.00180);
+                let peak_harvest_thresh = (tp * 0.60).max(net_profit_min);
+                let min_stagnant_ms = (tau_trade_ms * (5.0 + 3.0 * temporal_s)).clamp(480_000.0, 14_400_000.0) as u64;
+                let hard_stagnant_ms = (tau_trade_ms * (10.0 + 6.0 * temporal_s)).clamp(1_200_000.0, 28_800_000.0) as u64;
+                let absolute_trade_life_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(3_000_000.0, 86_400_000.0) as u64;
 
                 let spec_alive = self.temporal_spectrum.get(coin_id).map(|spec| {
                     let sig = spec.signal_at(tau_trade_ms);
@@ -1335,20 +1354,20 @@ impl GodEngineCore {
                     let peak_harvest_decay = position_age_ms > harvest_age_ms
                         && peak_pnl >= peak_harvest_thresh
                         && pnl_pct >= net_profit_min
-                        && pnl_pct <= (peak_pnl * 0.85).max(net_profit_min);
+                        && pnl_pct <= (peak_pnl * 0.75).max(net_profit_min);
 
                     if peak_harvest_decay {
                         is_peak_harvest = true;
                     }
 
                     // NUNCA liquidar un trade por fluctuación normal de spread (-2 bps).
-                    // Solo cerrar si la tesis direccional se rompió con significancia estadística (> 85% del SL con flujo y microtendencia en contra)
+                    // Solo cerrar si la tesis direccional se rompió con significancia estadística (> 65% del SL con flujo y microtendencia en contra)
                     // o si superó su tiempo de vida con pérdida y pérdida de coherencia espectral.
                     let time_stagnant_decay = if position_age_ms > min_stagnant_ms {
-                        let ema_ofi_adverse = (is_long && ema_ofi < -0.35) || (!is_long && ema_ofi > 0.35);
-                        let thesis_broken = pnl_pct < -sl * 0.85 && ema_ofi_adverse && trend_adverse;
-                        let stillborn_cut = peak_pnl <= 0.0001 && pnl_pct < -sl * 0.85 && ema_ofi_adverse;
-                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.85 && !spec_alive;
+                        let ema_ofi_adverse = (is_long && ema_ofi < -0.20) || (!is_long && ema_ofi > 0.20);
+                        let thesis_broken = pnl_pct < -sl * 0.65 && ema_ofi_adverse && trend_adverse;
+                        let stillborn_cut = peak_pnl <= 0.0006 && pnl_pct < -sl * 0.60 && (ema_ofi_adverse || trend_adverse);
+                        let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.65 && !spec_alive;
                         let absolute_expired = position_age_ms > absolute_trade_life_ms && pnl_pct < -live_fee * 2.0 && !spec_alive;
 
                         thesis_broken || stillborn_cut || time_expired || absolute_expired
@@ -1362,11 +1381,11 @@ impl GodEngineCore {
                 };
 
                 // D-649 (DÉCIMA OLA), #548 & #560: Timeout y Zombi adaptativo continuo por escala espectral
-                let dynamic_zombie_debounce_ms = (tau_trade_ms * (6.0 + 4.0 * temporal_s)).clamp(600_000.0, 14_400_000.0) as u64;
-                let dynamic_hard_timeout_ms = (tau_trade_ms * (12.0 + 8.0 * temporal_s)).clamp(1_200_000.0, 28_800_000.0) as u64;
-                let absolute_expiry_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(3_600_000.0, 86_400_000.0) as u64;
-                let z_loss_hard = (sl * (0.75 + 0.15 * temporal_s)).max(live_fee * 2.0);
-                let z_loss_trend = (sl * (0.65 + 0.15 * temporal_s)).max(live_fee * 2.0);
+                let dynamic_zombie_debounce_ms = (tau_trade_ms * (5.0 + 3.0 * temporal_s)).clamp(480_000.0, 14_400_000.0) as u64;
+                let dynamic_hard_timeout_ms = (tau_trade_ms * (10.0 + 6.0 * temporal_s)).clamp(900_000.0, 28_800_000.0) as u64;
+                let absolute_expiry_ms = (tau_trade_ms * (18.0 + 8.0 * temporal_s)).clamp(2_700_000.0, 86_400_000.0) as u64;
+                let z_loss_hard = (sl * (0.60 + 0.15 * temporal_s)).max(live_fee * 2.0);
+                let z_loss_trend = (sl * (0.50 + 0.15 * temporal_s)).max(live_fee * 2.0);
 
                 let expired_by_age =
                     event_time_ms > 0 && position_age_ms > absolute_expiry_ms && pnl_pct <= -z_loss_hard && !spec_alive;
@@ -1489,7 +1508,7 @@ impl GodEngineCore {
 
                     if self.diag_close_total < 100 {
                         println!(
-                            "🚪 [CLOSE TRACE] #{} reason={} pnl_pct={:.4}% peak={:.4}% age={}s gross_pnl=${:.4} exit={:.2} entry={:.2} h={:?} ts={}",
+                            "🚪 [CLOSE TRACE] #{} reason={} pnl_pct={:.4}% peak={:.4}% age={}s gross_pnl=${:.4} exit={:.2} entry={:.2} trail_stop={:.2} mid={:.2} h={:?} ts={}",
                             self.diag_close_total,
                             reason,
                             pnl_pct * 100.0,
@@ -1498,6 +1517,8 @@ impl GodEngineCore {
                             gross_pnl,
                             exit_price,
                             entry,
+                            active_trail_stop,
+                            mid_price,
                             pos.horizon(),
                             event_time_ms
                         );
@@ -1801,6 +1822,7 @@ impl GodEngineCore {
                     coin.last_close_is_long.store(is_long, Ordering::Relaxed);
                     coin.last_close_was_win.store(is_win, Ordering::Relaxed);
                     coin.last_close_reason.store(reason_code, Ordering::Relaxed);
+                    coin.last_close_exit_price.store(exit_price, Ordering::Relaxed);
                     coin.last_scalp_close_ts.store(event_time_ms, Ordering::Relaxed);
                     // MOD2/7-021 (INFORME DECIMOCUARTO): `last_swing_close_ts`
                     // se escribía con el MISMO valor que el scalp (timestamps
@@ -2395,6 +2417,18 @@ impl GodEngineCore {
             let is_confirmed_downtrend = bear_signal && !bull_signal;
             let is_confirmed_uptrend = bull_signal && !bear_signal;
 
+            // Invariante de Momentum Adverso Multiescala (#564)
+            let is_adverse_momentum_short = (macro_trend > 0.00005 && micro_trend > 0.00010 && secular_trend > -0.0020)
+                || (macro_trend > 0.00010 && micro_trend > 0.00015)
+                || (micro_trend > 0.00020)
+                || (micro_trend > 0.00003 && higher_trend > -0.00015)
+                || (higher_trend > 0.00010 && macro_trend > 0.0 && micro_trend > 0.00010 && secular_trend > -0.0010);
+            let is_adverse_momentum_long = (macro_trend < -0.00005 && micro_trend < -0.00010 && secular_trend < 0.0020)
+                || (macro_trend < -0.00010 && micro_trend < -0.00015)
+                || (micro_trend < -0.00020)
+                || (micro_trend < -0.00003 && higher_trend < 0.00015)
+                || (higher_trend < -0.00010 && macro_trend < 0.0 && micro_trend < -0.00010 && secular_trend < 0.0010);
+
             set_reg("ema_trend", micro_trend);
             set_reg("ema_trend_swing", macro_trend);
             set_reg("higher_trend", higher_trend);
@@ -2912,9 +2946,15 @@ impl GodEngineCore {
                     let d_tech_thr = if effective_short_streak >= 2 { dynamic_tech_thr.max(0.30) } else { dynamic_tech_thr };
                     let d_obi_trend = if effective_short_streak >= 2 { min_obi_trend.max(0.22) } else { min_obi_trend };
                     // 1. Tendencial Short: Flujo institucional, confluencia L2 y ML apuntan a la baja
+                    // F8-P9: Invariante de flujo y microtendencia — prohibido vender ante microtendencia adversa o flujo comprador
                     if composite_score < -d_tech_thr
                         && not_overextended_short
                         && effective_obi_short < -d_obi_trend
+                        && !is_adverse_momentum_short
+                        && macro_trend <= 0.0
+                        && micro_trend <= 0.00003
+                        && ofi <= 0.05
+                        && rolling_cvd <= 0.15
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
@@ -2962,9 +3002,15 @@ impl GodEngineCore {
                     let u_tech_thr = if effective_long_streak >= 2 { dynamic_tech_thr.max(0.30) } else { dynamic_tech_thr };
                     let u_obi_trend = if effective_long_streak >= 2 { min_obi_trend.max(0.22) } else { min_obi_trend };
                     // 1. Tendencial Long: Flujo institucional, confluencia L2 y ML apuntan al alza
+                    // F8-P9: Invariante de flujo y microtendencia — prohibido comprar ante microtendencia adversa o flujo vendedor
                     if composite_score > u_tech_thr
                         && not_overextended_long
                         && effective_obi_long > u_obi_trend
+                        && !is_adverse_momentum_long
+                        && macro_trend >= 0.0
+                        && micro_trend >= 0.0
+                        && ofi >= -0.05
+                        && rolling_cvd >= -0.15
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
@@ -3009,12 +3055,14 @@ impl GodEngineCore {
                     // cuando el mercado está GENUINAMENTE en rango o retroceso no impulsivo.
                     // Si higher_trend (2h) o secular_trend imponen una dirección macro clara,
                     // operar contra la marea produce pérdidas directas por parada (SL).
-                    let range_long_trend_ok = higher_trend >= -0.0008
-                        && !(higher_trend < -0.0002 && secular_trend < 0.0)
-                        && macro_trend >= -0.00025;
-                    let range_short_trend_ok = higher_trend <= 0.0008
-                        && !(higher_trend > 0.0002 && secular_trend > 0.0)
-                        && macro_trend <= 0.00025;
+                    let range_long_trend_ok = higher_trend >= 0.0
+                        && !(higher_trend < 0.0 && secular_trend < 0.0)
+                        && macro_trend >= -0.00010
+                        && secular_trend < 0.0025;
+                    let range_short_trend_ok = higher_trend <= 0.0
+                        && !(higher_trend > 0.0 && secular_trend > 0.0)
+                        && macro_trend <= 0.00010
+                        && secular_trend > -0.0025;
 
                     if composite_score > range_thr
                         && effective_obi_long > range_obi
@@ -3090,20 +3138,7 @@ impl GodEngineCore {
                     && !is_anti_persistent
                     && tensor_scalp.net_confidence.abs() >= tensor_cutoff
                 {
-                    // D-502, D-503 & D-505: Invariante de Momentum Jerárquico, Micro-Surge y Concurrencia Multiescala
-                    // 1. Prohibido abrir Short ante micro-spikes de ticks adversos > +4 bps (mic > 0.00040).
-                    // 2. Prohibido abrir Short si 2h, 1m y ticks están concurrentemente subiendo (ht > 0.00020 && mac > 0.00005 && mic > 0.00015).
-                    // 3. Prohibido abrir Short si momentum micro y macro son adversos sin soporte secular fuerte (mac > 0.00005 && mic > 0.00010 && st > -0.0020).
-                    // Simétrico para órdenes Long.
-                    let is_adverse_momentum_short = (macro_trend > 0.00005 && micro_trend > 0.00010 && secular_trend > -0.0020)
-                        || (macro_trend > 0.00010 && micro_trend > 0.00015)
-                        || (micro_trend > 0.00040)
-                        || (higher_trend > 0.00010 && macro_trend > 0.0 && micro_trend > 0.00010 && secular_trend > -0.0010);
-                    let is_adverse_momentum_long = (macro_trend < -0.00005 && micro_trend < -0.00010 && secular_trend < 0.0020)
-                        || (macro_trend < -0.00010 && micro_trend < -0.00015)
-                        || (micro_trend < -0.00040)
-                        || (higher_trend < -0.00010 && macro_trend < 0.0 && micro_trend < -0.00010 && secular_trend < 0.0010);
-                    let tensor_tech_thr = (dynamic_tech_thr * 0.90).max(0.22);
+                    let tensor_tech_thr = dynamic_tech_thr.max(0.48);
                     let range_obi = (dynamic_obi_thr * 0.85).clamp(0.12, 0.35);
 
                     let long_macro_slope_ok = macro_trend >= 0.0 || (higher_trend > 0.00020 && micro_trend > 0.00015);
@@ -3119,7 +3154,7 @@ impl GodEngineCore {
                         !(higher_trend < -0.0001 && (secular_trend < 0.0 || macro_trend < -0.0001))
                             && !(secular_trend < -0.0002 && macro_trend < 0.0),
                         !(price_stretch < -0.80 && secular_trend < 0.0010),
-                        higher_trend >= -0.0001 && long_macro_slope_ok,
+                        higher_trend >= 0.00030 && long_macro_slope_ok,
                         composite_score >= tensor_tech_thr,
                         effective_obi_long > range_obi,
                         not_overextended_long,
@@ -3131,7 +3166,7 @@ impl GodEngineCore {
                         !(higher_trend > 0.0001 && (secular_trend > 0.0 || macro_trend > 0.0001))
                             && !(secular_trend > 0.0002 && macro_trend > 0.0),
                         !(price_stretch > 0.80 && secular_trend > -0.0010),
-                        higher_trend <= 0.0001 && short_macro_slope_ok,
+                        higher_trend <= -0.00030 && short_macro_slope_ok,
                         composite_score <= -tensor_tech_thr,
                         effective_obi_short < -range_obi,
                         not_overextended_short,
@@ -3904,11 +3939,24 @@ impl GodEngineCore {
                         // POST-WIN: La pata impulsiva se monetizó con éxito.
                         // Prohibido comprar el techo del rally o vender el piso del dump recién tomado.
                         if is_same_dir {
-                            if elapsed_ms < 180_000 {
-                                (unified_intent.signal == SignalType::Long && p_stretch > 1.20)
-                                    || (unified_intent.signal == SignalType::Short
-                                        && p_stretch < -1.20)
-                                    || elapsed_ms < 30_000
+                            let last_exit = coin.last_close_exit_price.load(Ordering::Relaxed);
+                            let min_discount = 0.50 * cur_atr;
+                            if elapsed_ms < 900_000 {
+                                // Cooldown armónico incondicional: la onda necesita al menos 15 min para consolidar
+                                true
+                            } else if elapsed_ms < 3_600_000 {
+                                // Dentro de 1 hora post-victoria: jamás comprar por encima o igual a la salida ganadora sin flujo institucional agresivo (cvd > 0.10)
+                                if last_exit > 0.0 {
+                                    if unified_intent.signal == SignalType::Long {
+                                        mid_price >= (last_exit - min_discount)
+                                            || (mid_price >= last_exit && rolling_cvd <= 0.10)
+                                    } else {
+                                        mid_price <= (last_exit + min_discount)
+                                            || (mid_price <= last_exit && rolling_cvd >= -0.10)
+                                    }
+                                } else {
+                                    true
+                                }
                             } else {
                                 false
                             }
@@ -4051,6 +4099,16 @@ impl GodEngineCore {
                 }
             }
 
+            // F8-P10: Invariante Universal de Flujo Institucional y Agresión de Mercado (CVD Universal Guard)
+            // La cinta de transacciones ejecutadas reales (CVD) es la huella digital inmutable del capital agresor.
+            // Prohibido comprar (Long) si el volumen agresor neto es fuertemente vendedor (rolling_cvd < -0.12).
+            // Prohibido vender (Short) si el volumen agresor neto es fuertemente comprador (rolling_cvd > 0.12).
+            if unified_intent.signal == SignalType::Long && rolling_cvd < -0.05 {
+                unified_intent = SignalIntent::flat();
+            } else if unified_intent.signal == SignalType::Short && rolling_cvd > 0.05 {
+                unified_intent = SignalIntent::flat();
+            }
+
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_L2);
             // D-696 (DÉCIMA OLA · auditoría integral): UN SOLO SITIO DECIDE SI LA
             // PREDICCIÓN ESTÁ DE ACUERDO CON LA DIRECCIÓN.
@@ -4089,6 +4147,15 @@ impl GodEngineCore {
                 self.diag_dir.record_neural_gate(neural_against_long, neural_skill);
             }
 
+            // F8-P11: Invariante de Alineación Predictiva Neural y Ensamble ML
+            // Prohibido abrir Long si el ensamble neuronal predice caída (ml_prob < 0.50).
+            // Prohibido abrir Short si el ensamble neuronal predice subida (ml_prob > 0.50).
+            if unified_intent.signal == SignalType::Long && ml_prob < 0.50 {
+                unified_intent = SignalIntent::flat();
+            } else if unified_intent.signal == SignalType::Short && ml_prob > 0.50 {
+                unified_intent = SignalIntent::flat();
+            }
+
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_NEURAL);
 
             let is_long_intent = unified_intent.signal == SignalType::Long;
@@ -4112,29 +4179,24 @@ impl GodEngineCore {
 
             // En micro-cuentas ($13 USD), el apalancamiento continuo prohíbe
             // apilar posiciones en la misma dirección dentro de la misma banda armónica (|Δ ln τ| < 1.20)
-            // a menos que la posición previa ya esté asegurada en ganancia (>= 12 bps).
-            // Ondas ortogonales (ej. micro-scalp 30s conviviendo con macro-swing 4h) coexisten armónicamente.
+            // En micro-cuentas ($13 USD), el apalancamiento continuo prohíbe estrictamente
+            // apilar posiciones en la misma dirección a menos que la posición previa
+            // ya esté asegurada en ganancia (>= 12 bps).
+            // Posiciones en direcciones opuestas (Hedge LONG + SHORT) coexisten armónicamente.
             let same_dir_unsecured = if raw_slot_available {
                 let slots = [&coin.positions.scalp, &coin.positions.swing, &coin.positions.position];
-                let ln_target = tau_intent_ms.max(10.0).ln();
                 slots.iter().any(|p| {
                     if p.is_open() && p.is_long.load(Ordering::Relaxed) == is_long_intent {
-                        let open_tau = (p.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
-                        let diff_ln = (ln_target - open_tau.ln()).abs();
-                        if diff_ln < 1.20 {
-                            let ep = p.entry_price.load(Ordering::Relaxed);
-                            if ep > 0.0 && mid_price > 0.0 {
-                                let pnl = if is_long_intent {
-                                    (mid_price - ep) / ep
-                                } else {
-                                    (ep - mid_price) / ep
-                                };
-                                pnl < 0.0012
+                        let ep = p.entry_price.load(Ordering::Relaxed);
+                        if ep > 0.0 && mid_price > 0.0 {
+                            let pnl = if is_long_intent {
+                                (mid_price - ep) / ep
                             } else {
-                                true
-                            }
+                                (ep - mid_price) / ep
+                            };
+                            pnl < 0.0028
                         } else {
-                            false
+                            true
                         }
                     } else {
                         false
@@ -4430,23 +4492,17 @@ impl GodEngineCore {
                                     .used_margin
                                     .fetch_add(margin_req, Ordering::Relaxed);
 
-                                let base_price = if is_long { ask } else { bid };
+                                let entry_is_maker = tau_intent_ms >= 60_000.0;
+                                let base_price = if entry_is_maker {
+                                    if is_long { bid } else { ask }
+                                } else {
+                                    if is_long { ask } else { bid }
+                                };
                                 let nominal_size = margin_req * eff_leverage;
-                                // O-01/O-02 — REALITY PHYSICS CONECTADO: el
-                                // fill lineal 0.5bps/$1M daba impacto ≈0 a
-                                // escala operativa (un edge de pocos bps era
-                                // "certificado" sin fricción). Ahora:
-                                // impacto CUADRÁTICO (powf 1.2) que castiga
-                                // tamaños grandes + latency-slippage (el
-                                // precio se mueve durante la latencia) +
-                                // base_slippage_floor del GENOMA. Puede volcar
-                                // el signo del PnL certificado — es el punto.
-                                // N-01 — FIX UNIDADES: atr_pct YA es la
-                                // fracción que calculate_market_entry espera
-                                // (sus tests usan 0.001-0.002). Multiplicar
-                                // por mid_price producía unidades ABSOLUTAS
-                                // (BTC ~60) que saturaban el latency-slippage
-                                // al clamp del 5% en TODO trade.
+                                // O-01/O-02 — REALITY PHYSICS CONECTADO:
+                                // Para micro-impulsos (tau < 60s), entrada taker a mercado con impacto de libro y latencia.
+                                // Para ondas sostenidas multi-escala (tau >= 60s), entrada preferente Maker (Post-Only)
+                                // al mejor bid/ask, eliminando slippage adverso y reduciendo comisiones de 5 bps a 2 bps.
                                 let tick_vol = atr_pct;
                                 let slip_floor = self
                                     .arena
@@ -4460,7 +4516,13 @@ impl GodEngineCore {
                                     .latency_penalty_ms
                                     .load(Ordering::Relaxed)
                                     .max(0.0);
-                                let (real_entry_price, phys_entry_fee) =
+                                let (real_entry_price, phys_entry_fee) = if entry_is_maker {
+                                    self.reality.calculate_maker_entry(
+                                        base_price,
+                                        is_long,
+                                        nominal_size,
+                                    )
+                                } else {
                                     self.reality.calculate_market_entry(
                                         base_price,
                                         is_long,
@@ -4468,7 +4530,8 @@ impl GodEngineCore {
                                         tick_vol,
                                         slip_floor,
                                         lat_ms,
-                                    );
+                                    )
+                                };
                                 let real_entry_price = if real_entry_price <= 0.0 {
                                     base_price
                                 } else {
@@ -4554,7 +4617,7 @@ impl GodEngineCore {
 
                                 if self.diag_opened <= 100 {
                                     println!(
-                                        "🚀 [OPEN TRACE] #{} dir={} rama={:.0} h={:?} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sc={:.3} obi={:.3} ht={:.5} st={:.5} mac={:.5} mic={:.5} ts={}",
+                                        "🚀 [OPEN TRACE] #{} dir={} rama={:.0} h={:?} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sc={:.3} obi={:.3} ofi={:.3} cvd={:.3} ht={:.5} st={:.5} mac={:.5} mic={:.5} ts={}",
                                         self.diag_opened,
                                         if is_long { "LONG" } else { "SHORT" },
                                         unified_intent.volume_flow_rate,
@@ -4565,6 +4628,8 @@ impl GodEngineCore {
                                         nominal_size,
                                         composite_score,
                                         current_obi,
+                                        ofi,
+                                        rolling_cvd,
                                         higher_trend,
                                         secular_trend,
                                         macro_trend,
