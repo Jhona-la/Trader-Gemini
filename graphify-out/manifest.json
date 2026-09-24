@@ -798,9 +798,9 @@
     "semantic_hash": "3819bf0fcc99c84f0cd51fc69c208867"
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1790206481.7636635,
-    "seen": 1790212458.0864086,
-    "ast_hash": "2c8379bab302a56045ec05480c199f9f",
+    "mtime": 1790214624.172872,
+    "seen": 1790215234.393111,
+    "ast_hash": "da8b6e531d4ccfb7d6a717474abdeed3",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/math_kernels.rs": {
@@ -1158,9 +1158,9 @@
     "semantic_hash": "0814b04ee32d8d86bcdb6a6ff6aae8c6"
   },
   "crates/quantum-arena/src/position.rs": {
-    "mtime": 1790187034.1415963,
-    "seen": 1790187998.2399347,
-    "ast_hash": "6c56d49933ea8a92025b1589369a6a27",
+    "mtime": 1790214522.2309077,
+    "seen": 1790215234.393111,
+    "ast_hash": "0a468b7aae812cea32d42b56a4a88ed9",
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/ring_buffer.rs": {
@@ -1170,9 +1170,9 @@
     "semantic_hash": "9b3a60b75f7457bf87079f9951054d7d"
   },
   "crates/quantum-arena/src/state.rs": {
-    "mtime": 1790205881.4306543,
-    "seen": 1790212458.0864086,
-    "ast_hash": "8786f41bd26f4a50b7675a18967ed3db",
+    "mtime": 1790214508.3291702,
+    "seen": 1790215234.393111,
+    "ast_hash": "70424929e71802458d1194fd5d2e9618",
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/state_continuity.rs": {
@@ -1284,9 +1284,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/lib.rs": {
-    "mtime": 1790212120.1439612,
-    "seen": 1790212458.0864086,
-    "ast_hash": "fb8c2cc7f7dffee9e8c750b6136ded4d",
+    "mtime": 1790214538.620128,
+    "seen": 1790215234.393111,
+    "ast_hash": "88f7f377ce7aabfa8ae45846fe5c9aa4",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/orchestrator.rs": {
@@ -2328,9 +2328,9 @@
     "semantic_hash": ""
   },
   "docs/MICRO_CAPITAL_OPERATIONS.md": {
-    "mtime": 1776108311.5391243,
-    "seen": 1789162211.1560645,
-    "ast_hash": "e09331551f55a0b7f9a7b3e290bc1398",
+    "mtime": 1790212536.625565,
+    "seen": 1790215234.393111,
+    "ast_hash": "b719c9c133784e8ff57c718974b4f63a",
     "semantic_hash": ""
   },
   "docs/NANO_LATENCY_AUDIT.md": {

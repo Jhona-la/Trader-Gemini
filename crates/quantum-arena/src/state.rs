@@ -201,6 +201,12 @@ pub struct CoinArena {
     /// global; `compute_tp_sl` consume ESTE: la geometría del trade usa la
     /// persistencia del horizonte que realmente tradea.
     pub hurst_scale_matched: AtomicF64,
+    /// Universo Multivariante Continuo Temporal Espectral: Coherencia armónica de fase global [-1.0, 1.0]
+    pub spectral_coherence: AtomicF64,
+    /// Entropía espectral de Shannon normalizada [0.0, 1.0] (0 = orden láser, 1 = ruido térmico)
+    pub spectral_entropy: AtomicF64,
+    /// Longitud de onda o centro de masa espectral armónico continuo tau* (ms)
+    pub spectral_resonant_tau: AtomicF64,
     /// P-3b — OPEN INTEREST per-símbolo (normalizado log contra $100M de
     /// contratos abiertos, [0,1]): el dinero apalancado DENTRO de esta
     /// moneda. Alimenta el asiento Ente del Mercado. Escrito por el poller
@@ -300,6 +306,9 @@ impl CoinArena {
             current_atr: AtomicF64::new(0.0),
             hurst_exponent: AtomicF64::new(0.5),
             hurst_scale_matched: AtomicF64::new(0.5),
+            spectral_coherence: AtomicF64::new(0.0),
+            spectral_entropy: AtomicF64::new(1.0),
+            spectral_resonant_tau: AtomicF64::new(30_000.0),
             open_interest_norm: AtomicF64::new(0.0),
             epigenetic_bias: AtomicF64::new(1.0),
             epigenetic_threshold_modifier: AtomicF64::new(1.0),

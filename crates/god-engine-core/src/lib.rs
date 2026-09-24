@@ -598,6 +598,12 @@ impl GodEngineCore {
             // vuelve una VISTA del continuo, no la fuente.
             if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
                 spec.update(current_price, event_time_ms);
+                if coin_id < self.arena.coins.len() {
+                    let field = spec.spectral_field(true);
+                    self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
+                    self.arena.coins[coin_id].spectral_entropy.store(field.spectral_entropy, Ordering::Relaxed);
+                    self.arena.coins[coin_id].spectral_resonant_tau.store(field.resonant_tau_ms, Ordering::Relaxed);
+                }
             }
 
             // F4.7 — CALIBRACIÓN CONTINUA DEL ENSAMBLE: cada kline CERRADO
@@ -886,6 +892,12 @@ impl GodEngineCore {
             if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
                 let mid = (bid + ask) * 0.5;
                 spec.update(mid, event_time_ms);
+                if coin_id < self.arena.coins.len() {
+                    let field = spec.spectral_field(true);
+                    self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
+                    self.arena.coins[coin_id].spectral_entropy.store(field.spectral_entropy, Ordering::Relaxed);
+                    self.arena.coins[coin_id].spectral_resonant_tau.store(field.resonant_tau_ms, Ordering::Relaxed);
+                }
             }
 
             // 1. Quantum Kill-Switch Check
@@ -4177,26 +4189,34 @@ impl GodEngineCore {
             let target_pos_slot = maybe_slot.unwrap_or(0);
             let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 
-            // En micro-cuentas ($13 USD), el apalancamiento continuo prohíbe
-            // apilar posiciones en la misma dirección dentro de la misma banda armónica (|Δ ln τ| < 1.20)
+            // Desacoplamiento Espectral Armónico de Apalancamiento:
             // En micro-cuentas ($13 USD), el apalancamiento continuo prohíbe estrictamente
-            // apilar posiciones en la misma dirección a menos que la posición previa
-            // ya esté asegurada en ganancia (>= 12 bps).
-            // Posiciones en direcciones opuestas (Hedge LONG + SHORT) coexisten armónicamente.
+            // apilar posiciones en la misma dirección DENTRO DE LA MISMA BANDA ARMÓNICA (|Δ ln τ| < 0.60)
+            // a menos que la posición previa ya esté asegurada en ganancia (>= 28 bps o con stop positivo).
+            // Si la posición previa pertenece a una frecuencia armónica ortogonal (|Δ ln τ| >= 0.60),
+            // coexisten armónicamente en ranuras independientes sin duplicar el riesgo de la misma onda.
             let same_dir_unsecured = if raw_slot_available {
-                let slots = [&coin.positions.scalp, &coin.positions.swing, &coin.positions.position];
+                let slots = coin.positions.slots();
+                let ln_target = (tau_intent_ms.max(10.0)).ln();
                 slots.iter().any(|p| {
                     if p.is_open() && p.is_long.load(Ordering::Relaxed) == is_long_intent {
-                        let ep = p.entry_price.load(Ordering::Relaxed);
-                        if ep > 0.0 && mid_price > 0.0 {
-                            let pnl = if is_long_intent {
-                                (mid_price - ep) / ep
+                        let p_tau = (p.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
+                        let diff_ln = (ln_target - p_tau.ln()).abs();
+                        // Solo se exige seguro de ganancia si la posición previa pertenece a la MISMA banda armónica
+                        if diff_ln < 0.60 {
+                            let ep = p.entry_price.load(Ordering::Relaxed);
+                            if ep > 0.0 && mid_price > 0.0 {
+                                let pnl = if is_long_intent {
+                                    (mid_price - ep) / ep
+                                } else {
+                                    (ep - mid_price) / ep
+                                };
+                                pnl < 0.0028
                             } else {
-                                (ep - mid_price) / ep
-                            };
-                            pnl < 0.0028
+                                true
+                            }
                         } else {
-                            true
+                            false // Frecuencias desacopladas ortogonales: no interfieren destructivamente
                         }
                     } else {
                         false

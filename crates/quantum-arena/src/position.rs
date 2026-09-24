@@ -547,18 +547,10 @@ impl PositionManager {
             }
         }
 
-        // 2. Asignación armónica continua según la escala temporal:
-        // - Frecuencias altas (tau < 60s): orden preferente [0, 2, 1]
-        // - Frecuencias medias/bajas (tau >= 60s): orden preferente [1, 2, 0]
-        let preference = if safe_tau < 60_000.0 {
-            [0usize, 2usize, 1usize]
-        } else {
-            [1usize, 2usize, 0usize]
-        };
-
-        for &slot_idx in &preference {
-            if !slots[slot_idx].is_open() {
-                return Some(slot_idx);
+        // 2. Asignación continua en el espacio de Hilbert a la primera ranura armónica libre
+        for (idx, pos) in slots.iter().enumerate() {
+            if !pos.is_open() {
+                return Some(idx);
             }
         }
 

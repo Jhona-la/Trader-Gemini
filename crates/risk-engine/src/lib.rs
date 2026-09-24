@@ -639,10 +639,32 @@ impl RiskEngine {
             .min_confidence_btc
             .load(Ordering::Relaxed)
             .clamp(0.05, 0.95);
-        // Endurecimiento micro del gate de confianza en la proporción que fijaba
-        // la calibración original (0,66 frente a 0,62), aplicada sobre el gen.
+
+        // Modulación Cuántica del Gate de Confianza por el Tensor Espectral Continuo:
+        // En el Universo Multivariante Continuo Temporal Espectral, la certidumbre física emerge
+        // de la resonancia constructiva de las 32 ondas (global_coherence > 0) y baja entropía térmica (entropy < 0.85).
+        // Cuando las 32 escalas están en fase armónica, el endurecimiento artificial de scarcity se modula continuamente,
+        // permitiendo que los alphas genuinos con fuerte convicción espectral pasen a ejecución sin arriesgar en ruido térmico.
+        let spec_coh = if coin_id < arena.coins.len() {
+            arena.coins[coin_id].spectral_coherence.load(Ordering::Relaxed)
+        } else {
+            0.0
+        };
+        let spec_ent = if coin_id < arena.coins.len() {
+            arena.coins[coin_id].spectral_entropy.load(Ordering::Relaxed)
+        } else {
+            1.0
+        };
+        let coh_benefit = if spec_coh > 0.05 && spec_ent < 0.85 {
+            (spec_coh * (1.0 - spec_ent * 0.5)).clamp(0.0, 0.80)
+        } else {
+            0.0
+        };
+        let base_micro_ratio = 0.66 / 0.62;
+        let effective_micro_ratio = base_micro_ratio - (base_micro_ratio - 1.0) * coh_benefit;
+
         let min_required_confidence =
-            crate::capital_regime::lerp(base_conf_gate, base_conf_gate * (0.66 / 0.62), scarcity)
+            crate::capital_regime::lerp(base_conf_gate, base_conf_gate * effective_micro_ratio, scarcity)
                 .clamp(0.05, 0.98);
         if confidence < min_required_confidence {
             return rej(REJ_CONFIDENCE);
