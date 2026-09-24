@@ -124,7 +124,7 @@ impl TensorVoteOrchestrator {
             0.0
         };
 
-        let confidence_cutoff = self
+        let _confidence_cutoff = self
             .arena
             .config
             .explosive_confidence_threshold

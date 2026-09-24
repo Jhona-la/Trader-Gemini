@@ -236,14 +236,31 @@ pub struct CoinArena {
     pub last_close_was_win: AtomicBool,
     pub last_close_reason: AtomicU8,
     pub last_close_exit_price: AtomicF64,
+    pub last_tick_timestamp_ms: AtomicU64,
 }
 
 impl CoinArena {
     /// O(1) lock-free tick push. ~5 nanoseconds.
     #[inline(always)]
     pub fn push_tick(&self, tick: CompactTick) {
+        self.last_tick_timestamp_ms.store(tick.timestamp, Ordering::Relaxed);
         self.tick_ring.push(tick);
         self.tick_head.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Retorna el modificador epigenético de umbral activo aplicando decaimiento homeostático continuo
+    /// hacia 1.0 (equilibrio físico sin estados absorbentes).
+    #[inline]
+    pub fn get_active_epigenetic_threshold(&self, now_ms: u64) -> f64 {
+        let stored = self.epigenetic_threshold_modifier.load(Ordering::Relaxed);
+        let last_close = self.last_close_ts.load(Ordering::Relaxed);
+        if last_close == 0 || now_ms <= last_close {
+            return stored;
+        }
+        let elapsed_ms = (now_ms - last_close) as f64;
+        // Relajación homeostática hacia 1.0 (tau_homeo = 15 minutos = 900,000 ms)
+        let decay = (-elapsed_ms / 900_000.0).exp();
+        1.0 + (stored - 1.0) * decay
     }
 
     /// Quantum Epigenetics: Modifies the genetic bias and thresholds continuously based on trade feedback.
@@ -256,18 +273,22 @@ impl CoinArena {
     ///
     /// **CÓMO:**
     /// - `epigenetic_bias` (0.5x → 2.0x): Multiplicador de confianza. Win → sube, Loss → baja.
-    /// - `epigenetic_threshold_modifier` (0.8x → 1.5x): Multiplicador del min_confidence_cutoff.
-    ///   Loss → sube (requiere MÁS confianza para entrar), Win rápido → baja levemente.
+    /// - `epigenetic_threshold_modifier` (0.8x → 1.25x): Multiplicador del min_confidence_cutoff.
+    ///   Loss → sube moderadamente con disipación temporal continua, Win rápido → baja suavemente.
     ///
     /// **CUÁNDO:** Se llama al cerrar cada posición (scalp o swing) en process_tick y process_tick_shadow.
     /// **DÓNDE:** CoinArena (crates/quantum-arena/src/state.rs).
     /// **QUIÉN:** GodEngineCore invoca esto tras cada cierre de posición.
     /// Retroalimentación Epigenética Adaptativa Multivariante Espectral.
     ///
-    /// Integra la escala temporal de operación `tau_trade_ms` para sincronizar
-    /// la adaptación de la moneda con su física de onda correspondiente.
-    #[inline(always)]
-    pub fn apply_spectral_epigenetic_feedback(&self, pnl_pct: f64, trade_duration_ms: u64, tau_trade_ms: f64) {
+    /// Integra la escala temporal de operación `tau_trade_ms` y el timestamp causal `event_time_ms`.
+    pub fn apply_spectral_epigenetic_feedback_with_time(
+        &self,
+        pnl_pct: f64,
+        trade_duration_ms: u64,
+        tau_trade_ms: f64,
+        event_time_ms: u64,
+    ) {
         let safe_tau = if tau_trade_ms.is_finite() && tau_trade_ms > 10.0 {
             tau_trade_ms
         } else {
@@ -281,33 +302,43 @@ impl CoinArena {
         let new_bias = (old_bias + pnl_shift).clamp(0.5, 2.0);
         self.epigenetic_bias.store(new_bias, Ordering::Relaxed);
 
-        // Modificador de umbral adaptativo continuo
+        // Modificador de umbral adaptativo continuo con proporcionalidad de pérdida y saturación controlada
         let duration_factor = 1.0 - (trade_duration_ms as f64 / (safe_tau * 3.0)).clamp(0.0, 1.0);
+        let pnl_mag = (pnl_pct.abs() / 0.002).clamp(0.15, 2.5);
         let threshold_shift = if pnl_pct > 0.0 {
-            -0.008 - 0.020 * duration_factor
+            (-0.006 - 0.015 * duration_factor) * pnl_mag
         } else {
-            0.040 * (1.0 / tau_inertia.sqrt()).clamp(0.5, 2.0)
+            (0.010 * (1.0 / tau_inertia.sqrt()).clamp(0.5, 1.5)) * pnl_mag
         };
 
         let old_threshold = self.epigenetic_threshold_modifier.load(Ordering::Relaxed);
-        let new_threshold = (old_threshold + threshold_shift).clamp(0.75, 1.50);
+        let new_threshold = (old_threshold + threshold_shift).clamp(0.80, 1.25);
         self.epigenetic_threshold_modifier
             .store(new_threshold, Ordering::Relaxed);
 
-        // Actualizar métricas universales de cierre
-        let now_ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-        self.last_close_ts.store(now_ts, Ordering::Relaxed);
-        self.last_scalp_close_ts.store(now_ts, Ordering::Relaxed);
-        self.last_swing_close_ts.store(now_ts, Ordering::Relaxed);
+        // Actualizar métricas universales de cierre con timestamp del evento causal
+        let close_ts = if event_time_ms > 0 {
+            event_time_ms
+        } else {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64
+        };
+        self.last_close_ts.store(close_ts, Ordering::Relaxed);
+        self.last_scalp_close_ts.store(close_ts, Ordering::Relaxed);
+        self.last_swing_close_ts.store(close_ts, Ordering::Relaxed);
         self.last_close_was_win.store(pnl_pct > 0.0, Ordering::Relaxed);
     }
 
     #[inline(always)]
+    pub fn apply_spectral_epigenetic_feedback(&self, pnl_pct: f64, trade_duration_ms: u64, tau_trade_ms: f64) {
+        self.apply_spectral_epigenetic_feedback_with_time(pnl_pct, trade_duration_ms, tau_trade_ms, 0);
+    }
+
+    #[inline(always)]
     pub fn apply_epigenetic_feedback(&self, pnl_pct: f64, trade_duration_ms: u64) {
-        self.apply_spectral_epigenetic_feedback(pnl_pct, trade_duration_ms, 30_000.0);
+        self.apply_spectral_epigenetic_feedback_with_time(pnl_pct, trade_duration_ms, 30_000.0, 0);
     }
 }
 
@@ -344,6 +375,7 @@ impl CoinArena {
             last_close_was_win: AtomicBool::new(false),
             last_close_reason: AtomicU8::new(0),
             last_close_exit_price: AtomicF64::new(0.0),
+            last_tick_timestamp_ms: AtomicU64::new(0),
         }
     }
 }

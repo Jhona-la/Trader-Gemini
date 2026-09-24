@@ -98,6 +98,7 @@ pub struct StatefulEngine {
     pub scalp_short_loss_streak: u32,
     pub scalp_long_loss_streak: u32,
     pub spectral_loss_streaks: [u32; 3], // [0: Micro (<60s), 1: Meso (60s..30m), 2: Macro (>=30m)]
+    pub spectral_directional_loss_streaks: [[u32; 2]; 3], // [band][0: Short, 1: Long]
     pub spectral_exit_ts: [u64; 3],
     pub last_trade_is_sell: bool,
     /// #18: Filtro de Kalman 1D para estimar el micro-precio justo en O(1)
@@ -175,6 +176,7 @@ impl StatefulEngine {
             scalp_short_loss_streak: 0,
             scalp_long_loss_streak: 0,
             spectral_loss_streaks: [0; 3],
+            spectral_directional_loss_streaks: [[0; 2]; 3],
             spectral_exit_ts: [0; 3],
             last_trade_is_sell: false,
             kalman: feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1),
@@ -216,8 +218,10 @@ impl StatefulEngine {
         self.last_scalp_exit_ts = ts;
         self.last_scalp_was_loss = is_directional_loss;
 
+        let dir_idx = if is_long { 1 } else { 0 };
         if is_directional_loss {
             self.spectral_loss_streaks[band] += 1;
+            self.spectral_directional_loss_streaks[band][dir_idx] += 1;
             self.scalp_loss_streak += 1;
             if is_long {
                 self.scalp_long_loss_streak += 1;
@@ -226,6 +230,7 @@ impl StatefulEngine {
             }
         } else {
             self.spectral_loss_streaks[band] = 0;
+            self.spectral_directional_loss_streaks[band][dir_idx] = 0;
             self.scalp_loss_streak = 0;
             if is_long {
                 self.scalp_long_loss_streak = 0;
@@ -311,36 +316,60 @@ impl StatefulEngine {
     /// Obtiene la racha total de pérdidas activa considerando el decaimiento temporal en milisegundos
     #[inline(always)]
     pub fn get_active_total_loss_streak(&self) -> u32 {
-        let elapsed_ms = if self.current_ts > 0 && self.last_scalp_exit_ts > 0 {
-            self.current_ts.saturating_sub(self.last_scalp_exit_ts)
+        self.get_active_total_loss_streak_at_tau(30_000.0)
+    }
+
+    /// Obtiene la racha total de pérdidas activa desacoplada por banda espectral considerando el decaimiento temporal
+    #[inline(always)]
+    pub fn get_active_total_loss_streak_at_tau(&self, tau_ms: f64) -> u32 {
+        let band = Self::spectral_band_index(tau_ms);
+        let band_exit_ts = self.spectral_exit_ts[band];
+        let elapsed_ms = if self.current_ts > 0 && band_exit_ts > 0 {
+            self.current_ts.saturating_sub(band_exit_ts)
         } else {
             self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
         };
-        if elapsed_ms > 3_600_000 { // 1 hora
+        let raw = self.spectral_loss_streaks[band];
+        let decay_window_ms = match band {
+            0 => 300_000,    // 5 minutos para micro (<60s)
+            1 => 1_800_000,  // 30 minutos para meso (60s..30m)
+            _ => 7_200_000,  // 2 horas para macro (>=30m)
+        };
+        if elapsed_ms > decay_window_ms {
             0
-        } else if elapsed_ms > 1_800_000 { // 30 minutos
-            self.scalp_loss_streak.saturating_sub(1)
+        } else if elapsed_ms > decay_window_ms / 2 {
+            raw.saturating_sub(1)
         } else {
-            self.scalp_loss_streak
+            raw
         }
     }
 
     /// Obtiene la racha de pérdidas activa para una dirección (long/short), considerando el decaimiento temporal en milisegundos
     #[inline(always)]
     pub fn get_active_directional_streak(&self, is_long: bool) -> u32 {
-        let elapsed_ms = if self.current_ts > 0 && self.last_scalp_exit_ts > 0 {
-            self.current_ts.saturating_sub(self.last_scalp_exit_ts)
+        self.get_active_directional_streak_at_tau(is_long, 30_000.0)
+    }
+
+    /// Obtiene la racha direccional de pérdidas activa desacoplada por banda espectral considerando el decaimiento temporal
+    #[inline(always)]
+    pub fn get_active_directional_streak_at_tau(&self, is_long: bool, tau_ms: f64) -> u32 {
+        let band = Self::spectral_band_index(tau_ms);
+        let dir_idx = if is_long { 1 } else { 0 };
+        let band_exit_ts = self.spectral_exit_ts[band];
+        let elapsed_ms = if self.current_ts > 0 && band_exit_ts > 0 {
+            self.current_ts.saturating_sub(band_exit_ts)
         } else {
             self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
         };
-        let raw = if is_long {
-            self.scalp_long_loss_streak
-        } else {
-            self.scalp_short_loss_streak
+        let raw = self.spectral_directional_loss_streaks[band][dir_idx];
+        let decay_window_ms = match band {
+            0 => 300_000,    // 5 minutos para micro (<60s)
+            1 => 1_800_000,  // 30 minutos para meso (60s..30m)
+            _ => 7_200_000,  // 2 horas para macro (>=30m)
         };
-        if elapsed_ms > 3_600_000 { // 1 hora
+        if elapsed_ms > decay_window_ms {
             0
-        } else if elapsed_ms > 1_800_000 { // 30 minutos
+        } else if elapsed_ms > decay_window_ms / 2 {
             raw.saturating_sub(1)
         } else {
             raw
@@ -379,6 +408,7 @@ impl StatefulEngine {
         self.scalp_short_loss_streak = 0;
         self.scalp_long_loss_streak = 0;
         self.spectral_loss_streaks = [0; 3];
+        self.spectral_directional_loss_streaks = [[0; 2]; 3];
         self.spectral_exit_ts = [0; 3];
         self.hurst = RecursiveHurst::new();
         self.obi_accel = ObiAcceleration::new();

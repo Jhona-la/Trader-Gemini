@@ -652,11 +652,13 @@ impl RiskEngine {
         // de la resonancia constructiva de las 32 ondas (global_coherence > 0) y baja entropía térmica (entropy < 0.85).
         // Cuando las 32 escalas están en fase armónica, el endurecimiento artificial de scarcity se modula continuamente,
         // permitiendo que los alphas genuinos con fuerte convicción espectral pasen a ejecución sin arriesgar en ruido térmico.
-        let spec_coh = if coin_id < arena.coins.len() {
+        let is_long = intent.signal == SignalType::Long;
+        let raw_coh = if coin_id < arena.coins.len() {
             arena.coins[coin_id].spectral_coherence.load(Ordering::Relaxed)
         } else {
             0.0
         };
+        let spec_coh = if is_long { raw_coh } else { -raw_coh };
         let spec_ent = if coin_id < arena.coins.len() {
             arena.coins[coin_id].spectral_entropy.load(Ordering::Relaxed)
         } else {
@@ -670,8 +672,13 @@ impl RiskEngine {
         let base_micro_ratio = 0.66 / 0.62;
         let effective_micro_ratio = base_micro_ratio - (base_micro_ratio - 1.0) * coh_benefit;
 
+        let now_ts = if coin_id < arena.coins.len() {
+            arena.coins[coin_id].last_tick_timestamp_ms.load(Ordering::Relaxed)
+        } else {
+            0
+        };
         let epi_thresh = if coin_id < arena.coins.len() {
-            arena.coins[coin_id].epigenetic_threshold_modifier.load(Ordering::Relaxed)
+            arena.coins[coin_id].get_active_epigenetic_threshold(now_ts)
         } else {
             1.0
         };

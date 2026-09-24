@@ -815,6 +815,13 @@ impl GodEngineCore {
                     .store(current_price, Ordering::Relaxed);
             }
 
+            // CERT-PARITY-FIX: Si hay pánico de latencia o es un evento puro de profundidad sin trade,
+            // la bandera `allow_entries` se propaga DENTRO de `process_tick_dual`.
+            // Esto garantiza que si las entradas están vetadas, la posición NUNCA se abre
+            // en memoria (evitando Ghost Positions y desincronización de margen).
+            // A la salida, todo new_order generado es legítimo y viaja sin censura.
+            let allow_entries = !latency_panic && (!is_depth || is_trade);
+
             let (new_order, closed_order, _maker) = self.process_tick_dual(
                 coin_id,
                 eff_bid,
@@ -824,15 +831,10 @@ impl GodEngineCore {
                 event_time_ms,
                 omni_features,
                 is_depth, // CERT-M2-H01: el depth path ya actualizó macro arriba
+                allow_entries,
             );
 
-            // Si hay pánico de latencia o es un evento puro de profundidad sin trade,
-            // no abrimos nuevas órdenes pero permitimos cierres defensivos (SL/TP/trailing)
-            if latency_panic || (is_depth && !is_trade) {
-                (None, closed_order)
-            } else {
-                (new_order, closed_order)
-            }
+            (new_order, closed_order)
         })
     }
 
@@ -878,6 +880,7 @@ impl GodEngineCore {
         event_time_ms: u64,
         omni_features: &[f64; 54],
         _skip_macro_update: bool,
+        allow_entries: bool,
     ) -> (
         Option<(bool, f64, f64, f64, f64)>,
         Option<(bool, f64, f64)>,
@@ -904,7 +907,7 @@ impl GodEngineCore {
                 return (None, None, None);
             }
 
-            // 2. Latency Interlock
+            // 2. Latency Interlock & Entry Permissions
             let latency_threshold_ms = self
                 .arena
                 .config
@@ -920,9 +923,11 @@ impl GodEngineCore {
             // frontera de EVALUAR ENTRADAS).
             // X-010: stalled (watchdog del WS sin datos 5s) también bloquea
             // entradas — la muerte silenciosa del feed ya no es invisible.
-            let entries_blocked = quantum_arena::feed_health::is_stalled()
-                || latency_ms > latency_threshold_ms as u64;
-            if entries_blocked
+            let is_latency_panic = latency_ms > latency_threshold_ms as u64;
+            let entries_blocked = !allow_entries
+                || quantum_arena::feed_health::is_stalled()
+                || is_latency_panic;
+            if is_latency_panic
                 && self
                     .arena
                     .tick_counter
@@ -1614,7 +1619,7 @@ impl GodEngineCore {
 
                     // CONEXIÓN EPIGENÉTICA MULTIVARIANTE ESPECTRAL (Fase 26 / Auto-Adaptación Viva):
                     // 1. Adaptación continua celular a nivel de moneda (epigenetic_bias y epigenetic_threshold_modifier):
-                    coin.apply_spectral_epigenetic_feedback(pnl_pct, position_age_ms, tau_trade_ms);
+                    coin.apply_spectral_epigenetic_feedback_with_time(pnl_pct, position_age_ms, tau_trade_ms, event_time_ms);
 
                     // 2. Adaptación continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
                     if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
@@ -2741,10 +2746,10 @@ impl GodEngineCore {
                     dynamic_obi_thr.max(0.14)
                 };
 
-                // D-500: Anti-Chop & Post-Loss Conviction Firewall con Direccionalidad y Decaimiento Temporal
-                let short_streak = self.feature_engines[coin_id].get_active_directional_streak(false);
-                let long_streak = self.feature_engines[coin_id].get_active_directional_streak(true);
-                let total_loss_streak = self.feature_engines[coin_id].get_active_total_loss_streak();
+                // D-500 & #573: Anti-Chop & Post-Loss Conviction Firewall desacoplado por banda espectral tau
+                let short_streak = self.feature_engines[coin_id].get_active_directional_streak_at_tau(false, micro_tau);
+                let long_streak = self.feature_engines[coin_id].get_active_directional_streak_at_tau(true, micro_tau);
+                let total_loss_streak = self.feature_engines[coin_id].get_active_total_loss_streak_at_tau(micro_tau);
                 // Si ambas direcciones han fallado recientemente (chop alternante), total_loss_streak modula.
                 // Si solo una dirección falla mientras el mercado se mueve en la otra, la dirección a favor del flujo permanece libre.
                 let is_alternating_chop = short_streak >= 1 && long_streak >= 1;
@@ -3928,19 +3933,19 @@ impl GodEngineCore {
                     if !directional_flow_ok || extreme_entropy || extreme_counter_tide || extreme_incoherence {
                         unified_intent.signal = SignalType::Flat;
                     } else {
-                        // MODULACIÓN ARMÓNICA CONTINUA DE CONFIANZA:
+                        // MODULACIÓN ARMÓNICA CONTINUA DE CONFIANZA (#573):
                         // La convicción respira armónicamente con el tensor espectral (coherencia, marea macro y entropía)
-                        // en un solo paso canónico, evitando la colisión de doble atenuación parásita.
+                        // centrada en la identidad (1.0), amplificando en resonancia constructiva y atenuando en ruido térmico.
                         let is_trending_mode = is_confirmed_uptrend || is_confirmed_downtrend;
                         let directional_persist = if is_trending_mode { persist } else { -persist };
-                        let mod_coherence = (0.80 + 0.20 * coherence).clamp(0.70, 1.10);
-                        let mod_tide = (0.90 + 0.10 * macro_tide.clamp(-0.50, 1.0)).clamp(0.80, 1.15);
-                        let mod_entropy = (1.0 - 0.10 * (field.spectral_entropy - 0.50).max(0.0)).clamp(0.85, 1.05);
-                        let mod_persist = (1.0 + 0.10 * directional_persist).clamp(0.85, 1.15);
-                        let spectral_multiplier = (mod_coherence * mod_tide * mod_entropy * mod_persist).clamp(0.65, 1.25);
+                        let mod_coherence = (1.0 + 0.40 * (coherence - 0.15)).clamp(0.75, 1.25);
+                        let mod_tide = (1.0 + 0.25 * macro_tide.clamp(-0.80, 0.80)).clamp(0.80, 1.20);
+                        let mod_entropy = (1.0 - 0.20 * (field.spectral_entropy - 0.65)).clamp(0.85, 1.15);
+                        let mod_persist = (1.0 + 0.15 * directional_persist).clamp(0.85, 1.15);
+                        let spectral_multiplier = (mod_coherence * mod_tide * mod_entropy * mod_persist).clamp(0.65, 1.35);
 
                         unified_intent.confidence =
-                            (unified_intent.confidence * spectral_multiplier).clamp(0.45, 0.95);
+                            (unified_intent.confidence * spectral_multiplier).clamp(0.45, 0.98);
 
                         // Mapeo armónico continuo en el Universo Multivariante Continuo Temporal Espectral:
                         // Elimina la discretización binaria rígida y converge continuamente hacia el centro de masa tau*.
@@ -4031,8 +4036,13 @@ impl GodEngineCore {
                     } else {
                         // POST-LOSS: Prohibido capitular al final de extensiones extremas (> 1.5 ATR)
                         let is_scalp_long = unified_intent.signal == SignalType::Long;
-                        let dir_streak = self.feature_engines[coin_id].get_active_directional_streak(is_scalp_long);
-                        let tot_streak = self.feature_engines[coin_id].get_active_total_loss_streak();
+                        let intent_tau = if unified_intent.expected_duration_ms > 0 {
+                            unified_intent.expected_duration_ms as f64
+                        } else {
+                            tau_dom
+                        };
+                        let dir_streak = self.feature_engines[coin_id].get_active_directional_streak_at_tau(is_scalp_long, intent_tau);
+                        let tot_streak = self.feature_engines[coin_id].get_active_total_loss_streak_at_tau(intent_tau);
                         let effective_streak = dir_streak.max(tot_streak);
 
                         if !is_same_dir {
@@ -4094,9 +4104,14 @@ impl GodEngineCore {
             // se exige convicción Bayesiana institucional (|score| >= 0.28, |current_obi| >= 0.18).
             // Si la racha es >= 3, se exige convicción superlativa (|score| >= 0.32, |current_obi| >= 0.22).
             let is_short_intent = unified_intent.signal == SignalType::Short;
-            let dir_streak = self.feature_engines[coin_id].get_active_directional_streak(!is_short_intent);
-            let other_streak = self.feature_engines[coin_id].get_active_directional_streak(is_short_intent);
-            let tot_streak = self.feature_engines[coin_id].get_active_total_loss_streak();
+            let intent_tau = if unified_intent.expected_duration_ms > 0 {
+                unified_intent.expected_duration_ms as f64
+            } else {
+                tau_dom
+            };
+            let dir_streak = self.feature_engines[coin_id].get_active_directional_streak_at_tau(!is_short_intent, intent_tau);
+            let other_streak = self.feature_engines[coin_id].get_active_directional_streak_at_tau(is_short_intent, intent_tau);
+            let tot_streak = self.feature_engines[coin_id].get_active_total_loss_streak_at_tau(intent_tau);
             let is_alternating_chop = dir_streak >= 1 && other_streak >= 1;
             let effective_streak = if is_alternating_chop { dir_streak.max(tot_streak) } else { dir_streak };
 
@@ -4501,7 +4516,16 @@ impl GodEngineCore {
                     // ml_gate_thresholds (largo ≥ ½ ≥ corto, finitud) — la
                     // ÚNICA reparación de esos dos genes en el motor — y el
                     // umbral YA reparado es el que se reinterpreta como lift.
-                    let ml_now = ml_prob_pure;
+                    // F8-P11: En cold start o sin habilidad estadística probada en la red secundaria,
+                    // la convicción la dicta el bosque del roster validado para que una red descalibrada
+                    // no inhiba destructivamente las aperturas en largo del GBDT.
+                    let ml_now = if neural_skill {
+                        ml_prob_pure
+                    } else if let Some(fp) = diag_forest_p {
+                        fp
+                    } else {
+                        ml_prob_pure
+                    };
                     let (ml_thr_long_gate, ml_thr_short_gate) = crate::calibration::ml_gate_thresholds(
                         self.arena.config.ml_threshold_long.load(Ordering::Relaxed),
                         self.arena.config.ml_threshold_short.load(Ordering::Relaxed),
@@ -4510,11 +4534,10 @@ impl GodEngineCore {
                     let ml_lift_short = (0.50 - ml_thr_short_gate).clamp(0.02, 0.25);
                     // S-6 (ESPECTRALIZACIÓN): el lift exigido respira con el
                     // ACUERDO espectral — cuando la fusión del espectro apunta
-                    // en la MISMA dirección que el modelo, la exigencia baja
+                    // en la MISMA dirección que la orden, la exigencia baja
                     // (×0.7); cuando divergen, sube (×1.3). agree ∈ [-1,1].
-                    let agree = (council_fused
-                        * (ml_now - ml_model_base).signum())
-                        .clamp(-1.0, 1.0);
+                    let dir_sign = if order.signal == SignalType::Long { 1.0 } else { -1.0 };
+                    let agree = (council_fused * dir_sign).clamp(-1.0, 1.0);
                     // Autoadaptabilidad Epigenética Continua: modulación por Hurst local |H - 0.50|
                     // Si el proceso es persistente (H > 0.50), la predictibilidad es alta y el lift requerido se relaja suavemente;
                     // si es ruido browniano puro (H ≈ 0.50), el lift se eleva para proteger contra martingala aleatoria.
@@ -4794,6 +4817,7 @@ impl GodEngineCore {
             event_time_ms,
             omni_features,
             false, // CERT-M2-H01: wrapper legacy — siempre actualiza macro
+            true,  // allow_entries: por defecto permitido en wrapper legacy
         )
     }
 }

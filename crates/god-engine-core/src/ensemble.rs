@@ -115,6 +115,8 @@ pub struct ModelEnsemble {
     /// X-023: primera opinión de cada modelo dentro del bar — la calificada
     /// al cierre (lead real sobre el desenlace).
     bar_open_predictions: [Option<f64>; 2],
+    /// Última predicción registrada por cada modelo (inmune a reset entre velas)
+    last_predictions: [Option<f64>; 2],
     /// D-695: habilidad medida frente a la tasa base.
     skill: SkillTracker,
 }
@@ -132,9 +134,8 @@ impl ModelEnsemble {
             eta: 0.05,
             shrink: 0.995,
             predictions: [None, None],
-            // X-023: primera opinión de cada modelo DENTRO del bar actual —
-            // la que se califica al cierre (lead real), no la del último tick.
             bar_open_predictions: [None, None],
+            last_predictions: [None, None],
             skill: SkillTracker::default(),
         }
     }
@@ -157,6 +158,7 @@ impl ModelEnsemble {
         let p = prob.clamp(0.001, 0.999);
         let slot = id as usize;
         self.predictions[slot] = Some(p);
+        self.last_predictions[slot] = Some(p);
         // X-023: si es la PRIMERA opinión del bar, es la del arranque — la
         // única con lead real sobre el desenlace del bar.
         if self.bar_open_predictions[slot].is_none() {
@@ -250,8 +252,13 @@ impl ModelEnsemble {
             (false, false) => 1.0,
         };
         // Escala adaptativa por el retorno del trade
-        let eta_trade = (0.20 * (pnl_pct.abs() / 0.001).clamp(0.5, 3.0)).clamp(0.05, 0.60);
-        for (i, pred) in self.predictions.iter().enumerate() {
+        let eta_trade = (0.25 * (pnl_pct.abs() / 0.001).clamp(0.5, 3.0)).clamp(0.08, 0.75);
+        let preds = if self.predictions.iter().any(|p| p.is_some()) {
+            self.predictions
+        } else {
+            self.last_predictions
+        };
+        for (i, pred) in preds.iter().enumerate() {
             if let Some(p) = pred.as_ref() {
                 let p = *p;
                 let brier = (p - y) * (p - y);
