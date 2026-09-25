@@ -211,10 +211,14 @@ impl CorrelationGuardEngine {
     /// ¿La correlación medida convierte a las dos posiciones en la MISMA
     /// apuesta? Sin medida utilizable la respuesta es `true`: el caso adverso.
     ///
-    /// Se compara el valor ABSOLUTO porque dos posiciones del mismo signo
-    /// sobre activos anticorrelacionados también se resuelven juntas (una gana
-    /// cuando la otra pierde sólo si los signos difieren, y aquí el llamador ya
-    /// filtró por dirección común).
+    /// El llamador ya filtró por DIRECCIÓN COMÚN (dos largos o dos cortos).
+    /// Con la misma dirección, sólo la correlación POSITIVA las hace perder a
+    /// la vez; sobre activos anticorrelacionados, cuando una pierde la otra
+    /// gana: es una cobertura, no la misma apuesta.
+    ///
+    /// Auditoría PR #5 (D-750b): antes se comparaba `|r|`, de modo que una
+    /// cobertura con r = −0,7 contaba como exposición duplicada y el guard
+    /// vetaba justo la operación que diversifica.
     #[inline]
     pub fn es_la_misma_apuesta(correlacion_medida: Option<f64>, umbral_gen: f64) -> bool {
         let umbral = if umbral_gen.is_finite() {
@@ -223,7 +227,7 @@ impl CorrelationGuardEngine {
             0.01
         };
         match correlacion_medida {
-            Some(r) if r.is_finite() => r.abs() >= umbral,
+            Some(r) if r.is_finite() => r >= umbral,
             _ => true,
         }
     }
@@ -300,6 +304,15 @@ mod tests {
             r_otra.abs() < r_gemela,
             "la medida debe separar lo gemelo de lo independiente: {r_otra} vs {r_gemela}"
         );
+    }
+
+    /// D-750b — misma dirección sobre activos anticorrelacionados es una
+    /// cobertura: no cuenta como la misma apuesta. Correlación positiva sí.
+    #[test]
+    fn d750b_la_anticorrelacion_con_la_misma_direccion_es_cobertura() {
+        assert!(!CorrelationGuardEngine::es_la_misma_apuesta(Some(-0.7), 0.5));
+        assert!(CorrelationGuardEngine::es_la_misma_apuesta(Some(0.7), 0.5));
+        assert!(!CorrelationGuardEngine::es_la_misma_apuesta(Some(0.2), 0.5));
     }
 
     /// Sin medida utilizable se asume el caso adverso, jamás independencia.
