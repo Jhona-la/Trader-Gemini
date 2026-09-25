@@ -85,6 +85,14 @@
 - Tests: instalar `wine64` y exportar
   `CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=/usr/lib/wine/wine64 WINEDEBUG=-all`,
   luego `cargo test --target x86_64-pc-windows-gnu -p <crate> --lib`.
+- DEMO desde la nube: la política de red del entorno bloquea (403) todos los
+  hosts de Binance (`testnet.binancefuture.com`, `stream.binancefuture.com`,
+  `fapi.binance.com`, `data.binance.vision`) y no hay claves en el entorno;
+  los tapes no están en el repo (viven en el PC del operador). Para operar
+  demo en una sesión cloud hay que permitir esos hosts en la configuración
+  de red del entorno y definir `USE_TESTNET=true` +
+  `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_SECRET_KEY` como variables
+  del entorno. Si no, la demo se corre en el PC local.
 
 ### Lección de este merge
 - Git sólo marcó 4 hunks en `god-engine-core/src/lib.rs`, pero hubo dos
