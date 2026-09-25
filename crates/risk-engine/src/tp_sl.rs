@@ -57,6 +57,17 @@ pub struct TpSlInputs {
     pub roundtrip_fee: f64,
     /// Multiplicador genómico del stop sobre la dispersión difusiva.
     pub sl_atr_multiplier: f64,
+    /// D-754 — σ PRONOSTICADA para ESTE horizonte (fracción de precio), si el
+    /// espectro predictivo ha demostrado habilidad fuera de muestra. `None`
+    /// ⇒ se usa la ley de escala sobre la volatilidad medida hacia atrás.
+    ///
+    /// Por qué importa: el stop debe cubrir la volatilidad que OCURRIRÁ
+    /// mientras la posición viva, no la que acaba de ocurrir. `atr · (τ/τ_ref)^H`
+    /// es una extrapolación de la volatilidad pasada; el pronóstico espectral
+    /// mide, fuera de muestra, entre un 11 % y un 18 % de la varianza del
+    /// logaritmo de la varianza realizada futura a horizontes de 1 a 18
+    /// minutos. Cuando existe con evidencia, es la magnitud correcta.
+    pub sigma_forecast: Option<f64>,
 }
 
 /// Resultado. `tp_pct` y `sl_pct` son fracciones del precio, siempre
@@ -89,7 +100,55 @@ pub struct TpSl {
 /// que la difusión justifica, y a H = 0,5 hasta 7,7 veces. El objetivo quedaba
 /// fuera del alcance del horizonte (0 salidas por TP en el backtest forense)
 /// y las posiciones terminaban por stop o por caducidad.
-const TAU_REFERENCE_MS: f64 = 60_000.0;
+pub const TAU_REFERENCE_MS: f64 = 60_000.0;
+
+/// D-747 — DESLIZAMIENTO POR LATENCIA: UNA SOLA LEY, LA DE LA DIFUSIÓN.
+///
+/// # Qué estaba mal
+///
+/// La misma magnitud tenía DOS fórmulas incompatibles:
+///
+/// * la física de ejecución (`god-engine-core::reality_physics`) cobra
+///   `σ · √(latencia / τ_ref)` — difusión: el desplazamiento esperado en un
+///   tiempo `t` escala con `√t`;
+/// * la compuerta de expectativa del risk-engine estimaba
+///   `σ · (latencia / umbral_de_pánico)` — **lineal**, y normalizada además
+///   contra un gen (`latency_ms_panic_threshold`) que no es una escala de
+///   volatilidad sino el umbral a partir del cual el enlace se considera
+///   roto.
+///
+/// La ley lineal subestima el coste de las latencias cortas y sobreestima el
+/// de las largas frente a la browniana; peor, el gate y la ejecución cobraban
+/// números distintos por el mismo evento, de modo que el gate certificaba como
+/// rentables operaciones que la física del propio motor volvía negativas.
+///
+/// # La derivación
+///
+/// Entre la decisión y el fill transcurre `t`. Bajo difusión el desplazamiento
+/// esperado del precio es `σ(t) = σ(τ_ref) · √(t/τ_ref)`. La dispersión
+/// disponible es `atr_ratio` y se MIDE sobre la vela interna de 1 minuto
+/// ([`TAU_REFERENCE_MS`]), de modo que `τ_ref = 60 000 ms`. Ni la escala ni el
+/// exponente son parámetros: la escala es aquella en la que se estima la
+/// volatilidad y el exponente ½ es el de la difusión.
+///
+/// Esta es la FUENTE ÚNICA del término de latencia. `reality_physics` debe
+/// llamarla para que la ejecución y la compuerta cobren el mismo número.
+#[inline]
+pub fn latency_slippage_pct(atr_ratio: f64, latency_ms: f64) -> f64 {
+    if !atr_ratio.is_finite() || atr_ratio <= 0.0 {
+        return 0.0;
+    }
+    if !latency_ms.is_finite() || latency_ms <= 0.0 {
+        return 0.0;
+    }
+    let r = (latency_ms / TAU_REFERENCE_MS).sqrt();
+    let s = atr_ratio * r;
+    if s.is_finite() {
+        s
+    } else {
+        0.0
+    }
+}
 
 /// FUNCIÓN PURA ÚNICA. La invocan, con las MISMAS entradas, tanto el gate de
 /// expectativa como el constructor de la orden: es imposible por construcción
@@ -135,7 +194,12 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
     //    anómala: sigma(tau) = sigma_ref · (tau/tau_ref)^H. Aquí `tau` SÍ es
     //    tiempo — a diferencia de D-604, donde se usaba una fracción de
     //    capital dentro de esta misma ley.
-    let sigma_tau = atr * (tau / TAU_REFERENCE_MS).powf(h);
+    // D-754: si hay pronóstico CON EVIDENCIA para este horizonte, la
+    // dispersión esperada es esa; si no, la ley de escala sobre lo medido.
+    let sigma_tau = match input.sigma_forecast {
+        Some(s) if s.is_finite() && s > 0.0 => s,
+        _ => atr * (tau / TAU_REFERENCE_MS).powf(h),
+    };
 
     // 2) STOP DIFUSIVO. El stop cubre k veces la dispersión del horizonte.
     //    Este es el piso REAL y ya no se destruye con un clamp posterior
@@ -219,7 +283,33 @@ mod tests {
             hurst: 0.5,
             roundtrip_fee: 0.0010,
             sl_atr_multiplier: 1.0,
+            sigma_forecast: None,
         }
+    }
+
+    /// D-754: con pronóstico CON EVIDENCIA, la dispersión del horizonte es la
+    /// pronosticada y no la extrapolada del pasado. Sin él, nada cambia.
+    #[test]
+    fn d754_el_pronostico_manda_sobre_la_extrapolacion_del_pasado() {
+        let sin = compute_tp_sl(base());
+        let mut con = base();
+        // El doble de dispersión esperada que la que el pasado extrapola.
+        let sigma_pasado = base().atr_ratio * (base().tau_ms / TAU_REFERENCE_MS).powf(0.5);
+        con.sigma_forecast = Some(sigma_pasado * 2.0);
+        let salida = compute_tp_sl(con);
+        assert!(
+            salida.sl_pct > sin.sl_pct,
+            "con el doble de σ pronosticada el stop debe ser más ancho: {} vs {}",
+            salida.sl_pct,
+            sin.sl_pct
+        );
+        // Y un pronóstico no utilizable no puede cambiar nada.
+        let mut basura = base();
+        basura.sigma_forecast = Some(f64::NAN);
+        assert_eq!(compute_tp_sl(basura).sl_pct, sin.sl_pct);
+        let mut cero = base();
+        cero.sigma_forecast = Some(0.0);
+        assert_eq!(compute_tp_sl(cero).sl_pct, sin.sl_pct);
     }
 
     /// D-637: el gate de EV y la orden deben ver EXACTAMENTE lo mismo. Al ser
@@ -397,5 +487,25 @@ mod tests {
             );
             prev = r.sl_pct;
         }
+    }
+
+    /// D-747: el deslizamiento por latencia obedece a la difusión. Cuadruplicar
+    /// la latencia DUPLICA el desplazamiento esperado (√4 = 2); la fórmula
+    /// lineal que usaba el gate lo cuadruplicaba.
+    #[test]
+    fn el_deslizamiento_por_latencia_escala_con_la_raiz_del_tiempo() {
+        let atr = 0.005;
+        let s1 = latency_slippage_pct(atr, 15.0);
+        let s4 = latency_slippage_pct(atr, 60.0);
+        assert!(
+            (s4 / s1 - 2.0).abs() < 1e-9,
+            "×4 latencia ⇒ ×2 desplazamiento, no ×4: {s1} {s4}"
+        );
+        // A la escala en la que se MIDE la volatilidad, el desplazamiento
+        // esperado es exactamente esa volatilidad.
+        assert!((latency_slippage_pct(atr, TAU_REFERENCE_MS) - atr).abs() < 1e-12);
+        // Entradas degeneradas no inventan fricción.
+        assert_eq!(latency_slippage_pct(atr, 0.0), 0.0);
+        assert_eq!(latency_slippage_pct(f64::NAN, 10.0), 0.0);
     }
 }

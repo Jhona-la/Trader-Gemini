@@ -194,6 +194,19 @@ pub struct CoinArena {
     pub current_price: AtomicF64,
     pub ml_prob: AtomicF64,
     pub current_atr: AtomicF64,
+    /// D-754 — σ PRONOSTICADA por el espectro predictivo en cada ancla
+    /// (fracción de precio, `spectral_tape::ANCLAS_PRONOSTICO`). El núcleo
+    /// sólo la publica cuando el pronosticador ha DEMOSTRADO habilidad fuera
+    /// de muestra frente a la climatología: un 0 significa «no hay pronóstico
+    /// con evidencia», y el consumidor cae al ATR hacia atrás de siempre.
+    pub sigma_forecast: [AtomicF64; 7],
+    /// D-745 — τ DOMINANTE MEDIDA del espectro temporal de esta moneda (ms).
+    /// El núcleo la publica en cada tick; el risk-engine la usa como horizonte
+    /// de la orden cuando la señal no declara duración propia. Antes ese
+    /// respaldo era el gen estático `temporal_scale`, de modo que el
+    /// dimensionado y la gestión de la MISMA posición vivían en horizontes
+    /// distintos. 0 = el espectro aún no ha arrancado.
+    pub dominant_tau_ms: AtomicF64,
     pub hurst_exponent: AtomicF64,
     /// S-7 (ESPECTRALIZACIÓN): Hurst multifractal SELECCIONADO POR τ — el
     /// H de la escala que el motor opera AHORA (micro si τ<2min, meso si
@@ -232,6 +245,51 @@ pub struct CoinArena {
 }
 
 impl CoinArena {
+    /// D-754 — σ PRONOSTICADA AL HORIZONTE τ, interpolada en log τ entre las
+    /// anclas publicadas. Fuera del rango de anclas se toma la del extremo:
+    /// extrapolar una ley de escala más allá de donde se ha medido es
+    /// exactamente lo que el espectro temporal hacía cuando opinaba con
+    /// escalas que no había observado (D-742).
+    ///
+    /// `None` si el pronosticador todavía no ha demostrado habilidad (el
+    /// núcleo publica ceros): el llamador debe caer a la volatilidad medida
+    /// hacia atrás, nunca inventarse un pronóstico.
+    pub fn sigma_forecast_at(&self, tau_ms: f64) -> Option<f64> {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
+            return None;
+        }
+        let anclas = crate::spectral_tape::ANCLAS_PRONOSTICO;
+        let v: Vec<f64> = self
+            .sigma_forecast
+            .iter()
+            .map(|a| a.load(std::sync::atomic::Ordering::Relaxed))
+            .collect();
+        if v.iter().all(|x| !(x.is_finite() && *x > 0.0)) {
+            return None;
+        }
+        let lt = tau_ms.ln();
+        if lt <= anclas[0].ln() {
+            return if v[0] > 0.0 { Some(v[0]) } else { None };
+        }
+        let ultimo = anclas.len() - 1;
+        if lt >= anclas[ultimo].ln() {
+            return if v[ultimo] > 0.0 { Some(v[ultimo]) } else { None };
+        }
+        let mut i = 0usize;
+        while i + 1 < anclas.len() && anclas[i + 1].ln() < lt {
+            i += 1;
+        }
+        let (l0, l1) = (anclas[i].ln(), anclas[i + 1].ln());
+        let (s0, s1) = (v[i], v[i + 1]);
+        if !(s0 > 0.0 && s1 > 0.0) {
+            return None;
+        }
+        let f = ((lt - l0) / (l1 - l0)).clamp(0.0, 1.0);
+        // Interpolación geométrica: σ escala como potencia de τ, de modo que
+        // en log-log la recta es la ley de difusión y no una cuerda arbitraria.
+        Some((s0.ln() * (1.0 - f) + s1.ln() * f).exp())
+    }
+
     /// O(1) lock-free tick push. ~5 nanoseconds.
     #[inline(always)]
     pub fn push_tick(&self, tick: CompactTick) {
@@ -297,6 +355,16 @@ impl CoinArena {
             current_price: AtomicF64::new(0.0),
             ml_prob: AtomicF64::new(w_base),
             current_atr: AtomicF64::new(0.0),
+            dominant_tau_ms: AtomicF64::new(0.0),
+            sigma_forecast: [
+                AtomicF64::new(0.0),
+                AtomicF64::new(0.0),
+                AtomicF64::new(0.0),
+                AtomicF64::new(0.0),
+                AtomicF64::new(0.0),
+                AtomicF64::new(0.0),
+                AtomicF64::new(0.0),
+            ],
             hurst_exponent: AtomicF64::new(0.5),
             hurst_scale_matched: AtomicF64::new(0.5),
             open_interest_norm: AtomicF64::new(0.0),
@@ -334,6 +402,12 @@ pub struct GlobalArena {
     // Portfolio & Risk
     pub unified_capital: AtomicF64,
     pub used_margin: AtomicF64,
+    /// D-744 — RIESGO POR OPERACIÓN REALMENTE TOMADO (fracción del capital
+    /// que se pierde si el stop de la orden se toca), como media móvil
+    /// exponencial de las órdenes dimensionadas. Es la magnitud que convierte
+    /// una caída observada en evidencia: sin ella, un tope de drawdown es una
+    /// opinión. 0 = todavía no se ha dimensionado ninguna orden.
+    pub riesgo_por_operacion: AtomicF64,
     pub scalp_used_margin: AtomicF64,
     pub swing_used_margin: AtomicF64,
     pub tick_counter: AtomicU64,
@@ -421,6 +495,7 @@ impl GlobalArena {
             coins,
             unified_capital: AtomicF64::new(initial_capital),
             used_margin: AtomicF64::new(0.0),
+            riesgo_por_operacion: AtomicF64::new(0.0),
             scalp_used_margin: AtomicF64::new(0.0),
             swing_used_margin: AtomicF64::new(0.0),
             tick_counter: AtomicU64::new(0),

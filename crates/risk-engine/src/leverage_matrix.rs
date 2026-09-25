@@ -47,6 +47,18 @@ impl QuantumLeverageMatrix {
         real_profit_factor: f64, // PF REAL del coin (de arena.coins[id].scalp/swing.profit_factor)
         real_win_rate: f64,      // Win Rate REAL histórico del coin
         genome_max_leverage: f64, // Límite del genoma (de config.global_leverage)
+        // D-750 — NOCIONAL MÍNIMO DEL SÍMBOLO, no el literal congelado.
+        //
+        // El techo de apalancamiento se funde entre el régimen micro y el
+        // estándar según cuántas órdenes mínimas caben en el capital. Esa
+        // cuenta se hacía contra `arena.config.min_notional`, que nace con el
+        // literal 5,0 y que NADIE escribe jamás en todo el repositorio: un
+        // número congelado gobernando el riesgo por operación. El mínimo real
+        // lo publica el exchange por símbolo (`exchangeInfo` →
+        // `symbol_registry`) y varía entre símbolos; con uno de 20 $ el cálculo
+        // antiguo creía que en 13 $ caben 2,6 órdenes cuando no cabe ninguna, y
+        // abría el techo de apalancamiento en consecuencia.
+        min_notional_simbolo: f64,
         arena: &GlobalArena,
     ) -> f64 {
         // FIX #651: Sanitizar parámetros entrantes asegurando robustez numérica total
@@ -128,14 +140,50 @@ impl QuantumLeverageMatrix {
         // ═══════════════════════════════════════════════════════
         // TENSOR 2: Convicción de la Señal (Bayesian Proxy Adaptativo)
         // ═══════════════════════════════════════════════════════
-        let conviction_scale = volatility_multiplier.max(1.0);
-        let conviction = (0.40 + signal.confidence.clamp(0.1, 1.0) * 0.60) * conviction_scale;
+        // D-746 — LA VOLATILIDAD NO ES CONVICCIÓN.
+        //
+        // `conviction_scale = volatility_multiplier.max(1.0)` multiplicaba la
+        // convicción de la señal por el multiplicador de volatilidad del
+        // genoma, que en el risk-engine llega ya escalado por la volatilidad
+        // RELATIVA de la moneda frente a BTC (`eth_mult · clamp(atr/btc_atr,
+        // 0.5, 3.0)`). Es decir: cuanto MÁS volátil el activo, MÁS
+        // apalancamiento. Con una alt a 0,6 % de ATR frente a 0,2 % de BTC, la
+        // convicción se multiplicaba por ~4 y el apalancamiento subía hasta el
+        // techo del régimen — y como el stop también se ensancha con σ, la
+        // pérdida en dólares al tocarlo escalaba con σ². El riesgo por unidad
+        // de margen crecía con el cuadrado de la volatilidad exactamente en
+        // los activos donde debía encogerse.
+        //
+        // La convicción es de la SEÑAL. La volatilidad ya gobierna el tamaño
+        // por donde debe: la distancia del stop (`compute_tp_sl`, σ(τ)) y el
+        // apalancamiento derivado del riesgo entre esa distancia (S-4/D-745b
+        // en el host).
+        let conviction = 0.40 + signal.confidence.clamp(0.1, 1.0) * 0.60;
 
         // ═══════════════════════════════════════════════════════
         // TENSOR 3: Freno de Volatilidad (SIEMPRE activo)
         // ═══════════════════════════════════════════════════════
-        let vol_sensitivity = safe_vol_mult.max(1.0); // Minimum 1.0, genome dictates
-        let vol_brake = 1.0 - (safe_tick_vol * vol_sensitivity).tanh();
+        // D-746 — EL FRENO DE VOLATILIDAD FRENABA UN 0,2 %.
+        //
+        // `1 − tanh(atr_pct · vol_mult)` con `atr_pct` ∈ [0,002; 0,01] y un
+        // multiplicador de orden 1 daba 0,998: un freno inerte, decorativo. La
+        // magnitud que de verdad dice si la volatilidad amenaza a la posición
+        // no es el ATR en abstracto, sino el ATR MEDIDO CONTRA LA DISTANCIA
+        // DEL STOP que esa misma volatilidad produce: si un recorrido típico
+        // de la escala se come el stop, el tamaño debe encogerse. Con
+        // `sl ≈ k·σ(τ)`, ese cociente es ~1/k y el freno se vuelve una función
+        // real del régimen en vez de un cero a la izquierda.
+        let tau_para_sl = quantum_arena::temporal_spectrum::operating_tau_ms(
+            signal.expected_duration_ms,
+            arena
+                .config
+                .temporal_scale
+                .load(Ordering::Relaxed)
+                .clamp(0.0, 1.0),
+        );
+        let sl_esperado = arena.config.sl_at_tau(tau_para_sl).max(1e-6);
+        let amenaza = (safe_tick_vol / sl_esperado.max(1e-6)).clamp(0.0, 4.0);
+        let vol_brake = 1.0 / (1.0 + amenaza);
 
         // ═══════════════════════════════════════════════════════
         // TENSOR 4: Micro-Capital Acceleration (Curva Logarítmica)
@@ -187,9 +235,12 @@ impl QuantumLeverageMatrix {
         // techo micro de 4× rige pleno a ≤3 operaciones mínimas y se funde
         // geométricamente con el estándar hasta 10.
         let standard_ceiling = 50.0 * (1.0 - (log_cap / (log_divisor * 2.0)).min(0.8));
+        // D-750: la escasez se mide contra el mínimo DEL SÍMBOLO que se va a
+        // operar. `effective_min_notional` ya sanea el valor del spec y cae al
+        // mínimo universal del exchange cuando el registro aún no lo publica.
         let micro_w = crate::capital_regime::micro_weight(
             safe_curr_cap,
-            arena.config.min_notional.load(Ordering::Relaxed),
+            crate::capital_regime::effective_min_notional(min_notional_simbolo),
         );
         let raw_ceiling = crate::capital_regime::log_lerp(standard_ceiling, 4.0, micro_w);
         let dynamic_ceiling = if raw_ceiling.is_finite() {
@@ -283,8 +334,41 @@ mod tests {
 
     fn leverage_for(signal: &SignalIntent, arena: &GlobalArena) -> f64 {
         QuantumLeverageMatrix::calculate_dynamic_leverage(
-            signal, 0.0, 10_000.0, 10_000.0, 0.001, 1.0, 0.5, 1.0, 0.0, 20.0, arena,
+            signal, 0.0, 10_000.0, 10_000.0, 0.001, 1.0, 0.5, 1.0, 0.0, 20.0, 5.0, arena,
         )
+    }
+
+    /// D-750 — EL TECHO DE APALANCAMIENTO DEPENDE DEL MÍNIMO DEL SÍMBOLO.
+    ///
+    /// Con el código viejo este test no podía ni escribirse: el mínimo era un
+    /// literal congelado en la configuración, idéntico para todos los símbolos,
+    /// así que el mismo capital producía SIEMPRE el mismo techo. La escasez es
+    /// «cuántas órdenes mínimas caben en el capital», y eso cambia por símbolo:
+    /// 60 $ son doce órdenes de 5 $ (régimen estándar) pero sólo tres de 20 $
+    /// (régimen micro pleno, techo 4×).
+    #[test]
+    fn el_techo_de_apalancamiento_sale_del_minimo_del_simbolo() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(60.0);
+        let signal = SignalIntent {
+            signal: signal_engine::SignalType::Long,
+            confidence: 0.9,
+            win_probability: 0.9,
+            ..Default::default()
+        };
+        let lev = |mn: f64| {
+            QuantumLeverageMatrix::calculate_dynamic_leverage(
+                &signal, 0.0, 60.0, 60.0, 0.001, 1.0, 0.5, 2.0, 0.6, 50.0, mn, &arena,
+            )
+        };
+        let barato = lev(5.0);
+        let caro = lev(20.0);
+        assert!(
+            caro < barato,
+            "un símbolo con nocional mínimo mayor deja menos margen de \
+             maniobra y debe recibir MENOS apalancamiento: {caro} vs {barato}"
+        );
+        // En micro pleno el techo es 4×, no el del genoma.
+        assert!(caro <= 4.0 + 1e-9, "techo micro violado: {caro}");
     }
 
     /// D-690 + QO-M0.1: el Kelly usa la probabilidad (calibrada si existe)

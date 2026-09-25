@@ -81,6 +81,11 @@ pub const SPECTRUM_SCALES_MS: [f64; 32] = [
 /// El continuo las reemplaza; quedan solo como puntos de conversión del
 /// genoma legacy — ningún código decide por pertenecer a una banda.
 pub const TAU_ANCHOR_FAST_MS: f64 = 30_000.0;
+
+/// Resolución del reloj de los eventos del exchange (Binance sella en ms).
+/// Una escala τ ≪ esta resolución no se distingue de otra: su peso en la
+/// fusión escala con 1 − e^{−τ/resolución} (D-742).
+pub const FEED_CLOCK_RESOLUTION_MS: f64 = 1.0;
 pub const TAU_ANCHOR_SLOW_MS: f64 = 43_200_000.0;
 
 /// D-638b (DÉCIMA OLA) — MAPEO ÚNICO DEL HORIZONTE OPERATIVO.
@@ -145,11 +150,20 @@ pub struct ScaleState {
     pub signal: f64,      // tanh(z): opinión direccional ∈ [-1,1]
     pub persistence: f64, // EWMA de sign(dev)·sign(prev_dev) — autocorrelación de sorpresas
     prev_dev: f64,
+    /// Suma del núcleo de |dev| SIN corregir por la masa observada; la
+    /// estimación pública `ewma_dev_vol` es `raw_dev_vol / masa` (D-742).
+    raw_dev_vol: f64,
 }
 
 pub struct TemporalSpectrum {
     pub scales: [ScaleState; 32],
     last_ts_ms: u64,
+    /// Primer instante observado: define la masa del núcleo que los datos ya
+    /// llenaron en cada escala (D-742).
+    first_ts_ms: u64,
+    /// Actualizaciones absorbidas: con el tiempo observado da el intervalo
+    /// medio entre eventos, y con él las muestras efectivas de cada escala.
+    updates: u64,
     /// Score espectral fusionado (paridad de riesgo 1/vol) ∈ ~[-1,1].
     pub fused_score: f64,
     /// Escala dominante (mayor |w·señal|) en ms — información, no decisión.
@@ -173,6 +187,8 @@ impl TemporalSpectrum {
         Self {
             scales,
             last_ts_ms: 0,
+            first_ts_ms: 0,
+            updates: 0,
             fused_score: 0.0,
             dominant_tau_ms: 0.0,
         }
@@ -185,13 +201,17 @@ impl TemporalSpectrum {
             return;
         }
         if self.last_ts_ms == 0 {
-            // Primer tick: inicializar EWMAs al precio observado.
+            // Primer tick: el precio observado es la única referencia. La vol
+            // de desviación arranca VACÍA —sin semilla—: su estimación es la
+            // media de lo observado, corregida por la masa del núcleo (D-742).
             for s in self.scales.iter_mut() {
                 s.ewma_price = price;
-                s.ewma_dev_vol = 1e-7; // vol de desviación semilla (evita z=∞)
+                s.ewma_dev_vol = 0.0;
+                s.raw_dev_vol = 0.0;
                 s.signal = 0.0;
             }
             self.last_ts_ms = ts_ms;
+            self.first_ts_ms = ts_ms;
             return;
         }
         // Idempotencia parcial de X-035: dt=0 (mismo evento por dos caminos,
@@ -203,9 +223,15 @@ impl TemporalSpectrum {
         }
         let dt = (ts_ms - self.last_ts_ms) as f64;
         self.last_ts_ms = ts_ms;
+        let elapsed = (ts_ms - self.first_ts_ms) as f64;
+        self.updates += 1;
 
         let mut w_sum = 0.0;
         let mut w_sig_sum = 0.0;
+        // Respaldo H0: promedio de las señales ponderado sólo por lo que cada
+        // escala puede observar (masa del núcleo × resolución del reloj).
+        let mut obs_sum = 0.0;
+        let mut obs_sig_sum = 0.0;
         let mut best_contrib = 0.0f64;
         let mut dominant = 0.0f64;
 
@@ -226,7 +252,20 @@ impl TemporalSpectrum {
             // denominador que mantiene z ~ O(1) ante caminata aleatoria en
             // TODAS las escalas — de lo contrario la deriva √N espuria satura
             // tanh con convicción de mentira (bug que el test de ruido cazó).
-            s.ewma_dev_vol += alpha * (dev.abs() - s.ewma_dev_vol);
+            //
+            // D-742 (DÉCIMA OLA · espectro): LA ESCALA QUE NO HA VISTO SU τ NO
+            // SABE NADA. La EWMA partía de una semilla de 1e-7 y a la escala de
+            // 146 años un mes de datos sólo llena 5,6e-4 de su núcleo: su vol
+            // se quedaba cerca de la semilla, su z = dev/vol explotaba (señal
+            // ±1 saturada, que no es más que «precio sobre o bajo el de
+            // arranque») y su peso 1/vol era el MAYOR de las 32 escalas, de
+            // modo que esas escalas vacías gobernaban `fused_score`. Ahora la
+            // vol es la media observada (suma del núcleo / masa llenada) y el
+            // peso de la fusión multiplica por esa masa: lo no observado no
+            // opina.
+            s.raw_dev_vol = s.raw_dev_vol * (1.0 - alpha) + alpha * dev.abs();
+            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+            s.ewma_dev_vol = if mass > 0.0 { s.raw_dev_vol / mass } else { 0.0 };
 
             let z = if s.ewma_dev_vol > 1e-12 {
                 dev / s.ewma_dev_vol
@@ -249,24 +288,42 @@ impl TemporalSpectrum {
             s.momentum_z = z;
             s.signal = z.clamp(-5.0, 5.0).tanh();
 
-            // CERT-M3-H01 — FUSIÓN POR CONTENIDO INFORMATIVO (|Hurst−0.5|).
+            // FUSIÓN POR PARIDAD DE RIESGO **OBSERVABLE** (D-742, medido).
             //
-            // La paridad-de-riesgo anterior (w ∝ 1/ewma_dev_vol) degeneraba:
-            // la vol de sorpresa de las escalas lentas es sistemáticamente
-            // menor ⇒ SIEMPRE pesaban más (el sesgo que el propio comentario
-            // C-05 documentaba abajo para la τ dominante, replicado aquí en
-            // la fusión que consumen arbitración/consejo/teleonomía).
+            // Tres pesos han gobernado esta fusión: 1/vol (paridad de riesgo),
+            // el contenido informativo de CERT-M3-H01 —`max((p−0,5)·2; 0,05)`,
+            // que además asume `persistence ∈ [0,1]` cuando aquí vive en
+            // [−1,1]— y la combinación de ambos. Se midieron los cinco
+            // candidatos sobre tape REAL con `spectral_bench` (BTCUSDT junio,
+            // 34 M trades; SOLUSDT julio, 6,7 M), puntuando el IC del
+            // `fused_score` contra el retorno de los 1, 5 y 30 minutos
+            // siguientes y su correlación con el signo del precio respecto del
+            // de arranque:
             //
-            // DERIVACIÓN: cada escala ya entrega su señal z-normalizada
-            // (comparables entre sí). Bajo H0 (martingala) TODAS aportan ruido
-            // idéntico — el peso correcto es el contenido de información de
-            // cada escala, y `persistence` ∈ [0,1] (EMA de persistencia de
-            // signo de la desviación) es su medida directa: el análogo
-            // discreto de |Hurst − 0.5| para procesos fraccionalmente
-            // integrados. persistence=0.5 ⇒ puro ruido ⇒ peso suelo (5%,
-            // conserva diversificación del promedio de ensamble); 1.0 ⇒
-            // tendencia pura ⇒ peso pleno.
-            let w = ((s.persistence - 0.5) * 2.0).max(0.05);
+            //   · el término informativo EMPEORA el IC en los dos símbolos y
+            //     en los tres horizontes (BTC 5 min: +0,0117 → +0,0026; SOL
+            //     5 min: −0,0128 → −0,0249) y dispara el anclaje al precio de
+            //     arranque en SOL (corr 0,150 → 0,245);
+            //   · la corrección de observabilidad —masa del núcleo llenada ×
+            //     resolución del reloj— elimina ese anclaje en ambos (BTC
+            //     0,050 → 0,007; SOL 0,150 → 0,014) sin coste de IC, y es la
+            //     única que impide que escalas sin datos pesen: en SOL, la
+            //     fusión 1/vol daba el 18,4 % de su peso a escalas MÁS LARGAS
+            //     que todo el tape.
+            //
+            // Queda, por tanto, paridad de riesgo sobre lo observable. (El
+            // valor DIRECCIONAL del `fused_score` no está establecido: su IC
+            // es positivo en BTC y negativo en SOL; eso lo decide quien lo
+            // consuma, no esta ponderación.)
+            let resolution = 1.0 - (-s.tau_ms / FEED_CLOCK_RESOLUTION_MS).exp();
+            let observable = mass * resolution;
+            let w = if s.ewma_dev_vol > 1e-12 {
+                observable / s.ewma_dev_vol
+            } else {
+                0.0
+            };
+            obs_sum += observable;
+            obs_sig_sum += observable * s.signal;
             w_sum += w;
             let contrib = w * s.signal;
             w_sig_sum += contrib;
@@ -277,11 +334,14 @@ impl TemporalSpectrum {
         }
         self.fused_score = if w_sum > 1e-12 {
             (w_sig_sum / w_sum).clamp(-1.0, 1.0)
+        } else if obs_sum > 1e-12 {
+            // H0-correcto: sin información medible por encima del azar, el
+            // promedio de las señales OBSERVABLES (ruido promediado, varianza
+            // ↓ por CLT) — jamás 0 plano, y jamás el promedio uniforme de 32
+            // escalas de las que diez son la misma y ocho no han visto nada.
+            (obs_sig_sum / obs_sum).clamp(-1.0, 1.0)
         } else {
-            // H0-correcto: sin información medible, promedio uniforme de las
-            // señales (ruido promediado, varianza ↓ por CLT) — jamás 0 plano.
-            let n = self.scales.len() as f64;
-            (self.scales.iter().map(|s| s.signal).sum::<f64>() / n).clamp(-1.0, 1.0)
+            0.0
         };
         // C-05 (INFORME 14, FASE 0) — τ DEGENERADA. La fusión por paridad de
         // riesgo (w ∝ 1/ewma_dev_vol) degenera: la vol de sorpresa de las
@@ -523,6 +583,45 @@ mod tests {
         let mid = curve.eval((TAU_ANCHOR_FAST_MS * TAU_ANCHOR_SLOW_MS).sqrt());
         assert!(mid > 0.01 && mid < 0.05);
         assert!(curve.b > 0.0, "TP crece con horizonte: pendiente positiva");
+    }
+
+    /// D-742: en una caminata aleatoria la fusión no puede quedar reducida a
+    /// «el precio está sobre o bajo el de arranque». Con la semilla de 1e-7 y
+    /// el peso 1/vol, las escalas que los datos no han llenado (días a siglos)
+    /// dominaban la fusión con su señal saturada.
+    #[test]
+    fn d742_las_escalas_vacias_no_gobiernan_la_fusion() {
+        let mut spec = TemporalSpectrum::new();
+        let mut seed: u64 = 7;
+        let mut t = 1_700_000_000_000u64;
+        let mut price = 60_000.0f64;
+        let p0 = price;
+        let (mut n, mut sx, mut sy, mut sxx, mut syy, mut sxy) = (0.0f64, 0.0, 0.0, 0.0, 0.0, 0.0);
+        for i in 0..259_200u64 {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let u = ((seed >> 11) as f64) / ((1u64 << 53) as f64) - 0.5;
+            price *= 1.0 + u * 0.0006;
+            spec.update(price, t);
+            t += 1_000;
+            if i >= 21_600 && i % 60 == 0 {
+                let x = spec.fused_score;
+                let y = (price / p0).ln().signum();
+                n += 1.0;
+                sx += x;
+                sy += y;
+                sxx += x * x;
+                syy += y * y;
+                sxy += x * y;
+            }
+        }
+        let cov = sxy / n - (sx / n) * (sy / n);
+        let vx = sxx / n - (sx / n).powi(2);
+        let vy = syy / n - (sy / n).powi(2);
+        let corr = if vx > 0.0 && vy > 0.0 { cov / (vx * vy).sqrt() } else { 0.0 };
+        assert!(
+            corr.abs() < 0.5,
+            "la fusión copia el signo del precio respecto del arranque: corr {corr:.3}"
+        );
     }
 
     /// C-05 (INFORME 14, FASE 0): la τ dominante que sale hacia la DECISIÓN

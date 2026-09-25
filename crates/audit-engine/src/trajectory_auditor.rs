@@ -18,16 +18,32 @@ pub enum TrajectoryStatus {
     },
 }
 
+/// Hipótesis viva de trayectoria de UNA posición.
+///
+/// # U-ERR-3 (ERRADICACIÓN DEL BINARIO DE HORIZONTE)
+///
+/// Esta estructura llevaba un campo `is_scalp` que seleccionaba una de dos
+/// tablas de tracks (`scalp_tracks` / `swing_tracks`). El único productor vivo
+/// registraba SIEMPRE con `is_scalp = true`, de modo que `swing_tracks`
+/// jamás contuvo nada: el auditor consultaba las dos ranuras y media
+/// herramienta estaba permanentemente vacía. Peor: el consumidor evaluaba el
+/// tick dos veces (una por ranura) y emitía la misma alerta etiquetada como
+/// «scalp» y como «swing».
+///
+/// Una posición tiene UNA trayectoria. El horizonte de esa trayectoria no es
+/// una etiqueta binaria: es `expected_duration_ms`, el τ esperado que el
+/// genoma fijó al abrir, y contra ese τ se miden todas las divergencias.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActiveTrajectoryTrack {
     pub symbol_id: usize,
     pub is_long: bool,
-    pub is_scalp: bool,
     pub entry_price: f64,
     pub entry_time_ms: u64,
-    pub expected_magnitude: f64,   // Delta precio % esperado
-    pub expected_volume_usd: f64,  // Volumencapital base esperado en la ola
-    pub expected_duration_ms: u64, // Duración esperada en ms
+    pub expected_magnitude: f64, // Delta precio % esperado
+    pub expected_volume_usd: f64, // Volumen/capital base esperado en la ola
+    /// τ esperado de la posición en ms: el horizonte continuo de ESTA
+    /// trayectoria. Todas las fracciones de tiempo se miden contra él.
+    pub expected_duration_ms: u64,
 
     // Métricas en tiempo real de seguimiento
     pub accumulated_volume_usd: f64,
@@ -40,7 +56,6 @@ impl ActiveTrajectoryTrack {
     pub fn new(
         symbol_id: usize,
         is_long: bool,
-        is_scalp: bool,
         entry_price: f64,
         entry_time_ms: u64,
         expected_magnitude: f64,
@@ -66,7 +81,6 @@ impl ActiveTrajectoryTrack {
         Self {
             symbol_id,
             is_long,
-            is_scalp,
             entry_price: safe_entry,
             entry_time_ms,
             expected_magnitude: safe_magnitude,
@@ -80,33 +94,30 @@ impl ActiveTrajectoryTrack {
     }
 }
 
+/// Auditor de coherencia entre la tesis de entrada y la realidad tick a tick.
+///
+/// U-ERR-3: UNA trayectoria por posición y por moneda. Ver
+/// [`ActiveTrajectoryTrack`] para el defecto que esto corrige.
 pub struct TrajectoryAuditor {
-    pub scalp_tracks: Vec<Option<ActiveTrajectoryTrack>>,
-    pub swing_tracks: Vec<Option<ActiveTrajectoryTrack>>,
+    pub tracks: Vec<Option<ActiveTrajectoryTrack>>,
     pub num_coins: usize,
 }
 
 impl TrajectoryAuditor {
     pub fn new(num_coins: usize) -> Self {
-        let mut scalp_tracks = Vec::with_capacity(num_coins);
-        let mut swing_tracks = Vec::with_capacity(num_coins);
+        let mut tracks = Vec::with_capacity(num_coins);
         for _ in 0..num_coins {
-            scalp_tracks.push(None);
-            swing_tracks.push(None);
+            tracks.push(None);
         }
-        Self {
-            scalp_tracks,
-            swing_tracks,
-            num_coins,
-        }
+        Self { tracks, num_coins }
     }
 
     /// Registra el inicio de una nueva hipótesis de trayectoria al abrir posición
+    #[allow(clippy::too_many_arguments)]
     pub fn record_entry(
         &mut self,
         symbol_id: usize,
         is_long: bool,
-        is_scalp: bool,
         entry_price: f64,
         entry_time_ms: u64,
         expected_magnitude: f64,
@@ -116,28 +127,21 @@ impl TrajectoryAuditor {
         if symbol_id >= self.num_coins {
             return;
         }
-        let track = ActiveTrajectoryTrack::new(
+        self.tracks[symbol_id] = Some(ActiveTrajectoryTrack::new(
             symbol_id,
             is_long,
-            is_scalp,
             entry_price,
             entry_time_ms,
             expected_magnitude,
             expected_volume_usd,
             expected_duration_ms,
-        );
-        if is_scalp {
-            self.scalp_tracks[symbol_id] = Some(track);
-        } else {
-            self.swing_tracks[symbol_id] = Some(track);
-        }
+        ));
     }
 
-    /// Evalúa en nanosegundos la coherencia tick-a-tick entre la predicción teórica y la realidad del mercado
+    /// Evalúa la coherencia tick-a-tick entre la predicción teórica y la realidad del mercado
     pub fn evaluate_tick(
         &mut self,
         symbol_id: usize,
-        is_scalp: bool,
         current_price: f64,
         tick_volume_usd: f64,
         current_time_ms: u64,
@@ -148,19 +152,14 @@ impl TrajectoryAuditor {
             };
         }
 
+        // FIX #1449: Inmunidad ante NaNs o precios no positivos.
         if !current_price.is_finite() || current_price <= 0.0 {
             return TrajectoryStatus::Aligned {
                 coherence_score: 1.0,
             };
         }
 
-        let track_slot = if is_scalp {
-            &mut self.scalp_tracks[symbol_id]
-        } else {
-            &mut self.swing_tracks[symbol_id]
-        };
-
-        let track = match track_slot {
+        let track = match &mut self.tracks[symbol_id] {
             Some(t) => t,
             None => {
                 return TrajectoryStatus::Aligned {
@@ -168,13 +167,6 @@ impl TrajectoryAuditor {
                 }
             }
         };
-
-        // FIX #1449: Inmunidad ante NaNs o precios no positivos en evaluación tick-a-tick
-        if !current_price.is_finite() || current_price <= 0.0 {
-            return TrajectoryStatus::Aligned {
-                coherence_score: 1.0,
-            };
-        }
 
         // Actualizar métricas acumuladas
         let safe_vol = if tick_volume_usd.is_finite() && tick_volume_usd >= 0.0 {
@@ -202,8 +194,13 @@ impl TrajectoryAuditor {
         }
 
         let elapsed_ms = current_time_ms.saturating_sub(track.entry_time_ms);
-        let duration_ratio =
-            (elapsed_ms as f64 / track.expected_duration_ms.max(1) as f64).clamp(0.0, 3.0);
+        // U-ERR-4: fracción del τ esperado de ESTA posición consumida hasta
+        // ahora. Antes se recortaba a 3,0 aquí y más abajo se comparaba con
+        // 4,0: la comprobación de agotamiento temporal era INALCANZABLE por
+        // construcción — `TimeExhaustionWithoutProgress` no podía emitirse
+        // nunca. La fracción no se recorta; donde hace falta un valor acotado
+        // (la puntuación de tiempo) se acota en el punto de uso.
+        let duration_ratio = elapsed_ms as f64 / track.expected_duration_ms.max(1) as f64;
 
         if track.entry_price <= 0.0 || !track.entry_price.is_finite() {
             return TrajectoryStatus::Aligned {
@@ -229,7 +226,7 @@ impl TrajectoryAuditor {
         }
 
         // Check 2: Inanición de Volumen (Volume Starvation)
-        // Si ha transcurrido más del 70% del tiempo esperado Y el volumen acumulado es < 1% del esperado con delta adverso
+        // Si ha transcurrido más del 70% del τ esperado Y el volumen acumulado es < 1% del esperado con delta adverso
         if duration_ratio > 0.70 && track.expected_volume_usd > 1_000.0 {
             let volume_ratio = track.accumulated_volume_usd / track.expected_volume_usd;
             if volume_ratio < 0.01 && price_delta_pct < 0.0 {
@@ -241,7 +238,7 @@ impl TrajectoryAuditor {
         }
 
         // Check 3: Agotamiento de Tiempo sin avance (Time Exhaustion Without Progress)
-        // Si transcurrió > 400% del tiempo esperado Y el PnL es inferior a -0.30%
+        // Si transcurrió > 4·τ esperado Y el PnL es inferior a -0.30%
         if duration_ratio > 4.0 && price_delta_pct < -0.0030 {
             return TrajectoryStatus::Divergent {
                 reason: TrajectoryDivergenceReason::TimeExhaustionWithoutProgress,
@@ -270,20 +267,14 @@ impl TrajectoryAuditor {
     pub fn record_exit(
         &mut self,
         symbol_id: usize,
-        is_scalp: bool,
         exit_price: f64,
         exit_time_ms: u64,
     ) -> Option<f64> {
         if symbol_id >= self.num_coins {
             return None;
         }
-        let track_slot = if is_scalp {
-            &mut self.scalp_tracks[symbol_id]
-        } else {
-            &mut self.swing_tracks[symbol_id]
-        };
 
-        let track = track_slot.take()?;
+        let track = self.tracks[symbol_id].take()?;
         if !exit_price.is_finite() || exit_price <= 0.0 {
             return Some(1.0);
         }
@@ -309,72 +300,133 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_trajectory_aligned_and_exit() {
+    fn trayectoria_alineada_y_cierre() {
         let mut auditor = TrajectoryAuditor::new(5);
         let now_ms = 1_000_000;
 
-        auditor.record_entry(0, true, true, 100.0, now_ms, 0.01, 50_000.0, 30_000);
+        auditor.record_entry(0, true, 100.0, now_ms, 0.01, 50_000.0, 30_000);
 
-        let status = auditor.evaluate_tick(0, true, 100.5, 20_000.0, now_ms + 5_000);
+        let status = auditor.evaluate_tick(0, 100.5, 20_000.0, now_ms + 5_000);
         match status {
             TrajectoryStatus::Aligned { coherence_score } => {
                 assert!(coherence_score > 0.0);
             }
-            _ => panic!("Expected trajectory aligned"),
+            _ => panic!("Se esperaba trayectoria alineada"),
         }
 
-        let tce = auditor.record_exit(0, true, 101.0, now_ms + 25_000);
+        let tce = auditor.record_exit(0, 101.0, now_ms + 25_000);
         assert!(tce.is_some());
     }
 
     #[test]
-    fn test_trajectory_momentum_reversal_early_cut() {
+    fn corte_temprano_por_inversion_de_momentum() {
         let mut auditor = TrajectoryAuditor::new(5);
         let now_ms = 1_000_000;
 
-        auditor.record_entry(1, true, true, 100.0, now_ms, 0.01, 50_000.0, 30_000);
+        auditor.record_entry(1, true, 100.0, now_ms, 0.01, 50_000.0, 30_000);
 
         // Caída brusca del precio del -0.7% (< -0.6% threshold)
-        let status = auditor.evaluate_tick(1, true, 99.3, 5_000.0, now_ms + 2_000);
+        let status = auditor.evaluate_tick(1, 99.3, 5_000.0, now_ms + 2_000);
         match status {
             TrajectoryStatus::Divergent { reason, .. } => {
                 assert_eq!(reason, TrajectoryDivergenceReason::MomentumReversal);
             }
-            _ => panic!("Expected momentum reversal divergence"),
+            _ => panic!("Se esperaba divergencia por inversión de momentum"),
         }
     }
 
     #[test]
-    fn test_trajectory_volume_starvation_early_cut() {
+    fn corte_temprano_por_inanicion_de_volumen() {
         let mut auditor = TrajectoryAuditor::new(5);
         let now_ms = 1_000_000;
 
-        auditor.record_entry(2, true, true, 100.0, now_ms, 0.01, 100_000.0, 30_000);
+        auditor.record_entry(2, true, 100.0, now_ms, 0.01, 100_000.0, 30_000);
 
-        // Ha pasado el 80% del tiempo (24,000ms) pero solo ha habido $500 de volumen (< 1% de $100k) y el precio cayó (-0.01%)
-        let status = auditor.evaluate_tick(2, true, 99.99, 500.0, now_ms + 24_000);
+        // Ha pasado el 80% del τ (24.000 ms) pero sólo ha habido $500 de volumen
+        // (< 1% de $100k) y el precio cayó (-0,01%).
+        let status = auditor.evaluate_tick(2, 99.99, 500.0, now_ms + 24_000);
         match status {
             TrajectoryStatus::Divergent { reason, .. } => {
                 assert_eq!(reason, TrajectoryDivergenceReason::VolumeStarvation);
             }
-            _ => panic!("Expected volume starvation divergence"),
+            _ => panic!("Se esperaba divergencia por inanición de volumen"),
         }
     }
 
     #[test]
-    fn test_trajectory_nan_and_untracked_symbol_immunity() {
+    fn inmunidad_a_nan_y_simbolo_no_seguido() {
         let mut auditor = TrajectoryAuditor::new(5);
-        let status_untracked = auditor.evaluate_tick(0, true, 100.0, 1000.0, 1000);
+        let status_untracked = auditor.evaluate_tick(0, 100.0, 1000.0, 1000);
         match status_untracked {
             TrajectoryStatus::Aligned { coherence_score } => assert_eq!(coherence_score, 1.0),
-            _ => panic!("Untracked should default to aligned"),
+            _ => panic!("Un símbolo sin traza debe quedar alineado por defecto"),
         }
 
-        auditor.record_entry(0, true, true, f64::NAN, 1000, f64::NAN, f64::NAN, 10000);
-        let status_nan = auditor.evaluate_tick(0, true, f64::NAN, f64::NAN, 2000);
+        auditor.record_entry(0, true, f64::NAN, 1000, f64::NAN, f64::NAN, 10000);
+        let status_nan = auditor.evaluate_tick(0, f64::NAN, f64::NAN, 2000);
         match status_nan {
             TrajectoryStatus::Aligned { coherence_score } => assert!(coherence_score >= 0.0),
             _ => {}
+        }
+    }
+
+    /// U-ERR-3 — UNA TRAYECTORIA POR POSICIÓN.
+    ///
+    /// Falla con el código viejo: allí `record_exit` se consultaba en dos
+    /// ranuras y la segunda (`swing`) devolvía siempre `None` porque nadie
+    /// escribía en ella; el consumidor evaluaba además cada tick dos veces.
+    /// Aquí se fija la invariante: una entrada crea UNA traza, un cierre la
+    /// consume, y un segundo cierre sobre la misma posición no devuelve nada
+    /// porque no hay una segunda ranura que rascar.
+    #[test]
+    fn u_err_3_una_entrada_produce_una_sola_traza() {
+        let mut auditor = TrajectoryAuditor::new(3);
+        let t0 = 1_000_000;
+
+        auditor.record_entry(0, true, 100.0, t0, 0.01, 50_000.0, 30_000);
+        assert_eq!(
+            auditor.tracks.iter().filter(|t| t.is_some()).count(),
+            1,
+            "una entrada debe producir exactamente una traza viva"
+        );
+
+        let primero = auditor.record_exit(0, 101.0, t0 + 25_000);
+        assert!(primero.is_some(), "el cierre debe devolver el TCE");
+
+        let segundo = auditor.record_exit(0, 101.0, t0 + 25_000);
+        assert!(
+            segundo.is_none(),
+            "no existe una segunda ranura: el cierre ya consumió la traza"
+        );
+    }
+
+    /// U-ERR-4 — EL AGOTAMIENTO TEMPORAL ES ALCANZABLE.
+    ///
+    /// Falla con el código viejo: `duration_ratio` se recortaba a 3,0 y luego
+    /// se comparaba con `> 4.0`, así que `TimeExhaustionWithoutProgress` era
+    /// una rama muerta que no podía emitirse jamás. Con 5·τ transcurridos y
+    /// PnL por debajo de −0,30% (pero por encima del umbral de inversión de
+    /// momentum, para aislar esta comprobación) la divergencia debe emitirse.
+    #[test]
+    fn u_err_4_agotamiento_temporal_se_emite_pasado_cuatro_tau() {
+        let mut auditor = TrajectoryAuditor::new(3);
+        let t0 = 1_000_000u64;
+        let tau_ms = 30_000u64;
+
+        // expected_magnitude alto ⇒ el umbral de MomentumReversal queda en
+        // −0,60% (el max(-0.0060, -mag*1.5) lo fija la rama de −0,60%),
+        // de modo que un −0,40% NO dispara la inversión de momentum y deja
+        // ver la comprobación de agotamiento.
+        auditor.record_entry(0, true, 100.0, t0, 0.05, 0.0, tau_ms);
+
+        // 5·τ transcurridos, precio a −0,40%.
+        let status = auditor.evaluate_tick(0, 99.6, 1_000.0, t0 + 5 * tau_ms);
+        match status {
+            TrajectoryStatus::Divergent { reason, score } => {
+                assert_eq!(reason, TrajectoryDivergenceReason::TimeExhaustionWithoutProgress);
+                assert!(score > 4.0, "la fracción de τ no debe venir recortada: {score}");
+            }
+            other => panic!("se esperaba agotamiento temporal, llegó {other:?}"),
         }
     }
 }

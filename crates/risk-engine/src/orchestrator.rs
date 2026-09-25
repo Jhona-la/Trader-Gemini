@@ -102,6 +102,14 @@ impl<'a> PortfolioOrchestrator<'a> {
         intent_is_long: bool,
         required_margin: f64,
         regime: crate::regime::MarketRegime,
+        // D-750 — NOCIONAL MÍNIMO DEL SÍMBOLO QUE SE PRETENDE ABRIR.
+        //
+        // La escasez de capital que estrecha el colchón de margen se medía
+        // contra `arena.config.min_notional`, literal 5,0 que nadie escribe
+        // nunca. El mínimo real lo publica el exchange por símbolo y el
+        // evaluador ya lo tiene resuelto cuando llega aquí: se lo pasa, en vez
+        // de que esta capa vuelva a leer el número congelado.
+        min_notional_simbolo: f64,
     ) -> bool {
         if !required_margin.is_finite() || required_margin <= 0.0 {
             return false;
@@ -136,15 +144,22 @@ impl<'a> PortfolioOrchestrator<'a> {
 
         let total_exposure = total_long_margin + total_short_margin + required_margin;
 
-        // Max Margin Allocation limit: Allow up to 95% of unified capital to be allocated as collateral
-        let exposure_limit = (1.0
-            - self
-                .arena
-                .config
-                .global_max_drawdown
-                .load(Ordering::Relaxed)
-                .min(0.20))
-        .clamp(0.80, 1.0);
+        // D-744: el tope de margen ya NO se deriva del gen de drawdown. Eran
+        // dos conceptos distintos leyendo el mismo número: con el gen base
+        // (0,95) el `min(0,20)` lo aplastaba a 0,20 y el colchón quedaba
+        // clavado en 0,80 pasara lo que pasara — evolucionar el drawdown
+        // movía, de paso y sin decirlo, cuánto capital podía comprometerse.
+        // El colchón tiene su propio gen (`margin_cushion_pct`) y su propia
+        // fuente única, la misma que usa el núcleo al comprobar margen libre.
+        // D-750: escasez medida contra el mínimo DEL SÍMBOLO.
+        let escasez = crate::capital_regime::micro_weight(
+            capital,
+            crate::capital_regime::effective_min_notional(min_notional_simbolo),
+        );
+        let exposure_limit = crate::capital_regime::margin_cushion(
+            self.arena.config.margin_cushion_pct.load(Ordering::Relaxed),
+            escasez,
+        );
 
         if total_exposure > capital * exposure_limit {
             return false;

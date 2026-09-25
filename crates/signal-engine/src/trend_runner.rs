@@ -3,9 +3,18 @@ use std::f64;
 use std::sync::Arc;
 use strategy_core::QuantumStrategy;
 
-/// 🚀 ALGORITMO #27: MOTOR DE EXPANSIÓN DE TENDENCIA DE ALTA GANANCIA (HIGH-PAYOFF TREND-RUNNER)
-/// Amplifica los objetivos de Take-Profit en Swing (+3.5% a +8.0%) cuando se confirma inercia estocástica.
-/// Al lograr un payoff de +500 bps frente a 4.5 bps de fee, el usuario retiene más del 99.1% de la ganancia.
+/// MOTOR DE EXPANSIÓN DE TENDENCIA (TREND-RUNNER).
+///
+/// Amplía el objetivo de recorrido cuando se confirma inercia estocástica en
+/// la serie.
+///
+/// U-ERR-1: la descripción anterior anunciaba «objetivos de Take-Profit en
+/// Swing (+3,5% a +8,0%)» y un «payoff de +500 bps frente a 4,5 bps de fee»
+/// del que se derivaba una retención «del 99,1%». Ni la banda de horizonte ni
+/// esos números describen lo que el motor calcula: la expansión es continua y
+/// depende del estado de la serie, y ninguna cifra de retención está medida
+/// aquí. La clave de registro `ema_trend_swing` se conserva porque su
+/// productor vive fuera de este ámbito.
 #[derive(Clone, Default)]
 #[repr(C, align(64))]
 pub struct HighPayoffTrendRunner {

@@ -25,8 +25,8 @@ pub use consejo_seniors::{
 };
 pub use epigenoma_store::{read_epigenoma_gene, set_epigenoma_gene};
 pub use evolutionary_templates::{
-    DualHorizonStrategyParams, EvolutionaryTemplateEngine, VolumeFundingParams,
-    WaveletFeatureParams, WaveletType,
+    ContinuumStrategyParams, EvolutionaryTemplateEngine, VolumeFundingParams, WaveletFeatureParams,
+    WaveletType,
 };
 pub use fases_autonomous::{FaseAutonomous, FaseAutonomousManager, HealthMetrics};
 pub use hot_swap_controller::{EpigenomaSymbolParams, HotSwapController};

@@ -43,7 +43,11 @@ pub struct TelemetryFrame {
     pub timestamp_ns: u64,
     pub subsystem_id: u8,
     pub event_type: u8,
-    pub context_id: u8, // 0 = General, 1 = Scalp, 2 = Swing
+    /// Identificador libre de contexto del emisor. La documentación anterior
+    /// afirmaba «0 = General, 1 = Scalp, 2 = Swing»: una tabla de bandas de
+    /// horizonte que ningún emisor del repositorio respeta ni consulta. El
+    /// campo es un discriminante opaco que cada subsistema interpreta.
+    pub context_id: u8,
     pub _padding: [u8; 5],
     pub payload: [f64; 6],
 }
@@ -250,7 +254,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         let frame = events[0];
         assert_eq!(frame.subsystem_id, SUBSYSTEM_RISK_ENGINE);
-        assert_eq!(frame.context_id, 2); // Swing context
+        assert_eq!(frame.context_id, 2); // discriminante opaco del emisor
         assert_eq!(frame.payload[0], 0.0); // Sanitized NaN
         assert_eq!(frame.payload[1], 0.0); // Sanitized Inf
         assert_eq!(frame.payload[2], -10.5);

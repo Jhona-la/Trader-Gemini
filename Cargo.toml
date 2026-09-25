@@ -224,6 +224,14 @@ name = "train_forest"
 path = "src/bin/train_forest.rs"
 
 [[bin]]
+name = "spectral_bench"
+path = "src/bin/spectral_bench.rs"
+
+[[bin]]
+name = "tape_spread_fix"
+path = "src/bin/tape_spread_fix.rs"
+
+[[bin]]
 name = "ml_path_probe"
 path = "src/bin/ml_path_probe.rs"
 
