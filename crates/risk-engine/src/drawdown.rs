@@ -95,6 +95,30 @@ pub fn drawdown_compatible(
     }
 }
 
+/// Umbral de caída que APLICAN los dos cortacircuitos (sistema inmune del host
+/// y veto de entradas del risk-engine): la caída compatible con el edge cuando
+/// ya hay riesgo medido y, mientras no lo hay, el gen leído como fracción de
+/// caída —la semántica anterior a D-744—.
+///
+/// Auditoría PR #5 (D-744b): `riesgo_por_operacion` no se persiste y nace en
+/// 0 en cada arranque del proceso; sólo se escribe al final de una orden
+/// validada. Con `drawdown_compatible` → `None`, el host usaba
+/// `unwrap_or(∞)` y el risk-engine se saltaba el veto: tras un reinicio con
+/// posiciones reconciliadas, o mientras todas las intenciones se rechazan
+/// antes de dimensionar, NINGÚN cortacircuitos podía disparar por mucho que
+/// cayera el capital. Sin evidencia no se inventa un umbral fino, pero
+/// tampoco se desarma el freno: rige el gen, acotado al mismo rango.
+#[inline]
+pub fn drawdown_maximo(riesgo_por_operacion: f64, q_perdida: f64, gen_confianza: f64) -> f64 {
+    drawdown_compatible(riesgo_por_operacion, q_perdida, gen_confianza).unwrap_or_else(|| {
+        if gen_confianza.is_finite() {
+            gen_confianza.clamp(0.02, 0.95)
+        } else {
+            0.95
+        }
+    })
+}
+
 /// Media móvil exponencial del riesgo por operación: el peso de la última
 /// orden es 1/n hasta n = `memoria`, y 1/memoria a partir de ahí — así la
 /// primera orden no queda diluida ni la última manda sola.
@@ -113,6 +137,21 @@ pub fn actualizar_riesgo_ewma(previo: f64, nuevo: f64, memoria: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D-744b — sin riesgo medido (arranque del proceso) el freno NO se
+    /// desarma: rige el gen como fracción de caída, en el mismo rango.
+    #[test]
+    fn d744b_sin_riesgo_medido_el_freno_sigue_armado() {
+        assert!(drawdown_compatible(0.0, 0.5, 0.95).is_none());
+        assert_eq!(drawdown_maximo(0.0, 0.5, 0.95), 0.95);
+        assert_eq!(drawdown_maximo(0.0, 0.5, 0.60), 0.60);
+        assert_eq!(drawdown_maximo(f64::NAN, 0.5, f64::NAN), 0.95);
+        // Con riesgo medido manda la prueba de hipótesis, no el gen.
+        assert_eq!(
+            drawdown_maximo(0.05, 0.5, 0.95),
+            drawdown_compatible(0.05, 0.5, 0.95).unwrap()
+        );
+    }
 
     #[test]
     fn el_umbral_crece_con_el_riesgo_tomado() {

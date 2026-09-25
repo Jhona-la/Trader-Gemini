@@ -225,14 +225,14 @@ impl RiskEngine {
                     .win_rate
                     .load(Ordering::Relaxed)
                     .clamp(0.0, 1.0);
-            if let Some(max_dd) = crate::drawdown::drawdown_compatible(
+            // D-744b: sin riesgo medido rige el gen; el veto nunca se salta.
+            let max_dd = crate::drawdown::drawdown_maximo(
                 arena.riesgo_por_operacion.load(Ordering::Relaxed),
                 q_perdida,
                 arena.config.global_max_drawdown.load(Ordering::Relaxed),
-            ) {
-                if dd >= max_dd {
-                    return rej(REJ_DRAWDOWN);
-                }
+            );
+            if dd >= max_dd {
+                return rej(REJ_DRAWDOWN);
             }
         }
 
@@ -1044,11 +1044,20 @@ impl RiskEngine {
             1.0
         };
 
+        if safe_vol <= 0.0
+            || (intent.signal != SignalType::Flat && (safe_tp <= 0.0 || safe_sl <= 0.0))
+        {
+            return ValidatedOrder::rejected();
+        }
+
         // D-744: el RIESGO REALMENTE TOMADO por esta orden —lo que se pierde
         // si su stop se toca, en fracción del capital— alimenta la media móvil
         // que convierte una caída observada en evidencia. Sin esta medida, el
         // cortacircuitos de drawdown es una opinión sobre un número inventado.
-        if safe_vol > 0.0 && sl_pct > 0.0 && current_cap > 0.0 {
+        // D-744c (auditoría PR #5): se registra DESPUÉS del último rechazo de
+        // esta función; antes también entraban órdenes que aquí mismo se
+        // rechazaban por geometría inválida.
+        if sl_pct > 0.0 && current_cap > 0.0 {
             let riesgo = (safe_vol * safe_lev * sl_pct) / current_cap;
             let previo = arena.riesgo_por_operacion.load(Ordering::Relaxed);
             arena.riesgo_por_operacion.store(
@@ -1059,12 +1068,6 @@ impl RiskEngine {
                 ),
                 Ordering::Relaxed,
             );
-        }
-
-        if safe_vol <= 0.0
-            || (intent.signal != SignalType::Flat && (safe_tp <= 0.0 || safe_sl <= 0.0))
-        {
-            return ValidatedOrder::rejected();
         }
 
         ValidatedOrder {

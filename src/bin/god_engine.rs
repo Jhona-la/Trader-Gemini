@@ -1669,12 +1669,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             0.5
                         }
                     };
-                    let max_dd = risk_engine::drawdown::drawdown_compatible(
+                    // D-744b: sin riesgo medido (p. ej. tras reiniciar con
+                    // posiciones reconciliadas) rige el gen — antes ∞, es
+                    // decir, el sistema inmune desarmado.
+                    let max_dd = risk_engine::drawdown::drawdown_maximo(
                         arena_imm.riesgo_por_operacion.load(Ordering::Relaxed),
                         q_perdida_global,
                         arena_imm.config.global_max_drawdown.load(Ordering::Relaxed),
-                    )
-                    .unwrap_or(f64::INFINITY);
+                    );
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único
