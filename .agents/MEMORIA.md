@@ -14,8 +14,11 @@
 - `main` (1fa9a914) llevaba 3 commits que la rama de auditoría no tenía:
   F-009 / D-411 (desasfixia ML), M2-C02 / M1-M02 / WS (Hawkes por símbolo,
   OI en USD, timeout WS adaptativo) y streams WS en minúsculas.
-- `claude/decima-ola-auditoria-2` (PR #4, abierto) llevaba 13 commits
-  (D-742 … D-758). Se unificaron las dos en `claude/elegant-euler-mmtht4`.
+- `claude/decima-ola-auditoria-2` (PR #4) llevaba 13 commits
+  (D-742 … D-758). Se unificaron las dos en `claude/elegant-euler-mmtht4`
+  (PR #5, auditado y fusionado a `main`; el #4 se cerró como sustituido).
+  Una sesión que siga sobre `claude/decima-ola-auditoria-2` debe traer
+  `main` antes de continuar.
 - Ramas muertas (no integrar): `claude/decima-ola-auditoria-forense`
   (155 detrás), `subagent-*` (121 detrás, de junio).
 
@@ -63,6 +66,47 @@
 - **CERT-M1-M02**: OI normalizado en notional USD (escala log $100M…$10B).
 - **WS**: streams en minúsculas; watchdog `BINANCE_WS_TIMEOUT_SECS`
   (defecto 15 s mainnet / 30 s testnet).
+
+### Auditoría del PR #5 (2026-09-25) — corregido antes de fusionar
+- **D-744b**: sin `riesgo_por_operacion` medido (arranque del proceso) los
+  DOS cortacircuitos de drawdown quedaban desarmados. Ahora
+  `drawdown::drawdown_maximo` cae al gen como fracción de caída.
+- **D-744c**: la EWMA del riesgo tomado se registra tras el último rechazo.
+- **D-754b**: el σ pronosticado vuelve a ceros si la habilidad cae, y sólo
+  se publican anclas puntuadas (`MUESTRAS_MADURAS` = 30).
+- **D-754c**: el pronóstico σ entra al stop ×√(8/π) (`RANGO_PARKINSON`):
+  el respaldo ATR es un rango y el gen del SL está en esa escala.
+- **D-750b**: el guard de correlación compara r CON signo (misma dirección
+  + anticorrelación = cobertura, no la misma apuesta).
+
+### Hallazgos de la auditoría NO corregidos (diseño — siguiente ola)
+1. **EV gate con p calibrada (D-751) puede ser un estado absorbente**: el
+   calibrador sólo aprende de lo ejecutado; si baja p, el EV veta todo y p
+   no se recupera (lo que D-690 evitó en el gate de confianza). Vigilar en
+   el forense si una moneda deja de operar tras ~20 cierres. Remedio
+   candidato: calibrar con resultados contrafactuales de intenciones
+   vetadas (auditor de trayectorias) o una cota superior de p como piso.
+2. **Convicción por rama (D-752) se re-infla aguas abajo** (boost ML ×1,5,
+   fusión `max`, persistencia ×1,3): una rama perdedora demostrada puede
+   superar `min_confidence_btc`. Y las ramas 11–14 (tensor, impulso,
+   tendencia lenta, consenso) no pasan por `conviccion_de_rama`.
+3. **VPIN**: el lado lo decide la regla del tick sobre el mid (no el
+   `is_buyer_maker` real); y los llamadores legacy de `process_tick`
+   (DarwinDaemon opt-in, bin `evolver`) nunca alimentan volumen ⇒ VPIN
+   congelado ahí.
+4. **Deslizamiento por latencia (D-753)** unificado sólo en gate y física;
+   brackets del host (`genome_protection_prices`, fallback de entrada) y el
+   pre-screen del daemon siguen con la ley lineal (~3× distinta).
+5. **Freno de apalancamiento (D-746)** mide contra el τ del gen y la curva
+   de SL genómica, no contra la τ medida ni el stop real (D-745/745b).
+6. **Anti-whiplash (D-757)**: sus ventanas de tiempo son código muerto
+   (el enfriamiento de `viable_para_entrar` ya las cubre).
+7. **Bosque (freno)**: la exactitud direccional se puntúa con PnL NETO
+   (`is_win`); un acierto menor que las comisiones cuenta como fallo.
+8. Guard de correlación: dirección OPUESTA + anticorrelación también es la
+   misma apuesta y el llamador la descarta (preexistente).
+9. Proceso: los commits 6c06ee3d y 8cb5504b mezclan varios bloques
+   (incumplen «commits atómicos»); no se reescribe historia.
 
 ### Abierto / pendiente
 - **Nada autoriza a operar**: el motor sigue perdiendo en las tres
