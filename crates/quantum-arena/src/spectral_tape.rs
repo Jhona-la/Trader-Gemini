@@ -589,6 +589,10 @@ impl HorizonForecaster {
     }
 }
 
+/// Muestras puntuadas fuera de muestra a partir de las cuales un ancla
+/// cuenta como madura: entra en la habilidad media y puede publicarse.
+pub const MUESTRAS_MADURAS: u64 = 30;
+
 /// Banco de pronóstico de un símbolo: el tape y un pronosticador por escala
 /// ancla dentro de la banda OPERATIVA (30 s … 12 h, las anclas del genoma).
 /// Entre anclas se interpola en log τ, porque el espectro es continuo: se
@@ -723,8 +727,11 @@ impl SpectralForecastBank {
     /// bate a la climatología en las anclas maduras? (media de las que ya
     /// puntúan). Sin muestras devuelve `None` — el llamador no debe usarlo.
     pub fn habilidad_volatilidad(&self) -> Option<f64> {
-        let maduras: Vec<&HorizonForecaster> =
-            self.varianza.iter().filter(|f| f.score.n >= 30).collect();
+        let maduras: Vec<&HorizonForecaster> = self
+            .varianza
+            .iter()
+            .filter(|f| f.score.n >= MUESTRAS_MADURAS)
+            .collect();
         if maduras.is_empty() {
             return None;
         }
@@ -741,10 +748,23 @@ impl SpectralForecastBank {
 
     /// σ pronosticada en CADA ancla (fracción de precio), para publicarla al
     /// arena. `None` en las anclas que aún no tienen pronóstico.
+    ///
+    /// Auditoría PR #5 (D-754b): sólo se publican las anclas cuyo propio
+    /// pronosticador ya ha sido PUNTUADO fuera de muestra (`MUESTRAS_MADURAS`).
+    /// La habilidad que autoriza la publicación es la media de las anclas
+    /// maduras; sin este filtro, un ancla de 12 h con n = 0 (persistencia +
+    /// prior) salía al motor avalada por la habilidad de las de minutos.
     pub fn sigmas_en_anclas(&self, now_ms: u64) -> [Option<f64>; 7] {
         let mut out = [None; 7];
         for (i, &h) in self.anclas_ms.iter().enumerate().take(7) {
-            out[i] = self.sigma_at(h, now_ms);
+            let madura = self
+                .varianza
+                .get(i)
+                .map(|f| f.score.n >= MUESTRAS_MADURAS)
+                .unwrap_or(false);
+            if madura {
+                out[i] = self.sigma_at(h, now_ms);
+            }
         }
         out
     }
@@ -816,5 +836,33 @@ mod tests {
         // La persistencia ya explica los regímenes largos; el modelo no debe
         // hacerlo peor que ella en un proceso tan regular.
         assert!(f.score.skill_vs_persistence() > -0.05, "{:?}", f.score);
+    }
+
+    /// D-754b — un ancla que su pronosticador todavía no ha puntuado fuera de
+    /// muestra NO sale al arena, aunque ya pueda emitir un número: ese número
+    /// es persistencia + prior, no un pronóstico con evidencia.
+    #[test]
+    fn d754b_no_se_publica_un_ancla_sin_puntuar() {
+        let mut bank = SpectralForecastBank::new();
+        let mut ts = 0u64;
+        for i in 0..20_000u64 {
+            ts += 10;
+            bank.on_trade(ts, 100.0 + (i % 5) as f64 * 0.01, 1.0, i % 2 == 0);
+        }
+        let publicadas = bank.sigmas_en_anclas(ts);
+        let mut hubo_numero_sin_evidencia = false;
+        for (i, f) in bank.varianza.iter().enumerate() {
+            if f.score.n < MUESTRAS_MADURAS {
+                assert!(publicadas[i].is_none(), "ancla {i} publicada con n = {}", f.score.n);
+                if bank.sigma_at(bank.anclas_ms[i], ts).is_some() {
+                    hubo_numero_sin_evidencia = true;
+                }
+            }
+        }
+        // 200 s de tape no maduran el ancla de ~19,5 h.
+        assert!(publicadas[6].is_none());
+        // El caso que el filtro existe para cubrir sí se produce: un ancla
+        // sin puntuar YA emite un número (que antes salía al arena).
+        assert!(hubo_numero_sin_evidencia);
     }
 }

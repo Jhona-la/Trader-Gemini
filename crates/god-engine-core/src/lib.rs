@@ -1148,18 +1148,25 @@ impl GodEngineCore {
                     // conserva ceros y la geometría sigue usando el ATR hacia
                     // atrás de siempre. Publicar un pronóstico sin evidencia
                     // sería exactamente el pecado que esta ola vino a cerrar.
+                    //
+                    // Auditoría PR #5 (D-754b): cuando la habilidad deja de ser
+                    // positiva (o vuelve a no haber muestras maduras), el arena
+                    // VUELVE a ceros. Antes sólo se escribía en la rama con
+                    // habilidad y los últimos σ quedaban congelados: el
+                    // risk-engine seguía leyendo un pronóstico ya desautorizado.
                     let habilidad = bank.habilidad_volatilidad();
+                    let slots = &self.arena.coins[coin_id].sigma_forecast;
                     if habilidad.map(|h| h > 0.0).unwrap_or(false) {
                         let sigmas = bank.sigmas_en_anclas(event_time_ms);
-                        for (slot, s) in self.arena.coins[coin_id]
-                            .sigma_forecast
-                            .iter()
-                            .zip(sigmas.iter())
-                        {
+                        for (slot, s) in slots.iter().zip(sigmas.iter()) {
                             slot.store(
                                 s.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(0.0),
                                 Ordering::Relaxed,
                             );
+                        }
+                    } else {
+                        for slot in slots.iter() {
+                            slot.store(0.0, Ordering::Relaxed);
                         }
                     }
                 }

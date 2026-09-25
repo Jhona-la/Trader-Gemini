@@ -102,6 +102,12 @@ pub struct TpSl {
 /// y las posiciones terminaban por stop o por caducidad.
 pub const TAU_REFERENCE_MS: f64 = 60_000.0;
 
+/// Rango medio de una vela browniana en desviaciones típicas, `√(8/π)`: el
+/// factor de Parkinson que convierte una σ de retorno en la escala del ATR.
+/// Mismo valor que `god_engine_core::diffusion::PARKINSON_RANGE_FACTOR`
+/// (el risk-engine no puede depender del núcleo: ciclo de dependencias).
+pub const RANGO_PARKINSON: f64 = 1.595_769_121_605_730_8;
+
 /// D-747 — DESLIZAMIENTO POR LATENCIA: UNA SOLA LEY, LA DE LA DIFUSIÓN.
 ///
 /// # Qué estaba mal
@@ -196,8 +202,16 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
     //    capital dentro de esta misma ley.
     // D-754: si hay pronóstico CON EVIDENCIA para este horizonte, la
     // dispersión esperada es esa; si no, la ley de escala sobre lo medido.
+    //
+    // D-754c (auditoría PR #5): las dos ramas deben hablar la MISMA unidad.
+    // La ley de escala parte del ATR de 1 minuto, que es un RANGO medio
+    // (√(8/π)·σ para una vela browniana, ver `god_engine_core::diffusion`), y
+    // el gen `sl_atr_multiplier` está expresado en múltiplos de ese rango. El
+    // pronóstico es una σ de retorno. Sin convertirla, el stop y el TP se
+    // encogían ~1,6× en el instante en que el pronóstico ganaba habilidad,
+    // sin cambio alguno en la volatilidad real.
     let sigma_tau = match input.sigma_forecast {
-        Some(s) if s.is_finite() && s > 0.0 => s,
+        Some(s) if s.is_finite() && s > 0.0 => s * RANGO_PARKINSON,
         _ => atr * (tau / TAU_REFERENCE_MS).powf(h),
     };
 
@@ -293,8 +307,10 @@ mod tests {
     fn d754_el_pronostico_manda_sobre_la_extrapolacion_del_pasado() {
         let sin = compute_tp_sl(base());
         let mut con = base();
-        // El doble de dispersión esperada que la que el pasado extrapola.
-        let sigma_pasado = base().atr_ratio * (base().tau_ms / TAU_REFERENCE_MS).powf(0.5);
+        // El doble de dispersión esperada que la que el pasado extrapola (en
+        // σ de retorno: el ATR es un rango, ver D-754c).
+        let sigma_pasado =
+            (base().atr_ratio / RANGO_PARKINSON) * (base().tau_ms / TAU_REFERENCE_MS).powf(0.5);
         con.sigma_forecast = Some(sigma_pasado * 2.0);
         let salida = compute_tp_sl(con);
         assert!(
@@ -310,6 +326,27 @@ mod tests {
         let mut cero = base();
         cero.sigma_forecast = Some(0.0);
         assert_eq!(compute_tp_sl(cero).sl_pct, sin.sl_pct);
+    }
+
+    /// D-754c — un pronóstico que coincide con la σ que el ATR ya implica NO
+    /// puede mover el stop: la geometría sólo cambia si cambia la volatilidad
+    /// esperada, no por la unidad en que llega.
+    #[test]
+    fn d754c_el_pronostico_y_el_atr_hablan_la_misma_unidad() {
+        let sin = compute_tp_sl(base());
+        let b = base();
+        let h = b.hurst.clamp(0.30, 0.75);
+        let sigma_implicita =
+            (b.atr_ratio / RANGO_PARKINSON) * (b.tau_ms / TAU_REFERENCE_MS).powf(h);
+        let mut con = base();
+        con.sigma_forecast = Some(sigma_implicita);
+        let salida = compute_tp_sl(con);
+        assert!(
+            (salida.sl_pct - sin.sl_pct).abs() <= 1e-12 * sin.sl_pct.max(1e-12),
+            "misma volatilidad, stop distinto: {} vs {}",
+            salida.sl_pct,
+            sin.sl_pct
+        );
     }
 
     /// D-637: el gate de EV y la orden deben ver EXACTAMENTE lo mismo. Al ser
