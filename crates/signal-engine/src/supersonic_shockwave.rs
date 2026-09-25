@@ -43,7 +43,11 @@ impl SupersonicShockwaveEngine {
     #[inline(always)]
     pub fn compute_shockwave_jump(mach: f64) -> f64 {
         if mach.is_finite() && mach > 1.0 {
-            ((mach * mach - 1.0) / (mach * mach + 1.0))
+            // Equivalent ratio after dividing numerator/denominator by M^2.
+            // For M>1 the reciprocal is bounded and cannot overflow on squaring.
+            // This stabilizes the heuristic, not a physical conservation law.
+            let inverse_square = mach.recip().powi(2);
+            ((1.0 - inverse_square) / (1.0 + inverse_square))
                 .tanh()
                 .clamp(0.0, 1.0)
         } else {

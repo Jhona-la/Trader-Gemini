@@ -31,7 +31,8 @@ impl MultiAssetOrchestrator {
         }
     }
 
-    /// Procesa el tick de cualquier símbolo y retorna las intenciones de Quote (Maker) y Arb (StatArb).
+    /// Legacy BTCUSDT/ETHUSDT pair adapter, not a universal multi-asset engine.
+    /// Other instruments must not update or replay the cached pair observations.
     pub fn on_tick(
         &mut self,
         symbol: &str,
@@ -47,18 +48,23 @@ impl MultiAssetOrchestrator {
             || !ask_qty.is_finite()
             || bid <= 0.0
             || ask <= 0.0
+            || ask <= bid
             || bid_qty < 0.0
             || ask_qty < 0.0
         {
             return (None, None);
         }
 
+        let is_btc = symbol.eq_ignore_ascii_case("BTCUSDT");
+        let is_eth = symbol.eq_ignore_ascii_case("ETHUSDT");
+        if !is_btc && !is_eth {
+            return (None, None);
+        }
+
         let mut quote: Option<MakerQuote> = None;
         let mut arb_signal: Option<SignalIntent> = None;
 
-        let sym_lower = symbol.to_lowercase();
-
-        if sym_lower.starts_with("btc") {
+        if is_btc {
             self.btc_bid = bid;
             self.btc_ask = ask;
 
@@ -107,15 +113,15 @@ impl MultiAssetOrchestrator {
                 tensor_poly_b,
             );
             quote = Some(new_quote);
-        } else if sym_lower.starts_with("eth") {
+        } else if is_eth {
             self.eth_bid = bid;
             self.eth_ask = ask;
         }
 
         // Si tenemos datos de ambos, calculamos la Cointegración (Arbitraje Estadístico)
         if self.btc_bid > 0.0 && self.btc_ask > 0.0 && self.eth_bid > 0.0 && self.eth_ask > 0.0 {
-            let btc_mid = (self.btc_bid + self.btc_ask) / 2.0;
-            let eth_mid = (self.eth_bid + self.eth_ask) / 2.0;
+            let btc_mid = self.btc_bid * 0.5 + self.btc_ask * 0.5;
+            let eth_mid = self.eth_bid * 0.5 + self.eth_ask * 0.5;
 
             if btc_mid.is_finite() && eth_mid.is_finite() && btc_mid > 0.0 && eth_mid > 0.0 {
                 let arb = self.stat_arb_engine.update(btc_mid, eth_mid);

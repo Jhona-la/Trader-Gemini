@@ -17,6 +17,7 @@ pub mod meta;
 pub mod moe_neat_arena;
 pub mod neat;
 pub mod online_daemon;
+pub mod return_evidence;
 pub mod online_random_forest;
 pub mod polars_evolver;
 pub mod random_forest;
@@ -164,18 +165,38 @@ impl EvolutionEngine {
                 .min(100);
 
             // FASE 3: Persistir el verdadero Optimizador CMA-ES + PSO sin destruir la matriz de covarianza (D-140)
-            let optimizer = cma_es_optimizer.get_or_insert_with(|| {
-                let mut opt = crate::cma_es::CmaEsOptimizer::new(
+            if cma_es_optimizer.is_none() {
+                let mut opt = match crate::cma_es::CmaEsOptimizer::try_new(
                     Genotype::DIMENSION,
                     mutation_rate,
                     Some(pop_size),
-                );
+                ) {
+                    Ok(opt) => opt,
+                    Err(error) => {
+                        eprintln!("[CMA] Configuración rechazada: {error:?}");
+                        continue;
+                    }
+                };
                 // D-405: Centroide en hipercubo canónico unitario [0.0, 1.0]^DIMENSION
                 opt.mean = current_alpha.to_normalized_vector();
                 opt.global_best = opt.mean.clone();
-                opt
-            });
-            optimizer.sigma = mutation_rate;
+                cma_es_optimizer = Some(opt);
+            }
+            let optimizer = cma_es_optimizer.as_mut().expect("initialized above");
+            // FMT-013: persist CSA learning; only CHANGES in the supervisor
+            // level rescale sigma. This is not a covariance/path restart.
+            let step = match optimizer.apply_exploration_level(mutation_rate) {
+                Ok(step) => step,
+                Err(error) => {
+                    eprintln!("[CMA] Ajuste de exploración rechazado: {error:?}");
+                    continue;
+                }
+            };
+            println!(
+                "[CMA PASO] generación={} sigma={:.8e}->{:.8e} nivel={:.8e}->{:.8e} lambda={} solicitada={}",
+                optimizer.generation, step.previous_sigma, step.sigma,
+                step.previous_level, step.level, optimizer.lambda, pop_size
+            );
 
             let w = self.arena.config.global_momentum.load(Ordering::Relaxed);
             let c1 = self
@@ -191,7 +212,7 @@ impl EvolutionEngine {
                 .load(Ordering::Relaxed)
                 * 2.0; // social
             let cma_samples = optimizer.sample_population(w, c1, c2);
-            let mut population: Vec<Genotype> = Vec::with_capacity(pop_size);
+            let mut population: Vec<Genotype> = Vec::with_capacity(cma_samples.len());
 
             // Generate genotypes from CMA-ES vectors via proyección afín canónica (D-405)
             for vec in &cma_samples {
@@ -527,7 +548,19 @@ impl EvolutionEngine {
             // Apply CMA-ES Update (D-140: Preservar matriz de covarianza viva)
             let actual_fee_rate = self.arena.config.max_fee_pct.load(Ordering::Relaxed);
             if let Some(opt) = cma_es_optimizer.as_mut() {
-                opt.update(&cma_samples, &mut results, actual_fee_rate);
+                // The sixth result is capital growth (velocity), NOT live Sharpe.
+                // No candidate-specific live reference was measured in this replay.
+                let sigma_before = opt.sigma;
+                let outcome = opt.update_backtest_only(&cma_samples, &mut results, actual_fee_rate);
+                println!(
+                    "[CMA EVALUACIÓN] generación={} resultado={outcome:?} sigma={sigma_before:.8e}->{:.8e}",
+                    opt.generation, opt.sigma
+                );
+                if outcome != crate::cma_es::UpdateOutcome::Updated {
+                    // A malformed/insufficient generation cannot promote a genome
+                    // or trigger the unvalidated anti-stagnation fallback below.
+                    continue;
+                }
             }
 
             // Re-sort to find the absolute best

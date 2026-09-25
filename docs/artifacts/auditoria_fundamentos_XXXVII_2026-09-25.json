@@ -1,0 +1,1001 @@
+{
+  "schema_version": 1,
+  "validation": {
+    "hashes_verified": 56,
+    "source_refs_verified": 31,
+    "append_only_prefixes_verified": 3,
+    "report_local_links_verified": 7,
+    "unique_test_count_verified": 109,
+    "touched_tracked_diff_check_passed": true,
+    "new_rust_files_rustfmt_check_passed": true,
+    "check_chunk": "c71bb4"
+  },
+  "round": "XXXVII",
+  "date": "2026-09-25",
+  "language": "es",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVII_2026-09-25.md",
+  "continuity": {
+    "previous_report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVI_2026-09-25.md",
+    "previous_artifact": "docs/artifacts/auditoria_fundamentos_XXXVI_2026-09-25.json",
+    "new_finding_ids": [
+      "FMT-275",
+      "FMT-276",
+      "FMT-277",
+      "FMT-278"
+    ],
+    "continued_ids": [
+      "FMT-113",
+      "FMT-186",
+      "FMT-266",
+      "FMT-273"
+    ],
+    "historic_matrix_rewritten": false
+  },
+  "scope": {
+    "tracked_files": 1119,
+    "preexisting_rust_files": 289,
+    "cargo_manifests": 24,
+    "inventory_basis": "heredado, no confundir con lectura completa",
+    "previous_complete_rust_reads": 165,
+    "complete_rust_reads": 166,
+    "pending_preexisting_rust_reads": 123,
+    "new_complete_reads": [
+      {
+        "path": "crates/risk-engine/src/capital_compounder.rs",
+        "baseline_lines": 222
+      }
+    ],
+    "repeated_complete_reads": [
+      "crates/execution-engine/src/router.rs",
+      "crates/risk-engine/src/epigenetic_fitness_landscape.rs"
+    ],
+    "whole_project_certified": false,
+    "non_rust_total_certified": false
+  },
+  "git": {
+    "branch": "main",
+    "head": "59a76de4be726098d9af934b4d35987e9a636802",
+    "dirty": true,
+    "commit": false,
+    "push": false,
+    "merge": false,
+    "fetch": false,
+    "reset": false,
+    "checkout": false,
+    "remote_verified": false
+  },
+  "findings": [
+    {
+      "id": "FMT-273",
+      "kind": "continuation",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Cancelación con propiedad de reserva y compensación única",
+      "mechanism": "Rollback por símbolo cerraba slots ajenos, incluso confirmados.",
+      "repair": "EntryReservation valida coin/slot/símbolo/generación; Position serializa cancelación no confirmada y confirmación; compensación sólo por transición ganadora. Host migrado y adaptador legacy sin token no barre slots.",
+      "remaining": [
+        "No ledger durable entre slot/capital/margen.",
+        "Escritores atómicos externos fuera del protocolo.",
+        "Registro global mutable; falta cuenta/entorno/arena/order/fill ID.",
+        "Generación prevista antes de open y ausencia de claim-submit.",
+        "Estado auxiliar no transaccional; open permite reemplazar un ocupante.",
+        "Emergencia conserva estado pero requiere terminalidad/deduplicación."
+      ],
+      "refs": [
+        "reservation",
+        "reservation_cancel",
+        "position_cancel",
+        "position_confirm",
+        "position_close",
+        "core_rollback",
+        "host_capture",
+        "host_emergency_retain",
+        "test_reservation",
+        "test_position",
+        "test_legacy_adapter"
+      ]
+    },
+    {
+      "id": "FMT-266",
+      "kind": "continuation",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Veto tardío aplicado a la propuesta actual",
+      "mechanism": "Drift/memoria detectados tras process_event dejaban una reserva ya generada.",
+      "repair": "Host cancela token capturado antes de descartar new_order; fallo de identidad marca dirty sin elegir otro slot.",
+      "remaining": [
+        "Recuperación de drift sin deduplicación/incidente/alcance propio.",
+        "No cubre todos los kill-switches ni prueba end-to-end de veto/despacho.",
+        "Missing token retiene estado incierto y requiere reconciliación."
+      ],
+      "refs": [
+        "host_capture",
+        "host_late_veto",
+        "core_capture",
+        "reservation_cancel"
+      ]
+    },
+    {
+      "id": "FMT-275",
+      "kind": "new",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "operational_caller_found": false,
+      "title": "Compounder fabricaba ventaja y reinflaba riesgo",
+      "mechanism": "PF.max(1.01), Half-Kelly mínimo0.005, clamp mínimo tras penalizaciones, gate WR<0.4, NaN correlación neutralizado y bounds inválidos.",
+      "repair": "Validación de dominios; PF≤1 abstiene; elimina WR40% y pisos; debajo del mínimo abstiene, sin elevar tamaño.",
+      "remaining": [
+        "Helper no localizado en ruta operativa.",
+        "Cero mezcla causas de rechazo.",
+        "Kelly binario no identifica nocional multiasset ni distribución de pagos variables.",
+        "Confianza/Hurst/racha/DD mantienen políticas heurísticas, wealth_factor no se usa."
+      ],
+      "red_to_green_behavioral": 4,
+      "refs": [
+        "compounder_domain",
+        "compounder_kelly",
+        "compounder_minimum",
+        "test_compounder"
+      ]
+    },
+    {
+      "id": "FMT-276",
+      "kind": "new",
+      "priority": "P2",
+      "status": "partially_repaired",
+      "operational_caller_found": false,
+      "title": "Capacidad ficticia y unidades monetarias",
+      "mechanism": "Capital inválido→13, DD inválido→0; base.max(1) rompe invariancia al cambio de moneda.",
+      "repair": "Cero capacidad ante invalidez; ratio current/base sin piso monetario y overflow rechazado.",
+      "remaining": [
+        "Ratio floored1 no se contrae bajo pérdida patrimonial.",
+        "Capacidad raíz floor/cap y splitDD no son asignación espectral.",
+        "Sin caller operacional localizado."
+      ],
+      "red_to_green_behavioral": 2,
+      "refs": [
+        "compounder_capacity",
+        "test_compounder"
+      ]
+    },
+    {
+      "id": "FMT-277",
+      "kind": "new",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Confirmación fija y cardinalidad de propuestas",
+      "mechanism": "Host confirmaba position aunque el core eligiera otro slot; dos reservas podían sobrescribir Option(new_order).",
+      "repair": "Confirmar token exacto; detenerse en primer candidato exitoso.",
+      "remaining": [
+        "El corte por candidato se validó estáticamente y con check, no reproducción E2E.",
+        "Orden de candidatos no es optimización conjunta.",
+        "Ok(()) del executor no prueba fill completo.",
+        "Otros lectores de cierre/adopción siguen fijos.",
+        "No exclusión durable entre validez de reserva y envío."
+      ],
+      "refs": [
+        "core_capture",
+        "core_one_order",
+        "host_confirm",
+        "test_reservation",
+        "position_overwrite"
+      ]
+    },
+    {
+      "id": "FMT-278",
+      "kind": "new",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Signo invertido del PnL de emergencia",
+      "mechanism": "(entry-exit)*qty*sign con +1 para long invierte ganancia/pérdida en ambos sentidos.",
+      "repair": "Host delega a gross_pnl compartido; prueba aritmética y check de cableado.",
+      "remaining": [
+        "Precio vivo no fill, slot sin generación, fee de salida ausente.",
+        "Duplicidad de outcome/learning pendiente.",
+        "Purga de todas las órdenes del símbolo incluso tras fallo de cierre.",
+        "Helper legacy no da resultado tipado para contexto desconocido/nofinito."
+      ],
+      "red_to_green_static": 1,
+      "refs": [
+        "host_emergency_pnl",
+        "shared_pnl",
+        "test_emergency",
+        "host_purge",
+        "host_emergency_retain"
+      ]
+    },
+    {
+      "id": "FMT-186",
+      "kind": "continuation",
+      "priority": "P1",
+      "status": "open",
+      "title": "Admisión espectral heurística no demuestra ortogonalidad",
+      "mechanism": "Fallback30s ante τ≤10ms/no finito, corte0.80, tres slots, alias índice; core corte1.50 y28bps sin verificar stop.",
+      "repair": "Sólo documentación científica/lock precisada; no cambio de política de admisión.",
+      "remaining": [
+        "Dependencia causal por activo/escala no estimada.",
+        "Cuatro diagnósticos OPEN reproducen limitaciones.",
+        "Resolución u64ms no representa ns; capacidad finita necesita error declarado."
+      ],
+      "refs": [
+        "position_slots",
+        "position_admission",
+        "core_extra_cutoff",
+        "test_slot_open"
+      ]
+    },
+    {
+      "id": "FMT-113",
+      "kind": "continuation",
+      "priority": "P1",
+      "status": "open",
+      "title": "Presupuesto con reserva propia descontada y leverage",
+      "mechanism": "Core carga used_margin antes de publicar; host compara requerida nuevamente contra capital-used_margin, pudiendo elevar leverage o vetar por presupuesto ya reservado.",
+      "repair": null,
+      "remaining": [
+        "Ledger de reservas/exposición y proyección de cantidad/costes.",
+        "Cambiar leverage de nocional fijo no reduce pérdida direccional.",
+        "Snapshot global y sincronización margen core/executor ausentes."
+      ],
+      "evidence_type": "static_flow_and_algebraic_counterexample_not_account_observation",
+      "refs": [
+        "core_reservation_margin",
+        "host_margin"
+      ]
+    }
+  ],
+  "source_refs": [
+    {
+      "id": "compounder_capacity",
+      "path": "crates/risk-engine/src/capital_compounder.rs",
+      "line": 15,
+      "anchor": "pub fn get_capital_regime_metrics("
+    },
+    {
+      "id": "compounder_domain",
+      "path": "crates/risk-engine/src/capital_compounder.rs",
+      "line": 74,
+      "anchor": "if !capital_bucket.is_finite()"
+    },
+    {
+      "id": "compounder_kelly",
+      "path": "crates/risk-engine/src/capital_compounder.rs",
+      "line": 94,
+      "anchor": "let kelly ="
+    },
+    {
+      "id": "compounder_minimum",
+      "path": "crates/risk-engine/src/capital_compounder.rs",
+      "line": 152,
+      "anchor": "Never undo a risk penalty"
+    },
+    {
+      "id": "position_cancel",
+      "path": "crates/quantum-arena/src/position.rs",
+      "line": 391,
+      "anchor": "pub fn cancel_unconfirmed_generation"
+    },
+    {
+      "id": "position_confirm",
+      "path": "crates/quantum-arena/src/position.rs",
+      "line": 409,
+      "anchor": "pub fn confirm_generation"
+    },
+    {
+      "id": "position_close",
+      "path": "crates/quantum-arena/src/position.rs",
+      "line": 424,
+      "anchor": "fn close_locked_with_fee"
+    },
+    {
+      "id": "position_slots",
+      "path": "crates/quantum-arena/src/position.rs",
+      "line": 551,
+      "anchor": "pub const MAX_SPECTRAL_SLOTS"
+    },
+    {
+      "id": "position_admission",
+      "path": "crates/quantum-arena/src/position.rs",
+      "line": 625,
+      "anchor": "pub fn find_resonant_slot"
+    },
+    {
+      "id": "position_overwrite",
+      "path": "crates/quantum-arena/src/position.rs",
+      "line": 264,
+      "anchor": "sin cierre previo"
+    },
+    {
+      "id": "reservation",
+      "path": "crates/god-engine-core/src/entry_reservation.rs",
+      "line": 6,
+      "anchor": "pub struct EntryReservation"
+    },
+    {
+      "id": "reservation_cancel",
+      "path": "crates/god-engine-core/src/entry_reservation.rs",
+      "line": 46,
+      "anchor": "pub fn cancel("
+    },
+    {
+      "id": "core_rollback",
+      "path": "crates/god-engine-core/src/lib.rs",
+      "line": 439,
+      "anchor": "pub fn rollback_position"
+    },
+    {
+      "id": "core_capture",
+      "path": "crates/god-engine-core/src/lib.rs",
+      "line": 4866,
+      "anchor": "self.entry_reservations[coin_id] = Some"
+    },
+    {
+      "id": "core_reservation_margin",
+      "path": "crates/god-engine-core/src/lib.rs",
+      "line": 4800,
+      "anchor": "used_margin.fetch_add(margin_req"
+    },
+    {
+      "id": "core_one_order",
+      "path": "crates/god-engine-core/src/lib.rs",
+      "line": 4899,
+      "anchor": "The legacy API returns ONE"
+    },
+    {
+      "id": "core_extra_cutoff",
+      "path": "crates/god-engine-core/src/lib.rs",
+      "line": 4430,
+      "anchor": "if diff_ln < 1.50"
+    },
+    {
+      "id": "host_capture",
+      "path": "src/bin/god_engine.rs",
+      "line": 3239,
+      "anchor": "let entry_reservation = new_order.and_then"
+    },
+    {
+      "id": "host_late_veto",
+      "path": "src/bin/god_engine.rs",
+      "line": 3759,
+      "anchor": "if (is_mem_panic || engine_real.drift_entry_veto())"
+    },
+    {
+      "id": "host_margin",
+      "path": "src/bin/god_engine.rs",
+      "line": 4066,
+      "anchor": "let free_margin = (arena_clone.unified_capital"
+    },
+    {
+      "id": "host_confirm",
+      "path": "src/bin/god_engine.rs",
+      "line": 4172,
+      "anchor": "if let Err(reason) = reservation.confirm"
+    },
+    {
+      "id": "host_emergency_pnl",
+      "path": "src/bin/god_engine.rs",
+      "line": 605,
+      "anchor": "let pnl_gross = execution_engine::trade_accounting::gross_pnl("
+    },
+    {
+      "id": "host_emergency_retain",
+      "path": "src/bin/god_engine.rs",
+      "line": 4365,
+      "anchor": "Confirmed exposure is NOT an unfilled reservation."
+    },
+    {
+      "id": "host_purge",
+      "path": "src/bin/god_engine.rs",
+      "line": 4350,
+      "anchor": "if let Err(ce) = exec_clone.load().cancel_all_symbol_orders"
+    },
+    {
+      "id": "shared_pnl",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "line": 75,
+      "anchor": "pub fn gross_pnl"
+    },
+    {
+      "id": "test_compounder",
+      "path": "crates/risk-engine/tests/compounder_admission_contract.rs",
+      "line": 10,
+      "anchor": "fn nonpositive_edge"
+    },
+    {
+      "id": "test_reservation",
+      "path": "crates/god-engine-core/tests/entry_reservation_contract.rs",
+      "line": 49,
+      "anchor": "fn cancel_preserves"
+    },
+    {
+      "id": "test_position",
+      "path": "crates/quantum-arena/tests/position_generation_contract.rs",
+      "line": 22,
+      "anchor": "fn cancellation_returns"
+    },
+    {
+      "id": "test_slot_open",
+      "path": "crates/quantum-arena/tests/slot_admission_open_diagnostics.rs",
+      "line": 22,
+      "anchor": "fn open_invalid"
+    },
+    {
+      "id": "test_emergency",
+      "path": "crates/execution-engine/tests/emergency_accounting_wiring_contract.rs",
+      "line": 5,
+      "anchor": "fn emergency_host"
+    },
+    {
+      "id": "test_legacy_adapter",
+      "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+      "line": 400,
+      "anchor": "fn unowned_symbol_rollback"
+    }
+  ],
+  "tests": {
+    "unique_final_passed": 109,
+    "functional_compatibility": 103,
+    "static_wiring": 1,
+    "open_diagnostics": 5,
+    "failed_final": 0,
+    "new_tests": 24,
+    "new_functional": 19,
+    "new_static": 1,
+    "new_open": 4,
+    "prior_open_reclassified": 1,
+    "red_to_green_behavioral": 6,
+    "red_to_green_static": 1,
+    "initial_red": [
+      {
+        "target": "compounder_admission_contract",
+        "session": 30532,
+        "passed": 0,
+        "failed": 6
+      },
+      {
+        "target": "emergency_accounting_wiring_contract",
+        "chunk": "0455c1",
+        "passed": 1,
+        "failed": 1,
+        "failed_type": "static_wiring"
+      }
+    ],
+    "integration": [
+      {
+        "crate": "god-engine-core",
+        "target": "close_outcome_contract",
+        "passed": 26,
+        "open": 1,
+        "static_wiring": 0
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "entry_reservation_contract",
+        "passed": 6,
+        "open": 0,
+        "static_wiring": 0
+      },
+      {
+        "crate": "quantum-arena",
+        "target": "position_generation_contract",
+        "passed": 3,
+        "open": 0,
+        "static_wiring": 0
+      },
+      {
+        "crate": "risk-engine",
+        "target": "compounder_admission_contract",
+        "passed": 9,
+        "open": 0,
+        "static_wiring": 0
+      },
+      {
+        "crate": "quantum-arena",
+        "target": "slot_admission_open_diagnostics",
+        "passed": 4,
+        "open": 4,
+        "static_wiring": 0
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "stateful_transition_contract",
+        "passed": 22,
+        "open": 0,
+        "static_wiring": 0
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "liquidation_state_contract",
+        "passed": 7,
+        "open": 0,
+        "static_wiring": 0
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "decay_causality_contract",
+        "passed": 10,
+        "open": 0,
+        "static_wiring": 0
+      },
+      {
+        "crate": "execution-engine",
+        "target": "entry_route_contract",
+        "passed": 10,
+        "open": 0,
+        "static_wiring": 0
+      },
+      {
+        "crate": "execution-engine",
+        "target": "emergency_accounting_wiring_contract",
+        "passed": 2,
+        "open": 0,
+        "static_wiring": 1
+      }
+    ],
+    "unit": [
+      {
+        "crate": "quantum-arena",
+        "filter": "position::tests",
+        "passed": 8
+      },
+      {
+        "crate": "risk-engine",
+        "filter": "capital_compounder::tests",
+        "passed": 2
+      }
+    ],
+    "sessions": [
+      {
+        "id": 16258,
+        "scope": "44 integration tests",
+        "exit_code": 0
+      },
+      {
+        "id": 23960,
+        "scope": "10 unit +39 core integration",
+        "exit_code": 0
+      },
+      {
+        "chunk": "4bc4cb",
+        "scope": "4 OPEN slot diagnostics",
+        "exit_code": 0
+      },
+      {
+        "id": 14105,
+        "scope": "10 entry route",
+        "exit_code": 0
+      },
+      {
+        "id": 95127,
+        "scope": "2 emergency tests and final 3-bin check",
+        "exit_code": 0
+      }
+    ],
+    "check": {
+      "command": "cargo check --offline -j 1 -p trader-gemini-v5 --bin god_engine --bin evolver --bin walkforward_evolver",
+      "passed": true,
+      "warnings": [
+        "evolution-engine/latest_ts",
+        "evolution-engine/mode",
+        "evolution-engine/trades",
+        "walkforward_evolver/toxic"
+      ]
+    },
+    "execution_policy": "Offline; core fixtures in temporary directories; entry route mocks/paper; emergency pure arithmetic/static source; no account/order/journal.",
+    "limits": [
+      "Passing OPEN proves persistence, not repair.",
+      "No complete workspace suite.",
+      "No host exchange/fill end-to-end.",
+      "Races tested in controlled runs, not formal exhaustive proof.",
+      "Candidate-loop first-success bound inspected and compiled, no forced pipeline reproduction."
+    ]
+  },
+  "science": {
+    "skills": [
+      "firecrawl",
+      "firecrawl-research-index"
+    ],
+    "cli_available": false,
+    "connector_used": true,
+    "private_code_sent": false,
+    "note": ".firecrawl/XXXVII-kelly-risk.md",
+    "verified_body_sources": [
+      {
+        "url": "https://arxiv.org/abs/1603.06183",
+        "use": "Distinguish log growth and probabilistic drawdown under declared return assumptions."
+      },
+      {
+        "url": "https://arxiv.org/abs/1812.10371",
+        "use": "Explicit uncertainty set and worst-case growth; coverage/tractability caveats."
+      }
+    ],
+    "abstract_only_candidates": [
+      "https://arxiv.org/abs/2502.16859",
+      "https://arxiv.org/abs/2604.11577",
+      "https://arxiv.org/abs/1906.01981"
+    ],
+    "impact": "Restricted exact-Kelly claims to fixed binary payoffs; risk vs notional; no uncalibrated robust optimizer, quantum advantage or Millennium-equation integration."
+  },
+  "preservation": {
+    "source_before": [
+      {
+        "path": "crates/quantum-arena/src/position.rs",
+        "lines": 1001,
+        "normalized_chars": 37241,
+        "normalized_sha256": "51BACB5E8A6470A9F59B8362087B6D9D66ED1E5CD3A8028B8895ECF4F024EA11",
+        "sha256": "51BACB5E8A6470A9F59B8362087B6D9D66ED1E5CD3A8028B8895ECF4F024EA11"
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "lines": 5228,
+        "normalized_chars": 283759,
+        "normalized_sha256": "7484F0DF49D2991415B2C11B649F556A91DE1F6E09C2EDC614D65E245654DCA6",
+        "sha256": "7484F0DF49D2991415B2C11B649F556A91DE1F6E09C2EDC614D65E245654DCA6"
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "lines": 4770,
+        "normalized_chars": 262171,
+        "normalized_sha256": "7C89D56921C815E87FB4A2B243275F26A71940FD87AB1061A1943DD9AB5FB5A7",
+        "sha256": "7C89D56921C815E87FB4A2B243275F26A71940FD87AB1061A1943DD9AB5FB5A7"
+      },
+      {
+        "path": "crates/risk-engine/src/capital_compounder.rs",
+        "lines": 222,
+        "normalized_chars": 8302,
+        "normalized_sha256": "85685740667BD63E67ECAF6EB5A45FCEEAC7AE7EEED5FA24F18D0CB17481A526",
+        "sha256": "85685740667BD63E67ECAF6EB5A45FCEEAC7AE7EEED5FA24F18D0CB17481A526"
+      },
+      {
+        "path": "crates/risk-engine/src/epigenetic_fitness_landscape.rs",
+        "lines": 55,
+        "normalized_chars": 1971,
+        "normalized_sha256": "52D33246948F2E7FAB730F01A5A0E9638245C77D33913DDC1C18267AD113C410",
+        "sha256": "52D33246948F2E7FAB730F01A5A0E9638245C77D33913DDC1C18267AD113C410"
+      },
+      {
+        "path": "crates/execution-engine/src/router.rs",
+        "lines": 301,
+        "normalized_chars": 10490,
+        "normalized_sha256": "C154FB30FBD1B1246D265BCEF1D4B949697F735C4EA0D16654F9BAB40EA65C70",
+        "sha256": "C154FB30FBD1B1246D265BCEF1D4B949697F735C4EA0D16654F9BAB40EA65C70"
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "lines": 620,
+        "normalized_chars": 26025,
+        "normalized_sha256": "6502BC2754A6CEE873BD51707666769408883C10F8315C9EF44903027F3CEDEA",
+        "sha256": "6502BC2754A6CEE873BD51707666769408883C10F8315C9EF44903027F3CEDEA"
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/risk-engine/src/capital_compounder.rs",
+        "lines": 214,
+        "sha256": "F47B515CC4564504F0C990FF0BA4E47B5CBD9DA923749FCE866986D752E5C63F"
+      },
+      {
+        "path": "crates/quantum-arena/src/position.rs",
+        "lines": 1045,
+        "sha256": "BD6DEBFEF09B163A025259537D493A8D51D632F59DA4C5ADB0F896A4626C22DB"
+      },
+      {
+        "path": "crates/god-engine-core/src/entry_reservation.rs",
+        "lines": 66,
+        "sha256": "DC1A2C91B25997F4F32E6DA82C27CCF2D67BE863E39EC67B30392B5E2035BD16"
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "lines": 5223,
+        "sha256": "C9AB67AD6CCE6B5C613329B1889CE70282B8CBFDA8F6C75EBC87999E7162D79D"
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "lines": 4768,
+        "sha256": "F374FF4803FC6F48ECAD6CEB1584B83C3A1A2DA1C2FD0B9FD4C0247E8ABFAEC1"
+      },
+      {
+        "path": "crates/execution-engine/src/trade_accounting.rs",
+        "lines": 491,
+        "sha256": "B23699DC9A88D46F5B08012AA4483762F0DEB6A07BB257E7A744BB3C705A1652"
+      },
+      {
+        "path": "crates/risk-engine/tests/compounder_admission_contract.rs",
+        "lines": 94,
+        "sha256": "5B8053B10E15EA4075EF2F823FBA4A5A157D187A98E2C731D9A969544E288443"
+      },
+      {
+        "path": "crates/god-engine-core/tests/entry_reservation_contract.rs",
+        "lines": 173,
+        "sha256": "A780300D168A905423E79795D5CFC6E6015487402BE604D22EB5A9589928AB8B"
+      },
+      {
+        "path": "crates/quantum-arena/tests/position_generation_contract.rs",
+        "lines": 84,
+        "sha256": "439CB53147A85487AD86081BF2349BDCFDFEBDD8BACF390CA090083FDF80C3E3"
+      },
+      {
+        "path": "crates/quantum-arena/tests/slot_admission_open_diagnostics.rs",
+        "lines": 57,
+        "sha256": "B3DF2628B5E653D29F1DBADB8455455B5DEAB183A7AA95A416B39CFDDFAD6428"
+      },
+      {
+        "path": "crates/execution-engine/tests/emergency_accounting_wiring_contract.rs",
+        "lines": 31,
+        "sha256": "8A99FF5F739248FB1BB3BFCF80C1312246C043181AE88C7DE0C68A3C7F8ACA60"
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "lines": 620,
+        "sha256": "D6BB059EE5DDD84464BAFBEAB9BCE284FEB87CAFB56BCE512414BC9357281994"
+      },
+      {
+        "path": "crates/execution-engine/src/router.rs",
+        "lines": 301,
+        "sha256": "C154FB30FBD1B1246D265BCEF1D4B949697F735C4EA0D16654F9BAB40EA65C70"
+      },
+      {
+        "path": "crates/risk-engine/src/epigenetic_fitness_landscape.rs",
+        "lines": 55,
+        "sha256": "52D33246948F2E7FAB730F01A5A0E9638245C77D33913DDC1C18267AD113C410"
+      }
+    ],
+    "append_only_documents": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "normalized_chars": 123407,
+        "expected_sha256": "FEAE3F07246EBB5F1A92B1DB890D6D03D889E805E8DE5AEF54A2F0AEC4412644",
+        "actual_sha256": "FEAE3F07246EBB5F1A92B1DB890D6D03D889E805E8DE5AEF54A2F0AEC4412644",
+        "preserved": true
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "normalized_chars": 760522,
+        "expected_sha256": "0D70C173DDC120A5F31FB3693F8FD4775C6937CB5F1E76FE8C66C7261F60FC18",
+        "actual_sha256": "0D70C173DDC120A5F31FB3693F8FD4775C6937CB5F1E76FE8C66C7261F60FC18",
+        "preserved": true
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVI_2026-09-25.md",
+        "normalized_chars": 34938,
+        "expected_sha256": "60D089A93D7C1302EC038DE5CBBB53D50DC96534C1F9803C9A5E138441DFF162",
+        "actual_sha256": "60D089A93D7C1302EC038DE5CBBB53D50DC96534C1F9803C9A5E138441DFF162",
+        "preserved": true
+      }
+    ],
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "report_snapshot": {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVII_2026-09-25.md",
+      "sha256": "FDCF8CD001D50BFDAE7F85D7C3C2EE6F4395C48D6AFE021C0A7040D0FA7A7AB5",
+      "lines": 241
+    },
+    "market_orders_sent": false,
+    "account_requests_sent": false,
+    "operational_training_or_promotion": false,
+    "host_modified": true,
+    "operational_binary_built": false,
+    "process_kills_or_restarts": false,
+    "shared_build_cache_deleted": false,
+    "active_genomes_deliberately_modified": false,
+    "global_arena_layout_modified": false,
+    "position_layout_modified": false,
+    "core_private_proposal_storage_added": true
+  },
+  "next_priorities": [
+    "Durable intention and claim-submit-fill-exit identity",
+    "All writers/slot readers generation-scoped",
+    "Portfolio reservation ledger and joint quantity-risk projection",
+    "Typed veto causes and incident-scoped recovery",
+    "Fill fee terminality and exactly-once outcome learning",
+    "Causal multiasset spectral dependence with uncertainty and OOS",
+    "Genome consumers parity across environments",
+    "123 remaining complete Rust reads and non-Rust coverage"
+  ]
+}

@@ -12,21 +12,21 @@
   "scalp_kelly_fraction": 0.15743530234320013,
   "swing_kelly_fraction": 0.11169446586647712,
   "scalp_obi_threshold": 0.7971533668114402,
-  "scalp_tp_base": 0.0036,
-  "scalp_sl_base": 0.0018,
-  "swing_tp_base": 0.0250,
-  "swing_sl_base": 0.0125,
+  "scalp_tp_base": 0.018,
+  "scalp_sl_base": 0.008,
+  "swing_tp_base": 0.035,
+  "swing_sl_base": 0.015,
   "tp_horizon_curve": {
-    "a": -8.3741568,
-    "b": 0.2665
+    "a": -4.9600174176553296,
+    "b": 0.09143837668088041
   },
   "sl_horizon_curve": {
-    "a": -9.0673038,
-    "b": 0.2665
+    "a": -5.719394858308684,
+    "b": 0.08643759946713066
   },
-  "sl_atr_mult_btc": 1.25,
-  "tp_rr_ratio_btc": 2.0,
-  "min_confidence_btc": 0.62,
+  "sl_atr_mult_btc": 2.5,
+  "tp_rr_ratio_btc": 2.25,
+  "min_confidence_btc": 0.7,
   "veto_threshold_btc": 0.546013609820926,
   "tech_threshold": 0.018325377501964554,
   "ml_threshold_long": 0.62,

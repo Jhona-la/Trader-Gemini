@@ -1,4 +1,5 @@
 use crate::GlobalArena;
+use crate::horizon_policy::{curve_from_anchors, trailing_at_tau, HorizonParameter};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
@@ -621,9 +622,10 @@ impl SuperGenotype {
         // con el coste real. Como 2,0 quedaba por debajo del mínimo correcto
         // en la banda corta, el propio genoma de arranque era EV-negativo.
         //
-        // Ahora: el stop parte del mínimo viable impuesto por la fricción
-        // (nunca por debajo: ahí ninguna RR alcanzable supera el coste) y el
-        // objetivo se deriva del RR que ese stop exige.
+        // El stop parte del piso de la política de presupuesto de fricción;
+        // el objetivo satisface la ecuación binaria de EV al w_base supuesto.
+        // Ni ese piso ni elevar el TP demuestran una probabilidad de toque
+        // alcanzable: la probabilidad cambia generalmente con las barreras.
         let roundtrip = 2.0 * taker_base; // D-645: la física aplica 2xtaker
         let scalp_sl_math = (taker_base * 3.0).max(Self::min_viable_sl(roundtrip) * 1.15);
         let swing_sl_math = (taker_base * 15.0).max(scalp_sl_math * 2.0);
@@ -2012,36 +2014,25 @@ impl SuperGenotype {
     }
 
     pub fn sync_continuous_curves(&mut self) {
-        use crate::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
-        self.kelly_horizon_curve = HorizonCurve::through_two_points(
-            TAU_ANCHOR_FAST_MS,
-            self.scalp_kelly_fraction.max(0.001),
-            TAU_ANCHOR_SLOW_MS,
-            self.swing_kelly_fraction.max(0.001),
+        self.kelly_horizon_curve = curve_from_anchors(
+            self.scalp_kelly_fraction,
+            self.swing_kelly_fraction,
         );
-        self.trail_mult_horizon_curve = HorizonCurve::through_two_points(
-            TAU_ANCHOR_FAST_MS,
-            self.scalp_trail_atr_mult_base.max(0.001),
-            TAU_ANCHOR_SLOW_MS,
-            self.swing_trail_atr_mult_base.max(0.001),
+        self.trail_mult_horizon_curve = curve_from_anchors(
+            self.scalp_trail_atr_mult_base,
+            self.swing_trail_atr_mult_base,
         );
-        self.trail_act_horizon_curve = HorizonCurve::through_two_points(
-            TAU_ANCHOR_FAST_MS,
-            self.scalp_trail_act_atr.max(0.001),
-            TAU_ANCHOR_SLOW_MS,
-            self.swing_trail_act_atr.max(0.001),
+        self.trail_act_horizon_curve = curve_from_anchors(
+            self.scalp_trail_act_atr,
+            self.swing_trail_act_atr,
         );
-        self.trail_step_horizon_curve = HorizonCurve::through_two_points(
-            TAU_ANCHOR_FAST_MS,
-            self.scalp_trail_step_atr.max(0.001),
-            TAU_ANCHOR_SLOW_MS,
-            self.swing_trail_step_atr.max(0.001),
+        self.trail_step_horizon_curve = curve_from_anchors(
+            self.scalp_trail_step_atr,
+            self.swing_trail_step_atr,
         );
-        self.obi_horizon_curve = HorizonCurve::through_two_points(
-            TAU_ANCHOR_FAST_MS,
-            self.scalp_obi_threshold.max(0.001),
-            TAU_ANCHOR_SLOW_MS,
-            self.swing_obi_threshold.max(0.001),
+        self.obi_horizon_curve = curve_from_anchors(
+            self.scalp_obi_threshold,
+            self.swing_obi_threshold,
         );
     }
 
@@ -2052,62 +2043,47 @@ impl SuperGenotype {
     pub const SL_A_BOUNDS: (f64, f64) = (-10.5, -3.0);
     pub const SL_B_BOUNDS: (f64, f64) = (-0.2, 0.35);
 
-    /// C-05 (INFORME 14, FASE 0): τ de DECISIÓN acotada a la banda operativa
-    /// [TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS] (30s–12h). Con la τ degenerada
-    /// de la fusión espectral (escala 31 ≈ 146 años), la extrapolación
-    /// exponencial de `HorizonCurve::eval` fuera de banda EXPLOTA (SL/TP de
-    /// más del 100% del precio: los brackets +65%/−32% del informe). El
-    /// espectro puede VER más allá de la banda; NINGÚN lector del genoma
-    /// evalúa las curvas fuera de ella.
-    #[inline]
-    fn tau_in_operating_band(tau_ms: f64) -> f64 {
-        use crate::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
-        if tau_ms.is_finite() && tau_ms > 0.0 {
-            tau_ms.clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS)
-        } else {
-            TAU_ANCHOR_FAST_MS
-        }
-    }
-
+    /// Misma política de lectura que QuantumConfig (FMT-134). No recorta a
+    /// las anclas de calibración: esos recortes nunca existieron en el lector
+    /// operativo. No autoriza extrapolación como bracket ni elimina los
+    /// límites de horizonte, riesgo y ejecución de los consumidores.
     #[inline]
     pub fn tp_at_tau(&self, tau_ms: f64) -> f64 {
-        self.tp_horizon_curve
-            .eval(Self::tau_in_operating_band(tau_ms))
+        HorizonParameter::TakeProfit.evaluate(self.tp_horizon_curve, tau_ms)
     }
 
     #[inline]
     pub fn sl_at_tau(&self, tau_ms: f64) -> f64 {
-        self.sl_horizon_curve
-            .eval(Self::tau_in_operating_band(tau_ms))
+        HorizonParameter::StopLoss.evaluate(self.sl_horizon_curve, tau_ms)
     }
 
     #[inline]
     pub fn kelly_at_tau(&self, tau_ms: f64) -> f64 {
-        self.kelly_horizon_curve
-            .eval(Self::tau_in_operating_band(tau_ms))
-            .clamp(0.01, 3.0)
+        // Igual que from_genome/apply_to_arena: los genes son autoritativos,
+        // no las curvas derivadas que pudieron quedar obsoletas al deserializar.
+        HorizonParameter::Kelly.evaluate(
+            curve_from_anchors(self.scalp_kelly_fraction, self.swing_kelly_fraction),
+            tau_ms,
+        )
     }
 
     #[inline]
     pub fn trail_params_at_tau(&self, tau_ms: f64) -> (f64, f64, f64) {
-        // C-05: las tres curvas se evalúan en la MISMA τ de banda — sin el
-        // clamp, un τ degenerado separaba mult/act/step a decades de distancia.
-        let tau = Self::tau_in_operating_band(tau_ms);
-        let mult = self.trail_mult_horizon_curve.eval(tau).clamp(0.01, 20.0);
-        let act = self.trail_act_horizon_curve.eval(tau).clamp(0.01, 20.0);
-        let step = self.trail_step_horizon_curve.eval(tau).clamp(0.01, 20.0);
+        let (mult, act, step, _) = trailing_at_tau(
+            curve_from_anchors(self.scalp_trail_atr_mult_base, self.swing_trail_atr_mult_base),
+            curve_from_anchors(self.scalp_trail_act_atr, self.swing_trail_act_atr),
+            curve_from_anchors(self.scalp_trail_step_atr, self.swing_trail_step_atr),
+            tau_ms,
+        );
         (mult, act, step)
     }
 
     #[inline]
     pub fn obi_threshold_at_tau(&self, tau_ms: f64) -> f64 {
-        // MOD3/5-005 (INFORME 14, C-09): el techo del lector es 0.95, igual
-        // que la banda evolutiva del gen (mutate 0.05..1.0). Un techo de 0.60
-        // hacía invisible el 25% superior de la banda — el campeón con OBI
-        // 0.797 se leía como 0.60.
-        self.obi_horizon_curve
-            .eval(Self::tau_in_operating_band(tau_ms))
-            .clamp(0.05, 0.95)
+        HorizonParameter::ObiThreshold.evaluate(
+            curve_from_anchors(self.scalp_obi_threshold, self.swing_obi_threshold),
+            tau_ms,
+        )
     }
 
     /// X-005 (REHAB-1): invariante RR SOBRE CURVAS — TP(τ) ≥ SL(τ)·MIN_RR_MUTATION
@@ -2387,35 +2363,19 @@ impl SuperGenotype {
     /// operativa real del sistema, 40–60 bps → 50 bps).
     pub const REFERENCE_SL: f64 = 0.0050;
 
-    /// D-636b (DÉCIMA OLA) — BANDA OPERABLE DERIVADA DE LA FRICCIÓN.
-    ///
-    /// Al corregir la derivación del RR emergió un hecho físico que el
-    /// sistema nunca había representado: `RR_req(SL) = (1−w)/w + f/(w·SL)`
-    /// DIVERGE cuando SL → 0. A un stop de 1,5 bps con una fricción de ida y
-    /// vuelta de 10 bps se exigiría RR ≈ 17,8 — un recorrido que el mercado
-    /// no entrega antes de tocar el stop. **No es que el sistema no deba
-    /// operar a 1 ms: es que a 1 ms no existe operación rentable posible.**
-    ///
-    /// Esto NO reintroduce un bucket arbitrario. La frontera se DERIVA: una
-    /// operación es viable mientras la fricción no domine el riesgo asumido.
-    /// Expresado como presupuesto de fricción sobre el riesgo:
-    ///
-    /// ```text
-    /// f ≤ MAX_FRICTION_SHARE_OF_RISK · SL
-    /// ```
-    ///
-    /// Si la fricción supera el riesgo, la posición deja de ser una tesis de
-    /// mercado y pasa a ser una máquina de generar comisiones: su resultado
-    /// esperado lo fija el coste, no el análisis. La mitad es la línea
-    /// conservadora natural — el punto en que el coste iguala a la mitad de
-    /// lo que se arriesga conscientemente.
-    ///
-    /// El espectro sigue OBSERVÁNDOSE completo (las 19 escalas alimentan el
-    /// score espectral); lo que la banda acota es dónde se ABRE posición.
+    /// Presupuesto heredado de fricción: exige f <= q * SL, con q = 0.65.
+    /// f y SL son fracciones del nocional; q limita su cociente adimensional.
+    /// Es una política elegida, no una constante física ni una condición
+    /// necesaria de rentabilidad. En particular, la ecuación binaria
+    /// EV = p*TP - (1-p)*SL - f puede ser positiva fuera de este presupuesto.
+    /// Su validez económica requiere probabilidades de toque, costes y
+    /// soporte observacional; una malla temporal más amplia no los crea.
     pub const MAX_FRICTION_SHARE_OF_RISK: f64 = 0.65;
 
-    /// SL mínimo con el que una operación puede ser rentable dada la fricción.
-    /// Derivado, no elegido: `SL_min = f / MAX_FRICTION_SHARE_OF_RISK`.
+    /// Piso de SL de la política de fricción: SL_min = f/q.
+    /// El despeje se deriva de la desigualdad; q es una preferencia de riesgo.
+    /// Por compatibilidad, fee cero, negativo o no finito usa la referencia;
+    /// no representa aquí una simulación de mercado sin comisiones.
     #[inline]
     pub fn min_viable_sl(roundtrip_fee: f64) -> f64 {
         let f = if roundtrip_fee.is_finite() && roundtrip_fee > 0.0 {
@@ -2426,58 +2386,55 @@ impl SuperGenotype {
         f / Self::MAX_FRICTION_SHARE_OF_RISK
     }
 
-    /// Horizonte mínimo OPERABLE de ESTE genoma: la τ a la que su propia
-    /// curva de SL alcanza el mínimo viable. Como `SL(τ) = exp(a + b·ln τ)`
-    /// es monótona, se despeja en forma cerrada:
-    ///
-    /// ```text
-    /// ln τ_min = (ln SL_min − a) / b        (b > 0)
-    /// ```
-    ///
-    /// Con `b ≤ 0` (SL que no crece con el horizonte) la curva es plana o
-    /// decreciente: o bien todo el espectro es operable, o ninguno lo es.
+    /// Extremo inferior de `tradeable_band_ms`, o infinito si está vacía
+    /// o la curva es inválida. Un mínimo finito NO autoriza todos los
+    /// horizontes mayores: una pendiente negativa impone un máximo también.
     pub fn min_tradeable_tau_ms(&self, roundtrip_fee: f64) -> f64 {
-        let scales = crate::temporal_spectrum::SPECTRUM_SCALES_MS;
-        let (lo, hi) = (scales[0], scales[scales.len() - 1]);
-        let sl_min = Self::min_viable_sl(roundtrip_fee);
-        let b = self.sl_horizon_curve.b;
-        if b.abs() < 1e-12 {
-            return if self.sl_horizon_curve.eval(lo) >= sl_min {
-                lo
-            } else {
-                f64::INFINITY
-            };
-        }
-        let ln_tau = (sl_min.ln() - self.sl_horizon_curve.a) / b;
-        if !ln_tau.is_finite() {
-            return f64::INFINITY;
-        }
-        let tau = ln_tau.exp();
-        if b > 0.0 {
-            tau.clamp(lo, f64::INFINITY)
-        } else {
-            // SL decrece con tau: lo operable está por DEBAJO de tau; si ni
-            // siquiera la escala mas corta es viable, nada lo es.
-            if self.sl_horizon_curve.eval(lo) >= sl_min {
-                lo
-            } else {
-                f64::INFINITY
-            }
-        }
-        .min(if b > 0.0 { f64::INFINITY } else { hi })
+        self.tradeable_band_ms(roundtrip_fee)
+            .map_or(f64::INFINITY, |(lo, _)| lo)
     }
 
-    /// Extremos de la banda operable sobre los que se verifica la invariante
-    /// RR. Devuelve `None` si el genoma no tiene NINGUNA escala operable —
-    /// condición que el gate de promoción rechaza explícitamente.
+    /// Intersección cerrada del espectro representado con SL(tau) >= f/q.
+    /// En x = ln(tau / 1 ms), ln(SL) = a + b*x: b positivo impone un mínimo,
+    /// b negativo un máximo, y b cero admite todo o nada. Se comprueban los
+    /// extremos antes de dividir: no se aproxima una pendiente pequeña por
+    /// cero ni se exponencia una raíz situada fuera del dominio.
+    ///
+    /// `None` significa banda vacía o coeficientes no finitos. Los extremos
+    /// son aproximaciones f64 a la raíz, no cotas de intervalo certificadas.
+    /// Esta banda geométrica no demuestra EV positiva, soporte estadístico,
+    /// factibilidad de ejecución ni que los lectores operen sin recortes.
     pub fn tradeable_band_ms(&self, roundtrip_fee: f64) -> Option<(f64, f64)> {
         let scales = crate::temporal_spectrum::SPECTRUM_SCALES_MS;
-        let hi = scales[scales.len() - 1];
-        let lo = self.min_tradeable_tau_ms(roundtrip_fee);
-        if !lo.is_finite() || lo > hi {
+        let (lo, hi) = (scales[0], scales[scales.len() - 1]);
+        let a = self.sl_horizon_curve.a;
+        let b = self.sl_horizon_curve.b;
+        let floor = Self::min_viable_sl(roundtrip_fee);
+        if !a.is_finite() || !b.is_finite() || !floor.is_finite() || floor <= 0.0 {
             return None;
         }
-        Some((lo.max(scales[0]), hi))
+        let log_floor = floor.ln();
+        let log_sl_lo = a + b * lo.ln();
+        let log_sl_hi = a + b * hi.ln();
+        if !log_sl_lo.is_finite() || !log_sl_hi.is_finite() {
+            return None;
+        }
+        match (log_sl_lo >= log_floor, log_sl_hi >= log_floor) {
+            (true, true) => Some((lo, hi)),
+            (false, false) => None,
+            (lo_admitted, _) => {
+                // Different endpoint signs imply b != 0 and an in-domain root.
+                let root = ((log_floor - a) / b).exp().clamp(lo, hi);
+                if !root.is_finite() {
+                    return None;
+                }
+                if lo_admitted {
+                    Some((lo, root))
+                } else {
+                    Some((root, hi))
+                }
+            }
+        }
     }
 
     /// RR mínimo que el GATE de promoción exige, evaluado en el punto de

@@ -1,0 +1,979 @@
+{
+  "schema_version": 1,
+  "round": "XXIV",
+  "date": "2026-09-25",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIV_2026-09-25.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false,
+    "dirty_tree_preserved": true,
+    "exporter_head_diff_includes_XXIII": true
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 139,
+    "pending_complete_rust": 150,
+    "new_complete_reads": [
+      "crates/god-engine-core/src/stateful_engine.rs"
+    ],
+    "new_complete_initial_lines": 1390,
+    "reread": [
+      "crates/feature-engine/src/hawkes.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/god-engine-core/src/lib.rs",
+      "crates/god-engine-core/src/bootloader.rs",
+      "src/bin/feature_exporter.rs",
+      "src/bin/train_forest.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false
+  },
+  "new_ids": [
+    "FMT-206",
+    "FMT-207",
+    "FMT-208",
+    "FMT-209",
+    "FMT-210"
+  ],
+  "updated_ids": [
+    "FMT-004",
+    "FMT-001",
+    "FMT-002"
+  ],
+  "findings": [
+    {
+      "id": "FMT-206",
+      "is_new": true,
+      "priority": "P1",
+      "status": "locally_repaired",
+      "title": "Inicialización de ticks omitida después de warmup por velas",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 490
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 518
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 536
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+          "line": 38
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+          "line": 49
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+          "line": 56
+        }
+      ],
+      "mechanism": "process_kline escribe last_price sin sembrar EMA/Kalman de ticks; la condición antigua last_price==0 impedía su inicialización. Primer tick constante 100 daba EMA 9.5238095238/0.9950248756 y fair_price 95.2385487096.",
+      "impact": "Tendencia artificial dependiente de ruta de arranque. Mecanismo plausible de divergencia train/live, no atribución de PnL medida.",
+      "repair": "Sembrar estimadores del stream al primer tick aceptado, tick_count==0, y preservar recurrencias posteriores.",
+      "regressions": [
+        "warmup_seeds_tick_emas_without_artificial_trend",
+        "warmup_seeds_kalman_from_first_tick_not_zero",
+        "warmup_does_not_change_tick_ema_kernel"
+      ],
+      "limitations": [
+        "No igualdad de todo el vector tras historias de warmup distintas.",
+        "Se mantiene Q/R y cadencia de Kalman; FMT-002 no cerrado.",
+        "Cambio deliberado de estado inicial requiere validar compatibilidad de modelos antes de promoción."
+      ],
+      "closure_criteria": "Evaluar contrato completo de warmup/eventos/readiness y registrar versión de features/modelo en candidato validado."
+    },
+    {
+      "id": "FMT-207",
+      "is_new": true,
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Reset dejaba memoria cinemática y dirección, y mezcla dominios de ciclo de vida",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 414
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 422
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 476
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+          "line": 70
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+          "line": 79
+        }
+      ],
+      "mechanism": "last_inst_v, dir_velocity y last_trade_is_sell sobrevivían a reset. Otros buffers se vaciaban, generando estado híbrido y continuación distinta de una instancia nueva.",
+      "impact": "Cinemática y clasificación de ticks planos pueden depender de historia supuestamente borrada.",
+      "repair": "Limpiar los tres campos y probar equivalencia del snapshot/34D/10D en continuación plana.",
+      "limitations": [
+        "Reset aún borra rachas/cooldowns y reinstancia simd_nn Default.",
+        "No se comprobó que una reconexión concreta ejecutara este método.",
+        "Snapshot de prueba no es equivalencia formal de todos los estados privados."
+      ],
+      "closure_criteria": "Separar reset de observación/riesgo/modelo, versionar epochs y probar restauración sin borrar evidencia económica."
+    },
+    {
+      "id": "FMT-208",
+      "is_new": true,
+      "priority": "P1",
+      "status": "locally_repaired_not_graph_atomic",
+      "title": "Inputs inválidos modificaban estado; rechazo no propagado en todo el grafo",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 13
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 483
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 490
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 619
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 744
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 750
+        },
+        {
+          "file": "src/bin/feature_exporter.rs",
+          "line": 189
+        },
+        {
+          "file": "src/bin/feature_exporter.rs",
+          "line": 438
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 956
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 959
+        }
+      ],
+      "mechanism": "El tick comprobaba solo precio; volumen inválido, reloj atrasado y overflow derivado podían mutar varios estimadores. process_kline actualizaba sin validar la geometría OHLCV. Epoch cero se confundía con inicialización pendiente de vela.",
+      "repair": "APIs fallibles con error tipado antes de primera escritura; validación de precio/volumen/reloj/contador/notional/suma/retorno, OHLCV coherente; timestamp cero y empates válidos. Exportador v2 propaga error por registro y no emite observación/footer de éxito.",
+      "impact": "Evita contaminación local y éxito falso del exportador para los casos comprobados.",
+      "limitations": [
+        "Los wrappers unitarios descartan el error: host y trainer siguen con ellos.",
+        "Otros nodos pueden haber mutado o seguir procesando; no atomicidad global.",
+        "No se garantiza todo el dominio f64 de los subestimadores ni campos públicos manipulados.",
+        "API de vela carece de timestamp/cierre, así que validez numérica no implica causalidad.",
+        "Volumen válido numéricamente no acredita trade observado."
+      ],
+      "closure_criteria": "Propagar aceptación/rechazo, epoch/readiness y métricas hasta inferencia/evaluación sin afectar salidas defensivas."
+    },
+    {
+      "id": "FMT-209",
+      "is_new": true,
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Cooldown con panic/wrap/horizonte inválido y bandas todavía rígidas",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 206
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 267
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 288
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 322
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 329
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 356
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 387
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+          "line": 162
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+          "line": 169
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+          "line": 176
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+          "line": 183
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+          "line": 265
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_open_diagnostics.rs",
+          "line": 6
+        }
+      ],
+      "historical_crossrefs": [
+        "FMT-015"
+      ],
+      "mechanism": "Un mínimo 600000 excedía el cap 300000 del clamp, produciendo panic. Multiplicaciones enteras podían wrap; NaN se sustituía implícitamente y podía admitir. Bandas y rachas dan resultados diferentes a 59999 y 60000 ms.",
+      "repair": "Validar tau finito/positivo, saturar multiplicaciones, cap>=floor y piso final entero >=mínimo caller.",
+      "counterexamples": [
+        {
+          "kind": "red_green_test",
+          "case": "min_cooldown_ms=600000 / u64::MAX después de pérdida"
+        },
+        {
+          "kind": "red_green_test",
+          "case": "tau=NaN, min=0"
+        },
+        {
+          "kind": "red_green_test",
+          "case": "fallback tick_count=2^62 y min=1; antiguo wrap a cero"
+        },
+        {
+          "kind": "open_diagnostic",
+          "case": "pérdida a 59999ms y siguiente resultado no negativo a 3600000ms; frontera 59999/60000 cambia admisión"
+        }
+      ],
+      "limitations": [
+        "Tres bandas, |delta log tau|<0.60, pisos/techos y multiplicadores conservados sin calibración acreditada.",
+        "tau positivo <=10ms se sustituye por 30000ms.",
+        "v_t>0.0015 no es invariante a unidad de precio.",
+        "Fallback ticks*100 sigue suponiendo cadencia.",
+        "record_trade_outcome y lectores auxiliares no comparten toda la validación; rachas u32 conservan incrementos no saturados."
+      ],
+      "closure_criteria": "Memoria continua de evidencia de pérdida/exposición e incertidumbre con calibración fuera de muestra; mantener límites duros y contratos de unidades."
+    },
+    {
+      "id": "FMT-210",
+      "is_new": true,
+      "priority": "P1",
+      "status": "open",
+      "title": "Hawkes directo carece de contrato temporal y de intensidad validado",
+      "evidence": [
+        {
+          "file": "crates/feature-engine/src/hawkes.rs",
+          "line": 17
+        },
+        {
+          "file": "crates/feature-engine/src/hawkes.rs",
+          "line": 29
+        },
+        {
+          "file": "crates/feature-engine/src/hawkes.rs",
+          "line": 82
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_open_diagnostics.rs",
+          "line": 15
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_open_diagnostics.rs",
+          "line": 23
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_open_diagnostics.rs",
+          "line": 30
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 705
+        }
+      ],
+      "historical_crossrefs": [
+        "FMT-025"
+      ],
+      "novelty": "Módulo local distinto del estimador de otra ruta de FMT-025; no nueva familia de Hawkes en general.",
+      "mechanism": "Evento atrasado suma impulso sin decay, t=0 pierde primer intervalo y lote vacío devuelve ratio cero distinto del estado. Constructor recorta parámetros pero intensidades usan mu original. Excitación por OFI/proxy no identifica un proceso de conteo multiactivo.",
+      "repair": "Ninguna modificación del módulo; tres diagnósticos reproducen los defectos.",
+      "limitations": [
+        "No se midieron consecuencias de PnL, calibración, estabilidad ni extremos numéricos completos.",
+        "Dos canales bull/bear no acreditan matriz cruzada entre activos.",
+        "No aplicar radio espectral subcrítico de otro modelo a estos parámetros sin definir kernel/marcas."
+      ],
+      "closure_criteria": "Reparar API; definir eventos observados/unidades/marcas; estimar kernels, estabilidad y compensadores bajo hipótesis explícitas."
+    },
+    {
+      "id": "FMT-004",
+      "is_new": false,
+      "priority": "P2",
+      "status": "open_consumer_contract",
+      "title": "FFT de eventos y vela interna irregular no definen frecuencia física común",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 557
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 619
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 661
+        },
+        {
+          "file": "crates/god-engine-core/tests/stateful_open_diagnostics.rs",
+          "line": 39
+        }
+      ],
+      "mechanism": "Muestras de velas de warmup y retornos de ticks llegan al mismo espectro; análisis cada 64 eventos. Vela se reancla en evento que cruza el intervalo (60001ms), no malla regular.",
+      "repair": "Documentación y diagnóstico adicional; no migración temporal de features/modelos.",
+      "limitations": [
+        "La prueba anterior de igual número de muestras Hurst no implica mismo muestreo ni mismo estimador para feeds distintos.",
+        "Huecos largos no aportan evidencia para ventanas omitidas."
+      ],
+      "closure_criteria": "Contrato de tiempo/observación con error de discretización, disponibilidad y migración train/serve coordinada."
+    },
+    {
+      "id": "FMT-001",
+      "is_new": false,
+      "priority": "P1",
+      "status": "reconfirmed_open",
+      "title": "La velocidad direccional sigue perdiendo signo",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 542
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 587
+        }
+      ],
+      "mechanism": "inst_v deriva de abs(price-last_price) y se usa en dir_velocity; las correcciones de reset no restauran el signo del proceso.",
+      "repair": "No se modifica la ecuación direccional en XXIV.",
+      "closure_criteria": "Separar actividad absoluta de movimiento firmado y sus unidades; validar todos los consumidores."
+    },
+    {
+      "id": "FMT-002",
+      "is_new": false,
+      "priority": "P1",
+      "status": "reconfirmed_open_caller",
+      "title": "Sembrar Kalman no corrige Q/R ni su reloj",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 521
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 525
+        }
+      ],
+      "mechanism": "P=1, Q=1e-4 y R dinámico proporcional al precio no establecen una varianza consistente por activo/tiempo. La API sigue por actualización.",
+      "repair": "Solo se repara siembra tras warmup; no se cambia parametrización.",
+      "closure_criteria": "Unidades de varianza/tiempo, calibración y transporte de coordenadas con migración del contrato."
+    }
+  ],
+  "tests": {
+    "functional_distinct_passed": 103,
+    "new_functional": 23,
+    "previous_functional": 80,
+    "open_diagnostics_passed": 5,
+    "new_open_diagnostics": 5,
+    "total_distinct_tests_passed": 108,
+    "red_green_observed": 15,
+    "groups": [
+      {
+        "name": "stateful_transition_contract",
+        "functional": 22,
+        "new_functional": 22,
+        "open_diagnostics": 0
+      },
+      {
+        "name": "stateful_engine::tests",
+        "functional": 10,
+        "new_functional": 0,
+        "open_diagnostics": 0
+      },
+      {
+        "name": "feature_exporter::contract_tests",
+        "functional": 10,
+        "new_functional": 1,
+        "open_diagnostics": 0
+      },
+      {
+        "name": "train_dark_alpha::contract_tests",
+        "functional": 8,
+        "new_functional": 0,
+        "open_diagnostics": 0
+      },
+      {
+        "name": "train_forest::contract_tests",
+        "functional": 25,
+        "new_functional": 0,
+        "open_diagnostics": 0
+      },
+      {
+        "name": "label_evidence_contract",
+        "functional": 25,
+        "new_functional": 0,
+        "open_diagnostics": 0
+      },
+      {
+        "name": "spectral_risk_contract",
+        "functional": 3,
+        "new_functional": 0,
+        "open_diagnostics": 0
+      },
+      {
+        "name": "stateful_open_diagnostics",
+        "functional": 0,
+        "new_functional": 0,
+        "open_diagnostics": 5
+      }
+    ],
+    "initial_red": {
+      "total": 12,
+      "passed": 1,
+      "failed": 11,
+      "baseline": {
+        "path": "crates/god-engine-core/src/stateful_engine.rs",
+        "sha256": "42F0CAB0A8F58E978947E20DD13947DBB84BBDB6806C415E9EA574B57B8395A4",
+        "lines": 1390
+      },
+      "failures": [
+        "reset_clears_kinematics_and_tick_rule_memory",
+        "reset_followed_by_flat_ticks_matches_fresh_engine",
+        "warmup_does_not_change_tick_ema_kernel",
+        "invalid_kline_is_rejected_before_any_state_change",
+        "invalid_tick_volume_does_not_mutate_state",
+        "backward_tick_is_rejected_without_prefix_mutation",
+        "overflowing_notional_does_not_mutate_state",
+        "overflowing_relative_return_does_not_mutate_state",
+        "warmup_seeds_tick_emas_without_artificial_trend",
+        "zero_timestamp_is_a_valid_initialized_clock",
+        "warmup_seeds_kalman_from_first_tick_not_zero"
+      ]
+    },
+    "additional_red": {
+      "cooldown_tests": 4,
+      "weak_initial_fallback_test_improved": true,
+      "explanation": "Primer fallback con u64::MAX/min0 pasó y no detectaba wrap. Se reemplazó por 2^62/min1: falló antes de reparar. Los otros tres fallaron en corrida separada."
+    },
+    "commands": [
+      "cargo test -p god-engine-core --test stateful_transition_contract --test stateful_open_diagnostics --offline",
+      "cargo test -p god-engine-core --lib stateful_engine::tests --offline",
+      "cargo test --bin feature_exporter --bin train_dark_alpha --bin train_forest --offline",
+      "cargo test -p backtest-engine --test label_evidence_contract --test spectral_risk_contract --offline"
+    ],
+    "filter_mistake_corrected": "Una corrida filtrada por stateful ejecutó 10 unitarias y 0 integraciones. Se repitió sin filtro; ceros/repeticiones no se suman.",
+    "entire_workspace_suite_run": false,
+    "real_market_backtest": false,
+    "diagnostics_do_not_mean_fixed": true
+  },
+  "checks": {
+    "cargo_check_four_binaries_passed": true,
+    "rustfmt_checked": [
+      "crates/god-engine-core/tests/stateful_transition_contract.rs",
+      "crates/god-engine-core/tests/stateful_open_diagnostics.rs",
+      "src/bin/feature_exporter.rs"
+    ],
+    "whole_stateful_rustfmt_applied": false,
+    "reason": "Edición localizada; no reformatear masivamente código preexistente fuera del bloque.",
+    "git_diff_check_scoped_passed": true,
+    "existing_warnings": [
+      "evolution-engine latest_ts, mode, trades (3)",
+      "continuous_evolution_backtest unused Arc (1)"
+    ],
+    "latency_or_pnl_measured": false
+  },
+  "implementation": {
+    "modified": [
+      "crates/god-engine-core/src/stateful_engine.rs",
+      "src/bin/feature_exporter.rs"
+    ],
+    "added": [
+      "crates/god-engine-core/tests/stateful_transition_contract.rs",
+      "crates/god-engine-core/tests/stateful_open_diagnostics.rs"
+    ],
+    "layout_fields_added": false,
+    "legacy_api_preserved": true,
+    "fallible_api_added": [
+      "try_process_tick",
+      "try_process_kline"
+    ],
+    "fallible_consumer_connected": [
+      "src/bin/feature_exporter.rs"
+    ],
+    "host_and_forest_still_ignore_rejection": true,
+    "feature_model_format_changed": false,
+    "initial_warmup_behavior_changed": true,
+    "trading_defaults_added": false,
+    "cooldown_caller_minimum_preserved": true,
+    "mathematical_model_replacement_performed": false
+  },
+  "theory": {
+    "extensions": [
+      "T01",
+      "T03",
+      "T24"
+    ],
+    "new_theory_ids": [],
+    "implemented": "Contratos de transición, guardas y pruebas de ciclo de vida; no nuevo estimador probabilístico.",
+    "proposed_not_implemented": [
+      "Semigrupo exponencial y medida explícita de evidencia; distinguir observación por evento de intervalo temporal.",
+      "Memoria continua de pérdidas sobre log(tau) con incertidumbre y restricciones de riesgo.",
+      "Hawkes multiactivo de tipos de evento observados, matriz de kernels/marcas, estabilidad y compensadores.",
+      "Versionado/as-of/readiness y tests de refinamiento del espectro."
+    ],
+    "universal_continuity_certified": false,
+    "quantum_advantage_claimed": false,
+    "millennium_equation_added": false,
+    "genome_effect_on_production_measured": false
+  },
+  "research": {
+    "round": "XXIV",
+    "date": "2026-09-25",
+    "method": "Firecrawl research index; metadata/abstract search, reference expansion and targeted in-body reading",
+    "sources": [
+      {
+        "id": "arxiv:1604.01824",
+        "url": "https://arxiv.org/abs/1604.01824",
+        "title": "The statistical significance of multivariate Hawkes processes fitted to limit order book data",
+        "basis": "Body passages, Section 6/7",
+        "summary": "Compensator residual checks and calibration diagnostics are needed. The studied LOB event data do not certify this repository or trading profitability."
+      },
+      {
+        "id": "arxiv:1401.0903",
+        "url": "https://arxiv.org/abs/1401.0903",
+        "title": "Second order statistics characterization of Hawkes processes and non-parametric estimation",
+        "basis": "Body passages, Section II assumption H",
+        "summary": "Linear nonnegative causal integrable multivariate kernels require subcritical integrated-kernel spectral radius in the stationary framework. Identifiability from second-order statistics is conditional on that model, not on any empirical covariance."
+      },
+      {
+        "id": "arxiv:1308.6756",
+        "url": "https://arxiv.org/abs/1308.6756",
+        "title": "Apparent criticality and calibration issues in the Hawkes self-excited point process model: application to high-frequency financial data",
+        "basis": "Abstract returned by reference expansion",
+        "summary": "Nonstationarity, kernel estimation and timestamp quality can bias estimated endogeneity; no claim that this repository's effect has been measured."
+      }
+    ],
+    "notes": "Paraphrases only. No private code/data sent. Research endpoints do not return scrape/search job IDs for supported feedback endpoints; no unsupported feedback call made."
+  },
+  "preservation": {
+    "source_before": [
+      {
+        "path": "crates/god-engine-core/src/stateful_engine.rs",
+        "sha256": "42F0CAB0A8F58E978947E20DD13947DBB84BBDB6806C415E9EA574B57B8395A4",
+        "lines": 1390
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE",
+        "lines": 5102
+      },
+      {
+        "path": "crates/god-engine-core/src/bootloader.rs",
+        "sha256": "53916B4E62F94D40AD009647C839D6F590EAE319A20313DA79E9F8D0FB231344",
+        "lines": 396
+      },
+      {
+        "path": "src/bin/feature_exporter.rs",
+        "sha256": "6353DC7B37EFFB9BCA04A53E5B4B996F8E1C9FBF5CAE6A2124F9E95C28E937E3",
+        "lines": 434
+      },
+      {
+        "path": "src/bin/train_forest.rs",
+        "sha256": "5A000BE67718C78A751B6ADA655AD1B277F992FEA2C635693569560420118F00",
+        "lines": 1679
+      },
+      {
+        "path": "crates/feature-engine/src/hawkes.rs",
+        "sha256": "28959E601217FF5C1B57DBA358AF6663DA1251C0DF6231BF746C51B32A7CD0B6",
+        "lines": 133
+      },
+      {
+        "path": "crates/quantum-arena/src/genome.rs",
+        "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+        "lines": 3347
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/god-engine-core/src/stateful_engine.rs",
+        "sha256": "5C9F8778542F02CCB31744A1E8C4838215F7EC9D7E2BA295072B4D21AA745C39",
+        "lines": 1474
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE",
+        "lines": 5102
+      },
+      {
+        "path": "crates/god-engine-core/src/bootloader.rs",
+        "sha256": "53916B4E62F94D40AD009647C839D6F590EAE319A20313DA79E9F8D0FB231344",
+        "lines": 396
+      },
+      {
+        "path": "src/bin/feature_exporter.rs",
+        "sha256": "3BB4E9F431F9671578B7BF6DA81813C5E98A71E271DAE0AF28C2FEB4388E1F7D",
+        "lines": 451
+      },
+      {
+        "path": "src/bin/train_forest.rs",
+        "sha256": "5A000BE67718C78A751B6ADA655AD1B277F992FEA2C635693569560420118F00",
+        "lines": 1679
+      },
+      {
+        "path": "crates/feature-engine/src/hawkes.rs",
+        "sha256": "28959E601217FF5C1B57DBA358AF6663DA1251C0DF6231BF746C51B32A7CD0B6",
+        "lines": 133
+      },
+      {
+        "path": "crates/quantum-arena/src/genome.rs",
+        "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+        "lines": 3347
+      },
+      {
+        "path": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+        "sha256": "6AFA176CD1916CBEF3CA1316248D94236FEBDF8E6C86FC3C0488EB86DC18E29E",
+        "lines": 278
+      },
+      {
+        "path": "crates/god-engine-core/tests/stateful_open_diagnostics.rs",
+        "sha256": "91481AA66FC44669656899E43409F24475F5ABE2CBC27613214CA9AD5EA68389",
+        "lines": 44
+      }
+    ],
+    "unchanged_reference_source_count": 5,
+    "unchanged_reference_sources": [
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE",
+        "lines": 5102
+      },
+      {
+        "path": "crates/god-engine-core/src/bootloader.rs",
+        "sha256": "53916B4E62F94D40AD009647C839D6F590EAE319A20313DA79E9F8D0FB231344",
+        "lines": 396
+      },
+      {
+        "path": "src/bin/train_forest.rs",
+        "sha256": "5A000BE67718C78A751B6ADA655AD1B277F992FEA2C635693569560420118F00",
+        "lines": 1679
+      },
+      {
+        "path": "crates/feature-engine/src/hawkes.rs",
+        "sha256": "28959E601217FF5C1B57DBA358AF6663DA1251C0DF6231BF746C51B32A7CD0B6",
+        "lines": 133
+      },
+      {
+        "path": "crates/quantum-arena/src/genome.rs",
+        "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+        "lines": 3347
+      }
+    ],
+    "models_comparison_base": "docs/artifacts/auditoria_fundamentos_XXIII_2026-09-24.json#/preservation/models_after",
+    "model_count": 41,
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "all_models_unchanged": true,
+    "documentation_prefixes": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "before_chars": 87488,
+        "after_chars": 90072,
+        "added_chars": 2584,
+        "expected_sha256": "C4E1726F13DE62E4C9B1FF8D33893AFBB835C40BBC685191DBC43606997908CA",
+        "actual_prefix_sha256": "C4E1726F13DE62E4C9B1FF8D33893AFBB835C40BBC685191DBC43606997908CA",
+        "preserved": true
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "before_chars": 669070,
+        "after_chars": 675944,
+        "added_chars": 6874,
+        "expected_sha256": "11392C72A0B016CF740DEA5267F26A55782DE2D1F81AB7AF18194F53F7FABB6E",
+        "actual_prefix_sha256": "11392C72A0B016CF740DEA5267F26A55782DE2D1F81AB7AF18194F53F7FABB6E",
+        "preserved": true
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIII_2026-09-24.md",
+        "before_chars": 31931,
+        "after_chars": 33071,
+        "added_chars": 1140,
+        "expected_sha256": "A3EAB89351E2114A6C03A16D3388EFC8956A5FFBEAD3045E2EED45A35696503F",
+        "actual_prefix_sha256": "A3EAB89351E2114A6C03A16D3388EFC8956A5FFBEAD3045E2EED45A35696503F",
+        "preserved": true
+      }
+    ],
+    "prefix_normalization": "CRLF→LF; SHA256 sobre UTF8 del prefijo con longitud original en caracteres .NET",
+    "prior_findings_erased": false
+  },
+  "operational_guards": {
+    "orders_sent": false,
+    "accounts_or_genomes_changed": false,
+    "models_trained_or_promoted": false,
+    "market_downloaded": false,
+    "actual_corpus_exported": false,
+    "user_processes_restarted_or_killed": false,
+    "git_remote_operations": false
+  },
+  "open_debt": [
+    "150 fuentes Rust y demás archivos no auditados íntegramente",
+    "Propagación de rechazo y epochs por el grafo completo",
+    "Reset separado de riesgo/modelo",
+    "Hawkes temporal/calibración",
+    "FMT-001/002/004 unidades/signo/cadencia",
+    "Cooldown rígido y demás APIs de rachas",
+    "FMT-202..205 productores de tapes, FMT-200/201 diagnósticos y promoción/evaluación de rondas anteriores",
+    "Atribución genómica causal, dependencia multiactivo y validación económica"
+  ],
+  "final_document_validation": {
+    "status": "passed_scoped_checks",
+    "json_parsed": true,
+    "test_and_coverage_counts_valid": true,
+    "evidence_file_line_references_checked": 49,
+    "local_report_and_adenda_links_checked": 23,
+    "source_and_model_hashes_checked": 50,
+    "historical_prefixes_preserved": 3,
+    "issues": [],
+    "scope": "Verificación estructural y de conservación, no certificación integral del sistema."
+  }
+}

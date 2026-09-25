@@ -1,0 +1,523 @@
+{
+  "schema_version": 1,
+  "round": "XIX",
+  "date": "2026-09-24",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIX_2026-09-24.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 130,
+    "pending_complete_rust": 159,
+    "new_complete_reads": [
+      "crates/quantum-arena/src/position.rs",
+      "crates/execution-engine/src/order_registry.rs"
+    ],
+    "reread": [
+      "crates/execution-engine/src/reconciliation.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/god-engine-core/src/lib.rs",
+      "src/bin/god_engine.rs",
+      "crates/execution-engine/src/executor.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false,
+    "denominator_policy": "Inventario Rust histórico; no se infla la cobertura con tests nuevos. Lectura completa no equivale a certificación matemática ni dinámica."
+  },
+  "new_ids": [
+    "FMT-185",
+    "FMT-186",
+    "FMT-187",
+    "FMT-188",
+    "FMT-189"
+  ],
+  "updated_ids": [
+    "FMT-184"
+  ],
+  "findings": [
+    {
+      "id": "FMT-184",
+      "is_new": false,
+      "priority": "P1",
+      "status": "partially_contained",
+      "title": "Conciliación incapaz de representar hedge, múltiples asignaciones e incertidumbre",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/reconciliation.rs",
+          "line": 255
+        },
+        {
+          "file": "crates/execution-engine/src/reconciliation.rs",
+          "line": 319
+        },
+        {
+          "file": "src/bin/god_engine.rs",
+          "line": 1386
+        }
+      ],
+      "mechanism": "Netear piernas opuestas, interpretar ausencia como plano y proyectar un total remoto sobre un solo slot destruye información de exposición. Un epsilon absoluto confundía cantidad pequeña con inexistente.",
+      "reproductions": [
+        "Hedge +1/-1 cerraba posición local y liberaba margen.",
+        "Hedge desigual sustituía bruto por neto.",
+        "Dos asignaciones locales 0.4+0.6 frente a 1.2 remoto podían terminar en 1.2+0.6.",
+        "Ausencia, NaN e inversión no tenían semántica de no-resolución.",
+        "Cantidades 5e-9 y drift 2e-6 -> 1e-7 podían tratarse como plano."
+      ],
+      "repairs": [
+        "ArenaReconciliationReport separa adjustments y unresolved con motivos tipados.",
+        "Agrupación determinista por símbolo conserva filas por pierna, sin netear.",
+        "Rechazo de duplicados, modos incompatibles, signos inválidos, cantidad no finita y precio/leverage inválidos de exposición abierta.",
+        "Nocional y margen calculados deben ser finitos y positivos; overflow/underflow no se convierten en posiciones representables.",
+        "Hedge, dirección incompatible y múltiples asignaciones preservan estado local en vez de modificarlo como si se hubieran resuelto.",
+        "Ausencia no equivale a plano; cantidad no nula no se redondea a cero por epsilon absoluto.",
+        "Una referencia del universo por pasada, comprobación de duplicados y capacidad antes de indexar.",
+        "Wrapper compatible registra motivos; el API checked permite consumirlos estructuradamente."
+      ],
+      "tests": {
+        "new": 13,
+        "initial_behavioral_failures": 9,
+        "reinforcements": 4,
+        "updated_prior_diagnostic": 1
+      },
+      "residual_debt": [
+        "Host aún consume únicamente el conteo; unresolved no está integrado con admisión global.",
+        "Preservar estado local no representa toda la exposición remota ni constituye un ledger por pierna.",
+        "Campos serde default y position_side vacío como BOTH mantienen deuda FMT-179.",
+        "Sin contrato de frescura, watermark, epoch ni identidad persistente; snapshot viejo válido sigue siendo peligroso.",
+        "Escrituras de caso representable siguen fuera de una transacción común; precio, margen, fees y protecciones requieren ledger.",
+        "Adopción al registro usa símbolo/updateTime sin pierna: dos intentos pueden colisionar en una entrada.",
+        "La agrupación y los logs añaden coste no medido."
+      ],
+      "closure": "Identidad estable cuenta/entorno/instrumento/pierna, asignación causal de fills, snapshot completo/fresco, protocolo coherente de mutación y política de admisión de incertidumbre que preserve reducción de riesgo."
+    },
+    {
+      "id": "FMT-185",
+      "is_new": true,
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Merge de cantidad, precio, nocional y estados terminales sin evidencia causal suficiente",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/order_registry.rs",
+          "line": 279
+        },
+        {
+          "file": "crates/execution-engine/src/order_registry.rs",
+          "line": 312
+        }
+      ],
+      "mechanism": "max(cantidad) coexistía con precio/nocional de menor cobertura; terminales de igual rango podían sobrescribir FILLED.",
+      "reproductions": [
+        "(q=1,avg=100,quote=100) seguido de (0.5,90,45) producía (1,90,45).",
+        "Snapshot WS antiguo sobrescribía avg aunque se conservara la cantidad mayor.",
+        "CANCELED/EXPIRED tardíos sustituían FILLED.",
+        "EXPIRED_IN_MATCH no se reconocía como terminal."
+      ],
+      "repairs": [
+        "Precio y nocional acumulados REST condicionados a cobertura finita no decreciente.",
+        "Promedio WS condicionado a cobertura; fees por fill se procesan aparte.",
+        "FILLED absorbente y capaz de completar cancelación previa; UNKNOWN no degrada conocimiento; conflictos entre otros terminales conservan el primero.",
+        "EXPIRED_IN_MATCH se mapea a Expired según enum oficial."
+      ],
+      "tests": {
+        "new": 6,
+        "initial_behavioral_failures": 5,
+        "reinforcements": 1
+      },
+      "residual_debt": [
+        "Igual cantidad con tiempo más antiguo todavía puede sobrescribir avg/cum_quote.",
+        "No se resuelven identidad contradictoria, tuplas incompletas ni conflictos de estado/cantidad.",
+        "Persisten deudas de fees, divisas, signos y nocional WS de rondas anteriores.",
+        "Estado absorbente presupone identidad correcta y no demuestra orden causal total."
+      ],
+      "closure": "Orden parcial explícito por identidad, cobertura de fills y tiempo comparable; conflictos representados y resueltos, no ocultos por max o rango."
+    },
+    {
+      "id": "FMT-186",
+      "is_new": true,
+      "priority": "P1",
+      "status": "open",
+      "title": "Separación logarítmica de escalas presentada como ortogonalidad sin definición ni estimación",
+      "evidence": [
+        {
+          "file": "crates/quantum-arena/src/position.rs",
+          "line": 580
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 4304
+        }
+      ],
+      "mechanism": "Tres slots físicos; veto de igual dirección para diferencia logarítmica menor que 0.80. Tau inválida o <=10ms se sustituye por 30000ms. No hay kernel, producto interno ni estimador de dependencia que pruebe ortogonalidad.",
+      "reproductions": [
+        "NaN, infinito, tau negativa/cero y 1ns expresado en ms dan slot elegible por fallback.",
+        "En filtros causales exponenciales L2 normalizados, separación logarítmica 0.80 deja solapamiento sech(0.40)>0.92."
+      ],
+      "repairs": [],
+      "limits": [
+        "El contraejemplo es algebraico, no la correlación medida del motor.",
+        "Tres slots no refutan por sí solos una aproximación continua: falta declarar aproximación y error.",
+        "No se eliminó el control actual ni se sustituyó su umbral sin validación."
+      ],
+      "closure": "Definir estimandos/kernels, dependencia causal y presupuesto de concentración; comparar heurística con baselines y ablations fuera de muestra. Escala desconocida debe permanecer explícitamente desconocida."
+    },
+    {
+      "id": "FMT-187",
+      "is_new": true,
+      "priority": "P1",
+      "status": "open",
+      "title": "Tensor de features sin propiedad generacional puede asociarse a otra posición",
+      "evidence": [
+        {
+          "file": "crates/quantum-arena/src/position.rs",
+          "line": 31
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 4710
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1750
+        }
+      ],
+      "mechanism": "Apertura/cierre no versionan ni transfieren nn_entry_tensor. El productor escribe después de publicar is_open; el consumidor valida longitud y vuelve a bloquear después.",
+      "reproductions": [
+        "Abrir A, cargar 54 valores 7, cerrar A, abrir B: generation aumenta pero B conserva tensor de A."
+      ],
+      "repairs": [],
+      "limits": [
+        "No se midió cuántas filas reales están contaminadas.",
+        "No demuestra que toda brecha backtest/live provenga de este mecanismo.",
+        "Vaciar al cierre rompería al consumidor actual que lee después; no se aplicó ese parche incompleto."
+      ],
+      "closure": "Payload inmutable con instrumento, generación, evento y versiones; publicación coherente y receipt de cierre que lleve la misma evidencia al dataset, o muestra explícitamente no entrenable."
+    },
+    {
+      "id": "FMT-188",
+      "is_new": true,
+      "priority": "P1",
+      "status": "open",
+      "title": "Snapshots generacionales no cubren todos los escritores de campos públicos",
+      "evidence": [
+        {
+          "file": "crates/quantum-arena/src/position.rs",
+          "line": 449
+        },
+        {
+          "file": "crates/execution-engine/src/reconciliation.rs",
+          "line": 597
+        }
+      ],
+      "mechanism": "Open/close usan protocolo de transición, pero writers de quantity/margin/tau acceden directamente a atómicos sin generation común. Atomicidad de cada escalar no constituye atomicidad de la tupla.",
+      "reproductions": [
+        "Cambiar quantity por store público produce snapshots con cantidades distintas y generation idéntica."
+      ],
+      "repairs": [],
+      "limits": [
+        "Diagnóstico secuencial del contrato, no observación experimental de todas las carreras.",
+        "Stress open/close pasa pero no cubre reconciliación y todos los writers.",
+        "Spinlock sin cota de iteraciones; no se midieron percentiles de bloqueo."
+      ],
+      "closure": "Encapsular mutaciones y elegir propietario/protocolo común; verificar concurrencia incluyendo reconciliación, fills, protecciones y apertura."
+    },
+    {
+      "id": "FMT-189",
+      "is_new": true,
+      "priority": "P2_auxiliary_API",
+      "status": "open",
+      "title": "Timeout local fabrica EXPIRED sin prueba del exchange",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/order_registry.rs",
+          "line": 508
+        }
+      ],
+      "mechanism": "cleanup_stale_orders convierte antigüedad en estado terminal, habilitando purga posterior sin confirmación de cierre/cancelación.",
+      "reproductions": [
+        "Intención activa, avance de reloj y limpieza local -> Expired; prune_terminated elimina el registro."
+      ],
+      "repairs": [],
+      "limits": [
+        "No se localizó caller operativo de cleanup_stale_orders; sí de prune_terminated.",
+        "No se afirma que el mecanismo cause actualmente órdenes huérfanas en producción."
+      ],
+      "closure": "Stale/ResolutionRequired separado del estado del exchange, reservas e intención conservadas hasta evidencia concluyente, con query/cancel/fills y vigilancia."
+    }
+  ],
+  "theory": {
+    "id": "T42",
+    "status": "design_proposal_not_deployed",
+    "title": "Evidencia causal, estado suficiente y significado del cálculo espectral",
+    "commitments": [
+      "Identidad antes de merge o aprendizaje.",
+      "Unión de fills no es selección de snapshot acumulado.",
+      "Ausencia, conflicto y no-representabilidad no son ceros.",
+      "Continuidad analítica no elimina obligaciones finitas del ledger."
+    ],
+    "counterexample": {
+      "family": "h_tau(t)=sqrt(2/tau)*exp(-t/tau), t>=0, tau>0",
+      "normalization": "Integral h_tau(t)^2 dt = 1",
+      "inner_product": "2*sqrt(tau1*tau2)/(tau1+tau2) = sech(abs(log(tau1/tau2))/2)",
+      "log_separation": 0.8,
+      "normalized_overlap": 0.925007451905755,
+      "origin": "Derivación algebraica propia; test de contraejemplo, no simulación del motor ni correlación empírica."
+    },
+    "integration_gate": [
+      "Variables observables y unidades",
+      "Hipótesis e identificabilidad",
+      "Baseline y ablation",
+      "Estabilidad numérica y presupuesto de latencia",
+      "Prueba fuera de muestra y trazabilidad de promoción"
+    ],
+    "millennium_equations_implemented": false,
+    "quantum_advantage_claimed": false,
+    "omniscience_or_profitability_certified": false
+  },
+  "changes": {
+    "production_files": [
+      "crates/execution-engine/src/reconciliation.rs",
+      "crates/execution-engine/src/order_registry.rs"
+    ],
+    "new_test_files": [
+      "crates/execution-engine/tests/reconciliation_evidence_contract.rs",
+      "crates/execution-engine/tests/order_evidence_contract.rs",
+      "crates/execution-engine/tests/registry_open_diagnostics.rs",
+      "crates/quantum-arena/tests/position_evidence_diagnostics.rs"
+    ],
+    "updated_prior_test_files": [
+      "crates/execution-engine/tests/execution_open_diagnostics.rs"
+    ],
+    "additive_reports": [
+      "ATLAS_ANALITICO.md",
+      "INFORME_FORENSE_MAESTRO.md",
+      "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVIII_2026-09-24.md"
+    ]
+  },
+  "verification": {
+    "unique_tests_passed": 59,
+    "new_unique_tests": 26,
+    "initial_red_to_green": 14,
+    "new_reinforcements": 5,
+    "new_open_debt_diagnostics": 6,
+    "new_algebraic_counterexamples": 1,
+    "preexisting_unique_tests": 33,
+    "semantics": "Un diagnóstico open_debt que pasa confirma deuda pendiente; un test de contención no certifica resolución remota.",
+    "commands": [
+      {
+        "command": "cargo test -p execution-engine --test order_evidence_contract --test reconciliation_evidence_contract --test registry_open_diagnostics --test execution_open_diagnostics --test exchange_response_contract --offline -- --test-threads=1",
+        "passed": 35
+      },
+      {
+        "command": "cargo test -p quantum-arena --test position_evidence_diagnostics --offline -- --test-threads=1",
+        "passed": 4
+      },
+      {
+        "command": "cargo test -p execution-engine --lib order_registry::tests --offline -- --test-threads=1",
+        "passed": 8
+      },
+      {
+        "command": "cargo test -p execution-engine --lib reconciliation::tests --offline -- --test-threads=1",
+        "passed": 4
+      },
+      {
+        "command": "cargo test -p quantum-arena --lib position::tests --offline -- --test-threads=1",
+        "passed": 8
+      },
+      {
+        "command": "cargo check --bin god_engine --offline",
+        "exit_code": 0,
+        "previous_warnings": [
+          "evolution-engine latest_ts unused",
+          "evolution-engine mode unused",
+          "RealWfOutcome.trades unread"
+        ]
+      }
+    ],
+    "after_final_overflow_guard": "28 integration tests + 4 reconciliation unit tests rerun successfully; final cargo check exit 0. Repetitions not counted as new.",
+    "harness_correction": "Arc en vez de Box, corregido antes del baseline conductual. Error de compilación no contado como reproducción.",
+    "genome_environment": "Aviso TG_GENOME_ENV al crear arenas sin entorno; no se seleccionó prod/demo para silenciarlo."
+  },
+  "integrity_verification": {
+    "json_parsed": true,
+    "source_hashes_matched": 14,
+    "protected_source_hashes_unchanged": 7,
+    "historical_normalized_prefixes_preserved": 3,
+    "append_added_characters": {
+      "ATLAS_ANALITICO.md": 2266,
+      "INFORME_FORENSE_MAESTRO.md": 5420,
+      "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVIII_2026-09-24.md": 1183
+    },
+    "report_local_links_checked": 15,
+    "report_local_links_invalid": 0,
+    "rustfmt_check_own_seven_rust_files": true,
+    "git_diff_check_two_production_sources": true,
+    "scope": "Comprobaciones locales de los archivos enumerados; no certifican todo el repositorio ni el estado remoto."
+  },
+  "research": {
+    "skill": "Firecrawl: contraste de contrato oficial del exchange",
+    "transport": "Conector; CLI no disponible, no se instaló software.",
+    "sources": [
+      {
+        "url": "https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/common-definition",
+        "role": "Primary authoritative enum; supports EXPIRED_IN_MATCH and BOTH/LONG/SHORT",
+        "scrape_id": "01a0d652-6263-7062-b149-d7425f3f5054",
+        "http_status": 200,
+        "content_sufficient": true,
+        "feedback": "good_sent"
+      },
+      {
+        "url": "https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/user-data-streams/Event-Order-Update",
+        "role": "Not relied upon: navigation-only response",
+        "scrape_id": "01a0d651-7026-74cf-989d-5153e11b7782",
+        "http_status": 200,
+        "content_sufficient": false,
+        "feedback": "partial_sent"
+      }
+    ],
+    "third_party_index_results_used_as_authority": false,
+    "private_repository_content_uploaded": false
+  },
+  "source_hashes": [
+    {
+      "path": "crates/execution-engine/src/reconciliation.rs",
+      "sha256": "E22B216AAA34F5A427AC17AC4B071175729AF1E8AE3F70FE140C70794B71FD3A",
+      "lines": 829
+    },
+    {
+      "path": "crates/quantum-arena/src/position.rs",
+      "sha256": "51BACB5E8A6470A9F59B8362087B6D9D66ED1E5CD3A8028B8895ECF4F024EA11",
+      "lines": 1001
+    },
+    {
+      "path": "crates/execution-engine/src/order_registry.rs",
+      "sha256": "22BE01912C108AA690D3EA2276F53D65BC47023E94C70AC99DDF3281A01548F1",
+      "lines": 836
+    },
+    {
+      "path": "crates/execution-engine/src/order_types.rs",
+      "sha256": "1ABC654E3397E998D0656CEA6C720AE5AFFC1F3D2B6BDBD46B9B12C9BC63C1E6",
+      "lines": 283
+    },
+    {
+      "path": "crates/execution-engine/src/executor.rs",
+      "sha256": "AF8729346B4DAFD3380B96DF6DC65FD6CBA6C33548AEF07C988A1ED165F6BB03",
+      "lines": 3881
+    },
+    {
+      "path": "crates/execution-engine/src/user_data_stream.rs",
+      "sha256": "33C2CC1AEFC61D74BE49515B3C2210C4D03594E1825D8CD00DDBC77AAE73CFF0",
+      "lines": 1020
+    },
+    {
+      "path": "src/bin/god_engine.rs",
+      "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62",
+      "lines": 4814
+    },
+    {
+      "path": "crates/quantum-arena/src/genome.rs",
+      "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+      "lines": 3347
+    },
+    {
+      "path": "crates/quantum-arena/src/config.rs",
+      "sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140",
+      "lines": 495
+    },
+    {
+      "path": "crates/execution-engine/tests/reconciliation_evidence_contract.rs",
+      "sha256": "9D057CA5E48C39DFCAFC4AE753BD44A5A4DCEE431313C09DDB461FFF89A3417C",
+      "lines": 229
+    },
+    {
+      "path": "crates/execution-engine/tests/order_evidence_contract.rs",
+      "sha256": "E761A9172448742899FBE078D1587F4620AA6617F9B075C55CC90412CC713AFC",
+      "lines": 83
+    },
+    {
+      "path": "crates/execution-engine/tests/registry_open_diagnostics.rs",
+      "sha256": "9C2789A69E7B7C81BBC99F007A708799E8F15FFD6F227AC72B211D55672EBA3D",
+      "lines": 46
+    },
+    {
+      "path": "crates/quantum-arena/tests/position_evidence_diagnostics.rs",
+      "sha256": "36121F7CA138C0C414BC7D8F33C2973ADC1E830EDF38E57512D5AABC0E45477D",
+      "lines": 53
+    },
+    {
+      "path": "crates/execution-engine/tests/execution_open_diagnostics.rs",
+      "sha256": "D0DC10EE0213D8A9CB3D8364BCBBF68DD3C75CB89EB1A0A7B959A88A06D044B8",
+      "lines": 129
+    }
+  ],
+  "protected_sources": [
+    {
+      "path": "crates/quantum-arena/src/position.rs",
+      "sha256": "51BACB5E8A6470A9F59B8362087B6D9D66ED1E5CD3A8028B8895ECF4F024EA11",
+      "lines": 1001
+    },
+    {
+      "path": "crates/execution-engine/src/order_types.rs",
+      "sha256": "1ABC654E3397E998D0656CEA6C720AE5AFFC1F3D2B6BDBD46B9B12C9BC63C1E6",
+      "lines": 283
+    },
+    {
+      "path": "crates/execution-engine/src/executor.rs",
+      "sha256": "AF8729346B4DAFD3380B96DF6DC65FD6CBA6C33548AEF07C988A1ED165F6BB03",
+      "lines": 3881
+    },
+    {
+      "path": "crates/execution-engine/src/user_data_stream.rs",
+      "sha256": "33C2CC1AEFC61D74BE49515B3C2210C4D03594E1825D8CD00DDBC77AAE73CFF0",
+      "lines": 1020
+    },
+    {
+      "path": "src/bin/god_engine.rs",
+      "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62",
+      "lines": 4814
+    },
+    {
+      "path": "crates/quantum-arena/src/genome.rs",
+      "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+      "lines": 3347
+    },
+    {
+      "path": "crates/quantum-arena/src/config.rs",
+      "sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140",
+      "lines": 495
+    }
+  ],
+  "append_only_prefixes": [
+    {
+      "path": "ATLAS_ANALITICO.md",
+      "chars": 72981,
+      "hash": "62D5C08E47486E75931DB7B9DBF7C84D564FB94364189DA5D7AC6321AE6A48BC"
+    },
+    {
+      "path": "INFORME_FORENSE_MAESTRO.md",
+      "chars": 635660,
+      "hash": "FCEE8E76D148D63ACFFE14469C5DC713A8DF1F810FC213074532A87F4399B4DC"
+    },
+    {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVIII_2026-09-24.md",
+      "chars": 34442,
+      "hash": "2D4802066ED1783E00171EE008A2F2A13F8AD34A0994106B0F3FA2C603DE0E64"
+    }
+  ],
+  "prefix_hash_normalization": "CRLF -> LF; first chars UTF-16 string units hashed as UTF-8 SHA-256. Preserves content prefix, not raw line-ending identity.",
+  "safety": {
+    "engine_started_or_restarted": false,
+    "live_account_accessed": false,
+    "real_orders_sent": false,
+    "operational_genomes_intentionally_modified": false,
+    "git_published": false,
+    "full_system_certified": false
+  }
+}

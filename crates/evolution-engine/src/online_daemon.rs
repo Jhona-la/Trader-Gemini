@@ -2,13 +2,16 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+use crate::return_evidence::{EvidenceEwma, ReturnEvidence, latch_degradation, summarize_returns};
 
 /// Estructura atómica que reside en la memoria compartida entre el Motor de Evolución y el Motor de Ejecución
 #[derive(Clone)]
 pub struct QuantumHotSwapState {
     pub has_new_genome: Arc<AtomicBool>,
     pub active_genome_id: Arc<AtomicUsize>,
+    /// Legacy scalar: descriptive t-score, NaN when undefined. Prefer typed evidence.
     pub shadow_sharpe_ratio: Arc<RwLock<f64>>,
+    pub shadow_return_evidence: Arc<RwLock<Option<ReturnEvidence>>>,
 }
 
 impl QuantumHotSwapState {
@@ -16,7 +19,8 @@ impl QuantumHotSwapState {
         Self {
             has_new_genome: Arc::new(AtomicBool::new(false)),
             active_genome_id: Arc::new(AtomicUsize::new(0)),
-            shadow_sharpe_ratio: Arc::new(RwLock::new(0.0)),
+            shadow_sharpe_ratio: Arc::new(RwLock::new(f64::NAN)),
+            shadow_return_evidence: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -267,12 +271,14 @@ pub struct LiveEvolutionDaemon {
     pub is_demo: bool, // Identifica si estamos en Testnet para acelerar la evolución
     pub ledger: storage_engine::evolution_ledger::EvolutionLedger,
     pub champion_path: String,
-    pub ewma_sharpe: f64, // HC-12: Sharpe adaptativo para kill switch
+    pub ewma_sharpe: f64, // Legacy view of descriptive t-score EWMA, NOT Sharpe.
+    drift_evidence: EvidenceEwma,
+    return_observation_revision: u64,
     pub forest: crate::online_random_forest::TrueOnlineRandomForest,
     /// F4.5: PnL realizado visto por coin en el ciclo anterior — para muestrear
     /// retornos de la ESTRATEGIA (deltas reales), no beta del mercado.
     pub last_realized_by_coin: std::collections::HashMap<usize, f64>,
-    /// FIX #1600: Acumulación histórica persistente de retornos de estrategia sobre ventana deslizante
+    /// Rolling PnL-delta observations: not individually reconciled trade returns.
     pub returns_history: Vec<f64>,
     /// T-10 — retornos ETIQUETADOS por moneda: el walk-forward requiere que
     /// el momentum decida sobre el retorno de LA MISMA moneda (antes: el
@@ -314,6 +320,8 @@ impl LiveEvolutionDaemon {
             ledger,
             champion_path: champion_path.to_string(),
             ewma_sharpe: 0.0,
+            drift_evidence: EvidenceEwma::default(),
+            return_observation_revision: 0,
             forest: crate::online_random_forest::TrueOnlineRandomForest::new(5000),
             last_realized_by_coin: std::collections::HashMap::new(),
             returns_history: Vec::with_capacity(1024),
@@ -324,7 +332,7 @@ impl LiveEvolutionDaemon {
     }
 
     /// Ciclo asincrónico que corre paralelo al bot de producción
-    /// Ingiere datos reales y entrena tensores cuánticos en las sombras.
+    /// Ingiere telemetría y entrena modelos clásicos auxiliares.
     /// F5.4: sin unwrap — telemetría ausente ⇒ ingesta deshabilitada con log,
     /// el resto del daemon (umbrales, drift) sigue vivo.
     pub async fn run_online_learning_loop(&mut self) {
@@ -333,36 +341,49 @@ impl LiveEvolutionDaemon {
         ));
 
         let mut pending_new_obs = 0;
+        let mut telemetry_read_failed = false;
 
         loop {
             tokio::time::sleep(Duration::from_millis(500)).await;
 
             // Ingest Telemetry into the Shadow Forest
             if let Some(reader) = telemetry_reader.as_mut() {
-                if let Ok(frames) = reader.read_latest_frames() {
-                    for f in frames {
-                        // SUBSYSTEM_TENSOR_PREDICTOR = 12, FRAME_PREDICTION_VS_REALITY = 30
-                        if f.subsystem_id == 12 && f.frame_type == 30 {
-                            // E-02 / #23: Inyectar variables reales leídas del bus mmap
-                            // payload[0]=ml_prob, [1]=is_long, [2]=obi, [3]=net_pnl_pct, [4]=atr_pct, [5]=hurst
-                            let ml_prob = f.payload[0];
-                            let is_long = f.payload[1] > 0.5;
-                            let obi = f.payload[2];
-                            let net_pnl_pct = f.payload[3];
-                            let atr_pct = f.payload[4];
-                            let hurst = if f.payload[5] > 0.0 { f.payload[5] } else { 0.50 };
-
-                            let features = [
-                                obi,
-                                0.0,
-                                1.0,
-                                atr_pct,
-                                hurst,
-                                if is_long { ml_prob - 0.50 } else { 0.50 - ml_prob },
-                            ];
-                            self.forest.shadow_evaluate_with_features(features, net_pnl_pct);
-                            pending_new_obs += 1;
+                match reader.read_latest_frames() {
+                    Ok(frames) => {
+                        if telemetry_read_failed {
+                            println!("ℹ️ [TELEMETRY] lectura recuperada; continuidad histórica NO acreditada");
+                            telemetry_read_failed = false;
                         }
+                        for f in frames {
+                            // SUBSYSTEM_TENSOR_PREDICTOR = 12, FRAME_PREDICTION_VS_REALITY = 30
+                            if f.subsystem_id == 12 && f.frame_type == 30 {
+                                // E-02 / #23: Inyectar variables reales leídas del bus mmap
+                                // payload[0]=ml_prob, [1]=is_long, [2]=obi, [3]=net_pnl_pct, [4]=atr_pct, [5]=hurst
+                                let ml_prob = f.payload[0];
+                                let is_long = f.payload[1] > 0.5;
+                                let obi = f.payload[2];
+                                let net_pnl_pct = f.payload[3];
+                                let atr_pct = f.payload[4];
+                                let hurst = if f.payload[5] > 0.0 { f.payload[5] } else { 0.50 };
+
+                                let features = [
+                                    obi,
+                                    0.0,
+                                    1.0,
+                                    atr_pct,
+                                    hurst,
+                                    if is_long { ml_prob - 0.50 } else { 0.50 - ml_prob },
+                                ];
+                                self.forest.shadow_evaluate_with_features(features, net_pnl_pct);
+                                pending_new_obs += 1;
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        if !telemetry_read_failed {
+                            eprintln!("⚠️ [TELEMETRY] evidencia no disponible: {error}; no equivale a cero observaciones");
+                        }
+                        telemetry_read_failed = true;
                     }
                 }
             }
@@ -497,6 +518,7 @@ impl LiveEvolutionDaemon {
                     let ret = delta / capital;
                     if ret.is_finite() {
                         self.returns_history.push(ret);
+                        self.return_observation_revision = self.return_observation_revision.saturating_add(1);
                         let coin_window = self.returns_by_coin.entry(coin_id).or_default();
                         coin_window.push(ret);
                         if coin_window.len() > 400 {
@@ -540,7 +562,7 @@ impl LiveEvolutionDaemon {
             self.last_realized_by_coin.insert(coin_id, realized);
         }
 
-        // Mantener ventana deslizante acotada a los 1000 trades más recientes
+        // Bound to 1000 observed PnL deltas, not necessarily 1000 trades.
         if self.returns_history.len() > 1000 {
             let drain_count = self.returns_history.len() - 1000;
             self.returns_history.drain(0..drain_count);
@@ -552,8 +574,8 @@ impl LiveEvolutionDaemon {
     }
 
     /// FASE 3 — Watchdog de rollback automático: si el genoma recién
-    /// promovido acumula evidencia de edge NEGATIVO estadísticamente
-    /// significativo (t-stat <= -2.0 con >= 20 observaciones post-promoción),
+    /// promovido cruza la política heurística de degradación
+    /// (t descriptivo <= -2.0 con >= 20 deltas post-promoción),
     /// revierte al padre vía el embudo versionado y lo reaplica al arena.
     /// Es el complemento operativo del gate de `promote`: sanidad antes,
     /// rendición de cuentas después.
@@ -564,7 +586,21 @@ impl LiveEvolutionDaemon {
         if self.post_promo_returns.len() < 20 {
             return;
         }
-        let t_stat = Self::calculate_ransac_sharpe(&self.post_promo_returns);
+        let evidence = match summarize_returns(&self.post_promo_returns) {
+            Ok(evidence) => evidence,
+            Err(error) => {
+                eprintln!("[ROLLBACK EVIDENCE] Lote inválido: {error:?}; no se inventa un t-stat.");
+                return;
+            }
+        };
+        let Some(t_stat) = evidence.studentized() else {
+            // Constant losses are not a finite t-test. Latch safety, but do not
+            // fabricate significance or mutate a genome on this degenerate test.
+            if latch_degradation(&self.arena.kill_switch_active, evidence.is_constant_loss()) {
+                eprintln!("[ROLLBACK EVIDENCE] Pérdidas constantes: kill-switch armado; rollback requiere revisión de evidencia y linaje.");
+            }
+            return;
+        };
         if t_stat <= -2.0 {
             println!(
                 "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {:.2} sobre {} obs post-promoción. Revirtiendo al padre {}.",
@@ -605,77 +641,59 @@ impl LiveEvolutionDaemon {
 
         self.sample_realized_returns();
 
-        // FIX BLOQUEO #3: Reducir umbral de 10 a 3 para micro-capital ($13)
-        // Con $13 y scalping, cada trade cuenta. 3 observaciones bastan para arrancar.
-        if self.returns_history.len() < 3 {
+        // Retain the former estimator's minimum as a consumer policy, not a
+        // significance theorem. These are PnL deltas, not identified trades.
+        if self.returns_history.len() < 10 {
             return;
         }
-
-        // Si el Sharpe Cuántico RANSAC > 1.2 y supera a la estrategia de producción...
-        let current_shadow_sharpe = Self::calculate_ransac_sharpe(&self.returns_history);
-
+        let evidence = match summarize_returns(&self.returns_history) {
+            Ok(evidence) => evidence,
+            Err(error) => {
+                *self.state.shadow_return_evidence.write() = None;
+                *self.state.shadow_sharpe_ratio.write() = f64::NAN;
+                eprintln!("[EVOLUTION EVIDENCE] Lote inválido: {error:?}; sin búsqueda ni promoción.");
+                return;
+            }
+        };
+        *self.state.shadow_return_evidence.write() = Some(evidence);
+        *self.state.shadow_sharpe_ratio.write() = evidence.studentized().unwrap_or(f64::NAN);
         let elapsed_warmup = self.daemon_start_time.elapsed().as_secs();
         if elapsed_warmup < self.warmup_duration_secs {
             println!(
-                "⏳ [WARMUP PHASE] {}/{} segundos. Sharpe: {:.2}. Esperando maduración de tensores...",
-                elapsed_warmup, self.warmup_duration_secs, current_shadow_sharpe
+                "[WARMUP POLICY] {}/{} segundos. Evidencia descriptiva: {:?}.",
+                elapsed_warmup, self.warmup_duration_secs, evidence.statistic
             );
             return;
         }
-
-        println!(
-            "🧜 [ONLINE EVOLUTION] Evaluando Shadow Strategy con {} trades reales acumulados... t-stat RANSAC: {:.2}",
-            self.returns_history.len(),
-            current_shadow_sharpe
-        );
-
-        {
-            let mut sr = self.state.shadow_sharpe_ratio.write();
-            *sr = current_shadow_sharpe;
-        }
-
-        // --- FASE 9 / HC-08: DRIFT DETECTION & KILL SWITCH (EWMA ADAPTIVE - D-389) ---
-        // N-01: Se evalúa siempre sobre muestra representativa (>= 25 trades) sin importar el Sharpe puntual
-        if self.returns_history.len() >= 25 {
-            if self.ewma_sharpe == 0.0 {
-                self.ewma_sharpe = current_shadow_sharpe;
-            } else {
-                self.ewma_sharpe = 0.1 * current_shadow_sharpe + 0.9 * self.ewma_sharpe;
+        let Some(current_shadow_sharpe) = evidence.studentized() else {
+            if evidence.n >= 25 && latch_degradation(&self.arena.kill_switch_active, evidence.is_constant_loss()) {
+                eprintln!("[DRIFT EVIDENCE] Pérdidas constantes observadas: kill-switch armado. No es un p-valor ni un Sharpe.");
             }
-
-            // D-389: calculate_ransac_sharpe retorna el t-statistic de Student (inlier_mean / inlier_std * sqrt(N)).
-            // Un t-stat entre 0.0 y +1.0 representa retornos positivos leves en muestras pequeñas.
-            // Para activar Kill Switch por degradación del edge, el t-stat debe ser estadísticamente NEGATIVO
-            // con significancia (t < -1.50, p < 0.07 de que el edge negativo sea casual).
-            // CERT-M8-H02: el `!self.is_demo` anterior desarmaba el kill-switch
-            // exactamente en el único entorno donde la autoevolución está
-            // ARMADA por defecto y las mutaciones son vivas — un genoma
-            // degradado en demo seguía tradando hasta que el (mucho más
-            // lento) rollback watchdog acumulara 20 observaciones. El
-            // kill-switch es una red de seguridad del TRADING, no de la
-            // promoción: debe ser env-independiente.
-            if self.ewma_sharpe < -1.50
-                && !self.arena.kill_switch_active.load(Ordering::Relaxed)
-            {
-                println!(
-                    "🚨 [DRIFT DETECTION] t-stat EWMA degradado significativamente a {:.2} sobre {} trades. Activando Kill Switch para detener ejecuciones hasta reentrenar.",
-                    self.ewma_sharpe,
-                    self.returns_history.len()
-                );
-                self.arena.kill_switch_active.store(true, Ordering::Relaxed);
+            return; // Zero dispersion cannot feed a fabricated promotion score.
+        };
+        println!(
+            "[ONLINE EVOLUTION] {} deltas de PnL observados; media studentizada descriptiva: {:.2}",
+            self.returns_history.len(), current_shadow_sharpe
+        );
+        // FMT-055/056: smooth only NEW observation revisions. Overlapping windows
+        // are not independent evidence; this threshold is a policy, not a p-value.
+        if self.returns_history.len() >= 25 {
+            if let Err(error) = self.drift_evidence.observe(
+                self.return_observation_revision, current_shadow_sharpe, 0.1,
+            ) {
+                eprintln!("[DRIFT EVIDENCE] Suavizado rechazado: {error:?}");
                 return;
             }
-
-            // Auto-reset / reactivación si el edge se estabiliza (t-stat > -0.50)
-            if self.arena.kill_switch_active.load(Ordering::Relaxed) && self.ewma_sharpe > -0.50 {
+            self.ewma_sharpe = self.drift_evidence.value().expect("valid evidence initialized EWMA");
+            if latch_degradation(&self.arena.kill_switch_active, self.ewma_sharpe < -1.50) {
                 println!(
-                    "✅ [DRIFT RECOVERY] t-stat EWMA recuperado a {:.2}. Reactivando operaciones (Kill Switch desactivado).",
-                    self.ewma_sharpe
+                    "[DRIFT POLICY] EWMA del score {:.2} sobre {} deltas. Kill-switch armado; rearme requiere la autoridad de seguridad.",
+                    self.ewma_sharpe, self.returns_history.len()
                 );
-                self.arena
-                    .kill_switch_active
-                    .store(false, Ordering::Relaxed);
+                return;
             }
+            // No auto-reset: latency, drawdown or an operator may own this latch.
+            // Recovery of a strategy score does not resolve those causes.
         }
 
         // D-689: la deriva y el kill-switch de arriba son protección y siguen
@@ -685,7 +703,7 @@ impl LiveEvolutionDaemon {
         }
 
         println!(
-            "🔄 [ADAPTIVE SEARCH] Evaluando mutaciones walk-forward (Sharpe actual: {:.2})...",
+            "[ADAPTIVE SEARCH] Evaluando mutaciones (t descriptivo actual: {:.2})...",
             current_shadow_sharpe
         );
 
@@ -1103,9 +1121,8 @@ impl LiveEvolutionDaemon {
         .await
         .unwrap_or((fallback_genome, Vec::new()));
 
-        // FASE 6 / L-0: Estasis de Probabilidad Adaptativa por Tamaño Muestral con Prior Bayesiano Bootstrap.
-        // Para cuentas micro ($13 USD) en fase de arranque (N < 15), incorpora un prior exploratorio suave
-        // para evitar que el bot descarte el 100% de las mutaciones al inicio de su ciclo de vida (Causa Forense #D101).
+        // Legacy heuristic gate retained for compatibility: not a Bayesian
+        // posterior or bootstrap confidence estimate. FMT-055 remains partial.
         let safe_sharpe = if current_shadow_sharpe.is_finite() && current_shadow_sharpe > 0.0 {
             current_shadow_sharpe
         } else {
@@ -1116,7 +1133,7 @@ impl LiveEvolutionDaemon {
         let raw_confidence = (1.0 - (std_error / safe_sharpe)).clamp(0.0, 1.0);
 
         let bootstrap_weight = (15.0 - safe_len).max(0.0) / 15.0;
-        let bayesian_confidence =
+        let heuristic_gate_score =
             (1.0 - bootstrap_weight) * raw_confidence + bootstrap_weight * 0.60;
 
         let target_confidence = if self.is_demo {
@@ -1129,11 +1146,11 @@ impl LiveEvolutionDaemon {
             0.75
         };
 
-        if bayesian_confidence < target_confidence {
+        if heuristic_gate_score < target_confidence {
             println!(
-                "⚠️ [PROBABILITY STASIS] Sharpe {:.2} superó base, pero Confianza Bayesiana es {:.1}%. Requiere > {:.0}% (N={}). Se descarta mutación.",
+                "[HEURISTIC GATE] t descriptivo {:.2}; score heurístico {:.1}% < política {:.0}% (N={}). No es probabilidad posterior.",
                 current_shadow_sharpe,
-                bayesian_confidence * 100.0,
+                heuristic_gate_score * 100.0,
                 target_confidence * 100.0,
                 safe_len as usize
             );
@@ -1172,8 +1189,10 @@ impl LiveEvolutionDaemon {
             best_genome.clone(),
             "online_daemon",
             &format!(
-                "t-stat estrategia {:.2} (confianza bayesiana >95%), {} observaciones acumuladas",
+                "t descriptivo {:.2}; score heurístico {:.4} >= política {:.4}; {} deltas PnL; sin garantía de confianza posterior",
                 current_shadow_sharpe,
+                heuristic_gate_score,
+                target_confidence,
                 self.returns_history.len()
             ),
         ) {
@@ -1206,39 +1225,43 @@ impl LiveEvolutionDaemon {
         let _ = &self.champion_path; // conservado para compat de la struct
     }
 
-    /// RANSAC (Random Sample Consensus) para el cálculo robusto de Sharpe Ratio.
-    /// Elimina outliers (ruido de microestructura) y estima el Sharpe real.
-    // FIX #719: Filtrado previo de retornos finitos y guarda de resultado finito en RANSAC Sharpe
-    fn calculate_ransac_sharpe(returns: &[f64]) -> f64 {
-        // CERT-M8-H03: el RANSAC anterior trimaba ±2σ outliers ANTES de
-        // computar el t-stat — removiendo exactamente la cola negativa
-        // gorda que EVIDENCIA degradación. Los tres controles que consumen
-        // este estadístico (kill-switch, DSR gate, rollback watchdog) eran
-        // todos optimistas por construcción. Ahora: el t-stat se computa
-        // sobre la MUESTRA COMPLETA (sin trim). El inlier_mean RANSAC se
-        // mantiene como estimación robusta de LOCALIZACIÓN reportada
-        // alongside, pero el test de significancia ve la cola completa.
-        let clean_returns: Vec<f64> = returns.iter().copied().filter(|r| r.is_finite()).collect();
-        if clean_returns.len() < 10 {
-            return 0.0;
-        }
+    // Statistics live in return_evidence; no RANSAC or quantum estimator is claimed.
+}
 
-        // Media y desviación sobre la MUESTRA COMPLETA
-        let n_all = clean_returns.len() as f64;
-        let full_mean = clean_returns.iter().sum::<f64>() / n_all;
-        let full_var = clean_returns.iter().map(|r| (r - full_mean).powi(2)).sum::<f64>() / (n_all - 1.0);
-        let full_std = full_var.sqrt();
+#[cfg(test)]
+mod evidence_regressions {
+    use super::*;
+    use crate::return_evidence::{EvidenceError, MeanStatistic};
 
-        if full_std <= 1e-12 || !full_std.is_finite() {
-            return 0.0;
-        }
+    #[test]
+    fn studentized_mean_uses_sqrt_n_with_sample_variance() {
+        let returns: Vec<f64> = (1..=10).map(|i| i as f64).collect();
+        let expected = 5.5 / (82.5_f64 / 9.0).sqrt() * 10.0_f64.sqrt();
+        let actual = summarize_returns(&returns).unwrap().studentized().unwrap();
+        assert!((actual - expected).abs() < 1e-12, "actual={actual}, expected={expected}");
+    }
 
-        // t-stat sobre muestra completa: ve la cola gorda negativa
-        let t_stat = (full_mean / full_std) * (n_all - 1.0).sqrt();
-        if t_stat.is_finite() {
-            t_stat
-        } else {
-            0.0
-        }
+    #[test]
+    fn evidence_is_invariant_to_positive_return_units() {
+        let returns: Vec<f64> = (1..=10).map(|i| i as f64).collect();
+        let tiny: Vec<f64> = returns.iter().map(|r| r * 1e-20).collect();
+        let base = summarize_returns(&returns).unwrap().studentized().unwrap();
+        let scaled = summarize_returns(&tiny).unwrap().studentized().unwrap();
+        assert!((base - scaled).abs() < 1e-12, "base={base}, scaled={scaled}");
+    }
+
+    #[test]
+    fn constant_losses_are_not_a_neutral_student_statistic() {
+        let evidence = summarize_returns(&[-0.01; 25]).unwrap();
+        assert_eq!(evidence.statistic, MeanStatistic::Constant);
+        assert_eq!(evidence.studentized(), None);
+        assert!(evidence.is_constant_loss());
+    }
+
+    #[test]
+    fn invalid_observation_cannot_be_silently_deleted() {
+        let mut returns: Vec<f64> = (1..=10).map(|i| i as f64).collect();
+        returns.push(f64::NAN);
+        assert_eq!(summarize_returns(&returns), Err(EvidenceError::NonFiniteObservation { index: 10 }));
     }
 }

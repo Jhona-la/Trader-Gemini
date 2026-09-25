@@ -1,49 +1,25 @@
-//! 🧬 ACTIVE UNIVERSE: Selección Dinámica de Monedas Basada en Capital
-//!
-//! QUÉ: Módulo que determina cuántas y cuáles monedas operar según el capital disponible.
-//! POR QUÉ: Con $13capital base, operar 30 monedas fragmenta el capital ($0.43/coin) haciendo
-//!           imposible cumplir el notional mínimo de Binance ($5) sin leverage suicida.
-//! PARA QUÉ: Concentrar capital en las 3-5 monedas con mejor relación
-//!            volatilidad/liquidez/fees para maximizar crecimiento compuesto.
-//! CÓMO: Ranking multi-criterio (tick_impact, lot_notional, volatility, volume).
-//! CUÁNDO: Se recalcula al inicio y cada vez que el capital cambia significativamente.
-//! DÓNDE: quantum-arena crate, accesible lock-free desde todos los hilos.
-//! QUIÉN: live_trader.rs consulta is_active(coin_id), god_engine filtra señales.
+//! Legacy universe admission heuristics. This module does not implement a
+//! continuous spectral portfolio optimizer or manage the lifecycle of positions.
+//! Checked APIs preserve failure reasons; compatibility wrappers abstain on error.
 
-/// Máximo de monedas activas por rango de capital.
-/// Estos límites están calculados para garantizar que cada moneda reciba
-/// suficiente margen para operar sin leverage suicida (>20x).
-/// FASE 1: Modelado Matemático Continuo (Crecimiento Logarítmico Asintótico)
-/// Reemplaza el hardcoding arbitrario de escalones. Calcula la distribución
-/// óptima del portafolio basada en una curva logarítmica que se ajusta a
-/// la ley de rendimientos decrecientes y la volatilidad del capital.
+/// Historical USD-capital heuristic ceil(sqrt(capital) / 2), not an optimality
+/// theorem or a proof of order feasibility. Invalid capital admits no new assets.
 #[inline(always)]
 pub fn max_active_coins_for_capital(capital: f64) -> usize {
-    // FASE 1 & 14: Modelado Asintótico (Raíz Cuadrada)
-    // Distribución óptima que concentra micro-capital en pocas monedas
-    // y expande naturalmente con el interés compuesto.
-    // Ej: $13 -> ~2 monedas. $100 -> 5 monedas. $1000 -> 15 monedas.
-    let safe_capital = if capital.is_finite() {
-        capital.max(0.0)
-    } else {
-        13.0
-    };
-    let base_coins = (safe_capital.max(1.0).sqrt() * 0.5).ceil() as usize;
-    let max_universe = crate::symbols::get_active_universe_size();
-
-    if max_universe == 0 {
-        // Universo dinámico aún no registrado (arranque en curso o tests):
-        // clamp(1, 0) pánico. Sin tope conocido, devolvemos la base (mínimo 1).
-        return base_coins.max(1);
+    if !capital.is_finite() || capital <= 0.0 {
+        return 0;
     }
-    base_coins.clamp(1, max_universe)
+    let base_coins = (capital.max(1.0).sqrt() * 0.5).ceil() as usize;
+    let max_universe = crate::symbols::get_active_universe_size();
+    if max_universe == 0 {
+        base_coins.max(1)
+    } else {
+        base_coins.clamp(1, max_universe)
+    }
 }
 
-/// Score de aptitud para micro-cuenta. Combina:
-/// - tick_impact_usd: cuánto cuesta un tick con min_qty (menor = mejor control)
-/// - lot_notional_usd: cuánto cuesta el lote mínimo (menor = más accesible)
-/// - volume_rank: estimado de liquidez (mayor = mejor slippage)
-/// - fee_efficiency: ratio maker/taker (menor = mejor)
+/// Compatibility fields retain the two historical heuristic scores. Their names
+/// do not establish temporal estimands; a continuous replacement needs evidence.
 #[derive(Debug, Clone)]
 pub struct CoinFitness {
     pub coin_id: usize,
@@ -54,97 +30,34 @@ pub struct CoinFitness {
     pub tick_impact_usd: f64,
 }
 
-/// Calcula el universo activo óptimo para el capital dado.
-/// Retorna un vector ordenado de coin_ids que deberían estar activos,
-/// y un bitmap de 64 bits para consulta O(1) lock-free.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UniverseSelectionError {
+    InvalidCapital,
+    LengthMismatch,
+    InvalidForcedCoin { coin_id: usize },
+    InvalidForcedEvidence { coin_id: usize },
+    BitmapCapacityExceeded { coin_id: usize },
+}
+
+/// Compatibility wrapper. An empty result on error is NOT permission to stop
+/// managing open positions; lifecycle membership must be maintained separately.
 pub fn calculate_active_universe(
     capital: f64,
     prices: &[f64],
     forced_coin_ids: &[usize],
 ) -> (Vec<CoinFitness>, u64) {
-    let safe_capital = if capital.is_finite() {
-        capital.max(0.0)
-    } else {
-        13.0
-    };
-    let max_coins = max_active_coins_for_capital(safe_capital);
-    let mut candidates: Vec<CoinFitness> = Vec::with_capacity(prices.len());
-
-    for (i, &price) in prices.iter().enumerate() {
-        let Some(spec_data) = super::symbol_registry::try_spec(i) else {
-            continue; // Spec aún no registrada (arranque): saltar sin pánico
-        };
-        let spec_ref = &spec_data;
-        if price <= 0.0 {
-            continue; // No tenemos precio todavía para esta moneda
-        }
-
-        let lot_notional = spec_ref.min_qty * price;
-        let tick_impact = spec_ref.tick_size * spec_ref.min_qty;
-
-        // FASE 28: Zero-Orphans (Hard-Forcing). Si tenemos posiciones abiertas en esta moneda,
-        // le inyectamos una infinidad de score y evadimos el filtro de capital.
-        let is_forced = forced_coin_ids.contains(&i);
-
-        if !is_forced {
-            // Penalizar monedas cuyo lote mínimo excede el capital disponible por moneda
-            let capital_per_coin = safe_capital / max_coins as f64;
-            if lot_notional > capital_per_coin * 20.0 {
-                // Ni con 20x leverage podemos comprar el lote mínimo con nuestro capital/moneda
-                continue;
-            }
-        }
-
-        let accessibility_score = 1.0 / (lot_notional.max(0.01));
-        let granularity_score = 1.0 / (tick_impact.max(0.000001));
-        let fee_score = 1.0 / ((spec_ref.maker_fee + spec_ref.taker_fee).max(0.0001));
-
-        let mut scalp_score =
-            accessibility_score * 10.0 + granularity_score * 5.0 + fee_score * 1.0;
-        let mut swing_score =
-            accessibility_score * 20.0 + fee_score * 0.5 + granularity_score * 0.1;
-
-        if is_forced {
-            scalp_score += 1_000_000.0;
-            swing_score += 1_000_000.0;
-        }
-
-        candidates.push(CoinFitness {
-            coin_id: i,
-            symbol: spec_ref.symbol.clone(),
-            scalp_score,
-            swing_score,
-            lot_notional_usd: lot_notional,
-            tick_impact_usd: tick_impact,
-        });
-    }
-
-    // Sort by joint multi-horizon fitness (max(scalp_score, swing_score))
-    // to guarantee both prime Scalp and high-conviction Swing assets are active simultaneously.
-    candidates.sort_by(|a, b| {
-        let score_a = a.scalp_score.max(a.swing_score);
-        let score_b = b.scalp_score.max(b.swing_score);
-        score_b
-            .partial_cmp(&score_a)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    // Si los forced coins exceden max_coins, igual los incluimos a todos
-    // (el mercado manda sobre las reglas logarítmicas de capital).
-    let take_count = max_coins.max(forced_coin_ids.len());
-    candidates.truncate(take_count);
-
-    let mut bitmap = 0u64;
-    for c in &candidates {
-        if c.coin_id < 64 {
-            bitmap |= 1u64 << c.coin_id;
-        }
-    }
-
-    (candidates, bitmap)
+    try_calculate_active_universe(capital, prices, forced_coin_ids).unwrap_or_default()
 }
 
-/// 🚀 FASE XXI: Selección Dinámica basada en Momentum y Volumen (L2 Radar)
+pub fn try_calculate_active_universe(
+    capital: f64,
+    prices: &[f64],
+    forced_coin_ids: &[usize],
+) -> Result<(Vec<CoinFitness>, u64), UniverseSelectionError> {
+    select_universe(capital, prices, None, forced_coin_ids)
+}
+
+/// Legacy dynamic score, not a volatility estimator or a full temporal spectrum.
 pub fn calculate_dynamic_universe(
     capital: f64,
     prices: &[f64],
@@ -152,92 +65,167 @@ pub fn calculate_dynamic_universe(
     price_changes_pct: &[f64],
     forced_coin_ids: &[usize],
 ) -> (Vec<CoinFitness>, u64) {
-    let max_coins = max_active_coins_for_capital(capital);
-    let mut candidates: Vec<CoinFitness> = Vec::with_capacity(prices.len());
-
-    for i in 0..prices.len() {
-        let Some(spec_data) = super::symbol_registry::try_spec(i) else {
-            continue;
-        };
-        let spec_ref = &spec_data;
-        let price = prices[i];
-        if price <= 0.0 {
-            continue;
-        }
-
-        let lot_notional = spec_ref.min_qty * price;
-        let tick_impact = spec_ref.tick_size * spec_ref.min_qty;
-        let capital_per_coin = capital / max_coins as f64;
-
-        let is_forced = forced_coin_ids.contains(&i);
-        if !is_forced && lot_notional > capital_per_coin * 20.0 {
-            continue;
-        }
-
-        let accessibility_score = 1.0 / (lot_notional.max(0.01));
-        let granularity_score = 1.0 / (tick_impact.max(0.000001));
-
-        let fee_score = 1.0 / ((spec_ref.maker_fee + spec_ref.taker_fee).max(0.0001));
-        // Momentum = |% Change| * log10(Volumecapital base)
-        // Monedas que se mueven rápido con alto volumen tendrán un momentum_score altísimo
-        let momentum_score = price_changes_pct[i].abs() * volumes_usd[i].max(1.0).log10();
-
-        // Mezclamos la accesibilidad base con el momentum dinámico
-        // BIFURCACIÓN DE ESTRATEGIA (SCALP VS SWING)
-        // Scalp valora infinitamente más la granularidad (tick size) y fees bajos.
-        let mut scalp_score = (accessibility_score * 5.0)
-            + (granularity_score * 0.5)
-            + (momentum_score * 2.0)
-            + fee_score * 1.0;
-
-        // Swing valora más la accesibilidad global (margen) y soporta peor granularidad.
-        let mut swing_score = (accessibility_score * 20.0)
-            + (momentum_score * 5.0)
-            + (granularity_score * 0.1)
-            + fee_score * 0.5;
-
-        if is_forced {
-            scalp_score += 1_000_000.0;
-            swing_score += 1_000_000.0;
-        }
-
-        candidates.push(CoinFitness {
-            coin_id: i,
-            symbol: spec_ref.symbol.clone(),
-            scalp_score,
-            swing_score,
-            lot_notional_usd: lot_notional,
-            tick_impact_usd: tick_impact,
-        });
-    }
-
-    // Sort default by scalp_score since Scalping is the primary HFT engine
-    candidates.sort_by(|a, b| {
-        b.scalp_score
-            .partial_cmp(&a.scalp_score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    let take_count = max_coins.max(forced_coin_ids.len());
-    candidates.truncate(take_count);
-
-    let mut bitmap = 0u64;
-    for c in &candidates {
-        if c.coin_id < 64 {
-            bitmap |= 1u64 << c.coin_id;
-        }
-    }
-
-    (candidates, bitmap)
+    try_calculate_dynamic_universe(
+        capital,
+        prices,
+        volumes_usd,
+        price_changes_pct,
+        forced_coin_ids,
+    )
+    .unwrap_or_default()
 }
 
-/// Consulta O(1) lock-free si una moneda está en el universo activo.
+pub fn try_calculate_dynamic_universe(
+    capital: f64,
+    prices: &[f64],
+    volumes_usd: &[f64],
+    price_changes_pct: &[f64],
+    forced_coin_ids: &[usize],
+) -> Result<(Vec<CoinFitness>, u64), UniverseSelectionError> {
+    if prices.len() != volumes_usd.len() || prices.len() != price_changes_pct.len() {
+        return Err(UniverseSelectionError::LengthMismatch);
+    }
+    select_universe(
+        capital,
+        prices,
+        Some((volumes_usd, price_changes_pct)),
+        forced_coin_ids,
+    )
+}
+
+fn select_universe(
+    capital: f64,
+    prices: &[f64],
+    dynamic: Option<(&[f64], &[f64])>,
+    forced_coin_ids: &[usize],
+) -> Result<(Vec<CoinFitness>, u64), UniverseSelectionError> {
+    if !capital.is_finite() || capital <= 0.0 {
+        return Err(UniverseSelectionError::InvalidCapital);
+    }
+    let forced: std::collections::BTreeSet<usize> = forced_coin_ids.iter().copied().collect();
+    for &coin_id in &forced {
+        if coin_id >= prices.len() || super::symbol_registry::try_spec(coin_id).is_none() {
+            return Err(UniverseSelectionError::InvalidForcedCoin { coin_id });
+        }
+        if coin_id >= 64 {
+            return Err(UniverseSelectionError::BitmapCapacityExceeded { coin_id });
+        }
+    }
+    let max_coins = max_active_coins_for_capital(capital);
+    let capital_per_coin = capital / max_coins.max(forced.len()) as f64;
+    let mut candidates = Vec::with_capacity(prices.len());
+
+    for (i, &price) in prices.iter().enumerate() {
+        let Some(spec) = super::symbol_registry::try_spec(i) else {
+            continue;
+        };
+        let is_forced = forced.contains(&i);
+        let lot_notional = spec.min_qty * price;
+        let tick_impact = spec.tick_size * spec.min_qty;
+        let valid = price.is_finite()
+            && price > 0.0
+            && spec.step_size.is_finite()
+            && spec.step_size > 0.0
+            && spec.tick_size.is_finite()
+            && spec.tick_size > 0.0
+            && spec.min_qty.is_finite()
+            && spec.min_qty > 0.0
+            && spec.min_notional.is_finite()
+            && spec.min_notional >= 0.0
+            && spec.max_leverage > 0
+            && spec.maker_fee.is_finite()
+            && spec.taker_fee.is_finite()
+            && (spec.maker_fee + spec.taker_fee).is_finite()
+            && lot_notional.is_finite()
+            && lot_notional > 0.0
+            && tick_impact.is_finite()
+            && tick_impact > 0.0;
+        if !valid {
+            if is_forced {
+                return Err(UniverseSelectionError::InvalidForcedEvidence { coin_id: i });
+            }
+            continue;
+        }
+        let required_notional = lot_notional.max(spec.min_notional);
+        // Necessary affordability check only: step rounding, fees, existing
+        // margin, order types and venue limits still require execution validation.
+        // Preserve the historical policy cap 20 but respect lower instrument caps.
+        let leverage = spec.max_leverage.min(20) as f64;
+        if !is_forced && required_notional / leverage > capital_per_coin {
+            continue;
+        }
+
+        let accessibility = 1.0 / lot_notional.max(0.01);
+        let granularity = 1.0 / tick_impact.max(0.000001);
+        let fee = 1.0 / (spec.maker_fee + spec.taker_fee).max(0.0001);
+        let (scalp_score, swing_score) = if let Some((volumes, changes)) = dynamic {
+            if !volumes[i].is_finite() || volumes[i] < 0.0 || !changes[i].is_finite() {
+                if is_forced {
+                    return Err(UniverseSelectionError::InvalidForcedEvidence { coin_id: i });
+                }
+                continue;
+            }
+            let momentum = changes[i].abs() * volumes[i].max(1.0).log10();
+            (
+                accessibility * 5.0 + granularity * 0.5 + momentum * 2.0 + fee,
+                accessibility * 20.0 + momentum * 5.0 + granularity * 0.1 + fee * 0.5,
+            )
+        } else {
+            (
+                accessibility * 10.0 + granularity * 5.0 + fee,
+                accessibility * 20.0 + fee * 0.5 + granularity * 0.1,
+            )
+        };
+        if !scalp_score.is_finite() || !swing_score.is_finite() {
+            if is_forced {
+                return Err(UniverseSelectionError::InvalidForcedEvidence { coin_id: i });
+            }
+            continue;
+        }
+        let rank_score = if dynamic.is_some() {
+            scalp_score
+        } else {
+            scalp_score.max(swing_score)
+        };
+        candidates.push((
+            is_forced,
+            rank_score,
+            CoinFitness {
+                coin_id: i,
+                symbol: spec.symbol,
+                scalp_score,
+                swing_score,
+                lot_notional_usd: lot_notional,
+                tick_impact_usd: tick_impact,
+            },
+        ));
+    }
+    // Membership obligations precede scores lexicographically: no finite bonus
+    // can prove that a forced member survives an unbounded score.
+    candidates.sort_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then_with(|| b.1.total_cmp(&a.1))
+            .then_with(|| a.2.coin_id.cmp(&b.2.coin_id))
+    });
+    candidates.truncate(max_coins.max(forced.len()));
+    let mut bitmap = 0u64;
+    let mut selected = Vec::with_capacity(candidates.len());
+    for (_, _, coin) in candidates {
+        if coin.coin_id >= 64 {
+            return Err(UniverseSelectionError::BitmapCapacityExceeded {
+                coin_id: coin.coin_id,
+            });
+        }
+        bitmap |= 1u64 << coin.coin_id;
+        selected.push(coin);
+    }
+    Ok((selected, bitmap))
+}
+
+/// O(1) query for the compatibility bitmap, limited to IDs 0..63.
 #[inline(always)]
 pub fn is_coin_active(bitmap: u64, coin_id: usize) -> bool {
-    if coin_id >= 64 {
-        return false;
-    }
-    bitmap & (1u64 << coin_id) != 0
+    coin_id < 64 && bitmap & (1u64 << coin_id) != 0
 }
 
 #[cfg(test)]
@@ -283,7 +271,7 @@ mod tests {
         crate::symbols::update_dynamic_universe(Vec::new());
         // Universo sin registrar: debe devolver la base sin clamping, nunca pánico.
         assert_eq!(max_active_coins_for_capital(15.0), 2);
-        assert_eq!(max_active_coins_for_capital(0.0), 1);
+        assert_eq!(max_active_coins_for_capital(0.0), 0);
     }
 
     #[test]

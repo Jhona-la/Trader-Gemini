@@ -1,6 +1,107 @@
 use rusqlite::{params, Connection, OpenFlags, Result};
 use std::path::Path;
 
+#[cfg(test)]
+mod audit_xiii_tests {
+    use super::*;
+
+    #[test]
+    fn invalid_write_is_an_error_not_acknowledged_persistence() {
+        let db = StateDb::new(":memory:").unwrap();
+        assert!(db
+            .save_position_intent(
+                0,
+                "BTCUSDT",
+                HorizonIntent::Continuous,
+                true,
+                f64::NAN,
+                1.0,
+                10
+            )
+            .is_err());
+        assert!(db
+            .save_position_intent(0, "", HorizonIntent::Continuous, true, 10.0, 1.0, 10)
+            .is_err());
+        assert!(db.get_position_intent(0).unwrap().is_none());
+    }
+
+    #[test]
+    fn unknown_horizon_is_not_reinterpreted_as_swing() {
+        let db = StateDb::new(":memory:").unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO position_intent VALUES (0,'BTCUSDT','UNRECOGNIZED',1,10,1,100)",
+                [],
+            )
+            .unwrap();
+        assert!(db.get_position_intent(0).is_err());
+    }
+
+    #[test]
+    fn persisted_invalid_side_and_quantity_are_rejected() {
+        for (side, quantity) in [(2, 1.0), (1, -1.0)] {
+            let db = StateDb::new(":memory:").unwrap();
+            db.conn
+                .execute(
+                    "INSERT INTO position_intent VALUES (0,'BTCUSDT','CONTINUOUS',?1,10,?2,100)",
+                    params![side, quantity],
+                )
+                .unwrap();
+            assert!(db.get_position_intent(0).is_err());
+            assert!(db
+                .get_position_intent_by_horizon(0, HorizonIntent::Continuous)
+                .is_err());
+        }
+    }
+
+    #[test]
+    fn integer_domains_do_not_alias_other_keys_or_times() {
+        let db = StateDb::new(":memory:").unwrap();
+        assert!(db
+            .save_position_intent(
+                0,
+                "BTCUSDT",
+                HorizonIntent::Continuous,
+                true,
+                10.0,
+                1.0,
+                u64::MAX
+            )
+            .is_err());
+        if usize::BITS == 64 {
+            assert!(db
+                .save_position_intent(
+                    usize::MAX,
+                    "BTCUSDT",
+                    HorizonIntent::Continuous,
+                    true,
+                    10.0,
+                    1.0,
+                    1
+                )
+                .is_err());
+            assert!(db.clear_position(usize::MAX).is_err());
+        }
+    }
+
+    #[test]
+    fn all_declared_legacy_tags_remain_readable_without_inventing_a_tag() {
+        let db = StateDb::new(":memory:").unwrap();
+        for (i, h) in [
+            HorizonIntent::Continuous,
+            HorizonIntent::Scalp,
+            HorizonIntent::Swing,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            db.save_position_intent(i, "BTCUSDT", h, false, 10.0, 1.0, 100)
+                .unwrap();
+            assert_eq!(db.get_position_intent(i).unwrap().unwrap().0, h);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HorizonIntent {
     #[default]
@@ -9,13 +110,92 @@ pub enum HorizonIntent {
     Swing,
 }
 
-/// Base de Datos de Estado con Atomicidad y Recuperación Rápida
+fn invalid_input(message: &str) -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        message,
+    )))
+}
+
+fn sql_coin_id(coin_id: usize) -> Result<i64> {
+    i64::try_from(coin_id).map_err(|_| invalid_input("coin_id exceeds SQLite INTEGER domain"))
+}
+
+impl HorizonIntent {
+    // Legacy tags remain readable for migration; they are not a spectral coordinate.
+    fn storage_tag(self) -> &'static str {
+        match self {
+            Self::Continuous => "CONTINUOUS",
+            Self::Scalp => "SCALP",
+            Self::Swing => "SWING",
+        }
+    }
+}
+
+fn corrupt_column(index: usize, kind: rusqlite::types::Type, message: &str) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(
+        index,
+        kind,
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            message,
+        )),
+    )
+}
+
+fn decode_intent(row: &rusqlite::Row<'_>) -> Result<(HorizonIntent, bool, f64, f64)> {
+    use rusqlite::types::Type;
+    let tag: String = row.get(0)?;
+    let horizon = match tag.as_str() {
+        "CONTINUOUS" => HorizonIntent::Continuous,
+        "SCALP" => HorizonIntent::Scalp,
+        "SWING" => HorizonIntent::Swing,
+        _ => {
+            return Err(corrupt_column(
+                0,
+                Type::Text,
+                "unknown horizon tag; migration required",
+            ))
+        }
+    };
+    let side: i64 = row.get(1)?;
+    if side != 0 && side != 1 {
+        return Err(corrupt_column(1, Type::Integer, "is_long must be 0 or 1"));
+    }
+    let entry_price: f64 = row.get(2)?;
+    let qty: f64 = row.get(3)?;
+    for (index, value) in [(2, entry_price), (3, qty)] {
+        if !value.is_finite() || value <= 0.0 {
+            return Err(corrupt_column(
+                index,
+                Type::Real,
+                "price and quantity must be finite and positive",
+            ));
+        }
+    }
+    let symbol: String = row.get(4)?;
+    if symbol.trim().is_empty() {
+        return Err(corrupt_column(4, Type::Text, "symbol must not be blank"));
+    }
+    let updated_at: i64 = row.get(5)?;
+    if updated_at < 0 {
+        return Err(corrupt_column(
+            5,
+            Type::Integer,
+            "timestamp must be nonnegative",
+        ));
+    }
+    Ok((horizon, side == 1, entry_price, qty))
+}
+
+/// Atomic individual position intentions, not a complete engine recovery snapshot.
 pub struct StateDb {
     conn: Connection,
 }
 
 impl StateDb {
-    /// Inicializa la conexión SQLite en modo WAL para nanosegundos de latencia y protección contra apagones.
+    /// Opens SQLite in WAL mode. Latency is unmeasured; NORMAL does not guarantee
+    /// survival of the latest committed transactions after power loss.
     pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self> {
         let conn = Connection::open_with_flags(
             db_path,
@@ -34,7 +214,7 @@ impl StateDb {
         )?;
 
         // Tabla de intenciones de posición con clave primaria compuesta (coin_id, horizon)
-        // Permite coexistencia simultánea e independiente de posiciones en el espectro continuo
+        // Compatibility key: one intention per legacy tag, NOT arbitrary spectral slots.
         conn.execute(
             "CREATE TABLE IF NOT EXISTS position_intent (
                 coin_id INTEGER NOT NULL,
@@ -64,23 +244,26 @@ impl StateDb {
         qty: f64,
         ts: u64,
     ) -> Result<()> {
-        // FIX #1427: Sanitización estricta contra NaNs o valores no positivos
+        // A successful return acknowledges a write, never silently discards invalid input.
         if !entry_price.is_finite() || entry_price <= 0.0 || !qty.is_finite() || qty <= 0.0 {
-            return Ok(());
+            return Err(invalid_input(
+                "price and quantity must be finite and positive",
+            ));
         }
-
-        let horizon_str = match horizon {
-            HorizonIntent::Continuous => "CONTINUOUS",
-            HorizonIntent::Scalp => "SCALP",
-            HorizonIntent::Swing => "SWING",
-        };
+        if symbol.trim().is_empty() {
+            return Err(invalid_input("symbol must not be blank"));
+        }
+        let coin_id = sql_coin_id(coin_id)?;
+        let ts = i64::try_from(ts)
+            .map_err(|_| invalid_input("timestamp exceeds SQLite INTEGER domain"))?;
+        let horizon_str = horizon.storage_tag();
 
         self.conn.execute(
             "INSERT INTO position_intent (coin_id, symbol, horizon, is_long, entry_price, qty, updated_at) 
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(coin_id, horizon) DO UPDATE SET 
              symbol=excluded.symbol, is_long=excluded.is_long, entry_price=excluded.entry_price, qty=excluded.qty, updated_at=excluded.updated_at",
-            params![coin_id as i64, symbol, horizon_str, is_long, entry_price, qty, ts as i64],
+            params![coin_id, symbol, horizon_str, is_long, entry_price, qty, ts],
         )?;
         Ok(())
     }
@@ -88,14 +271,10 @@ impl StateDb {
     /// Elimina una posición específica por horizonte o todas las posiciones de la moneda.
     #[inline]
     pub fn clear_position_horizon(&self, coin_id: usize, horizon: HorizonIntent) -> Result<()> {
-        let horizon_str = match horizon {
-            HorizonIntent::Continuous => "CONTINUOUS",
-            HorizonIntent::Scalp => "SCALP",
-            HorizonIntent::Swing => "SWING",
-        };
+        let horizon_str = horizon.storage_tag();
         self.conn.execute(
             "DELETE FROM position_intent WHERE coin_id = ?1 AND horizon = ?2",
-            params![coin_id as i64, horizon_str],
+            params![sql_coin_id(coin_id)?, horizon_str],
         )?;
         Ok(())
     }
@@ -105,7 +284,7 @@ impl StateDb {
     pub fn clear_position(&self, coin_id: usize) -> Result<()> {
         self.conn.execute(
             "DELETE FROM position_intent WHERE coin_id = ?1",
-            params![coin_id as i64],
+            params![sql_coin_id(coin_id)?],
         )?;
         Ok(())
     }
@@ -116,57 +295,31 @@ impl StateDb {
         coin_id: usize,
         horizon: HorizonIntent,
     ) -> Result<Option<(HorizonIntent, bool, f64, f64)>> {
-        let horizon_str = match horizon {
-            HorizonIntent::Continuous => "CONTINUOUS",
-            HorizonIntent::Scalp => "SCALP",
-            HorizonIntent::Swing => "SWING",
-        };
+        let horizon_str = horizon.storage_tag();
         let mut stmt = self.conn.prepare(
-            "SELECT horizon, is_long, entry_price, qty FROM position_intent WHERE coin_id = ?1 AND horizon = ?2",
+            "SELECT horizon, is_long, entry_price, qty, symbol, updated_at FROM position_intent WHERE coin_id = ?1 AND horizon = ?2",
         )?;
-        let mut rows = stmt.query(params![coin_id as i64, horizon_str])?;
+        let mut rows = stmt.query(params![sql_coin_id(coin_id)?, horizon_str])?;
 
         if let Some(row) = rows.next()? {
-            let h_str: String = row.get(0)?;
-            let is_long: bool = row.get(1)?;
-            let entry_price: f64 = row.get(2)?;
-            let qty: f64 = row.get(3)?;
-
-            let h = match h_str.as_str() {
-                "CONTINUOUS" => HorizonIntent::Continuous,
-                "SCALP" => HorizonIntent::Scalp,
-                _ => HorizonIntent::Swing,
-            };
-
-            Ok(Some((h, is_long, entry_price, qty)))
+            decode_intent(row).map(Some)
         } else {
             Ok(None)
         }
     }
 
-    /// Recupera la intención (si existe) para restaurar el Engine desde un reinicio.
+    /// Retrieves only the latest intention, not all positions or the full engine state.
     pub fn get_position_intent(
         &self,
         coin_id: usize,
     ) -> Result<Option<(HorizonIntent, bool, f64, f64)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT horizon, is_long, entry_price, qty FROM position_intent WHERE coin_id = ?1 ORDER BY updated_at DESC LIMIT 1",
+            "SELECT horizon, is_long, entry_price, qty, symbol, updated_at FROM position_intent WHERE coin_id = ?1 ORDER BY updated_at DESC LIMIT 1",
         )?;
-        let mut rows = stmt.query(params![coin_id as i64])?;
+        let mut rows = stmt.query(params![sql_coin_id(coin_id)?])?;
 
         if let Some(row) = rows.next()? {
-            let horizon_str: String = row.get(0)?;
-            let is_long: bool = row.get(1)?;
-            let entry_price: f64 = row.get(2)?;
-            let qty: f64 = row.get(3)?;
-
-            let horizon = match horizon_str.as_str() {
-                "CONTINUOUS" => HorizonIntent::Continuous,
-                "SCALP" => HorizonIntent::Scalp,
-                _ => HorizonIntent::Swing,
-            };
-
-            Ok(Some((horizon, is_long, entry_price, qty)))
+            decode_intent(row).map(Some)
         } else {
             Ok(None)
         }
@@ -248,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn test_state_db_nan_sanitization() {
+    fn test_state_db_invalid_values_are_errors() {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join("test_state_db_nan.db");
 
@@ -263,10 +416,10 @@ mod tests {
                 1.0,
                 1000
             )
-            .is_ok());
+            .is_err());
         assert!(db
             .save_position_intent(1, "ETHUSDT", HorizonIntent::Scalp, true, 2000.0, -1.0, 1000)
-            .is_ok());
+            .is_err());
         assert!(db
             .get_position_intent_by_horizon(1, HorizonIntent::Scalp)
             .unwrap()

@@ -18,20 +18,14 @@
 /// ver evolver.rs:443 "sin split IS/OOS aquí").
 #[inline]
 pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64, total_trades: u32) -> f64 {
-    if initial <= 0.0 || !initial.is_finite() || !final_cap.is_finite() || final_cap <= 0.0 {
-        return f64::NEG_INFINITY; // ruina o datos inválidos
-    }
     const MIN_TRADES: u32 = 30;
-    if total_trades < MIN_TRADES {
-        return f64::NEG_INFINITY; // D-654: poca actividad = ruido, no edge
-    }
-    let growth = (final_cap / initial).ln();
-    // λ = 4·ln(2): el dd del 50% cuesta exactamente lo que duplicar capital gana
-    const DRAWDOWN_LAMBDA: f64 = 2.772_588_722_239_781;
-    let dd = max_dd.clamp(0.0, 1.0);
-    growth - DRAWDOWN_LAMBDA * dd * dd
+    // Compatibility sentinel. New callers can retain the reason via checked_fitness.
+    fitness_contract::checked_fitness(initial, final_cap, max_dd, total_trades, MIN_TRADES)
+        .unwrap_or(f64::NEG_INFINITY)
 }
 
+pub mod fitness_contract;
+pub mod entry_reservation;
 pub mod bootloader;
 pub mod calibration;
 pub mod conformal;
@@ -45,6 +39,7 @@ pub mod math_kernels;
 pub mod ml_inference;
 pub mod orchestrator;
 pub mod order_flow_aggregator;
+pub mod outcome_context;
 pub mod quantum_kelly_risk;
 pub mod reality_physics;
 pub mod reexport_storage {
@@ -61,12 +56,31 @@ use signal_engine::{MakerEngine, MakerQuote, SignalIntent, SignalType};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+/// Local decision-to-position binding. Not an exchange fill or settlement proof.
+/// The enclosing array supplies coin/slot; symbol guards against index reuse.
+#[derive(Debug, Clone)]
+pub struct CouncilEntryEvidence {
+    pub symbol: String,
+    pub generation: u64,
+    pub is_long: bool,
+    pub signals: [f64; 11],
+}
+
 /// Axioma VII: God Engine Core
 /// Este componente contiene la lógica dura del ciclo HFT,
 /// unificando la Arena con los motores, y eliminando la duplicación
 /// entre Backtest y Producción.
 pub struct GodEngineCore {
     pub arena: Arc<GlobalArena>,
+    outcome_context: outcome_context::OutcomeContext,
+    /// Host-owned drift veto: blocks entries, not local defensive exits.
+    /// Recovery cannot clear the independent arena/executor kill switches.
+    drift_entry_veto: bool,
+    entry_reservations: Vec<Option<entry_reservation::EntryReservation>>,
+    /// Close proposals excluded from economic feedback for missing entry evidence.
+    pub diag_unverified_close_total: u64,
+    /// Eligible local closes that cannot be attributed to a council decision.
+    pub diag_unattributed_council_closes: u64,
     pub risk_engine: RiskEngine,
     pub maker_engines: Vec<MakerEngine>,
     pub feature_engines: Vec<StatefulEngine>,
@@ -85,6 +99,9 @@ pub struct GodEngineCore {
     /// binaria scalp/swing: el motor observa todas las escalas a la vez, con
     /// fusión por paridad de riesgo (w ∝ 1/vol_de_desviación).
     pub temporal_spectrum: Vec<quantum_arena::temporal_spectrum::TemporalSpectrum>,
+    /// XXXIII: liquidation evidence belongs to this core and to an exact symbol.
+    liquidation_states: Vec<Option<liquidation_feed::LiquidationState>>,
+    pub liquidation_diagnostics: liquidation_feed::LiquidationDiagnostics,
     /// F4.7: último precio de kline CERRADO por coin — para calibrar el
     /// ensamble con la dirección realizada de cada vela.
     kline_close_memory: Vec<f64>,
@@ -94,8 +111,9 @@ pub struct GodEngineCore {
     pub reality: reality_physics::RealityPhysics,
     pub last_fast_intent: Vec<SignalIntent>,
     pub last_slow_intent: Vec<SignalIntent>,
-    /// U-2: señales del consejo que acompañan la intención evaluada por ranura armónica del espectro continuo.
+    /// Compatibility/diagnostic mirror only. Learning requires a generation binding.
     pub last_senior_signals: Vec<[[f64; 11]; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
+    pub council_entry_evidence: Vec<[Option<CouncilEntryEvidence>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
     pub lakehouse: Option<Arc<storage_engine::LakehouseWarehouse>>,
     pub consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion,
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
@@ -151,7 +169,16 @@ pub struct GodEngineCore {
 }
 
 impl GodEngineCore {
+    /// Isolated local simulation by default. A live host must select its
+    /// provenance explicitly; sharing the core does not imply sharing outputs.
     pub fn new(arena: Arc<GlobalArena>) -> Self {
+        Self::new_with_outcome_context(arena, outcome_context::OutcomeContext::IsolatedSimulation)
+    }
+
+    pub fn new_with_outcome_context(
+        arena: Arc<GlobalArena>,
+        outcome_context: outcome_context::OutcomeContext,
+    ) -> Self {
         let initial_capital = arena.config.base_capital.load(Ordering::Relaxed);
         // F-012 FIX: Universal model key — the NanoForest serves ALL assets, not just BTC.
         // Search order: UNIVERSAL → legacy BTCUSDT_SCALP fallback for backward compatibility.
@@ -268,6 +295,11 @@ impl GodEngineCore {
 
         Self {
             arena,
+            outcome_context,
+            drift_entry_veto: false,
+            entry_reservations: vec![None; n_coins],
+            diag_unverified_close_total: 0,
+            diag_unattributed_council_closes: 0,
             risk_engine: RiskEngine::new(initial_capital),
             maker_engines,
             feature_engines,
@@ -282,6 +314,8 @@ impl GodEngineCore {
                 .map(|_| quantum_arena::temporal_spectrum::TemporalSpectrum::new())
                 .collect(),
             kline_close_memory: vec![0.0; n_coins],
+            liquidation_states: vec![None; n_coins],
+            liquidation_diagnostics: liquidation_feed::LiquidationDiagnostics::default(),
             model_rx: None,
             last_ml_prob: 0.5,
             flight_recorder: None,
@@ -289,12 +323,13 @@ impl GodEngineCore {
             last_fast_intent: vec![SignalIntent::flat(); n_coins],
             last_slow_intent: vec![SignalIntent::flat(); n_coins],
             last_senior_signals: vec![[[0.0; 11]; quantum_arena::position::MAX_SPECTRAL_SLOTS]; n_coins],
+            council_entry_evidence: (0..n_coins).map(|_| std::array::from_fn(|_| None)).collect(),
             lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
             ppo_engine,
             online_learner,
-            immune_system: metacortex_engine::immune_system::LivingImmuneSystem::new("."),
+            immune_system: metacortex_engine::immune_system::LivingImmuneSystem::new_deferred("."),
             shadow_auditor: std::sync::Arc::new(
                 metacortex_engine::shadow_graph_auditor::ShadowGraphAuditor::new(),
             ),
@@ -327,6 +362,54 @@ impl GodEngineCore {
         self.feature_engines[coin_id].get_features()
     }
 
+    /// Accept a reported execution snapshot, not an incremental fill. No global fallback.
+    pub fn observe_liquidation(
+        &mut self,
+        mut observation: liquidation_feed::LiquidationObservation,
+    ) -> Result<liquidation_feed::ObservationUpdate, &'static str> {
+        use liquidation_feed::{LiquidationState, ObservationUpdate};
+        let Some(coin_id) = quantum_arena::symbol_registry::try_index(&observation.symbol)
+            .filter(|&i| i < self.liquidation_states.len() && i < self.feature_engines.len())
+        else {
+            self.liquidation_diagnostics.unknown_symbol += 1;
+            return Err("unknown liquidation symbol");
+        };
+        let Some(symbol) = quantum_arena::symbol_registry::try_symbol(coin_id)
+            .filter(|s| s.eq_ignore_ascii_case(&observation.symbol)) else {
+                self.liquidation_diagnostics.unknown_symbol += 1;
+                return Err("liquidation universe changed during lookup");
+            };
+        observation.symbol = symbol;
+        let lambda = self.feature_engines[coin_id].dark_alpha.decay_lambda;
+        let slot = &mut self.liquidation_states[coin_id];
+        let result = match slot {
+            Some(state) if state.latest().symbol == observation.symbol => state.observe(observation, lambda),
+            _ => LiquidationState::new(observation, lambda).map(|state| {
+                *slot = Some(state);
+                ObservationUpdate::Accepted
+            }),
+        };
+        match result {
+            Ok(ObservationUpdate::Accepted) => self.liquidation_diagnostics.accepted += 1,
+            Ok(ObservationUpdate::Duplicate) => self.liquidation_diagnostics.duplicates += 1,
+            Ok(ObservationUpdate::Older) => self.liquidation_diagnostics.older += 1,
+            Ok(ObservationUpdate::ConflictingTimestamp) => self.liquidation_diagnostics.conflicting += 1,
+            Err(_) => self.liquidation_diagnostics.invalid += 1,
+        }
+        result
+    }
+
+    /// None means no matching observation; it does NOT certify feed health.
+    pub fn liquidation_severity_at(&self, coin_id: usize, as_of_ms: u64)
+        -> Result<Option<f64>, &'static str> {
+        let slot = self.liquidation_states.get(coin_id).ok_or("invalid liquidation slot")?;
+        let symbol = quantum_arena::symbol_registry::try_symbol(coin_id).ok_or("unregistered liquidation slot")?;
+        match slot {
+            Some(state) if state.latest().symbol == symbol => state.severity_at(as_of_ms).map(Some),
+            _ => Ok(None),
+        }
+    }
+
     pub fn reset_engines(&mut self) {
         for i in 0..quantum_arena::state::MAX_COINS {
             self.feature_engines[i] = StatefulEngine::new();
@@ -351,30 +434,18 @@ impl GodEngineCore {
         self.lakehouse = Some(lakehouse);
     }
 
-    /// Rollback local quantum position when order is rejected by exchange or blocked by risk envelope
+    /// Legacy adapter: cancel only a captured proposal; never guess ownership by asset.
+    /// Asynchronous consumers must retain entry_reservation() before the next tick.
     pub fn rollback_position(&self, coin_id: usize) {
-        if coin_id >= self.arena.coins.len() {
-            return;
-        }
-        let coin = &self.arena.coins[coin_id];
-        for p in coin.positions.slots() {
-            if p.is_open() {
-                let (_is_long, _entry_price, _qty, margin_used, entry_fee) =
-                    p.close_with_fee();
-                if margin_used > 0.0 {
-                    let _ = self.arena.used_margin.fetch_update(
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                        |v| Some((v - margin_used).max(0.0)),
-                    );
-                }
-                if entry_fee > 0.0 {
-                    self.arena
-                        .unified_capital
-                        .fetch_add(entry_fee, Ordering::Relaxed);
-                }
+        if let Some(reservation) = self.entry_reservation(coin_id) {
+            if let Err(reason) = reservation.cancel(&self.arena) {
+                telemetry_server::telemetry_log!("[RESERVATION] rollback refused: {:?}", reason);
             }
         }
+    }
+
+    pub fn entry_reservation(&self, coin_id: usize) -> Option<entry_reservation::EntryReservation> {
+        self.entry_reservations.get(coin_id).cloned().flatten()
     }
 
     /// Construye el tensor unificado de 54 dimensiones para la Red Neuronal Dark Alpha (Swing)
@@ -719,12 +790,15 @@ impl GodEngineCore {
                 } else {
                     omni_features[11]
                 };
-                // P-4: severidad de liquidación VIVA (event-driven, swap).
-                let liq_severity = crate::liquidation_feed::take_pending();
+                // XXXIII: non-consuming, symbol-scoped as-of view. A level is not an impulse.
+                let liq_severity = self.liquidation_severity_at(coin_id, event_time_ms)
+                    .ok().flatten().unwrap_or(0.0);
+                self.feature_engines[coin_id].dark_alpha.current_severity = liq_severity;
+                self.feature_engines[coin_id].dark_alpha.last_timestamp_ms = event_time_ms;
                 self.feature_engines[coin_id].update_macro_features(
                     depth_obi,
                     funding_rate_live,
-                    liq_severity,
+                    0.0,
                     event_time_ms,
                 );
                 let mid_price = (eff_bid + eff_ask) / 2.0;
@@ -843,6 +917,15 @@ impl GodEngineCore {
         self.revert_quantum_ghost_position(coin_id);
     }
 
+    /// Changes only this core's drift entry veto, never a shared risk latch.
+    pub fn set_drift_entry_veto(&mut self, blocked: bool) {
+        self.drift_entry_veto = blocked;
+    }
+
+    pub fn drift_entry_veto(&self) -> bool {
+        self.drift_entry_veto
+    }
+
     /// Revierte de inmediato una posición cuántica continua rechazada por el exchange
     pub fn revert_quantum_ghost_position(&mut self, coin_id: usize) {
         if coin_id >= self.arena.coins.len() {
@@ -887,6 +970,9 @@ impl GodEngineCore {
         Option<MakerQuote>,
     ) {
         telemetry_server::profile_node!("GodEngineCore::process_tick_dual", {
+            if let Some(reservation) = self.entry_reservations.get_mut(coin_id) {
+                *reservation = None;
+            }
             // X-016 (REHAB-1): el espectro se actualiza TAMBIÉN aquí — los
             // callers directos de dual (backtests) congelaban el espectro al
             // no pasar por process_event. Idempotente para producción (process_
@@ -924,9 +1010,17 @@ impl GodEngineCore {
             // X-010: stalled (watchdog del WS sin datos 5s) también bloquea
             // entradas — la muerte silenciosa del feed ya no es invisible.
             let is_latency_panic = latency_ms > latency_threshold_ms as u64;
+            let liquidation_view = self.liquidation_severity_at(coin_id, event_time_ms);
+            let liquidation_as_of_invalid = liquidation_view.is_err();
+            if liquidation_as_of_invalid {
+                self.liquidation_diagnostics.invalid_as_of += 1;
+            }
+            let liquidation_severity = liquidation_view.ok().flatten().unwrap_or(0.0);
             let entries_blocked = !allow_entries
+                || self.drift_entry_veto
                 || quantum_arena::feed_health::is_stalled()
-                || is_latency_panic;
+                || is_latency_panic
+                || liquidation_as_of_invalid;
             if is_latency_panic
                 && self
                     .arena
@@ -953,6 +1047,10 @@ impl GodEngineCore {
                 0.01
             };
             let feature_engine = &mut self.feature_engines[coin_id];
+            // Both tensor and council see this same captured score. Do not re-add
+            // a snapshot on every tick, and never inject future evidence.
+            feature_engine.dark_alpha.current_severity = liquidation_severity;
+            feature_engine.dark_alpha.last_timestamp_ms = event_time_ms;
             feature_engine.process_tick(mid_price, tick_vol, event_time_ms);
             // D-220 & D-247: Depth snapshots must NOT corrupt OrderFlow with synthetic trades. Real trades update order flow via process_event when is_trade=true.
 
@@ -987,8 +1085,7 @@ impl GodEngineCore {
             // y klines); los depth events ya fueron actualizados arriba
             // con el funding per-símbolo (mejor dato).
             if !_skip_macro_update {
-                let liq_sev_tick = crate::liquidation_feed::take_pending();
-                feature_engine.update_macro_features(obi, omni_features[11], liq_sev_tick, event_time_ms);
+                feature_engine.update_macro_features(obi, omni_features[11], 0.0, event_time_ms);
             }
             let raw_atr_pct = feature_engine.get_atr_pct();
             let hurst_val = feature_engine.hurst.current();
@@ -1040,6 +1137,7 @@ impl GodEngineCore {
                     continue;
                 }
                 let is_long = pos.is_long.load(Ordering::Relaxed);
+                let position_generation = pos.generation.load(Ordering::Acquire);
                 let entry = pos.entry_price.load(Ordering::Relaxed);
                 let qty = pos.quantity.load(Ordering::Relaxed);
                 let entry_time = pos.entry_time_ms.load(Ordering::Relaxed);
@@ -1198,11 +1296,11 @@ impl GodEngineCore {
                 let buf_fast = (roundtrip_friction + 0.00035).clamp(0.00180, 0.00250);
                 // El espacio de respiración (breathing room) debe ser proporcional a la volatilidad real ATR(tau):
                 let min_breathing_fast = (atr_pct_live * 1.25).max(0.00150);
-                let act_fast = (buf_fast + min_breathing_fast).max(tp * 0.48);
+                let act_fast = (buf_fast + min_breathing_fast).min(tp * 0.45).max(buf_fast + 0.0004);
 
                 let buf_slow = (roundtrip_friction + 0.00060).clamp(0.00200, 0.00300);
                 let min_breathing_slow = (atr_pct_live * 1.75).max(0.00250);
-                let act_slow = (buf_slow + min_breathing_slow).max(tp * be_frac * 0.70);
+                let act_slow = (buf_slow + min_breathing_slow).min(tp * be_frac * 0.70).max(buf_slow + 0.0008);
 
                 let be_buffer = (1.0 - temporal_s) * buf_fast + temporal_s * buf_slow;
                 let be_activation = (1.0 - temporal_s) * act_fast + temporal_s * act_slow;
@@ -1237,9 +1335,9 @@ impl GodEngineCore {
                 }
 
                 // 2. Trailing Stop Ratchet Espectral Continuo (#559, #560, #584)
-                // Se activa en cuanto Breakeven está asegurado y el trade expande hacia TP (>= 50% TP):
-                let trail_act_fast = (be_activation + min_breathing_fast * 0.25).max(tp * 0.50);
-                let trail_act_slow = (tp * trail_frac).max(be_activation * 1.10).min(tp * 0.90);
+                // Se activa en cuanto Breakeven está asegurado y el trade expande hacia TP:
+                let trail_act_fast = (be_activation + min_breathing_fast * 0.25).min(tp * 0.55).max(be_activation + 0.0006);
+                let trail_act_slow = (be_activation * 1.15).min(tp * trail_frac);
                 let trail_activation_pnl = (1.0 - temporal_s) * trail_act_fast + temporal_s * trail_act_slow;
                 let trail_active = be_triggered && peak_pnl >= trail_activation_pnl;
 
@@ -1354,7 +1452,7 @@ impl GodEngineCore {
                 let roundtrip_taker_friction = live_fee.max(0.0007) + 2.0 * slip_floor;
                 // Garantía de ganancia neta sustancial en cosechas: al menos 70% del SL o 2.5x la fricción total
                 let net_profit_min = (sl * 0.70).max(roundtrip_taker_friction * 2.5).max(0.00280);
-                let peak_harvest_thresh = (tp * 0.75).max(net_profit_min * 1.20);
+                let peak_harvest_thresh = (net_profit_min * 1.15).max(tp * 0.40);
                 let min_stagnant_ms = (tau_trade_ms * (5.0 + 3.0 * temporal_s)).clamp(480_000.0, 14_400_000.0) as u64;
                 let hard_stagnant_ms = (tau_trade_ms * (10.0 + 6.0 * temporal_s)).clamp(1_200_000.0, 28_800_000.0) as u64;
                 let absolute_trade_life_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(3_000_000.0, 86_400_000.0) as u64;
@@ -1551,7 +1649,17 @@ impl GodEngineCore {
                     // D-619: puntuación cruda con la que se abrió (se lee antes de
                     // que `close_with_fee` limpie la posición).
                     let score_at_entry = pos.confidence.load(Ordering::Relaxed);
-                    let (_, _, _, margin_used, entry_fee_paid) = pos.close_with_fee();
+                    let (closed_side, closed_entry, closed_qty, margin_used, entry_fee_paid) = pos.close_with_fee();
+                    // Consume even when economic eligibility later rejects this
+                    // close. A subsequent adopted/reopened position must not
+                    // inherit the previous occupant's learning evidence.
+                    let council_evidence = self.council_entry_evidence
+                        .get_mut(coin_id).and_then(|slots| slots.get_mut(slot_idx))
+                        .and_then(Option::take)
+                        .filter(|e| e.symbol == sym && e.generation == position_generation
+                            && e.is_long == is_long && closed_side == is_long
+                            && closed_entry == entry && closed_qty == qty && closed_qty > 0.0
+                            && pos.generation.load(Ordering::Acquire) == position_generation.wrapping_add(1));
 
                     // B3.14 — ¿la entrada EXISTIÓ en el exchange? La
                     // posición local nace ANTES de la ejecución asíncrona;
@@ -1579,6 +1687,19 @@ impl GodEngineCore {
                         |v| Some((v - margin_used).max(0.0)),
                     );
 
+                    // XXIX / FMT-225: a local close remains a defensive proposal
+                    // for the host, not evidence that an unconfirmed entry earned
+                    // money. Simulation has its own arena and may learn locally.
+                    // Reservation settlement and exit-fill attribution remain
+                    // separate contracts; this gate does not certify them.
+                    if !self.outcome_context.permits_local_learning(was_exchange_confirmed) {
+                        self.diag_unverified_close_total += 1;
+                        closed_order = Some((is_long, net_trade_pnl, qty));
+                        break; // stop slot scan, NOT downstream market analytics
+                    }
+                    let publish_estimate = self.outcome_context
+                        .permits_shared_estimate_outputs(was_exchange_confirmed);
+
                     // FASE 23 / F-014 / C-07 (INFORME DECIMOCUARTO): métricas
                     // continuas unificadas — el PnL se escribe SOLO en
                     // coin.metrics (fuente única de verdad). Las escrituras
@@ -1586,8 +1707,12 @@ impl GodEngineCore {
                     // veces y hacían mentir el comentario F-014 de arriba;
                     // quedan en 0 (los readers D-441 de telemetría ya caen al
                     // fallback contra coin.metrics cuando scalp == 0).
-                    // B3.14: SOLO posiciones cuya entrada existió en el exchange.
-                    if was_exchange_confirmed {
+                    // Simulation metrics stay inside their own arena. In the
+                    // exchange context, the eligibility gate above has passed;
+                    // an entry-confirmed estimate is still not exit settlement.
+                    if was_exchange_confirmed
+                        || self.outcome_context == outcome_context::OutcomeContext::IsolatedSimulation
+                    {
                         // D-739 (DÉCIMA OLA · auditoría integral): el MISMO PnL se
                         // escribía en las tres celdas —`metrics`, `scalp` y
                         // `swing`—, de modo que una operación de +1,00 USD
@@ -1638,7 +1763,9 @@ impl GodEngineCore {
                     // de autoevolución estaba muerto: el daemon leía un bus
                     // que nadie escribía). Cada cierre emite predicción-vs-
                     // realidad para el Shadow Forest del online_daemon.
-                    {
+                    // XXIX: isolated evaluators must never publish on this live
+                    // bus. Legacy live estimates still need settlement provenance.
+                    if publish_estimate {
                         let cap_pct = if entry > 0.0 {
                             net_trade_pnl / (entry * qty).max(1e-8)
                         } else {
@@ -1686,27 +1813,10 @@ impl GodEngineCore {
                         self.confidence_calibrator.update(score_at_entry, is_win);
                     }
 
-                    // #25: Actualización del motor de refuerzo continuo PPO (OnlinePpoPolicyEngine)
-                    let ppo_reward = net_trade_pnl / (entry * qty).max(1e-8);
-                    let action_sign = if is_long { 1.0 } else { -1.0 };
-                    let fe_c = &self.feature_engines[coin_id];
-                    let state_feats = [
-                        fe_c.ofi_model.ema_ofi,
-                        fe_c.obi_accel.prev_obi,
-                        fe_c.cvpin.current_vpin(),
-                        0.0,
-                        fe_c.a_t,
-                    ];
-                    self.ppo_engine.update_policy(
-                        ppo_reward,
-                        &state_feats,
-                        action_sign,
-                        1.0,
-                        0.05,
-                        0.01,
-                        0.20,
-                        0.01,
-                    );
+                    // XXIX / FMT-228: one close is one reward observation.
+                    // The policy update below consumes it once. The former
+                    // second ingestion advanced the reward EMA twice and used
+                    // incompatible feature coordinates for the same outcome.
 
                     // D-680 (DÉCIMA OLA): media posterior con prior de diseño. Antes
                     // `n` empezaba en 1 y la primera operación sobrescribía el
@@ -1746,9 +1856,10 @@ impl GodEngineCore {
                     // APERTURA con el retorno neto REALIZADO y appendar la
                     // fila al dataset del auto-trainer NN. Append directo:
                     // los cierres son eventos raros (segundos-minutos), el
-                    // costo de abrir el archivo es irrelevante fuera del
-                    // hot path de ticks.
-                    {
+                    // costo de abrir el archivo debe medirse, no suponerse
+                    // irrelevante en un cierre síncrono del tick-path.
+                    // XXIX: no shared training dataset from isolated simulations.
+                    if publish_estimate {
                         let tensor_ready = pos
                             .nn_entry_tensor
                             .lock()
@@ -1801,11 +1912,10 @@ impl GodEngineCore {
                         .load(Ordering::Relaxed);
                     let clamp_min = self.arena.config.kelly_clamp_min.load(Ordering::Relaxed);
                     let clamp_max = self.arena.config.kelly_clamp_max.load(Ordering::Relaxed);
-                    let tau_pos = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
-                    let strategy_base = self
-                        .arena
-                        .config
-                        .kelly_at_tau(if tau_pos > 0.0 { tau_pos } else { 30_000.0 });
+                    // XXIX / FMT-229: close_with_fee has already cleared the
+                    // slot. Reuse this trade's pre-close continuous horizon;
+                    // reading the slot here silently replaced every tau by 30s.
+                    let strategy_base = self.arena.config.kelly_at_tau(tau_trade_ms);
                     // S-1: confianza espectral — persistencia de la escala
                     // dominante mapeada de [-1,1] a [0,1] (0.5 = browniano
                     // neutral). La banda de Kelly respira con el régimen.
@@ -1855,18 +1965,20 @@ impl GodEngineCore {
                     // — idénticas tras la unificación— duplicando cada trade en
                     // el tracker (los pesos adaptativos aprendían de un dataset
                     // con cada observación repetida).
-                    // C-07 / U-2: record_outcome por ranura armónica real sin colisiones
-                    if coin_id < self.last_senior_signals.len()
-                        && slot_idx < quantum_arena::position::MAX_SPECTRAL_SLOTS
-                    {
-                        self.consejo_deliberacion.record_outcome(
-                            &self.last_senior_signals[coin_id][slot_idx],
+                    // XXXII: a slot's most recent candidate is not necessarily
+                    // the decision which opened the position being closed.
+                    if let Some(evidence) = council_evidence {
+                        self.consejo_deliberacion.record_trade_outcome(
+                            &evidence.signals,
                             realized_ret,
+                            is_long,
                         );
+                    } else {
+                        self.diag_unattributed_council_closes += 1;
                     }
 
                     // #26: Registrar trauma en el sistema inmune vivo si la pérdida excede 1.5%
-                    if realized_ret < -0.015 {
+                    if publish_estimate && realized_ret < -0.015 {
                         let record = metacortex_engine::immune_system::TraumaRecord {
                             id: format!("trauma_{}_{}", sym, event_time_ms),
                             timestamp: chrono::Utc::now(),
@@ -4297,21 +4409,16 @@ impl GodEngineCore {
                     .unwrap_or(30_000.0)
             };
 
-            // Despacho Espectral Continuo Universal Multivariante:
-            // En lugar de cortes discretos arbitrarios (<= 300s vs > 300s),
-            // la escala característica tau_ms busca una ranura armónica disponible que no
-            // entre en interferencia destructiva con posiciones en la misma dirección.
+            // Legacy scale-distance admission over three physical slots.
+            // The 0.80 log-distance policy is not measured spectral independence.
             let maybe_slot = coin.positions.find_resonant_slot(tau_intent_ms, is_long_intent);
             let raw_slot_available = maybe_slot.is_some();
             let target_pos_slot = maybe_slot.unwrap_or(0);
             let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 
-            // Desacoplamiento Espectral Armónico de Apalancamiento:
-            // En micro-cuentas ($13 USD), el apalancamiento continuo prohíbe estrictamente
-            // apilar posiciones en la misma dirección DENTRO DE LA MISMA BANDA ARMÓNICA (|Δ ln τ| < 1.50)
-            // a menos que la posición previa ya esté asegurada en ganancia (>= 28 bps o con stop positivo).
-            // Si la posición previa pertenece a una frecuencia armónica ortogonal (|Δ ln τ| >= 1.50),
-            // coexisten armónicamente en ranuras independientes sin duplicar el riesgo de la misma onda.
+            // Additional legacy cutoff 1.50 with unrealized return >=28bps.
+            // It does NOT verify a protective stop or guarantee secured profit,
+            // and distant scales can still share portfolio risk.
             let same_dir_unsecured = if raw_slot_available {
                 let slots = coin.positions.slots();
                 let ln_target = (tau_intent_ms.max(10.0)).ln();
@@ -4333,7 +4440,7 @@ impl GodEngineCore {
                                 true
                             }
                         } else {
-                            false // Frecuencias desacopladas ortogonales: no interfieren destructivamente
+                            false // Outside this policy band; independence is not established.
                         }
                     } else {
                         false
@@ -4460,14 +4567,13 @@ impl GodEngineCore {
                                 .unwrap_or(1_138_000.0),
                             // P-5b: datos EXCLUSIVOS del asiento Ente del
                             // Mercado — ballena (z de burst del @trade real),
-                            // cascada (PEEK: observa sin robarle el evento al
-                            // camino per-tick), apalancamiento (OI per-símbolo).
+                            // cascada (misma vista as-of por símbolo que las
+                            // features), apalancamiento (OI per-símbolo).
                             whale_burst_z: self
                                 .arena
                                 .registry
                                 .get_for_coin_or(coin_id, "whale_burst_z", 0.0),
-                            liquidation_severity:
-                                crate::liquidation_feed::peek_pending(),
+                            liquidation_severity,
                             open_interest_norm: coin
                                 .open_interest_norm
                                 .load(Ordering::Relaxed),
@@ -4487,22 +4593,12 @@ impl GodEngineCore {
                             ml_model_base,
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
-                    let senior_sigs = self
-                        .consejo_deliberacion
-                        .extract_senior_signals(&council_snapshot, wr);
-                    // U-2: Registro exacto por ranura armónica espectral. Cada ranura armónica
-                    // de Hilbert preserva sus propias señales del Consejo deliberadas en la apertura,
-                    // garantizando aprendizaje desacoplado e incorruptible en el cierre.
-                    if coin_id < self.last_senior_signals.len()
-                        && target_pos_slot < quantum_arena::position::MAX_SPECTRAL_SLOTS
-                    {
-                        self.last_senior_signals[coin_id][target_pos_slot] = senior_sigs;
-                    }
-                    let deliberation = self.consejo_deliberacion.deliberar_with_weights(
+                    let council_decision = self.consejo_deliberacion.deliberar_traced(
                         &council_snapshot,
                         wr,
                         None,
                     );
+                    let deliberation = &council_decision.consensus;
                     // D-738 (DÉCIMA OLA · auditoría integral): EL CONSEJO APRUEBA
                     // UNA OPERACIÓN, NO «TENGO UNA OPINIÓN».
                     //
@@ -4629,12 +4725,6 @@ impl GodEngineCore {
                             if margin_req * eff_leverage >= min_notional
                                 && total_used + margin_req <= current_cap * cushion
                             {
-                                self.diag_opened += 1;
-                                self.diag_dir.record_open(is_long);
-                                self.arena
-                                    .used_margin
-                                    .fetch_add(margin_req, Ordering::Relaxed);
-
                                 let entry_is_maker = tau_intent_ms >= 60_000.0;
                                 let base_price = if entry_is_maker {
                                     if is_long { bid } else { ask }
@@ -4683,10 +4773,6 @@ impl GodEngineCore {
 
                                 // H-4: usar el fee de la FÍSICA — antes se recalculaba aparte
                                 let fee_paid = phys_entry_fee;
-                                self.arena
-                                    .unified_capital
-                                    .fetch_add(-fee_paid, Ordering::Relaxed);
-
                                 let qty = nominal_size / real_entry_price;
 
                                 let tau_coin = self
@@ -4705,9 +4791,19 @@ impl GodEngineCore {
                                         .round() as u64
                                 };
                                 let target_pos = coin.positions.get_slot(target_pos_slot);
+                                // Preserve reservation-before-publication ordering.
+                                // Invalid local prices/quantities cannot charge capital.
+                                if !real_entry_price.is_finite() || real_entry_price <= 0.0
+                                    || !qty.is_finite() || qty <= 0.0 {
+                                    continue;
+                                }
+                                self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
+                                self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
+                                let expected_generation = target_pos.generation
+                                    .load(Ordering::Acquire).wrapping_add(1);
 
                                 // Publicación ATÓMICA e inmutable de la posición junto con su tau espectral:
-                                target_pos.open_with_tau_and_fee(
+                                if !target_pos.open_with_tau_and_fee(
                                     is_long,
                                     real_entry_price,
                                     qty,
@@ -4720,7 +4816,25 @@ impl GodEngineCore {
                                     raw_confidence_score,
                                     fee_paid,
                                     tau_entry,
-                                );
+                                ) {
+                                    // Compensate only this attempted local reservation.
+                                    self.arena.used_margin.fetch_add(-margin_req, Ordering::Relaxed);
+                                    self.arena.unified_capital.fetch_add(fee_paid, Ordering::Relaxed);
+                                    continue; // No order, success counter or learning trace.
+                                }
+                                self.diag_opened += 1;
+                                self.diag_dir.record_open(is_long);
+                                // Fail closed for attribution if another transition
+                                // interleaved. This is not a transactional fill ledger.
+                                self.council_entry_evidence[coin_id][target_pos_slot] =
+                                    if target_pos.generation.load(Ordering::Acquire) == expected_generation
+                                        && target_pos.is_open()
+                                    {
+                                        self.last_senior_signals[coin_id][target_pos_slot] = council_decision.signals;
+                                        Some(CouncilEntryEvidence { symbol: sym.clone(),
+                                            generation: expected_generation, is_long,
+                                            signals: council_decision.signals })
+                                    } else { None };
                                 // QO-E2b — PRODUCTOR DEL DATASET NN: congelar
                                 // el tensor 54D de la APERTURA. El cierre lo
                                 // empareja con el retorno neto realizado y
@@ -4749,6 +4863,10 @@ impl GodEngineCore {
                                     order.tp_target,
                                     order.sl_target,
                                 ));
+                                self.entry_reservations[coin_id] = Some(entry_reservation::EntryReservation {
+                                    coin_id, slot: target_pos_slot, generation: expected_generation,
+                                    symbol: sym.clone(),
+                                });
 
                                 if self.diag_opened <= 100 {
                                     println!(
@@ -4778,6 +4896,9 @@ impl GodEngineCore {
                         }
                     }
                 }
+                // The legacy API returns ONE proposal. Do not reserve a second
+                // candidate whose order/identity would overwrite the first.
+                if new_order.is_some() { break; }
             }
             } // Fin de iteración concurrente de candidatos espectrales
 

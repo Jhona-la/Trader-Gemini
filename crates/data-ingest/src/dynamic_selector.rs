@@ -26,6 +26,13 @@ pub struct DynamicSelector {
     is_testnet: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectorError {
+    InvalidMinimumVolume,
+    ExpectedTickerArray,
+    ConflictingDuplicate { symbol: String },
+}
+
 impl DynamicSelector {
     // FIX #1488: Construcción de cliente HTTP resiliente sin unwrap
     pub fn new(is_testnet: bool) -> Self {
@@ -41,7 +48,7 @@ impl DynamicSelector {
         quantum_arena::symbols::update_dynamic_universe(top_symbols.to_vec());
     }
 
-    /// Fetches 24hr ticker data and ranks symbols based on Canonical Institutional Score
+    /// Fetches a legacy 24h-return ranking, not an estimated volatility spectrum.
     pub async fn select_top_10(&self) -> Result<Vec<String>, String> {
         let url = if self.is_testnet {
             "https://testnet.binancefuture.com/fapi/v1/ticker/24hr"
@@ -54,7 +61,9 @@ impl DynamicSelector {
             .get(url)
             .send()
             .await
-            .map_err(|e| format!("Failed to fetch 24hr ticker: {}", e))?;
+            .map_err(|e| format!("Failed to fetch 24hr ticker: {}", e))?
+            .error_for_status()
+            .map_err(|e| format!("Invalid ticker HTTP response: {}", e))?;
 
         let data: Value = response
             .json()
@@ -66,47 +75,78 @@ impl DynamicSelector {
         } else {
             1_000_000.0
         };
-        let top_10 = Self::parse_and_rank_tickers(&data, min_vol_usd);
+        let top_10 = Self::try_parse_and_rank_tickers(&data, min_vol_usd)
+            .map_err(|e| format!("Invalid ticker evidence: {:?}", e))?;
+        if top_10.is_empty() {
+            // Missing evidence must neither manufacture symbols nor overwrite
+            // the last published universe. This is not a freshness guarantee.
+            return Err("No eligible instruments in ticker response".to_string());
+        }
         Self::sync_with_quantum_arena(&top_10);
         Ok(top_10)
     }
 
-    /// Parsea y rankea activos en memoria de manera pura, determinista y testeable
-    /// Aplica la fórmula institucional canonical: score = ln(1 + vol) * pct * exp(-pct / 15.0)
+    /// Compatibility wrapper: malformed input has no selected instruments.
+    /// Use the checked API to distinguish an error from a valid empty selection.
     pub fn parse_and_rank_tickers(data: &Value, min_vol_usd: f64) -> Vec<String> {
-        let mut assets = Vec::new();
+        Self::try_parse_and_rank_tickers(data, min_vol_usd).unwrap_or_default()
+    }
 
-        if let Some(arr) = data.as_array() {
-            for item in arr {
-                if let (Some(sym), Some(vol_str), Some(pct_str)) = (
-                    item.get("symbol").and_then(|v| v.as_str()),
-                    item.get("quoteVolume").and_then(|v| v.as_str()),
-                    item.get("priceChangePercent").and_then(|v| v.as_str()),
-                ) {
-                    // Filtrar stablecoins y validar que sea un par USDT válido
-                    if sym.ends_with("USDT") && !sym.contains('_') && !STABLECOINS.contains(&sym) {
-                        let base = &sym[..sym.len() - 4];
-                        if base.len() >= 3
-                            && base.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+    /// Legacy heuristic ln(1+volume) * abs(return_pct) * exp(-abs(return_pct)/15).
+    /// The 15%-return preference is preserved, not presented as an optimum.
+    pub fn try_parse_and_rank_tickers(
+        data: &Value,
+        min_vol_usd: f64,
+    ) -> Result<Vec<String>, SelectorError> {
+        if !min_vol_usd.is_finite() || min_vol_usd < 0.0 {
+            return Err(SelectorError::InvalidMinimumVolume);
+        }
+        let arr = data.as_array().ok_or(SelectorError::ExpectedTickerArray)?;
+        let mut assets = Vec::new();
+        let mut seen = std::collections::HashMap::new();
+
+        for item in arr {
+            if let (Some(sym), Some(vol_str), Some(pct_str)) = (
+                item.get("symbol").and_then(|v| v.as_str()),
+                item.get("quoteVolume").and_then(|v| v.as_str()),
+                item.get("priceChangePercent").and_then(|v| v.as_str()),
+            ) {
+                // Filtrar stablecoins y validar que sea un par USDT válido
+                if sym.ends_with("USDT") && !sym.contains('_') && !STABLECOINS.contains(&sym) {
+                    let base = &sym[..sym.len() - 4];
+                    if base.len() >= 3
+                        && base
+                            .chars()
+                            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+                    {
+                        if let (Ok(vol), Ok(pct)) = (vol_str.parse::<f64>(), pct_str.parse::<f64>())
                         {
-                            if let (Ok(vol), Ok(pct)) =
-                                (vol_str.parse::<f64>(), pct_str.parse::<f64>())
-                            {
-                                if vol.is_finite() && pct.is_finite() && vol >= min_vol_usd {
-                                    let volatility = pct.abs();
-                                    // F4.6 / D-239: Ranking Unificado con Banda Exponencial:
-                                    // score = ln(1 + vol) * pct * exp(-pct / 15.0)
-                                    let score = (1.0 + vol).ln()
-                                        * volatility
-                                        * (-volatility / 15.0_f64).exp();
-                                    if score.is_finite() && score > 0.0 {
-                                        assets.push(AssetScore {
+                            if vol.is_finite() && vol >= 0.0 && pct.is_finite() {
+                                if let Some(previous) = seen.insert(sym.to_string(), (vol, pct)) {
+                                    if previous != (vol, pct) {
+                                        return Err(SelectorError::ConflictingDuplicate {
                                             symbol: sym.to_string(),
-                                            volume_usd: vol,
-                                            volatility_pct: volatility,
-                                            score,
                                         });
                                     }
+                                    continue;
+                                }
+                                if vol < min_vol_usd {
+                                    continue;
+                                }
+                                let volatility = pct.abs();
+                                // F4.6 / D-239: Ranking Unificado con Banda Exponencial:
+                                // score = ln(1 + vol) * pct * exp(-pct / 15.0)
+                                // Evaluate the bounded return band before
+                                // multiplying by log-volume to avoid inf*0.
+                                let band = volatility * (-volatility / 15.0_f64).exp();
+                                let score = vol.ln_1p() * band;
+                                if score.is_finite() && score > 0.0 {
+                                    assets.push(AssetScore {
+                                        symbol: sym.to_string(),
+                                        volume_usd: vol,
+                                        volatility_pct: volatility,
+                                        score,
+                                    });
                                 }
                             }
                         }
@@ -115,33 +155,14 @@ impl DynamicSelector {
             }
         }
 
-        // Ordenar de mayor a menor score
+        // Equal scores have an explicit tie rule independent of feed order.
         assets.sort_by(|a, b| {
             b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .total_cmp(&a.score)
+                .then_with(|| a.symbol.cmp(&b.symbol))
         });
 
-        // Tomar los 10 mejores
-        let mut top_10: Vec<String> = assets.into_iter().take(10).map(|a| a.symbol).collect();
-
-        // FIX #616: Fallback canónico determinista con las 10 monedas maestras si el feed es insuficiente
-        if top_10.is_empty() {
-            top_10 = vec![
-                "BTCUSDT".to_string(),
-                "ETHUSDT".to_string(),
-                "SOLUSDT".to_string(),
-                "BNBUSDT".to_string(),
-                "DOGEUSDT".to_string(),
-                "XRPUSDT".to_string(),
-                "ADAUSDT".to_string(),
-                "AVAXUSDT".to_string(),
-                "LINKUSDT".to_string(),
-                "SUIUSDT".to_string(),
-            ];
-        }
-
-        top_10
+        Ok(assets.into_iter().take(10).map(|a| a.symbol).collect())
     }
 }
 
@@ -215,12 +236,10 @@ mod tests {
     }
 
     #[test]
-    fn test_dynamic_selector_fallback_on_empty() {
+    fn test_dynamic_selector_abstains_on_empty() {
         let empty_json = serde_json::json!([]);
         let top = DynamicSelector::parse_and_rank_tickers(&empty_json, 10_000.0);
-        assert_eq!(top.len(), 10);
-        assert_eq!(top[0], "BTCUSDT");
-        assert_eq!(top[1], "ETHUSDT");
+        assert!(top.is_empty());
     }
 
     #[test]

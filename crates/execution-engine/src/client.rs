@@ -307,7 +307,8 @@ impl BinanceClient {
     /// Distingue tres clases de fallo para idempotencia (F1.2):
     ///   - Err empezando con "AMBIGUOUS:" → timeout/red: la orden PUEDE existir
     ///     en Binance; el caller DEBE consultar por clientOrderId antes de reintentar.
-    ///   - Err con code negativo → rechazo definitivo, seguro reintentar.
+    ///   - ACK ilegible, HTTP408 y códigos -1006/-1007 → también ambiguos.
+    ///   - Rechazos conocidos no prueban que sea seguro repetir otra intención.
     ///   - Ok(ack) → respuesta conocida.
     #[inline(always)]
     pub async fn execute_order_payload_typed(
@@ -329,22 +330,47 @@ impl BinanceClient {
                 let limits = extract_limits(resp.headers());
                 let retry_after = extract_retry_after(resp.headers());
                 let status = resp.status();
-                let body = resp
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "Unknown error".to_string());
+                // These transport-level controls are known from the headers,
+                // even if reading the error body later would fail.
+                if status.as_u16() == 429 {
+                    return Err(format!("HTTP_429_RATE_LIMITED retry_after={}", retry_after));
+                }
+                if status.as_u16() == 418 {
+                    return Err("HTTP_418_IP_BANNED".to_string());
+                }
+                let body = resp.text().await.map_err(|_| {
+                    format!(
+                        "AMBIGUOUS: HTTP {} unreadable response body",
+                        status.as_u16()
+                    )
+                })?;
                 if status.is_success() {
-                    let ack: OrderAck = parse_order_body(&body)?;
+                    // A successful submission can precede a truncated/invalid
+                    // response. A parse error is not proof of non-execution.
+                    let ack: OrderAck =
+                        parse_order_body(&body).map_err(|e| format!("AMBIGUOUS: {}", e))?;
                     Ok((limits, ack))
-                } else if status.as_u16() == 429 {
-                    // F1.8: rate limit = cooldown temporal, no kill-switch.
-                    Err(format!("HTTP_429_RATE_LIMITED retry_after={}", retry_after))
-                } else if status.as_u16() == 418 {
-                    // F1.8: 418 = IP baneada por Binance → kill-switch legítimo.
-                    Err("HTTP_418_IP_BANNED".to_string())
                 } else if status.is_client_error() {
-                    // 4xx: Binance procesó el request y lo rechazó — la orden NO existe.
-                    Err(parse_reject_body(&body, status.as_u16()))
+                    use crate::order_types::{error_codes, BinanceApiError};
+                    let unknown_execution = status.as_u16() == 408
+                        || serde_json::from_str::<BinanceApiError>(&body)
+                            .map(|e| {
+                                matches!(
+                                    e.code,
+                                    error_codes::EXECUTION_STATUS_UNKNOWN
+                                        | error_codes::BACKEND_TIMEOUT
+                                )
+                            })
+                            .unwrap_or(false);
+                    if unknown_execution {
+                        Err(format!(
+                            "AMBIGUOUS: HTTP {} body={}",
+                            status.as_u16(),
+                            truncate(&body, 200)
+                        ))
+                    } else {
+                        Err(parse_reject_body(&body, status.as_u16()))
+                    }
                 } else {
                     // 5xx: estado desconocido — tratar como ambiguo.
                     Err(format!(

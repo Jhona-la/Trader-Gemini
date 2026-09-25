@@ -1,6 +1,7 @@
-/// Fase A: Filtro de Kalman Cuántico
-/// Un filtro de estado ultra-rápido para la predictibilidad de micro-tendencias (Scalping).
-/// Modela la incertidumbre y suaviza señales con varianza adaptativa.
+/// Filtro escalar clásico de paseo aleatorio y observación directa (H = 1).
+/// x tiene unidades de la observación; p, q y r tienen sus unidades al cuadrado.
+/// q es varianza POR ACTUALIZACIÓN: esta API no conoce timestamps ni estima q/r.
+/// No representa un cálculo cuántico ni una taxonomía de horizontes de trading.
 
 #[derive(Debug, Clone)]
 pub struct KalmanFilter1D {
@@ -15,45 +16,91 @@ pub struct KalmanFilter1D {
 }
 
 impl KalmanFilter1D {
+    /// # Panics
+    /// Ante estado/covarianzas inválidos; usar try_new para datos externos.
     pub fn new(initial_x: f64, initial_p: f64, q: f64, r: f64) -> Self {
-        Self {
+        Self::try_new(initial_x, initial_p, q, r)
+            .expect("Kalman requires finite state and nonnegative finite variances")
+    }
+
+    /// Construcción fallible para configuración externa; no inventa covarianzas.
+    pub fn try_new(initial_x: f64, initial_p: f64, q: f64, r: f64) -> Result<Self, &'static str> {
+        if !initial_x.is_finite()
+            || !Self::valid_variance(initial_p)
+            || !Self::valid_variance(q)
+            || !Self::valid_variance(r)
+        {
+            return Err("Kalman requires finite state and nonnegative finite variances");
+        }
+        Ok(Self {
             x: initial_x,
             p: initial_p,
             q,
             r,
-        }
+        })
+    }
+
+    fn valid_variance(value: f64) -> bool {
+        value.is_finite() && value >= 0.0
     }
 
     /// Actualiza el filtro con una nueva medición O(1)
     #[inline(always)]
     pub fn update(&mut self, measurement: f64) -> f64 {
-        if !measurement.is_finite() {
-            return self.x;
+        self.try_update(measurement).unwrap_or(self.x)
+    }
+
+    /// Rechaza una entrada/estado inválido o una predicción no representable sin
+    /// cambiar x/p/r. Los campos públicos obligan a validar también cada update.
+    /// Un resultado Err no significa incertidumbre cero ni observación neutra.
+    pub fn try_update(&mut self, measurement: f64) -> Result<f64, &'static str> {
+        self.try_update_with_r(measurement, self.r)
+    }
+
+    fn try_update_with_r(&mut self, measurement: f64, r: f64) -> Result<f64, &'static str> {
+        if !measurement.is_finite()
+            || !self.x.is_finite()
+            || !Self::valid_variance(self.p)
+            || !Self::valid_variance(self.q)
+            || !Self::valid_variance(r)
+        {
+            return Err("invalid Kalman observation or covariance state");
         }
-
-        // Predicción
-        self.p = (self.p + self.q).max(1e-12);
-
-        // Actualización
-        let denom = self.p + self.r;
-        let k = if denom.abs() > 1e-12 {
-            self.p / denom
+        let predicted_p = self.p + self.q;
+        if !predicted_p.is_finite() || (predicted_p == 0.0 && r == 0.0) {
+            return Err("Kalman innovation variance is singular or not representable");
+        }
+        // K=P-/(P-+R), evaluado como razones <=1: evita overflow de la suma.
+        // P+=P-*R/(P-+R), sin producto desbordado ni cancelación de (1-K).
+        let (k, next_p) = if predicted_p >= r {
+            let ratio = r / predicted_p;
+            (1.0 / (1.0 + ratio), r / (1.0 + ratio))
         } else {
-            0.0
+            let ratio = predicted_p / r;
+            (ratio / (1.0 + ratio), predicted_p / (1.0 + ratio))
         };
-        self.x += k * (measurement - self.x);
-        self.p = ((1.0 - k) * self.p).max(1e-12);
-
-        self.x
+        // Una combinación convexa evita overflow de measurement-x con signos opuestos.
+        let next_x = (1.0 - k) * self.x + k * measurement;
+        if !next_x.is_finite() || !next_p.is_finite() {
+            return Err("Kalman posterior is not representable");
+        }
+        self.x = next_x;
+        self.p = next_p;
+        self.r = r;
+        Ok(next_x)
     }
 
     /// Actualiza dinámicamente el ruido de medición basado en la volatilidad reciente
     #[inline(always)]
     pub fn update_with_dynamic_r(&mut self, measurement: f64, dynamic_r: f64) -> f64 {
-        if dynamic_r.is_finite() && dynamic_r > 0.0 {
-            self.r = dynamic_r.max(1e-6);
-        }
-        self.update(measurement)
+        // Compatibilidad: un R dinámico inválido conserva el R anterior. La
+        // publicación del nuevo R se realiza sólo si toda la actualización pasa.
+        let r = if dynamic_r.is_finite() && dynamic_r > 0.0 {
+            dynamic_r
+        } else {
+            self.r
+        };
+        self.try_update_with_r(measurement, r).unwrap_or(self.x)
     }
 
     /// Modula el ruido de medición R en función de la volatilidad instantánea (ej. ATR o Garman-Klass)

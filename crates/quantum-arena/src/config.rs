@@ -1,4 +1,6 @@
 use crate::atomic_float::AtomicF64;
+use crate::horizon_policy::{trailing_at_tau, HorizonParameter};
+use crate::temporal_spectrum::HorizonCurve;
 
 /// Axioma V: El Config Omnisciente (5 Capas Adaptativas)
 /// Todo expuesto como atómicos para mutación lock-free (O(1)) desde el Evolver.
@@ -398,22 +400,22 @@ impl QuantumConfig {
         }
     }
 
-    /// Evalúa el TP objetivo continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
+    /// TP bajo la política compartida runtime-v1, no autorización de operación.
     #[inline(always)]
     pub fn tp_at_tau(&self, tau_ms: f64) -> f64 {
         use std::sync::atomic::Ordering;
         let a = self.tp_curve_a.load(Ordering::Relaxed);
         let b = self.tp_curve_b.load(Ordering::Relaxed);
-        (a + b * tau_ms.max(1e-6).ln()).exp()
+        HorizonParameter::TakeProfit.evaluate(HorizonCurve { a, b }, tau_ms)
     }
 
-    /// Evalúa el SL continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
+    /// SL bajo runtime-v1. La lectura de a/b separados no es un snapshot atómico.
     #[inline(always)]
     pub fn sl_at_tau(&self, tau_ms: f64) -> f64 {
         use std::sync::atomic::Ordering;
         let a = self.sl_curve_a.load(Ordering::Relaxed);
         let b = self.sl_curve_b.load(Ordering::Relaxed);
-        (a + b * tau_ms.max(1e-6).ln()).exp()
+        HorizonParameter::StopLoss.evaluate(HorizonCurve { a, b }, tau_ms)
     }
 
     /// Evalúa la fracción Kelly continua en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
@@ -422,7 +424,7 @@ impl QuantumConfig {
         use std::sync::atomic::Ordering;
         let a = self.kelly_curve_a.load(Ordering::Relaxed);
         let b = self.kelly_curve_b.load(Ordering::Relaxed);
-        (a + b * tau_ms.max(1e-6).ln()).exp().clamp(0.01, 3.0)
+        HorizonParameter::Kelly.evaluate(HorizonCurve { a, b }, tau_ms)
     }
 
     /// Evalúa los parámetros del Trailing Stop continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años]:
@@ -437,12 +439,12 @@ impl QuantumConfig {
         let step_a = self.trail_step_curve_a.load(Ordering::Relaxed);
         let step_b = self.trail_step_curve_b.load(Ordering::Relaxed);
 
-        let ln_t = tau_ms.max(1e-6).ln();
-        let mult = (mult_a + mult_b * ln_t).exp().clamp(1.5, 6.0);
-        let act = (act_a + act_b * ln_t).exp().clamp(1.5, 6.0);
-        let step = (step_a + step_b * ln_t).exp().clamp(0.5, 4.0);
-        let max = (act * 1.5).clamp(2.0, 7.0);
-        (mult, act, step, max)
+        trailing_at_tau(
+            HorizonCurve { a: mult_a, b: mult_b },
+            HorizonCurve { a: act_a, b: act_b },
+            HorizonCurve { a: step_a, b: step_b },
+            tau_ms,
+        )
     }
 
     /// Evalúa el umbral OBI continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
@@ -456,7 +458,7 @@ impl QuantumConfig {
         // invisible el 25% superior de la banda: el campeón con OBI 0.797
         // llegaba al gate leído como 0.60 — el genoma evaluado no era el
         // operado.
-        (a + b * tau_ms.max(1e-6).ln()).exp().clamp(0.10, 0.95)
+        HorizonParameter::ObiThreshold.evaluate(HorizonCurve { a, b }, tau_ms)
     }
 
     /// Actualiza la curva continua de TP a partir de anclas rápida y lenta

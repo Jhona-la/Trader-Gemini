@@ -1,6 +1,6 @@
 /// ⚡ ALGORITMO #63: AGREGADOR DE FLUJO DE ÓRDENES CERO-COPIA NANO HFT (ORDER FLOW AGGREGATOR ENGINE)
 /// Agrega volúmenes agresores de compra y venta en microsegundos sin asignaciones en Heap.
-/// Conduce la latencia de procesamiento sistémico a < 1.1 µs por tick.
+/// Pure arithmetic helper; this function alone does not establish system latency.
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C, align(64))]
 pub struct OrderFlowAggregatorEngine;
@@ -20,11 +20,16 @@ impl OrderFlowAggregatorEngine {
         } else {
             0.0
         };
-        let total = safe_buy + safe_sell;
-        if total <= 1e-12 {
+        let scale = safe_buy.max(safe_sell);
+        if scale == 0.0 {
             return (0.5, 0.0);
         }
-        let buy_ratio = (safe_buy / total).clamp(0.0, 1.0);
+        // Homogeneous degree zero: changing volume units cannot change the
+        // ratio. Scale first to avoid overflowing B+S for finite inputs.
+        // A nonzero tiny volume is not missing data or a neutral market.
+        let buy = safe_buy / scale;
+        let sell = safe_sell / scale;
+        let buy_ratio = buy / (buy + sell);
         let delta = safe_buy - safe_sell;
         (buy_ratio, delta)
     }

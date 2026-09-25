@@ -157,10 +157,10 @@ impl ShadowForest {
         // QO-E2c — OBJETIVO UNIFICADO: la cosecha comparaba PnL CRUDO (el
         // único promotor fuera del fitness D-652 — divergencia de objetivos
         // que la auditoría señaló). Ahora cada universo se puntúa con
-        /// fitness::compute (crecimiento log penalizado por drawdown²,
-        /// inacción INVIABLE) y el ganador debe superar al CONTROL en
-        /// fitness, no en dólares: un mutante con $1 más y +40% de
-        /// drawdown YA NO gana.
+        // fitness::compute (crecimiento log penalizado por drawdown²,
+        // inacción INVIABLE) y el ganador debe superar al CONTROL en
+        // fitness, no en dólares: un mutante con $1 más y +40% de
+        // drawdown YA NO gana.
         for (i, engine) in self.engines.iter().enumerate() {
             let cap = engine.arena.unified_capital.load(Ordering::Relaxed);
             if i < self.peak_capital.len() && cap > self.peak_capital[i] {
@@ -232,9 +232,11 @@ impl ShadowForest {
                 .config
                 .base_capital
                 .store(self.initial_capital, Ordering::Relaxed);
-            // Cerramos todas las posiciones virtuales
+            // Cerramos todas las posiciones virtuales en todos los slots espectrales
             for coin in engine.arena.coins.iter() {
-                coin.positions.position.close();
+                for slot in coin.positions.slots() {
+                    slot.close();
+                }
             }
 
             let mutation = if i == 0 {

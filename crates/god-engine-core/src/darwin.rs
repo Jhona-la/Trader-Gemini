@@ -8,8 +8,10 @@ use quantum_arena::tick_source::TickEvent;
 use rand::RngExt;
 
 /// Axioma X: The Darwin Daemon
-/// Continuous Online Evolution. Evaluates the recent market microstructure
-/// and dynamically hot-swaps parameters without stopping the live engine.
+/// Legacy optional GA on a recent tick window; not a certification of online
+/// adaptation or out-of-sample superiority. XXXV shares replay and drawdown
+/// policy for candidate/baseline. Synthetic context, incomplete configuration
+/// snapshots and promotion-before-persistence remain open.
 
 #[derive(Debug, Clone)]
 pub struct Genotype {
@@ -305,6 +307,65 @@ impl OmniSynth {
     }
 }
 
+/// Legacy promotion margin, NOT statistical significance or publication authority.
+/// Nonfinite scores (including insufficient evidence) are not measured utilities.
+pub fn meets_promotion_margin(candidate: f64, baseline: f64) -> bool {
+    if !candidate.is_finite() || !baseline.is_finite() {
+        return false;
+    }
+    if baseline >= 0.0 {
+        candidate > (baseline * 1.05).max(baseline + 1e-4)
+    } else {
+        candidate > baseline && candidate > baseline * 0.95
+    }
+}
+
+fn replay_arena(genome: &Genotype, initial: f64, max_drawdown: f64) -> Arc<GlobalArena> {
+    let arena = GlobalArena::build_in_own_stack(initial);
+    genome.apply_to_arena(&arena);
+    arena.config.global_max_drawdown.store(max_drawdown, Ordering::Relaxed);
+    arena
+}
+
+/// Common replay, still with synthetic macros and realized-close drawdown.
+/// Defaults outside the copied genes and dynamically loaded models are NOT
+/// a frozen live configuration/model snapshot or an out-of-sample experiment.
+fn evaluate_genotype(
+    genome: &Genotype,
+    stream: &[TickEvent],
+    initial: f64,
+    max_drawdown_policy: f64,
+    active_coins: usize,
+) -> (f64, f64) {
+    if !initial.is_finite() || initial <= 0.0 || !max_drawdown_policy.is_finite() {
+        return (initial, f64::NEG_INFINITY);
+    }
+    let arena = replay_arena(genome, initial, max_drawdown_policy);
+    let mut engine = GodEngineCore::new(arena.clone());
+    let mut synth = OmniSynth::new(active_coins);
+    let mut peak_capital = initial;
+    let mut max_drawdown = 0.0_f64;
+    let mut trades = 0_u32;
+    for tick in stream {
+        arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price,
+            tick.bid_qty, tick.ask_qty, tick.timestamp);
+        let omni = synth.tick(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty);
+        let (_, closed, _) = engine.process_tick(tick.coin_id, tick.bid_price, tick.ask_price,
+            tick.bid_qty, tick.ask_qty, tick.timestamp, &omni);
+        if closed.is_some() {
+            trades += 1;
+            let capital = arena.unified_capital.load(Ordering::Relaxed);
+            if !capital.is_finite() || capital <= 0.0 {
+                return (capital, f64::NEG_INFINITY);
+            }
+            peak_capital = peak_capital.max(capital);
+            max_drawdown = max_drawdown.max((peak_capital - capital) / peak_capital);
+        }
+    }
+    let final_capital = arena.unified_capital.load(Ordering::Relaxed);
+    (final_capital, crate::fitness_compute(initial, final_capital, max_drawdown, trades))
+}
+
 pub struct DarwinDaemon {
     pub live_arena: Arc<GlobalArena>,
 }
@@ -358,7 +419,14 @@ impl DarwinDaemon {
         let current_active = Genotype::current_from_arena(&self.live_arena);
         population[0] = current_active.clone();
 
-        let initial_capital = self.live_arena.unified_capital.load(Ordering::Relaxed); // Dynamic fitness baseline
+        let initial_capital = self.live_arena.unified_capital.load(Ordering::Relaxed);
+        // Capture this risk constraint once for BOTH sides, not a transactional
+        // snapshot of the whole live configuration.
+        let replay_max_drawdown = self.live_arena.config.global_max_drawdown.load(Ordering::Relaxed);
+        if !initial_capital.is_finite() || initial_capital <= 0.0 || !replay_max_drawdown.is_finite() {
+            println!("[Darwin] Evaluation skipped: invalid capital or drawdown policy.");
+            return;
+        }
         // M5-H01: arranca en INVIABLE, no en 0.0 — con 0.0, una corrida donde
         // ningún genoma aclara el gate min_trades (todos -inf) o donde todos
         // pierden deja este valor FANTASMA, y FIX#412 lo leería como "mejor
@@ -370,75 +438,8 @@ impl DarwinDaemon {
             let mut results: Vec<_> = population
                 .par_iter()
                 .map(|genome| {
-                    // D-714: construcción con pila suficiente (este sitio corre en un worker de rayon).
-                    let arena = GlobalArena::build_in_own_stack(initial_capital);
-                    genome.apply_to_arena(&arena);
-                    arena
-                        .config
-                        .global_max_drawdown
-                        .store(0.95, Ordering::Relaxed);
-
-                    let mut engine = GodEngineCore::new(arena.clone());
-                    let mut max_drawdown = 0.0;
-                    let mut peak_capital = initial_capital;
-                    // M5-H01: cierres completados — alimenta el gate min_trades
-                    // del fitness unificado (30 = WF_MIN_TRADES).
-                    let mut trades: u32 = 0;
-                    // CERT-M2-H05: tensor 54D CAUSAL del propio tick — mismo
-                    // contrato que producción/nativo (ver OmniSynth). Antes:
-                    // copia de swing-features en omni[0..34] con funding=
-                    // aceleración y macro=0.
-                    let mut synth = OmniSynth::new(active_coins);
-
-                    for tick in &master_stream {
-                        arena.update_market_data(
-                            tick.coin_id,
-                            tick.bid_price,
-                            tick.ask_price,
-                            tick.bid_qty,
-                            tick.ask_qty,
-                            tick.timestamp,
-                        );
-                        let dynamic_omni = synth.tick(
-                            tick.coin_id,
-                            tick.bid_price,
-                            tick.ask_price,
-                            tick.bid_qty,
-                            tick.ask_qty,
-                        );
-
-                        let (_new_pos, closed_pos, _) = engine.process_tick(
-                            tick.coin_id,
-                            tick.bid_price,
-                            tick.ask_price,
-                            tick.bid_qty,
-                            tick.ask_qty,
-                            tick.timestamp,
-                            &dynamic_omni,
-                        );
-
-                        if closed_pos.is_some() {
-                            trades += 1;
-                            let current_cap = arena.unified_capital.load(Ordering::Relaxed);
-                            if current_cap > peak_capital {
-                                peak_capital = current_cap;
-                            }
-                            let dd = (peak_capital - current_cap) / peak_capital;
-                            if dd > max_drawdown {
-                                max_drawdown = dd;
-                            }
-                        }
-                    }
-
-                    let final_cap = arena.unified_capital.load(Ordering::Relaxed);
-                    // CERT-M5-H01: fitness UNIFICADO — antes (final−initial)×(1−dd):
-                    // PnL crudo sin log-utility, sin INVIABLE para inacción, escalado
-                    // por dólares (no por crecimiento relativo). Era la 5ª fn compitiendo.
-                    let fitness = crate::fitness_compute(
-                        initial_capital,
-                        final_cap,
-                        max_drawdown,
-                        trades,
+                    let (final_cap, fitness) = evaluate_genotype(
+                        genome, &master_stream, initial_capital, replay_max_drawdown, active_coins,
                     );
                     (genome.clone(), final_cap, fitness)
                 })
@@ -583,95 +584,23 @@ impl DarwinDaemon {
             population = next_gen;
         }
 
-        let baseline_results = [current_active];
-        let baseline_fitness = {
-            // D-714: construcción con pila suficiente (este sitio corre en un worker de rayon).
-            let arena = GlobalArena::build_in_own_stack(initial_capital);
-            baseline_results[0].apply_to_arena(&arena);
-            let mut engine = GodEngineCore::new(arena.clone());
-            let mut max_drawdown = 0.0;
-            let mut peak_capital = initial_capital;
-            let mut baseline_trades: u32 = 0;
-            let mut synth = OmniSynth::new(active_coins);
-            for tick in &master_stream {
-                arena.update_market_data(
-                    tick.coin_id,
-                    tick.bid_price,
-                    tick.ask_price,
-                    tick.bid_qty,
-                    tick.ask_qty,
-                    tick.timestamp,
-                );
-                let dynamic_omni = synth.tick(
-                    tick.coin_id,
-                    tick.bid_price,
-                    tick.ask_price,
-                    tick.bid_qty,
-                    tick.ask_qty,
-                );
-
-                let (_new_pos, closed_pos, _) = engine.process_tick(
-                    tick.coin_id,
-                    tick.bid_price,
-                    tick.ask_price,
-                    tick.bid_qty,
-                    tick.ask_qty,
-                    tick.timestamp,
-                    &dynamic_omni,
-                );
-                if closed_pos.is_some() {
-                    baseline_trades += 1;
-                    let cap = arena.unified_capital.load(Ordering::Relaxed);
-                    if cap > peak_capital {
-                        peak_capital = cap;
-                    }
-                    let dd = if peak_capital > 0.0 {
-                        (peak_capital - cap) / peak_capital
-                    } else {
-                        0.0
-                    };
-                    if dd > max_drawdown && dd.is_finite() {
-                        max_drawdown = dd;
-                    }
-                }
-            }
-            let final_cap = arena.unified_capital.load(Ordering::Relaxed);
-            // CERT-M5-H01: fitness UNIFICADO (baseline también)
-            let raw_fitness = crate::fitness_compute(
-                initial_capital,
-                final_cap,
-                max_drawdown,
-                baseline_trades,
-            );
-            if raw_fitness.is_finite() {
-                raw_fitness
-            } else {
-                -999999.0
-            }
-        };
+        let (_, baseline_fitness) = evaluate_genotype(
+            &current_active, &master_stream, initial_capital, replay_max_drawdown, active_coins,
+        );
 
         println!("[Darwin] Online Evolution Complete.");
         println!("         Current Active Fitness: {:.4}", baseline_fitness);
         println!("         Evolved Genome Fitness: {:.4}", best_all_time.1);
 
-        // FIX #412: El nuevo genoma debe ser estrictamente mejor y superar un margen del 5% sin inversión de signo.
-        // M5-H01: si el baseline no alcanzó min_trades (30), raw_fitness es
-        // NEG_INFINITY → aquí -999999.0 ⇒ cualquier genoma evolucionado que sí
-        // aclare el gate promueve (la inacción del incumbente no es evidencia
-        // de bondad). Si NADIE lo aclara, no hay promoción: NEG_INFINITY no
-        // es > -999999.0.
-        let is_significantly_better = if baseline_fitness >= 0.0 {
-            best_all_time.1 > (baseline_fitness * 1.05).max(baseline_fitness + 1e-4)
-        } else {
-            // Para fitness negativo (ej. -100.0), mejorar un 5% significa acercarse a cero (ej. > -95.0)
-            best_all_time.1 > baseline_fitness && best_all_time.1 > (baseline_fitness * 0.95)
-        };
+        // Missing/invalid evidence is not a measured loss. The inherited finite
+        // margin is a policy, not significance or a structural-change detector.
+        let clears_margin = meets_promotion_margin(best_all_time.1, baseline_fitness);
 
         let allow_hotswap = std::env::var("ENABLE_ONLINE_DARWIN_MUTATION")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
-        if is_significantly_better && allow_hotswap {
-            println!("[Darwin] 🧬 HOT-SWAPPING ACTIVE GENOME! Market regime shift detected.");
+        if clears_margin && allow_hotswap {
+            println!("[Darwin] 🧬 Candidate cleared the configured in-window margin; authorized legacy promotion.");
             best_all_time.0.apply_to_arena(&self.live_arena);
 
             let mut full_genotype =
@@ -710,7 +639,7 @@ impl DarwinDaemon {
                 Err(e) => println!("⚠️ [DARWIN] Fallo al promover genoma al almacén: {}", e),
             }
         } else {
-            println!("[Darwin] 🛡️ Current genome is still optimal for this regime.");
+            println!("[Darwin] No promotion: missing comparable evidence, margin not met, or mutation disabled. No optimality claim.");
         }
     }
 }
@@ -774,5 +703,50 @@ mod tests {
                 .load(std::sync::atomic::Ordering::Relaxed)
                 > 0.0
         );
+    }
+
+    #[test]
+    fn replay_candidate_and_baseline_use_the_same_captured_drawdown_policy() {
+        let source = GlobalArena::build_in_own_stack(100.0);
+        let genome = Genotype::current_from_arena(&source);
+        let candidate = replay_arena(&genome, 100.0, 0.2);
+        let baseline = replay_arena(&genome, 100.0, 0.2);
+        assert_eq!(candidate.config.global_max_drawdown.load(Ordering::Relaxed), 0.2);
+        assert_eq!(baseline.config.global_max_drawdown.load(Ordering::Relaxed), 0.2);
+        assert_eq!(candidate.config.global_leverage.load(Ordering::Relaxed),
+            baseline.config.global_leverage.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn empty_replay_preserves_missing_evidence_instead_of_a_finite_loss() {
+        let source = GlobalArena::build_in_own_stack(100.0);
+        let genome = Genotype::current_from_arena(&source);
+        let (capital, score) = evaluate_genotype(&genome, &[], 100.0, 0.2, 1);
+        assert_eq!(capital, 100.0);
+        assert_eq!(score, f64::NEG_INFINITY);
+        assert!(!meets_promotion_margin(0.1, score));
+    }
+
+    #[test]
+    fn invalid_replay_policy_is_rejected_before_constructing_an_engine() {
+        let source = GlobalArena::build_in_own_stack(100.0);
+        let genome = Genotype::current_from_arena(&source);
+        assert_eq!(evaluate_genotype(&genome, &[], 100.0, f64::NAN, 1).1, f64::NEG_INFINITY);
+        assert_eq!(evaluate_genotype(&genome, &[], 0.0, 0.2, 1).1, f64::NEG_INFINITY);
+    }
+
+    #[test]
+    fn same_genome_and_short_tape_have_equal_replay_results() {
+        let source = GlobalArena::build_in_own_stack(100.0);
+        let genome = Genotype::current_from_arena(&source);
+        let stream = [1_000, 2_000, 3_000].map(|timestamp| TickEvent {
+            coin_id: 0, timestamp, bid_price: 100.0, ask_price: 100.02,
+            bid_qty: 1.0, ask_qty: 1.0,
+        });
+        let candidate = evaluate_genotype(&genome, &stream, 100.0, 0.2, 1);
+        let baseline = evaluate_genotype(&genome, &stream, 100.0, 0.2, 1);
+        assert_eq!(candidate, baseline);
+        assert!(candidate.0.is_finite());
+        assert_eq!(candidate.1, f64::NEG_INFINITY); // three ticks are not thirty closes
     }
 }

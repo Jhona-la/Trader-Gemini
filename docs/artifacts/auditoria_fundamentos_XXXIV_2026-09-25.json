@@ -1,0 +1,1123 @@
+{
+  "schema_version": 1,
+  "round": "XXXIV",
+  "date": "2026-09-25",
+  "language": "es",
+  "title": "Causalidad de memoria, física de ejecución y evolución verificable",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIV_2026-09-25.md",
+  "continuity": {
+    "previous_report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIII_2026-09-25.md",
+    "previous_artifact": "docs/artifacts/auditoria_fundamentos_XXXIII_2026-09-25.json",
+    "new_finding_ids": [
+      "FMT-257",
+      "FMT-258",
+      "FMT-259",
+      "FMT-260",
+      "FMT-261"
+    ],
+    "continued_finding_ids": [
+      "FMT-255"
+    ],
+    "historical_findings_rewritten": false
+  },
+  "scope": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "previous_complete_rust_reads": 153,
+    "new_complete_preexisting_rust_reads": 4,
+    "complete_rust_reads": 157,
+    "pending_preexisting_rust_reads": 132,
+    "whole_project_certified": false,
+    "non_rust_full_coverage_certified": false,
+    "new_complete_reads": [
+      {
+        "path": "crates/god-engine-core/src/slippage_predictor.rs",
+        "baseline_lines": 120
+      },
+      {
+        "path": "crates/god-engine-core/src/darwin.rs",
+        "baseline_lines": 778
+      },
+      {
+        "path": "crates/god-engine-core/src/reality_physics.rs",
+        "baseline_lines": 261
+      },
+      {
+        "path": "crates/metacortex-engine/src/cazador_constantes.rs",
+        "baseline_lines": 144
+      }
+    ],
+    "additional_complete_new_test_files": [
+      "crates/god-engine-core/tests/decay_causality_contract.rs",
+      "crates/god-engine-core/tests/slippage_continuity_contract.rs",
+      "crates/god-engine-core/tests/reality_physics_open_diagnostics.rs",
+      "crates/god-engine-core/tests/darwin_genotype_open_diagnostics.rs",
+      "crates/metacortex-engine/tests/constant_hunter_open_diagnostics.rs"
+    ],
+    "directed_not_new_complete": [
+      "crates/god-engine-core/src/math_kernels.rs",
+      "crates/god-engine-core/src/stateful_engine.rs",
+      "crates/god-engine-core/src/lib.rs",
+      "crates/quantum-arena/src/config.rs",
+      "src/bin/god_engine.rs"
+    ],
+    "note": "Los nuevos tests y las búsquedas por patrones no incrementan el denominador ni equivalen a lectura completa de archivos pendientes. Las cuatro lecturas nuevas son de archivos preexistentes; la cobertura acumulada continúa el inventario anterior."
+  },
+  "git": {
+    "branch": "main",
+    "head": "59a76de4be726098d9af934b4d35987e9a636802",
+    "dirty": true,
+    "preexisting_edits_preserved": true,
+    "commit": false,
+    "push": false,
+    "merge": false,
+    "fetch": false,
+    "reset": false,
+    "checkout": false,
+    "remote_verified": false
+  },
+  "findings": [
+    {
+      "id": "FMT-255",
+      "kind": "continuation",
+      "priority": "P2",
+      "status": "locally_repaired_with_residual_limits",
+      "title": "Transición de memoria exponencial sin causalidad ni garantía de estado válido",
+      "mechanism": "apply_event anterior podía rebobinar last_timestamp_ms, sumar evidencia antigua como fresca y envejecerla nuevamente. Impulsos inválidos y overflow de suma podían publicar reloj/nivel parcialmente inválidos; los consumidores macro modificaban variables aun con evento inválido.",
+      "contract": "Para h>0 representable, lambda=ln(2)/h, delta>=0 y a>=0, se calcula x'=x exp(-lambda delta)+a. Tasa, nivel, impulso y resultado finitos se validan antes de publicar reloj y nivel.",
+      "implemented": [
+        "DecayError distingue InvalidHalfLife, InvalidRate, InvalidState, InvalidImpulse, OutOfOrder y Overflow.",
+        "try_new, try_apply_event y try_decay_to devuelven Result; el error no muta la instancia.",
+        "StatefulEngine valida funding/OBI y transición antes de publicar el evento macro; rejected_macro_updates cuenta rechazos y reset lo limpia.",
+        "El test OPEN previo de retroceso pasa a regresión reparada."
+      ],
+      "compatibility": "Las firmas legacy permanecen. new falla con panic ante configuración inválida; try_new es la vía fallible. apply_event/decay_to no devuelven motivo de rechazo. Campos públicos permiten corrupción externa; try_* la detecta, no la repara. No es atomicidad concurrente.",
+      "residual": [
+        "Semivida fija10s no es adaptación genómica.",
+        "No se implementan historia, reordenamiento, deduplicación ni observabilidad de rechazo en todo el trace.",
+        "Igual timestamp suma impulsos; no es el estado máximo de snapshots de liquidación de XXXIII.",
+        "El core puede asignar campos del kernel antes de llamar macro: no se certifica con esta reparación causalidad global."
+      ],
+      "evidence_refs": [
+        "kernel_errors",
+        "kernel_constructor",
+        "kernel_transition",
+        "macro_counter",
+        "macro_features",
+        "macro_flow",
+        "causality_tests",
+        "repaired_prior_test"
+      ],
+      "tests": {
+        "new_functional": 10,
+        "red_to_green": 5,
+        "prior_open_converted": 1
+      },
+      "closure": "Cerrado el defecto local demostrado; transportar calidad/frescura/motivo y auditar contratos de todos los consumidores antes de certificar el sistema."
+    },
+    {
+      "id": "FMT-257",
+      "kind": "new",
+      "priority": "P2",
+      "status": "continuity_repaired_calibration_open",
+      "title": "Salto artificial de slippage en OBI neutro y coste sin evidencia",
+      "reachability": "No se localizaron callers operativos del helper en crates/src fuera de tests; no se declara mejora de fills reales.",
+      "mechanism": "La rama d<0 exp(1+2|d|) tiene límite e, frente a valor1 en d=0. Una perturbación negativa ínfima multiplicaba el coste casi por e.",
+      "before_example": {
+        "quantity": 1000,
+        "depth": 10000,
+        "relative_atr": 0.001,
+        "bps_at_zero": 1.58113883,
+        "bps_at_negative_1e_12": 4.29798095
+      },
+      "implemented": [
+        "La rama negativa usa exp(2|d|), recuperando continuidad y el ejemplo documentado.",
+        "Documentación distingue heurística determinista de probabilidad calibrada y ruta óptima."
+      ],
+      "residual": [
+        "La derivada sigue teniendo un quiebre en0; no se inventa una familia sin calibración.",
+        "Gamma0.5, piso monetario100, recortes y urgencia0.65 no quedan justificados por corregir continuidad.",
+        "Profundidad ausente todavía devuelve1.5bps; el piso rompe invariancia de cambio común de unidades monetarias."
+      ],
+      "evidence_refs": [
+        "slippage_pressure",
+        "slippage_open_tests"
+      ],
+      "tests": {
+        "new_functional": 3,
+        "new_open": 2,
+        "red_to_green": 2
+      },
+      "closure": "Calibración por activo/contexto, incertidumbre, unidades y estado de evidencia faltante; evaluar ruta de ejecución sólo si realmente se integra."
+    },
+    {
+      "id": "FMT-258",
+      "kind": "new",
+      "priority": "P1",
+      "status": "open",
+      "title": "Física de ejecución determinista no identificada y frontera maker/taker",
+      "reachability": "Callers de RealityPhysics localizados en el core. Evidencia estática y fixtures sintéticos; no actividad de cuenta observada.",
+      "mechanism": "Impacto sqrt(nocional/1M)*0.0005 más volatilidad*sqrt(latencia/150ms), piso y tope5%. Maker retorna precio base y fee sin cola/fill parcial/probabilidad de ejecución. Tau>=60000ms selecciona maker y cambia condiciones de evaluación discretamente.",
+      "reproductions": [
+        "Latencia negativa produce NaN y el piso finito oculta invalidez, reduciendo coste frente a latencia0.",
+        "Precio base f64::MAX finito produce precio infinito al multiplicar por1+slippage.",
+        "Maker no condiciona estimación a cola, latencia o fill.",
+        "Cambiar latency_penalty_ms estructural no cambia resultado con argumento de latencia explícita idéntico."
+      ],
+      "implemented": [
+        "Aclaraciones de documentación: heurística determinista y precio condicional, no simulador estocástico ni fill garantizado.",
+        "Cuatro diagnósticos OPEN; ninguna fórmula/política operativa cambiada."
+      ],
+      "theory": "La bibliografía primaria distingue impacto de metaorden de orden individual/imbalance y usa volumen/volatilidad normalizados. No acredita un coste universal por nocional ni ATR como volatilidad identificada de150ms.",
+      "false_positive_rejected": "El tick_vol de entrada se sombrea con atr_pct; no se acusa a esa llamada de pasar volumen de libro como volatilidad.",
+      "evidence_refs": [
+        "physics_impact",
+        "physics_open_tests",
+        "maker_boundary",
+        "entry_atr"
+      ],
+      "tests": {
+        "new_open": 4
+      },
+      "closure": "Resultado tipado de estimación/indisponibilidad, operaciones finitas, calibración por activo/escala, precio condicional y fill/no-fill separados; contrastar costes realizados y maker/taker bajo un objetivo común."
+    },
+    {
+      "id": "FMT-259",
+      "kind": "new",
+      "priority": "P1",
+      "status": "open_optional_legacy",
+      "title": "Genomas comparados con riesgo, contexto y evidencia no equivalentes",
+      "reachability": "Darwin legacy condicionado por ENABLE_LEGACY_DARWIN_DAEMON; mutación por ENABLE_ONLINE_DARWIN_MUTATION. Defaults falsos según código; entorno vivo no leído ni cambiado.",
+      "mechanism": "Candidato fuerza global_max_drawdown0.95, baseline no. Genotype no incluye dicho campo. Si default difiere de0.95, la comparación mezcla estrategia y política de riesgo.",
+      "other_issues": [
+        "Primeros30slots y4096ticks por slot no representan necesariamente todo el universo multiactivo.",
+        "OmniSynth construye funding/OI/macro a partir de proxies de precio/cantidad, no observaciones equivalentes a los feeds reales.",
+        "Drawdown se mide al cierre; bloque sin valoración terminal explícita de todas las posiciones.",
+        "Selección y baseline reutilizan master_stream; cinco generaciones de20candidatos, +5%fitness y mínimo1e-4 no son significación estadística ni validación independiente.",
+        "apply_to_arena público admite leverage2000, confidence5 y capital_split-3 finitos; random/mutate normales sí acotan varios rangos."
+      ],
+      "reproduction": "Arenas locales con drawdown0.20/0.95 siguen diferentes tras aplicar el mismo genotipo; test de dominio confirma lectura de valores fuera de rango. No se ejecutó GA para probarlo.",
+      "implemented": [
+        "Documentación del alcance y dos diagnósticos OPEN; sin cambiar selección, riesgo o promoción."
+      ],
+      "evidence_refs": [
+        "darwin_apply",
+        "darwin_drawdown",
+        "darwin_baseline",
+        "darwin_acceptance",
+        "darwin_flag",
+        "darwin_host_flag",
+        "darwin_open_tests"
+      ],
+      "tests": {
+        "new_open": 2
+      },
+      "closure": "Configuración/datos/modelos congelados comunes, mismo evaluador, dominio de genes, equity marcada a mercado y cierre terminal explícito; validación temporal independiente con costes e incertidumbre."
+    },
+    {
+      "id": "FMT-260",
+      "kind": "new",
+      "priority": "P1",
+      "status": "open_optional_legacy",
+      "title": "Publicación de fenotipo vivo anterior al éxito de persistencia",
+      "mechanism": "best_all_time.apply_to_arena(live_arena) antecede GenomeEnvelope::promote. Un Err posterior sólo registra advertencia; memoria ya cambió. Átomicos independientes no forman una generación coherente.",
+      "consequence": "Posible divergencia entre fenotipo en RAM, genoma durable, atribución de outcome y estado al reiniciar. Posible lectura intermedia de genes de generaciones distintas.",
+      "evidence_type": "Inspección estática. No se ejecutó promoción fallida ni se observó corrupción actual. Requiere flags de la ruta y fallo de persistencia para el escenario durable.",
+      "implemented": [
+        "Documentación de deuda; sin modificación operativa de protocolo ni promociones."
+      ],
+      "evidence_refs": [
+        "darwin_apply",
+        "darwin_live_publish",
+        "darwin_persistence",
+        "darwin_flag",
+        "darwin_host_flag"
+      ],
+      "tests": {
+        "new_open": 0,
+        "live_fault_injection": false
+      },
+      "closure": "Protocolo versionado preparar/validar/commit/publicar con recuperación y snapshot coherente de lector, probado con fallos de un almacén temporal. Persistir primero por sí solo no cubre todos los fallos."
+    },
+    {
+      "id": "FMT-261",
+      "kind": "new",
+      "priority": "P2",
+      "status": "open_auxiliary",
+      "title": "Genes ordinales y mutación de literales sin contrato semántico",
+      "reachability": "No se localizaron callers operativos del transformador fuera de tests; no se transformó el repositorio.",
+      "mechanism": "gene_{file_tag}_idx_N cambia significado al insertar un literal previo y default global comparte keys entre fuentes. Omitir ItemConst/ItemStatic no impide reescribir const fn o inline const a llamadas de runtime; macros quedan fuera de recorrido ordinario.",
+      "theory_limit": "La selección por literal no trivial no prueba unidades, dominio, identificabilidad, sensibilidad, seguridad ni equivalencia tipo/runtime. Almacén epigenético atómico no acredita mmap.",
+      "implemented": [
+        "Comentarios explican límites reales; cuatro OPEN inspeccionan AST serializado."
+      ],
+      "tests": {
+        "new_open": 4,
+        "generated_code_compiled": false
+      },
+      "evidence_refs": [
+        "ordinal_gene",
+        "default_gene_namespace",
+        "constant_hunter_open_tests"
+      ],
+      "closure": "Catálogo explícito estable/versionado con unidad, dominio, consumidor, rol entrenable/invariante y migración. Un scanner puede proponer candidatos, no conferir autoridad científica al literal."
+    }
+  ],
+  "veto_contracts": [
+    {
+      "rule": "Tasa positiva/finita e impulso no negativo/finito",
+      "meaning": "Dominio de la memoria no negativa",
+      "action": "Error tipado, sin mutación"
+    },
+    {
+      "rule": "Timestamp anterior",
+      "meaning": "No rejuvenecer evidencia",
+      "action": "Rechazo; historia causal no implementada"
+    },
+    {
+      "rule": "Overflow del estado",
+      "meaning": "No publicar estado irrepresentable",
+      "action": "Transición completa rechazada"
+    },
+    {
+      "rule": "Funding/OBI inválidos",
+      "meaning": "Entrada macro no identificada",
+      "action": "Conservar evento previo y contar rechazo; procedencia/frescura integral pendiente"
+    },
+    {
+      "rule": "Mejora fitness5%",
+      "meaning": "Preferencia de promoción, no significación",
+      "action": "Auditoría abierta; política no relajada"
+    },
+    {
+      "rule": "Persistencia fallida",
+      "meaning": "Generación no durable",
+      "action": "Defecto abierto: RAM legacy ya puede haberse publicado"
+    },
+    {
+      "rule": "Literal no trivial",
+      "meaning": "No prueba elegibilidad como gen",
+      "action": "Transformador auxiliar auditado; no aplicado al sistema"
+    }
+  ],
+  "tests": {
+    "passed": 105,
+    "functional_or_compatibility": 92,
+    "open_diagnostics": 13,
+    "failed_final": 0,
+    "ignored_final": 0,
+    "suites": [
+      {
+        "name": "close_outcome_contract",
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "passed": 23,
+        "functional_or_compatibility": 22,
+        "open_diagnostics": 1,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --test close_outcome_contract --test darwin_genotype_open_diagnostics --test decay_causality_contract --test liquidation_state_contract --test reality_physics_open_diagnostics --test slippage_continuity_contract --test stateful_transition_contract --no-fail-fast -- --test-threads=1"
+      },
+      {
+        "name": "darwin_genotype_open_diagnostics",
+        "path": "crates/god-engine-core/tests/darwin_genotype_open_diagnostics.rs",
+        "passed": 2,
+        "functional_or_compatibility": 0,
+        "open_diagnostics": 2,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --test close_outcome_contract --test darwin_genotype_open_diagnostics --test decay_causality_contract --test liquidation_state_contract --test reality_physics_open_diagnostics --test slippage_continuity_contract --test stateful_transition_contract --no-fail-fast -- --test-threads=1"
+      },
+      {
+        "name": "decay_causality_contract",
+        "path": "crates/god-engine-core/tests/decay_causality_contract.rs",
+        "passed": 10,
+        "functional_or_compatibility": 10,
+        "open_diagnostics": 0,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --test close_outcome_contract --test darwin_genotype_open_diagnostics --test decay_causality_contract --test liquidation_state_contract --test reality_physics_open_diagnostics --test slippage_continuity_contract --test stateful_transition_contract --no-fail-fast -- --test-threads=1"
+      },
+      {
+        "name": "liquidation_state_contract",
+        "path": "crates/god-engine-core/tests/liquidation_state_contract.rs",
+        "passed": 7,
+        "functional_or_compatibility": 7,
+        "open_diagnostics": 0,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --test close_outcome_contract --test darwin_genotype_open_diagnostics --test decay_causality_contract --test liquidation_state_contract --test reality_physics_open_diagnostics --test slippage_continuity_contract --test stateful_transition_contract --no-fail-fast -- --test-threads=1"
+      },
+      {
+        "name": "reality_physics_open_diagnostics",
+        "path": "crates/god-engine-core/tests/reality_physics_open_diagnostics.rs",
+        "passed": 4,
+        "functional_or_compatibility": 0,
+        "open_diagnostics": 4,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --test close_outcome_contract --test darwin_genotype_open_diagnostics --test decay_causality_contract --test liquidation_state_contract --test reality_physics_open_diagnostics --test slippage_continuity_contract --test stateful_transition_contract --no-fail-fast -- --test-threads=1"
+      },
+      {
+        "name": "slippage_continuity_contract",
+        "path": "crates/god-engine-core/tests/slippage_continuity_contract.rs",
+        "passed": 5,
+        "functional_or_compatibility": 3,
+        "open_diagnostics": 2,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --test close_outcome_contract --test darwin_genotype_open_diagnostics --test decay_causality_contract --test liquidation_state_contract --test reality_physics_open_diagnostics --test slippage_continuity_contract --test stateful_transition_contract --no-fail-fast -- --test-threads=1"
+      },
+      {
+        "name": "stateful_transition_contract",
+        "path": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+        "passed": 22,
+        "functional_or_compatibility": 22,
+        "open_diagnostics": 0,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --test close_outcome_contract --test darwin_genotype_open_diagnostics --test decay_causality_contract --test liquidation_state_contract --test reality_physics_open_diagnostics --test slippage_continuity_contract --test stateful_transition_contract --no-fail-fast -- --test-threads=1"
+      },
+      {
+        "name": "math_kernels::tests",
+        "path": "crates/god-engine-core/src/math_kernels.rs",
+        "passed": 7,
+        "functional_or_compatibility": 7,
+        "open_diagnostics": 0,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --lib math_kernels::tests -- --test-threads=1"
+      },
+      {
+        "name": "stateful_engine::tests",
+        "path": "crates/god-engine-core/src/stateful_engine.rs",
+        "passed": 10,
+        "functional_or_compatibility": 10,
+        "open_diagnostics": 0,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --lib stateful_engine::tests -- --test-threads=1"
+      },
+      {
+        "name": "slippage_predictor::tests",
+        "path": "crates/god-engine-core/src/slippage_predictor.rs",
+        "passed": 2,
+        "functional_or_compatibility": 2,
+        "open_diagnostics": 0,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --lib slippage_predictor::tests -- --test-threads=1"
+      },
+      {
+        "name": "reality_physics::tests",
+        "path": "crates/god-engine-core/src/reality_physics.rs",
+        "passed": 3,
+        "functional_or_compatibility": 3,
+        "open_diagnostics": 0,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --lib reality_physics::tests -- --test-threads=1"
+      },
+      {
+        "name": "darwin::tests",
+        "path": "crates/god-engine-core/src/darwin.rs",
+        "passed": 3,
+        "functional_or_compatibility": 3,
+        "open_diagnostics": 0,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --lib darwin::tests -- --test-threads=1"
+      },
+      {
+        "name": "cazador_constantes::tests",
+        "path": "crates/metacortex-engine/src/cazador_constantes.rs",
+        "passed": 2,
+        "functional_or_compatibility": 2,
+        "open_diagnostics": 0,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p metacortex-engine --lib cazador_constantes::tests -- --test-threads=1"
+      },
+      {
+        "name": "constant_hunter_open_diagnostics",
+        "path": "crates/metacortex-engine/tests/constant_hunter_open_diagnostics.rs",
+        "passed": 4,
+        "functional_or_compatibility": 0,
+        "open_diagnostics": 4,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p metacortex-engine --test constant_hunter_open_diagnostics -- --test-threads=1"
+      },
+      {
+        "name": "quantum_organism_test",
+        "path": "crates/metacortex-engine/tests/quantum_organism_test.rs",
+        "passed": 1,
+        "functional_or_compatibility": 1,
+        "open_diagnostics": 0,
+        "failed": 0,
+        "ignored": 0,
+        "command": "cargo test --offline -j 1 -p metacortex-engine --test quantum_organism_test -- --test-threads=1"
+      }
+    ],
+    "new_test_files": 5,
+    "new_tests": 25,
+    "new_functional": 13,
+    "new_open": 12,
+    "prior_open_converted_to_regression": 1,
+    "red_to_green": {
+      "valid_failures": 7,
+      "command": "cargo test --offline -j 1 -p god-engine-core --test decay_causality_contract --test slippage_continuity_contract --no-fail-fast -- --test-threads=1",
+      "observations": [
+        "Evento antiguo dejó(1000,10) en vez de(2000,1).",
+        "Impulso NaN dejó(2000,NaN) en vez de conservar estado.",
+        "Suma de finitos dejó(1001,inf) en vez de conservar estado.",
+        "Macro flow inválido contaminó dark_alpha.",
+        "Funding inválido avanzó estado a(2000,3.933...).",
+        "OBI ligeramente negativo produjo salto casi e.",
+        "Multiplicador en−0.8 discrepó de exp(1.6) documentado."
+      ],
+      "note": "No se incluyen como rojo previo los tests de APIs que aún no existían. Reejecuciones intermedias no se suman al total final."
+    },
+    "cargo_check": {
+      "command": "cargo check --offline -j 1 -p trader-gemini-v5 --bin god_engine --bin feature_exporter --bin train_forest --bin train_dark_alpha",
+      "exit_code": 0,
+      "preexisting_warnings": [
+        "evolution-engine latest_ts",
+        "evolution-engine mode",
+        "evolution-engine trades"
+      ],
+      "operational_binary_built": false
+    },
+    "other_preexisting_warnings": [
+      "quantum_organism_test: imports FaseAutonomous, FaseAutonomousManager y HealthMetrics no usados"
+    ],
+    "not_run": [
+      "Suite completa de todo el workspace",
+      "Benchmark de latencia",
+      "Backtest económico completo con datos reales y validación independiente",
+      "Evolución/promoción Darwin viva",
+      "Generación/compilación de código transformado por Cazador sobre el proyecto"
+    ]
+  },
+  "research": {
+    "skills_used": [
+      "firecrawl",
+      "firecrawl-research-index"
+    ],
+    "method": "CLI no disponible; búsqueda/vecinos/pasajes por conector. Se verificó cuerpo del paper principal y resúmenes de vecinos.",
+    "local_research_note": ".firecrawl/XXXIV-impact-research.md",
+    "local_note_gitignored": true,
+    "sources": [
+      {
+        "url": "https://arxiv.org/abs/1105.1694",
+        "title": "Anomalous price impact and the critical nature of liquidity in financial markets",
+        "read_depth": "Pasajes del cuerpo",
+        "supports": "Diferencia metaorden/orden individual/imbalance; impacto Y sigma sqrt(Q/V) con volumen/volatilidad diarios."
+      },
+      {
+        "url": "https://arxiv.org/abs/1311.6262",
+        "title": "Agent-based models for latent liquidity and concave price impact",
+        "read_depth": "Resumen",
+        "supports": "Liquidez latente y concavidad; no calibración del código."
+      },
+      {
+        "url": "https://arxiv.org/abs/1412.2152",
+        "title": "Beyond the square root: Evidence for logarithmic dependence of market impact on size and participation rate",
+        "read_depth": "Resumen",
+        "supports": "Límites de extrapolar square-root; dependencia de duración/participación."
+      },
+      {
+        "url": "https://arxiv.org/abs/1102.5457",
+        "title": "How efficiency shapes market impact",
+        "read_depth": "Resumen",
+        "supports": "Modelo de metaórdenes/fair pricing; no coeficiente universal del sistema."
+      }
+    ],
+    "inference": "La relación de metaórdenes no identifica automáticamente el coste de un fill individual ni la calibración para cripto o todos los activos.",
+    "unverified_claims_not_made": [
+      "Ventaja cuántica",
+      "Rentabilidad garantizada",
+      "Procesamiento observable por nanosegundo de100años",
+      "Omnisciencia",
+      "Identificación/calibración de todos los coeficientes físicos"
+    ]
+  },
+  "evidence_references": [
+    {
+      "id": "kernel_errors",
+      "path": "crates/god-engine-core/src/math_kernels.rs",
+      "line": 1052,
+      "anchor": "pub enum DecayError",
+      "matches": 1
+    },
+    {
+      "id": "kernel_constructor",
+      "path": "crates/god-engine-core/src/math_kernels.rs",
+      "line": 1069,
+      "anchor": "pub fn try_new(half_life_ms",
+      "matches": 1
+    },
+    {
+      "id": "kernel_transition",
+      "path": "crates/god-engine-core/src/math_kernels.rs",
+      "line": 1094,
+      "anchor": "pub fn try_apply_event(",
+      "matches": 1
+    },
+    {
+      "id": "macro_counter",
+      "path": "crates/god-engine-core/src/stateful_engine.rs",
+      "line": 75,
+      "anchor": "pub rejected_macro_updates:",
+      "matches": 1
+    },
+    {
+      "id": "macro_features",
+      "path": "crates/god-engine-core/src/stateful_engine.rs",
+      "line": 824,
+      "anchor": "pub fn update_macro_features(",
+      "matches": 1
+    },
+    {
+      "id": "macro_flow",
+      "path": "crates/god-engine-core/src/stateful_engine.rs",
+      "line": 846,
+      "anchor": "pub fn update_macro_flow(",
+      "matches": 1
+    },
+    {
+      "id": "slippage_pressure",
+      "path": "crates/god-engine-core/src/slippage_predictor.rs",
+      "line": 46,
+      "anchor": "let pressure_multiplier =",
+      "matches": 1
+    },
+    {
+      "id": "slippage_open_tests",
+      "path": "crates/god-engine-core/tests/slippage_continuity_contract.rs",
+      "line": 32,
+      "anchor": "fn open_missing_depth",
+      "matches": 1
+    },
+    {
+      "id": "physics_impact",
+      "path": "crates/god-engine-core/src/reality_physics.rs",
+      "line": 84,
+      "anchor": "1_000_000.0",
+      "matches": 2
+    },
+    {
+      "id": "physics_open_tests",
+      "path": "crates/god-engine-core/tests/reality_physics_open_diagnostics.rs",
+      "line": 4,
+      "anchor": "fn open_negative_latency",
+      "matches": 1
+    },
+    {
+      "id": "darwin_apply",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "line": 82,
+      "anchor": "pub fn apply_to_arena(",
+      "matches": 1
+    },
+    {
+      "id": "darwin_drawdown",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "line": 379,
+      "anchor": ".global_max_drawdown",
+      "matches": 1
+    },
+    {
+      "id": "darwin_baseline",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "line": 588,
+      "anchor": "let baseline_fitness =",
+      "matches": 1
+    },
+    {
+      "id": "darwin_acceptance",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "line": 664,
+      "anchor": "let is_significantly_better =",
+      "matches": 1
+    },
+    {
+      "id": "darwin_flag",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "line": 671,
+      "anchor": "let allow_hotswap =",
+      "matches": 1
+    },
+    {
+      "id": "darwin_live_publish",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "line": 676,
+      "anchor": "best_all_time.0.apply_to_arena(&self.live_arena);",
+      "matches": 1
+    },
+    {
+      "id": "darwin_persistence",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "line": 699,
+      "anchor": "GenomeEnvelope::promote",
+      "matches": 1
+    },
+    {
+      "id": "darwin_host_flag",
+      "path": "src/bin/god_engine.rs",
+      "line": 1943,
+      "anchor": "let enable_legacy_darwin =",
+      "matches": 1
+    },
+    {
+      "id": "darwin_open_tests",
+      "path": "crates/god-engine-core/tests/darwin_genotype_open_diagnostics.rs",
+      "line": 22,
+      "anchor": "fn open_genotype_does_not_carry",
+      "matches": 1
+    },
+    {
+      "id": "maker_boundary",
+      "path": "crates/god-engine-core/src/lib.rs",
+      "line": 4733,
+      "anchor": "let entry_is_maker = tau_intent_ms",
+      "matches": 1
+    },
+    {
+      "id": "entry_atr",
+      "path": "crates/god-engine-core/src/lib.rs",
+      "line": 4744,
+      "anchor": "let tick_vol = atr_pct;",
+      "matches": 1
+    },
+    {
+      "id": "ordinal_gene",
+      "path": "crates/metacortex-engine/src/cazador_constantes.rs",
+      "line": 64,
+      "anchor": "let unique_key =",
+      "matches": 1
+    },
+    {
+      "id": "default_gene_namespace",
+      "path": "crates/metacortex-engine/src/cazador_constantes.rs",
+      "line": 95,
+      "anchor": "Self::strip_constants_with_tag(rust_code, \"global\")",
+      "matches": 1
+    },
+    {
+      "id": "constant_hunter_open_tests",
+      "path": "crates/metacortex-engine/tests/constant_hunter_open_diagnostics.rs",
+      "line": 18,
+      "anchor": "fn open_const_function_and_inline_const",
+      "matches": 1
+    },
+    {
+      "id": "causality_tests",
+      "path": "crates/god-engine-core/tests/decay_causality_contract.rs",
+      "line": 7,
+      "anchor": "fn old_event_cannot_rewind",
+      "matches": 1
+    },
+    {
+      "id": "repaired_prior_test",
+      "path": "crates/god-engine-core/tests/liquidation_state_contract.rs",
+      "line": 101,
+      "anchor": "fn repaired_legacy_decay_kernel",
+      "matches": 1
+    }
+  ],
+  "preservation": {
+    "source_before": [
+      {
+        "path": "crates/god-engine-core/src/math_kernels.rs",
+        "sha256": "49A86F374DFAA958EF5EA63DA651B50A93AF5E21E54F8C7BEB6C6F6C749CD9BE",
+        "lines": 1205,
+        "normalized_chars": 36497,
+        "normalized_sha256": "49A86F374DFAA958EF5EA63DA651B50A93AF5E21E54F8C7BEB6C6F6C749CD9BE"
+      },
+      {
+        "path": "crates/god-engine-core/src/stateful_engine.rs",
+        "sha256": "5C9F8778542F02CCB31744A1E8C4838215F7EC9D7E2BA295072B4D21AA745C39",
+        "lines": 1474,
+        "normalized_chars": 61450,
+        "normalized_sha256": "5C9F8778542F02CCB31744A1E8C4838215F7EC9D7E2BA295072B4D21AA745C39"
+      },
+      {
+        "path": "crates/god-engine-core/src/slippage_predictor.rs",
+        "sha256": "6B2484DCE9A20B31AC3B303FD25781C9930355406B1AAD51EC1656782C067D1E",
+        "lines": 120,
+        "normalized_chars": 4820,
+        "normalized_sha256": "6B2484DCE9A20B31AC3B303FD25781C9930355406B1AAD51EC1656782C067D1E"
+      },
+      {
+        "path": "crates/god-engine-core/src/darwin.rs",
+        "sha256": "4E4D77E81C9E9D35323C92D317FB9A18CE953F417D8B3014A99587938E9D90D1",
+        "lines": 778,
+        "normalized_chars": 33099,
+        "normalized_sha256": "4E4D77E81C9E9D35323C92D317FB9A18CE953F417D8B3014A99587938E9D90D1"
+      },
+      {
+        "path": "crates/god-engine-core/src/reality_physics.rs",
+        "sha256": "A19D9D95761FC1F0BF7FB4B5D8D1AB161F78B24A12DD69940B21959658A73307",
+        "lines": 261,
+        "normalized_chars": 9417,
+        "normalized_sha256": "A19D9D95761FC1F0BF7FB4B5D8D1AB161F78B24A12DD69940B21959658A73307"
+      },
+      {
+        "path": "crates/metacortex-engine/src/cazador_constantes.rs",
+        "sha256": "19225CCF07BCDA2459AF8E07C42F7F15546364AEBB8F401B37EDBE283044496E",
+        "lines": 144,
+        "normalized_chars": 5228,
+        "normalized_sha256": "19225CCF07BCDA2459AF8E07C42F7F15546364AEBB8F401B37EDBE283044496E"
+      },
+      {
+        "path": "crates/god-engine-core/tests/liquidation_state_contract.rs",
+        "sha256": "5EF7DFA7D76C4F992152844AEC8920DAF57BD02982431486F79C11B4DE1AE8DC",
+        "lines": 108,
+        "normalized_chars": 3699,
+        "normalized_sha256": "5EF7DFA7D76C4F992152844AEC8920DAF57BD02982431486F79C11B4DE1AE8DC"
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/god-engine-core/src/math_kernels.rs",
+        "sha256": "AA5ED7785C28AFD1880021645649FAFA30BB92BBF840D4E84AA63784E93CA4E0",
+        "lines": 1252
+      },
+      {
+        "path": "crates/god-engine-core/src/stateful_engine.rs",
+        "sha256": "39B9762809736C820A8B2FE846F4DE88ED93BF93F14740136C8425D259D38135",
+        "lines": 1485
+      },
+      {
+        "path": "crates/god-engine-core/src/slippage_predictor.rs",
+        "sha256": "36FD8240D26A09ABDA568D5A7B115B1C91B1FE1C12FE70C27A78A9474BAEFD43",
+        "lines": 121
+      },
+      {
+        "path": "crates/god-engine-core/src/darwin.rs",
+        "sha256": "2DAE56EE6BBF647976E74E49C94B2A0CBBF11247CC9097FCABAED0A0C62380D7",
+        "lines": 779
+      },
+      {
+        "path": "crates/god-engine-core/src/reality_physics.rs",
+        "sha256": "C55EE9929FEA8CFF941B92A141C2D3647F90A7C32D6A8634D49DF4B95352FA32",
+        "lines": 267
+      },
+      {
+        "path": "crates/metacortex-engine/src/cazador_constantes.rs",
+        "sha256": "DD5714425F4482F61B6068FD64729D838A0E1F1B1F05201016237E87F67A7530",
+        "lines": 147
+      },
+      {
+        "path": "crates/god-engine-core/tests/liquidation_state_contract.rs",
+        "sha256": "0F507589C6FD78901583A6D0D6CCA2B8989A0F10D766F9A163421D2FB1F75951",
+        "lines": 108
+      },
+      {
+        "path": "crates/god-engine-core/tests/decay_causality_contract.rs",
+        "sha256": "45137C7274CD6A2B1CFB06DDC4F54D9A552709CC684E556869A35DBD8F4C2A3A",
+        "lines": 136
+      },
+      {
+        "path": "crates/god-engine-core/tests/slippage_continuity_contract.rs",
+        "sha256": "D235B7890C736C2A835738946C9B81CBE8943801DC28BD1090E42F892CB8B56E",
+        "lines": 44
+      },
+      {
+        "path": "crates/god-engine-core/tests/reality_physics_open_diagnostics.rs",
+        "sha256": "760DA2DF68FC8510965683CD90426287CF2E589C7A726F34BB584CEC6D55A2FA",
+        "lines": 41
+      },
+      {
+        "path": "crates/god-engine-core/tests/darwin_genotype_open_diagnostics.rs",
+        "sha256": "D094A2954A73731751D5CD7ACF95F14624DF07BFFD8C444A9C33F2ABDFAA017B",
+        "lines": 31
+      },
+      {
+        "path": "crates/metacortex-engine/tests/constant_hunter_open_diagnostics.rs",
+        "sha256": "E7CA17428AD4DFF9BE524DD08AB6265284A1622A97DBB3B0A5CB9A061E9C8537",
+        "lines": 43
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "620E4340477E44EB7865CC2EA564E12AC3588F2ED8590E85DA18FB2F3DCAB2E4",
+        "lines": 5221
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "sha256": "5AE38B15E6DF871C7F89FA98DE83793D5DC99FACD8A0BBE789A3D44BD43D91B9",
+        "lines": 4791
+      },
+      {
+        "path": "crates/metacortex-engine/src/epigenoma_store.rs",
+        "sha256": "D5F518896A8CA9EA5E52F45AF15E624B80499B5AAFE07E6CB52648592B751C73",
+        "lines": 174
+      }
+    ],
+    "report_snapshot": {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIV_2026-09-25.md",
+      "sha256": "788412A9A708F13DF3EF80DA500BA71F3AB1B03774A572C8D1AC878A835BE8BF",
+      "lines": 290
+    },
+    "append_only_documents": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 114010,
+        "appended_normalized_chars": 3492,
+        "normalized_prefix_sha256": "578F3D6BE37D90260E5FADB06F4D6B944D5B111E7D127BA8FC81CFE7EDD28DE0"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 734869,
+        "appended_normalized_chars": 8784,
+        "normalized_prefix_sha256": "6B4F2CB067CCEFBC5547BDF8EE9502828443D12BA8BAA4488E9E69F2CAE095D0"
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIII_2026-09-25.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 36429,
+        "appended_normalized_chars": 1500,
+        "normalized_prefix_sha256": "D272B12D6275ABBEBE5692BC21043CD9E0EF9192407C9C49A6E145651C74A230"
+      }
+    ],
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "market_orders_sent": 0,
+    "account_requests_sent": 0,
+    "operational_training_or_promotion": false,
+    "active_genomes_deliberately_modified": false,
+    "legacy_darwin_activated": false,
+    "process_kills_or_restarts": false,
+    "operational_binary_built": false,
+    "shared_build_caches_deleted": false,
+    "note": "Hash de archivo completo para fuentes/modelos/informe; prefijos documentales normalizados CRLF→LF. Este JSON no se hashea a sí mismo. No certifica cambios concurrentes posteriores."
+  },
+  "next_work": [
+    "Igualar candidato/baseline bajo un evaluador y snapshot común.",
+    "Probar protocolo de promoción durable con inyección de fallos aislada.",
+    "Tipar y calibrar ejecución/fill condicional por activo y escala.",
+    "Catálogo semántico de genes con identidad estable y dominio.",
+    "Continuar los132Rust preexistentes pendientes y cobertura no Rust; verificar end-to-end fuera de muestra."
+  ],
+  "validation": {
+    "status": "passed_snapshot_check",
+    "source_and_model_hash_count": 57,
+    "evidence_reference_count": 26,
+    "append_only_prefix_count": 3,
+    "local_report_links_checked": 10,
+    "test_totals_consistent": true,
+    "new_test_counts_verified_from_source": true,
+    "whitespace_check_passed": true,
+    "errors": [],
+    "limits": "Validación del snapshot y consistencia de este artefacto, no certificación global, económica o de producción. No se hashea el propio JSON."
+  }
+}

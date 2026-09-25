@@ -1,0 +1,1184 @@
+{
+  "schema_version": 1,
+  "round": "XXXVIII",
+  "date": "2026-09-25",
+  "language": "es",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVIII_2026-09-25.md",
+  "validation": {
+    "status": "verified_scoped_not_global",
+    "hashes_verified": 59,
+    "source_refs_verified": 39,
+    "append_only_prefixes_verified": 3,
+    "report_local_links_verified": 12,
+    "unique_test_count_verified": 78,
+    "touched_tracked_diff_check_passed": true,
+    "new_rust_files_rustfmt_check_passed": true,
+    "manifest_check_chunk": "865c24",
+    "final_focused_recheck_chunk": "0ff296",
+    "final_focused_recheck_tests": 24,
+    "final_focused_recheck_exit_code": 0,
+    "repeated_runs_added_to_unique_count": false
+  },
+  "continuity": {
+    "previous_report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVII_2026-09-25.md",
+    "previous_artifact": "docs/artifacts/auditoria_fundamentos_XXXVII_2026-09-25.json",
+    "new_finding_ids": [
+      "FMT-279",
+      "FMT-280",
+      "FMT-281",
+      "FMT-282",
+      "FMT-283"
+    ],
+    "continued_ids": [
+      "FMT-278",
+      "FMT-181"
+    ],
+    "historic_matrix_rewritten": false,
+    "prior_open_diagnostics_reclassified": 0
+  },
+  "scope": {
+    "tracked_files": 1119,
+    "preexisting_rust_files": 289,
+    "cargo_manifests": 24,
+    "inventory_basis": "heredado; no confundir inventario, búsqueda transversal o test con lectura completa",
+    "previous_complete_rust_reads": 166,
+    "complete_rust_reads": 168,
+    "pending_preexisting_rust_reads": 121,
+    "new_complete_reads": [
+      {
+        "path": "crates/execution-engine/src/trade_accounting.rs",
+        "baseline_lines": 491
+      },
+      {
+        "path": "crates/execution-engine/src/shadow.rs",
+        "baseline_lines": 349
+      }
+    ],
+    "repeated_complete_reads": [
+      "crates/execution-engine/src/ntp.rs",
+      "crates/risk-engine/src/ruin.rs",
+      "crates/execution-engine/src/dynamic_symbols.rs"
+    ],
+    "targeted_reads": [
+      "src/bin/god_engine.rs",
+      "crates/execution-engine/src/executor.rs",
+      "crates/execution-engine/src/order_types.rs",
+      "crates/execution-engine/src/user_data_stream.rs"
+    ],
+    "whole_project_certified": false,
+    "non_rust_total_certified": false,
+    "operational_pnl_or_genome_parity_certified": false
+  },
+  "git": {
+    "branch": "main",
+    "head": "59a76de4be726098d9af934b4d35987e9a636802",
+    "dirty": true,
+    "commit": false,
+    "push": false,
+    "merge": false,
+    "fetch": false,
+    "reset": false,
+    "checkout": false,
+    "remote_verified": false,
+    "warning": "git no pudo leer el ignore global del usuario; status local disponible. Cambios compartidos preservados."
+  },
+  "findings": [
+    {
+      "id": "FMT-279",
+      "kind": "new",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Integridad numérica de outcomes, sin acreditar identidad financiera",
+      "mechanism": "Entradas infinitas o producto desbordado podían exportar PnL no finito. El gate entry>0 y el wrapper 0 mezclaban contexto desconocido, invalidez y resultado plano.",
+      "repair": "checked_gross_pnl valida precios/cantidad finitos y positivos, overflow y underflow a cero; AccountingError distingue causas. Host aplica checked_numeric_net_pnl antes de aprendizaje. Wrapper legacy retorna0 por compatibilidad, sin certificar breakeven.",
+      "math": {
+        "linear_long": "q*(exit-entry)",
+        "linear_short": "q*(entry-exit)",
+        "net": "supplied_gross-signed_cost",
+        "units": "precios en moneda cotizada/unidad, cantidad en unidades; sólo mismo numerario y contrato lineal",
+        "underflow": "resultado==0 con precios distintos es error, no resultado plano",
+        "scope": "Aritmética f64 representable; no precisión decimal arbitraria ni procedencia de ejecución"
+      },
+      "reproduction": "Cuatro RED de infinito/overflow; gate estático RED. OPEN: long100→110 qty1 con supplied_gross=-10 retornaOk(-10) dos veces.",
+      "remaining": [
+        "pnl_gross suministrado no se concilia con el reconstruido",
+        "BracketClose sin cuenta/entorno/order/fill/generación/genoma/moneda/fuente de evidencia",
+        "contexto del primer slot o último journal por símbolo/lado, sin as-of",
+        "dedup por proximidad temporal puede colapsar distintos outcomes o admitir duplicados",
+        "net0 entra en media ganadora pero record_trade recibe false",
+        "sumas += pueden desbordar aunque cada operando sea finito",
+        "rechazo por stop/slippage inválidos puede censurar un resultado recuperable; falta cuarentena por causa"
+      ],
+      "closure_criteria": [
+        "outcome causal inmutable",
+        "numerario/contrato y reconciliación de bruto",
+        "IDs y replay idempotente",
+        "flat/desconocido explícitos",
+        "agregación checked y salud de muestra"
+      ],
+      "refs": [
+        "checked_gross",
+        "numeric_net",
+        "journal_validation",
+        "host_numeric",
+        "host_flat",
+        "host_kelly",
+        "host_totals",
+        "stream_context",
+        "context_recovery"
+      ]
+    },
+    {
+      "id": "FMT-280",
+      "kind": "new",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "JSON fiel no garantiza diario durable ni muestra completa",
+      "mechanism": "Interpolación manual de texto y decimales fijos podía romper JSON o redondear evidencia pequeña a0. I/O y cola de aprendizaje tienen garantías distintas.",
+      "repair": "Serializers puros serde_json preservan claves, escapan texto, validan números antes de serializar y evitan truncación decimal fija. INVALID_RECORDS cuenta rechazos previos a I/O y cola.",
+      "reproduction": "Tests de roundtrip con quotes/newlines y valores submicro; dos registros inválidos incrementan contador2 y dejan PENDING vacío sin worker.",
+      "remaining": [
+        "canal std mpsc de I/O sin cota",
+        "write_all y fallos de apertura pueden perder evidencia sin ACK",
+        "sin fsync/protocolo durable",
+        "fallback síncrono en llamador y clone por línea",
+        "PENDING1024 puede censurar aprendizaje aunque diario reciba línea",
+        "poisoning parece cola vacía",
+        "no consumidor operacional del accessor de descartes localizado",
+        "INVALID_RECORDS no es cuarentena ni contador de pérdida de disco",
+        "caché mtime/len, lectura bajo mutex y último contexto sin as-of",
+        "lectores ad hoc dependientes de orden/decimales no auditados"
+      ],
+      "closure_criteria": [
+        "ledger durable con IDs",
+        "ACK/lag/backpressure observables",
+        "crash/replay sin duplicar reward",
+        "cuarentena recuperable",
+        "contexto causal"
+      ],
+      "refs": [
+        "close_serializer",
+        "entry_serializer",
+        "journal_queue",
+        "journal_worker",
+        "journal_append",
+        "record_close",
+        "queue_loss",
+        "invalid_records",
+        "drain",
+        "context_recovery"
+      ]
+    },
+    {
+      "id": "FMT-281",
+      "kind": "new",
+      "priority": "P2",
+      "status": "open",
+      "title": "ShadowExecutor es stub, no simulación de ejecución ni veto",
+      "mechanism": "La ruta de entrada acepta NaN/Inf y qty redondeada0, limit admite inválidos, kill sólo imprime y ACK no crea fill/posición ni modifica capital.",
+      "repair": "Sólo documentación de alcance. No cambio funcional de shadow ni declaración de paridad.",
+      "reproduction": "Cinco tests OPEN de comportamiento aislado.",
+      "reachability": "Búsqueda ShadowExecutor::new en crates/src sólo localizó tests; no se atribuye el fallo observado de demo a este auxiliar.",
+      "remaining": [
+        "sin ledger de fills/capital",
+        "sin latch kill causal",
+        "sin distribución de latencia/cola/costes",
+        "validaciones heterogéneas",
+        "confusión potencial shadow/paper/demo/backtest"
+      ],
+      "closure_criteria": [
+        "contrato compartido intención-ACK-fill-cancel",
+        "estado y balances",
+        "costes y restricciones",
+        "paridad de trazas entre entornos"
+      ],
+      "refs": [
+        "shadow_entry",
+        "shadow_kill",
+        "shadow_limit",
+        "shadow_positions",
+        "shadow_balance"
+      ]
+    },
+    {
+      "id": "FMT-282",
+      "kind": "new",
+      "priority": "P1",
+      "status": "open",
+      "title": "Veto por comisiones sin completitud, atribución ni nueva evidencia",
+      "mechanism": "Escala temporal global y agregación por símbolo mezclan activos monetarios y políticas; el contador es de filas no nulas, no de operaciones independientes. Relectura renueva suspensiones.",
+      "repair": "Auditoría y diseño de rehabilitación; predicado económico y protección operativa no alterados.",
+      "math": {
+        "tau": "exp(log(anchor_fast)+clamp(global_gene,0,1)*(log(anchor_slow)-log(anchor_fast))), limitada30s..12h",
+        "window": "clamp(24*tau,1h,48h)",
+        "R": "sum(REALIZED_PNL)+sum(FUNDING_FEE)",
+        "G_positive": "sum(max(REALIZED_PNL,0))",
+        "F": "sum(abs(COMMISSION))",
+        "n": "número de filas REALIZED_PNL !=0",
+        "predicate": "n>=3 && R-F<0 && F>G_positive",
+        "hours": "floor(clamp(4*clamp(F/max(G_positive,1e-9),0.25,3),1,12))",
+        "expiry": "now+hours*3600000",
+        "warning": "piso1e-9 es monetario, horas enteras y evidencia repetida no constituyen inferencia estadística"
+      },
+      "subfindings": [
+        {
+          "key": "scope",
+          "evidence": "un único temporal_scale global, no espectro vivo por símbolo ni genoma que generó cada ingreso",
+          "impact": "modelo nuevo puede heredar veto de otra política; mecanismo posible, no causalidad operacional probada"
+        },
+        {
+          "key": "sample",
+          "evidence": "REALIZED_PNL!=0 incrementa trades; partial fills pueden producir varias filas y flat se excluye",
+          "impact": "n>=3 no acredita tamaño efectivo, independencia ni precisión"
+        },
+        {
+          "key": "units",
+          "evidence": "IncomeEntry.asset no participa en Agg; comisión se lleva a abs y otras clases se omiten",
+          "impact": "numerario y convención firmada no reconciliados"
+        },
+        {
+          "key": "completeness",
+          "evidence": "máximo4páginas; Result<Vec> no lleva completitud; sin progreso o frontera llena retornaOk; no endTime congelado",
+          "impact": "datos parciales pueden renovar veto"
+        },
+        {
+          "key": "identity",
+          "evidence": "IncomeKey=(tran_id,time,amount_bits,symbol,type), sinasset/trade_id",
+          "impact": "conflictos de importe se duplican; diferencias omitidas pueden colapsar; no se asume unicidad global del ID"
+        },
+        {
+          "key": "renewal",
+          "evidence": "cada300s renueva until aunque no exista ingreso nuevo",
+          "impact": "plazo efectivo mayor al comunicado; no necesariamente infinito, pues evidencia puede salir de ventana"
+        },
+        {
+          "key": "persistence",
+          "evidence": "mapa sólo por símbolo; fallos write/rename ignorados; corrupto restaura sin veto; lock unwrap",
+          "impact": "namespace ausente, fail-open de entrada ante pérdida del estado, posible pánico"
+        }
+      ],
+      "caveats": [
+        "string_or_f64 de REST ya valida finitud; no reabrir ese defecto como si persistiera",
+        "no daemon ejecutado ni consultas de cuenta",
+        "sin medición de pérdidas reales causadas por el veto",
+        "no se eliminó la protección"
+      ],
+      "closure_criteria": [
+        "intervalo completo/as-of",
+        "identidad de ingreso y conflictos",
+        "moneda y exposición/política",
+        "incertidumbre calibrada",
+        "evidencia nueva y recuperación por causa",
+        "persistencia verificable"
+      ],
+      "refs": [
+        "fee_state",
+        "fee_persist",
+        "fee_scale",
+        "fee_paging",
+        "fee_aggregate",
+        "fee_predicate",
+        "fee_duration",
+        "income_paging",
+        "income_key",
+        "income_type",
+        "income_parser"
+      ]
+    },
+    {
+      "id": "FMT-283",
+      "kind": "new",
+      "priority": "P2",
+      "status": "partially_repaired",
+      "title": "Tipos canónicos exactos, sin confundir nombre y propiedad",
+      "mechanism": "contains aceptaba tokens como NOT_STOP_MARKET y TAKE_PROFIT_MARKET_FAKE.",
+      "repair": "matches exacto con STOP_MARKET,TAKE_PROFIT_MARKET,TRAILING_STOP_MARKET; comentarios distinguen convención de nombres de firma criptográfica.",
+      "reproduction": "RED de NOT_STOP_MARKET antes; nuevos casos exactos y negativos pasan.",
+      "remaining": [
+        "fallback por clientOrderId sigue siendo sintáctico",
+        "tipo no demuestra reduce-only/propiedad/terminalidad",
+        "requiere relación registrada intención-orden-fill"
+      ],
+      "closure_criteria": [
+        "identidad de orden",
+        "estado compatible",
+        "conversiones de protocolo vinculadas al registro"
+      ],
+      "refs": [
+        "exact_type",
+        "client_id_fallback",
+        "stream_context"
+      ]
+    },
+    {
+      "id": "FMT-278",
+      "kind": "continuation",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Emergencia checked, sin inventar outcome ante invalidez",
+      "mechanism": "Fórmula común de signo corregida enXXXVII aún requería dominio y error explícitos.",
+      "repair": "Host llama checked_gross_pnl; Err marca protection_health dirty, registra y retorna sin encolar.",
+      "remaining": [
+        "salida aproximada al precio local",
+        "primer slot sin identidad de generación",
+        "fees/fill confirmados",
+        "deduplicación y reconciliación"
+      ],
+      "refs": [
+        "emergency",
+        "emergency_checked"
+      ]
+    },
+    {
+      "id": "FMT-181",
+      "kind": "continuation",
+      "priority": "inherited",
+      "status": "open",
+      "title": "Costes firmados y numerario aún no end-to-end",
+      "mechanism": "Serializer permite coste firmado, pero stream usaabs y BracketClose no lleva asset/conversión.",
+      "repair": "Contrato aritmético documentado, no cambio del productor de comisiones.",
+      "remaining": [
+        "conservación signo/tipo",
+        "moneda y FX as-of",
+        "prorrateo por fill identificado"
+      ],
+      "refs": [
+        "stream_fees",
+        "income_type",
+        "numeric_net"
+      ]
+    }
+  ],
+  "source_refs": [
+    {
+      "id": "checked_gross",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub fn checked_gross_pnl",
+      "line": 97,
+      "matches": 1
+    },
+    {
+      "id": "numeric_net",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub fn checked_numeric_net_pnl",
+      "line": 115,
+      "matches": 1
+    },
+    {
+      "id": "journal_validation",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "fn validate_journal_fields",
+      "line": 122,
+      "matches": 1
+    },
+    {
+      "id": "close_serializer",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub fn journal_line",
+      "line": 138,
+      "matches": 1
+    },
+    {
+      "id": "exact_type",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub fn is_closing_bracket_order",
+      "line": 158,
+      "matches": 1
+    },
+    {
+      "id": "client_id_fallback",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub fn bracket_close_kind_by_client_id",
+      "line": 184,
+      "matches": 1
+    },
+    {
+      "id": "journal_queue",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "static FILLS_LINE_TX",
+      "line": 216,
+      "matches": 1
+    },
+    {
+      "id": "journal_worker",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "fn drain_fills_journal",
+      "line": 232,
+      "matches": 1
+    },
+    {
+      "id": "journal_append",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "fn journal_append",
+      "line": 269,
+      "matches": 1
+    },
+    {
+      "id": "record_close",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub fn record_bracket_close",
+      "line": 283,
+      "matches": 1
+    },
+    {
+      "id": "queue_loss",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub static DESCARTADOS",
+      "line": 316,
+      "matches": 1
+    },
+    {
+      "id": "invalid_records",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub static INVALID_RECORDS",
+      "line": 319,
+      "matches": 1
+    },
+    {
+      "id": "drain",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub fn drain_bracket_closes",
+      "line": 327,
+      "matches": 1
+    },
+    {
+      "id": "context_recovery",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub fn last_journal_entry_px",
+      "line": 364,
+      "matches": 1
+    },
+    {
+      "id": "entry_serializer",
+      "path": "crates/execution-engine/src/trade_accounting.rs",
+      "anchor": "pub fn entry_fill_journal_line",
+      "line": 420,
+      "matches": 1
+    },
+    {
+      "id": "shadow_entry",
+      "path": "crates/execution-engine/src/shadow.rs",
+      "anchor": "async fn execute_order(",
+      "line": 44,
+      "matches": 1
+    },
+    {
+      "id": "shadow_kill",
+      "path": "crates/execution-engine/src/shadow.rs",
+      "anchor": "fn trigger_kill_switch",
+      "line": 90,
+      "matches": 1
+    },
+    {
+      "id": "shadow_limit",
+      "path": "crates/execution-engine/src/shadow.rs",
+      "anchor": "async fn execute_limit_order(",
+      "line": 164,
+      "matches": 1
+    },
+    {
+      "id": "shadow_positions",
+      "path": "crates/execution-engine/src/shadow.rs",
+      "anchor": "async fn fetch_open_positions",
+      "line": 198,
+      "matches": 1
+    },
+    {
+      "id": "shadow_balance",
+      "path": "crates/execution-engine/src/shadow.rs",
+      "anchor": "async fn fetch_account_balance",
+      "line": 203,
+      "matches": 1
+    },
+    {
+      "id": "emergency",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "fn record_emergency_close(",
+      "line": 578,
+      "matches": 1
+    },
+    {
+      "id": "emergency_checked",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "let pnl_gross = match execution_engine::trade_accounting::checked_gross_pnl(",
+      "line": 605,
+      "matches": 1
+    },
+    {
+      "id": "host_numeric",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "let net_bc = match bc.checked_numeric_net_pnl()",
+      "line": 3326,
+      "matches": 1
+    },
+    {
+      "id": "host_flat",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "if net_bc >= 0.0",
+      "line": 3353,
+      "matches": 1
+    },
+    {
+      "id": "host_kelly",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "risk_envelope.record_trade(net_bc > 0.0",
+      "line": 3358,
+      "matches": 1
+    },
+    {
+      "id": "host_totals",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "total_gross_pnl += bc.pnl_gross",
+      "line": 3363,
+      "matches": 1
+    },
+    {
+      "id": "fee_state",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "static SYMBOL_SUSPENDED_UNTIL",
+      "line": 366,
+      "matches": 1
+    },
+    {
+      "id": "fee_persist",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "fn persist_fee_breaker(",
+      "line": 394,
+      "matches": 1
+    },
+    {
+      "id": "fee_scale",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "let l_fast = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();",
+      "line": 2230,
+      "matches": 1
+    },
+    {
+      "id": "fee_paging",
+      "path": "src/bin/god_engine.rs",
+      "anchor": ".fetch_income_paged(&[], window_start, 4)",
+      "line": 2243,
+      "matches": 1
+    },
+    {
+      "id": "fee_aggregate",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "struct Agg {",
+      "line": 2249,
+      "matches": 1
+    },
+    {
+      "id": "fee_predicate",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "if a.trades >= 3 && net < 0.0 && a.fees > a.gross_pos",
+      "line": 2279,
+      "matches": 1
+    },
+    {
+      "id": "fee_duration",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "let offense = (a.fees / a.gross_pos.max(1e-9))",
+      "line": 2297,
+      "matches": 1
+    },
+    {
+      "id": "income_paging",
+      "path": "crates/execution-engine/src/executor.rs",
+      "anchor": "pub async fn fetch_income_paged",
+      "line": 1045,
+      "matches": 1
+    },
+    {
+      "id": "income_key",
+      "path": "crates/execution-engine/src/executor.rs",
+      "anchor": "fn income_key(",
+      "line": 3563,
+      "matches": 1
+    },
+    {
+      "id": "income_type",
+      "path": "crates/execution-engine/src/order_types.rs",
+      "anchor": "pub struct IncomeEntry",
+      "line": 167,
+      "matches": 1
+    },
+    {
+      "id": "income_parser",
+      "path": "crates/execution-engine/src/order_types.rs",
+      "anchor": "pub fn string_or_f64",
+      "line": 14,
+      "matches": 1
+    },
+    {
+      "id": "stream_context",
+      "path": "crates/execution-engine/src/user_data_stream.rs",
+      "anchor": "let (entry_price, entry_fee, entry_qty) = self",
+      "line": 512,
+      "matches": 1
+    },
+    {
+      "id": "stream_fees",
+      "path": "crates/execution-engine/src/user_data_stream.rs",
+      "anchor": "let fees = update.commission.abs()",
+      "line": 565,
+      "matches": 1
+    }
+  ],
+  "tests": {
+    "unique_total": 78,
+    "functional_or_compatibility": 69,
+    "static_wiring": 2,
+    "open_diagnostics": 7,
+    "new_unique_total": 22,
+    "new_functional": 15,
+    "new_static": 1,
+    "new_open": 6,
+    "initial_red_behavioral": 5,
+    "initial_red_static": 1,
+    "prior_open_reclassified": 0,
+    "initial_red_chunks": [
+      "session72104",
+      "dac3cd"
+    ],
+    "final_output_chunk": "337b9d",
+    "final_exit_code": 0,
+    "targets": [
+      {
+        "package": "execution-engine",
+        "target": "accounting_numeric_contract",
+        "unique": 16,
+        "functional": 15,
+        "static": 1,
+        "open": 0
+      },
+      {
+        "package": "execution-engine",
+        "target": "accounting_open_diagnostics",
+        "unique": 1,
+        "functional": 0,
+        "static": 0,
+        "open": 1
+      },
+      {
+        "package": "execution-engine",
+        "target": "shadow_open_diagnostics",
+        "unique": 5,
+        "functional": 0,
+        "static": 0,
+        "open": 5
+      },
+      {
+        "package": "execution-engine",
+        "target": "emergency_accounting_wiring_contract",
+        "unique": 2,
+        "functional": 1,
+        "static": 1,
+        "open": 0
+      },
+      {
+        "package": "execution-engine",
+        "target": "entry_route_contract",
+        "unique": 10,
+        "functional": 10,
+        "static": 0,
+        "open": 0
+      },
+      {
+        "package": "god-engine-core",
+        "target": "close_outcome_contract",
+        "unique": 26,
+        "functional": 25,
+        "static": 0,
+        "open": 1
+      },
+      {
+        "package": "god-engine-core",
+        "target": "entry_reservation_contract",
+        "unique": 6,
+        "functional": 6,
+        "static": 0,
+        "open": 0
+      },
+      {
+        "package": "risk-engine",
+        "target": "compounder_admission_contract",
+        "unique": 9,
+        "functional": 9,
+        "static": 0,
+        "open": 0
+      },
+      {
+        "package": "execution-engine",
+        "target": "--lib trade_accounting::tests::d701",
+        "unique": 3,
+        "functional": 3,
+        "static": 0,
+        "open": 0
+      }
+    ],
+    "commands": [
+      "cargo test --offline -j 1 -p execution-engine --test accounting_numeric_contract --test accounting_open_diagnostics --test shadow_open_diagnostics --test emergency_accounting_wiring_contract --test entry_route_contract -p god-engine-core --test close_outcome_contract --test entry_reservation_contract -p risk-engine --test compounder_admission_contract -- --test-threads=1",
+      "cargo test --offline -j 1 -p execution-engine --lib trade_accounting::tests::d701 -- --test-threads=1",
+      "cargo check --offline -j 1 -p trader-gemini-v5 --bin god_engine --bin evolver --bin walkforward_evolver",
+      "rustfmt --edition 2021 --check crates/execution-engine/tests/accounting_numeric_contract.rs crates/execution-engine/tests/accounting_open_diagnostics.rs crates/execution-engine/tests/shadow_open_diagnostics.rs"
+    ],
+    "check_bins": [
+      "god_engine",
+      "evolver",
+      "walkforward_evolver"
+    ],
+    "check_passed": true,
+    "warnings": [
+      "evolution-engine latest_ts unused",
+      "evolution-engine mode unused",
+      "online_daemon RealWfOutcome.trades unread",
+      "walkforward_evolver Eval.toxic unread"
+    ],
+    "limitations": [
+      "OPEN verde reproduce deuda, no reparación",
+      "tests estáticos no ejecutan host",
+      "no toda la suite workspace",
+      "no tests del diario que inicialicen I/O operativo",
+      "no stress I/O, crash/replay ni benchmark",
+      "fee-breaker inspeccionado, no arrancado",
+      "sin OOS o entrenamiento nuevos"
+    ],
+    "tooling_notes": [
+      "PowerShell braces de una búsqueda se corrigieron; no fue defecto del proyecto",
+      "rustfmt directo sin --edition falló por asumir2015; reejecutado con2021 del manifiesto y pasó"
+    ]
+  },
+  "theory": {
+    "approach": "Campo continuo multiactivo/espectral aproximado finitamente con soporte, incertidumbre, dependencia y causalidad; no dos motores ni regímenes rígidos como ontología.",
+    "not_implemented": [
+      "nuevo optimizador financiero",
+      "contraste secuencial calibrado",
+      "solver de problemas del milenio",
+      "ventaja cuántica"
+    ],
+    "no_claims": [
+      "omnisciencia",
+      "observación de mercado cada nanosegundo",
+      "estimación de100años sin datos",
+      "beneficio garantizado",
+      "paridad operacional global"
+    ],
+    "next_designs": [
+      "ledger e identidad causal",
+      "representación multiescala con error de refinamiento",
+      "dependencia conjunta regularizada",
+      "vetos por evidencia identificada y causas",
+      "trazas de genoma consumido entre entornos"
+    ]
+  },
+  "research": {
+    "skills_used": [
+      "firecrawl",
+      "firecrawl-developer-index",
+      "firecrawl-scrape"
+    ],
+    "cli_available": false,
+    "connector_used": true,
+    "private_data_sent": false,
+    "account_calls": false,
+    "primary_sources": [
+      {
+        "title": "Binance Get Income History",
+        "url": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/account#get-income-history",
+        "scrape_id": "01a0d9c9-0513-723e-b8db-104540d1a651",
+        "used_claims": [
+          "income/asset/time/IDs",
+          "page y máximo1000",
+          "extremos temporales inclusivos"
+        ],
+        "not_claimed": [
+          "fila equivale a trade independiente",
+          "tranId globalmente único"
+        ]
+      }
+    ],
+    "rejected_evidence": [
+      "resultados Aster/no oficial no usados como Binance",
+      "HTTP200 Order Trade Update con contenido AskAI/Feedback insuficiente"
+    ],
+    "insufficient_ws_scrape_id": "01a0d9cd-ebc3-7399-a010-82a87b0d61e5",
+    "feedback": "ambos intentos rechazados409 FEEDBACK_WINDOW_EXPIRED; sin reintento",
+    "influence": "Separación entre finitud, unidades, identidad y unidad experimental; se mantiene abierto el rediseño causal del veto sin calibrar con filas como trades.",
+    "local_note": ".firecrawl/XXXVIII-accounting-evidence.md"
+  },
+  "preservation": {
+    "source_before": [
+      {
+        "path": "crates/execution-engine/src/trade_accounting.rs",
+        "lines": 491,
+        "normalized_chars": 20188,
+        "normalized_sha256": "B23699DC9A88D46F5B08012AA4483762F0DEB6A07BB257E7A744BB3C705A1652",
+        "sha256": "B23699DC9A88D46F5B08012AA4483762F0DEB6A07BB257E7A744BB3C705A1652"
+      },
+      {
+        "path": "crates/execution-engine/src/shadow.rs",
+        "lines": 349,
+        "normalized_chars": 10415,
+        "normalized_sha256": "29369935A28C5F2D22D9B7C7A61ACA1AB7E8D1E6BC842AD1AB0D4C00B5DF2560",
+        "sha256": "29369935A28C5F2D22D9B7C7A61ACA1AB7E8D1E6BC842AD1AB0D4C00B5DF2560"
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "lines": 4768,
+        "normalized_chars": 262712,
+        "normalized_sha256": "F374FF4803FC6F48ECAD6CEB1584B83C3A1A2DA1C2FD0B9FD4C0247E8ABFAEC1",
+        "sha256": "F374FF4803FC6F48ECAD6CEB1584B83C3A1A2DA1C2FD0B9FD4C0247E8ABFAEC1"
+      },
+      {
+        "path": "crates/execution-engine/tests/emergency_accounting_wiring_contract.rs",
+        "lines": 31,
+        "normalized_chars": 1037,
+        "normalized_sha256": "8A99FF5F739248FB1BB3BFCF80C1312246C043181AE88C7DE0C68A3C7F8ACA60",
+        "sha256": "8A99FF5F739248FB1BB3BFCF80C1312246C043181AE88C7DE0C68A3C7F8ACA60"
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/execution-engine/src/trade_accounting.rs",
+        "lines": 563,
+        "sha256": "92957529C3E6BDCB083270B8E0747BEDD13E1F9DA893EB837F6C6F82F817B5EE"
+      },
+      {
+        "path": "crates/execution-engine/src/shadow.rs",
+        "lines": 352,
+        "sha256": "A9DFE78A71B2EF75794D4B049AB10050A35E304554AAE4319E7AEC1CEF746612"
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "lines": 4779,
+        "sha256": "E340F30AD25C7A73256144FDCF37BBC1771878A6C39BA3213510D2A572071931"
+      },
+      {
+        "path": "crates/execution-engine/tests/accounting_numeric_contract.rs",
+        "lines": 210,
+        "sha256": "C2C5AD87D1D26317BDA3B3606FD51CDCDD417E70A058710362328B0C12E7D185"
+      },
+      {
+        "path": "crates/execution-engine/tests/accounting_open_diagnostics.rs",
+        "lines": 22,
+        "sha256": "B64E33CEC4F0C1F17802236C20B4DCE6CBA012A340708722C07DC20C2DEC21FB"
+      },
+      {
+        "path": "crates/execution-engine/tests/shadow_open_diagnostics.rs",
+        "lines": 62,
+        "sha256": "0EFEE69954D22E44027640AF2FF486A9268ED97BFD2636456C1C37F854AD26D1"
+      },
+      {
+        "path": "crates/execution-engine/tests/emergency_accounting_wiring_contract.rs",
+        "lines": 31,
+        "sha256": "5DACADB034BC09A2AA752EF7FFBB7A0DD5A1EB53A888E10600BBDF651583E5FD"
+      },
+      {
+        "path": "crates/execution-engine/src/executor.rs",
+        "lines": 3946,
+        "sha256": "3C21E8280E4DB08089B352B27FB73FA8A12769B90D3AF5C15D7D953650648133"
+      },
+      {
+        "path": "crates/execution-engine/src/order_types.rs",
+        "lines": 283,
+        "sha256": "1ABC654E3397E998D0656CEA6C720AE5AFFC1F3D2B6BDBD46B9B12C9BC63C1E6"
+      },
+      {
+        "path": "crates/execution-engine/src/user_data_stream.rs",
+        "lines": 1020,
+        "sha256": "33C2CC1AEFC61D74BE49515B3C2210C4D03594E1825D8CD00DDBC77AAE73CFF0"
+      },
+      {
+        "path": "crates/execution-engine/src/ntp.rs",
+        "lines": 42,
+        "sha256": "1BC0E26D4C43FAC5FD98EC4F8BEAD89F1239D0FD9E59C8C35D69F69BDAAA8374"
+      },
+      {
+        "path": "crates/execution-engine/src/dynamic_symbols.rs",
+        "lines": 261,
+        "sha256": "2DF0E42F14390A8305E1D3CF6F9EDAB0D0CFE2C89D34F490B278647AEF2857A6"
+      },
+      {
+        "path": "crates/risk-engine/src/ruin.rs",
+        "lines": 108,
+        "sha256": "7AE99C6174DE9AC4B8D59E4EC264D10FEE35C2AEC1BC47BB7D6D0044B7ACCBCB"
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "lines": 620,
+        "sha256": "D6BB059EE5DDD84464BAFBEAB9BCE284FEB87CAFB56BCE512414BC9357281994"
+      },
+      {
+        "path": "crates/god-engine-core/tests/entry_reservation_contract.rs",
+        "lines": 173,
+        "sha256": "A780300D168A905423E79795D5CFC6E6015487402BE604D22EB5A9589928AB8B"
+      },
+      {
+        "path": "crates/risk-engine/tests/compounder_admission_contract.rs",
+        "lines": 94,
+        "sha256": "5B8053B10E15EA4075EF2F823FBA4A5A157D187A98E2C731D9A969544E288443"
+      },
+      {
+        "path": "crates/execution-engine/tests/entry_route_contract.rs",
+        "lines": 347,
+        "sha256": "6A93CD65C9DDDFFC05DF68EFD01185C7BFB5521054F7853FD2DCE8ED6979A977"
+      }
+    ],
+    "append_only_documents": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "normalized_chars": 126388,
+        "expected_sha256": "757D833130BB56307F44FE31F8689F21C7D21F49F9A096A70CACF83F22F3994C",
+        "actual_sha256": "757D833130BB56307F44FE31F8689F21C7D21F49F9A096A70CACF83F22F3994C",
+        "preserved": true
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "normalized_chars": 767703,
+        "expected_sha256": "6CE1CA5C2EA1D275444E2ACAE51DAD83AD0F6469E68559D775CE9CB76006AE40",
+        "actual_sha256": "6CE1CA5C2EA1D275444E2ACAE51DAD83AD0F6469E68559D775CE9CB76006AE40",
+        "preserved": true
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVII_2026-09-25.md",
+        "normalized_chars": 29775,
+        "expected_sha256": "FDCF8CD001D50BFDAE7F85D7C3C2EE6F4395C48D6AFE021C0A7040D0FA7A7AB5",
+        "actual_sha256": "FDCF8CD001D50BFDAE7F85D7C3C2EE6F4395C48D6AFE021C0A7040D0FA7A7AB5",
+        "preserved": true
+      }
+    ],
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "report_snapshot": {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVIII_2026-09-25.md",
+      "sha256": "A4ADC4C0859CCB74C69BC334E58D2436DF6853863A11EE05FF9A7AEB047FCF09",
+      "lines": 352
+    },
+    "market_orders_sent": false,
+    "account_requests_sent": false,
+    "operational_training_or_promotion": false,
+    "operational_binary_built": false,
+    "process_kills_or_restarts": false,
+    "shared_build_cache_deleted": false,
+    "active_genomes_deliberately_modified": false,
+    "global_arena_layout_modified": false,
+    "position_layout_modified": false,
+    "host_modified": true
+  },
+  "next_steps": [
+    "Outcome causal y reconciliación por identidad",
+    "Numerario de comisiones",
+    "Ledger durable y replay",
+    "Income completo con conflictos",
+    "Veto calibrado por evidencia/política",
+    "Simulador contractual si se utiliza para validar",
+    "Clasificador ligado a registro de orden",
+    "Continuar121 lecturas Rust y cobertura noRust"
+  ]
+}

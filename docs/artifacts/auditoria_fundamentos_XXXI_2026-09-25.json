@@ -1,0 +1,826 @@
+{
+  "schema_version": 1,
+  "round": "XXXI",
+  "artifact_validation": {
+    "status": "passed_at_local_snapshot",
+    "hashes_verified": 47,
+    "model_hashes_verified": 41,
+    "evidence_references_verified": 36,
+    "report_local_links_verified": 27,
+    "append_only_prefixes_verified": 3,
+    "test_totals_consistent": true,
+    "issues": [],
+    "scope": "Snapshot hashes and reference existence/ranges, not semantic certification of the entire system or later concurrent edits. Artifact does not hash itself."
+  },
+  "date": "2026-09-25",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXI_2026-09-25.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false,
+    "dirty_tree_preserved": true
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 146,
+    "pending_complete_rust": 143,
+    "new_complete_reads": [
+      {
+        "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+        "baseline_lines": 1521,
+        "final_lines": 1614
+      }
+    ],
+    "reread_previously_covered": [
+      "crates/storage-engine/src/ledger.rs",
+      "crates/risk-engine/src/ruin.rs",
+      "crates/risk-engine/src/epigenetic_fitness_landscape.rs",
+      "crates/risk-engine/src/correlation_guard.rs",
+      "crates/metacortex-engine/src/reminiscence_and_adn.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/god-engine-core/src/lib.rs",
+      "crates/quantum-arena/src/position.rs",
+      "crates/risk-engine/src/lib.rs",
+      "crates/risk-engine/src/guard.rs"
+    ],
+    "new_files_reviewed": [
+      "crates/metacortex-engine/tests/council_evidence_contract.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false
+  },
+  "new_ids": [
+    "FMT-237",
+    "FMT-238",
+    "FMT-239",
+    "FMT-240",
+    "FMT-241",
+    "FMT-242",
+    "FMT-243",
+    "FMT-244",
+    "FMT-245"
+  ],
+  "local_contract_repairs": [
+    "FMT-237",
+    "FMT-238",
+    "FMT-239",
+    "FMT-240",
+    "FMT-241",
+    "FMT-242"
+  ],
+  "new_open_design_debt": [
+    "FMT-243",
+    "FMT-244",
+    "FMT-245"
+  ],
+  "carried_open": [
+    "FMT-006",
+    "FMT-052",
+    "FMT-225",
+    "FMT-227",
+    "FMT-230",
+    "FMT-231",
+    "FMT-232",
+    "FMT-235",
+    "FMT-236"
+  ],
+  "findings": [
+    {
+      "id": "FMT-237",
+      "priority": "P1",
+      "status": "deliberation_integrity_contract_repaired_not_full_provenance",
+      "title": "Campos y política inválidos admitidos o sustituidos silenciosamente",
+      "runtime_exposure": "Council connected to GodEngineCore; auxiliary APIs not all covered",
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 116
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 794
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 907
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 31
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 77
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 102
+        }
+      ],
+      "mechanism": "Nueve flotantes omitidos en finitud, otros dominios sin validar, parámetros inválidos y multiplicadores ignorados podían continuar como permiso.",
+      "reproduction": "Antes: causal_veto_threshold NaN pasa validate; OBI1.1 aceptado; threshold negativo aprueba; multiplicador NaN continúa. Bucles se detienen en primera aserción fallida.",
+      "change": "Validar payload, params, wr y multiplicadores antes de deliberar; error con justificación de integridad, sin fallback.",
+      "residual": "Sin Missing/Observed/freshness/cuenta/venue/generación. El productor conserva defaults. Scorers/extracción y extensibilidad del vector no certificados.",
+      "acceptance": "Gate numérico pasa tests; cierre de evidencia exige procedencia y motivos estructurados en todo el flujo."
+    },
+    {
+      "id": "FMT-238",
+      "priority": "P1",
+      "status": "direction_alignment_repaired_policy_calibration_open",
+      "title": "Excepción por magnitud del libro ignora dirección de la entrada",
+      "runtime_exposure": "SeniorCausal in active council; later overrides unchanged",
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 505
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 113
+        }
+      ],
+      "mechanism": "abs(OBI)>0.25 permite llamar alineado a un libro contrario al lado propuesto.",
+      "reproduction": "Risk0.8, threshold0.75 y tau30s con libro opuesto no vetaba; ambos lados y dirección cero cubiertos.",
+      "change": "Exigir OBI*intended_direction>0 además de condiciones legacy.",
+      "residual": "Umbrales y clasificación rápida no calibrados. VPIN no acredita identificación causal do-calculus. Override posterior sigue vigente.",
+      "acceptance": "Contrato de signo reparado; validar economía de excepción separadamente."
+    },
+    {
+      "id": "FMT-239",
+      "priority": "P2",
+      "status": "configured_breaker_activation_repaired",
+      "title": "Parámetro de cascada no gobierna la activación del veto",
+      "runtime_exposure": "Latent nondefault council configuration; default0.85 unchanged",
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 952
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 128
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 273
+        }
+      ],
+      "mechanism": "Asiento activa con0.85; parámetro sólo se consulta después de existir veto, de modo que reducirlo no activa protección.",
+      "reproduction": "Limit0.5, severity0.6 antes aprobado; después EnteMercado veta. Prueba de > estricto en frontera.",
+      "change": "Consejo utiliza umbral configurado tanto para activar como proteger breaker; diagnóstico muestra límite efectivo.",
+      "residual": "Standalone mantiene default; no distribución P99 acreditada, actualización transaccional ni calibración por activo.",
+      "acceptance": "Contrato config→veto pasa; no se certifica optimalidad del límite."
+    },
+    {
+      "id": "FMT-240",
+      "priority": "P1",
+      "status": "ml_reference_repaired_utility_target_open",
+      "title": "Teleonomia centra señal en0.5 en vez de base del modelo",
+      "runtime_exposure": "Directional council scorer",
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 707
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 139
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 148
+        }
+      ],
+      "mechanism": "Otros asientos usan p-base; Teleonomia usa p-0.5, creando dirección sin lift al cambiar la base.",
+      "reproduction": "p=base0.3 y espectro cero producía -0.15444800000000003; ahora cero. Traslación conjunta conserva salida.",
+      "change": "Componente ML usa2*(p-base), manteniendo escala/pesos existentes.",
+      "residual": "Lift no es utilidad monetaria ni probabilidad de acción óptima. Target, Hurst, mezcla y costes sin validación integral.",
+      "acceptance": "Neutralidad/invariancia de referencia; calibración económica pendiente."
+    },
+    {
+      "id": "FMT-241",
+      "priority": "P1",
+      "status": "abstention_accounting_repaired",
+      "title": "Abstenciones y moduladores enmascarados se entrenan como permisos",
+      "runtime_exposure": "Shared council performance tracker",
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 1170
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 1212
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 1223
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 1239
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 160
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 168
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 195
+        }
+      ],
+      "mechanism": "Máscara convierte señales en cero, pero tracker contaba cero como ensayo y acierto si retorno>0.",
+      "reproduction": "Una muestra de once ceros incrementaba todos los contadores; diez ganancias entrenaban moduladores. Ventana retenía ensayos falsos.",
+      "change": "Sólo no-cero cuenta en inserción y expulsión; vectores numéricamente inválidos rechazados.",
+      "residual": "History.len sigue contando outcomes agregados. Máscara por índice presupone topología fija; sin motivo durable de descarte ni evaluación contrafactual de vetos.",
+      "acceptance": "Abstención, máscara y expulsión pasan; no se acredita identidad de topología dinámica."
+    },
+    {
+      "id": "FMT-242",
+      "priority": "P1",
+      "status": "executed_side_attribution_repaired_in_core",
+      "title": "Retorno de corto ganador premia dirección contraria",
+      "runtime_exposure": "GodEngineCore close consumer and council scorer",
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 1157
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1880
+        },
+        {
+          "file": "crates/god-engine-core/tests/close_outcome_contract.rs",
+          "line": 365
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 235
+        }
+      ],
+      "mechanism": "PnL neto de operación comparado con signo de mercado: corto ganador tiene r positivo pero señal acertada negativa.",
+      "reproduction": "Fixture core en slot2: voto bajista correcto contaba0 antes,1 después; contrario ahora0. Primera preparación slot0 fue corregida y no se usa como reproducción de orientación.",
+      "change": "record_trade_outcome recibe is_long; a_i=side*s_i mide acuerdo con acción y usa net return sin convertirlo en precio. Core usa nueva API.",
+      "residual": "Selected-trade attribution is not counterfactual predictive accuracy. FMT225 fills y trace/generación siguen abiertos; adapter legacy exige orientación común.",
+      "acceptance": "Ambos lados × ambos signos PnL y cierre core pasan; no certifica causalidad económica de todas las muestras."
+    },
+    {
+      "id": "FMT-243",
+      "priority": "P1",
+      "status": "open_reproduced_population_and_trace_mismatch",
+      "title": "Shrinkage mezcla n global con wr por activo y extrae señales distintas",
+      "runtime_exposure": "Shared council fed by coin.metrics wr; payload lacks asset identity",
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 925
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 932
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 1138
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 342
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 4508
+        }
+      ],
+      "mechanism": "n es longitud del tracker agregado; wr viene del activo. Extracción evalúa wr crudo mientras deliberación evalúa mezcla.",
+      "reproduction": "Wr0.1 con n0 da0.5; diez outcomes dan5/18; extract sigue0.1. Probe sintético identifica valores recibidos.",
+      "change": "Sólo corregida explicación: k8 implica Beta4,4 bajo población compatible, no Beta1,1. Mezcla y doble evaluación no rediseñadas.",
+      "residual": "Sin suficiente estadístico de misma población ni trace único congelado; pooling implícito y selección.",
+      "acceptance": "Una evaluación genera decisión/trace y evidencia por activo/escala/acción, o modelo jerárquico explícito validado."
+    },
+    {
+      "id": "FMT-244",
+      "priority": "P1",
+      "status": "open_reproduced_dependent_consensus",
+      "title": "Consenso normalizado no prueba pluralidad independiente",
+      "runtime_exposure": "Council admission and veto override",
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 1005
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 1023
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 294
+        }
+      ],
+      "mechanism": "Denominador depende de confianza/abstención; Meta y Teleonomia reutilizan raíces. Moduladores influyen en final_signal.",
+      "reproduction": "Sólo OBI como raíz direccional con ML/espectro neutros produce approval yconsensus1.0.",
+      "change": "Comentarios acotan independencia, número de votos y penalización bayesiana; pesos/umbrales no cambiados arbitrariamente.",
+      "residual": "Sin medición de dependencia, ablación, n efectivo o autoridad de veto por clase.",
+      "acceptance": "Grafo de procedencia y criterio económico falsable; no deducir independencia del número de scorers."
+    },
+    {
+      "id": "FMT-245",
+      "priority": "P2",
+      "status": "open_reproduced_temporal_saturation",
+      "title": "Coordenada de horizonte colapsa extremos y resume espectro en tau dominante",
+      "runtime_exposure": "Council risk/execution/causal scorer thresholds",
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 104
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 312
+        },
+        {
+          "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+          "line": 264
+        }
+      ],
+      "mechanism": "s=clamp(log(tau/30s)/log(12h/30s),0,1); extremos indistinguibles para estas políticas.",
+      "reproduction": "1ns y30s dan0;12h ycien años dan1. Valores siguen válidos como dominio positivo.",
+      "change": "No endpoints expanded or universal calibration invented.",
+      "residual": "Dominant tau not full spectral distribution; thresholds not adaptive beyond band; uncertainty/data support unspecified.",
+      "acceptance": "Representation with support, units, approximation error, uncertainty and replay parity; no exhaustive nanosecond-loop claim."
+    }
+  ],
+  "verification": {
+    "unique_functional_or_compatibility_passes": 37,
+    "unique_open_diagnostic_passes": 4,
+    "unique_total_passes": 41,
+    "new_functional_tests": 20,
+    "new_open_diagnostic_tests": 3,
+    "new_total_tests": 23,
+    "red_assertion_to_green": 13,
+    "ignored_in_selected_runs": 0,
+    "suites": [
+      {
+        "command": "cargo test --offline -j 1 -p metacortex-engine --test council_evidence_contract -- --test-threads=1",
+        "functional": 19,
+        "open_diagnostics": 3,
+        "status": "pass"
+      },
+      {
+        "command": "cargo test --offline -j 1 -p metacortex-engine --lib consejo_seniors::tests -- --test-threads=1",
+        "functional": 8,
+        "open_diagnostics": 0,
+        "status": "pass",
+        "caveat": "Legacy diversity tests prove functional sensitivity, not statistical independence."
+      },
+      {
+        "command": "cargo test --offline -j 1 -p god-engine-core --test close_outcome_contract -- --test-threads=1",
+        "functional": 10,
+        "open_diagnostics": 1,
+        "status": "pass"
+      }
+    ],
+    "checks": [
+      {
+        "command": "cargo check --offline -j 1 --bin god_engine --bin feature_exporter --bin train_forest --bin train_dark_alpha",
+        "status": "pass",
+        "warnings": [
+          "evolution-engine unused latest_ts",
+          "evolution-engine unused mode",
+          "RealWfOutcome.trades never read"
+        ]
+      }
+    ],
+    "format_checks": [
+      {
+        "command": "rustfmt --edition 2021 --check crates/metacortex-engine/tests/council_evidence_contract.rs",
+        "status": "pass"
+      },
+      {
+        "command": "rustfmt --edition 2024 --check crates/god-engine-core/tests/close_outcome_contract.rs",
+        "status": "pass"
+      },
+      {
+        "command": "git diff --check -- ATLAS_ANALITICO.md INFORME_FORENSE_MAESTRO.md crates/metacortex-engine/src/consejo_seniors.rs crates/god-engine-core/src/lib.rs",
+        "status": "pass"
+      }
+    ],
+    "open_diagnostic_names": [
+      "open_aggregate_trial_count_changes_shrinkage_without_asset_identity",
+      "open_extreme_horizons_collapse_to_the_same_legacy_endpoints",
+      "open_one_raw_directional_source_can_still_look_like_full_consensus",
+      "open_kill_switch_blocks_even_a_local_stop_close_proposal"
+    ],
+    "initial_failures": {
+      "council_contract": {
+        "passed": 2,
+        "failed_assertions": 12
+      },
+      "core_short_corrected_fixture": {
+        "passed": 0,
+        "failed_assertions": 1
+      },
+      "infrastructure": "Initial cargo compilation failed os error112 disk space before test execution. Serial retry succeeded; no cache deletion performed.",
+      "fixture_correction": "Initial short fixture set signals in slot0; actual position field is slot2. Corrected and rerun RED before source repair; earlier run not counted for side-attribution proof."
+    },
+    "workspace_suite_executed": false,
+    "live_trading_or_account_replay": false,
+    "performance_benchmark": false,
+    "operational_concurrency_test": false
+  },
+  "scientific_review": {
+    "new_advanced_theory_implemented": false,
+    "quantum_advantage_claimed": false,
+    "millennium_problem_solved": false,
+    "contracts": [
+      "a_i=d*s_i scores agreement with executed action, not counterfactual price prediction",
+      "zero directional vote is abstention, not a successful permission trial",
+      "p-base shared reference invariant under common translation",
+      "capacity-weighted consensus does not enforce independent source count",
+      "n and wr require compatible population for beta-binomial posterior interpretation",
+      "positive temporal domain does not imply observed support or unsaturated sensitivity"
+    ],
+    "primary_sources": [
+      {
+        "url": "https://mc-stan.org/docs/functions-reference/continuous_distributions_on_0_1.html#beta-distribution",
+        "used_for": "Beta density and mean/concentration parameterization; own derivation yields posterior mean (s+alpha)/(n+alpha+beta). k8 maps to Beta4,4 conditionally, not validating current mixed population."
+      }
+    ],
+    "source_note": ".firecrawl/XXXI-beta-evidence.md",
+    "skills_used": [
+      "firecrawl",
+      "firecrawl-scrape"
+    ],
+    "cli_available": false,
+    "connector_fallback": true,
+    "private_repository_files_uploaded": false,
+    "scrape_job_id": "01a0d8e9-6b48-7424-9994-29a45bb7df3a",
+    "feedback_status": "accepted"
+  },
+  "veto_audit": [
+    {
+      "veto": "nonfinite_or_invalid_domain",
+      "classification": "integrity",
+      "change": "Explicitly reject, not adapt away"
+    },
+    {
+      "veto": "invalid_policy_or_weights",
+      "classification": "configuration_integrity",
+      "change": "Reject instead of silent fallback"
+    },
+    {
+      "veto": "causal_breakout_exception",
+      "classification": "heuristic_market_policy",
+      "change": "Require actual side agreement; cutoffs remain uncalibrated"
+    },
+    {
+      "veto": "liquidation_cascade",
+      "classification": "market_safety_policy",
+      "change": "Configured activation and nonoverride use same threshold; default unchanged"
+    },
+    {
+      "veto": "consensus_override",
+      "classification": "heuristic_authority",
+      "change": "No arbitrary new quorum; dependence and provenance remain open"
+    },
+    {
+      "veto": "global_kill_switch",
+      "classification": "safety_action_scope",
+      "change": "Unchanged; diagnostic of blocked defense rerun"
+    }
+  ],
+  "preservation": {
+    "append_only_checks": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "prefix_chars": 105729,
+        "before_sha256": "7392E49786064550E9BB2FCC39F1FB841CA987A631D6557351E80BD92A1B98C5",
+        "after_prefix_sha256": "7392E49786064550E9BB2FCC39F1FB841CA987A631D6557351E80BD92A1B98C5",
+        "preserved": true,
+        "appended_chars": 2652
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "prefix_chars": 709910,
+        "before_sha256": "A462F9C92E99B3C48A798E4AE4081C7B20EAD1C26D4D12C5243902F3FA56C587",
+        "after_prefix_sha256": "A462F9C92E99B3C48A798E4AE4081C7B20EAD1C26D4D12C5243902F3FA56C587",
+        "preserved": true,
+        "appended_chars": 8460
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXX_2026-09-25.md",
+        "prefix_chars": 39911,
+        "before_sha256": "A27EC60B3B33FF073E656BC58BD1F1BA9B147947C628F5B6618E50B8597FA329",
+        "after_prefix_sha256": "A27EC60B3B33FF073E656BC58BD1F1BA9B147947C628F5B6618E50B8597FA329",
+        "preserved": true,
+        "appended_chars": 1244
+      }
+    ],
+    "source_before": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "chars": 105729,
+        "sha256": "7392E49786064550E9BB2FCC39F1FB841CA987A631D6557351E80BD92A1B98C5",
+        "normalized_sha256": "7392E49786064550E9BB2FCC39F1FB841CA987A631D6557351E80BD92A1B98C5"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "chars": 709910,
+        "sha256": "ED1AD5146F28C1DBD789BDB10713392ACD2A7D0D9CF08921140DC65BC17CEF18",
+        "normalized_sha256": "A462F9C92E99B3C48A798E4AE4081C7B20EAD1C26D4D12C5243902F3FA56C587"
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXX_2026-09-25.md",
+        "chars": 39911,
+        "sha256": "A27EC60B3B33FF073E656BC58BD1F1BA9B147947C628F5B6618E50B8597FA329",
+        "normalized_sha256": "A27EC60B3B33FF073E656BC58BD1F1BA9B147947C628F5B6618E50B8597FA329"
+      },
+      {
+        "path": "crates/metacortex-engine/src/consejo_seniors.rs",
+        "chars": 63572,
+        "sha256": "9DC7A84DF2BFF64D65D275422EF2334E6C3CDD49A9F08026A397A939DDCEAF37",
+        "normalized_sha256": "9DC7A84DF2BFF64D65D275422EF2334E6C3CDD49A9F08026A397A939DDCEAF37"
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "chars": 277034,
+        "sha256": "A63DFF91881E7DB391CB2EDDB3CF9F306F988D9195D74297E6E52FD9FEF1513F",
+        "normalized_sha256": "A63DFF91881E7DB391CB2EDDB3CF9F306F988D9195D74297E6E52FD9FEF1513F"
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "chars": 12967,
+        "sha256": "9DDABB1976797B03B0F00D44655AD866D12103FB2B5847B95FD54B036F9C79DE",
+        "normalized_sha256": "9DDABB1976797B03B0F00D44655AD866D12103FB2B5847B95FD54B036F9C79DE"
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/metacortex-engine/src/consejo_seniors.rs",
+        "sha256": "404D87922C81C1A2DD5A03FE7088B3C5F98DEC551A575DE951C43C61685526BA",
+        "lines": 1614
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "C44D6AAA4B3B25AE2F3A810BC3A651F837880209789032EE6E4EF0F144A18EA2",
+        "lines": 5121
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "sha256": "49DBD8F580FBDE7A887A238CDBDFFD7069FCF1369CB8F7DC4D22DF9CC2D97F70",
+        "lines": 388
+      },
+      {
+        "path": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+        "sha256": "3C865663B4F2353CF594092D2989BC89FCD82C0479217E92D05F7A1B523F462F",
+        "lines": 354
+      },
+      {
+        "path": ".firecrawl/XXXI-beta-evidence.md",
+        "sha256": "554D8471A36D76109A20C416540936244DE15EB1B32D06D052BFECBA2BFF2F56",
+        "lines": 7
+      }
+    ],
+    "report_snapshot": {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXI_2026-09-25.md",
+      "sha256": "773AB3F22961F93F4B8627AD1DA6CC9BBD0CAECD58105D2E99C03F7697CE936C",
+      "lines": 325
+    },
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "market_orders_sent": 0,
+    "account_requests_sent": 0,
+    "operational_training_or_promotion": false,
+    "synthetic_learning_updates_in_tests": true,
+    "active_genomes_deliberately_modified": false,
+    "process_kills_or_restarts": false,
+    "operational_binary_built": false,
+    "shared_build_caches_deleted": false,
+    "temporary_files_removed": "Only isolated fixture-owned temporary close-test directories under canonicalized Temp; no user datasets, models, traumas or operational data removed."
+  },
+  "roadmap": [
+    "Single evaluated decision plus frozen trace and generation",
+    "Causal economic fill ledger FMT225",
+    "Same-population statistics or explicit hierarchical pooling FMT243",
+    "Veto class/authority and defensive actions FMT232",
+    "Source provenance and dependence-aware validation FMT244",
+    "Temporal functional support/error/budget FMT245",
+    "Read remaining143 historical Rust files and non-Rust inventory"
+  ]
+}

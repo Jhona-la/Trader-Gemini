@@ -36,6 +36,16 @@ impl PhaseOrchestrator {
 
     /// Llamado en cada tick del Market Data. Mueve la máquina de estados.
     pub fn on_tick(&mut self) -> SystemPhase {
+        // Readiness is revocable. Elapsed ticks cannot replace authorization.
+        // This gates new admission; it does not cancel orders or close positions.
+        if matches!(
+            self.current_phase,
+            SystemPhase::DemoVerify | SystemPhase::PaperTrading | SystemPhase::ProductionMainnet
+        ) && !self.darwin_approved.load(Ordering::Acquire)
+        {
+            self.current_phase = SystemPhase::GenomicAudit;
+            return self.current_phase;
+        }
         match self.current_phase {
             SystemPhase::Initialization => {
                 // Inmediatamente a Warmup después de arrancar
@@ -54,12 +64,10 @@ impl PhaseOrchestrator {
             }
             SystemPhase::GenomicAudit => {
                 self.current_ticks = self.current_ticks.saturating_add(1);
-                // FIX #1506: Transición por aprobación de Darwin o timeout defensivo (5000 ticks)
-                if self.darwin_approved.load(Ordering::Relaxed)
-                    || self.current_ticks >= self.warmup_ticks_required.saturating_add(5000)
-                {
+                // A timeout may be diagnosed, but never grants trading permission.
+                if self.darwin_approved.load(Ordering::Acquire) {
                     println!(
-                        "🚀 [ORCHESTRATOR] Fase: GenomicAudit -> DemoVerify (Darwin Approved / Ready)"
+                        "🚀 [ORCHESTRATOR] Fase: GenomicAudit -> DemoVerify (approval flag observed)"
                     );
                     self.current_phase = SystemPhase::DemoVerify;
                 }
@@ -85,8 +93,10 @@ impl PhaseOrchestrator {
     }
 
     pub fn is_trading_allowed(&self) -> bool {
-        self.current_phase == SystemPhase::PaperTrading
-            || self.current_phase == SystemPhase::ProductionMainnet
+        matches!(
+            self.current_phase,
+            SystemPhase::PaperTrading | SystemPhase::ProductionMainnet
+        ) && self.darwin_approved.load(Ordering::Acquire)
     }
 
     pub fn is_paper_trading(&self) -> bool {

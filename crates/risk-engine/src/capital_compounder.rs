@@ -10,36 +10,30 @@ pub struct CapitalRegimeMetrics {
 pub struct CapitalCompounderEngine;
 
 impl CapitalCompounderEngine {
-    /// Returns dynamic capital allocation rules based on continuous math models
-    /// rather than hardcoded step functions.
+    /// Legacy capacity heuristic: smooth inputs, integer capacity and policy caps.
+    /// It is not a learned spectral allocation or a calibrated risk guarantee.
     pub fn get_capital_regime_metrics(
         current_capital: f64,
         current_drawdown: f64,
         base_capital: f64,
     ) -> CapitalRegimeMetrics {
-        // FIX #652: Sanitizar parámetros entrantes
-        let safe_curr = if current_capital.is_finite() && current_capital > 0.0 {
-            current_capital
-        } else {
-            13.0
-        };
-        let safe_base = if base_capital.is_finite() && base_capital > 0.0 {
-            base_capital
-        } else {
-            13.0
-        };
-        let safe_dd = if current_drawdown.is_finite() && current_drawdown >= 0.0 {
-            current_drawdown
-        } else {
-            0.0
-        };
+        // Missing/invalid capital is not an account funded with an invented $13.
+        // Legacy return type: zero capacity is a veto, not evidence of zero risk.
+        let invalid = || CapitalRegimeMetrics { max_concurrent_positions: 0,
+            spectral_energy_split: 0.0, scalp_capital_split: 0.0, wealth_factor: 0.0 };
+        if !current_capital.is_finite() || current_capital <= 0.0
+            || !base_capital.is_finite() || base_capital <= 0.0
+            || !current_drawdown.is_finite() || !(0.0..=1.0).contains(&current_drawdown) {
+            return invalid();
+        }
+        let safe_dd = current_drawdown;
 
-        // Continuous wealth factor (1.0 = base, expands exponentially)
-        let wealth_ratio = (safe_curr / safe_base.max(1.0)).max(1.0);
+        // Relative wealth, floored at one by the retained legacy policy.
+        let wealth_ratio = (current_capital / base_capital).max(1.0);
+        if !wealth_ratio.is_finite() { return invalid(); }
 
-        // SISTEMA SUPREMO: Escalado Concurrente Exponencial (Raíz Cuadrada)
-        // Sustituimos la asfixia logarítmica (log10). Si cuadruplicamos el capital ($52), abrimos 3 posiciones.
-        // Si llegamos a 81x ($1000), abrimos las 10 del Top Epigenético. Esto fuerza el crecimiento de interés compuesto.
+        // Retained capacity heuristic: square-root, NOT exponential growth.
+        // Integer slots necessarily step. This formula does not force compounding.
         let concurrent_positions = (1.0 + wealth_ratio.sqrt()).floor() as usize;
 
         // Clamp it to reasonable bounds based on our memory/risk budget (Maximum Top 10 Epigenetic slots)
@@ -59,7 +53,10 @@ impl CapitalCompounderEngine {
         }
     }
 
-    /// Calculates the Kelly-optimal notional position size without human biases
+    /// Legacy heuristic allocation amount, NOT a generally Kelly-optimal notional.
+    /// Binary Kelly assumes fixed payoff/loss units; mapping risk to notional needs
+    /// loss distance, costs and a joint portfolio model absent from this signature.
+    /// Invalid evidence returns zero. Min is an admission floor, never an uplift.
     pub fn calculate_compounding_position_notional(
         capital_bucket: f64,
         win_rate: f64,
@@ -78,23 +75,31 @@ impl CapitalCompounderEngine {
             || capital_bucket <= 0.0
             || !win_rate.is_finite()
             || !profit_factor.is_finite()
+            || !(0.0..=1.0).contains(&win_rate)
+            || profit_factor <= 1.0
+            || !confidence.is_finite() || !(0.0..=1.0).contains(&confidence)
+            || !hurst_exponent.is_finite() || !(0.0..=1.0).contains(&hurst_exponent)
+            || !current_drawdown.is_finite() || !(0.0..=1.0).contains(&current_drawdown)
+            || !correlation_penalty.is_finite() || !(0.0..=1.0).contains(&correlation_penalty)
+            || !kelly_clamp_min.is_finite() || !kelly_clamp_max.is_finite()
+            || kelly_clamp_min < 0.0 || kelly_clamp_min > kelly_clamp_max
+            || kelly_clamp_max > 1.0
         {
             return 0.0;
         }
 
-        // FIX #555: Fórmula analítica exacta de Kelly basada en Profit Factor: f* = W * (1 - 1/PF)
-        let pf = profit_factor.max(1.01);
+        // Binary fixed-payoff identity: f*=p-(1-p)/b=p*(1-1/PF), PF=p*b/(1-p).
+        // Empirical p/PF with variable outcomes is only a plug-in heuristic here.
+        let pf = profit_factor;
         let kelly = (win_rate * (1.0 - 1.0 / pf)).max(0.0);
-        if kelly <= 0.0 || win_rate < 0.40 {
+        if kelly <= 0.0 {
             return 0.0;
         }
 
-        // Half Kelly for volatility safety
-        let mut target_fraction = (kelly * 0.5).max(0.005);
+        // Fractional scaling, not a specified probability-of-drawdown guarantee.
+        let mut target_fraction = kelly * 0.5;
 
-        // Scale continuously with ML confidence (0.0 to 1.0)
-        // Scale continuously with ML confidence (0.0 to 1.0)
-        // FIX #1430: Sanitización de confianza, Hurst y penalización de correlación
+        // Retained confidence floor is a heuristic, not a calibrated probability.
         let safe_conf = if confidence.is_finite() {
             confidence.clamp(0.0, 1.0)
         } else {
@@ -104,8 +109,8 @@ impl CapitalCompounderEngine {
         target_fraction *= confidence_scalar;
 
         // Hurst Exponent continuous penalty
-        // > 0.5 is trending (good for swing/scalp continuation), < 0.5 is mean reverting
-        // We apply a smooth polynomial scalar based on Hurst (if Hurst ~ 0.5 it's random, we reduce size)
+        // Distance from 0.5 is a heuristic; Hurst alone neither identifies a
+        // profitable direction nor proves randomness/mean reversion of returns.
         let safe_hurst = if hurst_exponent.is_finite() {
             hurst_exponent.clamp(0.0, 1.0)
         } else {
@@ -144,22 +149,9 @@ impl CapitalCompounderEngine {
         let dd_decay = (-safe_dd * 15.0).exp().clamp(0.01, 1.0);
         target_fraction *= dd_decay;
 
-        // Enforce the clamping requested by the arena limits (solo si hay fracción positiva)
-        // FIX #703: Ordenamiento defensivo de (min, max) y validación de finitud para evitar pánicos en clamp
-        if target_fraction > 0.0 {
-            let min_k = if kelly_clamp_min.is_finite() {
-                kelly_clamp_min.max(0.0)
-            } else {
-                0.01
-            };
-            let max_k = if kelly_clamp_max.is_finite() {
-                kelly_clamp_max.max(0.0)
-            } else {
-                0.25
-            };
-            let (safe_min, safe_max) = (min_k.min(max_k), min_k.max(max_k));
-            target_fraction = target_fraction.clamp(safe_min, safe_max);
-        }
+        // Never undo a risk penalty to satisfy a minimum. Infeasible size => abstain.
+        target_fraction = target_fraction.min(kelly_clamp_max);
+        if target_fraction < kelly_clamp_min { return 0.0; }
 
         capital_bucket * target_fraction
     }

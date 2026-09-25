@@ -1,9 +1,9 @@
-//! VISTA OMNISCIENTE (F6) — el pulso completo del sistema en un comando.
+//! Diagnóstico parcial (F6): consultas de sólo lectura, con procedencia explícita.
 //!
-//! QUÉ: consolida TODAS las capas de estado en un solo reporte legible:
+//! QUÉ: reúne las fuentes disponibles en un reporte legible:
 //!      genoma activo (linaje), envolvente Kelly bayesiana, espectro temporal,
 //!      ensamble ML, contabilidad del exchange (income API), feed health,
-//!      registro de órdenes y sistema inmune.
+//!      registro local. No accede al estado privado de otro proceso ni certifica salud.
 //! POR QUÉ: directriz — "auditoría y visualización diagnóstica" + "identifica
 //!      las áreas donde el sistema es mudo, ciego y sordo". Antes cada métrica
 //!      vivía en su propio log/binario; el operador no tenía UNA vista.
@@ -30,7 +30,7 @@ async fn main() {
     }
 
     println!("╔══════════════════════════════════════════════════════════════════╗");
-    println!("║           🩺 SYSTEM HEALTH — VISTA OMNISCIENTE                   ║");
+    println!("║           🩺 SYSTEM HEALTH — DIAGNÓSTICO PARCIAL                 ║");
     println!(
         "║  Entorno: {}                                    ║",
         if is_testnet {
@@ -44,7 +44,7 @@ async fn main() {
     println!();
 
     // ═══ 1. GENOMA ACTIVO (linaje del almacén) ═══
-    println!("─── 🧬 GENOMA ACTIVO ───────────────────────────────────────────────");
+    println!("─── 🧬 GENOMA DEL ALMACÉN (no acredita carga del motor) ─────────────");
     match GenomeEnvelope::load_active() {
         Some(env) => {
             let age_min = (now_ms().saturating_sub(env.created_ms)) / 60_000;
@@ -93,22 +93,15 @@ async fn main() {
                 }
             }
         }
-        None => println!("   ⚠️ Sin genoma activo — baseline en operación"),
+        None => println!("   ⚠️ Sin genoma legible en el almacén; estado del motor desconocido"),
     }
     println!();
 
     // ═══ 2. FEED HEALTH ═══
     println!("─── 📡 FEED ─────────────────────────────────────────────────────────");
-    let stalled = quantum_arena::feed_health::is_stalled();
-    println!(
-        "   Estado: {} · watchdog: {}",
-        if stalled {
-            "⚠️ STALLED (sin datos 5s+)"
-        } else {
-            "✅ vivo"
-        },
-        if stalled { "DISPARADO" } else { "normal" }
-    );
+    // El átomo de feed_health es local al proceso; no observa god_engine.
+    println!("   Estado del motor: DESCONOCIDO (sin snapshot IPC del watchdog)");
+    println!("   Consultar telemetría del proceso y su timestamp; no inferir salud desde este binario.");
     println!();
 
     // ═══ 3. CUENTA Y POSICIONES (verdad del exchange) ═══
@@ -170,10 +163,14 @@ async fn main() {
 
     // ═══ 4. CONTABILIDAD REAL (income API — la verdad pre/post fees) ═══
     println!();
-    println!("─── 💸 CONTABILIDAD REAL (income API, últimos 7 días) ───────────────");
+    println!("─── 💸 INCOME (desde hace 7 días; una página, cobertura no certificada) ──");
     let week_ms = now_ms().saturating_sub(7 * 86_400_000);
     match exec.fetch_income(&[], week_ms, 1000).await {
         Ok(entries) => {
+            println!("   {} filas recibidas; las sumas siguientes sólo cubren esta respuesta.", entries.len());
+            if entries.len() >= 1000 {
+                println!("   ⚠️ Límite de página alcanzado: puede faltar información de la ventana.");
+            }
             let mut pnl_gross = 0.0;
             let mut commissions = 0.0;
             let mut funding = 0.0;
@@ -200,7 +197,7 @@ async fn main() {
                     pnl_gross, commissions, funding
                 );
                 println!(
-                    "   PnL NETO:  ${:+.4} · WR: {:.1}% · trades: {}",
+                    "   Neto de filas: ${:+.4} · filas positivas: {:.1}% · filas REALIZED_PNL: {}",
                     net,
                     (wins as f64 / trades as f64) * 100.0,
                     trades
@@ -220,7 +217,8 @@ async fn main() {
                     drag, funding_share
                 );
             } else {
-                println!("   ∅ Sin trades en la ventana");
+                println!("   ∅ Sin filas REALIZED_PNL en esta respuesta; no acredita ausencia de operaciones.");
+                println!("   Fees: ${:+.4} · funding: ${:+.4} · neto de filas: ${:+.4}", commissions, funding, net);
             }
         }
         Err(e) => println!("   ⚠️ income: {}", truncate_str(&e, 60)),
@@ -228,7 +226,8 @@ async fn main() {
 
     // ═══ 5. REGISTRO DE ÓRDENES (máquina de estados local) ═══
     println!();
-    println!("─── 📋 REGISTRO DE ÓRDENES (estado local) ───────────────────────────");
+    println!("─── 📋 REGISTRO DE ESTA CONSULTA (no es el del motor) ───────────────");
+    println!("   Sin snapshot IPC ni consulta de órdenes abiertas: estado operativo DESCONOCIDO.");
     let stats = exec.registry().stats();
     println!(
         "   Total: {} · activas: {} · llenas: {} · parciales: {} · canceladas: {} · rechazadas: {}",
@@ -241,7 +240,7 @@ async fn main() {
     );
     if stats.active > 0 {
         println!(
-            "   ⚠️ {} órdenes VIVAS en el exchange — verificar que sean intencionales",
+            "   ⚠️ {} registros activos locales; no es confirmación de órdenes vivas en exchange",
             stats.active
         );
     }
@@ -249,9 +248,9 @@ async fn main() {
 
     // ═══ 6. MODO DE LA CUENTA ═══
     println!("─── 🔀 MODO DE POSICIÓN ─────────────────────────────────────────────");
-    match exec.ensure_hedge_mode().await {
-        Ok(false) => println!("   ✅ HEDGE (dualSidePosition) — correcto para el motor"),
-        Ok(true) => println!("   🔀 Migrado a HEDGE en esta consulta (estaba one-way)"),
+    match exec.fetch_hedge_mode().await {
+        Ok(true) => println!("   HEDGE (dualSidePosition) — consulta de sólo lectura"),
+        Ok(false) => println!("   ONE-WAY — consulta de sólo lectura; no se cambió el modo"),
         Err(e) => println!(
             "   ⚠️ {}: {}",
             if is_testnet { "testnet" } else { "mainnet" },
@@ -261,7 +260,7 @@ async fn main() {
     println!();
 
     println!("══════════════════════════════════════════════════════════════════");
-    println!("  Salud del sistema consolidada. Para espectro/ensamble en vivo:  ");
+    println!("  Diagnóstico parcial, no certificación de salud. Para estado vivo:");
     println!("  telemetry_server (per-100 ticks) · income_report --days N       ");
     println!("══════════════════════════════════════════════════════════════════");
 }

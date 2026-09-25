@@ -1,4 +1,5 @@
 pub mod booktick_replay;
+pub mod label_evidence;
 pub mod network_jitter;
 pub mod tick_replayer;
 pub mod vectorized;
@@ -77,8 +78,6 @@ pub fn run_backtest_native(
 
     // Axioma VII: Paridad Absoluta de Modelos. Usamos la misma Arena y Core que producción.
     use god_engine_core::GodEngineCore;
-    use std::sync::Arc;
-
     use quantum_arena::GlobalArena;
     use std::sync::atomic::Ordering;
 
@@ -373,8 +372,7 @@ pub fn run_backtest_native(
             }
             pos_was_open = arena.coins[target_coin_id.min(arena.coins.len().saturating_sub(1))]
                 .positions
-                .position
-                .is_open();
+                .is_any_open();
 
             // F5.1 (paridad host): alimentar el posterior del edge con cada
             // cierre — mismos EWMAs y mismo record_trade que el replay/vivo.
@@ -447,15 +445,16 @@ pub fn run_backtest_native(
     // FIX #1485 & #1517: Usar target_coin_id y proteger suma de unrealized PnL
     let last_price = closes.last().copied().unwrap_or(0.0);
     let safe_coin_idx = target_coin_id.min(core.arena.coins.len().saturating_sub(1));
-    let pos = &core.arena.coins[safe_coin_idx].positions.position;
-    if pos.is_open() {
-        let entry = pos.entry_price.load(Ordering::Relaxed);
-        let qty = pos.quantity.load(Ordering::Relaxed);
-        let is_long = pos.is_long.load(Ordering::Relaxed);
-        let exit_fee = qty * last_price * avg_fee_est;
-        let unrealized = (last_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
-        if unrealized.is_finite() {
-            final_cap += unrealized;
+    for pos in core.arena.coins[safe_coin_idx].positions.slots() {
+        if pos.is_open() {
+            let entry = pos.entry_price.load(Ordering::Relaxed);
+            let qty = pos.quantity.load(Ordering::Relaxed);
+            let is_long = pos.is_long.load(Ordering::Relaxed);
+            let exit_fee = qty * last_price * avg_fee_est;
+            let unrealized = (last_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
+            if unrealized.is_finite() {
+                final_cap += unrealized;
+            }
         }
     }
 

@@ -68,8 +68,8 @@ pub struct TpSl {
     pub sl_pct: f64,
     /// RR efectivamente aplicado (≥ el mínimo exigido por la fricción).
     pub rr_applied: f64,
-    /// RR mínimo que la fricción exige al nivel de SL resultante, evaluado en
-    /// el win rate de diseño (D-681).
+    /// RR mínimo bajo WORST_TOLERATED_WR y la fricción declarada. Es una
+    /// condición de EV bajo ese p supuesto, no una probabilidad calibrada.
     pub rr_required: f64,
     /// `true` si el horizonte solicitado NO es operable: la dispersión
     /// esperada a esa τ no cubre el stop mínimo viable frente a la fricción.
@@ -186,23 +186,20 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
     }
 }
 
-/// Variante que respeta un RR genómico más ambicioso que el mínimo exigido.
+/// El gen sólo puede ampliar el TP base: conserva SL, el piso y la misma
+/// probabilidad contractual. Un target no representable deja intacta la base.
+/// Aumentar TP no garantiza mantener la probabilidad de primera llegada:
+/// esa probabilidad todavía requiere estimación independiente.
 pub fn compute_tp_sl_with_target_rr(input: TpSlInputs, target_rr: f64) -> TpSl {
     let mut out = compute_tp_sl(input);
-    let fee = if input.roundtrip_fee.is_finite() && input.roundtrip_fee > 0.0 {
-        input.roundtrip_fee
-    } else {
-        SuperGenotype::REFERENCE_ROUNDTRIP_FEE
-    };
-    let rr_design = SuperGenotype::min_rr_for(SuperGenotype::DESIGN_WIN_RATE, fee, out.sl_pct);
-    let min_allowed_rr = rr_design.max(2.0); // B3.24: RR >= 2 siempre (SL <= TP/2)
-    if target_rr.is_finite() && target_rr >= min_allowed_rr {
-        out.rr_applied = target_rr;
-        out.rr_required = rr_design;
-        out.tp_pct = out.sl_pct * target_rr;
-    } else if target_rr.is_finite() && target_rr > out.rr_applied {
-        out.rr_applied = target_rr;
-        out.tp_pct = out.sl_pct * target_rr;
+    // FMT-096: recalcular el mínimo con p=0.55 podía reducir el TP que
+    // la base había construido con p=0.40 (SL=.002, fee=.001, target=2).
+    if target_rr.is_finite() && target_rr > out.rr_applied {
+        let target_tp = out.sl_pct * target_rr;
+        if target_tp.is_finite() && target_tp >= out.tp_pct {
+            out.rr_applied = target_rr;
+            out.tp_pct = target_tp;
+        }
     }
     out
 }
@@ -375,10 +372,15 @@ mod tests {
     fn d681_el_objetivo_no_depende_del_desempeno_observado() {
         let i = base();
         let r = compute_tp_sl(i);
-        let rr = SuperGenotype::min_rr_for(SuperGenotype::WORST_TOLERATED_WR, i.roundtrip_fee, r.sl_pct)
-            .max(1.0);
+        let rr =
+            SuperGenotype::min_rr_for(SuperGenotype::WORST_TOLERATED_WR, i.roundtrip_fee, r.sl_pct)
+                .max(1.0);
         assert!((r.tp_pct / r.sl_pct - rr).abs() < 1e-12);
-        assert!(r.rr_applied < 3.0, "a la geometría de referencia el RR es acotado: {}", r.rr_applied);
+        assert!(
+            r.rr_applied < 3.0,
+            "a la geometría de referencia el RR es acotado: {}",
+            r.rr_applied
+        );
     }
 
     /// Un horizonte más largo implica más dispersión y por tanto más recorrido

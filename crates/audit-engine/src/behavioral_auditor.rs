@@ -1,8 +1,10 @@
 use std::f64;
 
-/// 🔬 MOTOR ALGORÍTMICO DE DIAGNÓSTICO COMPORTAMENTAL CONTINUO Y DETECCIÓN DE ANOMALÍAS (ZERO-COST BEHAVIORAL AUDITOR)
-/// Implementa Wald's Sequential Probability Ratio Test (SPRT) y CUSUM (Cumulative Sum Control Chart).
-/// Detecta anomalías, silenciaciones, degradaciones de latencia y desvíos microestructurales en < 5 nanosegundos por tick.
+/// Diagnóstico CUSUM y acumulador heurístico legacy rotulado SPRT.
+/// XXXV: no implementa la LLR gaussiana declarada (faltan varianza y término
+/// de centrado); los bounds nominales no certifican errores alfa/beta del 1%.
+/// No hay benchmark que acredite coste cero o <5ns por tick. Invalidez y
+/// normalidad comparten None; parámetros infinitos siguen admitidos (OPEN).
 #[derive(Debug, Clone)]
 #[repr(C, align(64))]
 pub struct BehavioralAuditorEngine {
@@ -42,7 +44,7 @@ impl BehavioralAuditorEngine {
         }
     }
 
-    /// Audita una nueva observación comportamental en caliente en < 5 nanosegundos
+    /// Audita una observación con trabajo escalar constante; latencia no medida.
     /// Retorna Option<&'static str> indicando la anomalía detectada o None si el comportamiento es nominal
     #[inline(always)]
     pub fn audit_observation(&mut self, current_val: f64) -> Option<&'static str> {
@@ -58,7 +60,7 @@ impl BehavioralAuditorEngine {
         self.cusum_pos = (self.cusum_pos + diff - self.slack_k).max(0.0);
         self.cusum_neg = (self.cusum_neg - diff - self.slack_k).max(0.0);
 
-        // 2. Algoritmo SPRT de Wald (Likelihood Ratio de distribución Gaussiana)
+        // 2. Heurística legacy; NO es una LLR gaussiana calibrada (ver arriba).
         let delta_hypotheses = 0.10; // Desvío de hipótesis alternativa H1
         let sprt_increment = (diff * delta_hypotheses) / (self.baseline_mean.abs() + 1e-5);
         self.log_likelihood_ratio += sprt_increment;

@@ -14,52 +14,50 @@
 //! **exclusivamente retornos de un paso**: existía un único τ y la derivada
 //! respecto a `ln τ` ni siquiera estaba definida.
 //!
-//! **(2) Lo que sí medía era curtosis.** Calculaba
-//! `E[|r|] / (√E[r²] · √(2/π))`, que para una gaussiana vale **exactamente 1**
-//! con independencia de la autocorrelación. Era ciego precisamente a lo que
-//! Hurst mide.
+//! **(2) Medía un descriptor marginal, no curtosis ni Hurst.** El cociente
+//! `E[|r|] / (√E[r²] · √(2/π))` vale 1 en población para una gaussiana
+//! centrada. No identifica la dependencia temporal; tampoco usa el cuarto
+//! momento necesario para llamarlo curtosis.
 //!
 //! **(3) Dependía del número de muestras.** El denominador era `ln n` con `n`
-//! el CONTADOR DE MUESTRAS, no una escala temporal, de modo que
-//! `H(n) → 0,50` de forma determinista al crecer el proceso. El «régimen de
-//! mercado» detectado era una función decreciente del tiempo transcurrido
-//! desde el arranque.
+//! el CONTADOR DE MUESTRAS: no efectuaba una regresión multiescala.
+//! Si n creciera sin límite con descriptor
+//! acotado se induciría convergencia a 0,50, pero el código actual limita
+//! n por ventana: no se debe atribuirle una convergencia asintótica inexistente.
 //!
 //! ## La consecuencia que explica el sesgo hacia el scalping
 //!
-//! Las tres «escalas» de `MultiScaleHurstConfluence` (10/25/50) diferían
-//! **sólo en ese `ln n`**, con lo que la relación entre ellas era una constante
-//! del sistema: `Δh_macro/Δh_micro = ln10/ln50 = 0,589`, siempre, para todo
-//! mercado. Aplicando los umbrales de viabilidad:
+//! Las ventanas 10/25/50 combinaban el descriptor marginal con distintos
+//! denominadores y umbrales bajo etiquetas de operación. El cociente de
+//! desviaciones sería ln10/ln50 sólo si compartieran el MISMO descriptor;
+//! sus muestras distintas impiden afirmar que sea constante en todo mercado.
+//! Ninguna de esas etiquetas convierte el descriptor en exponente temporal.
+//! La migración de consumidores sigue requiriendo versionar features y modelos.
 //!
-//! * `is_scalp_viable` exigía `|ln SR| > 0,230` → se cruza rutinariamente con
-//!   la leptocurtosis normal de las criptomonedas;
-//! * `is_swing_viable` exigía `|ln SR| > 0,587` → prácticamente inalcanzable.
+//! # Estimador implementado y límites de interpretación
 //!
-//! **El detector de régimen de horizonte largo estaba matemáticamente apagado.**
-//! El sesgo hacia el scalping no era una decisión de diseño: era un artefacto
-//! del denominador.
-//!
-//! # El estimador correcto
-//!
-//! DFA (*Detrended Fluctuation Analysis*) sobre agregaciones temporales REALES.
+//! DFA (*Detrended Fluctuation Analysis*) sobre ventanas de MUESTRAS.
 //! Para cada escala `s`, se divide el paseo integrado en ventanas de longitud
 //! `s`, se elimina la tendencia lineal de cada una y se toma la fluctuación
-//! cuadrática media. La pendiente de `ln F(s)` sobre `ln s` es `H`.
+//! cuadrática media. La pendiente de `ln F(s)` sobre `ln s` se interpreta
+//! como H de los retornos sólo bajo un modelo estacionario de escalamiento.
 //!
-//! Frente a R/S clásico, DFA es robusto a tendencias no estacionarias — que es
-//! exactamente la condición de una serie de precios.
+//! DFA1 elimina tendencias lineales del perfil integrado, no cualquier
+//! no-estacionariedad de precios/retornos. Un R² alto no demuestra memoria
+//! larga, causalidad, significación ni ausencia de sesgo de muestra finita.
+//! Esta API no recibe timestamps: el caller debe justificar muestreo regular,
+//! huecos y soporte temporal. No estima por sí sola un espectro 1 ns–100 años.
 //!
 //! ## Coste
 //!
-//! O(N) por escala en la actualización incremental, con el histórico acotado a
-//! `MAX_HISTORY` retornos. Se recalcula cada `RECOMPUTE_EVERY` muestras, de
-//! modo que el coste amortizado por tick es despreciable.
+//! O(N·K) por recomputación, con asignaciones temporales y hasta K=7 escalas;
+//! histórico acotado a `MAX_HISTORY`. Se recalcula cada `RECOMPUTE_EVERY`
+//! muestras aceptadas. La latencia p99 debe medirse, no se presume despreciable.
 
 /// Escalas de agregación, en número de muestras. Log-espaciadas base 2 para
 /// que la regresión sobre `ln s` tenga puntos uniformemente distribuidos.
-/// Cubren de 4 a 256 muestras: una década y media de escala, suficiente para
-/// una pendiente estable sin exigir un histórico enorme.
+/// Cubren de 4 a 256 muestras. Es un soporte finito de estimación, no una
+/// partición en motores de trading ni garantía de una pendiente estable.
 const DFA_SCALES: [usize; 7] = [4, 8, 16, 32, 64, 128, 256];
 
 /// Histórico de retornos. Debe superar holgadamente la escala mayor para que
@@ -69,8 +67,8 @@ const MAX_HISTORY: usize = 1024;
 /// Cada cuántas muestras se recalcula la regresión completa.
 const RECOMPUTE_EVERY: usize = 32;
 
-/// Mínimo de muestras para que la estimación sea significativa: al menos
-/// cuatro ventanas de la escala mayor.
+/// Warmup de política. A 512 retornos la mayor escala admisible es 128;
+/// la escala 256 requiere las 1024 muestras (cuatro ventanas por escala).
 const MIN_SAMPLES: usize = 512;
 
 #[derive(Debug, Clone)]
@@ -81,14 +79,21 @@ pub struct HurstDfa {
     filled: usize,
     last_price: f64,
     since_recompute: usize,
-    /// Última estimación válida. 0,5 = difusión browniana (sin memoria).
+    /// Salida acotada de compatibilidad; 0,5 también es fallback sin evidencia,
+    /// no prueba de difusión browniana. Consultar is_valid y raw_exponent.
     pub hurst: f64,
-    /// Bondad del ajuste de la regresión log-log, en [0,1]. Un `r²` bajo
-    /// significa que la serie NO sigue una ley de potencias y que el valor de
-    /// `hurst` no debe usarse con convicción — información que el estimador
-    /// anterior no podía siquiera expresar.
+    /// Bondad descriptiva del ajuste log-log, en [0,1], no probabilidad de
+    /// que exista una ley de potencias. R² alto no descarta crossovers o sesgo.
     pub r_squared: f64,
-    /// `true` cuando hay muestras suficientes para una estimación con sentido.
+    /// Pendiente sin clipping, incluso fuera de (0,1); None si no hubo ajuste.
+    /// Permite diagnosticar mala especificación sin ocultarla en una frontera.
+    pub raw_exponent: Option<f64>,
+    /// Número de escalas realmente utilizadas en el ajuste más reciente.
+    pub scales_used: usize,
+    /// Mayor escala utilizada, en muestras, NO milisegundos.
+    pub max_scale: usize,
+    /// Ajuste finito y pendiente dentro de (0,1), dominio del modelo de
+    /// retornos estacionarios adoptado aquí. No es una prueba de estacionariedad.
     pub is_valid: bool,
 }
 
@@ -108,6 +113,9 @@ impl HurstDfa {
             since_recompute: 0,
             hurst: 0.5,
             r_squared: 0.0,
+            raw_exponent: None,
+            scales_used: 0,
+            max_scale: 0,
             is_valid: false,
         }
     }
@@ -118,7 +126,8 @@ impl HurstDfa {
         self.filled
     }
 
-    /// Alimenta un precio. Devuelve `(hurst, r_squared)`.
+    /// Alimenta un precio. Devuelve `(hurst, r_squared)` del último ajuste.
+    /// Ignorar un precio inválido no equivale a revalidar su frescura temporal.
     pub fn update(&mut self, price: f64) -> (f64, f64) {
         if !price.is_finite() || price <= 0.0 {
             return (self.hurst, self.r_squared);
@@ -127,7 +136,18 @@ impl HurstDfa {
             self.last_price = price;
             return (self.hurst, self.r_squared);
         }
-        let r = (price / self.last_price).ln();
+        // Within a factor of two, subtraction benefits from Sterbenz's range
+        // and log1p retains nearby-price increments. Outside that range use
+        // the ratio directly, avoiding cancellation of delta/p near -1.
+        // If the ratio under/overflows, log-difference remains finite.
+        let ratio = price / self.last_price;
+        let r = if (0.5..=2.0).contains(&ratio) {
+            ((price - self.last_price) / self.last_price).ln_1p()
+        } else if ratio.is_finite() && ratio > 0.0 {
+            ratio.ln()
+        } else {
+            price.ln() - self.last_price.ln()
+        };
         self.last_price = price;
         if !r.is_finite() {
             return (self.hurst, self.r_squared);
@@ -161,8 +181,14 @@ impl HurstDfa {
         out
     }
 
-    /// Regresión de `ln F(s)` sobre `ln s`. La pendiente es H.
+    /// Regresión de ln F(s) sobre ln s; interpretar la pendiente requiere modelo.
     fn recompute(&mut self) {
+        self.is_valid = false;
+        self.hurst = 0.5;
+        self.r_squared = 0.0;
+        self.raw_exponent = None;
+        self.scales_used = 0;
+        self.max_scale = 0;
         let r = self.ordered();
         let n = r.len();
         if n < MIN_SAMPLES {
@@ -172,11 +198,21 @@ impl HurstDfa {
         // Paseo integrado con la media eliminada: el objeto sobre el que DFA
         // mide fluctuación. Sin esta integración se estaría midiendo el ruido,
         // no su acumulación — que es donde vive la memoria del proceso.
-        let mean = r.iter().sum::<f64>() / n as f64;
+        // DFA is homogeneous: F(a*r)=|a|F(r). A common positive normalization
+        // changes only the log-log intercept, not slope or R². This prevents
+        // squared residual under/overflow and removes the absolute F>1e-15 gate.
+        if r.iter().any(|x| !x.is_finite()) {
+            return;
+        }
+        let amplitude = r.iter().fold(0.0_f64, |a, x| a.max(x.abs()));
+        if amplitude == 0.0 {
+            return;
+        }
+        let mean = r.iter().map(|x| x / amplitude).sum::<f64>() / n as f64;
         let mut walk = Vec::with_capacity(n);
         let mut acc = 0.0;
         for &x in r.iter() {
-            acc += x - mean;
+            acc += x / amplitude - mean;
             walk.push(acc);
         }
 
@@ -192,8 +228,8 @@ impl HurstDfa {
             for w in 0..windows {
                 let seg = &walk[w * s..(w + 1) * s];
                 // Ajuste lineal por mínimos cuadrados dentro de la ventana:
-                // eliminar la tendencia local es lo que hace a DFA robusto
-                // frente a la no estacionariedad de una serie de precios.
+                // elimina sólo la componente lineal del perfil local; no
+                // prueba robustez frente a cualquier no-estacionariedad.
                 let m = s as f64;
                 let sum_x = (s * (s - 1)) as f64 / 2.0;
                 let sum_xx = ((s - 1) * s * (2 * s - 1)) as f64 / 6.0;
@@ -219,12 +255,14 @@ impl HurstDfa {
                 sum_sq += resid / m;
             }
             let f_s = (sum_sq / windows as f64).sqrt();
-            if f_s > 1e-15 && f_s.is_finite() {
+            if f_s > 0.0 && f_s.is_finite() {
                 ln_s.push((s as f64).ln());
                 ln_f.push(f_s.ln());
+                self.max_scale = s;
             }
         }
 
+        self.scales_used = ln_s.len();
         if ln_s.len() < 3 {
             // Menos de tres puntos no define una pendiente con sentido: se
             // declara no válido en lugar de devolver un número inventado.
@@ -246,35 +284,41 @@ impl HurstDfa {
             sxx += dx * dx;
             syy += dy * dy;
         }
-        if sxx <= 1e-15 {
-            self.is_valid = false;
+        if !sxx.is_finite() || sxx <= 0.0 || !syy.is_finite() || syy <= 0.0 {
             return;
         }
         let slope = sxy / sxx;
+        if !slope.is_finite() {
+            return;
+        }
+        self.raw_exponent = Some(slope);
         // r²: cuánta de la variación de ln F(s) explica la ley de potencias.
-        self.r_squared = if syy > 1e-15 {
-            (sxy * sxy / (sxx * syy)).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        // H físicamente admisible. [0,05, 0,95] cubre desde anti-persistencia
-        // extrema hasta tendencia casi determinista.
-        self.hurst = if slope.is_finite() {
-            slope.clamp(0.05, 0.95)
-        } else {
-            0.5
-        };
-        self.is_valid = true;
+        let r2 = sxy / sxx.sqrt() / syy.sqrt();
+        if !r2.is_finite() {
+            return;
+        }
+        self.r_squared = (r2 * r2).clamp(0.0, 1.0);
+        self.is_valid = slope > 0.0 && slope < 1.0;
+        if self.is_valid {
+            // Legacy output policy, not a physical law. Raw slope remains
+            // available; an out-of-model slope is never certified by clipping.
+            self.hurst = slope.clamp(0.05, 0.95);
+        }
     }
 
-    /// Hurst sólo si el ajuste es fiable; en caso contrario, 0,5 (difusión sin
-    /// memoria), que es la hipótesis nula honesta.
+    /// Salida bajo el dominio adoptado y un umbral descriptivo de R².
+    /// En caso contrario 0,5 es fallback, no evidencia a favor de browniano.
     ///
     /// El consumidor que quiera modular por convicción debe usar `r_squared`
     /// en lugar de tratar `hurst` como un número siempre significativo — que es
     /// lo que hacía el sistema con el estimador anterior.
     pub fn hurst_or_neutral(&self, min_r2: f64) -> f64 {
-        if self.is_valid && self.r_squared >= min_r2 {
+        if min_r2.is_finite()
+            && (0.0..=1.0).contains(&min_r2)
+            && self.is_valid
+            && self.r_squared.is_finite()
+            && self.r_squared >= min_r2
+        {
             self.hurst
         } else {
             0.5
@@ -294,7 +338,9 @@ mod tests {
                 .0
                 .wrapping_mul(6364136223846793005)
                 .wrapping_add(1442695040888963407);
-            ((self.0 >> 33) as f64 / (u32::MAX as f64)) - 0.5
+            // 53 random bits divided by 2^53: [0,1), then centered. The old
+            // 31-bit numerator / 32-bit denominator produced only negatives.
+            ((self.0 >> 11) as f64 / (1_u64 << 53) as f64) - 0.5
         }
         /// Normal aproximada por suma de uniformes (Irwin–Hall, k=12).
         fn next_normal(&mut self) -> f64 {
@@ -339,17 +385,19 @@ mod tests {
         let mut p = 60_000.0;
         let mut prev = 0.0;
         let h = correr((0..4_000).map(|_| {
-            // AR(1) con phi alto: memoria larga positiva.
+            // AR(1) con phi alto: correlación positiva de corto alcance;
+            // la pendiente aparente en estas escalas no prueba memoria larga.
             let e = rng.next_normal() * 0.0008;
             prev = 0.85 * prev + e;
             p *= 1.0 + prev;
             p
         }));
-        assert!(h.is_valid);
+        let raw = h.raw_exponent.expect("finite AR(1) scale fit");
+        assert_eq!(h.is_valid, raw > 0.0 && raw < 1.0);
         assert!(
-            h.hurst > 0.58,
-            "serie persistente debe dar H > 0,58, dio {} (r²={})",
-            h.hurst,
+            raw > 0.58,
+            "short-memory AR(1) must show an elevated finite-scale slope: {} (r²={})",
+            raw,
             h.r_squared
         );
     }
@@ -394,7 +442,8 @@ mod tests {
                 p *= 1.0 + prev;
                 p
             }))
-            .hurst
+            .raw_exponent
+            .expect("finite AR(1) scale fit")
         };
         let h_corto = hacer(1_200);
         let h_largo = hacer(6_000);
@@ -433,10 +482,10 @@ mod tests {
             p2
         }));
         assert!(
-            persistente.hurst > reversion.hurst + 0.20,
-            "el estimador debe separar persistencia de reversión: {} vs {}",
-            persistente.hurst,
-            reversion.hurst
+            persistente.raw_exponent.unwrap() > reversion.raw_exponent.unwrap() + 0.20,
+            "finite-scale slopes must distinguish AR(1) structures: {:?} vs {:?}",
+            persistente.raw_exponent,
+            reversion.raw_exponent
         );
     }
 
@@ -468,5 +517,127 @@ mod tests {
         }
         assert_eq!(h.hurst, 0.5);
         assert!(!h.is_valid);
+    }
+
+    fn fit_returns(scale: f64) -> HurstDfa {
+        let mut h = HurstDfa::new();
+        let mut state = 7_u64;
+        for r in &mut h.returns {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let u = (state >> 11) as f64 / (1_u64 << 53) as f64 - 0.5;
+            *r = scale * u;
+        }
+        h.filled = MAX_HISTORY;
+        h.recompute();
+        h
+    }
+
+    #[test]
+    fn contract_dfa_is_invariant_to_return_amplitude() {
+        let baseline = fit_returns(1.0);
+        assert!(baseline.is_valid);
+        for scale in [1e-200, 1e-16, 1e-8, 1e8, 1e200] {
+            let h = fit_returns(scale);
+            assert!(
+                h.is_valid,
+                "amplitude {scale} discarded an estimable series"
+            );
+            assert!((h.hurst - baseline.hurst).abs() < 1e-10);
+            assert!((h.r_squared - baseline.r_squared).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn contract_finite_positive_prices_do_not_lose_extreme_log_returns() {
+        let mut h = HurstDfa::new();
+        h.update(f64::MIN_POSITIVE);
+        h.update(f64::MAX);
+        h.update(f64::MIN_POSITIVE);
+        assert_eq!(
+            h.samples(),
+            2,
+            "ratio overflow/underflow dropped valid observations"
+        );
+    }
+
+    #[test]
+    fn contract_nonstationary_return_trend_is_not_certified_as_stationary_hurst() {
+        let mut h = HurstDfa::new();
+        for (i, r) in h.returns.iter_mut().enumerate() {
+            *r = i as f64;
+        }
+        h.filled = MAX_HISTORY;
+        h.recompute();
+        assert!(
+            !h.is_valid,
+            "out-of-model slope was clamped into a valid Hurst"
+        );
+        assert_eq!(h.hurst_or_neutral(0.85), 0.5);
+    }
+
+    #[test]
+    fn contract_test_innovations_are_centered_and_two_sided() {
+        let mut rng = Rng(42);
+        let draws: Vec<f64> = (0..20_000).map(|_| rng.next_normal()).collect();
+        let mean = draws.iter().sum::<f64>() / draws.len() as f64;
+        let variance = draws.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / draws.len() as f64;
+        assert!(
+            draws.iter().any(|x| *x > 0.0),
+            "all test innovations are negative"
+        );
+        assert!(mean.abs() < 0.05, "innovation mean={mean}");
+        assert!(
+            (variance - 1.0).abs() < 0.05,
+            "innovation variance={variance}"
+        );
+    }
+
+    #[test]
+    fn contract_support_reports_actual_scales_and_clears_stale_estimates() {
+        let mut h = fit_returns(1.0);
+        assert_eq!((h.scales_used, h.max_scale), (7, 256));
+        h.filled = MIN_SAMPLES;
+        h.recompute();
+        assert_eq!((h.scales_used, h.max_scale), (6, 128));
+        h.returns.fill(2.0);
+        h.recompute();
+        assert!(!h.is_valid);
+        assert_eq!((h.hurst, h.r_squared), (0.5, 0.0));
+        assert_eq!(h.raw_exponent, None);
+        assert_eq!((h.scales_used, h.max_scale), (0, 0));
+    }
+
+    #[test]
+    fn contract_return_offset_preserves_detrended_slope() {
+        let baseline = fit_returns(1.0);
+        let mut shifted = baseline.clone();
+        for x in &mut shifted.returns {
+            *x += 10.0;
+        }
+        shifted.recompute();
+        assert!(shifted.is_valid);
+        assert!((shifted.hurst - baseline.hurst).abs() < 1e-10);
+        assert!((shifted.r_squared - baseline.r_squared).abs() < 1e-10);
+    }
+
+    #[test]
+    fn contract_invalid_quality_threshold_never_validates_a_fit() {
+        let h = fit_returns(1.0);
+        for bad in [f64::NAN, f64::INFINITY, -1.0, 2.0] {
+            assert_eq!(h.hurst_or_neutral(bad), 0.5);
+        }
+    }
+
+    #[test]
+    fn contract_large_price_decline_preserves_log_return_accuracy() {
+        let mut h = HurstDfa::new();
+        h.update(1.0);
+        h.update(1e-15);
+        assert!(
+            (h.returns[0] - 1e-15_f64.ln()).abs() < 1e-13,
+            "observed={}, expected={}",
+            h.returns[0],
+            1e-15_f64.ln()
+        );
     }
 }

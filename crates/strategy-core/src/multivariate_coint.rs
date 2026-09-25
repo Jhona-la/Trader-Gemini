@@ -1,5 +1,6 @@
-/// 🌌 MOTOR DE COINTEGRACIÓN MULTIVARIANTE Y ORNSTEIN-UHLENBECK (MULTIVARIATE COINTEGRATION & OU ENGINE)
-/// Modela clusters de altcoins cointegradas con estimación de vida media de reversión $t_{1/2} = \frac{\ln(2)}{\theta}$ (#83-#95).
+/// Legacy weighted-log basket and event-index mean-reversion proxy (#83-#95).
+/// Supplied weights are assumed, not estimated cointegration vectors. Neither
+/// stationarity nor a physical-time OU model is certified by this helper.
 use crate::types::{SignalIntent, SignalType, TradeHorizon};
 
 const MAX_ASSETS: usize = 4;
@@ -55,57 +56,97 @@ impl MultivariateCointegrationEngine {
         }
     }
 
-    /// Actualiza el estado con un nuevo vector de precios de los activos del cluster
+    /// Updates the legacy event-index estimator. The timestamp is not yet used
+    /// for a physical-time OU fit. Rejected observations do not mutate state.
     pub fn update_and_evaluate(
         &mut self,
         prices: &[f64; MAX_ASSETS],
         _timestamp_ms: u64,
     ) -> Option<SignalIntent> {
+        // Public fields can be changed by callers; do not extend invalid state.
+        if !self.mean_spread.is_finite()
+            || !self.last_spread.is_finite()
+            || !self.var_spread.is_finite()
+            || self.var_spread < 0.0
+            || !self.theta_reversion_speed.is_finite()
+            || self.theta_reversion_speed <= 0.0
+            || !self.z_score_threshold.is_finite()
+            || self.z_score_threshold <= 0.0
+            || !self.memory_decay.is_finite()
+            || !(0.0..=1.0).contains(&self.memory_decay)
+        {
+            return None;
+        }
         // 1. Calcular el spread sintético $S_t = \sum w_i \ln(P_i)$
         let mut spread = 0.0;
         for i in 0..MAX_ASSETS {
-            if prices[i] <= 0.0 || !prices[i].is_finite() {
+            if prices[i] <= 0.0 || !prices[i].is_finite() || !self.weights[i].is_finite() {
                 return None;
             }
             spread += self.weights[i] * prices[i].ln();
         }
 
-        self.count += 1;
+        if !spread.is_finite() {
+            return None;
+        }
+        let next_count = self.count.checked_add(1)?;
 
-        // 2. Actualización online de Welford para media y varianza del spread
-        if self.count == 1 {
+        // 2. Legacy hybrid mean/EW variance update, not unbiased sample Welford.
+        if next_count == 1 {
             self.mean_spread = spread;
             self.var_spread = 1e-4;
             self.last_spread = spread;
+            self.count = next_count;
             return None;
         }
 
         let diff_spread = spread - self.last_spread;
-        // FIX #577: Rechazar saltos espurios causados por datos corruptos (>150% de movimiento logarítmico en 1 tick)
+        if !diff_spread.is_finite() {
+            return None;
+        }
+        // Legacy jump policy in weighted-log units, not a percentage return.
+        // A legitimate permanent level shift can still freeze this estimator.
         let max_jump = 10.0 * self.var_spread.sqrt();
-        if self.count > 10 && diff_spread.abs() > max_jump.max(1.5) {
-            return None; // Outlier temporal de red: rechazar para no corromper la distribución OU
+        if next_count > 10 && diff_spread.abs() > max_jump.max(1.5) {
+            return None; // Rejection alone cannot establish that a tick is corrupt.
         }
 
         let delta = spread - self.mean_spread;
-        self.mean_spread += delta / (self.count as f64).min(500.0);
-        let delta2 = spread - self.mean_spread;
-        self.var_spread = (self.memory_decay * self.var_spread
-            + (1.0 - self.memory_decay) * (delta * delta2).max(0.0))
+        let next_mean = self.mean_spread + delta / (next_count as f64).min(500.0);
+        let delta2 = spread - next_mean;
+        let innovation_product = delta * delta2;
+        if !delta.is_finite() || !next_mean.is_finite() || !innovation_product.is_finite() {
+            return None;
+        }
+        let next_var = (self.memory_decay * self.var_spread
+            + (1.0 - self.memory_decay) * innovation_product.max(0.0))
         .max(1e-6);
 
         // 3. Estimación discreta de velocidad de reversión Ornstein-Uhlenbeck: $\Delta S_t = -\theta (S_{t-1} - \mu) + \epsilon_t$
-        let spread_deviation = self.last_spread - self.mean_spread;
+        let spread_deviation = self.last_spread - next_mean;
+        let mut next_theta = self.theta_reversion_speed;
         if spread_deviation.abs() > 1e-6 {
-            let instantaneous_theta = (-diff_spread / spread_deviation).clamp(0.01, 2.0);
-            self.theta_reversion_speed =
-                0.95 * self.theta_reversion_speed + 0.05 * instantaneous_theta;
+            let ratio = -diff_spread / spread_deviation;
+            if !spread_deviation.is_finite() || !ratio.is_finite() {
+                return None;
+            }
+            let instantaneous_theta = ratio.clamp(0.01, 2.0);
+            next_theta = 0.95 * self.theta_reversion_speed + 0.05 * instantaneous_theta;
         }
-        self.last_spread = spread;
 
         // 4. Calcular Z-Score del spread
-        let std_dev = self.var_spread.sqrt();
-        let z_score = (spread - self.mean_spread) / std_dev;
+        let std_dev = next_var.sqrt();
+        let z_score = delta2 / std_dev;
+        if !next_var.is_finite() || !next_theta.is_finite() || !z_score.is_finite() {
+            return None;
+        }
+        // Commit all accepted-observation statistics together. This guards the
+        // numerical contract, not stationarity or the validity of the OU model.
+        self.count = next_count;
+        self.mean_spread = next_mean;
+        self.var_spread = next_var;
+        self.theta_reversion_speed = next_theta;
+        self.last_spread = spread;
 
         // 5. Vida media de reversión: $t_{1/2} = \frac{\ln(2)}{\theta}$
         let half_life_periods = (2.0_f64.ln() / self.theta_reversion_speed).clamp(1.0, 100.0);
@@ -162,10 +203,18 @@ impl MultivariateCointegrationEngine {
             SignalType::Flat => 0.0,
         };
         let mut alloc = [0.0; MAX_ASSETS];
-        let sum_abs: f64 = self.weights.iter().map(|w| w.abs()).sum();
-        let norm = if sum_abs > 1e-6 { sum_abs } else { 1.0 };
+        if sign == 0.0 || self.weights.iter().any(|w| !w.is_finite()) {
+            return alloc;
+        }
+        let scale = self.weights.iter().map(|w| w.abs()).fold(0.0_f64, f64::max);
+        if scale == 0.0 {
+            return alloc;
+        }
+        // L1 normalization in scaled coordinates avoids overflow and an
+        // arbitrary absolute floor for very small but nonzero baskets.
+        let norm: f64 = self.weights.iter().map(|w| (w / scale).abs()).sum();
         for i in 0..MAX_ASSETS {
-            alloc[i] = sign * (self.weights[i] / norm);
+            alloc[i] = sign * ((self.weights[i] / scale) / norm);
         }
         alloc
     }

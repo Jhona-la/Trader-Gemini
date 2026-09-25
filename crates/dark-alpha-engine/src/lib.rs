@@ -3,15 +3,17 @@
 //! ## QUÉ
 //! Perceptrón Multicapa (MLP) de 3 capas implementado sin frameworks ML externos.
 //! Recibe un vector de features (precio, volumen, microestructura, macro) y devuelve
-//! una probabilidad [0.0, 1.0] de anomalía/oportunidad de trading.
+//! un score sigmoide [0,1]. Su significado depende del target y de la
+//! calibración del artefacto; no equivale por sí solo a probabilidad de PnL.
 //!
 //! ## POR QUÉ
-//! - `candle-core` arrastra +50 dependencias y compilación de 5+ minutos
-//! - Para un MLP de 3 capas, la aritmética manual es más rápida que cualquier framework
-//! - Inferencia en ~50-100 nanosegundos vs ~1ms con candle en CPU
+//! Implementación nativa sin un framework externo de entrenamiento.
+//! No hay garantía universal de latencia ni superioridad frente a frameworks:
+//! deben medirse arquitectura, validación, hardware y percentiles completos.
 //!
 //! ## PARA QUÉ
-//! Capa de confluencia neuronal profunda para todo el espectro temporal continuo [1 ns, 100 a].
+//! Componente de confluencia neuronal. Esta API no recibe una coordenada de
+//! horizonte ni acredita soporte empírico continuo entre 1 ns y 100 años.
 //! El GodEngineCore consulta `DarkAlphaEngine::predict_for_coin()` integrando la inferencia
 //! en el ensamble Brier multidimensional tanto en micro-ticks como en macro-ciclos.
 //!
@@ -108,16 +110,16 @@ impl DenseLayer {
         }
     }
 
-    /// Sanitiza los pesos eliminando números subnormales (denormals < 1e-7) y NaNs
-    /// para evitar microcode exception traps en hardware x86_64 que degradan la latencia a 200x.
+    /// Explicitly zero only IEEE-754 subnormals. Normal small parameters are
+    /// preserved; NaN/Inf remain invalid and must be rejected, not repaired.
     pub fn sanitize_denormals(&mut self) {
         for w in self.weights.iter_mut() {
-            if !w.is_finite() || w.abs() < 1e-7 {
+            if w.is_subnormal() {
                 *w = 0.0;
             }
         }
         for b in self.biases.iter_mut() {
-            if !b.is_finite() || b.abs() < 1e-7 {
+            if b.is_subnormal() {
                 *b = 0.0;
             }
         }
@@ -134,10 +136,7 @@ impl DenseLayer {
         // producía lectura fuera de límites. Ahora una capa o unos buffers
         // incoherentes producen salida NaN y retorno inmediato; el motor
         // comprueba `layers_valid()` antes de inferir y responde `None`.
-        if input.len() < self.in_features
-            || output.len() < self.out_features
-            || !self.is_valid()
-        {
+        if input.len() < self.in_features || output.len() < self.out_features || !self.is_valid() {
             output.iter_mut().for_each(|o| *o = f64::NAN);
             return;
         }
@@ -173,7 +172,13 @@ impl DenseLayer {
 
             // ReLU
             unsafe {
-                *output.get_unchecked_mut(i) = if sum > 0.0 { sum } else { 0.0 };
+                *output.get_unchecked_mut(i) = if !sum.is_finite() {
+                    f64::NAN
+                } else if sum > 0.0 {
+                    sum
+                } else {
+                    0.0
+                };
             }
         }
     }
@@ -188,10 +193,7 @@ impl DenseLayer {
         // producía lectura fuera de límites. Ahora una capa o unos buffers
         // incoherentes producen salida NaN y retorno inmediato; el motor
         // comprueba `layers_valid()` antes de inferir y responde `None`.
-        if input.len() < self.in_features
-            || output.len() < self.out_features
-            || !self.is_valid()
-        {
+        if input.len() < self.in_features || output.len() < self.out_features || !self.is_valid() {
             output.iter_mut().for_each(|o| *o = f64::NAN);
             return;
         }
@@ -222,7 +224,11 @@ impl DenseLayer {
             }
 
             unsafe {
-                *output.get_unchecked_mut(i) = sum.tanh();
+                *output.get_unchecked_mut(i) = if sum.is_finite() {
+                    sum.tanh()
+                } else {
+                    f64::NAN
+                };
             }
         }
     }
@@ -238,10 +244,7 @@ impl DenseLayer {
         // producía lectura fuera de límites. Ahora una capa o unos buffers
         // incoherentes producen salida NaN y retorno inmediato; el motor
         // comprueba `layers_valid()` antes de inferir y responde `None`.
-        if input.len() < self.in_features
-            || output.len() < self.out_features
-            || !self.is_valid()
-        {
+        if input.len() < self.in_features || output.len() < self.out_features || !self.is_valid() {
             output.iter_mut().for_each(|o| *o = f64::NAN);
             return;
         }
@@ -275,7 +278,11 @@ impl DenseLayer {
             // Limite matemático para evitar f64::exp overflow (f64 límite es ~709.0)
             let clamped = sum.clamp(-700.0, 700.0);
             unsafe {
-                *output.get_unchecked_mut(i) = 1.0 / (1.0 + (-clamped).exp());
+                *output.get_unchecked_mut(i) = if sum.is_finite() {
+                    1.0 / (1.0 + (-clamped).exp())
+                } else {
+                    f64::NAN
+                };
             }
         }
     }
@@ -335,10 +342,7 @@ impl QuantizedDenseLayer {
         // producía lectura fuera de límites. Ahora una capa o unos buffers
         // incoherentes producen salida NaN y retorno inmediato; el motor
         // comprueba `layers_valid()` antes de inferir y responde `None`.
-        if input.len() < self.in_features
-            || output.len() < self.out_features
-            || !self.is_valid()
-        {
+        if input.len() < self.in_features || output.len() < self.out_features || !self.is_valid() {
             output.iter_mut().for_each(|o| *o = f64::NAN);
             return;
         }
@@ -376,10 +380,7 @@ impl QuantizedDenseLayer {
         // producía lectura fuera de límites. Ahora una capa o unos buffers
         // incoherentes producen salida NaN y retorno inmediato; el motor
         // comprueba `layers_valid()` antes de inferir y responde `None`.
-        if input.len() < self.in_features
-            || output.len() < self.out_features
-            || !self.is_valid()
-        {
+        if input.len() < self.in_features || output.len() < self.out_features || !self.is_valid() {
             output.iter_mut().for_each(|o| *o = f64::NAN);
             return;
         }
@@ -437,35 +438,40 @@ impl Scaler {
         Self { mean, std_dev }
     }
 
+    pub fn valid_for(&self, dim: usize) -> bool {
+        self.mean.len() == dim
+            && self.std_dev.len() == dim
+            && self.mean.iter().all(|x| x.is_finite())
+            && self.std_dev.iter().all(|x| x.is_finite() && *x >= 0.0)
+    }
+
+    /// Retains the legacy floor/winsorization policy for valid artifacts.
+    /// This validates numeric evidence, not invariance to feature units.
+    pub fn scale_checked(&self, features: &mut [f64]) -> Result<(), &'static str> {
+        if !self.valid_for(features.len()) || features.iter().any(|x| !x.is_finite()) {
+            return Err("invalid scaler or input");
+        }
+        for (i, feature) in features.iter_mut().enumerate() {
+            let s = self.std_dev[i];
+            let scaled = if s > 1e-4 {
+                (*feature - self.mean[i]) / s
+            } else if s > 1e-6 {
+                (*feature - self.mean[i]) / 1e-4
+            } else {
+                0.0
+            };
+            if !scaled.is_finite() {
+                return Err("scaler arithmetic overflow");
+            }
+            *feature = soft_tail_winsorize(scaled);
+        }
+        Ok(())
+    }
+
     #[inline(always)]
     pub fn scale(&self, features: &mut [f64]) {
-        for i in 0..features.len() {
-            if i < self.mean.len() && i < self.std_dev.len() {
-                let m = if self.mean[i].is_finite() {
-                    self.mean[i]
-                } else {
-                    0.0
-                };
-                let s = if self.std_dev[i].is_finite() {
-                    self.std_dev[i]
-                } else {
-                    0.0
-                };
-                let feat = if features[i].is_finite() {
-                    features[i]
-                } else {
-                    0.0
-                };
-                let scaled = if s > 1e-4 {
-                    (feat - m) / s
-                } else if s > 1e-6 {
-                    (feat - m) / 1e-4
-                } else {
-                    0.0
-                };
-                // #540: Winsorización suave C1 con preservación de identidad en [-3.0, 3.0]
-                features[i] = soft_tail_winsorize(scaled);
-            }
+        if self.scale_checked(features).is_err() {
+            features.fill(f64::NAN);
         }
     }
 }
@@ -487,6 +493,18 @@ impl Default for ChannelWelfordStats {
 }
 
 impl ChannelWelfordStats {
+    fn is_valid(&self) -> bool {
+        self.count.is_finite()
+            && self.count >= 0.0
+            && self.mean.is_finite()
+            && self.m2.is_finite()
+            && self.m2 >= 0.0
+    }
+
+    fn is_ready(&self) -> bool {
+        self.is_valid() && self.count >= 2.0
+    }
+
     #[inline(always)]
     pub const fn new() -> Self {
         Self {
@@ -570,10 +588,9 @@ impl ChannelWelfordStats {
 ///
 /// Arquitectura: Input(20) → Dense(64, ReLU) → Dense(32, ReLU) → Dense(1, Sigmoid)
 ///
-/// La salida es una probabilidad [0.0, 1.0]:
-/// - > 0.7: Alta confianza en oportunidad de trading (Long bias)
-/// - < 0.3: Alta confianza en riesgo (Short bias o no operar)
-/// - 0.3-0.7: Zona neutral (no operar en swing)
+/// La salida sigmoide no impone categorías temporales ni umbrales de acción.
+/// Target, calibración, costes, activo y dominio de validez deben declararse
+/// fuera de estos pesos; no se deducen de una salida entre cero y uno.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DarkAlphaEngine {
     pub layer1: DenseLayer,
@@ -609,27 +626,40 @@ impl DarkAlphaEngine {
             && self.layer3.is_valid()
             && self.layer2.in_features == self.layer1.out_features
             && self.layer3.in_features == self.layer2.out_features
+            && self.layer3.out_features == 1
     }
 
     /// Valida un modelo recién cargado. Un archivo truncado, de otra versión o
     /// corrupto se rechaza en la carga, no en mitad de una inferencia en vivo.
     pub fn validate(&self) -> Result<(), String> {
-        if self.layers_valid() {
-            Ok(())
-        } else {
-            Err(format!(
-                "modelo DarkAlpha incoherente: capas {}x{} ({} pesos), {}x{} ({} pesos), {}x{} ({} pesos)",
-                self.layer1.in_features,
-                self.layer1.out_features,
-                self.layer1.weights.len(),
-                self.layer2.in_features,
-                self.layer2.out_features,
-                self.layer2.weights.len(),
-                self.layer3.in_features,
-                self.layer3.out_features,
-                self.layer3.weights.len(),
-            ))
+        if !self.layers_valid() {
+            return Err("invalid DarkAlpha layer shapes or non-binary output".into());
         }
+        if [&self.layer1, &self.layer2, &self.layer3]
+            .iter()
+            .any(|layer| {
+                layer
+                    .weights
+                    .iter()
+                    .chain(&layer.biases)
+                    .any(|x| !x.is_finite())
+            })
+        {
+            return Err("nonfinite DarkAlpha parameters".into());
+        }
+        let dim = self.layer1.in_features;
+        if self.scaler.as_ref().is_some_and(|s| !s.valid_for(dim)) {
+            return Err("invalid DarkAlpha scaler".into());
+        }
+        let valid_stats = |stats: &[ChannelWelfordStats]| {
+            (stats.is_empty() || stats.len() == dim) && stats.iter().all(|s| s.is_valid())
+        };
+        if !valid_stats(&self.channel_normalizers)
+            || self.per_coin_normalizers.iter().any(|s| !valid_stats(s))
+        {
+            return Err("invalid DarkAlpha normalizer state".into());
+        }
+        Ok(())
     }
 
     /// Congela los normalizadores para inferencia determinista sin drift
@@ -666,10 +696,9 @@ impl DarkAlphaEngine {
     }
 
     /// Garantiza que los buffers pre-alocados para inferencia tengan el tamaño correcto
-    /// y sanitiza pesos denormales / subnormales.
+    /// sin alterar parámetros aprendidos ni ocultar corrupción numérica.
     /// Indispensable tras deserialización con serde / bincode.
     pub fn init_buffers(&mut self) {
-        self.sanitize_denormals();
         let in_dim = self.layer1.in_features;
         if self.channel_normalizers.len() != in_dim {
             self.channel_normalizers
@@ -698,182 +727,115 @@ impl DarkAlphaEngine {
         }
     }
 
-    /// Sanitiza los pesos de todas las capas eliminando valores subnormales (< 1e-7)
+    /// Explicit, optional subnormal cleanup; never an implicit loading step.
     pub fn sanitize_denormals(&mut self) {
         self.layer1.sanitize_denormals();
         self.layer2.sanitize_denormals();
         self.layer3.sanitize_denormals();
     }
 
-    /// Forward pass completo — ~50-100ns en CPU moderna
-    ///
-    /// `features` debe tener al menos `input_dim` elementos normalizados [-1, 1]
-    #[inline(always)]
-    pub fn predict(&mut self, features: &[f64]) -> Option<f64> {
-        telemetry_server::profile_node!("DarkAlphaEngine::predict", {
-            let in_dim = self.layer1.in_features;
-            if features.len() < in_dim {
-                return None; // Fallo explícito si faltan datos (Leakage prevent)
-            }
-            // D-613: un modelo incoherente no infiere. ReLU convierte NaN en 0,
-            // así que sin esta comprobación la salida sería un 0,5 plausible y
-            // falso en lugar de una ausencia de predicción.
-            if !self.layers_valid() {
-                return None;
-            }
-
-            // Invariante de seguridad: asegurar que los buffers y normalizadores estén inicializados
-            if self.buf_scaled.len() < in_dim
-                || self.buf_h1.len() < self.layer1.out_features
-                || self.channel_normalizers.len() < in_dim
-            {
-                self.init_buffers();
-            }
-
-            if let Some(scaler) = &self.scaler {
-                // Adaptabilidad dimensional y sanitización defensiva ante no-finitos (reemplazo por 0.0)
-                for (dest, &src) in self.buf_scaled[..in_dim]
-                    .iter_mut()
-                    .zip(&features[..in_dim])
-                {
-                    *dest = if src.is_finite() { src } else { 0.0 };
-                }
-                scaler.scale(&mut self.buf_scaled[..in_dim]);
-            } else {
-                // 1. Normalización Welford Online individual por canal O(1) con control de congelamiento (N-11 / D-138)
-                for i in 0..in_dim {
-                    let raw = if features[i].is_finite() {
-                        features[i]
-                    } else {
-                        0.0
-                    };
-                    self.buf_scaled[i] = if self.freeze_normalizers {
-                        if self.channel_normalizers[i].count < 500.0 {
-                            self.channel_normalizers[i].normalize(raw)
-                        } else {
-                            self.channel_normalizers[i].transform(raw)
-                        }
-                    } else {
-                        self.channel_normalizers[i].normalize(raw)
-                    };
-                }
-
-                // #540: Winsorización suave C1 por canal Welford acotada en (-4.0, 4.0) sin truncar colas
-                for v in self.buf_scaled[..in_dim].iter_mut() {
-                    *v = soft_tail_winsorize(*v);
-                }
-            }
-
-            // N-11: Arquitectura ReLU en capas ocultas alineada 100% con fit() y SGD backward pass
-            self.layer1
-                .forward_relu(&self.buf_scaled[..in_dim], &mut self.buf_h1);
-            self.layer2.forward_relu(&self.buf_h1, &mut self.buf_h2);
-            self.layer3.forward_sigmoid(&self.buf_h2, &mut self.buf_out);
-
-            let out = self.buf_out[0];
-            if out.is_finite() {
-                Some(out.clamp(0.0, 1.0))
-            } else {
-                None
-            }
-        })
+    /// Prepare scratch buffers only; never resize serialized statistical state.
+    fn ensure_inference_buffers(&mut self) {
+        self.buf_scaled.resize(self.layer1.in_features, 0.0);
+        self.buf_h1.resize(self.layer1.out_features, 0.0);
+        self.buf_h2.resize(self.layer2.out_features, 0.0);
+        self.buf_out.resize(1, 0.0);
     }
 
-    /// FIX D-53: Forward pass aislado por activo para eliminar contaminación cruzada de Welford entre activos
-    #[inline(always)]
-    pub fn predict_for_coin(&mut self, coin_id: usize, features: &[f64]) -> Option<f64> {
-        let in_dim = self.layer1.in_features;
-        if features.len() < in_dim {
+    /// Both entry points share validation and coordinate selection.
+    /// Frozen inference never learns from evaluation observations.
+    fn predict_in_context(&mut self, coin_id: Option<usize>, features: &[f64]) -> Option<f64> {
+        let dim = self.layer1.in_features;
+        if self.validate().is_err()
+            || features.len() < dim
+            || features[..dim].iter().any(|x| !x.is_finite())
+        {
             return None;
         }
-        if !self.layers_valid() {
-            return None;
-        }
-
-        if self.per_coin_normalizers.len() <= coin_id {
-            self.per_coin_normalizers
-                .resize_with(coin_id + 1, || vec![ChannelWelfordStats::new(); in_dim]);
-        }
-        if self.per_coin_normalizers[coin_id].len() < in_dim {
-            self.per_coin_normalizers[coin_id].resize(in_dim, ChannelWelfordStats::new());
-        }
-
-        if self.buf_scaled.len() < in_dim || self.buf_h1.len() < self.layer1.out_features {
-            self.init_buffers();
-        }
-
+        self.ensure_inference_buffers();
         if let Some(scaler) = &self.scaler {
-            for (dest, &src) in self.buf_scaled[..in_dim]
-                .iter_mut()
-                .zip(&features[..in_dim])
-            {
-                *dest = if src.is_finite() { src } else { 0.0 };
-            }
-            scaler.scale(&mut self.buf_scaled[..in_dim]);
-        } else {
-            // R-03 — FALLBACK A NORMALIZADORES ENTRENADOS: si el per-coin
-            // está FRÍO (sin observaciones), usar el canal ENTRENADO en vez
-            // de stats vacíos (mean=0/std=0 -> features crudas saturadas ->
-            // salida ≈ sigmoid(bias) ≈ constante: el ML medía bias). El
-            // per-coin toma el control cuando acumula evidencia propia.
-            let normalizers = &mut self.per_coin_normalizers[coin_id];
-            for i in 0..in_dim {
-                let raw = if features[i].is_finite() {
-                    features[i]
+            self.buf_scaled.copy_from_slice(&features[..dim]);
+            scaler.scale_checked(&mut self.buf_scaled).ok()?;
+        } else if self.freeze_normalizers {
+            for (i, &raw) in features[..dim].iter().enumerate() {
+                // A global trained coordinate system takes precedence, including
+                // low-count but defined sample variance. No 20/500-tick warmup.
+                let global = self.channel_normalizers.get(i).filter(|s| s.is_ready());
+                let local = coin_id
+                    .and_then(|c| self.per_coin_normalizers.get(c))
+                    .and_then(|v| v.get(i))
+                    .filter(|s| s.is_ready());
+                let stats = global.or(local)?;
+                let std = stats.std_dev();
+                let z = if std > 1e-6 {
+                    (raw - stats.mean) / std
                 } else {
                     0.0
                 };
-                // D-124 & D-138: Warmup adaptativo de 500 ticks en Welford antes del freeze estricto.
-                // Si el normalizador per-coin aún no acumuló 500 observaciones:
-                // - Si el canal global entrenado está disponible (count >= 20), usar transform del canal global mientras se actualiza el local.
-                // - Si no hay canal global disponible, usar normalize() en el normalizador local hasta completar 500 ticks.
-                // MOD2/7-035 (DEC-14): alcanzado el count >= 500, se transforma con los
-                // estadísticos del ENTRENAMIENTO (channel_normalizers) — el input
-                // distribution shift del vivo es estructural: el NN debe ver el MISMO
-                // rango de features para el que fue entrenado. Los estadísticos
-                // per-coin acumulados en vivo se desvinculan del modelo (media/std
-                // divergen del espacio que los pesos aprendieron → paridad
-                // train/serve rota). El per-coin queda sólo como fallback de
-                // cold-start cuando el canal entrenado no existe.
-                self.buf_scaled[i] = if self.freeze_normalizers {
-                    if normalizers[i].count >= 500.0 {
-                        if i < self.channel_normalizers.len()
-                            && self.channel_normalizers[i].count >= 20.0
-                        {
-                            self.channel_normalizers[i].transform(raw)
-                        } else {
-                            normalizers[i].transform(raw)
-                        }
-                    } else if i < self.channel_normalizers.len()
-                        && self.channel_normalizers[i].count >= 20.0
-                    {
-                        normalizers[i].update(raw);
-                        self.channel_normalizers[i].transform(raw)
-                    } else {
-                        normalizers[i].normalize(raw)
-                    }
-                } else {
-                    normalizers[i].normalize(raw)
-                };
+                if !z.is_finite() {
+                    return None;
+                }
+                self.buf_scaled[i] = soft_tail_winsorize(z.clamp(-5.0, 5.0));
             }
-
-            // #540: Winsorización suave C1 por canal Welford acotada en (-4.0, 4.0) sin truncar colas
-            for v in self.buf_scaled[..in_dim].iter_mut() {
-                *v = soft_tail_winsorize(*v);
+        } else {
+            let stats = if let Some(c) = coin_id {
+                let required = c.checked_add(1)?;
+                if required > self.per_coin_normalizers.len() {
+                    self.per_coin_normalizers
+                        .try_reserve(required - self.per_coin_normalizers.len())
+                        .ok()?;
+                    self.per_coin_normalizers.resize_with(required, Vec::new);
+                }
+                &mut self.per_coin_normalizers[c]
+            } else {
+                &mut self.channel_normalizers
+            };
+            if stats.is_empty() {
+                stats.resize(dim, ChannelWelfordStats::new());
+            }
+            // Preflight the whole row on copies. An overflowing later channel
+            // must not partially update earlier channels.
+            for (i, &raw) in features[..dim].iter().enumerate() {
+                let mut next = stats[i];
+                next.update(raw);
+                if !next.is_valid() {
+                    return None;
+                }
+                let std = next.std_dev();
+                let z = if std > 1e-6 {
+                    (raw - next.mean) / std
+                } else {
+                    0.0
+                };
+                if !z.is_finite() {
+                    return None;
+                }
+                self.buf_scaled[i] = soft_tail_winsorize(z.clamp(-5.0, 5.0));
+            }
+            for (stats, &raw) in stats.iter_mut().zip(&features[..dim]) {
+                stats.update(raw);
             }
         }
-
-        self.layer1
-            .forward_relu(&self.buf_scaled[..in_dim], &mut self.buf_h1);
+        self.layer1.forward_relu(&self.buf_scaled, &mut self.buf_h1);
         self.layer2.forward_relu(&self.buf_h1, &mut self.buf_h2);
         self.layer3.forward_sigmoid(&self.buf_h2, &mut self.buf_out);
+        let probability = self.buf_out[0];
+        probability.is_finite().then_some(probability)
+    }
 
-        let out = self.buf_out[0];
-        if out.is_finite() {
-            Some(out.clamp(0.0, 1.0))
-        } else {
-            None
-        }
+    /// Score using global coordinates; invalid evidence returns None.
+    #[inline(always)]
+    pub fn predict(&mut self, features: &[f64]) -> Option<f64> {
+        telemetry_server::profile_node!("DarkAlphaEngine::predict", {
+            self.predict_in_context(None, features)
+        })
+    }
+
+    /// Isolated adaptation per numeric asset slot. Slot identity and model
+    /// authorization still belong to the registry/host, not to this index.
+    #[inline(always)]
+    pub fn predict_for_coin(&mut self, coin_id: usize, features: &[f64]) -> Option<f64> {
+        self.predict_in_context(Some(coin_id), features)
     }
 
     /// Forward pass con plasticidad sináptica continua (Oja Hebbian Learning)
@@ -916,9 +878,21 @@ impl DarkAlphaEngine {
         }
         // D-613: entrenar sobre capas incoherentes escribiría gradientes en
         // índices que no existen.
-        if !self.layers_valid() {
+        if self.validate().is_err()
+            || !learning_rate.is_finite()
+            || learning_rate <= 0.0
+            || epochs == 0
+            || targets_batch
+                .iter()
+                .any(|y| !y.is_finite() || !(0.0..=1.0).contains(y))
+            || features_batch
+                .iter()
+                .any(|x| x.len() != self.layer1.in_features || x.iter().any(|v| !v.is_finite()))
+        {
             return;
         }
+        let before_fit = self.clone();
+        self.init_buffers();
 
         let start = std::time::Instant::now();
         let mut h1 = vec![0.0; self.layer1.out_features];
@@ -1006,6 +980,12 @@ impl DarkAlphaEngine {
                         self.layer1.weights[row_offset + j] -= learning_rate * delta_h1 * feat;
                     }
                     self.layer1.biases[i] -= learning_rate * delta_h1;
+                }
+                // Training is a cold path: preserve the previous artifact if
+                // finite inputs nevertheless overflow preprocessing/gradients.
+                if self.validate().is_err() {
+                    *self = before_fit;
+                    return;
                 }
             }
         }
@@ -1266,12 +1246,9 @@ mod tests {
 
         let result = engine.predict(&features);
         assert!(
-            result.is_some(),
-            "Sanitizer must handle NaN/Inf by mapping to 0.0"
+            result.is_none(),
+            "invalid observations are absent evidence, not zero features"
         );
-        let prob = result.unwrap();
-        assert!(prob.is_finite());
-        assert!((0.0..=1.0).contains(&prob));
     }
 
     #[test]
@@ -1279,9 +1256,10 @@ mod tests {
         let scaler = Scaler::new(vec![f64::NAN, 10.0], vec![0.0, f64::NAN]);
         let mut feat = vec![5.0, 15.0];
         scaler.scale(&mut feat);
-        // Zero scale should keep original value, NaN mean should treat mean as 0.0
-        assert!(feat[0].is_finite());
-        assert!(feat[1].is_finite());
+        assert!(
+            feat.iter().all(|x| x.is_nan()),
+            "invalid scaler must not fabricate coordinates"
+        );
     }
 
     #[test]

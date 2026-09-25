@@ -1,6 +1,6 @@
 use dark_alpha_engine::DarkAlphaEngine;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::time::Instant;
 
 // Adam Optimizer state for a DenseLayer
@@ -49,64 +49,141 @@ fn shuffle(indices: &mut [usize], prng: &mut XorShift) {
     }
 }
 
-fn main() {
-    let symbol = std::env::args().nth(1).unwrap_or_else(|| "BTCUSDT".to_string());
-    let input_csv = std::env::args().nth(2).unwrap_or_else(|| format!("data/{}_FEATURES.csv", symbol));
+const LEGACY_FEATURE_DIM: usize = 54;
+
+#[derive(Debug)]
+struct TrainingData {
+    inputs: Vec<Vec<f64>>,
+    targets: Vec<f64>,
+}
+
+/// Syntax/numeric validation of the legacy exporter contract only.
+/// The name target_5m does NOT certify a clock horizon (FMT-195).
+fn read_training_csv(reader: impl BufRead) -> Result<TrainingData, String> {
+    let mut lines = reader.lines();
+    let header = lines
+        .next()
+        .ok_or("missing CSV header")?
+        .map_err(|e| format!("header I/O: {e}"))?;
+    let expected = std::iter::once("target_5m".to_string())
+        .chain((0..LEGACY_FEATURE_DIM).map(|i| format!("feature_{i}")))
+        .collect::<Vec<_>>()
+        .join(",");
+    if header.trim_end_matches('\r') != expected {
+        return Err(
+            "unsupported CSV schema: require legacy target_5m,feature_0..feature_53".into(),
+        );
+    }
+    let mut data = TrainingData {
+        inputs: Vec::new(),
+        targets: Vec::new(),
+    };
+    for (offset, line) in lines.enumerate() {
+        let row_number = offset + 2;
+        let line = line.map_err(|e| format!("CSV row {row_number}: I/O error: {e}"))?;
+        let parts: Vec<_> = line.split(',').collect();
+        if parts.len() != LEGACY_FEATURE_DIM + 1 {
+            return Err(format!(
+                "CSV row {row_number}: expected 55 columns, found {}",
+                parts.len()
+            ));
+        }
+        let number = |column: usize| -> Result<f64, String> {
+            let value = parts[column]
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| format!("CSV row {row_number}, column {column}: not numeric"))?;
+            if !value.is_finite() {
+                return Err(format!("CSV row {row_number}, column {column}: nonfinite"));
+            }
+            Ok(value)
+        };
+        let target = number(0)?;
+        if target != 0.0 && target != 1.0 {
+            return Err(format!(
+                "CSV row {row_number}: target must be exactly 0 or 1"
+            ));
+        }
+        let features = (1..=LEGACY_FEATURE_DIM)
+            .map(number)
+            .collect::<Result<Vec<_>, _>>()?;
+        data.inputs.push(features);
+        data.targets.push(target);
+    }
+    if data.inputs.is_empty() {
+        return Err("CSV contains no observations".into());
+    }
+    Ok(data)
+}
+
+/// Fit on declared training rows. No claim of held-out validation here.
+fn fit_scaler(inputs: &[Vec<f64>]) -> Result<dark_alpha_engine::Scaler, String> {
+    if inputs.is_empty() {
+        return Err("cannot fit scaler without data".into());
+    }
+    let dim = inputs[0].len();
+    let mut mean = vec![0.0; dim];
+    let mut m2 = vec![0.0; dim];
+    for (row, x) in inputs.iter().enumerate() {
+        if x.len() != dim || dim == 0 || x.iter().any(|v| !v.is_finite()) {
+            return Err("invalid scaler training row".into());
+        }
+        let count = (row + 1) as f64;
+        for i in 0..dim {
+            let delta = x[i] - mean[i];
+            mean[i] += delta / count;
+            m2[i] += delta * (x[i] - mean[i]);
+            if !mean[i].is_finite() || !m2[i].is_finite() || m2[i] < 0.0 {
+                return Err("scaler fitting overflow".into());
+            }
+        }
+    }
+    // Retained serialization floor, not a learned noise scale.
+    let std_dev = m2
+        .iter()
+        .map(|v| (v / inputs.len() as f64).sqrt().max(1e-8))
+        .collect();
+    Ok(dark_alpha_engine::Scaler::new(mean, std_dev))
+}
+
+fn research_candidate_path(symbol: &str, run_id: u128) -> Result<std::path::PathBuf, String> {
+    if symbol.is_empty()
+        || !symbol
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+    {
+        return Err("symbol must contain uppercase ASCII letters/digits only".into());
+    }
+    // Outside the operational models namespace: legacy CSV has no temporal
+    // provenance, so this binary cannot authorize live model publication.
+    Ok(std::path::Path::new("artifacts/training")
+        .join(format!("DarkAlpha_{symbol}_CANDIDATE_{run_id}.json")))
+}
+
+fn main() -> Result<(), String> {
+    let symbol = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "BTCUSDT".to_string());
+    let input_csv = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| format!("data/{}_FEATURES.csv", symbol));
+    let run_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let out_path = research_candidate_path(&symbol, run_id)?;
 
     println!("============================================================");
     println!("🧠 RUST NATIVE TRAINER: DARK ALPHA ENGINE");
     println!("============================================================");
     println!("📥 Loading {} for symbol {}...", input_csv, symbol);
 
-    let file = match File::open(&input_csv) {
-        Ok(f) => f,
-        Err(_) => {
-            println!("❌ Could not open CSV file. Run feature_exporter first.");
-            return;
-        }
-    };
-
-    let reader = BufReader::new(file);
-    let mut inputs = Vec::new();
-    let mut targets = Vec::new(); // 1.0 for Long opportunity, 0.0 for Short/Flat
-
-    let mut skip_header = true;
-    for line in reader.lines() {
-        if let Ok(l) = line {
-            if skip_header {
-                skip_header = false;
-                continue;
-            }
-            let parts: Vec<&str> = l.split(',').collect();
-            if parts.len() >= 26 {
-                if let Ok(target_return) = parts[0].parse::<f64>() {
-                    let max_cols = (parts.len() - 1).min(54);
-                    let mut feat = vec![0.0; max_cols];
-                    for i in 0..max_cols {
-                        if let Ok(val) = parts[i + 1].parse::<f64>() {
-                            if val.is_nan() || val.is_infinite() {
-                                feat[i] = 0.0;
-                            } else {
-                                feat[i] = val;
-                            }
-                        } else {
-                            feat[i] = 0.0;
-                        }
-                    }
-                    // Target label directo del método Triple Barrier (1.0 = Long ganador, 0.0 = Short ganador)
-                    let label = if target_return > 0.5 { 1.0 } else { 0.0 };
-                    inputs.push(feat);
-                    targets.push(label);
-                }
-            }
-        }
-    }
-
+    let file = File::open(&input_csv).map_err(|e| format!("cannot open training CSV: {e}"))?;
+    let TrainingData {
+        mut inputs,
+        targets,
+    } = read_training_csv(BufReader::new(file))?;
     let num_samples = inputs.len();
-    if num_samples == 0 {
-        println!("❌ No valid samples found.");
-        return;
-    }
 
     let long_count = targets.iter().filter(|&&t| t > 0.5).count();
     let short_count = num_samples - long_count;
@@ -120,60 +197,25 @@ fn main() {
 
     let input_dim = inputs[0].len();
 
-    // --- ETL: COMPUTE MEAN AND STD DEV ---
-    println!(
-        "🧹 Calculating Means and StdDevs for Normalization ({} features)...",
-        input_dim
-    );
-    let mut mean = vec![0.0; input_dim];
-    for x in &inputs {
-        for i in 0..input_dim {
-            mean[i] += x[i];
-        }
-    }
-    for i in 0..input_dim {
-        mean[i] /= num_samples as f64;
-    }
-
-    let mut std_dev = vec![0.0; input_dim];
-    for x in &inputs {
-        for i in 0..input_dim {
-            let diff = x[i] - mean[i];
-            std_dev[i] += diff * diff;
-        }
-    }
-    for i in 0..input_dim {
-        std_dev[i] = (std_dev[i] / num_samples as f64).sqrt();
-        if std_dev[i] < 1e-8 {
-            std_dev[i] = 1e-8; // Prevent division by zero
-        }
-    }
-
-    let scaler = dark_alpha_engine::Scaler::new(mean.clone(), std_dev.clone());
-
-    // Normalize inputs
+    let scaler = fit_scaler(&inputs)?;
+    let mean = scaler.mean.clone();
+    let std_dev = scaler.std_dev.clone();
     for x in &mut inputs {
-        scaler.scale(x);
+        scaler.scale_checked(x).map_err(str::to_string)?;
     }
-
     println!(
-        "✅ Loaded and Normalized {} valid samples ({}D). Starting Adam Optimization with L2 Regularization...",
+        "   {} rows / {} features; TRAINING evidence only, no independent evaluation",
         num_samples, input_dim
     );
-
     let mut engine = DarkAlphaEngine::new(input_dim, 64, 32);
     engine.scaler = Some(scaler);
     for i in 0..input_dim {
         engine.channel_normalizers[i].count = num_samples as f64;
         engine.channel_normalizers[i].mean = mean[i];
-        let var = std_dev[i] * std_dev[i];
-        engine.channel_normalizers[i].m2 = var * (num_samples as f64 - 1.0).max(1.0);
+        engine.channel_normalizers[i].m2 = std_dev[i].powi(2) * (num_samples as f64 - 1.0).max(1.0);
     }
-    if !engine.per_coin_normalizers.is_empty() {
-        for i in 0..input_dim {
-            engine.per_coin_normalizers[0][i] = engine.channel_normalizers[i];
-        }
-    }
+    // No claim that numeric asset slot zero identifies this symbol.
+    // Scaler is the fixed coordinate system used by this trainer.
 
     // Initialize Adam States
     let mut adam1 = AdamState::new(input_dim, 64);
@@ -358,25 +400,115 @@ fn main() {
         start_time.elapsed().as_secs_f64()
     );
 
-    // Sanitizar números subnormales antes de guardar el modelo
-    engine.sanitize_denormals();
+    // No implicit pruning and no operational publication. The current CSV
+    // cannot support interval purging or an auditable independent test.
+    engine.validate()?;
+    engine.freeze();
+    let json = serde_json::to_vec_pretty(&engine).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(out_path.parent().unwrap()).map_err(|e| e.to_string())?;
+    let mut destination = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&out_path)
+        .map_err(|e| format!("candidate create: {e}"))?;
+    destination
+        .write_all(&json)
+        .map_err(|e| format!("candidate write: {e}"))?;
+    destination
+        .sync_all()
+        .map_err(|e| format!("candidate sync: {e}"))?;
+    println!(
+        "Research candidate only: {}. NOT approved for trading.",
+        out_path.display()
+    );
+    Ok(())
+}
 
-    // FIX #1481: Creación de directorio y guardado resiliente de modelo JSON
-    if let Err(e) = std::fs::create_dir_all("models") {
-        println!("❌ Failed to create models directory: {}", e);
-        return;
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn header() -> String {
+        std::iter::once("target_5m".to_string())
+            .chain((0..54).map(|i| format!("feature_{i}")))
+            .collect::<Vec<_>>()
+            .join(",")
     }
-    let out_path = format!("models/DarkAlpha_{}.json", symbol);
-    match serde_json::to_string_pretty(&engine) {
-        Ok(json_str) => {
-            if let Err(e) = std::fs::write(&out_path, json_str) {
-                println!("❌ Failed to write model file {}: {}", out_path, e);
-            } else {
-                println!("💾 Dark Alpha Model Saved: {}", out_path);
-            }
+    fn row(target: &str, width: usize) -> String {
+        std::iter::once(target.to_string())
+            .chain((0..width).map(|i| i.to_string()))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+    #[test]
+    fn csv_retains_numeric_values_and_labels_for_exact_legacy_schema() {
+        let csv = format!("{}\r\n{}\r\n{}\r\n", header(), row("1", 54), row("0", 54));
+        let data = read_training_csv(Cursor::new(csv)).unwrap();
+        assert_eq!(data.targets, vec![1.0, 0.0]);
+        assert_eq!(data.inputs[0][53], 53.0);
+    }
+    #[test]
+    fn mixed_short_long_and_extra_columns_are_rejected() {
+        for width in [25, 53, 55] {
+            let csv = format!("{}\n{}\n{}", header(), row("1", 54), row("0", width));
+            assert!(read_training_csv(Cursor::new(csv))
+                .unwrap_err()
+                .contains("row 3"));
         }
-        Err(e) => {
-            println!("❌ Failed to serialize Dark Alpha model: {}", e);
+    }
+    #[test]
+    fn nonfinite_ambiguous_or_out_of_range_targets_are_rejected() {
+        for target in ["NaN", "inf", "-inf", "0.5", "-1", "2", "bad"] {
+            let csv = format!("{}\n{}", header(), row(target, 54));
+            assert!(read_training_csv(Cursor::new(csv)).is_err(), "{target}");
+        }
+    }
+    #[test]
+    fn invalid_features_are_not_silently_imputed() {
+        for value in ["NaN", "inf", "-inf", "", "broken"] {
+            let mut parts = vec!["1"; 55];
+            parts[17] = value;
+            let csv = format!("{}\n{}", header(), parts.join(","));
+            assert!(read_training_csv(Cursor::new(csv))
+                .unwrap_err()
+                .contains("column 17"));
+        }
+    }
+    #[test]
+    fn schema_and_empty_data_are_rejected() {
+        for csv in [
+            "".to_string(),
+            header(),
+            format!("wrong_header\n{}", row("1", 54)),
+        ] {
+            assert!(read_training_csv(Cursor::new(csv)).is_err());
+        }
+    }
+    #[test]
+    fn input_read_errors_are_not_silent_skips() {
+        let bytes = [format!("{}\n", header()).as_bytes(), &[0xff, 0xfe, b'\n']].concat();
+        assert!(read_training_csv(Cursor::new(bytes))
+            .unwrap_err()
+            .contains("I/O error"));
+    }
+    #[test]
+    fn scaler_matches_population_moments_and_rejects_overflow() {
+        let s = fit_scaler(&[vec![1.0, 7.0], vec![3.0, 7.0]]).unwrap();
+        assert_eq!(s.mean, vec![2.0, 7.0]);
+        assert_eq!(s.std_dev, vec![1.0, 1e-8]);
+        assert!(fit_scaler(&[vec![f64::MAX], vec![-f64::MAX]]).is_err());
+        assert!(fit_scaler(&[vec![1.0], vec![]]).is_err());
+    }
+    #[test]
+    fn publication_path_is_versioned_outside_operational_namespace() {
+        let a = research_candidate_path("BTCUSDT", 1).unwrap();
+        let b = research_candidate_path("BTCUSDT", 2).unwrap();
+        assert_ne!(a, b);
+        assert!(a.starts_with("artifacts/training"));
+        assert!(!a.starts_with("models"));
+        for symbol in ["", "../BTCUSDT", "btcUSDT", "BTC/USDT", "BTC:USDT"] {
+            assert!(research_candidate_path(symbol, 1).is_err());
         }
     }
 }

@@ -1,0 +1,1124 @@
+{
+  "schema_version": 1,
+  "round": "XXXV",
+  "date": "2026-09-25",
+  "language": "es",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXV_2026-09-25.md",
+  "continuity": {
+    "previous_report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIV_2026-09-25.md",
+    "previous_artifact": "docs/artifacts/auditoria_fundamentos_XXXIV_2026-09-25.json",
+    "new_finding_ids": [
+      "FMT-262",
+      "FMT-263",
+      "FMT-264",
+      "FMT-265",
+      "FMT-266",
+      "FMT-267"
+    ],
+    "historic_matrix_rewritten": false
+  },
+  "scope": {
+    "tracked_files": 1119,
+    "preexisting_rust_files": 289,
+    "cargo_manifests": 24,
+    "previous_complete_rust_reads": 157,
+    "complete_rust_reads": 160,
+    "pending_preexisting_rust_reads": 129,
+    "new_complete_reads": [
+      {
+        "path": "crates/audit-engine/src/trajectory_auditor.rs",
+        "baseline_lines": 380
+      },
+      {
+        "path": "crates/audit-engine/src/drift_auditor.rs",
+        "baseline_lines": 139
+      },
+      {
+        "path": "crates/audit-engine/src/behavioral_auditor.rs",
+        "baseline_lines": 125
+      }
+    ],
+    "whole_project_certified": false,
+    "non_rust_total_certified": false,
+    "note": "audit-engine/lib.rs completo sin incrementar cobertura conservadora; darwin/fitness releídos. Host y core dirigidos; nuevos archivos no inflan denominador histórico."
+  },
+  "git": {
+    "branch": "main",
+    "head": "59a76de4be726098d9af934b4d35987e9a636802",
+    "dirty": true,
+    "commit": false,
+    "push": false,
+    "merge": false,
+    "fetch": false,
+    "reset": false,
+    "checkout": false,
+    "remote_verified": false
+  },
+  "findings": [
+    {
+      "id": "FMT-262",
+      "kind": "new",
+      "priority": "P1",
+      "status": "locally_repaired",
+      "title": "Fitness con overflow intermedio y evidencia no finita reinterpretada",
+      "mechanism": "ln(final/initial) puede recibir inf o cero con ambos extremos positivos finitos; DD NaN produce NaN en core y pena finita en evolución; OOS inválido equivale a factor1 y prior inválido contamina.",
+      "changes": [
+        "Módulo core fitness_contract compartido por evolución, sin dependencia nueva.",
+        "Log directo para cociente representable, diferencia de logs en otro caso.",
+        "Errores tipados de capital/DD/soporte; wrappers conservan sentinel legacy.",
+        "OOS positivo/finito obligatorio, sin piso del ratio; validar prior sólo cuando interviene."
+      ],
+      "limits": [
+        "DD finito fuera de[0,1] conserva clamp heredado.",
+        "Mínimo de30 en core no prueba independencia o potencia estadística.",
+        "OOS igual-igual positivo sigue permitiendo ausencia de split.",
+        "Otros consumidores siguen colapsando invalidez/soporte en−infinito."
+      ],
+      "refs": [
+        "fitness_errors",
+        "log_growth",
+        "checked_fitness",
+        "legacy_core_wrapper",
+        "oos_contract",
+        "evolution_compute",
+        "cold_prior",
+        "numeric_tests",
+        "evolution_tests"
+      ],
+      "red_to_green": 7
+    },
+    {
+      "id": "FMT-259",
+      "kind": "continuation",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Comparabilidad local de replay y riesgo",
+      "changes": [
+        "evaluate_genotype único para ambos lados.",
+        "Límite drawdown capturado una vez, aplicado por replay_arena; retirado0.95 exclusivo del candidato.",
+        "Ensayos de construcción de arenas y replay corto idéntico."
+      ],
+      "limits": [
+        "Captura no transaccional de configuración completa/modelos.",
+        "Contexto sintético, primeros30slots, misma cinta para selección/comparación.",
+        "Drawdown al cierre y sin valoración terminal completa.",
+        "Dominio público del genotipo y promoción durable deFMT-260 pendientes."
+      ],
+      "refs": [
+        "shared_replay",
+        "replay_arena",
+        "captured_drawdown"
+      ]
+    },
+    {
+      "id": "FMT-263",
+      "kind": "new",
+      "priority": "P1",
+      "status": "locally_repaired",
+      "title": "Baseline sin evidencia convertido en pérdida artificial",
+      "mechanism": "Baseline no finito se convertía en−999999 y se comparaba como utilidad observada; podía perder ante un candidato finito negativo.",
+      "changes": [
+        "Se conserva score ausente como no finito; meets_promotion_margin exige dos valores finitos.",
+        "Margen finito5% y1e−4 conservado.",
+        "Logs ya no declaran optimalidad o cambio de régimen por el margen."
+      ],
+      "limits": [
+        "Margen relativo no exige utilidad positiva ni superioridad a cash.",
+        "No hay significación, OOS o autorización de publicación implícita.",
+        "Ruta legacy opcional, no se activó ni ejecutó evolución/promoción."
+      ],
+      "refs": [
+        "margin_gate",
+        "margin_tests",
+        "shared_replay"
+      ],
+      "new_api_tests_not_claimed_red_before_existence": true
+    },
+    {
+      "id": "FMT-264",
+      "kind": "new",
+      "priority": "P2",
+      "status": "exhaustion_repaired_other_contracts_open",
+      "title": "Diagnóstico de trayectoria temporal y clasificación de ausencia",
+      "mechanism": "duration_ratio limitado a3 hacía imposible la condición>4.",
+      "changes": [
+        "Retirado límite3 sólo del ratio; componente de coherencia conserva su recorte.",
+        "Retirada promesa no medida de latencia nanosegundo."
+      ],
+      "open_issues": [
+        "NaN, índice inválido o track ausente→Aligned1.",
+        "Ticks antiguos suman volumen y rebobinan reloj; falta dedup e identidad.",
+        "Dos buckets scalp/swing, capacidad30 y entrada siempretrue en host.",
+        "TCE perfecto0 se anuncia como fidelidad con1=concordancia; ponderación no calibrada."
+      ],
+      "reachability": "Host recibe Divergent para telemetría; no cierra órdenes por ese resultado en el bloque inspeccionado.",
+      "refs": [
+        "trajectory_ratio",
+        "trajectory_exhaustion",
+        "trajectory_error",
+        "trajectory_host_capacity",
+        "trajectory_host_fidelity",
+        "duration_tests",
+        "auditor_open_tests"
+      ],
+      "red_to_green": 1
+    },
+    {
+      "id": "FMT-265",
+      "kind": "new",
+      "priority": "P1",
+      "status": "open",
+      "title": "Drift fail-open y shadow endógeno",
+      "mechanism": "NaN evita acumulación y comparación>, luego retornaOk(NaN); límiteNaN permiteOK con diferencia2. No se valida identidad de pareja.",
+      "production_context": "Host usa límite0.05 válido, pero shadow=0.95*real. Drift=−0.05*real y umbral equivale aproximadamente aabs(real)>1; no prueba expectativa independiente backtest/live.",
+      "limits": [
+        "No se observó cuenta o incidente vivo.",
+        "API no arma breaker por sí mismo; consumidor decide.",
+        "Suma firmada y umbral por observación no son contraste estadístico agregado."
+      ],
+      "changes": [
+        "Documentación explicita límites; tres diagnósticos OPEN. Sin cambio de clasificación operativa."
+      ],
+      "closure": "Resultado tipado de validez/emparejamiento, IDtrade/posición/generación/exposición y comparación independiente; distinguir centinela contable de error predictivo.",
+      "refs": [
+        "drift_method",
+        "drift_threshold",
+        "drift_shadow_proxy",
+        "auditor_open_tests"
+      ]
+    },
+    {
+      "id": "FMT-266",
+      "kind": "new",
+      "priority": "P1",
+      "status": "open_static_consumer_evidence",
+      "title": "Rearme no consecutivo y borrado de veto compartido sin propiedad",
+      "mechanism": [
+        "Err no resetea drift_clean_closes.",
+        "fetch_add devuelve valor anterior: desde0 clean>=10 ocurre enundécimoOK.",
+        "Liberación false de kill_switch_active sin comprobar otras causas/propietarios."
+      ],
+      "consequence": "Crédito previo sobrevive nuevofallo y puede retirarse señal de bloqueo ajena. Interacción de vivacidad con cierres defensivos bloqueados por kill-switch.",
+      "limits": [
+        "Prueba estática, no ensayo de seguridad sobre proceso vivo.",
+        "Otros filtros pueden continuar impidiendo entradas; no se afirma orden indebida realizada.",
+        "Otras rutas de cierre impiden concluir deadlock inevitable."
+      ],
+      "changes": [],
+      "closure": "Registro de causas independiente; secuencia válida que se reinicia por fallo; liberación sólo de causa propia; prueba de concurrencia y salidas defensivas.",
+      "refs": [
+        "drift_new_failure",
+        "drift_clean_counter",
+        "drift_rearm_boundary",
+        "drift_rearm_cause_reset"
+      ]
+    },
+    {
+      "id": "FMT-267",
+      "kind": "new",
+      "priority": "P2",
+      "status": "open_auxiliary_documentation_corrected",
+      "title": "SPRT declarado sin LLR gaussiana",
+      "mechanism": "Incremento (x−mu0)*delta/(abs(mu0)+1e−5), sin sigma² ni−delta²/(2sigma²). Enx=mu0 acumula0 frente al negativo del modelo declarado.",
+      "correct_reference_equation": "Para normales con varianza común, LLR=delta*(x−mu0)/sigma²−delta²/(2sigma²). Derivación algebraica local, no calibración del sistema.",
+      "open_issues": [
+        "None para inválido y nominal.",
+        "k/h infinitos aceptados.",
+        "Bounds nominales1% no certifican eseerror.",
+        "No hay benchmark<5ns ni coste cero."
+      ],
+      "reachability": "No se localizaron callers operativos fuera de tests.",
+      "changes": [
+        "Comentarios precisan heurística, garantías y latencia; no se cambia fórmula sin H0/H1/varianza/dependencia identificadas."
+      ],
+      "refs": [
+        "behavioral_increment",
+        "behavioral_invalid",
+        "auditor_open_tests"
+      ]
+    },
+    {
+      "id": "FMT-047/FMT-048",
+      "kind": "continuation",
+      "priority": "P1",
+      "status": "documentation_corrected_legacy_admission_open",
+      "title": "Preferencia no es ley y sentinel no es utilidad de abstención",
+      "changes": [
+        "Precisar invariancia monetaria vs apalancamiento, no aditividad deDD/OOS, lambda como preferencia elegida y contracción lineal no acreditada como posterior."
+      ],
+      "open_issues": [
+        "Cash inactivo sigue peor ordenado que pérdida finita por sentinel en wrappers.",
+        "Holdout, multiplicidad, dependencia y costes no quedan resueltos con finitud."
+      ],
+      "refs": [
+        "evolution_compute",
+        "evolution_tests"
+      ]
+    }
+  ],
+  "evidence_references": [
+    {
+      "id": "fitness_errors",
+      "path": "crates/god-engine-core/src/fitness_contract.rs",
+      "anchor": "pub enum FitnessError",
+      "line": 8,
+      "matches": 1
+    },
+    {
+      "id": "log_growth",
+      "path": "crates/god-engine-core/src/fitness_contract.rs",
+      "anchor": "pub fn log_capital_growth",
+      "line": 17,
+      "matches": 1
+    },
+    {
+      "id": "checked_fitness",
+      "path": "crates/god-engine-core/src/fitness_contract.rs",
+      "anchor": "pub fn checked_fitness",
+      "line": 35,
+      "matches": 1
+    },
+    {
+      "id": "legacy_core_wrapper",
+      "path": "crates/god-engine-core/src/lib.rs",
+      "anchor": "pub fn fitness_compute",
+      "line": 20,
+      "matches": 1
+    },
+    {
+      "id": "oos_contract",
+      "path": "crates/evolution-engine/src/fitness.rs",
+      "anchor": "fn oos_factor",
+      "line": 86,
+      "matches": 1
+    },
+    {
+      "id": "evolution_compute",
+      "path": "crates/evolution-engine/src/fitness.rs",
+      "anchor": "pub fn compute(",
+      "line": 94,
+      "matches": 1
+    },
+    {
+      "id": "cold_prior",
+      "path": "crates/evolution-engine/src/fitness.rs",
+      "anchor": "pub fn compute_with_bayesian_prior",
+      "line": 110,
+      "matches": 1
+    },
+    {
+      "id": "margin_gate",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "anchor": "pub fn meets_promotion_margin",
+      "line": 312,
+      "matches": 1
+    },
+    {
+      "id": "replay_arena",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "anchor": "fn replay_arena",
+      "line": 323,
+      "matches": 1
+    },
+    {
+      "id": "shared_replay",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "anchor": "fn evaluate_genotype",
+      "line": 333,
+      "matches": 1
+    },
+    {
+      "id": "captured_drawdown",
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "anchor": "let replay_max_drawdown",
+      "line": 425,
+      "matches": 1
+    },
+    {
+      "id": "trajectory_ratio",
+      "path": "crates/audit-engine/src/trajectory_auditor.rs",
+      "anchor": "let duration_ratio =",
+      "line": 208,
+      "matches": 1
+    },
+    {
+      "id": "trajectory_exhaustion",
+      "path": "crates/audit-engine/src/trajectory_auditor.rs",
+      "anchor": "if duration_ratio > 4.0",
+      "line": 247,
+      "matches": 1
+    },
+    {
+      "id": "trajectory_error",
+      "path": "crates/audit-engine/src/trajectory_auditor.rs",
+      "anchor": "let tce = (0.70",
+      "line": 304,
+      "matches": 1
+    },
+    {
+      "id": "trajectory_host_capacity",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "TrajectoryAuditor::new(30)",
+      "line": 2852,
+      "matches": 1
+    },
+    {
+      "id": "trajectory_host_fidelity",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "score fidelidad",
+      "line": 3654,
+      "matches": 1
+    },
+    {
+      "id": "drift_method",
+      "path": "crates/audit-engine/src/drift_auditor.rs",
+      "anchor": "pub fn audit_execution",
+      "line": 44,
+      "matches": 1
+    },
+    {
+      "id": "drift_threshold",
+      "path": "crates/audit-engine/src/drift_auditor.rs",
+      "anchor": "if drift.abs()",
+      "line": 71,
+      "matches": 1
+    },
+    {
+      "id": "drift_shadow_proxy",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "pnl_pct: real_pnl_pct * 0.95",
+      "line": 3608,
+      "matches": 1
+    },
+    {
+      "id": "drift_new_failure",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "drift_kill_armed_at.fetch_add(1",
+      "line": 3620,
+      "matches": 1
+    },
+    {
+      "id": "drift_clean_counter",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "let clean = drift_clean_closes.fetch_add",
+      "line": 3629,
+      "matches": 1
+    },
+    {
+      "id": "drift_rearm_boundary",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "if clean >= 10",
+      "line": 3630,
+      "matches": 1
+    },
+    {
+      "id": "drift_rearm_cause_reset",
+      "path": "src/bin/god_engine.rs",
+      "anchor": "drift_kill_armed_at.store(0",
+      "line": 3631,
+      "matches": 1
+    },
+    {
+      "id": "behavioral_increment",
+      "path": "crates/audit-engine/src/behavioral_auditor.rs",
+      "anchor": "let sprt_increment",
+      "line": 65,
+      "matches": 1
+    },
+    {
+      "id": "behavioral_invalid",
+      "path": "crates/audit-engine/src/behavioral_auditor.rs",
+      "anchor": "if !current_val.is_finite()",
+      "line": 52,
+      "matches": 1
+    },
+    {
+      "id": "numeric_tests",
+      "path": "crates/god-engine-core/tests/fitness_numeric_contract.rs",
+      "anchor": "fn finite_capitals_do_not_overflow",
+      "line": 5,
+      "matches": 1
+    },
+    {
+      "id": "margin_tests",
+      "path": "crates/god-engine-core/tests/darwin_margin_contract.rs",
+      "anchor": "fn invalid_or_missing_score",
+      "line": 4,
+      "matches": 1
+    },
+    {
+      "id": "evolution_tests",
+      "path": "crates/evolution-engine/tests/fitness_evidence_contract.rs",
+      "anchor": "fn invalid_oos",
+      "line": 31,
+      "matches": 1
+    },
+    {
+      "id": "duration_tests",
+      "path": "crates/audit-engine/tests/trajectory_duration_contract.rs",
+      "anchor": "fn time_exhaustion_is_reachable",
+      "line": 6,
+      "matches": 1
+    },
+    {
+      "id": "auditor_open_tests",
+      "path": "crates/audit-engine/tests/auditor_open_diagnostics.rs",
+      "anchor": "fn open_nan_drift_is_reported",
+      "line": 17,
+      "matches": 1
+    }
+  ],
+  "tests": {
+    "status": "passed_selected_contracts_and_open_characterizations",
+    "red_to_green": {
+      "failed": 8,
+      "passed": 2,
+      "session": 37187,
+      "observations": [
+        "Core finite endpoints overflowed toinf.",
+        "Core positive endpoint ratio underflowed to0→−inf.",
+        "Core DDNaN returnedNaN.",
+        "Evolution ratio overflowed toinf.",
+        "Evolution cold priorNaN returnedNaN.",
+        "Evolution DDNaN returned finite−2.6772785424354564.",
+        "Evolution OOS startNaN preserved score0.06758429258192712.",
+        "Trajectory at5durations remainedAligned0.44999999999999857."
+      ]
+    },
+    "new_tests": 33,
+    "new_functional_or_compatibility": 22,
+    "new_open_diagnostics": 11,
+    "new_test_files": 5,
+    "new_tests_in_existing_darwin_file": 4,
+    "note": "La selección fitness::tests incluye5entropy_fitness::tests por coincidencia de substring. Un filtro fitness_compute_tests seleccionó0 y se corrigió a tests_m5_h01; el intento vacío no se suma. El test previo sobre Genotype sin DD se renombra como compatibilidad: el replay común aporta esa política; no se cuenta como defecto de comparación aún abierto.",
+    "prior_open_reclassified_as_compatibility": 1,
+    "suites": [
+      {
+        "crate": "core",
+        "name": "fitness_numeric_contract",
+        "open_diagnostics": 0,
+        "passed": 7,
+        "functional_or_compatibility": 7,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "core",
+        "name": "darwin_margin_contract",
+        "open_diagnostics": 0,
+        "passed": 3,
+        "functional_or_compatibility": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "core",
+        "name": "darwin_genotype_open_diagnostics",
+        "open_diagnostics": 1,
+        "passed": 2,
+        "functional_or_compatibility": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "core",
+        "name": "liquidation_state_contract",
+        "open_diagnostics": 0,
+        "passed": 7,
+        "functional_or_compatibility": 7,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "core",
+        "name": "decay_causality_contract",
+        "open_diagnostics": 0,
+        "passed": 10,
+        "functional_or_compatibility": 10,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "core",
+        "name": "close_outcome_contract",
+        "open_diagnostics": 1,
+        "passed": 23,
+        "functional_or_compatibility": 22,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "core",
+        "name": "stateful_transition_contract",
+        "open_diagnostics": 0,
+        "passed": 22,
+        "functional_or_compatibility": 22,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "evolution",
+        "name": "fitness_evidence_contract",
+        "open_diagnostics": 2,
+        "passed": 8,
+        "functional_or_compatibility": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "audit",
+        "name": "trajectory_duration_contract",
+        "open_diagnostics": 0,
+        "passed": 2,
+        "functional_or_compatibility": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "audit",
+        "name": "auditor_open_diagnostics",
+        "open_diagnostics": 9,
+        "passed": 9,
+        "functional_or_compatibility": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "core",
+        "name": "darwin::tests",
+        "open_diagnostics": 0,
+        "passed": 7,
+        "functional_or_compatibility": 7,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "core",
+        "name": "tests_m5_h01",
+        "open_diagnostics": 0,
+        "passed": 2,
+        "functional_or_compatibility": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "evolution",
+        "name": "fitness::tests (+ entropy_fitness::tests substring match)",
+        "open_diagnostics": 0,
+        "passed": 13,
+        "functional_or_compatibility": 13,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "audit",
+        "name": "trajectory_auditor::tests",
+        "open_diagnostics": 0,
+        "passed": 4,
+        "functional_or_compatibility": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "audit",
+        "name": "drift_auditor::tests",
+        "open_diagnostics": 0,
+        "passed": 2,
+        "functional_or_compatibility": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "crate": "audit",
+        "name": "behavioral_auditor::tests",
+        "open_diagnostics": 0,
+        "passed": 2,
+        "functional_or_compatibility": 2,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "final_unique_passed": 123,
+    "functional_or_compatibility": 110,
+    "open_diagnostics": 13,
+    "failed_final": 0,
+    "ignored_final": 0,
+    "commands": {
+      "red": "cargo test --offline -j 1 -p god-engine-core --test fitness_numeric_contract -p evolution-engine --test fitness_evidence_contract -p audit-engine --test trajectory_duration_contract --no-fail-fast -- --test-threads=1",
+      "integration": "cargo test --offline -j 1 -p god-engine-core --test fitness_numeric_contract --test darwin_margin_contract --test darwin_genotype_open_diagnostics --test liquidation_state_contract --test decay_causality_contract --test close_outcome_contract --test stateful_transition_contract -p evolution-engine --test fitness_evidence_contract -p audit-engine --test trajectory_duration_contract --test auditor_open_diagnostics --no-fail-fast -- --test-threads=1",
+      "units": [
+        "cargo test --offline -j 1 -p god-engine-core --lib darwin::tests -- --test-threads=1",
+        "cargo test --offline -j 1 -p god-engine-core --lib tests_m5_h01 -- --test-threads=1",
+        "cargo test --offline -j 1 -p evolution-engine --lib fitness::tests -- --test-threads=1",
+        "cargo test --offline -j 1 -p audit-engine --lib trajectory_auditor::tests -- --test-threads=1",
+        "cargo test --offline -j 1 -p audit-engine --lib drift_auditor::tests -- --test-threads=1",
+        "cargo test --offline -j 1 -p audit-engine --lib behavioral_auditor::tests -- --test-threads=1"
+      ],
+      "reclassified_test": "cargo test --offline -j 1 -p god-engine-core -p evolution-engine -p audit-engine --test darwin_genotype_open_diagnostics -- --test-threads=1",
+      "check": "cargo check --offline -j 1 -p trader-gemini-v5 --bin god_engine --bin evolver --bin walkforward_evolver"
+    },
+    "check_exit_code": 0,
+    "warnings": [
+      "evolution-engine latest_ts (previous)",
+      "evolution-engine mode (previous)",
+      "evolution-engine trades (previous)",
+      "walkforward_evolver toxic (unmodified file)"
+    ],
+    "not_run": [
+      "Full workspace test suite",
+      "Live Darwin evolution/promotion",
+      "Live failure injection of drift recovery",
+      "Statistical out-of-sample experiment",
+      "Latency benchmark",
+      "Operational engine binary"
+    ],
+    "new_test_paths": [
+      "crates/god-engine-core/tests/fitness_numeric_contract.rs",
+      "crates/god-engine-core/tests/darwin_margin_contract.rs",
+      "crates/evolution-engine/tests/fitness_evidence_contract.rs",
+      "crates/audit-engine/tests/trajectory_duration_contract.rs",
+      "crates/audit-engine/tests/auditor_open_diagnostics.rs"
+    ]
+  },
+  "research": {
+    "skills": [
+      "firecrawl",
+      "firecrawl-research-index"
+    ],
+    "cli_available": false,
+    "method": "Conector: búsqueda semántica, pasajes del cuerpo principal y vecinos por citas. Notas guardadas; no instalación ni scraping de cuentas.",
+    "note": ".firecrawl/XXXV-growth-risk-evidence.md",
+    "sources": [
+      {
+        "url": "https://arxiv.org/abs/1603.06183",
+        "title": "Risk-Constrained Kelly Gambling",
+        "depth": "Pasajes del cuerpo",
+        "supports": "Objetivo esperado logarítmico y condición suficiente para restricción de riqueza mínima; no equivale a score penalizado porDDobservado²."
+      },
+      {
+        "url": "https://arxiv.org/abs/1812.10371",
+        "title": "Distributional Robust Kelly Gambling: Optimal Strategy under Uncertainty in the Long-Run",
+        "depth": "Resumen",
+        "supports": "Conjunto de incertidumbre y peor esperanza logarítmica; noimplementado."
+      },
+      {
+        "url": "https://arxiv.org/abs/1802.04885",
+        "title": "Distributionally Robust Mean-Variance Portfolio Selection with Wasserstein Distances",
+        "depth": "Resumen",
+        "supports": "Familia robusta con objetivo diferente; no reemplazo automático deKelly."
+      },
+      {
+        "url": "https://arxiv.org/abs/1710.01503",
+        "title": "On Drawdown-Modulated Feedback Control in Stock Trading",
+        "depth": "Resumen",
+        "supports": "Alternativa de feedback bajo hipótesis propias; no garantía sobreelhost."
+      }
+    ],
+    "no_quantum_advantage_claim": true,
+    "no_profit_guarantee": true,
+    "no_exhaustive_nanosecond_observability_claim": true
+  },
+  "preservation": {
+    "source_before": [
+      {
+        "path": "crates/god-engine-core/src/darwin.rs",
+        "sha256": "2DAE56EE6BBF647976E74E49C94B2A0CBBF11247CC9097FCABAED0A0C62380D7",
+        "lines": 779,
+        "normalized_chars": 33184,
+        "normalized_sha256": "2DAE56EE6BBF647976E74E49C94B2A0CBBF11247CC9097FCABAED0A0C62380D7"
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "620E4340477E44EB7865CC2EA564E12AC3588F2ED8590E85DA18FB2F3DCAB2E4",
+        "lines": 5221,
+        "normalized_chars": 283530,
+        "normalized_sha256": "620E4340477E44EB7865CC2EA564E12AC3588F2ED8590E85DA18FB2F3DCAB2E4"
+      },
+      {
+        "path": "crates/evolution-engine/src/fitness.rs",
+        "sha256": "CFF26E09234BC9FEADF2EAF008C38E031FB6CBA4798FEFF6E3D046F544C25BD2",
+        "lines": 315,
+        "normalized_chars": 12170,
+        "normalized_sha256": "CFF26E09234BC9FEADF2EAF008C38E031FB6CBA4798FEFF6E3D046F544C25BD2"
+      },
+      {
+        "path": "crates/audit-engine/src/trajectory_auditor.rs",
+        "sha256": "F5A0BB53BF732515C40881A7D842A711456FC786A85ADBADBD4ACB0F6EB72E59",
+        "lines": 380,
+        "normalized_chars": 13238,
+        "normalized_sha256": "F5A0BB53BF732515C40881A7D842A711456FC786A85ADBADBD4ACB0F6EB72E59"
+      },
+      {
+        "path": "crates/audit-engine/src/drift_auditor.rs",
+        "sha256": "15ED8BFA45CEAFF3BE28ABF0836F688EE9980C8E190F868A4D4E00A391A53DFA",
+        "lines": 139,
+        "normalized_chars": 4252,
+        "normalized_sha256": "15ED8BFA45CEAFF3BE28ABF0836F688EE9980C8E190F868A4D4E00A391A53DFA"
+      },
+      {
+        "path": "crates/audit-engine/src/behavioral_auditor.rs",
+        "sha256": "764FD40BEECD42F9F7E832B1066A50F84D562598F5682CC696A1206221E32B22",
+        "lines": 125,
+        "normalized_chars": 4926,
+        "normalized_sha256": "764FD40BEECD42F9F7E832B1066A50F84D562598F5682CC696A1206221E32B22"
+      },
+      {
+        "path": "crates/audit-engine/src/lib.rs",
+        "sha256": "7BFD31F92D2291E8CA9E41FCFF24E9C1476155A85665B3251A2625BB51ACC731",
+        "lines": 9,
+        "normalized_chars": 218,
+        "normalized_sha256": "7BFD31F92D2291E8CA9E41FCFF24E9C1476155A85665B3251A2625BB51ACC731"
+      },
+      {
+        "path": "crates/god-engine-core/tests/darwin_genotype_open_diagnostics.rs",
+        "sha256": "D094A2954A73731751D5CD7ACF95F14624DF07BFFD8C444A9C33F2ABDFAA017B",
+        "lines": 31,
+        "origin": "Captured immediately before renaming prior OPEN test to shared-policy compatibility regression"
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/god-engine-core/src/darwin.rs",
+        "sha256": "92E9D453E6FE5858C73DE79B225090DDD587DDF07AA58ECBD6AD34BD4933F61F",
+        "lines": 752
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "EB1D22EFA16E3F5D9C7D0B80D7DE9C929ECC692C86231138D86356C4330776B9",
+        "lines": 5214
+      },
+      {
+        "path": "crates/evolution-engine/src/fitness.rs",
+        "sha256": "B8FDF7DED25548AA2D0510A1CF49E8D6366B99711F6D2F47B24C05A6B381EDF1",
+        "lines": 282
+      },
+      {
+        "path": "crates/audit-engine/src/trajectory_auditor.rs",
+        "sha256": "D3B7E8702702480A77B1D16546BB28FE7394A7A22A26658F2CB02F33AFFEFEBE",
+        "lines": 382
+      },
+      {
+        "path": "crates/audit-engine/src/drift_auditor.rs",
+        "sha256": "3560A0E995277CC13DBF9CDCFE5514C6DC41359791CE3F6436910E20C3ECB8A8",
+        "lines": 141
+      },
+      {
+        "path": "crates/audit-engine/src/behavioral_auditor.rs",
+        "sha256": "95A9EF10E19666B9DDFD2CCC9A38150DF034E4A4BDAE16CA2131BB38020C17C2",
+        "lines": 127
+      },
+      {
+        "path": "crates/audit-engine/src/lib.rs",
+        "sha256": "7BFD31F92D2291E8CA9E41FCFF24E9C1476155A85665B3251A2625BB51ACC731",
+        "lines": 9
+      },
+      {
+        "path": "crates/god-engine-core/src/fitness_contract.rs",
+        "sha256": "39B2CC87682EC4A540AC445992055A379F5CA9B4E9D7D504FF66FC99AE1636C8",
+        "lines": 55
+      },
+      {
+        "path": "crates/god-engine-core/tests/fitness_numeric_contract.rs",
+        "sha256": "0B50BDBDBBBAA796A7A04B39AD73DB8E071D54D8E8E3B78C0D26C1938952B84E",
+        "lines": 82
+      },
+      {
+        "path": "crates/god-engine-core/tests/darwin_margin_contract.rs",
+        "sha256": "4F973E260C52FAF06D35DD34F82384CAB9F8A796BEC2C6FA0D9618A0017077F0",
+        "lines": 25
+      },
+      {
+        "path": "crates/evolution-engine/tests/fitness_evidence_contract.rs",
+        "sha256": "BD2355E051A32F18109426CA80C402B8F0EDA268634ECFF35A0B29FC7E2D04D6",
+        "lines": 95
+      },
+      {
+        "path": "crates/audit-engine/tests/trajectory_duration_contract.rs",
+        "sha256": "BB14C3EA6B8BEE7C5431160CB887BBD87A0A2F715163060F08C577D868D64880",
+        "lines": 26
+      },
+      {
+        "path": "crates/audit-engine/tests/auditor_open_diagnostics.rs",
+        "sha256": "CED8B1B4302B224136D6F0230AFB89D53185A425F1ABEE83BEF774CD639A24C4",
+        "lines": 98
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "sha256": "5AE38B15E6DF871C7F89FA98DE83793D5DC99FACD8A0BBE789A3D44BD43D91B9",
+        "lines": 4791
+      },
+      {
+        "path": "crates/god-engine-core/tests/darwin_genotype_open_diagnostics.rs",
+        "sha256": "DC0C6C2E8B7ACB2C3F0C8974D03C52AA478548407FA2B0C8C77DA21C22432546",
+        "lines": 33
+      }
+    ],
+    "append_only_documents": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 117502,
+        "appended_normalized_chars": 3037,
+        "normalized_prefix_sha256": "A18C7844D71A9C94BA9BC07BF8591AF3DD68044BADBD64FF8244C95556C833FC"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 743653,
+        "appended_normalized_chars": 9141,
+        "normalized_prefix_sha256": "B65697F7DD9D758254FFA0B37BAA84A884902F601A2C2402AF2BB5A2F71808AD"
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIV_2026-09-25.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 35129,
+        "appended_normalized_chars": 1368,
+        "normalized_prefix_sha256": "788412A9A708F13DF3EF80DA500BA71F3AB1B03774A572C8D1AC878A835BE8BF"
+      }
+    ],
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "market_orders_sent": 0,
+    "account_requests_sent": 0,
+    "operational_training_or_promotion": false,
+    "active_genomes_deliberately_modified": false,
+    "legacy_darwin_activated": false,
+    "host_modified": false,
+    "process_kills_or_restarts": false,
+    "operational_binary_built": false,
+    "shared_build_cache_deleted": false,
+    "report_snapshot": {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXV_2026-09-25.md",
+      "sha256": "7A035FF6865426E3AC488B9347412D584A5229043A0D795C8C5314A380DE0CDB",
+      "lines": 298
+    },
+    "hash_semantics": "Sources, models, report: SHA256 of exact bytes; prior documentation: normalized CRLF→LF prefix. No artifact self-hash."
+  },
+  "next_work": [
+    "Propiedad delkill-switch y secuencias de recuperación por causa.",
+    "Pareja real-shadow identificada, no derivada delresultado real.",
+    "Snapshot de evaluación y valoración terminal de posiciones.",
+    "Promoción durable porgeneración.",
+    "Trayectoria porposición/símbolo/generación/horizonte continuo.",
+    "Validación independiente multiactivo/multiescala y129Rustpendientes."
+  ],
+  "validation": {
+    "status": "passed_snapshot_check",
+    "hashes_checked": 57,
+    "evidence_references_checked": 30,
+    "append_only_document_prefixes_checked": 3,
+    "local_report_links_checked": 9,
+    "test_totals_consistent": true,
+    "new_test_counts_verified_from_source": true,
+    "whitespace_check_passed": true,
+    "research_note_gitignored": true,
+    "errors": [],
+    "limits": "Verificación del snapshot local y la selección indicada; no certificación global, económica, de latencia o de producción. No incluye hash del propio JSON ni cambios concurrentes posteriores."
+  }
+}

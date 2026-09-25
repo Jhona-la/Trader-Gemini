@@ -1,6 +1,6 @@
-/// 🚀 ALGORITMO #135: MOTOR ACELERADOR DE LATENCIA SPSC LIBRE DE BLOQUEOS (LATENCY ACCELERATOR ENGINE)
-/// Optimiza los bucles de comunicación inter-hilo entre Scalping y Swing mediante sondeo atómico acquire/release sin bloqueos ni asignaciones Heap,
-/// reduciendo la latencia de paso de mensajes IPC a nivel sub-nanosegundo en O(1).
+/// Legacy-named arithmetic helpers for latency ratios and bounded clock offsets.
+/// No queue, SPSC protocol, atomic polling, IPC acceleration or measured latency
+/// budget is implemented here. A ratio does not itself accelerate execution.
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C, align(64))]
 pub struct LatencyAcceleratorEngine;

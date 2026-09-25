@@ -1,9 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+// XXXIV audit: deterministic local cost heuristic, not an exchange fill model.
+// Maker results are conditional price/fee estimates: no queue/fill probability.
+// Fixed reference notional, 150ms time reference, caps and coefficients are not
+// a cross-asset calibration. Invalid latency and output-overflow contracts remain
+// open; callers must not infer that finite input price implies a valid fill.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EngineMode {
     Optimistic, // Solo Fees fijos, sin impacto de latencia ni de libro de órdenes. (Ideal para IA training inicial)
-    HyperRealistic, // Fricción exponencial basada en nominal size y demoras estocásticas.
+    HyperRealistic, // Nombre legacy: fórmula determinista, no demora estocástica simulada.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +39,7 @@ impl RealityPhysics {
         }
     }
 
-    /// Calcula el costo real de entrar a mercado cruzando el spread (Taker)
+    /// Estima precio/coste taker con la heurística local; no confirma una ejecución.
     /// Devuelve: (precio_ejecutado, fee_total_usd)
     pub fn calculate_market_entry(
         &self,
@@ -100,7 +106,7 @@ impl RealityPhysics {
         (executed_price, fee_usd)
     }
 
-    /// Calcula el costo real de entrar con orden Maker (Post-Only)
+    /// Estimación condicional maker (Post-Only); no modela si/cuándo se llena.
     /// Para órdenes de horizonte más pausado (tau >= 60s), se coloca en el mejor bid/ask
     /// ejecutando sin slippage adverso y pagando tarifa Maker VIP0 (0.0002).
     pub fn calculate_maker_entry(
@@ -126,7 +132,7 @@ impl RealityPhysics {
         (base_price, fee_usd)
     }
 
-    /// Calcula el costo real de salir (Taker o Maker según trailing stop)
+    /// Estimación local de salida taker/maker; no resultado reconciliado del exchange.
     pub fn calculate_exit(
         &self,
         base_price: f64,

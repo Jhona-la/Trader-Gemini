@@ -31,6 +31,19 @@ pub struct ValidatedOrder {
 }
 
 impl ValidatedOrder {
+    /// Exact integer representation, never a truncating conversion. Exchange
+    /// adapters must additionally enforce their instrument/API-specific cap.
+    pub fn integer_leverage(&self) -> Option<u32> {
+        if !self.leverage.is_finite()
+            || self.leverage < 1.0
+            || self.leverage > u32::MAX as f64
+            || self.leverage.fract() != 0.0
+        {
+            return None;
+        }
+        Some(self.leverage as u32)
+    }
+
     pub fn rejected() -> Self {
         Self {
             signal: SignalType::Flat,
@@ -51,14 +64,17 @@ impl ValidatedOrder {
 /// evaluate_single_intent. Índices:
 /// 0=flat/coin 1=exposure0 2=correlación 3=spec 4=EV 5=fee_impact
 /// 6=min_notional 7=margen_insuf 8=orchestrator 9=otros
-/// 10=drawdown 11=suelo TP/SL 12=confianza. Antes el drawdown compartía el
+/// 10=drawdown 11=suelo TP/SL 12=confianza.
+/// 13=entrada inválida 14=geometría inválida. Antes el drawdown compartía el
 /// índice 2 con la correlación, y el suelo TP/SL y la confianza el 4 con el EV:
 /// la telemetría no podía decir qué compuerta rechazaba.
 use std::sync::atomic::AtomicU64;
-pub const REJECT_SLOTS: usize = 13;
+pub const REJECT_SLOTS: usize = 15;
 pub const REJ_DRAWDOWN: usize = 10;
 pub const REJ_TP_SL_FLOOR: usize = 11;
 pub const REJ_CONFIDENCE: usize = 12;
+pub const REJ_INVALID_INPUT: usize = 13;
+pub const REJ_TARGET_GEOMETRY: usize = 14;
 
 #[allow(clippy::declare_interior_mutable_const)]
 const REJECT_ZERO: AtomicU64 = AtomicU64::new(0);
@@ -109,6 +125,8 @@ pub const REJECT_NAMES: [&str; REJECT_SLOTS] = [
     "drawdown",
     "suelo_tp_sl",
     "confianza",
+    "entrada_invalida",
+    "geometria_invalida",
 ];
 
 fn format_reject_counters(counters: &[AtomicU64; REJECT_SLOTS]) -> String {
@@ -174,8 +192,33 @@ impl RiskEngine {
         }
 
         let current_capital = arena.unified_capital.load(Ordering::Relaxed);
-        if !current_capital.is_finite() || current_capital <= 0.0 {
-            return ValidatedOrder::rejected();
+        // FMT-212: validate before clamps/comparisons can turn an unknown
+        // probability, peak or configuration into permission (or a panic).
+        let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed);
+        let clamp_max = arena.config.kelly_clamp_max.load(Ordering::Relaxed);
+        let configured_dd = arena.config.global_max_drawdown.load(Ordering::Relaxed);
+        if !current_capital.is_finite()
+            || current_capital <= 0.0
+            || !self.peak_capital.is_finite()
+            || self.peak_capital <= 0.0
+            || !intent.confidence.is_finite()
+            || !(0.0..=1.0).contains(&intent.confidence)
+            || !intent.win_probability.is_finite()
+            || !(0.0..=1.0).contains(&intent.win_probability)
+            || !(0.0..=1.0).contains(&clamp_min)
+            || !(clamp_min..=1.0).contains(&clamp_max)
+            || !(0.0..=1.0).contains(&configured_dd)
+        {
+            return rej(REJ_INVALID_INPUT);
+        }
+        // Zero alone means "derive this target". Malformed explicit targets
+        // must not silently fall back to a different trade.
+        if !intent.tp_price_target.is_finite()
+            || intent.tp_price_target < 0.0
+            || !intent.sl_price_target.is_finite()
+            || intent.sl_price_target < 0.0
+        {
+            return rej(REJ_TARGET_GEOMETRY);
         }
 
         if current_capital > self.peak_capital {
@@ -196,11 +239,7 @@ impl RiskEngine {
             current_capital,
             arena.config.min_notional.load(Ordering::Relaxed),
         );
-        let max_dd = crate::capital_regime::lerp(
-            arena.config.global_max_drawdown.load(Ordering::Relaxed),
-            0.85,
-            micro_w,
-        );
+        let max_dd = crate::capital_regime::lerp(configured_dd, 0.85, micro_w);
         if self.peak_capital > 0.0 && max_dd > 0.0 && max_dd < 1.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
             if dd >= max_dd {
@@ -209,16 +248,6 @@ impl RiskEngine {
         }
 
         let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
-        let clamp_min = arena
-            .config
-            .kelly_clamp_min
-            .load(Ordering::Relaxed)
-            .max(0.0);
-        let clamp_max = arena
-            .config
-            .kelly_clamp_max
-            .load(Ordering::Relaxed)
-            .clamp(clamp_min, 1.0);
         let trades_n = arena.coins[coin_id]
             .metrics
             .trade_count
@@ -239,10 +268,7 @@ impl RiskEngine {
             .metrics
             .profit_factor
             .load(Ordering::Relaxed);
-        let kelly_cold_raw = arena
-            .config
-            .kelly_bootstrap_cold
-            .load(Ordering::Relaxed);
+        let kelly_cold_raw = arena.config.kelly_bootstrap_cold.load(Ordering::Relaxed);
         let kelly_cold = if trades_n == 0 || pf <= 1.0 {
             // Sin edge probado empíricamente en la sesión: exploración ultra-conservadora (¼ del piso)
             (clamp_min.max(0.0) * 0.25).clamp(0.0, 0.05)
@@ -374,7 +400,8 @@ impl RiskEngine {
         // la cuenta es diminuta vs min_notional: en ese caso la orden es
         // inviable-by-design (el host la vetará por margen) — preservamos el
         // cap y no la fracción inflada.
-        let micro_kelly = crate::ruin::clamp_ruin(micro_kelly, crate::ruin::CONSERVATIVE_Q).max(0.0);
+        let micro_kelly =
+            crate::ruin::clamp_ruin(micro_kelly, crate::ruin::CONSERVATIVE_Q).max(0.0);
         let kelly_for_scale =
             crate::capital_regime::lerp(kelly_adjusted, micro_kelly, micro_w_alloc);
 
@@ -383,8 +410,12 @@ impl RiskEngine {
         } else {
             1.0
         };
-        let effective_confidence = (intent.confidence * epi_bias.clamp(0.60, 1.40)).clamp(0.05, 0.98);
+        let effective_confidence =
+            (intent.confidence * epi_bias.clamp(0.60, 1.40)).clamp(0.05, 0.98);
         let raw_exposure = dir * effective_confidence * kelly_for_scale * allocated_capital;
+        if !raw_exposure.is_finite() {
+            return rej(REJ_INVALID_INPUT);
+        }
         if raw_exposure == 0.0 {
             return rej(1);
         }
@@ -423,7 +454,10 @@ impl RiskEngine {
         let max_exchange_leverage = spec.max_leverage as f64;
 
         let current_atr = coin.current_atr.load(Ordering::Relaxed);
-        let current_price = coin.current_price.load(Ordering::Relaxed).max(1e-8);
+        let current_price = coin.current_price.load(Ordering::Relaxed);
+        if !current_price.is_finite() || current_price <= 0.0 {
+            return rej(REJ_INVALID_INPUT);
+        }
         let atr_pct = current_atr / current_price;
 
         let hurst_exponent = coin.hurst_exponent.load(Ordering::Relaxed);
@@ -456,11 +490,14 @@ impl RiskEngine {
             let relative_vol = (effective_atr_pct / btc_atr_pct.max(0.0005)).clamp(0.5, 3.0);
             eth_mult * relative_vol
         };
-        let genome_max_leverage = arena
-            .config
-            .global_leverage
-            .load(Ordering::Relaxed)
-            .min(max_exchange_leverage);
+        let genomic_leverage_cap = arena.config.global_leverage.load(Ordering::Relaxed);
+        if !genomic_leverage_cap.is_finite()
+            || genomic_leverage_cap < 1.0
+            || max_exchange_leverage < 1.0
+        {
+            return rej(REJ_INVALID_INPUT);
+        }
+        let genome_max_leverage = genomic_leverage_cap.min(max_exchange_leverage);
 
         // U-C — FIX ZOMBIE: coin.scalp/swing ya nadie los escribe (motor
         // unificado -> coin.metrics). Antes el leverage leía un win-rate
@@ -497,7 +534,10 @@ impl RiskEngine {
         // cadena razone con el mismo entero que verá el exchange. La
         // discretización no es una constante arbitraria: la impone el contrato del
         // endpoint.
-        dynamic_leverage = dynamic_leverage.floor().max(1.0);
+        if !dynamic_leverage.is_finite() || dynamic_leverage < 1.0 {
+            return rej(REJ_INVALID_INPUT);
+        }
+        dynamic_leverage = dynamic_leverage.min(genome_max_leverage).floor();
 
         let _maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
         let taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);
@@ -562,6 +602,9 @@ impl RiskEngine {
         let latency_slip = atr_pct * (lat_ms / latency_ref_ms);
         let per_side_slip = (slip_floor + latency_slip).clamp(0.0, 0.05);
         let roundtrip_fee = entry_fee_rate + exit_fee_rate + 2.0 * per_side_slip;
+        if !roundtrip_fee.is_finite() || roundtrip_fee < 0.0 {
+            return rej(REJ_INVALID_INPUT);
+        }
 
         // D-637 (DÉCIMA OLA) — EL GATE EVALÚA EL TRADE QUE SE VA A EJECUTAR.
         //
@@ -608,14 +651,49 @@ impl RiskEngine {
             arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
         );
         // D-636b & #585: Rechazo Físico Invariante de Suelo Operable (below_tradeable_floor).
-        // Si la dispersión difusiva esperada sigma(tau) no cubre el SL mínimo viable frente
-        // a la fricción de ida y vuelta, la operación es matemáticamente inviable (EV < 0 neto).
+        // Política de presupuesto fricción/stop del modelo (FMT-041): no es
+        // un teorema universal de EV negativo. Se conserva esta protección.
         // Se rechaza limpiamente con REJ_TP_SL_FLOOR en lugar de inflar artificialmente el stop.
         if tpsl_gate.below_tradeable_floor {
             return rej(REJ_TP_SL_FLOOR);
         }
-        let expected_win = tpsl_gate.tp_pct;
-        let expected_loss = tpsl_gate.sl_pct;
+        // Blindaje Cuántico Micro-Cuenta ($13 USD):
+        // Dado el suelo de Binance de $5.00 min notional, el tamaño no puede comprimirse por debajo de ~$5.10.
+        // Si el stop difusivo sigma(tau)*k excede 55 bps en régimen micro, la pérdida en dólares violaría el presupuesto
+        // de ruina ($0.0280 USD max). Se acota el stop a 55 bps y se preserva el ratio RR >= 2.25 de diseño.
+        let (expected_win, expected_loss) = if micro_w_alloc > 0.5 && tpsl_gate.sl_pct > 0.0055 {
+            let sl = 0.0055;
+            let tp = (sl * tpsl_gate.rr_applied).max(sl * 2.25);
+            (tp, sl)
+        } else {
+            (tpsl_gate.tp_pct, tpsl_gate.sl_pct)
+        };
+
+        // FMT-211: resolve once BEFORE EV and reuse these exact prices below.
+        // Payouts are signed fractions of entry price, not leveraged returns.
+        let final_tp = if intent.tp_price_target > 0.0 {
+            intent.tp_price_target
+        } else {
+            current_price * (1.0 + dir * expected_win)
+        };
+        let final_sl = if intent.sl_price_target > 0.0 {
+            intent.sl_price_target
+        } else {
+            current_price * (1.0 - dir * expected_loss)
+        };
+        let expected_win = dir * ((final_tp - current_price) / current_price);
+        let expected_loss = dir * ((current_price - final_sl) / current_price);
+        if !final_tp.is_finite()
+            || final_tp <= 0.0
+            || !final_sl.is_finite()
+            || final_sl <= 0.0
+            || !expected_win.is_finite()
+            || expected_win <= 0.0
+            || !expected_loss.is_finite()
+            || expected_loss <= 0.0
+        {
+            return rej(REJ_TARGET_GEOMETRY);
+        }
 
         // D-642 (DÉCIMA OLA): la confianza entra tal cual. El suelo `.max(0.51)`
         // falseaba la probabilidad que alimenta a Kelly y al EV, inflando el
@@ -648,20 +726,23 @@ impl RiskEngine {
             .load(Ordering::Relaxed)
             .clamp(0.05, 0.95);
 
-        // Modulación Cuántica del Gate de Confianza por el Tensor Espectral Continuo:
-        // En el Universo Multivariante Continuo Temporal Espectral, la certidumbre física emerge
-        // de la resonancia constructiva de las 32 ondas (global_coherence > 0) y baja entropía térmica (entropy < 0.85).
-        // Cuando las 32 escalas están en fase armónica, el endurecimiento artificial de scarcity se modula continuamente,
-        // permitiendo que los alphas genuinos con fuerte convicción espectral pasen a ejecución sin arriesgar en ruido térmico.
+        // Heuristic spectral modulation of an admission threshold. Coherence
+        // and entropy are not calibrated win probabilities or evidence of
+        // physical/quantum certainty. The .05/.85 branches remain policy
+        // discontinuities pending out-of-sample validation (audit XXV).
         let is_long = intent.signal == SignalType::Long;
         let raw_coh = if coin_id < arena.coins.len() {
-            arena.coins[coin_id].spectral_coherence.load(Ordering::Relaxed)
+            arena.coins[coin_id]
+                .spectral_coherence
+                .load(Ordering::Relaxed)
         } else {
             0.0
         };
         let spec_coh = if is_long { raw_coh } else { -raw_coh };
         let spec_ent = if coin_id < arena.coins.len() {
-            arena.coins[coin_id].spectral_entropy.load(Ordering::Relaxed)
+            arena.coins[coin_id]
+                .spectral_entropy
+                .load(Ordering::Relaxed)
         } else {
             1.0
         };
@@ -674,7 +755,9 @@ impl RiskEngine {
         let effective_micro_ratio = base_micro_ratio - (base_micro_ratio - 1.0) * coh_benefit;
 
         let now_ts = if coin_id < arena.coins.len() {
-            arena.coins[coin_id].last_tick_timestamp_ms.load(Ordering::Relaxed)
+            arena.coins[coin_id]
+                .last_tick_timestamp_ms
+                .load(Ordering::Relaxed)
         } else {
             0
         };
@@ -694,6 +777,8 @@ impl RiskEngine {
         }
 
         let expected_value_pct = (confidence * expected_win) - ((1.0 - confidence) * expected_loss);
+        // This is conditional binary EV, not a first-passage calibration:
+        // changing barriers can change p. FMT-041 remains open.
 
         // D-641: misma transición continua para la barrera de comisiones.
         // Con la cuenta al límite se exige hasta un 25 % de margen sobre la
@@ -704,16 +789,22 @@ impl RiskEngine {
             .ev_fee_multiplier
             .load(Ordering::Relaxed)
             .clamp(min_ev_mult, 1.80);
+        if !expected_value_pct.is_finite() || !ev_fee_multiplier.is_finite() {
+            return rej(REJ_INVALID_INPUT);
+        }
         if expected_value_pct <= (roundtrip_fee * ev_fee_multiplier) {
             return rej(4);
         }
 
         let max_acceptable_fee_pct = arena.config.max_fee_pct.load(Ordering::Relaxed);
-        let _max_safe_leverage = if roundtrip_fee > 0.0 {
-            max_acceptable_fee_pct / roundtrip_fee
-        } else {
-            100.0
-        };
+        if !max_acceptable_fee_pct.is_finite() || max_acceptable_fee_pct < 0.0 {
+            return rej(REJ_INVALID_INPUT);
+        }
+        // Cost per notional times L is cost per unit of allocated margin.
+        // Preserve the existing micro policy, but enforce it on every final
+        // order, not just branches that rescue a minimum notional (FMT-217).
+        let max_fee_limit =
+            crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc);
         let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
 
         let bounded_exposure = raw_exposure.clamp(-allocated_capital, allocated_capital);
@@ -739,34 +830,21 @@ impl RiskEngine {
             // rechazos/día con señales sanas de conf 0.7+). El fee_impact
             // check de abajo sigue limitando el costo.
             let candidate_leverage = (dynamic_min_notional / final_margin.max(0.01)) * 1.02;
-            // D-641 (completo): tolerancia de impacto de comisión continua.
-            let max_fee_limit =
-                crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc);
-            let fee_impact_pct = roundtrip_fee * candidate_leverage;
-            if fee_impact_pct > max_fee_limit {
-                if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
-                    println!(
-                        "🔍 [RISK REJECT] FEE_IMPACT: fee_impact={:.6} > limit={:.6}",
-                        fee_impact_pct, max_fee_limit
-                    );
-                }
-                return rej(5);
-            }
             // D-641 (completo): el techo micro de apalancamiento es continuo en
             // la confianza (antes escalones en 0,70 y 0,75) y en el capital
             // (antes escalón de ~5× a 50× en $20). Interpolación geométrica: el
             // punto medio natural entre 5× y 50× es ~16×, no 27,5×.
             let conf_t = ((intent.confidence - 0.65) / 0.10).clamp(0.0, 1.0);
             let micro_lev_cap = 5.0 + 1.5 * conf_t * conf_t * (3.0 - 2.0 * conf_t);
-            let max_lev_cap =
-                crate::capital_regime::log_lerp(50.0, micro_lev_cap, micro_w_alloc);
+            let max_lev_cap = crate::capital_regime::log_lerp(50.0, micro_lev_cap, micro_w_alloc);
             dynamic_leverage = candidate_leverage
-                .min(max_exchange_leverage)
-                .min(max_lev_cap);
+                .min(genome_max_leverage)
+                .min(max_lev_cap)
+                .floor();
         }
 
         // FASE 3 FIX: Micro-Account Notional Safety
-        // Sumamos un centavo de dólar (+0.1) al min notional para evitar rechazos
+        // Sumamos diez centavos de dólar (+0.1) al min notional para evitar rechazos
         // por pérdida de precisión IEEE-754 en multiplicaciones de apalancamiento
         let safe_min_notional = dynamic_min_notional + 0.1;
         let required_margin_for_min_notional = safe_min_notional / dynamic_leverage;
@@ -801,16 +879,29 @@ impl RiskEngine {
             final_margin = safe_limit;
             if final_margin > 0.0 && final_margin * dynamic_leverage < safe_min_notional {
                 let re_lev = (safe_min_notional / final_margin) * 1.01;
-                let fee_impact = roundtrip_fee * re_lev;
-                let max_fee_lim =
-                    crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc);
-                if fee_impact <= max_fee_lim {
-                    dynamic_leverage = re_lev.min(max_exchange_leverage).min(50.0);
+                // Quantize BEFORE checking feasibility: all downstream
+                // notional/margin calculations must see the exchange integer.
+                let capped_leverage = re_lev.min(genome_max_leverage).min(50.0).floor();
+                let fee_impact = roundtrip_fee * capped_leverage;
+                if fee_impact <= max_fee_limit {
+                    dynamic_leverage = capped_leverage;
                 }
             }
         }
-        let required_margin_for_min_notional = safe_min_notional / dynamic_leverage;
-        if final_margin < required_margin_for_min_notional {
+        // Terminal invariants after every size/leverage adjustment. No
+        // fallback to 1x can silently change the validated action here.
+        if !dynamic_leverage.is_finite()
+            || dynamic_leverage < 1.0
+            || dynamic_leverage.fract() != 0.0
+            || dynamic_leverage > genome_max_leverage
+        {
+            return rej(REJ_INVALID_INPUT);
+        }
+        let final_fee_impact = roundtrip_fee * dynamic_leverage;
+        if !final_fee_impact.is_finite() || final_fee_impact > max_fee_limit {
+            return rej(5);
+        }
+        if !guard::enforce_minimum_notional(final_margin, safe_min_notional, dynamic_leverage).0 {
             return rej(7);
         }
 
@@ -822,33 +913,7 @@ impl RiskEngine {
             return rej(8);
         }
 
-        // D-637/D-638/D-639/D-640 — LA ORDEN USA LA MISMA FUENTE QUE EL GATE.
-        //
-        // Sustituye a dos `match intent.horizon` encadenados (uno de los
-        // cuales descartaba su propio SL con `_sl_base`), al piso difusivo que
-        // se anulaba con el `clamp` que le seguía, y a la banda literal que
-        // confinaba el stop entre 40 y 60 bps con independencia de la
-        // volatilidad, del horizonte y de los genes.
-        // D-682: la orden usa exactamente el TP/SL que el gate evaluó.
-        let tpsl = tpsl_gate;
-        let sl_pct = tpsl.sl_pct;
-        let tp_pct = tpsl.tp_pct;
-
-        let final_sl = if intent.sl_price_target > 0.0 {
-            intent.sl_price_target
-        } else if dir > 0.0 {
-            current_price * (1.0 - sl_pct)
-        } else {
-            current_price * (1.0 + sl_pct)
-        };
-
-        let final_tp = if intent.tp_price_target > 0.0 {
-            intent.tp_price_target
-        } else if dir > 0.0 {
-            current_price * (1.0 + tp_pct)
-        } else {
-            current_price * (1.0 - tp_pct)
-        };
+        // Reuse the prices evaluated above, including explicit intent targets.
 
         let safe_tp = if final_tp.is_finite() && final_tp > 0.0 {
             final_tp
@@ -865,16 +930,12 @@ impl RiskEngine {
         } else {
             0.0
         };
-        let safe_lev = if dynamic_leverage.is_finite() && dynamic_leverage >= 1.0 {
-            dynamic_leverage
-        } else {
-            1.0
-        };
+        let safe_lev = dynamic_leverage;
 
         if safe_vol <= 0.0
             || (intent.signal != SignalType::Flat && (safe_tp <= 0.0 || safe_sl <= 0.0))
         {
-            return ValidatedOrder::rejected();
+            return rej(REJ_INVALID_INPUT);
         }
 
         ValidatedOrder {

@@ -1,11 +1,14 @@
-/// Algoritmo de Welford Online para Varianza
-/// Permite calcular la media, la varianza y la desviación estándar en una sola pasada (O(1) por update)
-/// sin sufrir cancelación catastrófica (IEEE-754 precision issues).
+/// Estadísticas por evento: Welford acumulativo, seguido de varianza exponencial.
+/// Reduce cancelación frente a E[x²]-E[x]²; no evita todo overflow de f64.
+/// El umbral histórico de 2000 observaciones es política de memoria, no tiempo físico.
 
 #[derive(Debug, Clone, Copy)]
 pub struct WelfordOnline {
+    /// Conteo acumulativo antes del cambio de modo. En update_decay conserva
+    /// el indicador de masa histórico; NO es tamaño muestral efectivo ni reloj.
     pub count: f64,
     pub mean: f64,
+    /// Suma de cuadrados centrados en modo acumulativo; varianza en modo decay.
     pub m2: f64,
     pub is_decay: bool,
 }
@@ -28,13 +31,16 @@ impl WelfordOnline {
             return;
         }
 
-        if self.count >= 2000.0 {
+        if self.is_decay || self.count >= 2000.0 {
             // FIX #389: Transición suave a EWMA sin discontinuidad de varianza
             if !self.is_decay {
                 self.m2 = (self.m2 / (self.count - 1.0)).max(0.0);
                 self.is_decay = true;
             }
-            let alpha = 2.0 / (self.count.min(2000.0) + 1.0);
+            // Una vez convertido, m2 nunca vuelve a ser suma de cuadrados.
+            // update usa siempre la política histórica; para otro alpha se
+            // debe llamar explícitamente a update_decay en cada observación.
+            let alpha = 2.0 / 2001.0;
             let delta = val - self.mean;
             self.mean += alpha * delta;
             let delta2 = val - self.mean;
@@ -48,11 +54,22 @@ impl WelfordOnline {
         }
     }
 
-    /// Actualización con factor de decaimiento exponencial explícito (EW-Welford)
+    /// Actualización exponencial con 0 < alpha <= 1; entradas inválidas no mutan.
+    /// La primera muestra inicializa la media sin inventar un prior en cero.
+    /// Al convertir un estado acumulativo se conserva su varianza muestral
+    /// como estado inicial del filtro, no como momento empírico ponderado exacto.
     #[inline(always)]
     pub fn update_decay(&mut self, val: f64, alpha: f64) {
         // FIX #1429: Inmunidad ante valores no finitos
-        if !val.is_finite() || !alpha.is_finite() || alpha <= 0.0 {
+        if !val.is_finite() || !alpha.is_finite() || alpha <= 0.0 || alpha > 1.0 {
+            return;
+        }
+
+        if self.count == 0.0 {
+            self.count = 1.0;
+            self.mean = val;
+            self.m2 = 0.0;
+            self.is_decay = true;
             return;
         }
 

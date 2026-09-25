@@ -8,7 +8,9 @@
 
 use serde::Deserialize;
 
-/// Deserializa campos que Binance envía como string O como número.
+/// Deserializa números finitos como string o número JSON. El signo se conserva:
+/// income, rebates y posiciones SHORT pueden ser negativos legítimamente.
+/// Rechazar NaN/inf no valida identidad, completitud ni semántica de cada campo.
 pub fn string_or_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -20,7 +22,7 @@ where
         F(f64),
         N(serde_json::Number),
     }
-    match Val::deserialize(deserializer)? {
+    let value = match Val::deserialize(deserializer)? {
         Val::F(f) => Ok(f),
         Val::N(n) => n
             .as_f64()
@@ -29,6 +31,11 @@ where
             .trim()
             .parse::<f64>()
             .map_err(|_| serde::de::Error::custom(format!("string no numérica: {}", s))),
+    }?;
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom("número no finito"))
     }
 }
 
@@ -198,8 +205,18 @@ pub mod error_codes {
     pub const DUPLICATED_ORDER: i64 = -4116; // newClientOrderId repetido activo
     pub const NEW_ORDER_REJECTED: i64 = -2010; // saldo/posición insuficiente, etc.
     pub const SIGNATURE_INVALID: i64 = -1022;
-    pub const PARAM_REPEAT: i64 = -1105; // parámetro duplicado (bug histórico positionSide)
-    pub const RATE_LIMIT_BAN: i64 = -4164; // VP límite
+    pub const TOO_MANY_PARAMETERS: i64 = -1101;
+    pub const PARAM_EMPTY: i64 = -1105;
+    pub const MIN_NOTIONAL: i64 = -4164;
+    pub const TOO_MANY_REQUESTS: i64 = -1003;
+    pub const EXECUTION_STATUS_UNKNOWN: i64 = -1006;
+    pub const BACKEND_TIMEOUT: i64 = -1007;
+    #[deprecated(note = "Use TOO_MANY_PARAMETERS; -1105 means PARAM_EMPTY")]
+    pub const PARAM_REPEAT: i64 = TOO_MANY_PARAMETERS;
+    #[deprecated(
+        note = "Use TOO_MANY_REQUESTS; the code alone does not distinguish throttling from an IP ban"
+    )]
+    pub const RATE_LIMIT_BAN: i64 = TOO_MANY_REQUESTS;
 }
 
 #[cfg(test)]

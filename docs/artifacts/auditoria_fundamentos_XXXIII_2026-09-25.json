@@ -1,0 +1,907 @@
+{
+  "schema_version": 1,
+  "round": "XXXIII",
+  "date": "2026-09-25",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIII_2026-09-25.md",
+  "artifact_validation": {
+    "status": "passed_at_local_snapshot",
+    "hashes_verified": 55,
+    "model_hashes_verified": 41,
+    "evidence_references_verified": 26,
+    "report_local_links_verified": 10,
+    "append_only_prefixes_verified": 3,
+    "test_totals_consistent": true,
+    "issues": [],
+    "scope": "Snapshot hashes, source/range anchors, local links and arithmetic totals; not semantic certification of the entire system or subsequent concurrent edits. Artifact does not hash itself."
+  },
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false,
+    "dirty_tree_preserved": true
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 153,
+    "pending_complete_rust": 136,
+    "new_complete_reads": [
+      {
+        "file": "crates/data-ingest/src/tensor_parser.rs",
+        "baseline_lines": 220,
+        "final_lines": 220
+      },
+      {
+        "file": "crates/data-pipeline/src/validation.rs",
+        "baseline_lines": 203,
+        "final_lines": 205
+      }
+    ],
+    "reread_previously_covered": [
+      "crates/god-engine-core/src/liquidation_feed.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/god-engine-core/src/lib.rs",
+      "src/bin/god_engine.rs",
+      "crates/god-engine-core/src/stateful_engine.rs",
+      "crates/god-engine-core/src/math_kernels.rs",
+      "crates/metacortex-engine/src/consejo_seniors.rs",
+      "crates/data-pipeline/src/ws_client.rs",
+      "crates/data-ingest/src/lib.rs"
+    ],
+    "new_files_reviewed": [
+      "crates/data-ingest/src/liquidation.rs",
+      "crates/data-ingest/tests/liquidation_contract.rs",
+      "crates/god-engine-core/tests/liquidation_state_contract.rs",
+      "crates/data-pipeline/tests/spread_validation_contract.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false
+  },
+  "new_ids": [
+    "FMT-253",
+    "FMT-254",
+    "FMT-255",
+    "FMT-256"
+  ],
+  "partial_progress": [
+    "FMT-249"
+  ],
+  "carried_open": [
+    "FMT-225",
+    "FMT-232",
+    "FMT-243",
+    "FMT-244",
+    "FMT-245",
+    "FMT-247",
+    "FMT-250",
+    "FMT-251",
+    "FMT-252"
+  ],
+  "findings": [
+    {
+      "id": "FMT-249",
+      "priority": "P1",
+      "status": "local_delivery_repaired_systemic_partial",
+      "problem": "Global unscoped liquidation scalar consumed by next asset and emptied before council observation.",
+      "repair": "Core-instance and symbol-owned decaying maximum state; non-consuming as-of view for features and council; incompatible clocks block entries only.",
+      "residuals": [
+        "No complete causal history, source-health state or durable persistence.",
+        "Same-millisecond ambiguity diagnosed with max merge, not order-ID deduplication.",
+        "Universe slot migration can lose history; no global transactional reconfiguration proof.",
+        "Far-future timestamps can sustain an entry interlock pending clock-quality/recovery design.",
+        "Economic calibration and replay equivalence are not repaired."
+      ],
+      "evidence_kinds": [
+        "scope_ingress_and_asof",
+        "depth_projection",
+        "entry_only_interlock",
+        "feature_projection",
+        "council_shared_snapshot",
+        "integration_tests"
+      ]
+    },
+    {
+      "id": "FMT-253",
+      "priority": "P1",
+      "status": "operational_parser_repaired_legacy_and_hardening_open",
+      "problem": "Parser emitted p*q without symbol/time; prefix numeric scanner parses 1e3 as 1.",
+      "repair": "Structured raw/combined UM snapshot decoder; ap*z reported cumulative executed notional; identity/clock/domain validation and record-local errors.",
+      "residuals": [
+        "Legacy APIs retain diagnosed behavior but no operational producer caller found.",
+        "serde_json Value duplicate-key detection not added; X transitions not certified.",
+        "Missing st assumes legacy USD-M endpoint only.",
+        "Quote-denomination conversion not implemented; CM requires contract metadata.",
+        "Allocation and reject-logging costs not benchmarked."
+      ],
+      "evidence_kinds": [
+        "legacy_numeric_prefix",
+        "legacy_requested_fields",
+        "checked_record",
+        "checked_envelope",
+        "host_decoder_delivery",
+        "parser_contract_tests"
+      ]
+    },
+    {
+      "id": "FMT-254",
+      "priority": "P1",
+      "status": "open_identifiability_and_calibration",
+      "problem": "Sampled public stream and absolute log-notional score do not identify full market volume/intensity/probability; fixed memory and missing replay parity constrain genome efficacy.",
+      "equations": {
+        "score": "clamp(ln(n/n0)/ln(nref/n0),0,1)",
+        "n0_quote_units": 1,
+        "nref_quote_units": 1000000,
+        "theta_default": 0.85,
+        "implied_notional_threshold": 125892.54117941669,
+        "half_life_ms": 10000,
+        "max_score_threshold_crossing_ms": 2344.65253637023,
+        "envelope": "x(t)=max_i s_i exp(-lambda*(t-E_i)), for constant lambda and accepted observations",
+        "lambda": "ln(2)/half_life_ms",
+        "aggregation": "max, not sum; not conserved volume or estimated intensity"
+      },
+      "closure_requirements": [
+        "Persist provenance and source-health/observation policy.",
+        "Replay same data, masks, missingness and as-of decisions in backtest/demo/prod.",
+        "Calibrate normalization and memory across asset/liquidity/horizon, with uncertainty and OOS checks.",
+        "Explicit graph transmission for systemic cross-asset risk, not accidental global contamination."
+      ],
+      "evidence_kinds": [
+        "heuristic_normalization",
+        "fixed_half_life",
+        "reset_half_life",
+        "live_micro_feature",
+        "universal_feature_contract",
+        "default_breaker"
+      ]
+    },
+    {
+      "id": "FMT-255",
+      "priority": "P2",
+      "status": "open_reproduced_generic_helper",
+      "problem": "ExponentialDecayTensor apply_event rewinds last_timestamp on old input, then double-decays at a previously reached horizon; rate/severity domain is unguarded.",
+      "reproduction": "apply(1,2000); apply(0,1000); decay_to(2000) -> 0.5 at half-life 1000 instead of keeping the original time horizon.",
+      "scope": "New liquidation state bypasses generic impulse storage; helper itself is not repaired. No actual market loss established.",
+      "evidence_kinds": [
+        "open_clock_rewind",
+        "pure_state_tests"
+      ]
+    },
+    {
+      "id": "FMT-256",
+      "priority": "P2",
+      "status": "local_spread_arithmetic_repaired_downstream_and_policy_open",
+      "problem": "Finite bid/ask sum overflows midpoint, producing zero relative spread and bypassing admission.",
+      "reproduction": "bid=6e307, ask=1.6e308: previous validation returned Ok instead of AbsurdSpread.",
+      "repair": "r=bid/ask; relative_spread=2*(1-r)/(1+r), preserving strict >0.50 policy.",
+      "residuals": [
+        "50% spread bound remains uncalibrated policy, not proof of corrupt market data.",
+        "Downstream ws_client current_price and core midpoints still use direct sums.",
+        "Reject telemetry global; negative quantity shares QtyNotFinite category.",
+        "Full validation-boundary graph not certified."
+      ],
+      "evidence_kinds": [
+        "spread_repair",
+        "caller_and_open_downstream_sum",
+        "spread_property_cases"
+      ]
+    }
+  ],
+  "external_sources": [
+    {
+      "url": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market#all-market-liquidation-order-streams",
+      "title": "Binance USD-M Futures market WebSocket streams",
+      "consulted": "2026-09-25",
+      "method": "Firecrawl developer index + fresh scrape maxAge=0; CLI unavailable, connector fallback",
+      "scrape_id": "01a0d922-1e8b-7327-a04f-00b243d01abf",
+      "contract_facts": [
+        "Last liquidation snapshot per symbol per 1000ms; not exhaustive tape.",
+        "q/p original quantity/price; ap average price, z cumulative filled qty, l last filled qty, E/T event/trade time.",
+        "Documented post-migration st=1 UM and st=2 CM."
+      ],
+      "engineering_inference": "ap*z interpreted as reported cumulative executed UM snapshot notional, not incremental volume.",
+      "deployment_migration_verified": false
+    }
+  ],
+  "tests": {
+    "selections": [
+      {
+        "package": "god-engine-core",
+        "target": "close_outcome_contract",
+        "kind": "integration",
+        "passed": 23,
+        "open": 1,
+        "new_tests": 7,
+        "command": "cargo test --offline -j 1 -p god-engine-core --test close_outcome_contract -- --test-threads=1",
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "god-engine-core",
+        "target": "liquidation_state_contract",
+        "kind": "integration",
+        "passed": 7,
+        "open": 1,
+        "new_tests": 7,
+        "command": "cargo test --offline -j 1 -p god-engine-core --test liquidation_state_contract -- --test-threads=1",
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "god-engine-core",
+        "target": "spectral_admission_diagnostics",
+        "kind": "integration",
+        "passed": 6,
+        "open": 2,
+        "new_tests": 0,
+        "command": "cargo test --offline -j 1 -p god-engine-core --test spectral_admission_diagnostics -- --test-threads=1",
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "data-ingest",
+        "target": "liquidation_contract",
+        "kind": "integration",
+        "passed": 9,
+        "open": 2,
+        "new_tests": 9,
+        "command": "cargo test --offline -j 1 -p data-ingest --test liquidation_contract -- --test-threads=1",
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "data-ingest",
+        "target": "tensor_parser::tests",
+        "kind": "lib_filter",
+        "passed": 5,
+        "open": 0,
+        "new_tests": 0,
+        "command": "cargo test --offline -j 1 -p data-ingest --lib tensor_parser::tests -- --test-threads=1",
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "data-pipeline",
+        "target": "spread_validation_contract",
+        "kind": "integration",
+        "passed": 3,
+        "open": 0,
+        "new_tests": 3,
+        "command": "cargo test --offline -j 1 -p data-pipeline --test spread_validation_contract -- --test-threads=1",
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "data-pipeline",
+        "target": "validation::tests",
+        "kind": "lib_filter",
+        "passed": 5,
+        "open": 0,
+        "new_tests": 0,
+        "command": "cargo test --offline -j 1 -p data-pipeline --lib validation::tests -- --test-threads=1",
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "metacortex-engine",
+        "target": "council_evidence_contract",
+        "kind": "integration",
+        "passed": 34,
+        "open": 3,
+        "new_tests": 0,
+        "command": "cargo test --offline -j 1 -p metacortex-engine --test council_evidence_contract -- --test-threads=1",
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "package": "metacortex-engine",
+        "target": "consejo_seniors::tests",
+        "kind": "lib_filter",
+        "passed": 8,
+        "open": 0,
+        "new_tests": 0,
+        "command": "cargo test --offline -j 1 -p metacortex-engine --lib consejo_seniors::tests -- --test-threads=1",
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "unique_passed": 100,
+    "functional_or_compatibility_passed": 91,
+    "open_diagnostics_passed": 9,
+    "new_tests": 26,
+    "new_functional": 23,
+    "new_open": 3,
+    "red_to_green_assertions": 3,
+    "red_to_green_cases": [
+      {
+        "test": "core_does_not_consume_unscoped_process_global_liquidation_evidence",
+        "before": "left 0.95, expected 0.0",
+        "after": "passed"
+      },
+      {
+        "test": "finite_extreme_prices_do_not_bypass_spread_veto_by_midpoint_overflow",
+        "before": "Ok(()), expected Err(AbsurdSpread)",
+        "after": "passed"
+      },
+      {
+        "test": "spread_classification_is_scale_invariant_for_positive_finite_books",
+        "before": "Ok(()), expected Err(AbsurdSpread) at finite extreme scaling",
+        "after": "passed"
+      }
+    ],
+    "excluded_fixture_failure": "Initial slot reassignment test used update_registry, which preserves indices. Corrected fixture uses update_dynamic_universe. Not counted as product red-to-green.",
+    "suite_complete": false,
+    "benchmark_performed": false,
+    "live_end_to_end_performed": false
+  },
+  "compilation": {
+    "command": "cargo check --offline -j 1 -p trader-gemini-v5 --bin god_engine --bin feature_exporter --bin train_forest --bin train_dark_alpha",
+    "exit_code": 0,
+    "preexisting_warnings": [
+      "evolution-engine latest_ts unused",
+      "evolution-engine mode unused",
+      "evolution-engine RealWfOutcome.trades unread"
+    ],
+    "operational_binary_built": false
+  },
+  "evidence": [
+    {
+      "file": "crates/data-ingest/src/tensor_parser.rs",
+      "start": 12,
+      "end": 56,
+      "kind": "legacy_numeric_prefix",
+      "anchor": "fast_parse_f64"
+    },
+    {
+      "file": "crates/data-ingest/src/tensor_parser.rs",
+      "start": 103,
+      "end": 138,
+      "kind": "legacy_requested_fields",
+      "anchor": "parse_force_orders"
+    },
+    {
+      "file": "crates/data-ingest/src/liquidation.rs",
+      "start": 43,
+      "end": 129,
+      "kind": "checked_record",
+      "anchor": "fn number"
+    },
+    {
+      "file": "crates/data-ingest/src/liquidation.rs",
+      "start": 131,
+      "end": 157,
+      "kind": "checked_envelope",
+      "anchor": "pub fn decode_liquidation_snapshots"
+    },
+    {
+      "file": "crates/god-engine-core/src/liquidation_feed.rs",
+      "start": 62,
+      "end": 68,
+      "kind": "heuristic_normalization",
+      "anchor": "pub fn severity_from_notional"
+    },
+    {
+      "file": "crates/god-engine-core/src/liquidation_feed.rs",
+      "start": 106,
+      "end": 175,
+      "kind": "state_max_envelope",
+      "anchor": "pub struct LiquidationState"
+    },
+    {
+      "file": "crates/god-engine-core/src/lib.rs",
+      "start": 366,
+      "end": 411,
+      "kind": "scope_ingress_and_asof",
+      "anchor": "pub fn observe_liquidation"
+    },
+    {
+      "file": "crates/god-engine-core/src/lib.rs",
+      "start": 807,
+      "end": 816,
+      "kind": "depth_projection",
+      "anchor": "let liq_severity"
+    },
+    {
+      "file": "crates/god-engine-core/src/lib.rs",
+      "start": 1014,
+      "end": 1023,
+      "kind": "entry_only_interlock",
+      "anchor": "let liquidation_view"
+    },
+    {
+      "file": "crates/god-engine-core/src/lib.rs",
+      "start": 1052,
+      "end": 1054,
+      "kind": "feature_projection",
+      "anchor": "dark_alpha.current_severity = liquidation_severity"
+    },
+    {
+      "file": "crates/god-engine-core/src/lib.rs",
+      "start": 4581,
+      "end": 4581,
+      "kind": "council_shared_snapshot",
+      "anchor": "liquidation_severity,"
+    },
+    {
+      "file": "src/bin/god_engine.rs",
+      "start": 2895,
+      "end": 2923,
+      "kind": "host_decoder_delivery",
+      "anchor": "sampled forceOrder"
+    },
+    {
+      "file": "crates/god-engine-core/src/stateful_engine.rs",
+      "start": 158,
+      "end": 158,
+      "kind": "fixed_half_life",
+      "anchor": "ExponentialDecayTensor::new(10000.0)"
+    },
+    {
+      "file": "crates/god-engine-core/src/stateful_engine.rs",
+      "start": 443,
+      "end": 443,
+      "kind": "reset_half_life",
+      "anchor": "ExponentialDecayTensor::new(10000.0)"
+    },
+    {
+      "file": "crates/god-engine-core/src/stateful_engine.rs",
+      "start": 885,
+      "end": 885,
+      "kind": "live_micro_feature",
+      "anchor": "dark_alpha.current_severity"
+    },
+    {
+      "file": "crates/god-engine-core/src/stateful_engine.rs",
+      "start": 895,
+      "end": 950,
+      "kind": "universal_feature_contract",
+      "anchor": "pub fn get_universal_features"
+    },
+    {
+      "file": "crates/god-engine-core/src/math_kernels.rs",
+      "start": 1043,
+      "end": 1078,
+      "kind": "open_clock_rewind",
+      "anchor": "pub struct ExponentialDecayTensor"
+    },
+    {
+      "file": "crates/data-pipeline/src/validation.rs",
+      "start": 98,
+      "end": 130,
+      "kind": "spread_repair",
+      "anchor": "pub fn validate_book_ticker"
+    },
+    {
+      "file": "crates/data-pipeline/src/ws_client.rs",
+      "start": 290,
+      "end": 299,
+      "kind": "caller_and_open_downstream_sum",
+      "anchor": "validate_book_ticker"
+    },
+    {
+      "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+      "start": 846,
+      "end": 846,
+      "kind": "default_breaker",
+      "anchor": "cascade_severity_breaker: 0.85"
+    },
+    {
+      "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+      "start": 1001,
+      "end": 1005,
+      "kind": "breaker_evidence",
+      "anchor": "op.is_veto = payload.liquidation_severity"
+    },
+    {
+      "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+      "start": 1120,
+      "end": 1130,
+      "kind": "breaker_authority",
+      "anchor": "cascade_breaker"
+    },
+    {
+      "file": "crates/god-engine-core/tests/liquidation_state_contract.rs",
+      "start": 1,
+      "end": 108,
+      "kind": "pure_state_tests",
+      "anchor": "open_legacy_decay_kernel_rewinds_its_clock"
+    },
+    {
+      "file": "crates/god-engine-core/tests/close_outcome_contract.rs",
+      "start": 468,
+      "end": 570,
+      "kind": "integration_tests",
+      "anchor": "core_does_not_consume_unscoped"
+    },
+    {
+      "file": "crates/data-ingest/tests/liquidation_contract.rs",
+      "start": 1,
+      "end": 163,
+      "kind": "parser_contract_tests",
+      "anchor": "legacy_number_scanner_still_drops"
+    },
+    {
+      "file": "crates/data-pipeline/tests/spread_validation_contract.rs",
+      "start": 1,
+      "end": 47,
+      "kind": "spread_property_cases",
+      "anchor": "finite_extreme_prices"
+    }
+  ],
+  "preservation": {
+    "source_before": [
+      {
+        "path": "crates/data-ingest/src/tensor_parser.rs",
+        "sha256": "2F55DB65264E3E4028B929FDD352FD3A895FDEE60FE74667D8BD2114584CECD1",
+        "lines": 220,
+        "normalized_chars": 8361,
+        "normalized_sha256": "2F55DB65264E3E4028B929FDD352FD3A895FDEE60FE74667D8BD2114584CECD1"
+      },
+      {
+        "path": "crates/god-engine-core/src/liquidation_feed.rs",
+        "sha256": "1B5E3C567A5E61D76317AE3F7B7E15FD61C0037DA363DEFC6796213B03C94E03",
+        "lines": 62,
+        "normalized_chars": 2643,
+        "normalized_sha256": "1B5E3C567A5E61D76317AE3F7B7E15FD61C0037DA363DEFC6796213B03C94E03"
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "2FF87B3063059866602EC590E7BB0924642CC1C4654C0F25EDF9B41D6922B2D5",
+        "lines": 5156,
+        "normalized_chars": 279797,
+        "normalized_sha256": "2FF87B3063059866602EC590E7BB0924642CC1C4654C0F25EDF9B41D6922B2D5"
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "sha256": "AD22BDCEA283BEB47A0074291BC8170BE63F19B0272874A4B9A6F97EB9955ED9",
+        "lines": 4779,
+        "normalized_chars": 262846,
+        "normalized_sha256": "AD22BDCEA283BEB47A0074291BC8170BE63F19B0272874A4B9A6F97EB9955ED9"
+      },
+      {
+        "path": "crates/god-engine-core/src/math_kernels.rs",
+        "sha256": "49A86F374DFAA958EF5EA63DA651B50A93AF5E21E54F8C7BEB6C6F6C749CD9BE",
+        "lines": 1205,
+        "normalized_chars": 36497,
+        "normalized_sha256": "49A86F374DFAA958EF5EA63DA651B50A93AF5E21E54F8C7BEB6C6F6C749CD9BE"
+      },
+      {
+        "path": "crates/data-ingest/src/lib.rs",
+        "sha256": "A3775327EFE55699A1FDBDCAE06B909D3BBDF3A97E4D82ADB9E4155AE6B86104",
+        "origin": "captured before module export"
+      },
+      {
+        "path": "crates/data-pipeline/src/validation.rs",
+        "sha256": "14639061905A5536D8A7E6A5BF27D12F13CE4B7FAAED444872ED64053D382303",
+        "lines": 203,
+        "origin": "captured before repair"
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "sha256": "B40FD9E25129C61639CD4280BF5992A9E301871CC669BE04A2F4105DD1F0733D",
+        "lines": 465,
+        "origin": "XXXII snapshot before XXXIII test additions"
+      },
+      {
+        "path": "crates/god-engine-core/tests/spectral_admission_diagnostics.rs",
+        "sha256": "D94F15DB0398263D30D5CB043FCA7003C4B3DD367545DF8D049A47F44DD62A03",
+        "lines": 50,
+        "origin": "XXXII snapshot before XXXIII test additions"
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/data-ingest/src/liquidation.rs",
+        "sha256": "FB8E270C5D9FA4E7385BEA41B1D955B723D19CAC36071AFD63FFCB19802C5C7D",
+        "lines": 157
+      },
+      {
+        "path": "crates/data-ingest/src/lib.rs",
+        "sha256": "9A0F9FA7D84CDC65D66623FF4072A69ECA68A2069D164CA480E3FF40DE4CA74D",
+        "lines": 197
+      },
+      {
+        "path": "crates/data-ingest/src/tensor_parser.rs",
+        "sha256": "2F55DB65264E3E4028B929FDD352FD3A895FDEE60FE74667D8BD2114584CECD1",
+        "lines": 220
+      },
+      {
+        "path": "crates/data-ingest/tests/liquidation_contract.rs",
+        "sha256": "93C6547B6FEFCDB2DB3D69635C6C4929BF9E2601DAEFA59EDA79EBFCA3B42A5C",
+        "lines": 163
+      },
+      {
+        "path": "crates/data-pipeline/src/validation.rs",
+        "sha256": "F793BA9220D164EE8B28B7A83190DF3218050E772DEEB6260DCCD918A196FAD5",
+        "lines": 205
+      },
+      {
+        "path": "crates/data-pipeline/tests/spread_validation_contract.rs",
+        "sha256": "85D4397B7409283D60ADB2D0B3C8245B4A8ED3F28D7BE424E1B03D4554BE07C9",
+        "lines": 47
+      },
+      {
+        "path": "crates/god-engine-core/src/liquidation_feed.rs",
+        "sha256": "6233574513C6D76BDE31A67363C9F2508AFF55D38EAD7030AECFCD8052A54B37",
+        "lines": 186
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "620E4340477E44EB7865CC2EA564E12AC3588F2ED8590E85DA18FB2F3DCAB2E4",
+        "lines": 5221
+      },
+      {
+        "path": "crates/god-engine-core/src/math_kernels.rs",
+        "sha256": "49A86F374DFAA958EF5EA63DA651B50A93AF5E21E54F8C7BEB6C6F6C749CD9BE",
+        "lines": 1205
+      },
+      {
+        "path": "crates/god-engine-core/tests/liquidation_state_contract.rs",
+        "sha256": "5EF7DFA7D76C4F992152844AEC8920DAF57BD02982431486F79C11B4DE1AE8DC",
+        "lines": 108
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "sha256": "B64A4EFB951F827A7D66A10C9BE93CB76606125EE9268FE94CFEDF18BA7CFA74",
+        "lines": 570
+      },
+      {
+        "path": "crates/god-engine-core/tests/spectral_admission_diagnostics.rs",
+        "sha256": "E517DF80C9C448054065B8D709B5EF3DF471AE25791D314A2DD126C0272365DB",
+        "lines": 50
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "sha256": "5AE38B15E6DF871C7F89FA98DE83793D5DC99FACD8A0BBE789A3D44BD43D91B9",
+        "lines": 4791
+      }
+    ],
+    "report_snapshot": {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIII_2026-09-25.md",
+      "sha256": "D272B12D6275ABBEBE5692BC21043CD9E0EF9192407C9C49A6E145651C74A230",
+      "lines": 231
+    },
+    "append_only_documents": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 110886,
+        "appended_normalized_chars": 3124,
+        "normalized_prefix_sha256": "7F430B14A54633261E5E6D206F4DAEDD94A0875DAA53FC17535B6D66B00C8713"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 726376,
+        "appended_normalized_chars": 8493,
+        "normalized_prefix_sha256": "019A165845DBC1F721506DC6EE2BBC841A0FFD7595AF8C11607C187D1C2CCA22"
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXII_2026-09-25.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 38588,
+        "appended_normalized_chars": 1666,
+        "normalized_prefix_sha256": "0590454F35C6FA9FF8C79C7433769A40171B2F50C14DECB46BDD15AEA928D2F7"
+      }
+    ],
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "market_orders_sent": 0,
+    "account_requests_sent": 0,
+    "operational_training_or_promotion": false,
+    "synthetic_learning_updates_in_tests": true,
+    "active_genomes_deliberately_modified": false,
+    "process_kills_or_restarts": false,
+    "operational_binary_built": false,
+    "shared_build_caches_deleted": false,
+    "temporary_files_removed": "Only unique fixture-owned directories in canonicalized Temp; no operational data or shared caches."
+  }
+}

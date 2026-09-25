@@ -1,8 +1,9 @@
 use std::f64;
 
-/// 📊 ALGORITMO P2 (PI-SQUARE) DE ESTIMACIÓN DE CUANTILES EN TIEMPO REAL O(1)
-/// Permite rastrear percentiles dinámicos (e.g., P80, P90, P95) sin almacenar vectores de datos.
-/// Elimina al 100% la necesidad de umbrales hardcodeados.
+/// Estimador heurístico P² del cuantil de todas las observaciones aceptadas.
+/// Mantiene cinco marcadores: memoria y trabajo O(1) por observación.
+/// No incorpora olvido temporal, ventana móvil ni intervalos de confianza.
+/// Actualizar un cuantil no calibra por sí solo un umbral predictivo.
 #[derive(Debug, Clone)]
 pub struct P2Quantile {
     pub p: f64,       // Percentil objetivo (e.g., 0.80 para P80)
@@ -15,29 +16,43 @@ pub struct P2Quantile {
 }
 
 impl P2Quantile {
+    /// Adaptador histórico: recorta p a [0.01,0.99], incluidos infinitos.
+    /// NaN se rechaza al construir; antes congelaba silenciosamente el ajuste.
+    /// Para validar una probabilidad sin modificarla, usar `try_new`.
+    ///
+    /// # Panics
+    /// Si p es NaN. Los consumidores configurables deben usar `try_new`.
     pub fn new(p: f64) -> Self {
-        let p_clamped = p.clamp(0.01, 0.99);
-        Self {
-            p: p_clamped,
+        Self::try_new(p.clamp(0.01, 0.99)).expect("quantile probability must not be NaN")
+    }
+
+    /// Construye sin recortar p: el dominio de P² es 0 < p < 1.
+    /// Los extremos requieren estimadores de mínimo/máximo, no este marcador.
+    pub fn try_new(p: f64) -> Result<Self, &'static str> {
+        if !p.is_finite() || p <= 0.0 || p >= 1.0 {
+            return Err("quantile probability must be finite and strictly between 0 and 1");
+        }
+        Ok(Self {
+            p,
             count: 0,
             q: [0.0; 5],
             n: [1, 2, 3, 4, 5],
             np: [
                 1.0,
-                1.0 + 2.0 * p_clamped,
-                1.0 + 4.0 * p_clamped,
-                3.0 + 2.0 * p_clamped,
+                1.0 + 2.0 * p,
+                1.0 + 4.0 * p,
+                3.0 + 2.0 * p,
                 5.0,
             ],
             dn: [
                 0.0,
-                p_clamped / 2.0,
-                p_clamped,
-                (1.0 + p_clamped) / 2.0,
+                p / 2.0,
+                p,
+                (1.0 + p) / 2.0,
                 1.0,
             ],
             initialized: false,
-        }
+        })
     }
 
     #[inline(always)]
@@ -120,9 +135,20 @@ impl P2Quantile {
         let q_ip1 = self.q[i + 1];
         let q_im1 = self.q[i - 1];
 
-        q_i + (d / (n_ip1 - n_im1))
-            * ((n_i - n_im1 + d) * (q_ip1 - q_i) / (n_ip1 - n_i)
-                + (n_ip1 - n_i - d) * (q_i - q_im1) / (n_i - n_im1))
+        let predict = |lower: f64, center: f64, upper: f64| {
+            center + (d / (n_ip1 - n_im1))
+                * ((n_i - n_im1 + d) * (upper - center) / (n_ip1 - n_i)
+                    + (n_ip1 - n_i - d) * (center - lower) / (n_i - n_im1))
+        };
+        let estimate = predict(q_im1, q_i, q_ip1);
+        if estimate.is_finite() {
+            return estimate;
+        }
+        // P² is homogeneous in marker heights. Normalize only if intermediate
+        // arithmetic overflowed, retaining ordinary-range numerical behavior.
+        // A true overshoot is still rejected by the neighboring-marker check.
+        let scale = q_im1.abs().max(q_i.abs()).max(q_ip1.abs());
+        predict(q_im1 / scale, q_i / scale, q_ip1 / scale) * scale
     }
 
     #[inline(always)]
@@ -131,7 +157,15 @@ impl P2Quantile {
         let n_diff = (self.n[idx_next] - self.n[i]) as f64;
         let q_diff = self.q[idx_next] - self.q[i];
 
-        self.q[i] + d * (q_diff / n_diff)
+        if q_diff.is_finite() {
+            self.q[i] + d * (q_diff / n_diff)
+        } else {
+            // Opposite-sign finite endpoints can have an infinite difference.
+            // The move is a convex combination (0 < weight < 1), so the
+            // result remains between those endpoints without that subtraction.
+            let weight = d / n_diff;
+            (1.0 - weight) * self.q[i] + weight * self.q[idx_next]
+        }
     }
 
     #[inline(always)]
@@ -140,7 +174,8 @@ impl P2Quantile {
             if self.count == 0 {
                 return 0.0;
             }
-            let mut temp = self.q[..self.count as usize].to_vec();
+            let mut temp = self.q;
+            let temp = &mut temp[..self.count as usize];
             temp.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let idx = ((self.count as f64 - 1.0) * self.p) as usize;
             return temp[idx.min(temp.len() - 1)];
@@ -149,8 +184,9 @@ impl P2Quantile {
     }
 }
 
-/// 🛡️ MOTOR DE ADAPTACIÓN ANTI-HARDCODE PARAMÉTRICO
-/// Mantiene cuantiles dinámicos para eliminar cualquier constante estática del sistema.
+/// Cuantiles acumulativos con percentiles, pisos y fallbacks de política fijos.
+/// `initialized` sólo indica cinco observaciones, no evidencia suficiente para
+/// un percentil extremo, adaptación a un régimen nuevo o precisión garantizada.
 #[derive(Debug, Clone)]
 pub struct AdaptiveQuantileEngine {
     pub ofi_p80: P2Quantile,

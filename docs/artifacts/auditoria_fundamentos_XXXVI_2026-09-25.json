@@ -1,0 +1,1004 @@
+{
+  "schema_version": 1,
+  "round": "XXXVI",
+  "date": "2026-09-25",
+  "language": "es",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVI_2026-09-25.md",
+  "continuity": {
+    "previous_report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXV_2026-09-25.md",
+    "previous_artifact": "docs/artifacts/auditoria_fundamentos_XXXV_2026-09-25.json",
+    "new_finding_ids": [
+      "FMT-268",
+      "FMT-269",
+      "FMT-270",
+      "FMT-271",
+      "FMT-272",
+      "FMT-273",
+      "FMT-274"
+    ],
+    "historic_matrix_rewritten": false
+  },
+  "scope": {
+    "tracked_files": 1119,
+    "preexisting_rust_files": 289,
+    "cargo_manifests": 24,
+    "previous_complete_rust_reads": 160,
+    "complete_rust_reads": 165,
+    "pending_preexisting_rust_reads": 124,
+    "new_complete_reads": [
+      {
+        "path": "crates/audit-engine/src/state_validator.rs",
+        "baseline_lines": 111
+      },
+      {
+        "path": "crates/audit-engine/src/cybernetic_resilience.rs",
+        "baseline_lines": 144
+      },
+      {
+        "path": "crates/audit-engine/src/resilience.rs",
+        "baseline_lines": 59
+      },
+      {
+        "path": "crates/audit-engine/src/telemetry.rs",
+        "baseline_lines": 252
+      },
+      {
+        "path": "crates/audit-engine/src/forensics.rs",
+        "baseline_lines": 120
+      }
+    ],
+    "whole_project_certified": false,
+    "non_rust_total_certified": false
+  },
+  "git": {
+    "branch": "main",
+    "head": "59a76de4be726098d9af934b4d35987e9a636802",
+    "dirty": true,
+    "commit": false,
+    "push": false,
+    "merge": false,
+    "fetch": false,
+    "reset": false,
+    "checkout": false,
+    "remote_verified": false
+  },
+  "findings": [
+    {
+      "id": "FMT-265",
+      "kind": "continuation",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Drift numérico, compatibilidad y evidencia causal",
+      "mechanism": "NaN podía terminar en Ok; límite inválido y overflow del acumulador no impedían éxito; pares de símbolos/lados distintos se aceptaban.",
+      "repair": "API checked con errores diferenciados, wrapper fail-closed, host migrado; nocional inválido no produce retorno0.",
+      "remaining": [
+        "Shadow0.95real no independiente.",
+        "Sin ID/generación/deduplicación, compatibilidad no demuestra pareja.",
+        "Propuesta de cierre no es fill; auditor corre antes de dedup de bracket.",
+        "Total firmado cancela; umbral por observación sin calibración."
+      ],
+      "refs": [
+        "drift_errors",
+        "drift_checked",
+        "drift_accumulator",
+        "host_notional",
+        "host_proxy",
+        "host_dedup",
+        "drift_validation_tests"
+      ],
+      "red_to_green": 4
+    },
+    {
+      "id": "FMT-266",
+      "kind": "continuation",
+      "priority": "P1",
+      "status": "partially_repaired",
+      "title": "Recuperación por causa, consecutividad y frontera temporal",
+      "mechanism": "Racha sobrevivía a nuevos fallos, fetch_add liberaba en11, store(false) borraba riesgos ajenos.",
+      "repair": "Estado local con NonZeroU32, error reinicia, liberación en10, veto propio en core y ninguna escritura drift a latches global/executor.",
+      "remaining": [
+        "Repeticiones de mismo outcome liberan; no alcance por activo/incidente.",
+        "Veto efectivo en próxima decisión, no cancela propuesta ya generada.",
+        "Sin recuperación garantizada si faltan cierres elegibles.",
+        "Kill global/executor mantiene limitaciones defensivas."
+      ],
+      "refs": [
+        "drift_recovery",
+        "host_recovery",
+        "host_checked",
+        "core_veto",
+        "core_veto_setter",
+        "core_defense_test",
+        "core_global_test",
+        "host_late_veto",
+        "new_open_tests"
+      ]
+    },
+    {
+      "id": "FMT-268",
+      "kind": "new",
+      "priority": "P1",
+      "status": "open_documentation_corrected",
+      "title": "Paridad sin snapshot contable ni resultado válido distinguible",
+      "mechanism": "Initial inválido→13; PnL/fee inválidos omitidos; capital no finito→retorno; sumas sin dominio y lecturas separadas; retorno unit.",
+      "impact": "Puede ocultar corrupción o señalar divergencia causada por lecturas intercaladas; identidad incompleta para flujos externos.",
+      "operational_reach": "No caller externo localizado en crates/src; tests smoke no prueban paridad.",
+      "closure": "Ledger de flujos, snapshot versionado, errores tipados, tolerancia monetaria justificada y pruebas de intercalaciones.",
+      "refs": [
+        "state_invalid",
+        "state_equation"
+      ]
+    },
+    {
+      "id": "FMT-269",
+      "kind": "new",
+      "priority": "P2",
+      "status": "open_documentation_corrected",
+      "title": "Políticas de salud inconsistentes y métricas sin ventana",
+      "mechanism": "Simple exige<1000ms; integral admite≤2000ms; contador drops sin ventana ni denominador, first-error oculta causas concurrentes.",
+      "impact": "Mismo estado1500ms recibe decisiones opuestas; salud no acredita dependencias, memoria o entrega.",
+      "operational_reach": "Sólo módulo/tests localizados, no activación operativa atribuida.",
+      "closure": "Separar warning/critical, definir ventanas/soporte y devolver causas múltiples con acción.",
+      "refs": [
+        "health_simple",
+        "health_comprehensive",
+        "new_open_tests"
+      ]
+    },
+    {
+      "id": "FMT-270",
+      "kind": "new",
+      "priority": "P2",
+      "status": "open_documentation_corrected",
+      "title": "ChaosMonkey no reproducible y probabilidades fuera de dominio",
+      "mechanism": "Reloj mod100 sin semilla/uniformidad; NaN/negativos→éxito,>1→drop; as_millis trunca subms y sleep bloquea.",
+      "impact": "No permite inferir cobertura probabilística reproducible ni ensayar fielmente latencia.",
+      "operational_reach": "Helper audit-engine sin caller operativo encontrado; no confundir con otro ChaosMonkey.",
+      "closure": "Semilla, reloj virtual y fake transport, validación[0,1], escenarios de pérdida/reorden/duplicación.",
+      "refs": [
+        "chaos_clock",
+        "chaos_sleep",
+        "new_open_tests"
+      ]
+    },
+    {
+      "id": "FMT-271",
+      "kind": "new",
+      "priority": "P1",
+      "status": "open_documentation_corrected",
+      "title": "Pérdida de telemetría y fallo de worker silenciosos",
+      "mechanism": "Resultados de spawn y try_send ignorados en cola compartida; ParityAlert puede descartarse sin contador.",
+      "impact": "La instrumentación puede quedar ciega; estimación32MB y garantía latencia0 no sustentadas.",
+      "verification": "Lectura estática completa; no saturación/OOM ni fallo de thread provocados.",
+      "closure": "Contadores de aceptación/pérdida/desconexión, heartbeat, supervisión, prioridades y drenaje.",
+      "refs": [
+        "telemetry_spawn",
+        "telemetry_send"
+      ]
+    },
+    {
+      "id": "FMT-272",
+      "kind": "new",
+      "priority": "P2",
+      "status": "communication_repaired_calculation_open",
+      "title": "Escenario lineal descrito como duplicación compuesta",
+      "mechanism": "capital/(meanPnL*50 trades/día) presupone ganancia absoluta/cadencia fija, no reinversión ni estimación temporal.",
+      "repair": "Se preserva cálculo y se etiqueta como escenario no calibrado, no pronóstico/interés compuesto.",
+      "remaining": [
+        "Sin frecuencia medida, incertidumbre, atribución por activo/horizonte o protección del acumulado.",
+        "No productor externo de send_trade_execution localizado; sí update_dynamic_capital."
+      ],
+      "closure": "Contabilidad observable y estimación temporal con dependencia, tamaños, costes y validación OOS.",
+      "refs": [
+        "projection"
+      ]
+    },
+    {
+      "id": "FMT-273",
+      "kind": "new",
+      "priority": "P1",
+      "status": "open_reproduced",
+      "title": "Rollback por símbolo cierra posiciones no rechazadas",
+      "mechanism": "rollback_position recorre todos los slots sin identidad/generación/confirmación; new_order carece de token de reserva.",
+      "impact": "Rechazar entrada puede borrar estado de exposición confirmada; la cuenta remota no se modifica por ese rollback.",
+      "verification": "Fixture con2slots, uno confirmado: ambos cierran y margen30→0, sin exchange.",
+      "closure": "Reserva/posición/generación en propuesta, compare-and-transition y compensación idempotente sólo del intento.",
+      "refs": [
+        "rollback",
+        "rollback_open",
+        "host_late_veto"
+      ]
+    },
+    {
+      "id": "FMT-274",
+      "kind": "new",
+      "priority": "P1",
+      "status": "open_static_and_smoke",
+      "title": "Certificados forenses sin aserciones del pipeline real",
+      "mechanism": "CSV ausente/desordenado no falla test; leakage usa5precios sintéticos y4parejas; r≥.99 tampoco impide imprimir PASSED0%.",
+      "impact": "Pruebas verdes se interpretan indebidamente como validación de causalidad o ausencia de leakage.",
+      "verification": "Archivo120líneas leído;2tests pasaron como smoke; no .forensic_violation hallado después.",
+      "closure": "Invariancia causal del prefijo en pipeline real, contratos de datasets, splits por intervalos, normalización causal y resultado estructurado.",
+      "refs": [
+        "forensic_csv",
+        "forensic_certificate"
+      ]
+    }
+  ],
+  "evidence_references": [
+    {
+      "line": 22,
+      "id": "drift_errors",
+      "anchor": "pub enum DriftAuditError",
+      "path": "crates/audit-engine/src/drift_auditor.rs"
+    },
+    {
+      "line": 46,
+      "id": "drift_recovery",
+      "anchor": "pub fn observe(",
+      "path": "crates/audit-engine/src/drift_auditor.rs"
+    },
+    {
+      "line": 84,
+      "id": "drift_legacy",
+      "anchor": "pub fn audit_execution(",
+      "path": "crates/audit-engine/src/drift_auditor.rs"
+    },
+    {
+      "line": 96,
+      "id": "drift_checked",
+      "anchor": "pub fn audit_execution_checked(",
+      "path": "crates/audit-engine/src/drift_auditor.rs"
+    },
+    {
+      "line": 119,
+      "id": "drift_accumulator",
+      "anchor": "return Err(DriftAuditError::AccumulatorOverflow)",
+      "path": "crates/audit-engine/src/drift_auditor.rs"
+    },
+    {
+      "line": 1027,
+      "id": "core_veto",
+      "anchor": "|| self.drift_entry_veto",
+      "path": "crates/god-engine-core/src/lib.rs"
+    },
+    {
+      "line": 931,
+      "id": "core_veto_setter",
+      "anchor": "pub fn set_drift_entry_veto(",
+      "path": "crates/god-engine-core/src/lib.rs"
+    },
+    {
+      "line": 2839,
+      "id": "host_recovery",
+      "anchor": "let mut drift_recovery =",
+      "path": "src/bin/god_engine.rs"
+    },
+    {
+      "line": 3561,
+      "id": "host_notional",
+      "anchor": "let exit_notional =",
+      "path": "src/bin/god_engine.rs"
+    },
+    {
+      "line": 3602,
+      "id": "host_proxy",
+      "anchor": "pnl_pct: real_pnl_pct * 0.95",
+      "path": "src/bin/god_engine.rs"
+    },
+    {
+      "line": 3605,
+      "id": "host_checked",
+      "anchor": "let audit = drift_auditor.audit_execution_checked(",
+      "path": "src/bin/god_engine.rs"
+    },
+    {
+      "line": 3755,
+      "id": "host_late_veto",
+      "anchor": "XXXVI OPEN: a new veto takes effect",
+      "path": "src/bin/god_engine.rs"
+    },
+    {
+      "line": 3639,
+      "id": "host_dedup",
+      "anchor": "let bracket_ts_dedup =",
+      "path": "src/bin/god_engine.rs"
+    },
+    {
+      "line": 435,
+      "id": "rollback",
+      "anchor": "pub fn rollback_position(",
+      "path": "crates/god-engine-core/src/lib.rs"
+    },
+    {
+      "line": 400,
+      "id": "rollback_open",
+      "anchor": "fn open_symbol_rollback_also_closes_an_unrelated_confirmed_slot(",
+      "path": "crates/god-engine-core/tests/close_outcome_contract.rs"
+    },
+    {
+      "line": 366,
+      "id": "core_defense_test",
+      "anchor": "fn drift_entry_veto_preserves_local_defensive_close_and_blocks_new_entry(",
+      "path": "crates/god-engine-core/tests/close_outcome_contract.rs"
+    },
+    {
+      "line": 383,
+      "id": "core_global_test",
+      "anchor": "fn releasing_drift_cannot_clear_an_independent_global_risk_latch(",
+      "path": "crates/god-engine-core/tests/close_outcome_contract.rs"
+    },
+    {
+      "line": 18,
+      "id": "state_invalid",
+      "anchor": "let safe_initial =",
+      "path": "crates/audit-engine/src/state_validator.rs"
+    },
+    {
+      "line": 52,
+      "id": "state_equation",
+      "anchor": "let expected_capital =",
+      "path": "crates/audit-engine/src/state_validator.rs"
+    },
+    {
+      "line": 26,
+      "id": "health_simple",
+      "anchor": "active_engines_count >= 1 && websocket_latency_ms < 1000",
+      "path": "crates/audit-engine/src/cybernetic_resilience.rs"
+    },
+    {
+      "line": 34,
+      "id": "health_comprehensive",
+      "anchor": "if metrics.websocket_latency_ms > 2000",
+      "path": "crates/audit-engine/src/cybernetic_resilience.rs"
+    },
+    {
+      "line": 34,
+      "id": "chaos_clock",
+      "anchor": "let rand_val = (r % 100)",
+      "path": "crates/audit-engine/src/resilience.rs"
+    },
+    {
+      "line": 39,
+      "id": "chaos_sleep",
+      "anchor": "if self.latency_spike.as_millis() > 0",
+      "path": "crates/audit-engine/src/resilience.rs"
+    },
+    {
+      "line": 68,
+      "id": "telemetry_spawn",
+      "anchor": "let _ = thread::Builder::new()",
+      "path": "crates/audit-engine/src/telemetry.rs"
+    },
+    {
+      "line": 81,
+      "id": "telemetry_send",
+      "anchor": "let _ = self.sender.try_send(event)",
+      "path": "crates/audit-engine/src/telemetry.rs"
+    },
+    {
+      "line": 119,
+      "id": "projection",
+      "anchor": "let projected_trades_per_day =",
+      "path": "crates/audit-engine/src/telemetry.rs"
+    },
+    {
+      "line": 26,
+      "id": "forensic_csv",
+      "anchor": "let ts: u64 = parts[5].parse().unwrap_or(0)",
+      "path": "crates/audit-engine/src/forensics.rs"
+    },
+    {
+      "line": 118,
+      "id": "forensic_certificate",
+      "anchor": "GOVERNANCE PASSED",
+      "path": "crates/audit-engine/src/forensics.rs"
+    },
+    {
+      "line": 16,
+      "id": "drift_validation_tests",
+      "anchor": "fn nonfinite_pnl_never_counts_as_clean_evidence(",
+      "path": "crates/audit-engine/tests/drift_validation_contract.rs"
+    },
+    {
+      "line": 9,
+      "id": "drift_recovery_tests",
+      "anchor": "fn releases_exactly_on_tenth_clean_observation_not_eleventh(",
+      "path": "crates/audit-engine/tests/drift_recovery_contract.rs"
+    },
+    {
+      "line": 52,
+      "id": "new_open_tests",
+      "anchor": "fn open_same_outcome_repeated_ten_times_can_release_recovery(",
+      "path": "crates/audit-engine/tests/resilience_open_diagnostics.rs"
+    }
+  ],
+  "tests": {
+    "unique_final_passed": 155,
+    "functional_compatibility": 133,
+    "legacy_smoke_without_audit_result_assertions": 5,
+    "open_diagnostics": 17,
+    "failed_final": 0,
+    "new_tests": 21,
+    "new_functional": 14,
+    "new_open": 7,
+    "prior_open_reclassified": 3,
+    "red_to_green": 4,
+    "initial_red": {
+      "passed": 1,
+      "failed": 4,
+      "session": 69156
+    },
+    "integration": [
+      {
+        "crate": "audit-engine",
+        "target": "drift_validation_contract",
+        "passed": 7,
+        "open": 0
+      },
+      {
+        "crate": "audit-engine",
+        "target": "drift_recovery_contract",
+        "passed": 5,
+        "open": 0
+      },
+      {
+        "crate": "audit-engine",
+        "target": "auditor_open_diagnostics",
+        "passed": 9,
+        "open": 6
+      },
+      {
+        "crate": "audit-engine",
+        "target": "resilience_open_diagnostics",
+        "passed": 6,
+        "open": 6
+      },
+      {
+        "crate": "audit-engine",
+        "target": "trajectory_duration_contract",
+        "passed": 2,
+        "open": 0
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "close_outcome_contract",
+        "passed": 26,
+        "open": 2
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "stateful_transition_contract",
+        "passed": 22,
+        "open": 0
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "liquidation_state_contract",
+        "passed": 7,
+        "open": 0
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "decay_causality_contract",
+        "passed": 10,
+        "open": 0
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "fitness_numeric_contract",
+        "passed": 7,
+        "open": 0
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "darwin_margin_contract",
+        "passed": 3,
+        "open": 0
+      },
+      {
+        "crate": "god-engine-core",
+        "target": "darwin_genotype_open_diagnostics",
+        "passed": 2,
+        "open": 1
+      },
+      {
+        "crate": "evolution-engine",
+        "target": "fitness_evidence_contract",
+        "passed": 8,
+        "open": 2
+      }
+    ],
+    "unit": [
+      {
+        "crate": "audit-engine",
+        "filter": "all --lib",
+        "passed": 19,
+        "smoke": 5
+      },
+      {
+        "crate": "god-engine-core",
+        "filter": "darwin::tests",
+        "passed": 7
+      },
+      {
+        "crate": "god-engine-core",
+        "filter": "tests_m5_h01",
+        "passed": 2
+      },
+      {
+        "crate": "evolution-engine",
+        "filter": "fitness::tests",
+        "passed": 13,
+        "note": "Incluye5entropy_fitness y8fitness, no doble conteo."
+      }
+    ],
+    "final_integration_session": 84475,
+    "audit_unit_and_first_check_session": 57572,
+    "other_units_and_final_check_session": 62592,
+    "check": {
+      "command": "cargo check --offline -j 1 -p trader-gemini-v5 --bin god_engine --bin evolver --bin walkforward_evolver",
+      "passed": true,
+      "warnings": [
+        "evolution-engine/latest_ts",
+        "evolution-engine/mode",
+        "evolution-engine/trades",
+        "walkforward_evolver/toxic"
+      ]
+    },
+    "execution_policy": "Tests offline aislados; no órdenes/cuentas. Fixtures core en temporales. --lib audit-engine incluye2forensics/3state-validator smoke sin aserción de resultado; no certificar desde sus logs.",
+    "limits": [
+      "Pruebas seleccionadas, no suite exhaustiva del workspace.",
+      "Sin prueba end-to-end del host/executor/fill.",
+      "OPEN passing reproduce una limitación; no equivale a reparación."
+    ]
+  },
+  "research": {
+    "skills": [
+      "firecrawl",
+      "firecrawl-research-index"
+    ],
+    "cli_available": false,
+    "connector_used": true,
+    "note": ".firecrawl/XXXVI-sequential-evidence.md",
+    "sources": [
+      {
+        "url": "https://arxiv.org/abs/1810.08240",
+        "level": "abstract_and_two_body_passages"
+      },
+      {
+        "url": "https://arxiv.org/abs/2605.07964",
+        "level": "abstract"
+      },
+      {
+        "url": "https://arxiv.org/abs/2102.09540",
+        "level": "abstract"
+      },
+      {
+        "url": "https://arxiv.org/abs/2009.03167",
+        "level": "abstract_related"
+      },
+      {
+        "url": "https://arxiv.org/abs/0912.4269",
+        "level": "abstract_related"
+      }
+    ],
+    "influence": "Secuencias de confianza/martingalas como propuesta condicionada, no garantía actual. Contratos causales antes de estadística. No implementar física/cuántica por prestigio."
+  },
+  "preservation": {
+    "source_before": [
+      {
+        "path": "crates/audit-engine/src/drift_auditor.rs",
+        "sha256": "3560A0E995277CC13DBF9CDCFE5514C6DC41359791CE3F6436910E20C3ECB8A8",
+        "lines": 141,
+        "normalized_chars": 4458,
+        "normalized_sha256": "3560A0E995277CC13DBF9CDCFE5514C6DC41359791CE3F6436910E20C3ECB8A8"
+      },
+      {
+        "path": "crates/audit-engine/src/state_validator.rs",
+        "sha256": "65F70767CE3539456C6999D05038603D9AB7D14A42AA1766FE63452F91F89690",
+        "lines": 111,
+        "normalized_chars": 4198,
+        "normalized_sha256": "65F70767CE3539456C6999D05038603D9AB7D14A42AA1766FE63452F91F89690"
+      },
+      {
+        "path": "crates/audit-engine/src/cybernetic_resilience.rs",
+        "sha256": "09D9FF5FBC3D01D1499C1E98D3277ECD89B18E03003CDA46FA87C0AE00FEE3B9",
+        "lines": 144,
+        "normalized_chars": 5189,
+        "normalized_sha256": "09D9FF5FBC3D01D1499C1E98D3277ECD89B18E03003CDA46FA87C0AE00FEE3B9"
+      },
+      {
+        "path": "crates/audit-engine/src/resilience.rs",
+        "sha256": "33FF4CC142B934CFA9672418C88408050835561BED9476DEBCAFFBDEBA432E87",
+        "lines": 59,
+        "normalized_chars": 1635,
+        "normalized_sha256": "33FF4CC142B934CFA9672418C88408050835561BED9476DEBCAFFBDEBA432E87"
+      },
+      {
+        "path": "crates/audit-engine/src/telemetry.rs",
+        "sha256": "848ACE31CF2B87F01EACA0DAA6FD4965B44FD1F57DD3879E6D8D1B7F35D61AB8",
+        "lines": 252,
+        "normalized_chars": 8589,
+        "normalized_sha256": "848ACE31CF2B87F01EACA0DAA6FD4965B44FD1F57DD3879E6D8D1B7F35D61AB8"
+      },
+      {
+        "path": "crates/audit-engine/src/lib.rs",
+        "sha256": "7BFD31F92D2291E8CA9E41FCFF24E9C1476155A85665B3251A2625BB51ACC731",
+        "lines": 9,
+        "normalized_chars": 218,
+        "normalized_sha256": "7BFD31F92D2291E8CA9E41FCFF24E9C1476155A85665B3251A2625BB51ACC731"
+      },
+      {
+        "path": "crates/audit-engine/tests/auditor_open_diagnostics.rs",
+        "sha256": "CED8B1B4302B224136D6F0230AFB89D53185A425F1ABEE83BEF774CD639A24C4",
+        "lines": 98,
+        "normalized_chars": 3062,
+        "normalized_sha256": "CED8B1B4302B224136D6F0230AFB89D53185A425F1ABEE83BEF774CD639A24C4"
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "EB1D22EFA16E3F5D9C7D0B80D7DE9C929ECC692C86231138D86356C4330776B9",
+        "lines": 5214,
+        "normalized_chars": 283235,
+        "normalized_sha256": "EB1D22EFA16E3F5D9C7D0B80D7DE9C929ECC692C86231138D86356C4330776B9"
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "sha256": "B64A4EFB951F827A7D66A10C9BE93CB76606125EE9268FE94CFEDF18BA7CFA74",
+        "lines": 570,
+        "normalized_chars": 23845,
+        "normalized_sha256": "B64A4EFB951F827A7D66A10C9BE93CB76606125EE9268FE94CFEDF18BA7CFA74"
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "sha256": "5AE38B15E6DF871C7F89FA98DE83793D5DC99FACD8A0BBE789A3D44BD43D91B9",
+        "lines": 4791,
+        "normalized_chars": 263633,
+        "normalized_sha256": "5AE38B15E6DF871C7F89FA98DE83793D5DC99FACD8A0BBE789A3D44BD43D91B9"
+      }
+    ],
+    "source_after": [
+      {
+        "sha256": "B1EF4D3CB6FD4AFA20E09603E5D40087E3F8CAEE73EB9CB797156F5058BDB4A9",
+        "lines": 199,
+        "path": "crates/audit-engine/src/drift_auditor.rs"
+      },
+      {
+        "sha256": "7484F0DF49D2991415B2C11B649F556A91DE1F6E09C2EDC614D65E245654DCA6",
+        "lines": 5228,
+        "path": "crates/god-engine-core/src/lib.rs"
+      },
+      {
+        "sha256": "7C89D56921C815E87FB4A2B243275F26A71940FD87AB1061A1943DD9AB5FB5A7",
+        "lines": 4770,
+        "path": "src/bin/god_engine.rs"
+      },
+      {
+        "sha256": "6502BC2754A6CEE873BD51707666769408883C10F8315C9EF44903027F3CEDEA",
+        "lines": 620,
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs"
+      },
+      {
+        "sha256": "C2609E5D60453116DF29EC6605363001A78C870FE7D85068C7EB00C2871B721E",
+        "lines": 113,
+        "path": "crates/audit-engine/src/state_validator.rs"
+      },
+      {
+        "sha256": "9673686968198F06504C51AD14189118ACA3015E86AD43B0E6D65B28F44A7961",
+        "lines": 146,
+        "path": "crates/audit-engine/src/cybernetic_resilience.rs"
+      },
+      {
+        "sha256": "EBCB6B91B352148B18C8EE4D39D00D5EF6E6359A9D32E9950E22AEFFE7D8F612",
+        "lines": 60,
+        "path": "crates/audit-engine/src/resilience.rs"
+      },
+      {
+        "sha256": "16E3D882F2981151FE45A5528995913D98FA1305B744B86A5943BE8ED65FE15C",
+        "lines": 252,
+        "path": "crates/audit-engine/src/telemetry.rs"
+      },
+      {
+        "sha256": "020D341C3128DD49CE086E56979FD79B67A5E409628AB13B6D5DD17D70D8B790",
+        "lines": 120,
+        "path": "crates/audit-engine/src/forensics.rs"
+      },
+      {
+        "sha256": "9F97D4B6FFC983ED997F4B50775A29E8ACE4DF93575B6D8198FE39F04CB2CF62",
+        "lines": 103,
+        "path": "crates/audit-engine/tests/drift_validation_contract.rs"
+      },
+      {
+        "sha256": "4766D8124B71812D43C7B779776ADCE77E47086029E847DD3BBAB6DA4888F9C3",
+        "lines": 82,
+        "path": "crates/audit-engine/tests/drift_recovery_contract.rs"
+      },
+      {
+        "sha256": "5917B00E8ECFAED69156E267174E277421BF7A056FAA33889F8EC742F4D95C9F",
+        "lines": 90,
+        "path": "crates/audit-engine/tests/resilience_open_diagnostics.rs"
+      },
+      {
+        "sha256": "8404AA76794F6253A522BA6741798269442D83EE0EDE763016730F6B67B0196D",
+        "lines": 95,
+        "path": "crates/audit-engine/tests/auditor_open_diagnostics.rs"
+      },
+      {
+        "sha256": "95A9EF10E19666B9DDFD2CCC9A38150DF034E4A4BDAE16CA2131BB38020C17C2",
+        "lines": 127,
+        "path": "crates/audit-engine/src/behavioral_auditor.rs"
+      },
+      {
+        "sha256": "D3B7E8702702480A77B1D16546BB28FE7394A7A22A26658F2CB02F33AFFEFEBE",
+        "lines": 382,
+        "path": "crates/audit-engine/src/trajectory_auditor.rs"
+      }
+    ],
+    "append_only_documents": [
+      {
+        "appended_chars": 2868,
+        "prefix_normalized_chars": 120539,
+        "prefix_sha256": "53D45AA56673109E4BC83C15A2A2C20DD084A33C721324F9CF5E46B4B6B029F0",
+        "preserved": true,
+        "path": "ATLAS_ANALITICO.md"
+      },
+      {
+        "appended_chars": 7728,
+        "prefix_normalized_chars": 752794,
+        "prefix_sha256": "5C204EAFD214B2027AB697BC3EE5715E67DA881FCA8BD0F1262F0D62491440C2",
+        "preserved": true,
+        "path": "INFORME_FORENSE_MAESTRO.md"
+      },
+      {
+        "appended_chars": 1232,
+        "prefix_normalized_chars": 33004,
+        "prefix_sha256": "7A035FF6865426E3AC488B9347412D584A5229043A0D795C8C5314A380DE0CDB",
+        "preserved": true,
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXV_2026-09-25.md"
+      }
+    ],
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "report_snapshot": {
+      "lines": 241,
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVI_2026-09-25.md",
+      "sha256": "60D089A93D7C1302EC038DE5CBBB53D50DC96534C1F9803C9A5E138441DFF162"
+    },
+    "market_orders_sent": 0,
+    "account_requests_sent": 0,
+    "operational_training_or_promotion": false,
+    "host_modified": true,
+    "operational_binary_built": false,
+    "process_kills_or_restarts": false,
+    "shared_build_cache_deleted": false,
+    "active_genomes_deliberately_modified": false,
+    "global_arena_layout_modified": false
+  },
+  "next_work": [
+    "Identidad de propuesta/outcome y rollback por reserva exacta.",
+    "Frontera transaccional de veto; separar todas las causas global/executor y acción defensiva.",
+    "Evidencia independiente, confirmada y deduplicada para recuperación multiactivo.",
+    "Paridad versionada y telemetría observable.",
+    "Pruebas de causalidad del pipeline real; completar124Rust pendientes."
+  ],
+  "validation": {
+    "status": "passed_snapshot_check",
+    "hashes_checked": 57,
+    "evidence_references_checked": 31,
+    "append_only_document_prefixes_checked": 3,
+    "local_report_links_checked": 8,
+    "test_totals_consistent": true,
+    "new_test_counts_verified_from_source": true,
+    "whitespace_check_passed": true,
+    "research_note_gitignored": true,
+    "errors": [],
+    "limits": "Snapshot local y selección indicada; no certificación global, de producción, latencia o rendimiento económico. No incluye hash del propio JSON ni ediciones concurrentes posteriores."
+  }
+}

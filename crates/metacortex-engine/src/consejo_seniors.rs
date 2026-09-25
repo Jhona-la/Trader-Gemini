@@ -1,5 +1,10 @@
 //! # Council of Seniors — Distributed Adversarial Deliberation Engine
 //!
+//! XXXI audit qualification: these are deterministic heuristic scorers, not
+//! independent human experts or a proof of Bayesian consensus. Several seats
+//! reuse the same observations. Historical design claims below are not a
+//! statistical independence, causal identification or quantum-advantage result.
+//!
 //! Implements a 10-member council of specialized senior agents in `cerebro/consejo/`.
 //!
 //! MOD2/7-006 (INFORME DECIMOCUARTO) — DIVERSIFICACIÓN DEL CONSEJO:
@@ -120,6 +125,15 @@ impl MarketSnapshotPayload {
             ("do_calculus_risk", self.do_calculus_risk),
             ("current_drawdown_pct", self.current_drawdown_pct),
             ("estimated_slippage_bps", self.estimated_slippage_bps),
+            ("causal_veto_threshold", self.causal_veto_threshold),
+            ("dominant_tau_ms", self.dominant_tau_ms),
+            ("whale_burst_z", self.whale_burst_z),
+            ("liquidation_severity", self.liquidation_severity),
+            ("open_interest_norm", self.open_interest_norm),
+            ("spoof_score", self.spoof_score),
+            ("crowd_ls_ratio", self.crowd_ls_ratio),
+            ("crowd_taker_ratio", self.crowd_taker_ratio),
+            ("ml_model_base", self.ml_model_base),
         ];
 
         for (name, val) in metrics {
@@ -148,6 +162,30 @@ impl MarketSnapshotPayload {
                 "Out-of-bounds intended_direction: {}",
                 self.intended_direction
             ));
+        }
+
+        // XXXI: domain checks are evidence contracts, not market-regime vetoes.
+        for (name, value, low, high) in [
+            ("book_imbalance", self.book_imbalance, -1.0, 1.0),
+            ("fused_score", self.fused_score, -1.0, 1.0),
+            ("do_calculus_risk", self.do_calculus_risk, 0.0, 1.0),
+            ("current_drawdown_pct", self.current_drawdown_pct, 0.0, 1.0),
+            ("causal_veto_threshold", self.causal_veto_threshold, 0.0, 1.0),
+            ("liquidation_severity", self.liquidation_severity, 0.0, 1.0),
+            ("open_interest_norm", self.open_interest_norm, 0.0, 1.0),
+            ("spoof_score", self.spoof_score, 0.0, 1.0),
+            ("ml_model_base", self.ml_model_base, 0.0, 1.0),
+        ] {
+            if !(low..=high).contains(&value) {
+                return Err(format!("Out-of-bounds {name}: {value}"));
+            }
+        }
+        if self.dominant_tau_ms <= 0.0
+            || self.estimated_slippage_bps < 0.0
+            || self.crowd_ls_ratio < 0.0
+            || self.crowd_taker_ratio < 0.0
+        {
+            return Err("Invalid time scale, slippage or crowd ratio".into());
         }
 
         Ok(())
@@ -194,6 +232,50 @@ pub struct ConsensusResult {
     pub total_consensus_pct: f64,
     pub vetoed_by: Option<SeniorRole>,
     pub dissenting_log: Vec<SeniorOpinion>,
+}
+
+/// XXXII: the decision and its evidence come from ONE evaluation per agent.
+/// Roles index signals/weights; vector order is not an agent's identity.
+/// The sample count is still aggregate (FMT-243), not per-asset calibration.
+#[derive(Debug, Clone)]
+pub struct CouncilDecisionTrace {
+    pub consensus: ConsensusResult,
+    /// Learning-eligible votes. Zero capacity is abstention; raw opinions remain below.
+    pub signals: [f64; 11],
+    pub opinions: Vec<SeniorOpinion>,
+    pub effective_win_rate: Option<f64>,
+    pub aggregate_outcome_count: usize,
+}
+
+impl CouncilDecisionTrace {
+    fn integrity_failure(reason: String) -> Self {
+        Self {
+            consensus: ConsensusResult::integrity_failure(reason),
+            signals: [0.0; 11],
+            opinions: Vec::new(),
+            effective_win_rate: None,
+            aggregate_outcome_count: 0,
+        }
+    }
+}
+
+impl ConsensusResult {
+    fn integrity_failure(reason: String) -> Self {
+        Self {
+            approved: false,
+            final_signal: 0.0,
+            total_consensus_pct: 0.0,
+            vetoed_by: Some(SeniorRole::Riesgo),
+            dissenting_log: vec![SeniorOpinion {
+                role: SeniorRole::Riesgo,
+                signal_direction: 0.0,
+                confidence: 1.0,
+                weight: 1.0,
+                is_veto: true,
+                justification: format!("Data/policy integrity failure: {reason}"),
+            }],
+        }
+    }
 }
 
 pub trait SeniorAgent: Send + Sync {
@@ -446,6 +528,7 @@ impl SeniorAgent for SeniorCausal {
         // alineado Y banda rápida (la microestructura que lidera breakouts
         // reales tiene ambas características).
         let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25
+            && payload.book_imbalance * payload.intended_direction > 0.0
             && payload.spectral_s() < 0.5)
             && do_calculus_risk < 0.88;
         let is_veto = do_calculus_risk > effective_threshold && !is_aligned_breakout;
@@ -644,7 +727,9 @@ impl SeniorAgent for SeniorTeleonomia {
 
         let predictability = ((payload.hurst_exponent - 0.5).abs() * 2.0).clamp(0.0, 1.0);
         let spectral = spectral_opinion(payload.fused_score, payload.persistence);
-        let ml_edge = ((payload.ml_prob.clamp(0.0, 1.0) - 0.5) * 2.0).clamp(-1.0, 1.0);
+        // Same model reference as ML/metacognitive seats; lift is not an
+        // economic expected return or proof of calibrated directional skill.
+        let ml_edge = ((payload.ml_prob - payload.ml_model_base) * 2.0).clamp(-1.0, 1.0);
         let toxicity_penalty = 1.0 - 0.30 * payload.do_calculus_risk.clamp(0.0, 1.0);
         let expected_utility = (spectral * predictability * 0.6 + ml_edge * 0.4)
             * execution_quality
@@ -706,29 +791,48 @@ impl SeniorAgent for SeniorAuditorInterno {
 /// `params` ANTES del arranque — nunca en caliente.
 #[derive(Debug, Clone, Copy)]
 pub struct CouncilParams {
-    /// Umbral de aprobación del consenso. DERIVACIÓN: N=5 asientos
-    /// direccionales independientes (MOD2/7-006) ⇒ "≥2 perspectivas
-    /// alineadas" = 2/5 = 0.40; 0.35 deja banda de tolerancia a la
-    /// abstención sin caer a una sola voz (1/5 = 0.20).
+    /// Heuristic threshold on a confidence-weighted capacity ratio. The
+    /// denominator varies with abstentions: 0.35 does NOT enforce a minimum
+    /// count of independent observations (one raw source can yield 100%).
     pub approval_threshold: f64,      // 0.35
-    /// Supermayoría que desempata un veto singular: 4 de 5 voces = 0.80.
+    /// Capacity fraction for override; not necessarily four of five voters.
     pub supermajority_override: f64,  // 0.80
     /// Convicción mínima para que la supermayoría desempate: banda media
     /// de señal del consejo (0.28 ≈ percentil 60 de |final_signal| en
     /// calibración B3.31).
     pub override_signal_floor: f64,   // 0.28
-    /// Penalización bayesiana al desempatar un veto: pérdida del 25% de
-    /// convicción equivale a recibir el voto disidente como evidencia en
-    /// contra con peso 1/4.
+    /// Heuristic signal attenuation after override. No likelihood or posterior
+    /// odds derivation establishes that this is a Bayesian update.
     pub override_penalty: f64,        // 0.75
-    /// Pseudo-observaciones Laplace del prior Beta(1,1) del win-rate:
-    /// k=8 = prior débilmente informativo (8 trades neutros) — el wr
-    /// empírico domina a partir de ~40 outcomes.
+    /// Concentración k de una mezcla simétrica hacia 0.5. Si n y wr
+    /// describiesen los mismos ensayos Bernoulli, corresponde a Beta(k/2,k/2):
+    /// k=8 implica Beta(4,4), NO Beta(1,1). La ruta actual mezcla wr del activo
+    /// con n agregado; no está acreditada como posterior calibrada.
     pub shrinkage_k: f64,             // 8.0
     /// Severidad de cascada que activa el cortacircuitos del Ente:
     /// >P99 de la distribución de severidad de liquidaciones observada
     /// (familia kill-switch, no sobreescribible por supermayoría).
     pub cascade_severity_breaker: f64, // 0.85
+}
+
+impl CouncilParams {
+    pub fn validate(&self) -> Result<(), String> {
+        for (name, value) in [
+            ("approval_threshold", self.approval_threshold),
+            ("supermajority_override", self.supermajority_override),
+            ("override_signal_floor", self.override_signal_floor),
+            ("override_penalty", self.override_penalty),
+            ("cascade_severity_breaker", self.cascade_severity_breaker),
+        ] {
+            if !(0.0..=1.0).contains(&value) {
+                return Err(format!("Invalid council parameter {name}: {value}"));
+            }
+        }
+        if !self.shrinkage_k.is_finite() || self.shrinkage_k <= 0.0 {
+            return Err("shrinkage_k must be finite and positive".into());
+        }
+        Ok(())
+    }
 }
 
 impl Default for CouncilParams {
@@ -825,60 +929,83 @@ impl ConsejoDeliberacion {
         win_rate: f64,
         weight_multipliers: Option<&[f64; 11]>,
     ) -> ConsensusResult {
-        // R-06 — SHRINKAGE BAYESIANO del win rate: wr=0 con n=0 significa
-        // "sin datos", NO "sistema fallando". Mezcla con prior Beta(1,1)
-        // (uniforme) ponderada por la evidencia disponible: sin trades el
-        // prior 0.5 domina (neutral); con n grande el wr empírico manda.
-        // El caller pasa n implícito vía el propio wr — usamos el shrinkage
-        // estándar wr' = (wr*n + 0.5*k)/(n + k) con k=8 pseudo-observaciones
-        // y n estimado del tracker del Consejo cuando existe.
+        self.deliberar_traced(payload, win_rate, weight_multipliers).consensus
+    }
+
+    pub fn deliberar_traced(
+        &self,
+        payload: &MarketSnapshotPayload,
+        win_rate: f64,
+        weight_multipliers: Option<&[f64; 11]>,
+    ) -> CouncilDecisionTrace {
+        if let Err(reason) = payload.validate().and_then(|_| self.params.validate()) {
+            return CouncilDecisionTrace::integrity_failure(reason);
+        }
+        if !(0.0..=1.0).contains(&win_rate) {
+            return CouncilDecisionTrace::integrity_failure("invalid win_rate".into());
+        }
+        if weight_multipliers.is_some_and(|weights| {
+            weights.iter().any(|w| !w.is_finite() || *w <= 0.0)
+        }) {
+            return CouncilDecisionTrace::integrity_failure("invalid weight multiplier".into());
+        }
+        let mut seen = [false; 11];
+        for agent in &self.agents {
+            let idx = agent.role() as usize;
+            if seen[idx] {
+                return CouncilDecisionTrace::integrity_failure("duplicate senior role".into());
+            }
+            seen[idx] = true;
+        }
+        // Heuristic shrinkage. A posterior interpretation would require wr
+        // and n from the SAME trials; current per-asset/global scopes differ.
         let raw_wr = if win_rate.is_finite() {
             win_rate.clamp(0.0, 1.0)
         } else {
             0.5
         };
-        let n_obs = self
-            .tracker
-            .read()
-            .ok()
-            .map(|t| t.total_outcomes())
-            .unwrap_or(0) as f64;
+        // Capture count and adaptive weights under the SAME read lock, then
+        // release it before agent callbacks. Poison is not a cold start.
+        let (aggregate_outcome_count, dynamic_weights) = match self.tracker.read() {
+            Ok(tracker) => (tracker.total_outcomes(),
+                weight_multipliers.is_none().then(|| tracker.compute_weights())),
+            Err(_) => return CouncilDecisionTrace::integrity_failure("poisoned performance tracker".into()),
+        };
+        let n_obs = aggregate_outcome_count as f64;
         let k_prior = self.params.shrinkage_k;
         let safe_wr = (raw_wr * n_obs + 0.5 * k_prior) / (n_obs + k_prior);
 
         // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
-        let dynamic_weights = if weight_multipliers.is_none() {
-            self.tracker.read().ok().map(|t| t.compute_weights())
-        } else {
-            None
-        };
         let active_mults = weight_multipliers.or(dynamic_weights.as_ref());
 
-        // Enforce strict data payload validation
-        if let Err(err_msg) = payload.validate() {
-            return ConsensusResult {
-                approved: false,
-                final_signal: 0.0,
-                total_consensus_pct: 0.0,
-                vetoed_by: Some(SeniorRole::Riesgo),
-                dissenting_log: vec![SeniorOpinion {
-                    role: SeniorRole::Riesgo,
-                    signal_direction: 0.0,
-                    confidence: 1.0,
-                    weight: 5.0,
-                    is_veto: true,
-                    justification: format!("Data integrity failure: {}", err_msg),
-                }],
-            };
-        }
-
         let mut opinions = Vec::new();
+        let mut signals = [0.0; 11];
         let mut total_weighted_signal = 0.0;
         let mut active_weights = 0.0;
         let mut vetoes = Vec::new();
 
-        for (idx, agent) in self.agents.iter().enumerate() {
+        for agent in &self.agents {
+            let role = agent.role();
+            let idx = role as usize;
             let mut op = agent.evaluate(payload, safe_wr);
+            if op.role != role
+                || !(-1.0..=1.0).contains(&op.signal_direction)
+                || !(0.0..=1.0).contains(&op.confidence)
+                || !op.weight.is_finite() || op.weight < 0.0
+            {
+                return CouncilDecisionTrace::integrity_failure(format!("invalid opinion from {role:?}"));
+            }
+            // The council's configured threshold must both create and protect
+            // this breaker. The standalone seat retains its legacy default.
+            if op.role == SeniorRole::EnteMercado {
+                op.is_veto = payload.liquidation_severity > self.params.cascade_severity_breaker;
+                op.justification = format!(
+                    "EnteMercado/council: cascada={:.4}, limite={:.4}, veto={}, conviccion={:.4}; ballena_z={:.4}, OI={:.4}, spoof={:.4}",
+                    payload.liquidation_severity, self.params.cascade_severity_breaker,
+                    op.is_veto, op.confidence, payload.whale_burst_z,
+                    payload.open_interest_norm, payload.spoof_score
+                );
+            }
             if let Some(multipliers) = active_mults {
                 if let Some(&mult) = multipliers.get(idx) {
                     if mult.is_finite() && mult > 0.0 {
@@ -886,6 +1013,12 @@ impl ConsejoDeliberacion {
                     }
                 }
             }
+            if !op.weight.is_finite() {
+                return CouncilDecisionTrace::integrity_failure("weighted opinion overflow".into());
+            }
+            signals[idx] = if op.confidence > 0.0 && op.weight > 0.0 {
+                op.signal_direction
+            } else { 0.0 };
 
             if op.is_veto {
                 vetoes.push(op.clone());
@@ -896,6 +1029,9 @@ impl ConsejoDeliberacion {
                 active_weights += op.confidence * op.weight;
             }
             opinions.push(op);
+        }
+        if !total_weighted_signal.is_finite() || !active_weights.is_finite() {
+            return CouncilDecisionTrace::integrity_failure("opinion accumulation overflow".into());
         }
 
         let mut final_signal = if active_weights > 0.0 {
@@ -941,6 +1077,10 @@ impl ConsejoDeliberacion {
             .filter(|o| is_directional_seat(o) && o.signal_direction < 0.0)
             .map(|o| o.weight * o.confidence.clamp(0.0, 1.0))
             .sum();
+
+        if !total_directional_capacity.is_finite() {
+            return CouncilDecisionTrace::integrity_failure("directional capacity overflow".into());
+        }
 
         let long_consensus_pct = if total_directional_capacity > 0.0 {
             let raw = positive_capacity / total_directional_capacity;
@@ -1020,61 +1160,67 @@ impl ConsejoDeliberacion {
 
         let dissenting_log = if approved {
             opinions
-                .into_iter()
+                .iter()
                 .filter(|o| {
                     o.is_veto
                         || (o.signal_direction != 0.0
                             && final_signal != 0.0
                             && o.signal_direction.signum() != final_signal.signum())
                 })
-                .collect()
+                .cloned().collect()
         } else if !vetoes.is_empty() {
             vetoes
         } else {
             opinions
-                .into_iter()
+                .iter()
                 .filter(|o| {
                     o.signal_direction != 0.0
                         && final_signal != 0.0
                         && o.signal_direction.signum() != final_signal.signum()
                 })
-                .collect()
+                .cloned().collect()
         };
 
-        ConsensusResult {
+        CouncilDecisionTrace { consensus: ConsensusResult {
             approved,
             final_signal: if approved { final_signal } else { 0.0 },
             total_consensus_pct: consensus_pct,
             vetoed_by,
             dissenting_log,
-        }
+        }, signals, opinions, effective_win_rate: Some(safe_wr), aggregate_outcome_count }
     }
 
-    /// Deliberates on market snapshot requiring explicit payload validation, 60% consensus, and 0 vetoes
+    /// Compatibility wrapper; thresholds and override policy live in CouncilParams.
     #[inline(always)]
     pub fn deliberar(&self, payload: &MarketSnapshotPayload, win_rate: f64) -> ConsensusResult {
         self.deliberar_with_weights(payload, win_rate, None)
     }
 
-    /// N-12: Extrae las señales direccionales de los 10 Seniors para correlacionar con el resultado posterior
+    /// Compatibility extractor. This starts a NEW deliberation; consumers that
+    /// also need its decision must keep deliberar_traced's result instead.
     pub fn extract_senior_signals(
         &self,
         payload: &MarketSnapshotPayload,
         win_rate: f64,
     ) -> [f64; 11] {
-        let safe_wr = if win_rate.is_finite() {
-            win_rate.clamp(0.0, 1.0)
-        } else {
-            0.5
-        };
-        let mut signals = [0.0; 11];
-        for (idx, agent) in self.agents.iter().enumerate() {
-            signals[idx] = agent.evaluate(payload, safe_wr).signal_direction;
-        }
-        signals
+        self.deliberar_traced(payload, win_rate, None).signals
     }
 
-    /// N-12: Registra el retorno realizado de una operación para actualizar los pesos adaptativos
+    /// Score agreement with the executed action using its net return. This is
+    /// attribution on selected trades, NOT counterfactual prediction accuracy.
+    pub fn record_trade_outcome(
+        &self,
+        senior_signals: &[f64; 11],
+        net_trade_return: f64,
+        is_long: bool,
+    ) {
+        let side = if is_long { 1.0 } else { -1.0 };
+        let agreement = senior_signals.map(|signal| signal * side);
+        self.record_outcome(&agreement, net_trade_return);
+    }
+
+    /// Legacy scorer: signals and outcome must already share an orientation.
+    /// Net PnL callers must use record_trade_outcome with the executed side.
     pub fn record_outcome(&self, senior_signals: &[f64; 11], realized_return: f64) {
         // CERT-M7-H02: los asientos MODULADORES no actualizan pesos con el
         // outcome — heredan la dirección del sistema y su "acierto" es el
@@ -1118,7 +1264,9 @@ impl SeniorPerformanceTracker {
 
     /// Registra el resultado observado tras la decisión del Consejo
     pub fn record_outcome(&mut self, senior_signals: &[f64; 11], realized_return: f64) {
-        if !realized_return.is_finite() {
+        if !realized_return.is_finite()
+            || senior_signals.iter().any(|s| !(-1.0..=1.0).contains(s))
+        {
             return;
         }
 
@@ -1126,12 +1274,12 @@ impl SeniorPerformanceTracker {
             if let Some((old_signals, old_ret)) = self.history.pop_front() {
                 for i in 0..11 {
                     let old_sig = old_signals[i];
+                    if old_sig == 0.0 {
+                        continue;
+                    }
                     self.total_counts[i] = self.total_counts[i].saturating_sub(1);
-                    let was_correct = if old_sig != 0.0 {
-                        (old_sig > 0.0 && old_ret > 0.0) || (old_sig < 0.0 && old_ret < 0.0)
-                    } else {
-                        old_ret > 0.0
-                    };
+                    let was_correct =
+                        (old_sig > 0.0 && old_ret > 0.0) || (old_sig < 0.0 && old_ret < 0.0);
                     if was_correct {
                         self.correct_counts[i] = self.correct_counts[i].saturating_sub(1);
                     }
@@ -1141,14 +1289,13 @@ impl SeniorPerformanceTracker {
 
         for i in 0..11 {
             let sig = senior_signals[i];
+            // Abstention / masked modulator is no directional trial.
+            if sig == 0.0 {
+                continue;
+            }
             self.total_counts[i] += 1;
-            let was_correct = if sig != 0.0 {
-                (sig > 0.0 && realized_return > 0.0) || (sig < 0.0 && realized_return < 0.0)
-            } else {
-                // D-345: Para los 4 seniors de veto/permiso (signal == 0.0), el permiso implícito
-                // es evaluado por el éxito del trade ejecutado: si ganó, el permiso fue acertado.
-                realized_return > 0.0
-            };
+            let was_correct =
+                (sig > 0.0 && realized_return > 0.0) || (sig < 0.0 && realized_return < 0.0);
             if was_correct {
                 self.correct_counts[i] += 1;
             }

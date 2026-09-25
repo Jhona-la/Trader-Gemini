@@ -32,8 +32,16 @@ impl CoaxialBreakoutEngine {
         _current_price: f64,
         is_bullish_flow: bool,
     ) -> Option<SignalIntent> {
-        // FIX #682: Validar finitud de ATRs
-        if !atr_1s.is_finite() || !atr_5s.is_finite() || !atr_1m.is_finite() {
+        // Relative compression needs observed nonnegative variation and positive
+        // denominators. Zero / zero is unknown, not maximal compression.
+        // A zero 1s numerator is valid when the larger-scale denominators exist.
+        if !atr_1s.is_finite()
+            || !atr_5s.is_finite()
+            || !atr_1m.is_finite()
+            || atr_1s < 0.0
+            || atr_5s <= 0.0
+            || atr_1m <= 0.0
+        {
             return None;
         }
 

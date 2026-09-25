@@ -301,7 +301,7 @@ pub fn run_booktick_replay(
     let mut risk_envelope = RiskEnvelope::new();
     let mut avg_win_abs = 0.0f64;
     let mut avg_loss_abs = 0.0f64;
-    let mut pos_was_open = arena.coins[0].positions.position.is_open();
+    let mut pos_was_open = arena.coins[0].positions.is_any_open();
 
     let mut pnl_list: Vec<f64> = Vec::new();
     let mut peak = cfg.initial_capital;
@@ -415,7 +415,7 @@ pub fn run_booktick_replay(
                 pos_was_open,
                 &mut stats.envelope_vetoes,
             );
-            pos_was_open = arena.coins[0].positions.position.is_open();
+            pos_was_open = arena.coins[0].positions.is_any_open();
             c1 = None;
             c2 = closed;
         } else {
@@ -450,7 +450,7 @@ pub fn run_booktick_replay(
                 pos_was_open,
                 &mut stats.envelope_vetoes,
             );
-            pos_was_open = arena.coins[0].positions.position.is_open();
+            pos_was_open = arena.coins[0].positions.is_any_open();
             // D-717: en el modo con libro, `mid <= sim_bid` es una tautología
             // falsa (el mid nunca baja del bid simulado), de modo que el CVD
             // quedaba clavado en +1 y las dos ramas Short eran inalcanzables. El
@@ -486,7 +486,7 @@ pub fn run_booktick_replay(
                 pos_was_open,
                 &mut stats.envelope_vetoes,
             );
-            pos_was_open = arena.coins[0].positions.position.is_open();
+            pos_was_open = arena.coins[0].positions.is_any_open();
             c1 = closed1;
             c2 = closed2;
         }
@@ -616,8 +616,11 @@ pub fn live_envelope_gate(
         Some(c) => c,
         None => return true,
     };
-    let pos = &coin.positions.position;
-    if prev_open || !pos.is_open() {
+    let pos = match coin.positions.slots().into_iter().find(|p| p.is_open()) {
+        Some(p) => p,
+        None => return true,
+    };
+    if prev_open {
         return true; // nada nuevo que dictaminar
     }
 
@@ -656,7 +659,7 @@ pub fn live_envelope_gate(
     // D-116: envolvente AUTORITATIVA + bootstrap exploratorio (leverage 1).
     let envelope_n = envelope.posterior.n();
     let notional_ord = qty.abs() * entry_price;
-    let core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
+    let _core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
         (notional_ord / pos_margin).round().clamp(1.0, 50.0) as u32
     } else {
         (5.05 / cap_now.max(1.0)).ceil().clamp(1.0, 20.0) as u32
@@ -745,20 +748,21 @@ fn vol_brake_factor(vol_fc: f64, vol_base: f64) -> f64 {
 /// (nunca fue coste real). Sin PnL — la entrada vetada no contabiliza (B3.14).
 pub fn rollback_local_position(arena: &Arc<GlobalArena>, coin_id: usize) {
     if let Some(coin) = arena.coins.get(coin_id) {
-        let pos = &coin.positions.position;
-        if pos.is_open() {
-            let (_, _, _, margin_used, entry_fee) = pos.close_with_fee();
-            if margin_used > 0.0 {
-                // MOD6/8-010: resta atómica — mismo criterio que el host:
-                // el RMW load→store no es atómico.
-                arena
-                    .used_margin
-                    .fetch_sub(margin_used, Ordering::Relaxed);
-            }
-            if entry_fee > 0.0 {
-                arena
-                    .unified_capital
-                    .fetch_add(entry_fee, Ordering::Relaxed);
+        for pos in coin.positions.slots() {
+            if pos.is_open() {
+                let (_, _, _, margin_used, entry_fee) = pos.close_with_fee();
+                if margin_used > 0.0 {
+                    // MOD6/8-010: resta atómica — mismo criterio que el host:
+                    // el RMW load→store no es atómico.
+                    arena
+                        .used_margin
+                        .fetch_sub(margin_used, Ordering::Relaxed);
+                }
+                if entry_fee > 0.0 {
+                    arena
+                        .unified_capital
+                        .fetch_add(entry_fee, Ordering::Relaxed);
+                }
             }
         }
     }

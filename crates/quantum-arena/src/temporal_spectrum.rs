@@ -20,6 +20,11 @@
 //! La entropía de esa masa mide dispersión ENTRE ESCALAS, no incertidumbre
 //! direccional. Consenso perfecto en 32 escalas puede tener entropía 1.
 //!
+//! Las consultas entre nodos interpolan CADA observable en log(tau).
+//! Conservan las señales y masas nodales: I[tanh(z)] no es tanh(I[z]),
+//! e I[w*|s|] no es w(I[estado])*|I[s]|. Una masa positiva puede coexistir
+//! con cancelación direccional; no representa confianza de una operación.
+//!
 //! El centroide del campo no tiene recorte operativo. Las salidas heredadas
 //! `dominant_tau_ms` y `continuous_resonant_tau_ms` conservan [30 s,12 h]
 //! por compatibilidad con las curvas del genoma. Esto sigue siendo una
@@ -128,7 +133,9 @@ pub struct ScaleState {
     /// No es una desviación típica ni corrige por sí sola el sesgo de arranque.
     pub ewma_dev_vol: f64,
     pub momentum_z: f64,
-    pub signal: f64,      // tanh(z): opinión direccional ∈ [-1,1]
+    /// En nodos actualizados: tanh(clamp(z,-5,5)). `state_at` interpola esta
+    /// observable por separado; no impone tanh al momentum interpolado.
+    pub signal: f64,
     pub persistence: f64, // EWMA de sign(dev)·sign(prev_dev) — autocorrelación de sorpresas
     /// Factor adaptativo epigenético por escala armónica (0.20..3.00, inicial 1.0)
     pub epigenetic_gain: f64,
@@ -304,6 +311,7 @@ impl TemporalSpectrum {
 
     /// Interpolante continuo por tramos en log(τ) entre las señales de la malla.
     /// La continuidad del interpolante no añade observaciones entre nodos.
+    /// Es I[signal], no tanh(clamp(momentum_z_at(tau), -5, 5)).
     pub fn signal_at(&self, tau_ms: f64) -> f64 {
         if !tau_ms.is_finite() || tau_ms <= 0.0 {
             return 0.0;
@@ -497,7 +505,11 @@ impl TemporalSpectrum {
         ((p + 1.0) * 0.5).clamp(0.0, 1.0)
     }
 
-    /// Densidad de energía informacional espectral continua E(τ) = w(τ) · |s(τ)| a escala τ.
+    /// Interpolante de la masa nodal adimensional E_i = w_i*|signal_i|.
+    /// No es energía física ni una densidad probabilística normalizada.
+    /// Entre nodos se calcula I[E], NO w(state_at(tau))*|signal_at(tau)|:
+    /// señales vecinas opuestas conservan actividad aunque su media sea cero.
+    /// Comparar esta masa no identifica por sí solo la mejor dirección.
     #[inline]
     pub fn continuous_energy_density(&self, tau_ms: f64) -> f64 {
         if !tau_ms.is_finite() || tau_ms <= 0.0 {
@@ -519,14 +531,24 @@ impl TemporalSpectrum {
         energy(&self.scales[i0]) * (1.0 - frac) + energy(&self.scales[i1]) * frac
     }
 
-    /// Gradiente o derivada espectral local ∂s/∂ln(τ) evaluada por diferencias finitas continuas.
+    /// Pendiente local exacta del interpolante lineal por tramos en ln(tau).
+    /// En cada nodo se devuelve la derivada DERECHA; no se afirma que exista
+    /// una derivada bilateral en los quiebres. Fuera de la malla la extensión
+    /// es constante (derivada cero), también a la derecha del último nodo.
+    /// Una tau inválida devuelve cero, como las otras consultas de señal.
     #[inline]
     pub fn spectral_gradient_at(&self, tau_ms: f64) -> f64 {
-        let tau_plus = tau_ms * 2.0;
-        let tau_minus = (tau_ms * 0.5).max(1e-6);
-        let s_plus = self.signal_at(tau_plus);
-        let s_minus = self.signal_at(tau_minus);
-        (s_plus - s_minus) / (2.0 * 2.0_f64.ln())
+        if !tau_ms.is_finite()
+            || tau_ms < SPECTRUM_SCALES_MS[0]
+            || tau_ms >= SPECTRUM_SCALES_MS[31]
+        {
+            return 0.0;
+        }
+        // Search actual nodes to avoid assigning a rounded logarithm to the
+        // wrong side of a knot. No multiplication of tau can overflow here.
+        let right = SPECTRUM_SCALES_MS.partition_point(|&node| node <= tau_ms);
+        (self.scales[right].signal - self.scales[right - 1].signal)
+            / (SPECTRUM_SCALES_MS[right].ln() - SPECTRUM_SCALES_MS[right - 1].ln())
     }
 
     /// Producto de dos señales reales, en [-1,1]. Conserva el nombre histórico.
@@ -538,7 +560,10 @@ impl TemporalSpectrum {
         (s_fast * s_slow).clamp(-1.0, 1.0)
     }
 
-    /// Estado espectral continuo interpolado completo ScaleState a escala τ.
+    /// Vista de observables interpolados independientemente a escala tau.
+    /// No es un filtro EWMA evolucionado a esa tau ni un estado reanudable:
+    /// prev_dev no se reconstruye. En particular, signal != tanh(momentum_z)
+    /// en general. Las identidades nodales no conmutan con la interpolación.
     pub fn state_at(&self, tau_ms: f64) -> ScaleState {
         ScaleState {
             tau_ms,

@@ -1,0 +1,772 @@
+{
+  "schema_version": 1,
+  "round": "XXX",
+  "artifact_validation": {
+    "status": "passed_at_local_snapshot",
+    "hashes_verified": 50,
+    "model_hashes_verified": 41,
+    "evidence_references_verified": 26,
+    "report_local_links_verified": 19,
+    "append_only_prefixes_verified": 3,
+    "test_totals_consistent": true,
+    "coverage_paths_exist": true,
+    "issues": [],
+    "scope": "Checks snapshot hashes and reference existence/ranges, not all semantic claims or later concurrent edits. Artifact does not hash itself."
+  },
+  "date": "2026-09-25",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXX_2026-09-25.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false,
+    "dirty_tree_preserved": true
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 145,
+    "pending_complete_rust": 144,
+    "new_complete_reads": [
+      {
+        "file": "crates/storage-engine/src/ledger.rs",
+        "baseline_lines": 294,
+        "final_lines": 385
+      }
+    ],
+    "reread_previously_covered": [
+      "crates/storage-engine/src/mmap_bus.rs",
+      "crates/storage-engine/src/evolution_ledger.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/evolution-engine/src/online_daemon.rs",
+      "crates/god-engine-core/src/lib.rs",
+      "src/bin/god_engine.rs",
+      "crates/execution-engine/src/trade_accounting.rs",
+      "crates/execution-engine/src/user_data_stream.rs",
+      "crates/metacortex-engine/src/online_learning.rs"
+    ],
+    "new_files_reviewed": [
+      "crates/storage-engine/tests/mmap_admission_contract.rs",
+      "crates/storage-engine/tests/ownership_read_contract.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false
+  },
+  "new_ids": [
+    "FMT-233",
+    "FMT-234",
+    "FMT-235",
+    "FMT-236"
+  ],
+  "updated_ids": [
+    "FMT-230",
+    "FMT-231",
+    "FMT-232"
+  ],
+  "carried_open": [
+    "FMT-006",
+    "FMT-052",
+    "FMT-225",
+    "FMT-227"
+  ],
+  "findings": [
+    {
+      "id": "FMT-231",
+      "priority": "P1",
+      "status": "initial_length_contained_format_concurrency_open",
+      "title": "Memoria interpretada antes de validar longitud",
+      "runtime_exposure": "telemetry reader and evolution consumer",
+      "evidence": [
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 272
+        },
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 288
+        },
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 316
+        },
+        {
+          "file": "crates/storage-engine/tests/mmap_admission_contract.rs",
+          "line": 66
+        },
+        {
+          "file": "crates/evolution-engine/src/online_daemon.rs",
+          "line": 344
+        }
+      ],
+      "mechanism": "Un objeto mmap o descriptor abierto no acredita longitud válida para crear AtomicUsize ni recorrer el ring. Error de apertura se confundía con lote vacío.",
+      "reproduction": "Aserción fallida para cabecera incompleta y terminación aislada con 0xc0000005 STATUS_ACCESS_VIOLATION para archivo vacío antes del fix.",
+      "change": "Validar tamaño antes de mapear y antes de interpretar cabecera; propagar error y reintentar. Daemon registra primera interrupción y recuperación sin certificar continuidad.",
+      "residual": "Sin magic/version/generación, garantías ante truncamiento posterior, protocolo concurrente válido o gap durable; el log no pausa aprendizaje/promoción.",
+      "acceptance": "Formato versionado, propietario y generación, protocolo de publicación y tests de recuperación/wraparound, no sólo guarda de longitud."
+    },
+    {
+      "id": "FMT-233",
+      "priority": "P1",
+      "status": "nonempty_partial_file_preservation_repaired",
+      "title": "Inicialización implícita podía borrar evidencia parcial",
+      "runtime_exposure": "telemetry writer constructor",
+      "evidence": [
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 105
+        },
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 118
+        },
+        {
+          "file": "crates/storage-engine/tests/mmap_admission_contract.rs",
+          "line": 50
+        }
+      ],
+      "mechanism": "Un archivo existente menor al tamaño esperado se ampliaba y llenaba de ceros, confundiendo creación y recuperación.",
+      "reproduction": "El test rechazaba la aceptación del archivo parcial anterior; tras el fix verifica InvalidData y mismos bytes/longitud.",
+      "change": "Sólo archivo de tamaño cero puede inicializarse; archivo no vacío incompleto se preserva y rechaza.",
+      "residual": "No recuperación versionada, exclusión de inicializadores, cuarentena o reintento global OnceLock.",
+      "acceptance": "Preservación cubierta; recuperación y concurrencia requieren contrato adicional."
+    },
+    {
+      "id": "FMT-234",
+      "priority": "P2",
+      "status": "read_contract_repaired_auxiliary_not_live_ledger",
+      "title": "Contrato dual ocultaba etiquetas y convertía corrupción en cero",
+      "runtime_exposure": "No production caller found in crates/src; implementation, reexport and tests only",
+      "evidence": [
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 20
+        },
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 171
+        },
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 212
+        },
+        {
+          "file": "crates/storage-engine/tests/ownership_read_contract.rs",
+          "line": 49
+        }
+      ],
+      "mechanism": "Sólo cuatro números para scalp/swing; otra etiqueta ignorada, error numérico default cero, iteración podía terminar silenciosamente y apertura podía crear DB.",
+      "reproduction": "Tres fallos de aserción: etiqueta continuous, cantidad mal tipada y lectura que creaba DB ausente; test legacy ya pasaba.",
+      "change": "read_ownership Result con todas las etiquetas de procedencia, sólo lectura, errores de fila/dominio propagados. Adaptador devuelve None si no puede representar todo.",
+      "residual": "Sin identidad de cuenta/venue/fill/evento, freshness o generación; la lectura corregida no acredita autoridad económica ni aptitud hot path.",
+      "acceptance": "Once contratos de lectura pasan; antes de usar para riesgo exige ledger causal y migración explícita."
+    },
+    {
+      "id": "FMT-235",
+      "priority": "P2",
+      "status": "open_reproduced_write_admission",
+      "title": "Snapshot plano y exposición pequeña descartados por filtro dimensional",
+      "runtime_exposure": "auxiliary PositionLedger, no operational consumer found",
+      "evidence": [
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 91
+        },
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 136
+        },
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 156
+        },
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 361
+        },
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 369
+        }
+      ],
+      "mechanism": "abs(qty_delta)<1e-12 se aplica a deltas y absolutos; cero absoluto no llega al borrado. Writer aplica además <=1e-8 sin unidad de riesgo.",
+      "reproduction": "Dos diagnósticos con canal propio prueban que 0 y 1e-13 no se admiten; no worker ni DB.",
+      "change": "No writer repair; diagnostics and documentation only.",
+      "residual": "Estado plano intransmisible, exposición real pequeña descartada, semánticas mezcladas y rechazo sin razón.",
+      "acceptance": "Eventos snapshot/delta distintos, inventario sin dust implícito, invariancia de unidades y tests de cierre/replay."
+    },
+    {
+      "id": "FMT-236",
+      "priority": "P2",
+      "status": "open_queue_loss_reproduced_durability_static",
+      "title": "Enqueue sin ACK y fallos de persistencia sin respuesta por evento",
+      "runtime_exposure": "auxiliary PositionLedger, no operational consumer found",
+      "evidence": [
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 165
+        },
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 377
+        },
+        {
+          "file": "crates/storage-engine/src/ledger.rs",
+          "line": 81
+        }
+      ],
+      "mechanism": "try_send ignorado; worker continúa tras errores individuales y puede intentar commit sin ACK ni event_id.",
+      "reproduction": "Canal de capacidad uno conserva primer evento y descarta segundo válido sin respuesta; fallos SQL/commit sólo inspección estática.",
+      "change": "No durable protocol implemented; passing diagnostic of open defect.",
+      "residual": "Sin distinción rejected/enqueued/persisted/reconciled, backpressure, idempotencia ni recuperación.",
+      "acceptance": "ACK por etapa, autoridad definida, identidad, rollback/atomicidad, saturación/restart/replay tests."
+    },
+    {
+      "id": "FMT-230",
+      "priority": "P1",
+      "status": "open_reproduced_again",
+      "title": "Cursor consume reserva antes del commit y pierde muestra",
+      "runtime_exposure": "mmap evidence channel",
+      "evidence": [
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 337
+        },
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 356
+        },
+        {
+          "file": "crates/storage-engine/tests/mmap_open_diagnostics.rs",
+          "line": 6
+        }
+      ],
+      "mechanism": "Head reserva antes de publicación; reader salta seq impar y consume cursor. Commit posterior no se reintenta.",
+      "reproduction": "Mismo lector pierde frame; lector nuevo sí ve payload. Fases seriales, no carrera inducida.",
+      "change": "No cursor repair in XXX.",
+      "residual": "Reserva/publicación, secuencia absoluta, batch gaps y modelo de memoria abiertos.",
+      "acceptance": "Protocolo explícito acorde a best-effort o evidencia lossless."
+    },
+    {
+      "id": "FMT-232",
+      "priority": "P1",
+      "status": "open_promoted_from_static_to_reproduced",
+      "title": "Kill-switch bloquea propuesta local de cierre defensivo",
+      "runtime_exposure": "actual core decision path tested with isolated arena",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 678
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 922
+        },
+        {
+          "file": "crates/god-engine-core/tests/close_outcome_contract.rs",
+          "line": 345
+        }
+      ],
+      "mechanism": "Retorno global anterior a gestión de posición; veto de entrada también suprime propuesta por stop en la vía local.",
+      "reproduction": "Entrada 100, stop 99, bid 97: flag activo mantiene posición; al limpiar sólo el flag de fixture se genera cierre con pérdida.",
+      "change": "No operational veto disabled; diagnostic added.",
+      "residual": "No afirmación sobre disponibilidad de brackets externos. Falta autoridad/cause/action matrix.",
+      "acceptance": "Separar aumento/reducción/cancelación/reconciliación con evidencia, probar posición pendiente, partials y datos no válidos."
+    }
+  ],
+  "veto_audit": [
+    {
+      "condition": "incomplete_map",
+      "classification": "memory_integrity",
+      "action": "retain explicit rejection",
+      "adaptive": false
+    },
+    {
+      "condition": "unknown_provenance_label",
+      "classification": "arbitrary_representation_partition",
+      "action": "preserve in unified API; legacy adapter returns None",
+      "adaptive": false
+    },
+    {
+      "condition": "invalid_ownership_row",
+      "classification": "invalid_evidence",
+      "action": "reject full query, not impute zeros",
+      "adaptive": false
+    },
+    {
+      "condition": "absolute_zero_quantity",
+      "classification": "valid_snapshot_rejected",
+      "action": "open defect, writer unchanged",
+      "adaptive": false
+    },
+    {
+      "condition": "fixed_inventory_epsilon",
+      "classification": "dimensional_arbitrariness",
+      "action": "open defect; preserve accounting exposure independently of order limits",
+      "adaptive": false
+    },
+    {
+      "condition": "queue_full",
+      "classification": "capacity",
+      "action": "open loss; require backpressure and health",
+      "adaptive": false
+    },
+    {
+      "condition": "kill_switch",
+      "classification": "safety_authority_scope",
+      "action": "retain, specify per cause/action; no live bypass",
+      "adaptive": false
+    }
+  ],
+  "scientific_contracts": {
+    "new_theory_implemented": false,
+    "quantum_advantage_claimed": false,
+    "millennium_problem_solved": false,
+    "continuous_temporal_model": "Representation on tau>0 is distinct from observation support, clock resolution, numerical approximation and latency.",
+    "proposed_not_implemented": [
+      "dimensionless log-scale u=log(tau/tau_ref)",
+      "causal relaxation exp(-delta_t/tau) with monotone event-time contract",
+      "multiasset covariance units, alignment and PSD validation",
+      "genome finite-difference sensitivity with convergence and fixed causal context"
+    ],
+    "memory_primary_sources": [
+      {
+        "url": "https://doc.rust-lang.org/std/ptr/fn.read_volatile.html",
+        "claim": "Volatile is not an atomic operation or interthread synchronization guarantee."
+      },
+      {
+        "url": "https://docs.rs/memmap2/latest/memmap2/struct.MmapOptions.html#safety",
+        "claim": "File-backed mmap requires precautions against file modification; initial length checks do not certify lifetime safety."
+      }
+    ],
+    "source_note": ".firecrawl/XXX-memory-contract-evidence.md",
+    "skills_used": [
+      "firecrawl",
+      "firecrawl-developer-index",
+      "firecrawl-scrape"
+    ],
+    "tooling": "CLI unavailable; connector fallback; private repository content not uploaded",
+    "source_feedback": "Both feedback attempts expired with 409 FEEDBACK_WINDOW_EXPIRED; no retries bypassing the window."
+  },
+  "verification": {
+    "unique_functional_or_compatibility_passes": 30,
+    "unique_open_diagnostic_passes": 5,
+    "unique_total_passes": 35,
+    "new_functional_tests": 18,
+    "new_open_diagnostic_tests": 4,
+    "new_total_tests": 22,
+    "ignored_in_selected_runs": 0,
+    "red_assertion_to_green": 5,
+    "crash_to_guarded_contract": 1,
+    "pre_fix_caveats": [
+      "Initial test compile error from unwrap_err requiring Debug was corrected and is not bug reproduction.",
+      "Process crash prevented later cases in that run from executing; these are not counted as pre-fix reproductions."
+    ],
+    "suites": [
+      {
+        "command": "cargo test --offline -p storage-engine --test mmap_admission_contract --test mmap_open_diagnostics --test ownership_read_contract -- --test-threads=1",
+        "functional": 18,
+        "open_diagnostics": 1,
+        "status": "pass"
+      },
+      {
+        "command": "cargo test --offline -p storage-engine --lib mmap_bus::tests -- --test-threads=1",
+        "functional": 3,
+        "open_diagnostics": 0,
+        "status": "pass",
+        "caveat": "Existing serial compatibility including NaN sanitization; not proof of statistical correctness or concurrency."
+      },
+      {
+        "command": "cargo test --offline -p storage-engine --lib ledger::tests::xxx_open -- --test-threads=1",
+        "functional": 0,
+        "open_diagnostics": 3,
+        "status": "pass",
+        "caveat": "No SQLite worker or operational DB; confirms unresolved admission/queue behavior."
+      },
+      {
+        "command": "cargo test --offline -p god-engine-core --test close_outcome_contract -- --test-threads=1",
+        "functional": 9,
+        "open_diagnostics": 1,
+        "status": "pass"
+      }
+    ],
+    "checks": [
+      {
+        "command": "cargo check --offline --bin god_engine --bin feature_exporter --bin train_forest --bin train_dark_alpha",
+        "status": "pass",
+        "warnings": [
+          "evolution-engine unused latest_ts",
+          "evolution-engine unused mode",
+          "RealWfOutcome.trades never read"
+        ]
+      }
+    ],
+    "format_checks": [
+      {
+        "command": "rustfmt --edition 2021 --check crates/storage-engine/tests/mmap_admission_contract.rs crates/storage-engine/tests/ownership_read_contract.rs",
+        "status": "pass"
+      },
+      {
+        "command": "rustfmt --edition 2024 --check crates/god-engine-core/tests/close_outcome_contract.rs",
+        "status": "pass"
+      },
+      {
+        "command": "git diff --check -- ATLAS_ANALITICO.md INFORME_FORENSE_MAESTRO.md crates/storage-engine/src/ledger.rs crates/storage-engine/src/mmap_bus.rs crates/evolution-engine/src/online_daemon.rs",
+        "status": "pass"
+      }
+    ],
+    "workspace_suite_executed": false,
+    "real_concurrency_fault_injection": false,
+    "performance_benchmark": false,
+    "daemon_end_to_end_runtime_test": false,
+    "legacy_async_sql_writer_tests_run": false,
+    "open_diagnostic_names": [
+      "open_reader_permanently_skips_a_reserved_frame_committed_later",
+      "open_kill_switch_blocks_even_a_local_stop_close_proposal",
+      "xxx_open_absolute_flat_snapshot_is_discarded_before_writer",
+      "xxx_open_small_nonzero_exposure_is_discarded_without_reason",
+      "xxx_open_queue_full_discards_a_valid_event_without_ack"
+    ]
+  },
+  "preservation": {
+    "append_only_checks": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "prefix_chars": 103017,
+        "before_sha256": "7D9CE64EACDDE1BCA3FE5DB8C97E0A67F54EE721518504F9EC1EDA975434F022",
+        "after_prefix_sha256": "7D9CE64EACDDE1BCA3FE5DB8C97E0A67F54EE721518504F9EC1EDA975434F022",
+        "preserved": true,
+        "appended_chars": 2712
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "prefix_chars": 702832,
+        "before_sha256": "2ED7C5F17C04927CC0FC668F7EA1B71802DFA8C8F35F8B9533F7490B7AA4BAAE",
+        "after_prefix_sha256": "2ED7C5F17C04927CC0FC668F7EA1B71802DFA8C8F35F8B9533F7490B7AA4BAAE",
+        "preserved": true,
+        "appended_chars": 7078
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIX_2026-09-25.md",
+        "prefix_chars": 33658,
+        "before_sha256": "CA9CD30DEF761D7052C31AB83F07EB61FCDB745DD91871808172BE15201AA9AF",
+        "after_prefix_sha256": "CA9CD30DEF761D7052C31AB83F07EB61FCDB745DD91871808172BE15201AA9AF",
+        "preserved": true,
+        "appended_chars": 1440
+      }
+    ],
+    "source_before": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "normalized_chars": 103017,
+        "sha256": "7D9CE64EACDDE1BCA3FE5DB8C97E0A67F54EE721518504F9EC1EDA975434F022",
+        "normalized_sha256": "7D9CE64EACDDE1BCA3FE5DB8C97E0A67F54EE721518504F9EC1EDA975434F022"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "normalized_chars": 702832,
+        "sha256": "E6B2486B383C6255F1EA58B928E46A271471A86C5321716B5EB09C37C5C7149A",
+        "normalized_sha256": "2ED7C5F17C04927CC0FC668F7EA1B71802DFA8C8F35F8B9533F7490B7AA4BAAE"
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIX_2026-09-25.md",
+        "normalized_chars": 33658,
+        "sha256": "CA9CD30DEF761D7052C31AB83F07EB61FCDB745DD91871808172BE15201AA9AF",
+        "normalized_sha256": "CA9CD30DEF761D7052C31AB83F07EB61FCDB745DD91871808172BE15201AA9AF"
+      },
+      {
+        "path": "crates/storage-engine/src/mmap_bus.rs",
+        "normalized_chars": 17746,
+        "sha256": "BC3F56F9585B7115ADD83D58C0DAB4C932A5E4B6D6BBA0E65F182681F6E3D9F0",
+        "normalized_sha256": "BC3F56F9585B7115ADD83D58C0DAB4C932A5E4B6D6BBA0E65F182681F6E3D9F0"
+      },
+      {
+        "path": "crates/evolution-engine/src/online_daemon.rs",
+        "normalized_chars": 60944,
+        "sha256": "EEA91F108543B66AC53CDFF6DAAB83466F9E2451A92568727A4E23CD13400BC9",
+        "normalized_sha256": "EEA91F108543B66AC53CDFF6DAAB83466F9E2451A92568727A4E23CD13400BC9"
+      },
+      {
+        "path": "crates/storage-engine/src/ledger.rs",
+        "sha256": "FE78C96EF8AAA920FF9BF30150B6417DE3619F22C2E722DF62C087F642AF771D"
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "sha256": "4D6A71532E8684C30E63677A3271CF7A4C8BC84B5617176D54751F589AC1FBAB"
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/storage-engine/src/ledger.rs",
+        "sha256": "94706D2AD1BC1F2D97E144EE64B6A3F8E33087EC62AFB5D0DDB1EB32B95B3F69",
+        "lines": 385
+      },
+      {
+        "path": "crates/storage-engine/src/mmap_bus.rs",
+        "sha256": "81BED43A56569EE817471A965F2E04D112D9EC1A606F3560CF54CF105E241DEF",
+        "lines": 481
+      },
+      {
+        "path": "crates/evolution-engine/src/online_daemon.rs",
+        "sha256": "81A3A49DDCE3849AB7882D7E346DA355C0B75673181241D6F7100059609A7A4F",
+        "lines": 1267
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "sha256": "9DDABB1976797B03B0F00D44655AD866D12103FB2B5847B95FD54B036F9C79DE",
+        "lines": 362
+      },
+      {
+        "path": "crates/storage-engine/tests/mmap_admission_contract.rs",
+        "sha256": "EE1A26F5E5168FBA8D0F38625135202A63F35A5A884B264CD0536B207C315719",
+        "lines": 137
+      },
+      {
+        "path": "crates/storage-engine/tests/ownership_read_contract.rs",
+        "sha256": "63D05B5FA892C3E198BBC7F896E41C0DFD134CA9D00DD455CCE02D2709EDA484",
+        "lines": 192
+      },
+      {
+        "path": "crates/storage-engine/tests/mmap_open_diagnostics.rs",
+        "sha256": "78427A0E05ABA3F6BFD92B7410ACB7397A28E17397CC20D2E42AE6AAF86D2D7B",
+        "lines": 51
+      },
+      {
+        "path": ".firecrawl/XXX-memory-contract-evidence.md",
+        "sha256": "54E4692B3A1F1AF97D3AFABFB10C0AA36A7F1C8EDF9DEE54A474BA3E1F6B7525",
+        "lines": 10
+      }
+    ],
+    "report_snapshot": {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXX_2026-09-25.md",
+      "sha256": "A27EC60B3B33FF073E656BC58BD1F1BA9B147947C628F5B6618E50B8597FA329",
+      "lines": 314
+    },
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "market_orders_sent": 0,
+    "account_requests_sent": 0,
+    "operational_training_or_promotion": false,
+    "synthetic_learning_updates_in_tests": true,
+    "active_genomes_deliberately_modified": false,
+    "process_kills_or_restarts": false,
+    "operational_binary_built": false,
+    "temporary_files_removed": "Only own test fixtures. One empty crash-left fixture file and its empty validated directory removed non-recursively; no user datasets/models/traumas/operational maps removed."
+  },
+  "roadmap": [
+    "Economic authority and causal fills FMT-225",
+    "Cause/action/evidence safety policy FMT-232",
+    "Mmap publication, memory, generation and gaps FMT-230/231",
+    "Typed writer events and durable acknowledgments FMT-235/236",
+    "Frozen decision features and causal learning FMT-006/052",
+    "Continuous temporal/multiasset sensitivity under data support",
+    "Complete remaining 144 preexisting Rust reads and non-Rust inventory"
+  ]
+}

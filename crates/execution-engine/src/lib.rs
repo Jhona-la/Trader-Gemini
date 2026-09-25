@@ -1,8 +1,11 @@
 pub mod binance_api;
 pub mod client;
 pub mod dynamic_symbols;
+pub mod entry_dispatch;
+pub mod execution_evidence;
 pub mod executor;
 pub mod hot_swap;
+pub mod income_evidence;
 pub mod ntp;
 pub mod order_registry;
 pub mod order_types;

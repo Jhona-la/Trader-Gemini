@@ -8,7 +8,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Un frame de telemetría de 64 bytes (1 cache line exacto)
-/// #[repr(C)] garantiza que los datos se guarden tal cual en la memoria (y por tanto, en el SSD).
+/// repr(C) fixes this process ABI layout; it does not guarantee persistence,
+/// a portable wire format, atomic publication, or interprocess consistency.
 #[repr(C, align(64))]
 #[derive(Clone, Copy, Default, serde::Serialize)]
 pub struct TelemetryFrame {
@@ -90,7 +91,8 @@ pub const FRAME_TYPE_HURST_EXPONENT: u8 = 12;
 const RING_CAPACITY: usize = 1_000_000; // ~64 MB
 const HEADER_SIZE: usize = 64; // Guardamos metadatos atómicos al principio
 
-/// Bus lock-free Mmap para latencia O(1) picosegundos
+/// Legacy best-effort mmap telemetry. No picosecond/lock-free guarantee is
+/// certified here; the concurrent publication protocol remains under audit.
 pub struct MmapTelemetryBus {
     mmap: UnsafeCell<MmapMut>,
 }
@@ -111,7 +113,15 @@ impl MmapTelemetryBus {
             .open(&path)?;
 
         let metadata = file.metadata()?;
-        if metadata.len() < file_size as u64 {
+        // XXX / FMT-233: never zero existing evidence to "repair" a partial
+        // file. Only an empty/new file can be initialized by this legacy API.
+        if metadata.len() > 0 && metadata.len() < file_size as u64 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "incomplete telemetry file: preserve it and recover explicitly",
+            ));
+        }
+        if metadata.len() == 0 {
             file.set_len(file_size as u64)?;
             // Pre-fault the file with zeros to prevent allocation latencies during runtime
             file.write_all(&vec![0; file_size])?;
@@ -134,7 +144,8 @@ impl MmapTelemetryBus {
         }
     }
 
-    /// Escribe una traza atómicamente en memoria, que Windows paginará al SSD
+    /// Reserve a slot and write a trace. This is not a durable economic commit;
+    /// volatile/SIMD accesses do not by themselves certify atomic publication.
     #[inline(always)]
     pub fn write_trace(&self, subsystem: u8, frame_type: u8, payload: [f64; 6]) {
         // FIX #658: Sanitizar finitud de los flotantes en payload
@@ -237,8 +248,8 @@ impl MmapTelemetryBus {
     }
 }
 
-/// Lector lock-free del anillo de telemetría.
-/// Permite extraer métricas en vivo (O(1)) de la memoria mapeada sin interferir con el motor.
+/// Legacy reader of the telemetry ring. Work scales with the attempted batch;
+/// cached mapping avoids reopening a valid file on every poll, not all I/O.
 pub struct MmapTelemetryReader {
     mmap: Option<memmap2::Mmap>,
     path: std::path::PathBuf,
@@ -247,7 +258,7 @@ pub struct MmapTelemetryReader {
 
 impl MmapTelemetryReader {
     /// Abre el archivo mapeado en memoria en modo SÓLO LECTURA.
-    // FIX #1499: Constructor no falible para latencia cero y drop explícito antes de borrar archivo
+    // Infallible construction; open/format errors are retried and reported by read.
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
         let path_buf = path.as_ref().to_path_buf();
         let mmap = Self::open_mmap(&path_buf).ok();
@@ -268,14 +279,30 @@ impl MmapTelemetryReader {
         opts.share_mode(3); // FILE_SHARE_READ | FILE_SHARE_WRITE
 
         let file = opts.open(path)?;
+        // XXX / FMT-231: mapping an empty file can succeed on a platform;
+        // dereferencing its header is still invalid. Check before mapping.
+        Self::validate_len(file.metadata()?.len())?;
         unsafe { MmapOptions::new().map(&file) }
     }
 
-    /// Lee todos los frames nuevos desde la última vez que fue invocado.
-    /// Mantiene el mmap cacheado para latencia O(1) sin handle churn.
+    fn validate_len(len: u64) -> std::io::Result<()> {
+        let required = HEADER_SIZE + RING_CAPACITY * std::mem::size_of::<TelemetryFrame>();
+        if len < required as u64 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "incomplete telemetry header/ring",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Attempts a bounded batch from the legacy ring; not a lossless journal.
+    /// Cached mapping avoids handle churn, but batch work is not constant time.
     pub fn read_latest_frames(&mut self) -> std::io::Result<Vec<TelemetryFrame>> {
         if self.mmap.is_none() {
-            self.mmap = Self::open_mmap(&self.path).ok();
+            // Absence/corruption is not an observed empty batch. Keep None
+            // on failure so the next call can retry after external recovery.
+            self.mmap = Some(Self::open_mmap(&self.path)?);
         }
 
         let mmap = match &self.mmap {
@@ -283,6 +310,10 @@ impl MmapTelemetryReader {
             None => return Ok(Vec::new()),
         };
 
+        // Validate the actual mapping too, before constructing ANY header
+        // reference. This does not authorize concurrent truncation/replacement
+        // or certify the legacy volatile publication protocol.
+        Self::validate_len(mmap.len() as u64)?;
         let head_ptr = unsafe { &*(mmap.as_ptr() as *const AtomicUsize) };
         let current_head = head_ptr.load(Ordering::Acquire);
 

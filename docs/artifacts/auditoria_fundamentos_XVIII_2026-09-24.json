@@ -1,0 +1,542 @@
+{
+  "schema_version": 1,
+  "round": "XVIII",
+  "date": "2026-09-24",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVIII_2026-09-24.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 128,
+    "pending_complete_rust": 161,
+    "new_complete_reads": [
+      "crates/execution-engine/src/order_types.rs",
+      "crates/execution-engine/src/dynamic_symbols.rs",
+      "crates/execution-engine/src/client.rs",
+      "crates/execution-engine/src/reconciliation.rs"
+    ],
+    "reread": [
+      "crates/quantum-arena/src/symbol_registry.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/execution-engine/src/executor.rs",
+      "crates/execution-engine/src/order_registry.rs",
+      "src/bin/god_engine.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false
+  },
+  "new_ids": [
+    "FMT-178",
+    "FMT-179",
+    "FMT-180",
+    "FMT-181",
+    "FMT-182",
+    "FMT-183",
+    "FMT-184"
+  ],
+  "updated_ids": [
+    "FMT-175"
+  ],
+  "findings": [
+    {
+      "id": "FMT-175",
+      "is_new": false,
+      "priority": "P2_auxiliary_API",
+      "status": "partially_repaired",
+      "title": "Proyección de cantidades, dominio y precisión",
+      "evidence": [
+        {
+          "file": "crates/quantum-arena/src/symbol_registry.rs",
+          "line": 19
+        }
+      ],
+      "mechanism": "Inferir decimales con round(-log10(step)) incrementaba el pedido o abandonaba la malla; NaN, metadatos y overflow no rechazados.",
+      "reproductions": [
+        "step0.05/raw0.06 ->0.1",
+        "step0.025/raw0.09 ->0.08",
+        "NaN accepted",
+        "zero lot and infinite notional accepted"
+      ],
+      "repairs": [
+        "finite positive input domain",
+        "finite nonnegative minima",
+        "no fabricated step",
+        "origin minQty + integer increments",
+        "conservative downward correction",
+        "q/step unit-resolution bound below2^53",
+        "finite resulting notional"
+      ],
+      "limits": [
+        "no operative caller found",
+        "f64 boundary may underfill0.3 to0.2",
+        "not decimal serializer",
+        "maxQty/market-specific/reduce-only filters absent",
+        "not unified with executor rounding"
+      ],
+      "closure": "Exact decimal inputs and serialized feasible quantities using applicable exchange/account constraints."
+    },
+    {
+      "id": "FMT-178",
+      "is_new": true,
+      "priority": "P1_operational_numeric_boundary",
+      "status": "finite_deserialization_repaired",
+      "title": "Números no finitos como hechos contables",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/order_types.rs",
+          "line": 14
+        },
+        {
+          "file": "crates/execution-engine/src/reconciliation.rs",
+          "line": 13
+        }
+      ],
+      "mechanism": "String parse accepted NaN/infinity/overflow in ACK, fills, algo orders, incomes and positions; invalid position could be filtered as not open.",
+      "repairs": [
+        "finite check after each parse variant",
+        "legitimate negative numbers preserved"
+      ],
+      "limits": [
+        "missing fields still default",
+        "semantic domain per field unvalidated",
+        "public structs can bypass serde"
+      ],
+      "closure": "Complete typed contracts with presence, units, freshness, identity and per-field semantics."
+    },
+    {
+      "id": "FMT-179",
+      "is_new": true,
+      "priority": "P1_operational_schema",
+      "status": "open",
+      "title": "Defaults convierten falta de evidencia en identidad vacía o cero",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/order_types.rs",
+          "line": 189
+        },
+        {
+          "file": "crates/execution-engine/src/reconciliation.rs",
+          "line": 13
+        },
+        {
+          "file": "crates/execution-engine/src/order_registry.rs",
+          "line": 261
+        }
+      ],
+      "mechanism": "parse_order_body({}) succeeds with empty client ID; registry keys from that field. Missing positionAmt becomes zero without finite deserializer.",
+      "reproductions": [
+        "empty ACK accepted"
+      ],
+      "limits": [
+        "no claim exchange sent malformed replies",
+        "mandatory fields differ per endpoint and synthetic ACK"
+      ],
+      "closure": "Separate ACK/RESULT/query/cancel contracts; correlate response to intent; represent absence/unknown separately."
+    },
+    {
+      "id": "FMT-180",
+      "is_new": true,
+      "priority": "P1_operational_order_state",
+      "status": "typed_client_classification_partially_repaired",
+      "title": "Resultado incierto etiquetado como parse fallido o rechazo",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/client.rs",
+          "line": 314
+        },
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 2087
+        }
+      ],
+      "mechanism": "HTTP2xx parse errors did not carry AMBIGUOUS prefix; all4xx except rate controls were considered rejections despite timeout/unknown status.",
+      "repairs": [
+        "unreadable response body ambiguous",
+        "invalid success ACK ambiguous",
+        "HTTP408 and -1006/-1007 ambiguous",
+        "429/418 classification preserved before body read"
+      ],
+      "test_surface": "Real HTTP client against ephemeral loopback server, synthetic responses only",
+      "limits": [
+        "untyped/WS/cancel/chase not certified",
+        "malformed but structurally accepted ACK still FMT179",
+        "strings instead of typed error/state enum",
+        "5xx conservatively ambiguous"
+      ],
+      "closure": "Persistent correlated intent state machine with out-of-order fills and verified cancellation."
+    },
+    {
+      "id": "FMT-181",
+      "is_new": true,
+      "priority": "P1_accounting_mixed_reachability",
+      "status": "open",
+      "title": "Comisiones mezcladas por moneda y signo alterado",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/order_types.rs",
+          "line": 142
+        },
+        {
+          "file": "crates/execution-engine/src/order_registry.rs",
+          "line": 261
+        }
+      ],
+      "mechanism": "Helper sums positive fees regardless of asset; registry fragment stores abs fee per trade and also lacks currency valuation.",
+      "reproductions": [
+        "1BNB +1USDT -0.1USDT returns scalar2"
+      ],
+      "limits": [
+        "helper no operative caller found",
+        "registry only targeted read",
+        "full downstream conversion not audited"
+      ],
+      "closure": "Signed currency ledger per fill/time and causal numeraire valuation; observed versus imputed costs separated."
+    },
+    {
+      "id": "FMT-182",
+      "is_new": true,
+      "priority": "P2_auxiliary_selector",
+      "status": "open",
+      "title": "Segundo selector conserva fabricación, duplicación y orden inconsistente",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/dynamic_symbols.rs",
+          "line": 16
+        },
+        {
+          "file": "crates/execution-engine/src/dynamic_symbols.rs",
+          "line": 76
+        },
+        {
+          "file": "crates/execution-engine/src/dynamic_symbols.rs",
+          "line": 130
+        }
+      ],
+      "mechanism": "Invalid JSON falls back to empty; BTC always inserted; lastPrice only checked as string; symbols repeat; Eq/PartialOrd/Ord disagree on NaN.",
+      "reproductions": [
+        "empty input returnsBTC",
+        "duplicate invalid-price rows selected twice",
+        "NaN not equal itself but Ord saysEqual"
+      ],
+      "limits": [
+        "no operative caller found beyond definition/export/tests",
+        "heap producer filters nonfinite scores",
+        "daily return score is not spectral volatility"
+      ],
+      "closure": "Shared checked eligibility contract, no fabricated candidates, deduplication, deterministic total order, versioned policy."
+    },
+    {
+      "id": "FMT-183",
+      "is_new": true,
+      "priority": "P2_exported_error_constants",
+      "status": "corrected_with_deprecated_aliases",
+      "title": "Parámetros y nocional confundidos con duplicación y ban",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/order_types.rs",
+          "line": 204
+        }
+      ],
+      "mechanism": "PARAM_REPEAT=-1105 and RATE_LIMIT_BAN=-4164 were semantically incorrect.",
+      "repairs": [
+        "canonical -1101,-1105,-4164,-1003 constants",
+        "unknown execution -1006/-1007 constants",
+        "old names deprecated and remapped"
+      ],
+      "limits": [
+        "aliases retain symbols but change erroneous values",
+        "-1003 alone does not identify IP ban",
+        "no operative internal references found"
+      ],
+      "closure": "Canonical map verified; external consumers must review changed values and use HTTP/body-specific handling."
+    },
+    {
+      "id": "FMT-184",
+      "is_new": true,
+      "priority": "P1_operational_reconciliation",
+      "status": "open_reproduced",
+      "title": "Hedge neteado a plano e inversión con dirección obsoleta",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/reconciliation.rs",
+          "line": 245
+        },
+        {
+          "file": "crates/execution-engine/src/reconciliation.rs",
+          "line": 284
+        },
+        {
+          "file": "crates/execution-engine/src/reconciliation.rs",
+          "line": 425
+        },
+        {
+          "file": "src/bin/god_engine.rs",
+          "line": 2107
+        }
+      ],
+      "mechanism": "Aggregation by symbol discards leg identity. Zero net triggers cleanup; drift updates quantity/margin without direction or entry. Price/leverage maps retain last row.",
+      "reproductions": [
+        "remote LONG+1 SHORT-1 closes local slot despite gross2",
+        "local LONG1@100 remote SHORT1@120 staysLONG@100"
+      ],
+      "additional_static_observations": [
+        "absence default0",
+        "absolute thresholds unrelated to lot",
+        "synthetic adoption ID omits side",
+        "registry versus arena imputed fee divergence"
+      ],
+      "limits": [
+        "account mode not inspected",
+        "no real-account experiment",
+        "additional static observations not all fault-injected"
+      ],
+      "closure": "Stable per-leg keys, complete fresh snapshots and atomic coherent position/ledger/protection transition; permutation/restart/out-of-order tests."
+    }
+  ],
+  "theory": {
+    "id": "T41",
+    "title": "Continuidad analítica, discreción del terminal y conservación de información",
+    "status": "design_proposal_not_algorithm_integration",
+    "principles": [
+      "time resolution is not information resolution",
+      "continuous estimand with constrained discrete actions",
+      "net exposure cannot identify gross or legs",
+      "signed currency flows before numeraire valuation",
+      "causal comparable feedback before evolutionary promotion"
+    ],
+    "quantum_advantage_claimed": false,
+    "millennium_equations_implemented": false,
+    "profitability_certified": false
+  },
+  "verification": {
+    "distinct_tests_passed": 50,
+    "new_tests": 23,
+    "new_red_green_initial": 12,
+    "new_reinforcement": 5,
+    "new_open_diagnostics": 6,
+    "existing_tests_executed": 27,
+    "prior_open_diagnostics_converted_to_regression": 2,
+    "grid_cases": 5994,
+    "commands": [
+      {
+        "command": "cargo test -p quantum-arena --test order_quantity_contract --test universe_identity_diagnostics --test universe_selection_contract --offline -- --test-threads=1",
+        "passed": 26
+      },
+      {
+        "command": "cargo test -p execution-engine --test exchange_response_contract --test execution_open_diagnostics --offline -- --test-threads=1",
+        "passed": 13
+      },
+      {
+        "command": "cargo test -p execution-engine --lib order_types --offline -- --test-threads=1",
+        "passed": 3
+      },
+      {
+        "command": "cargo test -p execution-engine --lib client::tests --offline -- --test-threads=1",
+        "passed": 4
+      },
+      {
+        "command": "cargo test -p execution-engine --lib reconciliation::tests --offline -- --test-threads=1",
+        "passed": 4
+      },
+      {
+        "command": "cargo check --bin god_engine --offline",
+        "exit_code": 0
+      }
+    ],
+    "format_check_passed": true,
+    "diff_check_passed": true,
+    "preexisting_warnings": [
+      "evolution-engine latest_ts unused",
+      "evolution-engine mode unused",
+      "RealWfOutcome.trades never read"
+    ],
+    "engine_executed": false,
+    "exchange_requests_from_tests": false,
+    "local_http_fault_injection": true,
+    "notes": [
+      "After adding affine origin, boundary regression caught scale check; fixed and reverified.",
+      "Transient Windows1224 rustfmt failure retried without process termination."
+    ]
+  },
+  "research": {
+    "skill": "Firecrawl developer-index and scrape",
+    "cli_available": false,
+    "connector_used": true,
+    "pages": [
+      {
+        "url": "https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/error-code",
+        "scrape_id": "01a0d634-fdbf-738b-a5ad-37a3dcb6d79c",
+        "requested_max_age": 0,
+        "http_status": 200
+      },
+      {
+        "url": "https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/general-info",
+        "scrape_id": "01a0d636-1972-73e0-bf11-fa1c547adce1",
+        "requested_max_age": 0,
+        "http_status": 200
+      },
+      {
+        "url": "https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/common-definition",
+        "scrape_id": "01a0d639-9296-701a-afb9-e82fd33ba931",
+        "requested_max_age": 0,
+        "http_status": 200
+      }
+    ],
+    "feedback_result": "window_expired_409_no_retry",
+    "private_data_uploaded": false
+  },
+  "edited_production_sources": [
+    "crates/quantum-arena/src/symbol_registry.rs",
+    "crates/execution-engine/src/order_types.rs",
+    "crates/execution-engine/src/client.rs"
+  ],
+  "source_hashes": [
+    {
+      "path": "crates/quantum-arena/src/symbol_registry.rs",
+      "sha256": "67D838C6DE10DC0C4E5E00DFC28DEFC4B7E8E9834479687E73F4BE7EF3CA2FE4",
+      "lines": 203
+    },
+    {
+      "path": "crates/execution-engine/src/order_types.rs",
+      "sha256": "1ABC654E3397E998D0656CEA6C720AE5AFFC1F3D2B6BDBD46B9B12C9BC63C1E6",
+      "lines": 283
+    },
+    {
+      "path": "crates/execution-engine/src/dynamic_symbols.rs",
+      "sha256": "2DF0E42F14390A8305E1D3CF6F9EDAB0D0CFE2C89D34F490B278647AEF2857A6",
+      "lines": 261
+    },
+    {
+      "path": "crates/execution-engine/src/client.rs",
+      "sha256": "E8A2668AFC985CDA9BA80A1C3CEDD501C25E15B0E4FF8FCE3326B18D1FD7E6B7",
+      "lines": 560
+    },
+    {
+      "path": "crates/execution-engine/src/reconciliation.rs",
+      "sha256": "B09921C21066BD6646D87C6FF29A9962E0225403D6A4F9598D20EB0DA9A18E15",
+      "lines": 697
+    },
+    {
+      "path": "crates/execution-engine/src/executor.rs",
+      "sha256": "AF8729346B4DAFD3380B96DF6DC65FD6CBA6C33548AEF07C988A1ED165F6BB03",
+      "lines": 3881
+    },
+    {
+      "path": "src/bin/god_engine.rs",
+      "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62",
+      "lines": 4814
+    },
+    {
+      "path": "crates/quantum-arena/src/genome.rs",
+      "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+      "lines": 3347
+    },
+    {
+      "path": "crates/quantum-arena/src/config.rs",
+      "sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140",
+      "lines": 495
+    },
+    {
+      "path": "crates/quantum-arena/tests/order_quantity_contract.rs",
+      "sha256": "277FF4B5D43CA78B4BA5A551195038A116D8933211DC8DD2094C7C2340D6621E",
+      "lines": 103
+    },
+    {
+      "path": "crates/quantum-arena/tests/universe_identity_diagnostics.rs",
+      "sha256": "E7200F0C03418186A3E3CE77F7B49E4FE4FDEF70617220168863564494A8801A",
+      "lines": 70
+    },
+    {
+      "path": "crates/execution-engine/tests/exchange_response_contract.rs",
+      "sha256": "E6157A8463B8E21824E2B1D7D713A927687CD46FAB11ABAB06FF2C334C179B66",
+      "lines": 119
+    },
+    {
+      "path": "crates/execution-engine/tests/execution_open_diagnostics.rs",
+      "sha256": "FE30A40537435E37537CDD3E8FD36B2417AF2846B5E45F2DDAF4F47B4EE652C5",
+      "lines": 126
+    }
+  ],
+  "protected_sources": [
+    {
+      "path": "crates/execution-engine/src/dynamic_symbols.rs",
+      "before_sha256": "2DF0E42F14390A8305E1D3CF6F9EDAB0D0CFE2C89D34F490B278647AEF2857A6",
+      "after_sha256": "2DF0E42F14390A8305E1D3CF6F9EDAB0D0CFE2C89D34F490B278647AEF2857A6",
+      "unchanged": true
+    },
+    {
+      "path": "crates/execution-engine/src/reconciliation.rs",
+      "before_sha256": "B09921C21066BD6646D87C6FF29A9962E0225403D6A4F9598D20EB0DA9A18E15",
+      "after_sha256": "B09921C21066BD6646D87C6FF29A9962E0225403D6A4F9598D20EB0DA9A18E15",
+      "unchanged": true
+    },
+    {
+      "path": "crates/execution-engine/src/executor.rs",
+      "before_sha256": "AF8729346B4DAFD3380B96DF6DC65FD6CBA6C33548AEF07C988A1ED165F6BB03",
+      "after_sha256": "AF8729346B4DAFD3380B96DF6DC65FD6CBA6C33548AEF07C988A1ED165F6BB03",
+      "unchanged": true
+    },
+    {
+      "path": "src/bin/god_engine.rs",
+      "before_sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62",
+      "after_sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62",
+      "unchanged": true
+    },
+    {
+      "path": "crates/quantum-arena/src/genome.rs",
+      "before_sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+      "after_sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+      "unchanged": true
+    },
+    {
+      "path": "crates/quantum-arena/src/config.rs",
+      "before_sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140",
+      "after_sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140",
+      "unchanged": true
+    }
+  ],
+  "append_only_prefixes": [
+    {
+      "path": "ATLAS_ANALITICO.md",
+      "chars": 70674,
+      "hash": "08DE33564436E7C0B5351B0ECFDCD7231E67272F3813FF7AD16017CECA3C8FCD"
+    },
+    {
+      "path": "INFORME_FORENSE_MAESTRO.md",
+      "chars": 629478,
+      "hash": "9ECD697D50639A1928B2195E24A44033909D1A83E1718C4505AF10150B84C97E"
+    },
+    {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVII_2026-09-24.md",
+      "chars": 37226,
+      "hash": "16645548BB37085837567D3CA8F8591EB8D65B1B019DD5997D55082C347B12EC"
+    }
+  ],
+  "final_integrity": {
+    "json_validated": true,
+    "source_hashes_matching": 13,
+    "protected_sources_unchanged": 6,
+    "local_report_links_valid": 17,
+    "append_only_prefixes_verified": 3,
+    "appended_normalized_characters": {
+      "ATLAS_ANALITICO.md": 2307,
+      "INFORME_FORENSE_MAESTRO.md": 6182,
+      "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVII_2026-09-24.md": 1177
+    },
+    "app_preview_status": "queued"
+  },
+  "safety": {
+    "operational_genomes_intentionally_modified": false,
+    "real_orders_sent": false,
+    "account_accessed": false,
+    "deployed": false,
+    "processes_restarted": false
+  }
+}

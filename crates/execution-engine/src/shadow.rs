@@ -1,3 +1,6 @@
+//! Legacy logging stub, NOT a fill/queue/fee/portfolio simulator.
+//! It does not establish demo-production parity; admission/kill-switch gaps are
+//! reproduced in shadow_open_diagnostics. Do not use its Ok(()) as fill evidence.
 use crate::executor::ExecutionProvider;
 use risk_engine::ValidatedOrder;
 

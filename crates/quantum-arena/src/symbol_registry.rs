@@ -16,32 +16,54 @@ pub struct SymbolSpec {
 }
 
 impl SymbolSpec {
+    /// Conservative projection onto min_qty + integer lots in the supplied f64 model.
+    /// Never increases requested exposure or fabricates missing metadata.
+    /// This is NOT an exchange decimal serializer or full order validator:
+    /// binary boundary values may lose a lot; maxQty, market-specific filters,
+    /// reduce-only exceptions and price-tick validation are not represented here.
     #[inline]
     pub fn validate_order(&self, raw_qty: f64, price: f64) -> Result<f64, &'static str> {
-        if price <= 0.0 || raw_qty <= 0.0 {
+        if !price.is_finite() || !raw_qty.is_finite() || price <= 0.0 || raw_qty <= 0.0 {
             return Err("Invalid price or quantity");
         }
-        let step = if self.step_size > 0.0 {
-            self.step_size
-        } else {
-            1.0
-        };
-        let qty_steps = (raw_qty / step).floor();
-        let mut adjusted_qty = qty_steps * step;
-
-        // Exact decimal rounding based on step_size to eliminate floating point residues (BUG-673)
-        if step < 1.0 && step > 0.0 {
-            let decimals = (-step.log10()).round() as i32;
-            if decimals > 0 && decimals <= 8 {
-                let factor = 10_f64.powi(decimals);
-                adjusted_qty = (adjusted_qty * factor).round() / factor;
-            }
+        let step = self.step_size;
+        if !step.is_finite()
+            || step <= 0.0
+            || !self.min_qty.is_finite()
+            || self.min_qty < 0.0
+            || !self.min_notional.is_finite()
+            || self.min_notional < 0.0
+        {
+            return Err("Invalid quantity filter metadata");
+        }
+        if raw_qty < self.min_qty {
+            return Err("Qty below minQty");
+        }
+        // USD-M's documented lattice is (quantity - minQty) % stepSize == 0.
+        // Do not assume minQty is itself an integer multiple of stepSize.
+        let mut qty_steps = ((raw_qty - self.min_qty) / step).floor();
+        // 2^53 is the f64 unit-resolution boundary, not a trading threshold.
+        if !qty_steps.is_finite() || raw_qty / step >= 2_f64.powi(f64::MANTISSA_DIGITS as i32) {
+            return Err("Lot count exceeds f64 unit resolution");
+        }
+        let mut adjusted_qty = self.min_qty + qty_steps * step;
+        // Division/multiplication can straddle a binary rounding boundary.
+        // Correct downwards only; no arbitrary epsilon authorizes extra exposure.
+        if adjusted_qty > raw_qty {
+            qty_steps -= 1.0;
+            adjusted_qty = self.min_qty + qty_steps * step;
+        }
+        if !adjusted_qty.is_finite() || adjusted_qty <= 0.0 || adjusted_qty > raw_qty {
+            return Err("No positive conservative lot quantity");
         }
 
         if adjusted_qty < self.min_qty {
             return Err("Qty below minQty");
         }
         let final_notional = adjusted_qty * price;
+        if !final_notional.is_finite() {
+            return Err("Notional overflow");
+        }
         if final_notional < self.min_notional {
             return Err("Notional below minNotional");
         }

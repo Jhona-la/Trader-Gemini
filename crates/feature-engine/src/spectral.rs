@@ -1,11 +1,31 @@
-//! 🌌 MOTOR DE ANÁLISIS ESPECTRAL DE FOURIER EN TIEMPO REAL (ONLINE FFT SPECTRAL ENGINE)
-//! Descomposición espectral Cooley-Tukey Radix-2 en ventanas fijas de 64 muestras (#249-#265).
-//! Ejecución Zero-Alloc en microsegundos para detectar frecuencias dominantes y ciclos en scalping/swing.
+//! FFT Radix-2 sobre 64 observaciones en TIEMPO DE EVENTOS. Un bin k significa
+//! k/64 ciclos por observación, no hertz. No hay timestamps ni modelo multiescala.
+//! La API legacy mantiene el esquema ML anterior. La API V2 opt-in elimina media,
+//! declara calidad y normaliza potencia; cambiar el consumidor exige versionar y
+//! reevaluar/reentrenar las features. No se acredita latencia sin benchmark.
 const FFT_SIZE: usize = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpectrumError {
+    InsufficientSamples { received: usize },
+    InvalidSamples { count: usize },
+    UnrepresentablePower,
+}
+
+/// Potencia unilateral por bin (unidades de entrada al cuadrado, NO PSD/Hz).
+/// La suma de bins incluye DC residual del taper y equivale a energía de la
+/// señal centrada y ventaneada dividida por sum(w²). Dominio/centroide excluyen DC.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EventSpectrumV2 {
+    pub power_by_bin: [f64; FFT_SIZE / 2 + 1],
+    pub dominant_bin: usize,
+    pub centroid_bin: f64,
+}
 
 #[derive(Debug, Clone)]
 pub struct SpectralCycleEngine {
     buffer: [f64; FFT_SIZE],
+    valid: [bool; FFT_SIZE],
     index: usize,
     count: usize,
 }
@@ -14,6 +34,7 @@ impl SpectralCycleEngine {
     pub fn new() -> Self {
         Self {
             buffer: [0.0; FFT_SIZE],
+            valid: [false; FFT_SIZE],
             index: 0,
             count: 0,
         }
@@ -22,6 +43,7 @@ impl SpectralCycleEngine {
     /// Añade un nuevo retorno o precio normalizado al buffer circular
     #[inline(always)]
     pub fn push(&mut self, value: f64) {
+        self.valid[self.index] = value.is_finite();
         self.buffer[self.index] = if value.is_finite() { value } else { 0.0 };
         self.index = (self.index + 1) % FFT_SIZE;
         if self.count < FFT_SIZE {
@@ -29,14 +51,15 @@ impl SpectralCycleEngine {
         }
     }
 
-    /// Calcula la frecuencia dominante, la potencia espectral máxima y el centroide espectral
+    /// LEGACY: calcula bin dominante, potencia no corregida por ventana y centroide.
+    /// No distingue ausencia, imputación y cero. Conservada por compatibilidad ML.
     /// Retorna: `(dominant_freq_bin, max_power, spectral_centroid)`
     pub fn analyze_spectrum(&self) -> (usize, f64, f64) {
         if self.count < FFT_SIZE {
             return (0, 0.0, 0.0);
         }
 
-        // 1. Extraer muestras ordenadas cronológicamente y aplicar ventana asimétrica causal (Planck-Taper)
+        // 1. Extraer muestras ordenadas y aplicar un taper de medio coseno izquierdo.
         // Atenúa el borde histórico izquierdo para evitar fuga espectral, pero mantiene peso 1.0 en el presente (i -> N-1)
         let mut real = [0.0; FFT_SIZE];
         let mut imag = [0.0; FFT_SIZE];
@@ -91,6 +114,84 @@ impl SpectralCycleEngine {
         };
 
         (dominant_bin, safe_max_power, safe_centroid)
+    }
+
+    /// Estimador V2 de ventana finita, causal respecto al buffer recibido.
+    /// Centrado aritmético antes del taper; potencia unilateral con duplicación
+    /// sólo de bins interiores (DC y Nyquist no se duplican). Se rechaza toda
+    /// ventana con imputaciones, no se comprime el reloj quitando eventos malos.
+    /// No estima significación, intervalos, distribución predictiva ni régimen.
+    pub fn analyze_event_spectrum_v2(&self) -> Result<EventSpectrumV2, SpectrumError> {
+        if self.count < FFT_SIZE {
+            return Err(SpectrumError::InsufficientSamples {
+                received: self.count,
+            });
+        }
+        let invalid = self.valid.iter().filter(|valid| !**valid).count();
+        if invalid > 0 {
+            return Err(SpectrumError::InvalidSamples { count: invalid });
+        }
+        let scale = self.buffer.iter().fold(0.0_f64, |m, x| m.max(x.abs()));
+        let mut result = EventSpectrumV2 {
+            power_by_bin: [0.0; FFT_SIZE / 2 + 1],
+            dominant_bin: 0,
+            centroid_bin: 0.0,
+        };
+        if scale == 0.0 {
+            return Ok(result);
+        }
+        // Normalizar antes de sumar evita overflow por media o mariposas.
+        let mean = self
+            .buffer
+            .iter()
+            .map(|x| (x / scale) / FFT_SIZE as f64)
+            .sum::<f64>();
+        let mut real = [0.0; FFT_SIZE];
+        let mut imag = [0.0; FFT_SIZE];
+        let mut window_energy = 0.0;
+        for (i, value) in real.iter_mut().enumerate() {
+            let weight = if i < FFT_SIZE / 4 {
+                0.5 * (1.0 - (std::f64::consts::PI * i as f64 / (FFT_SIZE / 4) as f64).cos())
+            } else {
+                1.0
+            };
+            *value = (self.buffer[(self.index + i) % FFT_SIZE] / scale - mean) * weight;
+            window_energy += weight * weight;
+        }
+        Self::fft_radix2(&mut real, &mut imag);
+        let mut max_power = 0.0;
+        let mut total = 0.0;
+        let mut weighted = 0.0;
+        for k in 0..=FFT_SIZE / 2 {
+            let sides = if k == 0 || k == FFT_SIZE / 2 {
+                1.0
+            } else {
+                2.0
+            };
+            let power =
+                sides * (real[k] * real[k] + imag[k] * imag[k]) / (FFT_SIZE as f64 * window_energy);
+            // Orden que no calcula scale² directamente: puede desbordar aunque
+            // power*scale² sí sea representable. Un bin positivo que subdesborda
+            // a cero tampoco se presenta como una medición de potencia nula.
+            let restored = (power * scale) * scale;
+            if !restored.is_finite() || (power > 0.0 && restored == 0.0) {
+                return Err(SpectrumError::UnrepresentablePower);
+            }
+            result.power_by_bin[k] = restored;
+            if k > 0 {
+                if power > max_power {
+                    max_power = power;
+                    result.dominant_bin = k;
+                }
+                total += power;
+                weighted += k as f64 * power;
+            }
+        }
+        // No piso dimensional: forma espectral independiente de amplitud.
+        if total > 0.0 {
+            result.centroid_bin = weighted / total;
+        }
+        Ok(result)
     }
 
     /// Algoritmo Cooley-Tukey Radix-2 FFT In-Place de alta velocidad ($O(N \log N)$)

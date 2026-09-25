@@ -8,8 +8,8 @@
 //! INVARIANTES por evento:
 //!      1. Precios finitos, > 0.
 //!      2. bid <= ask (libro cruzado = dato corrupto o replay desordenado).
-//!      3. Spread relativo < 50% (glitch de feed; el filtro ancho evita
-//!         falsos positivos en exóticos ilíquidos).
+//!      3. Spread relativo <= 50% (política heredada de admisión, NO prueba
+//!         de corrupción ni umbral calibrado para todo activo).
 //!      4. Cantidades finitas, >= 0.
 //!      5. event_time > 0 (0 = campo sin parsear).
 //! Contadores atómicos por razón — telemetría F6 leerá "cuánta basura
@@ -18,9 +18,8 @@
 use crate::parser::BookTickerEvent;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Umbral de spread relativo para rechazo. Constante de infraestructura:
-/// un book con 50% de spread no existe en ningún listado de Binance —
-/// es corrupción de feed, no un mercado raro.
+/// Política heredada, no ley de mercado. XXXIII conserva el umbral y corrige
+/// solo la estabilidad numérica; calibración por activo/liquidez sigue pendiente.
 const MAX_RELATIVE_SPREAD: f64 = 0.50;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,8 +108,11 @@ pub fn validate_book_ticker(e: &BookTickerEvent) -> Result<(), RejectReason> {
         return Err(RejectReason::CrossedBook);
     }
     // 3) Spread absurdo
-    let mid = (e.bid_price + e.ask_price) * 0.5;
-    if mid > 0.0 && (e.ask_price - e.bid_price) / mid > MAX_RELATIVE_SPREAD {
+    // Positive ordered prices imply r in [0,1]. Algebraically equivalent to
+    // (ask-bid)/mid, without overflowing the sum of two finite prices.
+    let ratio = e.bid_price / e.ask_price;
+    let relative_spread = 2.0 * (1.0 - ratio) / (1.0 + ratio);
+    if relative_spread > MAX_RELATIVE_SPREAD {
         return Err(RejectReason::AbsurdSpread);
     }
     // 4) Cantidades

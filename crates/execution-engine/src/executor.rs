@@ -75,9 +75,9 @@ fn snap_ceil(scaled: f64) -> f64 {
 /// spread 3 ticks: compra = bid + 1t,  venta = ask − 1t   (dentro del spread)
 /// ```
 ///
-/// Nunca cruza: bajo GTX el exchange rechaza cualquier orden que tomaría
-/// liquidez, y ese rechazo es la señal correcta, no un fallo a esquivar
-/// alejándose del libro.
+/// Sin bid/ask contemporáneos no se puede certificar pasividad localmente.
+/// GTX deja al exchange rechazar una orden que tomaría liquidez; ese rechazo
+/// no debe eludirse convirtiendo automáticamente la orden a taker.
 #[inline(always)]
 pub(crate) fn passive_join_price(mid: f64, tick: f64, is_sell: bool) -> f64 {
     if !mid.is_finite() || mid <= 0.0 || !tick.is_finite() || tick <= 0.0 {
@@ -354,11 +354,11 @@ pub enum OrderResolution {
     /// El exchange aceptó la orden (NEW/PARTIALLY_FILLED/FILLED con orderId)
     /// o hubo fill real antes de un estado terminal.
     Accepted,
-    /// Terminal con cero fills y confirmación del exchange, u orden
-    /// inexistente (-2013 "Order does not exist").
+    /// Terminal con cero fills y evidencia de identidad del exchange.
+    /// No incluye errores de consulta como -2013 (ausencia no es rechazo).
     Rejected,
     /// Sin verificación concluyente (red caída en ambos planos). El llamador
-    /// conserva el estado local y reconcilia contra positionRisk (X-007).
+    /// conserva el estado local; posición agregada no acredita la intención.
     Timeout,
 }
 
@@ -479,54 +479,50 @@ impl OrderExecutor {
         }
     }
 
-    /// FIX M4-C01: resolución por consulta REST (respaldo cuando el
-    /// user-data stream no entrega ORDER_TRADE_UPDATE). -2013 ("Order does
-    /// not exist") ⇒ la orden NUNCA llegó al exchange ⇒ Rejected. Otros
-    /// errores de red ⇒ Timeout (inconcluso, el llamador reconcilia).
+    /// Consulta REST sin reenvío. Un error de consulta (incluido -2013) no
+    /// prueba rechazo; la evidencia se valida ANTES de escribir el registro.
     pub async fn resolve_via_rest(&self, symbol: &str, client_order_id: &str) -> OrderResolution {
         if self.is_paper_trading {
             return OrderResolution::Accepted;
         }
-        match self.query_order(symbol, client_order_id).await {
-            Ok(ack) => {
-                let now = self.get_synced_timestamp();
-                self.order_registry.apply_ack(&ack, now);
-                if ack.executed_qty > 0.0 {
-                    return OrderResolution::Accepted;
-                }
-                match crate::order_registry::OrderStatus::parse(&ack.status) {
-                    crate::order_registry::OrderStatus::Rejected
-                    | crate::order_registry::OrderStatus::Expired
-                    | crate::order_registry::OrderStatus::Canceled => OrderResolution::Rejected,
-                    _ => {
-                        if ack.order_id > 0 {
-                            OrderResolution::Accepted
-                        } else {
-                            OrderResolution::Rejected
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                if e.contains("-2013") {
-                    OrderResolution::Rejected
-                } else {
-                    println!(
-                        "⚠️ [M4-C01] resolve_via_rest {} inconcluso: {}",
-                        client_order_id, e
-                    );
-                    OrderResolution::Timeout
-                }
+        let result = self.query_order(symbol, client_order_id).await;
+        self.record_query_resolution(symbol, client_order_id, result.as_ref().map_err(String::as_str))
+    }
+
+    fn record_query_resolution(
+        &self,
+        symbol: &str,
+        client_order_id: &str,
+        result: Result<&OrderAck, &str>,
+    ) -> OrderResolution {
+        let resolution = crate::execution_evidence::classify_query_result(symbol, client_order_id, result);
+        if resolution == OrderResolution::Timeout {
+            return resolution;
+        }
+        let ack = result.expect("validated query evidence");
+        if let Some(prior) = self.order_registry.get(client_order_id) {
+            if prior.symbol != symbol || prior.side != ack.side
+                || (prior.order_id != 0 && prior.order_id != ack.order_id)
+            {
+                return OrderResolution::Timeout;
             }
         }
+        self.order_registry.apply_ack(ack, self.get_synced_timestamp());
+        // A late terminal snapshot with zero fills cannot erase positive
+        // cumulative fill evidence already merged from WS/REST.
+        if let Some(merged) = self.order_registry.get(client_order_id) {
+            if merged.executed_qty.is_finite() && merged.executed_qty > 0.0 {
+                return OrderResolution::Accepted;
+            }
+        }
+        resolution
     }
 
     /// FIX M4-C01: gate de confirmación para envíos WS. Retorna Ok(()) SOLO
     /// con confirmación del exchange. Err clasificado para el host:
-    /// · "WS_ORDER_REJECTED…" → la orden no existe → rama Err genérica
-    ///   (rollback local seguro: no hay posición real).
-    /// · "AMBIGUOUS…" → inconcluso → rama X-007 (reconcile-then-rollback:
-    ///   consultar positionRisk ANTES de tocar el estado local).
+    /// · "WS_ORDER_REJECTED…" → terminal observado sin fills conocidos.
+    /// · "AMBIGUOUS…" → inconcluso: conservar reserva, no certificar posición.
+    /// El rollback por reserva/intención en el host sigue siendo necesario.
     /// Latencia happy-path: el ORDER_TRADE_UPDATE del fill llega en <500ms
     /// típicos; el timeout de 8s + 3 queries REST solo corre cuando el
     /// user-data stream falló.
@@ -548,7 +544,7 @@ impl OrderExecutor {
         match resolution {
             OrderResolution::Accepted => Ok(()),
             OrderResolution::Rejected => Err(format!(
-                "WS_ORDER_REJECTED: {} sin ack del exchange (rechazada/inexistente)",
+                "WS_ORDER_REJECTED: {} terminal confirmado sin fills conocidos",
                 client_order_id
             )),
             OrderResolution::Timeout => Err(format!(
@@ -576,6 +572,36 @@ impl OrderExecutor {
                 .unwrap_or_default()
                 .as_millis() as u64
         }
+    }
+
+    /// Consulta firmada de sólo lectura: true=hedge, false=one-way.
+    /// No modifica la cuenta ni publica un estado operativo local.
+    /// En simulación no existe evidencia remota: devolver error, no asumir modo.
+    pub async fn fetch_hedge_mode(&self) -> Result<bool, String> {
+        if self.is_paper_trading {
+            return Err("POSITION_MODE_UNAVAILABLE_IN_PAPER".to_string());
+        }
+        let timestamp = self.get_synced_timestamp();
+        let api_secret = self.api_secret.load();
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/positionSide/dual?");
+        let payload_start = buf.as_str().len();
+        buf.push_str("timestamp=");
+        buf.push_u64(timestamp);
+        let mut sig_buf = [0u8; 64];
+        sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
+        buf.push_str("&signature=");
+        buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
+        let (_, body) = self.get_payload_account(buf.as_str()).await?;
+        #[derive(serde::Deserialize)]
+        struct ModeResp {
+            #[serde(rename = "dualSidePosition")]
+            dual: bool,
+        }
+        serde_json::from_str::<ModeResp>(&body)
+            .map(|mode| mode.dual)
+            .map_err(|e| format!("POSITION_MODE_PARSE: {}", e))
     }
 
     /// F1.11: verifica que la cuenta esté en modo HEDGE (dualSidePosition).
@@ -947,40 +973,43 @@ impl OrderExecutor {
         Ok((cancelled, closed))
     }
 
-    /// F3.5: GET /fapi/v1/income — la VERDAD contable del exchange (PnL
-    /// realizado, comisiones, funding). Base de los informes pre/post fees:
-    /// sin esto, "cuánto pagamos" es una estimación; con esto, es un hecho.
-    /// `income_types`: filtro opcional (ej. ["COMMISSION","FUNDING_FEE"]).
-    /// `start_ms`: ventana desde; `limit` ≤ 1000 (paginar hacia atrás si hace falta).
+    /// F3.5: one reported income page (PnL, commission, funding, other flows).
+    /// This is not complete accounting or a trade-outcome certificate.
+    /// `income_types`: empty or exactly one type; the endpoint filter is scalar.
+    /// `limit`: 1..=1000, validated rather than silently clamped.
     pub async fn fetch_income(
         &self,
         income_types: &[&str],
         start_ms: u64,
         limit: u32,
     ) -> Result<Vec<crate::order_types::IncomeEntry>, String> {
+        // A single page is not a coverage certificate. Keep this API for callers
+        // requesting one page; decision consumers use fetch_income_paged/window.
+        self.fetch_income_page(income_types, start_ms, self.get_synced_timestamp(), 1, limit).await
+    }
+
+    async fn fetch_income_page(
+        &self,
+        income_types: &[&str],
+        start_ms: u64,
+        end_ms: u64,
+        page: u32,
+        limit: u32,
+    ) -> Result<Vec<crate::order_types::IncomeEntry>, String> {
+        let timestamp = self.get_synced_timestamp();
+        let query = crate::income_evidence::income_page_query(
+            start_ms, end_ms, page, limit, income_types, timestamp,
+        ).map_err(|e| format!("INCOME_QUERY: {e:?}"))?;
         if self.is_paper_trading {
             return Ok(Vec::new());
         }
-        let timestamp = self.get_synced_timestamp();
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
         buf.push_str("/fapi/v1/income?");
         let payload_start = buf.as_str().len();
-        if !income_types.is_empty() {
-            let joined = income_types.join("%2C");
-            buf.push_str("incomeType=");
-            buf.push_str(&joined);
-            buf.push_str("&");
-        }
-        buf.push_str("startTime=");
-        buf.push_u64(start_ms);
-        buf.push_str("&limit=");
-        let mut itoa_buf = itoa::Buffer::new();
-        buf.push_str(itoa_buf.format(limit.clamp(1, 1000)));
-        buf.push_str("&timestamp=");
-        buf.push_u64(timestamp);
+        buf.push_str(&query);
 
         let mut sig_buf = [0u8; 64];
         sign_payload_to_buffer(
@@ -1006,49 +1035,47 @@ impl OrderExecutor {
         }
     }
 
-    /// B3.6b (auditoría) — income VENTANA COMPLETA paginada.
-    ///
-    /// /fapi/v1/income sirve máx 1000 entradas por llamada. Un día activo
-    /// genera ~4 entradas por trade (2 COMMISSION + REALIZED_PNL + funding
-    /// ocasional): con ~250 trades la ventana de 24h del fee-breaker se
-    /// trunca SIN aviso, y la truncación silenciosa sub-cuenta fees — falso
-    /// negativo de suspensión justo cuando el churn es peor. Esta rutina
-    /// pagina por cursor de tiempo (re-sirviendo el ms frontera y colapsando
-    /// duplicados por tranId: varias entradas comparten el mismo ms) hasta
-    /// `max_pages` páginas o agotar la ventana, y AVISA si quedó truncada.
+    /// Bounded numbered traversal with a fixed inclusive interval. A short/empty
+    /// page establishes observed exhaustion, not an immutable provider snapshot
+    /// or completeness beyond provider retention. Paper is explicitly simulated.
+    pub async fn fetch_income_window(
+        &self,
+        income_types: &[&str],
+        start_ms: u64,
+        end_ms: u64,
+        max_pages: u32,
+    ) -> Result<crate::income_evidence::IncomeWindow, String> {
+        crate::income_evidence::income_page_query(
+            start_ms, end_ms, 1, 1000, income_types, self.get_synced_timestamp(),
+        ).map_err(|e| format!("INCOME_QUERY: {e:?}"))?;
+        if max_pages == 0 {
+            return Err("INCOME_QUERY: InvalidPageBudget".into());
+        }
+        if self.is_paper_trading {
+            return Ok(crate::income_evidence::IncomeWindow {
+                start_ms, end_ms, pages_read: 0,
+                coverage: crate::income_evidence::IncomeCoverage::Simulated,
+                entries: Vec::new(),
+            });
+        }
+        crate::income_evidence::collect_income_window(
+            start_ms, end_ms, max_pages, 1000,
+            |page| self.fetch_income_page(income_types, start_ms, end_ms, page, 1000),
+        ).await.map_err(|e| format!("INCOME_EVIDENCE: {e:?}"))
+    }
+
+    /// Compatibility API: never expose budget-truncated, stalled or simulated
+    /// evidence as an exhausted real window. Existing suspensions are not cleared.
     pub async fn fetch_income_paged(
         &self,
         income_types: &[&str],
         start_ms: u64,
         max_pages: u32,
     ) -> Result<Vec<crate::order_types::IncomeEntry>, String> {
-        let max_pages = max_pages.max(1);
-        let mut acc: Vec<crate::order_types::IncomeEntry> = Vec::new();
-        let mut seen: std::collections::HashSet<IncomeKey> = std::collections::HashSet::new();
-        let mut cursor = start_ms;
-        for page_idx in 0..max_pages {
-            let page = self.fetch_income(income_types, cursor, 1000).await?;
-            let full_page = page.len() >= 1000;
-            let last_ts = page.iter().map(|e| e.time).max().unwrap_or(0);
-            let added = merge_income_page(&mut acc, &mut seen, page);
-            if !full_page {
-                return Ok(acc); // ventana agotada: última página parcial
-            }
-            if last_ts <= cursor || added == 0 {
-                // Sin progreso de cursor o puro dedup: no hay más nada nuevo.
-                return Ok(acc);
-            }
-            if page_idx + 1 == max_pages {
-                println!(
-                    "⚠️ [INCOME] ventana truncada tras {} páginas ({} entradas desde ms {}) — la contabilidad de fees puede estar SUB-CONTADA",
-                    max_pages,
-                    acc.len(),
-                    start_ms
-                );
-            }
-            cursor = last_ts;
-        }
-        Ok(acc)
+        self.fetch_income_window(income_types, start_ms, self.get_synced_timestamp(), max_pages)
+            .await?
+            .into_exhausted_entries()
+            .map_err(|e| format!("INCOME_EVIDENCE: {e:?}"))
     }
 
     /// F1.7: GET /fapi/v2/positionRisk — posiciones abiertas según el EXCHANGE.
@@ -1360,15 +1387,33 @@ impl OrderExecutor {
         step_size: f64,
         tick_size: f64,
     ) -> Option<ExecutionPayload> {
-        if order.volume_usd <= 0.0 || current_price <= 0.0 || tick_size <= 0.0 {
+        if !order.volume_usd.is_finite()
+            || order.volume_usd <= 0.0
+            || !current_price.is_finite()
+            || current_price <= 0.0
+            || (order.maker_only && (!tick_size.is_finite() || tick_size <= 0.0))
+            || !step_size.is_finite()
+            || step_size <= 0.0
+            || order
+                .integer_leverage()
+                .filter(|&l| l <= crate::binance_api::MAX_INITIAL_LEVERAGE)
+                .is_none()
+        {
             return None;
         }
 
         // Cantidad exacta calculada a partir del margen asignado y el apalancamiento aprobado
-        let raw_quantity = (order.volume_usd * order.leverage) / current_price;
+        let notional = order.volume_usd * order.leverage;
+        if !notional.is_finite() || notional <= 0.0 {
+            return None;
+        }
+        let raw_quantity = notional / current_price;
+        if !raw_quantity.is_finite() || raw_quantity <= 0.0 {
+            return None;
+        }
         let final_quantity = Self::round_to_step_size(raw_quantity, step_size);
 
-        if final_quantity == 0.0 {
+        if !final_quantity.is_finite() || final_quantity <= 0.0 {
             return None;
         }
 
@@ -1398,6 +1443,15 @@ impl OrderExecutor {
             // D-628: unirse al mejor nivel propio (medio tick desde el mid), no
             // quedar un nivel por detrás.
             let final_price = passive_join_price(current_price, tick_size, is_sell);
+            // The minimum-tick fallback must not move a BUY above its reference.
+            // This checks quote geometry, not passivity against a live book.
+            if !final_price.is_finite()
+                || final_price <= 0.0
+                || (!is_sell && final_price > current_price)
+                || (is_sell && final_price < current_price)
+            {
+                return None;
+            }
             (
                 ORDER_TYPE_LIMIT,
                 crate::binance_api::TIME_IN_FORCE_GTX,
@@ -1915,9 +1969,25 @@ impl ExecutionProvider for OrderExecutor {
         current_price: f64,
         step_size: f64,
     ) -> Result<(), String> {
-        if current_price <= 0.0 {
-            return Err("SEGURIDAD: current_price inválido (<= 0.0). Orden abortada.".to_string());
+        if !current_price.is_finite()
+            || current_price <= 0.0
+            || !order.volume_usd.is_finite()
+            || order.volume_usd <= 0.0
+            || !step_size.is_finite()
+            || step_size <= 0.0
+            || !(order.volume_usd * order.leverage).is_finite()
+            || order.signal == SignalType::Flat
+        {
+            return Err("SEGURIDAD: precio, margen o paso inválido. Orden abortada.".to_string());
         }
+        // FMT-214/218: validate before paper success, leverage mutation or IO.
+        // Casting fractional L changes collateral semantics without changing N.
+        let target_leverage = order
+            .integer_leverage()
+            .filter(|&l| l <= crate::binance_api::MAX_INITIAL_LEVERAGE)
+            .ok_or_else(|| {
+                "SEGURIDAD: apalancamiento no entero o fuera del dominio de Binance.".to_string()
+            })?;
 
         if self.is_paper_trading {
             println!("📝 [PAPER TRADING LOCAL] Ejecutando orden de {:?} para {}. No se envió a Testnet API para evitar divergencia de latencia.", order.signal, symbol);
@@ -1925,7 +1995,6 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         // Parametrizar dinámicamente el Leverage (Kelly Criterion)
-        let target_leverage = order.leverage as u32;
         let needs_update = {
             let cache = self.active_leverage.load();
             cache.get(symbol).copied().unwrap_or(0) != target_leverage
@@ -2107,7 +2176,7 @@ impl ExecutionProvider for OrderExecutor {
             );
         }
         let final_quantity = Self::round_to_step_size(quantity, step_size);
-        if final_quantity == 0.0 {
+        if !final_quantity.is_finite() || final_quantity <= 0.0 {
             return Err("Volumen 0 despues de round_to_step_size".to_string());
         }
 
@@ -2356,8 +2425,8 @@ impl ExecutionProvider for OrderExecutor {
         }
     }
 
-    /// Implementa el algoritmo Maker-Chase: Coloca orden Límite Maker (GTX), espera 50ms,
-    /// si no se llena (o por simplicidad, la cancela preventivamente), y cae a orden Market (Taker).
+    /// GTX, sondeo acotado, cancelación y consulta terminal antes de completar
+    /// el remanente como taker. Un resultado incierto no permite otra entrada.
     #[inline(always)]
     async fn execute_maker_chase(
         &self,
@@ -2389,20 +2458,17 @@ impl ExecutionProvider for OrderExecutor {
                 client_order_id,
             )
             .await;
-        if maker_res.is_err() {
-            // Si la orden GTX es rechazada (ej. cruza el libro inmediatamente), caemos a Taker.
-            return self
-                .execute_raw_qty(symbol, is_long, quantity, step_size)
-                .await;
+        if let Err(error) = maker_res {
+            // The legacy LIMIT transport does not prove non-execution on all
+            // error paths. No unconditional full-size MARKET replacement.
+            // Even a known rejection needs a typed fallback policy, not Err.
+            return Err(format!("MAKER_CHASE_UNVERIFIED: initial maker submission: {error}"));
         }
 
-        // 2. Espera adaptativa con sondeo de order_registry (D-361).
-        // B3.26 — ventana 15ms → 400ms: medido en vivo, el post-only al mid
-        // NUNCA llenó pasivo en 15ms (32/32 entradas cayeron al remnant
-        // taker mcT_ — cero ahorro de maker). Con horizonte de barrera de 5
-        // MINUTOS, 400ms de latencia son irrelevantes para la tesis; para el
-        // estado, B3.14 (exchange_confirmed) ya domestica los parciales.
-        // Early-exit en cuanto la orden deja de estar activa (llenó/canceló).
+        // 2. Presupuesto fijo heredado: 100 sondeos de 4ms más scheduling.
+        // No es adaptación al espectro temporal ni acredita que 400ms sean
+        // inocuos para cualquier intención. La salida temprana es sólo una
+        // observación local: todavía se consulta el terminal remoto abajo.
         for _ in 0..100 {
             tokio::time::sleep(std::time::Duration::from_millis(4)).await;
             if let Some(order) = self.order_registry.get(client_order_id) {
@@ -2412,19 +2478,10 @@ impl ExecutionProvider for OrderExecutor {
             }
         }
 
-        // 3. Cancelar la orden límite. C-03 (INFORME-14): el resultado del
-        //    DELETE ya NO se descarta — se CLASIFICA.
-        //    · Benigno (-2011 "Unknown order" / -4002 / CANCELED): la GTX ya
-        //      no existe en el exchange (llenó o fue resuelta); el fill YA
-        //      ocurrió y no se puede deshacer — el query_order de abajo fija
-        //      el remanente real.
-        //    · Red (timeout/conexión/429): la GTX puede seguir VIVA en el
-        //      libro. El remnant SOLO se mercadoa si el query_order posterior
-        //      confirma executedQty < qty; si ese query también falla, se
-        //      aborta con el código ambiguo que el host enruta a la rama X-007
-        //      (reconcile-then-rollback). Antes, mercadear a ciegas tras un
-        //      cancel fallido producía sobre-exposición hasta 2×qty cuando la
-        //      límite llenaba DESPUÉS del market.
+        // 3. Solicitar cancelación. Las etiquetas de error legacy sólo ayudan
+        // al diagnóstico: ninguna prueba por sí sola ausencia o cancelación.
+        // Incluso un DELETE exitoso exige identidad, cantidades válidas y
+        // estado terminal en la consulta posterior antes de reemplazar.
         let mut cancel_net_failed = false;
         match self.cancel_order(symbol, client_order_id).await {
             Ok(()) => {}
@@ -2436,7 +2493,7 @@ impl ExecutionProvider for OrderExecutor {
                     || e.contains("CANCELED");
                 if benign {
                     println!(
-                        "🛡️ [MAKER-CHASE] cancel de {} benigno ({}): la GTX ya no existe en el exchange — el query fija el remanente.",
+                        "🛡️ [MAKER-CHASE] cancel de {} devolvió etiqueta legacy ({}): no acredita terminal; se exige consulta antes del remanente.",
                         client_order_id, e
                     );
                 } else {
@@ -2454,7 +2511,9 @@ impl ExecutionProvider for OrderExecutor {
         // Antes: se mercadeaba la cantidad completa aunque el límite se hubiera
         // llenado parcial o totalmente → posición duplicada (bug crítico de auditoría).
         let executed = match self.query_order(symbol, client_order_id).await {
-            Ok(ack) => ack.executed_qty,
+            Ok(ack) => crate::execution_evidence::terminal_maker_executed_quantity(
+                symbol, client_order_id, &ack,
+            )?,
             Err(e) => {
                 // Sin estado verificable NO se mercadea nada: a ciegas es el bug
                 // original. El remanente se materializa vía reconciliación (F1.7).
@@ -2588,6 +2647,11 @@ impl ExecutionProvider for OrderExecutor {
         tick_size: f64,
         client_order_id: &str,
     ) -> Result<(), String> {
+        // FMT-220: preserve the API, not an undocumented USD-M capability.
+        // This gate precedes paper success, signing, and account/network effects.
+        if !crate::binance_api::SUPPORTS_NATIVE_ICEBERG {
+            return Err("UNSUPPORTED_NATIVE_ICEBERG: USD-M /fapi/v1/order has no documented icebergQty support".into());
+        }
         let final_quantity = Self::round_to_step_size(quantity, step_size);
         if final_quantity == 0.0 {
             return Err("Volumen 0".to_string());
@@ -3282,7 +3346,7 @@ impl ExecutionProvider for OrderExecutor {
         match res {
             Ok((limits, body)) => {
                 self.update_limits(&limits);
-                crate::order_types::parse_order_body(&body)
+                crate::execution_evidence::parse_query_order_response(&body, symbol, client_order_id)
             }
             Err(e) => Err(e),
         }
@@ -3334,41 +3398,7 @@ impl ExecutionProvider for OrderExecutor {
         match res {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
-                let mut open_positions = Vec::new();
-                if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let Some(arr) = json_val.as_array() {
-                        for item in arr {
-                            if let Some(amt_str) = item.get("positionAmt").and_then(|v| v.as_str())
-                            {
-                                if let Ok(amt) = amt_str.parse::<f64>() {
-                                    if amt.abs() > 1e-8 {
-                                        if let (Some(sym), Some(price_str)) = (
-                                            item.get("symbol").and_then(|v| v.as_str()),
-                                            item.get("entryPrice").and_then(|v| v.as_str()),
-                                        ) {
-                                            if let Ok(entry_price) = price_str.parse::<f64>() {
-                                                let leverage = item
-                                                    .get("leverage")
-                                                    .and_then(|v| v.as_str())
-                                                    .and_then(|v| v.parse::<f64>().ok())
-                                                    .filter(|l| l.is_finite() && *l > 0.0)
-                                                    .unwrap_or(0.0);
-                                                open_positions.push(ActivePosition {
-                                                    symbol: sym.to_string(),
-                                                    qty: amt.abs(),
-                                                    entry_price,
-                                                    leverage,
-                                                    is_long: amt > 0.0,
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(open_positions)
+                crate::execution_evidence::parse_active_positions(&text)
             }
             Err(e) => Err(e),
         }
@@ -3426,6 +3456,12 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn set_leverage(&self, symbol: &str, leverage: u32) -> Result<(), String> {
+        if symbol.is_empty() || !(1..=crate::binance_api::MAX_INITIAL_LEVERAGE).contains(&leverage) {
+            return Err("SEGURIDAD: símbolo vacío o leverage fuera del dominio USD-M".into());
+        }
+        if self.is_paper_trading {
+            return Ok(());
+        }
         let timestamp = self.get_synced_timestamp();
 
         self.check_rate_limits(timestamp)?;
@@ -3455,9 +3491,9 @@ impl ExecutionProvider for OrderExecutor {
 
         let res = self.client.post_payload(buf.as_str()).await;
         match res {
-            Ok((limits, _text)) => {
+            Ok((limits, text)) => {
                 self.update_limits(&limits);
-                Ok(())
+                crate::binance_api::validate_leverage_confirmation(&text, symbol, leverage)
             }
             Err(e) => Err(e),
         }
@@ -3519,12 +3555,14 @@ impl ExecutionProvider for OrderExecutor {
     }
 }
 
-/// Clave de dedup de una entrada de income (B3.6b paginación). tranId es el
-/// identificador canónico del exchange; cuando viene 0 (payload degradado)
-/// se cae a la tupla completa — dos entradas indistinguibles colapsan a una.
+// Historical merge fixture only: retains old tests, NOT an operational identity
+// contract. New traversal validates IDs and includes asset/trade_id; see
+// income_evidence. These legacy tests do not prove pagination completeness.
+#[cfg(test)]
 type IncomeKey = (u64, u64, u64, String, String);
 
 #[inline]
+#[cfg(test)]
 fn income_key(e: &crate::order_types::IncomeEntry) -> IncomeKey {
     (
         e.tran_id,
@@ -3537,6 +3575,7 @@ fn income_key(e: &crate::order_types::IncomeEntry) -> IncomeKey {
 
 /// Fusiona una página de income en el acumulador deduplicando por clave.
 /// Devuelve cuántas entradas NUEVAS agregó (0 = puro solapamiento de cursor).
+#[cfg(test)]
 fn merge_income_page(
     acc: &mut Vec<crate::order_types::IncomeEntry>,
     seen: &mut std::collections::HashSet<IncomeKey>,
@@ -3789,6 +3828,66 @@ mod tests_m4_c01 {
             OrderResolution::Accepted
         );
         assert!(ex.confirm_ws_dispatch("BTCUSDT", "whatever").await.is_ok());
+    }
+}
+
+#[cfg(test)]
+mod tests_query_evidence {
+    use super::*;
+
+    fn ack(status: &str, qty: f64) -> OrderAck {
+        OrderAck {
+            symbol: "AUDITUSDT".into(),
+            client_order_id: "intent-1".into(),
+            side: "BUY".into(),
+            order_id: 123,
+            orig_qty: 1.0,
+            executed_qty: qty,
+            status: status.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn invalid_or_missing_query_does_not_mutate_the_registry() {
+        let ex = OrderExecutor::new("fixture".into(), "fixture".into(), true);
+        let mut foreign = ack("NEW", 0.0);
+        foreign.symbol = "OTHERUSDT".into();
+        for result in [Ok(&foreign), Err("-2013"), Err("network timeout")] {
+            assert_eq!(ex.record_query_resolution("AUDITUSDT", "intent-1", result), OrderResolution::Timeout);
+        }
+        assert_eq!(ex.registry().stats().total, 0);
+    }
+
+    #[test]
+    fn known_intent_side_and_order_identity_cannot_be_replaced() {
+        let ex = OrderExecutor::new("fixture".into(), "fixture".into(), true);
+        ex.registry().register_intent("intent-1", "AUDITUSDT", "SELL", "SHORT", "LIMIT", 1.0, 1);
+        assert_eq!(ex.record_query_resolution("AUDITUSDT", "intent-1", Ok(&ack("NEW", 0.0))), OrderResolution::Timeout);
+        assert_eq!(ex.registry().get("intent-1").unwrap().side, "SELL");
+        let mut original = ack("NEW", 0.0);
+        original.side = "SELL".into();
+        ex.registry().apply_ack(&original, 2);
+        original.order_id += 1;
+        assert_eq!(ex.record_query_resolution("AUDITUSDT", "intent-1", Ok(&original)), OrderResolution::Timeout);
+        assert_eq!(ex.registry().get("intent-1").unwrap().order_id, 123);
+    }
+
+    #[test]
+    fn stale_zero_fill_terminal_cannot_erase_a_known_partial_fill() {
+        let ex = OrderExecutor::new("fixture".into(), "fixture".into(), true);
+        let partial = ack("PARTIALLY_FILLED", 0.4);
+        assert_eq!(ex.record_query_resolution("AUDITUSDT", "intent-1", Ok(&partial)), OrderResolution::Accepted);
+        let stale_terminal = ack("CANCELED", 0.0);
+        assert_eq!(ex.record_query_resolution("AUDITUSDT", "intent-1", Ok(&stale_terminal)), OrderResolution::Accepted);
+        assert_eq!(ex.registry().get("intent-1").unwrap().executed_qty, 0.4);
+    }
+
+    #[test]
+    fn valid_terminal_nofill_and_new_keep_different_outcomes() {
+        let ex = OrderExecutor::new("fixture".into(), "fixture".into(), true);
+        assert_eq!(ex.record_query_resolution("AUDITUSDT", "intent-1", Ok(&ack("NEW", 0.0))), OrderResolution::Accepted);
+        assert_eq!(ex.record_query_resolution("AUDITUSDT", "intent-1", Ok(&ack("CANCELED", 0.0))), OrderResolution::Rejected);
     }
 }
 

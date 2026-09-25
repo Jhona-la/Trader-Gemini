@@ -1,6 +1,8 @@
 /// 🛡️ ALGORITMO #54: CYBERNETIC HOLISTIC RESILIENCE AUDIT SHIELD (ESCUDO CIBERNÉTICO DE INTEGRIDAD SISTÉMICA)
-/// Audita de extremo a extremo la integridad de la tubería cibernética.
-/// Garantiza cero fugas de memoria, cero bloqueos y cero caída de señales en vivo.
+/// Comprueba métricas suministradas contra límites heredados; no inspecciona
+/// memoria, bloqueos, topología ni entrega de eventos. No garantiza su ausencia.
+/// XXXVI OPEN: los dos métodos tienen políticas de latencia distintas y no
+/// establecen ventana, denominador ni calibración de los umbrales.
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C, align(64))]
 pub struct CyberneticResilienceShield;

@@ -1,13 +1,14 @@
 use std::f64;
 
 /// 🔒 PREDICTOR DE IMPACTO DE MERCADO Y SLIPPAGE POR PROFUNDIDAD DE LIBRO (BOOK LEVEL SLIPPAGE PREDICTOR)
-/// Estima el deslizamiento probabilístico (slippage) antes de la ejecución de una orden.
-/// Selecciona automáticamente la ruta óptima de orden (Maker Post-Only vs Taker Limit).
+/// Heurística determinista de coste y recomendación; no devuelve una distribución
+/// probabilística ni demuestra una ruta óptima. Sin caller operativo localizado.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BookDepthSlippagePredictor;
 
 impl BookDepthSlippagePredictor {
-    /// Calcula el impacto de mercado esperado (en bps) usando la ley de raíz cuadrada de Kyle expandida por OBI
+    /// Score en bps con forma raíz-cuadrada y modulador OBI. Coeficientes/cotas
+    /// heredados no calibrados aquí; esta forma no acredita un modelo de Kyle.
     #[inline(always)]
     pub fn predict_slippage_bps(
         order_notional_usd: f64,
@@ -26,7 +27,7 @@ impl BookDepthSlippagePredictor {
             return 1.5; // Fallback predeterminado de 1.5 bps
         }
 
-        let gamma = 0.50; // Constante de impacto microestructural de Kyle
+        let gamma = 0.50; // Coeficiente heredado; no constante universal.
         // FIX #714: Clampear ratio de volumen y ATR para evitar explosión de slippage en libros desiertos
         let safe_vol_ratio = (order_notional_usd / book_depth_usd.max(100.0))
             .sqrt()
@@ -43,7 +44,7 @@ impl BookDepthSlippagePredictor {
         // Si directional_obi es negativo, vamos contra la corriente -> slippage exponencial
         // Si directional_obi es positivo, el impacto de mercado es mitigado por la liquidez a favor
         let pressure_multiplier = if directional_obi < 0.0 {
-            (1.0 + directional_obi.abs() * 2.0).exp() // Multiplicador exponencial (ej: OBI -0.8 -> exp(1.6) -> ~4.95x)
+            (directional_obi.abs() * 2.0).exp() // exp(1.6) ≈ 4.95; límite en OBI=0 es 1.
         } else {
             (1.0 - directional_obi * 0.5).max(0.5) // Reducción de hasta un 50% del slippage
         };

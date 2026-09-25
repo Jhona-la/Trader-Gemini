@@ -517,11 +517,17 @@ impl UserDataStreamer {
                         .and_then(|ci| arena.coins.get(ci))
                 })
                 .map(|c| {
-                    let p = &c.positions.position;
+                    let maybe_p = c
+                        .positions
+                        .slots()
+                        .into_iter()
+                        .find(|p| p.is_open() && p.is_long.load(std::sync::atomic::Ordering::Relaxed) == was_long)
+                        .or_else(|| c.positions.slots().into_iter().find(|p| p.is_open()))
+                        .unwrap_or(c.positions.get_slot(0));
                     (
-                        p.entry_price.load(std::sync::atomic::Ordering::Relaxed),
-                        p.entry_fee.load(std::sync::atomic::Ordering::Relaxed),
-                        p.quantity.load(std::sync::atomic::Ordering::Relaxed),
+                        maybe_p.entry_price.load(std::sync::atomic::Ordering::Relaxed),
+                        maybe_p.entry_fee.load(std::sync::atomic::Ordering::Relaxed),
+                        maybe_p.quantity.load(std::sync::atomic::Ordering::Relaxed),
                     )
                 })
                 .unwrap_or((0.0, 0.0, 0.0));

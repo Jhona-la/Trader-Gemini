@@ -1,0 +1,650 @@
+{
+  "schema_version": 1,
+  "round": "XVII",
+  "date": "2026-09-24",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVII_2026-09-24.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 124,
+    "pending_complete_rust": 165,
+    "new_complete_reads": [
+      "crates/quantum-arena/src/active_universe.rs",
+      "crates/data-ingest/src/dynamic_selector.rs",
+      "crates/quantum-arena/src/symbol_ranker_engine.rs",
+      "crates/quantum-arena/src/symbol_registry.rs",
+      "crates/quantum-arena/src/symbols.rs",
+      "crates/data-pipeline/src/dynamic_ranker.rs",
+      "crates/data-pipeline/src/asset_selector.rs",
+      "src/symbol_manager.rs"
+    ],
+    "targeted_not_complete": [
+      "src/bin/god_engine.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false
+  },
+  "new_ids": [
+    "FMT-171",
+    "FMT-172",
+    "FMT-173",
+    "FMT-174",
+    "FMT-175",
+    "FMT-176",
+    "FMT-177"
+  ],
+  "findings": [
+    {
+      "id": "FMT-171",
+      "priority": "P2_auxiliary_API",
+      "title": "Admisión con presupuesto ficticio y permanencia forzada no garantizada",
+      "status": "contracts_partially_repaired",
+      "evidence": [
+        {
+          "file": "crates/quantum-arena/src/active_universe.rs",
+          "line": 8
+        },
+        {
+          "file": "crates/quantum-arena/src/active_universe.rs",
+          "line": 96
+        }
+      ],
+      "mechanism": "Capital inválido se sustituía por13; vectores sin igual longitud podían provocar panic; NaN alcanzaba ranking; bono1e6 no garantizaba inclusión; forced IDs repetidos ampliaban cupo; faltaban min_notional y max_leverage.",
+      "reproductions": [
+        "zero capital admits1",
+        "forced member displaced by granularity score",
+        "duplicate IDs expand K",
+        "min_notional1000 ignored despite low lot value",
+        "leverage1 treated as20",
+        "NaN price selected",
+        "empty dynamic vectors panic",
+        "infinite volume candidate reaches sorting"
+      ],
+      "repairs": [
+        "UniverseSelectionError and checked APIs",
+        "no admission on invalid capital",
+        "shape and finite-spec/evidence checks",
+        "deduplicated forced members with lexicographic priority",
+        "minimum required notional and lower leverage limit",
+        "error if selected ID is not representable by bitmap64"
+      ],
+      "limits": [
+        "K=sqrt(capital)/2 retained",
+        "dual historical scores retained explicitly",
+        "forced membership is not new-exposure authorization",
+        "wrapper empty loses error reason",
+        "no position lifecycle management",
+        "no composite snapshot epoch",
+        "not a full margin/order feasibility solver"
+      ],
+      "closure": "Stable instrument snapshot; separate observation, mandatory position management and admission; calibrated objective and final feasible quantities."
+    },
+    {
+      "id": "FMT-172",
+      "priority": "P1_model_design_mixed_reachability",
+      "title": "Retorno neto diario confundido con volatilidad espectral",
+      "status": "open",
+      "evidence": [
+        {
+          "file": "crates/quantum-arena/src/symbol_ranker_engine.rs",
+          "line": 131
+        },
+        {
+          "file": "crates/data-pipeline/src/dynamic_ranker.rs",
+          "line": 147
+        },
+        {
+          "file": "crates/quantum-arena/src/active_universe.rs",
+          "line": 161
+        }
+      ],
+      "mechanism": "abs(priceChangePercent24h) loses path variation. x*exp(-x/15) encodes a fixed15-percent preference; historical scalp/swing recipes are not integration over temporal scales. Leverage penalty reuses band and decreases at large x.",
+      "reproductions": [
+        "same zero endpoint return for constant and oscillating path; selector omits both",
+        "band peak15/e yields penalty max~1.104; penalty at100 is1"
+      ],
+      "repairs": [],
+      "limits": [
+        "penalty diagnostic reproduces expression rather than private network function",
+        "no economic optimality or quantum advantage established",
+        "no new continuous portfolio engine"
+      ],
+      "closure": "Separate return, realized variation, liquidity and cost estimands; define scale measure, uncertainty and independent validation."
+    },
+    {
+      "id": "FMT-173",
+      "priority": "P2_auxiliary_selector",
+      "title": "Feed inválido fabrica universo; duplicados y empates alteran slots",
+      "status": "parsing_and_abstention_repaired_publication_limits_open",
+      "evidence": [
+        {
+          "file": "crates/data-ingest/src/dynamic_selector.rs",
+          "line": 52
+        },
+        {
+          "file": "crates/data-ingest/src/dynamic_selector.rs",
+          "line": 97
+        }
+      ],
+      "mechanism": "Empty, malformed or wholly invalid feed returned canonical10 and was published. Duplicate symbols occupied multiple slots; equal scores depended on input order.",
+      "reproductions": [
+        "empty/malformed input returns invented10",
+        "identical BTC duplicate appears twice",
+        "tie order changes with reversed feed",
+        "invalid volume threshold returns fallback"
+      ],
+      "repairs": [
+        "SelectorError and checked parser",
+        "no hardcoded fallback",
+        "deduplicate identical observations; reject conflicting observations",
+        "explicit alphabetical tie break",
+        "ln_1p and bounded band evaluated first",
+        "HTTP error_for_status",
+        "empty/error network selection does not replace prior universe"
+      ],
+      "limits": [
+        "no HTTP integration test",
+        "last universe has no freshness/expiry",
+        "public sync can still overwrite universe directly",
+        "three-character/ASCII filter, stablecoins, top10 and15-percent band retained",
+        "no operative caller found in local static search"
+      ],
+      "closure": "Versioned publication and availability state, explicit policy constraints, common pure parser used by actual consumer."
+    },
+    {
+      "id": "FMT-174",
+      "priority": "P1_live_identity_and_state",
+      "title": "Ranking mutable y cache de IDs inicial pueden cambiar atribución",
+      "status": "open_reproduced_isolated_lookup",
+      "evidence": [
+        {
+          "file": "src/bin/god_engine.rs",
+          "line": 3108
+        },
+        {
+          "file": "crates/quantum-arena/src/symbols.rs",
+          "line": 8
+        },
+        {
+          "file": "crates/quantum-arena/src/symbol_registry.rs",
+          "line": 99
+        },
+        {
+          "file": "src/symbol_manager.rs",
+          "line": 211
+        }
+      ],
+      "mechanism": "Host startup map has precedence for known symbols while try_symbol/try_spec interpret ID using current ordered universe. [A,B]->[C,A] leaves cached A0 but dynamic ID0 means C.",
+      "reproductions": [
+        "real registry/universe lookups plus equivalent cached host map disagree after rotation"
+      ],
+      "repairs": [],
+      "limits": [
+        "not a live position or full event-loop simulation",
+        "no financial loss attribution",
+        "changing lookup alone does not migrate positions/features"
+      ],
+      "closure": "Stable IDs independent of ranking, versioned bindings and lifecycle for delayed fills; migration/rotation replay with all consumers."
+    },
+    {
+      "id": "FMT-175",
+      "priority": "P2_order_validator_API",
+      "title": "validate_order acepta NaN y su decimal rounding aumenta cantidad",
+      "status": "open_reproduced",
+      "evidence": [
+        {
+          "file": "crates/quantum-arena/src/symbol_registry.rs",
+          "line": 20
+        },
+        {
+          "file": "crates/quantum-arena/src/symbol_registry.rs",
+          "line": 34
+        }
+      ],
+      "mechanism": "Inequalities fail to reject NaN. round(-log10(step)) is not the precision of a general decimal lot increment; second rounding can exceed request or leave lattice.",
+      "reproductions": [
+        "qtyNaN -> Ok(NaN)",
+        "priceNaN with valid quantity -> Ok(quantity)",
+        "step.05 raw.06 ->.1",
+        "step.025 raw.09 ->.08 not integer lot count"
+      ],
+      "repairs": [],
+      "limits": [
+        "no operational caller located in crates/src",
+        "no exchange order submitted"
+      ],
+      "closure": "Decimal/integer lot contract, finite/range validation, monotone round-down and final serialization tests; not another arbitrary epsilon."
+    },
+    {
+      "id": "FMT-176",
+      "priority": "P1_operational_universe_policy",
+      "title": "Políticas divergentes y tests duplicados no protegen filtro real",
+      "status": "open_static_evidence",
+      "evidence": [
+        {
+          "file": "crates/data-pipeline/src/dynamic_ranker.rs",
+          "line": 94
+        },
+        {
+          "file": "crates/data-pipeline/src/dynamic_ranker.rs",
+          "line": 129
+        },
+        {
+          "file": "crates/data-pipeline/src/dynamic_ranker.rs",
+          "line": 181
+        },
+        {
+          "file": "crates/data-pipeline/src/dynamic_ranker.rs",
+          "line": 267
+        },
+        {
+          "file": "crates/data-pipeline/src/asset_selector.rs",
+          "line": 59
+        }
+      ],
+      "mechanism": "Environment-dependent volume thresholds differ across selectors; testnet_blacklist applies unconditionally; tests copy incomplete closure; truncate precedes usable ExchangeInfo validation; fees/leverage/filter defaults not observed.",
+      "reproductions": [],
+      "repairs": [],
+      "limits": [
+        "no current exchange listing/status assertion",
+        "not all safety filters are arbitrary",
+        "no end-to-end HTTP test"
+      ],
+      "closure": "Common pure parsing/eligibility logic, explicit versioned policies, validated metadata before truncation and observed/configured/unknown provenance."
+    },
+    {
+      "id": "FMT-177",
+      "priority": "P1_publication_consistency",
+      "title": "Universo y specs sin epoch conjunto; refresco condicionado a cambio de lista",
+      "status": "open_static_evidence",
+      "evidence": [
+        {
+          "file": "src/symbol_manager.rs",
+          "line": 182
+        },
+        {
+          "file": "src/symbol_manager.rs",
+          "line": 211
+        },
+        {
+          "file": "src/symbol_manager.rs",
+          "line": 244
+        },
+        {
+          "file": "crates/quantum-arena/src/symbol_registry.rs",
+          "line": 62
+        }
+      ],
+      "mechanism": "List and metadata publication separate, specs updated only under changed-list gate, persistence/reconnect errors discarded. Registry read-clone-store can lose concurrent updates.",
+      "reproductions": [],
+      "repairs": [],
+      "limits": [
+        "no concurrency fault injection or operational disruption",
+        "individual ArcSwap safety does not certify composite consistency"
+      ],
+      "closure": "Versioned snapshot and ack/retry protocol, metadata refresh independent of ranking, stable IDs, durable generation and observable failures."
+    }
+  ],
+  "topology": {
+    "root": [
+      "Ticker24h",
+      "ExchangeInfo",
+      "capital and observed instrument metadata"
+    ],
+    "decision": [
+      "eligibility",
+      "legacy score",
+      "roster/hysteresis",
+      "admission selection"
+    ],
+    "published_state": [
+      "ordered universe",
+      "spec registry",
+      "config binary/json",
+      "WS URL/reconnect request"
+    ],
+    "terminal_risk": "startup IDs vs dynamic IDs can disagree before arena/features/orders",
+    "auxiliary_paths": [
+      "active_universe",
+      "data-ingest DynamicSelector",
+      "SymbolRankerEngine"
+    ],
+    "operational_path_verified_by_static_read": "src/symbol_manager.rs -> data-pipeline fetch_dynamic_universe; host starts daemon with resubscribe"
+  },
+  "theory": {
+    "id": "T40",
+    "name": "Selección online con disponibilidad, feedback y coste de transición",
+    "status": "research_design_only",
+    "method": "Firecrawl Research Index; CLI unavailable; no private code or account data sent",
+    "primary_sources": [
+      {
+        "url": "https://arxiv.org/abs/2003.03490",
+        "title": "Adversarial Online Learning with Changing Action Sets: Efficient Algorithms with Approximate Regret Bounds",
+        "evidence": "three_in_body_passages",
+        "constraints": [
+          "availability revealed before choice",
+          "binary losses",
+          "full-information vs chosen-action-only bandit feedback",
+          "approximate regret vs best ranking",
+          "not guarantee of profit"
+        ]
+      },
+      {
+        "url": "https://arxiv.org/abs/2205.06846",
+        "title": "Optimal Comparator Adaptive Online Learning with Switching Cost",
+        "evidence": "three_in_body_passages",
+        "constraints": [
+          "unconstrained holdings and bounded per-share changes",
+          "L1 switching cost",
+          "investment example per-share fee and zero-interest idealization",
+          "additive comparison to buy-and-hold differs from compounded growth"
+        ]
+      }
+    ],
+    "abstract_only_family": [
+      {
+        "id": "arxiv:2102.03758",
+        "title": "Non-stationary Online Learning with Memory and Non-stochastic Control",
+        "url": "https://arxiv.org/abs/2102.03758"
+      },
+      {
+        "id": "arxiv:1810.09666",
+        "title": "Online learning with feedback graphs and switching costs",
+        "url": "https://arxiv.org/abs/1810.09666"
+      },
+      {
+        "id": "arxiv:1810.10815",
+        "title": "Adaptive Online Learning in Dynamic Environments",
+        "url": "https://arxiv.org/abs/1810.10815"
+      },
+      {
+        "id": "arxiv:2602.06902",
+        "title": "Parameter-free Dynamic Regret: Time-varying Movement Costs, Delayed Feedback, and Memory",
+        "url": "https://arxiv.org/abs/2602.06902"
+      },
+      {
+        "id": "arxiv:2301.13349",
+        "title": "Unconstrained Dynamic Regret via Sparse Coding",
+        "url": "https://arxiv.org/abs/2301.13349"
+      },
+      {
+        "id": "arxiv:2102.06933",
+        "title": "Revisiting Smoothed Online Learning",
+        "url": "https://arxiv.org/abs/2102.06933"
+      },
+      {
+        "id": "arxiv:2205.00741",
+        "title": "Smoothed Online Convex Optimization Based on Discounted-Normal-Predictor",
+        "url": "https://arxiv.org/abs/2205.00741"
+      }
+    ],
+    "proposed_contract": [
+      "separate observation universe, mandatory management and new-exposure admission",
+      "stable instrument/venue IDs and epoch",
+      "state x(asset,time,tau) with estimand and uncertainty",
+      "availability and feedback as-of",
+      "comparator and net transition costs declared before evaluation",
+      "same exogenous tape across evolutionary candidates"
+    ],
+    "algorithm_implemented": false,
+    "quantum_advantage_demonstrated": false,
+    "millennium_equations_implemented": false
+  },
+  "tests": {
+    "distinct_passed": 35,
+    "new_tests": 23,
+    "red_to_green": 12,
+    "new_contract_strengthenings": 6,
+    "open_debt_characterizations": 5,
+    "whole_workspace_suite_run": false,
+    "network_exchange_calls": false,
+    "suites": [
+      {
+        "command": "cargo test -p quantum-arena --test universe_selection_contract --test universe_identity_diagnostics --offline -- --test-threads=1",
+        "groups": {
+          "universe_selection_contract": 12,
+          "universe_identity_diagnostics": 4
+        },
+        "exit_code": 0
+      },
+      {
+        "command": "cargo test -p data-ingest --test dynamic_selector_contract --offline -- --test-threads=1",
+        "passed": 7,
+        "exit_code": 0
+      },
+      {
+        "command": "cargo test -p quantum-arena --lib active_universe --offline -- --test-threads=1",
+        "passed": 6,
+        "exit_code": 0
+      },
+      {
+        "command": "cargo test -p data-ingest --lib dynamic_selector --offline -- --test-threads=1",
+        "passed": 6,
+        "exit_code": 0
+      }
+    ],
+    "files": [
+      "crates/quantum-arena/tests/universe_selection_contract.rs",
+      "crates/quantum-arena/tests/universe_identity_diagnostics.rs",
+      "crates/data-ingest/tests/dynamic_selector_contract.rs"
+    ],
+    "incidents": [
+      "Temporary rustfmt Windows mapped-section error1224; content verified, retried without killing process.",
+      "Cargo transient build lock; no processes killed."
+    ],
+    "diagnostic_limits": [
+      "identity test uses real registry/universe plus equivalent startup map; not full host loop",
+      "leverage test reproduces source expression, no private HTTP function execution"
+    ]
+  },
+  "build": {
+    "command": "cargo check --bin god_engine --offline",
+    "exit_code": 0,
+    "engine_executed": false,
+    "warnings": [
+      "latest_ts unused",
+      "mode unused",
+      "RealWfOutcome.trades unused"
+    ]
+  },
+  "changes": {
+    "source_files": [
+      "crates/quantum-arena/src/active_universe.rs",
+      "crates/data-ingest/src/dynamic_selector.rs"
+    ],
+    "test_files": [
+      "crates/quantum-arena/tests/universe_selection_contract.rs",
+      "crates/quantum-arena/tests/universe_identity_diagnostics.rs",
+      "crates/data-ingest/tests/dynamic_selector_contract.rs"
+    ],
+    "protected_sources": [
+      {
+        "path": "crates/quantum-arena/src/symbol_ranker_engine.rs",
+        "sha256": "D2EC8E76AA9D8D54372321702D3AB14E49665349E43577685F867FA3F9A4AEB1",
+        "lines": 214,
+        "unchanged": true
+      },
+      {
+        "path": "crates/quantum-arena/src/symbol_registry.rs",
+        "sha256": "23D85148ED46303E572F08DB5F2D1ABD16621A629113AE7F0EA0A3F8A4BE05BC",
+        "lines": 181,
+        "unchanged": true
+      },
+      {
+        "path": "crates/quantum-arena/src/symbols.rs",
+        "sha256": "5984FE2880E7D9EBED42C326FCE6E9CC05B4B2173B2A21B672E5BF907CEFBF08",
+        "lines": 74,
+        "unchanged": true
+      },
+      {
+        "path": "crates/data-pipeline/src/dynamic_ranker.rs",
+        "sha256": "01E2B2E2DDA39EE5ED15C7583FAA798714D685F1AA8398FB61D35CCE8B983C57",
+        "lines": 360,
+        "unchanged": true
+      },
+      {
+        "path": "crates/data-pipeline/src/asset_selector.rs",
+        "sha256": "8512B2579B86DE6401794F2FA116D5B7215F2BCFA8E09AE70C47830260FCD9EE",
+        "lines": 181,
+        "unchanged": true
+      },
+      {
+        "path": "src/symbol_manager.rs",
+        "sha256": "F9BE6E4FC48CCE429525F95B09C43A4C79987E9A431AA32FE156ED16C5F33EA4",
+        "lines": 418,
+        "unchanged": true
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62",
+        "lines": 4814,
+        "unchanged": true
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE",
+        "lines": 5102,
+        "unchanged": true
+      },
+      {
+        "path": "crates/quantum-arena/src/genome.rs",
+        "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+        "lines": 3347,
+        "unchanged": true
+      },
+      {
+        "path": "crates/quantum-arena/src/config.rs",
+        "sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140",
+        "lines": 495,
+        "unchanged": true
+      }
+    ],
+    "active_genomes_written": false,
+    "deployment_or_restart": false,
+    "trading_calls": false
+  },
+  "integrity": {
+    "source_inventory": [
+      {
+        "path": "crates/quantum-arena/src/active_universe.rs",
+        "sha256": "275A57ACD5AD3F222127CB0494FDE7EB420EDF2D8016B6B93E30B9277C208668",
+        "lines": 335
+      },
+      {
+        "path": "crates/data-ingest/src/dynamic_selector.rs",
+        "sha256": "CEC87EF12C4C06CF472327A6B5375B55D6D033FE67FC25E598A1CB46C37E354C",
+        "lines": 252
+      },
+      {
+        "path": "crates/quantum-arena/src/symbol_ranker_engine.rs",
+        "sha256": "D2EC8E76AA9D8D54372321702D3AB14E49665349E43577685F867FA3F9A4AEB1",
+        "lines": 214
+      },
+      {
+        "path": "crates/quantum-arena/src/symbol_registry.rs",
+        "sha256": "23D85148ED46303E572F08DB5F2D1ABD16621A629113AE7F0EA0A3F8A4BE05BC",
+        "lines": 181
+      },
+      {
+        "path": "crates/quantum-arena/src/symbols.rs",
+        "sha256": "5984FE2880E7D9EBED42C326FCE6E9CC05B4B2173B2A21B672E5BF907CEFBF08",
+        "lines": 74
+      },
+      {
+        "path": "crates/data-pipeline/src/dynamic_ranker.rs",
+        "sha256": "01E2B2E2DDA39EE5ED15C7583FAA798714D685F1AA8398FB61D35CCE8B983C57",
+        "lines": 360
+      },
+      {
+        "path": "crates/data-pipeline/src/asset_selector.rs",
+        "sha256": "8512B2579B86DE6401794F2FA116D5B7215F2BCFA8E09AE70C47830260FCD9EE",
+        "lines": 181
+      },
+      {
+        "path": "src/symbol_manager.rs",
+        "sha256": "F9BE6E4FC48CCE429525F95B09C43A4C79987E9A431AA32FE156ED16C5F33EA4",
+        "lines": 418
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62",
+        "lines": 4814
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE",
+        "lines": 5102
+      },
+      {
+        "path": "crates/quantum-arena/src/genome.rs",
+        "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+        "lines": 3347
+      },
+      {
+        "path": "crates/quantum-arena/src/config.rs",
+        "sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140",
+        "lines": 495
+      },
+      {
+        "path": "crates/quantum-arena/tests/universe_selection_contract.rs",
+        "sha256": "EB25B4294226A0E1DB499A8A8C3E6D92DEDAD44E6979A0571600AE1B3A4E9860",
+        "lines": 158
+      },
+      {
+        "path": "crates/quantum-arena/tests/universe_identity_diagnostics.rs",
+        "sha256": "1754B1F830BAB71F8DCBC9E2895CC533EBEDCAA6E9740D81DFE2F9569B42619A",
+        "lines": 69
+      },
+      {
+        "path": "crates/data-ingest/tests/dynamic_selector_contract.rs",
+        "sha256": "F3EE5746BF424EC1DD0315B47A9E2FDF22B399A934E9C20FA1212932FE3C24DC",
+        "lines": 77
+      }
+    ],
+    "append_only_baselines": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "length": 68576,
+        "sha256": "3F2FDFBAC05155D7C6DFCB4D6F6D6EBEF98805523D76465FAF51B03C057EDF99"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "length": 624123,
+        "sha256": "E1E1E425E45B1C289E8026137484144778406E3B8F88D517A6B54FF7869159EF"
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVI_2026-09-24.md",
+        "length": 34948,
+        "sha256": "C6D75CC9FFC4E35CFAADC04CF99E026F804F90EB1BB3EA9FCEB1CB382E007903"
+      }
+    ],
+    "normalization": "CRLF->LF, UTF8 SHA256 of original prefix; historical NUL preserved",
+    "append_only_verified": true,
+    "links_verified": true,
+    "verification_summary": {
+      "source_hashes_matched": 15,
+      "protected_sources_unchanged": 10,
+      "local_report_links_valid": 21,
+      "prior_document_prefixes_preserved": 3,
+      "appended_normalized_characters": {
+        "ATLAS_ANALITICO.md": 2098,
+        "INFORME_FORENSE_MAESTRO.md": 5355,
+        "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVI_2026-09-24.md": 1141
+      }
+    }
+  },
+  "limitations": [
+    "124/289 preexisting Rust complete; not whole repository",
+    "No PnL, live loss attribution, p99, full workspace or exchange integration test",
+    "No Git publication or remote branch audit",
+    "Dual score recipes preserved explicitly as legacy, not mislabeled continuous",
+    "Study is not economic guarantee or autonomous production certification"
+  ]
+}

@@ -505,11 +505,10 @@ impl ShannonEntropy {
 ///
 /// # El estimador adoptado
 ///
-/// DFA sobre agregaciones temporales reales, con regresión de `ln F(s)` sobre
-/// `ln s` en siete escalas (ver `feature_engine::hurst_dfa`). Insesgado frente
-/// al paseo aleatorio, robusto a tendencias no estacionarias y capaz de
-/// declarar cuándo NO hay ley de potencias (`r_squared`), cosa que el
-/// estimador anterior ni siquiera podía expresar.
+/// DFA sobre ventanas de muestras, con hasta siete escalas (ver
+/// `feature_engine::hurst_dfa`). Requiere justificar reloj, datos ausentes y
+/// modelo de escalamiento; no es insesgado en toda muestra ni elimina toda
+/// tendencia. R² mide ajuste descriptivo, no prueba existencia de una ley.
 ///
 /// Durante el calentamiento devuelve 0,50 —la hipótesis nula honesta— en lugar
 /// de una estimación sesgada: es preferible no opinar a opinar mal.
@@ -539,18 +538,16 @@ impl RecursiveHurst {
 
     /// Exponente actual sin mutar estado.
     ///
-    /// El umbral de `r²` exige que la serie SIGA efectivamente una ley de
-    /// potencias antes de emitir un valor distinto de 0,5. Sin él, el
-    /// consumidor trataría cualquier pendiente de regresión como un régimen
-    /// de mercado — que es la clase de error que esta corrección persigue.
+    /// El umbral R²=0,85 es política descriptiva, no significación estadística.
+    /// El DFA rechaza pendientes fuera del modelo estacionario adoptado;
+    /// devolver 0,5 por falta de evidencia no certifica ausencia de memoria.
     #[inline(always)]
     pub fn current(&self) -> f64 {
         self.dfa.hurst_or_neutral(0.85)
     }
 
-    /// Bondad del ajuste log-log en [0,1]. Permite a los consumidores modular
-    /// su convicción por la calidad de la medición en lugar de tratar el
-    /// exponente como un número siempre significativo.
+    /// R² log-log en [0,1] si el ajuste es admisible. El nombre se conserva
+    /// por compatibilidad: NO es probabilidad calibrada de acierto/cobertura.
     #[inline(always)]
     pub fn confidence(&self) -> f64 {
         if self.dfa.is_valid { self.dfa.r_squared } else { 0.0 }
@@ -1042,7 +1039,8 @@ impl FundingRateElasticity {
     }
 }
 
-/// O(1) Exponential Decay Tensor for MEV/RBF Severity (Dark Alpha)
+/// O(1) nonnegative impulse accumulator with exponential elapsed-time decay.
+/// This scalar is not a probability, a tensor decomposition or calibrated risk.
 #[derive(Debug, Clone)]
 pub struct ExponentialDecayTensor {
     pub current_severity: f64,
@@ -1050,33 +1048,79 @@ pub struct ExponentialDecayTensor {
     pub last_timestamp_ms: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecayError {
+    InvalidHalfLife,
+    InvalidRate,
+    InvalidState,
+    InvalidImpulse,
+    OutOfOrder,
+    Overflow,
+}
+
 impl ExponentialDecayTensor {
+    /// Compatibility constructor. Panics on invalid configuration; use try_new
+    /// for untrusted/runtime parameters. Existing operational callers use constants.
     #[inline(always)]
     pub fn new(half_life_ms: f64) -> Self {
+        Self::try_new(half_life_ms).expect("half-life must produce a finite positive decay rate")
+    }
+
+    pub fn try_new(half_life_ms: f64) -> Result<Self, DecayError> {
+        if !half_life_ms.is_finite() || half_life_ms <= 0.0 {
+            return Err(DecayError::InvalidHalfLife);
+        }
         let decay_lambda = std::f64::consts::LN_2 / half_life_ms;
-        Self {
+        if !decay_lambda.is_finite() || decay_lambda <= 0.0 {
+            return Err(DecayError::InvalidRate);
+        }
+        Ok(Self {
             current_severity: 0.0,
             decay_lambda,
             last_timestamp_ms: 0,
-        }
+        })
     }
 
+    /// Compatibility wrapper: invalid input is a no-op. Checked callers should
+    /// use try_apply_event to retain the reason. Equal-time impulses are additive;
+    /// timestamps alone are NOT event identities or a deduplication mechanism.
     #[inline(always)]
     pub fn apply_event(&mut self, event_severity: f64, timestamp_ms: u64) {
-        self.decay_to(timestamp_ms);
-        self.current_severity += event_severity;
-        self.last_timestamp_ms = timestamp_ms;
+        let _ = self.try_apply_event(event_severity, timestamp_ms);
     }
 
+    /// Reject out-of-order events instead of moving their information to now.
+    /// Compute the entire transition before committing either value or clock.
+    pub fn try_apply_event(&mut self, event_severity: f64, timestamp_ms: u64) -> Result<(), DecayError> {
+        if !self.decay_lambda.is_finite() || self.decay_lambda <= 0.0 {
+            return Err(DecayError::InvalidRate);
+        }
+        if !self.current_severity.is_finite() || self.current_severity < 0.0 {
+            return Err(DecayError::InvalidState);
+        }
+        if !event_severity.is_finite() || event_severity < 0.0 {
+            return Err(DecayError::InvalidImpulse);
+        }
+        if timestamp_ms < self.last_timestamp_ms { return Err(DecayError::OutOfOrder); }
+        let dt = (timestamp_ms - self.last_timestamp_ms) as f64;
+        let next = self.current_severity * (-self.decay_lambda * dt).exp() + event_severity;
+        if !next.is_finite() { return Err(DecayError::Overflow); }
+        self.current_severity = next;
+        self.last_timestamp_ms = timestamp_ms;
+        Ok(())
+    }
+
+    /// Compatibility wrapper. On an invalid clock/state it returns the unchanged
+    /// level; use try_decay_to when the distinction is required for admission.
     #[inline(always)]
     pub fn decay_to(&mut self, current_timestamp_ms: u64) -> f64 {
-        if current_timestamp_ms > self.last_timestamp_ms {
-            let dt = (current_timestamp_ms - self.last_timestamp_ms) as f64;
-            let decay_factor = (-self.decay_lambda * dt).exp();
-            self.current_severity *= decay_factor;
-            self.last_timestamp_ms = current_timestamp_ms;
-        }
+        let _ = self.try_decay_to(current_timestamp_ms);
         self.current_severity
+    }
+
+    pub fn try_decay_to(&mut self, timestamp_ms: u64) -> Result<f64, DecayError> {
+        self.try_apply_event(0.0, timestamp_ms)?;
+        Ok(self.current_severity)
     }
 }
 #[cfg(test)]

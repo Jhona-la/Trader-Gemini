@@ -6,6 +6,7 @@ pub mod config;
 pub mod feed_health;
 pub mod genome;
 pub mod genome_store;
+pub mod horizon_policy;
 pub mod paths;
 pub mod position;
 pub mod protection_health;

@@ -1,7 +1,10 @@
 //! # Constant Hunter (Cazador de Constantes)
 //!
-//! AST scanner using `syn::visit_mut` that strips hardcoded magic numbers from Rust code
-//! and replaces them with dynamic unique `Epigenoma` mmap state lookups (`gene_line{X}_col{Y}`).
+//! Experimental AST rewrite of selected float literals into global Epigenoma lookups.
+//! Keys use file_tag + traversal ordinal, NOT stable semantic identity. This is
+//! not a type/unit-aware gene extractor or a compilation check. The underlying
+//! store is process-global atomics, not mmap. Const functions/blocks and macro
+//! token streams require explicit handling before this can be a safe source transform.
 
 use quote::quote;
 use syn::visit_mut::{self, VisitMut};

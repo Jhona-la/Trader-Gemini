@@ -35,8 +35,7 @@ pub fn check_drawdown_limit(
     // pleno ⇒ `max(0,75, gen)` como se diseñó; estándar ⇒ la sigmoide genómica;
     // entre ambos, transición continua sobre operaciones mínimas que caben.
     let micro_limit = 0.75_f64.max(genome_max_drawdown_pct);
-    let standard_limit = (genome_max_drawdown_pct
-        + (0.85 - genome_max_drawdown_pct) * sigmoid_val)
+    let standard_limit = (genome_max_drawdown_pct + (0.85 - genome_max_drawdown_pct) * sigmoid_val)
         .clamp(0.02, 0.90);
     let w = crate::capital_regime::micro_weight(current_capital, min_notional);
     let dynamic_max_drawdown = crate::capital_regime::lerp(standard_limit, micro_limit, w);
@@ -64,8 +63,18 @@ mod tests {
         assert!(!res3, "99% drawdown must be blocked");
 
         // NaN and zero/negative capital must be blocked
-        assert!(!check_drawdown_limit(f64::NAN, 100.0, 0.05, 13.0, 1.0, 1.0, 5.0));
-        assert!(!check_drawdown_limit(-5.0, 100.0, 0.05, 13.0, 1.0, 1.0, 5.0));
+        assert!(!check_drawdown_limit(
+            f64::NAN,
+            100.0,
+            0.05,
+            13.0,
+            1.0,
+            1.0,
+            5.0
+        ));
+        assert!(!check_drawdown_limit(
+            -5.0, 100.0, 0.05, 13.0, 1.0, 1.0, 5.0
+        ));
         assert!(!check_drawdown_limit(0.0, 100.0, 0.05, 13.0, 1.0, 1.0, 5.0));
     }
 
@@ -91,6 +100,10 @@ mod tests {
 }
 
 #[inline(always)]
+/// Comprueba N=margen·leverage frente al mínimo del símbolo. El primer
+/// argumento es margen en moneda de cuenta, NO cantidad del activo ni un
+/// notional ya apalancado. No aumenta exposición para alcanzar el mínimo.
+/// No sustituye la validación del presupuesto de pérdida N·distancia.
 pub fn enforce_minimum_notional(
     intended_volume: f64,
     min_notional: f64,
@@ -100,13 +113,14 @@ pub fn enforce_minimum_notional(
         || intended_volume <= 0.0
         || !available_leverage.is_finite()
         || available_leverage <= 0.0
+        || !min_notional.is_finite()
+        || min_notional <= 0.0
     {
         return (false, 0.0);
     }
-    // Binance exige un nominal mínimo de $5.00 USD por orden
+    // Usar el filtro vigente del símbolo; no asumir un mínimo universal.
     let nominal_value = intended_volume * available_leverage;
-
-    if nominal_value < min_notional {
+    if !nominal_value.is_finite() || nominal_value <= 0.0 || nominal_value < min_notional {
         // No alcanza, rechazamos (o podríamos forzarlo al mínimo, pero forzar apalancamiento aumenta riesgo de ruina)
         (false, 0.0)
     } else {

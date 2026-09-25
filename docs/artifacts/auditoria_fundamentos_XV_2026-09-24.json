@@ -1,0 +1,474 @@
+{
+  "schema_version": 1,
+  "round": "XV",
+  "date": "2026-09-24",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XV_2026-09-24.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 115,
+    "pending_complete_rust": 174,
+    "new_complete_reads": [
+      "src/features/correlation.rs"
+    ],
+    "rereads_not_added": [
+      "crates/feature-engine/src/kalman.rs",
+      "crates/feature-engine/src/spectral.rs",
+      "crates/feature-engine/src/correlation.rs",
+      "crates/feature-engine/src/multifractal.rs",
+      "crates/feature-engine/src/ewma.rs",
+      "crates/feature-engine/src/lib.rs",
+      "crates/risk-engine/src/regime.rs",
+      "crates/risk-engine/src/capital_regime.rs",
+      "src/features/ewma.rs",
+      "src/features/mod.rs",
+      "src/multi_asset_orchestrator.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/god-engine-core/src/stateful_engine.rs",
+      "crates/god-engine-core/src/lib.rs",
+      "crates/risk-engine/src/lib.rs",
+      "crates/quantum-arena/src/genome.rs",
+      "crates/quantum-arena/src/config.rs"
+    ],
+    "entire_project_certified": false
+  },
+  "new_ids": [
+    "FMT-165",
+    "FMT-166"
+  ],
+  "findings": [
+    {
+      "id": "FMT-165",
+      "priority": "P1_library_with_consumer",
+      "title": "Kalman finite arithmetic and covariance contracts violated",
+      "status": "numeric_and_transactional_contract_fixed",
+      "evidence": {
+        "file": "crates/feature-engine/src/kalman.rs",
+        "line": 21
+      },
+      "repairs": [
+        "Validated constructor and update API",
+        "Stable gain and posterior covariance ratios",
+        "Convex state update instead of overflowing innovation",
+        "No absolute covariance floors",
+        "Dynamic R committed only with accepted observation"
+      ],
+      "limits": [
+        "Public fields can still be corrupted",
+        "Legacy update returns old x without quality",
+        "Prediction overflow or singularity is rejected",
+        "No elapsed-time model or online Q/R identification"
+      ]
+    },
+    {
+      "id": "FMT-166",
+      "priority": "P1_architecture",
+      "title": "Two regime genes have no located operational reader",
+      "status": "open_static_search_evidence",
+      "evidence": {
+        "file": "crates/quantum-arena/src/config.rs",
+        "line": 56
+      },
+      "search": {
+        "symbols": [
+          "regime_duration_ms",
+          "regime_atr_multiplier"
+        ],
+        "roots": [
+          "crates",
+          "src"
+        ],
+        "glob": "*.rs",
+        "matching_lines": 22,
+        "located_files": [
+          "crates/quantum-arena/src/genome.rs",
+          "crates/quantum-arena/src/config.rs"
+        ]
+      },
+      "limits": [
+        "Not proof of no external/dynamic use",
+        "Indirect optimizer effects not ruled out",
+        "No deletion or reindexing of chromosomes"
+      ]
+    },
+    {
+      "id": "FMT-002",
+      "priority": "P1_integration",
+      "title": "Kalman caller still uses incompatible variance scale and event clock",
+      "status": "helper_floors_removed_caller_model_open",
+      "evidence": {
+        "file": "crates/god-engine-core/src/stateful_engine.rs",
+        "line": 471
+      },
+      "limits": [
+        "R remains proportional to price",
+        "Q remains per call, without dt",
+        "Ten consumer tests are not statistical calibration"
+      ]
+    },
+    {
+      "id": "FMT-004",
+      "priority": "P1_consumed_feature",
+      "title": "Event FFT still lacks physical-time support and legacy has DC leakage",
+      "status": "opt_in_v2_implemented_legacy_ml_migration_open",
+      "evidence": {
+        "file": "crates/feature-engine/src/spectral.rs",
+        "line": 124
+      },
+      "repairs": [
+        "V2 data validity mask",
+        "Demean before one-sided cosine taper",
+        "One-sided bin energy normalized by N and window energy",
+        "Shape independent of amplitude floor",
+        "Overflow/underflow of restored positive power reported"
+      ],
+      "limits": [
+        "Existing analyze_spectrum numerical behavior retained",
+        "V2 not wired to ML",
+        "64 events, not Hz or all scales",
+        "No confidence intervals or performance benchmark"
+      ]
+    },
+    {
+      "id": "FMT-046",
+      "priority": "P2_auxiliary_api",
+      "title": "Correlation accepted inconsistent cross-sections and mislabeled its estimand",
+      "status": "validated_atomic_local_update_fixed_estimand_limits_open",
+      "evidence": {
+        "file": "crates/feature-engine/src/correlation.rs",
+        "line": 59
+      },
+      "repairs": [
+        "try_new and try_update with explicit error/absence",
+        "Stage moments before committing accepted state",
+        "Reject invalid prices, returns and second moments",
+        "First snapshot establishes baseline only",
+        "Document basket self-inclusion and O(N) complexity"
+      ],
+      "limits": [
+        "Not pairwise covariance, beta or PSD risk matrix",
+        "No productive caller found",
+        "Requires caller synchronization",
+        "Legacy wrapper maps absence/errors to zero",
+        "No asynchronous or per-asset quality handling"
+      ]
+    },
+    {
+      "id": "FMT-091",
+      "priority": "P1_global_policy",
+      "title": "Discrete BTC regime still imposes global unilateral veto",
+      "status": "open_characterized",
+      "evidence": {
+        "file": "crates/god-engine-core/src/lib.rs",
+        "line": 748
+      },
+      "diagnostics": [
+        "Alternative RegimeDetector treats 255 as Range",
+        "Invalid inputs retain state without quality/age",
+        "Threshold discontinuity and correlation 2 still produce valid labels"
+      ],
+      "limits": [
+        "Alternative detector is not actual BTC producer",
+        "Policy veto not removed",
+        "No evidence new smoother policy would be safe"
+      ]
+    },
+    {
+      "id": "FMT-140",
+      "priority": "P2_duplicate_library",
+      "title": "Root correlation still has invalid-snapshot state drift",
+      "status": "open_characterized",
+      "evidence": {
+        "file": "src/features/correlation.rs",
+        "line": 32
+      },
+      "limits": [
+        "Root implementation not modified",
+        "Path harness compiles exact legacy source",
+        "Passing historical finiteness tests do not prove accepted-state preservation"
+      ]
+    }
+  ],
+  "theory": {
+    "id": "T38",
+    "title": "Continuous evolving multivariate spectral context and uncertainty",
+    "status": "research_integration_proposal_not_implemented",
+    "requirements": [
+      "Timestamp and quality contract before estimation",
+      "PSD spectral matrices with declared normalization and integration measure",
+      "Scale of observation distinct from decision horizon",
+      "No future-data symmetric smoothing in online features",
+      "Finite support, numerical error and regularization explicit",
+      "Causal feedback and gene influence tests linked to versions"
+    ],
+    "not_claimed": [
+      "Full continuous universal engine from 64-event FFT",
+      "Quantum advantage",
+      "Profitability",
+      "Physical laws of price",
+      "1ns observation or 100-year empirical identification"
+    ]
+  },
+  "verification": {
+    "unique_tests_passed": 93,
+    "new_tests": 25,
+    "new_red_to_green": 7,
+    "open_defect_characterizations": 5,
+    "commands": [
+      {
+        "command": "cargo test -p feature-engine --lib --test kalman_numeric_contract --test correlation_input_contract --test event_spectrum_v2_contract --test legacy_correlation_diagnostics --offline -- --test-threads=1 --skip quantum_tensor_store::tests",
+        "passed": 79,
+        "groups": {
+          "library": 54,
+          "kalman": 8,
+          "correlation": 5,
+          "spectrum_before_added_ring_test": 7,
+          "legacy_harness": 5
+        },
+        "excluded": 3
+      },
+      {
+        "command": "cargo test -p feature-engine --test event_spectrum_v2_contract --offline -- --test-threads=1",
+        "passed": 8,
+        "unique_addition_since_previous": 1,
+        "note": "Rechecks final underflow behavior and new ring chronology test"
+      },
+      {
+        "command": "cargo test -p risk-engine --test regime_taxonomy_diagnostics --offline -- --test-threads=1",
+        "passed": 3
+      },
+      {
+        "command": "cargo test -p god-engine-core --lib stateful_engine::tests --offline -- --test-threads=1",
+        "passed": 10
+      },
+      {
+        "command": "cargo check --bin god_engine --offline",
+        "result": "passed_without_execution"
+      },
+      {
+        "command": "rustfmt --check --edition 2021 --config skip_children=true on eight files",
+        "result": "passed"
+      },
+      {
+        "command": "git diff --check on three source files",
+        "result": "passed"
+      }
+    ],
+    "pre_fix": {
+      "kalman_numeric_contract": {
+        "failed": 5,
+        "passed": 0
+      },
+      "correlation_input_contract": {
+        "failed": 2,
+        "passed": 0
+      }
+    },
+    "tests_added_after_repair_or_new_api": 18,
+    "existing_warnings": [
+      "unused latest_ts",
+      "unused mode",
+      "unread RealWfOutcome.trades"
+    ],
+    "full_workspace_suite": false,
+    "economic_backtest": false,
+    "latency_benchmark": false,
+    "excluded_test_surface": "quantum_tensor_store::tests (3) to avoid persistent tensor surface",
+    "document_integrity": {
+      "json_parsed": true,
+      "matching_file_hashes": 18,
+      "protected_files_unchanged": 6,
+      "valid_local_report_links": 20,
+      "invalid_local_report_links": 0,
+      "preserved_document_prefixes": 3,
+      "prefix_normalization": "CRLF to LF before UTF-8 SHA256",
+      "normalized_characters_appended": {
+        "ATLAS_ANALITICO.md": 2772,
+        "INFORME_FORENSE_MAESTRO.md": 5997,
+        "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIV_2026-09-24.md": 1189
+      }
+    }
+  },
+  "sources": [
+    {
+      "url": "https://arxiv.org/abs/2310.12788",
+      "title": "Continuous Time Locally Stationary Wavelet Processes",
+      "inspection": "abstract and selected body passages",
+      "access": "Firecrawl Research Index"
+    },
+    {
+      "url": "https://arxiv.org/abs/1810.09810",
+      "title": "Multivariate Locally Stationary Wavelet Process Analysis with the mvLSW R Package",
+      "inspection": "abstract and selected body passages on regular grid, symmetric smoothing and matrix regularization",
+      "access": "Firecrawl Research Index"
+    },
+    {
+      "url": "https://arxiv.org/abs/1404.4605",
+      "title": "Quantile Spectral Analysis for Locally Stationary Time Series",
+      "inspection": "abstract only"
+    },
+    {
+      "url": "https://arxiv.org/abs/0808.1452",
+      "title": "Locally adaptive estimation of evolutionary wavelet spectra",
+      "inspection": "abstract only"
+    },
+    {
+      "url": "https://arxiv.org/abs/2303.11561",
+      "title": "Bayesian nonparametric spectral analysis of locally stationary processes",
+      "inspection": "abstract only"
+    },
+    {
+      "url": "https://arxiv.org/abs/2106.03533",
+      "title": "Modeling Nonstationary Time Series using Locally Stationary Basis Processes",
+      "inspection": "related abstract only"
+    },
+    {
+      "url": "https://arxiv.org/abs/1309.2435",
+      "title": "Bayesian Wavelet Shrinkage of the Haar-Fisz Transformed Wavelet Periodogram",
+      "inspection": "related abstract only"
+    }
+  ],
+  "files": [
+    {
+      "path": "crates/feature-engine/src/kalman.rs",
+      "lines": 169,
+      "sha256": "E593A81561797AFF44D76D006600B4CED06FC0B0E8E94E22DE48BDD40F0A3155",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/feature-engine/src/correlation.rs",
+      "lines": 139,
+      "sha256": "E0B135990E30DE59A219B24062C20AEBFAD9377A553C1992B28B00387028938F",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/feature-engine/src/spectral.rs",
+      "lines": 312,
+      "sha256": "CA67535EB64035ADE7599C394B57827EF5F4A7F125E515D895E29857C8E104E0",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/feature-engine/tests/kalman_numeric_contract.rs",
+      "lines": 69,
+      "sha256": "31ACFEE90F4A16E4098B700004C03947A4F4CEEFC3E7CD18E522F9F2D7922E1E",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/feature-engine/tests/correlation_input_contract.rs",
+      "lines": 71,
+      "sha256": "088C10713A3D1F3006E696C5835DE96B147FFC0B7F835009DDA1070A77EB13A6",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/feature-engine/tests/event_spectrum_v2_contract.rs",
+      "lines": 150,
+      "sha256": "B828F43DCA3E9BA070315223957F791B243F9E84F708195B034D8DD5313BB269",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/feature-engine/tests/legacy_correlation_diagnostics.rs",
+      "lines": 27,
+      "sha256": "55ABF04642AC214B9689ADD928EB472F50D1C022B0882895ED5ABB5BB6B298E9",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/risk-engine/tests/regime_taxonomy_diagnostics.rs",
+      "lines": 22,
+      "sha256": "A66BA106FE184CA5E513D10D36A5BE08D0369881CF67B522F29B70ABE44F6FAA",
+      "change": "new_test"
+    },
+    {
+      "path": "src/features/correlation.rs",
+      "lines": 125,
+      "sha256": "5A1E064FBF77E3E9ABBD8ABA824C4CB76FD803C99CAD966277A02FF0C25745DF",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/risk-engine/src/regime.rs",
+      "lines": 81,
+      "sha256": "D16AB5DCCDD9E87BB7FF24DE49EA0C7CD92FBE86B78B80F15FDFE06CC87DA7C0",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/feature-engine/src/multifractal.rs",
+      "lines": 285,
+      "sha256": "27E24E33A33C1C43C648CD6014BB736CAA7D187931D07925C43FB19E2BD0815F",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/risk-engine/src/capital_regime.rs",
+      "lines": 258,
+      "sha256": "F94D67FB91BE990425F6D09CB02D4FA56D9D753E8A4A3892657CEBB5C8A23C52",
+      "change": "read_only"
+    }
+  ],
+  "protected": [
+    {
+      "path": "crates/god-engine-core/src/lib.rs",
+      "lines": 5102,
+      "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE"
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "lines": 951,
+      "sha256": "E9883455B6BEBEFA866C2F56FE6C4A403321E22BA58C82D004BF5839E738C4A1"
+    },
+    {
+      "path": "crates/god-engine-core/src/stateful_engine.rs",
+      "lines": 1390,
+      "sha256": "42F0CAB0A8F58E978947E20DD13947DBB84BBDB6806C415E9EA574B57B8395A4"
+    },
+    {
+      "path": "src/bin/god_engine.rs",
+      "lines": 4814,
+      "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62"
+    },
+    {
+      "path": "crates/quantum-arena/src/genome.rs",
+      "lines": 3347,
+      "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22"
+    },
+    {
+      "path": "crates/quantum-arena/src/config.rs",
+      "lines": 495,
+      "sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140"
+    }
+  ],
+  "append_only_baselines": [
+    {
+      "path": "ATLAS_ANALITICO.md",
+      "normalized_character_length": 63557,
+      "normalized_sha256": "2B076FC4519FAF45D171F189579289A81ADB3A96C141247BB2A3844AF9512ED9"
+    },
+    {
+      "path": "INFORME_FORENSE_MAESTRO.md",
+      "normalized_character_length": 612142,
+      "normalized_sha256": "FCDEF903FAD987967964E36705A09352E8DE562F660800A4209AE6BCDB97B64A"
+    },
+    {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIV_2026-09-24.md",
+      "normalized_character_length": 35342,
+      "normalized_sha256": "F73024B78435AAE3F77C2EE60D8FD2B82FB58B5CFA0E65DE88BDAF4EE98D0414"
+    }
+  ],
+  "not_performed": [
+    "trading",
+    "authenticated_exchange_calls",
+    "genome_change",
+    "model_promotion",
+    "deployment",
+    "engine_restart",
+    "commit",
+    "push",
+    "merge",
+    "fetch"
+  ]
+}

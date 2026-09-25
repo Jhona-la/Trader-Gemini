@@ -23,13 +23,26 @@ impl TensorVoteOrchestrator {
         }
     }
 
-    pub fn add_strategy(&mut self, mut strategy: Box<dyn QuantumStrategy>) {
-        let _ = strategy.init(std::sync::Arc::clone(&self.arena.registry));
-        self.strategies.push(strategy);
+    /// Compatibility wrapper; a failed initialization never admits a voter.
+    pub fn add_strategy(&mut self, strategy: Box<dyn QuantumStrategy>) {
+        if let Err(error) = self.try_add_strategy(strategy) {
+            eprintln!("Strategy not registered: {error}");
+        }
     }
 
-    /// FIX #407: Evalúa el consenso bayesiano para un horizonte temporal específico (Scalp vs Swing),
-    /// evitando la aniquilación mutua de estrategias con diferentes frecuencias operativas.
+    /// Returns initialization failure to callers that need startup completeness.
+    /// Does not roll back registry side effects inside a strategy's initializer.
+    pub fn try_add_strategy(
+        &mut self,
+        mut strategy: Box<dyn QuantumStrategy>,
+    ) -> Result<(), String> {
+        strategy.init(std::sync::Arc::clone(&self.arena.registry))?;
+        self.strategies.push(strategy);
+        Ok(())
+    }
+
+    /// Legacy horizon entry point; Continuous is the only representable variant.
+    /// The vote score is a heuristic, not a calibrated Bayesian probability.
     pub fn evaluate_horizon_consensus(&self, target_horizon: TradeHorizon) -> TensorDecision {
         if target_horizon == TradeHorizon::Continuous {
             return self.evaluate_continuous_consensus();
@@ -254,7 +267,7 @@ impl TensorVoteOrchestrator {
         coin_id: usize,
         symbol: &str,
     ) -> TensorDecision {
-        let all: Vec<&Box<dyn QuantumStrategy>> = self.strategies.iter().collect();
+        let all = &self.strategies;
         if all.is_empty() {
             return TensorDecision {
                 signal: SignalType::Flat,
@@ -268,7 +281,7 @@ impl TensorVoteOrchestrator {
         let mut short_votes = 0.0;
         let mut active_weight = 0.0;
         let mut max_volatility = 0.0f64;
-        for s in &all {
+        for s in all {
             let output = s.evaluate_for_coin(coin_id, symbol);
             if !output.is_finite() {
                 continue;
@@ -380,49 +393,29 @@ impl TensorVoteOrchestrator {
         }
     }
 
-    /// Evalúa de forma desacoplada ambos horizontes simultáneamente (Scalp y Swing) sin supresión mutua (BUG-643)
+    /// Legacy pair of views of ONE continuous decision, not two independent engines.
     pub fn evaluate_dual_consensus(&self) -> (TensorDecision, TensorDecision) {
         self.evaluate_dual_consensus_for_coin(0, "BTCUSDT")
     }
 
-    /// D-424: Consenso dual desacoplado escopado por activo real
+    /// Evaluates once so stateful voters cannot consume the same observation twice.
     pub fn evaluate_dual_consensus_for_coin(
         &self,
         coin_id: usize,
         symbol: &str,
     ) -> (TensorDecision, TensorDecision) {
-        let scalp_decision = self.evaluate_scalp_consensus_for_coin(coin_id, symbol);
-        let swing_decision = self.evaluate_swing_consensus_for_coin(coin_id, symbol);
-        (scalp_decision, swing_decision)
+        let decision = self.evaluate_continuous_consensus_for_coin(coin_id, symbol);
+        (decision, decision)
     }
 
-    /// Evalúa todas las estrategias preservando la señal de mayor convicción según su horizonte
+    /// Compatibility entry point to the universal continuous consensus.
     pub fn evaluate_consensus(&self) -> TensorDecision {
         self.evaluate_consensus_for_coin(0, "BTCUSDT")
     }
 
-    /// D-424: Consenso global preservando mayor convicción escopado por activo real
+    /// No second evaluation or legacy 1.2x preference for a nominal horizon.
     pub fn evaluate_consensus_for_coin(&self, coin_id: usize, symbol: &str) -> TensorDecision {
-        let scalp_decision = self.evaluate_scalp_consensus_for_coin(coin_id, symbol);
-        let swing_decision = self.evaluate_swing_consensus_for_coin(coin_id, symbol);
-
-        if scalp_decision.signal != SignalType::Flat && swing_decision.signal != SignalType::Flat {
-            // FIX #599 & #1542: Ponderar convicción Swing (1.2x) por persistencia temporal macro con finitud estricta
-            let weighted_swing_conf = if swing_decision.net_confidence.is_finite() {
-                swing_decision.net_confidence * 1.20
-            } else {
-                0.0
-            };
-            if scalp_decision.net_confidence >= weighted_swing_conf {
-                scalp_decision
-            } else {
-                swing_decision
-            }
-        } else if scalp_decision.signal != SignalType::Flat {
-            scalp_decision
-        } else {
-            swing_decision
-        }
+        self.evaluate_continuous_consensus_for_coin(coin_id, symbol)
     }
 }
 

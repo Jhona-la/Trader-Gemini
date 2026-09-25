@@ -133,7 +133,8 @@ impl TrajectoryAuditor {
         }
     }
 
-    /// Evalúa en nanosegundos la coherencia tick-a-tick entre la predicción teórica y la realidad del mercado
+    /// Diagnóstico heurístico por evento. No hay garantía de latencia nanosegundo
+    /// ni calibración probabilística de sus pesos/umbrales. No ordena un cierre.
     pub fn evaluate_tick(
         &mut self,
         symbol_id: usize,
@@ -202,8 +203,9 @@ impl TrajectoryAuditor {
         }
 
         let elapsed_ms = current_time_ms.saturating_sub(track.entry_time_ms);
-        let duration_ratio =
-            (elapsed_ms as f64 / track.expected_duration_ms.max(1) as f64).clamp(0.0, 3.0);
+        // Do not cap at 3: the exhaustion branch explicitly tests ratio > 4.
+        // Only the bounded coherence component below needs a clipped ratio.
+        let duration_ratio = elapsed_ms as f64 / track.expected_duration_ms.max(1) as f64;
 
         if track.entry_price <= 0.0 || !track.entry_price.is_finite() {
             return TrajectoryStatus::Aligned {

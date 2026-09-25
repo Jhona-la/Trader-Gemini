@@ -5,6 +5,72 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::time::{Duration, sleep};
 
+/// Domain validation of exchange OHLCV strings, not an outlier or alpha filter.
+/// Preserves valid observations exactly. Time ordering/closure is a separate contract.
+fn parse_warmup_kline(kline: &[Value]) -> Option<[f64; 5]> {
+    if kline.len() < 6 {
+        return None;
+    }
+    let parse = |index: usize| kline[index].as_str()?.parse::<f64>().ok();
+    let bar = [parse(1)?, parse(2)?, parse(3)?, parse(4)?, parse(5)?];
+    let [o, h, l, c, v] = bar;
+    (bar.iter().all(|value| value.is_finite())
+        && l > 0.0
+        && v >= 0.0
+        && l <= o
+        && o <= h
+        && l <= c
+        && c <= h)
+        .then_some(bar)
+}
+
+#[cfg(test)]
+mod audit_xiii_tests {
+    use super::*;
+
+    #[test]
+    fn warmup_rejects_nonfinite_and_malformed_fields() {
+        for field in 1..=5 {
+            for invalid in ["NaN", "inf", "-inf", "invalid"] {
+                let mut bar = serde_json::json!([1000, "10", "12", "9", "11", "2"])
+                    .as_array()
+                    .unwrap()
+                    .clone();
+                bar[field] = Value::String(invalid.into());
+                assert!(
+                    parse_warmup_kline(&bar).is_none(),
+                    "field={field} value={invalid}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn warmup_requires_true_ohlc_geometry_and_nonnegative_volume() {
+        for bad in [
+            serde_json::json!([1000, "13", "12", "9", "11", "2"]),
+            serde_json::json!([1000, "8", "12", "9", "11", "2"]),
+            serde_json::json!([1000, "10", "12", "-1", "11", "2"]),
+            serde_json::json!([1000, "10", "12", "9", "11", "-2"]),
+        ] {
+            assert!(
+                parse_warmup_kline(bad.as_array().unwrap()).is_none(),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn warmup_preserves_valid_market_values_including_zero_volume() {
+        let bar = serde_json::json!([1000, "10", "12", "9", "11", "0"]);
+        assert_eq!(
+            parse_warmup_kline(bar.as_array().unwrap()),
+            Some([10.0, 12.0, 9.0, 11.0, 0.0])
+        );
+        assert_eq!(parse_warmup_kline(&[]), None);
+    }
+}
+
 /// Orquestador de Secuencia de Arranque (Fase 1: System Bootloader)
 pub struct SystemBootloader {
     arena: Arc<GlobalArena>,
@@ -145,45 +211,24 @@ impl SystemBootloader {
             }
 
             if let Some(Value::Array(klines)) = klines_data {
+                let mut accepted = 0;
                 for k in &klines {
                     if let Value::Array(kline_arr) = k {
-                        if kline_arr.len() >= 6 {
-                            let _open_time = kline_arr[0].as_u64().unwrap_or(0);
-                            let open = kline_arr[1]
-                                .as_str()
-                                .unwrap_or("0")
-                                .parse::<f64>()
-                                .unwrap_or(0.0);
-                            let high = kline_arr[2]
-                                .as_str()
-                                .unwrap_or("0")
-                                .parse::<f64>()
-                                .unwrap_or(0.0);
-                            let low = kline_arr[3]
-                                .as_str()
-                                .unwrap_or("0")
-                                .parse::<f64>()
-                                .unwrap_or(0.0);
-                            let close = kline_arr[4]
-                                .as_str()
-                                .unwrap_or("0")
-                                .parse::<f64>()
-                                .unwrap_or(0.0);
-                            let volume = kline_arr[5]
-                                .as_str()
-                                .unwrap_or("0")
-                                .parse::<f64>()
-                                .unwrap_or(0.0);
-
-                            // Proyectamos el evento cerrado hacia el motor
+                        if let Some([open, high, low, close, volume]) =
+                            parse_warmup_kline(kline_arr)
+                        {
+                            // Closure and event-time alignment are not established by this parser.
                             engine.feature_engines[coin_id]
                                 .process_kline(open, high, low, close, volume);
+                            accepted += 1;
                         }
                     }
                 }
                 println!(
-                    "      ✅ {} klines procesadas en StatefulEngine.",
-                    klines.len()
+                    "      {} klines aceptadas por StatefulEngine; {} rechazadas por esquema/OHLCV ({}).",
+                    accepted,
+                    klines.len() - accepted,
+                    symbol
                 );
             } else {
                 println!("      ❌ Falló la carga de klines para {}", symbol);
@@ -314,27 +359,16 @@ impl SystemDiagnostics {
                         for k in &klines {
                             if let serde_json::Value::Array(kline_arr) = k {
                                 // [openTime, open, high, low, close, volume, ...]
-                                if kline_arr.len() >= 6 {
-                                    let parse = |idx: usize| {
-                                        kline_arr[idx]
-                                            .as_str()
-                                            .unwrap_or("0")
-                                            .parse::<f64>()
-                                            .unwrap_or(0.0)
-                                    };
-                                    let (o, h, l, c, v) =
-                                        (parse(1), parse(2), parse(3), parse(4), parse(5));
-                                    if c > 0.0
-                                        && c.is_finite()
-                                        && h >= l
-                                        && h >= c
-                                        && l <= c
-                                        && o > 0.0
-                                    {
-                                        klines_vec.push([o, h, l, c, v]);
-                                    }
+                                if let Some(bar) = parse_warmup_kline(kline_arr) {
+                                    klines_vec.push(bar);
                                 }
                             }
+                        }
+                        let rejected = klines.len() - klines_vec.len();
+                        if rejected > 0 {
+                            eprintln!(
+                                "Warmup {symbol}: {rejected} klines rejected by schema/OHLCV validation; temporal coverage is incomplete."
+                            );
                         }
                     }
                 }

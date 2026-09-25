@@ -1,0 +1,432 @@
+{
+  "schema_version": 1,
+  "round": "XIII",
+  "date": "2026-09-24",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIII_2026-09-24.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 107,
+    "pending_complete_rust": 182,
+    "new_complete_reads": [
+      "crates/storage-engine/src/history_store.rs",
+      "crates/data-pipeline/src/state_db.rs",
+      "crates/god-engine-core/src/bootloader.rs",
+      "crates/quantum-arena/src/state_continuity.rs",
+      "crates/data-pipeline/src/persistence.rs",
+      "crates/storage-engine/src/lib.rs"
+    ],
+    "targeted_not_complete": [
+      "src/bin/god_engine.rs"
+    ],
+    "rereads_not_added": [
+      "crates/storage-engine/src/temporal_store.rs"
+    ],
+    "entire_project_certified": false
+  },
+  "findings": [
+    {
+      "id": "FMT-145",
+      "priority": "P2",
+      "status": "locally_fixed_and_tested",
+      "title": "Historical writes admitted invalid or synthetic OHLCV",
+      "evidence": {
+        "file": "crates/storage-engine/src/history_store.rs",
+        "line": 203
+      },
+      "mechanism": "Single inserts silently acknowledged rejected values; batches skipped rows or fabricated extrema/volume. Invalid batches are now errors, with atomic rollback and no imputation.",
+      "limits": [
+        "No operational consumer found by targeted crates/src search",
+        "Existing stored datasets were not repaired",
+        "No latency benchmark"
+      ]
+    },
+    {
+      "id": "FMT-146",
+      "priority": "P2",
+      "status": "fallible_contract_fixed_legacy_wrappers_lossy",
+      "title": "Read errors, overflow and fallback paths hid provenance loss",
+      "evidence": {
+        "file": "crates/storage-engine/src/history_store.rs",
+        "line": 263
+      },
+      "mechanism": "Fallible opening no longer redirects to a shared temporary database; row failures propagate; integer/range/limit/prune domains are explicit.",
+      "limits": [
+        "Legacy wrappers still return empty/None or log errors",
+        "new panics on failed initialization; callers should prefer try_new",
+        "100000-row resource budget retained and made explicit",
+        "No temporal-gap detection"
+      ]
+    },
+    {
+      "id": "FMT-147",
+      "priority": "P1_conditional_on_multisource_use",
+      "status": "open",
+      "title": "Historical primary key cannot identify multi-venue multi-interval observations",
+      "evidence": {
+        "file": "crates/storage-engine/src/history_store.rs",
+        "line": 283
+      },
+      "mechanism": "The (coin_id,timestamp) key aliases bars from different intervals, venues or universe versions under those conditions.",
+      "limits": [
+        "No live collision observed",
+        "Requires versioned migration, not inferred historical labels"
+      ]
+    },
+    {
+      "id": "FMT-148",
+      "priority": "P2",
+      "status": "locally_fixed_and_tested",
+      "title": "Unknown intention tags were reinterpreted as swing",
+      "evidence": {
+        "file": "crates/data-pipeline/src/state_db.rs",
+        "line": 146
+      },
+      "mechanism": "Decoder accepts only declared tags and validates persisted domains; input and deletion coordinates use checked conversions; invalid writes return errors.",
+      "limits": [
+        "Legacy SCALP/SWING records remain readable for migration",
+        "No operational StateDb caller found",
+        "Schema and recovery scope remain incomplete"
+      ]
+    },
+    {
+      "id": "FMT-149",
+      "priority": "P1_recovery",
+      "status": "open",
+      "title": "Intentions and snapshots omit sufficient state and continuous position identity",
+      "evidence": {
+        "file": "crates/data-pipeline/src/state_db.rs",
+        "line": 221
+      },
+      "mechanism": "One intention per tag and a latest-only getter cannot restore all spectral slots, learned state or event frontiers. Unconditional upsert can replace newer time with older time.",
+      "limits": [
+        "No production failure attribution",
+        "Need event/revision authority contract before rejecting late writes",
+        "Checkpoint is_scalp remains legacy"
+      ]
+    },
+    {
+      "id": "FMT-150",
+      "priority": "P1_recovery",
+      "status": "open_characterized",
+      "title": "Partial XOR checksum and unchecked checkpoint metadata",
+      "evidence": {
+        "file": "crates/quantum-arena/src/state_continuity.rs",
+        "line": 44
+      },
+      "mechanism": "Direction, risk fields and time are uncovered; swapping size/entry and adding 64 to coin_id collide. Loader accepts unsupported version, negative capital and arbitrary global checksum.",
+      "limits": [
+        "Three passing tests assert presence of the defect, not repair",
+        "No on-disk format migration",
+        "No operational save/load caller found"
+      ]
+    },
+    {
+      "id": "FMT-151",
+      "priority": "P2",
+      "status": "open_static_evidence",
+      "title": "Shared temporary publication and unsupported recovery complexity guarantees",
+      "evidence": {
+        "file": "crates/quantum-arena/src/state_continuity.rs",
+        "line": 57
+      },
+      "mechanism": "with_extension(tmp) aliases destinations/writers. JSON serialization scales with state size; no consistent-cut protocol or power-failure experiment supports O(1), zero-copy or sub-ms claims.",
+      "limits": [
+        "No crash/power-loss injection executed",
+        "No benchmark",
+        "File sync alone is not graph consistency"
+      ]
+    },
+    {
+      "id": "FMT-152",
+      "priority": "P1_warmup_call_path",
+      "status": "numeric_domain_fixed_temporal_contract_open",
+      "title": "Warmup admitted infinities and inconsistent OHLCV",
+      "evidence": {
+        "file": "crates/god-engine-core/src/bootloader.rs",
+        "line": 10
+      },
+      "mechanism": "Both warmup routes now share strict parsing/geometry and rejection counts; the used route previously admitted infinite open and open outside extrema.",
+      "limits": [
+        "1m/1000 warmup support retained",
+        "Timestamps, order, closure, gaps and completeness remain unrepresented",
+        "HTTP not mocked or called",
+        "No live feature parity experiment"
+      ]
+    },
+    {
+      "id": "FMT-153",
+      "priority": "P1",
+      "status": "open_static_evidence",
+      "title": "Called training placeholder and alternative boot checks do not prove adaptation or recovery",
+      "evidence": {
+        "file": "crates/god-engine-core/src/bootloader.rs",
+        "line": 382
+      },
+      "mechanism": "Training returns Some(()) without using history/lr/epochs. The bin calls it with genome-derived parameters. Alternative recovery only inventories in-memory positions without loading or comparing state.",
+      "limits": [
+        "This does not imply all project training is empty",
+        "No external execute_boot_sequence caller found",
+        "Protected host source not changed"
+      ]
+    },
+    {
+      "id": "FMT-154",
+      "priority": "P2",
+      "status": "open",
+      "title": "WalStorage synthesizes zero observations and overstates WAL durability",
+      "evidence": {
+        "file": "crates/data-pipeline/src/persistence.rs",
+        "line": 48
+      },
+      "mechanism": "Invalid price/volume become zero and insert succeeds; timestamp wraps and symbol is unchecked. NORMAL durability claims exceed SQLite's documented power-loss guarantees.",
+      "limits": [
+        "Module left unchanged",
+        "No live caller found",
+        "Pragmas unchanged; no universal FULL policy imposed"
+      ]
+    }
+  ],
+  "theory": {
+    "id": "T36",
+    "name": "Sufficient state, consistent cuts and observational recovery equivalence",
+    "status": "proposed_not_implemented",
+    "transition": "(S_next, effects) = F(S, event; policy_version)",
+    "acceptance": [
+      "Replay with and without injected failure must preserve per-event features, decisions and terminal effects under declared tolerances",
+      "Identify observations, learned state, policy, genome and event frontiers separately",
+      "Deduplicate external effects and reconcile exchange state",
+      "Declare temporal support and numerical approximation error"
+    ],
+    "not_claimed": [
+      "Quantum advantage",
+      "Millennium-problem integration",
+      "Economic superiority",
+      "Empirical identification from 1ns to 100 years"
+    ]
+  },
+  "observed_topology": {
+    "edges": [
+      {
+        "from": "src/bin/god_engine.rs:1172",
+        "to": "SystemDiagnostics::execute_phase_3_warmup",
+        "kind": "source_call"
+      },
+      {
+        "from": "src/bin/god_engine.rs:1181",
+        "to": "SystemDiagnostics::execute_phase_4_training",
+        "kind": "source_call_to_noop"
+      },
+      {
+        "from": "SystemDiagnostics::execute_phase_3_warmup",
+        "to": "parse_warmup_kline",
+        "kind": "source_call"
+      },
+      {
+        "from": "SystemBootloader::phase_3_historical_warmup",
+        "to": "parse_warmup_kline",
+        "kind": "source_call_alternative_path"
+      }
+    ],
+    "no_operational_call_found": [
+      "HistoryStore",
+      "StateDb",
+      "WalStorage",
+      "StateContinuityEngine::save_checkpoint",
+      "StateContinuityEngine::load_checkpoint",
+      "SystemBootloader::execute_boot_sequence"
+    ],
+    "search_scope": "rg in crates and src Rust sources; not runtime tracing or whole-workspace call-graph proof"
+  },
+  "verification": {
+    "unique_tests_passed": 28,
+    "new_tests": 22,
+    "new_red_to_green": 12,
+    "open_defect_characterizations": 3,
+    "commands": [
+      {
+        "command": "cargo test -p storage-engine --lib history_store:: --offline",
+        "passed": 15,
+        "pre_fix": {
+          "passed": 1,
+          "failed": 6
+        },
+        "post_fix_additional_tests": 4
+      },
+      {
+        "command": "cargo test -p data-pipeline --lib state_db:: --offline",
+        "passed": 7,
+        "pre_fix_new_tests": {
+          "passed": 1,
+          "failed": 4
+        }
+      },
+      {
+        "command": "cargo test -p god-engine-core --lib bootloader::audit_xiii_tests --offline",
+        "passed": 3,
+        "pre_fix": {
+          "passed": 1,
+          "failed": 2
+        }
+      },
+      {
+        "command": "cargo test -p quantum-arena --test checkpoint_characterization --offline",
+        "passed": 3,
+        "interpretation": "Passing asserts remaining defects"
+      },
+      {
+        "command": "cargo check --bin god_engine --offline",
+        "result": "passed_no_execution",
+        "warnings": [
+          "unused latest_ts",
+          "unused mode",
+          "unread RealWfOutcome.trades"
+        ]
+      },
+      {
+        "command": "rustfmt --check (2021/2024 per file)",
+        "result": "passed",
+        "scope": [
+          "crates/storage-engine/src/history_store.rs",
+          "crates/data-pipeline/src/state_db.rs",
+          "crates/god-engine-core/src/bootloader.rs",
+          "crates/quantum-arena/tests/checkpoint_characterization.rs"
+        ]
+      },
+      {
+        "command": "git diff --check on three modified source files",
+        "result": "passed"
+      }
+    ],
+    "artifact_json_parsed": true,
+    "file_hashes_verified": 11,
+    "local_report_links_verified": 17,
+    "append_only_prefix_hashes_verified": 3,
+    "full_workspace_tests": false,
+    "economic_backtest": false,
+    "engine_executed": false,
+    "formatting_note": "Windows mapped-section lock prevented in-place rustfmt twice; stdout formatting applied with apply_patch then --check passed."
+  },
+  "sources": [
+    {
+      "url": "https://www.sqlite.org/pragma.html#pragma_synchronous",
+      "title": "SQLite PRAGMA synchronous",
+      "access": "Firecrawl Scrape",
+      "use": "WAL NORMAL versus FULL power-loss durability; focused section"
+    },
+    {
+      "url": "https://arxiv.org/abs/1506.08603",
+      "title": "Lightweight Asynchronous Snapshots for Distributed Dataflows",
+      "access": "Firecrawl Research Index",
+      "use": "Read returned body fragments about consistent states and recovery barriers; not claimed full-paper reading"
+    }
+  ],
+  "files": [
+    {
+      "path": "crates/storage-engine/src/history_store.rs",
+      "lines": 629,
+      "sha256": "3661B4D99658582A265731E077C4CD29AB4E18A80DC758DE795F1332B903E4B3",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/data-pipeline/src/state_db.rs",
+      "lines": 430,
+      "sha256": "D304B61437B3CB892C57B034F5178CD5F53370B4214206CF738953974A068D51",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/god-engine-core/src/bootloader.rs",
+      "lines": 396,
+      "sha256": "53916B4E62F94D40AD009647C839D6F590EAE319A20313DA79E9F8D0FB231344",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/quantum-arena/src/state_continuity.rs",
+      "lines": 142,
+      "sha256": "724526556EBA075596875A4702B38592C645508605C01AE1FC1AE94C7DF6E0E4",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/data-pipeline/src/persistence.rs",
+      "lines": 101,
+      "sha256": "B77A52A1AD172A603E595625DA381C75DA307DC5CF71548177D1DFA56C6DA177",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/storage-engine/src/lib.rs",
+      "lines": 14,
+      "sha256": "74BC16667B4D3F08DCB7AA1A82965C6C6DEA7B959D2D0F55FA3C5F3A4BD1C7FB",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/quantum-arena/tests/checkpoint_characterization.rs",
+      "lines": 71,
+      "sha256": "BEDCC4D7BF381E535E790E36CDA843F404F534B32EDAD5BC940D0A3874C61F99",
+      "change": "new_diagnostic_test"
+    }
+  ],
+  "protected": [
+    {
+      "path": "src/bin/god_engine.rs",
+      "lines": 4814,
+      "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62"
+    },
+    {
+      "path": "crates/god-engine-core/src/lib.rs",
+      "lines": 5102,
+      "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE"
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "lines": 951,
+      "sha256": "E9883455B6BEBEFA866C2F56FE6C4A403321E22BA58C82D004BF5839E738C4A1"
+    },
+    {
+      "path": "crates/backtest-engine/src/booktick_replay.rs",
+      "lines": 1049,
+      "sha256": "736CC1DBB38E21D78EB0C5B02F410BC90F72130A613F70C02818318051AB02C6"
+    }
+  ],
+  "append_only_baselines": [
+    {
+      "path": "ATLAS_ANALITICO.md",
+      "normalized_character_length": 58423,
+      "normalized_sha256": "E642FFF92D57458EBB1E05686DAFF6CE60C4E910E7C2896545B3B6CBE64B539B"
+    },
+    {
+      "path": "INFORME_FORENSE_MAESTRO.md",
+      "normalized_character_length": 600428,
+      "normalized_sha256": "A4CCB61499E26E29D5DE59DC9487E4CE3307564E4BE570701699790BD6A1FE13"
+    },
+    {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XII_2026-09-24.md",
+      "normalized_character_length": 27818,
+      "normalized_sha256": "4FCAE7C8C7B959A75D40DA64A809FF4ECB8E797CE6727A3FACBD5A440F770480"
+    }
+  ],
+  "not_performed": [
+    "trading",
+    "authenticated_exchange_queries",
+    "genome_promotion",
+    "active_database_migration",
+    "deployment",
+    "engine_restart",
+    "commit",
+    "push",
+    "merge",
+    "fetch"
+  ],
+  "related_open_findings_not_duplicated": [
+    "FMT-083",
+    "FMT-107",
+    "FMT-108",
+    "FMT-144"
+  ]
+}

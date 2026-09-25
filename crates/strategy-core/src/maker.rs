@@ -19,6 +19,11 @@ impl MakerEngine {
         }
     }
 
+    /// Legacy quote heuristic. `genome_spread_pct + volatility * tensor_poly_b`
+    /// is a HALF-spread fraction of mid, not a full spread in basis points.
+    /// Inventory is normalized by a retained USD 100 heuristic, not portfolio
+    /// risk. The returned type does not attest validity, freshness or tick size;
+    /// in particular the invalid-book fallback still requires caller validation.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub fn generate_quote(
@@ -95,7 +100,7 @@ impl MakerEngine {
             0.0
         };
 
-        let mid = (bid + ask) / 2.0;
+        let mid = bid * 0.5 + ask * 0.5;
 
         // Ampliamos el spread si la volatilidad es alta para protegernos de toxicidad
         // Usamos tensor_poly_b en vez del viejo hardcode "0.005"
@@ -124,15 +129,18 @@ impl MakerEngine {
         let optimal_ask = mid + half_spread + total_skew;
 
         // Regla estricta de Market Maker: NUNCA cruzar el spread real de mercado (eso pagaría Taker fee)
-        let final_bid = if optimal_bid.is_finite() {
-            optimal_bid.min(bid).max(1e-8)
+        // The valid book already supplies positive ordered bounds. An absolute
+        // price floor is not unit invariant and can cross very small markets.
+        // This does NOT validate exchange tick size or the invalid-book branch.
+        let final_bid = if optimal_bid.is_finite() && optimal_bid > 0.0 {
+            optimal_bid.min(bid)
         } else {
-            bid.max(1e-8)
+            bid
         };
         let final_ask = if optimal_ask.is_finite() {
-            optimal_ask.max(ask).max(final_bid + 1e-8)
+            optimal_ask.max(ask)
         } else {
-            ask.max(final_bid + 1e-8)
+            ask
         };
 
         MakerQuote {

@@ -6,15 +6,14 @@
 //! aprendía de los cierres del core, la minoría: 10/10 trades del
 //! 2026-09-15 cerraron por bracket). Esta pieza cierra el lazo:
 //!
-//! CÓMO: `on_order_trade_update` detecta fills de piernas de bracket
-//! (STOP_MARKET / TAKE_PROFIT_MARKET / TRAILING_STOP_MARKET — siempre
-//! cierres en este sistema), junta el contexto de entrada del arena local
-//! (precio/fee de entrada) y produce un `BracketClose` que va a DOS sitios:
-//!   1. data/trade_fills.jsonl — diario persistente inmediato (un renglón
-//!      por disparo: trigger, fill, slippage en bps adversos, PnL bruto,
-//!      fees, neto) — la estadística de disparos N>1 que faltaba.
-//!   2. Cola en memoria que god_engine drena cada tick para alimentar
-//!      risk_envelope.record_trade — Kelly aprende de TODOS los cierres.
+//! CÓMO: `on_order_trade_update` reconoce candidatos por tipo o nombre de
+//! bracket y junta contexto local de entrada. Esa clasificación no prueba
+//! propiedad ni terminalidad. `BracketClose` se entrega a DOS caminos:
+//!   1. data/trade_fills.jsonl — serialización validada y escritura asíncrona
+//!      sin ACK durable; un registro puede representar un fill parcial.
+//!   2. Cola acotada que god_engine drena antes de validar la aritmética y
+//!      actualizar estadísticas. Saturación, contexto ausente o invalidez
+//!      pueden excluir evidencia; no se garantiza aprender de todos los cierres.
 //!
 //! HONESTIDAD: si el arena local no tiene la posición (adoptada tras
 //! reconexión), entry=0 y pnl_gross=0 — el registro queda como evidencia
@@ -40,13 +39,15 @@ pub struct BracketClose {
     pub qty: f64,
     /// Precio de entrada conocido por el arena local (0 = desconocido).
     pub entry_price: f64,
-    /// Fill real de salida.
+    /// Precio reportado de salida; la emergencia legacy puede usar una estimación.
     pub exit_price: f64,
     /// Precio trigger de la pierna (0 si el evento no lo trajo).
     pub stop_price: f64,
-    /// PnL bruto del fill: (entry-exit)·qty·sign — 0 si entry desconocido.
+    /// Gross PnL: (exit-entry)*qty for long, opposite for short.
+    /// Zero may still mean unknown in legacy producers; use numeric validation.
     pub pnl_gross: f64,
-    /// Comisión del fill de salida + entrada pro-rata (positivo).
+    /// Signed costs in one common currency: positive expense, negative rebate.
+    /// The record does not yet carry currency or conversion provenance.
     pub fees: f64,
     /// "TP" | "SL" | "TRAIL"
     pub trigger: &'static str,
@@ -68,18 +69,82 @@ static PENDING: LazyLock<Mutex<Vec<BracketClose>>> =
 /// el win-rate aprenden justo al revés.
 ///
 /// `reconciliation.rs` ya tenía la fórmula correcta: aquí vive una sola vez y la
-/// consumen ambos caminos. Devuelve 0 si falta el contexto de entrada (posición
-/// adoptada): PnL desconocido no es PnL cero, y quien lo consuma debe mirar
-/// `entry_price > 0` para distinguirlo.
+/// consumen ambos caminos. El wrapper legacy devuelve 0 ante contexto inválido
+/// o aritmética no representable: no distingue esos casos de un cierre plano.
+/// Los consumidores de aprendizaje deben usar la API checked y conservar el error.
 #[inline]
 pub fn gross_pnl(was_long: bool, entry_price: f64, exit_price: f64, qty: f64) -> f64 {
-    if !(entry_price > 0.0 && exit_price > 0.0 && qty > 0.0) {
-        return 0.0;
-    }
-    if was_long {
+    // Compatibility only: zero is not proof of a breakeven outcome.
+    checked_gross_pnl(was_long, entry_price, exit_price, qty).unwrap_or(0.0)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountingError {
+    InvalidSymbol,
+    InvalidQuantity,
+    InvalidEntryPrice,
+    InvalidExitPrice,
+    InvalidStopPrice,
+    InvalidGrossPnl,
+    InvalidFees,
+    InvalidSlippage,
+    NonFiniteCalculation,
+    Underflow,
+    Serialization,
+}
+
+/// Arithmetic validation only. Does not attest a fill, its owner or its currency.
+pub fn checked_gross_pnl(was_long: bool, entry_price: f64, exit_price: f64, qty: f64)
+    -> Result<f64, AccountingError> {
+    if !entry_price.is_finite() || entry_price <= 0.0 { return Err(AccountingError::InvalidEntryPrice); }
+    if !exit_price.is_finite() || exit_price <= 0.0 { return Err(AccountingError::InvalidExitPrice); }
+    if !qty.is_finite() || qty <= 0.0 { return Err(AccountingError::InvalidQuantity); }
+    let result = if was_long {
         (exit_price - entry_price) * qty
     } else {
         (entry_price - exit_price) * qty
+    };
+    if !result.is_finite() { return Err(AccountingError::NonFiniteCalculation); }
+    if result == 0.0 && entry_price != exit_price { return Err(AccountingError::Underflow); }
+    Ok(result)
+}
+
+impl BracketClose {
+    /// Reject numeric corruption before statistics/learning. Missing entry (0)
+    /// is not breakeven. This does NOT establish provenance or deduplication.
+    pub fn checked_numeric_net_pnl(&self) -> Result<f64, AccountingError> {
+        self.validate_journal_fields()?;
+        checked_gross_pnl(self.was_long, self.entry_price, self.exit_price, self.qty)?;
+        let net = self.pnl_gross - self.fees;
+        if net.is_finite() { Ok(net) } else { Err(AccountingError::NonFiniteCalculation) }
+    }
+
+    fn validate_journal_fields(&self) -> Result<(), AccountingError> {
+        if self.symbol.trim().is_empty() { return Err(AccountingError::InvalidSymbol); }
+        if !self.qty.is_finite() || self.qty <= 0.0 { return Err(AccountingError::InvalidQuantity); }
+        // Zero entry retains diagnostic records from legacy unknown-context producers.
+        if !self.entry_price.is_finite() || self.entry_price < 0.0 { return Err(AccountingError::InvalidEntryPrice); }
+        if !self.exit_price.is_finite() || self.exit_price <= 0.0 { return Err(AccountingError::InvalidExitPrice); }
+        if !self.stop_price.is_finite() || self.stop_price < 0.0 { return Err(AccountingError::InvalidStopPrice); }
+        if !self.pnl_gross.is_finite() { return Err(AccountingError::InvalidGrossPnl); }
+        if !self.fees.is_finite() { return Err(AccountingError::InvalidFees); }
+        if !self.slippage_bps.is_finite() { return Err(AccountingError::InvalidSlippage); }
+        if !(self.pnl_gross - self.fees).is_finite() { return Err(AccountingError::NonFiniteCalculation); }
+        Ok(())
+    }
+
+    /// Pure serializer, preserving the legacy keys without fixed decimal truncation.
+    /// Serialization is not durable persistence; zero entry is diagnostic-only.
+    pub fn journal_line(&self) -> Result<String, AccountingError> {
+        self.validate_journal_fields()?;
+        let value = serde_json::json!({
+            "ts": self.ts_ms, "sym": self.symbol, "trig": self.trigger,
+            "long": self.was_long, "qty": self.qty, "entry": self.entry_price,
+            "exit": self.exit_price, "stop": self.stop_price,
+            "pnl_gross": self.pnl_gross, "fees": self.fees,
+            "net": self.pnl_gross - self.fees, "slip_bps": self.slippage_bps
+        });
+        serde_json::to_string(&value).map(|s| s + "\n").map_err(|_| AccountingError::Serialization)
     }
 }
 /// Serializa los tests que tocan la cola global PENDING (cargo test corre
@@ -87,13 +152,11 @@ pub fn gross_pnl(was_long: bool, entry_price: f64, exit_price: f64, qty: f64) ->
 #[cfg(test)]
 pub(crate) static TEST_QUEUE_LOCK: Mutex<()> = Mutex::new(());
 
-/// ¿Es una pierna de cierre? En este sistema las entradas son
-/// MARKET/LIMIT/GTX/ICEBERG; STOP_MARKET, TAKE_PROFIT_MARKET y
-/// TRAILING_STOP_MARKET sólo existen como brackets de salida —
-/// convención-independiente (los clientIds han cambiado de formato
-/// `*_TP` a `wdTP_*` entre bloques).
+/// Reconoce los tres tipos canónicos usados como candidatos a bracket local.
+/// El tipo exacto evita coincidencias por substring, pero no demuestra por sí
+/// solo reduce-only, propiedad de la posición ni identidad del fill.
 pub fn is_closing_bracket_order(order_type: &str) -> bool {
-    order_type.contains("STOP_MARKET") || order_type.contains("TAKE_PROFIT_MARKET")
+    matches!(order_type, "STOP_MARKET" | "TAKE_PROFIT_MARKET" | "TRAILING_STOP_MARKET")
 }
 
 /// Clasifica el trigger por tipo de orden.
@@ -112,7 +175,7 @@ pub fn trigger_kind(order_type: &str) -> &'static str {
 /// El servicio de Algo (migración OCO-F5) puede convertir la pierna
 /// condicional disparada en una orden MARKET normal: en ese caso el campo
 /// `o` del ORDER_TRADE_UPDATE ya no identifica el cierre y la detección
-/// por tipo lo pierde. Las piernas de este sistema llevan ids FIRMADOS:
+/// por tipo lo pierde. Las piernas usan una convención de nombres, NO una firma:
 ///   · watchdog top-up:  "wdTP_<micros>_<intent>" / "wdSL_<micros>_<intent>"
 ///   · OCO de entrada:   "<base>_TP" / "<base>_TPR" / "<base>_SL" / "<base>_SLR"
 /// Los ids de ENTRADA ("cL_", "cS_", "mc_", "iceberg_") y los reduce-only
@@ -133,8 +196,8 @@ pub fn bracket_close_kind_by_client_id(client_order_id: &str) -> Option<&'static
 }
 
 /// ¿Este fill cierra posición vía pierna de bracket? Por tipo de orden
-/// (canónico) o por clientOrderId firmado (respaldo ante conversión MARKET
-/// del servicio Algo).
+/// (canónico) o por convención de clientOrderId (respaldo ante conversión MARKET
+/// del servicio Algo). Es reconocimiento sintáctico, no autenticación del cierre.
 pub fn is_bracket_close_fill(order_type: &str, client_order_id: &str) -> bool {
     is_closing_bracket_order(order_type)
         || bracket_close_kind_by_client_id(client_order_id).is_some()
@@ -148,8 +211,8 @@ pub fn is_bracket_close_fill(order_type: &str, client_order_id: &str) -> bool {
 /// líneas formateadas se envían por un canal mpsc que un hilo dedicado
 /// (`trade-fills-io`) drena y escribe. El handle del archivo se abre UNA vez
 /// y se conserva (antes se re-abría por línea). Si el hilo drenador muere
-/// (imposible en práctica: sólo termina si el Sender se cae), se cae a la
-/// escritura síncrona vieja — la evidencia nunca se pierde por esta vía.
+/// se cae a escritura síncrona. Esta ruta sigue sin ACK durable y puede perder
+/// datos por errores de disco o caída del proceso; la cola de I/O no es acotada.
 static FILLS_LINE_TX: LazyLock<std::sync::mpsc::Sender<String>> =
     LazyLock::new(|| {
         let (tx, rx) = std::sync::mpsc::channel::<String>();
@@ -218,23 +281,15 @@ fn journal_append(line: String) {
 
 /// Registra un cierre: append al diario persistente (hilo de fondo) + cola para Kelly.
 pub fn record_bracket_close(rec: BracketClose) {
-    // Diario primero: la evidencia sobrevive aunque el motor caiga.
-    let net = rec.pnl_gross - rec.fees;
-    let line = format!(
-        "{{\"ts\":{},\"sym\":\"{}\",\"trig\":\"{}\",\"long\":{},\"qty\":{:.8},\"entry\":{:.6},\"exit\":{:.6},\"stop\":{:.6},\"pnl_gross\":{:.6},\"fees\":{:.6},\"net\":{:.6},\"slip_bps\":{:.2}}}\n",
-        rec.ts_ms,
-        rec.symbol,
-        rec.trigger,
-        rec.was_long,
-        rec.qty,
-        rec.entry_price,
-        rec.exit_price,
-        rec.stop_price,
-        rec.pnl_gross,
-        rec.fees,
-        net,
-        rec.slippage_bps
-    );
+    // Valid syntax/numbers before either queue. Enqueue is NOT durable commit.
+    let line = match rec.journal_line() {
+        Ok(line) => line,
+        Err(reason) => {
+            INVALID_RECORDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            eprintln!("[ACCOUNTING] rejected invalid close record: {:?}", reason);
+            return;
+        }
+    };
     journal_append(line);
     if let Ok(mut q) = PENDING.lock() {
         if q.len() < 1024 {
@@ -259,6 +314,9 @@ pub fn record_bracket_close(rec: BracketClose) {
 /// D-710: cierres perdidos por cola llena. Cualquier valor > 0 invalida la
 /// muestra con la que aprende Kelly.
 pub static DESCARTADOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Numeric/serialization rejections, separate from queue-capacity losses.
+pub static INVALID_RECORDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// D-710: cuántos cierres se han descartado por cola llena desde el arranque.
 pub fn cierres_descartados() -> u64 {
@@ -349,11 +407,25 @@ pub fn record_entry_fill(
     is_maker: bool,
     commission: f64,
 ) {
-    // MOD1/4-012: el append va al canal del hilo de I/O, no al hilo del WS.
-    let line = format!(
-        "{{\"kind\":\"ENTRY\",\"ts\":{ts_ms},\"sym\":\"{symbol}\",\"long\":{long},\"qty\":{qty:.8},\"px\":{price:.6},\"maker\":{is_maker},\"fee\":{commission:.6}}}\n"
-    );
-    journal_append(line);
+    match entry_fill_journal_line(ts_ms, symbol, long, qty, price, is_maker, commission) {
+        Ok(line) => journal_append(line),
+        Err(reason) => {
+            INVALID_RECORDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            eprintln!("[ACCOUNTING] rejected invalid entry record: {:?}", reason);
+        }
+    }
+}
+
+/// Pure entry serializer; signed commission must already have a currency contract.
+pub fn entry_fill_journal_line(ts_ms: u64, symbol: &str, long: bool, qty: f64,
+    price: f64, is_maker: bool, commission: f64) -> Result<String, AccountingError> {
+    if symbol.trim().is_empty() { return Err(AccountingError::InvalidSymbol); }
+    if !qty.is_finite() || qty <= 0.0 { return Err(AccountingError::InvalidQuantity); }
+    if !price.is_finite() || price <= 0.0 { return Err(AccountingError::InvalidEntryPrice); }
+    if !commission.is_finite() { return Err(AccountingError::InvalidFees); }
+    let value = serde_json::json!({"kind":"ENTRY", "ts":ts_ms, "sym":symbol,
+        "long":long, "qty":qty, "px":price, "maker":is_maker, "fee":commission});
+    serde_json::to_string(&value).map(|s| s + "\n").map_err(|_| AccountingError::Serialization)
 }
 
 #[cfg(test)]

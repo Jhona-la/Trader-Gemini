@@ -1,74 +1,47 @@
-/// 🧬 ALGORITMO #103: REBALANCEADOR DE CAPITAL EPIGENÉTICO PARA EL TOP 10 (EPIGENETIC CAPITAL ALLOCATOR ENGINE)
-/// Modula las máscaras de metilación epigenéticas para canalizar dinámicamente el margen ($50.00capital base)
-/// exclusivamente hacia las 10 mejores oportunidades con mayor payoff esperado.
+/// Legacy score-based allocator with an epigenetic multiplier. This is not a
+/// covariance-aware portfolio optimizer or an exchange notional validator.
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C, align(64))]
 pub struct EpigeneticCapitalAllocEngine;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AllocationError {
+    InvalidCapital,
+    LengthMismatch,
+    NonFiniteScore { index: usize },
+    NonFiniteMethylation { index: usize },
+}
+
 impl EpigeneticCapitalAllocEngine {
-    /// Asigna las fracciones óptimas de capital para los Top 10 activos bajo expresión epigenética en O(1).
-    /// FIX #580: Si available_capital es bajo (< $30 USD), concentra el margen en los top-K activos para cumplir Binance MIN_NOTIONAL ($5.00).
+    /// Compatibility wrapper: invalid input leaves capital unallocated. Use the
+    /// checked API to distinguish invalid data from absence of positive evidence.
     #[inline(always)]
     pub fn allocate_epigenetic_top10_margin_with_capital(
         top10_scores: &[f64; 10],
         methylation_tensor: &[f64; 10],
         available_capital: f64,
     ) -> [f64; 10] {
-        let mut raw_weights = [0.0f64; 10];
-        for i in 0..10 {
-            // FIX #615: Sanitización estricta de finitud en scores y tensores de metilación
-            let safe_methyl = if methylation_tensor[i].is_finite() {
-                methylation_tensor[i].clamp(0.0, 1.0)
-            } else {
-                0.5
-            };
-            let safe_score = if top10_scores[i].is_finite() {
-                top10_scores[i].max(0.0)
-            } else {
-                0.0
-            };
-            let epigenetic_multiplier = 0.5 + (safe_methyl * 1.0);
-            raw_weights[i] = safe_score * epigenetic_multiplier;
-        }
-
-        // Determinar K máximo de activos viables según capital (ej: $13 USD -> máx 2 monedas para notional >= $5)
-        let safe_cap = if available_capital.is_finite() && available_capital > 0.0 {
-            available_capital
-        } else {
-            13.0
-        };
-        let max_k = if safe_cap < 30.0 {
-            2
-        } else if safe_cap < 100.0 {
-            5
-        } else {
-            10
-        };
-
-        // Encontrar los índices del top-K
-        let mut indices: [usize; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-        indices.sort_by(|&a, &b| {
-            raw_weights[b]
-                .partial_cmp(&raw_weights[a])
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        let mut weights = [0.0f64; 10];
-        let mut total_w = 0.0;
-        for i in 0..max_k {
-            let idx = indices[i];
-            weights[idx] = raw_weights[idx].max(0.01);
-            total_w += weights[idx];
-        }
-
-        let inv_total = if total_w > 0.0 { 1.0 / total_w } else { 0.0 };
-        for i in 0..10 {
-            weights[i] *= inv_total;
-        }
-        weights
+        Self::try_allocate_epigenetic_top10_margin_with_capital(
+            top10_scores,
+            methylation_tensor,
+            available_capital,
+        )
+        .unwrap_or([0.0; 10])
     }
 
-    /// Asigna las fracciones óptimas de capital para los Top 10 activos bajo expresión epigenética en O(1)
+    pub fn try_allocate_epigenetic_top10_margin_with_capital(
+        scores: &[f64; 10],
+        methylation: &[f64; 10],
+        capital: f64,
+    ) -> Result<[f64; 10], AllocationError> {
+        let mut ranked = [(0, 0.0); 10];
+        let mut weights = [0.0; 10];
+        Self::allocate_checked(scores, methylation, capital, &mut ranked, &mut weights)?;
+        Ok(weights)
+    }
+
+    /// Historical no-capital API explicitly assumes USD 13; new callers should
+    /// provide observed capital through the checked API.
     #[inline(always)]
     pub fn allocate_epigenetic_top10_margin(
         top10_scores: &[f64; 10],
@@ -96,67 +69,81 @@ impl EpigeneticCapitalAllocEngine {
         plasticity
     }
 
-    /// Asignación Epigenética Universal para N activos (hasta 30 monedas del universo) (Punto #190)
+    /// Compatibility API; preserves score cardinality on errors, with zero weights.
     pub fn allocate_epigenetic_universe_margin(
         scores: &[f64],
         methylation: &[f64],
         available_capital: f64,
     ) -> Vec<f64> {
-        let n = scores.len().min(methylation.len());
-        if n == 0 {
-            return Vec::new();
-        }
+        Self::try_allocate_epigenetic_universe_margin(scores, methylation, available_capital)
+            .unwrap_or_else(|_| vec![0.0; scores.len()])
+    }
 
-        let mut raw_weights = Vec::with_capacity(n);
-        for i in 0..n {
-            let safe_methyl = if methylation[i].is_finite() {
-                methylation[i].clamp(0.0, 1.0)
-            } else {
-                0.5
-            };
-            let safe_score = if scores[i].is_finite() {
-                scores[i].max(0.0)
-            } else {
-                0.0
-            };
-            let mult = 0.5 + safe_methyl;
-            raw_weights.push((i, safe_score * mult));
-        }
+    /// Checked heuristic allocation, O(n log n). Positive scores are eligibility
+    /// evidence, not calibrated expected returns. No floor manufactures exposure.
+    pub fn try_allocate_epigenetic_universe_margin(
+        scores: &[f64],
+        methylation: &[f64],
+        capital: f64,
+    ) -> Result<Vec<f64>, AllocationError> {
+        let mut ranked = vec![(0, 0.0); scores.len()];
+        let mut weights = vec![0.0; scores.len()];
+        Self::allocate_checked(scores, methylation, capital, &mut ranked, &mut weights)?;
+        Ok(weights)
+    }
 
-        let safe_cap = if available_capital.is_finite() && available_capital > 0.0 {
-            available_capital
-        } else {
-            13.0
-        };
-        let max_k = if safe_cap < 30.0 {
+    fn allocate_checked(
+        scores: &[f64],
+        methylation: &[f64],
+        capital: f64,
+        ranked: &mut [(usize, f64)],
+        weights: &mut [f64],
+    ) -> Result<(), AllocationError> {
+        if !capital.is_finite() || capital <= 0.0 {
+            return Err(AllocationError::InvalidCapital);
+        }
+        if scores.len() != methylation.len() {
+            return Err(AllocationError::LengthMismatch);
+        }
+        let mut scale = 0.0_f64;
+        for (index, (&score, &methyl)) in scores.iter().zip(methylation).enumerate() {
+            if !score.is_finite() {
+                return Err(AllocationError::NonFiniteScore { index });
+            }
+            if !methyl.is_finite() {
+                return Err(AllocationError::NonFiniteMethylation { index });
+            }
+            scale = scale.max(score);
+        }
+        if scale == 0.0 {
+            return Ok(());
+        }
+        for (i, entry) in ranked.iter_mut().enumerate() {
+            // Common scaling cancels in normalization, bounding each raw weight
+            // by one even when finite scores are near f64::MAX.
+            *entry = (
+                i,
+                (scores[i].max(0.0) / scale) * ((0.5 + methylation[i].clamp(0.0, 1.0)) / 1.5),
+            );
+        }
+        ranked.sort_unstable_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        // Retained compatibility policy, NOT a proof of exchange MIN_NOTIONAL
+        // compliance: unequal weights can still produce sub-minimum notionals.
+        let max_k = if capital < 30.0 {
             2
-        } else if safe_cap < 100.0 {
+        } else if capital < 100.0 {
             5
-        } else if safe_cap < 300.0 {
+        } else if capital < 300.0 {
             10
         } else {
-            n
+            scores.len()
+        };
+        let selected = &ranked[..max_k.min(ranked.len())];
+        let total: f64 = selected.iter().map(|entry| entry.1).sum();
+        for &(i, weight) in selected {
+            weights[i] = weight / total;
         }
-        .min(n);
-
-        raw_weights.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        let mut weights = vec![0.0f64; n];
-        let mut total_w = 0.0;
-        for i in 0..max_k {
-            let (idx, w) = raw_weights[i];
-            let val = w.max(0.01);
-            if idx < n {
-                weights[idx] = val;
-                total_w += val;
-            }
-        }
-
-        let inv_total = if total_w > 0.0 { 1.0 / total_w } else { 0.0 };
-        for w in &mut weights {
-            *w *= inv_total;
-        }
-        weights
+        Ok(())
     }
 }
 
@@ -169,7 +156,7 @@ mod tests {
         let scores = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05];
         let methylation = [1.0; 10];
 
-        // En microcuenta ($13 USD), concentra en máx 2 activos para cumplir MIN_NOTIONAL
+        // Legacy concentration policy; this does not verify MIN_NOTIONAL.
         let weights = EpigeneticCapitalAllocEngine::allocate_epigenetic_top10_margin_with_capital(
             &scores,
             &methylation,
@@ -221,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn test_epigenetic_capital_allocation_nan_capital_immunity() {
+    fn test_epigenetic_capital_allocation_invalid_capital_abstains() {
         let scores = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05];
         let methylation = [1.0; 10];
 
@@ -232,7 +219,7 @@ mod tests {
                 f64::NAN,
             );
         let active_nan = weights_nan.iter().filter(|&&w| w > 0.0).count();
-        assert_eq!(active_nan, 2);
+        assert_eq!(active_nan, 0);
 
         let weights_neg =
             EpigeneticCapitalAllocEngine::allocate_epigenetic_top10_margin_with_capital(
@@ -241,6 +228,6 @@ mod tests {
                 -50.0,
             );
         let active_neg = weights_neg.iter().filter(|&&w| w > 0.0).count();
-        assert_eq!(active_neg, 2);
+        assert_eq!(active_neg, 0);
     }
 }

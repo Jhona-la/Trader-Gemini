@@ -92,12 +92,12 @@ pub fn evaluate_quantum_trailing_with_fee(
     } else {
         1.5
     };
-    let trail_f1 = if trail_f1.is_finite() && trail_f1 > 0.0 {
+    let _trail_f1 = if trail_f1.is_finite() && trail_f1 > 0.0 {
         trail_f1
     } else {
         1.5
     };
-    let trail_f2 = if trail_f2.is_finite() && trail_f2 > 0.0 {
+    let _trail_f2 = if trail_f2.is_finite() && trail_f2 > 0.0 {
         trail_f2
     } else {
         2.0
@@ -107,7 +107,7 @@ pub fn evaluate_quantum_trailing_with_fee(
     } else {
         2.5
     };
-    let trail_runner = if trail_runner.is_finite() && trail_runner > 0.0 {
+    let _trail_runner = if trail_runner.is_finite() && trail_runner > 0.0 {
         trail_runner
     } else {
         1.5
@@ -170,16 +170,16 @@ pub fn evaluate_quantum_trailing_with_fee(
     } else {
         0.5
     };
-    let lvl = |mr: f64, tend: f64| mr + (tend - mr) * t;
+    let _lvl = |mr: f64, tend: f64| mr + (tend - mr) * t;
     // B568 / F-025: be_buffer debe garantizar ganancia neta post-fees VIP0 reales.
     // Fee taker ida y vuelta: 2 * fee_rate (~10 bps) + 2 * slippage (~4-6 bps) + margen neto positivo (2-3 bps) = 16.5 a 21.0 bps.
     let roundtrip_taker_friction = effective_fee * 2.0 + 0.0005;
     let be_buffer = (roundtrip_taker_friction + 0.00025).clamp(0.00160, 0.00210);
     let atr_frac = if entry_price > 1e-8 { current_atr / entry_price } else { 0.0010 };
     let min_breathing = (atr_frac * 0.85).clamp(0.00080, 0.00150);
-    let be_trigger = (effective_tp * lvl(0.60, 0.75))
-        .max(be_buffer + min_breathing)
-        .max(effective_fee * 3.2);
+    let be_trigger = (be_buffer + min_breathing)
+        .max(effective_fee * 2.5)
+        .min(effective_tp * 0.45);
 
     // 3. Phase Transitions (Desasfixiadas: permiten que el trade desarrolle su ciclo hasta TP)
     if current_phase == 0 && (pnl_atr >= 1.5 || max_pnl_pct >= be_trigger) {
@@ -217,12 +217,15 @@ pub fn evaluate_quantum_trailing_with_fee(
 
     // T1: ATR Step Trailing
     if current_phase != 0 {
+        // Compresión armónica del trailing stop:
+        // A mayor avance de MFE/fase, menor distancia de retroceso permitida para garantizar
+        // la captura de la cola derecha del retorno espectral.
         let dist_atr = match current_phase {
-            1 => trail_f1,
-            2 => trail_f2,
-            3 => trail_f3,
-            4 => trail_runner,
-            _ => 2.0,
+            1 => 1.20,
+            2 => 0.90,
+            3 => 0.65,
+            4 => 0.45,
+            _ => 1.00,
         };
 
         let mut t1_stop = if pos_side == 1 {
@@ -231,21 +234,15 @@ pub fn evaluate_quantum_trailing_with_fee(
             current_price + (dist_atr * current_atr)
         };
 
-        // B3.27 — ESCALERA RELATIVA AL TP (no al fee). Hallazgo diario:
-        // 73% WR pero RRR 0.30 porque la escalera ×fee disparaba TODA dentro
-        // del rango del TP (con VIP0: be a 0.65%, half a 0.94%, profit a
-        // 1.05% — y el TP a 0.66-1.2%). Los winners se decapitaban antes de
-        // correr. Ahora cada nivel es FRACCIÓN del TP, interpolada por la
-        // persistencia espectral (S-2). El ATR-trailing (T1 arriba) sigue
-        // dando la distancia de respiración; esta escalera sólo pone SUELOS
-        // progresivos — el trade respira hasta su TP. `be_trigger`,
-        // `effective_tp`, `effective_fee`, `t` y `lvl` son los de arriba (D-711).
-        let half_lock_trigger = effective_tp * lvl(0.55, 0.75);
-        let half_lock_gain = (effective_tp * lvl(0.25, 0.38)).max(be_buffer + 0.0006);
-        let profit_lock_trigger = effective_tp * lvl(0.70, 0.88);
-        let profit_lock_gain = (effective_tp * lvl(0.45, 0.62)).max(half_lock_gain + 0.0006);
-        let runner_lock_trigger = effective_tp * lvl(0.85, 1.00);
-        let runner_lock_gain = (effective_tp * lvl(0.65, 0.88)).max(profit_lock_gain + 0.0006);
+        // Escalera progresiva continua armónica:
+        // be_trigger asegura ganancia neta post-fees;
+        // half, profit y runner ratchets aseguran la cosecha sin esperar al extremo del TP macro.
+        let half_lock_trigger = (be_trigger + min_breathing * 0.80).max(be_trigger * 1.25);
+        let half_lock_gain = (be_trigger * 0.65).max(be_buffer + 0.0006);
+        let profit_lock_trigger = (half_lock_trigger + min_breathing * 0.80).max(be_trigger * 1.60);
+        let profit_lock_gain = (profit_lock_trigger * 0.65).max(half_lock_gain + 0.0008);
+        let runner_lock_trigger = (profit_lock_trigger + min_breathing).max(be_trigger * 2.00);
+        let runner_lock_gain = (runner_lock_trigger * 0.70).max(profit_lock_gain + 0.0010);
 
         if max_pnl_pct >= be_trigger {
             if pos_side == 1 {

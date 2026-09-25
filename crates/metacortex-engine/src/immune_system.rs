@@ -28,14 +28,20 @@ pub struct LivingImmuneSystem {
 
 impl LivingImmuneSystem {
     pub fn new<P: AsRef<Path>>(base_dir: P) -> Self {
+        let system = Self::new_deferred(base_dir);
+        let _ = fs::create_dir_all(&system.trauma_dir);
+        let _ = fs::create_dir_all(&system.tests_vivos_dir);
+        let _ = fs::create_dir_all(&system.archivado_dir);
+        system
+    }
+
+    /// Build paths without filesystem effects, for isolated evaluators.
+    /// Directories are created only if an authorized caller persists a record.
+    pub fn new_deferred<P: AsRef<Path>>(base_dir: P) -> Self {
         let root = base_dir.as_ref();
         let trauma_dir = root.join("memoria").join("trauma");
         let tests_vivos_dir = root.join("sistema_inmune").join("tests_vivos");
         let archivado_dir = trauma_dir.join("archivado");
-
-        let _ = fs::create_dir_all(&trauma_dir);
-        let _ = fs::create_dir_all(&tests_vivos_dir);
-        let _ = fs::create_dir_all(&archivado_dir);
 
         Self {
             trauma_dir,
@@ -46,6 +52,7 @@ impl LivingImmuneSystem {
 
     /// Records a new trauma event to JSON
     pub fn record_trauma(&self, trauma: &TraumaRecord) -> std::io::Result<PathBuf> {
+        fs::create_dir_all(&self.trauma_dir)?;
         let filename = format!(
             "trauma_{}_{}.json",
             trauma.symbol,
@@ -82,6 +89,7 @@ impl LivingImmuneSystem {
     }
 
     fn generate_single_immune_test(&self, trauma: &TraumaRecord) -> std::io::Result<PathBuf> {
+        fs::create_dir_all(&self.tests_vivos_dir)?;
         // FIX #594: Sanitizar identificador Rust para evitar errores de sintaxis en el compilador
         let safe_id: String = trauma
             .id
@@ -151,6 +159,7 @@ fn test_immune_antibody_{safe_id}() {{
                 if let Ok(trauma) = serde_json::from_str::<TraumaRecord>(&content) {
                     let age = now.signed_duration_since(trauma.timestamp).num_days();
                     if age > max_age_days {
+                        fs::create_dir_all(&self.archivado_dir)?;
                         let dest = self.archivado_dir.join(path.file_name().unwrap());
                         fs::rename(&path, &dest)?;
                         count += 1;

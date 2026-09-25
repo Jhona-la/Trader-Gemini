@@ -1,0 +1,416 @@
+{
+  "schema_version": 1,
+  "round": "XII",
+  "date": "2026-09-24",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XII_2026-09-24.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "commit_push_merge_fetch_performed": false,
+    "remote_verified": false
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 101,
+    "pending_complete_rust": 188,
+    "new_complete_reads": [
+      "src/features/welford.rs",
+      "src/features/ewma.rs",
+      "src/features/mod.rs",
+      "crates/quantum-arena/src/feed_health.rs",
+      "crates/quantum-arena/src/tick_source.rs",
+      "src/bin/system_health.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/execution-engine/src/executor.rs",
+      "src/bin/god_engine.rs",
+      "crates/god-engine-core/src/lib.rs"
+    ],
+    "entire_project_certified": false
+  },
+  "findings": [
+    {
+      "id": "FMT-092",
+      "priority": "P2",
+      "status": "locally_fixed_domain_and_mode_transition",
+      "title": "Decay variance must not reenter the cumulative sum-of-squares branch",
+      "file": "crates/feature-engine/src/welford.rs",
+      "limits": [
+        "update_decay production caller not found",
+        "Legacy count is not effective sample size",
+        "Public state and numerical overflow remain unguarded",
+        "Historical automatic 2000-event policy retained"
+      ]
+    },
+    {
+      "id": "FMT-138",
+      "priority": "P2",
+      "status": "locally_fixed_and_tested",
+      "title": "First exponentially weighted observation introduced an undeclared zero prior",
+      "file": "crates/feature-engine/src/welford.rs",
+      "reproduction": {
+        "first_value": 10,
+        "alpha": 0.2,
+        "old_mean": 2,
+        "old_variance": 16,
+        "new_mean": 10,
+        "new_variance": 0
+      },
+      "limits": [
+        "One-sample zero observed variance is not zero future uncertainty"
+      ]
+    },
+    {
+      "id": "FMT-139",
+      "priority": "P2",
+      "status": "constructor_contract_fixed",
+      "title": "EWMA admitted NaN, extrapolating gains and invalid periods",
+      "file": "crates/feature-engine/src/ewma.rs",
+      "compatibility": "new/from_period now explicitly panic for invalid parameters; try_new/try_from_period return Result; valid event-based behavior retained",
+      "limits": [
+        "Public alpha can be mutated after construction",
+        "No invalid production configuration observed"
+      ]
+    },
+    {
+      "id": "FMT-140",
+      "priority": "P2",
+      "status": "open_characterized",
+      "title": "Exported legacy statistical implementations diverge from the crate",
+      "files": [
+        "src/features/welford.rs",
+        "src/features/ewma.rs",
+        "src/features/mod.rs"
+      ],
+      "diagnostics_assert_remaining_defect": true,
+      "limits": [
+        "Not proof the legacy copy currently affects live orders",
+        "Copies left intact pending migration inventory"
+      ]
+    },
+    {
+      "id": "FMT-141",
+      "priority": "P1",
+      "status": "false_claims_removed_ipc_observability_pending",
+      "title": "Diagnostic process-local watchdog and order registry did not observe the live engine",
+      "file": "src/bin/system_health.rs",
+      "repair": "Report unavailable live state as DESCONOCIDO; qualify local registry and genome-store provenance",
+      "limits": [
+        "No IPC snapshot implemented",
+        "Source checks, no two-process end-to-end experiment"
+      ]
+    },
+    {
+      "id": "FMT-142",
+      "priority": "P1",
+      "status": "mutating_diagnostic_call_replaced_by_read_only_getter",
+      "title": "A health query could activate hedge mode on the account",
+      "files": [
+        "src/bin/system_health.rs",
+        "crates/execution-engine/src/executor.rs"
+      ],
+      "repair": "fetch_hedge_mode performs signed GET only; diagnostic no longer calls ensure_hedge_mode",
+      "limits": [
+        "No authenticated exchange request or HTTP mock test performed",
+        "ensure_hedge_mode remains unchanged for explicit mutating consumers",
+        "Text source guards are narrow regression controls, not a formal noninterference proof"
+      ]
+    },
+    {
+      "id": "FMT-143",
+      "priority": "P2",
+      "status": "labels_and_coverage_corrected_reconciliation_pending",
+      "title": "Income response rows presented as trades and win rate",
+      "file": "src/bin/system_health.rs",
+      "repair": "Show row counts and positive-row percentage; label one-page scope and warn at limit; preserve cost rows without realized-PnL rows",
+      "limits": [
+        "Pagination completeness not implemented in this caller",
+        "No fill-to-trade grouping or per-trade cost attribution",
+        "Existing cost ratio denominator limitations remain"
+      ]
+    },
+    {
+      "id": "FMT-144",
+      "priority": "P1",
+      "status": "open_static_control_flow_evidence",
+      "title": "Watchdog disconnect transitions and queue-based recovery lack a complete health contract",
+      "files": [
+        "src/bin/god_engine.rs",
+        "crates/quantum-arena/src/feed_health.rs"
+      ],
+      "evidence": [
+        "Timeout marks stalled; socket-error and stream-ended branches reconnect without that publication",
+        "event_time>0 can clear process-local flag without session identity or recovery proof"
+      ],
+      "limits": [
+        "Other latency/interlock guards may block entries",
+        "No unsafe executed order demonstrated",
+        "Host left unchanged because it contains concurrent work"
+      ]
+    }
+  ],
+  "tests": {
+    "distinct_passed": 85,
+    "new_tests": 24,
+    "numeric_red_to_green": 7,
+    "existing_defect_source_guards_red_to_green": 3,
+    "new_api_presence_guard_initially_failed": 1,
+    "open_characterization_new_tests": 2,
+    "groups": [
+      {
+        "name": "feature-engine unit",
+        "passed": 57
+      },
+      {
+        "name": "welford_mode_contract",
+        "passed": 7,
+        "red_before": 4
+      },
+      {
+        "name": "ewma_configuration_contract",
+        "passed": 4,
+        "red_before": 3
+      },
+      {
+        "name": "ewma_physical_time_contract",
+        "passed": 7,
+        "new_capability": true
+      },
+      {
+        "name": "legacy_statistics_diagnostics",
+        "passed": 5,
+        "new": 2,
+        "embedded_existing": 3,
+        "open_defect": true
+      },
+      {
+        "name": "system_health_source_contract",
+        "passed": 4,
+        "source_only": true
+      },
+      {
+        "name": "tick_source::tests",
+        "passed": 1
+      }
+    ],
+    "offline": true,
+    "full_feature_engine_suite": true,
+    "full_workspace_suite": false,
+    "checks": [
+      "cargo check --bin god_engine --bin system_health --offline"
+    ],
+    "checks_passed": true,
+    "preexisting_warnings": [
+      "latest_ts",
+      "mode",
+      "RealWfOutcome.trades"
+    ],
+    "economic_backtest": false,
+    "authenticated_or_mock_http_test": false
+  },
+  "theory": {
+    "id": "T35",
+    "title": "Exact temporal propagation and asynchronous graph state assimilation",
+    "status": "scalar_baseline_implemented_graph_integration_proposed",
+    "implementation": "Ewma::update_elapsed: gain = -expm1(-elapsed_ms/tau_ms)",
+    "assumptions": [
+      "Finite elapsed>=0 and tau>0; same physical time units",
+      "Input held constant over interval by caller contract",
+      "First sample is initial condition",
+      "Does not infer timestamps, deduplicate data, learn tau or connect itself to production"
+    ],
+    "limits": [
+      "No nanosecond throughput or century-scale information claim",
+      "Partition invariance only for held constant input and unchanged tau",
+      "Rounding of small increments onto nonzero f64 state remains",
+      "No quantum or financial advantage claim"
+    ],
+    "sources": [
+      {
+        "url": "https://arxiv.org/abs/1510.04923",
+        "read": "two in-body passages"
+      },
+      {
+        "url": "https://arxiv.org/abs/2302.08415",
+        "read": "abstract and two in-body passages"
+      },
+      {
+        "url": "https://arxiv.org/abs/1907.03907",
+        "read": "abstract"
+      },
+      {
+        "url": "https://arxiv.org/abs/2405.03582",
+        "read": "abstract"
+      },
+      {
+        "url": "https://arxiv.org/abs/2410.14030",
+        "read": "related abstract"
+      },
+      {
+        "url": "https://arxiv.org/abs/2509.23313",
+        "read": "related abstract"
+      },
+      {
+        "url": "https://arxiv.org/abs/2308.16818",
+        "read": "related abstract"
+      }
+    ],
+    "skill_influence": "Firecrawl research index distinguished propagation, observation assimilation and unverified model guarantees; no source code uploaded"
+  },
+  "files": [
+    {
+      "path": "crates/feature-engine/src/welford.rs",
+      "lines": 126,
+      "sha256": "CE39E030A8EA7EB2AF980C4C8A750E974229D9BA9A9E69D008A2A0E1B309DC3D",
+      "change": "modified"
+    },
+    {
+      "path": "crates/feature-engine/src/ewma.rs",
+      "lines": 109,
+      "sha256": "A07A8BDBE86FCEE77EA5EC8AE4FE81529E6B034DFE934AAC883773652EBF7D99",
+      "change": "modified"
+    },
+    {
+      "path": "crates/execution-engine/src/executor.rs",
+      "lines": 3881,
+      "sha256": "AF8729346B4DAFD3380B96DF6DC65FD6CBA6C33548AEF07C988A1ED165F6BB03",
+      "change": "modified"
+    },
+    {
+      "path": "src/bin/system_health.rs",
+      "lines": 307,
+      "sha256": "EC97CBCA5ED3814C3F1A32BCEB46000E1A8F942F468ACDC8F20967DF641158A9",
+      "change": "modified"
+    },
+    {
+      "path": "crates/feature-engine/tests/welford_mode_contract.rs",
+      "lines": 124,
+      "sha256": "AF7948168AFD16C5F3EB1286695BFB1BCCEA5BC941C2EE4B805F3B563A2E6FB7",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/feature-engine/tests/ewma_configuration_contract.rs",
+      "lines": 27,
+      "sha256": "B7BAA5947D190692EE2B04FB572953E13B7A2B95DA7E45FDFF218327097ABA25",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/feature-engine/tests/ewma_physical_time_contract.rs",
+      "lines": 97,
+      "sha256": "3137CBD1A9A834B34919803579FED37C220185F270143FCD01059BB88C01A8D6",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/feature-engine/tests/legacy_statistics_diagnostics.rs",
+      "lines": 27,
+      "sha256": "0E526C6995A3A50DB53373F679F3F8F522CDF6EB4916744D3B300C40B14CE6E9",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/quantum-arena/tests/system_health_source_contract.rs",
+      "lines": 38,
+      "sha256": "045AE844131A9007361117F108D909F38C5D17E78F2468C426C23A5E4A0B7314",
+      "change": "new_test"
+    },
+    {
+      "path": "src/features/welford.rs",
+      "lines": 91,
+      "sha256": "6DA0024C4FDFD5146A24C067F776A4222AAFBA1CBF8A61939D2E23973E0DEC32",
+      "change": "read_only"
+    },
+    {
+      "path": "src/features/ewma.rs",
+      "lines": 97,
+      "sha256": "84D7009A519CE8848A9AACD8C0512E3AB566DAB37AFC0B7FD62C1349984CB52C",
+      "change": "read_only"
+    },
+    {
+      "path": "src/features/mod.rs",
+      "lines": 7,
+      "sha256": "407404D4E26F1D3C2821DA8F29FC432E816AB461CFB40C1F6974069F14B44491",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/quantum-arena/src/feed_health.rs",
+      "lines": 30,
+      "sha256": "F2241DD41E8C764C1799813CA8A9CBC1C6B696F2F826E527544752AF492CC1D7",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/quantum-arena/src/tick_source.rs",
+      "lines": 84,
+      "sha256": "663C53FA6DA8D8F28162B295ABF13C987035BB9AC592716D4C0742287963B6F8",
+      "change": "read_only"
+    }
+  ],
+  "protected": [
+    {
+      "path": "src/bin/god_engine.rs",
+      "lines": 4814,
+      "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62"
+    },
+    {
+      "path": "crates/god-engine-core/src/lib.rs",
+      "lines": 5102,
+      "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE"
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "lines": 951,
+      "sha256": "E9883455B6BEBEFA866C2F56FE6C4A403321E22BA58C82D004BF5839E738C4A1"
+    }
+  ],
+  "before_changes": [
+    {
+      "path": "crates/feature-engine/src/welford.rs",
+      "sha256": "D24594F33EFB90BEE9DFF78FF2908BA7048046064C4314324D1587982DB164D5"
+    },
+    {
+      "path": "crates/feature-engine/src/ewma.rs",
+      "sha256": "F528B4E6BE3143911944326546DA272E83A3530C9A2E587490A05B58BC42A1A3"
+    },
+    {
+      "path": "src/bin/system_health.rs",
+      "sha256": "F86886208E3B60CDF1F1FF0FFA9606721D8821D50712DAFB0B011B9F0AF24A95"
+    },
+    {
+      "path": "crates/execution-engine/src/executor.rs",
+      "sha256": "4E5722AB137D6DA25B7D1FBE765790F40E5D8289351F0DD73902AC99CAA58743"
+    }
+  ],
+  "append_only_baselines": [
+    {
+      "path": "ATLAS_ANALITICO.md",
+      "normalized_character_length": 56599,
+      "normalized_sha256": "5A38D19D9801DD17D3810D787788DFA4DC1B073D5F0B800D9C7397CAE3597509"
+    },
+    {
+      "path": "INFORME_FORENSE_MAESTRO.md",
+      "normalized_character_length": 596041,
+      "normalized_sha256": "67BC46FADA3C7C4A0F0C3C5D82C7328F1EF408EC41A0D02F82C79B89D2DB14AD"
+    },
+    {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_IV_2026-09-24.md",
+      "normalized_character_length": 61827,
+      "normalized_sha256": "7AB8A2B1DC110A9B62F6AB16BC8092708AF8B016AFB93C516C81A4395489081D"
+    },
+    {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XI_2026-09-24.md",
+      "normalized_character_length": 28864,
+      "normalized_sha256": "546011B16EADAC4EA2C05924371A09C81EE2E6CEFD3839CA0EB70AE37E387A39"
+    }
+  ],
+  "not_performed": [
+    "trading",
+    "genome_promotion",
+    "deployment",
+    "engine_restart",
+    "authenticated_exchange_queries",
+    "commit",
+    "push",
+    "merge",
+    "fetch"
+  ]
+}

@@ -22,7 +22,8 @@ impl ChaosMonkey {
             return Err("HTTP 429 Too Many Requests (Simulado)".to_string());
         }
 
-        // FIX #1493: Entropía determinista y multi-arquitectura (x86_64 / ARM / WASM)
+        // Clock-derived draw: neither seed-reproducible nor proven uniform.
+        // XXXVI OPEN: drop_rate is not validated; sleep blocks this thread.
         #[cfg(target_arch = "x86_64")]
         let r = unsafe { core::arch::x86_64::_rdtsc() };
         #[cfg(not(target_arch = "x86_64"))]

@@ -6254,3 +6254,1834 @@ La revisión de ramas también se actualiza: main tenía 43 commits locales
 no publicados y la rama de auditoría 13 commits exclusivos; la simulación
 de integración mostró conflictos en 11 archivos sin alterar el índice.
 La unión general y su validación permanecen pendientes.
+
+---
+
+## Anexo FMT — Fundamentos científicos, causalidad y evolución verificable (2026-09-24)
+
+Se incorpora, sin borrar ni renumerar la matriz histórica, el
+[informe detallado de fundamentos y programa científico](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_2026-09-24.md>).
+Contiene 26 hallazgos/limitaciones con evidencia, ecuaciones,
+contraejemplos, impacto condicionado y pruebas necesarias para su cierre.
+No se presentan como 26 incidentes de producción ni como una nueva
+certificación completa de todos los archivos.
+
+### Fallos de conexión que afectan al aprendizaje y al genoma
+
+- **FMT-005:** se decide con OFI/OBI normalizados, Hawkes, lead-lag y
+  régimen, pero se aprende al cierre con OFI/OBI actuales, CVPIN, cero y
+  aceleración. Hay cambio de instante, unidades y significado de canales.
+- **FMT-007/008:** el calibrador conformal reconstruye al cierre un
+  conjunto que puede diferir del emitido; además el clipping de alpha
+  invalida la cota universal que su documentación afirma.
+- **FMT-009:** el objetivo alpha del genoma modifica el calibrador global,
+  mientras el camino habitual decide y aprende con el calibrador por
+  moneda. La telemetría del global tampoco representa ese objeto activo.
+- **FMT-010/011:** el control de multiplicidad requiere más información
+  que la serie ganadora y un conteo fijo; una penalización multiplicativa
+  puede mejorar fitness negativo e invertir el ranking de candidatos.
+- **FMT-012/013:** CMA muestrea con covariance completa pero normaliza su
+  camino diagonalmente; el llamador sobrescribe sigma antes del siguiente
+  muestreo, interrumpiendo esa parte de su auto-adaptación.
+
+### Fallos de significado, dimensiones y filtros
+
+- **FMT-001/002:** velocidad direccional calculada desde valor absoluto y
+  Kalman parametrizado sin coherencia de unidades/tiempo físico.
+- **FMT-003/004:** pseudo-Hurst antiguo aún presente en features y FFT de
+  eventos que no identifica por sí sola frecuencias temporales físicas.
+- **FMT-014/015/016:** Kelly binario, protección por rachas y conteo de
+  posiciones no equivalen a control de riesgo multivariante continuo.
+- **FMT-006 y FMT-017 a FMT-021:** PPO, Nash y diversas etiquetas físicas anuncian
+  propiedades que sus ecuaciones no implementan; se distinguen
+  heurísticas potencialmente útiles de garantías no demostradas.
+- **FMT-022:** Tsallis binario q=1,5 tiene máximo 0,5857864, inferior al
+  umbral de filtro 0,60: esa condición no puede rechazar el dominio válido.
+- **FMT-023:** votos positivos de magnitud 10^-12 pueden dar confianza
+  cercana a 0,70; acuerdo relativo no es evidencia absoluta calibrada.
+- **FMT-024/025/026:** pseudo-Lyapunov, snapshots tensoriales, identificación
+  de Hawkes, coste bajo ráfagas y fitness con interpretación excesiva.
+
+### Rehabilitación científica propuesta y límites del corte
+
+El diseño propuesto conserva un único campo multivariante por escala,
+unidades y soporte observacional, con nodo raíz de datos, nodo de decisión
+y nodo terminal reconciliado. Genoma, estado epigenético y parámetros
+estadísticos tienen responsabilidades distintas. El crédito debe volver
+a la predicción y al objetivo originales, no al estado al cierre.
+
+Se desarrollan 13 líneas de investigación priorizadas con fuentes
+primarias, supuestos, coste y criterios de admisión. Importar una teoría
+de física, control, grafos o inferencia es una hipótesis verificable, no
+una garantía de alpha. Los Problemas del Milenio se tratan con su estado
+oficial consultado y separando analogías de aplicaciones justificadas.
+
+Verificación: **141 tests existentes aprobados**, más comprobaciones
+algebraicas independientes. Se leyeron íntegramente 24 archivos teóricos
+y se inspeccionaron conexiones seleccionadas. El inventario Git era
+1.119 archivos / 289 Rust / 24 Cargo.toml; no se afirma lectura exhaustiva
+de ese universo. La cobertura y exclusiones están enumeradas en el anexo.
+
+Durante esta revisión otro trabajo incorporó `59a76de4`; hubo cambios
+concurrentes que se preservaron. No se modificó código operativo, no se
+operó, no se desplegó, ni se hizo commit/push/merge en esta ronda.
+La referencia local origin/main estaba 45 commits detrás de HEAD, sin
+fetch nuevo aquí. Ni las pruebas unitarias ni un replay corto positivo
+certifican rentabilidad futura o integración completa de las ramas.
+
+## Adenda científica II — auditoría del contrato matemático y del aprendizaje (24-09-2026)
+
+Informe de detalle y visualización causal:
+[AUDITORIA_FUNDAMENTOS_CIENTIFICOS_II_2026-09-24.md](</C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_II_2026-09-24.md>).
+Esta sección es aditiva. No elimina hallazgos previos ni modifica
+retroactivamente su estado. Los IDs FMT-027–046 amplían la familia FMT;
+no se suman mecánicamente al número histórico de la matriz maestra
+como si fueran fallos deduplicados o incidentes observados.
+
+| ID | Prioridad | Fallo o limitación | Condición de cierre |
+|---|---|---|---|
+| FMT-027 | P1 | Neutral convertido en clase negativa y aprendido | Resultado tipado, no actualización y avance correcto del estado |
+| FMT-028 | P1 | Probabilidades de primer paso, dirección y PnL intercambiadas | Objetivo/barreras/horizonte/censura comunes entre productor y consumidor |
+| FMT-029 | P1 | Dos updates PPO por cierre con features diferentes | Consumo idempotente por resultado y aprendiz |
+| FMT-030 | P1 | Newton sin control de descenso y cero confundido con ausencia | Convergencia/frontera verificadas y probabilidad opcional válida |
+| FMT-031 | P1 | Habilidad agregada usada para penalizar exclusivamente una red | Crédito individual y telemetría de pesos efectivos |
+| FMT-032 | P2 | Z de habilidad sin garantías bajo dependencia y consultas repetidas | Inferencia justificada para el proceso observado |
+| FMT-033 | P2 | OU fuerza reversión y omite duración física | Transición con reloj, identificación y capacidad de rechazar OU |
+| FMT-034 | P2 | Gate de saltos deja referencia congelada | Estado de calidad y recuperación contrastada ante ruptura |
+| FMT-035 | P1 | Proxy vivo presentado como Johansen/VECM | Nombre/estimador/consumidor coherentes, rango y modelo contrastados |
+| FMT-036 | P1 | Impulso llamado lead–lag sin demora ni expiración | Estimación asíncrona, disponibilidad as-of y caducidad |
+| FMT-037 | P1 | Bosque sin garantía acíclica y sin contrato semántico de artefacto | Validación estructural, presupuesto de inferencia y manifiesto |
+| FMT-038 | P2 | Pesos “ortogonales” de rango ≤2; dominio SIMD distinto | Propiedad de inicialización probada y contrato numérico común |
+| FMT-039 | P2 | Innovación escalar repartida con denominadores por canal | Modelo de observación y gain consistentes, consumidor explícito |
+| FMT-040 | P1 | Banda temporal incorrecta para stops decrecientes | Resolver desigualdades por signo e intersectar límites |
+| FMT-041 | P1 | Política de fricción presentada como imposibilidad de EV | Derivación correcta y política de riesgo identificada como tal |
+| FMT-042 | P1 | Atomicidad, generaciones y linaje incompletamente garantizados | Publicación segura, control de versión/esquema y recuperación |
+| FMT-043 | P2 | Grafo sintáctico confundible con conectividad del producto | Separar símbolos resueltos, trazas, cobertura y latencia medida |
+| FMT-044 | P1 | PF histórico combinado con p de otra población en Kelly | Distribución conjunta de pagos/probabilidad coherente |
+| FMT-045 | P2 | OHLC inválido puede convertirse en volatilidad mínima | Validación completa y dato inválido distinto de varianza cero |
+| FMT-046 | P2 | Correlación con cesta propia interpretada como dependencia por pares | Estimando, benchmark, sincronización y matriz definidos |
+
+### Evidencia de causa y alcance
+
+Los contraejemplos no necesitan asumir rentabilidad futura: la etiqueta
+neutral vale aritméticamente cero; las dos llamadas de aprendizaje están
+en el mismo bloque; una parametrización permitida de SL viola el floor
+en parte de la banda declarada; la identidad Kelly–PF puede producir
+signo opuesto al cálculo con pagos coherentes. El anexo distingue estas
+deducciones de las réplicas numéricas y de rutas no conectadas.
+
+La inicialización sinusoidal de la red auxiliar se descompone exactamente
+en dos productos externos: su matriz inicial tiene rango como máximo
+dos, aunque la red entrenada/no lineal no esté limitada por esa misma
+conclusión. El calibrador se contrastó con réplicas adversariales, no
+con una nueva prueba Rust. El ejemplo de árbol cíclico no se ejecutó.
+
+También se prueba una propiedad favorable: la validación de EV en los
+extremos es suficiente para las leyes de potencia con p y coste fijos,
+por concavidad en log-escala. No se recomienda eliminarla; se explicitan
+sus supuestos y se corrige conceptualmente su dependencia de la banda.
+
+### Diseño de rehabilitación, sin implementación en esta ronda
+
+Primero deben estabilizarse etiquetas, crédito temporal, calibración,
+persistencia y semántica de riesgo. Después pueden evaluarse T14–T20,
+con fuentes primarias, unidades, errores y criterios de rechazo. El
+objetivo continúa siendo un campo multivariante temporal conjunto, no
+dos motores scalping/swing. El diagrama del anexo es un contrato de
+arquitectura objetivo; no declara que todas sus aristas existan hoy.
+
+Verificación: **107 tests existentes aprobados**; lectura completa de
+23 archivos Rust adicionales y lectura parcial de conexiones grandes.
+Inventario observado: 1.119 archivos versionados / 289 Rust / 24 Cargo.
+No se certifica cobertura total ni que toda API auxiliar llegue a live.
+
+Todos los FMT de esta adenda quedan abiertos. HEAD observado: `59a76de4`,
+con cambios concurrentes preservados. No se implementaron reparaciones,
+no se operó ni se promovieron genomas; no hubo commit/push/merge ni
+verificación nueva del remoto. Esta revisión no es una certificación
+de rentabilidad, ausencia de bugs o integración completa de ramas.
+
+## Adenda científica III — auditoría de autoevolución y evidencia causal (24-09-2026)
+
+Se incorpora, sin sustituir contenido anterior, la
+[auditoría científica III](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_III_2026-09-24.md>).
+Registra 25 entradas FMT-047–071. No se convierten mecánicamente en
+25 incidentes productivos ni en un aumento deduplicado del recuento
+histórico; el anexo distingue rutas vivas, APIs auxiliares y derivaciones.
+
+| ID | Prioridad | Hallazgo documentado |
+|---|---|---|
+| FMT-047 | P1 | Propiedades de fitness no demostradas para la función completa |
+| FMT-048 | P1 | Abstención peor que pérdida finita por diseño del filtro |
+| FMT-049 | P1 | PnL de la política vigente convertido en mercado de evaluación |
+| FMT-050 | P1 | Spread exógeno dependiente del gen y cronología sintética |
+| FMT-051 | P1 | Holdout reutilizado y parámetros de ventana completa |
+| FMT-052 | P1 | Dataset online mezcla esquemas, tiempos y outcomes sin identidad |
+| FMT-053 | P1 | Optimización de umbral degenerada por usar clases 0/1 |
+| FMT-054 | P1 | Beneficio interpretado como dirección y accuracy in-sample como gate |
+| FMT-055 | P1 | Pseudo-confianza, degeneración estadística y relectura de evidencia |
+| FMT-056 | P1 | Reset sin propietario y rollback sin vinculación a generación activa |
+| FMT-057 | P1 | Mutación forense en RAM fuera del armado y del linaje |
+| FMT-058 | P2 | Promotores auxiliares con fallback no evaluado y distinta fitness |
+| FMT-059 | P2 | Evaluador auxiliar con reloj, conteo y riesgo inconsistentes |
+| FMT-060 | P1 | Tests inmunes no ejecutan el predictor ni prueban la reparación |
+| FMT-061 | P2 | Familia wavelet ignorada y plantilla dual todavía generable |
+| FMT-062 | P2 | Compilación del paquete sin vincular candidato ni artefacto |
+| FMT-063 | P2 | Pipes, memoria y aislamiento incompletos en compilación |
+| FMT-064 | P2 | Máquina de fases sin invariantes globales ante métricas inválidas |
+| FMT-065 | P2 | Reglas de WR/haircut presentadas como pruebas estadísticas |
+| FMT-066 | P2 | Distribución Cauchy recortada y dimensión genómica truncada |
+| FMT-067 | P2 | Imputación favorable de métricas desconocidas en Pareto |
+| FMT-068 | P2 | Distribución y media de jitter modificadas por caps y dependencia |
+| FMT-069 | P2 | Loader pierde procedencia y confunde alineación con calidad |
+| FMT-070 | P2 | Estado epigenómico auxiliar sin snapshot coherente ni curvas temporales |
+| FMT-071 | P1 | Búsqueda y reentrenamiento retrasan controles del mismo daemon |
+
+### Qué prueba esta ampliación
+
+El daemon vivo usa resultados de la política vigente para reconstruir
+precios con los que juzga candidatos. El mismo núcleo no garantiza
+paridad si recibe otro proceso de datos. El bosque online filtra con
+clases discretas, por lo que los umbrales de su rejilla seleccionan
+conjuntos idénticos. Su objetivo de beneficio tampoco equivale a
+dirección del precio. Son contratos verificables en código, no una
+opinión sobre la sofisticación de sus nombres.
+
+La utilidad logarítmica sigue siendo una opción legítima; se corrigen
+sus garantías declaradas y se conserva lo correcto. Las pruebas inmunes
+deben ejecutar el comportamiento reparado, no validar la magnitud de
+un PnL histórico literal. Compilar un paquete que no integra el módulo
+generado no demuestra autoarquitectura.
+
+### Teoría, comprobación y estado de resolución
+
+T21–T24 proponen evaluación doblemente robusta, presupuestos de evidencia
+adaptativa, riesgo de trayectoria/drawdown y pruebas metamórficas. Se
+documentan ecuaciones, unidades, fuentes primarias, hipótesis y límites
+de transferencia. No se presentan como implementaciones o alpha probado.
+
+Pasaron 17 tests existentes: 14 del filtro fitness de evolution-engine
+y 3 de fases_autonomous de metacortex-engine. Se leyeron íntegramente
+20 Rust adicionales y se añadieron sus hashes. No se certifica revisión
+total: los tres manifiestos reúnen 67 Rust, frente a 289 Rust / 1.119
+archivos versionados del inventario observado.
+
+Todos los hallazgos nuevos quedan abiertos. No hubo cambios de código,
+trading, promoción de genomas, autorización de evolución, commit,
+push, merge ni fetch. HEAD observado `59a76de4`; se preservó trabajo
+concurrente. No hay mediciones nuevas de rentabilidad ni p99; los
+costes de bucles son análisis estático, no benchmarks de producción.
+
+
+---
+
+## AMPLIACIÓN CIENTÍFICA IV — CONTRATOS DE APRENDIZAJE, MICROESTRUCTURA Y DECISIÓN
+### Corte: 2026-09-24 — FMT-072 a FMT-094 — todos abiertos
+
+Se conserva el contenido anterior. El desarrollo forense completo, con
+ecuaciones, enlaces a líneas, contraejemplos, alcances, criterios de cierre,
+fuentes primarias y grafo diagnóstico, está en:
+[Auditoría de fundamentos científicos IV](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_IV_2026-09-24.md>).
+
+| Hallazgo | Descripción consolidada | Alcance |
+|---|---|---|
+| FMT-072 | Señal infinitesimal elevada a ±0,15; exploración confundida con voto | Perceptrón conectado |
+| FMT-073 | Freeze no es inmutabilidad completa; APIs con warmup distinto | DarkAlpha |
+| FMT-074 | Validador dimensional sin contrato completo de modelo/scaler | Carga y API neural |
+| FMT-075 | Varianza uniforme un tercio de la inicialización anunciada | Constructores |
+| FMT-076 | Poda de pesos normales bajo nombre de subnormales | Carga/buffers |
+| FMT-077 | Arquitectura cargada variable frente a índices 54D fijos | Entrenador disponible |
+| FMT-078 | Train crudo y validación Welford si Scaler=None | Entrenador disponible |
+| FMT-079 | None suma pérdida cero; gate sin rechazo explícito de NaN | Promoción del entrenador |
+| FMT-080 | Rollback sin Adam/estadísticas y holdout reutilizado | Ciclo de aprendizaje |
+| FMT-081 | Denominador max(precio,1) rompe invariancia de unidad | Omni → vector 34D |
+| FMT-082 | Precio menos señal MACD genera canal saturado | Omni → universal[27] |
+| FMT-083 | Rangos solapados y relojes de actualización incompatibles | Tick/kline/Omni |
+| FMT-084 | Profundidad OFI inicial omitida e invalidez convertida en flujo | OFI del núcleo |
+| FMT-085 | Ocho inputs nulos agotan categorías sin recuperación | Clustering auxiliar |
+| FMT-086 | Persistencia admite más categorías que la capacidad | API auxiliar |
+| FMT-087 | Colas L2 antiguas contradicen totales nuevos | Libro normalizado auxiliar |
+| FMT-088 | Top-K rígido, capital inválido y scores cero producen asignación | API auxiliar |
+| FMT-089 | Gen de colchón con sensibilidad cero bajo escasez | Riesgo y apertura |
+| FMT-090 | NaN imputado cuenta como evidencia de entropía baja | Shannon auxiliar |
+| FMT-091 | Régimen BTC discreto impone veto global unilateral | Núcleo → riesgo |
+| FMT-092 | Alpha fuera de dominio y mezcla de estados de varianza | EW-Welford auxiliar |
+| FMT-093 | Guard de portafolio puede permitir con capital NaN | API conectada |
+| FMT-094 | Consumidor Hebbiano omitido conserva mismatch y fallback global | Consenso continuo |
+
+### Hallazgos de conexión y significado que requieren prioridad
+
+FMT-094 es una reparación incompleta comprobada en código: el cierre
+publica {símbolo}_hebbian_weight, una lectura del núcleo ya se corrigió,
+pero PerceptronGate todavía resuelve {símbolo}_perceptron_hebbian_weight
+y puede caer al global. Se requiere prueba productor→todos los
+consumidores; no basta verificar el bloque previamente reparado.
+
+FMT-077/078/079 impiden considerar científico el gate del entrenador:
+los datos, las dimensiones, el transformador y la cobertura de
+predicciones deben coincidir antes de comparar pérdidas. FMT-080
+muestra que restaurar capas no restaura la trayectoria del optimizador.
+
+FMT-089 aporta una explicación algebraica de genes sin efecto: para
+c(g,w)=(1−w)g+0,98w, la derivada respecto del gen es cero en w=1.
+Ese contexto puede diferir entre backtest, demo y producción. No se
+atribuye a él toda la diferencia de rendimiento sin replay controlado.
+La apertura y el risk-engine también calculan escasez con entradas
+distintas; compartir una función no prueba igualdad de restricciones.
+
+No se propone eliminar salvaguardas ni conectar capacidades auxiliares
+sin contratos. Los nombres scalping/swing aún presentes no siempre
+son motores separados: varios wrappers ya redirigen al consenso
+continuo. El defecto relevante debe probarse en ecuación, estado,
+productor o consumidor, no inferirse de una búsqueda léxica.
+
+### Teoría, cobertura y estado de resolución
+
+T25 propone transporte de coordenadas con conservación algebraica
+de la primera capa, declarando límites por clipping y optimizador.
+T26 propone transferencia de información en tiempo continuo como
+medida de incremento predictivo de aristas; no prueba causalidad
+económica. T07 se concreta con posterior de duración desde el
+último cambio. Las propuestas incluyen coste, condiciones y refutación.
+
+Se leyeron completos 15 Rust adicionales (4.781 líneas) con hashes;
+el acumulado de cuatro rondas es 82 Rust distintos frente a 289 Rust
+y 1.119 archivos versionados. Se ejecutaron 95 tests existentes,
+todos aprobados. No hay cobertura integral, benchmark p99 nuevo,
+validación de rentabilidad ni certificación de producción.
+
+Sólo documentación añadida en esta ronda. Sin código operativo,
+configuración, genomas, trading, reinicios, commit, push, merge o fetch.
+Los 23 hallazgos están abiertos; identificar y documentar no es reparar.
+
+## Anexo FMT-V — Riesgo realizable, ejecución y memoria temporal
+
+### Corte: 2026-09-24 — FMT-095 a FMT-113 — todos abiertos
+
+Informe completo, con contraejemplos, ecuaciones y criterios de cierre:
+[Auditoría de fundamentos científicos V](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_V_2026-09-24.md>).
+
+Este anexo amplía la serie científica sin renumerar ni eliminar la
+matriz histórica. No equivale a 19 incidentes nuevos de producción:
+hay defectos conectados, contratos auxiliares y una contradicción
+de representación, con alcance explícito en cada ficha.
+
+| ID | Descripción resumida | Alcance |
+|---|---|---|
+| FMT-095 | El cap RR≥2 estrecha el supuesto piso difusivo | Riesgo conectado |
+| FMT-096 | El RR genómico puede bajar TP y cambia p=0,40 por 0,55 | Riesgo conectado |
+| FMT-097 | Cap micro de 55 bps: escalón y falsa cota monetaria | Riesgo conectado |
+| FMT-098 | Bootstrap micro puede reactivar riesgo tras pérdidas maduras | Host/replay |
+| FMT-099 | Se permite operar pese a riesgo mínimo mayor al presupuesto | Host/replay |
+| FMT-100 | Dos EMA consecutivas ralentizan el payoff | Host/backtests |
+| FMT-101 | Epsilon monetario hace variar payoff con tamaño/unidad | Envolvente |
+| FMT-102 | PF≤1 se convierte en edge positivo por un piso | Compounder auxiliar |
+| FMT-103 | La ruta de pánico pierde el ID original de intención | Router auxiliar |
+| FMT-104 | El redondeo IOC puede superar el límite de precio | Router auxiliar |
+| FMT-105 | Salida favorable ±0,2 % independiente del mercado | Simulador auxiliar |
+| FMT-106 | Inconsistencia de ledger, parciales y fills entre métodos | Simulador auxiliar |
+| FMT-107 | Wrap mmap permite escrituras concurrentes al mismo slot | Almacén auxiliar |
+| FMT-108 | Falta recuperación/retención/durabilidad contractual | Almacén auxiliar |
+| FMT-109 | Encolar no equivale a persistir; errores de disco ignorados | Diario conectado |
+| FMT-110 | Última entrada por símbolo/lado no identifica el cierre | Recuperación conectada |
+| FMT-111 | Descartes contados no invalidan/reponen muestra aprendida | Contabilidad/host |
+| FMT-112 | Interpolar campos no preserva identidades no lineales | Contrato espectral |
+| FMT-113 | Kelly no limita Q enviada y el adaptador eleva leverage | Host/replay |
+
+**Prioridad raíz–cima:** FMT-113/098/099 (acción factible), 095–097
+(geometría), 109–111 (crédito y evidencia), 100/101 (estimación),
+capacidades auxiliares y representación continua. No se retiran
+controles de seguridad por el solo hecho de contener umbrales.
+
+El informe explica N=|Q|P, pérdida nominal N·d y margen N/L.
+La distinción es esencial para interpretar la sensibilidad del genoma
+y para no confundir paridad entre entornos con garantía de riesgo.
+T27 desarrolla el criterio de conjunto factible y T28 la propuesta de
+reducción por observabilidad, con fuentes y límites de verificación.
+Ninguna teoría se presenta como garantía de rentabilidad u omnisciencia.
+
+Cobertura: 8 Rust completos nuevos dentro de los manifiestos FMT,
+3.615 líneas; acumulado 90 Rust distintos sobre 289 Rust y 1.119
+archivos versionados. Lecturas parciales y búsquedas no se cuentan
+como completas. Pasaron 34 tests existentes, sin nuevas pruebas
+integradas para estos contraejemplos. Quedan pendientes auditoría
+integral, benchmarks p99 y validación empírica de propuestas.
+
+Se conserva CES-018 como conexión corregida en el corte observado.
+No hubo código operativo, genomas, trading, reinicios, commit, push,
+merge o fetch. Las fichas documentan trabajo pendiente, no reparado.
+
+## Anexo FMT-VI — Rehabilitación local de contratos matemáticos de riesgo
+
+### Corte: 2026-09-24 — nuevas fichas FMT-114–116 y actualización localizada
+
+Informe técnico, ecuaciones, reproducciones, manifiesto y límites:
+[Auditoría científica VI y rehabilitación verificable del riesgo](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_VI_2026-09-24.md>).
+
+Este anexo documenta código modificado con autorización posterior a la
+auditoría V. No elimina ni reescribe la evidencia previa. “Corregido
+localmente” exige implementación y tests en el workspace; no significa
+desplegado, ausencia de fallos relacionados o certificación de rentabilidad.
+
+| Referencia | Cambio / evidencia | Estado y frontera |
+|---|---|---|
+| FMT-096 | RR genómico conserva TP base, SL y probabilidad contractual; overflow no contamina la base | Corregido localmente; probabilidad de llegada sigue sin calibrarse |
+| FMT-098 | Eliminado bootstrap micro implícito de la envolvente; veto y rollback maduros probados | Corregido en ese helper; bootstrap n<30 del consumidor permanece |
+| FMT-099 | Eliminada excepción de notional mínimo que excedía el presupuesto | Corregido en la envolvente, no en todo el sizing |
+| FMT-114, nuevo | Parámetros no finitos, posterior inválido y overflow beta podían autorizar riesgo | Corregido localmente; 3 regresiones de dominio/varianza |
+| FMT-115, nuevo | Filtro NaN o producto margen×leverage infinito podía superar el guard | Corregido localmente; mínimo válido y producto finito requeridos |
+| FMT-116, nuevo | Pisos p≥0,01 y payoff≥0,05 fabricaban ventaja | Corregido localmente; 2 contraejemplos económicos reproducidos |
+| FMT-113 | API ExposureBudget y proyección a lotes implementadas y probadas | Abierto: aún no gobiernan Q final en host/replay |
+
+La proyección usa presupuesto B=Cf y pérdida nominal |Q|P(d+c). Conserva
+unidades, costes proporcionales explícitos y restricciones realizables
+después del redondeo. Si no hay lote factible, no eleva exposición para
+satisfacer el mínimo. Cambiar el multiplicador de margen N/L sin cambiar
+Q no limita esa pérdida. Esta distinción mantiene FMT-113 como prioridad
+de integración, aunque los helpers reparados ya pasen sus tests.
+
+La geometría genómica se prueba sobre 1.032 combinaciones de horizonte y
+RR en dominio representable 1 ns–100 años; la proyección, sobre 768
+combinaciones con aceptaciones no vacuas. No son observaciones de mercado
+nanosegundo a nanosegundo ni aprendizaje empírico de cien años. El informe
+no introduce categorías separadas scalping/swing para resolverlos.
+
+Las nuevas fichas incluyen mecanismo anterior, datos de reproducción,
+impacto, reparación y riesgo residual. La consulta primaria de Kelly
+restringido distingue una cota bajo hipótesis IID de una heurística de
+racha y de un presupuesto nominal. No se implementó ese optimizador ni
+se transfirió su garantía al sistema. Se mantienen T01–T28 y sus límites.
+
+**Resultado de verificación:** 76 tests seleccionados aprobados: 49
+existentes de riesgo, 21 nuevos de riesgo, 3 nuevos del consumidor de
+replay y 3 existentes de ese gate. Doce regresiones nuevas fallaron
+antes de corregir su causa y pasaron después. cargo check del host
+terminó correctamente; no se ejecutó el binario de trading.
+
+Cobertura acumulada: 91 Rust preexistentes de 289 leídos íntegramente,
+con los dos tests nuevos contabilizados aparte; 1.119 archivos versionados
+y 24 manifiestos Cargo en el corte. No se revisó íntegramente el proyecto.
+FMT-095/097/100/101/109–113, entre otros, conservan trabajo pendiente.
+
+Los archivos del host, replay y risk-engine/lib.rs ya modificados por
+otras sesiones se preservaron; el informe registra sus hashes. No hubo
+despliegue, edición de genomas, trading, reinicios ni operaciones Git de
+publicación/integración. Un cierre global requiere integrar la cantidad
+final y validar efectos económicos y operativos, no sólo acumular tests.
+
+## Anexo FMT-VII — Soporte espectral y evidencia de selección evolutiva
+
+### Corte: 2026-09-24 — FMT-117–123 y reparación localizada de FMT-011
+
+[Informe detallado de auditoría científica VII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_VII_2026-09-24.md>).
+
+| ID | Mecanismo | Estado de este corte |
+|---|---|---|
+| FMT-117 | Ventanas de muestras, reloj irregular y R² no acreditan cobertura temporal universal | Diagnóstico/documentación mejorados; integración temporal abierta |
+| FMT-118 | Piso absoluto de F(s) y cuadrados rompen homogeneidad de DFA | Reparado localmente; normalización común antes del perfil |
+| FMT-119 | Overflow/underflow del cociente descarta log-retornos finitos | Reparado; prueba adicional de precisión de grandes caídas |
+| FMT-120 | Pendiente fuera del modelo recortada y certificada como Hurst válido | Reparado; pendiente cruda y validez separadas |
+| FMT-121 | RNG de pruebas confundía 31 bits con un denominador de 32 bits | Reparado; innovaciones centradas y verificación de momentos |
+| FMT-122 | Campo de crecimiento patrimonial tratado como Sharpe live | Caller reparado mediante update_backtest_only |
+| FMT-123 | Sentinel −1e9 favorecía fitness inválido frente a pérdida finita | Reparado; exclusión de parentalidad y memoria preservada |
+| FMT-011, previo | Multiplicar fitness negativo por retención mejoraba ranking | Reparado en CMA, probado para ambos signos |
+
+La ruta de decisión se documenta desde precio/reloj, perfil DFA, pendiente
+y soporte hasta el consumidor del motor; y desde genoma/replay, utilidad
+canónica y evidencia hasta ranking/memoria evolutiva. No se ejecuta la
+promoción final ni se presenta su éxito como probado por tests locales.
+
+Una muestra de 512 retornos permite aquí seis escalas hasta 128, no
+cuatro ventanas de 256. Un modelo con R² alto puede contener crossovers;
+un AR(1) de memoria corta puede tener pendiente aparente fuera de (0,1)
+en escalas finitas. Publicar la pendiente sin clipping evita ocultar ese
+diagnóstico, sin afirmar que la falta de admisibilidad pruebe no-estacionariedad.
+
+La reparación de selección conserva crecimiento patrimonial como metadata
+para su consumidor legítimo y no lo usa como comparación live. Penalizar
+utilidad negativa utiliza división por la retención, no multiplicación.
+Se mantienen visibles las limitaciones de la heurística de brecha y de
+la API histórica de tuplas. No se fabrica evidencia donde no se midió.
+
+Dieciséis tests nuevos, incluidos seis contraejemplos heredados observados
+rojo→verde. Un séptimo caso rojo detectó una regresión de precisión de
+esta intervención; se corrigió y se identifica como tal. El informe
+detalla las suites existentes, compilación del host, hashes y resultados.
+
+Se añaden T29 (soporte y contraste de modelos de escalamiento) y T30
+(contratos de evidencia/utilidad), preservando T01–T28. Los pasajes
+primarios consultados limitan la interpretación de DFA y CMA; no se
+anuncia un optimizador cuántico ni solución de problemas del milenio.
+
+La lectura completa acumulada alcanza 92 Rust preexistentes de 289;
+los dos archivos nuevos de tests se cuentan aparte. La intervención
+modifica cuatro fuentes limpios, uno sólo en documentación, y conserva
+los cambios concurrentes de host/replay/risk-lib. FMT-113, la sobrescritura
+de sigma, el blanqueamiento CMA y el proxy ML siguen pendientes.
+
+Sin trading, evolución en vivo, despliegue, genomas, reinicio ni
+commit/push/merge/fetch. Este anexo amplía evidencia histórica y estados,
+no certifica resolución global ni rentabilidad.
+
+## ANEXO ADITIVO — FUNDAMENTOS CIENTÍFICOS VIII — 2026-09-24
+
+Informe detallado: [Continuidad de aprendizaje y contratos de generación](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_VIII_2026-09-24.md).
+Se preservan matriz y descripciones históricas; estos seis nuevos puntos
+no renumeran ni sustituyen los 305 puntos de la matriz original.
+
+FMT-124: una generación sin validación estructural admitía IDs repetidos,
+índices fuera de rango y genomas inválidos. Se añade preflight completo,
+diagnóstico explícito y rechazo sin mutar estado ni scores. No sustituye
+identidad económica del experimento ni hash de genoma/escenario.
+
+FMT-125: las fuerzas PSO usaban ceros de almacenamiento como memorias
+antes de observar fitness. Se excluyen memorias ausentes/no finitas y
+se mantiene la influencia de memorias evaluadas. FMT-126: se corrige la
+raíz y el desplazamiento ausentes en d_sigma frente a la fuente primaria.
+
+FMT-127/128/129 permanecen abiertos: mejores puntuaciones sin identidad
+de ventana, población solicitada que no cambia lambda y sigma generador
+distinto del normalizador. Se documentan contraejemplos y condiciones de
+cierre; los clamps y la geometría híbrida no se certifican canónicos.
+
+Actualización de FMT-013: se reparó la sobrescritura de sigma con un
+contrato relativo de supervisor, trazas y pruebas de dos generaciones.
+No se eliminó supervisión ni se acreditó científicamente su heurística.
+
+Resultado: 25 tests distintos aprobados, incluidos 16 nuevos; cinco
+regresiones demostraron el fallo antes del arreglo. cargo check del host
+terminó correctamente. Sin backtest económico, despliegue ni ejecución
+del evolver. El host llama al daemon; no se localizó caller operativo
+de la ruta CMA auxiliar. Una mejora compilada no equivale a integración.
+
+El anexo contiene grafo diagnóstico, ecuaciones con significado,
+matriz de estado, conexión con los ocho módulos, T31 (invariancias IGO),
+ampliación T30 y manifiesto. La cobertura completa sigue en 92 Rust
+preexistentes de 289; no se cuenta una relectura como archivo nuevo.
+Se conservaron cambios ajenos y todo el historial previo de informes.
+Sin trading, genomas, reinicios, commit, push, merge ni fetch.
+
+## ANEXO ADITIVO — FUNDAMENTOS CIENTÍFICOS IX — 2026-09-24
+
+Informe detallado: [Evidencia operativa, autoridad de parada y trazabilidad](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_IX_2026-09-24.md).
+Esta ronda interviene el daemon conectado al host, sin desplegarlo ni
+ejecutarlo. Conserva íntegros la matriz original y los anexos anteriores.
+
+FMT-055 permanece parcialmente abierto, con reparaciones locales:
+sqrt(n) correcto sobre varianza muestral; invariancia de unidades sin
+umbral absoluto de desviación; distinción entre estadístico válido,
+muestra constante y lote inválido; EWMA que no acumula lecturas repetidas
+como evidencia nueva. La política de promoción deja de describirse como
+posterior >95 %, pero su fórmula heurística todavía requiere sustitución.
+
+FMT-056: se retira el rearme del latch compartido por recuperación de una
+señal del daemon. El writer sólo puede activar la parada. No se declara
+resuelto el rollback: siguen pendientes comparación transaccional de
+generación, atribución de outcomes y conservación del watchdog tras error.
+
+FMT-130: save_weight no confirma encolado ni commit y puede perder eventos.
+FMT-131: un upsert mutable de pesos no constituye journal de decisiones;
+dos rollbacks al mismo padre pueden compartir clave y sustituirse.
+FMT-132: el polling selecciona deltas no nulos y divide por capital actual;
+no identifica trades ni retorno económico reconciliado. El anexo demuestra
+la asimetría r/(1+r) cuando el denominador es riqueza posterior, indicando
+las hipótesis del ejemplo y sin afirmar una magnitud empírica no medida.
+
+Los tres puntos nuevos permanecen abiertos. Se añaden T32, evaluación
+off-policy bajo soporte/causalidad explícitos, y ampliación de T22 sobre
+inferencia secuencial. No se atribuye validez anytime a una EWMA ni ventaja
+cuántica a cálculo clásico.
+
+47 tests distintos aprobados, 22 nuevos; cuatro regresiones fallaron antes
+de la reparación. cargo check del host pasó. Cobertura completa acumulada:
+93 Rust preexistentes de 289. evolution_ledger.rs se leyó completo y no se
+editó; tramos dirigidos y fuentes nuevos no inflan cobertura del repositorio.
+Sin trading, despliegue, genomas, reinicios, commit, push, merge ni fetch.
+
+## Continuación científica X — geometría temporal, interpolación y paridad de lectores
+
+[Auditoría científica X](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_X_2026-09-24.md>). [artefacto estructurado X](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_X_2026-09-24.json>). Corte local main/59a76de4;
+no acredita integración de todas las ramas ni sincronización remota.
+
+FMT-040 reparado localmente: desigualdad SL(tau)>=fee/q resuelta para ambos
+signos y pendiente cero, sin falso singleton a 146 años ni aproximación
+arbitraria de pendientes pequeñas a cero. FMT-041 parcial: el presupuesto
+de fricción se identifica como política, no teorema de rentabilidad.
+Se conserva la prueba por extremos de EV bajo sus supuestos y se explica
+su fundamento de concavidad, no sólo monotonía de RR.
+
+FMT-112 aclara el contrato I[signal], I[momentum] e I[masa] independientes;
+no cambia la fusión existente. Nuevo FMT-133, reparado: gradiente exacto
+del interpolante por tramos, convención derecha en nodos y neutralidad ante
+consultas inválidas. Nuevo FMT-134, abierto y relacionado con CES-009:
+SuperGenotype y QuantumConfig usan dominios y saturaciones diferentes para
+el mismo genoma; tres testigos documentan la discrepancia sin cambiar
+la política operativa. No se presenta como causa total probada del gap
+backtest/demo/producción.
+
+44 tests distintos aprobados, 21 nuevos y 12 rojo→verde; tres nuevos son
+caracterizaciones de FMT-134 abierto, no prueba de reparación. cargo check
+del host pasó con los tres warnings preexistentes de evolución. T33 queda
+como propuesta experimental fundamentada en fuentes primarias sobre espacio
+de escalas causal; no se activa otro motor ni se atribuye ventaja cuántica.
+Cobertura completa acumulada: 94 Rust preexistentes de 289; 195 pendientes
+de lectura íntegra acreditada. Se añade config.rs sin editarlo. Sin trading,
+genomas activos, despliegue, reinicios, commit/push/merge/fetch.
+
+## Adenda XI — FMT-134 y nuevos FMT-135–137 (2026-09-24)
+
+El desarrollo profesional completo, con causas, reproducción, fórmulas,
+significado de unidades, compatibilidad, evidencia y criterios de cierre,
+se incorpora en [auditoría XI](</C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XI_2026-09-24.md>); el [artefacto XI](</C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XI_2026-09-24.json>) enumera
+pruebas, hashes, archivos protegidos y límites de alcance. Esta adenda
+conserva el contenido previo y la matriz histórica de 305 puntos.
+
+### FMT-134 — paridad determinista reparada; coherencia transaccional pendiente
+
+El lector operativo QuantumConfig conservó sus fórmulas y límites. Se
+centralizó esa política en horizon_policy.rs y se alinearon los getters de
+SuperGenotype, incluido el caso de curvas derivadas antiguas frente a genes
+actualizados. Cinco pruebas reprodujeron el desacuerdo antes del arreglo;
+seis nuevas verifican igualdad sobre las 32 escalas, cachés obsoletas y
+compatibilidad con las fórmulas operativas en 257 horizontes logarítmicos.
+Los tres testigos de X se convierten en regresiones de igualdad; X conserva
+su evidencia histórica. No se demuestra paridad económica end-to-end.
+
+La política runtime-v1 identifica fórmulas, no una generación publicada:
+FMT-070/042 no se cierran. Tampoco se cierran FMT-113 (presupuesto sobre
+cantidad/payload efectivos), ni la base de dos anclas, el soporte de datos
+por escala o las saturaciones heredadas de CES-008/009.
+
+### FMT-135 — configuración NaN del estimador P²
+
+Una probabilidad NaN sobrevivía al clamp, contaminaba posiciones deseadas
+y hacía falsas las comparaciones de ajuste. El conteo avanzaba sin estimar
+válidamente el percentil. Se añade try_new con dominio finito 0<p<1 y sin
+recorte; new conserva el clipping histórico, pero falla explícitamente
+ante NaN. La regresión fallaba antes y pasa después. Los campos públicos
+aún permiten corrupción posterior; no se declara validación universal.
+
+### FMT-136 — overflow intermedio y dependencia artificial de unidades
+
+Quinientas muestras reescaladas por 10^308 producían una trayectoria
+distinta incluso tras reconvertir unidades, por overflow antes de dividir.
+Se normalizan alturas sólo si la parábola ordinaria no es finita y se usa
+combinación convexa cuando desborda la diferencia lineal. Se conservan
+orden de marcadores y cálculo ordinario finito. La regresión de reescalado
+es rojo→verde; no se prueba todo el espacio f64 ni rendimiento económico.
+
+### FMT-137 — acumulación no equivale a adaptación al régimen
+
+P² carece de timestamp/olvido y conserva historia. El wrapper aún fija
+percentiles, pisos y fallbacks. Tras 10.000 ceros y 100 unos recientes,
+su salida queda por debajo de 0,5 mientras el cuantil de la ventana
+reciente es 1. Es un contrato acumulativo, no una falla de olvido de un
+algoritmo que nunca lo implementó. Se corrige la descripción, no se afirma
+haber incorporado adaptación temporal. Cinco muestras iniciales tampoco
+acreditan precisión de cola ni probabilidad de acierto de trading.
+
+No se localizó conexión operativa de P2Quantile/AdaptiveQuantileEngine.
+Por tanto, FMT-135–137 se clasifican como hallazgos de API/diseño auxiliar,
+no como explicación probada de la divergencia entre backtest y producción.
+T34 propone un estimando causal con memoria física y una comparación
+controlada de algoritmos; la bibliografía primaria no se presenta como
+prueba de rentabilidad ni como integración cuántica.
+
+### Verificación y cobertura XI
+
+63 tests distintos seleccionados aprobados; 15 nuevos, siete rojo→verde
+y tres diagnósticos de X actualizados a igualdad. cargo check del host
+pasó con tres warnings preexistentes. No se ejecutó un backtest económico
+ni la suite completa del workspace. Cobertura completa acumulada de Rust
+preexistente: 95/289; 194 pendientes. Lectura íntegra nueva:
+adaptive_quantiles.rs. Sin modificar consumidores concurrentes protegidos,
+genomas activos, trading, despliegue, reinicios, commit/push/merge/fetch.
+
+## Adenda científica XII — FMT-138–144 y reparación local de FMT-092
+
+Fecha: 2026-09-24. Desarrollo completo, ecuaciones, causalidad, escenarios,
+compatibilidad y límites en la [auditoría XII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XII_2026-09-24.md>); hashes y pruebas en el [artefacto XII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XII_2026-09-24.json>).
+No se borra evidencia previa ni se renumera la matriz histórica.
+
+### Contratos estadísticos y memoria temporal
+
+FMT-092: alpha>1 producía pesos negativos y varianza ocultada por clamp.
+Alternar update_decay y update podía interpretar una varianza como suma
+de cuadrados. Se valida el dominio y se conserva el modo exponencial.
+La ruta update mantiene su política histórica de 2000 eventos, sin
+declararla calibración automática ni tiempo físico.
+
+FMT-138: update_decay(10.0, 0.2) sobre estado vacío devolvía media 2 y varianza
+16 por atribuir evidencia a cero. La primera muestra ahora establece media
+10 y dispersión observada cero; no se confunde ésta con riesgo futuro cero.
+Se compara el modo exponencial con pesos explícitos, no sólo finitud.
+
+FMT-139: EWMA aceptaba alpha NaN, ganancia>1 y periodo negativo. Se añaden
+constructores fallibles sin sustituciones arbitrarias. Los constructores
+históricos ahora fallan explícitamente ante parámetros inválidos; las rutas
+con parámetros válidos conservan su cálculo. La nueva update_elapsed usa
+la solución exacta bajo entrada retenida constante: exp(-dt/tau), evaluada
+con expm1 para razones pequeñas. No aprende tau ni está integrada al motor.
+
+FMT-140 permanece abierto: las copias src/features exportadas tienen
+semánticas distintas de feature-engine; el Welford legacy se contamina con
+NaN y el EWMA legacy sustituye parámetros inválidos por valores prefijados.
+Dos pruebas caracterizan los defectos restantes, no certifican reparación.
+
+### Observabilidad, autoridad de consulta y contabilidad
+
+FMT-141: el diagnóstico independiente leía su propia copia de un átomo
+watchdog inicialmente false y creaba su propio registro de órdenes. Se
+sustituye la falsa confirmación por DESCONOCIDO y se explicita procedencia;
+no se implementó aún snapshot IPC. El genoma del almacén tampoco acredita
+la generación realmente cargada por el motor.
+
+FMT-142: system_health llamaba ensure_hedge_mode, capaz de enviar POST
+y cambiar una cuenta one-way a hedge, también con --live. Se reemplaza por
+fetch_hedge_mode, GET firmado sin cambio de modo ni estado operativo local.
+La operación mutante original permanece para sus consumidores explícitos.
+No se ejecutó el diagnóstico ni se contactó el exchange durante la prueba.
+
+FMT-143: una página de income contaba filas REALIZED_PNL como trades y
+su fracción positiva como WR. Se conservan sumas con etiquetas correctas,
+alcance de una respuesta y aviso de posible truncamiento. Se muestran
+costes incluso sin filas de PnL. Reconciliación, paginación completa e
+identidad de operación siguen pendientes.
+
+FMT-144 queda abierto: timeout marca stall, pero errores/fin de socket
+reconectan sin la misma transición; un evento encolado con timestamp positivo
+puede limpiar el booleano sin probar recuperación de su sesión. Otros
+interlocks pueden impedir órdenes. No se demostró una orden insegura ni se
+editó el host con trabajo concurrente. El cierre exige procedencia y frescura
+por fuente, no sólo atomics ni umbrales de latencia.
+
+### T35, verificación y cobertura
+
+T35 separa propagación temporal de asimilación de evidencia en el grafo.
+Se contrasta con literatura primaria de momentos centrales, grafos temporales
+irregulares y alternativas ODE/curvas latentes. El baseline escalar está
+implementado y probado; la integración de modelos grafales sigue propuesta.
+No se atribuye ventaja cuántica ni se incorporan ecuaciones por prestigio.
+
+85 tests distintos aprobados, 24 nuevos; siete regresiones numéricas y tres
+guardas textuales de defectos previos fallaron antes. Una guarda adicional
+exige el nuevo getter. Dos tests nuevos caracterizan bugs legacy abiertos.
+cargo check de god_engine y system_health pasó; no suite completa del
+workspace ni backtest económico. Cobertura completa acreditada: 101/289
+Rust preexistentes; 188 pendientes. Sin genomas activos, trading, exchange
+autenticado, despliegue, reinicios, commit/push/merge/fetch.
+
+
+## Adenda científica XIII — persistencia, arranque y recuperación causal (2026-09-24)
+
+Esta adenda agrega evidencia al informe, no reemplaza ningún diagnóstico anterior. Continúa XII y mantiene la matriz histórica de 305 puntos. Detalle profesional, mecanismos, reproducciones, impacto condicionado, compatibilidad, límites y criterios de cierre en la [auditoría XIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIII_2026-09-24.md>); inventario verificable en el [JSON XIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XIII_2026-09-24.json>).
+
+| ID | Estado | Descripción causal y límite |
+| --- | --- | --- |
+| FMT-145 | Corregido localmente | HistoryStore devolvía éxito sin escritura o fabricaba extremos/volumen; ahora exige dominio OHLCV y atomicidad del lote. No se repara retroactivamente un dataset. |
+| FMT-146 | APIs fallibles corregidas | Se eliminan fallback compartido, descarte de errores de filas y casts envolventes; rangos/poda son explícitos. Wrappers legacy aún pierden información y no acreditan cobertura. |
+| FMT-147 | Abierto | La clave coin_id/timestamp no distingue venue, intervalo, instrumento estable ni generación. Una migración debe preservar evidencia e impedir colisiones de escalas/fuentes. |
+| FMT-148 | Corregido localmente | Una cadena desconocida se convertía en swing; escrituras inválidas recibían Ok. Decoder común y conversiones comprobadas rechazan corrupción, preservando etiquetas válidas de compatibilidad. |
+| FMT-149 | Abierto | Una intención por etiqueta y un getter de la última no representan todas las posiciones ni el estado de filtros/modelos/genoma. No hay coordenada tau, secuencia de revisión ni estado suficiente de replay. |
+| FMT-150 | Abierto, probado | El checksum sólo mezcla size/entry y coin_id módulo 64; deja fuera dirección/stops/tiempo y tiene colisiones estructurales. El loader acepta versión futura y capital/global_checksum sin validar. |
+| FMT-151 | Abierto | Temporal compartido, ausencia de protocolo de escritor/corte y JSON O(P) contradicen garantías de recuperación O(1), cero copia y menos de un milisegundo no medidas. |
+| FMT-152 | Reparación numérica; tiempo pendiente | Las dos rutas de warmup comparten validación estricta de OHLCV y cuentan rechazos. Siguen sin contrato de cierre, huecos, orden/cobertura; 1m/1000 no es todo el espectro. |
+| FMT-153 | Abierto | Training retorna Some(()) sin usar histórico ni parámetros. La ruta alternativa de recuperación sólo enumera posiciones y calcula un hash sin contrastarlo. No toda fase nombrada produce evidencia. |
+| FMT-154 | Abierto en WalStorage | NaN/negativos se convierten a cero y timestamps se castean sin verificar. WAL/NORMAL no garantiza durabilidad del último commit ante pérdida de energía; falta RPO/RTO y prueba de fallos. |
+
+No se encontró consumidor operativo de HistoryStore, StateDb, WalStorage o save/load_checkpoint en la búsqueda dirigida de crates/src. Sí se confirmó el caller de warmup y del training placeholder en el binario. No se atribuyen automáticamente a producción fallos de APIs sin cableado observado.
+
+### T36: contrato de estado del grafo vivo
+
+La recuperación debe reconstruir un estado suficiente S y la frontera de eventos para que F(S,e;theta) conserve la traza observable. Genotipo, estado aprendido, política, entradas y efectos externos requieren identidades separadas. Un corte consistente no puede contener recepción de un mensaje sin su antecedente causal; una repetición interna no puede duplicar órdenes externas. Se propone una prueba con fallos inyectados y comparación por evento contra ejecución ininterrumpida, no sólo comparación de PnL final.
+
+Una coordenada temporal continua puede evaluarse numéricamente con soporte y error declarados. La precisión de un reloj de nanosegundos no crea observaciones de mercado ni valida cien años de extrapolación. No se incorporaron ecuaciones por prestigio ni componentes cuánticos sin hipótesis medibles.
+
+### Verificación y alcance XIII
+
+28 tests distintos pasan: 15 históricos, 7 de intenciones, 3 del parser y 3 caracterizaciones del checkpoint. Son 22 tests nuevos; doce fallaron antes de las reparaciones. Los tres de checkpoint certifican la presencia de debilidades, no una reparación. cargo check --bin god_engine --offline pasa sin ejecutar el motor; quedan tres warnings preexistentes. Formato y diff check pasan en el alcance intervenido.
+
+Cobertura completa acreditada acumulada: 107/289 Rust preexistentes; 182 pendientes. Se agregan seis lecturas completas, no se cuentan búsquedas parciales ni tests nuevos como cobertura previa. Continúan pendientes la auditoría integral y el cierre arquitectónico. Sin trading, consultas autenticadas, genomas activos, migraciones de bases, reinicios, despliegue ni commit/push/merge/fetch. Los consumidores concurrentes protegidos conservan sus hashes.
+
+## Adenda XIV — auditoría de contratos científicos y autorización (2026-09-24)
+
+Se agrega esta actualización sin eliminar hallazgos, evidencias ni estados históricos. La matriz original de 305 puntos se conserva: los identificadores FMT de estas rondas son un registro adicional y no justifican recalcular retrospectivamente aquella matriz. Documento detallado: [Auditoría científica XIV](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIV_2026-09-24.md>). Evidencia estructurada: [JSON XIV](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XIV_2026-09-24.json>).
+
+### Estado de resolución y alcance operativo
+
+Hay diez IDs nuevos, FMT-155–164; FMT-093 recibe una reparación parcial y FMT-023 dos caracterizaciones adicionales. Se distinguen arreglos locales de expresión/estado, defectos de contratos, integración pendiente y validación económica inexistente. Cinco fuentes cambiadas y cinco archivos nuevos de pruebas no equivalen a una refactorización completa del grafo vivo.
+
+FMT-155 elimina un bypass que autorizaba después de 5.000 ticks adicionales aunque nunca hubiera aprobación. La retirada de autorización ahora bloquea la consulta inmediatamente y devuelve las fases habilitadas a auditoría al actualizar. No cancela órdenes ni liquida posiciones. El host todavía establece un booleano sin certificado de candidato y DemoVerify no compara resultados empíricos: el control de fase queda mejorado, no certificado extremo a extremo.
+
+FMT-093 rechaza capital no finito/no positivo, configuración de drawdown fuera de dominio y márgenes abiertos negativos/no finitos, además de sumas desbordadas. Antes NaN podía hacer falsas ambas comparaciones de rechazo. Se mantiene la política para estados válidos, probada en su frontera. Aún suma colateral, no exposición delta; ni la lectura de slots es una instantánea coherente ni hay reserva atómica entre decisiones concurrentes.
+
+### Inferencia, genomas y divergencia entre rutas
+
+FMT-156 corrige doble evaluación del mismo ensamble desde adaptadores legacy y retira el multiplicador de preferencia 1,20 asociado a swing. La decisión única es compatible con las firmas anteriores. El núcleo ya utilizaba el método continuo, por lo que este hallazgo no se presenta como prueba de doble evaluación en ese caller.
+
+FMT-157 impide que una estrategia cuyo init devuelve error entre al conjunto votante. La nueva API fallible conserva el error y el wrapper anterior registra el rechazo. Falta rollback de escrituras parciales del inicializador y declaración de componentes requeridos: no se afirma arranque transaccional.
+
+FMT-158 identifica en el núcleo un CVPIN entregado al argumento Hawkes de Turbo. Ambos son adimensionales, pero miden cosas distintas; no basta comprobar tipo f64 o unidades. El caller real está localizado. FMT-159 identifica una base del modelo calculada y no publicada con la clave que consume el gate, que cae a 0,5. Un caso hipotético reproducido cambia un voto short al publicar la base 0,3. Además, los genes usados por helpers no se leen de igual manera en las implementaciones votantes, que conservan umbrales fijos. Estos son mecanismos plausibles de divergencia entre pruebas de helper y ejecución; no una atribución medida del PnL demo/prod.
+
+Los productores centrales tienen cambios concurrentes y no fueron editados. La reparación integral debe alinear objetivo, base, versión, reloj y genes, con pruebas por ruta e influencia causal. Una conexión nominal en el grafo no prueba que una perturbación genética llegue a la acción.
+
+### Teoría numérica, targets y telemetría
+
+FMT-160 corrige la API de compresión: tres ATR cero generaban tanh(4), casi uno, al utilizar epsilon en razones indeterminadas. Ahora se requieren denominadores positivos y se conserva el numerador corto cero cuando los denominadores son válidos. La ruta de registro conserva fallbacks; las claves temporales del núcleo son proxies combinados, no tres estimadores acreditados sobre 1/5/60 segundos. Continúa abierta la interpretación multiescala.
+
+FMT-161 usa la igualdad (M²−1)/(M²+1)=(1−M^-2)/(1+M^-2) para evitar desbordamiento intermedio cuando M es finito y grande. Las pruebas comparan equivalencia y límite hasta f64::MAX. No se convierte por ello la heurística en una ecuación física de conservación; el cociente upstream y la normalización dimensional requieren revisión separada.
+
+FMT-162 reproduce un TP final menor al base después de aplicar una cota tanh: falta definir precedencia entre piso y techo. FMT-163 reproduce extensión con PnL negativo por un término Hawkes independiente: una prueba previa con Hawkes=1 no cubría esa contradicción documental. No se encontró caller operativo de esa función auxiliar. FMT-164 identifica sustituciones de datos ausentes por cifras plausibles en un frame dual sin tau/calidad/linaje y sin consumidores externos localizados. Se mantiene abierto para migración versionada, no se cambian bytes de interfaz por intuición.
+
+FMT-023 sigue abierto: un voto mínimo recibe confianza al menos 0,70 y clones elevan el score. Dos tests verifican esa deuda, no su reparación. La incertidumbre, disponibilidad, intensidad y probabilidad deben ser objetos distintos.
+
+### Evolución propuesta y criterio de aceptación
+
+T37, contrastada con fuentes primarias mediante Firecrawl Research Index, propone expertos con abstención y feedback retardado. La mezcla sobre log(tau) exige targets comparables, masa no negativa conservada al refinar nodos/clonar expertos y ausencia explícita cuando no hay soporte. Las garantías de aprendizaje con vectores de pérdida revelados no se transfieren automáticamente al PnL de órdenes no ejecutadas. Se propone primero un baseline de predicción observable y después la evaluación económica causal. T37 es propuesta; no algoritmo vivo nuevo.
+
+Se rechaza inferir omnisciencia, observación a cada nanosegundo, cien años de soporte empírico, ventaja cuántica o rentabilidad a partir de nombres, relojes o ecuaciones sofisticadas. Las relecturas de plasticidad muestran perturbación de pesos, no evidencia de auto-reconexión topológica operativa.
+
+84 tests distintos aprobados, 21 nuevos, once reproducciones previas fallidas ahora verdes; cinco caracterizaciones de defectos aún presentes. Pasan cargo check del binario sin ejecutarlo, formato y diff de las fuentes de esta ronda. No se ejecutaron suite completa, backtest económico ni benchmark. Cobertura completa acumulada: 114/289 Rust preexistentes, 175 pendientes. Sin operación de cuentas, despliegue, reinicio, genomas activos ni commit/push/merge/fetch. El JSON conserva hashes de 15 archivos examinados/intervenidos y cuatro consumidores protegidos, además de los prefijos históricos de documentos para comprobar integridad.
+
+## Adenda XV — revisión del continuo multivariante, filtros y estimadores (2026-09-24)
+
+Se agrega evidencia sin reemplazar el historial ni la matriz original de 305 puntos. El [informe científico XV](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XV_2026-09-24.md>) contiene fórmulas, casos, límites y fuentes primarias; el [JSON XV](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XV_2026-09-24.json>) conserva los estados y las comprobaciones.
+
+### Resolución y pendientes por contrato
+
+**FMT-165, nuevo, P1 de biblioteca conectada.** Kalman publicaba infinito con dos estados finitos de signos opuestos, calculaba ganancia cero por una suma desbordada, convertía covarianzas pequeñas en un piso dominante, extrapolaba con ruido negativo y cambiaba R cuando rechazaba la medición. Las cinco reproducciones fallaron antes de reparar. Se incorporan construcción/actualización fallibles, validación de dominio, cálculo mediante razones y actualización conjunta de x/P/R. El wrapper histórico conserva x ante error y no sustituye un canal de calidad. El constructor inválido falla explícitamente; try_new permite validar configuración externa sin panic.
+
+**FMT-002, parcial.** Q por evento y R proporcional a precio permanecen en el consumidor. Eliminar pisos del helper no establece unidades coherentes, tiempo físico o identificación de ruido. La modulación por volatilidad sigue siendo heurística. Diez tests de StatefulEngine pasan, sin acreditar calibración estadística.
+
+**FMT-046, parcial.** El estimador auxiliar de correlación aceptaba subconjuntos distintos de observaciones para precios, medias y covarianzas. Dos reproducciones muestran divergencia futura tras NaN o retorno desbordado. Ahora prepara momentos en memoria reutilizable y sólo confirma el estado aceptado si el corte entero es válido. No sincroniza feeds ni crea una transacción global. try_update distingue error, ausencia y resultado; el wrapper f64 conserva un cero ambiguo. Se documenta O(N), no O(1), y el estimando real: correlación con una cesta que incluye al propio activo, no beta o matriz multiactivo. Se rechazan cestas vacías y momentos no representables.
+
+**FMT-004, V2 implementada sin cierre productivo.** La nueva API resta media antes del taper, expone validez de ventana y normaliza potencia unilateral incluyendo DC/Nyquist. Overflow o subdesbordamiento a cero se informan como error. Ocho tests verifican constantes, amplitud, offset, Parseval, validez, extremos y orden del ring; uno caracteriza defectos todavía presentes en legacy. El reloj sigue siendo 64 eventos, no hertz. No se cambia la ruta ML ni se reentrena el modelo; integrar la V2 exige esquema versionado y evaluación de paridad. No se presenta como implementación de todo el continuo temporal.
+
+**FMT-091, abierto.** El grafo BTC → cuatro etiquetas → veto long global sigue intacto. La API alternativa RegimeDetector, distinta del productor central, conserva código inválido convertido a Range, estado retenido tras NaN sin antigüedad y clasificación a partir de correlación fuera del dominio. Tres tests documentan esas limitaciones. No se retira una barrera de admisión sin comprobar su política sustituta: suavidad matemática no demuestra seguridad ni autoaprendizaje.
+
+**FMT-166, nuevo, P1 arquitectónico.** regime_duration_ms y regime_atr_multiplier aparecen en 22 líneas Rust concentradas en config/genome para almacenamiento, generación, mutación y vectorización, sin lector operativo localizado que gobierne el régimen. No se afirma ausencia de efectos indirectos en el optimizador ni se eliminan índices persistidos. Cierre: identidad de esquema, consumidores tipados y pruebas pareadas de influencia sobre decisiones.
+
+**FMT-140, ampliación sin nuevo ID.** La correlación root es otra implementación, no un alias del crate. Un harness compila esa fuente exacta y demuestra que una entrada inválida modifica el resultado futuro, aunque pasen sus tests de finitud. La copia root permanece sin cambios. Su migración exige conocer consumidores y declarar cualquier cambio de semántica.
+
+### Integración científica y paradigma
+
+T38 propone estado espectral multivariante evolutivo con soporte e incertidumbre, distinto de un catálogo rígido de regímenes. La búsqueda primaria con Firecrawl incluyó wavelets localmente estacionarias en tiempo continuo, espectros matriciales, cuantiles y regularización. Los pasajes verificados distinguen proceso continuo de muestra finita, problema inverso, pérdida de positividad tras corregir sesgo y suavizado simétrico que no puede usarse como feature online sin resolver causalidad.
+
+La propuesta declara requisitos, no un algoritmo desplegado: timestamps, unidades, matrices PSD, medida de integración, escala observacional separada del horizonte de decisión, pruebas de causalidad y evaluación shadow. Los genomas deben parametrizar funciones con influencia verificable; sumar dimensiones sin consumidores no acredita autoevolución. No se importan ecuaciones de problemas del milenio por prestigio ni se atribuye ventaja cuántica al Kalman clásico.
+
+### Verificación local y cobertura
+
+Tres fuentes modificadas y cinco archivos de pruebas nuevos. 93 tests distintos pasan: 25 nuevos, siete rojo→verde y cinco caracterizaciones de deuda abierta. Los cuatro tests legacy incluidos por path y diez del consumidor son existentes. Se excluyen tres de la superficie de tensor persistente. Pasan compilación del binario sin ejecución, formato y diff. No hay suite completa, backtest económico o benchmark.
+
+Cobertura acreditada: 115/289 Rust completos; 174 pendientes. Sólo una nueva lectura se añade: src/features/correlation.rs. Relecturas y búsquedas no inflan el acumulado. Los seis consumidores/configuraciones protegidos permanecen intactos. Sin genomas activos, cuentas, despliegue, reinicio, commit, push, merge o fetch. La auditoría integral, migración legacy y autoevolución productiva siguen pendientes.
+
+## ADENDA CIENTÍFICA XVI — identidad multiactivo, cotización y evidencia conjunta
+
+Fecha 2026-09-24; main local, HEAD 59a76de4. Esta adenda no reescribe la matriz histórica de 305 puntos ni declara cierres globales por cambios locales. Véanse el [informe profesional XVI](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVI_2026-09-24.md>) y el [artefacto verificable XVI](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XVI_2026-09-24.json>).
+
+### Resumen de resolución y nueva evidencia
+
+FMT-088 queda parcialmente reparado: scores no positivos ya no reciben exposición por un suelo de 0,01; capital inválido no se transforma en 13 USD; tamaños de vectores distintos y valores no finitos tienen error explícito; el wrapper retorna ceros. La normalización usa un factor común que evita desbordamientos y conserva proporciones sin introducir epsilon de mercado. Siguen K=2/5/10/N, clipping de metilación y ausencia de optimización conjunta. Un test demuestra que limitar K no garantiza mínimos de orden. La API antigua sin capital conserva su supuesto explícito de 13.
+
+FMT-167, nuevo, documenta y repara el contrato numérico de la cesta. Pesos finitos podían generar spread/varianza no representables y dejar estado parcialmente modificado. Se calcula el siguiente estado antes de confirmarlo y la asignación L1 se obtiene en coordenadas escaladas. El contador ya no incrementa con un salto rechazado: subparte de FMT-034 corregida. Permanecen el constructor que sustituye pesos inválidos, None sin motivo de abstención, pisos de varianza y modelo no identificado.
+
+FMT-033/034 no se cierran: cambiar los timestamps por un factor de un millón no cambia las estadísticas; 180 observaciones del nuevo nivel pueden seguir rechazadas. Theta forzado positivo no demuestra reversión y su vida media no está en unidades físicas. La reparación numérica no se presenta como nueva teoría OU.
+
+FMT-036 recibe una corrección acotada del adaptador auxiliar: un símbolo de prefijo BTC/ETH ya no puede suplantar las claves BTCUSDT/ETHUSDT y un tick de un tercero no vuelve a insertar el par cacheado. También se rechazan libros bloqueados/cruzados. Tres regresiones pasan; sigue faltando edad/coherencia por pata. Este adaptador no se convirtió en el motor multiactivo universal ni se reparó todo lead–lag.
+
+FMT-168, nuevo, repara el suelo de 10⁻⁸ que hacía cruzar una compra en libros de precios diminutos pero válidos. Las cotas proceden ahora del libro observado. Permanece un fallback que devuelve bid=101/ask=100 para un libro inválido; el test abierto lo demuestra. El constructor base_spread no afecta a la salida, el valor OFI actualizado se descarta y el quote no porta identidad, calidad, TTL ni tick size. El inventario usa una escala fija de 100 USD. Se exige API fallible y contrato de ejecución antes de ampliar conexiones.
+
+FMT-169, nuevo, documenta un bloqueo matemático de StatArb. La observación evaluada pertenece a la misma ventana que estima media/desviación poblacional: |z|≤sqrt(n−1). Con n=2 y umbral 1,5 no se puede producir la señal pretendida en aritmética exacta. La prueba de shocks de ambos signos caracteriza el fallo; no se cambia el umbral para forzar operaciones. El spread beta=1 y la intención de A no garantizan cointegración, hedge ni ejecución de ambas patas.
+
+FMT-170, nuevo, traza la desconexión maker: process_tick_dual calcula y retorna MakerQuote, pero process_event lo captura como _maker y devuelve solo entradas/cierres al host. Hay cómputo sin arista terminal en esta ruta. El núcleo aporta ATR/precio como volatility y el auxiliar aporta spread relativo; sus genes de umbral OFI/OBI también difieren. No se atribuye a ese mecanismo toda divergencia de PnL ni se niega la existencia de otras entradas limit/maker.
+
+FMT-050 se reconfirma en online_daemon: candidate.maker_spread_pct controla el half-spread del mercado sintético. Un gen puede mejorar fitness cambiando el entorno aunque el quote calculado no alcance el host. Es un mecanismo causal de falta de paridad que requiere tape exógeno común y atribución por consumidor.
+
+### Grafo y ciencia: raíz, decisión y terminal
+
+La raíz exige instrumento/venue/relojes/calidad; la decisión debe declarar estimando, unidades e incertidumbre; el terminal debe observarse en ejecución confirmada. El nuevo T39 compara familias de covariación asíncrona con prepromediado/ruido y sincronización refresh-time. Es una propuesta contrastada con fuentes primarias, no un nuevo motor conectado. Matriz PSD, soporte, causalidad y coste O(d²) deben verificarse; “cuántico”, “continuo” o “epigenético” no sustituyen esos contratos.
+
+Los ocho módulos reciben una matriz de alcance en XVI: identidad/L2; señales y calibración; multiactivo/tiempo; ejecución; riesgo/genoma; transacción de estado; conexiones del grafo; y backtesting/gobernanza. Los módulos no examinados íntegramente se marcan como pendientes. No se incorporan ecuaciones por complejidad nominal ni se certifica una capacidad omnisciente.
+
+### Pruebas, integridad y cobertura
+
+48 pruebas distintas pasan: 22 nuevas, doce rojo→verde, cuatro refuerzos de contrato y seis caracterizaciones abiertas. Las 26 restantes son existentes, incluidas dos del orquestador ejecutadas mediante path. Cuatro fuentes se modifican y cinco archivos de tests se añaden. Compila god_engine con cargo check --offline sin ejecutar motor; tres warnings existentes de evolution-engine permanecen.
+
+Cobertura conservadora: 116/289 Rust preexistentes completos; 173 pendientes. Solo maker.rs incrementa el acumulado; StatArb ya estaba revisado en II. El inventario conserva 1.119 archivos y 24 manifiestos. Se preservan cinco consumidores/configuraciones protegidos por hashes. No se han medido PnL, latencia p99, todas las features, todas las ramas remotas ni la suite completa. No hubo commit, push, merge, fetch, despliegue, reinicio, modificación de genomas activos u operaciones de cuenta.
+
+## ADENDA CIENTÍFICA XVII — selección de universo e identidad multiactivo
+
+Fecha 2026-09-24, main local/59a76de4. No reemplaza la matriz histórica de 305 puntos. [Informe XVII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVII_2026-09-24.md>) y [artefacto verificable](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XVII_2026-09-24.json>).
+
+### Resolución y fallos nuevos FMT-171 a FMT-177
+
+FMT-171 repara contratos de active_universe, API auxiliar sin caller operativo localizado. Capital desconocido ya no se convierte en 13 y capital cero no admite activos; vectores distintos tienen error en vez de panic; specs/precios/evidencia no finitos se rechazan. Los forzados se deduplican y preceden lexicográficamente al score, sin bono finito superable. El filtro usa max(min_qty·precio,min_notional) y el menor entre límite del instrumento y política 20. Seleccionados fuera de bitmap64 tienen error. Los wrappers vacíos no autorizan abandonar posiciones abiertas. Quedan gestión obligatoria versus entrada nueva, política de capital y snapshot coherente.
+
+FMT-172 documenta el error de estimando: priceChangePercent24h no es volatilidad realizada ni espectro. 100→150→100 y un recorrido constante tienen retorno cero, pero distinta variación. La banda x·exp(−x/15) impone un máximo al 15% por construcción. Reutilizarla para leverage produce penalidad máxima aproximada 1,104, que vuelve a uno ante cambios mayores. El diagnóstico reproduce la expresión, no el endpoint. Dos scores scalp/swing siguen en el helper legacy; no se renombraron como un motor universal.
+
+FMT-173 corrige DynamicSelector: feed vacío/malformado no inventa diez instrumentos. Parser fallible, deduplicación, error ante observaciones contradictorias del mismo símbolo y desempate independiente del feed. La ruta HTTP comprueba status y no publica vacío/error. Retener la lista previa no acredita frescura; la publicación directa sin epoch sigue limitada. Las pruebas no llaman al exchange.
+
+FMT-174 traza un riesgo de identidad en la ruta viva: el host prioriza símbolo→ID del arranque y los lookups del registry usan el universo mutable. El diagnóstico [A,B]→[C,A] demuestra que A conserva ID0 en caché mientras ID0 significa C dinámicamente. No abre posiciones reales. Cambiar solo el lookup no migra posición/features/modelos: se exigen IDs estables independientes del ranking y tratamiento de fills retrasados.
+
+FMT-175 reproduce dos defectos de validate_order: NaN puede retornar Ok y round(−log10(step)) no representa pasos decimales generales. step 0,05/raw 0,06 puede devolver 0,1; step 0,025/raw 0,09 produce 0,08 fuera de malla. Sin caller operativo localizado; no se atribuyen órdenes reales. Cierre mediante contrato decimal/lotes, rango/finitud, redondeo conservador y serialización.
+
+FMT-176 identifica políticas incompatibles: mínimos de volumen por módulo/entorno, testnet_blacklist también aplicada a producción y formato usado como elegibilidad. El test copia un closure sin esa blacklist, por lo que no prueba el filtro real. Truncar antes de validar specs puede excluir elegibles; defaults de tick/lote/fee/leverage no son observaciones. Hace falta lógica pura común, procedencia y políticas explícitas/versionadas.
+
+FMT-177 identifica publicaciones separadas de universo/specs, descarte de specs nuevas cuando no cambia la lista y errores ignorados de persistencia/reconexión. load→clone→store del registry permite pérdida de actualizaciones entre escritores concurrentes. La atomicidad de una referencia no es una transacción del grafo. No se realizó fault injection en procesos operativos.
+
+### T40 y hoja de ruta de raíz a terminal
+
+T40 propone disponibilidad observable, feedback definido y coste de transición en aprendizaje online. Fuentes primarias distinguen sleeping experts/bandits y comparadores con costes de cambio; no garantizan crecimiento compuesto. No se implementó ni conectó un nuevo algoritmo. Continúa T39: dependencia y selección requieren evidencia causal e identidad compartida.
+
+Prioridad: IDs estables/epoch; separar observación, gestión y admisión; cantidades decimales; elegibilidad común y refresco de specs independiente del ranking; estimandos por escala; evolución en tapes exógenos iguales, con costes y feedback. La matriz de ocho módulos del informe conserva los límites de cada revisión. Ningún módulo entero se certifica por estos arreglos.
+
+### Verificación y cobertura
+
+35 pruebas distintas pasan: 23 nuevas, doce rojo→verde, seis refuerzos y cinco caracterizaciones abiertas. Doce tests existentes pasan, con contratos actualizados para capital cero/feed vacío. Dos fuentes y tres archivos de pruebas. Check del binario sin ejecución; tres warnings anteriores permanecen. El error transitorio Windows1224 de rustfmt se resolvió sin matar procesos.
+
+Ocho Rust preexistentes completos: active_universe, symbol_ranker_engine, symbol_registry, symbols, dynamic_ranker, asset_selector, dynamic_selector y symbol_manager. Cobertura 124/289, pendientes 165; inventario 1.119 archivos y 24 manifiestos. Fragmentos del host no cuentan como lectura completa. Diez fuentes protegidas mantienen sus hashes. Sin genomas activos, cuentas, despliegue, reinicio, commit, push, merge o fetch. El remoto y el desempeño económico no fueron certificados.
+
+## Adenda XVIII — integridad numérica, ejecución incierta y reconciliación multiactivo (2026-09-24)
+
+Esta adenda conserva el diagnóstico histórico. Informe profesional detallado: [fundamentos XVIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVIII_2026-09-24.md>); artefacto: [registro XVIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XVIII_2026-09-24.json>). Se añaden FMT-178–184 y se actualiza FMT-175; no se sustituye la matriz histórica de 305 puntos.
+
+### Contratos reparados y alcance
+
+FMT-175: el helper validate_order aceptaba NaN, inventaba paso1 y redondeaba fuera de la malla. Se reemplaza la inferencia de decimales por la proyección conservadora q_min+n·paso, con dominio finito, rechazo de filtros inválidos, nocional finito y frontera de resolución f64 derivada de 2^53. No aumenta exposición. La fuente oficial motivó contemplar minQty como origen. Diez pruebas nuevas, incluidas 5.994 combinaciones de paso/cantidad. Sigue siendo binario: 0,3 con paso0,1 puede dar0,2. No se certifica serialización decimal, maxQty, reduce-only, MARKET_LOT_SIZE ni integración con executor. Sin caller operativo localizado.
+
+FMT-178: string_or_f64 ahora rechaza NaN/inf/overflow textual en ACK, fills, órdenes algo, ingresos y posición remota. Preserva signos legítimos de SHORT, income y rebates. El host inspeccionado no reconcilia cuando fetch_position_risk propaga un error. Los campos ausentes, números finitos semánticamente imposibles y structs construidos directamente siguen requiriendo validación.
+
+FMT-180: el POST tipado preserva incertidumbre ante ACK ilegible, cuerpo truncado, HTTP408 y códigos -1006/-1007. Estos errores usan AMBIGUOUS para no evitar la consulta por clientOrderId. Rate limit429 y ban418 conservan sus categorías. Se verifica con HTTP local real y credencial sintética. No se certifican las otras rutas, cancelaciones, WS, maker-chase o exactamente-una-vez. Los errores como strings siguen siendo deuda de diseño.
+
+FMT-183: PARAM_REPEAT=-1105 y RATE_LIMIT_BAN=-4164 tenían semántica falsa. Ahora se definen nombres canónicos para parámetros, nocional mínimo, exceso de solicitudes y ejecución incierta. Los aliases antiguos se deprecan y apuntan a valores corregidos; consumidores externos deben revisar la diferencia de valor. No había uso operativo interno localizado. Contratos contrastados con documentación primaria USD-M, no por memoria.
+
+### Defectos abiertos con evidencia
+
+FMT-179: parse_order_body("{}") sigue retornando un ACK de identidad vacía y cantidades cero. Defaults en PositionRiskEntry también convierten ausencia en cero sin ejecutar el deserializador finito. Falta distinguir ACK/RESULT/query/cancel, correlacionar identidad con intención y expresar campos desconocidos. Endurecer todos los tipos con una única lista obligatoria también sería incorrecto.
+
+FMT-181: total_commission suma monedas incompatibles y descarta rebates. El test 1BNB+1USDT−0,1USDT produce2 sin numerario. El helper no tiene caller operativo localizado, pero un fragmento del registry sí almacena commission.abs() por fill y suma sin moneda. No se certificó todo el circuito. Se requiere ledger firmado por moneda/fill/tiempo y conversión causal, separando observados e imputados. No se elimina arbitrariamente el signo.
+
+FMT-182: execution-engine conserva un selector diferente al reparado en data-ingest. Fabrica BTC ante cero observaciones, admite lastPrice="NaN" porque solo comprueba presencia y duplica símbolos. Su SymbolScore público viola coherencia Eq/Ord para NaN, aunque el constructor de ranking filtra scores no finitos. La heurística de cambio neto diario por log-volumen no es volatilidad espectral ni cómputo cuántico. Solo se localizaron definición, exportación y tests; no se exagera su alcance vivo.
+
+FMT-184: reconcile_arena suma las piernas por símbolo. LONG+1 y SHORT−1 producen cero y cierran el slot local pese a bruto2. En one-way, una posición local LONG1 frente a remota SHORT1 conserva is_long=true y el precio de entrada anterior tras actualizar cantidad/margen. Ambos casos reproducidos sobre la función real sin exchange. Mapas de precio/leverage pierden pierna; ausencia se asume cero; tolerancias absolutas no dependen del lote. Observaciones adicionales: ID sintético de adopción omite lado; tarifas imputadas difieren entre registry/arena. Estas últimas no se presentan como experimentos completos.
+
+No se corrige FMT-184 cambiando solo un booleano: debe migrarse dirección, precio medio, margen, coste realizado, protecciones, identidad y procedencia como una transición coherente. El peligro es un estado híbrido más difícil de detectar. Permanece P1 abierto junto con FMT-174/177.
+
+### T41, causalidad del genoma y verificación
+
+T41 exige estado suficiente para decisión/contabilidad. Neto=suma(q_j) no determina bruto=suma(abs(q_j)); la pérdida de información no se resuelve añadiendo una capa predictiva. La continuidad analítica convive con terminales discretos y datos asincrónicos. La evolución debe evaluarse sobre tapes comparables con costes, restricciones y feedback explícitos. No se incorpora una teoría por prestigio, no se afirma ventaja cuántica ni se promete omnisciencia o retorno.
+
+50 tests distintos pasan: 23 nuevos (12 rojo→verde,5 refuerzos,6 diagnósticos abiertos) y27 preexistentes, incluidos2 antiguos diagnósticos de FMT-175 convertidos en regresiones. Cargo check del binario pasa sin ejecutarlo, con los3 warnings preexistentes de evolution-engine. El primer formato de client.rs encontró Windows1224; se inspeccionó y reintentó, sin matar procesos. Formato y diff finales pasan.
+
+Cuatro lecturas completas nuevas: order_types, dynamic_symbols, client y reconciliation. Acumulado128/289 Rust;161 pendientes;1.119 archivos versionados y24 manifiestos. Fragmentos de executor, registry y host no cuentan como lectura completa. Tres fuentes intervenidas y tres nuevos archivos de tests; se actualiza un test deXVII. Se conservan cambios ajenos y contenido histórico. Sin genomas activos, trading, cuentas, deploy, reinicio, commit, push, merge o fetch. Rama main/59a76de4 es solo evidencia local.
+
+## Adenda XIX — contratos causales para posiciones y evolución (2026-09-24)
+
+Se añade sin reemplazar el historial ni la matriz de305 puntos. Véanse [informe XIX](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIX_2026-09-24.md>) y [artefacto XIX](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XIX_2026-09-24.json>). Nuevos IDs FMT-185–189; ampliación y contención parcial de FMT-184.
+
+### Reparaciones verificadas
+
+FMT-184: se conserva identidad de filas por pierna durante validación. Hedge equilibrado/desigual, duplicados, modo mezclado, NaN, metadatos inválidos, ausencia, inversión y varias asignaciones locales no autorizan una proyección falsa. Se conserva estado/margen conocido y se exponen motivos mediante ArenaReconciliationReport. Un único snapshot de nombres y chequeo de capacidad evitan algunas incoherencias de la pasada, no la identidad persistente. El wrapper emite diagnósticos y mantiene su firma. No existe aún gate global de admisión ni ledger completo por pierna: la posición remota no queda certificada. Se eliminan epsilons absolutos que confundían cantidad positiva pequeña con plano.
+
+FMT-185: el registro conservaba acumulado1 pero podía tomar precio90/nocional45 de un evento viejo con acumulado0,5. Se protegen precio/nocional junto con la cobertura acumulada y se mantiene la unión separada de fees por fill. FILLED no se degrada a CANCELED/EXPIRED por llegada tardía, y un fill tardío puede completar una cancelación anterior. EXPIRED_IN_MATCH se reconoce como expiración, contrastado con fuente oficial. Siguen abiertos conflictos de igual cobertura, timestamps, identidad, dominios semánticos y motivos terminales.
+
+### Nuevos defectos de diseño y ciencia
+
+FMT-186: find_resonant_slot es una heurística operativa de distancia logarítmica con umbral0,80, comentarios parcialmente0,60, fallback30s y mínimo10ms. No calcula producto interno, covarianza ni dependencia. Admite NaN/inf/negativos/cero/1ns en un manager vacío tras sustituir escala. Para filtros causales exponenciales normalizados se deriva exactamente <hτ1,hτ2>=sech(Δlogτ/2), superior0,92 enΔ0,80: contraejemplo a llamar ortogonales a escalas solo por su separación. El límite de tres slots es una capacidad física; debe distinguirse del modelo continuo y su error de aproximación. No se sustituye el umbral por otra arbitrariedad.
+
+FMT-187: el tensor de entrada54D sobrevive a una nueva generación del slot; open/close no lo transfieren con identidad generacional. El core lo escribe después de publicar apertura y el emisor lo consulta después de cerrar. La prueba secuencial demuestra retención, no tasa real de contaminación. Riesgo de asociar features deA al resultado deB. Vaciar al cerrar rompería el consumidor actual; hace falta payload inmutable de entrada y receipt generacional de cierre, con muestras no entrenables explícitas cuando falten features.
+
+FMT-188: generación/snapshot no cubren todas las escrituras públicas. Un test cambia quantity y obtiene dos snapshots de misma generación con cantidades distintas. Se observan writes de cantidad/margen/tau fuera del cerrojo compartido. No se afirma haber reproducido todas las carreras ni linealizabilidad; el estrés existente solo cubre apertura/cierre. Acquire/Release por campo no es transacción. El spinlock tampoco tiene límite de iteraciones pese a un comentario de espera acotada. Se requiere disciplina única de mutación y presupuesto medido.
+
+FMT-189: cleanup_stale_orders transforma demora local en EXPIRED sin consulta remota; el registro puede purgarse después. Prueba reproducida, pero sin caller operativo localizado: P2 auxiliar. La sospecha debe ser ResolutionRequired, no un estado terminal inventado.
+
+Ampliación de FMT-184: dos adopciones de piernas con símbolo/updateTime idénticos colisionan en un único client ID sintético. Test demuestra2 intentos y1 entrada. Sin arreglo aislado porque no resolvería el modelo de posición/ledger. Sigue pendiente frescura y esquema obligatorio: un campo ausente deserializado a cero todavía puede parecer plano explícito, deuda FMT-179.
+
+### Verificación y alcance
+
+T42 propone orden parcial de evidencia, estado suficiente y propiedad generacional de features/labels; no es un algoritmo cuántico integrado. No se incorporan ecuaciones por complejidad ni se garantiza rentabilidad. La continuidad analítica requiere una cadena causal comprobable de raíz a terminal y de vuelta al aprendizaje.
+
+59 tests distintos pasan: 26 nuevos (14 rojo→verde,5 refuerzos,6 diagnósticos abiertos,1 contraejemplo) y33 preexistentes. Un diagnóstico XVIII pasa a contención. Check del binario sin ejecución, formato y diff pasan; tres warnings anteriores permanecen. El primer harness asumió Box en vez de Arc y se corrigió antes de medir fallos conductuales. Se conserva el aviso de entorno de genoma no definido en tests sin elegir demo/prod para silenciarlo.
+
+Dos fuentes modificadas: reconciliation y order_registry. Cuatro nuevos archivos de tests y uno anterior actualizado. Dos lecturas completas nuevas, position y order_registry, elevan cobertura a130/289 Rust;159 pendientes. Universo versionado1.119 archivos,24 manifiestos. Main/59a76de4 local; remoto sin verificar. Sin operación de cuentas, genomas operativos, despliegue, reinicio, commit, push, merge o fetch. Las adendas son aditivas y se verifican por prefijo/hash.
+
+
+## Adenda XX — integridad matemática del artefacto, boosting y evidencia de generalización (2026-09-24)
+
+Esta adenda no sustituye el registro de 305 puntos ni las rondas anteriores. Detalle, reproducciones y hoja de ruta: [Fundamentos XX](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XX_2026-09-24.md>). Registro estructurado: [artefacto XX](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XX_2026-09-24.json>).
+
+### FMT-190 — función entrenada distinta de la función servida
+
+El trainer construía índices de hijos locales por árbol, concatenaba arrays y los copiaba sin desplazamiento. Inferencia arranca por tree_offsets pero interpreta los hijos como absolutos. Dos árboles con hojas izquierdas 1 y 4 daban 2 en vez de 5, confirmado por una prueba fallida antes de reparar. Separadamente, entrenamiento suma η·árbol pero exportación omitía η: bias 0,25, hoja 2, η=0,1 debía producir 0,45, no 2,25.
+
+Ahora la exportación relocaliza índices, aplica shrinkage a los valores, rechaza estructuras inválidas y comprueba el objeto antes de escribir. Tras early stopping, se evalúa el artefacto retenido con NanoForest y se recalculan tanto pérdida del gate como diagnósticos; la antigua f_val podía describir rondas descartadas. Las pruebas incluyen JSON/bincode, ambos lados y varias tasas. Hay tolerancia por f32, no igualdad bit a bit con toda operación en f64.
+
+Ocho de veinte bosques guardados tienen aristas fuera del intervalo propio: cuatro candidatos y cuatro archivos sin sufijo candidato, incluido NEARUSDT_VOL. Se rechazan al construir con el contrato nuevo. No se ha observado su carga en un proceso vivo. Doce pasan estructura, no validación económica; el JSON DarkAlpha tiene otro esquema. Ningún modelo se ha modificado ni promovido. La migración necesita procedencia/reentrenamiento: el esquema no conserva η para una reparación histórica certificable.
+
+### FMT-191 — ascenso del error en la regresión
+
+El solver guarda +G/(H+λ) y el booster suma la hoja. Para media cuadrática, debe usarse G=Σ(y−f), no Σ(f−y). Con f=0, y=2, H=1, λ=1, η=0,1, el código previo aumenta el error 4→4,41; el corregido lo reduce a 3,61. Se verificó con build_tree y con diferencia finita en ambos signos. Clasificación ya usaba el negativo del gradiente correcto y se conserva.
+
+La reparación no acredita ventaja del modelo, estabilidad de todos los hiperparámetros ni validez del objetivo. La derivación oficial de boosting se contrastó mediante Firecrawl; las pruebas concretas son locales.
+
+### FMT-037 — reparación estructural y límites de la admisión
+
+Se amplía el hallazgo de II: validación de longitudes, finitud, offsets, hijos intrárbol, features y ciclos mediante DFS iterativa. Inferencia tiene recorrido acotado por nodos y un contrato checked común a raw/probabilidad. Evidencia inválida produce None o NaN explícito en el wrapper legacy, no 0,5 válido. Se conserva el bias-only explícito usado por oráculos.
+
+Nueve regresiones se reprodujeron sin ejecutar ciclos; se añade un árbol válido de profundidad 4.096 y rechazo desde JSON/bin antes de crear caché. Persisten falta de manifiesto semántico, límites de deserialización, saneo del host a cero y coordinación global multiwriter. La corrección no hace linealizable toda publicación ni asegura un SLA temporal.
+
+### FMT-192/193/194 — diseño y metodología todavía abiertos
+
+FMT-192: ganancia de splits mezcla G/H del padre completo con G_L/H_L de una muestra de hasta 2.048 ocurrencias, y deriva el lado derecho por resta. Con 4.096 filas y probe equilibrado usa Hessianos 1.024/3.072 en vez de 2.048/2.048 completos o 1.024/1.024 muestrales. Se requiere una medida común, pesos definidos y pruebas de ranking/coste; no se ha modificado ese algoritmo.
+
+FMT-193: el split 80/20 no purga los intervalos usados por labels futuros; --val-in no acredita disjunción ni cronología. La misma validación selecciona best_rounds y justifica promoción. Corregir qué artefacto mide el gate no hace independiente la evidencia seleccionada. Deben conservarse tiempos de disponibilidad/resolución y separarse selección, purga y evaluación final.
+
+FMT-194: max-samples se usa en una heurística de stride que puede dejar más oportunidades que el máximo declarado, sin contador de límite. En la rama inversa puede disminuir el stride solicitado; cero puede propagarse al paso efectivo. El impacto es presupuesto de CPU/memoria y dependencia experimental, no una latencia p99 viva medida. Falta contrato de intentos vs labels válidos y validación de CLI.
+
+### Deudas online revalidadas y secuencia de cierre
+
+FMT-052/053/054 permanecen: features de distinta semántica y momento entran al mismo bosque; una clase 0/1 no discrimina thresholds continuos; media de PnL transformada por sigmoid no identifica probabilidad de ganar, y beneficio no equivale a dirección. Accuracy de resustitución sigue alimentando un gate de consumo. Se relee completo online_random_forest, pero no se cambia aisladamente su API para ocultar la incompatibilidad.
+
+T43 formula invariancia de representación del predictor, convenio de gradientes y particiones estadísticas coherentes. No implementa ventajas cuánticas ni ecuaciones de problemas del milenio, ni promete omnisciencia. Antes de nuevas familias multiespectrales: procedencia/labels por acción, validación causal, ledger generacional, error de aproximación y coste medido.
+
+Verificación: 31 pruebas funcionales distintas (19 nuevas, 12 anteriores); doce rojo→verde y siete refuerzos nuevos. El inventario manual se contabiliza aparte. El primer inventario se detuvo por tratar DarkAlpha como un bosque: se corrigió el harness y se repitió sin tocar el modelo. Check pasa con cinco warnings previos entre trainer/evolution. Solo tests sintéticos y lectura de modelos: no motor, entrenamiento real, cuenta, despliegue ni promoción.
+
+Una lectura nueva completa de train_forest, antes revisado solo por fragmentos, eleva cobertura a 131/289 Rust; 158 pendientes. Se conservan el universo de 1.119 archivos/24 manifiestos y las deudas de XIX. Main/59a76de4 describe solo el checkout local, no remoto sincronizado. Se protegen por hash cinco fuentes de referencia y 41 archivos de modelos. Sin commit, push, merge o fetch; solo adendas a los documentos históricos.
+
+
+## Adenda científica XXI — coherencia de medida y juez temporal; cinco deudas nuevas (2026-09-24)
+
+Referencia íntegra: [auditoría XXI](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXI_2026-09-24.md>) y [registro estructurado](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXI_2026-09-24.json>). Se añade contenido; no se reemplazan los 305 puntos ni se afirma equivalencia aritmética entre esa matriz y la taxonomía FMT.
+
+### Resolución acotada de pendientes XX
+
+FMT-192, P1, reparado localmente. El padre del árbol sumaba todas las filas bootstrap y el hijo izquierdo solo el probe; restar el segundo del primero no producía el complemento de la partición completa. En 4.096 filas balanceadas, la ganancia anterior era 1.364,2232339891889 frente a 4.094,000976085894. El muestreo también descartaba hijos completos que sí cumplían min_child. Ahora probe propone cuantiles, pero estadísticas y conteos usan el mismo multiconjunto completo mediante barrido ordenado de prefijos/sufijos. No se certifica velocidad; O(n log n) por feature/nodo puede costar más que el estimador defectuoso.
+
+FMT-193, P1, parcialmente reparado. Se retienen intervalos [inicio, deadline] y se eliminan de ajuste las etiquetas cuyo fin alcance el inicio de selección. Se admite fin no monótono, se valida alineación y cronología, y se rechaza entrenamiento agotado/monoclase. --promote exige --test-in; su primer instante debe superar el máximo fin de toda etiqueta utilizada en train y selección. Test solo puntúa el artefacto congelado. Falta registro de reutilización del holdout, manifiesto de procedencia, incertidumbre dependiente y validación económica. Usar un archivo diferente no es por sí solo independencia. No se presenta una mejora de pérdida como certificación de trading.
+
+FMT-194, P2, reparado localmente. La fórmula anterior podía conservar una cadencia demasiado densa o reducir el stride solicitado. Se usa max(stride, floor(span/budget)+1) y un contador explícito. max-samples limita intentos por archivo, incluidos descartes posteriores, no garantiza B etiquetas ni acota toda la lectura/latencia. Los valores cero se rechazan y las sumas temporales no desbordan. El mínimo heredado de 5.000 etiquetas permanece: datos insuficientes no se completan artificialmente.
+
+El gate de regresión describe skill frente a la media de train, no R² centrado en el test. Se elimina el corte absoluto del denominador que anulaba mejoras relativas en pérdidas muy pequeñas; cero/no finito no acredita evidencia. El margen conserva condición de política operativa, no significancia estadística.
+
+### Matriz complementaria de nuevos hallazgos abiertos
+
+- FMT-195, P1: feature_exporter rotula target_5m una búsqueda de 500 ticks; comprueba ±0,18% antes de ±0,36%, haciendo inalcanzables ambos TP. El fallback por retorno terminal agrega otro evento. Sus 54 columnas incluyen constantes macro y no equivalen al vector 48D del bosque. Se localiza como consumidor por defecto train_dark_alpha, no train_forest. Faltan esquema, timestamps, censura y control durable de escritura; no se regeneró el CSV.
+- FMT-196, P2: feature_validator deriva pseudo-OBI de localización del cierre OHLC; con volumen positivo equivale a 2p−1, no a libro observado. Omite salidas en la barra de entrada y elige TP si una barra posterior toca TP y SL. No modela costes/gaps/terminal y declara ventaja estadística por WR>55% y suma positiva. Es un POC auxiliar; no se probó que autorice órdenes. Requiere política de ambigüedad y evaluación externa, no solo otro umbral.
+- FMT-197, P1: train_dark_alpha permite dimensión por fila entre 25 y 54 y luego indexa todas según la primera. Una fila 54D seguida de 25D puede provocar panic; NaN en target se transforma en clase 0, e imputación a cero oculta errores de features. Requiere contrato estricto y ledger de rechazos. No se ejecutó el binario con un CSV malformado.
+- FMT-198, P1: el mismo trainer normaliza y ajusta todo el CSV, informa BCE de ajuste y escribe directamente DarkAlpha_<activo>.json. No hay test independiente ni gate de publicación en esa ruta. Entrenar sobre todos los datos destinados a train no es por sí solo fuga; la ausencia de evaluación y gobierno sí es el defecto confirmado. No se afirma que el archivo publicado sea activado por un proceso actual.
+- FMT-199, P1: los targets vol y volu son RMS de retornos y profundidad media ponderados por eventos. Agregar mensajes repetidos puede cambiar el objetivo aunque no cambie el movimiento económico. No hay invariancia automática de reloj, activo o contrato. Se corrigen descripciones, no se migran targets ni modelos silenciosamente.
+
+FMT-028 continúa abierto: timeouts descartados condicionan la probabilidad y 1−p del largo no modela automáticamente TP del corto. Se corrigieron comentarios que afirmaban equivalencia con break-even. El trainer continúa siendo por activo/objetivo y horizonte individual; esta ronda no lo convierte en un motor espectral conjunto.
+
+### Ciencia, pruebas y preservación
+
+T44 exige medida, unidad, intervalo informacional y esquema por nodo, además de la cadena gen→expresión→decisión→fill→outcome→comparación→promoción. Es propuesta de diseño; no se acredita implementación de nuevas teorías físicas, ecuaciones del milenio ni ventaja cuántica. Firecrawl permitió contrastar documentación primaria pública sobre separación de test y ajuste; no se enviaron archivos privados.
+
+37 pruebas funcionales distintas pasan: 18 nuevas en el trainer (4 reproducían fallos previos) y 19 anteriores. El filtro inicial mal especificado del harness de inferencia ejecutó cero pruebas; se corrigió a --test ml_model_contract y pasaron doce, con el inventario manual ignorado. Check de ambos binarios y controles de formato pasan. Continúan tres warnings previos de evolution-engine. Sin entrenamiento real ni ejecución del motor.
+
+Cobertura: 134/289 Rust preexistentes leídos completos, 155 pendientes; inventario 1.119 archivos y 24 manifiestos. Tres nuevas lecturas completas: feature_exporter, feature_validator y train_dark_alpha. Solo cambia train_forest como fuente; siete fuentes protegidas y 41 modelos mantienen hashes. Main/59a76de4 describe estado local, no remoto sincronizado. No commit, push, merge, fetch, despliegue, reinicio, cambio de cuentas ni promoción. El historial de atlas/maestro/XX se conserva mediante adendas y verificación de prefijos normalizados.
+
+## Adenda científica XXII — preservación del predictor y gobernanza neuronal (2026-09-24)
+
+[Informe detallado XXII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXII_2026-09-24.md>) · [Artefacto trazable](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXII_2026-09-24.json>). Adición al historial; no reescribe la matriz de 305 puntos ni las conclusiones anteriores. Se actualizan cinco IDs y se agregan dos, sin contar sospechas descartadas como defectos.
+
+### Reparaciones locales y contenciones
+
+FMT-073, P1: congelar normalizadores tenía excepciones de warmup que permitían incorporar observaciones de evaluación, y las APIs no seleccionaban siempre las mismas coordenadas. predict y predict_for_coin comparten ahora una ruta validada. Con Scaler se usa ese sistema fijo; sin él y con freeze se prefiere estado global disponible y luego local, sin actualizaciones ni asignaciones estadísticas. Si no hay estado utilizable, se devuelve None. count≥2 define el denominador de varianza muestral; no acredita confianza, independencia ni tamaño efectivo. Freeze no inmoviliza todas las APIs de aprendizaje. La adaptación no congelada comprueba todos los canales antes de comprometer momentos, pero no revierte estadísticas si el forward posterior desborda. No se implementó adaptación por reloj.
+
+FMT-074, P1, reparación parcial: se añaden validaciones de finitud de parámetros, Scaler completo/no negativo, momentos y forma binaria de salida. ReLU/tanh/sigmoid no deben convertir sumas inválidas en ceros o saturaciones aprovechables. scale_checked distingue error aritmético; predict devuelve None. fit rechaza lote inválido antes de modificar y restaura el modelo previo ante corrupción numérica detectada durante el ajuste. La API de fit aún no devuelve error tipado; faltan manifiesto semántico, soporte por activo/horizonte, límites de recursos y gobierno de las APIs cuantizadas. La validación por llamada añade O(P+C·d); el smoke de media no certifica latencia productiva.
+
+FMT-076, P2, reparación local: se eliminó la poda implícita en init_buffers y se clasifica con is_subnormal. El corte anterior |w|<1e−7 eliminaba números normales. Contraejemplo ejecutado: pesos 1e−8 y 1e8 dan logit 1 y salida ≈0,7310586; anular el primero da 0,5. Preservar pesos al cargar es un contrato matemático, no una preferencia estética. La limpieza explícita de verdaderos subnormales sigue modificando valores y no se anuncia como exacta. Pesos ya borrados en archivos históricos no se restauran. Documentación primaria Rust contrastada mediante Firecrawl.
+
+FMT-197, P1, reparación local del esquema legacy: se exige encabezado target_5m,feature_0…feature_53 y 55 campos. Targets deben ser 0/1 finitos; campos inválidos, anchuras mixtas, corpus vacío y errores de lectura abortan con contexto, en lugar de imputar ceros u omitir filas. El Scaler calcula momentos de entrenamiento mediante actualización Welford con rechazo de desbordamiento. Todo el corpus se denomina TRAIN; no se presenta BCE de ajuste como validación independiente. Se conservan floors de escala por compatibilidad. FMT-195 sigue abierto: el nombre target_5m no acredita cinco minutos, y la semántica de barreras/eventos no se corrige con el parser.
+
+FMT-198, P1, contención parcial: el trainer ya no publica en models/. Produce candidato versionado en artifacts/training con create_new, write_all y sync_all; errores se propagan. No existe --promote en esta ruta. Se valida/congela antes de serializar, sin poda, y se elimina la equiparación de símbolo con slot cero. No hay gate causal, holdout purgado, ledger, manifest ni publicación atómica por rename; una escritura fallida puede dejar un candidato incompleto fuera del espacio operativo. Los otros escritores de modelos no quedan gobernados automáticamente. El destino nuevo es un cambio deliberado de workflow, no una promoción automática.
+
+### Fallos nuevos de los instrumentos de auditoría
+
+FMT-200, P2, abierto: ml_path_probe.rs se presenta como reproducción exacta live, pero arma 44 variables —34 universales y 10 espectrales—, frente a las 48 del bosque con macro. Si un árbol necesita las dimensiones omitidas, puede abstenerse sin que exista un NaN. El contador de índices no finitos no clasifica esa causa y tampoco cuenta ausencia de modelo global como None. Sus comparaciones de precios no rechazan NaN. Usa muestreo cada 137 eventos, replay/layout nativo y un único activo fijo, sin demostrar igualdad del estado/contexto. load_global puede escribir caché binaria: la sonda no se ejecutó como inspección de solo lectura. Cierre exigido: constructor y snapshot compartidos, clasificación de errores y carga sin efectos laterales.
+
+FMT-201, P2, abierto: test_ml.rs es un binario, no una suite validada. Omite ocho bytes sin validar cabecera y crea un slice de BinTick desde Vec<u8> sin demostrar alineación. La violación de esa precondición sería comportamiento indefinido, pero no se afirma haberla observado en este equipo. Se propone decoder explícito con endianness y validación de longitud. Indexa 32 pesos sin comprobar arquitectura; un modelo válido más pequeño puede hacer fallar el diagnóstico. El pseudo_maker se invierte respecto al exportador; ninguna de las dos comparaciones de profundidad acredita lado agresor real. El tensor usa constantes/contexto no idénticos al host. La comparación elimina Scaler y activa Welford sobre los mismos pesos: compara funciones distintas sin target fuera de muestra. Porcentajes p≥0,5 no certifican alpha. Esta carga también puede escribir cachés; se preservó sin ejecutar.
+
+### Conexiones, teoría y cobertura de la verificación
+
+Se rechazó la hipótesis de doble Scaler+Welford en inferencia ordinaria porque las ramas son excluyentes. Se confirma en fuente que el host lee models/DarkAlpha_BTCUSDT.json al construirse; no se inspeccionó activación en procesos. Fuera de BTC, el host no infiere pero envía Some(0.5) como DarkAlphaNN: es voto, no ausencia en la interfaz. Su impacto final requiere seguir el ensemble. No se retiró el gate por activo.
+
+T25 y T44 continúan: cambiar μ,D cambia el predictor salvo transporte compatible de pesos/biases. La equivalencia afín no atraviesa automáticamente winsorización, clipping ni escala cero; los momentos de Adam también requieren tratamiento. No se inventa otra teoría ni se integra física/cuántica por analogía. La representación continua multiactivo requiere unidad, reloj, soporte y estado de evidencia; parámetros entre 1 ns y 100 años no acreditan resolución observada ni cobertura predictiva.
+
+Pruebas: 18 nuevas neuronales, 8 nuevas del trainer, 30 funcionales previas de biblioteca, 1 control de media, 25 del bosque y 12 de NanoForest: 94 distintas aprobadas, 93 funcionales. Primeras 12 neuronales reproducen rojo→verde. Inventario manual de modelos ignorado no contado. El smoke aislado observó 8.272 ns/call sobre 20.000 llamadas en build de tests sin optimizar; no es p99 ni medición de producción. Check de cuatro binarios pasa; tres warnings de evolution-engine anteriores persisten. Las pruebas de NanoForest solo limpian temporales sintéticos propios, no material del usuario.
+
+Dos lecturas nuevas completas elevan cobertura a 136/289 fuentes Rust preexistentes; 153 faltan, además del resto del proyecto no certificado íntegramente. Dos fuentes cambian y se añade un archivo de tests; ocho fuentes protegidas y 41 modelos conservan SHA-256. No se ejecutan entrenamiento real, motor, diagnósticos con caché, promoción, cuentas, genomas, órdenes, reinicios o despliegues. Main/59a76de4 es estado local, no remoto verificado. No commit/push/merge/fetch. La siguiente prioridad es corregir el contrato causal del exportador y cerrar evaluación/promoción neuronal antes de extender teorías o autorización multiactivo.
+
+## Adenda científica XXIII — raíces observacionales del aprendizaje (2026-09-24)
+
+[Informe detallado XXIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIII_2026-09-24.md>) · [Artefacto trazable](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXIII_2026-09-24.json>). No sustituye el historial ni la matriz consolidada. Cuatro nuevos IDs FMT organizan trazas específicas y se concilian con D-233/D-691/D-721/D-722/D-724: no se anuncian como cuatro fenómenos sin antecedentes.
+
+### Contrato reparado parcialmente
+
+FMT-195: el exportador deja de llamar cinco minutos a 500 eventos y de confundir el stop de un lado con el take-profit del contrario. Nueva salida JSONL tgm.midpoint_barrier_surface.v2, solo investigación, con lista explícita de horizontes en milisegundos y barreras declaradas. Cada lado mantiene su primer evento. NoObservedHit conserva no resolución observada; RightCensored conserva insuficiencia de futuro. No se descartan trayectorias planas ni se infiere victoria del complemento del otro lado. Los hits son sobre midpoints muestreados sin costes/fills, no outcomes operables.
+
+Se guarda tiempo de features, ordinal e intervalo de información. La primera muestra posterior al deadline puede confirmar que el tape alcanza el horizonte; su precio no se incorpora a ese horizonte, pero su timestamp amplía information_end para purga. La cobertura del tape no certifica ausencia de huecos: se registran último punto y mayor gap. No se interpola ni se presume resolución nanosegundo.
+
+FMT-069, P2: el decoder nuevo valida bytes LE, cabecera, longitud, mercado finito/no cruzado, cantidades, sumas y cronología, sin casts ni imputación. Legacy requiere opt-in. Los lectores anteriores y TickOrigin::es_real no se migran globalmente. Presupuesto de registros rechaza exceso en vez de exportar un prefijo; presupuesto de labels rechaza agotamiento sin footer exitoso. No son cotas de todo coste del proceso.
+
+Se retienen 54 posiciones: canal 6 y externos 40–53 son null. Los primeros 34 siguen siendo productos legacy de StatefulEngine, no se acredita que sus defaults sean mediciones. Derivados 34–39 conservan varias escalas/clamps históricos declarados, aún por calibrar. Se rechaza overflow antes de clipping; no se redondea todo a seis decimales.
+
+El manifiesto registra schema, hash/bytes/registros, origen declarado, símbolo/unidad declarados por caller, horizonte, barreras y política de muestreo. El destino se crea exclusivamente, no sobrescribe el CSV previo, y propaga write/flush/sync. Puede quedar un archivo parcial: no hay commit atómico por rename. El footer no es promoción ni garantiza por sí solo fsync exitoso. El CLI exige parámetros explícitos y rechaza la invocación posicional antigua; --help explica la migración.
+
+Train_dark_alpha no consume v2 y rechazará el JSONL como CSV. No se creó conversión silenciosa de censura/desenlaces por lado a clase binaria. FMT-198 sigue abierto en evaluación y promoción independiente.
+
+### Hallazgos en productores recién leídos
+
+FMT-202, P1, contención local en v2: el descargador inventa semi-spread 0,00005·precio y profundidad base=max(0,25·q,0,1), luego escribe TGMTICK1. Binance documenta precio/cantidad/IDs/tiempo/maker de aggTrades, no libro L2. El suelo relativo mejora la escala frente al antiguo suelo en dólares, pero no transforma supuestos en observaciones. FMT-202 reconfirma una familia ya documentada en D-233 y D-691. V2 marca TradeDerivedUnverifiedBook y observed_l2_certified=false. No migra archivos ni certifica sus fuentes. El hash identifica bytes, no veracidad de etiquetas de origen.
+
+FMT-203, P1, abierto: parquet_to_bin aún usa high/low actuales en la primera barra, close actual para ciertos suelos/fallbacks del spread y como sustituto de open ausente. Reparte volumen final desde t+0. Coloca extremos finales en t+15/t+35 y cierre en t+55, sin que OHLCV identifique esos tiempos. Elegir el orden de extremos por apertura previa no cierra estas fugas. Con igual pasado/open y rango previo cero, close=100 frente a 200 cambia el spread inicial de 0,01 a 0,02; volumen final 4 frente a 40 cambia cantidades iniciales de 1 a 10. Son testigos algebraicos de dependencia futura, no una corrida real. TGMSYNT1 informa síntesis pero no causalidad. Pendientes validación de datos/tiempos y sumas temporales con overflow potencial. No se regeneraron tapes.
+
+FMT-204, P1, parcialmente contenido: para buyer_maker=true el productor guarda aq=q+base>bq; el caller bq>aq produce false y OrderFlowTracker lo cuenta como compra. El caso false original se invierte análogamente, y bq+aq aumenta cantidad de q a q+2·base. La traza amplía FMT-201: el diagnóstico opuesto coincide con maker solo bajo este generador concreto, no en L2 genérico. V2 no deriva agresor desde cantidades y omite canal 6; host, train_forest y datos/modelos existentes no se cambian. Cierre global requiere campos trade/quote separados y paridad del productor/consumidor.
+
+FMT-205, P1, abierto: parser de ZIP puede retornar true sin registros y omite errores/filas; skip(1) perdería una fila si no hay cabecera, sin afirmar que los ficheros oficiales carezcan de ella. Descargas diarias fallidas se omiten y se publica el resto sin ledger de cobertura. HTTP/fechas no están completamente validados. La rama mensual mantiene sort_unstable_by_key pese al arreglo estable diario; no garantiza el orden de eventos con igual tiempo, crítico para primeras llegadas. IDs originales ausentes impiden deduplicación causal. Escritores usan destinos conocidos y errores incompletamente propagados, sin publicación atómica. No se ejecutaron estas rutas.
+
+### Teoría, pruebas y conservación
+
+Se implementa la capa de desenlaces de T17/T44, no un estimador de probabilidades ni una ecuación nueva. F⁺(h), F⁻(h), S(h) requieren coherencia y tratamiento de censura; retirar timeouts cambia la probabilidad a otra condicionada. La misma vela puede corresponder a trayectorias con distinto primer toque: modelos cuánticos, físicos o tensoriales no reconstruyen de forma única información que no se observó. La integración científica necesita datos, supuestos, baseline, incertidumbre y pruebas de coste/beneficio.
+
+70 pruebas distintas pasan: 25 de label_evidence y 9 del exportador nuevas; 8 del trainer neuronal, 25 del bosque y 3 de riesgo espectral anteriores. Se prueban escala de precio y transformación del reloj para labels, no para toda la red. Cuatro binarios pasan check; --help del exportador ejecutado sin datos. No latencia productiva, entrenamiento ni evaluación económica. Un error inicial de tipo en un literal del test nuevo y un bloqueo temporal de rustfmt por sección mapeada se resolvieron sin tocar procesos; no se cuentan como bugs históricos.
+
+Nuevas lecturas completas: binance_vision_sync.rs (483) y parquet_to_bin.rs (199). Cobertura 138/289 Rust, 151 pendientes y demás activos no certificados íntegramente. Cambian exporter y una exportación de módulo en lib; se añaden módulo y suite, más .firecrawl/ en .gitignore. Doce fuentes de referencia y 41 modelos conservan SHA-256. Los prefijos de atlas/maestro/XXII se preservan mediante adendas. Sin commit/push/merge/fetch, descargas de mercado, exportación real, cuentas/genomas, órdenes, promociones o reinicios. La auditoría raíz→cima continúa abierta.
+
+## Adenda forense XXIV — inicialización, rechazo de evidencia y filtros (2026-09-25)
+
+Continuación aditiva de XXIII. [Informe detallado XXIV](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIV_2026-09-25.md>) y [artefacto estructurado](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXIV_2026-09-25.json>). No sustituye ni borra hallazgos históricos; cinco IDs nuevos localizan mecanismos, no cinco familias universalmente inéditas.
+
+### FMT-206 — siembra incompatible entre warmup y ticks (P1, reparación local)
+
+process_kline escribía last_price mientras las EMA de ticks permanecían en cero por una separación histórica de kernels. process_tick elegía inicialización mediante last_price==0, por lo que después de velas nunca sembraba las EMA ni el Kalman. Con p=100 constante: EMA_fast=9,5238095, EMA_slow=0,9950249 y fair_price=95,2385487. El cociente relativo de EMA era 8,5714286 sin tendencia de mercado.
+
+La condición se cambia a primer tick aceptado, tick_count==0. Se conserva la recurrencia posterior 20/200. Pruebas verifican precios de varias escalas, Kalman y secuencia idéntica de EMA con/sin velas previas. No se declara igualdad de todos los estimadores: el warmup sigue aportando historia heterogénea a FFT/Hurst/Omni y no tiene reloj de cierre en esta interfaz. FMT-002 dimensional sigue abierto; se requiere validación de arranque antes de promoción de modelos.
+
+### FMT-207 — memorias huérfanas tras reset (P1, reparación parcial)
+
+last_inst_v, dir_velocity y last_trade_is_sell sobrevivían al reset, aunque los rings/acumuladores se reiniciaban. Una secuencia 100→99, reset y ticks planos difería de una instancia nueva. Se limpian los tres campos y se verifica continuación sobre snapshot/34D/10D.
+
+El reset todavía borra rachas/cooldowns y reemplaza simd_nn por Default. Esto requiere dividir ciclo de vida de observación, riesgo y aprendizaje; no se modificó esa política ni se demostró una reconexión operativa concreta. Un reinicio de feed no es una prueba de que una pérdida dejó de ser relevante.
+
+### FMT-208 — mutaciones por inputs inválidos (P1, contención local y en v2)
+
+El tick aceptaba volumen inválido y tiempo atrasado. La vela no validaba su geometría antes de escribir. Producto notional y retorno relativo podían desbordar aun con inputs finitos. Se reprodujeron NaN, infinito, negativo, open fuera de low/high, orden temporal inverso y extremos numéricos.
+
+Se añaden FeatureInputError y métodos try_process_tick/try_process_kline: todas las guardas declaradas preceden la primera mutación del objeto. Se permite volumen cero, empates de timestamp y epoch cero sin inventar ticks. Se valida contador, suma de volumen, notional y retorno representable. No se añade un umbral estadístico arbitrario sobre retornos.
+
+El exportador v2 propaga índice y causa, y aborta sin observación/footer complete ante rechazo. Los wrappers históricos conservan firma y descartan el error: core/lib y train_forest pueden continuar con otras actualizaciones. La atomicidad no cubre todo el grafo, ni todos los extremos f64 internos, ni la causalidad de velas sin timestamp/cierre.
+
+### FMT-209 — filtros rígidos y fallo numérico del cooldown (P1, reparación parcial)
+
+min_cooldown_ms=600.000 frente al techo de clamp 300.000 provocaba panic. Se reproducían admisión de tau NaN y wrap del fallback ticks×100; el caso de mínimo u64::MAX también fallaba. Se usa saturación, clamp con cota superior no menor al piso, mínimo entero exacto y rechazo de horizonte no finito/no positivo. Se preserva la protección mínima solicitada; no se eliminaron barreras de riesgo.
+
+Continúa una frontera real: tras pérdida a 59.999 ms y resultado sin pérdida a 3.600.000 ms, el mismo historial bloquea tau=59.999 y permite 60.000. Las tres bandas, cortes de decaimiento, tau≤10→30.000, pisos/techos y v_t>0,0015 no son un modelo continuo identificado. v_t está en unidades de precio: el umbral no es invariante entre denominaciones. Persisten otras APIs sin guarda de tau e incrementos u32 de racha sin saturación.
+
+Cierre: memoria de pérdidas/exposición sobre log(tau), incertidumbre y evidencia con soporte, estimación y evaluación fuera de muestra, manteniendo límites duros. Mover constantes al genoma no constituye derivación teórica.
+
+### FMT-210 — Hawkes: API temporal y significado estadístico abiertos (P1)
+
+Se releyó el módulo completo sin modificarlo. update(1000,+) seguido de update(900,+) suma un impulso tardío sin decay; update(0,+) seguido de update(1000,0) pierde el primer intervalo; update_batch vacío devuelve ratio cero con intensidades desiguales. Tres diagnósticos reproducen los fallos.
+
+El constructor mezcla parámetros recortados con intensidades del mu original; no valida configuración de forma fallible. La excitación usa OFI y proxy de volumen, no un evento de conteo/tipo certificado. El host actualiza OFI después de process_tick, por lo que este consume OFI previo. No hay en este módulo calibración de likelihood/compensador ni matriz multiactivo identificada.
+
+Fuentes primarias revisadas: Bacry/Muzy (arXiv:1401.0903), Martins/Hendricks (1604.01824), y abstract sobre sesgos de criticalidad (1308.6756). Las condiciones de kernels causales/integrables y radio espectral subcrítico no se transfieren a una heurística por nombre. La prueba de ajuste requiere residuos y supuestos; no rechazar no es certificar. Este trabajo se relaciona con T03 y distingue el módulo del estimador de FMT-025.
+
+### Espectro, diseño y verificación
+
+Se amplía FMT-004: la FFT aún mezcla warmup de velas y retornos por evento; el bin no es automáticamente hertz. La vela interna se reancla al evento que cruza el intervalo, demostrada en 60.001 ms. FMT-001 direccional sin signo y FMT-002 Q/R/Δt siguen abiertos. El continuo multiactivo exige identidad, unidades, as-of, ausencia y readiness explícitas, no solo variantes renombradas.
+
+103 pruebas funcionales distintas pasan: 22 nuevas del estado, 10 unitarias anteriores, 10 del exportador (una nueva), 8 del trainer neuronal, 25 del bosque, 25 labels y 3 riesgo espectral. Aparte, 5 diagnósticos nuevos pasan al confirmar deuda abierta. Quince regresiones se observaron rojo→verde. Se fortaleció una prueba inicial de wrap demasiado débil, y una ejecución filtrada con cero integraciones se repitió correctamente; no se contabilizan como verificación ficticia.
+
+Check de feature_exporter/god_engine/train_dark_alpha/train_forest pasa. No suite completa, métricas económicas ni p99. Cobertura 139/289 Rust preexistentes, 150 pendientes: solo StatefulEngine suma una lectura nueva. Se preservan cinco fuentes de referencia, 41 modelos y prefijos documentales. No se operó, reinició, entrenó, promovió ni hizo commit/push/merge/fetch. La certificación integral y atribución causal genoma→decisión→fill continúan abiertas.
+
+## ADENDA CIENTÍFICA XXV — VETOS Y RECHAZOS, 2026-09-25
+
+Se añade el [informe XXV detallado](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXV_2026-09-25.md>) y su [artefacto estructurado](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXV_2026-09-25.json>). No se reescribe el historial ni se equiparan estos seis identificadores con seis adiciones independientes a la matriz original de 305.
+
+### FMT-211 — Identidad de la operación evaluada
+
+El filtro calculaba EV con objetivos derivados, pero después aceptaba objetivos explícitos sin verificar orientación ni recomputar el payoff. Con entrada 100, TP 100,01, SL 99 y p=0,9, EV bruto=-0,00091: aun así la versión anterior admitía Long. Se reprodujo también la simetría Short y geometrías invertidas. Ahora se resuelven los precios una sola vez antes del filtro, se exige ganancia/pérdida direccional estrictamente positiva y se devuelven esos mismos precios. Cero sigue siendo ausencia; NaN y negativos ya no fabrican fallback. Siguen pendientes la calibración de probabilidad por barreras y el presupuesto sobre cantidad final.
+
+### FMT-212 — Invalidez no es certeza ni seguridad
+
+Confianza infinita podía clampearse a certeza; pico NaN evitaba la protección de drawdown; un intervalo Kelly con mínimo 1,1 producía pánico. Se valida dominio antes de usarlo, precio positivo finito, exposición/fricción/EV finitos y objetivos coherentes. Nuevos motivos diferenciados entrada_invalida y geometria_invalida se añaden al final de los índices. No se afirma que todo gen/estado tenga validación transaccional ni que la política micro de drawdown 0,85 haya cambiado.
+
+### FMT-213 — Evidencia del supervisor
+
+El clasificador de errores trataba request-id-2019; y AMBIGUOUS: code=-1007 como rechazos. El diario es consumido por el streak del supervisor de posiciones con gap de protección, que puede escalar a cierre defensivo. Se restringe a envelopes/formatos anclados y se excluyen códigos de resultado desconocido. La documentación oficial de Binance consultada respalda la distinción; no demuestra que todo rechazo sea permanente. Persisten strings sin contexto HTTP, diario por símbolo sin pierna/epoch y carrera de limpieza dirty. No se observó ni provocó un cierre real.
+
+### FMT-214 — Leverage vuelve a ser fraccionario
+
+Las ramas de mínimo nocional sustituyen el leverage entero inicial por cocientes continuos. Un fixture de capital 13 devuelve 4,121212121212122 y margen 1,2375: nocional 5,1; con 4× se requieren 1,275 de margen. El test diagnóstico conserva la discrepancia, no la corrige. El cierre exige una proyección conjunta de lote, leverage, presupuesto, mínimo y pérdida; no subir riesgo para forzar factibilidad.
+
+### FMT-215 — Semánticas auxiliares inconsistentes
+
+El guard auxiliar de drawdown admite pico desconocido; el de rachas convierte máximo uno en dos. Solo se localizaron sus definiciones y tests, no una ruta productiva adicional. El cluster continuo sí tiene caller y transforma también el máximo; imputa capital inválido a microcuenta. Se documentan contratos en conflicto sin atribuir pérdidas ni debilitar guardas. La cuenta de posiciones sigue sin medir dependencia multiactivo.
+
+### FMT-216 — Mutación, banda vacía y prueba aleatoria
+
+La ejecución ampliada de quantum-arena dio 65 pases y un fallo en test_r11_evolution_pipeline_never_blocked_by_gate; su repetición aislada pasó. Se halló un testigo determinista: semilla 199, tasa 0,5, curva SL a=-6,608724033347974/b=-0,005566305445407774 y banda None tanto en mutante como tras roundtrip. No se promovió ni guardó ese genoma. Rechazarlo es correcto bajo el piso de fricción vigente; la promesa de reparación total y el test de cero rechazos son más fuertes que el resultado. band_taus sustituye None por el extremo largo, lo que no prueba existencia de dominio admisible. Se requiere resultado de factibilidad explícito y corpus reproducible, sin relajar el gate.
+
+### Topología, continuidad y resultado
+
+El informe contiene grafo raíz→intención→riesgo→terminal→reconciliación y matriz de catorce familias de filtros, con unidades, límites y requisitos de cierre. Distingue la salida defensiva del veto de nuevas entradas. El test de stalled ejecutado prueba continuidad de analítica, no todos los cierres. FMT-004/016/040/041/089/091/093/097 siguen abiertos en los aspectos descritos: tau recortada, dependencia, políticas de costes, escasez, régimen global y pérdida final.
+
+16 contratos funcionales nuevos y seis diagnósticos nuevos; nueve fallos reproducidos rojo→verde. Total de pruebas distintas observadas: 164 funcionales sin fallo, diez diagnósticos que reproducen deuda abierta y un test inestable con fallo/pase. No suite global verde. Check offline de cuatro binarios pasa, con tres warnings previos de evolution-engine. Cobertura 141/289 Rust, 148 pendientes. Dos fuentes productivas cambiadas, cuatro suites creadas, 41 modelos preservados. Sin órdenes, entrenamiento, promoción, reinicios, commit, push, merge o fetch. La certificación integral sigue abierta.
+
+## Adenda XXVI — conservación del contrato entre riesgo y terminal (2026-09-25)
+
+Informe detallado: [XXVI](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXVI_2026-09-25.md>). Datos estructurados, alcance, hashes y pruebas: [artefacto XXVI](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXVI_2026-09-25.json>). Esta adenda no sustituye la matriz histórica ni borra estados anteriores.
+
+### FMT-214 — reparación parcial de entero y autorización genómica
+
+El floor inicial no sobrevivía al rescate del mínimo nocional: un fixture de capital 13 devolvía L=4,121212121212122 y margen 1,2375; el rescate también podía superar un techo genómico 1. La conversión posterior del ejecutor a 4 conservaba un nocional calculado con otro leverage. El margen nominal N/L_exchange difería del margen autorizado; la discrepancia del ejemplo fraccionario es aproximadamente 3,03%, sin afirmar incidencia real.
+
+Se valida el gen antes de min/fallback, se acotan y cuantizan las reasignaciones intervenidas y se revisa el contrato final. ValidatedOrder expone conversión exacta Option<u32>; Binance aplica además el dominio entero 1..125 de su esquema, sin sustituir límites inferiores por instrumento/cuenta. No se resuelve todavía la ampliación de margen, la pérdida conjunta ni la completitud de la búsqueda de órdenes factibles.
+
+### FMT-217 — veto de coste condicionado por ramas
+
+El presupuesto de coste sobre margen no alcanzaba necesariamente a las órdenes que no necesitaban rescatar el mínimo. El test con roundtrip 0,00082 y presupuesto estándar 0,0001 demuestra que ningún L≥1 puede satisfacerlo, pero antes la orden podía pasar. Se rechazan presupuestos inválidos y se comprueba cL_final después de ajustar leverage. Comprobar el coste de un candidato previo al cap también era un objeto de decisión incorrecto.
+
+La reparación conserva B(w)=(1−w)b_gen+w×0,035; en micro el gen puede seguir perdiendo influencia frente al literal. El cálculo mide fracción de margen consumida por el coste estimado, no pérdida total, confianza de alpha ni probabilidad de ruina. Modelo de costes, política y trazabilidad de versiones permanecen abiertos.
+
+### FMT-218 — dominio numérico y rechazo pertinente
+
+El constructor ya no firma cantidades de las rutas probadas con leverage fraccionario/fuera de dominio, producto o lote no representable. El primer tick podía desplazar una compra maker de referencia 0,005 a precio 0,01. Se contiene esa geometría; no se afirma que se conozca el libro ni que pueda garantizarse pasividad con un único precio. El comentario de «nunca cruza» se precisó.
+
+La validación de tick se aplica cuando el payload necesita precio maker; no se añade ese veto a MARKET por un parámetro no utilizado. execute_order valida dominio básico, Flat y overflow antes de éxito paper/cambio de leverage. La validación completa de filtros sigue posterior o ausente en varias rutas, y el éxito paper aún precede a build_payload. No se certifican todas las APIs de ejecución ni las salidas defensivas.
+
+### FMT-175 y FMT-219 — evidencia de deuda terminal abierta
+
+Tres diagnósticos offline: (1) N=5,10255 con paso 0,03 y P=100 termina en N=3, inferior a un mínimo 5; (2) q=0,3999999999 termina en 0,4 por snap_floor; (3) maker short m=10/L=4/P_ref=100/tick=10 termina en q=0,4/P*=110, valor límite 44 frente a 40. El tercer caso no prueba margen realizado ni fill; prueba incoherencia de valoración/presupuesto. El primero amplía FMT-175 desde el helper auxiliar hacia un consumidor operativo.
+
+SymbolFilter y su parser no transportan todavía todo el contrato de LOT_SIZE/MARKET_LOT_SIZE/PRICE_FILTER y conservan un fallback de mínimo. La reparación requiere plan único, filtros versionados, proyección decimal y comprobación final de coste/riesgo; copiar fórmulas sin integrar el host no basta.
+
+### Ciencia, continuidad y aseguramiento
+
+El informe desarrolla N=mL, C/m=cL, la diferencia entre señal continua y acción discreta, y una especificación de factibilidad sin confundirla con un optimizador implementado. Persisten el clamp temporal 1.000..43.200.000 ms, categorías globales y ausencia de garantía de snapshot compuesto. No se añadieron teorías físicas/cuánticas nominales ni supuestas soluciones de problemas abiertos. Se corrigió la descripción O(1) de HMAC: salida de tamaño fijo no equivale a trabajo independiente de la longitud del mensaje.
+
+Verificación: 14 contratos nuevos, tres diagnósticos nuevos y una conversión de diagnóstico a regresión; ocho rojo→verde conservadores. 116 pruebas funcionales más 11 diagnósticos abiertos pasan; total 127 distintos. Check de cuatro binarios pasa con tres warnings previos. No se repitió ni se cerró la inestabilidad de promoción FMT-216. Cobertura 142/289 Rust; 147 pendientes. Tres fuentes productivas, tres suites nuevas, una suite anterior ajustada; 41 modelos preservados. Sin órdenes, cuentas, entrenamiento, promoción, reinicios ni operaciones Git de publicación/integración. La certificación integral sigue abierta.
+
+## Adenda XXVII — topología de entrada y evidencia del actuador (2026-09-25)
+
+Informe ampliado: [XXVII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXVII_2026-09-25.md>). [Artefacto de evidencia](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXVII_2026-09-25.json>). Se preserva el contenido anterior y no se reemplaza la matriz histórica de 305 puntos.
+
+### Alcance real de las reparaciones
+
+El host no pasaba por execute_order/build_payload para esta entrada: enviaba q mediante raw/maker/iceberg. Los contratos de XXVI siguen siendo útiles, pero no acreditan todos esos consumidores. Se crea entry_dispatch, conectado al host y comprobable con un transporte simulado; no se lo presenta como una proyección monetaria completa ni como otro motor por horizonte. El router QuantumOrderRouter permanece auxiliar: sólo definición, reexportación y tests localizados en esta búsqueda.
+
+### FMT-220 — iceberg no respaldado, argumentos intercambiados e ID fijo
+
+La firma heredada espera quantity, iceberg_qty, price; el host pasaba quantity, maker_price, iceberg_qty. Todos son f64 y la permutación compilaba. Con cantidad 2, precio 100 y visible 0,2, podía describirse visible 100 a precio 0,2. Se introducen campos nombrados y se conserva el orden correcto al delegar.
+
+El endpoint USD-M de nueva orden consultado no documenta icebergQty. El adaptador declara la capacidad no soportada y rechaza antes de éxito paper/firma/envío. El despachador la comprueba antes del cambio de leverage. La API y su implementación histórica quedan conservadas detrás de esa guarda, pero no acreditadas como operativas. No se cambia a MARKET ni se expone todo el volumen en silencio. Una implementación de órdenes hijas debe demostrar conservación de cantidad, presupuestos, fills, cancelación y recuperación.
+
+El literal iceberg_01 se elimina de la ruta del host: cada nueva intención recibe un ID de 35 caracteres compartido por su request. La prueba de 1.000 IDs comprueba formato y unicidad observada, no exactamente-una-vez. Los reintentos deben conservar la identidad previa, no regenerarla.
+
+### FMT-221 — confirmación de leverage antes de entrada
+
+El host omitía fijar 1×, descartaba el Result de set_leverage y podía enviar tras su fallo. A su vez, set_leverage aceptaba cualquier cuerpo con HTTP exitoso. Ahora el despachador configura todas las entradas, incluso 1×, y exige éxito antes de submit; el adaptador real valida símbolo y leverage del JSON, sin defaults. Paper no realiza esa petición a una cuenta.
+
+Una respuesta ilegible o inconsistente no acredita configuración. El rechazo ENTRY_LEVERAGE_UNCONFIRMED impide enviar la entrada, pero no afirma que una configuración remota incierta no haya ocurrido. maxNotionalValue, tiers, exclusión concurrente por cuenta/símbolo y una caché con epoch válido siguen pendientes. Confirmar 1× tiene coste de red/rate limit; no se suprime sin demostrar cuándo la evidencia anterior sigue siendo válida. No se midió p99.
+
+### FMT-218 ampliado — NaN posterior al redondeo en caller vivo
+
+El test q=0,4/step subnormal mostró paper raw_qty NaN con Ok, porque NaN==0 es falso. Se valida finitud/positividad después del redondeo y representabilidad básica en preflight. No se cambió globalmente el helper usado por cierres. Permanecen aumento por tolerancia, mínimo post-lote y valoración maker FMT-175/219.
+
+### FMT-222 — incertidumbre convertida en confirmación, P1 abierto
+
+La consulta de posiciones de la rama AMBIGUOUS devuelve adopted=true si falla, para conservar estado. Después, todo adopted=true marca exchange_confirmed=true. La conservación defensiva no demuestra posición real. Además, la coincidencia sólo por símbolo no acredita la intención o pierna, y ausencia de posición no demuestra ausencia de orden aceptada sin fill. El rollback recorre slots abiertos del símbolo, sin reservation_id explícito; se registra riesgo bajo concurrencia sin afirmar un incidente productivo observado.
+
+Cierre: estados de evidencia separados, identidad de orden/fill/posición/cuenta/entorno, y rollback de la reserva del intento. Probar consultas fallidas, fill parcial, limit aceptada sin fill, posición anterior, reordenamiento y reutilización de slots. No se corrige a ciegas cambiando true por false: eso podría provocar un rollback injustificado. La rama queda abierta y documentada por lectura estática, sin test de cuenta real.
+
+### FMT-113 y teoría de la acción efectiva
+
+Se mantiene el hallazgo V: el host deriva L de la envolvente/vol_brake, mantiene q y luego puede elevar L para margen. N=|q|P, M=N/L y R≈N·d+costes expresan magnitudes distintas. A q/P/d fijos, cambiar L no reduce R en ese modelo. El plan de riesgo debe actuar sobre cantidad/precio/costes y conservar ledger/brackets, no sólo financiación. La bootstrap n<30/L=1 y los clamps siguen abiertos. No se afirma autoevolución demostrada ni se añaden teorías nominales para compensar esas desconexiones.
+
+Verificación XXVII: diez contratos nuevos, dos rojo→verde; total 126 funcionales y 11 diagnósticos abiertos, 137 pases distintos. Check offline de cuatro binarios pasa con warnings previos. Cobertura 143/289 Rust, 146 pendientes; cuatro fuentes existentes modificadas, un módulo y una suite nuevos. Sin órdenes, cuentas, entrenamiento, promoción, reinicios, commit, push, merge o fetch. La auditoría integral sigue abierta.
+
+## Adenda de fundamentos XXVIII — conservación de evidencia y autoevolución causal (2026-09-25)
+
+[Informe detallado XXVIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXVIII_2026-09-25.md>) y [artefacto XXVIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXVIII_2026-09-25.json>). Esta adenda no sustituye la matriz histórica de 305 puntos. Añade FMT-223…226 y actualiza FMT-222/179/180, conservando los estados parciales.
+
+### FMT-222 — contención sin confirmación fabricada
+
+La rama AMBIGUOUS/MAKER_CHASE_UNVERIFIED deja de usar presencia de posición agregada como identidad del intento. Se conserva estado sin marcar exchange_confirmed ni hacer rollback; protección dirty se marca antes de consultar la orden con el ejecutor retenido por el despacho. Accepted puede ser NEW y un terminal del padre no liquida hijos maker. No se ha implementado ledger durable, recuperación exactly-once ni reserva generacional. La rama Ok aún puede acreditar un slot a partir de éxito de despacho y el rollback genérico aún no tiene reservation_id.
+
+### FMT-223 — consulta inconclusa no es rechazo certificado, P1 parcial
+
+Antes se insertaba un ACK antes de validar la consulta y -2013 se interpretaba como nunca aceptada. GET ahora exige campos de identidad/estado/cantidad y cantidades coherentes; identidad ajena, campo ausente, estado desconocido o error permanecen inconclusos. Se contrasta lado/orderId conocido antes de mutación y una consulta terminal cero no borra ejecución positiva del registro. Las pruebas cubren también ausencia de mutación. Persisten WS sin contrato equivalente, productores directos de ACK, falta de positionSide y watermark, y secuencia get/apply/get no transaccional. No se declara resuelto FMT-185/188.
+
+### FMT-224 — cartera vacía fabricada por parser permisivo, P1 parcial
+
+JSON inválido, objeto de error o fila incompleta podían producir Ok vacío; NaN se ocultaba y abs(q)≤1e-8 borraba exposición. Un parser estricto y conectado valida la lista completa y conserva toda cantidad numérica no nula, separando existencia de exposición de negociabilidad por lote. Evita duplicados/modes mezclados y conserva dos piernas hedge. El arranque vuelve a usar unwrap_or_default y fetch_position_risk conserva DTOs con defaults: falta cerrar el contrato hasta el consumidor. Frescura, completitud y cálculo monetario derivado no están acreditados.
+
+### FMT-225 — capital y recompensa de cierres no acreditados, P1 abierto
+
+En el cierre del core, was_exchange_confirmed condiciona coin.metrics.pnl_realized, pero record_trade_outcome, unified_capital, feedback epigenético/espectral, ensamble y mmap están fuera de ese if. Si esa ruta cierra un slot no confirmado, el aprendizaje y capital pueden evolucionar aunque la métrica visible excluya el trade. Evidencia estática, no conteo de incidentes productivos. Un veto operativo no es alpha negativo ni un cierre local es un fill. No se añadió un if general porque apagaría también simulación legítima: se exige procedencia real/simulada/contrafactual, intención, generaciones, fills de ambos extremos y costes. La certificación de autoevolución depende de cerrar ese circuito.
+
+### FMT-226 — reemplazo maker incierto, P1 parcialmente contenido
+
+maker_res.is_err disparaba MARKET completa; después de cancelación bastaba leer executedQty, incluso si el estado seguía NEW/PARTIALLY_FILLED. Ambos caminos podían sobreponer exposiciones. Se elimina el fallback incondicional y se exige terminal con identidad/cantidad válidas para calcular remanente. El error conserva prefijo de incertidumbre y no se usa para confirmar/revertir el slot. Se explicita la contrapartida de retener reservas para algunos rechazos verdaderos. Falta transporte tipado, agregado padre/hijos, fusión causal de fills y pruebas completas de fallos/reinicio. El presupuesto de sondeo 100×4ms no se presenta como adaptación ni como inocuo para todo el espectro.
+
+### Teoría y verificación
+
+El informe distingue mercado continuo x_a(t,τ), máscara de evidencia y estados contractuales discretos. La raíz aporta observaciones; orden, fill, posición, capital y recompensa son nodos diferentes. Ampliar el formalismo matemático o cuántico sin esa trazabilidad no demuestra capacidad predictiva. Se explican unidades de N=|q|P, M≈N/L y R≈N·d+costes y las limitaciones que mantienen FMT-113/175/219 abiertos.
+
+16 pruebas nuevas, cinco rojo→verde, total 66 funcionales y 11 diagnósticos de deuda, 77 pases distintos; cargo check de cuatro binarios pasa. Cobertura 143/289 Rust, 146 pendientes, sin nuevas lecturas integrales preexistentes contabilizadas. 41 modelos sin cambios. Sólo pruebas puras/registro local/HTTP loopback sintético; no cuentas, órdenes, entrenamiento, promoción, despliegue, reinicios ni publicación Git. FMT-216 no se repitió y sigue abierto. No se certifica la totalidad del proyecto.
+
+## Adenda científica XXIX — procedencia económica, continuidad temporal y vetos defensivos
+
+Fecha: 2026-09-25. [Informe profesional detallado XXIX](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIX_2026-09-25.md>) y [matriz/artefacto XXIX](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXIX_2026-09-25.json>). Se conserva toda la documentación anterior. Las seis entradas FMT-227…232 no se suman automáticamente a los 305 históricos como incidentes deduplicados.
+
+### FMT-225 — contención parcial del cierre no confirmado
+
+La reproducción del cierre real del núcleo llevó el capital de 100 a 100,9798 aun con entrada no confirmada. Un enum de procedencia separa IsolatedSimulation y ExchangeLocalEstimate: no clasifica mercados, horizontes ni volatilidad. En el host, la falta de evidencia de entrada excluye actualizaciones económicas/aprendizaje del cierre y sus publicaciones, conservando la propuesta defensiva. Las pruebas incluyen pérdida con tensor y dos activos para comprobar que el veto de un resultado no bloquea el otro.
+
+Sigue abierto el contrato de liquidación: close_with_fee y la liberación local de margen preceden al gate; hay flags de entrada sin identidad de fill; capital y entrenamiento de entradas confirmadas usan precio de salida estimado. Se requiere ledger por cuenta, intención, reserva, generación, cantidad y comisión. Ninguna parte de esta adenda convierte un cierre local en prueba de ejecución real.
+
+### FMT-227 — contaminación de salidas entre evaluación y circuito vivo, P1 parcial
+
+Una arena de simulación independiente no aislaba archivos relativos ni writer global. La prueba con pérdida y tensor producía CSV compartible. El constructor común ahora conserva aprendizaje local pero impide que ese cierre publique CSV/mmap/trauma. El host opta explícitamente por estimaciones asociadas a ejecución; el constructor inmune diferido sólo materializa rutas cuando se solicita persistir. La exclusión de mmap es inspección de cableado, no prueba interproceso. Lecturas/globales, sinks ajenos y separación demo/prod siguen fuera de la certificación. FMT-052 y FMT-060 permanecen vigentes.
+
+### FMT-228 — doble evidencia de recompensa, P1 reparado en consumidor
+
+Dos llamadas a update_policy ingerían el mismo cierre con coordenadas de features diferentes. La EMA m'=(1−α)m+αr aplicada dos veces da peso α(2−α) al cierre. Para α=0,05 y r=0,009798, daba 0,000955305 en vez de 0,0004899. Se elimina la primera llamada; la prueba end-to-end local del consumidor pasa. No es una prohibición de optimizar varias épocas sobre trayectorias fijadas: el artículo PPO distingue ese procedimiento del cociente probabilístico de políticas y de la ingestión de una nueva observación. FMT-006, la falta de features de decisión congeladas y la atribución exactly-once entre reinicios no quedan resueltos.
+
+### FMT-229 — horizonte borrado y gen desconectado, P1 reparado en consumidor
+
+close_with_fee limpia entry_tau_ms antes de que el núcleo actualice Kelly. Volver a leer el slot imponía 30.000ms aunque la operación tuviera otro horizonte. Se reutiliza tau_trade_ms capturado antes del cierre. El fixture configura una curva continua y estadísticas no saturadas por límites: Kelly anterior 0,05667194503805592; oráculo por horizonte real 0,08623814224061167; corregido coincide. Esto repara una conexión gen→cálculo, no acredita Kelly multiactivo óptimo ni borra supuestos binarios, clamps, milisegundos enteros o carreras de generación.
+
+### FMT-230 — pérdida de feedback por cursor de reserva, P1 abierto reproducido
+
+El writer incrementa head antes de commit; el reader descarta seq impar pero incrementa last_read_idx. Un commit posterior del mismo slot desaparece para ese reader. Un nuevo reader sí lo ve. El diagnóstico temporal reproduce la secuencia sin concurrencia ni mapa operativo. Se necesita distinguir reserva/publicación, secuencia absoluta, overwrite, retry y gaps; un spin ilimitado no es solución porque un escritor puede morir. La tolerancia de pérdida de telemetría no implica tolerancia de pérdida de evidencia económica.
+
+### FMT-231 — acceso anterior a validación de cabecera, P1 abierto estático
+
+El lector convierte el inicio del mmap a AtomicUsize y carga head antes de comprobar longitud. No se valida aquí magic/version/frame-size/generación. Abrir el archivo no acredita el contrato de memoria. No se provocó un acceso fuera de región en pruebas. Debe validarse antes de interpretar, distinguir corrupción de ausencia y revisar unsafe/orden de publicación. Son deudas adyacentes el salto a los últimos 10.000 frames sin gap tipado y la sustitución de no finitos por cero.
+
+### FMT-232 — veto que también suprime defensa local, P1 abierto estático
+
+Los retornos por kill_switch_active en process_event y process_tick_dual ocurren antes de gestionar las posiciones. No se afirma que desaparezcan brackets u otros cierres externos; se observa que esa vía local deja de generar la propuesta. Se mantiene el veto mientras se define una política por causa/propietario y datos disponibles, separando nueva exposición, cancelación, reducción y reconciliación. No se desactiva una protección para mejorar una tasa de aceptación.
+
+### Alcance científico, módulos y verificación
+
+El informe amplía el grafo raíz→estado→decisión→intención→fills→ledger→resultado→aprendizaje, con distinción visible del atajo por estimaciones. Explica memoria α(Δt,τ), sensibilidad genómica, soporte observacional, escalas continuas y criterios para integrar teoría avanzada. Preserva I–III sin atribuir al producto ventajas cuánticas, omnisciencia ni resolución de problemas del milenio. Los ocho módulos mantienen sus deudas y criterios de cierre explícitos.
+
+Diez pruebas nuevas: nueve funcionales y un diagnóstico abierto. Cuatro reproducciones rojo→verde. Total distinto 82 funcionales y 6 diagnósticos de deuda, 88 pases; una prueba de inventario ignorada. Cargo check offline pasa para god_engine, feature_exporter, train_forest y train_dark_alpha, con warnings previos. Nueva lectura integral mmap_bus.rs (450 líneas): 144/289 Rust, 145 pendientes. Modelos: 41 hashes sin cambios. No se ejecutó toda la suite ni benchmarks/recuperación end-to-end. Sin peticiones de cuenta, órdenes, entrenamiento/promoción operativos, reinicios ni commit/push/merge/fetch; HEAD local 59a76de4.
+
+## Adenda científica XXX — de la evidencia válida al veto justificable (2026-09-25)
+
+[Informe XXX](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXX_2026-09-25.md>) y [artefacto XXX](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXX_2026-09-25.json>). Nueva revisión profunda del almacenamiento y del circuito de evidencia. Aporta contratos de admisión reparados y diagnósticos reproducibles de deuda; no certifica la totalidad del sistema.
+
+### FMT-231 — cabecera interpretada sin longitud válida, P1 con contención
+
+En una prueba aislada, un archivo de cabecera produjo fallo de contrato y otro vacío provocó terminación del proceso de test con 0xc0000005. No fue un incidente operativo. El lector ahora exige el tamaño mínimo completo antes de mapear y antes de crear la referencia de cabecera; los errores de apertura/formato se propagan y pueden reintentarse, en lugar de convertirse en lote vacío. El daemon informa la primera interrupción y su recuperación, expresando que la continuidad no está certificada.
+
+Se validan tamaños 0, 1, 7, 63, 64, 65 y requerido−1, además de archivos completos. La guarda no verifica magic/version/generación, ni hace seguro el truncamiento posterior o el protocolo concurrente. Se mantienen abiertos FMT-230 y la revisión del unsafe. Una documentación primaria de Rust y memmap2 respalda que volatile y mmap no certifican por sí mismos atomicidad, sincronización o persistencia.
+
+### FMT-233 — reparación destructiva de archivo parcial, P1 contenido
+
+El constructor del writer trataba un archivo existente pequeño como inicializable y lo rellenaba con ceros. Se confundían creación y recuperación, con pérdida potencial de evidencia forense. Ahora un archivo no vacío menor al tamaño esperado devuelve InvalidData y permanece byte a byte igual. El caso vacío/nuevo conserva inicialización para compatibilidad. Se reproduce la aceptación anterior y se verifica preservación posterior.
+
+No se implementó cuarentena, migración, propietario único o recuperación entre procesos. La indisponibilidad explícita es preferible a inventar una continuidad, pero necesita un protocolo de recuperación. No se borraron mapas operativos ni se alteró la política global de OnceLock.
+
+### FMT-234 — representación dual de ownership oculta exposición, P2 auxiliar reparado en lectura
+
+El lector de cuatro números sólo expresaba scalp/swing; una fila continuous podía traducirse a cartera cero. Los errores de conversión numérica también caían a cero y la apertura de lectura podía crear una base inexistente. Tres tests reproducían estos errores.
+
+La nueva read_ownership devuelve registros de todas las etiquetas, con Result y apertura de sólo lectura. Rechaza dominios inválidos y errores de cualquier fila sin devolver una cartera parcial aparentemente completa. No aplica epsilon al inventario. El adaptador antiguo se conserva pero devuelve None ante etiqueta no representable, duplicado o fallo. None no es ausencia observada de exposición.
+
+No se encontró consumidor operativo de PositionLedger en crates/src. Sus once contratos no prueban causalidad de fills ni reparan reconciliación real. Sigue faltando identidad de cuenta, venue, evento, generación y freshness. Esta corrección retira una partición del contrato de lectura, no demuestra un sistema espectral universal.
+
+### FMT-235 — cero absoluto rechazado y epsilons de inventario, P2 abierto
+
+push_event usa abs(qty_delta)<1e−12 para dos semánticas distintas: delta y snapshot absoluto. Un snapshot cero no llega a la rama de borrado del writer, por lo que no puede comunicar estado plano exacto. La misma guarda descarta 1e−13; el writer usa además <=1e−8 para borrar. Dos diagnósticos sobre canal propio confirman rechazo antes de persistencia.
+
+Un epsilon en unidades de activo representa un notional qP dependiente del precio. El límite de tamaño de una nueva orden no permite borrar una exposición existente. Deben separarse tipos de evento, representación de inventario y restricciones del venue. Se requiere probar cero, cierre parcial, sobrecierre, subnormales, precio/activo y replay; no se modifica silenciosamente el writer en esta ronda.
+
+### FMT-236 — cola y WAL sin confirmación por evento, P2 abierto
+
+El productor ignora try_send y retorna unidad. Con canal de capacidad uno, dos eventos válidos dejan sólo el primero sin que el segundo reciba rechazo observable. El diagnóstico confirma saturación, no una tasa operativa de pérdida.
+
+Por inspección, el worker continúa después de errores de sentencias y puede intentar commit; fallos de transacción/commit no se notifican al productor. Se necesita identidad, deduplicación, atomicidad definida y ACK por etapa. WAL y batching no convierten el encolado en confirmación durable. No se inyectó fallo de disco ni se certificó recuperación.
+
+### Actualización FMT-230/232 y dependencias económicas
+
+FMT-230 sigue reproducido: el cursor consume una reserva impar y no vuelve a leer su commit posterior; un lector nuevo sí encuentra el frame. La guarda de longitud no repara pérdida ni selección de muestras. El límite de batch tampoco define un horizonte científico.
+
+FMT-232 ahora tiene prueba del core: posición propia con entrada 100, stop 99 y bid 97; kill activo impide propuesta defensiva, desactivarlo sólo en fixture permite cerrar. No se retiró el veto real ni se afirmó que faltasen brackets externos. Se requiere matriz causa×acción×evidencia para entrada, reducción, cancelación y reconciliación.
+
+FMT-225 permanece abierto más allá de la contención XXIX: estimar un cierre no prueba su fill. La nueva API auxiliar no es el ledger económico autoritativo. FMT-006/052 y la causalidad de features también permanecen abiertos.
+
+### Teoría, verificación y preservación
+
+El informe detalla unidades, soporte de escala temporal, memoria causal dependiente de Δt/τ, covarianza multiactivo, sensibilidad genómica y tipado de evidencia. Se presentan como especificaciones y criterios de validación, no implementaciones nuevas. No se añade teoría cuántica por analogía ni se afirma resolver problemas del milenio.
+
+22 tests nuevos: 18 funcionales y cuatro diagnósticos. Selección final de 35 pases distintos: 30 funcionales/compatibilidad + cinco de deuda abierta; sin ignorados. Cinco aserciones fallidas antes de corregir y un crash aislado contenido; no se cuentan como reproducciones los tests que el aborto impidió ejecutar. Cargo check offline de cuatro binarios pasa con tres warnings previos. No se ejecutó toda la suite, benchmarks ni integración real.
+
+Cobertura acumulada 145/289 Rust preexistentes, 144 pendientes. Nueva lectura integral ledger.rs, 294 líneas en HEAD. Los 41 modelos preservan hashes. Documentos ampliados por adenda; cambios ajenos conservados. Sin cuentas, órdenes, entrenamiento/promoción operativos, reinicios, build del ejecutable operativo ni commit/push/merge/fetch. Se retiró únicamente un fixture temporal vacío dejado por el crash, validando ruta y contenido, sin borrado recursivo ni datos del usuario.
+
+## Adenda científica XXXI — contratos del consejo y fallos del feedback (2026-09-25)
+
+[Informe XXXI](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXI_2026-09-25.md>) y [artefacto XXXI](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXXI_2026-09-25.json>). Se documentan nueve familias nuevas, con seis correcciones locales y tres deudas de diseño reproducidas. Se mantienen los informes previos y sus cifras como snapshots históricos.
+
+### FMT-237 — admisión incompleta de evidencia y política, P1 contenido
+
+Nueve flotantes del payload no estaban incluidos en validate; otros scores sólo validaban finitud. Un NaN en umbral/base/cascada podía pasar a clamps, defaults o comparaciones. Parámetros negativos y multiplicadores externos inválidos podían continuar como una política aparentemente válida.
+
+La deliberación valida ahora finitud y dominios, CouncilParams, win-rate y multiplicadores antes de evaluar. Se preserva el dominio positivo de τ sin limitarlo a la banda 30s–12h. Un valor de mercado válido pero peligroso conserva su veto económico; no se etiqueta como corrupción. Los errores retornan una justificación explícita de integridad.
+
+No se tiparon faltantes/freshness ni cuenta/venue/generación. El productor aún puede introducir defaults finitos. Las APIs de scorers individuales y extracción no heredan todo el gate; no se certifica toda topología personalizada ni la observabilidad durable de cada descarte.
+
+### FMT-238 — excepción alineada sin comprobación de lado, P1 corregido localmente
+
+La excepción de SeniorCausal comprobaba |OBI|>0,25, banda rápida y riesgo<0,88. Un libro fuerte contrario a la entrada también cumplía. Con riesgo0,8 y umbral0,75 la prueba mostraba ausencia indebida de veto. Ahora exige OBI·intended_direction>0, simétricamente para largos y cortos; dirección cero no concede excepción.
+
+Se conservan los demás umbrales hasta calibrarlos. En esta ruta do_calculus_risk recibe VPIN, no una identificación causal mediante intervenciones. La reparación del signo no acredita esa teoría ni elimina overrides posteriores.
+
+### FMT-239 — parámetro de cascada sólo intervenía después del veto, P2 corregido
+
+El asiento activaba con literal0,85; el consejo consultaba el parámetro sólo si ya existía un veto. Configurar0,5 no activaba protección para severidad0,6. El consejo usa ahora el mismo parámetro para activar y proteger el cortacircuitos contra supermayoría. La justificación muestra el límite efectivo. El standalone conserva su default y no se modificó el default operativo.
+
+Se prueba frontera estricta: igual al límite no activa por sí sola, superior sí. La referencia P99 del comentario no demuestra calibración por activo/escala. No se introdujo actualización transaccional en caliente.
+
+### FMT-240 — centro ML inconsistente en Teleonomia, P1 corregido en referencia
+
+ML y Metacognitivo usaban base del modelo; Teleonomia usaba0,5. Con p=base=0,3 y componente espectral nulo, emitía −0,154448 en el fixture. Ahora usa2(p−base), conservando escala y mezcla existentes. Pasan neutralidad en base e invariancia a traslación conjunta de probabilidad/base.
+
+El resultado sigue siendo score heurístico, no utilidad monetaria esperada. No se validan por este cambio el target ML, predictibilidad a partir de Hurst, pesos0,6/0,4 ni costes reales. La brecha entre label y decisión continúa como deuda.
+
+### FMT-241 — máscara de moduladores inefectiva por semántica del cero, P1 corregido
+
+El consejo ponía a cero las señales de moduladores para no entrenarlos, pero el tracker contaba cada cero como ensayo y como éxito cuando la operación ganaba. Una muestra de once ceros generaba once ensayos; diez ganancias entrenaban asientos supuestamente excluidos.
+
+Ahora sólo señales no nulas incrementan/decrementan contadores. La ventana aplica simetría de inserción/expulsión y rechaza vectores numéricamente inválidos. Se prueban abstención, máscara y expulsión. La historia de outcomes sigue separada del número de votos por asiento; su uso como n global es FMT-243 abierto. No se acredita valor contrafactual de vetos por observar sólo operaciones admitidas.
+
+### FMT-242 — sesgo de orientación en cortos, P1 corregido en caller y scorer
+
+El core suministraba retorno neto de operación, mientras el tracker comparaba su signo con dirección de mercado. Un corto ganador podía penalizar el voto bajista y premiar el alcista. La regresión usa cierre del core sobre fixture propio y confirma el error antes del fix; se corrigió previamente el slot del fixture de0 a2 para que la reproducción midiera las señales correctas.
+
+record_trade_outcome recibe is_long y transforma la señal en acuerdo con la acción ejecutada, a=d·s, sin convertir artificialmente retorno neto en retorno del precio. El caller real fue actualizado; el legacy permanece para entradas ya orientadas. Las pruebas cubren ambos lados y ambos signos de PnL.
+
+Es atribución de acuerdo sobre acciones seleccionadas, no exactitud predictiva ni prueba de rentabilidad de la acción opuesta. FMT-225 sigue abierto: estimaciones de cierre no equivalen a fills. Faltan trace de decisión/fill/generación e identidad económica integral.
+
+### FMT-243 — n global, wr local y extracción divergente, P1 abierto reproducido
+
+El core pasa wr de coin.metrics; el consejo usa n del tracker agregado. El payload no identifica activo para seleccionar esa población. El test muestra cambio0,5→5/18 para el mismo wr0,1 al añadir diez outcomes agregados. Además, extracción devuelve señal basada en wr0,1 mientras deliberación usa5/18: el array guardado no es la deliberación congelada.
+
+La documentación primaria beta y la derivación de posterior aclaran que k=8 corresponde a Beta(4,4), no Beta(1,1), siempre que n·wr sea el número de éxitos del mismo conjunto de ensayos. Se corrige la explicación, no se certifica ese requisito. Cierre: suficiente estadístico con procedencia compatible o pooling jerárquico explícito; una evaluación produce decisión y trace causal.
+
+### FMT-244 — consenso normalizado sin quórum independiente, P1 abierto reproducido
+
+La capacidad activa varía con confianza y abstención. Con sólo OBI como fuente direccional bruta, ML/espectro neutrales y meta derivado de OBI, el consejo aprueba con consenso1,0. No se demuestra que toda operación así sea incorrecta, sino que1,0 no acredita varias observaciones independientes.
+
+Metacognitivo y Teleonomia reutilizan raíces; moduladores heredados de la intención influyen en final_signal. Se acotan comentarios de independencia, “cuatro de cinco” y “penalización bayesiana”; no se reemplazan pesos por otros igualmente arbitrarios. Requiere grafo de procedencia, dependencia, ablación y autoridad diferenciada de vetos.
+
+### FMT-245 — espectro resumido en τ dominante y banda saturada, P2 abierto reproducido
+
+spectral_s mapea logτ a[0,1] con extremos30s/12h. El test confirma que1ns y30s comparten0, y12h/cien años comparten1. Riesgo/Ejecución utilizan esa coordenada para sus umbrales, y Causal la compara con0,5. Eliminar enums no elimina esa pérdida de sensibilidad ni añade soporte estadístico.
+
+No se amplían extremos por decreto. La solución exige distinguir representación funcional, datos observables, error de aproximación, memoria y presupuesto de cálculo; validar sincronización multiasset y fuera de muestra. El motor continuo no significa evaluar cada nanosegundo ni predecir sin datos.
+
+### Verificación y preservación XXXI
+
+23 tests nuevos:20 funcionales y3 diagnósticos. Selección final:37 funcionales/compatibilidad +4 abiertos =41 pases distintos; sin ignorados. Trece contratos rojo→verde:12 del consejo y1 de cierre corto con fixture corregido. Los tests legacy de diversidad pasan, pero prueban sensibilidad funcional, no independencia estadística.
+
+Cargo check offline de god_engine, feature_exporter, train_forest y train_dark_alpha pasa con tres warnings previos. La compilación inicial os error112 no ejecutó tests; reintento serial funcionó sin borrar cachés. No se ejecutó suite completa, benchmarking ni replay económico.
+
+Nueva lectura completa consejo_seniors.rs (1.521 líneas base,1.614 finales): cobertura146/289 Rust;143 pendientes. Hashes de41 modelos preservados. Adendas sin modificar prefijos previos. Sin cuentas, órdenes, promoción/entrenamiento operativos, reinicios, build del ejecutable operativo ni commit/push/merge/fetch. Rama main, HEAD59a76de4; remoto no verificado.
+
+## Adenda de auditoría científica XXXII — trazabilidad del consejo y vetos con evidencia
+
+[Informe XXXII completo](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXII_2026-09-25.md>) · [Artefacto JSON XXXII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXXII_2026-09-25.json>).
+
+### Paradigma de grafo vivo y topología del sistema
+
+La cadena raíz→transformación→decisión→posición→outcome necesitaba preservar identidad, no sólo tamaño del vector. El core evaluaba dos veces el consejo con wr diferente y persistía el primer array antes de aprobar consejo/ML/capital. Se añade decisión+trace de una sola evaluación y vínculo local de posición; no se certifica settlement económico.
+
+El shock de liquidación expone una arista aún rota: parser→AtomicF64 global→consumo macro→peek del consejo. El evento puede desaparecer antes del veto; tampoco conserva activo/tiempo. No es equivalente a una representación conjunta del espectro multiactivo.
+
+### Resumen de estado y matriz complementaria
+
+Se añaden FMT-246…252 sin renumerar los305 puntos históricos. FMT-243 queda parcialmente contenido, no cerrado. FMT-246/247/248 tienen reparaciones locales; FMT-249/250/251/252 conservan deuda funcional. Las mejoras de documentación en249/252 no se cuentan como reparación del mecanismo.
+
+| Punto | Estado y exposición |
+|---|---|
+| FMT-243 | Una evaluación y snapshot conjunto n/pesos reparados; población n global/wr local ABIERTA |
+| FMT-246 | Roles estables/únicos y salidas numéricas validadas; topología pública ya no reasigna pesos por orden |
+| FMT-247 | Vínculo símbolo/coin/slot/generación/lado y consumo único; falta ledger durable de ejecución |
+| FMT-248 | Cociente de flujo estable e invariante a unidades; helper no localizado en operación |
+| FMT-249 | ABIERTO P1: buffer consumido antes del veto, sin identidad multiasset ni vigencia |
+| FMT-250 | ABIERTO P2: offset temporal sin incertidumbre/edad, medido con reloj de pared |
+| FMT-251 | ABIERTO P2 latente: estasis por wr/EV y swap de booleano no acreditan producción |
+| FMT-252 | ABIERTO P3 latente: helper escalar sin aceleración SPSC; wrap extremo reproducido |
+
+### Módulos1/2/3 — datos, inferencia y horizonte multiactivo
+
+FMT-248: B/(B+S) daba0 para B=S=f64::MAX por overflow y neutralizaba B=3e−20,S=1e−20 por el literal1e−12. Ahora se divide primero por max(B,S); la fracción compradora no cambia al cambiar unidades. Sólo cero total usa la convención neutral. La sanitización legacy de inputs inválidos a cero sigue siendo residual; no se conecta el helper al motor.
+
+FMT-243: CouncilDecisionTrace contiene decisión, opiniones completas, votos elegibles, wr efectivo y n observado. Evita dos evaluaciones y libera el lock antes de callbacks. Los wrappers compatibles siguen disponibles, pero la extracción separada es otra deliberación. El probe muestra evaluación única; payload inválido no invoca agentes; el trace conserva opiniones incluso cuando hay veto.
+
+El shrinkage sigue usando (n_global·wr_activo+0,5k)/(n_global+k). Que n y pesos procedan de una misma lectura no vuelve compatibles sus poblaciones. FMT-244/245 también siguen abiertos: consenso derivado de fuentes dependientes y saturación temporal30s–12h. No se implementan etiquetas nuevas de scalping/swing ni un supuesto cálculo exhaustivo por nanosegundo.
+
+### Módulos4/5 — ejecución, riesgo, genomas y atribución
+
+FMT-247: antes, el array del slot podía describir un candidato rechazado o un ocupante anterior. Ahora se guarda evidencia sólo después de apertura local válida y con generación esperada. Al cerrar se consume una vez y se cotejan símbolo/generación/lado y valores devueltos por el cierre. Entrada no confirmada conserva la exclusión económica de XXIX. Falta de vínculo omite aprendizaje del consejo y produce contador diagnóstico, pero no bloquea por sí misma una salida defensiva.
+
+Se respeta el bool de open_with_tau_and_fee, antes ignorado: precio/cantidad inválidos no cargan capital; se reserva antes de publicar y se compensa el intento si la API lo rechaza. Esto no es una transacción de reservas frente a otros escritores. Los tests prueban consumo local, ausencia de evidencia, reutilización, mismatch y orientación del corto; no prueban ejecución real.
+
+La arista genoma→decisión→fill→outcome sigue incompleta: no se persiste trace íntegro/versiones ni fill_id. FMT-225 sigue abierto, y los otros aprendices no reciben automáticamente este vínculo. El contador por generación no demuestra linealizabilidad de toda la ruta económica.
+
+FMT-249: bump0,95→take0,95→peek0 reproduce ausencia de evidencia tras consumo. Hay productores/callers operativos. Un único máximo global no representa reparto causal por activo ni acumulación de un burst. El score es log(N/1USD)/log(10^6), no probabilidad; 10k→2/3,100k→5/6. La descripción se corrige sin modificar política. El veto configurable de XXXI conserva su contrato para payloads válidos, pero la entrega de evidencia sigue rota.
+
+### Módulos6/7 — estado, temporalidad y confluencia
+
+FMT-246: peso/array dependían de enumerate mientras máscara/tracker asumían SeniorRole. Invertir la colección reasignaba autoridad y crédito. Se indexa por rol, se prohíbe duplicación y se valida rol devuelto, señal, confianza, peso y overflow. Peso cero es capacidad nula válida; el voto sin capacidad no entrena. La validación no introduce un veto de volatilidad o escala. Un tracker poisoned ya no se disfraza de cold start.
+
+FMT-250: el sincronizador activo estima offset desde t0/t1 de SystemTime. Saturating_sub puede esconder un salto del reloj; no conserva RTT/calidad/edad y el error deja vivo el offset previo. Se requiere reloj monotónico para duración y estado de calidad/validez; no se alteran parámetros de cuenta.
+
+FMT-252: el módulo llamado acelerador sólo calcula cociente y resta. Se corrige la promesa documental de SPSC/IPC subnanosegundo; no hay tal implementación aquí. El diagnóstico con local0/serveru64::MAX produce−1 por conversión a i64 previa: residual abierto del dominio extremo, no evidencia de fallo con la época actual. Sin caller operativo localizado.
+
+### Módulo8 — gobernanza, auditoría y certificación
+
+FMT-251: el helper de execution llamado HotSwapController evalúa wr>0,55 y EV>threshold sin muestra, costes, horizonte, incertidumbre o validación OOS. execute_swap no hace transición de conexiones: publica un booleano. No se localizaron callers operativos de esos métodos, y no se los ejecutó. Debe separar evidencia de candidato, autorización y protocolo de despliegue; no habilitarse por nombre.
+
+Se releen componentes metacortex ya auditados enII/III sin duplicarIDs ni cobertura. Permanecen Kalman con innovación escalar/denominador por canal, learning_rate inerte en esa actualización, compilación sin integración garantizada y condiciones no globales de fases. No se presentan como hallazgos nuevos.
+
+### Verificación, cobertura y rehabilitación
+
+Ocho aserciones fallaron antes de reparar:4 consejo,1 core,3 flujo. Se añaden23tests:21 funcionales y2 diagnósticos. Selección final66pases únicos=60funcionales/compatibilidad+6OPEN; los OPEN reproducen población incompatible, dependencia de consenso, saturación temporal, kill-switch defensivo, pérdida de cascada y wrap del helper. Cero ignorados; no suite completa ni benchmark ni evaluación económica.
+
+Check offline de god_engine, feature_exporter, train_forest y train_dark_alpha pasa con tres warnings previos. Cinco lecturas completas nuevas elevan146→151/289 Rust;138 pendientes, además de inventario no Rust. Se verifican41modelos sin cambio y conservación de prefijos de informes.
+
+Prioridad siguiente:1eventos/estado de liquidación por activo;2ledger y cierre condicional por generación;3población compatible de shrinkage;4confluencia/soporte temporal;5calidad de reloj;6API de promoción y helpers honestos;7cobertura pendiente. Sin órdenes, cuentas, promoción/entrenamiento operativos, reinicios ni commit/push/merge/fetch.
+
+## Adenda XXXIII — grafo causal de liquidaciones y auditoría de filtros
+
+[Informe profesional detallado XXXIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIII_2026-09-25.md>) · [Artefacto de evidencia XXXIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXXIII_2026-09-25.json>). Se agrega sin modificar el dictamen histórico de XXXII o la matriz de305puntos. Lo reparado localmente y lo aún abierto se distinguen expresamente.
+
+### Grafo vivo: raíz, identidad, decisión y terminal
+
+La raíz es un mensaje público muestreado, no un fill de la cuenta. El parser preserva identidad y unidades; el estado pertenece a instancia/símbolo; una vista as-of alimenta features y consejo; el terminal sigue siendo una propuesta que necesita reconciliación durable. Un nombre “cuántico”, un tensor54D o una puntuación logarítmica no eliminan pérdida de información, dependencia estadística ni límites de observación.
+
+La consulta primaria de Binance mediante Firecrawl confirma snapshot de última liquidación por símbolo/intervalo1000ms y diferencia entre q/p y ap/z; también documenta distinciónUM/CM. No se consultó cuenta ni se confirmó migración del despliegue. El informe contiene el enlace preciso y separa ese contrato de la inferencia de ingeniería ap*z. No se declara un tape completo ni una medida de intensidad a partir de snapshots censurados.
+
+### Módulo1 — FMT-253 y FMT-256
+
+FMT-253: el scanner anterior entregaba p/q sin símbolo ni tiempo, y fast_parse_f64(1e3) entregaba1. Una liquidación sintética con q10,p100,ap90,z2 producía1000, no180. El productor operativo migra a JSON estructural: valida números completos y finitos, timestamps positivos y coherentes, lado, identidad y 0<=l<=z<=q con q>0; ap*z debe permanecer finito. Cero ejecución no se reemplaza por cantidad solicitada. Acepta raw/combined y múltiples registros; errores semánticos locales no destruyen los registros válidos restantes.
+
+stCM explícito se rechaza por incompatibilidad de unidades; no se habilita trading CM ni se convierte contratos a cantidad del activo por suposición. El DTO conserva los campos de procedencia, aunque la observación compacta no es un ledger. Las API legacy siguen presentes por compatibilidad y sus tests OPEN no significan reparación. Quedan duplicados de claves JSON, validación de transiciones X, límites de frame, rendimiento de asignación y coste de logs por evaluar. No se extrapola la reparación a cada parser REST/depth/replay.
+
+FMT-256: dos precios finitos podían producir mid infinito y spread relativo0. Con bid6e307/ask1,6e308 el filtro aceptaba erróneamente; dos tests fallaron antes de reparar. El nuevo cociente2(1-r)/(1+r),r=bid/ask, mantiene el dominio acotado y la política >0,50. Se comprueban escalas finitas, frontera exacta, spread0 y subnormales iguales. El umbral sigue siendo una política heredada sin calibración por activo; no una prueba lógica de corrupción. Contadores globales y etiqueta QtyNotFinite que incluye negativos permanecen como deuda de observabilidad.
+
+Residual FMT-256 aguas abajo: ws_client recalcula current_price como (bid+ask)*0,5 después de validar, y otros puntos del core conservan sumas directas. Un book de spread cero con precios máximos finitos puede seguir produciendo midpoint infinito. La reparación del filtro no certifica toda la aritmética de precios; se documenta evidencia estática, no una incidencia observada en mercado ni un ensayo del socket.
+
+### Módulos2/3/6/7 — continuación FMT-249
+
+Se verifica que la severidad global0,95 contaminaba un core aislado sin observación por símbolo. El primer consumidor vaciaba además el buffer antes del consejo. La entrega operativa se reemplaza por LiquidationState por instancia/símbolo y lecturas no destructivas. La misma severidad capturada entra en las features y en el payload del consejo; el update macro recibe impulso0 para no reañadir el nivel en cada tick. Las rutas depth/tick se prueban; el vínculo al payload se inspecciona sin fingir un ensayo completo con modelos de producción.
+
+Eventos idénticos no refrescan tiempo; eventos anteriores no reescriben estado; igualdad de milisegundo con contenido distinto conserva máximo sin sumar y deja diagnóstico. La comparación temporal evita look-ahead. Si la decisión es anterior a la evidencia disponible, el interlock impide entradas y deja continuar cierre defensivo; el test no cierra el residual previo del kill-switch global. La reasignación del universo no puede relabelar el snapshot al nuevo símbolo en el caso ensayado. No se certifican transacciones de todo el universo o reubicación automática de historia entre slots.
+
+### Módulos3/5/8 — FMT-254: estadística, genoma y equivalencia de entorno
+
+La fórmula heredada normaliza ln(n) contra ln(1.000.000) con referencia implícita de una unidad. Esa unidad es de cotización; tratarla siempre comoUSD requiere conversión. El score es0para magnitudes pequeñas y satura en1, de modo que no es percentil ni probabilidad. Con theta0,85 equivale a una frontera monetaria≈125.892,54 antes de decaimiento, ajena a profundidad/volatilidad/liq. La misma frontera no implica mismo riesgo económico en todos los activos.
+
+La nueva memoria es una envolvente máxima exponencial de scores observados. Para tasa constante su recurrencia es equivalente a max_i[s_i exp(-lambda(t-E_i))]; la implementación no suma cantidades acumuladas sin identidad. No estima intensidad ni conserva volumen. La constante lambda=ln2/h usa por defecto h10.000ms; no se localizó adaptación genómica de esa tasa. Desde score1 y sin nuevo shock dominante, el umbral0,85 se cruza a≈2.344,65ms. Es una consecuencia de parámetros, no una recomendación ni TTL validado.
+
+La ausencia de snapshot no prueba ausencia de liquidaciones o salud del canal. La paridad histórica de [9] enmascarada y la inclusión del dark_alpha en otras features siguen sin un corpus equivalente de liquidaciones en replay. Este es un mecanismo concreto por el que un genoma puede tener efecto distinto entre backtest y servicio. Se necesita política de faltantes, trazabilidad de fuente, datos equivalentes, calibración fuera de muestra y control de selección; no basta reducir vetos para producir más entradas.
+
+### Módulo6 — FMT-255: kernel exponencial abierto
+
+El kernel genérico aplica evento1en2000, después evento0en1000 y cambia su reloj a1000. Al consultar2000 vuelve a decaer y entrega0,5con semivida1000, aunque ese horizonte ya se había alcanzado. Se añade diagnóstico OPEN. Constructor y actualización no imponen dominio completo de tasa/severidad; el nuevo estado de liquidaciones evita esa acumulación, pero no repara cada consumidor del kernel. La solución exige escoger rechazo, reordenamiento o integración causal de atrasados, sin convertir un impulso antiguo en nuevo mediante un clamp opaco.
+
+### Verificación, cobertura y preservación
+
+26tests nuevos:23funcionales y3OPEN. Tres aserciones de producto válidas rojo→verde; se excluye el fallo inicial del fixture que confundía actualización del registro con reasignación del universo. Selección final100pases únicos=91funcionales/compatibilidad+9OPEN, cero fallos finales. Core23+7+6; ingest9+5; pipeline3+5; consejo34+8. Check offline de god_engine/feature_exporter/train_forest/train_dark_alpha pasa con tres warnings previos, sin build/reinicio operativo.
+
+Lecturas completas nuevas: tensor_parser.rs220líneas y validation.rs203antes/205después. Acumulado153/289Rust,136pendientes; inventario1119versionados/24Cargo conservado. No se certifica todo el proyecto. 41modelos mantienen hashes; adendas verificadas por prefijo normalizado. No hay órdenes, solicitudes de cuenta, entrenamiento/promoción operativos, borrado de cachés, commit/push/merge/fetch/reset/checkout. Rama localmain,HEAD59a76de4; remoto no verificado.
+
+### Rehabilitación y teoría
+
+Prioridad: historia/calidad del feed→calibración del score y memoria→kernel causal→ledger de resultados→población y confluencia→campo temporal con error medido→cobertura restante. El informe propone investigación en observación parcial, memoria multiescala, dependencias multiactivo, veto basado en pérdidas/restricciones y trazabilidad de genes. No presenta esas propuestas como implementaciones ni como evidencia de ventaja cuántica. Un continuo analítico evaluado por eventos no crea datos nanosegundo ni soporte histórico de cien años. No se agregan ecuaciones por prestigio sin mecanismo identificable y validación.
+
+## ADENDA FORENSE XXXIV — CAUSALIDAD, EJECUCIÓN Y EVOLUCIÓN IDENTIFICABLE — 2026-09-25
+
+[Informe completo XXXIV](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIV_2026-09-25.md>) · [Artefacto JSON XXXIV](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXXIV_2026-09-25.json>). Esta sección agrega evidencia y estado posterior sin eliminar observaciones históricas. No reetiqueta como reparados los defectos que sólo tienen un test OPEN.
+
+### Matriz de estado y alcance
+
+| ID | Estado de esta ronda | Alcance comprobado |
+|---|---|---|
+| FMT-255, continuación | Reparado localmente | Kernel causal y consumidores macro; sin certificación de todos los relojes/consumidores |
+| FMT-257, nuevo | Continuidad reparada; calibración abierta | Helper de slippage sin caller operativo localizado |
+| FMT-258, nuevo | ABIERTO, P1 | Modelo determinista de costes usado por el core |
+| FMT-259, nuevo | ABIERTO, P1 | Evaluación Darwin legacy opcional, no ejecutada |
+| FMT-260, nuevo | ABIERTO, P1 | Publicación/persistencia legacy bajo flags |
+| FMT-261, nuevo | ABIERTO, P2 | Transformador AST auxiliar, no reescritura operativa |
+
+### FMT-255 — memoria: estado y reloj como una transición
+
+Antes, un impulso antiguo podía sumar al nivel actual y mover el reloj hacia atrás; un impulso NaN o una suma de finitos desbordada dejaban un estado contaminado. El contrato reparado valida h, lambda, estado previo, impulso, orden temporal y resultado antes de asignar. La semántica es x(t)=x(t0)exp[−lambda(t−t0)]+a, con lambda=ln2/h; t y h comparten unidades. Las APIs fallibles preservan razón de error. Los consumidores macro validan funding/OBI antes de modificar el resto del evento; se añade contador de rechazo y se prueba reset.
+
+No confundir impulso aditivo con snapshot acumulado de liquidación: igual timestamp puede contener impulsos distintos y el kernel suma; el estado específico de XXXIII usa máximo para evitar doble conteo sin identidad. Se prueba semigrupo del decaimiento e invariancia al escalar tiempo/semivida juntos. El cierre es numérico/causal, no calibración de semivida ni sincronización global. La API legacy no devuelve motivo y los campos siguen públicos; try_* es el contrato verificable. new inválido ahora falla explícitamente; no se declara compatibilidad total ante inputs inválidos.
+
+### FMT-257 — coste discontinuo sin discontinuidad de evidencia
+
+Para presión direccional d<0, el helper multiplicaba por exp(1+2|d|), mientras que en d=0 usaba1. Con Q1000, profundidad10000 y ATR0,001, pasar de cero a −1e−12 cambiaba de1,5811 a4,2980bps. Se elimina el +1 espurio y se comprueba la continuidad y la fórmula documentada para −0,8. La curva sigue sin calibración económica ni distribución probabilística. También conserva piso monetario100, gamma0,5, clamps y umbral de urgencia0,65. Dos OPEN reproducen coste inventado con libro ausente e incumplimiento de invariancia de moneda. No se presenta la corrección de un helper sin caller localizado como mejora real de ejecución.
+
+### FMT-258 — heurística de ejecución y fitness confundidos
+
+RealityPhysics emplea sqrt(nocional/1M)×0,0005, término de volatilidad×sqrt(latencia/150ms), piso y tope5%. Una latencia negativa genera NaN que puede convertirse en un piso finito y aparentar coste menor; un precio finito extremo puede producir precio de ejecución infinito. La latencia del campo de estructura y la pasada explícitamente no tienen la misma sensibilidad. Maker se trata como fill al precio base más fee sin cola, parcialidad o probabilidad de no ejecución. Cuatro tests OPEN fijan estas limitaciones; las fórmulas operativas quedan sin cambios.
+
+El core elige maker para tau≥60s: una frontera dura produce condiciones de simulación distintas dentro del supuesto espectro continuo. Eso puede orientar el fitness hacia fills idealizados; no se cuantifica su efecto económico en esta ronda. Se descarta un falso positivo de unidades: el tick_vol de la entrada está sombreado por atr_pct; el problema demostrado es la escala/calibración, no afirmar que recibe volumen de libro. La consulta primaria de impacto distingue metaorden, orden individual y imbalance. Una ley de impacto normalizada por volumen y volatilidad no acredita por sí sola coeficientes monetarios universales de este simulador.
+
+### FMT-259 — comparabilidad, población y dominio de genomas
+
+El candidato recibe global_max_drawdown0,95 forzado; baseline sólo aplica Genotype, que no porta ese campo. Con defaults distintos, el experimento compara estrategias y políticas de riesgo a la vez. El test local prueba que aplicar un mismo genotipo no elimina una diferencia0,20/0,95; no se asegura diferencia si ambos arrancan en0,95. Otro OPEN demuestra que el método público admite valores finitos fuera de dominio, aunque random/mutate sí acotan varios parámetros. Las defensas posteriores no quedan certificadas por este test.
+
+El daemon limita la población de datos a primeros30slots y4096ticks por slot; sintetiza macrovariables a partir de precio/cantidad, mide drawdown al cierre y no muestra una valoración terminal completa de posiciones abiertas. Reutiliza master_stream para selección y baseline. +5%fitness y1e−4 son preferencias, no pruebas de significación ni evidencia de detección de cambio de distribución. Los flags ENABLE_LEGACY_DARWIN_DAEMON y ENABLE_ONLINE_DARWIN_MUTATION delimitan alcance opcional; no se activaron ni se consultó su estado vivo.
+
+### FMT-260 — memoria antes de durabilidad y ausencia de generación coherente
+
+La rama de promoción primero aplica el candidato a live_arena, luego persiste. Si persiste con error, sólo avisa; RAM ya cambió. Así pueden divergir fenotipo ejecutado, genoma durable y estado tras reinicio. Los stores Relaxed independientes permiten además estados intermedios entre campos. Es evidencia estática condicionada a habilitación y fallo de persistencia, no observación de corrupción actual. Se necesita protocolo de generación versionada, preparación, validación, commit/publicación y recuperación con fallo inyectado en fixture; no basta invertir dos llamadas sin especificar consistencia del lector.
+
+### FMT-261 — identidad del gen y contrato científico
+
+La identidad gene_{file_tag}_idx_N depende del ordinal de literales: insertar una constante cambia el vínculo de genes posteriores. El namespace por defecto global se reutiliza entre fuentes. Saltar ItemConst/ItemStatic no protege const fn ni bloques inline const; el transformador introduce lecturas runtime y deja esas construcciones sin garantía de const-eval. Los literales dentro de macros no reciben el mismo tratamiento. Cuatro OPEN observan el AST resultante; no se compila el código generado ni se ejecuta una mutación sobre el proyecto.
+
+La exclusión de constantes cercanas a0,0,5,1,2,pi,e no prueba significado, unidades, identificabilidad o seguridad. El almacén subyacente usa átomicos, no acredita mmap por el nombre. La rehabilitación requiere un catálogo semántico explícito, estable y versionado, dominios y migraciones, sensibilidad observable y separación entre parámetro estimable e invariante de seguridad.
+
+### Sentido de vetos, continuo y validación
+
+Se conservan los rechazos que defienden causalidad y dominio matemático. No se elimina un veto de riesgo para que mejore el backtest. Faltan estados distinguibles de dato inválido, evidencia insuficiente, restricción de protocolo y resultado económico desfavorable. Un acumulador evaluado por eventos puede ser continuo entre observaciones, pero no inventa datos nanosegundo ni historia de cien años. No se introduce teoría cuántica o de problemas del milenio sin mecanismo contrastable, objetivo, unidades y experimento independiente.
+
+Selección final105pases únicos=92funcionales/compatibilidad+13OPEN;25nuevos=13funcionales+12OPEN. Siete aserciones válidas observadas rojo→verde. El OPEN histórico del kernel se convierte en regresión reparada. Check offline de cuatro binarios pasa; tres warnings de evolution-engine y warning previo de imports en quantum_organism_test se consignan. No es benchmark ni prueba de producción.
+
+Lecturas completas adicionales:reality_physics.rs,darwin.rs,slippage_predictor.rs,cazador_constantes.rs;157/289Rust preexistentes,132pendientes. Se mantiene inventario1119versionados/24Cargo.41modelos sin cambio y documentos anteriores preservados por adición. Main sigue en59a76de4; sin commit/push/merge/fetch/reset/checkout y remoto no verificado. Sin cuentas/órdenes, promoción/entrenamiento operativos, modificación deliberada de genomas activos ni build/reinicio del motor. Prioridad siguiente: evaluación equivalente→promoción recuperable→ejecución identificada→genes estables→validación multiactivo/multiescala y cobertura pendiente.
+
+## ADENDA FORENSE XXXV — EVIDENCIA NUMÉRICA, COMPARABILIDAD Y PROPIEDAD DE VETOS — 2026-09-25
+
+[Informe detallado XXXV](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXV_2026-09-25.md>) · [Artefacto verificable XXXV](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXXV_2026-09-25.json>). Esta adenda no elimina hallazgos anteriores. Separa corrección de código, diagnóstico reproducible, evidencia estática y propuesta de rehabilitación.
+
+### FMT-262 — números finitos no garantizan un score identificable
+
+Calcular ln(final/inicial) mediante una división previa puede producir ±infinito con capitales positivos finitos. Los extremos1e−300/1e300 demuestran un fallo de representabilidad intermedia, no ruina o crecimiento infinito reales. Un módulo compartido preserva la ruta ordinaria y usa ln(final)−ln(inicial) cuando el cociente no es representable. Se comprueban invariancia monetaria y simetría al invertir los extremos. Cambiar unidades no es apalancar: el segundo altera la trayectoria económica.
+
+Antes, DD no finito daba NaN en core y una penalización finita de DD=1 en evolución. OOS inválido podía devolver factor1 y el prior NaN podía contaminar la aptitud. Ahora checked_fitness devuelve errores diferenciados y OOS exige capitales positivos finitos; la contracción valida el prior sólo si lo utiliza. Se retira el piso1e−12 que truncaba pérdidas OOS extremas. Los wrappers retienen −infinito para compatibilidad; quedan pendientes los consumidores que lo confunden con rendimiento y no con inadmisibilidad.
+
+No se inventa un nuevo peso de riesgo ni se reduce el mínimo de trades. lambda=4ln2 se explica como consecuencia algebraica de una equivalencia elegida, no como preferencia universal. El máximo drawdown² y el factor OOS no son aditivos. Una sola trayectoria penalizada no implementa maximización de esperanza Kelly ni una cota de ruina. Esta precisión continúa FMT-047; el problema de ordenar abstención por debajo de cualquier pérdida finita de FMT-048 persiste y tiene diagnóstico OPEN.
+
+### FMT-259, continuidad, y FMT-263 — igualdad local de evaluación y benchmark ausente
+
+Se reemplazan los dos bucles Darwin por un replay compartido. Candidato y baseline reciben el mismo capital, cinta y límite DD capturado una vez. Se elimina DD0,95 exclusivo del candidato. Pruebas verifican política idéntica, replay de cinta corta idéntico, vacío sin evidencia y rechazo de configuración no finita. Esto no congela toda la configuración ni los modelos globales; siguen proxies macro, primeros30slots, misma cinta para búsqueda/comparación, drawdown al cierre y posiciones terminales sin valoración completa.
+
+El baseline no finito se sustituía por −999999. Ese número no era pérdida observada: podía convertir soporte ausente en un rival artificialmente malo. El margen ahora exige dos scores finitos y mantiene el5%/1e−4 existente para pares válidos. Los logs no anuncian optimalidad o detección de régimen por ese resultado. El cambio evita una comparación inválida, no demuestra rentabilidad, significación o superioridad a cash. Un candidato negativo puede seguir superar a otro más negativo. La ruta permanece condicionada por flags; no se ejecuta evolución/promoción viva ni se cierra FMT-260 de persistencia.
+
+### FMT-264 — agotamiento temporal imposible y contratos de trayectoria abiertos
+
+El auditor limitaba elapsed/expected_duration a3 antes de comprobar >4. Se restaura la alcanzabilidad retirando sólo ese recorte; el componente de coherencia conserva su saturación específica. Con entrada100, precio99,6, magnitud esperada1%, duración1s y cinco segundos transcurridos, el fixture antes devolvía Aligned≈0,45; ahora TimeExhaustion con ratio5. A exactamente4 sigue sin disparar según política heredada. El host sólo registra telemetría de esa divergencia, no ejecuta un cierre por ella.
+
+Siguen OPEN la clasificación de NaN/track ausente/índice fuera de rango como coherencia1, los defaults inventados de entrada y magnitud, la aceptación de ticks antiguos que suman volumen y rebobinan reloj, y la falta de deduplicación/identidad de evento. El host conserva capacidad30, recorre dos buckets y registra entradas con is_scalp=true. No es suficiente renombrar etiquetas: se necesita posición/generación/símbolo/horizonte como identidad y contrato de observación.
+
+TCE es error: trayectoria perfecta devuelve0. El consumidor lo anuncia como fidelidad con1=concordancia. El test demuestra el valor; el log permanece pendiente. Magnitud absoluta y duración normalizada se mezclan con pesos0,70/0,30 sin calibración acreditada. Se elimina de la documentación la promesa de evaluación nanosegundo sin benchmark.
+
+### FMT-265 — drift sin pareja causal y éxito con NaN
+
+Si shadow.pnl−real.pnl es NaN, la acumulación se omite y la comparación abs(d)>limit resulta falsa: devuelve Ok(NaN). Finitud protegida en un acumulador no justifica declarar sana la evidencia. Un límite NaN desactiva asimismo el rechazo; el host usa0,05 finito, de modo que ese caso es del API, no configuración viva observada. Símbolo, lado y timestamps no se usan para emparejar: operaciones distintas con igual PnL dan deriva0.
+
+El consumidor suministra shadow=0,95·real_pnl_pct. La deriva es entonces −0,05·real, y abs(d)>0,05 equivale aproximadamente a abs(real)>1. No existe expectativa independiente con la que verificar el desajuste predictivo backtest→producción. El acumulado firmado puede cancelar diferencias y el umbral efectivo es por observación, no sobre ese total. El API no enciende el breaker por sí mismo; el host decide armamento/rearme.
+
+Rehabilitación: tipar invalidez, ausencia de contraparte, diferencia medida y excedencia; enlazar trade/posición/generación/exposición; separar centinela contable de divergencia de modelo. No forzar igualdad de timestamps de fill que naturalmente difieren, ni llamar probabilidad a un ratio determinista.
+
+### FMT-266 — recuperación no consecutiva y sin propiedad de causa
+
+La rama Err no reinicia drift_clean_closes. Así un nuevo fallo conserva crédito de observaciones previas. fetch_add retorna el valor anterior, por lo que clean>=10 se cumple en la undécima aceptación desde cero, pese al texto “diez”. Más importante, el rearme escribe false en kill_switch_active sin comprobar que no exista otra causa de bloqueo. La concurrencia o secuencia con otro subsistema puede retirar una señal que drift no posee.
+
+La evidencia es estática del host; no se provocó un fallo vivo ni se declara una orden indebidamente enviada. Otros filtros podrían seguir bloqueando. También debe evaluarse la dependencia entre kill-switch, cierres defensivos y generación de eventos para rearme; no se afirma deadlock inevitable porque hay otras rutas de cierre. Resolver sólo el off-by-one sin propiedad de causa podría acelerar una liberación insegura. Se requiere registro de causas independiente, secuencia de recuperación verificable y liberación exclusiva de la causa propia, con pruebas de concurrencia y salidas defensivas.
+
+### FMT-267 — semántica estadística y latencia del auditor comportamental
+
+La recurrencia rotulada SPRT usa (x−mu0)delta/(abs(mu0)+1e−5). Para normales de varianza común sigma² y medias separadas delta, log(f1/f0)=delta(x−mu0)/sigma²−delta²/(2sigma²). Faltan varianza y término constante. En la media nula, el código acumula0; el contraste declarado acumularía evidencia negativa. Bounds calculados con alfa/beta1% no heredan esa garantía para otra recurrencia o datos dependientes.
+
+None significa tanto input inválido como ausencia de alarma; parámetros CUSUM infinitos se admiten. Se documentan tres OPEN y se precisan las afirmaciones científicas. No se localizaron callers operativos; no se atribuye un bloqueo de decisiones real a este helper. Las promesas <5ns/coste cero se retiran sin sustituirlas por otra medición inventada. No se cambia su fórmula sin identificar variable, hipótesis, varianza, dependencia y reinicios.
+
+### Ciencia, cobertura y continuidad
+
+La investigación primaria contrasta Kelly con restricción de riqueza mínima y métodos robustos bajo incertidumbre; distingue esos problemas de una penalización observada por DD². Sólo se verificó cuerpo del paper principal; vecinos por resumen. No se implementan técnicas cuánticas o ecuaciones de problemas del milenio sin mapeo causal, baseline, presupuesto de cómputo y evaluación. El continuo multiactivo requiere campo por activo/escala/tiempo y soporte/uncertidumbre explícitos, no acumulación exhaustiva de nanosegundos sin observaciones.
+
+Nuevas lecturas completas: trajectory_auditor.rs, drift_auditor.rs y behavioral_auditor.rs. Acumulado160/289Rust,129pendientes; inventario1119versionados/24Cargo. Verificación final, comandos, hashes y distinción funcional/OPEN figuran en el informe y JSON XXXV.41modelos preservados; documentos históricos ampliados por adición. Sin cuentas/órdenes, entrenamiento/promoción operativos, reinicios o publicación Git. Prioridad: propiedad del veto→pareja real-shadow→snapshot/valoración terminal→promoción durable→trayectoria continua→validación y cobertura pendientes.
+
+
+## Ampliación XXXVI — auditoría causal de vetos, rechazos y certificación interna (2026-09-25)
+
+[Informe XXXVI con descripción completa, cálculos, topología y criterios de cierre](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVI_2026-09-25.md>) · [JSON verificable XXXVI](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXXVI_2026-09-25.json>). Se conserva íntegro el texto anterior como historial de snapshots. Esta sección actualiza el estado de FMT-265/266 y agrega FMT-268 a274.
+
+### FMT-265 y FMT-266 — reparación local con límites explícitos
+
+Cuatro regresiones fallaron antes de la intervención: PnL no finito aceptado, límite no validado, comparación de activos/lados incompatibles y acumulador desbordado sin error. La API audit_execution_checked separa cada clase, preserva estado ante evidencia inválida y nunca concede éxito a NaN. El wrapper anterior sigue existiendo; invalidez es Err(NaN), exceso finito es Err(drift). Sólo la API nueva conserva el motivo y es la utilizada por el host.
+
+La política numérica0,05 no se recalibra. Si shadow=0,95r, el residuo es−0,05r y no evidencia error predictivo independiente. r usa nocional de salida, no equity o nocional de entrada. El host ya no convierte nocional inválido en0; lo rechaza como evidencia no finita. Quedan pendientes IDs, generación, deduplicación y confirmación de salida; symbol_id/is_long compatibles no prueban que dos resultados sean la misma operación.
+
+El rearme previo tenía dos errores de conteo y uno de propiedad: no reiniciaba la racha ante nuevo error, liberaba en11 al usar el valor anterior de fetch_add y borraba un booleano compartido aunque otra causa estuviera activa. DriftRecovery reinicia en error y libera en10; sólo controla el veto privado drift_entry_veto. Los latches global/executor no se modifican por drift. Se comprueba que salidas defensivas locales siguen proponiéndose bajo este veto y que limpiar drift no limpia el global.
+
+Esto no resuelve toda recuperación. Diez repeticiones del mismo resultado bastan porque falta deduplicación; observaciones de B pueden recuperar un incidente de A; sin cierres elegibles puede no recuperarse. El veto opera desde la siguiente decisión: no cancela transaccionalmente una entrada ya emitida por process_event. El sistema no debe generar trades artificiales para levantar su propio bloqueo. FMT-232 continúa: otros kill-switches pueden bloquear defensas.
+
+### FMT-268 — paridad contable no equivalente a paridad de sistema
+
+StateValidator compara capital con C0+ΣPnL−fees_abiertas. Sustituye C0 inválido por13, omite PnL/fees no finitos, retorna silenciosamente si capital no es finito y no devuelve un resultado evaluable. Las sumas y lecturas de varios átomos carecen de snapshot común. SeqCst no solucionaría por sí solo una transacción de ledger. Flujos externos, fees y funding deben pertenecer a la misma convención temporal/contable antes de afirmar divergencia.0,01USD es tolerancia heredada, no bound de error flotante. No se halló caller operacional. Se precisa la documentación; no se añade un veto sobre evidencia incoherente.
+
+### FMT-269 — salud y rigidez sin semántica común
+
+El chequeo simple exige latencia<1000ms; el integral admite hasta2000ms. Un caso1500ms nominal recibe decisiones opuestas. Drops>100 no tiene ventana/denominador y porcentaje de error no tiene soporte ni incertidumbre. Una política podría distinguir warning/critical, pero las APIs no declaran esa jerarquía. No se hallaron callers operativos; se retira la promesa de cero fugas/bloqueos/pérdidas. Requiere causas múltiples, readiness por dependencia/activo y límites derivados del presupuesto de servicio.
+
+### FMT-270 — caos no reproducible y configuración inválida confundida con resultado
+
+El generador usa reloj mod100; no es determinista por semilla ni tiene uniformidad demostrada. NaN/negativos dan éxito, valores>1 dan caída de red en vez de error de configuración. La comprobación as_millis()>0 ignora duraciones submilisegundo y sleep bloquea al llamador. Sus pruebas previas sólo fuerzan429. Se añaden diagnósticos OPEN; hace falta transporte simulado, semilla y reloj virtual, no sleeps en el hot path. No se modifica el otro ChaosMonkey de data-pipeline.
+
+### FMT-271 y FMT-272 — observabilidad y proyecciones sin soporte suficiente
+
+El worker ignora fallo de spawn y el productor ignora canal lleno/desconectado; ParityAlert puede perderse sin contador. Un millón de eventos no demuestra32MB y try_send no demuestra latencia cero. Se corrigen descripciones; el arreglo operacional necesita métricas, supervisión y política de pérdida por severidad.
+
+La cifra capital/(PnL medio×50trades/día) asume ganancia monetaria y cadencia constantes; no representa reinversión. Se conserva el cálculo pero se etiqueta como escenario lineal no calibrado, sin prometer duplicación. No hay productor externo encontrado de send_trade_execution; sí actualizaciones de capital. Una fórmula compuesta distinta tampoco sería un pronóstico sin medir distribución, cadencia, tamaños, costes y dependencia. El objetivo financiero del proyecto no es una garantía.
+
+### FMT-273 — rollback por activo borra posiciones no rechazadas
+
+Se reproduce con dos slots del mismo activo: uno propuesto y otro confirmado. rollback_position(coin_id) cierra ambos y libera30 de margen local. El exchange no participa en la prueba: lo demostrado es borrado local indiscriminado, que podría dejar exposición remota sin reflejo local. new_order carece de slot/generación para cancelar sólo la propuesta. No se usa ese rollback para el nuevo veto tardío de drift. Requiere token de reserva, compare-and-transition y compensación idempotente, con pruebas de confirmación concurrente y conservación de posiciones ajenas.
+
+### FMT-274 — pruebas que pasan sin sustentar el certificado
+
+forensics.rs cuenta desorden de un CSV fijo sin assert, acepta ausencia de datos y estima ticks por tamaño/48 sin validar layout. El test de leakage usa5 precios/4 parejas y medias construidas dentro del test, no el feature pipeline. Alta correlación puede ser causal y baja correlación no excluye fuga; bounds de Rust no impiden usar información futura dentro de un array válido. Aun ante r≥0,99 imprime PASSED y0,00%. Los dos tests sólo cuentan como smoke heredado. La validación real necesita invariancia del prefijo frente a cambios futuros, lineage temporal, splits por intervalos y fallos explícitos por precondiciones.
+
+### Evidencia, ciencia y conservación
+
+Resultado155 pruebas únicas,0 fallos finales:133 contratos/compatibilidad,5 smoke y17 OPEN. Nuevas21=14 funcionales+7 diagnósticos;3 diagnósticos previos de drift reclasificados tras arreglo. Cuatro fallos iniciales pasan después. Se comprueban tres binarios con cargo check; no build/reinicio operativo.41 modelos conservados, prefijos documentales preservados y referencias/hashes enJSON.
+
+La investigación primaria sobre confidence sequences/test martingales sustenta una propuesta de detección bajo hipótesis explícitas, no convierte diez observaciones ni el proxy en significación estadística. El campo multiactivo/logτ debe llevar soporte e incertidumbre; no se confunde resolución del reloj con información observada. No se implementan ecuaciones de problemas del milenio o ventaja cuántica sin observables, baseline y presupuesto comprobable.
+
+Cobertura165/289Rust,124pendientes; cinco lecturas completas nuevas. Main y cambios compartidos preservados, sin publicaciónGit ni acciones de cuenta. Prioridad: identidad/outcome→rollback por reserva→vetos por causa→recuperación causal→sombra independiente→snapshot contable/telemetría→pruebas del pipeline real→promoción durable.
+
+## Adenda científica XXXVII — reserva propia, riesgo admitido y cierre de emergencia
+
+[Informe XXXVII y grafo diagnóstico](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVII_2026-09-25.md>) · [JSON XXXVII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXXVII_2026-09-25.json>). Esta adenda añade evidencia; no reemplaza la matriz histórica ni convierte sus305 puntos en un total nuevo de fallos resueltos.
+
+### FMT-273/FMT-266 — reparación parcial de cancelación y veto tardío
+
+La unidad de rechazo debe coincidir con la reserva creada por la intención, no con todo el símbolo. EntryReservation captura coin_id, slot, generación y símbolo; valida índice sin fallback y compara ocupante bajo el lock de transición. Sólo una reserva abierta y no confirmada puede cancelarse. La cancelación ganadora libera su margen y devuelve su fee una vez; repetición, slot reutilizado, símbolo distinto o confirmación previa no tocan posiciones ajenas. La confirmación usa el mismo protocolo cooperante.
+
+El host guarda la identidad inmediatamente al recibir la propuesta y la usa en rechazos asíncronos y vetos tardíos de drift/memoria. El rollback legacy sin token deja los slots intactos. La nueva garantía es local y acotada: cerrar el slot y compensar cartera no forman una transacción durable; escritores atómicos directos, adopción y reconciliación no están todos migrados. La generación esperada se lee antes de open y falta claim-submit. La tabla global de símbolos tampoco queda congelada. No se certifica ausencia de todas las carreras.
+
+Seis tests de reserva y tres de posición verifican compensación exacta, duplicados, ocupante nuevo, confirmación y cancelación concurrentes. El OPEN de rollback indiscriminado se convierte en contrato de preservación. Después de una emergencia de entrada confirmada ya no se llama al rollback de entrada rechazada: se conserva estado y se marca reconciliación, sin reembolsar fee. La duplicidad de evidencias de salida sigue pendiente de outcome_id.
+
+### FMT-275 — evidencia de ventaja y factibilidad del tamaño
+
+PF.max(1,01) convertía PF desfavorable en ventaja positiva; WR<40% vetaba pagos binarios con esperanza positiva; un piso de Kelly y el clamp mínimo reinflaban tamaños reducidos por riesgo. NaN de correlación se volvía1. La función ahora valida dominios/bounds, no eleva PF, no aplica el gate40% y se abstiene cuando el resultado es inferior al mínimo. Seis contraejemplos fallaron antes y pasan después; nueve pruebas finales incluyen unidades y monotonicidad. No se encontró caller operacional externo del helper.
+
+Para pagos binarios fijos, f*=p−(1−p)/b=p(1−1/PF), con PF=pb/(1−p). No es un óptimo general a partir de dos estadísticas empíricas con pagos variables. Capital×f tampoco identifica nocional apropiado sin pérdida por unidad, costes y dependencia de cartera. Half-Kelly, confianza mínima0,5, Hurst, rachas y exp(-15DD) siguen siendo heurísticas no calibradas. El retorno0 no diferencia evidencia inválida, falta de ventaja e infeasibilidad: pendiente API de motivos. No se implantó otro coeficiente por intuición.
+
+### FMT-276 — patrimonio inválido y cambio de unidad
+
+Capital no válido se sustituía por13 y DD inválido por0, produciendo capacidad ficticia. base_capital.max(1) rompía equivalencia entre dólares y centavos para una base menor que1. Se valida capital/DD/cociente, se devuelve capacidad0 ante invalidez y se elimina el piso monetario del denominador. Se preservan como política legacy el suelo de razón de riqueza1, capacidad floor(1+sqrt(ratio)) limitada a10 y split cuadrático de DD. No son crecimiento exponencial ni energía espectral estimada. Sin caller operacional localizado.
+
+### FMT-277 — slot confirmado y cardinalidad del retorno
+
+La selección podía abrir scalp o swing como slot físico mientras el host confirmaba siempre position. Ahora confirma la generación capturada. Dos candidatos podían reservarse mientras sólo el último cabía en Option(new_order); se corta al primer éxito. Esto evita sobrescritura del retorno, pero conserva sesgo de orden y no implementa optimización conjunta. El token no convierte Result<(),String> del executor en un fill con cantidad/precio/identidad. Otros lectores de cierre y adopción siguen fijos. Prueba de contrato de confirmación directa; el corte de candidatos tiene inspección estática y check, no end-to-end forzado.
+
+### FMT-278 — PnL invertido en emergencia
+
+El host duplicaba (entrada−salida)·qty·signo con signo+1 para long:100→110 con qty2 se registraba−20. La ruta común gross_pnl ya tenía la convención correcta; se conecta la emergencia a ella. Prueba aritmética de ambos lados y unidades, más una regresión estática del cableado (RED→GREEN). No se ejecutó cuenta/diario/cola. Permanecen salida aproximada al precio vivo, elección del primer slot sin generación, fee incompleta y falta de deduplicación. Purga por símbolo tras fallo de cierre no corregida. PnL con signo correcto no implica outcome correcto para entrenar.
+
+### FMT-186/FMT-113 — límites y razonamiento pendientes
+
+La admisión conserva corte logτ0,80, tres slots y fallback30s para tau≤10ms/inválido; el core añade1,50 y28bps de PnL no realizado, sin verificar stop protector en ese tramo. La distancia temporal no establece ortogonalidad: para filtros exponenciales normalizados el solapamiento es sech(Δ/2), aproximadamente0,925 enΔ0,80. Cuatro OPEN reproducen corte, fallback, capacidad e índice inválido alias. Se precisan comentarios, no se retiran controles económicos sin validación conjunta.
+
+El core ya aumenta used_margin al reservar. El host calcula capital−used_margin y vuelve a exigir margen de esa misma propuesta sobre ese remanente. Con capital100, reserva60, nocional60 y leverage1, ve40libres y sube leverage a2 para pasar su guard. La reserva local puede seguir en60; aumentar leverage no reduce la pérdida del nocional60 ante el mismo movimiento. Hace falta ledger de reservas y proyección de q/costes/exposición, no simplemente sumar margen con un snapshot inconsistente.
+
+### Verificación, preservación y ciencia
+
+109 tests únicos pasan:103funcionales/compatibilidad,1estático y5OPEN.24nuevos=19funcionales+1estático+4OPEN.6fallos numéricos iniciales y1de cableado se corrigen; un OPEN previo reclasificado. Check god_engine/evolver/walkforward_evolver offline correcto con warnings heredados.41modelos sin cambios. Prefijos históricos conservados; fuentes/referencias/hashes enJSON. Sin commit/push/merge/fetch, órdenes/cuentas, entrenamiento/promoción operativos, build/reinicio del motor.
+
+Cobertura166/289Rust,123pendientes; sólo capital_compounder suma lectura completa nueva. No se certifica todo el proyecto ni paridad real. La investigación primaria Kelly/riesgo y Kelly robusto guió distinciones de unidades y supuestos, no una implementación financiera sin calibración. No hay demostración de ventaja cuántica, omnisciencia ni información a escala de nanosegundos. Prioridad siguiente: identidad durable y claim-submit, ledger, terminalidad/fees/deduplicación, vetos por causa, dependencia multiactivo-espectral y consumo genómico coherente entre entornos.
+
+## Adenda XXXVIII — integridad numérica, diario y veto por comisiones
+
+Fecha2026-09-25. [Informe completo XXXVIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVIII_2026-09-25.md>) · [Artefacto XXXVIII](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXXVIII_2026-09-25.json>). Esta adenda preserva íntegramente los estados anteriores y añade garantías acotadas y deuda abierta; no sustituye una auditoría completa.
+
+### FMT-279 — PnL inválido, desconocido y cero no son el mismo estado
+
+Se reprodujo que gross_pnl podía exportar infinitos y desbordar con operandos finitos. El gate previo entry>0 tampoco separaba desconocido, infinito o inconsistencia. checked_gross_pnl exige precios/cantidad finitos y positivos, rechaza resultado no finito y underflow a cero con precios distintos. El wrapper legacy devuelve0 ante error; su resultado no certifica breakeven. El host usa checked_numeric_net_pnl antes de medias/Kelly/estadísticas y registra motivo si excluye el evento.
+
+G=q(Psalida−Pentrada) para largo y su opuesto para corto tiene unidad monetaria sólo bajo un contrato lineal y cantidad correctamente expresada. N=G−C requiere misma moneda y convención firmada. La nueva validación no establece esa procedencia. Entry0 queda admitido sólo para diario diagnóstico, no para aprender. Stop/slippage inválidos excluyen el registro completo; falta cuarentena y métricas de sesgo por esa exclusión.
+
+Un OPEN conserva evidencia del límite: largo100→110 con q1 y pnl_gross−10 pasa dos veces el gate numérico. No se ha conciliado el bruto suministrado con el reconstruido ni creado identidad exactamente-una-vez. El productor puede escoger primer slot del mismo lado o cualquier slot como fallback; el diario recupera última entrada sin límite as-of. La dedup del host por símbolo/ventana temporal no demuestra identidad. Neto0 actualiza media ganadora pero registra win=false; totales += todavía pueden desbordar aunque cada evento sea finito. No se declara resuelta la contaminación semántica del reward.
+
+### FMT-280 — serialización reparada, durabilidad y muestra pendientes
+
+Se reemplaza JSON manual de entradas/cierres por serializers puros que escapan texto y conservan precisión serializable sin seis/ocho decimales fijos. Se preservan claves legacy y se validan números antes de serde_json para no representar NaN como null. INVALID_RECORDS cuenta rechazos antes de encolar o inicializar I/O. Tests verifican texto con comillas/saltos, magnitudes pequeñas, fees firmadas y rechazo sin tocar diario operativo.
+
+El canal de I/O continúa ilimitado y el trabajador ignora write_all. No hay ACK durable, fsync ni replay idempotente. La cola de aprendizaje limita1024 y puede perder un registro ya enviado al diario; DESCARTADOS tiene contador, pero no se localizó consumidor operacional de su accessor. Poisoning puede parecer cola vacía. El fallback a disco síncrono y la caché que relee bajo mutex conservan riesgos de latencia, sin benchmark en esta ronda. El hash mtime/longitud tampoco fija identidad causal. Se exige ledger durable y salud de muestra, no simplemente aumentar la cola.
+
+### FMT-281 — simulador auxiliar y falsa equivalencia entre entornos
+
+ShadowExecutor devuelve Ok para NaN/Inf en precio, cantidad redondeada a0 y limit con cantidad/precio inválidos. Su kill-switch no conserva latch; la siguiente entrada pasa. ACK no evoluciona posiciones, capital o fill consultable. Cinco OPEN reproducen esas limitaciones. Se añade advertencia de stub, sin cambiar su lógica ni afirmar que ahora simula mercado.
+
+La búsqueda no halló constructor operacional fuera de tests. No se atribuye a esta clase la discrepancia observada por el usuario en cuenta demo. El adaptador real en paper es distinto y sus10 contratos de ruta se reejecutan. Paridad exige estados y eventos comparables, no dos objetos que retornan Ok.
+
+### FMT-282 — causalidad, unidades y completitud del fee-breaker
+
+El daemon usa un temporal_scale global y anclas globales; tau se limita30s–12h y la ventana24tau a1h–48h. El comentario por-símbolo no coincide con ese acceso. Los ingresos se agrupan por símbolo sin generación/política ni moneda asset. REALIZED_PNL no nulo suma una unidad al contador trades, aunque una fila no pruebe operación independiente. Fees usa abs y otras clases se omiten. El parser REST ya valida finitud; el problema aquí es significado, suma y cobertura.
+
+La regla n>=3,net<0,fees>gross_pos describe resultados pasados bajo esa agregación; no demuestra que el activo no pueda pagar su siguiente operación. La duración floor(clamp(4*clamp(fees/max(gross_pos,1e-9),0,25,3),1,12)) horas incorpora un piso monetario y saltos. Recalcular cada300s renueva hasta=ahora+duración incluso sin nueva evidencia. Puede exceder el primer plazo comunicado; no es infinito necesariamente, porque las filas pueden salir de la ventana.
+
+La paginación retorna Ok(Vec) aunque alcance4 páginas o no progrese en una frontera temporal completa. No distingue truncación/completitud; falta endTime congelado. La clave de dedup omite asset/trade_id e incluye importe: puede colapsar diferencias omitidas o aceptar una contradicción de importe como otro evento. No se inventa alcance global de unicidad de tranId. La fuente primaria oficial confirma campos y paginación, no equivalencia fila=trade.
+
+El mapa de veto carece de cuenta/entorno/causa/evidencia. Persistencia tmp+rename ignora fallos y no tiene ACK durable. Restaurar un JSON corrupto como sin suspensiones es fail-open para entradas, aunque un mensaje lo llame fail-safe. Locks unwrap pueden propagar poisoning; filtrado de expirados en archivo no purga el mapa. Se conserva la protección y se documenta reemplazo por evidencia identificada, completitud, numerario, incertidumbre y recuperación por causa.
+
+### FMT-283 / FMT-278 / FMT-181 — continuaciones acotadas
+
+Tipos de bracket se comparan exactamente: NOT_STOP_MARKET y sufijos falsos ya no pasan. El fallback textual por clientOrderId sigue sin acreditar propiedad/reduce-only; no es firma criptográfica. Se precisan comentarios, no se presume autenticación. La emergencia migra de gross_pnl a checked_gross_pnl; ante error numérico marca reconciliación y no encola evidencia inválida. Permanece la estimación local del precio, primer slot, fees y dedup pendientes. Admitir fees firmadas en serializer tampoco repara el abs del productor ni convierte monedas.
+
+### Verificación, paradigma y siguientes condiciones de cierre
+
+78 pruebas únicas=69 funcionales/compatibilidad+2 estáticas+7 OPEN.22 nuevas=15 funcionales+1 estática+6 OPEN;5 contraejemplos de comportamiento y1 estático RED→GREEN. No se reclasifica OPEN previo. Check god_engine/evolver/walkforward_evolver offline correcto con warnings conocidos.41 modelos intactos. Prefijos históricos preservados; hashes y referencias en artefacto. No órdenes/cuentas, entrenamiento/promoción operativos, build/reinicio o publicación Git.
+
+Cobertura168/289Rust,121pendientes: lecturas nuevas completas de trade_accounting y shadow; relecturas de ntp/ruin/dynamic_symbols no se vuelven a contar. El informe organiza ocho módulos, grafo raíz→evidencia→aprendizaje→veto y hoja de ruta. La representación continua multiactivo/espectral requiere soporte, incertidumbre y aproximación controlada; no suprimir límites físicos, ni confundir nanosegundos de timestamp con información observada. La investigación primaria de ingresos influyó en no calibrar vetos sobre filas sin identidad/numerario. No se implementó matemática avanzada por su nombre ni se certifica ventaja cuántica.
+
+## Adenda XXXIX — paginación, identidad visible y aislamiento monetario
+
+2026-09-25. [Informe XXXIX](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIX_2026-09-25.md>) · [Artefacto XXXIX](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/docs/artifacts/auditoria_fundamentos_XXXIX_2026-09-25.json>). Se añaden detalles/correcciones sin modificar el historial anterior ni certificar toda la matriz.
+
+### FMT-282 — de cursor ambiguo a cobertura explícita
+
+El cursor anterior repetía el último milisegundo, pero devolvía Ok si no progresaba o alcanzaba max_pages. Más de1000 eventos en una frontera podía dejar ingresos invisibles y aun así alimentar el fee-breaker. El nuevo collect_income_window recibe páginas numeradas con start/end fijos y valida dominio, tamaño e identidad. PageExhausted requiere página corta/vacía sin error; PageBudgetExceeded, NoProgress y Simulated no se entregan como una ventana real agotada. El wrapper conserva Vec/Err para callers existentes y el host registra el motivo de no evaluación.
+
+incomeType se trata como filtro singular; listas y caracteres de query se rechazan. page>=1,limit1..1000,intervalo ordenado/int64,timestamp válido y presupuesto positivo son restricciones del protocolo/configuración, no barreras de alpha. Se prueba densidad1001 en el mismo ms, múltiplo exacto que requiere página vacía, presupuesto lleno, página repetida, error tras éxito parcial e inválidos sin invocar fetcher. El adaptador paper conserva estadoSimulated, no dinero real con cero movimientos.
+
+La nueva identidad visible incluye activo,símbolo,tipo,tranId,tiempo,tradeId y excluye importe: mismo registro se consume una vez por recorrido; importe diferente bajo esa tupla es conflicto. Campos omitidos/defaults sin identidad utilizable producen error. No se asume unicidad global de tranId ni se promete dedup entre ventanas/reinicios. Dos OPEN prueban límites: una inserción tardía anterior a la página leída puede faltar aunque haya agotamiento observado; una revisión del timestamp e importe cambia la tupla y todavía se admite como otra fila. La representación f64 tampoco conserva todas las diferencias decimales del payload.
+
+Un rango fijo no es snapshot. Faltan retención contractual, versionado del proveedor, identidad de cuenta capturada, cuarentena durable y cobertura recuperable por símbolo. Una fila inválida puede invalidar todo el recorrido; eso no se presenta como política estadística óptima. Los antiguos helpers de merge quedan sólo bajo cfg(test), preservando fixtures históricas sin usarlos como contrato operativo.
+
+### FMT-282 — control por símbolo, no bloqueo global por una divisa
+
+partition_legacy_fee_evidence agrupa por símbolo sólo REALIZED_PNL/COMMISSION/FUNDING_FEE, preservando la semántica de selección de la política anterior. Cada grupo requiere una moneda; un grupo mixto se diagnostica y no se reevalúa. Otros símbolos homogéneos siguen disponibles. Transferencias globales en otra moneda no invalidan sus grupos, y símbolos distintos en USDT/USDC se revisan sin sumar las divisas. Tres tests prueban ese aislamiento.
+
+No hay conversión FX ni liberación explícita de una suspensión previa. Su temporizador puede expirar; la recuperación con evidencia incierta sigue OPEN. El cambio no es una nueva orden de cierre ni un veto de mercado. Permanecen escala temporal genómica global, contador de filas no nulas como trades, abs de comisiones, n>=3, piso monetario1e-9, horas enteras, renovación con evidencia repetida, suma operativa sin checks y mapa/persistencia legacy. Se mejora el acceso a evidencia sin certificar el predicado económico.
+
+### FMT-284 — informe con unidades y significado de cada cálculo
+
+Lectura completa nueva de income_report,223líneas de partida. El texto equiparaba WR bruto y neto por trade mientras contaba filas REALIZED_PNL positivas y sumaba costes aparte. Se conserva el cálculo como proporción de filas, nombrado %FILAS+, con cero en denominador representado como N/D. No establece independencia, trades cerrados ni rentabilidad neta de una intención. Ejemplo lógico:+1bruto y−2costes produce−1neto aunque la fila bruta sea positiva.
+
+Los agregados se separan por moneda/símbolo y total por moneda. R+C+F se etiqueta subtotal seleccionado, con comisiones y financiación firmadas. OTROS conserva otras clases y su conteo, sin confundir transferencias con beneficios. No se suman monedas distintas ni se inventa ROI sin capital/flujos. Se preservan las magnitudes anteriores con descripción más precisa, y se añaden unidades/clases antes invisibles.
+
+La razón(C+F)/|R| es adimensional y firmada, no volumen de PnL ni coste por turnover. Desaparece el umbral monetario1e-9 del informe; con R=0 o razón no representable se emite N/D, no0. Checked sums detectan overflow de componentes/subtotal/OTROS; sigue f64, no suma decimal exacta ni invariancia general al orden. Display conserva valores pequeños sin cuatro decimales obligatorios.
+
+El cálculo de lookback rechaza days0, multiplicación desbordada y resta anterior al epoch. --days ausente de valor/no numérico ya no cae silenciosamente en7. Inicio/fin consultados coinciden con los mostrados. El informe no se emite como completo si el recorrido se trunca/estanca/simula; vacío significa endpoint sin registros, no ausencia universal fuera de retención. El loader.env, argumentos duplicados y conciliación de ROI/WR neto siguen fuera de certificación; no se ejecutó ese main ni se leyó .env.
+
+### Verificación, ciencia y continuidad
+
+66 pruebas únicas=58funcionales/compatibilidad+5estáticas+3OPEN.28nuevas=23funcionales+3estáticas+2OPEN.3RED iniciales estáticos pasan; no se inventan RED funcionales ni se cuenta dos veces una reejecución. Check offline de god_engine,income_report,evolver,walkforward_evolver correcto con warnings heredados.41modelos sin cambios; prefijos históricos y anclas/hashes verificables enJSON. No cuentas/órdenes, entrenamiento/promoción operativos, cargo build del motor, reinicios ni publicación Git.
+
+Cobertura169/289Rust,120pendientes; nuevo income_evidence y tests no se suman al denominador histórico. La guía Firecrawl llevó a reutilizar la fuente oficial del mismo día: page,start/end,limit y filtro escalar sustentan la implementación; no se infiere snapshot ni unicidad global. La formulación multivariante exige conservar cuenta/activo/tiempo/generación, no reducirlos a un contador homogéneo. No se incorpora teoría por prestigio ni se certifica ventaja cuántica, observación nanosegundo a nanosegundo o beneficio garantizado. Siguiente prioridad: identidad durable, nueva evidencia, atribución genómica y recuperación causal del veto.

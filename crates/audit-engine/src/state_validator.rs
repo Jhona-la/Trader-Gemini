@@ -3,8 +3,10 @@ use std::sync::atomic::Ordering;
 
 /// Motor de Auditoría de Paridad Forense
 ///
-/// Garantiza que el comportamiento en Backtest y en Producción
-/// siga estrictamente el mismo conjunto de axiomas matemáticos.
+/// Diagnóstico parcial de una identidad contable local; NO certifica paridad
+/// backtest/producción. Las lecturas no forman un snapshot transaccional.
+/// XXXVI OPEN: evidencia inválida se sustituye/omite; no hay resultado tipado,
+/// ledger de flujos externos ni consumidor operacional encontrado en esta ronda.
 pub struct StateValidator;
 
 impl StateValidator {

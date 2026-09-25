@@ -49,7 +49,7 @@ pub struct PositionRiskEntry {
 
 impl PositionRiskEntry {
     pub fn is_open(&self) -> bool {
-        self.position_amt.is_finite() && self.position_amt.abs() > 1e-12
+        self.position_amt.is_finite() && self.position_amt != 0.0
     }
 
     pub fn is_long(&self) -> bool {
@@ -229,41 +229,173 @@ impl PositionRiskEntry {
     }
 }
 
-/// R3.5: Reconcilia el estado de posiciones entre el exchange (PositionRiskEntry) y GlobalArena.
-/// - Si el exchange está plano (amt == 0.0) pero la Arena tiene posiciones abiertas (scalp o swing),
-///   se detecta posición fantasma y se cierran en la Arena para liberar margen.
-/// - Si el exchange tiene posición abierta pero la Arena está plana, se adopta en Swing.
-/// - Si ambos tienen posición abierta, se corrige cualquier deriva (drift) en la cantidad.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReconciliationIssueKind {
+    MissingRemoteEvidence,
+    InvalidRemoteEvidence,
+    MultipleRemoteLegs,
+    MultipleLocalAllocations,
+    DirectionMismatch,
+    InvalidUniverse,
+    UnmappedInstrument,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReconciliationIssue {
+    pub symbol: String,
+    pub kind: ReconciliationIssueKind,
+}
+
+#[derive(Debug, Default)]
+pub struct ArenaReconciliationReport {
+    pub adjustments: usize,
+    /// No adjustment was authorized for these instruments. This does NOT mean
+    /// that remote risk is represented or that new exposure may be admitted.
+    pub unresolved: Vec<ReconciliationIssue>,
+}
+
+// Retain leg identity while checking whether the legacy single-allocation
+// mutation can represent this observation. Never sum a hedge into a flat.
+fn single_remote_position<'a>(
+    rows: &[&'a PositionRiskEntry],
+) -> Result<Option<&'a PositionRiskEntry>, ReconciliationIssueKind> {
+    use ReconciliationIssueKind::*;
+    let mut sides = std::collections::HashSet::new();
+    let mut active = None;
+    for row in rows {
+        let side = row.position_side.trim().to_ascii_uppercase();
+        // Empty side remains a legacy one-way alias for internal DTOs. Presence
+        // validation at the endpoint boundary is still required (FMT-179).
+        let side = if side.is_empty() { "BOTH" } else { &side };
+        if !matches!(side, "BOTH" | "LONG" | "SHORT")
+            || !sides.insert(side.to_string())
+            || !row.position_amt.is_finite()
+            || (side == "LONG" && row.position_amt < 0.0)
+            || (side == "SHORT" && row.position_amt > 0.0)
+        {
+            return Err(InvalidRemoteEvidence);
+        }
+        if row.position_amt != 0.0 {
+            if !row.entry_price.is_finite()
+                || row.entry_price <= 0.0
+                || !row.leverage.is_finite()
+                || row.leverage < 1.0
+            {
+                return Err(InvalidRemoteEvidence);
+            }
+            let notional = row.position_amt.abs() * row.entry_price;
+            let margin = notional / row.leverage;
+            if !notional.is_finite() || notional <= 0.0 || !margin.is_finite() || margin <= 0.0 {
+                return Err(InvalidRemoteEvidence);
+            }
+            if active.replace(*row).is_some() {
+                return Err(MultipleRemoteLegs);
+            }
+        }
+    }
+    if sides.contains("BOTH") && sides.len() > 1 {
+        return Err(InvalidRemoteEvidence);
+    }
+    Ok(active)
+}
+
+/// Compatibility wrapper: emits unresolved evidence, returns adjustment count.
+/// Containment only, not a complete per-leg ledger or global admission gate.
 pub fn reconcile_arena(
     remote: &[PositionRiskEntry],
     arena: &quantum_arena::GlobalArena,
     now_ms: u64,
 ) -> usize {
-    let mut adjustments = 0;
-    let universe_size = quantum_arena::symbols::get_active_universe_size();
+    let report = reconcile_arena_checked(remote, arena, now_ms);
+    for issue in &report.unresolved {
+        eprintln!("[RECONCILIATION_UNRESOLVED] {} {:?}: estado local preservado; exposición remota no certificada", issue.symbol, issue.kind);
+    }
+    report.adjustments
+}
 
-    let mut remote_map: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-    let mut remote_price_map: std::collections::HashMap<String, f64> =
-        std::collections::HashMap::new();
-    let mut remote_lev_map: std::collections::HashMap<String, f64> =
-        std::collections::HashMap::new();
+/// Only unambiguous, representable observations may mutate the legacy arena.
+/// An absent row is UNKNOWN, not FLAT. Multiple legs/allocations and reversals
+/// require a coherent position/ledger transition, not an arbitrary projection.
+pub fn reconcile_arena_checked(
+    remote: &[PositionRiskEntry],
+    arena: &quantum_arena::GlobalArena,
+    now_ms: u64,
+) -> ArenaReconciliationReport {
+    use ReconciliationIssueKind::*;
+    let mut report = ArenaReconciliationReport::default();
+    let mut adjustments = 0;
+    // One name snapshot per pass; this does not repair persistent arena IDs.
+    let universe = quantum_arena::symbols::get_active_universe_ref();
+    let names: std::collections::HashSet<_> = universe.iter().map(|s| s.to_uppercase()).collect();
+    if universe.len() > arena.coins.len() || names.len() != universe.len() {
+        report.unresolved.push(ReconciliationIssue {
+            symbol: String::new(),
+            kind: InvalidUniverse,
+        });
+        return report;
+    }
+    let mut remote_map: std::collections::BTreeMap<String, Vec<&PositionRiskEntry>> =
+        std::collections::BTreeMap::new();
     for p in remote {
-        if p.is_open() {
-            *remote_map.entry(p.symbol.to_uppercase()).or_insert(0.0) += p.position_amt;
-            remote_price_map.insert(p.symbol.to_uppercase(), p.entry_price);
-            remote_lev_map.insert(p.symbol.to_uppercase(), p.leverage);
+        remote_map
+            .entry(p.symbol.to_uppercase())
+            .or_default()
+            .push(p);
+    }
+    for (symbol, rows) in &remote_map {
+        if !names.contains(symbol) && rows.iter().any(|p| p.position_amt != 0.0) {
+            report.unresolved.push(ReconciliationIssue {
+                symbol: symbol.clone(),
+                kind: UnmappedInstrument,
+            });
         }
     }
-
-    for coin_idx in 0..universe_size {
-        let sym = match quantum_arena::symbol_registry::try_symbol(coin_idx) {
-            Some(s) => s.to_uppercase(),
-            None => continue,
+    for (coin_idx, symbol) in universe.iter().enumerate() {
+        let sym = symbol.to_uppercase();
+        let Some(rows) = remote_map.get(&sym) else {
+            report.unresolved.push(ReconciliationIssue {
+                symbol: sym,
+                kind: MissingRemoteEvidence,
+            });
+            continue;
         };
-        let remote_net_qty = remote_map.get(&sym).copied().unwrap_or(0.0);
-        let remote_price = remote_price_map.get(&sym).copied().unwrap_or(0.0);
+        let remote_position = match single_remote_position(rows) {
+            Ok(p) => p,
+            Err(kind) => {
+                report
+                    .unresolved
+                    .push(ReconciliationIssue { symbol: sym, kind });
+                continue;
+            }
+        };
+        let remote_net_qty = remote_position.map(|p| p.position_amt).unwrap_or(0.0);
+        let remote_price = remote_position.map(|p| p.entry_price).unwrap_or(0.0);
+        let remote_leverage = remote_position.map(|p| p.leverage).unwrap_or(0.0);
         let coin = &arena.coins[coin_idx];
-
+        let local_open: Vec<_> = coin
+            .positions
+            .slots()
+            .into_iter()
+            .filter(|p| p.is_open())
+            .collect();
+        if local_open.len() > 1 {
+            report.unresolved.push(ReconciliationIssue {
+                symbol: sym,
+                kind: MultipleLocalAllocations,
+            });
+            continue;
+        }
+        if remote_net_qty != 0.0
+            && local_open.first().is_some_and(|p| {
+                p.is_long.load(std::sync::atomic::Ordering::Relaxed) != (remote_net_qty > 0.0)
+            })
+        {
+            report.unresolved.push(ReconciliationIssue {
+                symbol: sym,
+                kind: DirectionMismatch,
+            });
+            continue;
+        }
         let cont_open = coin.positions.is_any_open();
 
         let arena_net_qty: f64 = coin
@@ -281,7 +413,7 @@ pub fn reconcile_arena(
             })
             .sum();
 
-        if remote_net_qty.abs() < 1e-8 {
+        if remote_net_qty == 0.0 {
             // Exchange está plano pero la Arena cree que tiene posiciones abiertas: phantom cleanup
             if cont_open {
                 for slot in coin.positions.slots() {
@@ -289,8 +421,7 @@ pub fn reconcile_arena(
                         continue;
                     }
                     let exit_price = remote_price;
-                    let (was_long, entry_p, qty, m, entry_fee_paid) =
-                        slot.close_with_fee();
+                    let (was_long, entry_p, qty, m, entry_fee_paid) = slot.close_with_fee();
                     if m > 0.0 {
                         arena
                             .used_margin
@@ -340,9 +471,10 @@ pub fn reconcile_arena(
                                 .gross_wins
                                 .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
                         } else {
-                            coin.metrics
-                                .gross_losses
-                                .fetch_add(net_trade_pnl.abs(), std::sync::atomic::Ordering::Relaxed);
+                            coin.metrics.gross_losses.fetch_add(
+                                net_trade_pnl.abs(),
+                                std::sync::atomic::Ordering::Relaxed,
+                            );
                         }
                     }
                 }
@@ -371,14 +503,14 @@ pub fn reconcile_arena(
                 // S-06: usar el LEVERAGE REAL de la posición reportada por el
                 // exchange (antes: /10.0 hardcoded — inflaba used_margin 2-5x
                 // en cuentas 20x/50x → falsa escasez de margen).
-                let lev = remote_lev_map.get(&sym).copied().unwrap_or(10.0);
+                let lev = remote_leverage;
                 let lev = if lev.is_finite() && lev >= 1.0 {
                     lev
                 } else {
                     10.0
                 };
                 let margin = notional / lev;
-// CERT-M4-H05: imputar entry_fee de la adopción con el fee
+                // CERT-M4-H05: imputar entry_fee de la adopción con el fee
                 // taker estándar (0.04% VIP default — el arena config no es
                 // accesible desde aquí sin refactor de firma; el fee exacto
                 // se corrige en la primera reconciliación con tradeId).
@@ -422,10 +554,10 @@ pub fn reconcile_arena(
                     .used_margin
                     .fetch_add(margin, std::sync::atomic::Ordering::Relaxed);
                 adjustments += 1;
-            } else if (arena_net_qty - remote_net_qty).abs() > 1e-6 {
+            } else if arena_net_qty != remote_net_qty {
                 // Drift en cantidad: actualizar posición continua o slot abierto para reflejar el tamaño real
                 let target_abs = remote_net_qty.abs();
-                if target_abs <= 1e-6 {
+                if target_abs == 0.0 {
                     for slot in coin.positions.slots() {
                         if slot.is_open() {
                             let (_, _, _, old_margin, _) = slot.close_with_fee();
@@ -442,7 +574,11 @@ pub fn reconcile_arena(
                         .positions
                         .slots()
                         .into_iter()
-                        .find(|p| p.is_open() && p.is_long.load(std::sync::atomic::Ordering::Relaxed) == is_remote_long)
+                        .find(|p| {
+                            p.is_open()
+                                && p.is_long.load(std::sync::atomic::Ordering::Relaxed)
+                                    == is_remote_long
+                        })
                         .or_else(|| coin.positions.slots().into_iter().find(|p| p.is_open()))
                         .unwrap_or(&coin.positions.position);
 
@@ -461,11 +597,7 @@ pub fn reconcile_arena(
                     let old_margin = target_slot
                         .margin_used
                         .load(std::sync::atomic::Ordering::Relaxed);
-                    let lev_deriva = remote_lev_map
-                        .get(&sym)
-                        .copied()
-                        .filter(|l| l.is_finite() && *l >= 1.0)
-                        .unwrap_or(10.0);
+                    let lev_deriva = remote_leverage;
                     let new_margin = if safe_price > 0.0 {
                         (target_abs * safe_price) / lev_deriva
                     } else {
@@ -488,7 +620,8 @@ pub fn reconcile_arena(
         }
     }
 
-    adjustments
+    report.adjustments = adjustments;
+    report
 }
 
 #[cfg(test)]
@@ -651,6 +784,7 @@ mod tests {
                 symbol: "ETHUSDT".into(),
                 position_amt: 0.5,
                 entry_price: 3000.0,
+                leverage: 10.0,
                 update_time: 2000,
                 ..Default::default()
             },
@@ -686,12 +820,10 @@ mod tests {
             "la adopción de reconcile_arena debe marcar exchange_confirmed"
         );
         // Y el fantasma cerrado consume su confirmación (slot limpio).
-        assert!(
-            !arena.coins[0]
-                .positions
-                .position
-                .exchange_confirmed
-                .load(std::sync::atomic::Ordering::Relaxed)
-        );
+        assert!(!arena.coins[0]
+            .positions
+            .position
+            .exchange_confirmed
+            .load(std::sync::atomic::Ordering::Relaxed));
     }
 }

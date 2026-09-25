@@ -7,7 +7,14 @@ pub enum PositionHorizon {
     Scalping,
     Swing,
 }
-/// Lock-free Position tracking for the Hot Path
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PositionTransitionError {
+    Closed,
+    GenerationMismatch,
+    AlreadyConfirmed,
+}
+/// Atomic fields with serialized transitions; not a lock-free transaction/ledger.
 #[repr(C, align(64))]
 pub struct Position {
     pub is_open: AtomicBool,
@@ -94,8 +101,8 @@ impl Default for Position {
 }
 
 impl Position {
-    /// Adquiere el cerrojo de transición. Espera activa acotada: las
-    /// secciones críticas son decenas de stores atómicos, nunca I/O.
+    /// Transition spin lock. No wait-time bound or fairness guarantee is proved;
+    /// a preempted writer can delay contenders. Readers of atomics do not acquire it.
     #[inline]
     fn lock_transition(&self) {
         while self
@@ -363,9 +370,9 @@ impl Position {
     /// salida se dispara). El comentario original prometía exactamente la
     /// garantía que el código no daba.
     ///
-    /// Ahora el borrado ocurre ANTES de publicar el cierre, y se protege con
-    /// el contador de generación: si otro hilo abrió mientras leíamos, la
-    /// generación cambió y abortamos sin tocar un solo campo suyo.
+    /// Cooperating open/close methods now serialize through transition_lock.
+    /// This legacy close does not check caller identity; use the generation-
+    /// scoped cancellation API for a rejected, still-unconfirmed reservation.
     pub fn close_with_fee(&self) -> (bool, f64, f64, f64, f64) {
         // D-659: toda la transición —comprobar, leer el snapshot, despublicar
         // y borrar— ocurre bajo el cerrojo. Una apertura concurrente espera
@@ -373,6 +380,48 @@ impl Position {
         // producía posiciones vivas con entry_price = 0 y sin protecciones.
         self.lock_transition();
 
+        let result = self.close_locked_with_fee();
+        self.unlock_transition();
+        result
+    }
+
+    /// Cancels only the still-unconfirmed occupant captured by the caller.
+    /// Cooperating confirmation/open/close methods share the transition lock.
+    /// Direct public atomic field writes remain outside this protocol.
+    pub fn cancel_unconfirmed_generation(&self, generation: u64)
+        -> Result<(bool, f64, f64, f64, f64), PositionTransitionError> {
+        self.lock_transition();
+        let result = if self.generation.load(Ordering::Acquire) != generation {
+            Err(PositionTransitionError::GenerationMismatch)
+        } else if !self.is_open.load(Ordering::Acquire) {
+            Err(PositionTransitionError::Closed)
+        } else if self.exchange_confirmed.load(Ordering::Acquire) {
+            Err(PositionTransitionError::AlreadyConfirmed)
+        } else {
+            Ok(self.close_locked_with_fee())
+        };
+        self.unlock_transition();
+        result
+    }
+
+    /// A confirmation for an old occupant must not confirm a reused slot.
+    /// The caller is responsible for supplying actual execution evidence.
+    pub fn confirm_generation(&self, generation: u64) -> Result<(), PositionTransitionError> {
+        self.lock_transition();
+        let result = if self.generation.load(Ordering::Acquire) != generation {
+            Err(PositionTransitionError::GenerationMismatch)
+        } else if !self.is_open.load(Ordering::Acquire) {
+            Err(PositionTransitionError::Closed)
+        } else {
+            self.exchange_confirmed.store(true, Ordering::Release);
+            Ok(())
+        };
+        self.unlock_transition();
+        result
+    }
+
+    // Requires transition_lock. Never call from an unguarded path.
+    fn close_locked_with_fee(&self) -> (bool, f64, f64, f64, f64) {
         // El CAS se conserva: garantiza cierre único incluso frente a otro
         // cerrador que ya hubiera pasado por aquí.
         if self
@@ -380,7 +429,6 @@ impl Position {
             .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
-            self.unlock_transition();
             return (false, 0.0, 0.0, 0.0, 0.0);
         }
 
@@ -423,7 +471,6 @@ impl Position {
         // su lectura, no sólo las aperturas.
         self.generation.fetch_add(1, Ordering::AcqRel);
 
-        self.unlock_transition();
         (is_long, price, qty, margin, fee)
     }
 
@@ -572,11 +619,9 @@ impl PositionManager {
         count
     }
 
-    /// Despacho por resonancia y desacoplamiento espectral continuo (sin cortes discretos).
-    ///
-    /// Evalúa si existe una ranura libre cuya longitud de onda `tau_ms` no entre en interferencia destructiva
-    /// con otra posición abierta en la misma dirección (|ln(tau_target) - ln(tau_open)| < 0.6).
-    /// Si dos ondas están suficientemente separadas en escala (|Δ ln τ| >= 0.6), coexisten armónicamente.
+    /// Legacy slot-admission heuristic: same-side log-scale distance must be >=0.80.
+    /// This discrete cutoff does NOT prove orthogonality or independent risk.
+    /// Invalid/small tau fallback and three-slot capacity remain audited limitations.
     pub fn find_resonant_slot(&self, tau_ms: f64, is_long: bool) -> Option<usize> {
         let slots = [&self.scalp, &self.swing, &self.position];
         let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
@@ -593,9 +638,8 @@ impl PositionManager {
                 if open_is_long == is_long {
                     let open_tau = (pos.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
                     let diff_ln = (ln_target - open_tau.ln()).abs();
-                    // Escalas muy cercanas en la misma dirección (|Δ ln τ| < 0.80, factor ~2.2x): interferencia destructiva.
-                    // Si |Δ ln τ| >= 0.80 (más de 1.15 octavas de separación), las ondas son armónicamente ortogonales
-                    // y pueden coexistir simultáneamente en ranuras independientes sin canibalizarse.
+                    // Retained policy cutoff (scale ratio ~2.23), not measured
+                    // dependence, destructive interference or a Hilbert inner product.
                     if diff_ln < 0.80 {
                         return None;
                     }
@@ -603,7 +647,7 @@ impl PositionManager {
             }
         }
 
-        // 2. Asignación continua en el espacio de Hilbert a la primera ranura armónica libre
+        // First free physical slot; no functional-space optimization is performed.
         for (idx, pos) in slots.iter().enumerate() {
             if !pos.is_open() {
                 return Some(idx);

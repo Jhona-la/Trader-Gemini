@@ -2,9 +2,41 @@ use crate::entropy_fitness::EntropyFitness;
 use rand::RngExt;
 use std::f64::consts::PI;
 
-/// CMA-ES (Covariance Matrix Adaptation Evolution Strategy) con Realidad Cuántica
-/// Optimiza tensores de parámetros HFT usando CMA-ES penalizando fuertemente
-/// las estrategias irrealistas mediante EntropyFitness::reality_slippage_penalty.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CmaInputError {
+    InvalidDimension,
+    InvalidPopulationSize,
+    InvalidStepSize,
+    InvalidOptimizerShape,
+    PopulationSizeMismatch,
+    GenomeDimensionMismatch,
+    InvalidGene,
+    EvaluationCountMismatch,
+    CandidateIndexOutOfRange,
+    DuplicateCandidateIndex,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateOutcome {
+    Updated,
+    InsufficientValidParents,
+    Rejected(CmaInputError),
+}
+
+/// Supervisor policy level and CMA search dispersion are distinct quantities.
+/// This trace explains their composition; it is not evidence of profitability.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepSizeAdjustment {
+    pub previous_sigma: f64,
+    pub sigma: f64,
+    pub previous_level: f64,
+    pub level: f64,
+}
+
+/// Optimizador clásico híbrido CMA/PSO sobre coordenadas normalizadas.
+/// No implementa computación cuántica. Sus clamps y blanqueamiento diagonal
+/// requieren validación propia; no hereda todas las invariancias de CMA canónico.
+#[derive(Clone, Debug)]
 pub struct CmaEsOptimizer {
     pub dimension: usize,
     pub lambda: usize,
@@ -12,6 +44,7 @@ pub struct CmaEsOptimizer {
     pub weights: Vec<f64>,
     pub mueff: f64,
     pub sigma: f64,
+    supervisor_level: f64,
     pub mean: Vec<f64>,
     pub cov_matrix: Vec<Vec<f64>>,
     pub p_c: Vec<f64>,
@@ -54,9 +87,29 @@ fn reflective_boundary(mut val: f64, lower: f64, upper: f64) -> f64 {
 }
 
 impl CmaEsOptimizer {
+    /// Compatibility constructor for statically valid parameters. Runtime
+    /// configuration should use `try_new` and handle invalid input explicitly.
     pub fn new(dimension: usize, initial_sigma: f64, override_lambda: Option<usize>) -> Self {
+        Self::try_new(dimension, initial_sigma, override_lambda)
+            .expect("CMA requires dimension > 0, lambda >= 2 and finite positive sigma")
+    }
+
+    pub fn try_new(
+        dimension: usize,
+        initial_sigma: f64,
+        override_lambda: Option<usize>,
+    ) -> Result<Self, CmaInputError> {
+        if dimension == 0 {
+            return Err(CmaInputError::InvalidDimension);
+        }
+        if !initial_sigma.is_finite() || initial_sigma <= 0.0 {
+            return Err(CmaInputError::InvalidStepSize);
+        }
         let lambda =
             override_lambda.unwrap_or_else(|| 4 + (3.0 * (dimension as f64).ln()) as usize);
+        if lambda < 2 {
+            return Err(CmaInputError::InvalidPopulationSize);
+        }
         let mu = lambda / 2;
 
         let mut weights = Vec::with_capacity(mu);
@@ -86,20 +139,25 @@ impl CmaEsOptimizer {
             / ((dimension as f64 + 2.0).powi(2) + mueff))
             .min(1.0 - c_1)
             .max(0.0);
-        let d_sigma = 1.0 + 2.0 * ((mueff - 1.0) / (dimension as f64 + 1.0)).max(0.0) + c_sigma;
+        // Hansen, arXiv:1604.00772, Appendix C: damping of log(sigma).
+        // Missing sqrt and -1 overdamped adaptation, especially at large mu_eff/n.
+        let d_sigma = 1.0
+            + 2.0 * (((mueff - 1.0) / (dimension as f64 + 1.0)).sqrt() - 1.0).max(0.0)
+            + c_sigma;
 
         let mut cov_matrix = vec![vec![0.0; dimension]; dimension];
         for i in 0..dimension {
             cov_matrix[i][i] = 1.0;
         }
 
-        Self {
+        Ok(Self {
             dimension,
             lambda,
             mu,
             weights,
             mueff,
             sigma: initial_sigma,
+            supervisor_level: initial_sigma,
             mean: vec![0.0; dimension], // Centered at 0 initially
             cov_matrix,
             p_c: vec![0.0; dimension],
@@ -114,12 +172,62 @@ impl CmaEsOptimizer {
             velocities: vec![vec![0.0; dimension]; lambda],
             personal_bests: vec![vec![0.0; dimension]; lambda],
             personal_best_fitnesses: vec![f64::MIN; lambda],
+        })
+    }
+
+    /// Compose external exploration policy with learned dispersion:
+    /// sigma_new = sigma_learned * level_new / level_previous.
+    /// A repeated level is an exact no-op, not a restart. The supervisor's
+    /// rationale (currently heuristic) must be validated separately from CSA.
+    /// Reject invalid/overflowing rescaling without mutating either state.
+    pub fn apply_exploration_level(
+        &mut self,
+        level: f64,
+    ) -> Result<StepSizeAdjustment, CmaInputError> {
+        if !level.is_finite() || level <= 0.0 || !self.sigma.is_finite() || self.sigma <= 0.0 {
+            return Err(CmaInputError::InvalidStepSize);
         }
+        let sigma = if level == self.supervisor_level {
+            self.sigma
+        } else {
+            let scaled = self.sigma * (level / self.supervisor_level);
+            if scaled.is_finite() && scaled > 0.0 {
+                scaled
+            } else {
+                // Avoid intermediate overflow/underflow when the final value
+                // is representable. True overflow/underflow is rejected below.
+                (self.sigma.ln() + level.ln() - self.supervisor_level.ln()).exp()
+            }
+        };
+        if !sigma.is_finite() || sigma <= 0.0 {
+            return Err(CmaInputError::InvalidStepSize);
+        }
+        let adjustment = StepSizeAdjustment {
+            previous_sigma: self.sigma,
+            sigma,
+            previous_level: self.supervisor_level,
+            level,
+        };
+        self.sigma = sigma;
+        self.supervisor_level = level;
+        Ok(adjustment)
     }
 
     /// Samplea una población usando una técnica híbrida CMA-ES + PSO (Particle Swarm)
     pub fn sample_population(&mut self, w: f64, c1: f64, c2: f64) -> Vec<Vec<f64>> {
         let mut rng = rand::rng();
+        self.sample_population_with_rng(w, c1, c2, &mut rng)
+    }
+
+    /// RNG inyectable para reproducir y comparar propuestas con ruido común.
+    /// La semilla no convierte la evaluación económica en evidencia independiente.
+    pub fn sample_population_with_rng<R: rand::Rng + ?Sized>(
+        &mut self,
+        w: f64,
+        c1: f64,
+        c2: f64,
+        rng: &mut R,
+    ) -> Vec<Vec<f64>> {
         let mut population = Vec::with_capacity(self.lambda);
 
         // Cholesky decomposition L of covariance matrix C (L * L^T = C)
@@ -183,12 +291,25 @@ impl CmaEsOptimizer {
                     self.mean[d]
                 };
 
-                // PSO Velocity Update
+                // No measured fitness means no personal/social attractor.
+                // Zero-filled constructor vectors are storage, not evidence.
                 let r1_pso: f64 = rng.random();
                 let r2_pso: f64 = rng.random();
-                let vel = w * self.velocities[i][d]
-                    + c1 * r1_pso * (self.personal_bests[i][d] - safe_cma)
-                    + c2 * r2_pso * (self.global_best[d] - safe_cma);
+                let cognitive = if self.personal_best_fitnesses[i].is_finite()
+                    && self.personal_best_fitnesses[i] > f64::MIN
+                {
+                    c1 * r1_pso * (self.personal_bests[i][d] - safe_cma)
+                } else {
+                    0.0
+                };
+                let social = if self.global_best_fitness.is_finite()
+                    && self.global_best_fitness > f64::MIN
+                {
+                    c2 * r2_pso * (self.global_best[d] - safe_cma)
+                } else {
+                    0.0
+                };
+                let vel = w * self.velocities[i][d] + cognitive + social;
                 let safe_vel = if vel.is_finite() {
                     vel.clamp(-100000.0, 100000.0)
                 } else {
@@ -205,39 +326,128 @@ impl CmaEsOptimizer {
         population
     }
 
-    /// Actualiza la matriz de covarianza, media y step-size basado en la población evaluada.
-    /// Incorpora penalizaciones de realidad (Slippage/Fees y Reality Gap) internamente.
-    /// FASE 22: `actual_fee_rate` inyectado desde el Arena (no hardcodeado).
+    /// API histórica con comparación backtest/live: el sexto componente debe
+    /// ser Sharpe live comparable, nunca crecimiento de capital. El conteo de
+    /// trades compartido es una limitación de esta API; no certifica evidencia.
+    /// El fitness canónico ya debe incluir costes. `actual_fee_rate` se
+    /// conserva por compatibilidad: el antiguo PnL auxiliar no cambiaba el
+    /// factor efectivo [0.05,1], por lo que no descontaba fees del fitness.
     pub fn update(
         &mut self,
         population: &[Vec<f64>],
         fitness_scores: &mut [(usize, f64, f64, usize, f64, f64)],
-        actual_fee_rate: f64,
-    ) {
+        _actual_fee_rate: f64,
+    ) -> UpdateOutcome {
+        self.update_impl(population, fitness_scores, true)
+    }
+
+    /// Actualiza candidatos que sólo tienen evaluación de backtest. No
+    /// inventa una referencia live: el sexto componente es metadata opaca
+    /// del caller y se preserva, pero no interviene en la selección.
+    /// Esto NO valida fuera de muestra ni autoriza promoción/despliegue.
+    pub fn update_backtest_only(
+        &mut self,
+        population: &[Vec<f64>],
+        fitness_scores: &mut [(usize, f64, f64, usize, f64, f64)],
+        _actual_fee_rate: f64,
+    ) -> UpdateOutcome {
+        self.update_impl(population, fitness_scores, false)
+    }
+
+    /// Each generation is a complete indexed batch: exactly one evaluation
+    /// per candidate. Preflight is transactional for both optimizer and scores.
+    /// This validates shape/identity, NOT the fitness's economic provenance.
+    fn validate_batch(
+        &self,
+        population: &[Vec<f64>],
+        scores: &[(usize, f64, f64, usize, f64, f64)],
+    ) -> Result<(), CmaInputError> {
+        let n = self.dimension;
+        if n == 0
+            || self.lambda < 2
+            || self.mu == 0
+            || self.mu > self.lambda
+            || self.weights.len() != self.mu
+            || self.mean.len() != n
+            || self.p_c.len() != n
+            || self.p_sigma.len() != n
+            || self.global_best.len() != n
+            || self.cov_matrix.len() != n
+            || self.cov_matrix.iter().any(|row| row.len() != n)
+            || self.velocities.len() != self.lambda
+            || self.velocities.iter().any(|row| row.len() != n)
+            || self.personal_bests.len() != self.lambda
+            || self.personal_bests.iter().any(|row| row.len() != n)
+            || self.personal_best_fitnesses.len() != self.lambda
+        {
+            return Err(CmaInputError::InvalidOptimizerShape);
+        }
+        if !self.sigma.is_finite() || self.sigma <= 0.0 {
+            return Err(CmaInputError::InvalidStepSize);
+        }
+        if population.len() != self.lambda {
+            return Err(CmaInputError::PopulationSizeMismatch);
+        }
+        for genome in population {
+            if genome.len() != n {
+                return Err(CmaInputError::GenomeDimensionMismatch);
+            }
+            if genome
+                .iter()
+                .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
+            {
+                return Err(CmaInputError::InvalidGene);
+            }
+        }
+        if scores.len() != self.lambda {
+            return Err(CmaInputError::EvaluationCountMismatch);
+        }
+        let mut seen = vec![false; self.lambda];
+        for stat in scores {
+            let Some(already_seen) = seen.get_mut(stat.0) else {
+                return Err(CmaInputError::CandidateIndexOutOfRange);
+            };
+            if *already_seen {
+                return Err(CmaInputError::DuplicateCandidateIndex);
+            }
+            *already_seen = true;
+        }
+        Ok(())
+    }
+
+    fn update_impl(
+        &mut self,
+        population: &[Vec<f64>],
+        fitness_scores: &mut [(usize, f64, f64, usize, f64, f64)],
+        has_live_reference: bool,
+    ) -> UpdateOutcome {
+        if let Err(error) = self.validate_batch(population, fitness_scores) {
+            return UpdateOutcome::Rejected(error);
+        }
         // fitness_scores tuples: (index, raw_fitness, gross_pnl, num_trades, backtest_sharpe, live_sharpe)
 
-        // Aplicar Reality Slippage Penalty y Reality Gap Penalty a los PnLs
+        // Apply only an identified comparison, on the SIGNED canonical score.
         for stat in fitness_scores.iter_mut() {
-            let real_pnl =
-                EntropyFitness::reality_slippage_penalty(stat.2, stat.3, actual_fee_rate);
-
-            // FASE VII: Penalización bayesiana si el sistema colapsa en producción respecto al backtest
-            let reality_gap = EntropyFitness::reality_gap_adversarial_score(stat.4, stat.5, stat.3);
-
-            // CERT-M8-C04: el código ANTERIOR SOBRESCRIBÍA `stat.1` (el
-            // fitness canónico D-652 que el caller computó con
-            // fitness::compute) con `real_pnl * reality_gap` (pnl-based).
-            // El caller ordenaba por stat.1 DESPUÉS de esta sobrescritura:
-            // la utilidad Kelly era decorativa, D-653/D-654 re-rotos. Ahora
-            // la penalización de reality-gap SE APLICA como factor
-            // multiplicativo ≤ 1.0 SOBRE el fitness canónico (sólo puede
-            // REDUCIRLO, jamás reemplazarlo por una pnl-utility diferente).
+            if !stat.1.is_finite()
+                || !stat.2.is_finite()
+                || (has_live_reference && (!stat.4.is_finite() || !stat.5.is_finite()))
+            {
+                stat.1 = f64::MIN;
+                continue;
+            }
+            let retention = if has_live_reference {
+                EntropyFitness::reality_gap_adversarial_score(stat.4, stat.5, stat.3)
+            } else {
+                1.0
+            };
+            // FMT-011: for 0<r<=1, f*r<=f if f>=0, and f/r<=f if f<0.
+            // Use the score's sign, not the sign of a differently defined PnL.
             if stat.3 > 0 {
-                if real_pnl >= 0.0 {
-                    stat.1 *= reality_gap.clamp(0.0, 1.0);
+                stat.1 = if stat.1 >= 0.0 {
+                    stat.1 * retention
                 } else {
-                    stat.1 *= reality_gap.clamp(0.05, 1.0);
-                }
+                    stat.1 / retention
+                };
             } else {
                 // Penalidad suave: la distancia a la media ayuda a evitar que todos tengan la misma puntuación (planicie)
                 let norm: f64 = population[stat.0].iter().map(|v| v.abs()).sum();
@@ -245,9 +455,21 @@ impl CmaEsOptimizer {
             }
 
             if !stat.1.is_finite() {
-                stat.1 = -1e9;
+                // A fixed -1e9 could outrank a finite score below -1e9.
+                stat.1 = f64::MIN;
             }
+        }
 
+        fitness_scores.sort_by(|a, b| b.1.total_cmp(&a.1));
+        // No empirical parents: leave optimizer memory and geometry untouched.
+        if self.mu == 0
+            || fitness_scores.len() < self.mu
+            || fitness_scores.iter().take(self.mu).any(|s| s.1 == f64::MIN)
+        {
+            return UpdateOutcome::InsufficientValidParents;
+        }
+
+        for stat in fitness_scores.iter().filter(|s| s.1 != f64::MIN) {
             // --- PSO: Update Personal Best ---
             let idx = stat.0;
             if stat.1 > self.personal_best_fitnesses[idx] {
@@ -255,9 +477,6 @@ impl CmaEsOptimizer {
                 self.personal_bests[idx] = population[idx].clone();
             }
         }
-
-        // Sort population by reality-adjusted fitness (descending, higher is better)
-        fitness_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // --- PSO: Update Global Best ---
         if fitness_scores[0].1 > self.global_best_fitness {
@@ -381,6 +600,7 @@ impl CmaEsOptimizer {
         } else {
             self.sigma = self.sigma.max(1e-9);
         }
+        UpdateOutcome::Updated
     }
 }
 

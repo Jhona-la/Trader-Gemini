@@ -42,17 +42,14 @@
 //! F = ln(capital_final / capital_inicial) − λ · max_drawdown²
 //! ```
 //!
-//! Propiedades que la hacen correcta para este sistema:
-//!
-//! * **Invariante ante el apalancamiento** salvo por su efecto real sobre la
-//!   ruina — que ahora el backtest sí simula (D-669).
-//! * **Cóncava en la riqueza**: es la utilidad de Kelly, coherente con el
-//!   dimensionamiento de Kelly que el motor ya emplea. Maximizarla es
-//!   maximizar la tasa de crecimiento geométrico a largo plazo.
-//! * **El drawdown entra al cuadrado**: penaliza desproporcionadamente las
-//!   caídas grandes, que son las que producen ruina irreversible.
-//! * **Aditiva en el tiempo**: `ln` convierte el producto de retornos en suma,
-//!   de modo que la aptitud de dos periodos es la suma de sus aptitudes.
+//! Alcance matemático (XXXV, precisión de FMT-047): el log-crecimiento es
+//! invariante a la unidad monetaria, NO al apalancamiento. Sólo el término
+//! logarítmico es aditivo al encadenar periodos; el máximo drawdown y el factor
+//! OOS no lo son. El log es cóncavo en riqueza positiva, pero este escalar de
+//! una trayectoria no es una optimización de esperanza ni garantiza Kelly.
+//! La penalización cuadrática es una preferencia de riesgo heredada, no una
+//! cota probabilística de ruina. El mínimo de trades es admisibilidad de
+//! evidencia; su sentinel NO demuestra que abstenerse sea económicamente peor.
 
 /// Entradas observables de la evaluación. Ninguna es opcional: obligar a
 /// aportarlas todas impide que un llamador construya su propia variante
@@ -76,72 +73,38 @@ pub struct FitnessInputs {
 /// Aptitud que la evolución **maximiza**. `NEG_INFINITY` marca inviabilidad.
 pub const INVIABLE: f64 = f64::NEG_INFINITY;
 
-/// Peso de la penalización por drawdown. Derivado, no elegido: se fija de modo
-/// que un drawdown del 50 % anule exactamente una duplicación del capital
-/// (`ln 2 ≈ 0,693`), que es el punto en que un operador racional considera
-/// equivalentes ambos resultados.
+/// Peso heredado: se ELIGE la equivalencia entre penalizar DD=50% y premiar
+/// duplicar capital. Resolver esa igualdad da lambda; no deriva una preferencia
+/// universal del inversor ni una probabilidad de ruina.
 ///
 /// `λ · 0,5² = ln 2  ⟹  λ = 4·ln 2 ≈ 2,7726`
-pub const DRAWDOWN_LAMBDA: f64 = 2.772_588_722_239_781;
+pub use god_engine_core::fitness_contract::DRAWDOWN_LAMBDA;
 
-/// Penalización por degradación fuera de muestra. Un genoma que gana en la
-/// partición de entrenamiento y pierde en la de validación está sobreajustado;
-/// la penalización es continua en la magnitud de la degradación, sin escalón.
-fn oos_factor(inputs: &FitnessInputs) -> f64 {
-    let start = inputs.oos_start_capital;
-    let end = inputs.oos_end_capital;
-    if !start.is_finite() || !end.is_finite() || start <= 0.0 {
-        return 1.0;
-    }
-    let oos_growth = (end / start).max(1e-12).ln();
-    if oos_growth >= 0.0 {
-        1.0
-    } else {
-        // Degradación OOS: el factor crece suavemente con la pérdida relativa.
-        // −10 % OOS ⇒ ×1,105; −50 % ⇒ ×1,69. Continuo y sin umbrales.
-        1.0 + oos_growth.abs()
-    }
+/// Heurística continua de pérdida OOS, no test de sobreajuste. Datos inválidos
+/// o riqueza OOS no positiva no equivalen a "sin degradación". Endpoints iguales
+/// y positivos mantienen la convención legacy sin split; no acreditan un OOS.
+fn oos_factor(inputs: &FitnessInputs) -> Option<f64> {
+    let growth = god_engine_core::fitness_contract::log_capital_growth(
+        inputs.oos_start_capital, inputs.oos_end_capital,
+    ).ok()?;
+    Some(1.0 + (-growth).max(0.0))
 }
 
 /// FUNCIÓN ÚNICA DE APTITUD. Todo promotor de genomas debe llamar a ESTA.
 pub fn compute(inputs: &FitnessInputs) -> f64 {
-    // D-654: la inacción es INVIABLE, no intermedia. El gen `min_trades_per_day`
-    // existe precisamente para esto y estaba entre los que nadie leía.
-    if inputs.total_trades < inputs.min_trades_required.max(1) {
-        return INVIABLE;
-    }
-    if !inputs.initial_capital.is_finite() || inputs.initial_capital <= 0.0 {
-        return INVIABLE;
-    }
-    if !inputs.final_capital.is_finite() {
-        return INVIABLE;
-    }
-    // Ruina: capital agotado. Peor resultado posible, sin gradiente que
-    // invite a explorar en esa dirección.
-    if inputs.final_capital <= 0.0 {
-        return INVIABLE;
-    }
-
-    // Crecimiento logarítmico: la utilidad de Kelly.
-    let growth = (inputs.final_capital / inputs.initial_capital).ln();
-
-    // Penalización cuadrática por drawdown.
-    let dd = if inputs.max_drawdown_pct.is_finite() {
-        inputs.max_drawdown_pct.clamp(0.0, 1.0)
-    } else {
-        1.0
+    let base = match god_engine_core::fitness_contract::checked_fitness(
+        inputs.initial_capital, inputs.final_capital, inputs.max_drawdown_pct,
+        inputs.total_trades, inputs.min_trades_required,
+    ) {
+        Ok(value) => value,
+        Err(_) => return INVIABLE,
     };
-    let dd_penalty = DRAWDOWN_LAMBDA * dd * dd;
-
-    let base = growth - dd_penalty;
-
-    // La degradación fuera de muestra AMPLIFICA el castigo y ATENÚA el premio:
-    // en ambos casos empuja hacia genomas que generalizan.
-    let oos = oos_factor(inputs);
+    let Some(oos) = oos_factor(inputs) else { return INVIABLE; };
     if base >= 0.0 { base / oos } else { base * oos }
 }
 
-/// Calcula la aptitud con regularización Bayesiana hacia un prior para muestras reducidas (#22).
+/// Contracción lineal hacia un prior para muestras reducidas (#22). El nombre
+/// legacy no acredita posterior bayesiano: faltan prior/likelihood identificados.
 /// Previene el bloqueo en frío donde candidatos con N < min_trades_required reciben -inf,
 /// contrayendo suavemente el fitness observado hacia el prior en lugar de descartarlo.
 pub fn compute_with_bayesian_prior(inputs: &FitnessInputs, prior_fitness: f64) -> f64 {
@@ -152,15 +115,19 @@ pub fn compute_with_bayesian_prior(inputs: &FitnessInputs, prior_fitness: f64) -
     if inputs.total_trades >= req {
         return compute(inputs);
     }
+    if !prior_fitness.is_finite() {
+        return INVIABLE;
+    }
     // Regularización Bayesiana suave: peso proporcional al soporte muestral N / N_req
     let weight = inputs.total_trades as f64 / req as f64;
     let mut modified_inputs = inputs.clone();
     modified_inputs.min_trades_required = inputs.total_trades;
     let raw_fitness = compute(&modified_inputs);
-    if raw_fitness == INVIABLE {
+    if !raw_fitness.is_finite() {
         INVIABLE
     } else {
-        weight * raw_fitness + (1.0 - weight) * prior_fitness
+        let value = weight * raw_fitness + (1.0 - weight) * prior_fitness;
+        if value.is_finite() { value } else { INVIABLE }
     }
 }
 

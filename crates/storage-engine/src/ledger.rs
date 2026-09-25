@@ -1,5 +1,5 @@
 use crossbeam_channel::{Receiver, Sender};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OpenFlags};
 use std::thread;
 
 /// Un evento de posesión para actualizar el Ledger Local
@@ -7,7 +7,7 @@ use std::thread;
 pub struct LedgerEvent {
     pub symbol: String,
     pub position_side: String,      // "LONG" o "SHORT"
-    pub strategy: String,           // "scalp" o "swing"
+    pub strategy: String,           // Etiqueta histórica de procedencia, no partición del motor
     pub qty_delta: f64,             // Positivo (abrir) o Negativo (cerrar)
     pub price: f64,                 // Precio promedio
     pub is_absolute_override: bool, // Si es true, sobrescribe en vez de sumar (útil para conciliación)
@@ -17,8 +17,19 @@ pub struct PositionLedger {
     tx: Sender<LedgerEvent>,
 }
 
+/// A persisted ownership row, not proof of an exchange fill or a spectral model.
+/// Keep the old label as provenance; it must not partition the public read API
+/// into two trading engines or silently hide other labels.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnershipRecord {
+    pub provenance_label: String,
+    pub quantity: f64,
+    pub entry_price: f64,
+}
+
 impl PositionLedger {
-    /// Inicializa la BD en modo WAL y lanza el hilo de fondo (Zero-Latency)
+    /// Inicializa la BD en modo WAL y lanza el hilo de fondo.
+    /// Encolar no acredita persistencia; no se garantiza latencia cero.
     pub fn new(db_path: &str) -> Self {
         // FIX #1438: Canal acotado a 100k eventos para protección de RAM
         let (tx, rx): (Sender<LedgerEvent>, Receiver<LedgerEvent>) =
@@ -154,34 +165,76 @@ impl PositionLedger {
         let _ = self.tx.try_send(event); // No bloqueante para el hot path
     }
 
-    /// Método síncrono para inicialización: Leer estado del Ledger
+    /// Read all provenance labels without modifying or creating the database.
+    /// Missing/corrupt schema or row values are errors, not an observed flat
+    /// portfolio. The result is a local snapshot, NOT a fill/reservation ledger.
+    pub fn read_ownership(
+        db_path: &str,
+        symbol: &str,
+        position_side: &str,
+    ) -> rusqlite::Result<Vec<OwnershipRecord>> {
+        let conn = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        let mut stmt = conn.prepare(
+            "SELECT strategy, qty, entry_price FROM position_ownership \
+             WHERE symbol=?1 AND position_side=?2 ORDER BY strategy",
+        )?;
+        let rows = stmt.query_map(params![symbol, position_side], |row| {
+            let record = OwnershipRecord {
+                provenance_label: row.get(0)?,
+                quantity: row.get(1)?,
+                entry_price: row.get(2)?,
+            };
+            if record.provenance_label.is_empty()
+                || !record.quantity.is_finite()
+                || record.quantity < 0.0
+                || !record.entry_price.is_finite()
+                || record.entry_price < 0.0
+                || (record.quantity > 0.0 && record.entry_price == 0.0)
+            {
+                return Err(rusqlite::Error::FromSqlConversionFailure(
+                    1,
+                    rusqlite::types::Type::Real,
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "invalid ownership label, quantity or entry price",
+                    )),
+                ));
+            }
+            Ok(record)
+        })?;
+        rows.collect()
+    }
+
+    /// Legacy two-label adapter. New consumers must use read_ownership.
+    /// Returns None if any row cannot be represented without losing evidence;
+    /// None is NOT a flat portfolio and must never authorize new exposure.
     pub fn get_ownership(
         db_path: &str,
         symbol: &str,
         position_side: &str,
     ) -> Option<(f64, f64, f64, f64)> {
-        let conn = Connection::open(db_path).ok()?;
-        let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
-
-        // Retornamos (scalp_qty, scalp_price, swing_qty, swing_price)
+        let records = Self::read_ownership(db_path, symbol, position_side).ok()?;
+        // Retain historical serialization at this adapter only.
         let mut scalp_qty = 0.0;
         let mut scalp_price = 0.0;
         let mut swing_qty = 0.0;
         let mut swing_price = 0.0;
-
-        let mut stmt = conn.prepare("SELECT strategy, qty, entry_price FROM position_ownership WHERE symbol=?1 AND position_side=?2").ok()?;
-        let mut rows = stmt.query(params![symbol, position_side]).ok()?;
-
-        while let Ok(Some(row)) = rows.next() {
-            let strat: String = row.get(0).unwrap_or_default();
-            let q: f64 = row.get(1).unwrap_or(0.0);
-            let p: f64 = row.get(2).unwrap_or(0.0);
-            if strat == "scalp" {
-                scalp_qty = q;
-                scalp_price = p;
-            } else if strat == "swing" {
-                swing_qty = q;
-                swing_price = p;
+        let mut seen = std::collections::HashSet::new();
+        for record in records {
+            if !seen.insert(record.provenance_label.clone()) {
+                return None;
+            }
+            match record.provenance_label.as_str() {
+                "scalp" => {
+                    scalp_qty = record.quantity;
+                    scalp_price = record.entry_price;
+                }
+                "swing" => {
+                    swing_qty = record.quantity;
+                    swing_price = record.entry_price;
+                }
+                _ => return None,
             }
         }
 
@@ -290,5 +343,43 @@ mod tests {
         }
         assert!(persisted, "Debe acumular los deltas incrementales correctamente a 1.0 ETH y precio promedio 3050.0");
         let _ = std::fs::remove_file(db_path);
+    }
+
+    // XXX: passing diagnostics of OPEN write-side contracts. No worker/DB.
+    fn pending_event(qty: f64) -> LedgerEvent {
+        LedgerEvent {
+            symbol: "XXXUSDT".into(),
+            position_side: "LONG".into(),
+            strategy: "continuous".into(),
+            qty_delta: qty,
+            price: 100.0,
+            is_absolute_override: true,
+        }
+    }
+
+    #[test]
+    fn xxx_open_absolute_flat_snapshot_is_discarded_before_writer() {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let ledger = PositionLedger { tx };
+        ledger.push_event(pending_event(0.0));
+        assert!(rx.try_recv().is_err(), "known defect: absolute zero never reaches delete branch");
+    }
+
+    #[test]
+    fn xxx_open_small_nonzero_exposure_is_discarded_without_reason() {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let ledger = PositionLedger { tx };
+        ledger.push_event(pending_event(1e-13));
+        assert!(rx.try_recv().is_err(), "known defect: absolute unitless dust veto");
+    }
+
+    #[test]
+    fn xxx_open_queue_full_discards_a_valid_event_without_ack() {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let ledger = PositionLedger { tx };
+        ledger.push_event(pending_event(1.0));
+        ledger.push_event(pending_event(2.0));
+        assert_eq!(rx.try_recv().unwrap().qty_delta, 1.0);
+        assert!(rx.try_recv().is_err(), "known defect: second valid event vanished");
     }
 }

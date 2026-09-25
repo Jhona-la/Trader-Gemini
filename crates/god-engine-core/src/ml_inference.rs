@@ -23,25 +23,29 @@ pub struct NanoForestData {
 #[derive(Clone)]
 pub struct NanoForest {
     data: NanoForestData,
+    required_features: usize,
 }
 
 impl NanoForest {
     /// B3.9-aud — el contrato de dimensión aplica a TODA construcción, no
     /// sólo a `load_model`: `from_data` es la vía de tests y de trainers
     /// in-proc; un modelo más ancho que el binario vivo haría OOB en
-    /// `x[feature]` (la protección de `evaluate_tree` lo neutraliza a 0.0,
-    /// pero mejor rechazar en la frontera que silenciar en el hot loop).
+    /// `x[feature]`. También se valida topología y finitud antes de activar;
+    /// una entrada insuficiente produce ausencia de predicción, no neutralidad.
     pub fn from_data(data: NanoForestData) -> Result<Self, String> {
-        Self::validate_dim_contract(&data, "<from_data>")?;
-        Ok(NanoForest { data })
+        let required_features = Self::validate_dim_contract(&data, "<from_data>")?;
+        Ok(NanoForest {
+            data,
+            required_features,
+        })
     }
 
     /// B3.9 — CONTRATO DE DIMENSIÓN del vector ML de inferencia. Un modelo
     /// entrenado con un vector MÁS ANCHO que el de este binario (p.ej.
     /// 48D con splits en dims 44-47 corriendo en un binario 44D) haría
     /// out-of-bounds en `x[feature]`. El cargador RECHAZA cualquier modelo
-    /// que parta por una dim ≥ este contrato — el fallback a BTCUSDT_SCALP
-    /// mantiene el motor vivo. La regresión de binario queda segura.
+    /// que parta por una dim ≥ este contrato. El rechazo no acredita
+    /// compatibilidad semántica ni autoriza un fallback entre instrumentos.
     pub const ML_VECTOR_DIM: usize = 48;
 
     /// B3.36 — tasa base del PROPIO modelo: sigmoid(init_score). Con el
@@ -62,20 +66,102 @@ impl NanoForest {
         self.data.init_score as f64
     }
 
-    /// Valida que ningún split del modelo parta por una dimensión fuera del
-    /// vector que ESTE binario construye. Índices negativos (hojas: -1/-2)
-    /// y un vector `feature` vacío (modelo sin splits) no violan el
-    /// contrato: `evaluate_tree` los trata como hoja, sin acceso a memoria.
-    fn validate_dim_contract(data: &NanoForestData, origen: &str) -> Result<(), String> {
-        if let Some(&max_feat) = data.feature.iter().filter(|f| **f >= 0).max() {
-            if max_feat as usize >= Self::ML_VECTOR_DIM {
-                return Err(format!(
-                    "modelo {origen} parte por dim {max_feat} ≥ contrato ML_VECTOR_DIM={} — binario obsoleto para este modelo; re-compilar",
-                    Self::ML_VECTOR_DIM
-                ));
+    /// Validate topology once, before activation or cache writes. Child indices
+    /// are GLOBAL array indices and must stay inside their tree's offset range.
+    /// This is structural validity, not a feature-schema or calibration certificate.
+    fn validate_dim_contract(data: &NanoForestData, origin: &str) -> Result<usize, String> {
+        let fail = |reason: &str| format!("modelo {origin}: {reason}");
+        let n = data.value.len();
+        if [
+            data.children_left.len(),
+            data.children_right.len(),
+            data.feature.len(),
+            data.threshold.len(),
+        ]
+        .iter()
+        .any(|&len| len != n)
+        {
+            return Err(fail("parallel node arrays have different lengths"));
+        }
+        if !data.init_score.is_finite()
+            || data
+                .value
+                .iter()
+                .chain(&data.threshold)
+                .any(|x| !x.is_finite())
+        {
+            return Err(fail("non-finite model parameter"));
+        }
+        // Explicit legacy bias-only representation, used by measurement oracles.
+        // No tree is traversed. Other empty/degenerate encodings are rejected.
+        if n == 0 && data.tree_offsets == [0, 0] {
+            return Ok(0);
+        }
+        if n > i32::MAX as usize
+            || data.tree_offsets.len() < 2
+            || data.tree_offsets.first() != Some(&0)
+            || data.tree_offsets.last().copied() != Some(n as i32)
+            || data
+                .tree_offsets
+                .windows(2)
+                .any(|w| w[0] < 0 || w[1] <= w[0])
+        {
+            return Err(fail("invalid tree offsets"));
+        }
+        let mut required = 0;
+        let mut color = vec![0_u8; n];
+        for bounds in data.tree_offsets.windows(2) {
+            let (start, end) = (bounds[0] as usize, bounds[1] as usize);
+            if end > n {
+                return Err(fail("tree offset outside node arrays"));
+            }
+            for node in start..end {
+                let (left, right) = (data.children_left[node], data.children_right[node]);
+                if left == -1 && right == -1 {
+                    continue;
+                }
+                if left < 0
+                    || right < 0
+                    || [left, right]
+                        .iter()
+                        .any(|&c| (c as usize) < start || (c as usize) >= end)
+                {
+                    return Err(fail("split has missing or cross-tree child"));
+                }
+                let feature = data.feature[node];
+                if feature < 0 || feature as usize >= Self::ML_VECTOR_DIM {
+                    return Err(fail("split feature outside ML_VECTOR_DIM"));
+                }
+                required = required.max(feature as usize + 1);
+            }
+            // Iterative DFS avoids recursion-stack overflow and also checks
+            // unreachable nodes. Shared subtrees are allowed, cycles are not.
+            for root in start..end {
+                if color[root] != 0 {
+                    continue;
+                }
+                let mut stack = vec![(root, false)];
+                while let Some((node, leaving)) = stack.pop() {
+                    if leaving {
+                        color[node] = 2;
+                        continue;
+                    }
+                    if color[node] == 1 {
+                        return Err(fail("cycle in tree"));
+                    }
+                    if color[node] == 2 {
+                        continue;
+                    }
+                    color[node] = 1;
+                    stack.push((node, true));
+                    if data.children_left[node] != -1 {
+                        stack.push((data.children_right[node] as usize, false));
+                        stack.push((data.children_left[node] as usize, false));
+                    }
+                }
             }
         }
-        Ok(())
+        Ok(required)
     }
 
     /// Parsea el JSON fuente y (best-effort) recompila el .bin de caché.
@@ -137,15 +223,17 @@ impl NanoForest {
         // Aplica IGUAL al camino del .bin (caché) — y el .bin sólo se
         // escribe DESPUÉS de validar: un modelo rechazado no contamina la
         // caché para el próximo arranque.
-        Self::validate_dim_contract(&data, path).map_err(|e| -> Box<dyn std::error::Error> {
-            e.into()
-        })?;
+        let required_features = Self::validate_dim_contract(&data, path)
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
         if !from_bin {
             if let Ok(encoded) = bincode::serialize(&data) {
                 let _ = std::fs::write(&bin_path, encoded);
             }
         }
-        Ok(NanoForest { data })
+        Ok(NanoForest {
+            data,
+            required_features,
+        })
     }
 
     /// Loads the forest into the global static cache under a specific key
@@ -187,97 +275,67 @@ impl NanoForest {
         None
     }
 
-    /// Evaluates a single tree. Returns the leaf value with bounds protection.
+    /// Bounded traversal of a validated tree. No allocation on the prediction path.
     #[inline(always)]
-    fn evaluate_tree(&self, features: &[f32], tree_idx: usize) -> f32 {
-        let start_node = self.data.tree_offsets[tree_idx] as usize;
-        let mut current_node = start_node;
-
-        loop {
-            let left_child = self
-                .data
-                .children_left
-                .get(current_node)
-                .copied()
-                .unwrap_or(-1);
-            let right_child = self
-                .data
-                .children_right
-                .get(current_node)
-                .copied()
-                .unwrap_or(-1);
-
-            if left_child == -1 && right_child == -1 {
-                // Leaf node
-                return self.data.value.get(current_node).copied().unwrap_or(0.0);
-            }
-
-            let feat_idx = self.data.feature.get(current_node).copied().unwrap_or(-1);
-            if feat_idx < 0 || (feat_idx as usize) >= features.len() {
-                // Out of bounds feature protection: fallback to left leaf or 0.0
-                return 0.0;
-            }
-            let threshold = self
-                .data
-                .threshold
-                .get(current_node)
-                .copied()
-                .unwrap_or(0.0);
-
-            if features[feat_idx as usize] <= threshold {
-                if left_child < 0 {
-                    return 0.0;
-                }
-                current_node = left_child as usize;
-            } else {
-                if right_child < 0 {
-                    return 0.0;
-                }
-                current_node = right_child as usize;
-            }
-        }
-    }
-
-    /// Predicts the probability for the given features.
-    pub fn predict(&self, features: &[f32]) -> Option<f32> {
-        if self.data.tree_offsets.len() <= 1 || features.is_empty() {
-            return None;
-        }
-        // FIX #688: Validar finitud de todos los features
-        for &f in features {
-            if !f.is_finite() {
+    fn evaluate_tree(&self, features: &[f32], tree_idx: usize) -> Option<f32> {
+        let start = *self.data.tree_offsets.get(tree_idx)? as usize;
+        let end = *self.data.tree_offsets.get(tree_idx + 1)? as usize;
+        let mut node = start;
+        for _ in start..end {
+            if node < start || node >= end {
                 return None;
             }
+            let left = self.data.children_left[node];
+            let right = self.data.children_right[node];
+            if left == -1 && right == -1 {
+                return Some(self.data.value[node]);
+            }
+            let feature = usize::try_from(self.data.feature[node]).ok()?;
+            node = usize::try_from(if *features.get(feature)? <= self.data.threshold[node] {
+                left
+            } else {
+                right
+            })
+            .ok()?;
         }
-
-        let n_trees = self.data.tree_offsets.len() - 1;
-        let mut sum = self.data.init_score;
-
-        for i in 0..n_trees {
-            sum += self.evaluate_tree(features, i);
-        }
-
-        // Apply sigmoid with clamping for numerical stability [-50, +50]
-        let safe_sum = if sum.is_finite() { sum } else { 0.0 };
-        let clamped_sum = (-safe_sum).clamp(-50.0, 50.0);
-        let prob = 1.0 / (1.0 + clamped_sum.exp());
-        Some(if prob.is_finite() {
-            prob.clamp(0.0, 1.0)
-        } else {
-            0.5
-        })
+        None
     }
 
-    pub fn predict_raw(&self, features: &[f32]) -> (f32, f32) {
-        let n_trees = self.data.tree_offsets.len().saturating_sub(1);
-        let mut sum = self.data.init_score;
-        for i in 0..n_trees {
-            sum += self.evaluate_tree(features, i);
+    /// A valid number is not evidence when required features are absent.
+    pub fn predict(&self, features: &[f32]) -> Option<f32> {
+        self.predict_raw_checked(features)
+            .map(|(_, probability)| probability)
+    }
+
+    /// Unified input/numerical contract for classification and regression.
+    /// The second component is a logistic transform, not a calibrated
+    /// probability for regression targets.
+    pub fn predict_raw_checked(&self, features: &[f32]) -> Option<(f32, f32)> {
+        if features.is_empty()
+            || features.len() < self.required_features
+            || features.iter().any(|f| !f.is_finite())
+        {
+            return None;
         }
-        let safe_sum = if sum.is_finite() { sum } else { 0.0 };
-        let clamped_sum = (-safe_sum).clamp(-50.0, 50.0);
-        let prob = 1.0 / (1.0 + clamped_sum.exp());
-        (sum, prob)
+        let mut sum = self.data.init_score as f64;
+        if !self.data.value.is_empty() {
+            for tree in 0..self.data.tree_offsets.len() - 1 {
+                sum += self.evaluate_tree(features, tree)? as f64;
+            }
+        }
+        let raw = sum as f32;
+        if !sum.is_finite() || !raw.is_finite() {
+            return None;
+        }
+        let probability = (1.0 / (1.0 + (-sum).clamp(-50.0, 50.0).exp())) as f32;
+        Some((raw, probability))
+    }
+
+    /// Compatibility wrapper. Invalid input is explicitly non-finite, never a
+    /// fabricated 0.5 or zero-return forecast. New consumers should use checked.
+    pub fn predict_raw(&self, features: &[f32]) -> (f32, f32) {
+        self.predict_raw_checked(features)
+            .unwrap_or((f32::NAN, f32::NAN))
     }
 }
 
@@ -301,12 +359,12 @@ pub fn macro_ml_features(omni: &[f64; 54]) -> [f32; 4] {
         }
     };
     [
-        aff(omni[24], 20.0, 10.0), // VIXCLS — nivel de miedo
+        aff(omni[24], 20.0, 10.0),    // VIXCLS — nivel de miedo
         aff(omni[22], 5000.0, 500.0), // SP500 — nivel riesgo global
         // B3.23: ICE DXY (DX-Y.NYB ~99-105) en trainer y vivo — la serie
         // Fed DTWEXBGS (~120) quedó fuera (FRED bloquea la red); paridad
         // por MISMA SERIE en ambos lados del contrato.
-        aff(omni[21], 100.0, 5.0),  // ICE DXY — nivel dólar
+        aff(omni[21], 100.0, 5.0),      // ICE DXY — nivel dólar
         aff(omni[23], 18000.0, 2000.0), // NASDAQCOM — nivel tech
     ]
 }
@@ -356,9 +414,9 @@ mod tests {
         // NaN feature -> None
         assert!(forest.predict(&[f32::NAN]).is_none());
 
-        // Out of bounds feature index falls back safely
+        // Missing required input is unavailable, not a neutral vote.
         let prob = forest.predict(&[0.2]);
-        assert!(prob.is_some());
+        assert!(prob.is_none());
     }
 
     #[test]
@@ -459,24 +517,21 @@ mod tests {
         assert!(NanoForest::load_model(&bin_ok).is_ok());
     }
 
-    /// Sin features (o sólo índices de hoja negativos) no hay violación de
-    /// contrato: son modelos triviales/all-leaves, seguros en evaluate_tree.
+    /// Leaves may use negative feature sentinels; splits cannot.
     #[test]
-    fn b39_modelo_sin_splits_o_con_hojas_negativas_es_valido() {
-        let mut no_split = synthetic(1.0);
-        no_split.feature = vec![-1, -1, -1];
-        let f = NanoForest::from_data(no_split).unwrap();
-        assert!(f.predict(&[0.3]).is_some());
+    fn b39_leaf_sentinels_are_valid_but_missing_split_metadata_is_rejected() {
+        let mut leaf = synthetic(1.0);
+        leaf.children_left = vec![-1; 3];
+        leaf.children_right = vec![-1; 3];
+        leaf.feature = vec![-7; 3];
+        assert!(NanoForest::from_data(leaf).is_ok());
 
         let mut empty = synthetic(1.0);
-        empty.feature = Vec::new();
-        let f2 = NanoForest::from_data(empty).unwrap();
-        // feature vacío ⇒ feat_idx OOB se lee como -1 ⇒ hoja segura.
-        assert!(f2.predict(&[0.3]).is_some());
-
+        empty.feature.clear();
+        assert!(NanoForest::from_data(empty).is_err());
         let mut negative = synthetic(1.0);
-        negative.feature = vec![-7, -1, -1];
-        assert!(NanoForest::from_data(negative).is_ok());
+        negative.feature[0] = -7;
+        assert!(NanoForest::from_data(negative).is_err());
     }
 
     /// Frescura real de la caché: .json más nuevo que el .bin ⇒ se sirve el
@@ -498,7 +553,10 @@ mod tests {
 
         // Pasando el .json: sirve v2 y recompila el .bin.
         let via_json = NanoForest::load_model(&json).unwrap();
-        assert!(via_json.predict(&[0.1]).unwrap() < 0.5, "json nuevo debe ganar");
+        assert!(
+            via_json.predict(&[0.1]).unwrap() < 0.5,
+            "json nuevo debe ganar"
+        );
 
         // Pasando el .BIN directo (caso del host): el hermano .json más
         // nuevo también gana — antes el .bin se comparaba consigo mismo y

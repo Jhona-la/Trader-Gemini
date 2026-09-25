@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "audit": "X",
+  "date": "2026-09-24",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_X_2026-09-24.md",
+  "git": {
+    "branch": "main",
+    "head": "59a76de4",
+    "commit_created": false,
+    "push": false,
+    "merge": false,
+    "remote_verified": false
+  },
+  "scope": {
+    "complete_preexisting_rust_files": 94,
+    "baseline_tracked_rust": 289,
+    "remaining_without_complete_read": 195,
+    "new_complete_read": "crates/quantum-arena/src/config.rs",
+    "complete_project_audit": false,
+    "live_system_certified": false,
+    "live_trading": false,
+    "deployed": false,
+    "active_genomes_changed": false
+  },
+  "findings": [
+    {
+      "id": "FMT-040",
+      "status": "locally_fixed_and_tested",
+      "title": "Signed temporal friction band",
+      "file": "crates/quantum-arena/src/genome.rs",
+      "line": 2432,
+      "tests": "crates/quantum-arena/tests/temporal_band_contract.rs",
+      "limits": [
+        "Floating-point roots, not certified intervals",
+        "No guarantee of positive expected return or execution feasibility",
+        "Operating-domain clamps remain"
+      ]
+    },
+    {
+      "id": "FMT-041",
+      "status": "partial",
+      "title": "Friction policy is not a universal profitability theorem",
+      "files": [
+        "crates/quantum-arena/src/genome.rs",
+        "crates/quantum-arena/src/genome_store.rs"
+      ],
+      "limits": [
+        "Risk budget q=0.65 unchanged",
+        "Reference fee fallback unchanged",
+        "Economic and downstream validation remains open"
+      ]
+    },
+    {
+      "id": "FMT-112",
+      "status": "representation_contract_clarified_and_tested",
+      "title": "Independent interpolation of nodal observables",
+      "file": "crates/quantum-arena/src/temporal_spectrum.rs",
+      "line": 514,
+      "tests": "crates/quantum-arena/tests/spectral_interpolation_contract.rs",
+      "signal_or_mass_formula_changed": false,
+      "limits": [
+        "Mass is not directional confidence",
+        "state_at is not a resumable filter checkpoint",
+        "No predictive advantage demonstrated"
+      ]
+    },
+    {
+      "id": "FMT-133",
+      "status": "locally_fixed_and_tested",
+      "title": "Piecewise local slope replaces cross-knot secant",
+      "file": "crates/quantum-arena/src/temporal_spectrum.rs",
+      "line": 540,
+      "tests": "crates/quantum-arena/tests/spectral_interpolation_contract.rs",
+      "production_caller_found": false,
+      "limits": [
+        "Right derivative at knots, not bilateral differentiability",
+        "No measured latency or PnL improvement"
+      ]
+    },
+    {
+      "id": "FMT-134",
+      "status": "open",
+      "title": "Same genome has divergent query domains and output policies",
+      "extends": "CES-009",
+      "files": [
+        "crates/quantum-arena/src/genome.rs",
+        "crates/quantum-arena/src/config.rs"
+      ],
+      "tests": "crates/quantum-arena/tests/genome_reader_diagnostics.rs",
+      "diagnostic_tests_assert_current_disagreement": true,
+      "limits": [
+        "Not proof that every backtest uses a different reader than production",
+        "No global risk-policy change performed"
+      ]
+    }
+  ],
+  "tests": {
+    "distinct_passed": 44,
+    "new_tests": 21,
+    "red_before_green_after": 12,
+    "open_defect_characterizations": 3,
+    "groups": [
+      {
+        "filter": "--test temporal_band_contract",
+        "passed": 11,
+        "red_before": 7
+      },
+      {
+        "filter": "--test spectral_interpolation_contract",
+        "passed": 7,
+        "red_before": 5
+      },
+      {
+        "filter": "--test genome_reader_diagnostics",
+        "passed": 3,
+        "diagnostic_only": true
+      },
+      {
+        "filter": "--lib temporal_spectrum::tests",
+        "passed": 17
+      },
+      {
+        "filter": "--lib genome::tests",
+        "passed": 6
+      }
+    ],
+    "package": "quantum-arena",
+    "offline": true,
+    "full_workspace_test_suite": false,
+    "host_check": "cargo check --bin god_engine --offline",
+    "host_check_passed": true,
+    "existing_warnings": [
+      "latest_ts unused",
+      "mode unused",
+      "RealWfOutcome.trades unread"
+    ]
+  },
+  "theory": {
+    "id": "T33",
+    "status": "research_proposal_not_implemented",
+    "extends": [
+      "T02",
+      "T14",
+      "T29"
+    ],
+    "title": "Causal scale-space and normalized temporal scale selection",
+    "sources": [
+      {
+        "url": "https://arxiv.org/abs/2202.09209",
+        "evidence": "indexed abstract and four in-body passages"
+      },
+      {
+        "url": "https://arxiv.org/abs/1701.05088",
+        "evidence": "indexed abstract and two in-body passages"
+      },
+      {
+        "url": "https://arxiv.org/abs/1504.02648",
+        "evidence": "indexed abstract"
+      },
+      {
+        "url": "https://arxiv.org/abs/1504.01502",
+        "evidence": "indexed abstract"
+      }
+    ],
+    "claim_of_quantum_or_financial_advantage": false
+  },
+  "files": [
+    {
+      "path": "crates/quantum-arena/src/config.rs",
+      "lines": 493,
+      "sha256": "4AD9B0BD4DAE722BE259829E8CD4E3E6D0CB85112BEE5AFDC7FD6929FEBEE10E",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/quantum-arena/src/genome.rs",
+      "lines": 3372,
+      "sha256": "FF9308D33C34D9B25DDEDB4326339FC8FE0012923401523812B4B190C50B4294",
+      "change": "modified"
+    },
+    {
+      "path": "crates/quantum-arena/src/genome_store.rs",
+      "lines": 762,
+      "sha256": "CDA733774807C1109793501B08BBB93D19E33D23DE96443DE65902E10F2EDB25",
+      "change": "comments_and_error_message"
+    },
+    {
+      "path": "crates/quantum-arena/src/temporal_spectrum.rs",
+      "lines": 1178,
+      "sha256": "D65659D7926D31E04D55D66CC3CFFD03A3B0107F924E424E6DA5772B7338E7ED",
+      "change": "modified"
+    },
+    {
+      "path": "crates/quantum-arena/tests/temporal_band_contract.rs",
+      "lines": 170,
+      "sha256": "D025551D88A17C0793C150EEA554CF5F084FD090FBE568CF310D7DCB416BA126",
+      "change": "new"
+    },
+    {
+      "path": "crates/quantum-arena/tests/spectral_interpolation_contract.rs",
+      "lines": 98,
+      "sha256": "23BCA36E72D24EB02C2841B3F24B42D28C87AD76C33D05C07F137717783B1869",
+      "change": "new"
+    },
+    {
+      "path": "crates/quantum-arena/tests/genome_reader_diagnostics.rs",
+      "lines": 61,
+      "sha256": "F84F14C5393E2C50564A60126A5ADFEE98846B57461179659DE4895E709E7F2C",
+      "change": "new"
+    }
+  ],
+  "protected": [
+    {
+      "path": "src/bin/god_engine.rs",
+      "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62"
+    },
+    {
+      "path": "crates/backtest-engine/src/booktick_replay.rs",
+      "sha256": "736CC1DBB38E21D78EB0C5B02F410BC90F72130A613F70C02818318051AB02C6"
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "sha256": "E9883455B6BEBEFA866C2F56FE6C4A403321E22BA58C82D004BF5839E738C4A1"
+    },
+    {
+      "path": "crates/god-engine-core/src/lib.rs",
+      "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE"
+    }
+  ],
+  "append_only_baselines": [
+    {
+      "path": "ATLAS_ANALITICO.md",
+      "normalized_character_length": 53414,
+      "normalized_sha256": "10C3286F460154B81DF70129BC2E7ED48CCB4DDABF1F29B0DC360A5A610F3266"
+    },
+    {
+      "path": "INFORME_FORENSE_MAESTRO.md",
+      "normalized_character_length": 589960,
+      "normalized_sha256": "F2C673A68BD2DFCB99EC05768514D4CE7D43B6920AD7477A985772323B7F15B0"
+    },
+    {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_II_2026-09-24.md",
+      "normalized_character_length": 73205,
+      "normalized_sha256": "50F20CF097C29261B03EE05BBAFE4E2E5B480AB231CDD83A5128704CBE7CAED6"
+    },
+    {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_V_2026-09-24.md",
+      "normalized_character_length": 58947,
+      "normalized_sha256": "617B633317821E53FBAE51F89A1166B84676FD868480A870830574C470A023FE"
+    }
+  ]
+}

@@ -1,0 +1,796 @@
+{
+  "schema_version": 1,
+  "round": "XXIX",
+  "date": "2026-09-25",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIX_2026-09-25.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false,
+    "dirty_tree_preserved": true
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 144,
+    "pending_complete_rust": 145,
+    "new_complete_reads": [
+      {
+        "file": "crates/storage-engine/src/mmap_bus.rs",
+        "lines": 450
+      }
+    ],
+    "reread_previously_covered": [
+      "crates/metacortex-engine/src/immune_system.rs",
+      "crates/dark-alpha-engine/src/online_ppo.rs",
+      "crates/risk-engine/src/kelly.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/god-engine-core/src/lib.rs",
+      "src/bin/god_engine.rs",
+      "crates/quantum-arena/src/position.rs",
+      "crates/quantum-arena/src/config.rs"
+    ],
+    "new_files_reviewed": [
+      "crates/god-engine-core/src/outcome_context.rs",
+      "crates/god-engine-core/tests/close_outcome_contract.rs",
+      "crates/storage-engine/tests/mmap_open_diagnostics.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false
+  },
+  "new_ids": [
+    "FMT-227",
+    "FMT-228",
+    "FMT-229",
+    "FMT-230",
+    "FMT-231",
+    "FMT-232"
+  ],
+  "updated_ids": [
+    "FMT-225"
+  ],
+  "carried_open": [
+    "FMT-006",
+    "FMT-052",
+    "FMT-060",
+    "FMT-113",
+    "FMT-175",
+    "FMT-185",
+    "FMT-187",
+    "FMT-188",
+    "FMT-189",
+    "FMT-215",
+    "FMT-216",
+    "FMT-219",
+    "FMT-222",
+    "FMT-223",
+    "FMT-224",
+    "FMT-226"
+  ],
+  "findings": [
+    {
+      "id": "FMT-225",
+      "priority": "P1",
+      "status": "partial_containment_not_settlement",
+      "title": "Cierre sin evidencia de entrada modifica capital y aprendizaje",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1598
+        },
+        {
+          "file": "src/bin/god_engine.rs",
+          "line": 2734
+        },
+        {
+          "file": "crates/god-engine-core/tests/close_outcome_contract.rs",
+          "line": 95
+        }
+      ],
+      "mechanism": "El flag de entrada sólo protegía una métrica; capital, feedback y aprendizaje avanzaban sobre resultados de una entrada no confirmada.",
+      "reproduction": "Capital 100 -> 100.9798 en cierre sintético no confirmado antes; tras el gate permanece 100 y se conserva propuesta defensiva.",
+      "change": "Contexto de procedencia explícito; no aprendizaje/contabilidad de cierre en ExchangeLocalEstimate sin evidencia de entrada; contador de exclusión.",
+      "remaining": [
+        "Slot y margen se modifican antes del gate",
+        "Flag no identifica fill/cuenta/generación",
+        "Entradas confirmadas todavía generan feedback por salida estimada",
+        "Ledger, reservas, partial fills y exit settlement abiertos"
+      ],
+      "evidence_level": "actual_core_red_green_and_static_host"
+    },
+    {
+      "id": "FMT-227",
+      "priority": "P1",
+      "status": "partial_close_output_isolation",
+      "title": "Simulación podía publicar resultados en canales de entrenamiento compartidos",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 158
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1676
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1770
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1887
+        },
+        {
+          "file": "crates/metacortex-engine/src/immune_system.rs",
+          "line": 40
+        }
+      ],
+      "mechanism": "Arena propia no aísla archivos relativos ni writer global; el constructor inmune también creaba directorios.",
+      "reproduction": "Pérdida simulada con tensor emitía CSV; tests posteriores verifican ausencia y conservación de aprendizaje local, incluido constructor default con flag true.",
+      "change": "new -> IsolatedSimulation; publicaciones de cierre sólo en ExchangeLocalEstimate con flag; constructor inmune diferido.",
+      "remaining": [
+        "Exclusión mmap probada estáticamente, no interproceso",
+        "Lecturas/globales y otros sinks no aislados de forma general",
+        "Proveniencia demo/prod/cuenta/generación pendiente",
+        "FMT-052 y FMT-060 abiertos"
+      ],
+      "evidence_level": "actual_core_red_green_files_and_static_bus"
+    },
+    {
+      "id": "FMT-228",
+      "priority": "P1",
+      "status": "fixed_in_close_consumer_not_algorithm_certification",
+      "title": "Una recompensa se ingiere dos veces con coordenadas diferentes",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1724
+        },
+        {
+          "file": "crates/dark-alpha-engine/src/online_ppo.rs",
+          "line": 79
+        },
+        {
+          "file": "crates/god-engine-core/tests/close_outcome_contract.rs",
+          "line": 198
+        }
+      ],
+      "mechanism": "Dos llamadas de cierre actualizan EMA y pesos; alpha efectivo 2alpha-alpha^2.",
+      "reproduction": "alpha=.05, reward=.009798: antes EMA=.000955305; esperado/actual corregido=.0004899.",
+      "change": "Eliminada primera llamada; conservada una ingestión por cierre elegible.",
+      "remaining": [
+        "FMT-006: no objetivo probabilístico PPO",
+        "Features de cierre vs decisión, proxy CVPIN/Hawkes",
+        "Denominador de retorno con piso 1",
+        "Exactly-once entre procesos/restarts pendiente"
+      ],
+      "evidence_level": "actual_core_red_green_and_primary_paper"
+    },
+    {
+      "id": "FMT-229",
+      "priority": "P1",
+      "status": "fixed_in_close_consumer_not_risk_model_certification",
+      "title": "Kelly relee horizonte ya borrado y usa 30 segundos",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1823
+        },
+        {
+          "file": "crates/quantum-arena/src/position.rs",
+          "line": 411
+        },
+        {
+          "file": "crates/god-engine-core/tests/close_outcome_contract.rs",
+          "line": 273
+        }
+      ],
+      "mechanism": "close_with_fee borra entry_tau_ms; lector posterior sustituye cero por 30000ms.",
+      "reproduction": "tau=1e9ms; antes Kelly=.05667194503805592 (fallback), oráculo=.08623814224061167; corregido coincide.",
+      "change": "Reutilización de tau_trade_ms anterior al cierre.",
+      "remaining": [
+        "Snapshot compuesto/ABA pendiente",
+        "Milisegundos enteros de posición",
+        "Modelo Kelly/clamps/soporte espectral sin certificar"
+      ],
+      "evidence_level": "actual_core_red_green"
+    },
+    {
+      "id": "FMT-230",
+      "priority": "P1",
+      "status": "open_reproduced",
+      "title": "El cursor mmap pierde el commit de una reserva leída en progreso",
+      "evidence": [
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 150
+        },
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 325
+        },
+        {
+          "file": "crates/storage-engine/tests/mmap_open_diagnostics.rs",
+          "line": 6
+        }
+      ],
+      "mechanism": "head publica reserva antes de commit; seq impar se descarta avanzando last_read_idx; no se relee.",
+      "reproduction": "Reader original ve vacío antes y después del commit; reader fresco ve payload .125.",
+      "change": "Sólo diagnóstico; no se modificó el bus.",
+      "remaining": [
+        "Secuencia absoluta, retry/gap, overwrite, writer muerto",
+        "Definir evidencia durable vs telemetría best-effort",
+        "Revisión formal de publicación y concurrencia"
+      ],
+      "evidence_level": "deterministic_single_thread_mmap_diagnostic"
+    },
+    {
+      "id": "FMT-231",
+      "priority": "P1",
+      "status": "open_static_no_invalid_dereference_executed",
+      "title": "Carga tipada de cabecera antes de validar tamaño",
+      "evidence": [
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 286
+        },
+        {
+          "file": "crates/storage-engine/src/mmap_bus.rs",
+          "line": 300
+        }
+      ],
+      "mechanism": "Se crea/carga AtomicUsize antes de verificar longitud; apertura de mapa no acredita esquema.",
+      "reproduction": null,
+      "change": "Documentación únicamente; no se provocó acceso inválido.",
+      "remaining": [
+        "Validación previa de header y schema",
+        "Generación y arquitectura/endianness",
+        "Unsafe y recuperación de archivos truncados"
+      ],
+      "evidence_level": "static"
+    },
+    {
+      "id": "FMT-232",
+      "priority": "P1",
+      "status": "open_static_defensive_policy_required",
+      "title": "Kill-switch suprime también propuestas defensivas del núcleo",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 678
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 922
+        }
+      ],
+      "mechanism": "Returns antes del recorrido de posiciones, a diferencia de latency gate que sólo bloquea entradas.",
+      "reproduction": null,
+      "change": "Sin retirada de protección; se documenta necesidad de política por causa/autoridad.",
+      "remaining": [
+        "Probar exposición abierta y fallo de bracket",
+        "Separar admisión/reducción/cancelación/reconciliación",
+        "Verificar redundancia externa; no se afirma ausencia de protección de cuenta"
+      ],
+      "evidence_level": "static_control_flow"
+    }
+  ],
+  "topology": {
+    "status": "desired_contract_graph_not_complete_implementation",
+    "nodes": [
+      "observations",
+      "continuous_multiasset_state",
+      "decision_snapshot",
+      "intent_reservation",
+      "entry_fills",
+      "close_proposal",
+      "exit_fills",
+      "ledger",
+      "attributable_outcome",
+      "learning"
+    ],
+    "edges": [
+      [
+        "observations",
+        "continuous_multiasset_state"
+      ],
+      [
+        "continuous_multiasset_state",
+        "decision_snapshot"
+      ],
+      [
+        "decision_snapshot",
+        "intent_reservation"
+      ],
+      [
+        "intent_reservation",
+        "entry_fills"
+      ],
+      [
+        "entry_fills",
+        "close_proposal"
+      ],
+      [
+        "close_proposal",
+        "exit_fills"
+      ],
+      [
+        "exit_fills",
+        "ledger"
+      ],
+      [
+        "ledger",
+        "attributable_outcome"
+      ],
+      [
+        "attributable_outcome",
+        "learning"
+      ],
+      [
+        "learning",
+        "decision_snapshot"
+      ]
+    ],
+    "remaining_unsafe_shortcut": "entry-confirmed close proposal -> local estimated outcome -> learning, without exit settlement"
+  },
+  "verification": {
+    "new_tests": 10,
+    "new_functional": 9,
+    "new_open_diagnostics": 1,
+    "red_green_observed": 4,
+    "functional_passes": 82,
+    "open_diagnostic_passes": 6,
+    "total_distinct_passes": 88,
+    "ignored": 1,
+    "suites": [
+      {
+        "suite": "close_outcome_contract",
+        "functional": 9,
+        "open_diagnostics": 0,
+        "ignored": 0,
+        "failed": 0
+      },
+      {
+        "suite": "dfa_contract",
+        "functional": 2,
+        "open_diagnostics": 0,
+        "ignored": 0,
+        "failed": 0
+      },
+      {
+        "suite": "ml_model_contract",
+        "functional": 12,
+        "open_diagnostics": 0,
+        "ignored": 1,
+        "failed": 0
+      },
+      {
+        "suite": "phase_authorization_contract",
+        "functional": 3,
+        "open_diagnostics": 0,
+        "ignored": 0,
+        "failed": 0
+      },
+      {
+        "suite": "stateful_transition_contract",
+        "functional": 22,
+        "open_diagnostics": 0,
+        "ignored": 0,
+        "failed": 0
+      },
+      {
+        "suite": "stateful_open_diagnostics",
+        "functional": 0,
+        "open_diagnostics": 5,
+        "ignored": 0,
+        "failed": 0
+      },
+      {
+        "suite": "label_evidence_contract",
+        "functional": 25,
+        "open_diagnostics": 0,
+        "ignored": 0,
+        "failed": 0
+      },
+      {
+        "suite": "spectral_risk_contract",
+        "functional": 3,
+        "open_diagnostics": 0,
+        "ignored": 0,
+        "failed": 0
+      },
+      {
+        "suite": "immune_system::tests",
+        "functional": 1,
+        "open_diagnostics": 0,
+        "ignored": 0,
+        "failed": 0
+      },
+      {
+        "suite": "online_ppo::tests",
+        "functional": 5,
+        "open_diagnostics": 0,
+        "ignored": 0,
+        "failed": 0
+      },
+      {
+        "suite": "mmap_open_diagnostics",
+        "functional": 0,
+        "open_diagnostics": 1,
+        "ignored": 0,
+        "failed": 0
+      }
+    ],
+    "commands": [
+      "cargo test --offline -p god-engine-core --test close_outcome_contract --test stateful_transition_contract --test stateful_open_diagnostics --test phase_authorization_contract --test ml_model_contract --test dfa_contract -- --test-threads=1",
+      "cargo test --offline -p storage-engine --test mmap_open_diagnostics -- --test-threads=1",
+      "cargo test --offline -p backtest-engine --test spectral_risk_contract --test label_evidence_contract -- --test-threads=1",
+      "cargo test --offline -p metacortex-engine --lib immune_system::tests -- --test-threads=1",
+      "cargo test --offline -p dark-alpha-engine --lib online_ppo::tests -- --test-threads=1",
+      "cargo check --offline --bin god_engine --bin feature_exporter --bin train_forest --bin train_dark_alpha"
+    ],
+    "four_bin_check": "passed",
+    "warnings": [
+      "evolution-engine latest_ts unused",
+      "evolution-engine mode unused",
+      "evolution-engine RealWfOutcome.trades unread",
+      "backtest continuous_evolution_backtest unused Arc import"
+    ],
+    "rustfmt_new_files": "passed",
+    "scope_limits": [
+      "No workspace-wide test suite",
+      "No live/account integration",
+      "No initialized operational global bus",
+      "No latency benchmarks",
+      "FMT-216 not rerun",
+      "No concurrency/unsafe certification"
+    ],
+    "development_note": "Un bloque de gate fue inicialmente colocado por ancla ambigua y produjo error de compilación; se movió al cierre antes de la verificación verde final. No es evidencia de un incidente productivo."
+  },
+  "sources": [
+    {
+      "title": "Proximal Policy Optimization Algorithms",
+      "url": "https://arxiv.org/abs/1707.06347",
+      "note": ".firecrawl/XXIX-ppo-evidence.md",
+      "retrieval": "Firecrawl research_read_paper; primary paper v2; CLI unavailable",
+      "influence": "Distinción entre épocas sobre dataset fijo e ingestión duplicada de recompensa; FMT-006 no cerrado."
+    }
+  ],
+  "preservation": {
+    "append_only_checks": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "prefix_chars": 100363,
+        "before_sha256": "DA48FAABE88AA6ADD045FA0E722083942A76E8B1B9388A83CC996D908E59C3BB",
+        "after_prefix_sha256": "DA48FAABE88AA6ADD045FA0E722083942A76E8B1B9388A83CC996D908E59C3BB",
+        "preserved": true,
+        "appended_chars": 2654
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "prefix_chars": 696440,
+        "before_sha256": "89E1FDB7AA99AA676C7312CEECDF7D653DA0FF1907B535DC651EA9116F4D9998",
+        "after_prefix_sha256": "89E1FDB7AA99AA676C7312CEECDF7D653DA0FF1907B535DC651EA9116F4D9998",
+        "preserved": true,
+        "appended_chars": 6392
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXVIII_2026-09-25.md",
+        "prefix_chars": 34827,
+        "before_sha256": "197A65E115E615C4741B7F5B39DF30831132322DA9535E78F2EA3E3589A1AC7A",
+        "after_prefix_sha256": "197A65E115E615C4741B7F5B39DF30831132322DA9535E78F2EA3E3589A1AC7A",
+        "preserved": true,
+        "appended_chars": 1193
+      }
+    ],
+    "source_before": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "chars": 100363,
+        "sha256": "DA48FAABE88AA6ADD045FA0E722083942A76E8B1B9388A83CC996D908E59C3BB",
+        "normalized_sha256": "DA48FAABE88AA6ADD045FA0E722083942A76E8B1B9388A83CC996D908E59C3BB"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "chars": 696440,
+        "sha256": "6470B00DAC5E8E8BEA8E9F8F48C387C9156D1A4092946AEB8066DDC84C130033",
+        "normalized_sha256": "89E1FDB7AA99AA676C7312CEECDF7D653DA0FF1907B535DC651EA9116F4D9998"
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXVIII_2026-09-25.md",
+        "chars": 34827,
+        "sha256": "197A65E115E615C4741B7F5B39DF30831132322DA9535E78F2EA3E3589A1AC7A",
+        "normalized_sha256": "197A65E115E615C4741B7F5B39DF30831132322DA9535E78F2EA3E3589A1AC7A"
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "chars": 275405,
+        "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE",
+        "normalized_sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE"
+      },
+      {
+        "path": "crates/metacortex-engine/src/immune_system.rs",
+        "chars": 7016,
+        "sha256": "8291A9912D2837CCD09B2F8591FA728BDB471C29EA8D540968C6CD89E20B4F42",
+        "normalized_sha256": "8291A9912D2837CCD09B2F8591FA728BDB471C29EA8D540968C6CD89E20B4F42"
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "chars": 262468,
+        "sha256": "FA7469FD05ACBB1E8123799DD9943125B0D1DAD8BEB3EA5B8595FDD7F993B64C",
+        "normalized_sha256": "FA7469FD05ACBB1E8123799DD9943125B0D1DAD8BEB3EA5B8595FDD7F993B64C"
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "A63DFF91881E7DB391CB2EDDB3CF9F306F988D9195D74297E6E52FD9FEF1513F",
+        "lines": 5120
+      },
+      {
+        "path": "crates/god-engine-core/src/outcome_context.rs",
+        "sha256": "39468E0B37D1DEF8ACFB4B0EDCED16794B5F97337C4E6EC673A9D6C47F4BA8DF",
+        "lines": 24
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "sha256": "4D6A71532E8684C30E63677A3271CF7A4C8BC84B5617176D54751F589AC1FBAB",
+        "lines": 341
+      },
+      {
+        "path": "crates/metacortex-engine/src/immune_system.rs",
+        "sha256": "9BE9B71654141455ECBD90406A40F973286F6587CD123A0731015E28FF08338F",
+        "lines": 218
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "sha256": "AD22BDCEA283BEB47A0074291BC8170BE63F19B0272874A4B9A6F97EB9955ED9",
+        "lines": 4779
+      },
+      {
+        "path": "crates/storage-engine/src/mmap_bus.rs",
+        "sha256": "BC3F56F9585B7115ADD83D58C0DAB4C932A5E4B6D6BBA0E65F182681F6E3D9F0",
+        "lines": 450
+      },
+      {
+        "path": "crates/storage-engine/tests/mmap_open_diagnostics.rs",
+        "sha256": "78427A0E05ABA3F6BFD92B7410ACB7397A28E17397CC20D2E42AE6AAF86D2D7B",
+        "lines": 51
+      },
+      {
+        "path": ".firecrawl/XXIX-ppo-evidence.md",
+        "sha256": "BC8DBBE256B1E874424BFD766AB9D7F620C2BC3F25CC6DE18D6AE7E9CC5842D0",
+        "lines": 9
+      }
+    ],
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "market_orders_sent": 0,
+    "account_requests_sent": 0,
+    "operational_training_or_promotion": false,
+    "synthetic_learning_updates_in_tests": true,
+    "active_genomes_deliberately_modified": false,
+    "process_kills_or_restarts": false,
+    "operational_binary_built": false,
+    "temporary_files_removed": "Only uniquely created test fixtures; no user datasets/models/traumas removed"
+  },
+  "document_validation": {
+    "hashes_checked": 49,
+    "evidence_references_checked": 21,
+    "report_local_links_checked": 22,
+    "append_only_prefixes_checked": 3,
+    "issues": [],
+    "test_totals_independently_checked": true,
+    "final_local_head": "59a76de4"
+  },
+  "next_priority": "OutcomeEvidence and ledger by account/intent/reservation/generation/entry-and-exit-fills before attributing real economic reward"
+}

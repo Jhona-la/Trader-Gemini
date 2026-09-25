@@ -26,6 +26,15 @@ test_run.log
 check_errors.json
 cargo_warnings.json
 crates_dep_tree.txt
+logs_motor_*.txt
+rustc-ice-*.txt
+
+# Preservación y estado de agentes (runtime-only, viven en backups/ fuera de git)
+backups/
+.mimosa/
+
+# Cache de análisis graphify (los reportes SÍ se trackean)
+graphify-out/cache/
 
 # Estado runtime / caches de la API (regenerables, linaje en F2.7)
 state*.json
@@ -73,3 +82,6 @@ Thumbs.db
 
 # Historial del almacén de genomas: ilimitado, runtime-only (active.json SÍ se trackea)
 config_dir/genomes/*/history/
+
+# Public research source cache (Firecrawl)
+.firecrawl/

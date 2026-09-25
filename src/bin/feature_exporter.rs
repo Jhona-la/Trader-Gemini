@@ -1,217 +1,451 @@
+//! Versioned research export: sampled midpoint barriers over caller-supplied
+//! clock horizons. Not trading outcomes, not an operational training format.
+use backtest_engine::label_evidence::{
+    label_surface, validate_horizons, BarrierSpec, Record, Tape, RECORD_BYTES,
+};
 use god_engine_core::stateful_engine::StatefulEngine;
-use std::fs::File;
-use std::io::{BufWriter, Write};
+use serde_json::json;
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Read, Write};
 
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-struct BinTick {
-    pub timestamp: u64,
-    pub bid_price: f64,
-    pub ask_price: f64,
-    pub bid_qty: f64,
-    pub ask_qty: f64,
+#[derive(Debug)]
+struct Options {
+    symbol: String,
+    input: String,
+    output: String,
+    horizons_ms: Vec<u64>,
+    stride_ms: u64,
+    max_records: usize,
+    max_work: u64,
+    spec: BarrierSpec,
+    allow_legacy: bool,
 }
-
-fn main() {
-    println!("============================================================");
-    println!("🌌 RUST QUANTUM FEATURE EXPORTER (1:1 ALIGNMENT)");
-    println!("============================================================");
-
-    let symbol = std::env::args().nth(1).unwrap_or_else(|| "BTCUSDT".to_string());
-    let input_path = std::env::args().nth(2).unwrap_or_else(|| {
-        let aug_real = format!("data/{}_AUG_REAL.bin", symbol);
-        let ticks_real = format!("data/{}_ticks_REAL.bin", symbol);
-        let ticks_legacy = format!("data/{}_ticks.bin", symbol);
-        if std::path::Path::new(&aug_real).exists() {
-            aug_real
-        } else if std::path::Path::new(&ticks_real).exists() {
-            ticks_real
-        } else {
-            ticks_legacy
-        }
-    });
-    let max_ticks: usize = std::env::args()
-        .nth(3)
-        .and_then(|s| s.parse().ok())
-        .or_else(|| std::env::var("MAX_TICKS").ok().and_then(|s| s.parse().ok()))
-        .unwrap_or(1_000_000);
-
-    let file = match File::open(&input_path) {
-        Ok(f) => f,
-        Err(e) => {
-            println!("⚠️ Failed to open {}: {}", input_path, e);
-            return;
-        }
-    };
-
-    let mmap = match unsafe { memmap2::MmapOptions::new().map(&file) } {
-        Ok(m) => m,
-        Err(e) => {
-            println!("❌ Failed to mmap file {}: {}", input_path, e);
-            return;
-        }
-    };
-
-    let bytes_len = mmap.len();
-    let (origen, header_len) = backtest_engine::tick_replayer::TickOrigin::from_header(
-        &mmap[..bytes_len.min(8)],
-    );
-    let payload_len = bytes_len - header_len;
-    let tick_size = std::mem::size_of::<BinTick>();
-    let total_file_ticks = payload_len / tick_size;
-    let num_ticks = total_file_ticks.min(max_ticks);
-
-    if num_ticks == 0 {
-        println!("❌ No data loaded or file is empty.");
-        return;
-    }
-
-    println!("📦 Origen de los datos: {}", origen.descripcion());
-    let ticks = unsafe {
-        std::slice::from_raw_parts(
-            mmap.as_ptr().add(header_len) as *const BinTick,
-            num_ticks,
-        )
-    };
-    println!("✅ Loaded {}/{} BinTicks from {} for {}", num_ticks, total_file_ticks, input_path, symbol);
-
-    let out_path = format!("data/{}_FEATURES.csv", symbol);
-    let out_file = match File::create(&out_path) {
-        Ok(f) => f,
-        Err(e) => {
-            println!("❌ Failed to create {}: {}", out_path, e);
-            return;
-        }
-    };
-    let mut out_file = BufWriter::new(out_file);
-
-    // Escribir cabeceras para 54 variables unificadas
-    let mut header = String::from("target_5m");
-    for i in 0..54 {
-        header.push_str(&format!(",feature_{}", i));
-    }
-    if let Err(e) = writeln!(out_file, "{}", header) {
-        println!("❌ Failed to write header to {}: {}", out_path, e);
-        return;
-    }
-
-    let mut feature_engine = StatefulEngine::new();
-    let mut written = 0;
-
-    for i in 0..num_ticks {
-        let t = &ticks[i];
-        let mid_price = (t.bid_price + t.ask_price) / 2.0;
-        let total_vol = t.bid_qty + t.ask_qty;
-        let pseudo_maker = t.bid_qty > t.ask_qty;
-
-        feature_engine.process_tick(mid_price, total_vol, t.timestamp);
-        feature_engine.update_trade_flow(total_vol, pseudo_maker);
-        let _ = feature_engine.update_ofi(t.bid_price, t.ask_price, t.bid_qty, t.ask_qty);
-
-        // Triple Barrier Labeling Method (Marcos López de Prado)
-        // Alineado exactamente a los pisos institucionales de GodEngineCore: TP = 0.36%, SL = 0.18%
-        if i >= 100 && i + 500 < num_ticks {
-            let tp_pct = 0.0036;
-            let sl_pct = 0.0018;
-            let long_tp = mid_price * (1.0 + tp_pct);
-            let long_sl = mid_price * (1.0 - sl_pct);
-            let short_tp = mid_price * (1.0 - tp_pct);
-            let short_sl = mid_price * (1.0 + sl_pct);
-
-            let mut barrier_label: f64 = 0.5; // 0.5 = Neutral
-
-            for f in 1..=500 {
-                let fut_mid = (ticks[i + f].bid_price + ticks[i + f].ask_price) / 2.0;
-
-                // D-329: Causalidad estricta Triple Barrier (López de Prado)
-                // 1) Si toca el Stop Loss de Long (-0.15%), la hipótesis alcista fracasa inmediatamente
-                if fut_mid <= long_sl {
-                    barrier_label = 0.0; // Pérdida en Long / Victoria en Short
-                    break;
+impl Options {
+    fn parse(args: &[String]) -> Result<Self, String> {
+        let mut values = BTreeMap::new();
+        let mut allow_legacy = false;
+        let mut i = 0;
+        while i < args.len() {
+            let key = args[i].as_str();
+            if key == "--allow-legacy" {
+                if allow_legacy {
+                    return Err("duplicate --allow-legacy".into());
                 }
-                // 2) Si toca el Stop Loss de Short (+0.15%), la hipótesis bajista fracasa inmediatamente
-                if fut_mid >= short_sl {
-                    barrier_label = 1.0; // Victoria en Long / Pérdida en Short
-                    break;
-                }
-                // 3) Si toca Take Profit de Long (+0.30%) sin haber tocado SL previo
-                if fut_mid >= long_tp {
-                    barrier_label = 1.0;
-                    break;
-                }
-                // 4) Si toca Take Profit de Short (-0.30%) sin haber tocado SL previo
-                if fut_mid <= short_tp {
-                    barrier_label = 0.0;
-                    break;
-                }
-            }
-
-            // Si ninguna barrera horizontal se tocó en 500 ticks (barrera vertical), usar retorno terminal
-            if barrier_label == 0.5 {
-                let end_mid = (ticks[i + 500].bid_price + ticks[i + 500].ask_price) / 2.0;
-                let end_ret = (end_mid - mid_price) / mid_price;
-                if end_ret > 0.0004 {
-                    barrier_label = 1.0;
-                } else if end_ret < -0.0004 {
-                    barrier_label = 0.0;
-                }
-            }
-
-            // Descartar zonas puramente laterales para entrenamiento discriminativo puro
-            if (barrier_label - 0.5).abs() < 0.1 {
+                allow_legacy = true;
+                i += 1;
                 continue;
             }
-
-            // Generar features idénticas a GodEngineCore (34 micro+omni + 20 macro/cross-exchange proxies)
-            let stateful_feats = feature_engine.get_universal_features();
-
-            let mut features = [0.0; 54];
-            for j in 0..34 {
-                features[j] = stateful_feats[j] as f64;
+            if ![
+                "--symbol",
+                "--input",
+                "--output",
+                "--horizons-ms",
+                "--stride-ms",
+                "--max-records",
+                "--max-work",
+                "--tp-return",
+                "--sl-return",
+                "--timestamp-unit",
+            ]
+            .contains(&key)
+            {
+                return Err(format!("unknown argument {key}; use --help"));
             }
-
-            let delta = feature_engine.v_t;
-
-            // Proxies para variables macro/on-chain 34..54 derivadas de la serie histórica
-            features[34] = (delta / mid_price).clamp(-0.1, 0.1); // Log return
-            features[35] = feature_engine.get_atr_pct(); // Volatility ATR
-            features[36] = (total_vol / 1000.0).tanh(); // Relative Volume
-            features[37] = if total_vol > 0.0 {
-                (t.bid_qty - t.ask_qty) / total_vol
+            let value = args
+                .get(i + 1)
+                .ok_or_else(|| format!("missing value for {key}"))?;
+            if values.insert(key, value.as_str()).is_some() {
+                return Err(format!("duplicate {key}"));
+            }
+            i += 2;
+        }
+        let get = |key| {
+            values
+                .get(key)
+                .copied()
+                .ok_or_else(|| format!("required argument {key}"))
+        };
+        if get("--timestamp-unit")? != "ms" {
+            return Err(
+                "this input contract supports explicitly declared milliseconds only".into(),
+            );
+        }
+        let symbol = get("--symbol")?.to_string();
+        if symbol.is_empty()
+            || !symbol
+                .bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        {
+            return Err("symbol must be nonempty uppercase ASCII alphanumeric".into());
+        }
+        let horizons_ms = get("--horizons-ms")?
+            .split(',')
+            .map(|s| s.parse::<u64>().map_err(|_| "invalid horizon".to_string()))
+            .collect::<Result<Vec<_>, _>>()?;
+        validate_horizons(&horizons_ms)?;
+        let positive = |key| -> Result<u64, String> {
+            let v = get(key)?
+                .parse::<u64>()
+                .map_err(|_| format!("invalid {key}"))?;
+            if v == 0 {
+                Err(format!("{key} must be positive"))
             } else {
-                0.0
-            }; // Realized OBI
-            features[38] = (features[34] * 10.0).tanh(); // Momentum Proxy
-            features[39] = (features[35] * 100.0).min(5.0); // Parkinson Vol Proxy
-            // Sincronización 1:1 estricta con build_54d_tensor (crates/god-engine-core/src/lib.rs:433-485)
-            features[40] = 0.0; // MUERTA (sin productor vivo)
-            features[41] = 1.04; // DXY Index Baseline (~104.0 / 100.0)
-            features[42] = 1.02; // SP500 Index Baseline (~5100.0 / 5000.0)
-            features[43] = 1.00; // Nasdaq Baseline (~18000.0 / 18000.0)
-            features[44] = 0.75; // VIX Baseline (~15.0 / 20.0)
-            features[45] = 0.0; // MUERTA (us10y sin productor vivo)
-            features[46] = 0.0; // Gold PAXG fallback (0.0 "sin dato")
-            features[47] = 0.0; // MUERTA (oil WTI sin productor vivo)
-            features[48] = 0.0; // Funding / Econ Impact
-            features[49] = 0.0; // MUERTA (fed_rate sin productor vivo)
-            features[50] = 1.0; // Taker buy/sell baseline
-            features[51] = 0.0; // MUERTA (basis premium sin productor vivo)
-            features[52] = 0.0; // MUERTA (liq cluster short sin productor vivo)
-            features[53] = 0.0; // MUERTA (liq cluster long sin productor vivo)
+                Ok(v)
+            }
+        };
+        let spec = BarrierSpec {
+            take_profit_return: get("--tp-return")?
+                .parse()
+                .map_err(|_| "invalid --tp-return")?,
+            stop_loss_return: get("--sl-return")?
+                .parse()
+                .map_err(|_| "invalid --sl-return")?,
+        };
+        spec.validate()?;
+        Ok(Self {
+            symbol,
+            input: get("--input")?.to_string(),
+            output: get("--output")?.to_string(),
+            horizons_ms,
+            stride_ms: positive("--stride-ms")?,
+            max_records: positive("--max-records")?
+                .try_into()
+                .map_err(|_| "record budget exceeds platform")?,
+            max_work: positive("--max-work")?,
+            spec,
+            allow_legacy,
+        })
+    }
+}
 
-            let mut row = format!("{:.1}", barrier_label);
-            for f in &features {
-                let safe_f = if f.is_finite() { *f } else { 0.0 };
-                row.push_str(&format!(",{:.6}", safe_f));
-            }
-            if writeln!(out_file, "{}", row).is_ok() {
-                written += 1;
-            }
+/// Retain legacy channel positions without inventing external macro values.
+/// 0..34 are legacy StatefulEngine outputs (may themselves have cold/default
+/// values). None distinguishes unavailable/nonfinite values from numeric zero.
+fn feature_snapshot(engine: &StatefulEngine, t: Record) -> Vec<Option<f64>> {
+    let mut f = vec![None; 54];
+    for (i, value) in engine.get_universal_features().iter().enumerate() {
+        f[i] = value.is_finite().then_some(*value as f64);
+    }
+    // BinTick does not retain an observed buyer-maker flag. Book imbalance
+    // cannot establish aggressor side; do not export a fabricated flow delta.
+    f[6] = None;
+    let depth_proxy = t.bid_qty + t.ask_qty;
+    let delta_over_mid = engine.v_t / t.mid();
+    let atr_ratio = engine.get_atr_pct();
+    f[34] = delta_over_mid
+        .is_finite()
+        .then(|| delta_over_mid.clamp(-0.1, 0.1));
+    f[35] = atr_ratio.is_finite().then_some(atr_ratio);
+    f[36] = Some((depth_proxy / 1000.0).tanh());
+    f[38] = f[34].map(|v| (v * 10.0).tanh());
+    let scaled_atr = atr_ratio * 100.0;
+    f[39] = scaled_atr.is_finite().then(|| scaled_atr.min(5.0));
+    if depth_proxy > 0.0 {
+        f[37] = Some((t.bid_qty - t.ask_qty) / depth_proxy);
+    }
+    f
+}
+
+fn line(out: &mut impl Write, value: &serde_json::Value) -> Result<(), String> {
+    serde_json::to_writer(&mut *out, value).map_err(|e| e.to_string())?;
+    out.write_all(b"\n").map_err(|e| e.to_string())
+}
+
+fn export_to(out: &mut impl Write, bytes: &[u8], options: &Options) -> Result<usize, String> {
+    let tape = Tape::parse(bytes, options.allow_legacy)?;
+    if tape.len() > options.max_records {
+        return Err("record budget exceeded; no prefix sampling".into());
+    }
+    let source_hash = format!("{:x}", Sha256::digest(bytes));
+    line(
+        out,
+        &json!({
+            "kind":"manifest", "schema":"tgm.midpoint_barrier_surface.v2", "research_only":true,
+            "symbol":options.symbol, "symbol_identity":"caller_declared_not_encoded_in_tape",
+            "source_path":options.input, "source_sha256":source_hash, "source_bytes":bytes.len(),
+            "records":tape.len(), "timestamp_unit":"ms", "timestamp_unit_basis":"caller_declaration",
+            "provenance":tape.provenance, "observed_l2_certified":false,
+            "horizons_ms":options.horizons_ms, "barriers":options.spec,
+            "stride_ms":options.stride_ms, "max_work":options.max_work,
+            "price_basis":"sampled_midpoint_not_executable_quote_or_fill", "costs_included":false,
+            "event_order":"file_ordinal_within_equal_timestamp_not_exchange_sequence",
+            "features":"legacy_stateful_34_plus_6_derived; positions_40_53_unavailable",
+            "feature_limits":"legacy warmup/defaults and depth proxies remain; not host parity",
+            "trade_flow_channel_6":"unavailable; buyer_maker not stored, no depth-to-aggressor inference",
+            "transform_34_39":"v_t/mid clipped; ATR ratio; tanh(depth/1000); depth imbalance; tanh(10*f34); min(100*f35,5)",
+            "missing_values":"null; not imputed", "completion":"requires terminal complete record"
+        }),
+    )?;
+    let mut engine = StatefulEngine::new();
+    let mut next_anchor = 0;
+    let mut remaining = options.max_work;
+    let mut rows = 0;
+    for i in 0..tape.len() {
+        let t = tape.get(i).unwrap();
+        let depth_proxy = t.bid_qty + t.ask_qty;
+        engine
+            .try_process_tick(t.mid(), depth_proxy, t.timestamp_ms)
+            .map_err(|error| format!("feature state rejected record {i}: {error:?}"))?;
+        // No observed aggressor flag in this format: do not infer it from depth.
+        let _ = engine.update_ofi(t.bid, t.ask, t.bid_qty, t.ask_qty);
+        if t.timestamp_ms < next_anchor {
+            continue;
+        }
+        let horizons = label_surface(&tape, i, &options.horizons_ms, options.spec, &mut remaining)?;
+        let information_end = horizons.iter().map(|h| h.information_end_ms).max().unwrap();
+        line(
+            out,
+            &json!({
+                "kind":"observation", "symbol":options.symbol, "source_record":i,
+                "feature_time_ms":t.timestamp_ms, "feature_history_start_ms":tape.get(0).unwrap().timestamp_ms,
+                "feature_history_records":i+1, "features":feature_snapshot(&engine,t),
+                "label_information_start_ms":t.timestamp_ms, "label_information_end_ms":information_end,
+                "horizons":horizons
+            }),
+        )?;
+        rows += 1;
+        // If no subsequent representable anchor exists, all later records
+        // still have been validated; no wraparound to timestamp zero.
+        let Some(next) = t.timestamp_ms.checked_add(options.stride_ms) else {
+            break;
+        };
+        next_anchor = next;
+    }
+    line(
+        out,
+        &json!({"kind":"complete","rows":rows,"source_sha256":source_hash,
+        "work_used":options.max_work-remaining,"research_only":true}),
+    )?;
+    out.flush().map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+fn main() -> Result<(), String> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.len() == 1 && args[0] == "--help" {
+        println!("Research v2 (legacy CSV is not overwritten). Required: --symbol SYMBOL --input PATH --output NEW_PATH --timestamp-unit ms --horizons-ms H1,H2,... --stride-ms N --tp-return F --sl-return F --max-records N --max-work N. Optional: --allow-legacy. No trading defaults; no promotion. Trainer legacy does not consume v2.");
+        return Ok(());
+    }
+    let options = Options::parse(&args)?;
+    let max_bytes = options
+        .max_records
+        .checked_mul(RECORD_BYTES)
+        .and_then(|n| n.checked_add(8))
+        .ok_or("byte budget overflow")?;
+    let read_limit = u64::try_from(max_bytes)
+        .ok()
+        .and_then(|n| n.checked_add(1))
+        .ok_or("read limit overflow")?;
+    let mut bytes = Vec::new();
+    File::open(&options.input)
+        .map_err(|e| e.to_string())?
+        .take(read_limit)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > max_bytes {
+        return Err("input exceeds record budget; refusing silent truncation".into());
+    }
+    // Validate before creating output; never overwrite an existing dataset.
+    Tape::parse(&bytes, options.allow_legacy)?;
+    let mut output = BufWriter::new(
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&options.output)
+            .map_err(|e| e.to_string())?,
+    );
+    let rows = export_to(&mut output, &bytes, &options)?;
+    output.get_ref().sync_all().map_err(|e| e.to_string())?;
+    println!("Research v2 complete: {rows} anchors. No model trained or promoted.");
+    Ok(())
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    fn options() -> Options {
+        Options {
+            symbol: "BTCUSDT".into(),
+            input: "synthetic_fixture.bin".into(),
+            output: "unused.jsonl".into(),
+            horizons_ms: vec![5, 10],
+            stride_ms: 10,
+            max_records: 10,
+            max_work: 1000,
+            spec: BarrierSpec {
+                take_profit_return: 0.0036,
+                stop_loss_return: 0.0018,
+            },
+            allow_legacy: false,
         }
     }
+    fn tape(rows: &[(u64, f64)]) -> Vec<u8> {
+        let mut b = b"TGMTICK1".to_vec();
+        for &(ts, p) in rows {
+            b.extend_from_slice(&ts.to_le_bytes());
+            for v in [p, p, 1.0, 1.000000001] {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        b
+    }
+    fn export(rows: &[(u64, f64)]) -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        export_to(&mut out, &tape(rows), &options()).unwrap();
+        String::from_utf8(out)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+    #[test]
+    fn explicit_cli_has_no_hidden_trading_defaults() {
+        assert!(Options::parse(&[]).is_err());
+        let args="--symbol ETHUSDT --input x --output y --timestamp-unit ms --horizons-ms 1,100,100000 --stride-ms 5 --tp-return 0.01 --sl-return 0.02 --max-records 100 --max-work 1000";
+        let a: Vec<String> = args.split_whitespace().map(str::to_string).collect();
+        let o = Options::parse(&a).unwrap();
+        assert_eq!(o.symbol, "ETHUSDT");
+        assert_eq!(o.horizons_ms, vec![1, 100, 100000]);
+        for extra in [
+            "--bad 1",
+            "--symbol BTCUSDT",
+            "--allow-legacy --allow-legacy",
+        ] {
+            let mut b = a.clone();
+            b.extend(extra.split_whitespace().map(str::to_string));
+            assert!(Options::parse(&b).is_err());
+        }
+        for (from, to) in [
+            ("ms --horizons", "ns --horizons"),
+            ("1,100,100000", "1,1"),
+            ("--max-work 1000", "--max-work 0"),
+            ("ETHUSDT", "../ETHUSDT"),
+        ] {
+            assert!(Options::parse(
+                &args
+                    .replace(from, to)
+                    .split_whitespace()
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            )
+            .is_err());
+        }
+    }
+    #[test]
+    fn v2_keeps_flat_and_censored_rows_and_has_terminal_manifest_hash() {
+        let v = export(&[(0, 100.), (10, 100.), (20, 100.)]);
+        assert_eq!(v.len(), 5);
+        assert_eq!(v[0]["schema"], "tgm.midpoint_barrier_surface.v2");
+        assert_eq!(v[0]["observed_l2_certified"], false);
+        assert_eq!(v[1]["horizons"][0]["long"]["kind"], "no_observed_hit");
+        assert_eq!(v[3]["horizons"][1]["long"]["kind"], "right_censored");
+        assert_eq!(v[4]["kind"], "complete");
+        assert_eq!(v[4]["rows"], 3);
+        assert_eq!(v[0]["source_sha256"], v[4]["source_sha256"]);
+    }
+    #[test]
+    fn unavailable_external_features_are_null_not_macro_constants() {
+        let v = export(&[(0, 100.), (10, 100.)]);
+        let f = v[1]["features"].as_array().unwrap();
+        assert_eq!(f.len(), 54);
+        assert!(f[40..].iter().all(|v| v.is_null()));
+        let obi = f[37].as_f64().unwrap();
+        assert!(obi.abs() > 0. && obi.abs() < 1e-6); // no six-decimal rounding to zero
+    }
+    #[test]
+    fn future_price_does_not_change_earlier_feature_snapshot() {
+        let a = export(&[(0, 100.), (10, 100.4), (20, 101.)]);
+        let b = export(&[(0, 100.), (10, 99.6), (20, 90.)]);
+        assert_eq!(a[1]["features"], b[1]["features"]);
+        assert_ne!(a[1]["horizons"], b[1]["horizons"]);
+        assert_ne!(a[0]["source_sha256"], b[0]["source_sha256"]);
+    }
+    #[test]
+    fn budgets_reject_instead_of_silent_prefix_or_success_footer() {
+        let b = tape(&[(0, 100.), (10, 100.), (20, 100.)]);
+        let mut o = options();
+        o.max_records = 2;
+        let mut out = Vec::new();
+        assert!(export_to(&mut out, &b, &o).is_err());
+        assert!(out.is_empty());
+        o.max_records = 10;
+        o.max_work = 3;
+        assert!(export_to(&mut out, &b, &o).is_err());
+        assert!(!String::from_utf8(out)
+            .unwrap()
+            .contains("\"kind\":\"complete\""));
+    }
+    #[test]
+    fn invalid_tape_is_rejected_before_manifest() {
+        let mut out = Vec::new();
+        assert!(export_to(&mut out, b"TGMTICK2", &options()).is_err());
+        assert!(out.is_empty());
+    }
+    #[test]
+    fn writer_and_flush_errors_propagate() {
+        struct Fails {
+            on_write: bool,
+        }
+        impl Write for Fails {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                if self.on_write {
+                    Err(std::io::Error::other("fixture write failure"))
+                } else {
+                    Ok(b.len())
+                }
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::Error::other("fixture flush failure"))
+            }
+        }
+        for on_write in [true, false] {
+            assert!(export_to(&mut Fails { on_write }, &tape(&[(0, 100.)]), &options()).is_err());
+        }
+    }
+    #[test]
+    fn derived_overflow_is_missing_before_clipping() {
+        let mut engine = StatefulEngine::new();
+        engine.v_t = f64::MAX;
+        let f = feature_snapshot(
+            &engine,
+            Record {
+                timestamp_ms: 0,
+                bid: 1e-100,
+                ask: 1e-100,
+                bid_qty: 0.,
+                ask_qty: 0.,
+            },
+        );
+        assert!(f[34].is_none());
+        assert!(f[38].is_none());
+        assert!(f[37].is_none());
+    }
 
-    println!(
-        "🚀 Exporter finished! Wrote {} clean rows to {}",
-        written, out_path
-    );
+    #[test]
+    fn book_imbalance_does_not_fabricate_trade_aggressor_evidence() {
+        let v = export(&[(0, 100.), (10, 100.)]);
+        assert!(v[1]["features"][6].is_null());
+        assert!(!v[1]["features"][37].is_null()); // separately labelled depth proxy
+        assert!(v[0]["trade_flow_channel_6"]
+            .as_str()
+            .unwrap()
+            .contains("unavailable"));
+    }
+
+    #[test]
+    fn feature_rejection_aborts_export_without_success_footer() {
+        let mut bytes = b"TGMTICK1".to_vec();
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        for value in [1e200_f64, 1e200, 1e200, 1e200] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let mut out = Vec::new();
+        let error = export_to(&mut out, &bytes, &options()).unwrap_err();
+        assert!(error.contains("record 0: NonFiniteDerivedValue"));
+        let text = String::from_utf8(out).unwrap();
+        assert!(!text.contains("\"kind\":\"complete\""));
+        assert!(!text.contains("\"kind\":\"observation\""));
+    }
 }

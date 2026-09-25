@@ -11,8 +11,39 @@ pub const TIME_IN_FORCE_GTC: &str = "GTC";
 pub const TIME_IN_FORCE_GTX: &str = "GTX"; // Post Only (Maker)
 pub const SIDE_BUY: &str = "BUY";
 pub const SIDE_SELL: &str = "SELL";
+/// USD-M POST /fapi/v1/leverage schema; instrument/account tiers can be lower.
+pub const MAX_INITIAL_LEVERAGE: u32 = 125;
 
-/// Firma criptográfica O(1) de Binance sin alojamientos (Zero-Allocation).
+/// The documented USD-M POST /fapi/v1/order schema has no icebergQty parameter.
+/// Do not silently fall back to a fully visible order or claim paper support.
+pub const SUPPORTS_NATIVE_ICEBERG: bool = false;
+
+/// A successful HTTP status alone does not confirm the requested configuration.
+/// This validates identity and leverage only, not account margin tiers/capacity.
+pub fn validate_leverage_confirmation(
+    body: &str,
+    symbol: &str,
+    leverage: u32,
+) -> Result<(), String> {
+    #[derive(serde::Deserialize)]
+    struct Confirmation {
+        symbol: String,
+        leverage: u32,
+    }
+    if symbol.is_empty() || !(1..=MAX_INITIAL_LEVERAGE).contains(&leverage) {
+        return Err("invalid leverage confirmation request".into());
+    }
+    let confirmation: Confirmation =
+        serde_json::from_str(body).map_err(|_| "malformed leverage confirmation".to_string())?;
+    if confirmation.symbol != symbol || confirmation.leverage != leverage {
+        return Err("leverage confirmation does not match requested symbol/value".into());
+    }
+    Ok(())
+}
+
+/// Firma HMAC-SHA256 sin alojamientos adicionales para el resultado.
+/// El trabajo escala con los bytes del mensaje y la normalización de la clave;
+/// que el digest tenga longitud fija no hace constante el coste de procesarlos.
 /// Escribe el HMAC-SHA256 directamente en un buffer preasignado.
 // FIX #1496: Firma criptográfica resiliente sin expect ni pánicos
 #[inline(always)]

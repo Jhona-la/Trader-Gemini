@@ -39,53 +39,54 @@ pub fn terminal_events_seen() -> u64 {
     TERMINAL_EVENTS_SEEN.load(Ordering::Relaxed)
 }
 
-/// B3.5b — CLASIFICACIÓN DE ERRORES DE COLOCACIÓN: distingue un RECHAZO
-/// del exchange (contiene un código de error Binance, p.ej. "-2019",
-/// "-2021", "-4164") de un fallo de transporte ("error sending request",
-/// timeouts). El escalado anti-desnudez sólo debe disparar con evidencia
-/// POSITIVA de rechazo: un blip de red de 3 ciclos no cierra posiciones
-/// sanas a mercado.
-///
-/// FIRMA DEL CÓDIGO (endurecida tras falsos positivos medidos): un código
-/// Binance es un entero NEGATIVO de exactamente 4 dígitos sin cero a la
-/// izquierda (rango documentado -1000..-9999), delimitado por un carácter
-/// NO alfanumérico (`:`, `,`, `)`, espacio, comilla, fin…). Con eso quedan
-/// fuera los patrones numéricos habituales de los textos de red:
-///
-/// ```text
-/// "…45.123-0500"  offset de zona horaria  → cero inicial      ✗
-/// "…123-05:00"    RFC 3339 con offset     → 2 dígitos         ✗
-/// "2026-09-15"    fecha ISO               → 2 dígitos         ✗
-/// "…-1757955…"    timestamp Unix          → 5º dígito es dígito ✗
-/// "1200-4800ms"   rango con unidad        → unidad alfanum.   ✗
-/// "-2019: …"      Display de Binance      → delimitador ':'   ✓
-/// "code":-4164,   cuerpo JSON de Binance  → delimitador ','   ✓
-/// ```
+/// Compatibility boundary for bracket-placement errors, not a general log
+/// scanner. Recognize the client's structured envelope or anchored legacy
+/// displays only. Incidental numbers in transport text are not evidence.
+/// Unknown execution (-1000/-1006/-1007) and AMBIGUOUS remain inconclusive.
+/// A true result says the request was rejected, NOT that protection is
+/// permanently impossible. Callers still need to reconcile current coverage.
+/// Future work: carry a typed, endpoint-correlated outcome through the client
+/// instead of flattening status/provenance into a string (FMT-213).
 pub fn is_exchange_rejection(msg: &str) -> bool {
-    let b = msg.as_bytes();
-    if b.len() < 5 {
+    let msg = msg.trim();
+    if msg.starts_with("AMBIGUOUS") {
         return false;
     }
-    for i in 0..=b.len() - 5 {
-        if b[i] != b'-' || b[i + 1] == b'0' || !b[i + 1].is_ascii_digit() {
-            continue;
-        }
-        // Exactamente 4 dígitos (1000..=9999): el tercero y el cuarto
-        // deben ser dígitos y el quinto carácter NO puede serlo (un run
-        // más largo es un timestamp o un rango, no un código).
-        if !b[i + 2].is_ascii_digit() || !b[i + 3].is_ascii_digit() || !b[i + 4].is_ascii_digit() {
-            continue;
-        }
-        if let Some(&next) = b.get(i + 5) {
-            // Una letra inmediata ("−4800ms", "-4164x") delata una magnitud
-            // con unidad, no un código de error del exchange.
-            if next.is_ascii_alphanumeric() {
-                continue;
-            }
-        }
-        return true;
+    #[derive(serde::Deserialize)]
+    struct ErrorEnvelope {
+        code: i64,
+        #[serde(rename = "msg")]
+        _message: String,
     }
-    false
+    let json = msg.strip_prefix("Binance API Error: ").unwrap_or(msg);
+    let code = if json.starts_with('{') {
+        serde_json::from_str::<ErrorEnvelope>(json)
+            .ok()
+            .map(|e| e.code)
+    } else if let Some(rest) = msg.strip_prefix("REJECTED code=") {
+        anchored_code(rest, " msg=")
+    } else if let Some(rest) = msg.strip_prefix("code=") {
+        anchored_code(rest, ":")
+    } else if let Some(rest) = msg.strip_prefix("reject: (") {
+        anchored_code(rest, ")")
+    } else {
+        anchored_code(msg, ":")
+    };
+    matches!(code, Some(code) if (-9999..=-1000).contains(&code)
+        && !matches!(code, -1000 | -1006 | -1007))
+}
+
+fn anchored_code(text: &str, delimiter: &str) -> Option<i64> {
+    let code = text.get(..5)?;
+    let bytes = code.as_bytes();
+    if bytes[0] != b'-'
+        || bytes[1] == b'0'
+        || !bytes[1..].iter().all(u8::is_ascii_digit)
+        || !text.get(5..)?.starts_with(delimiter)
+    {
+        return None;
+    }
+    code.parse().ok()
 }
 
 /// B3.5b — RECHAZOS DE BRACKET por símbolo (evidencia para el escalado).
@@ -101,8 +102,9 @@ pub fn note_rejection(symbol: &str, err: &str) -> bool {
     }
     if let Ok(mut m) = BRACKET_REJECTIONS.lock() {
         *m.entry(symbol.to_string()).or_insert(0) += 1;
+        return true;
     }
-    true
+    false
 }
 
 /// Rechazos acumulados del símbolo (para comparar entre auditorías).
@@ -126,8 +128,6 @@ mod tests {
             "Binance API Error: {\"code\":-4164,\"msg\":\"Order's notional must be no smaller than 5.0\"}",
             "reject: (-1013) Filter failure: PRICE_FILTER",
             "code=-2021: Order would immediately trigger",
-            "err -2019",
-            "trailing -4182.",
         ] {
             assert!(
                 is_exchange_rejection(msg),
@@ -148,6 +148,8 @@ mod tests {
             "latency spike 5000-60000ms window",
             "seq mismatch -1757955600000 vs -1757955601000",
             "HTTP_429_RATE_LIMITED retry_after=60",
+            "err -2019",
+            "trailing -4182.",
             "",
             "-",
             "short",

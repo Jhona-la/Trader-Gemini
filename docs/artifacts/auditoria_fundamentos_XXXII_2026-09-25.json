@@ -1,0 +1,825 @@
+{
+  "schema_version": 1,
+  "round": "XXXII",
+  "date": "2026-09-25",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXII_2026-09-25.md",
+  "artifact_validation": {
+    "status": "passed_at_local_snapshot",
+    "hashes_verified": 52,
+    "model_hashes_verified": 41,
+    "evidence_references_verified": 33,
+    "report_local_links_verified": 21,
+    "append_only_prefixes_verified": 3,
+    "test_totals_consistent": true,
+    "issues": [],
+    "scope": "Snapshot hashes, file/range references and arithmetic totals; not semantic certification of the whole system or subsequent concurrent edits. Artifact does not hash itself."
+  },
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false,
+    "dirty_tree_preserved": true
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 151,
+    "pending_complete_rust": 138,
+    "new_complete_reads": [
+      {
+        "file": "crates/execution-engine/src/ntp.rs",
+        "baseline_lines": 42,
+        "final_lines": 42
+      },
+      {
+        "file": "crates/execution-engine/src/hot_swap.rs",
+        "baseline_lines": 65,
+        "final_lines": 65
+      },
+      {
+        "file": "crates/god-engine-core/src/order_flow_aggregator.rs",
+        "baseline_lines": 54,
+        "final_lines": 59
+      },
+      {
+        "file": "crates/god-engine-core/src/latency_accelerator.rs",
+        "baseline_lines": 56,
+        "final_lines": 56
+      },
+      {
+        "file": "crates/god-engine-core/src/liquidation_feed.rs",
+        "baseline_lines": 61,
+        "final_lines": 62
+      }
+    ],
+    "reread_previously_covered": [
+      "crates/metacortex-engine/src/consejo_seniors.rs",
+      "crates/metacortex-engine/src/online_learning.rs",
+      "crates/metacortex-engine/src/hot_swap_controller.rs",
+      "crates/metacortex-engine/src/fases_autonomous.rs",
+      "crates/metacortex-engine/src/lib.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/god-engine-core/src/lib.rs",
+      "crates/quantum-arena/src/position.rs",
+      "crates/execution-engine/src/executor.rs",
+      "crates/data-pipeline/src/ws_client.rs",
+      "src/bin/god_engine.rs"
+    ],
+    "new_files_reviewed": [
+      "crates/god-engine-core/tests/spectral_admission_diagnostics.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false
+  },
+  "new_ids": [
+    "FMT-246",
+    "FMT-247",
+    "FMT-248",
+    "FMT-249",
+    "FMT-250",
+    "FMT-251",
+    "FMT-252"
+  ],
+  "local_contract_repairs": [
+    "FMT-246",
+    "FMT-247",
+    "FMT-248"
+  ],
+  "partial_progress": [
+    "FMT-243"
+  ],
+  "new_open_design_debt": [
+    "FMT-249",
+    "FMT-250",
+    "FMT-251",
+    "FMT-252"
+  ],
+  "carried_open": [
+    "FMT-006",
+    "FMT-039",
+    "FMT-052",
+    "FMT-225",
+    "FMT-227",
+    "FMT-230",
+    "FMT-231",
+    "FMT-232",
+    "FMT-235",
+    "FMT-236",
+    "FMT-243",
+    "FMT-244",
+    "FMT-245"
+  ],
+  "findings": [
+    {
+      "id": "FMT-243",
+      "inherited": true,
+      "priority": "P1",
+      "status": "partially_repaired_population_open",
+      "title": "Una evaluación para decisión y votos; n global/wr local aún incompatibles",
+      "section": 3,
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 935
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 969
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 4536
+        }
+      ],
+      "tests": [
+        "traced_decision_evaluates_each_agent_once_with_the_effective_wr",
+        "invalid_snapshot_is_rejected_before_agent_callbacks",
+        "poisoned_tracker_is_not_silently_interpreted_as_cold_start",
+        "open_aggregate_trial_count_changes_shrinkage_without_asset_identity"
+      ],
+      "detailed_analysis_markdown": "FMT-243 — una sola evaluación; población aún incompatible\n\n**Evidencia.** [deliberar_traced](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/metacortex-engine/src/consejo_seniors.rs:935>) y [consumidor del core](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/src/lib.rs:4536>). XXXI ya documentó el contraste entre extracción con wr crudo y deliberación con shrinkage. Esta adenda no lo cuenta como un hallazgo nuevo.\n\n**Fallo anterior.** Con wr=0,1 y cero outcomes, el probe de extracción devolvía 0,1, mientras la deliberación usaba 0,5. Guardar la extracción y posteriormente evaluar el resultado no representa el estado que produjo la decisión. Con un agente stateful, la segunda llamada también puede observar un estado interno diferente aunque ambos argumentos coincidieran. El trabajo de evaluar once agentes se duplicaba, incluyendo sus cálculos y construcción de justificaciones.\n\n**Cambio.** CouncilDecisionTrace devuelve el consenso, todas las opiniones, los votos elegibles para aprendizaje indexados por rol, el wr efectivo y el contador agregado observado. El core llama una vez a deliberar_traced. Los wrappers históricos deliberar y deliberar_with_weights conservan sus firmas; extract_senior_signals conserva la suya pero inicia una nueva deliberación y queda documentado que no debe combinarse con otra llamada para reconstruir un mismo trace.\n\nEl contador y los pesos adaptativos se leen bajo una única adquisición del RwLock. El lock se libera antes de invocar agentes, para no mantenerlo alrededor de callbacks. Si el lock está poisoned se devuelve rechazo de integridad; no se interpreta el estado potencialmente inconsistente como un cold start sano. No se implementa recuperación automática del tracker ni se garantiza tiempo máximo de espera.\n\n**Significado del cálculo.** La expresión vigente es:\n\n~~~text\nwr_efectivo = (n_global · wr_activo + 0,5 · k) / (n_global + k)\n~~~\n\nLa mezcla reduce el extremo observado hacia 0,5 cuando n es pequeño. Una lectura de posterior Beta requiere ensayos y proporción de la misma población; k=8 sería una concentración simétrica Beta(4,4) en ese modelo. Aquí un activo puede alterar el n utilizado para regularizar el wr de otro. Corregir la doble lectura del lock no convierte esa mezcla en inferencia calibrada. El diagnóstico que inserta diez outcomes agregados y cambia 0,5 a 5/18 sigue reproduciendo la incompatibilidad.\n\n**Pruebas.** Un agente contador es llamado exactamente una vez; sus votos coinciden con la opinión evaluada y el wr efectivo. Un payload NaN se rechaza antes de callbacks. El trace conserva las once opiniones cuando un veto de cascada rechaza la decisión. Se comprueba explícitamente el tracker poisoned. El test OPEN de población permanece abierto; únicamente se actualizó su aserción secundaria de extracción para reflejar la reparación real, sin borrar la evidencia pendiente.\n\n**Residual y cierre pendiente.** Falta un suficiente estadístico por población compatible o un modelo de pooling explícito y validado. No se congelan en almacenamiento durable todas las features, versiones de modelo/genoma, política, identidad de decisión y propensiones de admisión. Tampoco se ha medido dependencia temporal, sesgo de selección o calibración fuera de muestra.\n"
+    },
+    {
+      "id": "FMT-246",
+      "priority": "P1",
+      "status": "local_role_and_output_contract_repaired",
+      "title": "Identidad de roles, duplicación y validación de salida",
+      "section": 4,
+      "evidence": [
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 953
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 987
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 1019
+        },
+        {
+          "file": "crates/metacortex-engine/src/consejo_seniors.rs",
+          "line": 1082
+        }
+      ],
+      "tests": [
+        "reordering_agents_cannot_reassign_external_weights",
+        "signal_extraction_uses_roles_not_vector_order",
+        "duplicate_roles_are_an_integrity_failure_not_extra_votes",
+        "an_invalid_agent_output_cannot_be_clamped_into_approval",
+        "every_opinion_numeric_contract_and_role_are_validated",
+        "finite_weights_that_overflow_when_scaled_do_not_approve",
+        "dynamic_weights_follow_roles_when_the_topology_is_reordered",
+        "a_zero_weight_is_valid_but_cannot_create_directional_capacity"
+      ],
+      "detailed_analysis_markdown": "FMT-246 — el orden de los agentes alteraba la identidad del aprendizaje\n\n**Localización.** [validación de roles](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/metacortex-engine/src/consejo_seniors.rs:953>) y [evaluación e indexación](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/metacortex-engine/src/consejo_seniors.rs:987>).\n\n**Mecanismo.** agents es un Vec público. El tracker y las máscaras utilizan posiciones canónicas de SeniorRole, pero el bucle original aplicaba multiplicadores por enumerate(). Reordenar la misma colección cambiaba qué peso recibía cada agente. La extracción guardaba señales por orden, por lo que la máscara de moduladores podía actuar sobre otro rol. Una colección con más de once agentes también podía escribir fuera del array de extracción. Una duplicación del mismo rol añadía capacidad como si existiera una observación adicional.\n\n**Reproducciones rojas.** Invertir el orden de los once agentes alteró final_signal bajo un vector externo de pesos no uniforme; también invirtió posiciones del array de señales. Añadir un segundo Microestructura no produjo un rechazo de integridad. Un agente sintético con signal_direction=100 fue aprobado después de clamping, a pesar del contrato [-1,1].\n\n**Reparación.** Se verifica unicidad de roles antes de callbacks. Se exige que el rol de la opinión coincida con el rol declarado por el agente. Multiplicadores externos, pesos aprendidos y señales se indexan por rol. Se validan señal [-1,1], confianza [0,1] y peso finito no negativo. Peso cero es válido: expresa capacidad nula, no corrupción. Con confianza o peso cero, el voto elegible para aprendizaje es cero; la opinión cruda se mantiene en el trace.\n\nTambién se comprueba finitud después de multiplicar el peso y después de acumular señal/capacidad. De otro modo, inputs finitos grandes podrían producir infinito y esconder un estado mal definido detrás de un clamp. No se añade un techo arbitrario nuevo al peso para ocultar el overflow.\n\n**Por qué el rechazo tiene sentido.** No se veta un estado de mercado ni una escala temporal: se rechaza una topología ambigua o una salida que viola su contrato numérico. Un duplicado no puede convertirse en evidencia adicional sólo por estar repetido. Una subcolección con roles únicos sigue siendo aceptable como topología; no se exige exactamente once agentes ni se introduce un nuevo quorum estadístico.\n\n**Pruebas y límites.** Se prueban pesos externos y aprendidos con orden inverso, salida inválida, rol incoherente, overflow, duplicados y peso cero. Estos casos no acreditan independencia entre Microestructura, Metacognitivo y Teleonomia. FMT-244 permanece: transformaciones de una misma raíz pueden dar apariencia de consenso total. Tampoco se resuelven pánicos dentro de callbacks, identidad versionada de implementaciones ni un registro dinámico ilimitado de roles.\n"
+    },
+    {
+      "id": "FMT-247",
+      "priority": "P1",
+      "status": "local_entry_binding_repaired_settlement_and_concurrency_open",
+      "title": "Candidatos o generaciones previas recibían crédito de otro cierre",
+      "section": 5,
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 68
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1074
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1590
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1904
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 4742
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 4765
+        }
+      ],
+      "tests": [
+        "a_position_without_a_bound_council_decision_does_not_train_the_council",
+        "bound_votes_are_consumed_once_and_do_not_survive_slot_reuse",
+        "wrong_generation_side_or_symbol_cannot_receive_credit",
+        "unconfirmed_exchange_close_consumes_binding_without_training",
+        "legacy_signal_mirror_cannot_overwrite_the_frozen_binding",
+        "winning_short_rewards_the_councils_short_prediction_not_its_opposite"
+      ],
+      "detailed_analysis_markdown": "FMT-247 — persistencia de votos antes de la admisión y sin identidad de posición\n\n**Evidencia.** [CouncilEntryEvidence](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/src/lib.rs:68>), [consumo en cierre](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/src/lib.rs:1590>) y [publicación y vinculación de apertura](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/src/lib.rs:4742>).\n\n**Fallo anterior.** El core sobrescribía last_senior_signals[coin][slot] antes de comprobar el consejo, el gate ML y el margen. El array sobrevivía al cierre, rollback, adopción o reapertura. El cierre lo trataba como evidencia del trade actual. En el fixture, una posición abierta directamente y un voto legacy +1 bastaban para insertar un outcome; no existía decisión del consejo asociada a esa posición.\n\n**Impacto lógico.** Se mezclaban tres hechos distintos: “un candidato fue evaluado”, “una posición fue publicada” y “un resultado pertenece a esa decisión”. Eso puede invertir el crédito del aprendizaje, reforzar votos nunca admitidos o rellenar n con cierres sin origen decisional. Que el PnL sea positivo no repara una asociación causal equivocada.\n\n**Cambio implementado.** Se añade un vínculo local por coin/slot con símbolo, generación, lado y votos de la única deliberación. Se escribe después de aprobar las demás condiciones y de obtener éxito de open_with_tau_and_fee. El array legacy queda como espejo de diagnóstico; ya no es la fuente para entrenar el consejo.\n\nLa generación esperada se obtiene antes de la transición como g+1. Si se intercala otra transición y no coincide con la observada al publicar, se descarta la atribución. Al cerrar se consume el Option una vez, incluso si luego el contexto económico rechaza aprender. Se contrastan símbolo, generación, lado, precio/cantidad devueltos por el cierre y el avance de generación observado. Una discrepancia no reconstruye ni inventa evidencia.\n\n**Apertura fallida.** El retorno bool antes ignorado ahora se respeta. Se validan precio/cantidad finitos positivos antes del cargo local. Se mantiene reserva/fee antes de publicar la posición; si la API devuelve false, se compensan únicamente los importes de ese intento. No se publica orden, contador de éxito ni vínculo de aprendizaje para el intento rechazado. Esta compensación no constituye un ledger transaccional de reservas concurrentes.\n\n**Frontera del veto.** Si falta vínculo, el cierre local conserva la ruta defensiva existente y las reglas OutcomeContext. Se omite exclusivamente el crédito al consejo y aumenta diag_unattributed_council_closes para cierres económicamente elegibles sin atribución. No se convierte “no sé qué decisión originó esta posición” en “debo mantenerla abierta”.\n\n**Pruebas.** La prueba roja de posición sin vínculo pasa de un outcome indebido a cero. Las pruebas nuevas cubren consumo único, reutilización de slot, generación/lado/símbolo incorrectos, entrada no confirmada y mutación del espejo legacy. El corto ganador de XXXI conserva su prueba de orientación, ahora con vínculo explícito del fixture. Los tests construyen evidencia sintética dentro de su propia arena; no afirman haber generado fills reales.\n\n**Residual importante.** El vínculo vive en memoria del core y es público como otros estados actuales; no es una firma ni una frontera contra callers que lo falsifiquen. No se serializa el trace completo, ni hay vínculo durable a order_id/fill_id/genoma. La identidad por símbolo mitiga reutilización de índices, pero no equivale a versión inmutable del registro. El chequeo de generación es una contención, no una prueba de linealizabilidad de todas las lecturas/cierres: la ruta económica aún usa campos leídos separadamente y el cierre no es una operación compare-and-close sobre un snapshot suministrado por el caller. No se realizó prueba concurrente de extremo a extremo.\n\nFMT-225 sigue abierto: ExchangeLocalEstimate con entrada confirmada puede aprender de una estimación local de salida; falta settlement real. Los demás consumidores de aprendizaje no pasan automáticamente a usar CouncilEntryEvidence. El residual online/Kalman, PPO, mmap y datasets conservan sus deudas previas.\n"
+    },
+    {
+      "id": "FMT-248",
+      "priority": "P2",
+      "status": "arithmetic_repaired_no_operational_caller_located",
+      "title": "Ratio dependiente de unidades y con overflow para inputs finitos",
+      "section": 6,
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/order_flow_aggregator.rs",
+          "line": 11
+        },
+        {
+          "file": "crates/god-engine-core/tests/spectral_admission_diagnostics.rs",
+          "line": 5
+        },
+        {
+          "file": "crates/god-engine-core/tests/spectral_admission_diagnostics.rs",
+          "line": 12
+        },
+        {
+          "file": "crates/god-engine-core/tests/spectral_admission_diagnostics.rs",
+          "line": 19
+        }
+      ],
+      "tests": [
+        "flow_ratio_does_not_overflow_for_finite_balanced_volumes",
+        "flow_ratio_does_not_erase_small_nonzero_volume_as_neutral",
+        "flow_ratio_is_invariant_to_finite_changes_of_volume_units"
+      ],
+      "detailed_analysis_markdown": "FMT-248 — el flujo cambiaba con las unidades y podía desbordarse\n\n**Evidencia.** [aggregate_order_flow](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/src/order_flow_aggregator.rs:11>) y [regresiones numéricas](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/tests/spectral_admission_diagnostics.rs:5>).\n\n**Fórmulas y significado.** Para volúmenes no negativos B y S, r=B/(B+S) es la fracción compradora y Δ=B−S es el desequilibrio absoluto. r no tiene unidades; Δ sí conserva las unidades de volumen. Por construcción, r(aB,aS)=r(B,S) para a>0, siempre que los inputs y resultados sean representables.\n\n**Defectos reproducidos.** Con B=S=f64::MAX, la suma anterior era infinito y r daba 0 en lugar de 0,5: equilibrio extremo se convertía en sesgo vendedor. Con B=3e−20 y S=1e−20, el filtro B+S≤1e−12 devolvía neutralidad 0,5 y Δ=0, destruyendo un desequilibrio real. La elección de unidad podía por sí sola alterar la señal.\n\n**Reparación.** Se calcula m=max(B,S); si m=0, la convención heredada es (0,5,0). En otro caso, r=(B/m)/[(B/m)+(S/m)]. Uno de los términos escalados es 1 y el denominador no desborda. No se añade un umbral de liquidez; si se necesita tal filtro, debe expresarse separadamente con unidades y evidencia. Se conserva Δ=B−S.\n\n**Exposición y límites.** La búsqueda de callers en crates/src sólo encontró los tests y la definición del helper. No se afirma que el arreglo cambie operaciones actuales. Las entradas negativas/no finitas aún se sustituyen por cero por compatibilidad: dato inválido sigue pudiendo confundirse con ausencia de volumen. Ese contrato merece una API checked separada; no se cablea ahora el helper al motor operativo. Se retira la promesa documental de latencia sistémica <1,1µs: no había benchmark de esta ronda que la sostuviera.\n\nTres aserciones rojas quedan verdes: grandes equilibrados, pequeños no nulos e invariancia de unidades. También pasan los dos tests legacy de equilibrio/sesgo y sanitización.\n"
+    },
+    {
+      "id": "FMT-249",
+      "priority": "P1",
+      "status": "open_delivery_scope_and_freshness_documentation_repaired",
+      "title": "Severidad consumida antes del veto y sin identidad multiactivo",
+      "section": 7,
+      "evidence": [
+        {
+          "file": "src/bin/god_engine.rs",
+          "line": 2902
+        },
+        {
+          "file": "crates/god-engine-core/src/liquidation_feed.rs",
+          "line": 28
+        },
+        {
+          "file": "crates/god-engine-core/src/liquidation_feed.rs",
+          "line": 41
+        },
+        {
+          "file": "crates/god-engine-core/src/liquidation_feed.rs",
+          "line": 57
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 754
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 1021
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 4516
+        },
+        {
+          "file": "crates/god-engine-core/tests/spectral_admission_diagnostics.rs",
+          "line": 28
+        }
+      ],
+      "tests": [
+        "open_liquidation_breaker_peek_loses_an_event_after_macro_consumption",
+        "liquidation_normalization_matches_its_documented_formula"
+      ],
+      "detailed_analysis_markdown": "FMT-249 — el veto de cascadas puede observar un buffer ya vaciado\n\n**Ruta observada.** El [parser operativo](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/src/bin/god_engine.rs:2902>) calcula notional desde p y q y llama a bump. El [canal global](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/src/liquidation_feed.rs:28>) guarda el máximo pendiente en un AtomicF64. El core consume con take_pending en la ruta macro, tanto en [eventos depth](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/src/lib.rs:754>) como en [actualización macro por tick](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/src/lib.rs:1021>). Más adelante, [el payload del consejo](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/src/lib.rs:4516>) usa peek_pending.\n\n**Reproducción mínima.** bump(0,95) → take_pending()=0,95 → peek_pending()=0. Ese orden representa el camino donde macro absorbe el evento antes de deliberar y no llega otro evento entre ambas llamadas. El test usa el static de su proceso de pruebas, no la memoria del motor operativo. No demuestra que toda deliberación vea cero: si otro productor interviene puede ver otro evento, precisamente otra dependencia del interleaving.\n\n**Pérdida multiactivo.** bump sólo recibe severidad. No conserva símbolo, dirección, timestamp, secuencia ni origen. El primer activo procesado puede consumir el evento de otro, mientras los restantes no lo observan. Si la intención es modelar contagio global, distribuirlo mediante “el primero gana” tampoco constituye un modelo cross-asset. max no preserva conteo, volumen agregado ni distribución temporal: diez shocks menores se vuelven indistinguibles de uno del mismo máximo.\n\n**Normalización.** La función actual es s=clamp[ln(N/1USD)/ln(10^6),0,1]. Da 2/3 para 10.000 USD y 5/6 para 100.000 USD, no los valores 0,33/0,67 que indicaba su comentario. Se corrige la descripción, no el cálculo ni el umbral. Para s>0,85 el notional del evento debe superar 10^5,1≈125.893 USD. No es un percentil empírico, una probabilidad ni una calibración por profundidad/capitalización del activo. Cambiar sin estudio el logaritmo o su referencia alteraría sustancialmente qué eventos vetan.\n\n**Relación con XXXI.** FMT-239 reparó activación y protección del threshold configurado dentro del consejo. Eso sigue siendo correcto para un payload válido. FMT-249 revela que la evidencia del payload puede haber desaparecido o pertenecer al contexto equivocado. No se marca FMT-239 como una reparación económica integral.\n\n**Diseño requerido y criterio de cierre.** Separar evento consumible por features de estado observable por decisiones. Conservar evento_id, símbolo/alcance, tiempo de mercado/recepción y valor con unidades; definir explícitamente reducción y expiración. Un snapshot compartido por una decisión debe alimentar tanto las features como su veto sin depender de quién lea primero. Modelar por separado señal local y contagio global. Probar dos activos con órdenes de llegada invertidos, burst de eventos, duplicados, retraso, reordenamiento y ausencia de nuevos datos.\n\nNo se añade un TTL arbitrario ni se mantiene indefinidamente el último máximo: ambas decisiones podrían sustituir un falso permiso por un bloqueo permanente. La reparación funcional de esta ruta queda ABIERTA.\n"
+    },
+    {
+      "id": "FMT-250",
+      "priority": "P2",
+      "status": "open_static_connected_path_no_live_network_experiment",
+      "title": "Offset sin calidad o edad, RTT con reloj de pared",
+      "section": 8,
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/ntp.rs",
+          "line": 9
+        },
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 117
+        },
+        {
+          "file": "crates/data-pipeline/src/ws_client.rs",
+          "line": 414
+        }
+      ],
+      "tests": [],
+      "detailed_analysis_markdown": "FMT-250 — offset de reloj sin calidad ni vigencia explícitas\n\n**Evidencia.** [start_ntp_synchronizer](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/execution-engine/src/ntp.rs:9>); uso en [timestamp firmado](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/execution-engine/src/executor.rs:117>) y en [estimación de latencia](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/data-pipeline/src/ws_client.rs:414>). Se verificó también el caller del sincronizador en el host; no se hicieron peticiones de tiempo al exchange.\n\n**Qué calcula.** Se observan t0 y t1 mediante SystemTime y un server_time s. El estimador es offset=s−[t0+(t1−t0)/2], usando saturating_sub para el tramo local. Esto aproxima el offset con el punto medio del round-trip; requiere interpretar el timestamp del servidor y la demora de transporte. Un offset escalar no separa desfase del reloj y asimetría de red.\n\n**Defectos de contrato.** El tiempo transcurrido se obtiene de un reloj de pared susceptible de ajuste. Si retrocede, saturating_sub oculta el salto fijando RTT a cero en lugar de invalidar la muestra. Cualquier respuesta válida de fetch_server_time reemplaza el offset sin calidad/RTT asociado, incertidumbre o edad. En error se imprime un aviso, pero el anterior offset conserva vigencia implícita. Los consumidores no reciben “sin sincronizar”, “estimación caducada” o un intervalo de error.\n\n**Impacto condicionado.** Un ajuste incorrecto puede afectar timestamps enviados o la estimación de frescura usada por filtros de latencia. No se observó un rechazo Binance real ni se midió el jitter de esta cuenta; el hallazgo es estructural y operativo por el cableado localizado. No se afirma que todo rechazo de tiempo proceda de aquí.\n\n**Cierre pendiente.** Medir duración con reloj monotónico, detectar discontinuidades del reloj de pared, conservar instante/calidad de la muestra y propagar validez. Definir presupuesto de incertidumbre compatible con ventanas del protocolo y objetivos de latencia; no inventar un umbral universal en milisegundos. Probar retraso asimétrico, fallo prolongado, saltos y reordenamiento de muestras con reloj inyectable. No se modifica configuración temporal operativa en esta ronda.\n"
+    },
+    {
+      "id": "FMT-251",
+      "priority": "P2",
+      "status": "open_latent_no_operational_caller_located",
+      "title": "Estasis y booleano de swap no demuestran una promoción",
+      "section": 9,
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/hot_swap.rs",
+          "line": 18
+        },
+        {
+          "file": "crates/execution-engine/src/hot_swap.rs",
+          "line": 30
+        }
+      ],
+      "tests": [],
+      "detailed_analysis_markdown": "FMT-251 — “estasis” y hot-swap no prueban promoción a producción\n\n**Evidencia.** [evaluate_estasis](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/execution-engine/src/hot_swap.rs:18>) y [execute_swap](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/execution-engine/src/hot_swap.rs:30>). Es un tipo diferente del HotSwapController de metacortex; no deben confundirse por compartir nombre.\n\n**Problema matemático.** La admisión compara wr>0,55 y EV>threshold. No recibe número de muestras, incertidumbre, horizonte del retorno, costes, estabilidad, límites de cartera, evaluación fuera de muestra o identidad de candidato. Un wr bajo puede coexistir con expectativa positiva; uno alto no demuestra utilidad neta ni seguridad. Incluso el dominio del wr no está acotado a [0,1], sólo se comprueba finitud. El threshold del constructor no se valida y no expresa unidades.\n\n**Problema funcional.** execute_swap publica un booleano y un mensaje de transición a MAINNET, pero el comentario del cuerpo describe el cambio de conexión como trabajo futuro. No hay validación de precondiciones dentro de execute_swap ni transición transaccional de conexiones, credenciales, órdenes, riesgo y rollback.\n\n**Exposición.** La búsqueda de evaluate_estasis/execute_swap encontró definición y test local, no uso operativo en el host. Por tanto es deuda latente de API y de afirmaciones, no evidencia de una promoción real insegura ya ejecutada. No se llamó execute_swap ni se cambiaron credenciales o entorno.\n\n**Cierre.** Separar diagnóstico de candidato, autorización explícita de despliegue y ejecución del despliegue. El evaluador debe explicar muestra, objetivo neto, incertidumbre y límites; un booleano local no puede certificarlos. La promoción requiere un protocolo de estado con rollback y reconciliación. No se conecta este helper a producción como “mejora” automática.\n"
+    },
+    {
+      "id": "FMT-252",
+      "priority": "P3",
+      "status": "documentation_corrected_arithmetic_boundary_open_no_operational_caller_located",
+      "title": "Helper escalar presentado como acelerador IPC y resta extrema con wrap",
+      "section": 10,
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/latency_accelerator.rs",
+          "line": 1
+        },
+        {
+          "file": "crates/god-engine-core/src/latency_accelerator.rs",
+          "line": 21
+        },
+        {
+          "file": "crates/god-engine-core/tests/spectral_admission_diagnostics.rs",
+          "line": 45
+        }
+      ],
+      "tests": [
+        "open_clock_helper_wraps_a_representable_unsigned_timestamp"
+      ],
+      "detailed_analysis_markdown": "FMT-252 — un cociente no es un acelerador SPSC\n\n**Evidencia.** [descripción y funciones](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/src/latency_accelerator.rs:1>) y [diagnóstico del timestamp extremo](<C:/Users/jhona/Documents/Proyectos/Trader Gemini/crates/god-engine-core/tests/spectral_admission_diagnostics.rs:45>).\n\nEl módulo no implementa cola, atomics, acquire/release, IPC ni separación entre motores. Contiene un cociente de latencias con clamp y una resta de timestamps. La documentación anterior prometía IPC subnanosegundo y hablaba de comunicación scalping/swing sin implementación que lo respaldase. Se sustituye por una descripción de helpers aritméticos; se conserva la API para no romper usos externos no visibles.\n\nLa resta convierte u64 a i64 antes de operar. Para local=0 y server=u64::MAX, el resultado actual es −1, cuando la diferencia matemática es positiva y su saturación al intervalo vigente sería +5000. El diagnóstico OPEN conserva esa reproducción. Es una prueba del dominio de la API, no un argumento de que los timestamps Unix actuales alcancen ese extremo.\n\nEl cociente devuelve neutralidad 1 ante ciertos inputs inválidos y .01 para raw_latency negativo; además satura magnitudes válidas en [.01,100]. Esas convenciones no aceleran el sistema y no se convierten aquí en política operacional. No se localizaron callers de producción de estos helpers. Quedan pendientes resta en dominio amplio, validación explícita y contrato separado entre métrica y decisión; no se cambia la política de latencia por un nombre atractivo.\n"
+    }
+  ],
+  "verification": {
+    "new_tests": 23,
+    "new_functional_tests": 21,
+    "new_open_diagnostics": 2,
+    "total_distinct_passed": 66,
+    "functional_or_compatibility_passed": 60,
+    "open_diagnostics_passed": 6,
+    "ignored": 0,
+    "whole_workspace_suite_run": false,
+    "red_to_green_assertions": 8,
+    "red_to_green_test_names": [
+      "reordering_agents_cannot_reassign_external_weights",
+      "signal_extraction_uses_roles_not_vector_order",
+      "duplicate_roles_are_an_integrity_failure_not_extra_votes",
+      "an_invalid_agent_output_cannot_be_clamped_into_approval",
+      "a_position_without_a_bound_council_decision_does_not_train_the_council",
+      "flow_ratio_does_not_overflow_for_finite_balanced_volumes",
+      "flow_ratio_does_not_erase_small_nonzero_volume_as_neutral",
+      "flow_ratio_is_invariant_to_finite_changes_of_volume_units"
+    ],
+    "selections": [
+      {
+        "package": "metacortex-engine",
+        "target": "council_evidence_contract",
+        "passed": 34,
+        "functional": 31,
+        "open": 3
+      },
+      {
+        "package": "metacortex-engine",
+        "target": "consejo_seniors::tests",
+        "passed": 8,
+        "functional": 8,
+        "open": 0
+      },
+      {
+        "package": "god-engine-core",
+        "target": "close_outcome_contract",
+        "passed": 16,
+        "functional": 15,
+        "open": 1
+      },
+      {
+        "package": "god-engine-core",
+        "target": "spectral_admission_diagnostics",
+        "passed": 6,
+        "functional": 4,
+        "open": 2
+      },
+      {
+        "package": "god-engine-core",
+        "target": "order_flow_aggregator::tests",
+        "passed": 2,
+        "functional": 2,
+        "open": 0
+      }
+    ],
+    "cargo_check": {
+      "offline": true,
+      "jobs": 1,
+      "status": "passed",
+      "bins": [
+        "god_engine",
+        "feature_exporter",
+        "train_forest",
+        "train_dark_alpha"
+      ],
+      "preexisting_warnings": [
+        "evolution-engine latest_ts unused",
+        "evolution-engine mode unused",
+        "evolution-engine trades dead field"
+      ]
+    },
+    "end_to_end_new_entry_with_validated_roster_tested": false,
+    "concurrency_stress_run": false,
+    "economic_backtest_or_profitability_certified": false,
+    "latency_benchmark_run": false
+  },
+  "scientific_review": {
+    "new_external_literature_review_performed": false,
+    "derived_from": "Current source contracts, elementary algebra and isolated tests; previous scientific reports retained.",
+    "claims_not_made": [
+      "quantum advantage",
+      "universal continuous-time identifiability",
+      "nanosecond latency",
+      "omniscience",
+      "profit guarantee",
+      "complete project audit"
+    ],
+    "detailed_analysis_markdown": "Fundamento científico y evolución sin inflación terminológica\n\nLa ampliación teórica útil de esta ronda es contractual y matemática: identidad, una evaluación reproducible, invariancia de unidades, diferencia entre evento y estado, y separación entre estimador y evidencia económica. No se implementan ecuaciones de problemas del milenio ni se afirma ventaja cuántica. La complejidad de una ecuación no suple variable observable, modelo de medición, hipótesis ni una comparación falsable.\n\nPara evolucionar el sistema como función multivariante de escala, activo y estado, faltan al menos estos contratos:\n\n1. Representación temporal: distinguir τ continuo como argumento de una función del soporte finito que los datos permiten estimar. FMT-245 mantiene el colapso de extremos del consejo a 30s–12h; no se soluciona extendiendo constantes a 1ns–100 años.\n2. Representación de activo: usar identidad y procedencia en la raíz, no sólo índices de arrays reutilizables. El vínculo de esta ronda mejora una arista; el canal de liquidaciones demuestra otra arista todavía global y ambigua.\n3. Observación versus intervención: un veto y una ejecución seleccionan qué resultados se observan. El tracker aprende acuerdo con operaciones seleccionadas, no resultados contrafactuales de las rechazadas. No puede interpretarse sin más como precisión universal del agente.\n4. Estadística consistente: proporción y número de ensayos deben describir la misma población; si se desea compartir información entre activos/escalas, declarar el pooling y validar cuánto se comparte.\n5. Hipótesis medibles: “ortogonal”, “cuántico”, “resonante”, “Bayesiano” y “epigenético” deben señalar una operación verificable y sus condiciones. No son garantías por sí mismas.\n6. Cierre del lazo: genoma/modelo/política versionados → features as-of → decisión → intención → ejecución → cash-flow reconciliado → actualización reproducible. Sin ese lazo, un backtest exitoso no acredita impacto equivalente en demo o producción.\n\nSe releyeron online_learning, fases_autonomous, hot_swap_controller y lib de metacortex. Sus problemas ya estaban registrados en II/III; no se reenumeran como descubrimientos nuevos. Entre ellos siguen relevantes FMT-039 (innovación escalar replicada con denominadores por canal, learning_rate sin efecto en esa actualización), generación/compilación que no demuestra integración o hot-swap y validaciones no globales en la máquina de fases. La ruta online del core vuelve a usar features actuales al cierre; esta ronda no la reescribe ni convierte su salida diagnóstica en probabilidad servida.\n\nNo se ha realizado una revisión bibliográfica nueva ni un barrido completo de todas las teorías del proyecto. Las derivaciones numéricas anteriores se contrastan con el código y los tests indicados; no se presentan como resultados empíricos del mercado.\n"
+  },
+  "veto_audit": {
+    "detailed_analysis_markdown": "Auditoría de vetos, rechazos y arbitrariedades\n\n| Condición | Naturaleza | Tratamiento en esta ronda |\n|---|---|---|\n| Payload/política no finitos o fuera de dominio | Integridad | Rechazo explícito previo; se preserva XXXI |\n| Rol duplicado, opinión incompatible o overflow | Integridad/topología | Rechazo explícito nuevo; no calibración de mercado |\n| Peso cero o confianza cero | Abstención/capacidad nula | Válidos; no se fabrican votos de aprendizaje |\n| Falta de vínculo decisional en cierre | Evidencia insuficiente para atribuir | Omitir crédito al consejo; no bloquear por ello la salida |\n| Cascada por encima del parámetro | Política de riesgo | Consejo conserva veto; feed/procedencia abiertos en FMT-249 |\n| Rechazo ML y presupuesto de margen | Decisión económica/ejecución | Preservados; no se recalibran por decreto |\n| Kill-switch global | Política de seguridad | FMT-232 sigue reproduciendo supresión de propuesta defensiva |\n| WR>0,55 y EV>threshold para “estasis” | Heurística de promoción | Deuda latente, no habilitada |\n| Volumen total≤1e−12 en ratio | Umbral dependiente de unidades | Eliminado del cociente; no era condición matemática necesaria |\n\nNo todos los estados discretos son regímenes de mercado arbitrarios. Una entrada confirmada, una generación de slot o un dato inválido son hechos contractuales. El enfoque temporal continuo no elimina esos estados ni permite usar datos incoherentes. Tampoco justifica convertir vetos de integridad en una opinión sobreescribible por mayoría.\n\nPersisten umbrales económicos legacy, pesos heurísticos y clamps temporales documentados en XXXI. Esta ronda no demuestra que estén óptimamente calibrados; evita sustituirlos por otros números sin ensayo causal, coste y fuera de muestra.\n"
+  },
+  "preservation": {
+    "append_only_documents": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 108381,
+        "appended_normalized_chars": 2505,
+        "normalized_prefix_sha256": "FFC56DAACCB25A0397D0BA6D9C09FF33AB18CE6C8369616D61D54D12C0D133B1"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 718370,
+        "appended_normalized_chars": 8006,
+        "normalized_prefix_sha256": "79061BC289912E231C7422F207817ACF88F39DE8FFC5FD4B4CC460CA756CE17A"
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXI_2026-09-25.md",
+        "prefix_preserved": true,
+        "before_normalized_chars": 39606,
+        "appended_normalized_chars": 1543,
+        "normalized_prefix_sha256": "773AB3F22961F93F4B8627AD1DA6CC9BBD0CAECD58105D2E99C03F7697CE936C"
+      }
+    ],
+    "source_before": [
+      {
+        "path": "crates/metacortex-engine/src/consejo_seniors.rs",
+        "sha256": "404D87922C81C1A2DD5A03FE7088B3C5F98DEC551A575DE951C43C61685526BA",
+        "normalized_chars": 67879,
+        "normalized_sha256": "404D87922C81C1A2DD5A03FE7088B3C5F98DEC551A575DE951C43C61685526BA",
+        "lines": 1614
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "C44D6AAA4B3B25AE2F3A810BC3A651F837880209789032EE6E4EF0F144A18EA2",
+        "normalized_chars": 277077,
+        "normalized_sha256": "C44D6AAA4B3B25AE2F3A810BC3A651F837880209789032EE6E4EF0F144A18EA2",
+        "lines": 5121
+      },
+      {
+        "path": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+        "sha256": "3C865663B4F2353CF594092D2989BC89FCD82C0479217E92D05F7A1B523F462F",
+        "normalized_chars": 11554,
+        "normalized_sha256": "3C865663B4F2353CF594092D2989BC89FCD82C0479217E92D05F7A1B523F462F",
+        "lines": 354
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "sha256": "49DBD8F580FBDE7A887A238CDBDFFD7069FCF1369CB8F7DC4D22DF9CC2D97F70",
+        "normalized_chars": 14084,
+        "normalized_sha256": "49DBD8F580FBDE7A887A238CDBDFFD7069FCF1369CB8F7DC4D22DF9CC2D97F70",
+        "lines": 388
+      },
+      {
+        "path": "crates/execution-engine/src/ntp.rs",
+        "sha256": "1BC0E26D4C43FAC5FD98EC4F8BEAD89F1239D0FD9E59C8C35D69F69BDAAA8374",
+        "lines": 42
+      },
+      {
+        "path": "crates/execution-engine/src/hot_swap.rs",
+        "sha256": "87ED217B4942546F14DB39B84101947847785DB64F17E1A8821F9BE2C349E7FE",
+        "lines": 65
+      },
+      {
+        "path": "crates/god-engine-core/src/order_flow_aggregator.rs",
+        "sha256": "9E72BD693F41C6821462154DC7610ECEBEA739FA3B906B7DB2B0E7B9E0605B1B",
+        "lines": 54
+      },
+      {
+        "path": "crates/god-engine-core/src/latency_accelerator.rs",
+        "sha256": "72BDF105E140A38C869D8C3F1435B3C61F64375E9E8079CC420016B1FB4F49DF",
+        "lines": 56
+      },
+      {
+        "path": "crates/god-engine-core/src/liquidation_feed.rs",
+        "sha256": "66DC9EBCB2F54D1FE8134D1D1C70C6C6068C37C5099657EE3AB637AEC5449846",
+        "lines": 61
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/metacortex-engine/src/consejo_seniors.rs",
+        "sha256": "A532F1579BCE7987195924EA94927E3DFEE976E6D71585EA53ECB0D43CC17CDE",
+        "lines": 1668
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "2FF87B3063059866602EC590E7BB0924642CC1C4654C0F25EDF9B41D6922B2D5",
+        "lines": 5156
+      },
+      {
+        "path": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+        "sha256": "00B2AAB69003114D2DE3D8A0AB2C0FE3F60632C46A867381EA3045AF8EA7275F",
+        "lines": 532
+      },
+      {
+        "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+        "sha256": "B40FD9E25129C61639CD4280BF5992A9E301871CC669BE04A2F4105DD1F0733D",
+        "lines": 465
+      },
+      {
+        "path": "crates/god-engine-core/tests/spectral_admission_diagnostics.rs",
+        "sha256": "D94F15DB0398263D30D5CB043FCA7003C4B3DD367545DF8D049A47F44DD62A03",
+        "lines": 50
+      },
+      {
+        "path": "crates/execution-engine/src/ntp.rs",
+        "sha256": "1BC0E26D4C43FAC5FD98EC4F8BEAD89F1239D0FD9E59C8C35D69F69BDAAA8374",
+        "lines": 42
+      },
+      {
+        "path": "crates/execution-engine/src/hot_swap.rs",
+        "sha256": "87ED217B4942546F14DB39B84101947847785DB64F17E1A8821F9BE2C349E7FE",
+        "lines": 65
+      },
+      {
+        "path": "crates/god-engine-core/src/order_flow_aggregator.rs",
+        "sha256": "B4127A81499C91B321802BC1B24EC2F15F4A403EF0F20B769C0956EAE6BE5869",
+        "lines": 59
+      },
+      {
+        "path": "crates/god-engine-core/src/latency_accelerator.rs",
+        "sha256": "DFDA30210CD1EFB2C5BAC792723B79C1869B9176EAB7A88C3242E4FB5AFCFDF5",
+        "lines": 56
+      },
+      {
+        "path": "crates/god-engine-core/src/liquidation_feed.rs",
+        "sha256": "1B5E3C567A5E61D76317AE3F7B7E15FD61C0037DA363DEFC6796213B03C94E03",
+        "lines": 62
+      }
+    ],
+    "report_snapshot": {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXII_2026-09-25.md",
+      "lines": 289,
+      "sha256": "0590454F35C6FA9FF8C79C7433769A40171B2F50C14DECB46BDD15AEA928D2F7"
+    },
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "market_orders_sent": 0,
+    "account_requests_sent": 0,
+    "operational_training_or_promotion": false,
+    "synthetic_learning_updates_in_tests": true,
+    "active_genomes_deliberately_modified": false,
+    "process_kills_or_restarts": false,
+    "operational_binary_built": false,
+    "shared_build_caches_deleted": false,
+    "temporary_files_removed": "Only owned close-fixture directories in canonicalized Temp; no operational datasets, models, traumas or shared caches removed."
+  },
+  "roadmap": [
+    "FMT249 typed local/global liquidation event and decision snapshot",
+    "FMT225/FMT247 durable intention-order-fill-outcome lineage and conditional close",
+    "FMT243 same-population statistics or validated pooling",
+    "FMT244/FMT245 source-aware confluence and measurable temporal support",
+    "FMT250 monotonic elapsed time and synchronization uncertainty/freshness",
+    "FMT251/FMT252 honest promotion and arithmetic contracts without activating latent paths",
+    "Read remaining138 historical Rust plus non-Rust inventory"
+  ]
+}

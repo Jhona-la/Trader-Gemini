@@ -1,0 +1,552 @@
+{
+  "schema_version": 1,
+  "round": "XIV",
+  "date": "2026-09-24",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIV_2026-09-24.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 114,
+    "pending_complete_rust": 175,
+    "new_complete_reads": [
+      "crates/god-engine-core/src/orchestrator.rs",
+      "crates/signal-engine/src/coaxial_breakout.rs",
+      "crates/signal-engine/src/micro_scalp_trigger.rs",
+      "crates/signal-engine/src/turbo_scalper.rs",
+      "crates/signal-engine/src/trend_runner.rs",
+      "crates/strategy-core/src/momentum_booster.rs",
+      "crates/strategy-core/src/strategy_telemetry.rs"
+    ],
+    "rereads_not_added": [
+      "crates/signal-engine/src/orchestrator.rs",
+      "crates/risk-engine/src/orchestrator.rs",
+      "crates/signal-engine/src/perceptron_gate.rs",
+      "crates/signal-engine/src/supersonic_shockwave.rs",
+      "crates/dark-alpha-engine/src/neuro_plasticity.rs",
+      "crates/dark-alpha-engine/src/online_ppo.rs"
+    ],
+    "targeted_not_complete": [
+      "src/bin/god_engine.rs",
+      "crates/god-engine-core/src/lib.rs",
+      "crates/risk-engine/src/lib.rs",
+      "crates/god-engine-core/src/stateful_engine.rs"
+    ],
+    "entire_project_certified": false
+  },
+  "findings": [
+    {
+      "id": "FMT-093",
+      "priority": "P1",
+      "status": "finite_domain_fixed_snapshot_and_notional_risk_open",
+      "title": "Portfolio guard admitted unknown financial state",
+      "evidence": {
+        "file": "crates/risk-engine/src/orchestrator.rs",
+        "line": 100
+      },
+      "repairs": [
+        "Reject nonfinite/nonpositive capital",
+        "Reject invalid drawdown fraction and negative/nonfinite open margins",
+        "Reject overflowed sums; preserve finite collateral policy"
+      ],
+      "limits": [
+        "Not a coherent portfolio snapshot",
+        "No atomic reservation",
+        "Collateral is not delta",
+        "Existing drawdown-to-margin policy retained"
+      ]
+    },
+    {
+      "id": "FMT-155",
+      "priority": "P1",
+      "status": "timeout_and_revocation_fixed_approval_provenance_open",
+      "title": "Elapsed ticks substituted genomic authorization",
+      "evidence": {
+        "file": "crates/god-engine-core/src/orchestrator.rs",
+        "line": 38
+      },
+      "repairs": [
+        "No timeout grants permission",
+        "Permission rechecks current approval",
+        "Revocation returns terminal/demo phase to audit"
+      ],
+      "limits": [
+        "Host still sets a boolean without candidate certificate",
+        "DemoVerify is not an empirical parity test",
+        "No final dispatch-generation authorization",
+        "No order cancellation or liquidation"
+      ]
+    },
+    {
+      "id": "FMT-156",
+      "priority": "P2",
+      "status": "locally_fixed",
+      "title": "Legacy dual wrappers evaluated the same continuous ensemble twice",
+      "evidence": {
+        "file": "crates/signal-engine/src/orchestrator.rs",
+        "line": 397
+      },
+      "repairs": [
+        "Evaluate once and copy the decision for legacy pair API",
+        "Remove nominal swing 1.2x selection preference",
+        "Avoid per-call temporary Vec of strategy references"
+      ],
+      "limits": [
+        "Core observed caller already used continuous method once",
+        "No cross-call event deduplication or coherent registry snapshot",
+        "No benchmark"
+      ]
+    },
+    {
+      "id": "FMT-157",
+      "priority": "P2",
+      "status": "locally_fixed_registry_transaction_pending",
+      "title": "Failed initialization still admitted a voter",
+      "evidence": {
+        "file": "crates/signal-engine/src/orchestrator.rs",
+        "line": 27
+      },
+      "repairs": [
+        "New try_add_strategy propagates error",
+        "Compatibility wrapper logs rejection and does not insert"
+      ],
+      "limits": [
+        "No rollback of initializer registry side effects",
+        "No required-components completeness certificate"
+      ]
+    },
+    {
+      "id": "FMT-158",
+      "priority": "P1",
+      "status": "open_source_call_confirmed",
+      "title": "CVPIN supplied as Hawkes intensity ratio",
+      "evidence": {
+        "file": "crates/god-engine-core/src/lib.rs",
+        "line": 3244
+      },
+      "repairs": [],
+      "limits": [
+        "Protected concurrent source not changed",
+        "Effect on live profitability unmeasured",
+        "CVPIN and intensity ratio both dimensionless but semantically distinct"
+      ]
+    },
+    {
+      "id": "FMT-159",
+      "priority": "P1",
+      "status": "open_characterized_and_source_traced",
+      "title": "Model base missing from registry and helper genes disconnected from voting path",
+      "evidence": {
+        "file": "crates/signal-engine/src/micro_scalp_trigger.rs",
+        "line": 171
+      },
+      "repairs": [],
+      "limits": [
+        "Producer computes base but registry publication not located",
+        "Hypothetical p=0.36/base=0.3 case reproduced without real model",
+        "Correct baseline does not solve profitability-versus-direction label semantics",
+        "No producer integration in this round"
+      ]
+    },
+    {
+      "id": "FMT-160",
+      "priority": "P2_api_P1_temporal_interpretation",
+      "status": "helper_domain_fixed_multiscale_measurement_open",
+      "title": "Zero over zero became near-maximal squeeze",
+      "evidence": {
+        "file": "crates/signal-engine/src/coaxial_breakout.rs",
+        "line": 27
+      },
+      "repairs": [
+        "Reject negative/nonfinite ATR and zero denominators",
+        "Preserve zero short-scale numerator with positive larger-scale variation"
+      ],
+      "limits": [
+        "Registry path retains fallbacks",
+        "Core ATR horizon keys are synthetic proxies",
+        "No empirical justification of Brownian range scaling"
+      ]
+    },
+    {
+      "id": "FMT-161",
+      "priority": "P2",
+      "status": "finite_input_numeric_expression_fixed",
+      "title": "Bounded shock heuristic overflowed at an intermediate square",
+      "evidence": {
+        "file": "crates/signal-engine/src/supersonic_shockwave.rs",
+        "line": 44
+      },
+      "repairs": [
+        "Use (1-M^-2)/(1+M^-2) for finite M>1",
+        "Verify safe-domain equivalence and large-input limit"
+      ],
+      "limits": [
+        "Mach quotient upstream can still overflow",
+        "FMT-020 dimensional normalization remains open",
+        "No physical conservation law or predictive validation"
+      ]
+    },
+    {
+      "id": "FMT-162",
+      "priority": "P2",
+      "status": "open_characterized",
+      "title": "Smooth TP cap can shrink the base target",
+      "evidence": {
+        "file": "crates/signal-engine/src/trend_runner.rs",
+        "line": 28
+      },
+      "repairs": [],
+      "limits": [
+        "Static helper counterexample is not an observed live order",
+        "Need precedence for incompatible base and upper bound",
+        "No target behavior changed"
+      ]
+    },
+    {
+      "id": "FMT-163",
+      "priority": "P2",
+      "status": "open_characterized",
+      "title": "Negative PnL does not disable all momentum extension terms",
+      "evidence": {
+        "file": "crates/strategy-core/src/momentum_booster.rs",
+        "line": 43
+      },
+      "repairs": [],
+      "limits": [
+        "No operational caller found",
+        "This is a contract/documentation discrepancy, not proof extension in loss is always wrong"
+      ]
+    },
+    {
+      "id": "FMT-164",
+      "priority": "P2",
+      "status": "open_api_contract",
+      "title": "Telemetry replaces missing values and retains dual payload semantics",
+      "evidence": {
+        "file": "crates/strategy-core/src/strategy_telemetry.rs",
+        "line": 19
+      },
+      "repairs": [],
+      "limits": [
+        "No operational external constructor caller found",
+        "No schema migration",
+        "Missing tau, quality and lineage",
+        "f64 integer identity precision only up to 2^53"
+      ]
+    },
+    {
+      "id": "FMT-023",
+      "priority": "P1",
+      "status": "open_characterized",
+      "title": "Tiny-vote confidence floor and cloning sensitivity persist",
+      "evidence": {
+        "file": "crates/signal-engine/src/orchestrator.rs",
+        "line": 265
+      },
+      "repairs": [],
+      "limits": [
+        "Two passing diagnostic tests assert remaining behavior",
+        "Formula not recalibrated",
+        "No posterior probability or economic gain certified"
+      ]
+    }
+  ],
+  "new_ids": [
+    "FMT-155",
+    "FMT-156",
+    "FMT-157",
+    "FMT-158",
+    "FMT-159",
+    "FMT-160",
+    "FMT-161",
+    "FMT-162",
+    "FMT-163",
+    "FMT-164"
+  ],
+  "theory": {
+    "id": "T37",
+    "title": "Availability-aware spectral expert mixtures with matured causal feedback",
+    "status": "proposal_not_implemented",
+    "requirements": [
+      "Same declared predictive target before aggregation",
+      "Nonnegative mass on expert and log-time support",
+      "Explicit availability; zero denominator means no evidence",
+      "Conserve prior mass when splitting nodes/cloning experts",
+      "Entry prediction and policy snapshots linked to matured labels",
+      "Delayed-loss assumptions cannot be supplied by unexecuted trade PnL",
+      "Gene influence matrix evaluated on paired causal traces"
+    ],
+    "not_claimed": [
+      "Quantitative regret guarantee for current engine",
+      "Calibrated probabilities from heuristic votes",
+      "Quantum advantage",
+      "Empirical support from 1ns to 100 years",
+      "Economic superiority"
+    ]
+  },
+  "verification": {
+    "unique_tests_passed": 84,
+    "new_tests": 21,
+    "new_red_to_green": 11,
+    "open_defect_characterizations": 5,
+    "commands": [
+      {
+        "command": "cargo test -p signal-engine --lib --test physics_numeric_contract --test single_consensus_contract --offline -- --test-threads=1",
+        "passed": 69,
+        "groups": {
+          "existing_library": 61,
+          "physics": 4,
+          "single_consensus": 4
+        }
+      },
+      {
+        "command": "cargo test -p signal-engine --test ensemble_characterization --offline -- --test-threads=1",
+        "passed": 5,
+        "meaning": "Tests document defects that remain open"
+      },
+      {
+        "command": "cargo test -p risk-engine --test portfolio_admission_contract --offline -- --test-threads=1",
+        "passed": 5
+      },
+      {
+        "command": "cargo test -p god-engine-core --test phase_authorization_contract --offline -- --test-threads=1",
+        "passed": 3
+      },
+      {
+        "command": "cargo test -p god-engine-core --lib orchestrator::tests --offline -- --test-threads=1",
+        "passed": 2
+      },
+      {
+        "command": "cargo check --bin god_engine --offline",
+        "result": "passed_no_execution"
+      },
+      {
+        "command": "rustfmt --check (2021 or 2024 per file)",
+        "result": "passed_ten_changed_files"
+      },
+      {
+        "command": "git diff --check on five source files",
+        "result": "passed"
+      }
+    ],
+    "pre_fix": {
+      "single_consensus": {
+        "failed": 3,
+        "passed": 0
+      },
+      "phase_authorization": {
+        "failed": 3,
+        "passed": 0
+      },
+      "portfolio_admission": {
+        "failed": 3,
+        "passed": 2
+      },
+      "physics_numeric": {
+        "failed": 2,
+        "passed": 1
+      }
+    },
+    "post_fix_additional_tests": 2,
+    "existing_warnings": [
+      "unused latest_ts",
+      "unused mode",
+      "unread RealWfOutcome.trades"
+    ],
+    "test_environment_note": "Arena construction reported TG_GENOME_ENV unset. No live/demo genome environment was configured.",
+    "full_workspace_suite": false,
+    "economic_backtest": false,
+    "latency_benchmark": false,
+    "document_integrity": {
+      "json_parsed": true,
+      "matching_file_hashes": 19,
+      "protected_files_unchanged": 4,
+      "valid_local_report_links": 21,
+      "invalid_local_report_links": 0,
+      "preserved_document_prefixes": 3,
+      "prefix_normalization": "CRLF to LF before UTF-8 SHA256",
+      "normalized_characters_appended": {
+        "ATLAS_ANALITICO.md": 3235,
+        "INFORME_FORENSE_MAESTRO.md": 6791,
+        "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIII_2026-09-24.md": 1231
+      }
+    }
+  },
+  "sources": [
+    {
+      "url": "https://arxiv.org/abs/1502.05934",
+      "title": "Achieving All with No Parameters: Adaptive NormalHedge",
+      "access": "Firecrawl Research Index",
+      "inspection": "abstract and confidence-rated body passages"
+    },
+    {
+      "url": "https://arxiv.org/abs/1902.10433",
+      "title": "Adaptive Hedging under Delayed Feedback",
+      "access": "Firecrawl Research Index",
+      "inspection": "abstract and body passages for losses/delays/continuous experts"
+    },
+    {
+      "url": "https://arxiv.org/abs/1301.0534",
+      "title": "Follow the Leader If You Can, Hedge If You Must",
+      "inspection": "related-paper abstract only"
+    },
+    {
+      "url": "https://arxiv.org/abs/1202.3323",
+      "title": "Mirror Descent Meets Fixed Share (and feels no regret)",
+      "inspection": "related-paper abstract only"
+    },
+    {
+      "url": "https://arxiv.org/abs/1711.02545",
+      "title": "Online Learning for Changing Environments using Coin Betting",
+      "inspection": "search abstract only"
+    }
+  ],
+  "files": [
+    {
+      "path": "crates/signal-engine/src/orchestrator.rs",
+      "lines": 548,
+      "sha256": "B13500549E03DA830C39D7ACD671D702982CD768854E3426ED9480A19E9EB6BE",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/signal-engine/src/coaxial_breakout.rs",
+      "lines": 263,
+      "sha256": "8B5E9875397CEC10469EB5EB5FBB28726B47756DE068EA0B2F442296C9F9ECAE",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/signal-engine/src/supersonic_shockwave.rs",
+      "lines": 207,
+      "sha256": "DA9BDB557E98DA8654EE4A7EBD951410548006AF84A4AC924C989321FBF152ED",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/god-engine-core/src/orchestrator.rs",
+      "lines": 159,
+      "sha256": "8BBAE8393ED808A23FB914B1BB0063D0FDC7DC07C4B15E53973CF5D3ECBFDEF5",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/risk-engine/src/orchestrator.rs",
+      "lines": 177,
+      "sha256": "79FFFDDAD7D093290CFD5F4AAA25B44049A539BC47737361DD732E3F8D319241",
+      "change": "modified_source"
+    },
+    {
+      "path": "crates/signal-engine/src/micro_scalp_trigger.rs",
+      "lines": 364,
+      "sha256": "D48C7C17D813FAFC90686AA3171612C2BE415E53351732F97F3BF026430016B9",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/signal-engine/src/trend_runner.rs",
+      "lines": 223,
+      "sha256": "545183D6386AF99AED56B243A09734E0B37C6793F393FF48A0CC5526637E6EB9",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/signal-engine/src/turbo_scalper.rs",
+      "lines": 319,
+      "sha256": "7CBC8A3ADF2D83890C82972BB8D9648673FB5DB701F6FBB8418F804F0D300E3C",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/strategy-core/src/momentum_booster.rs",
+      "lines": 121,
+      "sha256": "D55FC62E7000D20B7334269947BF5DAE1C3836596EE3A8CC27219A05D93EF8D5",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/strategy-core/src/strategy_telemetry.rs",
+      "lines": 229,
+      "sha256": "BCC3EE9BAB2EE193561A197247BEDD007332A52A0D4A8BB57AB529D53EE70E3D",
+      "change": "read_only"
+    },
+    {
+      "path": "crates/signal-engine/tests/single_consensus_contract.rs",
+      "lines": 84,
+      "sha256": "5EB96FA24EEEE10197053197FFEE508B1D3B15B8D3BEFFFA6E56AF8F852E03B4",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/signal-engine/tests/physics_numeric_contract.rs",
+      "lines": 45,
+      "sha256": "9DD9601E611FD5D56C7B125103708E516EE7CCED7B4C8040B9F971F9B5C4EB27",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/signal-engine/tests/ensemble_characterization.rs",
+      "lines": 77,
+      "sha256": "120A11A461C2804AA7EA242AE4DAF19E25CF12885304E5E3382F583ACFB04764",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/risk-engine/tests/portfolio_admission_contract.rs",
+      "lines": 79,
+      "sha256": "3EA473D13D7580DCB92E58CE024DF692EBDF6300BCA2F7808136A38E807AC812",
+      "change": "new_test"
+    },
+    {
+      "path": "crates/god-engine-core/tests/phase_authorization_contract.rs",
+      "lines": 52,
+      "sha256": "F8840774368B9D94E9776AE65AD46F47434EFCCFBFAE2962EF5EAE8826C51379",
+      "change": "new_test"
+    }
+  ],
+  "protected": [
+    {
+      "path": "src/bin/god_engine.rs",
+      "lines": 4814,
+      "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62"
+    },
+    {
+      "path": "crates/god-engine-core/src/lib.rs",
+      "lines": 5102,
+      "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE"
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "lines": 951,
+      "sha256": "E9883455B6BEBEFA866C2F56FE6C4A403321E22BA58C82D004BF5839E738C4A1"
+    },
+    {
+      "path": "crates/backtest-engine/src/booktick_replay.rs",
+      "lines": 1049,
+      "sha256": "736CC1DBB38E21D78EB0C5B02F410BC90F72130A613F70C02818318051AB02C6"
+    }
+  ],
+  "append_only_baselines": [
+    {
+      "path": "ATLAS_ANALITICO.md",
+      "normalized_character_length": 60322,
+      "normalized_sha256": "8B0AA4E4B0CE82427522B9289C8A50553E3759B8685E8EFB6425A35DB59324CC"
+    },
+    {
+      "path": "INFORME_FORENSE_MAESTRO.md",
+      "normalized_character_length": 605351,
+      "normalized_sha256": "ECDD11EE6EE690A97D1355FD523140F40BB9C638A4EA772E67CBCCA7AC8C3C57"
+    },
+    {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIII_2026-09-24.md",
+      "normalized_character_length": 34907,
+      "normalized_sha256": "8C048187D9312E5378C36D81D5D877DAF3E417AAA40B9C674FB3DAE4264B6DCA"
+    }
+  ],
+  "not_performed": [
+    "trading",
+    "authenticated_exchange_queries",
+    "genome_promotion",
+    "deployment",
+    "engine_restart",
+    "commit",
+    "push",
+    "merge",
+    "fetch"
+  ]
+}

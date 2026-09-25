@@ -254,15 +254,17 @@ impl GenomeEnvelope {
         // comisiones) y SOLO en las dos anclas legacy (30 s y 12 h), dejando
         // 14 de las 19 escalas del espectro sin protección alguna.
         //
-        // Ahora: la banda operable se DERIVA de la fricción (ver
-        // `SuperGenotype::tradeable_band_ms`) y, como `RR(τ) = TP(τ)/SL(τ)`
-        // es monótona en `ln τ` —ambas curvas son log-lineales—, verificar
-        // los DOS EXTREMOS de esa banda es NECESARIO Y SUFICIENTE para todas
-        // las escalas contenidas en ella. Mismo coste, cobertura completa.
+        // La banda satisface el presupuesto elegido f <= q*SL; no es una
+        // garantía de rentabilidad. Para p fijo, 0<p<1, y f>=0 constantes,
+        // h(x)=ln(p)+a_tp+b_tp*x-ln((1-p)*exp(a_sl+b_sl*x)+f) es cóncava:
+        // el último término es una log-sum-exp convexa. h>=0 en los DOS
+        // EXTREMOS implica h>=0 dentro, equivalente a EV>=0 bajo ese modelo.
+        // La monotonía de TP/SL sola no prueba el umbral dependiente de SL.
+        // Esta garantía no se traslada a p(tau), f(tau) o curvas arbitrarias.
         let fee = SuperGenotype::REFERENCE_ROUNDTRIP_FEE;
         let (lo_tau, hi_tau) = genome.tradeable_band_ms(fee).ok_or_else(|| {
             format!(
-                "genoma sin banda operable: su curva de SL nunca alcanza el                  mínimo viable {:.6} ({:.1} bps) impuesto por la fricción de                  {:.4}. Ninguna escala del espectro puede producir EV positivo.",
+                "genoma sin banda admisible por política de fricción: su curva de SL no alcanza el piso {:.6} ({:.1} bps) para fee {:.4}. Esto no certifica el signo del EV fuera de la política.",
                 SuperGenotype::min_viable_sl(fee),
                 SuperGenotype::min_viable_sl(fee) * 1e4,
                 fee

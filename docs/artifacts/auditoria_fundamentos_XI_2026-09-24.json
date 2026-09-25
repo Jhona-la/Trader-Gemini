@@ -1,0 +1,314 @@
+{
+  "schema_version": 1,
+  "round": "XI",
+  "date": "2026-09-24",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XI_2026-09-24.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "commit_push_merge_fetch_performed": false,
+    "remote_state_verified": false
+  },
+  "scope": {
+    "tracked_files_inventory": 1119,
+    "rust_baseline": 289,
+    "cargo_manifests": 24,
+    "preexisting_rust_read_completely_cumulative": 95,
+    "preexisting_rust_pending_complete_read": 194,
+    "new_complete_read": "crates/quantum-arena/src/adaptive_quantiles.rs",
+    "complete_project_audit": false,
+    "production_certification": false
+  },
+  "changes": [
+    {
+      "id": "FMT-134",
+      "priority": "P1",
+      "status": "deterministic_read_parity_locally_fixed_concurrent_snapshot_open",
+      "title": "Shared runtime read policy and authoritative genes replace divergent getters and stale derived caches",
+      "files": [
+        "crates/quantum-arena/src/horizon_policy.rs",
+        "crates/quantum-arena/src/genome.rs",
+        "crates/quantum-arena/src/config.rs"
+      ],
+      "evidence": {
+        "new_tests": 6,
+        "failed_before": 5,
+        "logarithmic_horizons_legacy_equivalence": 257,
+        "scalar_genes_override_stale_caches": true
+      },
+      "compatibility": {
+        "runtime_formulas_preserved": true,
+        "genotype_getters_semantically_changed": true,
+        "serialized_legacy_fields_preserved": true,
+        "policy_version": "runtime-v1",
+        "version_is_transaction_generation": false
+      },
+      "limits": [
+        "FMT-070/042 concurrent snapshot and publication remain open",
+        "Risk caps retained, not statistically re-estimated",
+        "Two-anchor basis and per-scale support remain unresolved",
+        "Not proof of full backtest/demo/production equivalence",
+        "Compatibility reader is not input validation; invalid tau floor and exp overflow remain"
+      ]
+    },
+    {
+      "id": "FMT-135",
+      "priority": "P2",
+      "status": "constructor_contract_locally_fixed",
+      "title": "NaN probability silently disabled marker adjustment",
+      "file": "crates/quantum-arena/src/adaptive_quantiles.rs",
+      "production_caller_found": false,
+      "evidence": {
+        "failed_before": true,
+        "mechanism": "NaN desired positions make marker-shift comparisons false"
+      },
+      "repair": "try_new validates finite 0<p<1 without clipping; legacy new keeps historical clipping but explicitly panics for NaN",
+      "limits": [
+        "Public mutable fields can still violate invariants",
+        "Legacy new now panics on NaN; external configuration should use try_new"
+      ]
+    },
+    {
+      "id": "FMT-136",
+      "priority": "P2",
+      "status": "reproduced_numeric_cases_locally_fixed",
+      "title": "Intermediate overflow changes the P2 trajectory under positive unit rescaling",
+      "file": "crates/quantum-arena/src/adaptive_quantiles.rs",
+      "production_caller_found": false,
+      "evidence": {
+        "failed_before": true,
+        "observations": 500,
+        "scale": 1e+308,
+        "p": 0.1,
+        "base_before": -0.999941014254562,
+        "rescaled_before": -0.9998493535530663,
+        "regression_tolerance": 1e-10
+      },
+      "repair": "Normalize parabolic marker heights only for nonfinite intermediate result; use convex combination when opposite-sign linear difference overflows",
+      "limits": [
+        "Not a universal floating-point proof",
+        "Counter and marker-position representation limits remain",
+        "Extreme-opposite-marker test added after fix, not counted red-to-green",
+        "No measured economic or P99 gain"
+      ]
+    },
+    {
+      "id": "FMT-137",
+      "priority": "P2",
+      "status": "misleading_description_corrected_temporal_adaptation_not_implemented",
+      "title": "Cumulative quantiles with fixed policy are not physical-time regime adaptation",
+      "file": "crates/quantum-arena/src/adaptive_quantiles.rs",
+      "production_caller_found": false,
+      "evidence": {
+        "historical_zeros": 10000,
+        "recent_ones": 100,
+        "recent_exact_quantile": 1,
+        "cumulative_estimate_below": 0.5,
+        "uses_timestamps": false,
+        "has_forgetting": false,
+        "initialized_after_samples": 5
+      },
+      "limits": [
+        "No claim this auxiliary explains live trading behavior",
+        "Percentile is not conditional trade success probability",
+        "Floors, fallbacks and chosen probabilities remain policy constants"
+      ]
+    }
+  ],
+  "tests": {
+    "distinct_passed": 63,
+    "new_tests": 15,
+    "red_before_green_after": 7,
+    "existing_characterizations_converted_to_equality": 3,
+    "package": "quantum-arena",
+    "offline": true,
+    "full_workspace_test_suite": false,
+    "economic_backtest": false,
+    "groups": [
+      {
+        "filter": "--test horizon_reader_parity",
+        "passed": 6,
+        "new": true,
+        "red_before": 5
+      },
+      {
+        "filter": "--test quantile_numeric_contract",
+        "passed": 9,
+        "new": true,
+        "red_before": 2
+      },
+      {
+        "filter": "--test genome_reader_diagnostics",
+        "passed": 3,
+        "converted_from_historical_disagreement": true
+      },
+      {
+        "filter": "--test temporal_band_contract",
+        "passed": 11
+      },
+      {
+        "filter": "--test spectral_interpolation_contract",
+        "passed": 7
+      },
+      {
+        "filter": "--lib temporal_spectrum::tests",
+        "passed": 17
+      },
+      {
+        "filter": "--lib genome::tests",
+        "passed": 6
+      },
+      {
+        "filter": "--lib adaptive_quantiles::tests",
+        "passed": 4
+      }
+    ],
+    "host_check": "cargo check --bin god_engine --offline",
+    "host_check_passed": true,
+    "existing_warnings": [
+      "latest_ts unused",
+      "mode unused",
+      "RealWfOutcome.trades unread"
+    ]
+  },
+  "theory": {
+    "id": "T34",
+    "status": "research_proposal_not_implemented",
+    "title": "Physical-time quantile memory and causal threshold evaluation",
+    "own_design": "Exponentially weighted causal empirical CDF by tau; define estimand before selecting an approximate streaming algorithm",
+    "sources": [
+      {
+        "url": "https://www.cse.wustl.edu/~jain/papers/ftp/psqr.pdf",
+        "evidence": "Original P2 PDF: development, algorithm and evaluation passages"
+      },
+      {
+        "url": "https://arxiv.org/abs/1901.04681",
+        "evidence": "Indexed abstract, two in-body passages and related references"
+      },
+      {
+        "url": "https://arxiv.org/abs/1507.05073",
+        "evidence": "Indexed abstract"
+      },
+      {
+        "url": "https://arxiv.org/abs/1411.2250",
+        "evidence": "Related indexed abstract"
+      },
+      {
+        "url": "https://arxiv.org/abs/1407.1121",
+        "evidence": "Related indexed abstract"
+      },
+      {
+        "url": "https://doi.org/10.1109/TCYB.2017.2779140",
+        "evidence": "Partial indexed abstract only; guarantees not asserted"
+      }
+    ],
+    "claim_of_quantum_or_financial_advantage": false,
+    "skill_influence": "Firecrawl research/scrape separated primary evidence from unread guarantees; no code uploaded"
+  },
+  "files": [
+    {
+      "path": "crates/quantum-arena/src/lib.rs",
+      "lines": 30,
+      "sha256": "AE90612C29F0EAFD302FE4A5498D778C6C1782B0D754A96D5288C5EDFE031A81",
+      "change": "modified"
+    },
+    {
+      "path": "crates/quantum-arena/src/horizon_policy.rs",
+      "lines": 80,
+      "sha256": "7FBCE50ED4D7CD015C917253E7FCAEEE5E42E83651D658B486C755EE057E72A4",
+      "change": "new"
+    },
+    {
+      "path": "crates/quantum-arena/src/genome.rs",
+      "lines": 3347,
+      "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+      "change": "modified"
+    },
+    {
+      "path": "crates/quantum-arena/src/config.rs",
+      "lines": 495,
+      "sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140",
+      "change": "modified"
+    },
+    {
+      "path": "crates/quantum-arena/src/adaptive_quantiles.rs",
+      "lines": 314,
+      "sha256": "8DA0D5A4E27D7D878073201FA96B847B261B10F5C7D7B92F08CC95AC7CE8C1AC",
+      "change": "modified"
+    },
+    {
+      "path": "crates/quantum-arena/tests/horizon_reader_parity.rs",
+      "lines": 118,
+      "sha256": "D55242D4CAE114CAE52EC51F6C5713E43BFF3AE773055B3BBABC76A9A35B6769",
+      "change": "new"
+    },
+    {
+      "path": "crates/quantum-arena/tests/genome_reader_diagnostics.rs",
+      "lines": 61,
+      "sha256": "9D4511CA85C4B5BCB7DC57E13C2885605BD32AA936C6A8A5DB1A90890C170E48",
+      "change": "modified"
+    },
+    {
+      "path": "crates/quantum-arena/tests/quantile_numeric_contract.rs",
+      "lines": 119,
+      "sha256": "FF79981A1DB3CDD940171C92589689BDFE2813F538BAAEEDC2BE3B17A9CD89A3",
+      "change": "new"
+    }
+  ],
+  "protected": [
+    {
+      "path": "src/bin/god_engine.rs",
+      "lines": 4814,
+      "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62"
+    },
+    {
+      "path": "crates/backtest-engine/src/booktick_replay.rs",
+      "lines": 1049,
+      "sha256": "736CC1DBB38E21D78EB0C5B02F410BC90F72130A613F70C02818318051AB02C6"
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "lines": 951,
+      "sha256": "E9883455B6BEBEFA866C2F56FE6C4A403321E22BA58C82D004BF5839E738C4A1"
+    },
+    {
+      "path": "crates/god-engine-core/src/lib.rs",
+      "lines": 5102,
+      "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE"
+    }
+  ],
+  "append_only_baselines": [
+    {
+      "path": "ATLAS_ANALITICO.md",
+      "normalized_character_length": 54726,
+      "normalized_sha256": "CD4F5DC551438AF14419CDC238096414B3748EA9130D0BA34334EE49CF059684"
+    },
+    {
+      "path": "INFORME_FORENSE_MAESTRO.md",
+      "normalized_character_length": 591963,
+      "normalized_sha256": "79B563FECD5B3E261AAC054FB43A8E5014CAF650DF924A4A27AC4810F98276D0"
+    },
+    {
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_X_2026-09-24.md",
+      "normalized_character_length": 29487,
+      "normalized_sha256": "5130180F641AFD5E0D7208A22D94760F6E63AB1AEAF2D46198C9834E3779CE08"
+    }
+  ],
+  "previous_artifact": "docs/artifacts/auditoria_fundamentos_X_2026-09-24.json",
+  "previous_artifact_is_historical_not_current_hash_manifest": true,
+  "untouched_operational_actions": [
+    "active_genome_promotion",
+    "trading",
+    "deployment",
+    "engine_restart",
+    "exchange_connections"
+  ],
+  "open_integration_contracts": [
+    "FMT-070",
+    "FMT-042",
+    "FMT-113",
+    "CES-008",
+    "CES-009",
+    "causal_feedback_and_ledger_findings_from_prior_rounds"
+  ]
+}

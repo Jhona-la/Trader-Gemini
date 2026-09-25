@@ -1,0 +1,750 @@
+{
+  "schema_version": 1,
+  "round": "XXVI",
+  "date": "2026-09-25",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXVI_2026-09-25.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false,
+    "dirty_tree_preserved": true
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 142,
+    "pending_complete_rust": 147,
+    "new_complete_reads": [
+      "crates/execution-engine/src/binance_api.rs"
+    ],
+    "reread": [
+      "crates/risk-engine/src/lib.rs",
+      "crates/risk-engine/src/leverage_matrix.rs",
+      "crates/risk-engine/src/capital_regime.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/execution-engine/src/executor.rs",
+      "crates/quantum-arena/src/genome.rs",
+      "crates/quantum-arena/src/config.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false
+  },
+  "new_ids": [
+    "FMT-217",
+    "FMT-218",
+    "FMT-219"
+  ],
+  "updated_ids": [
+    "FMT-214",
+    "FMT-175"
+  ],
+  "carried_open": [
+    "FMT-215",
+    "FMT-216"
+  ],
+  "findings": [
+    {
+      "id": "FMT-214",
+      "priority": "P1",
+      "status": "integer_and_genomic_cap_contract_repaired_joint_projection_open",
+      "title": "Los rescates posteriores anulaban cuantización y techo genómico",
+      "evidence": [
+        {
+          "file": "crates/risk-engine/src/lib.rs",
+          "line": 36
+        },
+        {
+          "file": "crates/risk-engine/src/lib.rs",
+          "line": 493
+        },
+        {
+          "file": "crates/risk-engine/src/lib.rs",
+          "line": 832
+        },
+        {
+          "file": "crates/risk-engine/src/lib.rs",
+          "line": 884
+        },
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 1988
+        },
+        {
+          "file": "crates/risk-engine/tests/leverage_admission_contract.rs",
+          "line": 48
+        },
+        {
+          "file": "crates/risk-engine/tests/leverage_admission_contract.rs",
+          "line": 63
+        },
+        {
+          "file": "crates/risk-engine/tests/leverage_admission_contract.rs",
+          "line": 76
+        }
+      ],
+      "before_witness": {
+        "capital": 13,
+        "margin": 1.2375,
+        "leverage": 4.121212121212122,
+        "genomic_cap_one_still_admitted": true
+      },
+      "repaired": [
+        "validar gen antes de min/fallback",
+        "acotar y cuantizar todas las reasignaciones intervenidas",
+        "comprobar entero/techo al final",
+        "conversión exacta Option<u32> en execute_order"
+      ],
+      "remaining": [
+        "upsizing del margen para mínimo nocional",
+        "pérdida final no acotada por un plan común",
+        "búsqueda de factibilidad no demostrada completa",
+        "instrumento/cuenta pueden imponer techo menor al esquema"
+      ]
+    },
+    {
+      "id": "FMT-217",
+      "priority": "P1",
+      "status": "final_fee_admission_repaired_policy_and_cost_model_open",
+      "title": "El veto de coste dependía de entrar en ramas de rescate",
+      "evidence": [
+        {
+          "file": "crates/risk-engine/src/lib.rs",
+          "line": 806
+        },
+        {
+          "file": "crates/risk-engine/src/lib.rs",
+          "line": 900
+        },
+        {
+          "file": "crates/risk-engine/tests/leverage_admission_contract.rs",
+          "line": 91
+        },
+        {
+          "file": "crates/risk-engine/tests/leverage_admission_contract.rs",
+          "line": 108
+        }
+      ],
+      "equations": [
+        "N=m*L",
+        "C=c*N",
+        "C/m=c*L",
+        "B(w)=(1-w)*b_gen+w*0.035"
+      ],
+      "witness": {
+        "capital": 100,
+        "roundtrip_cost_fraction": 0.00082,
+        "configured_standard_fee_budget": 0.0001
+      },
+      "repaired": [
+        "dominio finito no negativo del presupuesto",
+        "comprobación sobre leverage efectivo final",
+        "eliminación del veto contra candidato sin acotar"
+      ],
+      "remaining": [
+        "0.035 puede dominar al gen en micro",
+        "modelo de coste no calibrado en esta ronda",
+        "riesgo total y financiación no demostrados por cL"
+      ]
+    },
+    {
+      "id": "FMT-218",
+      "priority": "P1",
+      "status": "selected_terminal_domains_repaired_other_entrypoints_open",
+      "title": "Dominio numérico y representación de la orden firmada",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 1385
+        },
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 1413
+        },
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 1448
+        },
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 1988
+        },
+        {
+          "file": "crates/execution-engine/tests/payload_admission_contract.rs",
+          "line": 30
+        },
+        {
+          "file": "crates/execution-engine/tests/payload_admission_contract.rs",
+          "line": 45
+        },
+        {
+          "file": "crates/execution-engine/tests/payload_admission_contract.rs",
+          "line": 74
+        },
+        {
+          "file": "crates/execution-engine/tests/payload_admission_contract.rs",
+          "line": 87
+        },
+        {
+          "file": "crates/execution-engine/tests/payload_admission_contract.rs",
+          "line": 95
+        },
+        {
+          "file": "crates/execution-engine/tests/payload_admission_contract.rs",
+          "line": 146
+        }
+      ],
+      "repaired": [
+        "leverage exacto y dominio Binance 1..125",
+        "margen/precio/paso y resultado de proyección finitos positivos",
+        "maker tick válido y precio final del lado correcto de referencia",
+        "paper no salta comprobación básica; rechazo Flat y overflow",
+        "MARKET no exige tick de precio límite no utilizado"
+      ],
+      "remaining": [
+        "paper sigue anterior al payload completo",
+        "cambio leverage anterior a proyección completa de filtros",
+        "otras APIs de ejecución no unificadas",
+        "sin bid/ask contemporáneo no se acredita pasividad"
+      ]
+    },
+    {
+      "id": "FMT-175",
+      "priority": "P1_for_terminal_caller",
+      "status": "open_terminal_integration_debt_helper_repair_preserved",
+      "title": "Lote terminal puede invalidar mínimo o aumentar cantidad",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 44
+        },
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 102
+        },
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 1417
+        },
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 1610
+        },
+        {
+          "file": "crates/execution-engine/tests/payload_open_diagnostics.rs",
+          "line": 20
+        },
+        {
+          "file": "crates/execution-engine/tests/payload_open_diagnostics.rs",
+          "line": 38
+        }
+      ],
+      "witnesses": [
+        {
+          "margin": 1.2756375,
+          "leverage": 4,
+          "reference_price": 100,
+          "step_size": 0.03,
+          "notional_before": 5.10255,
+          "notional_after": 3,
+          "required_minimum": 5
+        },
+        {
+          "requested_quantity": 0.3999999999,
+          "step_size": 0.1,
+          "signed_quantity": 0.4
+        }
+      ],
+      "remaining": [
+        "helper conservador XVIII no unificado con executor",
+        "filtros incompletos y sin tipos de orden completos",
+        "min_notional fallback 5 persiste",
+        "proyección/serialización decimal y validación final pendientes"
+      ]
+    },
+    {
+      "id": "FMT-219",
+      "priority": "P1",
+      "status": "open_reproduced",
+      "title": "Precio maker revalúa nocional sin recalcular presupuesto",
+      "evidence": [
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 1413
+        },
+        {
+          "file": "crates/execution-engine/src/executor.rs",
+          "line": 1448
+        },
+        {
+          "file": "crates/execution-engine/tests/payload_open_diagnostics.rs",
+          "line": 53
+        }
+      ],
+      "witness": {
+        "signal": "Short",
+        "margin": 10,
+        "leverage": 4,
+        "reference_price": 100,
+        "tick_size": 10,
+        "quantity": 0.4,
+        "limit_price": 110,
+        "reference_notional": 40,
+        "limit_notional": 44
+      },
+      "inference_limit": "No demuestra margen realizado, fill ni pérdida; evidencia dos valoraciones incoherentes con el presupuesto.",
+      "closure": "ExecutionPlan único con precio/referencia, cantidad, coste, riesgo, metadatos versionados y validación antes de efectos."
+    }
+  ],
+  "theory": {
+    "new_theories_or_libraries_installed": false,
+    "new_quantum_advantage_claimed": false,
+    "continuous_spectrum_completed": false,
+    "formulas_explained": [
+      "nocional y margen",
+      "coste por margen",
+      "presupuesto interpolado",
+      "factibilidad discreta del actuador"
+    ],
+    "unchanged_temporal_clamp_ms": [
+      1000,
+      43200000
+    ],
+    "hmac_complexity_comment_corrected": true,
+    "no_latency_or_pnl_measurement": true
+  },
+  "verification": {
+    "new_functional_tests": 14,
+    "new_open_diagnostic_tests": 3,
+    "prior_diagnostic_converted_to_functional": 1,
+    "conservative_observed_red_green": 8,
+    "red_green_caveat": "No se cuenta como novena reproducción idéntica la prueba mixta numérica al afinar tick a maker. El testigo primer tick se renombró por causa descrita inicialmente de forma incorrecta.",
+    "distinct_functional_passes": 116,
+    "distinct_open_diagnostic_passes": 11,
+    "total_distinct_passes": 127,
+    "entire_workspace_suite_run": false,
+    "prior_FMT216_flaky_test_rerun": false,
+    "executions": [
+      {
+        "command": "cargo test --offline -p risk-engine --lib --tests",
+        "passed": 108,
+        "functional": 100,
+        "open_diagnostics": 8
+      },
+      {
+        "command": "cargo test --offline -p execution-engine --test payload_admission_contract --test payload_open_diagnostics",
+        "passed": 12,
+        "functional": 9,
+        "open_diagnostics": 3
+      },
+      {
+        "command": "cargo test --offline -p execution-engine --lib tests_decima_ola",
+        "passed": 5
+      },
+      {
+        "command": "cargo test --offline -p execution-engine --lib binance_api::tests",
+        "passed": 2
+      }
+    ],
+    "cargo_check": {
+      "passed": true,
+      "binaries": [
+        "god_engine",
+        "feature_exporter",
+        "train_forest",
+        "train_dark_alpha"
+      ],
+      "existing_warnings": [
+        "evolution-engine: latest_ts",
+        "evolution-engine: mode",
+        "evolution-engine: RealWfOutcome.trades"
+      ]
+    },
+    "rustfmt_check_six_files_passed": true,
+    "executor_whole_file_formatted": false,
+    "scoped_git_diff_check_passed": true
+  },
+  "sources": [
+    {
+      "title": "Binance USD-M Change Initial Leverage",
+      "url": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/trade#change-initial-leverage",
+      "http_status": 200,
+      "cached_at": "2026-09-24T14:49:44.901Z",
+      "constraint": "integer, minimum 1, maximum 125; lower instrument/account restrictions remain",
+      "method": "Firecrawl connector after unavailable CLI",
+      "feedback": "accepted"
+    },
+    {
+      "title": "Binance USD-M Common Definition",
+      "url": "https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/common-definition",
+      "http_status": 200,
+      "cached_at": "2026-09-25T01:41:35.428Z",
+      "constraint": "distinct price/lot/market lot/minimum notional filters; GTX post-only",
+      "method": "Firecrawl connector",
+      "feedback": "accepted"
+    }
+  ],
+  "preservation": {
+    "append_only_checks": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "before_chars": 92548,
+        "before_normalized_sha256": "F3565014A48EEF2386834663FDEC9C30A35D1FE5402DD6444E60A72BEBE0D8CE",
+        "after_prefix_sha256": "F3565014A48EEF2386834663FDEC9C30A35D1FE5402DD6444E60A72BEBE0D8CE",
+        "preserved": true,
+        "appended_chars": 2701
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "before_chars": 681043,
+        "before_normalized_sha256": "171A54D9B37692C46F5C6DF24DDB365AE826F16B15153C7214713EDF4D544D47",
+        "after_prefix_sha256": "171A54D9B37692C46F5C6DF24DDB365AE826F16B15153C7214713EDF4D544D47",
+        "preserved": true,
+        "appended_chars": 5058
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXV_2026-09-25.md",
+        "before_chars": 33553,
+        "before_normalized_sha256": "51DDBDFDD8E743D95AA186BF06A58A8471E941D10584676180ACE2D2F74DE250",
+        "after_prefix_sha256": "51DDBDFDD8E743D95AA186BF06A58A8471E941D10584676180ACE2D2F74DE250",
+        "preserved": true,
+        "appended_chars": 1448
+      }
+    ],
+    "source_before": [
+      {
+        "path": "crates/risk-engine/src/lib.rs",
+        "sha256": "7261E71C21A9B32AF8E7D289A75F2A2C090C61384E18200C6E03DDB923C6B497",
+        "prefix_chars": 43712,
+        "prefix_sha256": "7261E71C21A9B32AF8E7D289A75F2A2C090C61384E18200C6E03DDB923C6B497"
+      },
+      {
+        "path": "crates/risk-engine/src/leverage_matrix.rs",
+        "sha256": "3D8D67F5317D7E33A4FCB3F897BDCD92DB5DCC804E2F0D53FEBD4072C95D4B07",
+        "prefix_chars": 14043,
+        "prefix_sha256": "3D8D67F5317D7E33A4FCB3F897BDCD92DB5DCC804E2F0D53FEBD4072C95D4B07"
+      },
+      {
+        "path": "crates/risk-engine/tests/veto_open_diagnostics.rs",
+        "sha256": "8AB95143B1D63D62F6011679A2730C7577FD27CA4561F725C917DE5801BF9F92",
+        "prefix_chars": 2644,
+        "prefix_sha256": "8AB95143B1D63D62F6011679A2730C7577FD27CA4561F725C917DE5801BF9F92"
+      },
+      {
+        "path": "crates/execution-engine/src/executor.rs",
+        "sha256": "AF8729346B4DAFD3380B96DF6DC65FD6CBA6C33548AEF07C988A1ED165F6BB03",
+        "prefix_chars": 160814,
+        "prefix_sha256": "AF8729346B4DAFD3380B96DF6DC65FD6CBA6C33548AEF07C988A1ED165F6BB03"
+      },
+      {
+        "path": "crates/quantum-arena/src/genome.rs",
+        "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+        "prefix_chars": 154755,
+        "prefix_sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22"
+      },
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "sha256": "F3565014A48EEF2386834663FDEC9C30A35D1FE5402DD6444E60A72BEBE0D8CE",
+        "prefix_chars": 92548,
+        "prefix_sha256": "F3565014A48EEF2386834663FDEC9C30A35D1FE5402DD6444E60A72BEBE0D8CE"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "sha256": "1000EFCE5113FAD844FFE6E714783F7F3073D32875768910066542CF7E07F030",
+        "prefix_chars": 681043,
+        "prefix_sha256": "171A54D9B37692C46F5C6DF24DDB365AE826F16B15153C7214713EDF4D544D47"
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXV_2026-09-25.md",
+        "sha256": "51DDBDFDD8E743D95AA186BF06A58A8471E941D10584676180ACE2D2F74DE250",
+        "prefix_chars": 33553,
+        "prefix_sha256": "51DDBDFDD8E743D95AA186BF06A58A8471E941D10584676180ACE2D2F74DE250"
+      },
+      {
+        "path": "crates/execution-engine/src/binance_api.rs",
+        "sha256": "62ECBF3AD4B9A9C901018FF85113C1381B8FA0D336456437CDD73E3B16BC6FE7"
+      }
+    ],
+    "source_after": [
+      {
+        "path": "crates/risk-engine/src/lib.rs",
+        "sha256": "6B61E3376BF72B7C5BC81B9DFD621FD14117FAAE50F4E5940B7FE2C11053439F"
+      },
+      {
+        "path": "crates/execution-engine/src/binance_api.rs",
+        "sha256": "F02CA7F96E9A37D5230487784D408B8369757DBC615C3293243CBB2948CCE826"
+      },
+      {
+        "path": "crates/execution-engine/src/executor.rs",
+        "sha256": "9F2A1EFB3A3AC1B0FB81423AEEB2E8AA31EB1946A0B1A42739EF930AE4A53229"
+      },
+      {
+        "path": "crates/risk-engine/tests/leverage_admission_contract.rs",
+        "sha256": "361813797C5A524116E1315A1B33C5DC4C645EA244FAB05AA02004EE05087AE5"
+      },
+      {
+        "path": "crates/risk-engine/tests/veto_open_diagnostics.rs",
+        "sha256": "9DD18857D0D95B5F15143629FDBD3752BC341E95EA4ECAA8F01290D812C038F3"
+      },
+      {
+        "path": "crates/execution-engine/tests/payload_admission_contract.rs",
+        "sha256": "24B762A35CA7B0E6636CE65F0D571E0F784B3867AF65A9E43D4F42F1412D3E8B"
+      },
+      {
+        "path": "crates/execution-engine/tests/payload_open_diagnostics.rs",
+        "sha256": "781FA0EBB9441F3AFDE6FC44AA7A96A74C84B570407A8BDED61F588635B4A2CD"
+      }
+    ],
+    "unchanged_sources": [
+      {
+        "path": "crates/risk-engine/src/leverage_matrix.rs",
+        "before": "3D8D67F5317D7E33A4FCB3F897BDCD92DB5DCC804E2F0D53FEBD4072C95D4B07",
+        "after": "3D8D67F5317D7E33A4FCB3F897BDCD92DB5DCC804E2F0D53FEBD4072C95D4B07",
+        "unchanged": true
+      },
+      {
+        "path": "crates/quantum-arena/src/genome.rs",
+        "before": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+        "after": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+        "unchanged": true
+      }
+    ],
+    "model_hashes": [
+      {
+        "path": "models/ADAFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1C453A962C9D242BA29EBB083EBFD25CB15E4B71F9DC5F98A1AE6701C654638A",
+        "unchanged": true
+      },
+      {
+        "path": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "1E95B9EADB3A9D6144A9AF4F8553CD1DCACFB92B076859926FFB36495CAE4320",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.bin",
+        "sha256": "55A94D0E8A1A75838546B641B12A4B0D64924A24FB94D1900021FF3D8A50FD2C",
+        "unchanged": true
+      },
+      {
+        "path": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "97D8103941166D6E80B98FCB3262DE685C217D29483C723F48A39D460BD5175F",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.bin",
+        "sha256": "E42CB5587329AB471598CDDD6339AC81EB32022E0CD52FAD71EA9952CDF09DD5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.bin",
+        "sha256": "86E0C27A1CA04D775B292AB1DC70B5126C8A1816944B5D6B4CBFBA7DB3BA6DA5",
+        "unchanged": true
+      },
+      {
+        "path": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "unchanged": true
+      },
+      {
+        "path": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.bin",
+        "sha256": "D070EB8BBFB4782F56ADEF01A8FB95F4462E1BE5EE3503F27B5D89445757A747",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.bin",
+        "sha256": "374F6BAAD39AE2FB52C5163D6C89087B6F7B4AC3754F492BD1BB9BE252AD1A8E",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.bin",
+        "sha256": "5153A85CE96598E92172853501F8E3109104922970B4C167458380C29CBC9F70",
+        "unchanged": true
+      },
+      {
+        "path": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.bin",
+        "sha256": "8D2D6768E97C0DEAF86710B3944AFA2FAED3FFDEC539204606A827753BE86F8B",
+        "unchanged": true
+      },
+      {
+        "path": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "unchanged": true
+      }
+    ],
+    "models_unchanged_count": 41,
+    "market_orders_sent": false,
+    "account_requests_sent": false,
+    "active_genomes_deliberately_modified": false,
+    "training_or_promotion": false,
+    "process_kills_or_restarts": false
+  },
+  "document_validation": {
+    "evidence_references_checked": 31,
+    "final_source_and_model_hashes_checked": 48,
+    "local_links_checked": 27,
+    "append_only_prefixes_preserved": 3,
+    "unchanged_additional_sources": 2,
+    "errors": [],
+    "final_risk_repeat_passes": 10,
+    "final_micro_witness": {
+      "leverage": 4.0,
+      "margin": 1.2756374999999998
+    },
+    "test_environment_warning": "TG_GENOME_ENV absent in synthetic arena fixtures; production environment left unchanged"
+  },
+  "limitations": [
+    "No todos los archivos están auditados",
+    "No equivalencia backtest/demo/prod certificada",
+    "Márgenes de cuenta y fills reales no medidos",
+    "No eliminación global de taxonomías de régimen/horizonte",
+    "Cambios concurrentes anteriores preservados; diff contra HEAD es acumulativo",
+    "Sin publicación Git ni inspección remota"
+  ]
+}

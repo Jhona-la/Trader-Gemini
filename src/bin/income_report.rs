@@ -1,27 +1,45 @@
 //! INFORME CONTABLE REAL (F3.5) — pre/post fees desde /fapi/v1/income.
 //!
 //! QUÉ: reporte por símbolo con PnL bruto (REALIZED_PNL), comisiones
-//!      (COMMISSION), funding (FUNDING_FEE) y PnL neto — TODO desde la
-//!      contabilidad del exchange, no de simulaciones.
+//!      (COMMISSION), funding (FUNDING_FEE) y subtotal seleccionado, por moneda.
+//!      Filas de income no son operaciones independientes ni un WR neto.
 //! USO:
-//!   income_report                    → últimos 7 días (demo/testnet según USE_TESTNET)
+//!   income_report                    → últimos 7 días (demo/testnet)
 //!   income_report --days 30          → ventana custom
 //!   income_report --live             → mainnet (requiere .env con llave activa)
-//! Directriz de informes: ROI/PnL/WR antes Y después de fees, con el período
-//! temporal usado siempre visible.
+//! Período y unidades explícitos. ROI requiere capital/flujos; WR neto requiere
+//! operaciones identificadas y costes vinculados: no se inventan con filas.
 
 use execution_engine::executor::OrderExecutor;
-use std::collections::BTreeMap;
+use execution_engine::income_evidence::{aggregate_income_by_asset, income_lookback_start};
 
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let days: u64 = args
-        .iter()
-        .position(|a| a == "--days")
-        .and_then(|i| args.get(i + 1))
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(7);
+    let days: u64 = match args.iter().position(|a| a == "--days") {
+        None => 7,
+        Some(i) => match args.get(i + 1).and_then(|v| v.parse().ok()) {
+            Some(days) => days,
+            None => {
+                eprintln!("--days requiere un entero positivo");
+                std::process::exit(2);
+            }
+        },
+    };
+    let now_ms = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        Ok(t) => t.as_millis() as u64,
+        Err(_) => {
+            eprintln!("Reloj anterior al epoch");
+            std::process::exit(2);
+        }
+    };
+    let start_ms = match income_lookback_start(now_ms, days) {
+        Ok(start) => start,
+        Err(reason) => {
+            eprintln!("Ventana inválida: {reason:?}");
+            std::process::exit(2);
+        }
+    };
     let is_testnet = !args.contains(&"--live".to_string());
 
     // .env local si existe (dotenv ligero sin dependencia extra) — ANTES de
@@ -60,12 +78,6 @@ async fn main() {
     let mut exec = OrderExecutor::new(key, secret, is_testnet);
     exec.set_paper_trading(false);
 
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64;
-    let start_ms = now_ms - days * 86_400_000;
-
     println!("══════════════════════════════════════════════════════════════");
     println!(
         "📊 INFORME CONTABLE REAL — Binance Futures {}",
@@ -77,119 +89,110 @@ async fn main() {
         fmt_ms(start_ms),
         fmt_ms(now_ms)
     );
-    println!("   Fuente: /fapi/v1/income (contabilidad del exchange — hechos, no estimaciones)");
+    println!("   Fuente: /fapi/v1/income; agotamiento de páginas no garantiza snapshot ni retención histórica completa");
     println!("══════════════════════════════════════════════════════════════");
 
-    // B3.6b (auditoría): paginado — 1000 entradas por llamada truncaba
-    // ventanas de 7/30 días sin aviso (sub-contando fees). 20 páginas =
-    // hasta 20k entradas.
-    let entries = match exec.fetch_income_paged(&[], start_ms, 20).await {
-        Ok(e) => e,
+    // Freeze the exact interval displayed above. The page cap is a resource
+    // budget, not permission to present a truncated traversal as complete.
+    let window = match exec.fetch_income_window(&[], start_ms, now_ms, 20).await {
+        Ok(window) => window,
         Err(err) => {
             eprintln!("❌ Income API falló: {}", err);
             std::process::exit(1);
         }
     };
-
-    // Agregación por símbolo: pnl bruto, comisiones, funding
-    #[derive(Default)]
-    struct Agg {
-        realized_pnl: f64,
-        commission: f64,
-        funding: f64,
-        pnl_trades: u64,
-        win_trades: u64,
-    }
-    let mut by_symbol: BTreeMap<String, Agg> = BTreeMap::new();
-    let mut total = Agg::default();
-    let mut first_ts = u64::MAX;
-    let mut last_ts = 0u64;
-
-    for e in &entries {
-        let agg = by_symbol.entry(e.symbol.clone()).or_default();
-        first_ts = first_ts.min(e.time);
-        last_ts = last_ts.max(e.time);
-        match e.income_type.as_str() {
-            "REALIZED_PNL" => {
-                agg.realized_pnl += e.income;
-                agg.pnl_trades += 1;
-                if e.income > 0.0 {
-                    agg.win_trades += 1;
-                }
-            }
-            "COMMISSION" => agg.commission += e.income, // negativo = pagado
-            "FUNDING_FEE" => agg.funding += e.income,   // con signo
-            _ => {}
+    println!(
+        "   Páginas leídas: {}; cobertura observada: {:?}",
+        window.pages_read, window.coverage
+    );
+    let entries = match window.into_exhausted_entries() {
+        Ok(entries) => entries,
+        Err(reason) => {
+            eprintln!("Informe no emitido como completo: {reason:?}");
+            std::process::exit(1);
         }
-    }
-    for agg in by_symbol.values() {
-        total.realized_pnl += agg.realized_pnl;
-        total.commission += agg.commission;
-        total.funding += agg.funding;
-        total.pnl_trades += agg.pnl_trades;
-        total.win_trades += agg.win_trades;
-    }
-
+    };
     if entries.is_empty() {
-        println!("\n∅ Sin movimientos en la ventana.");
+        println!("\n∅ El endpoint no devolvió movimientos; no demuestra cobertura fuera de su retención.");
         return;
     }
-
-    println!(
-        "\n{:<14}{:>12}{:>11}{:>11}{:>12}{:>9}{:>8}",
-        "SÍMBOLO", "PnL BRUTO", "FEES", "FUNDING", "PnL NETO", "WR", "TRDES"
-    );
-    println!("{}", "-".repeat(80));
-    for (sym, a) in &by_symbol {
-        let net = a.realized_pnl + a.commission + a.funding;
-        let wr = if a.pnl_trades > 0 {
-            (a.win_trades as f64 / a.pnl_trades as f64) * 100.0
-        } else {
-            0.0
-        };
-        println!(
-            "{:<14}{:>12.4}{:>11.4}{:>11.4}{:>12.4}{:>8.1}%{:>7}",
-            if sym.is_empty() { "(global)" } else { sym },
-            a.realized_pnl,
-            a.commission,
-            a.funding,
-            net,
-            wr,
-            a.pnl_trades
-        );
-    }
-    println!("{}", "-".repeat(80));
-    let net = total.realized_pnl + total.commission + total.funding;
-    let wr = if total.pnl_trades > 0 {
-        (total.win_trades as f64 / total.pnl_trades as f64) * 100.0
-    } else {
-        0.0
+    let summary = match aggregate_income_by_asset(&entries) {
+        Ok(summary) => summary,
+        Err(reason) => {
+            eprintln!("Agregación inválida: {reason:?}");
+            std::process::exit(1);
+        }
     };
     println!(
-        "{:<14}{:>12.4}{:>11.4}{:>11.4}{:>12.4}{:>8.1}%{:>7}",
-        "TOTAL", total.realized_pnl, total.commission, total.funding, net, wr, total.pnl_trades
+        "\n{:<9}{:<14}{:>12}{:>12}{:>12}{:>12}{:>12}{:>9}{:>8}",
+        "MONEDA",
+        "SÍMBOLO",
+        "BRUTO",
+        "COMISIÓN",
+        "FUNDING",
+        "SUBTOTAL",
+        "OTROS",
+        "% FILAS+",
+        "FILAS"
     );
-
-    let fee_drag_pct = if total.realized_pnl.abs() > 1e-9 {
-        ((total.commission + total.funding) / total.realized_pnl.abs()) * 100.0
-    } else {
-        0.0
-    };
-    println!(
-        "\n💸 Arrastre de costos: {:.1}% del volumen de PnL bruto (comisiones+funding / |bruto|)",
-        fee_drag_pct
-    );
-    println!(
-        "   WR bruto = WR neto por trade (Binance ya descuenta fees del REALIZED_PNL: {} entradas)",
-        total.pnl_trades
-    );
-    if last_ts > 0 {
-        println!(
-            "   Datos reales entre {} → {}",
-            fmt_ms(first_ts),
-            fmt_ms(last_ts)
+    for ((asset, symbol), totals) in &summary.by_symbol {
+        print_totals(
+            asset,
+            if symbol.is_empty() {
+                "(global)"
+            } else {
+                symbol
+            },
+            totals,
         );
     }
+    for (asset, totals) in &summary.by_asset {
+        print_totals(asset, "TOTAL MONEDA", totals);
+        println!(
+            "   {asset}: razón firmada (comisión+funding)/|bruto| = {}; filas de otras clases = {}",
+            totals
+                .cost_to_abs_realized_ratio()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/D".into()),
+            totals.other_rows
+        );
+    }
+    println!("   SUBTOTAL = REALIZED_PNL + COMMISSION + FUNDING_FEE; OTROS conserva las demás clases, incluidas transferencias: no son automáticamente beneficio.");
+    println!("   % FILAS+ cuenta filas REALIZED_PNL positivas, no WR de operaciones ni WR neto. Requiere enlazar fills y costes para medirlos.");
+    println!("   No se suman monedas distintas. N/D indica razón no definida o no representable, no cero.");
+    println!(
+        "   Eventos recibidos entre {} → {}",
+        fmt_ms(entries.iter().map(|e| e.time).min().unwrap()),
+        fmt_ms(entries.iter().map(|e| e.time).max().unwrap())
+    );
+}
+
+fn print_totals(
+    asset: &str,
+    symbol: &str,
+    totals: &execution_engine::income_evidence::IncomeTotals,
+) {
+    let net = totals
+        .selected_net()
+        .map(|v| v.to_string())
+        .unwrap_or_else(|_| "INVÁLIDO".into());
+    let positive = totals
+        .positive_row_fraction()
+        .map(|v| format!("{:.1}", v * 100.0))
+        .unwrap_or_else(|| "N/D".into());
+    // Default Display preserves small nonzero values; fixed decimals are not evidence.
+    println!(
+        "{:<9}{:<14}{:>12}{:>12}{:>12}{:>12}{:>12}{:>9}{:>8}",
+        asset,
+        symbol,
+        totals.realized_pnl,
+        totals.commission,
+        totals.funding,
+        net,
+        totals.other_income,
+        positive,
+        totals.pnl_rows
+    );
 }
 
 fn fmt_ms(ms: u64) -> String {

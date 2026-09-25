@@ -2,7 +2,7 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use once_cell::sync::Lazy;
 use std::thread;
 
-/// Un evento de telemetría hiper-rápido y compacto para serialización lock-free
+/// Telemetry payload. No zero-latency or lock-free serialization guarantee.
 #[derive(Debug, Clone)]
 pub enum TelemetryEvent {
     LatencyWarning {
@@ -61,10 +61,10 @@ impl Default for TelemetryManager {
 impl TelemetryManager {
     pub fn new() -> Self {
         // Un ring buffer grande para evitar dropear eventos en picos de volatilidad, pero limitado para proteger la RAM.
-        // 1_000_000 de eventos = ~32MB de memoria RAM pre-asignada.
+        // Memory depends on enum size, channel overhead and owned strings, not 32MB.
         let (tx, rx): (Sender<TelemetryEvent>, Receiver<TelemetryEvent>) = bounded(1_000_000);
 
-        // FIX #1494: Spawn resiliente de TelemetryWorker sin expect
+        // XXXVI OPEN: spawn failure is ignored; no consumer health is exposed.
         let _ = thread::Builder::new()
             .name("TelemetryWorker".to_string())
             .spawn(move || {
@@ -76,7 +76,7 @@ impl TelemetryManager {
 
     #[inline(always)]
     pub fn send(&self, event: TelemetryEvent) {
-        // try_send para que sea estrictamente lock-free y sin latencia.
+        // Nonblocking send; this is not a measured zero-latency guarantee.
         // Si el buffer está lleno, el evento se descarta para no frenar el God Engine (prioridad: latencia de trading).
         let _ = self.sender.try_send(event);
     }
@@ -116,7 +116,7 @@ impl TelemetryManager {
 
                     if total_trades % 10 == 0 || pnl.abs() > compounding_capital * 0.05 {
                         let avg_pnl = total_pnl / total_trades as f64;
-                        let projected_trades_per_day = 50.0; // Asumimos 50 trades por día por moneda activa
+                        let projected_trades_per_day = 50.0; // Fixed hypothetical TOTAL cadence, not measured per asset.
                         let projected_daily_pnl = avg_pnl * projected_trades_per_day;
                         let days_to_double = if projected_daily_pnl > 0.0 {
                             compounding_capital / projected_daily_pnl
@@ -125,7 +125,7 @@ impl TelemetryManager {
                         };
 
                         println!(
-                            "📊 [PROYECCIÓN INSTITUCIONAL] Trade #{} | Coin: {} | Dir: {}",
+                            "📊 [ESCENARIO LINEAL NO CALIBRADO] Trade #{} | Coin: {} | Dir: {}",
                             total_trades,
                             coin_id,
                             if is_long { "LONG" } else { "SHORT" }
@@ -136,7 +136,7 @@ impl TelemetryManager {
                         );
                         println!("   ➤ Capital Compuesto: {:.2} USD | PnL Acumulado: {:.2} USD | WR Actual: {:.2}%", compounding_capital, total_pnl, current_wr * 100.0);
                         if days_to_double.is_finite() && days_to_double > 0.0 {
-                            println!("   🚀 [PROYECCIÓN] A este ritmo, el capital se duplicará en {:.1} días.", days_to_double);
+                            println!("   [ESCENARIO] Capital / (PnL medio × 50 trades/día) = {:.1} días; no es pronóstico ni interés compuesto.", days_to_double);
                         } else {
                             println!("   ⚠️ [PROYECCIÓN] El sistema necesita mejorar el Profit Factor para proyectar crecimiento compuesto.");
                         }
@@ -185,7 +185,7 @@ impl TelemetryManager {
     }
 }
 
-/// Helper functions macro-like para enviar telemetría en nanosegundos
+/// Nonblocking telemetry helpers; latency has not been certified here.
 #[inline(always)]
 pub fn send_latency_warning(dns_ms: u64, ws_ms: u64) {
     TELEMETRY.send(TelemetryEvent::LatencyWarning { dns_ms, ws_ms });

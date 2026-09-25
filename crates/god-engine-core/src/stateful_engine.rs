@@ -7,6 +7,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub static DROP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// Rejected observations do not advance the feature state. These checks are
+/// input/transition guards, not certification of all downstream estimators.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureInputError {
+    InvalidPrice,
+    InvalidVolume,
+    NonFiniteDerivedValue,
+    BackwardTimestamp,
+    CounterExhausted,
+    InvalidOhlc,
+}
+
 /// C-02 — índices del vector 34D (`get_universal_features`) cuya fuente de datos
 /// está MUERTA en producción: hoy sólo [9] (dark_alpha / dex_severity, sin
 /// productor MEV-DEX en vivo: `update_macro_features` la recibe como 0.0
@@ -59,6 +71,8 @@ pub struct StatefulEngine {
     pub cvpin: ContinuousVPIN,
     pub entropy: ShannonEntropy,
     pub dark_alpha: ExponentialDecayTensor,
+    /// Invalid macro inputs/transitions rejected before mutating macro state.
+    pub rejected_macro_updates: u64,
     pub last_entropy: f64,
     // Add compatibility properties so swing engine isn't completely broken
     pub ema_fast: f64,
@@ -144,6 +158,7 @@ impl StatefulEngine {
             cvpin: ContinuousVPIN::new(10_000.0), // $10,000 USD rolling bucket size
             entropy: ShannonEntropy::new(),
             dark_alpha: ExponentialDecayTensor::new(10000.0), // 10s half-life
+            rejected_macro_updates: 0,
             last_entropy: 0.0,
             ema_fast: 0.0,
             ema_slow: 0.0,
@@ -253,6 +268,9 @@ impl StatefulEngine {
     /// evitar que pérdidas en microsegundos congelen el motor durante 1 hora.
     #[inline(always)]
     pub fn can_open_at_tau(&self, tau_candidate_ms: f64, min_cooldown_ms: u64) -> bool {
+        if !tau_candidate_ms.is_finite() || tau_candidate_ms <= 0.0 {
+            return false;
+        }
         let band = Self::spectral_band_index(tau_candidate_ms);
         let same_spectral_band = if self.last_exit_tau_ms > 0 && tau_candidate_ms > 10.0 {
             let ln_cand = tau_candidate_ms.ln();
@@ -270,7 +288,7 @@ impl StatefulEngine {
         let elapsed_ms = if self.current_ts > 0 && last_band_ts > 0 {
             self.current_ts.saturating_sub(last_band_ts)
         } else {
-            self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
+            self.tick_count.saturating_sub(self.last_scalp_exit_tick).saturating_mul(100)
         };
 
         let raw_streak = if same_spectral_band {
@@ -302,20 +320,25 @@ impl StatefulEngine {
         // En macroescalas (tau ~ 1-4h), el cooldown respira con el ciclo macro.
         let scale_factor = (safe_tau / 30_000.0).clamp(0.20, 5.0);
 
+        // A caller minimum is a lower bound, even above a legacy heuristic cap.
+        // Retain ordinary-case policy; do not panic, wrap or shorten that bound.
+        let bounded = |value: f64, floor: f64, cap: f64| -> u64 {
+            value.clamp(floor, cap.max(floor)).round() as u64
+        };
         let required_ms = match active_streak {
             0 => min_cooldown_ms,
             1 => {
                 let base = if self.v_t > 0.0015 {
-                    min_cooldown_ms * 3
+                    min_cooldown_ms.saturating_mul(3)
                 } else {
-                    min_cooldown_ms * 2
+                    min_cooldown_ms.saturating_mul(2)
                 };
-                ((base as f64) * scale_factor).clamp(min_cooldown_ms as f64, 300_000.0).round() as u64
+                bounded((base as f64) * scale_factor, min_cooldown_ms as f64, 300_000.0)
             }
-            2 => ((300_000.0 * scale_factor).clamp(min_cooldown_ms as f64 * 1.5, 600_000.0)).round() as u64,
-            3 => ((600_000.0 * scale_factor).clamp(min_cooldown_ms as f64 * 2.0, 1_200_000.0)).round() as u64,
-            _ => ((1_200_000.0 * scale_factor).clamp(min_cooldown_ms as f64 * 3.0, 2_400_000.0)).round() as u64,
-        };
+            2 => bounded(300_000.0 * scale_factor, min_cooldown_ms as f64 * 1.5, 600_000.0),
+            3 => bounded(600_000.0 * scale_factor, min_cooldown_ms as f64 * 2.0, 1_200_000.0),
+            _ => bounded(1_200_000.0 * scale_factor, min_cooldown_ms as f64 * 3.0, 2_400_000.0),
+        }.max(min_cooldown_ms);
         elapsed_ms >= required_ms
     }
 
@@ -333,7 +356,7 @@ impl StatefulEngine {
         let elapsed_ms = if self.current_ts > 0 && band_exit_ts > 0 {
             self.current_ts.saturating_sub(band_exit_ts)
         } else {
-            self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
+            self.tick_count.saturating_sub(self.last_scalp_exit_tick).saturating_mul(100)
         };
         let raw = self.spectral_loss_streaks[band];
         // Decaimiento analítico continuo proporcional a la escala física tau:
@@ -364,7 +387,7 @@ impl StatefulEngine {
         let elapsed_ms = if self.current_ts > 0 && band_exit_ts > 0 {
             self.current_ts.saturating_sub(band_exit_ts)
         } else {
-            self.tick_count.saturating_sub(self.last_scalp_exit_tick) * 100
+            self.tick_count.saturating_sub(self.last_scalp_exit_tick).saturating_mul(100)
         };
         let raw = self.spectral_directional_loss_streaks[band][dir_idx];
         let decay_window_ms = (4.0 * tau_ms.max(10.0)).clamp(60_000.0, 7_200_000.0) as u64;
@@ -399,6 +422,9 @@ impl StatefulEngine {
         self.v_t = 0.0;
         self.a_t = 0.0;
         self.a_t_spectral = 0.0;
+        self.last_inst_v = 0.0;
+        self.dir_velocity = 0.0;
+        self.last_trade_is_sell = false;
         self.tick_count = 0;
         self.last_scalp_exit_tick = 0;
         self.last_scalp_exit_ts = 0;
@@ -418,6 +444,7 @@ impl StatefulEngine {
         self.cvpin = ContinuousVPIN::new(10_000.0);
         self.entropy = ShannonEntropy::new();
         self.dark_alpha = ExponentialDecayTensor::new(10000.0);
+        self.rejected_macro_updates = 0;
         self.last_entropy = 0.0;
         self.ema_fast = 0.0;
         self.ema_slow = 0.0;
@@ -455,13 +482,44 @@ impl StatefulEngine {
         self.last_hawkes_ratio = 0.0;
     }
 
-    /// Processes a new tick internally in f64
+    /// Compatibility entry point: invalid observations leave this state intact.
+    /// Consumers that need rejection diagnostics must use `try_process_tick`.
     pub fn process_tick(&mut self, price: f64, _volume: f64, event_time_ms: u64) {
+        let _ = self.try_process_tick(price, _volume, event_time_ms);
+    }
+
+    /// Validate before the first mutation. Equal timestamps preserve caller
+    /// order; a zero timestamp is valid. Volume must be nonnegative and finite,
+    /// but these checks cannot establish whether it is an observed trade size.
+    pub fn try_process_tick(
+        &mut self,
+        price: f64,
+        _volume: f64,
+        event_time_ms: u64,
+    ) -> Result<(), FeatureInputError> {
         if price <= 0.0 || !price.is_finite() {
-            return;
+            return Err(FeatureInputError::InvalidPrice);
+        }
+        if !_volume.is_finite() || _volume < 0.0 {
+            return Err(FeatureInputError::InvalidVolume);
+        }
+        if self.tick_count > 0 && event_time_ms < self.current_ts {
+            return Err(FeatureInputError::BackwardTimestamp);
+        }
+        if self.tick_count == u64::MAX {
+            return Err(FeatureInputError::CounterExhausted);
+        }
+        if !(price * _volume).is_finite()
+            || !(self.kline_volume + _volume).is_finite()
+            || (self.last_price > 0.0
+                && !((price - self.last_price) / self.last_price).is_finite())
+        {
+            return Err(FeatureInputError::NonFiniteDerivedValue);
         }
         self.current_ts = event_time_ms;
-        if self.last_price == 0.0 {
+        // Kline warmup sets last_price but never initializes the tick EMA or
+        // Kalman stream. Its first accepted tick must seed those estimators.
+        if self.tick_count == 0 {
             self.ema_fast = price;
             self.ema_slow = price;
             self.kalman = feature_engine::KalmanFilter1D::new(price, 1.0, 1e-4, 0.1);
@@ -562,7 +620,7 @@ impl StatefulEngine {
         };
         self.cvpin.update(notional_usd, is_sell);
 
-        if self.kline_start_ms == 0 {
+        if self.tick_count == 0 {
             self.kline_start_ms = event_time_ms;
             self.kline_open = price;
             self.kline_high = price;
@@ -654,6 +712,7 @@ impl StatefulEngine {
 
         self.last_price = price;
         self.tick_count += 1;
+        Ok(())
     }
 
     /// #16: Actualiza el proceso de auto-excitación de Hawkes con timestamps y OFI
@@ -687,10 +746,38 @@ impl StatefulEngine {
     }
 
     pub fn process_kline(&mut self, _open: f64, high: f64, low: f64, close: f64, _volume: f64) {
-        // FIX #665: Descarte preventivo de klines con precios corruptos o no finitos
-        // FIX: Erradicación del Feature Leakage (Ceguera Causal)
-        // Usar los altos y bajos de la vela ANTERIOR para el cálculo actual de features de IA.
-        // Si el modelo ve el high/low de esta misma vela, el backtest hace trampa leyendo el futuro.
+        let _ = self.try_process_kline(_open, high, low, close, _volume);
+    }
+
+    /// Validate OHLCV before mutating any estimator. No timestamp/closure is
+    /// supplied by this legacy interface: causal availability remains unproven.
+    pub fn try_process_kline(
+        &mut self,
+        open: f64,
+        high: f64,
+        low: f64,
+        close: f64,
+        volume: f64,
+    ) -> Result<(), FeatureInputError> {
+        if ![open, high, low, close].iter().all(|p| p.is_finite() && *p > 0.0)
+            || low > high
+            || open < low
+            || open > high
+            || close < low
+            || close > high
+        {
+            return Err(FeatureInputError::InvalidOhlc);
+        }
+        if !volume.is_finite() || volume < 0.0 {
+            return Err(FeatureInputError::InvalidVolume);
+        }
+        if self.last_price > 0.0
+            && !((close - self.last_price) / self.last_price).is_finite()
+        {
+            return Err(FeatureInputError::NonFiniteDerivedValue);
+        }
+        // Preserve the legacy feature definition. Lagged extrema do not by
+        // themselves certify causality; the caller must establish availability.
         let prev_high = if self.kline_high > 0.0 {
             self.kline_high
         } else {
@@ -731,6 +818,7 @@ impl StatefulEngine {
         } else {
             (self.v_t * 0.8 + tr * 0.2).max(close * 0.0005)
         };
+        Ok(())
     }
 
     pub fn update_macro_features(
@@ -742,13 +830,17 @@ impl StatefulEngine {
     ) {
         // FIX #665: Sanitizar macro features
         if !obi.is_finite() || !funding_rate.is_finite() || !dex_severity.is_finite() {
+            self.rejected_macro_updates += 1;
+            return;
+        }
+        if self.dark_alpha.try_apply_event(dex_severity, ts_ms).is_err() {
+            self.rejected_macro_updates += 1;
             return;
         }
 
         self.obi_accel.update(obi);
         self.obi_noise.update(obi);
         self.fr_elasticity.update(funding_rate, self.last_price);
-        self.dark_alpha.apply_event(dex_severity, ts_ms);
     }
 
     pub fn update_macro_flow(
@@ -757,8 +849,11 @@ impl StatefulEngine {
         dex_severity: f64,
         ts_ms: u64,
     ) {
+        if !funding_rate.is_finite() || self.dark_alpha.try_apply_event(dex_severity, ts_ms).is_err() {
+            self.rejected_macro_updates += 1;
+            return;
+        }
         self.fr_elasticity.update(funding_rate, self.last_price);
-        self.dark_alpha.apply_event(dex_severity, ts_ms);
     }
 
     pub fn get_market_regime(&self) -> MarketRegime {

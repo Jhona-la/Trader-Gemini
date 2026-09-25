@@ -1,0 +1,598 @@
+{
+  "schema_version": 1,
+  "round": "XVI",
+  "date": "2026-09-24",
+  "report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVI_2026-09-24.md",
+  "local_git": {
+    "branch": "main",
+    "head_short": "59a76de4",
+    "remote_verified": false,
+    "commit_push_merge_fetch_performed": false
+  },
+  "coverage": {
+    "baseline_tracked_files": 1119,
+    "baseline_rust_files": 289,
+    "cargo_manifests": 24,
+    "complete_preexisting_rust_cumulative": 116,
+    "pending_complete_rust": 173,
+    "new_complete_reads": [
+      "crates/strategy-core/src/maker.rs"
+    ],
+    "rereads_not_added": [
+      "crates/risk-engine/src/epigenetic_capital_alloc.rs",
+      "crates/strategy-core/src/multivariate_coint.rs",
+      "crates/strategy-core/src/stat_arb.rs",
+      "crates/strategy-core/src/vecm_arbitrage.rs",
+      "src/multi_asset_orchestrator.rs",
+      "crates/graph-4d/src/lib.rs",
+      "crates/risk-engine/src/correlation_guard.rs"
+    ],
+    "targeted_not_complete": [
+      "crates/god-engine-core/src/lib.rs",
+      "crates/god-engine-core/src/stateful_engine.rs",
+      "crates/evolution-engine/src/online_daemon.rs",
+      "src/bin/god_engine.rs"
+    ],
+    "entire_project_certified": false,
+    "historical_305_matrix_replaced": false
+  },
+  "new_ids": [
+    "FMT-167",
+    "FMT-168",
+    "FMT-169",
+    "FMT-170"
+  ],
+  "findings": [
+    {
+      "id": "FMT-088",
+      "priority": "P2_auxiliary_API",
+      "title": "El asignador fabrica exposición y sustituye capital desconocido",
+      "status": "partially_repaired",
+      "evidence": [
+        {
+          "file": "crates/risk-engine/src/epigenetic_capital_alloc.rs",
+          "line": 19
+        },
+        {
+          "file": "crates/risk-engine/src/epigenetic_capital_alloc.rs",
+          "line": 95
+        }
+      ],
+      "mechanism": "El suelo 0.01 asignaba capital a scores nulos/negativos; el fallback 13 sustituía capital inválido. La multiplicación de scores grandes desbordaba y el truncamiento de arrays perdía identidad dimensional.",
+      "reproductions": [
+        "all zero scores -> ten 0.1 weights",
+        "invalid capital -> two 0.5 weights",
+        "scores [1,0,-1] -> positive weights for all",
+        "MAX scores -> NaN weights",
+        "positive rescaling changes allocations"
+      ],
+      "repairs": [
+        "API AllocationError y try_",
+        "Ceros sin evidencia positiva; errores no generan exposición",
+        "Normalización por máximo común antes de multiplicar",
+        "Dimensiones iguales; wrapper conserva cardinalidad",
+        "Stack arrays top10; sort O(n log n) universo"
+      ],
+      "limits": [
+        "K heredado 2/5/10/N",
+        "No mínimo de orden garantizado",
+        "Sin covariance-aware optimizer ni consumidor operativo localizado",
+        "Wrapper pierde motivo de error",
+        "API sin capital conserva supuesto explícito USD13",
+        "Empates al corte K dependientes del índice",
+        "Plasticity tensor legacy sin cambio"
+      ],
+      "closure": "Riesgo conjunto, costes/tamaños observados y consumidor trazable sobre replay causal; no solo suavizar K."
+    },
+    {
+      "id": "FMT-167",
+      "priority": "P2_auxiliary_API",
+      "title": "Cesta finita de entrada puede corromper estado y normalización",
+      "status": "numeric_transactional_contract_repaired_model_not_certified",
+      "evidence": [
+        {
+          "file": "crates/strategy-core/src/multivariate_coint.rs",
+          "line": 61
+        },
+        {
+          "file": "crates/strategy-core/src/multivariate_coint.rs",
+          "line": 199
+        }
+      ],
+      "mechanism": "Productos w*ln(P), innovación y suma L1 desbordan; suelo 1e-6 hace depender la exposición de la magnitud común del vector.",
+      "reproductions": [
+        "MAX weights and prices100 poison first update",
+        "weights [epsilon,-epsilon,epsilon,-epsilon] fail normalized allocations for epsilon 1e-200 or1e308"
+      ],
+      "repairs": [
+        "Validación de campos públicos/precios/pesos",
+        "checked_add de contador",
+        "Estado candidato validado antes de commit lógico",
+        "L1 en coordenadas escaladas sin piso absoluto"
+      ],
+      "limits": [
+        "No fit de cointegración/OU",
+        "Constructor aún sustituye pesos inválidos por0.25",
+        "None/cero no porta motivo de abstención",
+        "Aritmética fuera de rango rechazada, no resuelta con precisión arbitraria",
+        "Campos públicos aún editables"
+      ],
+      "closure": "El contrato numérico verificado no cierra validez estadística ni tamaño ejecutable por pata."
+    },
+    {
+      "id": "FMT-034",
+      "priority": "P2_auxiliary_API",
+      "title": "Filtro de saltos sigue bloqueable; contador aceptado corregido",
+      "status": "count_fixed_persistent_freeze_open",
+      "evidence": [
+        {
+          "file": "crates/strategy-core/src/multivariate_coint.rs",
+          "line": 110
+        }
+      ],
+      "mechanism": "El filtro compara con último spread aceptado. Un cambio de nivel persistente se rechaza indefinidamente; antes también incrementaba count por cada rechazo.",
+      "reproductions": [
+        "20 stable then jump: count was21, now20",
+        "180 post-shift observations still rejected"
+      ],
+      "repairs": [
+        "Incremento solo al confirmar observación aceptada"
+      ],
+      "limits": [
+        "Umbral1.5 en coordenadas log ponderadas, no porcentaje",
+        "No cuarentena/reidentificación",
+        "Rechazo no identifica dato corrupto"
+      ],
+      "closure": "Probar recuperación ante salto real persistente y rechazo ante corrupción aislada con trazabilidad."
+    },
+    {
+      "id": "FMT-033",
+      "priority": "P2_auxiliary_API",
+      "title": "OU por evento no utiliza reloj físico",
+      "status": "open_reconfirmed",
+      "evidence": [
+        {
+          "file": "crates/strategy-core/src/multivariate_coint.rs",
+          "line": 61
+        }
+      ],
+      "mechanism": "Timestamp ignorado, theta positivo por clipping y momentos de memorias diferentes. La vida media es por evento, no por tiempo físico.",
+      "reproductions": [
+        "same prices with timestamps scaled1e6 -> identical mean, variance, half-life"
+      ],
+      "repairs": [],
+      "limits": [
+        "No stationary OU inference",
+        "Varianza con pisos",
+        "expected_magnitude0.015 fijo"
+      ],
+      "closure": "Modelo irregular en tiempo físico con parámetros identificables, incertidumbre y validación fuera de muestra."
+    },
+    {
+      "id": "FMT-036",
+      "priority": "P1_architecture_P2_auxiliary_adapter_repair",
+      "title": "Remuestreo de par por ticks ajenos y alias de instrumento",
+      "status": "identity_replay_fixed_age_leadlag_open",
+      "evidence": [
+        {
+          "file": "src/multi_asset_orchestrator.rs",
+          "line": 36
+        }
+      ],
+      "mechanism": "startswith BTC/ETH mezclaba instrumentos; ticks ajenos volvían a insertar el par cacheado. Libros cruzados entraban a estado.",
+      "reproductions": [
+        "SOL ticks mature unchanged BTC/ETH pair",
+        "BTCDOWNUSDT/BTCUSDC/ETHBTC alias into wrong cache",
+        "locked/crossed book changes state"
+      ],
+      "repairs": [
+        "Identidad exacta BTCUSDT/ETHUSDT del adaptador legacy",
+        "Rechazo temprano símbolos ajenos y ask<=bid",
+        "Mid sin suma desbordada",
+        "Sin String por lowercase"
+      ],
+      "limits": [
+        "Adaptador no universal",
+        "Sin timestamp/edad por pata",
+        "Actualización de una pata todavía combina otra antigua",
+        "LeadLag separado no modificado"
+      ],
+      "closure": "Instrument keys y coherent event-time evidence; no snapshots repetidos ni legs sin soporte."
+    },
+    {
+      "id": "FMT-168",
+      "priority": "P1_library_with_core_caller",
+      "title": "Quote maker cruza libros diminutos y fallback inválido sigue cruzable",
+      "status": "valid_book_floor_fixed_invalid_book_contract_open",
+      "evidence": [
+        {
+          "file": "crates/strategy-core/src/maker.rs",
+          "line": 24
+        }
+      ],
+      "mechanism": "Piso absoluto1e-8 rompe invariancia de unidades y supera ask de libro válido diminuto. Rama inválida puede devolver bid101 ask100 sin error.",
+      "reproductions": [
+        "bid1e-12 ask2e-12 -> bid>=1e-8 before repair",
+        "crossed invalid book still yields crossed quote",
+        "constructor spread1 vs100 identical quotes"
+      ],
+      "repairs": [
+        "Sin suelo absoluto en rama válida",
+        "Límites bid/ask observados preservan orden",
+        "Mid calculado por mitades",
+        "Comentarios de semispread y escala inventario"
+      ],
+      "limits": [
+        "MakerQuote sin validity/identity/TTL/tick size",
+        "Cantidades negativas sin rechazar",
+        "Suma cantidades puede desbordar",
+        "OFI actualizado pero salida no usada",
+        "Constructor base spread sin efecto",
+        "Escala inventario USD100 y threshold OBI heredados"
+      ],
+      "closure": "API fallible y abstención propagada, unidades declaradas, rounding/post-only y replay de ejecución; no activar nuevas órdenes sin contrato."
+    },
+    {
+      "id": "FMT-169",
+      "priority": "P2_auxiliary_strategy",
+      "title": "Umbral imposible por studentización interna de ventana corta",
+      "status": "open_with_proof_and_characterization",
+      "evidence": [
+        {
+          "file": "crates/strategy-core/src/stat_arb.rs",
+          "line": 38
+        }
+      ],
+      "mechanism": "Actual observation included before computing population z. Cauchy-Schwarz gives |z_i|<=sqrt(n-1), hence n2 cannot exceed1.5 in exact arithmetic.",
+      "reproductions": [
+        "window2 threshold1.5 remains Flat across large signed shocks"
+      ],
+      "repairs": [],
+      "limits": [
+        "Beta1 spread not proof of cointegration",
+        "Fixed0.002 log-spread threshold not cost model",
+        "Scalar SignalIntent does not encode both legs",
+        "No empirical calibrated confidence"
+      ],
+      "closure": "Specify predictive estimand, validate feasible settings and carry hedge/cost/legs semantics."
+    },
+    {
+      "id": "FMT-170",
+      "priority": "P1_genome_to_terminal_integration",
+      "title": "Quote calculado no alcanza host; inputs maker no equivalentes",
+      "status": "open_static_path_evidence",
+      "evidence": [
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 825
+        },
+        {
+          "file": "crates/god-engine-core/src/lib.rs",
+          "line": 4785
+        },
+        {
+          "file": "crates/god-engine-core/src/stateful_engine.rs",
+          "line": 768
+        },
+        {
+          "file": "src/bin/god_engine.rs",
+          "line": 3216
+        },
+        {
+          "file": "src/multi_asset_orchestrator.rs",
+          "line": 87
+        }
+      ],
+      "mechanism": "process_tick_dual returns quote but process_event discards _maker. Core volatility is ATR-relative; auxiliary adapter volatility is relative spread and reads dynamic_ofi_threshold instead of maker_obi_threshold.",
+      "reproductions": [],
+      "repairs": [],
+      "limits": [
+        "Not proof that all maker/limit entries absent",
+        "Not measured actual PnL attribution",
+        "Other direct process_tick consumers not exhaustively audited",
+        "No p99 benchmark"
+      ],
+      "closure": "Trace gene->observable->decision->quote->execution acknowledgment; explain sensitivity using fixed exogenous tape."
+    },
+    {
+      "id": "FMT-050",
+      "priority": "P1_evolution_evaluation",
+      "title": "El gen maker altera el libro exógeno en replay",
+      "status": "open_reconfirmed",
+      "evidence": [
+        {
+          "file": "crates/evolution-engine/src/online_daemon.rs",
+          "line": 125
+        }
+      ],
+      "mechanism": "half_spread = candidate.maker_spread_pct changes bid/ask used to evaluate candidate. Fitness sensitivity can reflect changed environment even though process_event discards generated quote.",
+      "reproductions": [],
+      "repairs": [],
+      "limits": [
+        "Static causal mechanism, no quantified contribution to live/demo difference",
+        "This round did not rerun economic backtest"
+      ],
+      "closure": "Same market tape across candidates, separate execution/environment parameters and evaluate independently."
+    }
+  ],
+  "theory": {
+    "id": "T39",
+    "name": "Covariación multiactivo asíncrona y evidencia conjunta",
+    "status": "research_and_design_not_implemented",
+    "method": "Firecrawl Research Index search and in-body retrieval; local CLI unavailable; no private code/data submitted",
+    "primary_sources": [
+      {
+        "url": "https://arxiv.org/abs/2003.13062",
+        "title": "Streaming Approach to Quadratic Covariation Estimation Using Financial Ultra-High-Frequency Data",
+        "evidence_level": "three_in_body_passages",
+        "limits": "Fixed bandwidth saves memory but is statistically suboptimal; refresh-time synchrony differs from all-event previous-tick alignment; PSD vs accuracy tradeoffs."
+      },
+      {
+        "url": "https://arxiv.org/abs/1302.5202",
+        "title": "Estimation of integrated covariances in the simultaneous presence of nonsynchronicity, microstructure noise and jumps",
+        "evidence_level": "three_in_body_passages",
+        "limits": "Estimates continuous-part integrated covariance under explicit assumptions; not cointegration or profit prediction."
+      }
+    ],
+    "reading_queue_abstract_only": [
+      "https://arxiv.org/abs/2602.19645",
+      "https://arxiv.org/abs/2602.19658",
+      "https://arxiv.org/abs/1507.01033"
+    ],
+    "proposed_contract": [
+      "instrument/venue/event_time/receive_time/sequence/quality",
+      "estimand and units separated from algorithm name",
+      "matrix support and uncertainty, not missing-as-zero",
+      "PSD and regularization effect validation",
+      "causal same-tape replay; latency/memory benchmarks"
+    ],
+    "quantum_advantage_demonstrated": false,
+    "millennium_equations_implemented": false
+  },
+  "tests": {
+    "distinct_passed": 48,
+    "new_tests": 22,
+    "red_to_green": 12,
+    "new_contract_strengthenings": 4,
+    "open_debt_characterizations": 6,
+    "whole_workspace_suite_run": false,
+    "suites": [
+      {
+        "command": "cargo test -p strategy-core --lib --test basket_state_contract --test maker_quote_contract --test pair_model_characterization --offline -- --test-threads=1",
+        "groups": {
+          "lib": 21,
+          "basket": 7,
+          "maker": 3,
+          "pair": 1
+        },
+        "exit_code": 0
+      },
+      {
+        "command": "cargo test -p risk-engine epigenetic_capital_alloc --lib --offline -- --test-threads=1",
+        "passed": 3,
+        "exit_code": 0
+      },
+      {
+        "command": "cargo test -p risk-engine --test epigenetic_allocation_contract --offline -- --test-threads=1",
+        "passed": 8,
+        "exit_code": 0
+      },
+      {
+        "command": "cargo test -p signal-engine --test multi_asset_identity_contract --offline -- --test-threads=1",
+        "passed": 5,
+        "existing_path_tests_included": 2,
+        "exit_code": 0
+      }
+    ],
+    "files": [
+      "crates/risk-engine/tests/epigenetic_allocation_contract.rs",
+      "crates/strategy-core/tests/basket_state_contract.rs",
+      "crates/strategy-core/tests/maker_quote_contract.rs",
+      "crates/strategy-core/tests/pair_model_characterization.rs",
+      "crates/signal-engine/tests/multi_asset_identity_contract.rs"
+    ],
+    "incidents": [
+      "First maker test import was wrong; fixed harness before behavioral red test; not counted as product defect.",
+      "Temporary Cargo build lock, no processes killed.",
+      "Arena harness emitted missing TG_GENOME_ENV on red tests; no production environment enabled."
+    ]
+  },
+  "build": {
+    "command": "cargo check --bin god_engine --offline",
+    "exit_code": 0,
+    "engine_executed": false,
+    "warnings": [
+      "evolution-engine latest_ts unused",
+      "evolution-engine mode unused",
+      "RealWfOutcome.trades unused"
+    ]
+  },
+  "changes": {
+    "source_files": [
+      "crates/risk-engine/src/epigenetic_capital_alloc.rs",
+      "crates/strategy-core/src/multivariate_coint.rs",
+      "crates/strategy-core/src/maker.rs",
+      "src/multi_asset_orchestrator.rs"
+    ],
+    "test_files": [
+      "crates/risk-engine/tests/epigenetic_allocation_contract.rs",
+      "crates/strategy-core/tests/basket_state_contract.rs",
+      "crates/strategy-core/tests/maker_quote_contract.rs",
+      "crates/strategy-core/tests/pair_model_characterization.rs",
+      "crates/signal-engine/tests/multi_asset_identity_contract.rs"
+    ],
+    "protected_sources": [
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE",
+        "unchanged": true
+      },
+      {
+        "path": "crates/risk-engine/src/lib.rs",
+        "sha256": "E9883455B6BEBEFA866C2F56FE6C4A403321E22BA58C82D004BF5839E738C4A1",
+        "unchanged": true
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62",
+        "unchanged": true
+      },
+      {
+        "path": "crates/quantum-arena/src/genome.rs",
+        "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+        "unchanged": true
+      },
+      {
+        "path": "crates/quantum-arena/src/config.rs",
+        "sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140",
+        "unchanged": true
+      }
+    ],
+    "active_genomes_written": false,
+    "deployment_or_restart": false,
+    "accounts_or_authenticated_trading_calls": false,
+    "publication": false
+  },
+  "integrity": {
+    "source_inventory": [
+      {
+        "path": "crates/risk-engine/src/epigenetic_capital_alloc.rs",
+        "sha256": "FBFF1B4D3FBF26F075A69F026473C35540789BD0A5853E72747128173DD913CD",
+        "lines": 233
+      },
+      {
+        "path": "crates/strategy-core/src/multivariate_coint.rs",
+        "sha256": "33C3B8AE1ACEC5F5E3407C838E7017EC44F5AE216ECB9C722949A51D80F0B6CD",
+        "lines": 326
+      },
+      {
+        "path": "crates/strategy-core/src/maker.rs",
+        "sha256": "D0A1B77E652A37C21F5663C3A29C98AF9EE4C02B329907A73EC6F5338A9C0EC6",
+        "lines": 193
+      },
+      {
+        "path": "src/multi_asset_orchestrator.rs",
+        "sha256": "04C1047314431A99B06FC61E420CE97D5AE20F623957F9B9D72CE3D46365DAF9",
+        "lines": 167
+      },
+      {
+        "path": "crates/god-engine-core/src/lib.rs",
+        "sha256": "F65BEE26A20FBD2A15B6C6BB719B9362A53AE832E7C082B145E399E567B655FE",
+        "lines": 5102
+      },
+      {
+        "path": "crates/risk-engine/src/lib.rs",
+        "sha256": "E9883455B6BEBEFA866C2F56FE6C4A403321E22BA58C82D004BF5839E738C4A1",
+        "lines": 951
+      },
+      {
+        "path": "src/bin/god_engine.rs",
+        "sha256": "F2BA92C4283C66E65E25329F9A73A12D53F2E07331DBC9461737AF7F7297DD62",
+        "lines": 4814
+      },
+      {
+        "path": "crates/quantum-arena/src/genome.rs",
+        "sha256": "C3EB9752B757C6EECBDB859CDEA9A29E0FD4D6A238CDCDF50A314EEA3A142F22",
+        "lines": 3347
+      },
+      {
+        "path": "crates/quantum-arena/src/config.rs",
+        "sha256": "2D4D3A2B98B070D6EBDD8127AE80125C4EC561909BC03A9996EC3D4252380140",
+        "lines": 495
+      },
+      {
+        "path": "crates/risk-engine/tests/epigenetic_allocation_contract.rs",
+        "sha256": "0C1293C436D8E8E74E5D01CD0F8D7B767D3A61FD260A28F8FCA39BC5FA6DD9FE",
+        "lines": 97
+      },
+      {
+        "path": "crates/strategy-core/tests/basket_state_contract.rs",
+        "sha256": "3BAA1621A6F184CEA4113C171D5FD0F8428DE3F804D7C22B12D7C97E9114BCFF",
+        "lines": 115
+      },
+      {
+        "path": "crates/strategy-core/tests/maker_quote_contract.rs",
+        "sha256": "42A1E5866029416C98DA0F5C3DB12820344F21E21CF22C862EF61A4EFC422FE9",
+        "lines": 26
+      },
+      {
+        "path": "crates/strategy-core/tests/pair_model_characterization.rs",
+        "sha256": "57EABB28483C5F4097AF08639699C2B1D5E6B8F242F1E2A845BE9B08831EE7E1",
+        "lines": 9
+      },
+      {
+        "path": "crates/signal-engine/tests/multi_asset_identity_contract.rs",
+        "sha256": "DACA16AC79B6F4726A9DEEAE6AE2E49D6E4544389507127276FC9DEB90D69DCC",
+        "lines": 35
+      },
+      {
+        "path": "crates/strategy-core/src/stat_arb.rs",
+        "sha256": "493718EDBB3054E2C47174FD87843C96B2009C9C8D72142B97B762ACC2CD76EC",
+        "lines": 195
+      },
+      {
+        "path": "crates/strategy-core/src/vecm_arbitrage.rs",
+        "sha256": "6D0D68DA56067E6ABF15D578F206988F212A4076ED544958DDC3E4D6E666CF7F",
+        "lines": 243
+      },
+      {
+        "path": "crates/graph-4d/src/lib.rs",
+        "sha256": "E28705A20CF71B4AFFC486ACFF003D4F94AABFD99B19D621C88BA27B608B4A38",
+        "lines": 174
+      },
+      {
+        "path": "crates/risk-engine/src/correlation_guard.rs",
+        "sha256": "539A9CE918182CD4FC8B3B6D470C1D2ED0FE8B44BFB28DDDCEE99CABB6A5F8A8",
+        "lines": 129
+      },
+      {
+        "path": "crates/god-engine-core/src/stateful_engine.rs",
+        "sha256": "42F0CAB0A8F58E978947E20DD13947DBB84BBDB6806C415E9EA574B57B8395A4",
+        "lines": 1390
+      },
+      {
+        "path": "crates/evolution-engine/src/online_daemon.rs",
+        "sha256": "EEA91F108543B66AC53CDFF6DAAB83466F9E2451A92568727A4E23CD13400BC9",
+        "lines": 1254
+      }
+    ],
+    "append_only_baselines": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "length": 66329,
+        "sha256": "8595712EF84B3367D03A4A31646BF5815446C132D3619F84AB2235D520C5E593"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "length": 618139,
+        "sha256": "DB2279E8A54215B41228277B71690914EA68F0113A3335DAD40205D6E18AFB00"
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XV_2026-09-24.md",
+        "length": 30624,
+        "sha256": "80829863E77A9807D113D9F9AC0803C19F5C502F8C6A3AFA1809EAF761125C43"
+      }
+    ],
+    "normalization": "CRLF -> LF; SHA256 of UTF8 baseline prefix; historical NUL retained",
+    "append_only_verified": true,
+    "links_verified": true,
+    "verification_summary": {
+      "source_hashes_matched": 20,
+      "protected_sources_unchanged": 5,
+      "local_report_links_valid": 17,
+      "prior_document_prefixes_preserved": 3,
+      "appended_normalized_characters": {
+        "ATLAS_ANALITICO.md": 2247,
+        "INFORME_FORENSE_MAESTRO.md": 5984,
+        "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XV_2026-09-24.md": 1447
+      }
+    }
+  },
+  "limitations": [
+    "116/289 preexisting Rust complete; no full repository certification",
+    "No measured PnL, live/demo attribution, p99 or full workspace suite",
+    "No audit of all remote branches and no merge/push",
+    "Research proposal not production integration",
+    "Existing and concurrent dirty files preserved"
+  ]
+}

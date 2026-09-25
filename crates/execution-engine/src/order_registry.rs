@@ -32,7 +32,7 @@ impl OrderStatus {
             "PARTIALLY_FILLED" => OrderStatus::PartiallyFilled,
             "FILLED" => OrderStatus::Filled,
             "CANCELED" => OrderStatus::Canceled,
-            "EXPIRED" => OrderStatus::Expired,
+            "EXPIRED" | "EXPIRED_IN_MATCH" => OrderStatus::Expired,
             "REJECTED" => OrderStatus::Rejected,
             _ => OrderStatus::Unknown,
         }
@@ -55,6 +55,24 @@ impl OrderStatus {
             | OrderStatus::Canceled
             | OrderStatus::Expired
             | OrderStatus::Rejected => 3,
+        }
+    }
+
+    /// Conservative merge, not a total ordering of exchange events. Filled is
+    /// absorbing; another terminal label must not overwrite it on late arrival.
+    /// Conflicts between other terminal labels retain the first known state.
+    /// Event-time and identity conflict resolution remain separate contracts.
+    fn merge(self, incoming: Self) -> Self {
+        if self == Self::Filled || incoming == Self::Unknown {
+            self
+        } else if incoming == Self::Filled {
+            incoming
+        } else if self.lifecycle_rank() == 3 {
+            self
+        } else if incoming.lifecycle_rank() >= self.lifecycle_rank() {
+            incoming
+        } else {
+            self
         }
     }
 }
@@ -290,14 +308,16 @@ impl OrderRegistry {
             entry.position_side = pos_side;
         }
         // Invariantes: executed_qty y avg_price del exchange son la verdad.
-        if ack.executed_qty >= entry.executed_qty {
+        // Quantity, average and quote describe the same cumulative observation.
+        // A smaller cumulative snapshot cannot supply a newer average/notional.
+        if ack.executed_qty.is_finite() && ack.executed_qty >= entry.executed_qty {
             entry.executed_qty = ack.executed_qty;
-        }
-        if ack.avg_price > 0.0 {
-            entry.avg_price = ack.avg_price;
-        }
-        if ack.cum_quote > 0.0 {
-            entry.cum_quote = ack.cum_quote;
+            if ack.avg_price.is_finite() && ack.avg_price > 0.0 {
+                entry.avg_price = ack.avg_price;
+            }
+            if ack.cum_quote.is_finite() && ack.cum_quote > 0.0 {
+                entry.cum_quote = ack.cum_quote;
+            }
         }
         if ack.order_id > 0 {
             entry.order_id = ack.order_id;
@@ -325,9 +345,7 @@ impl OrderRegistry {
 
         // R3.4: Monotonic status guard — impedir que acks tardíos o de retries degraden estados terminales
         let new_status = OrderStatus::parse(&ack.status);
-        if new_status.lifecycle_rank() >= entry.status.lifecycle_rank() {
-            entry.status = new_status;
-        }
+        entry.status = entry.status.merge(new_status);
         entry.updated_ms = now_ms;
     }
 
@@ -372,17 +390,17 @@ impl OrderRegistry {
         if u.order_id > 0 {
             entry.order_id = u.order_id;
         }
-        if u.cumulative_filled_qty >= entry.executed_qty {
+        if u.cumulative_filled_qty.is_finite() && u.cumulative_filled_qty >= entry.executed_qty {
             entry.executed_qty = u.cumulative_filled_qty;
+            if u.avg_price.is_finite() && u.avg_price > 0.0 {
+                entry.avg_price = u.avg_price;
+            }
         } else {
             // Fill desordenado (WS llega antes que un ack viejo): conservar el máximo.
             println!(
                 "⚠️ [REGISTRY] TradeUpdate con cumulativeFilled {} < conocido {} para {}",
                 u.cumulative_filled_qty, entry.executed_qty, u.client_order_id
             );
-        }
-        if u.avg_price > 0.0 {
-            entry.avg_price = u.avg_price;
         }
         // R3.4: Comisión acumulativa por fill WS + deduplicación con ACK REST
         if u.last_filled_qty > 0.0 && u.commission > 0.0 {
@@ -404,9 +422,7 @@ impl OrderRegistry {
         }
 
         // R3.4: Monotonic status guard — impedir que actualizaciones WS desordenadas degraden estados terminales
-        if u.status.lifecycle_rank() >= entry.status.lifecycle_rank() {
-            entry.status = u.status;
-        }
+        entry.status = entry.status.merge(u.status);
         entry.updated_ms = now_ms;
     }
 

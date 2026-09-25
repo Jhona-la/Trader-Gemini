@@ -106,6 +106,21 @@ impl<'a> PortfolioOrchestrator<'a> {
         if !required_margin.is_finite() || required_margin <= 0.0 {
             return false;
         }
+        // Unknown financial state is not zero exposure. Preserve the existing
+        // collateral policy only inside its declared finite domain.
+        let capital = self.arena.unified_capital.load(Ordering::Relaxed);
+        let drawdown_budget = self
+            .arena
+            .config
+            .global_max_drawdown
+            .load(Ordering::Relaxed);
+        if !capital.is_finite()
+            || capital <= 0.0
+            || !drawdown_budget.is_finite()
+            || !(0.0..=1.0).contains(&drawdown_budget)
+        {
+            return false;
+        }
         // Regime Orchestration (Fase 13: Kill-Switch macro)
         if regime == crate::regime::MarketRegime::Crash && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
@@ -116,11 +131,15 @@ impl<'a> PortfolioOrchestrator<'a> {
         let mut total_long_margin = 0.0;
         let mut total_short_margin = 0.0;
 
-        // Lock-free iteration over all coins and spectral slots to calculate net delta and exposure
+        // Sum collateral across spectral slots; this is NOT market delta.
+        // Individual atomic loads do not provide a coherent portfolio snapshot.
         for coin in self.arena.coins.iter() {
             for pos in coin.positions.slots() {
                 if pos.is_open() {
                     let margin = pos.margin_used.load(Ordering::Relaxed);
+                    if !margin.is_finite() || margin < 0.0 {
+                        return false;
+                    }
                     if pos.is_long.load(Ordering::Relaxed) {
                         total_long_margin += margin;
                     } else {
@@ -130,28 +149,18 @@ impl<'a> PortfolioOrchestrator<'a> {
             }
         }
 
-        let capital = self.arena.unified_capital.load(Ordering::Relaxed);
-        if capital <= 0.0 {
+        let total_exposure = total_long_margin + total_short_margin + required_margin;
+        if !total_exposure.is_finite() {
             return false;
         }
-
-        let total_exposure = total_long_margin + total_short_margin + required_margin;
-
-        // Max Margin Allocation limit: Allow up to 95% of unified capital to be allocated as collateral
-        let exposure_limit = (1.0
-            - self
-                .arena
-                .config
-                .global_max_drawdown
-                .load(Ordering::Relaxed)
-                .min(0.20))
-        .clamp(0.80, 1.0);
+        // Legacy collateral fraction in [0.8,1.0], not a drawdown guarantee.
+        let exposure_limit = (1.0 - drawdown_budget.min(0.20)).clamp(0.80, 1.0);
 
         if total_exposure > capital * exposure_limit {
             return false;
         }
 
-        // Net Delta / Directional Limit: Smooth continuous check
+        // Directional collateral limit; leverage/notional are not modeled here.
         // Allow full directional exposure but respect capital limits
         if intent_is_long {
             if (total_long_margin + required_margin) > capital * exposure_limit {

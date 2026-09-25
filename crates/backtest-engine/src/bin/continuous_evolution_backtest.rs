@@ -527,6 +527,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tick.timestamp,
                 &omni,
                 false,
+                true,
             );
             let new_order = new_ord.is_some();
             let closed_order = closed_ord.is_some();
@@ -575,7 +576,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let atr = engine.feature_engines[safe_cid].get_atr_pct();
                 let hurst = engine.feature_engines[safe_cid].hurst.current();
                 let macro_t = engine.feature_engines[safe_cid].get_macro_trend();
-                let is_open = engine.arena.coins[cid].positions.position.is_open();
+                let is_open = engine.arena.coins[cid].positions.is_any_open();
                 println!(
                     "🔍 [TICK #{}] coin={} ts={} mid={:.2} atr={:.6} hurst={:.3} macro_trend={:.6} open={} new_ord={} closed={}",
                     idx,
@@ -614,6 +615,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tick.timestamp,
                     &omni,
                     false,
+                    true,
                 );
             });
 
@@ -635,22 +637,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let mut open_unrealized = 0.0;
         for coin in arena.coins.iter() {
-            let pos = &coin.positions.position;
-            if pos.is_open() {
-                let entry = pos.entry_price.load(Ordering::Relaxed);
-                let qty = pos.quantity.load(Ordering::Relaxed);
-                let is_long = pos.is_long.load(Ordering::Relaxed);
-                let c_price = coin.current_price.load(Ordering::Relaxed);
-                let exit_price = if c_price > 0.0 {
-                    c_price
-                } else {
-                    last_tick_price
-                };
-                let exit_fee = qty * exit_price * 0.0005;
-                let unrealized =
-                    (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
-                if unrealized.is_finite() {
-                    open_unrealized += unrealized;
+            for pos in coin.positions.slots() {
+                if pos.is_open() {
+                    let entry = pos.entry_price.load(Ordering::Relaxed);
+                    let qty = pos.quantity.load(Ordering::Relaxed);
+                    let is_long = pos.is_long.load(Ordering::Relaxed);
+                    let c_price = coin.current_price.load(Ordering::Relaxed);
+                    let exit_price = if c_price > 0.0 {
+                        c_price
+                    } else {
+                        last_tick_price
+                    };
+                    let exit_fee = qty * exit_price * 0.0005;
+                    let unrealized =
+                        (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
+                    if unrealized.is_finite() {
+                        open_unrealized += unrealized;
+                    }
                 }
             }
         }
@@ -752,22 +755,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for (i, engine) in shadow_engines.iter().enumerate() {
             let mut cap = engine.arena.unified_capital.load(Ordering::Relaxed);
             for coin in engine.arena.coins.iter() {
-                let pos = &coin.positions.position;
-                if pos.is_open() {
-                    let entry = pos.entry_price.load(Ordering::Relaxed);
-                    let qty = pos.quantity.load(Ordering::Relaxed);
-                    let is_long = pos.is_long.load(Ordering::Relaxed);
-                    let c_price = coin.current_price.load(Ordering::Relaxed);
-                    let exit_price = if c_price > 0.0 {
-                        c_price
-                    } else {
-                        last_tick_price
-                    };
-                    let exit_fee = qty * exit_price * 0.0005;
-                    let unrealized =
-                        (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
-                    if unrealized.is_finite() {
-                        cap += unrealized;
+                for pos in coin.positions.slots() {
+                    if pos.is_open() {
+                        let entry = pos.entry_price.load(Ordering::Relaxed);
+                        let qty = pos.quantity.load(Ordering::Relaxed);
+                        let is_long = pos.is_long.load(Ordering::Relaxed);
+                        let c_price = coin.current_price.load(Ordering::Relaxed);
+                        let exit_price = if c_price > 0.0 {
+                            c_price
+                        } else {
+                            last_tick_price
+                        };
+                        let exit_fee = qty * exit_price * 0.0005;
+                        let unrealized =
+                            (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
+                        if unrealized.is_finite() {
+                            cap += unrealized;
+                        }
                     }
                 }
             }
