@@ -130,6 +130,22 @@ impl<'a> PortfolioOrchestrator<'a> {
             return false;
         }
         // Regime Orchestration (Fase 13: Kill-Switch macro)
+        // (Ola XLII·B1-wire) CRASH POLICY CONTINUA: la crash-ness MEDIDA del
+        // campo espectral (publicada por símbolo) contrae el margen admisible
+        // continuamente — el largo paga hasta +25 pb de colchón a crash-ness
+        // plena. El veto binario del enum queda como el extremo declarado
+        // (caída libre sistémica); el rango medio es gradiente, no caja.
+        let mut crash_pressure = 0.0f64;
+        if intent_is_long {
+            let crash_max = self
+                .arena
+                .coins
+                .iter()
+                .map(|c| c.spectral_crash_flux.load(Ordering::Relaxed))
+                .fold(0.0f64, f64::max)
+                .clamp(0.0, 1.0);
+            crash_pressure = 0.25 * crash_max;
+        }
         if regime == crate::regime::MarketRegime::Crash && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
         }
@@ -177,10 +193,11 @@ impl<'a> PortfolioOrchestrator<'a> {
             capital,
             crate::capital_regime::effective_min_notional(min_notional_simbolo),
         );
-        let exposure_limit = crate::capital_regime::margin_cushion(
+        let exposure_limit = (crate::capital_regime::margin_cushion(
             self.arena.config.margin_cushion_pct.load(Ordering::Relaxed),
             escasez,
-        );
+        ) - crash_pressure)
+            .max(0.05);
 
         // GROSS exposure cap: margen comprometido en AMBAS direcciones a la
         // vez — el límite direccional no lo captura (40 long + 50 short caben

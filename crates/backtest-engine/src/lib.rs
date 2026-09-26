@@ -1009,8 +1009,9 @@ mod tests {
             trades, 2,
             "golden baseline: serie neutra ejecuta exactamente su sonda de arranque (D-1) y B3.25 veta el resto"
         );
-        // Bits exactos de la re-certificación: la sonda cerró +2 trades
-        // ligeramente rentables en ESTA serie (1000.0241615213755).
-        assert_eq!(out_stats[2].to_bits(), 4652007521368178953u64);
+        // Bits exactos de la re-certificación XLII: la sonda cerró +2 trades
+        // con las puertas z-tipificadas de flujo/campo (1000.02270273). Cada
+        // cambio INTENCIONADO del motor re-certifica conscientemente.
+        assert_eq!(out_stats[2].to_bits(), 4652007508536518328u64);
     }
 }

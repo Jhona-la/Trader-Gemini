@@ -1208,6 +1208,15 @@ impl LiveEvolutionDaemon {
         // ronda: spread, rejilla de precios y apalancamiento máximo son del
         // exchange, no del examinado.
         let wf_market = observed_market_env(&self.arena);
+        // (Ola XLII·C3-wire) Snapshot de identificabilidad ANTES de clonar:
+        // Fisher de escala por moneda (−1 = frío, sin masa). El gate vive en
+        // el spawn (donde ya no hay self): se captura como el entorno.
+        let wf_fisher_snapshot: Vec<f64> = self
+            .arena
+            .coins
+            .iter()
+            .map(|c| c.spectral_fisher.load(Ordering::Relaxed))
+            .collect();
         println!(
             "📏 [WF-ENV] Entorno del examen medido del mercado: semi-spread {:.5} %, tick {:.6} %, apalancamiento máx {:.0}x",
             wf_market.observed_half_spread_pct * 100.0,
@@ -1514,6 +1523,30 @@ impl LiveEvolutionDaemon {
 
             // ── CERT-M8-H01: ETAPA REAL — el motor completo juzga al top-K ──
             prescreened.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+            // (Ola XLII·C3-wire) GATE DE IDENTIFICABILIDAD — Fisher de escala
+            // del campo VIVO: la masa espectral concentrada en escala (Fisher
+            // alta) declara un régimen identificable y el examen walk-forward
+            // miente menos. Con el campo difuso (la mayoría de las monedas CON
+            // masa por debajo del umbral), la ronda se aplaza: evolucionar
+            // sobre un régimen no identificable memoriza ruido. Frío (sin
+            // masa) NO bloquea — el warmup ya gobierna el arranque.
+            {
+                let con_masa: Vec<f64> = wf_fisher_snapshot
+                    .iter()
+                    .copied()
+                    .filter(|f| *f >= 0.0)
+                    .collect();
+                let identificados = con_masa.iter().filter(|f| **f > 1.0).count();
+                if con_masa.len() >= 2 && identificados * 2 < con_masa.len() {
+                    println!(
+                        "🌀 [WF-FISHER] campo espectral difuso (identificables {}/{}) — ronda aplazada: evolucionar sobre un régimen no identificable memoriza ruido",
+                        identificados,
+                        con_masa.len()
+                    );
+                    return (current_genome.clone(), Vec::new(), 0);
+                }
+            }
             // D-746 — genomas DISTINTOS puestos a prueba en esta ronda. El
             // embudo tiene dos etapas (pre-screen sobre todos, motor real
             // sobre el top-K), pero la selección del ganador se hace sobre el

@@ -8274,3 +8274,12 @@ Resumen: (1) la sesión retomó el trabajo forense tras versionar el WIP (ac1366
 Ver [AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLI_2026-09-26.md](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLI_2026-09-26.md).
 
 Resumen: censo completo de la cadena de vetos (~70 puntos, 6 etapas); 9 interacciones patológicas reparadas sin tocar la doctrina medida; 2 bugs reales del fusionado detectados por contratos de aritmética exacta (espectro re-sembra con ts=0; lector del consejo con ponderación distinta a la de decisión); oráculo genético re-baselineado 0/144→19/144 (supera trinquete). Doctrina espectral: régimen como campo continuo con crash-ness que modula margen en vez de veto binario. Teoría integrada con protocolo completo: Marchenko-Pastur (el ruido no veta), funciones de estructura de Kolmogorov (intermitencia endurece pisos), Fisher de escala (identificabilidad). Golden del backtest re-certificado conscientemente (sonda de arranque). Nota institucional: las validaciones truncadas no son validaciones.
+
+
+---
+
+## 26. ADENDA OLA XLII (2026-09-26) — los últimos literales leen su distribución y el régimen tiene derivada de movimiento
+
+Ver [AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLII_2026-09-26.md](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLII_2026-09-26.md).
+
+Resumen: A3 cerrado (CVD y X-016 z-tipificados contra EWMAs propios, con fallbacks conservadores documentados; pisos fríos re-clasificados como fail-safe); Fisher gobierna cuándo NO evolucionar (walk-forward); crash-ness contrae el colchón del orchestrator; transporte de Wasserstein-1 espectral mide la RESTRUCTURACIÓN del régimen (complemento dinámico de la Fisher estática). Oráculo: 20/144 (13.9 %) — el trinquete sigue subiendo.

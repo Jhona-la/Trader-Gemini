@@ -972,6 +972,14 @@ impl GodEngineCore {
                     self.arena.coins[coin_id].spectral_intermittency.store(intermittency, Ordering::Relaxed);
                     let fisher = spec.fisher_scale_information().unwrap_or(-1.0);
                     self.arena.coins[coin_id].spectral_fisher.store(fisher, Ordering::Relaxed);
+                    // (Ola XLII·D) Transporte W1 a 64 updates (~1/4 del
+                    // anillo): reestructuración del régimen. Publicada al
+                    // registry para telemetría; consumo de gates = próxima
+                    // ola (frenar aperturas en τ en tránsito).
+                    let w1 = spec.spectral_transport_w1(64).unwrap_or(0.0);
+                    self.arena
+                        .registry
+                        .set_for_coin(coin_id, "spectral_w1_transport", w1);
                 }
             }
 
@@ -1391,6 +1399,14 @@ impl GodEngineCore {
                     self.arena.coins[coin_id].spectral_intermittency.store(intermittency, Ordering::Relaxed);
                     let fisher = spec.fisher_scale_information().unwrap_or(-1.0);
                     self.arena.coins[coin_id].spectral_fisher.store(fisher, Ordering::Relaxed);
+                    // (Ola XLII·D) Transporte W1 a 64 updates (~1/4 del
+                    // anillo): reestructuración del régimen. Publicada al
+                    // registry para telemetría; consumo de gates = próxima
+                    // ola (frenar aperturas en τ en tránsito).
+                    let w1 = spec.spectral_transport_w1(64).unwrap_or(0.0);
+                    self.arena
+                        .registry
+                        .set_for_coin(coin_id, "spectral_w1_transport", w1);
                 }
             }
 
@@ -3232,6 +3248,31 @@ impl GodEngineCore {
             } else {
                 0.0
             };
+            // (Ola XLII·A3a) Z-TIPIFICACIÓN DEL CVD: media y segundo momento
+            // EWMA (memoria ~500 eventos) convierten los literales en
+            // puntos básicos de los gates de flujo en lecturas de SU PROPIA
+            // distribución. cvd_z_warm=false durante el calentamiento: los
+            // gates caen al literal histórico (fail-safe documentado, doctrina
+            // del escudo L2 D-475: sin σ no se inventa umbral).
+            {
+                let alpha_cvd = 0.002_f64;
+                let prev_mean = coin.cvd_mean_ewma.load(Ordering::Relaxed);
+                let prev_sq = coin.cvd_sq_ewma.load(Ordering::Relaxed);
+                let new_mean = prev_mean + alpha_cvd * (rolling_cvd - prev_mean);
+                let new_sq = prev_sq + alpha_cvd * (rolling_cvd * rolling_cvd - prev_sq);
+                coin.cvd_mean_ewma.store(new_mean, Ordering::Relaxed);
+                coin.cvd_sq_ewma.store(new_sq, Ordering::Relaxed);
+            }
+            let cvd_mean = coin.cvd_mean_ewma.load(Ordering::Relaxed);
+            let cvd_var = (coin.cvd_sq_ewma.load(Ordering::Relaxed) - cvd_mean * cvd_mean).max(0.0);
+            let cvd_sd = cvd_var.sqrt();
+            let cvd_z_warm = cvd_sd.is_finite() && cvd_sd > 1e-4;
+            let cvd_z = if cvd_z_warm {
+                (rolling_cvd - cvd_mean) / cvd_sd
+            } else {
+                0.0
+            };
+            set_reg("cvd_z", cvd_z);
             let ofi = self.feature_engines[coin_id].ofi_model.ema_ofi;
 
             let obi_norm = (current_obi / dynamic_obi_thr).clamp(-1.5, 1.5);
@@ -3833,7 +3874,12 @@ impl GodEngineCore {
                         // momentum directo sin confirmación de régimen. Requiere
                         // desviación mayor (+0.5 ATR extra) y CVD alineado como
                         // substituto.
-                        else if !hurst_active && dev_atr > 2.0 && dev_atr < 5.0 && rolling_cvd > 0.05 {
+                        else if !hurst_active
+                            && dev_atr > 2.0
+                            && dev_atr < 5.0
+                            // (A3a) acuerdo de flujo sobre su propio ruido
+                            && if cvd_z_warm { cvd_z > 0.0 } else { rolling_cvd > 0.05 }
+                        {
                             fast_intent = SignalIntent {
                                 signal: SignalType::Long,
                                 confidence: conviccion_de_rama(
@@ -3846,7 +3892,11 @@ impl GodEngineCore {
                                 expected_duration_ms: fast_duration_ms,
                                 ..Default::default()
                             };
-                        } else if !hurst_active && dev_atr < -2.0 && dev_atr > -5.0 && rolling_cvd < -0.05 {
+                        } else if !hurst_active
+                            && dev_atr < -2.0
+                            && dev_atr > -5.0
+                            && if cvd_z_warm { cvd_z < 0.0 } else { rolling_cvd < -0.05 }
+                        {
                             fast_intent = SignalIntent {
                                 signal: SignalType::Short,
                                 confidence: conviccion_de_rama(
@@ -3891,7 +3941,8 @@ impl GodEngineCore {
                         && macro_trend <= 0.0
                         && micro_trend <= 0.00003
                         && ofi <= 0.05
-                        && rolling_cvd <= 0.15
+                        // (A3a) techo de confluencia contraria: medio σ
+                        && if cvd_z_warm { cvd_z <= 0.5 } else { rolling_cvd <= 0.15 }
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
@@ -4926,8 +4977,49 @@ impl GodEngineCore {
                     // - Operar contra marea macro profunda (macro_tide < -0.15)
                     // - Caos térmico desacoplado puro (entropía > 0.98)
                     // - Coherencia colapsada a cero (< 0.02)
-                    let extreme_entropy = field.spectral_entropy > 0.98;
-                    let extreme_counter_tide = macro_tide < -0.15;
+                    // (Ola XLII·A3b) EXTREMOS Z-TIPIFICADOS contra la historia
+                    // del propio campo: una entropía de 0,97 es extrema en un
+                    // mercado que suele vivir en 0,80 y no lo es en uno de 0,97
+                    // crónico; una marea de −0,20 es profunda si el campo suele
+                    // moverse a ±0,08. EWMAs por símbolo (α≈1/300 intents),
+                    // fallback a los literales históricos en calentamiento.
+                    {
+                        let tide_neutral = spec.swing_score() * 0.60 + spec.secular_score() * 0.40;
+                        let coin_f = &self.arena.coins[coin_id];
+                        let alpha_f = 0.0033_f64;
+                        let prev_tide_sq = coin_f.tide_sq_ewma.load(Ordering::Relaxed);
+                        coin_f.tide_sq_ewma.store(
+                            prev_tide_sq + alpha_f * (tide_neutral * tide_neutral - prev_tide_sq),
+                            Ordering::Relaxed,
+                        );
+                        let prev_ent_m = coin_f.entropy_mean_ewma.load(Ordering::Relaxed);
+                        let prev_ent_sq = coin_f.entropy_sq_ewma.load(Ordering::Relaxed);
+                        let ent = field.spectral_entropy;
+                        let new_m = prev_ent_m + alpha_f * (ent - prev_ent_m);
+                        let new_sq = prev_ent_sq + alpha_f * (ent * ent - prev_ent_sq);
+                        coin_f.entropy_mean_ewma.store(new_m, Ordering::Relaxed);
+                        coin_f.entropy_sq_ewma.store(new_sq, Ordering::Relaxed);
+                    }
+                    let ent_mean = self.arena.coins[coin_id].entropy_mean_ewma.load(Ordering::Relaxed);
+                    let ent_var =
+                        (self.arena.coins[coin_id].entropy_sq_ewma.load(Ordering::Relaxed) - ent_mean * ent_mean)
+                            .max(0.0);
+                    let ent_sd = ent_var.sqrt();
+                    let extreme_entropy = if ent_sd.is_finite() && ent_sd > 1e-3 {
+                        field.spectral_entropy > ent_mean + 2.0 * ent_sd
+                    } else {
+                        field.spectral_entropy > 0.98
+                    };
+                    let tide_sd = self.arena.coins[coin_id]
+                        .tide_sq_ewma
+                        .load(Ordering::Relaxed)
+                        .max(0.0)
+                        .sqrt();
+                    let extreme_counter_tide = if tide_sd.is_finite() && tide_sd > 1e-3 {
+                        (-macro_tide) > 2.0 * tide_sd
+                    } else {
+                        macro_tide < -0.15
+                    };
                     // (Ola XLI·D3) La incoherencia sólo veta con campo CALIENTE: el
                     // espectro recién nacido tiene coherencia 0 por construcción y el
                     // veto era un never-start (agudizaba el bloqueo del oráculo). Sin
@@ -5194,9 +5286,23 @@ impl GodEngineCore {
             // La cinta de transacciones ejecutadas reales (CVD) es la huella digital inmutable del capital agresor.
             // Prohibido comprar (Long) si el volumen agresor neto es fuertemente vendedor (rolling_cvd < -0.12).
             // Prohibido vender (Short) si el volumen agresor neto es fuertemente comprador (rolling_cvd > 0.12).
-            if unified_intent.signal == SignalType::Long && rolling_cvd < -0.12 {
+            // (Ola XLII·A3a) El veto lee la z del CVD: significación del 95 %
+            // CONTRA SU PROPIA DISTRIBUCIÓN (un −0,12 fijo vetaba ruido en
+            // libros tranquilos y pasaba extremos en libros ruidosos). Con
+            // σ aún en calentamiento, fallback al literal histórico.
+            let cvd_adverso_long = if cvd_z_warm {
+                cvd_z < -crate::diffusion::Z95
+            } else {
+                rolling_cvd < -0.12
+            };
+            let cvd_adverso_short = if cvd_z_warm {
+                cvd_z > crate::diffusion::Z95
+            } else {
+                rolling_cvd > 0.12
+            };
+            if unified_intent.signal == SignalType::Long && cvd_adverso_long {
                 unified_intent = SignalIntent::flat();
-            } else if unified_intent.signal == SignalType::Short && rolling_cvd > 0.12 {
+            } else if unified_intent.signal == SignalType::Short && cvd_adverso_short {
                 unified_intent = SignalIntent::flat();
             }
 

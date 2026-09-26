@@ -245,6 +245,20 @@ pub struct CoinArena {
     /// Tracking de CVD (Cumulative Volume Delta) - Flujo de Capital
     pub agg_buy_vol: AtomicF64,
     pub agg_sell_vol: AtomicF64,
+    /// (Ola XLII·A3a) Estadística medida del CVD rodante para su
+    /// z-tipificación: media EWMA y segundo momento EWMA (de donde sale
+    /// σ). Los vetos/confluencias de flujo dejan de leer literales en
+    /// puntos básicos y pasan a leer CUÁNTO DE SU PROPIA DISTRIBUCIÓN
+    /// se aparta el flujo actual. 0 = aún en calentamiento.
+    pub cvd_mean_ewma: AtomicF64,
+    pub cvd_sq_ewma: AtomicF64,
+    /// (Ola XLII·A3b) Estadística del CAMPO espectral para los extremos de
+    /// X-016: segundo momento de la marea neutra (swing·0.6+secular·0.4) y
+    /// media/segundo momento de la entropía. Los «extremos» pasan de
+    /// literales a z-scores contra la historia del propio campo.
+    pub tide_sq_ewma: AtomicF64,
+    pub entropy_mean_ewma: AtomicF64,
+    pub entropy_sq_ewma: AtomicF64,
     /// Tracking de Liquidez Profunda L2
     pub l2_bid_wall: AtomicF64, // Volumen acumulado en bids
     pub l2_ask_wall: AtomicF64, // Volumen acumulado en asks
@@ -443,6 +457,11 @@ impl CoinArena {
             spot_bid_qty: AtomicF64::new(0.0),
             spot_ask_qty: AtomicF64::new(0.0),
             agg_buy_vol: AtomicF64::new(0.0),
+            cvd_mean_ewma: AtomicF64::new(0.0),
+            cvd_sq_ewma: AtomicF64::new(0.0),
+            tide_sq_ewma: AtomicF64::new(0.0),
+            entropy_mean_ewma: AtomicF64::new(1.0),
+            entropy_sq_ewma: AtomicF64::new(1.0),
             agg_sell_vol: AtomicF64::new(0.0),
             l2_bid_wall: AtomicF64::new(0.0),
             l2_ask_wall: AtomicF64::new(0.0),
