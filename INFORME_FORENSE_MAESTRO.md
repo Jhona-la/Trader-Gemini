@@ -8085,3 +8085,174 @@ El cálculo de lookback rechaza days0, multiplicación desbordada y resta anteri
 66 pruebas únicas=58funcionales/compatibilidad+5estáticas+3OPEN.28nuevas=23funcionales+3estáticas+2OPEN.3RED iniciales estáticos pasan; no se inventan RED funcionales ni se cuenta dos veces una reejecución. Check offline de god_engine,income_report,evolver,walkforward_evolver correcto con warnings heredados.41modelos sin cambios; prefijos históricos y anclas/hashes verificables enJSON. No cuentas/órdenes, entrenamiento/promoción operativos, cargo build del motor, reinicios ni publicación Git.
 
 Cobertura169/289Rust,120pendientes; nuevo income_evidence y tests no se suman al denominador histórico. La guía Firecrawl llevó a reutilizar la fuente oficial del mismo día: page,start/end,limit y filtro escalar sustentan la implementación; no se infiere snapshot ni unicidad global. La formulación multivariante exige conservar cuenta/activo/tiempo/generación, no reducirlos a un contador homogéneo. No se incorpora teoría por prestigio ni se certifica ventaja cuántica, observación nanosegundo a nanosegundo o beneficio garantizado. Siguiente prioridad: identidad durable, nueva evidencia, atribución genómica y recuperación causal del veto.
+
+
+---
+
+## 23. 🆕 ADENDA 22 — EL MOTOR UNIVERSAL CONTINUO, MEDIDO (2026-09-19/20)
+
+Esta adenda cubre tres cosas: qué encontró la re-auditoría del motor *después* de
+integrar todo el trabajo de la sesión paralela (R1…R8), qué dicen las primeras
+MEDICIONES del espectro sobre tape real, y qué se corrigió en consecuencia.
+
+### 22.1 El estado de lo que ya se había reportado
+
+Los 25 defectos de la auditoría de constantes (ola anterior) se re-verificaron
+uno a uno contra el árbol fusionado:
+
+| estado | nº | qué significa |
+|---|---|---|
+| vigente | 20 | el código sigue idéntico, el modo de fallo sigue alcanzable |
+| parcial | 4 | cambió algo, pero el fallo descrito sigue vivo |
+| corregido | 1 | cerrado (tope de riesgo de ruina, CERT-M5-H03) |
+
+Los dos S0 seguían intactos: el cortacircuitos de drawdown con tres semánticas
+incompatibles, y la matriz de apalancamiento que SUBE el apalancamiento con la
+volatilidad relativa de la moneda.
+
+### 22.2 El binario scalp/swing no había muerto: vivía en el núcleo
+
+La auditoría de bifurcación encontró que el «motor universal continuo» seguía
+leyendo el espectro por dos ventanas —`fast_intent` y `slow_intent`— y que los
+filtros duros se aplicaban SÓLO a la rápida. La lenta podía abrir:
+
+- con el spread por encima del recorrido esperado y sin volatilidad mínima,
+- dentro del enfriamiento de reentrada,
+- contra el consenso del propio tick (invariante bayesiano D-472),
+- contra el modelo (ponderación continua F-009),
+- contra el flujo agregado (CVD) y contra el muro del libro (L2).
+
+Y la arbitración le entrega la decisión a esa lectura siempre que la τ dominante
+supera la media geométrica de la banda operativa: **el veto que el operador cree
+tener armado no existía en la mitad de los regímenes**. Corregido en D-743: las
+cuatro puertas son ahora una función única (`puertas_del_continuo`) que se aplica
+por igual a cualquier lectura del espectro antes de arbitrar.
+
+### 22.3 Lo que el tape real dice del espectro (medición, no teoría)
+
+`spectral_bench` recorre un tape REAL de aggTrades y puntúa, en la misma pasada,
+las cinco formas de fusionar el espectro que han existido en el motor, contra el
+retorno de los 1, 5 y 30 minutos siguientes:
+
+| fusión | IC 1 min BTC | 5 min | 30 min | corr(arranque) | SOL 1 min | 5 min | 30 min | corr(arranque) |
+|---|---|---|---|---|---|---|---|---|
+| 1/vol original | +0,0262 | +0,0117 | +0,0062 | +0,050 | −0,0364 | −0,0128 | +0,0051 | +0,150 |
+| CERT-M3-H01 informativo | +0,0254 | +0,0026 | −0,0099 | +0,051 | −0,0274 | −0,0249 | −0,0258 | +0,245 |
+| informativo × observable | +0,0143 | −0,0041 | −0,0156 | +0,051 | −0,0207 | −0,0247 | −0,0298 | +0,240 |
+| **1/vol × observable** | **+0,0290** | **+0,0119** | **+0,0053** | **+0,007** | −0,0430 | −0,0173 | −0,0008 | **+0,014** |
+| uniforme sobre observable | +0,0251 | +0,0037 | −0,0104 | +0,048 | −0,0445 | −0,0285 | −0,0204 | +0,162 |
+
+(BTCUSDT junio, 34 M trades; SOLUSDT julio, 6,7 M; n ≈ 44 000 muestras por
+símbolo; error típico del IC ≈ ±0,0047.)
+
+Tres lecturas honestas:
+
+1. **El `fused_score` no tiene valor direccional establecido.** Su IC es
+   positivo en BTC y negativo en SOL con TODA ponderación. Quien lo consuma
+   —ruta espectral directa, consejo, teleonomía— está usando una señal cuyo
+   signo depende del símbolo y del mes.
+2. **El término «informativo» resta.** Empeora el IC en los dos símbolos y en
+   los tres horizontes. Se retira.
+3. **La corrección de observabilidad (D-742) sí vale**, y no por teoría: elimina
+   el anclaje al precio de arranque en ambos símbolos (BTC 0,050 → 0,007; SOL
+   0,150 → 0,014). En SOLUSDT, la fusión anterior daba el **18,4 %** de su peso
+   a escalas MÁS LARGAS que todo el tape — escalas que no han visto un solo τ.
+   En BTCUSDT sólo el 2,6 %, que es por lo que el defecto pasaba inadvertido en
+   el símbolo que más se mira.
+
+### 22.4 Lo que el motor SÍ puede predecir
+
+El mismo banco mide el espectro predictivo (`spectral_tape`): tasas por núcleo
+exponencial a todas las escalas y un pronóstico en línea por mínimos cuadrados
+recursivos sobre la FORMA del espectro (generalización espectral del HAR). Cada
+muestra se puntúa antes de que el modelo vea su objetivo. Sobre BTCUSDT junio:
+
+| objetivo | 1,1 min | 4,6 min | 18,3 min | 1,22 h | 4,89 h |
+|---|---|---|---|---|---|
+| volatilidad (R² fuera de muestra vs. climatología) | +0,113 | +0,173 | +0,175 | +0,118 | +0,054 |
+| volumen | +0,333 | +0,452 | +0,495 | +0,437 | +0,251 |
+| intensidad (nº de trades) | +0,409 | +0,574 | +0,639 | +0,588 | +0,364 |
+| flujo de dinero (desequilibrio) | +0,014 | +0,014 | +0,009 | −0,016 | −0,033 |
+| concentración de entes | −0,096 | −0,092 | −0,068 | +0,013 | +0,001 |
+
+Y frente a la persistencia —el pronóstico ingenuo, que es el baseline honesto—
+el modelo gana en TODOS los objetivos y horizontes (+0,11 a +0,60).
+
+Conclusión medida: **la volatilidad, el volumen y la intensidad del mercado son
+predecibles** con habilidad real fuera de muestra a horizontes de minutos a
+horas. **El flujo de dinero y la concentración de entes no lo son** con este
+modelo: se quedan en observación (que es información, no pronóstico).
+
+Esto tiene una consecuencia directa sobre los predictores P-1/P-2 de la sesión
+paralela: su gate compara el R² contra la MEDIA constante, no contra la
+persistencia, de modo que un R² de 0,106 no demuestra habilidad; y su etiqueta
+de volatilidad es un RMS **por tick** (mezcla volatilidad con intensidad de
+ticks) mientras la de «volumen» es, en el tape real, una función determinista de
+la propia cantidad del trade con un suelo artificial.
+
+### 22.5 Correcciones de esta adenda
+
+- **D-742** — el espectro temporal deja de opinar con escalas que no ha
+  observado: la vol de desviación es la media OBSERVADA (sin la semilla de 1e-7)
+  y el peso multiplica por la masa del núcleo llenada y por la resolución del
+  reloj del feed.
+- **D-743** — puertas del continuo: viabilidad de mercado, invariante bayesiano,
+  ponderación del modelo y vetos de flujo y muro se aplican a CUALQUIER lectura
+  del espectro, no sólo a la banda rápida.
+- **D-744** — el cortacircuitos de drawdown deja de ser una opinión: la caída
+  máxima es la compatible con el riesgo que el motor toma de verdad (medido al
+  dimensionar cada orden) y con su tasa de pérdida observada, con el gen
+  `global_max_drawdown` reinterpretado como la CONFIANZA de esa prueba. El mismo
+  número lo usan el sistema inmune del host y el veto de entradas; el colchón de
+  margen del orquestador deja de leer ese gen y usa su propia fuente única.
+
+### 22.6 EL HISTÓRICO ERA INOPERABLE (D-751) Y EL MEDIDOR COBRABA EL SPREAD DOS VECES (D-752)
+
+Al intentar medir el motor sobre una moneda que SÍ tiene modelo (ATOMUSDT), el
+forense devolvió **cero operaciones en 1 173 874 trades reales**. El diagnóstico
+nuevo (D-750) dijo por qué en una línea: `spread 2,08 % ≤ máx 0,06 %? false`.
+
+Dos causas, ambas en el instrumental, ninguna en el mercado:
+
+1. **El defecto del codificador sigue congelado en los ficheros.**
+   `binance_vision_sync` construía el libro sintético con un semi-spread de
+   `max(price · 0,00005; 0,01)`: un suelo de UN CENTAVO en términos ABSOLUTOS.
+   A 58 605 $ (BTC) son 0,01 %; a 1,955 $ (ATOM), 1,12 %; a 0,0018 $ (GALA),
+   **1 095 %**. D-723 corrigió el codificador; los ficheros ya escritos nadie
+   los regeneró. Inventario: de 98 tapes REALES en `data/`, **81 llevan el
+   suelo absoluto y 72 declaran un spread por encima del máximo que el filtro
+   del motor admite**. Sobre ellos el motor no puede abrir una posición — y son
+   los datos con los que se entrenaron y validaron los modelos del roster.
+   `tape_spread_fix` reescribe un tape conservando lo que es DATO (instante,
+   precio medio, cantidad, lado del agresor) y recalculando sólo lo que era
+   MODELO, con el tick del instrumento INFERIDO del propio tape.
+2. **El forense duplicaba la horquilla.** El tape ya trae las dos puntas;
+   `sim_bid = bid − medio_spread` y `sim_ask = ask + medio_spread` no aplican un
+   suelo: duplican el spread. Toda la fricción con la que se midió el motor
+   —incluidas las aptitudes de −0,12 a −0,15 con las que se concluyó que
+   pierde— se pagó por partida doble en cada entrada y cada salida.
+
+### 22.7 LA CADENA MEDIDA, DE PRINCIPIO A FIN (ATOMUSDT, junio 2026, 1,17 M trades reales)
+
+| estado | operaciones | ROI mitad 1 | acierto | ROI mitad 2 | operaciones |
+|---|---|---|---|---|---|
+| como estaba (tape y medidor sin corregir) | **0** | 0,00 % | — | 0,00 % | 0 |
+| tape corregido + spread cobrado una vez | 12 | −3,15 % | 8 % | −1,80 % | 6 |
+| + modelo reentrenado con el pipeline corregido | 22 | −2,35 % | **41 %** | −0,33 % | 1 |
+
+El modelo reentrenado se ajustó con JUNIO y se validó con JULIO (cruce de mes
+real): logloss 0,3625 frente a 0,3956 del predictor constante. El anterior
+—entrenado con el flujo espejado de D-747— devolvía 0,99997 CONSTANTE en
+servicio, y el ensamble lo promediaba con una red que decía 0,0015: su media,
+0,5007, es exactamente el punto donde la puerta no deja pasar nada. Eso, y no el
+mercado, es lo que paralizaba al motor.
+
+**Nada de esto autoriza a operar.** El motor sigue perdiendo en las tres
+configuraciones, y hay un defecto abierto que invalida cualquier lectura del
+ML: el modelo reentrenado, cuya mediana en entrenamiento es 0,14, devuelve
+3·10⁻¹³ en servicio. La paridad entrenamiento↔servicio sigue rota más allá del
+flujo agregado: el entrenador alimenta al motor de rasgos con un subconjunto de
+las actualizaciones que el motor vivo recibe (sin libro L2, sin cierres de vela,
+sin la ruta `process_event`), de modo que los rasgos con los que aprende no son
+los rasgos con los que decide. Mientras eso siga así, **ningún número del camino
+ML significa nada**, ni bueno ni malo.

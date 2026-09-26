@@ -1,11 +1,22 @@
 use crate::atomic_float::AtomicF64;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+/// Modo de horizonte de una posición.
+///
+/// # U-ERR-5 (ERRADICACIÓN DEL BINARIO DE HORIZONTE)
+///
+/// Tenía tres variantes (`Continuous`, `Scalping`, `Swing`). Ningún fichero
+/// del repositorio construía `Scalping` ni `Swing` fuera de este módulo: todas
+/// las aperturas vivas —core, backtest, reconciliación, binario— abren
+/// `Continuous`. Las dos variantes sobrantes sólo servían para alimentar un
+/// `match` en `PositionManager::get_position`, que tampoco tenía llamadores.
+///
+/// El motor tiene UN modo de horizonte. El horizonte REAL de una posición no
+/// es esta etiqueta sino [`Position::entry_tau_ms`]: la τ dominante del
+/// espectro temporal en el instante de la entrada, un valor continuo en ms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PositionHorizon {
     Continuous,
-    Scalping,
-    Swing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +30,9 @@ pub enum PositionTransitionError {
 pub struct Position {
     pub is_open: AtomicBool,
     pub is_long: AtomicBool,
-    pub horizon: std::sync::atomic::AtomicU8, // 0 = Continuous, 1 = Scalping, 2 = Swing
+    /// U-ERR-5: encoding del modo de horizonte. Único valor vivo: 0 =
+    /// continuo. La τ real de la posición vive en `entry_tau_ms`.
+    pub horizon: std::sync::atomic::AtomicU8,
     pub entry_price: AtomicF64,
     pub quantity: AtomicF64,
     pub margin_used: AtomicF64,
@@ -267,14 +280,13 @@ impl Position {
         self.generation.fetch_add(1, Ordering::AcqRel);
 
         self.is_long.store(is_long, Ordering::Relaxed);
-        // U-1 — encoding fiel del continuo: Continuous ocupa SU PROPIO slot
-        // (2). Antes colisionaba con Swing (=1): una posición continua era
-        // indistinguible de un swing al leer (la auditoría T-08/K-17).
-        // D-419: encoding canónico unificado: 0 = Continuous, 1 = Scalping, 2 = Swing
+        // U-1 / U-ERR-5 — encoding fiel del continuo. El encoding llegó a tener
+        // tres valores (0 = Continuous, 1 = Scalping, 2 = Swing) y una colisión
+        // histórica entre Continuous y Swing (auditoría T-08/K-17). Ya no hay
+        // bandas: sólo el modo continuo (0). La τ real de la posición se
+        // publica aparte en `entry_tau_ms`.
         let h_val = match horizon {
             PositionHorizon::Continuous => 0,
-            PositionHorizon::Scalping => 1,
-            PositionHorizon::Swing => 2,
         };
         self.horizon.store(h_val, Ordering::Release);
         self.entry_price.store(safe_price, Ordering::Relaxed);
@@ -304,6 +316,11 @@ impl Position {
         true
     }
 
+    /// Modo de horizonte del ocupante del slot.
+    ///
+    /// U-ERR-5: el encoding ya no tiene bandas — toda posición nace en el modo
+    /// continuo. Quien quiera el horizonte REAL de la posición debe leer
+    /// `entry_tau_ms` (τ en ms), que es la magnitud del continuo.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub fn open_with_fee(
@@ -338,11 +355,12 @@ impl Position {
 
     #[inline(always)]
     pub fn horizon(&self) -> PositionHorizon {
-        match self.horizon.load(Ordering::Acquire) {
-            1 => PositionHorizon::Scalping,
-            2 => PositionHorizon::Swing,
-            _ => PositionHorizon::Continuous,
-        }
+        debug_assert_eq!(
+            self.horizon.load(Ordering::Acquire),
+            0,
+            "encoding de horizonte fuera del modo continuo"
+        );
+        PositionHorizon::Continuous
     }
 
     pub fn close(&self) -> (bool, f64, f64, f64) {
@@ -535,7 +553,9 @@ impl Position {
 pub struct PositionSnapshot {
     pub generation: u64,
     pub is_long: bool,
-    pub horizon: u8, // 0 = Continuous, 1 = Scalping, 2 = Swing
+    /// U-ERR-5: encoding del modo de horizonte (único valor vivo: 0 =
+    /// continuo). La τ real de la posición es `entry_tau_ms`.
+    pub horizon: u8,
     pub entry_price: f64,
     pub quantity: f64,
     pub margin_used: f64,
@@ -550,6 +570,19 @@ pub struct PositionSnapshot {
 
 pub const MAX_SPECTRAL_SLOTS: usize = 3;
 
+/// Posición viva de una moneda.
+///
+/// # RANURAS ESPECTRALES (decisión de fusión PR #5)
+///
+/// U-ERR-5 erradicó las ranuras `scalp`/`swing` tras auditar que ningún
+/// productor escribía en ellas — cierto en la base de esa auditoría. Las
+/// Olas 22-26 de main (#565-#586) convirtieron después las tres ranuras en
+/// SLOTS ESPECTRALES reales con productores: `find_resonant_slot` admite
+/// posiciones en espacio log(τ) y el despacho multi-banda concurrente
+/// escribe en las tres. La fusión conserva la arquitectura de main (3
+/// slots por moneda); el binario de horizonte sigue erradicado: los tres
+/// slots viven en `TradeHorizon::Continuous` y se distinguen por τ, no
+/// por etiqueta.
 #[repr(C, align(64))]
 #[derive(Default)]
 pub struct PositionManager {
@@ -562,25 +595,6 @@ impl PositionManager {
     #[inline(always)]
     pub fn is_any_open(&self) -> bool {
         self.scalp.is_open() || self.swing.is_open() || self.position.is_open()
-    }
-
-    #[inline(always)]
-    pub fn is_scalp_open(&self) -> bool {
-        self.scalp.is_open()
-    }
-
-    #[inline(always)]
-    pub fn is_swing_open(&self) -> bool {
-        self.swing.is_open()
-    }
-
-    #[inline(always)]
-    pub fn get_position(&self, horizon: PositionHorizon) -> &Position {
-        match horizon {
-            PositionHorizon::Scalping => &self.scalp,
-            PositionHorizon::Swing => &self.swing,
-            PositionHorizon::Continuous => &self.position,
-        }
     }
 
     #[inline(always)]
@@ -763,6 +777,34 @@ mod tests {
         cerrador.join().expect("hilo cerrador");
         vigilante.join().expect("hilo vigilante");
 
+        // El vigilante corre un número FIJO de vueltas: bajo carga (la suite
+        // completa ocupa todos los núcleos) puede consumirlas enteras mientras
+        // la posición está cerrada y no observar ni una vez el estado abierto
+        // — el test fallaba por el planificador de la máquina, no por el
+        // código. La observación por el camino de producción se garantiza aquí,
+        // ya sin concurrencia: el tramo concurrente sigue contando corrupciones,
+        // y esta apertura final asegura que el invariante se comprueba SIEMPRE.
+        pos.open_with_fee(
+            true,
+            62_500.0,
+            0.0032,
+            13.0,
+            1_700_000_100_000,
+            63_200.0,
+            62_100.0,
+            PositionHorizon::Continuous,
+            0.61,
+            0.72,
+            0.004,
+        );
+        let snap = pos
+            .snapshot()
+            .expect("tras abrir sin concurrencia, snapshot() debe ver la posición");
+        observaciones.fetch_add(1, Ordering::Relaxed);
+        if snap.entry_price <= 0.0 || snap.quantity <= 0.0 || snap.sl_price <= 0.0 {
+            corrupciones.fetch_add(1, Ordering::Relaxed);
+        }
+
         assert!(
             observaciones.load(Ordering::Relaxed) > 0,
             "el vigilante nunca vio la posición abierta: el test no ejercitó la carrera"
@@ -843,7 +885,7 @@ mod tests {
             1_000,
             51_000.0,
             49_000.0,
-            PositionHorizon::Scalping,
+            PositionHorizon::Continuous,
             0.8,
             0.9,
             2.5,
@@ -868,7 +910,7 @@ mod tests {
             1_000,
             30_600.0,
             29_700.0,
-            PositionHorizon::Swing,
+            PositionHorizon::Continuous,
             0.6,
             0.7,
             1.0,
@@ -884,7 +926,7 @@ mod tests {
             2_000,
             31_900.0,
             30_400.0,
-            PositionHorizon::Swing,
+            PositionHorizon::Continuous,
             0.65,
             0.75,
         );
@@ -951,12 +993,27 @@ mod tests {
         assert_eq!(p2, 0.0);
     }
 
+    /// U-ERR-5 — UNA MONEDA, UNA POSICIÓN.
+    ///
+    /// Sustituye a `test_position_dual_scalp_swing_independence`, que abría a
+    /// la vez una posición en la ranura `swing` y otra en `scalp` y
+    /// comprobaba que eran independientes. Esa independencia nunca existió en
+    /// producción: ningún productor del repositorio escribía en esas dos
+    /// ranuras, de modo que el test verdeaba sobre una capacidad que el motor
+    /// no ejercía, y `is_any_open` pagaba dos lecturas atómicas por consulta
+    /// para interrogar ranuras que siempre estaban vacías.
+    ///
+    /// Este test FALLA con el código viejo: allí `is_any_open` devolvía `true`
+    /// mientras cualquiera de las tres ranuras estuviese abierta, así que
+    /// cerrar `position` no bastaba para dejar la moneda plana. La invariante
+    /// que se fija ahora: la ocupación de la moneda es exactamente la
+    /// ocupación de su ÚNICA posición.
     #[test]
-    fn test_position_dual_scalp_swing_independence() {
+    fn u_err_5_la_ocupacion_es_la_de_la_unica_posicion() {
         let mgr = PositionManager::default();
+        assert!(!mgr.is_any_open());
 
-        // 1. Open Swing Long
-        mgr.swing.open_with_horizon(
+        mgr.position.open_with_horizon(
             true,
             90000.0,
             0.1,
@@ -964,43 +1021,20 @@ mod tests {
             1000,
             91500.0,
             89300.0,
-            PositionHorizon::Swing,
+            PositionHorizon::Continuous,
         );
-        assert!(mgr.is_swing_open());
-        assert!(!mgr.is_scalp_open());
         assert!(mgr.is_any_open());
+        assert_eq!(mgr.is_any_open(), mgr.position.is_open());
 
-        // 2. Open Scalp Short simultaneously without interfering
-        mgr.scalp.open_with_horizon(
-            false,
-            90200.0,
-            0.05,
-            450.0,
-            1050,
-            89900.0,
-            90350.0,
-            PositionHorizon::Scalping,
-        );
-        assert!(mgr.is_swing_open());
-        assert!(mgr.is_scalp_open());
-        assert!(mgr.is_any_open());
+        let (is_long, price, qty, _) = mgr.position.close();
+        assert!(is_long);
+        assert_eq!(price, 90000.0);
+        assert_eq!(qty, 0.1);
 
-        // 3. Scalp exits on TP
-        let (is_long_sc, p_sc, q_sc, _) = mgr.scalp.close();
-        assert!(!is_long_sc);
-        assert_eq!(p_sc, 90200.0);
-        assert_eq!(q_sc, 0.05);
-        assert!(!mgr.is_scalp_open());
-        // Swing remains OPEN!
-        assert!(mgr.is_swing_open());
-
-        // 4. Swing exits
-        let (is_long_sw, p_sw, q_sw, _) = mgr.swing.close();
-        assert!(is_long_sw);
-        assert_eq!(p_sw, 90000.0);
-        assert_eq!(q_sw, 0.1);
-        assert!(!mgr.is_swing_open());
+        // Cerrada la única posición, la moneda queda plana: no hay ninguna
+        // otra ranura que pueda sostener un `true` fantasma.
         assert!(!mgr.is_any_open());
+        assert_eq!(mgr.is_any_open(), mgr.position.is_open());
     }
 
     #[test]

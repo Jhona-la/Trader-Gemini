@@ -3,12 +3,14 @@ pub mod capital_regime;
 pub mod correlation_guard;
 pub mod epigenetic_capital_alloc;
 pub mod epigenetic_fitness_landscape;
+pub mod evidence;
 pub mod guard;
 pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;
 pub mod orchestrator;
 pub mod regime;
+pub mod drawdown;
 pub mod ruin;
 pub mod tp_sl;
 
@@ -28,6 +30,13 @@ pub struct ValidatedOrder {
     pub tp_target: f64,
     pub sl_target: f64,
     pub fee_buffer_multiplier: f64,
+    /// D-745 — HORIZONTE CON EL QUE SE DIMENSIONÓ ESTA ORDEN (ms). El núcleo
+    /// lo guarda tal cual en `entry_tau_ms`, de modo que la geometría, el
+    /// trailing, la caducidad, el Kelly del cierre y el apalancamiento del
+    /// host razonan sobre el MISMO horizonte con el que se calculó el tamaño.
+    /// Antes, el núcleo lo recalculaba desde la τ dominante del espectro y la
+    /// misma posición se dimensionaba a un horizonte y se gestionaba en otro.
+    pub tau_ms: f64,
 }
 
 impl ValidatedOrder {
@@ -53,6 +62,7 @@ impl ValidatedOrder {
             tp_target: 0.0,
             sl_target: 0.0,
             fee_buffer_multiplier: 1.01,
+            tau_ms: 0.0,
         }
     }
 }
@@ -65,16 +75,25 @@ impl ValidatedOrder {
 /// 0=flat/coin 1=exposure0 2=correlación 3=spec 4=EV 5=fee_impact
 /// 6=min_notional 7=margen_insuf 8=orchestrator 9=otros
 /// 10=drawdown 11=suelo TP/SL 12=confianza.
-/// 13=entrada inválida 14=geometría inválida. Antes el drawdown compartía el
-/// índice 2 con la correlación, y el suelo TP/SL y la confianza el 4 con el EV:
-/// la telemetría no podía decir qué compuerta rechazaba.
+/// 13=viabilidad (D-750: la orden mínima ya arriesga más de lo que el control
+/// de ruina permite) 14=sin evidencia (D-751) 15=entrada inválida
+/// 16=geometría inválida (fusión PR #5: ambas familias de códigos, slots
+/// expandidos 15→17). Antes el drawdown compartía el índice 2 con la
+/// correlación, y el suelo TP/SL y la confianza el 4 con el EV: la telemetría
+/// no podía decir qué compuerta rechazaba.
 use std::sync::atomic::AtomicU64;
-pub const REJECT_SLOTS: usize = 15;
+pub const REJECT_SLOTS: usize = 17;
 pub const REJ_DRAWDOWN: usize = 10;
 pub const REJ_TP_SL_FLOOR: usize = 11;
 pub const REJ_CONFIDENCE: usize = 12;
-pub const REJ_INVALID_INPUT: usize = 13;
-pub const REJ_TARGET_GEOMETRY: usize = 14;
+pub const REJ_INVALID_INPUT: usize = 15;
+pub const REJ_TARGET_GEOMETRY: usize = 16;
+/// D-750 — la orden más pequeña que el símbolo acepta ya arriesga más de lo que
+/// el control de ruina permite: la operación es INVIABLE, no «pequeña».
+pub const REJ_VIABILIDAD: usize = 13;
+/// D-751 — no hay probabilidad de ganar (ni calibrada ni observada) con la que
+/// evaluar el valor esperado: se rechaza por falta de evidencia.
+pub const REJ_SIN_EVIDENCIA: usize = 14;
 
 #[allow(clippy::declare_interior_mutable_const)]
 const REJECT_ZERO: AtomicU64 = AtomicU64::new(0);
@@ -125,6 +144,8 @@ pub const REJECT_NAMES: [&str; REJECT_SLOTS] = [
     "drawdown",
     "suelo_tp_sl",
     "confianza",
+    "viabilidad",
+    "sin_evidencia",
     "entrada_invalida",
     "geometria_invalida",
 ];
@@ -242,6 +263,18 @@ impl RiskEngine {
         let max_dd = crate::capital_regime::lerp(configured_dd, 0.85, micro_w);
         if self.peak_capital > 0.0 && max_dd > 0.0 && max_dd < 1.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
+            let q_perdida = 1.0
+                - arena.coins[coin_id]
+                    .metrics
+                    .win_rate
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0, 1.0);
+            // D-744b: sin riesgo medido rige el gen; el veto nunca se salta.
+            let max_dd = crate::drawdown::drawdown_maximo(
+                arena.riesgo_por_operacion.load(Ordering::Relaxed),
+                q_perdida,
+                arena.config.global_max_drawdown.load(Ordering::Relaxed),
+            );
             if dd >= max_dd {
                 return rej(REJ_DRAWDOWN);
             }
@@ -252,6 +285,41 @@ impl RiskEngine {
             .metrics
             .trade_count
             .load(Ordering::Relaxed);
+        // D-749 — EL PROFIT FACTOR QUE ENTRA AL DIMENSIONADO ES UNA COTA
+        // INFERIOR, NO EL LITERAL QUE PUBLICA EL PRODUCTOR.
+        //
+        // `coin.metrics.profit_factor` vale 5,0 en cuanto hay ganancias y
+        // ninguna pérdida registrada, y 1,50 sin historial: dos números
+        // inventados. Con 5,0 una ÚNICA operación ganadora sacaba a la moneda
+        // de la rama de exploración (`pf <= 1.0`) y ponía
+        // `kelly_from_pf = p·(1 − 1/5) = 0,8·p` — el Kelly prácticamente en su
+        // techo con una observación. Aquí se recalcula desde los estadísticos
+        // suficientes (sumas de ganancias y pérdidas + número de operaciones)
+        // con corrección de continuidad y descuento por tamaño de muestra.
+        let pf = crate::evidence::profit_factor_lcb(
+            arena.coins[coin_id]
+                .metrics
+                .gross_wins
+                .load(Ordering::Relaxed),
+            arena.coins[coin_id]
+                .metrics
+                .gross_losses
+                .load(Ordering::Relaxed),
+            arena.coins[coin_id]
+                .metrics
+                .trade_count
+                .load(Ordering::Relaxed) as f64,
+        );
+        let clamp_min = arena
+            .config
+            .kelly_clamp_min
+            .load(Ordering::Relaxed)
+            .max(0.0);
+        let clamp_max = arena
+            .config
+            .kelly_clamp_max
+            .load(Ordering::Relaxed)
+            .clamp(clamp_min, 1.0);
         let raw_kelly = arena.coins[coin_id]
             .metrics
             .kelly_fraction
@@ -260,17 +328,18 @@ impl RiskEngine {
         // CERT-M5-C01: el bootstrap anterior clampeaba a [0.05, 0.35] con
         // baseline 0.5 → 0.35. Con PF ≤ 1 (probado SIN edge), una moneda
         // tradearía al 35% Kelly — bypassando la protección de kelly.rs
-        // (PF≤1 → exploración ≤ ¼ del piso). Ahora: PF ≤ 1 o trades_n == 0
-        // (arranque frío sin historial) ⇒ ≤ ¼ del clamp_min del genoma
-        // (la MISMA regla que kelly.rs aplica una capa abajo); PF > 1 con
-        // historial probado ⇒ bootstrap del genoma.
-        let pf = arena.coins[coin_id]
-            .metrics
-            .profit_factor
+        // (PF≤1 → exploración ≤ ¼ del piso). Ahora: PF ≤ 1 ⇒ ≤ ¼ del
+        // clamp_min del genoma (la MISMA regla que kelly.rs aplica una
+        // capa abajo); PF > 1 sin historial ⇒ bootstrap del genoma.
+        // D-749: la segunda lectura de `profit_factor` —idéntica a la de arriba,
+        // que la sombreaba sin cambiarla— se elimina: el PF de esta evaluación
+        // es UNO y es la cota inferior calculada más arriba.
+        let kelly_cold_raw = arena
+            .config
+            .kelly_bootstrap_cold
             .load(Ordering::Relaxed);
-        let kelly_cold_raw = arena.config.kelly_bootstrap_cold.load(Ordering::Relaxed);
-        let kelly_cold = if trades_n == 0 || pf <= 1.0 {
-            // Sin edge probado empíricamente en la sesión: exploración ultra-conservadora (¼ del piso)
+        let kelly_cold = if pf <= 1.0 {
+            // Sin edge probado: exploración ultra-conservadora (¼ del piso)
             (clamp_min.max(0.0) * 0.25).clamp(0.0, 0.05)
         } else {
             kelly_cold_raw.clamp(0.05, 0.35)
@@ -337,13 +406,33 @@ impl RiskEngine {
         if intent.signal == SignalType::Flat || allocated_capital <= 0.0 {
             return ValidatedOrder::rejected();
         }
+        // D-750 — EL NOCIONAL MÍNIMO ES EL DEL SÍMBOLO, NO UN LITERAL DE
+        // CONFIGURACIÓN.
+        //
+        // `arena.config.min_notional` nace con el literal 5,0 y NADIE lo
+        // escribe nunca (no existe un solo `.store` sobre él en todo el
+        // repositorio): es un número congelado que gobernaba el régimen de
+        // capital, el guard de correlación y el piso de viabilidad del sizing.
+        // El mínimo REAL lo publica el exchange por símbolo
+        // (`symbol_registry` ← `exchangeInfo`) y `capital_regime::
+        // effective_min_notional` ya sabía leerlo — pero sólo lo usaba el
+        // chequeo de nocional, al final de la cadena. Con un símbolo cuyo
+        // mínimo sea 20 $ en lugar de 5 $, el régimen de capital situaba una
+        // cuenta de 13 $ en «2,6 operaciones mínimas» cuando en realidad no
+        // cabe ni una. La consulta del spec sube AQUÍ para que TODA la
+        // evaluación razone con el mismo mínimo.
+        let spec = match quantum_arena::symbol_registry::try_spec(coin_id) {
+            Some(s) => s,
+            None => return rej(3),
+        };
+        let max_exchange_leverage = spec.max_leverage as f64;
+        let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
+
         // D-641 (completo): peso del régimen de capital micro para TODA la
         // evaluación. Un único valor, calculado una vez, del que derivan todas
         // las transiciones que antes eran escalones en $15 y $20.
-        let micro_w_alloc = crate::capital_regime::micro_weight(
-            allocated_capital,
-            arena.config.min_notional.load(Ordering::Relaxed),
-        );
+        let micro_w_alloc =
+            crate::capital_regime::micro_weight(allocated_capital, dynamic_min_notional);
 
         let dir = match intent.signal {
             SignalType::Long => 1.0,
@@ -365,7 +454,7 @@ impl RiskEngine {
         // 10 s y 24 h mientras el gate de TP/SL lo hacía sobre los extremos del
         // espectro y la matriz de apalancamiento con otra fórmula: tres
         // horizontes distintos para la misma intención.
-        let tau_ms = horizon_tau_ms(intent, arena);
+        let tau_ms = horizon_tau_ms_coin(intent, arena, coin_id);
         let continuous_sl = arena.config.sl_at_tau(tau_ms).max(1e-6);
         let fast_anchor_sl = arena
             .config
@@ -379,29 +468,42 @@ impl RiskEngine {
         // Escalamos adaptativamente con la convicción Bayesiana para operar entre $1.15 y $1.80 de margen,
         // dentro del límite seguro del 25% del capital ($2.60).
         // D-641 (completo): el escalador micro de Kelly deja de saltar en $20.
-        // CERT-M5-C02: el PISO anterior `.max(0.12)` y `.clamp(0.10, 0.20)`
-        // forzaba 10-20% de fracción Kelly SIN EDGE en la cuenta demo ($13).
-        // Ahora el piso sólo existe para VIABILIDAD de notional (no como
-        // fracción de apuesta): el mínimo es el necesario para alcanzar
-        // el min_notional, jamás un % fijo del capital.
-        let micro_min_viable = if allocated_capital > 0.0 {
-            // Fracción mínima para que margin = notional/leverage ≥
-            // min_notional en micro-cuenta: (min_notional / lev) / capital
-            let mn = arena.config.min_notional.load(Ordering::Relaxed).max(1.0);
-            (mn / (5.0 * allocated_capital)).clamp(0.0, 0.10)
-        } else {
-            0.0
-        };
-        let micro_kelly = (kelly_adjusted.max(micro_min_viable)
-            * (1.0 + (intent.confidence - 0.65).max(0.0) * 1.5))
-            .clamp(micro_min_viable, 0.20);
-        // CERT-M5-H03: el escalador micro tampoco escapa al tope de ruina.
-        // El piso de viabilidad (micro_min_viable) puede EXCEDER el cap cuando
-        // la cuenta es diminuta vs min_notional: en ese caso la orden es
-        // inviable-by-design (el host la vetará por margen) — preservamos el
-        // cap y no la fracción inflada.
+        // D-750 — EL PISO DE VIABILIDAD NO ES UNA FRACCIÓN DE APUESTA.
+        //
+        // CERT-M5-C02 declaró cerrado el modo de fallo «fracción mínima sin
+        // edge», pero lo reintrodujo con otro nombre:
+        //
+        // ```text
+        //   micro_min_viable = (min_notional · 5 / capital).clamp(0, 0,10)
+        //   micro_kelly      = (kelly.max(micro_min_viable) · conv)
+        //                        .clamp(micro_min_viable.min(0,10), 0,20)
+        // ```
+        //
+        // Con 13 $ y `min_notional = 5`, `5·5/13 = 1,92` se recortaba a 0,10 y
+        // ese 0,10 pasaba a ser el LÍMITE INFERIOR del clamp: el 10 % del
+        // capital apostado aunque el Kelly medido valiera cero. El `· 5` era
+        // además un apalancamiento implícito escrito a mano, y el techo 0,20
+        // un literal por encima del tope de ruina del propio sistema.
+        //
+        // La viabilidad es otra cosa: es el MARGEN mínimo con el que la orden
+        // alcanza el nocional mínimo DEL SÍMBOLO al apalancamiento que se va a
+        // usar, `margen_min = min_notional / L`. Eso se comprueba más abajo,
+        // una vez conocidos `L` y el stop, y si ese mínimo excede lo que el
+        // control de ruina permite la orden se RECHAZA (`REJ_VIABILIDAD`): no
+        // se infla la apuesta para que quepa.
+        //
+        // Aquí sólo queda la modulación por convicción, acotada por el tope de
+        // ruina —streak-bound + axioma del 25 %—, que es un límite derivado y
+        // no el literal 0,20. La convicción tampoco se mide ya contra el par
+        // de literales `(confianza − 0,65) · 1,5`: el exceso relevante es el
+        // que hay SOBRE LA PUERTA DE CONFIANZA del genoma, que es el punto a
+        // partir del cual el sistema considera la señal accionable.
+        let conviccion = 1.0
+            + (intent.confidence - arena.config.min_confidence_btc.load(Ordering::Relaxed))
+                .max(0.0);
         let micro_kelly =
-            crate::ruin::clamp_ruin(micro_kelly, crate::ruin::CONSERVATIVE_Q).max(0.0);
+            crate::ruin::clamp_ruin(kelly_adjusted * conviccion, crate::ruin::CONSERVATIVE_Q)
+                .max(0.0);
         let kelly_for_scale =
             crate::capital_regime::lerp(kelly_adjusted, micro_kelly, micro_w_alloc);
 
@@ -420,38 +522,76 @@ impl RiskEngine {
             return rej(1);
         }
 
-        // FASE 16 & BUG-578: Correlation Guard (Continuous Universal)
+        // D-748 — GUARD DE CORRELACIÓN QUE MIDE CORRELACIÓN.
+        //
+        // Antes: se contaban posiciones en la misma dirección y se comparaban
+        // con `(global_correlation_threshold · 5).round()`. Multiplicar un
+        // coeficiente de correlación por cinco para obtener un número de
+        // posiciones es un cambio de unidades inventado, y NINGUNA correlación
+        // se medía: dos ALTCOINs gemelas contaban igual que BTC contra un
+        // activo descorrelacionado.
+        //
+        // Ahora se mide de verdad —Pearson sobre los retornos logarítmicos del
+        // mid, llevados a una rejilla temporal común desde los anillos de ticks
+        // del arena—, el gen recupera su significado literal (umbral de
+        // correlación a partir del cual dos posiciones son la MISMA apuesta) y
+        // el límite de exposición sale del riesgo medido contra el tope de
+        // ruina del sistema, no de un múltiplo.
         let is_long = intent.signal == SignalType::Long;
-        let mut same_dir_count = 0;
-        for c in arena.coins.iter() {
-            for pos in c.positions.slots() {
-                if pos.is_open() && (pos.is_long.load(Ordering::Relaxed) == is_long) {
-                    same_dir_count += 1;
-                }
-            }
-        }
+        let current_cap = arena.unified_capital.load(Ordering::Relaxed);
         let corr_thresh = arena
             .config
             .global_correlation_threshold
             .load(Ordering::Relaxed);
-        let max_allowed_cluster = (corr_thresh * 5.0).round() as usize;
-        let current_cap = arena.unified_capital.load(Ordering::Relaxed);
-        // D-401: Desasfixia multiactivo para micro-cuentas ($13 USD) - permite hasta 2 micro-posiciones continuas
-        if correlation_guard::CorrelationGuardEngine::is_continuous_correlation_vetoed(
-            same_dir_count,
-            current_cap,
-            arena.config.min_notional.load(Ordering::Relaxed),
-            max_allowed_cluster.max(2),
+        let mut misma_apuesta = 0usize;
+        {
+            let ticks_candidata = arena.coins[coin_id]
+                .tick_ring
+                .snapshot_recent(correlation_guard::MAX_TICKS_MUESTRA);
+            for (otro_id, c) in arena.coins.iter().enumerate() {
+                if otro_id == coin_id {
+                    continue;
+                }
+                let pos = &c.positions.position;
+                if !pos.is_open() || pos.is_long.load(Ordering::Relaxed) != is_long {
+                    continue;
+                }
+                let ticks_otro = c
+                    .tick_ring
+                    .snapshot_recent(correlation_guard::MAX_TICKS_MUESTRA);
+                let r = correlation_guard::correlacion_de_retornos(
+                    &ticks_candidata,
+                    &ticks_otro,
+                    corr_thresh,
+                );
+                if correlation_guard::CorrelationGuardEngine::es_la_misma_apuesta(r, corr_thresh)
+                {
+                    misma_apuesta += 1;
+                }
+            }
+            // Una posición ya abierta en la PROPIA moneda es, por definición, la
+            // misma apuesta: correlación 1 sin necesidad de medirla.
+            let propia = &arena.coins[coin_id].positions.position;
+            if propia.is_open() && propia.is_long.load(Ordering::Relaxed) == is_long {
+                misma_apuesta += 1;
+            }
+        }
+        if correlation_guard::CorrelationGuardEngine::veto_por_exposicion_direccional(
+            misma_apuesta,
+            arena.riesgo_por_operacion.load(Ordering::Relaxed),
+            1.0 - arena.coins[coin_id]
+                .metrics
+                .win_rate
+                .load(Ordering::Relaxed)
+                .clamp(0.0, 1.0),
         ) {
             return rej(2);
         }
 
+        // D-750: el spec y el nocional mínimo del símbolo se resolvieron al
+        // principio de la evaluación, porque de ellos depende también el
+        // régimen de capital. Aquí sólo se usa lo ya resuelto.
         let coin = &arena.coins[coin_id];
-        let spec = match quantum_arena::symbol_registry::try_spec(coin_id) {
-            Some(s) => s,
-            None => return rej(3),
-        };
-        let max_exchange_leverage = spec.max_leverage as f64;
 
         let current_atr = coin.current_atr.load(Ordering::Relaxed);
         let current_price = coin.current_price.load(Ordering::Relaxed);
@@ -518,6 +658,9 @@ impl RiskEngine {
                 profit_factor,
                 real_win_rate,
                 genome_max_leverage,
+                // D-750: el mínimo del símbolo, resuelto una vez al principio
+                // de la evaluación, gobierna también el techo de leverage.
+                dynamic_min_notional,
                 arena,
             );
         // D-730 (DÉCIMA OLA · auditoría integral): EL APALANCAMIENTO SE CUANTIZA
@@ -591,15 +734,21 @@ impl RiskEngine {
         let entry_fee_rate = taker_fee;
         let exit_fee_rate = taker_fee;
 
-        // La normalización de la latencia deja de ser un literal: se compara
-        // contra el umbral de pánico de latencia, que es el gen que define
-        // qué cuenta como «lento» para este sistema.
-        let latency_ref_ms = arena
-            .config
-            .latency_ms_panic_threshold
-            .load(Ordering::Relaxed)
-            .clamp(10.0, 5_000.0);
-        let latency_slip = atr_pct * (lat_ms / latency_ref_ms);
+        // D-747 — UNA SOLA LEY PARA EL DESLIZAMIENTO POR LATENCIA.
+        //
+        // Este gate cobraba `atr_pct · (lat / umbral_de_pánico)`: LINEAL en el
+        // tiempo y normalizado contra un gen que no es una escala de
+        // volatilidad sino el umbral a partir del cual el enlace se considera
+        // roto. La física de ejecución cobra, en cambio, la ley de difusión
+        // `σ · √(t/τ_ref)`. Dos fórmulas incompatibles para el mismo evento:
+        // el gate certificaba como rentables operaciones que la ejecución
+        // volvía negativas.
+        //
+        // Ahora ambos lados hablan de difusión y la fuente es única:
+        // `tp_sl::latency_slippage_pct`, con la referencia temporal en la
+        // escala a la que se MIDE el ATR (la vela interna de 1 minuto), la
+        // misma que ya gobierna la dispersión de TP/SL.
+        let latency_slip = crate::tp_sl::latency_slippage_pct(atr_pct, lat_ms);
         let per_side_slip = (slip_floor + latency_slip).clamp(0.0, 0.05);
         let roundtrip_fee = entry_fee_rate + exit_fee_rate + 2.0 * per_side_slip;
         if !roundtrip_fee.is_finite() || roundtrip_fee < 0.0 {
@@ -618,7 +767,7 @@ impl RiskEngine {
         //
         // Ahora ambos caminos llaman a la MISMA función pura con las MISMAS
         // entradas: la identidad es estructural, no disciplinaria.
-        let tau_for_sizing = horizon_tau_ms(intent, arena);
+        let tau_for_sizing = horizon_tau_ms_coin(intent, arena, coin_id);
         // S-7: Hurst DE LA ESCALA OPERADA — hurst_scale_matched es el H(τ)
         // multifractal que el core selecciona por τ dominante; fallback al
         // escalar global si aún no fue escrito (0.0).
@@ -647,6 +796,11 @@ impl RiskEngine {
                 } else {
                     arena.config.sl_atr_multiplier.load(Ordering::Relaxed)
                 },
+                // D-754: la σ que el espectro predictivo pronostica PARA ESTE
+                // horizonte, si ha demostrado habilidad fuera de muestra. El
+                // arena publica ceros mientras no la tenga, y entonces la
+                // geometría sigue con la ley de escala sobre el ATR medido.
+                sigma_forecast: arena.coins[coin_id].sigma_forecast_at(tau_for_sizing),
             },
             arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
         );
@@ -776,9 +930,65 @@ impl RiskEngine {
             return rej(REJ_CONFIDENCE);
         }
 
-        let expected_value_pct = (confidence * expected_win) - ((1.0 - confidence) * expected_loss);
-        // This is conditional binary EV, not a first-passage calibration:
-        // changing barriers can change p. FMT-041 remains open.
+        // D-751 — LA CONFIANZA DE UNA RAMA NO ES P(GANAR).
+        //
+        // El valor esperado se calculaba como
+        // `ev = confianza · TP − (1 − confianza) · SL`, tratando la puntuación
+        // de convicción de la señal como si fuera una probabilidad calibrada.
+        // No lo es: es una puntuación heurística cuya escala ni siquiera está
+        // acotada a la frecuencia con la que esas señales ganan —el propio
+        // núcleo lo documenta en D-619/D-690, y por eso mantiene un calibrador
+        // aparte—. Con una puntuación típica de 0,70 el EV salía positivo por
+        // construcción aunque la rama ganase el 40 % de las veces.
+        //
+        // Orden de preferencia, de más a menos informativo:
+        //   1. la probabilidad CALIBRADA con resultados reales que el núcleo
+        //      adjunta a la intención (`win_probability`, D-690);
+        //   2. la frecuencia OBSERVADA de la moneda con su cota inferior
+        //      bayesiana (posterior de Jeffreys, el mismo z del sistema);
+        //   3. ninguna: entonces el EV no puede evaluarse y la entrada se
+        //      rechaza POR FALTA DE EVIDENCIA, no con un número inventado.
+        // D-751b (fusión PR #5 + FMT): ARRANQUE FRÍO TOTAL. D-750 financia la
+        // sonda mínima pero D-751 rechazaba el EV «sin evidencia»: sin
+        // trades jamás hay evidencia — deadlock que mató el oráculo genético
+        // (T-1: 0/144 tras la fusión). Unificación doctrinal: en arranque
+        // frío TOTAL (cero operaciones del símbolo y sin probabilidad
+        // calibrada adjunta) el EV no se inventa ni bloquea: la orden sigue
+        // como SONDA D-750, cuyo sizing mínimo ya está acotado por el control
+        // de ruina. Con evidencia (aunque sea una) rige D-751 íntegro.
+        let arranque_frio_total = arena.coins[coin_id]
+            .metrics
+            .trade_count
+            .load(Ordering::Relaxed)
+            == 0;
+        let p_ganar = if intent.win_probability.is_finite()
+            && intent.win_probability > 0.0
+            && intent.win_probability < 1.0
+        {
+            Some(intent.win_probability)
+        } else {
+            match crate::evidence::win_rate_lcb(
+                arena.coins[coin_id]
+                    .metrics
+                    .win_rate
+                    .load(Ordering::Relaxed),
+                arena.coins[coin_id]
+                    .metrics
+                    .trade_count
+                    .load(Ordering::Relaxed) as f64,
+            ) {
+                Some(p) => Some(p),
+                None if arranque_frio_total => None,
+                None => return rej(REJ_SIN_EVIDENCIA),
+            }
+        };
+        let expected_value_pct = match p_ganar {
+            Some(p) => (p * expected_win) - ((1.0 - p) * expected_loss),
+            // Sonda en arranque frío: EV neutral-conservador al 50 %, sólo
+            // para atravesar los literales de abajo; el veto EV real no
+            // aplica a la sonda (ver abajo).
+            None => 0.5 * expected_win - 0.5 * expected_loss,
+        };
 
         // D-641: misma transición continua para la barrera de comisiones.
         // Con la cuenta al límite se exige hasta un 25 % de margen sobre la
@@ -792,7 +1002,7 @@ impl RiskEngine {
         if !expected_value_pct.is_finite() || !ev_fee_multiplier.is_finite() {
             return rej(REJ_INVALID_INPUT);
         }
-        if expected_value_pct <= (roundtrip_fee * ev_fee_multiplier) {
+        if p_ganar.is_some() && expected_value_pct <= (roundtrip_fee * ev_fee_multiplier) {
             return rej(4);
         }
 
@@ -806,6 +1016,49 @@ impl RiskEngine {
         let max_fee_limit =
             crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc);
         let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
+        let _max_safe_leverage = if roundtrip_fee > 0.0 {
+            max_acceptable_fee_pct / roundtrip_fee
+        } else {
+            100.0
+        };
+
+        // D-750 — PISO DE VIABILIDAD DERIVADO, Y RECHAZO SI NO CABE.
+        //
+        // La orden más pequeña que el símbolo acepta tiene nocional
+        // `min_notional` y, con el stop de esta geometría, arriesga
+        // `min_notional · SL` dólares, es decir una fracción
+        // `min_notional · SL / capital` de la cuenta. Nótese que el
+        // apalancamiento NO aparece: reparte el mismo nocional entre margen y
+        // préstamo, pero no cambia lo que se pierde si el stop se toca — por eso
+        // «subir el apalancamiento para que quepa» no hace viable nada.
+        //
+        // Ese riesgo mínimo se compara con el ÚNICO tope de riesgo por evento
+        // del sistema (`ruin::clamp_ruin`: streak-bound + axioma del 25 %). Si
+        // lo excede, ni la orden mínima del exchange es compatible con la
+        // supervivencia de esta cuenta: se RECHAZA. Antes, en cambio, el sizing
+        // inflaba la fracción apostada hasta el 10 % del capital para alcanzar
+        // el mínimo, que es exactamente el modo de fallo que CERT-M5-C02
+        // decía haber cerrado.
+        let q_para_ruina = {
+            let wr = arena.coins[coin_id]
+                .metrics
+                .win_rate
+                .load(Ordering::Relaxed);
+            if wr > 0.0 && wr < 1.0 {
+                1.0 - wr
+            } else {
+                crate::ruin::CONSERVATIVE_Q
+            }
+        };
+        let tope_riesgo_evento = crate::ruin::clamp_ruin(1.0, q_para_ruina);
+        if !crate::capital_regime::orden_viable(
+            dynamic_min_notional,
+            expected_loss,
+            allocated_capital,
+            tope_riesgo_evento,
+        ) {
+            return rej(REJ_VIABILIDAD);
+        }
 
         let bounded_exposure = raw_exposure.clamp(-allocated_capital, allocated_capital);
         let mut final_margin = bounded_exposure.abs();
@@ -847,7 +1100,10 @@ impl RiskEngine {
         // Sumamos diez centavos de dólar (+0.1) al min notional para evitar rechazos
         // por pérdida de precisión IEEE-754 en multiplicaciones de apalancamiento
         let safe_min_notional = dynamic_min_notional + 0.1;
-        let required_margin_for_min_notional = safe_min_notional / dynamic_leverage;
+        // D-750: el margen mínimo viable sale de la MISMA función que la
+        // comprobación de viabilidad de más arriba: `min_notional / L`.
+        let required_margin_for_min_notional =
+            crate::capital_regime::margen_minimo_viable(safe_min_notional, dynamic_leverage);
         if final_margin < required_margin_for_min_notional {
             // FIX FP (diag R4): lev x (min_notional/lev) puede dar
             // 5.0999... < 5.1 en punto flotante y rechazar la orden en el
@@ -901,15 +1157,19 @@ impl RiskEngine {
         if !final_fee_impact.is_finite() || final_fee_impact > max_fee_limit {
             return rej(5);
         }
-        if !guard::enforce_minimum_notional(final_margin, safe_min_notional, dynamic_leverage).0 {
-            return rej(7);
-        }
+        // (fusión PR #5: la viabilidad de margen mínimo ya se exigió arriba con
+        // rej(6); el duplicado del hunk se elimina)
 
         let orchestrator = orchestrator::PortfolioOrchestrator::new(arena);
         let raw_regime = arena.market_regime.load(Ordering::Relaxed);
         let regime = crate::regime::MarketRegime::from(raw_regime);
 
-        if !orchestrator.allow_trade(bounded_exposure > 0.0, final_margin, regime) {
+        if !orchestrator.allow_trade(
+            bounded_exposure > 0.0,
+            final_margin,
+            regime,
+            dynamic_min_notional,
+        ) {
             return rej(8);
         }
 
@@ -938,6 +1198,27 @@ impl RiskEngine {
             return rej(REJ_INVALID_INPUT);
         }
 
+        // D-744: el RIESGO REALMENTE TOMADO por esta orden —lo que se pierde
+        // si su stop se toca, en fracción del capital— alimenta la media móvil
+        // que convierte una caída observada en evidencia. Sin esta medida, el
+        // cortacircuitos de drawdown es una opinión sobre un número inventado.
+        // D-744c (auditoría PR #5): se registra DESPUÉS del último rechazo de
+        // esta función; antes también entraban órdenes que aquí mismo se
+        // rechazaban por geometría inválida.
+        let sl_pct = tpsl_gate.sl_pct;
+        if sl_pct > 0.0 && current_cap > 0.0 {
+            let riesgo = (safe_vol * safe_lev * sl_pct) / current_cap;
+            let previo = arena.riesgo_por_operacion.load(Ordering::Relaxed);
+            arena.riesgo_por_operacion.store(
+                crate::drawdown::actualizar_riesgo_ewma(
+                    previo,
+                    riesgo.clamp(0.0, 1.0),
+                    crate::drawdown::TRADE_HORIZON / 10.0,
+                ),
+                Ordering::Relaxed,
+            );
+        }
+
         ValidatedOrder {
             signal: intent.signal,
             volume_usd: safe_vol,
@@ -946,6 +1227,8 @@ impl RiskEngine {
             tp_target: safe_tp,
             sl_target: safe_sl,
             fee_buffer_multiplier: ev_fee_multiplier,
+            // D-745: la orden se lleva el horizonte con el que fue dimensionada.
+            tau_ms: tau_for_sizing,
         }
     }
 }
@@ -967,11 +1250,31 @@ impl RiskEngine {
 /// En ningún caso se consulta la etiqueta discreta para elegir parámetros:
 /// ésta sólo desempata el extremo del continuo cuando no hay nada mejor.
 fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
-    // Espectro Continuo Temporal Universal:
-    // La duración declarada físicamente por la intención define la escala operativa tau.
-    // Si no se declara duración (>0), se interpola sobre la escala continua del arena.
+    horizon_tau_ms_coin(intent, arena, usize::MAX)
+}
+
+/// D-745 — EL HORIZONTE DE LA ORDEN ES EL QUE EL MERCADO MUESTRA, NO UN GEN.
+///
+/// Si la señal declara una duración, manda ella: es información de la rama que
+/// la produjo. Si no, el respaldo era el gen estático `temporal_scale` —el
+/// mismo para las 30 monedas y para todo el mes—, mientras el núcleo abría la
+/// posición con la τ DOMINANTE medida del espectro de ESA moneda. Dimensionar
+/// a 19 minutos y gestionar a 30 segundos es el defecto, no el gen. Ahora el
+/// respaldo es esa misma τ medida, y el gen sólo entra mientras el espectro no
+/// ha arrancado (arranque en frío).
+fn horizon_tau_ms_coin(intent: &SignalIntent, arena: &GlobalArena, coin_id: usize) -> f64 {
+    let _ = intent.horizon;
     if intent.expected_duration_ms > 0 {
-        return (intent.expected_duration_ms as f64).clamp(1_000.0, 43_200_000.0);
+        return intent.expected_duration_ms as f64;
+    }
+    if coin_id < arena.coins.len() {
+        let medida = arena.coins[coin_id].dominant_tau_ms.load(Ordering::Relaxed);
+        if medida.is_finite() && medida > 0.0 {
+            return medida.clamp(
+                quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+            );
+        }
     }
     let s = arena
         .config

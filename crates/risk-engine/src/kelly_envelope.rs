@@ -316,6 +316,16 @@ impl RiskEnvelope {
         z: f64,
         shrinkage_k: f64,
     ) -> (f64, bool) {
+        // (fusión PR #5, fail-closed FMT): NaN no es capital positivo ni stop
+        // ni mínimo ejecutables; se rechaza antes de que propague. Un
+        // posterior INVÁLIDO (alpha/beta NaN) tampoco admite candidatos:
+        // f64::min ignora NaN y la sonda mínima colaría sin este guard.
+        if !capital.is_finite() || capital <= 0.0 {
+            return (0.0, false);
+        }
+        if !(self.posterior.alpha.is_finite() && self.posterior.beta.is_finite()) {
+            return (0.0, false);
+        }
         if !stop_distance_pct.is_finite()
             || stop_distance_pct <= 0.0
             || !exchange_min_notional.is_finite()
@@ -323,22 +333,57 @@ impl RiskEnvelope {
         {
             return (0.0, false);
         }
-        let Some(budget) =
-            self.exposure_budget(capital, stop_distance_pct.max(0.0005), 0.0, z, shrinkage_k)
-        else {
-            return (0.0, false);
-        };
-        let minimum_loss = exchange_min_notional * budget.loss_per_notional;
-        let exposure_ratio = budget.max_notional / capital;
-        if exchange_min_notional > budget.max_notional
-            || !minimum_loss.is_finite()
-            || minimum_loss > budget.risk_budget_usd
-            || !exposure_ratio.is_finite()
-            || exposure_ratio <= 0.0
-        {
+        let stop = stop_distance_pct.max(0.0005); // piso 5 bps: stop imposible de más cerca
+
+        // D-750 — LA FRACCIÓN MÍNIMA EJECUTABLE ES UNA MEDIDA, NO UN NÚMERO.
+        //
+        // La orden más pequeña que el símbolo acepta tiene nocional
+        // `exchange_min_notional`; con este stop pierde
+        // `exchange_min_notional · stop` dólares si se toca, es decir esta
+        // fracción del capital. Es la unidad de riesgo indivisible de este
+        // símbolo: por debajo de ella no existe orden alguna. Nótese que el
+        // apalancamiento NO aparece — reparte el mismo nocional entre margen y
+        // préstamo, pero no cambia lo que se pierde.
+        let f_min_ejecutable = exchange_min_notional * stop / capital;
+
+        let mut f = self.risk_fraction(z, shrinkage_k);
+        // FIX #702 / #793: arranque para cuentas en régimen micro — evita el
+        // bloqueo bayesiano en que la cota inferior da `f ≤ 0` con muestras
+        // pequeñas y el motor nunca genera la evidencia que necesita.
+        //
+        // D-750 — LA APUESTA DE EXPLORACIÓN ERA `0,015 · micro_w`: un 1,5 % del
+        // capital arriesgado SIN EDGE, inventado. La única apuesta defendible
+        // cuando no hay edge probado es la MÍNIMA EJECUTABLE: exactamente lo que
+        // el exchange obliga a arriesgar para que exista una orden, ni un
+        // céntimo más. Y se somete al mismo control de ruina que cualquier otra
+        // fracción del sistema: si ni el mínimo cabe bajo el tope de ruina, la
+        // exploración no es viable y se rechaza (abajo).
+        let micro_w = crate::capital_regime::micro_weight(capital, exchange_min_notional);
+        if f <= 0.0 && micro_w > 0.0 {
+            let q_lcb = (1.0 - self.posterior.lcb(z)).clamp(0.01, 0.99);
+            f = crate::ruin::clamp_ruin(f_min_ejecutable, q_lcb);
+        }
+        if f <= 0.0 || !f.is_finite() {
             return (0.0, false);
         }
-        (exposure_ratio, true)
+
+        // D-750 — SI NO CABE, SE RECHAZA; JAMÁS SE INFLA.
+        //
+        // Antes, cuando el presupuesto de riesgo no alcanzaba para la orden
+        // mínima, una puerta de escape devolvía `operable = true` con un
+        // apalancamiento escrito a mano —`(min_notional/capital).max(1).min(5)`,
+        // tras exigir `min_notional ≤ capital·5` y `f ≥ 0,005`: cuatro literales
+        // sin derivación— e inflaba así la apuesta por encima de lo que el
+        // propio control de ruina acababa de autorizar. Es el modo de fallo que
+        // CERT-M5-C02 declaró cerrado, sobreviviendo aquí.
+        //
+        // La respuesta correcta es la de la aritmética: si la unidad de riesgo
+        // indivisible del símbolo excede la fracción que el riesgo permite, NO
+        // HAY ORDEN POSIBLE en este símbolo con este capital y este stop.
+        if f < f_min_ejecutable {
+            return (0.0, false); // capital insuficiente: protección, no leverage suicida
+        }
+        (f / stop, true)
     }
 }
 
@@ -435,6 +480,80 @@ mod tests {
         assert!(
             !ok_tiny && lev_tiny == 0.0,
             "capital insuficiente ⇒ fuera, no apalancar"
+        );
+    }
+
+    /// D-750 — LA PUERTA DE ESCAPE QUE INFLABA LA APUESTA.
+    ///
+    /// EL DEFECTO: cuando el presupuesto de riesgo no alcanzaba para la orden
+    /// mínima del símbolo, en lugar de rechazar, el código devolvía
+    /// `operable = true` con un apalancamiento escrito a mano
+    /// —`(min_notional/capital).max(1).min(5)`— siempre que
+    /// `min_notional ≤ capital · 5` y `f ≥ 0,005`. Con 13 $ de capital, un
+    /// símbolo de 50 $ de mínimo y un stop del 10 %, la unidad de riesgo
+    /// indivisible es el 38 % del capital mientras el riesgo autorizado ronda
+    /// el 18 %: la puerta se abría y operaba igual, DUPLICANDO la fracción que
+    /// el control de ruina acababa de permitir.
+    ///
+    /// Con el código viejo este test falla: devolvía `(3,85, true)`.
+    #[test]
+    fn si_la_orden_minima_no_cabe_se_rechaza_en_vez_de_inflar() {
+        let mut env = RiskEnvelope::new();
+        for i in 0..400 {
+            env.record_trade(i % 20 < 11, 15.0, -10.0); // 55 % WR, payoff 1,5
+        }
+        let f = env.risk_fraction(1.64, 50.0);
+        let capital = 13.0;
+        let min_notional = 50.0;
+        let stop = 0.10;
+        let f_min_ejecutable = min_notional * stop / capital;
+        // La premisa del test: hay edge medido, pero NO alcanza para la unidad
+        // de riesgo indivisible de este símbolo.
+        assert!(
+            f > 0.005 && f < f_min_ejecutable,
+            "premisa del test: {f} debe estar entre 0,005 y {f_min_ejecutable}"
+        );
+        // Y la puerta de escape vieja habría vinculado (min_notional ≤ 5·cap).
+        assert!(min_notional <= capital * 5.0, "premisa del test");
+
+        let (lev, operable) = env.max_leverage(capital, stop, min_notional, 1.64, 50.0);
+        assert!(
+            !operable && lev == 0.0,
+            "la orden mínima no cabe en el riesgo permitido ⇒ se rechaza, \
+             no se infla la apuesta; got ({lev}, {operable})"
+        );
+    }
+
+    /// D-750 — LA APUESTA DE EXPLORACIÓN ES LA MÍNIMA EJECUTABLE, NO EL 1,5 %.
+    ///
+    /// EL DEFECTO: sin edge probado, el arranque micro apostaba
+    /// `0,015 · micro_w` del capital — un número inventado. Ahora arriesga
+    /// exactamente lo que el exchange obliga a arriesgar para que exista una
+    /// orden, y ni un céntimo más: el apalancamiento resultante es justo el que
+    /// realiza el nocional mínimo del símbolo.
+    #[test]
+    fn la_exploracion_arriesga_lo_minimo_ejecutable() {
+        let env = RiskEnvelope::new(); // sin evidencia: risk_fraction = 0
+        assert_eq!(env.risk_fraction(1.64, 50.0), 0.0, "premisa: sin edge");
+
+        let capital = 13.0;
+        let min_notional = 5.0;
+        let stop = 0.02;
+        let (lev, operable) = env.max_leverage(capital, stop, min_notional, 1.64, 50.0);
+        assert!(operable, "la orden mínima cabe: debe poder explorarse");
+        // f = min_notional·stop/capital  ⇒  L = f/stop = min_notional/capital.
+        let esperado = min_notional / capital;
+        assert!(
+            (lev - esperado).abs() < 1e-9,
+            "la exploración realiza EXACTAMENTE el nocional mínimo: {lev} vs {esperado}"
+        );
+        // El viejo `0,015 · micro_w` daba, con esta cuenta en micro pleno,
+        // L = 0,015/0,02 = 0,75: arriesgaba 0,195 $ cuando la orden mínima sólo
+        // obliga a arriesgar 0,10 $. Es decir, apostaba casi el DOBLE de lo
+        // necesario sin ningún edge que lo respaldase.
+        assert!(
+            lev < 0.75,
+            "explorar debe costar lo mínimo ejecutable, no el 1,5 % inventado: {lev}"
         );
     }
 

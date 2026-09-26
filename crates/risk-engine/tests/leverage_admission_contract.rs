@@ -38,6 +38,11 @@ fn fixture(capital: f64) -> (Arc<GlobalArena>, SignalIntent) {
         SignalIntent {
             signal: SignalType::Long,
             confidence: 0.9,
+            // D-751 (fusión PR #5): sin probabilidad calibrada NI historial
+            // observado, el EV se rechaza por falta de evidencia. Este test
+            // verifica factibilidad de leverage/nocional, no el gate EV,
+            // así que adjunta la probabilidad calibrada del núcleo.
+            win_probability: 0.9,
             expected_duration_ms: 60_000,
             ..Default::default()
         },

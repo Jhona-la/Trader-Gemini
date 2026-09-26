@@ -165,6 +165,73 @@ pub fn effective_min_notional(spec_min_notional: f64) -> f64 {
     }
 }
 
+/// D-750 — VIABILIDAD DE LA ORDEN: FUENTE ÚNICA.
+///
+/// # Qué estaba mal
+///
+/// El dimensionado micro llevaba un «piso de viabilidad» expresado como
+/// FRACCIÓN DE APUESTA:
+///
+/// ```text
+///   micro_min_viable = (min_notional · 5 / capital).clamp(0, 0,10)
+/// ```
+///
+/// Con 13 $ de capital y un mínimo de 5 $ el cálculo daba 1,92, se recortaba a
+/// 0,10 y ese 0,10 se convertía en el límite INFERIOR del Kelly: el 10 % del
+/// capital apostado aunque el edge medido fuese nulo. El `· 5` era además un
+/// apalancamiento escrito a mano dentro de una fórmula que hablaba de
+/// fracciones.
+///
+/// # Qué es la viabilidad
+///
+/// Dos magnitudes distintas, ninguna de ellas una fracción de apuesta:
+///
+/// * **Margen mínimo**: `min_notional / L`. Es el capital que hay que
+///   inmovilizar para que la orden alcance el nocional mínimo del símbolo al
+///   apalancamiento que se va a usar. Es una restricción de EJECUCIÓN.
+/// * **Riesgo mínimo**: `min_notional · SL / capital`. Es la fracción del
+///   capital que se pierde si el stop de la orden MÁS PEQUEÑA que el símbolo
+///   acepta se toca. Es una restricción de SUPERVIVENCIA — y nótese que el
+///   apalancamiento NO aparece: reparte el mismo nocional entre margen y
+///   préstamo, pero no cambia lo que se pierde. Por eso «subir el
+///   apalancamiento para que quepa» no hace viable nada.
+///
+/// Si el riesgo mínimo excede el tope de riesgo por evento del sistema, la
+/// orden es inviable y debe RECHAZARSE.
+#[inline]
+pub fn margen_minimo_viable(min_notional: f64, apalancamiento: f64) -> f64 {
+    let mn = effective_min_notional(min_notional);
+    let l = if apalancamiento.is_finite() && apalancamiento >= 1.0 {
+        apalancamiento
+    } else {
+        1.0
+    };
+    mn / l
+}
+
+/// Fracción del capital que arriesga la orden más pequeña que el símbolo
+/// acepta. `f64::INFINITY` si el capital no es utilizable: sin capital no hay
+/// orden viable.
+#[inline]
+pub fn riesgo_minimo_viable(min_notional: f64, sl_pct: f64, capital: f64) -> f64 {
+    if !capital.is_finite() || capital <= 0.0 {
+        return f64::INFINITY;
+    }
+    if !sl_pct.is_finite() || sl_pct <= 0.0 {
+        return f64::INFINITY;
+    }
+    effective_min_notional(min_notional) * sl_pct / capital
+}
+
+/// ¿Cabe la orden mínima del símbolo dentro del tope de riesgo por evento?
+#[inline]
+pub fn orden_viable(min_notional: f64, sl_pct: f64, capital: f64, tope_riesgo: f64) -> bool {
+    if !tope_riesgo.is_finite() || tope_riesgo <= 0.0 {
+        return false;
+    }
+    riesgo_minimo_viable(min_notional, sl_pct, capital) <= tope_riesgo
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,6 +311,45 @@ mod tests {
         assert_eq!(effective_min_notional(100.0), 100.0);
         assert_eq!(effective_min_notional(1.0), DEFAULT_MIN_NOTIONAL);
         assert_eq!(effective_min_notional(f64::NAN), DEFAULT_MIN_NOTIONAL);
+    }
+
+    /// EL DEFECTO (D-750): el piso de viabilidad era una fracción de apuesta
+    /// que, con la cuenta de producción, valía exactamente 0,10 — el 10 % del
+    /// capital apostado sin edge. La viabilidad no es eso: es el margen que
+    /// alcanza el nocional mínimo, y el riesgo que ese nocional mínimo toma.
+    #[test]
+    fn el_margen_minimo_sale_del_nocional_y_del_apalancamiento() {
+        // 5 $ de nocional mínimo a 5× necesitan 1 $ de margen; a 1×, 5 $.
+        assert!((margen_minimo_viable(5.0, 5.0) - 1.0).abs() < 1e-12);
+        assert!((margen_minimo_viable(5.0, 1.0) - 5.0).abs() < 1e-12);
+        // El mínimo del símbolo manda sobre el universal del exchange.
+        assert!((margen_minimo_viable(20.0, 4.0) - 5.0).abs() < 1e-12);
+        // Apalancamiento corrupto ⇒ el caso más exigente (1×).
+        assert!((margen_minimo_viable(5.0, f64::NAN) - 5.0).abs() < 1e-12);
+    }
+
+    /// El apalancamiento NO aparece en el riesgo: subirlo no hace viable nada.
+    #[test]
+    fn el_riesgo_minimo_no_depende_del_apalancamiento() {
+        let r = riesgo_minimo_viable(5.0, 0.01, 13.0);
+        assert!((r - (5.0 * 0.01 / 13.0)).abs() < 1e-12, "{r}");
+        assert!(r.is_finite());
+        // Sin capital o sin stop no hay orden viable que evaluar.
+        assert!(riesgo_minimo_viable(5.0, 0.01, 0.0).is_infinite());
+        assert!(riesgo_minimo_viable(5.0, 0.0, 13.0).is_infinite());
+    }
+
+    /// Si ni la orden mínima del símbolo cabe en el tope de riesgo, la
+    /// respuesta correcta es NO OPERAR — jamás inflar la apuesta.
+    #[test]
+    fn una_orden_que_no_cabe_en_el_tope_de_riesgo_es_inviable() {
+        // Cuenta de 13 $, símbolo con mínimo de 100 $ y stop del 5 %:
+        // la orden mínima arriesga 5 $ = 38 % del capital. Tope del 25 %.
+        assert!(!orden_viable(100.0, 0.05, 13.0, 0.25));
+        // El mismo símbolo con un stop del 0,5 % arriesga el 3,8 %: cabe.
+        assert!(orden_viable(100.0, 0.005, 13.0, 0.25));
+        // Tope degenerado ⇒ nada es viable.
+        assert!(!orden_viable(5.0, 0.01, 13.0, 0.0));
     }
 
     #[test]

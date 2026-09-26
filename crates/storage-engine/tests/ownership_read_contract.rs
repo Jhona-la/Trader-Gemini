@@ -51,7 +51,7 @@ fn legacy_tuple_must_not_report_zero_for_continuous_ownership() {
     let db = f.db();
     insert(&db, "continuous", 0.25, 100.0);
     assert!(
-        PositionLedger::get_ownership(&f.path(), "AAAUSDT", "LONG").is_none(),
+        PositionLedger::get_ownership_legacy(&f.path(), "AAAUSDT", "LONG").is_none(),
         "legacy tuple cannot represent a continuous row; must fail, not claim flat"
     );
 }
@@ -65,13 +65,13 @@ fn malformed_quantity_must_not_become_valid_zero() {
         [],
     )
     .unwrap();
-    assert!(PositionLedger::get_ownership(&f.path(), "AAAUSDT", "LONG").is_none());
+    assert!(PositionLedger::get_ownership_legacy(&f.path(), "AAAUSDT", "LONG").is_none());
 }
 
 #[test]
 fn read_of_missing_database_does_not_create_it() {
     let f = Fixture::new();
-    assert!(PositionLedger::get_ownership(&f.path(), "AAAUSDT", "LONG").is_none());
+    assert!(PositionLedger::get_ownership_legacy(&f.path(), "AAAUSDT", "LONG").is_none());
     assert!(
         !std::path::Path::new(&f.path()).exists(),
         "a query is not authorization to create a database"
@@ -85,7 +85,7 @@ fn legacy_known_labels_remain_compatible() {
     insert(&db, "scalp", 0.25, 100.0);
     insert(&db, "swing", 0.5, 110.0);
     assert_eq!(
-        PositionLedger::get_ownership(&f.path(), "AAAUSDT", "LONG"),
+        PositionLedger::get_ownership_legacy(&f.path(), "AAAUSDT", "LONG"),
         Some((0.25, 100.0, 0.5, 110.0))
     );
 }
@@ -106,7 +106,7 @@ fn unified_read_preserves_every_label_without_making_them_engines() {
             .collect::<Vec<_>>(),
         vec!["continuous", "research/run-42", "scalp", "swing"]
     );
-    assert!(PositionLedger::get_ownership(&f.path(), "AAAUSDT", "LONG").is_none());
+    assert!(PositionLedger::get_ownership_legacy(&f.path(), "AAAUSDT", "LONG").is_none());
 }
 
 #[test]
@@ -188,5 +188,5 @@ fn legacy_duplicate_label_cannot_silently_overwrite_ownership() {
     let db = f.db();
     insert(&db, "scalp", 0.25, 100.0);
     insert(&db, "scalp", 0.5, 200.0);
-    assert!(PositionLedger::get_ownership(&f.path(), "AAAUSDT", "LONG").is_none());
+    assert!(PositionLedger::get_ownership_legacy(&f.path(), "AAAUSDT", "LONG").is_none());
 }

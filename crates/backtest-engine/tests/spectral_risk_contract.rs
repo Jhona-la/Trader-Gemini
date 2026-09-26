@@ -23,8 +23,12 @@ fn open_candidate(arena: &Arc<GlobalArena>) {
     arena.unified_capital.fetch_add(-0.01, Ordering::Relaxed);
 }
 
+/// D-750 (fusión PR #5): sin edge probado (PF = 1) en régimen micro, la
+/// envolvente NO veta la sonda mínima — la mantiene viva con apuesta
+/// exactamente la orden mínima ejecutable, bajo control de ruina. La
+/// evidencia modula el TECHO; el veto llega cuando ni el mínimo cabe.
 #[test]
-fn mature_micro_no_edge_is_vetoed_and_candidate_accounting_is_restored() {
+fn mature_micro_no_edge_keeps_the_minimal_probe_alive() {
     let arena = GlobalArena::build_in_own_stack(13.0);
     let mut envelope = RiskEnvelope::new();
     for i in 0..500 {
@@ -32,7 +36,7 @@ fn mature_micro_no_edge_is_vetoed_and_candidate_accounting_is_restored() {
     }
     open_candidate(&arena);
     let mut vetoes = 0;
-    assert!(!live_envelope_gate(
+    assert!(live_envelope_gate(
         &arena,
         &mut envelope,
         0,
@@ -41,10 +45,9 @@ fn mature_micro_no_edge_is_vetoed_and_candidate_accounting_is_restored() {
         false,
         &mut vetoes
     ));
-    assert_eq!(vetoes, 1);
-    assert!(!arena.coins[0].positions.position.is_open());
-    assert_eq!(arena.used_margin.load(Ordering::Relaxed), 0.0);
-    assert!((arena.unified_capital.load(Ordering::Relaxed) - 13.0).abs() < 1e-12);
+    assert_eq!(vetoes, 0);
+    assert!(arena.coins[0].positions.position.is_open());
+    assert_eq!(arena.used_margin.load(Ordering::Relaxed), 1.0);
 }
 
 #[test]

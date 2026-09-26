@@ -206,6 +206,45 @@ pub fn ml_gate_thresholds(long_threshold: f64, short_threshold: f64) -> (f64, f6
     (long.clamp(0.5, 1.0), short.clamp(0.0, 0.5))
 }
 
+
+/// D-749 — EL VETO DEL MURO COMPARABA UNA RAZÓN CONTRA UNA FRACCIÓN.
+///
+/// `wall_veto_threshold` es una RAZÓN entre los tamaños de los muros: su banda
+/// evolutiva es [5, 50] y su valor base, π·5 ≈ 15,7. La comprobación, en
+/// cambio, lo contrastaba contra el desequilibrio NORMALIZADO
+/// `(bid − ask)/(bid + ask)`, que por construcción vive en [−1, 1]. Ninguna
+/// cantidad en [−1, 1] supera 15,7: el veto de muro del libro no podía
+/// dispararse JAMÁS con el genoma base, y con un mutante en su banda tampoco.
+/// El operador creía tener armado un freno contra entrar de cara a una pared
+/// de liquidez y no existía.
+///
+/// La comparación se hace ahora donde el gen vive: si el muro CONTRARIO es al
+/// menos `gen` veces el muro a favor, la entrada se veta. Un muro a favor nulo
+/// con muro contrario positivo es razón infinita: veto.
+#[inline]
+pub fn muro_en_contra(bid_wall: f64, ask_wall: f64, gen_razon: f64, es_largo: bool) -> bool {
+    let razon_gen = if gen_razon.is_finite() && gen_razon > 1.0 {
+        gen_razon
+    } else {
+        // Un gen no utilizable no puede desarmar el freno: se exige al menos
+        // que el muro contrario DOBLE al favorable, el mínimo por debajo del
+        // cual «pared de liquidez» no significa nada.
+        2.0
+    };
+    let (a_favor, en_contra) = if es_largo {
+        (bid_wall, ask_wall)
+    } else {
+        (ask_wall, bid_wall)
+    };
+    if !a_favor.is_finite() || !en_contra.is_finite() || en_contra <= 0.0 {
+        return false;
+    }
+    if a_favor <= 0.0 {
+        return true;
+    }
+    en_contra / a_favor >= razon_gen
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,5 +364,46 @@ mod tests {
         let (hi, lo) = (c.calibrate(0.9), c.calibrate(0.55));
         assert!((hi - lo).abs() < 0.02, "sin información no debe separar: {hi} vs {lo}");
         assert!((hi - 0.4).abs() < 0.02 && (lo - 0.4).abs() < 0.02);
+    }
+}
+
+#[cfg(test)]
+mod tests_d749_muro {
+    use super::muro_en_contra;
+
+    /// El razon base vale π·5 ≈ 15,7 y su banda evolutiva es [5, 50]: son
+    /// RAZONES entre muros. Contrastarlo contra `(bid−ask)/(bid+ask)` ∈ [−1, 1]
+    /// dejaba el veto muerto para cualquier genoma posible.
+    #[test]
+    fn d749_el_veto_del_muro_es_alcanzable_con_el_gen_base() {
+        let razon = std::f64::consts::PI * 5.0;
+        // Muro vendedor 99 veces el comprador: un largo entra de cara a la pared.
+        assert!(muro_en_contra(1.0, 99.0, razon, true));
+        // El mismo libro no estorba a un corto: la pared está a su favor.
+        assert!(!muro_en_contra(1.0, 99.0, razon, false));
+        // Libro equilibrado: nadie veta.
+        assert!(!muro_en_contra(50.0, 50.0, razon, true));
+        assert!(!muro_en_contra(50.0, 50.0, razon, false));
+        // Justo en el umbral: la razón ES el razon ⇒ veta.
+        assert!(muro_en_contra(1.0, razon, razon, true));
+        // Un pelo por debajo: no veta.
+        assert!(!muro_en_contra(1.0, razon * 0.99, razon, true));
+    }
+
+    #[test]
+    fn d749_sin_muro_a_favor_y_con_muro_en_contra_se_veta() {
+        assert!(muro_en_contra(0.0, 10.0, 15.7, true));
+        // Sin muro en contra no hay nada que vetar, aunque falte el favorable.
+        assert!(!muro_en_contra(0.0, 0.0, 15.7, true));
+    }
+
+    #[test]
+    fn d749_un_gen_no_utilizable_no_desarma_el_freno() {
+        for razon in [f64::NAN, 0.0, -3.0, 0.5] {
+            assert!(
+                muro_en_contra(1.0, 10.0, razon, true),
+                "razon {razon} dejó pasar una pared 10×"
+            );
+        }
     }
 }

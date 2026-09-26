@@ -34,8 +34,12 @@ impl Default for QuantumHotSwapState {
 use quantum_arena::GlobalArena;
 use quantum_arena::genome::SuperGenotype;
 
-/// Capital inicial de la simulación walk-forward del daemon (micro-capital
-/// $13 — misma cifra que la simulación previa al fix C-10).
+/// Numerario de capital del PRE-SCREEN. No es una constante de decisión: la
+/// simulación del pre-screen es puramente multiplicativa
+/// (`cap += net_ret · cap · kelly`), de modo que `cap_final/cap_inicial` —y
+/// con él `fitness::compute`, que sólo lee ese cociente en logaritmo— es
+/// INVARIANTE frente a este valor. Cambiarlo no reordena a ningún candidato.
+/// El JUEZ (`wf_evaluate_real`) no lo usa: arranca del capital VIVO del arena.
 const WF_INITIAL_CAPITAL: f64 = 13.0;
 
 /// C-10 / MOD3/5-012 (INFORME 14): mínimo estadístico de operaciones en la
@@ -57,10 +61,236 @@ const WF_REAL_WINDOW: usize = 400;
 const WF_REAL_MAX_COINS: usize = 8;
 const WF_REAL_MICRO_TICKS: usize = 8;
 
+/// Numerario de precio del examen. Las series son de RETORNOS relativos, de
+/// modo que el nivel de precio no afecta al PnL ni a la aptitud: sólo fija la
+/// escala frente al tick del instrumento cuando el mercado vivo todavía no ha
+/// publicado su propia rejilla (ver `WfMarketEnv::half_spread`).
+const WF_SYNTH_PRICE_BASE: f64 = 100.0;
+
 struct RealWfOutcome {
     fitness: f64,
     net_returns: Vec<f64>,
     trades: usize,
+}
+
+/// D-742 (DÉCIMA OLA) — EL ENTORNO DEL EXAMEN NO ES DEL EXAMINADO.
+///
+/// # Qué estaba mal
+/// El semi-spread del mercado simulado salía del genoma evaluado
+/// (`candidate.maker_spread_pct`): un mutante que declarase un spread menor
+/// se examinaba en un mercado MÁS BARATO que sus competidores y ganaba por
+/// eso, no por operar mejor. La presión selectiva apuntaba a «declara un
+/// spread pequeño», que en vivo no abarata nada: el spread lo pone el libro.
+/// El gen `maker_spread_pct` además entra en `omni[1]` (feature de spread que
+/// el consejo lee), así que el candidato también se fabricaba su feature.
+///
+/// # Qué garantiza el arreglo
+/// Todos los candidatos de la ronda se examinan con el MISMO entorno, medido
+/// del arena vivo antes de clonar nada. Ningún campo de esta estructura
+/// procede del genoma.
+#[derive(Debug, Clone, Copy)]
+pub struct WfMarketEnv {
+    /// Semi-spread relativo (adimensional) observado en el libro vivo:
+    /// mediana de (ask − bid)/(2·mid) sobre las monedas con cotización sana.
+    /// Mediana y no media: un libro cruzado o rancio de un símbolo no
+    /// contamina el examen de todos.
+    pub observed_half_spread_pct: f64,
+    /// Tick relativo (tick_size/mid) mediano del universo vivo. Es el paso de
+    /// la rejilla de precios del exchange expresado sin unidades, de modo que
+    /// transfiere a cualquier numerario de precio del examen.
+    pub tick_pct: f64,
+    /// Apalancamiento máximo PUBLICADO por el exchange (mediana del universo).
+    /// Fija la mayor orden que el examen puede emitir y, con ella, la
+    /// profundidad que el libro debe poder absorber.
+    pub max_leverage: f64,
+}
+
+impl WfMarketEnv {
+    /// Entorno neutro para un mercado del que no se ha observado nada todavía
+    /// (arranque en frío). `max_leverage = 1` es la hipótesis más conservadora:
+    /// un libro que sólo garantiza absorber el capital sin apalancar.
+    pub fn unknown() -> Self {
+        Self { observed_half_spread_pct: 0.0, tick_pct: 0.0, max_leverage: 1.0 }
+    }
+
+    /// Semi-spread efectivo. Es el observado en el mercado, con el piso físico
+    /// de MEDIO TICK: ningún libro cotiza más fino que la rejilla de precios
+    /// del instrumento, luego un spread menor que un tick es imposible.
+    /// `exam_tick_pct` es la rejilla del propio instrumento del examen, usada
+    /// sólo cuando el universo vivo aún no ha publicado ninguna.
+    #[inline]
+    pub fn half_spread(&self, exam_tick_pct: f64) -> f64 {
+        let grid = if self.tick_pct > 0.0 { self.tick_pct } else { exam_tick_pct };
+        self.observed_half_spread_pct.max(0.5 * grid.max(0.0))
+    }
+
+    /// Profundidad mostrada a CADA lado, en unidades base. Las series del
+    /// examen sólo contienen retornos: no describen el racionamiento de cola,
+    /// así que el examen supone un libro capaz de absorber la mayor orden que
+    /// puede emitir — capital × apalancamiento máximo publicado / precio.
+    /// Suponer menos sería inventar rechazos de fill que ningún dato sostiene.
+    #[inline]
+    pub fn depth_qty(&self, mid: f64, capital: f64) -> f64 {
+        if mid <= 0.0 || !mid.is_finite() {
+            return 0.0;
+        }
+        (capital.max(0.0) * self.max_leverage.max(1.0) / mid).max(0.0)
+    }
+}
+
+/// Mediana (promedio de los dos centrales si n es par). Devuelve `None` con
+/// muestra vacía — el llamador decide el fallback, aquí no se inventa un valor.
+fn median(values: &[f64]) -> Option<f64> {
+    let mut clean: Vec<f64> = values.iter().copied().filter(|v| v.is_finite()).collect();
+    if clean.is_empty() {
+        return None;
+    }
+    clean.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = clean.len();
+    Some(if n % 2 == 1 {
+        clean[n / 2]
+    } else {
+        0.5 * (clean[n / 2 - 1] + clean[n / 2])
+    })
+}
+
+/// Mide el entorno de mercado con el que se examinará a TODOS los candidatos.
+/// Se llama sobre el arena VIVO antes de lanzar la ronda; nada aquí depende de
+/// ningún genoma.
+pub fn observed_market_env(arena: &GlobalArena) -> WfMarketEnv {
+    let mut half_spreads: Vec<f64> = Vec::new();
+    let mut tick_pcts: Vec<f64> = Vec::new();
+    let mut leverages: Vec<f64> = Vec::new();
+    for (coin_id, coin) in arena.coins.iter().enumerate() {
+        let bid = coin.spot_bid.load(Ordering::Relaxed);
+        let ask = coin.spot_ask.load(Ordering::Relaxed);
+        if !(bid > 0.0 && ask > bid) {
+            continue;
+        }
+        let mid = 0.5 * (bid + ask);
+        half_spreads.push((ask - bid) / (2.0 * mid));
+        if let Some(spec) = quantum_arena::symbol_registry::try_spec(coin_id) {
+            if spec.tick_size > 0.0 {
+                tick_pcts.push(spec.tick_size / mid);
+            }
+            if spec.max_leverage > 0 {
+                leverages.push(spec.max_leverage as f64);
+            }
+        }
+    }
+    let fallback = WfMarketEnv::unknown();
+    WfMarketEnv {
+        observed_half_spread_pct: median(&half_spreads)
+            .unwrap_or(fallback.observed_half_spread_pct),
+        tick_pct: median(&tick_pcts).unwrap_or(fallback.tick_pct),
+        max_leverage: median(&leverages).unwrap_or(fallback.max_leverage),
+    }
+}
+
+/// D-743 (DÉCIMA OLA) — PARTICIÓN TEMPORAL DEL EXAMEN.
+///
+/// Índice donde termina el entrenamiento y empieza la validación de una serie
+/// de `len` observaciones. Corte por TIEMPO, sin barajar: el pasado entrena,
+/// el futuro juzga.
+///
+/// La frontera es la mediana temporal, y eso NO es una fracción elegida a
+/// mano: el punto que MAXIMIZA el tamaño de la partición menor — la que ata
+/// la precisión de ambas estimaciones — es el punto medio. Cualquier otro
+/// reparto empeora la peor de las dos muestras.
+#[inline]
+pub fn oos_split_index(len: usize) -> usize {
+    len / 2
+}
+
+/// Longitud mínima de una serie para poder ser juzgada fuera de muestra: su
+/// mitad de validación debe alcanzar el mínimo muestral que la aptitud exige
+/// (`WF_MIN_TRADES`), y en el examen se cierra como mucho una operación por
+/// barra. Por debajo, la serie no se examina — no se la juzga con menos
+/// evidencia de la que el propio gate de viabilidad reclama.
+#[inline]
+pub fn wf_min_series_len() -> usize {
+    2 * WF_MIN_TRADES as usize
+}
+
+/// D-746 — pruebas acumuladas para la corrección por multiplicidad. Monótona
+/// no decreciente y saturante: el número de experimentos realizados por el
+/// proceso no puede bajar ni desbordar. Nunca devuelve 0 (el DSR necesita al
+/// menos una prueba para que E[max SR] esté definido).
+#[inline]
+pub fn accumulated_trials(previas: usize, ronda: usize) -> usize {
+    previas.saturating_add(ronda).max(ronda).max(1)
+}
+
+/// D-747 — estado de la ventana de vigilancia tras una promoción ACEPTADA por
+/// el almacén. Devuelve `true` si la ventana se reinició.
+///
+/// Regla: la evidencia post-promoción describe al genoma que OPERA. Sólo se
+/// descarta cuando ese genoma cambia. Re-registrar el mismo genoma (el
+/// incumbente gana su propia ronda) no borra nada: de lo contrario el
+/// watchdog de rollback jamás reúne las observaciones que necesita para
+/// vencer y un genoma degradado sobrevive re-promoviéndose a sí mismo.
+pub fn armar_vigilancia(
+    es_mismo_genoma: bool,
+    promoted_generation: &mut Option<(u64, u64)>,
+    post_promo_returns: &mut Vec<f64>,
+    generation: u64,
+    parent: u64,
+) -> bool {
+    if es_mismo_genoma {
+        // El genoma que opera NO ha cambiado: la evidencia post-promoción
+        // sigue describiéndolo y se conserva íntegra. Sólo si el watchdog no
+        // estaba armado todavía (primera vez que se registra este genoma) se
+        // arma ahora — sin borrar las observaciones ya recogidas — y se
+        // conserva el par (generación, padre) original, que es el que el
+        // rollback debe restaurar.
+        if promoted_generation.is_none() {
+            *promoted_generation = Some((generation, parent));
+        }
+        false
+    } else {
+        post_promo_returns.clear();
+        *promoted_generation = Some((generation, parent));
+        true
+    }
+}
+
+/// Forma canónica de un genoma: su vector genético tras el roundtrip
+/// `to_vector`/`from_vector`, que aplica los clamps y los invariantes (RR de
+/// las curvas) de la fuente única R1.1. Dos genomas con la misma forma
+/// canónica son EL MISMO genoma para el motor.
+pub fn canonical_vector(g: &SuperGenotype) -> Vec<f64> {
+    SuperGenotype::from_vector(&g.to_vector()).to_vector()
+}
+
+/// ¿Son el mismo genoma? Comparación EXACTA de la forma canónica. No hay
+/// tolerancia que elegir: no se comparan dos medidas físicas sino el mismo
+/// vector de parámetros pasado por la misma normalización.
+pub fn same_genome(a: &SuperGenotype, b: &SuperGenotype) -> bool {
+    let va = canonical_vector(a);
+    let vb = canonical_vector(b);
+    va.len() == vb.len() && va.iter().zip(vb.iter()).all(|(x, y)| x == y)
+}
+
+/// D-744 (DÉCIMA OLA) — RETORNO SOBRE EL CAPITAL DEL MOMENTO.
+///
+/// El retorno de una operación que alimenta Sharpe/DSR debe normalizarse por
+/// el capital que estaba EN RIESGO al abrirla, no por el capital inicial de
+/// la simulación. Con el capital inicial, una cuenta que dobla produce
+/// retornos aparentes del doble para el mismo riesgo relativo, la varianza se
+/// infla y el Sharpe queda sesgado por la trayectoria del capital en vez de
+/// por la calidad de las decisiones. Sólo la serie de retornos geométricos es
+/// aditiva en logaritmos y comparable entre tramos.
+///
+/// `capital_after` es el capital DESPUÉS de contabilizar `pnl_net`; el capital
+/// en riesgo es por tanto `capital_after − pnl_net`.
+#[inline]
+pub fn trade_return_on_equity(pnl_net: f64, capital_after: f64) -> Option<f64> {
+    let capital_before = capital_after - pnl_net;
+    if !capital_before.is_finite() || capital_before <= 0.0 {
+        return None;
+    }
+    let r = pnl_net / capital_before;
+    if r.is_finite() { Some(r) } else { None }
 }
 
 /// Registra specs sintéticos WFD{i} (idempotente) y devuelve sus coin_ids.
@@ -87,18 +317,199 @@ fn wf_real_coin_ids(n: usize) -> Vec<usize> {
     ids
 }
 
+use god_engine_core::GodEngineCore;
+use risk_engine::kelly_envelope::RiskEnvelope;
+
+/// Estado mutable del replay walk-forward. Se conserva ENTRE la pasada de
+/// entrenamiento y la de validación: el motor no se reinicia al cruzar la
+/// frontera del examen, igual que en vivo nadie lo reinicia.
+struct WfReplayState {
+    ts: u64,
+    vetoes: u64,
+    avg_win: f64,
+    avg_loss: f64,
+    peak: f64,
+    max_dd: f64,
+    net_returns: Vec<f64>,
+    pos_open_flags: [bool; quantum_arena::state::MAX_COINS],
+    ruina: bool,
+}
+
+/// Reproduce el tramo `[from, to)` de una serie contra el MOTOR REAL.
+///
+/// `puntua` separa las dos pasadas del walk-forward (D-743): en la de
+/// ENTRENAMIENTO el motor calienta features, ML y envelope pero su resultado
+/// NO entra en la aptitud; en la de VALIDACIÓN se contabilizan retornos,
+/// drawdown y operaciones. El corte es temporal y sin barajar.
+#[allow(clippy::too_many_arguments)]
+fn wf_replay_segment(
+    core: &mut GodEngineCore,
+    arena: &Arc<GlobalArena>,
+    envelope: &mut RiskEnvelope,
+    st: &mut WfReplayState,
+    price: &mut f64,
+    coin_id: usize,
+    rets: &[f64],
+    from: usize,
+    to: usize,
+    market: &WfMarketEnv,
+    capital_examen: f64,
+    puntua: bool,
+) {
+    // Rejilla de precios del instrumento del examen — sólo se usa como piso
+    // del spread cuando el universo vivo aún no ha publicado la suya.
+    let tick_size = quantum_arena::symbol_registry::try_spec(coin_id)
+        .map(|s| s.tick_size)
+        .unwrap_or(0.0);
+    let to = to.min(rets.len());
+    for ri in from..to {
+        let r = rets[ri];
+        let next_price = (*price * (1.0 + r)).max(1e-6);
+        let prev_ret = if ri > 0 { rets[ri - 1] } else { 0.0 };
+        let base_price = *price;
+        for t in 0..WF_REAL_MICRO_TICKS {
+            st.ts += 2_000;
+            let frac = (t + 1) as f64 / WF_REAL_MICRO_TICKS as f64;
+            let frac_prev = t as f64 / WF_REAL_MICRO_TICKS as f64;
+            let mid = base_price + (next_price - base_price) * frac;
+            let prev_mid = base_price + (next_price - base_price) * frac_prev;
+
+            // D-742 — SPREAD DEL MERCADO, NO DEL EXAMINADO. Antes:
+            // `candidate.maker_spread_pct` — el candidato se fabricaba el
+            // mercado en el que lo examinaban.
+            let exam_tick_pct = if mid > 0.0 { tick_size / mid } else { 0.0 };
+            let half_spread = market.half_spread(exam_tick_pct);
+            let bid = mid * (1.0 - half_spread);
+            let ask = mid * (1.0 + half_spread);
+
+            // D-745 — LIBRO SIMÉTRICO, OBI NEUTRO. Antes:
+            // `noise_qty = 0.5 + ((ts % 7)/7)` producía un ciclo DETERMINISTA
+            // de periodo 7 con bid_qty medio 7,5 contra ask_qty medio 12,5 —
+            // un sesgo vendedor permanente y aprendible. Las series del examen
+            // sólo contienen RETORNOS: no hay ni un dato de flujo de órdenes,
+            // de modo que cualquier OBI sería inventado. El examen declara el
+            // libro equilibrado (OBI = 0) y NO PUEDE JUZGAR las ramas de
+            // microestructura: un genoma que dependa del desequilibrio del
+            // libro no operará aquí y, por tanto, no será promovido por este
+            // camino. Es la única postura honesta con los datos disponibles.
+            let depth = market.depth_qty(mid, capital_examen);
+            let bid_qty = depth;
+            let ask_qty = depth;
+            let obi = 0.0f64;
+            // Clasificación del agresor por la REGLA DEL TICK (Lee & Ready):
+            // una impresión a precio superior la origina un comprador
+            // (is_buyer_maker = false) y una a precio inferior, un vendedor.
+            // Deriva del movimiento ya recorrido, no de un contador.
+            let is_buyer_maker = mid < prev_mid;
+
+            // omni 54D causal — mismos campos clave que el nativo
+            let mut omni = [0.0f64; 54];
+            omni[1] = (2.0 * half_spread * 10.0).clamp(-5.0, 5.0);
+            omni[11] = (prev_ret * 0.005).clamp(-0.001, 0.001);
+            omni[13] = (1.0 + prev_ret * 5.0).clamp(0.5, 2.5);
+            omni[14] = (50.0 + prev_ret * 500.0).clamp(10.0, 90.0);
+            omni[24] = (15.0 + prev_ret.abs() * 200.0).clamp(10.0, 80.0);
+            omni[30] = obi * 5.0;
+            omni[31] = obi * 6.0;
+            omni[32] = if ask_qty > 0.0 {
+                (bid_qty / ask_qty).clamp(0.1, 10.0)
+            } else {
+                1.0
+            };
+            omni[34] = mid * 1.01;
+            omni[35] = mid * 0.99;
+            omni[39] = obi;
+            omni[41] = (-prev_ret * 2.0).clamp(-0.25, 0.25);
+            omni[43] = mid;
+            omni[49] = prev_ret.abs() * 100.0;
+
+            let is_kline = t == WF_REAL_MICRO_TICKS - 1;
+            let (_, closed) = core.process_event(
+                coin_id, true, is_kline, true, mid, bid_qty.min(ask_qty),
+                bid, ask, bid_qty, ask_qty, obi, 0.0, st.ts, false, &omni, is_buyer_maker,
+            );
+            // Envelope del host sobre cada entrada recién abierta
+            let atr_now = core
+                .feature_engines
+                .get(coin_id)
+                .map(|f| f.get_atr_pct())
+                .unwrap_or(0.002);
+            let was_open = st.pos_open_flags[coin_id];
+            backtest_engine::booktick_replay::live_envelope_gate(
+                arena, envelope, coin_id, mid, atr_now, was_open, &mut st.vetoes,
+            );
+            st.pos_open_flags[coin_id] = arena.coins[coin_id].positions.position.is_open();
+
+            if let Some((_, pnl_net, _)) = closed {
+                if pnl_net >= 0.0 {
+                    st.avg_win = if st.avg_win == 0.0 {
+                        pnl_net.abs()
+                    } else {
+                        st.avg_win * 0.95 + pnl_net.abs() * 0.05
+                    };
+                } else {
+                    st.avg_loss = if st.avg_loss == 0.0 {
+                        pnl_net.abs()
+                    } else {
+                        st.avg_loss * 0.95 + pnl_net.abs() * 0.05
+                    };
+                }
+                envelope.record_trade(pnl_net > 0.0, st.avg_win.max(1e-9), -st.avg_loss.max(1e-9));
+                // D-744: normalizado por el capital del MOMENTO (el que estaba
+                // en riesgo), no por el capital inicial de la simulación.
+                if puntua {
+                    let cap_after = arena.unified_capital.load(Ordering::Relaxed);
+                    if let Some(ret) = trade_return_on_equity(pnl_net, cap_after) {
+                        st.net_returns.push(ret);
+                    }
+                }
+            }
+        }
+        *price = next_price;
+        let cap = arena.unified_capital.load(Ordering::Relaxed);
+        // El drawdown que puntúa es el de la ventana de VALIDACIÓN.
+        if puntua {
+            if cap > st.peak {
+                st.peak = cap;
+            }
+            if st.peak > 0.0 {
+                let dd = (st.peak - cap) / st.peak;
+                if dd.is_finite() && dd > st.max_dd {
+                    st.max_dd = dd;
+                }
+            }
+        }
+        if cap <= 0.0 {
+            st.ruina = true;
+            return;
+        }
+    }
+}
+
 /// Evalúa un candidato con el MOTOR REAL sobre micro-ticks Brownian-bridge
 /// sintetizados de las series per-coin (contrato omni 54D causal, mismo
 /// patrón que run_backtest_native). Envelope del host sobre cada entrada.
+///
+/// D-742 — `market` es el entorno MEDIDO del mercado, idéntico para todos los
+/// candidatos de la ronda. Ningún parámetro del entorno sale del genoma.
+/// D-743 — cada serie se parte por TIEMPO: la primera mitad entrena (calienta
+/// el motor) y la segunda valida. La aptitud se calcula SÓLO sobre la
+/// validación, con los capitales OOS reales. El motor NO se reinicia en la
+/// frontera (features, ML y envelope llegan calientes, como en vivo) y cada
+/// moneda conserva su precio; el reloj del examen sigue siendo monótono, pero
+/// cada moneda ve un salto temporal al cruzar la frontera — el mismo tipo de
+/// artefacto que ya producía el recorrido moneda-a-moneda anterior.
 fn wf_evaluate_real(
     candidate: &SuperGenotype,
     series: &[Vec<f64>],
     initial_capital: f64,
+    market: &WfMarketEnv,
 ) -> RealWfOutcome {
-    use god_engine_core::GodEngineCore;
-    use risk_engine::kelly_envelope::RiskEnvelope;
-
-    let mut ranked_series: Vec<&Vec<f64>> = series.iter().filter(|s| s.len() >= 60).collect();
+    // Una serie sólo es examinable si su mitad de validación alcanza el
+    // mínimo muestral que la aptitud exige (ver `wf_min_series_len`).
+    let min_len = wf_min_series_len();
+    let mut ranked_series: Vec<&Vec<f64>> =
+        series.iter().filter(|s| s.len() >= min_len).collect();
     ranked_series.sort_by_key(|s| std::cmp::Reverse(s.len()));
     ranked_series.truncate(WF_REAL_MAX_COINS);
     if ranked_series.is_empty() {
@@ -110,112 +521,76 @@ fn wf_evaluate_real(
     candidate.apply_to_arena(&arena);
     let mut core = GodEngineCore::new(arena.clone());
     let mut envelope = RiskEnvelope::new();
-    let mut vetoes: u64 = 0;
-    let mut net_returns: Vec<f64> = Vec::new();
-    let mut avg_win = 0.0f64;
-    let mut avg_loss = 0.0f64;
-    let mut peak = initial_capital;
-    let mut max_dd = 0.0f64;
-    let mut ts: u64 = 60_000;
-    let mut pos_open_flags = [false; quantum_arena::state::MAX_COINS];
+    let mut st = WfReplayState {
+        ts: 60_000,
+        vetoes: 0,
+        avg_win: 0.0,
+        avg_loss: 0.0,
+        peak: initial_capital,
+        max_dd: 0.0,
+        net_returns: Vec::new(),
+        pos_open_flags: [false; quantum_arena::state::MAX_COINS],
+        ruina: false,
+    };
+    let mut prices = vec![WF_SYNTH_PRICE_BASE; ranked_series.len()];
 
-    for (si, rets) in ranked_series.iter().enumerate() {
+    // ── PASADA 1 — ENTRENAMIENTO (no puntúa) ─────────────────────────────
+    for si in 0..ranked_series.len() {
+        let rets = ranked_series[si];
         let coin_id = coin_ids[si].min(quantum_arena::state::MAX_COINS - 1);
-        let mut price = 100.0f64;
-        let half_spread = candidate.maker_spread_pct.max(0.00005);
-        for (ri, &r) in rets.iter().enumerate() {
-            let next_price = (price * (1.0 + r)).max(1e-6);
-            for t in 0..WF_REAL_MICRO_TICKS {
-                ts += 2_000;
-                let frac = (t + 1) as f64 / WF_REAL_MICRO_TICKS as f64;
-                let mid = price + (next_price - price) * frac;
-                let bid = mid * (1.0 - half_spread);
-                let ask = mid * (1.0 + half_spread);
-                let noise_qty = 0.5 + ((ts % 7) as f64) / 7.0;
-                let bid_qty = 10.0 * noise_qty;
-                let ask_qty = 10.0 * (2.0 - noise_qty);
-                let obi = ((bid_qty - ask_qty) / (bid_qty + ask_qty)).clamp(-1.0, 1.0);
-                // omni 54D causal — mismos campos clave que el nativo
-                let mut omni = [0.0f64; 54];
-                let prev_ret = if ri > 0 { rets[ri - 1] } else { 0.0 };
-                omni[1] = (2.0 * half_spread * 10.0).clamp(-5.0, 5.0);
-                omni[11] = (prev_ret * 0.005).clamp(-0.001, 0.001);
-                omni[13] = (1.0 + prev_ret * 5.0).clamp(0.5, 2.5);
-                omni[14] = (50.0 + prev_ret * 500.0).clamp(10.0, 90.0);
-                omni[24] = (15.0 + prev_ret.abs() * 200.0).clamp(10.0, 80.0);
-                omni[30] = obi * 5.0;
-                omni[31] = obi * 6.0;
-                omni[32] = if ask_qty > 0.0 {
-                    (bid_qty / ask_qty).clamp(0.1, 10.0)
-                } else {
-                    1.0
-                };
-                omni[34] = mid * 1.01;
-                omni[35] = mid * 0.99;
-                omni[39] = obi;
-                omni[41] = (-prev_ret * 2.0).clamp(-0.25, 0.25);
-                omni[43] = mid;
-                omni[49] = prev_ret.abs() * 100.0;
-
-                let is_kline = t == WF_REAL_MICRO_TICKS - 1;
-                let (_, closed) = core.process_event(
-                    coin_id, true, is_kline, true, mid, bid_qty.min(ask_qty),
-                    bid, ask, bid_qty, ask_qty, obi, 0.0, ts, false, &omni, bid_qty > ask_qty,
-                );
-                // Envelope del host sobre cada entrada recién abierta
-                let atr_now = core
-                    .feature_engines
-                    .get(coin_id)
-                    .map(|f| f.get_atr_pct())
-                    .unwrap_or(0.002);
-                let was_open = pos_open_flags[coin_id];
-                backtest_engine::booktick_replay::live_envelope_gate(
-                    &arena, &mut envelope, coin_id, mid, atr_now, was_open, &mut vetoes,
-                );
-                pos_open_flags[coin_id] = arena.coins[coin_id].positions.is_any_open();
-
-                if let Some((_, pnl_net, _)) = closed {
-                    if pnl_net >= 0.0 {
-                        avg_win = if avg_win == 0.0 { pnl_net.abs() } else { avg_win * 0.95 + pnl_net.abs() * 0.05 };
-                    } else {
-                        avg_loss = if avg_loss == 0.0 { pnl_net.abs() } else { avg_loss * 0.95 + pnl_net.abs() * 0.05 };
-                    }
-                    envelope.record_trade(pnl_net > 0.0, avg_win.max(1e-9), -avg_loss.max(1e-9));
-                    net_returns.push(pnl_net / initial_capital);
-                }
-            }
-            price = next_price;
-            let cap = arena.unified_capital.load(Ordering::Relaxed);
-            if cap > peak {
-                peak = cap;
-            }
-            if peak > 0.0 {
-                let dd = (peak - cap) / peak;
-                if dd.is_finite() && dd > max_dd {
-                    max_dd = dd;
-                }
-            }
-            if cap <= 0.0 {
-                break;
-            }
-        }
-        if arena.unified_capital.load(Ordering::Relaxed) <= 0.0 {
+        let split = oos_split_index(rets.len());
+        wf_replay_segment(
+            &mut core, &arena, &mut envelope, &mut st, &mut prices[si], coin_id,
+            rets, 0, split, market, initial_capital, false,
+        );
+        if st.ruina {
             break;
         }
     }
 
-    let final_cap = arena.unified_capital.load(Ordering::Relaxed);
-    let trades = net_returns.len();
+    // Frontera del examen. El capital aquí es el punto de partida REAL de la
+    // ventana fuera de muestra; los acumuladores que puntúan se reinician.
+    let oos_start_capital = arena.unified_capital.load(Ordering::Relaxed);
+    st.peak = oos_start_capital;
+    st.max_dd = 0.0;
+    st.net_returns.clear();
+
+    // ── PASADA 2 — VALIDACIÓN (la única que puntúa) ──────────────────────
+    if !st.ruina {
+        for si in 0..ranked_series.len() {
+            let rets = ranked_series[si];
+            let coin_id = coin_ids[si].min(quantum_arena::state::MAX_COINS - 1);
+            let split = oos_split_index(rets.len());
+            wf_replay_segment(
+                &mut core, &arena, &mut envelope, &mut st, &mut prices[si], coin_id,
+                rets, split, rets.len(), market, initial_capital, true,
+            );
+            if st.ruina {
+                break;
+            }
+        }
+    }
+
+    let oos_end_capital = arena.unified_capital.load(Ordering::Relaxed);
+    let trades = st.net_returns.len();
+    // D-743: la aptitud se mide ÍNTEGRAMENTE sobre la partición de validación
+    // — capital inicial y final son los de esa ventana, y el mínimo de
+    // operaciones (WF_MIN_TRADES, definido justamente como «mínimo en la
+    // ventana OOS») se exige sobre ella. El rendimiento dentro de muestra ya
+    // no puede comprar aptitud. `oos_start/oos_end` llevan esos mismos
+    // capitales reales: el factor OOS vale 1 cuando la validación creció y
+    // agrava el castigo cuando se degradó, que es su propósito.
     let fitness = crate::fitness::compute(&crate::fitness::FitnessInputs {
-        initial_capital,
-        final_capital: final_cap,
-        max_drawdown_pct: max_dd,
+        initial_capital: oos_start_capital,
+        final_capital: oos_end_capital,
+        max_drawdown_pct: st.max_dd,
         total_trades: trades as u32,
         min_trades_required: WF_MIN_TRADES,
-        oos_start_capital: final_cap,
-        oos_end_capital: final_cap,
+        oos_start_capital,
+        oos_end_capital,
     });
-    RealWfOutcome { fitness, net_returns, trades }
+    let _ = st.vetoes; // telemetría del envelope: contabilizada, no puntúa
+    RealWfOutcome { fitness, net_returns: st.net_returns, trades }
 }
 
 /// D-689 (DÉCIMA OLA) — ARMADO EXPLÍCITO DE LA EVOLUCIÓN EN VIVO.
@@ -290,6 +665,14 @@ pub struct LiveEvolutionDaemon {
     /// NEGATIVO estadísticamente significativo, se revierte al padre.
     pub post_promo_returns: Vec<f64>,
     pub promoted_generation: Option<(u64, u64)>, // (generación, padre)
+    /// D-746 (DÉCIMA OLA) — PRUEBAS ACUMULADAS PARA LA CORRECCIÓN POR
+    /// MULTIPLICIDAD. El gate DSR recibía el literal `2_000` en cada ronda,
+    /// como si cada evaluación de tres minutos fuese el primer experimento de
+    /// la historia del proceso. La multiplicidad NO se reinicia: un daemon que
+    /// lleva 40 rondas ha probado ~80 000 genomas y el máximo esperado bajo
+    /// ruido crece con ln N. Este contador acumula los candidatos realmente
+    /// evaluados desde el arranque del daemon.
+    pub cumulative_trials: usize,
 }
 
 impl LiveEvolutionDaemon {
@@ -328,6 +711,7 @@ impl LiveEvolutionDaemon {
             returns_by_coin: std::collections::HashMap::new(),
             post_promo_returns: Vec::with_capacity(256),
             promoted_generation: None,
+            cumulative_trials: 0,
         }
     }
 
@@ -515,8 +899,27 @@ impl LiveEvolutionDaemon {
             if let Some(&prev) = self.last_realized_by_coin.get(&coin_id) {
                 let delta = realized - prev;
                 if delta.abs() > 0.0 && capital > 0.0 {
-                    let ret = delta / capital;
-                    if ret.is_finite() {
+                    // D-744 — MISMA NORMALIZACIÓN QUE EL EXAMEN. `capital` es
+                    // el saldo leído DESPUÉS de contabilizar `delta`, así que
+                    // dividir por él medía el retorno contra un capital que ya
+                    // incluye la propia ganancia (lo infravalora) o del que ya
+                    // se restó la propia pérdida (la sobrevalora). El
+                    // denominador correcto es el capital EN RIESGO al abrir:
+                    // `capital − delta`. Con micro-capital ($13) el sesgo no
+                    // es despreciable — una operación de +1 USD daba 7,7 % en
+                    // vez del 8,3 % real — y estos retornos alimentan el
+                    // Sharpe RANSAC y el watchdog de rollback.
+                    //
+                    // Aproximación declarada: si varias monedas cierran entre
+                    // dos muestreos, `capital − delta` sólo es exacto para la
+                    // última; el resto queda con el mismo error de signo que
+                    // tenía antes, más pequeño. No se inventa un reparto que
+                    // los datos del arena no permiten reconstruir.
+                    let Some(ret) = trade_return_on_equity(delta, capital) else {
+                        self.last_realized_by_coin.insert(coin_id, realized);
+                        continue;
+                    };
+                    {
                         self.returns_history.push(ret);
                         self.return_observation_revision = self.return_observation_revision.saturating_add(1);
                         let coin_window = self.returns_by_coin.entry(coin_id).or_default();
@@ -723,6 +1126,10 @@ impl LiveEvolutionDaemon {
 
         let _iteration = self.iteration_count;
         let fallback_genome = current_genome.clone();
+        // D-747 — copia del genoma ACTIVO para poder reconocer, tras la ronda,
+        // si el «ganador» es el incumbente de siempre (ver el gate del
+        // watchdog más abajo).
+        let genoma_activo = current_genome.clone();
 
         // FASE 13: Entropic Volatility Mutation
         let mean = self.returns_history.iter().sum::<f64>() / self.returns_history.len() as f64;
@@ -795,6 +1202,19 @@ impl LiveEvolutionDaemon {
             .unified_capital
             .load(Ordering::Relaxed)
             .max(1.0);
+
+        // D-742 — ENTORNO DEL EXAMEN, MEDIDO DEL MERCADO VIVO ANTES DE CLONAR
+        // NINGÚN GENOMA. Un único entorno para los 2 001 candidatos de la
+        // ronda: spread, rejilla de precios y apalancamiento máximo son del
+        // exchange, no del examinado.
+        let wf_market = observed_market_env(&self.arena);
+        println!(
+            "📏 [WF-ENV] Entorno del examen medido del mercado: semi-spread {:.5} %, tick {:.6} %, apalancamiento máx {:.0}x",
+            wf_market.observed_half_spread_pct * 100.0,
+            wf_market.tick_pct * 100.0,
+            wf_market.max_leverage
+        );
+
         let best_genome = tokio::task::spawn_blocking(move || {
             // CERT-M8-H01: el momentum-sim es PRE-SCREEN (ventana corta,
             // prior grueso). El JUEZ es wf_evaluate_real (motor completo)
@@ -1094,17 +1514,22 @@ impl LiveEvolutionDaemon {
 
             // ── CERT-M8-H01: ETAPA REAL — el motor completo juzga al top-K ──
             prescreened.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            // D-746 — genomas DISTINTOS puestos a prueba en esta ronda. El
+            // embudo tiene dos etapas (pre-screen sobre todos, motor real
+            // sobre el top-K), pero la selección del ganador se hace sobre el
+            // conjunto ENTERO: ésa es la multiplicidad que hay que corregir.
+            let prescreen_count = prescreened.len();
             let mut best = current_genome.clone();
             let mut best_score = f64::NEG_INFINITY;
             let mut best_candidate_returns: Vec<f64> = Vec::new();
             let mut evaluated = 1usize; // el incumbente siempre compite
-            let inc = wf_evaluate_real(&current_genome, &real_series, wf_live_capital);
+            let inc = wf_evaluate_real(&current_genome, &real_series, wf_live_capital, &wf_market);
             if inc.fitness > best_score {
                 best_score = inc.fitness;
                 best_candidate_returns = inc.net_returns;
             }
             for (_pre, cand) in prescreened.into_iter().take(WF_REAL_TOP_K) {
-                let out = wf_evaluate_real(&cand, &real_series, wf_live_capital);
+                let out = wf_evaluate_real(&cand, &real_series, wf_live_capital, &wf_market);
                 evaluated += 1;
                 if out.fitness > best_score {
                     best_score = out.fitness;
@@ -1112,14 +1537,15 @@ impl LiveEvolutionDaemon {
                     best_candidate_returns = out.net_returns;
                 }
             }
+            let trials_ronda = prescreen_count.max(evaluated);
             println!(
-                "🧬 [WF-REAL] {} candidatos evaluados con el MOTOR REAL (consejo+ML+fees+envelope); mejor fitness {:.4}",
-                evaluated, best_score
+                "🧬 [WF-REAL] {} candidatos evaluados con el MOTOR REAL (consejo+ML+fees+envelope) de {} probados en la ronda; mejor fitness {:.4}",
+                evaluated, trials_ronda, best_score
             );
-            (best, best_candidate_returns)
+            (best, best_candidate_returns, trials_ronda)
         })
         .await
-        .unwrap_or((fallback_genome, Vec::new()));
+        .unwrap_or((fallback_genome, Vec::new(), 0));
 
         // Legacy heuristic gate retained for compatibility: not a Bayesian
         // posterior or bootstrap confidence estimate. FMT-055 remains partial.
@@ -1166,15 +1592,27 @@ impl LiveEvolutionDaemon {
         // promueve — cuando el incumbente estaba caliente, cualquier ruido
         // pasaba. Ahora evalúa los returns SIMULADOS del candidato que el
         // walk-forward produjo.
-        let (best_genome, candidate_returns) = best_genome; // destructure tuple
-        let dsr_verdict =
-            crate::selection_stats::edge_survives_multiplicity(&candidate_returns, 2_000);
+        let (best_genome, candidate_returns, trials_ronda) = best_genome; // destructure tuple
+
+        // D-746 — MULTIPLICIDAD ACUMULADA. El literal `2_000` decía que cada
+        // ronda era el primer experimento del proceso: el daemon repite la
+        // búsqueda cada 3 minutos (60 s en demo) y, con la cuenta reiniciada,
+        // el listón del DSR no subía nunca por más genomas que se probaran.
+        // Ahora el contador arrastra las pruebas de TODAS las rondas desde el
+        // arranque y se usa el número REAL de candidatos de esta ronda, no un
+        // literal que ni siquiera coincidía con los 2 001 evaluados.
+        self.cumulative_trials = accumulated_trials(self.cumulative_trials, trials_ronda);
+        let dsr_verdict = crate::selection_stats::edge_survives_multiplicity(
+            &candidate_returns,
+            self.cumulative_trials,
+        );
         if !dsr_verdict.passes {
             println!(
-                "🚫 [QO-M1 DSR] {:.3} < {:.2} con {} pruebas — {}",
+                "🚫 [QO-M1 DSR] {:.3} < {:.2} con {} pruebas acumuladas ({} en esta ronda) — {}",
                 dsr_verdict.dsr,
                 crate::selection_stats::DSR_THRESHOLD,
                 dsr_verdict.n_trials,
+                trials_ronda,
                 dsr_verdict.note
             );
             return;
@@ -1200,13 +1638,41 @@ impl LiveEvolutionDaemon {
                 env.apply_to_arena(&self.arena);
                 self.state.active_genome_id.fetch_add(1, Ordering::SeqCst);
                 self.state.has_new_genome.store(true, Ordering::Release);
-                // FASE 3: armar watchdog de rollback sobre el padre.
-                self.post_promo_returns.clear();
-                self.promoted_generation = Some((env.generation, env.parent_generation));
-                println!(
-                    "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado.",
-                    env.generation, env.parent_generation
+                // D-747 (DÉCIMA OLA) — EL WATCHDOG QUE NUNCA VENCÍA.
+                //
+                // Qué estaba mal: toda promoción reiniciaba
+                // `post_promo_returns`. Cuando el ganador de la ronda era el
+                // PROPIO incumbente (caso frecuentísimo: el incumbente compite
+                // y suele ganar), el sistema «promovía» el mismo genoma, la
+                // ventana de vigilancia volvía a cero y el rollback —que exige
+                // 20 observaciones posteriores— no llegaba a reunirlas nunca.
+                // Un genoma degradado podía sobrevivir indefinidamente
+                // re-promoviéndose a sí mismo cada 3 minutos (60 s en demo).
+                //
+                // Qué garantiza el arreglo: la evidencia sólo se descarta
+                // cuando el genoma que opera CAMBIA. Si es el mismo, la
+                // ventana sigue corriendo y el watchdog acaba venciendo.
+                let es_mismo_genoma = same_genome(&best_genome, &genoma_activo);
+                let reiniciada = armar_vigilancia(
+                    es_mismo_genoma,
+                    &mut self.promoted_generation,
+                    &mut self.post_promo_returns,
+                    env.generation,
+                    env.parent_generation,
                 );
+                if reiniciada {
+                    println!(
+                        "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado.",
+                        env.generation, env.parent_generation
+                    );
+                } else {
+                    println!(
+                        "⚡ [HOT-SWAP] Generación {} registra el MISMO genoma activo (padre {}): la ventana de vigilancia NO se reinicia ({} observaciones acumuladas).",
+                        env.generation,
+                        env.parent_generation,
+                        self.post_promo_returns.len()
+                    );
+                }
                 // QO-E2d — LEDGER: cada promoción queda en el WAL consultable
                 // (responde "qué aprendió el sistema esta semana"; antes el
                 // ledger se creaba y jamás se escribía).
@@ -1263,5 +1729,231 @@ mod evidence_regressions {
         let mut returns: Vec<f64> = (1..=10).map(|i| i as f64).collect();
         returns.push(f64::NAN);
         assert_eq!(summarize_returns(&returns), Err(EvidenceError::NonFiniteObservation { index: 10 }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// D-742 — el semi-spread del examen sale del MERCADO. Con el código
+    /// viejo el valor venía de `candidate.maker_spread_pct`: dos candidatos
+    /// con genes distintos veían mercados distintos. Aquí se comprueba que el
+    /// entorno es un dato medido y que el piso es físico (medio tick), no el
+    /// literal 0,00005 que había escrito a mano.
+    #[test]
+    fn d742_el_spread_del_examen_es_del_mercado_con_piso_de_medio_tick() {
+        // Mercado observado más ancho que la rejilla: manda lo observado.
+        let ancho = WfMarketEnv {
+            observed_half_spread_pct: 0.0008,
+            tick_pct: 0.00002,
+            max_leverage: 20.0,
+        };
+        assert!((ancho.half_spread(0.0001) - 0.0008).abs() < 1e-12);
+
+        // Mercado observado imposiblemente fino: el libro no puede cotizar
+        // por debajo de un tick, así que el piso es medio tick relativo.
+        let fino = WfMarketEnv {
+            observed_half_spread_pct: 0.0,
+            tick_pct: 0.0002,
+            max_leverage: 20.0,
+        };
+        assert!((fino.half_spread(0.0) - 0.0001).abs() < 1e-12);
+
+        // Sin universo vivo, el piso lo pone la rejilla del propio
+        // instrumento del examen (tick/mid): 0,01 sobre 100 ⇒ 5e-5.
+        let ciego = WfMarketEnv::unknown();
+        let tick_pct_examen = 0.01 / WF_SYNTH_PRICE_BASE;
+        assert!((ciego.half_spread(tick_pct_examen) - 0.00005).abs() < 1e-12);
+    }
+
+    /// D-742 — la profundidad del libro del examen se deriva de la mayor
+    /// orden que el examen puede emitir (capital × apalancamiento publicado),
+    /// no de un 10,0 escrito a mano, y es simétrica.
+    #[test]
+    fn d742_profundidad_derivada_del_apalancamiento_publicado() {
+        let m = WfMarketEnv { observed_half_spread_pct: 0.0005, tick_pct: 0.0, max_leverage: 50.0 };
+        let depth = m.depth_qty(100.0, 13.0);
+        assert!((depth - 13.0 * 50.0 / 100.0).abs() < 1e-12, "depth = {depth}");
+        // Mercado desconocido ⇒ hipótesis conservadora: sin apalancar.
+        let ciego = WfMarketEnv::unknown();
+        assert!((ciego.depth_qty(100.0, 13.0) - 0.13).abs() < 1e-12);
+    }
+
+    /// La mediana ignora no-finitos y no inventa valor con muestra vacía.
+    #[test]
+    fn mediana_robusta() {
+        assert_eq!(median(&[]), None);
+        assert_eq!(median(&[f64::NAN, f64::INFINITY]), None);
+        assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));
+        assert_eq!(median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5));
+    }
+
+    /// D-743 — el juez parte cada serie por tiempo. Con el código viejo
+    /// `wf_evaluate_real` recorría la serie ENTERA y entregaba
+    /// `oos_start_capital == oos_end_capital`: no había validación alguna.
+    #[test]
+    fn d743_particion_temporal_por_la_mediana() {
+        assert_eq!(oos_split_index(100), 50);
+        assert_eq!(oos_split_index(61), 30);
+        assert_eq!(oos_split_index(0), 0);
+        // La partición menor es la mayor posible: cualquier otro corte la
+        // empeora.
+        for len in [60usize, 61, 200, 401] {
+            let s = oos_split_index(len);
+            let menor = s.min(len - s);
+            for alt in 1..len {
+                let menor_alt = alt.min(len - alt);
+                assert!(menor >= menor_alt, "len={len}: corte {s} peor que {alt}");
+            }
+        }
+    }
+
+    /// D-743 — una serie sólo se examina si su mitad de validación alcanza el
+    /// mínimo muestral que la propia aptitud exige (WF_MIN_TRADES).
+    #[test]
+    fn d743_longitud_minima_derivada_del_minimo_de_operaciones() {
+        assert_eq!(wf_min_series_len(), 2 * WF_MIN_TRADES as usize);
+        let min = wf_min_series_len();
+        assert!(min - oos_split_index(min) >= WF_MIN_TRADES as usize);
+    }
+
+    /// D-744 — el retorno se normaliza por el capital EN RIESGO en el momento
+    /// de la operación. Con el código viejo se dividía por el capital inicial
+    /// de la simulación: la misma operación producía un retorno distinto sólo
+    /// porque la cuenta había crecido o encogido antes.
+    #[test]
+    fn d744_retorno_normalizado_por_el_capital_del_momento() {
+        // Capital 10 en riesgo, gana 1 ⇒ +10 %, esté donde esté el inicial.
+        let r = trade_return_on_equity(1.0, 11.0).unwrap();
+        assert!((r - 0.1).abs() < 1e-12, "r = {r}");
+        // La normalización VIEJA (por el capital inicial de la simulación,
+        // 13.0) habría dado 7,69 %: un sesgo puro de trayectoria.
+        let viejo = 1.0 / 13.0;
+        assert!((r - viejo).abs() > 0.02, "el arreglo debe cambiar el número");
+        // Capital en riesgo nulo o negativo ⇒ no hay retorno definible y no se
+        // fabrica ninguno.
+        assert!(trade_return_on_equity(1.0, 1.0).is_none());
+        assert!(trade_return_on_equity(-1.0, -3.0).is_none());
+        // Ruina: había 4 en riesgo y se perdieron 5 ⇒ −125 %. El número es
+        // correcto y se reporta; ocultarlo con None escondería la pérdida.
+        let ruina = trade_return_on_equity(-5.0, -1.0).unwrap();
+        assert!((ruina + 1.25).abs() < 1e-12, "ruina = {ruina}");
+        // Serie geométrica coherente: dos operaciones del mismo % dan el
+        // mismo retorno aunque el capital haya crecido entre medias.
+        let r1 = trade_return_on_equity(1.0, 11.0).unwrap();
+        let r2 = trade_return_on_equity(1.1, 12.1).unwrap();
+        assert!((r1 - r2).abs() < 1e-12, "{r1} vs {r2}");
+    }
+
+    /// D-744 (muestreo VIVO) — `sample_realized_returns` dividía el PnL de la
+    /// operación por el capital leído DESPUÉS de contabilizarla. Ese
+    /// denominador contiene la propia ganancia (o le falta la propia
+    /// pérdida), de modo que la serie que alimenta el Sharpe RANSAC y el
+    /// watchdog de rollback venía sesgada: las ganancias se infravaloraban y
+    /// las pérdidas se sobrevaloraban, y el sesgo crece con el tamaño de la
+    /// operación frente a la cuenta — justo el régimen de micro-capital en el
+    /// que este daemon opera. Este test falla con la fórmula vieja.
+    #[test]
+    fn d744_el_muestreo_vivo_no_divide_por_el_capital_post_operacion() {
+        // Cuenta de 12 USD que cierra una ganancia de 1 USD ⇒ saldo 13.
+        let capital_post = 13.0;
+        let delta = 1.0;
+        let correcto = trade_return_on_equity(delta, capital_post).unwrap();
+        let viejo = delta / capital_post; // fórmula anterior
+        assert!((correcto - 1.0 / 12.0).abs() < 1e-12, "correcto = {correcto}");
+        assert!(
+            correcto > viejo,
+            "la ganancia estaba INFRAVALORADA: {correcto:.6} vs {viejo:.6}"
+        );
+
+        // Y en pérdida el sesgo va al revés: −1 sobre 13 que quedan en 12.
+        let correcto_p = trade_return_on_equity(-1.0, 12.0).unwrap();
+        let viejo_p = -1.0 / 12.0;
+        assert!((correcto_p + 1.0 / 13.0).abs() < 1e-12, "correcto_p = {correcto_p}");
+        assert!(
+            correcto_p > viejo_p,
+            "la pérdida estaba SOBREVALORADA: {correcto_p:.6} vs {viejo_p:.6}"
+        );
+
+        // Ida y vuelta al mismo punto ⇒ los dos retornos se cancelan en
+        // logaritmos, que es la propiedad que el viejo denominador rompía.
+        let ida = trade_return_on_equity(1.0, 13.0).unwrap();
+        let vuelta = trade_return_on_equity(-1.0, 12.0).unwrap();
+        assert!(
+            ((1.0 + ida) * (1.0 + vuelta) - 1.0).abs() < 1e-12,
+            "ida {ida} y vuelta {vuelta} deben componer a capital idéntico"
+        );
+    }
+
+    /// D-746 — la multiplicidad se ACUMULA entre rondas. Con el literal
+    /// `2_000` el listón del DSR era el mismo en la ronda 1 que en la 500.
+    #[test]
+    fn d746_las_pruebas_se_acumulan_entre_rondas() {
+        let mut acc = 0usize;
+        for _ in 0..3 {
+            acc = accumulated_trials(acc, 2_001);
+        }
+        assert_eq!(acc, 6_003);
+        assert!(acc > 2_000, "tras 3 rondas la multiplicidad debe superar la de una");
+        // Monótona y saturante.
+        assert_eq!(accumulated_trials(usize::MAX, 10), usize::MAX);
+        assert_eq!(accumulated_trials(0, 0), 1);
+        // Y sube el listón del DSR de forma efectiva.
+        let una = crate::selection_stats::expected_max_sharpe(2_001, 1.0);
+        let muchas = crate::selection_stats::expected_max_sharpe(acc, 1.0);
+        assert!(muchas > una, "{muchas:.4} debe superar {una:.4}");
+    }
+
+    /// D-747 — re-registrar el MISMO genoma no reinicia la ventana de
+    /// vigilancia. Con el código viejo `post_promo_returns.clear()` corría en
+    /// toda promoción: el watchdog de rollback (20 observaciones) no vencía
+    /// jamás mientras el incumbente siguiera ganando sus propias rondas.
+    #[test]
+    fn d747_el_watchdog_no_se_reinicia_con_el_mismo_genoma() {
+        let mut vigilancia = Some((7u64, 6u64));
+        let mut obs: Vec<f64> = (0..19).map(|i| -0.001 * (i as f64 + 1.0)).collect();
+        let reiniciada = armar_vigilancia(true, &mut vigilancia, &mut obs, 8, 7);
+        assert!(!reiniciada, "el mismo genoma no reinicia la vigilancia");
+        assert_eq!(obs.len(), 19, "la evidencia acumulada debe sobrevivir");
+        assert_eq!(vigilancia, Some((7, 6)), "sigue vigilando la promoción original");
+
+        // Un genoma DISTINTO sí invalida la evidencia anterior.
+        let reiniciada = armar_vigilancia(false, &mut vigilancia, &mut obs, 9, 7);
+        assert!(reiniciada);
+        assert!(obs.is_empty());
+        assert_eq!(vigilancia, Some((9, 7)));
+
+        // Sin vigilancia previa, el mismo genoma la arma sin borrar nada.
+        let mut vigilancia2: Option<(u64, u64)> = None;
+        let mut obs2: Vec<f64> = vec![0.01, -0.02];
+        let reiniciada = armar_vigilancia(true, &mut vigilancia2, &mut obs2, 3, 2);
+        assert!(!reiniciada);
+        assert_eq!(vigilancia2, Some((3, 2)));
+        assert_eq!(obs2.len(), 2);
+    }
+
+    /// D-747 — identidad de genomas: el guardia sólo sirve si reconoce tanto
+    /// la igualdad como la diferencia.
+    #[test]
+    fn d747_same_genome_reconoce_igualdad_y_diferencia() {
+        let base = SuperGenotype::default();
+        assert!(same_genome(&base, &base.clone()));
+        // El roundtrip canónico no cambia la identidad.
+        let canonico = SuperGenotype::from_vector(&base.to_vector());
+        assert!(same_genome(&base, &canonico));
+
+        // Y alguna perturbación del vector genético DEBE distinguirse.
+        let v = canonical_vector(&base);
+        let mut distingue = false;
+        for i in 0..v.len() {
+            let mut v2 = v.clone();
+            v2[i] = if v[i].abs() > 1e-9 { v[i] * 0.5 } else { 0.5 };
+            if !same_genome(&base, &SuperGenotype::from_vector(&v2)) {
+                distingue = true;
+                break;
+            }
+        }
+        assert!(distingue, "same_genome debe distinguir genomas distintos");
     }
 }

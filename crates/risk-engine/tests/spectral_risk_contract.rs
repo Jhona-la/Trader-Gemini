@@ -9,6 +9,7 @@ fn geometry() -> TpSlInputs {
         hurst: 0.5,
         roundtrip_fee: 0.001,
         sl_atr_multiplier: 1.0,
+        sigma_forecast: None,
     }
 }
 
@@ -66,21 +67,36 @@ fn contracts_nonrepresentable_target_does_not_poison_finite_geometry() {
     assert_eq!(out.tp_pct, baseline.tp_pct);
 }
 
+/// D-750 (fusión PR #5): sin edge probado la exposición financiada es
+/// EXACTAMENTE la orden mínima ejecutable del símbolo (mn·stop/capital de
+/// fracción, es decir mn/capital de techo nocional), ni un céntimo más, y
+/// sólo en régimen micro. En régimen estándar no hay exploración financiada.
 #[test]
-fn contracts_no_implicit_funded_exploration_without_evidence() {
+fn contracts_exploration_without_evidence_is_exactly_the_minimum_executable() {
     let env = RiskEnvelope::new();
     assert_eq!(env.risk_fraction(0.85, 10.0), 0.0);
-    assert_eq!(env.max_leverage(13.0, 0.005, 5.0, 0.85, 10.0), (0.0, false));
+    assert_eq!(
+        env.max_leverage(13.0, 0.005, 5.0, 0.85, 10.0),
+        (5.0 / 13.0, true)
+    );
+    assert_eq!(env.max_leverage(100.0, 0.005, 5.0, 0.85, 10.0), (0.0, false));
 }
 
+/// D-750: la evidencia NEGATIVA mata el dimensionado (risk_fraction = 0)
+/// pero no el sondeo mínimo, que no puede violar el tope de ruina por
+/// construcción (una sola orden mínima no arruina la cuenta). La evidencia
+/// modula el TECHO, no la existencia de la sonda.
 #[test]
-fn contracts_mature_negative_evidence_cannot_reactivate_micro_exposure() {
+fn contracts_mature_negative_evidence_kills_sizing_not_the_minimal_probe() {
     let mut env = RiskEnvelope::new();
     for _ in 0..500 {
         env.record_trade(false, 0.0, -1.0);
     }
     assert_eq!(env.risk_fraction(0.85, 10.0), 0.0);
-    assert_eq!(env.max_leverage(13.0, 0.005, 5.0, 0.85, 10.0), (0.0, false));
+    assert_eq!(
+        env.max_leverage(13.0, 0.005, 5.0, 0.85, 10.0),
+        (5.0 / 13.0, true)
+    );
 }
 
 #[test]

@@ -1,7 +1,11 @@
 use god_engine_core::reality_physics::RealityPhysics;
 
+/// CERRADO por D-753 (fusión PR #5): la física unificada
+/// (`tp_sl::latency_slippage_pct`) sanea latencia negativa/NaN a 0 ANTES de
+/// la raíz, de modo que sqrt(-1) ya no existe y el piso .max() ya no puede
+/// ocultar una latencia inválita. Contrato de regresión: inválida == válida.
 #[test]
-fn open_negative_latency_hides_impact_behind_finite_floor() {
+fn negative_latency_is_sanitized_to_zero_slippage() {
     let p = RealityPhysics::default();
     let valid = p
         .calculate_market_entry(100.0, true, 1e6, 0.001, 0.0001, 0.0)
@@ -9,7 +13,11 @@ fn open_negative_latency_hides_impact_behind_finite_floor() {
     let invalid = p
         .calculate_market_entry(100.0, true, 1e6, 0.001, 0.0001, -1.0)
         .0;
-    assert!(invalid < valid); // sqrt(-1) -> NaN; max(floor) hides missing/invalid latency.
+    assert_eq!(invalid, valid);
+    let nan = p
+        .calculate_market_entry(100.0, true, 1e6, 0.001, 0.0001, f64::NAN)
+        .0;
+    assert_eq!(nan, valid);
 }
 
 #[test]

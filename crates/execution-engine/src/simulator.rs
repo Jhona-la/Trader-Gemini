@@ -437,6 +437,8 @@ mod tests {
             tp_target: 52000.0,
             sl_target: 49000.0,
             fee_buffer_multiplier: 1.01,
+                    // D-745: horizonte de la orden (el simulado declara el ancla rápida).
+            tau_ms: quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
         };
 
         // Open Long position on BTCUSDT

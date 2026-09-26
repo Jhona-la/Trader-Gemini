@@ -8,7 +8,7 @@ fn unknown_capital_cannot_authorize_margin() {
     for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
         arena.unified_capital.store(bad, Ordering::Relaxed);
         assert!(
-            !PortfolioOrchestrator::new(&arena).allow_trade(false, 1.0, MarketRegime::Range),
+            !PortfolioOrchestrator::new(&arena).allow_trade(false, 1.0, MarketRegime::Range, 5.0),
             "capital={bad}"
         );
     }
@@ -23,7 +23,7 @@ fn unknown_drawdown_budget_cannot_authorize_margin() {
             .global_max_drawdown
             .store(bad, Ordering::Relaxed);
         assert!(
-            !PortfolioOrchestrator::new(&arena).allow_trade(true, 1.0, MarketRegime::Range),
+            !PortfolioOrchestrator::new(&arena).allow_trade(true, 1.0, MarketRegime::Range, 5.0),
             "budget={bad}"
         );
     }
@@ -36,11 +36,18 @@ fn valid_margin_boundary_and_crash_policy_are_preserved() {
         .config
         .global_max_drawdown
         .store(0.1, Ordering::Relaxed);
+    // D-744 (fusión PR #5): el colchón de margen ya no se deriva del gen de
+    // drawdown — tiene gen propio. Se fija 0.90 para reproducir la frontera
+    // que este contrato audita.
+    arena
+        .config
+        .margin_cushion_pct
+        .store(0.90, Ordering::Relaxed);
     let guard = PortfolioOrchestrator::new(&arena);
-    assert!(guard.allow_trade(true, 90.0, MarketRegime::Range));
-    assert!(!guard.allow_trade(true, 90.01, MarketRegime::Range));
-    assert!(!guard.allow_trade(true, 1.0, MarketRegime::Crash));
-    assert!(guard.allow_trade(false, 1.0, MarketRegime::Crash));
+    assert!(guard.allow_trade(true, 90.0, MarketRegime::Range, 5.0));
+    assert!(!guard.allow_trade(true, 90.01, MarketRegime::Range, 5.0));
+    assert!(!guard.allow_trade(true, 1.0, MarketRegime::Crash, 5.0));
+    assert!(guard.allow_trade(false, 1.0, MarketRegime::Crash, 5.0));
 }
 
 #[test]
@@ -53,7 +60,7 @@ fn invalid_open_position_margin_cannot_hide_exposure() {
         for bad in [f64::NAN, f64::NEG_INFINITY, -1.0] {
             position.margin_used.store(bad, Ordering::Relaxed);
             assert!(
-                !PortfolioOrchestrator::new(&arena).allow_trade(true, 1.0, MarketRegime::Range),
+                !PortfolioOrchestrator::new(&arena).allow_trade(true, 1.0, MarketRegime::Range, 5.0),
                 "margin={bad},side={side}"
             );
         }
@@ -67,6 +74,13 @@ fn finite_margins_are_summed_across_spectral_slots_and_sides() {
         .config
         .global_max_drawdown
         .store(0.1, Ordering::Relaxed);
+    // D-744 (fusión PR #5): el colchón de margen ya no se deriva del gen de
+    // drawdown — tiene gen propio. Se fija 0.90 para reproducir la frontera
+    // que este contrato audita.
+    arena
+        .config
+        .margin_cushion_pct
+        .store(0.90, Ordering::Relaxed);
     for (i, margin) in [40.0, 30.0].into_iter().enumerate() {
         let position = arena.coins[0].positions.slots()[i];
         position.is_long.store(i == 0, Ordering::Relaxed);
@@ -74,6 +88,6 @@ fn finite_margins_are_summed_across_spectral_slots_and_sides() {
         position.is_open.store(true, Ordering::Release);
     }
     let guard = PortfolioOrchestrator::new(&arena);
-    assert!(guard.allow_trade(true, 20.0, MarketRegime::Range));
-    assert!(!guard.allow_trade(false, 20.01, MarketRegime::Range));
+    assert!(guard.allow_trade(true, 20.0, MarketRegime::Range, 5.0));
+    assert!(!guard.allow_trade(false, 20.01, MarketRegime::Range, 5.0));
 }

@@ -41,7 +41,7 @@ fn open_missing_or_invalid_trajectory_is_perfectly_aligned() {
     let mut a = TrajectoryAuditor::new(1);
     for (symbol, price) in [(0, 100.0), (0, f64::NAN), (1, 100.0)] {
         assert_eq!(
-            a.evaluate_tick(symbol, true, price, 1.0, 1_000),
+            a.evaluate_tick(symbol, price, 1.0, 1_000),
             TrajectoryStatus::Aligned {
                 coherence_score: 1.0
             }
@@ -52,10 +52,10 @@ fn open_missing_or_invalid_trajectory_is_perfectly_aligned() {
 #[test]
 fn open_old_trajectory_tick_rewinds_time_and_adds_volume() {
     let mut a = TrajectoryAuditor::new(1);
-    a.record_entry(0, true, true, 100.0, 1_000, 0.01, 1_000.0, 10_000);
-    a.evaluate_tick(0, true, 100.0, 5.0, 2_000);
-    a.evaluate_tick(0, true, 100.0, 5.0, 500);
-    let t = a.scalp_tracks[0].as_ref().unwrap();
+    a.record_entry(0, true, 100.0, 1_000, 0.01, 1_000.0, 10_000);
+    a.evaluate_tick(0, 100.0, 5.0, 2_000);
+    a.evaluate_tick(0, 100.0, 5.0, 500);
+    let t = a.tracks[0].as_ref().unwrap();
     assert_eq!(t.last_update_ms, 500);
     assert_eq!(t.accumulated_volume_usd, 10.0);
 }
@@ -63,8 +63,8 @@ fn open_old_trajectory_tick_rewinds_time_and_adds_volume() {
 #[test]
 fn open_perfect_trajectory_returns_zero_error_not_one_fidelity() {
     let mut a = TrajectoryAuditor::new(1);
-    a.record_entry(0, true, true, 100.0, 1_000, 0.01, 0.0, 1_000);
-    assert_eq!(a.record_exit(0, true, 101.0, 2_000), Some(0.0));
+    a.record_entry(0, true, 100.0, 1_000, 0.01, 0.0, 1_000);
+    assert_eq!(a.record_exit(0, 101.0, 2_000), Some(0.0));
 }
 
 #[test]

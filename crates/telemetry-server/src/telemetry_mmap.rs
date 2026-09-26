@@ -20,7 +20,7 @@ pub struct MmapTelemetry {
 pub struct TelemetrySnapshot {
     pub tick_counter: u64,
     pub unified_capital: f64,
-    pub pnl_realized_scalp: f64,
+    pub pnl_realized: f64,
     pub global_leverage: f64,
     pub ai_ml_prob: f64,
     pub hurst_exponent: f64,
@@ -138,7 +138,7 @@ impl MmapTelemetry {
         let snap = TelemetrySnapshot {
             tick_counter: self.arena.tick_counter.load(Ordering::Relaxed),
             unified_capital: safe_uni,
-            pnl_realized_scalp: safe_pnl,
+            pnl_realized: safe_pnl,
             global_leverage: safe_lev,
             ai_ml_prob: if avg_ml_prob.is_finite() {
                 avg_ml_prob

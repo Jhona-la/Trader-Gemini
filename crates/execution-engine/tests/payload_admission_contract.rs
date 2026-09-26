@@ -12,6 +12,7 @@ fn order() -> ValidatedOrder {
         tp_target: 102.0,
         sl_target: 99.0,
         fee_buffer_multiplier: 1.1,
+        tau_ms: 60_000.0,
     }
 }
 

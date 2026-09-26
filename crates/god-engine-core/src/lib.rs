@@ -49,6 +49,135 @@ pub mod slippage_predictor;
 pub mod stateful_engine;
 pub mod trailing;
 
+/// D-752 — TASA DE ACIERTO MEDIDA, CON SU INCERTIDUMBRE (intervalo de Wilson).
+///
+/// QUÉ ESTABA MAL: varias ramas de señal emitían una «confianza» LITERAL
+/// (0,72 / 0,68 / 0,65) y el freno del bosque se armaba con `acc > 0,55` sin
+/// mirar el tamaño de la muestra. Aguas abajo esa cifra se trata como una
+/// PROBABILIDAD: pasa por el escalado de Platt que alimenta el Kelly y se
+/// compara contra el gen `min_confidence_btc`. Una constante escrita a mano no
+/// es una frecuencia observada, y una exactitud sin `n` no es evidencia.
+///
+/// POR QUÉ IMPORTABA: el tamaño de la posición es monótono en esa cifra, y el
+/// ORDEN entre ramas (0,72 > 0,68 > 0,65) tampoco salía de dato alguno. Una
+/// rama que acierta el 45 % dimensionaba como si acertara el 72 %, y ninguna
+/// racha de pérdidas podía corregirla: un literal no aprende.
+///
+/// QUÉ GARANTIZA: la convicción de una rama es la frecuencia de acierto que
+/// ESA rama demostró, penalizada por el tamaño de su muestra. Se usa el
+/// intervalo de Wilson —no el normal de Wald— porque no degenera con `n`
+/// pequeño ni con `p` en los extremos: con 3 aciertos de 3, Wald devuelve
+/// [1, 1] («certeza» con tres datos) y Wilson devuelve un intervalo ancho que
+/// todavía contiene ½.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TasaAcierto {
+    /// Operaciones cerradas atribuidas a esta fuente.
+    pub n: u32,
+    /// De ellas, las que acabaron en ganancia NETA de comisiones.
+    pub aciertos: u32,
+}
+
+impl TasaAcierto {
+    #[inline]
+    pub fn observar(&mut self, acierto: bool) {
+        self.n = self.n.saturating_add(1);
+        if acierto {
+            self.aciertos = self.aciertos.saturating_add(1);
+        }
+    }
+
+    /// Intervalo de Wilson al nivel `z`. Con `n = 0` devuelve `[0, 1]`: la
+    /// ignorancia completa, que es exactamente lo que hay antes del primer
+    /// cierre. `z` es el mismo `Z95` que usa el resto del núcleo para decidir
+    /// significación, de modo que hay UN solo criterio en todo el motor.
+    #[inline]
+    pub fn intervalo(&self, z: f64) -> (f64, f64) {
+        if self.n == 0 || !z.is_finite() || z <= 0.0 {
+            return (0.0, 1.0);
+        }
+        let n = self.n as f64;
+        let p = (self.aciertos as f64 / n).clamp(0.0, 1.0);
+        let z2 = z * z;
+        let denom = 1.0 + z2 / n;
+        let centro = (p + z2 / (2.0 * n)) / denom;
+        let radio = z * ((p * (1.0 - p) / n) + z2 / (4.0 * n * n)).sqrt() / denom;
+        (
+            (centro - radio).clamp(0.0, 1.0),
+            (centro + radio).clamp(0.0, 1.0),
+        )
+    }
+
+    /// `true` sólo si la muestra EXCLUYE la moneda al aire por arriba: la
+    /// fuente demostró acierto mejor que el azar al nivel `z`.
+    #[inline]
+    pub fn mejor_que_el_azar(&self, z: f64) -> bool {
+        self.intervalo(z).0 > 0.5
+    }
+}
+
+/// D-752 — CONVICCIÓN DE UNA RAMA A PARTIR DE SU PROPIO HISTORIAL.
+///
+/// Tres estados y ningún parámetro libre; el criterio es siempre el mismo:
+/// «¿excluye el intervalo de Wilson la moneda al aire?».
+///   · cota inferior > ½ ⇒ la rama DEMOSTRÓ ventaja. La convicción es esa
+///     cota: lo que la muestra garantiza, no lo que su media sugiere.
+///   · cota superior < ½ ⇒ la rama DEMOSTRÓ desventaja. Emite esa cota
+///     superior, que por definición queda bajo ½, y el gate de confianza del
+///     risk-engine la rechaza sin necesidad de una regla aparte.
+///   · el intervalo contiene ½ ⇒ todavía no hay evidencia; decide la magnitud
+///     MEDIDA del disparo, que es lo único observable en ese momento.
+///
+/// El tercer caso no es una concesión: sin él el motor nunca abriría la
+/// primera operación de una rama y jamás reuniría la muestra con la que
+/// juzgarla.
+#[inline]
+pub fn conviccion_de_rama(registro: &TasaAcierto, piso_por_magnitud: f64) -> f64 {
+    let (lo, hi) = registro.intervalo(crate::diffusion::Z95);
+    if lo > 0.5 {
+        lo
+    } else if hi < 0.5 {
+        hi
+    } else {
+        piso_por_magnitud
+    }
+}
+
+/// D-756 — ESCALADA DE EXIGENCIA TRAS UNA RACHA DE PÉRDIDAS.
+///
+/// QUÉ ESTABA MAL: la exigencia de desequilibrio de libro tras dos pérdidas
+/// seguidas se elevaba con un escalón único y literal (`.max(0,22)` /
+/// `.max(0,20)`), que además podía REBAJARLA si el umbral vigente ya era
+/// mayor. Y una tercera o cuarta pérdida no cambiaba nada.
+///
+/// QUÉ GARANTIZA: la misma escalera binaria que gobierna el enfriamiento
+/// (D-754). Cada pérdida consecutiva a partir de la segunda DUPLICA el
+/// desequilibrio exigido, y el techo es 1 porque es lo que |OBI| puede valer
+/// por construcción. Es monótona (nunca relaja) y no tiene escalones
+/// inventados. El tope de 8 duplicaciones sólo evita el desbordamiento: a
+/// partir de ahí el umbral ya está saturado en 1.
+#[inline]
+pub fn exigencia_tras_racha(umbral: f64, racha: u32) -> f64 {
+    if !umbral.is_finite() {
+        return umbral;
+    }
+    let niveles = racha.saturating_sub(1).min(8) as i32;
+    (umbral * 2f64.powi(niveles)).min(1.0)
+}
+
+/// D-752 — etiquetas de rama. `SignalIntent::volume_flow_rate` YA transportaba
+/// un identificador de rama (1..14) para la traza de apertura, y sobrevive a
+/// la arbitración porque todas las fusiones usan `..fast_intent` / `..winner`.
+/// Se reutiliza ese canal —en vez de abrir otro— para atribuir cada cierre a
+/// la rama que lo originó. Las ramas de respaldo (ML re-centrado, espectro,
+/// acción de precio) no lo rellenaban: quedaban todas en 0, indistinguibles.
+pub const RAMA_ML_RECENTRADO: f64 = 20.0;
+pub const RAMA_ESPECTRO_DIRECTO: f64 = 21.0;
+pub const RAMA_TENDENCIA_PERSISTENTE: f64 = 22.0;
+pub const RAMA_REVERSION_ANTIPERSISTENTE: f64 = 23.0;
+pub const RAMA_MOMENTO_SIN_REGIMEN: f64 = 24.0;
+/// Casillas del registro por moneda: cubre las etiquetas 0..=24 con holgura.
+pub const N_RAMAS: usize = 32;
+
 use crate::stateful_engine::StatefulEngine;
 use quantum_arena::GlobalArena;
 use risk_engine::RiskEngine;
@@ -102,6 +231,13 @@ pub struct GodEngineCore {
     /// XXXIII: liquidation evidence belongs to this core and to an exact symbol.
     liquidation_states: Vec<Option<liquidation_feed::LiquidationState>>,
     pub liquidation_diagnostics: liquidation_feed::LiquidationDiagnostics,
+    /// ESPECTRO PREDICTIVO por simbolo (D-742b): el tape a todas las escalas
+    /// y el pronostico en linea de volatilidad y volumen a cualquier
+    /// horizonte, con su habilidad medida fuera de muestra. Observacion pura
+    /// por ahora: se publica al registry y NADIE decide todavia con ello -
+    /// primero se mide en el forense, despues se conecta.
+    pub spectral_forecast: Vec<quantum_arena::spectral_tape::SpectralForecastBank>,
+
     /// F4.7: último precio de kline CERRADO por coin — para calibrar el
     /// ensamble con la dirección realizada de cada vela.
     kline_close_memory: Vec<f64>,
@@ -166,6 +302,34 @@ pub struct GodEngineCore {
     pub diag_pnl_sum: f64,
     /// Diagnóstico por dirección del embudo de entrada (sólo telemetría).
     pub diag_dir: direction_diag::DirectionDiag,
+    /// D-752 — HISTORIAL DE ACIERTO POR RAMA Y POR MONEDA. Índice externo:
+    /// `coin_id`; interno: la etiqueta de rama que viaja en
+    /// `SignalIntent::volume_flow_rate`. Esto NO es telemetría: es la fuente
+    /// de la convicción que las ramas de respaldo emiten (ver
+    /// `conviccion_de_rama`). Por moneda porque la exchangeabilidad se rompe
+    /// entre activos, igual que ya ocurre con `conformal_by_coin`.
+    pub rama_registro: Vec<[TasaAcierto; N_RAMAS]>,
+    /// Rama que abrió la posición viva de cada moneda; `None` si no hay
+    /// posición o si la entrada no llevaba etiqueta. El cierre la consume.
+    pub rama_abierta: Vec<Option<usize>>,
+    /// D-752 — HISTORIAL DIRECCIONAL DEL BOSQUE ONLINE, medido por el núcleo.
+    /// El productor (`online_daemon`) publica `forest6_acc` SIN tamaño de
+    /// muestra, así que esa cifra no admite cota inferior alguna. El núcleo
+    /// mide lo único que puede medir por sí mismo: si el voto del bosque en la
+    /// apertura coincidió con el resultado del cierre.
+    pub bosque_registro: Vec<TasaAcierto>,
+    /// Voto direccional del bosque en la apertura viva (`true` = predijo
+    /// subida). `None` si el bosque no opinaba al abrir.
+    pub bosque_voto_abierto: Vec<Option<bool>>,
+    /// D-756 — DISTRIBUCIÓN MEDIDA DE |OFI|, |OBI| Y DEL SCORE MICRO, POR
+    /// MONEDA, con los estimadores P² que ya existían en
+    /// `quantum_arena::adaptive_quantiles` y que NO tenían ni un solo
+    /// llamador fuera de sus propios tests: la maquinaria anti-hardcode del
+    /// repositorio estaba construida y desconectada. Ahora alimenta los
+    /// suelos de los umbrales de flujo y libro, de modo que «desequilibrio
+    /// significativo» signifique el percentil 80 de lo que ESTE símbolo hace,
+    /// y no un número escrito a mano.
+    pub cuantiles: Vec<quantum_arena::adaptive_quantiles::AdaptiveQuantileEngine>,
 }
 
 impl GodEngineCore {
@@ -222,7 +386,7 @@ impl GodEngineCore {
             signal_engine::hawkes_bessel::HawkesBesselEngine::new(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
-            signal_engine::micro_scalp_trigger::MicroScalpTriggerEngine::default(),
+            signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::default(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
             signal_engine::perceptron_gate::PerceptronGateEngine::new(),
@@ -243,13 +407,13 @@ impl GodEngineCore {
             signal_engine::supersonic_shockwave::SupersonicShockwaveEngine::new(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
-            signal_engine::swing_conformal_filter::SwingConformalFilterEngine::default(),
+            signal_engine::conformal_reversion_filter::ConformalReversionFilterEngine::default(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
             signal_engine::trend_runner::HighPayoffTrendRunner::new(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
-            signal_engine::turbo_scalper::TurboScalpEngine::default(),
+            signal_engine::flow_impulse::FlowImpulseEngine::default(),
         ));
         // FIX #781: Registrar JohansenVecmEngine en el orquestador central
         tensor_orchestrator.add_strategy(Box::new(
@@ -313,6 +477,9 @@ impl GodEngineCore {
             temporal_spectrum: (0..n_coins)
                 .map(|_| quantum_arena::temporal_spectrum::TemporalSpectrum::new())
                 .collect(),
+            spectral_forecast: (0..n_coins)
+                .map(|_| quantum_arena::spectral_tape::SpectralForecastBank::new())
+                .collect(),
             kline_close_memory: vec![0.0; n_coins],
             liquidation_states: vec![None; n_coins],
             liquidation_diagnostics: liquidation_feed::LiquidationDiagnostics::default(),
@@ -355,6 +522,13 @@ impl GodEngineCore {
             diag_notional_max: 0.0,
             diag_pnl_sum: 0.0,
             diag_dir: direction_diag::DirectionDiag::default(),
+            rama_registro: vec![[TasaAcierto::default(); N_RAMAS]; n_coins],
+            rama_abierta: vec![None; n_coins],
+            bosque_registro: vec![TasaAcierto::default(); n_coins],
+            bosque_voto_abierto: vec![None; n_coins],
+            cuantiles: (0..n_coins)
+                .map(|_| quantum_arena::adaptive_quantiles::AdaptiveQuantileEngine::new())
+                .collect(),
         }
     }
 
@@ -609,6 +783,116 @@ impl GodEngineCore {
     /// Procesa un evento unificado continuo (trade, kline, depth) y devuelve las órdenes generadas.
     /// Retorna: (NuevoOrden, CerradoOrden) en arquitectura universal continua.
     #[inline(always)]
+    /// PUERTAS DEL CONTINUO (D-743) — lo que invalida una entrada es del
+    /// MERCADO, no de la banda que la produjo.
+    ///
+    /// El motor lee el espectro por dos ventanas —la rápida (microestructura,
+    /// flujo del libro) y la lenta (tendencia, EMAs, stretch)— y arbitra entre
+    /// ellas. Pero los filtros duros vivían sólo en el camino de la rápida: la
+    /// lectura lenta podía abrir con el spread por encima del recorrido, sin
+    /// volatilidad que recorrer, dentro del enfriamiento de reentrada, contra
+    /// el consenso del tick, contra el modelo y contra el muro del libro. Con
+    /// τ dominante por encima de la media geométrica de la banda operativa, la
+    /// arbitración le entrega la decisión a esa lectura: el veto que el
+    /// operador cree tener armado no existe en la mitad de los regímenes.
+    ///
+    /// Aquí están las cuatro puertas, aplicadas por igual a cualquier lectura:
+    ///   1. viabilidad del mercado (ATR mínimo, spread, enfriamiento);
+    ///   2. invariante bayesiano D-472 (nada contradice al consenso del tick);
+    ///   3. ponderación continua del modelo F-009 / D-411 (veta si lo
+    ///      contradice con fuerza y no hay acción de precio extrema; si no,
+    ///      modula confianza). La dirección del modelo se mide RELATIVA a su
+    ///      propia base (`ml_model_base`, ~0,30 con el etiquetado honesto), no
+    ///      a 0,5: contra 0,5 un modelo con base 0,30 «contradecía» todo largo
+    ///      por construcción;
+    ///   4. vetos de flujo agregado (CVD) y de muro del libro (L2).
+    fn puertas_del_continuo(
+        &self,
+        coin_id: usize,
+        intent: SignalIntent,
+        viable: bool,
+        composite_score: f64,
+        ml_prob: f64,
+        ml_model_base: f64,
+        price_stretch: f64,
+    ) -> SignalIntent {
+        if intent.signal == SignalType::Flat {
+            return intent;
+        }
+        if !viable {
+            return SignalIntent::flat();
+        }
+        let mut out = intent;
+
+        // 2. Invariante bayesiano absoluto (D-472).
+        if (out.signal == SignalType::Long && composite_score < 0.0)
+            || (out.signal == SignalType::Short && composite_score > 0.0)
+        {
+            return SignalIntent::flat();
+        }
+
+        // 3. Ponderación continua por el modelo (F-009 / D-411, desasfixia
+        //    direccional): la dirección se mide contra la base del propio
+        //    modelo; sólo una contradicción FUERTE (< −0,80) veta, y la
+        //    penalización blanda conserva convicción no nula (piso 0,20).
+        let ml_base = if ml_model_base > 0.05 && ml_model_base < 0.95 {
+            ml_model_base
+        } else {
+            0.5
+        };
+        let ml_directional = match out.signal {
+            SignalType::Long => (ml_prob - ml_base) * 2.0,
+            SignalType::Short => (ml_base - ml_prob) * 2.0,
+            _ => 0.0,
+        };
+        if ml_directional < -0.80 && price_stretch.abs() < 2.5 {
+            return SignalIntent::flat();
+        } else if ml_directional < 0.0 && price_stretch.abs() < 2.5 {
+            out.confidence *= (1.0 + ml_directional * 0.5).clamp(0.20, 1.0);
+        } else if ml_directional > 0.0 {
+            out.confidence = (out.confidence * (1.0 + ml_directional * 0.5)).min(0.99);
+        }
+
+        // 4. Vetos duros de flujo agregado y muro del libro.
+        let coin = &self.arena.coins[coin_id];
+        let buy_vol = coin.agg_buy_vol.load(Ordering::Relaxed);
+        let sell_vol = coin.agg_sell_vol.load(Ordering::Relaxed);
+        let total_vol_cvd = buy_vol + sell_vol;
+        let cvd_ratio = if total_vol_cvd > 0.0 {
+            (buy_vol - sell_vol) / total_vol_cvd
+        } else {
+            0.0
+        };
+        let bid_wall = coin.l2_bid_wall.load(Ordering::Relaxed);
+        let ask_wall = coin.l2_ask_wall.load(Ordering::Relaxed);
+        let cvd_veto = self.arena.config.cvd_veto_threshold.load(Ordering::Relaxed);
+        // D-749: el veto del muro se decide en el espacio del gen —una RAZÓN
+        // entre muros— y no contrastando esa razón contra un desequilibrio
+        // normalizado en [−1, 1], donde nunca podía dispararse.
+        let wall_veto = self
+            .arena
+            .config
+            .wall_veto_threshold
+            .load(Ordering::Relaxed);
+        let es_largo = out.signal == SignalType::Long;
+        match out.signal {
+            SignalType::Long | SignalType::Short => {
+                let cvd_en_contra = if es_largo {
+                    cvd_ratio < -cvd_veto
+                } else {
+                    cvd_ratio > cvd_veto
+                };
+                if cvd_en_contra
+                    || crate::calibration::muro_en_contra(bid_wall, ask_wall, wall_veto, es_largo)
+                {
+                    return SignalIntent::flat();
+                }
+            }
+            _ => {}
+        }
+        out
+    }
+
     pub fn process_event(
         &mut self,
         coin_id: usize,
@@ -809,6 +1093,14 @@ impl GodEngineCore {
                 self.arena.coins[coin_id]
                     .current_atr
                     .store(raw_atr_pct * mid_price, Ordering::Relaxed);
+                // D-745: la τ dominante MEDIDA se publica al arena para que el
+                // risk-engine dimensione en el mismo horizonte en el que el
+                // núcleo gestionará la posición.
+                if let Some(spec) = self.temporal_spectrum.get(coin_id) {
+                    self.arena.coins[coin_id]
+                        .dominant_tau_ms
+                        .store(spec.dominant_tau_ms, Ordering::Relaxed);
+                }
                 self.arena.update_market_data(
                     coin_id,
                     eff_bid,
@@ -846,9 +1138,43 @@ impl GodEngineCore {
                         .hurst_scalp_threshold
                         .load(Ordering::Relaxed)
                         .clamp(0.30, h_trend - 0.02);
-                    let new_regime = if btc_trend > 0.015 && btc_hurst > h_trend {
+                    // D-758 — EL RÉGIMEN GLOBAL NO PUEDE DECIDIRSE CON 150
+                    // PUNTOS BÁSICOS ESCRITOS A MANO.
+                    //
+                    // QUÉ ESTABA MAL: `btc_trend > 0,015`. `btc_trend` es el
+                    // diferencial relativo de las EMAs de 20 y 200 TICKS —una
+                    // magnitud de microestructura, típicamente de unos pocos
+                    // puntos básicos—, así que exigirle el 1,5 % declaraba
+                    // «BullRun» o «Crash» prácticamente nunca: las dos ramas
+                    // estaban muertas y el régimen global se reducía a
+                    // Range/Chaotic. Y el 1,5 % es además absoluto: no
+                    // distingue un mercado en calma de uno en pánico.
+                    //
+                    // QUÉ GARANTIZA: el mismo criterio de significación que ya
+                    // usa el resto del núcleo —z al 95 %— aplicado con las
+                    // unidades CORRECTAS: la σ del retorno POR TICK medida por
+                    // el propio motor (D-758) escalada por la desviación
+                    // estacionaria del diferencial de dos EMAs de esos mismos
+                    // periodos. Sin calentamiento el z es 0 y no se declara
+                    // tendencia: la ignorancia no es un régimen.
+                    let z_btc = match btc_fe.sigma_retorno_tick() {
+                        Some(sd) => {
+                            let escala = sd
+                                * crate::diffusion::ema_spread_sd(
+                                    crate::stateful_engine::TICK_EMA_FAST_BARS,
+                                    crate::stateful_engine::TICK_EMA_SLOW_BARS,
+                                );
+                            if escala > 0.0 && btc_trend.is_finite() {
+                                btc_trend / escala
+                            } else {
+                                0.0
+                            }
+                        }
+                        None => 0.0,
+                    };
+                    let new_regime = if z_btc > crate::diffusion::Z95 && btc_hurst > h_trend {
                         1u8 // BullRun
-                    } else if btc_trend < -0.015 && btc_hurst > h_trend {
+                    } else if z_btc < -crate::diffusion::Z95 && btc_hurst > h_trend {
                         2u8 // Crash
                     } else if btc_hurst < h_chaos {
                         3u8 // Chaotic / Mean Reverting
@@ -860,6 +1186,19 @@ impl GodEngineCore {
                         .store(new_regime, Ordering::Relaxed);
                 }
             }
+
+            // D-753 — LA CANTIDAD NEGOCIADA REAL LLEGA AL MOTOR DE FEATURES.
+            // `trade_qty` ya venía en la firma y TODOS los llamadores la
+            // rellenan con la cantidad del tape (vivo, `booktick_replay`,
+            // forense). Sólo faltaba hacerla llegar al camino per-tick, que
+            // fabricaba un sustituto a partir de la profundidad del libro.
+            // En eventos que NO son trades queda en 0: no hubo volumen.
+            self.feature_engines[coin_id].ultima_cantidad_trade =
+                if is_trade && trade_qty.is_finite() && trade_qty > 0.0 {
+                    trade_qty
+                } else {
+                    0.0
+                };
 
             if is_trade {
                 // CERT-M2-C02: cada trade real EXCITA el proceso de Hawkes
@@ -884,6 +1223,43 @@ impl GodEngineCore {
                 // externas se retiran para no contar dos veces.
                 self.arena
                     .update_agg_trade(coin_id, is_buyer_maker, trade_qty);
+                // ESPECTRO PREDICTIVO (D-742b): el mismo trade alimenta las
+                // tasas de todas las escalas y madura los pronósticos cuyo
+                // horizonte acaba de vencer. `is_buyer_maker` = el comprador
+                // era el pasivo ⇒ el AGRESOR fue el vendedor.
+                if let Some(bank) = self.spectral_forecast.get_mut(coin_id) {
+                    bank.on_trade(event_time_ms, (eff_bid + eff_ask) * 0.5, trade_qty, !is_buyer_maker);
+                    // D-754 — EL PRONÓSTICO SÓLO SALE AL MOTOR SI HA
+                    // DEMOSTRADO HABILIDAD. `habilidad_volatilidad` es el R²
+                    // fuera de muestra frente a la climatología, acumulado
+                    // prequencialmente: cada muestra se puntúa ANTES de que el
+                    // modelo vea su objetivo. Mientras sea None (sin muestras
+                    // maduras) o ≤ 0 (no bate a su propia media), el arena
+                    // conserva ceros y la geometría sigue usando el ATR hacia
+                    // atrás de siempre. Publicar un pronóstico sin evidencia
+                    // sería exactamente el pecado que esta ola vino a cerrar.
+                    //
+                    // Auditoría PR #5 (D-754b): cuando la habilidad deja de ser
+                    // positiva (o vuelve a no haber muestras maduras), el arena
+                    // VUELVE a ceros. Antes sólo se escribía en la rama con
+                    // habilidad y los últimos σ quedaban congelados: el
+                    // risk-engine seguía leyendo un pronóstico ya desautorizado.
+                    let habilidad = bank.habilidad_volatilidad();
+                    let slots = &self.arena.coins[coin_id].sigma_forecast;
+                    if habilidad.map(|h| h > 0.0).unwrap_or(false) {
+                        let sigmas = bank.sigmas_en_anclas(event_time_ms);
+                        for (slot, s) in slots.iter().zip(sigmas.iter()) {
+                            slot.store(
+                                s.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(0.0),
+                                Ordering::Relaxed,
+                            );
+                        }
+                    } else {
+                        for slot in slots.iter() {
+                            slot.store(0.0, Ordering::Relaxed);
+                        }
+                    }
+                }
                 self.arena.coins[coin_id]
                     .current_price
                     .store(current_price, Ordering::Relaxed);
@@ -1040,12 +1416,26 @@ impl GodEngineCore {
             let mid_price = (bid + ask) / 2.0;
             let total_vol = bid_qty + ask_qty;
 
-            // D-119: cvpin solo debe recibir volumen normalizado o trades reales, no millones de USD de profundidad L2
-            let tick_vol = if total_vol > 0.0 {
-                (total_vol * 0.005).clamp(0.01, 10.0)
-            } else {
-                0.01
-            };
+            // D-119 / D-753: cvpin sólo debe recibir volumen NEGOCIADO.
+            //
+            // QUÉ ESTABA MAL: aquí se fabricaba `(bid_qty + ask_qty)·0,005`
+            // acotado a [0,01; 10] y se llamaba «volumen del tick». Eso es el
+            // 0,5 % de la PROFUNDIDAD del libro: ni es volumen negociado ni
+            // guarda relación monótona con él —un libro grueso y quieto
+            // producía «volumen» constante—, y el recorte a 10 lo saturaba
+            // para cualquier símbolo líquido, dejando una cifra CASI
+            // CONSTANTE.
+            //
+            // POR QUÉ IMPORTABA: el VPIN es un reloj de VOLUMEN. Con un
+            // volumen casi constante, los buckets se cerraban a ritmo fijo y
+            // el VPIN medía la cadencia del feed, no la toxicidad del flujo.
+            // Y el VPIN gobierna el corte tóxico de posiciones, el asiento
+            // causal del consejo y `vpin_risk` en el dimensionado.
+            //
+            // QUÉ GARANTIZA: la cantidad es la del trade REAL (0 cuando el
+            // evento no es un trade), así que el reloj de volumen avanza
+            // exactamente con el volumen que cruzó el mercado.
+            let tick_vol = self.feature_engines[coin_id].ultima_cantidad_trade;
             let feature_engine = &mut self.feature_engines[coin_id];
             // Both tensor and council see this same captured score. Do not re-add
             // a snapshot on every tick, and never inject future evidence.
@@ -1649,6 +2039,10 @@ impl GodEngineCore {
                     // D-619: puntuación cruda con la que se abrió (se lee antes de
                     // que `close_with_fee` limpie la posición).
                     let score_at_entry = pos.confidence.load(Ordering::Relaxed);
+                    // D-754: el horizonte con el que se dimensiono la posicion
+                    // es la base del enfriamiento posterior. Se lee ANTES de
+                    // cerrar, mientras el estado de la posicion sigue viva.
+                    let tau_de_la_posicion = pos.entry_tau_ms.load(Ordering::Relaxed);
                     let (closed_side, closed_entry, closed_qty, margin_used, entry_fee_paid) = pos.close_with_fee();
                     // Consume even when economic eligibility later rejects this
                     // close. A subsequent adopted/reopened position must not
@@ -1660,6 +2054,7 @@ impl GodEngineCore {
                             && e.is_long == is_long && closed_side == is_long
                             && closed_entry == entry && closed_qty == qty && closed_qty > 0.0
                             && pos.generation.load(Ordering::Acquire) == position_generation.wrapping_add(1));
+
 
                     // B3.14 — ¿la entrada EXISTIÓ en el exchange? La
                     // posición local nace ANTES de la ejecución asíncrona;
@@ -1728,6 +2123,32 @@ impl GodEngineCore {
                             .fetch_add(net_trade_pnl, Ordering::Relaxed);
                     }
 
+                    self.feature_engines[coin_id].last_scalp_exit_tick =
+                        self.feature_engines[coin_id].tick_count;
+                    // D-754: los dos relojes del enfriamiento - CUANDO se
+                    // cerro (en ms de evento, no en cuenta de ticks) y CON QUE
+                    // horizonte se habia dimensionado.
+                    self.feature_engines[coin_id].last_scalp_exit_ms = event_time_ms;
+                    if tau_de_la_posicion > 0 {
+                        self.feature_engines[coin_id].tau_ultimo_cierre_ms = tau_de_la_posicion;
+                    }
+                    let was_loss = net_trade_pnl <= 0.0;
+                    self.feature_engines[coin_id].last_scalp_was_loss = was_loss;
+                    if was_loss {
+                        self.feature_engines[coin_id].scalp_loss_streak += 1;
+                        if is_long {
+                            self.feature_engines[coin_id].scalp_long_loss_streak += 1;
+                        } else {
+                            self.feature_engines[coin_id].scalp_short_loss_streak += 1;
+                        }
+                    } else {
+                        self.feature_engines[coin_id].scalp_loss_streak = 0;
+                        if is_long {
+                            self.feature_engines[coin_id].scalp_long_loss_streak = 0;
+                        } else {
+                            self.feature_engines[coin_id].scalp_short_loss_streak = 0;
+                        }
+                    }
                     let is_directional_loss = net_trade_pnl < 0.0 && pnl_pct <= -0.0005;
                     let cur_tick = self.feature_engines[coin_id].tick_count;
                     self.feature_engines[coin_id].record_trade_outcome(
@@ -1737,27 +2158,44 @@ impl GodEngineCore {
                         cur_tick,
                         event_time_ms,
                     );
+
                     self.arena
                         .unified_capital
                         .fetch_add(net_realized_pnl, Ordering::Relaxed);
 
                     let is_win = net_trade_pnl > 0.0;
 
-                    // CONEXIÓN EPIGENÉTICA MULTIVARIANTE ESPECTRAL (Fase 26 / Auto-Adaptación Viva):
-                    // 1. Adaptación continua celular a nivel de moneda (epigenetic_bias y epigenetic_threshold_modifier):
+                    // CONEXION EPIGENETICA MULTIVARIANTE ESPECTRAL (Fase 26 / Auto-Adaptacion Viva):
+                    // 1. Adaptacion continua celular a nivel de moneda (epigenetic_bias y epigenetic_threshold_modifier):
                     coin.apply_spectral_epigenetic_feedback_with_time(pnl_pct, position_age_ms, tau_trade_ms, event_time_ms);
 
-                    // 2. Adaptación continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
+                    // 2. Adaptacion continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
                     if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
                         spec.apply_epigenetic_outcome(tau_trade_ms, is_win, pnl_pct);
                     }
 
-                    // 3. Retroalimentación epigenética directa de trade cerrado al ensamble de modelos predictivos:
+                    // 3. Retroalimentacion epigenetica directa de trade cerrado al ensamble de modelos predictivos:
                     if coin_id < self.ensembles.len() {
                         self.ensembles[coin_id].update_with_trade_outcome(is_long, is_win, pnl_pct);
                     } else {
                         self.ensemble.update_with_trade_outcome(is_long, is_win, pnl_pct);
                     }
+
+                    // D-752 - ATRIBUCION DEL RESULTADO A QUIEN LO ORIGINO.
+                    // La rama que abrio esta posicion aprende de su propio cierre.
+                    if let Some(rama) = self.rama_abierta[coin_id].take() {
+                        if rama < N_RAMAS {
+                            self.rama_registro[coin_id][rama].observar(is_win);
+                        }
+                    }
+                    // D-752 - Y EL BOSQUE APRENDE DE SU PROPIO VOTO.
+                    // Direccion realizada: un largo que gana subio y uno que
+                    // pierde baja; para un corto, al reves (`subio == (is_long == is_win)`).
+                    if let Some(predijo_subida) = self.bosque_voto_abierto[coin_id].take() {
+                        let subio = is_long == is_win;
+                        self.bosque_registro[coin_id].observar(predijo_subida == subio);
+                    }
+
 
                     // MMAP TELEMETRY BUS — PRODUCTOR CONECTADO (el feedback
                     // de autoevolución estaba muerto: el daemon leía un bus
@@ -2403,7 +2841,13 @@ impl GodEngineCore {
                         sym, coin_model_key
                     );
                 }
-            } else if tick % 100 == 0 {
+            } else if tick % 100_000 == 0 {
+                // D-748b: este diagnóstico se emitía cada 100 ticks. En una
+                // corrida forense de 17 M de ticks sobre un símbolo sin modelo
+                // son 170 000 líneas idénticas —37 807 en la primera media
+                // hora— que ahogan el log donde vive el veredicto y frenan la
+                // corrida por E/S. La ausencia de modelo es un estado, no un
+                // evento: basta recordarlo de cuando en cuando.
                 println!(
                     "🔬 [ML-DIAG] {} SIN forest activo (key {:?} sin modelo y sin fallback)",
                     sym, coin_model_key
@@ -2517,23 +2961,85 @@ impl GodEngineCore {
                 .get(coin_id)
                 .map(|s| s.dominant_tau_ms)
                 .unwrap_or(30_000.0);
+            // D-756 — LOS UMBRALES SALEN DE LA DISTRIBUCIÓN MEDIDA, NO DE UN
+            // RECORTE A MANO.
+            //
+            // QUÉ ESTABA MAL, y era lo más grave de los tres:
+            // `obi_threshold_at_tau` YA acota el gen a su banda evolutiva
+            // [0,10; 0,95] — MOD3/5-005 subió ese techo de 0,60 a 0,95
+            // precisamente porque «el campeón con OBI 0,797 llegaba al gate
+            // leído como 0,60: el genoma evaluado no era el operado». Aquí se
+            // volvía a recortar a 0,60 inmediatamente después, reintroduciendo
+            // en el núcleo el defecto que el arena había corregido: el cuarto
+            // superior de la banda que la evolución explora seguía siendo
+            // invisible, y la evolución seguía premiando genomas que el motor
+            // no podía ejecutar. Los suelos 0,12 / 0,0008 / 0,15 y el techo
+            // 0,0040 eran además absolutos: la misma cifra para un libro
+            // profundo y quieto que para uno fino y nervioso.
+            //
+            // QUÉ GARANTIZA: el gen pone la ambición y la DISTRIBUCIÓN MEDIDA
+            // pone el suelo. Por debajo del percentil 80 de |OBI| o |OFI| de
+            // ESTE símbolo, «desequilibrio» describe el estado típico del
+            // libro, no un evento: ningún gen puede bajar de ahí. Se usan los
+            // estimadores P² de `adaptive_quantiles`, que ya existían.
+            let piso_obi_medido = self.cuantiles[coin_id].dynamic_obi_threshold();
+            let piso_ofi_medido = self.cuantiles[coin_id].dynamic_ofi_threshold();
+            // D-756: el suelo del score analítico, por el mismo camino. Es el
+            // percentil 85 MEDIDO de |composite_score| en este símbolo: por
+            // debajo de él, «convicción analítica» describe lo que el score
+            // hace el 85 % del tiempo, no un evento. Se lee aquí, junto a los
+            // otros dos, para que TODAS las puertas de abajo usen el mismo
+            // estado del estimador dentro del mismo tick.
+            let piso_score_medido = self.cuantiles[coin_id].dynamic_holistic_threshold();
+            // D-752 (cierre del hueco) — EL HISTORIAL DE TODAS LAS RAMAS, NO
+            // SÓLO EL DE LAS DE RESPALDO.
+            //
+            // QUÉ ESTABA MAL AÚN: las cinco ramas de respaldo ya consultaban su
+            // propio historial, pero las DIEZ ramas del camino principal
+            // —etiquetadas 1..10 en `volume_flow_rate`, que es justo el canal
+            // que el cierre lee para atribuir el resultado— seguían emitiendo
+            // `sig_conf(score)` a pelo. Su resultado SÍ se registraba, pero
+            // nadie lo leía: el motor acumulaba la evidencia de que una rama
+            // perdía y volvía a dimensionar igual en la siguiente entrada.
+            //
+            // QUÉ GARANTIZA: una sola regla para TODAS las ramas etiquetadas.
+            // Mientras la muestra no decida manda la magnitud medida del
+            // disparo (`sig_conf`), y en cuanto el intervalo de Wilson excluye
+            // la moneda al aire —por arriba o por abajo— manda la cota que esa
+            // muestra garantiza. Se copia la fila de la moneda (es `Copy`)
+            // para no retener un préstamo de `self` dentro de las ramas.
+            let registro_ramas = self.rama_registro[coin_id];
             let dynamic_obi_thr = self
                 .arena
                 .config
                 .obi_threshold_at_tau(tau_dom)
-                .clamp(0.12, 0.60);
+                .max(piso_obi_medido)
+                .clamp(0.0, 1.0); // |OBI| ∈ [-1,1] por construcción
+            // El umbral de tendencia se compara con `macro_trend`, que es
+            // (EMA₉ − EMA₂₁)/EMA₂₁ sobre velas de 1 min. Su suelo es el valor
+            // que la difusión declara SIGNIFICATIVO al 95 % con la
+            // volatilidad medida: por debajo de él, «tendencia» es ruido de
+            // dos medias móviles sobre un paseo aleatorio.
+            let piso_tendencia = crate::diffusion::Z95
+                * crate::diffusion::sigma_from_atr(atr_pct)
+                * crate::diffusion::ema_spread_sd(
+                    crate::diffusion::EMA_FAST_BARS,
+                    crate::diffusion::EMA_SLOW_BARS,
+                );
             let dynamic_ema_thr = self
                 .arena
                 .config
                 .dynamic_ema_trend
                 .load(Ordering::Relaxed)
-                .clamp(0.0003, 0.0040);
+                .max(piso_tendencia)
+                .max(0.0);
             let dynamic_ofi_thr = self
                 .arena
                 .config
                 .dynamic_ofi_threshold
                 .load(Ordering::Relaxed)
-                .clamp(0.15, 0.95);
+                .max(piso_ofi_medido)
+                .max(f64::MIN_POSITIVE); // sólo evita la división por cero
 
             let micro_trend = self.feature_engines[coin_id].get_micro_trend();
             let macro_trend = self.feature_engines[coin_id].get_macro_trend();
@@ -2563,9 +3069,64 @@ impl GodEngineCore {
             set_reg("ema_trend", micro_trend);
             set_reg("ema_trend_swing", macro_trend);
             set_reg("higher_trend", higher_trend);
+            // D-756: el signo de la tendencia superior se decidía con un
+            // literal de 10 pb. Diez puntos básicos son un desplazamiento
+            // enorme en un símbolo tranquilo y ruido puro en uno volátil. Se
+            // exige significación al 95 % sobre la distancia a la EMA de 2 h,
+            // tipificada con la volatilidad medida — el mismo criterio que ya
+            // usan los escudos macro de más abajo.
+            let z_higher_dir = crate::diffusion::ema_distance_z(
+                higher_trend,
+                atr_pct,
+                crate::diffusion::EMA_TREND_BARS,
+            );
+            // D-758 — LOS CUATRO EJES DE TENDENCIA, TIPIFICADOS UNA SOLA VEZ Y
+            // CADA UNO EN SU PROPIA ESCALA.
+            //
+            // QUÉ ESTABA MAL: los escudos de momento adverso comparaban los
+            // cuatro ejes contra fracciones crudas (0,00005 / 0,00010 /
+            // 0,00015 / 0,00040 / 0,0010 / 0,0020). Ninguna depende del
+            // instrumento ni de su volatilidad, y —peor— se aplicaban a
+            // magnitudes de escalas DISTINTAS: `micro_trend` es un diferencial
+            // de EMAs por TICK, `macro_trend` uno de EMAs de vela de 1 min, y
+            // `higher_trend`/`secular_trend` son distancias a las EMAs de 2 h y
+            // 12 h. Cuatro escalas, y umbrales del mismo orden para todas.
+            //
+            // QUÉ GARANTIZA: cada eje se tipifica con la σ de SU propia escala
+            // —la medida por tick para el micro (D-758), la del ATR de 1 min
+            // para los tres de vela— y con la desviación estacionaria que le
+            // corresponde según sus periodos. A partir de aquí los cuatro
+            // hablan el mismo idioma, el de las desviaciones típicas, y pueden
+            // compararse y combinarse entre sí.
+            let z_micro = match self.feature_engines[coin_id].sigma_retorno_tick() {
+                Some(sd) => {
+                    let escala = sd
+                        * crate::diffusion::ema_spread_sd(
+                            crate::stateful_engine::TICK_EMA_FAST_BARS,
+                            crate::stateful_engine::TICK_EMA_SLOW_BARS,
+                        );
+                    if escala > 0.0 && micro_trend.is_finite() {
+                        micro_trend / escala
+                    } else {
+                        0.0
+                    }
+                }
+                None => 0.0,
+            };
+            let z_macro = crate::diffusion::ema_spread_z(
+                macro_trend,
+                atr_pct,
+                crate::diffusion::EMA_FAST_BARS,
+                crate::diffusion::EMA_SLOW_BARS,
+            );
+            let z_secular = crate::diffusion::ema_distance_z(
+                secular_trend,
+                atr_pct,
+                crate::diffusion::EMA_MACRO_BARS,
+            );
             set_reg(
                 "trend_direction",
-                if higher_trend.abs() > 0.0010 {
+                if z_higher_dir.abs() > crate::diffusion::Z95 {
                     higher_trend.signum()
                 } else if macro_trend > 0.0 {
                     1.0
@@ -2771,6 +3332,12 @@ impl GodEngineCore {
             // No son estrategias: son dos vistas del MISMO espectro temporal
             // (doctrina F8). La fusión final arbitra el ESPECTRO (banda más
             // cercana a τ dominante), no una etiqueta de horizonte.
+            // D-756 — SE ALIMENTA LA DISTRIBUCIÓN MEDIDA. Los umbrales que
+            // este mismo tick ha usado se leyeron ANTES (más arriba), con el
+            // estado anterior del estimador: una magnitud no puede participar
+            // en el cálculo del umbral que la juzga.
+            self.cuantiles[coin_id].update(ofi, current_obi, composite_score, atr_pct);
+
             let mut fast_intent = SignalIntent::flat();
             let micro_tau = self
                 .temporal_spectrum
@@ -2784,7 +3351,60 @@ impl GodEngineCore {
             } else {
                 0.0
             };
-            let dynamic_max_spread = (atr_pct * 0.25).clamp(0.0006, 0.0025);
+            // D-755 — EL FILTRO DE HORQUILLA SALE DEL INSTRUMENTO Y DEL
+            // HORIZONTE, NO DE DOS NÚMEROS.
+            //
+            // QUÉ ESTABA MAL: `(atr_pct·0,25).clamp(0,0006; 0,0025)`. Los dos
+            // extremos son absolutos y no dependen del instrumento. Un símbolo
+            // cuyo TICK vale más de 6 pb del precio no puede cotizar NUNCA una
+            // horquilla por debajo del suelo: el filtro lo declaraba inviable
+            // siempre, aun con el libro en su mejor estado posible. Y en un
+            // símbolo de tick fino el techo de 25 pb dejaba pasar horquillas
+            // que se comen varias veces el recorrido que la operación
+            // persigue. El factor 0,25 sobre el ATR tampoco decía de dónde
+            // salía ese cuarto.
+            //
+            // QUÉ GARANTIZA: dos magnitudes medidas.
+            //  · SUELO — el TICK del símbolo relativo al precio
+            //    (`symbol_registry`). Es la rejilla de cotización: ninguna
+            //    horquilla puede ser menor, así que rechazar por debajo de
+            //    ella es rechazar el mejor libro que el exchange permite.
+            //  · TECHO — lo que deja la aritmética del viaje de ida y vuelta.
+            //    Cruzar la horquilla y pagar las dos comisiones publicadas
+            //    tiene que dejar algo del recorrido alcanzable a τ. El
+            //    recorrido alcanzable es el MENOR entre lo que el motor
+            //    persigue (`tp_at_tau`) y lo que la difusión puede entregar a
+            //    ese horizonte (σ(τ) con el Hurst MEDIDO): si el objetivo es
+            //    ambicioso pero el mercado no se mueve tanto, manda el
+            //    mercado, y al revés. No hay fracción inventada: la fracción
+            //    la impone el propio recorrido.
+            let spec_simbolo = quantum_arena::symbol_registry::try_spec(coin_id);
+            let tick_pct = spec_simbolo
+                .as_ref()
+                .map(|s| s.tick_size)
+                .filter(|t| t.is_finite() && *t > 0.0)
+                .map(|t| t / mid_price.max(1e-12))
+                .unwrap_or(0.0);
+            let friccion_ida_vuelta = spec_simbolo
+                .as_ref()
+                .map(|s| (s.maker_fee + s.taker_fee).max(0.0))
+                .unwrap_or(0.0);
+            // σ(τ): ley de escala de la difusión. σ(1 min) sale del ATR
+            // relativo (factor de Parkinson) y se lleva a τ elevando el
+            // cociente de horizontes al exponente de Hurst medido — la misma
+            // ley fraccionaria que ya gobierna la geometría TP/SL del motor.
+            let sigma_tau = crate::diffusion::sigma_from_atr(atr_pct)
+                * (tau_dom / 60_000.0)
+                    .max(1e-9)
+                    .powf(hurst_val.clamp(0.05, 0.95));
+            let recorrido_alcanzable = self
+                .arena
+                .config
+                .tp_at_tau(tau_dom)
+                .min(sigma_tau)
+                .max(0.0);
+            let dynamic_max_spread =
+                (recorrido_alcanzable - friccion_ida_vuelta).max(tick_pct);
             let spread_ok = spread_pct <= dynamic_max_spread;
 
             // MOD2/7-014: clasificación canónica de Hurst — UNA definición
@@ -2792,24 +3412,76 @@ impl GodEngineCore {
             let is_anti_persistent = hurst_val < HURST_ANTI_PERSISTENT;
             let is_persistent = hurst_val > HURST_PERSISTENT;
 
-            if atr_pct > dynamic_atr_min
-                && spread_ok
-                && self.feature_engines[coin_id].can_open_at_tau(micro_tau, 60_000)
+            // D-743: la VIABILIDAD de una entrada —que haya volatilidad que
+            // recorrer, que el spread no se coma el recorrido y que la reentrada
+            // no esté en enfriamiento— es una condición del MERCADO, no de la
+            // banda que produjo la señal. Se calcula aquí, una vez, y la
+            // comparten las dos lecturas del espectro (ver `puertas_del_continuo`).
+            // D-754 — EL ENFRIAMIENTO ES TIEMPO, Y SU BASE ES UN HORIZONTE.
+            //
+            // QUÉ ESTABA MAL: `can_open_position(600)` contaba 600 TICKS. En
+            // un tape denso son segundos; en uno ralo, horas. La misma línea
+            // significaba cosas que diferían en tres órdenes de magnitud según
+            // el símbolo, la hora del día y el entorno —vivo contra forense—,
+            // de modo que el backtest medía una política distinta de la que
+            // corre en producción.
+            //
+            // QUÉ GARANTIZA: la base es el horizonte τ con el que se
+            // dimensionó la operación que acaba de cerrarse; reentrar antes de
+            // que pase τ es reentrar dentro del mismo movimiento del que se
+            // acaba de salir. Si todavía no hubo cierre con τ registrada, se
+            // usa la τ dominante viva del espectro, que es la misma magnitud
+            // medida sobre el mercado actual.
+            let enfriamiento_base_ms = {
+                let tau_cierre = self.feature_engines[coin_id].tau_ultimo_cierre_ms;
+                if tau_cierre > 0 {
+                    tau_cierre as f64
+                } else {
+                    tau_dom
+                }
+            };
+            let cooldown_ok =
+                self.feature_engines[coin_id].can_open_position_ms(enfriamiento_base_ms);
+            let atr_ok = atr_pct > dynamic_atr_min;
+            let viable_para_entrar = atr_ok && spread_ok && cooldown_ok;
+            // D-750: cuando el motor pasa un mes entero sin evaluar una sola
+            // señal, hay que poder decir POR CUÁL de las tres condiciones. El
+            // diagnóstico de abajo vive dentro del bloque viable, así que
+            // guarda silencio justo en el caso que hay que explicar.
+            if !viable_para_entrar
+                && self.arena.tick_counter.load(Ordering::Relaxed) % 50_000 == 0
             {
+                telemetry_server::telemetry_log!(
+                    "🚧 [VIABILIDAD] tick={} INVIABLE · atr {:.6} > min {:.6}? {} · spread {:.6} ≤ max {:.6}? {} · enfriamiento? {}",
+                    self.arena.tick_counter.load(Ordering::Relaxed),
+                    atr_pct,
+                    dynamic_atr_min,
+                    atr_ok,
+                    spread_pct,
+                    dynamic_max_spread,
+                    spread_ok,
+                    cooldown_ok
+                );
+            }
+            let ema_slow_continuo = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
+                self.feature_engines[coin_id].kline_ema_slow
+            } else {
+                self.feature_engines[coin_id].ema_slow
+            };
+            let cur_atr_continuo = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+            let price_stretch_continuo = if ema_slow_continuo > 0.0 {
+                (mid_price - ema_slow_continuo) / cur_atr_continuo
+            } else {
+                0.0
+            };
+
+            if viable_para_entrar {
                 // (misma banda canónica: reversión a la media ≡ anti-persistencia)
                 let is_mean_reverting = is_anti_persistent;
 
-                let ema_slow = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
-                    self.feature_engines[coin_id].kline_ema_slow
-                } else {
-                    self.feature_engines[coin_id].ema_slow
-                };
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
-                let price_stretch = if ema_slow > 0.0 {
-                    (mid_price - ema_slow) / cur_atr
-                } else {
-                    0.0
-                };
+                let ema_slow = ema_slow_continuo;
+                let cur_atr = cur_atr_continuo;
+                let price_stretch = price_stretch_continuo;
                 // D-472, D-474 & D-478: Disciplina Antiextensión y Cero Persecución (No Chasing Law)
                 // Prohibido vender por debajo de la media (price_stretch < 0.0) o comprar por encima (price_stretch > 0.0).
                 // En tendencia, entrar exclusivamente en o por encima de la EMA slow para cortos (y en o por debajo para largos).
@@ -2848,26 +3520,27 @@ impl GodEngineCore {
                     dynamic_tech_thr *= 1.20; // Elevar exigencia analítica 20% en régimen de ruido/chop
                 }
 
+                // D-756: los recortes 0,35 / 0,12 / 0,14 eran absolutos. El
+                // suelo es ahora el percentil 80 MEDIDO de |OBI| de este
+                // símbolo (por debajo de él, «desequilibrio» es el estado
+                // habitual del libro) y el techo es 1, que es lo que el OBI
+                // puede valer por construcción. La modulación por régimen
+                // (±15 %) se conserva: es una preferencia del gen, no un
+                // umbral disfrazado.
                 let min_obi_trend: f64 = if is_anti_persistent {
-                    (dynamic_obi_thr * 1.10).min(0.35)
+                    (dynamic_obi_thr * 1.10).min(1.0)
                 } else {
-                    (dynamic_obi_thr * 0.85).max(0.12)
+                    (dynamic_obi_thr * 0.85).max(piso_obi_medido)
                 };
                 let min_obi_pullback: f64 = if is_anti_persistent {
-                    (dynamic_obi_thr * 1.10).min(0.35)
+                    (dynamic_obi_thr * 1.10).min(1.0)
                 } else {
-                    dynamic_obi_thr.max(0.14)
+                    dynamic_obi_thr.max(piso_obi_medido)
                 };
 
-                // D-500 & #573: Anti-Chop & Post-Loss Conviction Firewall desacoplado por banda espectral tau
-                let short_streak = self.feature_engines[coin_id].get_active_directional_streak_at_tau(false, micro_tau);
-                let long_streak = self.feature_engines[coin_id].get_active_directional_streak_at_tau(true, micro_tau);
-                let total_loss_streak = self.feature_engines[coin_id].get_active_total_loss_streak_at_tau(micro_tau);
-                // Si ambas direcciones han fallado recientemente (chop alternante), total_loss_streak modula.
-                // Si solo una dirección falla mientras el mercado se mueve en la otra, la dirección a favor del flujo permanece libre.
-                let is_alternating_chop = short_streak >= 1 && long_streak >= 1;
-                let effective_short_streak = if is_alternating_chop { short_streak.max(total_loss_streak) } else { short_streak };
-                let effective_long_streak = if is_alternating_chop { long_streak.max(total_loss_streak) } else { long_streak };
+                // D-500: Anti-Chop & Post-Loss Conviction Firewall con Direccionalidad y Decaimiento Temporal
+                let short_streak = self.feature_engines[coin_id].get_active_directional_streak_ms(false, enfriamiento_base_ms);
+                let long_streak = self.feature_engines[coin_id].get_active_directional_streak_ms(true, enfriamiento_base_ms);
 
                 // F7-backtest: cuando el libro está AUSENTE, las condiciones
                 // OBI (< -min_obi_trend) son imposibles de satisfacer (OBI=0).
@@ -2885,7 +3558,7 @@ impl GodEngineCore {
                         atr_pct,
                         dynamic_atr_min,
                         spread_ok,
-                        self.feature_engines[coin_id].can_open_at_tau(micro_tau, 60_000),
+                        cooldown_ok,
                         hurst_val,
                         self.feature_engines[coin_id].ema_slow,
                         mid_price,
@@ -2902,7 +3575,12 @@ impl GodEngineCore {
                 // el forest tiende a predecir ~0.5 sin features de libro).
                 // Ruta 2: PRICE-ACTION puro (momentum/ATR/Hurst — funciona
                 // SIN ML y SIN libro; computable de precio/volumen solos).
-                if book_absent && fast_intent.signal == SignalType::Flat && atr_pct > 0.00005 {
+                // D-756: el respaldo exigia atr_pct > 0,00005 — cinco millonesimas,
+                // absolutas y sin relacion con el instrumento. El minimo fisico
+                // es el TICK: si el recorrido tipico del simbolo no llega a un
+                // paso de su rejilla de cotizacion, no hay excursion que operar
+                // por mucha senal que haya.
+                if book_absent && fast_intent.signal == SignalType::Flat && atr_pct > tick_pct {
                     // B3.36 — mismos gates POR LIFT que el camino vivo: el
                     // fallback usa los MISMOS genes reinterpretados como lift
                     // sobre la base del modelo del símbolo.
@@ -2918,15 +3596,22 @@ impl GodEngineCore {
                     let ml_lift = (ml_thr_long - 0.50).clamp(0.02, 0.25);
                     // Ruta 1: ML RE-CENTRADO (sesgo eliminado) con confianza
                     // proporcional al LIFT sobre la base del modelo.
+                    // D-752: el suelo literal de 0,60 sobre la convicción
+                    // REGALABA 10 puntos de probabilidad a un lift de 2 pb: un
+                    // modelo que apenas se despega de su base entraba al Kelly
+                    // declarando 0,60. La convicción por magnitud es el propio
+                    // lift medido sobre la base del modelo (0,5 + lift), y
+                    // sobre ella decide el historial de la rama.
+                    let registro_ml = self.rama_registro[coin_id][RAMA_ML_RECENTRADO as usize];
                     if ml_prob_adaptive > ml_model_base + ml_lift {
                         let conviction =
                             0.5 + (ml_prob_adaptive - ml_model_base).abs().min(0.45);
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
-                            confidence: conviction.clamp(0.60, 0.95),
+                            confidence: conviccion_de_rama(&registro_ml, conviction.min(1.0)),
+                            volume_flow_rate: RAMA_ML_RECENTRADO,
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
-                            volume_flow_rate: 1.0,
                             ..Default::default()
                         };
                     } else if ml_prob_adaptive < ml_model_base - ml_lift {
@@ -2934,10 +3619,10 @@ impl GodEngineCore {
                             0.5 + (ml_prob_adaptive - ml_model_base).abs().min(0.45);
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
-                            confidence: conviction.clamp(0.60, 0.95),
+                            confidence: conviccion_de_rama(&registro_ml, conviction.min(1.0)),
+                            volume_flow_rate: RAMA_ML_RECENTRADO,
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
-                            volume_flow_rate: 1.0,
                             ..Default::default()
                         };
                     }
@@ -2947,6 +3632,15 @@ impl GodEngineCore {
                     // score es fuerte en una dirección Y la persistencia lo
                     // confirma, es una señal legítima independiente del ML.
                     if fast_intent.signal == SignalType::Flat {
+                        // D-752: la convicción por magnitud de esta rama es el
+                        // propio score fusionado del espectro, que ya vive en
+                        // [-1, 1] y es una medida (paridad de riesgo sobre 32
+                        // escalas). `sig_conf` lo lleva a la escala de
+                        // confianza del motor; sobre ella decide el historial.
+                        // Antes: `0,55 + |fused|·0,3` acotado a 0,90 — tres
+                        // números sin origen.
+                        let registro_esp =
+                            self.rama_registro[coin_id][RAMA_ESPECTRO_DIRECTO as usize];
                         if let Some(spec) = self.temporal_spectrum.get(coin_id) {
                             let field_long = spec.spectral_field(true);
                             let field_short = spec.spectral_field(false);
@@ -2961,19 +3655,25 @@ impl GodEngineCore {
                             if fused > 0.60 && field_long.global_coherence > 0.15 {
                                 fast_intent = SignalIntent {
                                     signal: SignalType::Long,
-                                    confidence: (0.55 + field_long.global_coherence * 0.35).min(0.92),
+                                    confidence: conviccion_de_rama(
+                                        &registro_esp,
+                                        sig_conf(fused),
+                                    ),
+                                    volume_flow_rate: RAMA_ESPECTRO_DIRECTO,
                                     horizon: strategy_core::TradeHorizon::Continuous,
                                     expected_duration_ms: expected_tau,
-                                    volume_flow_rate: dyn_flow,
                                     ..Default::default()
                                 };
                             } else if fused < -0.60 && field_short.global_coherence > 0.15 {
                                 fast_intent = SignalIntent {
                                     signal: SignalType::Short,
-                                    confidence: (0.55 + field_short.global_coherence * 0.35).min(0.92),
+                                    confidence: conviccion_de_rama(
+                                        &registro_esp,
+                                        sig_conf(fused),
+                                    ),
+                                    volume_flow_rate: RAMA_ESPECTRO_DIRECTO,
                                     horizon: strategy_core::TradeHorizon::Continuous,
                                     expected_duration_ms: expected_tau,
-                                    volume_flow_rate: dyn_flow,
                                     ..Default::default()
                                 };
                             }
@@ -3006,40 +3706,78 @@ impl GodEngineCore {
                         let dev_atr = (mid_price - ema_s) / atr_abs;
                         let hurst_active = is_anti_persistent || is_persistent;
 
+                        // D-752 — LAS CONFIANZAS LITERALES POR RAMA.
+                        //
+                        // QUÉ ESTABA MAL: estas ramas emitían 0,72 / 0,68 /
+                        // 0,65 fijos. Aguas abajo la cifra se trata como una
+                        // PROBABILIDAD —pasa por el escalado de Platt que
+                        // alimenta el Kelly y se compara contra el gen
+                        // `min_confidence_btc`—, de modo que el tamaño de la
+                        // posición es monótono en ella. Una rama que dispara
+                        // con dev_atr = 1,51 declaraba exactamente lo mismo
+                        // que una que dispara con 3,9, y el ORDEN entre las
+                        // tres (0,72 > 0,68 > 0,65) no salía de ninguna
+                        // medición: nadie había comprobado que la rama de
+                        // tendencia acierte más que la de reversión.
+                        //
+                        // QUÉ GARANTIZA: dos fuentes medidas, en este orden.
+                        //  1. El historial de ESA rama en ESA moneda, con su
+                        //     intervalo de Wilson: si la muestra excluye la
+                        //     moneda al aire, la convicción es la cota que la
+                        //     muestra garantiza —por arriba o por abajo—.
+                        //  2. Mientras la muestra no decida, la magnitud del
+                        //     disparo: la desviación sobre la EMA lenta
+                        //     tipificada (`atr_stretch_z`) y referida al mismo
+                        //     z95 que el resto del núcleo usa para declarar
+                        //     significación. Así una rama que dispara al
+                        //     límite pide menos tamaño que una que dispara
+                        //     lejos, que es lo que el literal impedía.
+                        let magnitud_z = crate::diffusion::atr_stretch_z(
+                            dev_atr,
+                            crate::diffusion::EMA_SLOW_BARS,
+                        );
+                        let magnitud_norm =
+                            (magnitud_z.abs() / crate::diffusion::Z95).clamp(0.0, 1.0);
+                        let piso_magnitud = sig_conf(magnitud_norm);
+                        let registro_tend =
+                            self.rama_registro[coin_id][RAMA_TENDENCIA_PERSISTENTE as usize];
+                        let registro_rev = self.rama_registro[coin_id]
+                            [RAMA_REVERSION_ANTIPERSISTENTE as usize];
+
                         if hurst_active && is_persistent && dev_atr > 1.5 && dev_atr < 4.0 && rolling_cvd > 0.0 {
                             fast_intent = SignalIntent {
                                 signal: SignalType::Long,
-                                confidence: 0.72,
+                                confidence: conviccion_de_rama(&registro_tend, piso_magnitud),
+                                volume_flow_rate: RAMA_TENDENCIA_PERSISTENTE,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
-                                volume_flow_rate: 2.0,
                                 ..Default::default()
                             };
                         } else if hurst_active && is_persistent && dev_atr < -1.5 && dev_atr > -4.0 && rolling_cvd < 0.0 {
                             fast_intent = SignalIntent {
                                 signal: SignalType::Short,
-                                confidence: 0.72,
+                                confidence: conviccion_de_rama(&registro_tend, piso_magnitud),
+                                volume_flow_rate: RAMA_TENDENCIA_PERSISTENTE,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
-                                volume_flow_rate: 2.0,
                                 ..Default::default()
                             };
                         } else if hurst_active && is_anti_persistent && dev_atr > 2.5 {
                             fast_intent = SignalIntent {
                                 signal: SignalType::Short,
-                                confidence: 0.68,
+                                confidence: conviccion_de_rama(&registro_rev, piso_magnitud),
+                                volume_flow_rate: RAMA_REVERSION_ANTIPERSISTENTE,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
-                                volume_flow_rate: 2.2,
                                 ..Default::default()
                             };
                         } else if hurst_active && is_anti_persistent && dev_atr < -2.5 {
                             fast_intent = SignalIntent {
                                 signal: SignalType::Long,
-                                confidence: 0.68,
+                                confidence: conviccion_de_rama(&registro_rev, piso_magnitud),
+                                volume_flow_rate: RAMA_REVERSION_ANTIPERSISTENTE,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
-                                volume_flow_rate: 2.2,
                                 ..Default::default()
                             };
                         }
@@ -3050,19 +3788,27 @@ impl GodEngineCore {
                         else if !hurst_active && dev_atr > 2.0 && dev_atr < 5.0 && rolling_cvd > 0.05 {
                             fast_intent = SignalIntent {
                                 signal: SignalType::Long,
-                                confidence: 0.65,
+                                confidence: conviccion_de_rama(
+                                    &self.rama_registro[coin_id]
+                                        [RAMA_MOMENTO_SIN_REGIMEN as usize],
+                                    piso_magnitud,
+                                ),
+                                volume_flow_rate: RAMA_MOMENTO_SIN_REGIMEN,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
-                                volume_flow_rate: 2.5,
                                 ..Default::default()
                             };
                         } else if !hurst_active && dev_atr < -2.0 && dev_atr > -5.0 && rolling_cvd < -0.05 {
                             fast_intent = SignalIntent {
                                 signal: SignalType::Short,
-                                confidence: 0.65,
+                                confidence: conviccion_de_rama(
+                                    &self.rama_registro[coin_id]
+                                        [RAMA_MOMENTO_SIN_REGIMEN as usize],
+                                    piso_magnitud,
+                                ),
+                                volume_flow_rate: RAMA_MOMENTO_SIN_REGIMEN,
                                 horizon: strategy_core::TradeHorizon::Continuous,
                                 expected_duration_ms: fast_duration_ms,
-                                volume_flow_rate: 2.5,
                                 ..Default::default()
                             };
                         }
@@ -3073,8 +3819,21 @@ impl GodEngineCore {
                 // Confluencia de triple escala temporal: Micro (1m ticks), Intermedio (EMA 9 vs 21), y Macro Superior (2-Hour EMA 120).
                 if is_confirmed_downtrend {
                     // RÉGIMEN BAJISTA CONFIRMADO (MULTISCALE DOWNTREND)
-                    let d_tech_thr = if effective_short_streak >= 2 { dynamic_tech_thr.max(0.30) } else { dynamic_tech_thr };
-                    let d_obi_trend = if effective_short_streak >= 2 { min_obi_trend.max(0.22) } else { min_obi_trend };
+                    // D-756: el endurecimiento tras racha era `.max(0,30)` —un
+                    // absoluto que además no hacía NADA si el gen ya pedía
+                    // más, y que no crecía con la cuarta ni la quinta pérdida—.
+                    // Suelo: el percentil 85 medido de |score| en este símbolo.
+                    // Escalada: la escalera binaria del motor, desde el primer
+                    // nivel en que esta puerta actúa (racha 2).
+                    let d_tech_thr = if short_streak >= 2 {
+                        exigencia_tras_racha(
+                            dynamic_tech_thr.max(piso_score_medido),
+                            short_streak.saturating_sub(1),
+                        )
+                    } else {
+                        dynamic_tech_thr
+                    };
+                    let d_obi_trend = exigencia_tras_racha(min_obi_trend, short_streak);
                     // 1. Tendencial Short: Flujo institucional, confluencia L2 y ML apuntan a la baja
                     // F8-P9: Invariante de flujo y microtendencia — prohibido vender ante microtendencia adversa o flujo comprador
                     if composite_score < -d_tech_thr
@@ -3088,7 +3847,10 @@ impl GodEngineCore {
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
-                            confidence: sig_conf(composite_score),
+                            confidence: conviccion_de_rama(
+                                &registro_ramas[1],
+                                sig_conf(composite_score),
+                            ),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 1.0,
@@ -3096,19 +3858,32 @@ impl GodEngineCore {
                         };
                     // 2. Pullback Short: Rebote hacia ema_slow vendido con confluencia estricta de flujo L2 Y composite score
                     // D-500 & D-501: Convicción analítica plena (composite_score <= -d_tech_thr),
-                    // filtro de tendencia superior (higher_trend <= -0.0010 para evitar vender en rallies)
-                    // y desbalance de libro sólido (current_obi < -0.20)
-                    } else if effective_short_streak < 2
-                        && higher_trend <= -0.0010
+                    // filtro de tendencia superior (para evitar vender en rallies)
+                    // y desbalance de libro sólido.
+                    //
+                    // D-756: el filtro era `higher_trend <= -0,0010`. Diez
+                    // puntos básicos sobre la EMA de 2 h son un desplome en un
+                    // símbolo tranquilo y ruido puro en uno volátil: el mismo
+                    // literal significaba cosas opuestas según el instrumento
+                    // y la hora. Se exige lo mismo que ya decide
+                    // `trend_direction` unas líneas más arriba —significación
+                    // al 95 % de la distancia a la EMA de tendencia,
+                    // tipificada con la volatilidad MEDIDA— y con signo
+                    // bajista. Es el mismo criterio, medido una sola vez.
+                    } else if short_streak < 2
+                        && z_higher_dir <= -crate::diffusion::Z95
                         && price_stretch >= 0.15
                         && price_stretch <= 1.20
-                        && effective_obi_short < -min_obi_pullback.max(0.20)
+                        && effective_obi_short < -exigencia_tras_racha(min_obi_pullback, short_streak)
                         && composite_score <= -d_tech_thr
                         && micro_trend <= 0.0
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
-                            confidence: sig_conf(composite_score.abs()),
+                            confidence: conviccion_de_rama(
+                                &registro_ramas[2],
+                                sig_conf(composite_score.abs()),
+                            ),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 2.0,
@@ -3129,8 +3904,17 @@ impl GodEngineCore {
                     }
                 } else if is_confirmed_uptrend {
                     // RÉGIMEN ALCISTA CONFIRMADO (MULTISCALE UPTREND)
-                    let u_tech_thr = if effective_long_streak >= 2 { dynamic_tech_thr.max(0.30) } else { dynamic_tech_thr };
-                    let u_obi_trend = if effective_long_streak >= 2 { min_obi_trend.max(0.22) } else { min_obi_trend };
+                    // D-756: simétrico del bajista — suelo por el percentil 85
+                    // medido de |score| y escalada por la escalera binaria.
+                    let u_tech_thr = if long_streak >= 2 {
+                        exigencia_tras_racha(
+                            dynamic_tech_thr.max(piso_score_medido),
+                            long_streak.saturating_sub(1),
+                        )
+                    } else {
+                        dynamic_tech_thr
+                    };
+                    let u_obi_trend = exigencia_tras_racha(min_obi_trend, long_streak);
                     // 1. Tendencial Long: Flujo institucional, confluencia L2 y ML apuntan al alza
                     // F8-P9: Invariante de flujo y microtendencia — prohibido comprar ante microtendencia adversa o flujo vendedor
                     if composite_score > u_tech_thr
@@ -3144,7 +3928,10 @@ impl GodEngineCore {
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
-                            confidence: sig_conf(composite_score),
+                            confidence: conviccion_de_rama(
+                                &registro_ramas[4],
+                                sig_conf(composite_score),
+                            ),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 4.0,
@@ -3152,19 +3939,27 @@ impl GodEngineCore {
                         };
                     // 2. Dip Long: Corrección hacia ema_slow comprada con confluencia estricta de flujo L2 Y composite score
                     // D-500 & D-501: Convicción analítica plena (composite_score >= u_tech_thr),
-                    // filtro de tendencia superior (higher_trend >= 0.0010)
-                    // y desbalance de libro sólido (current_obi > min_obi_pullback.max(0.20))
-                    } else if effective_long_streak < 2
-                        && higher_trend >= 0.0010
+                    // filtro de tendencia superior y desbalance de libro
+                    // sólido (current_obi > exigencia_tras_racha(min_obi_pullback, long_streak)).
+                    //
+                    // D-756: simétrico del pullback bajista — el literal de
+                    // 10 pb se sustituye por significación al 95 % de la
+                    // distancia a la EMA de tendencia con la volatilidad
+                    // medida.
+                    } else if long_streak < 2
+                        && z_higher_dir >= crate::diffusion::Z95
                         && price_stretch <= -0.15
                         && price_stretch >= -1.20
-                        && effective_obi_long > min_obi_pullback.max(0.20)
+                        && effective_obi_long > exigencia_tras_racha(min_obi_pullback, long_streak)
                         && composite_score >= u_tech_thr
                         && micro_trend >= 0.0
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
-                            confidence: sig_conf(composite_score),
+                            confidence: conviccion_de_rama(
+                                &registro_ramas[5],
+                                sig_conf(composite_score),
+                            ),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 5.0,
@@ -3178,13 +3973,15 @@ impl GodEngineCore {
                 } else {
                     // RÉGIMEN NEUTRO / RANGO LATERAL (Disciplina de reversión a la media: comprar en soporte, vender en resistencia)
                     let range_thr = dynamic_tech_thr * 1.15;
-                    let range_obi = (dynamic_obi_thr * 0.85).clamp(0.12, 0.35);
+                    // D-756: mismo criterio que min_obi_trend - suelo por el percentil
+                    // 80 medido de |OBI|, techo por el maximo que |OBI| admite.
+                    let range_obi = (dynamic_obi_thr * 0.85).max(piso_obi_medido).min(1.0);
 
-                    // D-745 (UNDÉCIMA OLA · ALINEACIÓN JERÁRQUICA MULTIESCALA EN RANGO):
-                    // Las ramas de reversión a la media (7, 8, 9, 10) solo deben operar
-                    // cuando el mercado está GENUINAMENTE en rango o retroceso no impulsivo.
-                    // Si higher_trend (2h) o secular_trend imponen una dirección macro clara,
-                    // operar contra la marea produce pérdidas directas por parada (SL).
+                    // D-745 (UNDECIMA OLA - ALINEACION JERARQUICA MULTIESCALA EN RANGO):
+                    // Las ramas de reversion a la media (7, 8, 9, 10) solo deben operar
+                    // cuando el mercado esta GENUINAMENTE en rango o retroceso no impulsivo.
+                    // Si higher_trend (2h) o secular_trend imponen una direccion macro clara,
+                    // operar contra la marea produce perdidas directas por parada (SL).
                     let range_long_trend_ok = higher_trend >= 0.0
                         && !(higher_trend < 0.0 && secular_trend < 0.0)
                         && macro_trend >= -0.00010
@@ -3200,9 +3997,13 @@ impl GodEngineCore {
                         && micro_trend >= 0.0
                         && range_long_trend_ok
                     {
+
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
-                            confidence: sig_conf(composite_score),
+                            confidence: conviccion_de_rama(
+                                &registro_ramas[7],
+                                sig_conf(composite_score),
+                            ),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 7.0,
@@ -3216,13 +4017,16 @@ impl GodEngineCore {
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
-                            confidence: sig_conf(composite_score),
+                            confidence: conviccion_de_rama(
+                                &registro_ramas[8],
+                                sig_conf(composite_score),
+                            ),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 8.0,
                             ..Default::default()
                         };
-                    } else if effective_short_streak < 2
+                    } else if short_streak < 2
                         && price_stretch > 1.0
                         && effective_obi_short < -range_obi * 1.15
                         && composite_score <= -0.24
@@ -3231,7 +4035,10 @@ impl GodEngineCore {
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Short,
-                            confidence: sig_conf(effective_obi_short.abs().min(composite_score.abs())),
+                            confidence: conviccion_de_rama(
+                                &registro_ramas[9],
+                                sig_conf(effective_obi_short.abs().min(composite_score.abs())),
+                            ),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 9.0,
@@ -3244,7 +4051,7 @@ impl GodEngineCore {
                     // exactamente 0 y la condición era imposible: la rama alcista
                     // NUNCA disparaba mientras su simétrica bajista sí. Es una de
                     // las causas mecánicas del «un solo largo en ~140 operaciones».
-                    } else if effective_long_streak < 2
+                    } else if long_streak < 2
                         && price_stretch < -1.0
                         && effective_obi_long > range_obi * 1.15
                         && composite_score >= 0.24
@@ -3253,7 +4060,10 @@ impl GodEngineCore {
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
-                            confidence: sig_conf(effective_obi_long.abs().min(composite_score.abs())),
+                            confidence: conviccion_de_rama(
+                                &registro_ramas[10],
+                                sig_conf(effective_obi_long.abs().min(composite_score.abs())),
+                            ),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 10.0,
@@ -3268,15 +4078,55 @@ impl GodEngineCore {
                     && !is_anti_persistent
                     && tensor_cont.net_confidence.abs() >= tensor_cutoff
                 {
-                    // Autoadaptabilidad Espectral Continua (Erradicación del 0.48 fijo):
-                    // Modulación analítica por persistencia Browniana (Hurst), flujo tóxico (VPIN) y entropía informacional:
-                    let vpin_local = self.feature_engines[coin_id].cvpin.current_vpin().clamp(0.0, 1.0);
-                    let hurst_noise = ((0.50 - hurst_val) / 0.50).max(0.0);
-                    let entropy_norm = (shannon_ent / 3.0).clamp(0.0, 1.0);
-                    let tensor_tech_thr = (dynamic_tech_thr * 0.50
-                        * (1.0 + hurst_noise + 0.25 * vpin_local + 0.15 * entropy_norm))
-                        .clamp(0.08, 0.28);
-                    let range_obi = (dynamic_obi_thr * 0.85).clamp(0.12, 0.35);
+                    // D-502, D-503 & D-505: Invariante de Momentum Jerárquico,
+                    // Micro-Surge y Concurrencia Multiescala.
+                    //
+                    // D-758 — QUÉ ESTABA MAL: el escudo era una escalera de
+                    // cuatro cláusulas con ocho fracciones crudas (0,00005 /
+                    // 0,00010 / 0,00015 / 0,00040 / 0,0010 / 0,0020). Lo que
+                    // esas cláusulas querían decir es muy simple —«hay momento
+                    // en contra, sea porque un eje solo grita o porque varios
+                    // susurran a la vez»— pero se escribió como una tabla de
+                    // umbrales a mano, con el agravante de aplicar números del
+                    // mismo orden a ejes que viven en escalas temporales
+                    // distintas (tick, 1 min, 2 h, 12 h).
+                    //
+                    // QUÉ GARANTIZA: los mismos dos casos, dichos con la
+                    // estadística que ya usa todo el núcleo y sobre los ejes ya
+                    // tipificados (D-758).
+                    //  · UN EJE SOLO: alguno de los tres ejes operativos supera
+                    //    por sí mismo la significación del 95 %. Es la cláusula
+                    //    del micro-spike, sin el «+4 pb».
+                    //  · VARIOS A LA VEZ: la combinación de Stouffer —suma de
+                    //    z's dividida por √k, que es la forma canónica de
+                    //    agregar evidencia independiente— alcanza esa misma
+                    //    significación. Es la cláusula de concurrencia
+                    //    multiescala, sin la tabla de umbrales: tres ejes que
+                    //    susurran a 1,2σ suman 2,08σ y levantan el escudo,
+                    //    mientras que uno solo a 1,2σ no.
+                    //  · EL EJE SECULAR conserva su papel de veto del veto: el
+                    //    escudo NO se levanta si la estructura de 12 h apoya
+                    //    significativamente la entrada que se quiere hacer.
+                    let z95 = crate::diffusion::Z95;
+                    let ejes = [z_micro, z_macro, z_higher_dir];
+                    let stouffer =
+                        ejes.iter().sum::<f64>() / (ejes.len() as f64).sqrt();
+                    let is_adverse_momentum_short = (ejes.iter().any(|z| *z > z95)
+                        || stouffer > z95)
+                        && z_secular > -z95;
+                    let is_adverse_momentum_long = (ejes.iter().any(|z| *z < -z95)
+                        || stouffer < -z95)
+                        && z_secular < z95;
+                    // D-756: el suelo 0,22 era absoluto. Se sustituye por el
+                    // percentil 85 MEDIDO de |score| en este símbolo. El 0,90
+                    // se conserva: es una preferencia de relajación del gen
+                    // para la rama tensorial —no un umbral— y el suelo medido
+                    // impide que relaje por debajo de lo que este activo hace
+                    // el 85 % del tiempo.
+                    let tensor_tech_thr = (dynamic_tech_thr * 0.90).max(piso_score_medido);
+                    // D-756: mismo criterio que min_obi_trend — suelo por el percentil
+                    // 80 medido de |OBI|, techo por el maximo que |OBI| admite.
+                    let range_obi = (dynamic_obi_thr * 0.85).max(piso_obi_medido).min(1.0);
 
                     let long_macro_slope_ok = macro_trend >= 0.0 || (higher_trend > 0.00020 && micro_trend > 0.00015);
                     let short_macro_slope_ok = macro_trend <= 0.0 || (higher_trend < -0.00020 && micro_trend < -0.00015);
@@ -3302,26 +4152,37 @@ impl GodEngineCore {
                     // Diagnóstico por dirección: las condiciones del gate se nombran una
                     // sola vez y el diagnóstico cuenta cuál falla. La semántica es la de la
                     // conjunción anterior: comparaciones puras, sin efectos laterales.
+                    // D-758: los cuatro literales de estas dos listas
+                    // (0,0002 / 0,0010 / 0,0008) pasan al espacio tipificado.
+                    // Su tamaño delataba lo que realmente eran:
+                    //  · 2 pb sobre la EMA de 2 h son ~0,06 σ y 8 pb ~0,24 σ
+                    //    con la volatilidad típica del activo. Es decir: NO
+                    //    eran umbrales, eran bandas muertas alrededor de cero
+                    //    puestas a ojo. La banda muerta honesta es la que mide
+                    //    el propio ruido — el signo cuando se quiere «se
+                    //    inclina hacia», y el z95 cuando se quiere «no está
+                    //    claramente en contra».
+                    //  · el 0,0010 sobre la EMA de 12 h cumplía el papel de
+                    //    «el eje secular no apoya claramente esta entrada»:
+                    //    eso es exactamente una prueba de significación.
                     let long_conditions = [
-                        effective_long_streak < 2,
+                        long_streak < 2,
                         !is_confirmed_downtrend,
                         !is_adverse_momentum_long,
-                        !(higher_trend < -0.0001 && (secular_trend < 0.0 || macro_trend < -0.0001))
-                            && !(secular_trend < -0.0002 && macro_trend < 0.0),
-                        !(price_stretch < -0.80 && secular_trend < 0.0010),
-                        higher_trend_long_harmonic_ok,
+                        !(z_higher_dir < 0.0 && z_secular < 0.0),
+                        !(price_stretch < -0.80 && z_secular < crate::diffusion::Z95),
+                        z_higher_dir >= -crate::diffusion::Z95,
                         composite_score >= tensor_tech_thr,
                         effective_obi_long > range_obi,
                         not_overextended_long,
                     ];
                     let short_conditions = [
-                        effective_short_streak < 2,
+                        short_streak < 2,
                         !is_confirmed_uptrend,
                         !is_adverse_momentum_short,
-                        !(higher_trend > 0.0001 && (secular_trend > 0.0 || macro_trend > 0.0001))
-                            && !(secular_trend > 0.0002 && macro_trend > 0.0),
-                        !(price_stretch > 0.80 && secular_trend > -0.0010),
-                        higher_trend_short_harmonic_ok,
+                        !(z_higher_dir > 0.0 && z_secular > 0.0),
+                        !(price_stretch > 0.80 && z_secular > -crate::diffusion::Z95),
+                        z_higher_dir <= crate::diffusion::Z95,
                         composite_score <= -tensor_tech_thr,
                         effective_obi_short < -range_obi,
                         not_overextended_short,
@@ -3354,8 +4215,8 @@ impl GodEngineCore {
 
                 if fast_intent.signal == SignalType::Flat {
                     let hawkes_r = self.feature_engines[coin_id].cvpin.current_vpin();
-                    if let Some(mut turbo_intent) =
-                        signal_engine::turbo_scalper::TurboScalpEngine::evaluate_turbo_scalp(
+                    if let Some(mut impulso_intent) =
+                        signal_engine::flow_impulse::FlowImpulseEngine::evaluate_flow_impulse(
                             &self.arena,
                             current_obi,
                             ofi,
@@ -3366,106 +4227,39 @@ impl GodEngineCore {
                             event_time_ms,
                         )
                     {
-                        let turbo_streak = if turbo_intent.signal == SignalType::Long {
-                            effective_long_streak
+                        let impulso_streak = if impulso_intent.signal == SignalType::Long {
+                            long_streak
                         } else {
-                            effective_short_streak
+                            short_streak
                         };
-                        let turbo_aligned_with_regime = if is_confirmed_downtrend {
-                            turbo_intent.signal == SignalType::Short
+                        let impulso_alineado_con_regimen = if is_confirmed_downtrend {
+                            impulso_intent.signal == SignalType::Short
                         } else if is_confirmed_uptrend {
-                            turbo_intent.signal == SignalType::Long
+                            impulso_intent.signal == SignalType::Long
                         } else if is_mean_reverting {
-                            (turbo_intent.signal == SignalType::Long
+                            (impulso_intent.signal == SignalType::Long
                                 && price_stretch < -0.5
                                 && macro_trend >= -dynamic_ema_thr)
-                                || (turbo_intent.signal == SignalType::Short
+                                || (impulso_intent.signal == SignalType::Short
                                     && price_stretch > 0.5
                                     && macro_trend <= dynamic_ema_thr)
                         } else {
-                            (turbo_intent.signal == SignalType::Long && macro_trend >= 0.0)
-                                || (turbo_intent.signal == SignalType::Short && macro_trend <= 0.0)
+                            (impulso_intent.signal == SignalType::Long && macro_trend >= 0.0)
+                                || (impulso_intent.signal == SignalType::Short && macro_trend <= 0.0)
                         };
 
-                        if turbo_streak < 2
-                            && turbo_aligned_with_regime
-                            && ((turbo_intent.signal == SignalType::Long && not_overextended_long)
-                                || (turbo_intent.signal == SignalType::Short
+                        if impulso_streak < 2
+                            && impulso_alineado_con_regimen
+                            && ((impulso_intent.signal == SignalType::Long && not_overextended_long)
+                                || (impulso_intent.signal == SignalType::Short
                                     && not_overextended_short))
                         {
-                            turbo_intent.volume_flow_rate = 12.0;
-                            fast_intent = turbo_intent;
+                            impulso_intent.volume_flow_rate = 12.0;
+                            fast_intent = impulso_intent;
                         }
                     }
                 }
 
-                // Ruta Micro-Espectral Directa: resonancia armónica de alta frecuencia (tau = micro_tau)
-                if fast_intent.signal == SignalType::Flat {
-                    if let Some(spec) = self.temporal_spectrum.get(coin_id) {
-                        let micro_sig = spec.signal_at(micro_tau);
-                        let micro_pers = spec.persistence_at(micro_tau);
-                        let micro_gain = spec.scale_gain_at(micro_tau);
-
-                        if micro_sig.abs() > 0.40 && micro_pers > 0.48 {
-                            let (dir, ok_ext, is_l) = if micro_sig > 0.0 {
-                                (SignalType::Long, not_overextended_long, true)
-                            } else {
-                                (SignalType::Short, not_overextended_short, false)
-                            };
-                            let strk = if is_l { effective_long_streak } else { effective_short_streak };
-                            if ok_ext && strk < 2 {
-                                let conf = (0.58 + micro_sig.abs() * 0.22 * micro_gain).clamp(0.55, 0.94);
-                                fast_intent = SignalIntent {
-                                    signal: dir,
-                                    confidence: conf,
-                                    expected_duration_ms: fast_duration_ms,
-                                    horizon: strategy_core::TradeHorizon::Continuous,
-                                    volume_flow_rate: 14.0,
-                                    ..Default::default()
-                                };
-                            }
-                        }
-                    }
-                }
-
-                // D-472: Invariante Bayesiano Absoluto — Prohibir cualquier scalp que contradiga el composite score
-                if fast_intent.signal == SignalType::Long && composite_score < 0.0 {
-                    fast_intent = SignalIntent::flat();
-                } else if fast_intent.signal == SignalType::Short && composite_score > 0.0 {
-                    fast_intent = SignalIntent::flat();
-                }
-
-                // F-009 FIX: Continuous ML Probability Weighting (replaces binary switch)
-                // Instead of killing signals when ml_prob crosses 0.51/0.49, modulate
-                // confidence continuously relative to the model's baseline (ml_model_base).
-                // The farther ml_prob is from ml_base in the signal's direction, the more
-                // confidence is amplified. Against the signal, confidence is reduced smoothly.
-                {
-                    let ml_base = if ml_model_base > 0.05 && ml_model_base < 0.95 {
-                        ml_model_base
-                    } else {
-                        0.5
-                    };
-                    let ml_directional = match fast_intent.signal {
-                        SignalType::Long => (ml_prob - ml_base) * 2.0,   // [-1, +1] where +1 = strong bullish
-                        SignalType::Short => (ml_base - ml_prob) * 2.0,  // [-1, +1] where +1 = strong bearish
-                        _ => 0.0,
-                    };
-                    // #539: Simetría y Veto Estricto del ML-Gate (Restitución de Veto Causal).
-                    // Si el modelo contradice con convicción (ml_directional < -0.50), veto total: prohibido
-                    // abrir órdenes en contra de la predicción de IA salvo estiramiento de reversión (|stretch| >= 2.5).
-                    // Para contradicción leve (-0.50 <= ml_directional < 0.0), atenuación continua y simétrica
-                    // sin piso arbitrario de 0.20 que mantenía vivas operaciones con esperanza negativa.
-                    if ml_directional < -0.50 && price_stretch.abs() < 2.5 {
-                        fast_intent = SignalIntent::flat();
-                    } else if ml_directional < 0.0 && price_stretch.abs() < 2.5 {
-                        fast_intent.confidence *= (1.0 + ml_directional).clamp(0.05, 1.0);
-                    } else if ml_directional > 0.0 {
-                        // ML confirma la dirección: boost simétrico y suave acotado a 0.95
-                        fast_intent.confidence *= 1.0 + ml_directional * 0.5;
-                        fast_intent.confidence = fast_intent.confidence.min(0.95);
-                    }
-                }
 
                 // D-622 (DÉCIMA OLA): el cooldown binario del lado scalp (20 s tras
                 // ganar; 90 s o 180 s tras perder según volatilidad) se retira. El
@@ -3474,48 +4268,21 @@ impl GodEngineCore {
                 // mayores, y sin distinguir de qué «motor» vino la señal.
             }
 
-            // --- CVD & L2 Wall HARD FILTERS (VETOS) ---
-            if fast_intent.signal != SignalType::Flat {
-                let buy_vol = coin.agg_buy_vol.load(Ordering::Relaxed);
-                let sell_vol = coin.agg_sell_vol.load(Ordering::Relaxed);
-                let cvd = buy_vol - sell_vol;
-                let total_vol_cvd = buy_vol + sell_vol;
-                let cvd_ratio = if total_vol_cvd > 0.0 {
-                    cvd / total_vol_cvd
-                } else {
-                    0.0
-                };
-
-                let bid_wall = coin.l2_bid_wall.load(Ordering::Relaxed);
-                let ask_wall = coin.l2_ask_wall.load(Ordering::Relaxed);
-                let total_wall = bid_wall + ask_wall;
-                let wall_imbalance = if total_wall > 0.0 {
-                    (bid_wall - ask_wall) / total_wall
-                } else {
-                    0.0
-                };
-
-                let cvd_veto = self.arena.config.cvd_veto_threshold.load(Ordering::Relaxed);
-                let wall_veto = self
-                    .arena
-                    .config
-                    .wall_veto_threshold
-                    .load(Ordering::Relaxed);
-
-                if fast_intent.signal == SignalType::Long {
-                    if cvd_ratio < -cvd_veto {
-                        fast_intent = SignalIntent::flat();
-                    } else if wall_imbalance < -wall_veto {
-                        fast_intent = SignalIntent::flat();
-                    }
-                } else if fast_intent.signal == SignalType::Short {
-                    if cvd_ratio > cvd_veto {
-                        fast_intent = SignalIntent::flat();
-                    } else if wall_imbalance > wall_veto {
-                        fast_intent = SignalIntent::flat();
-                    }
-                }
-            }
+            // D-743 — PUERTAS DEL CONTINUO sobre la banda rápida. Los vetos de
+            // flujo agregado y muro del libro, el invariante bayesiano y la
+            // ponderación continua del modelo vivían aquí, aplicados SÓLO a esta
+            // banda: la lectura lenta del mismo espectro entraba sin pasar por
+            // ninguno. Ahora son una función única que se aplica a las DOS
+            // lecturas antes de arbitrar.
+            fast_intent = self.puertas_del_continuo(
+                coin_id,
+                fast_intent,
+                viable_para_entrar,
+                composite_score,
+                ml_prob,
+                ml_model_base,
+                price_stretch_continuo,
+            );
 
             if let Some(fr) = &self.flight_recorder {
                 let mut payload = [0u8; 47];
@@ -3791,6 +4558,21 @@ impl GodEngineCore {
             // bloqueaba una tesis de horas. Contaminación cruzada entre horizontes
             // que el sistema declara unificados. Lo cubre el guard D-463.
 
+            // D-743: la lectura LENTA pasa por las MISMAS puertas que la rápida
+            // —viabilidad de mercado, invariante bayesiano, ponderación del
+            // modelo y vetos de flujo y muro— antes de competir en la
+            // arbitración. Hasta aquí entraba sin ninguna: un motor universal
+            // con una puerta para cada mitad no es un motor universal.
+            slow_intent = self.puertas_del_continuo(
+                coin_id,
+                slow_intent,
+                viable_para_entrar,
+                composite_score,
+                ml_prob,
+                ml_model_base,
+                price_stretch_continuo,
+            );
+
             if coin_id < self.last_fast_intent.len() {
                 self.last_fast_intent[coin_id] = fast_intent;
             }
@@ -3913,24 +4695,56 @@ impl GodEngineCore {
             // UNILATERAL: el forest nunca AMPLÍA confianza (su acc de
             // clasificación binaria no justifica más agresividad) — sólo
             // puede frenar. Sin desacuerdo o sin entrenamiento: intacto.
+            // D-752 — EL FRENO DEL BOSQUE EXIGE EVIDENCIA, NO UNA EXACTITUD
+            // SUELTA.
+            //
+            // QUÉ ESTABA MAL: el freno se armaba con `forest6_acc > 0,55`. Esa
+            // cifra la publica el daemon SIN tamaño de muestra, así que 0,56
+            // podía venir de 9 aciertos sobre 16 —indistinguible de una moneda
+            // al aire— y aun así recortaba un 20 % la confianza, es decir el
+            // tamaño de la posición. Los umbrales de desacuerdo (0,40 / 0,60)
+            // y el recorte (×0,8) eran tres literales más, sin relación con lo
+            // buena que el bosque hubiera demostrado ser.
+            //
+            // QUÉ GARANTIZA: la autoridad del bosque es su exactitud
+            // DIRECCIONAL medida por el propio núcleo sobre las operaciones
+            // que el motor ejecutó (apertura: voto; cierre: dirección
+            // realizada), leída por su cota inferior de Wilson. Sólo frena si
+            // esa cota excluye la moneda al aire al 95 %. Y entonces todo lo
+            // demás sale de la misma cota `c`:
+            //   · desacuerdo: el bosque debe apartarse de ½ al menos tanto
+            //     como su propia ventaja demostrada (`p < 1 − c` para un
+            //     largo, `p > c` para un corto);
+            //   · recorte: `2·(1 − c)`, que vale 1 (sin freno) cuando el
+            //     bosque no demuestra nada y 0 (veto total) cuando acierta
+            //     siempre.
+            // Con `c = 0,60` la regla reproduce EXACTAMENTE los tres literales
+            // antiguos: eran el caso particular de un bosque con un 60 % de
+            // acierto demostrado, escrito como si fuera universal.
+            let f6_prob_actual = self
+                .arena
+                .registry
+                .get_for_coin_or(coin_id, "forest6_prob", 0.5);
+            // Voto direccional del bosque para esta moneda, o `None` si no
+            // opina (el valor por defecto del registry es justo ½).
+            let voto_bosque: Option<bool> = if (f6_prob_actual - 0.5).abs() > f64::EPSILON {
+                Some(f6_prob_actual > 0.5)
+            } else {
+                None
+            };
             if unified_intent.signal != SignalType::Flat {
-                let f6_acc = self
-                    .arena
-                    .registry
-                    .get_for_coin_or(coin_id, "forest6_acc", 0.0);
-                if f6_acc > 0.55 {
-                    let f6_prob = self
-                        .arena
-                        .registry
-                        .get_for_coin_or(coin_id, "forest6_prob", 0.5);
+                let (cota_bosque, _) =
+                    self.bosque_registro[coin_id].intervalo(crate::diffusion::Z95);
+                if cota_bosque > 0.5 {
                     let disagrees = match unified_intent.signal {
-                        SignalType::Long => f6_prob < 0.40,
-                        SignalType::Short => f6_prob > 0.60,
+                        SignalType::Long => f6_prob_actual < 1.0 - cota_bosque,
+                        SignalType::Short => f6_prob_actual > cota_bosque,
                         SignalType::Flat => false,
                     };
                     if disagrees && unified_intent.confidence.is_finite() {
+                        let recorte = (2.0 * (1.0 - cota_bosque)).clamp(0.0, 1.0);
                         unified_intent.confidence =
-                            (unified_intent.confidence * 0.8).clamp(0.0, 1.0);
+                            (unified_intent.confidence * recorte).clamp(0.0, 1.0);
                     }
                 }
             }
@@ -4150,83 +4964,79 @@ impl GodEngineCore {
                         0.0
                     };
 
+                    // D-757 — LAS VENTANAS DEL ANTI-WHIPLASH RESPIRAN CON τ.
+                    //
+                    // QUÉ ESTABA MAL: 45 s, 60 s, 3 min, 20 min, 1 h y 2 h
+                    // escritos a mano, más tres estiramientos en ATR crudo
+                    // (0,25 / 0,30 / 0,10). Un motor que declara operar un
+                    // CONTINUO de horizontes no puede llevar un calendario
+                    // fijo: tres minutos son una eternidad para una tesis de
+                    // 30 s y un parpadeo para una de doce horas. La misma
+                    // línea protegía de más en la banda rápida y de menos en
+                    // la lenta, y el escalón de racha (180 s → 20 min → 1 h →
+                    // 2 h) ni siquiera era regular.
+                    //
+                    // QUÉ GARANTIZA: la unidad es τ —el horizonte con el que
+                    // se dimensionó la operación que acaba de cerrarse— y la
+                    // escalada por racha es la misma escalera binaria del
+                    // enfriamiento (D-754), con el mismo techo: más allá del
+                    // horizonte más lento que el motor opera, esto deja de ser
+                    // un veto y pasa a ser un apagado.
+                    //
+                    // Los estiramientos pasan a ser pruebas de SIGNO. Lo que
+                    // las tres reglas querían decir es «el precio todavía no
+                    // ha vuelto de donde lo dejamos», y eso es el signo de la
+                    // distancia a la media, no una fracción de ATR: 0,25 ATR
+                    // equivale a 0,18 σ en la distribución de esa distancia —
+                    // ni siquiera es un desplazamiento distinguible de cero—,
+                    // así que el número no aportaba el matiz que aparentaba.
+                    let ventana_base_ms = enfriamiento_base_ms;
+                    let transcurrido_ms = elapsed_ms as f64;
                     let whiplash_veto = if last_was_win {
-                        // POST-WIN: La pata impulsiva se monetizó con éxito.
-                        // Prohibido comprar el techo del rally o vender el piso del dump recién tomado.
+                        // POST-WIN: la pata impulsiva se monetizó. Prohibido
+                        // recomprar el techo del rally (o revender el suelo
+                        // del desplome) mientras no haya pasado un horizonte
+                        // completo Y el precio siga extendido en la misma
+                        // dirección que se acaba de cobrar.
                         if is_same_dir {
-                            let last_exit = coin.last_close_exit_price.load(Ordering::Relaxed);
-                            let min_discount = 0.50 * cur_atr;
-                            if elapsed_ms < 900_000 {
-                                // Cooldown armónico incondicional: la onda necesita al menos 15 min para consolidar
-                                true
-                            } else if elapsed_ms < 3_600_000 {
-                                // Dentro de 1 hora post-victoria: jamás comprar por encima o igual a la salida ganadora sin flujo institucional agresivo (cvd > 0.10)
-                                if last_exit > 0.0 {
-                                    if unified_intent.signal == SignalType::Long {
-                                        mid_price >= (last_exit - min_discount)
-                                            || (mid_price >= last_exit && rolling_cvd <= 0.10)
-                                    } else {
-                                        mid_price <= (last_exit + min_discount)
-                                            || (mid_price <= last_exit && rolling_cvd >= -0.10)
-                                    }
-                                } else {
-                                    true
-                                }
-                            } else {
-                                false
-                            }
+                            transcurrido_ms < ventana_base_ms
+                                && ((unified_intent.signal == SignalType::Long
+                                    && p_stretch > 0.0)
+                                    || (unified_intent.signal == SignalType::Short
+                                        && p_stretch < 0.0))
                         } else {
-                            // Giro a contratendencia post-win: requiere al menos 45s de confirmación
-                            elapsed_ms < 45_000
+                            // Giro a contratendencia post-win: es una tesis
+                            // nueva, y como cualquier otra necesita que el
+                            // mercado haya tenido un horizonte para producirla.
+                            transcurrido_ms < ventana_base_ms
                         }
+                    } else if !is_same_dir {
+                        // POST-LOSS (SL) a contratendencia: prohibido vender la
+                        // capitulación que acaba de saltar un stop de largo, o
+                        // comprar la euforia que saltó uno de corto, durante un
+                        // horizonte; pasado éste, sólo mientras el precio siga
+                        // extendido en esa misma dirección adversa.
+                        transcurrido_ms < ventana_base_ms
+                            || (unified_intent.signal == SignalType::Short && p_stretch < 0.0)
+                            || (unified_intent.signal == SignalType::Long && p_stretch > 0.0)
                     } else {
-                        // POST-LOSS: Prohibido capitular al final de extensiones extremas (> 1.5 ATR)
+                        // POST-LOSS en la MISMA dirección: retroceso binario
+                        // sobre el horizonte, idéntico al del enfriamiento.
                         let is_scalp_long = unified_intent.signal == SignalType::Long;
-                        let intent_tau = if unified_intent.expected_duration_ms > 0 {
-                            unified_intent.expected_duration_ms as f64
-                        } else {
-                            tau_dom
-                        };
-                        let dir_streak = self.feature_engines[coin_id].get_active_directional_streak_at_tau(is_scalp_long, intent_tau);
-                        let tot_streak = self.feature_engines[coin_id].get_active_total_loss_streak_at_tau(intent_tau);
-                        let effective_streak = dir_streak.max(tot_streak);
-
-                        if !is_same_dir {
-                            if effective_streak >= 2 {
-                                // Racha de pérdidas consecutivas alternantes: cooldown exponencial antes de revertir
-                                let required_ms = match effective_streak {
-                                    2 => 600_000,    // 10 minutos
-                                    3 => 1_200_000,  // 20 minutos
-                                    _ => 1_800_000,  // 30 minutos
-                                };
-                                let time_veto = elapsed_ms < required_ms;
-                                let extreme_stretch_veto = (unified_intent.signal == SignalType::Short && p_stretch < -1.50)
-                                    || (unified_intent.signal == SignalType::Long && p_stretch > 1.50);
-                                time_veto || extreme_stretch_veto
-                            } else if elapsed_ms < 60_000 {
-                                true
-                            } else {
-                                (unified_intent.signal == SignalType::Short && p_stretch < -1.20)
-                                    || (unified_intent.signal == SignalType::Long
-                                        && p_stretch > 1.20)
-                            }
-                        } else {
-                            // En la MISMA DIRECCIÓN: cooldown si hay racha de pérdidas consecutivas
-                            let required_ms = match effective_streak {
-                                0 | 1 => 60_000,     // 1 minuto
-                                2 => 600_000,       // 10 minutos
-                                3 => 1_200_000,     // 20 minutos
-                                _ => 1_800_000,     // 30 minutos
-                            };
-                            let time_veto = elapsed_ms < required_ms;
-                            let extreme_stretch_veto = if effective_streak >= 2 {
-                                (unified_intent.signal == SignalType::Short && p_stretch < -1.50)
-                                    || (unified_intent.signal == SignalType::Long && p_stretch > 1.50)
-                            } else {
-                                false
-                            };
-                            time_veto || extreme_stretch_veto
-                        }
+                        let streak = self.feature_engines[coin_id]
+                            .get_active_directional_streak_ms(is_scalp_long, enfriamiento_base_ms);
+                        let requerido_ms = (ventana_base_ms
+                            * (streak.min(8) as f64).exp2())
+                        .min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS);
+                        let time_veto = transcurrido_ms < requerido_ms;
+                        // Con racha demostrada, además se exige que la entrada
+                        // esté en el lado correcto de la media: prohibido
+                        // vender por debajo de ella o comprar por encima.
+                        let stretch_veto = streak >= 2
+                            && ((unified_intent.signal == SignalType::Short && p_stretch < 0.0)
+                                || (unified_intent.signal == SignalType::Long
+                                    && p_stretch > 0.0));
+                        time_veto || stretch_veto
                     };
 
                     if whiplash_veto {
@@ -4245,35 +5055,47 @@ impl GodEngineCore {
             // aporta información nueva al flujo. Se elimina la segunda
             // evaluación; la única vive junto a la generación de señales.
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_BAYES);
-            // D-499: Invariante de Convicción Post-Racha Universal (Cross-Horizon Loss Streak Firewall)
-            // Si el activo acumula una racha de 2 o más pérdidas consecutivas activas (direccionales o totales),
-            // se exige convicción Bayesiana institucional (|score| >= 0.28, |current_obi| >= 0.18).
-            // Si la racha es >= 3, se exige convicción superlativa (|score| >= 0.32, |current_obi| >= 0.22).
-            let is_short_intent = unified_intent.signal == SignalType::Short;
-            let intent_tau = if unified_intent.expected_duration_ms > 0 {
-                unified_intent.expected_duration_ms as f64
-            } else {
-                tau_dom
-            };
-            let dir_streak = self.feature_engines[coin_id].get_active_directional_streak_at_tau(!is_short_intent, intent_tau);
-            let other_streak = self.feature_engines[coin_id].get_active_directional_streak_at_tau(is_short_intent, intent_tau);
-            let tot_streak = self.feature_engines[coin_id].get_active_total_loss_streak_at_tau(intent_tau);
-            let is_alternating_chop = dir_streak >= 1 && other_streak >= 1;
-            let effective_streak = if is_alternating_chop { dir_streak.max(tot_streak) } else { dir_streak };
-
-            if effective_streak >= 2 {
-                let (min_score, min_obi) = if effective_streak >= 3 {
-                    (0.32, 0.22)
-                } else {
-                    (0.28, 0.18)
-                };
-                let eff_obi = if book_absent { rolling_cvd } else { current_obi };
-                if unified_intent.signal == SignalType::Short {
-                    if composite_score > -min_score || eff_obi > -min_obi {
+            // D-499: Invariante de Convicción Post-Racha Direccional Universal
+            // (Cross-Horizon Directional Loss Streak Firewall).
+            //
+            // D-756 — QUÉ ESTABA MAL: la «convicción institucional» se escribía
+            // como cuatro números absolutos —(|score| ≥ 0,28; |OBI| ≥ 0,18) a
+            // partir de dos pérdidas y (0,32; 0,22) a partir de tres—. Ninguno
+            // depende del instrumento: en un libro grueso y quieto |OBI| = 0,18
+            // es el estado HABITUAL —el cortafuegos no cortaba nada— y en uno
+            // fino y nervioso es inalcanzable —cortaba siempre—. Además el
+            // escalón entre dos y tres pérdidas era del 14 %, una cifra sin
+            // origen, y una cuarta o quinta pérdida no cambiaba nada.
+            //
+            // QUÉ GARANTIZA: los dos suelos salen de la DISTRIBUCIÓN MEDIDA de
+            // este símbolo con los estimadores P² que ya existían —el percentil
+            // 85 de |composite_score| y el 80 de |OBI|—, de modo que «convicción»
+            // significa un EVENTO en la distribución propia del activo y no un
+            // número escrito a mano. La escalada es la misma escalera binaria
+            // del enfriamiento (D-754) y de la exigencia de libro, leída desde
+            // el primer nivel en que este cortafuegos actúa: como sólo engancha
+            // a partir de la segunda pérdida, la racha efectiva es `streak − 1`,
+            // así que dos pérdidas piden el suelo medido, tres lo duplican,
+            // cuatro lo cuadruplican. El techo de 1 es físico: tanto
+            // `composite_score` (acotado a [−1, 1] en su construcción) como
+            // |OBI| no pueden valer más, de modo que saturar es vetar.
+            if unified_intent.signal == SignalType::Short {
+                let streak = self.feature_engines[coin_id].get_active_directional_streak_ms(false, enfriamiento_base_ms);
+                if streak >= 2 {
+                    let nivel = streak.saturating_sub(1);
+                    let min_score = exigencia_tras_racha(piso_score_medido, nivel);
+                    let min_obi = exigencia_tras_racha(piso_obi_medido, nivel);
+                    if composite_score > -min_score || current_obi > -min_obi {
                         unified_intent = SignalIntent::flat();
                     }
-                } else if unified_intent.signal == SignalType::Long {
-                    if composite_score < min_score || eff_obi < min_obi {
+                }
+            } else if unified_intent.signal == SignalType::Long {
+                let streak = self.feature_engines[coin_id].get_active_directional_streak_ms(true, enfriamiento_base_ms);
+                if streak >= 2 {
+                    let nivel = streak.saturating_sub(1);
+                    let min_score = exigencia_tras_racha(piso_score_medido, nivel);
+                    let min_obi = exigencia_tras_racha(piso_obi_medido, nivel);
+                    if composite_score < min_score || current_obi < min_obi {
                         unified_intent = SignalIntent::flat();
                     }
                 }
@@ -4535,8 +5357,7 @@ impl GodEngineCore {
                     };
                     let council_loss_streak = self
                         .feature_engines[coin_id]
-                        .get_active_directional_streak(order.signal == SignalType::Long)
-                        .max(self.feature_engines[coin_id].get_active_total_loss_streak());
+                        .get_active_directional_streak_ms(order.signal == SignalType::Long, enfriamiento_base_ms);
                     let council_intended_dir = match order.signal {
                         SignalType::Long => 1.0,
                         SignalType::Short => -1.0,
@@ -4775,6 +5596,13 @@ impl GodEngineCore {
                                 let fee_paid = phys_entry_fee;
                                 let qty = nominal_size / real_entry_price;
 
+                                // U-ERR-5 (merge con F-009 de main): F-009 volvia a
+                                // partir la apertura en Swing/Scalping segun la
+                                // rama (vfr >= 13) o la duracion declarada. El
+                                // binario de horizonte esta erradicado: el
+                                // horizonte REAL de la posicion es `entry_tau_ms`
+                                // (tau dimensionada, D-745), no esta etiqueta.
+                                let pos_h = quantum_arena::position::PositionHorizon::Continuous;
                                 let tau_coin = self
                                     .temporal_spectrum
                                     .get(coin_id)
@@ -4801,6 +5629,7 @@ impl GodEngineCore {
                                 self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
                                 let expected_generation = target_pos.generation
                                     .load(Ordering::Acquire).wrapping_add(1);
+
 
                                 // Publicación ATÓMICA e inmutable de la posición junto con su tau espectral:
                                 if !target_pos.open_with_tau_and_fee(
@@ -4835,6 +5664,22 @@ impl GodEngineCore {
                                             generation: expected_generation, is_long,
                                             signals: council_decision.signals })
                                     } else { None };
+                                // D-752 - QUIEN ABRIO ESTA POSICION. La
+                                // etiqueta de rama viaja en `volume_flow_rate` y
+                                // sobrevive a la arbitracion. Se anota junto con
+                                // el voto del bosque hasta el cierre, que es quien
+                                // los juzga.
+                                let etiqueta_rama = unified_intent.volume_flow_rate;
+                                self.rama_abierta[coin_id] = if etiqueta_rama.is_finite()
+                                    && etiqueta_rama >= 0.0
+                                    && (etiqueta_rama as usize) < N_RAMAS
+                                {
+                                    Some(etiqueta_rama as usize)
+                                } else {
+                                    None
+                                };
+                                self.bosque_voto_abierto[coin_id] = voto_bosque;
+
                                 // QO-E2b — PRODUCTOR DEL DATASET NN: congelar
                                 // el tensor 54D de la APERTURA. El cierre lo
                                 // empareja con el retorno neto realizado y
@@ -4856,6 +5701,28 @@ impl GodEngineCore {
                                         *t = tensor_snapshot.to_vec();
                                     }
                                 }
+                                // D-745: la posición NACE con el horizonte CON
+                                // EL QUE SE DIMENSIONÓ (`order.tau_ms`), no con
+                                // una segunda lectura del espectro. Mientras se
+                                // recalculaba aquí, el risk-engine podía
+                                // dimensionar a 2 h una posición que el núcleo
+                                // gestionaba a 30 s: TP/SL de respaldo,
+                                // trailing, caducidad, Kelly de cierre y
+                                // apalancamiento del host razonaban sobre un
+                                // horizonte que nadie había usado para calcular
+                                // el tamaño. Respaldo: la τ dominante viva.
+                                let tau_entry = if order.tau_ms.is_finite() && order.tau_ms > 0.0 {
+                                    order.tau_ms as u64
+                                } else {
+                                    self.temporal_spectrum
+                                        .get(coin_id)
+                                        .map(|s| s.dominant_tau_ms as u64)
+                                        .unwrap_or(0)
+                                };
+                                coin.positions
+                                    .position
+                                    .entry_tau_ms
+                                    .store(tau_entry, Ordering::Relaxed);
                                 new_order = Some((
                                     is_long,
                                     real_entry_price,
@@ -5219,5 +6086,314 @@ mod tests_m5_h01 {
         // Ruina / datos inválidos siguen siendo INVIABLE con trades de sobra.
         assert_eq!(fitness_compute(0.0, 100.0, 0.0, 100), f64::NEG_INFINITY);
         assert_eq!(fitness_compute(100.0, -1.0, 0.0, 100), f64::NEG_INFINITY);
+    }
+}
+
+#[cfg(test)]
+mod tests_d743_puertas_del_continuo {
+    use super::*;
+    use signal_engine::{SignalIntent, SignalType};
+    use std::sync::Arc;
+
+    fn intencion_larga() -> SignalIntent {
+        SignalIntent {
+            signal: SignalType::Long,
+            confidence: 0.80,
+            horizon: strategy_core::TradeHorizon::Continuous,
+            ..Default::default()
+        }
+    }
+
+    /// D-743: las cuatro puertas valen para CUALQUIER lectura del espectro.
+    /// Antes vivían sólo en el camino de la banda rápida y la lenta —que gana
+    /// la arbitración siempre que τ dominante supera la media geométrica de la
+    /// banda operativa— entraba sin pasar por ninguna.
+    #[test]
+    fn d743_una_intencion_no_viable_queda_plana_venga_de_donde_venga() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let core = GodEngineCore::new(Arc::clone(&arena));
+        let i = intencion_larga();
+
+        // 1. Mercado inviable (spread, ATR o enfriamiento).
+        assert_eq!(
+            core.puertas_del_continuo(0, i, false, 0.5, 0.60, 0.5, 0.0).signal,
+            SignalType::Flat
+        );
+        // 2. Consenso del tick en contra (invariante bayesiano D-472).
+        assert_eq!(
+            core.puertas_del_continuo(0, i, true, -0.20, 0.60, 0.5, 0.0).signal,
+            SignalType::Flat
+        );
+        // 3. El modelo la contradice con fuerza (< −0,80 bajo su base) y no
+        //    hay acción de precio extrema.
+        assert_eq!(
+            core.puertas_del_continuo(0, i, true, 0.50, 0.05, 0.5, 0.0).signal,
+            SignalType::Flat
+        );
+        // Con acción de precio extrema, el veto del modelo cede (F-009).
+        assert_eq!(
+            core.puertas_del_continuo(0, i, true, 0.50, 0.05, 0.5, 3.0).signal,
+            SignalType::Long
+        );
+        // 4. Flujo agregado en contra: veto duro.
+        arena.coins[0].agg_buy_vol.store(1.0, Ordering::Relaxed);
+        arena.coins[0].agg_sell_vol.store(99.0, Ordering::Relaxed);
+        assert_eq!(
+            core.puertas_del_continuo(0, i, true, 0.50, 0.60, 0.5, 0.0).signal,
+            SignalType::Flat
+        );
+        arena.coins[0].agg_buy_vol.store(50.0, Ordering::Relaxed);
+        arena.coins[0].agg_sell_vol.store(50.0, Ordering::Relaxed);
+        // 4b. Muro del libro en contra: veto duro.
+        arena.coins[0].l2_bid_wall.store(1.0, Ordering::Relaxed);
+        arena.coins[0].l2_ask_wall.store(99.0, Ordering::Relaxed);
+        assert_eq!(
+            core.puertas_del_continuo(0, i, true, 0.50, 0.60, 0.5, 0.0).signal,
+            SignalType::Flat
+        );
+    }
+
+    /// F-009 / D-411 — la dirección del modelo se mide contra SU base. Con
+    /// base 0,30 (etiquetado honesto), ml = 0,30 es neutral para un largo: ni
+    /// veta ni penaliza. Una contradicción moderada (−0,60) sólo penaliza, con
+    /// piso de convicción, en vez de aplanar la intención.
+    #[test]
+    fn f009_d411_modelo_relativo_a_su_base_y_penalizacion_blanda() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let core = GodEngineCore::new(Arc::clone(&arena));
+        arena.coins[0].agg_buy_vol.store(50.0, Ordering::Relaxed);
+        arena.coins[0].agg_sell_vol.store(50.0, Ordering::Relaxed);
+        let i = intencion_larga();
+
+        let neutral = core.puertas_del_continuo(0, i, true, 0.50, 0.30, 0.30, 0.0);
+        assert_eq!(neutral.signal, SignalType::Long);
+        assert!((neutral.confidence - i.confidence).abs() < 1e-12);
+
+        // ml 0,20 con base 0,50 ⇒ dirección −0,60: penaliza, no veta.
+        let blanda = core.puertas_del_continuo(0, i, true, 0.50, 0.20, 0.5, 0.0);
+        assert_eq!(blanda.signal, SignalType::Long);
+        assert!((blanda.confidence - i.confidence * 0.70).abs() < 1e-12);
+
+        // Base fuera de (0,05, 0,95) no es base: se cae a 0,5.
+        let degenerada = core.puertas_del_continuo(0, i, true, 0.50, 0.05, 0.99, 0.0);
+        assert_eq!(degenerada.signal, SignalType::Flat);
+    }
+
+    /// Una intención que pasa las cuatro conserva su dirección, y el modelo a
+    /// favor sólo puede modular la confianza dentro de [0, 0.99].
+    #[test]
+    fn d743_lo_que_pasa_las_puertas_conserva_direccion_y_confianza_acotada() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let core = GodEngineCore::new(Arc::clone(&arena));
+        arena.coins[0].agg_buy_vol.store(50.0, Ordering::Relaxed);
+        arena.coins[0].agg_sell_vol.store(50.0, Ordering::Relaxed);
+        let out = core.puertas_del_continuo(0, intencion_larga(), true, 0.50, 0.95, 0.5, 0.0);
+        assert_eq!(out.signal, SignalType::Long);
+        assert!(out.confidence > 0.80 && out.confidence <= 0.99, "{}", out.confidence);
+    }
+}
+
+/// Tests de los defectos D-752 (confianzas literales por rama y freno del
+/// bosque sin muestra) y D-756 (escalada de exigencia tras racha). Afirman la
+/// propiedad que el código ANTERIOR violaba: un literal no aprende y una
+/// exactitud sin `n` no es evidencia.
+#[cfg(test)]
+mod tests_d752_d756 {
+    use super::*;
+    use crate::diffusion::Z95;
+
+    fn registro(n: u32, aciertos: u32) -> TasaAcierto {
+        TasaAcierto { n, aciertos }
+    }
+
+    /// D-752 — CON TRES DATOS NO HAY CERTEZA.
+    ///
+    /// Es la razón de usar Wilson y no Wald: con 3 aciertos de 3, el intervalo
+    /// normal degenera en [1, 1] («certeza» con tres observaciones) y el motor
+    /// dimensionaría al máximo. Wilson devuelve un intervalo que todavía
+    /// contiene la moneda al aire, así que la rama NO puede declarar ventaja.
+    #[test]
+    fn d752_wilson_no_declara_certeza_con_tres_datos() {
+        let r = registro(3, 3);
+        let (lo, hi) = r.intervalo(Z95);
+        assert!(lo < 0.5 && hi > 0.5, "3/3 no puede excluir el azar: [{lo}, {hi}]");
+        assert!(!r.mejor_que_el_azar(Z95));
+
+        // Sin muestra: ignorancia completa, no optimismo.
+        let (lo0, hi0) = registro(0, 0).intervalo(Z95);
+        assert_eq!((lo0, hi0), (0.0, 1.0));
+
+        // Con muestra suficiente, la MISMA proporción sí excluye el azar.
+        let r2 = registro(300, 300);
+        assert!(r2.mejor_que_el_azar(Z95), "300/300 debe excluir el azar");
+    }
+
+    /// D-752 — UNA RAMA QUE DEMUESTRA PERDER NO PUEDE SEGUIR DECLARANDO 0,72.
+    ///
+    /// QUÉ ESTABA MAL: las ramas de acción de precio emitían 0,72 / 0,68 /
+    /// 0,65 FIJOS, y aguas abajo esa cifra se trata como una PROBABILIDAD (la
+    /// come el escalado de Platt que alimenta el Kelly y se compara contra el
+    /// gen `min_confidence_btc`). El motor podía perder mil veces con la misma
+    /// rama y ésta seguiría pidiendo el mismo tamaño de posición.
+    ///
+    /// QUÉ GARANTIZA ESTE TEST: los tres estados de `conviccion_de_rama` son
+    /// los que la muestra permite, y ninguno de ellos es un literal.
+    #[test]
+    fn d752_la_conviccion_de_rama_sale_de_su_propio_historial() {
+        let piso = 0.58; // convicción por magnitud del disparo
+
+        // 1) Sin evidencia: manda la magnitud medida del disparo, no un literal.
+        assert_eq!(conviccion_de_rama(&registro(0, 0), piso), piso);
+        assert_eq!(conviccion_de_rama(&registro(5, 3), piso), piso);
+
+        // 2) Ventaja DEMOSTRADA: la convicción es la cota que la muestra
+        //    garantiza, no la media optimista.
+        let ganadora = registro(400, 280); // 70 % con n grande
+        let c_gana = conviccion_de_rama(&ganadora, piso);
+        let (lo, _) = ganadora.intervalo(Z95);
+        assert_eq!(c_gana, lo);
+        assert!(c_gana > 0.5 && c_gana < 0.70, "cota {c_gana} vs media 0,70");
+
+        // 3) Desventaja DEMOSTRADA: la convicción cae por debajo de ½ y el
+        //    gate de confianza la rechaza sin necesidad de una regla aparte.
+        //    ESTE es el caso que el literal 0,72 hacía imposible.
+        let perdedora = registro(400, 120); // 30 % con n grande
+        let c_pierde = conviccion_de_rama(&perdedora, piso);
+        assert!(
+            c_pierde < 0.5,
+            "una rama que pierde el 70 % de las veces declaró {c_pierde}"
+        );
+        assert!(
+            c_pierde < 0.72 && c_pierde < piso,
+            "la evidencia adversa debe mandar sobre la magnitud del disparo"
+        );
+
+        // Monotonía: más aciertos con la misma n ⇒ más convicción.
+        let a = conviccion_de_rama(&registro(400, 240), piso);
+        let b = conviccion_de_rama(&registro(400, 300), piso);
+        assert!(a < b, "la convicción no es monótona en la tasa medida: {a} / {b}");
+    }
+
+    /// D-752 — EL FRENO DEL BOSQUE EXIGE TAMAÑO DE MUESTRA.
+    ///
+    /// QUÉ ESTABA MAL: se armaba con `forest6_acc > 0,55`, una cifra que el
+    /// daemon publica SIN `n`. 9 aciertos de 16 dan 0,5625 —indistinguible de
+    /// una moneda al aire— y aun así recortaban un 20 % la confianza, es decir
+    /// el tamaño de la posición.
+    ///
+    /// QUÉ GARANTIZA ESTE TEST: con esa misma muestra el freno NO se arma, y
+    /// el recorte derivado `2·(1−c)` reproduce el ×0,8 antiguo exactamente
+    /// cuando el bosque demuestra el 60 % que aquel literal presuponía.
+    #[test]
+    fn d752_el_freno_del_bosque_exige_evidencia_no_una_exactitud_suelta() {
+        // 9/16 = 0,5625 > 0,55: el criterio viejo frenaba. El nuevo, no.
+        let flojo = registro(16, 9);
+        assert!(9.0 / 16.0 > 0.55, "premisa del test");
+        assert!(
+            !flojo.mejor_que_el_azar(Z95),
+            "9 de 16 no distinguen al bosque de una moneda al aire"
+        );
+
+        // Con muestra que sí demuestra ventaja, el freno se arma y su
+        // intensidad sale de la propia cota.
+        let solido = registro(2_000, 1_240); // 62 % con n grande
+        let (c, _) = solido.intervalo(Z95);
+        assert!(c > 0.5, "62 % con n=2000 debe excluir el azar");
+        let recorte = (2.0 * (1.0 - c)).clamp(0.0, 1.0);
+        assert!(recorte < 1.0 && recorte > 0.0, "recorte {recorte}");
+
+        // Identidad de calibración: c = 0,60 reproduce el ×0,8 y los umbrales
+        // de desacuerdo 0,40 / 0,60 que estaban escritos a mano — eran el caso
+        // particular de un bosque con 60 % de acierto DEMOSTRADO.
+        let c60 = 0.60_f64;
+        assert!(((2.0 * (1.0 - c60)) - 0.8).abs() < 1e-12);
+        assert!(((1.0 - c60) - 0.40).abs() < 1e-12);
+    }
+
+    /// D-752 — EL CANAL DE ATRIBUCIÓN Y EL REGISTRO TIENEN QUE CUADRAR.
+    ///
+    /// La convicción de una rama sólo puede salir de su historial si la
+    /// etiqueta que viaja en `SignalIntent::volume_flow_rate` cae dentro del
+    /// registro que el cierre actualiza. Si alguien añade una rama con una
+    /// etiqueta fuera de rango, la apertura no se anota, el cierre no enseña
+    /// nada y esa rama vuelve en silencio a dimensionar con un número fijo —
+    /// exactamente el defecto que D-752 corrige. Este test fija el contrato.
+    #[test]
+    fn d752_todas_las_etiquetas_de_rama_caben_en_el_registro() {
+        // Camino principal: etiquetas 1..=14 escritas como literales en los
+        // `SignalIntent` de las ramas de régimen.
+        for etiqueta in 1..=14usize {
+            assert!(
+                etiqueta < N_RAMAS,
+                "la etiqueta {etiqueta} del camino principal no cabe en el registro"
+            );
+        }
+        // Ramas de respaldo: constantes nombradas.
+        for etiqueta in [
+            RAMA_ML_RECENTRADO,
+            RAMA_ESPECTRO_DIRECTO,
+            RAMA_TENDENCIA_PERSISTENTE,
+            RAMA_REVERSION_ANTIPERSISTENTE,
+            RAMA_MOMENTO_SIN_REGIMEN,
+        ] {
+            assert!(etiqueta.is_finite() && etiqueta >= 0.0, "{etiqueta}");
+            assert!(
+                (etiqueta as usize) < N_RAMAS,
+                "la etiqueta de respaldo {etiqueta} no cabe en el registro"
+            );
+            // La conversión f64 → usize del canal de atribución debe ser
+            // exacta: una etiqueta con parte decimal se anotaría en la casilla
+            // equivocada y una rama aprendería del resultado de otra.
+            assert_eq!(etiqueta, (etiqueta as usize) as f64, "etiqueta no entera");
+        }
+        // Y no colisionan con las del camino principal.
+        assert!(RAMA_ML_RECENTRADO as usize > 14);
+    }
+
+    /// D-756 — LA EXIGENCIA TRAS RACHA ESCALA Y NUNCA RELAJA.
+    ///
+    /// QUÉ ESTABA MAL: `min_obi_trend.max(0,22)`. Con un umbral vigente ya
+    /// mayor que 0,22 el «endurecimiento» no hacía NADA, y una tercera, cuarta
+    /// o décima pérdida consecutiva tampoco cambiaba nada: el escalón era
+    /// único y literal.
+    ///
+    /// QUÉ GARANTIZA ESTE TEST: la misma escalera binaria del enfriamiento
+    /// (D-754), monótona y con techo en 1, que es lo que |OBI| puede valer por
+    /// construcción.
+    #[test]
+    fn d756_la_exigencia_tras_racha_escala_y_nunca_relaja() {
+        let umbral = 0.30_f64;
+
+        // Sin racha (0 y 1): la exigencia es la del umbral vigente.
+        assert_eq!(exigencia_tras_racha(umbral, 0), umbral);
+        assert_eq!(exigencia_tras_racha(umbral, 1), umbral);
+
+        // A partir de la segunda pérdida, cada una DUPLICA.
+        assert!((exigencia_tras_racha(umbral, 2) - 0.60).abs() < 1e-12);
+        assert!((exigencia_tras_racha(umbral, 3) - 1.0).abs() < 1e-12); // 1,20 → techo
+
+        // ESTA es la propiedad que el `.max(0,22)` viejo violaba: con un
+        // umbral vigente de 0,30 daba 0,30 para CUALQUIER racha.
+        assert!(
+            exigencia_tras_racha(umbral, 5) > exigencia_tras_racha(umbral, 2),
+            "una racha más larga debe exigir más, no lo mismo"
+        );
+
+        // Monotonía general y no-relajación, con un umbral pequeño.
+        let pequeno = 0.05_f64;
+        let mut anterior = exigencia_tras_racha(pequeno, 0);
+        for racha in 1..=12u32 {
+            let actual = exigencia_tras_racha(pequeno, racha);
+            assert!(
+                actual >= anterior,
+                "la exigencia RELAJÓ en la racha {racha}: {anterior} → {actual}"
+            );
+            assert!(actual <= 1.0, "|OBI| no puede exigir más de 1: {actual}");
+            anterior = actual;
+        }
+        assert!((anterior - 1.0).abs() < 1e-12, "debe saturar en el techo físico");
+
+        // Un umbral no finito no se inventa: se propaga tal cual.
+        assert!(exigencia_tras_racha(f64::NAN, 4).is_nan());
     }
 }

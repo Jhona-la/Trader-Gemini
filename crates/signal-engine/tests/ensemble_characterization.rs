@@ -1,8 +1,8 @@
 //! Open-defect diagnostics, NOT regression tests proving a repair.
 use omniscient_registry::OmniscientRegistry;
 use signal_engine::{
-    micro_scalp_trigger::MicroScalpTriggerEngine, orchestrator::TensorVoteOrchestrator,
-    trend_runner::HighPayoffTrendRunner,
+    flow_excitation_confluence::FlowExcitationConfluenceEngine,
+    orchestrator::TensorVoteOrchestrator, trend_runner::HighPayoffTrendRunner,
 };
 use std::sync::{atomic::Ordering, Arc};
 use strategy_core::{momentum_booster::VolatileMomentumBooster, QuantumStrategy};
@@ -46,7 +46,7 @@ fn diagnostic_missing_model_base_changes_directional_gate() {
     registry.set("hawkes_intensity", 2.0);
     registry.set("order_book_imbalance", -0.5);
     registry.set("ml_prob_motor", 0.36);
-    let mut trigger = MicroScalpTriggerEngine::new();
+    let mut trigger = FlowExcitationConfluenceEngine::new();
     trigger.init(registry.clone()).unwrap();
     assert!(trigger.evaluate() < 0.0); // default baseline 0.5 fabricates a negative lift
     registry.set("ml_model_base", 0.3);
