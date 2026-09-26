@@ -8,6 +8,56 @@
 
 ---
 
+## 2026-09-26 — `main` integra el trabajo local (Olas 11-26 + FMT XXX-XXXIX) con el PR #5
+
+### Estado de ramas
+- `main` = 6fdccd64: merge LOCAL (≈90 hunks, 17 archivos) del PR #5 con 47
+  commits que sólo vivían en el PC (Olas 11-26, FMT XXX-XXXIX, CES, 39
+  informes forenses). PR #4 y #5 cerrados. No hay PRs abiertos.
+- Los arreglos de la auditoría del PR #5 (D-744b/c, D-754b/c, D-750b,
+  F-009/D-411 en `puertas_del_continuo`) están VIVOS en `main` (verificado).
+
+### Decisiones de esa fusión (vigentes)
+- **3 slots espectrales por moneda** (`scalp`/`swing`/`position`) RESTAURADOS:
+  las Olas 22-26 les dieron productores reales (`find_resonant_slot`,
+  despacho multi-banda). El binario de horizonte SIGUE erradicado: los tres
+  viven en `Continuous` y se distinguen por τ, no por etiqueta.
+- **D-751b — arranque frío total**: con 0 operaciones del símbolo y sin p
+  calibrada, la orden sale como SONDA D-750 en vez de rechazarse por falta de
+  evidencia (rompía el oráculo T-1: 0/144). Con ≥1 operación rige D-751.
+  Nota: esto NO cubre el hallazgo #1 (p calibrada que cae tras operar).
+- Slots REJ del risk-engine 15→17; techo micro de apalancamiento 5×→4×.
+- `feature_exporter` = research-v2 de main; el exportador de paridad del PR
+  se conserva como `feature_parity_exporter` (pendiente de checkout, Ola XL).
+- T-1 (`backtest-engine/tests/t1_cobertura_genetica.rs`) IGNORADO: la física
+  de viabilidad es inviable sobre el fixture sintético (spread 4 pb vs
+  fricción 7 pb). Recalibrar sobre tape real = primer ítem de la Ola XL.
+
+### Verificación cloud de `main` (windows-gnu + wine) — 4 tests ROJOS
+Compila limpio (`--workspace --all-targets`). Fallan en `quantum-arena`:
+- **Introducidos por la fusión** (pasan en los dos padres, 3ee49b05 y
+  ac136633): los contratos CES de `temporal_spectrum` esperan la semántica
+  anterior a D-742, y la fusión adoptó D-742:
+  - `spectral_contract_learning_refreshes_fusion_without_new_tick`:
+    `fused_score` ≠ `spectral_coherence(true)` (Δ ≈ 0,039). `refresh_fusion`
+    pondera por masa×resolución (D-742) y `spectral_coherence` no: DOS
+    definiciones de la fusión. Remedio: una sola función de pesos para ambas.
+  - `spectral_contract_long_scale_retains_small_elapsed_mass`: espera la
+    semilla 1e-7 (0,0000001); D-742 da la vol OBSERVADA (0,0100). El test
+    codifica el defecto que D-742 corrigió → actualizar el test.
+  - `spectral_contract_timestamp_zero_is_a_valid_origin`: `assert_eq!` exacto
+    entre origen 0 y origen desplazado; difieren en 6e-14 → comparar con
+    tolerancia o hacer el cálculo invariante al desplazamiento.
+- **Preexistente** (ya fallaba en ac136633, antes de la fusión; intermitente
+  porque la mutación es aleatoria): `genome_store::test_r11_evolution_
+  pipeline_never_blocked_by_gate`. `mutate_cmaes`/`from_vector` producen
+  genomas cuya curva de SL no alcanza el piso de fricción (15,4 pb a fee
+  0,0010) que exige `GenomeEnvelope::validate` → el gate de promoción
+  rechaza mutantes. Los bounds de mutación y la política de fricción no
+  coinciden (regresión de R1.1).
+
+---
+
 ## 2026-09-25 — Integración ola «espectro predictivo» (PR #4) + F-009/WS de main
 
 ### Ramas
@@ -40,8 +90,9 @@
 - **D-744**: cortacircuitos de drawdown con una sola semántica medida.
 - **D-745 / U-ERR-5**: una posición, un horizonte. `PositionHorizon` sólo
   tiene `Continuous`; el horizonte REAL es `Position::entry_tau_ms` (τ con la
-  que se dimensionó, `ValidatedOrder::tau_ms`). **No reintroducir
-  Swing/Scalping** (F-009 de main lo hacía; se revirtió en el merge).
+  que se dimensionó, `ValidatedOrder::tau_ms`). **No reintroducir las
+  ETIQUETAS Swing/Scalping** (F-009 de main lo hacía; se revirtió). Desde el
+  2026-09-26 hay 3 slots por moneda, distinguidos por τ (ver bloque de arriba).
 - **D-746**: la volatilidad no es convicción (freno ATR vs distancia al stop).
 - **D-747**: flujo de entrenamiento des-espejado (`qty = |bq − aq|`,
   `is_buyer_maker = aq > bq`) en entrenador, exportador, sonda y forense.
