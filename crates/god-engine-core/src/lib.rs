@@ -199,6 +199,129 @@ pub struct CouncilEntryEvidence {
 /// Este componente contiene la lógica dura del ciclo HFT,
 /// unificando la Arena con los motores, y eliminando la duplicación
 /// entre Backtest y Producción.
+// ═══════════════════════════════════════════════════════════════════════
+// Ola XLIII·A — OBSERVADOR BAYESIANO DE CAMBIO SOBRE EL TRANSPORTE W₁
+//
+// Contrato (protocolo del repo):
+// - Variable: la serie W₁(t) del transporte de Wasserstein del espectro de
+//   UN símbolo (publicada en cada actualización espectral).
+// - Operador: BOCPD-lite (Adams & MacKay 2007, forma gaussiana): posterior
+//   sobre la longitud de segmento (run-length) r con hazard constante
+//   H=1/100 y modelo Normal(μ_r, σ) con σ fijado por la escala esperada del
+//   transporte (0.35 ejes-log; un eje completo = reestructuración total).
+//   p_transition = masa posterior de cambio en t (r=0).
+// - Unidades: adimensional [0,1] (probabilidad predictiva de cambio).
+// - Contorno: <8 observaciones → p_transition = None (calentamiento); W₁
+//   no finito o negativo → observación descartada (sin inventar).
+// - Coste: O(R) por observación con R = 128 segmentos truncados.
+// - Falsación: W₁ constante bajo → p_transition ≈ hazard; salto brusco de
+//   W₁ sostenido → p_transition > 0.5 (tests).
+// ═══════════════════════════════════════════════════════════════════════
+#[derive(Debug, Clone)]
+pub struct W1ChangepointObserver {
+    /// Posterior de run-length P(r), truncado a W1_R_MAX.
+    run_length_posterior: [f64; 128],
+    /// Media del segmento por run-length (estadística suficiente): la
+    /// predictiva del segmento estable se aprieta alrededor de SU nivel;
+    /// sin ella, un salto grande es igual de improbable bajo cambio y
+    /// no-cambio y el detector es ciego (delatado por la falsación).
+    segment_mean: [f64; 128],
+    n_obs: usize,
+    /// Último W₁ observado (para telemetría).
+    last_w1: f64,
+}
+
+const W1_R_MAX: usize = 128;
+const W1_HAZARD: f64 = 1.0 / 100.0;
+/// σ del modelo de emisión del segmento estable: escala esperada del
+/// transporte en ejes-log alrededor del nivel del propio segmento.
+const W1_EMISSION_SD: f64 = 0.35;
+/// σ del PRIOR de segmento nuevo: ancho (cubre hasta ~4 ejes-log, el rango
+/// físico completo de W₁). Un W₁ grande es plausible sólo al empezar.
+const W1_PRIOR_SD: f64 = 2.0;
+
+impl W1ChangepointObserver {
+    pub fn new() -> Self {
+        let mut rl = [0.0f64; 128];
+        rl[0] = 1.0;
+        Self {
+            run_length_posterior: rl,
+            segment_mean: [0.0; 128],
+            n_obs: 0,
+            last_w1: 0.0,
+        }
+    }
+
+    /// Incorpora una observación de W₁ y devuelve la probabilidad de
+    /// transición (cambio de régimen en curso) si hay masa suficiente.
+    pub fn observe(&mut self, w1: f64) -> Option<f64> {
+        if w1.is_finite() && w1 >= 0.0 {
+            self.last_w1 = w1;
+            self.n_obs += 1;
+            let mut new_rl = [0.0f64; W1_R_MAX];
+            let mut new_mean = [0.0f64; W1_R_MAX];
+            let mut total = 0.0f64;
+            for r in 0..W1_R_MAX {
+                let p = self.run_length_posterior[r];
+                if p <= 0.0 {
+                    continue;
+                }
+                // PREDICTIVA del segmento estable: Normal(mean_r, σ) — el
+                // segmento largo aprieta su pronóstico alrededor de SU nivel
+                // y un W₁ fuera de él es evidencia de ruptura.
+                let z_grow = (w1 - self.segment_mean[r]) / W1_EMISSION_SD;
+                let like_grow = (-0.5 * z_grow * z_grow).exp();
+                // PREDICTIVA de segmento NUEVO: prior ancho (σ₀ grande) — un
+                // W₁ cualquiera es plausible al empezar de cero.
+                let z_new = w1 / W1_PRIOR_SD;
+                let like_new = (-0.5 * z_new * z_new).exp();
+                let grow = p * (1.0 - W1_HAZARD) * like_grow;
+                let chng = p * W1_HAZARD * like_new;
+                if r + 1 < W1_R_MAX {
+                    new_rl[r + 1] += grow;
+                    // media del segmento crecido: media incremental
+                    let m = self.segment_mean[r];
+                    new_mean[r + 1] += grow * ((m * (r as f64 + 1.0) + w1) / (r as f64 + 2.0));
+                }
+                new_rl[0] += chng;
+                new_mean[0] += chng * (w1 * 0.5); // prior mean 0, un dato: suavizado
+                total += grow + chng;
+            }
+            if total > 1e-12 {
+                for x in new_rl.iter_mut() {
+                    *x /= total;
+                }
+                // media posterior por run-length: suma ponderada / peso
+                // normalizado (new_rl ya está normalizada).
+                for k in 0..W1_R_MAX {
+                    if new_rl[k] > 1e-12 {
+                        new_mean[k] /= new_rl[k];
+                    }
+                }
+            }
+            self.run_length_posterior = new_rl;
+            self.segment_mean = new_mean;
+        }
+        self.transition_probability()
+    }
+
+    /// P(cambio en la última observación) = masa posterior en r=0.
+    /// None en calentamiento (<8 observaciones).
+    pub fn transition_probability(&self) -> Option<f64> {
+        (self.n_obs >= 8).then(|| self.run_length_posterior[0])
+    }
+
+    pub fn last_w1(&self) -> f64 {
+        self.last_w1
+    }
+}
+
+impl Default for W1ChangepointObserver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct GodEngineCore {
     pub arena: Arc<GlobalArena>,
     outcome_context: outcome_context::OutcomeContext,
@@ -228,6 +351,11 @@ pub struct GodEngineCore {
     /// binaria scalp/swing: el motor observa todas las escalas a la vez, con
     /// fusión por paridad de riesgo (w ∝ 1/vol_de_desviación).
     pub temporal_spectrum: Vec<quantum_arena::temporal_spectrum::TemporalSpectrum>,
+    /// (Ola XLIII·A) Observador bayesiano del TRANSPORTE espectral (W₁) por
+    /// moneda: posterior de run-length del BOCPD-lite. p_transition alta =
+    /// la masa del espectro está RESTRUCTURÁNDOSE; los gates la leen para
+    /// encarecer aperturas durante la transición.
+    pub w1_bocpd: Vec<W1ChangepointObserver>,
     /// XXXIII: liquidation evidence belongs to this core and to an exact symbol.
     liquidation_states: Vec<Option<liquidation_feed::LiquidationState>>,
     pub liquidation_diagnostics: liquidation_feed::LiquidationDiagnostics,
@@ -476,6 +604,9 @@ impl GodEngineCore {
                 .collect(),
             temporal_spectrum: (0..n_coins)
                 .map(|_| quantum_arena::temporal_spectrum::TemporalSpectrum::new())
+                .collect(),
+            w1_bocpd: (0..n_coins)
+                .map(|_| W1ChangepointObserver::new())
                 .collect(),
             spectral_forecast: (0..n_coins)
                 .map(|_| quantum_arena::spectral_tape::SpectralForecastBank::new())
@@ -980,6 +1111,15 @@ impl GodEngineCore {
                     self.arena
                         .registry
                         .set_for_coin(coin_id, "spectral_w1_transport", w1);
+                    // (Ola XLIII·A) Observador bayesiano del transporte:
+                    // p_transition alta = la masa espectral se está moviendo
+                    // (cambio de régimen en curso). Publicada para gates.
+                    if let Some(obs) = self.w1_bocpd.get_mut(coin_id) {
+                        let p_t = obs.observe(w1).unwrap_or(0.0);
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "spectral_p_transition", p_t);
+                    }
                 }
             }
 
@@ -1407,6 +1547,15 @@ impl GodEngineCore {
                     self.arena
                         .registry
                         .set_for_coin(coin_id, "spectral_w1_transport", w1);
+                    // (Ola XLIII·A) Observador bayesiano del transporte:
+                    // p_transition alta = la masa espectral se está moviendo
+                    // (cambio de régimen en curso). Publicada para gates.
+                    if let Some(obs) = self.w1_bocpd.get_mut(coin_id) {
+                        let p_t = obs.observe(w1).unwrap_or(0.0);
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "spectral_p_transition", p_t);
+                    }
                 }
             }
 
@@ -5040,6 +5189,25 @@ impl GodEngineCore {
                         let mod_persist = (1.0 + 0.15 * directional_persist).clamp(0.85, 1.15);
                         let spectral_multiplier = (mod_coherence * mod_tide * mod_entropy * mod_persist).clamp(0.65, 1.35);
 
+                        // (Ola XLIII·A — ACTUADOR EN TELEMETRÍA, tras medir 2×)
+                        // El detector (W₁ + BOCPD) se queda; el DESCUENTO de
+                        // convicción se retira hasta calibrar sobre tape real.
+                        // Medido en el oráculo: con la estadística de trans-
+                        // porte del fixture sintético (W₁ fluctuante, saltos
+                        // constantes), p_transition vive arriba y el descuento
+                        // grava la sesión entera — 20→15 genes (dos calibra-
+                        // ciones probadas, piso incluido). Calibrar el actuador
+                        // contra las estadísticas de un fixture es la clase de
+                        // número inventado que la doctrina D-751 prohíbe: la
+                        // door vuelve a OBSERVACIÓN y se reactiva con la
+                        // distribución de p_transition medida en vivo.
+                        let p_transition = self
+                            .w1_bocpd
+                            .get(coin_id)
+                            .and_then(|o| o.transition_probability())
+                            .unwrap_or(0.0);
+                        let _ = p_transition; // ya publicada al registry
+
                         unified_intent.confidence =
                             (unified_intent.confidence * spectral_multiplier).clamp(0.45, 0.98);
 
@@ -6584,5 +6752,45 @@ mod tests_d752_d756 {
 
         // Un umbral no finito no se inventa: se propaga tal cual.
         assert!(exigencia_tras_racha(f64::NAN, 4).is_nan());
+    }
+}
+
+
+#[cfg(test)]
+mod w1_bocpd_tests {
+    use super::W1ChangepointObserver;
+
+    /// Falsación: W₁ bajo y constante → p_transition ≈ hazard (1%) —
+    /// el reposo no fabrica transiciones.
+    #[test]
+    fn xliii_a_reposo_no_fabrica_transiciones() {
+        let mut obs = W1ChangepointObserver::new();
+        let mut last = None;
+        for _ in 0..200 {
+            last = obs.observe(0.02);
+        }
+        let p = last.expect("calentado");
+        assert!(p < 0.05, "reposo dio p_transition={p}");
+    }
+
+    /// Falsación: salto brusco SOSTENIDO de W₁ → p_transition > 0.5 —
+    /// la reestructuración masiva se detecta en cuanto llega.
+    #[test]
+    fn xliii_a_salto_sostenido_se_detecta() {
+        let mut obs = W1ChangepointObserver::new();
+        for _ in 0..100 {
+            obs.observe(0.02);
+        }
+        // régimen roto: transporte de 2 ejes-log sostenido
+        let p = obs.observe(2.0).expect("calentado");
+        assert!(p > 0.5, "salto sostenido dio p_transition={p}");
+    }
+
+    /// Contorno: <8 observaciones → None (no se afirma cambio en frío).
+    #[test]
+    fn xliii_a_frio_no_afirma() {
+        let mut obs = W1ChangepointObserver::new();
+        assert!(obs.observe(5.0).is_none());
+        assert!(obs.transition_probability().is_none());
     }
 }

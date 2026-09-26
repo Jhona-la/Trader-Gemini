@@ -570,11 +570,22 @@ impl RiskEngine {
                 let ticks_otro = c
                     .tick_ring
                     .snapshot_recent(correlation_guard::MAX_TICKS_MUESTRA);
-                let r = correlation_guard::correlacion_de_retornos(
+                // (Ola XLIII·B) HAYASHI-YOSHIDA primero: los ticks de monedas
+                // distintas no comparten reloj y el Pearson en rejilla sufre
+                // Epps effect (la correlación decae con la desincronía). HY
+                // usa TODOS los solapes sin rejilla; si no hay evidencia HY,
+                // fallback al estimador en rejilla existente.
+                let r = correlation_guard::hayashi_yoshida_correlation(
                     &ticks_candidata,
                     &ticks_otro,
-                    corr_thresh,
-                );
+                )
+                .or_else(|| {
+                    correlation_guard::correlacion_de_retornos(
+                        &ticks_candidata,
+                        &ticks_otro,
+                        corr_thresh,
+                    )
+                });
                 pares_r.push((0, grupo_ids.len() - 1, r.unwrap_or(f64::NAN)));
                 if correlation_guard::CorrelationGuardEngine::es_la_misma_apuesta(r, corr_thresh)
                 {

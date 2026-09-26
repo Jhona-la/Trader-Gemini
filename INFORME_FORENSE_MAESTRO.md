@@ -8283,3 +8283,12 @@ Resumen: censo completo de la cadena de vetos (~70 puntos, 6 etapas); 9 interacc
 Ver [AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLII_2026-09-26.md](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLII_2026-09-26.md).
 
 Resumen: A3 cerrado (CVD y X-016 z-tipificados contra EWMAs propios, con fallbacks conservadores documentados; pisos fríos re-clasificados como fail-safe); Fisher gobierna cuándo NO evolucionar (walk-forward); crash-ness contrae el colchón del orchestrator; transporte de Wasserstein-1 espectral mide la RESTRUCTURACIÓN del régimen (complemento dinámico de la Fisher estática). Oráculo: 20/144 (13.9 %) — el trinquete sigue subiendo.
+
+
+---
+
+## 27. ADENDA OLA XLIII (2026-09-26) — asincronía honesta y cambio de régimen probable
+
+Ver [AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLIII_2026-09-26.md](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLIII_2026-09-26.md).
+
+Resumen: Hayashi-Yoshida corrige el sesgo de sincronía del veto multi-activo (Epps effect); BOCPD sobre W₁ convierte el movimiento espectral medido en PROBABILIDAD de cambio de régimen. La falsación obligó a reconstruir el detector (emisiva por segmento) y el trinquete del oráculo obligó a retirar el actuador hasta calibración con datos reales (20→15→20 documentado): el protocolo funcionó.
