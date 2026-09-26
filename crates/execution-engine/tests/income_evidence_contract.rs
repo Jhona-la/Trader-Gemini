@@ -357,3 +357,82 @@ async fn real_adapter_paper_mode_is_explicitly_not_exchange_evidence() {
     assert!(exec.fetch_income_window(&[], 2, 1, 2).await.is_err());
     assert!(exec.fetch_income_window(&[], 1, 100, 0).await.is_err());
 }
+
+// ═════════════════ FMT-285 (OLA XL): cobertura por símbolo + cuarentena ═════════════════
+
+#[test]
+fn fmt285_invalid_row_is_quarantined_not_window_fatal() {
+    // Antes (FMT-282): identity() erróneo abortaba la tanda entera. Ahora la
+    // fila inválida se aparta RECUPERABLE y las demás conservan su evidencia.
+    let mut bad = row(7, 10, 1.0);
+    bad.tran_id = 0; // contrato de identidad violado
+    let batch = vec![row(1, 10, 5.0), bad, row(2, 20, -3.0)];
+    let p = partition_income(batch.clone());
+    assert_eq!(p.accepted.len(), 2);
+    assert_eq!(p.quarantined.len(), 1);
+    assert_eq!(p.quarantined[0].reason, QuarantineReason::InvalidRecord);
+    assert!(p.quarantined[0].recoverable);
+    // Conservación: nada desaparece ni se anota a cero.
+    assert_eq!(p.accounted_rows(), batch.len() as u64);
+}
+
+#[test]
+fn fmt285_conflicting_identity_quarantines_as_non_recoverable() {
+    // Identidad visible repetida con importe distinto: antes ConflictingRecord
+    // mataba la recolección; ahora se aparta exigindo conciliación, y la fila
+    // ORIGINAL permanece aceptada con su importe.
+    let original = row(42, 10, 5.0);
+    // MISMA identidad visible (mismo tipo/símbolo/asset/trade) y OTRO importe.
+    let conflicting = row(42, 10, 99.0);
+    let p = partition_income(vec![original.clone(), conflicting]);
+    assert_eq!(p.accepted.len(), 1);
+    assert_eq!(p.accepted[0].income, 5.0);
+    assert_eq!(p.quarantined.len(), 1);
+    assert_eq!(p.quarantined[0].reason, QuarantineReason::ConflictingIdentity);
+    assert!(!p.quarantined[0].recoverable);
+}
+
+#[test]
+fn fmt285_identical_duplicate_is_dropped_without_quarantine() {
+    // La repetición EXACTA de una identidad ya aceptada ya está contada: no es
+    // conflicto ni cuarentena, sólo descarte de doble lectura.
+    let p = partition_income(vec![row(9, 10, 2.0), row(9, 10, 2.0), row(10, 30, 1.0)]);
+    assert_eq!(p.accepted.len(), 2);
+    assert!(p.quarantined.is_empty());
+    assert_eq!(p.accounted_rows(), 3);
+}
+
+#[test]
+fn fmt285_interval_by_symbol_observes_only_this_traversal() {
+    let mut a1 = row(1, 100, 1.0);
+    a1.symbol = "AAAUSDT".into();
+    let mut a2 = row(2, 300, 1.0);
+    a2.symbol = "AAAUSDT".into();
+    let mut b1 = row(3, 200, 1.0);
+    b1.symbol = "BBBUSDT".into();
+    let p = partition_income(vec![a1, b1, a2]);
+    let aaa = p.interval_by_symbol.get("AAAUSDT").unwrap();
+    assert_eq!((aaa.first_time_ms, aaa.last_time_ms, aaa.rows), (100, 300, 2));
+    let bbb = p.interval_by_symbol.get("BBBUSDT").unwrap();
+    assert_eq!((bbb.first_time_ms, bbb.last_time_ms, bbb.rows), (200, 200, 1));
+    // Símbolo ausente: sin entrada — ausencia de filas NO es cobertura vacía
+    // ni prueba de retención; el mapa sólo atestigua lo observado.
+    assert!(!p.interval_by_symbol.contains_key("CCCUSDT"));
+}
+
+#[test]
+fn fmt285_quarantine_debits_only_its_own_symbol_coverage() {
+    // La cuarentena de UN símbolo no puede suprimir la cobertura observada de
+    // los demás: se reporta por símbolo, no como veto global.
+    let mut bad = row(5, 50, 1.0);
+    bad.symbol = "AAAUSDT".into();
+    bad.tran_id = 0;
+    let mut ok = row(6, 60, 1.0);
+    ok.symbol = "BBBUSDT".into();
+    let p = partition_income(vec![bad, ok]);
+    assert!(p.interval_by_symbol.contains_key("BBBUSDT"));
+    assert!(!p.interval_by_symbol.contains_key("AAAUSDT"));
+    let debilitated = p.symbols_with_quarantine();
+    assert_eq!(debilitated.get("AAAUSDT"), Some(&1));
+    assert!(!debilitated.contains_key("BBBUSDT"));
+}

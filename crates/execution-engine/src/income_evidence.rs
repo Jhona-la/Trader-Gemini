@@ -371,3 +371,138 @@ pub fn income_lookback_start(now_ms: u64, days: u64) -> Result<u64, IncomeEviden
         .checked_sub(span)
         .ok_or(IncomeEvidenceError::InvalidRange)
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// FMT-285 (OLA XL) — COBERTURA POR SÍMBOLO Y CUARENTENA RECUPERABLE
+//
+// Hoja de ruta §13.2 del informe XXXIX: «Incorporar intervalo/cobertura por
+// símbolo y una política de cuarentena recuperable. Una muestra inválida no
+// debe desaparecer ni convertirse en rentabilidad cero.»
+//
+// Antes (FMT-282/284): `collect_income_window` abortaba TODA la ventana al
+// primer `InvalidRecord`, y la cobertura era un único estado global. Un solo
+// registro corrupto suprimía la evidencia de todos los demás símbolos, y un
+// símbolo sin filas era indistinguible de un símbolo cuya ventana se truncó.
+//
+// Qué garantiza esta partición:
+//   · COBERTURA POR SÍMBOLO: el intervalo [min_time, max_time] de las filas
+//     ACEPTADAS de cada símbolo, como observación de este recorrido — no una
+//     prueba de retención del proveedor ni un censo completo.
+//   · CUARENTENA RECUPERABLE: las filas que violan el contrato de identidad
+//     se apartan CON su motivo. `recoverable` distingue lo que una re-lectura
+//     puede reparar (registro malformado por transporte) de lo que exige
+//     conciliación (identidad visible repetida con importe distinto).
+//   · NINGUNA FILA DESAPARECE NI SE ANOTA A CERO: aceptadas + cuarentenadas
+//     == entradas; el caller decide qué política aplica a cada partición.
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Intervalo observado de un símbolo en ESTE recorrido: mín/máx tiempo de sus
+/// filas aceptadas. No es cobertura de retención ni ausencia universal fuera
+/// de él; es lo que esta ventana puede atestiguar por símbolo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SymbolInterval {
+    pub first_time_ms: u64,
+    pub last_time_ms: u64,
+    pub rows: u64,
+}
+
+/// Una fila apartada, con el motivo del contrato que violó y si una re-lectura
+/// puede repararla. El importe se conserva íntegro: nunca se anota a cero.
+#[derive(Debug, Clone)]
+pub struct QuarantinedEntry {
+    pub entry: IncomeEntry,
+    pub reason: QuarantineReason,
+    /// true: reintentar la lectura puede repararla (malformación de transporte).
+    /// false: exige conciliación (conflicto de identidad con importe distinto).
+    pub recoverable: bool,
+}
+
+/// Motivos de cuarentena. `ConflictingIdentity` NO es recuperable por re-lectura.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuarantineReason {
+    InvalidRecord,
+    ConflictingIdentity,
+}
+
+/// Resultado de particionar una tanda por el contrato de identidad.
+#[derive(Debug, Default)]
+pub struct PartitionedIncome {
+    pub accepted: Vec<IncomeEntry>,
+    pub quarantined: Vec<QuarantinedEntry>,
+    /// Repeticiones EXACTAS de una identidad ya aceptada (misma fila leída
+    /// dos veces): descartadas sin cuarentena, contadas para conservación.
+    pub exact_duplicates_dropped: u64,
+    /// Intervalo observado por símbolo (filas aceptadas, símbolo vacío incluido
+    /// como clave tal cual: la tanda no inventa símbolos que el registro no trae).
+    pub interval_by_symbol: BTreeMap<String, SymbolInterval>,
+}
+
+impl PartitionedIncome {
+    /// Inventario de conservación: nada se pierde ni se anota a cero.
+    /// aceptadas + cuarentena + duplicados exactos == filas de entrada.
+    pub fn accounted_rows(&self) -> u64 {
+        (self.accepted.len() + self.quarantined.len()) as u64
+            + self.exact_duplicates_dropped
+    }
+
+    /// Símbolos con filas en cuarentena: su intervalo observado está DEBILITADO
+    /// y debe reportarse junto al motivo, no como cobertura limpia.
+    pub fn symbols_with_quarantine(&self) -> BTreeMap<String, usize> {
+        let mut out = BTreeMap::new();
+        for q in &self.quarantined {
+            *out.entry(q.entry.symbol.clone()).or_insert(0) += 1;
+        }
+        out
+    }
+}
+
+/// Particiona una tanda ya recogida (sin transporte): filas válidas → aceptadas
+/// + cobertura por símbolo; filas que violan el contrato → cuarentena con
+/// motivo. A diferencia de `collect_income_window`, un registro inválido no
+/// aborta la tanda. La deduplicación por identidad visible se aplica igual:
+/// la repetición idéntica se descarta (ya contada), la conflictiva se aparta.
+pub fn partition_income(entries: Vec<IncomeEntry>) -> PartitionedIncome {
+    let mut out = PartitionedIncome::default();
+    let mut seen = HashMap::<IncomeIdentity, f64>::new();
+    for entry in entries {
+        let key = match identity(&entry) {
+            Ok(key) => key,
+            Err(_) => {
+                out.quarantined.push(QuarantinedEntry {
+                    entry,
+                    reason: QuarantineReason::InvalidRecord,
+                    recoverable: true,
+                });
+                continue;
+            }
+        };
+        if let Some(previous) = seen.get(&key) {
+            if *previous != entry.income {
+                out.quarantined.push(QuarantinedEntry {
+                    entry,
+                    reason: QuarantineReason::ConflictingIdentity,
+                    recoverable: false,
+                });
+                continue;
+            }
+            // Repetición idéntica de una identidad ya aceptada: descartada
+            // (ya está contada); no es cuarentena ni conflicto.
+            out.exact_duplicates_dropped += 1;
+            continue;
+        }
+        seen.insert(key.clone(), entry.income);
+        let interval = out
+            .interval_by_symbol
+            .entry(entry.symbol.clone())
+            .or_insert(SymbolInterval {
+                first_time_ms: entry.time,
+                last_time_ms: entry.time,
+                rows: 0,
+            });
+        interval.first_time_ms = interval.first_time_ms.min(entry.time);
+        interval.last_time_ms = interval.last_time_ms.max(entry.time);
+        interval.rows += 1;
+        out.accepted.push(entry);
+    }
+    out
+}

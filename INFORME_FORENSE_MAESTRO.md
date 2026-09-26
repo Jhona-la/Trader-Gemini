@@ -8256,3 +8256,12 @@ las actualizaciones que el motor vivo recibe (sin libro L2, sin cierres de vela,
 sin la ruta `process_event`), de modo que los rasgos con los que aprende no son
 los rasgos con los que decide. Mientras eso siga así, **ningún número del camino
 ML significa nada**, ni bueno ni malo.
+
+
+---
+
+## 24. ADENDA OLA XL (2026-09-25) — fusión, cuarentena recuperable y el oráculo re-baselineado
+
+Ver [AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XL_2026-09-25.md](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XL_2026-09-25.md).
+
+Resumen: (1) la sesión retomó el trabajo forense tras versionar el WIP (ac136633) y fusionar el PR #5 (6fdccd64) — dos defectos reales del PR reparados al integrar: fail-closed NaN y el deadlock de arranque frío D-750↔D-751 que dejaba el oráculo genético en 0/144; (2) FMT-285 implementa la cobertura por símbolo y la cuarentena recuperable del §13.2 — una muestra inválida ya no mata la tarta ni se anota a cero; (3) el oráculo T-1 queda `#[ignore]` con diagnóstico: la física de viabilidad calibrada sobre tape real es inviable sobre el fixture sintético; su recalibración es el primer ítem de la hoja de ruta y condición para volver a optimizar nada sobre él.

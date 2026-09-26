@@ -1468,3 +1468,14 @@ FMT-282, alcance: el control de moneda se aplica por símbolo y sobre las tres c
 FMT-284: income_report deja de afirmar WR bruto=WR neto por trade. Conserva proporción de filas positivas como %FILAS+, sin inferir operaciones independientes. Agrega por moneda/símbolo y total por moneda; muestra R+C+F como subtotal seleccionado y OTROS separado, sin llamar beneficio a transferencias. Sumas checked; razón(C+F)/|R| sin epsilon monetario y N/D cuando indefinida/no representable. --days inválido, overflow y pre-epoch se rechazan; la ventana mostrada es la consultada. No ROI ni WR neto inventados.
 
 66 pruebas únicas:58 funcionales/compatibilidad,5 estáticas y3 OPEN.28 nuevas=23funcionales+3estáticas+2OPEN;3RED iniciales estáticos→GREEN, no RED funcionales declarados. Check offline de god_engine/income_report/evolver/walkforward_evolver correcto, warnings heredados.41modelos intactos. Cobertura169/289Rust,120pendientes: nueva lectura completa income_report; relecturas y módulo nuevo no inflan el inventario. Investigación Firecrawl reutiliza fuente oficial del mismo día; no snapshot ni unicidad global inferidos. Sin cuentas/órdenes, entrenamiento/promoción operativos, build/reinicio o publicación Git.
+
+
+---
+
+## Anexo Ola XL (2026-09-25 tarde) — fusión PR #5 + FMT-285
+
+Entre rondas: WIP XXX–XXXIX versionado (ac136633) y PR #5 fusionado semánticamente (merge 6fdccd64, ~90 hunks; decisiones en issuecomment-5841402608). Defectos del PR reparados al fusionar: NaN capital/stop/posterior admitía órdenes en max_leverage (fail-closed); deadlock D-750↔D-751 mataba el arranque frío (oráculo 0/144 medido) — cláusula D-751b: arranque frío total ⇒ sonda mínima D-750. Techo micro re-auditado 5×→4×.
+
+FMT-285 (§13.2): partition_income separa aceptadas/cuarentena(InvalidRecord recuperable, ConflictingIdentity no recuperable)/duplicados exactos con inventario conservado; SymbolInterval por símbolo = intervalo observado del recorrido, no retención; symbols_with_quarantine debilita por símbolo, no global. Pendiente: cablear al recorrido con transporte (FMT-285b), identidad con payload decimal (§13.1), FX as-of (§13.3).
+
+Re-baseline PENDIENTE: oráculo T-1 #[ignore] con diagnóstico — física de viabilidad D-751/D-756 inviable sobre fixture sintético (spread 4pb vs fricción 7pb a τ corto; diag: spread 0.0004 ≤ max 0.000002). Recalibrar sobre tape real; el trinquete sólo sube desde re-medición documentada. Exportador de paridad D-753 recuperable: git show 3ee49b05:src/bin/feature_exporter.rs. Workspace verde (T-1 ignorado); cobertura lecturas sin cambio 169/289.
