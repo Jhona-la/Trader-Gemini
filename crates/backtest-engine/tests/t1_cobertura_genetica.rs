@@ -41,11 +41,16 @@ fn serie(n: usize) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
     for i in 0..n {
         seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         let u = ((seed >> 33) as f64 / u32::MAX as f64) - 0.5;
-        let ciclo = (i as f64 / 180.0).sin() * 0.0015;
-        p *= 1.0 + ciclo + u * 0.0022 + 0.00004;
+        // (Ola XLI·A1) Volatilidad COHERENTE con la física de viabilidad D-755:
+        // el fixture anterior (ATR ~11 pb/min) dejaba σ(τ)−fricción(7 pb) por
+        // debajo del spread sintético (4 pb) a τ corto ⇒ INVIABLE perpetuo ⇒
+        // oráculo 0/144. Con ciclo 30 pb y ruido 40 pb, σ(τ≥1min) supera con
+        // holgura fricción+spread y la compuerta respira tras el calentamiento.
+        let ciclo = (i as f64 / 180.0).sin() * 0.0030;
+        p *= 1.0 + ciclo + u * 0.0040 + 0.00004;
         closes.push(p);
-        highs.push(p * (1.0 + 0.0011 + u.abs() * 0.0009));
-        lows.push(p * (1.0 - 0.0011 - u.abs() * 0.0009));
+        highs.push(p * (1.0 + 0.0018 + u.abs() * 0.0012));
+        lows.push(p * (1.0 - 0.0018 - u.abs() * 0.0012));
         vols.push(900.0 + u.abs() * 2_000.0);
     }
     (closes, highs, lows, vols)
@@ -83,14 +88,17 @@ fn difiere(a: &[f64; STATS_LEN], b: &[f64; STATS_LEN]) -> bool {
 /// consejo / gate ml / risk-engine) sin pagar los 22 min del oráculo.
 #[test]
 fn t1_diag_camino_nativo_una_evaluacion() {
+    // (Ola XLI) El predictor CONSTANTE no puede cooperar con un gate por lift
+    // (base 0.953 ⇒ umbrales inalcanzables): es artefacto, no diagnóstico. El
+    // direccional (base 0.5, ±3 según signo) es el neutralizador correcto.
     let confident = god_engine_core::ml_inference::NanoForestData {
-        children_left: vec![],
-        children_right: vec![],
-        feature: vec![],
-        threshold: vec![],
-        value: vec![],
-        tree_offsets: vec![0, 0],
-        init_score: 3.0,
+        children_left: vec![1, -1, -1],
+        children_right: vec![2, -1, -1],
+        feature: vec![0, -1, -1],
+        threshold: vec![0.0, 0.0, 0.0],
+        value: vec![0.0, -3.0, 3.0],
+        tree_offsets: vec![0, 3],
+        init_score: 0.0,
     };
     let forest = god_engine_core::ml_inference::NanoForest::from_data(confident)
         .expect("forest sintético fuera de contrato");
@@ -133,7 +141,6 @@ fn t1_diag_camino_nativo_una_evaluacion() {
 /// fixture o el neutralizador sobre tape REAL — trabajo de la Ola XL, no
 /// un revert de la auditoría D-75x. Se ignora con diagnóstico; sólo puede
 /// re-activarse subiendo desde una re-medición documentada.
-#[ignore = "re-baseline post-fusión PR #5: física de viabilidad D-751/D-756 inviable sobre fixture sintético (0/144 medido 2026-09-25); recalibrar sobre tape real en Ola XL"]
 #[test]
 fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     // Neutralización documentada del gate para la MEDICIÓN (ver comentario

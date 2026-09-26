@@ -16,6 +16,7 @@ pub mod state_continuity;
 pub mod symbol_ranker_engine;
 pub mod symbol_registry;
 pub mod symbols;
+pub mod spectral_regime;
 pub mod spectral_tape;
 pub mod temporal_spectrum;
 pub mod tick_source;

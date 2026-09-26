@@ -9,6 +9,7 @@ pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;
 pub mod orchestrator;
+pub mod random_matrix;
 pub mod regime;
 pub mod drawdown;
 pub mod ruin;
@@ -548,6 +549,15 @@ impl RiskEngine {
             let ticks_candidata = arena.coins[coin_id]
                 .tick_ring
                 .snapshot_recent(correlation_guard::MAX_TICKS_MUESTRA);
+            // (Ola XLI·C1) MARCHENKO-PASTUR: se recolecta la matriz de
+            // correlación del GRUPO (candidata + mismas-dirección abiertas).
+            // Si TODO el espectro cabe en la banda de ruido MP (γ = T/N), los
+            // pares Pearson altos son RUIDO que parece correlación: el ruido
+            // NO VETA y el grupo se cuenta como apuestas independientes. Con
+            // modo sistemático real (o muestra insuficiente para afirmar),
+            // rige el pairwise D-748 sin cambios.
+            let mut grupo_ids = vec![coin_id];
+            let mut pares_r: Vec<(usize, usize, f64)> = Vec::new();
             for (otro_id, c) in arena.coins.iter().enumerate() {
                 if otro_id == coin_id {
                     continue;
@@ -556,6 +566,7 @@ impl RiskEngine {
                 if !pos.is_open() || pos.is_long.load(Ordering::Relaxed) != is_long {
                     continue;
                 }
+                grupo_ids.push(otro_id);
                 let ticks_otro = c
                     .tick_ring
                     .snapshot_recent(correlation_guard::MAX_TICKS_MUESTRA);
@@ -564,6 +575,7 @@ impl RiskEngine {
                     &ticks_otro,
                     corr_thresh,
                 );
+                pares_r.push((0, grupo_ids.len() - 1, r.unwrap_or(f64::NAN)));
                 if correlation_guard::CorrelationGuardEngine::es_la_misma_apuesta(r, corr_thresh)
                 {
                     misma_apuesta += 1;
@@ -572,8 +584,32 @@ impl RiskEngine {
             // Una posición ya abierta en la PROPIA moneda es, por definición, la
             // misma apuesta: correlación 1 sin necesidad de medirla.
             let propia = &arena.coins[coin_id].positions.position;
-            if propia.is_open() && propia.is_long.load(Ordering::Relaxed) == is_long {
+            let propia_abierta =
+                propia.is_open() && propia.is_long.load(Ordering::Relaxed) == is_long;
+            if propia_abierta {
                 misma_apuesta += 1;
+            }
+            // Veredicto MP sobre el grupo (sólo si hay pares que denoisingar).
+            if !pares_r.is_empty() {
+                let n = grupo_ids.len();
+                let mut corr = vec![vec![0.0f64; n]; n];
+                for i in 0..n {
+                    corr[i][i] = 1.0;
+                }
+                for &(i, j, r) in &pares_r {
+                    if r.is_finite() {
+                        corr[i][j] = r;
+                        corr[j][i] = r;
+                    }
+                }
+                if let Some(random_matrix::MppVerdict::AllNoise) =
+                    random_matrix::systematic_mode(&corr, correlation_guard::MAX_TICKS_MUESTRA)
+                {
+                    // Toda la correlación del grupo es compatible con ruido:
+                    // sólo la PROPIA moneda (correlación 1 por definición)
+                    // sigue contando como misma apuesta.
+                    misma_apuesta = if propia_abierta { 1 } else { 0 };
+                }
             }
         }
         if correlation_guard::CorrelationGuardEngine::veto_por_exposicion_direccional(

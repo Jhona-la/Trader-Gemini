@@ -157,12 +157,13 @@ impl<'a> PortfolioOrchestrator<'a> {
             }
         }
 
+        // (Ola XLI·D6) Una sola definición: la segunda era una sombra literal
+        // de la primera, y el límite TOTAL contra el mismo exposure_limit era
+        // redundante con el direccional (siempre dispara antes o igual).
         let total_exposure = total_long_margin + total_short_margin + required_margin;
         if !total_exposure.is_finite() {
             return false;
         }
-
-        let total_exposure = total_long_margin + total_short_margin + required_margin;
 
         // D-744: el tope de margen ya NO se deriva del gen de drawdown. Eran
         // dos conceptos distintos leyendo el mismo número: con el gen base
@@ -181,12 +182,15 @@ impl<'a> PortfolioOrchestrator<'a> {
             escasez,
         );
 
+        // GROSS exposure cap: margen comprometido en AMBAS direcciones a la
+        // vez — el límite direccional no lo captura (40 long + 50 short caben
+        // por lado y suman 90 sobre un techo de 90). (Ola XLI·D6 corrección:
+        // el total NO era redundante; sólo lo era la doble computación.)
         if total_exposure > capital * exposure_limit {
             return false;
         }
 
         // Directional collateral limit; leverage/notional are not modeled here.
-        // Allow full directional exposure but respect capital limits
         if intent_is_long {
             if (total_long_margin + required_margin) > capital * exposure_limit {
                 return false;

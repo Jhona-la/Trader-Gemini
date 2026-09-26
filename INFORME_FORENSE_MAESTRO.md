@@ -8265,3 +8265,12 @@ ML significa nada**, ni bueno ni malo.
 Ver [AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XL_2026-09-25.md](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XL_2026-09-25.md).
 
 Resumen: (1) la sesión retomó el trabajo forense tras versionar el WIP (ac136633) y fusionar el PR #5 (6fdccd64) — dos defectos reales del PR reparados al integrar: fail-closed NaN y el deadlock de arranque frío D-750↔D-751 que dejaba el oráculo genético en 0/144; (2) FMT-285 implementa la cobertura por símbolo y la cuarentena recuperable del §13.2 — una muestra inválida ya no mata la tarta ni se anota a cero; (3) el oráculo T-1 queda `#[ignore]` con diagnóstico: la física de viabilidad calibrada sobre tape real es inviable sobre el fixture sintético; su recalibración es el primer ítem de la hoja de ruta y condición para volver a optimizar nada sobre él.
+
+
+---
+
+## 25. ADENDA OLA XLI (2026-09-26) — los vetos vuelven a tener sentido y el oráculo lo demuestra
+
+Ver [AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLI_2026-09-26.md](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLI_2026-09-26.md).
+
+Resumen: censo completo de la cadena de vetos (~70 puntos, 6 etapas); 9 interacciones patológicas reparadas sin tocar la doctrina medida; 2 bugs reales del fusionado detectados por contratos de aritmética exacta (espectro re-sembra con ts=0; lector del consejo con ponderación distinta a la de decisión); oráculo genético re-baselineado 0/144→19/144 (supera trinquete). Doctrina espectral: régimen como campo continuo con crash-ness que modula margen en vez de veto binario. Teoría integrada con protocolo completo: Marchenko-Pastur (el ruido no veta), funciones de estructura de Kolmogorov (intermitencia endurece pisos), Fisher de escala (identificabilidad). Golden del backtest re-certificado conscientemente (sonda de arranque). Nota institucional: las validaciones truncadas no son validaciones.

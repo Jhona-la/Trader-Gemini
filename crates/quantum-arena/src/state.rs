@@ -220,6 +220,15 @@ pub struct CoinArena {
     pub spectral_entropy: AtomicF64,
     /// Longitud de onda o centro de masa espectral armónico continuo tau* (ms)
     pub spectral_resonant_tau: AtomicF64,
+    /// (Ola XLI·B1) Crash-ness continua [0,1] del campo espectral — ver
+    /// spectral_regime::SpectralRegimeField. 0 = calma.
+    pub spectral_crash_flux: AtomicF64,
+    /// (Ola XLI·C2) Intermitencia χ = (1−ζ3)⁺ de las funciones de estructura
+    /// de Kolmogorov: colas más gruesas que la autosimilaridad K41.
+    pub spectral_intermittency: AtomicF64,
+    /// (Ola XLI·C3) Información de Fisher de la masa espectral respecto a
+    /// ln(τ): identificabilidad del régimen (None→negativo = frío).
+    pub spectral_fisher: AtomicF64,
     /// P-3b — OPEN INTEREST per-símbolo (normalizado log contra $100M de
     /// contratos abiertos, [0,1]): el dinero apalancado DENTRO de esta
     /// moneda. Alimenta el asiento Ente del Mercado. Escrito por el poller
@@ -423,6 +432,9 @@ impl CoinArena {
             spectral_coherence: AtomicF64::new(0.0),
             spectral_entropy: AtomicF64::new(1.0),
             spectral_resonant_tau: AtomicF64::new(30_000.0),
+            spectral_crash_flux: AtomicF64::new(0.0),
+            spectral_intermittency: AtomicF64::new(0.0),
+            spectral_fisher: AtomicF64::new(-1.0),
             open_interest_norm: AtomicF64::new(0.0),
             epigenetic_bias: AtomicF64::new(1.0),
             epigenetic_threshold_modifier: AtomicF64::new(1.0),

@@ -1479,3 +1479,12 @@ Entre rondas: WIP XXX–XXXIX versionado (ac136633) y PR #5 fusionado semántica
 FMT-285 (§13.2): partition_income separa aceptadas/cuarentena(InvalidRecord recuperable, ConflictingIdentity no recuperable)/duplicados exactos con inventario conservado; SymbolInterval por símbolo = intervalo observado del recorrido, no retención; symbols_with_quarantine debilita por símbolo, no global. Pendiente: cablear al recorrido con transporte (FMT-285b), identidad con payload decimal (§13.1), FX as-of (§13.3).
 
 Re-baseline PENDIENTE: oráculo T-1 #[ignore] con diagnóstico — física de viabilidad D-751/D-756 inviable sobre fixture sintético (spread 4pb vs fricción 7pb a τ corto; diag: spread 0.0004 ≤ max 0.000002). Recalibrar sobre tape real; el trinquete sólo sube desde re-medición documentada. Exportador de paridad D-753 recuperable: git show 3ee49b05:src/bin/feature_exporter.rs. Workspace verde (T-1 ignorado); cobertura lecturas sin cambio 169/289.
+
+
+---
+
+## Anexo Ola XLI (2026-09-26) — cadena de vetos, campo de régimen y teoría nueva
+
+**Censo**: ~70 puntos de veto en 6 etapas (tabla maestra en AUDITORIA_XLI §1/§6); 9 deadlocks/incoherencias reparados (D1 sonda sin roster, D2 proxy de riesgo, D3 X-016 frío, D4 una-puerta-ML, D5 Stouffer unificado, D6 orchestrator, D7 quórum dd, D9 banda resonante) + 2 bugs reales del merge (re-sembra ts=0; lector spectral_coherence con peso legacy ≠ decisión D-742 — doctrina de DOS MASAS declarada: aprendizaje=persistencia×ganancia, decisión=observable). **Oráculo T-1: 0→19/144 (13,2% > trinquete 11,5%)**.
+
+**B1 Campo de régimen** (spectral_regime.rs): coordenadas continuas (H(τ)×3, τ*, dlnτ*/dt, entropía, marea) + crash-ness [0,1]; margen de largos ×(1−0.95·crash_flux) con marea adversa; enum = vista legacy. **C1 Marchenko-Pastur** (random_matrix.rs): borde (1+√(N/T))²; grupo AllNoise ⇒ el ruido no veta (D-748 con denoising RMT). **C2 Kolmogorov**: S_p(τ) del núcleo espectral (3er momento EWMA), ζ(p) log-log, χ=(1−ζ3)⁺; pisos P80/P85 ×(1+0.5χ). **C3 Fisher de escala**: Σ(Δq/Δlnτ)²/q de la masa — identificabilidad del régimen (walk-forward: cablear). Tabla milenio (C4): NS→multiescala (integrado), Y-M→familia RMT como teorema (integrado), Hodge→grafo de señales (candidato), RH/P≠NP/BSD→sin variable identificada (rechazado por protocolo). Deuda A3 con diseño: CVD z-tipificado, X-016 percentilado, pisos fríos.

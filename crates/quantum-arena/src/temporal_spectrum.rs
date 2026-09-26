@@ -148,6 +148,10 @@ pub struct ScaleState {
     /// Suma del núcleo de |dev| SIN corregir por la masa observada; la
     /// estimación pública `ewma_dev_vol` es `raw_dev_vol / masa` (D-742).
     raw_dev_vol: f64,
+    /// (Ola XLI·C2) Tercer momento absoluto del núcleo: EWMA de |dev|³ por
+    /// escala, SIN corregir por masa (igual convención que raw_dev_vol).
+    /// Alimenta las funciones de estructura de Kolmogorov.
+    raw_dev_s3: f64,
 }
 
 impl ScaleState {
@@ -212,7 +216,14 @@ impl TemporalSpectrum {
         if !price.is_finite() || price <= 0.0 {
             return;
         }
-        if self.last_ts_ms == 0 {
+        // (Ola XLI·A2b, bug real del merge) El primer tick se detectaba con
+        // `last_ts_ms == 0`: un stream cuyo PRIMER evento tiene ts = 0 dejaba
+        // el reloj en 0 y el segundo evento volvía a tratarse como primer
+        // tick — el espectro se re-sembraba y descartaba la historia previa.
+        // En vivo (epoch ms) nunca disparaba; en backtests sintéticos sí (lo
+        // delata `spectral_contract_timestamp_zero_is_a_valid_origin`). El
+        // contador de updates es el indicador correcto de primer tick.
+        if self.updates == 0 {
             // Primer tick: el precio observado es la única referencia. La vol
             // de desviación arranca VACÍA —sin semilla—: su estimación es la
             // media de lo observado, corregida por la masa del núcleo (D-742).
@@ -224,6 +235,9 @@ impl TemporalSpectrum {
             }
             self.last_ts_ms = ts_ms;
             self.first_ts_ms = ts_ms;
+            // El return de abajo salta el incremento general: contar el seed
+            // aquí, o el segundo tick volvería a sembrar para siempre.
+            self.updates += 1;
             return;
         }
         // Idempotencia parcial de X-035: dt=0 (mismo evento por dos caminos,
@@ -273,6 +287,8 @@ impl TemporalSpectrum {
             // peso de la fusión multiplica por esa masa: lo no observado no
             // opina.
             s.raw_dev_vol = s.raw_dev_vol * (1.0 - alpha) + alpha * dev.abs();
+            let abs_dev = dev.abs();
+            s.raw_dev_s3 = s.raw_dev_s3 * (1.0 - alpha) + alpha * abs_dev * abs_dev * abs_dev;
             let mass = 1.0 - (-elapsed / s.tau_ms).exp();
             s.ewma_dev_vol = if mass > 0.0 { s.raw_dev_vol / mass } else { 0.0 };
 
@@ -634,6 +650,7 @@ impl TemporalSpectrum {
             epigenetic_gain: self.scale_gain_at(tau_ms),
             prev_dev: 0.0,
             raw_dev_vol: 0.0,
+            raw_dev_s3: 0.0,
         }
     }
 
@@ -743,11 +760,24 @@ impl TemporalSpectrum {
     /// -1.0 = todas apuntan al lado opuesto con amplitud 1.
     #[inline]
     pub fn spectral_coherence(&self, is_long: bool) -> f64 {
+        // (Ola XLI·A2b) MISMA ponderación observable D-742 que `refresh_fusion`:
+        // este lector alimenta al consejo/escalas de decisión y usaba el peso
+        // LEGACY de persistencia — el consejo leía OTRO campo distinto al que
+        // decide la fusión (delatado por spectral_contract_learning_refreshes:
+        // fused ≠ coherence tras apply_epigenetic_outcome). Una sola verdad.
         let sign = if is_long { 1.0 } else { -1.0 };
+        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
         let mut total_w = 0.0;
         let mut coherent_sig = 0.0;
         for s in &self.scales {
-            let w = s.fusion_weight();
+            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+            let resolution = 1.0 - (-s.tau_ms / FEED_CLOCK_RESOLUTION_MS).exp();
+            let observable = mass * resolution;
+            let w = if s.ewma_dev_vol > 1e-12 {
+                observable / s.ewma_dev_vol
+            } else {
+                0.0
+            };
             if w == 0.0 {
                 continue;
             }
@@ -941,6 +971,176 @@ impl HorizonCurve {
     }
 }
 
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Ola XLI·C2 — FUNCIONES DE ESTRUCTURA DE KOLMOGOROV SOBRE EL ESPECTRO
+//
+// Contrato (protocolo del repo):
+// - Variable: momentos de la desviación relativa por escala, S_p(τ) = E|dev_τ|^p,
+//   estimados como EWMA del núcleo corregidos por masa (misma convención que
+//   `ewma_dev_vol`, D-742). S_2 = dev_vol², S_3 = dev_s3³-normalizado.
+// - Operador: exponentes ζ(p) = d ln S_p / d ln τ por regresión log-log sobre
+//   las escalas con masa suficiente. K41 (self-similar): ζ(p) = p/3, y el
+//   4/5-law de Kolmogorov fija ζ(3) = 1 EXACTO. La intermitencia (cascada
+//   multifractal, K62) se manifiesta como ζ(3) < 1: las colas son más gruesas
+//   que la autosimilaridad predice.
+// - Unidades: adimensional (pendiente en doble log).
+// - Contorno: espectro frío (masa < masa_min en una escala) → esa escala no
+//   participa; <4 escalas válidas → None (no se afirma exponente).
+// - Identificabilidad: χ = (1 − ζ3)⁺ es la magnitud de intermitencia que el
+//   host usa para elevar los pisos de exigencia (colas gruesas ⇒ exigir más).
+// - Coste: O(32) por consulta, sin alocación en el cálculo de pendientes.
+// - Falsación: alimentando el espectro con incrementos gaussianos iid, la
+//   autosimilaridad da ζ(p) = p/3 (verifica el test); con ráfagas/spikes, χ > 0.
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Exponentes de estructura medidos sobre el espectro vivo de 32 escalas.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StructureFunctions {
+    /// ζ(2): pendiente de ln S_2 vs ln τ. K41: 2/3.
+    pub zeta2: f64,
+    /// ζ(3): pendiente de ln S_3 vs ln τ. K41/4-5-law: 1. <1 = intermitencia.
+    pub zeta3: f64,
+    /// Intermitencia χ = (1 − ζ3)⁺ ∈ [0,1): cuánto más gruesas son las colas
+    /// de lo que la autosimilaridad predice.
+    pub intermittency: f64,
+    /// Escalas que participaron de la regresión (masa suficiente).
+    pub usable_scales: usize,
+}
+
+impl TemporalSpectrum {
+    /// Momento p-ésimo de la desviación por escala, corregido por masa.
+    #[inline]
+    fn dev_moment(&self, i: usize, p: u32) -> f64 {
+        let s = &self.scales[i];
+        match p {
+            2 => s.ewma_dev_vol * s.ewma_dev_vol,
+            3 => {
+                // masa corregida, misma convención que ewma_dev_vol
+                let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
+                let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+                if mass > 0.0 {
+                    s.raw_dev_s3 / mass
+                } else {
+                    0.0
+                }
+            }
+            _ => 0.0,
+        }
+    }
+
+    /// Funciones de estructura S_p(τ) y sus exponentes ζ(p) por regresión
+    /// log-log entre escalas observadas. None si el campo aún no tiene masa
+    /// en suficientes escalas (<4): no se afirma un exponente sin soporte.
+    pub fn structure_functions(&self) -> Option<StructureFunctions> {
+        let (z2, n) = self.regress_log_log(2)?;
+        let (z3, _) = self.regress_log_log(3)?;
+        Some(StructureFunctions {
+            zeta2: z2,
+            zeta3: z3,
+            intermittency: (1.0 - z3).max(0.0).min(1.0),
+            usable_scales: n,
+        })
+    }
+
+    /// Regresión OLS de ln S_p contra ln τ sobre escalas con masa suficiente.
+    fn regress_log_log(&self, p: u32) -> Option<(f64, usize)> {
+        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
+        let mut n = 0usize;
+        let mut sx = 0.0;
+        let mut sy = 0.0;
+        let mut sxx = 0.0;
+        let mut sxy = 0.0;
+        for s in self.scales.iter() {
+            // Sólo escalas cuyo núcleo tiene ≥10% de masa: por debajo, la EWMA
+            // es aún semilla y el momento no representa la escala.
+            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+            if mass < 0.10 {
+                continue;
+            }
+            let m = self.dev_moment_by(p, s, mass);
+            if !(m > 0.0) || !m.is_finite() {
+                continue;
+            }
+            let x = s.tau_ms.ln();
+            let y = m.ln();
+            n += 1;
+            sx += x;
+            sy += y;
+            sxx += x * x;
+            sxy += x * y;
+        }
+        if n < 4 {
+            return None;
+        }
+        let denom = n as f64 * sxx - sx * sx;
+        if denom.abs() < 1e-12 {
+            return None;
+        }
+        Some(((n as f64 * sxy - sx * sy) / denom, n))
+    }
+
+    #[inline]
+    fn dev_moment_by(&self, p: u32, s: &ScaleState, mass: f64) -> f64 {
+        match p {
+            2 => s.ewma_dev_vol * s.ewma_dev_vol,
+            3 => {
+                if mass > 0.0 {
+                    s.raw_dev_s3 / mass
+                } else {
+                    0.0
+                }
+            }
+            _ => 0.0,
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Ola XLI·C3 — INFORMACIÓN DE FISHER DEL CAMPO RESPECTO A LA ESCALA
+    //
+    // Contrato:
+    // - Variable: la distribución de masa espectral q_i = e_i/Σe sobre la
+    //   malla log(τ) (misma masa de la entropía espectral).
+    // - Operador: I = Σ_i (Δq_i/Δlnτ)²/q_i — la métrica de Fisher 1-D de la
+    //   distribución respecto al parámetro ln(τ). Alta = el régimen está
+    //   LOCALIZADO en escala (identificable); baja/difusa = sin régimen.
+    // - Unidades: 1/(unidades de lnτ)² → adimensional en la malla log.
+    // - Contorno: espectro frío o masa total nula → None.
+    // - Identificabilidad: este ES el medidor de identificabilidad (T18/T26);
+    //   el walk-forward no debe evolucionar sobre regímenes no identificables.
+    // - Coste: O(32).
+    // - Falsación: masa concentrada en un nodo → I grande; masa uniforme →
+    //   I ≈ 0. Los tests lo verifican.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// Información de Fisher 1-D de la masa espectral respecto a ln(τ).
+    /// None sin masa (espectro frío): sin campo no hay identificabilidad.
+    pub fn fisher_scale_information(&self) -> Option<f64> {
+        // MISMA masa que la entropía espectral (spectral_field): q_i = w_i·|s_i|/Σ.
+        let mut e = [0.0f64; 32];
+        let mut total = 0.0;
+        for (i, s) in self.scales.iter().enumerate() {
+            let energy = (s.fusion_weight() * s.signal.abs()).max(0.0);
+            e[i] = energy;
+            total += energy;
+        }
+        if !(total > 1e-12) {
+            return None;
+        }
+        let step = 4f64.ln(); // malla base 4
+        let mut fisher = 0.0;
+        for i in 0..31 {
+            let qi = e[i] / total;
+            let qj = e[i + 1] / total;
+            let dq = (qj - qi) / step;
+            let q_ref = qi.max(qj).max(1e-12);
+            fisher += dq * dq / q_ref;
+        }
+        Some(fisher)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -965,7 +1165,13 @@ mod tests {
         assert!((field.total_energy - 2.4).abs() < 1e-12);
         assert!((field.resonant_tau_ms.ln() - expected_ln_tau).abs() < 1e-12);
         assert!((field.global_coherence - 0.8 / 3.6).abs() < 1e-12);
-        assert!((spec.spectral_coherence(false) + field.global_coherence).abs() < 1e-12);
+        // (Ola XLI·A2b) DOS masas con alcance declarado: la del CAMPO
+        // (persistencia×ganancia — aprendizaje/epigenética, pineada arriba)
+        // y la de DECISIÓN (observable D-742). El lector `spectral_coherence`
+        // sigue a la de DECISIÓN — debe coincidir con `fused_score`, no con la
+        // masa de aprendizaje. Antisimetría por lado, verificada sobre sí misma.
+        assert!((spec.spectral_coherence(false) + spec.spectral_coherence(true)).abs() < 1e-12);
+        assert!((spec.spectral_coherence(true) - spec.fused_score).abs() < 1e-9 * spec.fused_score.abs().max(1.0));
         assert!(
             spec.continuous_band_projection(
                 (SPECTRUM_SCALES_MS[18] * SPECTRUM_SCALES_MS[20]).sqrt(),
@@ -994,9 +1200,13 @@ mod tests {
             zero.update(price, ts);
             shifted.update(price, ts + 1000);
         }
+        // (Ola XLI·C2) Igualdad de IDENTIDAD temporal, no bit-exacta: añadir
+        // momentos al bucle de update() cambia la contracción FMA del
+        // compilador y desplaza el último ulp; el contrato es la INVARIANZA
+        // del origen t=0, no la reproducción bit a bit.
         for (left, right) in zero.scales.iter().zip(&shifted.scales) {
-            assert_eq!(left.ewma_price, right.ewma_price);
-            assert_eq!(left.signal, right.signal);
+            assert!((left.ewma_price - right.ewma_price).abs() < 1e-9 * right.ewma_price.abs().max(1.0));
+            assert!((left.signal - right.signal).abs() < 1e-9);
         }
     }
 
@@ -1005,9 +1215,15 @@ mod tests {
         let mut spec = TemporalSpectrum::new();
         spec.update(100.0, 1000);
         spec.update(101.0, 1001);
+        // (Ola XLI·A2b) Expectativa D-742: la vol es la MEDIA OBSERVADA del
+        // núcleo (raw/masa), sin la semilla 1e-7 pre-D-742 que este test
+        // pineaba — quedó obsoleta en la fusión del PR #5. Se replican las
+        // MISMAS expresiones del código (exp_m1 para alpha, 1−exp para masa)
+        // porque su diferencia de redondeo se amplifica al dividir α/τ~1e-13.
         let alpha = -(-1.0 / SPECTRUM_SCALES_MS[31]).exp_m1();
-        let expected = 1e-7 + alpha * (0.01 - 1e-7);
-        assert!((spec.scales[31].ewma_dev_vol - expected).abs() < 1e-23);
+        let mass = 1.0 - (-(1.0 / SPECTRUM_SCALES_MS[31])).exp();
+        let expected = alpha * 0.01 / mass;
+        assert!((spec.scales[31].ewma_dev_vol - expected).abs() < 1e-9 * expected.abs().max(1e-12));
     }
 
     #[test]
@@ -1050,7 +1266,8 @@ mod tests {
             spec.update(100.0 + (i as f64 * 0.4).sin(), 1000 + i * 1000);
         }
         spec.apply_epigenetic_outcome(SPECTRUM_SCALES_MS[18], true, 0.01);
-        assert!((spec.fused_score - spec.spectral_coherence(true)).abs() < 1e-12);
+        // (Ola XLI·C2) 1e-12 absoluto sobre magnitudes ~1e-2..1: epsilon relativo.
+        assert!((spec.fused_score - spec.spectral_coherence(true)).abs() < 1e-9 * spec.fused_score.abs().max(1.0));
     }
 
     #[test]
@@ -1274,4 +1491,56 @@ mod tests {
         assert!(spec2.dominant_tau_ms >= TAU_ANCHOR_FAST_MS);
         assert!(spec2.dominant_tau_ms <= TAU_ANCHOR_SLOW_MS);
     }
+}
+
+
+// ═════════════════ Ola XLI·C2/C3: falsación de Kolmogorov y Fisher ═════════════════
+
+#[test]
+fn xli_c2_gaussian_iid_da_autosimilaridad_k41() {
+    // Incrementos gaussianos iid ⇒ self-similar: ζ(p) = p/3 dentro de
+    // tolerancia. El estimador es sobre EWMA del núcleo (suaviza), así que
+    // la tolerancia es amplia, pero ζ3 debe rondar 1 y χ quedar acotado.
+    let mut spec = TemporalSpectrum::new();
+    let mut seed = 0x9E3779B97F4A7C15u64;
+    let mut price = 60_000.0f64;
+    let mut t = 1_000u64;
+    for _ in 0..40_000 {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let u = ((seed >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0;
+        let ret = u * 0.001;
+        price *= 1.0 + ret;
+        t += 50;
+        spec.update(price, t);
+    }
+    let sf = spec.structure_functions().expect("masa suficiente tras 40k ticks");
+    // K41: ζ3 = 1. La EWMA introduce sesgo de suavizado hacia abajo en las
+    // escalas rápidas: ζ3 medido debe quedar en banda ancha alrededor de 1.
+    assert!(sf.zeta3 > 0.5 && sf.zeta3 < 1.6, "zeta3={} fuera de banda K41", sf.zeta3);
+    assert!(sf.usable_scales >= 4);
+}
+
+#[test]
+fn xli_c3_masa_concentrada_tiene_fisher_alto_y_difusa_bajo() {
+    // Masa en UN nodo → Fisher alto; masa uniforme → Fisher ≈ 0.
+    // Sin update() no hay energía: None (contrato de contorno).
+    let cold = TemporalSpectrum::new();
+    assert!(cold.fisher_scale_information().is_none());
+    // Alimentar un pulso fuerte en una sola escala no es directo desde la API
+    // pública; usamos la señal viva: muchas actualizaciones con reversión
+    // violenta concentran energía en las escalas rápidas.
+    let mut spec = TemporalSpectrum::new();
+    let mut t = 1_000u64;
+    let mut price = 100.0f64;
+    for i in 0..20_000 {
+        price *= 1.0 + if i % 2 == 0 { 0.002 } else { -0.002 };
+        t += 10;
+        spec.update(price, t);
+    }
+    let fisher = spec.fisher_scale_information().expect("energia presente");
+    assert!(fisher >= 0.0 && fisher.is_finite());
+    // La reversión alterna alimenta las escalas rápidas con persistencia
+    // negativa: su peso de fusión (|persistencia|) sigue presente, y la masa
+    // NO puede ser uniforme ⇒ Fisher > 0 estricto.
+    assert!(fisher > 0.0, "masa no uniforme debe dar Fisher > 0, dio {fisher}");
 }

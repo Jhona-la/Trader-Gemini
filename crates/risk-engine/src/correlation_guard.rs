@@ -279,12 +279,18 @@ impl CorrelationGuardEngine {
             return false;
         }
         let tope = crate::ruin::clamp_ruin(1.0, q_perdida);
-        if !riesgo_por_operacion.is_finite() || riesgo_por_operacion <= 0.0 {
-            // Sin riesgo medido no hay con qué acotar: no se duplica una
-            // apuesta que no se sabe dimensionar.
-            return true;
-        }
-        let riesgo_del_grupo = (posiciones_misma_apuesta as f64 + 1.0) * riesgo_por_operacion;
+        let riesgo_efectivo = if riesgo_por_operacion.is_finite() && riesgo_por_operacion > 0.0 {
+            riesgo_por_operacion
+        } else {
+            // (Ola XLI·D2) Sin riesgo medido (reinicio con posiciones adoptadas,
+            // `riesgo_por_operacion` aún sin primera validación que lo escriba) el
+            // veto incondicional serializaba el arranque y vetaba a ciegas. Proxy
+            // conservador y ACOTADO POR RUINA: 1/8 del tope por evento — generoso
+            // para la segunda posición, incapaz de autorizar un grupo desenfrenado.
+            // Provisional hasta persistir el riesgo medido (hoja de ruta FMT).
+            tope / 8.0
+        };
+        let riesgo_del_grupo = (posiciones_misma_apuesta as f64 + 1.0) * riesgo_efectivo;
         riesgo_del_grupo > tope
     }
 }
@@ -387,14 +393,25 @@ mod tests {
 
     /// Sin riesgo medido no se duplica una apuesta que no se sabe dimensionar.
     #[test]
-    fn sin_riesgo_medido_no_se_duplica_la_apuesta() {
-        assert!(CorrelationGuardEngine::veto_por_exposicion_direccional(
+    /// (Ola XLI·D2) Sin riesgo medido el veto INCONDICIONADO mataba el
+    /// arranque tras reinicio con posiciones adoptadas. Doctrina nueva: proxy
+    /// conservador tope/8 por operación — una segunda posición misma-dirección
+    /// CABE (no veto), un grupo desenfrenado NO. La primera posición nunca
+    /// fue vetada (n=0) y el veto duro sigue aplicando cuando el riesgo SÍ
+    /// está medido y no cabe.
+    fn sin_riesgo_medido_el_proxy_acotado_permite_la_segunda_posicion() {
+        assert!(!CorrelationGuardEngine::veto_por_exposicion_direccional(
             1, 0.0, 0.5
         ));
-        assert!(CorrelationGuardEngine::veto_por_exposicion_direccional(
+        assert!(!CorrelationGuardEngine::veto_por_exposicion_direccional(
             1,
             f64::NAN,
             0.5
+        ));
+        // Un grupo grande con el proxy también se corta: (n+1)·tope/8 > tope
+        // cuando n+1 > 8.
+        assert!(CorrelationGuardEngine::veto_por_exposicion_direccional(
+            9, 0.0, 0.5
         ));
     }
 

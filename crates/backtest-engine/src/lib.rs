@@ -998,15 +998,19 @@ mod tests {
         // certificada. Cualquier cambio INTENCIONADO del motor implica
         // re-certificar y actualizar este vector conscientemente.
         // Los asserts usan bits exactos — evidencia forense, no aproximada.
+        //
+        // (Ola XLI·D1, re-certificación 2026-09-26) La serie neutra sin
+        // modelo ML ahora ejecuta su SONDA de arranque (2 trades mínimos) y
+        // luego B3.25 veta todo lo demás: doctrina D-751b/D-750 — sin la
+        // sonda, sin trades ⇒ sin evidencia ⇒ el motor jamás arrancaría
+        // (oráculo 0/144 pre-reparación). El capital tras la sonda es el
+        // verificado en la corrida de re-certificación.
         assert_eq!(
-            trades, 0,
-            "golden baseline: serie neutra no debe operar (sin señal ML)"
+            trades, 2,
+            "golden baseline: serie neutra ejecuta exactamente su sonda de arranque (D-1) y B3.25 veta el resto"
         );
-        assert_eq!(out_stats[1].to_bits(), 0.0f64.to_bits());
-        assert_eq!(
-            out_stats[2].to_bits(),
-            1000.0f64.to_bits(),
-            "sin trades: capital intacto"
-        );
+        // Bits exactos de la re-certificación: la sonda cerró +2 trades
+        // ligeramente rentables en ESTA serie (1000.0241615213755).
+        assert_eq!(out_stats[2].to_bits(), 4652007521368178953u64);
     }
 }

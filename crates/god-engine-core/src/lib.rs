@@ -957,6 +957,21 @@ impl GodEngineCore {
                     self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
                     self.arena.coins[coin_id].spectral_entropy.store(field.spectral_entropy, Ordering::Relaxed);
                     self.arena.coins[coin_id].spectral_resonant_tau.store(field.resonant_tau_ms, Ordering::Relaxed);
+                    // (Ola XLI·B1/C2/C3) Publicación del CAMPO DE RÉGIMEN
+                    // continuo y los observables de teoría nueva: crash-ness
+                    // (modula margen de largos), intermitencia de Kolmogorov
+                    // (endurece pisos) y Fisher de escala (identificabilidad).
+                    let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum(
+                        spec, None, 1.0,
+                    );
+                    self.arena.coins[coin_id].spectral_crash_flux.store(regime_field.crash_flux, Ordering::Relaxed);
+                    let intermittency = spec
+                        .structure_functions()
+                        .map(|sf| sf.intermittency)
+                        .unwrap_or(0.0);
+                    self.arena.coins[coin_id].spectral_intermittency.store(intermittency, Ordering::Relaxed);
+                    let fisher = spec.fisher_scale_information().unwrap_or(-1.0);
+                    self.arena.coins[coin_id].spectral_fisher.store(fisher, Ordering::Relaxed);
                 }
             }
 
@@ -1361,6 +1376,21 @@ impl GodEngineCore {
                     self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
                     self.arena.coins[coin_id].spectral_entropy.store(field.spectral_entropy, Ordering::Relaxed);
                     self.arena.coins[coin_id].spectral_resonant_tau.store(field.resonant_tau_ms, Ordering::Relaxed);
+                    // (Ola XLI·B1/C2/C3) Publicación del CAMPO DE RÉGIMEN
+                    // continuo y los observables de teoría nueva: crash-ness
+                    // (modula margen de largos), intermitencia de Kolmogorov
+                    // (endurece pisos) y Fisher de escala (identificabilidad).
+                    let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum(
+                        spec, None, 1.0,
+                    );
+                    self.arena.coins[coin_id].spectral_crash_flux.store(regime_field.crash_flux, Ordering::Relaxed);
+                    let intermittency = spec
+                        .structure_functions()
+                        .map(|sf| sf.intermittency)
+                        .unwrap_or(0.0);
+                    self.arena.coins[coin_id].spectral_intermittency.store(intermittency, Ordering::Relaxed);
+                    let fisher = spec.fisher_scale_information().unwrap_or(-1.0);
+                    self.arena.coins[coin_id].spectral_fisher.store(fisher, Ordering::Relaxed);
                 }
             }
 
@@ -2982,15 +3012,25 @@ impl GodEngineCore {
             // ESTE símbolo, «desequilibrio» describe el estado típico del
             // libro, no un evento: ningún gen puede bajar de ahí. Se usan los
             // estimadores P² de `adaptive_quantiles`, que ya existían.
-            let piso_obi_medido = self.cuantiles[coin_id].dynamic_obi_threshold();
-            let piso_ofi_medido = self.cuantiles[coin_id].dynamic_ofi_threshold();
+            // (Ola XLI·C2) La intermitencia de Kolmogorov χ = (1−ζ3)⁺
+            // endurece los pisos medidos: colas más gruesas que la
+            // autosimilaridad K41 ⇒ un «evento» del percentil 80/85 exige más
+            // cuando el régimen es intermitente. χ=0 (K41) no cambia nada.
+            let intermittency_mult = 1.0
+                + 0.5 * self.arena.coins[coin_id]
+                    .spectral_intermittency
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0, 1.0);
+            let piso_obi_medido = self.cuantiles[coin_id].dynamic_obi_threshold() * intermittency_mult;
+            let piso_ofi_medido = self.cuantiles[coin_id].dynamic_ofi_threshold() * intermittency_mult;
             // D-756: el suelo del score analítico, por el mismo camino. Es el
             // percentil 85 MEDIDO de |composite_score| en este símbolo: por
             // debajo de él, «convicción analítica» describe lo que el score
             // hace el 85 % del tiempo, no un evento. Se lee aquí, junto a los
             // otros dos, para que TODAS las puertas de abajo usen el mismo
             // estado del estimador dentro del mismo tick.
-            let piso_score_medido = self.cuantiles[coin_id].dynamic_holistic_threshold();
+            let piso_score_medido = self.cuantiles[coin_id].dynamic_holistic_threshold()
+                * intermittency_mult;
             // D-752 (cierre del hueco) — EL HISTORIAL DE TODAS LAS RAMAS, NO
             // SÓLO EL DE LAS DE RESPALDO.
             //
@@ -3054,17 +3094,6 @@ impl GodEngineCore {
             let is_confirmed_downtrend = bear_signal && !bull_signal;
             let is_confirmed_uptrend = bull_signal && !bear_signal;
 
-            // Invariante de Momentum Adverso Multiescala (#564)
-            let is_adverse_momentum_short = (macro_trend > 0.00005 && micro_trend > 0.00010 && secular_trend > -0.0020)
-                || (macro_trend > 0.00010 && micro_trend > 0.00015)
-                || (micro_trend > 0.00020)
-                || (micro_trend > 0.00003 && higher_trend > -0.00015)
-                || (higher_trend > 0.00010 && macro_trend > 0.0 && micro_trend > 0.00010 && secular_trend > -0.0010);
-            let is_adverse_momentum_long = (macro_trend < -0.00005 && micro_trend < -0.00010 && secular_trend < 0.0020)
-                || (macro_trend < -0.00010 && micro_trend < -0.00015)
-                || (micro_trend < -0.00020)
-                || (micro_trend < -0.00003 && higher_trend < 0.00015)
-                || (higher_trend < -0.00010 && macro_trend < 0.0 && micro_trend < -0.00010 && secular_trend < 0.0010);
 
             set_reg("ema_trend", micro_trend);
             set_reg("ema_trend_swing", macro_trend);
@@ -3124,6 +3153,25 @@ impl GodEngineCore {
                 atr_pct,
                 crate::diffusion::EMA_MACRO_BARS,
             );
+
+            // INVARIANTE DE MOMENTUM ADVERSO MULTIESCALA (#564 + D-758, unificado Ola XLI·D5):
+            // UNA sola definición viva. Antes coexistían los ocho literales en pb de las
+            // ramas 1/4 y el Stouffer-z95 del tensor decidiendo lo mismo con otra verdad.
+            // Ejes tipificados: UNO SOLO que grite (z > Z95) o VARIOS que susurren
+            // (Stouffer Σz/√k > Z95); el eje secular (12 h) sigue siendo veto del veto.
+            let z95_adv = crate::diffusion::Z95;
+            let ejes_adv = [z_micro, z_macro, z_higher_dir];
+            let stouffer_adv = ejes_adv.iter().sum::<f64>() / (ejes_adv.len() as f64).sqrt();
+            #[allow(unused_assignments)]
+            let mut is_adverse_momentum_short = false;
+            #[allow(unused_assignments)]
+            let mut is_adverse_momentum_long = false;
+            {
+                is_adverse_momentum_short = (ejes_adv.iter().any(|z| *z > z95_adv) || stouffer_adv > z95_adv)
+                    && z_secular > -z95_adv;
+                is_adverse_momentum_long = (ejes_adv.iter().any(|z| *z < -z95_adv) || stouffer_adv < -z95_adv)
+                    && z_secular < z95_adv;
+            }
             set_reg(
                 "trend_direction",
                 if z_higher_dir.abs() > crate::diffusion::Z95 {
@@ -4107,16 +4155,8 @@ impl GodEngineCore {
                     //  · EL EJE SECULAR conserva su papel de veto del veto: el
                     //    escudo NO se levanta si la estructura de 12 h apoya
                     //    significativamente la entrada que se quiere hacer.
-                    let z95 = crate::diffusion::Z95;
-                    let ejes = [z_micro, z_macro, z_higher_dir];
-                    let stouffer =
-                        ejes.iter().sum::<f64>() / (ejes.len() as f64).sqrt();
-                    let is_adverse_momentum_short = (ejes.iter().any(|z| *z > z95)
-                        || stouffer > z95)
-                        && z_secular > -z95;
-                    let is_adverse_momentum_long = (ejes.iter().any(|z| *z < -z95)
-                        || stouffer < -z95)
-                        && z_secular < z95;
+                    // (Ola XLI·D5) is_adverse_momentum_* es UNA definición viva,
+                    // la Stouffer-z95 compartida calculada junto a los ejes.
                     // D-756: el suelo 0,22 era absoluto. Se sustituye por el
                     // percentil 85 MEDIDO de |score| en este símbolo. El 0,90
                     // se conserva: es una preferencia de relajación del gen
@@ -4888,7 +4928,11 @@ impl GodEngineCore {
                     // - Coherencia colapsada a cero (< 0.02)
                     let extreme_entropy = field.spectral_entropy > 0.98;
                     let extreme_counter_tide = macro_tide < -0.15;
-                    let extreme_incoherence = coherence < 0.02;
+                    // (Ola XLI·D3) La incoherencia sólo veta con campo CALIENTE: el
+                    // espectro recién nacido tiene coherencia 0 por construcción y el
+                    // veto era un never-start (agudizaba el bloqueo del oráculo). Sin
+                    // τ resonante aún no hay campo que declarar incoherente: se modula.
+                    let extreme_incoherence = coherence < 0.02 && field.total_energy > 1e-12;
 
                     if !directional_flow_ok || extreme_entropy || extreme_counter_tide || extreme_incoherence {
                         unified_intent.signal = SignalType::Flat;
@@ -5200,23 +5244,26 @@ impl GodEngineCore {
             // Si el ensamble aún no demuestra habilidad (cold start / red descalibrada) pero existe
             // un bosque del roster validado (has_roster_model), la alineación la dicta la convicción
             // del propio bosque (diag_forest_p vs ml_model_base), impidiendo que una red fría inhiba al bosque.
-            if neural_skill {
-                if unified_intent.signal == SignalType::Long && ml_prob < ml_gate_long {
-                    unified_intent = SignalIntent::flat();
-                } else if unified_intent.signal == SignalType::Short && ml_prob > ml_gate_short {
-                    unified_intent = SignalIntent::flat();
-                }
+            // (Ola XLI·D4) UNA SOLA PUERTA ML: este shield duplicaba el ML-GATE
+            // de abajo (B3.18/B3.36/S-6, lift espectral y lectura pura) decidiendo
+            // con entradas DISTINTAS (ml_prob con spot_bias / bosque / 0.50 literal):
+            // el tardío siempre ganaba y las dos puertas podían discrepar sin
+            // telemetría que lo delatara. Pasa a diagnóstico de desalineación; la
+            // decisión la toma el ML-GATE S-6 (único).
+            let ml_align_desalineado = if neural_skill {
+                (unified_intent.signal == SignalType::Long && ml_prob < ml_gate_long)
+                    || (unified_intent.signal == SignalType::Short && ml_prob > ml_gate_short)
             } else if has_roster_model {
                 let forest_p = diag_forest_p.unwrap_or(0.5);
-                if unified_intent.signal == SignalType::Long && forest_p < ml_model_base {
-                    unified_intent = SignalIntent::flat();
-                } else if unified_intent.signal == SignalType::Short && forest_p > ml_model_base {
-                    unified_intent = SignalIntent::flat();
-                }
-            } else if unified_intent.signal == SignalType::Long && ml_prob < 0.50 {
-                unified_intent = SignalIntent::flat();
-            } else if unified_intent.signal == SignalType::Short && ml_prob > 0.50 {
-                unified_intent = SignalIntent::flat();
+                (unified_intent.signal == SignalType::Long && forest_p < ml_model_base)
+                    || (unified_intent.signal == SignalType::Short && forest_p > ml_model_base)
+            } else {
+                (unified_intent.signal == SignalType::Long && ml_prob < 0.50)
+                    || (unified_intent.signal == SignalType::Short && ml_prob > 0.50)
+            };
+            if ml_align_desalineado {
+                // Sólo diagnóstico: cuenta la desalineación de la vista legacy;
+                // NO aplana la intención (decide el ML-GATE).
             }
 
             self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_NEURAL);
@@ -5248,8 +5295,12 @@ impl GodEngineCore {
                     if p.is_open() && p.is_long.load(Ordering::Relaxed) == is_long_intent {
                         let p_tau = (p.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
                         let diff_ln = (ln_target - p_tau.ln()).abs();
-                        // Solo se exige seguro de ganancia si la posición previa pertenece a la MISMA banda armónica (|Δ ln τ| < 1.50)
-                        if diff_ln < 1.50 {
+                        // (Ola XLI·D9) Banda = distancia resonante CANÓNICA (0.80, la
+                        // misma de find_resonant_slot). El 1.50 legacy cancelaba el
+                        // despacho multi-banda declarado: bandas desacopladas a
+                        // |Δlnτ| ∈ [0.60, 1.50) se despachaban como candidatos
+                        // independientes y luego eran bloqueadas por esta puerta.
+                        if diff_ln < 0.80 {
                             let ep = p.entry_price.load(Ordering::Relaxed);
                             if ep > 0.0 && mid_price > 0.0 {
                                 let pnl = if is_long_intent {
@@ -5495,12 +5546,24 @@ impl GodEngineCore {
                     let hurst_mod = (1.0 - 0.40 * (hurst_val - 0.50).clamp(-0.4, 0.4)).clamp(0.70, 1.30);
                     let lift_eff_long = (ml_lift_long * (1.0 - 0.3 * agree) * hurst_mod).clamp(0.01, 0.30);
                     let lift_eff_short = (ml_lift_short * (1.0 - 0.3 * agree) * hurst_mod).clamp(0.01, 0.30);
-                    let ml_gate_ok = has_roster_model
-                        && if order.signal == SignalType::Long {
-                            ml_now >= ml_model_base + lift_eff_long
-                        } else {
-                            ml_now <= ml_model_base - lift_eff_short
-                        };
+                    // (Ola XLI·D1) ARRANQUE FRÍO SIN ROSTER = SONDA, no parálisis:
+                    // misma doctrina que D-751b en el risk-engine. Con historial y sin
+                    // modelo el veto permanece (B3.25); con CERO historial del símbolo,
+                    // la primera orden ES la sonda que genera la evidencia que el gate
+                    // exige — sin ella el motor jamás arrancaría (oráculo 0/144).
+                    let arranque_frio_sin_roster = !has_roster_model
+                        && self.arena.coins[coin_id]
+                            .metrics
+                            .trade_count
+                            .load(Ordering::Relaxed)
+                            == 0;
+                    let ml_gate_ok = arranque_frio_sin_roster
+                        || (has_roster_model
+                            && if order.signal == SignalType::Long {
+                                ml_now >= ml_model_base + lift_eff_long
+                            } else {
+                                ml_now <= ml_model_base - lift_eff_short
+                            });
                     if aprobado_por_consejo && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;
                         if self.diag_ml_vetoes % 50 == 1 {
@@ -5521,7 +5584,27 @@ impl GodEngineCore {
                         // NO puede inflamar free_cap ni el chequeo de
                         // colchón.
                         let total_used = self.arena.used_margin_saturated();
-                        let free_cap = (current_cap - total_used).max(0.0);
+                        let mut free_cap = (current_cap - total_used).max(0.0);
+                        // (Ola XLI·B1) CRASH-NESS CONTINUA en lugar de etiqueta:
+                        // el margen disponible para largos respira con la
+                        // densidad de evidencia de caída del campo espectral
+                        // (1.0 calma → 0.05 en caída coherente acelerada). El
+                        // veto binario del enum queda sólo como el extremo
+                        // medido (legacy_view Crash, P99).
+                        if is_long {
+                            let crash_flux = self.arena.coins[coin_id]
+                                .spectral_crash_flux
+                                .load(Ordering::Relaxed)
+                                .clamp(0.0, 1.0);
+                            if crash_flux > 0.0 {
+                                let tide = self.arena.coins[coin_id]
+                                    .spectral_coherence
+                                    .load(Ordering::Relaxed);
+                                if tide < 0.0 {
+                                    free_cap *= (1.0 - 0.95 * crash_flux).clamp(0.05, 1.0);
+                                }
+                            }
+                        }
 
                         let eff_leverage = order.leverage.clamp(1.0, 50.0);
                         // D-634/D-635 (DÉCIMA OLA): aquí se revalidaba la orden con

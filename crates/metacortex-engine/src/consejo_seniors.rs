@@ -767,8 +767,12 @@ impl SeniorAgent for SeniorAuditorInterno {
         // Umbral de drawdown continuo en τ alineado con SeniorRiesgo para
         // evitar vetos contradictorios (D-343, U-4: antes escalones
         // Scalping/Continuous/Swing — misma curva que SeniorRiesgo).
-        let max_dd = 0.95 - 0.10 * payload.spectral_s();
-        let is_veto = payload.do_calculus_risk > 0.92 || payload.current_drawdown_pct > max_dd;
+        // (Ola XLI·D7) El drawdown ya veto en SeniorRiesgo con la MISMA curva:
+        // co-firmarlo aquí hacía que todo exceso de DD produjera DOS vetos, y el
+        // override por supermayoría (quórum D-342) jamás podía aplicar a drawdown
+        // — deadlock por diseño. El Auditor conserva SU condición propia (riesgo
+        // do_calculus) y el DD cuenta una sola vez.
+        let is_veto = payload.do_calculus_risk > 0.92;
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent
@@ -1126,6 +1130,16 @@ impl ConsejoDeliberacion {
                 && payload.liquidation_severity > self.params.cascade_severity_breaker
             {
                 vetoed_by = Some(SeniorRole::EnteMercado);
+            } else if vetoes.iter().any(|v| v.role == SeniorRole::Riesgo)
+            {
+                // (Ola XLI·D7) El veto por DRAWDOWN es ABSOLUTO — no
+                // sobreescribible por supermayoría. Antes lo conseguía por
+                // acoplamiento: AuditorInterno co-firmaba la MISMA condición
+                // y los dos vetos activaban la rama irrevocable. Al retirar la
+                // co-firma (para que el override pudiera existir), el dd
+                // quedó sobreescribible — restaurado aquí por condición
+                // propia, no por duplicación de asientos.
+                vetoed_by = Some(SeniorRole::Riesgo);
             } else if vetoes.len() == 1
                 && top_consensus >= self.params.supermajority_override
                 && final_signal.abs() >= self.params.override_signal_floor
