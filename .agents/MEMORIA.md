@@ -10,6 +10,9 @@
 
 ## 2026-09-28 — Claude (cloud): auditoría de gates de evolución y régimen (PR #8)
 
+> Estado: el primer tramo (XLIV-1…7) entró en `main` con 41755422 (merge
+> local de GLM). El segundo tramo (XLIV-8…12) sigue en el PR #8.
+
 Canal: PR #8 de GitHub (la sesión cloud no ve el buzón no versionado
 `COORDINACION_CODEX_2026-09-28.md`). Sin push directo a `main` (permiso
 bloqueado): todo entra por el PR. **No toco** correlation_guard /
@@ -55,6 +58,101 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - Aislamiento de tests: una vez se vio un fallo de determinismo de
   `replay_*` con tests en paralelo (no reproducido en 13 corridas). Probable
   estado global compartido (mapa global de bosques / registros).
+
+### Defecto propio encontrado por Codex (XLIV-3) — arreglo reservado por Codex
+- `momentos_ewma_corregidos` supone momentos sembrados en 0, pero `CoinArena`
+  siembra `entropy_mean_ewma`/`entropy_sq_ewma` en 1,0 (state.rs). Con
+  entropía constante 0,5, a t = 31: media 9,77 y varianza < 0 (sd = 0). CVD y
+  marea no afectados (nacen en 0). Codex tiene en local: semillas de entropía
+  en 0, dominio cerrado (peso ∈ (0,1], segundo momento ≥ 0, finito),
+  calentamiento con log1p/expm1 y reloj W₁ monótono. **XLIV-3 ya entró en
+  `main` (41755422) SIN ese arreglo**: el defecto está vivo hasta que Codex
+  publique su parche. Claude no toca esa zona.
+
+### Segundo tramo (XLIV-8 … XLIV-12, con 8b y 9b/9c)
+- **XLIV-8 fricción única**: `tp_sl::roundtrip_friction` (2·taker + 2·(piso +
+  latencia DIFUSIVA), tope 5 %/lado) para el gate, los brackets del host
+  (`genome_protection_prices`, fallback de entrada) y el pre-examen del daemon.
+  Los tres últimos seguían con la ley lineal `atr·lat/umbral_pánico` (3,46×
+  más por lado con umbral 500 ms y 50 ms). En el gate es idéntico bit a bit.
+- **XLIV-9 freno del bosque**: el registro de acierto usaba
+  `subio = (is_long == is_win)` con PnL NETO; el bosque se entrena con triple
+  barrera sobre el mid BRUTO. Un largo que subía menos que las comisiones
+  contaba como bajada y el voto contrario puntuaba como acierto (el freno se
+  armaba por la fricción). Ahora `direccion_realizada(is_long, pnl_pct)`.
+- **XLIV-10 suelos de confianza tras las puertas**: fusión constructiva
+  `(max + 0,1·min).clamp(0,55, 0,96)` fabricaba 0,55 con dos ramas de
+  desventaja demostrada (0,40/0,40); modulación espectral `.clamp(0,45, 0,98)`
+  deshacía el freno del bosque (0,70 → 0,35 → 0,45). Ahora
+  `confianza_superpuesta` (refuerzo sólo si ambas > ½) y `confianza_modulada`
+  (sin suelo). Mismo principio que D-642.
+- **XLIV-9c (revisión de Codex)**: el signo terminal del mid tampoco es la
+  etiqueta del bosque (primer toque TP/SL del LARGO, timeouts descartados).
+  `etiqueta_barrera(is_long, reason_code)`: largo TP ⇒ 1, largo SL ⇒ 0,
+  corto TP ⇒ 0; corto SL y demás salidas ⇒ sin dato. XLIV-8b: doc de
+  `roundtrip_friction` precisada (ATR/latencia no finitos ⇒ latencia 0);
+  la paridad de ENTRADAS gate/host/daemon sigue abierta.
+- **XLIV-9b ensamble**: el mismo defecto que XLIV-9 en `ModelEnsemble::
+  update_with_trade_outcome` (y = 1 si `is_long == is_win` neto): los pesos
+  Hedge castigaban al modelo que acertaba «sube» en un largo marginal. Ahora
+  recibe `subio` de `direccion_realizada`.
+- **XLIV-11 epigenética neta**: sesgo epigenético (tamaño) y modificador del
+  umbral de confianza aprendían del movimiento BRUTO del mid; un cierre que
+  ganaba menos que las comisiones BAJABA la exigencia y SUBÍA el tamaño tras
+  un perdedor neto. Ahora `retorno_neto_pct(net_trade_pnl, entry·qty)`.
+  Regla resultante: lo que predice DIRECCIÓN aprende de SU etiqueta
+  (bosque: barrera TP/SL; ensamble: signo del mid); lo que gobierna
+  RENTABILIDAD (epigenética, ramas D-752, espectro) aprende del neto.
+- **XLIV-12 test del replay**: `replay_con_envolvente_sigue_determinista`
+  fallaba «0 vs 1» porque el replay no registra specs y el registro global
+  lo llenaba otro test en paralelo entre las dos corridas (visto 2 veces).
+  `asegurar_spec_nativo` (extraído de B3.20, sin cambio) fija el entorno.
+- Verificación: risk-engine 197/197 (con las 4 suites de Codex tras traer
+  `main` 6b7c6d37), evolution-engine, god-engine-core 126/126 y golden del
+  backtest verdes; el golden no cambia con ninguno de XLIV-8…12.
+  T-1 (release, 30 min): sobre d6e5aba1 (XLIV-8/9/10) y sobre el head
+  completo ef172aac (≡ 4dac8061), 19/144 = 13,2 % ≥ trinquete 11,5 %, con la
+  MISMA lista de genes inertes que el primer tramo, gen a gen.
+- **Lección de build**: tras medir T-1 sobre `main` en el mismo directorio, el
+  artefacto release de quantum-arena quedó OBSOLETO con fecha más nueva que
+  las fuentes restauradas (carrera checkout ↔ compilación): la siguiente
+  build release falló con «no field cvd_ewma_peso». Tras cambiar de commit
+  para medir, `touch` a los .rs que difieren (o `cargo clean -p`) antes de
+  volver a compilar. La build debug no estaba afectada.
+
+### Hallazgos de este tramo NO corregidos (diseño o zona ajena)
+- **Tope micro del stop a 55 pb** (risk-engine, `micro_w_alloc > 0,5`): acota
+  el SL por presupuesto de ruina en dólares en vez de RECHAZAR lo que no cabe
+  (contradice «el único techo del SL es de capital, lo aplica quien
+  dimensiona» y D-750). Con SL dentro del ruido, la deriva de la señal tiene
+  menos tiempo para cobrar. Política, no bug numérico: decisión del dueño.
+- **Ramas 13 y 15**: confianzas con suelo literal (tanh(…).clamp(0,55, 0,95) y
+  0,58 + …); no pasan por `conviccion_de_rama` (D-752). Rediseño pendiente.
+- **Atribución en la fusión**: `volume_flow_rate = max(etiquetas)` atribuye el
+  resultado a la rama de índice mayor, no a la que aportó la convicción.
+- **D-746 freno de apalancamiento**: mide el ATR contra `sl_at_tau` genómico a
+  la τ de `operating_tau_ms`, no contra el stop real del gate
+  (`tpsl_gate.sl_pct`) ni su τ: exige reordenar el gate (goldens).
+- **`suelo_tp_sl`**: el veto es coherente (σ(τ)·k < f/0,65 ⇒ la τ propuesta no
+  paga la fricción); el desperdicio está AGUAS ARRIBA: el núcleo propone τ por
+  debajo de la banda operable. Candidato: que el generador consulte
+  `min_tradeable_tau_ms` con el ATR vivo antes de emitir.
+- **Genoma (GLM)**: al insertar `normalize_sl_curve_friction_floor` entre el
+  doc de `min_viable_sl` y su `fn`, `min_viable_sl` perdió su doc y su
+  `#[inline]` (se los quedó la función nueva). Cosmético + inline cross-crate.
+- **Tamaño fuera del espacio de riesgo (meta de crecimiento)**: Kelly entra
+  DOS veces — como fracción de MARGEN (`raw_exposure = dir·conf·kelly·capital`)
+  y, bajo raíz, en el factor de apalancamiento (`leverage_matrix`,
+  `capital_factor = 1 + √(kelly·√L_max)`). Lo que se arriesga al stop,
+  `f·conf·L·SL`, nunca se deriva: con f = 0,10, conf 0,7, L = 5 y SL = 0,5 %
+  es ≈ 0,18 % del capital por operación, frente a un Kelly de la geometría
+  (p = 0,45, TP 1,125 %, SL 0,5 %, fricción 12 pb) de ≈ 11 %. Con 13 USD el
+  nocional mínimo (5 USD) fija además el riesgo en ≈ 5·SL. Crecer como pide
+  la meta exige apostar cerca de Kelly EN RIESGO AL STOP, y eso sólo es
+  seguro con edge medido fuera de muestra, que hoy no existe. Propuesta:
+  dimensionar en espacio de riesgo (riesgo = fracción de Kelly acotada por
+  la ruina; nocional = riesgo/SL; margen = nocional/L) y dejar al
+  apalancamiento como pura consecuencia del margen disponible.
 
 ### Señalado a los dueños (no tocado)
 - Codex: HY normaliza por la varianza completa con cruce sólo en la ventana

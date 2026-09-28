@@ -240,17 +240,17 @@ impl ModelEnsemble {
     /// POR QUÉ: Las barras de 1 minuto tardan en acumularse y muchas son filtradas como
     ///      ruido neutro (|ret| < 10 bps). El desenlace financiero de un trade cerrado
     ///      es evidencia empírica directa y sin ambigüedad sobre qué modelos acertaron.
-    /// CÓMO: Si el trade fue Long y ganó (o Short y perdió), la dirección real fue alcista (y = 1.0).
-    ///      Si el trade fue Short y ganó (o Long y perdió), la dirección real fue bajista (y = 0.0).
+    /// CÓMO: `subio` es la dirección que tomó el MERCADO durante la posición
+    ///      (mid al cierre frente a la entrada): y = 1.0 si subió, 0.0 si bajó.
     ///      Cada modelo presente es penalizado por su error cuadrático de Brier con una tasa adaptativa
     ///      proporcional a la magnitud del trade sin aplicar shrink que borre el aprendizaje.
-    pub fn update_with_trade_outcome(&mut self, is_long: bool, is_win: bool, pnl_pct: f64) {
-        let y = match (is_long, is_win) {
-            (true, true) => 1.0,
-            (true, false) => 0.0,
-            (false, true) => 0.0,
-            (false, false) => 1.0,
-        };
+    ///
+    /// XLIV-9b: antes `y` salía de `(is_long, is_win)` con `is_win` = PnL NETO.
+    /// Un largo cuyo mid subía menos que las comisiones se etiquetaba «bajó» y
+    /// los pesos Hedge castigaban al modelo que había acertado «sube». Los
+    /// modelos predicen dirección, no rentabilidad neta.
+    pub fn update_with_trade_outcome(&mut self, subio: bool, pnl_pct: f64) {
+        let y = if subio { 1.0 } else { 0.0 };
         // Escala adaptativa por el retorno del trade
         let eta_trade = (0.25 * (pnl_pct.abs() / 0.001).clamp(0.5, 3.0)).clamp(0.08, 0.75);
         let preds = if self.predictions.iter().any(|p| p.is_some()) {
@@ -369,6 +369,23 @@ mod tests {
             e.update_with_outcome(y);
         }
         assert!(e.has_significant_skill(), "z = {:?}", e.skill_z());
+    }
+
+    /// XLIV-9b: un largo cuyo mid sube 3 pb y pierde por 10 pb de comisiones.
+    /// El mercado SUBIÓ: el modelo que dijo «sube» (0,9) debe ganar peso
+    /// frente al que dijo «baja» (0,1). Con la etiqueta vieja
+    /// `(is_long, is_win)` = (true, false) ⇒ y = 0 y ocurría lo contrario.
+    #[test]
+    fn xliv_el_ensamble_aprende_la_direccion_del_mercado_no_el_pnl_neto() {
+        let mut e = ModelEnsemble::new();
+        for _ in 0..50 {
+            e.submit(ModelId::MotorForest, 0.9);
+            e.submit(ModelId::DarkAlphaNN, 0.1);
+            let subio = crate::direccion_realizada(true, 0.0003).expect("hubo movimiento");
+            e.update_with_trade_outcome(subio, 0.0003);
+        }
+        let w = e.weights();
+        assert!(w[0] > w[1], "el que acertó «sube» debe pesar más: {w:?}");
     }
 
     #[test]

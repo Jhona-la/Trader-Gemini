@@ -142,6 +142,97 @@ pub fn conviccion_de_rama(registro: &TasaAcierto, piso_por_magnitud: f64) -> f64
     }
 }
 
+/// XLIV-9 — DIRECCIÓN QUE EL MERCADO TOMÓ DURANTE UNA POSICIÓN.
+///
+/// `pnl_pct` es el movimiento BRUTO del mid frente a la entrada, con el signo
+/// de la posición. Devuelve `Some(true)` si el precio subió, `Some(false)` si
+/// bajó y `None` si no se movió o el dato no es finito: sin movimiento no hay
+/// dirección que puntuar. La usa el ensamble, cuyo otro canal de
+/// calibración es también un signo terminal (la dirección de la vela). El
+/// freno del bosque usa en cambio [`etiqueta_barrera`] (XLIV-9c).
+#[inline]
+pub fn direccion_realizada(is_long: bool, pnl_pct: f64) -> Option<bool> {
+    if !pnl_pct.is_finite() || pnl_pct == 0.0 {
+        return None;
+    }
+    Some(if is_long { pnl_pct > 0.0 } else { pnl_pct < 0.0 })
+}
+
+/// XLIV-9c — ETIQUETA DE BARRERA DE UN CIERRE, EN LA SEMÁNTICA DEL ENTRENADOR.
+///
+/// El bosque (`train_forest --label dir`) aprende P(el TP del LARGO se toca
+/// antes que su SL) con TP ≥ 2·SL, y DESCARTA las muestras que no tocan
+/// ninguna barrera dentro del horizonte. El signo del mid al cierre no es esa
+/// etiqueta (observación de Codex en el PR #8): un +3 pb que cierra por
+/// trailing o por decaimiento sería un timeout descartado, no un 1.
+///
+/// Traducción de los cierres vivos (`reason_code` del núcleo):
+/// - largo por TP (1) ⇒ `Some(true)`; largo por SL (2) ⇒ `Some(false)`;
+/// - corto por TP: el precio cayó al menos su TP, que supera el SL del largo
+///   ⇒ el SL del largo se tocó antes ⇒ `Some(false)`;
+/// - corto por SL: subir su SL no implica tocar el TP del largo ⇒ `None`;
+/// - trailing, zombi, flujo tóxico, cosecha o decaimiento ⇒ `None`.
+///
+/// Aproximación declarada: los TP/SL vivos dependen de τ y del ATR del
+/// momento; los del entrenador, de los genes al horizonte de la etiqueta.
+#[inline]
+pub fn etiqueta_barrera(is_long: bool, reason_code: u8) -> Option<bool> {
+    match (is_long, reason_code) {
+        (true, 1) => Some(true),
+        (true, 2) => Some(false),
+        (false, 1) => Some(false),
+        _ => None,
+    }
+}
+
+/// XLIV-11 — RETORNO NETO DE UNA POSICIÓN, EN FRACCIÓN DEL NOCIONAL.
+///
+/// `neto_usd` descuenta las comisiones de ambas piernas. Devuelve `None` si
+/// el nocional no es positivo o el cociente no es finito.
+#[inline]
+pub fn retorno_neto_pct(neto_usd: f64, nocional_usd: f64) -> Option<f64> {
+    if !(nocional_usd.is_finite() && nocional_usd > 0.0) {
+        return None;
+    }
+    let r = neto_usd / nocional_usd;
+    r.is_finite().then_some(r)
+}
+
+/// XLIV-10 — SUPERPOSICIÓN CONSTRUCTIVA SIN CONFIANZA FABRICADA.
+///
+/// Cuando las bandas rápida y lenta coinciden en dirección y armónico, la
+/// fusión era `(max + 0,10·min).clamp(0,55, 0,96)`. El suelo 0,55 FABRICABA
+/// confianza: dos ramas con desventaja demostrada (cota superior de Wilson
+/// 0,40, que D-752 emite para que el gate las rechace) salían con 0,55, por
+/// encima del gate con el gen de confianza en su cota baja (0,50) o con el
+/// umbral epigenético rebajado. Y el término `+0,10·min` convertía dos
+/// convicciones de 0,49 en 0,54: dos pruebas de NO ventaja sumaban ventaja.
+///
+/// Ahora el refuerzo sólo existe si AMBAS bandas superan ½ (evidencia de
+/// ventaja en las dos); si no, la fusión es la mayor de las dos. Se conserva
+/// el techo 0,96. Sin suelo.
+#[inline]
+pub fn confianza_superpuesta(a: f64, b: f64) -> f64 {
+    let (hi, lo) = (a.max(b), a.min(b));
+    if lo > 0.5 {
+        (hi + 0.10 * lo).min(0.96)
+    } else {
+        hi.min(0.96)
+    }
+}
+
+/// XLIV-10 — LA MODULACIÓN ESPECTRAL NO DESHACE LOS FRENOS.
+///
+/// `(confianza · multiplicador).clamp(0,45, 0,98)` se aplicaba DESPUÉS del
+/// freno del bosque: un recorte de 0,70 a 0,35 volvía a 0,45 aunque el
+/// multiplicador fuera neutro (1,0). El suelo también comprimía la entrada
+/// del calibrador de Platt: todas las intenciones frenadas llegaban con la
+/// misma puntuación 0,45. Se conserva el techo 0,98; sin suelo.
+#[inline]
+pub fn confianza_modulada(confianza: f64, multiplicador: f64) -> f64 {
+    (confianza * multiplicador).clamp(0.0, 0.98)
+}
+
 /// D-756 — ESCALADA DE EXIGENCIA TRAS UNA RACHA DE PÉRDIDAS.
 ///
 /// QUÉ ESTABA MAL: la exigencia de desequilibrio de libro tras dos pérdidas
@@ -2409,7 +2500,14 @@ impl GodEngineCore {
 
                     // CONEXION EPIGENETICA MULTIVARIANTE ESPECTRAL (Fase 26 / Auto-Adaptacion Viva):
                     // 1. Adaptacion continua celular a nivel de moneda (epigenetic_bias y epigenetic_threshold_modifier):
-                    coin.apply_spectral_epigenetic_feedback_with_time(pnl_pct, position_age_ms, tau_trade_ms, event_time_ms);
+                    // XLIV-11: el sesgo (tamano) y el umbral (gate de confianza)
+                    // aprenden del retorno NETO. Con el movimiento bruto del mid,
+                    // un cierre que ganaba menos que las comisiones contaba como
+                    // victoria: bajaba la exigencia y subia el tamano tras un
+                    // perdedor neto (comisiones medidas ~109 % del PnL bruto).
+                    let pnl_epigenetico =
+                        retorno_neto_pct(net_trade_pnl, entry * qty).unwrap_or(pnl_pct);
+                    coin.apply_spectral_epigenetic_feedback_with_time(pnl_epigenetico, position_age_ms, tau_trade_ms, event_time_ms);
 
                     // 2. Adaptacion continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
                     if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
@@ -2417,10 +2515,13 @@ impl GodEngineCore {
                     }
 
                     // 3. Retroalimentacion epigenetica directa de trade cerrado al ensamble de modelos predictivos:
-                    if coin_id < self.ensembles.len() {
-                        self.ensembles[coin_id].update_with_trade_outcome(is_long, is_win, pnl_pct);
-                    } else {
-                        self.ensemble.update_with_trade_outcome(is_long, is_win, pnl_pct);
+                    // XLIV-9b: con la direccion del MERCADO, no con el signo del PnL neto.
+                    if let Some(subio) = direccion_realizada(is_long, pnl_pct) {
+                        if coin_id < self.ensembles.len() {
+                            self.ensembles[coin_id].update_with_trade_outcome(subio, pnl_pct);
+                        } else {
+                            self.ensemble.update_with_trade_outcome(subio, pnl_pct);
+                        }
                     }
 
                     // D-752 - ATRIBUCION DEL RESULTADO A QUIEN LO ORIGINO.
@@ -2431,11 +2532,17 @@ impl GodEngineCore {
                         }
                     }
                     // D-752 - Y EL BOSQUE APRENDE DE SU PROPIO VOTO.
-                    // Direccion realizada: un largo que gana subio y uno que
-                    // pierde baja; para un corto, al reves (`subio == (is_long == is_win)`).
+                    // XLIV-9: no con el signo del PnL NETO (un largo que subia
+                    // menos que las comisiones contaba como bajada y el voto
+                    // CONTRARIO puntuaba como acierto: el freno se armaba por
+                    // la friccion). XLIV-9c: tampoco con el signo terminal del
+                    // mid, sino con la ETIQUETA DE BARRERA con la que se
+                    // entrena (primer toque TP/SL del largo; el resto de
+                    // salidas serian timeouts descartados).
                     if let Some(predijo_subida) = self.bosque_voto_abierto[coin_id].take() {
-                        let subio = is_long == is_win;
-                        self.bosque_registro[coin_id].observar(predijo_subida == subio);
+                        if let Some(etiqueta) = etiqueta_barrera(is_long, reason_code) {
+                            self.bosque_registro[coin_id].observar(predijo_subida == etiqueta);
+                        }
                     }
 
 
@@ -4947,9 +5054,9 @@ impl GodEngineCore {
                     // Mismo armónico: colisión de frecuencias. Arbitrar por coherencia y energía.
                     if fast_intent.signal == slow_intent.signal {
                         // Superposición constructiva armónica continua:
-                        let boosted_conf = (fast_intent.confidence.max(slow_intent.confidence)
-                            + 0.10 * fast_intent.confidence.min(slow_intent.confidence))
-                            .clamp(0.55, 0.96);
+                        // XLIV-10: sin suelo 0,55 y sin refuerzo desde bandas ≤ ½.
+                        let boosted_conf =
+                            confianza_superpuesta(fast_intent.confidence, slow_intent.confidence);
                         let (fast_energy, slow_energy) = self
                             .temporal_spectrum
                             .get(coin_id)
@@ -5323,8 +5430,9 @@ impl GodEngineCore {
                             .unwrap_or(0.0);
                         let _ = p_transition; // ya publicada al registry
 
+                        // XLIV-10: sin suelo 0,45 (deshacía el freno del bosque).
                         unified_intent.confidence =
-                            (unified_intent.confidence * spectral_multiplier).clamp(0.45, 0.98);
+                            confianza_modulada(unified_intent.confidence, spectral_multiplier);
 
                         // Mapeo armónico continuo en el Universo Multivariante Continuo Temporal Espectral:
                         // Elimina la discretización binaria rígida y converge continuamente hacia el centro de masa tau*.
@@ -6691,6 +6799,113 @@ mod tests_d752_d756 {
 
     fn registro(n: u32, aciertos: u32) -> TasaAcierto {
         TasaAcierto { n, aciertos }
+    }
+
+    /// XLIV-9c — EL FRENO DEL BOSQUE SÓLO PUNTÚA CIERRES CON ETIQUETA DE BARRERA.
+    #[test]
+    fn xliv_el_bosque_se_puntua_con_la_etiqueta_de_barrera_del_entrenador() {
+        assert_eq!(etiqueta_barrera(true, 1), Some(true), "largo por TP");
+        assert_eq!(etiqueta_barrera(true, 2), Some(false), "largo por SL");
+        assert_eq!(etiqueta_barrera(false, 1), Some(false), "corto por TP: tocó el SL del largo");
+        assert_eq!(etiqueta_barrera(false, 2), None, "corto por SL: ambiguo");
+        // Trailing, forzado, zombi, flujo tóxico, decaimiento, cosecha: el
+        // entrenador los descartaría como timeout.
+        for rc in 3u8..=8 {
+            assert_eq!(etiqueta_barrera(true, rc), None, "largo rc={rc}");
+            assert_eq!(etiqueta_barrera(false, rc), None, "corto rc={rc}");
+        }
+    }
+
+    /// XLIV-11 — LA EPIGENÉTICA APRENDE DEL RETORNO NETO.
+    ///
+    /// Un cierre con +3 pb brutos y 10 pb de comisiones pierde dinero. Con el
+    /// bruto, el umbral epigenético BAJABA (gate más permisivo) y el sesgo de
+    /// tamaño SUBÍA; con el neto, el umbral sube y el sesgo baja.
+    #[test]
+    fn xliv_la_epigenetica_aprende_del_retorno_neto() {
+        let nocional = 100.0;
+        let bruto = 0.0003;
+        let neto_usd = bruto * nocional - 0.0010 * nocional;
+        let neto = retorno_neto_pct(neto_usd, nocional).expect("nocional válido");
+        assert!(neto < 0.0 && bruto > 0.0, "premisa: gana bruto, pierde neto");
+
+        // `CoinArena` no cabe en la pila de un hilo de test: arena propia.
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let (con_bruto, con_neto) = (&arena.coins[0], &arena.coins[1]);
+        con_bruto.apply_spectral_epigenetic_feedback_with_time(bruto, 10_000, 30_000.0, 1);
+        con_neto.apply_spectral_epigenetic_feedback_with_time(neto, 10_000, 30_000.0, 1);
+        let umbral = |c: &quantum_arena::state::CoinArena| {
+            c.epigenetic_threshold_modifier.load(Ordering::Relaxed)
+        };
+        let sesgo = |c: &quantum_arena::state::CoinArena| c.epigenetic_bias.load(Ordering::Relaxed);
+        assert!(umbral(con_bruto) < 1.0, "premisa: el bruto relajaba el gate");
+        assert!(umbral(con_neto) > 1.0, "el neto endurece el gate: {}", umbral(con_neto));
+        assert!(sesgo(con_neto) < sesgo(con_bruto));
+        assert!(!con_neto.last_close_was_win.load(Ordering::Relaxed));
+
+        assert_eq!(retorno_neto_pct(1.0, 0.0), None);
+        assert_eq!(retorno_neto_pct(f64::NAN, 10.0), None);
+    }
+
+    /// XLIV-10 — NINGÚN SUELO POSTERIOR A LAS PUERTAS FABRICA CONFIANZA.
+    #[test]
+    fn xliv_la_fusion_y_la_modulacion_no_fabrican_confianza() {
+        // Dos bandas con desventaja demostrada (cota sup. de Wilson 0,40):
+        // antes 0,55; ahora la mayor de las dos, que el gate rechaza.
+        assert_eq!(confianza_superpuesta(0.40, 0.40), 0.40);
+        let vieja = (0.40_f64.max(0.40) + 0.10 * 0.40).clamp(0.55, 0.96);
+        assert_eq!(vieja, 0.55, "premisa: el suelo viejo fabricaba 0,55");
+        // Dos «no ventaja» no suman ventaja.
+        assert!(confianza_superpuesta(0.49, 0.49) <= 0.5);
+        // Con evidencia en ambas, el refuerzo de siempre (techo 0,96).
+        let (a, b) = (0.70_f64, 0.60_f64);
+        assert!((confianza_superpuesta(a, b) - (0.70 + 0.10 * 0.60)).abs() < 1e-12);
+        assert_eq!(confianza_superpuesta(0.95, 0.90), 0.96);
+        // Simétrica.
+        assert_eq!(confianza_superpuesta(0.3, 0.8), confianza_superpuesta(0.8, 0.3));
+
+        // El freno del bosque recorta 0,70 → 0,35; un multiplicador neutro
+        // ya no la devuelve a 0,45.
+        let frenada = 0.70 * 0.5;
+        assert_eq!(confianza_modulada(frenada, 1.0), frenada);
+        assert_eq!((frenada * 1.0_f64).clamp(0.45, 0.98), 0.45, "premisa: el suelo viejo");
+        assert_eq!(confianza_modulada(0.9, 1.35), 0.98);
+        assert_eq!(confianza_modulada(0.5, -1.0), 0.0);
+    }
+
+    /// XLIV-9 — EL BOSQUE SE PUNTÚA CON LA DIRECCIÓN DEL MERCADO.
+    ///
+    /// Un largo cuyo mid sube 3 pb y cierra en pérdida neta por 10 pb de
+    /// comisiones: el mercado SUBIÓ. La regla anterior (`is_long == is_win`)
+    /// lo contaba como bajada y daba por acertado el voto bajista del bosque.
+    #[test]
+    fn xliv_la_direccion_realizada_es_la_del_mid_no_la_del_pnl_neto() {
+        let (sube_bruto, pnl_neto) = (0.0003_f64, 0.0003 - 0.0010);
+        assert!(pnl_neto < 0.0, "premisa: pérdida neta");
+        let (is_long, is_win) = (true, pnl_neto > 0.0);
+        let subio_viejo = is_long == is_win;
+        assert!(!subio_viejo, "la regla vieja decía «bajó»");
+        assert_eq!(direccion_realizada(true, sube_bruto), Some(true));
+        // Corto con el mid bajando: pnl_pct positivo ⇒ bajó.
+        assert_eq!(direccion_realizada(false, 0.0003), Some(false));
+        // Corto con el mid subiendo: pnl_pct negativo ⇒ subió.
+        assert_eq!(direccion_realizada(false, -0.0003), Some(true));
+        // Sin movimiento, o dato inválido, no se puntúa.
+        assert_eq!(direccion_realizada(true, 0.0), None);
+        assert_eq!(direccion_realizada(true, f64::NAN), None);
+
+        // Consecuencia en el registro: un bosque que siempre vota «baja»
+        // frente a largos marginales (suben menos que las comisiones) ya no
+        // acumula aciertos ficticios.
+        let mut r = TasaAcierto::default();
+        for _ in 0..200 {
+            if let Some(subio) = direccion_realizada(true, sube_bruto) {
+                // Voto del bosque: «baja» (predijo_subida = false).
+                r.observar(!subio);
+            }
+        }
+        let (_, hi) = r.intervalo(Z95);
+        assert!(hi < 0.5, "el voto bajista fue siempre erróneo: cota sup {hi}");
     }
 
     /// D-752 — CON TRES DATOS NO HAY CERTEZA.

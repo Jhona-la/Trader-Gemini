@@ -521,6 +521,30 @@ impl CorrelationGuardEngine {
     /// cobertura con r = −0,7 contaba como exposición duplicada y el guard
     /// vetaba justo la operación que diversifica.
     #[inline]
+    /// (Ola XLV·C) AMPLIFICADOR DE CONTAGIO: cuando el kernel de Hawkes
+    /// cross (feature-engine, 7da858ef) detecta contagio direccional
+    /// significativo (z > 3) entre el líder y el seguidor, la correlación
+    /// ESTÁTICA (HY) subestima el riesgo durante el episodio activo. Este
+    /// método eleva la correlación medida por el factor de contagión:
+    /// r_amplificada = r + (1 − r) · min(z_contagio/10, 0.5).
+    ///
+    /// El máximo aumento es +0.5 (medio rango): el contagio hace al par
+    /// MÁS same-bet pero no lo convierte en correlación 1 por decreto.
+    #[inline]
+    pub fn amplificar_por_contagio(
+        correlacion_medida: Option<f64>,
+        z_contagio: Option<f64>,
+    ) -> Option<f64> {
+        match (correlacion_medida, z_contagio) {
+            (Some(r), Some(z)) if z.is_finite() && z > 3.0 => {
+                let boost = ((z - 3.0) / 10.0).min(0.5);
+                Some(r + (1.0 - r) * boost)
+            }
+            (Some(r), _) => Some(r), // sin contagio: correlación intacta
+            (None, _) => None,
+        }
+    }
+
     pub fn es_la_misma_apuesta(correlacion_medida: Option<f64>, umbral_gen: f64) -> bool {
         let umbral = if umbral_gen.is_finite() {
             umbral_gen.clamp(0.01, 1.0)
@@ -895,5 +919,45 @@ mod xliv_structure_tests {
         assert!(CorrelationGuardEngine::veto_por_exposicion_estructural(4, sigma, q, Some(-0.4)), "varianza imposible no acredita cobertura");
         assert!(!CorrelationGuardEngine::veto_por_exposicion_estructural(4, sigma, q, Some(-0.2)), "rho negativo realizable permanece admisible");
         assert!(CorrelationGuardEngine::veto_por_exposicion_estructural(4, sigma, q, Some(0.0)), "independientes ya no caben");
+    }
+}
+
+
+#[cfg(test)]
+mod xlvc_contagion_tests {
+    use super::*;
+
+    /// Sin contagio (z<3): la correlación pasa intacta.
+    #[test]
+    fn xlvc_sin_contagio_no_amplifica() {
+        let a = CorrelationGuardEngine::amplificar_por_contagio(Some(0.5), Some(1.5));
+        assert!((a.unwrap() - 0.5).abs() < 1e-9);
+        let b = CorrelationGuardEngine::amplificar_por_contagio(Some(0.5), None);
+        assert!((b.unwrap() - 0.5).abs() < 1e-9);
+        let c = CorrelationGuardEngine::amplificar_por_contagio(Some(0.5), Some(3.0));
+        assert!((c.unwrap() - 0.5).abs() < 1e-9);
+    }
+
+    /// Contagio fuerte (z=8): r=0.5 → r+0.5·0.5=0.75 (máximo +0.5).
+    #[test]
+    fn xlvc_contagio_fuerte_amplifica_hacia_same_bet() {
+        let amplified = CorrelationGuardEngine::amplificar_por_contagio(Some(0.5), Some(8.0))
+            .unwrap();
+        // z=8: boost=(8-3)/10=0.5, r+(1-r)*boost = 0.5+0.5*0.5 = 0.75
+        assert!((amplified - 0.75).abs() < 1e-6, "z=8 debia dar 0.75, dio {amplified}");
+        let capped = CorrelationGuardEngine::amplificar_por_contagio(Some(0.5), Some(50.0))
+            .unwrap();
+        assert!((capped - 0.75).abs() < 1e-6, "cap en +0.5, dio {capped}");
+    }
+
+    /// Correlación negativa (cobertura) + contagio: la cobertura se erosiona
+    /// pero no se invierte por decreto.
+    #[test]
+    fn xlvc_cobertura_con_contagio_se_erosiona_sin_invertirse() {
+        let amplified = CorrelationGuardEngine::amplificar_por_contagio(Some(-0.4), Some(8.0))
+            .unwrap();
+        assert!(amplified > -0.4, "debe ser > original (erosion)");
+        // z=8: boost=0.5, r+(1-r)*0.5 = -0.4 + 1.4*0.5 = 0.3
+        assert!((amplified - 0.3).abs() < 1e-6, "matematica exacta: -0.4+1.4*0.5=0.3, dio {amplified}");
     }
 }
