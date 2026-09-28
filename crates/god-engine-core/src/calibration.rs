@@ -245,6 +245,39 @@ pub fn muro_en_contra(bid_wall: f64, ask_wall: f64, gen_razon: f64, es_largo: bo
     en_contra / a_favor >= razon_gen
 }
 
+/// Muestras efectivas mínimas para fiarse de la σ de una EWMA (el mismo
+/// mínimo muestral que usan el resto de gates de evidencia del sistema).
+pub const EWMA_MUESTRAS_MINIMAS: f64 = 30.0;
+
+/// Actualiza una EWMA con su PESO de corrección de sesgo: `peso` es la EWMA
+/// de la constante 1 (arranca en 0), de modo que `peso = 1 − (1 − α)^t`.
+#[inline]
+pub fn ewma_con_peso(valor: f64, previo: f64, peso: f64, alfa: f64) -> (f64, f64) {
+    (previo + alfa * (valor - previo), peso + alfa * (1.0 - peso))
+}
+
+/// Media y σ CORREGIDAS por sesgo de una EWMA que arrancó en 0 (Ola XLIV).
+///
+/// Sin la corrección, tras t eventos la media vale m·(1 − (1 − α)^t) y el
+/// segundo momento igual: con α = 0,002, tras UN evento de CVD −0,05 la σ
+/// sale ≈ 0,045·|c| y el z ≈ −22 — el veto de flujo se disparaba en cada
+/// arranque y al inicio de cada backtest. Devuelve `None` hasta que el peso
+/// equivale a [`EWMA_MUESTRAS_MINIMAS`] eventos: sin σ medida no se inventa
+/// umbral (el llamador cae a su literal histórico).
+#[inline]
+pub fn momentos_ewma_corregidos(media: f64, segundo: f64, peso: f64, alfa: f64) -> Option<(f64, f64)> {
+    if !(alfa > 0.0 && alfa < 1.0) || !media.is_finite() || !segundo.is_finite() || !peso.is_finite() {
+        return None;
+    }
+    let peso_minimo = 1.0 - (1.0 - alfa).powf(EWMA_MUESTRAS_MINIMAS);
+    if peso < peso_minimo {
+        return None;
+    }
+    let m = media / peso;
+    let var = (segundo / peso - m * m).max(0.0);
+    Some((m, var.sqrt()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,5 +438,42 @@ mod tests_d749_muro {
                 "razon {razon} dejó pasar una pared 10×"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_xliv_ewma_corregida {
+    use super::*;
+
+    /// El defecto: con la EWMA cruda, un solo evento ya daba σ «válida» y un
+    /// z enorme. Con la corrección, no hay σ hasta 30 eventos efectivos.
+    #[test]
+    fn xliv_un_evento_no_da_sigma() {
+        let alfa = 0.002;
+        let (m, w) = ewma_con_peso(-0.05, 0.0, 0.0, alfa);
+        let (sq, _) = ewma_con_peso(0.0025, 0.0, 0.0, alfa);
+        assert!(momentos_ewma_corregidos(m, sq, w, alfa).is_none());
+        // La lectura cruda que usaba el código anterior: σ > 1e-4 y |z| ≈ 22.
+        let sd_cruda = (sq - m * m).max(0.0).sqrt();
+        assert!(sd_cruda > 1e-4 && ((-0.05 - m) / sd_cruda).abs() > 20.0);
+    }
+
+    /// Con muestra suficiente, media y σ corregidas recuperan las de la
+    /// serie aunque el peso esté lejos de 1 (t ≪ 1/α).
+    #[test]
+    fn xliv_momentos_corregidos_recuperan_la_distribucion() {
+        let alfa = 0.002;
+        let (mut m, mut sq, mut w) = (0.0, 0.0, 0.0);
+        for i in 0..200 {
+            let v = if i % 2 == 0 { 0.10 + 0.02 } else { 0.10 - 0.02 };
+            let (nm, nw) = ewma_con_peso(v, m, w, alfa);
+            let (nsq, _) = ewma_con_peso(v * v, sq, w, alfa);
+            m = nm;
+            sq = nsq;
+            w = nw;
+        }
+        let (media, sd) = momentos_ewma_corregidos(m, sq, w, alfa).expect("200 eventos");
+        assert!((media - 0.10).abs() < 2e-3, "media {media}");
+        assert!((sd - 0.02).abs() < 2e-3, "sd {sd}");
     }
 }

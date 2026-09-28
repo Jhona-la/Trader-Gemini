@@ -1012,6 +1012,11 @@ mod tests {
         // Bits exactos de la re-certificación XLII: la sonda cerró +2 trades
         // con las puertas z-tipificadas de flujo/campo (1000.02270273). Cada
         // cambio INTENCIONADO del motor re-certifica conscientemente.
-        assert_eq!(out_stats[2].to_bits(), 4652007508536518328u64);
+        // (Ola XLIV, re-certificación 2026-09-28) Las EWMAs del CVD, la marea
+        // y la entropía se corrigen por sesgo y exigen 30 eventos efectivos
+        // antes de tipificar: en el arranque ya no hay z inflados (≈ ±22 tras
+        // un evento), así que los gates caen a sus literales y la sonda cierra
+        // sus 2 trades en ticks distintos: 1000.02270273 → 1000.02416152.
+        assert_eq!(out_stats[2].to_bits(), 4652007521368178953u64);
     }
 }

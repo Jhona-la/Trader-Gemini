@@ -3457,23 +3457,41 @@ impl GodEngineCore {
             // distribución. cvd_z_warm=false durante el calentamiento: los
             // gates caen al literal histórico (fail-safe documentado, doctrina
             // del escudo L2 D-475: sin σ no se inventa umbral).
+            //
+            // Ola XLIV: momentos CORREGIDOS por sesgo (las EWMAs arrancan en
+            // 0) y calentamiento de 30 eventos efectivos. Antes `sd > 1e-4`
+            // se cumplía tras UN evento y el z salía ≈ ±22: el veto de CVD se
+            // disparaba en cada arranque y al inicio de cada backtest.
+            const ALPHA_CVD: f64 = 0.002;
             {
-                let alpha_cvd = 0.002_f64;
-                let prev_mean = coin.cvd_mean_ewma.load(Ordering::Relaxed);
-                let prev_sq = coin.cvd_sq_ewma.load(Ordering::Relaxed);
-                let new_mean = prev_mean + alpha_cvd * (rolling_cvd - prev_mean);
-                let new_sq = prev_sq + alpha_cvd * (rolling_cvd * rolling_cvd - prev_sq);
+                let peso = coin.cvd_ewma_peso.load(Ordering::Relaxed);
+                let (new_mean, new_peso) = crate::calibration::ewma_con_peso(
+                    rolling_cvd,
+                    coin.cvd_mean_ewma.load(Ordering::Relaxed),
+                    peso,
+                    ALPHA_CVD,
+                );
+                let (new_sq, _) = crate::calibration::ewma_con_peso(
+                    rolling_cvd * rolling_cvd,
+                    coin.cvd_sq_ewma.load(Ordering::Relaxed),
+                    peso,
+                    ALPHA_CVD,
+                );
                 coin.cvd_mean_ewma.store(new_mean, Ordering::Relaxed);
                 coin.cvd_sq_ewma.store(new_sq, Ordering::Relaxed);
+                coin.cvd_ewma_peso.store(new_peso, Ordering::Relaxed);
             }
-            let cvd_mean = coin.cvd_mean_ewma.load(Ordering::Relaxed);
-            let cvd_var = (coin.cvd_sq_ewma.load(Ordering::Relaxed) - cvd_mean * cvd_mean).max(0.0);
-            let cvd_sd = cvd_var.sqrt();
-            let cvd_z_warm = cvd_sd.is_finite() && cvd_sd > 1e-4;
-            let cvd_z = if cvd_z_warm {
-                (rolling_cvd - cvd_mean) / cvd_sd
-            } else {
-                0.0
+            let cvd_momentos = crate::calibration::momentos_ewma_corregidos(
+                coin.cvd_mean_ewma.load(Ordering::Relaxed),
+                coin.cvd_sq_ewma.load(Ordering::Relaxed),
+                coin.cvd_ewma_peso.load(Ordering::Relaxed),
+                ALPHA_CVD,
+            )
+            .filter(|(_, sd)| sd.is_finite() && *sd > 1e-4);
+            let cvd_z_warm = cvd_momentos.is_some();
+            let cvd_z = match cvd_momentos {
+                Some((cvd_mean, cvd_sd)) => (rolling_cvd - cvd_mean) / cvd_sd,
+                None => 0.0,
             };
             set_reg("cvd_z", cvd_z);
             let ofi = self.feature_engines[coin_id].ofi_model.ema_ofi;
@@ -4226,7 +4244,11 @@ impl GodEngineCore {
                         && macro_trend >= 0.0
                         && micro_trend >= 0.0
                         && ofi >= -0.05
-                        && rolling_cvd >= -0.15
+                        // (A3a, Ola XLIV) espejo EXACTO de la rama corta 1:
+                        // suelo de confluencia contraria de medio σ. Antes el
+                        // largo seguía con el literal y las dos direcciones
+                        // filtraban con estadísticas distintas.
+                        && if cvd_z_warm { cvd_z >= -0.5 } else { rolling_cvd >= -0.15 }
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
@@ -5186,42 +5208,65 @@ impl GodEngineCore {
                     // crónico; una marea de −0,20 es profunda si el campo suele
                     // moverse a ±0,08. EWMAs por símbolo (α≈1/300 intents),
                     // fallback a los literales históricos en calentamiento.
+                    //
+                    // Ola XLIV: momentos corregidos por sesgo + 30 eventos
+                    // efectivos de calentamiento (mismo defecto que el CVD:
+                    // tras UN intent la σ de la marea valía ≈ 0,057·|marea| y
+                    // cualquier marea contraria quedaba «extrema»).
+                    const ALPHA_CAMPO: f64 = 0.0033;
+                    let coin_f = &self.arena.coins[coin_id];
                     {
                         let tide_neutral = spec.swing_score() * 0.60 + spec.secular_score() * 0.40;
-                        let coin_f = &self.arena.coins[coin_id];
-                        let alpha_f = 0.0033_f64;
-                        let prev_tide_sq = coin_f.tide_sq_ewma.load(Ordering::Relaxed);
-                        coin_f.tide_sq_ewma.store(
-                            prev_tide_sq + alpha_f * (tide_neutral * tide_neutral - prev_tide_sq),
-                            Ordering::Relaxed,
+                        let peso = coin_f.campo_ewma_peso.load(Ordering::Relaxed);
+                        let (new_tide_sq, new_peso) = crate::calibration::ewma_con_peso(
+                            tide_neutral * tide_neutral,
+                            coin_f.tide_sq_ewma.load(Ordering::Relaxed),
+                            peso,
+                            ALPHA_CAMPO,
                         );
-                        let prev_ent_m = coin_f.entropy_mean_ewma.load(Ordering::Relaxed);
-                        let prev_ent_sq = coin_f.entropy_sq_ewma.load(Ordering::Relaxed);
                         let ent = field.spectral_entropy;
-                        let new_m = prev_ent_m + alpha_f * (ent - prev_ent_m);
-                        let new_sq = prev_ent_sq + alpha_f * (ent * ent - prev_ent_sq);
+                        let (new_m, _) = crate::calibration::ewma_con_peso(
+                            ent,
+                            coin_f.entropy_mean_ewma.load(Ordering::Relaxed),
+                            peso,
+                            ALPHA_CAMPO,
+                        );
+                        let (new_sq, _) = crate::calibration::ewma_con_peso(
+                            ent * ent,
+                            coin_f.entropy_sq_ewma.load(Ordering::Relaxed),
+                            peso,
+                            ALPHA_CAMPO,
+                        );
+                        coin_f.tide_sq_ewma.store(new_tide_sq, Ordering::Relaxed);
                         coin_f.entropy_mean_ewma.store(new_m, Ordering::Relaxed);
                         coin_f.entropy_sq_ewma.store(new_sq, Ordering::Relaxed);
+                        coin_f.campo_ewma_peso.store(new_peso, Ordering::Relaxed);
                     }
-                    let ent_mean = self.arena.coins[coin_id].entropy_mean_ewma.load(Ordering::Relaxed);
-                    let ent_var =
-                        (self.arena.coins[coin_id].entropy_sq_ewma.load(Ordering::Relaxed) - ent_mean * ent_mean)
-                            .max(0.0);
-                    let ent_sd = ent_var.sqrt();
-                    let extreme_entropy = if ent_sd.is_finite() && ent_sd > 1e-3 {
-                        field.spectral_entropy > ent_mean + 2.0 * ent_sd
-                    } else {
-                        field.spectral_entropy > 0.98
+                    let campo_peso = coin_f.campo_ewma_peso.load(Ordering::Relaxed);
+                    let extreme_entropy = match crate::calibration::momentos_ewma_corregidos(
+                        coin_f.entropy_mean_ewma.load(Ordering::Relaxed),
+                        coin_f.entropy_sq_ewma.load(Ordering::Relaxed),
+                        campo_peso,
+                        ALPHA_CAMPO,
+                    ) {
+                        Some((ent_mean, ent_sd)) if ent_sd.is_finite() && ent_sd > 1e-3 => {
+                            field.spectral_entropy > ent_mean + 2.0 * ent_sd
+                        }
+                        _ => field.spectral_entropy > 0.98,
                     };
-                    let tide_sd = self.arena.coins[coin_id]
-                        .tide_sq_ewma
-                        .load(Ordering::Relaxed)
-                        .max(0.0)
-                        .sqrt();
-                    let extreme_counter_tide = if tide_sd.is_finite() && tide_sd > 1e-3 {
-                        (-macro_tide) > 2.0 * tide_sd
-                    } else {
-                        macro_tide < -0.15
+                    // La marea se mide alrededor de 0 (RMS): media nula,
+                    // segundo momento corregido.
+                    let tide_rms = crate::calibration::momentos_ewma_corregidos(
+                        0.0,
+                        coin_f.tide_sq_ewma.load(Ordering::Relaxed),
+                        campo_peso,
+                        ALPHA_CAMPO,
+                    )
+                    .map(|(_, sd)| sd)
+                    .filter(|sd| sd.is_finite() && *sd > 1e-3);
+                    let extreme_counter_tide = match tide_rms {
+                        Some(tide_sd) => (-macro_tide) > 2.0 * tide_sd,
+                        None => macro_tide < -0.15,
                     };
                     // (Ola XLI·D3) La incoherencia sólo veta con campo CALIENTE: el
                     // espectro recién nacido tiene coherencia 0 por construcción y el
