@@ -141,7 +141,28 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             .unwrap_or(0.5);
         const LIFT: f64 = 0.05;
 
-        if hawkes >= 1.2 && obi.abs() >= 0.2 {
+        // #535 (3ª iteración): el umbral de excitación vuelve a ser del
+        // GEN, anclado al estado estacionario del proceso. El gen
+        // [0.50, 0.95] exige entre 0% y +90% de excitación sobre el ritmo
+        // normal DEL SÍMBOLO (E[λ/μ̂] = 1+α/β = STEADY_STATE_RATIO en
+        // régimen normal). La constante 1.2 anterior quedaba POR DEBAJO
+        // del estado estacionario (≈1.6): el gate medía «hubo actividad»,
+        // no «hubo ráfaga», y sin consumidor el gen era un muerto que la
+        // evolución arrastraba sin gradiente.
+        let hawkes_gene = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "hawkes_excitation_gene",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && (0.50..=0.95).contains(v))
+            .unwrap_or(0.55);
+        let excitation = (hawkes_gene - 0.50).max(0.0) * 2.0;
+        let effective_hawkes_thresh = crate::hawkes_bessel::STEADY_STATE_RATIO + excitation;
+
+        if hawkes >= effective_hawkes_thresh && obi.abs() >= 0.2 {
             let is_long = obi > 0.0 && ml_prob >= ml_base + LIFT;
             let is_short = obi < 0.0 && ml_prob <= ml_base - LIFT;
 
@@ -206,5 +227,33 @@ mod tests {
         let v = engine.evaluate();
         assert!(v < 0.0, "flujo vendedor con lift negativo debe votar short");
         assert!((-1.0..=0.0).contains(&v), "el voto vive en [-1, 0]: {v}");
+    }
+
+    /// #535 (3ª iteración): el gen `hawkes_scalp_threshold` [0.50, 0.95]
+    /// vuelve a tener consumidor VIVO en la única superficie de decisión.
+    /// Con gen máximo (0.95) el umbral efectivo sube a 2.50 y una
+    /// intensidad 2.0 (que la constante muerta 1.2 dejaba pasar) YA NO
+    /// dispara; con gen mínimo (0.50) el umbral es el estado estacionario
+    /// 1.60 y una ráfaga 1.9 sí dispara.
+    #[test]
+    fn qo_535_gen_de_excitacion_gobierna_el_umbral_vivo() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        registry.set("hawkes_intensity", 2.0);
+        registry.set("order_book_imbalance", 0.5);
+        registry.set("ml_prob_motor", 0.85);
+        registry.set("hawkes_excitation_gene", 0.95);
+
+        let mut engine = FlowExcitationConfluenceEngine::new();
+        assert!(engine.init(Arc::clone(&registry)).is_ok());
+
+        // Umbral efectivo = 1.6 + (0.95−0.50)·2 = 2.50 > 2.0 ⇒ sin señal.
+        assert_eq!(engine.evaluate(), 0.0);
+
+        // Gen mínimo: umbral = estado estacionario 1.60; la ráfaga 1.9
+        // con el mismo flujo SÍ dispara.
+        registry.set("hawkes_excitation_gene", 0.50);
+        registry.set("hawkes_intensity", 1.9);
+        let v = engine.evaluate();
+        assert!(v > 0.0, "ráfaga 1.9 sobre umbral 1.60 debe votar long: {v}");
     }
 }

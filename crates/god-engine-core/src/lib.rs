@@ -2860,6 +2860,22 @@ impl GodEngineCore {
             // Clamp [0.1, 10] sólo acota telemetría: ≈1 calma, >3 cascada.
             set_reg("hawkes_intensity", hawkes_ratio_real.clamp(0.1, 10.0));
             set_reg("hawkes_branching", hawkes_eta_real);
+            // #535 (3ª iteración): el GEN de excitación al registro. El
+            // renombre U-ERR-1 eliminó `should_trigger_micro_scalp` (0
+            // llamadores) y con él el único lector de
+            // `hawkes_scalp_threshold` — el gen quedó muerto y el gate
+            // vivo del motor de confluencia cayó a la constante absoluta
+            // 1.2 (por DEBAJO del estado estacionario ≈1.6: gate abierto
+            // en cualquier símbolo activo). Sin este canal no hay
+            // gradiente evolutivo sobre la exigencia de ráfaga.
+            set_reg(
+                "hawkes_excitation_gene",
+                self.arena
+                    .config
+                    .hawkes_scalp_threshold
+                    .load(Ordering::Relaxed)
+                    .clamp(0.50, 0.95),
+            );
             set_reg("bessel_alpha", 1.5);
             set_reg("hawkes_dt", 0.05);
             set_reg(

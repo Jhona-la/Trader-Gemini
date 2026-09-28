@@ -57,15 +57,21 @@ pub const MAX_PUNTOS_REJILLA: usize = 256;
 
 #[inline]
 fn mid(t: &CompactTick) -> f64 {
-    let b = t.bid_price;
-    let a = t.ask_price;
-    if b > 0.0 && a > 0.0 {
-        (b + a) * 0.5
-    } else if b > 0.0 {
-        b
-    } else {
-        a
-    }
+    // Los llamadores validan ambas cotizaciones. Esta forma no desborda
+    // cuando bid y ask positivos están cerca de f64::MAX.
+    t.bid_price + (t.ask_price - t.bid_price) * 0.5
+}
+
+/// Un intervalo de retorno necesita duración positiva y dos precios válidos.
+/// Duplicados requieren agregación/orden de eventos aguas arriba; no se
+/// inventa un intervalo ni se oculta el error mediante la rejilla de respaldo.
+fn ticks_validos(ticks: &[CompactTick]) -> bool {
+    ticks.iter().all(|t| {
+        t.bid_price.is_finite()
+            && t.ask_price.is_finite()
+            && t.bid_price > 0.0
+            && t.ask_price > 0.0
+    }) && ticks.windows(2).all(|w| w[0].timestamp < w[1].timestamp)
 }
 
 /// Intervalo medio entre ticks de la serie, en milisegundos. Es la resolución
@@ -115,22 +121,34 @@ fn log_precios_en_rejilla(
     n
 }
 
-/// Coeficiente de correlación de Pearson. `None` si alguna serie es constante
-/// (desviación nula: la correlación no está definida) o hay menos de dos
-/// puntos.
+/// Pearson para pares completos, finitos y de igual longitud. `None` sin
+/// dos pares o con desviación nula. Cada serie se reescala ANTES de centrar:
+/// la correlación es invariante a escala positiva y así no se desbordan
+/// las sumas/cuadrados de precios finitos ni se anulan los de escala pequeña.
+/// Esto estabiliza la aritmética; no acredita tamaño muestral ni causalidad.
 #[inline]
 pub fn pearson(a: &[f64], b: &[f64]) -> Option<f64> {
-    let n = a.len().min(b.len());
-    if n < 2 {
+    let n = a.len();
+    if n < 2 || b.len() != n || a.iter().chain(b).any(|v| !v.is_finite()) {
+        return None;
+    }
+    // La media redondeada de una constante puede diferir de esa constante
+    // (p.ej. n=49). No convertir ese residuo aritmético en variación medida.
+    if a.iter().all(|v| *v == a[0]) || b.iter().all(|v| *v == b[0]) {
+        return None;
+    }
+    let scale_a = a.iter().fold(0.0_f64, |s, v| s.max(v.abs()));
+    let scale_b = b.iter().fold(0.0_f64, |s, v| s.max(v.abs()));
+    if scale_a == 0.0 || scale_b == 0.0 {
         return None;
     }
     let inv = 1.0 / n as f64;
-    let ma = a[..n].iter().sum::<f64>() * inv;
-    let mb = b[..n].iter().sum::<f64>() * inv;
+    let ma = a.iter().map(|v| v / scale_a).sum::<f64>() * inv;
+    let mb = b.iter().map(|v| v / scale_b).sum::<f64>() * inv;
     let (mut sab, mut saa, mut sbb) = (0.0f64, 0.0f64, 0.0f64);
     for i in 0..n {
-        let da = a[i] - ma;
-        let db = b[i] - mb;
+        let da = a[i] / scale_a - ma;
+        let db = b[i] / scale_b - mb;
         sab += da * db;
         saa += da * da;
         sbb += db * db;
@@ -138,7 +156,7 @@ pub fn pearson(a: &[f64], b: &[f64]) -> Option<f64> {
     if saa <= 0.0 || sbb <= 0.0 {
         return None;
     }
-    let r = sab / (saa * sbb).sqrt();
+    let r = sab / (saa.sqrt() * sbb.sqrt());
     if r.is_finite() {
         Some(r.clamp(-1.0, 1.0))
     } else {
@@ -171,7 +189,7 @@ pub fn correlacion_de_retornos(
     b: &[CompactTick],
     resolucion: f64,
 ) -> Option<f64> {
-    if a.len() < 2 || b.len() < 2 {
+    if a.len() < 2 || b.len() < 2 || !ticks_validos(a) || !ticks_validos(b) {
         return None;
     }
     // Ventana común: sin solape no hay nada que comparar.
@@ -214,54 +232,64 @@ pub fn correlacion_de_retornos(
 //   monedas no cotizan en instantes compartidos). Retorno del tick i de A
 //   sobre su intervalo (t_i, t_{i+1}], del tick j de B sobre (s_j, s_{j+1}].
 // - Operador: R_HY(A,B) = Σ_{overlap(i,j)>0} r_i^A · r_j^B, normalizada
-//   por √(R_HY(A,A) · R_HY(B,B)). Es el estimador consistente de la
-//   covarianza integrada bajo muestreo asíncrono no sincronizado
-//   (Hayashi-Yoshida 2005): productos PLENOS de todo par de retornos cuyos
-//   intervalos se solapan — sin rejilla, sin descarte de ticks, sin sesgo
-//   de asíncrona (el Epps effect: Pearson en rejilla decae con la
-//   desincronía; HY no).
-// - Unidades: adimensional (correlación).
-// - Contorno: <2 intervalos por serie, sin solape temporal, o varianza
-//   cero → None (no se afirma correlación sin evidencia).
+//   por √(Σ r_A² · Σ r_B²). Productos PLENOS de retornos cuyos intervalos
+//   se solapan, sin centrar ni sincronizar en rejilla. Sólo se incluyen
+//   intervalos con solape positivo con la ventana común en las DOS sumas.
+//   La consistencia de HY es asintótica bajo hipótesis del modelo; no
+//   demuestra ausencia de sesgo/ruido de microestructura en esta muestra.
+// - Unidades: adimensional. Se conserva el recorte legado a [-1,1]; HY
+//   normalizado puede excederlo en muestra finita y no garantiza PSD.
+// - Contorno: reloj no creciente, cotización inválida, <2 intervalos por
+//   serie en el soporte común, sin solape o variación cero → None.
+//   Dos intervalos son un mínimo computable, no suficiencia estadística.
 // - Coste: O(n+m) con dos punteros (cada par se visita a lo sumo una vez
 //   por cruce de intervalos).
-// - Falsación: (a) series sincronizadas exactas → HY == Pearson de los
-//   retornos tick-a-tick; (b) serie B desplazada (stagger) con la MISMA
-//   señal subyacente → HY recupera la correlación verdadera donde la
-//   correlación en rejilla gruesa la subestima (tests).
+// - Falsación: series idénticas no constantes → 1; historia totalmente
+//   disjunta no diluye el cociente. HY sincronizado NO equivale en general
+//   a Pearson centrado: [.1,.2] vs [.2,.1] da .8 frente a -1.
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Correlación de Hayashi-Yoshida entre dos series de ticks asíncronas.
-/// `mid_of` extrae el precio medio del tick (llamador decide bid/ask/mid).
+/// Covariación HY normalizada de los mids de dos series asíncronas.
+/// Intervalos que cruzan un borde común se conservan enteros: no se inventa
+/// un precio no observado en el borde. Esa incertidumbre de frontera y el
+/// recorte final requieren diagnóstico; `Some` no certifica diversificación.
 pub fn hayashi_yoshida_correlation(
     a: &[quantum_arena::state::CompactTick],
     b: &[quantum_arena::state::CompactTick],
 ) -> Option<f64> {
-    if a.len() < 3 || b.len() < 3 {
+    if a.len() < 3 || b.len() < 3 || !ticks_validos(a) || !ticks_validos(b) {
         return None;
     }
     // Solape global: sin ventana común no hay nada que covariar.
-    if a[a.len() - 1].timestamp <= b[0].timestamp
-        || b[b.len() - 1].timestamp <= a[0].timestamp
-    {
+    let start = a[0].timestamp.max(b[0].timestamp);
+    let end = a[a.len() - 1].timestamp.min(b[b.len() - 1].timestamp);
+    if end <= start {
         return None;
     }
-    let mid = |t: &quantum_arena::state::CompactTick| (t.bid_price + t.ask_price) * 0.5;
     // Retornos logarítmicos con sus intervalos: (inicio, fin, r).
     let build = |s: &[quantum_arena::state::CompactTick]| -> Vec<(u64, u64, f64)> {
         let mut out = Vec::with_capacity(s.len() - 1);
         for w in s.windows(2) {
+            if w[1].timestamp <= start || w[0].timestamp >= end {
+                continue;
+            }
             let p0 = mid(&w[0]);
             let p1 = mid(&w[1]);
-            if p0 > 0.0 && p1 > 0.0 {
-                out.push((w[0].timestamp, w[1].timestamp, (p1 / p0).ln()));
-            }
+            // ln_1p conserva variaciones pequeñas; diferencia de logaritmos
+            // evita overflow/underflow cuando la razón no es representable.
+            let relative = (p1 - p0) / p0;
+            let r = if relative.is_finite() && relative > -1.0 {
+                relative.ln_1p()
+            } else {
+                p1.ln() - p0.ln()
+            };
+            out.push((w[0].timestamp, w[1].timestamp, r));
         }
         out
     };
     let ra = build(a);
     let rb = build(b);
-    if ra.is_empty() || rb.is_empty() {
+    if ra.len() < 2 || rb.len() < 2 {
         return None;
     }
     // R_HY simétrico con dos punteros: cada retorno de A se cruza con los
@@ -269,8 +297,8 @@ pub fn hayashi_yoshida_correlation(
     let mut cross = 0.0f64;
     let mut var_a = 0.0f64;
     let mut var_b = 0.0f64;
-    // varianzas: HY consigo misma = Σ r_i² (todos los intervalos propios se
-    // solapan consigo mismos).
+    // Variaciones cuadráticas del MISMO soporte usado por la covariación:
+    // excluir aquí también los intervalos enteramente fuera de ventana.
     for (_, _, r) in &ra {
         var_a += r * r;
     }
@@ -293,14 +321,168 @@ pub fn hayashi_yoshida_correlation(
             k += 1;
         }
     }
-    let denom = (var_a * var_b).sqrt();
-    if !(denom > 1e-18) || !cross.is_finite() {
+    let denom = var_a.sqrt() * var_b.sqrt();
+    if !(denom > 0.0) || !denom.is_finite() || !cross.is_finite() {
         return None;
     }
-    Some((cross / denom).clamp(-1.0, 1.0))
+    let normalized = cross / denom;
+    normalized.is_finite().then(|| normalized.clamp(-1.0, 1.0))
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Ola XLIV — media de correlación y frustración de un grafo firmado.
+// El nombre legacy "curl" NO implementa una descomposición de Hodge.
+//
+// Contrato (protocolo del repo):
+// - Variable: matriz conjunta COMPLETA de correlación. El caller debe probar
+//   procedencia/ventana; las validaciones siguientes sólo prueban su dominio.
+// - Operadores:
+//   · rho_promedio: media de las correlaciones fuera de la diagonal. Es el
+//     parámetro de la agregación de varianza clásica:
+//     σ_grupo = σ·√(k + k(k−1)·ρ̄) — interpolación EXACTA entre dependencia
+//     total (ρ̄=1 ⇒ σ·k) y media nula (ρ̄=0 ⇒ σ·√k), sólo para exposiciones
+//     de IGUAL escala σ. Media nula no demuestra independencia.
+//   · curl_share: fracción de triángulos con producto de signos negativo.
+//     Describe balance firmado, no validez PSD ni riesgo de cartera. Una
+//     matriz PSD puede contener tales triángulos. El ajuste rho_efectivo
+//     se conserva como diagnóstico legado, no actuador en la admisión viva.
+// - Unidades: ρ̄ ∈ [−1,1]; curl_share ∈ [0,1].
+// - Contorno: grupo <3 nodos → curl None; correlación numéricamente inválida
+//   → media y rho efectivo None. PSD singular es admisible, no inválida.
+// - Coste: media O(n²) DESPUÉS de validar PSD O(barridos*n³); triángulos
+//   O(n³). No se declara despreciable sin benchmark ni se corre en el gate.
+// - Falsación: matriz de un factor (todas positivas) → curl 0; un triángulo
+//   con un signo contrario → detectado (tests).
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Media fuera de diagonal de una matriz COMPLETA de correlación válida.
+/// None para aristas ausentes, asimetría, rango/diagonal inválidos o no PSD.
+/// La validez numérica no acredita procedencia ni una muestra conjunta.
+pub fn rho_promedio(corr: &[Vec<f64>]) -> Option<f64> {
+    let n = corr.len();
+    crate::random_matrix::largest_eigenvalue(corr)?;
+    let mut sum = 0.0;
+    let mut count = 0usize;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let v = corr[i][j];
+            sum += v;
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return None;
+    }
+    Some((sum / count as f64).clamp(-1.0, 1.0))
+}
+
+/// Fracción legada de triángulos con producto negativo. No es curl de Hodge.
+/// Este diagnóstico de grafo por sí solo NO valida una matriz de correlación.
+/// None sin triángulos; aún omite triángulos no finitos (deuda diagnóstica).
+pub fn curl_share_desbalanceado(corr: &[Vec<f64>]) -> Option<f64> {
+    let n = corr.len();
+    if n < 3 || corr.iter().any(|r| r.len() != n) {
+        return None;
+    }
+    let mut total = 0usize;
+    let mut desbalanceados = 0usize;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            for k in (j + 1)..n {
+                let a = corr[i][j];
+                let b = corr[j][k];
+                let c = corr[i][k];
+                if a.is_finite() && b.is_finite() && c.is_finite() {
+                    total += 1;
+                    if a * b * c < 0.0 {
+                        desbalanceados += 1;
+                    }
+                }
+            }
+        }
+    }
+    if total == 0 {
+        return None;
+    }
+    Some(desbalanceados as f64 / total as f64)
+}
+
+/// Diagnóstico legado: media desplazada por frustración de signos.
+/// No es una descomposición de Hodge ni un estimador validado de riesgo.
+/// Exige matriz numéricamente válida; no autoriza descuento de exposición.
+pub fn rho_efectivo_para_agregacion(corr: &[Vec<f64>]) -> Option<f64> {
+    let rho = rho_promedio(corr)?;
+    let curl = curl_share_desbalanceado(corr).unwrap_or(0.0);
+    // Ajuste histórico por balance de signos, sin garantía estadística.
+    // La admisión real no consume este escalar como sigma ni como cobertura.
+    if rho >= 0.0 {
+        Some((rho + (1.0 - rho) * curl).clamp(-1.0, 1.0))
+    } else {
+        // ρ̄<0 con curl>0: no acreditar la cobertura más que (1−curl).
+        Some((rho * (1.0 - curl)).clamp(-1.0, 1.0))
+    }
 }
 
 pub struct CorrelationGuardEngine;
+
+/// Conteo del guard pairwise, no varianza ni presupuesto completo de cartera.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DependencyExposure {
+    pub open_positions: usize,
+    pub same_bet_positions: usize,
+    pub unknown_positions: usize,
+}
+
+/// Recorre TODOS los slots y aplica rho_PnL = signo_candidata*signo_posicion*rho.
+/// Estima una vez por activo; no fabrica aristas entre pares no observados ni
+/// usa un veredicto MP como independencia. None identifica candidato inválido.
+/// Se lee cada slot por snapshot; no constituye una reserva atómica de cartera.
+pub fn dependency_exposure(
+    arena: &quantum_arena::GlobalArena,
+    candidate_id: usize,
+    candidate_long: bool,
+    threshold: f64,
+) -> Option<DependencyExposure> {
+    let candidate = arena.coins.get(candidate_id)?;
+    let candidate_ticks = candidate.tick_ring.snapshot_recent(MAX_TICKS_MUESTRA);
+    let mut result = DependencyExposure::default();
+    for (asset_id, coin) in arena.coins.iter().enumerate() {
+        // Outer None: slot observed closed. Inner None: open but no usable
+        // snapshot, which must count as unknown rather than disappear.
+        let sides = coin.positions.slots().map(|p| {
+            if p.is_open() {
+                Some(p.snapshot().map(|s| s.is_long))
+            } else {
+                None
+            }
+        });
+        if sides.iter().all(Option::is_none) {
+            continue;
+        }
+        let price_rho = if asset_id == candidate_id {
+            Some(1.0)
+        } else {
+            let other_ticks = coin.tick_ring.snapshot_recent(MAX_TICKS_MUESTRA);
+            hayashi_yoshida_correlation(&candidate_ticks, &other_ticks).or_else(|| {
+                correlacion_de_retornos(&candidate_ticks, &other_ticks, threshold)
+            })
+        };
+        for side in sides.into_iter().flatten() {
+            result.open_positions += 1;
+            let pnl_rho = side.and_then(|long| {
+                price_rho.filter(|r| r.is_finite() && (-1.0..=1.0).contains(r))
+                    .map(|r| if long == candidate_long { r } else { -r })
+            });
+            if pnl_rho.is_none() {
+                result.unknown_positions += 1;
+            }
+            if CorrelationGuardEngine::es_la_misma_apuesta(pnl_rho, threshold) {
+                result.same_bet_positions += 1;
+            }
+        }
+    }
+    Some(result)
+}
 
 impl CorrelationGuardEngine {
     /// (fusión PR #5 — restaurado de main, línea FMT): veto continuo en
@@ -333,10 +515,9 @@ impl CorrelationGuardEngine {
     /// ¿La correlación medida convierte a las dos posiciones en la MISMA
     /// apuesta? Sin medida utilizable la respuesta es `true`: el caso adverso.
     ///
-    /// El llamador ya filtró por DIRECCIÓN COMÚN (dos largos o dos cortos).
-    /// Con la misma dirección, sólo la correlación POSITIVA las hace perder a
-    /// la vez; sobre activos anticorrelacionados, cuando una pierde la otra
-    /// gana: es una cobertura, no la misma apuesta.
+    /// La entrada es correlación de PnL: el llamador transforma la correlación
+    /// de precio por ambos signos de exposición. Un corto en un activo
+    /// anticorrelacionado con un largo puede ser la MISMA apuesta.
     ///
     /// Auditoría PR #5 (D-750b): antes se comparaba `|r|`, de modo que una
     /// cobertura con r = −0,7 contaba como exposición duplicada y el guard
@@ -349,7 +530,7 @@ impl CorrelationGuardEngine {
             0.01
         };
         match correlacion_medida {
-            Some(r) if r.is_finite() => r >= umbral,
+            Some(r) if r.is_finite() && (-1.0..=1.0).contains(&r) => r >= umbral,
             _ => true,
         }
     }
@@ -370,6 +551,26 @@ impl CorrelationGuardEngine {
         riesgo_por_operacion: f64,
         q_perdida: f64,
     ) -> bool {
+        Self::veto_por_exposicion_estructural(
+            posiciones_misma_apuesta,
+            riesgo_por_operacion,
+            q_perdida,
+            None,
+        )
+    }
+
+    /// API legada de agregación igual-escala. Some(rho) exige un promedio
+    /// realizable para k=n+1, además de evidencia/escala comparables que esta
+    /// firma no transporta. None o rho inválido usa la política lineal previa.
+    /// El camino vivo pasa None: pérdida al stop/EWMA no equivale a sigma.
+    /// El piso de una apuesta y el proxy de arranque se conservan como
+    /// políticas heredadas, NO como identidades de la varianza de cartera.
+    pub fn veto_por_exposicion_estructural(
+        posiciones_misma_apuesta: usize,
+        riesgo_por_operacion: f64,
+        q_perdida: f64,
+        rho_efectivo: Option<f64>,
+    ) -> bool {
         if posiciones_misma_apuesta == 0 {
             return false;
         }
@@ -385,7 +586,19 @@ impl CorrelationGuardEngine {
             // Provisional hasta persistir el riesgo medido (hoja de ruta FMT).
             tope / 8.0
         };
-        let riesgo_del_grupo = (posiciones_misma_apuesta as f64 + 1.0) * riesgo_efectivo;
+        let k = posiciones_misma_apuesta as f64 + 1.0;
+        let riesgo_del_grupo = match rho_efectivo {
+            // Para k exposiciones de igual escala, 1'C1 >= 0 exige
+            // rho_medio >= -1/(k-1). Un dato imposible NO es cobertura:
+            // usa el mismo caso adverso que None, sin clamp de varianza.
+            Some(rho) if rho.is_finite() && rho >= -1.0 / (k - 1.0) && rho <= 1.0 => {
+                let varianza = k + k * (k - 1.0) * rho;
+                // ρ̄ muy negativo puede anular la varianza (cobertura perfecta):
+                // nunca por debajo de la apuesta individual (k=1 efectivo).
+                riesgo_efectivo * varianza.max(1.0).sqrt()
+            }
+            _ => k * riesgo_efectivo,
+        };
         riesgo_del_grupo > tope
     }
 }
@@ -604,5 +817,85 @@ mod hy_tests {
         assert!(hayashi_yoshida_correlation(&a, &b).is_none(), "sin solape");
         let c = serie(&[1000], &[100.0]);
         assert!(hayashi_yoshida_correlation(&c, &a).is_none(), "sin intervalos");
+    }
+}
+
+
+#[cfg(test)]
+mod xliv_structure_tests {
+    use super::*;
+
+    fn matriz(vals: &[f64], n: usize) -> Vec<Vec<f64>> {
+        // vals en orden (i,j) i<j
+        let mut m = vec![vec![0.0f64; n]; n];
+        for i in 0..n {
+            m[i][i] = 1.0;
+        }
+        let mut k = 0;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                m[i][j] = vals[k];
+                m[j][i] = vals[k];
+                k += 1;
+            }
+        }
+        m
+    }
+
+    /// Falsación: factor común (todas positivas) → curl 0, ρ̄>0 — balance
+    /// perfecto del grafo firmado.
+    #[test]
+    fn xliv_factor_comun_esta_balanceado() {
+        let m = matriz(&[0.8, 0.7, 0.75], 3);
+        assert_eq!(curl_share_desbalanceado(&m), Some(0.0));
+        let rho = rho_promedio(&m).unwrap();
+        assert!(rho > 0.7 && rho < 0.76);
+        // ρ̄ efectivo sin desbalance = crudo.
+        assert_eq!(rho_efectivo_para_agregacion(&m), Some(rho));
+    }
+
+    /// Balance firmado y validez PSD son propiedades distintas. Se conserva
+    /// el testigo original inválido y se añade otro triángulo que SÍ es PSD.
+    #[test]
+    fn xliv_triangulo_inconsistente_detectado() {
+        let m = matriz(&[0.8, 0.7, -0.6], 3);
+        assert_eq!(curl_share_desbalanceado(&m), Some(1.0));
+        assert!(rho_efectivo_para_agregacion(&m).is_none());
+        assert!(rho_promedio(&m).is_none());
+        let valid = matriz(&[0.2, 0.2, -0.1], 3);
+        assert_eq!(curl_share_desbalanceado(&valid), Some(1.0));
+        let rho_ef = rho_efectivo_para_agregacion(&valid).unwrap();
+        let rho_crudo = rho_promedio(&valid).unwrap();
+        assert!(rho_ef > rho_crudo, "efectivo {} > crudo {}", rho_ef, rho_crudo);
+        assert!(rho_ef > 0.0);
+    }
+
+    /// Agregación de varianza: ρ̄=1 reproduce el k·σ histórico; ρ̄=0 acredita
+    /// √k; None (sin matriz) mantiene la forma lineal (fail-safe).
+    #[test]
+    fn xliv_agregacion_de_varianza_interpola_estructura() {
+        // k=5, riesgo tal que 5·σ > tope pero √5·σ < tope.
+        let q = 0.5;
+        let tope = crate::ruin::clamp_ruin(1.0, q);
+        let sigma = tope / 4.5; // 5σ = 1.11·tope (veto), √5σ = 0.50·tope (pasa)
+        assert!(CorrelationGuardEngine::veto_por_exposicion_estructural(4, sigma, q, Some(1.0)), "rho=1 => lineal");
+        assert!(!CorrelationGuardEngine::veto_por_exposicion_estructural(4, sigma, q, Some(0.0)), "rho=0 => sqrt(k)");
+        assert!(CorrelationGuardEngine::veto_por_exposicion_estructural(4, sigma, q, None), "None => lineal fail-safe");
+        // Firma legada intacta (compatibilidad de tests históricos).
+        assert!(CorrelationGuardEngine::veto_por_exposicion_direccional(4, sigma, q));
+    }
+
+    /// Un rho realizable negativo se distingue de una varianza imposible.
+    #[test]
+    fn xliv_cobertura_consistente_vs_inconsistente() {
+        // Testigo histórico PRESERVADO: rho=-.4, k=5 implica varianza -3.
+        // Debe caer al caso adverso, no inventar cobertura mediante max(1).
+        let q = 0.5;
+        let tope = crate::ruin::clamp_ruin(1.0, q);
+        // rho=-.2 sí es realizable para k=5: varianza 5-4=1.
+        let sigma = tope / 2.0;
+        assert!(CorrelationGuardEngine::veto_por_exposicion_estructural(4, sigma, q, Some(-0.4)), "varianza imposible no acredita cobertura");
+        assert!(!CorrelationGuardEngine::veto_por_exposicion_estructural(4, sigma, q, Some(-0.2)), "rho negativo realizable permanece admisible");
+        assert!(CorrelationGuardEngine::veto_por_exposicion_estructural(4, sigma, q, Some(0.0)), "independientes ya no caben");
     }
 }

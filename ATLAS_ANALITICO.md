@@ -1502,3 +1502,43 @@ Re-baseline PENDIENTE: oráculo T-1 #[ignore] con diagnóstico — física de vi
 ## Anexo Ola XLIII (2026-09-26 tarde) — Hayashi-Yoshida asíncrona + BOCPD sobre W₁
 
 **HY**: el veto D-748 correlacionaba monedas muestreando ticks en rejilla común — Epps effect: la correlación decae con la desincronía, el par "independiente" era a veces el más desincronizado. R_HY(A,B)=Σ_{overlap>0} rᵢrⱼ normalizada (Hayashi-Yoshida 2005), O(n+m), cableada ANTES del Pearson (fallback); la matriz del grupo MP hereda la covarianza corregida. 3 tests: sincronas→HY==1; señal común con relojes desplazados→mantiene ~0.98; sin solape→None. **BOCPD sobre W₁** (Adams-MacKay, hazard 1/100, R=128): p_transition = masa posterior de segmento nuevo sobre el transporte espectral. La falsación delató la emisiva fija (ciega al salto) → estadística por segmento (predictiva N(media_r,0.35) vs prior ancho N(0,2.0)): reposo→~hazard, salto 2 ejes→p>0.5. **Medición honesta (3 corridas oráculo)**: el descuento de convicción ×0.70 midió 20→15 genes en DOS calibraciones — el fixture sintético tiene transporte fluctuante y gravaba la sesión entera; ACTUADOR a telemetría hasta calibrar sobre tape real (doctrina D-751), DETECTOR operativo. Trinqueta: 20/144 restaurado y PASA.
+
+
+## Adenda de contratos espectrales — 2026-09-28 (Codex)
+
+[Informe detallado](docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md) · [Artefacto](docs/artifacts/auditoria_contratos_espectrales_2026-09-28.json).
+
+Esta adenda limita expresamente las conclusiones XLI–XLIV, sin borrar su historia:
+MP no prueba independencia; HY no es Pearson centrado; aristas no observadas no
+son cero; balance de signos no es descomposición de Hodge. El autovalor máximo
+se corregió con Jacobi y validación de dominio. 13 contratos del solver verdes
+tras 9 fallos iniciales; cinco contratos de integración/estimadores siguen RED.
+Suite risk-engine: 165 pasan, 5 ignoradas explícitas; workspace --all-targets
+compila con warnings. No se certifica rentabilidad ni paridad integral.
+
+El informe explica fórmulas, unidades, supuestos, contraejemplos, límites del
+cierre y criterios de aceptación de 15 fichas locales SPECTRAL. Lectura parcial
+del proyecto: inventario actual 1.300 versionados / 396 Rust, no cobertura total.
+
+
+---
+
+## Anexo Ola XLIV (2026-09-26 noche) — agregación de varianza estructural + curl de Hodge en el veto multi-activo
+
+**Defecto**: `veto_por_exposicion_direccional` computaba riesgo de grupo como k·σ LINEAL aunque acabara de medir la matriz HY+MP del grupo — medía la estructura para decidir SI contar y la ignoraba al contar: 5 independientes pagaban 5σ, negando el crédito √k de Markowitz a los grupos diversificados. **Reparación**: `veto_por_exposicion_estructural(k,σ,q,ρ̄)`: σ_grupo=σ·√(k+k(k−1)·ρ̄) — ρ̄→1 reproduce k·σ exacto; ρ̄→0 acredita √k; ρ̄<0 consistente baja al piso 1·σ (cobertura real); None ⇒ lineal fail-safe; AllNoise(MP) ⇒ ρ̄=0 explícito (el ruido ni veta ni agrava). **Curl de Hodge / Harary**: `curl_share_desbalanceado` = fracción de triángulos w_ij·w_jk·w_ki<0 (grafo firmado no balanceado) — el curl del 1-cochain sobre la 2-celda del clique; `rho_efectivo_para_agregacion` infla ρ̄ hacia 1 por el desbalance y desacredita coberturas montadas sobre triángulos inconsistentes. Cadena completa del veto multi-activo: HY (relojes) → MP (estructura vs ruido) → Hodge (consistencia) → varianza estructural. 4 tests (factor común curl 0; triángulo inconsistente; interpolación exacta k·σ/√k; cobertura consistente vs independiente).
+
+
+## Adenda 2026-09-28 — contratos numéricos y contraste de integración
+
+[Informe detallado](docs/AUDITORIA_INTEGRACION_Y_CONTRATOS_NUMERICOS_2026-09-28.md) ·
+[Artefacto](docs/artifacts/auditoria_integracion_numerica_2026-09-28.json).
+HY: soporte común para historia disjunta, tiempos/quotes válidos y log-retornos
+estables. Pearson: reescalado, pares completos y constancia explícita. Diez
+pruebas nuevas; risk-engine 178 pasan/2 ignoradas OPEN, ejecutadas en rojo aparte.
+Continúan los defectos XLIV de matriz parcial y varianza negativa: lo anterior
+NO certifica que AllNoise sea independencia ni que riesgo al stop sea sigma.
+
+Git remoto auditado: main coincide con origin/main, pero hay cambios locales y
+PR #7 abierto. Ramas históricas con trabajo exclusivo conservadas. Revalidación
+concurrente de quantum-arena: 79 pasan/1 falla por igualdad exacta de curva;
+el barrido seed199 ya pasa en esa edición posterior. No se publicó ni operó.

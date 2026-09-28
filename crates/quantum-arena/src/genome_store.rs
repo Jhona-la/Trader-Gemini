@@ -629,6 +629,34 @@ mod tests {
         );
     }
 
+
+    /// (Ola XLIV·diag) DETERMINISTA: encuentra y REPORTA el mutante que el
+    /// gate rechaza, con su vector — el flaky 3/4 del test r11 es un agujero
+    /// real bounds<->gate que este diagnóstico clava en sitio.
+    #[test]
+    fn xliv_diag_r11_encuentra_el_rechazo_determinista() {
+        let base = SuperGenotype::new_baseline(0.0002, 0.0005);
+        for i in 0..20_000u64 {
+            let rate = 0.05 + ((i % 10) as f64) * 0.05;
+            let mutant = base.mutate_cmaes_seeded(rate, i);
+            let roundtrip = SuperGenotype::from_vector(&mutant.to_vector());
+            if let Err(e) = GenomeEnvelope::validate(&roundtrip) {
+                use crate::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+                let fast_sl = roundtrip.sl_horizon_curve.eval(TAU_ANCHOR_FAST_MS);
+                let slow_sl = roundtrip.sl_horizon_curve.eval(TAU_ANCHOR_SLOW_MS);
+                panic!(
+                    "seed={i} rate={rate} err={e:?} | mutante: a={} b={} fast={} slow={} | roundtrip: a={} b={} fast={fast_sl} slow={slow_sl} | bases mut={} {} floor={}",
+                    mutant.sl_horizon_curve.a, mutant.sl_horizon_curve.b,
+                    mutant.sl_horizon_curve.eval(TAU_ANCHOR_FAST_MS),
+                    mutant.sl_horizon_curve.eval(TAU_ANCHOR_SLOW_MS),
+                    roundtrip.sl_horizon_curve.a, roundtrip.sl_horizon_curve.b,
+                    mutant.scalp_sl_base, mutant.swing_sl_base,
+                    crate::genome::SuperGenotype::min_viable_sl(crate::genome::SuperGenotype::REFERENCE_ROUNDTRIP_FEE)
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_r11_bounds_are_structurally_sound() {
         // R1.1 — invariantes de la fuente única de verdad, agnósticos al
