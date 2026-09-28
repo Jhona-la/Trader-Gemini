@@ -156,6 +156,37 @@ pub fn latency_slippage_pct(atr_ratio: f64, latency_ms: f64) -> f64 {
     }
 }
 
+/// XLV-1 — FRICCIÓN ROUNDTRIP: UNA SOLA FUNCIÓN PARA EL GATE Y LOS BRACKETS.
+///
+/// # Qué estaba mal
+///
+/// D-747 unificó la ley de latencia sólo en el gate y en la física. Los pisos
+/// de fricción de los brackets del host (`genome_protection_prices`), del
+/// fallback de entrada, del fallback de gestión del núcleo y del pre-screen
+/// del daemon seguían cobrando la ley LINEAL `atr · lat / umbral_de_pánico`.
+/// Con los genes por defecto (13,6 ms, umbral π·1000 ms) eso es 3,5 veces
+/// MENOS que la difusión que cobra el gate: los brackets eran menos
+/// conservadores que el gate que los aprueba, justo lo que B3.19 quería
+/// evitar.
+///
+/// # La identidad
+///
+/// Taker en ambas piernas (D-645) y, por lado, el piso de deslizamiento más
+/// el término de latencia de [`latency_slippage_pct`], acotado a 5 %. Es la
+/// fórmula que el gate ya usaba; ahora todos los llamadores la comparten por
+/// construcción.
+#[inline]
+pub fn roundtrip_friction(
+    taker_fee: f64,
+    slip_floor: f64,
+    atr_ratio: f64,
+    latency_ms: f64,
+) -> f64 {
+    let per_side =
+        (slip_floor.max(0.00001) + latency_slippage_pct(atr_ratio, latency_ms)).clamp(0.0, 0.05);
+    2.0 * taker_fee + 2.0 * per_side
+}
+
 /// FUNCIÓN PURA ÚNICA. La invocan, con las MISMAS entradas, tanto el gate de
 /// expectativa como el constructor de la orden: es imposible por construcción
 /// que evalúen trades distintos (D-637).
@@ -545,5 +576,49 @@ mod tests {
         // Entradas degeneradas no inventan fricción.
         assert_eq!(latency_slippage_pct(atr, 0.0), 0.0);
         assert_eq!(latency_slippage_pct(f64::NAN, 10.0), 0.0);
+    }
+
+    /// XLV-1: la fricción roundtrip cobra la latencia por difusión. Con los
+    /// genes por defecto (latencia e·5 ms, umbral de pánico π·1000 ms) la ley
+    /// lineal que usaban los brackets cobraba ≈ 3,5 veces menos.
+    #[test]
+    fn la_friccion_roundtrip_cobra_la_latencia_por_difusion() {
+        let (taker, piso, atr) = (0.0005, 0.0002, 0.005);
+        let lat = std::f64::consts::E * 5.0;
+        let rt = roundtrip_friction(taker, piso, atr, lat);
+        let difusion = atr * (lat / TAU_REFERENCE_MS).sqrt();
+        assert!((rt - (2.0 * taker + 2.0 * (piso + difusion))).abs() < 1e-15);
+        let lineal = atr * lat / (std::f64::consts::PI * 1000.0);
+        assert!(difusion / lineal > 3.4, "difusión {difusion} vs lineal {lineal}");
+        assert!(rt > 2.0 * taker + 2.0 * (piso + lineal));
+        // El piso de deslizamiento nunca baja de 0,1 pb ni el lado pasa de 5 %.
+        assert_eq!(roundtrip_friction(taker, 0.0, 0.0, 0.0), 2.0 * taker + 2.0 * 0.00001);
+        assert_eq!(roundtrip_friction(taker, 0.2, atr, lat), 2.0 * taker + 2.0 * 0.05);
+    }
+
+    /// XLV-1: el gate, los brackets del host, el fallback de entrada, el
+    /// fallback de gestión del núcleo y el pre-screen del daemon calculan la
+    /// fricción con la MISMA función. Guardia contra la reintroducción de una
+    /// fórmula inline (así divergieron las cinco la primera vez).
+    #[test]
+    fn todos_los_pisos_de_friccion_usan_la_funcion_unica() {
+        let fuentes = [
+            ("risk-engine/lib.rs", include_str!("lib.rs"), 1),
+            ("god_engine.rs", include_str!("../../../src/bin/god_engine.rs"), 2),
+            ("god-engine-core/lib.rs", include_str!("../../god-engine-core/src/lib.rs"), 1),
+            (
+                "online_daemon.rs",
+                include_str!("../../evolution-engine/src/online_daemon.rs"),
+                1,
+            ),
+        ];
+        for (nombre, codigo, esperadas) in fuentes {
+            let n = codigo.matches("tp_sl::roundtrip_friction(").count();
+            assert!(n >= esperadas, "{nombre}: {n} llamadas, se esperaban {esperadas}");
+            assert!(
+                !codigo.contains("lat_ref") && !codigo.contains("latency_ref_ms"),
+                "{nombre} conserva una normalización lineal de la latencia"
+            );
+        }
     }
 }

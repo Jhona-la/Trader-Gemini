@@ -700,8 +700,6 @@ impl RiskEngine {
         // Modelar la entrada como maker cuando `maker_only` subestimaba la
         // fricción en (taker − maker) precisamente en las cuentas que superan el
         // umbral maker.
-        let entry_fee_rate = taker_fee;
-        let exit_fee_rate = taker_fee;
 
         // D-747 — UNA SOLA LEY PARA EL DESLIZAMIENTO POR LATENCIA.
         //
@@ -717,9 +715,11 @@ impl RiskEngine {
         // `tp_sl::latency_slippage_pct`, con la referencia temporal en la
         // escala a la que se MIDE el ATR (la vela interna de 1 minuto), la
         // misma que ya gobierna la dispersión de TP/SL.
-        let latency_slip = crate::tp_sl::latency_slippage_pct(atr_pct, lat_ms);
-        let per_side_slip = (slip_floor + latency_slip).clamp(0.0, 0.05);
-        let roundtrip_fee = entry_fee_rate + exit_fee_rate + 2.0 * per_side_slip;
+        // XLV-1: la fricción roundtrip entera es también fuente única
+        // (`tp_sl::roundtrip_friction`), compartida con los brackets del host,
+        // los fallbacks y el pre-screen del daemon.
+        let roundtrip_fee =
+            crate::tp_sl::roundtrip_friction(taker_fee, slip_floor, atr_pct, lat_ms);
         if !roundtrip_fee.is_finite() || roundtrip_fee < 0.0 {
             return rej(REJ_INVALID_INPUT);
         }

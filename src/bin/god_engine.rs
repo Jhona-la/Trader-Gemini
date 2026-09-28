@@ -67,14 +67,10 @@ fn genome_protection_prices(
     // decide la forma; la fricción pone el suelo: stop ≥ mínimo viable y
     // TP ≥ stop · RR_mínimo(fee). Modelo D-645: taker en ambas piernas +
     // piso de slippage por lado — el mismo que usa el gate del risk-engine.
-    // B3.19 — + término de LATENCIA (atr_pct·lat/ref): el gate lo incluye y
-    // los brackets no (hallazgo de auditoría: brackets ligeramente menos
-    // conservadores que el gate que los aprueba).
-    let latency_ref_ms = arena
-        .config
-        .latency_ms_panic_threshold
-        .load(o)
-        .clamp(10.0, 5_000.0);
+    // B3.19 — + término de LATENCIA: el gate lo incluye y los brackets no
+    // (hallazgo de auditoría: brackets ligeramente menos conservadores que
+    // el gate que los aprueba). XLV-1: y con la MISMA ley, la de difusión:
+    // la fricción sale de `tp_sl::roundtrip_friction`, la del gate.
     let atr_pct = quantum_arena::symbol_registry::try_index(symbol)
         .and_then(|ci| arena.coins.get(ci))
         .map(|c| {
@@ -83,11 +79,12 @@ fn genome_protection_prices(
         })
         .filter(|a| a.is_finite() && *a > 0.0)
         .unwrap_or(0.0);
-    let latency_slip = (atr_pct
-        * (arena.config.latency_penalty_ms.load(o).max(0.0) / latency_ref_ms))
-        .clamp(0.0, 0.05);
-    let fee_rt = 2.0 * arena.config.live_taker_fee.load(o)
-        + 2.0 * (arena.config.base_slippage_floor.load(o).max(0.00001) + latency_slip);
+    let fee_rt = risk_engine::tp_sl::roundtrip_friction(
+        arena.config.live_taker_fee.load(o),
+        arena.config.base_slippage_floor.load(o),
+        atr_pct,
+        arena.config.latency_penalty_ms.load(o).max(0.0),
+    );
     let (sl_frac, tp_frac) =
         quantum_arena::genome::SuperGenotype::friction_floors(fee_rt, sl_frac, tp_frac);
     let tp = if is_long {
@@ -3994,7 +3991,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ).eval(tau_eff);
                             // B3.2: el fallback de entrada también nace viable —
                             // pisos de fricción idénticos a genome_protection_prices.
-                            // B3.19: + latency_slip (atr·lat/ref), como el gate.
+                            // B3.19 + XLV-1: la fricción del gate, por la misma
+                            // función (`tp_sl::roundtrip_friction`, ley de difusión).
                             let atr_pct_entry = engine_real
                                 .arena
                                 .coins
@@ -4005,23 +4003,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 })
                                 .filter(|a| a.is_finite() && *a > 0.0)
                                 .unwrap_or(0.0);
-                            let lat_ref = engine_real
-                                .arena
-                                .config
-                                .latency_ms_panic_threshold
-                                .load(Ordering::Relaxed)
-                                .clamp(10.0, 5_000.0);
-                            let lat_slip_entry = (atr_pct_entry
-                                * (engine_real
+                            let fee_rt_entry = risk_engine::tp_sl::roundtrip_friction(
+                                engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed),
+                                engine_real.arena.config.base_slippage_floor.load(Ordering::Relaxed),
+                                atr_pct_entry,
+                                engine_real
                                     .arena
                                     .config
                                     .latency_penalty_ms
                                     .load(Ordering::Relaxed)
-                                    .max(0.0)
-                                    / lat_ref))
-                            .clamp(0.0, 0.05);
-                            let fee_rt_entry = 2.0 * engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed)
-                                + 2.0 * (engine_real.arena.config.base_slippage_floor.load(Ordering::Relaxed).max(0.00001) + lat_slip_entry);
+                                    .max(0.0),
+                            );
                             let (sl_frac, tp_frac) =
                                 quantum_arena::genome::SuperGenotype::friction_floors(fee_rt_entry, sl_frac, tp_frac);
                             order_tp_price = if is_long { entry_price * (1.0 + tp_frac) } else { entry_price * (1.0 - tp_frac) };
