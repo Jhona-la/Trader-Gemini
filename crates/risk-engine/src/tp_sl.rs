@@ -168,8 +168,15 @@ pub fn latency_slippage_pct(atr_ratio: f64, latency_ms: f64) -> f64 {
 /// posición con otra, y el daemon promovía genomas contra una tercera.
 ///
 /// Modelo D-645: taker en ambas piernas + (piso de deslizamiento +
-/// latencia difusiva) por lado, acotado al 5 % por lado. No sanea sus
-/// entradas: un resultado no finito debe rechazarlo quien lo reciba.
+/// latencia difusiva) por lado, acotado al 5 % por lado.
+///
+/// Saneamiento (precisado tras la revisión de Codex en el PR #8): hereda el
+/// de [`latency_slippage_pct`], de modo que un ATR o una latencia no finitos
+/// o no positivos anulan el término de latencia (cobra 0, no lo detecta).
+/// `taker_fee` y `slip_floor` NO se sanean: si no son finitos el resultado
+/// tampoco lo es y quien lo reciba debe rechazarlo. Unifica la FÓRMULA; que
+/// gate, host y daemon lean el mismo ATR y la misma latencia en el mismo
+/// instante es otra paridad, todavía abierta.
 #[inline]
 pub fn roundtrip_friction(taker_fee: f64, slip_floor: f64, atr_ratio: f64, latency_ms: f64) -> f64 {
     let per_side_slip = (slip_floor + latency_slippage_pct(atr_ratio, latency_ms)).clamp(0.0, 0.05);
