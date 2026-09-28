@@ -144,9 +144,9 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   `purge_training`.
 - **main roto en f0fcf08a (XLV·F)**: `contagion_modulator.rs` importaba
   `crate::hawkes_cross`, que vive en feature-engine ⇒ signal-engine no
-  compilaba (`check --all-targets` rojo en 99a19bfb). Arreglado en el PR #10
-  con `feature_engine::hawkes_cross` (una línea; signal-engine ya dependía de
-  feature-engine).
+  compilaba (`check --all-targets` rojo en 99a19bfb). Arreglado con la misma
+  línea (`feature_engine::hawkes_cross`) en el PR #10 (3e7f00bb) y, en
+  paralelo, por Codex en el PR #12 (0f31d628, ya en `main` e67a4e2f).
 - Abierto (R8-A, Codex): el motivo de salida vivo no reconstruye el primer
   toque de las barreras del entrenador cuando los brackets difieren
   (contraejemplos suyos): XLIV-9c sigue siendo una aproximación.
