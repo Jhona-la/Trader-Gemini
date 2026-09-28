@@ -8292,3 +8292,54 @@ Resumen: A3 cerrado (CVD y X-016 z-tipificados contra EWMAs propios, con fallbac
 Ver [AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLIII_2026-09-26.md](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLIII_2026-09-26.md).
 
 Resumen: Hayashi-Yoshida corrige el sesgo de sincronía del veto multi-activo (Epps effect); BOCPD sobre W₁ convierte el movimiento espectral medido en PROBABILIDAD de cambio de régimen. La falsación obligó a reconstruir el detector (emisiva por segmento) y el trinquete del oráculo obligó a retirar el actuador hasta calibración con datos reales (20→15→20 documentado): el protocolo funcionó.
+
+
+## Adenda de verificación cruzada — contratos espectrales, 2026-09-28
+
+Ver [auditoría detallada](docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md) y
+[artefacto verificable](docs/artifacts/auditoria_contratos_espectrales_2026-09-28.json).
+No se renumeran ni se borran fichas históricas. Esta adenda corrige las garantías
+sobreafirmadas de la cadena HY→MP→agregación: una prueba verde de un supuesto
+incorrecto no certifica ese supuesto.
+
+Cierres acotados: autovalor dominante perdido por arranque uniforme y admisión
+numérica de matrices inválidas. Abiertos: falta convertida en independencia,
+T=capacidad en vez de muestra, signos/slots omitidos, ventana/tiempo HY,
+riesgo al stop tratado como sigma, varianza negativa clamped, media incompleta,
+overflow Pearson y etiquetas Hodge no correspondientes al operador.
+
+Evidencia: 9 RED iniciales → 13 GREEN del solver; 5 OPEN reproducidos en rojo;
+165 pruebas aprobadas y 5 ignoradas explícitas en risk-engine; cargo check
+--offline --workspace --all-targets exitoso con advertencias. Nada demuestra
+la meta +100%/72h. No hubo operación, entrenamiento, despliegue ni publicación Git.
+
+Coordinación por buzón y memoria compartida: Qoder confirmó su alcance Hawkes;
+no se sobrescribieron sus cambios ni los del consumidor XLIV de otra sesión.
+
+
+---
+
+## 28. ADENDA OLA XLIV (2026-09-26) — el último veto que contaba en lugar de medir
+
+Ver [AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLIV_2026-09-26.md](docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLIV_2026-09-26.md).
+
+Resumen: el riesgo de grupo del veto D-748 pasa de k·σ lineal a σ·√(k+k(k−1)·ρ̄_efectivo) — agregación de varianza con la estructura medida (ρ̄→1 idéntico al histórico; ρ̄→0 crédito √k; cobertura consistente acreditada al piso 1·σ). ρ̄ efectivo = ρ̄ medio inflado por el CURL de Hodge (triángulos de correlación no balanceados, Harary): la inconsistencia estructural se cobra, no se presume diversificación. Firma legada intacta (None ⇒ lineal); AllNoise ⇒ ρ̄=0 coherente con XLI. 4 tests de falsación; suite verde.
+
+
+## Adenda 2026-09-28 — integración comprobada y reparación numérica acotada
+
+Se añade [informe de integración y contratos numéricos](docs/AUDITORIA_INTEGRACION_Y_CONTRATOS_NUMERICOS_2026-09-28.md)
+y [artefacto de evidencia](docs/artifacts/auditoria_integracion_numerica_2026-09-28.json).
+Conservar las fichas previas: nuevos estados de 005 (parcial), 006 y 011;
+no renumerar la matriz maestra ni contar reejecuciones como pruebas nuevas.
+Diez contratos añadidos, nueve RED iniciales y otro RED de constancia n=49,
+ahora GREEN. Suite riesgo: 178 pasan/2 ignoradas OPEN; 008 y 009 siguen RED
+al ejecutarse. La adenda XLIV precedente NO queda certificada por ese verde.
+
+Main/origin main sincronizados a dc87cf1d no incluye trabajo sin commit ni PR #7,
+que sigue abierto. No hay ramas adicionales comprobadas como ya integradas;
+no se eliminó ninguna. Se documenta merge histórico ours contra ambos padres.
+El genoma concurrente tuvo seed199 RED; una edición posterior pasa ese barrido
+pero la suite completa quantum-arena da 79/80 por igualdad exacta de curva.
+Los cambios ajenos se preservaron y los resultados se comunicaron por buzón.
+No hay auditoría integral, validación de +100%/72h, publicación ni operación.

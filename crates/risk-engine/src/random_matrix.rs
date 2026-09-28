@@ -1,33 +1,23 @@
-//! MATRICES ALEATORIAS — BORDE DE MARCHENKO-PASTUR (Ola XLI·C1).
+//! Correlation-spectrum diagnostic and Marchenko-Pastur reference edge.
 //!
-//! Contrato (protocolo del repo):
-//! - Variable: matriz de correlación C (N×N, simétrica, diagonal 1) de los
-//!   retornos de N activos del universo sobre T observaciones.
-//! - Operador: el TEOREMA de Marchenko-Pastur dice que el espectro de
-//!   C cuando los retornos son ruido iid (sin estructura) se concentra en
-//!   [λ−, λ+] con λ± = σ²(1 ± √γ)², γ = T/N. Todo eigenvalor FUERA de ese
-//!   borde es estructura REAL (modo de mercado, factores), no ruido.
-//! - Unidades: adimensionales (eigenvalores de correlación).
-//! - Condiciones de contorno: N < 2 o T ≤ N → None (no se afirma borde con
-//!   γ ≥ 1: el borde inferior se degenera y la muestra es la población).
-//! - Identificabilidad: `systemic_mode` separa "correlación medida" (modo
-//!   fuera del borde) de "ruido que parece correlación" (dentro del borde).
-//!   El RUIDO NO VETA: un par Pearson alto dentro de la banda de ruido no es
-//!   evidencia de misma-apuesta.
-//! - Coste: iteración de potencias O(N²·iters) con N = tamaño del grupo
-//!   (típicamente ≤ 30) — despreciable frente a la adquisición de ticks.
-//! - Falsación: (a) ruido gaussiano iid con γ conocido → λ_max ≤ borde MP
-//!   (test); (b) un factor común inyectado → λ_max > borde (test).
+//! For standardized iid observations, gamma = N/T and the asymptotic upper
+//! edge is (1 + sqrt(gamma))^2. This is NOT a finite-sample confidence bound;
+//! neither side of that edge proves independence or a real market factor.
+//! Serial dependence, microstructure noise and pairwise asynchronous estimates
+//! require a separately justified null model. Buffer capacity is not sample size.
 //!
-//! Esta es la familia matemática de las conjeturas de brecha espectral
-//! (Yang-Mills) integrada como lo que aquí es: un TEOREMA con condiciones
-//! exactas, sin decoración.
+//! Input contract: a complete, finite, symmetric, positive-semidefinite
+//! correlation matrix with unit diagonal. Numerical checks cannot establish
+//! data provenance: missing correlations must never be encoded as measured zero.
+//!
+//! The eigensolver uses cyclic Jacobi rotations, O(sweeps * N^3) time and O(N^2)
+//! storage. Unlike a single-start power iteration, it retains modes orthogonal
+//! to the all-ones vector (including balanced long/short factor exposures).
+//! This is ordinary symmetric linear algebra, not a Yang-Mills mass-gap model.
 
-/// Borde superior de Marchenko-Pastur para una matriz de correlación N×N
-/// construida con T observaciones (varianza de población 1 por definición de
-/// correlación). γ = N/T: el espectro de ruido iid vive en
-/// [(1−√γ)², (1+√γ)²]. None si T ≤ N (muestra insuficiente: γ ≥ 1 y el
-/// borde inferior colapsa — no se afirma nada).
+/// Asymptotic reference edge for population identity correlation, gamma = N/T.
+/// The T > N restriction is this API's conservative support policy, not a claim
+/// that the MP law ceases to exist for gamma >= 1.
 #[inline]
 pub fn mp_upper_edge(n_assets: usize, t_observations: usize) -> Option<f64> {
     if n_assets < 2 || t_observations <= n_assets {
@@ -37,59 +27,115 @@ pub fn mp_upper_edge(n_assets: usize, t_observations: usize) -> Option<f64> {
     Some((1.0 + gamma.sqrt()).powi(2))
 }
 
-/// Mayor eigenvalor por iteración de potencias con deflación de la traza
-/// (la matriz de correlación tiene traza N: el modo trivial ~1 por activo
-/// está garantizado; lo que importa es si EXCEDE el borde de ruido).
-/// None en matriz vacía/degenerada o sin convergencia en 100 iteraciones.
+/// Largest eigenvalue of a numerically valid correlation matrix.
+/// Returns None on invalid input or nonconvergence. Singular PSD matrices are
+/// valid. No eigenvalue clipping, diagonal loading or imputation is performed.
 pub fn largest_eigenvalue(corr: &[Vec<f64>]) -> Option<f64> {
     let n = corr.len();
-    if n < 2 || corr.iter().any(|r| r.len() != n) {
+    if n < 2 || corr.iter().any(|row| row.len() != n) {
         return None;
     }
-    // vector inicial uniforme: no favorece ningún activo
-    let mut v = vec![1.0 / (n as f64).sqrt(); n];
-    let mut lambda_prev = 0.0;
-    for _ in 0..100 {
-        // y = C·v
-        let mut y = vec![0.0; n];
-        for (i, yi) in y.iter_mut().enumerate() {
-            let mut acc = 0.0;
-            for (j, &cij) in corr[i].iter().enumerate() {
-                acc += cij * v[j];
-            }
-            *yi = acc;
-        }
-        let norm: f64 = y.iter().map(|x| x * x).sum::<f64>().sqrt();
-        if !(norm > 1e-12) || !norm.is_finite() {
+    // Dimension-scaled roundoff budget for unit-scale entries. This is a
+    // numerical tolerance, not a market threshold or a statistical confidence.
+    let tolerance = 64.0 * f64::EPSILON * n as f64;
+    for i in 0..n {
+        if !corr[i][i].is_finite() || (corr[i][i] - 1.0).abs() > tolerance {
             return None;
         }
-        for (vi, yi) in v.iter_mut().zip(&y) {
-            *vi = yi / norm;
-        }
-        // λ = vᵀCv (Rayleigh)
-        let mut rayleigh = 0.0;
-        for i in 0..n {
-            for (j, &cij) in corr[i].iter().enumerate() {
-                rayleigh += v[i] * cij * v[j];
+        for j in (i + 1)..n {
+            let a = corr[i][j];
+            let b = corr[j][i];
+            if !a.is_finite()
+                || !b.is_finite()
+                || a.abs() > 1.0 + tolerance
+                || b.abs() > 1.0 + tolerance
+                || (a - b).abs() > tolerance
+            {
+                return None;
             }
         }
-        if (rayleigh - lambda_prev).abs() < 1e-10 * rayleigh.abs().max(1e-10) {
-            return Some(rayleigh);
+    }
+
+    let mut a = corr.to_vec();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            // Only reconcile roundoff-sized asymmetry after validation.
+            let symmetric = 0.5 * corr[i][j] + 0.5 * corr[j][i];
+            a[i][j] = symmetric;
+            a[j][i] = symmetric;
         }
-        lambda_prev = rayleigh;
+    }
+
+    // Bounded work: a numerical budget, not an acceptance shortcut. A matrix
+    // still above residual tolerance at the end yields None, never AllNoise.
+    const MAX_SWEEPS: usize = 64;
+    for sweep in 0..=MAX_SWEEPS {
+        let mut off_diagonal_norm = 0.0_f64;
+        for (i, row) in a.iter().enumerate() {
+            for &entry in row.iter().skip(i + 1) {
+                off_diagonal_norm = off_diagonal_norm.hypot(entry * std::f64::consts::SQRT_2);
+            }
+        }
+        if !off_diagonal_norm.is_finite() {
+            return None;
+        }
+        if off_diagonal_norm <= tolerance {
+            let mut largest = f64::NEG_INFINITY;
+            for (i, row) in a.iter().enumerate() {
+                // Residual Frobenius norm bounds the spectral error. Admit
+                // only roundoff-scale negativity, not an indefinite estimate.
+                if !row[i].is_finite() || row[i] < -tolerance {
+                    return None;
+                }
+                largest = largest.max(row[i]);
+            }
+            return Some(largest);
+        }
+        if sweep == MAX_SWEEPS {
+            break;
+        }
+        for p in 0..n {
+            for q in (p + 1)..n {
+                let apq = a[p][q];
+                if apq == 0.0 {
+                    continue;
+                }
+                let tau = (a[q][q] - a[p][p]) / (2.0 * apq);
+                // Stable smaller root of t^2 + 2*tau*t - 1 = 0.
+                let t = tau.signum() / (tau.abs() + tau.hypot(1.0));
+                let cosine = 1.0 / (1.0 + t * t).sqrt();
+                let sine = t * cosine;
+                a[p][p] -= t * apq;
+                a[q][q] += t * apq;
+                a[p][q] = 0.0;
+                a[q][p] = 0.0;
+                for k in 0..n {
+                    if k != p && k != q {
+                        let akp = a[k][p];
+                        let akq = a[k][q];
+                        let new_p = cosine * akp - sine * akq;
+                        let new_q = sine * akp + cosine * akq;
+                        a[k][p] = new_p;
+                        a[p][k] = new_p;
+                        a[k][q] = new_q;
+                        a[q][k] = new_q;
+                    }
+                }
+            }
+        }
     }
     None
 }
 
-/// ¿Existe un modo SISTEMÁTICO (estructura real de correlación) en la matriz,
-/// por encima de lo que el ruido explicaría? None sin muestra suficiente
-/// (γ ≤ 1): en ese caso la política de veto NO cambia (no se afirma nada).
+/// Legacy names retained for callers; these are threshold comparisons, not
+/// statistical certificates. In particular, AllNoise must not authorize a
+/// portfolio-risk discount without independently validated sampling evidence.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MppVerdict {
-    /// λ_max ≤ borde MP: toda la correlación observada es compatible con
-    /// ruido iid. Los pares altos NO cuentan como misma-apuesta medible.
+    /// Maximum eigenvalue did not exceed the asymptotic reference edge.
+    /// Does NOT imply independence, absence of structure or safe diversification.
     AllNoise,
-    /// λ_max > borde: existe al menos un modo real (mercado/factor).
+    /// Maximum eigenvalue exceeded the reference edge; not a calibrated p-value.
     SystematicMode { lambda_max: f64, mp_edge: f64 },
 }
 
@@ -110,13 +156,12 @@ pub fn systematic_mode(corr: &[Vec<f64>], t_observations: usize) -> Option<MppVe
 mod tests {
     use super::*;
 
-    /// Falsación (a): ruido gaussiano iid, γ = T/N = 4 → λ_max dentro del
-    /// borde MP. El ruido NO es modo sistemático.
+    /// One deterministic uniform-noise fixture, not a universal null guarantee.
     #[test]
     fn xli_c1_ruido_iid_no_supera_el_borde_mp() {
         let n = 8usize;
-        let t = 512usize; // γ = 64
-        // retornos iid deterministas (LCG)
+        let t = 512usize; // gamma = N/T = 1/64
+                          // retornos iid deterministas (LCG)
         let mut seed = 0xDEADBEEFCAFEBABEu64;
         let mut rets = vec![0.0f64; n * t];
         for r in rets.iter_mut() {
@@ -127,7 +172,7 @@ mod tests {
             *r = u;
         }
         let corr = correlation_matrix(&rets, n, t);
-        let verdict = systematic_mode(&corr, t).expect("gamma>1");
+        let verdict = systematic_mode(&corr, t).expect("T > N");
         assert!(
             matches!(verdict, MppVerdict::AllNoise),
             "ruido iid debe quedar dentro del borde MP: {:?}",
@@ -157,7 +202,7 @@ mod tests {
             }
         }
         let corr = correlation_matrix(&rets, n, t);
-        let verdict = systematic_mode(&corr, t).expect("gamma>1");
+        let verdict = systematic_mode(&corr, t).expect("T > N");
         match verdict {
             MppVerdict::SystematicMode {
                 lambda_max,
@@ -166,7 +211,10 @@ mod tests {
                 assert!(lambda_max > mp_edge);
                 // Un factor en 8 activos debe explicar la mayor parte de la
                 // traza: λ_max del orden de N·(share de varianza del factor).
-                assert!(lambda_max > 4.0, "lambda_max={lambda_max} debia ser dominante");
+                assert!(
+                    lambda_max > 4.0,
+                    "lambda_max={lambda_max} debia ser dominante"
+                );
             }
             other => panic!("factor comun debia ser sistematico: {other:?}"),
         }
@@ -179,7 +227,7 @@ mod tests {
         assert!(systematic_mode(&[], 100).is_none());
     }
 
-    /// Matriz de correlación de Pearson O(N·T) para los tests.
+    /// Matriz de correlación de Pearson O(N²·T) para los tests.
     fn correlation_matrix(rets: &[f64], n: usize, t: usize) -> Vec<Vec<f64>> {
         let mut means = vec![0.0; n];
         for i in 0..n {

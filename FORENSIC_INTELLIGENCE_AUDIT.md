@@ -12602,3 +12602,40 @@ El consumidor vivo evalúa `intensity_ratio(event_time)` — siempre en fase 0 (
 
 
 
+
+
+## OLA 10 — #535, TERCERA ITERACIÓN (2026-09-28): el renombre U-ERR-1 dejó el gen de Hawkes muerto y el gate vivo en constante absoluta
+
+### #582 — ✅ CIERRE IMPLEMENTADO: gen `hawkes_scalp_threshold` cableado a la superficie de decisión VIVA (mea culpa de la Ola 8 incluida)
+
+**Contexto de supervivencia (verificación post-olas, 4 días después):** HEAD `dc87cf1d` (serie externa Ola-XLIII; la historia fue rebasada — `ddf8c8bd` ya no está en la cadena de main). Verificado: (a) fix **M6-H02** intacto y commiteado (drain incondicional en god_engine.rs:3364, ANTES del `if !is_trading_allowed` en :3426 — único call site de `drain_bracket_closes`); (b) núcleo **#535** intacto (μ̂ empírico + `STEADY_STATE_RATIO` en hawkes_bessel.rs, 8+3 markers; bounds [0.50,0.95] en genome.rs init/mutate/lo[109]/hi[109]); (c) informe Olas 8-9 conservado (12,435→12,604 líneas por appends externos #556-#581).
+
+**El hallazgo de esta ola:** el commit externo `8afcc677` (U-ERR-1) renombró `MicroScalpTriggerEngine` → `FlowExcitationConfluenceEngine` (micro_scalp_trigger.rs → flow_excitation_confluence.rs) y ELIMINÓ `should_trigger_micro_scalp` + su variante conformal por no tener llamadores. Consecuencia doble:
+1. **El gate vivo quedó en constante absoluta**: `evaluate_for_coin` gatea en `hawkes >= 1.2 && obi.abs() >= 0.2` hard-coded (flow_excitation_confluence.rs). En el espacio del ratio λ/μ̂ (escala-libre desde #535), 1.2 está POR DEBAJO del estado estacionario E[λ/μ̂] = 1+α/β ≈ 1.6: cualquier símbolo con flujo activo satisface el gate casi siempre. El gate mide «hubo actividad», no «hubo ráfaga» — la tautología #535 rediviva en forma atenuada (la entrada ya no es un λ absoluto inflado, pero el umbral sigue sin discriminar).
+2. **El gen quedó huérfano**: `hawkes_scalp_threshold` (con el prior informado [0.50, 0.95] de #535) perdió su único lector — un gen muerto que la evolución arrastra sin gradiente de selección. La patología ORIGINAL que #535 documentó (gen sin presión de selección), ahora literal.
+
+**MEA CULPA (auditoría de mi propia Ola 8):** verificado con `git grep "should_trigger_micro_scalp(" 62c5da62` — CERO llamadores fuera del propio archivo (sólo sus tests). Mi cierre #552 puso el mapeo anclado-al-estado-estacionario en `should_trigger_micro_scalp`, que era CÓDIGO MUERTO; la superficie viva SIEMPRE fue `evaluate_for_coin` con su 1.2. Documenté ese 1.2 como «residuo aceptable» — el juicio fue un error de alcance: el residuo ERA el gate. La Ola 8 sí dejó vivo y genuino el μ̂ empírico (alimenta `hawkes_intensity` del registry, consumido por evaluate_for_coin y flow_impulse.rs:176/205) y los bounds del genoma; la mitad «umbral anclado» estaba en código muerto. Lección registrada: antes de declarar un cierre genuino, verificar que la función editada tenga LLAMADORES VIVOS (grep de call sites, no de definiciones) — no sólo que compile y pase sus propios tests.
+
+**El fix (3ª iteración, 2 archivos):**
+1. **Publicación del gen** (crates/god-engine-core/src/lib.rs, junto a `set_reg("hawkes_intensity", ...)` — CERT-M2-C02): nueva clave de registro `hawkes_excitation_gene` = `arena.config.hawkes_scalp_threshold.load(Relaxed).clamp(0.50, 0.95)`, publicada por el mismo `set_reg` (global + per-coin + scoped) que usa el resto de parámetros. Sin este canal no existe gradiente evolutivo sobre la exigencia de ráfaga.
+2. **Consumo en la superficie viva** (crates/signal-engine/src/flow_excitation_confluence.rs, `evaluate_for_coin`): lectura del gen vía `get_scoped_parameter("hawkes_excitation_gene", ...)` con filtro de validez (finito, en [0.50, 0.95]) y default 0.55 (el valor por defecto del genoma); umbral efectivo = `STEADY_STATE_RATIO + (gen − 0.50)·2` — mapeo continuo y monótono idéntico al de #552: el gen exige entre 0% y +90% de excitación sobre el ritmo normal DEL SÍMBOLO. La condición `hawkes >= 1.2` fue reemplazada por `hawkes >= effective_hawkes_thresh`. El gate de OBI (0.2) y el ML-lift (CERT-M2-C03) quedan intactos.
+3. **Test nuevo** `qo_535_gen_de_excitacion_gobierna_el_umbral_vivo`: gen=0.95 ⇒ umbral 2.50, intensidad 2.0 NO dispara (la constante muerta 1.2 la dejaba pasar); gen=0.50 ⇒ umbral 1.60, ráfaga 1.9 SÍ dispara. Prueba que el gen gobierna la superficie viva.
+
+**Verificación:** `cargo check -p signal-engine -p god-engine-core` MARKER:0 (warnings preexistentes de olas externas — pos_h, harmonic_ok — ninguno en región editada). Tests: signal-engine **59/59** (incl. el nuevo), god-engine-core **114/114**. Ambos crates verdes con el árbol como está (incl. risk-engine en vuelo de sesión externa).
+
+**Residuo documentado (sin acción):** `obi_zscore_threshold` TAMBIÉN quedó huérfano tras U-ERR-1 (única mención: el propio comentario del renombre). NO se cableó en esta ola: el valor de registro que consume el motor es el book-imbalance en [−1,1], no un z-score — cablear el gen tal cual sería un cambio semántico silencioso. Decisión pendiente de diseño evolutivo: publicar un OBI-z real o retirar el gen. Asimismo #554 (pseudo-hawkes de OBI en ppo_state, lib.rs) sigue pendiente.
+
+**Estado del árbol:** sucios MÍOS: `god-engine-core/src/lib.rs` + `signal-engine/src/flow_excitation_confluence.rs` (+ este append). Sucios de sesión externa ACTIVA: risk-engine (correlation_guard.rs, lib.rs, random_matrix.rs) — NO tocados. Patrón de absorción externa ya observado dos veces (#535→c8b4cfee, M6-H02→historia actual): estos dos archivos probablemente sean absorbidos por la próxima ola; re-verificar con grep `hawkes_excitation_gene` (lib.rs + flow_excitation_confluence.rs) tras cada ola.
+
+### RESUMEN DE ESTADO TRAS OLA 10
+| Ítem | Estado |
+|---|---|
+| #535 gen de Hawkes (consumidor vivo) | ✅ CERRADO 3ª iteración (#582 — publicación registry + ancla estacionaria en evaluate_for_coin) |
+| Mea culpa Ola 8 (#552 en código muerto) | ✅ Documentado con evidencia git (lección: verificar call sites vivos) |
+| M6-H02 / μ̂ #535 / bounds / informe | ✅ Sobrevivieron a las olas externas (verificado 2026-09-28) |
+| obi_zscore_threshold huérfano | 🟡 Nuevo hallazgo — decisión de diseño pendiente |
+| M5-H02 seqlock reader / #538-#540 / #548 / #554 | 🔴 Abiertos (M5-H02 re-verificado: writer en lib.rs:895-905, sigue sin readers) |
+
+**Conclusión:** el gen de excitación vuelve al circuito evolutivo con significado escala-libre, y la superficie de decisión viva por fin discrimina «ráfaga sobre el ritmo normal del símbolo» en lugar de «actividad». La cadena #535 queda completa de punta a punta: μ̂ (medición) → ratio al registry (canal) → gen (control) → gate (decisión). Queda M5-H02 como siguiente eslabón mayor.
+
+*(Fin de la Ola 10 — append solamente, conforme al mandato de documentación.)*

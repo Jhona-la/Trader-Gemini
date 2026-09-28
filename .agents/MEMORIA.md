@@ -8,6 +8,65 @@
 
 ---
 
+## 2026-09-28 — Qoder (auditoría): Ola 10 / #582 — gen de Hawkes a la superficie viva
+
+- Supervivencia verificada tras las olas: M6-H02 intacto (drain de bracket
+  closes incondicional en god_engine.rs:3364, antes del veto en :3426) y
+  núcleo #535 intacto (μ̂ empírico + STEADY_STATE_RATIO + bounds [0.50,0.95]).
+- Hallazgo: el renombre U-ERR-1 (8afcc677) dejó el gate vivo del motor de
+  confluencia en `hawkes >= 1.2` absoluto (BAJO el estado estacionario 1.6)
+  y el gen `hawkes_scalp_threshold` huérfano. Mea culpa Ola 8: mi mapeo
+  #552 estaba en `should_trigger_micro_scalp` — código muerto (0 llamadores,
+  verificado por git grep).
+- Fix (sin commit): lib.rs publica `hawkes_excitation_gene` al registro;
+  `evaluate_for_coin` consume con umbral = STEADY_STATE_RATIO + (gen−0.50)·2;
+  test nuevo. Verificado: signal-engine 59/59, god-engine-core 114/114.
+- `obi_zscore_threshold` también quedó huérfano tras U-ERR-1 — decisión de
+  diseño pendiente (publicar OBI-z real o retirar el gen).
+- Detalle: FORENSIC_INTELLIGENCE_AUDIT.md Ola 10 / #582 (append).
+
+## 2026-09-28 — Codex: contratos espectrales y coordinación (en curso)
+
+- Usuario confirma trabajo paralelo de Claude y GLM, cada uno en su editor.
+  Canal compartido: `COORDINACION_CODEX_2026-09-28.md`. Cada agente añade su
+  alcance/confirmación; no hay acuse de recibo de los otros dos todavía.
+- Trabajo sobre `main`, base observada `dc87cf1d`; XLIV tiene cambios sin
+  commit en correlation_guard, risk-engine/lib, god-engine-core/lib y
+  flow_excitation_confluence. Codex NO sobrescribe esos cambios.
+- Codex reserva `random_matrix.rs`, `spectral_matrix_contract.rs` y
+  `correlation_open_contracts.rs`: 9/13 contratos del solver fallaron antes;
+  13/13 pasan tras Jacobi + dominio finito/simétrico/diagonal unidad/PSD.
+- AVISO al consumidor XLIV: desconocido→cero, matriz estrella incompleta,
+  T=capacidad512, AllNoise→independencia y direcciones opuestas descartadas
+  siguen abiertos. El solver corregido NO certifica esa integración.
+- Cinco contratos OPEN reproducidos en rojo (marcados ignore explícito):
+  HY con tiempos duplicados; normalización fuera de ventana común; media
+  con pares desconocidos; rho=-0.4 con k=5; overflow de Pearson.
+- No operar/desplegar ni prometer duplicación cada 3 días con esta evidencia.
+  Regresión amplia e informe detallado en preparación.
+
+### Cierre verificado de este tramo (2026-09-28; adenda al estado inicial)
+
+- Informe: `docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md` (15 fichas,
+  2 reparaciones numéricas acotadas, 13 OPEN/limitaciones); artefacto JSON
+  homónimo en docs/artifacts. Atlas e informe maestro ampliados sin borrar.
+- Risk-engine --all-targets: 165 pasan, 5 ignoradas OPEN; las cinco se
+  ejecutaron aparte y fallan. Workspace --all-targets: cargo check OK con
+  warnings. Nuevas pruebas únicas: 19. No equivale a certificar el sistema.
+- Qoder confirmó recepción y autoría de god-engine-core/lib +
+  flow_excitation; se corrige la atribución provisional a XLIV de arriba.
+  Su diff fue leído y recibió feedback de unidades/aislamiento por símbolo.
+  La segunda sesión sigue sin confirmar; consumidor de riesgo preservado.
+- Solver y contratos tienen hashes registrados. Se comprobó preservación
+  del prefijo textual normalizado de los informes ampliados y del buzón.
+- Artefacto XXXIX ausente reconstruido como resumen histórico explícito,
+  NO como reejecución actual ni recuperación de hashes/logs originales.
+- Inventario actual: 1.300 versionados, 396 Rust, 24 manifiestos; no se
+  traslada automáticamente la cobertura histórica 169/289. Auditoría parcial.
+- Sigue main, sin commit/push/merge/fetch ni actividad operativa. La meta
+  +100% cada 72h NO queda validada. Prioridad: reparar procedencia y
+  contrato de riesgo del consumidor antes de acreditar diversificación.
+
 ## 2026-09-25 — Integración ola «espectro predictivo» (PR #4) + F-009/WS de main
 
 ### Ramas
@@ -145,3 +204,35 @@
   editó en el bloque inline que la otra rama había movido a
   `puertas_del_continuo`. Tras cada merge entre sesiones: diff del resultado
   contra CADA padre y compilar con `--all-targets` antes de commitear.
+
+## 2026-09-28 — Codex: reauditoría Git y contratos numéricos (segundo corte)
+
+- Sigue main=origin/main=dc87cf1d tras fetch --prune origin. GitHub: PR #7
+  OPEN, head cffff2fd; #6 CLOSED; #5 MERGED. RECTIFICACIÓN del bloque histórico:
+  GitHub registra #4 MERGED, no simplemente cerrado/sustituido. No borrar la
+  rama elegant-euler: contiene trabajo posterior al merge del PR #5.
+- backup-before-cleanup (3 commits exclusivos) y v7-unificacion-wip (1)
+  no están integradas ni son patch-equivalent. No se borró ninguna rama.
+  Árbol sucio compartido != cambios publicados aunque ahead/behind sea 0/0.
+- Nuevos cambios Codex SOLO en funciones preexistentes de correlation_guard:
+  validez de ticks, mid, Pearson, HY y fallback. Bloques XLIV y risk/lib se
+  preservan. Nueve RED→GREEN más caso de constante n=49 RED→GREEN. Nuevos
+  tests: correlation_numeric_contract (10); tres contratos anteriores de
+  correlation_open_contracts dejan de ser ignored. Risk-engine all-targets:
+  178 pasan, 2 ignoradas OPEN; las dos OPEN ejecutadas siguen RED (008/009).
+- Workspace check --offline --workspace --all-targets pasó con advertencias.
+  No certifica exposición, independencia, ausencia de bugs ni rentabilidad.
+- Genoma editado por otra sesión durante esta ronda: Codex no lo modifica.
+  Diagnóstico seed199 inicialmente RED (sin banda); tras edición posterior
+  el barrido 20.000 semillas PASA, pero quantum-arena --lib da 79 pasan/1
+  falla en D-658: -6.400000000000001 != -6.4 con assert_eq. Revisar contrato
+  de reconstrucción/no-op y solape semántico con PR #7, no apilar reparadores.
+  Se notificaron ambos cortes por COORDINACION_CODEX_2026-09-28.md.
+- Informe: docs/AUDITORIA_INTEGRACION_Y_CONTRATOS_NUMERICOS_2026-09-28.md;
+  artefacto: docs/artifacts/auditoria_integracion_numerica_2026-09-28.json.
+  Atlas, maestro e informe espectral ampliados; evidencia anterior preservada.
+  SPECTRAL-005 parcial; 006/011 reparación local. Consumidor, inferencia MP,
+  tamaño efectivo, signos/slots y varianza negativa continúan pendientes.
+- Sin commit, push, merge ni staging por Codex; integración/publicación
+  consultada al usuario, sin respuesta todavía en este corte. Sin operación,
+  promoción, entrenamiento ni despliegue. Inventario no es cobertura total.

@@ -629,42 +629,32 @@ mod tests {
         );
     }
 
-    /// R1.1b — la misma certificación que el test anterior, pero
-    /// DETERMINISTA: en lugar de 1 000 mutaciones aleatorias (que sólo a
-    /// veces caían en la región rota) recorre una rejilla de 9⁴ curvas TP/SL
-    /// que cubre sus bounds evolutivos completos. Antes de R1.1b, 549 de
-    /// ellas salían de `from_vector` con la curva de SL entera bajo el piso
-    /// de fricción y el gate de promoción las rechazaba.
+
+    /// (Ola XLIV·diag) DETERMINISTA: encuentra y REPORTA el mutante que el
+    /// gate rechaza, con su vector — el flaky 3/4 del test r11 es un agujero
+    /// real bounds<->gate que este diagnóstico clava en sitio.
     #[test]
-    fn test_r11b_ninguna_curva_de_los_bounds_sale_sin_banda_operable() {
-        let v0 = SuperGenotype::new_baseline(0.0002, 0.0005).to_vector();
-        let (ta, tb) = (SuperGenotype::TP_A_BOUNDS, SuperGenotype::TP_B_BOUNDS);
-        let (sa, sb) = (SuperGenotype::SL_A_BOUNDS, SuperGenotype::SL_B_BOUNDS);
-        let paso = |(lo, hi): (f64, f64), k: usize| lo + (hi - lo) * k as f64 / 8.0;
-        let mut rechazadas = Vec::new();
-        for i in 0..=8 {
-            for j in 0..=8 {
-                for k in 0..=8 {
-                    for l in 0..=8 {
-                        let mut v = v0.clone();
-                        v[140] = paso(ta, i);
-                        v[141] = paso(tb, j);
-                        v[142] = paso(sa, k);
-                        v[143] = paso(sb, l);
-                        let g = SuperGenotype::from_vector(&v);
-                        if let Err(e) = GenomeEnvelope::validate(&g) {
-                            rechazadas.push((v[140], v[141], v[142], v[143], e));
-                        }
-                    }
-                }
+    fn xliv_diag_r11_encuentra_el_rechazo_determinista() {
+        let base = SuperGenotype::new_baseline(0.0002, 0.0005);
+        for i in 0..20_000u64 {
+            let rate = 0.05 + ((i % 10) as f64) * 0.05;
+            let mutant = base.mutate_cmaes_seeded(rate, i);
+            let roundtrip = SuperGenotype::from_vector(&mutant.to_vector());
+            if let Err(e) = GenomeEnvelope::validate(&roundtrip) {
+                use crate::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+                let fast_sl = roundtrip.sl_horizon_curve.eval(TAU_ANCHOR_FAST_MS);
+                let slow_sl = roundtrip.sl_horizon_curve.eval(TAU_ANCHOR_SLOW_MS);
+                panic!(
+                    "seed={i} rate={rate} err={e:?} | mutante: a={} b={} fast={} slow={} | roundtrip: a={} b={} fast={fast_sl} slow={slow_sl} | bases mut={} {} floor={}",
+                    mutant.sl_horizon_curve.a, mutant.sl_horizon_curve.b,
+                    mutant.sl_horizon_curve.eval(TAU_ANCHOR_FAST_MS),
+                    mutant.sl_horizon_curve.eval(TAU_ANCHOR_SLOW_MS),
+                    roundtrip.sl_horizon_curve.a, roundtrip.sl_horizon_curve.b,
+                    mutant.scalp_sl_base, mutant.swing_sl_base,
+                    crate::genome::SuperGenotype::min_viable_sl(crate::genome::SuperGenotype::REFERENCE_ROUNDTRIP_FEE)
+                );
             }
         }
-        assert!(
-            rechazadas.is_empty(),
-            "{} curvas de los bounds rechazadas tras from_vector; primera: {:?}",
-            rechazadas.len(),
-            rechazadas.first()
-        );
     }
 
     #[test]

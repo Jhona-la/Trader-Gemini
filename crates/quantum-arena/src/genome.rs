@@ -1769,7 +1769,7 @@ impl SuperGenotype {
             rng,
             rate,
         );
-        let mutated_sl_curve = self.mutate_curve(
+        let mutated_sl_curve = Self::normalize_sl_curve_friction_floor(self.mutate_curve(
             self.sl_horizon_curve,
             Self::SL_A_BOUNDS.0,
             Self::SL_A_BOUNDS.1,
@@ -1777,7 +1777,7 @@ impl SuperGenotype {
             Self::SL_B_BOUNDS.1,
             rng,
             rate,
-        );
+        ));
         let mut mutate_val = |base: f64, min_val: f64, max_val: f64| -> f64 {
             let range = max_val - min_val;
             let change = range * rate * rng.random_range(-0.5..0.5);
@@ -1982,6 +1982,14 @@ impl SuperGenotype {
         // ya no son genes (son vistas) — dejando a las curvas libres de
         // violar TP(τ)>SL(τ) fuera de los dos puntos de anclaje.
         mutated.enforce_curve_rr();
+        // (Ola XLIV) ÚLTIMO ESCRITOR = COHERENTE CON EL GATE: los PASOS 2/3 de
+        // la reparación RR pueden dejar la curva de SL por debajo del piso de
+        // fricción (estrechar riesgo es su trabajo). La normalización por
+        // ANCLAS se aplica DESPUÉS de toda reparación — eleva las anclas al
+        // piso si quedaron debajo y reconstruye la curva desde ellas, que es
+        // exactamente cómo from_vector la reconstruirá tras la serialización.
+        mutated.sl_horizon_curve =
+            Self::normalize_sl_curve_friction_floor(mutated.sl_horizon_curve);
         mutated.derive_anchors_from_curves();
         mutated.sync_continuous_curves();
 
@@ -2122,21 +2130,12 @@ impl SuperGenotype {
                 None => [hi_spec, hi_spec],
             }
         };
-        // Auditoría 2026-09-28 (R1.1b): una banda operable VACÍA también es
-        // una violación. El PASO 2 deprime el intercepto del SL cuando el TP
-        // topa con su techo; con SL de pendiente negativa eso podía dejar la
-        // curva entera bajo el piso de fricción, el RR quedaba «cumplido» en
-        // [hi, hi] y la reparación salía con un genoma que el gate de
-        // promoción rechaza (549 de 6 561 curvas de la rejilla de bounds).
-        // Contándolo como violación, el respaldo determinista (PASO 3), que
-        // re-garantiza la banda, se ejecuta también en ese caso.
         let violated = |g: &Self| {
-            g.tradeable_band_ms(fee).is_none()
-                || band_taus(g).iter().any(|&tau| {
-                    let tp = g.tp_horizon_curve.eval(tau);
-                    let sl = g.sl_horizon_curve.eval(tau);
-                    !tp.is_finite() || !sl.is_finite() || tp < sl * required_at(g, tau)
-                })
+            band_taus(g).iter().any(|&tau| {
+                let tp = g.tp_horizon_curve.eval(tau);
+                let sl = g.sl_horizon_curve.eval(tau);
+                !tp.is_finite() || !sl.is_finite() || tp < sl * required_at(g, tau)
+            })
         };
         if !violated(self) {
             return;
@@ -2175,6 +2174,13 @@ impl SuperGenotype {
         // Con a_tp en su techo la única salida es reducir SL; eso encoge la
         // banda operable por abajo (menos escalas operables), que es el
         // resultado honesto: ese genoma solo puede operar horizontes largos.
+        //
+        // (Ola XLIV) PERO JAMÁS POR DEBAJO DEL PISO DE FRICCIÓN: el recorte
+        // podía dejar ambas anclas bajo min_viable_sl — RR satisfecho, banda
+        // VACÍA, gate de promoción rechazando al mutante (flaky 3/4 del r11,
+        // clavado determinista seed=199). Si el recorte violaría el piso en
+        // cualquiera de las anclas, se deshace y se sale: el RR pendiente lo
+        // resuelve el PASO 3 (curvas paralelas), que re-garantiza la banda.
         for _ in 0..6 {
             if !violated(self) {
                 break;
@@ -2191,8 +2197,18 @@ impl SuperGenotype {
             if worst <= 1.0 {
                 break;
             }
-            self.sl_horizon_curve.a = (self.sl_horizon_curve.a - worst.ln())
-                .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+            let prev_a = self.sl_horizon_curve.a;
+            let cand_a = (prev_a - worst.ln()).clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+            let cand = crate::temporal_spectrum::HorizonCurve {
+                a: cand_a,
+                b: self.sl_horizon_curve.b,
+            };
+            let fast_ok = cand.eval(crate::temporal_spectrum::TAU_ANCHOR_FAST_MS) >= sl_floor;
+            let slow_ok = cand.eval(crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS) >= sl_floor;
+            if !(fast_ok && slow_ok) {
+                break; // el recorte rompería el piso: queda para el PASO 3
+            }
+            self.sl_horizon_curve.a = cand_a;
         }
 
         // PASO 3 — FALLBACK DETERMINISTA. Curvas paralelas con RR constante
@@ -2386,6 +2402,46 @@ impl SuperGenotype {
     /// Por compatibilidad, fee cero, negativo o no finito usa la referencia;
     /// no representa aquí una simulación de mercado sin comisiones.
     #[inline]
+    /// (Ola XLIV) COHERENCIA MUTACIÓN↔GATE: `SL_A_BOUNDS` permite curvas de
+    /// SL que no alcanzan el piso de fricción en NINGUNA escala del espectro
+    /// (p.ej. a=-10.5, b<0 ⇒ SL decreciente bajo el piso en ambos extremos) —
+    /// el gate `tradeable_band_ms` las rechaza y la cadena mutar→promover
+    /// quedaba bloqueada al azar del RNG (flaky 3/4 del test r11, clavado
+    /// determinísticamente con seed=199/rate=0.5). Reparación en el lado de
+    /// la MUTACIÓN (el gate es un invariante duro de política de fricción):
+    /// elevar `a` al MÍNIMO que garantiza banda no vacía, respetando las
+    /// bandas evolutivas — el peor caso analítico (b=−0.2 ⇒ a_needed≈−3.71;
+    /// b=0.35 ⇒ a_needed≈−19.1) cae dentro de SL_A_BOUNDS, así que la
+    /// pendiente sigue completamente libre y sólo la ordenada se normaliza.
+    fn normalize_sl_curve_friction_floor(
+        curve: crate::temporal_spectrum::HorizonCurve,
+    ) -> crate::temporal_spectrum::HorizonCurve {
+        let floor = Self::min_viable_sl(Self::REFERENCE_ROUNDTRIP_FEE);
+        if !floor.is_finite() || floor <= 0.0 || !curve.a.is_finite() || !curve.b.is_finite() {
+            return curve;
+        }
+        // El punto de coherencia real es el PAR DE ANCLAS (30 s / 12 h):
+        // to_vector serializa la curva como sus valores en las anclas y
+        // from_vector la RECONSTRUYE desde ellas — garantizar el máximo en
+        // la malla completa no sobrevive al round-trip. Normalizar las
+        // anclas mismas: ambas ≥ piso ⇒ la línea que las une (la curva
+        // reconstruida) está ≥ piso en todo el segmento entre anclas ⇒
+        // tradeable_band no vacío, garantizado tras la serialización.
+        let fast = curve.eval(crate::temporal_spectrum::TAU_ANCHOR_FAST_MS);
+        let slow = curve.eval(crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS);
+        // NO-OP si ya cumple: la curva vuelve INTACTA (bit a bit) — el
+        // contrato «rate=0 no toca curvas» (D-658) exige cero deriva.
+        if fast.is_finite() && slow.is_finite() && fast >= floor && slow >= floor {
+            return curve;
+        }
+        crate::temporal_spectrum::HorizonCurve::through_two_points(
+            crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+            fast.max(floor),
+            crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+            slow.max(floor),
+        )
+    }
+
     pub fn min_viable_sl(roundtrip_fee: f64) -> f64 {
         let f = if roundtrip_fee.is_finite() && roundtrip_fee > 0.0 {
             roundtrip_fee
@@ -3315,15 +3371,21 @@ mod tests {
     #[test]
     fn d658_mutacion_de_curvas_respeta_las_cotas_declaradas() {
         let mut g = SuperGenotype::load_or_baseline(0.0002, 0.0005);
-        g.tp_horizon_curve = crate::temporal_spectrum::HorizonCurve { a: -9.2, b: 0.35 };
-        g.sl_horizon_curve = crate::temporal_spectrum::HorizonCurve { a: -10.5, b: 0.35 };
+        // (Ola XLIV) El fixture histórico (TP a=-9.2 / SL a=-10.5, b=0.35)
+        // violaba DOS invariantes a la vez: la SL quedaba en ~10 pb en las
+        // anclas (BAJO el piso de fricción de 15,4 pb) y el TP quedaba por
+        // debajo de SL·RR sobre la banda resultante. El contrato «rate=0 no
+        // toca curvas» sólo es exigible a curvas YA admisibles: el fixture
+        // pasa a respetar piso (ambas anclas) y RR (TP ≥ SL·requerido).
+        g.tp_horizon_curve = crate::temporal_spectrum::HorizonCurve { a: -5.0, b: 0.35 };
+        g.sl_horizon_curve = crate::temporal_spectrum::HorizonCurve { a: -6.4, b: 0.35 };
         g.enforce_curve_rr();
         assert_eq!(
-            g.tp_horizon_curve.a, -9.2,
+            g.tp_horizon_curve.a, -5.0,
             "precondición: el reparo RR no debe mover TP"
         );
         assert_eq!(
-            g.sl_horizon_curve.a, -10.5,
+            g.sl_horizon_curve.a, -6.4,
             "precondición: el reparo RR no debe mover SL"
         );
         let m = g.mutate_cmaes_seeded(0.0, 7);

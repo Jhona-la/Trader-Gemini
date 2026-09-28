@@ -320,3 +320,14 @@ La evidencia local de investigación queda en .firecrawl/XXXIX-income-contract-e
 
 Conclusión: la cadena de datos ahora expresa más fielmente cuándo sabe, cuándo está truncada y en qué unidades opera. Eso elimina errores concretos, pero todavía no establece una política autoevolutiva causal. La tarea siguiente es unir identidad, evidencia nueva y recuperación del veto; añadir complejidad matemática antes de esa unión podría optimizar un objetivo contablemente mal definido.
 
+
+## Adenda documental 2026-09-28 — enlace del artefacto histórico
+
+Se detectó que el JSON enlazado en la cabecera no existía. Se reconstruyó un
+resumen estructurado desde este informe, marcado explícitamente como histórico
+reconstruido: no es recuperación de logs originales ni reejecución de las 66
+pruebas en el árbol del 28 de septiembre. No contiene hashes inventados del
+código de aquel corte. La cobertura 169/289 conserva su denominador histórico.
+El nuevo [corte espectral](AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md) usa un
+inventario separado y no presenta esos resultados pasados como validación actual.
+
