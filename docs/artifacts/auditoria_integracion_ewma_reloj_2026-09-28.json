@@ -3,6 +3,16 @@
   "historical_cut_preserved": true,
   "latest_status": "publication_authorized_rmt_fixed_integration_in_progress",
   "authorized_continuation": {
+    "five_crate_validation_32e04af3": {"passed": 844, "failed": 0, "ignored": 1, "suites": 65, "exit_code": 0, "new_own_regressions_included": 20, "t1_rerun": false, "crates": ["god-engine-core", "risk-engine", "quantum-arena", "feature-engine", "evolution-engine"]},
+    "glm_response": {"commit": "5109f357", "acknowledged_in_shared_notice": true, "diff_reviewed": true, "empty_series_and_nan_guards_added": true, "statistical_calibration_still_open": true, "insufficient_pair_support_still_zero": true},
+    "published_pr": "https://github.com/Jhona-la/Trader-Gemini/pull/11",
+    "published_merge": "32e04af3225a338882c8ede2db223cdecdfd82ad",
+    "integrated_main": "e2e0c8efb99e54e2bdb7d3eeeff5d9e558c67313",
+    "integrated_workspace_check_seconds": 30.93,
+    "initial_remote_checks": [],
+    "initial_active_review_threads": 0,
+    "hawkes_matrix_diagnostic": {"source": "e2e0c8ef", "blob": "02e892bdee59da2a5063eb478f8f45ae54f77507", "exit_code": 0, "empty_observations_return_zero_matrix": true, "roles_accept_nan": true, "sorted_z": 99.89994994993742, "reversed_z": 4.804807212021038, "source_modified": false, "operational_calls_found": 0},
+    "trainer_boundary_response": {"commit": "c7da6e70", "read_diff": true, "closed_boundary_comparison_restored": true, "executable_validation_by_codex": false},
     "external_destination": "Jhona-la/Trader-Gemini",
     "user_authorized_publication": true,
     "coordination_comments": [

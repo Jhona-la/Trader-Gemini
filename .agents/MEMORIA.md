@@ -565,3 +565,13 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - Pendiente: integrar último main, check antes del merge, pruebas del árbol
   final, publicar PR propio y verificar SHA remoto antes de retirar rama.
   No confundir 616/777 históricos con pruebas de nuevos commits.
+
+- PR11 publicado en draft, head 32e04af3 sobre e2e0c8ef. Check workspace
+  all-targets pasó (30,93 s); cinco crates all-targets: 844 pasan/0 fallan/
+  1 inventario ignorado, 65 bloques. Incluye 20 regresiones propias, sin T-1.
+- Diagnóstico ejecutado de matriz Hawkes (blob 02e892bd): vacíos→ceros;
+  roles NaN→Some(NaN). GLM confirmó recepción y corrige en 5109f357.
+  Falta integrar/probar ese último delta. Media por N-1 NO resuelve
+  calibración/soporte ni vuelve el z invariante al universo. Siguen OPEN.
+- Claude respondió y c7da6e70 corrige purge_end cerrado en PR10, aún abierto
+  al consultar. Su reporte 39/39 es evidencia del autor, no ejecución Codex.

@@ -8449,3 +8449,26 @@ El detalle, padres del merge, impacto y criterios de reparación están en
 [el informe EWMA/W1, §20](docs/AUDITORIA_INTEGRACION_EWMA_Y_RELOJ_2026-09-28.md#20-regresión-de-integración-confirmada-contratos-del-trainer-desconectados).
 No se reabre el fix estructural de offsets ni se ejecuta promoción. Esto
 actualiza el estado presente sin invalidar la evidencia del corte histórico.
+
+### Adenda Codex: publicación y contratos espectrales (2026-09-28)
+
+[PR11](https://github.com/Jhona-la/Trader-Gemini/pull/11) publica EWMA, W1,
+RMT y los informes anteriormente locales, en rama/worktree aislados.
+[Informe, §23–26](docs/AUDITORIA_INTEGRACION_EWMA_Y_RELOJ_2026-09-28.md#23-continuación-autorizada-contrato-espectral-único-y-evidencia-roja)
+y [artefacto actualizado](docs/artifacts/auditoria_integracion_ewma_reloj_2026-09-28.json).
+
+RMT: siete contratos nuevos, 5/2 rojo y 7/0 verde. full_spectrum comparte
+validador/solver con largest_eigenvalue; rechaza covarianza escalada y
+asimetría material sin inventar correlaciones. effective_bets mide
+participación de modos retenidos, no cantidad real de apuestas de cartera.
+
+Hawkes: revisión matemática y testigos ejecutados de matriz sin observaciones
+que devuelve ceros y roles que propagan NaN; impacto operativo no acreditado.
+No se convierte z en correlación ni se retiran vetos de seguridad por aspirar
+a rentabilidad. Falta soporte, calibración y contrato de consumidores.
+
+Trainer: PR10 responde a la regresión de integración y c7da6e70 corrige la
+frontera interna tras revisión Codex. R8-A (target primer toque) sigue abierto.
+Las secciones históricas se conservan; comprobar el último corte del informe
+para pruebas/merge efectivos. Ni inventario léxico ni checks ausentes equivalen
+a auditoría integral, certificación científica o garantía de crecimiento.

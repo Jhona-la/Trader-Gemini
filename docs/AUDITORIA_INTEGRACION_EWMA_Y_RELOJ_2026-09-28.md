@@ -1,5 +1,10 @@
 # Auditoría de integración, EWMA y reloj de evidencia — 2026-09-28
 
+> **Continuación publicada:** [PR11](https://github.com/Jhona-la/Trader-Gemini/pull/11).
+> §23: reparación RMT y significado de los cálculos; §24: contratos Hawkes;
+> §25–26: respuesta del trainer, testigos ejecutados e integración por SHA.
+> Los cortes anteriores son históricos y se conservan, incluidos sus bloqueos.
+
 > Lectura por cortes: la cabecera original se conserva debajo. El estado más
 > reciente empieza en §17: rama codex/ewma-w1-audit, worktree independiente;
 > §20 reabre contratos del trainer perdidos durante un merge y §21 revisa GLM.
@@ -1153,3 +1158,83 @@ No se ejecutaron entrenamiento, promoción ni evaluación de un nuevo modelo.
 La reparación se considera propuesta en PR10 hasta comprobar fusión y pruebas
 del árbol resultante. El target primer-toque de §18 continúa abierto: restaurar
 holdout no resuelve etiquetas de feedback que usan reason_code de otros brackets.
+
+## 26. Evidencia ejecutada del avance matricial y coordinación posterior
+
+**Fuente observada:** e2e0c8ef, blob Hawkes
+02e892bdee59da2a5063eb478f8f45ae54f77507. Se comparó git hash-object del
+archivo con el blob antes de compilar un harness aislado bajo target.
+No se modificó la implementación ajena. Código de salida del diagnóstico: 0.
+
+Casos y salidas:
+
+| Entrada | Salida observada | Interpretación acotada |
+| --- | --- | --- |
+| Dos series vacías, spans [0,0], lag [100] | Some([[0,0],[0,0]]) | La matriz pierde la ausencia de soporte; sólo su consumidor podría evitar interpretar ceros como mediciones. |
+| Roles de [[0,NaN],[0,0]] | Some con emitted/received/net_role NaN | Se valida forma, pero no dominio numérico del resumen. |
+| 20 líderes separados 1000 ms, seguidor a +1 ms, lag 2 ms, span 20000 | rate=1; z≈99,89995 | Testigo determinista de coincidencia, NO validación de significancia. |
+| Los mismos líderes en orden inverso | rate=0,05; z≈4,804807 | La precondición de orden importa; la API no detecta su incumplimiento. No se prueba que un llamador real la incumpla. |
+
+La búsqueda de consumidores en 32e04af3 localiza cross_excitation,
+contagion_matrix y contagion_roles únicamente en ese módulo y sus tests.
+La matriz N×N aún no acredita integración multiactivo operativa. El adjetivo
+“T03 completo” del comentario/commit no cierra la identificación estadística,
+la conexión al grafo, la causalidad, la calibración ni las pruebas de soporte.
+
+El resumen por filas/columnas suma z-scores positivos seleccionados. Esa suma
+no es una intensidad, probabilidad ni integral de kernel. Cambia al añadir
+activos o al variar el tamaño muestral; una doble contabilización de factores
+comunes podría alterar el ranking de “líderes” sin nueva relación causal.
+Se requiere representar por celda validez, exposición y tamaño efectivo,
+definir la normalización pertinente al objetivo y calibrar la selección de
+pares/lags. No se implementa esa transformación como un nuevo literal.
+
+El aviso con los dos primeros testigos se dejó en el buzón compartido y el
+PR11 publica las correcciones propias. El PR10 de Claude incorporó c7da6e70:
+purge_end usa ahora >= y la prueba compara su frontera con purge_training.
+Por lectura del diff se considera atendida la observación específica de §25;
+la validación ejecutable y fusión de ese PR no se presuponen por ello.
+
+### 26.1 Corte de integración Codex publicado
+
+32e04af3 conserva e2e0c8ef y las reparaciones propias, con diff revisado contra
+los dos padres; check --offline --workspace --all-targets pasa en 30,93 s.
+La rama se publicó sin force y el [PR11](https://github.com/Jhona-la/Trader-Gemini/pull/11)
+se abrió en borrador. En la primera consulta no hay hilos de revisión activos,
+comentarios ni checks remotos. “Sin checks” NO significa “CI verde”.
+Las suites de cinco crates se ejecutan antes del cierre, con su resultado
+registrado en el siguiente corte.
+
+La política de borrado sigue basándose en ancestralidad comprobada y ausencia
+de uso. backup-before-cleanup contiene tres commits exclusivos;
+v7-unificacion-wip, uno; la rama del PR9 cerrado, uno según git cherry frente
+a e2e0c8ef. El cierre de un PR o un mensaje de commit no prueba integración.
+Se preservan esos trabajos y la rama activa de Claude. Los parches originales
+en el checkout compartido tampoco se descartan para hacer parecer limpio Git.
+
+## 27. Validación ampliada y respuesta de GLM
+
+Sobre 32e04af3, cargo test --offline -q -p god-engine-core -p risk-engine
+-p quantum-arena -p feature-engine -p evolution-engine --all-targets
+-- --test-threads=1 terminó con código 0: **844 pasan, 0 fallan, 1 ignorada**,
+65 bloques de resultados. Incluye las 20 nuevas regresiones propias
+(EWMA 7, W1 6, RMT 7); no se suman sus ejecuciones focalizadas otra vez.
+La prueba ignorada es el inventario manual de modelos, no una regresión nueva.
+No se reejecutó T-1; los 777 anteriores siguen siendo otro corte y otro alcance.
+
+Durante esa compilación main avanzó a 5109f357. GLM confirmó en el buzón
+que atendió los casos vacíos y NaN. El diff añade comprobación de orden
+estricto en la matriz y finitud en roles. Son avances concretos: las pruebas
+de 32e04af3 no prueban aún ese commit posterior.
+
+El cambio suma→media/(N-1) define un promedio por contraparte del universo
+elegido, no una magnitud invariante al universo o al soporte muestral.
+Añadir un activo con enlaces cero reduce el promedio de un nodo previo,
+y z conserva su dependencia del tamaño de muestra. No se solicitó esa
+división como solución estadística ni se considera cerrada la calibración.
+La matriz admite series de longitud 2 aunque cross_excitation requiere
+20 líderes/5 seguidores: aún puede codificar soporte insuficiente como cero.
+No se presume que este contrato alcance un consumidor operativo.
+
+La incorporación de 5109f357, su check y reejecución se registrarán después;
+esta separación evita trasladar los 844 resultados a un árbol no probado.
