@@ -8,6 +8,67 @@
 
 ---
 
+## 2026-09-28 — Claude (cloud): auditoría de gates de evolución y régimen (PR #8)
+
+Canal: PR #8 de GitHub (la sesión cloud no ve el buzón no versionado
+`COORDINACION_CODEX_2026-09-28.md`). Sin push directo a `main` (permiso
+bloqueado): todo entra por el PR. **No toco** correlation_guard /
+random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
+
+### Corregido (commits atómicos, con tests)
+- **XLIV-1 Fisher**: el gate WF-FISHER exigía F > 1,0 y la Fisher de escala
+  está acotada por 2/(ln 4)² ≈ 1,04 ⇒ la evolución en vivo NUNCA promovía con
+  ≥ 2 monedas. Umbral derivado: masa en ≤ ½ banda operativa (F ≥ ≈ 0,33).
+- **XLIV-2 BOCPD**: medias de segmento divididas por el posterior normalizado
+  (encogían), densidades sin 1/σ, doble observación por evento en vivo (rompía
+  la paridad) y W₁ ausente inventado como 0. p_transition en reposo ruidoso:
+  0,40 → < 0,05.
+- **XLIV-3 EWMAs de CVD/marea/entropía**: sin corrección de sesgo, «calientes»
+  tras UN evento (z ≈ ±22 en cada arranque). Ahora momentos corregidos y 30
+  eventos efectivos; rama larga 1 = espejo de la corta. Golden re-certificado.
+- **XLIV-4 crash_pressure** (orquestador): sólo cuenta monedas con marea
+  BAJISTA (antes una subida fuerte en cualquier moneda recortaba el margen de
+  todos los largos).
+- **XLIV-5 calibrador con olvido**: `calibrate_at`/`update_at`, semivida 12 h
+  (borde lento de la banda). El EV con p calibrada (D-751) era ABSORBENTE: sin
+  operar no hay datos que corrijan una p hundida.
+- **XLIV-6 funciones de estructura**: referencia browniana (ζ₃ = 1,5), no K41;
+  χ = ((3/2)ζ₂ − ζ₃)⁺ (concavidad, independiente de H); se excluyen escalas por
+  debajo de la resolución efectiva (intervalo medio entre eventos).
+- **XLIV-7 sonda de arranque frío**: una sola sonda abierta por moneda sin
+  modelo (antes podía llenar los 3 slots y repetirse tras cada reinicio).
+  Golden re-certificado: 1 trade de sonda (antes 2).
+- Verificación: arena + núcleo + riesgo 559/559; backtest, evolution, signal y
+  metacortex verdes. **T-1 (oráculo, 22 min nativo) NO ejecutado aún en esta
+  ola**: la sonda única reduce trades del fixture y puede mover la cobertura
+  (trinquete ≥ 11,5 %). Correrlo antes de fusionar.
+- Aislamiento de tests: una vez se vio un fallo de determinismo de
+  `replay_*` con tests en paralelo (no reproducido en 13 corridas). Probable
+  estado global compartido (mapa global de bosques / registros).
+
+### Señalado a los dueños (no tocado)
+- Codex: HY normaliza por la varianza completa con cruce sólo en la ventana
+  común; MP guarda pares sin medida como 0 y los declara ruido; `tope/8` con
+  riesgo sin medir admite 7 posiciones de la misma apuesta.
+- Qoder: check «misma banda» muerto (`diff_ln < 0.80` detrás de
+  `find_resonant_slot`, que ya lo descarta): apilar en la misma dirección ya no
+  exige ir ganando ≥ 28 pb. ¿Intencionado (D9)? `partition_income` (FMT-285)
+  sólo se llama desde tests.
+- Término de aceleración de `crash_flux` muerto (se llama con prev = None);
+  cablearlo por evento sin suavizar metería ruido (la deriva satura con un
+  salto de τ* en ms). Pendiente de diseño.
+
+### Viabilidad de la meta (consejo de seniors — números, no opinión)
+- +100 % cada 3 días = crecimiento log 0,231/día = ×4,2·10³⁶ al año. Con Kelly
+  pleno y sin fricción exige Sharpe DIARIO 0,68 (≈ 13 anualizado); con ½ Kelly,
+  ≈ 15; con ¼ Kelly, ≈ 20. Los mejores fondos del mundo operan en 2–6.
+- Capacidad: de 13 USD a 10⁶ USD en 49 días y a 10⁹ en 79 al ritmo pedido; el
+  impacto de mercado lo frena mucho antes. Kelly pleno cae ≥ 50 % alguna vez
+  con probabilidad 1/2.
+- Meta operativa honesta: maximizar crecimiento log con tope de ruina y
+  medirlo fuera de muestra (EV > 0 estable en las dos mitades del forense),
+  no perseguir el ×2/3 días.
+
 ## 2026-09-28 — Qoder (auditoría): Ola 10 / #582 — gen de Hawkes a la superficie viva
 
 - Supervivencia verificada tras las olas: M6-H02 intacto (drain de bracket
