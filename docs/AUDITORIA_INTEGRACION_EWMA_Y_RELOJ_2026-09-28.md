@@ -4,6 +4,8 @@
 > §23: reparación RMT y significado de los cálculos; §24: contratos Hawkes;
 > §25–26: respuesta del trainer, testigos ejecutados e integración por SHA.
 > Los cortes anteriores son históricos y se conservan, incluidos sus bloqueos.
+> **Recibo remoto en §29:** PR11 fusionado en main92534a9e; 875 pruebas
+> pasan, cero fallos, un inventario ignorado; rama fuente retirada.
 
 > Lectura por cortes: la cabecera original se conserva debajo. El estado más
 > reciente empieza en §17: rama codex/ewma-w1-audit, worktree independiente;
@@ -1297,3 +1299,50 @@ La guía babysit determinó la revisión de hilos, checks, padres y conflictos.
 La guía de investigación Firecrawl permitió contrastar definiciones con
 fuentes primarias; sus resultados se incorporan como límites del modelo,
 no como autorización para activar una estrategia.
+
+## 29. Recibo de integración remota y eliminación segura de la rama
+
+PR11: merged=true, merged_at=2026-09-28T22:50:17Z,
+merge_commit_sha=92534a9ee7e394fe08264b43319dec7544d5c216.
+git ls-remote confirmó ese SHA en refs/heads/main.
+git merge-base --is-ancestor confirmó c90679dc dentro de origin/main;
+git diff c90679dc origin/main no mostró diferencias de árbol.
+EWMA/W1/RMT y los informes publicados SÍ llegaron a main. Las 875 pruebas
+de §28 corresponden a su código; no se atribuye CI inexistente.
+
+Sólo después se separó el worktree de la rama y se eliminaron las referencias
+local y remota codex/ewma-w1-audit. No se borraron archivos ni commits:
+son recuperables desde main/92534a9e y c90679dc. El worktree se conserva
+para reutilización. Este recibo se prepara en codex/ewma-w1-receipt,
+sin cambios de fuentes/tests ni activación del sistema.
+
+### 29.1 Incidente real de coordinación, sin pérdida de fuentes
+
+GitHub registró closed a 22:47:08Z y head_ref_deleted a 22:47:09Z en PR11,
+cuando merged=false y main5109f357 NO contenía fbf299ee. Los eventos usan
+la cuenta compartida; no se identificó qué proceso/agente hizo la limpieza.
+No se atribuye a Claude o GLM por inferencia.
+
+Los commits seguían en el worktree aislado. Codex republicó c90679dc,
+verificó la referencia remota, reabrió el mismo PR y contrastó otra vez
+base/head antes del merge protegido por SHA.
+[Registro de recuperación](https://github.com/Jhona-la/Trader-Gemini/pull/11#issuecomment-5880140159).
+
+La limpieza exige conjuntamente ancestralidad del head exacto en main,
+ausencia de uso y preservación de cambios pendientes. Un PR cerrado,
+un nombre antiguo o una referencia movida NO satisfacen ese contrato.
+La recuperación documenta este incidente, no descarta otras acciones
+concurrentes ni certifica automáticamente otras ramas.
+
+### 29.2 Límites de la entrega
+
+PR10 seguía abierto al consultar; su resultado 39/39 pertenece a Claude.
+No se duplicó su trainer ni se borró su rama. Los backups mantienen commits
+exclusivos. El checkout compartido conserva originales y avisos: no se usaron
+reset, stash, clean ni checkout-discard. Main REMOTO integrado no significa
+que ese directorio esté limpio.
+
+No se afirma revisión de todos los archivos/crates. Persisten los contratos
+abiertos de target, soporte, calibración y consumidores. No hubo operación,
+entrenamiento, promoción ni despliegue. Las pruebas no certifican rentabilidad
+ni duplicación del capital cada tres días.

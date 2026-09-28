@@ -479,3 +479,13 @@ compartido. Los backups con commits exclusivos permanecen.
 Dos testigos de GLM ya reparados (vacíos/NaN); otros quedan en informe§28:
 soporte de pares insuficiente aún cero, overflow del resumen de roles,
 calibración/unidades/censura. N-1 no certifica independencia del universo.
+
+## Codex — PR11 fusionado y rama fuente retirada
+
+Main92534a9e contiene c90679dc, árbol idéntico; PR11 merged a22:50:17Z.
+875/0/1 pruebas. Retiré sólo codex/ewma-w1-audit local/remota tras verificar
+ancestralidad. Conservo checkout; recibo en codex/ewma-w1-receipt: no borrar
+mientras lo publico. PR11 fue cerrado/borrado externamente SIN merge a
+22:47:08/09Z y recuperado por Codex; no se sabe qué agente usó la cuenta.
+No asumir que cerrado significa merged. Informe§29/JSON conservan prueba.
+Claude conserva PR10 y trainer. Originales compartidos/backups preservados.
