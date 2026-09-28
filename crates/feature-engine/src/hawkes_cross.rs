@@ -130,7 +130,9 @@ pub fn cross_excitation(
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Matriz de excitación cruzada N×N: α[i][j] = z-score del contagio i→j.
-/// None si N < 2 (una matriz 1×1 no dice nada de estructura).
+/// None si N < 2, o si CUALQUIER serie está vacía o desordenada.
+/// (Ola XLV·E, fixes Codex PR#11): series vacías → None (no Some(ceros));
+/// NaN en la matriz → None; suma de z normalizada por N−1.
 pub fn contagion_matrix(
     event_series: &[Vec<u64>],
     spans_ms: &[u64],
@@ -140,30 +142,50 @@ pub fn contagion_matrix(
     if n < 2 || spans_ms.len() != n || lag_grid_ms.is_empty() {
         return None;
     }
+    // Codex PR#11: series vacías o con <2 eventos → None (no se afirma
+    // estructura sin datos).
+    for s in event_series {
+        if s.len() < 2 {
+            return None;
+        }
+        // verificar ordenación (requisito del estimador)
+        for w in s.windows(2) {
+            if w[1] <= w[0] {
+                return None;
+            }
+        }
+    }
     let mut matrix = vec![vec![0.0f64; n]; n];
     for i in 0..n {
         for j in 0..n {
             if i == j {
-                continue; // auto-excitación medida por Hawkes univariado
+                continue;
             }
             if let Some(exc) =
                 cross_excitation(&event_series[i], &event_series[j], spans_ms[j], lag_grid_ms)
             {
                 matrix[i][j] = exc.z_score;
             }
-            // sin evidencia → 0 (no se afirma contagio)
         }
+    }
+    // Codex PR#11: NaN en cualquier celda → None (no se devuelve una
+    // matriz parcialmente inválida).
+    if matrix.iter().any(|row| row.iter().any(|v| !v.is_finite())) {
+        return None;
     }
     Some(matrix)
 }
 
-/// Resume la matriz de contagio en un escalar por activo: la SUMA de
-/// z-scores de contagio EMITIDO (fila) y RECIBIDO (columna).
+/// Resume la matriz de contagio en un escalar por activo: la MEDIA de
+/// z-scores de contagio EMITIDO (fila) y RECIBIDO (columna), normalizada
+/// por N−1 para ser comparable entre universos de distinto tamaño.
+/// (Ola XLV·E, fixes Codex): suma → media/N−1 (magnitud independiente del
+/// tamaño del universo); NaN en la matriz → None.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ContagionRole {
-    /// Σ_j α[i][j] — cuánto contagia este activo a los demás.
+    /// Media de α[i][j] sobre j≠i — cuánto contagia este activo a los demás.
     pub emitted: f64,
-    /// Σ_i α[i][j] — cuánto es contagiado por los demás.
+    /// Media de α[i][j] sobre i≠j — cuánto es contagiado por los demás.
     pub received: f64,
     /// emitted − received: >0 = líder neto, <0 = seguidor neto.
     pub net_role: f64,
@@ -174,10 +196,15 @@ pub fn contagion_roles(matrix: &[Vec<f64>]) -> Option<Vec<ContagionRole>> {
     if n < 2 || matrix.iter().any(|r| r.len() != n) {
         return None;
     }
+    // Codex PR#11: NaN → None
+    if matrix.iter().any(|row| row.iter().any(|v| !v.is_finite())) {
+        return None;
+    }
+    let denom = (n - 1) as f64;
     let mut roles = Vec::with_capacity(n);
     for j in 0..n {
-        let emitted: f64 = matrix[j].iter().sum();
-        let received: f64 = (0..n).map(|i| matrix[i][j]).sum();
+        let emitted: f64 = matrix[j].iter().sum::<f64>() / denom;
+        let received: f64 = (0..n).map(|i| matrix[i][j]).sum::<f64>() / denom;
         roles.push(ContagionRole {
             emitted,
             received,
