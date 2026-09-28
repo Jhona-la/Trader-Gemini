@@ -2458,10 +2458,13 @@ impl GodEngineCore {
                     }
 
                     // 3. Retroalimentacion epigenetica directa de trade cerrado al ensamble de modelos predictivos:
-                    if coin_id < self.ensembles.len() {
-                        self.ensembles[coin_id].update_with_trade_outcome(is_long, is_win, pnl_pct);
-                    } else {
-                        self.ensemble.update_with_trade_outcome(is_long, is_win, pnl_pct);
+                    // XLIV-9b: con la direccion del MERCADO, no con el signo del PnL neto.
+                    if let Some(subio) = direccion_realizada(is_long, pnl_pct) {
+                        if coin_id < self.ensembles.len() {
+                            self.ensembles[coin_id].update_with_trade_outcome(subio, pnl_pct);
+                        } else {
+                            self.ensemble.update_with_trade_outcome(subio, pnl_pct);
+                        }
                     }
 
                     // D-752 - ATRIBUCION DEL RESULTADO A QUIEN LO ORIGINO.
