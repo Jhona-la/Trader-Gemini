@@ -1537,7 +1537,12 @@ impl LiveEvolutionDaemon {
                     .copied()
                     .filter(|f| *f >= 0.0)
                     .collect();
-                let identificados = con_masa.iter().filter(|f| **f > 1.0).count();
+                // Ola XLIV: umbral derivado de la banda operativa (≈ 0,33:
+                // masa en ≤ media banda). El literal 1,0 anterior sólo lo
+                // alcanzaba un pico en UNA escala (F ≤ 1,04 por construcción)
+                // y abortaba toda ronda con ≥ 2 monedas vivas.
+                let umbral = quantum_arena::temporal_spectrum::umbral_fisher_identificable();
+                let identificados = con_masa.iter().filter(|f| **f > umbral).count();
                 if con_masa.len() >= 2 && identificados * 2 < con_masa.len() {
                     println!(
                         "🌀 [WF-FISHER] campo espectral difuso (identificables {}/{}) — ronda aplazada: evolucionar sobre un régimen no identificable memoriza ruido",

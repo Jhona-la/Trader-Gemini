@@ -33,6 +33,36 @@
 /// Escalas del espectro: 10^-6 ms * 4^i para i∈0..32 → 1 ns (10^-6 ms) … ≈146.15 años (4.61*10^12 ms).
 /// Log-espaciadas base 4 (≈1.66 intervalos/década): resolución uniforme en
 /// log(τ), cubriendo desde microestructura en nanosegundos hasta tendencias seculares de más de 100 años.
+/// Fisher de escala MÁXIMA de la malla de base 4: toda la masa en una sola
+/// escala (dos saltos de |Δq| = 1 entre vecinos), 2/(ln 4)².
+pub const FISHER_ESCALA_MAX: f64 = 1.040_684_490_502_803_9;
+
+/// Soporte efectivo de la masa espectral, en número de escalas de la malla:
+/// k = [`FISHER_ESCALA_MAX`] / F. Exacto para masa uniforme sobre k escalas
+/// contiguas; ∞ para masa uniforme (F = 0); 1 para un único pico.
+#[inline]
+pub fn soporte_efectivo_en_escalas(fisher: f64) -> f64 {
+    if fisher.is_finite() && fisher > 0.0 {
+        FISHER_ESCALA_MAX / fisher
+    } else {
+        f64::INFINITY
+    }
+}
+
+/// Fisher mínima para declarar un régimen IDENTIFICABLE (Ola XLIV).
+///
+/// Un régimen es identificable cuando su masa espectral se concentra en, a lo
+/// sumo, la MITAD de la banda operativa [`TAU_ANCHOR_FAST_MS`, `TAU_ANCHOR_SLOW_MS`]
+/// (≈ 6,25 escalas de la malla de base 4 ⇒ soporte ≤ 3,13 escalas ⇒
+/// F ≥ ≈ 0,33). Antes el gate walk-forward exigía F > 1,0, que sólo alcanza
+/// un pico degenerado en UNA escala (F ≤ 1,04): con dos o más monedas vivas
+/// abortaba TODAS las rondas de evolución.
+#[inline]
+pub fn umbral_fisher_identificable() -> f64 {
+    let escalas_banda = (TAU_ANCHOR_SLOW_MS / TAU_ANCHOR_FAST_MS).ln() / 4f64.ln() + 1.0;
+    FISHER_ESCALA_MAX / (escalas_banda / 2.0)
+}
+
 pub const SPECTRUM_SCALES_MS: [f64; 32] = [
     1.0e-6,                   // 1 ns
     4.0e-6,                   // 4 ns
@@ -1218,6 +1248,12 @@ impl TemporalSpectrum {
 
     /// Información de Fisher 1-D de la masa espectral respecto a ln(τ).
     /// None sin masa (espectro frío): sin campo no hay identificabilidad.
+    ///
+    /// Rango (Ola XLIV): como |Δq| ≤ max(qᵢ, qⱼ), cada término cumple
+    /// Δq²/max ≤ |Δq|, así que F ≤ Σ|Δq|/(ln 4)² ≤ [`FISHER_ESCALA_MAX`]. Para
+    /// masa uniforme sobre k escalas contiguas F = FISHER_ESCALA_MAX / k: la
+    /// Fisher se lee como el inverso del SOPORTE EFECTIVO en escalas (ver
+    /// [`soporte_efectivo_en_escalas`]).
     pub fn fisher_scale_information(&self) -> Option<f64> {
         // MISMA masa que la entropía espectral (spectral_field): q_i = w_i·|s_i|/Σ.
         let mut e = [0.0f64; 32];
@@ -1620,6 +1656,41 @@ fn xli_c2_gaussian_iid_da_autosimilaridad_k41() {
     // escalas rápidas: ζ3 medido debe quedar en banda ancha alrededor de 1.
     assert!(sf.zeta3 > 0.5 && sf.zeta3 < 1.6, "zeta3={} fuera de banda K41", sf.zeta3);
     assert!(sf.usable_scales >= 4);
+}
+
+/// Ola XLIV — el rango de la Fisher de escala y su umbral de identificabilidad.
+/// El gate walk-forward exigía F > 1,0, inalcanzable salvo para un pico en UNA
+/// escala: la constante, el soporte efectivo y el umbral se fijan aquí.
+#[test]
+fn xliv_fisher_de_escala_tiene_techo_y_umbral_alcanzable() {
+    assert!((FISHER_ESCALA_MAX - 2.0 / (4f64.ln() * 4f64.ln())).abs() < 1e-15);
+    // Masa uniforme sobre k escalas contiguas (lejos de los bordes de la malla).
+    let fisher_bloque = |k: usize| {
+        let mut spec = TemporalSpectrum::new();
+        for i in 0..32 {
+            spec.scales[i].signal = if (10..10 + k).contains(&i) { 1.0 } else { 0.0 };
+        }
+        let w = spec.scales[10].fusion_weight();
+        for i in 10..10 + k {
+            assert!((spec.scales[i].fusion_weight() - w).abs() < 1e-15);
+        }
+        spec.fisher_scale_information().expect("masa presente")
+    };
+    for k in [1usize, 2, 3, 6, 12] {
+        let f = fisher_bloque(k);
+        assert!(f <= FISHER_ESCALA_MAX + 1e-12, "k={k}: F={f} excede el techo");
+        assert!(
+            (soporte_efectivo_en_escalas(f) - k as f64).abs() < 1e-9,
+            "k={k}: soporte efectivo {}",
+            soporte_efectivo_en_escalas(f)
+        );
+    }
+    let u = umbral_fisher_identificable();
+    assert!(u > 0.30 && u < 0.36, "umbral {u}");
+    // Concentrado en ≤ 3 escalas: identificable; en toda la banda (6): no.
+    assert!(fisher_bloque(3) > u && fisher_bloque(6) < u);
+    // El umbral anterior (1,0) sólo lo supera un pico en una escala.
+    assert!(fisher_bloque(1) > 1.0 && fisher_bloque(2) < 1.0);
 }
 
 #[test]
