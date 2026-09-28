@@ -574,6 +574,33 @@ mod tests {
         assert_eq!(latency_slippage_pct(f64::NAN, 10.0), 0.0);
     }
 
+    /// XLIV-8c (guardia portada de XLV-1, PR #9 de otra sesión Claude): el
+    /// gate, los brackets del host, el fallback de entrada, el fallback de
+    /// gestión del núcleo y el pre-examen del daemon calculan la fricción con
+    /// la MISMA función. XLIV-8 olvidó el cuarto; esta guardia sobre las
+    /// fuentes impide que una fórmula inline vuelva a divergir.
+    #[test]
+    fn xliv_todos_los_pisos_de_friccion_usan_la_funcion_unica() {
+        let fuentes = [
+            ("risk-engine/lib.rs", include_str!("lib.rs"), 1),
+            ("god_engine.rs", include_str!("../../../src/bin/god_engine.rs"), 2),
+            ("god-engine-core/lib.rs", include_str!("../../god-engine-core/src/lib.rs"), 1),
+            (
+                "online_daemon.rs",
+                include_str!("../../evolution-engine/src/online_daemon.rs"),
+                1,
+            ),
+        ];
+        for (nombre, codigo, esperadas) in fuentes {
+            let n = codigo.matches("tp_sl::roundtrip_friction(").count();
+            assert!(n >= esperadas, "{nombre}: {n} llamadas, se esperaban {esperadas}");
+            assert!(
+                !codigo.contains("lat_ref") && !codigo.contains("latency_ref_ms"),
+                "{nombre} conserva una normalización lineal de la latencia"
+            );
+        }
+    }
+
     /// XLIV-8: la fricción de ida y vuelta es la MISMA para el gate, los
     /// brackets del host y el daemon, y su latencia es la difusiva. La ley
     /// lineal que conservaban el host y el daemon cobraba, con el umbral de

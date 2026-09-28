@@ -1905,30 +1905,24 @@ impl GodEngineCore {
                     // fricción (mismo invariante que el gate y los brackets).
                     // Los pisos previos (0,05 % / 0,10 %) eran menores que la
                     // fricción roundtrip VIP0: TP garantizado en pérdida neta.
-                    // B3.19: + latency_slip (atr·lat/ref), como el gate.
-                    let lat_ref_mgmt = self
-                        .arena
-                        .config
-                        .latency_ms_panic_threshold
-                        .load(Ordering::Relaxed)
-                        .clamp(10.0, 5_000.0);
-                    let lat_slip_mgmt = (atr_pct_live
-                        * (self
-                            .arena
-                            .config
-                            .latency_penalty_ms
-                            .load(Ordering::Relaxed)
-                            .max(0.0)
-                            / lat_ref_mgmt))
-                    .clamp(0.0, 0.05);
-                    let fee_rt_mgmt = 2.0 * self.arena.config.live_taker_fee.load(Ordering::Relaxed)
-                        + 2.0 * (self
-                            .arena
+                    // B3.19: + deslizamiento por latencia, como el gate.
+                    // XLIV-8c (portado de XLV-1, PR #9 de otra sesión Claude):
+                    // XLIV-8 dejó este quinto sitio con la ley lineal
+                    // `atr·lat/umbral_de_pánico`; ahora la MISMA función.
+                    let fee_rt_mgmt = risk_engine::tp_sl::roundtrip_friction(
+                        self.arena.config.live_taker_fee.load(Ordering::Relaxed),
+                        self.arena
                             .config
                             .base_slippage_floor
                             .load(Ordering::Relaxed)
-                            .max(0.00001)
-                            + lat_slip_mgmt);
+                            .max(0.00001),
+                        atr_pct_live,
+                        self.arena
+                            .config
+                            .latency_penalty_ms
+                            .load(Ordering::Relaxed)
+                            .max(0.0),
+                    );
                     let (fallback_sl, fallback_tp) =
                         quantum_arena::genome::SuperGenotype::friction_floors(
                             fee_rt_mgmt,
