@@ -91,3 +91,34 @@ fn finite_margins_are_summed_across_spectral_slots_and_sides() {
     assert!(guard.allow_trade(true, 20.0, MarketRegime::Range, 5.0));
     assert!(!guard.allow_trade(false, 20.01, MarketRegime::Range, 5.0));
 }
+
+/// Ola XLIV — la presión de crash sobre los largos sólo la ejerce una caída:
+/// una moneda con crash-ness alta y marea ALCISTA (subida intensa) no puede
+/// recortar el margen de los largos del resto de la cartera.
+#[test]
+fn crash_pressure_only_from_adverse_tide() {
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    arena
+        .config
+        .global_max_drawdown
+        .store(0.1, Ordering::Relaxed);
+    arena
+        .config
+        .margin_cushion_pct
+        .store(0.90, Ordering::Relaxed);
+    let coin = &arena.coins[1];
+    coin.spectral_crash_flux.store(0.60, Ordering::Relaxed);
+
+    // Subida intensa (marea > 0): sin presión, la frontera de 90 se mantiene.
+    coin.spectral_coherence.store(0.70, Ordering::Relaxed);
+    let guard = PortfolioOrchestrator::new(&arena);
+    assert!(guard.allow_trade(true, 90.0, MarketRegime::Range, 5.0));
+
+    // Caída (marea < 0): el colchón pierde 0,25·0,60 = 15 pp ⇒ tope 75.
+    coin.spectral_coherence.store(-0.70, Ordering::Relaxed);
+    assert!(!guard.allow_trade(true, 90.0, MarketRegime::Range, 5.0));
+    assert!(guard.allow_trade(true, 74.0, MarketRegime::Range, 5.0));
+    assert!(!guard.allow_trade(true, 76.0, MarketRegime::Range, 5.0));
+    // Los cortos no pagan presión de crash.
+    assert!(guard.allow_trade(false, 89.0, MarketRegime::Range, 5.0));
+}

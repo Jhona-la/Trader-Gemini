@@ -229,6 +229,11 @@ pub struct W1ChangepointObserver {
     n_obs: usize,
     /// Último W₁ observado (para telemetría).
     last_w1: f64,
+    /// Ola XLIV: instante del último evento observado. `process_event` y
+    /// `process_tick_dual` publican el mismo espectro en el mismo evento; sin
+    /// este guard el observador contaba DOS observaciones por evento en vivo
+    /// y UNA en los backtests que llaman a dual directamente.
+    last_ts: Option<u64>,
 }
 
 const W1_R_MAX: usize = 128;
@@ -249,7 +254,18 @@ impl W1ChangepointObserver {
             segment_mean: [0.0; 128],
             n_obs: 0,
             last_w1: 0.0,
+            last_ts: None,
         }
+    }
+
+    /// Observa W₁ UNA vez por evento: una segunda llamada con el mismo
+    /// `event_time_ms` devuelve la probabilidad vigente sin actualizar.
+    pub fn observe_at(&mut self, event_time_ms: u64, w1: f64) -> Option<f64> {
+        if self.last_ts == Some(event_time_ms) {
+            return self.transition_probability();
+        }
+        self.last_ts = Some(event_time_ms);
+        self.observe(w1)
     }
 
     /// Incorpora una observación de W₁ y devuelve la probabilidad de
@@ -269,12 +285,19 @@ impl W1ChangepointObserver {
                 // PREDICTIVA del segmento estable: Normal(mean_r, σ) — el
                 // segmento largo aprieta su pronóstico alrededor de SU nivel
                 // y un W₁ fuera de él es evidencia de ruptura.
+                //
+                // Ola XLIV: las dos predictivas son DENSIDADES y llevan su
+                // 1/σ. Sin él, la de segmento nuevo (σ ancho) quedaba
+                // sobreponderada σ_nuevo/σ_emisión ≈ 5,8 veces frente a la de
+                // segmento estable: sesgo sistemático hacia «cambio».
                 let z_grow = (w1 - self.segment_mean[r]) / W1_EMISSION_SD;
-                let like_grow = (-0.5 * z_grow * z_grow).exp();
-                // PREDICTIVA de segmento NUEVO: prior ancho (σ₀ grande) — un
-                // W₁ cualquiera es plausible al empezar de cero.
-                let z_new = w1 / W1_PRIOR_SD;
-                let like_new = (-0.5 * z_new * z_new).exp();
+                let like_grow = (-0.5 * z_grow * z_grow).exp() / W1_EMISSION_SD;
+                // PREDICTIVA de segmento NUEVO: media ~ N(0, σ₀²) y emisión
+                // N(μ, σ²) ⇒ predictiva N(0, σ₀² + σ²). Un W₁ cualquiera es
+                // plausible al empezar de cero.
+                let sd_new = (W1_PRIOR_SD * W1_PRIOR_SD + W1_EMISSION_SD * W1_EMISSION_SD).sqrt();
+                let z_new = w1 / sd_new;
+                let like_new = (-0.5 * z_new * z_new).exp() / sd_new;
                 let grow = p * (1.0 - W1_HAZARD) * like_grow;
                 let chng = p * W1_HAZARD * like_new;
                 if r + 1 < W1_R_MAX {
@@ -284,19 +307,26 @@ impl W1ChangepointObserver {
                     new_mean[r + 1] += grow * ((m * (r as f64 + 1.0) + w1) / (r as f64 + 2.0));
                 }
                 new_rl[0] += chng;
-                new_mean[0] += chng * (w1 * 0.5); // prior mean 0, un dato: suavizado
+                // Media posterior de un segmento nuevo tras UN dato: prior
+                // N(0, σ₀²) y emisión σ² ⇒ w₁·σ₀²/(σ₀² + σ²) (antes w₁·0,5,
+                // que arrastraba cada segmento nuevo hacia 0).
+                new_mean[0] += chng * (w1 * W1_PRIOR_SD * W1_PRIOR_SD / (sd_new * sd_new));
                 total += grow + chng;
             }
             if total > 1e-12 {
-                for x in new_rl.iter_mut() {
-                    *x /= total;
-                }
-                // media posterior por run-length: suma ponderada / peso
-                // normalizado (new_rl ya está normalizada).
+                // Ola XLIV: la media por run-length es Σ peso·media / Σ peso
+                // con los pesos SIN normalizar. Antes se dividía por el
+                // posterior ya normalizado: cada media quedaba multiplicada
+                // por la evidencia `total` (< 1) y se encogía hacia 0 en cada
+                // paso, así que un W₁ estacionario pero ruidoso parecía un
+                // cambio de régimen (p_transition ≈ 0,40 en reposo).
                 for k in 0..W1_R_MAX {
-                    if new_rl[k] > 1e-12 {
+                    if new_rl[k] > 0.0 {
                         new_mean[k] /= new_rl[k];
                     }
+                }
+                for x in new_rl.iter_mut() {
+                    *x /= total;
                 }
             }
             self.run_length_posterior = new_rl;
@@ -1107,15 +1137,19 @@ impl GodEngineCore {
                     // anillo): reestructuración del régimen. Publicada al
                     // registry para telemetría; consumo de gates = próxima
                     // ola (frenar aperturas en τ en tránsito).
-                    let w1 = spec.spectral_transport_w1(64).unwrap_or(0.0);
-                    self.arena
-                        .registry
-                        .set_for_coin(coin_id, "spectral_w1_transport", w1);
+                    let w1_medido = spec.spectral_transport_w1(64);
+                    self.arena.registry.set_for_coin(
+                        coin_id,
+                        "spectral_w1_transport",
+                        w1_medido.unwrap_or(0.0),
+                    );
                     // (Ola XLIII·A) Observador bayesiano del transporte:
                     // p_transition alta = la masa espectral se está moviendo
                     // (cambio de régimen en curso). Publicada para gates.
-                    if let Some(obs) = self.w1_bocpd.get_mut(coin_id) {
-                        let p_t = obs.observe(w1).unwrap_or(0.0);
+                    // Ola XLIV: sólo con un W₁ MEDIDO (antes un None entraba
+                    // como 0,0 inventado) y una vez por evento (`observe_at`).
+                    if let (Some(obs), Some(w1)) = (self.w1_bocpd.get_mut(coin_id), w1_medido) {
+                        let p_t = obs.observe_at(event_time_ms, w1).unwrap_or(0.0);
                         self.arena
                             .registry
                             .set_for_coin(coin_id, "spectral_p_transition", p_t);
@@ -1543,15 +1577,19 @@ impl GodEngineCore {
                     // anillo): reestructuración del régimen. Publicada al
                     // registry para telemetría; consumo de gates = próxima
                     // ola (frenar aperturas en τ en tránsito).
-                    let w1 = spec.spectral_transport_w1(64).unwrap_or(0.0);
-                    self.arena
-                        .registry
-                        .set_for_coin(coin_id, "spectral_w1_transport", w1);
+                    let w1_medido = spec.spectral_transport_w1(64);
+                    self.arena.registry.set_for_coin(
+                        coin_id,
+                        "spectral_w1_transport",
+                        w1_medido.unwrap_or(0.0),
+                    );
                     // (Ola XLIII·A) Observador bayesiano del transporte:
                     // p_transition alta = la masa espectral se está moviendo
                     // (cambio de régimen en curso). Publicada para gates.
-                    if let Some(obs) = self.w1_bocpd.get_mut(coin_id) {
-                        let p_t = obs.observe(w1).unwrap_or(0.0);
+                    // Ola XLIV: sólo con un W₁ MEDIDO (antes un None entraba
+                    // como 0,0 inventado) y una vez por evento (`observe_at`).
+                    if let (Some(obs), Some(w1)) = (self.w1_bocpd.get_mut(coin_id), w1_medido) {
+                        let p_t = obs.observe_at(event_time_ms, w1).unwrap_or(0.0);
                         self.arena
                             .registry
                             .set_for_coin(coin_id, "spectral_p_transition", p_t);
@@ -2439,11 +2477,18 @@ impl GodEngineCore {
                     // resultado neto de comisiones. Se actualizan SIEMPRE el calibrador
                     // específico de la moneda (para sesgos locales) Y el calibrador global
                     // (para transferencia de aprendizaje cross-asset).
+                    // Ola XLIV: con su instante de evento, para el olvido por
+                    // tiempo de `calibrate_at` (ver calibration.rs).
                     if score_at_entry > 0.0 {
                         if coin_id < self.calibrator_by_coin.len() {
-                            self.calibrator_by_coin[coin_id].update(score_at_entry, is_win);
+                            self.calibrator_by_coin[coin_id].update_at(
+                                score_at_entry,
+                                is_win,
+                                event_time_ms,
+                            );
                         }
-                        self.confidence_calibrator.update(score_at_entry, is_win);
+                        self.confidence_calibrator
+                            .update_at(score_at_entry, is_win, event_time_ms);
                     }
 
                     // XXIX / FMT-228: one close is one reward observation.
@@ -3419,23 +3464,41 @@ impl GodEngineCore {
             // distribución. cvd_z_warm=false durante el calentamiento: los
             // gates caen al literal histórico (fail-safe documentado, doctrina
             // del escudo L2 D-475: sin σ no se inventa umbral).
+            //
+            // Ola XLIV: momentos CORREGIDOS por sesgo (las EWMAs arrancan en
+            // 0) y calentamiento de 30 eventos efectivos. Antes `sd > 1e-4`
+            // se cumplía tras UN evento y el z salía ≈ ±22: el veto de CVD se
+            // disparaba en cada arranque y al inicio de cada backtest.
+            const ALPHA_CVD: f64 = 0.002;
             {
-                let alpha_cvd = 0.002_f64;
-                let prev_mean = coin.cvd_mean_ewma.load(Ordering::Relaxed);
-                let prev_sq = coin.cvd_sq_ewma.load(Ordering::Relaxed);
-                let new_mean = prev_mean + alpha_cvd * (rolling_cvd - prev_mean);
-                let new_sq = prev_sq + alpha_cvd * (rolling_cvd * rolling_cvd - prev_sq);
+                let peso = coin.cvd_ewma_peso.load(Ordering::Relaxed);
+                let (new_mean, new_peso) = crate::calibration::ewma_con_peso(
+                    rolling_cvd,
+                    coin.cvd_mean_ewma.load(Ordering::Relaxed),
+                    peso,
+                    ALPHA_CVD,
+                );
+                let (new_sq, _) = crate::calibration::ewma_con_peso(
+                    rolling_cvd * rolling_cvd,
+                    coin.cvd_sq_ewma.load(Ordering::Relaxed),
+                    peso,
+                    ALPHA_CVD,
+                );
                 coin.cvd_mean_ewma.store(new_mean, Ordering::Relaxed);
                 coin.cvd_sq_ewma.store(new_sq, Ordering::Relaxed);
+                coin.cvd_ewma_peso.store(new_peso, Ordering::Relaxed);
             }
-            let cvd_mean = coin.cvd_mean_ewma.load(Ordering::Relaxed);
-            let cvd_var = (coin.cvd_sq_ewma.load(Ordering::Relaxed) - cvd_mean * cvd_mean).max(0.0);
-            let cvd_sd = cvd_var.sqrt();
-            let cvd_z_warm = cvd_sd.is_finite() && cvd_sd > 1e-4;
-            let cvd_z = if cvd_z_warm {
-                (rolling_cvd - cvd_mean) / cvd_sd
-            } else {
-                0.0
+            let cvd_momentos = crate::calibration::momentos_ewma_corregidos(
+                coin.cvd_mean_ewma.load(Ordering::Relaxed),
+                coin.cvd_sq_ewma.load(Ordering::Relaxed),
+                coin.cvd_ewma_peso.load(Ordering::Relaxed),
+                ALPHA_CVD,
+            )
+            .filter(|(_, sd)| sd.is_finite() && *sd > 1e-4);
+            let cvd_z_warm = cvd_momentos.is_some();
+            let cvd_z = match cvd_momentos {
+                Some((cvd_mean, cvd_sd)) => (rolling_cvd - cvd_mean) / cvd_sd,
+                None => 0.0,
             };
             set_reg("cvd_z", cvd_z);
             let ofi = self.feature_engines[coin_id].ofi_model.ema_ofi;
@@ -4188,7 +4251,11 @@ impl GodEngineCore {
                         && macro_trend >= 0.0
                         && micro_trend >= 0.0
                         && ofi >= -0.05
-                        && rolling_cvd >= -0.15
+                        // (A3a, Ola XLIV) espejo EXACTO de la rama corta 1:
+                        // suelo de confluencia contraria de medio σ. Antes el
+                        // largo seguía con el literal y las dos direcciones
+                        // filtraban con estadísticas distintas.
+                        && if cvd_z_warm { cvd_z >= -0.5 } else { rolling_cvd >= -0.15 }
                     {
                         fast_intent = SignalIntent {
                             signal: SignalType::Long,
@@ -5148,42 +5215,65 @@ impl GodEngineCore {
                     // crónico; una marea de −0,20 es profunda si el campo suele
                     // moverse a ±0,08. EWMAs por símbolo (α≈1/300 intents),
                     // fallback a los literales históricos en calentamiento.
+                    //
+                    // Ola XLIV: momentos corregidos por sesgo + 30 eventos
+                    // efectivos de calentamiento (mismo defecto que el CVD:
+                    // tras UN intent la σ de la marea valía ≈ 0,057·|marea| y
+                    // cualquier marea contraria quedaba «extrema»).
+                    const ALPHA_CAMPO: f64 = 0.0033;
+                    let coin_f = &self.arena.coins[coin_id];
                     {
                         let tide_neutral = spec.swing_score() * 0.60 + spec.secular_score() * 0.40;
-                        let coin_f = &self.arena.coins[coin_id];
-                        let alpha_f = 0.0033_f64;
-                        let prev_tide_sq = coin_f.tide_sq_ewma.load(Ordering::Relaxed);
-                        coin_f.tide_sq_ewma.store(
-                            prev_tide_sq + alpha_f * (tide_neutral * tide_neutral - prev_tide_sq),
-                            Ordering::Relaxed,
+                        let peso = coin_f.campo_ewma_peso.load(Ordering::Relaxed);
+                        let (new_tide_sq, new_peso) = crate::calibration::ewma_con_peso(
+                            tide_neutral * tide_neutral,
+                            coin_f.tide_sq_ewma.load(Ordering::Relaxed),
+                            peso,
+                            ALPHA_CAMPO,
                         );
-                        let prev_ent_m = coin_f.entropy_mean_ewma.load(Ordering::Relaxed);
-                        let prev_ent_sq = coin_f.entropy_sq_ewma.load(Ordering::Relaxed);
                         let ent = field.spectral_entropy;
-                        let new_m = prev_ent_m + alpha_f * (ent - prev_ent_m);
-                        let new_sq = prev_ent_sq + alpha_f * (ent * ent - prev_ent_sq);
+                        let (new_m, _) = crate::calibration::ewma_con_peso(
+                            ent,
+                            coin_f.entropy_mean_ewma.load(Ordering::Relaxed),
+                            peso,
+                            ALPHA_CAMPO,
+                        );
+                        let (new_sq, _) = crate::calibration::ewma_con_peso(
+                            ent * ent,
+                            coin_f.entropy_sq_ewma.load(Ordering::Relaxed),
+                            peso,
+                            ALPHA_CAMPO,
+                        );
+                        coin_f.tide_sq_ewma.store(new_tide_sq, Ordering::Relaxed);
                         coin_f.entropy_mean_ewma.store(new_m, Ordering::Relaxed);
                         coin_f.entropy_sq_ewma.store(new_sq, Ordering::Relaxed);
+                        coin_f.campo_ewma_peso.store(new_peso, Ordering::Relaxed);
                     }
-                    let ent_mean = self.arena.coins[coin_id].entropy_mean_ewma.load(Ordering::Relaxed);
-                    let ent_var =
-                        (self.arena.coins[coin_id].entropy_sq_ewma.load(Ordering::Relaxed) - ent_mean * ent_mean)
-                            .max(0.0);
-                    let ent_sd = ent_var.sqrt();
-                    let extreme_entropy = if ent_sd.is_finite() && ent_sd > 1e-3 {
-                        field.spectral_entropy > ent_mean + 2.0 * ent_sd
-                    } else {
-                        field.spectral_entropy > 0.98
+                    let campo_peso = coin_f.campo_ewma_peso.load(Ordering::Relaxed);
+                    let extreme_entropy = match crate::calibration::momentos_ewma_corregidos(
+                        coin_f.entropy_mean_ewma.load(Ordering::Relaxed),
+                        coin_f.entropy_sq_ewma.load(Ordering::Relaxed),
+                        campo_peso,
+                        ALPHA_CAMPO,
+                    ) {
+                        Some((ent_mean, ent_sd)) if ent_sd.is_finite() && ent_sd > 1e-3 => {
+                            field.spectral_entropy > ent_mean + 2.0 * ent_sd
+                        }
+                        _ => field.spectral_entropy > 0.98,
                     };
-                    let tide_sd = self.arena.coins[coin_id]
-                        .tide_sq_ewma
-                        .load(Ordering::Relaxed)
-                        .max(0.0)
-                        .sqrt();
-                    let extreme_counter_tide = if tide_sd.is_finite() && tide_sd > 1e-3 {
-                        (-macro_tide) > 2.0 * tide_sd
-                    } else {
-                        macro_tide < -0.15
+                    // La marea se mide alrededor de 0 (RMS): media nula,
+                    // segundo momento corregido.
+                    let tide_rms = crate::calibration::momentos_ewma_corregidos(
+                        0.0,
+                        coin_f.tide_sq_ewma.load(Ordering::Relaxed),
+                        campo_peso,
+                        ALPHA_CAMPO,
+                    )
+                    .map(|(_, sd)| sd)
+                    .filter(|sd| sd.is_finite() && *sd > 1e-3);
+                    let extreme_counter_tide = match tide_rms {
+                        Some(tide_sd) => (-macro_tide) > 2.0 * tide_sd,
+                        None => macro_tide < -0.15,
                     };
                     // (Ola XLI·D3) La incoherencia sólo veta con campo CALIENTE: el
                     // espectro recién nacido tiene coherencia 0 por construcción y el
@@ -5629,12 +5719,17 @@ impl GodEngineCore {
                 let raw_confidence_score = unified_intent.confidence;
                 let mut calibrated_intent = unified_intent;
                 // Cierre del lazo adaptativo por moneda con fallback bayesiano al calibrador global:
+                // Ola XLIV: `calibrate_at` olvida la evidencia con el tiempo
+                // sin operar; sin él, una p hundida vetaba la moneda en el EV
+                // para siempre (estado absorbente: sin operaciones no hay datos
+                // que la corrijan).
                 let cal_prob = if coin_id < self.calibrator_by_coin.len()
                     && self.calibrator_by_coin[coin_id].observations() >= 5
                 {
-                    self.calibrator_by_coin[coin_id].calibrate(raw_confidence_score)
+                    self.calibrator_by_coin[coin_id].calibrate_at(raw_confidence_score, event_time_ms)
                 } else {
-                    self.confidence_calibrator.calibrate(raw_confidence_score)
+                    self.confidence_calibrator
+                        .calibrate_at(raw_confidence_score, event_time_ms)
                 };
                 calibrated_intent.win_probability = cal_prob;
                 let order =
@@ -5841,12 +5936,22 @@ impl GodEngineCore {
                     // modelo el veto permanece (B3.25); con CERO historial del símbolo,
                     // la primera orden ES la sonda que genera la evidencia que el gate
                     // exige — sin ella el motor jamás arrancaría (oráculo 0/144).
+                    //
+                    // Ola XLIV: UNA sonda a la vez. `trade_count` sólo sube al
+                    // CERRAR y no se persiste, así que sin este límite la
+                    // «sonda» podía llenar los 3 slots espectrales de la moneda
+                    // antes del primer cierre, y tras cada reinicio las monedas
+                    // sin modelo (27 de 30 hoy) abrían de nuevo saltándose el
+                    // gate ML de B3.25. Con una posición abierta en la moneda
+                    // (sonda en curso o posición reconciliada tras reinicio)
+                    // la evidencia se espera, no se multiplica.
                     let arranque_frio_sin_roster = !has_roster_model
                         && self.arena.coins[coin_id]
                             .metrics
                             .trade_count
                             .load(Ordering::Relaxed)
-                            == 0;
+                            == 0
+                        && !self.arena.coins[coin_id].positions.is_any_open();
                     let ml_gate_ok = arranque_frio_sin_roster
                         || (has_roster_model
                             && if order.signal == SignalType::Long {
@@ -6800,6 +6905,56 @@ mod w1_bocpd_tests {
         // régimen roto: transporte de 2 ejes-log sostenido
         let p = obs.observe(2.0).expect("calentado");
         assert!(p > 0.5, "salto sostenido dio p_transition={p}");
+    }
+
+    /// Ola XLIV — un W₁ estacionario pero RUIDOSO no es un cambio de régimen.
+    /// Con la media de segmento encogida por la evidencia y las densidades sin
+    /// su 1/σ, W₁ ~ N(1, 0,25) daba p_transition ≈ 0,40 de media.
+    #[test]
+    fn xliv_w1_estacionario_ruidoso_no_es_transicion() {
+        let mut obs = W1ChangepointObserver::new();
+        // Generador determinista (LCG) + Box–Muller.
+        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut u = || {
+            x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((x >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+        };
+        let (mut suma, mut n, mut altos) = (0.0, 0usize, 0usize);
+        for i in 0..2_000 {
+            let z = (-2.0 * u().ln()).sqrt() * (2.0 * std::f64::consts::PI * u()).cos();
+            let w1 = (1.0 + 0.25 * z).max(0.0);
+            if let Some(p) = obs.observe(w1) {
+                if i >= 200 {
+                    suma += p;
+                    n += 1;
+                    if p > 0.3 {
+                        altos += 1;
+                    }
+                }
+            }
+        }
+        let media = suma / n as f64;
+        assert!(media < 0.05, "p_transition media en reposo ruidoso = {media}");
+        assert!((altos as f64) / (n as f64) < 0.02, "{altos}/{n} observaciones con p > 0,3");
+        // Y el nivel sigue detectándose: un salto sostenido a W₁ = 3 dispara.
+        let p = obs.observe(3.0).expect("calentado");
+        assert!(p > 0.5, "salto tras reposo ruidoso dio {p}");
+    }
+
+    /// Ola XLIV — un mismo evento publicado dos veces (process_event y
+    /// process_tick_dual) cuenta como UNA observación.
+    #[test]
+    fn xliv_un_evento_una_observacion() {
+        let mut a = W1ChangepointObserver::new();
+        let mut b = W1ChangepointObserver::new();
+        for t in 0..50u64 {
+            let w1 = 0.1 + (t % 5) as f64 * 0.05;
+            a.observe_at(t, w1);
+            b.observe_at(t, w1);
+            b.observe_at(t, w1);
+        }
+        assert_eq!(a.transition_probability(), b.transition_probability());
+        assert_eq!(a.n_obs, b.n_obs);
     }
 
     /// Contorno: <8 observaciones → None (no se afirma cambio en frío).

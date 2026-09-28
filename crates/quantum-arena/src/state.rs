@@ -252,6 +252,9 @@ pub struct CoinArena {
     /// se aparta el flujo actual. 0 = aún en calentamiento.
     pub cvd_mean_ewma: AtomicF64,
     pub cvd_sq_ewma: AtomicF64,
+    /// Ola XLIV: peso de corrección de sesgo de las EWMAs del CVD
+    /// (EWMA de la constante 1: `1 − (1 − α)^t`).
+    pub cvd_ewma_peso: AtomicF64,
     /// (Ola XLII·A3b) Estadística del CAMPO espectral para los extremos de
     /// X-016: segundo momento de la marea neutra (swing·0.6+secular·0.4) y
     /// media/segundo momento de la entropía. Los «extremos» pasan de
@@ -259,6 +262,9 @@ pub struct CoinArena {
     pub tide_sq_ewma: AtomicF64,
     pub entropy_mean_ewma: AtomicF64,
     pub entropy_sq_ewma: AtomicF64,
+    /// Ola XLIV: peso de corrección de sesgo compartido por las EWMAs de
+    /// marea y entropía (se actualizan juntas, con la misma α).
+    pub campo_ewma_peso: AtomicF64,
     /// Tracking de Liquidez Profunda L2
     pub l2_bid_wall: AtomicF64, // Volumen acumulado en bids
     pub l2_ask_wall: AtomicF64, // Volumen acumulado en asks
@@ -459,7 +465,9 @@ impl CoinArena {
             agg_buy_vol: AtomicF64::new(0.0),
             cvd_mean_ewma: AtomicF64::new(0.0),
             cvd_sq_ewma: AtomicF64::new(0.0),
+            cvd_ewma_peso: AtomicF64::new(0.0),
             tide_sq_ewma: AtomicF64::new(0.0),
+            campo_ewma_peso: AtomicF64::new(0.0),
             entropy_mean_ewma: AtomicF64::new(1.0),
             entropy_sq_ewma: AtomicF64::new(1.0),
             agg_sell_vol: AtomicF64::new(0.0),

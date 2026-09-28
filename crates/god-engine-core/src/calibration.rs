@@ -68,7 +68,14 @@ pub struct PlattCalibrator {
     obs: VecDeque<(f64, bool)>,
     a: f64,
     b: f64,
+    /// Ola XLIV: instante (ms de evento) del último resultado incorporado.
+    ultimo_dato_ms: Option<u64>,
 }
+
+/// Semivida de la evidencia del calibrador (Ola XLIV): el borde LENTO de la
+/// banda operativa (12 h). Es el horizonte más largo en el que el motor dice
+/// medir y mantener posiciones; evidencia más vieja describe otro régimen.
+pub const SEMIVIDA_EVIDENCIA_MS: f64 = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS;
 
 impl Default for PlattCalibrator {
     fn default() -> Self {
@@ -82,6 +89,7 @@ impl PlattCalibrator {
             obs: VecDeque::with_capacity(WINDOW),
             a: 1.0,
             b: 0.0,
+            ultimo_dato_ms: None,
         }
     }
 
@@ -101,6 +109,45 @@ impl PlattCalibrator {
             return 0.5;
         }
         sigmoid(self.a * logit(score) + self.b)
+    }
+
+    /// Probabilidad calibrada con OLVIDO por tiempo (Ola XLIV).
+    ///
+    /// El calibrador sólo aprende de operaciones EJECUTADAS. Si su mapa baja
+    /// la p lo bastante como para que la puerta de valor esperado (D-751) lo
+    /// rechace todo, no vuelve a haber operaciones, el mapa no vuelve a
+    /// cambiar y la moneda queda vetada para siempre: un estado ABSORBENTE
+    /// (el que D-690 evitó en la puerta de confianza). Con olvido, la
+    /// evidencia pesa `w = 2^(−Δt/semivida)` desde el último resultado y la
+    /// probabilidad se mezcla con el prior identidad —el comportamiento en
+    /// frío del propio calibrador—: `p = w·p_ajustada + (1 − w)·s`. Un
+    /// régimen perdedor se olvida gradualmente y el sistema vuelve a sondear
+    /// (a tamaño Kelly pequeño, porque el Kelly lee la misma p); un resultado
+    /// nuevo restablece el peso completo. Aproximación barata de una
+    /// verosimilitud con pesos por antigüedad: en el camino caliente no se
+    /// reajusta el modelo.
+    #[inline]
+    pub fn calibrate_at(&self, score: f64, now_ms: u64) -> f64 {
+        let ajustada = self.calibrate(score);
+        let Some(ultimo) = self.ultimo_dato_ms else {
+            return ajustada;
+        };
+        if !score.is_finite() || now_ms <= ultimo {
+            return ajustada;
+        }
+        let dt = (now_ms - ultimo) as f64;
+        let w = 0.5f64.powf(dt / SEMIVIDA_EVIDENCIA_MS);
+        let prior = score.clamp(EPS, 1.0 - EPS);
+        w * ajustada + (1.0 - w) * prior
+    }
+
+    /// Añade un resultado con su instante de evento (Ola XLIV) y reajusta.
+    pub fn update_at(&mut self, score: f64, won: bool, now_ms: u64) {
+        if !score.is_finite() {
+            return;
+        }
+        self.ultimo_dato_ms = Some(self.ultimo_dato_ms.map_or(now_ms, |u| u.max(now_ms)));
+        self.update(score, won);
     }
 
     /// Añade un resultado y reajusta el mapa.
@@ -243,6 +290,39 @@ pub fn muro_en_contra(bid_wall: f64, ask_wall: f64, gen_razon: f64, es_largo: bo
         return true;
     }
     en_contra / a_favor >= razon_gen
+}
+
+/// Muestras efectivas mínimas para fiarse de la σ de una EWMA (el mismo
+/// mínimo muestral que usan el resto de gates de evidencia del sistema).
+pub const EWMA_MUESTRAS_MINIMAS: f64 = 30.0;
+
+/// Actualiza una EWMA con su PESO de corrección de sesgo: `peso` es la EWMA
+/// de la constante 1 (arranca en 0), de modo que `peso = 1 − (1 − α)^t`.
+#[inline]
+pub fn ewma_con_peso(valor: f64, previo: f64, peso: f64, alfa: f64) -> (f64, f64) {
+    (previo + alfa * (valor - previo), peso + alfa * (1.0 - peso))
+}
+
+/// Media y σ CORREGIDAS por sesgo de una EWMA que arrancó en 0 (Ola XLIV).
+///
+/// Sin la corrección, tras t eventos la media vale m·(1 − (1 − α)^t) y el
+/// segundo momento igual: con α = 0,002, tras UN evento de CVD −0,05 la σ
+/// sale ≈ 0,045·|c| y el z ≈ −22 — el veto de flujo se disparaba en cada
+/// arranque y al inicio de cada backtest. Devuelve `None` hasta que el peso
+/// equivale a [`EWMA_MUESTRAS_MINIMAS`] eventos: sin σ medida no se inventa
+/// umbral (el llamador cae a su literal histórico).
+#[inline]
+pub fn momentos_ewma_corregidos(media: f64, segundo: f64, peso: f64, alfa: f64) -> Option<(f64, f64)> {
+    if !(alfa > 0.0 && alfa < 1.0) || !media.is_finite() || !segundo.is_finite() || !peso.is_finite() {
+        return None;
+    }
+    let peso_minimo = 1.0 - (1.0 - alfa).powf(EWMA_MUESTRAS_MINIMAS);
+    if peso < peso_minimo {
+        return None;
+    }
+    let m = media / peso;
+    let var = (segundo / peso - m * m).max(0.0);
+    Some((m, var.sqrt()))
 }
 
 #[cfg(test)]
@@ -405,5 +485,97 @@ mod tests_d749_muro {
                 "razon {razon} dejó pasar una pared 10×"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_xliv_ewma_corregida {
+    use super::*;
+
+    /// El defecto: con la EWMA cruda, un solo evento ya daba σ «válida» y un
+    /// z enorme. Con la corrección, no hay σ hasta 30 eventos efectivos.
+    #[test]
+    fn xliv_un_evento_no_da_sigma() {
+        let alfa = 0.002;
+        let (m, w) = ewma_con_peso(-0.05, 0.0, 0.0, alfa);
+        let (sq, _) = ewma_con_peso(0.0025, 0.0, 0.0, alfa);
+        assert!(momentos_ewma_corregidos(m, sq, w, alfa).is_none());
+        // La lectura cruda que usaba el código anterior: σ > 1e-4 y |z| ≈ 22.
+        let sd_cruda = (sq - m * m).max(0.0).sqrt();
+        assert!(sd_cruda > 1e-4 && ((-0.05 - m) / sd_cruda).abs() > 20.0);
+    }
+
+    /// Con muestra suficiente, media y σ corregidas recuperan las de la
+    /// serie aunque el peso esté lejos de 1 (t ≪ 1/α).
+    #[test]
+    fn xliv_momentos_corregidos_recuperan_la_distribucion() {
+        let alfa = 0.002;
+        let (mut m, mut sq, mut w) = (0.0, 0.0, 0.0);
+        for i in 0..200 {
+            let v = if i % 2 == 0 { 0.10 + 0.02 } else { 0.10 - 0.02 };
+            let (nm, nw) = ewma_con_peso(v, m, w, alfa);
+            let (nsq, _) = ewma_con_peso(v * v, sq, w, alfa);
+            m = nm;
+            sq = nsq;
+            w = nw;
+        }
+        let (media, sd) = momentos_ewma_corregidos(m, sq, w, alfa).expect("200 eventos");
+        assert!((media - 0.10).abs() < 2e-3, "media {media}");
+        assert!((sd - 0.02).abs() < 2e-3, "sd {sd}");
+    }
+}
+
+#[cfg(test)]
+mod tests_xliv_olvido {
+    use super::*;
+
+    fn calibrador_perdedor(t0: u64) -> PlattCalibrator {
+        let mut c = PlattCalibrator::new();
+        for i in 0..40u64 {
+            c.update_at(0.80, false, t0 + i);
+        }
+        c
+    }
+
+    /// Sin tiempo transcurrido, el olvido no cambia nada.
+    #[test]
+    fn xliv_sin_tiempo_no_hay_olvido() {
+        let c = calibrador_perdedor(1_000);
+        assert_eq!(c.calibrate_at(0.80, 1_039), c.calibrate(0.80));
+        // Un calibrador sin fechas (API antigua) se comporta como siempre.
+        let mut v = PlattCalibrator::new();
+        v.update(0.80, false);
+        assert_eq!(v.calibrate_at(0.80, u64::MAX), v.calibrate(0.80));
+    }
+
+    /// EL DEFECTO: 40 pérdidas a 0,80 hunden la p; sin operaciones, antes
+    /// quedaba hundida para siempre. Con olvido vuelve hacia el prior: la
+    /// mitad del camino en una semivida y casi entera en diez.
+    #[test]
+    fn xliv_la_evidencia_perdedora_se_olvida_sin_operar() {
+        let c = calibrador_perdedor(0);
+        let hundida = c.calibrate(0.80);
+        assert!(hundida < 0.30, "40 pérdidas deben hundir la p: {hundida}");
+        let semivida = SEMIVIDA_EVIDENCIA_MS as u64;
+        let media = c.calibrate_at(0.80, 39 + semivida);
+        assert!((media - (0.5 * hundida + 0.5 * 0.80)).abs() < 1e-9);
+        let lejos = c.calibrate_at(0.80, 39 + 10 * semivida);
+        assert!((lejos - 0.80).abs() < 1e-3, "tras 10 semividas: {lejos}");
+        // Monótona hacia el prior.
+        let mut previo = hundida;
+        for k in 1..=20u64 {
+            let p = c.calibrate_at(0.80, 39 + k * semivida / 2);
+            assert!(p >= previo - 1e-15);
+            previo = p;
+        }
+    }
+
+    /// Un resultado nuevo restablece el peso completo de la evidencia.
+    #[test]
+    fn xliv_un_dato_nuevo_restablece_la_evidencia() {
+        let mut c = calibrador_perdedor(0);
+        let t = 5 * SEMIVIDA_EVIDENCIA_MS as u64;
+        c.update_at(0.80, false, t);
+        assert_eq!(c.calibrate_at(0.80, t), c.calibrate(0.80));
     }
 }

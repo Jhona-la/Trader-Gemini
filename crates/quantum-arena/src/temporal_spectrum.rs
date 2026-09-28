@@ -33,6 +33,36 @@
 /// Escalas del espectro: 10^-6 ms * 4^i para i∈0..32 → 1 ns (10^-6 ms) … ≈146.15 años (4.61*10^12 ms).
 /// Log-espaciadas base 4 (≈1.66 intervalos/década): resolución uniforme en
 /// log(τ), cubriendo desde microestructura en nanosegundos hasta tendencias seculares de más de 100 años.
+/// Fisher de escala MÁXIMA de la malla de base 4: toda la masa en una sola
+/// escala (dos saltos de |Δq| = 1 entre vecinos), 2/(ln 4)².
+pub const FISHER_ESCALA_MAX: f64 = 1.040_684_490_502_803_9;
+
+/// Soporte efectivo de la masa espectral, en número de escalas de la malla:
+/// k = [`FISHER_ESCALA_MAX`] / F. Exacto para masa uniforme sobre k escalas
+/// contiguas; ∞ para masa uniforme (F = 0); 1 para un único pico.
+#[inline]
+pub fn soporte_efectivo_en_escalas(fisher: f64) -> f64 {
+    if fisher.is_finite() && fisher > 0.0 {
+        FISHER_ESCALA_MAX / fisher
+    } else {
+        f64::INFINITY
+    }
+}
+
+/// Fisher mínima para declarar un régimen IDENTIFICABLE (Ola XLIV).
+///
+/// Un régimen es identificable cuando su masa espectral se concentra en, a lo
+/// sumo, la MITAD de la banda operativa [`TAU_ANCHOR_FAST_MS`, `TAU_ANCHOR_SLOW_MS`]
+/// (≈ 6,25 escalas de la malla de base 4 ⇒ soporte ≤ 3,13 escalas ⇒
+/// F ≥ ≈ 0,33). Antes el gate walk-forward exigía F > 1,0, que sólo alcanza
+/// un pico degenerado en UNA escala (F ≤ 1,04): con dos o más monedas vivas
+/// abortaba TODAS las rondas de evolución.
+#[inline]
+pub fn umbral_fisher_identificable() -> f64 {
+    let escalas_banda = (TAU_ANCHOR_SLOW_MS / TAU_ANCHOR_FAST_MS).ln() / 4f64.ln() + 1.0;
+    FISHER_ESCALA_MAX / (escalas_banda / 2.0)
+}
+
 pub const SPECTRUM_SCALES_MS: [f64; 32] = [
     1.0e-6,                   // 1 ns
     4.0e-6,                   // 4 ns
@@ -1000,29 +1030,33 @@ impl HorizonCurve {
 //   estimados como EWMA del núcleo corregidos por masa (misma convención que
 //   `ewma_dev_vol`, D-742). S_2 = dev_vol², S_3 = dev_s3³-normalizado.
 // - Operador: exponentes ζ(p) = d ln S_p / d ln τ por regresión log-log sobre
-//   las escalas con masa suficiente. K41 (self-similar): ζ(p) = p/3, y el
-//   4/5-law de Kolmogorov fija ζ(3) = 1 EXACTO. La intermitencia (cascada
-//   multifractal, K62) se manifiesta como ζ(3) < 1: las colas son más gruesas
-//   que la autosimilaridad predice.
+//   las escalas con masa suficiente Y resueltas por el reloj de eventos
+//   (τ ≥ resolución efectiva, Ola XLIV). Un proceso autosimilar de Hurst H
+//   da ζ(p) = p·H (precio browniano: ζ₂ = 1, ζ₃ = 1,5; K41 en turbulencia:
+//   H = 1/3, ζ₃ = 1). La intermitencia (cascada multifractal, K62) se
+//   manifiesta como CONCAVIDAD de ζ(p): ζ₃ < (3/2)·ζ₂.
 // - Unidades: adimensional (pendiente en doble log).
-// - Contorno: espectro frío (masa < masa_min en una escala) → esa escala no
-//   participa; <4 escalas válidas → None (no se afirma exponente).
-// - Identificabilidad: χ = (1 − ζ3)⁺ es la magnitud de intermitencia que el
-//   host usa para elevar los pisos de exigencia (colas gruesas ⇒ exigir más).
+// - Contorno: espectro frío (masa < masa_min en una escala) o escala por
+//   debajo de la resolución → esa escala no participa; <4 escalas válidas →
+//   None (no se afirma exponente).
+// - Identificabilidad: χ = ((3/2)·ζ₂ − ζ₃)⁺ es la magnitud de intermitencia
+//   que el host usa para elevar los pisos de exigencia (colas gruesas ⇒
+//   exigir más). Antes χ = (1 − ζ₃)⁺ usaba la referencia K41, que para un
+//   precio confunde H con multifractalidad.
 // - Coste: O(32) por consulta, sin alocación en el cálculo de pendientes.
-// - Falsación: alimentando el espectro con incrementos gaussianos iid, la
-//   autosimilaridad da ζ(p) = p/3 (verifica el test); con ráfagas/spikes, χ > 0.
+// - Falsación: con incrementos iid, ζ(p) es lineal y χ ≈ 0 (verifica el
+//   test); con ráfagas/spikes multifractales, χ > 0.
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Exponentes de estructura medidos sobre el espectro vivo de 32 escalas.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StructureFunctions {
-    /// ζ(2): pendiente de ln S_2 vs ln τ. K41: 2/3.
+    /// ζ(2): pendiente de ln S_2 vs ln τ. Precio browniano: 1 (K41: 2/3).
     pub zeta2: f64,
-    /// ζ(3): pendiente de ln S_3 vs ln τ. K41/4-5-law: 1. <1 = intermitencia.
+    /// ζ(3): pendiente de ln S_3 vs ln τ. Precio browniano: 1,5 (K41: 1).
     pub zeta3: f64,
-    /// Intermitencia χ = (1 − ζ3)⁺ ∈ [0,1): cuánto más gruesas son las colas
-    /// de lo que la autosimilaridad predice.
+    /// Intermitencia χ = ((3/2)·ζ₂ − ζ₃)⁺ ∈ [0,1]: concavidad de ζ(p),
+    /// independiente del exponente de Hurst (Ola XLIV).
     pub intermittency: f64,
     /// Escalas que participaron de la regresión (masa suficiente).
     pub usable_scales: usize,
@@ -1052,26 +1086,56 @@ impl TemporalSpectrum {
     /// Funciones de estructura S_p(τ) y sus exponentes ζ(p) por regresión
     /// log-log entre escalas observadas. None si el campo aún no tiene masa
     /// en suficientes escalas (<4): no se afirma un exponente sin soporte.
+    ///
+    /// Ola XLIV — referencia correcta para PRECIOS. K41 (ζ(p) = p/3, ζ(3) = 1)
+    /// es la autosimilaridad de VELOCIDADES en turbulencia; un precio
+    /// browniano escala con H = ½ (ζ(p) = p·H: ζ₂ = 1, ζ₃ = 1,5). Medir la
+    /// intermitencia como (1 − ζ₃)⁺ confundía el exponente de Hurst con la
+    /// multifractalidad. Lo que distingue una cascada multifractal (K62) de
+    /// cualquier proceso autosimilar —sea cual sea su H— es la NO LINEALIDAD
+    /// de ζ(p): χ = ((3/2)·ζ₂ − ζ₃)⁺, nula para Brown y para K41 y positiva
+    /// sólo cuando ζ(p) es cóncava.
     pub fn structure_functions(&self) -> Option<StructureFunctions> {
         let (z2, n) = self.regress_log_log(2)?;
         let (z3, _) = self.regress_log_log(3)?;
         Some(StructureFunctions {
             zeta2: z2,
             zeta3: z3,
-            intermittency: (1.0 - z3).max(0.0).min(1.0),
+            intermittency: (1.5 * z2 - z3).max(0.0).min(1.0),
             usable_scales: n,
         })
+    }
+
+    /// Resolución temporal EFECTIVA del espectro (Ola XLIV): el mayor entre el
+    /// reloj del exchange y el intervalo medio entre eventos. Una escala con
+    /// τ por debajo de ella no está resuelta —su EWMA sólo repite el último
+    /// tick— y el momento que publica es el mismo en todas esas escalas.
+    pub fn resolucion_efectiva_ms(&self) -> f64 {
+        let dt_medio = if self.updates > 1 {
+            (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64 / (self.updates - 1) as f64
+        } else {
+            0.0
+        };
+        FEED_CLOCK_RESOLUTION_MS.max(dt_medio)
     }
 
     /// Regresión OLS de ln S_p contra ln τ sobre escalas con masa suficiente.
     fn regress_log_log(&self, p: u32) -> Option<(f64, usize)> {
         let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
+        // Ola XLIV: las escalas por debajo de la resolución efectiva publican
+        // el mismo momento (el del último tick) y formaban un bloque plano que
+        // arrastraba la pendiente: ζ₃ ≈ 0,56 en un precio browniano cuyo
+        // valor sobre las escalas reales es 1,5.
+        let resolucion = self.resolucion_efectiva_ms();
         let mut n = 0usize;
         let mut sx = 0.0;
         let mut sy = 0.0;
         let mut sxx = 0.0;
         let mut sxy = 0.0;
         for s in self.scales.iter() {
+            if s.tau_ms < resolucion {
+                continue;
+            }
             // Sólo escalas cuyo núcleo tiene ≥10% de masa: por debajo, la EWMA
             // es aún semilla y el momento no representa la escala.
             let mass = 1.0 - (-elapsed / s.tau_ms).exp();
@@ -1218,6 +1282,12 @@ impl TemporalSpectrum {
 
     /// Información de Fisher 1-D de la masa espectral respecto a ln(τ).
     /// None sin masa (espectro frío): sin campo no hay identificabilidad.
+    ///
+    /// Rango (Ola XLIV): como |Δq| ≤ max(qᵢ, qⱼ), cada término cumple
+    /// Δq²/max ≤ |Δq|, así que F ≤ Σ|Δq|/(ln 4)² ≤ [`FISHER_ESCALA_MAX`]. Para
+    /// masa uniforme sobre k escalas contiguas F = FISHER_ESCALA_MAX / k: la
+    /// Fisher se lee como el inverso del SOPORTE EFECTIVO en escalas (ver
+    /// [`soporte_efectivo_en_escalas`]).
     pub fn fisher_scale_information(&self) -> Option<f64> {
         // MISMA masa que la entropía espectral (spectral_field): q_i = w_i·|s_i|/Σ.
         let mut e = [0.0f64; 32];
@@ -1616,10 +1686,51 @@ fn xli_c2_gaussian_iid_da_autosimilaridad_k41() {
         spec.update(price, t);
     }
     let sf = spec.structure_functions().expect("masa suficiente tras 40k ticks");
-    // K41: ζ3 = 1. La EWMA introduce sesgo de suavizado hacia abajo en las
-    // escalas rápidas: ζ3 medido debe quedar en banda ancha alrededor de 1.
-    assert!(sf.zeta3 > 0.5 && sf.zeta3 < 1.6, "zeta3={} fuera de banda K41", sf.zeta3);
+    // Ola XLIV: la referencia de un PRECIO browniano es ζ(p) = p/2 (ζ₃ = 1,5),
+    // no K41 (ζ₃ = 1). La EWMA suaviza, así que la banda es ancha; lo que el
+    // contrato fija es la no intermitencia de un proceso iid: χ ≈ 0.
+    assert!(sf.zeta3 > 1.0 && sf.zeta3 < 2.0, "zeta3={} fuera de banda browniana", sf.zeta3);
+    assert!(sf.intermittency < 0.15, "iid no es intermitente: chi={}", sf.intermittency);
     assert!(sf.usable_scales >= 4);
+    // Con eventos cada 50 ms, ninguna escala por debajo de 50 ms participa.
+    assert!((spec.resolucion_efectiva_ms() - 50.0).abs() < 1e-6);
+    let resueltas = spec.scales.iter().filter(|s| s.tau_ms >= 50.0).count();
+    assert!(sf.usable_scales <= resueltas);
+}
+
+/// Ola XLIV — el rango de la Fisher de escala y su umbral de identificabilidad.
+/// El gate walk-forward exigía F > 1,0, inalcanzable salvo para un pico en UNA
+/// escala: la constante, el soporte efectivo y el umbral se fijan aquí.
+#[test]
+fn xliv_fisher_de_escala_tiene_techo_y_umbral_alcanzable() {
+    assert!((FISHER_ESCALA_MAX - 2.0 / (4f64.ln() * 4f64.ln())).abs() < 1e-15);
+    // Masa uniforme sobre k escalas contiguas (lejos de los bordes de la malla).
+    let fisher_bloque = |k: usize| {
+        let mut spec = TemporalSpectrum::new();
+        for i in 0..32 {
+            spec.scales[i].signal = if (10..10 + k).contains(&i) { 1.0 } else { 0.0 };
+        }
+        let w = spec.scales[10].fusion_weight();
+        for i in 10..10 + k {
+            assert!((spec.scales[i].fusion_weight() - w).abs() < 1e-15);
+        }
+        spec.fisher_scale_information().expect("masa presente")
+    };
+    for k in [1usize, 2, 3, 6, 12] {
+        let f = fisher_bloque(k);
+        assert!(f <= FISHER_ESCALA_MAX + 1e-12, "k={k}: F={f} excede el techo");
+        assert!(
+            (soporte_efectivo_en_escalas(f) - k as f64).abs() < 1e-9,
+            "k={k}: soporte efectivo {}",
+            soporte_efectivo_en_escalas(f)
+        );
+    }
+    let u = umbral_fisher_identificable();
+    assert!(u > 0.30 && u < 0.36, "umbral {u}");
+    // Concentrado en ≤ 3 escalas: identificable; en toda la banda (6): no.
+    assert!(fisher_bloque(3) > u && fisher_bloque(6) < u);
+    // El umbral anterior (1,0) sólo lo supera un pico en una escala.
+    assert!(fisher_bloque(1) > 1.0 && fisher_bloque(2) < 1.0);
 }
 
 #[test]
