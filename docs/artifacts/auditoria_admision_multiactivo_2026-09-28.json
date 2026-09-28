@@ -1,0 +1,395 @@
+{
+  "schema_version": 1,
+  "audit_id": "ADMISION-MULTIACTIVO-2026-09-28",
+  "language": "es",
+  "status": "partial_verified_not_certified",
+  "report": "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md",
+  "evidence_cut": {
+    "date": "2026-09-28",
+    "timezone": "America/Bogota",
+    "shared_checkout": true,
+    "atomic_build_snapshot": false
+  },
+  "scope": {
+    "complete_project_audit": false,
+    "production_or_demo_run": false,
+    "orders_sent": false,
+    "genome_promotion": false,
+    "profitability_validation": false,
+    "untracked_tests_are_local_evidence": true
+  },
+  "git": {
+    "initial_main": "dc87cf1d0e65231aee54596c7b92fc949e77b041",
+    "observed_main": "988f0478b1f81a0382d82a263648e4dabeb26611",
+    "observed_origin_main": "988f0478b1f81a0382d82a263648e4dabeb26611",
+    "confirmed_by": [
+      "git fetch --prune origin",
+      "git ls-remote --heads origin"
+    ],
+    "ahead": 0,
+    "behind": 0,
+    "concurrent_commit_not_created_by_this_codex_action": true,
+    "concurrent_commit_files": 14,
+    "codex_staged": false,
+    "codex_committed": false,
+    "codex_pushed": false,
+    "codex_merged": false,
+    "deleted_branches": [],
+    "eligible_extra_merged_branches": [],
+    "retained_branches": [
+      {
+        "name": "backup-before-cleanup",
+        "exclusive_commits": 3
+      },
+      {
+        "name": "v7-unificacion-wip",
+        "exclusive_commits": 1
+      },
+      {
+        "name": "claude/elegant-euler-mmtht4",
+        "reason": "PR7 closed without merge; branch now has additional BOCPD/calibration work absent from main"
+      }
+    ],
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/Jhona-la/Trader-Gemini/pull/7",
+      "state": "CLOSED",
+      "merged_at": null,
+      "closed_at": "2026-09-28T15:45:05Z",
+      "merge_status_fields_are_historical_after_closure": true,
+      "mergeable": "CONFLICTING",
+      "merge_state_status": "DIRTY",
+      "head": "cffff2fdd0e1de0a78c18a04be64625fa56eb73b",
+      "base_ref": "main",
+      "checks": [],
+      "empty_checks_do_not_mean_success": true
+    },
+    "merge_review": {
+      "read_only": true,
+      "base": "dc87cf1d0e65231aee54596c7b92fc949e77b041",
+      "paths": [
+        "crates/quantum-arena/src/genome.rs",
+        "crates/quantum-arena/src/genome_store.rs",
+        "crates/quantum-arena/tests/genome_gate_open_diagnostics.rs"
+      ],
+      "conflicted_paths": [
+        "crates/quantum-arena/src/genome_store.rs",
+        "crates/quantum-arena/tests/genome_gate_open_diagnostics.rs"
+      ],
+      "resolution_applied": false,
+      "required": "Preserve 20k seed sweep and 6561 curve grid plus seed199 witness; review composition of band predicate with anchor normalization; compare both parents and run all targets before merge."
+    },
+    "missing_from_head_tests": [
+      "crates/risk-engine/tests/correlation_admission_contract.rs",
+      "crates/risk-engine/tests/correlation_numeric_contract.rs",
+      "crates/risk-engine/tests/correlation_open_contracts.rs",
+      "crates/risk-engine/tests/spectral_matrix_contract.rs"
+    ]
+  },
+  "tests": [
+    {
+      "command": "cargo test --offline -p risk-engine --test correlation_admission_contract -- --test-threads=1",
+      "phase": "initial_11_contracts_before_fix",
+      "passed": 4,
+      "failed": 7,
+      "ignored": 0
+    },
+    {
+      "command": "cargo test --offline -p risk-engine --test correlation_admission_contract -- --test-threads=1",
+      "phase": "after_fix_before_extra_coverage",
+      "passed": 11,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "command": "cargo test --offline -q -p risk-engine --all-targets",
+      "phase": "final_local",
+      "passed": 195,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0,
+      "counts_by_suite": [
+        83,
+        9,
+        15,
+        10,
+        6,
+        8,
+        5,
+        5,
+        3,
+        13,
+        21,
+        12,
+        5
+      ]
+    },
+    {
+      "command": "cargo test --offline -q -p quantum-arena --all-targets",
+      "phase": "concurrent_genome_revalidated_not_edited",
+      "passed": 165,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0,
+      "counts_by_suite": [
+        80,
+        3,
+        1,
+        3,
+        6,
+        10,
+        4,
+        3,
+        4,
+        9,
+        4,
+        7,
+        4,
+        11,
+        4,
+        12
+      ]
+    },
+    {
+      "command": "cargo check --offline --workspace --all-targets",
+      "phase": "workspace",
+      "exit_code": 0,
+      "warnings": true,
+      "does_not_run_workspace_tests": true
+    }
+  ],
+  "new_local_test_suites": [
+    {
+      "file": "spectral_matrix_contract.rs",
+      "count": 13
+    },
+    {
+      "file": "correlation_numeric_contract.rs",
+      "count": 10
+    },
+    {
+      "file": "correlation_open_contracts.rs",
+      "count": 6
+    },
+    {
+      "file": "correlation_admission_contract.rs",
+      "count": 15
+    }
+  ],
+  "changes": [
+    {
+      "id": "SPECTRAL-003",
+      "priority": "P1",
+      "status": "consumer_bypass_removed",
+      "mechanism": "Unknown was imputed to zero in a partial star matrix; MP comparison could erase conservative count.",
+      "fix": "Structured pairwise evidence; unknown remains unknown; no MP or rho discount in D-748.",
+      "remaining": "Joint provenance and effective sample model absent."
+    },
+    {
+      "id": "SPECTRAL-004",
+      "priority": "P1",
+      "status": "partial_signs_and_slots_fixed",
+      "fix": "All slots and assets; signed PnL correlation; open but unreadable counted unknown.",
+      "remaining": "Count is not weighted money risk or global atomic reservation."
+    },
+    {
+      "id": "SPECTRAL-008",
+      "priority": "P1",
+      "status": "numerical_contract_fixed",
+      "fix": "Complete finite symmetric unit PSD matrix required before averaging.",
+      "remaining": "Numerical validity cannot establish source provenance."
+    },
+    {
+      "id": "SPECTRAL-009",
+      "priority": "P1",
+      "status": "scalar_domain_fixed",
+      "fix": "rho must be finite and -1/(k-1)<=rho<=1; otherwise same fallback as None.",
+      "remaining": "Legacy one-bet floor is policy, not variance identity."
+    },
+    {
+      "id": "SPECTRAL-010",
+      "priority": "P1",
+      "status": "unsafe_discount_removed_model_open",
+      "fix": "Stop-risk EWMA not used as sigma to authorize variance credit in live admission.",
+      "remaining": "Actual monetary exposure/fees/stops/tau per position and proposed/reserved/filled states."
+    },
+    {
+      "id": "SPECTRAL-012",
+      "priority": "P2",
+      "status": "documentation_corrected_legacy_diagnostic_open",
+      "fix": "Signed triangle frustration not called Hodge decomposition; API retained off admission path.",
+      "remaining": "Nonfinite triangle omission and product underflow; adjustment uncalibrated."
+    },
+    {
+      "id": "SPECTRAL-013",
+      "priority": "P2",
+      "status": "open",
+      "remaining": "Effective sample, freshness, clipping, shared time support and estimator uncertainty."
+    },
+    {
+      "id": "SPECTRAL-014",
+      "priority": "P2",
+      "status": "partial",
+      "fix": "Impossible-rho and indefinite-triangle witnesses retained with corrected expectations, valid counterexamples added.",
+      "remaining": "No full-project certification."
+    },
+    {
+      "id": "SPECTRAL-015",
+      "priority": "P1",
+      "status": "open_unvalidated",
+      "remaining": "100 percent growth per 72h is not demonstrated; no economics validated."
+    },
+    {
+      "id": "ADM-GIT-01",
+      "priority": "P1",
+      "status": "open",
+      "evidence": "Concurrent 988f0478 omitted 44 local regression tests and linked new reports."
+    },
+    {
+      "id": "ADM-GIT-02",
+      "priority": "P2",
+      "status": "open_documented",
+      "evidence": "Published commit message describes variance/Hodge actuation, own D-748 tree passes None."
+    },
+    {
+      "id": "ADM-MERGE-01",
+      "priority": "P1",
+      "status": "closed_pr_without_merge_reconciliation_pending",
+      "evidence": "PR7 closed as superseded, not merged; its grid and band predicate must not be presumed integrated. Reused branch has new work."
+    }
+  ],
+  "coverage": {
+    "new_tests_this_wave": 15,
+    "initial_tests_with_red_green": 7,
+    "additional_tests_without_claimed_prior_red": 4,
+    "existing_tests_unignored_this_wave": 2,
+    "all_four_local_suites": 44,
+    "sign_slot_combinations_in_one_test": 24,
+    "genome_seed_sweep_cases_not_test_count": 20000,
+    "pr_grid_cases_not_run_in_this_tree": 6561
+  },
+  "coordination": {
+    "channel": "COORDINACION_CODEX_2026-09-28.md",
+    "scope_notice_appended": true,
+    "new_acknowledgment_received": true,
+    "new_acknowledgment": "GLM confirmed authorship/publication of 988f0478 and is coordinating remaining publication and PR review.",
+    "codex_reply": "Preserve four suites (44 tests), the PR 6561 grid and main 20k sweep. Bypass/sign/slot fixes are already in 988f0478.",
+    "publication_claim_not_remote_completion": true,
+    "parallel_merge_avoided": true,
+    "historical_acknowledgment": "Qoder",
+    "channel_is_lock": false,
+    "uncoordinated_publication_observed": true
+  },
+  "source_files": [
+    {
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "sha256": "F28F3A5016F9A7A63931DB404633C7E04D9FDE1922EF519C3923CE85F6EAE297",
+      "lines": 899
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "sha256": "EC31D9F93DCBDEA4360C82FCDDE2A963D2A87712343179A74DBF66E2F8CD98C2",
+      "lines": 1279
+    },
+    {
+      "path": "crates/risk-engine/src/random_matrix.rs",
+      "sha256": "9ADF6B604C93F5404C8ECC85230B2F8DBFA041D7CAD15C0E323271DAE53C9C86",
+      "lines": 258
+    },
+    {
+      "path": "crates/risk-engine/tests/correlation_admission_contract.rs",
+      "sha256": "B1A9D03AF1C3E72E6B34FC83CA715C9797399F2FA22AE06AA4C3D9757656DDF1",
+      "lines": 307
+    },
+    {
+      "path": "crates/risk-engine/tests/correlation_open_contracts.rs",
+      "sha256": "C89A34E87D7A47026C7E401D12A7E9DBAB7856CEE3E350124546C809A01C2525",
+      "lines": 81
+    },
+    {
+      "path": "crates/risk-engine/tests/correlation_numeric_contract.rs",
+      "sha256": "66F2F9E9EF3B849285A13E334AF9AA9DB8ACB11110E1C8E5324DB4564E7E24EB",
+      "lines": 126
+    },
+    {
+      "path": "crates/risk-engine/tests/spectral_matrix_contract.rs",
+      "sha256": "6DCB45A3FA4DA4F6F46F18F2E21C4F7D0D85733E5F0EC26293FAD9E3E93F84C9",
+      "lines": 123
+    },
+    {
+      "path": "crates/quantum-arena/src/genome.rs",
+      "sha256": "EFF8103325CD65C937D79D4C5677C45EABC2EEF35C21A86F8F0FD0F1D9363147",
+      "lines": 3418
+    },
+    {
+      "path": "crates/quantum-arena/src/genome_store.rs",
+      "sha256": "432A2102406EA7DF5906AB37C509F8A21183CC7CCB57E4A3BD40680C0B4DD92C",
+      "lines": 790
+    },
+    {
+      "path": "crates/quantum-arena/tests/genome_gate_open_diagnostics.rs",
+      "sha256": "CA08FE574DE25A52FA28EE0A66AFFE7436F3ED47DB61A0E87F0DF8EB7692FBB0",
+      "lines": 50
+    }
+  ],
+  "artifact_validation": {
+    "historical_prefixes_preserved": [
+      {
+        "path": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md",
+        "chars": 25091,
+        "sha256": "3CA5427B9A5C38C644B190D0F1A16D5683D0CEE9DC43A6680E9C47C6DA7678EB"
+      },
+      {
+        "path": "docs/AUDITORIA_INTEGRACION_Y_CONTRATOS_NUMERICOS_2026-09-28.md",
+        "chars": 23141,
+        "sha256": "93741D72A9D344051FE56FAFCB0219009339DC512B8C8F8238E1FC9B3C3B961B"
+      },
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "chars": 140207,
+        "sha256": "94A41EE3AB3ECA720B55ECEB7C49D473099EAF0377AD881E9838A82B40E6D77E"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "chars": 798157,
+        "sha256": "3B26460087A26F85FD68D8F672E30291F87A67E90B735593F24D2438379C23AF"
+      }
+    ],
+    "all_ten_source_hashes_match": true,
+    "json_parsed": true,
+    "test_totals_reconciled": true,
+    "final_workspace_check": {
+      "command": "cargo check --offline --workspace --all-targets",
+      "exit_code": 0,
+      "warnings": true,
+      "waited_on_other_build": true
+    },
+    "regression_rustfmt_check": {
+      "files": 4,
+      "exit_code": 0
+    },
+    "final_git_diff_check_exit_code": 0
+  },
+  "final_remote_observation": {
+    "local_time": "2026-09-28T10:57:03-05:00",
+    "main": "988f0478b1f81a0382d82a263648e4dabeb26611",
+    "branch": "claude/elegant-euler-mmtht4",
+    "branch_sha": "ebdf23894e995763af26a153e90a6d9e63da0186",
+    "branch_exclusive_commits": 8,
+    "open_pull_requests": [],
+    "main_triple_dot_branch": {"files": 6, "insertions": 360, "deletions": 68},
+    "new_branch_changes_functionally_audited": false,
+    "new_branch_is_not_merged": true,
+    "local_artifacts_and_four_test_suites_not_published_at_cut": true
+  },
+  "limitations": [
+    "No global atomic position snapshot/reservation",
+    "No benchmark of live latency",
+    "No nanosecond-to-century data coverage",
+    "Legacy correlation threshold remains binary",
+    "Bootstrap risk proxy cap/8 remains",
+    "AllNoise is not independence",
+    "Green tests do not validate returns",
+    "No merger or all-project review claimed"
+  ]
+}
