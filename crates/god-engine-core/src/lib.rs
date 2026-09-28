@@ -142,6 +142,21 @@ pub fn conviccion_de_rama(registro: &TasaAcierto, piso_por_magnitud: f64) -> f64
     }
 }
 
+/// XLIV-9 — DIRECCIÓN QUE EL MERCADO TOMÓ DURANTE UNA POSICIÓN.
+///
+/// `pnl_pct` es el movimiento BRUTO del mid frente a la entrada, con el signo
+/// de la posición. Devuelve `Some(true)` si el precio subió, `Some(false)` si
+/// bajó y `None` si no se movió o el dato no es finito: sin movimiento no hay
+/// dirección que puntuar. Es la magnitud que etiqueta el entrenamiento del
+/// bosque (triple barrera sobre el mid), no el resultado neto de comisiones.
+#[inline]
+pub fn direccion_realizada(is_long: bool, pnl_pct: f64) -> Option<bool> {
+    if !pnl_pct.is_finite() || pnl_pct == 0.0 {
+        return None;
+    }
+    Some(if is_long { pnl_pct > 0.0 } else { pnl_pct < 0.0 })
+}
+
 /// D-756 — ESCALADA DE EXIGENCIA TRAS UNA RACHA DE PÉRDIDAS.
 ///
 /// QUÉ ESTABA MAL: la exigencia de desequilibrio de libro tras dos pérdidas
@@ -2422,11 +2437,18 @@ impl GodEngineCore {
                         }
                     }
                     // D-752 - Y EL BOSQUE APRENDE DE SU PROPIO VOTO.
-                    // Direccion realizada: un largo que gana subio y uno que
-                    // pierde baja; para un corto, al reves (`subio == (is_long == is_win)`).
+                    // XLIV-9: la direccion realizada es la del MERCADO (mid
+                    // al cierre frente a la entrada), no el signo del PnL
+                    // NETO. El bosque se entrena con triple barrera sobre el
+                    // mid bruto; con `subio = (is_long == is_win)` un largo
+                    // que subia menos que las comisiones contaba como bajada,
+                    // y el voto CONTRARIO a una operacion marginal puntuaba
+                    // como acierto: el freno se armaba por la friccion, no
+                    // por la habilidad del bosque. Sin movimiento no hay dato.
                     if let Some(predijo_subida) = self.bosque_voto_abierto[coin_id].take() {
-                        let subio = is_long == is_win;
-                        self.bosque_registro[coin_id].observar(predijo_subida == subio);
+                        if let Some(subio) = direccion_realizada(is_long, pnl_pct) {
+                            self.bosque_registro[coin_id].observar(predijo_subida == subio);
+                        }
                     }
 
 
@@ -6682,6 +6704,41 @@ mod tests_d752_d756 {
 
     fn registro(n: u32, aciertos: u32) -> TasaAcierto {
         TasaAcierto { n, aciertos }
+    }
+
+    /// XLIV-9 — EL BOSQUE SE PUNTÚA CON LA DIRECCIÓN DEL MERCADO.
+    ///
+    /// Un largo cuyo mid sube 3 pb y cierra en pérdida neta por 10 pb de
+    /// comisiones: el mercado SUBIÓ. La regla anterior (`is_long == is_win`)
+    /// lo contaba como bajada y daba por acertado el voto bajista del bosque.
+    #[test]
+    fn xliv_la_direccion_realizada_es_la_del_mid_no_la_del_pnl_neto() {
+        let (sube_bruto, pnl_neto) = (0.0003_f64, 0.0003 - 0.0010);
+        assert!(pnl_neto < 0.0, "premisa: pérdida neta");
+        let (is_long, is_win) = (true, pnl_neto > 0.0);
+        let subio_viejo = is_long == is_win;
+        assert!(!subio_viejo, "la regla vieja decía «bajó»");
+        assert_eq!(direccion_realizada(true, sube_bruto), Some(true));
+        // Corto con el mid bajando: pnl_pct positivo ⇒ bajó.
+        assert_eq!(direccion_realizada(false, 0.0003), Some(false));
+        // Corto con el mid subiendo: pnl_pct negativo ⇒ subió.
+        assert_eq!(direccion_realizada(false, -0.0003), Some(true));
+        // Sin movimiento, o dato inválido, no se puntúa.
+        assert_eq!(direccion_realizada(true, 0.0), None);
+        assert_eq!(direccion_realizada(true, f64::NAN), None);
+
+        // Consecuencia en el registro: un bosque que siempre vota «baja»
+        // frente a largos marginales (suben menos que las comisiones) ya no
+        // acumula aciertos ficticios.
+        let mut r = TasaAcierto::default();
+        for _ in 0..200 {
+            if let Some(subio) = direccion_realizada(true, sube_bruto) {
+                // Voto del bosque: «baja» (predijo_subida = false).
+                r.observar(!subio);
+            }
+        }
+        let (_, hi) = r.intervalo(Z95);
+        assert!(hi < 0.5, "el voto bajista fue siempre erróneo: cota sup {hi}");
     }
 
     /// D-752 — CON TRES DATOS NO HAY CERTEZA.
