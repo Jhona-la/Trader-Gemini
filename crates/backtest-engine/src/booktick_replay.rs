@@ -979,6 +979,11 @@ mod tests {
 
     #[test]
     fn replay_con_envolvente_sigue_determinista() {
+        // XLIV-12: el replay no registra specs (lo hace el llamador). Sin
+        // fijarlo aquí, la 1.ª corrida podía ver el registro vacío (0 trades,
+        // rechazo «spec») y la 2.ª el spec que otro test acababa de registrar
+        // en paralelo (1 trade): «left: 0, right: 1» sin no-determinismo real.
+        crate::asegurar_spec_nativo("BTCUSDT");
         let ticks = synth_ticks(20_000);
         let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
         let cfg = ReplayConfig {
