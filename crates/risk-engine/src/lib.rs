@@ -717,9 +717,11 @@ impl RiskEngine {
         // `tp_sl::latency_slippage_pct`, con la referencia temporal en la
         // escala a la que se MIDE el ATR (la vela interna de 1 minuto), la
         // misma que ya gobierna la dispersión de TP/SL.
-        let latency_slip = crate::tp_sl::latency_slippage_pct(atr_pct, lat_ms);
-        let per_side_slip = (slip_floor + latency_slip).clamp(0.0, 0.05);
-        let roundtrip_fee = entry_fee_rate + exit_fee_rate + 2.0 * per_side_slip;
+        // XLIV-8: la fórmula completa vive en `tp_sl::roundtrip_friction`,
+        // la MISMA que usan los brackets del host y el daemon.
+        debug_assert_eq!(entry_fee_rate, exit_fee_rate);
+        let roundtrip_fee =
+            crate::tp_sl::roundtrip_friction(entry_fee_rate, slip_floor, atr_pct, lat_ms);
         if !roundtrip_fee.is_finite() || roundtrip_fee < 0.0 {
             return rej(REJ_INVALID_INPUT);
         }

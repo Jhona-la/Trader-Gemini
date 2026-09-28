@@ -1157,9 +1157,8 @@ impl LiveEvolutionDaemon {
         // C-10 (INFORME 14): el daemon seguía con fricción pre-D-645 —
         // maker+taker (el roundtrip real de una entrada de mercado es
         // TAKER×2), ATR literal 0.002 y latencia normalizada contra un
-        // 150ms literal. Ahora replica la fórmula del gate de entrada del
-        // host (god_engine.rs `fee_rt_entry`, B3.19): 2×taker (D-645) +
-        // 2×(slippage_floor + atr_del_gen·latencia_del_gen/umbral_pánico).
+        // 150ms literal. Ahora replica la fricción del gate de entrada:
+        // 2×taker (D-645) + 2×(slippage_floor + latencia difusiva).
         let slip_floor_g = self
             .arena
             .config
@@ -1172,25 +1171,21 @@ impl LiveEvolutionDaemon {
             .latency_penalty_ms
             .load(Ordering::Relaxed)
             .max(0.0);
-        let lat_ref_g = self
-            .arena
-            .config
-            .latency_ms_panic_threshold
-            .load(Ordering::Relaxed)
-            .clamp(10.0, 5_000.0);
-        // D-645 / CERT-PARIDAD: unificación estricta de fricción con el host vivo (god_engine.rs:3920-3931).
+        // D-645 / CERT-PARIDAD: unificación estricta de fricción con el host vivo.
         // 1. Usar volatilidad real observada de la ventana bounded por el dynamic_atr_min del genoma.
         let atr_g = volatility.max(current_genome.dynamic_atr_min.max(0.0005));
-        // 2. lat_slip_g clamp a 0.05 (idéntico a god_engine.rs:3928 y lib.rs:1074, antes 0.01).
-        let lat_slip_g = (atr_g * (lat_g / lat_ref_g)).clamp(0.0, 0.05);
         let taker_g = self
             .arena
             .config
             .live_taker_fee
             .load(Ordering::Relaxed)
             .max(0.0001);
-        // 3. Fricción roundtrip: idéntica a la del host vivo (sin techo artificial de suma que subestimaba el slippage).
-        let roundtrip_fee = (taker_g * 2.0) + 2.0 * (slip_floor_g + lat_slip_g);
+        // 2. XLIV-8: fricción roundtrip con la MISMA función que el gate de
+        //    entrada y los brackets del host (`tp_sl::roundtrip_friction`):
+        //    latencia por difusión (D-747), no la ley lineal contra el
+        //    umbral de pánico, que cobraba hasta 3,5× más por lado.
+        let roundtrip_fee =
+            risk_engine::tp_sl::roundtrip_friction(taker_g, slip_floor_g, atr_g, lat_g);
 
         // R7-8 (des-rigidización por DERIVACIÓN): el capital semilla del
         // walk-forward era el literal 13.0 — un genoma evaluado a escala de
