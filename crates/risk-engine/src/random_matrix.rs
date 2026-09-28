@@ -31,6 +31,14 @@ pub fn mp_upper_edge(n_assets: usize, t_observations: usize) -> Option<f64> {
 /// Returns None on invalid input or nonconvergence. Singular PSD matrices are
 /// valid. No eigenvalue clipping, diagonal loading or imputation is performed.
 pub fn largest_eigenvalue(corr: &[Vec<f64>]) -> Option<f64> {
+    let diagonalized = diagonalize_correlation(corr)?;
+    Some(diagonalized.iter().enumerate().map(|(i, row)| row[i]).fold(f64::NEG_INFINITY, f64::max))
+}
+
+// One validation and eigensolver path for every spectral entry point. Keep
+// the diagonalized matrix so the maximum-only API needs no spectrum allocation
+// or sorting. A failed contract is never repaired into a different estimate.
+fn diagonalize_correlation(corr: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
     let n = corr.len();
     if n < 2 || corr.iter().any(|row| row.len() != n) {
         return None;
@@ -69,8 +77,6 @@ pub fn largest_eigenvalue(corr: &[Vec<f64>]) -> Option<f64> {
     // Bounded work: a numerical budget, not an acceptance shortcut. A matrix
     // still above residual tolerance at the end yields None, never AllNoise.
     const MAX_SWEEPS: usize = 64;
-    // (Ola XLV) Espectro completo extraído en convergencia.
-    let mut last_spectrum: Option<Vec<f64>> = None;
     for sweep in 0..=MAX_SWEEPS {
         let mut off_diagonal_norm = 0.0_f64;
         for (i, row) in a.iter().enumerate() {
@@ -82,22 +88,14 @@ pub fn largest_eigenvalue(corr: &[Vec<f64>]) -> Option<f64> {
             return None;
         }
         if off_diagonal_norm <= tolerance {
-            let mut largest = f64::NEG_INFINITY;
             for (i, row) in a.iter().enumerate() {
                 // Residual Frobenius norm bounds the spectral error. Admit
                 // only roundoff-scale negativity, not an indefinite estimate.
                 if !row[i].is_finite() || row[i] < -tolerance {
                     return None;
                 }
-                largest = largest.max(row[i]);
             }
-            // (Ola XLV) ESPECTRO COMPLETO: la diagonal de Jacobi YA son los
-            // autovalores — se devuelven ordenados para el número efectivo.
-            let mut eigenvalues: Vec<f64> =
-                (0..n).map(|i| a[i][i]).filter(|x| x.is_finite() && *x >= -tolerance).collect();
-            eigenvalues.sort_by(|x, y| y.partial_cmp(x).unwrap_or(std::cmp::Ordering::Equal));
-            last_spectrum = Some(eigenvalues);
-            return Some(largest);
+            return Some(a);
         }
         if sweep == MAX_SWEEPS {
             break;
@@ -135,89 +133,29 @@ pub fn largest_eigenvalue(corr: &[Vec<f64>]) -> Option<f64> {
     None
 }
 
-/// (Ola XLV) Espectro propio completo (ordenado descendente) de la matriz de
-/// correlación, via diagonalización de Jacobi. None si no converge.
-/// (Σλ = N por construcción de matriz de correlación.)
+/// Complete descending spectrum of a valid correlation matrix. Shares the
+/// domain, numerical tolerance and convergence checks of largest_eigenvalue.
+/// Returns None for invalid inputs or nonconvergence; trace equals N up to
+/// numerical error, not by normalizing an arbitrary covariance matrix.
 pub fn full_spectrum(corr: &[Vec<f64>]) -> Option<Vec<f64>> {
-    let n = corr.len();
-    if n < 2 || corr.iter().any(|row| row.len() != n) {
-        return None;
-    }
-    let tolerance = 64.0 * f64::EPSILON * n as f64;
-    let mut a = corr.to_vec();
-    for i in 0..n {
-        for j in (i + 1)..n {
-            a[i][j] = 0.5 * (corr[i][j] + corr[j][i]);
-            a[j][i] = a[i][j];
-        }
-    }
-    const MAX_SWEEPS: usize = 64;
-    for sweep in 0..=MAX_SWEEPS {
-        let mut off = 0.0_f64;
-        for (i, row) in a.iter().enumerate() {
-            for &entry in row.iter().skip(i + 1) {
-                off = off.hypot(entry * std::f64::consts::SQRT_2);
-            }
-        }
-        if !off.is_finite() {
-            return None;
-        }
-        if off <= tolerance {
-            let mut eigenvalues: Vec<f64> = (0..n).map(|i| a[i][i]).collect();
-            if eigenvalues.iter().any(|l| !l.is_finite() || *l < -tolerance) {
-                return None;
-            }
-            eigenvalues.sort_by(|x, y| y.partial_cmp(x).unwrap_or(std::cmp::Ordering::Equal));
-            return Some(eigenvalues);
-        }
-        if sweep == MAX_SWEEPS {
-            break;
-        }
-        for p in 0..n {
-            for q in (p + 1)..n {
-                let apq = a[p][q];
-                if apq == 0.0 {
-                    continue;
-                }
-                let tau = (a[q][q] - a[p][p]) / (2.0 * apq);
-                let t = tau.signum() / (tau.abs() + tau.hypot(1.0));
-                let c = 1.0 / (1.0 + t * t).sqrt();
-                let sine = t * c;
-                a[p][p] -= t * apq;
-                a[q][q] += t * apq;
-                a[p][q] = 0.0;
-                a[q][p] = 0.0;
-                for k in 0..n {
-                    if k != p && k != q {
-                        let akp = a[k][p];
-                        let akq = a[k][q];
-                        let np = c * akp - sine * akq;
-                        let nq = sine * akp + c * akq;
-                        a[k][p] = np; a[p][k] = np;
-                        a[k][q] = nq; a[q][k] = nq;
-                    }
-                }
-            }
-        }
-    }
-    None
+    let diagonalized = diagonalize_correlation(corr)?;
+    let mut eigenvalues: Vec<f64> =
+        diagonalized.into_iter().enumerate().map(|(i, row)| row[i]).collect();
+    eigenvalues.sort_by(|a, b| b.total_cmp(a));
+    Some(eigenvalues)
 }
 
-/// (Ola XLV) NÚMERO EFECTIVO DE APUESTAS: N_eff = (Σ√λ_i)² / Σλ_i sobre
-/// los autovalores LIMPIOS (por encima del borde MP). Es la dimensión real
-/// del espacio de apuestas del grupo — N activos con un solo factor común
-/// tienen N_eff ≈ 1; N activos independientes tienen N_eff ≈ N.
+/// Legacy name for the participation of modes ABOVE the MP reference edge:
+/// (sum sqrt(lambda))^2 / sum lambda. For k retained positive modes,
+/// Cauchy-Schwarz bounds this dimensionless diagnostic in [1, k] <= [1, N].
+/// Equal retained eigenvalues give k; a single retained mode gives 1.
 ///
-/// Contrato:
-/// - Variable: autovalores de la matriz de correlación del grupo que
-///   superan el borde MP de ruido.
-/// - Operador: (Σ√λ)²/Σλ — la participación efectiva de la varianza
-///   sistemática (Grinold-Kahn; батchelor).
-/// - Unidades: adimensional (∈ [1, N]).
-/// - Contorno: espectro vacío o sin autovalores > borde → None (no se
-///   afirma dimensión sin estructura validada).
-/// - Falsación: un factor común en N activos → N_eff ≈ 1 (test); ruido
-///   iid → None (todos bajo el borde, test).
+/// It is NOT a portfolio's effective number of independent bets: there are no
+/// position weights, and identity correlation yields None (no retained modes),
+/// not N. Exceeding an asymptotic edge does not statistically certify a factor.
+/// Missing/invalid inputs, unsupported sample count and no retained modes all
+/// yield None; callers must not interpret absence as independence or zero risk.
+/// No operational sizing or diversification discount is authorized by this API.
 pub fn effective_bets(corr: &[Vec<f64>], t_observations: usize) -> Option<f64> {
     let spectrum = full_spectrum(corr)?;
     let edge = mp_upper_edge(corr.len(), t_observations)?;

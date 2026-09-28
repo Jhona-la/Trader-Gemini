@@ -468,8 +468,10 @@ impl CoinArena {
             cvd_ewma_peso: AtomicF64::new(0.0),
             tide_sq_ewma: AtomicF64::new(0.0),
             campo_ewma_peso: AtomicF64::new(0.0),
-            entropy_mean_ewma: AtomicF64::new(1.0),
-            entropy_sq_ewma: AtomicF64::new(1.0),
+            // Estos son acumuladores SIN normalizar y campo_ewma_peso nace
+            // en cero. Sembrarlos en uno inventaría masa no incluida en peso.
+            entropy_mean_ewma: AtomicF64::new(0.0),
+            entropy_sq_ewma: AtomicF64::new(0.0),
             agg_sell_vol: AtomicF64::new(0.0),
             l2_bid_wall: AtomicF64::new(0.0),
             l2_ask_wall: AtomicF64::new(0.0),

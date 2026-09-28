@@ -349,80 +349,89 @@ impl W1ChangepointObserver {
         }
     }
 
-    /// Observa W₁ UNA vez por evento: una segunda llamada con el mismo
-    /// `event_time_ms` devuelve la probabilidad vigente sin actualizar.
+    /// Una actualización por timestamp creciente. Una entrada inválida no
+    /// consume tiempo; duplicados/retrasos no reescriben evidencia posterior.
+    /// El timestamp es la identidad legada: eventos distintos en el mismo ms
+    /// necesitan una política de agregación/identidad más fina aguas arriba.
     pub fn observe_at(&mut self, event_time_ms: u64, w1: f64) -> Option<f64> {
-        if self.last_ts == Some(event_time_ms) {
+        if !w1.is_finite() || w1 < 0.0 {
+            return None;
+        }
+        if self.last_ts.is_some_and(|last| event_time_ms <= last) {
             return self.transition_probability();
         }
-        self.last_ts = Some(event_time_ms);
-        self.observe(w1)
+        let previous_count = self.n_obs;
+        let result = self.observe(w1);
+        if self.n_obs != previous_count {
+            self.last_ts = Some(event_time_ms);
+        }
+        result
     }
 
-    /// Incorpora una observación de W₁ y devuelve la probabilidad de
-    /// transición (cambio de régimen en curso) si hay masa suficiente.
+    /// Actualización transaccional del filtro aproximado de run-length.
+    /// Se mantiene el modelo de emisión de XLIV, pero se normaliza en escala
+    /// logarítmica. Un error numérico devuelve None y preserva TODO el estado;
+    /// no se convierte en posterior cero ni en certeza de estabilidad.
     pub fn observe(&mut self, w1: f64) -> Option<f64> {
-        if w1.is_finite() && w1 >= 0.0 {
-            self.last_w1 = w1;
-            self.n_obs += 1;
-            let mut new_rl = [0.0f64; W1_R_MAX];
-            let mut new_mean = [0.0f64; W1_R_MAX];
-            let mut total = 0.0f64;
-            for r in 0..W1_R_MAX {
-                let p = self.run_length_posterior[r];
-                if p <= 0.0 {
-                    continue;
-                }
-                // PREDICTIVA del segmento estable: Normal(mean_r, σ) — el
-                // segmento largo aprieta su pronóstico alrededor de SU nivel
-                // y un W₁ fuera de él es evidencia de ruptura.
-                //
-                // Ola XLIV: las dos predictivas son DENSIDADES y llevan su
-                // 1/σ. Sin él, la de segmento nuevo (σ ancho) quedaba
-                // sobreponderada σ_nuevo/σ_emisión ≈ 5,8 veces frente a la de
-                // segmento estable: sesgo sistemático hacia «cambio».
-                let z_grow = (w1 - self.segment_mean[r]) / W1_EMISSION_SD;
-                let like_grow = (-0.5 * z_grow * z_grow).exp() / W1_EMISSION_SD;
-                // PREDICTIVA de segmento NUEVO: media ~ N(0, σ₀²) y emisión
-                // N(μ, σ²) ⇒ predictiva N(0, σ₀² + σ²). Un W₁ cualquiera es
-                // plausible al empezar de cero.
-                let sd_new = (W1_PRIOR_SD * W1_PRIOR_SD + W1_EMISSION_SD * W1_EMISSION_SD).sqrt();
-                let z_new = w1 / sd_new;
-                let like_new = (-0.5 * z_new * z_new).exp() / sd_new;
-                let grow = p * (1.0 - W1_HAZARD) * like_grow;
-                let chng = p * W1_HAZARD * like_new;
-                if r + 1 < W1_R_MAX {
-                    new_rl[r + 1] += grow;
-                    // media del segmento crecido: media incremental
-                    let m = self.segment_mean[r];
-                    new_mean[r + 1] += grow * ((m * (r as f64 + 1.0) + w1) / (r as f64 + 2.0));
-                }
-                new_rl[0] += chng;
-                // Media posterior de un segmento nuevo tras UN dato: prior
-                // N(0, σ₀²) y emisión σ² ⇒ w₁·σ₀²/(σ₀² + σ²) (antes w₁·0,5,
-                // que arrastraba cada segmento nuevo hacia 0).
-                new_mean[0] += chng * (w1 * W1_PRIOR_SD * W1_PRIOR_SD / (sd_new * sd_new));
-                total += grow + chng;
-            }
-            if total > 1e-12 {
-                // Ola XLIV: la media por run-length es Σ peso·media / Σ peso
-                // con los pesos SIN normalizar. Antes se dividía por el
-                // posterior ya normalizado: cada media quedaba multiplicada
-                // por la evidencia `total` (< 1) y se encogía hacia 0 en cada
-                // paso, así que un W₁ estacionario pero ruidoso parecía un
-                // cambio de régimen (p_transition ≈ 0,40 en reposo).
-                for k in 0..W1_R_MAX {
-                    if new_rl[k] > 0.0 {
-                        new_mean[k] /= new_rl[k];
-                    }
-                }
-                for x in new_rl.iter_mut() {
-                    *x /= total;
-                }
-            }
-            self.run_length_posterior = new_rl;
-            self.segment_mean = new_mean;
+        if !w1.is_finite() || w1 < 0.0 {
+            return None;
         }
+        let sd_new = (W1_PRIOR_SD * W1_PRIOR_SD + W1_EMISSION_SD * W1_EMISSION_SD).sqrt();
+        let z_new = w1 / sd_new;
+        let log_new = W1_HAZARD.ln() - 0.5 * z_new * z_new - sd_new.ln();
+        let mut log_grow = [f64::NEG_INFINITY; W1_R_MAX];
+        let mut log_change = [f64::NEG_INFINITY; W1_R_MAX];
+        let mut max_log = f64::NEG_INFINITY;
+        for r in 0..W1_R_MAX {
+            let p = self.run_length_posterior[r];
+            if !p.is_finite() || p < 0.0 {
+                return None;
+            }
+            if p == 0.0 {
+                continue;
+            }
+            let z = (w1 - self.segment_mean[r]) / W1_EMISSION_SD;
+            log_grow[r] = p.ln() + (-W1_HAZARD).ln_1p()
+                - 0.5 * z * z - W1_EMISSION_SD.ln();
+            log_change[r] = p.ln() + log_new;
+            max_log = max_log.max(log_grow[r]).max(log_change[r]);
+        }
+        if !max_log.is_finite() {
+            return None;
+        }
+        let mut new_rl = [0.0; W1_R_MAX];
+        let mut new_mean = [0.0; W1_R_MAX];
+        for r in 0..W1_R_MAX {
+            let grow = (log_grow[r] - max_log).exp();
+            let change = (log_change[r] - max_log).exp();
+            // El último bin representa la cola saturada, NO masa descartada.
+            // La media de cola con edad acotada sigue siendo una aproximación;
+            // no se presenta como posterior bayesiano exacto de edad infinita.
+            let next = (r + 1).min(W1_R_MAX - 1);
+            let grown_mean = self.segment_mean[r]
+                + (w1 - self.segment_mean[r]) / (r as f64 + 2.0);
+            new_rl[next] += grow;
+            new_mean[next] += grow * grown_mean;
+            new_rl[0] += change;
+            new_mean[0] += change * (w1 * (W1_PRIOR_SD / sd_new).powi(2));
+        }
+        let total: f64 = new_rl.iter().sum();
+        if !total.is_finite() || total <= 0.0 {
+            return None;
+        }
+        for k in 0..W1_R_MAX {
+            if new_rl[k] > 0.0 {
+                new_mean[k] /= new_rl[k];
+            }
+            new_rl[k] /= total;
+            if !new_mean[k].is_finite() || !new_rl[k].is_finite() {
+                return None;
+            }
+        }
+        self.run_length_posterior = new_rl;
+        self.segment_mean = new_mean;
+        self.last_w1 = w1;
+        self.n_obs = self.n_obs.saturating_add(1);
         self.transition_probability()
     }
 
@@ -7178,5 +7187,18 @@ mod w1_bocpd_tests {
         let mut obs = W1ChangepointObserver::new();
         assert!(obs.observe(5.0).is_none());
         assert!(obs.transition_probability().is_none());
+    }
+
+    #[test]
+    fn posterior_mass_is_conserved_past_the_run_length_capacity() {
+        let mut obs = W1ChangepointObserver::new();
+        for t in 0..2048 {
+            let x = if t % 257 == 256 { 40.0 } else { 0.2 };
+            obs.observe(x);
+            let mass: f64 = obs.run_length_posterior.iter().sum();
+            assert!((mass - 1.0).abs() < 1e-12, "t={t}: mass={mass}");
+            assert!(obs.run_length_posterior.iter().all(|p| p.is_finite() && *p >= 0.0));
+            assert!(obs.segment_mean.iter().all(|m| m.is_finite()));
+        }
     }
 }

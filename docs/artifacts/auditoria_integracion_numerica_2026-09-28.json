@@ -1,0 +1,338 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-28",
+  "audit": "integration_and_numerical_contracts",
+  "status": "local_repairs_verified_integration_open",
+  "report": "docs/AUDITORIA_INTEGRACION_Y_CONTRATOS_NUMERICOS_2026-09-28.md",
+  "report_sha256": "93741D72A9D344051FE56FAFCB0219009339DC512B8C8F8238E1FC9B3C3B961B",
+  "previous_artifact": "docs/artifacts/auditoria_contratos_espectrales_2026-09-28.json",
+  "previous_artifact_is_historical_cut": true,
+  "git": {
+    "branch": "main",
+    "head": "dc87cf1d0e65231aee54596c7b92fc949e77b041",
+    "origin_main": "dc87cf1d0e65231aee54596c7b92fc949e77b041",
+    "remote_fetched_and_rechecked": true,
+    "ahead": 0,
+    "behind": 0,
+    "all_work_published": false,
+    "shared_dirty_worktree": true,
+    "index_conflicts_observed": [],
+    "publication_question_answered": false,
+    "writes_by_this_session": {
+      "fetch": true,
+      "commit": false,
+      "push": false,
+      "merge": false,
+      "staging": false,
+      "branch_deletion": false
+    },
+    "pr7": {
+      "url": "https://github.com/Jhona-la/Trader-Gemini/pull/7",
+      "state": "OPEN",
+      "mergeable": "MERGEABLE",
+      "merge_state": "CLEAN",
+      "checks_observed": [],
+      "empty_checks_are_not_passes": true,
+      "head": "cffff2fdd0e1de0a78c18a04be64625fa56eb73b",
+      "branch": "claude/elegant-euler-mmtht4",
+      "commits_not_in_main": 4,
+      "changed_files": 3,
+      "insertions": 82,
+      "deletions": 24,
+      "diff_reviewed": true,
+      "exact_pr_tree_tested_here": false,
+      "local_concurrent_changes_overlap": true,
+      "ours_merge_reviewed_against_each_parent": "864177f9",
+      "ours_merge_preserves_second_parent_history_not_tree": true
+    },
+    "historical_pr_states": {
+      "4": "MERGED",
+      "5": "MERGED",
+      "6": "CLOSED"
+    },
+    "eligible_branches_for_deletion": [],
+    "preserved_unmerged_branches": [
+      {
+        "name": "backup-before-cleanup",
+        "head": "26afeb794811c456cfd12c4659218ccc2d5c972b",
+        "exclusive_commits": 3,
+        "patch_equivalent": false
+      },
+      {
+        "name": "v7-unificacion-wip",
+        "head": "48421129a9f03a101b1ace0e1789e35aff402148",
+        "exclusive_commits": 1,
+        "patch_equivalent": false
+      },
+      {
+        "name": "origin/claude/elegant-euler-mmtht4",
+        "reason": "open_PR_7_after_historical_PR_5_merge"
+      }
+    ]
+  },
+  "scope": {
+    "tracked_inventory": {
+      "files": 1300,
+      "rust": 396,
+      "cargo_manifests": 24
+    },
+    "inventory_is_not_coverage": true,
+    "all_files_audited": false,
+    "all_theories_validated": false,
+    "integration_or_live_trading_certified": false,
+    "growth_target_validated": false,
+    "targeted_reads": [
+      "crates/risk-engine/src/correlation_guard.rs",
+      "crates/risk-engine/src/lib.rs: D-748 consumer",
+      "crates/quantum-arena/src/genome.rs: mutation, repair, normalizer and affected tests",
+      "crates/quantum-arena/src/genome_store.rs: gate, local diagnostics",
+      "PR #7: complete diff of three files"
+    ],
+    "full_new_test_file_read": "crates/risk-engine/tests/correlation_numeric_contract.rs",
+    "own_source_change": "correlation_guard.rs: pre-XLIV mid, tick validation, Pearson, HY and grid validation only",
+    "preserved_concurrent_blocks": [
+      "correlation_guard.rs: XLIV structure functions, veto and tests",
+      "risk-engine/src/lib.rs",
+      "god-engine-core/src/lib.rs",
+      "signal-engine/src/flow_excitation_confluence.rs",
+      "quantum-arena/src/genome.rs",
+      "quantum-arena/src/genome_store.rs"
+    ]
+  },
+  "findings": [
+    {
+      "id": "SPECTRAL-005",
+      "status": "partial_local_repair",
+      "priority": "P1",
+      "evidence": "disjoint_prefix_suffix_invariance_red_to_green",
+      "remaining": "whole boundary-crossing intervals, finite sample uncertainty and diagnostic transport"
+    },
+    {
+      "id": "SPECTRAL-006",
+      "status": "fixed_input_contract_locally",
+      "priority": "P1",
+      "evidence": "strict clock and finite positive quotes in HY and fallback",
+      "remaining": "upstream same-time aggregation, sequence and downstream None handling"
+    },
+    {
+      "id": "SPECTRAL-011",
+      "status": "fixed_numerically_locally",
+      "priority": "P2",
+      "evidence": "scale invariance, complete pairs, invalid samples and explicit constancy tests"
+    },
+    {
+      "id": "NUMERIC-001",
+      "status": "fixed_locally",
+      "priority": "P2",
+      "description": "finite mid and log-return intermediate overflow"
+    },
+    {
+      "id": "NUMERIC-002",
+      "status": "fixed_locally",
+      "priority": "P2",
+      "description": "constant n=49 gains rounding variance",
+      "red_witness": {
+        "length": 49,
+        "value": 0.3
+      }
+    },
+    {
+      "id": "NUMERIC-003",
+      "status": "fixed_computability_contract_locally",
+      "priority": "P2",
+      "description": "absolute 1e-18 HY denominator threshold rejects nonzero variation",
+      "remaining": "does not establish statistical precision"
+    },
+    {
+      "id": "SPECTRAL-008",
+      "status": "open_reproduced_red",
+      "priority": "P1",
+      "test": "unknown_pairs_must_not_be_dropped_from_the_mean"
+    },
+    {
+      "id": "SPECTRAL-009",
+      "status": "open_reproduced_red",
+      "priority": "P1",
+      "test": "impossible_average_correlation_must_not_relax_the_veto"
+    },
+    {
+      "id": "SPECTRAL-003_004_010_012_013",
+      "status": "open_preserved",
+      "description": "consumer provenance, sides/slots, stop risk vs sigma, signed balance interpretation, effective support"
+    },
+    {
+      "id": "SPECTRAL-014",
+      "status": "open_static_evidence_extended",
+      "description": "31-bit shifted RNG divided by u32::MAX generates nonpositive increments; same index is not same physical time under distinct clocks"
+    },
+    {
+      "id": "GIT-001",
+      "status": "open",
+      "description": "0/0 branch divergence does not include dirty files or unmerged work"
+    },
+    {
+      "id": "GIT-002",
+      "status": "documented_history_warning",
+      "description": "ours merge makes second parent reachable without applying its content"
+    },
+    {
+      "id": "GEN-001",
+      "aliases": [
+        "FMT-216"
+      ],
+      "status": "initial_failure_followed_by_concurrent_repair_and_different_test_failure",
+      "description": "noncommuting SL and RR repair; PR composition remains unverified"
+    }
+  ],
+  "test_runs": [
+    {
+      "command": "cargo test --offline -p risk-engine --test correlation_numeric_contract -- --nocapture",
+      "cut": "initial_nine",
+      "passed": 0,
+      "failed": 9,
+      "ignored": 0
+    },
+    {
+      "command": "cargo test --offline -p risk-engine --test correlation_numeric_contract pearson_constant_series_never_gain_rounding_variance -- --nocapture",
+      "cut": "first_patch_adversarial_review",
+      "passed": 0,
+      "failed": 1,
+      "witness": "n=49"
+    },
+    {
+      "command": "cargo test --offline -p risk-engine --all-targets",
+      "cut": "final_numerical_patch",
+      "passed": 178,
+      "failed": 0,
+      "ignored": 2,
+      "exit_code": 0,
+      "includes_historical_open_diagnostics": true
+    },
+    {
+      "command": "cargo test --offline -p risk-engine --test correlation_open_contracts -- --ignored --nocapture",
+      "cut": "post_estimator_repair_unchanged_XLIV",
+      "passed": 0,
+      "failed": 2,
+      "filtered_out": 4,
+      "exit_code": 1
+    },
+    {
+      "command": "cargo check --offline --workspace --all-targets",
+      "cut": "post_final_numerical_patch",
+      "exit_code": 0,
+      "warnings": true,
+      "tests_executed": false
+    }
+  ],
+  "unique_new_tests": 10,
+  "preexisting_contracts_reactivated": 3,
+  "genome_observations": [
+    {
+      "cut": "initial_concurrent_normalizer",
+      "command": "cargo test --offline -p quantum-arena --lib xliv_diag_r11_encuentra_el_rechazo_determinista -- --nocapture",
+      "exit_code": 1,
+      "passed": 0,
+      "failed": 1,
+      "seed": 199,
+      "rate": 0.5,
+      "mutant_sl": 0.0012410326295169774,
+      "roundtrip_sl": 0.0013026105844166744,
+      "friction_floor": 0.0015384615384615385,
+      "source_hash_at_failed_cut": null,
+      "reason": "shared sources changed before fingerprint"
+    },
+    {
+      "cut": "later_concurrent_repair_around_10_06_Bogota",
+      "command": "cargo test --offline -p quantum-arena --lib",
+      "exit_code": 1,
+      "passed": 79,
+      "failed": 1,
+      "seeded_20000_scan_passed": true,
+      "failed_test": "genome::tests::d658_mutacion_de_curvas_respeta_las_cotas_declaradas",
+      "comparison": {
+        "actual": -6.400000000000001,
+        "expected": -6.4,
+        "operator": "assert_eq"
+      },
+      "pre_run_hashes": {
+        "crates/quantum-arena/src/genome.rs": "76633AA574108429BEB8005176246A16C378144E8D40E198193F19BA671DF67F",
+        "crates/quantum-arena/src/genome_store.rs": "432A2102406EA7DF5906AB37C509F8A21183CC7CCB57E4A3BD40680C0B4DD92C"
+      },
+      "hashes_are_not_atomic_compiler_snapshot": true
+    }
+  ],
+  "source_fingerprints": [
+    {
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "sha256": "2F8F37ED49CAA4D53D089E914849C33266CF0ED86817567FD4A954771FBA27F1",
+      "lines": 842
+    },
+    {
+      "path": "crates/risk-engine/src/random_matrix.rs",
+      "sha256": "9ADF6B604C93F5404C8ECC85230B2F8DBFA041D7CAD15C0E323271DAE53C9C86",
+      "lines": 258
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "sha256": "41F83B4D85922BBCD85601991F4782ED41AC25CFA5A1A64BEBC356CF6F031609",
+      "lines": 1368
+    },
+    {
+      "path": "crates/risk-engine/tests/correlation_numeric_contract.rs",
+      "sha256": "66F2F9E9EF3B849285A13E334AF9AA9DB8ACB11110E1C8E5324DB4564E7E24EB",
+      "lines": 126
+    },
+    {
+      "path": "crates/risk-engine/tests/correlation_open_contracts.rs",
+      "sha256": "EABA3CEFDFF738AABEEA83BD8C1FAF45058498370084C9FEA1D7BB4965B69327",
+      "lines": 83
+    },
+    {
+      "path": "crates/risk-engine/tests/spectral_matrix_contract.rs",
+      "sha256": "6DCB45A3FA4DA4F6F46F18F2E21C4F7D0D85733E5F0EC26293FAD9E3E93F84C9",
+      "lines": 123
+    }
+  ],
+  "coordination": {
+    "channel": "COORDINACION_CODEX_2026-09-28.md",
+    "memory": ".agents/MEMORIA.md",
+    "prior_acknowledged_agent": "Qoder",
+    "new_genome_edit_author_confirmed": false,
+    "second_agent_acknowledged": false,
+    "results_posted_for_both_genome_cuts": true,
+    "original_normalized_report_prefixes_verified_preserved": true,
+    "preserved_prefix_files": [
+      {
+        "path": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md",
+        "chars": 23790,
+        "sha256": "FFE207DB5D2A4B66D917BCA122247268CB77DE7BB34ADB356D60575279FDE3D9"
+      },
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "chars": 139263,
+        "sha256": "5E447D6F787876616A9A89273884C746DA7047125FCB6023272DA9372B853608"
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "chars": 796941,
+        "sha256": "561DEC38C0F6963AFE8DFC00E28E827DE503EB71193AF1942A8F969181B31986"
+      },
+      {
+        "path": "COORDINACION_CODEX_2026-09-28.md",
+        "chars": 5999,
+        "sha256": "AA0E1710546504CE0CF19D74A4E4FD8BF5D2B7A37D06F9417730F5622C7DF757"
+      }
+    ]
+  },
+  "prohibited_or_unperformed_actions": [
+    "production_build",
+    "order_submission",
+    "genome_promotion",
+    "training",
+    "engine_restart",
+    "deploy",
+    "forced_branch_delete",
+    "global_stash",
+    "git_add_all"
+  ]
+}
