@@ -157,6 +157,41 @@ pub fn direccion_realizada(is_long: bool, pnl_pct: f64) -> Option<bool> {
     Some(if is_long { pnl_pct > 0.0 } else { pnl_pct < 0.0 })
 }
 
+/// XLIV-10 — SUPERPOSICIÓN CONSTRUCTIVA SIN CONFIANZA FABRICADA.
+///
+/// Cuando las bandas rápida y lenta coinciden en dirección y armónico, la
+/// fusión era `(max + 0,10·min).clamp(0,55, 0,96)`. El suelo 0,55 FABRICABA
+/// confianza: dos ramas con desventaja demostrada (cota superior de Wilson
+/// 0,40, que D-752 emite para que el gate las rechace) salían con 0,55, por
+/// encima del gate con el gen de confianza en su cota baja (0,50) o con el
+/// umbral epigenético rebajado. Y el término `+0,10·min` convertía dos
+/// convicciones de 0,49 en 0,54: dos pruebas de NO ventaja sumaban ventaja.
+///
+/// Ahora el refuerzo sólo existe si AMBAS bandas superan ½ (evidencia de
+/// ventaja en las dos); si no, la fusión es la mayor de las dos. Se conserva
+/// el techo 0,96. Sin suelo.
+#[inline]
+pub fn confianza_superpuesta(a: f64, b: f64) -> f64 {
+    let (hi, lo) = (a.max(b), a.min(b));
+    if lo > 0.5 {
+        (hi + 0.10 * lo).min(0.96)
+    } else {
+        hi.min(0.96)
+    }
+}
+
+/// XLIV-10 — LA MODULACIÓN ESPECTRAL NO DESHACE LOS FRENOS.
+///
+/// `(confianza · multiplicador).clamp(0,45, 0,98)` se aplicaba DESPUÉS del
+/// freno del bosque: un recorte de 0,70 a 0,35 volvía a 0,45 aunque el
+/// multiplicador fuera neutro (1,0). El suelo también comprimía la entrada
+/// del calibrador de Platt: todas las intenciones frenadas llegaban con la
+/// misma puntuación 0,45. Se conserva el techo 0,98; sin suelo.
+#[inline]
+pub fn confianza_modulada(confianza: f64, multiplicador: f64) -> f64 {
+    (confianza * multiplicador).clamp(0.0, 0.98)
+}
+
 /// D-756 — ESCALADA DE EXIGENCIA TRAS UNA RACHA DE PÉRDIDAS.
 ///
 /// QUÉ ESTABA MAL: la exigencia de desequilibrio de libro tras dos pérdidas
@@ -4960,9 +4995,9 @@ impl GodEngineCore {
                     // Mismo armónico: colisión de frecuencias. Arbitrar por coherencia y energía.
                     if fast_intent.signal == slow_intent.signal {
                         // Superposición constructiva armónica continua:
-                        let boosted_conf = (fast_intent.confidence.max(slow_intent.confidence)
-                            + 0.10 * fast_intent.confidence.min(slow_intent.confidence))
-                            .clamp(0.55, 0.96);
+                        // XLIV-10: sin suelo 0,55 y sin refuerzo desde bandas ≤ ½.
+                        let boosted_conf =
+                            confianza_superpuesta(fast_intent.confidence, slow_intent.confidence);
                         let (fast_energy, slow_energy) = self
                             .temporal_spectrum
                             .get(coin_id)
@@ -5336,8 +5371,9 @@ impl GodEngineCore {
                             .unwrap_or(0.0);
                         let _ = p_transition; // ya publicada al registry
 
+                        // XLIV-10: sin suelo 0,45 (deshacía el freno del bosque).
                         unified_intent.confidence =
-                            (unified_intent.confidence * spectral_multiplier).clamp(0.45, 0.98);
+                            confianza_modulada(unified_intent.confidence, spectral_multiplier);
 
                         // Mapeo armónico continuo en el Universo Multivariante Continuo Temporal Espectral:
                         // Elimina la discretización binaria rígida y converge continuamente hacia el centro de masa tau*.
@@ -6704,6 +6740,32 @@ mod tests_d752_d756 {
 
     fn registro(n: u32, aciertos: u32) -> TasaAcierto {
         TasaAcierto { n, aciertos }
+    }
+
+    /// XLIV-10 — NINGÚN SUELO POSTERIOR A LAS PUERTAS FABRICA CONFIANZA.
+    #[test]
+    fn xliv_la_fusion_y_la_modulacion_no_fabrican_confianza() {
+        // Dos bandas con desventaja demostrada (cota sup. de Wilson 0,40):
+        // antes 0,55; ahora la mayor de las dos, que el gate rechaza.
+        assert_eq!(confianza_superpuesta(0.40, 0.40), 0.40);
+        let vieja = (0.40_f64.max(0.40) + 0.10 * 0.40).clamp(0.55, 0.96);
+        assert_eq!(vieja, 0.55, "premisa: el suelo viejo fabricaba 0,55");
+        // Dos «no ventaja» no suman ventaja.
+        assert!(confianza_superpuesta(0.49, 0.49) <= 0.5);
+        // Con evidencia en ambas, el refuerzo de siempre (techo 0,96).
+        let (a, b) = (0.70_f64, 0.60_f64);
+        assert!((confianza_superpuesta(a, b) - (0.70 + 0.10 * 0.60)).abs() < 1e-12);
+        assert_eq!(confianza_superpuesta(0.95, 0.90), 0.96);
+        // Simétrica.
+        assert_eq!(confianza_superpuesta(0.3, 0.8), confianza_superpuesta(0.8, 0.3));
+
+        // El freno del bosque recorta 0,70 → 0,35; un multiplicador neutro
+        // ya no la devuelve a 0,45.
+        let frenada = 0.70 * 0.5;
+        assert_eq!(confianza_modulada(frenada, 1.0), frenada);
+        assert_eq!((frenada * 1.0_f64).clamp(0.45, 0.98), 0.45, "premisa: el suelo viejo");
+        assert_eq!(confianza_modulada(0.9, 1.35), 0.98);
+        assert_eq!(confianza_modulada(0.5, -1.0), 0.0);
     }
 
     /// XLIV-9 — EL BOSQUE SE PUNTÚA CON LA DIRECCIÓN DEL MERCADO.
