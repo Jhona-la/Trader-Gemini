@@ -1030,29 +1030,33 @@ impl HorizonCurve {
 //   estimados como EWMA del núcleo corregidos por masa (misma convención que
 //   `ewma_dev_vol`, D-742). S_2 = dev_vol², S_3 = dev_s3³-normalizado.
 // - Operador: exponentes ζ(p) = d ln S_p / d ln τ por regresión log-log sobre
-//   las escalas con masa suficiente. K41 (self-similar): ζ(p) = p/3, y el
-//   4/5-law de Kolmogorov fija ζ(3) = 1 EXACTO. La intermitencia (cascada
-//   multifractal, K62) se manifiesta como ζ(3) < 1: las colas son más gruesas
-//   que la autosimilaridad predice.
+//   las escalas con masa suficiente Y resueltas por el reloj de eventos
+//   (τ ≥ resolución efectiva, Ola XLIV). Un proceso autosimilar de Hurst H
+//   da ζ(p) = p·H (precio browniano: ζ₂ = 1, ζ₃ = 1,5; K41 en turbulencia:
+//   H = 1/3, ζ₃ = 1). La intermitencia (cascada multifractal, K62) se
+//   manifiesta como CONCAVIDAD de ζ(p): ζ₃ < (3/2)·ζ₂.
 // - Unidades: adimensional (pendiente en doble log).
-// - Contorno: espectro frío (masa < masa_min en una escala) → esa escala no
-//   participa; <4 escalas válidas → None (no se afirma exponente).
-// - Identificabilidad: χ = (1 − ζ3)⁺ es la magnitud de intermitencia que el
-//   host usa para elevar los pisos de exigencia (colas gruesas ⇒ exigir más).
+// - Contorno: espectro frío (masa < masa_min en una escala) o escala por
+//   debajo de la resolución → esa escala no participa; <4 escalas válidas →
+//   None (no se afirma exponente).
+// - Identificabilidad: χ = ((3/2)·ζ₂ − ζ₃)⁺ es la magnitud de intermitencia
+//   que el host usa para elevar los pisos de exigencia (colas gruesas ⇒
+//   exigir más). Antes χ = (1 − ζ₃)⁺ usaba la referencia K41, que para un
+//   precio confunde H con multifractalidad.
 // - Coste: O(32) por consulta, sin alocación en el cálculo de pendientes.
-// - Falsación: alimentando el espectro con incrementos gaussianos iid, la
-//   autosimilaridad da ζ(p) = p/3 (verifica el test); con ráfagas/spikes, χ > 0.
+// - Falsación: con incrementos iid, ζ(p) es lineal y χ ≈ 0 (verifica el
+//   test); con ráfagas/spikes multifractales, χ > 0.
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Exponentes de estructura medidos sobre el espectro vivo de 32 escalas.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StructureFunctions {
-    /// ζ(2): pendiente de ln S_2 vs ln τ. K41: 2/3.
+    /// ζ(2): pendiente de ln S_2 vs ln τ. Precio browniano: 1 (K41: 2/3).
     pub zeta2: f64,
-    /// ζ(3): pendiente de ln S_3 vs ln τ. K41/4-5-law: 1. <1 = intermitencia.
+    /// ζ(3): pendiente de ln S_3 vs ln τ. Precio browniano: 1,5 (K41: 1).
     pub zeta3: f64,
-    /// Intermitencia χ = (1 − ζ3)⁺ ∈ [0,1): cuánto más gruesas son las colas
-    /// de lo que la autosimilaridad predice.
+    /// Intermitencia χ = ((3/2)·ζ₂ − ζ₃)⁺ ∈ [0,1]: concavidad de ζ(p),
+    /// independiente del exponente de Hurst (Ola XLIV).
     pub intermittency: f64,
     /// Escalas que participaron de la regresión (masa suficiente).
     pub usable_scales: usize,
@@ -1082,26 +1086,56 @@ impl TemporalSpectrum {
     /// Funciones de estructura S_p(τ) y sus exponentes ζ(p) por regresión
     /// log-log entre escalas observadas. None si el campo aún no tiene masa
     /// en suficientes escalas (<4): no se afirma un exponente sin soporte.
+    ///
+    /// Ola XLIV — referencia correcta para PRECIOS. K41 (ζ(p) = p/3, ζ(3) = 1)
+    /// es la autosimilaridad de VELOCIDADES en turbulencia; un precio
+    /// browniano escala con H = ½ (ζ(p) = p·H: ζ₂ = 1, ζ₃ = 1,5). Medir la
+    /// intermitencia como (1 − ζ₃)⁺ confundía el exponente de Hurst con la
+    /// multifractalidad. Lo que distingue una cascada multifractal (K62) de
+    /// cualquier proceso autosimilar —sea cual sea su H— es la NO LINEALIDAD
+    /// de ζ(p): χ = ((3/2)·ζ₂ − ζ₃)⁺, nula para Brown y para K41 y positiva
+    /// sólo cuando ζ(p) es cóncava.
     pub fn structure_functions(&self) -> Option<StructureFunctions> {
         let (z2, n) = self.regress_log_log(2)?;
         let (z3, _) = self.regress_log_log(3)?;
         Some(StructureFunctions {
             zeta2: z2,
             zeta3: z3,
-            intermittency: (1.0 - z3).max(0.0).min(1.0),
+            intermittency: (1.5 * z2 - z3).max(0.0).min(1.0),
             usable_scales: n,
         })
+    }
+
+    /// Resolución temporal EFECTIVA del espectro (Ola XLIV): el mayor entre el
+    /// reloj del exchange y el intervalo medio entre eventos. Una escala con
+    /// τ por debajo de ella no está resuelta —su EWMA sólo repite el último
+    /// tick— y el momento que publica es el mismo en todas esas escalas.
+    pub fn resolucion_efectiva_ms(&self) -> f64 {
+        let dt_medio = if self.updates > 1 {
+            (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64 / (self.updates - 1) as f64
+        } else {
+            0.0
+        };
+        FEED_CLOCK_RESOLUTION_MS.max(dt_medio)
     }
 
     /// Regresión OLS de ln S_p contra ln τ sobre escalas con masa suficiente.
     fn regress_log_log(&self, p: u32) -> Option<(f64, usize)> {
         let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
+        // Ola XLIV: las escalas por debajo de la resolución efectiva publican
+        // el mismo momento (el del último tick) y formaban un bloque plano que
+        // arrastraba la pendiente: ζ₃ ≈ 0,56 en un precio browniano cuyo
+        // valor sobre las escalas reales es 1,5.
+        let resolucion = self.resolucion_efectiva_ms();
         let mut n = 0usize;
         let mut sx = 0.0;
         let mut sy = 0.0;
         let mut sxx = 0.0;
         let mut sxy = 0.0;
         for s in self.scales.iter() {
+            if s.tau_ms < resolucion {
+                continue;
+            }
             // Sólo escalas cuyo núcleo tiene ≥10% de masa: por debajo, la EWMA
             // es aún semilla y el momento no representa la escala.
             let mass = 1.0 - (-elapsed / s.tau_ms).exp();
@@ -1652,10 +1686,16 @@ fn xli_c2_gaussian_iid_da_autosimilaridad_k41() {
         spec.update(price, t);
     }
     let sf = spec.structure_functions().expect("masa suficiente tras 40k ticks");
-    // K41: ζ3 = 1. La EWMA introduce sesgo de suavizado hacia abajo en las
-    // escalas rápidas: ζ3 medido debe quedar en banda ancha alrededor de 1.
-    assert!(sf.zeta3 > 0.5 && sf.zeta3 < 1.6, "zeta3={} fuera de banda K41", sf.zeta3);
+    // Ola XLIV: la referencia de un PRECIO browniano es ζ(p) = p/2 (ζ₃ = 1,5),
+    // no K41 (ζ₃ = 1). La EWMA suaviza, así que la banda es ancha; lo que el
+    // contrato fija es la no intermitencia de un proceso iid: χ ≈ 0.
+    assert!(sf.zeta3 > 1.0 && sf.zeta3 < 2.0, "zeta3={} fuera de banda browniana", sf.zeta3);
+    assert!(sf.intermittency < 0.15, "iid no es intermitente: chi={}", sf.intermittency);
     assert!(sf.usable_scales >= 4);
+    // Con eventos cada 50 ms, ninguna escala por debajo de 50 ms participa.
+    assert!((spec.resolucion_efectiva_ms() - 50.0).abs() < 1e-6);
+    let resueltas = spec.scales.iter().filter(|s| s.tau_ms >= 50.0).count();
+    assert!(sf.usable_scales <= resueltas);
 }
 
 /// Ola XLIV — el rango de la Fisher de escala y su umbral de identificabilidad.
