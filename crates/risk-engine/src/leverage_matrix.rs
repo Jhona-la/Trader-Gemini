@@ -59,6 +59,10 @@ impl QuantumLeverageMatrix {
         // antiguo creía que en 13 $ caben 2,6 órdenes cuando no cabe ninguna, y
         // abría el techo de apalancamiento en consecuencia.
         min_notional_simbolo: f64,
+        // CL-2 — DISTANCIA DEL STOP QUE LA ORDEN USARÁ, como fracción del
+        // precio. El freno de volatilidad mide contra ella; si no es válida
+        // (llamadores sin geometría) se cae a la curva del gen.
+        sl_operado: f64,
         arena: &GlobalArena,
     ) -> f64 {
         // FIX #651: Sanitizar parámetros entrantes asegurando robustez numérica total
@@ -173,15 +177,25 @@ impl QuantumLeverageMatrix {
         // de la escala se come el stop, el tamaño debe encogerse. Con
         // `sl ≈ k·σ(τ)`, ese cociente es ~1/k y el freno se vuelve una función
         // real del régimen en vez de un cero a la izquierda.
-        let tau_para_sl = quantum_arena::temporal_spectrum::operating_tau_ms(
-            signal.expected_duration_ms,
-            arena
-                .config
-                .temporal_scale
-                .load(Ordering::Relaxed)
-                .clamp(0.0, 1.0),
-        );
-        let sl_esperado = arena.config.sl_at_tau(tau_para_sl).max(1e-6);
+        //
+        // CL-2: el stop contra el que se mide es el REAL de la orden
+        // (`sl_operado`). Antes se reconstruía con la τ del gen
+        // `temporal_scale` y la curva genómica `sl_at_tau`, mientras la orden
+        // se dimensiona con la τ medida de la moneda (D-745) y el stop de
+        // `compute_tp_sl`: el freno juzgaba un trade distinto del ejecutado.
+        let sl_esperado = if sl_operado.is_finite() && sl_operado > 0.0 {
+            sl_operado
+        } else {
+            let tau_para_sl = quantum_arena::temporal_spectrum::operating_tau_ms(
+                signal.expected_duration_ms,
+                arena
+                    .config
+                    .temporal_scale
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0, 1.0),
+            );
+            arena.config.sl_at_tau(tau_para_sl).max(1e-6)
+        };
         let amenaza = (safe_tick_vol / sl_esperado.max(1e-6)).clamp(0.0, 4.0);
         let vol_brake = 1.0 / (1.0 + amenaza);
 
@@ -335,7 +349,7 @@ mod tests {
 
     fn leverage_for(signal: &SignalIntent, arena: &GlobalArena) -> f64 {
         QuantumLeverageMatrix::calculate_dynamic_leverage(
-            signal, 0.0, 10_000.0, 10_000.0, 0.001, 1.0, 0.5, 1.0, 0.0, 20.0, 5.0, arena,
+            signal, 0.0, 10_000.0, 10_000.0, 0.001, 1.0, 0.5, 1.0, 0.0, 20.0, 5.0, 0.0, arena,
         )
     }
 
@@ -358,7 +372,7 @@ mod tests {
         };
         let lev = |mn: f64| {
             QuantumLeverageMatrix::calculate_dynamic_leverage(
-                &signal, 0.0, 60.0, 60.0, 0.001, 1.0, 0.5, 2.0, 0.6, 50.0, mn, &arena,
+                &signal, 0.0, 60.0, 60.0, 0.001, 1.0, 0.5, 2.0, 0.6, 50.0, mn, 0.0, &arena,
             )
         };
         let barato = lev(5.0);
@@ -370,6 +384,36 @@ mod tests {
         );
         // En micro pleno el techo es 4×, no el del genoma.
         assert!(caro <= 4.0 + 1e-9, "techo micro violado: {caro}");
+    }
+
+    /// CL-2: el freno de volatilidad mide contra el stop REAL de la orden.
+    /// Con el mismo ATR, un stop real estrecho (la volatilidad se lo come)
+    /// debe dar MENOS apalancamiento que uno ancho; antes ambos daban lo mismo
+    /// porque el freno ignoraba el stop y usaba la curva del gen en su τ.
+    #[test]
+    fn cl2_el_freno_mide_contra_el_stop_real() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(10_000.0);
+        // Techo del genoma alto para que el freno, y no el techo, decida.
+        let signal = SignalIntent {
+            signal: signal_engine::SignalType::Long,
+            confidence: 0.9,
+            win_probability: 0.9,
+            ..Default::default()
+        };
+        let lev = |sl: f64| {
+            QuantumLeverageMatrix::calculate_dynamic_leverage(
+                &signal, 0.0, 10_000.0, 10_000.0, 0.004, 1.0, 0.5, 2.0, 0.6, 50.0, 5.0, sl,
+                &arena,
+            )
+        };
+        let estrecho = lev(0.002);
+        let ancho = lev(0.02);
+        assert!(
+            estrecho < ancho,
+            "un stop que la volatilidad se come debe frenar más: {estrecho} vs {ancho}"
+        );
+        // Sin stop válido se conserva la curva del gen (llamadores legados).
+        assert_eq!(lev(0.0), lev(f64::NAN));
     }
 
     /// D-690 + QO-M0.1: el Kelly usa la probabilidad (calibrada si existe)

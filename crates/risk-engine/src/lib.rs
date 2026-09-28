@@ -621,42 +621,6 @@ impl RiskEngine {
         // viva única.
         let real_win_rate = coin.metrics.win_rate.load(Ordering::Relaxed);
 
-        let mut dynamic_leverage =
-            leverage_matrix::QuantumLeverageMatrix::calculate_dynamic_leverage(
-                intent,
-                temporal_scale, // D-509: Variedad temporal continua sin colapso discreto
-                allocated_capital,
-                base_allocated,
-                atr_pct,
-                vol_mult,
-                hurst_exponent,
-                profit_factor,
-                real_win_rate,
-                genome_max_leverage,
-                // D-750: el mínimo del símbolo, resuelto una vez al principio
-                // de la evaluación, gobierna también el techo de leverage.
-                dynamic_min_notional,
-                arena,
-            );
-        // D-730 (DÉCIMA OLA · auditoría integral): EL APALANCAMIENTO SE CUANTIZA
-        // DONDE SE DECIDE.
-        //
-        // `POST /fapi/v1/leverage` sólo acepta ENTEROS, y el ejecutor envía
-        // `order.leverage as u32`; el nocional, en cambio, se dimensionaba con el
-        // f64 continuo. Con L = 2,9 y 2,40 USD de margen se enviaba un nocional de
-        // 6,96 USD que la cuenta, ya a 2x, exige respaldar con 3,48 USD: un 45 %
-        // más de margen del presupuestado, rechazo -2019 o margen bloqueado que
-        // `used_margin` no registra. El sesgo es sistemático y crece cuanto menor
-        // es el apalancamiento, es decir en régimen micro. Cuantizar aquí, ANTES
-        // de las comprobaciones de nocional mínimo y de margen, hace que toda la
-        // cadena razone con el mismo entero que verá el exchange. La
-        // discretización no es una constante arbitraria: la impone el contrato del
-        // endpoint.
-        if !dynamic_leverage.is_finite() || dynamic_leverage < 1.0 {
-            return rej(REJ_INVALID_INPUT);
-        }
-        dynamic_leverage = dynamic_leverage.min(genome_max_leverage).floor();
-
         let _maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
         let taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);
         // D-01 — FRICCIÓN REAL EN EL EV GATE: antes el gate comparaba contra
@@ -825,6 +789,53 @@ impl RiskEngine {
         {
             return rej(REJ_TARGET_GEOMETRY);
         }
+
+        // CL-2 — EL APALANCAMIENTO SE DECIDE CON LA GEOMETRÍA YA RESUELTA.
+        // Antes se calculaba ANTES de construir TP/SL: el freno de
+        // volatilidad (D-746) tenía que adivinar el stop con la τ del gen
+        // `temporal_scale` y la curva `sl_at_tau`, mientras la orden usa la τ
+        // medida de la moneda (D-745) y el stop de `compute_tp_sl`. Nada de
+        // la geometría depende del apalancamiento, así que se decide aquí.
+        let mut dynamic_leverage =
+            leverage_matrix::QuantumLeverageMatrix::calculate_dynamic_leverage(
+                intent,
+                temporal_scale, // D-509: Variedad temporal continua sin colapso discreto
+                allocated_capital,
+                base_allocated,
+                atr_pct,
+                vol_mult,
+                hurst_exponent,
+                profit_factor,
+                real_win_rate,
+                genome_max_leverage,
+                // D-750: el mínimo del símbolo, resuelto una vez al principio
+                // de la evaluación, gobierna también el techo de leverage.
+                dynamic_min_notional,
+                // CL-2: el freno de volatilidad mide contra el stop que la
+                // orden USARÁ (τ medida, geometría real, cap micro y precio
+                // objetivo de la señal), no contra la curva del gen.
+                expected_loss,
+                arena,
+            );
+        // D-730 (DÉCIMA OLA · auditoría integral): EL APALANCAMIENTO SE CUANTIZA
+        // DONDE SE DECIDE.
+        //
+        // `POST /fapi/v1/leverage` sólo acepta ENTEROS, y el ejecutor envía
+        // `order.leverage as u32`; el nocional, en cambio, se dimensionaba con el
+        // f64 continuo. Con L = 2,9 y 2,40 USD de margen se enviaba un nocional de
+        // 6,96 USD que la cuenta, ya a 2x, exige respaldar con 3,48 USD: un 45 %
+        // más de margen del presupuestado, rechazo -2019 o margen bloqueado que
+        // `used_margin` no registra. El sesgo es sistemático y crece cuanto menor
+        // es el apalancamiento, es decir en régimen micro. Cuantizar aquí, ANTES
+        // de las comprobaciones de nocional mínimo y de margen, hace que toda la
+        // cadena razone con el mismo entero que verá el exchange. La
+        // discretización no es una constante arbitraria: la impone el contrato del
+        // endpoint.
+        if !dynamic_leverage.is_finite() || dynamic_leverage < 1.0 {
+            return rej(REJ_INVALID_INPUT);
+        }
+        dynamic_leverage = dynamic_leverage.min(genome_max_leverage).floor();
+
 
         // D-642 (DÉCIMA OLA): la confianza entra tal cual. El suelo `.max(0.51)`
         // falseaba la probabilidad que alimenta a Kelly y al EV, inflando el
