@@ -1,0 +1,450 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-28",
+  "audit": "spectral_contracts",
+  "status": "partial_repair_open_integration",
+  "report": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md",
+  "git": {
+    "branch": "main",
+    "observed_head": "dc87cf1d0e65231aee54596c7b92fc949e77b041",
+    "shared_dirty_worktree": true,
+    "commit_created": false,
+    "pushed": false,
+    "remote_verified": false
+  },
+  "scope": {
+    "tracked_inventory": {
+      "files": 1300,
+      "rust": 396,
+      "cargo_manifests": 24
+    },
+    "inventory_is_not_coverage": true,
+    "full_source_reads": [
+      "crates/risk-engine/src/random_matrix.rs",
+      "crates/risk-engine/src/correlation_guard.rs",
+      "crates/risk-engine/src/guard.rs",
+      "crates/risk-engine/src/ruin.rs"
+    ],
+    "targeted_source_reads": [
+      "crates/risk-engine/src/lib.rs",
+      "crates/quantum-arena/src/position.rs"
+    ],
+    "historical_coverage_not_rebased": true,
+    "all_files_audited": false,
+    "all_theories_validated": false,
+    "live_trading_certified": false
+  },
+  "coordination": {
+    "channel": "COORDINACION_CODEX_2026-09-28.md",
+    "memory": ".agents/MEMORIA.md",
+    "acknowledged_agents": [
+      "Qoder"
+    ],
+    "second_agent_acknowledged": false,
+    "qoder_diff_read": true,
+    "qoder_test_results_independently_rerun": false,
+    "foreign_sources_preserved": [
+      "crates/risk-engine/src/correlation_guard.rs",
+      "crates/risk-engine/src/lib.rs",
+      "crates/god-engine-core/src/lib.rs",
+      "crates/signal-engine/src/flow_excitation_confluence.rs"
+    ]
+  },
+  "findings": [
+    {
+      "id": "SPECTRAL-001",
+      "priority": "P1",
+      "status": "fixed_local",
+      "description": "Power iteration misses a dominant mode orthogonal to its uniform start",
+      "path": "crates/risk-engine/src/random_matrix.rs",
+      "line": 33,
+      "evidence": "functional_red_to_green",
+      "test": "anticorrelation_dominant_mode_is_not_orthogonalized_away",
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-002",
+      "priority": "P1",
+      "status": "fixed_numerical_domain_only",
+      "description": "Invalid correlation matrices admitted to the spectrum",
+      "path": "crates/risk-engine/src/random_matrix.rs",
+      "line": 33,
+      "evidence": "functional_red_to_green",
+      "test": "indefinite_star_is_not_a_correlation_matrix",
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-003",
+      "priority": "P1",
+      "status": "open",
+      "description": "Missing edges become zero; asymptotic MP comparison clears exposure",
+      "path": "crates/risk-engine/src/lib.rs",
+      "line": 608,
+      "evidence": "static_call_path_and_algebra",
+      "test": null,
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-004",
+      "priority": "P1",
+      "status": "open",
+      "description": "Opposite exposure signs and non-primary position slots omitted",
+      "path": "crates/risk-engine/src/lib.rs",
+      "line": 568,
+      "evidence": "static_call_path_and_algebra",
+      "test": null,
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-005",
+      "priority": "P1",
+      "status": "open_red",
+      "description": "HY denominator includes disjoint observation history",
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "line": 236,
+      "evidence": "executed_rust_contract",
+      "test": "hy_common_window_must_not_depend_on_disjoint_history",
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-006",
+      "priority": "P1",
+      "status": "open_red",
+      "description": "HY accepts duplicate event timestamps",
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "line": 236,
+      "evidence": "executed_rust_contract",
+      "test": "hy_must_reject_duplicate_timestamps",
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-007",
+      "priority": "P2",
+      "status": "open",
+      "description": "HY documented as centered Pearson and overclaims finite-sample guarantees",
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "line": 236,
+      "evidence": "executed_semantic_counterexample",
+      "test": "synchronous_hy_is_not_centered_pearson_in_general",
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-008",
+      "priority": "P1",
+      "status": "open_red",
+      "description": "Group correlation mean silently omits unknown pairs",
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "line": 330,
+      "evidence": "executed_rust_contract",
+      "test": "unknown_pairs_must_not_be_dropped_from_the_mean",
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-009",
+      "priority": "P1",
+      "status": "open_red",
+      "description": "Impossible negative variance clipped into admissible hedge",
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "line": 485,
+      "evidence": "executed_rust_contract",
+      "test": "impossible_average_correlation_must_not_relax_the_veto",
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-010",
+      "priority": "P1",
+      "status": "open",
+      "description": "Historical stop-loss fraction used as equal portfolio standard deviation",
+      "path": "crates/risk-engine/src/lib.rs",
+      "line": 1273,
+      "evidence": "static_data_flow_and_units",
+      "test": null,
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-011",
+      "priority": "P2",
+      "status": "open_red",
+      "description": "Pearson denominator overflow breaks scale invariance",
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "line": 122,
+      "evidence": "executed_rust_contract",
+      "test": "pearson_must_preserve_scale_invariance_for_finite_samples",
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-012",
+      "priority": "P2",
+      "status": "open",
+      "description": "Signed-triangle balance mislabeled as Hodge decomposition",
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "line": 354,
+      "evidence": "operator_inspection_and_algebra",
+      "test": null,
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-013",
+      "priority": "P2",
+      "status": "open",
+      "description": "Temporal resolution, candidate horizon and effective sample not propagated",
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "line": 169,
+      "evidence": "static_support_contract",
+      "test": null,
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-014",
+      "priority": "P2",
+      "status": "open",
+      "description": "Tests and documentation overstate integration guarantees",
+      "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLIV_2026-09-26.md",
+      "line": null,
+      "evidence": "review_of_claims_and_counterexamples",
+      "test": null,
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    },
+    {
+      "id": "SPECTRAL-015",
+      "priority": "P1",
+      "status": "open",
+      "description": "Growth target and causal genome adaptation not validated by this evidence",
+      "path": null,
+      "line": null,
+      "evidence": "scope_limitation_not_observed_loss",
+      "test": null,
+      "details": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+    }
+  ],
+  "counterexamples": [
+    {
+      "case": "anticorrelation_2x2",
+      "corr": [
+        [
+          1,
+          -0.9
+        ],
+        [
+          -0.9,
+          1
+        ]
+      ],
+      "true_max": 1.9,
+      "t": 512,
+      "legacy_lambda": 0.09999999999999987,
+      "mp_edge": 1.12890625
+    },
+    {
+      "case": "missing_edges_as_identity",
+      "corr": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "true_max": 1,
+      "t": 512,
+      "legacy_lambda": 1.0000000000000002,
+      "mp_edge": 1.12890625
+    },
+    {
+      "case": "indefinite_star",
+      "corr": [
+        [
+          1,
+          0.9,
+          0.9
+        ],
+        [
+          0.9,
+          1,
+          0
+        ],
+        [
+          0.9,
+          0,
+          1
+        ]
+      ],
+      "true_max": 2.2727922061357857,
+      "true_min": -0.2727922061357857,
+      "t": 512,
+      "legacy_lambda": 2.272792206135115,
+      "mp_edge": 1.1589524839239487
+    }
+  ],
+  "tests": [
+    {
+      "command": "cargo test -p risk-engine --test spectral_matrix_contract -- --nocapture",
+      "phase": "before",
+      "exit_code": 1,
+      "passed": 4,
+      "failed": 9,
+      "chunk": "b8507b"
+    },
+    {
+      "command": "cargo test -p risk-engine --test spectral_matrix_contract -- --nocapture",
+      "phase": "after",
+      "exit_code": 0,
+      "passed": 13,
+      "failed": 0,
+      "chunk": "4ad310"
+    },
+    {
+      "command": "cargo test -p risk-engine --test correlation_open_contracts -- --ignored --nocapture",
+      "phase": "open_diagnostics",
+      "exit_code": 1,
+      "passed": 0,
+      "failed": 5,
+      "filtered": 1,
+      "chunk": "0e536d",
+      "expected_failure": true
+    },
+    {
+      "command": "cargo test --offline -p risk-engine --all-targets",
+      "exit_code": 0,
+      "passed": 165,
+      "ignored": 5,
+      "failed": 0,
+      "chunk": "d9ab8e",
+      "includes_historical_diagnostics": true
+    },
+    {
+      "command": "cargo check --offline --workspace --all-targets",
+      "exit_code": 0,
+      "warnings_present": true,
+      "chunk": "086f78",
+      "is_test_execution": false
+    },
+    {
+      "command": "rustfmt --edition 2021 --check crates/risk-engine/src/random_matrix.rs crates/risk-engine/tests/spectral_matrix_contract.rs crates/risk-engine/tests/correlation_open_contracts.rs",
+      "exit_code": 0,
+      "chunk": "f223ab"
+    }
+  ],
+  "new_unique_tests": 19,
+  "solver": {
+    "algorithm": "cyclic Jacobi",
+    "tolerance": "64 * f64::EPSILON * N",
+    "max_sweeps": 64,
+    "on_nonconvergence": "None",
+    "complexity": "O(sweeps*N^3)",
+    "storage": "O(N^2)",
+    "p99_benchmarked": false,
+    "provenance_validated": false,
+    "before_sha256": "33867525A9CCEB807B81BAE15BAE08FEDF00149119487AD3B18320044A042EC5"
+  },
+  "files_at_cut": [
+    {
+      "path": "crates/risk-engine/src/random_matrix.rs",
+      "sha256": "9ADF6B604C93F5404C8ECC85230B2F8DBFA041D7CAD15C0E323271DAE53C9C86",
+      "lines": 258
+    },
+    {
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "sha256": "DD08D1FEC2E1F249C7ACEE2A361E939822DD115D1A208C777D1E6ADCBF36CF77",
+      "lines": 813
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "sha256": "41F83B4D85922BBCD85601991F4782ED41AC25CFA5A1A64BEBC356CF6F031609",
+      "lines": 1368
+    },
+    {
+      "path": "crates/risk-engine/src/ruin.rs",
+      "sha256": "7AE99C6174DE9AC4B8D59E4EC264D10FEE35C2AEC1BC47BB7D6D0044B7ACCBCB",
+      "lines": 108
+    },
+    {
+      "path": "crates/risk-engine/src/guard.rs",
+      "sha256": "AAE534AEBF9D2F5770D6CC60238F57FE7033E928529E96BC165754B3F9D0B4C5",
+      "lines": 136
+    },
+    {
+      "path": "crates/quantum-arena/src/position.rs",
+      "sha256": "F5D71E8D640CF68E3715A8CC9243379DC3E1452A32C969EFB28DC21AFAB8D975",
+      "lines": 1079
+    },
+    {
+      "path": "crates/risk-engine/tests/spectral_matrix_contract.rs",
+      "sha256": "6DCB45A3FA4DA4F6F46F18F2E21C4F7D0D85733E5F0EC26293FAD9E3E93F84C9",
+      "lines": 123
+    },
+    {
+      "path": "crates/risk-engine/tests/correlation_open_contracts.rs",
+      "sha256": "CA828588913E3B5E8092C5F4329E0D15FD6E993A00A9698F0ABEC0EDED473DB1",
+      "lines": 86
+    },
+    {
+      "path": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md",
+      "sha256": "FFE207DB5D2A4B66D917BCA122247268CB77DE7BB34ADB356D60575279FDE3D9",
+      "lines": 402
+    }
+  ],
+  "preservation": {
+    "method": "SHA256 of pre-edit normalized LF text prefix; not byte-for-byte CRLF identity",
+    "checks": [
+      {
+        "path": "ATLAS_ANALITICO.md",
+        "prefix_length": 137001,
+        "original_prefix_sha256": "F8F4BC30E6385673D181B646D95BC5DD8FCC25DE721CC45E4561F5E2430B5032",
+        "preserved": true
+      },
+      {
+        "path": "INFORME_FORENSE_MAESTRO.md",
+        "prefix_length": 794922,
+        "original_prefix_sha256": "B16A7D6FB63F1BED9D4D9377BF08557B801C34C9A0CB70DD5287DDB3F11C4167",
+        "preserved": true
+      },
+      {
+        "path": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIX_2026-09-25.md",
+        "prefix_length": 37569,
+        "original_prefix_sha256": "AF346A4F1D8993BE5E67D86CFA87606B633BB9D57D7948D369B89273AA0A7BDC",
+        "preserved": true
+      },
+      {
+        "path": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md",
+        "prefix_length": 22660,
+        "original_prefix_sha256": "ACDA6F5D0AB97E8C4891B141D22F8E61EB11A69F0800162BF0FC402F2556BD2C",
+        "preserved": true
+      },
+      {
+        "path": "COORDINACION_CODEX_2026-09-28.md",
+        "prefix_length": 1820,
+        "original_prefix_sha256": "2B8D00E3A95EEC3E387241EF62E58258D8840A8F9F29462F9B583A696FB79C4A",
+        "preserved": true
+      }
+    ]
+  },
+  "research": {
+    "skill": "firecrawl + firecrawl-research-index",
+    "paper_index_result": "internal_error",
+    "fallback": "web primary sources",
+    "local_notes": ".firecrawl/contratos-espectrales-2026-09-28.md",
+    "sources": [
+      "https://www.netlib.org/lapack/lawnspdf/lawn150.pdf",
+      "https://arxiv.org/abs/math/0309355",
+      "https://www.ism.ac.jp/editsec/aism/60/367.pdf",
+      "https://www.claymath.org/millennium-problems/"
+    ]
+  },
+  "historical_artifact_reconstructed": "docs/artifacts/auditoria_fundamentos_XXXIX_2026-09-25.json",
+  "economic_target": {
+    "growth_per_72_hours": 1,
+    "log_growth": 0.6931471805599453,
+    "constant_daily_equivalent": 0.2599210498948732,
+    "feasibility_established": false
+  },
+  "operations": {
+    "account_access": false,
+    "orders": false,
+    "operational_training": false,
+    "deployment": false,
+    "engine_restart": false
+  }
+}

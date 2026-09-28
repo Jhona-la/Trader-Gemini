@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "record_type": "historical_summary_reconstructed",
+  "report_date": "2026-09-25",
+  "reconstructed_on": "2026-09-28",
+  "source_report": "docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIX_2026-09-25.md",
+  "caveat": "Reconstruido del informe; no recupera logs originales, no certifica el árbol actual y no reproduce hashes históricos ausentes.",
+  "original_head_reported": "59a76de4be726098d9af934b4d35987e9a636802",
+  "findings_reported": [
+    "FMT-282: rehabilitación parcial; inferencia y recuperación OPEN",
+    "FMT-284: informe de ingresos parcialmente reparado"
+  ],
+  "historical_coverage_reported": {
+    "fully_read_rust": 169,
+    "baseline_rust": 289,
+    "remaining": 120,
+    "not_current_denominator": true
+  },
+  "tests_reported_only": {
+    "unique_total": 66,
+    "functional_and_compatibility": 58,
+    "static": 5,
+    "open_diagnostics": 3,
+    "new_unique": 28,
+    "rerun_in_reconstruction": false
+  },
+  "current_scope_report": "docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md"
+}

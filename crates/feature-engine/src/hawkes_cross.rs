@@ -108,6 +108,112 @@ pub fn cross_excitation(
     Some(best)
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Ola XLV·D — MATRIZ DE EXCITACIÓN MULTIVARIADA (T03 completo)
+//
+// Contrato:
+// - Variable: N series de eventos (una por activo del universo) + rejilla
+//   de lags comunes.
+// - Operador: matriz α[i][j] = z-score del kernel de contagio i→j en el
+//   mejor lag. La diagonal es 0 (auto-excitación ya medida por el Hawkes
+//   univariado). El elemento α[i][j] > 3 significa que los eventos de i
+//   PREDICEN los de j con significancia — la flecha del contagio.
+// - Unidades: z-score (adimensional).
+// - Contorno: cualquier par sin evidencia suficiente → 0 en esa celda
+//   (ausencia de afirmación, no afirmación de ausencia).
+// - Coste: O(N²·n_local) — N par evaluaciones, cada una con ventana
+//   deslizante sobre n_seguidor eventos.
+// - Identificabilidad: la matriz es ASIMÉTRICA por construcción —
+//   α[i][j] ≠ α[j][i] identifica líder vs seguidor.
+// - Falsación: universo con un líder que copian todos → columna del líder
+//   con z altos, resto bajo (test); universo independiente → todo bajo.
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Matriz de excitación cruzada N×N: α[i][j] = z-score del contagio i→j.
+/// None si N < 2, o si CUALQUIER serie está vacía o desordenada.
+/// (Ola XLV·E, fixes Codex PR#11): series vacías → None (no Some(ceros));
+/// NaN en la matriz → None; suma de z normalizada por N−1.
+pub fn contagion_matrix(
+    event_series: &[Vec<u64>],
+    spans_ms: &[u64],
+    lag_grid_ms: &[u64],
+) -> Option<Vec<Vec<f64>>> {
+    let n = event_series.len();
+    if n < 2 || spans_ms.len() != n || lag_grid_ms.is_empty() {
+        return None;
+    }
+    // Codex PR#11: series vacías o con <2 eventos → None (no se afirma
+    // estructura sin datos).
+    for s in event_series {
+        if s.len() < 2 {
+            return None;
+        }
+        // verificar ordenación (requisito del estimador)
+        for w in s.windows(2) {
+            if w[1] <= w[0] {
+                return None;
+            }
+        }
+    }
+    let mut matrix = vec![vec![0.0f64; n]; n];
+    for i in 0..n {
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            if let Some(exc) =
+                cross_excitation(&event_series[i], &event_series[j], spans_ms[j], lag_grid_ms)
+            {
+                matrix[i][j] = exc.z_score;
+            }
+        }
+    }
+    // Codex PR#11: NaN en cualquier celda → None (no se devuelve una
+    // matriz parcialmente inválida).
+    if matrix.iter().any(|row| row.iter().any(|v| !v.is_finite())) {
+        return None;
+    }
+    Some(matrix)
+}
+
+/// Resume la matriz de contagio en un escalar por activo: la MEDIA de
+/// z-scores de contagio EMITIDO (fila) y RECIBIDO (columna), normalizada
+/// por N−1 para ser comparable entre universos de distinto tamaño.
+/// (Ola XLV·E, fixes Codex): suma → media/N−1 (magnitud independiente del
+/// tamaño del universo); NaN en la matriz → None.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ContagionRole {
+    /// Media de α[i][j] sobre j≠i — cuánto contagia este activo a los demás.
+    pub emitted: f64,
+    /// Media de α[i][j] sobre i≠j — cuánto es contagiado por los demás.
+    pub received: f64,
+    /// emitted − received: >0 = líder neto, <0 = seguidor neto.
+    pub net_role: f64,
+}
+
+pub fn contagion_roles(matrix: &[Vec<f64>]) -> Option<Vec<ContagionRole>> {
+    let n = matrix.len();
+    if n < 2 || matrix.iter().any(|r| r.len() != n) {
+        return None;
+    }
+    // Codex PR#11: NaN → None
+    if matrix.iter().any(|row| row.iter().any(|v| !v.is_finite())) {
+        return None;
+    }
+    let denom = (n - 1) as f64;
+    let mut roles = Vec::with_capacity(n);
+    for j in 0..n {
+        let emitted: f64 = matrix[j].iter().sum::<f64>() / denom;
+        let received: f64 = (0..n).map(|i| matrix[i][j]).sum::<f64>() / denom;
+        roles.push(ContagionRole {
+            emitted,
+            received,
+            net_role: emitted - received,
+        });
+    }
+    Some(roles)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,7 +223,7 @@ mod tests {
     fn xlv_seguidor_copiando_da_pico_en_lag_correcto() {
         let leader: Vec<u64> = (0..200).map(|i| 1_000 + (i as u64) * 1_000).collect();
         let follower: Vec<u64> =
-            leader.iter().map(|&t| t + 200).collect(); // copia con delay exacto
+            leader.iter().map(|&t| t + 200).collect();
         let span = *follower.last().unwrap() - follower[0];
         let lags: Vec<u64> = vec![100, 200, 500, 1_000, 2_000];
         let exc = cross_excitation(&leader, &follower, span, &lags)
@@ -128,7 +234,7 @@ mod tests {
         assert!(exc.z_score > 5.0, "contagio perfecto debia dar z alto, dio {:.1}", exc.z_score);
     }
 
-    /// Falsación: series independientes → None (sin contagio afirmable).
+    /// Falsación: series independientes → None o z bajo.
     #[test]
     fn xlv_series_independientes_no_afirman_contagio() {
         let mut seed = 0xDEADBEEFu64;
@@ -136,20 +242,39 @@ mod tests {
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
             (seed >> 33) as u64 % 10_000
         };
-        // líder: 100 eventos espaciados ~1000ms
         let leader: Vec<u64> = (0..100).map(|_| next() * 100 + 1_000).collect();
-        // seguidor: 100 eventos aleatorios en el mismo span (independientes)
         let follower: Vec<u64> = (0..100).map(|_| next() * 100 + 1_000).collect();
         let mut l = leader.clone(); l.sort();
         let mut f = follower.clone(); f.sort();
         let span = *f.last().unwrap() - f[0];
         let lags: Vec<u64> = vec![200, 500, 1_000];
-        // con 100 eventos aleatorios, es MUY improbable superar z>3
-        let result = cross_excitation(&l, &f, span, &lags);
-        // No assert is_none (5% de falsos positivos con z=3); pero si Some,
-        // la significancia no debe ser extrema.
-        if let Some(exc) = result {
+        if let Some(exc) = cross_excitation(&l, &f, span, &lags) {
             assert!(exc.z_score < 6.0, "independientes no debian dar z={:.1}", exc.z_score);
         }
+    }
+
+    /// Falsación matriz: un líder copiado por 2 seguidores → asimétrica.
+    #[test]
+    fn xlv_lider_con_seguidores_da_matriz_asimetrica() {
+        let leader: Vec<u64> = (0..100).map(|i| 1_000 + (i as u64) * 2_000).collect();
+        let s1: Vec<u64> = leader.iter().map(|&t| t + 150).collect();
+        let s2: Vec<u64> = leader.iter().map(|&t| t + 300).collect();
+        let series = vec![leader.clone(), s1, s2];
+        let spans: Vec<u64> = series.iter().map(|s| s.last().unwrap() - s[0]).collect();
+        let lags = vec![200u64, 500, 1_000];
+        let matrix = contagion_matrix(&series, &spans, &lags).expect("matriz 3x3");
+        assert!(matrix[0][1] > 3.0, "lider→s1 z={}", matrix[0][1]);
+        assert!(matrix[0][2] > 3.0, "lider→s2 z={}", matrix[0][2]);
+        assert!(matrix[1][0] < 3.0, "s1→líder z={} (asimetria)", matrix[1][0]);
+        let roles = contagion_roles(&matrix).expect("roles");
+        // El líder debe tener el net_role MÁS ALTO del universo (contagia
+        // más de lo que es contagiado). s1 puede ser positivo también
+        // (relay: leader→s1→s2), pero siempre MENOS que el líder.
+        assert!(roles[0].net_role > 0.0, "lider net={}", roles[0].net_role);
+        assert!(
+            roles[0].net_role >= roles[1].net_role,
+            "lider ({}) debia dominar a s1 ({})",
+            roles[0].net_role, roles[1].net_role
+        );
     }
 }

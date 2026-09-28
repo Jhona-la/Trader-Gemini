@@ -8,6 +8,7 @@ pub mod coaxial_breakout;
 // de los tres motores decide: los tres declaran `TradeHorizon::Continuous`.
 // Ahora se llaman por la magnitud que miden.
 pub mod conformal_reversion_filter;
+pub mod contagion_modulator;
 pub mod flow_excitation_confluence;
 pub mod flow_impulse;
 pub mod game_theoretic_nash;

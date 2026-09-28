@@ -332,3 +332,15 @@ FMT-197 queda reparado localmente: CSV legacy 54D estricto, targets 0/1 finitos,
 Se actualizan FMT-073/074/076 de IV con congelamiento determinista, validación numérica, abstención y preservación de pesos al preparar buffers. Se agregan FMT-200/201 sobre fidelidad/seguridad de dos diagnósticos auxiliares que no se ejecutaron por sus posibles escrituras de caché. La conexión del antiguo destino neuronal al host se confirma en fuente, no como activación de un proceso observado.
 
 La pasada XXII aprueba 94 tests distintos, 26 nuevos, y checks de cuatro binarios. Cobertura acumulada 136/289 Rust preexistentes, 153 pendientes. train_forest y otras siete fuentes protegidas conservan el hash inicial de XXII, al igual que 41 modelos. Sin entrenamiento real, promoción ni operaciones Git remotas. Esta adenda actualiza estados posteriores; no modifica la evidencia ni los resultados históricos de XXI.
+
+
+## Adenda 2026-09-28 — regresión posterior de integración, no cambio del corte XXI
+
+El merge 6fdccd64 retiró de main() las llamadas a contratos que aquí estaban
+reparados: FMT-193 (holdout/purga), FMT-194 (presupuesto) y evaluación del
+objeto serializado de FMT-190. Sus definiciones/tests siguen presentes, pero
+no protegen la ruta ejecutable en main 41755422. Se conserva la mejora del
+exportador estructural y la de estadísticas del árbol. Evidencia del merge,
+impacto y cierre en [informe de integración EWMA/W1, §20](AUDITORIA_INTEGRACION_EWMA_Y_RELOJ_2026-09-28.md#20-regresión-de-integración-confirmada-contratos-del-trainer-desconectados).
+Estado actual: contratos reabiertos, sin reparación del trainer ni promoción
+en esta pasada. Las pruebas históricas de XXI no certifican el consumidor actual.

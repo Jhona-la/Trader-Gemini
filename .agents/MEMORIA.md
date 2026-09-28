@@ -470,3 +470,139 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   nuevo trabajo BOCPD/calibración (6 archivos +360/-68), no auditado funcionalmente
   en esta ola. Main remoto sigue 988f0478; las 44 regresiones/documentos siguen
   pendientes en el último status. No borrar rama por PR cerrado. GLM avisado.
+
+## 2026-09-28 — Codex: integración EWMA/W1 y publicación parcial verificable
+
+- 6b7c6d37 creado y PUSH confirmado en main con SOLO 31 tests pendientes de
+  correlación/admisión. Junto a los 13 de e7bb4c59, las 44 regresiones previas
+  están publicadas. Informe de admisión y JSON seguían sin publicar.
+- PR #8 head 47a93fe6 revisado (9 diffs), comentarios iniciales sin hilos
+  pendientes; checks vacíos NO son CI verde. Otra sesión inició merge local:
+  MERGE_HEAD=47a93fe6, 9 archivos staged; no hubo conflictos de índice.
+  Codex preserva ese índice, no finaliza/aborta un merge ajeno ni hace add -A.
+- Parche adicional WORKING-TREE en state.rs semillas de entropía cero,
+  calibration.rs masa/momentos válidos y calentamiento estable log1p/expm1,
+  core/lib.rs reloj W1 monótono y transaccional, posterior lognormalizado y
+  cola saturada conservando masa. Mis fuentes son diff POSTERIOR al índice.
+  Sin editar genomas, Hawkes, fixture T-1, goldens ni presupuestos operativos.
+- 8 contraejemplos RED→GREEN reproducidos. 13 tests nuevos pasan (7 EWMA,
+  5 temporales y 1 masa privado). Core+arena+risk all-targets: 616 pasan,
+  0 fallan, 1 inventario local ignorado. Evolution all-targets: 100 pasan,
+  0 fallan, 0 ignoradas. Workspace check all-targets pasa con advertencias.
+  Suite de cinco crates sigue en oráculo T-1 largo; NO declararla aprobada
+  hasta ver resultado final. Otro editor corre cargo test --workspace;
+  no detenerlo ni atribuir sus resultados a Codex.
+- Informe nuevo docs/AUDITORIA_INTEGRACION_EWMA_Y_RELOJ_2026-09-28.md y JSON
+  homónimo en docs/artifacts; 15 hallazgos con fórmulas, topología y cierre.
+  Siguen OPEN Platt sin edad individual, Fisher/anclas fijas, hazard por
+  evento, riesgo monetario/reserva atómica y propagación del estado/edad.
+  Publicadores de régimen pasan None para deriva: no alimentan esa componente.
+  Un extremo por gen NO demuestra inercia global; T-1 tiene alcance condicionado.
+- Atlas, maestro e informe de admisión ampliados por adendas. Coordinación:
+  buzón local y comentario PR #8 /issuecomment-5877204118. Sin operación,
+  promoción, entrenamiento, despliegue ni garantía de +100%/72h.
+
+- DECISIÓN DEL USUARIO posterior: GLM debe terminar el merge actual. Codex
+  no lo cierra/aborta ni toca su índice. Manifest explícito dejado en el buzón.
+  Revalidación manual FMT-037/190: siguen 8 bosques JSON rechazados por hijos
+  fuera del árbol, 12 aceptados sólo estructuralmente y 1 de otro esquema.
+  Los 12 aceptados tienen 2 hashes distintos (10 FDUSD iguales + 2 BTCUSDT
+  iguales). No se activaron modelos ni se escribieron caches o modelos.
+
+- CIERRE LOCAL 15:18: cinco crates all-targets, 777 pasan/0 fallan/1 inventario
+  ignorado, código 0. T-1: 2 pasan, 1405,43 s, fixture/umbral/goldens intactos.
+  El inventario se ejecutó aparte (no equivale a modelos válidos). 9 hashes
+  de fuente y 21 de modelos verificados. No pruebas propias pendientes.
+- Corte remoto: main=6b7c6d37; Claude/PR #8 avanzó a 6ebb2857 con 3c5b0c1a y
+  6ebb2857. MERGE_HEAD sigue 47a93fe6. Los 777 NO prueban ese delta remoto.
+  Diff nuevo leído, no aplicado: signo terminal != etiqueta primer toque de
+  barrera; fricción compartida hereda ATR/latencia no finitos→0. GLM avisado.
+  No nuevas operaciones Git de escritura al índice, merge ni borrado de ramas.
+
+## 2026-09-28 — Codex: checkout aislado y publicación EWMA/W1 pendiente
+
+- El usuario cambia el protocolo a rama propia + merge + eliminación segura.
+  GLM ya cerró el merge previo en 41755422; ahora trabaja en
+  glm/xlv-effective-bets / random_matrix.rs. No se toca ese archivo.
+- Codex crea worktree gestionado codex-ewma-w1-audit y rama
+  codex/ewma-w1-audit desde 41755422. Snapshot explícito de 16 archivos;
+  cinco hashes de fuentes/tests idénticos a los de 777 tests históricos.
+  Los originales del checkout compartido se preservan; NO duplicar su commit.
+- Compilación desde caché independiente iniciada; resultado se añadirá al cerrar.
+  No se confunde la prueba anterior con los nuevos commits del PR #8.
+- R8-A sigue OPEN en df01c82c: reason_code tampoco reconstruye primer toque.
+  Dos trayectorias con brackets RR=2 producen etiqueta opuesta; el trainer
+  aggTrades usa TP/SL literales .0036/.0018, no genes. Detalle §18 del informe.
+- Aviso local añadido. Comentario GitHub no publicado (403 y bloqueo de
+  autorización externa); se pide permiso explícito para ese repositorio/contenido.
+  No push/merge remoto ni eliminación de ramas acreditados en este corte.
+- Inventario base: 1309 archivos, 400 Rust, 24 manifests; 78 archivos Rust
+  con scalp/swing. Es inventario léxico, NO cobertura ni 78 motores separados.
+
+- Check aislado workspace all-targets pasó (6m54s, advertencias). Pruebas de
+  core/risk/arena en curso. Se descubre regresión semántica del merge 6fdccd64:
+  main() perdió consumidores de holdout/purga (FMT-193), presupuesto (194)
+  y evaluación del artefacto (190); helpers/tests conservados. Reabiertos,
+  NO reparados aquí. Evidencia y criterios en informe EWMA/W1 §20.
+
+
+- CIERRE AISLADO: commits locales fbf299ee (EWMA, 3 archivos) y b3ba8d80
+  (W1, 2 archivos). Reejecución core/risk/arena all-targets: 616 pasan,
+  0 fallan, 1 inventario ignorado, 49 bloques, código 0. Check workspace
+  all-targets pasa; cinco hashes de fuentes/tests sin cambios. Sin pruebas
+  propias pendientes. 777/T-1 son históricos, no reejecución de esta pasada.
+- Main remoto verificado 7da858ef; Claude 4833d45c (delta sólo memoria).
+  Mi rama base 41755422 NO incluye los dos nuevos commits de main. Sus tests
+  no prueban ese delta. GLM-RMT-A confirmado en ejecutable aislado sobre blob
+  2d1413207425a19f4ef74a642431d256e5e87355: 4*I aceptada por full_spectrum
+  y effective_bets=3, largest_eigenvalue la rechaza. Archivo GLM intacto.
+- Informes/JSON ampliados, XXI actualizado por adenda de reapertura. Sin
+  push/PR/merge/borrado: autorización externa pendiente tras 403/auto-revisión.
+  No usar otro canal para eludirla. Buzón local notificado; no asumir acuse.
+  Conservar worktree y originales compartidos. Próximo: reconciliar main,
+  reparar consumidores del trainer/RMT sin revertir los cambios de otros,
+  validar árbol final y publicar cuando exista autorización explícita.
+
+## 2026-09-28 — Codex: autorización recibida y reparación RMT
+
+- Usuario autorizó destino Jhona-la/Trader-Gemini, push/PR/merge y eliminación
+  sólo de la propia rama integrada. Aviso publicado PR8 issuecomment-5879667925;
+  el bloqueo anterior es histórico. No se autoriza operación/promoción por ello.
+- Merge propio 09c86127 incorpora 7da858ef tras comparar ambos padres y check
+  workspace all-targets aprobado (37,58 s). PR8 se fusionó externamente en
+  09245261 y GLM avanzó main a 5cdc0fe0: falta validar esa combinación.
+- 57bae732: largest_eigenvalue/full_spectrum comparten validador/Jacobi.
+  Nueva suite: rojo 5 pasan/2 fallan; verde 7 pasan/0 fallan. Se precisa
+  effective_bets como participación de modos retenidos, no dimensión real
+  de la cartera. No se conecta el placeholder ni se modifica sizing.
+- Auditoría detallada §23–25 del informe EWMA/W1 y JSON: Hawkes cuenta
+  ventanas con algún evento, no un kernel de intensidad; referencia/nulo,
+  censura, selección de lag y amplificación sin contrato estadístico abiertos.
+  GLM avisado localmente; no presumir lectura ni modificar su evolución.
+- Claude propone reparación del trainer en PR10/e1edc1b3. Consumidores
+  recuperados por lectura del diff; NO duplicar la implementación.
+  Se comenta frontera interna estricta > frente a contrato cerrado >=:
+  issuecomment-5879876894. R8-A (primer toque) sigue abierto.
+- Pendiente: integrar último main, check antes del merge, pruebas del árbol
+  final, publicar PR propio y verificar SHA remoto antes de retirar rama.
+  No confundir 616/777 históricos con pruebas de nuevos commits.
+
+- PR11 publicado en draft, head 32e04af3 sobre e2e0c8ef. Check workspace
+  all-targets pasó (30,93 s); cinco crates all-targets: 844 pasan/0 fallan/
+  1 inventario ignorado, 65 bloques. Incluye 20 regresiones propias, sin T-1.
+- Diagnóstico ejecutado de matriz Hawkes (blob 02e892bd): vacíos→ceros;
+  roles NaN→Some(NaN). GLM confirmó recepción y corrige en 5109f357.
+  Falta integrar/probar ese último delta. Media por N-1 NO resuelve
+  calibración/soporte ni vuelve el z invariante al universo. Siguen OPEN.
+- Claude respondió y c7da6e70 corrige purge_end cerrado en PR10, aún abierto
+  al consultar. Su reporte 39/39 es evidencia del autor, no ejecución Codex.
+
+- VALIDACIÓN FINAL PRE-MERGE PR11: 8ac27783 incorpora 5109f357. Check
+  workspace all-targets pasa (34,89 s). Reejecución mismos cinco crates:
+  844/0/1 ignorada, 65 bloques. Backtest lib: 31/0/0 (19,84 s). Total875/0/1;
+  20 regresiones propias incluidas; T-1 no reejecutado. Sin tests pendientes.
+- Testigos Hawkes sobre blob024bb3d5: vacíos/NaN ya None. Series de dos
+  eventos aún Some(ceros); suma de entradas MAX finitas puede dar inf en
+  roles. Calibración/soporte siguen abiertos; sin consumidor operativo hallado.
+- Informe §28 registra árbol probado y alcance; consultar PR11 para recibo
+  de merge remoto posterior, no confundir este corte previo con fusión.

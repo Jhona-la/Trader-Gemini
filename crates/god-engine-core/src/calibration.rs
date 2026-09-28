@@ -292,8 +292,8 @@ pub fn muro_en_contra(bid_wall: f64, ask_wall: f64, gen_razon: f64, es_largo: bo
     en_contra / a_favor >= razon_gen
 }
 
-/// Muestras efectivas mínimas para fiarse de la σ de una EWMA (el mismo
-/// mínimo muestral que usan el resto de gates de evidencia del sistema).
+/// Calentamiento legado en número de actualizaciones con alfa constante.
+/// No es tamaño efectivo estadístico ni garantía de precisión de la sigma.
 pub const EWMA_MUESTRAS_MINIMAS: f64 = 30.0;
 
 /// Actualiza una EWMA con su PESO de corrección de sesgo: `peso` es la EWMA
@@ -310,19 +310,39 @@ pub fn ewma_con_peso(valor: f64, previo: f64, peso: f64, alfa: f64) -> (f64, f64
 /// sale ≈ 0,045·|c| y el z ≈ −22 — el veto de flujo se disparaba en cada
 /// arranque y al inicio de cada backtest. Devuelve `None` hasta que el peso
 /// equivale a [`EWMA_MUESTRAS_MINIMAS`] eventos: sin σ medida no se inventa
-/// umbral (el llamador cae a su literal histórico).
+/// umbral (el llamador cae a su literal histórico). Exige semilla cero en
+/// ambos momentos y peso; un prior requiere transportar su masa también.
+/// Sólo se recorta varianza negativa del orden del redondeo, no una entrada
+/// materialmente imposible. None conserva la ausencia de evidencia válida.
 #[inline]
 pub fn momentos_ewma_corregidos(media: f64, segundo: f64, peso: f64, alfa: f64) -> Option<(f64, f64)> {
-    if !(alfa > 0.0 && alfa < 1.0) || !media.is_finite() || !segundo.is_finite() || !peso.is_finite() {
+    if !(alfa > 0.0 && alfa < 1.0)
+        || !media.is_finite()
+        || !segundo.is_finite()
+        || segundo < 0.0
+        || !peso.is_finite()
+        || peso <= 0.0
+        || peso > 1.0
+    {
         return None;
     }
-    let peso_minimo = 1.0 - (1.0 - alfa).powf(EWMA_MUESTRAS_MINIMAS);
+    // -expm1(n*log1p(-alfa)) conserva la masa cuando alfa es muy pequeño.
+    let peso_minimo = -(EWMA_MUESTRAS_MINIMAS * (-alfa).ln_1p()).exp_m1();
     if peso < peso_minimo {
         return None;
     }
     let m = media / peso;
-    let var = (segundo / peso - m * m).max(0.0);
-    Some((m, var.sqrt()))
+    let segundo_normalizado = segundo / peso;
+    let media_cuadrada = m * m;
+    if !m.is_finite() || !segundo_normalizado.is_finite() || !media_cuadrada.is_finite() {
+        return None;
+    }
+    let var = segundo_normalizado - media_cuadrada;
+    let roundoff = 64.0 * f64::EPSILON * segundo_normalizado.max(media_cuadrada);
+    if var < -roundoff {
+        return None;
+    }
+    Some((m, var.max(0.0).sqrt()))
 }
 
 #[cfg(test)]
