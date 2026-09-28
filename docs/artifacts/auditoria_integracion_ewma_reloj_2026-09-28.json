@@ -1,7 +1,35 @@
 {
   "schema_version": 1,
   "historical_cut_preserved": true,
-  "latest_status": "verified_local_commits_pending_external_publication_authorization",
+  "latest_status": "publication_authorized_rmt_fixed_integration_in_progress",
+  "authorized_continuation": {
+    "external_destination": "Jhona-la/Trader-Gemini",
+    "user_authorized_publication": true,
+    "coordination_comments": [
+      "https://github.com/Jhona-la/Trader-Gemini/pull/8#issuecomment-5879667925",
+      "https://github.com/Jhona-la/Trader-Gemini/pull/10#issuecomment-5879876894"
+    ],
+    "own_merge_of_7da858ef": "09c86127",
+    "pre_merge_workspace_check": {"all_targets": true, "exit_code": 0, "seconds": 37.58},
+    "rmt_source_commit": "57bae732",
+    "rmt_contract_tests": {
+      "before": {"passed": 5, "failed": 2, "exit_code": 1},
+      "after": {"passed": 7, "failed": 0, "ignored": 0, "exit_code": 0},
+      "command": "cargo test --offline -q -p risk-engine --test full_spectrum_contract -- --test-threads=1"
+    },
+    "hawkes_static_review": {
+      "kernel_source": "7da858ef",
+      "amplifier_source": "5cdc0fe0",
+      "operational_amplifier_calls_found": 0,
+      "calibration_experiment_executed": false,
+      "status": "open_model_contract_and_support",
+      "primary_sources": ["https://arxiv.org/html/1401.0903", "https://arxiv.org/abs/1604.01824", "https://arxiv.org/abs/1706.03411"]
+    },
+    "concurrent_trainer_repair": {"pr": 10, "reviewed_head": "e1edc1b3", "consumers_reconnected_in_proposal": true, "internal_split_closed_boundary_issue_reported": true, "tested_by_codex": false},
+    "complete_project_audit": false,
+    "models_trained_or_promoted": false,
+    "returns_target_validated": false
+  },
   "isolated_final_validation": {"source_commits": ["fbf299ee", "b3ba8d80"], "base": "41755422", "suites": 49, "passed": 616, "failed": 0, "ignored": 1, "exit_code": 0, "new_regressions_passed": 13, "source_test_hashes_rechecked": 5, "workspace_check_all_targets_exit_code": 0, "new_main_delta_tested": false, "t1_rerun": false, "own_running_test_processes": 0, "push_performed": false, "pr_created": false, "remote_merge_performed": false, "branch_deletions": []},
   "subsequent_rmt_execution": {"source_commit": "8389432c", "source_blob": "2d1413207425a19f4ef74a642431d256e5e87355", "exit_code": 0, "diagnostic_only": true, "source_modified": false, "scaled_identity": {"largest": null, "full": [4,4,4], "effective_bets": 3}, "asymmetric": {"largest": null, "full": [1,1], "effective_bets": null}},
   "subsequent_cuts": [{

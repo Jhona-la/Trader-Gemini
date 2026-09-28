@@ -443,3 +443,27 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   Conservar worktree y originales compartidos. Próximo: reconciliar main,
   reparar consumidores del trainer/RMT sin revertir los cambios de otros,
   validar árbol final y publicar cuando exista autorización explícita.
+
+## 2026-09-28 — Codex: autorización recibida y reparación RMT
+
+- Usuario autorizó destino Jhona-la/Trader-Gemini, push/PR/merge y eliminación
+  sólo de la propia rama integrada. Aviso publicado PR8 issuecomment-5879667925;
+  el bloqueo anterior es histórico. No se autoriza operación/promoción por ello.
+- Merge propio 09c86127 incorpora 7da858ef tras comparar ambos padres y check
+  workspace all-targets aprobado (37,58 s). PR8 se fusionó externamente en
+  09245261 y GLM avanzó main a 5cdc0fe0: falta validar esa combinación.
+- 57bae732: largest_eigenvalue/full_spectrum comparten validador/Jacobi.
+  Nueva suite: rojo 5 pasan/2 fallan; verde 7 pasan/0 fallan. Se precisa
+  effective_bets como participación de modos retenidos, no dimensión real
+  de la cartera. No se conecta el placeholder ni se modifica sizing.
+- Auditoría detallada §23–25 del informe EWMA/W1 y JSON: Hawkes cuenta
+  ventanas con algún evento, no un kernel de intensidad; referencia/nulo,
+  censura, selección de lag y amplificación sin contrato estadístico abiertos.
+  GLM avisado localmente; no presumir lectura ni modificar su evolución.
+- Claude propone reparación del trainer en PR10/e1edc1b3. Consumidores
+  recuperados por lectura del diff; NO duplicar la implementación.
+  Se comenta frontera interna estricta > frente a contrato cerrado >=:
+  issuecomment-5879876894. R8-A (primer toque) sigue abierto.
+- Pendiente: integrar último main, check antes del merge, pruebas del árbol
+  final, publicar PR propio y verificar SHA remoto antes de retirar rama.
+  No confundir 616/777 históricos con pruebas de nuevos commits.

@@ -958,3 +958,198 @@ Quedan abiertas la regresión del trainer (§20), la correspondencia del target
 (§18), el dominio/cableado de RMT (§21) y las ocho deudas locales originales.
 Esto es un cierre de pasada y preservación de resultados, no certificación
 completa del sistema, reparación de todos sus fallos ni validación de rentabilidad.
+
+## 23. Continuación autorizada: contrato espectral único y evidencia roja
+
+El usuario autorizó expresamente enviar correcciones, informes y avisos a
+Jhona-la/Trader-Gemini, reconciliar main, fusionar el PR propio y retirar sólo
+la rama propia integrada. El bloqueo de publicación de §22 es HISTÓRICO:
+el aviso de coordinación se publicó en
+[PR8](https://github.com/Jhona-la/Trader-Gemini/pull/8#issuecomment-5879667925).
+No se amplía esa autorización a desplegar, operar, entrenar o promover modelos.
+
+PR8 se fusionó externamente en 092452616fafa1a677e8c9c6b80738d1e653bfd7.
+Antes de ello, Codex había integrado 7da858ef en 09c86127 con comparación de
+ambos padres y check workspace all-targets aprobado (37,58 s, advertencias).
+Los avances posteriores de main requieren otra integración y sus propias
+pruebas; no quedan cubiertos por los 616 resultados históricos de §22.
+
+### 23.1 GLM-RMT-A: reproducción, causa y corrección acotada
+
+**Gravedad:** alta en el contrato de la API, impacto operativo no acreditado.
+**Archivos:** crates/risk-engine/src/random_matrix.rs y su nueva suite
+tests/full_spectrum_contract.rs. **Introducción observada:** 8389432c.
+**Reproducción Cargo antes del parche:** 5 pasan, 2 fallan, código 1:
+covariance_scale_is_rejected_by_every_spectral_entrypoint y
+material_asymmetry_is_not_averaged_into_a_different_matrix.
+
+La primera prueba presenta 4·I, una covarianza perfectamente PSD pero NO una
+correlación: sus diagonales valen 4. full_spectrum devolvía [4,4,4]; al pasar
+ese espectro a effective_bets se obtenía 3 con T=512. largest_eigenvalue,
+correctamente, rechazaba la misma entrada. La segunda prueba detecta que
+promediar entradas opuestas antes de comprobar simetría convierte datos
+inválidos en una matriz distinta; no es una reparación estadística autorizada.
+También se cubre una asimetría con ambas entradas dentro de [-1,1].
+
+La raíz no es el algoritmo Jacobi en sí, sino haber duplicado un solver sin
+copiar su contrato de entrada. La corrección extrae diagonalize_correlation:
+ambas APIs comparten dimensionalidad, finitud, diagonal unitaria, simetría,
+rango, convergencia y positividad semidefinida dentro del presupuesto numérico.
+Se conserva tolerancia 64·epsilon·N y presupuesto de 64 barridos; no se
+agregan clipping de autovalores, diagonal loading ni imputaciones. La
+reconciliación de asimetría queda limitada al redondeo previamente validado.
+
+El retorno interno conserva la matriz diagonalizada. largest_eigenvalue sólo
+reduce su diagonal; full_spectrum la extrae y ordena. Se elimina la asignación
+last_spectrum, que construía y ordenaba un vector sin consumidor en la ruta
+del máximo. Esto elimina trabajo comprobable por lectura, NO acredita una
+reducción de latencia medida. No se cambia el consumidor de riesgo ni se
+conecta el placeholder de telemetría.
+
+### 23.2 Qué calcula effective_bets y qué no significa
+
+Sea K el conjunto de autovalores estrictamente por encima del borde MP,
+p_i=sqrt(lambda_i)/sum_K sqrt(lambda). Entonces el escalar implementado es
+1/sum_K(p_i^2) = (sum_K sqrt(lambda))^2 / sum_K lambda.
+Para k modos retenidos positivos, Cauchy-Schwarz acota el resultado en [1,k].
+Es adimensional y mide participación de ESOS modos, con la raíz como peso.
+No es el participation ratio usual (sum lambda)^2/sum lambda^2, ni incorpora
+las exposiciones de una cartera. Por tanto no estima automáticamente el
+número real de apuestas independientes del portafolio.
+
+Para I_N y T>N, el borde supera 1 y no queda ningún modo: la API devuelve
+None, NO N. Un modo retenido produce 1; dos bloques comunes iguales producen
+2. La documentación previa que afirmaba independencia→N era incompatible
+con la selección implementada. Se conserva el nombre por compatibilidad y
+se precisa su alcance en los comentarios, sin atribuciones bibliográficas
+no justificadas ni calificar los modos de estadísticamente “limpios”.
+
+None sigue mezclando entrada inválida, falta de soporte, no convergencia y
+ausencia de modos retenidos. Esa pérdida de diagnóstico queda ABIERTA para
+una API tipada futura. Ninguna de esas ausencias autoriza independencia,
+riesgo cero o descuento del tamaño de posición.
+
+### 23.3 Cobertura falsable añadida
+
+Siete tests cubren: covarianza escalada; asimetría material; forma/rango/NaN/
+infinitos; matrices indefinidas; espectros analíticos de equicorrelación con
+N=2,5,30 y casos singulares; invariancia frente a permutación/cambio de signos
+de exposición; y significado de la participación de modos retenidos.
+Se comparan traza y autovalor máximo, no sólo un booleano de aceptación.
+No son una auditoría de datos históricos, de la hipótesis iid del borde MP
+ni de la PSD de matrices estimadas de forma asíncrona. Resultado verde e
+integración remota se registrarán en un corte posterior, sin reescribir el rojo.
+
+## 24. Hawkes cruzado y amplificación: auditoría del modelo, no sólo del código
+
+**Corte:** hawkes_cross.rs de 7da858ef y correlation_guard.rs de 5cdc0fe0.
+**Estado:** observaciones estáticas verificadas y revisión bibliográfica;
+sin calibración empírica ni modificación de esos archivos por Codex. GLM
+ha reservado su siguiente evolución matricial en el buzón. Se le avisó
+localmente; no se presume acuse de lectura. La búsqueda en 5cdc0fe0 encuentra
+amplificar_por_contagio sólo en definición y tests: el título del commit
+NO demuestra que esté conectado a un veto operativo.
+
+### 24.1 Objeto estimado y unidades
+
+El bucle incrementa hits a lo sumo una vez por líder: estima la fracción
+de ventanas (t,t+delta] con al menos un evento seguidor. No cuenta todos los
+eventos y no estima una función de intensidad. Al ampliar delta, las ventanas
+se anidan: sumar sus tasas cuenta otra vez parte de las mismas coincidencias.
+Esa suma no es una masa de contagio invariante al refinamiento de la rejilla.
+Añadir puntos de lag podría cambiarla sin que aparezca información nueva.
+
+En el Hawkes lineal multivariado, la intensidad es
+lambda_i(t)=mu_i+sum_j integral phi_ij(t-s)dN_j(s). El kernel tiene unidades
+de tasa; su integral forma una matriz adimensional. La condición de radio
+espectral menor que uno pertenece al modelo y sus supuestos, no a cualquier
+matriz de coincidencias. La estimación no paramétrica mediante estadísticas
+de segundo orden requiere resolver su relación integral; no equivale al
+conteo de ventanas del código.
+[Bacry y Muzy, secciones II–III](https://arxiv.org/html/1401.0903).
+
+**Inferencia de auditoría:** es útil conservar el conteo como diagnóstico
+descriptivo, pero llamarlo kernel estimado/contagio causal atribuye al resultado
+propiedades que la implementación no calcula. La precedencia observada no
+elimina un factor común ni distingue efectos directos de cascadas indirectas.
+
+### 24.2 Referencia probabilística incompatible con el numerador
+
+El código compara hits/n con density·delta. El primero es frecuencia del
+indicador “al menos uno”; el segundo es un número esperado de eventos. Incluso
+bajo un nulo Poisson homogéneo ideal, si m=lambda·delta,
+P(N>=1)=1-exp(-m), no m. Por ejemplo m=0,5 produce ~0,393469, frente a 0,5
+en la referencia; m=2 produce ~0,864665, mientras la implementación recorta
+a casi 1. El recorte a [1e-9,1-1e-9] oculta que se excedió el dominio de una
+probabilidad y altera el error estándar. Estos números son deducción de la
+distribución hipotética, NO tasas medidas del mercado ni una calibración.
+
+Sustituir una fórmula no bastaría: ventanas solapadas reutilizan seguidores,
+las llegadas pueden depender temporalmente, la intensidad puede variar y
+se estima la tasa base con la misma muestra. La varianza binomial usada
+presupone una estructura que el contrato no comprueba. No hay corrección
+por seleccionar el máximo z entre múltiples lags y múltiples pares.
+
+### 24.3 Soporte observacional y falsación insuficiente
+
+- follower_span_ms=0 se reemplaza por 1: un intervalo sin soporte declarado
+  pasa a tener una exposición inventada. Debe distinguirse dato inválido.
+- No hay inicio/fin de observación de ambos activos: una ventana final
+  parcialmente observada se cuenta como si estuviera completa; no puede
+  corregirse censura ni comprobarse exposición común sólo con un span.
+- El avance monotónico del índice presupone timestamps ordenados. El contrato
+  lo exige por texto, pero no lo valida; tampoco identifica duplicados.
+- Se exigen cinco eventos follower globales, NO cinco coincidencias como
+  afirma el comentario. El soporte efectivo por lag permanece desconocido.
+- El test de independencia usa una sola realización y acepta Some si z<6.
+  Eso no estima error de tipo I ni valida el umbral de aceptación z>=3.
+
+Un programa de validación debería separar simulación bajo nulos, procesos
+con excitación conocida, tasas variables/factor común, censura, timestamps
+empatados y estabilidad frente a la rejilla. Debe medir cobertura y potencia
+con intervalos Monte Carlo, además de residuos fuera de muestra. La literatura
+sobre ajuste en libros de órdenes evalúa residuos y estabilidad, no únicamente
+un pico en una serie que copia otra.
+[Estudio de ajuste multivariado en LOB](https://arxiv.org/abs/1604.01824).
+Como línea de investigación multi-activo también se identificó la estimación
+de la matriz de normas del kernel aplicada a dos activos; no se implementó
+ni se presupone válida para estos datos.
+[Matriz de branching en flujos LOB](https://arxiv.org/abs/1706.03411).
+
+### 24.4 Amplificador 5cdc0fe0: discrepancias de contrato aún abiertas
+
+La fórmula ejecutada es r+(1-r)·min((z-3)/10,0,5), no la fórmula z/10 del
+comentario. Para r=-0,4 y z=8 devuelve +0,3: el propio test exige ese valor,
+aunque su título dice que la cobertura no se invierte. Para r=-1 el aumento
+máximo es +1, no +0,5 en valor absoluto; 0,5 limita el coeficiente, no el
+incremento. No se valida r finito/en [-1,1], ni se calibra la transformación
+entre una evidencia de frecuencia de eventos y una correlación de retornos.
+
+El estadístico de eventos no recibe el signo de retornos ni las exposiciones.
+No puede, por sí mismo, identificar si las dos posiciones son la misma apuesta
+o una cobertura. Tampoco hay garantía de que amplificar pares de forma
+independiente conserve PSD de una matriz global. Esto último es un requisito
+a validar para un consumidor matricial, no una ejecución de cartera fallida
+ya observada. No conectar ese escalar a sizing/descuento de riesgo basándose
+sólo en que sus tres tests reproducen la fórmula elegida.
+
+## 25. Revisión de reparación concurrente del trainer (PR10)
+
+Claude publicó c6862683/6f78aed8/905413be y reconcilió con main en e1edc1b3.
+El diff restituye --test-in antes de E/S, presupuesto con contador, purga
+entre archivos, evaluación del artefacto serializado y test posterior.
+Es respuesta concreta a §20: se reconoce el avance y NO se duplica su código.
+[Coordinación y observación de frontera](https://github.com/Jhona-la/Trader-Gemini/pull/10#issuecomment-5879876894).
+
+Permanece una diferencia estática en ese head: el split interno usa purge_end
+con end > first_val_ts; el contrato de intervalos cerrados del camino externo
+usa >=. La igualdad de frontera no es cubierta por el test nuevo de
+como_intervalos. Se avisó al autor para comprobar ambos caminos. El helper
+además construye filas con zip; no confundir alineación del resultado con
+validación de las longitudes originales. Este segundo punto es una deuda de
+robustez del adaptador, no prueba de que build esté produciendo desalineación.
+
+No se ejecutaron entrenamiento, promoción ni evaluación de un nuevo modelo.
+La reparación se considera propuesta en PR10 hasta comprobar fusión y pruebas
+del árbol resultante. El target primer-toque de §18 continúa abierto: restaurar
+holdout no resuelve etiquetas de feedback que usan reason_code de otros brackets.

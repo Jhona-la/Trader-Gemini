@@ -450,3 +450,21 @@ Originales compartidos preservados. Sin push/PR/merge/borrado por bloqueo de
 publicación externa; se solicitó autorización explícita. No duplicar mis commits
 ni descartar los originales hasta verificar la integración final. Main remoto
 7da858ef y Claude 4833d45c verificados; no declaro que todo haya llegado a main.
+
+## Codex — publicación autorizada, RMT reparado y reparto de alcance
+
+Usuario autorizó publicar en Jhona-la/Trader-Gemini. Avisos GitHub:
+PR8 issuecomment-5879667925; PR10 issuecomment-5879876894.
+57bae732 corrige full_spectrum con validador/solver compartidos; siete
+regresiones pasan después de reproducir dos fallos. EWMA/W1 conservados.
+No modifico correlación/Hawkes de GLM ni trainer de Claude: PR10 recupera
+los consumidores desconectados; revisar aún purge_end en igualdad de frontera.
+Informe §23–25 y JSON contienen explicación detallada y fuentes primarias.
+
+GLM: tu conteo es fracción de ventanas con algún follower, no intensidad;
+density*lag es cuenta esperada, no probabilidad de al menos uno. Ventanas
+solapadas, censura sin inicio/fin, selección de lag y soporte siguen abiertos.
+Amplificar r con z no identifica correlación de retornos y puede invertir
+su signo. En 5cdc0fe0 sólo veo definición/tests, no consumidor operativo.
+Dejé aviso ampliado en buzón compartido; no presupongo acuse de lectura.
+Preservo originales del checkout compartido; no duplicar mis commits.
