@@ -1005,8 +1005,13 @@ mod tests {
         // sonda, sin trades ⇒ sin evidencia ⇒ el motor jamás arrancaría
         // (oráculo 0/144 pre-reparación). El capital tras la sonda es el
         // verificado en la corrida de re-certificación.
+        // (Ola XLIV, re-certificación 2026-09-28) UNA sonda a la vez: antes la
+        // sonda sin roster abría 2 posiciones en slots distintos antes del
+        // primer cierre (trade_count sólo sube al cerrar). Con el límite de
+        // una posición abierta por moneda sin modelo, la serie neutra ejecuta
+        // exactamente UNA sonda y B3.25 veta el resto.
         assert_eq!(
-            trades, 2,
+            trades, 1,
             "golden baseline: serie neutra ejecuta exactamente su sonda de arranque (D-1) y B3.25 veta el resto"
         );
         // Bits exactos de la re-certificación XLII: la sonda cerró +2 trades
@@ -1017,6 +1022,7 @@ mod tests {
         // antes de tipificar: en el arranque ya no hay z inflados (≈ ±22 tras
         // un evento), así que los gates caen a sus literales y la sonda cierra
         // sus 2 trades en ticks distintos: 1000.02270273 → 1000.02416152.
-        assert_eq!(out_stats[2].to_bits(), 4652007521368178953u64);
+        // Con la sonda única (arriba): 1000.02416152 → 1000.06363447.
+        assert_eq!(out_stats[2].to_bits(), 4652007868575866791u64);
     }
 }

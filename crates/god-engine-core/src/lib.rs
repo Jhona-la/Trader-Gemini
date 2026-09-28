@@ -5936,12 +5936,22 @@ impl GodEngineCore {
                     // modelo el veto permanece (B3.25); con CERO historial del símbolo,
                     // la primera orden ES la sonda que genera la evidencia que el gate
                     // exige — sin ella el motor jamás arrancaría (oráculo 0/144).
+                    //
+                    // Ola XLIV: UNA sonda a la vez. `trade_count` sólo sube al
+                    // CERRAR y no se persiste, así que sin este límite la
+                    // «sonda» podía llenar los 3 slots espectrales de la moneda
+                    // antes del primer cierre, y tras cada reinicio las monedas
+                    // sin modelo (27 de 30 hoy) abrían de nuevo saltándose el
+                    // gate ML de B3.25. Con una posición abierta en la moneda
+                    // (sonda en curso o posición reconciliada tras reinicio)
+                    // la evidencia se espera, no se multiplica.
                     let arranque_frio_sin_roster = !has_roster_model
                         && self.arena.coins[coin_id]
                             .metrics
                             .trade_count
                             .load(Ordering::Relaxed)
-                            == 0;
+                            == 0
+                        && !self.arena.coins[coin_id].positions.is_any_open();
                     let ml_gate_ok = arranque_frio_sin_roster
                         || (has_roster_model
                             && if order.signal == SignalType::Long {
