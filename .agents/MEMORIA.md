@@ -39,9 +39,15 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   modelo (antes podía llenar los 3 slots y repetirse tras cada reinicio).
   Golden re-certificado: 1 trade de sonda (antes 2).
 - Verificación: arena + núcleo + riesgo 559/559; backtest, evolution, signal y
-  metacortex verdes. **T-1 (oráculo, 22 min nativo) NO ejecutado aún en esta
-  ola**: la sonda única reduce trades del fixture y puede mover la cobertura
-  (trinquete ≥ 11,5 %). Correrlo antes de fusionar.
+  metacortex verdes. **T-1 (oráculo, release bajo wine, 30 min): 19/144 genes
+  sensibles (13,2 %) ≥ trinquete 11,5 % — PASA.** La última cifra documentada
+  (Ola XLII) era 20/144 (13,9 %): la comparación gen a gen con `main` está en
+  curso.
+- Diagnóstico T-1 (fixture sintético): el risk-engine rechaza por
+  `suelo_tp_sl` 1 241 740 intenciones (167 161 largos, 1 074 579 cortos) frente
+  a 1 605 por comisiones. El suelo de TP/SL domina el embudo; con spread
+  sintético de 4 pb frente a fricción de 7 pb es esperable, pero hay que
+  medirlo sobre tape real antes de juzgarlo.
 - Aislamiento de tests: una vez se vio un fallo de determinismo de
   `replay_*` con tests en paralelo (no reproducido en 13 corridas). Probable
   estado global compartido (mapa global de bosques / registros).
