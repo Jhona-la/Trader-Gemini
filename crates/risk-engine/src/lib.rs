@@ -534,7 +534,10 @@ impl RiskEngine {
             .global_correlation_threshold
             .load(Ordering::Relaxed);
         let Some(dependence) = correlation_guard::dependency_exposure(
-            arena, coin_id, is_long, corr_thresh,
+            arena,
+            coin_id,
+            is_long,
+            corr_thresh,
         ) else {
             return rej(REJ_INVALID_INPUT);
         };
