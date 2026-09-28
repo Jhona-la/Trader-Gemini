@@ -132,16 +132,27 @@ impl<'a> PortfolioOrchestrator<'a> {
         // Regime Orchestration (Fase 13: Kill-Switch macro)
         // (Ola XLII·B1-wire) CRASH POLICY CONTINUA: la crash-ness MEDIDA del
         // campo espectral (publicada por símbolo) contrae el margen admisible
-        // continuamente — el largo paga hasta +25 pb de colchón a crash-ness
-        // plena. El veto binario del enum queda como el extremo declarado
-        // (caída libre sistémica); el rango medio es gradiente, no caja.
+        // continuamente — el largo pierde hasta 25 PUNTOS PORCENTUALES de
+        // colchón (0,25 de la fracción de capital) a crash-ness plena. El veto
+        // binario del enum queda como el extremo declarado (caída libre
+        // sistémica); el rango medio es gradiente, no caja.
+        //
+        // Ola XLIV: `crash_flux` usa |marea| («describe el evento, no el
+        // lado»), así que una tendencia ALCISTA intensa también lo eleva.
+        // Tomar el máximo de todas las monedas sin mirar el signo recortaba
+        // el margen de TODOS los largos cuando cualquier moneda subía con
+        // fuerza. Sólo cuenta la crash-ness de las monedas cuya marea
+        // portadora (`spectral_coherence`) es BAJISTA — la misma regla que
+        // aplica el núcleo a su propio recorte de `free_cap`.
         let mut crash_pressure = 0.0f64;
         if intent_is_long {
             let crash_max = self
                 .arena
                 .coins
                 .iter()
+                .filter(|c| c.spectral_coherence.load(Ordering::Relaxed) < 0.0)
                 .map(|c| c.spectral_crash_flux.load(Ordering::Relaxed))
+                .filter(|f| f.is_finite())
                 .fold(0.0f64, f64::max)
                 .clamp(0.0, 1.0);
             crash_pressure = 0.25 * crash_max;
