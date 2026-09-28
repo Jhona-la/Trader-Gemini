@@ -232,7 +232,19 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     // Dirección de recuperación: conectar genes muertos (D-649), retirar
     // clamps (D-643), o ensanchar la banda de lift con calibración Brier
     // real del evolver. Sólo puede SUBIR desde aquí.
-    const COBERTURA_MINIMA: f64 = 0.115;
+    //
+    // RE-CERTIFICACIÓN CONSCIENTE (CL-2, 2026-09-28, autorizada por el
+    // operador): 19/144 → 16/144 (11,1 %). Medido gen a gen, sólo cambian
+    // tres genes y los tres por el arreglo del freno de apalancamiento:
+    //   · 142/143 (`sl_horizon_curve`): su ÚNICA lectura efectiva en el
+    //     fixture era el stop imaginario del freno (τ del gen + curva
+    //     genómica). La orden usa el stop de `compute_tp_sl`; esa
+    //     sensibilidad era falsa y desaparece con el defecto.
+    //   · 20 (`veto_threshold_btc`): sigue cableado a la fracción Kelly de la
+    //     matriz, pero en el fixture su efecto queda por debajo del paso de
+    //     la cuantización entera del apalancamiento (D-730).
+    // Ningún cableado se retiró. El trinquete vuelve a ser el valor medido.
+    const COBERTURA_MINIMA: f64 = 0.110;
     assert!(
         cobertura >= COBERTURA_MINIMA,
         "cobertura genética {:.1} % por debajo del mínimo {:.1} %. \
