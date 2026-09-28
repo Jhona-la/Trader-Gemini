@@ -66,9 +66,10 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   entropía constante 0,5, a t = 31: media 9,77 y varianza < 0 (sd = 0). CVD y
   marea no afectados (nacen en 0). Codex tiene en local: semillas de entropía
   en 0, dominio cerrado (peso ∈ (0,1], segundo momento ≥ 0, finito),
-  calentamiento con log1p/expm1 y reloj W₁ monótono. **XLIV-3 ya entró en
-  `main` (41755422) SIN ese arreglo**: el defecto está vivo hasta que Codex
-  publique su parche. Claude no toca esa zona.
+  calentamiento con log1p/expm1 y reloj W₁ monótono. XLIV-3 entró en `main`
+  (41755422) sin ese arreglo; **CERRADO por el PR #11 de Codex** (fbf299ee /
+  b3ba8d80, en `main` desde 92534a9e): semillas de entropía en 0, dominio de
+  momentos cerrado y reloj W₁ causal.
 
 ### Segundo tramo (XLIV-8 … XLIV-12, con 8b y 9b/9c)
 - **XLIV-8 fricción única**: `tp_sl::roundtrip_friction` (2·taker + 2·(piso +
@@ -137,8 +138,17 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   antes de E/S, `SamplingBudget`, `purge_training` para `--val-in`,
   `serving_predictions` + control de paridad con `forest_raw`, y test
   posterior (`require_later_holdout`) que también debe pasar el gate.
-- Pendiente de Codex (su PR próximo): el motivo de salida vivo no reconstruye
-  el primer toque de las barreras del entrenador cuando los brackets difieren
+- **XLIV-13b (revisión de Codex)**: `purge_end` (split interno 80/20) usaba
+  frontera abierta (`t + τ > t_val`) y los contratos FMT cerrada; unificado a
+  `>=` (López de Prado). El test D-734 pasa de 5 a 6 purgadas y compara con
+  `purge_training`.
+- **main roto en f0fcf08a (XLV·F)**: `contagion_modulator.rs` importaba
+  `crate::hawkes_cross`, que vive en feature-engine ⇒ signal-engine no
+  compilaba (`check --all-targets` rojo en 99a19bfb). Arreglado en el PR #10
+  con `feature_engine::hawkes_cross` (una línea; signal-engine ya dependía de
+  feature-engine).
+- Abierto (R8-A, Codex): el motivo de salida vivo no reconstruye el primer
+  toque de las barreras del entrenador cuando los brackets difieren
   (contraejemplos suyos): XLIV-9c sigue siendo una aproximación.
 
 ### Hallazgos de este tramo NO corregidos (diseño o zona ajena)
