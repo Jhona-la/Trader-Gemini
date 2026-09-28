@@ -1,0 +1,509 @@
+{
+  "schema_version": 1,
+  "historical_cut_preserved": true,
+  "latest_status": "verified_local_commits_pending_external_publication_authorization",
+  "isolated_final_validation": {"source_commits": ["fbf299ee", "b3ba8d80"], "base": "41755422", "suites": 49, "passed": 616, "failed": 0, "ignored": 1, "exit_code": 0, "new_regressions_passed": 13, "source_test_hashes_rechecked": 5, "workspace_check_all_targets_exit_code": 0, "new_main_delta_tested": false, "t1_rerun": false, "own_running_test_processes": 0, "push_performed": false, "pr_created": false, "remote_merge_performed": false, "branch_deletions": []},
+  "subsequent_rmt_execution": {"source_commit": "8389432c", "source_blob": "2d1413207425a19f4ef74a642431d256e5e87355", "exit_code": 0, "diagnostic_only": true, "source_modified": false, "scaled_identity": {"largest": null, "full": [4,4,4], "effective_bets": 3}, "asymmetric": {"largest": null, "full": [1,1], "effective_bets": null}},
+  "subsequent_cuts": [{
+    "id": "isolated_codex_branch",
+    "base_main": "417554220712de3f92e75c6469a21ec54c386de8",
+    "branch": "codex/ewma-w1-audit",
+    "foreign_branch_preserved": "glm/xlv-effective-bets",
+    "source_test_hashes_match_previous_run": 5,
+    "independent_target_cache": true,
+    "workspace_check": {"exit_code": 0, "seconds": 414, "all_targets": true, "warnings": true},
+    "trainer_integration_regression": {
+      "observed_base": "41755422",
+      "introducing_merge": "6fdccd648fcf970bfc150a5c95323a474328c2b2",
+      "parents": ["ac1366331833ec8245b3c24fead09c7771b216b4", "3ee49b051ce38a58457e526b1e8114a61f592fb2"],
+      "reopened_contracts": ["FMT-193 independent holdout and purge consumers", "FMT-194 sampling budget consumer", "FMT-190 frozen serving evaluation before gate"],
+      "definitions_and_unit_tests_survive": true,
+      "cli_execution_performed": false,
+      "training_or_promotion_performed": false,
+      "source_fixed_this_cut": false,
+      "status": "open_verified_static_callsite_and_merge_diff"
+    },
+    "publication": "awaiting_explicit_destination_authorization",
+    "github_comment_published": false,
+    "later_remote_read_only_check": {"main": "7da858ef352663a4aaacc4dcde11a3151ce59a92", "claude": "4833d45c798dcedcac910f86c103ae616b0e527c", "own_branch_behind_main": 2, "own_source_commits": ["fbf299ee", "b3ba8d80"], "new_main_delta_in_running_tests": false},
+    "glm_review_8389432c": {"status": "static_open_not_modified", "full_spectrum_missing_correlation_validation": true, "diagonal_witness": "4*I_3 -> [4,4,4], effective_bets(T=512)=3", "asymmetry_witness": "[[1,2],[-2,1]] averaged to I_2", "risk_telemetry_placeholder_is_none": true, "witnesses_executed_in_rust": false, "hawkes_7da858ef_audited": false},
+    "inventory": {"tracked_files": 1309, "rust_files": 400, "cargo_manifests": 24, "legacy_term_rust_files": 78, "complete_file_by_file_review": false},
+    "R8_A_second_review": {
+      "status": "open_static_counterexamples",
+      "head": "df01c82c60d7e9cda2216583e0ca0b2894f62d5d",
+      "trainer_aggtrades_tp_sl": [0.0036, 0.0018],
+      "witnesses": [{"path": [100, 99.81, 100.60], "first_touch_label": false, "exit_reason_mapping": true}, {"path": [100, 100.40, 99.00], "first_touch_label": true, "exit_reason_mapping": false}],
+      "arithmetic_reproduced": true,
+      "full_live_path_executed": false,
+      "remote_code_modified": false
+    }
+  }],
+  "audit_id": "EWMA-W1-2026-09-28",
+  "report": "docs/AUDITORIA_INTEGRACION_EWMA_Y_RELOJ_2026-09-28.md",
+  "status": "local_repairs_verified_awaiting_glm_merge_and_new_remote_delta",
+  "complete_project_audit": false,
+  "operations_performed": false,
+  "git": {
+    "initial_main": "e7bb4c592a33508aace4667c4f9cf621dac921cd",
+    "codex_test_commit": "6b7c6d378f6ac41d7d2ef36ecdeae9ad8d9a52cd",
+    "test_commit_published": true,
+    "remote_confirmation": "git ls-remote --heads origin main",
+    "foreign_merge_head": "47a93fe6a5e5e0be7988337459b5b5a9f7b967bd",
+    "foreign_index_preserved": true,
+    "source_repairs_unstaged": true,
+    "pr": 8,
+    "pr_url": "https://github.com/Jhona-la/Trader-Gemini/pull/8",
+    "branch_deletions": [],
+    "docs_published": false,
+    "merge_owner_user_decision": "GLM",
+    "codex_will_not_finish_or_abort_foreign_merge": true,
+    "worktree_is_not_a_commit": true,
+    "final_observed_remote_main": "6b7c6d378f6ac41d7d2ef36ecdeae9ad8d9a52cd",
+    "final_observed_pr_head": "6ebb28578c6686a5eea705f37ff9fd085196ec37",
+    "new_remote_delta_tested": false,
+    "new_remote_commits_not_in_local_merge": ["3c5b0c1a", "6ebb2857"]
+  },
+  "coordination": {
+    "channel": "COORDINACION_CODEX_2026-09-28.md",
+    "review_comment": "https://github.com/Jhona-la/Trader-Gemini/pull/8#issuecomment-5877204118",
+    "skill": "babysit",
+    "final_delta_review_comment": "https://github.com/Jhona-la/Trader-Gemini/pull/8#issuecomment-5877785467",
+    "user_reply": "GLM debe terminar el merge actual",
+    "staged_tree_is_not_tested_working_tree": true,
+    "progress_comment": "https://github.com/Jhona-la/Trader-Gemini/pull/8#issuecomment-5877556548"
+  },
+  "regressions": {
+    "ewma_before": {
+      "passed": 1,
+      "failed": 5
+    },
+    "bocpd_before": {
+      "passed": 0,
+      "failed": 3
+    },
+    "original_contracts_after": {
+      "passed": 9,
+      "failed": 0
+    },
+    "expanded_integration_contracts_after": {
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0
+    },
+    "new_private_mass_conservation_test": {
+      "passed": 1,
+      "failed": 0,
+      "included_in_core_suite": true
+    },
+    "broad_results_pending": false,
+    "five_crate_all_targets": { "suites": 60, "passed": 777, "failed": 0, "ignored": 1, "exit_code": 0 },
+    "by_crate": { "backtest-engine": 61, "evolution-engine": 100, "god-engine-core": 254, "quantum-arena": 166, "risk-engine": 196 },
+    "genetic_suite": { "passed": 2, "failed": 0, "seconds": 1405.43, "fixture_changed": false, "threshold_changed": false, "sensitive_gene_count_not_printed_in_quiet_output": true },
+    "core_arena_risk_all_targets": {
+      "suites": 49,
+      "passed": 616,
+      "failed": 0,
+      "ignored": 1,
+      "exit_code": 0
+    },
+    "evolution_all_targets": {
+      "passed": 100,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "workspace_check_all_targets": {
+      "exit_code": 0,
+      "offline": true,
+      "warnings": true
+    },
+    "ignored_test": {
+      "name": "inspect_saved_models_without_activation_or_cache_writes",
+      "reason": "read-only local inventory, not a portable CI fixture",
+      "introduced_by_this_patch": false,
+      "manually_executed_as_read_only_inventory": true
+    },
+    "broad_pending_target": null,
+    "source_hashes_verified": 9,
+    "model_hashes_verified": 21,
+    "local_report_links_verified": 4,
+    "own_test_processes_pending": false
+  },
+  "witnesses": {
+    "constant_entropy": {
+      "alpha": 0.0033,
+      "events": 31,
+      "value": 0.5,
+      "observed_mean_before": 9.76757075091401,
+      "observed_sd_before": 0
+    },
+    "bounded_entropy": {
+      "events": 200,
+      "support": [
+        0.2,
+        0.8
+      ],
+      "observed_mean_before": 1.5678397524921845
+    },
+    "stale_timestamp": {
+      "p_control": 0.001729948187908505,
+      "p_corrupted": 0.9999999890052852
+    },
+    "invalid_consumes_timestamp": {
+      "challenged": null,
+      "reference": 0.0017299563863949633
+    },
+    "absorbing_numerical_failure": {
+      "returned_probability_after_recovery_and_jump": 0
+    }
+  },
+  "findings": [
+    {
+      "id": "EWMA-W1-01",
+      "location": {"file":"crates/quantum-arena/src/state.rs","symbol":"CoinArena::new"},
+      "priority": "P1",
+      "status": "fixed_local",
+      "cause": "Moment seed 1 without corresponding mass (weight 0)",
+      "repair": "Initialize unnormalized entropy accumulators at zero"
+    },
+    {
+      "id": "EWMA-W1-02",
+      "location": {"file":"crates/god-engine-core/src/calibration.rs","symbol":"momentos_ewma_corregidos"},
+      "priority": "P1",
+      "status": "fixed_local",
+      "cause": "Invalid mass, second moment and nonfinite normalized mean accepted",
+      "repair": "Domain validation plus roundoff-only variance clipping"
+    },
+    {
+      "id": "EWMA-W1-03",
+      "location": {"file":"crates/god-engine-core/src/calibration.rs","symbol":"EWMA_MUESTRAS_MINIMAS / peso_minimo"},
+      "priority": "P2",
+      "status": "fixed_local",
+      "cause": "Cancellation in 1-(1-alpha)^30",
+      "repair": "-expm1(30*log1p(-alpha)); real positive mass required"
+    },
+    {
+      "id": "EWMA-W1-04",
+      "location": {"file":"crates/god-engine-core/src/lib.rs","symbol":"W1ChangepointObserver::observe_at"},
+      "priority": "P1",
+      "status": "fixed_local",
+      "cause": "Invalid/numerical error consumes timestamp",
+      "repair": "Transactional clock commit after accepted observation"
+    },
+    {
+      "id": "EWMA-W1-05",
+      "location": {"file":"crates/god-engine-core/src/lib.rs","symbol":"W1ChangepointObserver::observe_at"},
+      "priority": "P1",
+      "status": "fixed_local",
+      "cause": "Old timestamp updates posterior",
+      "repair": "Reject nonincreasing event time without modifying evidence"
+    },
+    {
+      "id": "EWMA-W1-06",
+      "location": {"file":"crates/god-engine-core/src/lib.rs","symbol":"W1ChangepointObserver::observe"},
+      "priority": "P1",
+      "status": "fixed_local",
+      "cause": "Absolute 1e-12 evidence threshold and underflow destroy posterior",
+      "repair": "Log weights and common-max normalization; return None preserving state if numerically unsupported"
+    },
+    {
+      "id": "EWMA-W1-07",
+      "location": {"file":"crates/god-engine-core/src/lib.rs","symbol":"W1ChangepointObserver::observe tail"},
+      "priority": "P1",
+      "status": "fixed_local",
+      "cause": "Last-bin growth discarded but included in denominator",
+      "repair": "Saturated tail bin; explicitly approximate age/mean"
+    },
+    {
+      "id": "EWMA-W1-08",
+      "location": {"file":"crates/god-engine-core/src/calibration.rs","symbol":"PlattCalibrator::calibrate_at / update_at"},
+      "priority": "P2",
+      "status": "open",
+      "cause": "Last-observation clock rejuvenates all untimestamped Platt observations"
+    },
+    {
+      "id": "EWMA-W1-09",
+      "location": {"file":"crates/quantum-arena/src/temporal_spectrum.rs","symbol":"umbral_fisher_identificable / TAU_ANCHOR_*"},
+      "priority": "P2",
+      "status": "open",
+      "cause": "Fisher gate and adaptation half-life anchored to fixed 30s/12h band"
+    },
+    {
+      "id": "EWMA-W1-10",
+      "location": {"file":"COORDINACION_CODEX_2026-09-28.md","symbol":"Traspaso explícito del usuario"},
+      "priority": "P1",
+      "status": "open",
+      "cause": "Concurrent index/working-tree/remote differ"
+    },
+    {
+      "id": "EWMA-W1-11",
+      "location": {"file":"crates/god-engine-core/src/lib.rs","symbol":"W1_HAZARD / W1_EMISSION_SD / last_ts"},
+      "priority": "P2",
+      "status": "open",
+      "cause": "Event hazard, fixed noise and millisecond identity need empirical calibration"
+    },
+    {
+      "id": "EWMA-W1-12",
+      "location": {"file":"crates/risk-engine/src/correlation_guard.rs","symbol":"dependency_exposure / riesgo_por_operacion proxy"},
+      "priority": "P1",
+      "status": "open",
+      "cause": "Count/EWMA not per-position monetary loss nor atomic reservation"
+    },
+    {
+      "id": "EWMA-W1-13",
+      "location": {"file":"crates/backtest-engine/tests/t1_cobertura_genetica.rs","symbol":"t1_cobertura_genetica_del_oraculo_de_aptitud"},
+      "priority": "P2",
+      "status": "open",
+      "cause": "Single-coordinate far-endpoint response on one fixture does not imply global genetic inertia",
+      "evidence": "source inspection and algebraic counterexamples; fixture and threshold unchanged"
+    },
+    {
+      "id": "EWMA-W1-14",
+      "location": {"file":"crates/god-engine-core/src/lib.rs","symbol":"spectral_w1_transport / spectral_p_transition registry publication"},
+      "priority": "P2",
+      "status": "open",
+      "cause": "Publishing None as zero or retaining undated old registry values loses evidence state",
+      "evidence": "Two producer paths inspected; direct confidence actuator remains disabled"
+    },
+    {
+      "id": "EWMA-W1-15",
+      "location": {"file":"crates/quantum-arena/src/spectral_regime.rs","symbol":"SpectralRegimeField::from_spectrum and core callers passing None"},
+      "priority": "P2",
+      "status": "open",
+      "cause": "Both core publishers pass None previous ln(tau) so dominant_drift is zero",
+      "evidence": "Static control flow and bound crash_flux <= 0.65 for finite declared-domain inputs; other regime paths not ruled out"
+    }
+  ],
+  "source_files": [
+    {
+      "path": "crates/quantum-arena/src/state.rs",
+      "sha256": "4B832952618791B9707AB4BCDF816A9DA5A331B506D4C395D8B60AC4A9039CD2"
+    },
+    {
+      "path": "crates/god-engine-core/src/calibration.rs",
+      "sha256": "8C7CDE7CA8B294FBA0C643B7DE37BB22BAA53248E0599F859BD55321E70F4443"
+    },
+    {
+      "path": "crates/god-engine-core/src/lib.rs",
+      "sha256": "4C248190925161B178BD4F3413E2D0128FDC6AFD54285564D43925868770AD0C"
+    },
+    {
+      "path": "crates/god-engine-core/tests/ewma_initialization_contract.rs",
+      "sha256": "B3A8E1FB127C4ADA203090BB50DA2151D12EC448A5047A4D1BA9F10666ED09A2"
+    },
+    {
+      "path": "crates/god-engine-core/tests/bocpd_temporal_contract.rs",
+      "sha256": "6FAAAAC75F60E3A086620139AB2169A75AE679F97E339C8BD5ABE3AD7167579E"
+    }
+  ],
+  "limitations": [
+    "Remote 6ebb2857 delta read-only reviewed, not applied or test-certified",
+    "No profitability proof",
+    "No complete project review",
+    "No genome promotion, training, deployment or trading",
+    "Approximate run-length tail, not exact infinite-age Bayesian posterior",
+    "New input integrity does not validate hazard/emission assumptions",
+    "Risk monetary model not implemented",
+    "No merge of another editor's index claimed",
+    "No measured latency budget of logarithmic BOCPD path",
+    "Unknown/warmup/failure/age still not propagated through registry schema"
+  ],
+  "read_only_sources": [
+    {
+      "path": "crates/backtest-engine/tests/t1_cobertura_genetica.rs",
+      "sha256": "BC1C981DD6F52AB49EAB4C13988FB838A19243B96BFD6D20850745E7CEDC4E56"
+    },
+    {
+      "path": "crates/quantum-arena/src/spectral_regime.rs",
+      "sha256": "F96DAA8A5ED5744815DD95588CC23BAA421E694A5E7476EFD241DEBDC7AC941E"
+    },
+    {
+      "path": "crates/god-engine-core/src/ml_inference.rs",
+      "sha256": "BFE56DFDA8E8E8A2A7885CF1A9AEF3BF2E30B1F4618DE0D56A9EAFBF823AAC33"
+    },
+    {
+      "path": "crates/god-engine-core/tests/ml_model_contract.rs",
+      "sha256": "ED97CF1C732FA3467EAFB1B40DBFDF113E3DD61DDE4C339C4AABBDAD36C668FC"
+    }
+  ],
+  "remote_delta_review": {
+    "base": "47a93fe6",
+    "head": "6ebb2857",
+    "files_changed": 5,
+    "insertions": 136,
+    "deletions": 52,
+    "applied": false,
+    "tested": false,
+    "observations": [
+      {"id": "R8-A", "status": "open_static_review", "cause": "Terminal gross price direction is not the first-barrier training label with timeout exclusion"},
+      {"id": "R8-B", "status": "open_static_review", "cause": "Shared friction helper inherits nonfinite ATR/latency to zero fallback; shared formula is not shared inputs"}
+    ]
+  },
+  "saved_model_inventory": {
+    "historical_findings": [
+      "FMT-037",
+      "FMT-190"
+    ],
+    "status": "open_revalidated",
+    "command": "cargo test --offline -q -p god-engine-core --test ml_model_contract inspect_saved_models_without_activation_or_cache_writes -- --ignored --exact --test-threads=1 --nocapture",
+    "diagnostic_exit_code": 0,
+    "diagnostic_passed": 1,
+    "diagnostic_is_not_all_models_valid": true,
+    "structurally_accepted": 12,
+    "structurally_rejected": 8,
+    "other_schema": 1,
+    "distinct_accepted_hashes": 2,
+    "activated": false,
+    "cache_written": false,
+    "live_process_contents_checked": false,
+    "files": [
+      {
+        "file": "models/ADAFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "trees": 50,
+        "nodes": 4000,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/ADAUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "C2DF59FFC6762518E8C70D30F7639394359F15077E59574D6A28DAC5675E6E19",
+        "trees": 16,
+        "nodes": 984,
+        "result": "modelo <from_data>: split has missing or cross-tree child"
+      },
+      {
+        "file": "models/ATOMUSDT_MOTOR.json",
+        "sha256": "0F5695F36646D1E0E545F54330E75A65DB9B872C30C3F4D56E3E694B2019268D",
+        "trees": 11,
+        "nodes": 663,
+        "result": "modelo <from_data>: split has missing or cross-tree child"
+      },
+      {
+        "file": "models/ATOMUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "BE87DD4EE841CD3671A750B41C381D8BCA49DD3A2FC87A8631DBE17BD1312049",
+        "trees": 16,
+        "nodes": 978,
+        "result": "modelo <from_data>: split has missing or cross-tree child"
+      },
+      {
+        "file": "models/AVAXFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "trees": 50,
+        "nodes": 4000,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/BNBFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "trees": 50,
+        "nodes": 4000,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/BNBUSDT_MOTOR.json",
+        "sha256": "5CF715994B330F08F7C6862C36E2F6FC1E46C974C4F727A1A7EC2FA14CA62EBC",
+        "trees": 36,
+        "nodes": 1764,
+        "result": "modelo <from_data>: split has missing or cross-tree child"
+      },
+      {
+        "file": "models/BNBUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "51CA5D88748244F8C9D294C6E27401E4133C7587A5AD0BCB1CDE98FC86AF67E6",
+        "trees": 11,
+        "nodes": 589,
+        "result": "modelo <from_data>: split has missing or cross-tree child"
+      },
+      {
+        "file": "models/BTCFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "trees": 50,
+        "nodes": 4000,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/BTCUSDT_MOTOR.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "trees": 1,
+        "nodes": 49,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/BTCUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "6C1F67D1A2EA20234D53C8C0A0337BD277979AE10F2D1F3BD3DA1580597D0740",
+        "trees": 1,
+        "nodes": 49,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/DOGEFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "trees": 50,
+        "nodes": 4000,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/DOTFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "trees": 50,
+        "nodes": 4000,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/DarkAlpha_BTCUSDT.json",
+        "sha256": "EF149365307C268071818FB833972392A0BECAFD3FE9430F3414DAE63B5A7BA9",
+        "trees": null,
+        "nodes": null,
+        "result": "OTHER_MODEL_SCHEMA"
+      },
+      {
+        "file": "models/ETHFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "trees": 50,
+        "nodes": 4000,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/LINKFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "trees": 50,
+        "nodes": 4000,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/NEARUSDT_MOTOR.json",
+        "sha256": "4EB402644FADD7C86BFC5A58DB8F3771DC0E113D426BE9F6AB97623D51A6B536",
+        "trees": 26,
+        "nodes": 1532,
+        "result": "modelo <from_data>: split has missing or cross-tree child"
+      },
+      {
+        "file": "models/NEARUSDT_MOTOR_CANDIDATE.json",
+        "sha256": "F39DD70F9AF002E9027C25B9C5AEE46C9AB834475508D8CD6C90811A471A178C",
+        "trees": 11,
+        "nodes": 683,
+        "result": "modelo <from_data>: split has missing or cross-tree child"
+      },
+      {
+        "file": "models/NEARUSDT_VOL.json",
+        "sha256": "3D72ED2A650756A0FF549FCCACB6D4226D4FB27C7F7C2F6713FFD58539D55F2D",
+        "trees": 11,
+        "nodes": 639,
+        "result": "modelo <from_data>: split has missing or cross-tree child"
+      },
+      {
+        "file": "models/SOLFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "trees": 50,
+        "nodes": 4000,
+        "result": "STRUCTURALLY_ACCEPTED"
+      },
+      {
+        "file": "models/XRPFDUSD_MOTOR.json",
+        "sha256": "0B8BEF51C26F6480557FC8A74729FBECF5EE35B3CD1C49559C60876C6163A845",
+        "trees": 50,
+        "nodes": 4000,
+        "result": "STRUCTURALLY_ACCEPTED"
+      }
+    ]
+  }
+}

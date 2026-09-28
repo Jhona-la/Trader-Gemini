@@ -1577,3 +1577,74 @@ remota reutilizada avanzó a ebdf2389, con 8 commits fuera de main y cambios
 nuevos BOCPD/calibración (6 archivos +360/-68), aún no auditados funcionalmente
 en esta ola. Main remoto sigue 988f0478. No borrar rama por PR cerrado. Véase
 §15 del informe de admisión; GLM recibió el aviso y mantiene la coordinación.
+
+## Adenda 2026-09-28 — EWMA, reloj de evidencia y alcance del oráculo
+
+[Informe detallado](docs/AUDITORIA_INTEGRACION_EWMA_Y_RELOJ_2026-09-28.md) ·
+[Artefacto verificable](docs/artifacts/auditoria_integracion_ewma_reloj_2026-09-28.json).
+
+Quince hallazgos locales EWMA-W1; no sustituyen ni renumeran la matriz histórica.
+Siete clases de defecto reparadas localmente en inicialización EWMA, dominio
+de momentos, calentamiento numérico, reloj causal, posterior y conservación
+de masa. Ocho contraejemplos RED→GREEN; trece regresiones nuevas pasan. Entropía
+constante 0,5 producía media 9,76757075091401 tras 31 eventos: se reparó la
+composición semilla/peso, no se cambió un umbral para ocultar ese resultado.
+
+Validación intermedia: core+arena+risk, 616 pasan/0 fallan/1 inventario local
+ignorado; evolution-engine, 100 pasan/0 fallan/0 ignoradas. Workspace check
+--all-targets pasa con advertencias. La suite ampliada conserva T-1 genético
+largo y su resultado se documenta en el corte final del informe; no se infiere
+verde por ausencia de salida ni se cambia el fixture para conseguirlo.
+
+Siguen OPEN: olvido Platt por observación, anclas fijas/Fisher, calibración del
+hazard, riesgo monetario/reserva atómica y publicación coherente. Se añaden
+límites del oráculo (un extremo no demuestra inercia global), registry que
+confunde ausencia con cero y deriva del campo no alimentada por sus publicadores.
+Grafo diagnóstico, fórmulas, testigos y criterios de cierre en el informe.
+
+Git: 6b7c6d37 se creó y publicó con las 31 regresiones de riesgo que e7bb4c59
+había dejado fuera. PR #8 OPEN, head 47a93fe6. Otra sesión abrió un merge;
+Codex preservó el índice y dejó sus reparaciones como diff adicional del árbol
+de trabajo. No equiparar ese árbol probado con el staged o el remoto. No se
+borraron ramas con commits exclusivos ni se declaró integración completa.
+Sin operación, promoción, entrenamiento ni prueba de +100% cada 72 horas.
+
+Corte final posterior: los cinco crates terminan con **777 pasan, 0 fallan,
+1 inventario ignorado**, código 0; T-1 genético pasa sin alterar fixture ni
+umbral (1405,43 s). El inventario se ejecutó aparte: persisten 8 bosques JSON
+estructuralmente inválidos, deuda FMT-037/190. Informe §13–16 y JSON contienen
+hashes y límites. El usuario asignó a GLM el cierre del merge actual.
+
+Main remoto sigue 6b7c6d37. PR #8 avanzó a 6ebb2857 (dos commits/cinco archivos
+posteriores a MERGE_HEAD=47a93fe6). Ese delta fue revisado en lectura, NO
+integrado ni cubierto por los 777 tests. Se notificaron diferencias entre
+dirección terminal y label de barreras, y ausencia numérica en fricción.
+No se borra la rama ni se declara que todo llegó a main.
+
+
+### Adenda de aislamiento Codex y segunda revisión de etiquetas
+
+GLM finalizó el merge parcial en 41755422; las reparaciones EWMA/W1 se trasladan
+con hashes idénticos a `codex/ewma-w1-audit`, en worktree y caché independientes.
+No se incluye random_matrix.rs de GLM ni se cambia su rama compartida.
+El informe EWMA/W1, §17–19, amplía el estado real de integración y R8-A:
+`reason_code` tampoco identifica el primer toque del target. Dos trayectorias
+con brackets operativos RR=2 contradicen la tabla del PR #8 (df01c82c);
+trainer aggTrades conserva TP/SL literales 0.0036/0.0018. Es revisión estática
+con prueba aritmética, no ejecución del motor ni arreglo remoto acreditado.
+Se documentan identidad de predicción, barreras/horizonte, timeout y selección
+como condiciones de cierre. No se duplica el conteo de 15 hallazgos ni las 13
+regresiones. Inventario 1309 archivos/400 Rust/24 manifests no es cobertura total.
+Publicación remota pendiente de autorización explícita y validación del árbol.
+
+
+### Reapertura P1/P2: integración del trainer (2026-09-28)
+
+La revisión de main 41755422 confirma que el merge 6fdccd64 eliminó las llamadas
+ejecutables al holdout independiente (FMT-193), presupuesto de muestreo
+(FMT-194) y evaluación del objeto serializado (parte de FMT-190), pero dejó
+sus helpers/tests. La cabecera y el mensaje --test-in no reflejan main().
+El detalle, padres del merge, impacto y criterios de reparación están en
+[el informe EWMA/W1, §20](docs/AUDITORIA_INTEGRACION_EWMA_Y_RELOJ_2026-09-28.md#20-regresión-de-integración-confirmada-contratos-del-trainer-desconectados).
+No se reabre el fix estructural de offsets ni se ejecuta promoción. Esto
+actualiza el estado presente sin invalidar la evidencia del corte histórico.
