@@ -236,3 +236,47 @@
 - Sin commit, push, merge ni staging por Codex; integración/publicación
   consultada al usuario, sin respuesta todavía en este corte. Sin operación,
   promoción, entrenamiento ni despliegue. Inventario no es cobertura total.
+
+## 2026-09-28 — Codex: admisión multiactivo, contratos y publicación concurrente
+
+- Reparación del consumidor D-748: dependency_exposure recorre todos los activos
+  y slots, transforma rho por los DOS signos de exposición y mantiene Unknown
+  como caso adverso. No usa matriz estrella ni AllNoise para borrar el conteo.
+  Se estiman pares una vez por activo; snapshot de posición NO es reserva global.
+- SPECTRAL-008: rho_promedio exige matriz completa finita/simétrica/unitaria/PSD;
+  009: rho<-1/(k-1) o inválido no recibe crédito por varianza negativa. Los
+  dos contratos ignorados ahora están activos. Dos expectativas XLIV erróneas
+  se rectifican sin borrar sus testigos; se añaden ejemplos negativos válidos.
+- EWMA de pérdida al stop NO es sigma: el consumidor pasa None, sin descuento
+  MP/rho. Las APIs se conservan. Frustración de signos NO es Hodge. Falta riesgo
+  monetario real ponderado por posición/tau/stop y reserva atómica de cartera.
+  tope/8 y umbral binario son deudas legacy, no garantías científicas.
+- Risk-engine --all-targets: 195 pasan/0 fallan/0 ignoradas. 15 tests nuevos de
+  admisión; 7 RED→GREEN iniciales, 4 casos adicionales sin afirmar RED previo.
+  Cuatro suites locales nuevas suman 44 tests (13+10+6+15).
+- Quantum-arena --all-targets: 165 pasan/0 fallan/0 ignoradas tras cambio del
+  otro editor; 79/80 anterior queda histórico. Codex NO editó esos genomas.
+  Workspace check all-targets pasó con advertencias; no es test de todo el
+  workspace ni prueba de rentabilidad, latencia operativa o auditoría integral.
+- Git cambió DURANTE la ola: GLM reconoció crear/publicar 988f0478 en main con
+  arrastre de trabajos, incluyendo solver y correcciones Codex. Fetch/ls-remote
+  lo confirman. En ese corte faltan las cuatro suites nuevas y los informes.
+  Mensaje del commit dice varianza/Hodge viva, pero SU árbol D-748 ya usa None.
+- PR #7 sigue OPEN, ahora CONFLICTING. merge-tree inspeccionado sin iniciar
+  merge: conflictos en genome_store (20k semillas frente a rejilla 6561) y
+  genome_gate_open_diagnostics (testigo seed199 equivalente). Predicado de
+  banda vacía auto-mergea pero no está en violated de main; revisar composición.
+  Preservar ambos barridos; no asumir superseded sólo porque seed199 pasa.
+- GLM confirmó recepción y prepara validación/publicación; Codex le dejó
+  precisión de estados y manifest. No iniciar segundo merge/commit concurrente.
+  Backups tienen 3/1 commits exclusivos; no hay otra rama probadamente integrada.
+  Codex no hizo staging/commit/push/merge ni borró ramas en esta intervención.
+- Informe nuevo: docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md; JSON homónimo
+  en docs/artifacts. Atlas, maestro e informes previos ampliados por adenda.
+  No operación, promoción, entrenamiento, despliegue ni garantía +100%/72 h.
+
+- CORTE REMOTO POSTERIOR 10:57: PR #7 CLOSED, NO merged (mergedAt=null).
+  La rama elegant-euler avanzó a ebdf2389 y tiene 8 commits fuera de main,
+  nuevo trabajo BOCPD/calibración (6 archivos +360/-68), no auditado funcionalmente
+  en esta ola. Main remoto sigue 988f0478; las 44 regresiones/documentos siguen
+  pendientes en el último status. No borrar rama por PR cerrado. GLM avisado.

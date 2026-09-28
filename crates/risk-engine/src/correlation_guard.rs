@@ -19,40 +19,36 @@
 //! # Qué se hace ahora
 //!
 //! 1. **Se mide la correlación de verdad.** Los retornos están disponibles por
-//!    moneda en el anillo de ticks del arena (`tick_ring`). Se llevan ambas
-//!    series a una REJILLA TEMPORAL COMÚN —paso derivado del intervalo medio
-//!    entre ticks del feed más lento, porque interpolar por debajo de él
-//!    fabrica retornos nulos— y se calcula el coeficiente de Pearson de los
-//!    retornos logarítmicos del mid.
-//! 2. **El tamaño de muestra decide si la medida existe.** El error típico de
-//!    un coeficiente de Pearson con `K` puntos es `≈ 1/√(K−3)`. Si ese error no
-//!    permite distinguir la correlación del umbral que se quiere comprobar, NO
-//!    hay medida: la posición se trata como correlacionada (el caso adverso),
-//!    nunca como independiente.
+//!    moneda en el anillo (`tick_ring`). Se estima HY sobre intervalos
+//!    asíncronos, con Pearson en rejilla común como respaldo. Los signos de
+//!    AMBAS exposiciones convierten correlación de precio en la de PnL.
+//! 2. **Ausencia de medida no es independencia.** None cuenta en el caso
+//!    adverso. Un Some tampoco acredita precisión estadística: el tamaño
+//!    efectivo, el ruido y el error de estimación siguen siendo deudas.
 //! 3. **El gen recupera su significado literal.** `global_correlation_threshold`
 //!    es el umbral de correlación a partir del cual dos posiciones dejan de ser
 //!    apuestas distintas y pasan a ser la misma apuesta repetida.
 //! 4. **El límite de exposición sale del riesgo, no de un múltiplo.** Un grupo
 //!    de `n` posiciones correlacionadas pierde a la vez: es UN evento de riesgo
 //!    `n · r`, donde `r` es el riesgo por operación que el motor MIDE al
-//!    dimensionar (`arena.riesgo_por_operacion`). Ese evento se somete al
+//!    dimensionar (`arena.riesgo_por_operacion`, una EWMA histórica). Se somete al
 //!    mismo control de ruina que gobierna cualquier otra fracción de riesgo del
 //!    sistema (`ruin::clamp_ruin`: streak-bound + axioma del 25 %). Se veta
 //!    cuando `(n + 1) · r` excede ese tope.
 //!
-//! Sin `r` medido todavía no hay con qué acotar la exposición; en ese caso se
-//! rechaza duplicar una apuesta que no se sabe dimensionar, que es la postura
-//! conservadora y no un número inventado.
+//! La EWMA NO es sigma ni el riesgo individual actual de todas las posiciones.
+//! Sin ella se conserva el proxy histórico tope/8, pendiente de sustitución.
+//! MP y el diagnóstico de signos no conceden descuento en la ruta viva.
 
 use quantum_arena::state::CompactTick;
 
 /// Ticks que se traen del anillo para estimar la correlación. El anillo tiene
-/// 32 768 posiciones; se toma la cola reciente, que es la que describe el
-/// régimen en el que se va a abrir la posición.
+/// 32 768 posiciones; esta cola es un presupuesto de cómputo, NO tamaño
+/// efectivo, cobertura del espectro completo ni ventana óptima demostrada.
 pub const MAX_TICKS_MUESTRA: usize = 512;
 
-/// Puntos máximos de la rejilla común. Con el error típico de Pearson
-/// `1/√(K−3)`, 256 puntos resuelven correlaciones de hasta ±0,063.
+/// Capacidad de la rejilla común. No implica 256 observaciones independientes
+/// ni una precisión garantizada de la estimación financiera.
 pub const MAX_PUNTOS_REJILLA: usize = 256;
 
 #[inline]
@@ -164,8 +160,9 @@ pub fn pearson(a: &[f64], b: &[f64]) -> Option<f64> {
     }
 }
 
-/// Muestra mínima para que un coeficiente de Pearson RESUELVA una correlación
-/// del tamaño `resolucion`: el error típico `1/√(K−3)` debe caber en ella.
+/// Heurística legada de muestra a partir de la escala de error Fisher-z
+/// `1/√(K−3)` bajo supuestos iid. No es un intervalo de confianza calibrado
+/// para ticks dependientes; `resolucion` no representa un nivel de confianza.
 #[inline]
 pub fn puntos_minimos(resolucion: f64) -> usize {
     let res = if resolucion.is_finite() {
@@ -470,7 +467,8 @@ pub fn dependency_exposure(
         for side in sides.into_iter().flatten() {
             result.open_positions += 1;
             let pnl_rho = side.and_then(|long| {
-                price_rho.filter(|r| r.is_finite() && (-1.0..=1.0).contains(r))
+                price_rho
+                    .filter(|r| r.is_finite() && (-1.0..=1.0).contains(r))
                     .map(|r| if long == candidate_long { r } else { -r })
             });
             if pnl_rho.is_none() {

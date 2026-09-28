@@ -8343,3 +8343,38 @@ El genoma concurrente tuvo seed199 RED; una edición posterior pasa ese barrido
 pero la suite completa quantum-arena da 79/80 por igualdad exacta de curva.
 Los cambios ajenos se preservaron y los resultados se comunicaron por buzón.
 No hay auditoría integral, validación de +100%/72h, publicación ni operación.
+
+## Adenda 2026-09-28 — admisión multiactivo y tercer corte de evidencia
+
+[Informe detallado](docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md) · [Artefacto](docs/artifacts/auditoria_admision_multiactivo_2026-09-28.json).
+Se actualizan los estados anteriores sin borrar testigos: SPECTRAL-003 retira
+Unknown→cero y exención AllNoise; 004 incorpora TODOS los slots y ambos signos;
+008 exige matriz completa numéricamente válida; 009 no acredita rho imposible.
+010 retira el descuento sigma sobre EWMA de pérdida al stop, pero el presupuesto
+monetario por posición sigue OPEN. Frustración de signos no es Hodge ni PSD.
+
+Riesgo: 195 pruebas pasan, 0 ignoradas. Genoma del otro editor: 165 pasan.
+Los antiguos 79/80 son historia, no fallo actual. Se añaden 15 tests de admisión;
+7 testigos RED→GREEN entre los 11 iniciales, más 4 de cobertura. Dos expectativas
+XLIV inválidas se rectifican CONSERVANDO sus testigos y añadiendo casos válidos.
+No hay auditoría integral archivo-por-archivo ni validación de +100%/72 horas.
+
+Publicación concurrente: main remoto cambió a 988f0478, confirmado con fetch y
+ls-remote. Ese commit incorpora reparaciones pero en el corte deja fuera cuatro
+suites nuevas (44 tests) e informes enlazados desde documentos publicados.
+Su mensaje describe actuador varianza/Hodge, mientras su código ya pasa None.
+PR #7 sigue abierto, ahora CONFLICTING; main y PR aportan barridos complementarios
+que no deben perderse. No hay otra rama íntegramente integrada para borrar.
+
+GLM confirmó en el buzón que creó/publicó 988f0478 y que prepara integración de
+lo pendiente; reconoció arrastre de trabajo de Codex. Se le notificó preservar
+las cuatro suites y la rejilla de 6.561 curvas del PR, además de los 20.000 casos
+de main. Codex no abre un merge/commit en paralelo a ese responsable; añade
+documentación y evidencia. Riesgo ponderado, reserva atómica, muestra efectiva y
+tau siguen abiertos. No hubo operación, promoción, entrenamiento ni despliegue.
+
+Actualización de Git a las 10:57: PR #7 CLOSED sin merge, no integrado. La rama
+remota reutilizada avanzó a ebdf2389, con 8 commits fuera de main y cambios
+nuevos BOCPD/calibración (6 archivos +360/-68), aún no auditados funcionalmente
+en esta ola. Main remoto sigue 988f0478. No borrar rama por PR cerrado. Véase
+§15 del informe de admisión; GLM recibió el aviso y mantiene la coordinación.
