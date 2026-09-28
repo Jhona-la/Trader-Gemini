@@ -156,6 +156,33 @@ pub fn latency_slippage_pct(atr_ratio: f64, latency_ms: f64) -> f64 {
     }
 }
 
+/// XLIV-8 — FRICCIÓN DE IDA Y VUELTA: FUENTE ÚNICA.
+///
+/// D-747 unificó la ley del deslizamiento por latencia en el gate de
+/// expectativa y en la física de ejecución, pero la fricción con la que se
+/// construyen los brackets del host (`genome_protection_prices`, fallback de
+/// entrada) y la del pre-examen del daemon siguieron cobrando la ley LINEAL
+/// `atr · latencia / umbral_de_pánico`. Con el umbral en su cota baja
+/// (500 ms) y 50 ms de latencia, la ley lineal cobra 0,10·ATR por lado y la
+/// difusiva 0,029·ATR: el gate aprobaba una geometría y el host protegía la
+/// posición con otra, y el daemon promovía genomas contra una tercera.
+///
+/// Modelo D-645: taker en ambas piernas + (piso de deslizamiento +
+/// latencia difusiva) por lado, acotado al 5 % por lado.
+///
+/// Saneamiento (precisado tras la revisión de Codex en el PR #8): hereda el
+/// de [`latency_slippage_pct`], de modo que un ATR o una latencia no finitos
+/// o no positivos anulan el término de latencia (cobra 0, no lo detecta).
+/// `taker_fee` y `slip_floor` NO se sanean: si no son finitos el resultado
+/// tampoco lo es y quien lo reciba debe rechazarlo. Unifica la FÓRMULA; que
+/// gate, host y daemon lean el mismo ATR y la misma latencia en el mismo
+/// instante es otra paridad, todavía abierta.
+#[inline]
+pub fn roundtrip_friction(taker_fee: f64, slip_floor: f64, atr_ratio: f64, latency_ms: f64) -> f64 {
+    let per_side_slip = (slip_floor + latency_slippage_pct(atr_ratio, latency_ms)).clamp(0.0, 0.05);
+    2.0 * taker_fee + 2.0 * per_side_slip
+}
+
 /// FUNCIÓN PURA ÚNICA. La invocan, con las MISMAS entradas, tanto el gate de
 /// expectativa como el constructor de la orden: es imposible por construcción
 /// que evalúen trades distintos (D-637).
@@ -545,5 +572,28 @@ mod tests {
         // Entradas degeneradas no inventan fricción.
         assert_eq!(latency_slippage_pct(atr, 0.0), 0.0);
         assert_eq!(latency_slippage_pct(f64::NAN, 10.0), 0.0);
+    }
+
+    /// XLIV-8: la fricción de ida y vuelta es la MISMA para el gate, los
+    /// brackets del host y el daemon, y su latencia es la difusiva. La ley
+    /// lineal que conservaban el host y el daemon cobraba, con el umbral de
+    /// pánico en su cota baja (500 ms), 3,5× más deslizamiento por lado.
+    #[test]
+    fn xliv_friccion_de_ida_y_vuelta_usa_la_ley_difusiva() {
+        let (taker, floor, atr, lat) = (0.0005, 0.0001, 0.004, 50.0);
+        let f = roundtrip_friction(taker, floor, atr, lat);
+        // Identidad bit a bit con la expresión que usaba el gate.
+        let gate = taker + taker + 2.0 * (floor + latency_slippage_pct(atr, lat)).clamp(0.0, 0.05);
+        assert_eq!(f.to_bits(), gate.to_bits());
+        // La ley lineal del host (umbral de pánico = 500 ms) no es la misma.
+        let lineal = 2.0 * taker + 2.0 * (floor + (atr * lat / 500.0).clamp(0.0, 0.05));
+        let lat_difusiva = latency_slippage_pct(atr, lat);
+        let lat_lineal = atr * lat / 500.0;
+        assert!((lat_lineal / lat_difusiva - 3.464).abs() < 1e-3, "{lat_lineal} {lat_difusiva}");
+        assert!(lineal > f);
+        // Acotada al 5 % por lado, igual que antes en el gate.
+        assert_eq!(roundtrip_friction(taker, 0.2, atr, lat), 2.0 * taker + 0.10);
+        // Sin volatilidad ni latencia sólo quedan comisiones y piso.
+        assert_eq!(roundtrip_friction(taker, floor, 0.0, lat), 2.0 * taker + 2.0 * floor);
     }
 }

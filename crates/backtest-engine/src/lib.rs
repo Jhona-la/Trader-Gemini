@@ -15,26 +15,18 @@ pub use vectorized::{OrderBookL2DepthSlippageModel, run_vectorized_hybrid};
 /// DEBE usar STATS_LEN.
 pub const STATS_LEN: usize = 8;
 
-pub fn run_backtest_native(
-    closes: &[f64],
-    highs: &[f64],
-    lows: &[f64],
-    volumes: &[f64],
-    cfg: &SuperGenotype,
-    out_pnl: &mut [f64],
-    out_stats: &mut [f64],
-    symbol: &str,
-    initial_capital: f64,
-) -> usize {
-    let len = closes.len();
+/// B3.20 — CAUSA RAÍZ DEL ORÁCULO MUERTO: el registro dinámico nace VACÍO
+/// por diseño (lo puebla el symbol manager del motor en vivo); sin spec,
+/// evaluate_quantum_order rechaza TODA orden con "spec" (medido: 432/432
+/// rechazos, 0 trades, cobertura 0/144) — desde que el registro se hizo
+/// dinámico, no desde B3.18. Registra un spec estándar para el símbolo
+/// evaluado (idempotente: update_registry preserva los existentes).
+///
+/// XLIV-12: pública para que los tests de OTROS runners (replay de libro)
+/// fijen el MISMO entorno global que el golden antes de medir, en vez de
+/// depender de que otro test en paralelo ya lo haya registrado.
+pub fn asegurar_spec_nativo(symbol: &str) {
     let target_coin_id = quantum_arena::symbol_registry::try_index(symbol).unwrap_or(0);
-
-    // B3.20 — CAUSA RAÍZ DEL ORÁCULO MUERTO: el registro dinámico nace VACÍO
-    // por diseño (lo puebla el symbol manager del motor en vivo); sin spec,
-    // evaluate_quantum_order rechaza TODA orden con "spec" (medido: 432/432
-    // rechazos, 0 trades, cobertura 0/144) — desde que el registro se hizo
-    // dinámico, no desde B3.18. Registrar un spec estándar para el símbolo
-    // evaluado (idempotente: update_registry preserva los existentes).
     if quantum_arena::symbol_registry::try_spec(target_coin_id).is_none() {
         let spec = quantum_arena::symbol_registry::SymbolSpec {
             symbol: symbol.to_string(),
@@ -49,7 +41,22 @@ pub fn run_backtest_native(
         };
         quantum_arena::symbol_registry::update_registry(vec![spec]);
     }
+}
 
+pub fn run_backtest_native(
+    closes: &[f64],
+    highs: &[f64],
+    lows: &[f64],
+    volumes: &[f64],
+    cfg: &SuperGenotype,
+    out_pnl: &mut [f64],
+    out_stats: &mut [f64],
+    symbol: &str,
+    initial_capital: f64,
+) -> usize {
+    let len = closes.len();
+    let target_coin_id = quantum_arena::symbol_registry::try_index(symbol).unwrap_or(0);
+    asegurar_spec_nativo(symbol);
     // F3.4: capital 0/NaN ⇒ arena rota y métricas basura. Rechazo explícito:
     // el caller debe extraer el balance real (API en demo/prod).
     if !initial_capital.is_finite() || initial_capital <= 0.0 {
