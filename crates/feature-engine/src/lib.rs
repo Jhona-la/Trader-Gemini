@@ -2,6 +2,7 @@ pub mod hurst_dfa;
 pub mod correlation;
 pub mod ewma;
 pub mod hawkes;
+pub mod hawkes_cross;
 pub mod kalman;
 pub mod lead_lag;
 pub mod microstructure;

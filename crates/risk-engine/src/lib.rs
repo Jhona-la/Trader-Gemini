@@ -533,6 +533,9 @@ impl RiskEngine {
             .config
             .global_correlation_threshold
             .load(Ordering::Relaxed);
+        // (Ola XLV) N_eff como telemetría (dimension del grupo para el
+        // sizing por factor; el gate usa dependency_exposure ya).
+        let _n_eff_telemetry: Option<f64> = None; // TODO: wire when matrix exposed
         let Some(dependence) = correlation_guard::dependency_exposure(
             arena,
             coin_id,

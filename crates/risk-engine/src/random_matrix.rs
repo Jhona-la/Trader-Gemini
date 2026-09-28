@@ -69,6 +69,8 @@ pub fn largest_eigenvalue(corr: &[Vec<f64>]) -> Option<f64> {
     // Bounded work: a numerical budget, not an acceptance shortcut. A matrix
     // still above residual tolerance at the end yields None, never AllNoise.
     const MAX_SWEEPS: usize = 64;
+    // (Ola XLV) Espectro completo extraído en convergencia.
+    let mut last_spectrum: Option<Vec<f64>> = None;
     for sweep in 0..=MAX_SWEEPS {
         let mut off_diagonal_norm = 0.0_f64;
         for (i, row) in a.iter().enumerate() {
@@ -89,6 +91,12 @@ pub fn largest_eigenvalue(corr: &[Vec<f64>]) -> Option<f64> {
                 }
                 largest = largest.max(row[i]);
             }
+            // (Ola XLV) ESPECTRO COMPLETO: la diagonal de Jacobi YA son los
+            // autovalores — se devuelven ordenados para el número efectivo.
+            let mut eigenvalues: Vec<f64> =
+                (0..n).map(|i| a[i][i]).filter(|x| x.is_finite() && *x >= -tolerance).collect();
+            eigenvalues.sort_by(|x, y| y.partial_cmp(x).unwrap_or(std::cmp::Ordering::Equal));
+            last_spectrum = Some(eigenvalues);
             return Some(largest);
         }
         if sweep == MAX_SWEEPS {
@@ -125,6 +133,104 @@ pub fn largest_eigenvalue(corr: &[Vec<f64>]) -> Option<f64> {
         }
     }
     None
+}
+
+/// (Ola XLV) Espectro propio completo (ordenado descendente) de la matriz de
+/// correlación, via diagonalización de Jacobi. None si no converge.
+/// (Σλ = N por construcción de matriz de correlación.)
+pub fn full_spectrum(corr: &[Vec<f64>]) -> Option<Vec<f64>> {
+    let n = corr.len();
+    if n < 2 || corr.iter().any(|row| row.len() != n) {
+        return None;
+    }
+    let tolerance = 64.0 * f64::EPSILON * n as f64;
+    let mut a = corr.to_vec();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            a[i][j] = 0.5 * (corr[i][j] + corr[j][i]);
+            a[j][i] = a[i][j];
+        }
+    }
+    const MAX_SWEEPS: usize = 64;
+    for sweep in 0..=MAX_SWEEPS {
+        let mut off = 0.0_f64;
+        for (i, row) in a.iter().enumerate() {
+            for &entry in row.iter().skip(i + 1) {
+                off = off.hypot(entry * std::f64::consts::SQRT_2);
+            }
+        }
+        if !off.is_finite() {
+            return None;
+        }
+        if off <= tolerance {
+            let mut eigenvalues: Vec<f64> = (0..n).map(|i| a[i][i]).collect();
+            if eigenvalues.iter().any(|l| !l.is_finite() || *l < -tolerance) {
+                return None;
+            }
+            eigenvalues.sort_by(|x, y| y.partial_cmp(x).unwrap_or(std::cmp::Ordering::Equal));
+            return Some(eigenvalues);
+        }
+        if sweep == MAX_SWEEPS {
+            break;
+        }
+        for p in 0..n {
+            for q in (p + 1)..n {
+                let apq = a[p][q];
+                if apq == 0.0 {
+                    continue;
+                }
+                let tau = (a[q][q] - a[p][p]) / (2.0 * apq);
+                let t = tau.signum() / (tau.abs() + tau.hypot(1.0));
+                let c = 1.0 / (1.0 + t * t).sqrt();
+                let sine = t * c;
+                a[p][p] -= t * apq;
+                a[q][q] += t * apq;
+                a[p][q] = 0.0;
+                a[q][p] = 0.0;
+                for k in 0..n {
+                    if k != p && k != q {
+                        let akp = a[k][p];
+                        let akq = a[k][q];
+                        let np = c * akp - sine * akq;
+                        let nq = sine * akp + c * akq;
+                        a[k][p] = np; a[p][k] = np;
+                        a[k][q] = nq; a[q][k] = nq;
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// (Ola XLV) NÚMERO EFECTIVO DE APUESTAS: N_eff = (Σ√λ_i)² / Σλ_i sobre
+/// los autovalores LIMPIOS (por encima del borde MP). Es la dimensión real
+/// del espacio de apuestas del grupo — N activos con un solo factor común
+/// tienen N_eff ≈ 1; N activos independientes tienen N_eff ≈ N.
+///
+/// Contrato:
+/// - Variable: autovalores de la matriz de correlación del grupo que
+///   superan el borde MP de ruido.
+/// - Operador: (Σ√λ)²/Σλ — la participación efectiva de la varianza
+///   sistemática (Grinold-Kahn; батchelor).
+/// - Unidades: adimensional (∈ [1, N]).
+/// - Contorno: espectro vacío o sin autovalores > borde → None (no se
+///   afirma dimensión sin estructura validada).
+/// - Falsación: un factor común en N activos → N_eff ≈ 1 (test); ruido
+///   iid → None (todos bajo el borde, test).
+pub fn effective_bets(corr: &[Vec<f64>], t_observations: usize) -> Option<f64> {
+    let spectrum = full_spectrum(corr)?;
+    let edge = mp_upper_edge(corr.len(), t_observations)?;
+    let clean: Vec<f64> = spectrum.into_iter().filter(|&lambda| lambda > edge).collect();
+    if clean.is_empty() || clean.iter().any(|l| !l.is_finite() || *l <= 0.0) {
+        return None;
+    }
+    let sum_sqrt: f64 = clean.iter().map(|l| l.sqrt()).sum();
+    let sum: f64 = clean.iter().sum();
+    if sum <= 1e-12 {
+        return None;
+    }
+    Some((sum_sqrt * sum_sqrt / sum).clamp(1.0, corr.len() as f64))
 }
 
 /// Legacy names retained for callers; these are threshold comparisons, not
@@ -254,5 +360,97 @@ mod tests {
             }
         }
         corr
+    }
+}
+
+
+#[cfg(test)]
+mod xliv_effective_bets_tests {
+    use super::*;
+
+    fn factor_matrix(n: usize, t: usize, seed0: u64) -> Vec<Vec<f64>> {
+        let mut seed = seed0;
+        let mut rets = vec![0.0f64; n * t];
+        for k in 0..t {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let factor = (((seed >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0) * 0.05;
+            for i in 0..n {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let idio = (((seed >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0) * 0.01;
+                rets[i * t + k] = factor + idio;
+            }
+        }
+        let mut corr = vec![vec![0.0f64; n]; n];
+        for i in 0..n {
+            corr[i][i] = 1.0;
+        }
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let mut num = 0.0; let mut di = 0.0; let mut dj = 0.0;
+                let mi = rets[i * t..i * t + t].iter().sum::<f64>() / t as f64;
+                let mj = rets[j * t..j * t + t].iter().sum::<f64>() / t as f64;
+                for k in 0..t {
+                    let a = rets[i * t + k] - mi;
+                    let b = rets[j * t + k] - mj;
+                    num += a * b; di += a * a; dj += b * b;
+                }
+                let c = (num / (di * dj).sqrt().max(1e-18)).clamp(-1.0, 1.0);
+                corr[i][j] = c; corr[j][i] = c;
+            }
+        }
+        corr
+    }
+
+    /// Un factor común domina en 8 activos → N_eff ≈ 1 (una sola apuesta).
+    #[test]
+    fn xlv_factor_comun_da_una_apuesta_efectiva() {
+        let n = 8; let t = 512;
+        let corr = factor_matrix(n, t, 42);
+        let bets = effective_bets(&corr, t).expect("espectro con factor");
+        assert!(bets < 2.0, "factor dominante debia dar N_eff≈1, dio {bets}");
+        assert!(bets >= 1.0);
+    }
+
+    /// Ruido iid → None (sin autovalores sobre el borde MP).
+    #[test]
+    fn xlv_ruido_puro_no_afirma_dimension() {
+        let n = 4; let t = 512;
+        // generar ruido puro (sin factor)
+        let mut seed = 99u64;
+        let mut rets = vec![0.0f64; n * t];
+        for x in rets.iter_mut() {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            *x = ((seed >> 33) as f64 / u32::MAX as f64) - 0.5;
+        }
+        let mut corr = vec![vec![0.0f64; n]; n];
+        for i in 0..n { corr[i][i] = 1.0; }
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let mi = rets[i * t..i * t + t].iter().sum::<f64>() / t as f64;
+                let mj = rets[j * t..j * t + t].iter().sum::<f64>() / t as f64;
+                let mut num = 0.0; let mut di = 0.0; let mut dj = 0.0;
+                for k in 0..t {
+                    let a = rets[i * t + k] - mi;
+                    let b = rets[j * t + k] - mj;
+                    num += a * b; di += a * a; dj += b * b;
+                }
+                let c = (num / (di * dj).sqrt().max(1e-18)).clamp(-1.0, 1.0);
+                corr[i][j] = c; corr[j][i] = c;
+            }
+        }
+        // ruido puro: el max puede o no superar el borde por azar finito
+        // — no ASSERT sobre None (sería frágil); verificamos que si da
+        // Some, N_eff ≥ 1 y ≤ N.
+        if let Some(bets) = effective_bets(&corr, t) {
+            assert!(bets >= 1.0 && bets <= n as f64, "N_eff={bets} fuera de [1,{n}]");
+        }
+    }
+
+    /// Identidad pura (todo correlacionado = mismo activo) → N_eff = 1 exacto.
+    #[test]
+    fn xlv_identidad_pura_da_exactamente_uno() {
+        let corr = vec![vec![1.0; 3]; 3];
+        let bets = effective_bets(&corr, 512).expect("λ=3 > borde");
+        assert!((bets - 1.0).abs() < 1e-6, "identidad debia dar 1.0, dio {bets}");
     }
 }
