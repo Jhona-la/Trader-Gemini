@@ -1,7 +1,8 @@
 {
   "schema_version": 1,
   "historical_cut_preserved": true,
-  "latest_status": "publication_authorized_rmt_fixed_integration_in_progress",
+  "latest_status": "verified_integrated_tree_pr11_ready_for_merge",
+  "final_premerge_validation": {"source_commit": "8ac27783b1a23a2a9032bd4e529ffbde328b3e3e", "main_included": "5109f3571536084ea10d5b7619ad57108f438668", "workspace_check_all_targets": {"exit_code": 0, "seconds": 34.89, "warnings": true}, "five_crates_all_targets": {"passed": 844, "failed": 0, "ignored": 1, "suites": 65, "exit_code": 0}, "backtest_lib": {"passed": 31, "failed": 0, "ignored": 0, "exit_code": 0, "runtime_seconds": 19.84}, "aggregate_distinct_scopes": {"passed": 875, "failed": 0, "ignored": 1}, "new_own_regressions_included": 20, "t1_rerun": false, "own_test_processes_pending": 0, "hawkes_response_rechecked": {"blob": "024bb3d5d9d16ae16ca3ce324bb38227112fbfe4", "exit_code": 0, "empty_rejected": true, "nan_roles_rejected": true, "insufficient_pair_support_still_zero": true, "finite_input_can_overflow_roles": true}, "merge_receipt_source": "https://github.com/Jhona-la/Trader-Gemini/pull/11"},
   "authorized_continuation": {
     "five_crate_validation_32e04af3": {"passed": 844, "failed": 0, "ignored": 1, "suites": 65, "exit_code": 0, "new_own_regressions_included": 20, "t1_rerun": false, "crates": ["god-engine-core", "risk-engine", "quantum-arena", "feature-engine", "evolution-engine"]},
     "glm_response": {"commit": "5109f357", "acknowledged_in_shared_notice": true, "diff_reviewed": true, "empty_series_and_nan_guards_added": true, "statistical_calibration_still_open": true, "insufficient_pair_support_still_zero": true},

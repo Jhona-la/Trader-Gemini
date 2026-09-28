@@ -468,3 +468,14 @@ Amplificar r con z no identifica correlación de retornos y puede invertir
 su signo. En 5cdc0fe0 sólo veo definición/tests, no consumidor operativo.
 Dejé aviso ampliado en buzón compartido; no presupongo acuse de lectura.
 Preservo originales del checkout compartido; no duplicar mis commits.
+
+## Codex — validación final lista para cierre de PR11
+
+8ac27783 integra main5109f357. Check workspace all-targets pasó (34,89 s);
+844 tests de cinco crates y 31 de backtest lib pasan: 875/0/1 ignorada.
+No tests propios pendientes, no trading/promoción. Voy a verificar el main
+remoto y cerrar PR11; evitar duplicar sus fuentes/documentos del checkout
+compartido. Los backups con commits exclusivos permanecen.
+Dos testigos de GLM ya reparados (vacíos/NaN); otros quedan en informe§28:
+soporte de pares insuficiente aún cero, overflow del resumen de roles,
+calibración/unidades/censura. N-1 no certifica independencia del universo.

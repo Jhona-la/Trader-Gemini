@@ -575,3 +575,13 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   calibración/soporte ni vuelve el z invariante al universo. Siguen OPEN.
 - Claude respondió y c7da6e70 corrige purge_end cerrado en PR10, aún abierto
   al consultar. Su reporte 39/39 es evidencia del autor, no ejecución Codex.
+
+- VALIDACIÓN FINAL PRE-MERGE PR11: 8ac27783 incorpora 5109f357. Check
+  workspace all-targets pasa (34,89 s). Reejecución mismos cinco crates:
+  844/0/1 ignorada, 65 bloques. Backtest lib: 31/0/0 (19,84 s). Total875/0/1;
+  20 regresiones propias incluidas; T-1 no reejecutado. Sin tests pendientes.
+- Testigos Hawkes sobre blob024bb3d5: vacíos/NaN ya None. Series de dos
+  eventos aún Some(ceros); suma de entradas MAX finitas puede dar inf en
+  roles. Calibración/soporte siguen abiertos; sin consumidor operativo hallado.
+- Informe §28 registra árbol probado y alcance; consultar PR11 para recibo
+  de merge remoto posterior, no confundir este corte previo con fusión.

@@ -1238,3 +1238,62 @@ No se presume que este contrato alcance un consumidor operativo.
 
 La incorporación de 5109f357, su check y reejecución se registrarán después;
 esta separación evita trasladar los 844 resultados a un árbol no probado.
+
+## 28. Cierre de validación del árbol integrado antes de fusionar PR11
+
+**Árbol de código:** 8ac27783b1a23a2a9032bd4e529ffbde328b3e3e, que incorpora
+main 5109f357 conservando las reparaciones propias. Se comparó el merge contra
+ambos padres; el delta nuevo respecto de 3ee954af se limita a hawkes_cross.rs.
+Check workspace all-targets: código 0, 34,89 s, con advertencias existentes.
+No se ejecutó cargo fix ni se eliminaron advertencias ajenas indiscriminadamente.
+
+Pruebas finales, todas con --offline y --test-threads=1:
+
+| Alcance | Pasan | Fallan | Ignoradas | Evidencia |
+| --- | ---: | ---: | ---: | --- |
+| core, risk, arena, feature, evolution — all-targets | 844 | 0 | 1 | 65 bloques, código 0, reejecución completa tras 5109f357 |
+| backtest-engine — lib | 31 | 0 | 0 | Código 0; replay/golden/unitarios, 19,84 s de ejecución |
+| Total de estos ámbitos distintos | 875 | 0 | 1 | No incluye T-1 ni suma repeticiones focalizadas |
+
+Las 20 regresiones propias ya están incluidas. Los testigos aislados Hawkes
+son diagnósticos, no se suman al total. No se ejecutaron entrenamiento,
+promoción, trading, despliegue ni cambios de modelos o genomas operativos.
+Compilar todos los targets NO equivale a probar todos los crates ni leer
+todos los archivos; no se certifica ausencia global de bugs ni la meta financiera.
+
+### 28.1 Reprueba de la respuesta GLM y límites que quedan
+
+Con blob 024bb3d5d9d16ae16ca3ce324bb38227112fbfe4 de 5109f357, el mismo
+harness devuelve empty_observations=None y nonfinite_roles=None: esos dos
+testigos específicos quedan atendidos. La matriz con dos eventos por activo
+([1,2] y [3,4], spans 10, lag 1) sigue devolviendo Some(ceros): no hay
+soporte para el estimador de pares, pero desaparece esa distinción en la salida.
+Con entradas finitas [[0,MAX,MAX],[0,0,0],[0,0,0]], contagion_roles devuelve
+emitted/net_role infinitos por sumar antes de dividir. Es una deuda numérica
+de la API pública; no se afirma que el generador de z haya producido MAX.
+
+La normalización por N-1 no cierra el modelo probabilístico, las unidades,
+la selección múltiple ni los factores comunes de §24. La revisión reconoce
+dos correcciones sin extenderlas a esos otros contratos. Tampoco reabre como
+si siguieran iguales las entradas vacías o NaN que acabamos de verificar.
+
+### 28.2 Estado de entrega y prioridades restantes
+
+PR11 publica las correcciones fbf299ee, b3ba8d80 y 57bae732 y las adendas
+documentales, con integración explícita de los avances remotos. Este corte
+se escribe ANTES de ejecutar el merge remoto; la confirmación posterior se
+consulta en [el PR11](https://github.com/Jhona-la/Trader-Gemini/pull/11).
+No se afirma fusión basándose en un push o en que GitHub diga mergeable.
+
+Orden de seguimiento: (1) verificar integración y ejecución del trainer
+propuesto por Claude en PR10; (2) reconstruir targets causales de primer toque,
+no deducirlos de reason_code; (3) diferenciar ausencia/invalidación/valor medido
+en APIs espectrales y matriciales; (4) calibrar nulos, selección y costes
+antes de conectar nuevas teorías al veto/sizing; (5) continuar cobertura
+archivo por archivo con estado de lectura explícito. Se preservan los
+backups con commits exclusivos y los originales locales compartidos.
+
+La guía babysit determinó la revisión de hilos, checks, padres y conflictos.
+La guía de investigación Firecrawl permitió contrastar definiciones con
+fuentes primarias; sus resultados se incorporan como límites del modelo,
+no como autorización para activar una estrategia.
