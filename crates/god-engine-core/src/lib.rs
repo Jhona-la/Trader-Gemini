@@ -229,6 +229,11 @@ pub struct W1ChangepointObserver {
     n_obs: usize,
     /// Último W₁ observado (para telemetría).
     last_w1: f64,
+    /// Ola XLIV: instante del último evento observado. `process_event` y
+    /// `process_tick_dual` publican el mismo espectro en el mismo evento; sin
+    /// este guard el observador contaba DOS observaciones por evento en vivo
+    /// y UNA en los backtests que llaman a dual directamente.
+    last_ts: Option<u64>,
 }
 
 const W1_R_MAX: usize = 128;
@@ -249,7 +254,18 @@ impl W1ChangepointObserver {
             segment_mean: [0.0; 128],
             n_obs: 0,
             last_w1: 0.0,
+            last_ts: None,
         }
+    }
+
+    /// Observa W₁ UNA vez por evento: una segunda llamada con el mismo
+    /// `event_time_ms` devuelve la probabilidad vigente sin actualizar.
+    pub fn observe_at(&mut self, event_time_ms: u64, w1: f64) -> Option<f64> {
+        if self.last_ts == Some(event_time_ms) {
+            return self.transition_probability();
+        }
+        self.last_ts = Some(event_time_ms);
+        self.observe(w1)
     }
 
     /// Incorpora una observación de W₁ y devuelve la probabilidad de
@@ -269,12 +285,19 @@ impl W1ChangepointObserver {
                 // PREDICTIVA del segmento estable: Normal(mean_r, σ) — el
                 // segmento largo aprieta su pronóstico alrededor de SU nivel
                 // y un W₁ fuera de él es evidencia de ruptura.
+                //
+                // Ola XLIV: las dos predictivas son DENSIDADES y llevan su
+                // 1/σ. Sin él, la de segmento nuevo (σ ancho) quedaba
+                // sobreponderada σ_nuevo/σ_emisión ≈ 5,8 veces frente a la de
+                // segmento estable: sesgo sistemático hacia «cambio».
                 let z_grow = (w1 - self.segment_mean[r]) / W1_EMISSION_SD;
-                let like_grow = (-0.5 * z_grow * z_grow).exp();
-                // PREDICTIVA de segmento NUEVO: prior ancho (σ₀ grande) — un
-                // W₁ cualquiera es plausible al empezar de cero.
-                let z_new = w1 / W1_PRIOR_SD;
-                let like_new = (-0.5 * z_new * z_new).exp();
+                let like_grow = (-0.5 * z_grow * z_grow).exp() / W1_EMISSION_SD;
+                // PREDICTIVA de segmento NUEVO: media ~ N(0, σ₀²) y emisión
+                // N(μ, σ²) ⇒ predictiva N(0, σ₀² + σ²). Un W₁ cualquiera es
+                // plausible al empezar de cero.
+                let sd_new = (W1_PRIOR_SD * W1_PRIOR_SD + W1_EMISSION_SD * W1_EMISSION_SD).sqrt();
+                let z_new = w1 / sd_new;
+                let like_new = (-0.5 * z_new * z_new).exp() / sd_new;
                 let grow = p * (1.0 - W1_HAZARD) * like_grow;
                 let chng = p * W1_HAZARD * like_new;
                 if r + 1 < W1_R_MAX {
@@ -284,19 +307,26 @@ impl W1ChangepointObserver {
                     new_mean[r + 1] += grow * ((m * (r as f64 + 1.0) + w1) / (r as f64 + 2.0));
                 }
                 new_rl[0] += chng;
-                new_mean[0] += chng * (w1 * 0.5); // prior mean 0, un dato: suavizado
+                // Media posterior de un segmento nuevo tras UN dato: prior
+                // N(0, σ₀²) y emisión σ² ⇒ w₁·σ₀²/(σ₀² + σ²) (antes w₁·0,5,
+                // que arrastraba cada segmento nuevo hacia 0).
+                new_mean[0] += chng * (w1 * W1_PRIOR_SD * W1_PRIOR_SD / (sd_new * sd_new));
                 total += grow + chng;
             }
             if total > 1e-12 {
-                for x in new_rl.iter_mut() {
-                    *x /= total;
-                }
-                // media posterior por run-length: suma ponderada / peso
-                // normalizado (new_rl ya está normalizada).
+                // Ola XLIV: la media por run-length es Σ peso·media / Σ peso
+                // con los pesos SIN normalizar. Antes se dividía por el
+                // posterior ya normalizado: cada media quedaba multiplicada
+                // por la evidencia `total` (< 1) y se encogía hacia 0 en cada
+                // paso, así que un W₁ estacionario pero ruidoso parecía un
+                // cambio de régimen (p_transition ≈ 0,40 en reposo).
                 for k in 0..W1_R_MAX {
-                    if new_rl[k] > 1e-12 {
+                    if new_rl[k] > 0.0 {
                         new_mean[k] /= new_rl[k];
                     }
+                }
+                for x in new_rl.iter_mut() {
+                    *x /= total;
                 }
             }
             self.run_length_posterior = new_rl;
@@ -1107,15 +1137,19 @@ impl GodEngineCore {
                     // anillo): reestructuración del régimen. Publicada al
                     // registry para telemetría; consumo de gates = próxima
                     // ola (frenar aperturas en τ en tránsito).
-                    let w1 = spec.spectral_transport_w1(64).unwrap_or(0.0);
-                    self.arena
-                        .registry
-                        .set_for_coin(coin_id, "spectral_w1_transport", w1);
+                    let w1_medido = spec.spectral_transport_w1(64);
+                    self.arena.registry.set_for_coin(
+                        coin_id,
+                        "spectral_w1_transport",
+                        w1_medido.unwrap_or(0.0),
+                    );
                     // (Ola XLIII·A) Observador bayesiano del transporte:
                     // p_transition alta = la masa espectral se está moviendo
                     // (cambio de régimen en curso). Publicada para gates.
-                    if let Some(obs) = self.w1_bocpd.get_mut(coin_id) {
-                        let p_t = obs.observe(w1).unwrap_or(0.0);
+                    // Ola XLIV: sólo con un W₁ MEDIDO (antes un None entraba
+                    // como 0,0 inventado) y una vez por evento (`observe_at`).
+                    if let (Some(obs), Some(w1)) = (self.w1_bocpd.get_mut(coin_id), w1_medido) {
+                        let p_t = obs.observe_at(event_time_ms, w1).unwrap_or(0.0);
                         self.arena
                             .registry
                             .set_for_coin(coin_id, "spectral_p_transition", p_t);
@@ -1543,15 +1577,19 @@ impl GodEngineCore {
                     // anillo): reestructuración del régimen. Publicada al
                     // registry para telemetría; consumo de gates = próxima
                     // ola (frenar aperturas en τ en tránsito).
-                    let w1 = spec.spectral_transport_w1(64).unwrap_or(0.0);
-                    self.arena
-                        .registry
-                        .set_for_coin(coin_id, "spectral_w1_transport", w1);
+                    let w1_medido = spec.spectral_transport_w1(64);
+                    self.arena.registry.set_for_coin(
+                        coin_id,
+                        "spectral_w1_transport",
+                        w1_medido.unwrap_or(0.0),
+                    );
                     // (Ola XLIII·A) Observador bayesiano del transporte:
                     // p_transition alta = la masa espectral se está moviendo
                     // (cambio de régimen en curso). Publicada para gates.
-                    if let Some(obs) = self.w1_bocpd.get_mut(coin_id) {
-                        let p_t = obs.observe(w1).unwrap_or(0.0);
+                    // Ola XLIV: sólo con un W₁ MEDIDO (antes un None entraba
+                    // como 0,0 inventado) y una vez por evento (`observe_at`).
+                    if let (Some(obs), Some(w1)) = (self.w1_bocpd.get_mut(coin_id), w1_medido) {
+                        let p_t = obs.observe_at(event_time_ms, w1).unwrap_or(0.0);
                         self.arena
                             .registry
                             .set_for_coin(coin_id, "spectral_p_transition", p_t);
@@ -6784,6 +6822,56 @@ mod w1_bocpd_tests {
         // régimen roto: transporte de 2 ejes-log sostenido
         let p = obs.observe(2.0).expect("calentado");
         assert!(p > 0.5, "salto sostenido dio p_transition={p}");
+    }
+
+    /// Ola XLIV — un W₁ estacionario pero RUIDOSO no es un cambio de régimen.
+    /// Con la media de segmento encogida por la evidencia y las densidades sin
+    /// su 1/σ, W₁ ~ N(1, 0,25) daba p_transition ≈ 0,40 de media.
+    #[test]
+    fn xliv_w1_estacionario_ruidoso_no_es_transicion() {
+        let mut obs = W1ChangepointObserver::new();
+        // Generador determinista (LCG) + Box–Muller.
+        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut u = || {
+            x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((x >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+        };
+        let (mut suma, mut n, mut altos) = (0.0, 0usize, 0usize);
+        for i in 0..2_000 {
+            let z = (-2.0 * u().ln()).sqrt() * (2.0 * std::f64::consts::PI * u()).cos();
+            let w1 = (1.0 + 0.25 * z).max(0.0);
+            if let Some(p) = obs.observe(w1) {
+                if i >= 200 {
+                    suma += p;
+                    n += 1;
+                    if p > 0.3 {
+                        altos += 1;
+                    }
+                }
+            }
+        }
+        let media = suma / n as f64;
+        assert!(media < 0.05, "p_transition media en reposo ruidoso = {media}");
+        assert!((altos as f64) / (n as f64) < 0.02, "{altos}/{n} observaciones con p > 0,3");
+        // Y el nivel sigue detectándose: un salto sostenido a W₁ = 3 dispara.
+        let p = obs.observe(3.0).expect("calentado");
+        assert!(p > 0.5, "salto tras reposo ruidoso dio {p}");
+    }
+
+    /// Ola XLIV — un mismo evento publicado dos veces (process_event y
+    /// process_tick_dual) cuenta como UNA observación.
+    #[test]
+    fn xliv_un_evento_una_observacion() {
+        let mut a = W1ChangepointObserver::new();
+        let mut b = W1ChangepointObserver::new();
+        for t in 0..50u64 {
+            let w1 = 0.1 + (t % 5) as f64 * 0.05;
+            a.observe_at(t, w1);
+            b.observe_at(t, w1);
+            b.observe_at(t, w1);
+        }
+        assert_eq!(a.transition_probability(), b.transition_probability());
+        assert_eq!(a.n_obs, b.n_obs);
     }
 
     /// Contorno: <8 observaciones → None (no se afirma cambio en frío).
