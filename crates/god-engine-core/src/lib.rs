@@ -2477,11 +2477,18 @@ impl GodEngineCore {
                     // resultado neto de comisiones. Se actualizan SIEMPRE el calibrador
                     // específico de la moneda (para sesgos locales) Y el calibrador global
                     // (para transferencia de aprendizaje cross-asset).
+                    // Ola XLIV: con su instante de evento, para el olvido por
+                    // tiempo de `calibrate_at` (ver calibration.rs).
                     if score_at_entry > 0.0 {
                         if coin_id < self.calibrator_by_coin.len() {
-                            self.calibrator_by_coin[coin_id].update(score_at_entry, is_win);
+                            self.calibrator_by_coin[coin_id].update_at(
+                                score_at_entry,
+                                is_win,
+                                event_time_ms,
+                            );
                         }
-                        self.confidence_calibrator.update(score_at_entry, is_win);
+                        self.confidence_calibrator
+                            .update_at(score_at_entry, is_win, event_time_ms);
                     }
 
                     // XXIX / FMT-228: one close is one reward observation.
@@ -5712,12 +5719,17 @@ impl GodEngineCore {
                 let raw_confidence_score = unified_intent.confidence;
                 let mut calibrated_intent = unified_intent;
                 // Cierre del lazo adaptativo por moneda con fallback bayesiano al calibrador global:
+                // Ola XLIV: `calibrate_at` olvida la evidencia con el tiempo
+                // sin operar; sin él, una p hundida vetaba la moneda en el EV
+                // para siempre (estado absorbente: sin operaciones no hay datos
+                // que la corrijan).
                 let cal_prob = if coin_id < self.calibrator_by_coin.len()
                     && self.calibrator_by_coin[coin_id].observations() >= 5
                 {
-                    self.calibrator_by_coin[coin_id].calibrate(raw_confidence_score)
+                    self.calibrator_by_coin[coin_id].calibrate_at(raw_confidence_score, event_time_ms)
                 } else {
-                    self.confidence_calibrator.calibrate(raw_confidence_score)
+                    self.confidence_calibrator
+                        .calibrate_at(raw_confidence_score, event_time_ms)
                 };
                 calibrated_intent.win_probability = cal_prob;
                 let order =
