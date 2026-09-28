@@ -308,9 +308,16 @@ fn trailing_window_start(raw: &[BinTick], i: usize, start: u64) -> (usize, f64) 
 /// la etiqueta de las últimas muestras de train se resuelve DENTRO del tramo
 /// de validación — el modelo «ya vio» ese futuro y la métrica de validación
 /// sale optimista. Devuelve el fin (exclusivo) del train: la última muestra
-/// cuya ventana de etiqueta (t, t+τ] termina antes de la primera muestra de
-/// validación. El número de muestras descartadas no es una constante: lo fija
-/// el propio horizonte τ contra la densidad real del muestreo.
+/// cuya ventana de etiqueta termina ESTRICTAMENTE antes de la primera muestra
+/// de validación. El número de muestras descartadas no es una constante: lo
+/// fija el propio horizonte τ contra la densidad real del muestreo.
+///
+/// XLIV-13b (revisión de Codex en el PR #10): la frontera es CERRADA, la
+/// misma convención que `purge_training` (`end >= inicio`) y
+/// `require_later_holdout` (`inicio <= fin`), y la de la implementación de
+/// referencia de López de Prado. La etiqueta del train que acaba justo en
+/// `t_val` incluye el tick de `t_val`, que la validación ya conoce como
+/// rasgo (información ≤ t): la igualdad cuenta como solape.
 fn purge_end(ts: &[u64], split: usize, horizon_ms: u64) -> usize {
     if split == 0 || split >= ts.len() {
         return split.min(ts.len());
@@ -318,7 +325,7 @@ fn purge_end(ts: &[u64], split: usize, horizon_ms: u64) -> usize {
     let first_val_ts = ts[split];
     ts[..split]
         .iter()
-        .position(|&t| t.saturating_add(horizon_ms) > first_val_ts)
+        .position(|&t| t.saturating_add(horizon_ms) >= first_val_ts)
         .unwrap_or(split)
 }
 
@@ -3162,15 +3169,30 @@ mod tests {
 
         // Con tau/stride = 6, la muestra situada EXACTAMENTE tau antes del
         // borde resuelve su etiqueta en el instante de la primera muestra de
-        // validación, y ese instante todavía no pertenece a la ventana de
-        // etiqueta de la validación —que es (t_val, t_val+tau]—, así que no
-        // invade: se purgan las 5 posteriores, no 6. El número lo fija la
+        // validación. XLIV-13b: con intervalos CERRADOS (la convención de
+        // `purge_training`, `require_later_holdout` y López de Prado) esa
+        // frontera es solape — su etiqueta usa el tick que la validación ya
+        // tiene como rasgo —, así que se purgan 6, no 5. El número lo fija la
         // geometría de las ventanas, no una constante elegida.
-        assert_eq!(split - tr_end, 5, "purgadas {} muestras", split - tr_end);
+        assert_eq!(split - tr_end, 6, "purgadas {} muestras", split - tr_end);
         for &t in &ts[..tr_end] {
-            assert!(t + tau <= ts[split], "muestra de train que resuelve en validación: {t}");
+            assert!(t + tau < ts[split], "muestra de train que resuelve en validación: {t}");
         }
-        assert!(ts[tr_end] + tau > ts[split], "la primera purgada debe invadir");
+        assert!(ts[tr_end] + tau >= ts[split], "la primera purgada debe tocar la validación");
+        // Misma frontera que el contrato FMT sobre intervalos cerrados. Los
+        // contratos FMT rechazan el instante 0 (los tapes usan ms de época):
+        // se desplaza la rejilla 1 ms, y purge_end es invariante a traslación.
+        let ts1: Vec<u64> = ts.iter().map(|t| t + 1).collect();
+        assert_eq!(purge_end(&ts1, split, tau), tr_end);
+        let tr = como_intervalos(
+            &vec![vec![0.0f32]; split],
+            &vec![0.0; split],
+            &ts1[..split],
+            tau,
+        );
+        let sel = como_intervalos(&[vec![0.0]], &[0.0], &ts1[split..split + 1], tau);
+        let (kept, _) = purge_training(tr, &sel).unwrap();
+        assert_eq!(kept.labels.len(), tr_end, "purge_end y purge_training deben coincidir");
 
         // Sin solape (tau < stride) no se purga nada.
         assert_eq!(purge_end(&ts, split, 10_000), split);
