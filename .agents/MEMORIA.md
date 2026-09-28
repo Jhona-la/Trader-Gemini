@@ -110,8 +110,9 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - Verificación: risk-engine 197/197 (con las 4 suites de Codex tras traer
   `main` 6b7c6d37), evolution-engine, god-engine-core 126/126 y golden del
   backtest verdes; el golden no cambia con ninguno de XLIV-8…12.
-  T-1 (release, 30 min) sobre d6e5aba1 (XLIV-8/9/10): 19/144 = 13,2 %, la
-  MISMA lista de genes inertes que el primer tramo. Head completo: en curso.
+  T-1 (release, 30 min): sobre d6e5aba1 (XLIV-8/9/10) y sobre el head
+  completo ef172aac (≡ 4dac8061), 19/144 = 13,2 % ≥ trinquete 11,5 %, con la
+  MISMA lista de genes inertes que el primer tramo, gen a gen.
 - **Lección de build**: tras medir T-1 sobre `main` en el mismo directorio, el
   artefacto release de quantum-arena quedó OBSOLETO con fecha más nueva que
   las fuentes restauradas (carrera checkout ↔ compilación): la siguiente
