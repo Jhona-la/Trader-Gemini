@@ -157,6 +157,19 @@ pub fn direccion_realizada(is_long: bool, pnl_pct: f64) -> Option<bool> {
     Some(if is_long { pnl_pct > 0.0 } else { pnl_pct < 0.0 })
 }
 
+/// XLIV-11 — RETORNO NETO DE UNA POSICIÓN, EN FRACCIÓN DEL NOCIONAL.
+///
+/// `neto_usd` descuenta las comisiones de ambas piernas. Devuelve `None` si
+/// el nocional no es positivo o el cociente no es finito.
+#[inline]
+pub fn retorno_neto_pct(neto_usd: f64, nocional_usd: f64) -> Option<f64> {
+    if !(nocional_usd.is_finite() && nocional_usd > 0.0) {
+        return None;
+    }
+    let r = neto_usd / nocional_usd;
+    r.is_finite().then_some(r)
+}
+
 /// XLIV-10 — SUPERPOSICIÓN CONSTRUCTIVA SIN CONFIANZA FABRICADA.
 ///
 /// Cuando las bandas rápida y lenta coinciden en dirección y armónico, la
@@ -2450,7 +2463,14 @@ impl GodEngineCore {
 
                     // CONEXION EPIGENETICA MULTIVARIANTE ESPECTRAL (Fase 26 / Auto-Adaptacion Viva):
                     // 1. Adaptacion continua celular a nivel de moneda (epigenetic_bias y epigenetic_threshold_modifier):
-                    coin.apply_spectral_epigenetic_feedback_with_time(pnl_pct, position_age_ms, tau_trade_ms, event_time_ms);
+                    // XLIV-11: el sesgo (tamano) y el umbral (gate de confianza)
+                    // aprenden del retorno NETO. Con el movimiento bruto del mid,
+                    // un cierre que ganaba menos que las comisiones contaba como
+                    // victoria: bajaba la exigencia y subia el tamano tras un
+                    // perdedor neto (comisiones medidas ~109 % del PnL bruto).
+                    let pnl_epigenetico =
+                        retorno_neto_pct(net_trade_pnl, entry * qty).unwrap_or(pnl_pct);
+                    coin.apply_spectral_epigenetic_feedback_with_time(pnl_epigenetico, position_age_ms, tau_trade_ms, event_time_ms);
 
                     // 2. Adaptacion continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
                     if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
@@ -6743,6 +6763,37 @@ mod tests_d752_d756 {
 
     fn registro(n: u32, aciertos: u32) -> TasaAcierto {
         TasaAcierto { n, aciertos }
+    }
+
+    /// XLIV-11 — LA EPIGENÉTICA APRENDE DEL RETORNO NETO.
+    ///
+    /// Un cierre con +3 pb brutos y 10 pb de comisiones pierde dinero. Con el
+    /// bruto, el umbral epigenético BAJABA (gate más permisivo) y el sesgo de
+    /// tamaño SUBÍA; con el neto, el umbral sube y el sesgo baja.
+    #[test]
+    fn xliv_la_epigenetica_aprende_del_retorno_neto() {
+        let nocional = 100.0;
+        let bruto = 0.0003;
+        let neto_usd = bruto * nocional - 0.0010 * nocional;
+        let neto = retorno_neto_pct(neto_usd, nocional).expect("nocional válido");
+        assert!(neto < 0.0 && bruto > 0.0, "premisa: gana bruto, pierde neto");
+
+        // `CoinArena` no cabe en la pila de un hilo de test: arena propia.
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let (con_bruto, con_neto) = (&arena.coins[0], &arena.coins[1]);
+        con_bruto.apply_spectral_epigenetic_feedback_with_time(bruto, 10_000, 30_000.0, 1);
+        con_neto.apply_spectral_epigenetic_feedback_with_time(neto, 10_000, 30_000.0, 1);
+        let umbral = |c: &quantum_arena::state::CoinArena| {
+            c.epigenetic_threshold_modifier.load(Ordering::Relaxed)
+        };
+        let sesgo = |c: &quantum_arena::state::CoinArena| c.epigenetic_bias.load(Ordering::Relaxed);
+        assert!(umbral(con_bruto) < 1.0, "premisa: el bruto relajaba el gate");
+        assert!(umbral(con_neto) > 1.0, "el neto endurece el gate: {}", umbral(con_neto));
+        assert!(sesgo(con_neto) < sesgo(con_bruto));
+        assert!(!con_neto.last_close_was_win.load(Ordering::Relaxed));
+
+        assert_eq!(retorno_neto_pct(1.0, 0.0), None);
+        assert_eq!(retorno_neto_pct(f64::NAN, 10.0), None);
     }
 
     /// XLIV-10 — NINGÚN SUELO POSTERIOR A LAS PUERTAS FABRICA CONFIANZA.
