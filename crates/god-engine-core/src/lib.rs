@@ -147,14 +147,42 @@ pub fn conviccion_de_rama(registro: &TasaAcierto, piso_por_magnitud: f64) -> f64
 /// `pnl_pct` es el movimiento BRUTO del mid frente a la entrada, con el signo
 /// de la posición. Devuelve `Some(true)` si el precio subió, `Some(false)` si
 /// bajó y `None` si no se movió o el dato no es finito: sin movimiento no hay
-/// dirección que puntuar. Es la magnitud que etiqueta el entrenamiento del
-/// bosque (triple barrera sobre el mid), no el resultado neto de comisiones.
+/// dirección que puntuar. La usa el ensamble, cuyo otro canal de
+/// calibración es también un signo terminal (la dirección de la vela). El
+/// freno del bosque usa en cambio [`etiqueta_barrera`] (XLIV-9c).
 #[inline]
 pub fn direccion_realizada(is_long: bool, pnl_pct: f64) -> Option<bool> {
     if !pnl_pct.is_finite() || pnl_pct == 0.0 {
         return None;
     }
     Some(if is_long { pnl_pct > 0.0 } else { pnl_pct < 0.0 })
+}
+
+/// XLIV-9c — ETIQUETA DE BARRERA DE UN CIERRE, EN LA SEMÁNTICA DEL ENTRENADOR.
+///
+/// El bosque (`train_forest --label dir`) aprende P(el TP del LARGO se toca
+/// antes que su SL) con TP ≥ 2·SL, y DESCARTA las muestras que no tocan
+/// ninguna barrera dentro del horizonte. El signo del mid al cierre no es esa
+/// etiqueta (observación de Codex en el PR #8): un +3 pb que cierra por
+/// trailing o por decaimiento sería un timeout descartado, no un 1.
+///
+/// Traducción de los cierres vivos (`reason_code` del núcleo):
+/// - largo por TP (1) ⇒ `Some(true)`; largo por SL (2) ⇒ `Some(false)`;
+/// - corto por TP: el precio cayó al menos su TP, que supera el SL del largo
+///   ⇒ el SL del largo se tocó antes ⇒ `Some(false)`;
+/// - corto por SL: subir su SL no implica tocar el TP del largo ⇒ `None`;
+/// - trailing, zombi, flujo tóxico, cosecha o decaimiento ⇒ `None`.
+///
+/// Aproximación declarada: los TP/SL vivos dependen de τ y del ATR del
+/// momento; los del entrenador, de los genes al horizonte de la etiqueta.
+#[inline]
+pub fn etiqueta_barrera(is_long: bool, reason_code: u8) -> Option<bool> {
+    match (is_long, reason_code) {
+        (true, 1) => Some(true),
+        (true, 2) => Some(false),
+        (false, 1) => Some(false),
+        _ => None,
+    }
 }
 
 /// XLIV-11 — RETORNO NETO DE UNA POSICIÓN, EN FRACCIÓN DEL NOCIONAL.
@@ -2495,17 +2523,16 @@ impl GodEngineCore {
                         }
                     }
                     // D-752 - Y EL BOSQUE APRENDE DE SU PROPIO VOTO.
-                    // XLIV-9: la direccion realizada es la del MERCADO (mid
-                    // al cierre frente a la entrada), no el signo del PnL
-                    // NETO. El bosque se entrena con triple barrera sobre el
-                    // mid bruto; con `subio = (is_long == is_win)` un largo
-                    // que subia menos que las comisiones contaba como bajada,
-                    // y el voto CONTRARIO a una operacion marginal puntuaba
-                    // como acierto: el freno se armaba por la friccion, no
-                    // por la habilidad del bosque. Sin movimiento no hay dato.
+                    // XLIV-9: no con el signo del PnL NETO (un largo que subia
+                    // menos que las comisiones contaba como bajada y el voto
+                    // CONTRARIO puntuaba como acierto: el freno se armaba por
+                    // la friccion). XLIV-9c: tampoco con el signo terminal del
+                    // mid, sino con la ETIQUETA DE BARRERA con la que se
+                    // entrena (primer toque TP/SL del largo; el resto de
+                    // salidas serian timeouts descartados).
                     if let Some(predijo_subida) = self.bosque_voto_abierto[coin_id].take() {
-                        if let Some(subio) = direccion_realizada(is_long, pnl_pct) {
-                            self.bosque_registro[coin_id].observar(predijo_subida == subio);
+                        if let Some(etiqueta) = etiqueta_barrera(is_long, reason_code) {
+                            self.bosque_registro[coin_id].observar(predijo_subida == etiqueta);
                         }
                     }
 
@@ -6763,6 +6790,21 @@ mod tests_d752_d756 {
 
     fn registro(n: u32, aciertos: u32) -> TasaAcierto {
         TasaAcierto { n, aciertos }
+    }
+
+    /// XLIV-9c — EL FRENO DEL BOSQUE SÓLO PUNTÚA CIERRES CON ETIQUETA DE BARRERA.
+    #[test]
+    fn xliv_el_bosque_se_puntua_con_la_etiqueta_de_barrera_del_entrenador() {
+        assert_eq!(etiqueta_barrera(true, 1), Some(true), "largo por TP");
+        assert_eq!(etiqueta_barrera(true, 2), Some(false), "largo por SL");
+        assert_eq!(etiqueta_barrera(false, 1), Some(false), "corto por TP: tocó el SL del largo");
+        assert_eq!(etiqueta_barrera(false, 2), None, "corto por SL: ambiguo");
+        // Trailing, forzado, zombi, flujo tóxico, decaimiento, cosecha: el
+        // entrenador los descartaría como timeout.
+        for rc in 3u8..=8 {
+            assert_eq!(etiqueta_barrera(true, rc), None, "largo rc={rc}");
+            assert_eq!(etiqueta_barrera(false, rc), None, "corto rc={rc}");
+        }
     }
 
     /// XLIV-11 — LA EPIGENÉTICA APRENDE DEL RETORNO NETO.
