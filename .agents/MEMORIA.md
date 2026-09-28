@@ -40,9 +40,13 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   Golden re-certificado: 1 trade de sonda (antes 2).
 - Verificación: arena + núcleo + riesgo 559/559; backtest, evolution, signal y
   metacortex verdes. **T-1 (oráculo, release bajo wine, 30 min): 19/144 genes
-  sensibles (13,2 %) ≥ trinquete 11,5 % — PASA.** La última cifra documentada
-  (Ola XLII) era 20/144 (13,9 %): la comparación gen a gen con `main` está en
-  curso.
+  sensibles (13,2 %) ≥ trinquete 11,5 % — PASA.** Comparación gen a gen con
+  `main` (988f0478, mismo método): main 20/144; la rama pierde SÓLO el gen 19
+  (`min_confidence_btc`) y no gana ni pierde ningún otro. Hipótesis: en el
+  fixture las intenciones que sobreviven llevan confianza 0,98 y el umbral en
+  su extremo (0,95) ya no cambia nada; en vivo el gen sigue gobernando la
+  puerta de confianza. Sin bisecar (≈ 30 min por prueba) no se atribuye a un
+  commit concreto.
 - Diagnóstico T-1 (fixture sintético): el risk-engine rechaza por
   `suelo_tp_sl` 1 241 740 intenciones (167 161 largos, 1 074 579 cortos) frente
   a 1 605 por comisiones. El suelo de TP/SL domina el embudo; con spread
