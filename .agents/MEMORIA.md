@@ -10,8 +10,9 @@
 
 ## 2026-09-28 — Claude (cloud): auditoría de gates de evolución y régimen (PR #8)
 
-> Estado: el primer tramo (XLIV-1…7) entró en `main` con 41755422 (merge
-> local de GLM). El segundo tramo (XLIV-8…12) sigue en el PR #8.
+> Estado: los dos primeros tramos (XLIV-1…12) están en `main` (PR #8,
+> 09245261). El tercero (XLIV-8c, XLIV-13) va en un PR nuevo desde la misma
+> rama, reiniciada sobre `main`.
 
 Canal: PR #8 de GitHub (la sesión cloud no ve el buzón no versionado
 `COORDINACION_CODEX_2026-09-28.md`). Sin push directo a `main` (permiso
@@ -119,6 +120,26 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   build release falló con «no field cvd_ewma_peso». Tras cambiar de commit
   para medir, `touch` a los .rs que difieren (o `cargo clean -p`) antes de
   volver a compilar. La build debug no estaba afectada.
+
+### Tercer tramo (tras el merge del PR #8)
+- **XLIV-8c**: XLIV-8 olvidó un quinto sitio con la ley lineal de latencia,
+  el fallback de gestión del núcleo (`fee_rt_mgmt`). Portado de XLV-1 (PR #9
+  de otra sesión Claude, cerrado sin fusionar por solaparse con el #8) junto
+  con su guardia sobre las fuentes: función única en los cuatro archivos y
+  prohibido `lat_ref`/`latency_ref_ms`.
+- **XLIV-13 train_forest (hallazgo de Codex)**: el merge 6fdccd64 del PR #5
+  dejó los helpers FMT definidos pero SIN llamadas en `main()`. Verificado:
+  `--promote` escribía el modelo VIVO con evidencia de SELECCIÓN (sin
+  `--test-in`); el stride efectivo estaba invertido (excedía el presupuesto
+  en tapes largos y densificaba ×4 en cortos); `--val-in` suponía el no
+  solape sin comprobarlo; la validación no puntuaba el artefacto
+  serializado. Recompuesto sin revertir D-753/D-733: contrato de promoción
+  antes de E/S, `SamplingBudget`, `purge_training` para `--val-in`,
+  `serving_predictions` + control de paridad con `forest_raw`, y test
+  posterior (`require_later_holdout`) que también debe pasar el gate.
+- Pendiente de Codex (su PR próximo): el motivo de salida vivo no reconstruye
+  el primer toque de las barreras del entrenador cuando los brackets difieren
+  (contraejemplos suyos): XLIV-9c sigue siendo una aproximación.
 
 ### Hallazgos de este tramo NO corregidos (diseño o zona ajena)
 - **Tope micro del stop a 55 pb** (risk-engine, `micro_w_alloc > 0,5`): acota
