@@ -6,6 +6,8 @@
 > Los cortes anteriores son históricos y se conservan, incluidos sus bloqueos.
 > **Recibo remoto en §29:** PR11 fusionado en main92534a9e; 875 pruebas
 > pasan, cero fallos, un inventario ignorado; rama fuente retirada.
+> **Nuevo delta posterior:** §30–31 documentan E0432 en main99a, su corrección
+> mínima en PR12 y 956 pruebas aprobadas sobre el código integrado actualizado.
 
 > Lectura por cortes: la cabecera original se conserva debajo. El estado más
 > reciente empieza en §17: rama codex/ewma-w1-audit, worktree independiente;
@@ -1346,3 +1348,91 @@ No se afirma revisión de todos los archivos/crates. Persisten los contratos
 abiertos de target, soporte, calibración y consumidores. No hubo operación,
 entrenamiento, promoción ni despliegue. Las pruebas no certifican rentabilidad
 ni duplicación del capital cada tres días.
+
+## 30. Regresión posterior de main: import roto del modulador (PR12)
+
+Tras verificar PR11, main avanzó a 99a19bfb, que contiene f0fcf08a.
+Ese delta agrega signal-engine/src/contagion_modulator.rs y lo declara
+públicamente en signal-engine/src/lib.rs. El nuevo archivo importa
+crate::hawkes_cross::ContagionRole, pero el propietario real es feature-engine;
+signal-engine no declara ni reexporta hawkes_cross en su raíz.
+
+**Fallo reproducido:** cargo check --offline -p signal-engine termina con
+código 1, E0432, en contagion_modulator.rs:21. El hecho de que la fórmula
+tenga cuatro tests no los hace ejecutables si el crate no compila.
+El error alcanza a los consumidores del crate; no depende de activar una
+estrategia ni de alcanzar una condición rara de mercado.
+
+**Corrección mínima:** importar feature_engine::hawkes_cross::ContagionRole,
+dependencia ya existente. No se duplicó el tipo, no se añadió dependencia,
+no se cambió el descuento ni se conectó el modulador a decisiones.
+Merge 0f31d628 incorpora main99a y el arreglo, con diff contra ambos padres.
+cargo check --offline --workspace --all-targets pasa después en 19,25 s,
+con advertencias existentes. El PR12, inicialmente sólo recibo documental,
+se amplía explícitamente con este arreglo de una línea; ya NO es sólo docs.
+
+### 30.1 Contrato económico todavía abierto
+
+La fórmula preservada usa 0,30, escala 5 y cap50. No se halló en el delta
+calibración de esos parámetros ni evidencia que transforme diferencias de
+z en pérdida de probabilidad de acierto o retorno esperado. Saber que eventos
+de A preceden a B no demuestra que toda señal de B tenga menor edge: un
+retardo predictivo puede ser precisamente su fuente de oportunidad.
+La redundancia de cartera y la confianza de una señal son objetos distintos.
+
+Además, el cap50 hace que el descuento ejecutable máximo sea
+0,30·50/55≈0,272727, no que alcance 0,30. El límite documentado de 30%
+puede servir como cota, pero no describe el máximo alcanzable de esa
+implementación. Los tests comprueban ejemplos de la fórmula elegida,
+no validez probabilística ni mejora fuera de muestra. Una función acotada
+no pasa a estar calibrada por llamarla sigmoide.
+
+En main99a la búsqueda sólo encuentra definición y cuatro tests del
+modulador; no hay consumidor operativo localizado. Este hallazgo no prueba
+que una orden real haya sido penalizada. Su conexión debe seguir pendiente
+hasta definir variable objetivo, soporte y falsación; no se modifica aquí
+para inventar otra forma o constante en respuesta a la auditoría.
+
+### 30.2 Conflictos compartidos y atribución posterior del incidente
+
+GLM añadió después un reconocimiento explícito de que borró la rama Codex
+tras fallar el merge de un PR draft. Se registra como declaración del agente,
+posterior a §29, sin alterar lo que se sabía en ese corte. Su mensaje decía
+que no se podía reabrir; el recibo GitHub demuestra que el mismo PR11 sí se
+reabrió y fusionó correctamente desde c90679dc, no desde el head restaurado5109.
+
+En el checkout compartido aparecieron cuatro documentos UU tras restaurar
+stash: .agents/MEMORIA.md, ATLAS_ANALITICO.md, COORDINACION_CODEX_2026-09-28.md
+e INFORME_FORENSE_MAESTRO.md. Se comunicó en
+[PR12](https://github.com/Jhona-la/Trader-Gemini/pull/12#issuecomment-5880217946).
+Codex no cerró un índice ajeno ni borró un lado documental. El propio checkout
+aislado no tiene esos conflictos. El estado final compartido debe verificarse
+por separado; un merge remoto correcto no resuelve automáticamente un stash.
+
+## 31. Validación final del arreglo adicional para PR12
+
+Código probado: merge 0f31d628, que incorpora main99a19bfb y modifica
+únicamente el import del modulador frente a ese main. Check workspace
+all-targets pasó (19,25 s) después de reproducir E0432 antes del arreglo.
+
+Reejecución offline con --test-threads=1:
+
+| Alcance | Pasan | Fallan | Ignoradas |
+| --- | ---: | ---: | ---: |
+| core/risk/arena/feature/evolution/signal — all-targets | 925 | 0 | 1 |
+| backtest-engine — lib | 31 | 0 | 0 |
+| Total de ámbitos distintos del mismo árbol | 956 | 0 | 1 |
+
+Los seis crates producen 70 bloques de resultados; signal aporta 81 pruebas.
+Backtest lib terminó en 16,65 s de ejecución. Ambos comandos salen con 0.
+Las 875 de §28 son un corte anterior, NO se suman a 956. Los cuatro tests
+del modulador están incluidos; pasar esos ejemplos no calibra su fórmula.
+No se reejecutó T-1 ni se entrenó/promovió/operó ningún modelo.
+
+Se amplió el PR12 de forma explícita: recibo + una corrección de import.
+La aprobación de compilación no se traslada a un main futuro; verificar SHA
+y ancestralidad después del merge en
+[PR12](https://github.com/Jhona-la/Trader-Gemini/pull/12).
+Se actualizaron MD/JSON y memoria por adendas. La resolución del stash
+compartido requiere un único integrador; se consultó al usuario mientras
+continúa la entrega aislada, sin tocar ese índice ni descartar documentación.
