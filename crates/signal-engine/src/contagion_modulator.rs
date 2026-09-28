@@ -18,7 +18,7 @@
 //! - Falsación: líder neto → factor 1 (sin descuento); seguidor con rol
 //!   fuerte → factor cerca del mínimo; None → 1 (tests).
 
-use crate::hawkes_cross::ContagionRole;
+use feature_engine::hawkes_cross::ContagionRole;
 
 /// Descuenta la convicción de una señal en un activo SEGUIDOR.
 /// `raw_confidence` ∈ [0,1]; devuelve la convicción ajustada ∈ [0,1].
