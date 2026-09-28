@@ -2122,12 +2122,21 @@ impl SuperGenotype {
                 None => [hi_spec, hi_spec],
             }
         };
+        // Auditoría 2026-09-28 (R1.1b): una banda operable VACÍA también es
+        // una violación. El PASO 2 deprime el intercepto del SL cuando el TP
+        // topa con su techo; con SL de pendiente negativa eso podía dejar la
+        // curva entera bajo el piso de fricción, el RR quedaba «cumplido» en
+        // [hi, hi] y la reparación salía con un genoma que el gate de
+        // promoción rechaza (549 de 6 561 curvas de la rejilla de bounds).
+        // Contándolo como violación, el respaldo determinista (PASO 3), que
+        // re-garantiza la banda, se ejecuta también en ese caso.
         let violated = |g: &Self| {
-            band_taus(g).iter().any(|&tau| {
-                let tp = g.tp_horizon_curve.eval(tau);
-                let sl = g.sl_horizon_curve.eval(tau);
-                !tp.is_finite() || !sl.is_finite() || tp < sl * required_at(g, tau)
-            })
+            g.tradeable_band_ms(fee).is_none()
+                || band_taus(g).iter().any(|&tau| {
+                    let tp = g.tp_horizon_curve.eval(tau);
+                    let sl = g.sl_horizon_curve.eval(tau);
+                    !tp.is_finite() || !sl.is_finite() || tp < sl * required_at(g, tau)
+                })
         };
         if !violated(self) {
             return;
