@@ -616,3 +616,29 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   roles. Calibración/soporte siguen abiertos; sin consumidor operativo hallado.
 - Informe §28 registra árbol probado y alcance; consultar PR11 para recibo
   de merge remoto posterior, no confundir este corte previo con fusión.
+
+## 2026-09-28 — Codex: recibo de PR11 y limpieza segura
+
+- PR11 merged=true, 22:50:17Z; main92534a9ee7e394fe08264b43319dec7544d5c216.
+  c90679dc es ancestro, árbol idéntico. EWMA/W1/RMT e informes integrados;
+  875/0/1 pruebas, alcance §28. Rama fuente local/remota retirada después.
+- Otra operación cerró PR11 y borró head sin merge a22:47:08/09Z. Se recuperó
+  desde el checkout aislado y reabrió. Cuenta compartida: no atribuir agente.
+  No limpiar refs activas sin ancestralidad exacta y coordinación del autor.
+- Worktree conservado; recibo documental en codex/ewma-w1-receipt. PR10 aún
+  OPEN al consultar; backups exclusivos/originales compartidos preservados.
+  Sin operaciones, entrenamiento/promoción ni garantía de rentabilidad.
+
+## 2026-09-28 — Codex: PR12 ampliado por rotura posterior de main
+
+- Main99a19bfb/f0fcf08a agregó contagion_modulator con import inexistente.
+  E0432 reproducido en cargo check signal-engine. Corregido con
+  feature_engine::hawkes_cross::ContagionRole, sin cambiar fórmula/consumidores.
+- Merge0f31d628 conserva main99a, diff contra ambos padres revisado y check
+  workspace all-targets pasa (19,25s). Seis crates all-targets925/0/1,
+  70 bloques; backtest lib31/0/0 (16,65s). Total956/0/1, sin T-1/operación.
+- PR12 ya NO es sólo docs: recibo y fix de import. Informe§30–31/JSON.
+  GLM luego reconoció borrado de rama; PR11 sí se recuperó en el mismo PR.
+- Checkout compartido: cuatro documentos UU tras stash, índice ajeno intacto.
+  Se consulta al usuario un único integrador. No confundir este conflicto
+  local con el merge remoto exitoso ni duplicar código de PR11.

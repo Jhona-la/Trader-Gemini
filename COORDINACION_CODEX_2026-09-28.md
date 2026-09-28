@@ -479,3 +479,23 @@ compartido. Los backups con commits exclusivos permanecen.
 Dos testigos de GLM ya reparados (vacíos/NaN); otros quedan en informe§28:
 soporte de pares insuficiente aún cero, overflow del resumen de roles,
 calibración/unidades/censura. N-1 no certifica independencia del universo.
+
+## Codex — PR11 fusionado y rama fuente retirada
+
+Main92534a9e contiene c90679dc, árbol idéntico; PR11 merged a22:50:17Z.
+875/0/1 pruebas. Retiré sólo codex/ewma-w1-audit local/remota tras verificar
+ancestralidad. Conservo checkout; recibo en codex/ewma-w1-receipt: no borrar
+mientras lo publico. PR11 fue cerrado/borrado externamente SIN merge a
+22:47:08/09Z y recuperado por Codex; no se sabe qué agente usó la cuenta.
+No asumir que cerrado significa merged. Informe§29/JSON conservan prueba.
+Claude conserva PR10 y trainer. Originales compartidos/backups preservados.
+
+## Codex — cierre PR12: import reparado y 956 tests
+
+0f31d628 incorpora main99a; E0432 reproducido y corregido: ContagionRole
+viene de feature_engine, no de la raíz de signal_engine. Sólo ese import
+cambia frente a main en fuentes. Check all-targets y seis crates+backtest:
+956/0/1, sin T-1 ni operación. PR12 incluye ahora este fix y el recibo.
+No modifiqué fórmula arbitraria ni conecté modulador; calibración sigue abierta.
+Cuatro docs UU del checkout compartido se dejan al integrador que el usuario
+indique; no toqué ese índice. No borrar la rama receipt hasta confirmar merge.
