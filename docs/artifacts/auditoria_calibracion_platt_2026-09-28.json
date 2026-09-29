@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "audit": "calibration_platt",
+  "date": "2026-09-28",
+  "base": "a3d2eb065823c3dd72e344a2fa4bfd184198cc40",
+  "source_commit": "deeca0c6",
+  "complete_project_audit": false,
+  "scope": [
+    "crates/god-engine-core/src/calibration.rs",
+    "crates/god-engine-core/tests/platt_optimizer_contract.rs",
+    "call_site_and_git_audit"
+  ],
+  "initial_red": {
+    "passed": 2,
+    "failed": 5,
+    "ignored": 0,
+    "exit_code": 1
+  },
+  "initial_green": {
+    "passed": 7,
+    "failed": 0,
+    "ignored": 0,
+    "exit_code": 0
+  },
+  "extended_validation": {
+    "new_contracts": 8,
+    "core_lib": 127,
+    "failed": 0,
+    "ignored": 0,
+    "exit_code": 0
+  },
+  "findings": [
+    {
+      "id": "CAL-01",
+      "severity": "P1",
+      "state": "repaired_local",
+      "title": "Incorrect constrained Newton boundary",
+      "witness": {
+        "old_p": 0.2324073540128901,
+        "reference_p": 0.07009728095782931,
+        "inverse_ranking_old_p": 0,
+        "old_b": -209603.6470517351
+      }
+    },
+    {
+      "id": "CAL-02",
+      "severity": "P1",
+      "state": "repaired_local",
+      "title": "Uncontrolled Newton increases objective",
+      "witness": {
+        "old_loss": 9629521.589791697,
+        "identity_loss": 9.214262612976777
+      }
+    },
+    {
+      "id": "CAL-03",
+      "severity": "P2",
+      "state": "repaired_local",
+      "title": "Invalid finite training scores mutate fit and clock",
+      "operational_input_occurrence_proven": false
+    },
+    {
+      "id": "CAL-04",
+      "severity": "P2",
+      "state": "open",
+      "previous_id": "EWMA-W1-08",
+      "title": "Latest outcome rejuvenates all unweighted observations"
+    },
+    {
+      "id": "CAL-05",
+      "severity": "P2",
+      "state": "open",
+      "title": "Discontinuous global/local selection and missing horizon provenance"
+    },
+    {
+      "id": "CAL-06",
+      "severity": "P2",
+      "state": "open",
+      "title": "No convergence/latency diagnostics exposed to caller"
+    },
+    {
+      "id": "CAL-07",
+      "severity": "P2",
+      "state": "open",
+      "title": "Fixed statistical anchors and policies not validated across spectrum"
+    },
+    {
+      "id": "CAL-08",
+      "severity": "P1-validation",
+      "state": "open",
+      "title": "Selected executed outcomes do not identify rejected opportunity distribution"
+    },
+    {
+      "id": "INT-01",
+      "severity": "P2-process",
+      "state": "absent_in_later_shared_checkout",
+      "observed_local_commit": "78c81804",
+      "later_commit": "3cdbb6b3",
+      "modified_by_codex": false
+    },
+    {
+      "id": "INT-02",
+      "severity": "P2",
+      "state": "open_owner_notified",
+      "commit": "3cdbb6b3",
+      "title": "Contagion consumer lacks observed producer and diverges from helper finite guard"
+    }
+  ],
+  "inventory_base": {
+    "tracked_files": 1321,
+    "rust_files": 405,
+    "cargo_manifests": 24,
+    "means_full_review": false
+  },
+  "sources": [
+    "https://arxiv.org/abs/2305.00070",
+    "https://arxiv.org/abs/1909.10155",
+    "https://arxiv.org/abs/2006.10564",
+    "https://arxiv.org/abs/1301.2663"
+  ],
+  "coordination_comment": "https://github.com/Jhona-la/Trader-Gemini/pull/10#issuecomment-5881142305",
+  "deployment": false,
+  "trading": false,
+  "model_promotion": false,
+  "t1_rerun": false,
+  "return_target_validated": false,
+  "integration_validation": "pending"
+}
