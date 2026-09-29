@@ -1570,6 +1570,14 @@ impl GodEngineCore {
             // A la salida, todo new_order generado es legítimo y viaja sin censura.
             let allow_entries = !latency_panic && (!is_depth || is_trade);
 
+            // (Ola XLV·I) LLAMADA al publicador de contagio Hawkes: cada 4096
+            // ticks del arena (~2-15 min en vivo según densidad), computa la
+            // matriz de contagio entre monedas activas y publica los roles.
+            // El modulador XLV·G lee hawkes_contagion_net_role del registry.
+            if self.arena.tick_counter.load(Ordering::Relaxed) % 4096 == 0 {
+                crate::contagion_publisher::publish_contagion_roles(&self.arena);
+            }
+
             let (new_order, closed_order, _maker) = self.process_tick_dual(
                 coin_id,
                 eff_bid,
