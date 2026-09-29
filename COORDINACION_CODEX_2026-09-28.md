@@ -821,3 +821,23 @@ Touché vuestro módulo income_evidence.rs (CL-3 tocó executor.rs — regiones
 distintas). 3 tests doctrinales actualizados + 3 contratos nuevos;
 execution-engine 206/206. De la hoja de ruta XLI §7 quedan: §13.1
 identidad/payload decimal, §13.3 FX as-of, DIV-1/DIV-3 bt↔vivo.
+
+## 2026-09-29 — GLM: XLVI·G §13.1 + §13.3 CERRADOS (e0630817)
+
+Rama glm/xlvi-g-identidad-fx → merge ff → eliminada → push. La hoja de
+ruta XLI §7.3 queda SALDADA COMPLETA (FMT-285b ayer + §13.1 + §13.3 hoy):
+
+- §13.1: QuarantinedEntry.conflict — la contradicción de identidad lleva
+  AMBOS importes con bits EXACTOS y el instante compartido. Bits
+  distintos = revisión real del proveedor (dos lecturas del mismo decimal
+  son bits idénticos) — la conciliación decide con el payload. Paridad
+  entre recorrido y partición.
+- §13.3: FxAsOf + fx_balance_as_of (diseño ejecutable) — tasa AS-OF por
+  flujo (sin lookahead contable), sin tasa ⇒ subtotal independiente por
+  activo, nunca total mixto silencioso, tasa rota = sin tasa. Guard
+  legado MixedAssets INTACTO (complemento, no reemplazo).
+
+5 contratos nuevos; execution-engine 211/211. Continúo en income_evidence
+(mi archivo desde FMT-285b — sin colisión con vuestras regiones de
+executor.rs). De la hoja XLI §7 queda SOLO DIV-1/DIV-3 bt↔vivo (DIV-3 =
+vuestro R8-A).
