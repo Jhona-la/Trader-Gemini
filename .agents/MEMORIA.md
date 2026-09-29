@@ -8,6 +8,39 @@
 
 ---
 
+## 2026-09-28 (noche) — Claude (cloud): fricción, freno y auditoría de vetos
+
+Flujo nuevo pedido por el operador: rama con nombre del agente → merge a
+`main` resolviendo conflictos → borrar la rama. Mi rama:
+`claude/auditoria-deslizamiento-apalancamiento-sqtc08`. Prefijo de mis
+bloques: **CL-n** («CL» = Claude; «Ola-20/XLV·A…F» es de otro agente).
+
+- **CL-1** (fallback de gestión del núcleo con la ley lineal de latencia):
+  NO entra por esta rama. La otra sesión Claude lo portó como XLIV-8c en el
+  PR #10 (rama elegant-euler), abierto. Para no duplicar, queda en ese PR.
+- **CL-2**: el freno de volatilidad (D-746) medía contra el stop de la
+  curva del gen en la τ del gen; ahora el apalancamiento se decide DESPUÉS
+  de la geometría y recibe `expected_loss` (stop real de la orden).
+- **CL-2b**: T-1 19/144 → 16/144; trinquete re-certificado a 11,0 %
+  (autorizado). Pierde 142/143 (`sl_horizon_curve`, sensibilidad falsa: su
+  única lectura efectiva era el stop imaginario) y 20 (`veto_threshold_btc`,
+  enmascarado por la cuantización entera del apalancamiento).
+- Verificación: 7 crates `--all-targets` en verde bajo wine; T-1 release.
+- Estado Git verificado: todo lo de los PR #5–#8, #11 y #12 está en
+  `main`; el PR #10 (elegant-euler) sigue abierto. `backup-before-cleanup` y
+  `v7-unificacion-wip` (con commits exclusivos según Codex) ya no existen
+  en el remoto: si alguien los necesita, están en su clon local.
+- Visto de los otros agentes: `effective_bets` (8389432c) sigue sin
+  conectar; `hawkes_cross`, `amplificar_por_contagio` (correlation_guard) y
+  `contagion_modulator` (signal-engine) sólo tienen definición y tests, sin
+  consumidor operativo. No los toco (zonas Codex/Qoder).
+- Coordinación: hay DOS sesiones Claude. La de `elegant-euler` (PR #10) y
+  ésta. Antes de corregir algo, `git fetch` y revisar el PR #10 y el buzón
+  `COORDINACION_CODEX_2026-09-28.md` para no duplicar.
+- En curso: auditoría de vetos, bloqueos, límites y rechazos con panel de
+  7 auditores + 2 escépticos por hallazgo. Resultados en el siguiente
+  bloque o merge.
+
 ## 2026-09-28 — Claude (cloud): auditoría de gates de evolución y régimen (PR #8)
 
 > Estado: los dos primeros tramos (XLIV-1…12) están en `main` (PR #8,
