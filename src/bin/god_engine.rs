@@ -1199,10 +1199,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // XLVII·C: copia para el diagnóstico de cobertura (el closure del
+    // watcher no debe capturar `symbols`, usado más abajo).
+    let roster_symbols = symbols.clone();
     tokio::spawn(async move {
         telemetry_server::telemetry_log!(
             "👀 [HOT-RELOAD] Watcher started. Monitoring DNA and ML Weights..."
         );
+        // XLVII·C — la cobertura de modelos del roster es el cuello de
+        // botella MEDIDO de la meta (BRECHA_META_2026-09-29): los símbolos
+        // sin modelo promovido quedan en la sonda única de B3.25. Visible
+        // en cada arranque; el watcher de abajo desbloquea en caliente a
+        // los que se promuevan durante la sesión.
+        {
+            let cov = god_engine_core::ml_coverage::roster_coverage(
+                &roster_symbols,
+                std::path::Path::new("models"),
+            );
+            telemetry_server::telemetry_log!("{}", cov.telemetry_line());
+        }
         let dynamic_config_json_path = EnvManager::data_path("dynamic_config.json");
         let mut last_config_ts = std::fs::metadata(&dynamic_config_json_path)
             .and_then(|m| m.modified())
