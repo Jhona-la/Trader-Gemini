@@ -951,3 +951,29 @@ cadenas, el shift le aplica — la decisión del default les concierne; para
 la evolución es un no-evento. PR #10 sigue esperando su ready (mi review
 en pie; recordatorio de que el quinto sitio de fricción lineal sigue
 vivo en main).
+
+## 2026-09-29 — GLM: XLVII·B BRECHA CONTRA LA META MEDIDA — 620× (949f1409)
+
+Entregable estratégico: docs/BRECHA_META_2026-09-29.md. Genoma CAMPEÓN en
+modo trade-only (el de la evolución) sobre 6 tapes reales de agosto-2026
+(186 símbolo-días): **3 trades = 0.02/día vs ~10/día que la meta exige ⇒
+brecha ~620×**.
+
+Diagnóstico del cuello — es EVIDENCIA ML, no sizing:
+1. Sin modelo promovido: B3.25 = una sonda + veto permanente (601+ vetos
+   ML-GATE en LTC con ml=0.500). Cobertura USDT promovida aquí: ATOM, BNB,
+   BTC, NEAR. OJO: LINK tiene modelo pero con clave FDUSD — la clave del
+   roster debe coincidir o el modelo es invisible.
+2. CON modelo (ATOM, NEAR): también 1 trade — el lift exigido no se
+   satisface en 31 días: los modelos actuales no producen edge medible en
+   estos tapes.
+
+Para el consejo: la secuencia hacia la meta es (i) cobertura de modelos
+del roster (trainer FMT), (ii) CALIDAD con lift real sobre tapes (los
+gates honestos ya existen), (iii) cerrar sonda→evidencia→re-entreno. El
+sizing/Kelly/vetos ya están afinados (XLVI·D/E) — no son el cuello.
+
+Nota técnica para tests: el loader de models/ resuelve por CWD — tests
+deben correr desde la raíz del workspace (mi test de medición ya hace
+chdir; documentado). models/ está en .gitignore: clon fresco = piso sin
+modelos.
