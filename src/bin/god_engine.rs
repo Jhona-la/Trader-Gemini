@@ -4258,10 +4258,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     .fetch_position_risk()
                                                     .await
                                                     .map(|ps| {
-                                                        ps.iter().any(|p| {
-                                                            p.symbol == parsed_sym_str
-                                                                && p.position_amt.abs() > 0.0
-                                                        })
+                                                        // CL-12: el lado de ESTA entrada.
+                                                        execution_engine::reconciliation::cantidad_abierta_del_lado(
+                                                            &ps, &parsed_sym_str, final_is_long,
+                                                        )
+                                                        .is_some()
                                                     })
                                                     .unwrap_or(true); // si fetch falla, no bloquear
                                                 if !still_open {
@@ -4281,14 +4282,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .ok()
                                                 .and_then(|ps| {
                                                     // HEDGE: DOS registros por símbolo
-                                                    // (LONG/SHORT); el vacío trae amt=0
-                                                    // y puede ordenar primero.
-                                                    ps.iter()
-                                                        .find(|p| {
-                                                            p.symbol == parsed_sym_str
-                                                                && p.position_amt.abs() > 0.0
-                                                        })
-                                                        .map(|p| p.position_amt.abs())
+                                                    // (LONG/SHORT). CL-12: el del lado de
+                                                    // esta entrada, no el primero abierto.
+                                                    execution_engine::reconciliation::cantidad_abierta_del_lado(
+                                                        &ps, &parsed_sym_str, final_is_long,
+                                                    )
                                                 })
                                                 .filter(|a| *a > 0.0)
                                                 .map(|real| real.min(qty_intent))
@@ -4371,12 +4369,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .await
                                                 .ok()
                                                 .and_then(|ps| {
-                                                    ps.iter()
-                                                        .find(|p| {
-                                                            p.symbol == parsed_sym_str
-                                                                && p.position_amt.abs() > 0.0
-                                                        })
-                                                        .map(|p| p.position_amt.abs())
+                                                    // CL-12: la posición del lado que se
+                                                    // cierra (hedge: dos registros).
+                                                    execution_engine::reconciliation::cantidad_abierta_del_lado(
+                                                        &ps, &parsed_sym_str, is_long_close,
+                                                    )
                                                 })
                                                 .filter(|a| *a > 0.0)
                                                 .unwrap_or(final_qty.abs());
@@ -4397,7 +4394,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             };
                                             // Purgar órdenes restantes (haya cerrado o no:
                                             // si no cerró, reduceOnly sigue siendo válida).
-                                            if let Err(ce) = exec_clone.load().cancel_all_symbol_orders(&parsed_sym_str).await {
+                                            // CL-12: sólo las del LADO cerrado; la purga
+                                            // de todo el símbolo borraba el TP/SL de la
+                                            // posición del lado contrario.
+                                            if let Err(ce) = exec_clone.load().cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
                                                 telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
                                             }
                                             match close_res {

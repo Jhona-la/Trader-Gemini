@@ -64,6 +64,22 @@ impl PositionRiskEntry {
     }
 }
 
+/// CL-12 — cantidad abierta del LADO pedido de un símbolo. En modo hedge
+/// `positionRisk` trae DOS registros por símbolo (LONG y SHORT); buscar sólo
+/// por símbolo podía devolver el del lado contrario: el protocolo de
+/// emergencia del host cerraba con la cantidad del otro lado (-2022 y
+/// escalada) o dimensionaba el bracket con ella (protección parcial).
+pub fn cantidad_abierta_del_lado(
+    posiciones: &[PositionRiskEntry],
+    symbol: &str,
+    is_long: bool,
+) -> Option<f64> {
+    posiciones
+        .iter()
+        .find(|p| p.symbol == symbol && p.is_open() && p.is_long() == is_long)
+        .map(|p| p.position_amt.abs())
+}
+
 #[derive(Debug, Default)]
 pub struct ReconciliationReport {
     /// Posiciones abiertas en el exchange (la verdad a adoptar).
