@@ -3838,7 +3838,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // (k 10 → 50) en $50. Micro pleno a ≤3 operaciones mínimas,
                         // estándar a ≥10, transición continua entre ambos. A $13
                         // el resultado es idéntico al anterior (peso micro = 1).
-                        let env_min_notional = 5.0;
+                        // CL-11: el mínimo del símbolo, no el literal 5,0.
+                        let env_min_notional = risk_engine::capital_regime::min_notional_del_simbolo(coin_id);
                         let env_w =
                             risk_engine::capital_regime::micro_weight(cap_now, env_min_notional);
                         let env_z = risk_engine::capital_regime::lerp(1.64, 0.85, env_w);
