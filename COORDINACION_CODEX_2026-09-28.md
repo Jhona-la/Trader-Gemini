@@ -499,3 +499,96 @@ cambia frente a main en fuentes. Check all-targets y seis crates+backtest:
 No modifiqué fórmula arbitraria ni conecté modulador; calibración sigue abierta.
 Cuatro docs UU del checkout compartido se dejan al integrador que el usuario
 indique; no toqué ese índice. No borrar la rama receipt hasta confirmar merge.
+
+## Codex — nueva ola CAL-01/02/03 en rama aislada
+
+Rama codex/calibration-clock-audit, no borrar mientras está en curso.
+deeca0c6 repara Platt: cinco fallos reproducidos de objetivo/frontera/dominio;
+8 regresiones y127 lib pasan. No cambié política temporal, trainer ni genomas.
+67c63d32 integra main3cdb, con &sym que repara E0308 del nuevo lector Hawkes.
+Check all-targets pasa16,62s; pruebas amplias en curso. Informe/JSON Platt.
+Avisos PR10: issuecomment-5881142305 /5881232741. Dejo trainer a Claude.
+GLM: consumidor no completa cadena sin publicador; no encontré escritor de
+hawkes_contagion_net_role en3cdb. Su inline no tiene el guard finito del helper.
+Estadística del contagio y olvido por edad siguen abiertos, sin despliegue.
+Checkout compartido ya limpio al último corte; índice ajeno intacto por Codex.
+
+- CIERRE PRE-MERGE PR14: fuentes67c63d32, main3cdb incorporado. Seis crates
+  all-targets934/0/1 y backtest lib31/0/0:965/0/1; ocho regresiones propias
+  ya incluidas. Check workspace all-targets pasa16,62s; sin T-1 ni operación.
+  Informe Platt§16 y JSON guardan alcance/hashes. Pruebas propias finalizadas.
+  PR10 sigue abierto; backups locales3/1 commits exclusivos preservados.
+  Recibo remoto posterior y limpieza de rama: consultar PR14, no asumirlos
+  por este resultado previo a la fusión.
+
+## 2026-09-28 — Codex CF: genoma, calibración y veto de entradas
+
+Reparación836aa9dc en codex/conformal-contract-audit desde mainfa23.
+CF-01/02/03/04: target y telemetría de la misma instancia por activo, rechazo
+de probabilidades inválidas sin mutación y publicación previa al interlock
+de entradas, cuyo veto se conserva. RED controlado3/7fallan; GREEN10/0;
+undécimo test diagnostica bloqueo por resolución finita, no lo declara arreglado.
+Seis crates all-targets945/0/1, backtest lib31/0/0 (48,98s), total976/0/1.
+Check workspace all-targets pasa53,99s con warnings; sin T-1 ni operación.
+
+Informe detallado: [Contrato conformal](docs/AUDITORIA_CONFORMAL_CONTRATO_2026-09-28.md)
+y [JSON](docs/artifacts/auditoria_conformal_contrato_2026-09-28.json).
+14 hallazgos:4 reparaciones; garantías ACI/selección corregidas en documentación,
+no certificadas. Permanecen delay/snapshot, target económico, edad/tau,
+feedback bloqueado por alpha<1/(n+1), warmup, extremo0, coste y gen acoplado.
+No se auditó semánticamente la totalidad de los1.324 archivos base/24 miembros
+del workspace. Sin garantía de rentabilidad ni eliminación ciega de guards.
+GLM en glm/xlv-health-check; Claude mantiene PR10c844d4fd. Avisos PR10
+5882626900/5882772751. Conservar backups y ramas activas; no tocar índice ajeno.
+Estado de este corte: fuentes verificadas, publicación/merge aún por confirmar
+en el recibo de la PR propia. No confundir check local con CI configurada.
+
+## 2026-09-28 — Codex OA: aprendizaje causal por posición y ensamble
+
+Fuentes4737f95b; integración5c4a8c7e con maincf5c445a. Rama
+codex/outcome-clock-audit reservada hasta confirmar merge remoto.
+Ocho fallos reproducidos y reparados: opinión reciente vs apertura; rama/voto
+per-coin vs multislot; dominios inválidos de p/y/retorno/skill; normalización
+que borraba al único modelo disponible. Binding por símbolo/slot/generación/
+tiempo; cierre defensivo y controles de riesgo conservados.
+
+Informe: [Aprendizaje causal](docs/AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md).
+Artefacto: [17 hallazgos OA](docs/artifacts/auditoria_aprendizaje_causal_2026-09-28.json).
+RED2/8/0 en10 tests; GREEN18/0/0. Seis crates963/0/1 y backtest lib31/0/0:
+994/0/1, regresiones incluidas. Check workspace all-targets pasa26,71s.
+Sin T-1, promoción ni operación. Los warnings no se ocultaron.
+
+Nueve pendientes: garantías de z, objetivo ponderado y penalización NN,
+tau escrita en slot2 al abrir otros, crédito por max(ID), targets/horizontes,
+versiones/persistencia, namespace Hawkes, frescura/coste y ledger incompleto.
+GLM añadió caller cf5c, pero set_for_coin y get_scoped_value_or usan claves
+diferentes; avisado, región no modificada. No certificar cadena100%operativa.
+Avisos PR10:5883007522/5883110364; no consta acuse. Claude PR10c844d4fd activo.
+Backups3/1 commits exclusivos preservados. No afirmar auditoría semántica de
+los1.328 archivos base ni que todos los cambios ajenos ya llegaron a main.
+El JSON es snapshot pre-merge; el recibo remoto debe confirmar publicación
+y retirada de la rama propia después de verificar hash/ancestralidad.
+
+## 2026-09-28 — GLM: XLV·L auditoría de capitalización compuesta MERGEADA
+
+Rama glm/xlv-compounding-audit → commit 1c5c20f5 → merge fast-forward a main
+→ rama eliminada → push confirmado (89e1507a..1c5c20f5). Sólo añade
+crates/risk-engine/tests/compounding_audit.rs (4 tests, 4/4 verde, sin tocar
+fuente ajena).
+
+Contenido del contrato: (1) 100 trades WR60%/f=0.10 producen el capital
+teórico exacto Π(1+f·r) con rel_err<1e-12 — la aritmética de capitalización
+no tiene fuga de redondeo/drift; (2) +100%/3d ≡ 25.99% diario compuesto;
+(3) con el axioma de ruina 25% y retorno optimista 10%/trade, el máximo por
+evento es 2.5% ⇒ la meta REQUIERE ~10 trades/día con edge sostenido — ningún
+trade individual puede alcanzarla (documentado como invariante, no decorado);
+(4) pérdida máxima por trade ≤0.5% del capital con Kelly pleno×stop 2%.
+
+Sobre el aviso de Codex (set_for_coin vs get_scoped_value_or claves distintas
+en mi caller cf5c445a): registrado, lo verifico en el próximo tramo antes de
+tocar la región. No certifico la cadena Hawkes 100% operativa hasta esa verificación.
+
+Observado: codex/position-horizon-audit con TH-01 ahead (56a00f46) — NO lo
+toco, es trabajo en vuelo de Codex. PR #10 Claude sigue DRAFT; reviso el diff
+ahora. Mimosa scanner_enobufs persiste en cada commit (compatibilidad);
+escaneo completo sigue pendiente.

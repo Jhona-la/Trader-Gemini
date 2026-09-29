@@ -676,3 +676,57 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - Checkout compartido: cuatro documentos UU tras stash, índice ajeno intacto.
   Se consulta al usuario un único integrador. No confundir este conflicto
   local con el merge remoto exitoso ni duplicar código de PR11.
+
+## 2026-09-28 — Codex: Platt con Newton factible (CAL-01/02/03)
+
+- Rama propia codex/calibration-clock-audit desde a3d2eb06, worktree reutilizado.
+  deeca0c6: solver con frontera correcta, descenso Armijo, pérdida estable y
+  scores de entrenamiento válidos. Antes2/5fallan; después7/0 y octava prueba
+  adicional KKT; núcleo lib127/0. No se altera política temporal ni gates.
+- 67c63d32 incorpora main3cdbb6b3. E0308 en nuevo lector Hawkes reproducido;
+  fix mínimo &sym. Ambos padres revisados; check all-targets16,62s pasa.
+  Seis crates all-targets en curso; no confundir con resultados históricos.
+- Auditoría nueva docs/AUDITORIA_CALIBRACION_PLATT_2026-09-28.md y JSON.
+  Edad por dato, fallback local/global, sesgo de selección, τ y convergencia
+  siguen OPEN. No operación, entrenamiento/promoción ni garantía financiera.
+- Coordinación PR10 issuecomment-5881142305 /5881232741. Claude mantiene trainer.
+  Checkout compartido pasó de78c81804 con marcadores a3cdb limpio; Codex no
+  tocó su índice. Backups locales conservados; no refs remotas observadas.
+
+- CIERRE PRE-MERGE PR14: fuentes67c63d32, main3cdb incorporado. Seis crates
+  all-targets934/0/1 y backtest lib31/0/0:965/0/1; ocho regresiones propias
+  ya incluidas. Check workspace all-targets pasa16,62s; sin T-1 ni operación.
+  Informe Platt§16 y JSON guardan alcance/hashes. Pruebas propias finalizadas.
+  PR10 sigue abierto; backups locales3/1 commits exclusivos preservados.
+  Recibo remoto posterior y limpieza de rama: consultar PR14, no asumirlos
+  por este resultado previo a la fusión.
+
+## 2026-09-28 — Codex CF: contrato conformal por activo
+
+- 836aa9dc desde mainfa23: target local, telemetría de la misma instancia,
+  dominio válido y diagnóstico antes del veto de entradas (veto preservado).
+  11 regresiones; RED controlado3/7, GREEN10/0 y undécima diagnóstica.
+- Seis crates945/0/1 +backtest31/0/0 =976/0/1; check all-targets53,99s pasa.
+  Sin T-1/operación/promoción; no modificar golden ni límites para hacer pasar.
+- Informe docs/AUDITORIA_CONFORMAL_CONTRATO_2026-09-28.md y JSON,14 hallazgos.
+  ACI recortado no hereda la cota original; singleton no garantiza error
+  condicionado. Delay/target/tau/feedback/ausencia de evidencia siguen abiertos.
+- Rama propia codex/conformal-contract-audit en curso hasta recibo remoto.
+  GLM observado en glm/xlv-health-check, Claude PR10c844d4fd. Avisos PR10
+  5882626900/5882772751. Conservar ramas activas y backups exclusivos.
+
+## 2026-09-28 — Codex OA: atribución causal y contrato numérico
+
+- Fuentes4737f95b; integración5c4a8c7e con maincf5c. Ocho fallos reparados,
+  18 regresiones nuevas: snapshots por activo/slot/generación/símbolo/tiempo,
+  crédito rama/bosque y dominio numérico/softmax de modelos participantes.
+- Seis crates963/0/1 +backtest31/0/0 =994/0/1; check all-targets26,71s pasa.
+  Sin T-1/promoción/live; no se desactivó ningún control de riesgo.
+- Informe docs/AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md y JSON:17 hallazgos,
+  8 reparados/9 abiertos. Pendientes tau slot2, max(ID), target/horizonte,
+  versión durable, garantías estadísticas, namespace/frescura Hawkes y ledger.
+- GLM caller cf5c incorporado; namespace aún distinto, avisado PR10
+  5883007522/5883110364. Claude mantiene PR10c844d4fd; no acuse observado.
+- Rama codex/outcome-clock-audit propia hasta recibo remoto. Backups con3/1
+  commits exclusivos y ramas activas preservados. No declarar todo auditado
+  ni merged; JSON conserva snapshot previo y recibo posterior confirma Git.

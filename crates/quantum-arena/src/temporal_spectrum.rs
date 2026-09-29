@@ -1063,25 +1063,8 @@ pub struct StructureFunctions {
 }
 
 impl TemporalSpectrum {
-    /// Momento p-ésimo de la desviación por escala, corregido por masa.
-    #[inline]
-    fn dev_moment(&self, i: usize, p: u32) -> f64 {
-        let s = &self.scales[i];
-        match p {
-            2 => s.ewma_dev_vol * s.ewma_dev_vol,
-            3 => {
-                // masa corregida, misma convención que ewma_dev_vol
-                let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
-                let mass = 1.0 - (-elapsed / s.tau_ms).exp();
-                if mass > 0.0 {
-                    s.raw_dev_s3 / mass
-                } else {
-                    0.0
-                }
-            }
-            _ => 0.0,
-        }
-    }
+    // (Ola XLV·J) dev_moment eliminado: fue sustituido por dev_moment_by
+    // durante la refactorización de structure_functions — su lógica vive allí.
 
     /// Funciones de estructura S_p(τ) y sus exponentes ζ(p) por regresión
     /// log-log entre escalas observadas. None si el campo aún no tiene masa

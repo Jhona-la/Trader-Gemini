@@ -1,4 +1,4 @@
-//! R4.3 — Conformal real (split-conformal sobre ventana deslizante).
+//! R4.3 — Rangos conformales sobre ventana deslizante y adaptación recortada.
 //!
 //! No-conformidad de una observación con probabilidad de modelo `p_hat`
 //! (convención: probabilidad de que el trade resulte ganador en la dirección
@@ -16,18 +16,19 @@
 //! ```
 //!
 //! FUENTE DEL DATO: cada cierre de trade alimenta el calibrador con la
-//! probabilidad de ganar EN LA DIRECCIÓN OPERADA al abrir y su resultado neto
-//! de comisiones. La posición guarda `ml_prob` crudo (probabilidad de que el
-//! precio suba); para un corto el llamador debe pasar la complementaria
-//! (D-676). Con menos de `min_calibration` observaciones el calibrador
-//! acepta (fail-open documentado: sin evidencia no bloquea, pero no miente con
-//! una constante).
+//! puntuación direccional al abrir y su resultado neto de comisiones. La
+//! posición guarda `ml_prob` crudo; el llamador usa la complementaria para
+//! cortos (D-676). Esto NO demuestra que p_hat estime P(PnL_neto > 0): el
+//! target del modelo y los costes deben validarse por separado. Sólo se
+//! admiten entradas finitas en [0, 1]. Con menos de `min_calibration`
+//! observaciones válidas, acepta entradas válidas por política de warmup;
+//! p=1 en ese estado es un sentinel de falta de calibración, no evidencia.
 //!
 //! # D-618 (DÉCIMA OLA) — la regla de decisión estaba invertida
 //!
 //! El filtro exigía `p_gana ≥ 1 − α`, y este mismo docstring afirmaba que esa
-//! regla garantiza cobertura 1 − α. No es así. La cobertura 1 − α la tiene el
-//! CONJUNTO DE PREDICCIÓN que incluye cada etiqueta con `p > α`. Exigir
+//! regla garantiza cobertura 1 − α. No es así. Bajo las hipótesis conformales,
+//! esa cobertura corresponde al CONJUNTO que incluye etiquetas con `p > α`. Exigir
 //! `p ≥ 1 − α` pide que la no-conformidad de la predicción esté en el α-cuantil
 //! inferior de la historia —«operar sólo en el decil más confiado»—: un filtro
 //! heurístico sin ninguna garantía.
@@ -39,26 +40,33 @@
 //! p_gana > α   y   p_pierde ≤ α
 //! ```
 //!
-//! «Ganar» es plausible y «perder» no lo es, con la tasa de error controlada
-//! por α. Si ambas etiquetas son plausibles el calibrador se abstiene.
+//! «Ganar» es plausible y «perder» no lo es según los rangos empíricos.
+//! Si ambas etiquetas son plausibles el calibrador se abstiene. Incluso con
+//! cobertura marginal válida, α NO acota automáticamente la tasa de pérdidas
+//! CONDICIONADA a las operaciones seleccionadas. Esa garantía requiere otro
+//! contrato estadístico; no la aporta la regla singleton por sí sola.
 //!
 //! # D-617 (DÉCIMA OLA) — intercambiabilidad rota bajo cambio de régimen
 //!
 //! La garantía exige que calibración y predicción sean intercambiables. Con un
 //! modelo que se reentrena y se sustituye en caliente y un mercado
-//! heterocedástico no lo son. Se adopta ACI (Adaptive Conformal Inference,
-//! Gibbs & Candès, 2021): el nivel efectivo se corrige online
+//! heterocedástico no está demostrada. Se usa una variante inspirada en ACI
+//! (Gibbs & Candès, 2021), con proyección explícita:
 //!
 //! ```text
-//! α_{t+1} = α_t + γ · (α_objetivo − err_t)
+//! α_{t+1} = clip(α_t + γ · (α_objetivo − err_t), 1e-4, 0.5)
 //! ```
 //!
-//! con `err_t = 1` si el resultado realizado quedó fuera del conjunto. Si el
-//! calibrador se equivoca más de lo prometido, α baja, los conjuntos se
-//! ensanchan y se opera menos. El teorema de ACI acota la tasa media de error
-//! frente al objetivo por `(max(α_1, 1 − α_1) + γ)/(γ·T)` para CUALQUIER
-//! secuencia, sin suponer intercambiabilidad. `γ = 1/ventana`: la corrección
-//! tiene la misma memoria que la calibración.
+//! con `err_t = 1` si el resultado queda fuera del conjunto calculado JUSTO
+//! ANTES de insertar ese cierre. No se conserva aquí el conjunto de entrada:
+//! con feedback retrasado, el error no es necesariamente el de la decisión.
+//!
+//! La Proposición 4.1 de https://arxiv.org/abs/2106.00170 usa la recurrencia
+//! SIN proyección y conjuntos extremos fuera de [0, 1]. Su cota de seguimiento
+//! NO se hereda por este clip (véase el contraejemplo de empates en tests).
+//! `γ = 1/200` es una política por observación; NO equivale a una ventana
+//! física ni certifica cobertura por activo, escala temporal o selección.
+//! La adaptación sólo observa cierres ejecutados; no outcomes contrafactuales.
 
 use std::collections::VecDeque;
 
@@ -89,13 +97,14 @@ impl ConformalCalibrator {
     }
 
     #[inline]
+    fn valid_probability(p_hat: f64) -> bool {
+        p_hat.is_finite() && (0.0..=1.0).contains(&p_hat)
+    }
+
+    #[inline]
     fn nonconformity(p_hat: f64, won: bool) -> f64 {
-        let p = if p_hat.is_finite() {
-            p_hat.clamp(0.0, 1.0)
-        } else {
-            0.5
-        };
-        if won { 1.0 - p } else { p }
+        debug_assert!(Self::valid_probability(p_hat));
+        if won { 1.0 - p_hat } else { p_hat }
     }
 
     #[inline]
@@ -122,7 +131,8 @@ impl ConformalCalibrator {
     }
 
     /// Tasa media de error de los pasos adaptativos (conjunto que no contuvo
-    /// el resultado realizado).
+    /// el resultado realizado al procesar el cierre, no al decidir). Cero con
+    /// ningún paso es sólo el valor legacy de ausencia de datos, no cobertura.
     pub fn adaptive_error_rate(&self) -> f64 {
         if self.adapt_steps == 0 {
             0.0
@@ -131,8 +141,13 @@ impl ConformalCalibrator {
         }
     }
 
-    /// p-valor conformal de la etiqueta indicada. 1,0 durante el warmup.
+    /// Rango empírico de la etiqueta; 1,0 durante warmup de entradas válidas.
+    /// Devuelve 0,0 para una entrada inválida: sentinel de rechazo, NO un
+    /// p-valor estimado. Un rango válido siempre es al menos 1/(n+1).
     pub fn p_value_for(&self, p_hat: f64, won_label: bool) -> f64 {
+        if !Self::valid_probability(p_hat) {
+            return 0.0;
+        }
         if !self.is_warm() {
             return 1.0;
         }
@@ -147,8 +162,12 @@ impl ConformalCalibrator {
     }
 
     /// Regla selectiva: se acepta operar si el conjunto de predicción al nivel
-    /// efectivo es exactamente {gana}. Fail-open durante el warmup.
+    /// efectivo es exactamente {gana}. Fail-open sólo para entradas válidas
+    /// durante warmup. No garantiza tasa de acierto entre las seleccionadas.
     pub fn accepts(&self, p_hat: f64) -> bool {
+        if !Self::valid_probability(p_hat) {
+            return false;
+        }
         if !self.is_warm() {
             return true;
         }
@@ -157,9 +176,13 @@ impl ConformalCalibrator {
     }
 
     /// Alimenta la ventana con un par predicción/realización y, si ya hay
-    /// calibración, adapta el nivel efectivo (ACI) ANTES de añadir el dato: el
-    /// error se mide contra el conjunto que existía cuando se decidió.
+    /// calibración, adapta el nivel efectivo ANTES de añadir el dato. El error
+    /// usa el estado al procesar el cierre, no un snapshot de la decisión.
+    /// Una entrada inválida no muta ventana, contadores ni nivel adaptativo.
     pub fn update(&mut self, p_hat: f64, won: bool) {
+        if !Self::valid_probability(p_hat) {
+            return;
+        }
         if self.is_warm() {
             let a = self.effective_alpha.clamp(1e-4, 0.5);
             let realized_in_set = self.p_value_for(p_hat, won) > a;
@@ -271,9 +294,9 @@ mod tests {
         assert!(!c.accepts(0.9), "tras el cambio de régimen no debe aceptar");
     }
 
-    /// D-617: cota de ACI para una secuencia arbitraria. Aquí un modelo que
-    /// predice 0,7 y acierta con esa frecuencia; la tasa media de error de los
-    /// conjuntos debe quedar dentro de la cota teórica alrededor del objetivo.
+    /// Testigo histórico D-617: esta secuencia concreta cae dentro de la
+    /// referencia numérica de ACI. No prueba la cota para la variante recortada;
+    /// conformal_wiring_contract contiene un contraejemplo de empates.
     #[test]
     fn d617_tasa_de_error_de_largo_plazo_respeta_la_cota_de_aci() {
         let mut c = ConformalCalibrator::new();

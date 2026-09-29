@@ -1,0 +1,362 @@
+{
+  "schema_version": 1,
+  "audit_id": "OA-2026-09-28",
+  "title": "Auditoría de aprendizaje causal y contrato numérico del ensamble",
+  "language": "es",
+  "snapshot": {
+    "phase": "pre_remote_merge",
+    "pull_request_url": "https://github.com/Jhona-la/Trader-Gemini/pull/16",
+    "local_date": "2026-09-28",
+    "timezone": "America/Bogota",
+    "base": "3e79cefe2e0be057b9f9dc0ac5c419bd3ca7bc4b",
+    "fix_commit": "4737f95b",
+    "integrated_main": "cf5c445a999d9a9c84247cc5f46d335e38fb57d5",
+    "source_commit": "5c4a8c7e7c2c3ee90cd66e434552eb95014dfe25",
+    "branch": "codex/outcome-clock-audit",
+    "remote_merge_verified": false
+  },
+  "summary": {
+    "findings": 17,
+    "fixed": 8,
+    "open": 9,
+    "open_documentation_corrected": 1,
+    "all_project_audited": false,
+    "profitability_certified": false,
+    "production_operated": false
+  },
+  "coverage": {
+    "base_tracked_files": 1328,
+    "source_commit_tracked_files": 1329,
+    "workspace_members_including_root": 24,
+    "full_semantic_review_of_all_files": false,
+    "reviewed": [
+      "crates/god-engine-core/src/ensemble.rs",
+      "crates/god-engine-core/src/lib.rs (selected opening/closing/feedback and integration paths)",
+      "crates/god-engine-core/src/outcome_context.rs",
+      "crates/god-engine-core/src/contagion_publisher.rs",
+      "crates/omniscient-registry/src/lib.rs (namespace functions)",
+      "crates/quantum-arena/src/position.rs (slot mapping)",
+      "crates/god-engine-core/tests/outcome_attribution_contract.rs",
+      "crates/god-engine-core/tests/close_outcome_contract.rs (related fixtures/contracts)"
+    ],
+    "limits": [
+      "Fixtures inject opening evidence and exercise real local close; no complete live opening pipeline assertion.",
+      "No independent review, exchange test, performance benchmark, crash recovery or concurrency model checking.",
+      "No T-1, model promotion, real training or trading execution."
+    ]
+  },
+  "verification": {
+    "red": {
+      "total": 10,
+      "passed": 2,
+      "failed": 8,
+      "ignored": 0,
+      "exit": 1
+    },
+    "green_initial": {
+      "passed": 10,
+      "failed": 0,
+      "ignored": 0
+    },
+    "green_expanded": {
+      "passed": 18,
+      "failed": 0,
+      "ignored": 0
+    },
+    "workspace_check": {
+      "command": "cargo check --workspace --all-targets",
+      "exit": 0,
+      "seconds": 26.71,
+      "warnings": true
+    },
+    "six_crates": {
+      "command": "cargo test --offline -q -p god-engine-core -p risk-engine -p quantum-arena -p feature-engine -p evolution-engine -p signal-engine --all-targets -- --test-threads=1",
+      "blocks": 73,
+      "passed": 963,
+      "failed": 0,
+      "ignored": 1,
+      "exit": 0
+    },
+    "backtest_lib": {
+      "passed": 31,
+      "failed": 0,
+      "ignored": 0,
+      "exit": 0,
+      "execution_seconds": 34.82
+    },
+    "distinct_test_total": {
+      "passed": 994,
+      "failed": 0,
+      "ignored": 1
+    },
+    "new_tests_already_included": 18
+  },
+  "source_sha256": {
+    "crates/god-engine-core/src/lib.rs": "6F838670A05D2D2B7C97D07BA8095182C6AA6DE6BA01B8C11FBFF0D5A25FC32F",
+    "crates/god-engine-core/src/ensemble.rs": "9DF759D27D8DC0CE155FE75BE107DCFA5FC18AEDDDAD7C9A1AE0018021D458F7",
+    "crates/god-engine-core/tests/outcome_attribution_contract.rs": "6BF9D43255928DD696EFC5D3B9237076D97A434C137B98832BCA90C6DC251794"
+  },
+  "findings": [
+    {
+      "id": "OA-01",
+      "priority": "P1",
+      "status": "fixed",
+      "title": "Cierre demorado calificaba opiniones recientes",
+      "evidence": "lib.rs:2552; ensemble.rs:277",
+      "root_cause": "El cierre carecía de snapshot por posición y elegía cachés recientes.",
+      "impact": "Acreditación retrospectiva equivocada y pesos dependientes de cadencia.",
+      "action": "Snapshot por slot/generación/símbolo/tiempo y API explícita.",
+      "verification": "RED: posición sin binding alteraba pesos. GREEN: ausencia no aprende y apertura congelada vence a opiniones recientes.",
+      "remaining_or_acceptance": "No certifica target, versión ni settlement.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-02",
+      "priority": "P1",
+      "status": "fixed",
+      "title": "Crédito de rama se sobrescribía entre slots",
+      "evidence": "lib.rs:294,2414,2560,6319",
+      "root_cause": "Una celda por moneda era consumida por el primer cierre entre tres slots.",
+      "impact": "Tasas de acierto usadas para convicción se atribuían a otra rama.",
+      "action": "Branch dentro del binding; espejo legado sólo diagnóstico; etiqueta entera.",
+      "verification": "RED: espejo rama7 aumentaba n sin binding. GREEN: multislot/multiactivo/reapertura.",
+      "remaining_or_acceptance": "Fusión por máximo numérico de ID continúa en OA-12.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-03",
+      "priority": "P1",
+      "status": "fixed",
+      "title": "Voto de bosque pertenecía a otra posición",
+      "evidence": "lib.rs:2571,6319",
+      "root_cause": "Voto por moneda sobrescrito por cada apertura.",
+      "impact": "Habilidad y freno del bosque alimentados por autoría falsa.",
+      "action": "Voto por posición y consumo único con identidad.",
+      "verification": "RED: espejo true sumaba una observación. GREEN: dos votos contrarios preservados.",
+      "remaining_or_acceptance": "No valida equivalencia entre barreras runtime y trainer.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-04",
+      "priority": "P1",
+      "status": "fixed",
+      "title": "Probabilidades inválidas convertidas en evidencia",
+      "evidence": "ensemble.rs:110,158",
+      "root_cause": "Clamp admitía NaN/infinito o fuera de dominio.",
+      "impact": "Pesos/combinación contaminados o falsa certeza extrema.",
+      "action": "Validar finitud y [0,1]; ausencia actual y cache inválidas sin borrar primera opinión válida de barra.",
+      "verification": "NaN, infinitos, -0.1,1.1 ausentes; endpoints mantienen recorte existente.",
+      "remaining_or_acceptance": "No recalibra clipping ni rehabilita modelo degenerado.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-05",
+      "priority": "P1",
+      "status": "fixed",
+      "title": "Etiqueta inválida de barra consumía estado",
+      "evidence": "ensemble.rs:114,238",
+      "root_cause": "Actualización no validaba Bernoulli antes de mutar/resetear.",
+      "impact": "Pérdida de evidencia pendiente y corrupción de pesos.",
+      "action": "Sólo 0/1 actualizan; resto no-op.",
+      "verification": "Seis etiquetas inválidas conservan pesos y opinión; y válido aprende.",
+      "remaining_or_acceptance": "El target binario correcto sigue siendo contrato del llamador.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-06",
+      "priority": "P1",
+      "status": "fixed",
+      "title": "Retorno inválido contaminaba tasa de aprendizaje",
+      "evidence": "ensemble.rs:277",
+      "root_cause": "NaN/infinito llegaban a eta adaptativa.",
+      "impact": "NaN en pesos o máxima penalización con evidencia inválida.",
+      "action": "Retorno no finito no-op; probabilidades snapshot inválidas omitidas por componente.",
+      "verification": "NaN y +/-infinito no mutan; un componente inválido no envenena el válido.",
+      "remaining_or_acceptance": "Política eta dependiente del retorno queda abierta en OA-10.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-07",
+      "priority": "P1",
+      "status": "fixed",
+      "title": "Skill aceptaba probabilidades imposibles y labels no binarios",
+      "evidence": "ensemble.rs:65",
+      "root_cause": "Guard sólo comprobaba finitud.",
+      "impact": "Media/varianza/tasa base y z contaminados; posibles vetos incorrectos.",
+      "action": "Guard de dominio antes de tocar estado.",
+      "verification": "RED z125.9208->73.5287 por observación inadmisible; GREEN z inalterado.",
+      "remaining_or_acceptance": "No prueba significación estadística de z.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-08",
+      "priority": "P1",
+      "status": "fixed",
+      "title": "Modelo ausente anulaba al único predictor disponible",
+      "evidence": "ensemble.rs:198",
+      "root_cause": "Máximo de log-pesos incluía participantes ausentes.",
+      "impact": "Subdesbordamiento conjunto a cero y combined=None con voto válido.",
+      "action": "Max de pesos efectivos sólo de modelos presentes válidos.",
+      "verification": "2000 actualizaciones: antes None, ahora Some(0.001) del único modelo.",
+      "remaining_or_acceptance": "Se conserva penalización NN heredada.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-09",
+      "priority": "P2",
+      "status": "open_documentation_corrected",
+      "title": "EWMA z no certifica 95% secuencial",
+      "evidence": "ensemble.rs:37,88,105",
+      "root_cause": "n_eff independiente usado sin validar dependencia/selección/consultas múltiples.",
+      "impact": "Puede exagerar habilidad y autoridad de un veto.",
+      "action": "Comentarios de garantía corregidos; política no cambiada.",
+      "verification": "Derivación de hipótesis y lectura; no calibración empírica de error.",
+      "remaining_or_acceptance": "Replay dependiente, evaluación por bloques y control secuencial preespecificado.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-10",
+      "priority": "P2",
+      "status": "open",
+      "title": "Pérdida reponderada y castigo NN sin atribución",
+      "evidence": "ensemble.rs:201,286",
+      "root_cause": "Eta depende del resultado; skill agregado penaliza sólo NN.",
+      "impact": "Objetivo no equivale necesariamente a probabilidad y culpa arbitraria del componente.",
+      "action": "Se documenta; no alterado en este fix.",
+      "verification": "Óptimo ponderado derivado E[wY|X]/E[w|X], no garantía del algoritmo.",
+      "remaining_or_acceptance": "Separar probabilidad/utilidad; skill y objetivos por componente.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-11",
+      "priority": "P1",
+      "status": "open",
+      "title": "Tau reescrita sobre slot ajeno",
+      "evidence": "lib.rs:6243,6359; quantum-arena/position.rs:606",
+      "root_cause": "Dos fuentes tau; segunda escritura apunta siempre a .position slot2.",
+      "impact": "Horizonte de otra posición alterado y desacople riesgo/gestión.",
+      "action": "No reparado; región anunciada.",
+      "verification": "Seguimiento de escrituras y mapeo de slots; no reproducción end-to-end.",
+      "remaining_or_acceptance": "Tau dimensionada única, apertura atómica y pruebas para cada slot con otro ocupado.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-12",
+      "priority": "P1",
+      "status": "open",
+      "title": "ID mayor gana crédito de señal fusionada",
+      "evidence": "lib.rs:5099",
+      "root_cause": "max sobre etiquetas numéricas en volume_flow_rate.",
+      "impact": "Aprendizaje varía al renumerar ramas sin cambiar señales.",
+      "action": "No reparado por snapshot; etiqueta errónea se conserva fielmente.",
+      "verification": "Lectura de fusión y consumidor rama_registro.",
+      "remaining_or_acceptance": "Contribuciones tipadas o autor explícito; invariancia ante renombrado de IDs.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-13",
+      "priority": "P1",
+      "status": "open",
+      "title": "Mezcla de targets y horizontes",
+      "evidence": "ensemble.rs:update_with_outcome; lib.rs:etiqueta_barrera,direccion_realizada",
+      "root_cause": "Barra, dirección terminal y primer toque no son misma variable aleatoria.",
+      "impact": "Calibración y feedback no comparables; posible brecha backtest/host.",
+      "action": "No se modificó trainer ni labels.",
+      "verification": "Seguimiento de consumidores; hipótesis de impacto sin cuantificación live.",
+      "remaining_or_acceptance": "Target/version/tau explícitos y replay pareado por observación.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-14",
+      "priority": "P1",
+      "status": "open",
+      "title": "Falta versión durable de modelos y continuidad de evidencia",
+      "evidence": "lib.rs:EntryLearningEvidence,refresh_models; ensemble.rs:ModelId",
+      "root_cause": "ID de modelo no es hash/versión; binding en RAM; fallback global persiste.",
+      "impact": "Feedback antiguo puede actualizar reemplazo; reinicio pierde trazabilidad.",
+      "action": "Abstención sin binding para tres consumidores; resto abierto.",
+      "verification": "Inspección de campos; sin ensayo de crash/hot reload.",
+      "remaining_or_acceptance": "Ledger durable de decisión/modelo/genoma/target/tau y replay idempotente.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-15",
+      "priority": "P1",
+      "status": "open",
+      "title": "Namespace de contagio desconectado",
+      "evidence": "contagion_publisher.rs:70; lib.rs:5466; omniscient-registry/lib.rs:170,179",
+      "root_cause": "Escritura c{id}:name y lectura SYM_name/global nunca consultan misma clave.",
+      "impact": "Default o fuente global sustituye silenciosamente al publicador.",
+      "action": "Caller añadido por GLM en cf5c integrado; namespace dejado a GLM.",
+      "verification": "Lectura de ambas funciones; aviso PR10; sin prueba de cadena live.",
+      "remaining_or_acceptance": "Prueba producer-registry-consumer con roles distintos por activo y as-of.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-16",
+      "priority": "P2",
+      "status": "open",
+      "title": "Reloj/frescura/latencia del publicador no validados",
+      "evidence": "lib.rs:1592; contagion_publisher.rs:22",
+      "root_cause": "Cadencia contador global, soporte256eventos/6lags, falta invalidación y timestamp.",
+      "impact": "Acoplamiento entre activos, valores obsoletos y coste síncrono no perfilado.",
+      "action": "Documentado; no se amplió cómputo ni se activó veto.",
+      "verification": "Lectura; sin medición p99 ni identificación causal de contagio.",
+      "remaining_or_acceptance": "Contrato tiempo-evento, incertidumbre/frescura, scheduling y perfil de carga.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    },
+    {
+      "id": "OA-17",
+      "priority": "P1",
+      "status": "open",
+      "title": "Otros aprendizajes y settlement no cubiertos por binding",
+      "evidence": "lib.rs:close feedback; outcome_context.rs",
+      "root_cause": "Confirmación entrada != salida; varios consumidores fuera del nuevo guard.",
+      "impact": "Estimaciones provisionales pueden tener alcance mayor que evidencia disponible.",
+      "action": "Guard nuevo limitado a rama/bosque/ensemble; controles existentes preservados.",
+      "verification": "Tests locales positivos/negativos; sin exchange real ni model checking.",
+      "remaining_or_acceptance": "Ledger fills idempotente/reconciliación y test de todos los consumidores.",
+      "details": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    }
+  ],
+  "research": [
+    {
+      "url": "https://arxiv.org/abs/1306.0686",
+      "title": "Online Learning under Delayed Feedback",
+      "depth": "relevant body passages",
+      "use": "Timestamped decision identity, not inherited regret guarantee"
+    },
+    {
+      "url": "https://arxiv.org/abs/2510.00309",
+      "title": "Lipschitz Bandits with Stochastic Delayed Feedback",
+      "depth": "abstract only",
+      "use": "candidate, not implemented"
+    },
+    {
+      "url": "https://arxiv.org/abs/2504.12086",
+      "title": "Neural Contextual Bandits Under Delayed Feedback Constraints",
+      "depth": "abstract only",
+      "use": "candidate, not implemented"
+    },
+    {
+      "url": "https://arxiv.org/abs/2409.16866",
+      "title": "Risk-averse learning with delayed feedback",
+      "depth": "abstract only",
+      "use": "candidate, not implemented"
+    }
+  ],
+  "coordination": {
+    "notices": [
+      "https://github.com/Jhona-la/Trader-Gemini/pull/10#issuecomment-5883007522",
+      "https://github.com/Jhona-la/Trader-Gemini/pull/10#issuecomment-5883110364"
+    ],
+    "acknowledged": false,
+    "claude_pr10_head": "c844d4fdae096fda7f6691d67c1509fd018652f3",
+    "active_foreign_branches_preserved": true,
+    "local_backups_exclusive_commit_counts": {
+      "backup-before-cleanup": 3,
+      "v7-unificacion-wip": 1
+    }
+  },
+  "report": "../AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+}

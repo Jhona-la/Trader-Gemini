@@ -1671,3 +1671,76 @@ frontera interna tras revisión Codex. R8-A (target primer toque) sigue abierto.
 Las secciones históricas se conservan; comprobar el último corte del informe
 para pruebas/merge efectivos. Ni inventario léxico ni checks ausentes equivalen
 a auditoría integral, certificación científica o garantía de crecimiento.
+
+
+## 2026-09-28 — Codex: auditoría del optimizador Platt y reloj de evidencia
+
+Informe nuevo: [Auditoría del calibrador Platt](docs/AUDITORIA_CALIBRACION_PLATT_2026-09-28.md)
+y [artefacto JSON](docs/artifacts/auditoria_calibracion_platt_2026-09-28.json).
+CAL-01/02: Newton libre proyectaba sólo pendiente y aceptaba pasos sin descenso;
+40 pérdidas a score0,8 daban p0,2324 frente a referencia0,0701. CAL-03: scores
+finitos fuera de[0,1] contaminaban datos/prior/reloj. Cinco RED reproducidos;
+siete GREEN y octava prueba adicional de KKT. 127 tests lib del núcleo pasan.
+Reparación deeca0c6; merge67c63d32 integra main3cdb con fix mínimo &sym de E0308,
+reproducido antes del arreglo. Check workspace all-targets pasa (16,62s).
+Pruebas amplias del árbol integrado en curso: consultar adenda final, no
+reutilizar los956 de la ola anterior como evidencia actual.
+Abiertos: edad por observación, salto global/local a5, selección de ejecutadas,
+condicionamiento por activo/τ y estado de convergencia. No se certifica trading,
+latencia, cobertura integral ni +100%/72h. Informes anteriores preservados.
+
+- CIERRE PRE-MERGE PR14: fuentes67c63d32, main3cdb incorporado. Seis crates
+  all-targets934/0/1 y backtest lib31/0/0:965/0/1; ocho regresiones propias
+  ya incluidas. Check workspace all-targets pasa16,62s; sin T-1 ni operación.
+  Informe Platt§16 y JSON guardan alcance/hashes. Pruebas propias finalizadas.
+  PR10 sigue abierto; backups locales3/1 commits exclusivos preservados.
+  Recibo remoto posterior y limpieza de rama: consultar PR14, no asumirlos
+  por este resultado previo a la fusión.
+
+## 2026-09-28 — Codex CF: genoma, calibración y veto de entradas
+
+Reparación836aa9dc en codex/conformal-contract-audit desde mainfa23.
+CF-01/02/03/04: target y telemetría de la misma instancia por activo, rechazo
+de probabilidades inválidas sin mutación y publicación previa al interlock
+de entradas, cuyo veto se conserva. RED controlado3/7fallan; GREEN10/0;
+undécimo test diagnostica bloqueo por resolución finita, no lo declara arreglado.
+Seis crates all-targets945/0/1, backtest lib31/0/0 (48,98s), total976/0/1.
+Check workspace all-targets pasa53,99s con warnings; sin T-1 ni operación.
+
+Informe detallado: [Contrato conformal](docs/AUDITORIA_CONFORMAL_CONTRATO_2026-09-28.md)
+y [JSON](docs/artifacts/auditoria_conformal_contrato_2026-09-28.json).
+14 hallazgos:4 reparaciones; garantías ACI/selección corregidas en documentación,
+no certificadas. Permanecen delay/snapshot, target económico, edad/tau,
+feedback bloqueado por alpha<1/(n+1), warmup, extremo0, coste y gen acoplado.
+No se auditó semánticamente la totalidad de los1.324 archivos base/24 miembros
+del workspace. Sin garantía de rentabilidad ni eliminación ciega de guards.
+GLM en glm/xlv-health-check; Claude mantiene PR10c844d4fd. Avisos PR10
+5882626900/5882772751. Conservar backups y ramas activas; no tocar índice ajeno.
+Estado de este corte: fuentes verificadas, publicación/merge aún por confirmar
+en el recibo de la PR propia. No confundir check local con CI configurada.
+
+## 2026-09-28 — Codex OA: aprendizaje causal por posición y ensamble
+
+Fuentes4737f95b; integración5c4a8c7e con maincf5c445a. Rama
+codex/outcome-clock-audit reservada hasta confirmar merge remoto.
+Ocho fallos reproducidos y reparados: opinión reciente vs apertura; rama/voto
+per-coin vs multislot; dominios inválidos de p/y/retorno/skill; normalización
+que borraba al único modelo disponible. Binding por símbolo/slot/generación/
+tiempo; cierre defensivo y controles de riesgo conservados.
+
+Informe: [Aprendizaje causal](docs/AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md).
+Artefacto: [17 hallazgos OA](docs/artifacts/auditoria_aprendizaje_causal_2026-09-28.json).
+RED2/8/0 en10 tests; GREEN18/0/0. Seis crates963/0/1 y backtest lib31/0/0:
+994/0/1, regresiones incluidas. Check workspace all-targets pasa26,71s.
+Sin T-1, promoción ni operación. Los warnings no se ocultaron.
+
+Nueve pendientes: garantías de z, objetivo ponderado y penalización NN,
+tau escrita en slot2 al abrir otros, crédito por max(ID), targets/horizontes,
+versiones/persistencia, namespace Hawkes, frescura/coste y ledger incompleto.
+GLM añadió caller cf5c, pero set_for_coin y get_scoped_value_or usan claves
+diferentes; avisado, región no modificada. No certificar cadena100%operativa.
+Avisos PR10:5883007522/5883110364; no consta acuse. Claude PR10c844d4fd activo.
+Backups3/1 commits exclusivos preservados. No afirmar auditoría semántica de
+los1.328 archivos base ni que todos los cambios ajenos ya llegaron a main.
+El JSON es snapshot pre-merge; el recibo remoto debe confirmar publicación
+y retirada de la rama propia después de verificar hash/ancestralidad.
