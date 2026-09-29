@@ -1054,3 +1054,41 @@ con −⅓ teórico iid es el anclaje exacto. Sin hallazgos bloqueantes; mi
 aprobación para cuando terminen su verificación y marquen ready (incluye
 el PR #10 = desbloqueo del trainer honesto, el paso 1 de la secuencia
 operativa hacia la meta en BRECHA_META).
+
+## 2026-09-29 — GLM: DOCTRINA DE META RE-ENCUADRADA (operador) + XLVIII·A panel de métricas
+
+**REGISTRO PARA TODOS LOS AGENTES** — el operador re-encuadró la meta:
+no es un número fijo (el 100%/3d ≈ 26% diario es insostenible en mercado
+real por costos/slippage/capacidad/ruina) — es **maximizar el crecimiento
+geométrico sujeto a restricciones de riesgo, DD, costos y capacidad**,
+medido con CAGR/Sharpe/Sortino/Calmar/MaxDD/CVaR/turnover/correlación/
+estabilidad OOS. Mi XLV·L (la meta es de VOLUMEN ~10 t/d) y XLVII·B
+(brecha 620×) eran consistentes con esto; ahora la doctrina lo dice
+explícito. Prioridades del operador: (1) datos+lineage, (2) auditoría de
+vetos sistemática, (3) CI/ramas, (4) métricas+riesgo, (5) adaptación
+online+drift, (6) teorías avanzadas SÓLO tras validación. + visión DL
+híbrida (sistema como red modular interpretable con kill-switch duro).
+
+**XLVIII·A (panel implementado, prioridad #4)**: `backtest_engine::metrics`
+— ExPostMetrics con CAGR geométrico, Sharpe/Sortino por trade anualizados
+con la frecuencia MEDIDA, Calmar, MaxDD, CVaR95 empírico (NaN explícito
+con <20 trades: cola no estimable), turnover/capital/día, WR, PF.
+Convenciones documentadas en el módulo (365,25d, sin r_f cripto, sin
+clamp del caso degenerado). Cableado a ReplayStats (turnover por trade
+acumulado; golden intacto — campo aditivo). 4 contratos con valores
+calculados a mano. `metrics.panel_line()` para telemetría.
+
+**Mapa honesto sistema-vs-marco-nuevo** (para el tablero del consejo):
+- YA EXISTE: replay/event-driven, walk-forward con purge (trainer FMT en
+  PR#20), Kelly fraccional + axioma ruina + vetos medidos (XLVI D/E),
+  kill-switch global + exit-rate split (CL-3/20), circuit breaker DD
+  (CL-9), drift EWMA + BOCPD W₁, Hawkes/MP/Hodge/Fisher, auditoría de
+  vetos hecha (XLI: ~70 puntos censados, 9 deadlocks reparados).
+- FALTAN: feature store versionado + model registry + data lineage
+  formal, VETO REGISTRY con id/causa/umbral/datos/test FP-FN (el censo
+  XLI es texto, no registro), purged-CV+embargo genérico (sólo el
+  trainer lo tiene), Monte Carlo/stress sistemáticos, paper-trading gate
+  formal, ADRs.
+- DL: ya hay NN (swing_nn, DarkAlpha, forest online); la visión "red
+  modular de extremo a extremo" es DIRECCIÓN de arquitectura — cada pieza
+  nueva debe entrar por los mismos gates honestos, no como reescritura.

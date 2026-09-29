@@ -213,6 +213,9 @@ pub struct ReplayStats {
     /// B3.19 — entradas VETADAS por la envolvente D-442/margin-guards
     /// (rollback inmediato, paridad con los aborts del host en vivo).
     pub envelope_vetoes: u64,
+    /// XLVIII·A — panel ex-post de la meta re-encuadrada (CAGR, Sharpe/
+    /// Sortino anualizados, Calmar, MaxDD, CVaR95, turnover, WR, PF).
+    pub metrics: crate::metrics::ExPostMetrics,
 }
 
 impl ReplayStats {
@@ -320,6 +323,8 @@ pub fn run_booktick_replay(
     let mut pos_was_open = arena.coins[0].positions.is_any_open();
 
     let mut pnl_list: Vec<f64> = Vec::new();
+    // XLVIII·A: nocional bruto operado (entrada+salida) para turnover.
+    let mut turnover_notional: f64 = 0.0;
     let mut peak = cfg.initial_capital;
     let warmup = cfg.warmup_ticks.min(ticks.len() / 10);
 
@@ -549,6 +554,9 @@ pub fn run_booktick_replay(
                     stats.wins_gross += 1;
                 }
                 pnl_list.push(pnl_net);
+                // XLVIII·A: nocional por lado (entrada implícita en el qty
+                // del cierre + la salida al mid) — presión de capacity.
+                turnover_notional += notional + notional;
             }
         }
 
@@ -576,6 +584,16 @@ pub fn run_booktick_replay(
         let sd = var.sqrt();
         stats.sharpe = if sd > 1e-12 { mean / sd } else { 0.0 };
     }
+    // XLVIII·A — panel ex-post de la meta re-encuadrada (doctrina
+    // 2026-09-29: crecimiento geométrico sujeto a restricciones, medido).
+    stats.metrics = crate::metrics::ex_post_metrics(
+        &pnl_list,
+        turnover_notional,
+        cfg.initial_capital,
+        stats.final_capital,
+        stats.max_dd,
+        ticks.last().map(|t| t.ts_ms).unwrap_or(0).saturating_sub(ticks[0].ts_ms),
+    );
     stats.omni_neutral = omni.is_none();
     stats
 }
