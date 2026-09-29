@@ -80,6 +80,45 @@ pub fn cantidad_abierta_del_lado(
         .map(|p| p.position_amt.abs())
 }
 
+/// CL-16 — adopción de una posición remota al arrancar en una ranura LIBRE.
+///
+/// En modo hedge `positionRisk` trae una fila por pierna y las dos piernas de
+/// un símbolo pueden estar abiertas a la vez (`find_resonant_slot` sólo
+/// bloquea la misma dirección). La adopción escribía siempre en la ranura
+/// `position`: la segunda pierna pisaba a la primera (reapertura sin cierre)
+/// y el margen de la primera quedaba reservado en `used_margin` sin ninguna
+/// ranura que lo liberase. Además el margen se reservaba ANTES de saber si la
+/// apertura se aceptaba (D-729 rechaza precio o cantidad no válidos).
+///
+/// Devuelve la ranura abierta, o `None` si no hay ranura libre o la apertura
+/// se rechaza: en ese caso el llamador NO debe reservar margen. Se prefiere la
+/// ranura `position` (la de siempre) y después las otras.
+pub fn adoptar_en_ranura_libre(
+    posiciones: &quantum_arena::position::PositionManager,
+    is_long: bool,
+    precio: f64,
+    cantidad: f64,
+    margen: f64,
+    ahora_ms: u64,
+) -> Option<usize> {
+    let libre = [2usize, 0, 1]
+        .into_iter()
+        .find(|&i| !posiciones.get_slot(i).is_open())?;
+    posiciones
+        .get_slot(libre)
+        .open_with_horizon(
+            is_long,
+            precio,
+            cantidad,
+            margen,
+            ahora_ms,
+            0.0,
+            0.0,
+            quantum_arena::position::PositionHorizon::Continuous,
+        )
+        .then_some(libre)
+}
+
 #[derive(Debug, Default)]
 pub struct ReconciliationReport {
     /// Posiciones abiertas en el exchange (la verdad a adoptar).

@@ -1834,20 +1834,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })
                     };
                     let calculated_margin = (pos.qty.abs() * pos.entry_price) / lev_real;
-                    arena_real
-                        .used_margin
-                        .fetch_add(calculated_margin, Ordering::Relaxed);
-                    arena_real.coins[coin_idx].positions.position.open_with_horizon(
+                    // CL-16: cada pierna en su PROPIA ranura libre; el margen
+                    // sólo se reserva si la apertura se aceptó. Antes se
+                    // escribía siempre en `positions.position` (en hedge la
+                    // segunda pierna pisaba a la primera y su margen quedaba
+                    // fugado en used_margin) y se reservaba antes de abrir.
+                    let adopted_slot = execution_engine::reconciliation::adoptar_en_ranura_libre(
+                        &arena_real.coins[coin_idx].positions,
                         pos.is_long,
                         pos.entry_price,
-                        pos.qty,
+                        pos.qty.abs(),
                         calculated_margin,
                         now_ms,
-                        0.0,
-                        0.0,
-                        quantum_arena::position::PositionHorizon::Continuous,
                     );
-                    telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (Margen: ${:.2} a {:.0}x — reservado en used_margin)", pos.symbol, calculated_margin, lev_real);
+                    if let Some(slot) = adopted_slot {
+                        arena_real
+                            .used_margin
+                            .fetch_add(calculated_margin, Ordering::Relaxed);
+                        telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (ranura {}, margen: ${:.2} a {:.0}x — reservado en used_margin)", pos.symbol, slot, calculated_margin, lev_real);
+                    } else {
+                        quantum_arena::protection_health::mark_dirty();
+                        telemetry_engine::telemetry_err!(
+                            "🚨 [FASE 5] {} {}: sin ranura libre o entrada no adoptable (px {}, qty {}) — no se reserva margen; la protección remota se re-arma igual",
+                            pos.symbol,
+                            if pos.is_long { "LONG" } else { "SHORT" },
+                            pos.entry_price,
+                            pos.qty
+                        );
+                    }
 
                     // B2.7 — RECUPERACIÓN DE CONTEXTO (directriz del operador):
                     // qué τ y qué predicción ML seguían esta posición vive en
@@ -1856,15 +1870,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let ctx = recover_position_context(&pos.symbol, pos.is_long);
                     // B3.14 — la posición adoptada EXISTE en el exchange:
                     // sus cierres contabilizan.
-                    if let Some(c) = arena_real.coins.get(coin_idx) {
+                    if let (Some(c), Some(slot)) = (arena_real.coins.get(coin_idx), adopted_slot) {
                         c.positions
-                            .position
+                            .get_slot(slot)
                             .exchange_confirmed
                             .store(true, Ordering::Relaxed);
                     }
                     if let Some(rc) = &ctx {
-                        if let Some(c) = arena_real.coins.get(coin_idx) {
-                            c.positions.position.entry_tau_ms.store(rc.tau_ms, Ordering::Relaxed);
+                        if let (Some(c), Some(slot)) = (arena_real.coins.get(coin_idx), adopted_slot) {
+                            c.positions.get_slot(slot).entry_tau_ms.store(rc.tau_ms, Ordering::Relaxed);
                         }
                         telemetry_server::telemetry_log!(
                             "   🧠 [CONTEXTO] {} {}: τ_entrada={}ms ({}), ml_entrada={:.3}, edad {:.1}h",
