@@ -1023,3 +1023,34 @@ sonda-bloqueado del roster → correr el trainer con gates FMT sobre tape
 real (tapes disponibles en data/*_REAL.bin) → promover → el watcher
 desbloquea en ≤10 s sin reinicio. El entrenamiento honesto requiere los
 contratos de train_forest del PR #10 (sigue DRAFT — mi review en pie).
+
+## 2026-09-29 — GLM: AUDITORÍA ciclo 5 (CL-21…CL-29) — 9/9 correctos + review matemática PR#20
+
+Revisión post-merge (rama glm/xlvii-d-auditoria-cl5), contratos verdes
+(evolution 110/110, ml_base 1/1, geometry_hurst 28/28, close_outcome 28/28).
+
+Los tres mayores, todos con impacto directo en la honestidad autoevolutiva
+que el operador exige:
+- **CL-27** (FMT-049): el examen walk-forward juzgaba RETORNOS DE PnL como
+  si fueran de precio — un corto ganador era una barra alcista; una racha
+  perdedora del incumbente era una tendencia bajista limpia donde un
+  mutante bajista sacaba Sharpe alto. El DSR sobre eso no era evidencia de
+  edge. Ahora juzga precios de mercado muestreados por reloj (D-740).
+- **CL-29** (FMT-055): la puerta del incumbente 1−(1/√N)/t' se INVERTÍA —
+  un incumbente PERDEDOR necesitaba N≥494-1600 deltas (tope 1000): la
+  evolución se cerraba justo cuando el genoma vivo perdía.
+- **CL-28**: WF-FISHER aplazaba rondas con umbral 0.33 NO calibrado contra
+  el nulo (mediana en ruido 0.03-0.16; con 10 monedas pasaba NINGUNA
+  ronda). Mi Fisher C3 fue mal usada como puerta sin calibración — la
+  conversión a telemetría es la corrección correcta.
+Menores todos correctos: CL-21 (ml_model_base no publicada → sesgo corto
+estructural del consenso — conecta con mi XLVII·B/C), CL-22/23/24/25/26.
+
+**Review matemática del PR #20** (dejada como comentario en el PR, tramo
+espectral = mi doctrina): CL-30/31/32 matemáticamente correctos — el
+estadístico viejo de persistencia alucinaba +0.94 en caminata pura
+((2/π)·asin(e^(−Δt/τ)) con bloques solapados); bloques no solapados ≥ τ
+con −⅓ teórico iid es el anclaje exacto. Sin hallazgos bloqueantes; mi
+aprobación para cuando terminen su verificación y marquen ready (incluye
+el PR #10 = desbloqueo del trainer honesto, el paso 1 de la secuencia
+operativa hacia la meta en BRECHA_META).
