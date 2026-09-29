@@ -1921,7 +1921,11 @@ impl OrderExecutor {
 
         let side = if is_long_close { "SELL" } else { "BUY" };
         let timestamp = self.get_synced_timestamp();
-        self.check_rate_limits(timestamp)?;
+        // CL-20: pierna PROTECTORA, inherentemente reductora (positionSide en
+        // hedge, reduceOnly en one-way): el kill-switch no la bloquea (mismo
+        // principio que CL-3). Si el aplanado falla, la posición conserva
+        // su protección en vez de quedar desnuda. La cuota sigue aplicando.
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -2835,7 +2839,11 @@ impl ExecutionProvider for OrderExecutor {
         // Para cerrar SHORT: side = BUY, positionSide = SHORT
         let side = if is_long { SIDE_SELL } else { SIDE_BUY };
         let timestamp = self.get_synced_timestamp();
-        self.check_rate_limits(timestamp)?;
+        // CL-20: pierna PROTECTORA, inherentemente reductora (positionSide en
+        // hedge, reduceOnly en one-way): el kill-switch no la bloquea (mismo
+        // principio que CL-3). Si el aplanado falla, la posición conserva
+        // su protección en vez de quedar desnuda. La cuota sigue aplicando.
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         // OCO-F5: TRAILING_STOP_MARKET es tipo condicional — bloqueado en
@@ -2924,7 +2932,11 @@ impl ExecutionProvider for OrderExecutor {
 
         let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
         let timestamp = self.get_synced_timestamp();
-        self.check_rate_limits(timestamp)?;
+        // CL-20: pierna PROTECTORA, inherentemente reductora (positionSide en
+        // hedge, reduceOnly en one-way): el kill-switch no la bloquea (mismo
+        // principio que CL-3). Si el aplanado falla, la posición conserva
+        // su protección en vez de quedar desnuda. La cuota sigue aplicando.
+        self.check_exit_rate_limits(timestamp)?;
 
         let base_url = if self.client.is_testnet.load(Ordering::Relaxed) {
             "https://testnet.binancefuture.com/fapi/v1/algoOrder?"
@@ -3989,6 +4001,10 @@ mod tests_m4_c02 {
             "execute_reduce_only_market",
             "fetch_open_positions",
             "fetch_account_balance",
+            // CL-20: piernas protectoras (reductoras por construcción).
+            "place_algo_leg",
+            "execute_oco_order",
+            "execute_exchange_trailing_stop",
         ] {
             assert!(cuerpo(f).contains("check_exit_rate_limits("), "{f} debe ignorar el kill-switch");
         }
