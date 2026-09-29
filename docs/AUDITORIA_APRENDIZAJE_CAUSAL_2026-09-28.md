@@ -621,3 +621,19 @@ Fuente probada5c4a8c7e; los cambios posteriores son documentación.
 El JSON incluye SHA-256 de las tres fuentes/test,17 fichas y límites de cobertura.
 No hay certificación financiera ni de todos los archivos. El snapshot es
 previo a merge remoto; su confirmación se añadirá mediante recibo de la PR.
+
+## 22. Publicación PR16 y corte de ramas
+
+[PR16](https://github.com/Jhona-la/Trader-Gemini/pull/16) publicada: headc2b828dd,
+basecf5c445a, MERGEABLE/CLEAN, cero checks configurados y cero reviews/hilos.
+Eso no equivale a CI verde ni revisión independiente. La adenda siguiente
+es documental; fuentes y pruebas siguen ligadas a5c4a8c7e.
+
+PR10 está en borrador. git cherry muestra ocho commits de esa rama sin parche
+equivalente en main: no se declara su contenido totalmente integrado. Esto
+no prueba que cada arreglo esté ausente (algunos fueron reimplementados).
+La rama Claude de slippage sí es ancestro de main, pero conserva reserva de
+trabajo activa en la coordinación previa y no se elimina sin liberar su uso.
+Sólo se retirará la rama propia tras confirmar merge. El recibo posterior en
+PR16 registrará SHA remoto, comparación de árboles y retirada de referencias;
+el JSON conserva deliberadamente el snapshot previo, no inventa un merge futuro.

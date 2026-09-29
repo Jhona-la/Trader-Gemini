@@ -5,6 +5,7 @@
   "language": "es",
   "snapshot": {
     "phase": "pre_remote_merge",
+    "pull_request_url": "https://github.com/Jhona-la/Trader-Gemini/pull/16",
     "local_date": "2026-09-28",
     "timezone": "America/Bogota",
     "base": "3e79cefe2e0be057b9f9dc0ac5c419bd3ca7bc4b",
