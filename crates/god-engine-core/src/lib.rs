@@ -1900,8 +1900,9 @@ impl GodEngineCore {
                 .store(raw_atr_pct * mid_price, Ordering::Relaxed);
             coin.hurst_exponent.store(hurst_val, Ordering::Relaxed);
             // S-7 — Hurst multifractal SELECCIONADO POR τ: micro (<2min),
-            // meso (<1h), macro (≥1h). La geometría TP/SL consume el H del
-            // horizonte que el motor opera, no el escalar global.
+            // meso (<1h), macro (≥1h). Sólo telemetría: desde CL-26 la
+            // geometría TP/SL usa el Hurst muestreado por reloj
+            // (`hurst_exponent`, D-615b), porque estas ventanas son de eventos.
             {
                 let tau_dom_h = self
                     .temporal_spectrum
