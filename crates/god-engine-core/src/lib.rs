@@ -26,6 +26,7 @@ pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64, total_trades: 
 
 pub mod fitness_contract;
 pub mod entry_reservation;
+pub mod contagion_publisher;
 pub mod bootloader;
 pub mod calibration;
 pub mod conformal;
