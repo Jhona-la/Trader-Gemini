@@ -682,4 +682,3 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - Rama propia codex/conformal-contract-audit en curso hasta recibo remoto.
   GLM observado en glm/xlv-health-check, Claude PR10c844d4fd. Avisos PR10
   5882626900/5882772751. Conservar ramas activas y backups exclusivos.
-

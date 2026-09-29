@@ -450,6 +450,3 @@ El inventario de fa23 cuenta1.324 archivos versionados y24 miembros Cargo
 ni leerlos semánticamente. Hashes SHA-256 de las tres fuentes/test y detalles
 de los14 hallazgos están en el JSON. Esta ola agrega documentación a los
 cuatro índices compartidos; no reemplaza informes anteriores.
-
-
-

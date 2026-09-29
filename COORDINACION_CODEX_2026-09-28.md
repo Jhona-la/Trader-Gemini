@@ -542,4 +542,3 @@ GLM en glm/xlv-health-check; Claude mantiene PR10c844d4fd. Avisos PR10
 5882626900/5882772751. Conservar backups y ramas activas; no tocar índice ajeno.
 Estado de este corte: fuentes verificadas, publicación/merge aún por confirmar
 en el recibo de la PR propia. No confundir check local con CI configurada.
-
