@@ -239,3 +239,111 @@ fn xlvih_medicion_ab_doble_conteo_div1() {
         assert!(s.max_dd < 1.0, "{name}: dd {max}", max = s.max_dd);
     }
 }
+
+/// XLVII·A — RADIO DE IMPACTO DE DIV-1: el modo TRADE-ONLY (aggTrades, el
+/// que USA LA EVOLUCIÓN para medir aptitud) BYPASA el desplazamiento del
+/// harness — su branch pasa bid/ask sintéticos derivados del trade, no
+/// `sim_bid/sim_ask`. Consecuencia: el fitness que selecciona genomas
+/// NUNCA estuvo contaminado por el doble-conteo; el radio de DIV-1 es
+/// SOLO el modo libro (backtest_windows por defecto). Si alguien mueve el
+/// shift al camino trade-only o rompe el bypass, este contrato lo expone.
+#[test]
+fn xlviiA_trade_only_bypasa_el_shift_div1() {
+    use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay};
+    use quantum_arena::genome::SuperGenotype;
+
+    backtest_engine::asegurar_spec_nativo("BTCUSDT");
+    let mut seed = 0x5DEECE66Du64;
+    let mut next = move || {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((seed >> 33) as f64 / u32::MAX as f64) - 0.5
+    };
+    let mut p = 60_000.0f64;
+    let ticks: Vec<ReplayTick> = (0..20_000)
+        .map(|i| {
+            let u = next();
+            p *= 1.0 + (i as f64 / 180.0).sin() * 0.0030 + u * 0.0040 + 0.00004;
+            let half = p * 0.0002;
+            ReplayTick {
+                ts_ms: 1_700_000_000_000 + (i as u64) * 60_000,
+                bid: p - half,
+                ask: p + half,
+                bid_qty: 450.0 + u.abs() * 1000.0,
+                ask_qty: 450.0 + (1.0 - u.abs()) * 1000.0,
+            }
+        })
+        .collect();
+    let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+    let cfg = |frac: f64| ReplayConfig {
+        initial_capital: 1000.0,
+        warmup_ticks: 600,
+        trade_only: true, // ← el modo de la evolución
+        shift_atr_frac: frac,
+    };
+    let a = run_booktick_replay(&ticks, &genome, None, &cfg(0.10));
+    let b = run_booktick_replay(&ticks, &genome, None, &cfg(0.0));
+    // El shift NO toca este camino: bit-idéntico con cualquier fracción.
+    assert_eq!(a.trades, b.trades, "trade-only no puede depender del shift");
+    assert_eq!(a.net_pnl.to_bits(), b.net_pnl.to_bits());
+    assert_eq!(a.final_capital.to_bits(), b.final_capital.to_bits());
+    // Y una fracción absurda tampoco lo mueve (el bypass es total).
+    let c = run_booktick_replay(&ticks, &genome, None, &cfg(3.0));
+    assert_eq!(c.net_pnl.to_bits(), a.net_pnl.to_bits());
+}
+
+/// XLVII·A — MEDICIÓN EN TAPE REAL (manual, --ignored): carga aggTrades
+/// reales (TGMTICK1) y confirma el bypass empíricamente — trade-only
+/// idéntico con ambos shifts; book-mode sobre el mismo tape SÍ se mueve
+/// (radio de impacto = modo libro). Requiere data/THETAUSDT_2026-08_REAL.bin.
+#[test]
+#[ignore = "medición manual con tape real presente en data/"]
+fn xlviiA_medicion_radio_div1_en_tape_real() {
+    use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay};
+    use backtest_engine::tick_replayer::load_binary_ticks;
+    use quantum_arena::genome::SuperGenotype;
+
+    // El cwd de los tests es la raíz del CRATE: ruta absoluta al workspace.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data/THETAUSDT_2026-08_REAL.bin");
+    let events = load_binary_ticks(&path, 0).expect("tape real THETA 2026-08");
+    assert!(events.len() > 10_000, "tape sospechosamente corto");
+    let ticks: Vec<ReplayTick> = events
+        .iter()
+        .map(|e| ReplayTick {
+            ts_ms: e.timestamp,
+            bid: e.bid_price,
+            ask: e.ask_price,
+            bid_qty: e.bid_qty,
+            ask_qty: e.ask_qty,
+        })
+        .collect();
+    backtest_engine::asegurar_spec_nativo("THETAUSDT");
+    let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+    let cfg = |frac: f64, trade_only: bool| ReplayConfig {
+        initial_capital: 1000.0,
+        warmup_ticks: 600,
+        trade_only,
+        shift_atr_frac: frac,
+    };
+    // Bypass: trade-only idéntico.
+    let t1 = run_booktick_replay(&ticks, &genome, None, &cfg(0.10, true));
+    let t0 = run_booktick_replay(&ticks, &genome, None, &cfg(0.0, true));
+    println!(
+        "REAL trade-only: 0.10 trades={} net={:.4} | 0.0 trades={} net={:.4}",
+        t1.trades, t1.net_pnl, t0.trades, t0.net_pnl
+    );
+    assert_eq!(t1.net_pnl.to_bits(), t0.net_pnl.to_bits(), "bypass roto en tape real");
+    // Radio: book-mode sobre el MISMO tape (delta esperado ≠ 0).
+    let b1 = run_booktick_replay(&ticks, &genome, None, &cfg(0.10, false));
+    let b0 = run_booktick_replay(&ticks, &genome, None, &cfg(0.0, false));
+    println!(
+        "REAL book-mode: 0.10 trades={} net={:.4} | 0.0 trades={} net={:.4} | Δ={:+.4}",
+        b1.trades, b1.net_pnl, b0.trades, b0.net_pnl,
+        b0.net_pnl - b1.net_pnl
+    );
+    for (name, s) in [("t1", &t1), ("b1", &b1), ("b0", &b0)] {
+        assert!(s.final_capital.is_finite() && s.final_capital > 0.0, "{name} roto");
+    }
+}
