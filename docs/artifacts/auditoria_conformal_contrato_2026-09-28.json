@@ -276,6 +276,10 @@
     "backup_branches_preserved": true
   },
   "integration": {
+    "pull_request": "https://github.com/Jhona-la/Trader-Gemini/pull/15",
+    "snapshot_phase": "pre_merge; subsequent verification is recorded in the PR receipt",
+    "configured_checks_at_review": 0,
+    "unresolved_review_threads_at_review": 0,
     "merged": false,
     "verification": "Pending remote PR receipt; pre-merge tests are not proof of remote publication."
   }

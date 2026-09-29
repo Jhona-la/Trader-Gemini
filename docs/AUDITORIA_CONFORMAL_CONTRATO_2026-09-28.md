@@ -450,3 +450,15 @@ El inventario de fa23 cuenta1.324 archivos versionados y24 miembros Cargo
 ni leerlos semánticamente. Hashes SHA-256 de las tres fuentes/test y detalles
 de los14 hallazgos están en el JSON. Esta ola agrega documentación a los
 cuatro índices compartidos; no reemplaza informes anteriores.
+
+## 21. PR15: revisión previa y ubicación del recibo posterior
+
+[PR15 — reparación e informe CF](https://github.com/Jhona-la/Trader-Gemini/pull/15)
+publicada contra mainfa23. Revisión previa: MERGEABLE/CLEAN, cero checks
+configurados, cero revisiones/hilos pendientes. Esto NO se etiqueta CI verde
+ni revisión independiente; las pruebas son locales. El árbol de fuentes es
+836aa9dc y las adendas posteriores sólo añaden documentación.
+
+El JSON conserva deliberadamente su snapshot pre-merge. El recibo posterior
+en PR15 registra SHA remoto, comparación de árboles/ancestralidad y retirada
+de la rama: no se puede certificar un commit remoto antes de que exista.
