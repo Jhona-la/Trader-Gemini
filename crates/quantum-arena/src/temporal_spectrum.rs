@@ -10,9 +10,12 @@
 //! EWMA de |desviación|). Este cociente no es un z-score estadístico
 //! estándar: el denominador no es la desviación típica de una distribución.
 //!
-//! `persistence` es una EWMA del producto de signos, en [-1,1]: +1 indica
-//! signos repetidos; -1, alternantes; 0, balance o ausencia de evidencia.
-//! No estima por sí sola Hurst ni habilidad predictiva fuera de muestra.
+//! `persistence` es la autocorrelación de signo de los retornos de BLOQUES
+//! consecutivos y no solapados de duración ≥ τ, en [-1,1]: +1 indica
+//! continuación a esa escala; -1, reversión; 0, caminata aleatoria o
+//! ausencia de evidencia (CL-30). Sin solape, dos bloques de una caminata
+//! aleatoria son independientes y el nulo es 0 exacto. No estima por sí
+//! sola Hurst ni habilidad predictiva fuera de muestra.
 //!
 //! La política heredada usa w = clamp(2·|persistence|·epigenetic_gain,
 //! 0.02, 3). Fusión, coherencia, proyecciones y masa |señal|·w comparten
@@ -171,10 +174,17 @@ pub struct ScaleState {
     /// En nodos actualizados: tanh(clamp(z,-5,5)). `state_at` interpola esta
     /// observable por separado; no impone tanh al momentum interpolado.
     pub signal: f64,
-    pub persistence: f64, // EWMA de sign(dev)·sign(prev_dev) — autocorrelación de sorpresas
+    /// Autocorrelación de signo de retornos consecutivos de bloques no
+    /// solapados de duración ≥ τ (CL-30). 0 = caminata aleatoria.
+    pub persistence: f64,
     /// Factor adaptativo epigenético por escala armónica (0.20..3.00, inicial 1.0)
     pub epigenetic_gain: f64,
-    prev_dev: f64,
+    /// CL-30: bloque de τ en curso (inicio y ln del precio al inicio) y
+    /// retorno del bloque anterior. Sin armar hasta el primer precio.
+    bloque_armado: bool,
+    bloque_t0_ms: u64,
+    bloque_ln_p0: f64,
+    bloque_r_prev: f64,
     /// Suma del núcleo de |dev| SIN corregir por la masa observada; la
     /// estimación pública `ewma_dev_vol` es `raw_dev_vol / masa` (D-742).
     raw_dev_vol: f64,
@@ -200,6 +210,11 @@ impl ScaleState {
         (self.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0)
     }
 }
+
+/// CL-30: memoria de la persistencia, en bloques de τ. Peso 1/16 por bloque
+/// ⇒ desviación típica ≈ √(1/31) ≈ 0,18 en el nulo; arranca en 0 (sin
+/// evidencia) y la contrae hacia 0 hasta acumular bloques.
+const PERSISTENCIA_BLOQUES: f64 = 16.0;
 
 /// Anillo de snapshots de masa CRUDA por escala (energía w·|señal| sin
 /// normalizar) para el transporte de Wasserstein: MASS_RING muestras.
@@ -271,6 +286,10 @@ impl TemporalSpectrum {
                 s.ewma_dev_vol = 0.0;
                 s.raw_dev_vol = 0.0;
                 s.signal = 0.0;
+                s.bloque_armado = true;
+                s.bloque_t0_ms = ts_ms;
+                s.bloque_ln_p0 = price.ln();
+                s.bloque_r_prev = 0.0;
             }
             self.last_ts_ms = ts_ms;
             self.first_ts_ms = ts_ms;
@@ -294,9 +313,40 @@ impl TemporalSpectrum {
         // Relajación homeostática continua de las 32 escalas epigenéticas hacia 1.0 (tau_homeo = 30 min):
         // Erradica la histeresis no-ergódica donde ganancias infladas o penalizadas se petrificaban sin disipación.
         let homeo_decay = (-dt / 1_800_000.0).exp();
+        let ln_p = price.ln();
 
         for s in self.scales.iter_mut() {
             s.epigenetic_gain = 1.0 + (s.epigenetic_gain - 1.0) * homeo_decay;
+            // CL-30: persistencia sobre bloques no solapados de duración ≥ τ.
+            // La versión previa comparaba el signo de dos desviaciones
+            // consecutivas respecto a la MISMA EWMA: con τ ≫ Δt comparten
+            // casi toda su historia y en una caminata aleatoria su acuerdo
+            // es (2/π)·asin(e^(−Δt/τ)) ≈ +0,9, mientras todos los lectores
+            // (Kelly S-1, BE/trailing, consejo, Hurst por banda, fusión)
+            // leen 0 como browniano. Dos bloques disjuntos de una caminata
+            // aleatoria son independientes: su acuerdo medio es 0.
+            if !s.bloque_armado {
+                s.bloque_armado = true;
+                s.bloque_t0_ms = ts_ms;
+                s.bloque_ln_p0 = ln_p;
+                s.bloque_r_prev = 0.0;
+            } else if (ts_ms - s.bloque_t0_ms) as f64 >= s.tau_ms {
+                let r = ln_p - s.bloque_ln_p0;
+                let signo = |x: f64| {
+                    if x > 0.0 {
+                        1.0
+                    } else if x < 0.0 {
+                        -1.0
+                    } else {
+                        0.0
+                    }
+                };
+                let agree = signo(r) * signo(s.bloque_r_prev);
+                s.persistence += (agree - s.persistence) / PERSISTENCIA_BLOQUES;
+                s.bloque_r_prev = r;
+                s.bloque_t0_ms = ts_ms;
+                s.bloque_ln_p0 = ln_p;
+            }
             // α de la escala para el dt transcurrido: el horizonte τ_i define
             // cuánto pesa ESTE tick en esa escala. Continuo en dt y τ.
             // exp_m1 preserva precisión cuando Δt/τ es pequeño (p.ej. 1 ms / 146 años).
@@ -336,19 +386,6 @@ impl TemporalSpectrum {
             } else {
                 0.0
             };
-            // Persistencia (F4.10-ready): autocorrelación de signos de las
-            // sorpresas CONSECUTIVAS de esta escala. Ruido blanco ⇒ ±1 al 50%
-            // ⇒ EWMA→0; tendencia sostenida ⇒ misma firma ⇒ →+1; reversión a
-            // la media ⇒ →−1. (La versión previa comparaba dev consigo misma
-            // post-update — trivialmente +1; el test de ruido la cazó.)
-            let agree = (dev * s.prev_dev).signum()
-                * (if dev.abs() > 1e-12 && s.prev_dev.abs() > 1e-12 {
-                    1.0
-                } else {
-                    0.0
-                });
-            s.persistence += alpha * (agree - s.persistence);
-            s.prev_dev = dev;
             s.momentum_z = z;
             s.signal = z.clamp(-5.0, 5.0).tanh();
         }
@@ -686,8 +723,9 @@ impl TemporalSpectrum {
 
     /// Vista de observables interpolados independientemente a escala tau.
     /// No es un filtro EWMA evolucionado a esa tau ni un estado reanudable:
-    /// prev_dev no se reconstruye. En particular, signal != tanh(momentum_z)
-    /// en general. Las identidades nodales no conmutan con la interpolación.
+    /// el bloque de la persistencia no se reconstruye. En particular,
+    /// signal != tanh(momentum_z) en general. Las identidades nodales no
+    /// conmutan con la interpolación.
     pub fn state_at(&self, tau_ms: f64) -> ScaleState {
         ScaleState {
             tau_ms,
@@ -697,7 +735,10 @@ impl TemporalSpectrum {
             signal: self.signal_at(tau_ms),
             persistence: self.persistence_at(tau_ms),
             epigenetic_gain: self.scale_gain_at(tau_ms),
-            prev_dev: 0.0,
+            bloque_armado: false,
+            bloque_t0_ms: 0,
+            bloque_ln_p0: 0.0,
+            bloque_r_prev: 0.0,
             raw_dev_vol: 0.0,
             raw_dev_s3: 0.0,
         }
@@ -1540,10 +1581,99 @@ mod tests {
             mean_fused.abs() < 0.15,
             "ruido sin deriva ⇒ media temporal de fusión ≈ 0, dio {mean_fused}"
         );
+        // CL-30: niveles iid alrededor de un precio fijo son reversión pura:
+        // retornos de bloques vecinos con ρ = −½ ⇒ acuerdo de signo
+        // (2/π)·asin(−½) = −⅓. Lo que no debe aparecer es continuación.
         assert!(
-            mean_persist.abs() < 0.3,
-            "persistencia en ruido debe ser débil, dio {mean_persist}"
+            mean_persist < 0.0,
+            "ruido de nivel ⇒ reversión, nunca continuación; dio {mean_persist}"
         );
+    }
+
+    /// Normal estándar determinista (xorshift64 + Box-Muller) para CL-30.
+    fn normal_cl30(estado: &mut u64) -> f64 {
+        let mut uniforme = || {
+            *estado ^= *estado << 13;
+            *estado ^= *estado >> 7;
+            *estado ^= *estado << 17;
+            ((*estado >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+        };
+        let (u1, u2) = (uniforme(), uniforme());
+        (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
+    }
+
+    /// Media temporal de la persistencia en τ = 30 s durante la segunda
+    /// mitad de una serie de ln(precio) muestreada cada 100 ms.
+    fn persistencia_media_cl30(ln_precios: impl Iterator<Item = f64>, n: usize) -> f64 {
+        let mut spec = TemporalSpectrum::new();
+        let mut t = 1_700_000_000_000u64;
+        let (mut suma, mut cuenta) = (0.0, 0.0);
+        for (i, lp) in ln_precios.take(n).enumerate() {
+            spec.update(60_000.0 * lp.exp(), t);
+            t += 100;
+            if i >= n / 2 {
+                suma += spec.persistence_at(30_000.0);
+                cuenta += 1.0;
+            }
+        }
+        suma / cuenta
+    }
+
+    /// CL-30: en una caminata aleatoria los retornos de dos bloques
+    /// disjuntos son independientes; la persistencia debe quedar en 0 (el
+    /// «browniano neutral» que leen Kelly S-1, BE/trailing y el consejo).
+    /// El estimador por desviaciones solapadas daba ≈ +0,9 en cualquier
+    /// escala con τ ≫ Δt.
+    #[test]
+    fn cl30_caminata_aleatoria_persistencia_nula() {
+        let mut estado = 0x9E37_79B9_7F4A_7C15u64;
+        let mut lp = 0.0;
+        let serie = std::iter::from_fn(|| {
+            lp += 1e-4 * normal_cl30(&mut estado);
+            Some(lp)
+        });
+        let media = persistencia_media_cl30(serie, 144_000);
+        assert!(
+            media.abs() < 0.2,
+            "caminata aleatoria ⇒ persistencia ≈ 0 a 30 s, dio {media}"
+        );
+    }
+
+    /// CL-30: una deriva que domina el ruido a la escala mantiene el signo
+    /// de bloque a bloque ⇒ persistencia positiva.
+    #[test]
+    fn cl30_tendencia_persiste() {
+        let mut estado = 0xD1B5_4A32_D192_ED03u64;
+        let mut lp = 0.0;
+        let serie = std::iter::from_fn(|| {
+            lp += 2e-5 + 1e-4 * normal_cl30(&mut estado);
+            Some(lp)
+        });
+        let media = persistencia_media_cl30(serie, 144_000);
+        assert!(media > 0.6, "deriva dominante ⇒ persistencia > 0, dio {media}");
+    }
+
+    /// CL-30: un zigzag cuyo semiperiodo es el bloque de la escala 18
+    /// (68,8 s con Δt = 100 ms) invierte el signo en cada bloque ⇒
+    /// persistencia negativa en esa escala. El estimador solapado lo veía
+    /// como continuación: desviaciones vecinas del mismo lado de la EWMA.
+    #[test]
+    fn cl30_zigzag_a_la_escala_revierte() {
+        let mut spec = TemporalSpectrum::new();
+        let mut t = 1_700_000_000_000u64;
+        let semiperiodo = 688u64;
+        for i in 0..72_000u64 {
+            let fase = i % (2 * semiperiodo);
+            let x = if fase < semiperiodo {
+                fase as f64
+            } else {
+                (2 * semiperiodo - fase) as f64
+            } / semiperiodo as f64;
+            spec.update(60_000.0 * (1.0 + 0.002 * x), t);
+            t += 100;
+        }
+        let p = spec.scales[18].persistence;
+        assert!(p < -0.6, "zigzag al bloque ⇒ reversión, dio {p}");
     }
 
     #[test]
