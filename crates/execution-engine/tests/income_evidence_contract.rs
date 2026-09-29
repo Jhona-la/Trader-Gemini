@@ -132,10 +132,15 @@ async fn repeated_page_is_no_progress_even_when_short() {
 }
 #[tokio::test]
 async fn same_visible_identity_with_a_different_amount_is_a_conflict() {
-    let err = collect(vec![vec![row(1, 10, 1.0)], vec![row(1, 10, -1.0)]], 1, 2)
+    // FMT-285b: el conflicto se CUARENTENA (no recuperable — exige
+    // conciliación) en vez de matar la ventana; la evidencia válida viaja.
+    let w = collect(vec![vec![row(1, 10, 1.0)], vec![row(1, 10, -1.0)]], 1, 2)
         .await
-        .unwrap_err();
-    assert_eq!(err, IncomeEvidenceError::ConflictingRecord);
+        .unwrap();
+    assert_eq!(w.entries.len(), 1, "la primera lectura sobrevive");
+    assert_eq!(w.quarantined.len(), 1);
+    assert_eq!(w.quarantined[0].reason, QuarantineReason::ConflictingIdentity);
+    assert!(!w.quarantined[0].recoverable, "exige conciliación");
 }
 #[tokio::test]
 async fn asset_and_trade_id_prevent_false_duplicate_collapse() {
@@ -158,6 +163,8 @@ async fn identical_overlap_is_consumed_once_and_zero_sign_is_not_a_conflict() {
 }
 #[tokio::test]
 async fn invalid_missing_and_outside_window_rows_are_not_admitted() {
+    // FMT-285b: un registro inválido va a CUARENTENA — ya no aborta la
+    // ventana; sigue sin ser admitido como evidencia.
     let mut invalids = vec![];
     let mut x = row(1, 10, 1.0);
     x.asset.clear();
@@ -170,17 +177,19 @@ async fn invalid_missing_and_outside_window_rows_are_not_admitted() {
     invalids.push(row(1, 10, f64::NAN));
     invalids.push(row(1, 10, f64::INFINITY));
     for x in invalids {
-        assert_eq!(
-            collect(vec![vec![x]], 10, 1).await.unwrap_err(),
-            IncomeEvidenceError::InvalidRecord
-        );
+        let w = collect(vec![vec![x]], 10, 1).await.unwrap();
+        assert_eq!(w.entries.len(), 0, "el inválido no se admite");
+        assert_eq!(w.quarantined.len(), 1);
+        assert_eq!(w.quarantined[0].reason, QuarantineReason::InvalidRecord);
+        assert!(w.quarantined[0].recoverable);
     }
-    assert_eq!(
-        collect(vec![vec![row(1, 101, 1.0)]], 10, 1)
-            .await
-            .unwrap_err(),
-        IncomeEvidenceError::OutOfRange
-    );
+    // Fuera de ventana: cuarentena con su propio motivo (recuperable
+    // ampliando la ventana).
+    let w = collect(vec![vec![row(1, 101, 1.0)]], 10, 1).await.unwrap();
+    assert_eq!(w.quarantined[0].reason, QuarantineReason::OutOfRange);
+    assert_eq!(w.entries.len(), 0);
+    // OversizedPage sigue LETAL: es una violación de protocolo de página,
+    // no un registro malo.
     assert_eq!(
         collect(vec![vec![row(1, 10, 1.0), row(2, 10, 1.0)]], 1, 1)
             .await
@@ -203,18 +212,30 @@ async fn invalid_request_does_not_invoke_fetcher() {
 }
 #[tokio::test]
 async fn transport_error_after_partial_success_is_not_empty_or_complete_evidence() {
-    let result = collect_income_window(1, 100, 3, 1, |p| {
+    // FMT-285b: el transporte que falla TRAS la primera página devuelve la
+    // evidencia parcial con cobertura TransportTruncated y el motivo —
+    // jamás se presenta como agotada (into_exhausted_entries la rechaza).
+    let w = collect_income_window(1, 100, 3, 1, |p| {
         std::future::ready(if p == 1 {
             Ok(vec![row(1, 10, 1.0)])
         } else {
             Err("offline".into())
         })
     })
-    .await;
-    assert_eq!(
-        result.unwrap_err(),
-        IncomeEvidenceError::Transport("offline".into())
-    );
+    .await
+    .unwrap();
+    assert_eq!(w.coverage, IncomeCoverage::TransportTruncated);
+    assert_eq!(w.pages_read, 1);
+    assert_eq!(w.entries.len(), 1, "la página leída sobrevive");
+    assert_eq!(w.transport_error.as_deref(), Some("offline"));
+    assert!(w.into_exhausted_entries().is_err());
+    // Falla en la página 1: sin evidencia no hay ventana — Err como antes.
+    let err = collect_income_window(1, 100, 3, 1, |_| {
+        std::future::ready(Err("offline".into()))
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(err, IncomeEvidenceError::Transport("offline".into()));
 }
 #[test]
 fn single_asset_guard_never_converts_or_adds_currencies() {
@@ -435,4 +456,91 @@ fn fmt285_quarantine_debits_only_its_own_symbol_coverage() {
     let debilitated = p.symbols_with_quarantine();
     assert_eq!(debilitated.get("AAAUSDT"), Some(&1));
     assert!(!debilitated.contains_key("BBBUSDT"));
+}
+
+// ── FMT-285b: el recorrido con transporte alimenta la cuarentena ──────
+
+/// Una página con MEZCLA de válidos e inválidos: los válidos entran, los
+/// inválidos a cuarentena, la ventana NO aborta y termina agotada — un
+/// registro malo del exchange ya no cuesta la evidencia entera del día.
+#[tokio::test]
+async fn fmt285b_registro_malo_no_mata_la_ventana_mixta() {
+    let mut invalid = row(2, 10, 1.0);
+    invalid.asset.clear();
+    let w = collect(
+        vec![vec![row(1, 10, 5.0), invalid, row(3, 20, -1.0)]],
+        10,
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(w.entries.len(), 2, "los válidos entran");
+    assert_eq!(w.quarantined.len(), 1, "el inválido se cuarentena");
+    assert_eq!(w.coverage, IncomeCoverage::PageExhausted);
+    let ids: Vec<u64> = w.entries.iter().map(|e| e.tran_id).collect();
+    assert_eq!(ids, vec![1, 3]);
+    // La ventana agotada sigue siendo consumible como evidencia completa.
+    assert_eq!(w.into_exhausted_entries().unwrap().len(), 2);
+}
+
+/// Cuarentenas NUEVAS son progreso del recorrido: una página llena que sólo
+/// trae registros fuera de rango NO se reporta como NoProgress (el recorrido
+/// siguió hasta agotar su presupuesto) — pero una página de puros
+/// duplicados exactos SÍ es estancamiento.
+#[tokio::test]
+async fn fmt285b_cuarentena_nueva_es_progreso_no_estancamiento() {
+    // Presupuesto exacto de 2 páginas: la página 2 (llena, toda en
+    // cuarentena) NO estanca — el recorrido la consume y agota presupuesto.
+    let w = collect(
+        vec![
+            vec![row(1, 10, 1.0), row(2, 20, 1.0)],
+            vec![row(3, 999, 1.0), row(4, 999, 1.0)],
+        ],
+        2,
+        2,
+    )
+    .await
+    .unwrap();
+    assert_eq!(w.pages_read, 2, "la página de cuarentenas se leyó");
+    assert_eq!(w.quarantined.len(), 2);
+    assert_eq!(
+        w.coverage,
+        IncomeCoverage::PageBudgetExceeded,
+        "no se estancó en NoProgress tras la página 1"
+    );
+    // Pura repetición exacta: eso SÍ es NoProgress (sin nueva información).
+    let w = collect(
+        vec![
+            vec![row(1, 10, 1.0), row(2, 20, 1.0)],
+            vec![row(1, 10, 1.0), row(2, 20, 1.0)],
+        ],
+        2,
+        3,
+    )
+    .await
+    .unwrap();
+    assert_eq!(w.coverage, IncomeCoverage::NoProgress);
+    assert_eq!(w.exact_duplicates_dropped, 2);
+}
+
+/// PARIDAD con partition_income: la misma tanda procesada por el recorrido
+/// (una página) y por la partición pura produce las MISMAS admisiones y los
+/// MISMOS motivos de cuarentena — un solo contrato de identidad, dos puertas.
+#[tokio::test]
+async fn fmt285b_paridad_con_partition_income() {
+    let mut invalid = row(2, 10, 1.0);
+    invalid.tran_id = 0;
+    let batch = vec![row(1, 10, 1.0), invalid, row(1, 10, -9.0), row(3, 30, 2.0)];
+    let w = collect(vec![batch.clone()], 10, 1).await.unwrap();
+    let p = partition_income(batch);
+    assert_eq!(w.entries.len(), p.accepted.len());
+    assert_eq!(w.quarantined.len(), p.quarantined.len());
+    for (a, b) in w.quarantined.iter().zip(p.quarantined.iter()) {
+        assert_eq!(a.reason, b.reason);
+        assert_eq!(a.recoverable, b.recoverable);
+    }
+    assert_eq!(
+        w.exact_duplicates_dropped,
+        p.exact_duplicates_dropped as u64
+    );
 }
