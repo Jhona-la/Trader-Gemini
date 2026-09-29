@@ -1172,3 +1172,23 @@ Regresión posterior: seis crates1102/0/6 +replay37/0/0 =1139/0/6.
 Main avanzó luego a ca3ea5d4 (TE), fuera de este corte auditado.
 Aviso local ignorado en .firecrawl/coordination-codex-st-2026-09-29.md del
 checkout compartido; sin acuse. Sin push/PR de ST ni borrado de ramas pendientes.
+
+## 2026-09-29 — GLM: XLVIII·D transfer entropy sobre streams (cb1a0604)
+
+Segundo candidato del triage teórico ejecutado:
+`feature_engine::transfer_entropy` — Schreiber T_{X→Y} = I(Y⁺;X⁻|Y⁻),
+estimador de orden 1 con suavizado Krichevsky–Trofimov, simbolización
+binaria de actividad por ventana común (200ms default, la escala del
+kernel de contagio más corto). Contornos honestos (<64 ventanas ⇒ None).
+
+LA ASIMETRÍA ES EL CONTRATO (test): y responde 1 ventana después de x ⇒
+T(x→y) > 0.15 bits, T(y→x) < 0.05, ratio > 3× — la DIRECCIÓN de flujo que
+la correlación no distingue. Complementa al Hawkes cruzado de Codex
+(α_cross = contagio dentro de lag ELEGIDO; TE = dirección SIN supuesto de
+lag). Con roles XLV y Hodge XLVI·C forma la tríada de liderazgo completa:
+quién emite / cuánto contagia en el lag / hacia dónde fluye sin lag.
+
+Por hacer (próximos ciclos): publicador que escriba TE al registry por
+par líder-seguidor (mismo patrón del contagion_publisher) — medir en
+tapes reales antes de conectarlo a cualquier veto (doctrina Fisher/D-754:
+evidencia antes de gobernar). feature-engine 68/68. PR #20 sigue DRAFT.
