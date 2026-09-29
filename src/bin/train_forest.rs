@@ -308,9 +308,16 @@ fn trailing_window_start(raw: &[BinTick], i: usize, start: u64) -> (usize, f64) 
 /// la etiqueta de las últimas muestras de train se resuelve DENTRO del tramo
 /// de validación — el modelo «ya vio» ese futuro y la métrica de validación
 /// sale optimista. Devuelve el fin (exclusivo) del train: la última muestra
-/// cuya ventana de etiqueta (t, t+τ] termina antes de la primera muestra de
-/// validación. El número de muestras descartadas no es una constante: lo fija
-/// el propio horizonte τ contra la densidad real del muestreo.
+/// cuya ventana de etiqueta termina ESTRICTAMENTE antes de la primera muestra
+/// de validación. El número de muestras descartadas no es una constante: lo
+/// fija el propio horizonte τ contra la densidad real del muestreo.
+///
+/// XLIV-13b (revisión de Codex en el PR #10): la frontera es CERRADA, la
+/// misma convención que `purge_training` (`end >= inicio`) y
+/// `require_later_holdout` (`inicio <= fin`), y la de la implementación de
+/// referencia de López de Prado. La etiqueta del train que acaba justo en
+/// `t_val` incluye el tick de `t_val`, que la validación ya conoce como
+/// rasgo (información ≤ t): la igualdad cuenta como solape.
 fn purge_end(ts: &[u64], split: usize, horizon_ms: u64) -> usize {
     if split == 0 || split >= ts.len() {
         return split.min(ts.len());
@@ -318,7 +325,7 @@ fn purge_end(ts: &[u64], split: usize, horizon_ms: u64) -> usize {
     let first_val_ts = ts[split];
     ts[..split]
         .iter()
-        .position(|&t| t.saturating_add(horizon_ms) > first_val_ts)
+        .position(|&t| t.saturating_add(horizon_ms) >= first_val_ts)
         .unwrap_or(split)
 }
 
@@ -816,6 +823,22 @@ fn purge_training(
     Ok((kept, purged))
 }
 
+/// XLIV-13: adapta las muestras de `build` (marca t, etiqueta en (t, t+τ])
+/// al tipo de los contratos FMT, con el intervalo cerrado [t, t+τ] que usan
+/// `purge_training` y `require_later_holdout`.
+fn como_intervalos(
+    feats: &[Vec<f32>],
+    labels: &[f64],
+    ts: &[u64],
+    horizon_ms: u64,
+) -> TrainingSamples {
+    let mut out = TrainingSamples::default();
+    for ((x, &y), &t) in feats.iter().zip(labels).zip(ts) {
+        out.push(x.clone(), y, t, t.saturating_add(horizon_ms));
+    }
+    out
+}
+
 fn require_later_holdout(test: &TrainingSamples, evidence_end: u64) -> Result<(), String> {
     test.validate()?;
     if test.intervals[0].start <= evidence_end {
@@ -1055,6 +1078,11 @@ fn main() {
     let lambda: f64 = arg("--lambda", "1.0").parse().unwrap();
     let patience: usize = arg("--patience", "40").parse().unwrap();
     let promote = args.iter().any(|a| a == "--promote");
+    // XLIV-13 (recompone FMT; el merge 6fdccd64 del PR #5 desconectó este
+    // contrato): promover exige un test POSTERIOR e independiente, y se
+    // comprueba antes de cualquier E/S. --val-in es evidencia de SELECCIÓN.
+    let test_in = arg("--test-in", "");
+    require_promotion_holdout(promote, &test_in).expect("promotion contract rejected before I/O");
     // CALENTAMIENTO — MEDIDO EN RELOJ DEL TAPE, NO EN TICKS.
     //
     // Ningún vector se muestrea hasta que el estado MÁS LENTO que entra en él
@@ -1182,11 +1210,15 @@ fn main() {
 
         let last_ts = raw[n_total - 1].ts;
         let span_ms = last_ts.saturating_sub(raw[0].ts);
-        let stride_ms_eff = if stride_ms.max(1) as u64 * (max_samples as u64) < span_ms {
-            stride_ms
-        } else {
-            (span_ms / (max_samples as u64)).max(1_000)
-        };
+        // XLIV-13 (recompone FMT): el presupuesto lo gobierna `SamplingBudget`,
+        // que nunca densifica el stride pedido y lo ensancha lo justo para
+        // que floor(span/stride)+1 ≤ presupuesto. La versión inline hacía lo
+        // contrario en las dos ramas: en tapes largos usaba el stride pedido
+        // y EXCEDÍA el presupuesto (nada más lo acotaba); en cortos lo
+        // DENSIFICABA (30 días, 50 s, 200 k ⇒ 13 s: 4× más solape de etiquetas).
+        let mut budget = SamplingBudget::new(span_ms, stride_ms.max(1), max_samples)
+            .expect("invalid sampling budget");
+        let stride_ms_eff = budget.stride;
         println!("   [{}] span {:.1} días · stride efectivo {}ms", path,
                  span_ms as f64 / 86_400_000.0, stride_ms_eff);
         // D-732 — `--label volu` etiqueta NOCIONAL NEGOCIADO, y eso exige que
@@ -1349,7 +1381,6 @@ fn main() {
         // seguida de ticks inválidos con ts = 0). Marca el borde por debajo del
         // cual la ventana (t−τ, t] dejaría de estar cubierta por datos.
         let mut first_ts: u64 = 0;
-        let mut next_sample_ts: u64 = 0;
         // Fin del calentamiento en RELOJ del tape (ver `--calentamiento-ms`).
         let mut fin_calentamiento: u64 = 0;
         // Día UTC cuyo bloque macro está cargado en `omni`, y si ese bloque
@@ -1452,8 +1483,9 @@ fn main() {
                 std::process::exit(1);
             }
 
-            if t.ts >= fin_calentamiento && t.ts >= next_sample_ts && t.ts + horizon_ms <= last_ts {
-                next_sample_ts = t.ts + stride_ms_eff;
+            // `reserve` consume presupuesto aunque la muestra se descarte luego
+            // (sin macro, neutra): el presupuesto cuenta intentos, no éxitos.
+            if t.ts >= fin_calentamiento && t.ts + horizon_ms <= last_ts && budget.reserve(t.ts) {
                 // Sin macro as-of t−1 la muestra se descarta (honestidad),
                 // nunca se rellena: el motor ya quedó alimentado arriba.
                 if !macro_vigente {
@@ -1724,8 +1756,8 @@ fn main() {
         }
         let n = labels.len();
         println!(
-            "   [{}] stride efectivo {}ms (presupuesto de {} muestras sobre el span)",
-            path, stride_ms_eff, max_samples
+            "   [{}] stride efectivo {}ms · {} de {} intentos del presupuesto",
+            path, stride_ms_eff, budget.attempts, budget.limit
         );
         if n < 5_000 {
             eprintln!(
@@ -1773,12 +1805,13 @@ fn main() {
     // primera muestra de validación. El recorte no es un número elegido: lo
     // fija τ contra la densidad real del muestreo.
     let val_in = arg("--val-in", "");
-    let (tr_feats, va_feats, tr_y, va_y, va_persist): (
+    let (tr_feats, va_feats, tr_y, va_y, va_persist, va_ts): (
         Vec<Vec<f32>>,
         Vec<Vec<f32>>,
         Vec<f64>,
         Vec<f64>,
         Vec<f64>,
+        Vec<u64>,
     ) = if val_in.is_empty() {
         let split = n * 8 / 10;
         let tr_end = purge_end(&sample_ts, split, horizon_ms);
@@ -1807,13 +1840,27 @@ fn main() {
             labels[..tr_end].to_vec(),
             labels[split..].to_vec(),
             persist_all[split..].to_vec(),
+            sample_ts[split..].to_vec(),
         )
     } else {
-        // Validación en OTRO fichero (otro mes): no hay solape que purgar —
-        // ninguna etiqueta de train se resuelve dentro del tape de validación.
+        // Validación en OTRO fichero. XLIV-13 (recompone FMT): que no haya
+        // solape se COMPRUEBA en vez de suponerse. La selección debe empezar
+        // después de toda muestra de train, y se purgan las filas de train
+        // cuya ventana de etiqueta [t, t+τ] alcanza el inicio de la selección.
         let s_val = build(&val_in);
-        (feats, s_val.feats, labels, s_val.labels, s_val.persist)
+        let train = como_intervalos(&feats, &labels, &sample_ts, horizon_ms);
+        let seleccion = como_intervalos(&s_val.feats, &s_val.labels, &s_val.ts, horizon_ms);
+        let (train, purgadas) = purge_training(train, &seleccion)
+            .expect("invalid training/selection separation");
+        println!(
+            "   validación cruzada por archivo · purga de solape: −{} muestras de train (τ={}ms)",
+            purgadas, horizon_ms
+        );
+        (train.features, s_val.feats, train.labels, s_val.labels, s_val.persist, s_val.ts)
     };
+    // Fin de la información usada para entrenar y seleccionar: el test
+    // posterior debe empezar DESPUÉS (la selección es la parte más tardía).
+    let evidence_end = va_ts.last().map_or(0, |&t| t.saturating_add(horizon_ms));
     let split = tr_y.len();
     assert!(
         split >= 2 && split / 10 * 8 >= 2,
@@ -1952,10 +1999,27 @@ fn main() {
     // puntuación cruda sobre el bosque truncado — la misma composición que
     // `predict_raw` sirve en vivo. `best_val` NO se toca: por construcción ya
     // es la métrica de estos `best_rounds` árboles.
-    let f_val: Vec<f64> = va_feats
+    //
+    // XLIV-13 (recompone FMT-190/191): el artefacto que se guardará se
+    // serializa AQUÍ y la validación se puntúa con él por la ruta de servicio
+    // (`predict_raw_checked`); `best_val` pasa a ser la métrica de ese
+    // artefacto. La composición de entrenamiento (`forest_raw`) se conserva
+    // como control de paridad.
+    let model = serialize_forest(&trees, init_score, lr)
+        .expect("invalid forest export; no model has been written");
+    let f_val = serving_predictions(&model, &va_feats)
+        .expect("invalid validation evidence; no model has been written");
+    let paridad = va_feats
         .iter()
-        .map(|x| forest_raw(init_score, lr, &trees, x))
-        .collect();
+        .zip(&f_val)
+        .map(|(x, &f)| (forest_raw(init_score, lr, &trees, x) - f).abs())
+        .fold(0.0_f64, f64::max);
+    println!("   paridad entrenamiento↔servicio en validación: máx |Δ| = {:.3e}", paridad);
+    let best_val = if is_regression {
+        mse(&va_y, &f_val)
+    } else {
+        logloss(&va_feats, &va_y, &f_val)
+    };
 
     // Baseline CONSTANTE: tasa base en clasificación, media del train en
     // regresión. En clasificación es el baseline correcto (no hay «clase
@@ -2038,8 +2102,8 @@ fn main() {
     } else {
         baseline - best_val >= gate_margin
     };
-    let gate_ok = gate_pass;
-    if !gate_ok {
+    let gate_sel = gate_pass;
+    if !gate_sel {
         if is_regression {
             println!("🚫 GATE: el modelo no bate a la PERSISTENCIA por el margen {} — \
                       repetir el valor reciente es igual o mejor. El modelo vivo NO se toca.",
@@ -2049,6 +2113,48 @@ fn main() {
                      gate_margin);
         }
     }
+    // XLIV-13 (recompone FMT): el TEST POSTERIOR. Sólo el artefacto congelado
+    // llega al test; sus etiquetas no eligen árboles ni ajustan nada. Sin
+    // --test-in la evidencia es de selección y NO es apta para promoción
+    // (`require_promotion_holdout` ya lo impidió al arrancar).
+    let test_ok = if test_in.is_empty() {
+        println!("   sin --test-in: evidencia de selección solamente; NO apta para promoción");
+        true
+    } else {
+        let s_test = build(&test_in);
+        let test = como_intervalos(&s_test.feats, &s_test.labels, &s_test.ts, horizon_ms);
+        require_later_holdout(&test, evidence_end).expect("invalid final holdout");
+        let pred = serving_predictions(&model, &test.features).expect("invalid test predictions");
+        let constante = vec![init_score as f64; test.labels.len()];
+        let pass = if is_regression {
+            let mse_modelo = mse(&test.labels, &pred);
+            let (r2_media, skill, pass) = regression_gate(
+                mse_modelo,
+                mse(&test.labels, &constante),
+                mse(&test.labels, &s_test.persist),
+                gate_margin,
+            );
+            println!(
+                "   test posterior (n={}): MSE {:.6} · skill vs PERSISTENCIA {:.4} · R² vs media {:.4} (informativo)",
+                test.labels.len(), mse_modelo, skill, r2_media
+            );
+            pass
+        } else {
+            let ll = logloss(&test.features, &test.labels, &pred);
+            let base = logloss(&test.features, &test.labels, &constante);
+            println!(
+                "   test posterior (n={}): logloss {:.6} · baseline {:.6} (mejora {:+.6})",
+                test.labels.len(), ll, base, base - ll
+            );
+            passes_loss_gate(false, ll, base, gate_margin)
+        };
+        if !pass {
+            println!("🚫 GATE (test posterior): sin mejora ≥ {} fuera de la selección. El modelo vivo NO se toca.",
+                     gate_margin);
+        }
+        pass
+    };
+    let gate_ok = gate_sel && test_ok;
     let promote = promote && gate_ok;
 
     // ── 5. Serializar al formato NanoForestData ──────────────────────────
@@ -2083,10 +2189,8 @@ fn main() {
     } else {
         format!("models/{}{}_CANDIDATE.json", symbol, suffix)
     };
-    // (fusión PR #5) FMT-190/191: serializar el predictor EXACTO que sirvió
-    // al gate, antes de tocar cualquier destino.
-    let model = serialize_forest(&trees, init_score, lr)
-        .expect("invalid forest export; no model has been written");
+    // FMT-190/191: `model` es el artefacto EXACTO que puntuaron la validación
+    // y el test (serializado antes del gate, XLIV-13).
     let mut f = File::create(&out).unwrap();
     serde_json::to_writer_pretty(&mut f, &model).unwrap();
     println!(
@@ -2303,6 +2407,32 @@ mod contract_tests {
             samples.push(vec![start as f32], start as f64, start, end);
         }
         samples
+    }
+
+    #[test]
+    fn xliv_como_intervalos_compone_los_contratos_de_seleccion_y_test() {
+        // Train t = 1000, 2000, 3000 con τ = 1500: la ventana [3000, 4500]
+        // alcanza una selección que empieza en 4000 ⇒ se purga esa fila.
+        let tr = como_intervalos(
+            &[vec![0.1], vec![0.2], vec![0.3]],
+            &[1.0, 0.0, 1.0],
+            &[1000, 2000, 3000],
+            1500,
+        );
+        let sel = como_intervalos(&[vec![0.4], vec![0.5]], &[0.0, 1.0], &[4000, 5000], 1500);
+        let (kept, purged) = purge_training(tr, &sel).unwrap();
+        assert_eq!((kept.labels.len(), purged), (2, 1));
+        // La selección termina en 5000 + 1500: un test que empiece en 6500
+        // (frontera cerrada) solapa; en 6501 es posterior.
+        let fin = 5000 + 1500;
+        let solapa = como_intervalos(&[vec![0.6]], &[1.0], &[6500], 1500);
+        let posterior = como_intervalos(&[vec![0.6]], &[1.0], &[6501], 1500);
+        assert!(require_later_holdout(&solapa, fin).is_err());
+        assert!(require_later_holdout(&posterior, fin).is_ok());
+        // Una selección que empieza antes que el último train es inválida.
+        let tr2 = como_intervalos(&[vec![0.1], vec![0.2]], &[1.0, 0.0], &[1000, 5000], 10);
+        let sel2 = como_intervalos(&[vec![0.3]], &[1.0], &[4000], 10);
+        assert!(purge_training(tr2, &sel2).is_err());
     }
 
     #[test]
@@ -3039,15 +3169,30 @@ mod tests {
 
         // Con tau/stride = 6, la muestra situada EXACTAMENTE tau antes del
         // borde resuelve su etiqueta en el instante de la primera muestra de
-        // validación, y ese instante todavía no pertenece a la ventana de
-        // etiqueta de la validación —que es (t_val, t_val+tau]—, así que no
-        // invade: se purgan las 5 posteriores, no 6. El número lo fija la
+        // validación. XLIV-13b: con intervalos CERRADOS (la convención de
+        // `purge_training`, `require_later_holdout` y López de Prado) esa
+        // frontera es solape — su etiqueta usa el tick que la validación ya
+        // tiene como rasgo —, así que se purgan 6, no 5. El número lo fija la
         // geometría de las ventanas, no una constante elegida.
-        assert_eq!(split - tr_end, 5, "purgadas {} muestras", split - tr_end);
+        assert_eq!(split - tr_end, 6, "purgadas {} muestras", split - tr_end);
         for &t in &ts[..tr_end] {
-            assert!(t + tau <= ts[split], "muestra de train que resuelve en validación: {t}");
+            assert!(t + tau < ts[split], "muestra de train que resuelve en validación: {t}");
         }
-        assert!(ts[tr_end] + tau > ts[split], "la primera purgada debe invadir");
+        assert!(ts[tr_end] + tau >= ts[split], "la primera purgada debe tocar la validación");
+        // Misma frontera que el contrato FMT sobre intervalos cerrados. Los
+        // contratos FMT rechazan el instante 0 (los tapes usan ms de época):
+        // se desplaza la rejilla 1 ms, y purge_end es invariante a traslación.
+        let ts1: Vec<u64> = ts.iter().map(|t| t + 1).collect();
+        assert_eq!(purge_end(&ts1, split, tau), tr_end);
+        let tr = como_intervalos(
+            &vec![vec![0.0f32]; split],
+            &vec![0.0; split],
+            &ts1[..split],
+            tau,
+        );
+        let sel = como_intervalos(&[vec![0.0]], &[0.0], &ts1[split..split + 1], tau);
+        let (kept, _) = purge_training(tr, &sel).unwrap();
+        assert_eq!(kept.labels.len(), tr_end, "purge_end y purge_training deben coincidir");
 
         // Sin solape (tau < stride) no se purga nada.
         assert_eq!(purge_end(&ts, split, 10_000), split);

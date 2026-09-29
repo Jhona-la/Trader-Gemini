@@ -74,8 +74,9 @@ bloques: **CL-n** («CL» = Claude; «Ola-20/XLV·A…F» es de otro agente).
 
 ## 2026-09-28 — Claude (cloud): auditoría de gates de evolución y régimen (PR #8)
 
-> Estado: el primer tramo (XLIV-1…7) entró en `main` con 41755422 (merge
-> local de GLM). El segundo tramo (XLIV-8…12) sigue en el PR #8.
+> Estado: los dos primeros tramos (XLIV-1…12) están en `main` (PR #8,
+> 09245261). El tercero (XLIV-8c, XLIV-13) va en un PR nuevo desde la misma
+> rama, reiniciada sobre `main`.
 
 Canal: PR #8 de GitHub (la sesión cloud no ve el buzón no versionado
 `COORDINACION_CODEX_2026-09-28.md`). Sin push directo a `main` (permiso
@@ -129,9 +130,10 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   entropía constante 0,5, a t = 31: media 9,77 y varianza < 0 (sd = 0). CVD y
   marea no afectados (nacen en 0). Codex tiene en local: semillas de entropía
   en 0, dominio cerrado (peso ∈ (0,1], segundo momento ≥ 0, finito),
-  calentamiento con log1p/expm1 y reloj W₁ monótono. **XLIV-3 ya entró en
-  `main` (41755422) SIN ese arreglo**: el defecto está vivo hasta que Codex
-  publique su parche. Claude no toca esa zona.
+  calentamiento con log1p/expm1 y reloj W₁ monótono. XLIV-3 entró en `main`
+  (41755422) sin ese arreglo; **CERRADO por el PR #11 de Codex** (fbf299ee /
+  b3ba8d80, en `main` desde 92534a9e): semillas de entropía en 0, dominio de
+  momentos cerrado y reloj W₁ causal.
 
 ### Segundo tramo (XLIV-8 … XLIV-12, con 8b y 9b/9c)
 - **XLIV-8 fricción única**: `tp_sl::roundtrip_friction` (2·taker + 2·(piso +
@@ -184,6 +186,35 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   para medir, `touch` a los .rs que difieren (o `cargo clean -p`) antes de
   volver a compilar. La build debug no estaba afectada.
 
+### Tercer tramo (tras el merge del PR #8)
+- **XLIV-8c**: XLIV-8 olvidó un quinto sitio con la ley lineal de latencia,
+  el fallback de gestión del núcleo (`fee_rt_mgmt`). Portado de XLV-1 (PR #9
+  de otra sesión Claude, cerrado sin fusionar por solaparse con el #8) junto
+  con su guardia sobre las fuentes: función única en los cuatro archivos y
+  prohibido `lat_ref`/`latency_ref_ms`.
+- **XLIV-13 train_forest (hallazgo de Codex)**: el merge 6fdccd64 del PR #5
+  dejó los helpers FMT definidos pero SIN llamadas en `main()`. Verificado:
+  `--promote` escribía el modelo VIVO con evidencia de SELECCIÓN (sin
+  `--test-in`); el stride efectivo estaba invertido (excedía el presupuesto
+  en tapes largos y densificaba ×4 en cortos); `--val-in` suponía el no
+  solape sin comprobarlo; la validación no puntuaba el artefacto
+  serializado. Recompuesto sin revertir D-753/D-733: contrato de promoción
+  antes de E/S, `SamplingBudget`, `purge_training` para `--val-in`,
+  `serving_predictions` + control de paridad con `forest_raw`, y test
+  posterior (`require_later_holdout`) que también debe pasar el gate.
+- **XLIV-13b (revisión de Codex)**: `purge_end` (split interno 80/20) usaba
+  frontera abierta (`t + τ > t_val`) y los contratos FMT cerrada; unificado a
+  `>=` (López de Prado). El test D-734 pasa de 5 a 6 purgadas y compara con
+  `purge_training`.
+- **main roto en f0fcf08a (XLV·F)**: `contagion_modulator.rs` importaba
+  `crate::hawkes_cross`, que vive en feature-engine ⇒ signal-engine no
+  compilaba (`check --all-targets` rojo en 99a19bfb). Arreglado con la misma
+  línea (`feature_engine::hawkes_cross`) en el PR #10 (3e7f00bb) y, en
+  paralelo, por Codex en el PR #12 (0f31d628, ya en `main` e67a4e2f).
+- Abierto (R8-A, Codex): el motivo de salida vivo no reconstruye el primer
+  toque de las barreras del entrenador cuando los brackets difieren
+  (contraejemplos suyos): XLIV-9c sigue siendo una aproximación.
+
 ### Hallazgos de este tramo NO corregidos (diseño o zona ajena)
 - **Tope micro del stop a 55 pb** (risk-engine, `micro_w_alloc > 0,5`): acota
   el SL por presupuesto de ruina en dólares en vez de RECHAZAR lo que no cabe
@@ -194,9 +225,10 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   0,58 + …); no pasan por `conviccion_de_rama` (D-752). Rediseño pendiente.
 - **Atribución en la fusión**: `volume_flow_rate = max(etiquetas)` atribuye el
   resultado a la rama de índice mayor, no a la que aportó la convicción.
-- **D-746 freno de apalancamiento**: mide el ATR contra `sl_at_tau` genómico a
-  la τ de `operating_tau_ms`, no contra el stop real del gate
-  (`tpsl_gate.sl_pct`) ni su τ: exige reordenar el gate (goldens).
+- ~~**D-746 freno de apalancamiento**: mide el ATR contra `sl_at_tau`
+  genómico, no contra el stop real del gate.~~ **CERRADO por CL-2** (PR #13
+  de la otra sesión Claude, en `main` a3d2eb06): el apalancamiento se decide
+  tras la geometría y recibe el stop real de la orden.
 - **`suelo_tp_sl`**: el veto es coherente (σ(τ)·k < f/0,65 ⇒ la τ propuesta no
   paga la fricción); el desperdicio está AGUAS ARRIBA: el núcleo propone τ por
   debajo de la banda operable. Candidato: que el generador consulte
