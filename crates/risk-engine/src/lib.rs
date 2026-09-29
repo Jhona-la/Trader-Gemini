@@ -5,6 +5,7 @@ pub mod epigenetic_capital_alloc;
 pub mod epigenetic_fitness_landscape;
 pub mod evidence;
 pub mod guard;
+pub mod hodge;
 pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;

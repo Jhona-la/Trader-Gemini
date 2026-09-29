@@ -139,3 +139,42 @@ bajo selección. Dos bugs reales del merge (re-sembra ts=0, lector/campo desacop
 salieron a la luz por CONTRATOS que pineaban aritmética exacta — la lección institucional:
 las validaciones truncadas no son validaciones. El régimen ya es un campo, el ruido ya no
 veta, y la intermitencia ya endurece lo que el mercado exige.
+
+---
+
+## ADENDA 2026-09-29 (XLVI·C) — T05 CERRADO: Hodge discreto integrado con falsación
+
+La hoja de ruta §7.4 listaba «Hodge discreto (T05)» como pendiente. Cerrado:
+
+- **Implementación**: `risk_engine::hodge::hodge_curl_share` — descomposición
+  de Helmholtz-Hodge sobre grafos (Jiang-Lim-Yao-Ye 2011; familia de la
+  conjetura de Hodge, problema del milenio) aplicada al flujo antisimétrico
+  de contagio Hawkes `f_ij = α[i][j] − α[j][i]`. Proyección en mínimos
+  cuadrados sobre el laplaciano del grafo completo con un nodo a tierra;
+  `curl_share = 1 − ‖∇φ‖²/‖f‖²` = fracción de la energía del flujo que
+  NINGUNA jerarquía líder→seguidor explica.
+- **Significado operativo**: el gradiente es la cascada transitiva (los
+  roles XLV·F ya la explotan); el residual cíclico es la CÁMARA DE ECO —
+  contagio que se auto-refuerza (A→B→C→A), invisible para el descuento por
+  roles y que hace que la correlación estática SUBESTIME el riesgo conjunto
+  justo cuando más importa.
+- **Contrato completo** (variable/operador/unidades/contorno/
+  identificabilidad/coste/falsación) en la cabecera del módulo. Falsación
+  con datos REALES del kernel: cascada transitiva ⇒ curl<0.5; ciclo con
+  todos los brazos dentro de la rejilla de lags ⇒ curl>0.5; determinismo
+  bit-exacto de la tubería completa.
+- **Lección de medición**: el primer fixture de ciclo cerraba a 1700ms —
+  fuera de la rejilla de lags — y el campo medido era transitivo (curl 0.29,
+  correcto para lo que el kernel VEÍA). El ciclo sólo existe para Hodge si
+  el kernel lo ve cerrarse: la rejilla de lags ES parte del contorno de
+  identificabilidad, no un detalle.
+- **Cableado**: el publicador XLV·H publica `hawkes_contagion_curl_share`
+  al registry (escalar global). NO veta nada todavía: la constante de
+  acoplamiento al veto de exposición estructural exige medición en vivo
+  (doctrina Fisher C3 / habilidad D-754: publicar la evidencia antes de
+  gobernar). El proxy legado `curl_share_desbalanceado` (Harary) queda
+  documentado como lo que es — balance de signos, no Hodge — hasta su
+  reemplazo calibrado.
+
+Tabla milenio §C4, fila Hodge: «candidato futuro» → **integrado con
+falsación (XLVI·C)**.
