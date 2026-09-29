@@ -123,3 +123,56 @@ fn invalid_fee_budget_cannot_disable_the_veto() {
         );
     }
 }
+
+/// CL-6 — NINGUNA ORDEN VALIDADA QUEDA BAJO EL NOCIONAL MÍNIMO DEL SÍMBOLO.
+/// El segundo rescate (tras recortar el margen al límite micro) truncaba el
+/// apalancamiento con `floor()`, podía no aplicarlo si el coste lo impedía y
+/// no volvía a comprobar el nocional: la orden salía validada con un
+/// nocional que el exchange rechaza.
+#[test]
+fn cl6_ninguna_orden_validada_queda_bajo_el_nocional_minimo() {
+    let (a, intent) = fixture(13.0);
+    let mut validadas = 0;
+    for capital in [8.0, 10.0, 13.0, 20.0, 40.0] {
+        for cap in [1.0, 2.0, 3.0, 5.0, 20.0] {
+            for kelly in [0.05, 0.25] {
+                a.unified_capital.store(capital, Relaxed);
+                a.config.global_leverage.store(cap, Relaxed);
+                a.config.kelly_clamp_max.store(kelly, Relaxed);
+                let out = RiskEngine::new(capital).evaluate_quantum_order(0, &intent, &a);
+                if out.signal == SignalType::Flat {
+                    continue;
+                }
+                validadas += 1;
+                assert!(
+                    out.volume_usd * out.leverage >= 5.0,
+                    "capital={capital} cap={cap} kelly={kelly}: nocional {:.4} < 5 ({out:?})",
+                    out.volume_usd * out.leverage
+                );
+            }
+        }
+    }
+    assert!(validadas > 0, "el barrido no valida ninguna orden: no prueba nada");
+}
+
+/// CL-7 — EL RIESGO REGISTRADO ES EL DEL STOP QUE LA ORDEN LLEVA. En régimen
+/// micro el stop de la orden se acota a 55 pb, pero la EWMA de
+/// `riesgo_por_operacion` (que arma el cortacircuitos de drawdown) se
+/// alimentaba con el stop difusivo SIN acotar: registraba más riesgo del que
+/// se tomaba y aflojaba el freno en la misma proporción.
+#[test]
+fn cl7_la_ewma_de_riesgo_mide_el_stop_de_la_orden() {
+    let (a, intent) = fixture(13.0);
+    a.riesgo_por_operacion.store(0.0, Relaxed);
+    let out = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &a);
+    assert_eq!(out.signal, SignalType::Long, "{}", risk_engine::reject_report());
+    let entrada = a.coins[0].current_price.load(Relaxed);
+    let stop = (entrada - out.sl_target).abs() / entrada;
+    assert!(stop <= 0.0055 + 1e-12, "el fixture debe caer en el tope micro: stop {stop}");
+    let esperado = out.volume_usd * out.leverage * stop / 13.0;
+    let registrado = a.riesgo_por_operacion.load(Relaxed);
+    assert!(
+        (registrado - esperado).abs() <= 1e-9 * esperado.max(1e-12),
+        "registrado {registrado} ≠ riesgo de la orden {esperado}"
+    );
+}

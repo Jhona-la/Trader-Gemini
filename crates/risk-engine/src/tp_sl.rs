@@ -156,6 +156,71 @@ pub fn latency_slippage_pct(atr_ratio: f64, latency_ms: f64) -> f64 {
     }
 }
 
+/// σ del jitter lognormal del RTT a Binance Tokyo/AWS AP-Northeast.
+/// Mismo valor por defecto que `NetworkJitterSimulator` (backtest-engine):
+/// la dispersión es física de la ruta, no un gen.
+pub const LATENCY_SIGMA_JITTER: f64 = 0.35;
+
+/// XLVI·B — MUESTREO DETERMINISTA DE LATENCIA RTT LOGNORMAL (cierre DIV-2).
+///
+/// La auditoría bt↔vivo (docs/AUDITORIA_BT_VIVO_2026-09-28.md) midió que la
+/// física de fills cobra la latencia ESTÁTICA del genoma (`30.68ms`) mientras
+/// el RTT real es lognormal: p50 < estática < p99 (≈2×). El bt no conocía la
+/// cola — exactamente donde viven los stops que sobreviven por milisegundos.
+///
+/// El gen `latency_penalty_ms` pasa a calibrar la MEDIA del RTT (la
+/// normalización `exp(σz−σ²/2)` conserva la media: mediana ≈ 0.94·base) y
+/// la física añade la cola con σ fija ([`LATENCY_SIGMA_JITTER`]). El muestreo
+/// es determinista por semilla (xorshift + Box-Muller, réplica bit-exacta de
+/// `NetworkJitterSimulator::sample_latency_ms` — el contrato de igualdad vive
+/// en backtest-engine/tests/bt_vivo_parity_audit.rs), de modo que el replay
+/// conserva su garantía mismo-input ⇒ mismo-output.
+///
+/// Contornos honestos:
+/// - `base_ms` inválido (≤0/NaN) ⇒ se devuelve tal cual: sin calibración no
+///   se inventa dispersión (comportamiento previo conservado).
+/// - La pérdida de paquetes NO se modela aquí: una orden que no llena cambia
+///   la semántica de decisión, no la de contabilidad. Documentado, no callado.
+/// - La devolución se acota a [2, 500] ms como en el simulador canónico.
+#[inline]
+pub fn sample_latency_lognormal_ms(base_ms: f64, seed: u64) -> f64 {
+    if !base_ms.is_finite() || base_ms <= 0.0 {
+        return base_ms;
+    }
+    // Réplica exacta de la secuencia de `NetworkJitterSimulator::sample_latency_ms`
+    // (sin la bandera de pérdida): mismo seed ⇒ mismo milisegundo.
+    let mut rng_state = seed ^ 0x517CC1B727220A95;
+    rng_state = rng_state.wrapping_add(0x9E3779B97F4A7C15);
+    let mut z1 = rng_state;
+    z1 = (z1 ^ (z1 >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+    z1 = (z1 ^ (z1 >> 27)).wrapping_mul(0x94D049BB133111EB);
+    z1 = z1 ^ (z1 >> 31);
+    let u1 = ((z1 as f64) / (u64::MAX as f64)).clamp(1e-6, 1.0 - 1e-6);
+
+    rng_state = rng_state.wrapping_add(0x9E3779B97F4A7C15);
+    let mut z2 = rng_state;
+    z2 = (z2 ^ (z2 >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+    z2 = (z2 ^ (z2 >> 27)).wrapping_mul(0x94D049BB133111EB);
+    z2 = z2 ^ (z2 >> 31);
+    let u2 = ((z2 as f64) / (u64::MAX as f64)).clamp(1e-6, 1.0 - 1e-6);
+
+    let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+    let exponent =
+        (LATENCY_SIGMA_JITTER * z - 0.5 * LATENCY_SIGMA_JITTER * LATENCY_SIGMA_JITTER)
+            .clamp(-50.0, 50.0);
+    (base_ms * exponent.exp()).clamp(2.0, 500.0)
+}
+
+/// Semilla determinista por evento y activo para el muestreo de latencia:
+/// mezcla el reloj del evento con el nodo para que dos activos no compartan
+/// muestra en el mismo milisegundo (y el mismo activo sea reproducible).
+#[inline]
+pub fn latency_seed(event_time_ms: u64, coin_id: usize) -> u64 {
+    event_time_ms
+        .rotate_left(8)
+        .wrapping_add((coin_id as u64).wrapping_mul(0x9E3779B97F4A7C15))
+}
+
 /// XLIV-8 — FRICCIÓN DE IDA Y VUELTA: FUENTE ÚNICA.
 ///
 /// D-747 unificó la ley del deslizamiento por latencia en el gate de
@@ -622,5 +687,96 @@ mod tests {
         assert_eq!(roundtrip_friction(taker, 0.2, atr, lat), 2.0 * taker + 0.10);
         // Sin volatilidad ni latencia sólo quedan comisiones y piso.
         assert_eq!(roundtrip_friction(taker, floor, 0.0, lat), 2.0 * taker + 2.0 * floor);
+    }
+
+    /// XLVI·B — el muestreo es determinista por semilla: mismo (base, seed)
+    /// ⇒ bit-idéntico. Es la garantía que conserva el determinismo del replay.
+    #[test]
+    fn xlvib_muestreo_latencia_determinista_por_semilla() {
+        for base in [5.0_f64, 30.68, 100.0] {
+            for seed in [0u64, 1, 42, u64::MAX, 0xDEAD_BEEF] {
+                let a = sample_latency_lognormal_ms(base, seed);
+                let b = sample_latency_lognormal_ms(base, seed);
+                assert_eq!(a.to_bits(), b.to_bits(), "base={base} seed={seed}");
+                assert!(a.is_finite() && (2.0..=500.0).contains(&a), "a={a}");
+            }
+        }
+        // Semillas distintas ⇒ muestras distintas (en general): 100 semillas
+        // consecutivas no colapsan a un único valor.
+        let uniq: std::collections::HashSet<u64> = (0..100u64)
+            .map(|s| sample_latency_lognormal_ms(30.0, s).to_bits())
+            .collect();
+        assert!(uniq.len() > 90, "colapso a {} valores", uniq.len());
+    }
+
+    /// XLVI·B — el gen calibra la MEDIA: mean ≈ base (la normalización
+    /// conserva la media), mediana ≈ base·exp(−σ²/2) ≈ 0.94·base (firma que
+    /// la auditoría midió: p50 < estática), y la cola derecha existe
+    /// (p99 ≈ 2.1× base con σ=0.35). Contornos DIV-2 en su forma corregida.
+    #[test]
+    fn xlvib_media_preservada_y_cola_presente() {
+        let base = 30.68_f64;
+        let mut s: Vec<f64> = (0..20_000u64)
+            .map(|i| sample_latency_lognormal_ms(base, i))
+            .collect();
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let p50 = s[s.len() / 2];
+        let p99 = s[(s.len() as f64 * 0.99) as usize - 1];
+        let mean = s.iter().sum::<f64>() / s.len() as f64;
+        // Media ≈ base (±3%): el coste esperado en latencia no cambia.
+        assert!((mean / base - 1.0).abs() < 0.03, "mean={mean}");
+        // Mediana ≈ 0.94·base (±5%): la normalización exp(σz−σ²/2).
+        assert!((p50 / base - 0.9401).abs() < 0.05, "p50={p50}");
+        // Cola: p99 > 1.7× base (teórico ≈ 2.1×).
+        assert!(p99 > base * 1.7, "p99={p99}");
+    }
+
+    /// XLVI·B — sin calibración no se inventa dispersión: base inválido se
+    /// devuelve tal cual (conserva el comportamiento previo del estático).
+    #[test]
+    fn xlvib_base_invalida_pasa_sin_muestrear() {
+        assert_eq!(sample_latency_lognormal_ms(0.0, 7).to_bits(), 0.0_f64.to_bits());
+        assert!(sample_latency_lognormal_ms(-5.0, 7).is_nan() == false);
+        assert_eq!(sample_latency_lognormal_ms(-5.0, 7), -5.0);
+        assert!(sample_latency_lognormal_ms(f64::NAN, 7).is_nan());
+    }
+
+    /// XLVI·B — efecto agregado sobre la ley difusiva: con el gen calibrando
+    /// la MEDIANA, la mediana del slippage muestreado ≈ estática, la media
+    /// baja ≤2% (Jensen: E[√L] = √base·exp(−σ²/8)) y la cola sube >20% —
+    /// el cuerpo no se penaliza, la cola se cobra. Firma numérica de DIV-2.
+    #[test]
+    fn xlvib_cola_se_cobra_en_la_ley_difusiva() {
+        let (atr, base) = (0.004_f64, 30.68);
+        let estatica = latency_slippage_pct(atr, base);
+        let mut s: Vec<f64> = (0..20_000u64)
+            .map(|i| latency_slippage_pct(atr, sample_latency_lognormal_ms(base, i)))
+            .filter(|v| *v > 0.0)
+            .collect();
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let mean = s.iter().sum::<f64>() / s.len() as f64;
+        let p50 = s[s.len() / 2];
+        let p95 = s[(s.len() as f64 * 0.95) as usize - 1];
+        let p99 = s[(s.len() as f64 * 0.99) as usize - 1];
+        // Cuerpo: mediana ≈ estática (el gen sigue calibrando el centro).
+        assert!((p50 / estatica - 1.0).abs() < 0.05, "p50={p50} est={estatica}");
+        // Media: Jensen permite bajar hasta ~1.5%; nada más.
+        assert!(
+            mean / estatica > 0.95 && mean / estatica <= 1.005,
+            "media {mean} fuera de banda vs estática {estatica}"
+        );
+        // Cola: se cobra de verdad (p95 ≈ +29%, p99 ≈ +46% teóricos).
+        assert!(p95 > estatica * 1.2, "p95 {p95} ≤ 1.2× estática {estatica}");
+        assert!(p99 > estatica * 1.35, "p99 {p99} ≤ 1.35× estática {estatica}");
+    }
+
+    /// XLVI·B — la semilla mezcla evento y activo: mismo milisegundo en dos
+    /// activos NO comparte muestra; mismo activo reproduce su muestra.
+    #[test]
+    fn xlvib_semilla_por_evento_y_activo() {
+        let s0 = latency_seed(1000, 0);
+        assert_eq!(s0, latency_seed(1000, 0), "reproducible");
+        assert_ne!(latency_seed(1000, 0), latency_seed(1000, 1), "activos distintos");
+        assert_ne!(latency_seed(1000, 0), latency_seed(1001, 0), "eventos distintos");
     }
 }

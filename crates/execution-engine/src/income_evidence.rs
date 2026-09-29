@@ -11,6 +11,11 @@ pub enum IncomeCoverage {
     PageBudgetExceeded,
     NoProgress,
     Simulated,
+    /// FMT-285b: el transporte falló DESPUÉS de ≥1 página leída. La ventana
+    /// devuelve la evidencia parcial leída + el motivo; NO es una ventana
+    /// agotada (`into_exhausted_entries` la rechaza). La falla en la página
+    /// 1 sigue siendo `Err(Transport)` — sin evidencia no hay ventana.
+    TransportTruncated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +44,13 @@ pub struct IncomeWindow {
     pub pages_read: u32,
     pub coverage: IncomeCoverage,
     pub entries: Vec<IncomeEntry>,
+    /// FMT-285b: registros rechazados SIN abortar la ventana — el mismo
+    /// contrato de `partition_income`, aplicado durante el recorrido.
+    pub quarantined: Vec<QuarantinedEntry>,
+    /// Repeticiones idénticas de identidades ya aceptadas (descartadas).
+    pub exact_duplicates_dropped: u64,
+    /// Motivo del transporte si `coverage == TransportTruncated`.
+    pub transport_error: Option<String>,
 }
 
 impl IncomeWindow {
@@ -158,32 +170,87 @@ where
         pages_read: 0,
         coverage: IncomeCoverage::PageBudgetExceeded,
         entries: Vec::new(),
+        quarantined: Vec::new(),
+        exact_duplicates_dropped: 0,
+        transport_error: None,
     };
     let mut seen = HashMap::<IncomeIdentity, f64>::new();
     for page in 1..=max_pages {
-        let rows = fetch(page).await.map_err(IncomeEvidenceError::Transport)?;
+        // FMT-285b: el transporte deja de ser letal tras la primera página
+        // — la evidencia parcial viaja con cobertura TransportTruncated y
+        // el motivo; sin `into_exhausted_entries` jamás se presenta como
+        // agotada. Fallar en la página 1 sigue siendo Err: sin evidencia
+        // no hay ventana que devolver.
+        let rows = match fetch(page).await {
+            Ok(rows) => rows,
+            Err(e) => {
+                if page == 1 {
+                    return Err(IncomeEvidenceError::Transport(e));
+                }
+                window.coverage = IncomeCoverage::TransportTruncated;
+                window.transport_error = Some(e);
+                break;
+            }
+        };
         window.pages_read = page;
         let count = rows.len();
         if count > page_size as usize {
             return Err(IncomeEvidenceError::OversizedPage);
         }
-        let before = window.entries.len();
+        let before_entries = window.entries.len();
+        let before_quarantine = window.quarantined.len();
         for row in rows {
-            let key = identity(&row)?;
+            // FMT-285b: cuarentena por registro (contrato de partition_income)
+            // — un registro malo ya no mata la ventana entera.
+            let key = match identity(&row) {
+                Ok(key) => key,
+                Err(_) => {
+                    window.quarantined.push(QuarantinedEntry {
+                        entry: row,
+                        reason: QuarantineReason::InvalidRecord,
+                        recoverable: true,
+                        conflict: None,
+                    });
+                    continue;
+                }
+            };
             if row.time < start_ms || row.time > end_ms {
-                return Err(IncomeEvidenceError::OutOfRange);
+                window.quarantined.push(QuarantinedEntry {
+                    entry: row,
+                    reason: QuarantineReason::OutOfRange,
+                    recoverable: true,
+                    conflict: None,
+                });
+                continue;
             }
             if let Some(previous) = seen.get(&key) {
                 if *previous != row.income {
-                    return Err(IncomeEvidenceError::ConflictingRecord);
+                    window.quarantined.push(QuarantinedEntry {
+                        conflict: Some(IncomeConflict {
+                            accepted_income: *previous,
+                            accepted_bits: previous.to_bits(),
+                            new_bits: row.income.to_bits(),
+                            accepted_time_ms: key.time,
+                        }),
+                        entry: row,
+                        reason: QuarantineReason::ConflictingIdentity,
+                        recoverable: false,
+                    });
+                    continue;
                 }
-            } else {
-                seen.insert(key, row.income);
-                window.entries.push(row);
+                window.exact_duplicates_dropped += 1;
+                continue;
             }
+            seen.insert(key, row.income);
+            window.entries.push(row);
         }
-        // A repeated nonempty page is not proof that the range is exhausted.
-        if count > 0 && window.entries.len() == before {
+        // Una repetición sin avances NI de evidencia NI de cuarentena no es
+        // prueba de rango agotado (NoProgress); cuarentenas nuevas SÍ son
+        // progreso del recorrido.
+        if count > 0
+            && window.entries.len() == before_entries
+            && window.quarantined.len() == before_quarantine
+        {
             window.coverage = IncomeCoverage::NoProgress;
             break;
         }
@@ -210,6 +277,108 @@ pub fn single_income_asset(entries: &[IncomeEntry]) -> Result<Option<&str>, Inco
         }
     }
     Ok(asset)
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// §13.3 (XXXIX, cerrado XLVI·G) — FX AS-OF Y BALANCE DE FLUJOS
+//
+// Diseño ejecutable: la conversión de un flujo usa la tasa VIGENTE EN SU
+// INSTANTE, nunca la tasa actual para un flujo pasado (mirada de tasa =
+// lookahead contable). Reglas del contrato:
+//   · AS-OF: `FxAsOf::rate(from, to, time_ms)` — el proveedor responde la
+//     tasa del instante o None.
+//   · SIN TASA ⇒ SIN CONVERSIÓN: el flujo permanece en su activo, como
+//     subtotal INDEPENDIENTE. Nada se descarta ni se anota a cero.
+//   · NUNCA UN TOTAL MIXTO SILENCIOSO: `converted_net` sólo suma flujos
+//     con tasa as-of (o ya en el activo objetivo); `unconverted_by_asset`
+//     expone lo no convertible por activo.
+//   · El guard legado `single_income_asset` (Err(MixedAssets)) sigue
+//     disponible para quien NO quiera convertir — esta vía no lo reemplaza.
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Proveedor de tasas as-of. `None` = sin tasa para ese par/istante; una
+/// tasa no finita o ≤ 0 del proveedor se TRATA como None (defensa terminal:
+/// el balance jamás se envenena con una tasa rota).
+pub trait FxAsOf {
+    fn rate(&self, from: &str, to: &str, time_ms: u64) -> Option<f64>;
+}
+
+/// Una conversión realizada — trazabilidad del balance (qué flujo, cuándo,
+/// con qué tasa). No es evidencia de mercado; es el registro de la decisión.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FxConversion {
+    pub asset: String,
+    pub time_ms: u64,
+    pub amount: f64,
+    pub rate: f64,
+    /// true cuando el flujo ya estaba en el activo objetivo (tasa 1.0
+    /// implícita, no un dato de mercado).
+    pub passthrough: bool,
+}
+
+/// Balance de flujos multimoneda bajo FX as-of.
+#[derive(Debug, Default, Clone)]
+pub struct FxFlowBalance {
+    pub target_asset: String,
+    /// Σ de los flujos YA convertidos al activo objetivo (o nativos de él).
+    pub converted_net: f64,
+    /// Subtotales por activo de los flujos SIN tasa as-of — independientes.
+    pub unconverted_by_asset: BTreeMap<String, f64>,
+    /// Trazas de cada conversión (incluye passthroughs).
+    pub conversions: Vec<FxConversion>,
+}
+
+/// Balance de flujos con conversión FX as-of. Cada entrada debe validar el
+/// contrato de identidad (la cuarentena ya ocurrió aguas arriba); un
+/// registro roto aquí es error del caller, no cuarentena.
+pub fn fx_balance_as_of(
+    entries: &[IncomeEntry],
+    target_asset: &str,
+    fx: &dyn FxAsOf,
+) -> Result<FxFlowBalance, IncomeEvidenceError> {
+    let mut balance = FxFlowBalance {
+        target_asset: target_asset.to_string(),
+        ..FxFlowBalance::default()
+    };
+    for entry in entries {
+        identity(entry)?;
+        if entry.asset == target_asset {
+            balance.converted_net += entry.income;
+            balance.conversions.push(FxConversion {
+                asset: entry.asset.clone(),
+                time_ms: entry.time,
+                amount: entry.income,
+                rate: 1.0,
+                passthrough: true,
+            });
+            continue;
+        }
+        let usable = |r: Option<f64>| r.filter(|v| v.is_finite() && *v > 0.0);
+        match usable(fx.rate(&entry.asset, target_asset, entry.time)) {
+            Some(rate) => {
+                balance.converted_net += entry.income * rate;
+                balance.conversions.push(FxConversion {
+                    asset: entry.asset.clone(),
+                    time_ms: entry.time,
+                    amount: entry.income,
+                    rate,
+                    passthrough: false,
+                });
+            }
+            None => {
+                // Sin tasa as-of: el flujo PERMANECE en su activo. Nunca
+                // tasa actual, nunca descarte, nunca cero.
+                *balance
+                    .unconverted_by_asset
+                    .entry(entry.asset.clone())
+                    .or_insert(0.0) += entry.income;
+            }
+        }
+    }
+    if !balance.converted_net.is_finite() {
+        return Err(IncomeEvidenceError::NonFiniteAggregate);
+    }
+    Ok(balance)
 }
 
 #[derive(Debug, Default, Clone)]
@@ -415,6 +584,26 @@ pub struct QuarantinedEntry {
     /// true: reintentar la lectura puede repararla (malformación de transporte).
     /// false: exige conciliación (conflicto de identidad con importe distinto).
     pub recoverable: bool,
+    /// §13.1 (XXXIX): payload suficiente para RESOLVER la contradicción.
+    /// Sólo en `ConflictingIdentity`: AMBOS importes con su representación
+    /// EXACTA (bits) y el instante de la lectura admitida. Dos lecturas del
+    /// mismo decimal producen bits idénticos; bits distintos son revisión
+    /// real del proveedor — la conciliación decide con el payload, no con
+    /// la sospecha.
+    pub conflict: Option<IncomeConflict>,
+}
+
+/// Contradicción de identidad visible: misma clave, importes distintos.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IncomeConflict {
+    /// Importe YA ADMITIDO bajo la misma identidad visible.
+    pub accepted_income: f64,
+    /// Bits exactos del importe admitido (el decimal que el proveedor envió).
+    pub accepted_bits: u64,
+    /// Bits exactos del importe contradicctor (`entry.income`).
+    pub new_bits: u64,
+    /// Instante de la identidad compartida (ordena la revisión).
+    pub accepted_time_ms: u64,
 }
 
 /// Motivos de cuarentena. `ConflictingIdentity` NO es recuperable por re-lectura.
@@ -422,6 +611,9 @@ pub struct QuarantinedEntry {
 pub enum QuarantineReason {
     InvalidRecord,
     ConflictingIdentity,
+    /// FMT-285b: registro válido pero fuera de [start_ms, end_ms] de la
+    /// ventana pedida. Recuperable ampliando la ventana.
+    OutOfRange,
 }
 
 /// Resultado de particionar una tanda por el contrato de identidad.
@@ -472,6 +664,7 @@ pub fn partition_income(entries: Vec<IncomeEntry>) -> PartitionedIncome {
                     entry,
                     reason: QuarantineReason::InvalidRecord,
                     recoverable: true,
+                    conflict: None,
                 });
                 continue;
             }
@@ -479,6 +672,12 @@ pub fn partition_income(entries: Vec<IncomeEntry>) -> PartitionedIncome {
         if let Some(previous) = seen.get(&key) {
             if *previous != entry.income {
                 out.quarantined.push(QuarantinedEntry {
+                    conflict: Some(IncomeConflict {
+                        accepted_income: *previous,
+                        accepted_bits: previous.to_bits(),
+                        new_bits: entry.income.to_bits(),
+                        accepted_time_ms: key.time,
+                    }),
                     entry,
                     reason: QuarantineReason::ConflictingIdentity,
                     recoverable: false,

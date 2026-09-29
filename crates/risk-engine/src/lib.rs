@@ -5,6 +5,7 @@ pub mod epigenetic_capital_alloc;
 pub mod epigenetic_fitness_landscape;
 pub mod evidence;
 pub mod guard;
+pub mod hodge;
 pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;
@@ -14,6 +15,7 @@ pub mod regime;
 pub mod drawdown;
 pub mod ruin;
 pub mod tp_sl;
+pub mod veto_registry;
 
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 
@@ -264,12 +266,15 @@ impl RiskEngine {
         let max_dd = crate::capital_regime::lerp(configured_dd, 0.85, micro_w);
         if self.peak_capital > 0.0 && max_dd > 0.0 && max_dd < 1.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
-            let q_perdida = 1.0
-                - arena.coins[coin_id]
-                    .metrics
-                    .win_rate
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0, 1.0);
+            // CL-9: la caída es de la cuenta; la tasa de pérdida también
+            // (antes la de la moneda candidata: una moneda perdedora o sin
+            // historial aflojaba el freno de toda la cartera).
+            let q_perdida = crate::drawdown::q_perdida_cartera(arena.coins.iter().map(|c| {
+                (
+                    c.metrics.win_rate.load(Ordering::Relaxed),
+                    c.metrics.trade_count.load(Ordering::Relaxed) as f64,
+                )
+            }));
             // D-744b: sin riesgo medido rige el gen; el veto nunca se salta.
             let max_dd = crate::drawdown::drawdown_maximo(
                 arena.riesgo_por_operacion.load(Ordering::Relaxed),
@@ -545,20 +550,30 @@ impl RiskEngine {
             return rej(REJ_INVALID_INPUT);
         };
         // Las APIs MP/XLIV se conservan para diagnóstico e investigación.
-        // La ruta viva dispone de una EWMA de pérdida al stop, NO de sigmas
-        // comparables con pesos y covarianza conjunta. Por ello no se aplica
-        // aquí el descuento sqrt(k+k*(k-1)*rho); None conserva el presupuesto
-        // lineal legado. La sustitución por riesgo real por posición sigue
-        // pendiente (SPECTRAL-010), incluido el proxy de arranque tope/8.
-        if correlation_guard::CorrelationGuardEngine::veto_por_exposicion_estructural(
-            dependence.same_bet_positions,
-            arena.riesgo_por_operacion.load(Ordering::Relaxed),
-            1.0 - arena.coins[coin_id]
-                .metrics
-                .win_rate
-                .load(Ordering::Relaxed)
-                .clamp(0.0, 1.0),
-            None,
+        // (Ola XLVI·D/E, SPECTRAL-010) El veto agrega el RIESGO REAL de cada
+        // miembro misma-apuesta al stop (qty·|entry−sl|/capital, medido del
+        // snapshot), el riesgo EWMA de la candidata, y la ρ_PnL medida del
+        // grupo (D-748). Continuidad: miembro no medido ⇒ proxy tope/8 (el
+        // presupuesto lineal legado es el caso todos-no-medidos); riesgos
+        // uniformes reducen bit a bit a r·√(k+k(k−1)ρ̄).
+        let q_perdida = 1.0 - arena.coins[coin_id]
+            .metrics
+            .win_rate
+            .load(Ordering::Relaxed)
+            .clamp(0.0, 1.0);
+        let tope = crate::ruin::clamp_ruin(1.0, q_perdida);
+        let riesgo_ewma = arena.riesgo_por_operacion.load(Ordering::Relaxed);
+        let riesgo_candidata = if riesgo_ewma.is_finite() && riesgo_ewma > 0.0 {
+            riesgo_ewma
+        } else {
+            tope / 8.0 // arranque frío: mismo proxy que el veto legado
+        };
+        let mut riesgos = dependence.same_bet_riesgos_hibridos(tope / 8.0);
+        riesgos.push(riesgo_candidata);
+        if correlation_guard::veto_por_riesgo_real_medido(
+            &riesgos,
+            dependence.same_bet_rho_efectivo(),
+            tope,
         ) {
             return rej(2);
         }
@@ -709,19 +724,15 @@ impl RiskEngine {
         // Ahora ambos caminos llaman a la MISMA función pura con las MISMAS
         // entradas: la identidad es estructural, no disciplinaria.
         let tau_for_sizing = horizon_tau_ms_coin(intent, arena, coin_id);
-        // S-7: Hurst DE LA ESCALA OPERADA — hurst_scale_matched es el H(τ)
-        // multifractal que el core selecciona por τ dominante; fallback al
-        // escalar global si aún no fue escrito (0.0).
-        let hurst_for_geometry = {
-            let h_scale = arena.coins[coin_id]
-                .hurst_scale_matched
-                .load(Ordering::Relaxed);
-            if h_scale.is_finite() && (0.05..=0.95).contains(&h_scale) {
-                h_scale
-            } else {
-                hurst_exponent
-            }
-        };
+        // CL-26: la ley de escala del TP/SL usa el Hurst MUESTREADO POR RELOJ
+        // (DFA al cierre de la vela de 1 minuto, D-615b), no
+        // `hurst_scale_matched`. Ése (S-7) sale de ventanas de 10/25/50
+        // EVENTOS del motor multifractal: mide la microestructura del feed
+        // (con muchos ticks repetidos da H ≈ 0,2 en un paseo browniano) y,
+        // como τ dominante se queda en el ancla de 30 s, siempre era la
+        // ventana de 10 eventos. D-615b retiró el Hurst por evento
+        // precisamente porque gobierna esta ley; S-7 lo había reintroducido.
+        let hurst_for_geometry = hurst_exponent;
         // D-682 (DÉCIMA OLA): el gate evaluaba `compute_tp_sl` (TP = SL·RR_req)
         // mientras la orden usaba `compute_tp_sl_with_target_rr` (TP = SL·RR
         // genómico, mayor): la identidad que D-637 prometía seguía rota. Ahora
@@ -1060,6 +1071,16 @@ impl RiskEngine {
         // compartida con la comprobación de margen libre del núcleo.
         let safe_cushion = crate::capital_regime::margin_cushion(margin_cushion_pct, scarcity);
 
+        // D-641 (completo): el techo micro de apalancamiento es continuo en
+        // la confianza (antes escalones en 0,70 y 0,75) y en el capital
+        // (antes escalón de ~5× a 50× en $20). Interpolación geométrica: el
+        // punto medio natural entre 5× y 50× es ~16×, no 27,5×.
+        // CL-6: se calcula una vez y lo respetan LOS DOS rescates del nocional
+        // mínimo (el segundo usaba el literal 50).
+        let conf_t = ((intent.confidence - 0.65) / 0.10).clamp(0.0, 1.0);
+        let micro_lev_cap = 5.0 + 1.5 * conf_t * conf_t * (3.0 - 2.0 * conf_t);
+        let max_lev_cap = crate::capital_regime::log_lerp(50.0, micro_lev_cap, micro_w_alloc);
+
         // D-130: Evaluar si el notional real de la orden (final_margin * dynamic_leverage) cumple con el mínimo
         if final_margin > 0.0 && final_margin * dynamic_leverage < dynamic_min_notional {
             // FIX min_notional (diag R4): el leverage necesario para alcanzar
@@ -1071,13 +1092,6 @@ impl RiskEngine {
             // rechazos/día con señales sanas de conf 0.7+). El fee_impact
             // check de abajo sigue limitando el costo.
             let candidate_leverage = (dynamic_min_notional / final_margin.max(0.01)) * 1.02;
-            // D-641 (completo): el techo micro de apalancamiento es continuo en
-            // la confianza (antes escalones en 0,70 y 0,75) y en el capital
-            // (antes escalón de ~5× a 50× en $20). Interpolación geométrica: el
-            // punto medio natural entre 5× y 50× es ~16×, no 27,5×.
-            let conf_t = ((intent.confidence - 0.65) / 0.10).clamp(0.0, 1.0);
-            let micro_lev_cap = 5.0 + 1.5 * conf_t * conf_t * (3.0 - 2.0 * conf_t);
-            let max_lev_cap = crate::capital_regime::log_lerp(50.0, micro_lev_cap, micro_w_alloc);
             dynamic_leverage = candidate_leverage
                 .min(genome_max_leverage)
                 .min(max_lev_cap)
@@ -1122,14 +1136,17 @@ impl RiskEngine {
         if final_margin > safe_limit {
             final_margin = safe_limit;
             if final_margin > 0.0 && final_margin * dynamic_leverage < safe_min_notional {
-                let re_lev = (safe_min_notional / final_margin) * 1.01;
-                // Quantize BEFORE checking feasibility: all downstream
-                // notional/margin calculations must see the exchange integer.
-                let capped_leverage = re_lev.min(genome_max_leverage).min(50.0).floor();
-                let fee_impact = roundtrip_fee * capped_leverage;
-                if fee_impact <= max_fee_limit {
-                    dynamic_leverage = capped_leverage;
-                }
+                // CL-6: el apalancamiento ENTERO que alcanza el mínimo es el
+                // techo del cociente, no su suelo (`floor(1,98) = 1` dejaba la
+                // orden a la mitad del mínimo), acotado por los MISMOS techos
+                // que el primer rescate. Si no cabe, el invariante terminal de
+                // abajo rechaza; el coste lo juzga el presupuesto de comisiones.
+                let needed_leverage = (safe_min_notional / final_margin).ceil();
+                dynamic_leverage = needed_leverage
+                    .min(genome_max_leverage)
+                    .min(max_lev_cap)
+                    .floor()
+                    .max(dynamic_leverage);
             }
         }
         // Terminal invariants after every size/leverage adjustment. No
@@ -1144,6 +1161,12 @@ impl RiskEngine {
         let final_fee_impact = roundtrip_fee * dynamic_leverage;
         if !final_fee_impact.is_finite() || final_fee_impact > max_fee_limit {
             return rej(5);
+        }
+        // CL-6: ninguna orden validada queda bajo el nocional mínimo del
+        // símbolo. Antes nada lo re-verificaba tras el segundo rescate y la
+        // orden salía con un nocional que el exchange rechaza.
+        if !(final_margin * dynamic_leverage >= safe_min_notional * (1.0 - 1e-9)) {
+            return rej(6);
         }
         // (fusión PR #5: la viabilidad de margen mínimo ya se exigió arriba con
         // rej(6); el duplicado del hunk se elimina)
@@ -1193,7 +1216,11 @@ impl RiskEngine {
         // D-744c (auditoría PR #5): se registra DESPUÉS del último rechazo de
         // esta función; antes también entraban órdenes que aquí mismo se
         // rechazaban por geometría inválida.
-        let sl_pct = tpsl_gate.sl_pct;
+        // CL-7: el stop es el QUE LA ORDEN LLEVA (`expected_loss`, ya con el
+        // tope micro de 55 pb o el objetivo explícito de la intención), no el
+        // difusivo sin acotar de `tpsl_gate`: éste registraba más riesgo del
+        // que se tomaba y aflojaba el cortacircuitos en la misma proporción.
+        let sl_pct = expected_loss;
         if sl_pct > 0.0 && current_cap > 0.0 {
             let riesgo = (safe_vol * safe_lev * sl_pct) / current_cap;
             let previo = arena.riesgo_por_operacion.load(Ordering::Relaxed);

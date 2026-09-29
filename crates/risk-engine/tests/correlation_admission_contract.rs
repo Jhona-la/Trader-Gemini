@@ -138,10 +138,15 @@ fn fixture() -> (Arc<GlobalArena>, SignalIntent) {
 }
 
 fn open(arena: &GlobalArena, coin: usize, slot: usize, is_long: bool) {
+    // XLVI·E (SPECTRAL-010): qty=8 da al miembro same-bet un riesgo REAL
+    // al stop de 8·|100−99|/100 = 8% del capital — posición realista cuyo
+    // riesgo medido PESA en la agregación del veto. Con el qty=0.01 legado
+    // (riesgo real 0.01%) el veto por riesgo medido no ve al miembro y los
+    // tests de conteo doctrinal perdían su fuerza.
     arena.coins[coin].positions.slots()[slot].open(
         is_long,
         100.0,
-        0.01,
+        8.0,
         0.1,
         1000,
         if is_long { 102.0 } else { 98.0 },
@@ -304,4 +309,176 @@ fn invalid_candidate_has_no_dependency_snapshot() {
     use risk_engine::correlation_guard::dependency_exposure;
     let (arena, _) = fixture();
     assert!(dependency_exposure(&arena, arena.coins.len(), true, 0.5).is_none());
+}
+
+// ── XLVI·D: ρ efectiva medida del grupo same-bet ──────────────────────
+
+/// Continuidad con el legado: grupo same-bet enteramente NO medido ⇒
+/// ρ_efectiva = 1.0 ⇒ el veto decide EXACTAMENTE como con None (presupuesto
+/// lineal). Ningún comportamiento previo cambia por la medición.
+#[test]
+fn xlvid_grupo_no_medido_reproduce_el_presupuesto_lineal() {
+    use risk_engine::correlation_guard::CorrelationGuardEngine as C;
+    let tope = risk_engine::ruin::clamp_ruin(1.0, 0.5);
+    let riesgo = tope / 8.0; // proxy de arranque (XLI·D2)
+    for k in 1..12usize {
+        let con_none = C::veto_por_exposicion_estructural(k, riesgo, 0.5, None);
+        let con_rho_uno = C::veto_por_exposicion_estructural(k, riesgo, 0.5, Some(1.0));
+        assert_eq!(
+            con_none, con_rho_uno,
+            "k={k}: ρ̄=1 debe reproducir el lineal ({con_none} vs {con_rho_uno})"
+        );
+    }
+}
+
+/// El desbloque medido: k=9 mismas-apuestas con ρ̄=0.5 y riesgo de arranque
+/// — el lineal veta (9/8·tope > tope), la agregación de varianza NO
+/// (√(9+9·8·0.5)·tope/8 = 0.84·tope < tope). La concurrencia queda
+/// gobernada por la dependencia MEDIDA, no por el peor caso permanente.
+#[test]
+fn xlvid_rho_medida_desbloquea_concurrencia_consistente() {
+    use risk_engine::correlation_guard::CorrelationGuardEngine as C;
+    let tope = risk_engine::ruin::clamp_ruin(1.0, 0.5);
+    let riesgo = tope / 8.0;
+    let k = 9usize;
+    assert!(
+        C::veto_por_exposicion_estructural(k, riesgo, 0.5, None),
+        "legado lineal debe vetar k=9 al riesgo de arranque"
+    );
+    assert!(
+        !C::veto_por_exposicion_estructural(k, riesgo, 0.5, Some(0.5)),
+        "ρ̄=0.5 medida: √(9+36)·riesgo = 0.84·tope — no veto"
+    );
+    // ρ̄→1 recupera el veto (continuidad desde arriba).
+    assert!(
+        C::veto_por_exposicion_estructural(k, riesgo, 0.5, Some(0.999)),
+        "ρ̄→1 debe vetar como el lineal"
+    );
+}
+
+/// El acceso a la ρ efectiva: grupo vacío ⇒ None (el veto no la usa);
+/// grupo con miembros ⇒ valor acotado a [−1,1] pase lo que pase en bits.
+#[test]
+fn xlvid_acceso_rho_efectiva_tiene_contornos() {
+    use risk_engine::correlation_guard::DependencyExposure;
+    let mut e = DependencyExposure::default();
+    assert_eq!(e.same_bet_rho_efectivo(), None, "grupo vacío: None");
+    e.same_bet_positions = 4;
+    e.same_bet_rho_efectivo_bits = f64::to_bits(0.55);
+    assert!((e.same_bet_rho_efectivo().unwrap() - 0.55).abs() < 1e-12);
+    // Bits fuera de rango quedan acotados por el acceso, no por fe.
+    e.same_bet_rho_efectivo_bits = f64::to_bits(7.5);
+    assert_eq!(e.same_bet_rho_efectivo(), Some(1.0), "clamp de saneamiento");
+}
+
+// ── XLVI·E (SPECTRAL-010): veto por riesgo real medido ────────────────
+
+/// Reducción EXACTA a D-748: riesgos uniformes [r; n] con ρ ≥ 0 deben dar
+/// el MISMO veredicto que la fórmula del veto por conteo
+/// `r·sqrt(n+n(n−1)ρ̄) > tope` — la nueva agregación ponderada es la misma
+/// doctrina, no otra.
+#[test]
+fn xlvie_riesgos_uniformes_reducen_a_la_formula_d748() {
+    use risk_engine::correlation_guard::veto_por_riesgo_real_medido as veto;
+    let r = 0.00125_f64; // tope/8 con tope = 0.01
+    let tope = 0.01_f64;
+    for n in [1usize, 2, 4, 8, 12] {
+        for rho in [0.0_f64, 0.3, 0.5, 0.9, 1.0] {
+            let riesgos = vec![r; n];
+            let nuevo = veto(&riesgos, Some(rho), tope);
+            let kf = n as f64;
+            let viejo = r * (kf + kf * (kf - 1.0) * rho).sqrt() > tope;
+            assert_eq!(
+                nuevo, viejo,
+                "n={n} rho={rho}: nuevo={nuevo} viejo={viejo} — la reducción se rompió"
+            );
+        }
+    }
+}
+
+/// Híbrido frío == legado: vector enteramente de proxies (miembros no
+/// medidos + candidata sin EWMA) decide igual que el veto por conteo con
+/// el proxy tope/8 — el arranque frío no cambia de comportamiento.
+#[test]
+fn xlvie_hibrido_frio_coincide_con_el_veto_legado() {
+    use risk_engine::correlation_guard::veto_por_riesgo_real_medido as veto;
+    let tope = risk_engine::ruin::clamp_ruin(1.0, 0.5);
+    let proxy = tope / 8.0;
+    for k in 1..12usize {
+        let riesgos = vec![proxy; k + 1]; // k miembros + candidata
+        for rho in [None, Some(1.0), Some(0.5)] {
+            let nuevo = veto(&riesgos, rho, tope);
+            let viejo = risk_engine::correlation_guard::CorrelationGuardEngine::veto_por_exposicion_estructural(
+                k, proxy, 0.5, rho,
+            );
+            assert_eq!(
+                nuevo, viejo,
+                "k={k} rho={rho:?}: frío nuevo={nuevo} legado={viejo}"
+            );
+        }
+    }
+}
+
+/// El unlock de SPECTRAL-010: miembros con stops REALES pequeños dejan de
+/// pagar el proxy del peor caso. Tres miembros al 0.2% + candidata al 0.5%
+/// con tope 1%: la suma lineal veta (1.1%), la agregación con ρ̄=0.5 no
+/// (√(Σr²+ρ̄((Σr)²−Σr²)) ≈ 0.75%).
+#[test]
+fn xlvie_riesgo_real_medido_desbloquea_stops_pequenos() {
+    use risk_engine::correlation_guard::veto_por_riesgo_real_medido as veto;
+    let tope = 0.01_f64;
+    let riesgos = vec![0.002, 0.002, 0.002, 0.005]; // 3 miembros + candidata
+    assert!(veto(&riesgos, None, tope), "lineal: 1.1% > 1% veta");
+    assert!(
+        !veto(&riesgos, Some(0.5), tope),
+        "ρ̄=0.5: agregación ≈0.75% no veta — stops reales medidos"
+    );
+}
+
+/// Piso generalizado: correlación negativa extrema (o imposible) nunca
+/// baja el riesgo de grupo del MAYOR riesgo individual — la cobertura de
+/// fantasía no borra la peor exposición aislada.
+#[test]
+fn xlvie_piso_del_mayor_riesgo_individual() {
+    use risk_engine::correlation_guard::veto_por_riesgo_real_medido as veto;
+    // Un miembro al 0.9% solo, con tope 0.5%: aunque la agregación con ρ=−0.9
+    // prometa menos, la exposición individual YA excede el tope.
+    assert!(veto(&[0.009, 0.001], Some(-0.9), 0.005));
+    // ρ imposible (ρ < −1/(n−1)) ⇒ caso adverso lineal.
+    let riesgos = vec![0.004; 4];
+    assert!(veto(&riesgos, Some(-0.9), 0.01), "lineal 1.6% veta");
+}
+
+/// Sanidad terminal del veto: NaN/0/negativos en el vector no fabrican ni
+/// vetos fantasma ni descuentos; y el híbrido mapea bits-0 (no medido) al
+/// fallback del llamador.
+#[test]
+fn xlvie_sanidad_e_hibrido_de_acceso() {
+    use risk_engine::correlation_guard::{DependencyExposure, veto_por_riesgo_real_medido as veto};
+    assert!(!veto(&[f64::NAN, 0.0, -1.0, 0.001], None, 0.01));
+    assert!(veto(&[f64::NAN, 0.002, 0.002, 0.008], None, 0.01), "sólo los válidos suman");
+    let mut e = DependencyExposure::default();
+    e.same_bet_riesgos_bits = vec![0, f64::to_bits(0.003), 0];
+    let h = e.same_bet_riesgos_hibridos(0.00125);
+    assert_eq!(h, vec![0.00125, 0.003, 0.00125], "no medidos ⇒ fallback");
+    // Fallback inválido ⇒ prohibitivo (1.0), nunca gratis.
+    assert_eq!(e.same_bet_riesgos_hibridos(f64::NAN), vec![1.0, 0.003, 1.0]);
+}
+
+/// End-to-end del riesgo medido: posición misma-apuesta en el MISMO activo
+/// (ρ=1.0, siempre same-bet) con entry 100 / SL 99 / qty 8 y capital 100 ⇒
+/// riesgo real = 8·1/100 = 0.08 medido en el vector de bits.
+#[test]
+fn xlvie_dependency_exposure_mide_riesgo_real_del_snapshot() {
+    use risk_engine::correlation_guard::dependency_exposure;
+    let (arena, _) = fixture();
+    open(&arena, 0, 0, true); // long: entry 100, sl 99, qty 8
+    let e = dependency_exposure(&arena, 0, true, 0.5).unwrap();
+    assert_eq!(e.same_bet_positions, 1, "mismo activo misma dirección");
+    assert_eq!(e.same_bet_riesgos_bits.len(), 1);
+    let r = f64::from_bits(e.same_bet_riesgos_bits[0]);
+    assert!(
+        (r - 0.08).abs() < 1e-12,
+        "riesgo real qty·|entry−sl|/capital = 8·1/100, medido {r}"
+    );
 }

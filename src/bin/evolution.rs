@@ -202,6 +202,7 @@ fn evolve_main() {
         initial_capital,
         warmup_ticks: 200,
         trade_only: true, // aggTrades: sin libro real, solo eventos de trade
+        shift_atr_frac: 0.10, // histórico (DIV-1)
     };
     // El LLAMADOR registra specs del símbolo bajo evaluación (la función de
     // biblioteca no muta globals — lección de la carrera con el golden test).
@@ -542,6 +543,7 @@ fn evolve_main() {
         initial_capital,
         warmup_ticks: 50_000, // el contexto IS es warmup (PnL no se cuenta)
         trade_only: true,
+        shift_atr_frac: 0.10, // histórico (DIV-1)
     };
     let oos_rep = backtest_engine::booktick_replay::run_booktick_replay(
         &oos_with_context,

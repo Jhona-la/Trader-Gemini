@@ -60,6 +60,10 @@ const WF_REAL_TOP_K: usize = 24;
 const WF_REAL_WINDOW: usize = 400;
 const WF_REAL_MAX_COINS: usize = 8;
 const WF_REAL_MICRO_TICKS: usize = 8;
+/// CL-27 — duración de una barra del examen: `WF_REAL_MICRO_TICKS` micro-ticks
+/// de 2 s. Las series del examen son retornos del MERCADO muestreados a este
+/// reloj, así que cada retorno ocupa en el replay el tiempo que ocupó en vivo.
+const WF_BAR_MS: u64 = WF_REAL_MICRO_TICKS as u64 * 2_000;
 
 /// Numerario de precio del examen. Las series son de RETORNOS relativos, de
 /// modo que el nivel de precio no afecta al PnL ni a la aptitud: sólo fija la
@@ -212,6 +216,62 @@ pub fn wf_min_series_len() -> usize {
     2 * WF_MIN_TRADES as usize
 }
 
+/// CL-23 — series que el juez `wf_evaluate_real` puede juzgar: las de cada
+/// moneda con al menos `wf_min_series_len()` observaciones (sus últimas
+/// `WF_REAL_WINDOW`). Si ninguna llega, ninguna: la ronda no tiene nada que
+/// juzgar. CL-27: ya no hay respaldo global — era la serie de deltas de PnL
+/// del incumbente, que no es un precio (FMT-049). Una serie plana (precio
+/// congelado, feed caído) tampoco se juzga: no contiene mercado.
+pub fn series_del_examen(por_moneda: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    let minimo = wf_min_series_len();
+    por_moneda
+        .iter()
+        .filter(|sr| sr.len() >= minimo && sr.iter().any(|r| *r != 0.0))
+        .map(|sr| sr[sr.len().saturating_sub(WF_REAL_WINDOW)..].to_vec())
+        .collect()
+}
+
+/// CL-27 (FMT-049) — muestreo por RELOJ del precio de una moneda para el
+/// examen. `ultimo` es el cierre de la barra anterior (instante, precio).
+/// Devuelve el nuevo estado y, si se cerró una barra de `WF_BAR_MS`, su
+/// retorno simple (el replay avanza el precio con `p·(1 + r)`). Un hueco de
+/// más de cuatro barras (daemon parado, feed caído) reinicia la referencia
+/// sin emitir: comprimirlo en una barra fabricaría un salto que no ocurrió en
+/// ese tiempo.
+pub fn barra_de_mercado(
+    ultimo: Option<(u64, f64)>,
+    ahora_ms: u64,
+    precio: f64,
+) -> (Option<(u64, f64)>, Option<f64>) {
+    if !precio.is_finite() || precio <= 0.0 {
+        return (ultimo, None);
+    }
+    match ultimo {
+        None => (Some((ahora_ms, precio)), None),
+        Some((t0, p0)) => {
+            let dt = ahora_ms.saturating_sub(t0);
+            if dt < WF_BAR_MS {
+                (ultimo, None)
+            } else if dt > 4 * WF_BAR_MS {
+                (Some((ahora_ms, precio)), None)
+            } else {
+                (Some((ahora_ms, precio)), Some(precio / p0 - 1.0))
+            }
+        }
+    }
+}
+
+/// Desviación típica poblacional de todos los retornos de las series.
+fn volatilidad_de_series(series: &[Vec<f64>]) -> Option<f64> {
+    let n = series.iter().map(Vec::len).sum::<usize>();
+    if n == 0 {
+        return None;
+    }
+    let media = series.iter().flatten().sum::<f64>() / n as f64;
+    let var = series.iter().flatten().map(|r| (r - media).powi(2)).sum::<f64>() / n as f64;
+    var.sqrt().is_finite().then(|| var.sqrt())
+}
+
 /// D-746 — pruebas acumuladas para la corrección por multiplicidad. Monótona
 /// no decreciente y saturante: el número de experimentos realizados por el
 /// proceso no puede bajar ni desbordar. Nunca devuelve 0 (el DSR necesita al
@@ -241,8 +301,9 @@ pub fn armar_vigilancia(
         // sigue describiéndolo y se conserva íntegra. Sólo si el watchdog no
         // estaba armado todavía (primera vez que se registra este genoma) se
         // arma ahora — sin borrar las observaciones ya recogidas — y se
-        // conserva el par (generación, padre) original, que es el que el
-        // rollback debe restaurar.
+        // conserva el par (generación, padre) original. Ese padre puede
+        // llevar el MISMO genoma (re-registro): el destino real del rollback
+        // lo resuelve `destino_de_rollback` (CL-25).
         if promoted_generation.is_none() {
             *promoted_generation = Some((generation, parent));
         }
@@ -251,6 +312,60 @@ pub fn armar_vigilancia(
         post_promo_returns.clear();
         *promoted_generation = Some((generation, parent));
         true
+    }
+}
+
+/// Dirección de entrada del pre-examen a partir del momentum previo en sigmas.
+///
+/// CL-24: el umbral largo vive en [0,50; 0,95] y el corto en [0,05; 0,49]
+/// (genes 22/23); en el núcleo un corto exige `p ≤ umbral corto`, así que su
+/// exigencia es el ESPEJO `½ − umbral`. Antes se usaba `umbral − ½` también
+/// para el corto: con el gen dentro de su banda salía siempre 0, el
+/// pre-examen abría corto ante cualquier momentum negativo y la mutación del
+/// gen 23 no movía su aptitud. Mismo invariante que `ml_gate_thresholds`.
+pub fn prescreen_entry_bias(prev_sigma: f64, ml_thr_long: f64, ml_thr_short: f64) -> f64 {
+    let (thr_long, thr_short) =
+        god_engine_core::calibration::ml_gate_thresholds(ml_thr_long, ml_thr_short);
+    let mom_long = (thr_long - 0.5) * 2.0;
+    let mom_short = (0.5 - thr_short) * 2.0;
+    if prev_sigma > mom_long {
+        1.0
+    } else if prev_sigma < -mom_short {
+        -1.0
+    } else {
+        0.0
+    }
+}
+
+/// CL-25 — generación a la que el watchdog debe volver: la más reciente del
+/// linaje, desde `padre` hacia atrás, que NO lleva el genoma vigilado.
+///
+/// Cuando el incumbente gana su propia ronda, el almacén escribe otra
+/// generación con el MISMO genoma cuyo padre es la anterior, también el mismo.
+/// Con el watchdog desarmado (arranque, o tras un rollback) `armar_vigilancia`
+/// guardaba ese par y el rollback «restauraba» el genoma degradado: borraba la
+/// evidencia, anunciaba «padre restaurado» y no cambiaba nada. Ahora se salta
+/// la cadena de re-registros hasta el genoma que el vigilado sustituyó. Si en
+/// la cadena aparece un rollback, el vigilado YA es un genoma restaurado y lo
+/// que hay detrás es justo el que se retiró por degradado: no hay destino.
+pub fn destino_de_rollback(
+    padre: u64,
+    vigilado: &SuperGenotype,
+    cargar: impl Fn(u64) -> Option<quantum_arena::genome_store::GenomeEnvelope>,
+) -> Option<u64> {
+    let mut generacion = padre;
+    loop {
+        let env = cargar(generacion)?;
+        if !same_genome(&env.genome, vigilado) {
+            return Some(env.generation);
+        }
+        if env.source == "rollback"
+            || env.parent_generation == 0
+            || env.parent_generation >= env.generation
+        {
+            return None;
+        }
+        generacion = env.parent_generation;
     }
 }
 
@@ -673,6 +788,13 @@ pub struct LiveEvolutionDaemon {
     /// ruido crece con ln N. Este contador acumula los candidatos realmente
     /// evaluados desde el arranque del daemon.
     pub cumulative_trials: usize,
+    /// CL-27 (FMT-049) — retornos del MERCADO por moneda, muestreados por
+    /// reloj en barras de `WF_BAR_MS`: la entrada del examen y del
+    /// pre-examen. Antes el examen reproducía `returns_by_coin` (deltas de PnL
+    /// del incumbente) como si fueran precios: una racha perdedora del
+    /// incumbente se convertía en una tendencia bajista limpia.
+    pub market_returns_by_coin: std::collections::HashMap<usize, Vec<f64>>,
+    market_last_bar: std::collections::HashMap<usize, (u64, f64)>,
 }
 
 impl LiveEvolutionDaemon {
@@ -712,6 +834,28 @@ impl LiveEvolutionDaemon {
             post_promo_returns: Vec::with_capacity(256),
             promoted_generation: None,
             cumulative_trials: 0,
+            market_returns_by_coin: std::collections::HashMap::new(),
+            market_last_bar: std::collections::HashMap::new(),
+        }
+    }
+
+    /// CL-27 — cierra, para cada moneda con precio, la barra de mercado del
+    /// examen si ya transcurrió `WF_BAR_MS` (ver `barra_de_mercado`).
+    pub fn sample_market_bars_at(&mut self, ahora_ms: u64) {
+        for coin_id in 0..self.arena.coins.len() {
+            let precio = self.arena.coins[coin_id].current_price.load(Ordering::Relaxed);
+            let ultimo = self.market_last_bar.get(&coin_id).copied();
+            let (estado, retorno) = barra_de_mercado(ultimo, ahora_ms, precio);
+            if let Some(e) = estado {
+                self.market_last_bar.insert(coin_id, e);
+            }
+            if let Some(r) = retorno {
+                let ventana = self.market_returns_by_coin.entry(coin_id).or_default();
+                ventana.push(r);
+                if ventana.len() > WF_REAL_WINDOW {
+                    ventana.drain(0..ventana.len() - WF_REAL_WINDOW);
+                }
+            }
         }
     }
 
@@ -794,8 +938,14 @@ impl LiveEvolutionDaemon {
             // Aplicar thresholds óptimos del Shadow Forest a la Arena ÚNICAMENTE cuando está entrenado
             // D-689: y sólo con la evolución en vivo armada; sin armar, el bosque
             // aprende pero no sobrescribe los umbrales del genoma validado.
-            if self.forest.is_trained() && live_evolution_armed_for_env() {
-                let (opt_l, opt_s) = self.forest.get_optimal_thresholds();
+            // CL-18: sólo si la calibración identificó umbrales; si no, los
+            // genes del genoma validado siguen gobernando la puerta ML.
+            let calibrados = if self.forest.is_trained() && live_evolution_armed_for_env() {
+                self.forest.get_optimal_thresholds()
+            } else {
+                None
+            };
+            if let Some((opt_l, opt_s)) = calibrados {
                 self.arena
                     .config
                     .ml_threshold_long
@@ -868,6 +1018,12 @@ impl LiveEvolutionDaemon {
 
             // Muestrear retornos realizados en tiempo real tras cada tick de 500ms
             self.sample_realized_returns();
+            // CL-27: y el precio de mercado por reloj, entrada del examen.
+            let ahora_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            self.sample_market_bars_at(ahora_ms);
 
             // FASE 3: watchdog de rollback post-promoción
             self.check_post_promotion_degradation();
@@ -1005,31 +1161,43 @@ impl LiveEvolutionDaemon {
             return;
         };
         if t_stat <= -2.0 {
+            use quantum_arena::genome_store::GenomeEnvelope;
+            let destino = GenomeEnvelope::load_generation(generation_id)
+                .ok()
+                .and_then(|vigilado| {
+                    destino_de_rollback(parent, &vigilado.genome, |g| {
+                        GenomeEnvelope::load_generation(g).ok()
+                    })
+                });
             println!(
-                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {:.2} sobre {} obs post-promoción. Revirtiendo al padre {}.",
+                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {:.2} sobre {} obs post-promoción. Destino del rollback: {:?} (padre registrado {}).",
                 generation_id,
                 t_stat,
                 self.post_promo_returns.len(),
+                destino,
                 parent
             );
-            match quantum_arena::genome_store::GenomeEnvelope::rollback(parent) {
-                Ok(env) => {
+            match destino.map(|d| (d, GenomeEnvelope::rollback(d))) {
+                Some((d, Ok(env))) => {
                     env.genome.apply_to_arena(&self.arena);
                     println!(
-                        "✅ [ROLLBACK WATCHDOG] Padre {} restaurado y aplicado al arena (nueva generación {}).",
-                        parent, env.generation
+                        "✅ [ROLLBACK WATCHDOG] Generación {} restaurada y aplicada al arena (nueva generación {}).",
+                        d, env.generation
                     );
                     // QO-E2d — LEDGER: el rollback también se registra.
                     self.ledger.save_weight(
                         0,
-                        format!("gen_rollback_{}", parent),
+                        format!("gen_rollback_{}", d),
                         "rollback".to_string(),
                         -1.0,
                     );
                 }
-                Err(e) => println!(
-                    "⚠️ [ROLLBACK WATCHDOG] Rollback al padre {} falló: {}. El genoma degradado sigue activo — INTERVENCIÓN MANUAL.",
-                    parent, e
+                Some((d, Err(e))) => println!(
+                    "⚠️ [ROLLBACK WATCHDOG] Rollback a la generación {} falló: {}. El genoma degradado sigue activo — INTERVENCIÓN MANUAL.",
+                    d, e
+                ),
+                None => println!(
+                    "⚠️ [ROLLBACK WATCHDOG] El linaje no tiene un genoma distinto al que volver (o el vigilado ya es un rollback). El genoma degradado sigue activo — INTERVENCIÓN MANUAL."
                 ),
             }
             // Watchdog consumido: no re-revertir en cada ciclo sobre la misma evidencia.
@@ -1131,25 +1299,23 @@ impl LiveEvolutionDaemon {
         // watchdog más abajo).
         let genoma_activo = current_genome.clone();
 
-        // FASE 13: Entropic Volatility Mutation
-        let mean = self.returns_history.iter().sum::<f64>() / self.returns_history.len() as f64;
-        let variance = self
-            .returns_history
-            .iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f64>()
-            / self.returns_history.len() as f64;
-        let volatility = variance.sqrt().max(0.0001);
+        // T-10: series POR MONEDA para el walk-forward. CL-23: con la
+        // longitud que el juez exige (`wf_min_series_len`), no 40: entre 40 y
+        // 59 observaciones la serie desplazaba al respaldo global y luego el
+        // juez la descartaba — ninguna serie juzgada y la ronda perdida.
+        // CL-27 (FMT-049): series de MERCADO por reloj, no deltas de PnL.
+        let per_coin_series: Vec<Vec<f64>> = {
+            let mut ids: Vec<&usize> = self.market_returns_by_coin.keys().collect();
+            ids.sort();
+            let por_moneda: Vec<Vec<f64>> =
+                ids.iter().map(|id| self.market_returns_by_coin[*id].clone()).collect();
+            series_del_examen(&por_moneda)
+        };
 
-        // FIX BLOQUEO #2: Capturar snapshot de retornos reales para walk-forward en el closure
-        let returns_snapshot: Vec<f64> = self.returns_history.clone();
-        // T-10: series POR MONEDA (mínimo 40 obs) para el walk-forward.
-        let per_coin_series: Vec<Vec<f64>> = self
-            .returns_by_coin
-            .values()
-            .filter(|v| v.len() >= 40)
-            .cloned()
-            .collect();
+        // FASE 13: Entropic Volatility Mutation. CL-27: volatilidad por barra
+        // del MERCADO que se examina (la de los deltas de PnL no estaba en las
+        // unidades de las series).
+        let volatility = volatilidad_de_series(&per_coin_series).unwrap_or(0.0).max(0.0001);
 
         // E-04 — FRICCIÓN COHERENTE CON EL EV GATE: antes fee fijo
         // 0.0008 mientras el gate real incluye maker+taker+2×slip.
@@ -1225,20 +1391,17 @@ impl LiveEvolutionDaemon {
             // sobre el top-K + el incumbente — nunca más el mejor de un
             // mundo simulado que no es el que opera.
             let mut prescreened: Vec<(f64, SuperGenotype)> = Vec::with_capacity(2_048);
-            let real_series: Vec<Vec<f64>> = if !per_coin_series.is_empty() {
-                per_coin_series
-                    .iter()
-                    .map(|sr| {
-                        if sr.len() > WF_REAL_WINDOW {
-                            sr[sr.len() - WF_REAL_WINDOW..].to_vec()
-                        } else {
-                            sr.clone()
-                        }
-                    })
-                    .collect()
-            } else {
-                vec![returns_snapshot.clone()]
-            };
+            let real_series = per_coin_series.clone();
+            if real_series.is_empty() {
+                // CL-23: sin ninguna serie juzgable no hay selección, así que
+                // la ronda no se juega ni se cargan pruebas al DSR (antes se
+                // sumaban 2 001 por ronda de arranque sin juzgar nada).
+                println!(
+                    "🧬 [WF-REAL] Sin series juzgables (mínimo {} observaciones): ronda omitida, 0 pruebas.",
+                    wf_min_series_len()
+                );
+                return (current_genome.clone(), Vec::new(), 0);
+            }
             // FASE 2: roundtrip completo a taker (0.04% x 2 piernas),
             // consistente con el simulador y con el costo real de una
             // entrada de mercado + salida no-maker.
@@ -1386,21 +1549,12 @@ impl LiveEvolutionDaemon {
                 // de una decidía trades de otra. Se itera la porción OOS
                 // de cada serie por moneda; si no hay series suficientes
                 // (arranque frío) se cae a la serie global (compat).
-                let series: Vec<Vec<f64>> = if !per_coin_series.is_empty() {
-                    // pre-screen: sólo los últimos 300 retornos por moneda
-                    per_coin_series
-                        .iter()
-                        .map(|sr| {
-                            if sr.len() > 300 {
-                                sr[sr.len() - 300..].to_vec()
-                            } else {
-                                sr.clone()
-                            }
-                        })
-                        .collect()
-                } else {
-                    vec![returns_snapshot.clone()]
-                };
+                // pre-screen: sólo los últimos 300 retornos por moneda. Sin
+                // series juzgables la ronda ya se omitió (CL-23).
+                let series: Vec<Vec<f64>> = per_coin_series
+                    .iter()
+                    .map(|sr| sr[sr.len().saturating_sub(300)..].to_vec())
+                    .collect();
 
                 for coin_ret in &series {
                     let n_returns = coin_ret.len();
@@ -1418,7 +1572,7 @@ impl LiveEvolutionDaemon {
                         // distancia de probabilidad, ~0.1-0.45) — desajuste
                         // semántico que hacía el filtro degenerado. Ahora el
                         // momentum se expresa en sigmas de la ventana real
-                        // (`volatility`, calculada sobre returns_history) y el
+                        // (`volatility`, de las series de mercado, CL-27) y el
                         // umbral del genoma (0.5..0.95) se mapea a 0..0.9
                         // sigmas de momentum mínimo exigido.
                         let prev_sigma = if volatility > 1e-12 {
@@ -1426,15 +1580,8 @@ impl LiveEvolutionDaemon {
                         } else {
                             0.0
                         };
-                        let mom_long = (ml_thr_long - 0.5).max(0.0) * 2.0;
-                        let mom_short = (ml_thr_short - 0.5).max(0.0) * 2.0;
-                        let entry_bias = if prev_sigma > mom_long {
-                            1.0
-                        } else if prev_sigma < -mom_short {
-                            -1.0
-                        } else {
-                            0.0
-                        };
+                        let entry_bias =
+                            prescreen_entry_bias(prev_sigma, ml_thr_long, ml_thr_short);
                         if entry_bias == 0.0 {
                             continue;
                         } // Skip: no signal
@@ -1523,9 +1670,9 @@ impl LiveEvolutionDaemon {
             // del campo VIVO: la masa espectral concentrada en escala (Fisher
             // alta) declara un régimen identificable y el examen walk-forward
             // miente menos. Con el campo difuso (la mayoría de las monedas CON
-            // masa por debajo del umbral), la ronda se aplaza: evolucionar
-            // sobre un régimen no identificable memoriza ruido. Frío (sin
-            // masa) NO bloquea — el warmup ya gobierna el arranque.
+            // masa por debajo del umbral), la ronda se aplazaba: evolucionar
+            // sobre un régimen no identificable memoriza ruido. Desde CL-28
+            // es telemetría (ver abajo por qué).
             {
                 let con_masa: Vec<f64> = wf_fisher_snapshot
                     .iter()
@@ -1538,13 +1685,24 @@ impl LiveEvolutionDaemon {
                 // y abortaba toda ronda con ≥ 2 monedas vivas.
                 let umbral = quantum_arena::temporal_spectrum::umbral_fisher_identificable();
                 let identificados = con_masa.iter().filter(|f| **f > umbral).count();
-                if con_masa.len() >= 2 && identificados * 2 < con_masa.len() {
+                // CL-28: sólo telemetría. La Fisher de escala no discrimina un
+                // régimen del ruido: sobre un paseo aleatorio su mediana es
+                // 0,03–0,16 (< umbral ≈ 0,33), un régimen plantado no la sube
+                // y una tendencia la BAJA; con ≥ 2 monedas aplazaba casi toda
+                // ronda (≤ 10 % pasaban con 2 monedas, ≈ 0 con 10) y la
+                // evolución en vivo quedaba parada. Restringirla a escalas
+                // resueltas la vuelve una moneda al aire (≈ 32 % en ruido). Sin
+                // un umbral calibrado contra el nulo (la misma Fisher sobre
+                // incrementos barajados) no es un test de identificabilidad;
+                // la selección la protegen el examen pareado con el incumbente
+                // (D-740) y el DSR con multiplicidad acumulada (D-746).
+                if con_masa.len() >= 2 {
                     println!(
-                        "🌀 [WF-FISHER] campo espectral difuso (identificables {}/{}) — ronda aplazada: evolucionar sobre un régimen no identificable memoriza ruido",
+                        "🌀 [WF-FISHER] identificables {}/{} (umbral {:.3}; telemetría, no aplaza la ronda)",
                         identificados,
-                        con_masa.len()
+                        con_masa.len(),
+                        umbral
                     );
-                    return (current_genome.clone(), Vec::new(), 0);
                 }
             }
             // D-746 — genomas DISTINTOS puestos a prueba en esta ronda. El
@@ -1580,41 +1738,14 @@ impl LiveEvolutionDaemon {
         .await
         .unwrap_or((fallback_genome, Vec::new(), 0));
 
-        // Legacy heuristic gate retained for compatibility: not a Bayesian
-        // posterior or bootstrap confidence estimate. FMT-055 remains partial.
-        let safe_sharpe = if current_shadow_sharpe.is_finite() && current_shadow_sharpe > 0.0 {
-            current_shadow_sharpe
-        } else {
-            0.1
-        };
-        let safe_len = (self.returns_history.len().max(1)) as f64;
-        let std_error = 1.0 / safe_len.sqrt();
-        let raw_confidence = (1.0 - (std_error / safe_sharpe)).clamp(0.0, 1.0);
-
-        let bootstrap_weight = (15.0 - safe_len).max(0.0) / 15.0;
-        let heuristic_gate_score =
-            (1.0 - bootstrap_weight) * raw_confidence + bootstrap_weight * 0.60;
-
-        let target_confidence = if self.is_demo {
-            0.55
-        } else if safe_len < 10.0 {
-            0.50
-        } else if safe_len < 30.0 {
-            0.60
-        } else {
-            0.75
-        };
-
-        if heuristic_gate_score < target_confidence {
-            println!(
-                "[HEURISTIC GATE] t descriptivo {:.2}; score heurístico {:.1}% < política {:.0}% (N={}). No es probabilidad posterior.",
-                current_shadow_sharpe,
-                heuristic_gate_score * 100.0,
-                target_confidence * 100.0,
-                safe_len as usize
-            );
-            return;
-        }
+        // CL-29: se retiró la puerta heurística heredada (FMT-055). Medía el
+        // t descriptivo del INCUMBENTE, no al candidato, y estaba invertida:
+        // un incumbente que gana (t = 2) la pasaba con N ≥ 2 deltas, y uno que
+        // pierde (t ≤ 0 ⇒ 0,1) necesitaba N ≥ 494 en demo y N ≥ 1 600 fuera
+        // de demo (inalcanzable con el tope de 1 000): la evolución se cerraba
+        // justo cuando el genoma vivo pierde. La selección la juzgan el
+        // examen sobre el mercado con el incumbente compitiendo en la misma
+        // cinta (D-740, CL-27) y el DSR con multiplicidad acumulada (D-746).
 
         // QO-M1.1 — DEFLATED SHARPE RATIO (Bailey & López de Prado 2014):
         // con 2000 candidatos por ronda, el mejor por pura suerte supera
@@ -1660,10 +1791,10 @@ impl LiveEvolutionDaemon {
             best_genome.clone(),
             "online_daemon",
             &format!(
-                "t descriptivo {:.2}; score heurístico {:.4} >= política {:.4}; {} deltas PnL; sin garantía de confianza posterior",
+                "DSR {:.3} con {} pruebas acumuladas; incumbente con t descriptivo {:.2} sobre {} deltas PnL; sin garantía de confianza posterior",
+                dsr_verdict.dsr,
+                dsr_verdict.n_trials,
                 current_shadow_sharpe,
-                heuristic_gate_score,
-                target_confidence,
                 self.returns_history.len()
             ),
         ) {
@@ -1988,5 +2119,232 @@ mod tests {
             }
         }
         assert!(distingue, "same_genome debe distinguir genomas distintos");
+    }
+    /// CL-23 — entre 40 y 59 observaciones por moneda la serie desplazaba al
+    /// respaldo global y el juez (mínimo `wf_min_series_len`) la descartaba:
+    /// ninguna serie juzgada. Ahora el examen sólo lleva series juzgables.
+    #[test]
+    fn cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar() {
+        let minimo = wf_min_series_len();
+        assert_eq!(minimo, 60);
+
+        // Dos monedas con 50: nada juzgable, la ronda no carga pruebas.
+        assert!(series_del_examen(&[vec![0.001; 50], vec![-0.001; 50]]).is_empty());
+
+        // Mezcla: sólo la moneda que llega.
+        let s = series_del_examen(&[vec![0.001; 70], vec![0.001; 50]]);
+        assert_eq!(s.iter().map(Vec::len).collect::<Vec<_>>(), vec![70]);
+
+        // Recorte a la ventana del juez.
+        let s = series_del_examen(&[vec![0.001; 500]]);
+        assert_eq!(s[0].len(), WF_REAL_WINDOW);
+        assert!(s.iter().all(|x| x.len() >= minimo));
+
+        // CL-27: una serie plana (precio congelado) no contiene mercado.
+        assert!(series_del_examen(&[vec![0.0; 100]]).is_empty());
+    }
+
+    /// CL-27 (FMT-049) — las barras del examen son retornos del PRECIO por
+    /// reloj, no deltas de PnL.
+    #[test]
+    fn cl27_la_barra_del_examen_es_el_retorno_del_precio_por_reloj() {
+        let t0 = 1_000_000u64;
+        let (e, r) = barra_de_mercado(None, t0, 100.0);
+        assert_eq!((e, r), (Some((t0, 100.0)), None));
+        // Antes de una barra completa, nada.
+        let (e2, r) = barra_de_mercado(e, t0 + WF_BAR_MS - 1, 101.0);
+        assert_eq!((e2, r), (e, None));
+        // Al cerrar la barra, el retorno del precio.
+        let (e3, r) = barra_de_mercado(e2, t0 + WF_BAR_MS, 99.0);
+        assert_eq!(e3, Some((t0 + WF_BAR_MS, 99.0)));
+        assert!((r.unwrap() - (-0.01)).abs() < 1e-12);
+        // Un hueco largo reinicia la referencia sin emitir un salto.
+        let (e4, r) = barra_de_mercado(e3, t0 + WF_BAR_MS + 5 * WF_BAR_MS, 120.0);
+        assert_eq!((e4, r), (Some((t0 + 6 * WF_BAR_MS, 120.0)), None));
+        // Precio no válido: nada cambia.
+        assert_eq!(barra_de_mercado(e4, t0 + 7 * WF_BAR_MS, f64::NAN), (e4, None));
+    }
+
+    /// CL-27 — el daemon alimenta el examen con el precio de mercado, y el
+    /// PnL del incumbente no entra en esas series.
+    #[test]
+    fn cl27_el_examen_del_daemon_se_alimenta_del_mercado_y_no_del_pnl() {
+        let dir = std::env::temp_dir().join(format!("cl27_{}", std::process::id()));
+        let arena = GlobalArena::build_in_own_stack(100.0);
+        let mut d = LiveEvolutionDaemon::new(
+            QuantumHotSwapState::new(),
+            arena.clone(),
+            true,
+            dir.join("ledger.db").to_str().unwrap(),
+            dir.join("champion.json").to_str().unwrap(),
+        );
+        let t0 = 1_000_000u64;
+        let precios = [100.0, 101.0, 100.0, 102.0];
+        for (k, p) in precios.iter().enumerate() {
+            arena.coins[0].current_price.store(*p, Ordering::Relaxed);
+            // Un incumbente que PIERDE en cada barra (p.ej. un corto en subida).
+            arena.coins[0]
+                .metrics
+                .pnl_realized
+                .store(-(k as f64), Ordering::Relaxed);
+            d.sample_realized_returns();
+            d.sample_market_bars_at(t0 + k as u64 * WF_BAR_MS);
+        }
+        let barras = &d.market_returns_by_coin[&0];
+        assert_eq!(barras.len(), 3);
+        assert!((barras[0] - 0.01).abs() < 1e-12);
+        assert!((barras[1] - (100.0 / 101.0 - 1.0)).abs() < 1e-12);
+        assert!((barras[2] - 0.02).abs() < 1e-12);
+        // Las pérdidas del incumbente siguen en su propio registro.
+        assert!(d.returns_by_coin.get(&0).map_or(true, |v| v.iter().all(|r| *r < 0.0)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// CL-24 — el corto del pre-examen exige el ESPEJO de su umbral.
+    #[test]
+    fn cl24_el_umbral_corto_del_pre_examen_es_el_espejo_del_largo() {
+        // Umbral corto estricto (0,05) ⇒ exige 0,9σ de momentum bajista.
+        assert_eq!(prescreen_entry_bias(-0.3, 0.6, 0.05), 0.0);
+        assert_eq!(prescreen_entry_bias(-0.95, 0.6, 0.05), -1.0);
+        // Umbral corto laxo (0,45) ⇒ exige 0,1σ.
+        assert_eq!(prescreen_entry_bias(-0.3, 0.6, 0.45), -1.0);
+        // El largo no cambia: 0,6 ⇒ 0,2σ.
+        assert_eq!(prescreen_entry_bias(0.3, 0.6, 0.45), 1.0);
+        assert_eq!(prescreen_entry_bias(0.1, 0.6, 0.45), 0.0);
+        // La mutación del gen 23 dentro de su banda mueve la decisión.
+        let decisiones: std::collections::BTreeSet<i32> = [0.05, 0.25, 0.49]
+            .iter()
+            .map(|&thr| prescreen_entry_bias(-0.5, 0.6, thr) as i32)
+            .collect();
+        assert_eq!(decisiones.len(), 2);
+    }
+
+    fn genoma_distinto(base: &SuperGenotype) -> SuperGenotype {
+        let v = canonical_vector(base);
+        for i in 0..v.len() {
+            let mut v2 = v.clone();
+            v2[i] = if v[i].abs() > 1e-9 { v[i] * 0.5 } else { 0.5 };
+            let g = SuperGenotype::from_vector(&v2);
+            if !same_genome(base, &g) {
+                return g;
+            }
+        }
+        panic!("sin perturbación distinguible");
+    }
+
+    fn sobre(
+        generacion: u64,
+        padre: u64,
+        fuente: &str,
+        genoma: &SuperGenotype,
+    ) -> quantum_arena::genome_store::GenomeEnvelope {
+        quantum_arena::genome_store::GenomeEnvelope {
+            schema_version: 1,
+            generation: generacion,
+            created_ms: 0,
+            source: fuente.to_string(),
+            parent_generation: padre,
+            promotion_reason: String::new(),
+            genome: genoma.clone(),
+        }
+    }
+
+    /// CL-25 — el rollback vuelve al genoma que el vigilado sustituyó, no a
+    /// un re-registro de sí mismo; y nunca al que un rollback ya retiró.
+    #[test]
+    fn cl25_el_rollback_salta_los_re_registros_del_mismo_genoma() {
+        let a = SuperGenotype::default();
+        let c = genoma_distinto(&a);
+        // C (11) → A promovido (12) → A re-registrado 13..=20 → A gana (21).
+        let mut linaje = std::collections::HashMap::new();
+        linaje.insert(11, sobre(11, 10, "online_daemon", &c));
+        linaje.insert(12, sobre(12, 11, "online_daemon", &a));
+        for g in 13..=20 {
+            linaje.insert(g, sobre(g, g - 1, "online_daemon", &a));
+        }
+        let cargar = |g: u64| linaje.get(&g).cloned();
+        // El par que arma `armar_vigilancia` tras el arranque es (21, 20), y
+        // la generación 20 lleva el MISMO genoma: volver a ella no cambia nada.
+        assert!(same_genome(&linaje[&20].genome, &a));
+        assert_eq!(destino_de_rollback(20, &a, cargar), Some(11));
+        // Promoción real (12, padre 11): destino inmediato.
+        assert_eq!(destino_de_rollback(11, &a, cargar), Some(11));
+        // Generación ausente: sin destino.
+        assert_eq!(destino_de_rollback(99, &a, cargar), None);
+    }
+
+    #[test]
+    fn cl25_el_rollback_no_vuelve_al_genoma_que_un_rollback_retiro() {
+        let a = SuperGenotype::default();
+        let b = genoma_distinto(&a);
+        // A (4) → B (5) → rollback a A (6) → A re-registrado (7) → A gana (8).
+        let mut linaje = std::collections::HashMap::new();
+        linaje.insert(4, sobre(4, 3, "online_daemon", &a));
+        linaje.insert(5, sobre(5, 4, "online_daemon", &b));
+        linaje.insert(6, sobre(6, 5, "rollback", &a));
+        linaje.insert(7, sobre(7, 6, "online_daemon", &a));
+        let cargar = |g: u64| linaje.get(&g).cloned();
+        assert_eq!(destino_de_rollback(7, &a, cargar), None);
+        // Mientras B operaba, su watchdog (5, 4) sí volvía a A.
+        assert_eq!(destino_de_rollback(4, &b, cargar), Some(4));
+    }
+
+    /// CL-28 — la Fisher de escala no discrimina un régimen del ruido: sobre
+    /// un paseo aleatorio y sobre el MISMO ruido con una tendencia fuerte
+    /// (500 pb/h) queda bajo el umbral de identificabilidad, y la tendencia no
+    /// la sube. Un gate que aplaza la ronda con este estadístico no separa
+    /// regímenes identificables de los que no lo son: paraba la evolución.
+    #[test]
+    fn cl28_la_fisher_de_escala_no_separa_una_tendencia_del_ruido() {
+        use quantum_arena::temporal_spectrum::{umbral_fisher_identificable, TemporalSpectrum};
+        fn fisher(deriva_por_paso: f64) -> f64 {
+            let mut sp = TemporalSpectrum::new();
+            let mut semilla: u64 = 0x9E37_79B9_7F4A_7C15;
+            let mut uniforme = || {
+                semilla ^= semilla << 13;
+                semilla ^= semilla >> 7;
+                semilla ^= semilla << 17;
+                ((semilla >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+            };
+            let (dt_ms, sigma) = (300u64, 1e-4 * 0.3f64.sqrt());
+            let mut ln_p = 60_000f64.ln();
+            let mut fs = Vec::new();
+            for k in 0..36_000u64 {
+                let z = (-2.0 * uniforme().ln()).sqrt()
+                    * (2.0 * std::f64::consts::PI * uniforme()).cos();
+                ln_p += deriva_por_paso + sigma * z;
+                sp.update(ln_p.exp(), 1_000_000 + k * dt_ms);
+                if k >= 12_000 && k % 200 == 0 {
+                    if let Some(f) = sp.fisher_scale_information() {
+                        fs.push(f);
+                    }
+                }
+            }
+            fs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            fs[fs.len() / 2]
+        }
+        let umbral = umbral_fisher_identificable();
+        let ruido = fisher(0.0);
+        let tendencia = fisher(0.05 * 0.3 / 3_600.0);
+        assert!(ruido < umbral, "ruido F={ruido} umbral={umbral}");
+        assert!(tendencia < umbral, "tendencia F={tendencia} umbral={umbral}");
+        assert!(tendencia <= ruido * 1.25, "tendencia {tendencia} vs ruido {ruido}");
+    }
+
+    /// CL-29 — la promoción no pasa por la puerta heurística del incumbente.
+    #[test]
+    fn cl29_la_promocion_no_depende_del_t_del_incumbente() {
+        let codigo: String = include_str!("online_daemon.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        let ronda = codigo
+            .split("asyncfnevaluate_shadow_strategy(")
+            .nth(1)
+            .expect("ancla de la ronda");
+        assert!(!ronda.contains("[HEURISTICGATE]"));
+        assert!(!ronda.contains("heuristic_gate_score"));
     }
 }

@@ -119,6 +119,36 @@ pub fn drawdown_maximo(riesgo_por_operacion: f64, q_perdida: f64, gen_confianza:
     })
 }
 
+/// Tasa de pérdida supuesta mientras ninguna moneda ha cerrado operaciones:
+/// sin evidencia, pérdida y ganancia son igual de probables.
+pub const Q_SIN_HISTORIAL: f64 = 0.5;
+
+/// CL-9 — TASA DE PÉRDIDA DE LA CARTERA para los cortacircuitos de drawdown.
+///
+/// La caída que juzgan es la de la CUENTA (pico y capital unificados), así
+/// que la tasa de pérdida con la que se deriva el umbral también es la de la
+/// cuenta: media de las tasas por moneda ponderada por sus operaciones. El
+/// veto de entradas usaba la de la moneda CANDIDATA, y como el umbral crece
+/// con `q`, la misma caída de la cuenta se vetaba para una moneda que gana a
+/// menudo y se dejaba pasar para una que pierde a menudo o no tiene historial
+/// (q = 1 ⇒ racha de 200). El sistema inmune del host ya usaba esta media.
+///
+/// `monedas`: pares (tasa de acierto publicada, operaciones cerradas).
+pub fn q_perdida_cartera<I: IntoIterator<Item = (f64, f64)>>(monedas: I) -> f64 {
+    let (mut aciertos, mut total) = (0.0f64, 0.0f64);
+    for (tasa, n) in monedas {
+        if n > 0.0 && n.is_finite() && tasa.is_finite() {
+            aciertos += tasa.clamp(0.0, 1.0) * n;
+            total += n;
+        }
+    }
+    if total > 0.0 {
+        (1.0 - aciertos / total).clamp(0.0, 1.0)
+    } else {
+        Q_SIN_HISTORIAL
+    }
+}
+
 /// Media móvil exponencial del riesgo por operación: el peso de la última
 /// orden es 1/n hasta n = `memoria`, y 1/memoria a partir de ahí — así la
 /// primera orden no queda diluida ni la última manda sola.
@@ -161,6 +191,13 @@ mod tests {
             agresivo > suave,
             "arriesgar más por operación tolera más caída: {suave} vs {agresivo}"
         );
+    }
+
+    #[test]
+    fn cl9_la_tasa_de_perdida_es_la_de_la_cartera_ponderada() {
+        let q = q_perdida_cartera([(0.7, 50.0), (0.2, 2.0), (0.0, 0.0)]);
+        assert!((q - (1.0 - (0.7 * 50.0 + 0.2 * 2.0) / 52.0)).abs() < 1e-12);
+        assert_eq!(q_perdida_cartera([(0.9, 0.0), (f64::NAN, 3.0)]), Q_SIN_HISTORIAL);
     }
 
     #[test]

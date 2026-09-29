@@ -37,6 +37,7 @@ pub mod ensemble;
 pub mod latency_accelerator;
 pub mod liquidation_feed;
 pub mod math_kernels;
+pub mod ml_coverage;
 pub mod ml_inference;
 pub mod orchestrator;
 pub mod order_flow_aggregator;
@@ -254,6 +255,64 @@ pub fn exigencia_tras_racha(umbral: f64, racha: u32) -> f64 {
     }
     let niveles = racha.saturating_sub(1).min(8) as i32;
     (umbral * 2f64.powi(niveles)).min(1.0)
+}
+
+/// CL-4 — τ CON LA QUE NACE UNA POSICIÓN. Es la τ con la que el risk-engine
+/// la dimensionó (`ValidatedOrder::tau_ms`, D-745); sólo si esa τ no es un
+/// horizonte utilizable (no finita, ≤ 0 o menor que 1 ms tras truncar) se usa
+/// el respaldo del llamador. Nunca devuelve 0: un horizonte nulo desarma la
+/// gestión por τ de la posición.
+#[inline]
+pub fn tau_de_apertura(tau_dimensionada_ms: f64, respaldo_ms: u64) -> u64 {
+    if tau_dimensionada_ms.is_finite() && tau_dimensionada_ms >= 1.0 {
+        tau_dimensionada_ms.min(u64::MAX as f64) as u64
+    } else {
+        respaldo_ms.max(1)
+    }
+}
+
+/// CL-19 — ACTIVACIONES DEL BREAKEVEN Y DEL TRAILING (D-727, S-3).
+///
+/// D-727 fijó que la protección se arma en una FRACCIÓN del recorrido real al
+/// objetivo y que el TECHO es el propio objetivo; S-3 modula esa fracción con
+/// la persistencia (BE lerp(0,45; 0,65), trailing lerp(0,60; 0,80)). Un volcado
+/// de WIP (ac136633, sin número D ni nota) invirtió las cuatro fórmulas de
+/// `.max(tp·frac)` a `.min(tp·frac)`: el TP pasó a ser un techo de la
+/// activación y el piso físico (fricción + 1,25–1,75 ATR de 1 minuto) pasó a
+/// gobernarla. Como el ATR es de 1 minuto y el TP escala con σ(τ), a τ largo
+/// toda posición se volvía un scalp: con τ = 4 h (TP ≈ 535 pb) el BE se armaba
+/// a +54 pb y el trailing a +61 pb, 20 pb por detrás del precio, mientras el
+/// gate había certificado el EV sobre TP ≈ 535 / SL ≈ 238.
+///
+/// Ahora cada activación es `max(piso físico, fracción·TP)`, acotada por el TP
+/// (BE ≤ 0,90·TP, trailing ≤ 0,95·TP) y con el trailing nunca por debajo del
+/// BE. Devuelve `(activación_be, activación_trailing)` en fracción de precio.
+#[inline]
+pub fn activaciones_de_proteccion(
+    tp: f64,
+    be_frac: f64,
+    trail_frac: f64,
+    temporal_s: f64,
+    piso_rapido: f64,
+    piso_lento: f64,
+    respiro_rapido: f64,
+) -> (f64, f64) {
+    let s = if temporal_s.is_finite() {
+        temporal_s.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let techo_be = tp * 0.90;
+    let techo_trail = tp * 0.95;
+    let act_rapida = piso_rapido.max(tp * be_frac).min(techo_be);
+    let act_lenta = piso_lento.max(tp * be_frac).min(techo_be);
+    let be = (1.0 - s) * act_rapida + s * act_lenta;
+    let trail_rapido = (be + respiro_rapido * 0.25)
+        .max(tp * trail_frac)
+        .min(techo_trail);
+    let trail_lento = (be * 1.10).max(tp * trail_frac).min(techo_trail);
+    let trail = (1.0 - s) * trail_rapido + s * trail_lento;
+    (be, trail.max(be))
 }
 
 /// D-752 — etiquetas de rama. `SignalIntent::volume_flow_rate` YA transportaba
@@ -1842,8 +1901,9 @@ impl GodEngineCore {
                 .store(raw_atr_pct * mid_price, Ordering::Relaxed);
             coin.hurst_exponent.store(hurst_val, Ordering::Relaxed);
             // S-7 — Hurst multifractal SELECCIONADO POR τ: micro (<2min),
-            // meso (<1h), macro (≥1h). La geometría TP/SL consume el H del
-            // horizonte que el motor opera, no el escalar global.
+            // meso (<1h), macro (≥1h). Sólo telemetría: desde CL-26 la
+            // geometría TP/SL usa el Hurst muestreado por reloj
+            // (`hurst_exponent`, D-615b), porque estas ventanas son de eventos.
             {
                 let tau_dom_h = self
                     .temporal_spectrum
@@ -2037,14 +2097,22 @@ impl GodEngineCore {
                 let buf_fast = (roundtrip_friction + 0.00035).clamp(0.00180, 0.00250);
                 // El espacio de respiración (breathing room) debe ser proporcional a la volatilidad real ATR(tau):
                 let min_breathing_fast = (atr_pct_live * 1.25).max(0.00150);
-                let act_fast = (buf_fast + min_breathing_fast).min(tp * 0.45).max(buf_fast + 0.0004);
 
                 let buf_slow = (roundtrip_friction + 0.00060).clamp(0.00200, 0.00300);
                 let min_breathing_slow = (atr_pct_live * 1.75).max(0.00250);
-                let act_slow = (buf_slow + min_breathing_slow).min(tp * be_frac * 0.70).max(buf_slow + 0.0008);
 
                 let be_buffer = (1.0 - temporal_s) * buf_fast + temporal_s * buf_slow;
-                let be_activation = (1.0 - temporal_s) * act_fast + temporal_s * act_slow;
+                // CL-19: activaciones como fracción del TP REAL, con el piso
+                // físico debajo y el objetivo como techo (D-727, S-3).
+                let (be_activation, trail_activation_pnl) = activaciones_de_proteccion(
+                    tp,
+                    be_frac,
+                    trail_frac,
+                    temporal_s,
+                    buf_fast + min_breathing_fast,
+                    buf_slow + min_breathing_slow,
+                    min_breathing_fast,
+                );
 
                 let be_triggered = peak_pnl >= be_activation;
                 let be_stop = if is_long {
@@ -2077,9 +2145,7 @@ impl GodEngineCore {
 
                 // 2. Trailing Stop Ratchet Espectral Continuo (#559, #560, #584)
                 // Se activa en cuanto Breakeven está asegurado y el trade expande hacia TP:
-                let trail_act_fast = (be_activation + min_breathing_fast * 0.25).min(tp * 0.55).max(be_activation + 0.0006);
-                let trail_act_slow = (be_activation * 1.15).min(tp * trail_frac);
-                let trail_activation_pnl = (1.0 - temporal_s) * trail_act_fast + temporal_s * trail_act_slow;
+                // (activación calculada arriba por `activaciones_de_proteccion`)
                 let trail_active = be_triggered && peak_pnl >= trail_activation_pnl;
 
                 let mut force_close_trail = false;
@@ -2321,11 +2387,17 @@ impl GodEngineCore {
                             .base_slippage_floor
                             .load(Ordering::Relaxed)
                             .max(0.00001),
-                        self.arena
-                            .config
-                            .latency_penalty_ms
-                            .load(Ordering::Relaxed)
-                            .max(0.0),
+                        // XLVI·B (cierre DIV-2): misma cola lognormal que la
+                        // entrada — el SL/trailing taker también cruza el libro
+                        // un RTT después de la decisión.
+                        risk_engine::tp_sl::sample_latency_lognormal_ms(
+                            self.arena
+                                .config
+                                .latency_penalty_ms
+                                .load(Ordering::Relaxed)
+                                .max(0.0),
+                            risk_engine::tp_sl::latency_seed(event_time_ms, coin_id),
+                        ),
                     );
                     if phys_exit_price > 0.0 {
                         exit_price = phys_exit_price;
@@ -2491,23 +2563,11 @@ impl GodEngineCore {
                     if tau_de_la_posicion > 0 {
                         self.feature_engines[coin_id].tau_ultimo_cierre_ms = tau_de_la_posicion;
                     }
-                    let was_loss = net_trade_pnl <= 0.0;
-                    self.feature_engines[coin_id].last_scalp_was_loss = was_loss;
-                    if was_loss {
-                        self.feature_engines[coin_id].scalp_loss_streak += 1;
-                        if is_long {
-                            self.feature_engines[coin_id].scalp_long_loss_streak += 1;
-                        } else {
-                            self.feature_engines[coin_id].scalp_short_loss_streak += 1;
-                        }
-                    } else {
-                        self.feature_engines[coin_id].scalp_loss_streak = 0;
-                        if is_long {
-                            self.feature_engines[coin_id].scalp_long_loss_streak = 0;
-                        } else {
-                            self.feature_engines[coin_id].scalp_short_loss_streak = 0;
-                        }
-                    }
+                    // CL-5: la racha la lleva SÓLO `record_trade_outcome`.
+                    // Aquí se incrementaba antes con otra definición de
+                    // pérdida (neto ≤ 0): una pérdida direccional contaba
+                    // DOS veces y una pérdida por debajo del umbral
+                    // direccional se sumaba para borrarse a continuación.
                     let is_directional_loss = net_trade_pnl < 0.0 && pnl_pct <= -0.0005;
                     let cur_tick = self.feature_engines[coin_id].tick_count;
                     self.feature_engines[coin_id].record_trade_outcome(
@@ -2749,9 +2809,21 @@ impl GodEngineCore {
                             (0.5 + pers * 0.5).clamp(0.0, 1.0)
                         })
                         .unwrap_or(0.5);
+                    // CL-10 (D-749 en el productor): Kelly se alimenta con la
+                    // COTA INFERIOR del profit factor, no con `new_pf`, que
+                    // vale el literal 5,0 tras UNA ganancia sin pérdidas: con
+                    // él una sola operación afortunada llevaba la fracción a
+                    // `kelly_clamp_max`, y el risk-engine la usa tal cual en
+                    // cuanto hay historial (su cota inferior sólo decidía el
+                    // arranque en frío).
+                    let pf_para_kelly = risk_engine::evidence::profit_factor_lcb(
+                        total_wins,
+                        total_losses,
+                        n_prev + 1.0,
+                    );
                     let kelly_f = risk_engine::kelly::calculate_kelly_fraction(
                         new_wr,
-                        new_pf,
+                        pf_para_kelly,
                         curr_cap,
                         base_cap,
                         survival_ratio,
@@ -3258,8 +3330,16 @@ impl GodEngineCore {
                 // entrada en un alt la podía decidir el modelo de BTC.
                 // NN restringido a BTC hasta que exista un modelo por símbolo
                 // (paridad con B3.18b del forest): fuera de su símbolo de
-                // entrenamiento el voto es NEUTRAL (0.5) — no se evalúa la
-                // inferencia, el modelo simplemente no opina.
+                // entrenamiento no se evalúa la inferencia, el modelo
+                // simplemente no opina.
+                //
+                // CL-15: «no opina» es AUSENCIA, no un 0,5. Se enviaba 0,5 al
+                // ensamble, que lo promediaba con el bosque como una opinión
+                // más: con la base del bosque ≈ 0,30 (HOST-010) la ml_prob de
+                // cada alt quedaba subida hacia 0,5 sin información, y todas
+                // las puertas que miden el lift sobre `ml_model_base` (B3.18,
+                // F-009, CL-13) veían un sesgo largo fabricado. El ensamble ya
+                // normaliza sobre los modelos que opinaron.
                 let nn_trained_for_symbol = sym == "BTCUSDT";
                 let in_dim = nn.layer1.in_features;
                 let p_opt = if nn_trained_for_symbol {
@@ -3279,7 +3359,7 @@ impl GodEngineCore {
                         nn.predict_for_coin(coin_id, &combined_tensor)
                     }
                 } else {
-                    Some(0.5)
+                    None
                 };
                 if let Some(p) = p_opt {
                     diag_nn_p = Some(p);
@@ -3318,6 +3398,12 @@ impl GodEngineCore {
             coin.ml_prob.store(ml_prob, Ordering::Relaxed);
             set_reg("ml_prob", ml_prob);
             set_reg("ml_prob_motor", ml_prob);
+            // CL-21 (FMT-159): los votantes del consenso que miden el lift
+            // sobre la base del modelo (FlowExcitationConfluence, CERT-M2-C03)
+            // leen `ml_model_base` del registro, y nadie la publicaba: caían a
+            // 0,5 frente a bosques con base 0,18–0,23, y la pata corta quedaba
+            // abierta casi siempre (sesgo corto estructural en el consenso).
+            set_reg("ml_model_base", ml_model_base);
 
             // CF-01/02/04: genoma, decisión y telemetría usan la MISMA instancia.
             // Publicar antes del interlock mantiene el diagnóstico actualizado
@@ -3363,7 +3449,9 @@ impl GodEngineCore {
                 );
             }
 
-            let nn_score: f64 = self.feature_engines[coin_id].update_ml_prediction(ml_prob);
+            // CL-13: la opinión se mide contra la base del propio modelo.
+            let nn_score: f64 = self.feature_engines[coin_id]
+                .update_ml_prediction(ml_prob, ml_model_base);
 
             // X-012 (reubicado por B2.5-fix): frontera REAL del bloqueo —
             // gestión de posiciones (sección 1) y analítica ML/espectral ya
@@ -4812,9 +4900,16 @@ impl GodEngineCore {
             // MOD2/7-014: antes `hurst_exponent >= 0.48` — quinto literal de
             // banda. Candidato a tendencia = NO anti-persistente (banda
             // canónica 0.45; el umbral fino lo pone trend_threshold/EMA).
+            //
+            // CL-22: la rama ya no exige además `can_open_at_tau(macro_tau,
+            // 120_000)`. Ese enfriamiento legado (escalones fijos, escalón
+            // `v_t > 0,0015` en unidades de precio, cuenta de ticks antes del
+            // primer cierre) es el que D-754 sustituyó; sobrevivió aquí por un
+            // merge (#568 frente a D-754). El enfriamiento de esta intención lo
+            // aplica `puertas_del_continuo` vía `viable_para_entrar` (D-743),
+            // igual que a las demás.
             let is_trend_candidate = hurst_exponent >= HURST_ANTI_PERSISTENT
-                && (hurst_exponent >= trend_threshold || ma_trend_strength > 0.0020)
-                && self.feature_engines[coin_id].can_open_at_tau(macro_tau, 120_000);
+                && (hurst_exponent >= trend_threshold || ma_trend_strength > 0.0020);
 
             if is_trend_candidate {
                 if ema_slow > 0.0 {
@@ -6172,17 +6267,20 @@ impl GodEngineCore {
                             if margin_req * eff_leverage >= min_notional
                                 && total_used + margin_req <= current_cap * cushion
                             {
-                                let entry_is_maker = tau_intent_ms >= 60_000.0;
-                                let base_price = if entry_is_maker {
-                                    if is_long { bid } else { ask }
-                                } else {
-                                    if is_long { ask } else { bid }
-                                };
+                                // CL-14 — LA ENTRADA SIMULADA ES LA QUE EL VIVO
+                                // ENVÍA: MARKET. Con τ ≥ 60 s se simulaba un maker
+                                // (precio del lado pasivo, 2 pb, sin deslizamiento
+                                // ni condición de llenado) mientras el host envía
+                                // MARKET siempre (B3.29: 0 % de llenados pasivos
+                                // medidos) y el gate de riesgo ya cobra taker en
+                                // las dos piernas (D-645). El backtest —y con él la
+                                // aptitud que selecciona genomas— se ahorraba la
+                                // comisión taker y todo el deslizamiento en cada
+                                // entrada de banda lenta que el vivo sí paga.
+                                let base_price = if is_long { ask } else { bid };
                                 let nominal_size = margin_req * eff_leverage;
-                                // O-01/O-02 — REALITY PHYSICS CONECTADO:
-                                // Para micro-impulsos (tau < 60s), entrada taker a mercado con impacto de libro y latencia.
-                                // Para ondas sostenidas multi-escala (tau >= 60s), entrada preferente Maker (Post-Only)
-                                // al mejor bid/ask, eliminando slippage adverso y reduciendo comisiones de 5 bps a 2 bps.
+                                // O-01/O-02 — REALITY PHYSICS CONECTADO: entrada
+                                // taker con impacto de libro y latencia.
                                 let tick_vol = atr_pct;
                                 let slip_floor = self
                                     .arena
@@ -6190,19 +6288,20 @@ impl GodEngineCore {
                                     .base_slippage_floor
                                     .load(Ordering::Relaxed)
                                     .max(0.00001);
-                                let lat_ms = self
-                                    .arena
-                                    .config
-                                    .latency_penalty_ms
-                                    .load(Ordering::Relaxed)
-                                    .max(0.0);
-                                let (real_entry_price, phys_entry_fee) = if entry_is_maker {
-                                    self.reality.calculate_maker_entry(
-                                        base_price,
-                                        is_long,
-                                        nominal_size,
-                                    )
-                                } else {
+                                // XLVI·B (cierre DIV-2, auditoría bt↔vivo): el
+                                // gen calibra la MEDIANA del RTT y la física
+                                // añade la cola lognormal (σ=0.35). Muestreo
+                                // determinista por (evento, activo): el replay
+                                // conserva mismo-input ⇒ mismo-output.
+                                let lat_ms = risk_engine::tp_sl::sample_latency_lognormal_ms(
+                                    self.arena
+                                        .config
+                                        .latency_penalty_ms
+                                        .load(Ordering::Relaxed)
+                                        .max(0.0),
+                                    risk_engine::tp_sl::latency_seed(event_time_ms, coin_id),
+                                );
+                                let (real_entry_price, phys_entry_fee) =
                                     self.reality.calculate_market_entry(
                                         base_price,
                                         is_long,
@@ -6210,8 +6309,7 @@ impl GodEngineCore {
                                         tick_vol,
                                         slip_floor,
                                         lat_ms,
-                                    )
-                                };
+                                    );
                                 let real_entry_price = if real_entry_price <= 0.0 {
                                     base_price
                                 } else {
@@ -6234,7 +6332,7 @@ impl GodEngineCore {
                                     .get(coin_id)
                                     .map(|s| s.dominant_tau_ms)
                                     .unwrap_or(60_000.0);
-                                let tau_entry = if calibrated_intent.expected_duration_ms > 0 {
+                                let tau_respaldo = if calibrated_intent.expected_duration_ms > 0 {
                                     calibrated_intent.expected_duration_ms
                                 } else {
                                     tau_coin
@@ -6244,6 +6342,18 @@ impl GodEngineCore {
                                         )
                                         .round() as u64
                                 };
+                                // D-745 + CL-4: la posición NACE con el horizonte
+                                // CON EL QUE SE DIMENSIONÓ (`order.tau_ms`), y lo
+                                // recibe en la MISMA publicación atómica que abre
+                                // su ranura. Antes la τ dimensionada se escribía
+                                // tras la apertura en `positions.position` (la
+                                // ranura 2) cualquiera que fuera la ranura abierta:
+                                // como `find_resonant_slot` devuelve la primera
+                                // libre, casi todas las posiciones (ranura 0)
+                                // vivían con la τ de la intención y no con la del
+                                // tamaño, y una posición abierta en la ranura 2
+                                // perdía su propio horizonte al abrirse otra.
+                                let tau_entry = tau_de_apertura(order.tau_ms, tau_respaldo);
                                 let target_pos = coin.positions.get_slot(target_pos_slot);
                                 // Preserve reservation-before-publication ordering.
                                 // Invalid local prices/quantities cannot charge capital.
@@ -6340,28 +6450,6 @@ impl GodEngineCore {
                                         *t = tensor_snapshot.to_vec();
                                     }
                                 }
-                                // D-745: la posición NACE con el horizonte CON
-                                // EL QUE SE DIMENSIONÓ (`order.tau_ms`), no con
-                                // una segunda lectura del espectro. Mientras se
-                                // recalculaba aquí, el risk-engine podía
-                                // dimensionar a 2 h una posición que el núcleo
-                                // gestionaba a 30 s: TP/SL de respaldo,
-                                // trailing, caducidad, Kelly de cierre y
-                                // apalancamiento del host razonaban sobre un
-                                // horizonte que nadie había usado para calcular
-                                // el tamaño. Respaldo: la τ dominante viva.
-                                let tau_entry = if order.tau_ms.is_finite() && order.tau_ms > 0.0 {
-                                    order.tau_ms as u64
-                                } else {
-                                    self.temporal_spectrum
-                                        .get(coin_id)
-                                        .map(|s| s.dominant_tau_ms as u64)
-                                        .unwrap_or(0)
-                                };
-                                coin.positions
-                                    .position
-                                    .entry_tau_ms
-                                    .store(tau_entry, Ordering::Relaxed);
                                 new_order = Some((
                                     is_long,
                                     real_entry_price,
@@ -6535,6 +6623,190 @@ mod tests_d609 {
     fn respeta_los_limites_solo_en_la_direccion_del_cambio() {
         assert_eq!(hurst_duration_modulation(7_200_000, 0.60), 7_200_000);
         assert_eq!(hurst_duration_modulation(10_000, 0.40), 10_000);
+    }
+}
+
+#[cfg(test)]
+mod tests_cl4 {
+    use super::tau_de_apertura;
+
+    #[test]
+    fn cl4_la_posicion_nace_con_la_tau_dimensionada() {
+        assert_eq!(tau_de_apertura(45_000.0, 600_000), 45_000);
+        assert_eq!(tau_de_apertura(7_200_000.9, 30_000), 7_200_000);
+    }
+
+    #[test]
+    fn cl4_sin_tau_dimensionada_usa_el_respaldo_y_nunca_cero() {
+        assert_eq!(tau_de_apertura(f64::NAN, 30_000), 30_000);
+        assert_eq!(tau_de_apertura(0.0, 30_000), 30_000);
+        assert_eq!(tau_de_apertura(-5.0, 30_000), 30_000);
+        assert_eq!(tau_de_apertura(0.4, 30_000), 30_000);
+        assert_eq!(tau_de_apertura(f64::INFINITY, 0), 1);
+    }
+
+    /// El núcleo no puede volver a escribir la τ de entrada fuera de la
+    /// publicación atómica de la ranura abierta: cualquier `store` directo
+    /// sobre `entry_tau_ms` en este archivo es la regresión de CL-4 (se
+    /// escribía siempre en `positions.position`, la ranura 2).
+    #[test]
+    fn cl4_el_nucleo_no_escribe_la_tau_fuera_de_la_apertura() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        assert!(
+            !codigo.contains("entry_tau_ms.store("),
+            "la τ de entrada sólo se publica en open_with_tau_and_fee"
+        );
+        assert!(codigo.contains("lettau_entry=tau_de_apertura(order.tau_ms,tau_respaldo);"));
+    }
+}
+
+/// CL-19: BE y trailing se arman en fracciones del TP real, bajo el TP.
+#[cfg(test)]
+mod tests_cl19 {
+    use super::activaciones_de_proteccion;
+
+    /// τ = 4 h: TP ≈ 535 pb certificado por el gate. Antes el BE se armaba a
+    /// ≈ +54 pb y el trailing a ≈ +61 pb (el ATR de 1 minuto gobernaba).
+    #[test]
+    fn cl19_a_tau_largo_la_proteccion_sigue_al_objetivo() {
+        let tp = 0.0535;
+        let (be, trail) =
+            activaciones_de_proteccion(tp, 0.55, 0.70, 0.85, 0.0045, 0.0060, 0.0025);
+        assert!(be >= 0.55 * tp - 1e-12, "BE {be} por debajo de su fracción del TP");
+        assert!(trail >= 0.70 * tp - 1e-12, "trailing {trail} por debajo de su fracción");
+        assert!(be <= 0.90 * tp && trail <= 0.95 * tp);
+    }
+
+    /// Nada se arma por encima del objetivo, aunque el piso físico lo supere,
+    /// y el trailing nunca se activa antes que el BE.
+    #[test]
+    fn cl19_el_tp_es_el_techo_y_el_trailing_no_precede_al_be() {
+        for &(tp, s) in &[(0.0040, 0.0), (0.0040, 1.0), (0.0124, 0.3), (0.08, 0.7)] {
+            let (be, trail) =
+                activaciones_de_proteccion(tp, 0.45, 0.60, s, 0.0045, 0.0060, 0.0025);
+            assert!(be <= 0.90 * tp + 1e-15, "BE {be} sobre el techo con TP {tp}");
+            assert!(trail <= 0.95 * tp + 1e-15, "trailing {trail} sobre el techo");
+            assert!(trail >= be);
+        }
+        // Con TP holgado el piso físico (fricción + ruido) sigue mandando si
+        // es mayor que la fracción.
+        let (be, _) = activaciones_de_proteccion(0.0090, 0.45, 0.60, 0.0, 0.0050, 0.0060, 0.0025);
+        assert!((be - 0.0050).abs() < 1e-12);
+    }
+}
+
+/// CL-14: la entrada simulada del núcleo es la que el host envía (MARKET).
+#[cfg(test)]
+mod tests_cl14 {
+    /// El host envía siempre a mercado (`force_maker = false`, B3.29) y el
+    /// gate cobra taker en las dos piernas (D-645). Si el núcleo vuelve a
+    /// simular una entrada pasiva (precio del lado pasivo, 2 pb, sin
+    /// deslizamiento ni condición de llenado), el backtest y la aptitud que
+    /// selecciona genomas se ahorran lo que el vivo sí paga.
+    #[test]
+    fn cl14_la_entrada_simulada_es_market_como_la_del_host() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        assert!(!codigo.contains("calculate_maker_entry("));
+        assert!(!codigo.contains("entry_is_maker"));
+        assert!(codigo.contains("letbase_price=ifis_long{ask}else{bid};"));
+        let host: String = include_str!("../../../src/bin/god_engine.rs")
+            .split_whitespace()
+            .collect();
+        assert!(
+            host.contains("letforce_maker=false;"),
+            "si el host vuelve a enviar pasivas, el núcleo debe simularlas con su llenado"
+        );
+    }
+}
+
+/// CL-15: fuera de su símbolo el NN no opina (ausencia, no 0,5).
+#[cfg(test)]
+mod tests_cl15 {
+    use crate::ensemble::{ModelEnsemble, ModelId};
+
+    /// Un 0,5 «neutral» enviado al ensamble arrastra la opinión del bosque
+    /// hacia 0,5; la ausencia la deja intacta.
+    #[test]
+    fn cl15_un_modelo_que_no_opina_no_arrastra_al_bosque() {
+        let mut con_neutral = ModelEnsemble::new();
+        con_neutral.submit(ModelId::MotorForest, 0.30);
+        con_neutral.submit(ModelId::DarkAlphaNN, 0.5);
+        let mut sin_voto = ModelEnsemble::new();
+        sin_voto.submit(ModelId::MotorForest, 0.30);
+        assert!(con_neutral.combined().unwrap() > 0.35);
+        assert!((sin_voto.combined().unwrap() - 0.30).abs() < 1e-12);
+    }
+
+    #[test]
+    fn cl15_el_nucleo_no_envia_un_voto_nn_fuera_de_su_simbolo() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        let rama = codigo
+            .split("letnn_trained_for_symbol=sym==\"BTCUSDT\";")
+            .nth(1)
+            .expect("ancla del NN por símbolo");
+        let fin = rama.find("ifletSome(p)=p_opt").expect("envío del voto NN");
+        let rama = &rama[..fin];
+        assert!(rama.ends_with("}else{None};"), "fuera de BTC el voto NN es None");
+        assert!(!rama.contains("Some(0.5)"));
+    }
+}
+
+#[cfg(test)]
+mod tests_cl22 {
+    use crate::stateful_engine::StatefulEngine;
+
+    /// El enfriamiento legado contradice al unificado de D-754: tras un cierre
+    /// GANADOR de τ = 10 s, a los 60 s el unificado ya permite entrar y el
+    /// legado de la rama 13 sigue exigiendo 120 s planos; y antes del primer
+    /// cierre el legado cuenta ticks (100 ticks ⇒ «10 s»).
+    #[test]
+    fn cl22_el_enfriamiento_legado_contradice_al_unificado() {
+        let mut e = StatefulEngine::new();
+        let t0 = 1_000_000u64;
+        e.last_scalp_exit_ms = t0;
+        e.last_scalp_exit_ts = t0;
+        e.last_exit_tau_ms = 10_000;
+        e.scalp_loss_streak = 0;
+        e.last_event_ms = t0 + 60_000;
+        e.current_ts = t0 + 60_000;
+        assert!(e.can_open_position_ms(10_000.0));
+        assert!(!e.can_open_at_tau(3_600_000.0, 120_000));
+
+        let mut frio = StatefulEngine::new();
+        frio.tick_count = 100;
+        assert!(frio.can_open_position_ms(10_000.0));
+        assert!(!frio.can_open_at_tau(3_600_000.0, 120_000));
+    }
+
+    #[test]
+    fn cl22_la_rama_de_tendencia_lenta_no_lleva_un_segundo_enfriamiento() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        let rama = codigo
+            .split("letis_trend_candidate=")
+            .nth(1)
+            .expect("ancla de la rama 13");
+        let rama = &rama[..rama.find(';').expect("fin del predicado")];
+        assert!(!rama.contains("can_open_at_tau"), "{rama}");
     }
 }
 

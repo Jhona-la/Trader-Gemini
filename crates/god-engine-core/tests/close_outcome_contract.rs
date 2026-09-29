@@ -306,7 +306,12 @@ fn close_kelly_retains_the_trade_horizon_instead_of_using_cleared_slot() {
     let expected_at = |horizon| {
         risk_engine::kelly::calculate_kelly_fraction(
             metrics.win_rate.load(Ordering::Relaxed),
-            metrics.profit_factor.load(Ordering::Relaxed),
+            // CL-10: Kelly se alimenta con la cota inferior del PF.
+            risk_engine::evidence::profit_factor_lcb(
+                metrics.gross_wins.load(Ordering::Relaxed),
+                metrics.gross_losses.load(Ordering::Relaxed),
+                metrics.trade_count.load(Ordering::Relaxed) as f64,
+            ),
             arena.unified_capital.load(Ordering::Relaxed),
             arena.config.base_capital.load(Ordering::Relaxed),
             arena
@@ -617,4 +622,41 @@ fn observation_diagnostics_distinguish_duplicate_older_conflict_and_invalid() {
     assert!(c.observe_liquidation(invalid).is_err());
     let d=&c.liquidation_diagnostics;
     assert_eq!((d.accepted,d.duplicates,d.older,d.conflicting,d.invalid),(1,1,1,1,1));
+}
+
+/// CL-5 — una pérdida es UNA pérdida en la racha. El cierre incrementaba la
+/// racha en línea y después `record_trade_outcome` la volvía a incrementar:
+/// la primera pérdida ya contaba como dos y `exigencia_tras_racha` duplicaba
+/// el umbral desde el primer tropiezo.
+#[test]
+fn cl5_una_perdida_cuenta_una_sola_vez_en_la_racha() {
+    let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
+    let _dir = FixtureDirectory::new();
+    let (_arena, mut core) = core(OutcomeContext::IsolatedSimulation, false);
+    assert!(close(&mut core, 97.0) < 0.0);
+    let fe = &core.feature_engines[0];
+    assert_eq!(fe.scalp_loss_streak, 1, "racha global");
+    assert_eq!(fe.scalp_long_loss_streak, 1, "racha de largos");
+    assert_eq!(fe.scalp_short_loss_streak, 0, "racha de cortos");
+    assert!(fe.last_scalp_was_loss);
+}
+
+/// CL-10 — UNA ganancia no es evidencia de edge: el Kelly que publica el
+/// cierre sale de la cota inferior del profit factor. Con el literal 5,0 que
+/// vale `profit_factor` tras una ganancia sin pérdidas, la fracción saltaba al
+/// techo del genoma con una sola observación.
+#[test]
+fn cl10_una_ganancia_no_lleva_kelly_al_techo() {
+    let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
+    let _dir = FixtureDirectory::new();
+    let (arena, mut core) = core(OutcomeContext::IsolatedSimulation, false);
+    assert!(close(&mut core, 102.0) > 0.0);
+    let m = &arena.coins[0].metrics;
+    assert_eq!(m.trade_count.load(Ordering::Relaxed), 1);
+    let kelly = m.kelly_fraction.load(Ordering::Relaxed);
+    let piso = arena.config.kelly_clamp_min.load(Ordering::Relaxed).max(0.0);
+    assert!(
+        kelly <= 0.25 * piso + 1e-12,
+        "tras una ganancia Kelly = {kelly}, por encima de la exploración (¼ de {piso})"
+    );
 }

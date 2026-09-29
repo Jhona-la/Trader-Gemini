@@ -8,6 +8,37 @@
 
 ---
 
+## 2026-09-29 — Claude (cloud): ciclos 2 a 6 de vetos, bloqueos y límites
+
+Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (GLM la borra del
+remoto tras cada merge; se vuelve a crear con el mismo nombre). Cada hallazgo
+viene de la auditoría con 7 auditores y 2 escépticos, y cada arreglo tiene un
+test que falla en `main` antes del arreglo.
+
+- **En `main`**: ciclo 2 por el PR #17 (CL-3…CL-7), ciclos 3 y 4 por el PR
+  #18 (fa1adae6, CL-8…CL-20). T-1 16/144 en ambos.
+- **Ciclo 5 (núcleo, riesgo y evolución)**, T-1 17/144 (11,8 %):
+  - CL-21: el núcleo publica `ml_model_base` (FMT-159). `flow_excitation` caía a 0,5 frente a bosques con base 0,18–0,30 y votaba corto casi siempre.
+  - CL-22: la rama 13 ya no lleva un segundo enfriamiento (`can_open_at_tau(macro_tau, 120 s)`, artefacto de merge) además del de `puertas_del_continuo`.
+  - CL-23: el examen del daemon sólo lleva series que el juez juzga (≥ 60); en la zona 40–59 no juzgaba nada y sumaba 2 001 pruebas al DSR.
+  - CL-24: el umbral corto del pre-examen es el espejo del largo (el gen 23 daba siempre 0).
+  - CL-25: el rollback vuelve al primer genoma distinto del linaje (`destino_de_rollback`); antes re-promovía el mismo genoma.
+  - CL-26: la geometría TP/SL usa el Hurst DFA de 1 min, no el proxy por eventos (S-7 había deshecho D-615b).
+  - CL-27: el examen walk-forward juzga barras de mercado de 16 s por moneda, no los deltas de PnL del incumbente (FMT-049).
+  - CL-28: la Fisher de escala es telemetría en el daemon (en ruido su mediana queda bajo el umbral; aplazaba casi toda ronda).
+  - CL-29: se retira la puerta heurística del incumbente (FMT-055): cerraba la evolución justo cuando el genoma vivo pierde.
+- **Ciclo 6 (espectro, en curso)**:
+  - CL-30: la persistencia se mide sobre retornos de bloques NO solapados de duración ≥ τ. Antes daba ≈ +0,94 en una caminata aleatoria (y +0,996 en un zigzag que revierte), y todos sus lectores leen 0 como browniano: Kelly S-1, BE/trailing, consejo, Hurst por banda y la masa de la fusión.
+  - CL-31: la rama 15 trata la persistencia sin lado (`confluencia_resonante`, con `hurst_at`). Antes comparaba [−1,1] con 0,52/0,48 y sólo emitía largos en la zona moderada.
+  - CL-32: las escalas por debajo del intervalo medio entre eventos no votan (`resolucion_efectiva_ms`, como XLIV-6). A 1 evento/s se llevaban el 68 % del peso de la fusión y el 47 % de la masa espectral.
+- Abiertos (confirmados, sin arreglar todavía):
+  - `dominant_tau_ms` sigue siendo el argmax de |w·s| recortado a [30 s, 12 h]. Con pesos 1/vol, cae en la escala resuelta más rápida y se queda en 30 s. Elegir la escala dominante por habilidad medida exige otro criterio (p. ej. `SpectralForecastBank`).
+  - Rama 13/15: suelos literales de confianza (0,55/0,58); B1 OFI tóxico muerto en el núcleo; B3 Coaxial vota 0 y el gen 83 no tiene consumidor.
+  - La adopción al arrancar sigue con `entry_time_ms = now`; la distancia del trailing sigue en ATR de 1 min.
+  - Libro sintético de ±1 pb en eventos que no son de depth; gate de viabilidad ATR inalcanzable; veto de drawdown absorbente en backtest; `suelo_tp_sl` y la banda del genoma miden stops distintos.
+  - R8-A (primer toque de barrera) sigue abierto.
+- Descartados tras verificar: freno CL-2 con el ATR que se cancela (física del stop); `rama_abierta` por moneda (OA de Codex); god_engine.rs:4116; `crash_pressure` como máximo de cartera (diseño XLIV-4, política del dueño).
+
 ## 2026-09-28 (noche) — Claude (cloud): fricción, freno y auditoría de vetos
 
 Flujo nuevo pedido por el operador: rama con nombre del agente → merge a
