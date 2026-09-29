@@ -123,3 +123,34 @@ fn invalid_fee_budget_cannot_disable_the_veto() {
         );
     }
 }
+
+/// CL-6 — NINGUNA ORDEN VALIDADA QUEDA BAJO EL NOCIONAL MÍNIMO DEL SÍMBOLO.
+/// El segundo rescate (tras recortar el margen al límite micro) truncaba el
+/// apalancamiento con `floor()`, podía no aplicarlo si el coste lo impedía y
+/// no volvía a comprobar el nocional: la orden salía validada con un
+/// nocional que el exchange rechaza.
+#[test]
+fn cl6_ninguna_orden_validada_queda_bajo_el_nocional_minimo() {
+    let (a, intent) = fixture(13.0);
+    let mut validadas = 0;
+    for capital in [8.0, 10.0, 13.0, 20.0, 40.0] {
+        for cap in [1.0, 2.0, 3.0, 5.0, 20.0] {
+            for kelly in [0.05, 0.25] {
+                a.unified_capital.store(capital, Relaxed);
+                a.config.global_leverage.store(cap, Relaxed);
+                a.config.kelly_clamp_max.store(kelly, Relaxed);
+                let out = RiskEngine::new(capital).evaluate_quantum_order(0, &intent, &a);
+                if out.signal == SignalType::Flat {
+                    continue;
+                }
+                validadas += 1;
+                assert!(
+                    out.volume_usd * out.leverage >= 5.0,
+                    "capital={capital} cap={cap} kelly={kelly}: nocional {:.4} < 5 ({out:?})",
+                    out.volume_usd * out.leverage
+                );
+            }
+        }
+    }
+    assert!(validadas > 0, "el barrido no valida ninguna orden: no prueba nada");
+}
