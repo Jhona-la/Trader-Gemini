@@ -270,6 +270,50 @@ pub fn tau_de_apertura(tau_dimensionada_ms: f64, respaldo_ms: u64) -> u64 {
     }
 }
 
+/// CL-19 — ACTIVACIONES DEL BREAKEVEN Y DEL TRAILING (D-727, S-3).
+///
+/// D-727 fijó que la protección se arma en una FRACCIÓN del recorrido real al
+/// objetivo y que el TECHO es el propio objetivo; S-3 modula esa fracción con
+/// la persistencia (BE lerp(0,45; 0,65), trailing lerp(0,60; 0,80)). Un volcado
+/// de WIP (ac136633, sin número D ni nota) invirtió las cuatro fórmulas de
+/// `.max(tp·frac)` a `.min(tp·frac)`: el TP pasó a ser un techo de la
+/// activación y el piso físico (fricción + 1,25–1,75 ATR de 1 minuto) pasó a
+/// gobernarla. Como el ATR es de 1 minuto y el TP escala con σ(τ), a τ largo
+/// toda posición se volvía un scalp: con τ = 4 h (TP ≈ 535 pb) el BE se armaba
+/// a +54 pb y el trailing a +61 pb, 20 pb por detrás del precio, mientras el
+/// gate había certificado el EV sobre TP ≈ 535 / SL ≈ 238.
+///
+/// Ahora cada activación es `max(piso físico, fracción·TP)`, acotada por el TP
+/// (BE ≤ 0,90·TP, trailing ≤ 0,95·TP) y con el trailing nunca por debajo del
+/// BE. Devuelve `(activación_be, activación_trailing)` en fracción de precio.
+#[inline]
+pub fn activaciones_de_proteccion(
+    tp: f64,
+    be_frac: f64,
+    trail_frac: f64,
+    temporal_s: f64,
+    piso_rapido: f64,
+    piso_lento: f64,
+    respiro_rapido: f64,
+) -> (f64, f64) {
+    let s = if temporal_s.is_finite() {
+        temporal_s.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let techo_be = tp * 0.90;
+    let techo_trail = tp * 0.95;
+    let act_rapida = piso_rapido.max(tp * be_frac).min(techo_be);
+    let act_lenta = piso_lento.max(tp * be_frac).min(techo_be);
+    let be = (1.0 - s) * act_rapida + s * act_lenta;
+    let trail_rapido = (be + respiro_rapido * 0.25)
+        .max(tp * trail_frac)
+        .min(techo_trail);
+    let trail_lento = (be * 1.10).max(tp * trail_frac).min(techo_trail);
+    let trail = (1.0 - s) * trail_rapido + s * trail_lento;
+    (be, trail.max(be))
+}
+
 /// D-752 — etiquetas de rama. `SignalIntent::volume_flow_rate` YA transportaba
 /// un identificador de rama (1..14) para la traza de apertura, y sobrevive a
 /// la arbitración porque todas las fusiones usan `..fast_intent` / `..winner`.
@@ -2057,14 +2101,22 @@ impl GodEngineCore {
                 let buf_fast = (roundtrip_friction + 0.00035).clamp(0.00180, 0.00250);
                 // El espacio de respiración (breathing room) debe ser proporcional a la volatilidad real ATR(tau):
                 let min_breathing_fast = (atr_pct_live * 1.25).max(0.00150);
-                let act_fast = (buf_fast + min_breathing_fast).min(tp * 0.45).max(buf_fast + 0.0004);
 
                 let buf_slow = (roundtrip_friction + 0.00060).clamp(0.00200, 0.00300);
                 let min_breathing_slow = (atr_pct_live * 1.75).max(0.00250);
-                let act_slow = (buf_slow + min_breathing_slow).min(tp * be_frac * 0.70).max(buf_slow + 0.0008);
 
                 let be_buffer = (1.0 - temporal_s) * buf_fast + temporal_s * buf_slow;
-                let be_activation = (1.0 - temporal_s) * act_fast + temporal_s * act_slow;
+                // CL-19: activaciones como fracción del TP REAL, con el piso
+                // físico debajo y el objetivo como techo (D-727, S-3).
+                let (be_activation, trail_activation_pnl) = activaciones_de_proteccion(
+                    tp,
+                    be_frac,
+                    trail_frac,
+                    temporal_s,
+                    buf_fast + min_breathing_fast,
+                    buf_slow + min_breathing_slow,
+                    min_breathing_fast,
+                );
 
                 let be_triggered = peak_pnl >= be_activation;
                 let be_stop = if is_long {
@@ -2097,9 +2149,7 @@ impl GodEngineCore {
 
                 // 2. Trailing Stop Ratchet Espectral Continuo (#559, #560, #584)
                 // Se activa en cuanto Breakeven está asegurado y el trade expande hacia TP:
-                let trail_act_fast = (be_activation + min_breathing_fast * 0.25).min(tp * 0.55).max(be_activation + 0.0006);
-                let trail_act_slow = (be_activation * 1.15).min(tp * trail_frac);
-                let trail_activation_pnl = (1.0 - temporal_s) * trail_act_fast + temporal_s * trail_act_slow;
+                // (activación calculada arriba por `activaciones_de_proteccion`)
                 let trail_active = be_triggered && peak_pnl >= trail_activation_pnl;
 
                 let mut force_close_trail = false;
@@ -6590,6 +6640,41 @@ mod tests_cl4 {
             "la τ de entrada sólo se publica en open_with_tau_and_fee"
         );
         assert!(codigo.contains("lettau_entry=tau_de_apertura(order.tau_ms,tau_respaldo);"));
+    }
+}
+
+/// CL-19: BE y trailing se arman en fracciones del TP real, bajo el TP.
+#[cfg(test)]
+mod tests_cl19 {
+    use super::activaciones_de_proteccion;
+
+    /// τ = 4 h: TP ≈ 535 pb certificado por el gate. Antes el BE se armaba a
+    /// ≈ +54 pb y el trailing a ≈ +61 pb (el ATR de 1 minuto gobernaba).
+    #[test]
+    fn cl19_a_tau_largo_la_proteccion_sigue_al_objetivo() {
+        let tp = 0.0535;
+        let (be, trail) =
+            activaciones_de_proteccion(tp, 0.55, 0.70, 0.85, 0.0045, 0.0060, 0.0025);
+        assert!(be >= 0.55 * tp - 1e-12, "BE {be} por debajo de su fracción del TP");
+        assert!(trail >= 0.70 * tp - 1e-12, "trailing {trail} por debajo de su fracción");
+        assert!(be <= 0.90 * tp && trail <= 0.95 * tp);
+    }
+
+    /// Nada se arma por encima del objetivo, aunque el piso físico lo supere,
+    /// y el trailing nunca se activa antes que el BE.
+    #[test]
+    fn cl19_el_tp_es_el_techo_y_el_trailing_no_precede_al_be() {
+        for &(tp, s) in &[(0.0040, 0.0), (0.0040, 1.0), (0.0124, 0.3), (0.08, 0.7)] {
+            let (be, trail) =
+                activaciones_de_proteccion(tp, 0.45, 0.60, s, 0.0045, 0.0060, 0.0025);
+            assert!(be <= 0.90 * tp + 1e-15, "BE {be} sobre el techo con TP {tp}");
+            assert!(trail <= 0.95 * tp + 1e-15, "trailing {trail} sobre el techo");
+            assert!(trail >= be);
+        }
+        // Con TP holgado el piso físico (fricción + ruido) sigue mandando si
+        // es mayor que la fracción.
+        let (be, _) = activaciones_de_proteccion(0.0090, 0.45, 0.60, 0.0, 0.0050, 0.0060, 0.0025);
+        assert!((be - 0.0050).abs() < 1e-12);
     }
 }
 
