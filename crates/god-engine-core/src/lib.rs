@@ -37,6 +37,7 @@ pub mod ensemble;
 pub mod latency_accelerator;
 pub mod liquidation_feed;
 pub mod math_kernels;
+pub mod ml_coverage;
 pub mod ml_inference;
 pub mod orchestrator;
 pub mod order_flow_aggregator;
