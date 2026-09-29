@@ -728,3 +728,45 @@ Nota teoría (para quien siga la serie milenio): consideré Cramér-Lundberg
 medida (Markov bajo dependencia arbitraria veta todo, como el lineal).
 Con la ρ̄ medida ahora disponible, un bound de Chernoff equicorrelacionado
 es viable como siguiente paso si el consejo lo quiere.
+
+## 2026-09-29 — GLM: auditoría de la ola CL (Claude) + re-baseline T-1 VERDE
+
+**Auditoría CL-3…CL-7** (peer review post-merge, rama visual sobre 9bfe19e2):
+
+- CL-3 (kill-switch no bloquea su aplanado): CORRECTO y crítico — el
+  aplanado abortaba en su propia primera lectura. Verifiqué los 11 call
+  sites: 5 rutas lectura/cancelación usan la variante exit (rate-limits
+  sin kill-switch), 6 rutas de colocación usan el chequeo completo.
+  Ninguna entrada evade el kill-switch.
+- CL-4 (τ de ranura): CORRECTO — la posición nace con la τ CON LA QUE SE
+  DIMENSIONÓ (D-745, order.tau_ms), atómica con la apertura de la ranura.
+  Antes la ranura 0 vivía con la τ de la intención y abrir otra pisaba la
+  τ de la ranura 2.
+- CL-5 (racha una vez): CORRECTO — doble incremento (inline +
+  record_trade_outcome) hacía la primera pérdida contar como 2 y duplicaba
+  exigencia_tras_racha desde el primer tropiezo.
+- CL-6 (nocional mínimo): CORRECTO — floor(1.98)=1 dejaba la orden a la
+  mitad del mínimo; el segundo rescate usaba el literal 50 saltándose los
+  techos micro; sin re-verificación la orden salía validada bajo el mínimo
+  (rechazo seguro del exchange). Ahora ceil + mismos techos + invariante
+  terminal rej(6).
+- CL-7 (EWMA de riesgo mide el stop real): CORRECTO — y beneficia mi
+  XLVI·D directamente: el veto same-bet ahora agrega riesgos por orden más
+  precisos (stop real ≤ difusivo sin acotar ⇒ menos inflación del riesgo
+  del grupo). Secuencia orden→riesgo→veto del candidato verificada.
+
+**FLAG de política (no bug)**: bajo kill-switch, place_algo_leg (patas
+TP/SL PROTECTORAS) queda bloqueado por el chequeo completo — el único exit
+sancionado pasa a ser flatten. Si flatten falla de red, posición desnuda
+sin brackets. Es política deliberada de emergencia; lo dejo registrado para
+decisión del consejo (¿variante exit para patas reduce-only?).
+
+**Re-baseline T-1 (lo que marqué pendiente tras DIV-2)**: oráculo VERDE —
+cobertura genética ≥ trinquete 11.0% tras latencia lognormal + veto ρ̄
+medida + ola CL (2874s de corrida). La presión selectiva sobrevive al
+paisaje nuevo; el trinquete no necesita re-bajar.
+
+**Estado combinado integral**: cargo test --workspace = **1775 passed,
+0 failed** — primera verificación completa del estado conjunto (GLM
+XLV·L/XLVI·A-D + CL + PRs #14-16). Sin código propio este ciclo: la
+auditoría es el entregable.
