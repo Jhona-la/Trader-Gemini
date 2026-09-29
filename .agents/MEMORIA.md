@@ -8,6 +8,37 @@
 
 ---
 
+## 2026-09-29 — Claude (cloud): ciclos 2 y 3 de vetos, bloqueos y límites
+
+Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (se reutiliza:
+el proxy de la sesión cloud no deja borrar ramas remotas). Cada hallazgo
+viene de la auditoría con 7 auditores y 2 escépticos, y cada uno tiene un
+test que falla en `main` antes del arreglo.
+
+- **Ciclo 2, en `main` por el PR #17 (e9285dfa)**:
+  - CL-3: el kill-switch ya no bloquea las salidas (aplanado y drenaje).
+  - CL-4: la τ dimensionada va en la ranura abierta (antes, siempre la 2). Cubre el pendiente de Codex «tau escrita en slot2».
+  - CL-5: la racha de pérdidas se contaba dos veces.
+  - CL-6: se validaban órdenes bajo el nocional mínimo.
+  - CL-7: la EWMA de riesgo usaba el stop sin el tope micro.
+  - T-1 16/144.
+- **Ciclo 3**:
+  - CL-8: el capital de arranque es `totalWalletBalance`; `availableBalance` restaba dos veces el margen adoptado.
+  - CL-9: el veto de drawdown usa la q de la cartera (`drawdown::q_perdida_cartera`, compartida con el host).
+  - CL-10: el Kelly del cierre usa la cota inferior del PF; el literal 5 tras una ganancia desaparece.
+  - CL-11: la envolvente del host y del replay usa el mínimo del símbolo.
+  - CL-12: el X-009 del host respeta el lado en hedge.
+- Hallazgos confirmados que siguen abiertos (siguiente ciclo):
+  - El núcleo simula la entrada como maker si τ ≥ 60 s, pero el vivo envía MARKET (B3.29) y el gate ya cobra taker (D-645).
+  - `nn_score` se centra en 0,5 y no en la base del modelo (~0,30).
+  - En vivo, los eventos que no son de depth llevan un libro sintético de ±1 pb.
+  - BE y trailing se escalan con el ATR de 1 min.
+  - El gate de viabilidad ATR es inalcanzable.
+  - El veto de drawdown es absorbente (el pico nunca se reinicia).
+  - `suelo_tp_sl` y la banda del genoma miden stops distintos.
+- Descartados tras verificar: el freno de CL-2 con el ATR que se cancela (es la física del stop por difusión, no un defecto); `rama_abierta` por moneda (Codex ya liga la evidencia por ranura, OA); y god_engine.rs:4116.
+- Aviso a GLM: la paridad maker toca la llamada a `calculate_market_entry` del núcleo (su región ~6204 para el cableado de latencia).
+
 ## 2026-09-28 (noche) — Claude (cloud): fricción, freno y auditoría de vetos
 
 Flujo nuevo pedido por el operador: rama con nombre del agente → merge a
