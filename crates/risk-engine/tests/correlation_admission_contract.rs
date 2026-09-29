@@ -305,3 +305,63 @@ fn invalid_candidate_has_no_dependency_snapshot() {
     let (arena, _) = fixture();
     assert!(dependency_exposure(&arena, arena.coins.len(), true, 0.5).is_none());
 }
+
+// ── XLVI·D: ρ efectiva medida del grupo same-bet ──────────────────────
+
+/// Continuidad con el legado: grupo same-bet enteramente NO medido ⇒
+/// ρ_efectiva = 1.0 ⇒ el veto decide EXACTAMENTE como con None (presupuesto
+/// lineal). Ningún comportamiento previo cambia por la medición.
+#[test]
+fn xlvid_grupo_no_medido_reproduce_el_presupuesto_lineal() {
+    use risk_engine::correlation_guard::CorrelationGuardEngine as C;
+    let tope = risk_engine::ruin::clamp_ruin(1.0, 0.5);
+    let riesgo = tope / 8.0; // proxy de arranque (XLI·D2)
+    for k in 1..12usize {
+        let con_none = C::veto_por_exposicion_estructural(k, riesgo, 0.5, None);
+        let con_rho_uno = C::veto_por_exposicion_estructural(k, riesgo, 0.5, Some(1.0));
+        assert_eq!(
+            con_none, con_rho_uno,
+            "k={k}: ρ̄=1 debe reproducir el lineal ({con_none} vs {con_rho_uno})"
+        );
+    }
+}
+
+/// El desbloque medido: k=9 mismas-apuestas con ρ̄=0.5 y riesgo de arranque
+/// — el lineal veta (9/8·tope > tope), la agregación de varianza NO
+/// (√(9+9·8·0.5)·tope/8 = 0.84·tope < tope). La concurrencia queda
+/// gobernada por la dependencia MEDIDA, no por el peor caso permanente.
+#[test]
+fn xlvid_rho_medida_desbloquea_concurrencia_consistente() {
+    use risk_engine::correlation_guard::CorrelationGuardEngine as C;
+    let tope = risk_engine::ruin::clamp_ruin(1.0, 0.5);
+    let riesgo = tope / 8.0;
+    let k = 9usize;
+    assert!(
+        C::veto_por_exposicion_estructural(k, riesgo, 0.5, None),
+        "legado lineal debe vetar k=9 al riesgo de arranque"
+    );
+    assert!(
+        !C::veto_por_exposicion_estructural(k, riesgo, 0.5, Some(0.5)),
+        "ρ̄=0.5 medida: √(9+36)·riesgo = 0.84·tope — no veto"
+    );
+    // ρ̄→1 recupera el veto (continuidad desde arriba).
+    assert!(
+        C::veto_por_exposicion_estructural(k, riesgo, 0.5, Some(0.999)),
+        "ρ̄→1 debe vetar como el lineal"
+    );
+}
+
+/// El acceso a la ρ efectiva: grupo vacío ⇒ None (el veto no la usa);
+/// grupo con miembros ⇒ valor acotado a [−1,1] pase lo que pase en bits.
+#[test]
+fn xlvid_acceso_rho_efectiva_tiene_contornos() {
+    use risk_engine::correlation_guard::DependencyExposure;
+    let mut e = DependencyExposure::default();
+    assert_eq!(e.same_bet_rho_efectivo(), None, "grupo vacío: None");
+    e.same_bet_positions = 4;
+    e.same_bet_rho_efectivo_bits = f64::to_bits(0.55);
+    assert!((e.same_bet_rho_efectivo().unwrap() - 0.55).abs() < 1e-12);
+    // Bits fuera de rango quedan acotados por el acceso, no por fe.
+    e.same_bet_rho_efectivo_bits = f64::to_bits(7.5);
+    assert_eq!(e.same_bet_rho_efectivo(), Some(1.0), "clamp de saneamiento");
+}

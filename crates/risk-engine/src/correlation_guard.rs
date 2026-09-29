@@ -428,6 +428,39 @@ pub struct DependencyExposure {
     pub open_positions: usize,
     pub same_bet_positions: usize,
     pub unknown_positions: usize,
+    /// XLVI·D: ρ_PnL EFECTIVA del grupo misma-apuesta para la agregación de
+    /// varianza (D-748): media de las correlaciones medidas contra la
+    /// candidata, con los miembros NO medidos del grupo contando 1.0
+    /// (correlación perfecta). Con cero miembros medidos equivale a 1.0 —
+    /// el presupuesto LINEAL legado del `None` original es el caso límite,
+    /// no un comportamiento nuevo. Bits para preservar Eq/Copy.
+    pub same_bet_rho_efectivo_bits: u64,
+}
+
+impl DependencyExposure {
+    /// ρ efectiva del grupo misma-apuesta; None si el grupo está vacío
+    /// (el veto no la usa en ese caso).
+    pub fn same_bet_rho_efectivo(&self) -> Option<f64> {
+        if self.same_bet_positions == 0 {
+            return None;
+        }
+        Some(f64::from_bits(self.same_bet_rho_efectivo_bits).clamp(-1.0, 1.0))
+    }
+}
+
+/// Mezcla honesta de correlaciones medidas y no medidas del grupo same-bet:
+/// los medidos aportan su valor; cada NO medido aporta 1.0 (fue admitido al
+/// grupo conservadoramente y su dependencia real es desconocida). Sin
+/// miembros, 1.0 neutro (el conteo en cero desactiva el veto de todos modos).
+fn rho_efectivo_grupo(rhos: &[Option<f64>]) -> f64 {
+    if rhos.is_empty() {
+        return 1.0;
+    }
+    let suma: f64 = rhos
+        .iter()
+        .map(|r| r.filter(|v| v.is_finite() && (-1.0..=1.0).contains(v)).unwrap_or(1.0))
+        .sum();
+    (suma / rhos.len() as f64).clamp(-1.0, 1.0)
 }
 
 /// Recorre TODOS los slots y aplica rho_PnL = signo_candidata*signo_posicion*rho.
@@ -443,6 +476,9 @@ pub fn dependency_exposure(
     let candidate = arena.coins.get(candidate_id)?;
     let candidate_ticks = candidate.tick_ring.snapshot_recent(MAX_TICKS_MUESTRA);
     let mut result = DependencyExposure::default();
+    // XLVI·D: correlación PnL de cada miembro del grupo same-bet contra la
+    // candidata (None = no medida) — para la ρ efectiva del grupo.
+    let mut rhos_same_bet: Vec<Option<f64>> = Vec::new();
     for (asset_id, coin) in arena.coins.iter().enumerate() {
         // Outer None: slot observed closed. Inner None: open but no usable
         // snapshot, which must count as unknown rather than disappear.
@@ -476,9 +512,12 @@ pub fn dependency_exposure(
             }
             if CorrelationGuardEngine::es_la_misma_apuesta(pnl_rho, threshold) {
                 result.same_bet_positions += 1;
+                rhos_same_bet.push(pnl_rho);
             }
         }
     }
+    // XLVI·D: ρ efectiva del grupo (no medidos ⇒ 1.0, continuidad lineal).
+    result.same_bet_rho_efectivo_bits = rho_efectivo_grupo(&rhos_same_bet).to_bits();
     Some(result)
 }
 

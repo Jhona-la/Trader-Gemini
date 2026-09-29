@@ -546,11 +546,14 @@ impl RiskEngine {
             return rej(REJ_INVALID_INPUT);
         };
         // Las APIs MP/XLIV se conservan para diagnóstico e investigación.
-        // La ruta viva dispone de una EWMA de pérdida al stop, NO de sigmas
-        // comparables con pesos y covarianza conjunta. Por ello no se aplica
-        // aquí el descuento sqrt(k+k*(k-1)*rho); None conserva el presupuesto
-        // lineal legado. La sustitución por riesgo real por posición sigue
-        // pendiente (SPECTRAL-010), incluido el proxy de arranque tope/8.
+        // (Ola XLVI·D) La ρ_PnL del grupo misma-apuesta YA se mide por par
+        // (Hayashi-Yoshida × signo, D-748); antes se descartaba tras clasificar
+        // y el veto recibía None = presupuesto LINEAL (correlación perfecta
+        // asumida siempre). Ahora la ρ efectiva medida (no medidos ⇒ 1.0)
+        // activa la rama de agregación de varianza √(k+k(k−1)ρ̄) del propio
+        // veto: ρ̄→1 reproduce el lineal (continuidad), ρ̄ medida desbloquea
+        // concurrencia con dependencia real. Sustitución por riesgo real por
+        // posición sigue pendiente (SPECTRAL-010), incluido el proxy tope/8.
         if correlation_guard::CorrelationGuardEngine::veto_por_exposicion_estructural(
             dependence.same_bet_positions,
             arena.riesgo_por_operacion.load(Ordering::Relaxed),
@@ -559,7 +562,7 @@ impl RiskEngine {
                 .win_rate
                 .load(Ordering::Relaxed)
                 .clamp(0.0, 1.0),
-            None,
+            dependence.same_bet_rho_efectivo(),
         ) {
             return rej(2);
         }
