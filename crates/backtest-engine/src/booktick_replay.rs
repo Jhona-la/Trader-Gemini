@@ -649,8 +649,9 @@ pub fn live_envelope_gate(
             .max(0.0015)
     };
 
-    // D-641: z/k continuos por régimen de capital (mismo literal 5.0 del vivo).
-    let env_min_notional = 5.0;
+    // D-641: z/k continuos por régimen de capital (mismo mínimo que el vivo).
+    // CL-11: el mínimo del símbolo, no el literal 5,0.
+    let env_min_notional = risk_engine::capital_regime::min_notional_del_simbolo(coin_id);
     let env_w = risk_engine::capital_regime::micro_weight(cap_now, env_min_notional);
     let env_z = risk_engine::capital_regime::lerp(1.64, 0.85, env_w);
     let env_k = risk_engine::capital_regime::log_lerp(50.0, 10.0, env_w);

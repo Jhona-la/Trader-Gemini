@@ -216,3 +216,20 @@ fn maker_active_response_does_not_authorize_a_market_replacement() {
         terminal_maker_executed_quantity("OTHERUSDT", "intent-1", &ack("CANCELED", 0.0)).is_err()
     );
 }
+
+/// CL-8 — el capital es el saldo de la cartera, no el disponible (que ya
+/// descuenta el margen que el arranque vuelve a reservar al adoptar).
+#[test]
+fn cl8_el_capital_es_el_saldo_de_la_cartera_no_el_disponible() {
+    let cuenta = r#"{"totalWalletBalance":"13.00000000","availableBalance":"8.40000000","totalInitialMargin":"4.60000000"}"#;
+    assert_eq!(parse_account_equity(cuenta).unwrap(), 13.0);
+    for malo in [
+        r#"{"availableBalance":"8.4"}"#,
+        r#"{"totalWalletBalance":"NaN"}"#,
+        r#"{"totalWalletBalance":"-1"}"#,
+        r#"{"totalWalletBalance":null}"#,
+        "no es json",
+    ] {
+        assert!(parse_account_equity(malo).is_err(), "{malo}");
+    }
+}

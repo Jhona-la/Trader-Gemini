@@ -34,6 +34,11 @@ pub struct TrueOnlineRandomForest {
     /// dejar opinar al forest. Sin esto, un forest degenerado modularía
     /// entradas con ruido.
     pub last_accuracy: RwLock<f64>,
+    /// CL-18 — `true` sólo si el último reentrenamiento IDENTIFICÓ umbrales:
+    /// la curva de PnL filtrado cambia con el umbral. Con un clasificador
+    /// que sólo devuelve la clase (0/1) todos los umbrales de la rejilla
+    /// filtran lo mismo y no hay nada que calibrar.
+    thresholds_identified: RwLock<bool>,
 }
 
 impl TrueOnlineRandomForest {
@@ -46,6 +51,7 @@ impl TrueOnlineRandomForest {
             shadow_threshold_long: RwLock::new(0.60),
             shadow_threshold_short: RwLock::new(0.60),
             last_accuracy: RwLock::new(0.0),
+            thresholds_identified: RwLock::new(false),
         }
     }
 
@@ -82,10 +88,18 @@ impl TrueOnlineRandomForest {
         self.classifier.read().unwrap().is_some()
     }
 
-    pub fn get_optimal_thresholds(&self) -> (f32, f32) {
+    /// CL-18 — umbrales calibrados, o `None` si el último reentrenamiento no
+    /// pudo identificarlos (ver `thresholds_identified`). Antes devolvía
+    /// siempre un par, y con la calibración degenerada era (0,50; 0,50): el
+    /// daemon lo escribía cada 500 ms en los genes del gate ML y lo fijaba
+    /// en su lift mínimo.
+    pub fn get_optimal_thresholds(&self) -> Option<(f32, f32)> {
+        if !*self.thresholds_identified.read().unwrap() {
+            return None;
+        }
         let th_long = *self.shadow_threshold_long.read().unwrap();
         let th_short = *self.shadow_threshold_short.read().unwrap();
-        (th_long, th_short)
+        Some((th_long, th_short))
     }
 
     pub fn feed_observation(&self, obs: TradeObservation) {
@@ -166,6 +180,9 @@ impl TrueOnlineRandomForest {
         let mut best_th_short = 0.48_f32;
         let mut best_profit_long = -1e9_f64;
         let mut best_profit_short = -1e9_f64;
+        // CL-18: recorrido de cada curva de PnL sobre la rejilla de umbrales.
+        let (mut min_l, mut max_l) = (f64::INFINITY, f64::NEG_INFINITY);
+        let (mut min_s, mut max_s) = (f64::INFINITY, f64::NEG_INFINITY);
 
         // CERT-M8-C02: el loop ANTERIOR no usaba `th` dentro del cálculo
         // de profit — profit_l/profit_s eran idénticos para cada paso, así
@@ -180,8 +197,10 @@ impl TrueOnlineRandomForest {
             let mut profit_s = 0.0_f64;
             for (i, obs) in data.iter().enumerate() {
                 let pnl = obs.actual_pnl_pct;
-                // Probabilidad predicha por el clasificador (no la clase
-                // binaria): esto es lo que hace que `th` discrimine.
+                // CL-18: smartcore 0.3.2 sólo expone `predict`, que devuelve
+                // la CLASE (0/1), no una probabilidad: el comentario anterior
+                // («probabilidad predicha») no era cierto y ningún `th` de la
+                // rejilla discrimina. Se detecta abajo y no se publica nada.
                 let prob_win = y_class_pred.get(i).copied().unwrap_or(0) as f64;
                 if obs.obi > 0.0 && prob_win >= th {
                     profit_l += pnl;
@@ -190,6 +209,10 @@ impl TrueOnlineRandomForest {
                     profit_s += pnl;
                 }
             }
+            min_l = min_l.min(profit_l);
+            max_l = max_l.max(profit_l);
+            min_s = min_s.min(profit_s);
+            max_s = max_s.max(profit_s);
             if profit_l > best_profit_long {
                 best_profit_long = profit_l;
                 best_th_long = th as f32;
@@ -200,8 +223,15 @@ impl TrueOnlineRandomForest {
             }
         }
 
-        *self.shadow_threshold_long.write().unwrap() = best_th_long.clamp(0.50, 0.75);
-        *self.shadow_threshold_short.write().unwrap() = best_th_short.clamp(0.25, 0.50);
+        // CL-18: sólo se publica una calibración que el umbral puede mover. Una
+        // curva plana (los 26 umbrales filtran lo mismo) no identifica nada:
+        // el «óptimo» sería el primer paso de la rejilla, no un dato.
+        let identificados = max_l > min_l && max_s > min_s;
+        if identificados {
+            *self.shadow_threshold_long.write().unwrap() = best_th_long.clamp(0.50, 0.75);
+            *self.shadow_threshold_short.write().unwrap() = best_th_short.clamp(0.25, 0.50);
+        }
+        *self.thresholds_identified.write().unwrap() = identificados;
 
         *self.classifier.write().unwrap() = Some(Arc::new(classifier));
         *self.regressor.write().unwrap() = Some(Arc::new(regressor));

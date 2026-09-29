@@ -105,13 +105,6 @@ struct ProtectionAudit {
     /// Gap TP/SL restante tras el intento de top-up (unidades del activo).
     tp_gap: f64,
     sl_gap: f64,
-    /// HOST-024 (informe decimocuarto) — piernas omitidas porque el gap
-    /// está por debajo del minNotional del exchange: cobertura IMPOSIBLE
-    /// de colocar (no es un blip de red — el exchange JAMÁS aceptará esa
-    /// orden). Evidencia determinística de riesgo real que el watchdog
-    /// debe contar para el streak de escalado: la posición queda
-    /// parcialmente protegida de forma permanente.
-    min_notional_skips: u8,
 }
 
 /// B1.3: audita la cobertura TP/SL de una posición viva contra las algo
@@ -155,7 +148,6 @@ async fn ensure_position_protected(
         return ProtectionAudit {
             tp_gap: pos_qty - tp_covered,
             sl_gap: pos_qty - sl_covered,
-            min_notional_skips: 0,
         };
     };
     let tp_gap = (pos_qty - tp_covered).max(0.0);
@@ -164,7 +156,6 @@ async fn ensure_position_protected(
         return ProtectionAudit {
             tp_gap: 0.0,
             sl_gap: 0.0,
-            min_notional_skips: 0,
         }; // protegida
     }
     if entry_price <= 0.0 {
@@ -176,7 +167,6 @@ async fn ensure_position_protected(
         return ProtectionAudit {
             tp_gap,
             sl_gap,
-            min_notional_skips: 0,
         };
     }
     let (tp_price, sl_price) =
@@ -185,11 +175,9 @@ async fn ensure_position_protected(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_micros();
-    let min_notional = f.min_notional.max(5.0);
     let mut audit = ProtectionAudit {
         tp_gap,
         sl_gap,
-        min_notional_skips: 0,
     };
     // Precio VIVO del arena para el reintento -2021: cuando la posición
     // deriva más allá del nivel del genoma calculado desde el ENTRY, el
@@ -200,150 +188,131 @@ async fn ensure_position_protected(
         .and_then(|ci| arena.coins.get(ci))
         .map(|c| c.current_price.load(Ordering::Relaxed))
         .filter(|p| *p > 0.0);
+    // CL-17 — las piernas con gap se ENVÍAN aunque su nocional quede bajo el
+    // minNotional. HOST-024 las omitía suponiendo que «el exchange jamás
+    // aceptará esa orden», sin prueba: una orden de cierre (reduce-only en
+    // one-way, positionSide en hedge) no abre riesgo y el propio texto de
+    // -4164 exceptúa las reduce-only. Si el exchange la rechaza,
+    // `note_rejection` lo cuenta y el watchdog escala con EVIDENCIA (B3.5b),
+    // no con una suposición; si la acepta, la posición queda cubierta.
     if tp_gap >= f.step_size {
-        if tp_gap * tp_price < min_notional {
-            // HOST-024 — el gap es real pero el exchange jamás aceptará la
-            // orden (< minNotional): se cuenta como evidencia determinística
-            // para el streak del watchdog (antes sólo warning ⇒ riesgo
-            // perpetuo invisible al escalado).
-            audit.min_notional_skips += 1;
-            telemetry_server::telemetry_log!(
-                "⚠️ [{}] top-up TP {} {:.4} < minNotional — posición parcialmente protegida (cuenta para escalado)",
-                tag,
-                symbol,
-                tp_gap * tp_price
-            );
-        } else {
-            let mut trig = tp_price;
-            let frac_tp = ((tp_price - entry_price).abs() / entry_price).max(0.0015);
-            for intent in 0..2 {
-                let id = format!("wdTP_{}_{}", micros, intent);
-                match executor
-                    .place_algo_leg(
-                        symbol,
-                        is_long,
-                        "TAKE_PROFIT_MARKET",
-                        tp_gap,
-                        trig,
-                        f.step_size,
-                        f.tick_size,
-                        &id,
-                    )
-                    .await
-                {
-                    Ok(()) => {
-                        telemetry_server::telemetry_log!(
-                            "🛡️ [{}] TP re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
-                            tag, symbol, tp_gap, trig, tp_covered, pos_qty
-                        );
-                        audit.tp_gap = 0.0;
-                        break;
-                    }
-                    Err(e) if intent == 0 && e.contains("-2021") => {
-                        match live_price {
-                            Some(cur) => {
-                                trig = if is_long {
-                                    cur * (1.0 + frac_tp)
-                                } else {
-                                    cur * (1.0 - frac_tp)
-                                };
-                                telemetry_server::telemetry_log!(
-                                    "↪️ [{}] TP de {} reposicionado al precio vivo ({:.4} → {:.4})",
-                                    tag, symbol, tp_price, trig
-                                );
-                            }
-                            None => {
-                                telemetry_server::telemetry_log!(
-                                    "⚠️ [{}] top-up TP {} falló (-2021 sin precio vivo): {}",
-                                    tag, symbol, e
-                                );
-                                break;
-                            }
+        let mut trig = tp_price;
+        let frac_tp = ((tp_price - entry_price).abs() / entry_price).max(0.0015);
+        for intent in 0..2 {
+            let id = format!("wdTP_{}_{}", micros, intent);
+            match executor
+                .place_algo_leg(
+                    symbol,
+                    is_long,
+                    "TAKE_PROFIT_MARKET",
+                    tp_gap,
+                    trig,
+                    f.step_size,
+                    f.tick_size,
+                    &id,
+                )
+                .await
+            {
+                Ok(()) => {
+                    telemetry_server::telemetry_log!(
+                        "🛡️ [{}] TP re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
+                        tag, symbol, tp_gap, trig, tp_covered, pos_qty
+                    );
+                    audit.tp_gap = 0.0;
+                    break;
+                }
+                Err(e) if intent == 0 && e.contains("-2021") => {
+                    match live_price {
+                        Some(cur) => {
+                            trig = if is_long {
+                                cur * (1.0 + frac_tp)
+                            } else {
+                                cur * (1.0 - frac_tp)
+                            };
+                            telemetry_server::telemetry_log!(
+                                "↪️ [{}] TP de {} reposicionado al precio vivo ({:.4} → {:.4})",
+                                tag, symbol, tp_price, trig
+                            );
+                        }
+                        None => {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [{}] top-up TP {} falló (-2021 sin precio vivo): {}",
+                                tag, symbol, e
+                            );
+                            break;
                         }
                     }
-                    Err(e) => {
-                        // B3.5b: evidencia positiva de rechazo para el
-                        // escalado (los fallos de red no cuentan).
-                        let _ = quantum_arena::protection_health::note_rejection(symbol, &e);
-                        telemetry_server::telemetry_log!(
-                            "⚠️ [{}] top-up TP {} falló: {}",
-                            tag, symbol, e
-                        );
-                        break;
-                    }
+                }
+                Err(e) => {
+                    // B3.5b: evidencia positiva de rechazo para el
+                    // escalado (los fallos de red no cuentan).
+                    let _ = quantum_arena::protection_health::note_rejection(symbol, &e);
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [{}] top-up TP {} falló: {}",
+                        tag, symbol, e
+                    );
+                    break;
                 }
             }
         }
     }
     if sl_gap >= f.step_size {
-        if sl_gap * sl_price < min_notional {
-            // HOST-024 — ídem TP: gap bajo minNotional = riesgo real que
-            // ninguna orden puede cubrir; alimenta el streak del watchdog.
-            audit.min_notional_skips += 1;
-            telemetry_server::telemetry_log!(
-                "⚠️ [{}] top-up SL {} {:.4} < minNotional — posición parcialmente protegida (cuenta para escalado)",
-                tag,
-                symbol,
-                sl_gap * sl_price
-            );
-        } else {
-            let mut trig = sl_price;
-            let frac_sl = ((sl_price - entry_price).abs() / entry_price).max(0.0015);
-            for intent in 0..2 {
-                let id = format!("wdSL_{}_{}", micros, intent);
-                match executor
-                    .place_algo_leg(
-                        symbol,
-                        is_long,
-                        "STOP_MARKET",
-                        sl_gap,
-                        trig,
-                        f.step_size,
-                        f.tick_size,
-                        &id,
-                    )
-                    .await
-                {
-                    Ok(()) => {
-                        telemetry_server::telemetry_log!(
-                            "🛡️ [{}] SL re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
-                            tag, symbol, sl_gap, trig, sl_covered, pos_qty
-                        );
-                        audit.sl_gap = 0.0;
-                        break;
-                    }
-                    Err(e) if intent == 0 && e.contains("-2021") => {
-                        match live_price {
-                            Some(cur) => {
-                                trig = if is_long {
-                                    cur * (1.0 - frac_sl)
-                                } else {
-                                    cur * (1.0 + frac_sl)
-                                };
-                                telemetry_server::telemetry_log!(
-                                    "↪️ [{}] SL de {} reposicionado al precio vivo ({:.4} → {:.4})",
-                                    tag, symbol, sl_price, trig
-                                );
-                            }
-                            None => {
-                                telemetry_server::telemetry_log!(
-                                    "⚠️ [{}] top-up SL {} falló (-2021 sin precio vivo): {}",
-                                    tag, symbol, e
-                                );
-                                break;
-                            }
+        let mut trig = sl_price;
+        let frac_sl = ((sl_price - entry_price).abs() / entry_price).max(0.0015);
+        for intent in 0..2 {
+            let id = format!("wdSL_{}_{}", micros, intent);
+            match executor
+                .place_algo_leg(
+                    symbol,
+                    is_long,
+                    "STOP_MARKET",
+                    sl_gap,
+                    trig,
+                    f.step_size,
+                    f.tick_size,
+                    &id,
+                )
+                .await
+            {
+                Ok(()) => {
+                    telemetry_server::telemetry_log!(
+                        "🛡️ [{}] SL re-armado para {} ({:.6} @ {:.4}) — cobertura era {:.6}/{:.6}",
+                        tag, symbol, sl_gap, trig, sl_covered, pos_qty
+                    );
+                    audit.sl_gap = 0.0;
+                    break;
+                }
+                Err(e) if intent == 0 && e.contains("-2021") => {
+                    match live_price {
+                        Some(cur) => {
+                            trig = if is_long {
+                                cur * (1.0 - frac_sl)
+                            } else {
+                                cur * (1.0 + frac_sl)
+                            };
+                            telemetry_server::telemetry_log!(
+                                "↪️ [{}] SL de {} reposicionado al precio vivo ({:.4} → {:.4})",
+                                tag, symbol, sl_price, trig
+                            );
+                        }
+                        None => {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [{}] top-up SL {} falló (-2021 sin precio vivo): {}",
+                                tag, symbol, e
+                            );
+                            break;
                         }
                     }
-                    Err(e) => {
-                        // B3.5b: evidencia positiva de rechazo para el
-                        // escalado (los fallos de red no cuentan).
-                        let _ = quantum_arena::protection_health::note_rejection(symbol, &e);
-                        telemetry_server::telemetry_log!(
-                            "⚠️ [{}] top-up SL {} falló: {}",
-                            tag, symbol, e
-                        );
-                        break;
-                    }
+                }
+                Err(e) => {
+                    // B3.5b: evidencia positiva de rechazo para el
+                    // escalado (los fallos de red no cuentan).
+                    let _ = quantum_arena::protection_health::note_rejection(symbol, &e);
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [{}] top-up SL {} falló: {}",
+                        tag, symbol, e
+                    );
+                    break;
                 }
             }
         }
@@ -1662,22 +1631,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // risk-engine — la caída máxima compatible con el riesgo
                     // que el motor toma de verdad y con su tasa de pérdida
                     // observada, con el gen como confianza de la prueba.
-                    let q_perdida_global = {
-                        let (mut wins, mut total) = (0.0f64, 0.0f64);
-                        for c in arena_imm.coins.iter() {
-                            let w = c.metrics.win_rate.load(Ordering::Relaxed);
-                            let t = c.metrics.trade_count.load(Ordering::Relaxed) as f64;
-                            if t > 0.0 && w.is_finite() {
-                                wins += w.clamp(0.0, 1.0) * t;
-                                total += t;
-                            }
-                        }
-                        if total > 0.0 {
-                            1.0 - (wins / total)
-                        } else {
-                            0.5
-                        }
-                    };
+                    // CL-9: la MISMA función que el veto de entradas.
+                    let q_perdida_global =
+                        risk_engine::drawdown::q_perdida_cartera(arena_imm.coins.iter().map(|c| {
+                            (
+                                c.metrics.win_rate.load(Ordering::Relaxed),
+                                c.metrics.trade_count.load(Ordering::Relaxed) as f64,
+                            )
+                        }));
                     // D-744b: sin riesgo medido (p. ej. tras reiniciar con
                     // posiciones reconciliadas) rige el gen — antes ∞, es
                     // decir, el sistema inmune desarmado.
@@ -1842,20 +1803,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })
                     };
                     let calculated_margin = (pos.qty.abs() * pos.entry_price) / lev_real;
-                    arena_real
-                        .used_margin
-                        .fetch_add(calculated_margin, Ordering::Relaxed);
-                    arena_real.coins[coin_idx].positions.position.open_with_horizon(
+                    // CL-16: cada pierna en su PROPIA ranura libre; el margen
+                    // sólo se reserva si la apertura se aceptó. Antes se
+                    // escribía siempre en `positions.position` (en hedge la
+                    // segunda pierna pisaba a la primera y su margen quedaba
+                    // fugado en used_margin) y se reservaba antes de abrir.
+                    let adopted_slot = execution_engine::reconciliation::adoptar_en_ranura_libre(
+                        &arena_real.coins[coin_idx].positions,
                         pos.is_long,
                         pos.entry_price,
-                        pos.qty,
+                        pos.qty.abs(),
                         calculated_margin,
                         now_ms,
-                        0.0,
-                        0.0,
-                        quantum_arena::position::PositionHorizon::Continuous,
                     );
-                    telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (Margen: ${:.2} a {:.0}x — reservado en used_margin)", pos.symbol, calculated_margin, lev_real);
+                    if let Some(slot) = adopted_slot {
+                        arena_real
+                            .used_margin
+                            .fetch_add(calculated_margin, Ordering::Relaxed);
+                        telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (ranura {}, margen: ${:.2} a {:.0}x — reservado en used_margin)", pos.symbol, slot, calculated_margin, lev_real);
+                    } else {
+                        quantum_arena::protection_health::mark_dirty();
+                        telemetry_engine::telemetry_err!(
+                            "🚨 [FASE 5] {} {}: sin ranura libre o entrada no adoptable (px {}, qty {}) — no se reserva margen; la protección remota se re-arma igual",
+                            pos.symbol,
+                            if pos.is_long { "LONG" } else { "SHORT" },
+                            pos.entry_price,
+                            pos.qty
+                        );
+                    }
 
                     // B2.7 — RECUPERACIÓN DE CONTEXTO (directriz del operador):
                     // qué τ y qué predicción ML seguían esta posición vive en
@@ -1864,15 +1839,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let ctx = recover_position_context(&pos.symbol, pos.is_long);
                     // B3.14 — la posición adoptada EXISTE en el exchange:
                     // sus cierres contabilizan.
-                    if let Some(c) = arena_real.coins.get(coin_idx) {
+                    if let (Some(c), Some(slot)) = (arena_real.coins.get(coin_idx), adopted_slot) {
                         c.positions
-                            .position
+                            .get_slot(slot)
                             .exchange_confirmed
                             .store(true, Ordering::Relaxed);
                     }
                     if let Some(rc) = &ctx {
-                        if let Some(c) = arena_real.coins.get(coin_idx) {
-                            c.positions.position.entry_tau_ms.store(rc.tau_ms, Ordering::Relaxed);
+                        if let (Some(c), Some(slot)) = (arena_real.coins.get(coin_idx), adopted_slot) {
+                            c.positions.get_slot(slot).entry_tau_ms.store(rc.tau_ms, Ordering::Relaxed);
                         }
                         telemetry_server::telemetry_log!(
                             "   🧠 [CONTEXTO] {} {}: τ_entrada={}ms ({}), ml_entrada={:.3}, edad {:.1}h",
@@ -2604,7 +2579,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         )
                         .await;
                         let (g_tp, g_sl) = (prot.tp_gap, prot.sl_gap);
-                        if g_tp > 0.0 || g_sl > 0.0 {
+                        // CL-17 — sólo un gap de STOP deja la posición
+                        // desnuda. Un TP ausente con el SL completo no es
+                        // riesgo: se re-intenta en cada auditoría, pero nunca
+                        // justifica cerrar TODA la posición a mercado.
+                        if g_tp > 0.0 && g_sl <= 0.0 {
+                            telemetry_server::telemetry_log!(
+                                "🐕 [WATCHDOG] {} con gap de TP ({:.6}) y SL completo — no escala",
+                                p.symbol,
+                                g_tp
+                            );
+                        }
+                        if g_sl > 0.0 {
                             naked_total += 1;
                             // B3.5b — el streak SOLO sube con evidencia
                             // positiva: rechazos NUEVOS del exchange desde la
@@ -2612,17 +2598,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // = fallo de red o estado transitorio: se loguea,
                             // no se cuenta (un blip de 3 ciclos ya no cierra
                             // posiciones sanas a mercado).
-                            // HOST-024 — EXCEPCIÓN: gaps bajo minNotional sí
-                            // cuentan SIN rechazos: el exchange jamás aceptará
-                            // esa orden (evidencia determinística, no red) —
-                            // la posición queda parcialmente protegida para
-                            // siempre y el riesgo es real.
+                            // CL-17: la excepción HOST-024 (contar gaps bajo
+                            // minNotional sin rechazo) se retira: esas piernas
+                            // ahora se envían y su rechazo, si llega, es la
+                            // evidencia.
                             let rejections_now =
                                 quantum_arena::protection_health::rejections_of(&p.symbol);
                             let rejections_prev =
                                 naked_rejections.get(&p.symbol).copied().unwrap_or(0);
                             naked_rejections.insert(p.symbol.clone(), rejections_now);
-                            if rejections_now <= rejections_prev && prot.min_notional_skips == 0 {
+                            if rejections_now <= rejections_prev {
                                 telemetry_server::telemetry_log!(
                                     "🐕 [WATCHDOG] {} con gap pero sin rechazos nuevos — no escala (¿red?)",
                                     p.symbol
@@ -3846,7 +3831,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // (k 10 → 50) en $50. Micro pleno a ≤3 operaciones mínimas,
                         // estándar a ≥10, transición continua entre ambos. A $13
                         // el resultado es idéntico al anterior (peso micro = 1).
-                        let env_min_notional = 5.0;
+                        // CL-11: el mínimo del símbolo, no el literal 5,0.
+                        let env_min_notional = risk_engine::capital_regime::min_notional_del_simbolo(coin_id);
                         let env_w =
                             risk_engine::capital_regime::micro_weight(cap_now, env_min_notional);
                         let env_z = risk_engine::capital_regime::lerp(1.64, 0.85, env_w);
@@ -4265,10 +4251,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     .fetch_position_risk()
                                                     .await
                                                     .map(|ps| {
-                                                        ps.iter().any(|p| {
-                                                            p.symbol == parsed_sym_str
-                                                                && p.position_amt.abs() > 0.0
-                                                        })
+                                                        // CL-12: el lado de ESTA entrada.
+                                                        execution_engine::reconciliation::cantidad_abierta_del_lado(
+                                                            &ps, &parsed_sym_str, final_is_long,
+                                                        )
+                                                        .is_some()
                                                     })
                                                     .unwrap_or(true); // si fetch falla, no bloquear
                                                 if !still_open {
@@ -4288,14 +4275,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .ok()
                                                 .and_then(|ps| {
                                                     // HEDGE: DOS registros por símbolo
-                                                    // (LONG/SHORT); el vacío trae amt=0
-                                                    // y puede ordenar primero.
-                                                    ps.iter()
-                                                        .find(|p| {
-                                                            p.symbol == parsed_sym_str
-                                                                && p.position_amt.abs() > 0.0
-                                                        })
-                                                        .map(|p| p.position_amt.abs())
+                                                    // (LONG/SHORT). CL-12: el del lado de
+                                                    // esta entrada, no el primero abierto.
+                                                    execution_engine::reconciliation::cantidad_abierta_del_lado(
+                                                        &ps, &parsed_sym_str, final_is_long,
+                                                    )
                                                 })
                                                 .filter(|a| *a > 0.0)
                                                 .map(|real| real.min(qty_intent))
@@ -4378,12 +4362,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .await
                                                 .ok()
                                                 .and_then(|ps| {
-                                                    ps.iter()
-                                                        .find(|p| {
-                                                            p.symbol == parsed_sym_str
-                                                                && p.position_amt.abs() > 0.0
-                                                        })
-                                                        .map(|p| p.position_amt.abs())
+                                                    // CL-12: la posición del lado que se
+                                                    // cierra (hedge: dos registros).
+                                                    execution_engine::reconciliation::cantidad_abierta_del_lado(
+                                                        &ps, &parsed_sym_str, is_long_close,
+                                                    )
                                                 })
                                                 .filter(|a| *a > 0.0)
                                                 .unwrap_or(final_qty.abs());
@@ -4404,7 +4387,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             };
                                             // Purgar órdenes restantes (haya cerrado o no:
                                             // si no cerró, reduceOnly sigue siendo válida).
-                                            if let Err(ce) = exec_clone.load().cancel_all_symbol_orders(&parsed_sym_str).await {
+                                            // CL-12: sólo las del LADO cerrado; la purga
+                                            // de todo el símbolo borraba el TP/SL de la
+                                            // posición del lado contrario.
+                                            if let Err(ce) = exec_clone.load().cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
                                                 telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
                                             }
                                             match close_res {

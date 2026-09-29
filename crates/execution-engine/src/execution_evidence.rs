@@ -72,6 +72,32 @@ pub fn parse_active_positions(text: &str) -> Result<Vec<ActivePosition>, String>
     Ok(positions)
 }
 
+/// CL-8 — CAPITAL DE LA CUENTA = saldo de la cartera (`totalWalletBalance`).
+///
+/// El arena modela el capital como patrimonio y el margen retenido aparte
+/// (`used_margin`, que la adopción de posiciones del arranque suma). Se leía
+/// `availableBalance`, que Binance ya da NETO del margen inicial de las
+/// posiciones y órdenes abiertas: con posiciones vivas al arrancar, el margen
+/// se restaba dos veces y el capital libre salía infravalorado para siempre
+/// (la base de Kelly, del drawdown y del régimen micro). Sin el campo no se
+/// sustituye por otro de semántica distinta: el llamador reintenta.
+pub fn parse_account_equity(text: &str) -> Result<f64, String> {
+    let account: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| format!("ACCOUNT_EVIDENCE_INVALID: schema: {e}"))?;
+    let raw = account
+        .get("totalWalletBalance")
+        .ok_or_else(|| "ACCOUNT_EVIDENCE_INVALID: sin totalWalletBalance".to_string())?;
+    let value = match raw {
+        serde_json::Value::String(s) => s.parse::<f64>().ok(),
+        serde_json::Value::Number(n) => n.as_f64(),
+        _ => None,
+    };
+    match value {
+        Some(v) if v.is_finite() && v >= 0.0 => Ok(v),
+        _ => Err("ACCOUNT_EVIDENCE_INVALID: totalWalletBalance fuera de dominio".to_string()),
+    }
+}
+
 /// Accepted means order evidence, not necessarily a fill (NEW is accepted).
 /// Every query error, including -2013, is inconclusive: failure to retrieve an
 /// order is not a certificate that no execution ever took place.

@@ -165,6 +165,19 @@ pub fn effective_min_notional(spec_min_notional: f64) -> f64 {
     }
 }
 
+/// CL-11 — nocional mínimo efectivo del símbolo de `coin_id`, leído del
+/// registro (`exchangeInfo`). Lo usan la envolvente del host y la del replay,
+/// que llevaban el literal 5,0: con un símbolo de mínimo 100 $ la envolvente
+/// juzgaba operable una orden que el risk-engine y el exchange rechazan.
+#[inline]
+pub fn min_notional_del_simbolo(coin_id: usize) -> f64 {
+    effective_min_notional(
+        quantum_arena::symbol_registry::try_spec(coin_id)
+            .map(|s| s.min_notional)
+            .unwrap_or(0.0),
+    )
+}
+
 /// D-750 — VIABILIDAD DE LA ORDEN: FUENTE ÚNICA.
 ///
 /// # Qué estaba mal

@@ -551,17 +551,32 @@ impl StatefulEngine {
         self.racha_amortizada(cruda, enfriamiento_base_ms)
     }
 
-    /// Centra las predicciones ML en 0.50 con rango [-1.0, 1.0] en O(1).
+    /// Opinión ML en [-1, 1] medida contra la BASE DEL PROPIO MODELO.
     /// MOD2/7-002 (INFORME DECIMOCUARTO): los campos `ml_prob_ewma`/`ml_prob_var`
     /// (la supuesta "normalización adaptativa") se eliminaron — declarados,
     /// inicializados y jamás leídos: estado fantasma con contrato falsamente
     /// documentado. Este mapeo es estático por diseño.
+    ///
+    /// CL-13: se centraba en 0,50 mientras la base del bosque con el
+    /// etiquetado honesto (HOST-010) es ≈ 0,30 y todas las demás puertas ya
+    /// miden el LIFT sobre `ml_model_base` (B3.36, F-009). Un modelo neutral
+    /// aportaba ≈ −0,4 al compuesto: un sesgo corto permanente. Ahora la base
+    /// es el cero y cada lado se normaliza por su propio recorrido
+    /// ([0, b] → [−1, 0], [b, 1] → [0, 1]); con b = 0,50 es exactamente el
+    /// mapeo anterior `(p − 0,5)·2`.
     #[inline(always)]
-    pub fn update_ml_prediction(&mut self, ml_prob: f64) -> f64 {
+    pub fn update_ml_prediction(&mut self, ml_prob: f64, base: f64) -> f64 {
         if !ml_prob.is_finite() || ml_prob < 0.0 || ml_prob > 1.0 {
             return 0.0;
         }
-        ((ml_prob - 0.50) * 2.0).clamp(-1.0, 1.0)
+        let b = if base.is_finite() && base > 0.0 && base < 1.0 {
+            base
+        } else {
+            0.5
+        };
+        let d = ml_prob - b;
+        let s = if d >= 0.0 { d / (1.0 - b) } else { d / b };
+        s.clamp(-1.0, 1.0)
     }
 
     /// Flushes all internal buffers. Used to auto-heal time-series glitches after network disconnects.
@@ -1379,6 +1394,29 @@ impl ObiNoise {
 impl Drop for StatefulEngine {
     fn drop(&mut self) {
         DROP_COUNTER.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+mod tests_cl13 {
+    use super::*;
+
+    #[test]
+    fn cl13_la_opinion_ml_se_mide_contra_la_base_del_modelo() {
+        let mut e = StatefulEngine::new();
+        // Base 0,50: idéntico al mapeo anterior.
+        for p in [0.0, 0.2, 0.5, 0.73, 1.0] {
+            assert!((e.update_ml_prediction(p, 0.5) - ((p - 0.5) * 2.0)).abs() < 1e-12);
+        }
+        // Base 0,30: el modelo neutral no opina y cada lado llega a ±1.
+        assert_eq!(e.update_ml_prediction(0.30, 0.30), 0.0);
+        assert!((e.update_ml_prediction(0.15, 0.30) + 0.5).abs() < 1e-12);
+        assert!((e.update_ml_prediction(0.65, 0.30) - 0.5).abs() < 1e-12);
+        assert_eq!(e.update_ml_prediction(0.0, 0.30), -1.0);
+        assert_eq!(e.update_ml_prediction(1.0, 0.30), 1.0);
+        // Base inválida: la neutral de siempre.
+        assert_eq!(e.update_ml_prediction(0.5, f64::NAN), 0.0);
+        assert_eq!(e.update_ml_prediction(f64::NAN, 0.3), 0.0);
     }
 }
 
