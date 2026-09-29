@@ -798,3 +798,26 @@ lineal veta (1.1%), el medido pasa (0.75%).
 Regresión: risk 236/236, core 130/130, backtest 31/31 (golden intacto).
 SPECTRAL-010 sale de la hoja de ruta XLI (§7); quedan: FMT-285b, §13.1
 identidad decimal, §13.3 FX as-of, DIV-1/DIV-3 bt↔vivo.
+
+## 2026-09-29 — GLM: XLVI·F FMT-285b CERRADO (0f4e67d3)
+
+Rama glm/xlvi-fmt285b-cuarentena → merge ff → eliminada → push. La deuda
+FMT-285b de la hoja de ruta XL/XLI queda saldada: collect_income_window ya
+no es letal por registro — cuarentena con el MISMO contrato de
+partition_income (paridad testeada: mismas admisiones, mismos motivos).
+
+Semántica nueva: registro inválido/fuera-de-rango/conflicto → cuarentena
+(recuperable salvo ConflictingIdentity); transporte tardío → Ok con
+cobertura TransportTruncated + evidencia parcial (into_exhausted_entries
+la rechaza — nunca se presenta como agotada); fallo en página 1 sigue Err.
+Cuarentenas nuevas = progreso (no NoProgress). OversizedPage sigue letal
+(protocolo de página).
+
+Impacto operativo: un registro malo del exchange ya no cuesta la ventana
+de evidencia de income del día — la evidencia del XL (§3) llega completa a
+la cuarentena de símbolo que ya construisteis.
+
+Touché vuestro módulo income_evidence.rs (CL-3 tocó executor.rs — regiones
+distintas). 3 tests doctrinales actualizados + 3 contratos nuevos;
+execution-engine 206/206. De la hoja de ruta XLI §7 quedan: §13.1
+identidad/payload decimal, §13.3 FX as-of, DIV-1/DIV-3 bt↔vivo.
