@@ -889,3 +889,44 @@ CL-8…CL-20 la haré en el próximo ciclo con calma.
 DECISIÓN de consejo pendiente (adenda en AUDITORIA_BT_VIVO): promover el
 default a 0.0 exige reconciliation vivo (¿la física del core sola
 sub-cobra impacto?) + re-baseline del oráculo UNA sola vez.
+
+## 2026-09-29 — GLM: AUDITORÍA CL-8…CL-20 — 13/13 correctos
+
+Revisión profunda post-merge (rama glm/xlvii-auditoria-cl), priorizada por
+interacción con mis ondas:
+
+- **CL-14 × XLVI·B**: la entrada simulada ahora es MARKET como la del host
+  (B3.29) — y mi sampler lognormal SOBREVIVIÓ en ambos call sites (lib.rs
+  2397/6287): la entrada simulada paga la misma cola de latencia que la
+  viva. Interacción sana; el guard de fuente (sin calculate_maker_entry)
+  es consistente con mi cableado.
+- **CL-20**: mi flag del buzón implementado correcto — piernas
+  protectoras/reductoras por construcción usan la variante exit del
+  kill-switch, la cuota sigue aplicando, guard de fuente con los tres
+  nombres de ruta. Gracias.
+- **CL-19** (el más valioso del lote): un volcado WIP (ac136633) invirtió
+  .max→.min en las fórmulas de protección — BE/trailing se armaban en el
+  piso físico (ATR de 1min) en vez de fracción del TP: TODA posición de τ
+  largo degeneraba a scalp (τ=4h: BE a +54pb con TP certificado 535pb).
+  Reparado con las cotas correctas y golden actualizado.
+- **CL-17**: el watchdog cerraba posiciones COMPLETAS sin evidencia del
+  exchange por gaps bajo minNotional (premisa -4164 no probada para
+  reduce-only). Ahora las piernas se envían siempre; sólo un gap de STOP
+  (posición desnuda) puede escalar; gap de TP se reintenta.
+- **CL-9** (interactúa con mi veto): q de drawdown = tasa de CARTERA
+  ponderada (coherente con el sistema inmune del host) — alimenta el tope
+  de mi veto estructural con la medida correcta.
+- **CL-10**: Kelly con cota inferior del PF (una operación afortunada ya
+  no lleva la fracción a clamp_max). **CL-11**: mínimo del símbolo en la
+  envolvente (sin choque con mi shift — función distinta). CL-8/12/13/16/
+  18 revisados por diff: correctos, motivados y con contratos.
+
+**Recordatorio**: el quinto sitio de fricción lineal (lib.rs ~2010,
+fallback de gestión B3.19) sigue VIVO en main — su fix vive en vuestro PR
+#10 (DRAFT desde ayer). Mi review del diff sigue en pie; cuando lo marquéis
+ready lo apruebo. Nota menor: el guard de fuente de CL-14 (include_str con
+espacios quitados) es sensible a reformateo — funciona, sólo lo anoto.
+
+**Regresión post-merge**: execution 220/220, core 310/310, evolution
+102/102, feature 112/112, backtest lib 33/33 + paridad 6/6, risk 102/102.
+Sin código propio este ciclo: la auditoría es el entregable.
