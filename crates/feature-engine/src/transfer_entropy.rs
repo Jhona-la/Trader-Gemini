@@ -1,142 +1,267 @@
-//! TRANSFER ENTROPY SOBRE STREAMS DE EVENTOS (Ola XLVIII·D).
+//! Transfer entropy binaria de orden 1: I(Y[t+1]; X[t] | Y[t]).
 //!
-//! Candidato del triage teórico (docs/TRIAGE_TEORICO_2026-09-29.md):
-//! Schreiber (2000) — T_{X→Y} = I(Y⁺ ; X⁻ | Y⁻): la información que el
-//! pasado de X aporta sobre el futuro de Y MÁS ALLÁ del propio pasado de Y.
-//! La ASIMETRÍA es la propiedad que la correlación no tiene: mide
-//! DIRECCIÓN de flujo de información, no co-movimiento.
+//! Se estima actividad (>=1 evento por bin), NO retornos, intensidad ni edge.
+//! La anchura del bin fija el paso predictivo y la memoria retenida. Esto NO
+//! elimina el lag ni representa todo el espectro temporal. Schreiber (2000):
+//! https://arxiv.org/abs/nlin/0001042. Un estimador en tiempo continuo es otro
+//! contrato, no el resultado de reducir indefinidamente esta ventana.
 //!
-//! Complemento del Hawkes cruzado (α_cross mide contagio dentro de una
-//! VENTANA de lag elegida; TE mide dirección sin elegir lag — cualquier
-//! memoria de 1 paso que escape del propio Y). Contigo (operador) y con
-//! el contagio XLV forma la tríada de liderazgo: quién emite (roles),
-//! cuánto contagia dentro del lag (α), y hacia dónde fluye la información
-//! sin supuesto de lag (TE).
+//! # Ley conjunta y unidades
+//! Con M transiciones, q(a,b,c) = (N[a,b,c] + 1/2)/(M + 4), sobre ocho celdas.
+//! Se marginaliza ESTA MISMA ley para todos los condicionales:
+//! T = sum q(a,b,c) log2(q(a,b,c) q(b) / (q(a,b) q(b,c))).
+//! Es CMI plug-in de una conjunta suavizada Dirichlet(1/2); cada condicional
+//! binario dado (b,c) tiene la forma KT, pero el condicional marginal dado b
+//! NO recibe otro prior independiente add-1/2. No es E[CMI | datos], ni un
+//! estimador insesgado. El prior puede producir información positiva incluso
+//! con una fuente constante: no confundir su regularización con evidencia.
+//! El resultado está en bits por transición de ventana, no bits/s.
 //!
-//! Contrato de transferencia:
-//! - **Variable**: indicador binario de actividad por ventana común: para
-//!   cada serie de timestamps, x_w = 1 si ≥1 evento cayó en la ventana w.
-//! - **Operador**: TE de orden 1 con suavizado Krichevsky–Trofimov
-//!   (add-½ en los conteos — evita log 0 e infinitos por celdas vacías;
-//!   estimador documentado, no ad-hoc):
-//!   T = Σ p(y⁺,y,x) · log₂ [ p(y⁺|y,x) / p(y⁺|y) ].
-//! - **Unidades**: bits por paso de ventana.
-//! - **Contorno**: <64 ventanas totales ⇒ None (la tabla 2×2×2 con KT
-//!   necesita muestra; con menos, la medida no es estimable); streams sin
-//!   solape temporal ⇒ None.
-//! - **Identificabilidad**: con orden 1 mide el flujo de memoria de UN
-//!   paso; memoria más larga queda en el residuo — documentado, no
-//!   afirmado como TE total.
-//! - **Coste**: O(n_ventanas) con tablas de conteo; sin hot path.
-//! - **Falsación**: (a) series independientes ⇒ TE ≈ 0 en bits y en ambas
-//!   direcciones (tolerancia medible, no cero — KT introduce sesgo
-//!   positivo pequeño); (b) Y copia a X con retardo 1 ⇒ T_{X→Y} > umbral
-//!   y T_{Y→X} ≈ 0 — LA ASIMETRÍA ES EL CONTRATO; (c) bidireccional
-//!   simétrica ⇒ ambas direcciones comparables.
+//! # Cobertura y límites
+//! La API explícita recibe un intervalo común observado [inicio, fin).
+//! Solo usa bins completos. El llamador debe garantizar reloj/unidades
+//! comunes y cobertura sin outages; timestamps de eventos no lo acreditan.
+//! El wrapper histórico usa la intersección de los extremos como aproximación
+//! declarada, nunca la unión. No es apropiado para certificar cobertura real.
+//! 64 bins es una política heredada de soporte, no una cota de estimabilidad;
+//! la API explícita permite elegir el mínimo (>=2) y devuelve los conteos.
+//!
+//! Conteo disperso exacto en u64, O(E log(E+1)) tiempo y O(1) memoria auxiliar,
+//! E = eventos recibidos, sin recorrer/reservar cada bin vacío. El cálculo
+//! final usa f64: conteos >2^53 no mantienen precisión de una unidad.
+//! No hay test de significancia, corrección de múltiples pares/escalas,
+//! condicionamiento por factores comunes ni conexión operativa a un veto.
 
-/// Tamaño de ventana por defecto para simbolizar streams de eventos
-/// (200 ms: la escala del kernel de contagio más corto).
+/// Escala histórica de ejemplo. NO es una escala universal ni calibrada.
 pub const VENTANA_MS_DEFAULT: u64 = 200;
-/// Muestra mínima de ventanas para estimar la tabla 2×2×2 con KT.
+/// Política heredada de soporte; no equivale a significancia o independencia.
 pub const MIN_VENTANAS: usize = 64;
-/// Suavizado Krichevsky–Trofimov.
 const KT: f64 = 0.5;
 
-/// Simboliza un stream de timestamps en la rejilla de ventanas común:
-/// ind[w] = 1 si ≥1 evento cae en [t0 + w·Δ, t0 + (w+1)·Δ).
-/// Devuelve (indicadores, t0, n_ventanas) con la rejilla que cubre la
-/// unión de ambos streams (el llamador pasa ya t0/n para ambas series).
-fn simbolizar(ts: &[u64], t0: u64, ventana_ms: u64, n_ventanas: usize) -> Vec<u8> {
-    let mut ind = vec![0u8; n_ventanas];
-    for &t in ts {
-        let w = ((t.saturating_sub(t0)) / ventana_ms) as usize;
-        if w < n_ventanas {
-            ind[w] = 1;
-        }
-    }
-    ind
+type Counts = [[[u64; 2]; 2]; 2];
+
+/// Cobertura común DECLARADA por el llamador, en un único reloj de milisegundos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObservationWindow {
+    pub start_ms: u64,
+    /// Extremo exclusivo; el último bin parcial no se utiliza.
+    pub end_ms: u64,
+    pub bin_width_ms: u64,
+    /// Política de soporte explícita. Debe ser >=2; no mide n efectivo.
+    pub min_windows: u64,
 }
 
-/// TE de orden 1 entre dos series SÍMBOLO (0/1) ya alineadas, en bits.
-/// Suavizado KT add-½ en todas las tablas. None si la muestra es mínima.
-pub fn te_binaria_kt(x: &[u8], y: &[u8]) -> Option<f64> {
-    let n = x.len().min(y.len());
-    if n < MIN_VENTANAS {
-        return None;
-    }
-    // Tablas: n[y⁺][y][x] y márgenes.
-    let mut joint = [[[0.0_f64; 2]; 2]; 2]; // [y_fut][y][x]
-    for t in 0..n.saturating_sub(1) {
-        let (yf, y, xx) = (y[t + 1] as usize, y[t] as usize, x[t] as usize);
-        joint[yf][y][xx] += 1.0;
-    }
-    let pasos = (n - 1) as f64;
-    let mut te = 0.0_f64;
-    for yf in 0..2 {
-        for y in 0..2 {
-            // Margen p(y⁺|y) una vez por (yf, y).
-            let n_y = joint[0][y][0] + joint[0][y][1] + joint[1][y][0] + joint[1][y][1];
-            let n_yf_dado_y = joint[yf][y][0] + joint[yf][y][1];
-            let p_yf_dado_y = (n_yf_dado_y + KT) / (n_y + 2.0 * KT);
-            for xx in 0..2 {
-                let n_j = joint[yf][y][xx];
-                // p(y⁺, y, x) y p(y⁺|y, x) con KT.
-                let p_joint = (n_j + 2.0 * KT) / (pasos + 4.0 * 2.0 * KT);
-                let n_yx = joint[0][y][xx] + joint[1][y][xx];
-                let p_yf_dado_yx = (n_j + KT) / (n_yx + 2.0 * KT);
-                te += p_joint * (p_yf_dado_yx / p_yf_dado_y).log2();
+/// Errores de dominio/soporte, no rechazos de una orden de trading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransferEntropyError {
+    ZeroBinWidth,
+    InvalidInterval,
+    InvalidMinimumWindows,
+    UnsortedTimestamps,
+    InsufficientWindows,
+    NumericalFailure,
+}
+
+/// Resultado auditable de la rejilla declarada; no contiene un p-value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TransferEntropyEstimate {
+    pub x_to_y_bits: f64,
+    pub y_to_x_bits: f64,
+    pub complete_windows: u64,
+    pub transitions: u64,
+    pub discarded_tail_ms: u64,
+    /// Índices [destino futuro][destino pasado][fuente pasada].
+    pub counts_x_to_y: [[[u64; 2]; 2]; 2],
+    pub counts_y_to_x: [[[u64; 2]; 2]; 2],
+}
+
+/// CMI de UNA distribución suavizada; todos sus márgenes se derivan de ella.
+fn cmi(counts: &Counts, transitions: u64) -> Option<f64> {
+    let mut q = [[[0.0; 2]; 2]; 2];
+    for a in 0..2 {
+        for b in 0..2 {
+            for c in 0..2 {
+                q[a][b][c] = counts[a][b][c] as f64 + KT;
             }
         }
     }
-    if te.is_finite() {
-        Some(te.max(0.0)) // TE poblacional ≥ 0; el estimador puede dar ~0⁻
-    } else {
-        None
+    let mass = transitions as f64 + 8.0 * KT;
+    let mut result = 0.0;
+    for a in 0..2 {
+        for b in 0..2 {
+            let ab = q[a][b][0] + q[a][b][1];
+            let past = q[0][b][0] + q[0][b][1] + q[1][b][0] + q[1][b][1];
+            for c in 0..2 {
+                let bc = q[0][b][c] + q[1][b][c];
+                result += q[a][b][c] / mass * ((q[a][b][c] / bc) / (ab / past)).log2();
+            }
+        }
     }
+    // 8 positive cells: only a small floating-point residual may be clamped.
+    // A substantial negative value is a defect, not "negative information".
+    let tolerance = 64.0 * f64::EPSILON;
+    (result.is_finite() && (-tolerance..=1.0 + tolerance).contains(&result))
+        .then(|| result.clamp(0.0, 1.0))
 }
 
-/// Transfer entropy DIRECCIONAL entre dos streams de eventos (timestamps
-/// ordenados). Simboliza ambos sobre la MISMA rejilla (t0 = mínimo global,
-/// n_ventanas = span/ventana) y devuelve (T_{x→y}, T_{y→x}) en bits por
-/// paso. None en cualquiera de las direcciones si la muestra es mínima o
-/// los streams no comparten solape.
+/// Series binarias YA alineadas: igual longitud y símbolos exclusivamente 0/1.
+/// None con dominio inválido o soporte inferior a la política histórica.
+/// El nombre se conserva por compatibilidad; véase el contrato del prior arriba.
+pub fn te_binaria_kt(x: &[u8], y: &[u8]) -> Option<f64> {
+    if x.len() != y.len() || x.len() < MIN_VENTANAS || x.iter().chain(y).any(|&v| v > 1) {
+        return None;
+    }
+    let mut counts = [[[0_u64; 2]; 2]; 2];
+    for t in 0..x.len() - 1 {
+        counts[y[t + 1] as usize][y[t] as usize][x[t] as usize] += 1;
+    }
+    cmi(&counts, (x.len() - 1) as u64)
+}
+
+fn sorted(ts: &[u64]) -> bool {
+    ts.windows(2).all(|pair| pair[0] <= pair[1])
+}
+
+// A bin b affects transition b (past) and b-1 (future). Each iterator is
+// ordered because the original timestamps were validated, duplicates allowed.
+fn affected_transitions(
+    ts: &[u64],
+    observation: ObservationWindow,
+    windows: u64,
+    future: bool,
+) -> impl Iterator<Item = u64> + '_ {
+    ts.iter().filter_map(move |&t| {
+        let bin = t.checked_sub(observation.start_ms)? / observation.bin_width_ms;
+        if bin >= windows {
+            return None;
+        }
+        let step = if future { bin.checked_sub(1)? } else { bin };
+        (step < windows - 1).then_some(step)
+    })
+}
+
+fn active(ts: &[u64], observation: ObservationWindow, bin: u64) -> usize {
+    // bin < complete_windows implies start + bin * width <= end: no overflow.
+    let left = observation.start_ms + bin * observation.bin_width_ms;
+    let pos = ts.partition_point(|&t| t < left);
+    usize::from(
+        ts.get(pos)
+            .is_some_and(|&t| (t - left) / observation.bin_width_ms == 0),
+    )
+}
+
+/// Estima ambas direcciones sobre cobertura común explícita. Streams vacíos
+/// son admisibles: significan silencio OBSERVADO según el contrato del caller.
+/// Eventos fuera del intervalo/bins completos se ignoran; no se ordenan datos.
+/// Los duplicados no aumentan la actividad binaria.
+pub fn transfer_entropy_observada(
+    ts_x: &[u64],
+    ts_y: &[u64],
+    observation: ObservationWindow,
+) -> Result<TransferEntropyEstimate, TransferEntropyError> {
+    use TransferEntropyError::*;
+    if observation.bin_width_ms == 0 {
+        return Err(ZeroBinWidth);
+    }
+    let span = observation
+        .end_ms
+        .checked_sub(observation.start_ms)
+        .filter(|&span| span > 0)
+        .ok_or(InvalidInterval)?;
+    if observation.min_windows < 2 {
+        return Err(InvalidMinimumWindows);
+    }
+    if !sorted(ts_x) || !sorted(ts_y) {
+        return Err(UnsortedTimestamps);
+    }
+    let windows = span / observation.bin_width_ms;
+    if windows < observation.min_windows {
+        return Err(InsufficientWindows);
+    }
+    let transitions = windows - 1;
+    let mut xy = [[[0_u64; 2]; 2]; 2];
+    let mut yx = xy;
+    // All transitions initially silent. Visit only those touching active bins.
+    xy[0][0][0] = transitions;
+    yx[0][0][0] = transitions;
+    let mut candidates = [
+        affected_transitions(ts_x, observation, windows, false).peekable(),
+        affected_transitions(ts_x, observation, windows, true).peekable(),
+        affected_transitions(ts_y, observation, windows, false).peekable(),
+        affected_transitions(ts_y, observation, windows, true).peekable(),
+    ];
+    while let Some(t) = candidates
+        .iter_mut()
+        .filter_map(|it| it.peek().copied())
+        .min()
+    {
+        let x = active(ts_x, observation, t);
+        let y = active(ts_y, observation, t);
+        let xf = active(ts_x, observation, t + 1);
+        let yf = active(ts_y, observation, t + 1);
+        xy[0][0][0] -= 1;
+        yx[0][0][0] -= 1;
+        xy[yf][y][x] += 1;
+        yx[xf][x][y] += 1;
+        for it in &mut candidates {
+            while it.peek().is_some_and(|&next| next <= t) {
+                it.next();
+            }
+        }
+    }
+    Ok(TransferEntropyEstimate {
+        x_to_y_bits: cmi(&xy, transitions).ok_or(NumericalFailure)?,
+        y_to_x_bits: cmi(&yx, transitions).ok_or(NumericalFailure)?,
+        complete_windows: windows,
+        transitions,
+        discarded_tail_ms: span % observation.bin_width_ms,
+        counts_x_to_y: xy,
+        counts_y_to_x: yx,
+    })
+}
+
+/// Wrapper histórico: aproxima cobertura por [max(primeros), min(últimos)).
+/// Extremos de eventos NO prueban cobertura; para datos reales usar la API
+/// explícita con lineage del feed. Sin solape, orden o soporte devuelve None.
+/// Los timestamps están en ms, no ns; la resolución del reloj es parte del dato.
 pub fn transfer_entropy_eventos(
     ts_x: &[u64],
     ts_y: &[u64],
     ventana_ms: u64,
 ) -> (Option<f64>, Option<f64>) {
-    if ventana_ms == 0 || ts_x.len() < 2 || ts_y.len() < 2 {
+    if ts_x.len() < 2 || ts_y.len() < 2 {
         return (None, None);
     }
-    let t0 = ts_x[0].min(ts_y[0]);
-    let t_end = ts_x[ts_x.len() - 1].max(ts_y[ts_y.len() - 1]);
-    let span = t_end.saturating_sub(t0);
-    let n_ventanas = (span / ventana_ms + 1) as usize;
-    if n_ventanas < MIN_VENTANAS {
-        return (None, None);
+    let observation = ObservationWindow {
+        start_ms: ts_x[0].max(ts_y[0]),
+        end_ms: ts_x[ts_x.len() - 1].min(ts_y[ts_y.len() - 1]),
+        bin_width_ms: ventana_ms,
+        min_windows: MIN_VENTANAS as u64,
+    };
+    match transfer_entropy_observada(ts_x, ts_y, observation) {
+        Ok(value) => (Some(value.x_to_y_bits), Some(value.y_to_x_bits)),
+        Err(_) => (None, None),
     }
-    let x = simbolizar(ts_x, t0, ventana_ms, n_ventanas);
-    let y = simbolizar(ts_y, t0, ventana_ms, n_ventanas);
-    (te_binaria_kt(&x, &y), te_binaria_kt(&y, &x))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Génesis determinista (mismo xorshift del resto del dominio).
+    /// Generador congruencial lineal determinista para estas simulaciones.
     fn rng(seed: u64) -> impl FnMut() -> u64 {
         let mut s = seed;
         move || {
-            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            (s >> 33)
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            s >> 33
         }
     }
 
     /// FALSACIÓN (a): streams INDEPENDIENTES ⇒ TE ≈ 0 en ambas direcciones.
-    /// KT introduce un sesgo positivo pequeño que DECRECE con n — se mide,
-    /// no se clama cero exacto: tolerancia empírica documentada (<0.01 bits
-    /// con 20k ventanas).
+    /// Tolerancia empírica para ESTA simulación (<0.01 bits con 20k ventanas),
+    /// no una garantía general de sesgo, independencia o significancia.
     #[test]
     fn independientes_te_casi_cero() {
         let mut r = rng(0xBEEF);
@@ -182,7 +307,10 @@ mod tests {
         ys.extend(ruido_y);
         ys.sort();
         let (txy, tyx) = transfer_entropy_eventos(&xs, &ys, VENTANA_MS_DEFAULT);
-        let (a, b) = (txy.expect("muestra suficiente"), tyx.expect("muestra suficiente"));
+        let (a, b) = (
+            txy.expect("muestra suficiente"),
+            tyx.expect("muestra suficiente"),
+        );
         assert!(a > 0.15, "T(x→y)={a} — el líder debe fluir al seguidor");
         assert!(b < 0.05, "T(y→x)={b} — el seguidor no predice al líder");
         assert!(a > 3.0 * b.max(1e-6), "asimetría x→y dominante: {a} vs {b}");
