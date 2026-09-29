@@ -347,3 +347,103 @@ fn xlviiA_medicion_radio_div1_en_tape_real() {
         assert!(s.final_capital.is_finite() && s.final_capital > 0.0, "{name} roto");
     }
 }
+
+/// XLVII·B — BRECHA CONTRA LA META, MEDIDA EN TAPES REALES (manual, --ignored).
+///
+/// La auditoría de capitalización (XLV·L) fijó la aritmética de la meta:
+/// +100%/3d ≡ 25.99% diario ⇒ con el axioma de ruina 25% y 10%/trade se
+/// requieren ~10 trades/día con edge sostenido. Esta medición carga el
+/// GENOMA CAMPEÓN del repo y lo corre en modo trade-only (el de la
+/// evolución) sobre una muestra de tapes reales por tier de liquidez,
+/// reportando trades/día logrados vs los ~10/día que la meta exige.
+/// Muestra y método: docs/AUDITORIA_BT_VIVO_2026-09-28.md (adenda XLVII·B).
+#[test]
+#[ignore = "medición manual: ~40 min de cómputo sobre tapes reales"]
+fn xlviiB_brecha_meta_en_tapes_reales_campeon() {
+    use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay};
+    use backtest_engine::tick_replayer::load_binary_ticks;
+    use quantum_arena::genome::SuperGenotype;
+
+    // El loader de modelos resuelve "models/" RELATIVO AL CWD: desde la
+    // raíz del crate los modelos no se ven y la medición capturaría el
+    // piso SIN modelos (sonda única por símbolo), no la brecha del
+    // campeón. Este test debe correrse FILTRADO (-- --ignored
+    // xlviiB) para que el chdir no afecte a otros tests del proceso.
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    std::env::set_current_dir(&workspace).expect("chdir al workspace");
+
+    // Genoma CAMPEÓN del repo (el artefacto que config_compiler promueve).
+    let champion: SuperGenotype = serde_json::from_str(
+        &std::fs::read_to_string("config_dir/genotypes/quantum_champion.json")
+            .expect("quantum_champion.json legible"),
+    )
+    .expect("campeón deserializable");
+
+    // Muestra por tier de liquidez (todas < ~120 MB para cómputo acotado).
+    let muestra: &[(&str, &str)] = &[
+        ("LTCUSDT", "2026-08"),
+        ("ADAUSDT", "2026-08"),
+        ("LINKUSDT", "2026-08"),
+        ("ATOMUSDT", "2026-08"),
+        ("NEARUSDT", "2026-08"),
+        ("THETAUSDT", "2026-08"),
+    ];
+    let base = std::path::Path::new("data"); // CWD ya es el workspace
+    let mut total_trades = 0u64;
+    let mut total_days = 0.0f64;
+    println!("sym          trades  días   t/día   WR     net      fees");
+    for (sym, month) in muestra {
+        let path = base.join(format!("{sym}_{month}_REAL.bin"));
+        let Ok(events) = load_binary_ticks(&path, 0) else {
+            println!("{sym}: tape ausente, omitido");
+            continue;
+        };
+        let ticks: Vec<ReplayTick> = events
+            .iter()
+            .map(|e| ReplayTick {
+                ts_ms: e.timestamp,
+                bid: e.bid_price,
+                ask: e.ask_price,
+                bid_qty: e.bid_qty,
+                ask_qty: e.ask_qty,
+            })
+            .collect();
+        let span_ms = ticks.last().unwrap().ts_ms.saturating_sub(ticks[0].ts_ms);
+        let dias = span_ms as f64 / 86_400_000.0;
+        backtest_engine::asegurar_spec_nativo(sym);
+        let cfg = ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 600,
+            trade_only: true, // el modo de la evolución
+            shift_atr_frac: 0.10,
+        };
+        let s = run_booktick_replay(&ticks, &champion, None, &cfg);
+        let t_dia = if dias > 0.0 { s.trades as f64 / dias } else { 0.0 };
+        println!(
+            "{sym:<12} {:>4}   {:>5.1}  {:>5.2}  {:>.2}  {:>+8.3}  {:>.3}",
+            s.trades,
+            dias,
+            t_dia,
+            s.wr_net(),
+            s.net_pnl,
+            s.fees_est
+        );
+        total_trades += s.trades;
+        total_days += dias;
+        assert!(s.final_capital.is_finite() && s.final_capital > 0.0);
+    }
+    let t_dia_global = if total_days > 0.0 {
+        total_trades as f64 / total_days
+    } else {
+        0.0
+    };
+    println!(
+        "TOTAL: {} trades / {:.1} días = {:.2} trades/día — meta ≈ 10/día ⇒ brecha ≈ {:.0}×",
+        total_trades,
+        total_days,
+        t_dia_global,
+        if t_dia_global > 0.0 { 10.0 / t_dia_global } else { f64::INFINITY }
+    );
+    // El contrato es la SANIDAD del método, no el valor (la brecha es dato).
+    assert!(total_days > 5.0, "muestra sin días suficientes");
+}
