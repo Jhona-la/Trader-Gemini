@@ -251,6 +251,27 @@ pub fn roundtrip_friction(taker_fee: f64, slip_floor: f64, atr_ratio: f64, laten
 /// FUNCIÓN PURA ÚNICA. La invocan, con las MISMAS entradas, tanto el gate de
 /// expectativa como el constructor de la orden: es imposible por construcción
 /// que evalúen trades distintos (D-637).
+/// CL-34 — DISPERSIÓN AL HORIZONTE en la unidad del ATR de 1 minuto (un
+/// rango): `atr · (τ/τ_ref)^H`, con H acotado a [0,30; 0,75] como en la
+/// geometría. Es la ley con la que se fija el stop difusivo (`sl = k·esto`);
+/// cualquier distancia de una posición medida en «ATR» —el trailing— debe
+/// medirse en esta escala, la de su propio horizonte, o un ATR de 1 minuto
+/// aplicado a una posición de horas la corta dentro de su ruido.
+#[inline]
+pub fn dispersion_al_horizonte(atr: f64, tau_ms: f64, hurst: f64) -> f64 {
+    let h = if hurst.is_finite() {
+        hurst.clamp(0.30, 0.75)
+    } else {
+        0.50
+    };
+    let tau = if tau_ms.is_finite() && tau_ms > 0.0 {
+        tau_ms
+    } else {
+        TAU_REFERENCE_MS
+    };
+    atr * (tau / TAU_REFERENCE_MS).powf(h)
+}
+
 pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
     let atr = if input.atr_ratio.is_finite() && input.atr_ratio > 0.0 {
         input.atr_ratio
@@ -297,7 +318,7 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
     // sin cambio alguno en la volatilidad real.
     let sigma_tau = match input.sigma_forecast {
         Some(s) if s.is_finite() && s > 0.0 => s * RANGO_PARKINSON,
-        _ => atr * (tau / TAU_REFERENCE_MS).powf(h),
+        _ => dispersion_al_horizonte(atr, tau, h),
     };
 
     // 2) STOP DIFUSIVO. El stop cubre k veces la dispersión del horizonte.

@@ -315,6 +315,26 @@ pub fn activaciones_de_proteccion(
     (be, trail.max(be))
 }
 
+/// CL-34 — LA ESCALA DEL TRAILING ES LA DISPERSIÓN DEL HORIZONTE DE LA
+/// POSICIÓN, NO EL ATR DE 1 MINUTO.
+///
+/// La escalera del trailing (1,20 / 0,90 / 0,65 / 0,45 «ATR», fases por
+/// 1,5–4,5 «ATR», parabólico y contracción) medía en ATR de 1 minuto para
+/// cualquier horizonte. CL-19 arma el trailing en fracciones del TP real; a
+/// τ = 4 h (TP ≈ 535 pb, ATR ≈ 15 pb) se armaba a +375 pb con el stop a 7 pb
+/// del precio, 0,05–0,09 σ del horizonte restante: toda posición larga
+/// acababa como un scalp al primer retroceso, el RR realizado caía de 2,25 a
+/// ≈ 1,6 y el acierto de equilibrio subía del 32 % al 41 %.
+///
+/// Ahora la unidad es `tp_sl::dispersion_al_horizonte(atr, τ, H)`, la misma
+/// escala en la que el gate fijó el stop (`sl = k·dispersión`), así que la
+/// escalera guarda la misma proporción con el stop a cualquier τ. Devuelve la
+/// escala en precio (× entrada).
+#[inline]
+pub fn escala_del_trailing(atr_pct: f64, entrada: f64, tau_ms: f64, hurst: f64) -> f64 {
+    risk_engine::tp_sl::dispersion_al_horizonte(atr_pct, tau_ms, hurst) * entrada
+}
+
 /// CL-31 — RAMA 15, RESONANCIA EN EL CENTROIDE τ*.
 ///
 /// La persistencia espectral no tiene lado: +1 es continuación del movimiento
@@ -2032,7 +2052,6 @@ impl GodEngineCore {
                     (entry - mid_price) / entry
                 };
 
-                let pseudo_atr = atr_pct_live * entry;
                 let side_int = if is_long { 1 } else { -1 };
                 let position_age_ms = if event_time_ms > 0 {
                     event_time_ms.saturating_sub(entry_time)
@@ -2231,11 +2250,18 @@ impl GodEngineCore {
                     let (trail_atr_mult, trail_act, trail_step, trail_max) =
                         self.arena.config.trail_params_at_tau(tau_trade_ms);
 
+                    // CL-34: la escalera mide en la dispersión del horizonte.
+                    let escala_trailing = escala_del_trailing(
+                        atr_pct_live,
+                        entry,
+                        tau_trade_ms,
+                        coin.hurst_exponent.load(Ordering::Relaxed),
+                    );
                     let trail_res = crate::trailing::evaluate_quantum_trailing_with_fee(
                         side_int,
                         entry,
                         mid_price,
-                        pseudo_atr,
+                        escala_trailing,
                         pos.trailing_phase.load(Ordering::Relaxed) as i32,
                         pos.mfe_atr.load(Ordering::Relaxed),
                         peak_pnl,

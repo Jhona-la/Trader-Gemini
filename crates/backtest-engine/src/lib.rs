@@ -1036,6 +1036,13 @@ mod tests {
         // repetían el último tick. La sonda sigue siendo la única operación
         // y cierra en otro punto: 1000.06363447 → 1001.04880404. CL-30
         // (persistencia por bloques) y CL-31 (rama 15) no mueven el golden.
-        assert_eq!(out_stats[2].to_bits(), 4652016534219107765u64);
+        // (CL-34, re-certificación 2026-09-29) El trailing mide en la
+        // dispersión del horizonte de la posición, no en el ATR de 1 minuto.
+        // La sonda es un corto a τ = 12 h: antes el trailing, armado a
+        // +15,5 %, dejaba el stop a 0,05 % del precio y cerraba por
+        // FORCE_TRAIL en el pico (+15,53 %, 5,7 h); ahora cierra por TP
+        // (+21,71 %, 8,1 h). La sonda sigue siendo la única operación:
+        // 1001.04880404 → 1001.47074438. CL-33 no mueve el golden.
+        assert_eq!(out_stats[2].to_bits(), 4652020245645541180u64);
     }
 }
