@@ -155,6 +155,7 @@ fn run_backtest() {
         initial_capital,
         warmup_ticks: 500,
         trade_only,
+        shift_atr_frac: 0.10, // histórico (DIV-1: A/B con 0.0 documentado)
     };
     if trade_only {
         println!("   🔀 MODO TRADE-ONLY (sin bid/ask sintético)");

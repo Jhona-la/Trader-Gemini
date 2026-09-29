@@ -168,6 +168,21 @@ pub struct ReplayConfig {
     /// trade (is_trade=true) — las features de precio/volumen/ATR/Hurst/
     /// espectral funcionan correctamente sin el libro.
     pub trade_only: bool,
+    /// XLVI·H (DIV-1, auditoría bt↔vivo): fracción de ATR con la que el
+    /// harness ENSANCHA el libro antes de alimentar el core
+    /// (`sim_bid = bid − frac·ATR`, `sim_ask = ask + frac·ATR`). El host
+    /// vivo alimenta precios CRUDOS — este desplazamiento es un sesgo
+    /// bt-only que contamina las features de libro y DUPLICA el slippage
+    /// que la física del core ya cobra en los fills.
+    ///
+    /// - `0.10` (default): comportamiento histórico — la aptitud que la
+    ///   evolución ha medido hasta aquí. NO cambiar el default sin
+    ///   re-baseline del oráculo T-1.
+    /// - `0.0`: paridad de features con el vivo (libro crudo — `bid − 0.0`
+    ///   es bit-idéntico); el slippage de fills queda SÓLO en la física
+    ///   del core (`calculate_market_entry`). Usar en A/B para cuantificar
+    ///   el doble-conteo (ver docs/AUDITORIA_BT_VIVO_2026-09-28.md).
+    pub shift_atr_frac: f64,
 }
 
 impl Default for ReplayConfig {
@@ -176,6 +191,7 @@ impl Default for ReplayConfig {
             initial_capital: 13.0,
             warmup_ticks: 200,
             trade_only: false,
+            shift_atr_frac: 0.10,
         }
     }
 }
@@ -322,7 +338,10 @@ pub fn run_booktick_replay(
         running_atr = ATR_ALPHA * tr + (1.0 - ATR_ALPHA) * running_atr;
         prev_mid = mid;
         // Slippage institucional: castigo de fills según ATR vivo.
-        let slip = running_atr * 0.10;
+        // XLVI·H (DIV-1): configurable — 0.10 histórico, 0.0 = paridad de
+        // features con el vivo (el slippage queda sólo en la física del
+        // core). Negativo se sanean a 0 (nunca estrecha el libro).
+        let slip = running_atr * cfg.shift_atr_frac.max(0.0);
         let sim_bid = t.bid - slip;
         let sim_ask = t.ask + slip;
         let vol = t.bid_qty + t.ask_qty; // liquidez del libro (doc: no volumen operado)
@@ -800,6 +819,7 @@ mod tests {
             initial_capital: 1000.0,
             warmup_ticks: 200,
             trade_only: false,
+            shift_atr_frac: 0.10,
         };
         let a = run_booktick_replay(&ticks, &genome, None, &cfg);
         let b = run_booktick_replay(&ticks, &genome, None, &cfg);
@@ -990,6 +1010,7 @@ mod tests {
             initial_capital: 1000.0,
             warmup_ticks: 200,
             trade_only: false,
+            shift_atr_frac: 0.10,
         };
         let a = run_booktick_replay(&ticks, &genome, None, &cfg);
         let b = run_booktick_replay(&ticks, &genome, None, &cfg);
@@ -1050,5 +1071,58 @@ mod tests {
     fn serie_vacia_es_neutra_sin_pánico() {
         let h = hist_with(vec![]);
         assert_eq!(h.value_at(0, 19_675), 0.0);
+    }
+
+    // ── XLVI·H (DIV-1): desplazamiento del harness explícito y A/B ──────
+
+    /// El default reproduce el comportamiento histórico: el campo es 0.10 y
+    /// el harness lo usa (los golden/determinismo existentes, que corren con
+    /// el 0.10 literal, son la prueba bit a bit — si el default derivara,
+    /// este test lo expone ANTES de tocar una corrida de aptitud).
+    #[test]
+    fn xlvih_default_es_el_historico_y_determinista() {
+        assert_eq!(ReplayConfig::default().shift_atr_frac, 0.10);
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let ticks = synth_ticks(20_000);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let cfg = ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 200,
+            trade_only: false,
+            shift_atr_frac: 0.10,
+        };
+        let a = run_booktick_replay(&ticks, &genome, None, &cfg);
+        let b = run_booktick_replay(&ticks, &genome, None, &cfg);
+        assert_eq!(a.trades, b.trades);
+        assert_eq!(a.net_pnl.to_bits(), b.net_pnl.to_bits());
+    }
+
+    /// Paridad de features con el vivo: shift 0.0 alimenta el libro CRUDO
+    /// (`bid − 0.0` es bit-idéntico), el slippage queda sólo en la física
+    /// del core. Ambos modos deterministas; negativo se sanea (nunca
+    /// estrecha el libro).
+    #[test]
+    fn xlvih_shift_cero_paridad_y_negativo_saneado() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let ticks = synth_ticks(20_000);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let base = |frac: f64| ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 200,
+            trade_only: false,
+            shift_atr_frac: frac,
+        };
+        // Determinismo en el modo paridad.
+        let a1 = run_booktick_replay(&ticks, &genome, None, &base(0.0));
+        let a2 = run_booktick_replay(&ticks, &genome, None, &base(0.0));
+        assert_eq!(a1.trades, a2.trades);
+        assert_eq!(a1.net_pnl.to_bits(), a2.net_pnl.to_bits());
+        // Negativo = 0 (sanidad: nunca estrecha).
+        let neg = run_booktick_replay(&ticks, &genome, None, &base(-5.0));
+        assert_eq!(neg.trades, a1.trades);
+        assert_eq!(neg.net_pnl.to_bits(), a1.net_pnl.to_bits());
+        // Sano en el modo paridad: capital finito positivo y DD acotado.
+        assert!(a1.final_capital.is_finite() && a1.final_capital > 0.0);
+        assert!(a1.max_dd < 1.0);
     }
 }

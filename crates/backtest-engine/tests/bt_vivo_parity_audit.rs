@@ -175,3 +175,67 @@ fn xlvib_gen_como_media_cola_sobre_el_gen_activo() {
     assert!((p50 / base - 0.9401).abs() < 0.06, "p50={p50} debe ≈ 0.94× gen {base}");
     assert!(p99 > base * 1.7, "p99={p99} debe superar 1.7× gen {base}");
 }
+
+/// XLVI·H (DIV-1) — HARNESS DE MEDICIÓN A/B: misma serie, mismo genoma,
+/// desplazamiento del harness 0.10 (histórico) vs 0.0 (paridad de features
+/// con el vivo; el slippage queda sólo en la física del core). La DIFERENCIA
+/// entre ambos es la cuantificación del doble-conteo de DIV-1. Imprime la
+/// tabla con --nocapture (invisible en corridas normales); los asserts
+/// pinean sanidad, no dirección — el signo del delta es un hecho medido.
+#[test]
+fn xlvih_medicion_ab_doble_conteo_div1() {
+    use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay};
+    use quantum_arena::genome::SuperGenotype;
+
+    backtest_engine::asegurar_spec_nativo("BTCUSDT");
+    // Serie con la receta EXACTA del oráculo T-1 (trend+ciclo 30pb+ruido
+    // 40pb — física D-755 coherente): garantiza trades para que la
+    // medición del doble-conteo no sea 0/0.
+    let mut seed = 0x5DEECE66Du64;
+    let mut next = || {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((seed >> 33) as f64 / u32::MAX as f64) - 0.5
+    };
+    let mut p = 60_000.0f64;
+    let ticks: Vec<ReplayTick> = (0..30_000)
+        .map(|i| {
+            let u = next();
+            let ciclo = (i as f64 / 180.0).sin() * 0.0030;
+            p *= 1.0 + ciclo + u * 0.0040 + 0.00004;
+            let half = p * 0.0002; // spread sintético 4 pb
+            ReplayTick {
+                // Cadencia de 1 MINUTO por tick: cada tick madura su propio
+                // kline 1m — el warmup sintetiza 600 klines (Hurst necesita
+                // 512). Con 100ms el warmup produce ~1 kline y nada opera.
+                ts_ms: 1_700_000_000_000 + (i as u64) * 60_000,
+                bid: p - half,
+                ask: p + half,
+                bid_qty: 450.0 + u.abs() * 1000.0,
+                ask_qty: 450.0 + (1.0 - u.abs()) * 1000.0,
+            }
+        })
+        .collect();
+    let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+    let cfg = |frac: f64| ReplayConfig {
+        initial_capital: 1000.0,
+        warmup_ticks: 600,
+        trade_only: false,
+        shift_atr_frac: frac,
+    };
+
+    let a = run_booktick_replay(&ticks, &genome, None, &cfg(0.10));
+    let b = run_booktick_replay(&ticks, &genome, None, &cfg(0.0));
+    println!(
+        "A/B DIV-1: histórico(0.10) trades={} net={:.4} dd={:.4} fees={:.4} | paridad(0.0) trades={} net={:.4} dd={:.4} fees={:.4} | Δnet={:+.4}",
+        a.trades, a.net_pnl, a.max_dd, a.fees_est,
+        b.trades, b.net_pnl, b.max_dd, b.fees_est,
+        b.net_pnl - a.net_pnl
+    );
+    // Sanidad de ambos modos (la dirección del delta NO se pinea: es dato).
+    for (name, s) in [("histórico", &a), ("paridad", &b)] {
+        assert!(s.final_capital.is_finite() && s.final_capital > 0.0, "{name}: capital roto");
+        assert!(s.max_dd < 1.0, "{name}: dd {max}", max = s.max_dd);
+    }
+}
