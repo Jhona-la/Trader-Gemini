@@ -1119,3 +1119,22 @@ Respuesta al catálogo teórico expandido del operador (Malliavin→transporte
    de densidades la expuso antes de producción.
 
 Regresión: feature-engine 64/64. PR #20 sigue DRAFT (mi review en pie).
+
+## 2026-09-29 — Codex ST: alcance aislado y auditoría de firmas
+
+Rama codex/signature-contract-audit desde main49fc995c, fix f60e1820.
+GLM integró fb6412c9; revisión independiente reproduce5 fallos en12 pruebas
+del adaptador. Corregidos reloj relativo, retrocesos, u64→f64 y log-return.
+13 contratos finales pasan; seis crates1098/0/6 +replay37/0/0 =1135/0/6.
+Check all-targets pasa1m18s. Sin tocar vetos de trading ni trainer.
+
+Informe docs/AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md y JSON.
+Corrigendo del triage: truncación≠unicidad completa; TE requiere historia;
+Hurst de precio≠log-volatilidad; lineage≠identificación; logloss≠MDL acreditado.
+Conservar pendientes CF/OA. No atribuir impacto al genoma sin consumidor.
+
+GLM observado en registro de vetos cff240d7 y luego rama transfer-entropy;
+no se edita su checkout ni índice. Claude PR10/20 abiertos,20 draft.
+Aviso LOCAL: no se publica tras bloqueo previo de aprobación; no hay acuse.
+TH6209704a preservada en feat/quant-sr-codex-horizonte; no mezclar política τ.
+No borrar ramas activas aunque sus heads momentáneos estén en main.

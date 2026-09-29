@@ -8545,3 +8545,27 @@ Backups3/1 commits exclusivos preservados. No afirmar auditoría semántica de
 los1.328 archivos base ni que todos los cambios ajenos ya llegaron a main.
 El JSON es snapshot pre-merge; el recibo remoto debe confirmar publicación
 y retirada de la rama propia después de verificar hash/ancestralidad.
+
+## 2026-09-29 — Codex ST: firmas y contratos de transferencia científica
+
+Informe: [Auditoría ST](docs/AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md).
+Artefacto: [18 hallazgos ST](docs/artifacts/auditoria_firmas_contratos_teoricos_2026-09-29.json).
+
+Cuatro defectos de código corregidos localmente en f60e1820: normalización por
+epoch, reloj retrocedido, conversión prematura a f64 y cancelación logarítmica.
+Tres correcciones documentales y once limitaciones abiertas. No se suman como
+18 bugs de producción ni se cierran automáticamente matrices anteriores.
+
+RED:7/5 sobre12 nuevos tests; GREEN:13/0. Seis crates1098/0/6 +replay lib37/0/0:
+1135/0/6, regresiones incluidas. Check workspace all-targets pasa1m18s.
+Base49fc995c; no certifica avances posteriores ni los1350 archivos enumerados.
+No T-1, demo/live, entrenamiento, promoción ni modificación de golden.
+
+No hay consumidores operativos de firmas encontrados. Truncación nivel2 no
+hereda unicidad de la firma completa; τ/activo/frescura deben viajar por separado.
+Contrastes de rough volatility, TE, causalidad, MDL y garantías ACI en el informe.
+
+Rama codex/signature-contract-audit sin publicar. TH6209704a preservada en
+feat/quant-sr-codex-horizonte; decisión de τ sigue pendiente. PR10/20 abiertos,
+20 draft. Sin borrar ramas activas ni backups. No consta recepción de este
+aviso por otros agentes; publicación pública pendiente de autorización informada.

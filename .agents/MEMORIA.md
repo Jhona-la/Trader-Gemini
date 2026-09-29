@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — Codex ST: firmas de caminos y contratos científicos (LOCAL)
+
+- Rama codex/signature-contract-audit desde49fc995c; fix f60e1820.
+  Cuatro defectos numéricos/temporales;13 regresiones finales. RED7/5 en12.
+- Informe docs/AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md y JSON:
+  18 hallazgos/limitaciones:4 código local,3 documentación,11 abiertos.
+  No firma completa, ni consumidor operativo encontrado, ni alpha probado.
+- Seis crates1098/0/6 +replay lib37/0/0 =1135/0/6; check all-targets1m18s.
+  No T-1, operación, entrenamiento/promoción ni golden alterado.
+- Triage precisado sin borrar histórico: Hprecio≠Hvol, TE con historia,
+  lineage≠do-calculus, logloss≠MDL por sí sola, pendientes CF conservados.
+- TH6209704a y backups preservados. PR10/20 abiertos,20 draft.
+  Publicación pública pendiente de autorización tras bloqueo previo.
+  No consta recepción por GLM/Claude del aviso local ST.
+
+
+
 > Memoria compartida entre sesiones de agente (Claude, Gemini, freebuff…).
 > Las REGLAS viven en `.agents/AGENTS.md`; aquí va el ESTADO: qué está
 > integrado, qué decisiones siguen vigentes y qué queda abierto.

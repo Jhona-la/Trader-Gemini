@@ -1,0 +1,370 @@
+{
+  "schema_version": 1,
+  "audit_id": "ST",
+  "date": "2026-09-29",
+  "branch": "codex/signature-contract-audit",
+  "report": "docs/AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md",
+  "base_commit": "49fc995c2275ba80500671f8410b484337e4159b",
+  "source_introduction": "fb6412c98ed90e684cd2ba8d056e932d3376032a",
+  "fix_commit": "f60e182036f26d44127c22ccb92187db450df4cf",
+  "hashes": {
+    "original_module": "77E4CA054EFBBC92A1EA77D3D0B1D805419AA276B725391D9C922879E14C8D4A",
+    "fixed_module": "017C0934CBAF2DEF4D4267C71673765CB3B8B4153394097FF17B5C9282C39B68",
+    "contract_tests": "C19D4C3281BA8FB76A1896FAE405812516B9E993457C17CA2710602A44601F5A",
+    "scope": "local file bytes, line ending sensitive"
+  },
+  "counts": {
+    "total": 18,
+    "fixed_local": 4,
+    "documentation_corrected_local": 3,
+    "open_documented": 11
+  },
+  "verification": {
+    "original_red": {
+      "tests": 12,
+      "passed": 7,
+      "failed": 5
+    },
+    "intermediate_fix_regression": {
+      "test": "large_price_declines_do_not_lose_ratio_precision_near_minus_one",
+      "passed": 0,
+      "failed": 1,
+      "attributed_to_original": false,
+      "resolved_before_commit": true
+    },
+    "new_contract_suite": {
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "included_in_six_crates": true
+    },
+    "check_workspace_all_targets": {
+      "exit_code": 0,
+      "compile_duration_seconds": 78,
+      "warnings_present": true
+    },
+    "six_crates": {
+      "names": [
+        "feature-engine",
+        "signal-engine",
+        "risk-engine",
+        "god-engine-core",
+        "execution-engine",
+        "evolution-engine"
+      ],
+      "all_targets": true,
+      "passed": 1098,
+      "failed": 0,
+      "ignored": 6,
+      "result_blocks": 87
+    },
+    "backtest_lib": {
+      "passed": 37,
+      "failed": 0,
+      "ignored": 0,
+      "execution_seconds": 24.5
+    },
+    "total_disjoint": {
+      "passed": 1135,
+      "failed": 0,
+      "ignored": 6
+    },
+    "diagnostic_tests_are_not_bug_fixes": true,
+    "live_demo_run": false,
+    "training": false,
+    "promotion": false,
+    "testnet_ignored_tests_run": false,
+    "T1": false
+  },
+  "coverage": {
+    "tracked_files_enumerated_at_base": 1350,
+    "all_files_semantically_reviewed": false,
+    "full_read": [
+      "crates/feature-engine/src/path_signatures.rs",
+      "crates/feature-engine/tests/path_signature_contract.rs",
+      "docs/TRIAGE_TEORICO_2026-09-29.md"
+    ],
+    "targeted_read": [
+      "crates/feature-engine/src/hurst_dfa.rs",
+      "docs/AUDITORIA_CONFORMAL_CONTRATO_2026-09-28.md",
+      "docs/AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md"
+    ],
+    "searches": [
+      "signature callers under crates and src",
+      "Git heads, worktrees, remote refs and PR status"
+    ],
+    "production_consumers_found": 0,
+    "no_global_certification": true
+  },
+  "git_snapshot": {
+    "publication": "not_pushed_pending_informed_publication_authorization",
+    "remote_main": "303e7ef24f6be0bbde0b6da799dfb078044b4ec6",
+    "preserved_prior_branch": {
+      "name": "feat/quant-sr-codex-horizonte",
+      "head": "6209704acc77bbc0c088cfd206fd82118aaed3d0",
+      "reason": "pending tau policy conflict; includes TH report"
+    },
+    "pr10": {
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "head": "f87ad3fc7ff10c9ff2d79321eae3e82963e77c9f"
+    },
+    "pr20": {
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "43ed1411afd27b8db40c0580bed48eda69b623e6"
+    },
+    "active_glm_branch_observed": "glm/xlviii-d-transfer-entropy",
+    "branches_deleted": [],
+    "other_agents_receipt_confirmed": false
+  },
+  "sources": [
+    {
+      "topic": "signature_uniqueness",
+      "url": "https://arxiv.org/abs/math/0507536",
+      "verification": "body"
+    },
+    {
+      "topic": "signature_algebra",
+      "url": "https://arxiv.org/abs/1603.03788",
+      "verification": "body"
+    },
+    {
+      "topic": "rough_volatility",
+      "url": "https://arxiv.org/abs/1410.3394",
+      "verification": "body"
+    },
+    {
+      "topic": "transfer_entropy",
+      "url": "https://arxiv.org/abs/nlin/0001042",
+      "verification": "body"
+    },
+    {
+      "topic": "mdl",
+      "url": "https://arxiv.org/abs/math/0406077",
+      "verification": "body"
+    },
+    {
+      "topic": "causal_identification",
+      "url": "https://arxiv.org/abs/1206.6831",
+      "verification": "body"
+    },
+    {
+      "topic": "hhl",
+      "url": "https://arxiv.org/abs/0811.3171",
+      "verification": "body"
+    },
+    {
+      "topic": "grover",
+      "url": "https://arxiv.org/abs/quant-ph/9605043",
+      "verification": "metadata_abstract_only"
+    },
+    {
+      "topic": "sterbenz",
+      "url": "https://cs.stanford.edu/people/sharmar/pubs/popl18.pdf",
+      "verification": "section_5_2_search_excerpt"
+    }
+  ],
+  "findings": [
+    {
+      "id": "ST-01",
+      "priority": "P2",
+      "status": "fixed_local",
+      "type": "numeric_temporal_bug",
+      "title": "Normalización temporal dependiente del epoch",
+      "evidence": "ts=[1000,2000,3000] produce S_t=2/3; trasladar epoch cambia todas las componentes con tiempo.",
+      "closure_criterion_or_change": "Restas enteras de dt y span; traslación y normalización pasan.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "4. ST-01"
+    },
+    {
+      "id": "ST-02",
+      "priority": "P2",
+      "status": "fixed_local",
+      "type": "numeric_temporal_bug",
+      "title": "Retroceso interno del reloj aceptado",
+      "evidence": "ts=[1000,900,2000] era Some pese a retroceso interno.",
+      "closure_criterion_or_change": "checked_sub consecutivo; empates permitidos, no se ordenan precios.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "4. ST-02"
+    },
+    {
+      "id": "ST-03",
+      "priority": "P2",
+      "status": "fixed_local",
+      "type": "numeric_temporal_bug",
+      "title": "Pérdida de deltas por conversión prematura",
+      "evidence": "ts=[2^53,2^53+1] se convertía a dos f64 iguales y resultaba None.",
+      "closure_criterion_or_change": "Restar u64 antes de convertir; positivo 1 ms sobre 2^53 preservado.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "4. ST-03"
+    },
+    {
+      "id": "ST-04",
+      "priority": "P2",
+      "status": "fixed_local",
+      "type": "numeric_temporal_bug",
+      "title": "Cancelación de retornos logarítmicos",
+      "evidence": "p=1e300 y siguiente f64 representable: ln(q)-ln(p)=0 en la plataforma probada.",
+      "closure_criterion_or_change": "ln1p en región de Sterbenz; diferencia de logs fuera; pruebas de extremos.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "4. ST-04"
+    },
+    {
+      "id": "ST-05",
+      "priority": "P2",
+      "status": "documentation_corrected_local",
+      "type": "specification_theory_error",
+      "title": "Unicidad atribuida indebidamente a truncación",
+      "evidence": "Dos caminos de tiempo creciente comparten nivel 2 y difieren en S_xxt: 1/6 frente a 0.",
+      "closure_criterion_or_change": "Documentar firma completa frente a truncada; mantener contraejemplo.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "5. ST-05"
+    },
+    {
+      "id": "ST-06",
+      "priority": "P2",
+      "status": "documentation_corrected_local",
+      "type": "specification_theory_error",
+      "title": "Especificación incompatible con kernel",
+      "evidence": "Comentarios omiten media diagonal; triage exige <3 puntos y explica reverso ambiguamente.",
+      "closure_criterion_or_change": "Fórmula completa, dos puntos admitidos, reverso por transposición.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "5. ST-06"
+    },
+    {
+      "id": "ST-07",
+      "priority": "P2",
+      "status": "documentation_corrected_local",
+      "type": "specification_theory_error",
+      "title": "Remuestreo confundido con reparametrización",
+      "evidence": "Subdividir segmentos conserva geometría; eliminar excursiones cambia el camino.",
+      "closure_criterion_or_change": "Documentar interpolación y probar subdivisión del mismo camino.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "5. ST-07"
+    },
+    {
+      "id": "ST-08",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "Redundancia algebraica de seis coordenadas",
+      "evidence": "Shuffle: Q_ij+Q_ji=s_i*s_j; con S_t=1 quedan retorno y área como grados algebraicos.",
+      "closure_criterion_or_change": "Validar representación, rango, regularización y baseline retorno-área.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "6. ST-08"
+    },
+    {
+      "id": "ST-09",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "Duración e identidad fuera del vector",
+      "evidence": "Ventanas [0,1,2] y [0,1000000,2000000] con mismos precios dan iguales features.",
+      "closure_criterion_or_change": "Contrato versionado con activo, tau, soporte, as-of y reloj.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "6. ST-09"
+    },
+    {
+      "id": "ST-10",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "Feature sin consumidor operativo encontrado",
+      "evidence": "rg en crates y src sólo encuentra export, definiciones y tests.",
+      "closure_criterion_or_change": "Extractor compartido replay/serving, prueba de paridad y ablación OOS.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "6. ST-10"
+    },
+    {
+      "id": "ST-11",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "Kernel público sin dominio validado",
+      "evidence": "Incrementos MAX y NaN producen salida no finita en kernel unchecked.",
+      "closure_criterion_or_change": "API checked si se expone a otras fuentes; fuzz y rangos explícitos.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "6. ST-11"
+    },
+    {
+      "id": "ST-12",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "Rechazos Option sin causa tipada",
+      "evidence": "None combina seis clases de rechazo sin razón diferenciada.",
+      "closure_criterion_or_change": "Error tipado/diagnóstico compatible con registro de GLM.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "6. ST-12"
+    },
+    {
+      "id": "ST-13",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "Coste por ventana no presupuestado globalmente",
+      "evidence": "Vec de n-1 incrementos y dos recorridos; no benchmark multiactivo ni p99.",
+      "closure_criterion_or_change": "Benchmark hardware objetivo y validación de actualización incremental.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "6. ST-13"
+    },
+    {
+      "id": "ST-14",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "Hurst de precio confundido con rough volatilidad",
+      "evidence": "hurst_dfa recibe precios/retornos, mientras rough volatility estudia log sigma.",
+      "closure_criterion_or_change": "Estimar log-volatilidad y su ruido de medición antes del modelo rough.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "7. ST-14"
+    },
+    {
+      "id": "ST-15",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "Transfer entropy sin historia/lag es afirmación incorrecta",
+      "evidence": "Schreiber condiciona futuro del destino a historias de destino y fuente.",
+      "closure_criterion_or_change": "Reloj, historias, desfase, conditioning set y nulos con dependencia.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "7. ST-15"
+    },
+    {
+      "id": "ST-16",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "Lineage no identifica efecto intervencional",
+      "evidence": "OA conserva autoría temporal; no estima por sí mismo P(y|do(policy)).",
+      "closure_criterion_or_change": "Estimando contrafactual, supuestos causales y soporte de selección.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "7. ST-16"
+    },
+    {
+      "id": "ST-17",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "Logloss no basta para afirmar MDL",
+      "evidence": "El triage equipara logloss con MDL sin código de modelo o universal declarado.",
+      "closure_criterion_or_change": "Código/prior/unidades/complejidad y selección anidada.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "7. ST-17"
+    },
+    {
+      "id": "ST-18",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "design_or_validation_limit",
+      "title": "ACI implementado no certifica cobertura desplegada",
+      "evidence": "CF mantiene pendientes de recorte ACI, delay, selección y singleton.",
+      "closure_criterion_or_change": "Conservar CF; validar cobertura en población y política definidas.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "7. ST-18"
+    }
+  ]
+}

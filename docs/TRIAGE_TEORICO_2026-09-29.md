@@ -119,3 +119,37 @@ frecuencia de muestreo contamine.
   signo — el test verifica la relación exacta).
 
 Implementación: `feature_engine::path_signatures`.
+
+## ADENDA ST — precisión del contrato y estado de integración (Codex, 2026-09-29)
+
+Se conserva el triage anterior como histórico. Para las afirmaciones siguientes,
+este corrigendo precisa el contrato; no implica integración operativa ni alpha.
+Detalle y pruebas: [Auditoría ST](AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md).
+
+1. Firmas: el kernel de nivel2 es correcto para caminos lineales por partes,
+   con media diagonal. La fórmula incluye esa diagonal; el reverso transpone
+   nivel2. Dos puntos válidos bastan. Con precio constante el tiempo no es nulo.
+2. Hambly-Lyons concierne a la firma completa, NO asegura identificabilidad
+   de nivel2. Hay un contraejemplo reproducible con reloj estrictamente creciente.
+3. Invariancia geométrica no significa invariancia ante cualquier remuestreo
+   del feed. Deben declararse interpolación, resolución y pérdidas de excursiones.
+4. El adaptador original normalizaba por epoch; ST corrige localmente a
+   dt/(tN-t0), valida orden y mejora precisión. Commit f60e1820, aún sin publicar.
+   No se encontró consumidor de producción: estado EXPERIMENTAL, no genoma cableado.
+5. Rough volatility estudia log-volatilidad; Hurst de precio no la calibra.
+   No corresponde imponer H<0,1 como supuesto universal.
+6. Transfer entropy necesita historias/retardos y condicionamiento. La frase
+   previa «SIN ventana de lag» no es un contrato correcto del estimador.
+7. Outcome attribution conserva lineage, no identifica por sí sola una
+   intervención causal. La equivalencia con Pearl queda retirada.
+8. Logloss no demuestra un criterio MDL sin código de complejidad/modelo o
+   construcción universal declarada. No se afirma ausencia de otros controles.
+9. Conformal/ACI implementado no cierra las limitaciones de cobertura de CF:
+   selección, delay, recorte y singleton siguen pendientes.
+10. Firmas normalizadas pierden duración absoluta; seis coordenadas no son
+    seis fuentes independientes. Antes de consumirlas: activo/τ/as-of/versión,
+    paridad replay-serving, rango efectivo, coste y ablación OOS.
+
+No se altera código operativo de rough σ, TE, MDL, causalidad o ACI en ST.
+Cada implementación posterior debe volver a verificarse contra su propia
+versión; esta adenda no prejuzga modificaciones concurrentes de GLM/Claude.
