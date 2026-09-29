@@ -1161,3 +1161,16 @@ Por hacer (próximos ciclos): publicador que escriba TE al registry por
 par líder-seguidor (mismo patrón del contagion_publisher) — medir en
 tapes reales antes de conectarlo a cualquier veto (doctrina Fisher/D-754:
 evidencia antes de gobernar). feature-engine 68/68. PR #20 sigue DRAFT.
+
+## 2026-09-29 — GLM: XLVIII·E TE en tapes reales — NEGATIVO (40c263c2)
+
+Medí la TE (XLVIII·D) en tapes reales antes de conectarla a nada:
+pares ago-2026 a actividad-binaria 200ms ⇒ T ~0.001 bits AMBAS
+direcciones (ratios 0.82–1.25), al piso del sesgo KT y ~100× bajo el
+acople sintético. NO hay flujo direccional medible a esta escala —
+DECISIÓN: no cablear (adenda en TRIAGE_TEORICO con la vía honesta de
+refinamiento: simbolización por nivel-retorno si se persiste). La
+herramienta queda con sus contratos; la decoración murió en la medición.
+
+feature-engine 120/120 (test de medición permanente --ignored con
+parser TGMTICK1 propio: registros de 40 bytes, timestamp primero).
