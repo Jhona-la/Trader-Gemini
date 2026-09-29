@@ -1,21 +1,22 @@
-//! ENSAMBLE BAYESIANO ONLINE (F4.7) — predicción combinada con pesos aprendidos.
+//! ENSAMBLE ONLINE (F4.7) — predicción combinada con pesos aprendidos.
 //!
-//! QUÉ: combina N predictores (NanoForest scalp, NN swing, forest online) en
+//! QUÉ: combina predictores (NanoForest y DarkAlphaNN) en
 //!      una sola probabilidad con pesos que EVOLUCIONAN con el desempeño real.
 //! POR QUÉ: el código anterior era una cadena if-else de fallback (forest O NN
 //!      O 0.5) — el segundo modelo solo opinaba si el primero no existía. Un
 //!      ensamble real promedia diversidad: modelos que ven features distintas
-//!      se corrigen mutuamente (varianza ↓, robustez ↑).
+//!      pueden aportar diversidad; su beneficio debe medirse fuera de muestra.
 //! MATEMÁTICA (Hedge/Exponential Weighting — Cesa-Bianchi & Lugosi):
 //!      w_i *= exp(-η · Brier_i(p_i, y))
 //!   donde Brier = (p − y)² es una puntuación estrictamente apropiada: el
-//!   peso decae exponencialmente con el error de calibración ACUMULADO. Los
+//!   peso decae con la pérdida predictiva, no sólo con descalibración. Los
 //!   pesos viven en escala log para no sub/flotear en f64; se normalizan al
-//!   combinar. Regresión a la media del peso (regularización L2 suave) evita
-//!   que un modelo quede muerto eternamente tras un mal arranque.
-//! SIN CRISTAL BALLA: update_with_outcome se alimenta del CIERRE real
-//!      (dirección efectiva del trade o del bar siguiente) — jamás de labels
-//!      sintéticos.
+//!   combinar. El factor shrink descuenta log-evidencia hacia pesos uniformes;
+//!   no constituye por sí solo una posterior bayesiana ni una penalización L2.
+//! CONTRATO CAUSAL: barras califican su primera opinión; cierres demorados
+//!   requieren un snapshot de apertura ligado por el llamador a la posición.
+//!   La tasa por trade depende del retorno observado: repondera la pérdida
+//!   y no hereda automáticamente garantías de calibración o regret de Hedge.
 
 /// Identificador estable de cada predictor del ensamble.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,8 +40,10 @@ pub enum ModelId {
 /// `d = (tasa_base − y)² − (p − y)²`, positiva cuando el modelo gana. La tasa
 /// base es causal (la estimada antes de ver el resultado). Media y varianza
 /// exponenciales de `d` con la escala de la EMA macro del motor; la habilidad
-/// es significativa si `z = media / (σ / √n_eff)` supera z95, con
+/// se resume mediante `z = media / (σ / √n_eff)` frente a z95, con
 /// `n_eff = (2 − α)/α`, el tamaño efectivo de una media exponencial.
+/// Ese tamaño presupone observaciones independientes; autocorrelación,
+/// selección por gates y consultas secuenciales invalidan una garantía al 95 %.
 pub const SKILL_SPAN_BARS: f64 = crate::diffusion::EMA_MACRO_BARS;
 
 #[derive(Debug, Clone, Default)]
@@ -60,7 +63,7 @@ impl SkillTracker {
     /// Registra una vela: `p` es la probabilidad combinada del arranque y `y`
     /// el resultado (1 subió, 0 no).
     pub fn record(&mut self, p: f64, y: f64) {
-        if !p.is_finite() || !y.is_finite() {
+        if !valid_probability(p) || !valid_label(y) {
             return;
         }
         let a = Self::alpha();
@@ -98,10 +101,18 @@ impl SkillTracker {
         Some(self.mean_d / (sd / n_eff.sqrt()))
     }
 
-    /// ¿Supera el ensamble a la tasa base con significación al 95 %?
+    /// Umbral heurístico de habilidad; no es una certificación estadística al 95 %.
     pub fn is_significant(&self) -> bool {
         self.z().is_some_and(|z| z > crate::diffusion::Z95)
     }
+}
+
+fn valid_probability(p: f64) -> bool {
+    p.is_finite() && (0.0..=1.0).contains(&p)
+}
+
+fn valid_label(y: f64) -> bool {
+    y == 0.0 || y == 1.0
 }
 
 pub struct ModelEnsemble {
@@ -141,11 +152,16 @@ impl ModelEnsemble {
     }
 
     /// Registra la predicción de un modelo para el evento actual.
-    /// X-037: guard de degeneración — un modelo saturado (p≥0.9999 o
-    /// ≤0.0001) aporta señal degenerada; se neutraliza a 0.5 (antes este
-    /// guard existía en el camino viejo y se perdió en la migración F4.7).
+    /// Fuera de [0,1] o no finita: ausencia actual, nunca una probabilidad
+    /// imputada. Conserva la primera opinión válida del bar para calificarla.
     #[inline(always)]
     pub fn submit(&mut self, id: ModelId, prob: f64) {
+        let slot = id as usize;
+        if !valid_probability(prob) {
+            self.predictions[slot] = None;
+            self.last_predictions[slot] = None;
+            return;
+        }
         // B3.38b — CLAMP en vez de neutralizar. El neutralizador (p≥0.9999
         // ⇒ 0.5) mataba señal LEGÍTIMA: con el etiquetado honesto HOST-010
         // (barrera asimétrica RR 2:1, base ~20-30%) un GBDT fuerte satura a
@@ -156,7 +172,6 @@ impl ModelEnsemble {
         // decae exponencialmente — autocorrectivo, sin código que adivine
         // la intención del modelo.
         let p = prob.clamp(0.001, 0.999);
-        let slot = id as usize;
         self.predictions[slot] = Some(p);
         self.last_predictions[slot] = Some(p);
         // X-023: si es la PRIMERA opinión del bar, es la del arranque — la
@@ -173,29 +188,36 @@ impl ModelEnsemble {
         self.combine(&self.predictions)
     }
 
+    /// Opiniones del evento actual, sin recuperar cachés de eventos anteriores.
+    /// El dueño de la posición debe congelarlas al abrir, no al cerrar.
+    pub fn prediction_snapshot(&self) -> [Option<f64>; 2] {
+        self.predictions
+    }
+
     /// Combinación ponderada de un juego de opiniones con los pesos actuales.
     fn combine(&self, preds: &[Option<f64>; 2]) -> Option<f64> {
-        // Softmax estable: restar el máximo antes de exp.
-        let max_lw = self
-            .log_weights
+        // Normalizar sólo sobre participantes. Un modelo ausente con mayor
+        // peso no debe subdesbordar a cero todos los votos disponibles.
+        let nn_penalty = self.skill.z().unwrap_or(0.0).clamp(-4.0, 0.0);
+        let effective: [Option<f64>; 2] = std::array::from_fn(|i| {
+            preds[i].filter(|p| valid_probability(*p)).map(|_| {
+                self.log_weights[i]
+                    + if i == ModelId::DarkAlphaNN as usize {
+                        nn_penalty
+                    } else {
+                        0.0
+                    }
+            })
+        });
+        let max_lw = effective
             .iter()
-            .cloned()
+            .flatten()
+            .copied()
             .fold(f64::NEG_INFINITY, f64::max);
         let mut sum_w = 0.0;
         let mut sum_wp = 0.0;
         for (i, pred) in preds.iter().enumerate() {
-            if let Some(p) = pred.as_ref() {
-                let p = *p;
-                let mut lw = self.log_weights[i];
-                // Si el modelo secundario (DarkAlphaNN, slot 1) muestra z adverso frente a la tasa base,
-                // atenuar su ponderación en escala logarítmica para no canibalizar al bosque validado
-                if i == ModelId::DarkAlphaNN as usize {
-                    if let Some(z) = self.skill.z() {
-                        if z < 0.0 {
-                            lw += z.clamp(-4.0, 0.0);
-                        }
-                    }
-                }
+            if let (Some(p), Some(lw)) = (pred, effective[i]) {
                 let w = (lw - max_lw).exp();
                 sum_w += w;
                 sum_wp += w * p;
@@ -214,6 +236,9 @@ impl ModelEnsemble {
     /// calificaba la del tick inmediatamente previo al cierre (lead ~0): los
     /// pesos Hedge aprendían la cantidad equivocada.
     pub fn update_with_outcome(&mut self, y: f64) {
+        if !valid_label(y) {
+            return; // no mutar pesos, habilidad ni opiniones pendientes
+        }
         let graded = self.bar_open_predictions;
         // D-695: la habilidad se mide con la opinión combinada del arranque y
         // los pesos vigentes antes de actualizarlos.
@@ -233,34 +258,35 @@ impl ModelEnsemble {
         self.bar_open_predictions = [None, None];
     }
 
-    /// Retroalimentación epigenética directa de cada trade cerrado real.
-    ///
-    /// QUÉ: Ajusta los pesos logarítmicos del ensamble directamente en función
-    ///      de si las predicciones de los modelos acertaron la dirección del trade cerrado.
-    /// POR QUÉ: Las barras de 1 minuto tardan en acumularse y muchas son filtradas como
-    ///      ruido neutro (|ret| < 10 bps). El desenlace financiero de un trade cerrado
-    ///      es evidencia empírica directa y sin ambigüedad sobre qué modelos acertaron.
-    /// CÓMO: `subio` es la dirección que tomó el MERCADO durante la posición
-    ///      (mid al cierre frente a la entrada): y = 1.0 si subió, 0.0 si bajó.
-    ///      Cada modelo presente es penalizado por su error cuadrático de Brier con una tasa adaptativa
-    ///      proporcional a la magnitud del trade sin aplicar shrink que borre el aprendizaje.
-    ///
-    /// XLIV-9b: antes `y` salía de `(is_long, is_win)` con `is_win` = PnL NETO.
-    /// Un largo cuyo mid subía menos que las comisiones se etiquetaba «bajó» y
-    /// los pesos Hedge castigaban al modelo que había acertado «sube». Los
-    /// modelos predicen dirección, no rentabilidad neta.
+    /// Adaptador legado para feedback síncrono. No identifica una operación:
+    /// NO usar para cierres demorados; usar `update_with_trade_snapshot` con
+    /// evidencia congelada y verificada por el propietario de la posición.
     pub fn update_with_trade_outcome(&mut self, subio: bool, pnl_pct: f64) {
-        let y = if subio { 1.0 } else { 0.0 };
-        // Escala adaptativa por el retorno del trade
-        let eta_trade = (0.25 * (pnl_pct.abs() / 0.001).clamp(0.5, 3.0)).clamp(0.08, 0.75);
         let preds = if self.predictions.iter().any(|p| p.is_some()) {
             self.predictions
         } else {
             self.last_predictions
         };
+        self.update_with_trade_snapshot(preds, subio, pnl_pct);
+    }
+
+    /// Califica opiniones de apertura, no las disponibles al recibir el cierre.
+    /// `subio`: dirección de precio, no signo del PnL neto. `pnl_pct`: retorno
+    /// fraccional que modula la tasa existente; no prueba liquidación económica.
+    /// Retorno inválido: no-op. Opinión inválida: se omite sólo ese predictor.
+    pub fn update_with_trade_snapshot(
+        &mut self,
+        preds: [Option<f64>; 2],
+        subio: bool,
+        pnl_pct: f64,
+    ) {
+        if !pnl_pct.is_finite() {
+            return;
+        }
+        let y = if subio { 1.0 } else { 0.0 };
+        let eta_trade = (0.25 * (pnl_pct.abs() / 0.001).clamp(0.5, 3.0)).clamp(0.08, 0.75);
         for (i, pred) in preds.iter().enumerate() {
-            if let Some(p) = pred.as_ref() {
-                let p = *p;
+            if let Some(p) = pred.filter(|p| valid_probability(*p)) {
                 let brier = (p - y) * (p - y);
                 // Sin shrink aquí: la evidencia del PnL real es persistente
                 self.log_weights[i] -= eta_trade * brier;
@@ -273,7 +299,7 @@ impl ModelEnsemble {
         self.skill.z()
     }
 
-    /// D-695: ¿ha demostrado el ensamble habilidad frente a la tasa base?
+    /// D-695: ¿supera el umbral heurístico de habilidad frente a la tasa base?
     pub fn has_significant_skill(&self) -> bool {
         self.skill.is_significant()
     }

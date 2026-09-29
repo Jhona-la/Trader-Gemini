@@ -287,6 +287,20 @@ pub struct CouncilEntryEvidence {
     pub signals: [f64; 11],
 }
 
+/// Causal evidence for delayed branch/forest/ensemble feedback. Coin and slot
+/// are supplied by the enclosing array; generation prevents slot-reuse credit.
+/// This is local decision provenance, NOT an exchange settlement certificate.
+#[derive(Debug, Clone)]
+pub struct EntryLearningEvidence {
+    pub symbol: String,
+    pub generation: u64,
+    pub is_long: bool,
+    pub decision_time_ms: u64,
+    pub branch: Option<usize>,
+    pub forest_vote: Option<bool>,
+    pub model_predictions: [Option<f64>; 2],
+}
+
 /// Axioma VII: God Engine Core
 /// Este componente contiene la lógica dura del ciclo HFT,
 /// unificando la Arena con los motores, y eliminando la duplicación
@@ -509,6 +523,7 @@ pub struct GodEngineCore {
     /// Compatibility/diagnostic mirror only. Learning requires a generation binding.
     pub last_senior_signals: Vec<[[f64; 11]; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
     pub council_entry_evidence: Vec<[Option<CouncilEntryEvidence>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
+    pub entry_learning_evidence: Vec<[Option<EntryLearningEvidence>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
     pub lakehouse: Option<Arc<storage_engine::LakehouseWarehouse>>,
     pub consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion,
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
@@ -568,8 +583,8 @@ pub struct GodEngineCore {
     /// `conviccion_de_rama`). Por moneda porque la exchangeabilidad se rompe
     /// entre activos, igual que ya ocurre con `conformal_by_coin`.
     pub rama_registro: Vec<[TasaAcierto; N_RAMAS]>,
-    /// Rama que abrió la posición viva de cada moneda; `None` si no hay
-    /// posición o si la entrada no llevaba etiqueta. El cierre la consume.
+    /// Legacy last-opening mirror only: NOT evidence for any slot's close.
+    /// Operational feedback uses `entry_learning_evidence` per position.
     pub rama_abierta: Vec<Option<usize>>,
     /// D-752 — HISTORIAL DIRECCIONAL DEL BOSQUE ONLINE, medido por el núcleo.
     /// El productor (`online_daemon`) publica `forest6_acc` SIN tamaño de
@@ -577,8 +592,7 @@ pub struct GodEngineCore {
     /// mide lo único que puede medir por sí mismo: si el voto del bosque en la
     /// apertura coincidió con el resultado del cierre.
     pub bosque_registro: Vec<TasaAcierto>,
-    /// Voto direccional del bosque en la apertura viva (`true` = predijo
-    /// subida). `None` si el bosque no opinaba al abrir.
+    /// Legacy last-opening mirror (`true` = up), not operational close evidence.
     pub bosque_voto_abierto: Vec<Option<bool>>,
     /// D-756 — DISTRIBUCIÓN MEDIDA DE |OFI|, |OBI| Y DEL SCORE MICRO, POR
     /// MONEDA, con los estimadores P² que ya existían en
@@ -753,6 +767,7 @@ impl GodEngineCore {
             last_slow_intent: vec![SignalIntent::flat(); n_coins],
             last_senior_signals: vec![[[0.0; 11]; quantum_arena::position::MAX_SPECTRAL_SLOTS]; n_coins],
             council_entry_evidence: (0..n_coins).map(|_| std::array::from_fn(|_| None)).collect(),
+            entry_learning_evidence: (0..n_coins).map(|_| std::array::from_fn(|_| None)).collect(),
             lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
@@ -2388,6 +2403,14 @@ impl GodEngineCore {
                             && e.is_long == is_long && closed_side == is_long
                             && closed_entry == entry && closed_qty == qty && closed_qty > 0.0
                             && pos.generation.load(Ordering::Acquire) == position_generation.wrapping_add(1));
+                    let learning_evidence = self.entry_learning_evidence
+                        .get_mut(coin_id).and_then(|slots| slots.get_mut(slot_idx))
+                        .and_then(Option::take)
+                        .filter(|e| e.symbol == sym && e.generation == position_generation
+                            && e.is_long == is_long && closed_side == is_long
+                            && e.decision_time_ms == entry_time && event_time_ms >= e.decision_time_ms
+                            && closed_entry == entry && closed_qty == qty && closed_qty > 0.0
+                            && pos.generation.load(Ordering::Acquire) == position_generation.wrapping_add(1));
 
 
                     // B3.14 — ¿la entrada EXISTIÓ en el exchange? La
@@ -2515,19 +2538,19 @@ impl GodEngineCore {
                         spec.apply_epigenetic_outcome(tau_trade_ms, is_win, pnl_pct);
                     }
 
-                    // 3. Retroalimentacion epigenetica directa de trade cerrado al ensamble de modelos predictivos:
-                    // XLIV-9b: con la direccion del MERCADO, no con el signo del PnL neto.
-                    if let Some(subio) = direccion_realizada(is_long, pnl_pct) {
-                        if coin_id < self.ensembles.len() {
-                            self.ensembles[coin_id].update_with_trade_outcome(subio, pnl_pct);
-                        } else {
-                            self.ensemble.update_with_trade_outcome(subio, pnl_pct);
+                    // 3. Grade only opinions frozen at this position's opening.
+                    // Adopted/unbound positions still close defensively but
+                    // cannot train a model from another event's recent cache.
+                    if let Some(evidence) = learning_evidence.as_ref() {
+                        if let Some(subio) = direccion_realizada(is_long, pnl_pct) {
+                            let selected = self.ensembles.get_mut(coin_id).unwrap_or(&mut self.ensemble);
+                            selected.update_with_trade_snapshot(evidence.model_predictions, subio, pnl_pct);
                         }
                     }
 
                     // D-752 - ATRIBUCION DEL RESULTADO A QUIEN LO ORIGINO.
                     // La rama que abrio esta posicion aprende de su propio cierre.
-                    if let Some(rama) = self.rama_abierta[coin_id].take() {
+                    if let Some(rama) = learning_evidence.as_ref().and_then(|e| e.branch) {
                         if rama < N_RAMAS {
                             self.rama_registro[coin_id][rama].observar(is_win);
                         }
@@ -2540,7 +2563,7 @@ impl GodEngineCore {
                     // mid, sino con la ETIQUETA DE BARRERA con la que se
                     // entrena (primer toque TP/SL del largo; el resto de
                     // salidas serian timeouts descartados).
-                    if let Some(predijo_subida) = self.bosque_voto_abierto[coin_id].take() {
+                    if let Some(predijo_subida) = learning_evidence.as_ref().and_then(|e| e.forest_vote) {
                         if let Some(etiqueta) = etiqueta_barrera(is_long, reason_code) {
                             self.bosque_registro[coin_id].observar(predijo_subida == etiqueta);
                         }
@@ -6273,6 +6296,7 @@ impl GodEngineCore {
                                 let etiqueta_rama = unified_intent.volume_flow_rate;
                                 self.rama_abierta[coin_id] = if etiqueta_rama.is_finite()
                                     && etiqueta_rama >= 0.0
+                                    && etiqueta_rama.fract() == 0.0
                                     && (etiqueta_rama as usize) < N_RAMAS
                                 {
                                     Some(etiqueta_rama as usize)
@@ -6280,6 +6304,18 @@ impl GodEngineCore {
                                     None
                                 };
                                 self.bosque_voto_abierto[coin_id] = voto_bosque;
+                                self.entry_learning_evidence[coin_id][target_pos_slot] =
+                                    if target_pos.generation.load(Ordering::Acquire) == expected_generation
+                                        && target_pos.is_open()
+                                    {
+                                        Some(EntryLearningEvidence {
+                                            symbol: sym.clone(), generation: expected_generation,
+                                            is_long, decision_time_ms: event_time_ms,
+                                            branch: self.rama_abierta[coin_id], forest_vote: voto_bosque,
+                                            model_predictions: self.ensembles.get(coin_id)
+                                                .unwrap_or(&self.ensemble).prediction_snapshot(),
+                                        })
+                                    } else { None };
 
                                 // QO-E2b — PRODUCTOR DEL DATASET NN: congelar
                                 // el tensor 54D de la APERTURA. El cierre lo
