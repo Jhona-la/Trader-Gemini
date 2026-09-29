@@ -1003,7 +1003,7 @@ impl OrderExecutor {
         if self.is_paper_trading {
             return Ok(Vec::new());
         }
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
@@ -1088,7 +1088,7 @@ impl OrderExecutor {
         }
         let timestamp = self.get_synced_timestamp();
 
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
@@ -1261,7 +1261,20 @@ impl OrderExecutor {
         if self.kill_switch.load(Ordering::Relaxed) {
             return Err("KILL SWITCH ACTIVE. Execution blocked.".to_string());
         }
+        self.check_exit_rate_limits(timestamp_ms)
+    }
 
+    /// CL-3 — EL KILL-SWITCH BLOQUEA LO QUE AUMENTA EL RIESGO, NO LAS SALIDAS.
+    ///
+    /// El sistema inmune y el apagado arman el kill-switch y DESPUÉS llaman a
+    /// `flatten_all_positions`, que empieza por `fetch_position_risk`. Con el
+    /// chequeo del kill-switch en todas las rutas, esa lectura devolvía
+    /// «KILL SWITCH ACTIVE» y el aplanado abortaba sin cancelar ni cerrar
+    /// nada; también quedaban bloqueados los cierres reduce-only del núcleo y
+    /// las cancelaciones. Las rutas de lectura, cancelación y cierre
+    /// reduce-only usan esta variante: respetan los frenos de rate-limit del
+    /// exchange (418/429, headroom, límite local) pero no el kill-switch.
+    fn check_exit_rate_limits(&self, timestamp_ms: u64) -> Result<(), String> {
         // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
         // A diferencia del kill_switch permanente (incidentes reales), este
         // auto-expira: cuando timestamp_ms >= rate_brake_until_ms la ejecución
@@ -1726,7 +1739,7 @@ impl OrderExecutor {
         }
 
         let timestamp = self.get_synced_timestamp();
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -1771,7 +1784,7 @@ impl OrderExecutor {
             return Ok(());
         }
         let timestamp = self.get_synced_timestamp();
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -1827,7 +1840,7 @@ impl OrderExecutor {
             return Ok(Vec::new());
         }
         let timestamp = self.get_synced_timestamp();
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -2740,7 +2753,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
         let timestamp = self.get_synced_timestamp();
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3159,7 +3172,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let timestamp = self.get_synced_timestamp();
 
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3203,7 +3216,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let timestamp = self.get_synced_timestamp();
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3317,7 +3330,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let timestamp = self.get_synced_timestamp();
 
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3373,7 +3386,7 @@ impl ExecutionProvider for OrderExecutor {
     async fn fetch_open_positions(&self) -> Result<Vec<ActivePosition>, String> {
         let timestamp = self.get_synced_timestamp();
 
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3407,7 +3420,7 @@ impl ExecutionProvider for OrderExecutor {
     async fn fetch_account_balance(&self) -> Result<f64, String> {
         let timestamp = self.get_synced_timestamp();
 
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3502,7 +3515,7 @@ impl ExecutionProvider for OrderExecutor {
     async fn fetch_commission_rate(&self, symbol: &str) -> Result<(f64, f64), String> {
         let timestamp = self.get_synced_timestamp();
 
-        self.check_rate_limits(timestamp)?;
+        self.check_exit_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
         if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -3946,5 +3959,55 @@ mod tests_m4_c02 {
         assert!(
             !matches!(ex.check_rate_limits(now + 10_000), Err(e) if e.starts_with("RATE_BRAKE"))
         );
+    }
+    /// CL-3: tras el kill-switch, las salidas siguen disponibles. Antes
+    /// `flatten_all_positions` abortaba en su primera lectura
+    /// (`fetch_position_risk`) con «KILL SWITCH ACTIVE».
+    #[test]
+    fn cl3_el_kill_switch_no_bloquea_las_salidas() {
+        let ex = executor();
+        let now = current_synced_timestamp_ms(None);
+        ex.trigger_kill_switch();
+        assert!(ex.is_kill_switch_active());
+        assert!(
+            matches!(ex.check_rate_limits(now), Err(e) if e.contains("KILL SWITCH")),
+            "las entradas deben seguir bloqueadas"
+        );
+        assert!(ex.check_exit_rate_limits(now).is_ok());
+    }
+
+    /// CL-3: guardia de fuente. Cada ruta de lectura, cancelación o cierre
+    /// reduce-only (las que usa `flatten_all_positions` y los cierres del
+    /// núcleo) usa la variante que ignora el kill-switch; las de entrada no.
+    #[test]
+    fn cl3_rutas_de_salida_y_de_entrada() {
+        let codigo = include_str!("executor.rs");
+        let cuerpo = |f: &str| {
+            let i = codigo.rfind(&format!("fn {f}(")).expect(f);
+            let fin = ["\n    pub ", "\n    fn ", "\n    async fn "]
+                .iter()
+                .filter_map(|m| codigo[i + 3..].find(m).map(|k| i + 3 + k))
+                .min()
+                .unwrap_or(codigo.len());
+            &codigo[i..fin]
+        };
+        for f in [
+            "fetch_position_risk",
+            "cancel_all_algo_open_orders",
+            "cancel_all_symbol_orders",
+            "cancel_order",
+            "execute_reduce_only_market",
+            "fetch_open_positions",
+            "fetch_account_balance",
+        ] {
+            assert!(cuerpo(f).contains("check_exit_rate_limits("), "{f} debe ignorar el kill-switch");
+        }
+        for f in ["execute_raw_qty_with_client_id", "execute_order", "set_leverage"] {
+            let c = cuerpo(f);
+            assert!(
+                c.contains("check_rate_limits(") && !c.contains("check_exit_rate_limits("),
+                "{f} debe respetar el kill-switch"
+            );
+        }
     }
 }
