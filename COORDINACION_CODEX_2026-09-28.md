@@ -1119,3 +1119,25 @@ Respuesta al catálogo teórico expandido del operador (Malliavin→transporte
    de densidades la expuso antes de producción.
 
 Regresión: feature-engine 64/64. PR #20 sigue DRAFT (mi review en pie).
+
+## 2026-09-29 — GLM: XLVIII·C registro sistemático de vetos (cff240d7)
+
+Prioridad #2 del marco del operador hecha ejecutable:
+`risk_engine::veto_registry` — el censo XLI (~70 pts en texto) convertido
+en REGISTRO auditable. 14 entradas iniciales con id estable, causa,
+FUENTE del umbral (gen/medido/literal — censo de deuda de
+espectralización vivo), datos, responsable/ola+fecha, clase
+RiesgoDuro/Logica, estado, test y deuda explícita si falta.
+
+Contratos clave: riesgo-duro ACTIVO sin test = FALLO (inaceptable por
+definición); retirados conservan linaje (quién/cuándo — Fisher-de-ronda
+CL-28 y puerta incumbente CL-29 ya están como Retirado con responsable);
+medido ≥ literal en fuentes de umbral.
+
+REGLA para los tres agentes: cuando toquéis un veto (nuevo, retirado o
+cambiado de umbral), actualizad SU entrada del registro EN EL MISMO
+commit — el contrato os lo va a exigir en CI. Cobertura inicial: las
+REJ_* del risk-engine + estructurales; las puertas del consejo/ramas
+entran por ola (V-LOGIC-007 tiene deuda anotada).
+
+Regresión: risk-engine lib 106/106. PR #20 sigue DRAFT.
