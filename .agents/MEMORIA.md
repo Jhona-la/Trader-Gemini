@@ -668,3 +668,18 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   PR10 sigue abierto; backups locales3/1 commits exclusivos preservados.
   Recibo remoto posterior y limpieza de rama: consultar PR14, no asumirlos
   por este resultado previo a la fusión.
+
+## 2026-09-28 — Codex CF: contrato conformal por activo
+
+- 836aa9dc desde mainfa23: target local, telemetría de la misma instancia,
+  dominio válido y diagnóstico antes del veto de entradas (veto preservado).
+  11 regresiones; RED controlado3/7, GREEN10/0 y undécima diagnóstica.
+- Seis crates945/0/1 +backtest31/0/0 =976/0/1; check all-targets53,99s pasa.
+  Sin T-1/operación/promoción; no modificar golden ni límites para hacer pasar.
+- Informe docs/AUDITORIA_CONFORMAL_CONTRATO_2026-09-28.md y JSON,14 hallazgos.
+  ACI recortado no hereda la cota original; singleton no garantiza error
+  condicionado. Delay/target/tau/feedback/ausencia de evidencia siguen abiertos.
+- Rama propia codex/conformal-contract-audit en curso hasta recibo remoto.
+  GLM observado en glm/xlv-health-check, Claude PR10c844d4fd. Avisos PR10
+  5882626900/5882772751. Conservar ramas activas y backups exclusivos.
+
