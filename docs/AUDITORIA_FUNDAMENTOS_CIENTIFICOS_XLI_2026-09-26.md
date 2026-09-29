@@ -178,3 +178,29 @@ La hoja de ruta §7.4 listaba «Hodge discreto (T05)» como pendiente. Cerrado:
 
 Tabla milenio §C4, fila Hodge: «candidato futuro» → **integrado con
 falsación (XLVI·C)**.
+
+## ADENDA 2 — 2026-09-29 (XLVI·G): §13.1 y §13.3 CERRADOS
+
+La hoja de ruta §7.3 queda saldada en su totalidad:
+
+- **§13.1 (identidad/payload de contradicción)**: `QuarantinedEntry`
+  gana `conflict: Option<IncomeConflict>` — en `ConflictingIdentity`
+  viajan AMBOS importes con su representación EXACTA (bits f64) y el
+  instante de la identidad compartida. Dos lecturas del mismo decimal
+  producen bits idénticos; bits distintos son revisión real del
+  proveedor. La conciliación decide con el payload, no con la sospecha.
+  Paridad testeada entre las dos puertas (recorrido con transporte y
+  partición pura). El dominio de identidad visible NO se amplía con más
+  componentes de clave (lo que §13.1 prohibía como sustituto).
+- **§13.3 (FX as-of)**: diseño ejecutable `FxAsOf` + `fx_balance_as_of`
+  — cada flujo conviene con la tasa VIGENTE EN SU INSTANTE (nunca la
+  actual para un flujo pasado = sin lookahead contable); sin tasa, el
+  flujo PERMANECE como subtotal independiente por activo; jamás un total
+  mixto silencioso ni descarte; tasa rota (NaN/≤0) = sin tasa. El guard
+  legado `single_income_asset` (Err MixedAssets) sigue disponible para
+  quien no convierte — complemento, no reemplazo. Trazabilidad completa
+  por conversión (`FxConversion`, passthrough marcado).
+
+Con esto los cuatro puntos de §7.3 (FMT-285b + §13.1 + §13.3) y §7.1
+(re-baseline T-1, medido verde post DIV-2) están cerrados; de §7 queda
+sólo DIV-1/DIV-3 (brecha bt↔vivo, con DIV-3 = R8-A de Claude).
