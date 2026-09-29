@@ -794,8 +794,14 @@ impl LiveEvolutionDaemon {
             // Aplicar thresholds óptimos del Shadow Forest a la Arena ÚNICAMENTE cuando está entrenado
             // D-689: y sólo con la evolución en vivo armada; sin armar, el bosque
             // aprende pero no sobrescribe los umbrales del genoma validado.
-            if self.forest.is_trained() && live_evolution_armed_for_env() {
-                let (opt_l, opt_s) = self.forest.get_optimal_thresholds();
+            // CL-18: sólo si la calibración identificó umbrales; si no, los
+            // genes del genoma validado siguen gobernando la puerta ML.
+            let calibrados = if self.forest.is_trained() && live_evolution_armed_for_env() {
+                self.forest.get_optimal_thresholds()
+            } else {
+                None
+            };
+            if let Some((opt_l, opt_s)) = calibrados {
                 self.arena
                     .config
                     .ml_threshold_long
