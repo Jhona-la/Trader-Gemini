@@ -423,7 +423,7 @@ pub fn rho_efectivo_para_agregacion(corr: &[Vec<f64>]) -> Option<f64> {
 pub struct CorrelationGuardEngine;
 
 /// Conteo del guard pairwise, no varianza ni presupuesto completo de cartera.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DependencyExposure {
     pub open_positions: usize,
     pub same_bet_positions: usize,
@@ -431,10 +431,14 @@ pub struct DependencyExposure {
     /// XLVI·D: ρ_PnL EFECTIVA del grupo misma-apuesta para la agregación de
     /// varianza (D-748): media de las correlaciones medidas contra la
     /// candidata, con los miembros NO medidos del grupo contando 1.0
-    /// (correlación perfecta). Con cero miembros medidos equivale a 1.0 —
-    /// el presupuesto LINEAL legado del `None` original es el caso límite,
-    /// no un comportamiento nuevo. Bits para preservar Eq/Copy.
+    /// (correlación perfecta). Con cero medidos => 1.0: el presupuesto
+    /// LINEAL legado del `None` original es el caso límite, no un
+    /// comportamiento nuevo. Bits para preservar Eq.
     pub same_bet_rho_efectivo_bits: u64,
+    /// XLVI·E (SPECTRAL-010): riesgo REAL de cada miembro misma-apuesta al
+    /// stop, como fracción de capital: `qty·|entry−sl|/capital`. Bits 0 =
+    /// NO medido (snapshot sin stop utilizable). Bits para preservar Eq.
+    pub same_bet_riesgos_bits: Vec<u64>,
 }
 
 impl DependencyExposure {
@@ -446,6 +450,79 @@ impl DependencyExposure {
         }
         Some(f64::from_bits(self.same_bet_rho_efectivo_bits).clamp(-1.0, 1.0))
     }
+
+    /// Vector de riesgos HÍBRIDO (XLVI·E): medido donde hay stop utilizable,
+    /// `fallback` por miembro no medido — mismo patrón de honestidad que la
+    /// ρ efectiva (no medido no regala descuento). La candidata la añade el
+    /// llamador.
+    pub fn same_bet_riesgos_hibridos(&self, fallback: f64) -> Vec<f64> {
+        let fb = if fallback.is_finite() && fallback > 0.0 {
+            fallback
+        } else {
+            1.0 // fallback de fallback: orden de magnitud prohibitivo
+        };
+        self.same_bet_riesgos_bits
+            .iter()
+            .map(|&b| {
+                if b == 0 {
+                    fb
+                } else {
+                    let r = f64::from_bits(b);
+                    if r.is_finite() && r > 0.0 {
+                        r
+                    } else {
+                        fb
+                    }
+                }
+            })
+            .collect()
+    }
+}
+
+/// XLVI·E (SPECTRAL-010) — VETO POR RIESGO REAL MEDIDO AL STOP.
+///
+/// Agregación equicorrelacionada ponderada:
+/// `σ_grupo = sqrt(Σ r_i² + ρ̄·((Σ r_i)² − Σ r_i²))`.
+///
+/// **Continuidad exacta con D-748**: con riesgos uniformes r_i = r y
+/// n miembros reduce bit a bit a `r·sqrt(n + n(n−1)ρ̄)` — la fórmula que el
+/// veto por conteo ya usaba. No es una doctrina nueva: es la misma con las
+/// escalas individuales reales en vez de la suposición de igual tamaño.
+///
+/// Contornos:
+/// - `rho = None` (o inválida) ⇒ suma lineal: correlación perfecta.
+/// - ρ < −1/(n−1) (matriz no semidefinida positiva) ⇒ caso adverso lineal,
+///   igual que el veto por conteo: un dato imposible no es cobertura.
+/// - El piso del veto por conteo («nunca por debajo de una apuesta») se
+///   generaliza: nunca por debajo del MAYOR riesgo individual — la cobertura
+///   perfecta de fantasía no puede borrar la peor exposición aislada.
+/// - Entrada ≤ 0 o NaN en el vector ⇒ 0 (el llamador sanea con su fallback
+///   antes; aquí es defensa terminal).
+pub fn veto_por_riesgo_real_medido(riesgos: &[f64], rho: Option<f64>, tope: f64) -> bool {
+    if riesgos.is_empty() || !tope.is_finite() || tope <= 0.0 {
+        return false;
+    }
+    let r: Vec<f64> = riesgos
+        .iter()
+        .map(|x| if x.is_finite() && *x > 0.0 { *x } else { 0.0 })
+        .collect();
+    let n = r.len() as f64;
+    let suma: f64 = r.iter().sum::<f64>() * 1.0;
+    let suma_sq: f64 = r.iter().map(|x| x * x).sum();
+    let peor_individual = r.iter().cloned().fold(0.0_f64, f64::max);
+    let riesgo_grupo = match rho {
+        Some(rho) if rho.is_finite() && (-1.0..=1.0).contains(&rho) => {
+            if n > 1.0 && rho < -1.0 / (n - 1.0) {
+                // ρ imposible para n exposiciones: no es cobertura.
+                suma
+            } else {
+                let varianza = suma_sq + rho * (suma * suma - suma_sq);
+                varianza.max(0.0).sqrt().max(peor_individual)
+            }
+        }
+        _ => suma,
+    };
+    riesgo_grupo.is_finite() && riesgo_grupo > tope
 }
 
 /// Mezcla honesta de correlaciones medidas y no medidas del grupo same-bet:
@@ -479,17 +556,31 @@ pub fn dependency_exposure(
     // XLVI·D: correlación PnL de cada miembro del grupo same-bet contra la
     // candidata (None = no medida) — para la ρ efectiva del grupo.
     let mut rhos_same_bet: Vec<Option<f64>> = Vec::new();
+    // XLVI·E (SPECTRAL-010): riesgo REAL al stop de cada miembro, como
+    // fracción del capital unificado — el veto agregará estos, no una
+    // escala única supuesta.
+    let capital = arena.unified_capital.load(std::sync::atomic::Ordering::Relaxed);
     for (asset_id, coin) in arena.coins.iter().enumerate() {
         // Outer None: slot observed closed. Inner None: open but no usable
         // snapshot, which must count as unknown rather than disappear.
-        let sides = coin.positions.slots().map(|p| {
-            if p.is_open() {
-                Some(p.snapshot().map(|s| s.is_long))
-            } else {
-                None
-            }
-        });
-        if sides.iter().all(Option::is_none) {
+        // XLVI·E: estado por ranura (cerrada | abierta sin snapshot |
+        // abierta con snapshot) — misma semántica tri-estado que antes,
+        // reteniendo el snapshot COMPLETO (entry/sl/qty) emparejado con su
+        // lado para el riesgo al stop.
+        let slots: Vec<(bool, Option<_>)> = coin
+            .positions
+            .slots()
+            .iter()
+            .map(|p| {
+                let open = p.is_open();
+                let snap = if open { p.snapshot() } else { None };
+                (open, snap)
+            })
+            .collect();
+        let sides = slots
+            .iter()
+            .map(|(open, snap)| if *open { Some(snap.as_ref().map(|x| x.is_long)) } else { None });
+        if sides.clone().all(|s| s.is_none()) {
             continue;
         }
         let price_rho = if asset_id == candidate_id {
@@ -500,7 +591,12 @@ pub fn dependency_exposure(
                 correlacion_de_retornos(&candidate_ticks, &other_ticks, threshold)
             })
         };
-        for side in sides.into_iter().flatten() {
+        for (slot_idx, side_outer) in sides.into_iter().enumerate() {
+            // Ranura cerrada: no cuenta (semántica original del flatten).
+            let side = match side_outer {
+                None => continue,
+                Some(inner) => inner,
+            };
             result.open_positions += 1;
             let pnl_rho = side.and_then(|long| {
                 price_rho
@@ -513,6 +609,32 @@ pub fn dependency_exposure(
             if CorrelationGuardEngine::es_la_misma_apuesta(pnl_rho, threshold) {
                 result.same_bet_positions += 1;
                 rhos_same_bet.push(pnl_rho);
+                // XLVI·E: riesgo real al stop si el snapshot lo sostiene.
+                // Bits 0 = no medido (sin stop utilizable, lado del stop
+                // inconsistente con la dirección, o capital inválido).
+                let r = side.and_then(|long| {
+                    let snap = slots[slot_idx].1.as_ref()?;
+                    let sl_ok = if long {
+                        snap.sl_price > 0.0 && snap.sl_price < snap.entry_price
+                    } else {
+                        snap.sl_price > snap.entry_price
+                    };
+                    if !sl_ok
+                        || snap.entry_price <= 0.0
+                        || snap.quantity <= 0.0
+                        || !capital.is_finite()
+                        || capital <= 0.0
+                    {
+                        return None;
+                    }
+                    let r = snap.quantity * (snap.entry_price - snap.sl_price).abs() / capital;
+                    if r.is_finite() && r > 0.0 {
+                        Some(r)
+                    } else {
+                        None
+                    }
+                });
+                result.same_bet_riesgos_bits.push(r.map(|v| v.to_bits()).unwrap_or(0));
             }
         }
     }
