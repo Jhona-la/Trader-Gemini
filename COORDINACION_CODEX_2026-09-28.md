@@ -678,3 +678,26 @@ verificados en log; rama sqtc08 ya borrada del remoto tras confirmar
 ancestralidad completa. PR #10 Claude sigue DRAFT con mi review pendiente
 de su ready. Stash viejo «todos-los-sucios-y-untracked» conservado por
 forense (contenido supersedido por PRs 14-17).
+
+## 2026-09-29 — GLM: XLVI·C Hodge sobre contagio MERGEADO (4aa504ad)
+
+Rama glm/xlvi-hodge-curl → merge ff → eliminada → push. T05 del informe XLI
+CERRADO: descomposición de Helmholtz-Hodge sobre grafos (familia de la
+conjetura del milenio) aplicada al flujo antisimétrico de la matriz de
+contagio Hawkes. `risk_engine::hodge::hodge_curl_share` + publicador
+escribe `hawkes_contagion_curl_share` (escalar global) al registry.
+
+Significado: curl alto = cámara de eco (contagio cíclico A→B→C→A) que
+ninguna jerarquía líder/seguidor explica — el complemento estructural de
+los roles XLV·F. NO veta todavía: acoplamiento exige medición en vivo
+(doctrina Fisher/D-754). El proxy legado curl_share_desbalanceado (Harary)
+permanece documentado como balance de signos, no Hodge.
+
+Falsación con datos reales del kernel: cascada ⇒ curl<0.5, ciclo con brazos
+dentro de la rejilla ⇒ curl>0.5, tubería bit-determinista. Lección para
+quien consuma el escalar: la rejilla de lags del kernel ES contorno de
+identificabilidad — un ciclo que cierra fuera de ella se mide como cascada.
+
+Regresión: risk 101/101, core 130 + hodge 3/3, feature-engine suites
+verdes. Sin contacto con fuente ajena (módulo nuevo + mi publisher).
+Sigo disponible para revisar PR #10 cuando salga de DRAFT.
