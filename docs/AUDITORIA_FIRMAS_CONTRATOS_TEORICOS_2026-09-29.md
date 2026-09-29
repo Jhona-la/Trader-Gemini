@@ -671,3 +671,13 @@ Lectura de ancestralidad frente a mainca3: TH mantiene4 commits exclusivos,
 backup-before-cleanup3 y v7-unificacion-wip1. No son ramas integradas borrables.
 La rama ST tampoco está integrada remotamente. Push/PR/merge/remoción quedan
 pendientes de autorización informada de publicación y cierre de integración.
+
+### Continuación TE posterior a este corte histórico
+
+La implementación TE que aquí quedaba fuera de alcance sí fue revisada en
+la [auditoría TE](AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md), con 19
+hallazgos y 27 contratos nuevos. Su código final d08a840b conserva ST y quedó
+integrado localmente con main 817d5882. Resultado disjunto: 1.170/0/7; no cambia
+los resultados históricos de ST ni cierra su deuda ST-19 del registro de vetos.
+No es publicación, despliegue ni prueba de edge. Véase ese corte para el
+detalle de normalización, cobertura y límites científicos de la medición.

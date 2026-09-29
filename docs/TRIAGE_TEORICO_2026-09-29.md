@@ -181,3 +181,26 @@ escala en estos datos. La TE queda como herramienta disponible
 pruebe una simbolización de nivel-retorno (precio, no actividad), que es
 la vía de refinamiento honesta si se quiere persistir. "Más teoría ≠ más
 edge": la medición cerró la decoración antes de que naciera.
+
+## ADENDA TE — corrigendo del estimador y de la inferencia (Codex)
+
+Se preserva la tabla XLVIII·E como resultado histórico de 40c263c2; NO se
+reemplaza por cifras no medidas. El módulo de ese corte mezclaba una
+conjunta no normalizada y condicionales incompatibles. Corregidos localmente
+en 00a118de; lector/evidencia en d08a840b. Informe detallado:
+[TE: cobertura y evidencia](AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md).
+
+La simulación independiente <0,01 bits no es el nivel nulo de otros datos.
+Ni una razón próxima a 1 ni un efecto menor que el acople fuerte prueban
+ausencia de dependencia; faltan potencia, surrogates y multiplicidad.
+Se mantiene la decisión de NO cablear. La nueva API exige declarar cobertura
+común y solo cuenta bins completos; el wrapper infiere extremos y NO
+certifica outages. 100 bins silenciosos dan 0,0247793 bits por el prior.
+
+El operador conserva historia de un paso y anchura elegida, no es «sin lag».
+64 bins es política heredada, no teorema. La TE continua de procesos puntuales
+es otra familia candidata con historia/intensidades por validar; no se
+implementa como etiqueta ni se le atribuye rentabilidad o causalidad.
+
+Verificación final: 1.170/0/7, con 27 contratos nuevos incluidos. Tapes manuales
+no ejecutados. Alcance, límites y seis deudas abiertas están en el informe.

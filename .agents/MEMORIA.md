@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — Codex TE: cobertura y evidencia (LOCAL, no publicado)
+
+- Rama feat/quant-sr-codex-te; conserva ST y TH sin mezclar la política τ.
+- Fix del estimador 00a118de; lector/medición d08a840b. Main 817d5882
+  incorporado en 057cb491 (solo documental; código validado intacto).
+- Informe docs/AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md +JSON:
+  19 hallazgos: 11 de código local, 2 contratos documentados, 6 abiertos.
+- Normalización/marginales CMI, dominio, alineación, reloj, cobertura y
+  bins completos; conteo disperso O(E log(E+1)), O(1) en memoria auxiliar.
+- 27 tests nuevos; 1.170 aprobados/0 fallidos/7 ignorados (total disjunto).
+  Check all-targets: 4,03 s; tras ADRs: 3,46 s.
+  Sin T-1, tapes manuales, live, entrenamiento o promoción.
+- 100 bins silenciosos dan 0,0247793 bits del prior: no liderazgo demostrado.
+  Se conserva NO cablear TE. Medición GLM histórica no es contraste nulo.
+- PR #10/#20 abiertos, #20 draft; GLM activo en ADRs, no se toca su índice.
+  Aviso ignorado compartido .firecrawl/coordination-codex-te-2026-09-29.md
+  sin acuse. No push/PR/merge remoto: falta autorización pública informada.
+- ST-19 registry, TH política τ y restantes deudas científicas siguen abiertos.
+
 ## 2026-09-29 — Codex ST: firmas de caminos y contratos científicos (LOCAL)
 
 - Rama codex/signature-contract-audit desde49fc995c; fix f60e1820.

@@ -1224,3 +1224,43 @@ Para Codex/Claude: cuando una decisión de vuestras olas sea arquitectónica
 o doctrinal (p.ej. el examen WF sobre precios de CL-27, o el hot-reload de
 modelos de CL-11 si se sistematiza), vale un ADR — mismo formato, mismo
 índice. PR #20 sigue DRAFT.
+
+## ADENDA TE — información condicional, cobertura y evidencia (Codex, 2026-09-29)
+
+Corte local `d08a840b`, integrado con main `817d5882` mediante `057cb491`
+sin cambio de código validado. Rama `feat/quant-sr-codex-te`; NO publicada.
+
+Informe: [Auditoría TE](docs/AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md).
+Artefacto: [JSON TE](docs/artifacts/auditoria_te_cobertura_evidencia_2026-09-29.json).
+
+19 hallazgos: 11 corregidos en código local, 2 contratos documentados y
+6 abiertos. La conjunta TE sumaba (M+8)/(M+4)>1 y sus condicionales mezclaban
+priors. Se corrigen dominio, alineación, orden, solape, cola parcial y overflow.
+El conteo disperso cuesta O(E log(E+1)) y usa memoria auxiliar constante.
+Se declara cobertura explícita, conteos u64 y política de soporte configurable,
+sin agregar vetos de trading. El lector rechaza restos, vacío y desorden;
+la medición manual ya no puede pasar sin estimar ambos lados.
+
+27 contratos nuevos. RED del estimador: 1 aprobado/7 fallidos; lector: 2/3.
+Final: seis crates, 1.133 aprobadas/0 fallidas/7 ignoradas; replay lib: 37/0/0.
+Total disjunto: 1.170/0/7. Check all-targets: 4,03 s; tras ADRs: 3,46 s.
+Las ignoradas no son aprobaciones: 5 de testnet, 1 de inventario y 1 de tapes TE.
+Sin T-1, demo/live, entrenamiento, promoción, cambios de golden o de riesgo.
+
+Dos streams silenciosos observados, con 100 bins, dan 0,0247793 bits por el
+prior: TE>0 no acredita liderazgo. La cifra histórica de GLM (~0,001 bits)
+se conserva, pero no demuestra ausencia del fenómeno ni un piso universal
+del sesgo. Falta contraste calibrado; no se recalcularon tapes. Se mantiene
+NO cablear al motor. Un paso de 200 ms tampoco es un método «sin lag».
+
+Pendientes: significancia/multiplicidad, cobertura de feed, condicionamiento
+multiactivo, trazabilidad hasta genoma/ejecución, escala/memoria adaptativas
+y reinterpretación estadística de la medición histórica. ST-19 del registro
+permanece abierto. ADR-0004/0005 heredan esas salvedades; incorporarlos no
+certifica la cobertura de sus tests ni el supuesto sesgo del estimador.
+
+PR #10 y #20 abiertos; #20 draft. Aviso compartido ignorado:
+`.firecrawl/coordination-codex-te-2026-09-29.md`, sin acuse.
+Se conservan ramas activas y no integradas. Publicación detenida por
+autorización informada pendiente tras rechazo previo. No se certifica una
+auditoría semántica completa de las 1.358 rutas inventariadas.
