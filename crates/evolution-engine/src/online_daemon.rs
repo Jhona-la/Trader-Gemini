@@ -274,6 +274,28 @@ pub fn armar_vigilancia(
     }
 }
 
+/// Dirección de entrada del pre-examen a partir del momentum previo en sigmas.
+///
+/// CL-24: el umbral largo vive en [0,50; 0,95] y el corto en [0,05; 0,49]
+/// (genes 22/23); en el núcleo un corto exige `p ≤ umbral corto`, así que su
+/// exigencia es el ESPEJO `½ − umbral`. Antes se usaba `umbral − ½` también
+/// para el corto: con el gen dentro de su banda salía siempre 0, el
+/// pre-examen abría corto ante cualquier momentum negativo y la mutación del
+/// gen 23 no movía su aptitud. Mismo invariante que `ml_gate_thresholds`.
+pub fn prescreen_entry_bias(prev_sigma: f64, ml_thr_long: f64, ml_thr_short: f64) -> f64 {
+    let (thr_long, thr_short) =
+        god_engine_core::calibration::ml_gate_thresholds(ml_thr_long, ml_thr_short);
+    let mom_long = (thr_long - 0.5) * 2.0;
+    let mom_short = (0.5 - thr_short) * 2.0;
+    if prev_sigma > mom_long {
+        1.0
+    } else if prev_sigma < -mom_short {
+        -1.0
+    } else {
+        0.0
+    }
+}
+
 /// Forma canónica de un genoma: su vector genético tras el roundtrip
 /// `to_vector`/`from_vector`, que aplica los clamps y los invariantes (RR de
 /// las curvas) de la fuente única R1.1. Dos genomas con la misma forma
@@ -1452,15 +1474,8 @@ impl LiveEvolutionDaemon {
                         } else {
                             0.0
                         };
-                        let mom_long = (ml_thr_long - 0.5).max(0.0) * 2.0;
-                        let mom_short = (ml_thr_short - 0.5).max(0.0) * 2.0;
-                        let entry_bias = if prev_sigma > mom_long {
-                            1.0
-                        } else if prev_sigma < -mom_short {
-                            -1.0
-                        } else {
-                            0.0
-                        };
+                        let entry_bias =
+                            prescreen_entry_bias(prev_sigma, ml_thr_long, ml_thr_short);
                         if entry_bias == 0.0 {
                             continue;
                         } // Skip: no signal
@@ -2040,5 +2055,24 @@ mod tests {
         // Nada juzgable: nada que examinar (la ronda no carga pruebas).
         assert!(series_del_examen(&[vec![0.001; 59]], &vec![0.001; 59]).is_empty());
         assert!(s.iter().all(|x| x.len() >= minimo));
+    }
+
+    /// CL-24 — el corto del pre-examen exige el ESPEJO de su umbral.
+    #[test]
+    fn cl24_el_umbral_corto_del_pre_examen_es_el_espejo_del_largo() {
+        // Umbral corto estricto (0,05) ⇒ exige 0,9σ de momentum bajista.
+        assert_eq!(prescreen_entry_bias(-0.3, 0.6, 0.05), 0.0);
+        assert_eq!(prescreen_entry_bias(-0.95, 0.6, 0.05), -1.0);
+        // Umbral corto laxo (0,45) ⇒ exige 0,1σ.
+        assert_eq!(prescreen_entry_bias(-0.3, 0.6, 0.45), -1.0);
+        // El largo no cambia: 0,6 ⇒ 0,2σ.
+        assert_eq!(prescreen_entry_bias(0.3, 0.6, 0.45), 1.0);
+        assert_eq!(prescreen_entry_bias(0.1, 0.6, 0.45), 0.0);
+        // La mutación del gen 23 dentro de su banda mueve la decisión.
+        let decisiones: std::collections::BTreeSet<i32> = [0.05, 0.25, 0.49]
+            .iter()
+            .map(|&thr| prescreen_entry_bias(-0.5, 0.6, thr) as i32)
+            .collect();
+        assert_eq!(decisiones.len(), 2);
     }
 }
