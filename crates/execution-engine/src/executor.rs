@@ -1056,6 +1056,9 @@ impl OrderExecutor {
                 start_ms, end_ms, pages_read: 0,
                 coverage: crate::income_evidence::IncomeCoverage::Simulated,
                 entries: Vec::new(),
+                quarantined: Vec::new(),
+                exact_duplicates_dropped: 0,
+                transport_error: None,
             });
         }
         crate::income_evidence::collect_income_window(

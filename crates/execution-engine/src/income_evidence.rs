@@ -11,6 +11,11 @@ pub enum IncomeCoverage {
     PageBudgetExceeded,
     NoProgress,
     Simulated,
+    /// FMT-285b: el transporte falló DESPUÉS de ≥1 página leída. La ventana
+    /// devuelve la evidencia parcial leída + el motivo; NO es una ventana
+    /// agotada (`into_exhausted_entries` la rechaza). La falla en la página
+    /// 1 sigue siendo `Err(Transport)` — sin evidencia no hay ventana.
+    TransportTruncated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +44,13 @@ pub struct IncomeWindow {
     pub pages_read: u32,
     pub coverage: IncomeCoverage,
     pub entries: Vec<IncomeEntry>,
+    /// FMT-285b: registros rechazados SIN abortar la ventana — el mismo
+    /// contrato de `partition_income`, aplicado durante el recorrido.
+    pub quarantined: Vec<QuarantinedEntry>,
+    /// Repeticiones idénticas de identidades ya aceptadas (descartadas).
+    pub exact_duplicates_dropped: u64,
+    /// Motivo del transporte si `coverage == TransportTruncated`.
+    pub transport_error: Option<String>,
 }
 
 impl IncomeWindow {
@@ -158,32 +170,79 @@ where
         pages_read: 0,
         coverage: IncomeCoverage::PageBudgetExceeded,
         entries: Vec::new(),
+        quarantined: Vec::new(),
+        exact_duplicates_dropped: 0,
+        transport_error: None,
     };
     let mut seen = HashMap::<IncomeIdentity, f64>::new();
     for page in 1..=max_pages {
-        let rows = fetch(page).await.map_err(IncomeEvidenceError::Transport)?;
+        // FMT-285b: el transporte deja de ser letal tras la primera página
+        // — la evidencia parcial viaja con cobertura TransportTruncated y
+        // el motivo; sin `into_exhausted_entries` jamás se presenta como
+        // agotada. Fallar en la página 1 sigue siendo Err: sin evidencia
+        // no hay ventana que devolver.
+        let rows = match fetch(page).await {
+            Ok(rows) => rows,
+            Err(e) => {
+                if page == 1 {
+                    return Err(IncomeEvidenceError::Transport(e));
+                }
+                window.coverage = IncomeCoverage::TransportTruncated;
+                window.transport_error = Some(e);
+                break;
+            }
+        };
         window.pages_read = page;
         let count = rows.len();
         if count > page_size as usize {
             return Err(IncomeEvidenceError::OversizedPage);
         }
-        let before = window.entries.len();
+        let before_entries = window.entries.len();
+        let before_quarantine = window.quarantined.len();
         for row in rows {
-            let key = identity(&row)?;
+            // FMT-285b: cuarentena por registro (contrato de partition_income)
+            // — un registro malo ya no mata la ventana entera.
+            let key = match identity(&row) {
+                Ok(key) => key,
+                Err(_) => {
+                    window.quarantined.push(QuarantinedEntry {
+                        entry: row,
+                        reason: QuarantineReason::InvalidRecord,
+                        recoverable: true,
+                    });
+                    continue;
+                }
+            };
             if row.time < start_ms || row.time > end_ms {
-                return Err(IncomeEvidenceError::OutOfRange);
+                window.quarantined.push(QuarantinedEntry {
+                    entry: row,
+                    reason: QuarantineReason::OutOfRange,
+                    recoverable: true,
+                });
+                continue;
             }
             if let Some(previous) = seen.get(&key) {
                 if *previous != row.income {
-                    return Err(IncomeEvidenceError::ConflictingRecord);
+                    window.quarantined.push(QuarantinedEntry {
+                        entry: row,
+                        reason: QuarantineReason::ConflictingIdentity,
+                        recoverable: false,
+                    });
+                    continue;
                 }
-            } else {
-                seen.insert(key, row.income);
-                window.entries.push(row);
+                window.exact_duplicates_dropped += 1;
+                continue;
             }
+            seen.insert(key, row.income);
+            window.entries.push(row);
         }
-        // A repeated nonempty page is not proof that the range is exhausted.
-        if count > 0 && window.entries.len() == before {
+        // Una repetición sin avances NI de evidencia NI de cuarentena no es
+        // prueba de rango agotado (NoProgress); cuarentenas nuevas SÍ son
+        // progreso del recorrido.
+        if count > 0
+            && window.entries.len() == before_entries
+            && window.quarantined.len() == before_quarantine
+        {
             window.coverage = IncomeCoverage::NoProgress;
             break;
         }
@@ -422,6 +481,9 @@ pub struct QuarantinedEntry {
 pub enum QuarantineReason {
     InvalidRecord,
     ConflictingIdentity,
+    /// FMT-285b: registro válido pero fuera de [start_ms, end_ms] de la
+    /// ventana pedida. Recuperable ampliando la ventana.
+    OutOfRange,
 }
 
 /// Resultado de particionar una tanda por el contrato de identidad.

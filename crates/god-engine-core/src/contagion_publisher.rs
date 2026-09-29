@@ -75,4 +75,15 @@ pub fn publish_contagion_roles(arena: &GlobalArena) {
             let _ = symbol; // symbol disponible para telemetría scoped si se necesita
         }
     }
+
+    // XLVI·C (T05) — Hodge sobre el MISMO campo de contagio: fracción de la
+    // energía del flujo que ninguna jerarquía líder→seguidor explica (cámara
+    // de eco). Observable GLOBAL: estructura del universo, no de un activo.
+    // No veta nada todavía — la constante de acoplamiento exige medición en
+    // vivo (doctrina Fisher/D-754: publicar la evidencia antes de gobernar).
+    if let Some(curl) = risk_engine::hodge::hodge_curl_share(&matrix) {
+        arena
+            .registry
+            .set("hawkes_contagion_curl_share", curl);
+    }
 }

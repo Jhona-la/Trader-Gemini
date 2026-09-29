@@ -5,6 +5,7 @@ pub mod epigenetic_capital_alloc;
 pub mod epigenetic_fitness_landscape;
 pub mod evidence;
 pub mod guard;
+pub mod hodge;
 pub mod kelly;
 pub mod kelly_envelope;
 pub mod leverage_matrix;
@@ -548,20 +549,30 @@ impl RiskEngine {
             return rej(REJ_INVALID_INPUT);
         };
         // Las APIs MP/XLIV se conservan para diagnóstico e investigación.
-        // La ruta viva dispone de una EWMA de pérdida al stop, NO de sigmas
-        // comparables con pesos y covarianza conjunta. Por ello no se aplica
-        // aquí el descuento sqrt(k+k*(k-1)*rho); None conserva el presupuesto
-        // lineal legado. La sustitución por riesgo real por posición sigue
-        // pendiente (SPECTRAL-010), incluido el proxy de arranque tope/8.
-        if correlation_guard::CorrelationGuardEngine::veto_por_exposicion_estructural(
-            dependence.same_bet_positions,
-            arena.riesgo_por_operacion.load(Ordering::Relaxed),
-            1.0 - arena.coins[coin_id]
-                .metrics
-                .win_rate
-                .load(Ordering::Relaxed)
-                .clamp(0.0, 1.0),
-            None,
+        // (Ola XLVI·D/E, SPECTRAL-010) El veto agrega el RIESGO REAL de cada
+        // miembro misma-apuesta al stop (qty·|entry−sl|/capital, medido del
+        // snapshot), el riesgo EWMA de la candidata, y la ρ_PnL medida del
+        // grupo (D-748). Continuidad: miembro no medido ⇒ proxy tope/8 (el
+        // presupuesto lineal legado es el caso todos-no-medidos); riesgos
+        // uniformes reducen bit a bit a r·√(k+k(k−1)ρ̄).
+        let q_perdida = 1.0 - arena.coins[coin_id]
+            .metrics
+            .win_rate
+            .load(Ordering::Relaxed)
+            .clamp(0.0, 1.0);
+        let tope = crate::ruin::clamp_ruin(1.0, q_perdida);
+        let riesgo_ewma = arena.riesgo_por_operacion.load(Ordering::Relaxed);
+        let riesgo_candidata = if riesgo_ewma.is_finite() && riesgo_ewma > 0.0 {
+            riesgo_ewma
+        } else {
+            tope / 8.0 // arranque frío: mismo proxy que el veto legado
+        };
+        let mut riesgos = dependence.same_bet_riesgos_hibridos(tope / 8.0);
+        riesgos.push(riesgo_candidata);
+        if correlation_guard::veto_por_riesgo_real_medido(
+            &riesgos,
+            dependence.same_bet_rho_efectivo(),
+            tope,
         ) {
             return rej(2);
         }
