@@ -194,9 +194,10 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   0,58 + …); no pasan por `conviccion_de_rama` (D-752). Rediseño pendiente.
 - **Atribución en la fusión**: `volume_flow_rate = max(etiquetas)` atribuye el
   resultado a la rama de índice mayor, no a la que aportó la convicción.
-- **D-746 freno de apalancamiento**: mide el ATR contra `sl_at_tau` genómico a
-  la τ de `operating_tau_ms`, no contra el stop real del gate
-  (`tpsl_gate.sl_pct`) ni su τ: exige reordenar el gate (goldens).
+- ~~**D-746 freno de apalancamiento**: mide el ATR contra `sl_at_tau`
+  genómico, no contra el stop real del gate.~~ **CERRADO por CL-2** (PR #13
+  de la otra sesión Claude, en `main` a3d2eb06): el apalancamiento se decide
+  tras la geometría y recibe el stop real de la orden.
 - **`suelo_tp_sl`**: el veto es coherente (σ(τ)·k < f/0,65 ⇒ la τ propuesta no
   paga la fricción); el desperdicio está AGUAS ARRIBA: el núcleo propone τ por
   debajo de la banda operable. Candidato: que el generador consulte
