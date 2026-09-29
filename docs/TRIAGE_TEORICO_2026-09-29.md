@@ -119,3 +119,31 @@ frecuencia de muestreo contamine.
   signo — el test verifica la relación exacta).
 
 Implementación: `feature_engine::path_signatures`.
+
+---
+
+## ADENDA XLVIII·E (2026-09-29) — TE EN TAPES REALES: RESULTADO NEGATIVO REGISTRADO
+
+Medición (transfer_entropy_real.rs, --ignored): pares de agosto-2026 a
+ventana de actividad binaria de 200 ms —
+
+| par | T(a→b) bits | T(b→a) bits | ratio |
+|---|---|---|---|
+| LTC→THETA | 0.0008 | 0.0007 | 1.17 |
+| ADA→THETA | 0.0007 | 0.0005 | 1.25 |
+| LTC→ADA | 0.0013 | 0.0015 | 0.82 |
+
+**Lectura**: todos los valores están al piso del sesgo KT (<0.01 bits,
+medido sobre independientes) y ~100× por debajo del acople sintético de
+referencia (>0.15 bits). NO hay flujo direccional medible de información
+entre estos pares a esta escala/simbolización. La actividad binaria no
+está saturada (LTC ~1 evento/2s ⇒ ventanas mayormente 0), así que el
+resultado no es un artefacto trivial de rejilla.
+
+**Decisión del consejo (doctrina evidencia-antes-de-gobernar)**: NO cablear
+TE a ningún consumidor — el fenómeno que mide no está presente a esta
+escala en estos datos. La TE queda como herramienta disponible
+(feature_engine::transfer_entropy, con sus contratos) para cuando se
+pruebe una simbolización de nivel-retorno (precio, no actividad), que es
+la vía de refinamiento honesta si se quiere persistir. "Más teoría ≠ más
+edge": la medición cerró la decoración antes de que naciera.
