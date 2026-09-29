@@ -381,3 +381,33 @@ la reparación Platt, sus pruebas y el cambio de una referencia. El segundo
 check completo pasa con advertencias, 16,62s. Merge local: 67c63d32.
 La suite amplia empieza después del commit; su resultado aún no se afirma
 en este corte. Aviso al equipo: PR10/issuecomment-5881232741.
+
+## 16. Validación final previa al merge remoto de PR14
+
+Árbol de fuentes: **67c63d32**, incluye main3cdbb6b3. Cambios posteriores
+de esta rama hasta el recibo de pruebas son exclusivamente documentación.
+
+| Verificación propia | Pasan | Fallan | Ignoradas | Resultado |
+|---|---:|---:|---:|---|
+| Seis crates all-targets, 71 bloques de resultado | 934 | 0 | 1 | salida0 |
+| Backtest lib, golden sin modificar | 31 | 0 | 0 | salida0; 15,46s de ejecución |
+| Total de ámbitos distintos | 965 | 0 | 1 | ocho regresiones propias ya incluidas |
+| Workspace check all-targets | — | — | — | salida0; 16,62s; advertencias |
+
+Crates: god-engine-core, risk-engine, quantum-arena, feature-engine,
+evolution-engine y signal-engine. El inventario ignorado no es una prueba
+de la reparación. No se ejecutó T-1 en esta ola; no se proclama equivalencia
+genética global. No sumar otra vez los135 del corte inicial: están incluidos.
+No quedan pruebas Codex pendientes en este corte.
+
+Hashes SHA-256 de las tres fuentes/test modificadas están en el JSON.
+Sin marcadores de conflictos en los cuatro documentos de coordinación;
+diff --check sin errores y JSON parseado. PR14 sin checks configurados ni
+hilos de revisión activos: eso NO equivale a CI verde. Validación local.
+PR10 continúa OPEN en c844d4fd; se preserva su integración al autor activo.
+
+Ancestralidad revalidada: fbf299ee, b3ba8d80, 57bae732 y82ca7984 ya están en
+origin/main (EWMA/W1/RMT y PR12). Los backups locales conservan3 y1 commits
+no equivalentes por parche: no se borran ni se declaran integrados.
+Para la confirmación posterior de merge y retirada de rama propia, consultar
+el recibo en https://github.com/Jhona-la/Trader-Gemini/pull/14.

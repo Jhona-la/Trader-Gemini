@@ -660,3 +660,11 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - Coordinación PR10 issuecomment-5881142305 /5881232741. Claude mantiene trainer.
   Checkout compartido pasó de78c81804 con marcadores a3cdb limpio; Codex no
   tocó su índice. Backups locales conservados; no refs remotas observadas.
+
+- CIERRE PRE-MERGE PR14: fuentes67c63d32, main3cdb incorporado. Seis crates
+  all-targets934/0/1 y backtest lib31/0/0:965/0/1; ocho regresiones propias
+  ya incluidas. Check workspace all-targets pasa16,62s; sin T-1 ni operación.
+  Informe Platt§16 y JSON guardan alcance/hashes. Pruebas propias finalizadas.
+  PR10 sigue abierto; backups locales3/1 commits exclusivos preservados.
+  Recibo remoto posterior y limpieza de rama: consultar PR14, no asumirlos
+  por este resultado previo a la fusión.

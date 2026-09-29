@@ -124,5 +124,64 @@
   "model_promotion": false,
   "t1_rerun": false,
   "return_target_validated": false,
-  "integration_validation": "pending"
+  "integration_validation": "pending",
+  "latest_status": "premerge_validated",
+  "final_premerge_validation": {
+    "source_commit": "67c63d32",
+    "main_included": "3cdbb6b3895e104e9b936abe661fa04c74c31fdc",
+    "workspace_all_targets": {
+      "exit_code": 0,
+      "seconds": 16.62,
+      "warnings": true
+    },
+    "six_crates_all_targets": {
+      "passed": 934,
+      "failed": 0,
+      "ignored": 1,
+      "suites": 71,
+      "exit_code": 0
+    },
+    "backtest_lib": {
+      "passed": 31,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0,
+      "runtime_seconds": 15.46
+    },
+    "aggregate_distinct_scopes": {
+      "passed": 965,
+      "failed": 0,
+      "ignored": 1
+    },
+    "new_own_regressions_included": 8,
+    "t1_rerun": false,
+    "own_tests_pending": 0,
+    "source_sha256": {
+      "crates/god-engine-core/src/calibration.rs": "9A1B320BFBCAA715128C2F53E963253465D17F7D124C41E7F27759C1FD299AD0",
+      "crates/god-engine-core/tests/platt_optimizer_contract.rs": "7C90730462A306D24967DE8396566303DD2E84EA97E8FD73D035B8F777E3F0CC",
+      "crates/god-engine-core/src/lib.rs": "B6CFDB3EAEA14E8347CC459724FC7987F38A14584CA86EFD23B5553B1384D660"
+    },
+    "pr": "https://github.com/Jhona-la/Trader-Gemini/pull/14",
+    "pr10_observed_state": "OPEN",
+    "configured_remote_checks": 0,
+    "active_review_threads": 0
+  },
+  "integration_regression": {
+    "id": "INT-03",
+    "state": "repaired_validated",
+    "severity": "P1-integration",
+    "introducing_commit": "3cdbb6b3",
+    "error": "E0308 expected &str found String",
+    "fix": "get_scoped_value_or(&sym,...)",
+    "before_exit_code": 1,
+    "after_exit_code": 0,
+    "formula_changed": false
+  },
+  "backup_audit": {
+    "backup_before_cleanup_exclusive_commits": 3,
+    "v7_unificacion_wip_exclusive_commits": 1,
+    "deleted_by_codex": false,
+    "remote_refs_observed": false
+  },
+  "coordination_followup": "https://github.com/Jhona-la/Trader-Gemini/pull/10#issuecomment-5881232741"
 }
