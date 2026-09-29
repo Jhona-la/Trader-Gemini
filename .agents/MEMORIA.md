@@ -8,6 +8,42 @@
 
 ---
 
+## 2026-09-29 — Claude (cloud): ciclos 2, 3 y 4 de vetos, bloqueos y límites
+
+Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (GLM la borra del
+remoto tras cada merge; se vuelve a crear con el mismo nombre). Cada hallazgo
+viene de la auditoría con 7 auditores y 2 escépticos, y cada arreglo tiene un
+test que falla en `main` antes del arreglo.
+
+- **Ciclo 2, en `main` por el PR #17 (e9285dfa)**: CL-3 kill-switch sin
+  bloquear salidas; CL-4 τ en la ranura abierta; CL-5 racha contada una vez;
+  CL-6 nocional mínimo re-verificado; CL-7 EWMA de riesgo con el stop real.
+  T-1 16/144. GLM lo revisó post-merge: 5/5 correctos.
+- **Ciclo 3** (T-1 17/144 antes de traer XLVI·B…F):
+  - CL-8: capital de arranque = `totalWalletBalance` (`availableBalance` restaba dos veces el margen adoptado).
+  - CL-9: veto de drawdown con la q de la cartera (`drawdown::q_perdida_cartera`, también en el host).
+  - CL-10: Kelly del cierre con `profit_factor_lcb` (el PF 5 literal tras una ganancia desaparece).
+  - CL-11: la envolvente del host y del replay usa el mínimo del símbolo.
+  - CL-12: el X-009 del host respeta el lado en hedge.
+- **Ciclo 4**:
+  - CL-13: `nn_score` se mide contra `ml_model_base`, no contra 0,5.
+  - CL-14: la entrada simulada del núcleo es siempre MARKET (el host envía MARKET, B3.29); la llamada única lleva la latencia lognormal de XLVI·B.
+  - CL-15: fuera de BTC el NN no vota (antes 0,5 constante arrastraba la ml_prob hacia arriba).
+  - CL-16: la adopción al arrancar usa una ranura libre por pierna y sólo reserva margen si abre.
+  - CL-17: la re-protección envía las piernas bajo el mínimo (reduce-only) y sólo escala por un gap de STOP (HOST-024 cerraba todo por suposición).
+  - CL-18: el bosque sombra no publica umbrales que no identifica (su clasificador sólo da la clase; fijaba el gate ML en su lift mínimo cada 500 ms en demo, FMT-053).
+  - CL-19: BE y trailing se arman en fracciones del TP real (ac136633 había invertido `.max` → `.min` sin nota; a τ largo todo acababa en scalp).
+  - CL-20: el kill-switch no bloquea las piernas protectoras (flag de GLM).
+  - Verificación del conjunto (ciclos 3 y 4 + merge con XLVI·B…F): 8 crates `--all-targets` en verde; el T-1 del head va en el PR.
+- Abiertos (confirmados, sin arreglar todavía):
+  - Evolución: el examen walk-forward reproduce los deltas de PnL del incumbente como si fueran retornos de precio; y la puerta heurística bloquea la promoción cuando el incumbente pierde. Quitar la puerta antes de arreglar el examen dejaría promover sobre un examen roto: primero el examen.
+  - La adopción al arrancar sigue con `entry_time_ms = now` (el diario no identifica la posición).
+  - La distancia del trailing (trailing.rs) sigue en ATR de 1 min; el colchón del BE usa su propia fórmula de fricción.
+  - Libro sintético de ±1 pb en eventos que no son de depth (el `local_orderbooks` del host nunca borra niveles).
+  - Gate de viabilidad ATR inalcanzable; veto de drawdown absorbente en backtest; `suelo_tp_sl` y la banda del genoma miden stops distintos.
+  - Los umbrales del bosque sombra, aun con probabilidades, serían de otro modelo y de otra escala que los genes del gate.
+- Descartados tras verificar: freno CL-2 con el ATR que se cancela (física del stop); `rama_abierta` por moneda (OA de Codex); god_engine.rs:4116.
+
 ## 2026-09-28 (noche) — Claude (cloud): fricción, freno y auditoría de vetos
 
 Flujo nuevo pedido por el operador: rama con nombre del agente → merge a

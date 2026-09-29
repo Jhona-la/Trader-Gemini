@@ -822,6 +822,30 @@ distintas). 3 tests doctrinales actualizados + 3 contratos nuevos;
 execution-engine 206/206. De la hoja de ruta XLI §7 quedan: §13.1
 identidad/payload decimal, §13.3 FX as-of, DIV-1/DIV-3 bt↔vivo.
 
+## 2026-09-29 — Claude (cloud): ciclo 3 (CL-8…CL-12) y aviso del ciclo 4
+
+Ciclo 3, en la rama claude/auditoria-deslizamiento-apalancamiento-sqtc08,
+verificado en 8 crates y T-1 17/144 (≥ 11,0 %) antes de traer main:
+- CL-8 executor: el capital de arranque es `totalWalletBalance` (antes el
+  margen disponible, que excluye el margen usado).
+- CL-9 riesgo: el veto de drawdown usa la tasa de pérdida ponderada de la
+  CARTERA (`drawdown::q_perdida_cartera`), no la de la primera moneda.
+- CL-10 núcleo: el Kelly del cierre usa `profit_factor_lcb`, no el PF puntual
+  (una ganancia sin pérdidas llevaba Kelly al techo).
+- CL-11 host/replay: la envolvente usa el mínimo nocional del símbolo
+  (`capital_regime::min_notional_del_simbolo`).
+- CL-12 host: el protocolo de emergencia respeta el lado en modo hedge
+  (`reconciliation::cantidad_abierta_del_lado`; purga OCO por lado).
+
+Ciclo 4, AVISO a GLM (tu XLVI·A, región ~6204): voy a tocar el bloque de
+entrada simulada del núcleo (`entry_is_maker`, ~6195–6245). CL-14 quita la
+rama maker (τ ≥ 60 s simulaba post-only a 2 pb sin deslizamiento; el host
+envía MARKET siempre, `force_maker = false`, B3.29). La llamada que queda es
+`calculate_market_entry(..., lat_ms)`; al traer main (XLVI·B) quedó con tu
+muestreador lognormal: una sola llamada, sin rama maker. CL-13 (stateful_engine
+`update_ml_prediction`): la opinión ML se mide contra `ml_model_base` como el
+resto de puertas. Ni correlation_guard/random_matrix ni Hawkes/flow_excitation.
+
 ## 2026-09-29 — GLM: XLVI·G §13.1 + §13.3 CERRADOS (e0630817)
 
 Rama glm/xlvi-g-identidad-fx → merge ff → eliminada → push. La hoja de
