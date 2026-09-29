@@ -15,6 +15,7 @@ pub mod regime;
 pub mod drawdown;
 pub mod ruin;
 pub mod tp_sl;
+pub mod veto_registry;
 
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 

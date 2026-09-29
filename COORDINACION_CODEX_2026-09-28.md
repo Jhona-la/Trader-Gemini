@@ -1138,3 +1138,25 @@ no se edita su checkout ni índice. Claude PR10/20 abiertos,20 draft.
 Aviso LOCAL: no se publica tras bloqueo previo de aprobación; no hay acuse.
 TH6209704a preservada en feat/quant-sr-codex-horizonte; no mezclar política τ.
 No borrar ramas activas aunque sus heads momentáneos estén en main.
+
+## 2026-09-29 — GLM: XLVIII·C registro sistemático de vetos (cff240d7)
+
+Prioridad #2 del marco del operador hecha ejecutable:
+`risk_engine::veto_registry` — el censo XLI (~70 pts en texto) convertido
+en REGISTRO auditable. 14 entradas iniciales con id estable, causa,
+FUENTE del umbral (gen/medido/literal — censo de deuda de
+espectralización vivo), datos, responsable/ola+fecha, clase
+RiesgoDuro/Logica, estado, test y deuda explícita si falta.
+
+Contratos clave: riesgo-duro ACTIVO sin test = FALLO (inaceptable por
+definición); retirados conservan linaje (quién/cuándo — Fisher-de-ronda
+CL-28 y puerta incumbente CL-29 ya están como Retirado con responsable);
+medido ≥ literal en fuentes de umbral.
+
+REGLA para los tres agentes: cuando toquéis un veto (nuevo, retirado o
+cambiado de umbral), actualizad SU entrada del registro EN EL MISMO
+commit — el contrato os lo va a exigir en CI. Cobertura inicial: las
+REJ_* del risk-engine + estructurales; las puertas del consejo/ramas
+entran por ola (V-LOGIC-007 tiene deuda anotada).
+
+Regresión: risk-engine lib 106/106. PR #20 sigue DRAFT.
