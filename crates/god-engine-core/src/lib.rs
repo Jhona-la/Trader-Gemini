@@ -256,6 +256,20 @@ pub fn exigencia_tras_racha(umbral: f64, racha: u32) -> f64 {
     (umbral * 2f64.powi(niveles)).min(1.0)
 }
 
+/// CL-4 — τ CON LA QUE NACE UNA POSICIÓN. Es la τ con la que el risk-engine
+/// la dimensionó (`ValidatedOrder::tau_ms`, D-745); sólo si esa τ no es un
+/// horizonte utilizable (no finita, ≤ 0 o menor que 1 ms tras truncar) se usa
+/// el respaldo del llamador. Nunca devuelve 0: un horizonte nulo desarma la
+/// gestión por τ de la posición.
+#[inline]
+pub fn tau_de_apertura(tau_dimensionada_ms: f64, respaldo_ms: u64) -> u64 {
+    if tau_dimensionada_ms.is_finite() && tau_dimensionada_ms >= 1.0 {
+        tau_dimensionada_ms.min(u64::MAX as f64) as u64
+    } else {
+        respaldo_ms.max(1)
+    }
+}
+
 /// D-752 — etiquetas de rama. `SignalIntent::volume_flow_rate` YA transportaba
 /// un identificador de rama (1..14) para la traza de apertura, y sobrevive a
 /// la arbitración porque todas las fusiones usan `..fast_intent` / `..winner`.
@@ -2497,23 +2511,11 @@ impl GodEngineCore {
                     if tau_de_la_posicion > 0 {
                         self.feature_engines[coin_id].tau_ultimo_cierre_ms = tau_de_la_posicion;
                     }
-                    let was_loss = net_trade_pnl <= 0.0;
-                    self.feature_engines[coin_id].last_scalp_was_loss = was_loss;
-                    if was_loss {
-                        self.feature_engines[coin_id].scalp_loss_streak += 1;
-                        if is_long {
-                            self.feature_engines[coin_id].scalp_long_loss_streak += 1;
-                        } else {
-                            self.feature_engines[coin_id].scalp_short_loss_streak += 1;
-                        }
-                    } else {
-                        self.feature_engines[coin_id].scalp_loss_streak = 0;
-                        if is_long {
-                            self.feature_engines[coin_id].scalp_long_loss_streak = 0;
-                        } else {
-                            self.feature_engines[coin_id].scalp_short_loss_streak = 0;
-                        }
-                    }
+                    // CL-5: la racha la lleva SÓLO `record_trade_outcome`.
+                    // Aquí se incrementaba antes con otra definición de
+                    // pérdida (neto ≤ 0): una pérdida direccional contaba
+                    // DOS veces y una pérdida por debajo del umbral
+                    // direccional se sumaba para borrarse a continuación.
                     let is_directional_loss = net_trade_pnl < 0.0 && pnl_pct <= -0.0005;
                     let cur_tick = self.feature_engines[coin_id].tick_count;
                     self.feature_engines[coin_id].record_trade_outcome(
@@ -6240,7 +6242,7 @@ impl GodEngineCore {
                                     .get(coin_id)
                                     .map(|s| s.dominant_tau_ms)
                                     .unwrap_or(60_000.0);
-                                let tau_entry = if calibrated_intent.expected_duration_ms > 0 {
+                                let tau_respaldo = if calibrated_intent.expected_duration_ms > 0 {
                                     calibrated_intent.expected_duration_ms
                                 } else {
                                     tau_coin
@@ -6250,6 +6252,18 @@ impl GodEngineCore {
                                         )
                                         .round() as u64
                                 };
+                                // D-745 + CL-4: la posición NACE con el horizonte
+                                // CON EL QUE SE DIMENSIONÓ (`order.tau_ms`), y lo
+                                // recibe en la MISMA publicación atómica que abre
+                                // su ranura. Antes la τ dimensionada se escribía
+                                // tras la apertura en `positions.position` (la
+                                // ranura 2) cualquiera que fuera la ranura abierta:
+                                // como `find_resonant_slot` devuelve la primera
+                                // libre, casi todas las posiciones (ranura 0)
+                                // vivían con la τ de la intención y no con la del
+                                // tamaño, y una posición abierta en la ranura 2
+                                // perdía su propio horizonte al abrirse otra.
+                                let tau_entry = tau_de_apertura(order.tau_ms, tau_respaldo);
                                 let target_pos = coin.positions.get_slot(target_pos_slot);
                                 // Preserve reservation-before-publication ordering.
                                 // Invalid local prices/quantities cannot charge capital.
@@ -6346,28 +6360,6 @@ impl GodEngineCore {
                                         *t = tensor_snapshot.to_vec();
                                     }
                                 }
-                                // D-745: la posición NACE con el horizonte CON
-                                // EL QUE SE DIMENSIONÓ (`order.tau_ms`), no con
-                                // una segunda lectura del espectro. Mientras se
-                                // recalculaba aquí, el risk-engine podía
-                                // dimensionar a 2 h una posición que el núcleo
-                                // gestionaba a 30 s: TP/SL de respaldo,
-                                // trailing, caducidad, Kelly de cierre y
-                                // apalancamiento del host razonaban sobre un
-                                // horizonte que nadie había usado para calcular
-                                // el tamaño. Respaldo: la τ dominante viva.
-                                let tau_entry = if order.tau_ms.is_finite() && order.tau_ms > 0.0 {
-                                    order.tau_ms as u64
-                                } else {
-                                    self.temporal_spectrum
-                                        .get(coin_id)
-                                        .map(|s| s.dominant_tau_ms as u64)
-                                        .unwrap_or(0)
-                                };
-                                coin.positions
-                                    .position
-                                    .entry_tau_ms
-                                    .store(tau_entry, Ordering::Relaxed);
                                 new_order = Some((
                                     is_long,
                                     real_entry_price,
@@ -6541,6 +6533,45 @@ mod tests_d609 {
     fn respeta_los_limites_solo_en_la_direccion_del_cambio() {
         assert_eq!(hurst_duration_modulation(7_200_000, 0.60), 7_200_000);
         assert_eq!(hurst_duration_modulation(10_000, 0.40), 10_000);
+    }
+}
+
+#[cfg(test)]
+mod tests_cl4 {
+    use super::tau_de_apertura;
+
+    #[test]
+    fn cl4_la_posicion_nace_con_la_tau_dimensionada() {
+        assert_eq!(tau_de_apertura(45_000.0, 600_000), 45_000);
+        assert_eq!(tau_de_apertura(7_200_000.9, 30_000), 7_200_000);
+    }
+
+    #[test]
+    fn cl4_sin_tau_dimensionada_usa_el_respaldo_y_nunca_cero() {
+        assert_eq!(tau_de_apertura(f64::NAN, 30_000), 30_000);
+        assert_eq!(tau_de_apertura(0.0, 30_000), 30_000);
+        assert_eq!(tau_de_apertura(-5.0, 30_000), 30_000);
+        assert_eq!(tau_de_apertura(0.4, 30_000), 30_000);
+        assert_eq!(tau_de_apertura(f64::INFINITY, 0), 1);
+    }
+
+    /// El núcleo no puede volver a escribir la τ de entrada fuera de la
+    /// publicación atómica de la ranura abierta: cualquier `store` directo
+    /// sobre `entry_tau_ms` en este archivo es la regresión de CL-4 (se
+    /// escribía siempre en `positions.position`, la ranura 2).
+    #[test]
+    fn cl4_el_nucleo_no_escribe_la_tau_fuera_de_la_apertura() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        assert!(
+            !codigo.contains("entry_tau_ms.store("),
+            "la τ de entrada sólo se publica en open_with_tau_and_fee"
+        );
+        assert!(codigo.contains("lettau_entry=tau_de_apertura(order.tau_ms,tau_respaldo);"));
     }
 }
 

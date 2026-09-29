@@ -1060,6 +1060,16 @@ impl RiskEngine {
         // compartida con la comprobación de margen libre del núcleo.
         let safe_cushion = crate::capital_regime::margin_cushion(margin_cushion_pct, scarcity);
 
+        // D-641 (completo): el techo micro de apalancamiento es continuo en
+        // la confianza (antes escalones en 0,70 y 0,75) y en el capital
+        // (antes escalón de ~5× a 50× en $20). Interpolación geométrica: el
+        // punto medio natural entre 5× y 50× es ~16×, no 27,5×.
+        // CL-6: se calcula una vez y lo respetan LOS DOS rescates del nocional
+        // mínimo (el segundo usaba el literal 50).
+        let conf_t = ((intent.confidence - 0.65) / 0.10).clamp(0.0, 1.0);
+        let micro_lev_cap = 5.0 + 1.5 * conf_t * conf_t * (3.0 - 2.0 * conf_t);
+        let max_lev_cap = crate::capital_regime::log_lerp(50.0, micro_lev_cap, micro_w_alloc);
+
         // D-130: Evaluar si el notional real de la orden (final_margin * dynamic_leverage) cumple con el mínimo
         if final_margin > 0.0 && final_margin * dynamic_leverage < dynamic_min_notional {
             // FIX min_notional (diag R4): el leverage necesario para alcanzar
@@ -1071,13 +1081,6 @@ impl RiskEngine {
             // rechazos/día con señales sanas de conf 0.7+). El fee_impact
             // check de abajo sigue limitando el costo.
             let candidate_leverage = (dynamic_min_notional / final_margin.max(0.01)) * 1.02;
-            // D-641 (completo): el techo micro de apalancamiento es continuo en
-            // la confianza (antes escalones en 0,70 y 0,75) y en el capital
-            // (antes escalón de ~5× a 50× en $20). Interpolación geométrica: el
-            // punto medio natural entre 5× y 50× es ~16×, no 27,5×.
-            let conf_t = ((intent.confidence - 0.65) / 0.10).clamp(0.0, 1.0);
-            let micro_lev_cap = 5.0 + 1.5 * conf_t * conf_t * (3.0 - 2.0 * conf_t);
-            let max_lev_cap = crate::capital_regime::log_lerp(50.0, micro_lev_cap, micro_w_alloc);
             dynamic_leverage = candidate_leverage
                 .min(genome_max_leverage)
                 .min(max_lev_cap)
@@ -1122,14 +1125,17 @@ impl RiskEngine {
         if final_margin > safe_limit {
             final_margin = safe_limit;
             if final_margin > 0.0 && final_margin * dynamic_leverage < safe_min_notional {
-                let re_lev = (safe_min_notional / final_margin) * 1.01;
-                // Quantize BEFORE checking feasibility: all downstream
-                // notional/margin calculations must see the exchange integer.
-                let capped_leverage = re_lev.min(genome_max_leverage).min(50.0).floor();
-                let fee_impact = roundtrip_fee * capped_leverage;
-                if fee_impact <= max_fee_limit {
-                    dynamic_leverage = capped_leverage;
-                }
+                // CL-6: el apalancamiento ENTERO que alcanza el mínimo es el
+                // techo del cociente, no su suelo (`floor(1,98) = 1` dejaba la
+                // orden a la mitad del mínimo), acotado por los MISMOS techos
+                // que el primer rescate. Si no cabe, el invariante terminal de
+                // abajo rechaza; el coste lo juzga el presupuesto de comisiones.
+                let needed_leverage = (safe_min_notional / final_margin).ceil();
+                dynamic_leverage = needed_leverage
+                    .min(genome_max_leverage)
+                    .min(max_lev_cap)
+                    .floor()
+                    .max(dynamic_leverage);
             }
         }
         // Terminal invariants after every size/leverage adjustment. No
@@ -1144,6 +1150,12 @@ impl RiskEngine {
         let final_fee_impact = roundtrip_fee * dynamic_leverage;
         if !final_fee_impact.is_finite() || final_fee_impact > max_fee_limit {
             return rej(5);
+        }
+        // CL-6: ninguna orden validada queda bajo el nocional mínimo del
+        // símbolo. Antes nada lo re-verificaba tras el segundo rescate y la
+        // orden salía con un nocional que el exchange rechaza.
+        if !(final_margin * dynamic_leverage >= safe_min_notional * (1.0 - 1e-9)) {
+            return rej(6);
         }
         // (fusión PR #5: la viabilidad de margen mínimo ya se exigió arriba con
         // rej(6); el duplicado del hunk se elimina)
@@ -1193,7 +1205,11 @@ impl RiskEngine {
         // D-744c (auditoría PR #5): se registra DESPUÉS del último rechazo de
         // esta función; antes también entraban órdenes que aquí mismo se
         // rechazaban por geometría inválida.
-        let sl_pct = tpsl_gate.sl_pct;
+        // CL-7: el stop es el QUE LA ORDEN LLEVA (`expected_loss`, ya con el
+        // tope micro de 55 pb o el objetivo explícito de la intención), no el
+        // difusivo sin acotar de `tpsl_gate`: éste registraba más riesgo del
+        // que se tomaba y aflojaba el cortacircuitos en la misma proporción.
+        let sl_pct = expected_loss;
         if sl_pct > 0.0 && current_cap > 0.0 {
             let riesgo = (safe_vol * safe_lev * sl_pct) / current_cap;
             let previo = arena.riesgo_por_operacion.load(Ordering::Relaxed);

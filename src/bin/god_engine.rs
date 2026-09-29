@@ -3898,11 +3898,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // del stop a τ de entrada: leverage = riesgo/SL.
                             // SL 0.25% (banda rápida) ⇒ ×20 como antes; SL
                             // 1.5% (banda lenta) ⇒ ×6.7 — misma $ en riesgo.
-                            let tau_entry = engine_real.arena.coins[coin_id]
-                                .positions
-                                .position
-                                .entry_tau_ms
-                                .load(Ordering::Relaxed)
+                            // CL-4: la τ es la de la RANURA RESERVADA para esta
+                            // orden, no la de `positions.position` (ranura 2):
+                            // el núcleo abre en la primera ranura libre.
+                            let tau_entry = entry_reservation
+                                .as_ref()
+                                .map(|r| {
+                                    engine_real.arena.coins[coin_id]
+                                        .positions
+                                        .get_slot(r.slot)
+                                        .entry_tau_ms
+                                        .load(Ordering::Relaxed)
+                                })
+                                .unwrap_or(0)
                                 as f64;
                             // D-745b: el apalancamiento se divide por el stop
                             // REAL DE ESTA ORDEN, no por la curva genómica
