@@ -723,19 +723,15 @@ impl RiskEngine {
         // Ahora ambos caminos llaman a la MISMA función pura con las MISMAS
         // entradas: la identidad es estructural, no disciplinaria.
         let tau_for_sizing = horizon_tau_ms_coin(intent, arena, coin_id);
-        // S-7: Hurst DE LA ESCALA OPERADA — hurst_scale_matched es el H(τ)
-        // multifractal que el core selecciona por τ dominante; fallback al
-        // escalar global si aún no fue escrito (0.0).
-        let hurst_for_geometry = {
-            let h_scale = arena.coins[coin_id]
-                .hurst_scale_matched
-                .load(Ordering::Relaxed);
-            if h_scale.is_finite() && (0.05..=0.95).contains(&h_scale) {
-                h_scale
-            } else {
-                hurst_exponent
-            }
-        };
+        // CL-26: la ley de escala del TP/SL usa el Hurst MUESTREADO POR RELOJ
+        // (DFA al cierre de la vela de 1 minuto, D-615b), no
+        // `hurst_scale_matched`. Ése (S-7) sale de ventanas de 10/25/50
+        // EVENTOS del motor multifractal: mide la microestructura del feed
+        // (con muchos ticks repetidos da H ≈ 0,2 en un paseo browniano) y,
+        // como τ dominante se queda en el ancla de 30 s, siempre era la
+        // ventana de 10 eventos. D-615b retiró el Hurst por evento
+        // precisamente porque gobierna esta ley; S-7 lo había reintroducido.
+        let hurst_for_geometry = hurst_exponent;
         // D-682 (DÉCIMA OLA): el gate evaluaba `compute_tp_sl` (TP = SL·RR_req)
         // mientras la orden usaba `compute_tp_sl_with_target_rr` (TP = SL·RR
         // genómico, mayor): la identidad que D-637 prometía seguía rota. Ahora
