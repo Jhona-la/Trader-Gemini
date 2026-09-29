@@ -154,3 +154,25 @@ fn cl6_ninguna_orden_validada_queda_bajo_el_nocional_minimo() {
     }
     assert!(validadas > 0, "el barrido no valida ninguna orden: no prueba nada");
 }
+
+/// CL-7 — EL RIESGO REGISTRADO ES EL DEL STOP QUE LA ORDEN LLEVA. En régimen
+/// micro el stop de la orden se acota a 55 pb, pero la EWMA de
+/// `riesgo_por_operacion` (que arma el cortacircuitos de drawdown) se
+/// alimentaba con el stop difusivo SIN acotar: registraba más riesgo del que
+/// se tomaba y aflojaba el freno en la misma proporción.
+#[test]
+fn cl7_la_ewma_de_riesgo_mide_el_stop_de_la_orden() {
+    let (a, intent) = fixture(13.0);
+    a.riesgo_por_operacion.store(0.0, Relaxed);
+    let out = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &a);
+    assert_eq!(out.signal, SignalType::Long, "{}", risk_engine::reject_report());
+    let entrada = a.coins[0].current_price.load(Relaxed);
+    let stop = (entrada - out.sl_target).abs() / entrada;
+    assert!(stop <= 0.0055 + 1e-12, "el fixture debe caer en el tope micro: stop {stop}");
+    let esperado = out.volume_usd * out.leverage * stop / 13.0;
+    let registrado = a.riesgo_por_operacion.load(Relaxed);
+    assert!(
+        (registrado - esperado).abs() <= 1e-9 * esperado.max(1e-12),
+        "registrado {registrado} ≠ riesgo de la orden {esperado}"
+    );
+}

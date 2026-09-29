@@ -1205,7 +1205,11 @@ impl RiskEngine {
         // D-744c (auditoría PR #5): se registra DESPUÉS del último rechazo de
         // esta función; antes también entraban órdenes que aquí mismo se
         // rechazaban por geometría inválida.
-        let sl_pct = tpsl_gate.sl_pct;
+        // CL-7: el stop es el QUE LA ORDEN LLEVA (`expected_loss`, ya con el
+        // tope micro de 55 pb o el objetivo explícito de la intención), no el
+        // difusivo sin acotar de `tpsl_gate`: éste registraba más riesgo del
+        // que se tomaba y aflojaba el cortacircuitos en la misma proporción.
+        let sl_pct = expected_loss;
         if sl_pct > 0.0 && current_cap > 0.0 {
             let riesgo = (safe_vol * safe_lev * sl_pct) / current_cap;
             let previo = arena.riesgo_por_operacion.load(Ordering::Relaxed);
