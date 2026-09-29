@@ -212,6 +212,26 @@ pub fn wf_min_series_len() -> usize {
     2 * WF_MIN_TRADES as usize
 }
 
+/// CL-23 — series que el juez `wf_evaluate_real` puede juzgar. Las de cada
+/// moneda con al menos `wf_min_series_len()` observaciones (sus últimas
+/// `WF_REAL_WINDOW`); si ninguna llega, la serie global (T-10, arranque frío)
+/// si ella sí llega; si tampoco, ninguna: la ronda no tiene nada que juzgar.
+pub fn series_del_examen(por_moneda: &[Vec<f64>], global: &[f64]) -> Vec<Vec<f64>> {
+    let minimo = wf_min_series_len();
+    let juzgables: Vec<Vec<f64>> = por_moneda
+        .iter()
+        .filter(|sr| sr.len() >= minimo)
+        .map(|sr| sr[sr.len().saturating_sub(WF_REAL_WINDOW)..].to_vec())
+        .collect();
+    if !juzgables.is_empty() {
+        juzgables
+    } else if global.len() >= minimo {
+        vec![global.to_vec()]
+    } else {
+        Vec::new()
+    }
+}
+
 /// D-746 — pruebas acumuladas para la corrección por multiplicidad. Monótona
 /// no decreciente y saturante: el número de experimentos realizados por el
 /// proceso no puede bajar ni desbordar. Nunca devuelve 0 (el DSR necesita al
@@ -1149,11 +1169,14 @@ impl LiveEvolutionDaemon {
 
         // FIX BLOQUEO #2: Capturar snapshot de retornos reales para walk-forward en el closure
         let returns_snapshot: Vec<f64> = self.returns_history.clone();
-        // T-10: series POR MONEDA (mínimo 40 obs) para el walk-forward.
+        // T-10: series POR MONEDA para el walk-forward. CL-23: con la
+        // longitud que el juez exige (`wf_min_series_len`), no 40: entre 40 y
+        // 59 observaciones la serie desplazaba al respaldo global y luego el
+        // juez la descartaba — ninguna serie juzgada y la ronda perdida.
         let per_coin_series: Vec<Vec<f64>> = self
             .returns_by_coin
             .values()
-            .filter(|v| v.len() >= 40)
+            .filter(|v| v.len() >= wf_min_series_len())
             .cloned()
             .collect();
 
@@ -1231,20 +1254,17 @@ impl LiveEvolutionDaemon {
             // sobre el top-K + el incumbente — nunca más el mejor de un
             // mundo simulado que no es el que opera.
             let mut prescreened: Vec<(f64, SuperGenotype)> = Vec::with_capacity(2_048);
-            let real_series: Vec<Vec<f64>> = if !per_coin_series.is_empty() {
-                per_coin_series
-                    .iter()
-                    .map(|sr| {
-                        if sr.len() > WF_REAL_WINDOW {
-                            sr[sr.len() - WF_REAL_WINDOW..].to_vec()
-                        } else {
-                            sr.clone()
-                        }
-                    })
-                    .collect()
-            } else {
-                vec![returns_snapshot.clone()]
-            };
+            let real_series = series_del_examen(&per_coin_series, &returns_snapshot);
+            if real_series.is_empty() {
+                // CL-23: sin ninguna serie juzgable no hay selección, así que
+                // la ronda no se juega ni se cargan pruebas al DSR (antes se
+                // sumaban 2 001 por ronda de arranque sin juzgar nada).
+                println!(
+                    "🧬 [WF-REAL] Sin series juzgables (mínimo {} observaciones): ronda omitida, 0 pruebas.",
+                    wf_min_series_len()
+                );
+                return (current_genome.clone(), Vec::new(), 0);
+            }
             // FASE 2: roundtrip completo a taker (0.04% x 2 piernas),
             // consistente con el simulador y con el costo real de una
             // entrada de mercado + salida no-maker.
@@ -1994,5 +2014,31 @@ mod tests {
             }
         }
         assert!(distingue, "same_genome debe distinguir genomas distintos");
+    }
+    /// CL-23 — entre 40 y 59 observaciones por moneda la serie desplazaba al
+    /// respaldo global y el juez (mínimo `wf_min_series_len`) la descartaba:
+    /// ninguna serie juzgada. Ahora el examen sólo lleva series juzgables.
+    #[test]
+    fn cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar() {
+        let minimo = wf_min_series_len();
+        assert_eq!(minimo, 60);
+        let global: Vec<f64> = vec![0.001; 100];
+
+        // Dos monedas con 50: se juzga la serie global.
+        let s = series_del_examen(&[vec![0.001; 50], vec![-0.001; 50]], &global);
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].len(), 100);
+
+        // Mezcla: sólo la moneda que llega.
+        let s = series_del_examen(&[vec![0.001; 70], vec![0.001; 50]], &global);
+        assert_eq!(s.iter().map(Vec::len).collect::<Vec<_>>(), vec![70]);
+
+        // Recorte a la ventana del juez.
+        let s = series_del_examen(&[vec![0.001; 500]], &global);
+        assert_eq!(s[0].len(), WF_REAL_WINDOW);
+
+        // Nada juzgable: nada que examinar (la ronda no carga pruebas).
+        assert!(series_del_examen(&[vec![0.001; 59]], &vec![0.001; 59]).is_empty());
+        assert!(s.iter().all(|x| x.len() >= minimo));
     }
 }
