@@ -350,13 +350,17 @@ impl GenomeEnvelope {
         Ok(envelope)
     }
 
+    /// Lee una generación de la historia inmutable del entorno actual.
+    pub fn load_generation(generation: u64) -> io::Result<GenomeEnvelope> {
+        let hist_path = format!("{}/gen_{:06}.json", history_dir(), generation);
+        let data = std::fs::read_to_string(&hist_path)?;
+        serde_json::from_str(&data).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    }
+
     /// Rollback: re-promociona la generación `target` como nueva generación
     /// (la historia es append-only; revertir también queda auditado).
     pub fn rollback(target_generation: u64) -> io::Result<GenomeEnvelope> {
-        let hist_path = format!("{}/gen_{:06}.json", history_dir(), target_generation);
-        let data = std::fs::read_to_string(&hist_path)?;
-        let previous: GenomeEnvelope = serde_json::from_str(&data)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let previous = Self::load_generation(target_generation)?;
         Self::promote(
             previous.genome,
             "rollback",

@@ -261,8 +261,9 @@ pub fn armar_vigilancia(
         // sigue describiéndolo y se conserva íntegra. Sólo si el watchdog no
         // estaba armado todavía (primera vez que se registra este genoma) se
         // arma ahora — sin borrar las observaciones ya recogidas — y se
-        // conserva el par (generación, padre) original, que es el que el
-        // rollback debe restaurar.
+        // conserva el par (generación, padre) original. Ese padre puede
+        // llevar el MISMO genoma (re-registro): el destino real del rollback
+        // lo resuelve `destino_de_rollback` (CL-25).
         if promoted_generation.is_none() {
             *promoted_generation = Some((generation, parent));
         }
@@ -293,6 +294,38 @@ pub fn prescreen_entry_bias(prev_sigma: f64, ml_thr_long: f64, ml_thr_short: f64
         -1.0
     } else {
         0.0
+    }
+}
+
+/// CL-25 — generación a la que el watchdog debe volver: la más reciente del
+/// linaje, desde `padre` hacia atrás, que NO lleva el genoma vigilado.
+///
+/// Cuando el incumbente gana su propia ronda, el almacén escribe otra
+/// generación con el MISMO genoma cuyo padre es la anterior, también el mismo.
+/// Con el watchdog desarmado (arranque, o tras un rollback) `armar_vigilancia`
+/// guardaba ese par y el rollback «restauraba» el genoma degradado: borraba la
+/// evidencia, anunciaba «padre restaurado» y no cambiaba nada. Ahora se salta
+/// la cadena de re-registros hasta el genoma que el vigilado sustituyó. Si en
+/// la cadena aparece un rollback, el vigilado YA es un genoma restaurado y lo
+/// que hay detrás es justo el que se retiró por degradado: no hay destino.
+pub fn destino_de_rollback(
+    padre: u64,
+    vigilado: &SuperGenotype,
+    cargar: impl Fn(u64) -> Option<quantum_arena::genome_store::GenomeEnvelope>,
+) -> Option<u64> {
+    let mut generacion = padre;
+    loop {
+        let env = cargar(generacion)?;
+        if !same_genome(&env.genome, vigilado) {
+            return Some(env.generation);
+        }
+        if env.source == "rollback"
+            || env.parent_generation == 0
+            || env.parent_generation >= env.generation
+        {
+            return None;
+        }
+        generacion = env.parent_generation;
     }
 }
 
@@ -1053,31 +1086,43 @@ impl LiveEvolutionDaemon {
             return;
         };
         if t_stat <= -2.0 {
+            use quantum_arena::genome_store::GenomeEnvelope;
+            let destino = GenomeEnvelope::load_generation(generation_id)
+                .ok()
+                .and_then(|vigilado| {
+                    destino_de_rollback(parent, &vigilado.genome, |g| {
+                        GenomeEnvelope::load_generation(g).ok()
+                    })
+                });
             println!(
-                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {:.2} sobre {} obs post-promoción. Revirtiendo al padre {}.",
+                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {:.2} sobre {} obs post-promoción. Destino del rollback: {:?} (padre registrado {}).",
                 generation_id,
                 t_stat,
                 self.post_promo_returns.len(),
+                destino,
                 parent
             );
-            match quantum_arena::genome_store::GenomeEnvelope::rollback(parent) {
-                Ok(env) => {
+            match destino.map(|d| (d, GenomeEnvelope::rollback(d))) {
+                Some((d, Ok(env))) => {
                     env.genome.apply_to_arena(&self.arena);
                     println!(
-                        "✅ [ROLLBACK WATCHDOG] Padre {} restaurado y aplicado al arena (nueva generación {}).",
-                        parent, env.generation
+                        "✅ [ROLLBACK WATCHDOG] Generación {} restaurada y aplicada al arena (nueva generación {}).",
+                        d, env.generation
                     );
                     // QO-E2d — LEDGER: el rollback también se registra.
                     self.ledger.save_weight(
                         0,
-                        format!("gen_rollback_{}", parent),
+                        format!("gen_rollback_{}", d),
                         "rollback".to_string(),
                         -1.0,
                     );
                 }
-                Err(e) => println!(
-                    "⚠️ [ROLLBACK WATCHDOG] Rollback al padre {} falló: {}. El genoma degradado sigue activo — INTERVENCIÓN MANUAL.",
-                    parent, e
+                Some((d, Err(e))) => println!(
+                    "⚠️ [ROLLBACK WATCHDOG] Rollback a la generación {} falló: {}. El genoma degradado sigue activo — INTERVENCIÓN MANUAL.",
+                    d, e
+                ),
+                None => println!(
+                    "⚠️ [ROLLBACK WATCHDOG] El linaje no tiene un genoma distinto al que volver (o el vigilado ya es un rollback). El genoma degradado sigue activo — INTERVENCIÓN MANUAL."
                 ),
             }
             // Watchdog consumido: no re-revertir en cada ciclo sobre la misma evidencia.
@@ -2074,5 +2119,75 @@ mod tests {
             .map(|&thr| prescreen_entry_bias(-0.5, 0.6, thr) as i32)
             .collect();
         assert_eq!(decisiones.len(), 2);
+    }
+
+    fn genoma_distinto(base: &SuperGenotype) -> SuperGenotype {
+        let v = canonical_vector(base);
+        for i in 0..v.len() {
+            let mut v2 = v.clone();
+            v2[i] = if v[i].abs() > 1e-9 { v[i] * 0.5 } else { 0.5 };
+            let g = SuperGenotype::from_vector(&v2);
+            if !same_genome(base, &g) {
+                return g;
+            }
+        }
+        panic!("sin perturbación distinguible");
+    }
+
+    fn sobre(
+        generacion: u64,
+        padre: u64,
+        fuente: &str,
+        genoma: &SuperGenotype,
+    ) -> quantum_arena::genome_store::GenomeEnvelope {
+        quantum_arena::genome_store::GenomeEnvelope {
+            schema_version: 1,
+            generation: generacion,
+            created_ms: 0,
+            source: fuente.to_string(),
+            parent_generation: padre,
+            promotion_reason: String::new(),
+            genome: genoma.clone(),
+        }
+    }
+
+    /// CL-25 — el rollback vuelve al genoma que el vigilado sustituyó, no a
+    /// un re-registro de sí mismo; y nunca al que un rollback ya retiró.
+    #[test]
+    fn cl25_el_rollback_salta_los_re_registros_del_mismo_genoma() {
+        let a = SuperGenotype::default();
+        let c = genoma_distinto(&a);
+        // C (11) → A promovido (12) → A re-registrado 13..=20 → A gana (21).
+        let mut linaje = std::collections::HashMap::new();
+        linaje.insert(11, sobre(11, 10, "online_daemon", &c));
+        linaje.insert(12, sobre(12, 11, "online_daemon", &a));
+        for g in 13..=20 {
+            linaje.insert(g, sobre(g, g - 1, "online_daemon", &a));
+        }
+        let cargar = |g: u64| linaje.get(&g).cloned();
+        // El par que arma `armar_vigilancia` tras el arranque es (21, 20), y
+        // la generación 20 lleva el MISMO genoma: volver a ella no cambia nada.
+        assert!(same_genome(&linaje[&20].genome, &a));
+        assert_eq!(destino_de_rollback(20, &a, cargar), Some(11));
+        // Promoción real (12, padre 11): destino inmediato.
+        assert_eq!(destino_de_rollback(11, &a, cargar), Some(11));
+        // Generación ausente: sin destino.
+        assert_eq!(destino_de_rollback(99, &a, cargar), None);
+    }
+
+    #[test]
+    fn cl25_el_rollback_no_vuelve_al_genoma_que_un_rollback_retiro() {
+        let a = SuperGenotype::default();
+        let b = genoma_distinto(&a);
+        // A (4) → B (5) → rollback a A (6) → A re-registrado (7) → A gana (8).
+        let mut linaje = std::collections::HashMap::new();
+        linaje.insert(4, sobre(4, 3, "online_daemon", &a));
+        linaje.insert(5, sobre(5, 4, "online_daemon", &b));
+        linaje.insert(6, sobre(6, 5, "rollback", &a));
+        linaje.insert(7, sobre(7, 6, "online_daemon", &a));
+        let cargar = |g: u64| linaje.get(&g).cloned();
+        assert_eq!(destino_de_rollback(7, &a, cargar), None);
+        // Mientras B operaba, su watchdog (5, 4) sí volvía a A.
+        assert_eq!(destino_de_rollback(4, &b, cargar), Some(4));
     }
 }
