@@ -8472,3 +8472,28 @@ frontera interna tras revisión Codex. R8-A (target primer toque) sigue abierto.
 Las secciones históricas se conservan; comprobar el último corte del informe
 para pruebas/merge efectivos. Ni inventario léxico ni checks ausentes equivalen
 a auditoría integral, certificación científica o garantía de crecimiento.
+
+
+## 2026-09-28 — Codex: auditoría del optimizador Platt y reloj de evidencia
+
+Informe nuevo: [Auditoría del calibrador Platt](docs/AUDITORIA_CALIBRACION_PLATT_2026-09-28.md)
+y [artefacto JSON](docs/artifacts/auditoria_calibracion_platt_2026-09-28.json).
+CAL-01/02: Newton libre proyectaba sólo pendiente y aceptaba pasos sin descenso;
+40 pérdidas a score0,8 daban p0,2324 frente a referencia0,0701. CAL-03: scores
+finitos fuera de[0,1] contaminaban datos/prior/reloj. Cinco RED reproducidos;
+siete GREEN y octava prueba adicional de KKT. 127 tests lib del núcleo pasan.
+Reparación deeca0c6; merge67c63d32 integra main3cdb con fix mínimo &sym de E0308,
+reproducido antes del arreglo. Check workspace all-targets pasa (16,62s).
+Pruebas amplias del árbol integrado en curso: consultar adenda final, no
+reutilizar los956 de la ola anterior como evidencia actual.
+Abiertos: edad por observación, salto global/local a5, selección de ejecutadas,
+condicionamiento por activo/τ y estado de convergencia. No se certifica trading,
+latencia, cobertura integral ni +100%/72h. Informes anteriores preservados.
+
+- CIERRE PRE-MERGE PR14: fuentes67c63d32, main3cdb incorporado. Seis crates
+  all-targets934/0/1 y backtest lib31/0/0:965/0/1; ocho regresiones propias
+  ya incluidas. Check workspace all-targets pasa16,62s; sin T-1 ni operación.
+  Informe Platt§16 y JSON guardan alcance/hashes. Pruebas propias finalizadas.
+  PR10 sigue abierto; backups locales3/1 commits exclusivos preservados.
+  Recibo remoto posterior y limpieza de rama: consultar PR14, no asumirlos
+  por este resultado previo a la fusión.

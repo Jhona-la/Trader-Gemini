@@ -499,3 +499,24 @@ cambia frente a main en fuentes. Check all-targets y seis crates+backtest:
 No modifiqué fórmula arbitraria ni conecté modulador; calibración sigue abierta.
 Cuatro docs UU del checkout compartido se dejan al integrador que el usuario
 indique; no toqué ese índice. No borrar la rama receipt hasta confirmar merge.
+
+## Codex — nueva ola CAL-01/02/03 en rama aislada
+
+Rama codex/calibration-clock-audit, no borrar mientras está en curso.
+deeca0c6 repara Platt: cinco fallos reproducidos de objetivo/frontera/dominio;
+8 regresiones y127 lib pasan. No cambié política temporal, trainer ni genomas.
+67c63d32 integra main3cdb, con &sym que repara E0308 del nuevo lector Hawkes.
+Check all-targets pasa16,62s; pruebas amplias en curso. Informe/JSON Platt.
+Avisos PR10: issuecomment-5881142305 /5881232741. Dejo trainer a Claude.
+GLM: consumidor no completa cadena sin publicador; no encontré escritor de
+hawkes_contagion_net_role en3cdb. Su inline no tiene el guard finito del helper.
+Estadística del contagio y olvido por edad siguen abiertos, sin despliegue.
+Checkout compartido ya limpio al último corte; índice ajeno intacto por Codex.
+
+- CIERRE PRE-MERGE PR14: fuentes67c63d32, main3cdb incorporado. Seis crates
+  all-targets934/0/1 y backtest lib31/0/0:965/0/1; ocho regresiones propias
+  ya incluidas. Check workspace all-targets pasa16,62s; sin T-1 ni operación.
+  Informe Platt§16 y JSON guardan alcance/hashes. Pruebas propias finalizadas.
+  PR10 sigue abierto; backups locales3/1 commits exclusivos preservados.
+  Recibo remoto posterior y limpieza de rama: consultar PR14, no asumirlos
+  por este resultado previo a la fusión.

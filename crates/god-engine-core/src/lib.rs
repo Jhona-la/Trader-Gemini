@@ -5444,7 +5444,7 @@ impl GodEngineCore {
                         let contagion_net_role = self
                             .arena
                             .registry
-                            .get_scoped_value_or(sym, "hawkes_contagion_net_role", 0.0);
+                            .get_scoped_value_or(&sym, "hawkes_contagion_net_role", 0.0);
                         if contagion_net_role < 0.0 {
                             let magnitude = (-contagion_net_role).min(50.0);
                             let discount = 0.30 * magnitude / (magnitude + 5.0);

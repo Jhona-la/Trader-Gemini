@@ -16,14 +16,15 @@
 //! estimado por máximo a posteriori sobre una ventana acotada de pares
 //! (puntuación, resultado).
 //!
-//! * **Sin datos, identidad exacta.** El sistema arranca con el comportamiento
+//! * **Sin datos, identidad en [EPS, 1−EPS].** Los extremos se acotan por el
+//!   dominio numérico del logit. El sistema arranca con el comportamiento
 //!   que ya tenía; la calibración sólo se aparta de él con evidencia.
 //! * **Prior en forma de pseudo-observaciones.** El mapa identidad equivale a
 //!   observar, en cada puntuación `s`, una frecuencia de acierto `s`. El prior
 //!   son `z² ≈ 3,84` pseudo-observaciones en total —el mismo peso que el prior
 //!   del win rate (D-680)—, con etiqueta suave igual a la puntuación, repartidas
 //!   por igual sobre las puntuaciones observadas. Cuando todas las
-//!   observaciones comparten puntuación, el resultado coincide exactamente con
+//!   observaciones comparten puntuación, el resultado aproxima (por el ridge)
 //!   la media posterior Beta de D-680: tres pérdidas a 0,8 dan 0,449, no 0,27.
 //!   Un prior sobre los coeficientes `(a, b)` no tiene esa propiedad: su peso
 //!   efectivo en la escala de probabilidad depende de dónde caen los datos.
@@ -31,8 +32,8 @@
 //!   informa, el mapa se aplana hacia la tasa base (`a = 0`); nunca invierte
 //!   el orden de las señales.
 //!
-//! Cada ajuste son unas pocas iteraciones de Newton sobre una matriz 2×2, y
-//! sólo ocurre al cerrar una operación: fuera del camino caliente.
+//! Cada ajuste usa Newton factible con búsqueda de descenso sobre una matriz 2×2, y
+//! sólo ocurre al incorporar un resultado, no al consultar la probabilidad.
 
 use std::collections::VecDeque;
 
@@ -46,10 +47,9 @@ pub const WINDOW: usize = 512;
 /// Margen que aleja la puntuación de 0 y 1 antes del logit.
 const EPS: f64 = 1e-4;
 
-/// Regularización numérica hacia la identidad. Sólo actúa en la dirección que
-/// los datos no identifican —por ejemplo, con todas las observaciones en la
-/// misma puntuación la hessiana 2×2 es singular—; no altera ninguna estimación
-/// que los datos sí determinen.
+/// Ridge hacia la identidad: hace definida positiva la hessiana incluso con
+/// puntuaciones idénticas. También perturba las direcciones identificadas;
+/// NO es una regularización que actúe sólo en el espacio nulo.
 const RIDGE: f64 = 1e-4;
 
 #[inline]
@@ -143,16 +143,18 @@ impl PlattCalibrator {
 
     /// Añade un resultado con su instante de evento (Ola XLIV) y reajusta.
     pub fn update_at(&mut self, score: f64, won: bool, now_ms: u64) {
-        if !score.is_finite() {
+        if !valid_training_score(score) {
             return;
         }
         self.ultimo_dato_ms = Some(self.ultimo_dato_ms.map_or(now_ms, |u| u.max(now_ms)));
         self.update(score, won);
     }
 
-    /// Añade un resultado y reajusta el mapa.
+    /// Añade un resultado y reajusta el mapa. Puntuaciones fuera de [0,1]
+    /// o no finitas se rechazan sin modificar datos, coeficientes ni reloj.
+    /// El logit acota los extremos sólo para cómputo; el prior conserva s.
     pub fn update(&mut self, score: f64, won: bool) {
-        if !score.is_finite() {
+        if !valid_training_score(score) {
             return;
         }
         if self.obs.len() == WINDOW {
@@ -168,43 +170,96 @@ impl PlattCalibrator {
             return;
         }
         let pseudo_weight = PRIOR_PSEUDO_OBSERVATIONS / n as f64;
+        // Precalcular el logit fuera del bucle de Newton y de la búsqueda.
+        // Cada fila combina su etiqueta real y su pseudo-observación suave.
+        let weight = 1.0 + pseudo_weight;
+        let data: Vec<(f64, f64)> = self.obs.iter().map(|&(s, won)| {
+            (logit(s), (f64::from(won) + pseudo_weight * s) / weight)
+        }).collect();
+        let objective = |a: f64, b: f64| {
+            let ridge = 0.5 * RIDGE * ((a - 1.0).powi(2) + b * b);
+            ridge + data.iter().map(|&(x, target)| {
+                let z = a * x + b;
+                // softplus(z) - target*z, estable incluso si sigmoid satura.
+                weight * (z.max(0.0) - target * z + (-z.abs()).exp().ln_1p())
+            }).sum::<f64>()
+        };
         let (mut a, mut b) = (self.a, self.b);
-        for _ in 0..50 {
+        // Una ventana nueva puede hacer peor el warm start que la identidad.
+        // Partir del mejor de ambos da un respaldo comprobable, no un clamp de p.
+        if objective(a, b) > objective(1.0, 0.0) {
+            a = 1.0;
+            b = 0.0;
+        }
+        let mut loss = objective(a, b);
+        // Límites de trabajo numérico, no umbrales financieros ni evidencia
+        // estadística. Al agotarlos se conserva el mejor iterado factible.
+        for _ in 0..100 {
             // Gradiente y hessiana del negativo del log-posterior.
             let (mut ga, mut gb) = (RIDGE * (a - 1.0), RIDGE * b);
             let (mut haa, mut hab, mut hbb) = (RIDGE, 0.0, RIDGE);
-            for &(s, won) in &self.obs {
-                let x = logit(s);
+            for &(x, target) in &data {
                 let p = sigmoid(a * x + b);
                 let w = p * (1.0 - p);
-                let observed = if won { 1.0 } else { 0.0 };
-                // Observación real (peso 1) y pseudo-observación del prior
-                // (peso z²/n, etiqueta suave = la propia puntuación).
-                let r = (p - observed) + pseudo_weight * (p - s);
-                let wt = 1.0 + pseudo_weight;
+                let r = weight * (p - target);
                 ga += r * x;
                 gb += r;
-                haa += wt * w * x * x;
-                hab += wt * w * x;
-                hbb += wt * w;
+                haa += weight * w * x * x;
+                hab += weight * w * x;
+                hbb += weight * w;
+            }
+            // KKT: en a=0 se permite gradiente a positivo, NO un gradiente
+            // del intercepto distinto de cero. Proyectar sólo a tras un paso
+            // libre no resuelve este problema restringido.
+            let projected_ga = if a == 0.0 { ga.min(0.0) } else { ga };
+            if projected_ga.abs().max(gb.abs()) < 1e-9 {
+                break;
             }
             let det = haa * hbb - hab * hab;
             if !det.is_finite() || det <= 0.0 {
                 break;
             }
-            let da = (hbb * ga - hab * gb) / det;
-            let db = (haa * gb - hab * ga) / det;
-            a = (a - da).max(0.0);
-            b -= db;
-            if da.abs() < 1e-12 && db.abs() < 1e-12 {
-                break;
+            let mut da = -(hbb * ga - hab * gb) / det;
+            let mut db = -(haa * gb - hab * ga) / det;
+            if a + da < 0.0 {
+                // Mínimo del modelo cuadrático EN la frontera a+da=0:
+                // recalcular b, no conservar el paso libre incompatible.
+                da = -a;
+                db = -(gb + hab * da) / hbb;
             }
+            let mut step = 1.0;
+            let mut accepted = None;
+            for _ in 0..50 {
+                let next_a = (a + step * da).max(0.0);
+                let next_b = b + step * db;
+                let descent = ga * (next_a - a) + gb * (next_b - b);
+                let next_loss = objective(next_a, next_b);
+                // Armijo (1e-4) exige descenso de la misma función cuyo
+                // gradiente/hessiana se usan; impide explosiones de Newton.
+                if next_loss.is_finite() && descent < 0.0
+                    && next_loss <= loss + 1e-4 * descent {
+                    accepted = Some((next_a, next_b, next_loss));
+                    break;
+                }
+                step *= 0.5;
+            }
+            let Some((next_a, next_b, next_loss)) = accepted else {
+                break;
+            };
+            a = next_a;
+            b = next_b;
+            loss = next_loss;
         }
         if a.is_finite() && b.is_finite() {
             self.a = a;
             self.b = b;
         }
     }
+}
+
+#[inline]
+fn valid_training_score(score: f64) -> bool {
+    score.is_finite() && (0.0..=1.0).contains(&score)
 }
 
 /// D-693 (DÉCIMA OLA) — PROBABILIDAD DE SUBIDA QUE CONSUMEN LAS DECISIONES.
