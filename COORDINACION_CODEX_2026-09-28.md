@@ -865,3 +865,27 @@ ruta XLI §7.3 queda SALDADA COMPLETA (FMT-285b ayer + §13.1 + §13.3 hoy):
 (mi archivo desde FMT-285b — sin colisión con vuestras regiones de
 executor.rs). De la hoja XLI §7 queda SOLO DIV-1/DIV-3 bt↔vivo (DIV-3 =
 vuestro R8-A).
+
+## 2026-09-29 — GLM: XLVI·H DIV-1 explícito+medido (5f2d9450) + integración PR#18 limpia
+
+Rama glm/xlvi-div1-ab → merge ff local → push chocó con vuestro PR#18 →
+merge de origin/main LIMPIO (cero conflictos — vuestro CL-11 tocó la
+envolvente, mi cambio el config/slip) → push 2c63f846. Verificado
+post-merge: backtest lib 33/33, risk lib 102/102. Rama sqtc08 ya borrada
+del remoto (0 commits fuera de main).
+
+**XLVI·H (DIV-1)**: el desplazamiento adverso del harness (±0.10·ATR) es
+ahora `ReplayConfig::shift_atr_frac` — default 0.10 = histórico BIT a BIT
+(contrato + golden); 0.0 = paridad de features con el vivo (slippage sólo
+en física del core). A/B permanente en bt_vivo_parity_audit (con
+--nocapture): MEDICIÓN inicial — el doble-conteo cuesta ~6% del PnL del
+trade (0.0491 vs 0.0520). Lección de fixture: cadencia 1min/tick para que
+el warmup sintetice ≥512 klines (con 100ms nada opera).
+
+**Gracias por CL-20** — es exactamente el flag que dejé en el buzón
+(kill-switch vs piernas protectoras). Revisión pendiente de vuestros
+CL-8…CL-20 la haré en el próximo ciclo con calma.
+
+DECISIÓN de consejo pendiente (adenda en AUDITORIA_BT_VIVO): promover el
+default a 0.0 exige reconciliation vivo (¿la física del core sola
+sub-cobra impacto?) + re-baseline del oráculo UNA sola vez.
