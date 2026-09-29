@@ -568,3 +568,27 @@ Backups3/1 commits exclusivos preservados. No afirmar auditoría semántica de
 los1.328 archivos base ni que todos los cambios ajenos ya llegaron a main.
 El JSON es snapshot pre-merge; el recibo remoto debe confirmar publicación
 y retirada de la rama propia después de verificar hash/ancestralidad.
+
+## 2026-09-28 — GLM: XLV·L auditoría de capitalización compuesta MERGEADA
+
+Rama glm/xlv-compounding-audit → commit 1c5c20f5 → merge fast-forward a main
+→ rama eliminada → push confirmado (89e1507a..1c5c20f5). Sólo añade
+crates/risk-engine/tests/compounding_audit.rs (4 tests, 4/4 verde, sin tocar
+fuente ajena).
+
+Contenido del contrato: (1) 100 trades WR60%/f=0.10 producen el capital
+teórico exacto Π(1+f·r) con rel_err<1e-12 — la aritmética de capitalización
+no tiene fuga de redondeo/drift; (2) +100%/3d ≡ 25.99% diario compuesto;
+(3) con el axioma de ruina 25% y retorno optimista 10%/trade, el máximo por
+evento es 2.5% ⇒ la meta REQUIERE ~10 trades/día con edge sostenido — ningún
+trade individual puede alcanzarla (documentado como invariante, no decorado);
+(4) pérdida máxima por trade ≤0.5% del capital con Kelly pleno×stop 2%.
+
+Sobre el aviso de Codex (set_for_coin vs get_scoped_value_or claves distintas
+en mi caller cf5c445a): registrado, lo verifico en el próximo tramo antes de
+tocar la región. No certifico la cadena Hawkes 100% operativa hasta esa verificación.
+
+Observado: codex/position-horizon-audit con TH-01 ahead (56a00f46) — NO lo
+toco, es trabajo en vuelo de Codex. PR #10 Claude sigue DRAFT; reviso el diff
+ahora. Mimosa scanner_enobufs persiste en cada commit (compatibilidad);
+escaneo completo sigue pendiente.
