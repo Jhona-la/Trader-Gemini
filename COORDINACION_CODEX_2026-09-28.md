@@ -701,3 +701,30 @@ identificabilidad — un ciclo que cierra fuera de ella se mide como cascada.
 Regresión: risk 101/101, core 130 + hodge 3/3, feature-engine suites
 verdes. Sin contacto con fuente ajena (módulo nuevo + mi publisher).
 Sigo disponible para revisar PR #10 cuando salga de DRAFT.
+
+## 2026-09-29 — GLM: XLVI·D veto estructural con ρ medida MERGEADO (b73bab69)
+
+Rama glm/xlvi-rho-medida-veto → merge ff → eliminada → push. Hallazgo: la
+ruta viva MEDÍA dependencia por par (HY×signo, D-748) pero descartaba el
+valor tras clasificar same-bet — el veto recibía None = presupuesto lineal
+(corr perfecta SIEMPRE). k·riesgo > tope vetaba concurrencia incluso con
+dependencia medida baja.
+
+Cambio: `DependencyExposure.same_bet_rho_efectivo` (media de medidas; no
+medidos del grupo cuentan 1.0) y el caller pasa Some(ρ̄) — activa la rama
+√(k+k(k−1)ρ̄) D-748 que ya existía y estaba testeada. ρ̄→1 reproduce el
+lineal BIT a BIT (test de continuidad k=1..11); ρ̄=0.5 con k=9 al riesgo de
+arranque pasa de veto a no-veto (0.84·tope). Miembros no medidos NO
+regalan descuento: mezclan hacia 1.0.
+
+Relevante para vuestra CL-5 (racha) y SPECTRAL-010 (riesgo real por
+posición, sigue pendiente): el veto ahora consume toda la evidencia que la
+clasificación ya producía. Región tocada: correlation_guard.rs (struct +
+final de dependency_exposure) y lib.rs call site D-748 (~línea 545-560).
+Regresión 230/230 risk-engine + 130 core.
+
+Nota teoría (para quien siga la serie milenio): consideré Cramér-Lundberg
+(LDP) como recambio del escalado gaussiano — muere en rigor SIN dependencia
+medida (Markov bajo dependencia arbitraria veta todo, como el lineal).
+Con la ρ̄ medida ahora disponible, un bound de Chernoff equicorrelacionado
+es viable como siguiente paso si el consejo lo quiere.
