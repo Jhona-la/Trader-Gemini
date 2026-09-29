@@ -1738,41 +1738,14 @@ impl LiveEvolutionDaemon {
         .await
         .unwrap_or((fallback_genome, Vec::new(), 0));
 
-        // Legacy heuristic gate retained for compatibility: not a Bayesian
-        // posterior or bootstrap confidence estimate. FMT-055 remains partial.
-        let safe_sharpe = if current_shadow_sharpe.is_finite() && current_shadow_sharpe > 0.0 {
-            current_shadow_sharpe
-        } else {
-            0.1
-        };
-        let safe_len = (self.returns_history.len().max(1)) as f64;
-        let std_error = 1.0 / safe_len.sqrt();
-        let raw_confidence = (1.0 - (std_error / safe_sharpe)).clamp(0.0, 1.0);
-
-        let bootstrap_weight = (15.0 - safe_len).max(0.0) / 15.0;
-        let heuristic_gate_score =
-            (1.0 - bootstrap_weight) * raw_confidence + bootstrap_weight * 0.60;
-
-        let target_confidence = if self.is_demo {
-            0.55
-        } else if safe_len < 10.0 {
-            0.50
-        } else if safe_len < 30.0 {
-            0.60
-        } else {
-            0.75
-        };
-
-        if heuristic_gate_score < target_confidence {
-            println!(
-                "[HEURISTIC GATE] t descriptivo {:.2}; score heurístico {:.1}% < política {:.0}% (N={}). No es probabilidad posterior.",
-                current_shadow_sharpe,
-                heuristic_gate_score * 100.0,
-                target_confidence * 100.0,
-                safe_len as usize
-            );
-            return;
-        }
+        // CL-29: se retiró la puerta heurística heredada (FMT-055). Medía el
+        // t descriptivo del INCUMBENTE, no al candidato, y estaba invertida:
+        // un incumbente que gana (t = 2) la pasaba con N ≥ 2 deltas, y uno que
+        // pierde (t ≤ 0 ⇒ 0,1) necesitaba N ≥ 494 en demo y N ≥ 1 600 fuera
+        // de demo (inalcanzable con el tope de 1 000): la evolución se cerraba
+        // justo cuando el genoma vivo pierde. La selección la juzgan el
+        // examen sobre el mercado con el incumbente compitiendo en la misma
+        // cinta (D-740, CL-27) y el DSR con multiplicidad acumulada (D-746).
 
         // QO-M1.1 — DEFLATED SHARPE RATIO (Bailey & López de Prado 2014):
         // con 2000 candidatos por ronda, el mejor por pura suerte supera
@@ -1818,10 +1791,10 @@ impl LiveEvolutionDaemon {
             best_genome.clone(),
             "online_daemon",
             &format!(
-                "t descriptivo {:.2}; score heurístico {:.4} >= política {:.4}; {} deltas PnL; sin garantía de confianza posterior",
+                "DSR {:.3} con {} pruebas acumuladas; incumbente con t descriptivo {:.2} sobre {} deltas PnL; sin garantía de confianza posterior",
+                dsr_verdict.dsr,
+                dsr_verdict.n_trials,
                 current_shadow_sharpe,
-                heuristic_gate_score,
-                target_confidence,
                 self.returns_history.len()
             ),
         ) {
@@ -2356,5 +2329,22 @@ mod tests {
         assert!(ruido < umbral, "ruido F={ruido} umbral={umbral}");
         assert!(tendencia < umbral, "tendencia F={tendencia} umbral={umbral}");
         assert!(tendencia <= ruido * 1.25, "tendencia {tendencia} vs ruido {ruido}");
+    }
+
+    /// CL-29 — la promoción no pasa por la puerta heurística del incumbente.
+    #[test]
+    fn cl29_la_promocion_no_depende_del_t_del_incumbente() {
+        let codigo: String = include_str!("online_daemon.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        let ronda = codigo
+            .split("asyncfnevaluate_shadow_strategy(")
+            .nth(1)
+            .expect("ancla de la ronda");
+        assert!(!ronda.contains("[HEURISTICGATE]"));
+        assert!(!ronda.contains("heuristic_gate_score"));
     }
 }
