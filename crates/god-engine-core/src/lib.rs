@@ -2341,11 +2341,17 @@ impl GodEngineCore {
                             .base_slippage_floor
                             .load(Ordering::Relaxed)
                             .max(0.00001),
-                        self.arena
-                            .config
-                            .latency_penalty_ms
-                            .load(Ordering::Relaxed)
-                            .max(0.0),
+                        // XLVI·B (cierre DIV-2): misma cola lognormal que la
+                        // entrada — el SL/trailing taker también cruza el libro
+                        // un RTT después de la decisión.
+                        risk_engine::tp_sl::sample_latency_lognormal_ms(
+                            self.arena
+                                .config
+                                .latency_penalty_ms
+                                .load(Ordering::Relaxed)
+                                .max(0.0),
+                            risk_engine::tp_sl::latency_seed(event_time_ms, coin_id),
+                        ),
                     );
                     if phys_exit_price > 0.0 {
                         exit_price = phys_exit_price;
@@ -6198,12 +6204,19 @@ impl GodEngineCore {
                                     .base_slippage_floor
                                     .load(Ordering::Relaxed)
                                     .max(0.00001);
-                                let lat_ms = self
-                                    .arena
-                                    .config
-                                    .latency_penalty_ms
-                                    .load(Ordering::Relaxed)
-                                    .max(0.0);
+                                // XLVI·B (cierre DIV-2, auditoría bt↔vivo): el
+                                // gen calibra la MEDIANA del RTT y la física
+                                // añade la cola lognormal (σ=0.35). Muestreo
+                                // determinista por (evento, activo): el replay
+                                // conserva mismo-input ⇒ mismo-output.
+                                let lat_ms = risk_engine::tp_sl::sample_latency_lognormal_ms(
+                                    self.arena
+                                        .config
+                                        .latency_penalty_ms
+                                        .load(Ordering::Relaxed)
+                                        .max(0.0),
+                                    risk_engine::tp_sl::latency_seed(event_time_ms, coin_id),
+                                );
                                 let (real_entry_price, phys_entry_fee) = if entry_is_maker {
                                     self.reality.calculate_maker_entry(
                                         base_price,

@@ -133,3 +133,45 @@ fn xlvia_p99_latencia_lognormal_supera_penalizacion_estatica() {
     // Sanidad del sampler: P99 > P50 (distribución con cola derecha).
     assert!(p99 > p50 * 1.5, "cola insuficiente: p50={:.1} p99={:.1}", p50, p99);
 }
+
+/// XLVI·B (cierre DIV-2) — CONTRATO DE IGUALDAD BIT-EXACTA: el muestreador
+/// que usa la FÍSICA DE FILLS del núcleo (`risk_engine::tp_sl::
+/// sample_latency_lognormal_ms`, gen como mediana) y el simulador canónico
+/// del backtest (`NetworkJitterSimulator`) son la MISMA secuencia matemática
+/// (xorshift + Box-Muller + normalización lognormal). Mismo base, mismo seed
+/// ⇒ mismo milisegundo. Si alguien «corrige» uno de los dos lados sin el
+/// otro, este test expone la divergencia antes de que el bt y el vivo
+/// vuelvan a cobrar latencias distintas.
+#[test]
+fn xlvib_sampler_de_fills_y_simulador_canonico_son_bit_exactos() {
+    for base in [5.0_f64, 25.0, 30.68, 100.0] {
+        let sim = NetworkJitterSimulator::new(base, 0.35, 0.001);
+        for seed in [0u64, 1, 7, 42, 999_983, u64::MAX] {
+            let (canonico, _dropped) = sim.sample_latency_ms(seed);
+            let fisica = risk_engine::tp_sl::sample_latency_lognormal_ms(base, seed);
+            assert_eq!(
+                canonico.to_bits(),
+                fisica.to_bits(),
+                "base={base} seed={seed}: canonico={canonico} fisica={fisica}"
+            );
+        }
+    }
+}
+
+/// XLVI·B — el genoma calibra la MEDIA del RTT y la física añade la cola:
+/// con el genoma ACTIVO (30.68ms), media muestreada ≈ gen, mediana ≈ 0.94×
+/// gen y p99 ≈ 2× gen. Este es el estado POST-cierre de DIV-2: la cola que
+/// el bt no cobraba ahora vive dentro del núcleo de producción (bt y vivo,
+/// mismo código, misma semilla por evento).
+#[test]
+fn xlvib_gen_como_media_cola_sobre_el_gen_activo() {
+    let base = 30.679_914_238_190_136_f64; // genoma activo del repo
+    let mut s: Vec<f64> = (0..20_000u64)
+        .map(|i| risk_engine::tp_sl::sample_latency_lognormal_ms(base, i))
+        .collect();
+    s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let p50 = s[s.len() / 2];
+    let p99 = s[(s.len() as f64 * 0.99) as usize - 1];
+    assert!((p50 / base - 0.9401).abs() < 0.06, "p50={p50} debe ≈ 0.94× gen {base}");
+    assert!(p99 > base * 1.7, "p99={p99} debe superar 1.7× gen {base}");
+}
