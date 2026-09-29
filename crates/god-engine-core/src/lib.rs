@@ -314,6 +314,46 @@ pub fn activaciones_de_proteccion(
     (be, trail.max(be))
 }
 
+/// CL-31 — RAMA 15, RESONANCIA EN EL CENTROIDE τ*.
+///
+/// La persistencia espectral no tiene lado: +1 es continuación del movimiento
+/// en curso, sea al alza o a la baja. La rama la comparaba con 0,52 para los
+/// largos y con 0,48 para los cortos —la escala [0,1] de un Hurst— sobre un
+/// valor en [−1,1]: con persistencia 0,55 el largo moderado pasaba y el corto
+/// espejo no, y el corto moderado pedía ANTI-persistencia (reversión) para
+/// seguir la señal. Con la persistencia sesgada a +0,9 (CL-30) la rama sólo
+/// emitía largos en la zona moderada y el corto nunca cobraba el bono.
+///
+/// Ahora recibe el índice en [0,1] (`TemporalSpectrum::hurst_at`, 0,5 =
+/// browniano) y exige lo mismo a los dos lados: |fused| > 0,38, o |fused| >
+/// 0,22 con continuación (h ≥ 0,52); coherencia > 0,12 en su dirección; marea
+/// macro no adversa. El bono de convicción es (h − 0,5)⁺·0,5 en ambos lados.
+/// Devuelve `(es_largo, confianza)`.
+#[inline]
+pub fn confluencia_resonante(
+    fused: f64,
+    hurst_tau_star: f64,
+    coherencia_larga: f64,
+    coherencia_corta: f64,
+    marea_macro: f64,
+) -> Option<(bool, f64)> {
+    let continuacion = hurst_tau_star >= 0.52;
+    let bono = (hurst_tau_star - 0.50).max(0.0) * 0.50;
+    let largo = (fused > 0.38 || (fused > 0.22 && continuacion))
+        && coherencia_larga > 0.12
+        && marea_macro >= -0.00020;
+    let corto = (fused < -0.38 || (fused < -0.22 && continuacion))
+        && coherencia_corta > 0.12
+        && marea_macro <= 0.00020;
+    if largo {
+        Some((true, (0.58 + coherencia_larga * 0.35 + bono).clamp(0.58, 0.95)))
+    } else if corto {
+        Some((false, (0.58 + coherencia_corta * 0.35 + bono).clamp(0.58, 0.95)))
+    } else {
+        None
+    }
+}
+
 /// D-752 — etiquetas de rama. `SignalIntent::volume_flow_rate` YA transportaba
 /// un identificador de rama (1..14) para la traza de apertura, y sobrevive a
 /// la arbitración porque todas las fusiones usan `..fast_intent` / `..winner`.
@@ -4994,37 +5034,24 @@ impl GodEngineCore {
                     let field_long = spec.spectral_field(true);
                     let field_short = spec.spectral_field(false);
                     let fused = spec.fused_score;
-                    let tau_star_persist = spec.persistence_at(tau_star);
+                    let tau_star_hurst = spec.hurst_at(tau_star);
                     let tau_star_duration = (tau_star.clamp(5_000.0, 86_400_000.0)).round() as u64;
 
-                    // Confluencia armónica constructiva en el centroide espectral tau*:
-                    // Exige resonancia nítida en el tensor de 32 escalas:
-                    // 1. Fused score significativo (|fused| >= 0.38) o confluencia moderada (|fused| >= 0.22)
-                    //    con persistencia direccional estricta (|persist - 0.50| >= 0.02).
-                    // 2. Coherencia espectral global constructiva (> 0.12) en la fase correcta.
-                    // 3. Marea macro no adversa.
-                    let long_confluent = (fused > 0.38 || (fused > 0.22 && tau_star_persist >= 0.52))
-                        && field_long.global_coherence > 0.12
-                        && macro_trend >= -0.00020;
-
-                    let short_confluent = (fused < -0.38 || (fused < -0.22 && tau_star_persist <= 0.48))
-                        && field_short.global_coherence > 0.12
-                        && macro_trend <= 0.00020;
-
-                    if long_confluent {
-                        let conf = (0.58 + field_long.global_coherence * 0.35 + (tau_star_persist - 0.50).max(0.0) * 0.50).clamp(0.58, 0.95);
+                    // Confluencia armónica constructiva en el centroide espectral tau*
+                    // (condiciones en `confluencia_resonante`, CL-31).
+                    if let Some((is_long, conf)) = confluencia_resonante(
+                        fused,
+                        tau_star_hurst,
+                        field_long.global_coherence,
+                        field_short.global_coherence,
+                        macro_trend,
+                    ) {
                         slow_intent = SignalIntent {
-                            signal: SignalType::Long,
-                            confidence: conf,
-                            expected_duration_ms: tau_star_duration,
-                            horizon: strategy_core::TradeHorizon::Continuous,
-                            volume_flow_rate: 15.0,
-                            ..Default::default()
-                        };
-                    } else if short_confluent {
-                        let conf = (0.58 + field_short.global_coherence * 0.35 + (0.50 - tau_star_persist).max(0.0) * 0.50).clamp(0.58, 0.95);
-                        slow_intent = SignalIntent {
-                            signal: SignalType::Short,
+                            signal: if is_long {
+                                SignalType::Long
+                            } else {
+                                SignalType::Short
+                            },
                             confidence: conf,
                             expected_duration_ms: tau_star_duration,
                             horizon: strategy_core::TradeHorizon::Continuous,
