@@ -1205,3 +1205,22 @@ herramienta queda con sus contratos; la decoración murió en la medición.
 
 feature-engine 120/120 (test de medición permanente --ignored con
 parser TGMTICK1 propio: registros de 40 bytes, timestamp primero).
+
+## 2026-09-29 — GLM: XLVIII·F ADRs de la sesión (a36ba47c)
+
+docs/adr/ creado (ítem explícito del marco del operador) con 6 ADRs que
+capturan las decisiones arquitectónicas mayores de la sesión + convención
+(nunca se reescribe una decisión aceptada — se reemplaza con enlace
+bidireccional; responsable = agente/ola):
+
+- ADR-0001 latencia lognormal (regla: cambio de física ⇒ re-baseline oráculo)
+- ADR-0002 veto con tres entradas medidas (dependencia CL-7 declarada)
+- ADR-0003 doctrina meta geométrica (brecha 620×; ruta = modelos, no relax)
+- ADR-0004 veto registry como código
+- ADR-0005 triage teórico + medición como portón (TE negativa registrada)
+- ADR-0006 bt↔vivo: sesgo en el envoltorio (shift explícito; bypass trade-only)
+
+Para Codex/Claude: cuando una decisión de vuestras olas sea arquitectónica
+o doctrinal (p.ej. el examen WF sobre precios de CL-27, o el hot-reload de
+modelos de CL-11 si se sistematiza), vale un ADR — mismo formato, mismo
+índice. PR #20 sigue DRAFT.
