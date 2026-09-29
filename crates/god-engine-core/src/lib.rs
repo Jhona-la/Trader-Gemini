@@ -3278,8 +3278,16 @@ impl GodEngineCore {
                 // entrada en un alt la podía decidir el modelo de BTC.
                 // NN restringido a BTC hasta que exista un modelo por símbolo
                 // (paridad con B3.18b del forest): fuera de su símbolo de
-                // entrenamiento el voto es NEUTRAL (0.5) — no se evalúa la
-                // inferencia, el modelo simplemente no opina.
+                // entrenamiento no se evalúa la inferencia, el modelo
+                // simplemente no opina.
+                //
+                // CL-15: «no opina» es AUSENCIA, no un 0,5. Se enviaba 0,5 al
+                // ensamble, que lo promediaba con el bosque como una opinión
+                // más: con la base del bosque ≈ 0,30 (HOST-010) la ml_prob de
+                // cada alt quedaba subida hacia 0,5 sin información, y todas
+                // las puertas que miden el lift sobre `ml_model_base` (B3.18,
+                // F-009, CL-13) veían un sesgo largo fabricado. El ensamble ya
+                // normaliza sobre los modelos que opinaron.
                 let nn_trained_for_symbol = sym == "BTCUSDT";
                 let in_dim = nn.layer1.in_features;
                 let p_opt = if nn_trained_for_symbol {
@@ -3299,7 +3307,7 @@ impl GodEngineCore {
                         nn.predict_for_coin(coin_id, &combined_tensor)
                     }
                 } else {
-                    Some(0.5)
+                    None
                 };
                 if let Some(p) = p_opt {
                     diag_nn_p = Some(p);
@@ -6611,6 +6619,43 @@ mod tests_cl14 {
             host.contains("letforce_maker=false;"),
             "si el host vuelve a enviar pasivas, el núcleo debe simularlas con su llenado"
         );
+    }
+}
+
+/// CL-15: fuera de su símbolo el NN no opina (ausencia, no 0,5).
+#[cfg(test)]
+mod tests_cl15 {
+    use crate::ensemble::{ModelEnsemble, ModelId};
+
+    /// Un 0,5 «neutral» enviado al ensamble arrastra la opinión del bosque
+    /// hacia 0,5; la ausencia la deja intacta.
+    #[test]
+    fn cl15_un_modelo_que_no_opina_no_arrastra_al_bosque() {
+        let mut con_neutral = ModelEnsemble::new();
+        con_neutral.submit(ModelId::MotorForest, 0.30);
+        con_neutral.submit(ModelId::DarkAlphaNN, 0.5);
+        let mut sin_voto = ModelEnsemble::new();
+        sin_voto.submit(ModelId::MotorForest, 0.30);
+        assert!(con_neutral.combined().unwrap() > 0.35);
+        assert!((sin_voto.combined().unwrap() - 0.30).abs() < 1e-12);
+    }
+
+    #[test]
+    fn cl15_el_nucleo_no_envia_un_voto_nn_fuera_de_su_simbolo() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        let rama = codigo
+            .split("letnn_trained_for_symbol=sym==\"BTCUSDT\";")
+            .nth(1)
+            .expect("ancla del NN por símbolo");
+        let fin = rama.find("ifletSome(p)=p_opt").expect("envío del voto NN");
+        let rama = &rama[..fin];
+        assert!(rama.ends_with("}else{None};"), "fuera de BTC el voto NN es None");
+        assert!(!rama.contains("Some(0.5)"));
     }
 }
 
