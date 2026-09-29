@@ -5434,6 +5434,24 @@ impl GodEngineCore {
                         unified_intent.confidence =
                             confianza_modulada(unified_intent.confidence, spectral_multiplier);
 
+                        // (Ola XLV·G) MODULACIÓN POR CONTAGIO: si ESTE símbolo
+                        // es un SEGUIDOR neto (recibe más contagio Hawkes del
+                        // que emite), parte de su movimiento ya está explicado
+                        // por el líder — el edge propio es menor. El
+                        // modulador descuenta hasta 30% por sigmoide.
+                        // El net_role llega del registry (lo escribe el
+                        // publicador de contagion_matrix cuando esté cableado).
+                        let contagion_net_role = self
+                            .arena
+                            .registry
+                            .get_scoped_value_or(&sym, "hawkes_contagion_net_role", 0.0);
+                        if contagion_net_role < 0.0 {
+                            let magnitude = (-contagion_net_role).min(50.0);
+                            let discount = 0.30 * magnitude / (magnitude + 5.0);
+                            unified_intent.confidence =
+                                (unified_intent.confidence * (1.0 - discount)).clamp(0.0, 1.0);
+                        }
+
                         // Mapeo armónico continuo en el Universo Multivariante Continuo Temporal Espectral:
                         // Elimina la discretización binaria rígida y converge continuamente hacia el centro de masa tau*.
                         let base_tau = if unified_intent.expected_duration_ms > 0 {
