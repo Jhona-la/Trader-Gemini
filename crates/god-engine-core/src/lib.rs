@@ -2757,9 +2757,21 @@ impl GodEngineCore {
                             (0.5 + pers * 0.5).clamp(0.0, 1.0)
                         })
                         .unwrap_or(0.5);
+                    // CL-10 (D-749 en el productor): Kelly se alimenta con la
+                    // COTA INFERIOR del profit factor, no con `new_pf`, que
+                    // vale el literal 5,0 tras UNA ganancia sin pérdidas: con
+                    // él una sola operación afortunada llevaba la fracción a
+                    // `kelly_clamp_max`, y el risk-engine la usa tal cual en
+                    // cuanto hay historial (su cota inferior sólo decidía el
+                    // arranque en frío).
+                    let pf_para_kelly = risk_engine::evidence::profit_factor_lcb(
+                        total_wins,
+                        total_losses,
+                        n_prev + 1.0,
+                    );
                     let kelly_f = risk_engine::kelly::calculate_kelly_fraction(
                         new_wr,
-                        new_pf,
+                        pf_para_kelly,
                         curr_cap,
                         base_cap,
                         survival_ratio,
