@@ -1670,9 +1670,9 @@ impl LiveEvolutionDaemon {
             // del campo VIVO: la masa espectral concentrada en escala (Fisher
             // alta) declara un régimen identificable y el examen walk-forward
             // miente menos. Con el campo difuso (la mayoría de las monedas CON
-            // masa por debajo del umbral), la ronda se aplaza: evolucionar
-            // sobre un régimen no identificable memoriza ruido. Frío (sin
-            // masa) NO bloquea — el warmup ya gobierna el arranque.
+            // masa por debajo del umbral), la ronda se aplazaba: evolucionar
+            // sobre un régimen no identificable memoriza ruido. Desde CL-28
+            // es telemetría (ver abajo por qué).
             {
                 let con_masa: Vec<f64> = wf_fisher_snapshot
                     .iter()
@@ -1685,13 +1685,24 @@ impl LiveEvolutionDaemon {
                 // y abortaba toda ronda con ≥ 2 monedas vivas.
                 let umbral = quantum_arena::temporal_spectrum::umbral_fisher_identificable();
                 let identificados = con_masa.iter().filter(|f| **f > umbral).count();
-                if con_masa.len() >= 2 && identificados * 2 < con_masa.len() {
+                // CL-28: sólo telemetría. La Fisher de escala no discrimina un
+                // régimen del ruido: sobre un paseo aleatorio su mediana es
+                // 0,03–0,16 (< umbral ≈ 0,33), un régimen plantado no la sube
+                // y una tendencia la BAJA; con ≥ 2 monedas aplazaba casi toda
+                // ronda (≤ 10 % pasaban con 2 monedas, ≈ 0 con 10) y la
+                // evolución en vivo quedaba parada. Restringirla a escalas
+                // resueltas la vuelve una moneda al aire (≈ 32 % en ruido). Sin
+                // un umbral calibrado contra el nulo (la misma Fisher sobre
+                // incrementos barajados) no es un test de identificabilidad;
+                // la selección la protegen el examen pareado con el incumbente
+                // (D-740) y el DSR con multiplicidad acumulada (D-746).
+                if con_masa.len() >= 2 {
                     println!(
-                        "🌀 [WF-FISHER] campo espectral difuso (identificables {}/{}) — ronda aplazada: evolucionar sobre un régimen no identificable memoriza ruido",
+                        "🌀 [WF-FISHER] identificables {}/{} (umbral {:.3}; telemetría, no aplaza la ronda)",
                         identificados,
-                        con_masa.len()
+                        con_masa.len(),
+                        umbral
                     );
-                    return (current_genome.clone(), Vec::new(), 0);
                 }
             }
             // D-746 — genomas DISTINTOS puestos a prueba en esta ronda. El
@@ -2303,5 +2314,47 @@ mod tests {
         assert_eq!(destino_de_rollback(7, &a, cargar), None);
         // Mientras B operaba, su watchdog (5, 4) sí volvía a A.
         assert_eq!(destino_de_rollback(4, &b, cargar), Some(4));
+    }
+
+    /// CL-28 — la Fisher de escala no discrimina un régimen del ruido: sobre
+    /// un paseo aleatorio y sobre el MISMO ruido con una tendencia fuerte
+    /// (500 pb/h) queda bajo el umbral de identificabilidad, y la tendencia no
+    /// la sube. Un gate que aplaza la ronda con este estadístico no separa
+    /// regímenes identificables de los que no lo son: paraba la evolución.
+    #[test]
+    fn cl28_la_fisher_de_escala_no_separa_una_tendencia_del_ruido() {
+        use quantum_arena::temporal_spectrum::{umbral_fisher_identificable, TemporalSpectrum};
+        fn fisher(deriva_por_paso: f64) -> f64 {
+            let mut sp = TemporalSpectrum::new();
+            let mut semilla: u64 = 0x9E37_79B9_7F4A_7C15;
+            let mut uniforme = || {
+                semilla ^= semilla << 13;
+                semilla ^= semilla >> 7;
+                semilla ^= semilla << 17;
+                ((semilla >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+            };
+            let (dt_ms, sigma) = (300u64, 1e-4 * 0.3f64.sqrt());
+            let mut ln_p = 60_000f64.ln();
+            let mut fs = Vec::new();
+            for k in 0..36_000u64 {
+                let z = (-2.0 * uniforme().ln()).sqrt()
+                    * (2.0 * std::f64::consts::PI * uniforme()).cos();
+                ln_p += deriva_por_paso + sigma * z;
+                sp.update(ln_p.exp(), 1_000_000 + k * dt_ms);
+                if k >= 12_000 && k % 200 == 0 {
+                    if let Some(f) = sp.fisher_scale_information() {
+                        fs.push(f);
+                    }
+                }
+            }
+            fs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            fs[fs.len() / 2]
+        }
+        let umbral = umbral_fisher_identificable();
+        let ruido = fisher(0.0);
+        let tendencia = fisher(0.05 * 0.3 / 3_600.0);
+        assert!(ruido < umbral, "ruido F={ruido} umbral={umbral}");
+        assert!(tendencia < umbral, "tendencia F={tendencia} umbral={umbral}");
+        assert!(tendencia <= ruido * 1.25, "tendencia {tendencia} vs ruido {ruido}");
     }
 }
