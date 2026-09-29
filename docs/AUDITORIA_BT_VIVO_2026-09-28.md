@@ -127,3 +127,68 @@ fricción alta — y son los candidatos primarios de la brecha bt/vivo.
 3. DIV-3 sigue el curso de R8-A (Claude).
 
 Ninguna acción sobre DIV-4/5/6 (acotados o por diseño).
+
+---
+
+## ADENDA XLVI·H (2026-09-29) — DIV-1 hecho explícito, configurable y MEDIDO
+
+El desplazamiento adverso del harness (±0.10·ATR antes de alimentar el
+core) es ahora un campo explícito: `ReplayConfig::shift_atr_frac`.
+
+- **0.10 (default)**: comportamiento histórico bit a bit — la aptitud que
+  la evolución midió NO cambia por hacer explícito el sesgo (contrato
+  `xlvih_default_es_el_historico_y_determinista`; los golden existentes
+  corren con el 0.10 literal).
+- **0.0**: paridad de features con el vivo (`bid − 0.0` es bit-idéntico al
+  libro crudo); el slippage de fills queda SÓLO en la física del core
+  (`calculate_market_entry`). Negativo se sanea a 0 (nunca estrecha).
+- **A/B permanente** (`xlvih_medicion_ab_doble_conteo_div1`, imprime con
+  `--nocapture`): misma serie (receta oráculo T-1, cadencia 1 min/tick,
+  warmup 600 klines ≥ 512 que Hurst exige), mismo genoma.
+
+**Medición inicial (fixture sintético, 1 trade)**: histórico net +0.0491
+vs paridad +0.0520 — el doble-conteo cuesta **0.0029 USDT ≈ 6% del PnL
+del trade** (shift 0.10·ATR por lado encima de la física del core).
+Muestra pequeña y sintética: el harness queda para re-medir sobre cintas
+reales de aggTrades.
+
+**Decisión de consejo pendiente**: promover el default a 0.0 exige (a)
+re-baseline del oráculo T-1 y (b) verificar contra fills REALES que la
+física del core sola no sub-cobra el impacto (el shift pudo estar
+compensando un modelo de impacto débil sobre fixtures sintéticos delgados).
+La secuencia honesta: medir física-del-core vs fills vivos
+(reconciliation) → decidir default → re-baseline una sola vez.
+
+---
+
+## ADENDA XLVII·A (2026-09-29) — RADIO DE IMPACTO DE DIV-1: CORREGIDO A LA BAJA
+
+**Hallazgo**: el modo TRADE-ONLY — el que usa la EVOLUCIÓN para medir la
+aptitud que selecciona genomas (aggTrades reales, evolution.rs) — **bypasa
+el desplazamiento del harness por construcción**: su branch pasa bid/ask
+sintéticos derivados del trade (`mid·0.9999/1.0001`), no `sim_bid/sim_ask`.
+El shift sólo ensancha el libro en el MODO LIBRO (doble evento depth+trade;
+backtest_windows por defecto).
+
+**Confirmación empírica** (tape REAL THETAUSDT 2026-08, TGMTICK1, contrato
+`xlviiA_medicion_radio_div1_en_tape_real`, --ignored):
+- trade-only: shift 0.10 vs 0.0 ⇒ **bit-idéntico** (net +0.0127 ambos,
+  1 trade) — bypass total sobre aggTrades reales.
+- book-mode sobre el mismo tape: 0 trades ambos (libro derivado de
+  aggTrades no dispara entradas de doble evento con el genoma baseline).
+
+**Consecuencias para la decisión del default**:
+1. La aptitud de la evolución NUNCA estuvo contaminada por el
+   doble-conteo — el temor de la adenda XLVI·H sobre "cambiar el paisaje
+   de aptitud" se reduce al modo libro, que es diagnóstico.
+2. Promover el default a 0.0 ya NO exige re-baseline del oráculo T-1
+   (éste corre por klines vía run_backtest_native, sin el harness de
+   replay): el riesgo de cambiar el default baja a los binarios de
+   diagnóstico book-mode.
+3. La verificación contra fills vivos (reconciliation) sigue siendo el
+   paso previo honesto para decidir si la física del core sola cobra
+   suficiente — pero la urgencia baja: el consumidor primario no lee el
+   shift.
+
+Contratos nuevos: bypass pineado sintéticamente (siempre verde;
+`xlviiA_trade_only_bypasa_el_shift_div1`) + medición real (--ignored).

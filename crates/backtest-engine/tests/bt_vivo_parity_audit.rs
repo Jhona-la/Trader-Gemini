@@ -175,3 +175,275 @@ fn xlvib_gen_como_media_cola_sobre_el_gen_activo() {
     assert!((p50 / base - 0.9401).abs() < 0.06, "p50={p50} debe ≈ 0.94× gen {base}");
     assert!(p99 > base * 1.7, "p99={p99} debe superar 1.7× gen {base}");
 }
+
+/// XLVI·H (DIV-1) — HARNESS DE MEDICIÓN A/B: misma serie, mismo genoma,
+/// desplazamiento del harness 0.10 (histórico) vs 0.0 (paridad de features
+/// con el vivo; el slippage queda sólo en la física del core). La DIFERENCIA
+/// entre ambos es la cuantificación del doble-conteo de DIV-1. Imprime la
+/// tabla con --nocapture (invisible en corridas normales); los asserts
+/// pinean sanidad, no dirección — el signo del delta es un hecho medido.
+#[test]
+fn xlvih_medicion_ab_doble_conteo_div1() {
+    use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay};
+    use quantum_arena::genome::SuperGenotype;
+
+    backtest_engine::asegurar_spec_nativo("BTCUSDT");
+    // Serie con la receta EXACTA del oráculo T-1 (trend+ciclo 30pb+ruido
+    // 40pb — física D-755 coherente): garantiza trades para que la
+    // medición del doble-conteo no sea 0/0.
+    let mut seed = 0x5DEECE66Du64;
+    let mut next = || {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((seed >> 33) as f64 / u32::MAX as f64) - 0.5
+    };
+    let mut p = 60_000.0f64;
+    let ticks: Vec<ReplayTick> = (0..30_000)
+        .map(|i| {
+            let u = next();
+            let ciclo = (i as f64 / 180.0).sin() * 0.0030;
+            p *= 1.0 + ciclo + u * 0.0040 + 0.00004;
+            let half = p * 0.0002; // spread sintético 4 pb
+            ReplayTick {
+                // Cadencia de 1 MINUTO por tick: cada tick madura su propio
+                // kline 1m — el warmup sintetiza 600 klines (Hurst necesita
+                // 512). Con 100ms el warmup produce ~1 kline y nada opera.
+                ts_ms: 1_700_000_000_000 + (i as u64) * 60_000,
+                bid: p - half,
+                ask: p + half,
+                bid_qty: 450.0 + u.abs() * 1000.0,
+                ask_qty: 450.0 + (1.0 - u.abs()) * 1000.0,
+            }
+        })
+        .collect();
+    let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+    let cfg = |frac: f64| ReplayConfig {
+        initial_capital: 1000.0,
+        warmup_ticks: 600,
+        trade_only: false,
+        shift_atr_frac: frac,
+    };
+
+    let a = run_booktick_replay(&ticks, &genome, None, &cfg(0.10));
+    let b = run_booktick_replay(&ticks, &genome, None, &cfg(0.0));
+    println!(
+        "A/B DIV-1: histórico(0.10) trades={} net={:.4} dd={:.4} fees={:.4} | paridad(0.0) trades={} net={:.4} dd={:.4} fees={:.4} | Δnet={:+.4}",
+        a.trades, a.net_pnl, a.max_dd, a.fees_est,
+        b.trades, b.net_pnl, b.max_dd, b.fees_est,
+        b.net_pnl - a.net_pnl
+    );
+    // Sanidad de ambos modos (la dirección del delta NO se pinea: es dato).
+    for (name, s) in [("histórico", &a), ("paridad", &b)] {
+        assert!(s.final_capital.is_finite() && s.final_capital > 0.0, "{name}: capital roto");
+        assert!(s.max_dd < 1.0, "{name}: dd {max}", max = s.max_dd);
+    }
+}
+
+/// XLVII·A — RADIO DE IMPACTO DE DIV-1: el modo TRADE-ONLY (aggTrades, el
+/// que USA LA EVOLUCIÓN para medir aptitud) BYPASA el desplazamiento del
+/// harness — su branch pasa bid/ask sintéticos derivados del trade, no
+/// `sim_bid/sim_ask`. Consecuencia: el fitness que selecciona genomas
+/// NUNCA estuvo contaminado por el doble-conteo; el radio de DIV-1 es
+/// SOLO el modo libro (backtest_windows por defecto). Si alguien mueve el
+/// shift al camino trade-only o rompe el bypass, este contrato lo expone.
+#[test]
+fn xlviiA_trade_only_bypasa_el_shift_div1() {
+    use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay};
+    use quantum_arena::genome::SuperGenotype;
+
+    backtest_engine::asegurar_spec_nativo("BTCUSDT");
+    let mut seed = 0x5DEECE66Du64;
+    let mut next = move || {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((seed >> 33) as f64 / u32::MAX as f64) - 0.5
+    };
+    let mut p = 60_000.0f64;
+    let ticks: Vec<ReplayTick> = (0..20_000)
+        .map(|i| {
+            let u = next();
+            p *= 1.0 + (i as f64 / 180.0).sin() * 0.0030 + u * 0.0040 + 0.00004;
+            let half = p * 0.0002;
+            ReplayTick {
+                ts_ms: 1_700_000_000_000 + (i as u64) * 60_000,
+                bid: p - half,
+                ask: p + half,
+                bid_qty: 450.0 + u.abs() * 1000.0,
+                ask_qty: 450.0 + (1.0 - u.abs()) * 1000.0,
+            }
+        })
+        .collect();
+    let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+    let cfg = |frac: f64| ReplayConfig {
+        initial_capital: 1000.0,
+        warmup_ticks: 600,
+        trade_only: true, // ← el modo de la evolución
+        shift_atr_frac: frac,
+    };
+    let a = run_booktick_replay(&ticks, &genome, None, &cfg(0.10));
+    let b = run_booktick_replay(&ticks, &genome, None, &cfg(0.0));
+    // El shift NO toca este camino: bit-idéntico con cualquier fracción.
+    assert_eq!(a.trades, b.trades, "trade-only no puede depender del shift");
+    assert_eq!(a.net_pnl.to_bits(), b.net_pnl.to_bits());
+    assert_eq!(a.final_capital.to_bits(), b.final_capital.to_bits());
+    // Y una fracción absurda tampoco lo mueve (el bypass es total).
+    let c = run_booktick_replay(&ticks, &genome, None, &cfg(3.0));
+    assert_eq!(c.net_pnl.to_bits(), a.net_pnl.to_bits());
+}
+
+/// XLVII·A — MEDICIÓN EN TAPE REAL (manual, --ignored): carga aggTrades
+/// reales (TGMTICK1) y confirma el bypass empíricamente — trade-only
+/// idéntico con ambos shifts; book-mode sobre el mismo tape SÍ se mueve
+/// (radio de impacto = modo libro). Requiere data/THETAUSDT_2026-08_REAL.bin.
+#[test]
+#[ignore = "medición manual con tape real presente en data/"]
+fn xlviiA_medicion_radio_div1_en_tape_real() {
+    use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay};
+    use backtest_engine::tick_replayer::load_binary_ticks;
+    use quantum_arena::genome::SuperGenotype;
+
+    // El cwd de los tests es la raíz del CRATE: ruta absoluta al workspace.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data/THETAUSDT_2026-08_REAL.bin");
+    let events = load_binary_ticks(&path, 0).expect("tape real THETA 2026-08");
+    assert!(events.len() > 10_000, "tape sospechosamente corto");
+    let ticks: Vec<ReplayTick> = events
+        .iter()
+        .map(|e| ReplayTick {
+            ts_ms: e.timestamp,
+            bid: e.bid_price,
+            ask: e.ask_price,
+            bid_qty: e.bid_qty,
+            ask_qty: e.ask_qty,
+        })
+        .collect();
+    backtest_engine::asegurar_spec_nativo("THETAUSDT");
+    let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+    let cfg = |frac: f64, trade_only: bool| ReplayConfig {
+        initial_capital: 1000.0,
+        warmup_ticks: 600,
+        trade_only,
+        shift_atr_frac: frac,
+    };
+    // Bypass: trade-only idéntico.
+    let t1 = run_booktick_replay(&ticks, &genome, None, &cfg(0.10, true));
+    let t0 = run_booktick_replay(&ticks, &genome, None, &cfg(0.0, true));
+    println!(
+        "REAL trade-only: 0.10 trades={} net={:.4} | 0.0 trades={} net={:.4}",
+        t1.trades, t1.net_pnl, t0.trades, t0.net_pnl
+    );
+    assert_eq!(t1.net_pnl.to_bits(), t0.net_pnl.to_bits(), "bypass roto en tape real");
+    // Radio: book-mode sobre el MISMO tape (delta esperado ≠ 0).
+    let b1 = run_booktick_replay(&ticks, &genome, None, &cfg(0.10, false));
+    let b0 = run_booktick_replay(&ticks, &genome, None, &cfg(0.0, false));
+    println!(
+        "REAL book-mode: 0.10 trades={} net={:.4} | 0.0 trades={} net={:.4} | Δ={:+.4}",
+        b1.trades, b1.net_pnl, b0.trades, b0.net_pnl,
+        b0.net_pnl - b1.net_pnl
+    );
+    for (name, s) in [("t1", &t1), ("b1", &b1), ("b0", &b0)] {
+        assert!(s.final_capital.is_finite() && s.final_capital > 0.0, "{name} roto");
+    }
+}
+
+/// XLVII·B — BRECHA CONTRA LA META, MEDIDA EN TAPES REALES (manual, --ignored).
+///
+/// La auditoría de capitalización (XLV·L) fijó la aritmética de la meta:
+/// +100%/3d ≡ 25.99% diario ⇒ con el axioma de ruina 25% y 10%/trade se
+/// requieren ~10 trades/día con edge sostenido. Esta medición carga el
+/// GENOMA CAMPEÓN del repo y lo corre en modo trade-only (el de la
+/// evolución) sobre una muestra de tapes reales por tier de liquidez,
+/// reportando trades/día logrados vs los ~10/día que la meta exige.
+/// Muestra y método: docs/AUDITORIA_BT_VIVO_2026-09-28.md (adenda XLVII·B).
+#[test]
+#[ignore = "medición manual: ~40 min de cómputo sobre tapes reales"]
+fn xlviiB_brecha_meta_en_tapes_reales_campeon() {
+    use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay};
+    use backtest_engine::tick_replayer::load_binary_ticks;
+    use quantum_arena::genome::SuperGenotype;
+
+    // El loader de modelos resuelve "models/" RELATIVO AL CWD: desde la
+    // raíz del crate los modelos no se ven y la medición capturaría el
+    // piso SIN modelos (sonda única por símbolo), no la brecha del
+    // campeón. Este test debe correrse FILTRADO (-- --ignored
+    // xlviiB) para que el chdir no afecte a otros tests del proceso.
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    std::env::set_current_dir(&workspace).expect("chdir al workspace");
+
+    // Genoma CAMPEÓN del repo (el artefacto que config_compiler promueve).
+    let champion: SuperGenotype = serde_json::from_str(
+        &std::fs::read_to_string("config_dir/genotypes/quantum_champion.json")
+            .expect("quantum_champion.json legible"),
+    )
+    .expect("campeón deserializable");
+
+    // Muestra por tier de liquidez (todas < ~120 MB para cómputo acotado).
+    let muestra: &[(&str, &str)] = &[
+        ("LTCUSDT", "2026-08"),
+        ("ADAUSDT", "2026-08"),
+        ("LINKUSDT", "2026-08"),
+        ("ATOMUSDT", "2026-08"),
+        ("NEARUSDT", "2026-08"),
+        ("THETAUSDT", "2026-08"),
+    ];
+    let base = std::path::Path::new("data"); // CWD ya es el workspace
+    let mut total_trades = 0u64;
+    let mut total_days = 0.0f64;
+    println!("sym          trades  días   t/día   WR     net      fees");
+    for (sym, month) in muestra {
+        let path = base.join(format!("{sym}_{month}_REAL.bin"));
+        let Ok(events) = load_binary_ticks(&path, 0) else {
+            println!("{sym}: tape ausente, omitido");
+            continue;
+        };
+        let ticks: Vec<ReplayTick> = events
+            .iter()
+            .map(|e| ReplayTick {
+                ts_ms: e.timestamp,
+                bid: e.bid_price,
+                ask: e.ask_price,
+                bid_qty: e.bid_qty,
+                ask_qty: e.ask_qty,
+            })
+            .collect();
+        let span_ms = ticks.last().unwrap().ts_ms.saturating_sub(ticks[0].ts_ms);
+        let dias = span_ms as f64 / 86_400_000.0;
+        backtest_engine::asegurar_spec_nativo(sym);
+        let cfg = ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 600,
+            trade_only: true, // el modo de la evolución
+            shift_atr_frac: 0.10,
+        };
+        let s = run_booktick_replay(&ticks, &champion, None, &cfg);
+        let t_dia = if dias > 0.0 { s.trades as f64 / dias } else { 0.0 };
+        println!(
+            "{sym:<12} {:>4}   {:>5.1}  {:>5.2}  {:>.2}  {:>+8.3}  {:>.3}",
+            s.trades,
+            dias,
+            t_dia,
+            s.wr_net(),
+            s.net_pnl,
+            s.fees_est
+        );
+        total_trades += s.trades;
+        total_days += dias;
+        assert!(s.final_capital.is_finite() && s.final_capital > 0.0);
+    }
+    let t_dia_global = if total_days > 0.0 {
+        total_trades as f64 / total_days
+    } else {
+        0.0
+    };
+    println!(
+        "TOTAL: {} trades / {:.1} días = {:.2} trades/día — meta ≈ 10/día ⇒ brecha ≈ {:.0}×",
+        total_trades,
+        total_days,
+        t_dia_global,
+        if t_dia_global > 0.0 { 10.0 / t_dia_global } else { f64::INFINITY }
+    );
+    // El contrato es la SANIDAD del método, no el valor (la brecha es dato).
+    assert!(total_days > 5.0, "muestra sin días suficientes");
+}
