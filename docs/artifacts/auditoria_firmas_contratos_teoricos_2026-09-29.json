@@ -14,10 +14,10 @@
     "scope": "local file bytes, line ending sensitive"
   },
   "counts": {
-    "total": 18,
+    "total": 19,
     "fixed_local": 4,
     "documentation_corrected_local": 3,
-    "open_documented": 11
+    "open_documented": 12
   },
   "verification": {
     "original_red": {
@@ -76,13 +76,54 @@
     "testnet_ignored_tests_run": false,
     "T1": false
   },
+  "integration": {
+    "merge_commit": "682fa9732d8e3c95cb5bfb2d86387c602bdc8ce4",
+    "parents": [
+      "1dd6a08f55d7b753e0cc20a6e119280f7b0fed96",
+      "303e7ef24f6be0bbde0b6da799dfb078044b4ec6"
+    ],
+    "both_parent_diffs_reviewed": true,
+    "conflicts_resolved": [
+      "COORDINACION_CODEX_2026-09-28.md; both complete addenda retained"
+    ],
+    "glm_registry_unchanged": true,
+    "all_targets_check_before_merge_commit": {
+      "exit_code": 0,
+      "compile_seconds": 40.11,
+      "warnings_present": true
+    },
+    "publication": false,
+    "post_merge_tests": {
+      "six_crates": {
+        "passed": 1102,
+        "failed": 0,
+        "ignored": 6,
+        "result_blocks": 87,
+        "compile_seconds": 110
+      },
+      "backtest_lib": {
+        "passed": 37,
+        "failed": 0,
+        "ignored": 0,
+        "execution_seconds": 21.82
+      },
+      "total_disjoint": {
+        "passed": 1139,
+        "failed": 0,
+        "ignored": 6
+      },
+      "registry_mutation_included": false
+    }
+  },
+  "registry_mutation_diagnostic": {"passed": 4, "failed": 0, "proves_gap": true, "included_in_regression_total": false},
   "coverage": {
     "tracked_files_enumerated_at_base": 1350,
     "all_files_semantically_reviewed": false,
     "full_read": [
       "crates/feature-engine/src/path_signatures.rs",
       "crates/feature-engine/tests/path_signature_contract.rs",
-      "docs/TRIAGE_TEORICO_2026-09-29.md"
+      "docs/TRIAGE_TEORICO_2026-09-29.md",
+      "crates/risk-engine/src/veto_registry.rs (main303 integration)"
     ],
     "targeted_read": [
       "crates/feature-engine/src/hurst_dfa.rs",
@@ -118,6 +159,10 @@
     },
     "active_glm_branch_observed": "glm/xlviii-d-transfer-entropy",
     "branches_deleted": [],
+    "later_main_observed_not_in_tested_tree": "ca3ea5d4fbfe85228cb8a0faa60cfc85177c2248",
+    "later_main_unreviewed_change": "cb1a0604 transfer_entropy.rs",
+    "local_shared_notice": ".firecrawl/coordination-codex-st-2026-09-29.md (ignored by Git)",
+    "exclusive_commits_preserved": {"TH": 4, "backup-before-cleanup": 3, "v7-unificacion-wip": 1},
     "other_agents_receipt_confirmed": false
   },
   "sources": [
@@ -365,6 +410,18 @@
       "closure_criterion_or_change": "Conservar CF; validar cobertura en población y política definidas.",
       "runtime_impact_confirmed": false,
       "detail_section": "7. ST-18"
+    },
+    {
+      "id": "ST-19",
+      "priority": "P2",
+      "status": "open_documented",
+      "type": "assurance_contract_gap",
+      "title": "Registro de vetos acepta referencia a test inexistente",
+      "evidence": "Una copia de cff240d7 con test de V-RISK-001 cambiado a __st_missing_behavior_contract__ pasa sus cuatro tests originales.",
+      "closure_criterion_or_change": "Vincular IDs a productores y contratos verificables; mutation test debe detectar pérdida o referencia inválida; distinguir inventario de cobertura FP/FN.",
+      "runtime_impact_confirmed": false,
+      "detail_section": "12. ST-19",
+      "source_sha256": "C7A983D9F0E46EEF72AB62CEBF0B7F28AB995118133A01047514E4BC14B4F799"
     }
   ]
 }

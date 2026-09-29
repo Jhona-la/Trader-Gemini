@@ -1768,3 +1768,15 @@ Rama codex/signature-contract-audit sin publicar. TH6209704a preservada en
 feat/quant-sr-codex-horizonte; decisión de τ sigue pendiente. PR10/20 abiertos,
 20 draft. Sin borrar ramas activas ni backups. No consta recepción de este
 aviso por otros agentes; publicación pública pendiente de autorización informada.
+
+### Cierre ST tras integración local con main303
+
+Consolidado19 (4 código local,3 documentales,12 abiertos): ST-19 demuestra
+que el registro acepta un nombre de test inexistente en una copia (4/4 verdes);
+no acredita vínculo con contratos FP/FN. Registro real intacto.
+Merge local682fa973, ambos padres revisados; conflicto del buzón conserva
+ambos avisos; check all-targets40,11s antes del commit.
+Regresión posterior: seis crates1102/0/6 +replay37/0/0 =1139/0/6.
+Main avanzó luego a ca3ea5d4 (TE), fuera de este corte auditado.
+Aviso local ignorado en .firecrawl/coordination-codex-st-2026-09-29.md del
+checkout compartido; sin acuse. Sin push/PR de ST ni borrado de ramas pendientes.

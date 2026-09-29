@@ -5,7 +5,7 @@
 - Rama codex/signature-contract-audit desde49fc995c; fix f60e1820.
   Cuatro defectos numéricos/temporales;13 regresiones finales. RED7/5 en12.
 - Informe docs/AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md y JSON:
-  18 hallazgos/limitaciones:4 código local,3 documentación,11 abiertos.
+  Corte inicial18; integrado19:4 código local,3 documentación,12 abiertos.
   No firma completa, ni consumidor operativo encontrado, ni alpha probado.
 - Seis crates1098/0/6 +replay lib37/0/0 =1135/0/6; check all-targets1m18s.
   No T-1, operación, entrenamiento/promoción ni golden alterado.
@@ -14,6 +14,15 @@
 - TH6209704a y backups preservados. PR10/20 abiertos,20 draft.
   Publicación pública pendiente de autorización tras bloqueo previo.
   No consta recepción por GLM/Claude del aviso local ST.
+- Integración local682fa973 con main303e7ef2; único conflicto del buzón
+  resuelto conservando ambos avisos. Ambos padres revisados; all-targets
+  pasa40,11s antes del commit. No equivale a merge remoto.
+- ST-19: copia del registro GLM con test inexistente pasa4/4; sus checks
+  no prueban el vínculo prometido con contratos de comportamiento.
+  Registro real intacto; mutación documentada, no contada como reparación.
+- Cierre sobre682fa973: seis crates1102/0/6 +replay37/0/0 =1139/0/6.
+  Main posteriorca3ea5d4 (TE) no auditado en este corte. Aviso compartido
+  ignorado .firecrawl/coordination-codex-st-2026-09-29.md; sin acuse.
 
 
 

@@ -12,8 +12,9 @@ algebraico ni conectar señales nuevas al trading. Otras tres afirmaciones de
 documentación requieren corrección: unicidad de la truncación, fórmula
 incompleta y alcance de la invariancia al remuestreo.
 
-Esta ola registra **18 hallazgos y limitaciones**, no 18 bugs de ejecución:
-4 reparaciones de código, 3 correcciones documentales y 11 cuestiones abiertas
+El consolidado tras la integración (§12) registra **19 hallazgos y limitaciones**,
+no 19 bugs de ejecución: 4 reparaciones de código, 3 correcciones documentales
+y 12 cuestiones abiertas
 de diseño, contrato o validación científica. Ninguna reparación local equivale
 a publicación, merge, despliegue, validación OOS o garantía de rentabilidad.
 
@@ -72,6 +73,7 @@ discontinuas son requisitos de integración futura, no evidencia de conexión.
 | ST-16 | Inferencia, P2 | Lineage del outcome no identifica intervención | Abierto; relacionado con OA |
 | ST-17 | Selección, P2 | Logloss aislada no demuestra MDL | Abierto/corrigendo científico |
 | ST-18 | Garantías, P2 | Existencia de ACI no certifica cobertura desplegada | Abierto; relacionado con CF |
+| ST-19 | Aseguramiento de vetos, P2 | Referencia a test inexistente no detectada | Abierto; mutación aislada §12 |
 
 No se renumeran ni se cierran automáticamente las matrices históricas de
 305 puntos, CF, OA o TH. Los ID ST son un ámbito nuevo, con referencias cruzadas.
@@ -165,7 +167,7 @@ extreme_positive_prices_do_not_require_a_representable_price_ratio cubren
 movimientos pequeños, caídas grandes y ambos sentidos entre el mínimo subnormal
 positivo y f64::MAX. No prueban por enumeración todos los pares f64.
 
-Referencia numérica: [prova automatizada de implementaciones math.h, §5.2](https://cs.stanford.edu/people/sharmar/pubs/popl18.pdf).
+Referencia numérica: [prueba automatizada de implementaciones math.h, §5.2](https://cs.stanford.edu/people/sharmar/pubs/popl18.pdf).
 Se consultó el pasaje de Sterbenz, no se auditó ni adoptó el verificador del artículo.
 
 ## 5. Teoría de firmas: qué calcula y qué no
@@ -583,3 +585,89 @@ Hay una mejora comprobada y una auditoría trazable. No hay certificación globa
 omnisciencia, lectura semántica de cada archivo ni evidencia de duplicación
 consistente del capital. La meta evaluable es crecimiento geométrico con riesgo,
 costes, capacidad e incertidumbre explícitos.
+
+## 12. Adenda de integración — ST-19: registro de vetos sin vínculo verificable
+
+La revisión del avance cff240d7 añade **ST-19 (P2, abierto)**. El consolidado
+pasa a **19 hallazgos/limitaciones: 4 reparaciones de código, 3 documentales,
+12 abiertos**. Las cifras de 18 en adendas anteriores describen el corte previo.
+
+**Evidencia de origen.** veto_registry.rs declara que los tests obligan a
+mantener coherencia con el binario y cobertura de rechazos nombrados.
+La lectura completa de sus cuatro tests muestra controles de campos, IDs,
+Option::Some, recuentos de categorías y estado declarado en la propia tabla.
+No resuelven la referencia de prueba, no la ejecutan por su ID ni comprueban
+todos los sitios de retorno del motor.
+
+**Mutación de falsación.** En una COPIA temporal de la fuente exacta, se cambió
+el test de V-RISK-001 de
+xlvie_hibrido_frio_coincide_con_el_veto_legado a
+__st_missing_behavior_contract__. Rustc --test ejecutó los mismos cuatro tests
+del registro: **4 aprobados, 0 fallidos**. No se alteró el registro real ni
+los tests reales del repo. El parche de una línea se conserva en
+[artefacto de mutación](artifacts/veto_registry_missing_test_mutation.patch).
+
+**Causa y alcance.** Presencia de un string no implica existencia, ejecución,
+cobertura FP/FN ni vigencia de su contrato. Comprobar EstadoVeto::Retirado en la
+tabla tampoco demuestra que el gate ya no se ejecute. Una cantidad mínima de
+entradas o medidos≥literales es una propiedad del inventario, no una prueba
+de que cada límite tenga fundamento. No se afirma que todos los tests de
+riesgo sean falsos ni que CI completa carezca de otras comprobaciones:
+el contraejemplo refuta la garantía atribuida a estos cuatro checks.
+
+**Impacto.** La deriva código↔catálogo puede permanecer invisible mientras el
+registro aparece verde. Esto afecta gobernanza y aseguramiento de los vetos,
+no cambia por sí solo una orden ni desactiva una protección de capital.
+
+**Criterio de cierre.** IDs tipados emitidos por puntos de decisión; registro
+contrastado contra esos productores; prueba real localizable y con condiciones
+de disparo/no disparo; política explícita para tests ignorados; controles que
+fallen al mutar/remover productor o contrato. Conservar metadatos históricos
+y deuda sin sustituir evidencia por cuotas de clasificación. Coordinar cambios
+con GLM; esta ola documenta, no reescribe su catálogo recién integrado.
+
+Fuente SHA-256:
+C7A983D9F0E46EEF72AB62CEBF0B7F28AB995118133A01047514E4BC14B4F799.
+Copia diagnóstica:
+C:/Users/jhona/AppData/Local/Temp/codex-st-registry-9b96e963237646a7a3db3a0d93f8b703/registry_missing_test.rs.
+El artefacto permite reproducir la mutación en otra copia del commit cff240d7;
+no se debe aplicar el parche diagnóstico al árbol de producción.
+
+## 13. Recibo de integración local
+
+Merge local **682fa9732d8e3c95cb5bfb2d86387c602bdc8ce4**, padres
+1dd6a08f55d7b753e0cc20a6e119280f7b0fed96 y
+303e7ef24f6be0bbde0b6da799dfb078044b4ec6.
+
+Único conflicto: dos adendas concurrentes al buzón de coordinación. Se conservaron
+ambas completas. Comparación contra cada padre revisada; el registro y export
+de GLM son idénticos a main303. La compilación workspace --all-targets pasó
+en40,11s ANTES del commit. Warnings preexistentes visibles; ninguno se ocultó.
+
+Este merge incorpora main en la rama Codex. NO incorpora Codex en main remoto
+ni sustituye autorización de publicación. Los resultados del §9 quedan asociados
+a f60e1820; la corrida posterior al merge se registra separadamente.
+
+### Resultado posterior al merge y corte final
+
+Sobre el árbol 682fa973 se repitieron las suites: seis crates **1102/0/6**
+(87 bloques, compilación1m50s), y replay lib **37/0/0** (ejecución21,82s).
+Total disjunto **1139 aprobadas, 0 fallidas, 6 ignoradas**. Las cuatro pruebas
+extra respecto al corte previo son las del registro GLM. La mutación aislada
+4/4 de ST-19 NO se suma: prueba un hueco de aseguramiento, no una reparación.
+
+Main siguió avanzando concurrentemente a ca3ea5d4fbfe85228cb8a0faa60cfc85177c2248
+(transfer_entropy.rs, cb1a0604). Esa implementación posterior NO fue auditada
+ni forma parte del árbol 682fa973 verificado. El hash de corte evita atribuir
+los resultados a cambios ajenos más recientes. Antes de publicar habrá que
+reconciliar ese avance y repetir la verificación correspondiente.
+
+Se dejó aviso local ignorado por Git en el checkout compartido:
+.firecrawl/coordination-codex-st-2026-09-29.md, con rama, hallazgos y ubicación
+del informe. No consta lectura/aceptación por GLM/Claude; no se afirma contacto
+con la sesión cloud. Ningún índice ni fuente compartida se modificó.
+
+Lectura de ancestralidad frente a mainca3: TH mantiene4 commits exclusivos,
+backup-before-cleanup3 y v7-unificacion-wip1. No son ramas integradas borrables.
+La rama ST tampoco está integrada remotamente. Push/PR/merge/remoción quedan
+pendientes de autorización informada de publicación y cierre de integración.
