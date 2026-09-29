@@ -544,3 +544,119 @@ async fn fmt285b_paridad_con_partition_income() {
         p.exact_duplicates_dropped as u64
     );
 }
+
+// ── XLVI·G / §13.1: payload de contradicción con bits exactos ────────
+
+/// El conflicto cuarentenado lleva AMBOS importes con bits EXACTOS y el
+/// instante compartido: la conciliación resuelve con el payload (¿bits
+/// distintos = revisión real del proveedor?), no con la sospecha.
+#[tokio::test]
+async fn xlvig_conflicto_lleva_ambos_importes_en_bits() {
+    let w = collect(vec![vec![row(1, 10, 1.0), row(1, 10, 1.0000000000000002)]], 10, 1)
+        .await
+        .unwrap();
+    assert_eq!(w.quarantined.len(), 1);
+    let c = w.quarantined[0].conflict.as_ref().expect("payload §13.1");
+    assert_eq!(c.accepted_bits, 1.0_f64.to_bits());
+    assert_eq!(c.new_bits, 1.0000000000000002_f64.to_bits());
+    assert_ne!(c.accepted_bits, c.new_bits, "revisión real, no reparseo");
+    assert_eq!(c.accepted_income, 1.0);
+    assert_eq!(c.accepted_time_ms, 10, "instante de la identidad compartida");
+    // Las cuarentenas NO-conflicto no fabrican payload.
+    let mut invalid = row(9, 10, 1.0);
+    invalid.tran_id = 0;
+    let w2 = collect(vec![vec![invalid]], 10, 1).await.unwrap();
+    assert!(w2.quarantined[0].conflict.is_none());
+}
+
+/// El payload de contradicción es idéntico por las DOS puertas (recorrido
+/// y partición) — un contrato de identidad, una evidencia de conflicto.
+#[tokio::test]
+async fn xlvig_payload_de_conflicto_paridad_entre_puertas() {
+    let batch = vec![row(1, 10, 5.0), row(1, 10, -5.0)];
+    let w = collect(vec![batch.clone()], 10, 1).await.unwrap();
+    let p = partition_income(batch);
+    let cw = w.quarantined[0].conflict.as_ref().unwrap();
+    let cp = p.quarantined[0].conflict.as_ref().unwrap();
+    assert_eq!(cw, cp);
+}
+
+// ── XLVI·G / §13.3: FX as-of y balance de flujos ─────────────────────
+
+/// Mapa de tasas (par, instante) → tasa para los tests.
+struct FxTabla<'a>(&'a [((&'a str, u64), f64)]);
+impl FxAsOf for FxTabla<'_> {
+    fn rate(&self, from: &str, to: &str, time_ms: u64) -> Option<f64> {
+        // El proveedor responde por PAR DIRIGIDO; sin tasa para otro instante.
+        self.0
+            .iter()
+            .find(|((f, t), _)| *f == from && *t == time_ms)
+            .map(|(_, r)| *r)
+            .filter(|_| to == "USDT")
+    }
+}
+
+/// La conversión es AS-OF: cada flujo usa la tasa de SU instante, no la
+/// actual. Flujos sin tasa quedan como subtotales independientes por activo
+/// — nunca un total mixto silencioso, nunca descarte.
+#[test]
+fn xlvig_fx_convierte_as_of_y_deja_independiente_lo_sin_tasa() {
+    let mut bnb_t1 = row(1, 100, 2.0);
+    bnb_t1.asset = "BNB".into();
+    let mut bnb_t2 = row(2, 200, 1.0);
+    bnb_t2.asset = "BNB".into();
+    let mut btc = row(3, 100, 0.5);
+    btc.asset = "BTC".into(); // sin tasa en el mapa
+    let usdt = row(4, 100, 10.0);
+    let entries = vec![bnb_t1, bnb_t2, btc, usdt];
+
+    let fx = FxTabla(&[(("BNB", 100), 600.0), (("BNB", 200), 500.0)]);
+    let b = fx_balance_as_of(&entries, "USDT", &fx).unwrap();
+    // BNB@100: 2×600; BNB@200: 1×500 (as-of distinta por instante); USDT 10.
+    assert!((b.converted_net - (1200.0 + 500.0 + 10.0)).abs() < 1e-9);
+    // BTC sin tasa as-of: subtotal independiente, NI convertido NI descartado.
+    assert!((b.unconverted_by_asset["BTC"] - 0.5).abs() < 1e-12);
+    assert_eq!(b.conversions.len(), 3, "2 conversiones + 1 passthrough");
+    assert!(b.conversions.iter().any(|c| c.passthrough));
+    // La mirada de tasa NO es lookahead: la tasa del instante 200 (500)
+    // no se aplicó al flujo del instante 100.
+    assert_eq!(b.conversions[0].rate, 600.0);
+    assert_eq!(b.conversions[1].rate, 500.0);
+}
+
+/// Tasa rota del proveedor (NaN/≤0) se trata como SIN tasa — el balance
+/// nunca se envenena; y el balance es invariante a permutación de filas.
+#[test]
+fn xlvig_fx_tasa_rota_es_sin_tasa_y_el_balance_es_permutable() {
+    let mut b = row(1, 100, 3.0);
+    b.asset = "BNB".into();
+    let fx_rota = FxTabla(&[(("BNB", 100), f64::NAN)]);
+    let bal = fx_balance_as_of(&[b.clone()], "USDT", &fx_rota).unwrap();
+    assert!((bal.unconverted_by_asset["BNB"] - 3.0).abs() < 1e-12);
+    assert_eq!(bal.conversions.len(), 0);
+
+    let fx_neg = FxTabla(&[(("BNB", 100), -1.0)]);
+    let bal = fx_balance_as_of(&[b], "USDT", &fx_neg).unwrap();
+    assert!(bal.unconverted_by_asset.contains_key("BNB"));
+
+    // Permutación: mismo neto, mismos subtotales.
+    let mut x = row(1, 100, 2.0);
+    x.asset = "BNB".into();
+    let y = row(2, 100, 7.0);
+    let fx = FxTabla(&[(("BNB", 100), 600.0)]);
+    let a = fx_balance_as_of(&[x.clone(), y.clone()], "USDT", &fx).unwrap();
+    let c = fx_balance_as_of(&[y, x], "USDT", &fx).unwrap();
+    assert_eq!(a.converted_net, c.converted_net);
+}
+
+/// El guard legado sigue intacto: quien NO convierte sigue recibiendo
+/// MixedAssets — esta vía no lo reemplaza, lo complementa.
+#[test]
+fn xlvig_guard_legado_mixed_assets_sigue_disponible() {
+    let mut b = row(1, 10, 1.0);
+    b.asset = "BNB".into();
+    assert_eq!(
+        single_income_asset(&[b, row(2, 10, 1.0)]),
+        Err(IncomeEvidenceError::MixedAssets)
+    );
+}
