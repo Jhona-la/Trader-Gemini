@@ -60,6 +60,10 @@ const WF_REAL_TOP_K: usize = 24;
 const WF_REAL_WINDOW: usize = 400;
 const WF_REAL_MAX_COINS: usize = 8;
 const WF_REAL_MICRO_TICKS: usize = 8;
+/// CL-27 — duración de una barra del examen: `WF_REAL_MICRO_TICKS` micro-ticks
+/// de 2 s. Las series del examen son retornos del MERCADO muestreados a este
+/// reloj, así que cada retorno ocupa en el replay el tiempo que ocupó en vivo.
+const WF_BAR_MS: u64 = WF_REAL_MICRO_TICKS as u64 * 2_000;
 
 /// Numerario de precio del examen. Las series son de RETORNOS relativos, de
 /// modo que el nivel de precio no afecta al PnL ni a la aptitud: sólo fija la
@@ -212,24 +216,60 @@ pub fn wf_min_series_len() -> usize {
     2 * WF_MIN_TRADES as usize
 }
 
-/// CL-23 — series que el juez `wf_evaluate_real` puede juzgar. Las de cada
+/// CL-23 — series que el juez `wf_evaluate_real` puede juzgar: las de cada
 /// moneda con al menos `wf_min_series_len()` observaciones (sus últimas
-/// `WF_REAL_WINDOW`); si ninguna llega, la serie global (T-10, arranque frío)
-/// si ella sí llega; si tampoco, ninguna: la ronda no tiene nada que juzgar.
-pub fn series_del_examen(por_moneda: &[Vec<f64>], global: &[f64]) -> Vec<Vec<f64>> {
+/// `WF_REAL_WINDOW`). Si ninguna llega, ninguna: la ronda no tiene nada que
+/// juzgar. CL-27: ya no hay respaldo global — era la serie de deltas de PnL
+/// del incumbente, que no es un precio (FMT-049). Una serie plana (precio
+/// congelado, feed caído) tampoco se juzga: no contiene mercado.
+pub fn series_del_examen(por_moneda: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let minimo = wf_min_series_len();
-    let juzgables: Vec<Vec<f64>> = por_moneda
+    por_moneda
         .iter()
-        .filter(|sr| sr.len() >= minimo)
+        .filter(|sr| sr.len() >= minimo && sr.iter().any(|r| *r != 0.0))
         .map(|sr| sr[sr.len().saturating_sub(WF_REAL_WINDOW)..].to_vec())
-        .collect();
-    if !juzgables.is_empty() {
-        juzgables
-    } else if global.len() >= minimo {
-        vec![global.to_vec()]
-    } else {
-        Vec::new()
+        .collect()
+}
+
+/// CL-27 (FMT-049) — muestreo por RELOJ del precio de una moneda para el
+/// examen. `ultimo` es el cierre de la barra anterior (instante, precio).
+/// Devuelve el nuevo estado y, si se cerró una barra de `WF_BAR_MS`, su
+/// retorno simple (el replay avanza el precio con `p·(1 + r)`). Un hueco de
+/// más de cuatro barras (daemon parado, feed caído) reinicia la referencia
+/// sin emitir: comprimirlo en una barra fabricaría un salto que no ocurrió en
+/// ese tiempo.
+pub fn barra_de_mercado(
+    ultimo: Option<(u64, f64)>,
+    ahora_ms: u64,
+    precio: f64,
+) -> (Option<(u64, f64)>, Option<f64>) {
+    if !precio.is_finite() || precio <= 0.0 {
+        return (ultimo, None);
     }
+    match ultimo {
+        None => (Some((ahora_ms, precio)), None),
+        Some((t0, p0)) => {
+            let dt = ahora_ms.saturating_sub(t0);
+            if dt < WF_BAR_MS {
+                (ultimo, None)
+            } else if dt > 4 * WF_BAR_MS {
+                (Some((ahora_ms, precio)), None)
+            } else {
+                (Some((ahora_ms, precio)), Some(precio / p0 - 1.0))
+            }
+        }
+    }
+}
+
+/// Desviación típica poblacional de todos los retornos de las series.
+fn volatilidad_de_series(series: &[Vec<f64>]) -> Option<f64> {
+    let n = series.iter().map(Vec::len).sum::<usize>();
+    if n == 0 {
+        return None;
+    }
+    let media = series.iter().flatten().sum::<f64>() / n as f64;
+    let var = series.iter().flatten().map(|r| (r - media).powi(2)).sum::<f64>() / n as f64;
+    var.sqrt().is_finite().then(|| var.sqrt())
 }
 
 /// D-746 — pruebas acumuladas para la corrección por multiplicidad. Monótona
@@ -748,6 +788,13 @@ pub struct LiveEvolutionDaemon {
     /// ruido crece con ln N. Este contador acumula los candidatos realmente
     /// evaluados desde el arranque del daemon.
     pub cumulative_trials: usize,
+    /// CL-27 (FMT-049) — retornos del MERCADO por moneda, muestreados por
+    /// reloj en barras de `WF_BAR_MS`: la entrada del examen y del
+    /// pre-examen. Antes el examen reproducía `returns_by_coin` (deltas de PnL
+    /// del incumbente) como si fueran precios: una racha perdedora del
+    /// incumbente se convertía en una tendencia bajista limpia.
+    pub market_returns_by_coin: std::collections::HashMap<usize, Vec<f64>>,
+    market_last_bar: std::collections::HashMap<usize, (u64, f64)>,
 }
 
 impl LiveEvolutionDaemon {
@@ -787,6 +834,28 @@ impl LiveEvolutionDaemon {
             post_promo_returns: Vec::with_capacity(256),
             promoted_generation: None,
             cumulative_trials: 0,
+            market_returns_by_coin: std::collections::HashMap::new(),
+            market_last_bar: std::collections::HashMap::new(),
+        }
+    }
+
+    /// CL-27 — cierra, para cada moneda con precio, la barra de mercado del
+    /// examen si ya transcurrió `WF_BAR_MS` (ver `barra_de_mercado`).
+    pub fn sample_market_bars_at(&mut self, ahora_ms: u64) {
+        for coin_id in 0..self.arena.coins.len() {
+            let precio = self.arena.coins[coin_id].current_price.load(Ordering::Relaxed);
+            let ultimo = self.market_last_bar.get(&coin_id).copied();
+            let (estado, retorno) = barra_de_mercado(ultimo, ahora_ms, precio);
+            if let Some(e) = estado {
+                self.market_last_bar.insert(coin_id, e);
+            }
+            if let Some(r) = retorno {
+                let ventana = self.market_returns_by_coin.entry(coin_id).or_default();
+                ventana.push(r);
+                if ventana.len() > WF_REAL_WINDOW {
+                    ventana.drain(0..ventana.len() - WF_REAL_WINDOW);
+                }
+            }
         }
     }
 
@@ -949,6 +1018,12 @@ impl LiveEvolutionDaemon {
 
             // Muestrear retornos realizados en tiempo real tras cada tick de 500ms
             self.sample_realized_returns();
+            // CL-27: y el precio de mercado por reloj, entrada del examen.
+            let ahora_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            self.sample_market_bars_at(ahora_ms);
 
             // FASE 3: watchdog de rollback post-promoción
             self.check_post_promotion_degradation();
@@ -1224,28 +1299,23 @@ impl LiveEvolutionDaemon {
         // watchdog más abajo).
         let genoma_activo = current_genome.clone();
 
-        // FASE 13: Entropic Volatility Mutation
-        let mean = self.returns_history.iter().sum::<f64>() / self.returns_history.len() as f64;
-        let variance = self
-            .returns_history
-            .iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f64>()
-            / self.returns_history.len() as f64;
-        let volatility = variance.sqrt().max(0.0001);
-
-        // FIX BLOQUEO #2: Capturar snapshot de retornos reales para walk-forward en el closure
-        let returns_snapshot: Vec<f64> = self.returns_history.clone();
         // T-10: series POR MONEDA para el walk-forward. CL-23: con la
         // longitud que el juez exige (`wf_min_series_len`), no 40: entre 40 y
         // 59 observaciones la serie desplazaba al respaldo global y luego el
         // juez la descartaba — ninguna serie juzgada y la ronda perdida.
-        let per_coin_series: Vec<Vec<f64>> = self
-            .returns_by_coin
-            .values()
-            .filter(|v| v.len() >= wf_min_series_len())
-            .cloned()
-            .collect();
+        // CL-27 (FMT-049): series de MERCADO por reloj, no deltas de PnL.
+        let per_coin_series: Vec<Vec<f64>> = {
+            let mut ids: Vec<&usize> = self.market_returns_by_coin.keys().collect();
+            ids.sort();
+            let por_moneda: Vec<Vec<f64>> =
+                ids.iter().map(|id| self.market_returns_by_coin[*id].clone()).collect();
+            series_del_examen(&por_moneda)
+        };
+
+        // FASE 13: Entropic Volatility Mutation. CL-27: volatilidad por barra
+        // del MERCADO que se examina (la de los deltas de PnL no estaba en las
+        // unidades de las series).
+        let volatility = volatilidad_de_series(&per_coin_series).unwrap_or(0.0).max(0.0001);
 
         // E-04 — FRICCIÓN COHERENTE CON EL EV GATE: antes fee fijo
         // 0.0008 mientras el gate real incluye maker+taker+2×slip.
@@ -1321,7 +1391,7 @@ impl LiveEvolutionDaemon {
             // sobre el top-K + el incumbente — nunca más el mejor de un
             // mundo simulado que no es el que opera.
             let mut prescreened: Vec<(f64, SuperGenotype)> = Vec::with_capacity(2_048);
-            let real_series = series_del_examen(&per_coin_series, &returns_snapshot);
+            let real_series = per_coin_series.clone();
             if real_series.is_empty() {
                 // CL-23: sin ninguna serie juzgable no hay selección, así que
                 // la ronda no se juega ni se cargan pruebas al DSR (antes se
@@ -1479,21 +1549,12 @@ impl LiveEvolutionDaemon {
                 // de una decidía trades de otra. Se itera la porción OOS
                 // de cada serie por moneda; si no hay series suficientes
                 // (arranque frío) se cae a la serie global (compat).
-                let series: Vec<Vec<f64>> = if !per_coin_series.is_empty() {
-                    // pre-screen: sólo los últimos 300 retornos por moneda
-                    per_coin_series
-                        .iter()
-                        .map(|sr| {
-                            if sr.len() > 300 {
-                                sr[sr.len() - 300..].to_vec()
-                            } else {
-                                sr.clone()
-                            }
-                        })
-                        .collect()
-                } else {
-                    vec![returns_snapshot.clone()]
-                };
+                // pre-screen: sólo los últimos 300 retornos por moneda. Sin
+                // series juzgables la ronda ya se omitió (CL-23).
+                let series: Vec<Vec<f64>> = per_coin_series
+                    .iter()
+                    .map(|sr| sr[sr.len().saturating_sub(300)..].to_vec())
+                    .collect();
 
                 for coin_ret in &series {
                     let n_returns = coin_ret.len();
@@ -1511,7 +1572,7 @@ impl LiveEvolutionDaemon {
                         // distancia de probabilidad, ~0.1-0.45) — desajuste
                         // semántico que hacía el filtro degenerado. Ahora el
                         // momentum se expresa en sigmas de la ventana real
-                        // (`volatility`, calculada sobre returns_history) y el
+                        // (`volatility`, de las series de mercado, CL-27) y el
                         // umbral del genoma (0.5..0.95) se mapea a 0..0.9
                         // sigmas de momentum mínimo exigido.
                         let prev_sigma = if volatility > 1e-12 {
@@ -2082,24 +2143,77 @@ mod tests {
     fn cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar() {
         let minimo = wf_min_series_len();
         assert_eq!(minimo, 60);
-        let global: Vec<f64> = vec![0.001; 100];
 
-        // Dos monedas con 50: se juzga la serie global.
-        let s = series_del_examen(&[vec![0.001; 50], vec![-0.001; 50]], &global);
-        assert_eq!(s.len(), 1);
-        assert_eq!(s[0].len(), 100);
+        // Dos monedas con 50: nada juzgable, la ronda no carga pruebas.
+        assert!(series_del_examen(&[vec![0.001; 50], vec![-0.001; 50]]).is_empty());
 
         // Mezcla: sólo la moneda que llega.
-        let s = series_del_examen(&[vec![0.001; 70], vec![0.001; 50]], &global);
+        let s = series_del_examen(&[vec![0.001; 70], vec![0.001; 50]]);
         assert_eq!(s.iter().map(Vec::len).collect::<Vec<_>>(), vec![70]);
 
         // Recorte a la ventana del juez.
-        let s = series_del_examen(&[vec![0.001; 500]], &global);
+        let s = series_del_examen(&[vec![0.001; 500]]);
         assert_eq!(s[0].len(), WF_REAL_WINDOW);
-
-        // Nada juzgable: nada que examinar (la ronda no carga pruebas).
-        assert!(series_del_examen(&[vec![0.001; 59]], &vec![0.001; 59]).is_empty());
         assert!(s.iter().all(|x| x.len() >= minimo));
+
+        // CL-27: una serie plana (precio congelado) no contiene mercado.
+        assert!(series_del_examen(&[vec![0.0; 100]]).is_empty());
+    }
+
+    /// CL-27 (FMT-049) — las barras del examen son retornos del PRECIO por
+    /// reloj, no deltas de PnL.
+    #[test]
+    fn cl27_la_barra_del_examen_es_el_retorno_del_precio_por_reloj() {
+        let t0 = 1_000_000u64;
+        let (e, r) = barra_de_mercado(None, t0, 100.0);
+        assert_eq!((e, r), (Some((t0, 100.0)), None));
+        // Antes de una barra completa, nada.
+        let (e2, r) = barra_de_mercado(e, t0 + WF_BAR_MS - 1, 101.0);
+        assert_eq!((e2, r), (e, None));
+        // Al cerrar la barra, el retorno del precio.
+        let (e3, r) = barra_de_mercado(e2, t0 + WF_BAR_MS, 99.0);
+        assert_eq!(e3, Some((t0 + WF_BAR_MS, 99.0)));
+        assert!((r.unwrap() - (-0.01)).abs() < 1e-12);
+        // Un hueco largo reinicia la referencia sin emitir un salto.
+        let (e4, r) = barra_de_mercado(e3, t0 + WF_BAR_MS + 5 * WF_BAR_MS, 120.0);
+        assert_eq!((e4, r), (Some((t0 + 6 * WF_BAR_MS, 120.0)), None));
+        // Precio no válido: nada cambia.
+        assert_eq!(barra_de_mercado(e4, t0 + 7 * WF_BAR_MS, f64::NAN), (e4, None));
+    }
+
+    /// CL-27 — el daemon alimenta el examen con el precio de mercado, y el
+    /// PnL del incumbente no entra en esas series.
+    #[test]
+    fn cl27_el_examen_del_daemon_se_alimenta_del_mercado_y_no_del_pnl() {
+        let dir = std::env::temp_dir().join(format!("cl27_{}", std::process::id()));
+        let arena = GlobalArena::build_in_own_stack(100.0);
+        let mut d = LiveEvolutionDaemon::new(
+            QuantumHotSwapState::new(),
+            arena.clone(),
+            true,
+            dir.join("ledger.db").to_str().unwrap(),
+            dir.join("champion.json").to_str().unwrap(),
+        );
+        let t0 = 1_000_000u64;
+        let precios = [100.0, 101.0, 100.0, 102.0];
+        for (k, p) in precios.iter().enumerate() {
+            arena.coins[0].current_price.store(*p, Ordering::Relaxed);
+            // Un incumbente que PIERDE en cada barra (p.ej. un corto en subida).
+            arena.coins[0]
+                .metrics
+                .pnl_realized
+                .store(-(k as f64), Ordering::Relaxed);
+            d.sample_realized_returns();
+            d.sample_market_bars_at(t0 + k as u64 * WF_BAR_MS);
+        }
+        let barras = &d.market_returns_by_coin[&0];
+        assert_eq!(barras.len(), 3);
+        assert!((barras[0] - 0.01).abs() < 1e-12);
+        assert!((barras[1] - (100.0 / 101.0 - 1.0)).abs() < 1e-12);
+        assert!((barras[2] - 0.02).abs() < 1e-12);
+        // Las pérdidas del incumbente siguen en su propio registro.
+        assert!(d.returns_by_coin.get(&0).map_or(true, |v| v.iter().all(|r| *r < 0.0)));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// CL-24 — el corto del pre-examen exige el ESPEJO de su umbral.
