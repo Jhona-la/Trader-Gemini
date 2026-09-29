@@ -682,3 +682,19 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - Rama propia codex/conformal-contract-audit en curso hasta recibo remoto.
   GLM observado en glm/xlv-health-check, Claude PR10c844d4fd. Avisos PR10
   5882626900/5882772751. Conservar ramas activas y backups exclusivos.
+
+## 2026-09-28 — Codex OA: atribución causal y contrato numérico
+
+- Fuentes4737f95b; integración5c4a8c7e con maincf5c. Ocho fallos reparados,
+  18 regresiones nuevas: snapshots por activo/slot/generación/símbolo/tiempo,
+  crédito rama/bosque y dominio numérico/softmax de modelos participantes.
+- Seis crates963/0/1 +backtest31/0/0 =994/0/1; check all-targets26,71s pasa.
+  Sin T-1/promoción/live; no se desactivó ningún control de riesgo.
+- Informe docs/AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md y JSON:17 hallazgos,
+  8 reparados/9 abiertos. Pendientes tau slot2, max(ID), target/horizonte,
+  versión durable, garantías estadísticas, namespace/frescura Hawkes y ledger.
+- GLM caller cf5c incorporado; namespace aún distinto, avisado PR10
+  5883007522/5883110364. Claude mantiene PR10c844d4fd; no acuse observado.
+- Rama codex/outcome-clock-audit propia hasta recibo remoto. Backups con3/1
+  commits exclusivos y ramas activas preservados. No declarar todo auditado
+  ni merged; JSON conserva snapshot previo y recibo posterior confirma Git.

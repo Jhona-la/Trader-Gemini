@@ -1718,3 +1718,29 @@ GLM en glm/xlv-health-check; Claude mantiene PR10c844d4fd. Avisos PR10
 5882626900/5882772751. Conservar backups y ramas activas; no tocar índice ajeno.
 Estado de este corte: fuentes verificadas, publicación/merge aún por confirmar
 en el recibo de la PR propia. No confundir check local con CI configurada.
+
+## 2026-09-28 — Codex OA: aprendizaje causal por posición y ensamble
+
+Fuentes4737f95b; integración5c4a8c7e con maincf5c445a. Rama
+codex/outcome-clock-audit reservada hasta confirmar merge remoto.
+Ocho fallos reproducidos y reparados: opinión reciente vs apertura; rama/voto
+per-coin vs multislot; dominios inválidos de p/y/retorno/skill; normalización
+que borraba al único modelo disponible. Binding por símbolo/slot/generación/
+tiempo; cierre defensivo y controles de riesgo conservados.
+
+Informe: [Aprendizaje causal](docs/AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md).
+Artefacto: [17 hallazgos OA](docs/artifacts/auditoria_aprendizaje_causal_2026-09-28.json).
+RED2/8/0 en10 tests; GREEN18/0/0. Seis crates963/0/1 y backtest lib31/0/0:
+994/0/1, regresiones incluidas. Check workspace all-targets pasa26,71s.
+Sin T-1, promoción ni operación. Los warnings no se ocultaron.
+
+Nueve pendientes: garantías de z, objetivo ponderado y penalización NN,
+tau escrita en slot2 al abrir otros, crédito por max(ID), targets/horizontes,
+versiones/persistencia, namespace Hawkes, frescura/coste y ledger incompleto.
+GLM añadió caller cf5c, pero set_for_coin y get_scoped_value_or usan claves
+diferentes; avisado, región no modificada. No certificar cadena100%operativa.
+Avisos PR10:5883007522/5883110364; no consta acuse. Claude PR10c844d4fd activo.
+Backups3/1 commits exclusivos preservados. No afirmar auditoría semántica de
+los1.328 archivos base ni que todos los cambios ajenos ya llegaron a main.
+El JSON es snapshot pre-merge; el recibo remoto debe confirmar publicación
+y retirada de la rama propia después de verificar hash/ancestralidad.
