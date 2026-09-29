@@ -2511,23 +2511,11 @@ impl GodEngineCore {
                     if tau_de_la_posicion > 0 {
                         self.feature_engines[coin_id].tau_ultimo_cierre_ms = tau_de_la_posicion;
                     }
-                    let was_loss = net_trade_pnl <= 0.0;
-                    self.feature_engines[coin_id].last_scalp_was_loss = was_loss;
-                    if was_loss {
-                        self.feature_engines[coin_id].scalp_loss_streak += 1;
-                        if is_long {
-                            self.feature_engines[coin_id].scalp_long_loss_streak += 1;
-                        } else {
-                            self.feature_engines[coin_id].scalp_short_loss_streak += 1;
-                        }
-                    } else {
-                        self.feature_engines[coin_id].scalp_loss_streak = 0;
-                        if is_long {
-                            self.feature_engines[coin_id].scalp_long_loss_streak = 0;
-                        } else {
-                            self.feature_engines[coin_id].scalp_short_loss_streak = 0;
-                        }
-                    }
+                    // CL-5: la racha la lleva SÓLO `record_trade_outcome`.
+                    // Aquí se incrementaba antes con otra definición de
+                    // pérdida (neto ≤ 0): una pérdida direccional contaba
+                    // DOS veces y una pérdida por debajo del umbral
+                    // direccional se sumaba para borrarse a continuación.
                     let is_directional_loss = net_trade_pnl < 0.0 && pnl_pct <= -0.0005;
                     let cur_tick = self.feature_engines[coin_id].tick_count;
                     self.feature_engines[coin_id].record_trade_outcome(

@@ -618,3 +618,20 @@ fn observation_diagnostics_distinguish_duplicate_older_conflict_and_invalid() {
     let d=&c.liquidation_diagnostics;
     assert_eq!((d.accepted,d.duplicates,d.older,d.conflicting,d.invalid),(1,1,1,1,1));
 }
+
+/// CL-5 — una pérdida es UNA pérdida en la racha. El cierre incrementaba la
+/// racha en línea y después `record_trade_outcome` la volvía a incrementar:
+/// la primera pérdida ya contaba como dos y `exigencia_tras_racha` duplicaba
+/// el umbral desde el primer tropiezo.
+#[test]
+fn cl5_una_perdida_cuenta_una_sola_vez_en_la_racha() {
+    let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
+    let _dir = FixtureDirectory::new();
+    let (_arena, mut core) = core(OutcomeContext::IsolatedSimulation, false);
+    assert!(close(&mut core, 97.0) < 0.0);
+    let fe = &core.feature_engines[0];
+    assert_eq!(fe.scalp_loss_streak, 1, "racha global");
+    assert_eq!(fe.scalp_long_loss_streak, 1, "racha de largos");
+    assert_eq!(fe.scalp_short_loss_streak, 0, "racha de cortos");
+    assert!(fe.last_scalp_was_loss);
+}
