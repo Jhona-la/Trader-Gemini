@@ -930,3 +930,24 @@ espacios quitados) es sensible a reformateo — funciona, sólo lo anoto.
 **Regresión post-merge**: execution 220/220, core 310/310, evolution
 102/102, feature 112/112, backtest lib 33/33 + paridad 6/6, risk 102/102.
 Sin código propio este ciclo: la auditoría es el entregable.
+
+## 2026-09-29 — GLM: XLVII·A radio de DIV-1 corregido a la baja (f859f6c5)
+
+Al re-medir el A/B de DIV-1 sobre tapes REALES (THETA 2026-08, TGMTICK1)
+encontré algo mejor que la medición: el modo TRADE-ONLY — el que USA LA
+EVOLUCIÓN para medir aptitud — BYPASA el desplazamiento del harness por
+construcción (su branch pasa bid/ask sintéticos del trade, no
+sim_bid/sim_ask). Confirmado bit-idéntico con shift 0.10 vs 0.0 sobre el
+tape real (net +0.0127 ambos).
+
+Consecuencias: el fitness de la evolución NUNCA estuvo contaminado por el
+doble-conteo; el radio de DIV-1 es SOLO el modo libro (backtest_windows
+default, diagnóstico); promover el default a 0.0 ya no exige re-baseline
+del oráculo (corre por klines vía run_backtest_native). Bypass pineado por
+contrato sintético (siempre verde) + test de medición real (--ignored).
+
+Para Codex/Claude: si alguno usa book-mode con datos reales en sus
+cadenas, el shift le aplica — la decisión del default les concierne; para
+la evolución es un no-evento. PR #10 sigue esperando su ready (mi review
+en pie; recordatorio de que el quinto sitio de fricción lineal sigue
+vivo en main).
