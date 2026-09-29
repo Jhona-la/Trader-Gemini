@@ -1,0 +1,286 @@
+{
+  "schema_version": 1,
+  "audit_id": "CF-2026-09-28",
+  "report": "docs/AUDITORIA_CONFORMAL_CONTRATO_2026-09-28.md",
+  "timezone": "America/Bogota",
+  "base_commit": "fa23a1b7c00327f108934b70fe257b37c68deb62",
+  "source_commit": "836aa9dcefb3b495edf0db238aedf9453ebd00ed",
+  "branch": "codex/conformal-contract-audit",
+  "latest_status": "pre_merge_validated",
+  "complete_project_audit": false,
+  "return_target_validated": false,
+  "production_deployed": false,
+  "scope": {
+    "tracked_files_in_base": 1324,
+    "workspace_members_count": 24,
+    "all_files_semantically_read": false,
+    "review_type": "targeted causal path and scientific contract; not whole-project certification",
+    "deep_read": [
+      "crates/god-engine-core/src/conformal.rs",
+      "crates/signal-engine/src/conformal_reversion_filter.rs"
+    ],
+    "partial_path_review": [
+      "crates/god-engine-core/src/lib.rs",
+      "crates/quantum-arena/src/genome.rs",
+      "crates/quantum-arena/src/config.rs",
+      "crates/quantum-arena/src/position.rs",
+      "crates/quantum-arena/src/symbols.rs",
+      "crates/god-engine-core/tests/close_outcome_contract.rs"
+    ],
+    "new_regressions": "crates/god-engine-core/tests/conformal_wiring_contract.rs"
+  },
+  "findings": [
+    {
+      "id": "CF-01",
+      "priority": 1,
+      "status": "fixed_with_regression",
+      "title": "Genome target applied to global while local instance decides",
+      "evidence": "Base lib.rs:3539 and local queries following; local stays 0.10 at gene 0.03.",
+      "change": "Select local/fallback once and apply target to that instance; preserve adapted state.",
+      "tests": [
+        "genome_target_reaches_the_local_calibrator_not_just_global",
+        "evolved_target_changes_next_local_adaptation_without_resetting_state",
+        "explicit_legacy_global_fallback_remains_consistent"
+      ]
+    },
+    {
+      "id": "CF-02",
+      "priority": 1,
+      "status": "fixed_with_regression",
+      "title": "Effective-alpha telemetry taken from a different instance",
+      "evidence": "Controlled RED registry=0.05 versus local=0.11.",
+      "change": "Publish effective_alpha from selected calibrator at lib.rs:3318.",
+      "tests": [
+        "effective_alpha_telemetry_describes_the_instance_that_decides"
+      ],
+      "remaining": "Legacy global registry remains last-writer; external unscoped consumers not certified."
+    },
+    {
+      "id": "CF-03",
+      "priority": 1,
+      "status": "fixed_with_regression",
+      "title": "Invalid predictions imputed/clipped into observations and admitted in warmup",
+      "evidence": "40->45 observations, alpha 0.105->0.0875 after five invalid values.",
+      "change": "Reject nonfinite/out-of-range before mutation; accepts=false; p-value API=0 explicit invalid sentinel, not inferred rank.",
+      "tests": [
+        "invalid_predictions_do_not_enter_calibration_or_adaptation",
+        "warmup_is_not_permission_to_accept_an_invalid_probability",
+        "invalid_prediction_rank_is_an_explicit_rejection_sentinel",
+        "endpoints_remain_valid_scores_and_empirical_rank_uses_inclusive_ties"
+      ]
+    },
+    {
+      "id": "CF-04",
+      "priority": 2,
+      "status": "fixed_with_regression",
+      "title": "Entry interlock bypassed conformal publication",
+      "evidence": "Base entries_blocked return precedes conformal block.",
+      "change": "Publish after ml_prob_motor before entry interlock; entry veto and close return unchanged.",
+      "tests": [
+        "entry_interlock_preserves_conformal_analytics_and_still_blocks_entries"
+      ],
+      "remaining": "Does not move all downstream analytics or kill switch."
+    },
+    {
+      "id": "CF-05",
+      "priority": 1,
+      "status": "documentation_corrected_guarantee_open",
+      "title": "Unprojected ACI tracking bound claimed for clipped recurrence",
+      "evidence": "5000 tied scores: 4970 updates, alpha_eff=0.5, observed_error=0, target=0.1, original_bound~=0.03642.",
+      "tests": [
+        "clipped_adaptation_does_not_inherit_the_unprojected_aci_tracking_bound"
+      ],
+      "remaining": "Numerical policy unchanged; example establishes overcoverage/tracking failure, not undercoverage.",
+      "acceptance": "Specify projection residual, target schedule, outcome chronology and prove or empirically qualify the actual contract."
+    },
+    {
+      "id": "CF-06",
+      "priority": 1,
+      "status": "documentation_corrected_contract_open",
+      "title": "Marginal coverage is not selected-trade loss control",
+      "evidence": "Singleton acceptance conditions on a selected subset; a marginal bound alone only gives alpha/P(selection).",
+      "acceptance": "Record selection and decision-time sets, measure selective risk; validate any online selective procedure assumptions."
+    },
+    {
+      "id": "CF-07",
+      "priority": 1,
+      "status": "open",
+      "title": "Outcome-time recalculation differs from decision-time set",
+      "evidence": "update accepts only (p_hat, won); no snapshot, times or version; close loop at lib.rs:2578.",
+      "acceptance": "Causal prediction ledger with decision set, version, delay and replay of out-of-order outcomes."
+    },
+    {
+      "id": "CF-08",
+      "priority": 1,
+      "status": "open",
+      "title": "Directional probability and net-PnL labels are not equivalent",
+      "evidence": "Complement by side is trained against net outcome; stop/cost/first-touch semantics differ.",
+      "links_existing": [
+        "R8-A",
+        "CAL-08"
+      ],
+      "acceptance": "Align model target and economic outcome by side/asset/tau/costs with OOS validation."
+    },
+    {
+      "id": "CF-09",
+      "priority": 2,
+      "status": "open",
+      "title": "Per-asset scalar window mixes ages, scales and versions",
+      "evidence": "VecDeque<f64>, n=200, no timestamp/tau/version in update.",
+      "acceptance": "Provenance first; compare partial pooling and continuous conditioning without assuming weighted conformal validity.",
+      "unverified_hypothesis": "Index identity under universe rotation requires separate replay."
+    },
+    {
+      "id": "CF-10",
+      "priority": 1,
+      "status": "open_reproduced_policy_limit",
+      "title": "Finite rank resolution can make every singleton infeasible",
+      "evidence": "target .01, 200 wins then scores .2/.3/.4: alpha .00365 < 1/201; no valid probability can exclude loss.",
+      "tests": [
+        "finite_rank_resolution_can_block_all_singletons_until_new_feedback"
+      ],
+      "remaining": "Whole-engine starvation not proved: other strategies may supply feedback.",
+      "acceptance": "Instrument no-support state and design safe shadow-outcome protocol; do not remove risk gates merely to force trades."
+    },
+    {
+      "id": "CF-11",
+      "priority": 2,
+      "status": "open_policy_preserved",
+      "title": "Warmup and missing-key fail-open conflate no evidence and admissibility",
+      "evidence": "min_calibration=30, p=1, accepts=true for valid inputs; zero errors with zero steps; filter missing key=>true.",
+      "acceptance": "Explicit calibration quality/coverage state and empirical startup policy."
+    },
+    {
+      "id": "CF-12",
+      "priority": 2,
+      "status": "open_contract_ambiguity",
+      "title": "Valid p=0 filtered by outcome caller",
+      "evidence": "lib.rs:2578 uses ml_at_entry > 0 while calibrator supports endpoints.",
+      "acceptance": "Disambiguate missing predictor from legitimate zero before changing caller guard."
+    },
+    {
+      "id": "CF-13",
+      "priority": 2,
+      "status": "structural_cost_benchmark_pending",
+      "title": "Repeated rank scans on hot path",
+      "evidence": "Two published p-values plus two accepts: up to six*n comparisons/event, n<=200.",
+      "not_claimed": "No p99 regression or HFT latency benchmark measured.",
+      "acceptance": "Shared-rank equivalence including ties plus isolated benchmark; quantify added work on blocked-entry events."
+    },
+    {
+      "id": "CF-14",
+      "priority": 2,
+      "status": "open_validation",
+      "title": "One gene controls conformal adaptation and normal significance",
+      "evidence": "filter significance_strength uses conformal_alpha and two_sided_normal_p(z).",
+      "acceptance": "Joint/ablation OOS evaluation and null-distribution checks; not a claim that normal formula itself is wrong."
+    }
+  ],
+  "validation": {
+    "controlled_red": {
+      "base": "fa23a1b7",
+      "passed": 3,
+      "failed": 7,
+      "ignored": 0,
+      "total": 10,
+      "exit": 1
+    },
+    "green_initial": {
+      "regressions": {
+        "passed": 10,
+        "failed": 0
+      },
+      "core_lib": {
+        "passed": 127,
+        "failed": 0
+      },
+      "included_in_wide_total": true
+    },
+    "wide": {
+      "crates": [
+        "god-engine-core",
+        "risk-engine",
+        "quantum-arena",
+        "feature-engine",
+        "evolution-engine",
+        "signal-engine"
+      ],
+      "targets": "all-targets",
+      "passed": 945,
+      "failed": 0,
+      "ignored": 1,
+      "result_blocks": 72,
+      "exit": 0
+    },
+    "backtest": {
+      "targets": "backtest-engine --lib",
+      "passed": 31,
+      "failed": 0,
+      "ignored": 0,
+      "execution_seconds": 48.98,
+      "exit": 0,
+      "golden_modified": false
+    },
+    "workspace_check": {
+      "targets": "--workspace --all-targets",
+      "exit": 0,
+      "seconds": 53.99,
+      "warnings_present": true
+    },
+    "distinct_totals": {
+      "passed": 976,
+      "failed": 0,
+      "ignored": 1,
+      "new_regressions_included": 11
+    },
+    "not_run": [
+      "T-1",
+      "live/demo operations",
+      "model training/promotion",
+      "latency benchmark",
+      "full project semantic audit"
+    ],
+    "source_sha256": {
+      "crates/god-engine-core/src/conformal.rs": "FC8F1BDBBF26DFA0A5CD325CC22EF5A0CAA18C796FF742DEFE3B3792778964F0",
+      "crates/god-engine-core/src/lib.rs": "71354A4A18808430EE2ACFC7B9AAE030431976ED9FEA0AC4048DAD4364B14B27",
+      "crates/god-engine-core/tests/conformal_wiring_contract.rs": "A6CDD00E93DDEAFD182FE3E0957D4C73DDACABC69D3EAF5DBF903DFC4CD01143"
+    }
+  },
+  "sources": [
+    {
+      "url": "https://arxiv.org/abs/2106.00170",
+      "body_verified": "Section 4.1, Lemma/Proposition 4.1 and unprojected recurrence"
+    },
+    {
+      "url": "https://arxiv.org/abs/2508.10336",
+      "body_verified": "Section 1.2 selection effect"
+    },
+    {
+      "url": "https://arxiv.org/abs/2202.07282",
+      "role": "candidate only; not implemented"
+    },
+    {
+      "url": "https://arxiv.org/abs/2208.08401",
+      "role": "candidate only; not implemented"
+    }
+  ],
+  "coordination": {
+    "claude_pr": "https://github.com/Jhona-la/Trader-Gemini/pull/10",
+    "claude_head": "c844d4fdae096fda7f6691d67c1509fd018652f3",
+    "observed_shared_branch": "glm/xlv-health-check",
+    "notices": [
+      "https://github.com/Jhona-la/Trader-Gemini/pull/10#issuecomment-5882626900",
+      "https://github.com/Jhona-la/Trader-Gemini/pull/10#issuecomment-5882772751"
+    ],
+    "shared_index_modified_by_codex": false,
+    "backup_branches_preserved": true
+  },
+  "integration": {
+    "pull_request": "https://github.com/Jhona-la/Trader-Gemini/pull/15",
+    "snapshot_phase": "pre_merge; subsequent verification is recorded in the PR receipt",
+    "configured_checks_at_review": 0,
+    "unresolved_review_threads_at_review": 0,
+    "merged": false,
+    "verification": "Pending remote PR receipt; pre-merge tests are not proof of remote publication."
+  }
+}

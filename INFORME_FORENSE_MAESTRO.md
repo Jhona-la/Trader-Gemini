@@ -8497,3 +8497,25 @@ latencia, cobertura integral ni +100%/72h. Informes anteriores preservados.
   PR10 sigue abierto; backups locales3/1 commits exclusivos preservados.
   Recibo remoto posterior y limpieza de rama: consultar PR14, no asumirlos
   por este resultado previo a la fusión.
+
+## 2026-09-28 — Codex CF: genoma, calibración y veto de entradas
+
+Reparación836aa9dc en codex/conformal-contract-audit desde mainfa23.
+CF-01/02/03/04: target y telemetría de la misma instancia por activo, rechazo
+de probabilidades inválidas sin mutación y publicación previa al interlock
+de entradas, cuyo veto se conserva. RED controlado3/7fallan; GREEN10/0;
+undécimo test diagnostica bloqueo por resolución finita, no lo declara arreglado.
+Seis crates all-targets945/0/1, backtest lib31/0/0 (48,98s), total976/0/1.
+Check workspace all-targets pasa53,99s con warnings; sin T-1 ni operación.
+
+Informe detallado: [Contrato conformal](docs/AUDITORIA_CONFORMAL_CONTRATO_2026-09-28.md)
+y [JSON](docs/artifacts/auditoria_conformal_contrato_2026-09-28.json).
+14 hallazgos:4 reparaciones; garantías ACI/selección corregidas en documentación,
+no certificadas. Permanecen delay/snapshot, target económico, edad/tau,
+feedback bloqueado por alpha<1/(n+1), warmup, extremo0, coste y gen acoplado.
+No se auditó semánticamente la totalidad de los1.324 archivos base/24 miembros
+del workspace. Sin garantía de rentabilidad ni eliminación ciega de guards.
+GLM en glm/xlv-health-check; Claude mantiene PR10c844d4fd. Avisos PR10
+5882626900/5882772751. Conservar backups y ramas activas; no tocar índice ajeno.
+Estado de este corte: fuentes verificadas, publicación/merge aún por confirmar
+en el recibo de la PR propia. No confundir check local con CI configurada.

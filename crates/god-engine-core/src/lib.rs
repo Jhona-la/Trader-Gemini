@@ -3292,6 +3292,33 @@ impl GodEngineCore {
             coin.ml_prob.store(ml_prob, Ordering::Relaxed);
             set_reg("ml_prob", ml_prob);
             set_reg("ml_prob_motor", ml_prob);
+
+            // CF-01/02/04: genoma, decisión y telemetría usan la MISMA instancia.
+            // Publicar antes del interlock mantiene el diagnóstico actualizado
+            // sin permitir entradas cuando allow_entries/latencia las vetan.
+            let conf_alpha = self
+                .arena
+                .config
+                .conformal_alpha
+                .load(Ordering::Relaxed)
+                .clamp(0.01, 0.30);
+            let calibrator = self
+                .conformal_by_coin
+                .get_mut(coin_id)
+                .unwrap_or(&mut self.conformal);
+            calibrator.set_target_alpha(conf_alpha);
+            // Convención direccional D-676; no identifica por sí sola P(PnL>0).
+            let conformal_p = calibrator.p_value(ml_prob);
+            let conformal_p_short = calibrator.p_value(1.0 - ml_prob);
+            let accept_long = calibrator.accepts(ml_prob);
+            let accept_short = calibrator.accepts(1.0 - ml_prob);
+            set_reg("conformal_p_value", conformal_p);
+            set_reg("conformal_p_value_short", conformal_p_short);
+            set_reg("conformal_alpha", conf_alpha);
+            set_reg("conformal_alpha_eff", calibrator.effective_alpha());
+            set_reg("conformal_accept_long", if accept_long { 1.0 } else { 0.0 });
+            set_reg("conformal_accept_short", if accept_short { 1.0 } else { 0.0 });
+
             // B3.37-diag — latido del camino ML completo para los símbolos
             // con modelo: forest→ensamble→store. Si este línea imprime
             // valores vivos pero ESPECTRO sigue en 0.5000, el defecto está
@@ -3526,46 +3553,6 @@ impl GodEngineCore {
                     0.0
                 },
             );
-            let conf_alpha = self
-                .arena
-                .config
-                .conformal_alpha
-                .load(Ordering::Relaxed)
-                .clamp(0.01, 0.30);
-            // D-617/D-618: el calibrador recibe el nivel objetivo del genoma y
-            // decide con la regla selectiva conformal (conjunto = {gana}) sobre
-            // su nivel efectivo corregido por ACI. `conformal_accept` es lo que
-            // consume el filtro; el p-valor queda para telemetría.
-            self.conformal.set_target_alpha(conf_alpha);
-            let ml_prob_now = coin.ml_prob.load(Ordering::Relaxed);
-            // D-676: la aceptación depende de la dirección — un largo gana si el
-            // precio sube (p = ml_prob) y un corto si baja (p = 1 − ml_prob).
-            let conformal_p = if coin_id < self.conformal_by_coin.len() {
-                self.conformal_by_coin[coin_id].p_value(ml_prob_now)
-            } else {
-                self.conformal.p_value(ml_prob_now)
-            };
-            let conformal_p_short = if coin_id < self.conformal_by_coin.len() {
-                self.conformal_by_coin[coin_id].p_value(1.0 - ml_prob_now)
-            } else {
-                self.conformal.p_value(1.0 - ml_prob_now)
-            };
-            let accept_long = if coin_id < self.conformal_by_coin.len() {
-                            self.conformal_by_coin[coin_id].accepts(ml_prob_now)
-                        } else {
-                            self.conformal.accepts(ml_prob_now)
-                        };
-            let accept_short = if coin_id < self.conformal_by_coin.len() {
-                            self.conformal_by_coin[coin_id].accepts(1.0 - ml_prob_now)
-                        } else {
-                            self.conformal.accepts(1.0 - ml_prob_now)
-                        };
-            set_reg("conformal_p_value", conformal_p);
-            set_reg("conformal_p_value_short", conformal_p_short);
-            set_reg("conformal_alpha", conf_alpha);
-            set_reg("conformal_alpha_eff", self.conformal.effective_alpha());
-            set_reg("conformal_accept_long", if accept_long { 1.0 } else { 0.0 });
-            set_reg("conformal_accept_short", if accept_short { 1.0 } else { 0.0 });
             let buy_vol = coin.agg_buy_vol.load(Ordering::Relaxed);
             let sell_vol = coin.agg_sell_vol.load(Ordering::Relaxed);
             let total_vol_cvd = buy_vol + sell_vol;
