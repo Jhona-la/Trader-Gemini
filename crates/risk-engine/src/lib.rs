@@ -264,12 +264,15 @@ impl RiskEngine {
         let max_dd = crate::capital_regime::lerp(configured_dd, 0.85, micro_w);
         if self.peak_capital > 0.0 && max_dd > 0.0 && max_dd < 1.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
-            let q_perdida = 1.0
-                - arena.coins[coin_id]
-                    .metrics
-                    .win_rate
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0, 1.0);
+            // CL-9: la caída es de la cuenta; la tasa de pérdida también
+            // (antes la de la moneda candidata: una moneda perdedora o sin
+            // historial aflojaba el freno de toda la cartera).
+            let q_perdida = crate::drawdown::q_perdida_cartera(arena.coins.iter().map(|c| {
+                (
+                    c.metrics.win_rate.load(Ordering::Relaxed),
+                    c.metrics.trade_count.load(Ordering::Relaxed) as f64,
+                )
+            }));
             // D-744b: sin riesgo medido rige el gen; el veto nunca se salta.
             let max_dd = crate::drawdown::drawdown_maximo(
                 arena.riesgo_por_operacion.load(Ordering::Relaxed),

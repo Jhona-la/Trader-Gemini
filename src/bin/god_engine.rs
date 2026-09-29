@@ -1662,22 +1662,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // risk-engine — la caída máxima compatible con el riesgo
                     // que el motor toma de verdad y con su tasa de pérdida
                     // observada, con el gen como confianza de la prueba.
-                    let q_perdida_global = {
-                        let (mut wins, mut total) = (0.0f64, 0.0f64);
-                        for c in arena_imm.coins.iter() {
-                            let w = c.metrics.win_rate.load(Ordering::Relaxed);
-                            let t = c.metrics.trade_count.load(Ordering::Relaxed) as f64;
-                            if t > 0.0 && w.is_finite() {
-                                wins += w.clamp(0.0, 1.0) * t;
-                                total += t;
-                            }
-                        }
-                        if total > 0.0 {
-                            1.0 - (wins / total)
-                        } else {
-                            0.5
-                        }
-                    };
+                    // CL-9: la MISMA función que el veto de entradas.
+                    let q_perdida_global =
+                        risk_engine::drawdown::q_perdida_cartera(arena_imm.coins.iter().map(|c| {
+                            (
+                                c.metrics.win_rate.load(Ordering::Relaxed),
+                                c.metrics.trade_count.load(Ordering::Relaxed) as f64,
+                            )
+                        }));
                     // D-744b: sin riesgo medido (p. ej. tras reiniciar con
                     // posiciones reconciliadas) rige el gen — antes ∞, es
                     // decir, el sistema inmune desarmado.
