@@ -3445,24 +3445,11 @@ impl ExecutionProvider for OrderExecutor {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
 
-                // Parse the JSON object using serde_json to find availableBalance
-                if let Ok(account_info) = serde_json::from_str::<serde_json::Value>(&text) {
-                    // Try to fetch availableBalance first, fallback to totalWalletBalance
-                    let bal_str = account_info
-                        .get("availableBalance")
-                        .or_else(|| account_info.get("totalWalletBalance"))
-                        .and_then(|v| v.as_str());
-
-                    if let Some(bal_str) = bal_str {
-                        if let Ok(bal) = bal_str.parse::<f64>() {
-                            return Ok(bal);
-                        }
-                    }
-                }
-                Err(format!(
-                    "Failed to parse balance from Binance API /fapi/v2/account. Response: {}",
-                    text
-                ))
+                // CL-8: patrimonio (`totalWalletBalance`), no `availableBalance`
+                // (ya neto del margen que la adopción vuelve a reservar).
+                crate::execution_evidence::parse_account_equity(&text).map_err(|e| {
+                    format!("{e}. Response /fapi/v2/account: {text}")
+                })
             }
             Err(e) => Err(e),
         }
