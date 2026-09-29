@@ -355,6 +355,42 @@ pub fn confluencia_resonante(
     }
 }
 
+/// CL-33 — EL LIBRO DE UN EVENTO SIN LIBRO PROPIO.
+///
+/// El host sólo trae bid/ask en los eventos @depth5; en trades y klines los
+/// pasa a 0 y el núcleo fabricaba un libro de ±1 pb alrededor del print. Las
+/// entradas sólo se permiten en eventos que no son de depth, así que TODA
+/// entrada viva se decidía con ese libro inventado: la puerta de spread veía
+/// siempre 2 pb, el precio de entrada era el print ±1 pb y no el ask/bid, y el
+/// OFI comparaba el libro inventado con el real del depth anterior (en un
+/// libro quieto, cuyo OFI verdadero es 0, su EWMA llegaba a ±0,3 con el signo
+/// del último agresor y cruzaba los umbrales de salida de ±0,20). D-707 ya
+/// había llevado las CANTIDADES del último libro a estos eventos («el estado
+/// del libro es del mercado, no del tipo de evento»); los precios no.
+///
+/// Regla: el libro del propio evento si trae los dos lados; si no, el último
+/// libro medido de la moneda, trasladado lo justo para que el print quede
+/// dentro (un print fuera del libro demuestra que el libro se movió) y con su
+/// spread medido; sólo sin ningún libro medido, el respaldo de ±1 pb.
+/// Devuelve `(bid, ask)`.
+#[inline]
+pub fn libro_efectivo(precio: f64, bid: f64, ask: f64, ultimo: Option<(f64, f64)>) -> (f64, f64) {
+    if bid > 0.0 && ask > 0.0 {
+        return (bid, ask);
+    }
+    if let Some((b, a)) = ultimo {
+        let spread = (a - b).max(0.0);
+        if precio > a {
+            return (precio - spread, precio);
+        }
+        if precio < b {
+            return (precio, precio + spread);
+        }
+        return (b, a);
+    }
+    (precio * 0.9999, precio * 1.0001)
+}
+
 /// D-752 — etiquetas de rama. `SignalIntent::volume_flow_rate` YA transportaba
 /// un identificador de rama (1..14) para la traza de apertura, y sobrevive a
 /// la arbitración porque todas las fusiones usan `..fast_intent` / `..winner`.
@@ -613,6 +649,9 @@ pub struct GodEngineCore {
     /// F4.7: último precio de kline CERRADO por coin — para calibrar el
     /// ensamble con la dirección realizada de cada vela.
     kline_close_memory: Vec<f64>,
+    /// CL-33: último libro (bid, ask) medido por moneda, para los eventos que
+    /// no traen libro propio (trades y klines del host).
+    ultimo_libro: Vec<Option<(f64, f64)>>,
     pub model_rx: Option<std::sync::mpsc::Receiver<dark_alpha_engine::DarkAlphaEngine>>,
     pub last_ml_prob: f32,
     pub flight_recorder: Option<Arc<telemetry_server::FlightRecorder>>,
@@ -856,6 +895,7 @@ impl GodEngineCore {
                 .map(|_| quantum_arena::spectral_tape::SpectralForecastBank::new())
                 .collect(),
             kline_close_memory: vec![0.0; n_coins],
+            ultimo_libro: vec![None; n_coins],
             liquidation_states: vec![None; n_coins],
             liquidation_diagnostics: liquidation_feed::LiquidationDiagnostics::default(),
             model_rx: None,
@@ -964,6 +1004,7 @@ impl GodEngineCore {
         for i in 0..quantum_arena::state::MAX_COINS {
             self.feature_engines[i] = StatefulEngine::new();
         }
+        self.ultimo_libro.fill(None);
         let init_cap = self.arena.config.base_capital.load(Ordering::Relaxed);
         self.risk_engine.reset(init_cap);
     }
@@ -1439,16 +1480,12 @@ impl GodEngineCore {
                 self.refresh_models();
             }
 
-            let eff_bid = if bid > 0.0 {
-                bid
-            } else {
-                current_price * 0.9999
-            };
-            let eff_ask = if ask > 0.0 {
-                ask
-            } else {
-                current_price * 1.0001
-            };
+            // CL-33: el último libro medido, no ±1 pb inventado (`libro_efectivo`).
+            if bid > 0.0 && ask > 0.0 && bid.is_finite() && ask.is_finite() && ask >= bid {
+                self.ultimo_libro[coin_id] = Some((bid, ask));
+            }
+            let (eff_bid, eff_ask) =
+                libro_efectivo(current_price, bid, ask, self.ultimo_libro[coin_id]);
             let eff_bid_qty = if bid_qty > 0.0 {
                 bid_qty
             } else {
