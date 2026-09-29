@@ -1900,8 +1900,9 @@ impl GodEngineCore {
                 .store(raw_atr_pct * mid_price, Ordering::Relaxed);
             coin.hurst_exponent.store(hurst_val, Ordering::Relaxed);
             // S-7 — Hurst multifractal SELECCIONADO POR τ: micro (<2min),
-            // meso (<1h), macro (≥1h). La geometría TP/SL consume el H del
-            // horizonte que el motor opera, no el escalar global.
+            // meso (<1h), macro (≥1h). Sólo telemetría: desde CL-26 la
+            // geometría TP/SL usa el Hurst muestreado por reloj
+            // (`hurst_exponent`, D-615b), porque estas ventanas son de eventos.
             {
                 let tau_dom_h = self
                     .temporal_spectrum
@@ -3402,6 +3403,12 @@ impl GodEngineCore {
             coin.ml_prob.store(ml_prob, Ordering::Relaxed);
             set_reg("ml_prob", ml_prob);
             set_reg("ml_prob_motor", ml_prob);
+            // CL-21 (FMT-159): los votantes del consenso que miden el lift
+            // sobre la base del modelo (FlowExcitationConfluence, CERT-M2-C03)
+            // leen `ml_model_base` del registro, y nadie la publicaba: caían a
+            // 0,5 frente a bosques con base 0,18–0,23, y la pata corta quedaba
+            // abierta casi siempre (sesgo corto estructural en el consenso).
+            set_reg("ml_model_base", ml_model_base);
 
             // CF-01/02/04: genoma, decisión y telemetría usan la MISMA instancia.
             // Publicar antes del interlock mantiene el diagnóstico actualizado
@@ -4898,9 +4905,16 @@ impl GodEngineCore {
             // MOD2/7-014: antes `hurst_exponent >= 0.48` — quinto literal de
             // banda. Candidato a tendencia = NO anti-persistente (banda
             // canónica 0.45; el umbral fino lo pone trend_threshold/EMA).
+            //
+            // CL-22: la rama ya no exige además `can_open_at_tau(macro_tau,
+            // 120_000)`. Ese enfriamiento legado (escalones fijos, escalón
+            // `v_t > 0,0015` en unidades de precio, cuenta de ticks antes del
+            // primer cierre) es el que D-754 sustituyó; sobrevivió aquí por un
+            // merge (#568 frente a D-754). El enfriamiento de esta intención lo
+            // aplica `puertas_del_continuo` vía `viable_para_entrar` (D-743),
+            // igual que a las demás.
             let is_trend_candidate = hurst_exponent >= HURST_ANTI_PERSISTENT
-                && (hurst_exponent >= trend_threshold || ma_trend_strength > 0.0020)
-                && self.feature_engines[coin_id].can_open_at_tau(macro_tau, 120_000);
+                && (hurst_exponent >= trend_threshold || ma_trend_strength > 0.0020);
 
             if is_trend_candidate {
                 if ema_slow > 0.0 {
@@ -6754,6 +6768,50 @@ mod tests_cl15 {
         let rama = &rama[..fin];
         assert!(rama.ends_with("}else{None};"), "fuera de BTC el voto NN es None");
         assert!(!rama.contains("Some(0.5)"));
+    }
+}
+
+#[cfg(test)]
+mod tests_cl22 {
+    use crate::stateful_engine::StatefulEngine;
+
+    /// El enfriamiento legado contradice al unificado de D-754: tras un cierre
+    /// GANADOR de τ = 10 s, a los 60 s el unificado ya permite entrar y el
+    /// legado de la rama 13 sigue exigiendo 120 s planos; y antes del primer
+    /// cierre el legado cuenta ticks (100 ticks ⇒ «10 s»).
+    #[test]
+    fn cl22_el_enfriamiento_legado_contradice_al_unificado() {
+        let mut e = StatefulEngine::new();
+        let t0 = 1_000_000u64;
+        e.last_scalp_exit_ms = t0;
+        e.last_scalp_exit_ts = t0;
+        e.last_exit_tau_ms = 10_000;
+        e.scalp_loss_streak = 0;
+        e.last_event_ms = t0 + 60_000;
+        e.current_ts = t0 + 60_000;
+        assert!(e.can_open_position_ms(10_000.0));
+        assert!(!e.can_open_at_tau(3_600_000.0, 120_000));
+
+        let mut frio = StatefulEngine::new();
+        frio.tick_count = 100;
+        assert!(frio.can_open_position_ms(10_000.0));
+        assert!(!frio.can_open_at_tau(3_600_000.0, 120_000));
+    }
+
+    #[test]
+    fn cl22_la_rama_de_tendencia_lenta_no_lleva_un_segundo_enfriamiento() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        let rama = codigo
+            .split("letis_trend_candidate=")
+            .nth(1)
+            .expect("ancla de la rama 13");
+        let rama = &rama[..rama.find(';').expect("fin del predicado")];
+        assert!(!rama.contains("can_open_at_tau"), "{rama}");
     }
 }
 
