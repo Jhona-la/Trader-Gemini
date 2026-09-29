@@ -3402,6 +3402,12 @@ impl GodEngineCore {
             coin.ml_prob.store(ml_prob, Ordering::Relaxed);
             set_reg("ml_prob", ml_prob);
             set_reg("ml_prob_motor", ml_prob);
+            // CL-21 (FMT-159): los votantes del consenso que miden el lift
+            // sobre la base del modelo (FlowExcitationConfluence, CERT-M2-C03)
+            // leen `ml_model_base` del registro, y nadie la publicaba: caían a
+            // 0,5 frente a bosques con base 0,18–0,23, y la pata corta quedaba
+            // abierta casi siempre (sesgo corto estructural en el consenso).
+            set_reg("ml_model_base", ml_model_base);
 
             // CF-01/02/04: genoma, decisión y telemetría usan la MISMA instancia.
             // Publicar antes del interlock mantiene el diagnóstico actualizado
