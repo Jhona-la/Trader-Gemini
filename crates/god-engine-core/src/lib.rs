@@ -3383,7 +3383,9 @@ impl GodEngineCore {
                 );
             }
 
-            let nn_score: f64 = self.feature_engines[coin_id].update_ml_prediction(ml_prob);
+            // CL-13: la opinión se mide contra la base del propio modelo.
+            let nn_score: f64 = self.feature_engines[coin_id]
+                .update_ml_prediction(ml_prob, ml_model_base);
 
             // X-012 (reubicado por B2.5-fix): frontera REAL del bloqueo —
             // gestión de posiciones (sección 1) y analítica ML/espectral ya
