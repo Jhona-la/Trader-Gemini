@@ -6194,17 +6194,20 @@ impl GodEngineCore {
                             if margin_req * eff_leverage >= min_notional
                                 && total_used + margin_req <= current_cap * cushion
                             {
-                                let entry_is_maker = tau_intent_ms >= 60_000.0;
-                                let base_price = if entry_is_maker {
-                                    if is_long { bid } else { ask }
-                                } else {
-                                    if is_long { ask } else { bid }
-                                };
+                                // CL-14 — LA ENTRADA SIMULADA ES LA QUE EL VIVO
+                                // ENVÍA: MARKET. Con τ ≥ 60 s se simulaba un maker
+                                // (precio del lado pasivo, 2 pb, sin deslizamiento
+                                // ni condición de llenado) mientras el host envía
+                                // MARKET siempre (B3.29: 0 % de llenados pasivos
+                                // medidos) y el gate de riesgo ya cobra taker en
+                                // las dos piernas (D-645). El backtest —y con él la
+                                // aptitud que selecciona genomas— se ahorraba la
+                                // comisión taker y todo el deslizamiento en cada
+                                // entrada de banda lenta que el vivo sí paga.
+                                let base_price = if is_long { ask } else { bid };
                                 let nominal_size = margin_req * eff_leverage;
-                                // O-01/O-02 — REALITY PHYSICS CONECTADO:
-                                // Para micro-impulsos (tau < 60s), entrada taker a mercado con impacto de libro y latencia.
-                                // Para ondas sostenidas multi-escala (tau >= 60s), entrada preferente Maker (Post-Only)
-                                // al mejor bid/ask, eliminando slippage adverso y reduciendo comisiones de 5 bps a 2 bps.
+                                // O-01/O-02 — REALITY PHYSICS CONECTADO: entrada
+                                // taker con impacto de libro y latencia.
                                 let tick_vol = atr_pct;
                                 let slip_floor = self
                                     .arena
@@ -6218,13 +6221,7 @@ impl GodEngineCore {
                                     .latency_penalty_ms
                                     .load(Ordering::Relaxed)
                                     .max(0.0);
-                                let (real_entry_price, phys_entry_fee) = if entry_is_maker {
-                                    self.reality.calculate_maker_entry(
-                                        base_price,
-                                        is_long,
-                                        nominal_size,
-                                    )
-                                } else {
+                                let (real_entry_price, phys_entry_fee) =
                                     self.reality.calculate_market_entry(
                                         base_price,
                                         is_long,
@@ -6232,8 +6229,7 @@ impl GodEngineCore {
                                         tick_vol,
                                         slip_floor,
                                         lat_ms,
-                                    )
-                                };
+                                    );
                                 let real_entry_price = if real_entry_price <= 0.0 {
                                     base_price
                                 } else {
@@ -6586,6 +6582,35 @@ mod tests_cl4 {
             "la τ de entrada sólo se publica en open_with_tau_and_fee"
         );
         assert!(codigo.contains("lettau_entry=tau_de_apertura(order.tau_ms,tau_respaldo);"));
+    }
+}
+
+/// CL-14: la entrada simulada del núcleo es la que el host envía (MARKET).
+#[cfg(test)]
+mod tests_cl14 {
+    /// El host envía siempre a mercado (`force_maker = false`, B3.29) y el
+    /// gate cobra taker en las dos piernas (D-645). Si el núcleo vuelve a
+    /// simular una entrada pasiva (precio del lado pasivo, 2 pb, sin
+    /// deslizamiento ni condición de llenado), el backtest y la aptitud que
+    /// selecciona genomas se ahorran lo que el vivo sí paga.
+    #[test]
+    fn cl14_la_entrada_simulada_es_market_como_la_del_host() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        assert!(!codigo.contains("calculate_maker_entry("));
+        assert!(!codigo.contains("entry_is_maker"));
+        assert!(codigo.contains("letbase_price=ifis_long{ask}else{bid};"));
+        let host: String = include_str!("../../../src/bin/god_engine.rs")
+            .split_whitespace()
+            .collect();
+        assert!(
+            host.contains("letforce_maker=false;"),
+            "si el host vuelve a enviar pasivas, el núcleo debe simularlas con su llenado"
+        );
     }
 }
 
