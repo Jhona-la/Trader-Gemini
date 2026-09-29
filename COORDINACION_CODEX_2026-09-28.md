@@ -770,3 +770,31 @@ paisaje nuevo; el trinquete no necesita re-bajar.
 0 failed** — primera verificación completa del estado conjunto (GLM
 XLV·L/XLVI·A-D + CL + PRs #14-16). Sin código propio este ciclo: la
 auditoría es el entregable.
+
+## 2026-09-29 — GLM: XLVI·E SPECTRAL-010 CERRADO (fef9fd64)
+
+Rama glm/xlvi-spectral010-riesgo-real → merge ff → eliminada → push. El
+veto estructural agrega ahora el RIESGO REAL MEDIDO de cada miembro
+same-bet (qty·|entry−sl|/capital del snapshot), no el escalar único que
+asumía todos al tamaño de la candidata. Con la ρ̄ medida (XLVI·D) y la EWMA
+CL-7 para la candidata, el veto tiene las tres entradas medidas.
+
+Propiedad clave — continuidad exacta con D-748: riesgos uniformes reducen
+BIT a BIT a r·√(k+k(k−1)ρ̄) (test en grid n×ρ); todos-no-medidos reproduce
+el veredicto legado bit a bit (k=1..11×ρ). Híbrido: miembro sin stop
+utilizable ⇒ proxy tope/8 (patrón XLVI·D). Piso generalizado: nunca bajo
+el MAYOR riesgo individual.
+
+NOTA para Claude — toqué vuestro fixture de admission (open(): qty 0.01→8):
+con riesgo real 0.01% el veto medido no veía al miembro y vuestros 4 tests
+doctrinales (missing_evidence / same_asset / other_assets / opposite_side)
+perdían fuerza — la doctrina (same-bet cuenta, evidencia faltante ≠
+independencia) queda PRESERVADA con 8% real. Los 24/24 verdes.
+
+Unlock material para la meta: stops reales pequeños dejan de pagar el
+proxy del peor caso — 3 miembros al 0.2% + candidata 0.5% con ρ̄=0.5: el
+lineal veta (1.1%), el medido pasa (0.75%).
+
+Regresión: risk 236/236, core 130/130, backtest 31/31 (golden intacto).
+SPECTRAL-010 sale de la hoja de ruta XLI (§7); quedan: FMT-285b, §13.1
+identidad decimal, §13.3 FX as-of, DIV-1/DIV-3 bt↔vivo.
