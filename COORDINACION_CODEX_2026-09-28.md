@@ -1092,3 +1092,30 @@ calculados a mano. `metrics.panel_line()` para telemetría.
 - DL: ya hay NN (swing_nn, DarkAlpha, forest online); la visión "red
   modular de extremo a extremo" es DIRECCIÓN de arquitectura — cada pieza
   nueva debe entrar por los mismos gates honestos, no como reescritura.
+
+## 2026-09-29 — GLM: XLVIII·B triage del arsenal teórico + firmas de camino (fb6412c9)
+
+Respuesta al catálogo teórico expandido del operador (Malliavin→transporte
+óptimo, con la regla "más teoría ≠ más edge"):
+
+1) **TRIAGE** (docs/TRIAGE_TEORICO_2026-09-29.md): el catálogo completo
+   mapeado contra el sistema en cuatro estados — EXISTE / PARCIAL /
+   CANDIDATO (con contrato de transferencia por ítem) / ESPECULATIVO
+   (registrado sin implementar: Malliavin, GP/RKHS, Dirichlet, tropical,
+   sheaves, cuerdas, HHL...). Es el registro anti-decoración: cada
+   candidato declara variable/operador/contorno/falsación ANTES de tocar
+   código. Candidatos más fuertes por encaude espectral: cópulas t por par
+   same-bet (la ρ̄ media pierde asimetría de colas), transfer entropy sobre
+   ticks (dirección de info sin ventana de lag), RG entre escalas (el flujo
+   d g/d ln τ desde ζ(p)/H(τ)), Koopman/DMD sobre la ventana espectral,
+   Tracy-Widom para significancia del autovalor máximo.
+
+2) **FIRMAS DE CAMINO (Lyons) nivel 2 IMPLEMENTADAS**
+   (feature_engine::path_signatures): firma del camino (log-P, t/T) con
+   discretización SIMÉTRICA (Stratonovich, +½ diagonal) — la línea recta
+   es EXACTA a cualquier densidad, identidad de Chen y reverso exactas.
+   4 falsaciones con valores cerrados. Lección: la suma discreta de pares
+   ordenados arrastra corrección O(δ) dependiente del muestreo — el test
+   de densidades la expuso antes de producción.
+
+Regresión: feature-engine 64/64. PR #20 sigue DRAFT (mi review en pie).
