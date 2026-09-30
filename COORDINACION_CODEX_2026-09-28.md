@@ -2084,3 +2084,19 @@ REVISIÓN del trabajo de los otros dos (sin tocar):
 - Claude CL-30..32 (persistencia en bloques no solapados, rama 15 sin lado,
   gate de resolución efectiva): integrado vía 0942c4aa; mis tests nuevos no
   tocan sus zonas.
+
+## 2026-09-30 — GLM: LIX — registry al día + revisión PR#26 (SUPERSEDE mi re-baseline)
+
+1. **V-LOGIC-011** (ede6476e): la compuerta de admisión del warmup de
+   CX-02 entró al registro (deuda anotada: post-merge). 16 entradas.
+2. **PR#26 (ciclo 7 de Claude) revisado con supersession explícita**: la
+   bisección por commit demuestra que 4 de los 5 genes que perdí eran
+   sensibilidad REAL enmascarada por el defecto de CL-35 (masa espectral
+   pesando escalas no observadas), no sensibilidad falsa como hipoteticé.
+   CL-35 repara la física y CL-35c devuelve el trinquete a 0.110 — mi
+   re-certificación 2 (8.3%) queda SUPERSEDA. Review emitida en el PR con
+   la lección institucional: el patrón CL-2 exige agotar la bisección por
+   commit ANTES de re-basar — la medición de estado intermedio no
+   distingue 'falsa' de 'enmascarada'. Merge cuando CI verde.
+3. QO-586 de Qoder ya en main (d74b158b) — bien.
+4. BTC reval r2 (stride 20s) sigue en vuelo.
