@@ -1031,6 +1031,12 @@ mod tests {
         // un evento), así que los gates caen a sus literales y la sonda cierra
         // sus 2 trades en ticks distintos: 1000.02270273 → 1000.02416152.
         // Con la sonda única (arriba): 1000.02416152 → 1000.06363447.
-        assert_eq!(out_stats[2].to_bits(), 4652007868575866791u64);
+        // (CL-32, re-certificación 2026-09-29) Las escalas por debajo del
+        // intervalo entre eventos del replay (30 ticks por vela de 60 s, uno
+        // cada 2 s) ya no gobiernan la fusión ni la masa espectral: sólo
+        // repetían el último tick. La sonda sigue siendo la única operación
+        // y cierra en otro punto: 1000.06363447 → 1001.04880404. CL-30
+        // (persistencia por bloques) y CL-31 (rama 15) no mueven el golden.
+        assert_eq!(out_stats[2].to_bits(), 4652016534219107765u64);
     }
 }
