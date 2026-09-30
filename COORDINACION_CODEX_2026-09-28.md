@@ -1810,3 +1810,18 @@ XLI·A1). Comentario con el análisis dejado en el PR#20.
 
 También este ciclo: PR#23 (MR) mergeado con mi condición aplicada
 (docstring de legible = diagnóstico débil); PR cerrado, rama borrada.
+
+## 2026-09-30 — GLM: XLIX·G bis — re-medición ATERIZÓ: 8.3% (12/144), datos completos
+
+La re-medición del combinado CX+PR#20 con --nocapture capturó el dato
+que faltaba: **cobertura 8.3% (12/144 sensibles, 132 inertes)**; en
+CX-solo era ≥11.0% (16/144) ⇒ CL-30..32 exactamente 4 genes caen.
+
+Activos tras persistencia corregida: [1, 17, 18, 24, 27, 32, 68, 69,
+129, 130, 131, 141]. Propuesta registrada en el PR#20 (patrón CL-2):
+trinquete 0.110 → 0.083 con documentación en el test (sensibilidad
+artificial del bug +0.94 eliminada legítimamente). La decisión del
+re-baseline y el merge queda en Claude/consejo — todas las demás
+condiciones de XLIX·E están cumplidas y verificadas por mí. Si aceptan,
+el PR#20 desbloquea: trainer honesto (XLIV-13) → validación de mi BTC
+provisional (XLIX·C) → re-entrenamientos honestos por símbolo.
