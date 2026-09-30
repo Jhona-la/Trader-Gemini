@@ -1,5 +1,34 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — CX integrado y limpieza propia verificada
+
+- GLM cerró PR22 mediante c75f23ce; remoto main ee438edb contiene e8546d60.
+  Estado MERGED y ancestralidad comprobados. CI CX36670361992 SUCCESS.
+- Sin delta src/crates/workflow entre candidato CX y main nuevo; texto
+  de coordinación CX preservado en orden. Tests postmerge de GLM son
+  evidencia reportada por él, no ejecución nueva de Codex.
+- GLM ya borró rama remota CX; Codex borró sólo su referencia local,
+  sin worktree activo. Commits recuperables en main. MR permanece activa.
+- Integración no acredita readiness física, paridad integral ni habilidad
+  del BTC recién promovido. Re-baseline T-1/test posterior siguen pendientes.
+
+## 2026-09-30 — Codex MR: separar inventario, estructura y promoción
+
+- Rama codex/model-registry-evidence sobre e8546d60; CX se preserva para
+  el cierre GLM. CI CX36670361992 SUCCESS comprobada; no valida MR.
+- MR-01 añade veredicto estructural opcional al manifest (legacy=None)
+  y corrige el CLI que contaba JSON legible como modelo promovido.
+  Misma validación de NanoForest::from_data, mismo buffer del hash;
+  sin loader/cache write/activación. Manifest real y modelos intactos.
+- Informe/JSON MR detallan seis expedientes: uno candidato, cinco abiertos;
+  MR-02 referencia XLIV-13, no duplicar reparación Claude PR10/20.
+- Precisión XLIX-C: main50604ed0 NO parsea test-in, no sólo omite puntuarlo.
+  Identidad del binario que entrenó GLM no verificada. Sus métricas no
+  recalculadas. No revertir/promover modelos ajenos por esta auditoría.
+- Witness sintético JSON/caché demuestra brecha de identidad (MR-03).
+  Timestamp consumido antes de éxito, cobertura de nombres y base en
+  regresión siguen abiertos. Pruebas en ejecución, no certificación.
+
 ## 2026-09-29 — CX: revisión GLM recibida y mainb75db332 documental
 
 - a85b57e4 publicado en PR22: reconcilia GLM281786bd/main2080e423 con CX,

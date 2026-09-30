@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "audit": "MR-model-registry-evidence",
+  "date": "2026-09-30",
+  "branch": "codex/model-registry-evidence",
+  "base_commit": "e8546d600cf5a02cb3ea84bd14d60300780c8933",
+  "observed_main": "50604ed0680a14f36a29e416bc7bd65a7062440d",
+  "report": "docs/AUDITORIA_REGISTRO_MODELOS_2026-09-30.md",
+  "scope": "Source inventory diagnostics, promotion provenance and loader/watcher seams; not an exhaustive repository audit",
+  "counts": {"records": 6, "candidate_repairs": 1, "open": 5, "referenced_prior_findings": 1},
+  "findings": [
+    {
+      "id": "MR-01", "priority": "P1", "status": "candidate_repair",
+      "title": "JSON readability was reported as model promotion",
+      "sources": ["crates/god-engine-core/src/ml_registry.rs:escanear_models", "src/bin/model_manifest.rs:main"],
+      "mechanism": "Arbitrary JSON Value was legible=true and CLI counted it as promoted, even when the serving structural validator rejects it.",
+      "change": "Preserve old fields; add optional structural verdict and reason from NanoForest::from_data on the hashed source buffer; legacy manifests remain unevaluated. CLI reports inventory, readability and structure separately.",
+      "tests": ["mr_json_legible_no_certifica_estructura_y_no_escribe_cache", "mr_veredicto_sigue_contrato_del_loader_sin_activar_modelos", "mr_manifest_historico_no_inventa_validacion"],
+      "limits": "No certification of predictive skill, promotion, feature semantics or effective activation. No cache writes by scanner."
+    },
+    {
+      "id": "MR-02", "priority": "P0", "status": "open_existing_finding",
+      "references": ["XLIV-13", "PR10", "PR20", "XLIX-C"],
+      "title": "Promotion holdout helpers disconnected from executable route",
+      "sources": ["src/bin/train_forest.rs:main", "src/bin/train_forest.rs:require_promotion_holdout"],
+      "mechanism": "Observed main does not parse test-in; gate_ok depends on selection only. Presence of separately tested helpers does not gate promotion.",
+      "evidence_class": "static_source_and_agent_report_distinguished",
+      "limits": "GLM training metrics were reported, not rerun. Historical trainer binary identity unverified. Claude repairs are not duplicated."
+    },
+    {
+      "id": "MR-03", "priority": "P1", "status": "open",
+      "title": "JSON source hash is not effective predictor identity",
+      "sources": ["crates/god-engine-core/src/ml_inference.rs:load_model", "crates/god-engine-core/src/ml_registry.rs:escanear_models"],
+      "mechanism": "Binary cache chosen by mtime may contain a different valid predictor from the hashed JSON. No source-hash binding checked.",
+      "tests": ["mr_hash_json_no_identifica_necesariamente_predictor_cargado"],
+      "fixture": {"json_init_score": -1.0, "bin_init_score": 2.0, "bin_newer_seconds": 60},
+      "limits": "Synthetic witness of an open provenance gap, not proof of a live BTC incident or a closed defect. Loader unchanged."
+    },
+    {
+      "id": "MR-04", "priority": "P1", "status": "open",
+      "title": "Watcher records modification before load succeeds",
+      "sources": ["src/bin/god_engine.rs:forest_timestamps", "src/bin/train_forest.rs:File::create"],
+      "mechanism": "Failed load can consume the new timestamp; unchanged file is not retried. In-place publication permits partial-read windows.",
+      "evidence_class": "static_inspection",
+      "limits": "Race not exercised on the live process; no process changes performed."
+    },
+    {
+      "id": "MR-05", "priority": "P2", "status": "open",
+      "title": "Filename coverage and startup log overstate loaded availability",
+      "sources": ["crates/god-engine-core/src/ml_coverage.rs:roster_coverage", "src/bin/god_engine.rs:load_global", "crates/god-engine-core/src/lib.rs:has_roster_model"],
+      "mechanism": "Coverage checks names and startup log ignores load result; actual decision path checks the global model map.",
+      "evidence_class": "static_inspection",
+      "limits": "MR-01 does not fix host coverage/logging or relax any gate."
+    },
+    {
+      "id": "MR-06", "priority": "P2", "status": "open_semantics_clarified",
+      "title": "Legacy sigmoid base loses regression units",
+      "sources": ["crates/god-engine-core/src/ml_registry.rs:escanear_models", "crates/god-engine-core/src/ml_inference.rs:init_value"],
+      "mechanism": "Every source gets sigmoid(init_score), including regression objectives whose intercept is a raw conditional target mean.",
+      "change": "Clarify existing metadata without changing schema meaning or serving.",
+      "limits": "No evidence that this manifest field drives live regression sizing. Typed objective/unit/horizon metadata remains pending."
+    }
+  ],
+  "validation": {"status": "registry_contracts_passed_expanded_pending", "code_commit": "b17c60d9", "registry_tests": {"passed": 8, "failed": 0, "ignored": 0, "runtime_seconds": 0.25, "build_seconds": 236, "profile": "local default test with debuginfo", "compiler": "1.98.0-nightly (096694416 2026-06-29)"}, "abandoned_initial_cold_build": "debug=0 build interrupted only in own session; no validation claimed", "real_tapes": false, "training": false, "promotion": false, "trading": false, "models_manifest_regenerated": false},
+  "prior_cx_ci": {"run": 36670361992, "head": "e8546d600cf5a02cb3ea84bd14d60300780c8933", "conclusion": "success", "does_not_validate_mr": true},
+  "cx_integration_verified": {"pr": 22, "state": "MERGED", "merge": "c75f23ce44acbed4291237fb0617971ef2c6afa9", "remote_main": "ee438edb03333b67e2e41d8ba31229e8350a505e", "merged_at": "2026-09-30T12:27:51Z", "head_ancestry_verified": true, "code_workflow_delta_from_e8546d60": false, "cx_local_branch_deleted_after_verification": true, "cx_remote_branch_already_deleted_by_glm": true},
+  "limitations": ["No whole-project certification", "No demonstrated return target", "No quantum advantage claim", "No new predictive theory implemented without evidence"]
+}

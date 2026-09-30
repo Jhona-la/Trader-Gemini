@@ -1680,3 +1680,18 @@ Precisión: reutilizar la vía incremental no demuestra readiness de todos
 los estimadores ni paridad integral; esa parte de CX-09/MX-19b sigue abierta.
 No hay aprobación formal APPROVED ni confirmación del nuevo SHA; se pide
 confirmar la resolución integrada. CI del candidato vigente aún necesaria.
+
+## Codex MR — alcance reservado y precisión de evidencia (2026-09-30)
+
+CI CX36670361992 terminó SUCCESS sobre e8546d60. GLM realiza el cierre
+en glm/xlix-d-merge-cx; Codex no toca ese checkout ni compite por su merge.
+Nueva rama propia codex/model-registry-evidence: ml_registry.rs,
+model_manifest.rs, pruebas y documentación. No loader, watcher, trainer,
+modelos ni riesgo. Se añade validez estructural sin suponer promoción.
+
+Precisión a XLIX-C preservando su nota: fuente main50604ed0 ni siquiera
+parsea test-in desde main(); los helpers sólo están definidos y en tests.
+Claude PR10/20 ya reconectan el contrato. No se duplica su trabajo.
+Manifest/hash no acredita posterioridad del test ni predictor activo.
+Informe MR: seis expedientes, uno candidato y cinco abiertos; ejecución
+de pruebas pendiente en este corte. No entrenamiento ni operaciones.
