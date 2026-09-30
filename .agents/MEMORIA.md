@@ -1,5 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — publicación pública MR autorizada explícitamente
+
+- Operador: «Sí, publicar MR y abrir su PR» a pregunta que identifica
+  rama/código/pruebas/informes y repo PÚBLICO. Levanta el bloqueo anterior
+  para MR; conservarlo sólo como historia. No repetir petición de permiso.
+- Publicar candidato, comprobar push/PR/CI; merge condicionado a CI y
+  revisión cruzada. No autoriza operaciones/modelos/training ni auto-merge.
+- Fuente8ee1b8e8,163/0/1 y check56,06s. Remote mainee438edb comprobado;
+  no PR MR preexistente. Publicación por verificar, no inferir CI verde.
+
 ## 2026-09-30 — MR publicación bloqueada; pedir autorización específica
 
 - Auto-review rechazó commit/push/PR combinado ANTES de ejecutarse:

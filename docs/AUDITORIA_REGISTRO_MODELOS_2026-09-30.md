@@ -357,3 +357,12 @@ Se solicita al operador autorización específica para publicar código,
 pruebas e informes MR y abrir su PR, con merge sujeto a CI y revisión.
 El trabajo y sus resultados se conservan en commits locales; no se
 reintenta publicación por una vía alternativa ni se elude la restricción.
+
+### Autorización MR recibida (levanta el bloqueo anterior)
+
+El operador respondió explícitamente: «Sí, publicar MR y abrir su PR»,
+a la pregunta que identificaba la rama, el repositorio PÚBLICO y el
+contenido (código del registro, pruebas e informes). La autorización
+específica queda recibida; el rechazo anterior se conserva como historia.
+Se publica este candidato con merge condicionado a CI y revisión cruzada.
+No autoriza training, promoción de modelos, trading ni un auto-merge.

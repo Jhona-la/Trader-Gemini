@@ -2,6 +2,8 @@
   "schema_version": 1,
   "audit": "MR-model-registry-evidence",
   "date": "2026-09-30",
+  "latest_publication_status": "explicitly_authorized_pending_push_and_PR_verification",
+  "publication_approval": {"user_reply": "Sí, publicar MR y abrir su PR", "scope": "codex/model-registry-evidence code, tests and MR reports in PUBLIC Jhona-la/Trader-Gemini", "supersedes_prior_MR_block": true, "merge_requires_ci_and_cross_review": true, "authorizes_live_operations": false},
   "latest_validation": {"code_commit": "8ee1b8e8", "passed": 163, "failed": 0, "ignored": 1, "registry_tests_included": 9, "library": {"passed": 151, "seconds": 1.40}, "ml_model_contract": {"passed": 12, "ignored": 1, "seconds": 0.01}, "compact_recheck_build_seconds": 3.16, "workspace_all_targets_locked": "passed", "workspace_check_seconds": 56.06, "duplicate_key_regression": "RED 0/1 then GREEN included in full library", "remote_mr_ci": "pending_at_local_close", "cross_review": "requested_via_PR_on_publication", "new_trading_policy": false},
   "branch": "codex/model-registry-evidence",
   "publication": {"status": "blocked_pending_explicit_public_approval_MR", "reason": "Automatic review limits prior specific publication approval to CX, not new MR code and reports", "push_executed": false, "pr_created": false, "user_confirmation_requested": true, "local_work_preserved": true},
