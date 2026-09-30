@@ -8724,3 +8724,27 @@ limpio. Se preservan ambos textos al quitarlos y CI añade control de diff.
 CX-I01/02/03, causa, reproducción, límites y criterios; no duplican MX-19.
 Validación local108/0/2, 14 contratos causales, all-targets/locked20,12 s.
 CI nueva y revisión cruzada pendientes; no merge de PR22 a main todavía.
+
+## ADENDA MP — publicación multiactivo y frontera archivo/modelo (2026-09-30)
+
+El estado previo de CX es histórico: PR22 sí se integró en c75f23ce/main
+ee438edb. MR/PR23 permanece abierta al consultar. Esta nueva ola MP parte
+de main sin MR, preserva el checkout y el cierre PR20 de GLM.
+
+[Informe MP](docs/AUDITORIA_PUBLICACION_MULTIACTIVO_2026-09-30.md) y
+[artefacto MP](docs/artifacts/auditoria_publicacion_multiactivo_2026-09-30.json):
+dos familias reparadas como candidatas, cinco expedientes abiertos. RED real:
+183/256 publicaciones perdidas en memoria,4/24 cargas perdidas, rutas de caché
+erróneas y JSON sin extensión sobrescrito. GREEN10 contratos;198/0/1 ampliados,
+check all-targets31,16s. Código3f2be42d; replay complementario en ejecución.
+
+El mapa atómico no hacía atómica la actualización. Se usa RCU para preservar
+claves concurrentes; no se afirma orden de generación ni bundle transaccional.
+La ruta se resuelve por extensión final; el cache sigue basado en mtime, no
+identidad de serving. Watcher tiene además una oscilación t_json/t_bin estática
+documentada, todavía sin reparar. No se certifica rentabilidad ni todo el repo.
+
+Cierre local MP: replay108/0/2 completado; total disjunto306/0/3 con el
+núcleo/suites. Informe§14 y JSON final_validation documentan comandos,
+alcance y preservación de informes. Publicación MP específica aún pendiente;
+MR/PR23 sigue esperando CI completa y revisión. No operación/training/T-1.

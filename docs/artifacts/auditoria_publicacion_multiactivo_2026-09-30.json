@@ -1,0 +1,115 @@
+{
+  "schema": "trader-gemini-audit-mp-v1",
+  "date": "2026-09-30",
+  "branch": "codex/model-publication-contract",
+  "base_commit": "ee438edb03333b67e2e41d8ba31229e8350a505e",
+  "code_commit": "3f2be42d3e9effe102662cabb779405f70577fa9",
+  "scope": {
+    "description": "Model publication APIs, JSON/bin path resolution and adjacent identity/snapshot/watcher contracts; not a whole-project certification",
+    "tracked_files_in_base": 1377,
+    "rust_files_in_base": 434,
+    "inventory_is_semantic_coverage": false,
+    "production_files_changed": ["crates/god-engine-core/src/ml_inference.rs"],
+    "new_test_file": "crates/god-engine-core/tests/model_publication_contract.rs",
+    "operational_actions": [],
+    "real_models_changed": false,
+    "risk_policy_changed": false,
+    "mr_changes_included": false
+  },
+  "findings": [
+    {
+      "id": "MP-01", "priority": "P1", "status": "candidate_fixed_local",
+      "title": "Concurrent read-clone-store loses distinct-asset publications",
+      "source": "crates/god-engine-core/src/ml_inference.rs:251",
+      "mechanism": "Two writers copy the same map; unconditional publication of the second copy discards the first insertion despite each caller returning successfully.",
+      "red": {"missing_memory_publications": 183, "memory_publications": 256, "missing_file_loads": 4, "file_loads": 24},
+      "fix": "One store_global path using ArcSwap::rcu; parsing/validation and model Arc allocation outside the retry closure.",
+      "limits": ["No same-key version ordering", "No protection against direct external map stores", "No multi-key transaction", "No bounded latency claim"]
+    },
+    {
+      "id": "MP-02", "priority": "P1", "status": "candidate_fixed_local",
+      "title": "Textual path replacement changes parents/stems and can overwrite the JSON source",
+      "source": "crates/god-engine-core/src/ml_inference.rs:186",
+      "mechanism": "replace modifies all extension substrings; for an extensionless path, the implicit cache target equals the source.",
+      "red": {"path_contracts_failed": 3, "stale_binary_bias": 2, "expected_newer_json_bias": -2, "extensionless_source_overwritten": true},
+      "fix": "Path::with_extension for recognized json/bin pairs; other names remain validated JSON sources without an implicit cache.",
+      "limits": ["Filesystem aliases not fenced", "Cache write not transactional", "mtime remains freshness policy", "Standalone BIN preserved"]
+    },
+    {
+      "id": "MP-03", "priority": "P1", "status": "open_static",
+      "title": "Publication order does not enforce model-generation order",
+      "source": "crates/god-engine-core/src/ml_inference.rs:260",
+      "mechanism": "A delayed older writer may replace the same key after a newer publication; data/API carry no generation or expected predecessor.",
+      "closure": "Versioned compare-and-publish with explicit authorized rollback and inverted-arrival tests. Hash ordering is not version ordering."
+    },
+    {
+      "id": "MP-04", "priority": "P1", "status": "open_static",
+      "title": "Individual snapshots do not define coherent multi-head generations",
+      "source": "crates/god-engine-core/src/lib.rs:3185",
+      "mechanism": "MOTOR/VOL/OI are fetched independently and published separately; even one map snapshot could capture a partial ensemble update.",
+      "not_a_finding": "Directional prediction and its base share the same active_forest snapshot.",
+      "closure": "Explicit asynchronous compatibility or validated bundle publication plus per-decision version receipt."
+    },
+    {
+      "id": "MP-05", "priority": "P2", "status": "open_static",
+      "title": "Public mutable global permits bypass of cooperative publication contract",
+      "source": "crates/god-engine-core/src/ml_inference.rs:10",
+      "mechanism": "GLOBAL_FORESTS remains public; two existing test helpers use direct load-clone-store. No other direct production writer found in searched crates/src scope.",
+      "closure": "Audit external consumers, encapsulate mutation compatibly, define fixture APIs and test concurrency isolation."
+    },
+    {
+      "id": "MP-06", "priority": "P2", "status": "open_static_trace",
+      "title": "Watcher alternates one per-stem timestamp across JSON and BIN",
+      "source": "src/bin/god_engine.rs:1239",
+      "mechanism": "With different stable mtimes, JSON writes t_json and BIN writes t_bin into the same stem slot each pass, causing repeated reloads without content changes.",
+      "runtime_incident_measured": false,
+      "related": ["MR-04"],
+      "closure": "Canonical per-key artifact, observed-versus-activated state, success-based timestamp advancement and unchanged-second-pass tests."
+    },
+    {
+      "id": "MP-07", "priority": "P1", "status": "open_existing_reference",
+      "title": "mtime and structural validity do not bind cached predictor to manifest JSON",
+      "related": ["MR-03"], "new_discovery": false,
+      "mechanism": "Path repair preserves newer/equal-mtime BIN preference and standalone compatibility; no source/payload provenance binding is added.",
+      "closure": "Versioned source/payload lineage, migration policy and served-predictor receipt, independent of statistical promotion evidence."
+    }
+  ],
+  "validation": {
+    "toolchain": "nightly-2026-06-30",
+    "arc_swap": "1.9.2",
+    "local_profile": "unoptimized + debuginfo",
+    "red": {"passed": 3, "failed": 5, "ignored": 0, "tests_seconds": 0.56, "build_seconds": 39.09},
+    "green_mp": {"passed": 10, "failed": 0, "ignored": 0, "tests_seconds": 0.29, "build_seconds": 34.84},
+    "concurrency_repetition": {"rounds": 20, "unique_tests": 2, "executions_passed": 40, "failed": 0, "add_to_unique_total": false},
+    "selected_core_regression": {"passed": 198, "failed": 0, "ignored": 1, "build_seconds": 38.36, "parts": {"lib": 146, "conformal": 11, "base_publication": 1, "ml_model": 12, "mp": 10, "attribution": 18}, "ignored_reason": "Existing manual real-model inventory not enabled"},
+    "workspace_all_targets_locked": {"status": "success", "seconds": 31.16, "all_tests_executed": false},
+    "replay_regression": {"status": "running_at_initial_report_cut"},
+    "source_sha256": {
+      "crates/god-engine-core/src/ml_inference.rs": "72947A7685476162894366012DE24E6ACBF5F50E06B1EF8CBFA0861D907487D9",
+      "crates/god-engine-core/tests/model_publication_contract.rs": "42436619DB54F4683ABC20D961104AD0AA3A83BBB8723E42C6EA0F9B24CC6582"
+    }
+  },
+  "integration_cut": {
+    "remote_main": "ee438edb03333b67e2e41d8ba31229e8350a505e",
+    "mr_pr": 23, "mr_state": "OPEN", "mr_ci": "IN_PROGRESS", "mr_reviews": 0,
+    "claude_pr_20": "OPEN_DRAFT", "glm_local_merge": "77d6632a",
+    "cx_pr_22": "MERGED",
+    "mp_publication": "specific_public_authorization_requested",
+    "mp_remote_ci": "not_started", "mp_cross_review": "pending",
+    "shared_tracked_checkout_modified_by_codex": false,
+    "coordination_notice": "Ignored passive notice appended; no acknowledgement inferred"
+  },
+  "scientific_limits": ["No profitability or 100-percent-per-three-days evidence", "No quantum advantage claim", "No whole-project certification", "No monotonic same-key generation", "No ensemble atomicity", "No latency percentile measurement"],
+  "primary_reference": "https://docs.rs/arc-swap/1.9.2/arc_swap/struct.ArcSwapAny.html#method.rcu",
+  "final_validation": {
+    "code_commit": "3f2be42d3e9effe102662cabb779405f70577fa9",
+    "replay": {"status": "success", "exit_code": 0, "passed": 108, "failed": 0, "ignored": 2, "build_seconds": 123, "parts": {"lib": 51, "parity": 8, "metrics": 21, "labels": 25, "spectral_risk": 3}, "lib_seconds": 77.35, "parity_seconds": 35.79},
+    "unique_combined": {"passed": 306, "failed": 0, "ignored": 3},
+    "ignored": ["1 existing manual ML inventory", "2 existing manual parity experiments"],
+    "existing_assertions_or_golden_weakened": false,
+    "report_preservation_verified": {"coordination_lines": 1711, "master_lines": 8726, "atlas_lines": 1918},
+    "mr_review_request": "https://github.com/Jhona-la/Trader-Gemini/pull/23#issuecomment-5912446341",
+    "mr_last_ci_cut": "all-targets and registry passed; replay in progress; no global success inferred",
+    "mp_publication": "pending_specific_public_authorization"
+  }
+}

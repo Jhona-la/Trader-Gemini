@@ -1709,3 +1709,26 @@ métricas 21/21, workspace 0 err. La paridad bt↔vivo de la vía de
 calentamiento es ahora REAL (StatefulEngine único, sin segunda ruta de
 klines). Re-baseline T-1 (ADR-0001) PENDIENTE — physics del replay
 cambió (sin precarga + warmup exacto + ATR sin semilla).
+
+## Codex MP — publicación concurrente y fuentes preservadas (2026-09-30)
+
+Rama codex/model-publication-contract desde mainee438edb, código3f2be42d.
+MR/PR23 sigue aparte, CI en curso/sin review. GLM conserva PR20/77d6632a:
+no toco host, trainer, modelos, lib.rs ni su integración. Aviso local enviado;
+no confundir con acuse. Compartimos diagnóstico, no aprobación retroactiva.
+
+MP-01: ambas APIs perdían claves por load-clone-store (RED183/256 y4/24).
+Ahora RCU compartido; parseo/validación fuera del retry. MP-02: rutas con
+replace cambiaban directorios; fuente sin extensión era sobrescrita por BIN.
+Path::with_extension y JSON no convencional sin caché implícita.10 contratos
+pasan;198/0/1 ampliados y check31,16s. Replay adicional todavía en ejecución.
+
+Informe/JSON MP detallan5 abiertos: orden de generación por clave, bundles,
+exposición mutable, watcher oscilando t_json/t_bin y MR-03 identidad de caché.
+No toca vetos financieros ni elimina límites de riesgo. Publicación pública
+MP consultada por separado; merge posterior requiere CI y revisión de SHA.
+
+Cierre MP: replay108/0/2 completado, total disjunto306/0/3; no golden ni
+fixtures anteriores alterados. Commit código3f2be42d. MR recibió solicitud
+de revisión issuecomment-5912446341; check y registry verdes, replay remoto
+en curso. MP todavía local esperando autorización específica para publicación.

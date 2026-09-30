@@ -1,5 +1,34 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — MP cierre local306/0/3; publicación pendiente
+
+- Código3f2be42d: core/suites198/0/1 +replay108/0/2 =306/0/3 disjuntos.
+  Diez tests MP incluidos, repeticiones no duplicadas. Check31,16s aprobado.
+- Informe/JSON de publicación multiactivo con7 expedientes:2 candidatos y
+  5 abiertos (uno remite MR-03). Sin cambio de modelos/host/trainer/riesgo.
+- MR/PR23: check y registry verdes, replay en curso. Revisión solicitada
+  en issuecomment-5912446341; sin acuse ni aprobación inferida.
+- MP en rama propia local; autorización específica pública consultada.
+  No push/PR/merge MP todavía. No borrar MR/Claude/GLM ni backups pendientes.
+
+
+## 2026-09-30 — Codex MP: publicación multiactivo y rutas (LOCAL)
+
+- Rama codex/model-publication-contract desde mainee438edb; código3f2be42d.
+  No incluye MR/e17c88b4, preservada en PR23. GLM mantiene checkout77d6632a
+  con PR20 local; remoto PR20 sigue OPEN/DRAFT. No interferir en su cierre.
+- MP-01: carga/clonado/store perdía altas concurrentes (RED183/256 en memoria,
+  4/24 desde archivos). RCU común a store/load_global conserva otros activos.
+- MP-02: replace alteraba padres/stem y convertía fuente sin extensión a BIN.
+  Parejas con Path::with_extension; nombres no convencionales JSON sin caché.
+- RED3/5 -> GREEN10/0. Núcleo+cinco suites198/0/1; check all-targets31,16s.
+  Concurrencia2 tests x20 pasa; no sumarla como40 tests nuevos. Replay en curso.
+- Informe/JSON MP:2 candidatos,5 abiertos; MP-07 remite MR-03, no duplicar.
+  Versiones, bundle coherente, writers directos, watcher y linaje siguen abiertos.
+- Publicación MP específica consultada por repo público, todavía no realizada.
+  MR CI en curso/sin review, no merge. Sin training/promoción/operación/T-1.
+
+
 ## 2026-09-29 — CX: revisión GLM recibida y mainb75db332 documental
 
 - a85b57e4 publicado en PR22: reconcilia GLM281786bd/main2080e423 con CX,

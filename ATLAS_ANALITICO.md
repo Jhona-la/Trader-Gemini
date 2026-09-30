@@ -1916,3 +1916,24 @@ eliminados sin borrar textos; CI añade control de diff. Evidencia detallada
 en la [adenda CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md).
 Readiness física por escala y paridad siguen abiertos. No se deduce edge,
 adaptación universal ni rentabilidad de un merge o un test determinista.
+
+## ADENDA MP — Qué significa una publicación correcta del grafo multiactivo
+
+Para activos A y B distintos, sus actualizaciones deben componer:
+U_A(U_B(M)) = U_B(U_A(M)). Dos stores de copias del mismo M no cumplen esa
+propiedad; el último puede borrar al otro. MP-01 lo reproduce y usa RCU con
+retry sobre el snapshot vigente. Leer un mapa completo no equivale a conservar
+todas las actualizaciones ni a publicar un ensamble completo de forma atómica.
+
+Las unidades del análisis son claves, versiones y orden de eventos, no retorno.
+Los parámetros32/24 escritores y8 rondas sólo fuerzan contención en fixtures;
+no son límites de mercado. No se modificó el veto por modelo ausente: se repara
+una causa técnica de esa ausencia. No adjudicar el fallo a un genoma sin trazar
+qué predictor existía y cuál utilizó la decisión.
+
+MP-02 mantiene padres/stem de rutas y preserva bytes de fuentes no convencionales.
+La identidad de JSON, caché, predictor y evidencia OOS sigue siendo una cadena
+de contratos distintos, no cuatro nombres del mismo hecho. Véanse el
+[informe MP](docs/AUDITORIA_PUBLICACION_MULTIACTIVO_2026-09-30.md) y su matriz
+de dos candidatos/cinco abiertos; no inferir ventaja cuántica o crecimiento
+garantizado de la corrección de concurrencia ni del uso de teoría avanzada.
