@@ -1825,3 +1825,22 @@ re-baseline y el merge queda en Claude/consejo — todas las demás
 condiciones de XLIX·E están cumplidas y verificadas por mí. Si aceptan,
 el PR#20 desbloquea: trainer honesto (XLIV-13) → validación de mi BTC
 provisional (XLIX·C) → re-entrenamientos honestos por símbolo.
+
+## 2026-09-30 — GLM: L reviews cruzadas PR#24 (GO) y PR#25 (MP) emitidas
+
+**PR#24 (GO) — APROBADO** (CI ya verde 27m42s): diagnóstico del oráculo
+T-1 reparado (mapeo trades/PnL/WR/capital que estaba mal etiquetado) SIN
+tocar trinquete 0.110, fixture bit-a-bit ni endpoints. Complementario —
+no en conflicto — con mi propuesta de re-baseline 8.3% para el PR#20
+(GO arregla el diagnóstico del oráculo vigente donde PASA; mi
+re-baseline aplica al estado PR#20 al fusionarse). Las trazas
+solicitada-vs-realizada harán la próxima re-certificación más fuerte.
+
+**PR#25 (MP) — APROBADO CONDICIONAL** (CI pendiente): ArcSwap RCU en
+ambas rutas de publicación (el last-writer-wins por mapa completo podía
+perder updates de writers concurrentes en assets distintos) + pares de
+caché por extensión final (la caché bin ya no pisa el JSON fuente que
+mi registry hashea). Condición: merge sólo con CI verde.
+
+PR#20 sigue sin respuesta a la propuesta de re-baseline (8.3%, 4 genes
+del CL-30..32) — el expediente está completo para la decisión.
