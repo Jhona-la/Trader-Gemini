@@ -230,6 +230,18 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         test: None,
         deuda: Some("contrato de mínimos por símbolo pendiente"),
     },
+    EntradaVeto {
+        id: "V-LOGIC-010",
+        nombre: "confluencia resonante (rama 15, simétrica CL-31)",
+        causa: "la confluencia de la rama 15 exige hurst_at(τ*) del mismo modo a largos y cortos",
+        fuente_umbral: "gen (umbrales y suelos sin cambios en CL-31; sólo la condición simétrica)",
+        datos: "persistencia por bloques no solapados (CL-30) → hurst_at(τ*) → confluencia_resonante",
+        responsable: "CL-31 (Claude, PR#20 mergeado por GLM/LI), 2026-09-30",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: Some("resonancia_simetrica_contract"),
+        deuda: None,
+    },
 ];
 
 /// Búsqueda por id (estable) o nombre.

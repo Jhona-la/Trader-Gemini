@@ -8,6 +8,7 @@
 | [0004](ADR-0004-veto-registry-como-codigo.md) | Registro de vetos: el censo es código | Aceptado | 2026-09-29 |
 | [0005](ADR-0005-triage-teorico-y-medicion.md) | Teoría nueva: triage 4 estados + medición como portón | Aceptado | 2026-09-29 |
 | [0006](ADR-0006-bt-vivo-envoltorio.md) | bt↔vivo: el sesgo vive en el envoltorio | Aceptado | 2026-09-29 |
+| [0007](ADR-0007-worktree-aislado-verificaciones.md) | Corridas largas en worktree aislado | Aceptado | 2026-09-30 |
 
 ## Convención
 
