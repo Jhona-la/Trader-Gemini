@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — PR #21 publicada y regresión ST/TE/MX aprobada
+
+- PR: https://github.com/Jhona-la/Trader-Gemini/pull/21.
+- Corte probado: e9d8fcd4; incluye main7796326a. Esta adenda sólo cambia
+  documentación y no modifica el código que produjo la evidencia.
+- Seis crates: 1.137 aprobadas, 0 fallidas, 7 ignoradas. Replay: 86/0/0
+  (37 biblioteca, 21 MX, 25 labels, 3 riesgo espectral). Total disjunto:
+  **1.223 aprobadas, 0 fallidas, 7 ignoradas**; golden existente intacto.
+- `cargo check --workspace --all-targets`: éxito (19,14 s), con warnings
+  preexistentes; no se presentan como errores reparados.
+- Las ignoradas son 5 testnet, 1 inventario ML y 1 medición manual TE.
+  No hubo trading, entrenamiento, promoción ni evaluación de tapes T-1.
+- PR sin conflictos, revisiones/comentarios pendientes ni checks reportados
+  al consultar. Sin CI configurada: evidencia local, no «CI verde».
+- Integración solicitada; verificar el evento de merge y SHA en la PR.
+  Las notas anteriores LOCAL/no publicado son históricas desde este corte.
+  TH sigue pendiente; no se toca el checkout GLM ni su Cargo.lock sucio.
+  Los nueve expedientes MX abiertos y las limitaciones científicas subsisten.
+
 ## 2026-09-29 — Publicación ST/TE/MX autorizada por el operador
 
 El operador respondió «Hazlo» a la petición explícita de publicar la rama

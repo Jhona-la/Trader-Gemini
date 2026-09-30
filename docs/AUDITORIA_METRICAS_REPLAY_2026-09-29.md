@@ -649,3 +649,37 @@ no reporta protección/ruleset de main ni existen workflows versionados en
 este corte; ausencia de CI no se describe como «CI verde». Se realiza además
 regresión local conjunta antes de integrar. El resultado definitivo y la URL
 de la PR quedarán en el cierre de publicación.
+
+## Adenda de publicación y regresión conjunta — PR #21
+
+Publicación autorizada: https://github.com/Jhona-la/Trader-Gemini/pull/21.
+Código probado en e9d8fcd4, con main7796326a incluido. Los cambios posteriores
+de este cierre son únicamente documentales. El estado definitivo de merge
+se consulta en la PR; esta evidencia no anticipa un evento aún no ocurrido.
+
+Comandos reproducidos en el worktree aislado, sin operar el motor:
+
+```powershell
+cargo test -p feature-engine -p signal-engine -p risk-engine -p god-engine-core -p execution-engine -p evolution-engine --all-targets -- --test-threads=1
+cargo test -p backtest-engine --lib --test ex_post_metrics_contract --test label_evidence_contract --test spectral_risk_contract -- --test-threads=1
+cargo check --workspace --all-targets
+```
+
+La primera orden produjo 1.137 aprobadas, 0 fallidas y 7 ignoradas en 89
+bloques de resultados. La segunda: 86 aprobadas, 0 fallidas, 0 ignoradas
+(37 biblioteca, 21 MX, 25 labels, 3 riesgo espectral). Son poblaciones
+disjuntas: total **1.223/0/7**. Las ignoradas corresponden a 5 testnet,
+1 inventario ML y 1 medición manual TE. No se ejecutaron tapes T-1.
+
+El golden existente pasó sin modificaciones. La biblioteca de replay tardó
+69,87 s; sus tres contratos 0,01/0,01/0,06 s. La comprobación de todos los
+targets del workspace terminó correctamente en 19,14 s, conservando warnings
+preexistentes. Estos tiempos no miden latencia de inferencia o ejecución.
+Compilar todos los targets tampoco equivale a ejecutar todos los tests.
+
+La PR no tenía conflictos, comentarios/revisiones pendientes ni checks
+reportados al consultar. No hay CI configurada en este corte: lo anterior
+es evidencia local. Las afirmaciones históricas «no publicado» se conservan
+como historia, no describen el estado desde la apertura de PR #21.
+Los nueve hallazgos MX abiertos y todos sus criterios de cierre permanecen;
+publicar las reparaciones no demuestra alpha, rentabilidad o cobertura total.

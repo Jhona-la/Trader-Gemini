@@ -1339,3 +1339,28 @@ no reporta protección/ruleset de main ni existen workflows versionados en
 este corte; ausencia de CI no se describe como «CI verde». Se realiza además
 regresión local conjunta antes de integrar. El resultado definitivo y la URL
 de la PR quedarán en el cierre de publicación.
+
+## 2026-09-29 — Evidencia de publicación ST/TE/MX: PR #21
+
+PR pública autorizada: https://github.com/Jhona-la/Trader-Gemini/pull/21.
+Rama publicada `feat/quant-sr-codex-metricas`, corte probado e9d8fcd4,
+base main7796326a incluida. Esta adenda es documental. La PR es el punto
+visible de coordinación; no se atribuye acuse o revisión a Claude/GLM.
+
+Regresión local conjunta concluida: seis crates 1.137/0/7; replay 86/0/0,
+desglosado en 37 biblioteca +21 MX +25 labels +3 riesgo espectral.
+Total disjunto **1.223 aprobadas, 0 fallidas, 7 ignoradas**. Comprobación
+`cargo check --workspace --all-targets` aprobada (19,14 s), con warnings
+preexistentes. Golden conservado. No es una ejecución de todos los tests
+de todos los crates: all-targets es comprobación de compilación del workspace.
+
+Ignoradas: 5 testnet, 1 inventario ML y 1 medición manual TE; no son pruebas
+aprobadas. Sin trading, entrenamiento, promoción o T-1. Ausencia de CI no
+equivale a CI verde; la consulta de PR no reporta checks ni revisiones o
+comentarios pendientes. Se solicita integración sin bypass de requisitos;
+el evento y SHA definitivo se verifican en la PR antes de limpiar ramas.
+
+El checkout compartido pertenece a `glm/xlviii-h-reentrenar-btc`; se preserva
+su Cargo.lock sucio. TH6209704a, backups y trabajo activo quedan separados.
+La publicación no cierra MX-19 ni los otros ocho expedientes MX abiertos,
+ni demuestra paridad producción/backtest, alpha o rentabilidad futura.
