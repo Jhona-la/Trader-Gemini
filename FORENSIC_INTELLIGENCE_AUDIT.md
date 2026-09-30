@@ -12639,3 +12639,52 @@ El consumidor vivo evalúa `intensity_ratio(event_time)` — siempre en fase 0 (
 **Conclusión:** el gen de excitación vuelve al circuito evolutivo con significado escala-libre, y la superficie de decisión viva por fin discrimina «ráfaga sobre el ritmo normal del símbolo» en lugar de «actividad». La cadena #535 queda completa de punta a punta: μ̂ (medición) → ratio al registry (canal) → gen (control) → gate (decisión). Queda M5-H02 como siguiente eslabón mayor.
 
 *(Fin de la Ola 10 — append solamente, conforme al mandato de documentación.)*
+
+### #586 — ✅ CIERRE IMPLEMENTADO: PUERTA DE BANDA OPERABLE en el generador (Ola 11, 2026-09-30, Qoder)
+
+**Hallazgo (patrón superficie muerta, 3ª vez):** `SuperGenotype::min_tradeable_tau_ms` /
+`tradeable_band_ms` (quantum-arena/src/genome.rs:2457+) existen con suite de contratos
+(temporal_band_contract.rs) y CERO consumidores vivos. El generador del continuo acota τ al
+suelo FÍSICO del espectro (`TAU_ANCHOR_FAST_MS`) pero nunca a la banda OPERABLE (curva SL del
+genoma × fricción viva), y `suelo_tp_sl` (risk-engine/src/lib.rs, D-636b & #585,
+`tpsl_gate.below_tradeable_floor → REJ_TP_SL_FLOOR`) masacra el embudo: diagnóstico T-1 de
+Claude (XLIV) = 1.241.740 intenciones rechazadas por el suelo vs 1.605 por comisiones.
+
+**El daño NO era sólo desperdicio de pipeline.** La arbitración multi-banda (D-431 & #565,
+despacho concurrente integral) hace que una intención FAST con τ doomed:
+  (a) en el mismo armónico y misma dirección, pueda ganar la selección de
+      `best_duration` por densidad de energía espectral → la orden completa muere en el
+      gate aunque la banda lenta SÍ pagaba la fricción;
+  (b) en dirección opuesta, cancele por interferencia destructiva una señal slow operable.
+La banda que no puede monetizarse a su propio τ estaba VOTANDO en la fusión.
+
+**Fix (rama qoder/qo-586-banda-operable):**
+  1. `GodEngineCore::banda_paga_friccion(coin_id, tau_ms)` — sonda que repite el cálculo
+     del gate con la MISMA función pura (`tp_sl::compute_tp_sl_with_target_rr`) y las
+     MISMAS entradas arena-vivas (ATR/precio/hurst del coin, `roundtrip_friction` con
+     comisiones publicadas + piso de slippage + latencia, `sl_atr_mult_btc`/`sl_atr_multiplier`,
+     σ pronosticada al τ, `tp_rr_ratio_btc`). Paridad exacta por construcción (D-637/D-682:
+     una sola ley, identidad estructural no disciplinaria).
+  2. PUERTA 1.5 en `puertas_del_continuo` (después de viabilidad, antes del invariante
+     bayesiano): `expected_duration_ms > 0 && !banda_paga_friccion ⇒ SignalIntent::flat()`.
+     Cubre AMBAS bandas (fast 4858 y slow 5141) porque D-743 obliga a que toda puerta
+     viva ahí. No es veto fijo: con ATR vivo, en calma la banda se cierra sola y en
+     volatilidad se abre — la sonda sigue al régimen.
+  3. Telemetría forense por moneda: `registry.set_for_coin(coin_id, "qo_586_tau_inoperable", τ)`
+     sólo cuando la puerta aplasta (la banda viva no toca el registro).
+  4. `expected_duration_ms == 0` se remite al gate (resuelve τ por `horizon_tau_ms_coin`);
+     la puerta no decide en ese caso.
+
+**Qué NO hace el fix:** no estira τ (el estiramiento espectral con validación de
+persistencia merece su propia ola con medición T-1), no toca risk-engine (uso read-only
+de su API pública), no toca las ramas 11-15 (zona CL de Claude).
+
+**Verificación:** god-engine-core --lib 154/154 (151 previos + 3 contratos nuevos:
+sonda-sigue-al-régimen, puerta-aplasta/deja-pasar+telemetría, remisión τ=0);
+signal-engine 63/63 lib + suites de integración en verde; `cargo check --workspace
+--all-targets` OK (warnings preexistentes). Cero regresiones en tests_d743_puertas_del_continuo.
+
+**Pendiente relacionado:** el embudo aún puede morir por el suelo en las ramas 11-15
+(intenciones que no pasan por puertas_del_continuo) — mismas puertas candidatas para
+una ola posterior. La extensión "estirar τ al borde de banda con persistencia_at" queda
+como diseño abierto (requiere T-1).
