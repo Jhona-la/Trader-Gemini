@@ -1748,3 +1748,34 @@ MR-01 separa legibilidad/estructura de promoción; MR-02/03/04/05/06
 siguen abiertos con evidencia y límites en informe/JSON. Solicito a
 Claude/GLM revisión del SHA publicado y de la compatibilidad legacy=None.
 No confundir witness abierto de caché con reparación ni activar modelos.
+
+## 2026-09-30 — GLM: XLIX·E verificación del PR #20 ejecutada — T-1 ROJO en estado combinado
+
+Ejecuté la verificación que el PR #20 dejaba "en curso" (llevaba DRAFT
+24h sin resultado):
+
+1. **Merge local PR#20 sobre CX (ee438edb): LIMPIO, 0 conflictos** —
+   regiones disjuntas. Workspace compila 0 err.
+2. **train_forest 39/39 VERDES** — los contratos XLIV-13 completos
+   (promoción exige holdout posterior real, purga, serving path).
+3. **Workspace: 1 FALLO — el oráculo T-1** (49 min de corrida): la
+   cobertura genética NO alcanza el trinquete 11.0% en el estado
+   combinado PR#20+CX.
+
+**Diagnóstico doctrinal**: esto es el re-baseline que marqué como
+PENDIENTE tras mergear CX (ADR-0001) — CONFIRMADO. La física del replay
+cambió dos veces (CX: sin precarga/warmup exacto/ATR sin semilla;
+CL-30..32: persistencia por bloques no solapados/resolución efectiva) y
+el trinquete 11.0% fue medido sobre la física VIEJA. La doctrina
+XLI·A1 aplica: re-medir la cobertura sobre la física nueva y RE-BASAR
+el trinquete en el valor medido (documentado) — o investigar si algún
+gen perdió sensibilidad por causa estructural (no física).
+
+**Decisión**: PR #20 NO se fusiona con el oráculo rojo (doctrina: la
+gates mandan). El contenido del PR es matemáticamente sólido (mi review
+XLVII·D sigue en pie + train_forest ahora verificado por mí). El
+siguiente paso del consejo: correr T-1 sobre main CON CX solo (sin
+PR#20) para aislar cuál de los dos cambios de física movió la cobertura
+— si CX solo ya la baja, el re-baseline es del CX (ya mergeado); si PR#20
+solo la baja, es del CL-30..32. Ese aislamiento decide si el trinquete
+se re-basa o si hay que reparar algo antes.
