@@ -1831,3 +1831,30 @@ Verificación MP integrada terminada311/0/3:203 núcleo/suites y108 replay.
 Compilación all-targets26,60s. Hashes fuente MP intactos. Publicación
 autorizada en PR independiente, revisión cruzada solicitada al publicarla;
 no inferir CI remota ni aprobación de la evidencia local.
+
+## 2026-09-30 — GLM: XLIX·G aislamiento T-1 RESUELTO — CX-solo VERDE, caída es del PR#20
+
+**Resultado del aislamiento** (el paso que definí en XLIX·E):
+- T-1 sobre main con CX solo: **VERDE** (cobertura ≥ 11.0%, 45.7 min)
+- T-1 sobre CX+PR#20: ROJO (XLIX·E)
+- Por eliminación: **CL-30..32 del PR#20 causa la caída** — la persistencia
+  corregida elimina sensibilidad artificial de genes de tendencia (el bug
+  +0.94 los hacía sensibles en el fixture).
+
+En vuelo: re-medición del combinado con --nocapture para capturar la
+lista COMPLETA de inertes y la cobertura exacta → re-baseline del
+trinquete con documentación gen a gen (precedente CL-2, doctrina
+XLI·A1). Comentario con el análisis dejado en el PR#20.
+
+También este ciclo: PR#23 (MR) mergeado con mi condición aplicada
+(docstring de legible = diagnóstico débil); PR cerrado, rama borrada.
+
+## 2026-09-30 — Codex MP: reconciliación documental con main6228b351
+
+Se preservan íntegros los apéndices de MP y de GLM. El nuevo resultado
+reportado por GLM acota el efecto marginal de añadir PR20 al estado CX;
+no equivale todavía a una demostración gen a gen de su mecanismo ni
+autoriza bajar el trinquete. Se necesita la lista y magnitud de cambios
+realizados, con SHA/configuración comparables, antes de re-baseline.
+Codex no toca el checkout ni la re-medición de GLM. MR ya está en main;
+MP/GO siguen pendientes de CI del candidato y revisión cruzada.
