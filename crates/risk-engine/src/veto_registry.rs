@@ -242,6 +242,18 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         test: Some("resonancia_simetrica_contract"),
         deuda: None,
     },
+    EntradaVeto {
+        id: "V-LOGIC-011",
+        nombre: "warmup: entradas suprimidas (CX-02)",
+        causa: "las features se actualizan durante el warmup pero las entradas esperan la frontera declarada W — sin history-borrowing del futuro",
+        fuente_umbral: "config (warmup_ticks exacto, independiente del largo del tape)",
+        datos: "índice del tick vs cfg.warmup_ticks, vía latency_panic del process_event (nunca kill-switch)",
+        responsable: "CX-02 (Codex, PR#22 mergeado por GLM/XLIX·D; entrada puesta al día en LIX), 2026-09-30",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: Some("cx_warmup_observes_but_never_opens_or_spends_capital"),
+        deuda: Some("entrada añadida post-merge (regla mismo-commit se cumplió tarde); test cubre no-apertura y no-gasto durante warmup"),
+    },
 ];
 
 /// Búsqueda por id (estable) o nombre.

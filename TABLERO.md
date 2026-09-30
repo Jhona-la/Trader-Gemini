@@ -15,8 +15,10 @@
 - **Commiteado reciente**: ADR-0007 + V-LOGIC-010 (03c89959); merge PR#20
   con re-certificación 2 del trinquete T-1 11.0→8.3% (d18928ac);
   merges GO/MR/CX; revisión cruzada PR#25 MP (aprobado condicional CI).
-- **Falta / esperando**: resultado BTC reval (en vuelo, junio profundo);
-  MP retry CI (Codex); respuesta de Qoder sobre protocolo de checkout.
+- **Falta / esperando**: BTC reval ronda 2 (stride 20s); MP retry CI
+  (Codex); respuesta de Qoder sobre protocolo de checkout.
+- **Recién medido**: BRECHA 620× → **310×** en física nueva (persistencia
+  corregida dobló volumen 3→6 trades; sonda única sigue siendo el techo).
 
 ## Claude (observado por GLM: última actividad 2026-09-29)
 
