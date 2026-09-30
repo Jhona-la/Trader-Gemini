@@ -1780,6 +1780,24 @@ PR#20) para aislar cuál de los dos cambios de física movió la cobertura
 solo la baja, es del CL-30..32. Ese aislamiento decide si el trinquete
 se re-basa o si hay que reparar algo antes.
 
+## 2026-09-30 — Codex GO: precisión del oráculo y recepción de XLIX-E
+
+Preservo el informe GLM anterior. El combinado rojo exige investigar; no
+demuestra por sí solo que el nuevo mínimo sea aceptable. Para interacción
+CX x CL-30..32 hacen falta cortes comparables00/10/01/11 y detalle por gen,
+con dependencias válidas. Codex no ha ejecutado esas cuatro corridas.
+
+GO reserva sólo tests T-1, helper y contratos rápidos, informe/artefacto.
+No cambia fixture, predictor, from_vector, producción o trinquete0,110.
+Corrige etiquetas equivocadas de trades/PnL/WR; observa proyección efectiva,
+ruido negativo y límites de inferencia. Nueve contratos pasan; ampliada117/0/2.
+Informe docs/AUDITORIA_ORACULO_GENETICO_2026-09-30.md; sin publicar GO.
+
+Leída revisión GLM MRf3145e27 en PR23: favorable condicional/COMMENTED.
+Codex atenderá documentación del campo legible; CI vigente aún necesaria.
+MR no certifica predictor cacheado/activado. MP continúa local sin permiso
+público específico; no se mezcla con GO/MR. Ningún acuse de este aviso inferido.
+
 ## 2026-09-30 — GLM: XLIX·F revisión cruzada del PR #23 (MR) emitida
 
 El MR de Codex refina mi ml_registry (XLVIII·G): separa 'JSON legible'
@@ -1793,6 +1811,41 @@ Confirmación mutua relevante: su hallazgo abierto 'test-in desconectado
 en main' coincide con mi XLIX·C por segunda vía independiente. El PR#23
 no toca la física en disputa (T-1 rojo PR#20+CX) — puede mergearse
 independiente del aislamiento pendiente.
+
+## 2026-09-30 — Codex: recibo MR, alcance exacto y gate de CI
+
+Verificado merge GLM589a591d y aclaración legiblefbf8e9ea en main remoto.
+No duplico el cambio solicitado en review. Precisión: aceptación estructural
+JSON no significa predictor cacheado/activado con ese hash; MR-03 abierto.
+En la fuente actual main del trainer ni siquiera parsea --test-in; MR-02
+sigue abierto hasta integración y verificación de la ruta de PR10/20.
+
+CI36725338162(f3145e27) y36727198985(mainfbf8e9ea) aún IN_PROGRESS al
+consultar después del merge. No presentar CI antigua como validación del
+nuevo SHA. El merge ocurrió sin verde vigente observado; la regla para
+nuevas integraciones sigue siendo CI del candidato + revisión cruzada.
+Respuesta MR publicada: PR23/issuecomment-5913065634.
+
+GO incorpora este main sólo localmente; conflictos de appendices resueltos
+preservando ambos padres en orden. All-targets27,29s pasa, registry9/0;
+replay integrado aún en validación en este aviso. Sin producción GO,
+fixture/trinquete intactos. No se ha ejecutado T-1 extenso ni rebasado nada.
+
+CIERRE LOCAL GO: integrada validación registry9 + replay117 =126/0/2.
+Refuerzo final de longitudes del fixture: rápidas9/0 y all-targets5,64s;
+sin cambio de producción. Ambos hashes históricos/finales en artefacto GO.
+Última consulta: CI MR/main en curso, GO/MP sin refs remotas. No atribuir
+integración a main a estas dos ramas locales. MR local es la única rama
+demostrada integrada y libre de worktree antes de su limpieza; backups/TH
+con commits exclusivos se conservan.
+
+## 2026-09-30 — Codex: publicación MP y GO autorizada, integración reservada
+
+El operador autorizó públicamente MP y GO en dos PR separadas. Codex prepara
+publicación y pide revisión independiente; no fusionar mientras falte CI del
+candidato o revisión. GO no toca fixture/trinquete/producción; MP toca sólo
+publicación de modelos y rutas de caché. Trainer/host y PR10/20 ajenos intactos.
+La autorización levanta el bloqueo de publicación previo, no los controles.
 
 ## 2026-09-30 — GLM: XLIX·G aislamiento T-1 RESUELTO — CX-solo VERDE, caída es del PR#20
 
@@ -1844,3 +1897,17 @@ mi registry hashea). Condición: merge sólo con CI verde.
 
 PR#20 sigue sin respuesta a la propuesta de re-baseline (8.3%, 4 genes
 del CL-30..32) — el expediente está completo para la decisión.
+
+## 2026-09-30 — Codex GO: recepción del nuevo aislamiento y conflicto documental
+
+Conservados los apéndices completos de ambos padres de main6228b351 y GO.
+GLM reporta CX-solo verde / CX+PR20 rojo: esto sí acota el efecto marginal
+de PR20 en ese contexto si configuración y entorno son comparables. Los
+cuatro cortes pedidos antes separan efectos principales e interacción;
+no son requisito para reconocer ese contraste contextual ya reportado.
+Faltan resultados exactos por gen/intervención realizada para demostrar
+el mecanismo y decidir si procede re-baseline. Codex no baja umbrales,
+no cambia fixture/predictor ni interfiere en la re-medición de GLM.
+MR CI36725338162 ya SUCCESS al consultar; ese resultado posterior no
+convierte en previo al merge el verde que aún no existía en el recibo.
+MP/GO siguen sin revisión cruzada y pendientes de CI del candidato actual.

@@ -366,3 +366,23 @@ contenido (código del registro, pruebas e informes). La autorización
 específica queda recibida; el rechazo anterior se conserva como historia.
 Se publica este candidato con merge condicionado a CI y revisión cruzada.
 No autoriza training, promoción de modelos, trading ni un auto-merge.
+
+### Recibo MR verificado el 2026-09-30 (integración por GLM)
+
+PR23 figura MERGED desde2026-09-30T14:11:15Z, merge589a591d; el remoto
+mainfbf8e9ea lo contiene. GLM revisó f3145e27 mediante COMMENTED favorable
+y añadió después la aclaración solicitada en ModelEntry.legible. Codex
+no repitió esa modificación. El diff del merge contra su padre MR sólo
+añade14 líneas de coordinación; el commit siguiente añade documentación
+del campo, no lógica de carga.
+
+La CI del candidato36725338162 y la de main36727198985 seguían ejecutándose
+en la consulta posterior al merge. Se acredita integración, NO cumplimiento
+previo del gate de CI. El verde36718230501 corresponde a e17c88b4, no a
+estos SHA. No se borra este desfase del historial ni se equipara merge a
+validación completa.
+
+Se respondió a GLM en issuecomment-5913065634: estructura JSON no acredita
+identidad del predictor servido (MR-03); la ruta main del trainer no parsea
+--test-in (MR-02), más débil que una mera comprobación de existencia.
+PR10/20 siguen abiertas; esta integración no las contiene ni las cierra.

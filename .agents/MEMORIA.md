@@ -1008,3 +1008,39 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - Rama codex/outcome-clock-audit propia hasta recibo remoto. Backups con3/1
   commits exclusivos y ramas activas preservados. No declarar todo auditado
   ni merged; JSON conserva snapshot previo y recibo posterior confirma Git.
+
+## 2026-09-30 — GO: diagnóstico y contrato de la medición genética
+
+- Rama propia codex/genome-oracle-evidence desde76de9935. Sin producción,
+  genoma/fixture/predictor/comparador/trinquete modificados. T-1 completo no ejecutado.
+- Corrige trades/PnL/WR del diagnóstico (RED6/1 → GREEN9/0) y registra
+  petición/proyección efectiva. Preservación bit a bit de fixture y144 destinos.
+- Ruido negativo, extremos sin prueba de inercia, acoplamientos, stats≠fitness,
+  no finitos y cobertura monoactivo siguen abiertos: informe GO+JSON detallados.
+- Ampliada117/0/2; ignoradas sólo mediciones manuales. CI agrega target rápido,
+  no cambia golden ni ignora T-1 para ocultar el fallo informado por GLM.
+- GLM revisó MRf3145e27: COMMENTED favorable con condición documental legible.
+  Maincdab sólo registra esa revisión. MR/MP/GO son ramas y permisos distintos.
+- GO local, publicación específica pendiente; MP40f8685b preservada local.
+  No trading/training/promoción. Checkout compartido y PR20 ajenos intactos.
+- Check GO workspace/all-targets/locked confirmado en38,18s, sin errores.
+
+- ACTUALIZACIÓN: GLM fusionó MR/PR23 en589a591d y cumplió la condición
+  documental enfbf8e9ea; remoto main verificado. Codex no duplicó ese trabajo.
+  CI nueva MR/main seguía en curso después del merge: no certificar gate.
+- GO integra mainfbf8e9ea localmente, preservando ambos apéndices de tres
+  conflictos y comparando ambos padres. Check27,29s pasa. Se mantiene
+  separación de permisos/publicaciones GO/MP y PR10/20 pendientes.
+- CIERRE integrado: registry9 + replay117 =126/0/2; refuerzo de longitud
+  del contrato de fixture validado9/0 y all-targets5,64s. No T-1 extenso.
+  JSON conserva hashes previos/finales. MR/main CI todavía en curso;
+  no se certifica el gate pre-merge. MP/GO sin referencias remotas.
+
+## 2026-09-30 — Publicación MP y GO autorizada
+
+- Operador: «Hazlo» en respuesta a publicación en repo PÚBLICO mediante
+  dos PR separadas. Levanta el bloqueo anterior de MP/GO; no pedir de nuevo.
+- Mantener CI del candidato y revisión cruzada antes de cada merge.
+  No autoriza trading, training, promoción ni rebajar el trinquete T-1.
+- GO9cda4677 conserva hashes validados126/0/2; MP40f8685b debe reconciliar
+  mainfbf8e9ea y validar su composición antes de publicar. No mezclar ramas.

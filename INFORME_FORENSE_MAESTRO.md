@@ -8725,6 +8725,22 @@ CX-I01/02/03, causa, reproducción, límites y criterios; no duplican MX-19.
 Validación local108/0/2, 14 contratos causales, all-targets/locked20,12 s.
 CI nueva y revisión cruzada pendientes; no merge de PR22 a main todavía.
 
+## ADENDA GO — Validez de la evidencia de evolución (2026-09-30)
+
+[Informe detallado GO](docs/AUDITORIA_ORACULO_GENETICO_2026-09-30.md) y
+[JSON GO](docs/artifacts/auditoria_oraculo_genetico_2026-09-30.json).
+Base76de9935, rama codex/genome-oracle-evidence, sin publicación ni merge.
+Nueve expedientes: etiquetas equivocadas, ruido sesgado, extremos/interacciones,
+proyección efectiva, stats≠fitness, no finitos, contexto único, estado global
+y atribución de la regresión combinada. Una reparación candidata; ocho abiertos,
+con mejoras de lenguaje y trazabilidad en dos de ellos.
+
+RED6/1 del diagnóstico, GREEN9/0 rápido, ampliada117/0/2. Se preservan
+ecuaciones del fixture bit a bit y144 destinos de perturbación. No se ejecutó
+T-1 completo ni se cambió0,110. Fallo combinado PR20+CX es reporte de GLM,
+no prueba de que re-baseline sea correcto: falta contraste por gen y causas.
+Sin promesa de rentabilidad, auditoría universal ni integración implícita.
+
 ## ADENDA MR — evidencia de modelos y promoción (2026-09-30)
 
 [Informe MR](docs/AUDITORIA_REGISTRO_MODELOS_2026-09-30.md) y
