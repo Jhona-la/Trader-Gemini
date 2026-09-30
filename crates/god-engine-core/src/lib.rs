@@ -3859,7 +3859,17 @@ impl GodEngineCore {
             let pos_dev =
                 ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
             set_reg("quantum_position_deviation", pos_dev);
-            let hawkes_intensity = (1.0 + current_obi.abs() * 2.0).clamp(0.1, 5.0) / 5.0;
+            // #554 — RENOMBRE HONESTO: esta magnitud NO es intensidad de
+            // Hawkes. Es la magnitud del OBI normalizada a [0.1, 1] (el
+            // proxy de aceleración que CERT-M2-C02 erradicó de la
+            // telemetría seguía vivo aquí, con nombre de Hawkes). El
+            // λ/μ̂ REAL ya está en alcance (`hawkes_ratio_real`, publicado
+            // arriba al registry): cablearlo al slot 2 del PPO cambiaría
+            // la distribución de entrada de la política aprendida —
+            // invalida el PPO entrenado y exige re-certificación T-1
+            // (decisión de consejo, ABIERTA). Hoy el slot lleva flujo-OBI
+            // con signo y se llama por su nombre.
+            let obi_excitacion_norm = (1.0 + current_obi.abs() * 2.0).clamp(0.1, 5.0) / 5.0;
             let dir_flow_sign = if current_obi.abs() > 0.05 {
                 current_obi.signum()
             } else if ofi.abs() > 0.05 {
@@ -3867,7 +3877,7 @@ impl GodEngineCore {
             } else {
                 macro_trend.signum()
             };
-            let dir_hawkes = hawkes_intensity * dir_flow_sign;
+            let dir_obi_flow = obi_excitacion_norm * dir_flow_sign;
             let regime_code = ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0);
             let dir_regime = regime_code
                 * (if macro_trend.abs() > 0.0005 {
@@ -3886,7 +3896,7 @@ impl GodEngineCore {
             let ppo_state = [
                 ofi_norm,
                 obi_norm,
-                dir_hawkes,
+                dir_obi_flow,
                 lead_lag_div.clamp(-1.5, 1.5),
                 dir_regime,
             ];

@@ -12734,3 +12734,28 @@ veta-opuesta-no); god-engine-core --lib 154/154; check workspace --all-targets O
 (warnings preexistentes). La prueba estructural del defecto es sobre código
 commiteado: find_resonant_slot devuelve None ante colisión same-dir < 0.80 y el
 gate sólo corría con slot Some ⇒ rama inalcanzable ⇒ gate muerto.
+
+### #554 — ✅ CIERRE IMPLEMENTADO: renombre honesto del pseudo-hawkes del PPO (Ola 13, 2026-09-30, Qoder)
+
+**Estado verificado al HEAD actual (mejor de lo temido):** el pseudo NO colisiona con
+el registro — el único writer de la clave "hawkes_intensity" es el λ/μ̂ REAL
+(CERT-M2-C02, lib.rs set_reg). El pseudo sobrevivía como VARIABLE LOCAL:
+`let hawkes_intensity = (1.0 + |OBI|·2).clamp(0.1, 5.0)/5.0` (lib.rs, bloque del
+PPO), multiplicada por el signo de flujo y metida como slot 2 (`dir_hawkes`) del
+vector de estado del PPO.
+
+**El defecto real era de NOMENCLATRA-SEMÁNTICA sobre política aprendida:** el PPO
+aprende pesos para un slot que su nombre declara "intensidad Hawkes con signo de
+flujo", pero el dato que recibe desde siempre es la MAGNITUD DEL OBI normalizada.
+Todo diagnóstico/auditoría del PPO que razonara sobre "el slot de Hawkes" razonaba
+sobre OBI. (El proxy de aceleración/ATR que CERT-M2-C02 erradicó de la telemetría
+tenía este primo superviviente.)
+
+**Fix (neutro en comportamiento):** renombre `hawkes_intensity` → `obi_excitacion_norm`
+y `dir_hawkes` → `dir_obi_flow`, con comentario que (a) declara el contenido real del
+slot, (b) deja ABIERTA la decisión de consejo: cablear el λ/μ̂ REAL (`hawkes_ratio_real`,
+ya en alcance del mismo tick) al slot 2 cambiaría la distribución de entrada de la
+política aprendida — invalida el PPO entrenado y exige re-certificación T-1.
+
+**Verificación:** god-engine-core --lib 154/154 (renombre sin cambio de comportamiento,
+como corresponde); check workspace --all-targets OK.

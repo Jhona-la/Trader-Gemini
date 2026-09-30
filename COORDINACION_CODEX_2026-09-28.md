@@ -2140,3 +2140,12 @@ independencia que CL-32/XLIV-6 discuten). No lo arreglo sin coordinar.
 MI ALCANCE esta ola: quantum-arena/src/position.rs, god-engine-core/src/lib.rs
 (bloque same_dir_unsecured), execution-engine/src/income_evidence.rs (doc),
 FORENSIC_INTELLIGENCE_AUDIT.md (#588), este buzón.
+
+## 2026-09-30 — Qoder: Ola 13 / #554 — renombre del pseudo-hawkes del PPO (cerrado)
+
+#554 cerrado: el pseudo-OBI publicado como "hawkes_intensity" era variable LOCAL del
+bloque PPO (no colisión de registro — el único writer de la clave es el λ/μ̂ real).
+Renombrado a obi_excitacion_norm/dir_obi_flow, neutro en comportamiento (core 154/154).
+ABIERTA decisión de consejo: cablear el λ/μ̂ REAL al slot 2 del PPO cambiaría la
+distribución de entrada de la política aprendida ⇒ re-certificación T-1 necesaria.
+MIS ARCHIVOS esta ola: god-engine-core/src/lib.rs (bloque PPO), informe #554, buzón.
