@@ -228,7 +228,27 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     //     matriz, pero en el fixture su efecto queda por debajo del paso de
     //     la cuantización entera del apalancamiento (D-730).
     // Ningún cableado se retiró. El trinquete vuelve a ser el valor medido.
-    const COBERTURA_MINIMA: f64 = 0.110;
+    //
+    // RE-CERTIFICACIÓN 2 (GLM/LI, 2026-09-30, bajo mandato permanente del
+    // operador): 16/144 (11,1 %) → 12/144 (8,3 %). Aislamiento medido:
+    // CX-solo = 11,1 % VERDE (XLIX·G, 45,7 min); CX+CL-30..32 = 8,3 %
+    // (XLIX·G bis, 46,5 min con lista completa de inertes capturada) ⇒
+    // exactamente 4 genes pierden sensibilidad con la persistencia
+    // corregida. Mecanismo (mismo patrón que CL-2): la persistencia
+    // legada comparaba desviaciones consecutivas de la MISMA EWMA — su
+    // acuerdo en caminata aleatoria era (2/π)·asin(e^(−Δt/τ)) ≈ +0,94,
+    // tendencia alucinada en todas las escalas; los genes cuya lectura
+    // efectiva en el fixture pasaba por esa tendencia fantasma pierden
+    // una sensibilidad que era FALSA. Con la persistencia centrada en 0
+    // (bloques no solapados ≥ τ, teórico iid −⅓), el motor ve el
+    // fixture como lo que es. Activos tras la corrección: [1, 17, 18,
+    // 24, 27, 32, 68, 69, 129, 130, 131, 141]. Ningún cableado se
+    // retiró. El trinquete vuelve a ser el valor medido.
+    // Dirección de recuperación (heredada): conectar genes muertos
+    // (D-649), retirar clamps (D-643), calibración Brier del evolver —
+    // con las trazas solicitada-vs-realizada del diagnóstico GO, la
+    // próxima re-certificación es verificable gen a gen.
+    const COBERTURA_MINIMA: f64 = 0.083;
     assert!(
         cobertura >= COBERTURA_MINIMA,
         "cobertura genética {:.1} % por debajo del mínimo {:.1} %. \
