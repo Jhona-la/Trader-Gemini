@@ -316,3 +316,173 @@ obsoleta: la verificación posterior muestra índice limpio y ninguna ruta
 unmerged. Consulta remota de rama/PR CX: inexistentes en este cierre.
 La CI está escrita y versionada sólo localmente; no ejecutada en GitHub.
 Revisión cruzada pendiente. No hay merge CX a main ni rama CX que borrar.
+
+## Adenda CX-06 — rechazo de precios y contaminación del ATR (2026-09-29)
+
+Esta adenda preserva el corte anterior como historia. Actualiza CX-06 a
+**reparación candidata local de la siembra del ATR**; no certifica admisión
+atómica integral. Balance actualizado de los nueve expedientes CX: cinco
+reparaciones candidatas y cuatro abiertos (CX-05, CX-07, CX-08 y CX-09).
+La trazabilidad de rechazos y la validación conjunta de cantidades/reloj
+siguen pendientes en CX-07. No se presenta esta corrección como una
+auditoría archivo por archivo de todo el repositorio.
+
+### Causa, alcance y cadena de efectos
+
+La aduana de precios comprobaba mid finito/positivo, bid/ask positivos y
+libro no cruzado. Sin embargo, antes de entrar al bucle se ejecutaban
+`running_atr = 0.001 * ticks[0].mid()` y `prev_mid = ticks[0].mid()`.
+El `continue` descartaba el evento, pero no deshacía esa inicialización.
+El rechazo era efectivo para el núcleo y a la vez inefectivo para el
+estado auxiliar del simulador: una desconexión entre raíz y ejecución.
+
+```text
+Primera fila inválida ──► semilla ATR/prev_mid ANTES del rechazo (defecto)
+                               │
+                         EMA posterior alterada
+                               │
+                      bid/ask simulados alterados
+                               │
+                 fills, capital o posición distintos
+
+Candidato: fila ─► aduana de precios ─► primera semilla / siguiente EMA
+                         └─ rechazo: no siembra ni actualiza ATR
+```
+
+Para NaN, la EMA conserva NaN; para infinito, también puede producirlo
+al multiplicar el desplazamiento por cero. Por tanto, desactivar el
+desplazamiento no neutralizaba el defecto. El core podía usar su fallback
+de cotización al recibir límites no válidos. Para precios negativos o un
+libro cruzado finitos, la diferencia frente al primer precio aceptado
+introducía un salto inexistente; no hacía falta que apareciera NaN.
+
+El alcance dinámico demostrado es el modo libro (`trade_only=false`). El
+modo trade-only construye sus cotizaciones desde el mid aceptado y sirve
+como control negativo. No se extrapolan los efectos de estas fixtures a
+rentabilidad, pérdidas reales, frecuencia en producción ni todos los activos.
+
+### Reproducción falsable antes de reparar
+
+Base de código `2640bbbd`. Se añadieron cinco tests sin modificar el runner:
+cuatro prefijos inválidos y una cinta íntegramente rechazada. El mismo
+replay real procesa 80 filas válidas deterministas y una variante con una
+fila inválida antepuesta. La fila añadida lleva exactamente el timestamp
+de la primera válida y se usa `warmup_ticks=0`: así se aíslan el reloj de
+CX-07 y la población cruda del warmup. Los índices se realinean por evento
+aceptado, no por posición física en el archivo.
+
+Se comparan bit a bit 34 features, precio/volatilidad/Hurst internos, EMAs,
+contador de ticks, capital, margen y presencia de posiciones. Son 80
+instantáneas antes del evento, no inspección exhaustiva del heap ni una
+prueba independiente del último estado terminal. Los parámetros cruzados
+son ambos modos y desplazamiento `0.0`/`0.10`.
+
+| Primera fila añadida | Primera divergencia observada, índice aceptado base 0 | Condición |
+|---|---:|---|
+| bid/ask NaN | 10 | Libro, desplazamiento 0 |
+| bid/ask +infinito | 10 | Libro, desplazamiento 0 |
+| bid=-100, ask=-90 | 3 | Libro, desplazamiento 0,10 |
+| bid=900.000, ask=600.000 | 3 | Libro, desplazamiento 0,10 |
+
+En NaN se observó capital `1000.05353295625` sin la fila rechazada frente
+a `1000.05435539213` con ella, en la instantánea 10. El sentido del error
+puede favorecer un backtest: no es solamente un sesgo conservador. En el
+caso negativo, en la instantánea 3 la referencia tenía posición abierta
+y margen `8.28120985010707`; la variante tenía margen cero y ninguna
+posición. Es evidencia de resultado simulado distinto, no una estimación
+del impacto económico esperado. Los bits y aserciones de estas corridas
+proceden del contrato ejecutado, no de un simulador matemático duplicado.
+
+Resultado RED: **8 aprobadas / 4 fallidas / 0 ignoradas**, 3,47 s de tests
+y 50,41 s de compilación. Incluye los siete contratos CX previos. La cinta
+de 20 filas inválidas mixtas ya dejaba el núcleo frío y capital intacto;
+ese control impide confundir «no hubo trades» con ausencia de contaminación
+que sólo se manifiesta cuando llegan precios válidos después.
+
+### Reparación y significado de los cálculos
+
+La pareja `(ATR, mid anterior)` comienza como `None`. Sólo después de
+superar la aduana de precios recibe estado. En la primera fila aceptada
+se conserva exactamente la semilla previa `0.001 * mid` y se ejecuta la
+misma primera actualización; no se utiliza cero como sustituto de datos.
+Las siguientes filas aceptadas siguen la misma recurrencia:
+
+`TR_k = max(ask_k - bid_k, abs(mid_k - mid_(k-1)))`
+
+`ATR_k = 0.02 * TR_k + 0.98 * ATR_(k-1)`
+
+`slip_k = ATR_k * max(shift_atr_frac, 0)`
+
+TR expresa un rango monetario en unidades del precio cotizado; ATR es su
+promedio exponencial por evento admitido; slip desplaza cada lado del
+libro simulado. No es una probabilidad, un retorno ni el ATR porcentual
+interno del core. La corrección cambia la procedencia del estado, no el
+coeficiente, la semilla, el tamaño de posición ni una puerta de riesgo.
+En una cinta válida desde el principio se conserva el orden aritmético
+de cada actualización. El estado auxiliar no añade un nuevo buffer ni
+un recorrido del tape; costo y memoria adicionales constantes.
+
+Conservación no significa calibración demostrada: `alpha=0.02` tiene
+semivida `ln(0.5)/ln(0.98) = 34.30961849` eventos admitidos, no segundos.
+La duración física cambia con la intensidad del feed. Ni ese coeficiente,
+ni la semilla del 0,1% ni el desplazamiento histórico del 10% reciben aquí
+una justificación universal. Una futura sustitución por tiempo transcurrido
+necesita especificar escala, unidades, política de huecos, datos de
+calibración y prueba de paridad; no elegir otro número sin evidencia.
+
+Resultado GREEN del mismo conjunto: **12 aprobadas / 0 fallidas / 0
+ignoradas**, 3,51 s de tests y 24,88 s de compilación. Las cuatro pruebas
+que fallaban ahora recorren todas sus combinaciones; la cinta totalmente
+rechazada mantiene capital inicial y no muta el núcleo en ambos modos.
+
+### Límites de cierre y coordinación
+
+- No se valida aquí cantidad no finita/negativa, orden temporal, duplicados
+  ni frontera de minuto calculada desde una fila descartada. CX-07 sigue abierto.
+- El warmup sigue contando filas crudas; no se redefine silenciosamente
+  como número de eventos aceptados. La invariancia demostrada usa W=0.
+- La duración estadística sigue tomando primera/última fila del archivo;
+  una cinta enteramente inválida no es evidencia de mercado aunque conserve
+  capital. Población evaluada y estado «sin evidencia» pertenecen a CX-08.
+- No se añaden teorías cuánticas ni se certifica crecimiento, omnisciencia,
+  continuidad nanosegundo a siglo, ausencia total de bugs o paridad live.
+- Se mantiene el bloqueo de publicación pública CX; no hay nuevo push/PR.
+  GLM y Claude no han emitido una revisión cruzada de este candidato.
+
+La consulta remota de esta pasada encontró main `9ed0cb8c` y sólo ramas
+remotas main y las dos Claude; PR10 abierta, PR20 abierta y draft. El nuevo
+commit de GLM es documental y revisa MX/PR21, no CX. Su mención de
+«linaje ... corregido» para MX-20/21/22 necesita una precisión: aún están
+`span` del archivo, `2 * qty * mid` de cierre y `c1.or(c2)` en el runner.
+Se conserva su nota original y se añade la discrepancia; no se convierte
+una valoración favorable en cierre técnico de esos hallazgos.
+
+### Verificación ampliada y cierre de esta adenda
+
+Commit de reparación/pruebas: `88136410`. Misma orden ampliada documentada
+arriba: **105 aprobadas / 0 fallidas / 2 ignoradas** en cinco bloques
+(49 biblioteca, 7 paridad + 2 ignoradas, 21 métricas, 25 labels y 3 riesgo
+espectral). Biblioteca: 74,80 s; paridad: 31,79 s; build: 47,69 s.
+Las dos ignoradas son mediciones manuales con tapes reales. El golden
+existente se conserva y pasa. No se ejecutó la suite de todos los crates.
+`cargo check --workspace --all-targets --locked` aprobado en 23,53 s;
+persisten warnings previos. Estos tiempos no son benchmarks del hot path.
+
+Main remoto `9ed0cb8c` incorporado localmente en `8f9c27aa`: conflicto sólo
+en apéndices de coordinación, ambos conservados. Verificación adicional:
+las 1.434 líneas del primer padre y las 1.415 del segundo se preservan
+en orden en el buzón. Diffs contra ambos padres inspeccionados; el código
+no cambia frente a `88136410`. Check all-targets/locked repetido antes
+de cerrar el merge: aprobado en 3,55 s. Ningún conflicto sin resolver.
+
+La nota GLM y esta precisión quedan juntas. El aviso ignorado compartido
+permite localizar el trabajo, pero no acredita acuse. No se tocó el
+checkout principal, los procesos de entrenamiento ni los modelos ajenos.
+No había rama local ya integrada distinta de main para eliminar; las
+otras ramas contienen trabajo no integrado y se preservan.
+
+Publicación CX sigue bloqueada por falta de autorización específica para
+exponer estos cambios e informes en el repositorio público. No se hizo
+push ni PR y no se eludió la revisión de permisos. El workflow contiene
+esta nueva suite porque ejecuta la biblioteca completa, pero no se ha
+ejecutado remotamente. Revisión cruzada CX y merge a main pendientes.

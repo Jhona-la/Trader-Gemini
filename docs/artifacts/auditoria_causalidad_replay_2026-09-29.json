@@ -178,5 +178,93 @@
       "closure": "Comparación replay/demo por evento y capacidad.",
       "limitations": "Sin T-1 ni afirmación de cobertura universal."
     }
+  ],
+  "followups": [
+    {
+      "id": "CX-06-local-price-admission",
+      "date_local": "2026-09-29",
+      "baseline_code_commit": "2640bbbd",
+      "supersedes_finding_status": { "CX-06": "fixed_candidate" },
+      "current_counts": { "total": 9, "fixed_candidate": 5, "open": 4 },
+      "history_policy": "Original findings/counts/validation describe the preceding cut; this additive followup provides the latest CX-06 evidence.",
+      "scope": "Lazy seed of replay ATR after the existing price guard, not complete atomic event admission.",
+      "source": "crates/backtest-engine/src/booktick_replay.rs:run_booktick_replay_observed",
+      "tests": "crates/backtest-engine/src/booktick_causality_contract.rs",
+      "red": { "passed": 8, "failed": 4, "ignored": 0, "test_seconds": 3.47, "build_seconds": 50.41 },
+      "green": { "passed": 12, "failed": 0, "ignored": 0, "test_seconds": 3.51, "build_seconds": 24.88 },
+      "method": {
+        "valid_rows": 80,
+        "invalid_prefix_rows": 1,
+        "prefix_timestamp": "same_as_first_valid_row",
+        "warmup_raw_rows": 0,
+        "trade_only": [true, false],
+        "shift_atr_frac": [0.0, 0.10],
+        "observed_state": "34 feature bits, last_price, v_t, Hurst, kline EMAs, tick_count, capital, margin, open-position flag before each row",
+        "comparison": "bitwise, aligned on accepted event index",
+        "all_invalid_control_rows": 20,
+        "terminal_heap_fully_observed": false
+      },
+      "first_red_divergences": [
+        { "invalid_prices": "NaN/NaN", "accepted_index_zero_based": 10, "trade_only": false, "shift_atr_frac": 0.0 },
+        { "invalid_prices": "+Inf/+Inf", "accepted_index_zero_based": 10, "trade_only": false, "shift_atr_frac": 0.0 },
+        { "invalid_prices": "-100/-90", "accepted_index_zero_based": 3, "trade_only": false, "shift_atr_frac": 0.10 },
+        { "invalid_prices": "900000/600000 crossed", "accepted_index_zero_based": 3, "trade_only": false, "shift_atr_frac": 0.10 }
+      ],
+      "nan_red_capital_snapshot": {
+        "accepted_index_zero_based": 10,
+        "reference_f64_bits": "4652007779722052343",
+        "invalid_prefix_f64_bits": "4652007786956274782",
+        "reference_approx": 1000.05353295625,
+        "invalid_prefix_approx": 1000.05435539213
+      },
+      "repair": "Option<(ATR, previous_mid)> starts empty; seed and first EMA update occur only after price admission. Existing seed, alpha and displacement unchanged.",
+      "alpha_preserved": 0.02,
+      "alpha_half_life_accepted_events": 34.3096184915206,
+      "open_limitations": [
+        "CX-07: clock, quantities, duplicate/reordered events, rejected minute-boundary and rejection diagnostics",
+        "CX-08: raw-row warmup/population/span and ledger; invalid-only data is not market evidence",
+        "Coefficient/seed/displacement calibration and physical-time invariance not demonstrated",
+        "No live parity, latency benchmark, full repository certification or profitability claim"
+      ],
+      "coordination_observation": {
+        "main_remote": "9ed0cb8cc026c733b16f54d126e6b5a480bdb066",
+        "open_prs": [10, 20],
+        "draft_prs": [20],
+        "cx_remote_branch_present": false,
+        "cx_pr_present": false,
+        "glm_review_scope": "MX/PR21, not CX; its lineage wording does not close MX-20/21/22 still open in source/report"
+      },
+      "expanded_validation": {
+        "passed": 105,
+        "failed": 0,
+        "ignored": 2,
+        "blocks": [
+          { "name": "library", "passed": 49, "failed": 0, "ignored": 0, "seconds": 74.80 },
+          { "name": "bt_vivo_parity_audit", "passed": 7, "failed": 0, "ignored": 2, "seconds": 31.79 },
+          { "name": "ex_post_metrics_contract", "passed": 21, "failed": 0, "ignored": 0, "seconds": 0.01 },
+          { "name": "label_evidence_contract", "passed": 25, "failed": 0, "ignored": 0, "seconds": 0.01 },
+          { "name": "spectral_risk_contract", "passed": 3, "failed": 0, "ignored": 0, "seconds": 0.05 }
+        ],
+        "build_seconds": 47.69,
+        "workspace_all_targets_locked": "passed",
+        "workspace_check_seconds": 23.53,
+        "post_merge_all_targets_locked": "passed",
+        "post_merge_check_seconds": 3.55,
+        "golden_modified": false,
+        "all_crate_tests_executed": false,
+        "code_commit": "881364103391196d6575285c12dd51f10a335b5a",
+        "integration_commit": "8f9c27aa",
+        "merge_code_delta_from_first_parent": false,
+        "coordination_parent_lines_preserved_in_order": [1434, 1415],
+        "unresolved_merge_conflicts": 0,
+        "ci": "local_workflow_not_published_not_executed"
+      },
+      "publication": "blocked_pending_explicit_public_approval_CX",
+      "cross_review": "pending",
+      "live_run": false,
+      "training": false,
+      "promotion": false,
+      "t1": false
+    }
   ]
 }

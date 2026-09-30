@@ -1881,3 +1881,23 @@ relojes/rechazo atómico, ledger y paridad/readiness. MX-18 sólo parcialmente
 atendido; los informes anteriores se conservan como historia.
 CI nueva y revisión cruzada deben verificarse antes de integrar esta rama.
 Preservados el checkout GLM y las PR10/20; aviso de alcance sin acuse asumido.
+
+## ADENDA CX-06 — linaje de precios rechazados y ATR (2026-09-29)
+
+[Informe y ecuaciones](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md),
+[evidencia estructurada](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json).
+El precio de la primera fila descartada llegaba al ATR auxiliar antes de
+la aduana, afectando cotizaciones/fills y capital/posiciones simulados.
+Reparación 88136410: estado vacío hasta aceptar precios; fórmula intacta.
+No se confunde con el ATR porcentual del núcleo ni se suavizan vetos.
+
+La recurrencia pesa TR monetario al 2% y memoria al 98%; semivida 34,3096
+eventos aceptados, no segundos. Preservar el coeficiente no certifica su
+calibración o invariancia al muestreo. Prefijos NaN/Inf/negativos/cruzados:
+RED 8/4 → GREEN 12/0; regresión 105/0/2, check all-targets aprobado.
+Las fixtures no certifican rentabilidad ni cobertura de todas las escalas.
+
+Cinco candidatos/cuatro abiertos CX; el estado anterior queda como historia.
+Main 9ed0cb8c integrado localmente en 8f9c27aa; la revisión GLM es de MX,
+no de CX. MX-20/21/22 siguen abiertos pese a la ambigüedad de su nota.
+Sin publicación CX ni CI remota/review, training, promoción o trading.

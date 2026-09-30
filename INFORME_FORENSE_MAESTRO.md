@@ -8682,3 +8682,28 @@ relojes/rechazo atómico, ledger y paridad/readiness. MX-18 sólo parcialmente
 atendido; los informes anteriores se conservan como historia.
 CI nueva y revisión cruzada deben verificarse antes de integrar esta rama.
 Preservados el checkout GLM y las PR10/20; aviso de alcance sin acuse asumido.
+
+## ADENDA CX-06 — inicialización posterior a la validación (Codex, 2026-09-29)
+
+Seguimiento detallado en [Informe CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md)
+y [artefacto CX](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json).
+Se preservan los estados anteriores como cortes históricos; en este corte
+hay cinco candidatos y cuatro abiertos CX, no cierre de todo el sistema.
+
+Defecto demostrado: primera fila NaN/Inf/negativa/cruzada sembraba ATR
+antes del `continue`; una fila descartada cambiaba capital/posiciones
+simuladas posteriores. Incluso shift 0 fallaba con NaN/Inf. Commit 88136410
+inicializa sólo tras aduana de precios, preservando la fórmula y políticas.
+RED 8/4 → GREEN 12/0; ampliada 105/0/2, check all-targets/locked 23,53 s.
+Los dos ignorados son mediciones manuales; golden existente intacto.
+
+El informe explica recurrencia, unidades, controles y semivida de 34,3096
+eventos del alpha0,02: no acredita una escala física universal. Cantidades,
+reloj, macro point-in-time, ledger, población y paridad siguen pendientes.
+La nota favorable GLM sobre MX no cierra MX-20/21/22: el caller conserva
+span de archivo, nocional al mid de salida y c1.or(c2). Precisión añadida.
+
+Main 9ed0cb8c incorporado en 8f9c27aa, ambos apéndices conservados; check
+postmerge 3,55 s, sin cambio de código respecto a 88136410. CX sólo local:
+publicación pendiente de autorización específica, CI remota/review pendientes.
+No training/trading/promoción/T-1. No garantía de crecimiento o auditoría total.

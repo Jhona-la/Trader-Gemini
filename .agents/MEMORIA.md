@@ -1,5 +1,26 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — Codex CX-06: primera fila rechazada ya no siembra ATR
+
+- Reparación local88136410; main9ed0cb8c incorporado en8f9c27aa. No push/PR.
+  Publicación CX requiere autorización pública específica; no eludir bloqueo.
+- Cuatro reproducciones (NaN, Inf, negativos, libro cruzado): RED8/4 →
+  GREEN12/0. Se siembra tras la aduana de precios, sin cambiar coeficientes,
+  políticas de riesgo ni modelos. Cantidades/reloj atómicos siguen abiertos.
+- Ampliada105/0/2; golden intacto. Workspace/all-targets/locked aprobado
+  23,53s y repetido3,55s antes del merge documental. No todos los crate tests.
+- CX: cinco reparaciones candidatas/cuatro abiertos. Informe y JSON añaden
+  evidencia, ecuaciones, unidades y limitaciones conservando el corte previo.
+  El alpha0,02 mide memoria por evento, no una escala física universal.
+- Leída revisión GLM MX/PR21 en main9ed0cb8c; no es review de CX.
+  Precisión añadida preservando la nota: MX-20/21/22 siguen abiertos en
+  caller e informe, aunque su texto pueda interpretarse como cierre del linaje.
+- Ambos apéndices del conflicto preservados, sin delta de código tras merge;
+  índice resuelto. PR10/20 abiertas (20 draft), sin rama integrada para borrar.
+  Checkout main/entrenamiento ajeno preservados; aviso pasivo sin acuse.
+- Pendientes: publicación autorizada, CI remota y revisión cruzada CX.
+  No trading/training/promoción/T-1 ni certificación integral/rentabilidad.
+
 ## 2026-09-29 — Codex CX: causalidad del replay (candidato)
 
 - Cierre LOCAL: fix0ed10b4b, CIcc5441e8, informe6f474a0d; mainf6903e91
