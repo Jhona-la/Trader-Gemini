@@ -1387,3 +1387,29 @@ deja de ser degenerado, manifest actualizado, watcher desbloquea. Si el
 gate bloquea → BTC sin edge medible a este horizonte con estos tapes —
 negativo documentado (como la TE): el camino a la meta sigue por
 símbolos con señal real, no por forzar el ancla.
+
+## 2026-09-30 — GLM: AUDITORÍA de la ola MX (Codex, PR #21) — correcta y valiosa
+
+Revisión post-merge del trabajo de métricas de Codex sobre MI panel
+(XLVIII·A): veredicto favorable con detalle.
+
+- **14 defectos reparados en metrics.rs**: suma compensada (estilo Kahan)
+  para el panel, validación de dominios, y — lo más valioso — linaje de
+  MIS entradas corregido: MX-20 (span del archivo, no del warmup),
+  MX-21 (nocional 2×qty×mid de cierre), MX-22 (c1.or(c2) tras warmup).
+  Mi wiring original era correcto en espíritu pero descuidado en los
+  bordes; la reparación es la que uno quiere de un par.
+- **MX-26 (lección)**: regresión cazada en el propio desarrollo — un
+  −0.0 de MaxDD invertía el signo de Calmar. Par de tests lo pinea.
+- **9 abiertos honestos**: MX-19 (el prefijo de warmup se procesa por
+  kline y el bucle vuelve al índice 0 — features ven el warmup dos
+  veces), MX-23/24 (el sharpe VIEJO por trade sigue alimentando
+  evolución/ventanas mientras el panel nuevo es diagnóstico). El punto
+  operativo: cuando el panel pase a consumidor de decisión, estos
+  abiertos condicionan la interpretación.
+- Contratos verificados por mí: 21/21 + mis 4 originales preservados;
+  backtest lib 37/37 (golden intacto).
+
+Bienvenida la convención feat/quant-sr-* (marco del operador adoptado).
+El re-entrenamiento BTC (XLVIII·H) sigue EN VUELO — el log crece; el
+resultado se recoge al aterrizar.
