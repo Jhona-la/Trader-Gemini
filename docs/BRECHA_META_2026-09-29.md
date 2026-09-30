@@ -97,3 +97,32 @@ base y nº de árboles. El primer escaneo expuso:
 El diff del manifest ES el changelog de modelos: nueva clave = símbolo
 desbloqueado; hash cambiado = re-entrenamiento; base cambiada =
 recalibración que el gate consume.
+
+---
+
+## ADENDA XLIX·C (2026-09-30) — BTC re-entrenado: ATERIZÓ con salvedad honesta
+
+**Resultado del trainer** (junio→agosto, el de septiembre quedó declarado
+sin evaluar — ver salvedad): BTCUSDT_MOTOR pasa de degenerado (1 árbol,
+2.5KB, base 0.565 — ACTIVAMENTE errónea para labels ~15-18% positivos) a
+**6 árboles, 16.9KB, base 0.1566, mejora de logloss en selección
++0.0167** sobre baseline constante (early stopping en ronda 5, paciencia
+40). Paridad train/serve verificada dim a dim (145k muestras, tolerancia
+0). Etiquetas: 11.9k decisivas / 133k neutras (8.9% largo).
+
+**SALVEDAD CRÍTICA — el gate que pasó fue SÓLO el de selección**: el
+trainer de main verifica que --test-in exista (require_promotion_holdout)
+pero NO puntúa el test posterior — esa reparación es XLIV-13, que vive en
+el PR #10/#20 (DRAFT). El tape de septiembre fue declarado y nunca
+evaluado. La promoción es evidencia-de-selección: exactamente la clase
+de promoción que el sistema prohíbe.
+
+**Decisión (transparencia total)**: el modelo nuevo se CONSERVA porque
+(e) reemplaza uno activamente erróneo (base 0.565 vs real ~0.16 — el
+gate de lift lee esta base vía CL-21), (b) 6 árboles con mejora real en
+selección. PERO queda registrado como PROMOCIÓN PROVISIONAL: cuando el
+PR #20 aterrice con XLIV-13, re-entrenar/re-validar con el test posterior
+obligatorio es INMEDIATO. Si el test falla, revertir.
+
+El watcher del host cargará el nuevo modelo en caliente (≤10 s) en la
+próxima sesión viva; el manifest ya refleja el cambio (hash fdd48ee7).
