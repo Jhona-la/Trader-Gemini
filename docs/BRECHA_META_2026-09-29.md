@@ -143,3 +143,27 @@ La promoción original era aún más débil de lo que su salvedad decía.
 densidad de muestreo, decidido por adelantado, no ajustado al resultado):
 ~10k decisivas esperadas sobre junio, mínimo limpio. Septiembre sigue
 siendo el test posterior real — esta vez con la base de muestras honesta.
+
+## ADENDA LVIII·bis — BRECHA RE-MEDIDA EN LA FÍSICA NUEVA: 620× → 310×
+
+| sym | trades | t/día | WR | net |
+|---|---|---|---|---|
+| LTCUSDT | 1 | 0.03 | 0.00 | −0.046 |
+| ADAUSDT | 1 | 0.03 | 1.00 | +0.142 |
+| LINKUSDT | 1 | 0.03 | 1.00 | +0.106 |
+| ATOMUSDT | 1 | 0.03 | 0.00 | −0.076 |
+| NEARUSDT | 1 | 0.03 | 0.00 | −0.160 |
+| THETAUSDT | 1 | 0.03 | 0.00 | −0.075 |
+| **TOTAL** | **6** | **0.03/día** | | |
+
+**6 trades / 186 días = 0.03 t/día ⇒ brecha ≈ 310×** (era 620× en la
+física vieja). La corrección de la persistencia DOBLÓ el volumen (3→6
+trades): la rama 15 simétrica (CL-31) ahora puede abrir CORTOS que el
+bug excluía. La brecha sigue siendo el cuello dominante (evidencia ML),
+pero la dirección es correcta y la causa es conocida.
+
+Nota metodológica: cada símbolo sigue en exactamente 1 trade — la sonda
+única B3.25 sigue siendo el techo para los símbolos sin modelo promovido
+de calidad. El multiplicador del volumen vino del lado de los modelos
+existentes (ATOM/NEAR con bosque ahora operan su sonda en ambas
+direcciones), no de nueva cobertura.
