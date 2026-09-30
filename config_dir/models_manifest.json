@@ -1,0 +1,149 @@
+{
+  "entries": [
+    {
+      "key": "ADAFDUSD_MOTOR",
+      "archivo": "ADAFDUSD_MOTOR.json",
+      "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
+      "bytes": 216137,
+      "base": 0.2006304974492555,
+      "n_arboles": 50,
+      "legible": true
+    },
+    {
+      "key": "ATOMUSDT_MOTOR",
+      "archivo": "ATOMUSDT_MOTOR.json",
+      "sha256": "0f5695f36646d1e0e545f54330e75a65db9b872c30c3f4d56e3e694b2019268d",
+      "bytes": 32764,
+      "base": 0.20117961576337004,
+      "n_arboles": 11,
+      "legible": true
+    },
+    {
+      "key": "AVAXFDUSD_MOTOR",
+      "archivo": "AVAXFDUSD_MOTOR.json",
+      "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
+      "bytes": 216137,
+      "base": 0.2006304974492555,
+      "n_arboles": 50,
+      "legible": true
+    },
+    {
+      "key": "BNBFDUSD_MOTOR",
+      "archivo": "BNBFDUSD_MOTOR.json",
+      "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
+      "bytes": 216137,
+      "base": 0.2006304974492555,
+      "n_arboles": 50,
+      "legible": true
+    },
+    {
+      "key": "BNBUSDT_MOTOR",
+      "archivo": "BNBUSDT_MOTOR.json",
+      "sha256": "5cf715994b330f08f7c6862c36e2f6fc1e46c974c4f727a1a7ec2fa14ca62ebc",
+      "bytes": 86934,
+      "base": 0.18434131156841513,
+      "n_arboles": 36,
+      "legible": true
+    },
+    {
+      "key": "BTCFDUSD_MOTOR",
+      "archivo": "BTCFDUSD_MOTOR.json",
+      "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
+      "bytes": 216137,
+      "base": 0.2006304974492555,
+      "n_arboles": 50,
+      "legible": true
+    },
+    {
+      "key": "BTCUSDT_MOTOR",
+      "archivo": "BTCUSDT_MOTOR.json",
+      "sha256": "6c1f67d1a2ea20234d53c8c0a0337bd277979ae10f2d1f3bd3da1580597d0740",
+      "bytes": 2572,
+      "base": 0.5648907990014306,
+      "n_arboles": 1,
+      "legible": true
+    },
+    {
+      "key": "DOGEFDUSD_MOTOR",
+      "archivo": "DOGEFDUSD_MOTOR.json",
+      "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
+      "bytes": 216137,
+      "base": 0.2006304974492555,
+      "n_arboles": 50,
+      "legible": true
+    },
+    {
+      "key": "DOTFDUSD_MOTOR",
+      "archivo": "DOTFDUSD_MOTOR.json",
+      "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
+      "bytes": 216137,
+      "base": 0.2006304974492555,
+      "n_arboles": 50,
+      "legible": true
+    },
+    {
+      "key": "DarkAlpha_BTCUSDT",
+      "archivo": "DarkAlpha_BTCUSDT.json",
+      "sha256": "ef149365307c268071818fb833972392a0becafd3fe9430f3414dae63b5a7ba9",
+      "bytes": 321012,
+      "base": null,
+      "n_arboles": null,
+      "legible": true
+    },
+    {
+      "key": "ETHFDUSD_MOTOR",
+      "archivo": "ETHFDUSD_MOTOR.json",
+      "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
+      "bytes": 216137,
+      "base": 0.2006304974492555,
+      "n_arboles": 50,
+      "legible": true
+    },
+    {
+      "key": "LINKFDUSD_MOTOR",
+      "archivo": "LINKFDUSD_MOTOR.json",
+      "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
+      "bytes": 216137,
+      "base": 0.2006304974492555,
+      "n_arboles": 50,
+      "legible": true
+    },
+    {
+      "key": "NEARUSDT_MOTOR",
+      "archivo": "NEARUSDT_MOTOR.json",
+      "sha256": "4eb402644fadd7c86bfc5a58db8f3771dc0e113d426be9f6ab97623d51a6b536",
+      "bytes": 75636,
+      "base": 0.2321635632882616,
+      "n_arboles": 26,
+      "legible": true
+    },
+    {
+      "key": "NEARUSDT_VOL",
+      "archivo": "NEARUSDT_VOL.json",
+      "sha256": "3d72ed2a650756a0ff549fccacb6d4226d4fb27c7f7c2f6713ffd58539d55f2d",
+      "bytes": 32149,
+      "base": 0.5097201702178684,
+      "n_arboles": 11,
+      "legible": true
+    },
+    {
+      "key": "SOLFDUSD_MOTOR",
+      "archivo": "SOLFDUSD_MOTOR.json",
+      "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
+      "bytes": 216137,
+      "base": 0.2006304974492555,
+      "n_arboles": 50,
+      "legible": true
+    },
+    {
+      "key": "XRPFDUSD_MOTOR",
+      "archivo": "XRPFDUSD_MOTOR.json",
+      "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
+      "bytes": 216137,
+      "base": 0.2006304974492555,
+      "n_arboles": 50,
+      "legible": true
+    }
+  ],
+  "generado_ms": 1790732528280
+}

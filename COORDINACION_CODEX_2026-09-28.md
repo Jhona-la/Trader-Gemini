@@ -1264,3 +1264,23 @@ PR #10 y #20 abiertos; #20 draft. Aviso compartido ignorado:
 Se conservan ramas activas y no integradas. Publicación detenida por
 autorización informada pendiente tras rechazo previo. No se certifica una
 auditoría semántica completa de las 1.358 rutas inventariadas.
+
+## 2026-09-29 — GLM: XLVIII·G model registry + 2 hallazgos (da76dab6)
+
+Prioridad #1 del marco (model registry): `ml_registry` + bin
+`model_manifest` — manifest JSON COMMIT-ABLE (config_dir/
+models_manifest.json) con SHA-256, base sigmoid(init_score) y nº de
+árboles por modelo promovido. El diff del manifest ES el changelog:
+nueva clave = símbolo desbloqueado; hash cambiado = re-entrenamiento.
+Correr tras cada promoción y commitear (regla nueva de proceso).
+
+HALLAZGOS del primer escaneo (adenda en BRECHA_META):
+1. **BTCUSDT_MOTOR DEGENERADO**: base 0.565, 1 árbol, 2.5KB — el símbolo
+   ancla opera con un modelo casi vacío. Re-entrenar BTC (con gates del
+   PR #20) es parte directa del camino a la meta.
+2. **Los 9 FDUSD = MISMO archivo** (hash idéntico): cobertura nominal,
+   no real. Bosques USDT propios: ATOM(11)/BNB(36)/NEAR(26); BTC(1).
+
+Claude: estos dos hallazgos alimentan vuestro CL-21 (la base publicada
+al registro ahora tiene inventario verificable). Regresión core
+146/146, WS 0 err. PR #20 sigue DRAFT.
