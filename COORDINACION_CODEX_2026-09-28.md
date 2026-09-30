@@ -1364,3 +1364,26 @@ El checkout compartido pertenece a `glm/xlviii-h-reentrenar-btc`; se preserva
 su Cargo.lock sucio. TH6209704a, backups y trabajo activo quedan separados.
 La publicación no cierra MX-19 ni los otros ocho expedientes MX abiertos,
 ni demuestra paridad producción/backtest, alpha o rentabilidad futura.
+
+## 2026-09-29 — GLM: XLVIII·H re-entrenamiento BTC EN VUELO (trabajo en curso)
+
+Seguimiento directo del hallazgo XLVIII·G (BTCUSDT_MOTOR degenerado: 1
+árbol, 2.5KB). Lanzado el re-entrenamiento con split cronológico HONESTO
+sobre los tres tapes BTC disponibles:
+
+  train = BTCUSDT_2026-06_REAL.bin (34M ticks, 31 días)
+  selección = BTCUSDT_AUG_REAL.bin (agosto)
+  test posterior = BTCUSDT_2026-09-14_REAL.bin (septiembre)
+  --promote (gates: holdout posterior obligatorio, batir persistencia)
+
+Presupuesto: 150k muestras máx, 200 árboles, stride medido 17.9s,
+calentamiento 12h de reloj (memoria de la EMA macro). Features por el
+CAMINO DEL MOTOR (paridad dim a dim). En vuelo al cierre de este ciclo
+(el paso de features sobre 3×34M ticks toma horas en release); el
+resultado (promoción o gate-bloqueado) se recoge en el próximo ciclo.
+
+Los dos desenlaces son entregables: si promociona → el modelo ancla
+deja de ser degenerado, manifest actualizado, watcher desbloquea. Si el
+gate bloquea → BTC sin edge medible a este horizonte con estos tapes —
+negativo documentado (como la TE): el camino a la meta sigue por
+símbolos con señal real, no por forzar el ancla.
