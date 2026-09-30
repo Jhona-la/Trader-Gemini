@@ -1035,3 +1035,12 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   del contrato de fixture validado9/0 y all-targets5,64s. No T-1 extenso.
   JSON conserva hashes previos/finales. MR/main CI todavía en curso;
   no se certifica el gate pre-merge. MP/GO sin referencias remotas.
+
+## 2026-09-30 — Publicación MP y GO autorizada
+
+- Operador: «Hazlo» en respuesta a publicación en repo PÚBLICO mediante
+  dos PR separadas. Levanta el bloqueo anterior de MP/GO; no pedir de nuevo.
+- Mantener CI del candidato y revisión cruzada antes de cada merge.
+  No autoriza trading, training, promoción ni rebajar el trinquete T-1.
+- GO9cda4677 conserva hashes validados126/0/2; MP40f8685b debe reconciliar
+  mainfbf8e9ea y validar su composición antes de publicar. No mezclar ramas.

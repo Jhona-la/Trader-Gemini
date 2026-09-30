@@ -247,12 +247,19 @@
     },
     "preserved_exclusive_branches": {"backup-before-cleanup": 3, "v7-unificacion-wip": 1, "feat/quant-sr-codex-horizonte": 4}
   },
-  "publication": {
+  "publication_initial_snapshot": {
     "authorized": false,
     "pushed": false,
     "pr": null,
     "merged": false,
     "cross_review": null,
     "ci_run": null
+  },
+  "publication_authorization": {
+    "date": "2026-09-30",
+    "response": "Hazlo",
+    "scope": "Public MP and GO code, tests and reports in two separate PRs on Jhona-la/Trader-Gemini",
+    "conditions": ["candidate CI succeeds", "cross-review before merge"],
+    "training_trading_promotion_authorized": false
   }
 }

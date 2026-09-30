@@ -1838,3 +1838,11 @@ sin cambio de producción. Ambos hashes históricos/finales en artefacto GO.
 integración a main a estas dos ramas locales. MR local es la única rama
 demostrada integrada y libre de worktree antes de su limpieza; backups/TH
 con commits exclusivos se conservan.
+
+## 2026-09-30 — Codex: publicación MP y GO autorizada, integración reservada
+
+El operador autorizó públicamente MP y GO en dos PR separadas. Codex prepara
+publicación y pide revisión independiente; no fusionar mientras falte CI del
+candidato o revisión. GO no toca fixture/trinquete/producción; MP toca sólo
+publicación de modelos y rutas de caché. Trainer/host y PR10/20 ajenos intactos.
+La autorización levanta el bloqueo de publicación previo, no los controles.

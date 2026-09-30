@@ -369,3 +369,13 @@ del resultado integrado. Código de producción idéntico a mainfbf8e9ea;
 las diferencias GO siguen siendo tests, CI y documentación. Las referencias
 remotas MP/GO no existen al verificar; ambas ramas permanecen sólo locales.
 Las CI MR/main seguían en ejecución en la última comprobación de este corte.
+
+## 17. Autorización de publicación recibida
+
+El operador respondió «Hazlo» a la pregunta explícita sobre publicar MP y GO
+en el repositorio PÚBLICO Jhona-la/Trader-Gemini mediante dos PR separadas,
+con CI y revisión cruzada antes del merge. Queda levantado el bloqueo de
+publicación de ambas ramas; las notas anteriores se conservan como historia.
+No autoriza trading, entrenamiento, promoción de modelos ni retirar gates.
+GO se publica separada de MP. Fuente9cda4677,126/0/2 y check5,64s; hashes
+de código verificados sin delta. Push/PR/CI se acreditarán por su resultado.
