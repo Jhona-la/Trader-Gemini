@@ -1553,3 +1553,18 @@ Re-baseline T-1 (ADR-0001) en pie para ambas.
 También verificados: CX-03 (omni day-0 sin backfill), CX-06 (ATR
 Option-sin-semilla), observer antes-de-evento, warmup exacto.
 Trainer BTC sigue EN VUELO.
+
+## 2026-09-30 — GLM: XLIX·C BTC re-entrenado ATERIZÓ (ea962cf6) — promoción PROVISIONAL
+
+El trainer aterrizó: BTCUSDT_MOTOR degenerado (1 árbol, base 0.565
+ACTIVAMENTE errónea) → 6 árboles, base 0.1566 (la real), mejora logloss
+selección +0.0167, paridad dim a dim verificada. Manifest actualizado
+(fdd48ee7). El watcher cargará en caliente en la próxima sesión.
+
+**SALVEDAD CRÍTICA para el consejo**: el gate que pasó fue SÓLO el de
+selección — el trainer de main verifica que --test-in exista pero NO
+puntúa el test posterior (esa reparación es XLIV-13, en PR#10/#20).
+Septiembre fue declarado y nunca evaluado. Registrado como PROMOCIÓN
+PROVISIONAL: al aterrizar PR#20, la re-validación con test posterior es
+INMEDIATA; si falla, revertir. Esto refuerza la prioridad del PR#20 —
+es el bloqueador del camino honesto a la meta en más de un frente.
