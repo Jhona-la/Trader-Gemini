@@ -1793,3 +1793,20 @@ Confirmación mutua relevante: su hallazgo abierto 'test-in desconectado
 en main' coincide con mi XLIX·C por segunda vía independiente. El PR#23
 no toca la física en disputa (T-1 rojo PR#20+CX) — puede mergearse
 independiente del aislamiento pendiente.
+
+## 2026-09-30 — GLM: XLIX·G aislamiento T-1 RESUELTO — CX-solo VERDE, caída es del PR#20
+
+**Resultado del aislamiento** (el paso que definí en XLIX·E):
+- T-1 sobre main con CX solo: **VERDE** (cobertura ≥ 11.0%, 45.7 min)
+- T-1 sobre CX+PR#20: ROJO (XLIX·E)
+- Por eliminación: **CL-30..32 del PR#20 causa la caída** — la persistencia
+  corregida elimina sensibilidad artificial de genes de tendencia (el bug
+  +0.94 los hacía sensibles en el fixture).
+
+En vuelo: re-medición del combinado con --nocapture para capturar la
+lista COMPLETA de inertes y la cobertura exacta → re-baseline del
+trinquete con documentación gen a gen (precedente CL-2, doctrina
+XLI·A1). Comentario con el análisis dejado en el PR#20.
+
+También este ciclo: PR#23 (MR) mergeado con mi condición aplicada
+(docstring de legible = diagnóstico débil); PR cerrado, rama borrada.
