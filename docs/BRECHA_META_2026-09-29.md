@@ -74,3 +74,26 @@ ese es el hecho cuantificado que esta medición aporta.
   desde la raíz del workspace (el test de medición ya lo hace).
 - Fees del sample: ~1.2-1.3¢ por trade sobre capital 1000 — la fricción
   NO es el problema al volumen actual; el problema es el volumen.
+
+---
+
+## ADENDA XLVIII·G (2026-09-29) — model registry: dos hallazgos del inventario
+
+`config_dir/models_manifest.json` (generado por `cargo run --bin
+model_manifest`, commite-able): 16 modelos promovidos con SHA-256,
+base y nº de árboles. El primer escaneo expuso:
+
+1. **BTCUSDT_MOTOR es DEGENERADO**: base 0.565, 1 árbol, 2.5 KB — el
+   símbolo ancla del roster opera con un modelo casi vacío. Su "lift"
+   jamás será el de un bosque real; re-entrenar BTC es parte del camino
+   a la meta (con los gates FMT del PR #20).
+2. **Los 9 modelos FDUSD son el MISMO archivo** (hash 0b8bef51 idéntico,
+   base 0.2006, 50 árboles): cobertura nominal, no real — un modelo
+   universal estampado con 9 claves. La cobertura USDT-promovida REAL
+   con bosques propios: ATOM (11), BNB (36), NEAR (26). BTC cuenta 1.
+3. DarkAlpha_BTCUSDT: formato distinto (sin init_score) — registrado
+   legible con base None (deuda visible, no silencio).
+
+El diff del manifest ES el changelog de modelos: nueva clave = símbolo
+desbloqueado; hash cambiado = re-entrenamiento; base cambiada =
+recalibración que el gate consume.
