@@ -313,3 +313,12 @@ en curso al último seguimiento, no CI global aprobada todavía. Se publicó
 [solicitud de revisión cruzada MR](https://github.com/Jhona-la/Trader-Gemini/pull/23#issuecomment-5912446341),
 sin inferir respuesta. MP permanece local a la espera de autorización pública
 específica; no se publica código o informe MP mediante ese comentario MR.
+
+### Actualización posterior: CI MR terminada
+
+Run36718230501 terminó **SUCCESS** a2026-09-30T13:40:06Z sobre
+e17c88b4947cb6a01d4d8f55bef2a5f133b6b8ba. PR23 sigue OPEN y sin reviews;
+no se fusiona sin revisión cruzada. Main remoto continúa ee438edb. No hay
+otras ramas locales no principales acreditadas como integradas para borrar.
+MP conserva código3f2be42d e informe083f4321; no push ni PR propios MP.
+La CI MR no acredita esta rama MP ni sus cambios de loader/publicación.

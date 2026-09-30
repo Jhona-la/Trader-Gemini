@@ -110,6 +110,12 @@
     "report_preservation_verified": {"coordination_lines": 1711, "master_lines": 8726, "atlas_lines": 1918},
     "mr_review_request": "https://github.com/Jhona-la/Trader-Gemini/pull/23#issuecomment-5912446341",
     "mr_last_ci_cut": "all-targets and registry passed; replay in progress; no global success inferred",
-    "mp_publication": "pending_specific_public_authorization"
+    "mp_publication": "pending_specific_public_authorization",
+    "mr_ci_completion": {
+      "run_id": 36718230501,
+      "head": "e17c88b4947cb6a01d4d8f55bef2a5f133b6b8ba",
+      "conclusion": "SUCCESS", "completed_at": "2026-09-30T13:40:06Z",
+      "review_count": 0, "pr_state": "OPEN", "validates_mp": false
+    }
   }
 }

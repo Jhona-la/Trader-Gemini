@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — MR CI verde; MP sigue local
+
+- CI36718230501 SUCCESS sobre e17c88b4 a13:40:06Z. PR23 OPEN,0reviews;
+  falta revisión cruzada, no merge. Esto NO es CI de MP.
+- MP código3f2be42d, informe083f4321,306/0/3 y check31,16s. Publicación
+  pública específica consultada, aún pendiente. Main remotoee438edb.
+- Sin nuevas ramas integradas para borrar; preservar MP/MR/Claude/GLM.
+
+
 ## 2026-09-30 — MP cierre local306/0/3; publicación pendiente
 
 - Código3f2be42d: core/suites198/0/1 +replay108/0/2 =306/0/3 disjuntos.
