@@ -1931,3 +1931,19 @@ El ruido del fixture siempre es negativo. Se preservan fixture/comparador/
 trinquete0,110; no se obtienen aprobados cambiando la referencia.
 Regresión local117/0/2; contratos rápidos9/0. T-1 completo no ejecutado,
 CI remota/revisión/publicación GO pendientes. Sin cambio de producción.
+
+## ADENDA MR — qué significa cada evidencia del modelo (2026-09-30)
+
+La cadena correcta distingue: archivo presente → JSON legible → estructura
+válida → evidencia posterior → predictor activado → decisión atribuible.
+Hoy hay desconexiones entre esos pasos. MR añade el tercer diagnóstico,
+sin afirmar los siguientes ni convertir un inventario en permiso de trading.
+`SHA256(JSON)` identifica bytes de fuente, no necesariamente la caché servida.
+`sigmoid(init_score)` tiene interpretación probabilística para clasificación;
+no representa la media cruda y las unidades de una regresión `_VOL/_VOLU/_OI`.
+
+El [informe MR](docs/AUDITORIA_REGISTRO_MODELOS_2026-09-30.md) documenta
+los seis expedientes y controles. Ninguna nueva teoría matemática corrige
+por sí sola una validación desconectada o un linaje no observado. Habilidad
+multiactivo/multiescala exige datos y tests con soporte temporal efectivo;
+resolución del reloj, complejidad de modelos y nombres cuánticos no bastan.

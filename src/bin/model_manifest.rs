@@ -6,9 +6,9 @@
 //!
 //!   cargo run --bin model_manifest
 //!
-//! El diff del manifest ES el changelog de modelos: nueva clave =
-//! símbolo desbloqueado; hash cambiado = re-entrenamiento; base
-//! cambiada = recalibración que el gate ML consume.
+//! El diff identifica cambios en archivos, no confirma recarga ni habilidad:
+//! un hash puede cambiar sólo por formato. MR-01 separa legibilidad JSON,
+//! estructura del predictor y promoción (no acreditada por este inventario).
 
 use god_engine_core::ml_registry::escanear_models;
 use std::path::Path;
@@ -20,12 +20,12 @@ fn main() {
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
     let manifest = escanear_models(Path::new("models"), ahora);
-    let promovidos = manifest.entries.iter().filter(|e| e.legible).count();
+    let legibles = manifest.entries.iter().filter(|e| e.legible).count();
+    let validos = manifest.entries.iter()
+        .filter(|e| e.valido_estructuralmente == Some(true)).count();
     println!(
-        "📦 [MODEL-REGISTRY] {} modelos promovidos ({} entradas, {} ilegibles)",
-        promovidos,
-        manifest.entries.len(),
-        manifest.entries.len() - promovidos
+        "📦 [MODEL-REGISTRY] {} archivos inventariados; {} JSON legibles; {} estructuras válidas; promoción y activación NO acreditadas",
+        manifest.entries.len(), legibles, validos
     );
     for e in &manifest.entries {
         println!(
@@ -36,6 +36,9 @@ fn main() {
             e.bytes,
             &e.sha256[..12]
         );
+        if let Some(reason) = &e.error_estructural {
+            println!("    estructura rechazada: {reason}");
+        }
     }
     let salida = Path::new("config_dir/models_manifest.json");
     if let Err(e) = manifest.escribir(salida) {

@@ -209,6 +209,44 @@
     "crates/backtest-engine/tests/support/t1_measurement.rs": "1D874D34C30E3D7FCDB2A35C28D1C869837F6AB0939C5D9749A4645C73CC71C0",
     "crates/backtest-engine/tests/t1_measurement_contract.rs": "1F4F8E2E6DFD45B11AEAB1943F4F1F9B289D88658ED5F46BC1F7D03243B863D4"
   },
+  "integration": {
+    "go_parent": "774cbac55005697dc588d3cf44876aedc4ba1868",
+    "main_parent": "fbf8e9ea12554c8a7a4494859b631a3280ab06f9",
+    "resolved_conflicts": ["ATLAS_ANALITICO.md", "COORDINACION_CODEX_2026-09-28.md", "INFORME_FORENSE_MAESTRO.md"],
+    "both_parents_preserved_in_order": true,
+    "go_production_delta_from_main": false,
+    "all_targets_check": {"status": "success", "seconds": 27.29},
+    "registry_contracts": {"passed": 9, "failed": 0, "ignored": 0},
+    "replay_regression": {"passed": 117, "failed": 0, "ignored": 2},
+    "total_disjoint": {"passed": 126, "failed": 0, "ignored": 2},
+    "final_refinement": {
+      "description": "Require matching OHLCV lengths before bitwise zip comparison; only a test assertion changed.",
+      "fast_recheck": {"passed": 9, "failed": 0, "ignored": 0},
+      "all_targets_recheck": {"status": "success", "seconds": 5.64},
+      "counts_include_fast_tests_once": true
+    },
+    "final_source_sha256": {
+      "crates/backtest-engine/tests/t1_cobertura_genetica.rs": "FAE2F03CB48649D121AA500C092C4D6119CC7A36834BF345655668A98F802DBC",
+      "crates/backtest-engine/tests/support/t1_measurement.rs": "1D874D34C30E3D7FCDB2A35C28D1C869837F6AB0939C5D9749A4645C73CC71C0",
+      "crates/backtest-engine/tests/t1_measurement_contract.rs": "BA237A0D2EA4C3A1A5B64E8BC7D0D0FE0C7D81BED25475B8EDB72F2902863890"
+    },
+    "prior_source_hashes_scope": "Top-level source_sha256 records the original GO774cbac5; final_source_sha256 includes the stronger length assertion.",
+    "mr_merged_by_other_agent": {
+      "pr": 23,
+      "merge": "589a591db26fc4e30af931d71b0fb1f9cc3103f4",
+      "merged_at": "2026-09-30T14:11:15Z",
+      "review": "COMMENTED, favorable with documentation condition",
+      "condition_documented_in": "fbf8e9ea12554c8a7a4494859b631a3280ab06f9",
+      "ci_at_post_merge_observation": [
+        {"run": 36725338162, "head": "f3145e2779f92bfac9318ecae5bcad065d09e61c", "status": "in_progress"},
+        {"run": 36727198985, "head": "fbf8e9ea12554c8a7a4494859b631a3280ab06f9", "status": "in_progress"}
+      ],
+      "pre_merge_ci_gate_certified": false,
+      "unresolved_review_threads_at_check": 0,
+      "receipt_comment": "https://github.com/Jhona-la/Trader-Gemini/pull/23#issuecomment-5913065634"
+    },
+    "preserved_exclusive_branches": {"backup-before-cleanup": 3, "v7-unificacion-wip": 1, "feat/quant-sr-codex-horizonte": 4}
+  },
   "publication": {
     "authorized": false,
     "pushed": false,

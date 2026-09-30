@@ -126,6 +126,8 @@ fn go_extraction_preserves_frozen_legacy_fixture_bit_for_bit() {
         .into_iter()
         .zip([&actual.0, &actual.1, &actual.2, &actual.3])
     {
+        // zip alone would silently accept a truncated output prefix.
+        assert_eq!(old.len(), new.len());
         assert!(old.iter().zip(new).all(|(a, b)| a.to_bits() == b.to_bits()));
     }
     assert_eq!(serie(0), (vec![], vec![], vec![], vec![]));

@@ -8740,3 +8740,27 @@ ecuaciones del fixture bit a bit y144 destinos de perturbación. No se ejecutó
 T-1 completo ni se cambió0,110. Fallo combinado PR20+CX es reporte de GLM,
 no prueba de que re-baseline sea correcto: falta contraste por gen y causas.
 Sin promesa de rentabilidad, auditoría universal ni integración implícita.
+
+## ADENDA MR — evidencia de modelos y promoción (2026-09-30)
+
+[Informe MR](docs/AUDITORIA_REGISTRO_MODELOS_2026-09-30.md) y
+[artefacto MR](docs/artifacts/auditoria_registro_modelos_2026-09-30.json):
+seis expedientes, una reparación diagnóstica candidata y cinco abiertos.
+MR-02 referencia XLIV-13 existente; no se cuenta como descubrimiento nuevo.
+El registry separa JSON legible, estructura válida y promoción no acreditada;
+se preservan campos históricos. Los manifests previos quedan sin evaluar,
+no aprobados retroactivamente. No se modifica el manifest real ni serving.
+
+Abiertos: test-in desconectado del trainer main observado (Claude PR10/20),
+hash JSON distinto del predictor .bin servido, recarga fallida sin reintento,
+cobertura por nombres y unidades del intercepto de regresión. El informe
+explica evidencia, mecanismo, impacto, límites y criterios de cierre.
+La CI CX36670361992 terminó SUCCESS; no acredita este nuevo cambio MR.
+No entrenamiento, promoción, trading, T-1 ni auditoría integral certificada.
+
+Seguimiento MR: candidato8ee1b8e8 validado163/0/1 y check all-targets56,06s.
+QA añadió rechazo de claves JSON duplicadas (RED0/1→GREEN incluido).
+La estructura se valida sobre bytes originales, no sobre Value normalizado.
+Nueve contratos registry incluidos en el total, sin inflar el conteo.
+CX ya está en main mediante c75f23ce, comprobado en remotoee438edb;
+sus informes añaden el cierre conservando el historial. MR espera CI/review.

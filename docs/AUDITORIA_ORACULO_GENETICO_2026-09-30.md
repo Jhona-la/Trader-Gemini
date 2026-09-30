@@ -319,3 +319,53 @@ Check confirmado: workspace/all-targets/locked aprobado en38,18s, sin
 errores de compilación. No equivale a ejecutar todos los tests del workspace.
 Hashes SHA256 de los tres archivos de tests constan en el JSON; corresponden
 a los bytes locales validados, no a un modelo o a evidencia de producción.
+
+## 16. Recepción de MR en main y reconciliación local
+
+Durante este trabajo, GLM integró PR23 en589a591db26fc4e30af931d71b0fb1f9cc3103f4
+(2026-09-30T14:11:15Z) y añadió la condición documental del campo legible
+enfbf8e9ea12554c8a7a4494859b631a3280ab06f9. Remoto main verificado en ese SHA.
+Codex no ejecutó ese merge ni duplicó la aclaración. La rama remota MR
+ya estaba eliminada al consultar. Una review COMMENTED favorable no se
+presenta como estado formal APPROVED.
+
+En la consulta posterior, CI36725338162 del candidato f3145e27 y
+CI36727198985 de mainfbf8e9ea seguían IN_PROGRESS. Por tanto, el merge
+es un hecho observado, pero no se acredita que se cumpliera el gate de CI
+vigente antes de hacerlo. El verde histórico36718230501 corresponde a
+otro SHA. La protección de rama no se inspeccionó ni modificó; no se
+deduce su configuración de este evento.
+
+La recepción y las precisiones MR-02/MR-03 se comunicaron en
+[PR23](https://github.com/Jhona-la/Trader-Gemini/pull/23#issuecomment-5913065634).
+Aceptación estructural JSON no prueba identidad del predictor cacheado;
+main de train_forest sigue sin parsear --test-in en la fuente observada.
+PR10 y PR20 continúan abiertas; PR20 en borrador.
+
+GO774cbac5 incorpora localmente mainfbf8e9ea. Tres conflictos de apéndices
+resueltos conservando ambos lados. Verificación de subsecuencia ordenada,
+líneas HEAD/MERGE_HEAD: atlas1933/1934, coordinación1760/1795,
+maestro8742/8750, memoria954/1010, workflow49/50. Comparación contra ambos
+padres realizada; ningún delta de producción GO respecto al nuevo main.
+Check workspace/all-targets/locked aprobado en27,29s. Nueve contratos de
+registro aprobados; la repetición ampliada se registra al finalizar.
+
+Backups conservados: backup-before-cleanup tiene3 commits exclusivos,
+v7-unificacion-wip1 y TH4 frente a este main. No son ramas demostradas como
+integradas. MP40f8685b sigue local; GO no se publica mezclándola con MR.
+
+### Cierre de la validación integrada
+
+Repetición terminada sobre GO + mainfbf8e9ea: registry9/0/0 y
+replay117/0/2, total disjunto126 aprobadas / 0 fallidas / 2 ignoradas.
+Biblioteca73,35s; paridad42,55s; resto de targets de replay0,08s.
+El contrato bit a bit se reforzó con igualdad de longitudes: zip solo
+no detectaría truncamiento. Repetición final de las nueve rápidas9/0
+y check workspace/all-targets/locked5,64s aprobados tras esa única aserción.
+No contar las repeticiones como nuevos tests ni confundirlas con T-1 completo.
+
+JSON conserva hashes del primer candidato y añade final_source_sha256
+del resultado integrado. Código de producción idéntico a mainfbf8e9ea;
+las diferencias GO siguen siendo tests, CI y documentación. Las referencias
+remotas MP/GO no existen al verificar; ambas ramas permanecen sólo locales.
+Las CI MR/main seguían en ejecución en la última comprobación de este corte.
