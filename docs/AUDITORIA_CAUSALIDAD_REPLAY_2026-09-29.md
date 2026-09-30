@@ -300,3 +300,19 @@ preservan ramas TH, Claude y GLM; no se modifica el Cargo.lock sucio del
 checkout compartido. El trabajo se publica por PR y no se fusiona sin los
 checks y la revisión cruzada solicitada. Sólo se borrará la rama al constar
 su incorporación, nunca mientras esté pendiente de revisión.
+
+## Cierre local y bloqueo de publicación
+
+Commits: reparación `0ed10b4b`, CI `cc5441e8`, informe `6f474a0d`;
+mainf6903e91 integrado en `5054304c`. El único conflicto era de apéndices
+en coordinación: ambos textos conservados. Diff contra ambos padres
+revisado y check workspace/all-targets/locked aprobado antes del commit
+(3,58 s). El diff de crates y workflow entre 6f474a0d y 5054304c es vacío.
+
+La revisión automática de permisos bloqueó push/PR por requerir aprobación
+específica para publicar CX en el repositorio PÚBLICO. No se reintentó ni
+se usó otra vía. La mención a conflicto pendiente en ese rechazo era
+obsoleta: la verificación posterior muestra índice limpio y ninguna ruta
+unmerged. Consulta remota de rama/PR CX: inexistentes en este cierre.
+La CI está escrita y versionada sólo localmente; no ejecutada en GitHub.
+Revisión cruzada pendiente. No hay merge CX a main ni rama CX que borrar.

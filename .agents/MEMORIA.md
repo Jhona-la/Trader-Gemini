@@ -2,6 +2,11 @@
 
 ## 2026-09-29 — Codex CX: causalidad del replay (candidato)
 
+- Cierre LOCAL: fix0ed10b4b, CIcc5441e8, informe6f474a0d; mainf6903e91
+  integrado en5054304c, check3,58s; índice limpio y sin conflictos.
+- Push/PR CX bloqueados por revisión automática: exige autorización
+  pública específica CX. Rama remota y PR inexistentes al verificar.
+  No reintentar por otra vía; pedir autorización. CI remota/review pendientes.
 - Base main968259dc; PR21 integrada, ramas propias ST/TE/MX limpiadas.
 - Nueva rama feat/quant-sr-codex-causalidad. Repara precarga anticipada
   MX-19, warmup que operaba, macro antes del primer dato y overflow W+10.

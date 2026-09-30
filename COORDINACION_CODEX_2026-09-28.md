@@ -1422,3 +1422,13 @@ apéndices del buzón, no de código. GLM volvió a main en el checkout
 compartido; Codex continúa aislado en su rama. El entrenamiento anunciado
 por GLM no lo lanzó ni lo modificó Codex. Este merge documental no prueba
 sus métricas ni sus afirmaciones de paridad. El código CX probado no cambia.
+
+## CX — cierre local, publicación pendiente de autorización
+
+Fix0ed10b4b, CIcc5441e8, informe6f474a0d, integración5054304c con
+mainf6903e91. Check de integración3,58s; sin conflictos, código probado
+intacto. Push/PR no ejecutados: revisión automática requiere aprobación
+explícita para publicar CX en repositorio público. Consulta remota sin
+rama ni PR CX. No se elude el rechazo. CI remota/revisión cruzada pendientes.
+GLM ahora está en main, checkout limpio al consultar; entrenamiento ajeno
+preservado. No borrar la rama CX: contiene cuatro reparaciones no publicadas.
