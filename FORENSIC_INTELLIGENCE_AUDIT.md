@@ -12688,3 +12688,49 @@ signal-engine 63/63 lib + suites de integración en verde; `cargo check --worksp
 (intenciones que no pasan por puertas_del_continuo) — mismas puertas candidatas para
 una ola posterior. La extensión "estirar τ al borde de banda con persistencia_at" queda
 como diseño abierto (requiere T-1).
+
+### #588 — ✅ CIERRE IMPLEMENTADO: gate de pirámide limpia restaurado + veredicto FMT-285 (Ola 12, 2026-09-30, Qoder — responde señalización de Claude)
+
+**Hallazgo A (señalización de Claude, confirmada con prueba estructural): el gate
+«piramidar sólo en ganancia» estaba MUERTO desde el D9.** El contrato legacy exigía
+retorno no realizado ≥ 28 pb para apilar en la misma dirección. El D9 (Ola XLI)
+estrechó su banda de 1.50 a 0.80 —legítimamente, para eliminar la contradicción con
+el despacho multi-banda D-431— pero 0.80 es EXACTAMENTE la distancia que
+`find_resonant_slot` (quantum-arena/src/position.rs:639) ya exige para devolver un
+slot (devuelve None si hay same-dir a |Δlnτ| < 0.80). Como `same_dir_unsecured` sólo
+se evaluaba cuando el slot existía (raw_slot_available=true), su rama `diff_ln < 0.80`
+era INALCANZABLE: la condición `pnl < 0.0028` nunca se ejecutó desde el D9 ⇒ apilar
+hasta llenar los 3 slots en la misma dirección estaba permitido AUNQUE la posición
+previa estuviera perdiendo — triple riesgo correlacionado sobre una apuesta que no
+paga, exactamente la deuda que el guard de correlación documenta («distant scales
+can still share portfolio risk», admitido en el propio comentario muerto).
+
+**Fix:** método `PositionManager::misma_direccion_sin_asegurar(tau, is_long, mid)`
+(position.rs) con la regla uniforme e independiente de distancia: cualquier posición
+abierta same-direction con pnl < 28 pb (o entrada/mid no medible ⇒ conservador)
+veta el apilado. Cableado en god-engine-core/src/lib.rs sustituyendo el bloque
+muerto. |Δlnτ| grande declara energía ortogonal (D-431), NO riesgo independiente.
+El gate no acredita stop protector ni ganancia asegurada — sólo exige que la apuesta
+previa pague antes de doblarle la exposición.
+
+**Hallazgo B (veredicto, sin cambio de código): `partition_income` (FMT-285) NO es
+código muerto — es el ORÁCULO PURO del contrato de cuarentena.** La ruta productiva
+(`collect_income_window`) aplica el mismo contrato inline durante el recorrido
+(FMT-285b, income_evidence.rs:48/:203): cuarentena por registro sin abortar la
+ventana, dedup por identidad, conflicto apartado. «Sólo se llama desde tests» es su
+diseño; se añadió doc explícita para que no vuelva a ser señalado.
+
+**Hallazgo C (documentado, sin arreglar — decisión de diseño): hueco de despacho
+[0.60, 0.80).** La fusión D-431 despacha candidatos armónicos independientes a
+|Δlnτ| ≥ 0.60, pero `find_resonant_slot` bloquea el same-direction a < 0.80: un
+segundo candidato same-direction en [0.60, 0.80) se despacha y se descarta en
+silencio (slot None → el intent no abre, sin telemetría de rechazo). Unificar a 0.60
+o 0.80 (o telemetrizar el descarte) es decisión del consejo: toca el semántico de
+independencia de bandas que CL-32/XLIV-6 también discuten.
+
+**Verificación:** quantum-arena --lib 88/88 (2 contratos nuevos: pirámide-sólo-
+ganancia-en-cualquier-escala — incluyendo umbral exacto 28 pb — y short-perdiente-
+veta-opuesta-no); god-engine-core --lib 154/154; check workspace --all-targets OK
+(warnings preexistentes). La prueba estructural del defecto es sobre código
+commiteado: find_resonant_slot devuelve None ante colisión same-dir < 0.80 y el
+gate sólo corría con slot Some ⇒ rama inalcanzable ⇒ gate muerto.

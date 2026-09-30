@@ -653,6 +653,12 @@ impl PartitionedIncome {
 /// motivo. A diferencia de `collect_income_window`, un registro inválido no
 /// aborta la tanda. La deduplicación por identidad visible se aplica igual:
 /// la repetición idéntica se descarta (ya contada), la conflictiva se aparta.
+///
+/// QO-588 (veredicto de auditoría): es el ORÁCULO PURO del contrato de
+/// cuarentena — la ruta productiva (`collect_income_window`) aplica el mismo
+/// contrato inline durante el recorrido (FMT-285b). «Sólo se llama desde
+/// tests» es su diseño: existen para clavar el contrato ejecutable que la
+/// ruta viva debe igualar, no para ser despachada en producción.
 pub fn partition_income(entries: Vec<IncomeEntry>) -> PartitionedIncome {
     let mut out = PartitionedIncome::default();
     let mut seen = HashMap::<IncomeIdentity, f64>::new();

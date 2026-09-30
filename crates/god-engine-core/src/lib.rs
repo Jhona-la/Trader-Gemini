@@ -6012,43 +6012,24 @@ impl GodEngineCore {
             let target_pos_slot = maybe_slot.unwrap_or(0);
             let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 
-            // Additional legacy cutoff 1.50 with unrealized return >=28bps.
-            // It does NOT verify a protective stop or guarantee secured profit,
-            // and distant scales can still share portfolio risk.
-            let same_dir_unsecured = if raw_slot_available {
-                let slots = coin.positions.slots();
-                let ln_target = (tau_intent_ms.max(10.0)).ln();
-                slots.iter().any(|p| {
-                    if p.is_open() && p.is_long.load(Ordering::Relaxed) == is_long_intent {
-                        let p_tau = (p.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
-                        let diff_ln = (ln_target - p_tau.ln()).abs();
-                        // (Ola XLI·D9) Banda = distancia resonante CANÓNICA (0.80, la
-                        // misma de find_resonant_slot). El 1.50 legacy cancelaba el
-                        // despacho multi-banda declarado: bandas desacopladas a
-                        // |Δlnτ| ∈ [0.60, 1.50) se despachaban como candidatos
-                        // independientes y luego eran bloqueadas por esta puerta.
-                        if diff_ln < 0.80 {
-                            let ep = p.entry_price.load(Ordering::Relaxed);
-                            if ep > 0.0 && mid_price > 0.0 {
-                                let pnl = if is_long_intent {
-                                    (mid_price - ep) / ep
-                                } else {
-                                    (ep - mid_price) / ep
-                                };
-                                pnl < 0.0028
-                            } else {
-                                true
-                            }
-                        } else {
-                            false // Outside this policy band; independence is not established.
-                        }
-                    } else {
-                        false
-                    }
-                })
-            } else {
-                false
-            };
+            // QO-588 — GATE DE PIRÁMIDE LIMPIA (restauración). Historia del
+            // defecto: el contrato legacy exigía retorno no realizado >= 28 pb
+            // para apilar en la misma dirección; el D9 (Ola XLI) estrechó su
+            // banda de 1.50 a 0.80 para eliminar la contradicción con el
+            // despacho multi-banda — pero 0.80 es EXACTAMENTE la distancia que
+            // `find_resonant_slot` ya exige para devolver un slot, así que la
+            // rama `diff_ln < 0.80` quedó inalcanzable y la disciplina
+            // «piramidar sólo en ganancia» murió en silencio (señalización de
+            // Claude). Aquí la regla es uniforme e independiente de la
+            // distancia: |Δlnτ| grande declara energía ortogonal (D-431), no
+            // riesgo independiente — escalas distantes del mismo símbolo y
+            // signo comparten cartera. No acredita stop protector ni ganancia
+            // asegurada: sólo exige que la apuesta previa pague antes de
+            // doblarle la exposición.
+            let same_dir_unsecured = raw_slot_available
+                && coin
+                    .positions
+                    .misma_direccion_sin_asegurar(tau_intent_ms, is_long_intent, mid_price);
             let slot_available = raw_slot_available && !same_dir_unsecured;
 
             // --- APERTURA MULTI-HORIZONTE CONTINUA INTEGRAL ---
