@@ -628,3 +628,24 @@ calculada por el helper sin inventar denominadores de todo el proyecto.
 Los informes históricos y memoria recibieron adendas, no sustituciones.
 Sigue abierta la integración/publicación de la rama Codex y los nueve
 expedientes marcados open. No hay certificación total ni promesa de retorno.
+
+## 2026-09-29 — Publicación ST/TE/MX autorizada por el operador
+
+El operador respondió «Hazlo» a la petición explícita de publicar la rama
+`feat/quant-sr-codex-metricas`, incluidos los cambios e informes ST/TE/MX,
+en el repositorio PÚBLICO `Jhona-la/Trader-Gemini` y tramitar su integración
+a main. Queda levantada la anterior falta de autorización de publicación;
+los avisos anteriores se conservan como registro histórico, no como estado
+vigente de permisos.
+
+Alcance de publicación: los cambios acumulados frente a main7796326a,
+incluidas sus pruebas y documentos. TH6209704a permanece separada por su
+política pendiente; no se modifica el Cargo.lock sucio del checkout compartido.
+No se amplía esta autorización a operar, entrenar o promover modelos.
+
+La publicación no resuelve los hallazgos abiertos ni acredita rentabilidad.
+Se revisan diferencias, PR/comentarios y requisitos de integración. GitHub
+no reporta protección/ruleset de main ni existen workflows versionados en
+este corte; ausencia de CI no se describe como «CI verde». Se realiza además
+regresión local conjunta antes de integrar. El resultado definitivo y la URL
+de la PR quedarán en el cierre de publicación.
