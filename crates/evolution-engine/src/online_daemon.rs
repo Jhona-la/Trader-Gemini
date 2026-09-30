@@ -1686,14 +1686,19 @@ impl LiveEvolutionDaemon {
                 let umbral = quantum_arena::temporal_spectrum::umbral_fisher_identificable();
                 let identificados = con_masa.iter().filter(|f| **f > umbral).count();
                 // CL-28: sólo telemetría. Sobre un paseo aleatorio la mediana
-                // de la Fisher de escala es 0,03–0,16 (< umbral ≈ 0,33); con ≥ 2
+                // de la Fisher de escala era 0,03–0,16 (< umbral ≈ 0,33); con ≥ 2
                 // monedas aplazaba casi toda ronda (≤ 10 % pasaban con 2
                 // monedas, ≈ 0 con 10) y la evolución en vivo quedaba parada.
                 // Con la persistencia solapada una tendencia ni la subía; con
-                // la de bloques (CL-30) la sube ≈ 1,8×, pero sigue bajo el
-                // umbral. Sin un umbral calibrado contra el nulo (la misma
-                // Fisher sobre incrementos barajados) no es un test de
-                // identificabilidad;
+                // la de bloques (CL-30) la subía ≈ 1,8×, pero seguía bajo el
+                // umbral. Desde CL-35 la masa sólo pesa lo observado y la
+                // relación se invierte: en ruido la mediana es 0,36–0,40
+                // (SOBRE el umbral) y una tendencia fuerte la BAJA a
+                // 0,21–0,35. La Fisher mide cuánto se concentra la masa entre
+                // escalas; en ruido la concentran persistencias espurias y
+                // una tendencia persiste en todas y la reparte. Sin un umbral
+                // calibrado contra el nulo (la misma Fisher sobre incrementos
+                // barajados) no es un test de identificabilidad;
                 // la selección la protegen el examen pareado con el incumbente
                 // (D-740) y el DSR con multiplicidad acumulada (D-746).
                 if con_masa.len() >= 2 {
@@ -2290,14 +2295,17 @@ mod tests {
     }
 
     /// CL-28 — el umbral de la Fisher de escala no está calibrado contra un
-    /// nulo: sobre un paseo aleatorio y sobre el MISMO ruido con una
-    /// tendencia fuerte (500 pb/h), las dos medianas quedan bajo el umbral de
-    /// identificabilidad. Un gate que aplaza la ronda con ese umbral para la
-    /// evolución en ambos casos. (Con la persistencia por bloques de CL-30 la
-    /// Fisher SÍ responde a la tendencia —≈ 1,8× la del ruido—, pero sigue
-    /// lejos del umbral.)
+    /// nulo, así que no separa el ruido de una tendencia. Antes de CL-35, sobre
+    /// un paseo aleatorio y sobre el MISMO ruido con una tendencia fuerte
+    /// (500 pb/h), las dos medianas quedaban bajo el umbral: un gate con él
+    /// paraba la evolución en ambos casos. Desde CL-35 (la masa sólo pesa lo
+    /// observado) el ruido lo supera (≈ 0,37 frente a 0,33) y la tendencia
+    /// queda por debajo del ruido (≈ 0,32): el gate aprobaría el ruido y
+    /// aplazaría la tendencia. En 3, 12 y 24 h y con tres semillas, la
+    /// mediana del ruido está entre 0,36 y 0,40 y la de la tendencia entre
+    /// 0,21 y 0,35.
     #[test]
-    fn cl28_ni_el_ruido_ni_una_tendencia_alcanzan_el_umbral_de_la_fisher() {
+    fn cl28_el_umbral_de_la_fisher_no_separa_el_ruido_de_una_tendencia() {
         use quantum_arena::temporal_spectrum::{umbral_fisher_identificable, TemporalSpectrum};
         fn fisher(deriva_por_paso: f64) -> f64 {
             let mut sp = TemporalSpectrum::new();
@@ -2328,8 +2336,8 @@ mod tests {
         let umbral = umbral_fisher_identificable();
         let ruido = fisher(0.0);
         let tendencia = fisher(0.05 * 0.3 / 3_600.0);
-        assert!(ruido < umbral, "ruido F={ruido} umbral={umbral}");
-        assert!(tendencia < umbral, "tendencia F={tendencia} umbral={umbral}");
+        assert!(ruido > umbral, "ruido F={ruido} umbral={umbral}");
+        assert!(tendencia < ruido, "tendencia F={tendencia} ruido F={ruido}");
     }
 
     /// CL-29 — la promoción no pasa por la puerta heurística del incumbente.

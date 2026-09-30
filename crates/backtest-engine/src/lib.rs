@@ -1044,6 +1044,12 @@ mod tests {
         // FORCE_TRAIL en el pico (+15,53 %, 5,7 h); ahora cierra por TP
         // (+21,71 %, 8,1 h). La sonda sigue siendo la única operación:
         // 1001.04880404 → 1001.47074438. CL-33 no mueve el golden.
-        assert_eq!(out_stats[2].to_bits(), 4652020245645541180u64);
+        // (CL-35, re-certificación 2026-09-30) La masa espectral pesa sólo lo
+        // observado. A los 2 s de replay la τ* de la sonda ya no sale en 12 h
+        // (la ponían escalas que aún no habían visto su τ), sino en el piso
+        // de 30 s. La sonda sigue siendo un corto y la única operación, y
+        // cierra por TRAIL_HIT a +0,64 % tras 848 s:
+        // 1001.47074438 → 1000.04427745.
+        assert_eq!(out_stats[2].to_bits(), 4652007698309796339u64);
     }
 }
