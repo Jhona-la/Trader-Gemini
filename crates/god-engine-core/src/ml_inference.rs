@@ -215,27 +215,48 @@ impl NanoForest {
             _ => false,
         };
 
-        let (data, from_bin) = if !is_stale && std::path::Path::new(&bin_path).exists() {
+        let load_validated_json = || -> Result<_, Box<dyn std::error::Error>> {
+            let data = Self::parse_json(&json_path)?;
+            let required_features =
+                Self::validate_dim_contract(&data, &json_path.to_string_lossy())?;
+            Ok((data, required_features))
+        };
+        let ((data, required_features), from_bin) = if !is_stale && bin_path.exists() {
             match std::fs::read(&bin_path)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
                 .and_then(|bin_data| {
                     bincode::deserialize(&bin_data)
                         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
+                })
+                .and_then(|parsed| {
+                    // MP-08: decoding bytes is not structural acceptance. A
+                    // broken derived cache must not block its valid JSON source.
+                    let required =
+                        Self::validate_dim_contract(&parsed, &bin_path.to_string_lossy())?;
+                    Ok((parsed, required))
                 }) {
                 Ok(parsed) => (parsed, true),
-                Err(_) => (Self::parse_json(&json_path)?, false),
+                Err(cache_error) => (
+                    load_validated_json().map_err(|source_error| {
+                        format!(
+                            "cache {} rejected ({cache_error}); JSON source {} rejected ({source_error})",
+                            bin_path.display(),
+                            json_path.display()
+                        )
+                    })?,
+                    false,
+                ),
             }
         } else {
-            // Fallback to JSON (fresh compile below)
-            (Self::parse_json(&json_path)?, false)
+            // A newer JSON is authoritative: no fallback to its stale BIN if
+            // it fails validation. Preserve rejection and the last live model.
+            (load_validated_json()?, false)
         };
         // B3.9 — contrato de dimensión: el modelo debe vivir dentro del
         // vector que ESTE binario construye. Rechazo ruidoso, no silencio.
         // Aplica IGUAL al camino del .bin (caché) — y el .bin sólo se
         // escribe DESPUÉS de validar: un modelo rechazado no contamina la
         // caché para el próximo arranque.
-        let required_features = Self::validate_dim_contract(&data, path)
-            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
         if !from_bin {
             if let Ok(encoded) = bincode::serialize(&data) {
                 let _ = std::fs::write(&bin_path, encoded);

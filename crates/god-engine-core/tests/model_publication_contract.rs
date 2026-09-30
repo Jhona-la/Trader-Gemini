@@ -236,7 +236,136 @@ fn mp_corrupt_binary_cache_falls_back_to_valid_json() {
     let json = fixture.json("model.json", 8.0);
     let bin = json.with_extension("bin");
     std::fs::write(&bin, b"not a bincode model").unwrap();
+    make_cache_newer(&json, &bin);
     assert_eq!(load(&bin).init_value(), 8.0);
     let rebuilt: NanoForestData = bincode::deserialize(&std::fs::read(&bin).unwrap()).unwrap();
     assert_eq!(rebuilt.init_score, 8.0);
+}
+
+fn make_cache_newer(json: &Path, bin: &Path) {
+    // Explicit ordering; never rely on filesystem timestamp resolution/sleeps.
+    for (path, seconds) in [(json, 10_000), (bin, 20_000)] {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds)),
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn mp_structurally_invalid_cache_falls_back_to_valid_json() {
+    // Deserialization succeeds in every case. Rejection is structural, not I/O.
+    for kind in ["cycle", "dimension", "length", "offset", "nan", "infinity"] {
+        for extension in ["json", "bin"] {
+            let fixture = Fixture::new(&format!("semantic_{kind}_{extension}"));
+            let json = fixture.json("model.json", 9.0);
+            let bin = json.with_extension("bin");
+            let source = std::fs::read(&json).unwrap();
+            let mut invalid = model(-9.0);
+            match kind {
+                "cycle" | "dimension" => {
+                    invalid.children_left[0] = 0;
+                    invalid.children_right[0] = 0;
+                    invalid.feature[0] = if kind == "dimension" { 48 } else { 0 };
+                }
+                "length" => invalid.threshold.clear(),
+                "offset" => invalid.tree_offsets[1] = 2,
+                "nan" => invalid.init_score = f32::NAN,
+                "infinity" => invalid.value[0] = f32::INFINITY,
+                _ => unreachable!(),
+            }
+            let encoded = bincode::serialize(&invalid).unwrap();
+            let decoded: NanoForestData = bincode::deserialize(&encoded).unwrap();
+            assert!(NanoForest::from_data(decoded).is_err());
+            std::fs::write(&bin, encoded).unwrap();
+            make_cache_newer(&json, &bin);
+            let request = json.with_extension(extension);
+            let forest = NanoForest::load_model(request.to_str().unwrap())
+                .unwrap_or_else(|e| panic!("{kind}/{extension}: valid JSON was blocked: {e}"));
+            assert_eq!(forest.init_value(), 9.0);
+            assert_eq!(std::fs::read(&json).unwrap(), source);
+            let rebuilt: NanoForestData =
+                bincode::deserialize(&std::fs::read(&bin).unwrap()).unwrap();
+            assert_eq!(NanoForest::from_data(rebuilt).unwrap().init_value(), 9.0);
+        }
+    }
+}
+
+#[test]
+fn mp_invalid_cache_and_source_preserve_files_and_last_valid_model() {
+    let fixture = Fixture::new("both_invalid");
+    let json = fixture.json("model.json", 0.0);
+    let bin = json.with_extension("bin");
+    let mut invalid = model(0.0);
+    invalid.threshold.clear();
+    let cache = bincode::serialize(&invalid).unwrap();
+    NanoForest::store_global(
+        "MP_BOTH_INVALID",
+        NanoForest::from_data(model(7.0)).unwrap(),
+    );
+    for source in [
+        b"invalid JSON".to_vec(),
+        serde_json::to_vec(&invalid).unwrap(),
+    ] {
+        std::fs::write(&json, &source).unwrap();
+        std::fs::write(&bin, &cache).unwrap();
+        make_cache_newer(&json, &bin);
+        for request in [&json, &bin] {
+            let error = NanoForest::load_global("MP_BOTH_INVALID", request.to_str().unwrap())
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("cache ") && error.contains("JSON source "),
+                "{error}"
+            );
+            assert_eq!(
+                NanoForest::get_global("MP_BOTH_INVALID")
+                    .unwrap()
+                    .init_value(),
+                7.0
+            );
+            assert_eq!(std::fs::read(&json).unwrap(), source);
+            assert_eq!(std::fs::read(&bin).unwrap(), cache);
+        }
+    }
+}
+
+#[test]
+fn mp_invalid_standalone_cache_does_not_publish_or_rewrite() {
+    let fixture = Fixture::new("invalid_standalone");
+    let bin = fixture.0.join("model.bin");
+    let mut invalid = model(0.0);
+    invalid.threshold.clear();
+    let cache = bincode::serialize(&invalid).unwrap();
+    std::fs::write(&bin, &cache).unwrap();
+    assert!(NanoForest::load_global("MP_NO_SOURCE", bin.to_str().unwrap()).is_err());
+    assert!(NanoForest::get_global("MP_NO_SOURCE").is_none());
+    assert!(!bin.with_extension("json").exists());
+    assert_eq!(std::fs::read(&bin).unwrap(), cache);
+}
+
+#[test]
+fn mp_newer_invalid_json_must_not_fall_back_to_older_valid_cache() {
+    let fixture = Fixture::new("invalid_new_source");
+    let json = fixture.json("model.json", 0.0);
+    let bin = json.with_extension("bin");
+    let cache = bincode::serialize(&model(6.0)).unwrap();
+    let mut invalid = model(0.0);
+    invalid.threshold.clear();
+    let source = serde_json::to_vec(&invalid).unwrap();
+    std::fs::write(&json, &source).unwrap();
+    std::fs::write(&bin, &cache).unwrap();
+    // Invert the helper inputs to make the source strictly newer.
+    make_cache_newer(&bin, &json);
+    for request in [&json, &bin] {
+        assert!(NanoForest::load_global("MP_STALE_VALID", request.to_str().unwrap()).is_err());
+        assert!(NanoForest::get_global("MP_STALE_VALID").is_none());
+        assert_eq!(std::fs::read(&json).unwrap(), source);
+        assert_eq!(std::fs::read(&bin).unwrap(), cache);
+    }
 }
