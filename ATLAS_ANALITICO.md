@@ -1916,3 +1916,19 @@ eliminados sin borrar textos; CI añade control de diff. Evidencia detallada
 en la [adenda CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md).
 Readiness física por escala y paridad siguen abiertos. No se deduce edge,
 adaptación universal ni rentabilidad de un merge o un test determinista.
+
+## ADENDA MR — qué significa cada evidencia del modelo (2026-09-30)
+
+La cadena correcta distingue: archivo presente → JSON legible → estructura
+válida → evidencia posterior → predictor activado → decisión atribuible.
+Hoy hay desconexiones entre esos pasos. MR añade el tercer diagnóstico,
+sin afirmar los siguientes ni convertir un inventario en permiso de trading.
+`SHA256(JSON)` identifica bytes de fuente, no necesariamente la caché servida.
+`sigmoid(init_score)` tiene interpretación probabilística para clasificación;
+no representa la media cruda y las unidades de una regresión `_VOL/_VOLU/_OI`.
+
+El [informe MR](docs/AUDITORIA_REGISTRO_MODELOS_2026-09-30.md) documenta
+los seis expedientes y controles. Ninguna nueva teoría matemática corrige
+por sí sola una validación desconectada o un linaje no observado. Habilidad
+multiactivo/multiescala exige datos y tests con soporte temporal efectivo;
+resolución del reloj, complejidad de modelos y nombres cuánticos no bastan.
