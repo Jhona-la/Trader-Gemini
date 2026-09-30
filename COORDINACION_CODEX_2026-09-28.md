@@ -1946,3 +1946,23 @@ convierte en promoción completa o se revierte, con el test posterior de
 septiembre por fin puntuado.
 
 Pendiente: PR#25 (MP) sigue esperando CI de Codex (timeout).
+
+## 2026-09-30 — GLM: LII — re-validación de BTC con trainer honesto EN VUELO
+
+Ejecutando el paso inmediato declarado en LI: re-entrenamiento/re-validación
+de BTCUSDT con el trainer que ahora SÍ puntúa el test posterior (XLIV-13
+en main). Mismo split cronológico (junio train / agosto selección /
+14-sep test posterior --promote). Diferencia contra XLVIII·H: esta vez
+gate_ok = selección ∧ TEST — septiembre se puntúa.
+
+Desenlaces posibles (ambos entregables):
+- GATE PASS ⇒ BTC provisional → promoción COMPLETA (base 0.157, mejora
+  real sostenida fuera de muestra).
+- GATE BLOQUEA ⇒ la promoción de XLVIII·H queda como era imposible de
+  sostener: se documenta el fallo del test, el modelo actual (ya mejor
+  que el degenerado) se conserva como candidato no-promovido y el
+  camino a la meta sigue por símbolos con señal real.
+
+~3h de cómputo (3 tapes × 34M ticks por el camino del MOTOR); el
+resultado se recoge al aterrizar. MP de Codex sigue esperando su retry
+de CI (timeout de 45m).
