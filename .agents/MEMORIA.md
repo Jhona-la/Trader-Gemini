@@ -1,5 +1,38 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — MR publicación bloqueada; pedir autorización específica
+
+- Auto-review rechazó commit/push/PR combinado ANTES de ejecutarse:
+  aprobación pública previa cubre CX, no payload nuevo MR. No push/PR.
+- Se pide autorización expresa para publicar código, pruebas e informes
+  MR en repo PÚBLICO y abrir PR; merge condicionado a CI/revisión.
+  No eludir la denegación con otra herramienta ni reintentar sin respuesta.
+- Trabajo local se conserva. Candidato8ee1b8e8:163/0/1 y all-targets56,06s;
+  CX sí está integrado en main y su rama se limpió. MR no está en main.
+
+## 2026-09-30 — MR candidato final validado localmente
+
+- Parser8ee1b8e8: deserializa bytes originales, no normaliza claves
+  duplicadas mediante Value. RED0/1 y GREEN en ampliada163/0/1:
+  151 lib +12 ML, nueve registry incluidos. Ignorada manual intacta.
+- Check workspace/all-targets/locked56,06s después del refinamiento;
+  repetición compacta163/0/1 sin truncamiento. Warnings heredados visibles.
+- Seis expedientes MR: uno candidato, cinco abiertos (MR-02 ya era XLIV-13).
+  JSON/hash != predictor servido reproducido; no se repara loader aquí.
+- CI/revisión MR pendientes del candidato publicado; no auto-merge.
+  Código/runtime/modelos/riesgo ajenos intactos. Manifest de main preservado.
+
+## 2026-09-30 — MR: integración validada; refinamiento de parser en prueba
+
+- b17c60d9 + informe7389b042; main ee438edb integrado en66a6ab70,
+  preservadas1697/1711 líneas de padres. Check all-targets/locked204s.
+  Regresión162/0/1 (150 core +12 ML, inventario local ignorado intacto).
+- QA propia encontró que Value colapsa claves duplicadas: nuevo test
+  RED0/1. Corrección usa bytes originales para deserialización tipada,
+  luego el mismo contrato de NanoForest. Se repite toda la regresión.
+- GLM verifica PR20 en glm/xlix-e-verificar-pr20 (77d6632a local observado),
+  no integración remota inferida. No tocar su checkout/procesos/modelos.
+
 ## 2026-09-30 — CX integrado y limpieza propia verificada
 
 - GLM cerró PR22 mediante c75f23ce; remoto main ee438edb contiene e8546d60.

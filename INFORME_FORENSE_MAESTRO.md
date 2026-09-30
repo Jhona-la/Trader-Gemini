@@ -8741,3 +8741,10 @@ cobertura por nombres y unidades del intercepto de regresión. El informe
 explica evidencia, mecanismo, impacto, límites y criterios de cierre.
 La CI CX36670361992 terminó SUCCESS; no acredita este nuevo cambio MR.
 No entrenamiento, promoción, trading, T-1 ni auditoría integral certificada.
+
+Seguimiento MR: candidato8ee1b8e8 validado163/0/1 y check all-targets56,06s.
+QA añadió rechazo de claves JSON duplicadas (RED0/1→GREEN incluido).
+La estructura se valida sobre bytes originales, no sobre Value normalizado.
+Nueve contratos registry incluidos en el total, sin inflar el conteo.
+CX ya está en main mediante c75f23ce, comprobado en remotoee438edb;
+sus informes añaden el cierre conservando el historial. MR espera CI/review.

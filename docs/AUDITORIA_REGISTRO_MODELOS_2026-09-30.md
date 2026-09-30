@@ -1,5 +1,10 @@
 # MR — evidencia, promoción y linaje del registro de modelos
 
+Última validación local: código `8ee1b8e8`,163 aprobadas/0 fallidas/1
+ignorada; check workspace/all-targets/locked aprobado56,06s. MR-01 es
+candidato a revisión; los otros cinco expedientes no quedan cerrados.
+Los cortes de ejecución previos se conservan debajo como historia.
+
 ## Corte, alcance y dictamen
 
 Auditoría Codex del 30 de septiembre de 2026. Rama propia
@@ -275,3 +280,80 @@ La regresión ampliada y check all-targets se ejecutan aparte. CI remota
 MR todavía no ejecutada en este corte. Una compilación fría inicial con
 debug=0 fue interrumpida únicamente en el proceso propio para reutilizar
 el perfil local disponible; no se contabiliza como una validación aprobada.
+
+### Regresión ampliada: ejecución posterior
+
+`cargo +nightly-2026-06-30 test -p god-engine-core --locked --lib --test
+ml_model_contract -- --test-threads=1`: **162 aprobadas, 0 fallidas,
+1 ignorada**. Biblioteca:150/0/0 en9,62s; contratos de modelos:12/0/1
+en0,26s; compilación4min11s. Los ocho del registry están incluidos en150,
+no se suman dos veces. La ignorada es inventario manual local y no se
+habilita. No se borran warnings heredados ni se debilitan aserciones.
+
+Merge documental con mainee438edb:1697 líneas del primer padre y1711
+del segundo preservadas en orden; sin delta src/crates/workflow respecto
+a MR b17c60d9. El manifest GLM coincide byte a byte con main; incorporación
+no implica promoción desde este worktree. Check all-targets aún en curso
+al registrar esta evidencia; commit de merge espera su resultado.
+
+### Check e integración del corte previo
+
+El check `--workspace --all-targets --locked` terminó correctamente en
+3min24s, con warnings heredados. Tras comparar ambos padres, se cerró
+la integración documental en `66a6ab70`. No se cambió serving ni la
+versión de modelos de main. Este resultado precede al refinamiento del
+parser descrito a continuación; no se utiliza como check de ese cambio.
+
+### QA de MR-01: claves JSON duplicadas
+
+La revisión del propio candidato detectó una diferencia entre parsear a
+`Value` y deserializar directamente a `NanoForestData`. El primero puede
+colapsar claves duplicadas; convertir luego ese `Value` en estructura
+tipada ya perdió la evidencia del duplicado. Por eso reutilizar sólo el
+validador de topología no basta para reproducir el contrato de lectura.
+
+Se añadió `mr_claves_duplicadas_no_se_normalizan_antes_del_contrato`.
+Con dos `init_score` en una hoja válida: `Value` acepta, el parser tipado
+rechaza y el scanner del candidato b17c60d9 devolvía erróneamente
+`Some(true)`. Ejecución RED:0 aprobadas/1 fallida,0,06s (compilación1min42s).
+El archivo temporal se retira antes de la aserción, incluso al fallar.
+
+Refinamiento: deserializar **el buffer original** con
+`serde_json::from_slice::<NanoForestData>(&bytes_vec)` antes de
+`NanoForest::from_data`. Se conserva el parseo genérico para legibilidad
+y metadatos, pero ya no normaliza la entrada de la validación estructural.
+Esto sigue sin consultar/escribir caché ni activar modelos. La regresión
+completa se repite; no se omite el test rojo. Es un refuerzo de MR-01,
+no un séptimo hallazgo ni un nuevo cierre financiero.
+
+### Cierre local de validación — candidato 8ee1b8e8
+
+Refinamiento del parser guardado en `8ee1b8e8`. Regresión completa
+posterior: **163 aprobadas,0 fallidas,1 ignorada** (151 biblioteca,
+12 contratos ML). Incluye nueve pruebas del registry: cuatro históricas
+y cinco nuevas; no añadirlas de nuevo al total. El test rojo de claves
+duplicadas está incluido y ahora pasa. El witness MR-03 sigue reproduciendo
+su abierto y no se presenta como una reparación del loader.
+
+Se repitió la salida resumida con `--quiet` para conservar un veredicto
+sin truncamiento:151/0/0 en1,40s y12/0/1 en0,01s, build incremental3,16s.
+La corrida completa previa compiló en1min44s y permitió continuar al
+check de workspace; éste terminó correctamente en56,06s. Los tiempos
+no son benchmarks de latencia ni comparaciones de rendimiento.
+
+`git diff --check` y ambos JSON de auditoría válidos. Ningún delta MR
+respecto a main ee438edb en modelo-manifest real, trainer, host o loader.
+CI propia MR/revisión cruzada remotas pendientes al cerrar este corte;
+no auto-merge ni eliminación de la rama de trabajo pendiente. Las PR10/20
+siguen abiertas en la consulta,20 en borrador; GLM verifica su integración
+en otro checkout. No se atribuye ese trabajo a Codex ni se lo interrumpe.
+
+### Publicación MR: autorización específica pendiente
+
+La revisión automática rechazó la operación combinada de commit/push/PR
+antes de ejecutarla: la autorización explícita disponible cubría CX,
+no el nuevo payload MR en el repositorio público. No hubo push ni PR MR.
+Se solicita al operador autorización específica para publicar código,
+pruebas e informes MR y abrir su PR, con merge sujeto a CI y revisión.
+El trabajo y sus resultados se conservan en commits locales; no se
+reintenta publicación por una vía alternativa ni se elude la restricción.

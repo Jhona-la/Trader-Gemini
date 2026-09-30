@@ -2,7 +2,9 @@
   "schema_version": 1,
   "audit": "MR-model-registry-evidence",
   "date": "2026-09-30",
+  "latest_validation": {"code_commit": "8ee1b8e8", "passed": 163, "failed": 0, "ignored": 1, "registry_tests_included": 9, "library": {"passed": 151, "seconds": 1.40}, "ml_model_contract": {"passed": 12, "ignored": 1, "seconds": 0.01}, "compact_recheck_build_seconds": 3.16, "workspace_all_targets_locked": "passed", "workspace_check_seconds": 56.06, "duplicate_key_regression": "RED 0/1 then GREEN included in full library", "remote_mr_ci": "pending_at_local_close", "cross_review": "requested_via_PR_on_publication", "new_trading_policy": false},
   "branch": "codex/model-registry-evidence",
+  "publication": {"status": "blocked_pending_explicit_public_approval_MR", "reason": "Automatic review limits prior specific publication approval to CX, not new MR code and reports", "push_executed": false, "pr_created": false, "user_confirmation_requested": true, "local_work_preserved": true},
   "base_commit": "e8546d600cf5a02cb3ea84bd14d60300780c8933",
   "observed_main": "50604ed0680a14f36a29e416bc7bd65a7062440d",
   "report": "docs/AUDITORIA_REGISTRO_MODELOS_2026-09-30.md",
@@ -63,6 +65,9 @@
   ],
   "validation": {"status": "registry_contracts_passed_expanded_pending", "code_commit": "b17c60d9", "registry_tests": {"passed": 8, "failed": 0, "ignored": 0, "runtime_seconds": 0.25, "build_seconds": 236, "profile": "local default test with debuginfo", "compiler": "1.98.0-nightly (096694416 2026-06-29)"}, "abandoned_initial_cold_build": "debug=0 build interrupted only in own session; no validation claimed", "real_tapes": false, "training": false, "promotion": false, "trading": false, "models_manifest_regenerated": false},
   "prior_cx_ci": {"run": 36670361992, "head": "e8546d600cf5a02cb3ea84bd14d60300780c8933", "conclusion": "success", "does_not_validate_mr": true},
+  "parser_followup": {"finding": "MR-01", "test": "mr_claves_duplicadas_no_se_normalizan_antes_del_contrato", "mechanism": "Value normalization discards duplicate keys before typed deserialization", "red": {"passed": 0, "failed": 1, "seconds": 0.06, "build_seconds": 102}, "fix": "Typed deserialization from the original hashed bytes, then shared topology validator", "final_regression": "pending"},
+  "pre_parser_merge_check": {"status": "passed", "seconds": 204, "merge_commit": "66a6ab70", "warnings_present": true, "does_not_validate_later_parser_refinement": true},
+  "expanded_validation": {"passed": 162, "failed": 0, "ignored": 1, "library": {"passed": 150, "seconds": 9.62}, "ml_model_contract": {"passed": 12, "ignored": 1, "seconds": 0.26}, "build_seconds": 251, "registry_included_not_double_counted": true, "workspace_all_targets": "pending", "merge_parent_coordination_lines_preserved": [1697, 1711]},
   "cx_integration_verified": {"pr": 22, "state": "MERGED", "merge": "c75f23ce44acbed4291237fb0617971ef2c6afa9", "remote_main": "ee438edb03333b67e2e41d8ba31229e8350a505e", "merged_at": "2026-09-30T12:27:51Z", "head_ancestry_verified": true, "code_workflow_delta_from_e8546d60": false, "cx_local_branch_deleted_after_verification": true, "cx_remote_branch_already_deleted_by_glm": true},
   "limitations": ["No whole-project certification", "No demonstrated return target", "No quantum advantage claim", "No new predictive theory implemented without evidence"]
 }

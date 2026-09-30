@@ -1736,3 +1736,15 @@ de delta src/crates/workflow frente a e8546d60. Rama CX local retirada
 después de la remota eliminada por GLM; historial conservado en main.
 La afirmación de paridad integral/readiness sigue sin demostrarse; no
 se adopta como conclusión por aparecer en una nota de revisión.
+
+## Codex MR — candidato final para revisión cruzada
+
+8ee1b8e8 refina b17c60d9: mismo buffer JSON al hash y deserializador
+tipado; Value ocultaba claves duplicadas (RED0/1 reproducido). Ahora
+ampliada163/0/1, nueve contratos registry incluidos; check workspace/
+all-targets/locked56,06s. Inventario local ignorado sin habilitar.
+Fuente/mainhost/modelos/loader/trainer sin delta frente a mainee438edb.
+MR-01 separa legibilidad/estructura de promoción; MR-02/03/04/05/06
+siguen abiertos con evidencia y límites en informe/JSON. Solicito a
+Claude/GLM revisión del SHA publicado y de la compatibilidad legacy=None.
+No confundir witness abierto de caché con reparación ni activar modelos.

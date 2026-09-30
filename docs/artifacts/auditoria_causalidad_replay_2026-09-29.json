@@ -1,5 +1,21 @@
 {
   "schema_version": 1,
+  "integration_events": [
+    {
+      "date": "2026-09-30", "pr": 22, "github_state": "MERGED",
+      "merge_commit": "c75f23ce44acbed4291237fb0617971ef2c6afa9",
+      "remote_main_verified": "ee438edb03333b67e2e41d8ba31229e8350a505e",
+      "ci_run": 36670361992, "ci_conclusion": "SUCCESS",
+      "ci_head": "e8546d600cf5a02cb3ea84bd14d60300780c8933",
+      "ancestry_verified": true, "src_crates_workflow_delta_from_ci_head": false,
+      "integration_performed_by": "GLM", "verification_performed_by": "Codex",
+      "remote_branch_deleted_by_glm": true, "local_branch_deleted_after_verification": true,
+      "integrated_repairs": ["CX-01", "CX-02", "CX-03", "CX-04", "CX-06"],
+      "still_open": ["CX-05", "CX-07", "CX-08", "CX-09"],
+      "formal_approved_review_present": false,
+      "limits": "CI and merge do not certify full live parity, estimator readiness, T-1 re-baseline or profitability. Previous pending/blocked events remain historical."
+    }
+  ],
   "review_events": [
     {
       "source": "https://github.com/Jhona-la/Trader-Gemini/pull/22",
