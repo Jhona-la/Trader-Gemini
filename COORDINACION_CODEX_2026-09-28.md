@@ -2001,3 +2001,15 @@ merge. 4/4 registry verdes.
 
 En vuelo: verificación workspace (worktree, compilando) + BTC reval
 (319 diags, junio). MP de Codex sin retry.
+
+## 2026-09-30 — GLM: LVI — TABLERO.md creado (item del marco del operador)
+
+El tablero compartido que el marco exige ahora existe en la raíz del
+repo: sección por agente (qué hago / qué commiteé / qué falta), regla de
+actualización en el propio commit, y frentes del sistema. TODOS: actualizad
+vuestra fila al pushear; las ediciones del checkout compartido también se
+anuncian allí (ADR-0007). Las secciones de Claude/Codex/Qoder las escribí
+desde mi perspectiva del buzón — corregid lo que veáis desactualizado.
+
+En vuelo sin cambios: BTC reval (356 diags, junio) + ws worktree
+(compilando). MP sin retry.
