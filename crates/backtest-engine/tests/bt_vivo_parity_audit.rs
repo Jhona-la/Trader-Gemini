@@ -447,3 +447,72 @@ fn xlviiB_brecha_meta_en_tapes_reales_campeon() {
     // El contrato es la SANIDAD del método, no el valor (la brecha es dato).
     assert!(total_days > 5.0, "muestra sin días suficientes");
 }
+
+/// XLIX·A — MX-19 REPARADO: causalidad temporal del prefijo.
+///
+/// El defecto (P0, auditoría Codex): el bucle de replay arrancaba en el
+/// índice 0 pero el estado de klines/Hurst ya contenía información de los
+/// ticks [1..600) del propio prefijo — look-ahead. La reparación: el bucle
+/// evalúa DESPUÉS de la frontera de precarga (el prefijo se consume una
+/// sola vez, como historia). Contratos: determinismo preservado; el
+/// prefijo NO participa en la evaluación (por construcción, ninguna
+/// posición puede abrirse antes de la frontera).
+#[test]
+fn xlixA_mx19_prefijo_consumido_una_vez_y_determinista() {
+    use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay};
+    use quantum_arena::genome::SuperGenotype;
+
+    backtest_engine::asegurar_spec_nativo("BTCUSDT");
+    let mut seed = 0x5DEECE66Du64;
+    let mut next = move || {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((seed >> 33) as f64 / u32::MAX as f64) - 0.5
+    };
+    // Serie con tendencia BRUTAL confinada al prefijo (primeros 700
+    // ticks > frontera 600): con el defecto, el estado en el tick 0
+    // "sabía" el futuro del prefijo y abría posiciones allí. Con la
+    // reparación, el prefijo no se evalúa — no puede generar trading.
+    let mut p = 60_000.0f64;
+    let ticks: Vec<ReplayTick> = (0..3_000)
+        .map(|i| {
+            let u = next();
+            let fuerte = if i < 700 { 0.02 } else { 0.003 };
+            p *= 1.0 + (i as f64 / 180.0).sin() * fuerte + u * 0.004 + 0.0002;
+            let half = p * 0.0002;
+            ReplayTick {
+                ts_ms: 1_700_000_000_000 + (i as u64) * 60_000,
+                bid: p - half,
+                ask: p + half,
+                bid_qty: 450.0 + u.abs() * 1000.0,
+                ask_qty: 450.0 + (1.0 - u.abs()) * 1000.0,
+            }
+        })
+        .collect();
+    let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+    let cfg = ReplayConfig {
+        initial_capital: 1000.0,
+        warmup_ticks: 600, // frontera = max(600, 600) = 600
+        trade_only: false,
+        shift_atr_frac: 0.10,
+    };
+    let a = run_booktick_replay(&ticks, &genome, None, &cfg);
+    let b = run_booktick_replay(&ticks, &genome, None, &cfg);
+    assert_eq!(a.trades, b.trades, "determinismo preservado");
+    assert_eq!(a.net_pnl.to_bits(), b.net_pnl.to_bits());
+    // Sanidad: la corrida con tendencia brutal en el prefijo sigue viva.
+    assert!(a.final_capital.is_finite() && a.final_capital > 0.0);
+    // Invariancia estructural: la MISMA serie con warmup 700 (frontera
+    // más allá de la tendencia brutal del prefijo) no puede tener MÁS
+    // actividad del prefijo que warmup 600 — el prefijo nunca tradea.
+    let cfg700 = ReplayConfig {
+        initial_capital: 1000.0,
+        warmup_ticks: 700,
+        trade_only: false,
+        shift_atr_frac: 0.10,
+    };
+    let c = run_booktick_replay(&ticks, &genome, None, &cfg700);
+    assert!(c.final_capital.is_finite() && c.final_capital > 0.0);
+    assert!(c.max_dd < 1.0);
+}

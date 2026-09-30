@@ -327,8 +327,18 @@ pub fn run_booktick_replay(
     let mut turnover_notional: f64 = 0.0;
     let mut peak = cfg.initial_capital;
     let warmup = cfg.warmup_ticks.min(ticks.len() / 10);
+    // MX-19 (auditoría Codex, P0): el prefijo de precarga de klines
+    // [0, max(warmup,600)) YA fue consumido como historia por el estado
+    // (Hurst/EMAs de vela). Arrancar el bucle en 0 hacía que el estado
+    // en el tick 0 contuviera información de ticks 1..600 del MISMO
+    // prefijo — violación de causalidad temporal. El replay evalúa
+    // DESPUÉS de la frontera de historia; el prefijo se consume UNA vez.
+    let frontera_preload = cfg.warmup_ticks.max(600).min(ticks.len());
 
     for (i, t) in ticks.iter().enumerate() {
+        if i < frontera_preload {
+            continue; // historia ya consumida por la precarga: no se re-evalúa
+        }
         let mid = t.mid();
         if !mid.is_finite() || mid <= 0.0 || t.bid <= 0.0 || t.ask <= 0.0 || t.bid > t.ask {
             continue; // aduana F2.1 (misma regla que producción)
