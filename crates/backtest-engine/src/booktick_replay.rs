@@ -146,7 +146,9 @@ impl OmniHistory {
         let s = &self.series[slot];
         match s.binary_search_by_key(&day, |&(d, _)| d) {
             Ok(i) => s[i].1,
-            Err(0) => s.first().map(|v| v.1).unwrap_or(0.0),
+            // No observation was available yet. Preserve the legacy neutral
+            // missing-data sentinel, never backfill from a future date.
+            Err(0) => 0.0,
             Err(i) => s[i - 1].1,
         }
     }
@@ -159,7 +161,9 @@ impl OmniHistory {
 #[derive(Debug, Clone, Copy)]
 pub struct ReplayConfig {
     pub initial_capital: f64,
-    /// Ticks de calentamiento de features (sin evaluación de PnL).
+    /// Prefix length in tape rows: observations update features once, but no
+    /// entries are allowed until this exact boundary (independent of tape length).
+    /// This is not a claim that all slow-scale estimators are already ready.
     pub warmup_ticks: usize,
     /// MODO TRADE-ONLY: no enviar eventos depth con bid/ask sintético (las
     /// features de microestructura del motor se diseñaron para bookTicker
@@ -243,8 +247,20 @@ pub fn run_booktick_replay(
     omni: Option<&OmniHistory>,
     cfg: &ReplayConfig,
 ) -> ReplayStats {
+    run_booktick_replay_observed(ticks, genome, omni, cfg, |_, _| {})
+}
+
+// Same execution path in tests and production; the empty production observer
+// is monomorphized away. Inspect state BEFORE each event to test non-anticipation.
+fn run_booktick_replay_observed(
+    ticks: &[ReplayTick],
+    genome: &SuperGenotype,
+    omni: Option<&OmniHistory>,
+    cfg: &ReplayConfig,
+    mut before_event: impl FnMut(usize, &GodEngineCore),
+) -> ReplayStats {
     let mut stats = ReplayStats::default();
-    if ticks.len() <= cfg.warmup_ticks + 10
+    if ticks.len().saturating_sub(cfg.warmup_ticks) <= 10
         || !cfg.initial_capital.is_finite()
         || cfg.initial_capital <= 0.0
     {
@@ -255,41 +271,10 @@ pub fn run_booktick_replay(
     genome.apply_to_arena(&arena);
     let mut core = GodEngineCore::new(arena.clone());
 
-    // FIX AUDIT: Hurst necesita 512 cierres 1m para producir valores ≠ 0.5.
-    // Sin esto, el estimador DFA queda clavado en neutral y TODO el canal
-    // price-action (que depende de hurst > 0.52 o < 0.45) es inalcanzable.
-    // Sintetizamos los klines 1m agregando ticks por minutos:
-    let mut last_minute = 0u64;
-    let mut minute_open = 0.0f64;
-    let mut minute_high = 0.0f64;
-    let mut minute_low = f64::MAX;
-    let mut minute_close = 0.0f64;
-    let mut minute_vol = 0.0f64;
-    for t in ticks.iter().take(cfg.warmup_ticks.max(600).min(ticks.len())) {
-        let minute = t.ts_ms / 60_000;
-        if minute != last_minute && last_minute > 0 {
-            // Cerrar el kline anterior
-            core.feature_engines[0].process_kline(
-                minute_open,
-                minute_high,
-                minute_low,
-                minute_close,
-                minute_vol,
-            );
-            minute_high = 0.0;
-            minute_low = f64::MAX;
-            minute_vol = 0.0;
-        }
-        let mid = t.mid();
-        if minute != last_minute {
-            last_minute = minute;
-            minute_open = mid;
-        }
-        minute_high = minute_high.max(mid);
-        minute_low = minute_low.min(mid);
-        minute_close = mid;
-        minute_vol += t.bid_qty + t.ask_qty;
-    }
+    // CX / MX-19: no preloading from this tape before replaying index zero.
+    // StatefulEngine already updates Hurst and its time-based observations
+    // as events arrive. A second process_kline path would count them twice.
+    // Insufficient elapsed history must stay unready, not borrow the future.
 
     // LECCIÓN DE CARRERA (golden X-test): las funciones de biblioteca NO
     // mutan estado global (symbol_registry) — los tests corren en paralelo
@@ -326,9 +311,14 @@ pub fn run_booktick_replay(
     // XLVIII·A: nocional bruto operado (entrada+salida) para turnover.
     let mut turnover_notional: f64 = 0.0;
     let mut peak = cfg.initial_capital;
-    let warmup = cfg.warmup_ticks.min(ticks.len() / 10);
+    let warmup = cfg.warmup_ticks;
 
     for (i, t) in ticks.iter().enumerate() {
+        before_event(i, &core);
+        // The legacy process_event latency_panic argument only disables
+        // entries; it does not stop feature updates or defensive exits.
+        // Reuse that admission gate here, never toggle the global kill-switch.
+        let suppress_entries = i < warmup;
         let mid = t.mid();
         if !mid.is_finite() || mid <= 0.0 || t.bid <= 0.0 || t.ask <= 0.0 || t.bid > t.ask {
             continue; // aduana F2.1 (misma regla que producción)
@@ -363,7 +353,7 @@ pub fn run_booktick_replay(
             let day = OmniHistory::day_of(t.ts_ms);
             if day != last_day {
                 last_day = day;
-                let prev_day = (day - 1).max(0);
+                let prev_day = day - 1; // day zero has no previous observation
                 omni_state
                     .sp500
                     .store(hist.value_at(0, prev_day).to_bits(), Ordering::Relaxed);
@@ -415,7 +405,7 @@ pub fn run_booktick_replay(
                 0.0,           // OBI neutro
                 0.0,           // micro_div neutro
                 t.ts_ms,
-                false,
+                suppress_entries,
                 &omni_features,
                 // D-717 (DÉCIMA OLA · auditoría integral): el lado agresor viaja
                 // en el dato con el convenio de `binance_vision_sync` —maker ⇒
@@ -458,7 +448,7 @@ pub fn run_booktick_replay(
                 obi,
                 0.0,
                 t.ts_ms,
-                false,
+                suppress_entries,
                 &omni_features,
                 false,
             );
@@ -494,7 +484,7 @@ pub fn run_booktick_replay(
                 obi,
                 0.0,
                 t.ts_ms,
-                false,
+                suppress_entries,
                 &omni_features,
                 maker_flag,
             );
@@ -807,6 +797,10 @@ pub fn rollback_local_position(arena: &Arc<GlobalArena>, coin_id: usize) {
 }
 
 #[cfg(test)]
+#[path = "booktick_causality_contract.rs"]
+mod causality_contract;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1052,9 +1046,9 @@ mod tests {
     fn value_at_primer_dia_exacto_y_hueco() {
         // Serie con hueco de fin de semana: vie 100, lun 103.
         let h = hist_with(vec![(100, 1.0), (103, 2.0)]);
-        // Antes del primer dato → primer valor (sin pánico, sin 0 fantasma).
-        assert_eq!(h.value_at(0, 50), 1.0);
-        assert_eq!(h.value_at(0, 99), 1.0);
+        // Antes del primer dato no hay historia: nunca adelantar el viernes.
+        assert_eq!(h.value_at(0, 50), 0.0);
+        assert_eq!(h.value_at(0, 99), 0.0);
         // Golpe exacto.
         assert_eq!(h.value_at(0, 100), 1.0);
         // Hueco sábado(101)/domingo(102) → último conocido (viernes).
@@ -1071,11 +1065,12 @@ mod tests {
         // → debe recibir el VIERNES (100), jamás el propio lunes (103).
         let h = hist_with(vec![(100, 1.0), (103, 2.0)]);
         let monday = 103i64;
-        let prev_day = (monday - 1).max(0);
+        let prev_day = monday - 1;
         assert_eq!(prev_day, 102);
         assert_eq!(h.value_at(0, prev_day), 1.0, "t-1 debe ver el viernes");
-        // Día 0: el corte jamás baja de 0 (sin underflow de i64).
-        assert_eq!((0i64 - 1).max(0), 0);
+        // Día 0: pedir -1 es válido en i64 y no anticipa el cierre de día 0.
+        let h = hist_with(vec![(0, 10.0)]);
+        assert_eq!(h.value_at(0, -1), 0.0);
     }
 
     #[test]
