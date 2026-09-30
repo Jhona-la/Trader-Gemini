@@ -1,5 +1,77 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — publicación pública MR autorizada explícitamente
+
+- Operador: «Sí, publicar MR y abrir su PR» a pregunta que identifica
+  rama/código/pruebas/informes y repo PÚBLICO. Levanta el bloqueo anterior
+  para MR; conservarlo sólo como historia. No repetir petición de permiso.
+- Publicar candidato, comprobar push/PR/CI; merge condicionado a CI y
+  revisión cruzada. No autoriza operaciones/modelos/training ni auto-merge.
+- Fuente8ee1b8e8,163/0/1 y check56,06s. Remote mainee438edb comprobado;
+  no PR MR preexistente. Publicación por verificar, no inferir CI verde.
+
+## 2026-09-30 — MR publicación bloqueada; pedir autorización específica
+
+- Auto-review rechazó commit/push/PR combinado ANTES de ejecutarse:
+  aprobación pública previa cubre CX, no payload nuevo MR. No push/PR.
+- Se pide autorización expresa para publicar código, pruebas e informes
+  MR en repo PÚBLICO y abrir PR; merge condicionado a CI/revisión.
+  No eludir la denegación con otra herramienta ni reintentar sin respuesta.
+- Trabajo local se conserva. Candidato8ee1b8e8:163/0/1 y all-targets56,06s;
+  CX sí está integrado en main y su rama se limpió. MR no está en main.
+
+## 2026-09-30 — MR candidato final validado localmente
+
+- Parser8ee1b8e8: deserializa bytes originales, no normaliza claves
+  duplicadas mediante Value. RED0/1 y GREEN en ampliada163/0/1:
+  151 lib +12 ML, nueve registry incluidos. Ignorada manual intacta.
+- Check workspace/all-targets/locked56,06s después del refinamiento;
+  repetición compacta163/0/1 sin truncamiento. Warnings heredados visibles.
+- Seis expedientes MR: uno candidato, cinco abiertos (MR-02 ya era XLIV-13).
+  JSON/hash != predictor servido reproducido; no se repara loader aquí.
+- CI/revisión MR pendientes del candidato publicado; no auto-merge.
+  Código/runtime/modelos/riesgo ajenos intactos. Manifest de main preservado.
+
+## 2026-09-30 — MR: integración validada; refinamiento de parser en prueba
+
+- b17c60d9 + informe7389b042; main ee438edb integrado en66a6ab70,
+  preservadas1697/1711 líneas de padres. Check all-targets/locked204s.
+  Regresión162/0/1 (150 core +12 ML, inventario local ignorado intacto).
+- QA propia encontró que Value colapsa claves duplicadas: nuevo test
+  RED0/1. Corrección usa bytes originales para deserialización tipada,
+  luego el mismo contrato de NanoForest. Se repite toda la regresión.
+- GLM verifica PR20 en glm/xlix-e-verificar-pr20 (77d6632a local observado),
+  no integración remota inferida. No tocar su checkout/procesos/modelos.
+
+## 2026-09-30 — CX integrado y limpieza propia verificada
+
+- GLM cerró PR22 mediante c75f23ce; remoto main ee438edb contiene e8546d60.
+  Estado MERGED y ancestralidad comprobados. CI CX36670361992 SUCCESS.
+- Sin delta src/crates/workflow entre candidato CX y main nuevo; texto
+  de coordinación CX preservado en orden. Tests postmerge de GLM son
+  evidencia reportada por él, no ejecución nueva de Codex.
+- GLM ya borró rama remota CX; Codex borró sólo su referencia local,
+  sin worktree activo. Commits recuperables en main. MR permanece activa.
+- Integración no acredita readiness física, paridad integral ni habilidad
+  del BTC recién promovido. Re-baseline T-1/test posterior siguen pendientes.
+
+## 2026-09-30 — Codex MR: separar inventario, estructura y promoción
+
+- Rama codex/model-registry-evidence sobre e8546d60; CX se preserva para
+  el cierre GLM. CI CX36670361992 SUCCESS comprobada; no valida MR.
+- MR-01 añade veredicto estructural opcional al manifest (legacy=None)
+  y corrige el CLI que contaba JSON legible como modelo promovido.
+  Misma validación de NanoForest::from_data, mismo buffer del hash;
+  sin loader/cache write/activación. Manifest real y modelos intactos.
+- Informe/JSON MR detallan seis expedientes: uno candidato, cinco abiertos;
+  MR-02 referencia XLIV-13, no duplicar reparación Claude PR10/20.
+- Precisión XLIX-C: main50604ed0 NO parsea test-in, no sólo omite puntuarlo.
+  Identidad del binario que entrenó GLM no verificada. Sus métricas no
+  recalculadas. No revertir/promover modelos ajenos por esta auditoría.
+- Witness sintético JSON/caché demuestra brecha de identidad (MR-03).
+  Timestamp consumido antes de éxito, cobertura de nombres y base en
+  regresión siguen abiertos. Pruebas en ejecución, no certificación.
+
 ## 2026-09-29 — CX: revisión GLM recibida y mainb75db332 documental
 
 - a85b57e4 publicado en PR22: reconcilia GLM281786bd/main2080e423 con CX,
@@ -968,3 +1040,39 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - Rama codex/outcome-clock-audit propia hasta recibo remoto. Backups con3/1
   commits exclusivos y ramas activas preservados. No declarar todo auditado
   ni merged; JSON conserva snapshot previo y recibo posterior confirma Git.
+
+## 2026-09-30 — GO: diagnóstico y contrato de la medición genética
+
+- Rama propia codex/genome-oracle-evidence desde76de9935. Sin producción,
+  genoma/fixture/predictor/comparador/trinquete modificados. T-1 completo no ejecutado.
+- Corrige trades/PnL/WR del diagnóstico (RED6/1 → GREEN9/0) y registra
+  petición/proyección efectiva. Preservación bit a bit de fixture y144 destinos.
+- Ruido negativo, extremos sin prueba de inercia, acoplamientos, stats≠fitness,
+  no finitos y cobertura monoactivo siguen abiertos: informe GO+JSON detallados.
+- Ampliada117/0/2; ignoradas sólo mediciones manuales. CI agrega target rápido,
+  no cambia golden ni ignora T-1 para ocultar el fallo informado por GLM.
+- GLM revisó MRf3145e27: COMMENTED favorable con condición documental legible.
+  Maincdab sólo registra esa revisión. MR/MP/GO son ramas y permisos distintos.
+- GO local, publicación específica pendiente; MP40f8685b preservada local.
+  No trading/training/promoción. Checkout compartido y PR20 ajenos intactos.
+- Check GO workspace/all-targets/locked confirmado en38,18s, sin errores.
+
+- ACTUALIZACIÓN: GLM fusionó MR/PR23 en589a591d y cumplió la condición
+  documental enfbf8e9ea; remoto main verificado. Codex no duplicó ese trabajo.
+  CI nueva MR/main seguía en curso después del merge: no certificar gate.
+- GO integra mainfbf8e9ea localmente, preservando ambos apéndices de tres
+  conflictos y comparando ambos padres. Check27,29s pasa. Se mantiene
+  separación de permisos/publicaciones GO/MP y PR10/20 pendientes.
+- CIERRE integrado: registry9 + replay117 =126/0/2; refuerzo de longitud
+  del contrato de fixture validado9/0 y all-targets5,64s. No T-1 extenso.
+  JSON conserva hashes previos/finales. MR/main CI todavía en curso;
+  no se certifica el gate pre-merge. MP/GO sin referencias remotas.
+
+## 2026-09-30 — Publicación MP y GO autorizada
+
+- Operador: «Hazlo» en respuesta a publicación en repo PÚBLICO mediante
+  dos PR separadas. Levanta el bloqueo anterior de MP/GO; no pedir de nuevo.
+- Mantener CI del candidato y revisión cruzada antes de cada merge.
+  No autoriza trading, training, promoción ni rebajar el trinquete T-1.
+- GO9cda4677 conserva hashes validados126/0/2; MP40f8685b debe reconciliar
+  mainfbf8e9ea y validar su composición antes de publicar. No mezclar ramas.

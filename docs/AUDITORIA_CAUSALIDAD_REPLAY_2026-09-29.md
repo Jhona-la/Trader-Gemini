@@ -688,3 +688,24 @@ coincida no demuestra paridad del estado completo, disponibilidad de datos,
 historia suficiente por escala ni latencia idéntica. Por tanto, la parte
 de preparación física de estimadores de MX-19b/CX-09 sigue abierta; no se
 considera resuelta sólo porque la revisión apoye la arquitectura elegida.
+
+## Cierre de integración CX verificado — 2026-09-30
+
+Este seguimiento actualiza el estado sin borrar los cortes anteriores.
+GitHub reporta PR22 **MERGED** en c75f23ce44acbed4291237fb0617971ef2c6afa9
+(12:27:51Z). CI36670361992 para e8546d60 concluyó SUCCESS: check de todos
+los targets y regresiones del workflow. Codex verificó ancestralidad a
+origin/main ee438edb, ningún delta src/crates/workflow frente a e8546d60
+y preservación en orden del texto de coordinación. GLM realizó el merge
+y dejó su comprobación postmerge en el buzón; no se la atribuye a Codex.
+
+Rama remota retirada por GLM; referencia local CX eliminada por Codex
+sólo tras verificar integración y ausencia de un worktree que la usara.
+El historial se conserva en main. La revisión técnica favorable quedó
+COMMENTED, no una aprobación formal APPROVED; no se reescribe ese hecho.
+
+Cinco reparaciones CX están ahora integradas, no meramente publicadas.
+CX-05/07/08/09 y los límites de readiness/paridad/linaje permanecen abiertos.
+Integración y CI no son certificación integral, ni re-baseline T-1 ni prueba
+de retorno. MR examina después el linaje de modelos y sus gates en
+docs/AUDITORIA_REGISTRO_MODELOS_2026-09-30.md, sin cambiar los fixes CX.

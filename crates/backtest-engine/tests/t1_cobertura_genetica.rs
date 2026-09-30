@@ -25,61 +25,32 @@
 //! Perturbación coordenada a coordenada: se parte de un genoma base, se mueve
 //! un gen a un extremo de su banda evolutiva, se reevalúa y se compara. Es una
 //! medición CONDUCTUAL de la presión selectiva, no un recuento sintáctico.
+//!
+//! GO (2026-09-30): precisión del alcance de las afirmaciones históricas:
+//! se detecta cambio de OCHO ESTADÍSTICAS bajo UN extremo/fixture/predictor,
+//! no aptitud canónica ni inercia global. Interiores, interacciones y otros
+//! contextos pueden revelar efectos ausentes aquí. from_vector puede borrar
+//! o acoplar coordenadas; las trazas siguientes exponen el cambio realizado.
+//! Fixture, comparador histórico, predictor y trinquete permanecen intactos.
 
 use backtest_engine::{STATS_LEN, run_backtest_native};
 use quantum_arena::genome::SuperGenotype;
 
-/// Serie sintética determinista con estructura suficiente para que el motor
-/// abra y cierre posiciones: tendencia lenta + ciclo + ruido reproducible.
-fn serie(n: usize) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
-    let mut closes = Vec::with_capacity(n);
-    let mut highs = Vec::with_capacity(n);
-    let mut lows = Vec::with_capacity(n);
-    let mut vols = Vec::with_capacity(n);
-    let mut seed = 0x5DEECE66Du64;
-    let mut p = 60_000.0f64;
-    for i in 0..n {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-        let u = ((seed >> 33) as f64 / u32::MAX as f64) - 0.5;
-        // (Ola XLI·A1) Volatilidad COHERENTE con la física de viabilidad D-755:
-        // el fixture anterior (ATR ~11 pb/min) dejaba σ(τ)−fricción(7 pb) por
-        // debajo del spread sintético (4 pb) a τ corto ⇒ INVIABLE perpetuo ⇒
-        // oráculo 0/144. Con ciclo 30 pb y ruido 40 pb, σ(τ≥1min) supera con
-        // holgura fricción+spread y la compuerta respira tras el calentamiento.
-        let ciclo = (i as f64 / 180.0).sin() * 0.0030;
-        p *= 1.0 + ciclo + u * 0.0040 + 0.00004;
-        closes.push(p);
-        highs.push(p * (1.0 + 0.0018 + u.abs() * 0.0012));
-        lows.push(p * (1.0 - 0.0018 - u.abs() * 0.0012));
-        vols.push(900.0 + u.abs() * 2_000.0);
-    }
-    (closes, highs, lows, vols)
-}
+#[path = "support/t1_measurement.rs"]
+mod measurement;
+use measurement::{changed_slots, diagnostic_stats_line, difiere, furthest_endpoint, serie};
 
-fn evaluar(cfg: &SuperGenotype, serie: &(Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>)) -> [f64; STATS_LEN] {
+/// Evalúa un candidato sobre la serie histórica, sin cambiar sus entradas.
+fn evaluar(
+    cfg: &SuperGenotype,
+    serie: &(Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>),
+) -> [f64; STATS_LEN] {
     let mut pnl = vec![0.0f64; serie.0.len().max(1)];
     let mut stats = [0.0f64; STATS_LEN];
     run_backtest_native(
-        &serie.0,
-        &serie.1,
-        &serie.2,
-        &serie.3,
-        cfg,
-        &mut pnl,
-        &mut stats,
-        "BTCUSDT",
-        1_000.0,
+        &serie.0, &serie.1, &serie.2, &serie.3, cfg, &mut pnl, &mut stats, "BTCUSDT", 1_000.0,
     );
     stats
-}
-
-fn difiere(a: &[f64; STATS_LEN], b: &[f64; STATS_LEN]) -> bool {
-    a.iter().zip(b.iter()).any(|(x, y)| {
-        if !x.is_finite() || !y.is_finite() {
-            return x.is_finite() != y.is_finite();
-        }
-        (x - y).abs() > 1e-9 * x.abs().max(1.0)
-    })
 }
 
 /// DIAGNÓSTICO (B3.18, 2026-09-16): una SOLA evaluación con el predictor
@@ -109,7 +80,7 @@ fn t1_diag_camino_nativo_una_evaluacion() {
     let datos = serie(3_000);
     let base = SuperGenotype::new_baseline(0.0002, 0.0005);
     let stats = evaluar(&base, &datos);
-    println!("[T1-DIAG] stats: trades={} pnl={} wr={:?}", stats[0], stats[1], stats.get(2).copied());
+    println!("{}", diagnostic_stats_line(&stats));
     // Rechazos del risk-engine (contadores globales del proceso): "sin
     // rechazos" ⇒ las SEÑALES jamás produjeron intención; un motivo
     // dominante ⇒ el risk-engine es el estrangulamiento.
@@ -170,7 +141,9 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     // El runner nativo mapea su serie a coin 0; B3.18b resuelve la clave del
     // símbolo con default BTCUSDT cuando el registry no lo registra.
     god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_MOTOR", forest);
-    println!("[T-1] predictor sintético direccional cargado (gate por lift neutralizado para medir)");
+    println!(
+        "[T-1] predictor sintético direccional cargado (gate por lift neutralizado para medir)"
+    );
 
     let datos = serie(3_000);
     let base = SuperGenotype::new_baseline(0.0002, 0.0005);
@@ -180,6 +153,12 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     let n = base_vec.len();
     assert_eq!(n, SuperGenotype::DIMENSION);
 
+    let roundtrip = SuperGenotype::from_vector(&base_vec).to_vector();
+    println!(
+        "[T1-PROBE] baseline roundtrip changed_slots={:?}",
+        changed_slots(&base_vec, &roundtrip)
+    );
+
     let stats_base = evaluar(&base, &datos);
 
     let mut inertes: Vec<usize> = Vec::new();
@@ -187,17 +166,22 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
 
     for g in 0..n {
         let mut v = base_vec.clone();
-        // Mover el gen al extremo MÁS LEJANO de su banda: si con eso no cambia
-        // nada, no cambia con nada.
-        let dist_lo = (base_vec[g] - lo[g]).abs();
-        let dist_hi = (hi[g] - base_vec[g]).abs();
-        v[g] = if dist_hi >= dist_lo { hi[g] } else { lo[g] };
+        // Mismo extremo MÁS LEJANO histórico. No observar diferencia ahí
+        // NO prueba inercia para valores interiores o perturbaciones conjuntas.
+        v[g] = furthest_endpoint(base_vec[g], lo[g], hi[g]);
         if (v[g] - base_vec[g]).abs() < 1e-12 {
             // Banda degenerada: el gen no puede variar, se cuenta como inerte.
             inertes.push(g);
             continue;
         }
         let mutado = SuperGenotype::from_vector(&v);
+        let realized = mutado.to_vector();
+        println!(
+            "[T1-PROBE] gene={g} requested={} realized={} changed_slots={:?}",
+            v[g],
+            realized[g],
+            changed_slots(&base_vec, &realized)
+        );
         let stats = evaluar(&mutado, &datos);
         if difiere(&stats_base, &stats) {
             sensibles += 1;
@@ -209,7 +193,7 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     let cobertura = sensibles as f64 / n as f64;
     println!(
         "\\n[T-1] COBERTURA GENÉTICA DEL ORÁCULO: {sensibles}/{n} genes sensibles \\
-         ({:.1} %)\\n[T-1] Genes inertes: {:?}\\n",
+         ({:.1} %)\\n[T-1] Sin cambio observado bajo esta perturbación/fixture: {:?}\\n",
         cobertura * 100.0,
         inertes
     );
@@ -248,8 +232,8 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     assert!(
         cobertura >= COBERTURA_MINIMA,
         "cobertura genética {:.1} % por debajo del mínimo {:.1} %. \
-         {} genes no influyen en la aptitud: son ruido no seleccionado que sin \
-         embargo gobierna comportamiento en producción. Inertes: {:?}",
+         {} coordenadas no cambiaron las estadísticas bajo ESTE extremo y fixture; \
+         no es prueba de inercia global ni autorización para bajar el umbral. Sin cambio: {:?}",
         cobertura * 100.0,
         COBERTURA_MINIMA * 100.0,
         inertes.len(),
