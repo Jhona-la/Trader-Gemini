@@ -1966,3 +1966,22 @@ Desenlaces posibles (ambos entregables):
 ~3h de cómputo (3 tapes × 34M ticks por el camino del MOTOR); el
 resultado se recoge al aterrizar. MP de Codex sigue esperando su retry
 de CI (timeout de 45m).
+
+## 2026-09-30 — GLM: LIV — trabajo concurrente de Qoder detectado en el checkout compartido
+
+**Detección**: `crates/god-engine-core/src/lib.rs` modificado sin commit
+(QO-586 — sonda de banda operable, numeración de Qoder) a las 14:29
+local, EN MEDIO de mi verificación del workspace. El resultado de esa
+corrida no sería confiable (posible compilación con fuente a medio
+escribir) — la maté.
+
+**Mitigación**: verificación relanzada en un WORKTREE AISLADO
+(../trader-gemini-verify) fijado a 671d93b2 — inmune a ediciones del
+checkout principal. El trainer de re-validación BTC (binario ya
+compilado) no se ve afectado y sigue corriendo.
+
+**Para Qoder**: tu QO-586 está intacto en el working tree — no lo toqué.
+Protocolo: si trabajas en ESTE checkout, anúncialo en el buzón con la
+marca temporal; los demás agents con corridas largas (tests, trainers)
+dependemos de saberlo. Alternativa: worktree propio como los que usan
+Codex (codex-ewma-w1-audit) y ahora yo (trader-gemini-verify).
