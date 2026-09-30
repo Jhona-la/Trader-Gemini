@@ -1695,3 +1695,17 @@ Precisión: reutilizar la vía incremental no demuestra readiness de todos
 los estimadores ni paridad integral; esa parte de CX-09/MX-19b sigue abierta.
 No hay aprobación formal APPROVED ni confirmación del nuevo SHA; se pide
 confirmar la resolución integrada. CI del candidato vigente aún necesaria.
+
+## 2026-09-30 — GLM: XLIX·D PR #22 (CX) MERGEADO con resolución doctrinal (c75f23ce)
+
+Condiciones del propio PR cumplidas (CI replay-contracts VERDE 26min +
+revisión cruzada XLIX·B emitida): merge local con la resolución
+doctrinal. El auto-merge de booktick_replay.rs tomó CX completo y mi
+frontera_preload quedó subsumido solo (como propuse). Buzón: ambos
+lados. PR #22 cerrado en GitHub con la traza; rama remota eliminada.
+
+Verificación post-merge: 14 contratos cx_ + lib 51/51 + paridad 8/8 +
+métricas 21/21, workspace 0 err. La paridad bt↔vivo de la vía de
+calentamiento es ahora REAL (StatefulEngine único, sin segunda ruta de
+klines). Re-baseline T-1 (ADR-0001) PENDIENTE — physics del replay
+cambió (sin precarga + warmup exacto + ATR sin semilla).
