@@ -296,8 +296,9 @@ fn run_booktick_replay_observed(
 
     let omni_state = data_pipeline::omni_multiplexer::OmniState::new();
     let mut last_day = i64::MIN;
-    let mut running_atr = 0.001 * ticks[0].mid();
-    let mut prev_mid = ticks[0].mid();
+    // CX-06: (ATR, previous mid) exists only after a price row is admitted.
+    // A rejected first row must not seed fills with NaN/Inf or a false gap.
+    let mut atr_state: Option<(f64, f64)> = None;
     const ATR_ALPHA: f64 = 0.02;
 
     // B3.19 — envolvente del host replicada (D-442/D-116/D-382): misma
@@ -329,9 +330,13 @@ fn run_booktick_replay_observed(
         // un NIVEL DE PRECIO ($63K), no un rango → running_atr divergía a
         // mid/2 ≈ $31,500 → slippage del 5% por lado. TR correcto: el spread
         // o el cambio absoluto del precio vs el tick anterior.
+        // Keep the historical seed and first EMA update for valid-first tapes.
+        // Admission above is essential: sanitizing a poisoned ATR afterwards
+        // would hide the invalid input and invent a different price history.
+        let (previous_atr, prev_mid) = atr_state.unwrap_or_else(|| (0.001 * mid, mid));
         let tr = (t.ask - t.bid).max((mid - prev_mid).abs());
-        running_atr = ATR_ALPHA * tr + (1.0 - ATR_ALPHA) * running_atr;
-        prev_mid = mid;
+        let running_atr = ATR_ALPHA * tr + (1.0 - ATR_ALPHA) * previous_atr;
+        atr_state = Some((running_atr, mid));
         // Slippage institucional: castigo de fills según ATR vivo.
         // XLVI·H (DIV-1): configurable — 0.10 histórico, 0.0 = paridad de
         // features con el vivo (el slippage queda sólo en la física del

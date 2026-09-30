@@ -206,3 +206,87 @@ fn cx_macro_before_first_observation_is_missing_not_future() {
     assert_eq!(history.value_at(0, 100), 123.0);
     assert_eq!(history.value_at(0, 102), 123.0);
 }
+
+// Same timestamp as the first valid row isolates price admission from the
+// separate raw-row minute-boundary issue (CX-07). W=0 keeps the trading
+// boundary identical despite the extra rejected row. Trade-only and shift=0
+// are controls; NaN * 0 must not corrupt an ostensibly unshifted book either.
+fn assert_rejected_prefix_is_inert(bid: f64, ask: f64) {
+    let valid = ticks(80);
+    let mut prefixed = vec![ReplayTick {
+        bid,
+        ask,
+        ..valid[0].clone()
+    }];
+    prefixed.extend_from_slice(&valid);
+    for trade_only in [true, false] {
+        for shift_atr_frac in [0.0, 0.10] {
+            let config = ReplayConfig {
+                shift_atr_frac,
+                ..cfg(trade_only, 0)
+            };
+            let expected = trace(&valid, &config, valid.len());
+            let observed = trace(&prefixed, &config, prefixed.len());
+            assert_eq!(observed[0], observed[1], "rejected row mutated core");
+            for (i, (a, b)) in expected.iter().zip(&observed[1..]).enumerate() {
+                assert_eq!(
+                    a, b,
+                    "rejected prefix changed accepted event {i}, trade_only={trade_only}, shift={shift_atr_frac}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn cx_nan_first_row_cannot_poison_accepted_replay() {
+    assert_rejected_prefix_is_inert(f64::NAN, f64::NAN);
+}
+
+#[test]
+fn cx_infinite_first_row_cannot_poison_accepted_replay() {
+    assert_rejected_prefix_is_inert(f64::INFINITY, f64::INFINITY);
+}
+
+#[test]
+fn cx_nonpositive_first_row_cannot_poison_accepted_replay() {
+    assert_rejected_prefix_is_inert(-100.0, -90.0);
+}
+
+#[test]
+fn cx_crossed_first_row_cannot_poison_accepted_replay() {
+    assert_rejected_prefix_is_inert(900_000.0, 600_000.0);
+}
+
+#[test]
+fn cx_only_rejected_prices_leave_core_cold_and_capital_intact() {
+    let mut invalid = ticks(20);
+    for (i, tick) in invalid.iter_mut().enumerate() {
+        (tick.bid, tick.ask) = match i % 4 {
+            0 => (f64::NAN, f64::NAN),
+            1 => (f64::INFINITY, f64::INFINITY),
+            2 => (-100.0, -90.0),
+            _ => (900_000.0, 600_000.0),
+        };
+    }
+    for trade_only in [true, false] {
+        let config = cfg(trade_only, 0);
+        let mut visited = 0;
+        let result = run_booktick_replay_observed(
+            &invalid,
+            &SuperGenotype::new_baseline(0.0002, 0.0005),
+            None,
+            &config,
+            |_, core| {
+                visited += 1;
+                assert_eq!(core.feature_engines[0].tick_count, 0);
+                assert_eq!(core.feature_engines[0].last_price, 0.0);
+                assert!(!core.arena.coins[0].positions.is_any_open());
+                assert_eq!(core.arena.used_margin.load(Ordering::Relaxed), 0.0);
+            },
+        );
+        assert_eq!(visited, invalid.len());
+        assert_eq!(result.trades, 0);
+        assert_eq!(result.final_capital, config.initial_capital);
+    }
+}
