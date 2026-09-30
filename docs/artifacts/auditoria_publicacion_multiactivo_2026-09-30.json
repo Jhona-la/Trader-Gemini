@@ -99,6 +99,32 @@
     "shared_tracked_checkout_modified_by_codex": false,
     "coordination_notice": "Ignored passive notice appended; no acknowledgement inferred"
   },
+  "publication_authorization": {
+    "date": "2026-09-30",
+    "response": "Hazlo",
+    "scope": "Public MP and GO code, tests and reports in two separate PRs on Jhona-la/Trader-Gemini",
+    "conditions": ["candidate CI succeeds", "cross-review before merge"],
+    "training_trading_promotion_authorized": false
+  },
+  "integration_after_mr": {
+    "mp_parent": "40f8685b7d771d29f46e66071e6695b110669611",
+    "main_parent": "fbf8e9ea12554c8a7a4494859b631a3280ab06f9",
+    "both_parents_preserved_in_order": true,
+    "preserved_lines_head_main": {"memory": [976,1010], "workflow": [50,50], "atlas": [1939,1934], "coordination": [1734,1795], "master": [8750,8750]},
+    "source_hashes_unchanged": true,
+    "all_targets_locked": {"status": "success", "seconds": 26.60},
+    "selected_regression": {
+      "status": "success",
+      "core_suites": {"passed":203,"failed":0,"ignored":1,"build_seconds":48.03,"parts":{"lib":151,"conformal":11,"base":1,"ml":12,"mp":10,"attribution":18}},
+      "replay": {"passed":108,"failed":0,"ignored":2,"build_seconds":68,"lib_seconds":76.27,"parity_seconds":36.16,"parts":{"lib":51,"parity":8,"metrics":21,"labels":25,"spectral_risk":3}},
+      "combined_unique": {"passed":311,"failed":0,"ignored":3},
+      "delta_from_previous": "Five additional MR registry contracts; no extra MP bug closures"
+    },
+    "go_included": false,
+    "go_separate_pr": 24,
+    "mr_pr23": "merged by GLM, 589a591d; condition documented in fbf8e9ea",
+    "mr_main_ci_at_initial_cut": "in_progress"
+  },
   "scientific_limits": ["No profitability or 100-percent-per-three-days evidence", "No quantum advantage claim", "No whole-project certification", "No monotonic same-key generation", "No ensemble atomicity", "No latency percentile measurement"],
   "primary_reference": "https://docs.rs/arc-swap/1.9.2/arc_swap/struct.ArcSwapAny.html#method.rcu",
   "final_validation": {

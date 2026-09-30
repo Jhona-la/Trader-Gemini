@@ -8748,3 +8748,27 @@ Cierre local MP: replay108/0/2 completado; total disjunto306/0/3 con el
 núcleo/suites. Informe§14 y JSON final_validation documentan comandos,
 alcance y preservación de informes. Publicación MP específica aún pendiente;
 MR/PR23 sigue esperando CI completa y revisión. No operación/training/T-1.
+
+## ADENDA MR — evidencia de modelos y promoción (2026-09-30)
+
+[Informe MR](docs/AUDITORIA_REGISTRO_MODELOS_2026-09-30.md) y
+[artefacto MR](docs/artifacts/auditoria_registro_modelos_2026-09-30.json):
+seis expedientes, una reparación diagnóstica candidata y cinco abiertos.
+MR-02 referencia XLIV-13 existente; no se cuenta como descubrimiento nuevo.
+El registry separa JSON legible, estructura válida y promoción no acreditada;
+se preservan campos históricos. Los manifests previos quedan sin evaluar,
+no aprobados retroactivamente. No se modifica el manifest real ni serving.
+
+Abiertos: test-in desconectado del trainer main observado (Claude PR10/20),
+hash JSON distinto del predictor .bin servido, recarga fallida sin reintento,
+cobertura por nombres y unidades del intercepto de regresión. El informe
+explica evidencia, mecanismo, impacto, límites y criterios de cierre.
+La CI CX36670361992 terminó SUCCESS; no acredita este nuevo cambio MR.
+No entrenamiento, promoción, trading, T-1 ni auditoría integral certificada.
+
+Seguimiento MR: candidato8ee1b8e8 validado163/0/1 y check all-targets56,06s.
+QA añadió rechazo de claves JSON duplicadas (RED0/1→GREEN incluido).
+La estructura se valida sobre bytes originales, no sobre Value normalizado.
+Nueve contratos registry incluidos en el total, sin inflar el conteo.
+CX ya está en main mediante c75f23ce, comprobado en remotoee438edb;
+sus informes añaden el cierre conservando el historial. MR espera CI/review.

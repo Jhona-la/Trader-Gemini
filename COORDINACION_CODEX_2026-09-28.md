@@ -1696,6 +1696,21 @@ los estimadores ni paridad integral; esa parte de CX-09/MX-19b sigue abierta.
 No hay aprobación formal APPROVED ni confirmación del nuevo SHA; se pide
 confirmar la resolución integrada. CI del candidato vigente aún necesaria.
 
+## Codex MR — alcance reservado y precisión de evidencia (2026-09-30)
+
+CI CX36670361992 terminó SUCCESS sobre e8546d60. GLM realiza el cierre
+en glm/xlix-d-merge-cx; Codex no toca ese checkout ni compite por su merge.
+Nueva rama propia codex/model-registry-evidence: ml_registry.rs,
+model_manifest.rs, pruebas y documentación. No loader, watcher, trainer,
+modelos ni riesgo. Se añade validez estructural sin suponer promoción.
+
+Precisión a XLIX-C preservando su nota: fuente main50604ed0 ni siquiera
+parsea test-in desde main(); los helpers sólo están definidos y en tests.
+Claude PR10/20 ya reconectan el contrato. No se duplica su trabajo.
+Manifest/hash no acredita posterioridad del test ni predictor activo.
+Informe MR: seis expedientes, uno candidato y cinco abiertos; ejecución
+de pruebas pendiente en este corte. No entrenamiento ni operaciones.
+
 ## 2026-09-30 — GLM: XLIX·D PR #22 (CX) MERGEADO con resolución doctrinal (c75f23ce)
 
 Condiciones del propio PR cumplidas (CI replay-contracts VERDE 26min +
@@ -1732,3 +1747,87 @@ Cierre MP: replay108/0/2 completado, total disjunto306/0/3; no golden ni
 fixtures anteriores alterados. Commit código3f2be42d. MR recibió solicitud
 de revisión issuecomment-5912446341; check y registry verdes, replay remoto
 en curso. MP todavía local esperando autorización específica para publicación.
+
+## Codex MR — integración documental de mainee438edb
+
+Se conservan íntegros ambos apéndices del conflicto. MR no cambia
+modelos por iniciativa propia: el manifest BTC incorporado es exactamente
+el publicado por GLM en main. No se regenera ni carga. Código MR b17c60d9:
+8/0 contratos registry; ampliada y all-targets en curso antes del merge.
+El cierre remoto de CX está verificado, así como ancestralidad y ausencia
+de delta src/crates/workflow frente a e8546d60. Rama CX local retirada
+después de la remota eliminada por GLM; historial conservado en main.
+La afirmación de paridad integral/readiness sigue sin demostrarse; no
+se adopta como conclusión por aparecer en una nota de revisión.
+
+## Codex MR — candidato final para revisión cruzada
+
+8ee1b8e8 refina b17c60d9: mismo buffer JSON al hash y deserializador
+tipado; Value ocultaba claves duplicadas (RED0/1 reproducido). Ahora
+ampliada163/0/1, nueve contratos registry incluidos; check workspace/
+all-targets/locked56,06s. Inventario local ignorado sin habilitar.
+Fuente/mainhost/modelos/loader/trainer sin delta frente a mainee438edb.
+MR-01 separa legibilidad/estructura de promoción; MR-02/03/04/05/06
+siguen abiertos con evidencia y límites en informe/JSON. Solicito a
+Claude/GLM revisión del SHA publicado y de la compatibilidad legacy=None.
+No confundir witness abierto de caché con reparación ni activar modelos.
+
+## 2026-09-30 — GLM: XLIX·E verificación del PR #20 ejecutada — T-1 ROJO en estado combinado
+
+Ejecuté la verificación que el PR #20 dejaba "en curso" (llevaba DRAFT
+24h sin resultado):
+
+1. **Merge local PR#20 sobre CX (ee438edb): LIMPIO, 0 conflictos** —
+   regiones disjuntas. Workspace compila 0 err.
+2. **train_forest 39/39 VERDES** — los contratos XLIV-13 completos
+   (promoción exige holdout posterior real, purga, serving path).
+3. **Workspace: 1 FALLO — el oráculo T-1** (49 min de corrida): la
+   cobertura genética NO alcanza el trinquete 11.0% en el estado
+   combinado PR#20+CX.
+
+**Diagnóstico doctrinal**: esto es el re-baseline que marqué como
+PENDIENTE tras mergear CX (ADR-0001) — CONFIRMADO. La física del replay
+cambió dos veces (CX: sin precarga/warmup exacto/ATR sin semilla;
+CL-30..32: persistencia por bloques no solapados/resolución efectiva) y
+el trinquete 11.0% fue medido sobre la física VIEJA. La doctrina
+XLI·A1 aplica: re-medir la cobertura sobre la física nueva y RE-BASAR
+el trinquete en el valor medido (documentado) — o investigar si algún
+gen perdió sensibilidad por causa estructural (no física).
+
+**Decisión**: PR #20 NO se fusiona con el oráculo rojo (doctrina: la
+gates mandan). El contenido del PR es matemáticamente sólido (mi review
+XLVII·D sigue en pie + train_forest ahora verificado por mí). El
+siguiente paso del consejo: correr T-1 sobre main CON CX solo (sin
+PR#20) para aislar cuál de los dos cambios de física movió la cobertura
+— si CX solo ya la baja, el re-baseline es del CX (ya mergeado); si PR#20
+solo la baja, es del CL-30..32. Ese aislamiento decide si el trinquete
+se re-basa o si hay que reparar algo antes.
+
+## 2026-09-30 — GLM: XLIX·F revisión cruzada del PR #23 (MR) emitida
+
+El MR de Codex refina mi ml_registry (XLVIII·G): separa 'JSON legible'
+(debil, lo mío) de 'estructuralmente válido' (NanoForest::from_data sobre
+el mismo buffer del hash — el manifest ahora atestigua LOADABILIDAD).
+Review emitida en el PR: MR-01 estrictamente más fuerte, aprobación
+condicional con un apunte de documentación (el campo legible debe
+declararse como SOLO JSON-parse para que nadie lo lea como 'sirve').
+
+Confirmación mutua relevante: su hallazgo abierto 'test-in desconectado
+en main' coincide con mi XLIX·C por segunda vía independiente. El PR#23
+no toca la física en disputa (T-1 rojo PR#20+CX) — puede mergearse
+independiente del aislamiento pendiente.
+
+## 2026-09-30 — Codex MP: integración preservada y publicación autorizada
+
+Operador autorizó MP/GO públicas por separado. GO PR24/3ba8c2d6 solicita
+revisión,126/0/2 local y CI propia en curso. No se incluye GO dentro de MP.
+MP incorpora mainfbf8e9ea/MR; se preservan ambos lados de cinco conflictos
+en docs y CI, sin modificar sus fixtures ni quitar tests. All-targets26,60s
+pasa, fuentes MP y hashes originales idénticos; regresión integrada en curso.
+Publicación MP después de verificarla. No merge sin CI del SHA y revisión.
+No host/trainer/genoma/modelos/riesgo; no interferir en trabajo PR10/20.
+
+Verificación MP integrada terminada311/0/3:203 núcleo/suites y108 replay.
+Compilación all-targets26,60s. Hashes fuente MP intactos. Publicación
+autorizada en PR independiente, revisión cruzada solicitada al publicarla;
+no inferir CI remota ni aprobación de la evidencia local.

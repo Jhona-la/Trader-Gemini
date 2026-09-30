@@ -322,3 +322,45 @@ no se fusiona sin revisión cruzada. Main remoto continúa ee438edb. No hay
 otras ramas locales no principales acreditadas como integradas para borrar.
 MP conserva código3f2be42d e informe083f4321; no push ni PR propios MP.
 La CI MR no acredita esta rama MP ni sus cambios de loader/publicación.
+
+## 15. Publicación autorizada e integración con mainfbf8e9ea
+
+El operador respondió «Hazlo» a la pregunta explícita de publicar MP y GO
+en el repositorio PÚBLICO Jhona-la/Trader-Gemini, mediante dos PR separadas
+con CI y revisión cruzada antes del merge. La autorización previa pendiente
+queda satisfecha; los avisos anteriores se conservan como historial.
+No autoriza operar, entrenar, promover modelos ni retirar controles de riesgo.
+
+MR/PR23 ya está MERGED por GLM en589a591d; mainfbf8e9ea añade la aclaración
+de legible. Las CI36725338162 y36727198985 seguían en curso al verificar.
+No se deduce un gate verde retroactivo de la integración observada.
+GO se publicó separada en PR24, head3ba8c2d6; NO está incluida en MP.
+
+MP40f8685b se reconcilia con mainfbf8e9ea. Cinco conflictos documentales/CI:
+memoria, workflow, atlas, coordinación y maestro. Se conservan ambos lados
+y todas las pruebas. Verificación como subsecuencia ordenada, HEAD/MERGE_HEAD:
+memoria976/1010, workflow50/50, atlas1939/1934, coordinación1734/1795,
+maestro8750/8750. Se comparó el resultado contra cada padre, no sólo ausencia
+de marcas. No hay delta MP en genoma, trainer, host, modelos reales o riesgo.
+
+Las dos fuentes MP conservan exactamente los SHA256 del§12. Cambia la
+composición con registro MR y sus tests, no el arreglo MP. Check workspace/
+all-targets/locked aprobado26,60s; regresiones integradas lanzadas y aún no
+certificadas en este corte. Se documentará su resultado real antes de publicar.
+
+### Resultado integrado confirmado antes de publicación
+
+Regresión completa seleccionada terminada: núcleo/suites203/0/1 y
+replay108/0/2 = **311 aprobadas,0 fallidas,3 ignoradas**. Son conjuntos
+disjuntos; no sumar de nuevo los10 MP ni los9 registry incluidos.
+Núcleo lib151, conformal11, base1, ML12+1 ignorada, MP10 y atribución18.
+Replay lib51, paridad8+2 ignoradas, métricas21, labels25, riesgo3.
+Las tres ignoradas siguen siendo experimentos manuales existentes.
+
+Build núcleo48,03s; build replay68s; biblioteca replay76,27s y paridad36,16s.
+Check26,60s aprobado antes del commit de integración. Hashes fuente MP
+idénticos al candidato3f2be42d: el nuevo total incluye cinco tests de MR
+adicionales respecto al corte anterior306/0/3, no cinco reparaciones MP.
+No se ejecutaron T-1 completo, entrenamiento, promoción ni operaciones.
+Publicación autorizada; CI remota MP y revisión cruzada se comprobarán
+después de crear la PR, sin tomar estos tests locales como aprobación externa.
