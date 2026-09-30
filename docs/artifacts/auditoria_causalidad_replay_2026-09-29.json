@@ -1,0 +1,362 @@
+{
+  "schema_version": 1,
+  "review_events": [
+    {
+      "source": "https://github.com/Jhona-la/Trader-Gemini/pull/22",
+      "review_node_id": "PRR_kwDORUUmfc8AAAABP5JbNQ",
+      "reviewer_declared_agent": "GLM",
+      "github_state": "COMMENTED",
+      "reviewed_commit": "0ef061d88084a4ff6b6263b6d1e7d08d9607348c",
+      "recommendation": "Favorable; use CX without preload, remove frontera_preload, preserve causal observation during warmup",
+      "implemented_resolution": "a85b57e454ffe30d85cda03447c871e895a433f1",
+      "subsequent_main_documentation": "b75db332e189f19c4b98e6eb447e694c1ef9768f",
+      "integrated_head_confirmation": "requested_pending",
+      "formal_approved_review_present": false,
+      "scientific_limit": "Incremental ingestion does not alone certify estimator readiness or full live parity; CX-09 and physical-readiness aspect of MX-19b remain open"
+    }
+  ],
+  "integration_audits": [
+    {
+      "id": "CX-XLIX-A",
+      "date_local": "2026-09-29",
+      "first_parent": "0ef061d88084a4ff6b6263b6d1e7d08d9607348c",
+      "second_parent": "2080e423d55ebad37025a92fb196b084edcf84d0",
+      "glm_code_commit": "281786bddfd1aa883ac7cfd43eafcae005a444ba",
+      "findings": [
+        {
+          "id": "CX-I01", "severity": "P1", "kind": "integration_hazard",
+          "evidence": "Controlled combination of no preload plus max(W,600) skip loses history; event1 tick_count=0 instead of1 at W=0 and10",
+          "resolution": "Keep one causal observation pass; W suppresses entries only, not observations",
+          "attribution_limit": "The deliberately combined mutant was not main and was never committed/published"
+        },
+        {
+          "id": "CX-I02", "severity": "P1", "kind": "test_blind_spot",
+          "evidence": "Unchanged GLM determinism/sanity test passes on the same broken composition",
+          "resolution": "Preserve fixture and assertions; narrow comments to measured claims; add state-transition contracts"
+        },
+        {
+          "id": "CX-I03", "severity": "P2", "kind": "committed_conflict_markers",
+          "evidence": "main2080e423 includes three stash markers; git show --check detects them with exit2 despite clean index",
+          "resolution": "Remove delimiters preserving both texts; add CI diff check with checkout depth2"
+        }
+      ],
+      "negative_probe": { "passed": 0, "failed": 2, "seconds": 0.05, "build_seconds": 29.55, "published": false },
+      "glm_test_on_negative_probe": { "passed": 1, "failed": 0, "seconds": 2.28, "build_seconds": 39.95 },
+      "causality_contracts": { "passed": 14, "failed": 0, "seconds": 3.77, "build_seconds": 26.70 },
+      "expanded": {
+        "passed": 108, "failed": 0, "ignored": 2, "build_seconds": 40.58,
+        "blocks": [
+          { "name": "library", "passed": 51, "failed": 0, "ignored": 0, "seconds": 72.20 },
+          { "name": "bt_vivo_parity_audit", "passed": 8, "failed": 0, "ignored": 2, "seconds": 35.95 },
+          { "name": "ex_post_metrics_contract", "passed": 21, "failed": 0, "ignored": 0 },
+          { "name": "label_evidence_contract", "passed": 25, "failed": 0, "ignored": 0 },
+          { "name": "spectral_risk_contract", "passed": 3, "failed": 0, "ignored": 0 }
+        ]
+      },
+      "workspace_all_targets_locked": "passed_20.12s",
+      "golden_modified": false,
+      "glm_executable_assertions_preserved": true,
+      "coordination_non_marker_parent_lines_preserved": [1508, 1529],
+      "historical_cx_counts_unchanged": true,
+      "independent_cross_review": "pending",
+      "ci_for_integrated_candidate": "must_be_verified_after_push",
+      "merge_to_main_performed": false,
+      "training_trading_promotion_t1_executed": false
+    }
+  ],
+  "publication_events": [
+    {
+      "event": "explicit_user_authorization",
+      "date_local": "2026-09-29",
+      "scope": "Publish CX code, tests and reports to public Jhona-la/Trader-Gemini and open a PR",
+      "evidence": "User answered Si to the explicit CX public-publication question",
+      "supersedes": "blocked_pending_explicit_public_approval_CX",
+      "merge_conditions": ["CI green", "independent cross-review"],
+      "publication_verified": false,
+      "live_training_promotion_authorized": false
+    },
+    {
+      "event": "publication_verified",
+      "date_local": "2026-09-29",
+      "pr_url": "https://github.com/Jhona-la/Trader-Gemini/pull/22",
+      "opening_head_sha": "765b9d340ed5fdfecd1456950fad64c42d595916",
+      "opening_base_sha": "9ed0cb8cc026c733b16f54d126e6b5a480bdb066",
+      "local_remote_pr_sha_match": true,
+      "code_delta_from_tested_88136410": false,
+      "mergeability_at_opening": "MERGEABLE",
+      "initial_ci_run": 36668221994,
+      "initial_ci_state": "IN_PROGRESS",
+      "ci_current_status_source": "PR status checks; initial observation is not a final conclusion",
+      "independent_review": "pending",
+      "merge_performed": false,
+      "auto_merge_enabled": false
+    }
+  ],
+  "audit": "CX",
+  "date_local": "2026-09-29",
+  "base_commit": "968259dcad41d4daec049a374116554251051a82",
+  "branch": "feat/quant-sr-codex-causalidad",
+  "report": "docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md",
+  "coverage": {
+    "complete_semantic_repository_audit": false,
+    "complete_files": [
+      "crates/backtest-engine/src/booktick_replay.rs",
+      "crates/backtest-engine/src/booktick_causality_contract.rs"
+    ],
+    "focused_inspection": [
+      "crates/god-engine-core/src/lib.rs",
+      "crates/god-engine-core/src/stateful_engine.rs",
+      "src/bin/evolution.rs",
+      "src/bin/backtest_windows.rs",
+      "crates/backtest-engine/tests/bt_vivo_parity_audit.rs",
+      "docs/adr/ADR-0006-bt-vivo-envoltorio.md"
+    ]
+  },
+  "counts": {
+    "total": 9,
+    "fixed_candidate": 4,
+    "open": 5
+  },
+  "validation": {
+    "initial_contracts": {
+      "passed": 2,
+      "failed": 4
+    },
+    "intermediate": {
+      "passed": 5,
+      "failed": 1
+    },
+    "final_contracts": {
+      "passed": 7,
+      "failed": 0
+    },
+    "expanded": {
+      "passed": 100,
+      "failed": 0,
+      "ignored": 2,
+      "blocks": 5
+    },
+    "workspace_all_targets_locked": "passed",
+    "workspace_check_seconds": 100,
+    "ci": "local_workflow_not_published_not_executed",
+    "publication": "blocked_pending_explicit_public_approval_CX",
+    "code_commit": "0ed10b4b",
+    "integration_commit": "5054304c",
+    "integrated_main": "f6903e91",
+    "post_integration_check": "passed_3.58s",
+    "unresolved_merge_conflicts": 0,
+    "cross_review": "pending",
+    "live_run": false,
+    "training": false,
+    "promotion": false,
+    "t1": false,
+    "profitability_certified": false
+  },
+  "findings": [
+    {
+      "id": "CX-01",
+      "severity": "P0",
+      "status": "fixed_candidate",
+      "related": [
+        "MX-19"
+      ],
+      "title": "Precarga anticipada del mismo tape",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:271",
+      "evidence": "Antes del evento cero last_price=95364.99490466162; mutar sufijo desde40 o ampliar tape alteraba prefijo.",
+      "change_or_proposal": "Retirada precarga process_kline; recorrido incremental existente.",
+      "closure": "Estado inicial frío e invariancia de prefijo en los dos modos.",
+      "limitations": "No prueba causalidad macro, modelos point-in-time ni todo el heap."
+    },
+    {
+      "id": "CX-02",
+      "severity": "P1",
+      "status": "fixed_candidate",
+      "related": [
+        "MX-18"
+      ],
+      "title": "Warmup podía abrir posiciones y dependía de longitud total",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:314",
+      "evidence": "Segundo candidato abrió una posición antes del evento3 durante warmup19900.",
+      "change_or_proposal": "Frontera exacta W y supresión de entradas en los tres process_event.",
+      "closure": "Capital/margen intactos durante warmup, features avanzan; control positivo W=0.",
+      "limitations": "Ledger y duración de estadísticas siguen pendientes."
+    },
+    {
+      "id": "CX-03",
+      "severity": "P1",
+      "status": "fixed_candidate",
+      "related": [],
+      "title": "Backfill macro anterior al primer dato",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:145",
+      "evidence": "Consulta día99 retornaba el valor123 del día100.",
+      "change_or_proposal": "Err(0) retorna sentinel0; día0 consulta -1.",
+      "closure": "Casos anterior, exacto y hueco en historia sintética.",
+      "limitations": "Sentinel no es evidencia; faltan disponibilidad/vintage."
+    },
+    {
+      "id": "CX-04",
+      "severity": "P1",
+      "status": "fixed_candidate",
+      "related": [],
+      "title": "Overflow del tamaño de warmup",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:263",
+      "evidence": "W+10 puede desbordar; test inicial cero trades era insuficiente.",
+      "change_or_proposal": "N.saturating_sub(W)>10 conserva mínimo sin overflow.",
+      "closure": "W=usize::MAX exige cero eventos visitados.",
+      "limitations": "Mínimo de diez no certificado como suficiente; evidencia de causa estática."
+    },
+    {
+      "id": "CX-05",
+      "severity": "P0",
+      "status": "open",
+      "related": [],
+      "title": "Macro sin vintage ni publicación point-in-time",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:61",
+      "evidence": "Fecha/valor sin available_at ni revisión en fetch/fallback.",
+      "change_or_proposal": "Dataset versionado con disponibilidad y vintage.",
+      "closure": "Invariancia ante publicaciones/revisiones posteriores.",
+      "limitations": "Impacto por serie no cuantificado."
+    },
+    {
+      "id": "CX-06",
+      "severity": "P1",
+      "status": "open",
+      "related": [],
+      "title": "ATR sembrado desde primera fila sin validar",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:299",
+      "evidence": "Se asigna ticks[0].mid antes de aduana; evidencia estática.",
+      "change_or_proposal": "Siembra tras admisión atómica y rechazo trazable.",
+      "closure": "Fila inválida insertada no contamina estados aceptados.",
+      "limitations": "No se midió impacto económico."
+    },
+    {
+      "id": "CX-07",
+      "severity": "P1",
+      "status": "open",
+      "related": [],
+      "title": "Relojes y rechazo parciales",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:386",
+      "evidence": "Frontera compara fila previa aunque descartada; no admisión atómica de reloj/cantidades.",
+      "change_or_proposal": "Contrato común de aceptación y secuencia.",
+      "closure": "Duplicados, retrocesos, empates y frontera descartada.",
+      "limitations": "Mecanismos inspeccionados; efectos integrales no cuantificados."
+    },
+    {
+      "id": "CX-08",
+      "severity": "P1",
+      "status": "open",
+      "related": [
+        "MX-18",
+        "MX-20",
+        "MX-21",
+        "MX-22"
+      ],
+      "title": "Ledger y población temporal incompletos",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:511",
+      "evidence": "c1.or(c2), notional al mid de salida y span total persisten.",
+      "change_or_proposal": "Ledger por fill y población evaluada única.",
+      "closure": "Reconciliar PnL/equity, dos cierres y cortes.",
+      "limitations": "Warmup no cierra todos los hallazgos MX."
+    },
+    {
+      "id": "CX-09",
+      "severity": "P1",
+      "status": "open",
+      "related": [],
+      "title": "Paridad y resolución no demostradas",
+      "location": "docs/adr/ADR-0006-bt-vivo-envoltorio.md:11",
+      "evidence": "Reutilizar core no iguala condiciones; ts_ms no expresa ns.",
+      "change_or_proposal": "Trazas sincronizadas, estados/modelos versionados y readiness por escala.",
+      "closure": "Comparación replay/demo por evento y capacidad.",
+      "limitations": "Sin T-1 ni afirmación de cobertura universal."
+    }
+  ],
+  "followups": [
+    {
+      "id": "CX-06-local-price-admission",
+      "date_local": "2026-09-29",
+      "baseline_code_commit": "2640bbbd",
+      "supersedes_finding_status": { "CX-06": "fixed_candidate" },
+      "current_counts": { "total": 9, "fixed_candidate": 5, "open": 4 },
+      "history_policy": "Original findings/counts/validation describe the preceding cut; this additive followup provides the latest CX-06 evidence.",
+      "scope": "Lazy seed of replay ATR after the existing price guard, not complete atomic event admission.",
+      "source": "crates/backtest-engine/src/booktick_replay.rs:run_booktick_replay_observed",
+      "tests": "crates/backtest-engine/src/booktick_causality_contract.rs",
+      "red": { "passed": 8, "failed": 4, "ignored": 0, "test_seconds": 3.47, "build_seconds": 50.41 },
+      "green": { "passed": 12, "failed": 0, "ignored": 0, "test_seconds": 3.51, "build_seconds": 24.88 },
+      "method": {
+        "valid_rows": 80,
+        "invalid_prefix_rows": 1,
+        "prefix_timestamp": "same_as_first_valid_row",
+        "warmup_raw_rows": 0,
+        "trade_only": [true, false],
+        "shift_atr_frac": [0.0, 0.10],
+        "observed_state": "34 feature bits, last_price, v_t, Hurst, kline EMAs, tick_count, capital, margin, open-position flag before each row",
+        "comparison": "bitwise, aligned on accepted event index",
+        "all_invalid_control_rows": 20,
+        "terminal_heap_fully_observed": false
+      },
+      "first_red_divergences": [
+        { "invalid_prices": "NaN/NaN", "accepted_index_zero_based": 10, "trade_only": false, "shift_atr_frac": 0.0 },
+        { "invalid_prices": "+Inf/+Inf", "accepted_index_zero_based": 10, "trade_only": false, "shift_atr_frac": 0.0 },
+        { "invalid_prices": "-100/-90", "accepted_index_zero_based": 3, "trade_only": false, "shift_atr_frac": 0.10 },
+        { "invalid_prices": "900000/600000 crossed", "accepted_index_zero_based": 3, "trade_only": false, "shift_atr_frac": 0.10 }
+      ],
+      "nan_red_capital_snapshot": {
+        "accepted_index_zero_based": 10,
+        "reference_f64_bits": "4652007779722052343",
+        "invalid_prefix_f64_bits": "4652007786956274782",
+        "reference_approx": 1000.05353295625,
+        "invalid_prefix_approx": 1000.05435539213
+      },
+      "repair": "Option<(ATR, previous_mid)> starts empty; seed and first EMA update occur only after price admission. Existing seed, alpha and displacement unchanged.",
+      "alpha_preserved": 0.02,
+      "alpha_half_life_accepted_events": 34.3096184915206,
+      "open_limitations": [
+        "CX-07: clock, quantities, duplicate/reordered events, rejected minute-boundary and rejection diagnostics",
+        "CX-08: raw-row warmup/population/span and ledger; invalid-only data is not market evidence",
+        "Coefficient/seed/displacement calibration and physical-time invariance not demonstrated",
+        "No live parity, latency benchmark, full repository certification or profitability claim"
+      ],
+      "coordination_observation": {
+        "main_remote": "9ed0cb8cc026c733b16f54d126e6b5a480bdb066",
+        "open_prs": [10, 20],
+        "draft_prs": [20],
+        "cx_remote_branch_present": false,
+        "cx_pr_present": false,
+        "glm_review_scope": "MX/PR21, not CX; its lineage wording does not close MX-20/21/22 still open in source/report"
+      },
+      "expanded_validation": {
+        "passed": 105,
+        "failed": 0,
+        "ignored": 2,
+        "blocks": [
+          { "name": "library", "passed": 49, "failed": 0, "ignored": 0, "seconds": 74.80 },
+          { "name": "bt_vivo_parity_audit", "passed": 7, "failed": 0, "ignored": 2, "seconds": 31.79 },
+          { "name": "ex_post_metrics_contract", "passed": 21, "failed": 0, "ignored": 0, "seconds": 0.01 },
+          { "name": "label_evidence_contract", "passed": 25, "failed": 0, "ignored": 0, "seconds": 0.01 },
+          { "name": "spectral_risk_contract", "passed": 3, "failed": 0, "ignored": 0, "seconds": 0.05 }
+        ],
+        "build_seconds": 47.69,
+        "workspace_all_targets_locked": "passed",
+        "workspace_check_seconds": 23.53,
+        "post_merge_all_targets_locked": "passed",
+        "post_merge_check_seconds": 3.55,
+        "golden_modified": false,
+        "all_crate_tests_executed": false,
+        "code_commit": "881364103391196d6575285c12dd51f10a335b5a",
+        "integration_commit": "8f9c27aa",
+        "merge_code_delta_from_first_parent": false,
+        "coordination_parent_lines_preserved_in_order": [1434, 1415],
+        "unresolved_merge_conflicts": 0,
+        "ci": "local_workflow_not_published_not_executed"
+      },
+      "publication": "blocked_pending_explicit_public_approval_CX",
+      "cross_review": "pending",
+      "live_run": false,
+      "training": false,
+      "promotion": false,
+      "t1": false
+    }
+  ]
+}

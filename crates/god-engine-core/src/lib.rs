@@ -39,6 +39,7 @@ pub mod liquidation_feed;
 pub mod math_kernels;
 pub mod ml_coverage;
 pub mod ml_inference;
+pub mod ml_registry;
 pub mod orchestrator;
 pub mod order_flow_aggregator;
 pub mod outcome_context;

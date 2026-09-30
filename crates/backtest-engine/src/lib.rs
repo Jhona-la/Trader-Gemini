@@ -1,5 +1,6 @@
 pub mod booktick_replay;
 pub mod label_evidence;
+pub mod metrics;
 pub mod network_jitter;
 pub mod tick_replayer;
 pub mod vectorized;

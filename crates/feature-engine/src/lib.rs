@@ -9,6 +9,8 @@ pub mod microstructure;
 pub mod multifractal;
 pub mod normalizer;
 pub mod omni_strategies;
+pub mod path_signatures;
+pub mod transfer_entropy;
 pub mod quantum_tensor_store;
 pub mod shannon_entropy;
 pub mod simd_neural_network;

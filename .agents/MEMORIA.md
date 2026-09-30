@@ -1,5 +1,212 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — CX: revisión GLM recibida y mainb75db332 documental
+
+- a85b57e4 publicado en PR22: reconcilia GLM281786bd/main2080e423 con CX,
+  conserva fixture/aserciones, añade contratos, control CI y evidencia108/0/2.
+- GLM revisó0ef061d8: recomendación favorable y resolución propuesta igual
+  a la implementada. Estado GitHub COMMENTED, no APPROVED; no afirmar que
+  inspeccionó el nuevo SHA. Se solicita confirmar el candidato integrado.
+- Mainb75db332 sólo registra la revisión; merge documental conserva ambos
+  apéndices, sin modificar código/workflow frente a a85b57e4.
+- No se adopta como cierre la afirmación de paridad/readiness global:
+  eliminar precarga no acredita soporte suficiente de todos los estimadores.
+- Publicación autorizada y realizada; falta CI vigente y cierre de revisión
+  del resultado integrado antes de merge a main y limpieza de rama.
+
+## 2026-09-29 — CX/XLIX-A: integración con main2080e423 validada localmente
+
+- Padres: CX0ef061d8 y main2080e423 (GLM281786bd). PR22 debe recibir el
+  nuevo SHA y revisión cruzada; no está fusionada a main.
+- Composición negativa «sin precarga + salto max(W,600)»: contratos nuevos
+  0/2, fixture GLM1/0. Mutación nunca commiteada/publicada. Resolución:
+  conservar observaciones causales, suprimir sólo entradas durante W.
+- 14 contratos CX aprobados; ampliada108/0/2, check workspace/all-targets/
+  locked20,12 s antes de merge. Golden y aserciones GLM preservados.
+- Main incluía tres marcadores de stash versionados. Se quitan sólo
+  delimitadores, preservando1508/1529 líneas de padres en orden. CI añade
+  control git diff --check HEAD^ HEAD con profundidad2; cobertura intacta.
+- Informe/JSON y maestros añaden CX-I01/02/03 (composición, test insuficiente,
+  integridad documental), sin inflar los nueve expedientes CX originales.
+  MX-19b/readiness física sigue abierto; no imponer 512 min a todo el motor.
+- CI del árbol anterior no acredita el nuevo. Publicación CX ya autorizada;
+  merge condicionado a CI y revisión independiente. Sin training/trading/
+  promoción/T-1; checkout compartido y modelos ajenos intactos.
+
+## 2026-09-29 — CX publicada en PR #22; integración condicionada
+
+- PR https://github.com/Jhona-la/Trader-Gemini/pull/22, abierta y adjunta
+  al chat. Push verificado: local/remoto/PR coinciden en765b9d340ed5fdfecd1456950fad64c42d595916.
+- Main9ed0cb8c; GitHub reporta MERGEABLE. CI Replay contracts iniciada:
+  run36668221994, estado inicial IN_PROGRESS, no resultado verde inferido.
+- Sin reviews ni reviewers asignados al consultar. Revisión GLM de MX
+  no sirve como aprobación CX. No auto-merge, merge ni eliminación de rama.
+- Código idéntico al candidato88136410 validado localmente105/0/2;
+  publicación no incorpora trading, training, promoción, modelos ni tapes.
+- Los bloqueos de publicación anteriores son historia: autorización
+  específica y publicación ya verificadas. Falta CI y revisión cruzada CX.
+
+## 2026-09-29 — Publicación pública CX autorizada
+
+El operador respondió «Sí» a la petición explícita de publicar los cambios
+e informes CX en el repositorio PÚBLICO Jhona-la/Trader-Gemini y abrir su PR,
+condicionando el merge a CI y revisión cruzada. El bloqueo de publicación
+anterior queda levantado para CX; sus notas se conservan como historia.
+No autoriza trading, training, promoción ni dar por cerrados los hallazgos.
+Se verificó origin/main9ed0cb8c, rama CX limpia y sin PR preexistente.
+Evidencia local vigente: 105 aprobadas / 0 fallidas / 2 ignoradas;
+workspace/all-targets/locked aprobado. Publicación/CI/review se verificarán
+por sus resultados reales, nunca por la existencia del YAML.
+
+## 2026-09-29 — Codex CX-06: primera fila rechazada ya no siembra ATR
+
+- Reparación local88136410; main9ed0cb8c incorporado en8f9c27aa. No push/PR.
+  Publicación CX requiere autorización pública específica; no eludir bloqueo.
+- Cuatro reproducciones (NaN, Inf, negativos, libro cruzado): RED8/4 →
+  GREEN12/0. Se siembra tras la aduana de precios, sin cambiar coeficientes,
+  políticas de riesgo ni modelos. Cantidades/reloj atómicos siguen abiertos.
+- Ampliada105/0/2; golden intacto. Workspace/all-targets/locked aprobado
+  23,53s y repetido3,55s antes del merge documental. No todos los crate tests.
+- CX: cinco reparaciones candidatas/cuatro abiertos. Informe y JSON añaden
+  evidencia, ecuaciones, unidades y limitaciones conservando el corte previo.
+  El alpha0,02 mide memoria por evento, no una escala física universal.
+- Leída revisión GLM MX/PR21 en main9ed0cb8c; no es review de CX.
+  Precisión añadida preservando la nota: MX-20/21/22 siguen abiertos en
+  caller e informe, aunque su texto pueda interpretarse como cierre del linaje.
+- Ambos apéndices del conflicto preservados, sin delta de código tras merge;
+  índice resuelto. PR10/20 abiertas (20 draft), sin rama integrada para borrar.
+  Checkout main/entrenamiento ajeno preservados; aviso pasivo sin acuse.
+- Pendientes: publicación autorizada, CI remota y revisión cruzada CX.
+  No trading/training/promoción/T-1 ni certificación integral/rentabilidad.
+
+## 2026-09-29 — Codex CX: causalidad del replay (candidato)
+
+- Cierre LOCAL: fix0ed10b4b, CIcc5441e8, informe6f474a0d; mainf6903e91
+  integrado en5054304c, check3,58s; índice limpio y sin conflictos.
+- Push/PR CX bloqueados por revisión automática: exige autorización
+  pública específica CX. Rama remota y PR inexistentes al verificar.
+  No reintentar por otra vía; pedir autorización. CI remota/review pendientes.
+- Base main968259dc; PR21 integrada, ramas propias ST/TE/MX limpiadas.
+- Nueva rama feat/quant-sr-codex-causalidad. Repara precarga anticipada
+  MX-19, warmup que operaba, macro antes del primer dato y overflow W+10.
+- Informe y JSON: docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md;
+  4 reparaciones candidatas, 5 expedientes abiertos; no auditoría total.
+- 7 contratos propios pasan; ampliada100/0/2. Golden sin modificar.
+- Check workspace/all-targets/locked aprobado (1m40s), warnings previos.
+- CI nueva Replay contracts y revisión cruzada pendientes de verificación;
+  no confundir ausencia de review con aprobación ni YAML con CI verde.
+- Sin training, promoción, operación o T-1. Semántica de replay cambiada:
+  resultados/aptitudes históricos necesitan nueva medición causal.
+- GLM sigue en glm/xlviii-h-reentrenar-btc con Cargo.lock propio intacto.
+  PR10/20 preservadas; CX no toca sus rutas de código modificadas.
+  TH/backups quedan separados. Aviso compartido sin acuse demostrado.
+
+## 2026-09-29 — PR #21 publicada y regresión ST/TE/MX aprobada
+
+- PR: https://github.com/Jhona-la/Trader-Gemini/pull/21.
+- Corte probado: e9d8fcd4; incluye main7796326a. Esta adenda sólo cambia
+  documentación y no modifica el código que produjo la evidencia.
+- Seis crates: 1.137 aprobadas, 0 fallidas, 7 ignoradas. Replay: 86/0/0
+  (37 biblioteca, 21 MX, 25 labels, 3 riesgo espectral). Total disjunto:
+  **1.223 aprobadas, 0 fallidas, 7 ignoradas**; golden existente intacto.
+- `cargo check --workspace --all-targets`: éxito (19,14 s), con warnings
+  preexistentes; no se presentan como errores reparados.
+- Las ignoradas son 5 testnet, 1 inventario ML y 1 medición manual TE.
+  No hubo trading, entrenamiento, promoción ni evaluación de tapes T-1.
+- PR sin conflictos, revisiones/comentarios pendientes ni checks reportados
+  al consultar. Sin CI configurada: evidencia local, no «CI verde».
+- Integración solicitada; verificar el evento de merge y SHA en la PR.
+  Las notas anteriores LOCAL/no publicado son históricas desde este corte.
+  TH sigue pendiente; no se toca el checkout GLM ni su Cargo.lock sucio.
+  Los nueve expedientes MX abiertos y las limitaciones científicas subsisten.
+
+## 2026-09-29 — Publicación ST/TE/MX autorizada por el operador
+
+El operador respondió «Hazlo» a la petición explícita de publicar la rama
+`feat/quant-sr-codex-metricas`, incluidos los cambios e informes ST/TE/MX,
+en el repositorio PÚBLICO `Jhona-la/Trader-Gemini` y tramitar su integración
+a main. Queda levantada la anterior falta de autorización de publicación;
+los avisos anteriores se conservan como registro histórico, no como estado
+vigente de permisos.
+
+Alcance de publicación: los cambios acumulados frente a main7796326a,
+incluidas sus pruebas y documentos. TH6209704a permanece separada por su
+política pendiente; no se modifica el Cargo.lock sucio del checkout compartido.
+No se amplía esta autorización a operar, entrenar o promover modelos.
+
+La publicación no resuelve los hallazgos abiertos ni acredita rentabilidad.
+Se revisan diferencias, PR/comentarios y requisitos de integración. GitHub
+no reporta protección/ruleset de main ni existen workflows versionados en
+este corte; ausencia de CI no se describe como «CI verde». Se realiza además
+regresión local conjunta antes de integrar. El resultado definitivo y la URL
+de la PR quedarán en el cierre de publicación.
+
+
+## 2026-09-29 — Codex MX: métricas y causalidad (LOCAL)
+
+- Rama feat/quant-sr-codex-metricas; fix a0ad0a0b.
+- Integra main7796326a en7bdd39a8 con ambos historiales del buzón;
+  Cargo.lock añade sólo sha2 de god-engine-core, exigido por registro GLM.
+- Informe docs/AUDITORIA_METRICAS_REPLAY_2026-09-29.md +JSON:
+  26 observaciones,14 fixes previos+1 regresión del candidato,2 aclaraciones,
+  9 abiertos. No equivale a auditoría semántica de todo el repositorio.
+- 21 contratos nuevos: RED1/18, candidato19/2, GREEN21/0.
+  Ampliada86/0/0 antes de merge; checks33,37s y30,19s de integración.
+  Post-merge7bdd39a8:86/0/0 (37+21+25+3). Golden/fitness/riesgo intactos.
+- P0 MX-19: prefijo precargado antes de replay desde0; P1 poblaciones,
+  nocional, span, doble cierre, cash-PnL y consumidores antiguos.
+  No impacto productivo, OOS o rentabilidad demostrado por este cambio.
+- GLM model registry integrado; PR10/20 abiertas,20 draft. Main remoto779.
+  Sin push/merge remoto MX; falta autorización específica de publicación.
+  Aviso ignorado compartido MX sin acuse. No borrar ramas pendientes.
+- Se conservan TE/ST y TH; no ejecutar trading, T-1 o promoción por inferencia.
+
+
+## 2026-09-29 — Codex TE: cobertura y evidencia (LOCAL, no publicado)
+
+- Rama feat/quant-sr-codex-te; conserva ST y TH sin mezclar la política τ.
+- Fix del estimador 00a118de; lector/medición d08a840b. Main 817d5882
+  incorporado en 057cb491 (solo documental; código validado intacto).
+- Informe docs/AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md +JSON:
+  19 hallazgos: 11 de código local, 2 contratos documentados, 6 abiertos.
+- Normalización/marginales CMI, dominio, alineación, reloj, cobertura y
+  bins completos; conteo disperso O(E log(E+1)), O(1) en memoria auxiliar.
+- 27 tests nuevos; 1.170 aprobados/0 fallidos/7 ignorados (total disjunto).
+  Check all-targets: 4,03 s; tras ADRs: 3,46 s.
+  Sin T-1, tapes manuales, live, entrenamiento o promoción.
+- 100 bins silenciosos dan 0,0247793 bits del prior: no liderazgo demostrado.
+  Se conserva NO cablear TE. Medición GLM histórica no es contraste nulo.
+- PR #10/#20 abiertos, #20 draft; GLM activo en ADRs, no se toca su índice.
+  Aviso ignorado compartido .firecrawl/coordination-codex-te-2026-09-29.md
+  sin acuse. No push/PR/merge remoto: falta autorización pública informada.
+- ST-19 registry, TH política τ y restantes deudas científicas siguen abiertos.
+
+## 2026-09-29 — Codex ST: firmas de caminos y contratos científicos (LOCAL)
+
+- Rama codex/signature-contract-audit desde49fc995c; fix f60e1820.
+  Cuatro defectos numéricos/temporales;13 regresiones finales. RED7/5 en12.
+- Informe docs/AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md y JSON:
+  Corte inicial18; integrado19:4 código local,3 documentación,12 abiertos.
+  No firma completa, ni consumidor operativo encontrado, ni alpha probado.
+- Seis crates1098/0/6 +replay lib37/0/0 =1135/0/6; check all-targets1m18s.
+  No T-1, operación, entrenamiento/promoción ni golden alterado.
+- Triage precisado sin borrar histórico: Hprecio≠Hvol, TE con historia,
+  lineage≠do-calculus, logloss≠MDL por sí sola, pendientes CF conservados.
+- TH6209704a y backups preservados. PR10/20 abiertos,20 draft.
+  Publicación pública pendiente de autorización tras bloqueo previo.
+  No consta recepción por GLM/Claude del aviso local ST.
+- Integración local682fa973 con main303e7ef2; único conflicto del buzón
+  resuelto conservando ambos avisos. Ambos padres revisados; all-targets
+  pasa40,11s antes del commit. No equivale a merge remoto.
+- ST-19: copia del registro GLM con test inexistente pasa4/4; sus checks
+  no prueban el vínculo prometido con contratos de comportamiento.
+  Registro real intacto; mutación documentada, no contada como reparación.
+- Cierre sobre682fa973: seis crates1102/0/6 +replay37/0/0 =1139/0/6.
+  Main posteriorca3ea5d4 (TE) no auditado en este corte. Aviso compartido
+  ignorado .firecrawl/coordination-codex-st-2026-09-29.md; sin acuse.
+
+
+
 > Memoria compartida entre sesiones de agente (Claude, Gemini, freebuff…).
 > Las REGLAS viven en `.agents/AGENTS.md`; aquí va el ESTADO: qué está
 > integrado, qué decisiones siguen vigentes y qué queda abierto.

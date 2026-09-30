@@ -8545,3 +8545,182 @@ Backups3/1 commits exclusivos preservados. No afirmar auditoría semántica de
 los1.328 archivos base ni que todos los cambios ajenos ya llegaron a main.
 El JSON es snapshot pre-merge; el recibo remoto debe confirmar publicación
 y retirada de la rama propia después de verificar hash/ancestralidad.
+
+## 2026-09-29 — Codex ST: firmas y contratos de transferencia científica
+
+Informe: [Auditoría ST](docs/AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md).
+Artefacto: [18 hallazgos ST](docs/artifacts/auditoria_firmas_contratos_teoricos_2026-09-29.json).
+
+Cuatro defectos de código corregidos localmente en f60e1820: normalización por
+epoch, reloj retrocedido, conversión prematura a f64 y cancelación logarítmica.
+Tres correcciones documentales y once limitaciones abiertas. No se suman como
+18 bugs de producción ni se cierran automáticamente matrices anteriores.
+
+RED:7/5 sobre12 nuevos tests; GREEN:13/0. Seis crates1098/0/6 +replay lib37/0/0:
+1135/0/6, regresiones incluidas. Check workspace all-targets pasa1m18s.
+Base49fc995c; no certifica avances posteriores ni los1350 archivos enumerados.
+No T-1, demo/live, entrenamiento, promoción ni modificación de golden.
+
+No hay consumidores operativos de firmas encontrados. Truncación nivel2 no
+hereda unicidad de la firma completa; τ/activo/frescura deben viajar por separado.
+Contrastes de rough volatility, TE, causalidad, MDL y garantías ACI en el informe.
+
+Rama codex/signature-contract-audit sin publicar. TH6209704a preservada en
+feat/quant-sr-codex-horizonte; decisión de τ sigue pendiente. PR10/20 abiertos,
+20 draft. Sin borrar ramas activas ni backups. No consta recepción de este
+aviso por otros agentes; publicación pública pendiente de autorización informada.
+
+### Cierre ST tras integración local con main303
+
+Consolidado19 (4 código local,3 documentales,12 abiertos): ST-19 demuestra
+que el registro acepta un nombre de test inexistente en una copia (4/4 verdes);
+no acredita vínculo con contratos FP/FN. Registro real intacto.
+Merge local682fa973, ambos padres revisados; conflicto del buzón conserva
+ambos avisos; check all-targets40,11s antes del commit.
+Regresión posterior: seis crates1102/0/6 +replay37/0/0 =1139/0/6.
+Main avanzó luego a ca3ea5d4 (TE), fuera de este corte auditado.
+Aviso local ignorado en .firecrawl/coordination-codex-st-2026-09-29.md del
+checkout compartido; sin acuse. Sin push/PR de ST ni borrado de ramas pendientes.
+
+## ADENDA TE — información condicional, cobertura y evidencia (Codex, 2026-09-29)
+
+Corte local `d08a840b`, integrado con main `817d5882` mediante `057cb491`
+sin cambio de código validado. Rama `feat/quant-sr-codex-te`; NO publicada.
+
+Informe: [Auditoría TE](docs/AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md).
+Artefacto: [JSON TE](docs/artifacts/auditoria_te_cobertura_evidencia_2026-09-29.json).
+
+19 hallazgos: 11 corregidos en código local, 2 contratos documentados y
+6 abiertos. La conjunta TE sumaba (M+8)/(M+4)>1 y sus condicionales mezclaban
+priors. Se corrigen dominio, alineación, orden, solape, cola parcial y overflow.
+El conteo disperso cuesta O(E log(E+1)) y usa memoria auxiliar constante.
+Se declara cobertura explícita, conteos u64 y política de soporte configurable,
+sin agregar vetos de trading. El lector rechaza restos, vacío y desorden;
+la medición manual ya no puede pasar sin estimar ambos lados.
+
+27 contratos nuevos. RED del estimador: 1 aprobado/7 fallidos; lector: 2/3.
+Final: seis crates, 1.133 aprobadas/0 fallidas/7 ignoradas; replay lib: 37/0/0.
+Total disjunto: 1.170/0/7. Check all-targets: 4,03 s; tras ADRs: 3,46 s.
+Las ignoradas no son aprobaciones: 5 de testnet, 1 de inventario y 1 de tapes TE.
+Sin T-1, demo/live, entrenamiento, promoción, cambios de golden o de riesgo.
+
+Dos streams silenciosos observados, con 100 bins, dan 0,0247793 bits por el
+prior: TE>0 no acredita liderazgo. La cifra histórica de GLM (~0,001 bits)
+se conserva, pero no demuestra ausencia del fenómeno ni un piso universal
+del sesgo. Falta contraste calibrado; no se recalcularon tapes. Se mantiene
+NO cablear al motor. Un paso de 200 ms tampoco es un método «sin lag».
+
+Pendientes: significancia/multiplicidad, cobertura de feed, condicionamiento
+multiactivo, trazabilidad hasta genoma/ejecución, escala/memoria adaptativas
+y reinterpretación estadística de la medición histórica. ST-19 del registro
+permanece abierto. ADR-0004/0005 heredan esas salvedades; incorporarlos no
+certifica la cobertura de sus tests ni el supuesto sesgo del estimador.
+
+PR #10 y #20 abiertos; #20 draft. Aviso compartido ignorado:
+`.firecrawl/coordination-codex-te-2026-09-29.md`, sin acuse.
+Se conservan ramas activas y no integradas. Publicación detenida por
+autorización informada pendiente tras rechazo previo. No se certifica una
+auditoría semántica completa de las 1.358 rutas inventariadas.
+
+## ADENDA MX — métricas y causalidad del replay (Codex, 2026-09-29)
+
+Informe: [Auditoría MX](docs/AUDITORIA_METRICAS_REPLAY_2026-09-29.md).
+Artefacto: [JSON MX](docs/artifacts/auditoria_metricas_replay_2026-09-29.json).
+Rama `feat/quant-sr-codex-metricas`; reparación `a0ad0a0b`.
+Main `7796326a` integrado LOCALMENTE en `7bdd39a8`; no publicación de MX.
+
+26 observaciones: 14 defectos previos reparados, 1 regresión del candidato
+detectada/reparada, 2 contratos aclarados, 9 abiertos. No son 26 bugs de
+producción demostrados ni una nueva numeración de la matriz histórica.
+Se corrigen dominios NaN/Inf/tiempo/capital, ausencia frente a cero, epsilons
+monetarios, overflow/underflow, cola fraccional ES95 y signo de cero.
+Las fórmulas, unidades, supuestos y criterios de cierre están detallados.
+21 contratos nuevos; RED inicial1/18, candidato19/2, GREEN21/0.
+Ampliada antes de merge86/0/0; check all-targets33,37s y30,19s pre-commit
+de integración. La repetición integrada queda registrada en el cierre MX.
+
+Abiertos prioritarios: MX-19 precarga futura y replay desde índice0;
+MX-18 poblaciones warmup/capital/PnL inconsistentes; MX-20 reloj de archivo
+vs procesado; MX-21 nocional con ambas patas al mid de salida; MX-22 c1.or(c2)
+pierde el segundo si ambos existen. MX-17/23/25: proxy cash-PnL, consumidores
+legacy y ausencia de medición conjunta de cartera; MX-24 tasa3d aritmética.
+Son mecanismos/evidencia estática identificados; no se cuantificó su alpha
+ni se demuestra paridad demo/live. No se tocan golden, fitness, riesgo,
+datos, trainer ni ejecución; no T-1/operación/promoción.
+
+GLM incorporó el registro de modelos. El conflicto del buzón conserva
+ambas aportaciones; se revisaron los dos padres. Su inventario no demuestra
+por sí solo calidad predictiva o identidad del modelo efectivo por señal.
+PR10 y20 abiertas (20 draft). Aviso compartido ignorado MX sin acuse.
+Main remoto verificado7796326a; MX/ST/TE locales aún no publicados.
+Preservadas ramas activas/no integradas y política TH. Sin candidato seguro
+de borrado observado. Sigue pendiente autorización pública específica.
+
+## ADENDA CX — causalidad del replay y warmup (Codex, 2026-09-29)
+
+Informe: [Auditoría CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md).
+Artefacto: [JSON CX](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json).
+Base main968259dc, rama feat/quant-sr-codex-causalidad.
+
+Reparación candidata de MX-19: se elimina la precarga de este mismo tape
+antes del índice0; el estado se construye por el recorrido causal existente.
+La prueba inicial observa last_price=95.364,99490466162 antes del primer
+evento; mutar un sufijo o ampliar el tape cambiaba el prefijo.
+Segunda pasada: el warmup abría una posición antes del evento3. Ahora
+aprende features sin entradas, con frontera exacta W independiente de N.
+Macro anterior al primer dato ya no entrega futuro; límite W+10 sin overflow.
+
+Cuatro reparaciones candidatas y cinco expedientes abiertos, detallados
+por causa/evidencia/impacto/criterio de cierre. Siete contratos propios:
+RED2/4, candidato5/1, GREEN7/0; ampliada100/0/2. Las dos ignoradas son
+mediciones manuales en tapes. Sin training, promoción, trading ni T-1.
+No se cambia golden, shift_atr_frac, política de riesgo ni modelos.
+No equivale a una auditoría completa ni a prueba de rentabilidad.
+
+Pendientes: macro point-in-time/vintage, admisión inicial del ATR,
+relojes/rechazo atómico, ledger y paridad/readiness. MX-18 sólo parcialmente
+atendido; los informes anteriores se conservan como historia.
+CI nueva y revisión cruzada deben verificarse antes de integrar esta rama.
+Preservados el checkout GLM y las PR10/20; aviso de alcance sin acuse asumido.
+
+## ADENDA CX-06 — inicialización posterior a la validación (Codex, 2026-09-29)
+
+Seguimiento detallado en [Informe CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md)
+y [artefacto CX](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json).
+Se preservan los estados anteriores como cortes históricos; en este corte
+hay cinco candidatos y cuatro abiertos CX, no cierre de todo el sistema.
+
+Defecto demostrado: primera fila NaN/Inf/negativa/cruzada sembraba ATR
+antes del `continue`; una fila descartada cambiaba capital/posiciones
+simuladas posteriores. Incluso shift 0 fallaba con NaN/Inf. Commit 88136410
+inicializa sólo tras aduana de precios, preservando la fórmula y políticas.
+RED 8/4 → GREEN 12/0; ampliada 105/0/2, check all-targets/locked 23,53 s.
+Los dos ignorados son mediciones manuales; golden existente intacto.
+
+El informe explica recurrencia, unidades, controles y semivida de 34,3096
+eventos del alpha0,02: no acredita una escala física universal. Cantidades,
+reloj, macro point-in-time, ledger, población y paridad siguen pendientes.
+La nota favorable GLM sobre MX no cierra MX-20/21/22: el caller conserva
+span de archivo, nocional al mid de salida y c1.or(c2). Precisión añadida.
+
+Main 9ed0cb8c incorporado en 8f9c27aa, ambos apéndices conservados; check
+postmerge 3,55 s, sin cambio de código respecto a 88136410. CX sólo local:
+publicación pendiente de autorización específica, CI remota/review pendientes.
+No training/trading/promoción/T-1. No garantía de crecimiento o auditoría total.
+
+## ADENDA CX / XLIX-A — auditoría de la integración concurrente
+
+Main2080e423 incorporó GLM281786bd sobre el mismo defecto MX-19. La
+composición automática de «sin precarga» con «omitir prefijo precargado»
+perdía observaciones: dos contratos fallan; el test agregado de GLM pasa
+con esa mutación. Resolución: un recorrido causal completo y supresión de
+entradas durante W. Fixture y aserciones GLM preservadas; se añaden pruebas
+de transición, no se convierte finitud/determinismo en garantía causal.
+
+Además, main tenía tres delimitadores de stash versionados con índice
+limpio. Se preservan ambos textos al quitarlos y CI añade control de diff.
+[Informe CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md) y
+[JSON CX](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json) registran
+CX-I01/02/03, causa, reproducción, límites y criterios; no duplican MX-19.
+Validación local108/0/2, 14 contratos causales, all-targets/locked20,12 s.
+CI nueva y revisión cruzada pendientes; no merge de PR22 a main todavía.

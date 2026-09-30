@@ -74,3 +74,55 @@ ese es el hecho cuantificado que esta medición aporta.
   desde la raíz del workspace (el test de medición ya lo hace).
 - Fees del sample: ~1.2-1.3¢ por trade sobre capital 1000 — la fricción
   NO es el problema al volumen actual; el problema es el volumen.
+
+---
+
+## ADENDA XLVIII·G (2026-09-29) — model registry: dos hallazgos del inventario
+
+`config_dir/models_manifest.json` (generado por `cargo run --bin
+model_manifest`, commite-able): 16 modelos promovidos con SHA-256,
+base y nº de árboles. El primer escaneo expuso:
+
+1. **BTCUSDT_MOTOR es DEGENERADO**: base 0.565, 1 árbol, 2.5 KB — el
+   símbolo ancla del roster opera con un modelo casi vacío. Su "lift"
+   jamás será el de un bosque real; re-entrenar BTC es parte del camino
+   a la meta (con los gates FMT del PR #20).
+2. **Los 9 modelos FDUSD son el MISMO archivo** (hash 0b8bef51 idéntico,
+   base 0.2006, 50 árboles): cobertura nominal, no real — un modelo
+   universal estampado con 9 claves. La cobertura USDT-promovida REAL
+   con bosques propios: ATOM (11), BNB (36), NEAR (26). BTC cuenta 1.
+3. DarkAlpha_BTCUSDT: formato distinto (sin init_score) — registrado
+   legible con base None (deuda visible, no silencio).
+
+El diff del manifest ES el changelog de modelos: nueva clave = símbolo
+desbloqueado; hash cambiado = re-entrenamiento; base cambiada =
+recalibración que el gate consume.
+
+---
+
+## ADENDA XLIX·C (2026-09-30) — BTC re-entrenado: ATERIZÓ con salvedad honesta
+
+**Resultado del trainer** (junio→agosto, el de septiembre quedó declarado
+sin evaluar — ver salvedad): BTCUSDT_MOTOR pasa de degenerado (1 árbol,
+2.5KB, base 0.565 — ACTIVAMENTE errónea para labels ~15-18% positivos) a
+**6 árboles, 16.9KB, base 0.1566, mejora de logloss en selección
++0.0167** sobre baseline constante (early stopping en ronda 5, paciencia
+40). Paridad train/serve verificada dim a dim (145k muestras, tolerancia
+0). Etiquetas: 11.9k decisivas / 133k neutras (8.9% largo).
+
+**SALVEDAD CRÍTICA — el gate que pasó fue SÓLO el de selección**: el
+trainer de main verifica que --test-in exista (require_promotion_holdout)
+pero NO puntúa el test posterior — esa reparación es XLIV-13, que vive en
+el PR #10/#20 (DRAFT). El tape de septiembre fue declarado y nunca
+evaluado. La promoción es evidencia-de-selección: exactamente la clase
+de promoción que el sistema prohíbe.
+
+**Decisión (transparencia total)**: el modelo nuevo se CONSERVA porque
+(e) reemplaza uno activamente erróneo (base 0.565 vs real ~0.16 — el
+gate de lift lee esta base vía CL-21), (b) 6 árboles con mejora real en
+selección. PERO queda registrado como PROMOCIÓN PROVISIONAL: cuando el
+PR #20 aterrice con XLIV-13, re-entrenar/re-validar con el test posterior
+obligatorio es INMEDIATO. Si el test falla, revertir.
+
+El watcher del host cargará el nuevo modelo en caliente (≤10 s) en la
+próxima sesión viva; el manifest ya refleja el cambio (hash fdd48ee7).
