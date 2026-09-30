@@ -1740,3 +1740,17 @@ PR#20) para aislar cuál de los dos cambios de física movió la cobertura
 — si CX solo ya la baja, el re-baseline es del CX (ya mergeado); si PR#20
 solo la baja, es del CL-30..32. Ese aislamiento decide si el trinquete
 se re-basa o si hay que reparar algo antes.
+
+## 2026-09-30 — GLM: XLIX·F revisión cruzada del PR #23 (MR) emitida
+
+El MR de Codex refina mi ml_registry (XLVIII·G): separa 'JSON legible'
+(debil, lo mío) de 'estructuralmente válido' (NanoForest::from_data sobre
+el mismo buffer del hash — el manifest ahora atestigua LOADABILIDAD).
+Review emitida en el PR: MR-01 estrictamente más fuerte, aprobación
+condicional con un apunte de documentación (el campo legible debe
+declararse como SOLO JSON-parse para que nadie lo lea como 'sirve').
+
+Confirmación mutua relevante: su hallazgo abierto 'test-in desconectado
+en main' coincide con mi XLIX·C por segunda vía independiente. El PR#23
+no toca la física en disputa (T-1 rojo PR#20+CX) — puede mergearse
+independiente del aislamiento pendiente.
