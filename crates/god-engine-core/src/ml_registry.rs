@@ -122,7 +122,10 @@ pub fn escanear_models(models_dir: &Path, generado_ms: u64) -> ModelManifest {
                         // Pure in-memory validation: do not call load_model,
                         // which may prefer/write a .bin cache. Hash, metadata
                         // and structural verdict must describe the same bytes.
-                        let validation = serde_json::from_value::<NanoForestData>(v)
+                        // Deserialize the original bytes as serving does. A
+                        // Value roundtrip would discard duplicate struct keys
+                        // and accept a source that the typed JSON loader rejects.
+                        let validation = serde_json::from_slice::<NanoForestData>(&bytes_vec)
                             .map_err(|e| e.to_string())
                             .and_then(NanoForest::from_data);
                         (base, n, true, validation.err())
@@ -232,6 +235,22 @@ mod tests {
         assert_eq!(m.entries[0].error_estructural, None);
         let roundtrip: ModelManifest = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
         assert_eq!(m, roundtrip);
+    }
+
+    #[test]
+    fn mr_claves_duplicadas_no_se_normalizan_antes_del_contrato() {
+        let tmp = std::env::temp_dir().join(format!("tg_mr_duplicate_{}", std::process::id()));
+        let mut duplicate = serde_json::to_string(&valid_leaf()).unwrap();
+        assert_eq!(duplicate.pop(), Some('}'));
+        duplicate.push_str(",\"init_score\":2.0}");
+        assert!(serde_json::from_str::<serde_json::Value>(&duplicate).is_ok());
+        assert!(serde_json::from_str::<NanoForestData>(&duplicate).is_err());
+        setup(&tmp, &[("DUP_MOTOR.json", &duplicate)]);
+        let entry = escanear_models(&tmp, 0).entries.remove(0);
+        std::fs::remove_dir_all(&tmp).unwrap();
+        assert!(entry.legible, "JSON syntax and typed serving schema are different evidence");
+        assert_eq!(entry.valido_estructuralmente, Some(false));
+        assert!(entry.error_estructural.unwrap().contains("duplicate field"));
     }
 
     /// MR-03 OPEN: witness of a provenance gap, not a certification of serving.
