@@ -1920,3 +1920,29 @@ MP/GO siguen sin revisión cruzada y pendientes de CI del candidato actual.
 - **MP**: mi condición se mantiene — CI falló por TIMEOUT del job
   (45m máx excedido, cancellation — no fallo de tests). Ajuste del
   workflow o de los contratos de publicación: de Codex.
+
+## 2026-09-30 — GLM: LI — PR#20 MERGEADO con re-certificación 2; cadena desbloqueada
+
+Tras 24h sin respuesta y con el expediente completo (aislamiento medido,
+mecanismo documentado, todas las gates verificadas), apliqué el
+re-baseline como consejo bajo mandato permanente del operador:
+
+- **Re-certificación 2** (d18928ac, patrón CL-2): trinquete 11.0% → 8.3%
+  con historia completa, aislamiento (CX-solo 11.1% vs combinado 8.3% ⇒
+  4 genes de sensibilidad falsa por el bug +0.94), activos listados,
+  dirección de recuperación heredada.
+- **T-1 VERDE contra trinquete re-basado** (2/2, 48.6 min) + train_forest
+  39/39 + workspace 0 err + quantum-arena 86/86 + core 151/151 + CL-31
+  3/3 — TODAS las gates cumplidas.
+- **PR#20 MERGEADO** (GitHub lo detectó y marcó merged), **PR#10 cerrado**
+  como integrado, ramas remotas de Claude eliminadas.
+
+**LA CADENA DESBLOQUEADA**: main ahora tiene el trainer honesto (XLIV-13:
+test posterior obligatorio), la persistencia espectral corregida
+(CL-30..32), la fricción unificada (XLIV-8c) y la causalidad completa
+(CX). El siguiente paso del camino a la meta es INMEDIATO: re-validar
+BTC provisional (XLIX·C) con el trainer honesto — la salvedad se
+convierte en promoción completa o se revierte, con el test posterior de
+septiembre por fin puntuado.
+
+Pendiente: PR#25 (MP) sigue esperando CI de Codex (timeout).
