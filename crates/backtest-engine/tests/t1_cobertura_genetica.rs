@@ -248,7 +248,29 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     // (D-649), retirar clamps (D-643), calibración Brier del evolver —
     // con las trazas solicitada-vs-realizada del diagnóstico GO, la
     // próxima re-certificación es verificable gen a gen.
-    const COBERTURA_MINIMA: f64 = 0.083;
+    //
+    // RE-CERTIFICACIÓN 3 (Claude, CL-35c, 2026-09-30): el trinquete VUELVE a
+    // 11,0 %. Medido 17/144 (11,8 %) con los ciclos 6 y 7, la misma lista de
+    // genes sobre main ee438edb y sobre d0441aad, y cada perturbación sólo
+    // cambia su propia coordenada (trazas GO). La bisección por commit
+    // (un binario por commit) atribuye la caída de la re-certificación 2 así:
+    //   · 10, 11, 20 y 33 (Kelly) los perdió CL-32, y NO era sensibilidad
+    //     falsa: CL-32 destapó un defecto (la masa espectral pesaba escalas
+    //     que aún no habían visto su τ; τ* salía en 12 h a los 2 s de datos).
+    //     La rama 15 abría tres cortos a 12 h que perdían, el fixture caía de
+    //     170 a 22 cierres y con PF ≤ 1 el Kelly queda en exploración, que
+    //     sólo lee kelly_clamp_min. CL-35 arregla el defecto y los devuelve.
+    //   · 107 (`margin_cushion_pct`) lo perdió CL-30. Sólo muerde si el margen
+    //     Kelly supera la mitad del capital asignado: antes de CL-30 ocurría
+    //     en 2 de 174 cierres con el capital del fixture ×2,63; ahora llega
+    //     a ×1,67. Forzar la persistencia sesgada sólo en el Kelly S-1 no lo
+    //     recupera: es una sensibilidad marginal del fixture.
+    //   · 12 (`scalp_obi_threshold`, ancla de 30 s del umbral OBI) se gana;
+    //     inferido sin bisecar: con CL-35 la τ dominante del fixture cae al
+    //     extremo rápido, donde manda ese ancla.
+    // Se vuelve al último nivel certificado, no al medido (0,118), para no
+    // convertir en rojo la pérdida de un solo gen marginal.
+    const COBERTURA_MINIMA: f64 = 0.110;
     assert!(
         cobertura >= COBERTURA_MINIMA,
         "cobertura genética {:.1} % por debajo del mínimo {:.1} %. \
