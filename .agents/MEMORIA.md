@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — CX/XLIX-A: integración con main2080e423 validada localmente
+
+- Padres: CX0ef061d8 y main2080e423 (GLM281786bd). PR22 debe recibir el
+  nuevo SHA y revisión cruzada; no está fusionada a main.
+- Composición negativa «sin precarga + salto max(W,600)»: contratos nuevos
+  0/2, fixture GLM1/0. Mutación nunca commiteada/publicada. Resolución:
+  conservar observaciones causales, suprimir sólo entradas durante W.
+- 14 contratos CX aprobados; ampliada108/0/2, check workspace/all-targets/
+  locked20,12 s antes de merge. Golden y aserciones GLM preservados.
+- Main incluía tres marcadores de stash versionados. Se quitan sólo
+  delimitadores, preservando1508/1529 líneas de padres en orden. CI añade
+  control git diff --check HEAD^ HEAD con profundidad2; cobertura intacta.
+- Informe/JSON y maestros añaden CX-I01/02/03 (composición, test insuficiente,
+  integridad documental), sin inflar los nueve expedientes CX originales.
+  MX-19b/readiness física sigue abierto; no imponer 512 min a todo el motor.
+- CI del árbol anterior no acredita el nuevo. Publicación CX ya autorizada;
+  merge condicionado a CI y revisión independiente. Sin training/trading/
+  promoción/T-1; checkout compartido y modelos ajenos intactos.
+
 ## 2026-09-29 — CX publicada en PR #22; integración condicionada
 
 - PR https://github.com/Jhona-la/Trader-Gemini/pull/22, abierta y adjunta

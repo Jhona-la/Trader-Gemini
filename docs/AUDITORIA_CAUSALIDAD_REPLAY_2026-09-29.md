@@ -518,3 +518,151 @@ revisión cruzada de los contratos y del candidato vigente, con SHA explícito.
 No se fusiona ni se habilita auto-merge hasta CI satisfactoria y revisión
 cruzada; la rama se conserva. No se requiere más autorización de publicación
 CX, pero publicar no resuelve los expedientes abiertos ni certifica el sistema.
+
+## Integración CX / XLIX-A — nueva evidencia de composición (2026-09-29)
+
+### Corte, alcance y diagnóstico
+
+La PR22 publicada en `0ef061d8` se comparó con main `2080e423`, que añade
+la reparación GLM `281786bd` y su registro. Ambos intentan impedir operar
+con datos futuros del prefijo, pero usan mecanismos distintos. La revisión
+comprende el diff de esos commits, los tres archivos en conflicto, la
+prueba añadida por GLM y los contratos CX. No añade una auditoría semántica
+de todo el repositorio ni una afirmación de revisión por varios agentes.
+
+| ID de seguimiento | Tipo | Evidencia | Decisión de integración |
+|---|---|---|---|
+| CX-I01 | P1, riesgo de composición | Sin precarga, conservar el salto `max(W,600)` deja filas sin observar; dos contratos fallan en evento 1 | Un solo recorrido causal; W suprime entradas, no observaciones |
+| CX-I02 | P1, insuficiencia de prueba | El test GLM pasa con la misma combinación defectuosa | Se conserva y se añaden contratos de estado; comentarios limitados a lo que realmente prueba |
+| CX-I03 | P2, integridad documental | Main2080e423 contiene tres marcadores de conflicto de stash versionados | Quitar delimitadores preservando en orden ambos textos |
+
+Estos tres registros son hallazgos de integración asociados a CX-01/02 y
+al proceso de verificación, no tres nuevas reparaciones económicas. El
+inventario original CX conserva cinco candidatos y cuatro abiertos; no se
+duplica MX-19 para inflar el total de defectos resueltos.
+
+### CX-I01 — dos reparaciones válidas en intención no se componen por suma
+
+GLM conserva la precarga de klines del prefijo y evita evaluarlo después
+mediante `frontera_preload = max(warmup_ticks,600)`. CX retiró la precarga:
+el mismo stream produce incrementalmente las features, y durante las
+primeras W filas se impiden entradas. Conservar simultáneamente «no hay
+precarga» y «omitir la historia ya precargada» elimina la única fuente de
+esas observaciones. Es un fallo de composición, no un conflicto de nombres.
+
+Formalmente, si `T(x_i,S_i)` es la transición de observación, la ruta
+incremental exige `S_(i+1)=T(x_i,S_i)` para cada fila aceptada. Durante
+`i<W` sólo se impone `allow_entries=false`. El salto incorrecto aplica
+`S_(i+1)=S_i` a todas las filas `i<max(W,600)`: conserva un estado frío
+aunque los datos existan. En una cinta de 80 filas con W=0 no observaría
+ninguna. No se soluciona elevando W ni sustituyendo el estado faltante por
+una constante. Tampoco debe reintroducirse la precarga futura para lograr
+que una prueba de actividad vuelva a pasar.
+
+Se construyó **una mutación local controlada, nunca commiteada ni publicada**:
+el runner CX, sin precarga, más el salto de GLM. El observador se mantuvo
+antes del salto para inspeccionar el estado del motor. Dos contratos nuevos
+fallaron: **0 aprobadas / 2 fallidas**, 0,05 s; build 29,55 s. En ambos,
+antes del evento de índice1, `tick_count` era 0 cuando debía ser 1 en
+trade-only. Se reprodujo con W=0 y W=10. Esto demuestra el fallo de esa
+combinación; no se atribuye falsamente esa versión combinada a main.
+
+La resolución preserva la intención común —historia causal sin posiciones
+en warmup— mediante el recorrido incremental de CX. No retiene el salto
+ni un mínimo oculto de 600 filas. Agrega una explicación junto al bucle
+para evitar reintroducirlo en una integración posterior. No modifica
+coeficientes, genomas, límites duros, kill-switch, fees o física de fills.
+
+### CX-I02 — determinismo y sanidad no certifican causalidad
+
+Sobre la misma mutación defectuosa se ejecutó, sin alterar sus aserciones,
+`xlixA_mx19_prefijo_consumido_una_vez_y_determinista`: **1 aprobada / 0
+fallidas**, 2,28 s; build 39,95 s. Compara operaciones/PnL de dos corridas,
+capital final finito/positivo y drawdown menor que uno. Un motor que omite
+observaciones puede seguir siendo determinista y entregar cifras finitas.
+El nombre y los comentarios atribuían al test una garantía que las
+aserciones agregadas no establecen. Esta ejecución prueba el punto ciego
+frente a la mutación ensayada, no invalida todo el trabajo de GLM.
+
+Se conserva la fixture, el nombre y todas sus aserciones ejecutables.
+Sólo se aclaran comentarios: con tendencia intensa durante 700 filas y
+W=600, las últimas 100 quedan fuera del warmup; comparar capital finito
+para W=600/700 no demuestra dominancia de actividad ni ausencia de entradas
+en el prefijo. Los contratos añadidos observan los estados que faltaban.
+
+En la resolución candidata, **14 contratos CX pasan / 0 fallan** en
+3,77 s; build 26,70 s. Las nuevas comprobaciones cubren cinta de 80 filas,
+W=0/10/60/69, ambos modos y llegada efectiva a la frontera. Durante warmup
+exigen capital intacto, margen cero y ausencia de posiciones; el contador
+de observaciones debe avanzar en cada fila. En el contrato actual del
+harness hay un evento por fila en trade-only y dos en modo libro; esta
+prueba no certifica que ese modelado de microestructura sea paridad live.
+
+### CX-I03 — un índice limpio puede contener conflictos ya versionados
+
+Main2080e423 tenía `<<<<<<< Updated upstream`, `=======` y `>>>>>>> Stashed
+changes` dentro de COORDINACION_CODEX_2026-09-28.md. `git status` estaba
+limpio: sólo describe el índice, no detecta contenido incorrecto previamente
+commiteado. Los marcadores no eran del merge nuevo y podían confundirse
+con instrucciones de resolución vigentes. Había además un bloque histórico
+reincorporado desde stash; no se descartó por parecer duplicado.
+
+Se conservaron ambos textos y se retiraron sólo los delimitadores. La
+comprobación por subsecuencia preservó, en orden, las 1.508 líneas del
+primer padre y las 1.529 líneas no delimitadoras del segundo. Los conflictos
+de apéndices en el informe MX también conservaron ambas versiones. El
+historial antiguo queda explícitamente histórico: su afirmación de usar
+precarga/salto no describe la resolución actual CX.
+
+Control preventivo añadido al workflow: checkout con profundidad2 y
+`git diff --check HEAD^ HEAD` antes de compilar. En un evento PR revisa
+el delta del merge candidato contra su primer padre; en push revisa el
+commit frente a su padre. `git show --check 2080e423` reprodujo los tres
+marcadores con código de salida2. Este control detecta problemas de diff,
+no conflictos semánticos, no inspecciona toda la historia ni garantiza
+que main esté protegido ante pushes directos. No se eliminó ningún check
+de compilación ni ninguna prueba para introducirlo.
+
+### Implicaciones para el genoma y las escalas
+
+Si el estado con el que se evalúa un genoma depende de filas futuras o de
+observaciones omitidas, la aptitud deja de representar la trayectoria
+declarada. Corregir esa trayectoria es previo a comparar desempeño contra
+demo/producción; no demuestra que el genoma tenga edge ni que se haya
+resuelto toda la discrepancia entre entornos. No se reentrena ni promueve
+ningún candidato en esta integración.
+
+MX-19b de GLM se conserva abierto: número de filas no equivale a historia
+en tiempo físico. Tampoco se impone un warmup global arbitrario de 512
+minutos a todos los consumidores. El cierre necesita readiness verificable
+por estimador/escala, timestamps aceptados, frecuencia efectiva, huecos y
+linaje de modelos/features. Un cálculo avanzado o una red neuronal no
+reemplaza esas condiciones de observabilidad y reproducibilidad.
+
+La CI de `0ef061d8` no valida por sí sola este nuevo árbol integrado. Los
+resultados de la regresión conjunta, check all-targets y SHA final se
+registrarán al completar la validación. Revisión cruzada CX aún pendiente;
+no confundir resolución local del conflicto con merge de PR22 a main.
+
+### Cierre de validación local de la integración
+
+Regresión ampliada: **108 aprobadas / 0 fallidas / 2 ignoradas**. Biblioteca
+51/0/0 (72,20 s), paridad 8/0/2 (35,95 s), métricas21/0/0, labels25/0/0,
+riesgo espectral3/0/0. Build40,58 s. La prueba de GLM pasa también en la
+resolución correcta. El golden existente no se alteró; las dos ignoradas
+siguen siendo mediciones manuales con tapes. No se ejecutaron todos los
+tests de los demás crates ni training, promoción, exchange o T-1.
+
+`cargo check --workspace --all-targets --locked` aprobado en20,12 s antes
+de cerrar el merge, con warnings. Diffs de la resolución contra ambos
+padres inspeccionados; `git diff --check` limpio y sin delimitadores en
+los archivos revisados. El cambio operativo respecto al primer padre CX
+es nulo: el runner sólo recibe comentarios; respecto al segundo padre se
+reconcilia la reparación GLM con el recorrido incremental y sus pruebas.
+El workflow sí añade el control preventivo de diff, sin quitar cobertura.
+
+La matriz original continúa con cinco candidatos y cuatro expedientes
+abiertos. CX-I01/02/03 quedan documentados como controles de integración
+local, no como cierre de la arquitectura universal o del objetivo financiero.
+La revisión cruzada debe referirse al nuevo SHA. No había otra rama local
+ya integrada distinta de main para eliminar; CX sigue pendiente de merge.

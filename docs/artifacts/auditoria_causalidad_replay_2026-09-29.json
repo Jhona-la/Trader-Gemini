@@ -1,5 +1,54 @@
 {
   "schema_version": 1,
+  "integration_audits": [
+    {
+      "id": "CX-XLIX-A",
+      "date_local": "2026-09-29",
+      "first_parent": "0ef061d88084a4ff6b6263b6d1e7d08d9607348c",
+      "second_parent": "2080e423d55ebad37025a92fb196b084edcf84d0",
+      "glm_code_commit": "281786bddfd1aa883ac7cfd43eafcae005a444ba",
+      "findings": [
+        {
+          "id": "CX-I01", "severity": "P1", "kind": "integration_hazard",
+          "evidence": "Controlled combination of no preload plus max(W,600) skip loses history; event1 tick_count=0 instead of1 at W=0 and10",
+          "resolution": "Keep one causal observation pass; W suppresses entries only, not observations",
+          "attribution_limit": "The deliberately combined mutant was not main and was never committed/published"
+        },
+        {
+          "id": "CX-I02", "severity": "P1", "kind": "test_blind_spot",
+          "evidence": "Unchanged GLM determinism/sanity test passes on the same broken composition",
+          "resolution": "Preserve fixture and assertions; narrow comments to measured claims; add state-transition contracts"
+        },
+        {
+          "id": "CX-I03", "severity": "P2", "kind": "committed_conflict_markers",
+          "evidence": "main2080e423 includes three stash markers; git show --check detects them with exit2 despite clean index",
+          "resolution": "Remove delimiters preserving both texts; add CI diff check with checkout depth2"
+        }
+      ],
+      "negative_probe": { "passed": 0, "failed": 2, "seconds": 0.05, "build_seconds": 29.55, "published": false },
+      "glm_test_on_negative_probe": { "passed": 1, "failed": 0, "seconds": 2.28, "build_seconds": 39.95 },
+      "causality_contracts": { "passed": 14, "failed": 0, "seconds": 3.77, "build_seconds": 26.70 },
+      "expanded": {
+        "passed": 108, "failed": 0, "ignored": 2, "build_seconds": 40.58,
+        "blocks": [
+          { "name": "library", "passed": 51, "failed": 0, "ignored": 0, "seconds": 72.20 },
+          { "name": "bt_vivo_parity_audit", "passed": 8, "failed": 0, "ignored": 2, "seconds": 35.95 },
+          { "name": "ex_post_metrics_contract", "passed": 21, "failed": 0, "ignored": 0 },
+          { "name": "label_evidence_contract", "passed": 25, "failed": 0, "ignored": 0 },
+          { "name": "spectral_risk_contract", "passed": 3, "failed": 0, "ignored": 0 }
+        ]
+      },
+      "workspace_all_targets_locked": "passed_20.12s",
+      "golden_modified": false,
+      "glm_executable_assertions_preserved": true,
+      "coordination_non_marker_parent_lines_preserved": [1508, 1529],
+      "historical_cx_counts_unchanged": true,
+      "independent_cross_review": "pending",
+      "ci_for_integrated_candidate": "must_be_verified_after_push",
+      "merge_to_main_performed": false,
+      "training_trading_promotion_t1_executed": false
+    }
+  ],
   "publication_events": [
     {
       "event": "explicit_user_authorization",

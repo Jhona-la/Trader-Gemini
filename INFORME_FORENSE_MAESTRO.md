@@ -8707,3 +8707,20 @@ Main 9ed0cb8c incorporado en 8f9c27aa, ambos apéndices conservados; check
 postmerge 3,55 s, sin cambio de código respecto a 88136410. CX sólo local:
 publicación pendiente de autorización específica, CI remota/review pendientes.
 No training/trading/promoción/T-1. No garantía de crecimiento o auditoría total.
+
+## ADENDA CX / XLIX-A — auditoría de la integración concurrente
+
+Main2080e423 incorporó GLM281786bd sobre el mismo defecto MX-19. La
+composición automática de «sin precarga» con «omitir prefijo precargado»
+perdía observaciones: dos contratos fallan; el test agregado de GLM pasa
+con esa mutación. Resolución: un recorrido causal completo y supresión de
+entradas durante W. Fixture y aserciones GLM preservadas; se añaden pruebas
+de transición, no se convierte finitud/determinismo en garantía causal.
+
+Además, main tenía tres delimitadores de stash versionados con índice
+limpio. Se preservan ambos textos al quitarlos y CI añade control de diff.
+[Informe CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md) y
+[JSON CX](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json) registran
+CX-I01/02/03, causa, reproducción, límites y criterios; no duplican MX-19.
+Validación local108/0/2, 14 contratos causales, all-targets/locked20,12 s.
+CI nueva y revisión cruzada pendientes; no merge de PR22 a main todavía.

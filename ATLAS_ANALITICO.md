@@ -1901,3 +1901,18 @@ Cinco candidatos/cuatro abiertos CX; el estado anterior queda como historia.
 Main 9ed0cb8c integrado localmente en 8f9c27aa; la revisión GLM es de MX,
 no de CX. MX-20/21/22 siguen abiertos pese a la ambigüedad de su nota.
 Sin publicación CX ni CI remota/review, training, promoción o trading.
+
+## ADENDA CX / XLIX-A — estado causal antes de comparar genomas
+
+CX está publicada en PR22; este corte integra localmente main2080e423.
+Se evita un fallo de composición: quitar la precarga y conservar un salto
+de 600 filas deja al estimador sin observaciones. RED0/2 de contratos de
+estado mientras la fixture GLM de resultados pasa1/0. La resolución
+observa el prefijo una vez, sin entradas durante W. No cambia el genoma.
+
+Se conserva la prueba GLM y se aclara qué mide; se añaden dos contratos.
+Regresión108/0/2, all-targets aprobado. Delimitadores de stash en main
+eliminados sin borrar textos; CI añade control de diff. Evidencia detallada
+en la [adenda CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md).
+Readiness física por escala y paridad siguen abiertos. No se deduce edge,
+adaptación universal ni rentabilidad de un merge o un test determinista.

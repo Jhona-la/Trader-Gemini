@@ -31,6 +31,9 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
         with:
           persist-credentials: false
+          fetch-depth: 2 # first parent is required for the candidate diff check
+      - name: Reject conflict markers and whitespace errors in candidate diff
+        run: git diff --check HEAD^ HEAD
       - name: Install the compiler used for the local regression
         run: |
           rustup toolchain install nightly-2026-06-30 --profile minimal

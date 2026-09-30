@@ -314,6 +314,10 @@ fn run_booktick_replay_observed(
     let mut peak = cfg.initial_capital;
     let warmup = cfg.warmup_ticks;
 
+    // CX / XLIX-A integration: there is no preloaded prefix to skip here.
+    // Observe each accepted row once; only entries wait for the declared W.
+    // A max(W, 600) skip would discard history and impose an undeclared floor.
+
     for (i, t) in ticks.iter().enumerate() {
         before_event(i, &core);
         // The legacy process_event latency_panic argument only disables

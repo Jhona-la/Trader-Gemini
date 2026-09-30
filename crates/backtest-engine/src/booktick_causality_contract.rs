@@ -290,3 +290,63 @@ fn cx_only_rejected_prices_leave_core_cold_and_capital_intact() {
         assert_eq!(result.final_capital, config.initial_capital);
     }
 }
+
+#[test]
+fn cx_merge_zero_warmup_has_no_hidden_600_row_floor() {
+    crate::asegurar_spec_nativo("BTCUSDT");
+    for trade_only in [true, false] {
+        let mut checked = false;
+        run_booktick_replay_observed(
+            &ticks(80),
+            &SuperGenotype::new_baseline(0.0002, 0.0005),
+            None,
+            &cfg(trade_only, 0),
+            |i, core| {
+                if i == 1 {
+                    checked = true;
+                    assert_eq!(
+                        core.feature_engines[0].tick_count,
+                        if trade_only { 1 } else { 2 },
+                        "first accepted row was silently skipped"
+                    );
+                }
+            },
+        );
+        assert!(checked, "the short tape must actually be replayed");
+    }
+}
+
+#[test]
+fn cx_merge_short_warmup_observes_each_row_once_without_entries() {
+    crate::asegurar_spec_nativo("BTCUSDT");
+    for trade_only in [true, false] {
+        for warmup in [10, 60, 69] {
+            let config = cfg(trade_only, warmup);
+            let events_per_row = if trade_only { 1 } else { 2 };
+            let mut reached_boundary = false;
+            run_booktick_replay_observed(
+                &ticks(80),
+                &SuperGenotype::new_baseline(0.0002, 0.0005),
+                None,
+                &config,
+                |i, core| {
+                    if i <= warmup {
+                        assert_eq!(
+                            core.feature_engines[0].tick_count,
+                            i as u64 * events_per_row,
+                            "warmup skipped or duplicated history at {i}, W={warmup}, trade_only={trade_only}"
+                        );
+                        assert!(!core.arena.coins[0].positions.is_any_open());
+                        assert_eq!(
+                            core.arena.unified_capital.load(Ordering::Relaxed),
+                            config.initial_capital
+                        );
+                        assert_eq!(core.arena.used_margin.load(Ordering::Relaxed), 0.0);
+                    }
+                    reached_boundary |= i == warmup;
+                },
+            );
+            assert!(reached_boundary);
+        }
+    }
+}

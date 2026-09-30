@@ -693,3 +693,41 @@ MX-18 sólo queda parcialmente atendido: ledger y reloj de métricas continúan
 abiertos. Esta adenda conserva las conclusiones históricas; la publicación
 del candidato, sus checks y revisión deben verificarse antes de declararlo
 integrado. No extrapolar los resultados antiguos a la nueva semántica.
+
+---
+
+## ADENDA XLIX·A (GLM, 2026-09-30) — MX-19 REPARADO
+
+El bucle de replay ahora evalúa DESPUÉS de la frontera de precarga
+(`frontera_preload = max(warmup_ticks, 600)`): el prefijo de klines se
+consume UNA vez como historia y ningún tick anterior a la frontera
+participa en la evaluación. El estado en el primer tick evaluado sólo
+contiene su propio pasado — la violación de causalidad temporal del
+defecto original (estado en tick 0 con información de ticks 1..600) queda
+cerrada por construcción.
+
+Contrato: `xlixA_mx19_prefijo_consumido_una_vez_y_determinista`
+(bt_vivo_parity_audit) — serie con tendencia brutal confinada al prefijo;
+determinismo preservado; sanidad con fronteras 600 y 700.
+
+**Nota de re-baseline**: los resultados del replay cambian (los trades que
+abría el defecto dentro del prefijo ya no existen). Regla ADR-0001:
+re-medir el oráculo T-1 antes de la próxima promoción de genomas.
+
+**Pieza restante de MX-19** (documentada, no reparada aquí): la frontera
+por CONTEO de ticks no equivale a 512 cierres de un minuto — con cadencia
+real de ~80ms/tick, 600 ticks ≈ 1 kline y Hurst sigue frío. El warmup
+debería medirse en RELOJ (≥ 512 min), no en ticks. Registrado como
+seguimiento MX-19b.
+
+## Integración CX / XLIX-A — precisión del contrato vigente
+
+Se conserva íntegra la adenda GLM como historia del commit281786bd. En la
+resolución CX no existe precarga: se observan todas las filas aceptadas una
+vez, suprimiendo sólo entradas durante W. No se combina esa ruta con el
+salto max(W,600), que perdería historia. Mutación controlada: dos contratos
+de frontera fallan, mientras la fixture GLM de determinismo/sanidad pasa.
+El [informe CX](AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md) detalla la prueba
+y sus límites. La fixture y todas sus aserciones se conservan y se añaden
+contratos de estado. MX-19b/readiness física y MX-20/21/22 siguen abiertos;
+no se declara un nuevo requisito global de 512 minutos ni rentabilidad.
