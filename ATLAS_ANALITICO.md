@@ -1820,3 +1820,37 @@ PR #10 y #20 abiertos; #20 draft. Aviso compartido ignorado:
 Se conservan ramas activas y no integradas. Publicación detenida por
 autorización informada pendiente tras rechazo previo. No se certifica una
 auditoría semántica completa de las 1.358 rutas inventariadas.
+
+## ADENDA MX — métricas y causalidad del replay (Codex, 2026-09-29)
+
+Informe: [Auditoría MX](docs/AUDITORIA_METRICAS_REPLAY_2026-09-29.md).
+Artefacto: [JSON MX](docs/artifacts/auditoria_metricas_replay_2026-09-29.json).
+Rama `feat/quant-sr-codex-metricas`; reparación `a0ad0a0b`.
+Main `7796326a` integrado LOCALMENTE en `7bdd39a8`; no publicación de MX.
+
+26 observaciones: 14 defectos previos reparados, 1 regresión del candidato
+detectada/reparada, 2 contratos aclarados, 9 abiertos. No son 26 bugs de
+producción demostrados ni una nueva numeración de la matriz histórica.
+Se corrigen dominios NaN/Inf/tiempo/capital, ausencia frente a cero, epsilons
+monetarios, overflow/underflow, cola fraccional ES95 y signo de cero.
+Las fórmulas, unidades, supuestos y criterios de cierre están detallados.
+21 contratos nuevos; RED inicial1/18, candidato19/2, GREEN21/0.
+Ampliada antes de merge86/0/0; check all-targets33,37s y30,19s pre-commit
+de integración. La repetición integrada queda registrada en el cierre MX.
+
+Abiertos prioritarios: MX-19 precarga futura y replay desde índice0;
+MX-18 poblaciones warmup/capital/PnL inconsistentes; MX-20 reloj de archivo
+vs procesado; MX-21 nocional con ambas patas al mid de salida; MX-22 c1.or(c2)
+pierde el segundo si ambos existen. MX-17/23/25: proxy cash-PnL, consumidores
+legacy y ausencia de medición conjunta de cartera; MX-24 tasa3d aritmética.
+Son mecanismos/evidencia estática identificados; no se cuantificó su alpha
+ni se demuestra paridad demo/live. No se tocan golden, fitness, riesgo,
+datos, trainer ni ejecución; no T-1/operación/promoción.
+
+GLM incorporó el registro de modelos. El conflicto del buzón conserva
+ambas aportaciones; se revisaron los dos padres. Su inventario no demuestra
+por sí solo calidad predictiva o identidad del modelo efectivo por señal.
+PR10 y20 abiertas (20 draft). Aviso compartido ignorado MX sin acuse.
+Main remoto verificado7796326a; MX/ST/TE locales aún no publicados.
+Preservadas ramas activas/no integradas y política TH. Sin candidato seguro
+de borrado observado. Sigue pendiente autorización pública específica.

@@ -1,5 +1,25 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — Codex MX: métricas y causalidad (LOCAL)
+
+- Rama feat/quant-sr-codex-metricas; fix a0ad0a0b.
+- Integra main7796326a en7bdd39a8 con ambos historiales del buzón;
+  Cargo.lock añade sólo sha2 de god-engine-core, exigido por registro GLM.
+- Informe docs/AUDITORIA_METRICAS_REPLAY_2026-09-29.md +JSON:
+  26 observaciones,14 fixes previos+1 regresión del candidato,2 aclaraciones,
+  9 abiertos. No equivale a auditoría semántica de todo el repositorio.
+- 21 contratos nuevos: RED1/18, candidato19/2, GREEN21/0.
+  Ampliada86/0/0 antes de merge; checks33,37s y30,19s de integración.
+  Post-merge7bdd39a8:86/0/0 (37+21+25+3). Golden/fitness/riesgo intactos.
+- P0 MX-19: prefijo precargado antes de replay desde0; P1 poblaciones,
+  nocional, span, doble cierre, cash-PnL y consumidores antiguos.
+  No impacto productivo, OOS o rentabilidad demostrado por este cambio.
+- GLM model registry integrado; PR10/20 abiertas,20 draft. Main remoto779.
+  Sin push/merge remoto MX; falta autorización específica de publicación.
+  Aviso ignorado compartido MX sin acuse. No borrar ramas pendientes.
+- Se conservan TE/ST y TH; no ejecutar trading, T-1 o promoción por inferencia.
+
+
 ## 2026-09-29 — Codex TE: cobertura y evidencia (LOCAL, no publicado)
 
 - Rama feat/quant-sr-codex-te; conserva ST y TH sin mezclar la política τ.

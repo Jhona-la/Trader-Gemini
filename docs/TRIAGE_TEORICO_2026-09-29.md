@@ -204,3 +204,15 @@ implementa como etiqueta ni se le atribuye rentabilidad o causalidad.
 
 Verificación final: 1.170/0/7, con 27 contratos nuevos incluidos. Tapes manuales
 no ejecutados. Alcance, límites y seis deudas abiertas están en el informe.
+
+## ADENDA MX — antes de añadir otra teoría, validar la medición
+
+El panel XLVIII·A tiene reparación local a0ad0a0b (dominios, estabilidad y
+masa fraccional de cola). Véase [MX](AUDITORIA_METRICAS_REPLAY_2026-09-29.md).
+Su Sharpe/Sortino usa cash PnL por trade, no retorno de cartera; raíz de
+frecuencia no corrige autocovarianza. n≥20 es política, no precisión ES95.
+Nuevas prioridades: causalidad del prefijo, población/ledger/reloj únicos y
+consumidor trazable. La inferencia de rentabilidad o paridad live no queda
+validada por métricas puras, pruebas verdes ni un inventario de modelos.
+No se añade HAC con lag arbitrario, modelo cuántico o teoría del milenio
+sin dato identificable, presupuesto de error, costo y falsación OOS.
