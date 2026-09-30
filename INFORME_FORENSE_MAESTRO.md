@@ -8655,3 +8655,72 @@ PR10 y20 abiertas (20 draft). Aviso compartido ignorado MX sin acuse.
 Main remoto verificado7796326a; MX/ST/TE locales aún no publicados.
 Preservadas ramas activas/no integradas y política TH. Sin candidato seguro
 de borrado observado. Sigue pendiente autorización pública específica.
+
+## ADENDA CX — causalidad del replay y warmup (Codex, 2026-09-29)
+
+Informe: [Auditoría CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md).
+Artefacto: [JSON CX](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json).
+Base main968259dc, rama feat/quant-sr-codex-causalidad.
+
+Reparación candidata de MX-19: se elimina la precarga de este mismo tape
+antes del índice0; el estado se construye por el recorrido causal existente.
+La prueba inicial observa last_price=95.364,99490466162 antes del primer
+evento; mutar un sufijo o ampliar el tape cambiaba el prefijo.
+Segunda pasada: el warmup abría una posición antes del evento3. Ahora
+aprende features sin entradas, con frontera exacta W independiente de N.
+Macro anterior al primer dato ya no entrega futuro; límite W+10 sin overflow.
+
+Cuatro reparaciones candidatas y cinco expedientes abiertos, detallados
+por causa/evidencia/impacto/criterio de cierre. Siete contratos propios:
+RED2/4, candidato5/1, GREEN7/0; ampliada100/0/2. Las dos ignoradas son
+mediciones manuales en tapes. Sin training, promoción, trading ni T-1.
+No se cambia golden, shift_atr_frac, política de riesgo ni modelos.
+No equivale a una auditoría completa ni a prueba de rentabilidad.
+
+Pendientes: macro point-in-time/vintage, admisión inicial del ATR,
+relojes/rechazo atómico, ledger y paridad/readiness. MX-18 sólo parcialmente
+atendido; los informes anteriores se conservan como historia.
+CI nueva y revisión cruzada deben verificarse antes de integrar esta rama.
+Preservados el checkout GLM y las PR10/20; aviso de alcance sin acuse asumido.
+
+## ADENDA CX-06 — inicialización posterior a la validación (Codex, 2026-09-29)
+
+Seguimiento detallado en [Informe CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md)
+y [artefacto CX](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json).
+Se preservan los estados anteriores como cortes históricos; en este corte
+hay cinco candidatos y cuatro abiertos CX, no cierre de todo el sistema.
+
+Defecto demostrado: primera fila NaN/Inf/negativa/cruzada sembraba ATR
+antes del `continue`; una fila descartada cambiaba capital/posiciones
+simuladas posteriores. Incluso shift 0 fallaba con NaN/Inf. Commit 88136410
+inicializa sólo tras aduana de precios, preservando la fórmula y políticas.
+RED 8/4 → GREEN 12/0; ampliada 105/0/2, check all-targets/locked 23,53 s.
+Los dos ignorados son mediciones manuales; golden existente intacto.
+
+El informe explica recurrencia, unidades, controles y semivida de 34,3096
+eventos del alpha0,02: no acredita una escala física universal. Cantidades,
+reloj, macro point-in-time, ledger, población y paridad siguen pendientes.
+La nota favorable GLM sobre MX no cierra MX-20/21/22: el caller conserva
+span de archivo, nocional al mid de salida y c1.or(c2). Precisión añadida.
+
+Main 9ed0cb8c incorporado en 8f9c27aa, ambos apéndices conservados; check
+postmerge 3,55 s, sin cambio de código respecto a 88136410. CX sólo local:
+publicación pendiente de autorización específica, CI remota/review pendientes.
+No training/trading/promoción/T-1. No garantía de crecimiento o auditoría total.
+
+## ADENDA CX / XLIX-A — auditoría de la integración concurrente
+
+Main2080e423 incorporó GLM281786bd sobre el mismo defecto MX-19. La
+composición automática de «sin precarga» con «omitir prefijo precargado»
+perdía observaciones: dos contratos fallan; el test agregado de GLM pasa
+con esa mutación. Resolución: un recorrido causal completo y supresión de
+entradas durante W. Fixture y aserciones GLM preservadas; se añaden pruebas
+de transición, no se convierte finitud/determinismo en garantía causal.
+
+Además, main tenía tres delimitadores de stash versionados con índice
+limpio. Se preservan ambos textos al quitarlos y CI añade control de diff.
+[Informe CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md) y
+[JSON CX](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json) registran
+CX-I01/02/03, causa, reproducción, límites y criterios; no duplican MX-19.
+Validación local108/0/2, 14 contratos causales, all-targets/locked20,12 s.
+CI nueva y revisión cruzada pendientes; no merge de PR22 a main todavía.

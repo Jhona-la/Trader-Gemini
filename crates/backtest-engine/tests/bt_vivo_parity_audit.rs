@@ -448,15 +448,13 @@ fn xlviiB_brecha_meta_en_tapes_reales_campeon() {
     assert!(total_days > 5.0, "muestra sin días suficientes");
 }
 
-/// XLIX·A — MX-19 REPARADO: causalidad temporal del prefijo.
+/// XLIX·A — fixture GLM preservada: determinismo y sanidad con warmup.
 ///
-/// El defecto (P0, auditoría Codex): el bucle de replay arrancaba en el
-/// índice 0 pero el estado de klines/Hurst ya contenía información de los
-/// ticks [1..600) del propio prefijo — look-ahead. La reparación: el bucle
-/// evalúa DESPUÉS de la frontera de precarga (el prefijo se consume una
-/// sola vez, como historia). Contratos: determinismo preservado; el
-/// prefijo NO participa en la evaluación (por construcción, ninguna
-/// posición puede abrirse antes de la frontera).
+/// En 281786bd acompañó al salto del prefijo precargado. La integración CX
+/// observa todo el prefijo una vez, sin precarga, y suprime sólo entradas.
+/// Estas aserciones de resultado agregado NO demuestran por sí solas la
+/// ausencia de anticipación ni que el prefijo haya sido observado. Los
+/// contratos internos de causalidad inspeccionan esas transiciones.
 #[test]
 fn xlixA_mx19_prefijo_consumido_una_vez_y_determinista() {
     use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay};
@@ -470,10 +468,9 @@ fn xlixA_mx19_prefijo_consumido_una_vez_y_determinista() {
             .wrapping_add(1442695040888963407);
         ((seed >> 33) as f64 / u32::MAX as f64) - 0.5
     };
-    // Serie con tendencia BRUTAL confinada al prefijo (primeros 700
-    // ticks > frontera 600): con el defecto, el estado en el tick 0
-    // "sabía" el futuro del prefijo y abría posiciones allí. Con la
-    // reparación, el prefijo no se evalúa — no puede generar trading.
+    // Tendencia intensa en las primeras 700 filas. Con W=600, sus últimas
+    // 100 filas sí quedan fuera del warmup; con W=700, quedan dentro.
+    // No inferir ausencia de operaciones tempranas de un PnL final finito.
     let mut p = 60_000.0f64;
     let ticks: Vec<ReplayTick> = (0..3_000)
         .map(|i| {
@@ -493,7 +490,7 @@ fn xlixA_mx19_prefijo_consumido_una_vez_y_determinista() {
     let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
     let cfg = ReplayConfig {
         initial_capital: 1000.0,
-        warmup_ticks: 600, // frontera = max(600, 600) = 600
+        warmup_ticks: 600, // frontera solicitada, sin mínimo oculto adicional
         trade_only: false,
         shift_atr_frac: 0.10,
     };
@@ -503,9 +500,8 @@ fn xlixA_mx19_prefijo_consumido_una_vez_y_determinista() {
     assert_eq!(a.net_pnl.to_bits(), b.net_pnl.to_bits());
     // Sanidad: la corrida con tendencia brutal en el prefijo sigue viva.
     assert!(a.final_capital.is_finite() && a.final_capital > 0.0);
-    // Invariancia estructural: la MISMA serie con warmup 700 (frontera
-    // más allá de la tendencia brutal del prefijo) no puede tener MÁS
-    // actividad del prefijo que warmup 600 — el prefijo nunca tradea.
+    // Segunda configuración: sanidad, no prueba de dominancia de actividad.
+    // No se comparan conteos de operaciones ni trazas dentro del prefijo.
     let cfg700 = ReplayConfig {
         initial_capital: 1000.0,
         warmup_ticks: 700,

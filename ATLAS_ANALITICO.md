@@ -1854,3 +1854,65 @@ PR10 y20 abiertas (20 draft). Aviso compartido ignorado MX sin acuse.
 Main remoto verificado7796326a; MX/ST/TE locales aún no publicados.
 Preservadas ramas activas/no integradas y política TH. Sin candidato seguro
 de borrado observado. Sigue pendiente autorización pública específica.
+
+## ADENDA CX — causalidad del replay y warmup (Codex, 2026-09-29)
+
+Informe: [Auditoría CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md).
+Artefacto: [JSON CX](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json).
+Base main968259dc, rama feat/quant-sr-codex-causalidad.
+
+Reparación candidata de MX-19: se elimina la precarga de este mismo tape
+antes del índice0; el estado se construye por el recorrido causal existente.
+La prueba inicial observa last_price=95.364,99490466162 antes del primer
+evento; mutar un sufijo o ampliar el tape cambiaba el prefijo.
+Segunda pasada: el warmup abría una posición antes del evento3. Ahora
+aprende features sin entradas, con frontera exacta W independiente de N.
+Macro anterior al primer dato ya no entrega futuro; límite W+10 sin overflow.
+
+Cuatro reparaciones candidatas y cinco expedientes abiertos, detallados
+por causa/evidencia/impacto/criterio de cierre. Siete contratos propios:
+RED2/4, candidato5/1, GREEN7/0; ampliada100/0/2. Las dos ignoradas son
+mediciones manuales en tapes. Sin training, promoción, trading ni T-1.
+No se cambia golden, shift_atr_frac, política de riesgo ni modelos.
+No equivale a una auditoría completa ni a prueba de rentabilidad.
+
+Pendientes: macro point-in-time/vintage, admisión inicial del ATR,
+relojes/rechazo atómico, ledger y paridad/readiness. MX-18 sólo parcialmente
+atendido; los informes anteriores se conservan como historia.
+CI nueva y revisión cruzada deben verificarse antes de integrar esta rama.
+Preservados el checkout GLM y las PR10/20; aviso de alcance sin acuse asumido.
+
+## ADENDA CX-06 — linaje de precios rechazados y ATR (2026-09-29)
+
+[Informe y ecuaciones](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md),
+[evidencia estructurada](docs/artifacts/auditoria_causalidad_replay_2026-09-29.json).
+El precio de la primera fila descartada llegaba al ATR auxiliar antes de
+la aduana, afectando cotizaciones/fills y capital/posiciones simulados.
+Reparación 88136410: estado vacío hasta aceptar precios; fórmula intacta.
+No se confunde con el ATR porcentual del núcleo ni se suavizan vetos.
+
+La recurrencia pesa TR monetario al 2% y memoria al 98%; semivida 34,3096
+eventos aceptados, no segundos. Preservar el coeficiente no certifica su
+calibración o invariancia al muestreo. Prefijos NaN/Inf/negativos/cruzados:
+RED 8/4 → GREEN 12/0; regresión 105/0/2, check all-targets aprobado.
+Las fixtures no certifican rentabilidad ni cobertura de todas las escalas.
+
+Cinco candidatos/cuatro abiertos CX; el estado anterior queda como historia.
+Main 9ed0cb8c integrado localmente en 8f9c27aa; la revisión GLM es de MX,
+no de CX. MX-20/21/22 siguen abiertos pese a la ambigüedad de su nota.
+Sin publicación CX ni CI remota/review, training, promoción o trading.
+
+## ADENDA CX / XLIX-A — estado causal antes de comparar genomas
+
+CX está publicada en PR22; este corte integra localmente main2080e423.
+Se evita un fallo de composición: quitar la precarga y conservar un salto
+de 600 filas deja al estimador sin observaciones. RED0/2 de contratos de
+estado mientras la fixture GLM de resultados pasa1/0. La resolución
+observa el prefijo una vez, sin entradas durante W. No cambia el genoma.
+
+Se conserva la prueba GLM y se aclara qué mide; se añaden dos contratos.
+Regresión108/0/2, all-targets aprobado. Delimitadores de stash en main
+eliminados sin borrar textos; CI añade control de diff. Evidencia detallada
+en la [adenda CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md).
+Readiness física por escala y paridad siguen abiertos. No se deduce edge,
+adaptación universal ni rentabilidad de un merge o un test determinista.

@@ -684,6 +684,16 @@ como historia, no describen el estado desde la apertura de PR #21.
 Los nueve hallazgos MX abiertos y todos sus criterios de cierre permanecen;
 publicar las reparaciones no demuestra alpha, rentabilidad o cobertura total.
 
+## Seguimiento CX — evidencia nueva sobre MX-19 y MX-18
+
+La [auditoría CX](AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md) reproduce y
+repara la precarga anticipada de MX-19 en un candidato posterior a PR21.
+También impide entradas durante el warmup y respeta la frontera solicitada.
+MX-18 sólo queda parcialmente atendido: ledger y reloj de métricas continúan
+abiertos. Esta adenda conserva las conclusiones históricas; la publicación
+del candidato, sus checks y revisión deben verificarse antes de declararlo
+integrado. No extrapolar los resultados antiguos a la nueva semántica.
+
 ---
 
 ## ADENDA XLIX·A (GLM, 2026-09-30) — MX-19 REPARADO
@@ -709,3 +719,15 @@ por CONTEO de ticks no equivale a 512 cierres de un minuto — con cadencia
 real de ~80ms/tick, 600 ticks ≈ 1 kline y Hurst sigue frío. El warmup
 debería medirse en RELOJ (≥ 512 min), no en ticks. Registrado como
 seguimiento MX-19b.
+
+## Integración CX / XLIX-A — precisión del contrato vigente
+
+Se conserva íntegra la adenda GLM como historia del commit281786bd. En la
+resolución CX no existe precarga: se observan todas las filas aceptadas una
+vez, suprimiendo sólo entradas durante W. No se combina esa ruta con el
+salto max(W,600), que perdería historia. Mutación controlada: dos contratos
+de frontera fallan, mientras la fixture GLM de determinismo/sanidad pasa.
+El [informe CX](AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md) detalla la prueba
+y sus límites. La fixture y todas sus aserciones se conservan y se añaden
+contratos de estado. MX-19b/readiness física y MX-20/21/22 siguen abiertos;
+no se declara un nuevo requisito global de 512 minutos ni rentabilidad.

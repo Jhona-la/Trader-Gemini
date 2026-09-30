@@ -1,5 +1,106 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — CX: revisión GLM recibida y mainb75db332 documental
+
+- a85b57e4 publicado en PR22: reconcilia GLM281786bd/main2080e423 con CX,
+  conserva fixture/aserciones, añade contratos, control CI y evidencia108/0/2.
+- GLM revisó0ef061d8: recomendación favorable y resolución propuesta igual
+  a la implementada. Estado GitHub COMMENTED, no APPROVED; no afirmar que
+  inspeccionó el nuevo SHA. Se solicita confirmar el candidato integrado.
+- Mainb75db332 sólo registra la revisión; merge documental conserva ambos
+  apéndices, sin modificar código/workflow frente a a85b57e4.
+- No se adopta como cierre la afirmación de paridad/readiness global:
+  eliminar precarga no acredita soporte suficiente de todos los estimadores.
+- Publicación autorizada y realizada; falta CI vigente y cierre de revisión
+  del resultado integrado antes de merge a main y limpieza de rama.
+
+## 2026-09-29 — CX/XLIX-A: integración con main2080e423 validada localmente
+
+- Padres: CX0ef061d8 y main2080e423 (GLM281786bd). PR22 debe recibir el
+  nuevo SHA y revisión cruzada; no está fusionada a main.
+- Composición negativa «sin precarga + salto max(W,600)»: contratos nuevos
+  0/2, fixture GLM1/0. Mutación nunca commiteada/publicada. Resolución:
+  conservar observaciones causales, suprimir sólo entradas durante W.
+- 14 contratos CX aprobados; ampliada108/0/2, check workspace/all-targets/
+  locked20,12 s antes de merge. Golden y aserciones GLM preservados.
+- Main incluía tres marcadores de stash versionados. Se quitan sólo
+  delimitadores, preservando1508/1529 líneas de padres en orden. CI añade
+  control git diff --check HEAD^ HEAD con profundidad2; cobertura intacta.
+- Informe/JSON y maestros añaden CX-I01/02/03 (composición, test insuficiente,
+  integridad documental), sin inflar los nueve expedientes CX originales.
+  MX-19b/readiness física sigue abierto; no imponer 512 min a todo el motor.
+- CI del árbol anterior no acredita el nuevo. Publicación CX ya autorizada;
+  merge condicionado a CI y revisión independiente. Sin training/trading/
+  promoción/T-1; checkout compartido y modelos ajenos intactos.
+
+## 2026-09-29 — CX publicada en PR #22; integración condicionada
+
+- PR https://github.com/Jhona-la/Trader-Gemini/pull/22, abierta y adjunta
+  al chat. Push verificado: local/remoto/PR coinciden en765b9d340ed5fdfecd1456950fad64c42d595916.
+- Main9ed0cb8c; GitHub reporta MERGEABLE. CI Replay contracts iniciada:
+  run36668221994, estado inicial IN_PROGRESS, no resultado verde inferido.
+- Sin reviews ni reviewers asignados al consultar. Revisión GLM de MX
+  no sirve como aprobación CX. No auto-merge, merge ni eliminación de rama.
+- Código idéntico al candidato88136410 validado localmente105/0/2;
+  publicación no incorpora trading, training, promoción, modelos ni tapes.
+- Los bloqueos de publicación anteriores son historia: autorización
+  específica y publicación ya verificadas. Falta CI y revisión cruzada CX.
+
+## 2026-09-29 — Publicación pública CX autorizada
+
+El operador respondió «Sí» a la petición explícita de publicar los cambios
+e informes CX en el repositorio PÚBLICO Jhona-la/Trader-Gemini y abrir su PR,
+condicionando el merge a CI y revisión cruzada. El bloqueo de publicación
+anterior queda levantado para CX; sus notas se conservan como historia.
+No autoriza trading, training, promoción ni dar por cerrados los hallazgos.
+Se verificó origin/main9ed0cb8c, rama CX limpia y sin PR preexistente.
+Evidencia local vigente: 105 aprobadas / 0 fallidas / 2 ignoradas;
+workspace/all-targets/locked aprobado. Publicación/CI/review se verificarán
+por sus resultados reales, nunca por la existencia del YAML.
+
+## 2026-09-29 — Codex CX-06: primera fila rechazada ya no siembra ATR
+
+- Reparación local88136410; main9ed0cb8c incorporado en8f9c27aa. No push/PR.
+  Publicación CX requiere autorización pública específica; no eludir bloqueo.
+- Cuatro reproducciones (NaN, Inf, negativos, libro cruzado): RED8/4 →
+  GREEN12/0. Se siembra tras la aduana de precios, sin cambiar coeficientes,
+  políticas de riesgo ni modelos. Cantidades/reloj atómicos siguen abiertos.
+- Ampliada105/0/2; golden intacto. Workspace/all-targets/locked aprobado
+  23,53s y repetido3,55s antes del merge documental. No todos los crate tests.
+- CX: cinco reparaciones candidatas/cuatro abiertos. Informe y JSON añaden
+  evidencia, ecuaciones, unidades y limitaciones conservando el corte previo.
+  El alpha0,02 mide memoria por evento, no una escala física universal.
+- Leída revisión GLM MX/PR21 en main9ed0cb8c; no es review de CX.
+  Precisión añadida preservando la nota: MX-20/21/22 siguen abiertos en
+  caller e informe, aunque su texto pueda interpretarse como cierre del linaje.
+- Ambos apéndices del conflicto preservados, sin delta de código tras merge;
+  índice resuelto. PR10/20 abiertas (20 draft), sin rama integrada para borrar.
+  Checkout main/entrenamiento ajeno preservados; aviso pasivo sin acuse.
+- Pendientes: publicación autorizada, CI remota y revisión cruzada CX.
+  No trading/training/promoción/T-1 ni certificación integral/rentabilidad.
+
+## 2026-09-29 — Codex CX: causalidad del replay (candidato)
+
+- Cierre LOCAL: fix0ed10b4b, CIcc5441e8, informe6f474a0d; mainf6903e91
+  integrado en5054304c, check3,58s; índice limpio y sin conflictos.
+- Push/PR CX bloqueados por revisión automática: exige autorización
+  pública específica CX. Rama remota y PR inexistentes al verificar.
+  No reintentar por otra vía; pedir autorización. CI remota/review pendientes.
+- Base main968259dc; PR21 integrada, ramas propias ST/TE/MX limpiadas.
+- Nueva rama feat/quant-sr-codex-causalidad. Repara precarga anticipada
+  MX-19, warmup que operaba, macro antes del primer dato y overflow W+10.
+- Informe y JSON: docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md;
+  4 reparaciones candidatas, 5 expedientes abiertos; no auditoría total.
+- 7 contratos propios pasan; ampliada100/0/2. Golden sin modificar.
+- Check workspace/all-targets/locked aprobado (1m40s), warnings previos.
+- CI nueva Replay contracts y revisión cruzada pendientes de verificación;
+  no confundir ausencia de review con aprobación ni YAML con CI verde.
+- Sin training, promoción, operación o T-1. Semántica de replay cambiada:
+  resultados/aptitudes históricos necesitan nueva medición causal.
+- GLM sigue en glm/xlviii-h-reentrenar-btc con Cargo.lock propio intacto.
+  PR10/20 preservadas; CX no toca sus rutas de código modificadas.
+  TH/backups quedan separados. Aviso compartido sin acuse demostrado.
+
 ## 2026-09-29 — PR #21 publicada y regresión ST/TE/MX aprobada
 
 - PR: https://github.com/Jhona-la/Trader-Gemini/pull/21.
