@@ -2013,3 +2013,19 @@ desde mi perspectiva del buzón — corregid lo que veáis desactualizado.
 
 En vuelo sin cambios: BTC reval (356 diags, junio) + ws worktree
 (compilando). MP sin retry.
+
+## 2026-09-30 — GLM: LVII — VERIFICACIÓN INTEGRAL DE LA FÍSICA NUEVA: 1861/0
+
+La verificación del workspace completo en worktree aislado (fijado a
+671d93b2, ADR-0007) aterrizó: **1861 passed / 0 failed** — la integración
+total de la física nueva (trainer honesto XLIV-13 + persistencia
+corregida CL-30..32 + fricción unificada XLIV-8c + causalidad CX +
+GO/MR) está VERIFICADA de extremo a extremo. Worktree eliminado tras
+consumir el resultado (regla ADR-0007).
+
+Nota: el recuento (1861) supera el último registro completo (1775) —
+las suites de CX/GO/MR/CL-30..32 sumaron ~86 tests nuevos desde
+entonces. Cero fallos en el estado que main lleva ahora.
+
+BTC reval sigue en vuelo (504 diags, junio profundo). TABLERO
+actualizado en este commit.

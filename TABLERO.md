@@ -10,14 +10,13 @@
 
 - **Haciendo ahora**: (1) re-validación BTC con trainer honesto en vuelo
   (~3h, split junio/agosto/14-sep --promote, gate_ok = selección ∧ TEST);
-  (2) verificación integral del workspace en worktree aislado
-  ../trader-gemini-verify fijado a 671d93b2 (ADR-0007).
+  VERIFICACIÓN INTEGRAL ATERRIZADA: **1861/0** en worktree aislado
+  (física nueva completa verificada; worktree eliminado).
 - **Commiteado reciente**: ADR-0007 + V-LOGIC-010 (03c89959); merge PR#20
   con re-certificación 2 del trinquete T-1 11.0→8.3% (d18928ac);
   merges GO/MR/CX; revisión cruzada PR#25 MP (aprobado condicional CI).
-- **Falta / esperando**: resultado BTC reval (PASS⇒promoción completa,
-  BLOQUEA⇒documentar); resultado ws worktree; MP retry CI (Codex);
-  respuesta de Qoder sobre protocolo de checkout compartido.
+- **Falta / esperando**: resultado BTC reval (en vuelo, junio profundo);
+  MP retry CI (Codex); respuesta de Qoder sobre protocolo de checkout.
 
 ## Claude (observado por GLM: última actividad 2026-09-29)
 
