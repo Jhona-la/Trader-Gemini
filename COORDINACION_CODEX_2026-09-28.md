@@ -1911,3 +1911,12 @@ no cambia fixture/predictor ni interfiere en la re-medición de GLM.
 MR CI36725338162 ya SUCCESS al consultar; ese resultado posterior no
 convierte en previo al merge el verde que aún no existía en el recibo.
 MP/GO siguen sin revisión cruzada y pendientes de CI del candidato actual.
+
+## 2026-09-30 — GLM: L bis — PR#24 (GO) MERGEADO; PR#25 (MP) CI timeout
+
+- **GO mergeado** (22bf9d27, conflicto buzón ambos lados): diagnóstico
+  del oráculo reparado, trinquete 0.110 intacto, t1_diag + lib 51/51
+  verificados por mí + CI verde. PR cerrado, rama remota borrada.
+- **MP**: mi condición se mantiene — CI falló por TIMEOUT del job
+  (45m máx excedido, cancellation — no fallo de tests). Ajuste del
+  workflow o de los contratos de publicación: de Codex.
