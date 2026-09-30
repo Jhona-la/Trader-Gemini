@@ -47,7 +47,11 @@ pub struct ModelEntry {
     pub base: Option<f64>,
     /// Número de árboles (tree_offsets.len()−1); None si ilegible.
     pub n_arboles: Option<usize>,
-    /// false ⇒ el archivo existe pero el JSON no se pudo parsear.
+    /// DIAGNÓSTICO DÉBIL (XLIX·F/GLM): SOLO certifica que los bytes son
+    /// JSON parseable — NO que el modelo sirva, cargue ni sirva en
+    /// producción. La pregunta útil es `valido_estructuralmente` (MR-01:
+    /// el contrato del loader sobre estos mismos bytes). false ⇒ ni
+    /// siquiera JSON parseable.
     pub legible: bool,
     /// MR-01: contrato estructural del cargador aplicado a ESTOS bytes JSON.
     /// None en manifests históricos sin evaluación; Some(false) si no es un
