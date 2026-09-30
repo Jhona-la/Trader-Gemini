@@ -10,32 +10,44 @@
 //! Convenciones (explícitas, sin ambigüedad):
 //! - **Escala anual**: 365,25 días; el tiempo se mide por el SPAN real de
 //!   la muestra (último − primer evento), no por suposición de calendario.
-//! - **Sharpe/Sortino**: por TRADE, anualizados con √(trades/año) — la
-//!   frecuencia medida de la propia muestra. Sin tasa libre de riesgo
-//!   (convención cripto 24/7, r_f ≈ 0 en USDT-margen).
-//! - **Sortino**: desviación a la baja contra objetivo 0 (loss-only);
-//!   sin pérdidas ⇒ +∞ se reporta como `f64::INFINITY` (no se clamp-ea:
-//!   esconder el caso degenerado sería deshonesto).
-//! - **CVaR 95**: media empírica del peor 5 % de los PnL por trade
-//!   (magnitud de pérdida, positiva). Exige ≥ 20 trades: con menos, la
-//!   cola no es estimable y se reporta NaN (contrato explícito).
+//! - **Sharpe/Sortino**: proxies de PnL MONETARIO por trade, no ratios de
+//!   retornos de cartera. La escala √(trades/año) presupone incrementos
+//!   comparables, estacionarios y sin correlación; no corrige dependencia,
+//!   solapamiento ni duración variable. Benchmark/objetivo 0 por política,
+//!   no porque operar 24/7 implique una tasa libre de riesgo nula.
+//! - **Sortino**: semidesviación contra 0 con denominador n TOTAL, no sólo
+//!   el número de pérdidas. Sin pérdidas y media positiva ⇒ +∞; 0/0 ⇒ NaN.
+//! - **CVaR 95**: parte positiva del Expected Shortfall empírico de pérdidas
+//!   monetarias por trade, con masa fraccional en el cuantil. El piso en 0
+//!   es una convención de presentación, no el ES firmado. Exige ≥20 trades
+//!   por política de cobertura mínima; NO garantiza precisión estadística.
+//!   Con menos se reporta NaN, aunque el funcional empírico sea definible.
 //! - **Turnover**: nocional operado / capital / día — presión de capacity
 //!   y costos, no un mérito.
-//! - **Calmar**: CAGR/|MaxDD|; MaxDD 0 con CAGR > 0 ⇒ INFINITY (perfecto
-//!   e irreal — que se vea).
-//! - Entradas vacías o capital ≤ 0: todo el panel a 0/NaN según campo —
-//!   jamás fabricar métricas sin muestra.
+//! - **Calmar**: CAGR/MaxDD; MaxDD 0 con CAGR > 0 ⇒ INFINITY, no evidencia
+//!   de perfección. CAGR = MaxDD = 0 ⇒ NaN (denominador no identificado).
+//! - **Ausencia/invalidez**: NaN, nunca un cero de rendimiento inventado.
+//!   Cada métrica valida sus dependencias: un capital inválido no elimina
+//!   el win-rate conocido; un PnL no finito invalida TODA la muestra de
+//!   trades sin descartar filas, pero no altera el crecimiento de extremos.
+//!   Duración cero invalida anualización y turnover, no prueba ruina.
+//! - No se usan epsilons monetarios: ratios adimensionales deben conservarse
+//!   al cambiar la unidad de cuenta. Escalado previo evita cuadrados/sumas
+//!   intermedios fuera de rango; resultados verdaderamente no representables
+//!   aún pueden ser infinitos o subdesbordar en f64.
 
 /// Panel de métricas ex-post. Todos los campos son del cálculo puro sobre
 /// la muestra dada; ningún campo se "rellena" sin evidencia.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExPostMetrics {
     pub n_trades: usize,
     pub span_days: f64,
     /// Retorno geométrico anualizado: (fin/inicio)^(365,25/d) − 1.
-    /// Capital final ≤ 0 ⇒ −1 (ruina total es el piso).
+    /// Capital final finito ≤ 0 ⇒ −1 con capital inicial/tiempo válidos.
+    /// Presupone ausencia de aportes/retiros; no ajusta flujos externos.
     pub cagr: f64,
-    /// Sharpe por trade anualizado: media/σ · √(trades/año).
+    /// Proxy de PnL por trade: media/σ poblacional · √(trades/año).
+    /// σ = 0 ⇒ NaN. No es Sharpe de retornos de cartera.
     pub sharpe_ann: f64,
     /// Sortino por trade anualizado: media/σ_a la baja · √(trades/año).
     pub sortino_ann: f64,
@@ -44,21 +56,40 @@ pub struct ExPostMetrics {
     /// Máxima caída fraccional del capital (0 = sin caídas).
     pub max_dd: f64,
     /// CVaR 95 empírico por trade (magnitud de pérdida, ≥0). NaN si
-    /// n_trades < 20: la cola no es estimable con menos muestra.
+    /// n_trades < 20 por política, o muestra con algún PnL no finito.
     pub cvar_95: f64,
     /// Nocional operado / capital / día.
     pub turnover_per_day: f64,
     /// Trades ganadores / total (PnL > 0).
     pub win_rate: f64,
-    /// Σ ganancias / |Σ pérdidas|; sin pérdidas ⇒ INFINITY.
+    /// Σ ganancias / |Σ pérdidas|; ganancias sin pérdidas ⇒ INFINITY;
+    /// sin ganancias ni pérdidas ⇒ NaN.
     pub profit_factor: f64,
+}
+
+impl Default for ExPostMetrics {
+    fn default() -> Self {
+        Self {
+            n_trades: 0,
+            span_days: 0.0,
+            cagr: f64::NAN,
+            sharpe_ann: f64::NAN,
+            sortino_ann: f64::NAN,
+            calmar: f64::NAN,
+            max_dd: f64::NAN,
+            cvar_95: f64::NAN,
+            turnover_per_day: f64::NAN,
+            win_rate: f64::NAN,
+            profit_factor: f64::NAN,
+        }
+    }
 }
 
 impl ExPostMetrics {
     /// Panel de una línea para telemetría/informes.
     pub fn panel_line(&self) -> String {
         format!(
-            "n={} d={:.1} CAGR={:.1}% Sharpe={:.2} Sortino={:.2} Calmar={:.2} MaxDD={:.1}% CVaR95={:.4} turnover/d={:.1} WR={:.1}% PF={:.2}",
+            "n={} d={:.1} CAGR={:.1}% Sharpe={:.2} Sortino={:.2} Calmar={:.2} MaxDD={:.1}% CVaR95={:.4} turnover/d={:.1} WR={:.1}% PF={:.2} basis=cash_pnl_per_trade annualization=iid_proxy",
             self.n_trades,
             self.span_days,
             self.cagr * 100.0,
@@ -76,7 +107,8 @@ impl ExPostMetrics {
 
 /// Días por año de la convención (cripto 24/7).
 const DIAS_POR_ANIO: f64 = 365.25;
-/// Muestra mínima para estimar la cola del 5 %.
+/// Política mínima: masa de al menos una observación en la cola del 5 %.
+/// No es una garantía de precisión ni un límite matemático del estimador.
 pub const MIN_TRADES_CVAR: usize = 20;
 
 /// Calcula el panel ex-post.
@@ -85,10 +117,12 @@ pub const MIN_TRADES_CVAR: usize = 20;
 ///   cuenta.
 /// - `notional_total`: nocional bruto operado acumulado (entrada+salida a
 ///   criterio del llamador; documentar cuál en el consumidor).
-/// - `capital_inicial`, `capital_final`: para CAGR y MaxDD.
+/// - `capital_inicial`, `capital_final`: extremos para CAGR, sin flujos
+///   externos. Son evidencia independiente de la lista de trades.
 /// - `max_dd`: máxima caída fraccional ya medida sobre la curva de equity
 ///   (el llamador la tiene de su bucle; no se re-deriva de PnL).
-/// - `span_ms`: último − primer evento de la muestra.
+/// - `span_ms`: último − primer evento del período efectivamente observado.
+///   Cero no permite anualizar. El caller debe validar orden y cobertura.
 pub fn ex_post_metrics(
     pnls: &[f64],
     notional_total: f64,
@@ -99,84 +133,121 @@ pub fn ex_post_metrics(
 ) -> ExPostMetrics {
     let mut m = ExPostMetrics {
         n_trades: pnls.len(),
-        max_dd: if max_dd.is_finite() && max_dd > 0.0 { max_dd } else { 0.0 },
+        max_dd: if max_dd.is_finite() && max_dd >= 0.0 {
+            max_dd.abs() // canonical +0: -0 must not reverse Calmar's sign
+        } else {
+            f64::NAN
+        },
         ..ExPostMetrics::default()
     };
     let dias = span_ms as f64 / 86_400_000.0;
     m.span_days = dias;
 
-    if pnls.is_empty() || !(capital_inicial > 0.0) {
-        return m; // sin muestra no hay panel: ceros explícitos
+    // Capital/clock domains are independent of the trade sample domain.
+    if capital_inicial.is_finite() && capital_inicial > 0.0 && dias > 0.0 {
+        if capital_final.is_finite() {
+            m.cagr = if capital_final <= 0.0 {
+                -1.0 // preserved convention: finite insolvency floors growth
+            } else {
+                // ln_1p preserves small relative changes; log difference avoids
+                // overflow/underflow of final/initial for extreme finite ratios.
+                let relative = (capital_final - capital_inicial) / capital_inicial;
+                let log_growth = if relative.abs() <= 0.5 {
+                    relative.ln_1p()
+                } else {
+                    capital_final.ln() - capital_inicial.ln()
+                };
+                (log_growth * (DIAS_POR_ANIO / dias)).exp_m1()
+            };
+        }
+        if notional_total.is_finite() && notional_total >= 0.0 {
+            let direct = notional_total / capital_inicial / dias;
+            m.turnover_per_day = if notional_total > 0.0 && (!direct.is_finite() || direct == 0.0) {
+                (notional_total.ln() - capital_inicial.ln() - dias.ln()).exp()
+            } else {
+                direct
+            };
+        }
     }
+    // IEEE division represents missing input and 0/0 as NaN, and positive/0
+    // as infinity. Do not turn a tiny but measured drawdown into zero risk.
+    m.calmar = m.cagr / m.max_dd;
 
-    // CAGR geométrico (piso −1 en ruina).
-    if capital_final > 0.0 && dias > 0.0 {
-        m.cagr = (capital_final / capital_inicial).powf(DIAS_POR_ANIO / dias) - 1.0;
-    } else {
-        m.cagr = -1.0;
+    // Reject the whole contaminated sample, not individual inconvenient rows.
+    if pnls.is_empty() || pnls.iter().any(|p| !p.is_finite()) {
+        return m;
     }
-
     let n = pnls.len() as f64;
-    let media = pnls.iter().sum::<f64>() / n;
-    let varianza = pnls.iter().map(|p| (p - media) * (p - media)).sum::<f64>() / n;
-    let sigma = varianza.sqrt();
-    // Frecuencia medida → factor de anualización por trade.
-    let trades_por_anio = if dias > 0.0 { n / dias * DIAS_POR_ANIO } else { 0.0 };
-    let raiz_anual = trades_por_anio.sqrt();
-
-    m.sharpe_ann = if sigma > 1e-12 { media / sigma * raiz_anual } else { 0.0 };
-
-    // Sortino: desviación a la baja contra objetivo 0 (sólo pérdidas).
-    let perdidas = pnls.iter().filter(|p| **p < 0.0);
-    let hay_perdidas = perdidas.clone().count() > 0;
-    if hay_perdidas {
-        let dd = (perdidas.map(|p| p * p).sum::<f64>() / n).sqrt(); // semidesviación
-        m.sortino_ann = if dd > 1e-12 { media / dd * raiz_anual } else { 0.0 };
-    } else {
-        m.sortino_ann = if media > 0.0 { f64::INFINITY } else { 0.0 };
+    m.win_rate = pnls.iter().filter(|p| **p > 0.0).count() as f64 / n;
+    let scale = pnls.iter().map(|p| p.abs()).fold(0.0_f64, f64::max);
+    if scale > 0.0 {
+        let media = compensated_sum(pnls.iter().map(|p| p / scale)) / n;
+        let sigma = (compensated_sum(pnls.iter().map(|p| (p / scale - media).powi(2))) / n).sqrt();
+        if dias > 0.0 {
+            let raiz_anual = (n / dias * DIAS_POR_ANIO).sqrt();
+            if sigma > 0.0 {
+                m.sharpe_ann = media / sigma * raiz_anual;
+            }
+            // hypot avoids squaring away a small downside while the resulting
+            // ratio is still representable (e.g. PnLs [1, -1e-200]).
+            let downside = pnls
+                .iter()
+                .filter(|p| **p < 0.0)
+                .fold(0.0_f64, |norm, p| norm.hypot(p / scale))
+                / n.sqrt();
+            m.sortino_ann = media / downside * raiz_anual;
+        }
+        let ganancias = compensated_sum(pnls.iter().filter(|p| **p > 0.0).map(|p| p / scale));
+        let perdidas = compensated_sum(pnls.iter().filter(|p| **p < 0.0).map(|p| -p / scale));
+        m.profit_factor = ganancias / perdidas;
     }
 
-    // Calmar.
-    m.calmar = if m.max_dd > 1e-12 {
-        m.cagr / m.max_dd
-    } else if m.cagr > 0.0 {
-        f64::INFINITY
-    } else {
-        0.0
-    };
-
-    // CVaR 95 empírico: media del peor 5 % de trades (magnitud de pérdida).
     if pnls.len() >= MIN_TRADES_CVAR {
         let mut ordenados = pnls.to_vec();
-        ordenados.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let cola = (ordenados.len() as f64 * 0.05).ceil() as usize;
-        let cola = cola.max(1);
-        let media_cola = ordenados[..cola].iter().sum::<f64>() / cola as f64;
-        m.cvar_95 = (-media_cola).max(0.0); // magnitud positiva de pérdida
-    } else {
-        m.cvar_95 = f64::NAN; // cola no estimable: contrato explícito
+        // All observations validated above.
+        ordenados.sort_by(f64::total_cmp);
+        // Integrate the empirical quantile over exactly 5% probability mass.
+        // Integer division/remainder avoid rounding ceil(.05*n) at boundaries.
+        let completos = pnls.len() / 20;
+        let fraccion = (pnls.len() % 20) as f64 / 20.0;
+        let usados = completos + usize::from(fraccion > 0.0);
+        let escala_cola = ordenados[..usados]
+            .iter()
+            .map(|p| p.abs())
+            .fold(0.0_f64, f64::max);
+        m.cvar_95 = if escala_cola == 0.0 {
+            0.0
+        } else {
+            let suma = compensated_sum(
+                ordenados[..completos]
+                    .iter()
+                    .map(|p| p / escala_cola)
+                    .chain(
+                        (fraccion > 0.0).then(|| fraccion * (ordenados[completos] / escala_cola)),
+                    ),
+            );
+            (-(suma / (completos as f64 + fraccion)) * escala_cola).max(0.0)
+        };
     }
 
-    // Turnover diario.
-    m.turnover_per_day = if dias > 0.0 {
-        notional_total / capital_inicial / dias
-    } else {
-        0.0
-    };
-
-    // Win-rate y profit factor.
-    let ganancias: f64 = pnls.iter().filter(|p| **p > 0.0).sum();
-    let perdidas_abs: f64 = -pnls.iter().filter(|p| **p < 0.0).sum::<f64>();
-    m.win_rate = pnls.iter().filter(|p| **p > 0.0).count() as f64 / n;
-    m.profit_factor = if perdidas_abs > 1e-12 {
-        ganancias / perdidas_abs
-    } else if ganancias > 0.0 {
-        f64::INFINITY
-    } else {
-        0.0
-    };
-
     m
+}
+
+/// Neumaier summation on bounded, normalized inputs; reduces cancellation
+/// without allowing sums of raw monetary values to overflow first.
+fn compensated_sum(values: impl Iterator<Item = f64>) -> f64 {
+    let mut sum = 0.0_f64;
+    let mut correction = 0.0_f64;
+    for value in values {
+        let next = sum + value;
+        correction += if sum.abs() >= value.abs() {
+            (sum - next) + value
+        } else {
+            (value - next) + sum
+        };
+        sum = next;
+    }
+    sum + correction
 }
 
 #[cfg(test)]
@@ -241,7 +312,10 @@ mod tests {
         pnls.extend(vec![-8.0, -12.0]); // los 2 peores
         let m = ex_post_metrics(&pnls, 0.0, 100.0, 118.0, 0.05, 40 * DIA_MS);
         assert_eq!(m.n_trades, 40);
-        assert!((m.cvar_95 - 10.0).abs() < 1e-12, "cola=(−12+−8)/2=−10 ⇒ magnitud 10");
+        assert!(
+            (m.cvar_95 - 10.0).abs() < 1e-12,
+            "cola=(−12+−8)/2=−10 ⇒ magnitud 10"
+        );
         // Todos-ganadoras con n≥20: cola son las propias ganancias ⇒ pérdida
         // media negativa ⇒ magnitud clamp a 0 (no hay cola de pérdida).
         let m2 = ex_post_metrics(&[1.0; 25], 0.0, 100.0, 125.0, 0.0, 25 * DIA_MS);
@@ -253,7 +327,17 @@ mod tests {
     fn linea_de_panel_nombra_las_metricas() {
         let m = ex_post_metrics(&[1.0, -0.5, 1.0, -0.5], 100.0, 10.0, 11.0, 0.01, 4 * DIA_MS);
         let line = m.panel_line();
-        for campo in ["CAGR=", "Sharpe=", "Sortino=", "Calmar=", "MaxDD=", "CVaR95=", "turnover/d=", "WR=", "PF="] {
+        for campo in [
+            "CAGR=",
+            "Sharpe=",
+            "Sortino=",
+            "Calmar=",
+            "MaxDD=",
+            "CVaR95=",
+            "turnover/d=",
+            "WR=",
+            "PF=",
+        ] {
             assert!(line.contains(campo), "falta {campo} en {line}");
         }
     }

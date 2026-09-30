@@ -2,35 +2,39 @@
 //!
 //! Transferencia de la teoría de rough paths (Lyons): la firma de un camino
 //! es su "huella algebraica" — una representación universal de la
-//! trayectoria que alimenta modelos lineales y redes con enorme poder
-//! expresivo, con identidades exactas (Chen, reverso) que la hacen
-//! AUDITABLE. Para la doctrina espectral: compara la FORMA del camino
-//! entre escalas sin que la frecuencia de muestreo la contamine (los
-//! términos de nivel 1 son totales exactos; los de nivel 2, la co-ordenada
-//! temporal del recorrido).
+//! trayectoria. Aquí sólo se retienen dos niveles: un resumen NO inyectivo,
+//! sin garantía de poder predictivo. Las identidades de Chen y del reverso
+//! permiten auditar la fórmula (con tolerancia de redondeo en f64).
+//! Subdividir segmentos del MISMO camino lineal por partes conserva su
+//! firma; remuestrear una trayectoria distinta puede perder excursiones.
 //!
 //! Contrato (docs/TRIAGE_TEORICO_2026-09-29.md):
-//! - **Variable**: camino 2D X = (log-P(t), t/T normalizado); ventana de
-//!   una escala τ a elección del consumidor.
+//! - **Variable**: camino 2D X = (log-P(t), (t-t0)/(tN-t0)); interpolación
+//!   lineal por partes sobre una escala τ a elección del consumidor.
+//!   El consumidor debe conservar τ y la frescura por separado: normalizar
+//!   el tiempo elimina la duración absoluta, no identifica todos los horizontes.
 //! - **Operador**: firma truncada a nivel 2 — 6 términos significativos:
-//!   S¹, S² (incrementos totales) y S^{ij} = Σ_{a<b} Δ^i_a Δ^j_b.
-//!   Cómputo O(n) con sumas prefijas: S^{ij} = Σ_b prefijo_i(b−1)·Δ^j_b.
+//!   S¹, S² (incrementos totales) y
+//!   S^{ij} = Σ_{a<b} Δ^i_a Δ^j_b + ½ Σ_a Δ^i_a Δ^j_a.
+//!   No son seis grados de libertad: S^{ij}+S^{ji}=S^i S^j.
 //! - **Unidades**: adimensionales (log-acumulado × fracción de ventana).
 //! - **Contorno**: <2 puntos ⇒ None; precio ≤0/NaN ⇒ None (el log exige
-//!   positividad — el mismo saneamiento que todo el dominio espectral).
-//! - **Identificabilidad**: la firma a nivel 2 caracteriza el camino salvo
-//!   equivalencia tree-like (Hambly-Lyons) — unicidad NO afirmada.
+//!   positividad); timestamps no decrecientes y duración positiva.
+//! - **Identificabilidad**: Hambly-Lyons trata la firma COMPLETA de caminos
+//!   de variación acotada, no esta truncación. Caminos diferentes, incluso
+//!   aumentados con tiempo estrictamente creciente, pueden compartir nivel 2.
+//!   Fuentes: https://arxiv.org/abs/math/0507536 y https://arxiv.org/abs/1603.03788.
 //! - **Coste**: O(n) por ventana, fuera del hot path.
 //! - **Falsación** (tests): línea recta en densidades distintas ⇒ firma
 //!   idéntica (invariancia a remuestreo del caso exacto); identidad de
-//!   Chen S(A⊗B) = S(A)·(1⊕S(B)) a nivel 2; reverso: S¹→−S¹, S^{ij}→S^{ji}.
+//!   Chen S(A*B) = S(A)⊗S(B); reverso: S¹→−S¹, S^{ij}→S^{ji}.
 
 /// Firma truncada a nivel 2 de un camino 2D.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Signature2 {
     /// Nivel 1: incrementos totales por coordenada.
     pub level1: [f64; 2],
-    /// Nivel 2: level2[i][j] = S^{ij} = Σ_{a<b} Δ^i_a Δ^j_b.
+    /// Nivel 2: S^{ij} = Σ_{a<b} Δ^i_a Δ^j_b + ½ Σ_a Δ^i_a Δ^j_a.
     pub level2: [[f64; 2]; 2],
 }
 
@@ -51,12 +55,16 @@ impl Signature2 {
 /// Firma de nivel 2 sobre los INCREMENTOS ya computados (δx, δy) en orden.
 /// O(n): mantiene el prefijo acumulado de cada coordenada.
 ///
-/// DISCRETIZACIÓN SIMÉTRICA (Stratonovich): S^{ij} = Σ_{a<b} δ^i_a δ^j_b
+/// Firma geométrica del camino lineal por partes: S^{ij} = Σ_{a<b} δ^i_a δ^j_b
 /// + ½ Σ_a δ^i_a δ^j_a. El término de diagonal media hace que la firma del
-/// camino recto sea EXACTA a cualquier densidad de muestreo (S^{ij} =
-/// x_i·x_j/2) — el caso continuo exacto — y conserva sin error la identidad
-/// de Chen y la del reverso (ver tests). Sin ella, la suma discreta de
+/// camino recto sea exacta en aritmética real a cualquier subdivisión (S^{ij} =
+/// x_i·x_j/2) y conserva Chen y reverso salvo redondeo numérico (ver tests).
+/// Sin ella, la suma discreta de
 /// pares ordenados arrastra una corrección O(δ) dependiente del muestreo.
+///
+/// API algebraica SIN validación: el llamador debe asegurar incrementos e
+/// intermedios representables y finitos. No recorta overflow/NaN ni certifica
+/// una interpretación estocástica de Stratonovich para cualquier feed.
 pub fn firma_nivel2_incrementos(incrementos: &[(f64, f64)]) -> Signature2 {
     let mut sig = Signature2::default();
     let mut pref = [0.0_f64; 2];
@@ -73,34 +81,48 @@ pub fn firma_nivel2_incrementos(incrementos: &[(f64, f64)]) -> Signature2 {
     sig
 }
 
-/// Firma de la ventana (precios, timestamps): camino X = (log P, t/T).
-/// None con <2 puntos o precios no positivos/no finitos (contorno).
+/// Firma de la ventana: camino X = (log P, (t-t0)/(tN-t0)).
+/// None si longitudes distintas, <2 puntos, precios no positivos/no finitos,
+/// reloj decreciente, duración nula o resultado no finito. Timestamps iguales
+/// conservan el orden del feed; no se inventan tiempos ni se ordenan precios.
+/// Devuelve seis coordenadas adimensionales, NO duración ni edad del dato.
 pub fn firma_ventana_logprecio(precios: &[f64], ts_ms: &[u64]) -> Option<Signature2> {
     if precios.len() != ts_ms.len() || precios.len() < 2 {
         return None;
     }
-    let t0 = ts_ms[0] as f64;
-    let t1 = ts_ms[ts_ms.len() - 1] as f64;
-    let span = t1 - t0;
-    if !(span > 0.0) {
+    // Restar en el dominio entero ANTES de convertir evita perder un delta
+    // pequeño por redondeo del epoch absoluto (por ejemplo 2^53 y 2^53+1).
+    let span = ts_ms[ts_ms.len() - 1].checked_sub(ts_ms[0])?;
+    if span == 0 || !precios[0].is_finite() || precios[0] <= 0.0 {
         return None;
     }
     let mut incs: Vec<(f64, f64)> = Vec::with_capacity(precios.len() - 1);
-    let mut log_prev = None;
-    let mut t_prev = t0;
-    for (i, &p) in precios.iter().enumerate() {
+    let mut p_prev = precios[0];
+    let mut t_prev = ts_ms[0];
+    for (&p, &t) in precios.iter().zip(ts_ms).skip(1) {
         if !p.is_finite() || p <= 0.0 {
             return None;
         }
-        let lp = p.ln();
-        let t_norm = ts_ms[i] as f64 / t1; // t/T con T = último timestamp
-        if let Some(lpp) = log_prev {
-            incs.push((lp - lpp, t_norm - t_prev));
-        }
-        log_prev = Some(lp);
-        t_prev = t_norm;
+        let dt = t.checked_sub(t_prev)?;
+        // ln(1+r) mantiene movimientos pequeños que ln(p)-ln(p_prev) cancela.
+        // Cerca (factor 2), la resta satisface la condición de Sterbenz;
+        // lejos, restar logaritmos evita r redondeado cerca de -1. La frontera
+        // es numérica, no un filtro económico ni un recorte de rendimientos.
+        let log_return = if p >= 0.5 * p_prev && 0.5 * p <= p_prev {
+            ((p - p_prev) / p_prev).ln_1p()
+        } else {
+            p.ln() - p_prev.ln()
+        };
+        incs.push((log_return, dt as f64 / span as f64));
+        p_prev = p;
+        t_prev = t;
     }
-    Some(firma_nivel2_incrementos(&incs))
+    let signature = firma_nivel2_incrementos(&incs);
+    signature
+        .to_features()
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(signature)
 }
 
 #[cfg(test)]
@@ -112,9 +134,7 @@ mod tests {
     /// para CUALQUIER n: la firma del caso exacto no depende del muestreo.
     #[test]
     fn linea_recta_forma_cerrada_e_invariante_al_remuestreo() {
-        let firma = |n: usize, a: f64, b: f64| {
-            firma_nivel2_incrementos(&vec![(a, b); n])
-        };
+        let firma = |n: usize, a: f64, b: f64| firma_nivel2_incrementos(&vec![(a, b); n]);
         for n in [2_usize, 3, 10, 137] {
             let s = firma(n, 0.01, 0.2);
             assert!((s.level1[0] - n as f64 * 0.01).abs() < 1e-12);

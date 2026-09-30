@@ -1,0 +1,12 @@
+diff --git a/crates/risk-engine/src/veto_registry.rs b/crates/risk-engine/src/veto_registry.rs
+--- a/crates/risk-engine/src/veto_registry.rs
++++ b/crates/risk-engine/src/veto_registry.rs
+@@ -76,7 +76,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
+         responsable: "XLVI·E/SPECTRAL-010 (GLM), 2026-09-29",
+         clase: ClaseVeto::RiesgoDuro,
+         estado: EstadoVeto::Activo,
+-        test: Some("xlvie_hibrido_frio_coincide_con_el_veto_legado"),
++        test: Some("__st_missing_behavior_contract__"),
+         deuda: None,
+     },
+     EntradaVeto {

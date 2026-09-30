@@ -120,6 +120,40 @@ frecuencia de muestreo contamine.
 
 Implementación: `feature_engine::path_signatures`.
 
+## ADENDA ST — precisión del contrato y estado de integración (Codex, 2026-09-29)
+
+Se conserva el triage anterior como histórico. Para las afirmaciones siguientes,
+este corrigendo precisa el contrato; no implica integración operativa ni alpha.
+Detalle y pruebas: [Auditoría ST](AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md).
+
+1. Firmas: el kernel de nivel2 es correcto para caminos lineales por partes,
+   con media diagonal. La fórmula incluye esa diagonal; el reverso transpone
+   nivel2. Dos puntos válidos bastan. Con precio constante el tiempo no es nulo.
+2. Hambly-Lyons concierne a la firma completa, NO asegura identificabilidad
+   de nivel2. Hay un contraejemplo reproducible con reloj estrictamente creciente.
+3. Invariancia geométrica no significa invariancia ante cualquier remuestreo
+   del feed. Deben declararse interpolación, resolución y pérdidas de excursiones.
+4. El adaptador original normalizaba por epoch; ST corrige localmente a
+   dt/(tN-t0), valida orden y mejora precisión. Commit f60e1820, aún sin publicar.
+   No se encontró consumidor de producción: estado EXPERIMENTAL, no genoma cableado.
+5. Rough volatility estudia log-volatilidad; Hurst de precio no la calibra.
+   No corresponde imponer H<0,1 como supuesto universal.
+6. Transfer entropy necesita historias/retardos y condicionamiento. La frase
+   previa «SIN ventana de lag» no es un contrato correcto del estimador.
+7. Outcome attribution conserva lineage, no identifica por sí sola una
+   intervención causal. La equivalencia con Pearl queda retirada.
+8. Logloss no demuestra un criterio MDL sin código de complejidad/modelo o
+   construcción universal declarada. No se afirma ausencia de otros controles.
+9. Conformal/ACI implementado no cierra las limitaciones de cobertura de CF:
+   selección, delay, recorte y singleton siguen pendientes.
+10. Firmas normalizadas pierden duración absoluta; seis coordenadas no son
+    seis fuentes independientes. Antes de consumirlas: activo/τ/as-of/versión,
+    paridad replay-serving, rango efectivo, coste y ablación OOS.
+
+No se altera código operativo de rough σ, TE, MDL, causalidad o ACI en ST.
+Cada implementación posterior debe volver a verificarse contra su propia
+versión; esta adenda no prejuzga modificaciones concurrentes de GLM/Claude.
+
 ---
 
 ## ADENDA XLVIII·E (2026-09-29) — TE EN TAPES REALES: RESULTADO NEGATIVO REGISTRADO
@@ -147,3 +181,38 @@ escala en estos datos. La TE queda como herramienta disponible
 pruebe una simbolización de nivel-retorno (precio, no actividad), que es
 la vía de refinamiento honesta si se quiere persistir. "Más teoría ≠ más
 edge": la medición cerró la decoración antes de que naciera.
+
+## ADENDA TE — corrigendo del estimador y de la inferencia (Codex)
+
+Se preserva la tabla XLVIII·E como resultado histórico de 40c263c2; NO se
+reemplaza por cifras no medidas. El módulo de ese corte mezclaba una
+conjunta no normalizada y condicionales incompatibles. Corregidos localmente
+en 00a118de; lector/evidencia en d08a840b. Informe detallado:
+[TE: cobertura y evidencia](AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md).
+
+La simulación independiente <0,01 bits no es el nivel nulo de otros datos.
+Ni una razón próxima a 1 ni un efecto menor que el acople fuerte prueban
+ausencia de dependencia; faltan potencia, surrogates y multiplicidad.
+Se mantiene la decisión de NO cablear. La nueva API exige declarar cobertura
+común y solo cuenta bins completos; el wrapper infiere extremos y NO
+certifica outages. 100 bins silenciosos dan 0,0247793 bits por el prior.
+
+El operador conserva historia de un paso y anchura elegida, no es «sin lag».
+64 bins es política heredada, no teorema. La TE continua de procesos puntuales
+es otra familia candidata con historia/intensidades por validar; no se
+implementa como etiqueta ni se le atribuye rentabilidad o causalidad.
+
+Verificación final: 1.170/0/7, con 27 contratos nuevos incluidos. Tapes manuales
+no ejecutados. Alcance, límites y seis deudas abiertas están en el informe.
+
+## ADENDA MX — antes de añadir otra teoría, validar la medición
+
+El panel XLVIII·A tiene reparación local a0ad0a0b (dominios, estabilidad y
+masa fraccional de cola). Véase [MX](AUDITORIA_METRICAS_REPLAY_2026-09-29.md).
+Su Sharpe/Sortino usa cash PnL por trade, no retorno de cartera; raíz de
+frecuencia no corrige autocovarianza. n≥20 es política, no precisión ES95.
+Nuevas prioridades: causalidad del prefijo, población/ledger/reloj únicos y
+consumidor trazable. La inferencia de rentabilidad o paridad live no queda
+validada por métricas puras, pruebas verdes ni un inventario de modelos.
+No se añade HAC con lag arbitrario, modelo cuántico o teoría del milenio
+sin dato identificable, presupuesto de error, costo y falsación OOS.

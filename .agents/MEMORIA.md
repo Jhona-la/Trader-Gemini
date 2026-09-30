@@ -1,5 +1,111 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — PR #21 publicada y regresión ST/TE/MX aprobada
+
+- PR: https://github.com/Jhona-la/Trader-Gemini/pull/21.
+- Corte probado: e9d8fcd4; incluye main7796326a. Esta adenda sólo cambia
+  documentación y no modifica el código que produjo la evidencia.
+- Seis crates: 1.137 aprobadas, 0 fallidas, 7 ignoradas. Replay: 86/0/0
+  (37 biblioteca, 21 MX, 25 labels, 3 riesgo espectral). Total disjunto:
+  **1.223 aprobadas, 0 fallidas, 7 ignoradas**; golden existente intacto.
+- `cargo check --workspace --all-targets`: éxito (19,14 s), con warnings
+  preexistentes; no se presentan como errores reparados.
+- Las ignoradas son 5 testnet, 1 inventario ML y 1 medición manual TE.
+  No hubo trading, entrenamiento, promoción ni evaluación de tapes T-1.
+- PR sin conflictos, revisiones/comentarios pendientes ni checks reportados
+  al consultar. Sin CI configurada: evidencia local, no «CI verde».
+- Integración solicitada; verificar el evento de merge y SHA en la PR.
+  Las notas anteriores LOCAL/no publicado son históricas desde este corte.
+  TH sigue pendiente; no se toca el checkout GLM ni su Cargo.lock sucio.
+  Los nueve expedientes MX abiertos y las limitaciones científicas subsisten.
+
+## 2026-09-29 — Publicación ST/TE/MX autorizada por el operador
+
+El operador respondió «Hazlo» a la petición explícita de publicar la rama
+`feat/quant-sr-codex-metricas`, incluidos los cambios e informes ST/TE/MX,
+en el repositorio PÚBLICO `Jhona-la/Trader-Gemini` y tramitar su integración
+a main. Queda levantada la anterior falta de autorización de publicación;
+los avisos anteriores se conservan como registro histórico, no como estado
+vigente de permisos.
+
+Alcance de publicación: los cambios acumulados frente a main7796326a,
+incluidas sus pruebas y documentos. TH6209704a permanece separada por su
+política pendiente; no se modifica el Cargo.lock sucio del checkout compartido.
+No se amplía esta autorización a operar, entrenar o promover modelos.
+
+La publicación no resuelve los hallazgos abiertos ni acredita rentabilidad.
+Se revisan diferencias, PR/comentarios y requisitos de integración. GitHub
+no reporta protección/ruleset de main ni existen workflows versionados en
+este corte; ausencia de CI no se describe como «CI verde». Se realiza además
+regresión local conjunta antes de integrar. El resultado definitivo y la URL
+de la PR quedarán en el cierre de publicación.
+
+
+## 2026-09-29 — Codex MX: métricas y causalidad (LOCAL)
+
+- Rama feat/quant-sr-codex-metricas; fix a0ad0a0b.
+- Integra main7796326a en7bdd39a8 con ambos historiales del buzón;
+  Cargo.lock añade sólo sha2 de god-engine-core, exigido por registro GLM.
+- Informe docs/AUDITORIA_METRICAS_REPLAY_2026-09-29.md +JSON:
+  26 observaciones,14 fixes previos+1 regresión del candidato,2 aclaraciones,
+  9 abiertos. No equivale a auditoría semántica de todo el repositorio.
+- 21 contratos nuevos: RED1/18, candidato19/2, GREEN21/0.
+  Ampliada86/0/0 antes de merge; checks33,37s y30,19s de integración.
+  Post-merge7bdd39a8:86/0/0 (37+21+25+3). Golden/fitness/riesgo intactos.
+- P0 MX-19: prefijo precargado antes de replay desde0; P1 poblaciones,
+  nocional, span, doble cierre, cash-PnL y consumidores antiguos.
+  No impacto productivo, OOS o rentabilidad demostrado por este cambio.
+- GLM model registry integrado; PR10/20 abiertas,20 draft. Main remoto779.
+  Sin push/merge remoto MX; falta autorización específica de publicación.
+  Aviso ignorado compartido MX sin acuse. No borrar ramas pendientes.
+- Se conservan TE/ST y TH; no ejecutar trading, T-1 o promoción por inferencia.
+
+
+## 2026-09-29 — Codex TE: cobertura y evidencia (LOCAL, no publicado)
+
+- Rama feat/quant-sr-codex-te; conserva ST y TH sin mezclar la política τ.
+- Fix del estimador 00a118de; lector/medición d08a840b. Main 817d5882
+  incorporado en 057cb491 (solo documental; código validado intacto).
+- Informe docs/AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md +JSON:
+  19 hallazgos: 11 de código local, 2 contratos documentados, 6 abiertos.
+- Normalización/marginales CMI, dominio, alineación, reloj, cobertura y
+  bins completos; conteo disperso O(E log(E+1)), O(1) en memoria auxiliar.
+- 27 tests nuevos; 1.170 aprobados/0 fallidos/7 ignorados (total disjunto).
+  Check all-targets: 4,03 s; tras ADRs: 3,46 s.
+  Sin T-1, tapes manuales, live, entrenamiento o promoción.
+- 100 bins silenciosos dan 0,0247793 bits del prior: no liderazgo demostrado.
+  Se conserva NO cablear TE. Medición GLM histórica no es contraste nulo.
+- PR #10/#20 abiertos, #20 draft; GLM activo en ADRs, no se toca su índice.
+  Aviso ignorado compartido .firecrawl/coordination-codex-te-2026-09-29.md
+  sin acuse. No push/PR/merge remoto: falta autorización pública informada.
+- ST-19 registry, TH política τ y restantes deudas científicas siguen abiertos.
+
+## 2026-09-29 — Codex ST: firmas de caminos y contratos científicos (LOCAL)
+
+- Rama codex/signature-contract-audit desde49fc995c; fix f60e1820.
+  Cuatro defectos numéricos/temporales;13 regresiones finales. RED7/5 en12.
+- Informe docs/AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md y JSON:
+  Corte inicial18; integrado19:4 código local,3 documentación,12 abiertos.
+  No firma completa, ni consumidor operativo encontrado, ni alpha probado.
+- Seis crates1098/0/6 +replay lib37/0/0 =1135/0/6; check all-targets1m18s.
+  No T-1, operación, entrenamiento/promoción ni golden alterado.
+- Triage precisado sin borrar histórico: Hprecio≠Hvol, TE con historia,
+  lineage≠do-calculus, logloss≠MDL por sí sola, pendientes CF conservados.
+- TH6209704a y backups preservados. PR10/20 abiertos,20 draft.
+  Publicación pública pendiente de autorización tras bloqueo previo.
+  No consta recepción por GLM/Claude del aviso local ST.
+- Integración local682fa973 con main303e7ef2; único conflicto del buzón
+  resuelto conservando ambos avisos. Ambos padres revisados; all-targets
+  pasa40,11s antes del commit. No equivale a merge remoto.
+- ST-19: copia del registro GLM con test inexistente pasa4/4; sus checks
+  no prueban el vínculo prometido con contratos de comportamiento.
+  Registro real intacto; mutación documentada, no contada como reparación.
+- Cierre sobre682fa973: seis crates1102/0/6 +replay37/0/0 =1139/0/6.
+  Main posteriorca3ea5d4 (TE) no auditado en este corte. Aviso compartido
+  ignorado .firecrawl/coordination-codex-st-2026-09-29.md; sin acuse.
+
+
+
 > Memoria compartida entre sesiones de agente (Claude, Gemini, freebuff…).
 > Las REGLAS viven en `.agents/AGENTS.md`; aquí va el ESTADO: qué está
 > integrado, qué decisiones siguen vigentes y qué queda abierto.

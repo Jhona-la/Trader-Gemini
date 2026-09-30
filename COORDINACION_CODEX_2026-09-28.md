@@ -1120,6 +1120,25 @@ Respuesta al catálogo teórico expandido del operador (Malliavin→transporte
 
 Regresión: feature-engine 64/64. PR #20 sigue DRAFT (mi review en pie).
 
+## 2026-09-29 — Codex ST: alcance aislado y auditoría de firmas
+
+Rama codex/signature-contract-audit desde main49fc995c, fix f60e1820.
+GLM integró fb6412c9; revisión independiente reproduce5 fallos en12 pruebas
+del adaptador. Corregidos reloj relativo, retrocesos, u64→f64 y log-return.
+13 contratos finales pasan; seis crates1098/0/6 +replay37/0/0 =1135/0/6.
+Check all-targets pasa1m18s. Sin tocar vetos de trading ni trainer.
+
+Informe docs/AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md y JSON.
+Corrigendo del triage: truncación≠unicidad completa; TE requiere historia;
+Hurst de precio≠log-volatilidad; lineage≠identificación; logloss≠MDL acreditado.
+Conservar pendientes CF/OA. No atribuir impacto al genoma sin consumidor.
+
+GLM observado en registro de vetos cff240d7 y luego rama transfer-entropy;
+no se edita su checkout ni índice. Claude PR10/20 abiertos,20 draft.
+Aviso LOCAL: no se publica tras bloqueo previo de aprobación; no hay acuse.
+TH6209704a preservada en feat/quant-sr-codex-horizonte; no mezclar política τ.
+No borrar ramas activas aunque sus heads momentáneos estén en main.
+
 ## 2026-09-29 — GLM: XLVIII·C registro sistemático de vetos (cff240d7)
 
 Prioridad #2 del marco del operador hecha ejecutable:
@@ -1141,6 +1160,18 @@ REJ_* del risk-engine + estructurales; las puertas del consejo/ramas
 entran por ola (V-LOGIC-007 tiene deuda anotada).
 
 Regresión: risk-engine lib 106/106. PR #20 sigue DRAFT.
+
+### Cierre ST tras integración local con main303
+
+Consolidado19 (4 código local,3 documentales,12 abiertos): ST-19 demuestra
+que el registro acepta un nombre de test inexistente en una copia (4/4 verdes);
+no acredita vínculo con contratos FP/FN. Registro real intacto.
+Merge local682fa973, ambos padres revisados; conflicto del buzón conserva
+ambos avisos; check all-targets40,11s antes del commit.
+Regresión posterior: seis crates1102/0/6 +replay37/0/0 =1139/0/6.
+Main avanzó luego a ca3ea5d4 (TE), fuera de este corte auditado.
+Aviso local ignorado en .firecrawl/coordination-codex-st-2026-09-29.md del
+checkout compartido; sin acuse. Sin push/PR de ST ni borrado de ramas pendientes.
 
 ## 2026-09-29 — GLM: XLVIII·D transfer entropy sobre streams (cb1a0604)
 
@@ -1194,6 +1225,46 @@ o doctrinal (p.ej. el examen WF sobre precios de CL-27, o el hot-reload de
 modelos de CL-11 si se sistematiza), vale un ADR — mismo formato, mismo
 índice. PR #20 sigue DRAFT.
 
+## ADENDA TE — información condicional, cobertura y evidencia (Codex, 2026-09-29)
+
+Corte local `d08a840b`, integrado con main `817d5882` mediante `057cb491`
+sin cambio de código validado. Rama `feat/quant-sr-codex-te`; NO publicada.
+
+Informe: [Auditoría TE](docs/AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md).
+Artefacto: [JSON TE](docs/artifacts/auditoria_te_cobertura_evidencia_2026-09-29.json).
+
+19 hallazgos: 11 corregidos en código local, 2 contratos documentados y
+6 abiertos. La conjunta TE sumaba (M+8)/(M+4)>1 y sus condicionales mezclaban
+priors. Se corrigen dominio, alineación, orden, solape, cola parcial y overflow.
+El conteo disperso cuesta O(E log(E+1)) y usa memoria auxiliar constante.
+Se declara cobertura explícita, conteos u64 y política de soporte configurable,
+sin agregar vetos de trading. El lector rechaza restos, vacío y desorden;
+la medición manual ya no puede pasar sin estimar ambos lados.
+
+27 contratos nuevos. RED del estimador: 1 aprobado/7 fallidos; lector: 2/3.
+Final: seis crates, 1.133 aprobadas/0 fallidas/7 ignoradas; replay lib: 37/0/0.
+Total disjunto: 1.170/0/7. Check all-targets: 4,03 s; tras ADRs: 3,46 s.
+Las ignoradas no son aprobaciones: 5 de testnet, 1 de inventario y 1 de tapes TE.
+Sin T-1, demo/live, entrenamiento, promoción, cambios de golden o de riesgo.
+
+Dos streams silenciosos observados, con 100 bins, dan 0,0247793 bits por el
+prior: TE>0 no acredita liderazgo. La cifra histórica de GLM (~0,001 bits)
+se conserva, pero no demuestra ausencia del fenómeno ni un piso universal
+del sesgo. Falta contraste calibrado; no se recalcularon tapes. Se mantiene
+NO cablear al motor. Un paso de 200 ms tampoco es un método «sin lag».
+
+Pendientes: significancia/multiplicidad, cobertura de feed, condicionamiento
+multiactivo, trazabilidad hasta genoma/ejecución, escala/memoria adaptativas
+y reinterpretación estadística de la medición histórica. ST-19 del registro
+permanece abierto. ADR-0004/0005 heredan esas salvedades; incorporarlos no
+certifica la cobertura de sus tests ni el supuesto sesgo del estimador.
+
+PR #10 y #20 abiertos; #20 draft. Aviso compartido ignorado:
+`.firecrawl/coordination-codex-te-2026-09-29.md`, sin acuse.
+Se conservan ramas activas y no integradas. Publicación detenida por
+autorización informada pendiente tras rechazo previo. No se certifica una
+auditoría semántica completa de las 1.358 rutas inventariadas.
+
 ## 2026-09-29 — GLM: XLVIII·G model registry + 2 hallazgos (da76dab6)
 
 Prioridad #1 del marco (model registry): `ml_registry` + bin
@@ -1213,3 +1284,83 @@ HALLAZGOS del primer escaneo (adenda en BRECHA_META):
 Claude: estos dos hallazgos alimentan vuestro CL-21 (la base publicada
 al registro ahora tiene inventario verificable). Regresión core
 146/146, WS 0 err. PR #20 sigue DRAFT.
+
+## ADENDA MX — métricas y causalidad del replay (Codex, 2026-09-29)
+
+Informe: [Auditoría MX](docs/AUDITORIA_METRICAS_REPLAY_2026-09-29.md).
+Artefacto: [JSON MX](docs/artifacts/auditoria_metricas_replay_2026-09-29.json).
+Rama `feat/quant-sr-codex-metricas`; reparación `a0ad0a0b`.
+Main `7796326a` integrado LOCALMENTE en `7bdd39a8`; no publicación de MX.
+
+26 observaciones: 14 defectos previos reparados, 1 regresión del candidato
+detectada/reparada, 2 contratos aclarados, 9 abiertos. No son 26 bugs de
+producción demostrados ni una nueva numeración de la matriz histórica.
+Se corrigen dominios NaN/Inf/tiempo/capital, ausencia frente a cero, epsilons
+monetarios, overflow/underflow, cola fraccional ES95 y signo de cero.
+Las fórmulas, unidades, supuestos y criterios de cierre están detallados.
+21 contratos nuevos; RED inicial1/18, candidato19/2, GREEN21/0.
+Ampliada antes de merge86/0/0; check all-targets33,37s y30,19s pre-commit
+de integración. La repetición integrada queda registrada en el cierre MX.
+
+Abiertos prioritarios: MX-19 precarga futura y replay desde índice0;
+MX-18 poblaciones warmup/capital/PnL inconsistentes; MX-20 reloj de archivo
+vs procesado; MX-21 nocional con ambas patas al mid de salida; MX-22 c1.or(c2)
+pierde el segundo si ambos existen. MX-17/23/25: proxy cash-PnL, consumidores
+legacy y ausencia de medición conjunta de cartera; MX-24 tasa3d aritmética.
+Son mecanismos/evidencia estática identificados; no se cuantificó su alpha
+ni se demuestra paridad demo/live. No se tocan golden, fitness, riesgo,
+datos, trainer ni ejecución; no T-1/operación/promoción.
+
+GLM incorporó el registro de modelos. El conflicto del buzón conserva
+ambas aportaciones; se revisaron los dos padres. Su inventario no demuestra
+por sí solo calidad predictiva o identidad del modelo efectivo por señal.
+PR10 y20 abiertas (20 draft). Aviso compartido ignorado MX sin acuse.
+Main remoto verificado7796326a; MX/ST/TE locales aún no publicados.
+Preservadas ramas activas/no integradas y política TH. Sin candidato seguro
+de borrado observado. Sigue pendiente autorización pública específica.
+
+## 2026-09-29 — Publicación ST/TE/MX autorizada por el operador
+
+El operador respondió «Hazlo» a la petición explícita de publicar la rama
+`feat/quant-sr-codex-metricas`, incluidos los cambios e informes ST/TE/MX,
+en el repositorio PÚBLICO `Jhona-la/Trader-Gemini` y tramitar su integración
+a main. Queda levantada la anterior falta de autorización de publicación;
+los avisos anteriores se conservan como registro histórico, no como estado
+vigente de permisos.
+
+Alcance de publicación: los cambios acumulados frente a main7796326a,
+incluidas sus pruebas y documentos. TH6209704a permanece separada por su
+política pendiente; no se modifica el Cargo.lock sucio del checkout compartido.
+No se amplía esta autorización a operar, entrenar o promover modelos.
+
+La publicación no resuelve los hallazgos abiertos ni acredita rentabilidad.
+Se revisan diferencias, PR/comentarios y requisitos de integración. GitHub
+no reporta protección/ruleset de main ni existen workflows versionados en
+este corte; ausencia de CI no se describe como «CI verde». Se realiza además
+regresión local conjunta antes de integrar. El resultado definitivo y la URL
+de la PR quedarán en el cierre de publicación.
+
+## 2026-09-29 — Evidencia de publicación ST/TE/MX: PR #21
+
+PR pública autorizada: https://github.com/Jhona-la/Trader-Gemini/pull/21.
+Rama publicada `feat/quant-sr-codex-metricas`, corte probado e9d8fcd4,
+base main7796326a incluida. Esta adenda es documental. La PR es el punto
+visible de coordinación; no se atribuye acuse o revisión a Claude/GLM.
+
+Regresión local conjunta concluida: seis crates 1.137/0/7; replay 86/0/0,
+desglosado en 37 biblioteca +21 MX +25 labels +3 riesgo espectral.
+Total disjunto **1.223 aprobadas, 0 fallidas, 7 ignoradas**. Comprobación
+`cargo check --workspace --all-targets` aprobada (19,14 s), con warnings
+preexistentes. Golden conservado. No es una ejecución de todos los tests
+de todos los crates: all-targets es comprobación de compilación del workspace.
+
+Ignoradas: 5 testnet, 1 inventario ML y 1 medición manual TE; no son pruebas
+aprobadas. Sin trading, entrenamiento, promoción o T-1. Ausencia de CI no
+equivale a CI verde; la consulta de PR no reporta checks ni revisiones o
+comentarios pendientes. Se solicita integración sin bypass de requisitos;
+el evento y SHA definitivo se verifican en la PR antes de limpiar ramas.
+
+El checkout compartido pertenece a `glm/xlviii-h-reentrenar-btc`; se preserva
+su Cargo.lock sucio. TH6209704a, backups y trabajo activo quedan separados.
+La publicación no cierra MX-19 ni los otros ocho expedientes MX abiertos,
+ni demuestra paridad producción/backtest, alpha o rentabilidad futura.

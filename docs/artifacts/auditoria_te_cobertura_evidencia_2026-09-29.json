@@ -1,0 +1,389 @@
+{
+  "schema_version": 1,
+  "audit_id": "TE-2026-09-29",
+  "title": "Transfer entropy: cobertura, información condicional y evidencia",
+  "date": "2026-09-29",
+  "language": "es",
+  "branch": "feat/quant-sr-codex-te",
+  "state": "local_only_not_published",
+  "code_commit": "d08a840b5e4a1ff667d733c4b357b9c88c37d98e",
+  "integrated_main": "817d5882a1870ebe80bfb20dad5b0bf89ef121ad",
+  "report": "docs/AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md",
+  "counts": {
+    "total": 19,
+    "corregido_local": 11,
+    "contrato_documentado": 2,
+    "abierto": 6
+  },
+  "scope": {
+    "fully_reviewed": [
+      "crates/feature-engine/src/transfer_entropy.rs",
+      "crates/feature-engine/tests/transfer_entropy_contract.rs",
+      "crates/feature-engine/tests/transfer_entropy_real.rs"
+    ],
+    "partial_review": [
+      "crates/backtest-engine/src/tick_replayer.rs (primeras 110 líneas)",
+      "crates/feature-engine/src/lib.rs",
+      "crates/feature-engine/Cargo.toml",
+      "docs/TRIAGE_TEORICO_2026-09-29.md",
+      "COORDINACION_CODEX_2026-09-28.md"
+    ],
+    "inventory_tracked_paths": 1358,
+    "inventory_crate_manifests": 23,
+    "whole_repository_semantic_audit": false,
+    "operational_consumer_found": false
+  },
+  "commits": {
+    "integrate_initial_main": "3ef64475ebd06bf5a75c95bc81e27c785fe656b7",
+    "estimator_fix": "00a118de7cd72fc295dcb0d112ba41316b5b49e9",
+    "integrate_glm_tapes": "d98db3e7aa865f282745f8464192f25a3d51e469",
+    "measurement_fix": "d08a840b5e4a1ff667d733c4b357b9c88c37d98e",
+    "integrate_glm_adrs_documentation_only": "057cb4910b8cea2fb6871d6c272618ba59cf07a5"
+  },
+  "validation": {
+    "red_estimator": {
+      "passed": 1,
+      "failed": 7,
+      "total": 8
+    },
+    "red_reader": {
+      "passed": 2,
+      "failed": 3,
+      "total": 5
+    },
+    "new_estimator_tests": 20,
+    "new_reader_tests": 7,
+    "original_te_tests_preserved": 4,
+    "sparse_dense_grids": 3840,
+    "six_crates": {
+      "blocks": 89,
+      "passed": 1133,
+      "failed": 0,
+      "ignored": 7,
+      "command": "cargo test -p feature-engine -p signal-engine -p risk-engine -p god-engine-core -p execution-engine -p evolution-engine --all-targets",
+      "exit_code": 0
+    },
+    "backtest_lib": {
+      "passed": 37,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "disjoint_final": {
+      "passed": 1170,
+      "failed": 0,
+      "ignored": 7
+    },
+    "ignored_reasons": {
+      "testnet": 5,
+      "model_inventory": 1,
+      "real_tape_measurement": 1
+    },
+    "workspace_all_targets": {
+      "exit_code": 0,
+      "final_seconds": 3.46,
+      "code_cut_seconds": 4.03,
+      "pre_merge_seconds": [
+        42.69,
+        59.91,
+        3.46
+      ]
+    },
+    "not_executed": [
+      "T-1",
+      "tapes manual --ignored",
+      "demo/live",
+      "entrenamiento/promoción"
+    ],
+    "golden_changed": false,
+    "trade_veto_changed": false
+  },
+  "reproductions": {
+    "n64_original_bits": 0.38625361467532393,
+    "n64_reference_bits": 0.4091039241579857,
+    "observed_silent_100_bins_smoothed_bits": 0.02477933540853777
+  },
+  "hashes": {
+    "algorithm": "SHA-256",
+    "basis": "local_bytes_CRLF_may_differ_from_git_blob",
+    "original_te": "AEB1BC0345646E7CEAFECAAE1C19D9AFCD650F2BEB0315A2033D80EFDBCF8DF6",
+    "fixed_te": "C420D26F0A507AECA099B092B4C02637C3761816268BCC579B5C37384212AC06",
+    "contracts": "50BA9122E884B83F029574323689039722BAA59AC3C16D7CE49FD2D141C08482",
+    "real_tape_test": "1B1031CE3391DACC8021F163863A7053F8E983C43527A20586F9707219F8FB89"
+  },
+  "sources": [
+    {
+      "url": "https://arxiv.org/abs/nlin/0001042",
+      "verification": "body",
+      "use": "Historias y definición de TE; no validación del estimador local"
+    },
+    {
+      "url": "https://arxiv.org/abs/1610.08192",
+      "verification": "body",
+      "use": "Historias y medidas de trayectorias en tiempo continuo"
+    },
+    {
+      "url": "https://doi.org/10.1371/journal.pcbi.1008054",
+      "verification": "metadata_abstract_only",
+      "use": "Candidato vecino; cuerpo no recuperado"
+    },
+    {
+      "url": "https://arxiv.org/abs/2012.08667",
+      "verification": "metadata_abstract_only",
+      "use": "Candidato vecino, no implementado"
+    }
+  ],
+  "coordination": {
+    "local_notice": ".firecrawl/coordination-codex-te-2026-09-29.md",
+    "acknowledged_by_other_agents": false,
+    "shared_tracked_checkout_modified": false,
+    "ignored_notice_created_in_shared_checkout": true,
+    "prs": [
+      {
+        "number": 10,
+        "state": "open",
+        "draft": false,
+        "head": "01d1985aa10d2ee2d88a6e081deb97330602107f"
+      },
+      {
+        "number": 20,
+        "state": "open",
+        "draft": true,
+        "head": "43ed1411afd27b8db40c0580bed48eda69b623e6"
+      }
+    ],
+    "branches_deleted": [],
+    "remote_writes": [],
+    "publication_blocker": "Prior approval denial for public disclosure; explicit informed authorization still missing"
+  },
+  "findings": [
+    {
+      "id": "TE-01",
+      "severity": "alta",
+      "status": "corregido_local",
+      "title": "La supuesta conjunta no conservaba masa probabilística",
+      "anchor": "transfer_entropy.rs:te_binaria_kt (cb1a0604)",
+      "cause": "Cada una de las ocho celdas recibía 2·KT=1, pero el denominador solo añadía 4. Para M=n−1 transiciones, la suma era (M+8)/(M+4), no 1. Con n=64 resulta 71/67≈1,05970. No es un detalle de tolerancia: se ponderaba el log-cociente con una medida no normalizada.",
+      "impact": "Los valores perdían la interpretación de información mutua condicional y sus cotas. Una prueba cualitativa de dirección podía seguir pasando, ocultando el defecto. No se atribuye pérdida operativa: no se encontró consumidor de ejecución.",
+      "evidence": "RED: n=64 produjo 0,38625361467532393 bits frente al oráculo por cuatro entropías, 0,4091039241579857. Test cmi_matches_one_normalized_distribution.",
+      "remedy": "q=(N+1/2)/(M+4), con ocho pseudoconteos de 1/2; conteos enteros y cálculo final f64. Oráculo independiente H(A,B)+H(B,C)−H(B)−H(A,B,C).",
+      "closure": "Oráculo y equivalencia disperso/denso en 3.840 rejillas; pendiente publicación, no pendiente arreglo local."
+    },
+    {
+      "id": "TE-02",
+      "severity": "alta",
+      "status": "corregido_local",
+      "title": "Los condicionales usaban priors incompatibles con la conjunta",
+      "anchor": "transfer_entropy.rs:cmi",
+      "cause": "La versión original suavizaba por separado p(a|b,c) y p(a|b) con add-1/2. Marginalizar la nueva conjunta de ocho celdas exige sumar dos pseudoconteos por resultado en p(a|b), no reiniciar un Bernoulli add-1/2. Arreglar únicamente el denominador de TE-01 no cerraría este defecto.",
+      "impact": "El cálculo mezclaba leyes distintas. Recortar resultados negativos a cero no demuestra no negatividad del estimador ni restaura una identidad de CMI.",
+      "evidence": "Derivación algebraica: q(a|b,c)=(Nabc+1/2)/(Nbc+1); q(a|b)=(Nab+1)/(Nb+2). El oráculo por entropías exige consistencia de todos los márgenes.",
+      "remedy": "Derivar márgenes de una sola tabla suavizada. El nombre te_binaria_kt se conserva, pero se explica que es CMI plug-in de la media conjunta Dirichlet(1/2), no esperanza posterior de CMI ni un contraste KT secuencial.",
+      "closure": "Tests de referencia y complementos binarios pasan. Solo se recorta un residuo numérico de 64·EPSILON; violaciones sustanciales devuelven fallo."
+    },
+    {
+      "id": "TE-03",
+      "severity": "alta",
+      "status": "corregido_local",
+      "title": "Símbolos fuera del alfabeto causaban panic",
+      "anchor": "transfer_entropy.rs:te_binaria_kt",
+      "cause": "Los u8 se convertían directamente en índices de longitud dos. El tipo aceptaba 2…255 aunque la fórmula solo admite {0,1}. El último símbolo de la fuente no se usaba y podía quedar sin validar.",
+      "impact": "Datos mal codificados podían abortar la evaluación; diferentes posiciones del mismo dato inválido recibían trato distinto. Es un contrato de dominio, no un veto económico.",
+      "evidence": "RED: x[0]=2 causa index out of bounds. La regresión recorre valores 2 y 255 y posiciones 0,31,63, en ambas orientaciones.",
+      "remedy": "Validar todo el alfabeto de ambas series antes de indexar, devolviendo None sin truncar ni reinterpretar categorías.",
+      "closure": "malformed_alphabet_is_rejected_without_panicking pasa; no se ampliaron categorías del modelo."
+    },
+    {
+      "id": "TE-04",
+      "severity": "alta",
+      "status": "corregido_local",
+      "title": "Truncamiento silencioso simulaba alineación de dos series",
+      "anchor": "transfer_entropy.rs:te_binaria_kt",
+      "cause": "min(x.len(),y.len()) ocultaba diferencias de longitud. Coincidir en un prefijo no prueba que ambos vectores compartan origen, cadencia ni máscara de observación.",
+      "impact": "Una desalineación aguas arriba podía producir un escalar aparentemente válido. El algoritmo no dispone de timestamps en esta API para reconstruir la alineación.",
+      "evidence": "RED: longitudes 64/65 devuelven Some(0,3862536…), aunque el contrato de series alineadas está incumplido.",
+      "remedy": "Exigir igual longitud, además de declarar que la alineación semántica sigue siendo responsabilidad del llamador.",
+      "closure": "mismatched_series_are_not_silently_truncated pasa en ambas orientaciones; no se inventa un emparejamiento temporal."
+    },
+    {
+      "id": "TE-05",
+      "severity": "alta",
+      "status": "corregido_local",
+      "title": "Retrocesos del reloj se plegaban a cero o se descartaban",
+      "anchor": "transfer_entropy.rs:sorted y transfer_entropy_observada",
+      "cause": "El intervalo se calculaba con primer/último elemento sin validar orden. saturating_sub plegaba timestamps anteriores al origen; eventos posteriores al último aparente podían quedar fuera del vector.",
+      "impact": "Se alteraban actividad y dirección temporal sin diagnóstico. Ordenar silenciosamente sería también incorrecto si ocultara corrupción del feed.",
+      "evidence": "RED: [0,40,20,100] frente a [0,50,100] se acepta y produce valores finitos.",
+      "remedy": "Validación no decreciente de ambos streams antes del conteo. Duplicados permitidos porque actividad binaria colapsa eventos simultáneos. Error tipado UnsortedTimestamps.",
+      "closure": "Regresiones del wrapper, errores tipados, duplicados y epochs grandes verificadas."
+    },
+    {
+      "id": "TE-06",
+      "severity": "alta",
+      "status": "corregido_local",
+      "title": "La unión de extremos fabricaba observaciones fuera del solape",
+      "anchor": "transfer_entropy.rs:transfer_entropy_eventos y ObservationWindow",
+      "cause": "Se usaban min(primeros) y max(últimos), aunque la documentación prometía None sin solape. Los espacios externos se rellenaban con cero como si el feed se hubiera observado.",
+      "impact": "Ausencia de cobertura se confundía con silencio de mercado. El sesgo puede modificar ambas direcciones de manera distinta.",
+      "evidence": "RED: [0,100] y [200,300] devuelve aproximadamente (0,01312;0,01866) bits en vez de ausencia de estimación.",
+      "remedy": "Wrapper histórico con intersección conservadora de extremos. Nueva API con intervalo común declarado [inicio,fin), capaz de representar streams vacíos observados y eventos de extensiones disjuntas dentro de cobertura real.",
+      "closure": "Tests distinguen explícitamente silencio observado, falta de cobertura inferible y ausencia de solape. La certificación externa de cobertura permanece abierta en TE-13."
+    },
+    {
+      "id": "TE-07",
+      "severity": "media",
+      "status": "corregido_local",
+      "title": "Se contaba como completa una ventana terminal parcialmente observada",
+      "anchor": "transfer_entropy.rs:transfer_entropy_observada",
+      "cause": "span/anchura+1 incluía el bin del último evento aunque solo estuviera observado su comienzo. Esto podía satisfacer artificialmente MIN_VENTANAS.",
+      "impact": "Se incrementaba el soporte nominal y se introducían ceros no observados al final. El efecto es mayor en registros cortos.",
+      "evidence": "RED: extremos [0,639] con anchura 10 daban Some; solo hay 63 bins completos, no 64.",
+      "remedy": "N=floor((fin−inicio)/Δ); fin exclusivo. Solo N bins y N−1 transiciones, con discarded_tail_ms explícito.",
+      "closure": "Pruebas de frontera, registros externos al intervalo y cola parcial contrastadas contra un oráculo denso."
+    },
+    {
+      "id": "TE-08",
+      "severity": "alta",
+      "status": "corregido_local",
+      "title": "Overflow y conversiones del número de ventanas corrompían el soporte",
+      "anchor": "transfer_entropy.rs:transfer_entropy_observada",
+      "cause": "span/anchura+1 puede exceder u64, y el cast a usize añade otra dependencia de plataforma. Con [0,u64::MAX], anchura 1, el ejecutable usado devolvió None tras el cálculo envuelto.",
+      "impact": "Un intervalo enorme podía aparecer vacío o fallar antes de estimar. No se afirma que se observara un panic de overflow en esta configuración: el RED observado fue None y el unwrap del test falló.",
+      "evidence": "maximum_timestamp_does_not_overflow_bin_count falló antes del arreglo. Casos adicionales prueban origen cercano a u64::MAX y anchura próxima a u64::MAX/2.",
+      "remedy": "Restar el intervalo con checked_sub, usar extremo exclusivo y conteos u64; eliminar +1 y la asignación indexada por usize para bins temporales.",
+      "closure": "Casos máximos y épocas >2^53 pasan. La etapa f64 no promete precisión unitaria por encima de 2^53."
+    },
+    {
+      "id": "TE-09",
+      "severity": "alta",
+      "status": "corregido_local",
+      "title": "El coste dependía de todos los bins vacíos del intervalo",
+      "anchor": "transfer_entropy.rs:affected_transitions y active",
+      "cause": "Dos Vec<u8> de N bins exigían memoria y recorrido O(N), aunque solo hubiera dos eventos. Para 100 años a 1 ms, N≈3,15576·10^12: unos 6,31 TB para ambos indicadores, sin contar overhead.",
+      "impact": "Riesgo de agotamiento de memoria/latencia por reloj corrupto, separación larga o exploración de escalas. No se provocó deliberadamente una asignación masiva para demostrarlo.",
+      "evidence": "Análisis de las dos reservas originales; century_silence_uses_exact_counts_without_dense_allocation y equivalencia exacta de tablas sobre 3.840 rejillas.",
+      "remedy": "Inicializar M transiciones 000; visitar solo t=b y t=b−1 alrededor de bins activos. Cuatro iteradores ordenados, deduplicación y búsquedas binarias: O(E log(E+1)) tiempo, O(1) memoria auxiliar.",
+      "closure": "Conteos u64 exactos del intervalo centenario y del extremo u64; falta benchmark productivo de latencia, no se declara aptitud HFT."
+    },
+    {
+      "id": "TE-10",
+      "severity": "media",
+      "status": "contrato_documentado",
+      "title": "La descripción «sin lag» contradice el operador implementado",
+      "anchor": "transfer_entropy.rs:documentación; docs/TRIAGE_TEORICO_2026-09-29.md",
+      "cause": "El estadístico usa X[t], Y[t] y Y[t+1]. Con bins de Δ ms hay historia de un paso y horizonte de predicción Δ; el default de 200 ms no elimina esa elección.",
+      "impact": "Podía interpretarse erróneamente como estimador universal de todos los horizontes y memorias, o como superioridad automática sobre Hawkes.",
+      "evidence": "Definición del código y Schreiber (2000), ecuación 4 con historias de longitudes k,l. El formalismo continuo consultado también condiciona en historias.",
+      "remedy": "Corregir el módulo y añadir corrigendo sin borrar los textos históricos de GLM. Separar estimador discretizado de futuro candidato de procesos puntuales en tiempo continuo.",
+      "closure": "Contrato documental corregido localmente; una familia adaptativa de escalas sigue pendiente, TE-16."
+    },
+    {
+      "id": "TE-11",
+      "severity": "media",
+      "status": "contrato_documentado",
+      "title": "64 ventanas se presentaban como frontera matemática de estimabilidad",
+      "anchor": "transfer_entropy.rs:MIN_VENTANAS y ObservationWindow.min_windows",
+      "cause": "Un conteo mínimo fijo no mide n efectivo ni ocupación de las ocho celdas. El suavizado permite computar una cifra con menos datos; eso tampoco la vuelve significativa.",
+      "impact": "Rigidez opaca y confusión entre validez algebraica, política de soporte y evidencia estadística. Reducir el mínimo no resuelve la inferencia.",
+      "evidence": "La API explícita estima una transición y coincide con el oráculo; el caso de 100 bins silenciosos sigue dando un valor positivo debido al prior.",
+      "remedy": "Conservar 64 por compatibilidad, etiquetarlo como política y permitir min_windows explícito >=2. Exponer conteos/transiciones para diagnósticos sin fabricar p-values.",
+      "closure": "Configuración inválida produce error diferenciado; significancia y calibración permanecen abiertas en TE-12."
+    },
+    {
+      "id": "TE-12",
+      "severity": "alta",
+      "status": "abierto",
+      "title": "Regularización positiva no constituye evidencia de transferencia",
+      "anchor": "transfer_entropy_contract.rs:explicit_observation_distinguishes_silence_from_missing_coverage",
+      "cause": "La masa del prior en celdas no observadas puede crear dependencia condicional en la ley suavizada. Esta es una limitación del estimador, no necesariamente un bug de normalización restante.",
+      "impact": "Usar TE>0, una razón entre direcciones o un umbral universal como veto puede producir falsos liderazgos. Los bins vacíos repetidos no son eventos independientes de información financiera.",
+      "evidence": "Tras corregir la fórmula, dos streams vacíos con cobertura declarada de 100 bins producen 0,02477933540853777 bits. La prueba lo registra explícitamente.",
+      "remedy": "Diseñar nulos y surrogates que preserven dependencia/marginales pertinentes, calibrar tamaño y potencia, reportar sensibilidad al prior, ocupación y tamaño efectivo. Corregir multiplicidad antes de explorar pares, escalas y símbolos.",
+      "closure": "Exigir falsos positivos controlados bajo modelos nulos relevantes y potencia bajo alternativas predefinidas en datos separados. No se implementa un umbral arbitrario de sustitución."
+    },
+    {
+      "id": "TE-13",
+      "severity": "alta",
+      "status": "abierto",
+      "title": "La cobertura declarada aún no dispone de certificación de feed",
+      "anchor": "transfer_entropy.rs:ObservationWindow",
+      "cause": "Un intervalo start/end no contiene huecos de captura, sincronización entre exchanges, origen del reloj, correcciones o incertidumbre de timestamps. El wrapper solo infiere una intersección de extremos.",
+      "impact": "Un outage puede continuar interpretándose como silencio si el caller declara incorrectamente observación continua. La nueva API hace el supuesto visible, no lo verifica por magia.",
+      "evidence": "Los tipos de entrada solo incluyen timestamps y una ventana. No hay máscara de disponibilidad ni registro de gaps en el contrato local.",
+      "remedy": "Aportar lineage de captura por activo/venue/reloj, segmentos contiguos válidos y versión de datos. No contar transiciones atravesando gaps. Distinguir event-time, receive-time y tiempo de decisión.",
+      "closure": "Pruebas con outage conocido, relojes desfasados y segmentos separados; salida invalidada o segmentada con razón trazable, y paridad replay/serving."
+    },
+    {
+      "id": "TE-14",
+      "severity": "alta",
+      "status": "abierto",
+      "title": "TE bivariada no identifica causalidad económica multiactivo",
+      "anchor": "transfer_entropy.rs:te_binaria_kt",
+      "cause": "La conjunta solo tiene tres variables binarias. No condiciona por mercado común, otros activos, calendario, liquidez ni historial más largo.",
+      "impact": "Un driver común, latencias distintas o dinámica omitida pueden explicar la asimetría. Actividad predictiva no implica retorno neto predecible ni intervención causal.",
+      "evidence": "Ocho celdas y ausencia de variables Z; no hay control multivariante en el estimador. Schreiber contempla condicionar por un driver común conocido.",
+      "remedy": "Definir grafo y conjunto de condicionamiento identificable, baselines y controles de latencia. Evaluar capacidad, costes, fills y ablación fuera de muestra antes de inferir utilidad de trading.",
+      "closure": "Evidencia multivariante preespecificada y estabilidad fuera de muestra; no declarar causalidad solo por orientación de un arco."
+    },
+    {
+      "id": "TE-15",
+      "severity": "media",
+      "status": "abierto",
+      "title": "No existe transferencia demostrada de esta feature al genoma o al motor",
+      "anchor": "crates/src: búsqueda de transfer_entropy y te_binaria_kt",
+      "cause": "Los usos encontrados son la exportación del módulo, funciones internas y tests. La nueva prueba real es consumidor diagnóstico, no un consumidor operativo.",
+      "impact": "El módulo no puede explicar por sí mismo mejoras o discrepancias backtest/demo/producción. Conectarlo prematuramente introduciría una nueva política sin validación.",
+      "evidence": "Búsqueda transversal de símbolos tras integrar main c0f6510f; decisión de GLM de no cablear conservada. No se modifica ningún gen, veto de riesgo ni capa de ejecución.",
+      "remedy": "Si supera validación: definir payload versionado activo/par/τ/as-of, lineage hasta features/genes/decisión, comparación shadow y paridad de transformaciones en replay y serving.",
+      "closure": "Trazas de extremo a extremo y ablación con costes reales. Hasta entonces, estado experimental aislado."
+    },
+    {
+      "id": "TE-16",
+      "severity": "media",
+      "status": "abierto",
+      "title": "La representación actual no cubre un continuo temporal universal",
+      "anchor": "transfer_entropy.rs:ObservationWindow.bin_width_ms",
+      "cause": "El contrato usa u64 en milisegundos, bins homogéneos, actividad binaria y orden uno. No representa una observación de nanosegundos ni memoria de cien años. Un conteo de bins enormes prueba escalabilidad, no existencia de datos.",
+      "impact": "Etiquetarlo como espectro completo ocultaría límites de resolución, pérdida de marcas/conteos y aliasing. En activos muy activos la simbolización puede saturarse.",
+      "evidence": "Unidades y variables del API; timestamps iguales conservan actividad, no reconstruyen tiempos sub-ms. No hay selección adaptativa de escalas ni modelo de memoria.",
+      "remedy": "Tratar escala, memoria, resolución, incertidumbre y coste como parámetros verificables. Candidato: TE de procesos puntuales en tiempo continuo con intensidades dependientes de historia; compararlo con el baseline discreto y alternativas de símbolos marcados.",
+      "closure": "Datos con resolución acreditada, estudio de convergencia/sensibilidad, control de selección y coste. No implementar teorías del milenio o cuánticas sin variable observable, operador y falsación."
+    },
+    {
+      "id": "TE-17",
+      "severity": "alta",
+      "status": "abierto",
+      "title": "El «resultado negativo» histórico no tiene un contraste calibrado",
+      "anchor": "docs/TRIAGE_TEORICO_2026-09-29.md:ADENDA XLVIII·E",
+      "cause": "Se compara ~0,001 bits en tapes con <0,01 de una simulación y >0,15 de un acople fuerte. Son referencias descriptivas, no distribución nula, intervalo de confianza ni potencia de la prueba. Además se usó la fórmula anterior.",
+      "impact": "«No detectamos evidencia validada» no equivale a «el fenómeno no existe». Tampoco puede asumirse un piso universal del sesgo KT. La decisión prudente de no cablear es compatible con reconocer esta incertidumbre.",
+      "evidence": "Texto y tabla históricos del commit 40c263c2; no hay surrogates, significancia o potencia calculados en la prueba real. No se han recalculado esos tapes en este corte.",
+      "remedy": "Conservar tabla con versión del estimador; añadir esta salvedad. Repetir medición corregida con hashes/intervalos/cobertura y protocolo nulo/OOS, sin reutilizar la misma muestra para elegir símbolo y certificar rendimiento.",
+      "closure": "Reporte reproducible de efecto, incertidumbre, potencia y pruebas múltiples. No se sustituye la tabla histórica por números inventados."
+    },
+    {
+      "id": "TE-18",
+      "severity": "media",
+      "status": "corregido_local",
+      "title": "El lector diagnóstico aceptaba tapes truncados, vacíos o desordenados",
+      "anchor": "transfer_entropy_real.rs:timestamps_de_bytes",
+      "cause": "La división entera de bytes entre 40 descartaba el resto. Una cabecera sola producía Some([]), y no se comprobaba orden. El comentario declaraba cinco f64 aunque el timestamp se decodificaba correctamente como u64.",
+      "impact": "La medición podía usar evidencia incompleta o no observable sin reportar corrupción. La cabecera no acredita autenticidad ni calidad completa del contenido.",
+      "evidence": "RED del lector: 2 pasan/3 fallan. Un byte extra conservaba Some([10,20]); cabecera sola Some([]); [20,10,30] se aceptaba.",
+      "remedy": "Validar payload no vacío y múltiplo exacto de 40, y orden no decreciente. Extraer parser puro para fixtures; corregir descripción del layout sin alterar los cuatro campos ignorados.",
+      "closure": "Siete contratos finales del lector/medición pasan; no valida precios, continuidad ni procedencia autenticada, que quedan explícitamente fuera del lector."
+    },
+    {
+      "id": "TE-19",
+      "severity": "alta",
+      "status": "corregido_local",
+      "title": "La prueba manual podía pasar sin medir ningún par",
+      "anchor": "transfer_entropy_real.rs:medir_par_obligatorio",
+      "cause": "Faltaban tapes → continue; estimador None → println. Si todas las iteraciones quedaban en esos casos, el harness terminaba verde sin ninguna estimación válida.",
+      "impact": "Un resultado de infraestructura podía confundirse con evidencia cuantitativa. Que un test sea manual/ignored no justifica éxito cuando se solicita pero no tiene datos.",
+      "evidence": "Control de flujo del commit 40c263c2; contratos nuevos ejercitan ausencia de cada lado, ausencia de ambos y soporte insuficiente mediante catch_unwind.",
+      "remedy": "Exigir ambos tapes y ambas estimaciones cuando se ejecuta manualmente; fallo explícito ante ausencia/corrupción/soporte insuficiente. Se conserva ignored por requerir archivos externos. La razón entre direcciones sin denominador positivo se muestra como no definida.",
+      "closure": "Tests de invalidez y par válido pasan. La prueba con tapes reales permanece ignorada y no cuenta como validación económica."
+    }
+  ]
+}
