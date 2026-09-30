@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — Qoder: Ola 11 / #586 — puerta de banda operable en el generador
+
+- Flujo nuevo adoptado: rama `qoder/*` desde main → merge a main → borrar rama.
+- #586: `min_tradeable_tau_ms` tenía contratos y CERO consumidores; el generador
+  proponía τ bajo la banda operable y `suelo_tp_sl` (#585/D-636b) mataba 1.24M
+  intenciones (funnel dominante, medición XLIV). Peor: el τ doomed COMPETÍA en la
+  arbitración D-431 (podía ganar por energía o interferir destructivamente con
+  bandas que SÍ pagaban fricción).
+- Fix en god-engine-core/src/lib.rs: sonda `banda_paga_friccion` (MISMA función
+  pura del gate = paridad por construcción) + puerta 1.5 en `puertas_del_continuo`
+  (D-743, cubre ambas bandas) + telemetría `qo_586_tau_inoperable` por moneda.
+  No estira τ (diseño abierto con T-1). risk-engine intacto (read-only).
+- Verificado: core 154/154 (3 contratos nuevos), signal-engine verde, check
+  workspace all-targets OK. Detalle forense: FORENSIC_INTELLIGENCE_AUDIT.md #586.
+- Supervivencia verificada al adoptar main 9304b444: #582 vivo (lib.rs:3172 +
+  confluence:156), M6-H02 vivo (god_engine.rs:3346), #535 core intacto.
+  #538 CERRADO por D-643; #539 CERRADO por D-735; #548 cadáveres limpiados por
+  externos. M5-H02 ABIERTO (2 writers, 0 lectores seqlock — dormido correcto).
+
 ## 2026-09-30 — publicación pública MR autorizada explícitamente
 
 - Operador: «Sí, publicar MR y abrir su PR» a pregunta que identifica

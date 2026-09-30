@@ -1183,6 +1183,61 @@ impl GodEngineCore {
     ///      a 0,5: contra 0,5 un modelo con base 0,30 «contradecía» todo largo
     ///      por construcción;
     ///   4. vetos de flujo agregado (CVD) y de muro del libro (L2).
+    /// QO-586 — SONDA DE BANDA OPERABLE. Repite el cálculo del suelo de
+    /// viabilidad que hará el gate (`evaluate_quantum_order`) con la MISMA
+    /// función pura (`compute_tp_sl_with_target_rr`) y las MISMAS entradas
+    /// (ATR/precio/hurst del coin vivo, fricción del roundtrip con las
+    /// comisiones publicadas, σ pronosticada al τ pedido): una lectura
+    /// cuya τ no paga esa fricción será rechazada por REJ_TP_SL_FLOOR tras
+    /// recorrer todo el pipeline de fusión y sizing.
+    fn banda_paga_friccion(&self, coin_id: usize, tau_ms: f64) -> bool {
+        if coin_id >= self.arena.coins.len() || !tau_ms.is_finite() || tau_ms <= 0.0 {
+            return false;
+        }
+        let coin = &self.arena.coins[coin_id];
+        let price = coin.current_price.load(Ordering::Relaxed);
+        let atr = coin.current_atr.load(Ordering::Relaxed);
+        if !price.is_finite() || price <= 0.0 || !atr.is_finite() || atr <= 0.0 {
+            return false;
+        }
+        let atr_pct = atr / price;
+        let taker_fee = self.arena.config.live_taker_fee.load(Ordering::Relaxed);
+        let slip_floor = self
+            .arena
+            .config
+            .base_slippage_floor
+            .load(Ordering::Relaxed)
+            .max(0.00001);
+        let lat_ms = self
+            .arena
+            .config
+            .latency_penalty_ms
+            .load(Ordering::Relaxed)
+            .max(0.0);
+        let roundtrip_fee =
+            risk_engine::tp_sl::roundtrip_friction(taker_fee, slip_floor, atr_pct, lat_ms);
+        if !roundtrip_fee.is_finite() || roundtrip_fee < 0.0 {
+            return false;
+        }
+        let sl_mult = if coin_id == 0 {
+            self.arena.config.sl_atr_mult_btc.load(Ordering::Relaxed)
+        } else {
+            self.arena.config.sl_atr_multiplier.load(Ordering::Relaxed)
+        };
+        let probe = risk_engine::tp_sl::compute_tp_sl_with_target_rr(
+            risk_engine::tp_sl::TpSlInputs {
+                tau_ms,
+                atr_ratio: atr_pct,
+                hurst: coin.hurst_exponent.load(Ordering::Relaxed),
+                roundtrip_fee,
+                sl_atr_multiplier: sl_mult,
+                sigma_forecast: coin.sigma_forecast_at(tau_ms),
+            },
+            self.arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
+        );
+        !probe.below_tradeable_floor
+    }
+
     fn puertas_del_continuo(
         &self,
         coin_id: usize,
@@ -1200,6 +1255,27 @@ impl GodEngineCore {
             return SignalIntent::flat();
         }
         let mut out = intent;
+
+        // 1.5 QO-586 — PUERTA DE BANDA OPERABLE. La lectura de una banda
+        // cuya τ no paga la fricción del roundtrip no compite en la
+        // arbitración: sería rechazada por el gate (REJ_TP_SL_FLOOR, el
+        // rechazo dominante del embudo) tras todo el pipeline, y mientras
+        // tanto su τ doomed puede ganar la selección por densidad de
+        // energía espectral o interferir destructivamente con una lectura
+        // de banda operable, matando una orden que SÍ pagaba la fricción.
+        // El ATR vivo ya está en la sonda: en calma la banda se cierra
+        // sola; no es un veto fijo. `expected_duration_ms == 0` se remite
+        // al gate, que resuelve τ por `horizon_tau_ms_coin`.
+        if out.expected_duration_ms > 0
+            && !self.banda_paga_friccion(coin_id, out.expected_duration_ms as f64)
+        {
+            self.arena.registry.set_for_coin(
+                coin_id,
+                "qo_586_tau_inoperable",
+                out.expected_duration_ms as f64,
+            );
+            return SignalIntent::flat();
+        }
 
         // 2. Invariante bayesiano absoluto (D-472).
         if (out.signal == SignalType::Long && composite_score < 0.0)
@@ -7544,5 +7620,122 @@ mod w1_bocpd_tests {
             assert!(obs.run_length_posterior.iter().all(|p| p.is_finite() && *p >= 0.0));
             assert!(obs.segment_mean.iter().all(|m| m.is_finite()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_qo_586 {
+    //! QO-586 — PUERTA DE BANDA OPERABLE en `puertas_del_continuo`
+    //! (D-743: UNA puerta para las dos lecturas del espectro). Contrato:
+    //! una lectura cuya τ no paga la fricción del roundtrip —la misma que
+    //! el gate rechazaría con REJ_TP_SL_FLOOR, el rechazo dominante del
+    //! embudo— queda plana ANTES de competir en la arbitración espectral;
+    //! una τ que SÍ la paga atraviesa intacta. Sin la puerta, el τ doomed
+    //! puede ganar la selección por densidad de energía (matando la orden
+    //! completa de una banda operable) o interferir destructivamente.
+    //! La sonda repite el cálculo del gate con la MISMA función pura:
+    //! paridad por construcción, física viva del régimen, no veto fijo.
+
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    fn arena_en_regimen(atr_pct: f64) -> std::sync::Arc<quantum_arena::GlobalArena> {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        arena.config.live_taker_fee.store(0.0004, Ordering::Relaxed);
+        arena
+            .config
+            .base_slippage_floor
+            .store(0.0001, Ordering::Relaxed);
+        arena
+            .config
+            .latency_penalty_ms
+            .store(50.0, Ordering::Relaxed);
+        arena.config.sl_atr_mult_btc.store(2.0, Ordering::Relaxed);
+        arena.config.tp_rr_ratio_btc.store(2.0, Ordering::Relaxed);
+        let coin = &arena.coins[0];
+        coin.current_price.store(100.0, Ordering::Relaxed);
+        coin.current_atr.store(100.0 * atr_pct, Ordering::Relaxed);
+        coin.hurst_exponent.store(0.5, Ordering::Relaxed);
+        arena
+    }
+
+    fn intencion(tau_ms: u64) -> SignalIntent {
+        SignalIntent {
+            signal: SignalType::Long,
+            confidence: 0.70,
+            expected_duration_ms: tau_ms,
+            ..SignalIntent::default()
+        }
+    }
+
+    fn puertas_de(core: &GodEngineCore, tau_ms: u64) -> SignalIntent {
+        // Entradas neutras: bayesiano y ML no opinan (score>0 en largo,
+        // ml_prob = base), CVD 0/0 y muros 0/0 no vetan. Lo único que
+        // decide aquí es la puerta de banda operable.
+        core.puertas_del_continuo(0, intencion(tau_ms), true, 0.5, 0.5, 0.5, 0.0)
+    }
+
+    #[test]
+    fn qo_586_la_sonda_sigue_el_regimen_no_es_veto_fijo() {
+        let calma = arena_en_regimen(0.00001);
+        let core_calma = GodEngineCore::new(Arc::clone(&calma));
+        assert!(
+            !core_calma.banda_paga_friccion(0, 30_000.0),
+            "calma extrema (1 pb de ATR): σ(30 s)·k no paga la fricción"
+        );
+        let volatil = arena_en_regimen(0.10);
+        let core_volatil = GodEngineCore::new(Arc::clone(&volatil));
+        assert!(
+            core_volatil.banda_paga_friccion(0, 30_000.0),
+            "ATR del 10 %: la MISMA τ paga la fricción con holgura"
+        );
+    }
+
+    #[test]
+    fn qo_586_puerta_aplasta_tau_inoperable_y_deja_pasar_la_operable() {
+        let calma = arena_en_regimen(0.00001);
+        let core = GodEngineCore::new(Arc::clone(&calma));
+
+        let aplastada = puertas_de(&core, 30_000);
+        assert_eq!(
+            aplastada.signal,
+            SignalType::Flat,
+            "la lectura con τ inoperable muere antes de competir"
+        );
+        assert_eq!(
+            calma
+                .registry
+                .get_for_coin_or(0, "qo_586_tau_inoperable", -1.0),
+            30_000.0,
+            "el τ aplastado queda telemetrizado por moneda para el forense"
+        );
+
+        let volatil = arena_en_regimen(0.10);
+        let core_vol = GodEngineCore::new(Arc::clone(&volatil));
+        let viva = puertas_de(&core_vol, 30_000);
+        assert_eq!(viva.signal, SignalType::Long);
+        assert!(
+            (viva.confidence - 0.70).abs() < 1e-12,
+            "la τ operable atraviesa SIN penalización (ML neutral)"
+        );
+        assert_eq!(
+            volatil.registry.get_for_coin_or(0, "qo_586_tau_inoperable", -1.0),
+            -1.0,
+            "la telemetría sólo registra τ inoperables: la banda viva no toca el registro"
+        );
+    }
+
+    #[test]
+    fn qo_586_tau_cero_se_remite_al_gate() {
+        // `horizon_tau_ms_coin` resuelve τ por dominant_tau_ms cuando la
+        // intención no trae duración: la puerta NO decide en ese caso.
+        let calma = arena_en_regimen(0.00001);
+        let core = GodEngineCore::new(Arc::clone(&calma));
+        let remitida = puertas_de(&core, 0);
+        assert_eq!(remitida.signal, SignalType::Long);
+        assert!(
+            (remitida.confidence - 0.70).abs() < 1e-12,
+            "τ=0 atraviesa sin tocar confianza: la resolverá el gate"
+        );
     }
 }
