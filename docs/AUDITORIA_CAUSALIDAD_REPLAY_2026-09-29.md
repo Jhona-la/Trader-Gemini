@@ -486,3 +486,17 @@ exponer estos cambios e informes en el repositorio público. No se hizo
 push ni PR y no se eludió la revisión de permisos. El workflow contiene
 esta nueva suite porque ejecuta la biblioteca completa, pero no se ha
 ejecutado remotamente. Revisión cruzada CX y merge a main pendientes.
+
+## Autorización de publicación CX — actualización posterior al cierre local
+
+El operador respondió «Sí» a la solicitud específica de publicar estos
+cambios e informes CX en el repositorio PÚBLICO Jhona-la/Trader-Gemini y
+abrir su PR, condicionando el merge a CI y revisión cruzada. Queda levantado
+el bloqueo de publicación; las notas anteriores documentan el estado de
+sus respectivos cortes y no la autorización vigente. No cambia el código
+probado, los resultados 105/0/2 ni los cuatro expedientes abiertos CX.
+
+Comprobación previa: origin/main9ed0cb8c, rama local limpia, sin PR CX
+existente. No se publican modelos ni tapes, no se ejecuta entrenamiento y
+no se modifica el checkout compartido. Publicar no significa integrar ni
+aprobar: la URL, SHA remoto, CI y revisión deben comprobarse después.

@@ -1480,3 +1480,13 @@ ajeno. PR10/20 abiertas (20 draft). Sin ramas integradas inactivas para
 borrar en esta consulta; CX contiene trabajo aún no publicado.
 Publicación pública CX bloqueada, CI remota y revisión cruzada pendientes.
 Aviso pasivo compartido actualizado, sin asumir lectura/acuse de terceros.
+
+## Codex CX — publicación autorizada por el operador
+
+El operador autorizó expresamente publicar CX (código, pruebas e informes)
+en Jhona-la/Trader-Gemini, público, y abrir PR. Las restricciones anteriores
+son históricas desde esta autorización. Se conserva la condición de CI y
+revisión cruzada antes de merge; no se habilita auto-merge sin esa revisión.
+Base remota comprobada9ed0cb8c; código probado88136410, integración8f9c27aa,
+informea6e91046. La revisión GLM sobre MX no sustituye revisión CX.
+No se toca el checkout compartido, modelos ni entrenamiento en curso.

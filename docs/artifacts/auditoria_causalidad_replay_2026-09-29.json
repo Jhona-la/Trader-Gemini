@@ -1,5 +1,17 @@
 {
   "schema_version": 1,
+  "publication_events": [
+    {
+      "event": "explicit_user_authorization",
+      "date_local": "2026-09-29",
+      "scope": "Publish CX code, tests and reports to public Jhona-la/Trader-Gemini and open a PR",
+      "evidence": "User answered Si to the explicit CX public-publication question",
+      "supersedes": "blocked_pending_explicit_public_approval_CX",
+      "merge_conditions": ["CI green", "independent cross-review"],
+      "publication_verified": false,
+      "live_training_promotion_authorized": false
+    }
+  ],
   "audit": "CX",
   "date_local": "2026-09-29",
   "base_commit": "968259dcad41d4daec049a374116554251051a82",

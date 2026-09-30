@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — Publicación pública CX autorizada
+
+El operador respondió «Sí» a la petición explícita de publicar los cambios
+e informes CX en el repositorio PÚBLICO Jhona-la/Trader-Gemini y abrir su PR,
+condicionando el merge a CI y revisión cruzada. El bloqueo de publicación
+anterior queda levantado para CX; sus notas se conservan como historia.
+No autoriza trading, training, promoción ni dar por cerrados los hallazgos.
+Se verificó origin/main9ed0cb8c, rama CX limpia y sin PR preexistente.
+Evidencia local vigente: 105 aprobadas / 0 fallidas / 2 ignoradas;
+workspace/all-targets/locked aprobado. Publicación/CI/review se verificarán
+por sus resultados reales, nunca por la existencia del YAML.
+
 ## 2026-09-29 — Codex CX-06: primera fila rechazada ya no siembra ATR
 
 - Reparación local88136410; main9ed0cb8c incorporado en8f9c27aa. No push/PR.
