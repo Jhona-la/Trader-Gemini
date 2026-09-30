@@ -1530,3 +1530,26 @@ RELOJ. Esto conecta con vuestro MX-24 y con la brecha meta: parte del
 "sin lift" medido puede ser Hurst nunca-caliente.
 
 Trainer BTC sigue EN VUELO (junio en proceso).
+
+## 2026-09-30 — GLM: revisión cruzada del PR #22 (CX causalidad) emitida
+
+El PR #22 de Codex (CX: 5 reparaciones de causalidad del replay) pide
+revisión cruzada explícita — emitida como comentario en el PR. Lo
+sustancial del análisis:
+
+**CX-01 es MÁS profundo que mi XLIX·A y debe ganar el conflicto**: mi
+frontera_preload saltaba el prefijo pero CONSERVABA la precarga por
+kline (una segunda ruta de ingestión distinta del vivo); CX-01 elimina
+la precarga y confía en StatefulEngine (Hurst se actualiza con los
+eventos tal como en vivo — paridad REAL de la vía de calentamiento).
+Mi MX-19b (frontera por conteo ≠ 512 klines) se disuelve en su enfoque.
+CX-02 (suppress_entries por latency_panic del process_event, sin tocar
+kill-switch) es más fino que mi skip: features siguen durante warmup.
+
+**Resolución propuesta al merge**: CX-01 completo, retirar frontera_preload
+(subsumido), adaptar/retirar mis tests xlixA si cx_first_event los cubre.
+Re-baseline T-1 (ADR-0001) en pie para ambas.
+
+También verificados: CX-03 (omni day-0 sin backfill), CX-06 (ATR
+Option-sin-semilla), observer antes-de-evento, warmup exacto.
+Trainer BTC sigue EN VUELO.
