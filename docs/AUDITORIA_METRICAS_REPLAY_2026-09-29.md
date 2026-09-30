@@ -683,3 +683,13 @@ es evidencia local. Las afirmaciones históricas «no publicado» se conservan
 como historia, no describen el estado desde la apertura de PR #21.
 Los nueve hallazgos MX abiertos y todos sus criterios de cierre permanecen;
 publicar las reparaciones no demuestra alpha, rentabilidad o cobertura total.
+
+## Seguimiento CX — evidencia nueva sobre MX-19 y MX-18
+
+La [auditoría CX](AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md) reproduce y
+repara la precarga anticipada de MX-19 en un candidato posterior a PR21.
+También impide entradas durante el warmup y respeta la frontera solicitada.
+MX-18 sólo queda parcialmente atendido: ledger y reloj de métricas continúan
+abiertos. Esta adenda conserva las conclusiones históricas; la publicación
+del candidato, sus checks y revisión deben verificarse antes de declararlo
+integrado. No extrapolar los resultados antiguos a la nueva semántica.

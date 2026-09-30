@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — Codex CX: causalidad del replay (candidato)
+
+- Base main968259dc; PR21 integrada, ramas propias ST/TE/MX limpiadas.
+- Nueva rama feat/quant-sr-codex-causalidad. Repara precarga anticipada
+  MX-19, warmup que operaba, macro antes del primer dato y overflow W+10.
+- Informe y JSON: docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md;
+  4 reparaciones candidatas, 5 expedientes abiertos; no auditoría total.
+- 7 contratos propios pasan; ampliada100/0/2. Golden sin modificar.
+- Check workspace/all-targets/locked aprobado (1m40s), warnings previos.
+- CI nueva Replay contracts y revisión cruzada pendientes de verificación;
+  no confundir ausencia de review con aprobación ni YAML con CI verde.
+- Sin training, promoción, operación o T-1. Semántica de replay cambiada:
+  resultados/aptitudes históricos necesitan nueva medición causal.
+- GLM sigue en glm/xlviii-h-reentrenar-btc con Cargo.lock propio intacto.
+  PR10/20 preservadas; CX no toca sus rutas de código modificadas.
+  TH/backups quedan separados. Aviso compartido sin acuse demostrado.
+
 ## 2026-09-29 — PR #21 publicada y regresión ST/TE/MX aprobada
 
 - PR: https://github.com/Jhona-la/Trader-Gemini/pull/21.

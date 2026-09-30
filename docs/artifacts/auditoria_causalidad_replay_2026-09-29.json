@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "audit": "CX",
+  "date_local": "2026-09-29",
+  "base_commit": "968259dcad41d4daec049a374116554251051a82",
+  "branch": "feat/quant-sr-codex-causalidad",
+  "report": "docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md",
+  "coverage": {
+    "complete_semantic_repository_audit": false,
+    "complete_files": [
+      "crates/backtest-engine/src/booktick_replay.rs",
+      "crates/backtest-engine/src/booktick_causality_contract.rs"
+    ],
+    "focused_inspection": [
+      "crates/god-engine-core/src/lib.rs",
+      "crates/god-engine-core/src/stateful_engine.rs",
+      "src/bin/evolution.rs",
+      "src/bin/backtest_windows.rs",
+      "crates/backtest-engine/tests/bt_vivo_parity_audit.rs",
+      "docs/adr/ADR-0006-bt-vivo-envoltorio.md"
+    ]
+  },
+  "counts": {
+    "total": 9,
+    "fixed_candidate": 4,
+    "open": 5
+  },
+  "validation": {
+    "initial_contracts": {
+      "passed": 2,
+      "failed": 4
+    },
+    "intermediate": {
+      "passed": 5,
+      "failed": 1
+    },
+    "final_contracts": {
+      "passed": 7,
+      "failed": 0
+    },
+    "expanded": {
+      "passed": 100,
+      "failed": 0,
+      "ignored": 2,
+      "blocks": 5
+    },
+    "workspace_all_targets_locked": "passed",
+    "workspace_check_seconds": 100,
+    "ci": "workflow_added_not_yet_verified",
+    "cross_review": "pending",
+    "live_run": false,
+    "training": false,
+    "promotion": false,
+    "t1": false,
+    "profitability_certified": false
+  },
+  "findings": [
+    {
+      "id": "CX-01",
+      "severity": "P0",
+      "status": "fixed_candidate",
+      "related": [
+        "MX-19"
+      ],
+      "title": "Precarga anticipada del mismo tape",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:271",
+      "evidence": "Antes del evento cero last_price=95364.99490466162; mutar sufijo desde40 o ampliar tape alteraba prefijo.",
+      "change_or_proposal": "Retirada precarga process_kline; recorrido incremental existente.",
+      "closure": "Estado inicial frío e invariancia de prefijo en los dos modos.",
+      "limitations": "No prueba causalidad macro, modelos point-in-time ni todo el heap."
+    },
+    {
+      "id": "CX-02",
+      "severity": "P1",
+      "status": "fixed_candidate",
+      "related": [
+        "MX-18"
+      ],
+      "title": "Warmup podía abrir posiciones y dependía de longitud total",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:314",
+      "evidence": "Segundo candidato abrió una posición antes del evento3 durante warmup19900.",
+      "change_or_proposal": "Frontera exacta W y supresión de entradas en los tres process_event.",
+      "closure": "Capital/margen intactos durante warmup, features avanzan; control positivo W=0.",
+      "limitations": "Ledger y duración de estadísticas siguen pendientes."
+    },
+    {
+      "id": "CX-03",
+      "severity": "P1",
+      "status": "fixed_candidate",
+      "related": [],
+      "title": "Backfill macro anterior al primer dato",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:145",
+      "evidence": "Consulta día99 retornaba el valor123 del día100.",
+      "change_or_proposal": "Err(0) retorna sentinel0; día0 consulta -1.",
+      "closure": "Casos anterior, exacto y hueco en historia sintética.",
+      "limitations": "Sentinel no es evidencia; faltan disponibilidad/vintage."
+    },
+    {
+      "id": "CX-04",
+      "severity": "P1",
+      "status": "fixed_candidate",
+      "related": [],
+      "title": "Overflow del tamaño de warmup",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:263",
+      "evidence": "W+10 puede desbordar; test inicial cero trades era insuficiente.",
+      "change_or_proposal": "N.saturating_sub(W)>10 conserva mínimo sin overflow.",
+      "closure": "W=usize::MAX exige cero eventos visitados.",
+      "limitations": "Mínimo de diez no certificado como suficiente; evidencia de causa estática."
+    },
+    {
+      "id": "CX-05",
+      "severity": "P0",
+      "status": "open",
+      "related": [],
+      "title": "Macro sin vintage ni publicación point-in-time",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:61",
+      "evidence": "Fecha/valor sin available_at ni revisión en fetch/fallback.",
+      "change_or_proposal": "Dataset versionado con disponibilidad y vintage.",
+      "closure": "Invariancia ante publicaciones/revisiones posteriores.",
+      "limitations": "Impacto por serie no cuantificado."
+    },
+    {
+      "id": "CX-06",
+      "severity": "P1",
+      "status": "open",
+      "related": [],
+      "title": "ATR sembrado desde primera fila sin validar",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:299",
+      "evidence": "Se asigna ticks[0].mid antes de aduana; evidencia estática.",
+      "change_or_proposal": "Siembra tras admisión atómica y rechazo trazable.",
+      "closure": "Fila inválida insertada no contamina estados aceptados.",
+      "limitations": "No se midió impacto económico."
+    },
+    {
+      "id": "CX-07",
+      "severity": "P1",
+      "status": "open",
+      "related": [],
+      "title": "Relojes y rechazo parciales",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:386",
+      "evidence": "Frontera compara fila previa aunque descartada; no admisión atómica de reloj/cantidades.",
+      "change_or_proposal": "Contrato común de aceptación y secuencia.",
+      "closure": "Duplicados, retrocesos, empates y frontera descartada.",
+      "limitations": "Mecanismos inspeccionados; efectos integrales no cuantificados."
+    },
+    {
+      "id": "CX-08",
+      "severity": "P1",
+      "status": "open",
+      "related": [
+        "MX-18",
+        "MX-20",
+        "MX-21",
+        "MX-22"
+      ],
+      "title": "Ledger y población temporal incompletos",
+      "location": "crates/backtest-engine/src/booktick_replay.rs:511",
+      "evidence": "c1.or(c2), notional al mid de salida y span total persisten.",
+      "change_or_proposal": "Ledger por fill y población evaluada única.",
+      "closure": "Reconciliar PnL/equity, dos cierres y cortes.",
+      "limitations": "Warmup no cierra todos los hallazgos MX."
+    },
+    {
+      "id": "CX-09",
+      "severity": "P1",
+      "status": "open",
+      "related": [],
+      "title": "Paridad y resolución no demostradas",
+      "location": "docs/adr/ADR-0006-bt-vivo-envoltorio.md:11",
+      "evidence": "Reutilizar core no iguala condiciones; ts_ms no expresa ns.",
+      "change_or_proposal": "Trazas sincronizadas, estados/modelos versionados y readiness por escala.",
+      "closure": "Comparación replay/demo por evento y capacidad.",
+      "limitations": "Sin T-1 ni afirmación de cobertura universal."
+    }
+  ]
+}
