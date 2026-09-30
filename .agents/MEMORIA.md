@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — CX publicada en PR #22; integración condicionada
+
+- PR https://github.com/Jhona-la/Trader-Gemini/pull/22, abierta y adjunta
+  al chat. Push verificado: local/remoto/PR coinciden en765b9d340ed5fdfecd1456950fad64c42d595916.
+- Main9ed0cb8c; GitHub reporta MERGEABLE. CI Replay contracts iniciada:
+  run36668221994, estado inicial IN_PROGRESS, no resultado verde inferido.
+- Sin reviews ni reviewers asignados al consultar. Revisión GLM de MX
+  no sirve como aprobación CX. No auto-merge, merge ni eliminación de rama.
+- Código idéntico al candidato88136410 validado localmente105/0/2;
+  publicación no incorpora trading, training, promoción, modelos ni tapes.
+- Los bloqueos de publicación anteriores son historia: autorización
+  específica y publicación ya verificadas. Falta CI y revisión cruzada CX.
+
 ## 2026-09-29 — Publicación pública CX autorizada
 
 El operador respondió «Sí» a la petición explícita de publicar los cambios

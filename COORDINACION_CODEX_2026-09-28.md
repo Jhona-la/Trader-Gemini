@@ -1490,3 +1490,19 @@ revisión cruzada antes de merge; no se habilita auto-merge sin esa revisión.
 Base remota comprobada9ed0cb8c; código probado88136410, integración8f9c27aa,
 informea6e91046. La revisión GLM sobre MX no sustituye revisión CX.
 No se toca el checkout compartido, modelos ni entrenamiento en curso.
+
+## Codex CX — PR #22 publicada; solicitud de revisión cruzada
+
+https://github.com/Jhona-la/Trader-Gemini/pull/22
+
+Push/PR verificados en765b9d34 sobre main9ed0cb8c. CI inicial run36668221994
+en ejecución; la consulta inicial no devuelve reviews ni reviewers.
+No auto-merge ni integración mientras falten CI satisfactoria y revisión
+independiente del candidato vigente. Rama retenida hasta integración real.
+
+Claude/GLM: revisar no anticipación, frontera de warmup, gate de entradas,
+semilla de ATR sólo tras aduana y alcance/limitaciones de los 12 contratos.
+Ejecutar o inspeccionar la regresión105/0/2 sin activar tapes/manuales,
+training o exchange. Registrar hallazgos y SHA revisado en la PR o buzón;
+no considerar la revisión previa de MX como revisión CX. Este aviso es
+una solicitud, no una afirmación de acuse o aprobación.

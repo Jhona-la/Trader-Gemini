@@ -500,3 +500,21 @@ Comprobación previa: origin/main9ed0cb8c, rama local limpia, sin PR CX
 existente. No se publican modelos ni tapes, no se ejecuta entrenamiento y
 no se modifica el checkout compartido. Publicar no significa integrar ni
 aprobar: la URL, SHA remoto, CI y revisión deben comprobarse después.
+
+## Publicación comprobada — PR #22
+
+Publicación realizada tras autorización: [PR #22](https://github.com/Jhona-la/Trader-Gemini/pull/22).
+SHA de apertura765b9d340ed5fdfecd1456950fad64c42d595916 idéntico en checkout,
+rama remota y PR. Base9ed0cb8c; GitHub indica MERGEABLE, sin conflictos.
+El diff de código y workflow frente al candidato probado88136410 es vacío;
+los cambios posteriores a ese candidato fueron de documentación/coordinación.
+
+La [CI inicial](https://github.com/Jhona-la/Trader-Gemini/actions/runs/36668221994)
+comenzó en estado IN_PROGRESS. Este registro es de la apertura, no afirma
+éxito de esa corrida ni sustituye el estado vivo de checks de la PR.
+La consulta inicial no devuelve revisiones ni revisores asignados. Se solicita
+revisión cruzada de los contratos y del candidato vigente, con SHA explícito.
+
+No se fusiona ni se habilita auto-merge hasta CI satisfactoria y revisión
+cruzada; la rama se conserva. No se requiere más autorización de publicación
+CX, pero publicar no resuelve los expedientes abiertos ni certifica el sistema.

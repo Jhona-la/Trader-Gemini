@@ -10,6 +10,22 @@
       "merge_conditions": ["CI green", "independent cross-review"],
       "publication_verified": false,
       "live_training_promotion_authorized": false
+    },
+    {
+      "event": "publication_verified",
+      "date_local": "2026-09-29",
+      "pr_url": "https://github.com/Jhona-la/Trader-Gemini/pull/22",
+      "opening_head_sha": "765b9d340ed5fdfecd1456950fad64c42d595916",
+      "opening_base_sha": "9ed0cb8cc026c733b16f54d126e6b5a480bdb066",
+      "local_remote_pr_sha_match": true,
+      "code_delta_from_tested_88136410": false,
+      "mergeability_at_opening": "MERGEABLE",
+      "initial_ci_run": 36668221994,
+      "initial_ci_state": "IN_PROGRESS",
+      "ci_current_status_source": "PR status checks; initial observation is not a final conclusion",
+      "independent_review": "pending",
+      "merge_performed": false,
+      "auto_merge_enabled": false
     }
   ],
   "audit": "CX",
