@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "audit": "GO",
+  "date": "2026-09-30",
+  "author": "Codex",
+  "branch": "codex/genome-oracle-evidence",
+  "base": "76de9935cb21075414f6d50eda64089393e0a173",
+  "report": "docs/AUDITORIA_ORACULO_GENETICO_2026-09-30.md",
+  "status": "local_candidate_not_published",
+  "scope": {
+    "full_reads": [
+      "crates/backtest-engine/tests/t1_cobertura_genetica.rs",
+      "crates/backtest-engine/tests/support/t1_measurement.rs",
+      "crates/backtest-engine/tests/t1_measurement_contract.rs"
+    ],
+    "focused_reads": [
+      "crates/backtest-engine/src/lib.rs",
+      "crates/quantum-arena/src/genome.rs",
+      ".github/workflows/replay-contracts.yml",
+      "COORDINACION_CODEX_2026-09-28.md"
+    ],
+    "whole_project_audit": false
+  },
+  "invariants": {
+    "production_source_unchanged": true,
+    "fixture_bit_preservation_test": true,
+    "endpoint_bit_preservation_test": true,
+    "dimensions": 144,
+    "ratchet": 0.11,
+    "comparator_changed": false,
+    "predictor_changed": false,
+    "full_t1_executed": false,
+    "training": false,
+    "trading": false,
+    "promotion": false
+  },
+  "evidence": {
+    "red": {
+      "passed": 6,
+      "failed": 1,
+      "reason": "GO-01 field labels mismatched"
+    },
+    "fast": {
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0,
+      "execution_seconds": 0.01
+    },
+    "expanded": {
+      "passed": 117,
+      "failed": 0,
+      "ignored": 2,
+      "targets": {
+        "lib": 51,
+        "bt_vivo_parity_audit": 8,
+        "ex_post_metrics_contract": 21,
+        "label_evidence_contract": 25,
+        "spectral_risk_contract": 3,
+        "t1_measurement_contract": 9
+      },
+      "ignored_reason": "manual real-tape experiments not invoked"
+    },
+    "all_targets_check": {
+      "status": "success",
+      "seconds": 38.18,
+      "command": "cargo +nightly-2026-06-30 check --workspace --all-targets --locked"
+    }
+  },
+  "measurements": {
+    "noise": {
+      "n": 3000,
+      "positive_count": 0,
+      "mean": -0.2525882664848767,
+      "initial_price": 60000,
+      "final_price": 7592.089743463237,
+      "neutrality_claim": false
+    },
+    "projection": {
+      "baseline_changed_slots": [],
+      "erased_requests": [
+        13,
+        14,
+        15,
+        16,
+        140
+      ],
+      "coupled_requests": {
+        "141": [
+          13,
+          14,
+          15,
+          16,
+          140,
+          141,
+          142,
+          143
+        ],
+        "142": [
+          13,
+          14,
+          15,
+          16,
+          140,
+          142
+        ],
+        "143": [
+          13,
+          14,
+          15,
+          16,
+          140,
+          142
+        ]
+      },
+      "global_inertia_claim": false
+    }
+  },
+  "findings": [
+    {
+      "id": "GO-01",
+      "priority": "P1",
+      "status": "candidate_fixed",
+      "title": "Wrong mapping of trades/PnL/WR in T-1 diagnosis",
+      "cause": "Stats positions 0/1/2 displayed as trades/pnl/wr instead of net_wr/trades/final_capital.",
+      "repair": "Shared formatter uses positions 1/6/0/2 for trades/net PnL/net WR/capital.",
+      "test": "go_diagnostic_labels_match_actual_replay_layout",
+      "limits": "Only diagnosis changed; no execution or fitness repair."
+    },
+    {
+      "id": "GO-02",
+      "priority": "P1",
+      "status": "open",
+      "title": "Synthetic residual strictly negative",
+      "cause": "31-bit numerator divided by 32-bit maximum before subtracting 0.5.",
+      "impact": "Scenario coverage can favor directional paths and fail to exercise others.",
+      "test": "go_witness_legacy_fixture_noise_is_negative_not_centered",
+      "acceptance": "Versioned scenario family with distribution contracts and side-by-side historical comparison; do not silently replace fixture."
+    },
+    {
+      "id": "GO-03",
+      "priority": "P1",
+      "status": "open_documentation_corrected",
+      "title": "Endpoint probes cannot prove global inertia or cover interactions",
+      "counterexamples": [
+        "x*(1-x): zero at both endpoints, nonzero in interior",
+        "a*b: zero for either single-coordinate probe at baseline (0,0), nonzero jointly"
+      ],
+      "repair": "Limit wording to observed absence of change under this probe and fixture.",
+      "acceptance": "Feasible interior/joint/context probes with documented design and limits."
+    },
+    {
+      "id": "GO-04",
+      "priority": "P1",
+      "status": "open_observability_added",
+      "title": "Requested vector perturbation may be erased or coupled",
+      "prior_reference": "D-656 derived anchors, not four new dead-gene discoveries",
+      "repair": "Log requested/realized coordinate and all changed slots.",
+      "acceptance": "Define effective degrees of freedom and admissible perturbations; do not equate 144 serialized coordinates to 144 independent genes."
+    },
+    {
+      "id": "GO-05",
+      "priority": "P1",
+      "status": "open",
+      "title": "Eight-statistic sensitivity is not canonical fitness sensitivity",
+      "cause": "Any metric difference drives coverage; canonical promoter fitness not evaluated by comparison.",
+      "acceptance": "Typed metrics, validity, units, effective fitness version and selection trace; distinguish numerical tolerance and economic/statistical significance."
+    },
+    {
+      "id": "GO-06",
+      "priority": "P1",
+      "status": "open",
+      "title": "Nonfinite comparison is not validity evidence",
+      "witness": [
+        "NaN vs infinity treated as not different",
+        "finite vs NaN treated as sensitive"
+      ],
+      "compounding": "Replay sanitizes nonfinite aggregates before this comparison.",
+      "acceptance": "Separate validity/failure channel with original stage and cause, before sanitization."
+    },
+    {
+      "id": "GO-07",
+      "priority": "P1",
+      "status": "open",
+      "title": "Single synthetic BTC fixture does not certify multiasset continuous-spectrum evolution",
+      "cause": "One symbol/capital/tape/predictor lacks cross-asset competition, scale support and host-path coverage.",
+      "acceptance": "Causal context matrix, physical-time support, scale-specific uncertainty and net outcomes; no universal performance claim."
+    },
+    {
+      "id": "GO-08",
+      "priority": "P2",
+      "status": "open",
+      "title": "Global model/environment/counter state limits diagnostic isolation",
+      "cause": "set_var and global model/reject counters share process state; test attribute does not force serial execution.",
+      "acceptance": "Explicit isolated context or separate processes, deltas and resource restoration.",
+      "mitigation_this_run": "Explicit --test-threads=1; fast contracts do not run core."
+    },
+    {
+      "id": "GO-09",
+      "priority": "P1",
+      "status": "open",
+      "title": "Combined T-1 failure does not identify cause or authorize lowering ratchet",
+      "reported_by": "GLM in main76de9935; not Codex execution",
+      "reported_result": "PR20+CX below 11%, train_forest39/39; no per-gene count/list in note",
+      "acceptance": "Comparable Y00/Y10/Y01/Y11 cuts with precise commits, realized perturbations and per-gene/stat/stage differences; independent review before re-baseline."
+    }
+  ],
+  "source_sha256": {
+    "crates/backtest-engine/tests/t1_cobertura_genetica.rs": "FAE2F03CB48649D121AA500C092C4D6119CC7A36834BF345655668A98F802DBC",
+    "crates/backtest-engine/tests/support/t1_measurement.rs": "1D874D34C30E3D7FCDB2A35C28D1C869837F6AB0939C5D9749A4645C73CC71C0",
+    "crates/backtest-engine/tests/t1_measurement_contract.rs": "1F4F8E2E6DFD45B11AEAB1943F4F1F9B289D88658ED5F46BC1F7D03243B863D4"
+  },
+  "publication": {
+    "authorized": false,
+    "pushed": false,
+    "pr": null,
+    "merged": false,
+    "cross_review": null,
+    "ci_run": null
+  }
+}

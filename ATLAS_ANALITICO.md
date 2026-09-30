@@ -1916,3 +1916,18 @@ eliminados sin borrar textos; CI añade control de diff. Evidencia detallada
 en la [adenda CX](docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md).
 Readiness física por escala y paridad siguen abiertos. No se deduce edge,
 adaptación universal ni rentabilidad de un merge o un test determinista.
+
+## ADENDA GO — Qué mide realmente el oráculo genético
+
+La cadena petición → proyección del genoma → replay → estadísticas → cobertura
+no equivale a fitness ni a inercia global. [Informe GO](docs/AUDITORIA_ORACULO_GENETICO_2026-09-30.md)
+y [artefacto GO](docs/artifacts/auditoria_oraculo_genetico_2026-09-30.json)
+documentan nueve expedientes, unidades, contraejemplos y criterios de cierre.
+
+Una reparación diagnóstica: trades/PnL/WR estaban intercambiados. Trazas nuevas
+muestran peticiones borradas (13–16 y140 en esta base) y acoplamientos de141–143.
+D-656 ya documentaba las anclas derivadas; no son cuatro hallazgos nuevos.
+El ruido del fixture siempre es negativo. Se preservan fixture/comparador/
+trinquete0,110; no se obtienen aprobados cambiando la referencia.
+Regresión local117/0/2; contratos rápidos9/0. T-1 completo no ejecutado,
+CI remota/revisión/publicación GO pendientes. Sin cambio de producción.

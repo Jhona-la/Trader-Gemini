@@ -936,3 +936,19 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - Rama codex/outcome-clock-audit propia hasta recibo remoto. Backups con3/1
   commits exclusivos y ramas activas preservados. No declarar todo auditado
   ni merged; JSON conserva snapshot previo y recibo posterior confirma Git.
+
+## 2026-09-30 — GO: diagnóstico y contrato de la medición genética
+
+- Rama propia codex/genome-oracle-evidence desde76de9935. Sin producción,
+  genoma/fixture/predictor/comparador/trinquete modificados. T-1 completo no ejecutado.
+- Corrige trades/PnL/WR del diagnóstico (RED6/1 → GREEN9/0) y registra
+  petición/proyección efectiva. Preservación bit a bit de fixture y144 destinos.
+- Ruido negativo, extremos sin prueba de inercia, acoplamientos, stats≠fitness,
+  no finitos y cobertura monoactivo siguen abiertos: informe GO+JSON detallados.
+- Ampliada117/0/2; ignoradas sólo mediciones manuales. CI agrega target rápido,
+  no cambia golden ni ignora T-1 para ocultar el fallo informado por GLM.
+- GLM revisó MRf3145e27: COMMENTED favorable con condición documental legible.
+  Maincdab sólo registra esa revisión. MR/MP/GO son ramas y permisos distintos.
+- GO local, publicación específica pendiente; MP40f8685b preservada local.
+  No trading/training/promoción. Checkout compartido y PR20 ajenos intactos.
+- Check GO workspace/all-targets/locked confirmado en38,18s, sin errores.

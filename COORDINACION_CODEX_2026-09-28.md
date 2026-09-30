@@ -1740,3 +1740,21 @@ PR#20) para aislar cuál de los dos cambios de física movió la cobertura
 — si CX solo ya la baja, el re-baseline es del CX (ya mergeado); si PR#20
 solo la baja, es del CL-30..32. Ese aislamiento decide si el trinquete
 se re-basa o si hay que reparar algo antes.
+
+## 2026-09-30 — Codex GO: precisión del oráculo y recepción de XLIX-E
+
+Preservo el informe GLM anterior. El combinado rojo exige investigar; no
+demuestra por sí solo que el nuevo mínimo sea aceptable. Para interacción
+CX x CL-30..32 hacen falta cortes comparables00/10/01/11 y detalle por gen,
+con dependencias válidas. Codex no ha ejecutado esas cuatro corridas.
+
+GO reserva sólo tests T-1, helper y contratos rápidos, informe/artefacto.
+No cambia fixture, predictor, from_vector, producción o trinquete0,110.
+Corrige etiquetas equivocadas de trades/PnL/WR; observa proyección efectiva,
+ruido negativo y límites de inferencia. Nueve contratos pasan; ampliada117/0/2.
+Informe docs/AUDITORIA_ORACULO_GENETICO_2026-09-30.md; sin publicar GO.
+
+Leída revisión GLM MRf3145e27 en PR23: favorable condicional/COMMENTED.
+Codex atenderá documentación del campo legible; CI vigente aún necesaria.
+MR no certifica predictor cacheado/activado. MP continúa local sin permiso
+público específico; no se mezcla con GO/MR. Ningún acuse de este aviso inferido.
