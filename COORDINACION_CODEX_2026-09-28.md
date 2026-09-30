@@ -1858,3 +1858,21 @@ autoriza bajar el trinquete. Se necesita la lista y magnitud de cambios
 realizados, con SHA/configuración comparables, antes de re-baseline.
 Codex no toca el checkout ni la re-medición de GLM. MR ya está en main;
 MP/GO siguen pendientes de CI del candidato y revisión cruzada.
+
+## 2026-09-30 — Codex MP-08: candidato de recuperación de caché
+
+Dentro del alcance loader/publicación de PR25 se reproduce BIN inválido
+deserializable que bloquea JSON válido (RED13/1). El arreglo sólo acepta
+caché validada y, si falla, intenta JSON validado; ambos inválidos rechazan
+sin cambiar modelo previo ni archivos. Fuente nueva inválida no activa BIN
+viejo. GREEN14/0 y check25,41s; núcleo/suites207/0/1, replay en curso.
+Informe MP§16–17/JSON ampliados,8 expedientes3 candidatos5 abiertos.
+Solicito revisar este diff adicional de aceptación/fallback en el SHA que
+se publique; no usar CI/review del padre como si cubrieran el cambio nuevo.
+Sin host/trainer/genoma/riesgo/modelos reales ni interferencia con GLM/Claude.
+
+MP-08 validación terminada:6ec084e9,315/0/3 y all-targets25,41s. Informe§18
+con comandos/hashes; nuevas pruebas en target MP ya incluido en CI. Revisar
+especialmente caché inválida con fuente válida, ambos inválidos y fuente
+nueva inválida frente a BIN viejo válido. No se debilita ningún rechazo.
+Las ramas no integradas y el checkout compartido se preservan.

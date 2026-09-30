@@ -1953,3 +1953,23 @@ los seis expedientes y controles. Ninguna nueva teoría matemática corrige
 por sí sola una validación desconectada o un linaje no observado. Habilidad
 multiactivo/multiescala exige datos y tests con soporte temporal efectivo;
 resolución del reloj, complejidad de modelos y nombres cuánticos no bastan.
+
+## ADENDA MP-08 — deserializar no es validar; rechazar no siempre es detener
+
+El [nuevo expediente MP-08](docs/AUDITORIA_PUBLICACION_MULTIACTIVO_2026-09-30.md)
+distingue D(B), bytes BIN deserializables, de V(B), estructura ejecutable válida.
+La implementación anterior recuperaba desde JSON sólo cuando fallaba D y
+rechazaba sin recuperación cuando fallaba V. Un ciclo en caché y fuente JSON
+válida reproduce esa discontinuidad técnica; no es un cambio de régimen financiero.
+
+Ahora el par selección/validación forma una rama completa: BIN elegible y válido
+se conserva; BIN inválido intenta JSON válido; ambas fuentes inválidas rechazan.
+Si el JSON es más nuevo e inválido, no se acepta una caché vieja por conveniencia.
+El último modelo publicado sobrevive a cargas fallidas. Estas condiciones se
+comprueban con fixtures de timestamps explícitos, no con operaciones reales.
+
+La corrección elimina una causa concreta de bloqueo sin eliminar la protección
+estructural. V no equivale a evidencia estadística, hash de serving, permiso de
+promoción ni adecuación al activo/horizonte. Identidad, generaciones, coherencia
+multihead y watcher permanecen abiertos; ninguna ecuación avanzada los acredita
+por sí sola. No se cambia el diseño temporal del motor ni se mide rentabilidad.

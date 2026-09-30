@@ -8772,3 +8772,35 @@ La estructura se valida sobre bytes originales, no sobre Value normalizado.
 Nueve contratos registry incluidos en el total, sin inflar el conteo.
 CX ya está en main mediante c75f23ce, comprobado en remotoee438edb;
 sus informes añaden el cierre conservando el historial. MR espera CI/review.
+
+## ADENDA MP-08 — recuperación legítima de caché inválida (2026-09-30)
+
+Se reproduce otro rechazo lógico del cargador: un BIN deserializable con
+topología inválida bloqueaba su JSON válido porque la validación quedaba fuera
+de la rama de fallback. RED13/1 en14 tests; primer fallo cycle/json. No permitía
+activar el árbol inválido: el impacto era pérdida de disponibilidad/actualización.
+La corrección valida dentro de la aceptación de caché e intenta JSON plenamente
+validado en cualquier fallo de ésta. Preserva rechazo si ambas fuentes fallan,
+último modelo activo y archivos intactos; JSON nuevo inválido no retrocede a BIN
+viejo válido. Se distinguen ambos motivos en el error. No cambia gates de riesgo.
+
+El [informe MP, §16–17](docs/AUDITORIA_PUBLICACION_MULTIACTIVO_2026-09-30.md)
+y [artefacto MP](docs/artifacts/auditoria_publicacion_multiactivo_2026-09-30.json)
+añaden causa raíz, casos, impacto, límites y requisitos de cierre. Matriz MP
+actualizada por adenda:8 expedientes,3 reparaciones candidatas y5 abiertos;
+MP-07 sigue siendo referencia a MR-03, no un nuevo descubrimiento independiente.
+Los12 casos de caché inválida pertenecen a un test, no son12 tests distintos.
+GREEN inicial14/0; check final all-targets25,41s. Regresión ampliada se registra
+al terminar; no sumar evidencias históricas como si validaran el nuevo árbol.
+
+MR/PR23 integrado por GLM y CI posterior SUCCESS; MP/PR25 y GO/PR24 abiertas,
+sin revisión independiente al corte. Reconciliaciones con main6228 sólo docs,
+ambos padres preservados. El contraste T-1 reportado por GLM acota el efecto de
+PR20 sobre CX, no demuestra por sí solo mecanismo por gen ni autoriza re-baseline.
+No ejecución del motor, training, promoción, cambio de fixture/trinquete o
+certificación de todo el proyecto; tampoco evidencia de retorno garantizado.
+
+Cierre MP-08: código6ec084e9 validado315/0/3, check25,41s; informe§18 y JSON
+qa_mp08_final conservan los resultados anteriores y añaden el nuevo corte.
+No corresponde a315 fallos reparados ni demuestra merge/CI remotos. Publicar
+y revisar este candidato mantiene separados prueba local y cierre integrado.

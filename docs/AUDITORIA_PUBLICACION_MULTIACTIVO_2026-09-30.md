@@ -364,3 +364,198 @@ adicionales respecto al corte anterior306/0/3, no cinco reparaciones MP.
 No se ejecutaron T-1 completo, entrenamiento, promoción ni operaciones.
 Publicación autorizada; CI remota MP y revisión cruzada se comprobarán
 después de crear la PR, sin tomar estos tests locales como aprobación externa.
+
+## 16. Adenda MP-08 — rechazo recuperable de caché que bloqueaba una fuente válida
+
+Esta adenda conserva los cortes anteriores, sus cifras y sus autorizaciones.
+El inventario MP pasa a **ocho expedientes: tres reparaciones candidatas y cinco
+abiertos**, incluyendo la referencia existente MP-07/MR-03. No son ocho cierres.
+Las afirmaciones de dos candidatos, diez tests y311 resultados del corte previo
+siguen describiendo ese candidato histórico; no certifican por anticipado éste.
+
+### 16.1. Clasificación, alcance y causa raíz
+
+**ID MP-08; prioridad P2; defecto lógico de selección y recuperación del
+artefacto.** Fuente: `crates/god-engine-core/src/ml_inference.rs`,
+`NanoForest::load_model`, rama de caché en líneas218–264 del candidato de
+esta adenda. Es distinto de MP-02: la ruta puede ser correcta y el JSON
+conservar todos sus bytes, pero el cargador todavía rechaza un modelo disponible.
+Tampoco equivale a MP-07: no se corrige el linaje de una caché estructuralmente
+válida cuyo contenido difiere de la fuente certificada.
+
+El cargador elige el BIN si el JSON no es más nuevo. La implementación previa
+recuperaba desde JSON cuando fallaba leer/deserializar el BIN. Sin embargo,
+ejecutaba la validación de topología/dimensión/finitud **después** de salir de
+esa rama de recuperación. Un BIN que se deserializaba bien pero contenía un
+ciclo llegaba a esa validación tardía y devolvía error inmediatamente. Nunca
+intentaba leer el JSON válido situado en la pareja de rutas ya resuelta.
+
+La distinción formal es `D(B) != V(B)`: D significa deserialización exitosa;
+V significa aceptación estructural completa. Un archivo puede satisfacer D
+y no V. El contrato de recuperación comprobaba sólo el fracaso de D. No es
+una cuestión de elegir un umbral de probabilidad, un régimen de mercado o un
+horizonte; es una separación incorrecta entre selección y validación.
+
+### 16.2. Reproducción y alcance demostrado
+
+Sobre `e69797e1240b1c282844fadc0208480777cb2407` se añadieron cuatro tests,
+sin tocar todavía el cargador. Resultado **13 pasan /1 falla /0 ignoradas**,
+build15,02s y ejecución0,46s. El test fallido fue
+`mp_structurally_invalid_cache_falls_back_to_valid_json`, con mensaje
+`cycle/json: valid JSON was blocked: ... cycle in tree`.
+
+El fixture contiene un JSON sintético válido con intercepto9 y un BIN de
+intercepto−9 con hijo que apunta a sí mismo. El BIN se deserializa y se
+comprueba explícitamente que `NanoForest::from_data` lo rechaza. Los mtimes
+se fijan en10.000s y20.000s desde epoch para asegurar que el BIN sea elegido;
+son únicamente marcas del fixture, no edades ni límites productivos. No se
+emplean sleeps ni se presupone resolución temporal del sistema de archivos.
+
+La prueba final cubre seis clases de invalidez del BIN —ciclo, dimensión48,
+longitud paralela desigual, offset fuera del arreglo, NaN e infinito— para
+ambas entradas de API, ruta JSON y ruta BIN. Son **12 casos dentro de un test**,
+no12 tests independientes. El RED abortó en el primer caso: no se afirma
+haber observado las12 fallas antes de corregir. En GREEN se recorren todos.
+Para cada caso se verifica la fuente intacta y que la caché reconstruida sea
+estructuralmente válida y tenga el intercepto de la fuente, no el rechazado.
+
+### 16.3. Impacto causal y lo que no demuestra
+
+La cadena posible es caché derivada inválida → carga rechazada pese a JSON
+válido → `load_global` no publica ese candidato → modelo previo conservado,
+o ausencia si nunca existió → consumidor decide según su estado disponible.
+El fallo afecta disponibilidad/actualización; **no permitía activar ese árbol
+inválido**, porque la validación final sí lo rechazaba. No se afirma OOB,
+ganancia perdida, número de incidentes o tasa de rechazo observada en demo.
+
+Este defecto puede ocultar el efecto de una actualización del predictor al
+comparar backtest y vivo, pero el test no demuestra que explique una brecha
+real determinada. Para atribuirla se requieren recibos del artefacto servido,
+versión del genoma, entradas, timestamps y decisión. Tampoco prueba ni corrige
+la desconexión de promoción del trainer documentada por MR/Claude.
+
+### 16.4. Corrección y tabla de decisión
+
+La caché se deserializa **y valida dentro de la misma rama de aceptación**.
+Si cualquiera de esos pasos falla, se intenta el JSON y se aplica el mismo
+contrato estructural. El par `(data, required_features)` se conserva desde
+la validación para no recorrer dos veces la topología aceptada. La escritura
+best-effort de BIN sólo ocurre después de validar la fuente. El formato y
+la política de mtime permanecen sin cambiar; no se migra ni activa un modelo
+real. El callback RCU de publicación sigue sin E/S ni validación de árboles.
+
+| Estado de selección | Resultado requerido | Evidencia |
+|---|---|---|
+| BIN elegible, válido | se acepta con política actual | contratos previos de BIN/concurrencia |
+| BIN elegible ilegible/no deserializable, JSON válido | cargar JSON válido y reconstruir caché | test de bytes corruptos, ahora con mtime explícito |
+| BIN elegible deserializable pero inválido, JSON válido | mismo fallback validado | nuevo test6 clases ×2 entradas |
+| BIN inválido y JSON inválido | error; archivos y último modelo intactos | nuevo test JSON malformado y JSON estructuralmente inválido |
+| BIN inválido sin JSON | error; no alta global, no archivo creado | nuevo test standalone inválido |
+| JSON estrictamente más nuevo pero inválido; BIN viejo válido | error; no retroceso silencioso al BIN | nuevo test fuente autoritativa rechazada |
+
+Cuando ambos intentos fallan, el error identifica por separado la caché y la
+fuente con sus motivos. No se oculta el primer rechazo tras un genérico JSON
+no encontrado. Si se recupera con éxito, la API retorna el modelo; no añade
+un ledger durable de ese evento ni telemetría de cada intento fallido.
+
+Se mantienen dos invariantes: ningún árbol rechazado se publica y ningún
+JSON inválido se recompila a caché. Un JSON nuevo inválido no causa rollback
+implícito a una caché antigua. Si la caché válida es preferida por mtime, la
+comprobación de identidad con el JSON sigue faltando: **MP-07 permanece abierto**.
+
+### 16.5. Vetos y rechazos: criterio de legitimidad
+
+El rechazo estructural de ciclos, dimensiones fuera de contrato y números no
+finitos sigue siendo necesario; no se evoluciona hacia permitir esos valores.
+Lo que cambia es la decisión de detener la recuperación cuando existe otra
+representación candidata válida. La aceptación estructural es necesaria para
+ejecutar el predictor, pero no acredita calibración, evidencia posterior,
+autorización de promoción, adecuación al activo o habilidad espectral.
+
+No se reduce ningún umbral de señal, riesgo, cobertura genética o validación
+estadística. Tampoco se agregan buckets scalping/swing o regímenes discretos.
+La separación entre protección técnica y selección adaptativa evita adjudicar
+a una etiqueta de estrategia un defecto del grafo de artefactos.
+
+### 16.6. Límites que siguen abiertos y criterio de cierre
+
+La caché aún se escribe sin transacción durable; no se resuelven alias de
+filesystem, carreras con otro escritor ni fidelidad del mtime como identidad.
+No se garantiza monotonicidad de generaciones, bundle multiactivo/multihead
+coherente, encapsulación de todos los writers o watcher sin recargas espurias.
+No se añade una cota de recursos para deserializar archivos ni se mide p99.
+La corrección añade recuperación en un camino frío defectuoso; no constituye
+una garantía de latencia dura ni de cómputo nanosegundo a nanosegundo.
+
+GREEN inicial **14/0/0**, build27,79s, ejecución0,59s. Se refuerzan después
+dos aserciones: mtime determinista del test previo de bytes corruptos y error
+que conserva ambos motivos. Compilación final workspace/all-targets/locked
+**aprobada25,41s**; la regresión ampliada se registra abajo al finalizar.
+No se cuenta este GREEN de nuevo dentro del total ampliado.
+
+Para cierre integrado se exige revisión cruzada del nuevo diff de loader y
+CI del SHA publicado, no sólo el verde del padre documental. No está cerrado
+en main por existir un arreglo local. No se ejecuta trading, entrenamiento,
+promoción, el T-1 completo ni se acredita el objetivo financiero.
+
+## 17. Recibo de coordinación y conservación de main6228b351
+
+MR/PR23 ya está en main; su CI36725338162 terminó SUCCESS después del corte
+anterior. MP/PR25 y GO/PR24 seguían OPEN, sin revisiones al consultar.
+Las reconciliaciones documentales son MP`e69797e1` y GO`34324749`:
+compilaciones all-targets5,46s y26,67s respectivamente, sin delta de código,
+tests o CI respecto a sus padres de rama. Se verificaron ambos padres y la
+preservación ordenada de sus apéndices completos de coordinación:
+MP1833/1812 líneas y GO1848/1812 líneas. No se tocó el checkout compartido.
+
+El nuevo informe GLM de T-1 verde con CX y rojo con CX+PR20 aporta un
+contraste contextual útil si configuración/entorno son comparables. No se
+requieren cuatro cortes para reconocer ese contraste; sí permiten distinguir
+efectos principales de interacción. No demuestra todavía qué genes explican
+la caída ni autoriza rebajar el11,0%. Codex no ejecutó esas dos corridas ni
+la re-medición en vuelo: se identifica expresamente como evidencia de GLM.
+Su rama de re-medición y las ramas Claude permanecen intactas.
+
+## 18. Cierre de validación MP-08 — código6ec084e9
+
+Commit de fuente/pruebas: `6ec084e9a0d2908eaa9c7f6c028e9a41750e1dcb`.
+Finalizaron los dos comandos ampliados con código0:
+
+```text
+cargo +nightly-2026-06-30 check --workspace --all-targets --locked
+cargo +nightly-2026-06-30 test -p god-engine-core --locked --lib --test conformal_wiring_contract --test ml_base_publication_contract --test ml_model_contract --test model_publication_contract --test outcome_attribution_contract -- --test-threads=1
+cargo +nightly-2026-06-30 test -p backtest-engine --locked --lib --test ex_post_metrics_contract --test label_evidence_contract --test spectral_risk_contract --test bt_vivo_parity_audit -- --test-threads=1
+```
+
+| Conjunto disjunto | Aprobadas | Fallidas | Ignoradas |
+|---|---:|---:|---:|
+| Núcleo lib |151|0|0|
+| Conformal / base / ML / MP / atribución |11+1+12+14+18 =56|0|1|
+| Replay lib |51|0|0|
+| Paridad / métricas / labels / riesgo |8+21+25+3 =57|0|2|
+| **Total** |**315**|**0**|**3**|
+
+Las14 MP incluyen los cuatro tests agregados en esta adenda. Los12 casos
+internos de invalidez y las ejecuciones RED/GREEN no se suman como tests
+adicionales. Ignoradas: inventario manual ML y dos experimentos de paridad
+existentes; no se habilitaron. Check25,41s, build núcleo31,48s, build replay66s;
+replay lib75,62s y paridad36,45s. No es el T-1 largo ni una corrida de producción.
+
+SHA256 de archivos probados, verificados otra vez después del commit:
+
+- `ml_inference.rs`: `83277F1761A04E510A740FB50454597056B51747102E6A33426ACF669137CBD3`.
+- `model_publication_contract.rs`: `B2DA10AAD14941980554479F856A7829B45BF965BC73842FDCC7848335E2CBB3`.
+
+Conservación comprobada antes de esta adenda final: informe366 líneas
+históricas, maestro8774, atlas1955, memoria1063 y coordinación1860; todas
+siguen como subsecuencia ordenada. Los campos anteriores del JSON y los
+primeros siete expedientes se compararon estructuralmente: sin cambios.
+Esta ola añade evidencia, no reescribe resultados pasados.
+
+No hay nuevas ramas no principales demostradas integradas para limpiar.
+`backup-before-cleanup` conserva3 commits exclusivos, `v7-unificacion-wip`1,
+`feat/quant-sr-codex-horizonte`4 y la rama GLM de re-medición18 respecto a
+main6228. Exclusividad de commits no equivale a18 cambios independientes,
+pero impide suponerlos absorbidos. Las PR10/20/24/25 seguían abiertas.
+La publicación del nuevo candidato inicia CI nueva;315 resultados locales
+no son aprobación remota ni revisión independiente. Main aún no incluye MP.

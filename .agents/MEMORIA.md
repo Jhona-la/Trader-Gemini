@@ -1061,3 +1061,26 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   Cinco tests MR adicionales explican aumento desde306; no inflar fixes.
   Hashes fuente MP idénticos; check26,60s. Publicar PR propia, sin GO dentro,
   y esperar CI/review del candidato. Sin training, operación o T-1 completo.
+
+## 2026-09-30 — MP-08: caché inválida que bloqueaba fuente válida
+
+- MP PR25/e69797e1 y GO PR24/34324749 reconcilian main6228, sólo coordinación.
+  Ambos padres íntegros/en orden; checks all-targets5,46s/26,67s. Sin review.
+- QA MP reproduce RED13/1: BIN deserializable con ciclo impide JSON válido.
+  Validación movida dentro de aceptación BIN; fallback sólo a JSON validado.
+  Ambas fuentes inválidas preservan modelo/archivos; JSON nuevo inválido no
+  hace rollback a BIN viejo. Errores conservan causas de caché y fuente.
+- GREEN14/0; seis clases inválidas x2 rutas dentro de UN test. Check final
+  all-targets25,41s; núcleo/suites207/0/1, replay todavía en curso en este corte.
+  Informe/JSON MP§16–17;3 candidatos/5 abiertos, no8 bugs cerrados.
+- MR integrado por GLM, CI36725338162 SUCCESS posterior al merge. Nuevo
+  aislamiento GLM CX verde/combinado rojo acota efecto marginal; falta dato
+  por gen para re-baseline. No tocar rama/procesos GLM ni PR10/20 de Claude.
+- Main compartido limpio; ramas activas/backups no integrados preservados.
+  No training/promoción/operación/T-1/golden/umbral cambiado ni garantía de lucro.
+
+- CIERRE MP-08: código6ec084e9,207/0/1 núcleo +108/0/2 replay =315/0/3;
+  cuatro nuevos tests MP incluidos, no sumar otra vez12 casos internos.
+  Check25,41s; hashes re-verificados. Informe§18/JSON qa_mp08_final.
+  Publicar en PR25 y pedir review del nuevo SHA; no atribuirle CI del padre.
+  GO34324749 permanece en PR24 separada, sin código productivo cambiado.

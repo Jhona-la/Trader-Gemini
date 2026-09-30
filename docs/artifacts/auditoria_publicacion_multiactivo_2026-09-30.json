@@ -72,6 +72,19 @@
       "related": ["MR-03"], "new_discovery": false,
       "mechanism": "Path repair preserves newer/equal-mtime BIN preference and standalone compatibility; no source/payload provenance binding is added.",
       "closure": "Versioned source/payload lineage, migration policy and served-predictor receipt, independent of statistical promotion evidence."
+    },
+    {
+      "id": "MP-08", "priority": "P2", "status": "candidate_fixed_pending_ci_review",
+      "title": "Deserializable invalid cache blocks a structurally valid JSON source",
+      "source": "crates/god-engine-core/src/ml_inference.rs:218",
+      "mechanism": "Binary structural validation occurred outside the fallback branch; decoding success followed by a cycle/dimension/numeric rejection returned early without trying valid JSON.",
+      "impact": "Recoverable loading failure prevents publication of the available source; no invalid tree was accepted by the old code and no live incident frequency was measured.",
+      "red": {"passed":13,"failed":1,"ignored":0,"first_failure":"cycle/json","all_matrix_failures_observed_before_fix":false,"build_seconds":15.02,"test_seconds":0.46},
+      "fix": "Validate the chosen BIN within its acceptance branch; on failure try fully validated JSON, preserving newer-source authority and reporting both errors if both fail.",
+      "acceptance_matrix": {"invalid_cache_kinds":["cycle","dimension","length","offset","NaN","infinity"],"caller_extensions":["json","bin"],"cases_in_one_test":12},
+      "invariants": ["Invalid artifacts are never published", "Invalid JSON is never cached", "A newer invalid JSON does not fall back to an older BIN", "Failed loads preserve the last valid global model and both source files"],
+      "limits": ["No identity binding MR-03/MP-07", "No transactional cache write", "No generation ordering", "No activation receipt", "No measured live PnL/latency effect"],
+      "closure": "Candidate-specific CI plus independent cross-review and verified integration; local tests alone do not close this in main."
     }
   ],
   "validation": {
@@ -124,6 +137,34 @@
     "go_separate_pr": 24,
     "mr_pr23": "merged by GLM, 589a591d; condition documented in fbf8e9ea",
     "mr_main_ci_at_initial_cut": "in_progress"
+  },
+  "qa_mp08": {
+    "base": "e69797e1240b1c282844fadc0208480777cb2407",
+    "preserve_previous_cuts": true,
+    "finding_count":8,"candidate_fixes":3,"open":5,
+    "green_before_final_assertion_strengthening":{"passed":14,"failed":0,"ignored":0,"build_seconds":27.79,"test_seconds":0.59},
+    "final_assertions":["Explicit cache/source mtimes in corrupt-bytes test", "Both rejection causes preserved in error message"],
+    "all_targets_locked":{"status":"success","seconds":25.41},
+    "source_sha256": {
+      "crates/god-engine-core/src/ml_inference.rs":"83277F1761A04E510A740FB50454597056B51747102E6A33426ACF669137CBD3",
+      "crates/god-engine-core/tests/model_publication_contract.rs":"B2DA10AAD14941980554479F856A7829B45BF965BC73842FDCC7848335E2CBB3"
+    },
+    "regression_at_initial_adendum":"running",
+    "main_reconciliation":{"main":"6228b351336e7aa48e6d6c83e9191ac608a65ec8","mp":"e69797e1240b1c282844fadc0208480777cb2407","go":"343247492586a9b6c0337a21ef096cb3ea846df5","mp_all_targets_seconds":5.46,"go_all_targets_seconds":26.67,"production_delta_in_these_merges":false,"ordered_parent_lines_mp":[1833,1812],"ordered_parent_lines_go":[1848,1812]},
+    "glm_t1_report":{"source":"main6228 coordination note XLIX-G","cx_only":"reported_pass","cx_plus_pr20":"reported_fail","executed_by_codex":false,"interpretation":"Contextual marginal contrast; per-gene mechanism/rebaseline legitimacy still requires evidence"},
+    "public_pr":25,"separate_go_pr":24,"cross_review":"pending","merged_to_main":false
+  },
+  "qa_mp08_final": {
+    "code_commit":"6ec084e9a0d2908eaa9c7f6c028e9a41750e1dcb",
+    "core":{"passed":207,"failed":0,"ignored":1,"build_seconds":31.48,"parts":{"lib":151,"conformal":11,"base":1,"ml":12,"mp":14,"attribution":18}},
+    "replay":{"passed":108,"failed":0,"ignored":2,"build_seconds":66,"lib_seconds":75.62,"parity_seconds":36.45,"parts":{"lib":51,"parity":8,"metrics":21,"labels":25,"spectral_risk":3}},
+    "combined_unique":{"passed":315,"failed":0,"ignored":3},
+    "exit_codes":{"check":0,"core":0,"replay":0},
+    "hashes_rechecked_after_code_commit":true,
+    "report_historical_lines_preserved":{"mp":366,"master":8774,"atlas":1955,"memory":1063,"coordination":1860},
+    "all_previous_json_fields_and_findings_preserved":true,
+    "branch_cleanup":{"eligible_non_main":[],"deleted":[],"unmerged_exclusive_commits":{"backup-before-cleanup":3,"v7-unificacion-wip":1,"feat/quant-sr-codex-horizonte":4,"glm/xlix-g2-remedida-pr20":18}},
+    "full_t1_executed":false,"real_models_loaded_or_changed":false,"remote_ci_validated_by_local_tests":false
   },
   "scientific_limits": ["No profitability or 100-percent-per-three-days evidence", "No quantum advantage claim", "No whole-project certification", "No monotonic same-key generation", "No ensemble atomicity", "No latency percentile measurement"],
   "primary_reference": "https://docs.rs/arc-swap/1.9.2/arc_swap/struct.ArcSwapAny.html#method.rcu",
