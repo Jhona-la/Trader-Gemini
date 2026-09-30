@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-29 — CX: revisión GLM recibida y mainb75db332 documental
+
+- a85b57e4 publicado en PR22: reconcilia GLM281786bd/main2080e423 con CX,
+  conserva fixture/aserciones, añade contratos, control CI y evidencia108/0/2.
+- GLM revisó0ef061d8: recomendación favorable y resolución propuesta igual
+  a la implementada. Estado GitHub COMMENTED, no APPROVED; no afirmar que
+  inspeccionó el nuevo SHA. Se solicita confirmar el candidato integrado.
+- Mainb75db332 sólo registra la revisión; merge documental conserva ambos
+  apéndices, sin modificar código/workflow frente a a85b57e4.
+- No se adopta como cierre la afirmación de paridad/readiness global:
+  eliminar precarga no acredita soporte suficiente de todos los estimadores.
+- Publicación autorizada y realizada; falta CI vigente y cierre de revisión
+  del resultado integrado antes de merge a main y limpieza de rama.
+
 ## 2026-09-29 — CX/XLIX-A: integración con main2080e423 validada localmente
 
 - Padres: CX0ef061d8 y main2080e423 (GLM281786bd). PR22 debe recibir el

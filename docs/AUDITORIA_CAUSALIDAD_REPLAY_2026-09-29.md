@@ -666,3 +666,25 @@ abiertos. CX-I01/02/03 quedan documentados como controles de integración
 local, no como cierre de la arquitectura universal o del objetivo financiero.
 La revisión cruzada debe referirse al nuevo SHA. No había otra rama local
 ya integrada distinta de main para eliminar; CX sigue pendiente de merge.
+
+### Revisión GLM recibida e incorporación documental posterior
+
+Resolución de integración publicada en `a85b57e4`. Durante la validación,
+GLM emitió revisión técnica favorable en PR22 sobre `0ef061d8` y recomendó
+retirar `frontera_preload`, conservar CX sin precarga y mantener las
+observaciones durante warmup. Esa es la resolución aplicada. La prueba
+GLM se preservó; los dos contratos adicionales hacen observable su límite.
+Estado de la revisión en GitHub: COMMENTED, no APPROVED. No se atribuye
+al revisor una inspección del SHA nuevo que todavía no ha confirmado.
+
+Main `b75db332` añadió únicamente el registro de esa revisión y se incorpora
+conservando ambos apéndices. No cambia código ni workflow respecto a
+`a85b57e4`, cuyo árbol produjo 108/0/2 y el check20,12 s. Se solicita
+confirmación de la resolución integrada y CI del candidato vigente antes
+de merge a main. No se habilita auto-merge ni se elimina la rama pendiente.
+
+Se conserva una discrepancia científica explícita: que la ruta incremental
+coincida no demuestra paridad del estado completo, disponibilidad de datos,
+historia suficiente por escala ni latencia idéntica. Por tanto, la parte
+de preparación física de estimadores de MX-19b/CX-09 sigue abierta; no se
+considera resuelta sólo porque la revisión apoye la arquitectura elegida.

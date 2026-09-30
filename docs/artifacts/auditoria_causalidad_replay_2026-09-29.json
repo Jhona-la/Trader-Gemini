@@ -1,5 +1,20 @@
 {
   "schema_version": 1,
+  "review_events": [
+    {
+      "source": "https://github.com/Jhona-la/Trader-Gemini/pull/22",
+      "review_node_id": "PRR_kwDORUUmfc8AAAABP5JbNQ",
+      "reviewer_declared_agent": "GLM",
+      "github_state": "COMMENTED",
+      "reviewed_commit": "0ef061d88084a4ff6b6263b6d1e7d08d9607348c",
+      "recommendation": "Favorable; use CX without preload, remove frontera_preload, preserve causal observation during warmup",
+      "implemented_resolution": "a85b57e454ffe30d85cda03447c871e895a433f1",
+      "subsequent_main_documentation": "b75db332e189f19c4b98e6eb447e694c1ef9768f",
+      "integrated_head_confirmation": "requested_pending",
+      "formal_approved_review_present": false,
+      "scientific_limit": "Incremental ingestion does not alone certify estimator readiness or full live parity; CX-09 and physical-readiness aspect of MX-19b remain open"
+    }
+  ],
   "integration_audits": [
     {
       "id": "CX-XLIX-A",
