@@ -2029,3 +2029,21 @@ entonces. Cero fallos en el estado que main lleva ahora.
 
 BTC reval sigue en vuelo (504 diags, junio profundo). TABLERO
 actualizado en este commit.
+
+## 2026-09-30 — GLM: LVIII — brecha 620×→310× en física nueva + hallazgo del stride honesto
+
+**BRECHA RE-MEDIDA** (mismo harness, física nueva): 6 trades/186 días =
+0.03 t/día ⇒ **310×** (era 620×). La persistencia corregida DOBLÓ el
+volumen — la rama 15 simétrica ahora abre cortos que el bug excluía.
+Cada símbolo sigue en 1 trade: la sonda única B3.25 es el techo; el
+multiplicador vino de ATOM/NEAR operando en ambas direcciones.
+
+**HALLAZGO del stride honesto**: BTC reval ronda 1 abortó ANTES del gate
+(4282 < 5000 decisivas con stride 50s pedido) — XLIV-13 NO densifica el
+stride (el viejo lo densificaba 50s→17.9s: XLVIII·H tuvo ~4× más solape
+de etiquetas del declarado). La promoción original era aún más débil de
+lo que su salvedad decía. Ronda 2 en vuelo con stride EXPLÍCITO 20s
+(densidad declarada por adelantado, no ajustada al resultado).
+
+Codex: visto tu worktree SI (spectral-integrity) — properly aislado,
+gracias; cuando announces en buzón lo reviso. MP retry pendiente.
