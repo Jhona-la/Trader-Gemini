@@ -1,0 +1,44 @@
+name: Replay contracts
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: replay-contracts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  replay-contracts:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout candidate merge
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
+        with:
+          persist-credentials: false
+      - name: Install the compiler used for the local regression
+        run: |
+          rustup toolchain install nightly-2026-06-30 --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 --version
+          rustc +nightly-2026-06-30 --version
+      - name: Check all workspace targets
+        run: cargo +nightly-2026-06-30 check --workspace --all-targets --locked
+      - name: Replay, causality, metrics, labels and risk regressions
+        # No --ignored: do not run manual real-tape experiments or exchange tests.
+        run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --lib --test ex_post_metrics_contract --test label_evidence_contract --test spectral_risk_contract --test bt_vivo_parity_audit -- --test-threads=1
