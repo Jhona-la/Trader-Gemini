@@ -271,6 +271,25 @@ const HABILIDAD_OLVIDO: f64 = 1.0 / 64.0;
 /// (misma disciplina que `MUESTRAS_MADURAS` del banco de pronóstico).
 pub const MUESTRAS_SKILL_MADURAS: u64 = 30;
 
+/// #599 — umbral de significancia del IC para la selección de τ* (t ≥ 2 con
+/// el error estándar de Fisher 1/√(n−3)). El MÁXIMO de varios IC de puro
+/// ruido suele ser positivo (sesgo de selección entre 32 escalas,
+/// señalización de CL sobre #594): exigir significancia hace el umbral
+/// autoajustable por muestra — ≈0.385 con 30 bloques, ≈0.215 con 90 — sin
+/// constantes mágicas. `None` sin muestras para el estadístico.
+#[inline]
+pub fn umbral_ic_significativo(n_bloques: u64) -> Option<f64> {
+    if n_bloques < MUESTRAS_SKILL_MADURAS + 3 {
+        return None;
+    }
+    let umbral = 2.0 / ((n_bloques - 3) as f64).sqrt();
+    if umbral.is_finite() && umbral > 0.0 {
+        Some(umbral.min(1.0))
+    } else {
+        None
+    }
+}
+
 pub struct TemporalSpectrum {
     pub scales: [ScaleState; 32],
     last_ts_ms: u64,
@@ -558,7 +577,12 @@ impl TemporalSpectrum {
                 continue;
             }
             if let Some(ic) = s.habilidad_medida() {
-                if ic > best_skill {
+                // #599: un IC positivo aislado es el máximo típico de ruido
+                // entre 32 escalas — exige significancia t ≥ 2 para opinar.
+                let significativo = umbral_ic_significativo(s.skill_n)
+                    .map(|umbral| ic >= umbral)
+                    .unwrap_or(false);
+                if significativo && ic > best_skill {
                     best_skill = ic;
                     dominant_skill = s.tau_ms;
                 }
@@ -1557,15 +1581,16 @@ mod tests {
         spec.scales[18] = escala_con_habilidad(18, MUESTRAS_SKILL_MADURAS, -0.5);
         spec.scales[18].signal = 0.9;
         spec.scales[18].persistence = 0.6;
-        // Escala 19: energía menor, habilidad positiva medida.
-        spec.scales[19] = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS, 0.3);
+        // Escala 19: energía menor, habilidad positiva SIGNIFICATIVA
+        // (#599: 0.5 ≥ 2/√30 ≈ 0.365 con 33 bloques).
+        spec.scales[19] = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS + 3, 0.5);
         spec.scales[19].signal = 0.4;
         spec.scales[19].persistence = 0.3;
         spec.refresh_fusion();
         assert_eq!(spec.dominant_tau_ms, SPECTRUM_SCALES_MS[19]);
         // Telemetría: la escala elegida publica su IC; el testigo del defecto
         // (sólo habilidad negativa) cae al respaldo de energía.
-        assert_eq!(spec.habilidad_en(spec.dominant_tau_ms), Some(0.3));
+        assert_eq!(spec.habilidad_en(spec.dominant_tau_ms), Some(0.5));
         spec.scales[19].skill_n = MUESTRAS_SKILL_MADURAS - 1;
         spec.refresh_fusion();
         assert_eq!(spec.dominant_tau_ms, SPECTRUM_SCALES_MS[18]);
@@ -1588,6 +1613,48 @@ mod tests {
         // (comportamiento C-05/AGY-AUD-P10 intacto).
         assert_eq!(spec.dominant_tau_ms, SPECTRUM_SCALES_MS[19]);
         assert_eq!(spec.habilidad_en(spec.dominant_tau_ms), None);
+    }
+
+    #[test]
+    fn qo_599_el_maximo_de_ics_de_ruido_no_opina_sin_significancia() {
+        // Umbral autoajustable: 2/√(n−3), None sin muestras suficientes.
+        assert_eq!(umbral_ic_significativo(MUESTRAS_SKILL_MADURAS), None);
+        let u33 = umbral_ic_significativo(MUESTRAS_SKILL_MADURAS + 3).expect("33 bloques");
+        let u90 = umbral_ic_significativo(90).expect("90 bloques");
+        assert!((u33 - 2.0 / 30.0_f64.sqrt()).abs() < 1e-12);
+        assert!((u90 - 2.0 / 87.0_f64.sqrt()).abs() < 1e-12);
+        assert!(u33 > u90, "el umbral se afloja con evidencia");
+
+        // Escenario del sesgo de selección (señalización de CL): la escala
+        // 19 lleva el IC más alto (0.35, típico MÁXIMO de ruido con n=30)
+        // y antes lideraba la selección; la 18 tiene IC 0.5 con n=90.
+        let mut spec = TemporalSpectrum::new();
+        spec.first_ts_ms = 0;
+        spec.last_ts_ms = 86_400_000;
+        spec.updates = 10_000;
+        spec.scales[19] = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS, 0.35);
+        spec.scales[19].signal = 0.9;
+        spec.scales[19].persistence = 0.6;
+        spec.scales[18] = escala_con_habilidad(18, 90, 0.5);
+        spec.scales[18].signal = 0.4;
+        spec.scales[18].persistence = 0.3;
+        spec.refresh_fusion();
+        assert_eq!(
+            spec.dominant_tau_ms,
+            SPECTRUM_SCALES_MS[18],
+            "el máximo de ruido (0.35 < 0.385) no opina; la escala significativa lidera"
+        );
+        // Sin NINGUNA escala significativa (ambas n=30 con IC < umbral)
+        // → respaldo de energía: manda la más energética (19, señal 0.9).
+        spec.scales[18] = escala_con_habilidad(18, MUESTRAS_SKILL_MADURAS, 0.3);
+        spec.scales[18].signal = 0.4;
+        spec.scales[18].persistence = 0.3;
+        spec.refresh_fusion();
+        assert_eq!(
+            spec.dominant_tau_ms,
+            SPECTRUM_SCALES_MS[19],
+            "sin significancia en ninguna escala, manda el respaldo de energía"
+        );
     }
 
     fn opposed_scales() -> TemporalSpectrum {
