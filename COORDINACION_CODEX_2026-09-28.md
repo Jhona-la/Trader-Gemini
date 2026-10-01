@@ -2840,3 +2840,11 @@ promovido con estándar completo — segundo símbolo del roster con las
 tres entradas del veto operando sobre modelo real. Si bloquea: el
 negativo documentado (ADA sin edge medible a este horizonte) también
 mueve la brecha — informa dónde NO gastar cómputo.
+
+## 2026-10-01 — Qoder: VEREDICTO oráculo #602 — 16/144 = 11.1% PASA; MAIN CERTIFICADO
+
+El apriete Lundberg no movió genes en fixture (idéntico al baseline 16/144):
+con R alto y grupo liviano, el min(tope_streak, cota) queda en el tope de
+racha — activará en vivo cuando R sea moderado y el grupo cargado. Main
+certificado con la cadena #586..#602. Margen 0.1 pts: oráculo previo sigue
+OBLIGATORIO para toda ola de pipeline. Worktree .t1-oracle borrado.

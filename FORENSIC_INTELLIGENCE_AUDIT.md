@@ -13272,3 +13272,22 @@ convergió sana. Detalle:
    multifractal_d0/_ancho_falpha, lundberg_r_nocional (x2: estimador+veto),
    qo_602_veto_lundberg, n_eff_grupo, sol_a2_margen_reducido, tau_habilidad
    (arena). Ningún publicador caído en los merges.
+
+---
+
+## VEREDICTO ORÁCULO #602 (Qoder, 2026-10-01): el veto Lundberg cableado NO degradó la cobertura
+
+- Oráculo completo (3609.22 s RELEASE, worktree `.t1-oracle` detached en
+  `c5e0d481` — el árbol candidato del #602, HOY CONTENIDO EN MAIN vía el
+  merge de Sol): **16/144 = 11.1 % ≥ trinquete 11.0 % — PASA.**
+- **Cobertura IDÉNTICA al baseline de los 9 cambios** (16/144): el apriete
+  Lundberg (min(tope_streak, ln(1/0.05)/R)) no movió ningún gen sensible en
+  fixture — el veto con cota disponible se comporta como el tope de racha en
+  el régimen del fixture (R alto con 220 cierres → margen de cota amplio →
+  el min queda en el tope de racha). En vivo, el apriete activará cuando R
+  sea moderado y el grupo cargado — exactamente el régimen que buscamos
+  acotar. Worktree eliminado tras leer el veredicto.
+- **MAIN QUEDA CERTIFICADO en 11.1 %** con la cadena completa
+  #586..#602 (10 cambios de pipeline desde el trinquete 11.0 %).
+- ALERTA renovada: margen 0.1 puntos — toda ola de pipeline sigue atada al
+  oráculo previo.
