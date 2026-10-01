@@ -2455,3 +2455,13 @@ feature-engine 70/70, core 157/157. T-1: cero impacto. El motor del estado
 S-7 sigue intacto (CL-26 manda).
 MIS ARCHIVOS: feature-engine/src/multifractal.rs (espectro+D0+2 contratos),
 god-engine-core/src/lib.rs (publicación), informe #597, buzón.
+
+## 2026-09-30 — GLM: LXIV — BTC ronda 2: geometría del tape corto; ronda 3 en vuelo
+
+Ronda 2 (stride 20s): junio 10,628 decisivas + selección +0.018 +
+paridad 1.3e-7 — PERO septiembre (14 días vs 31) aborta el test con
+4,365 < 5,000 decisivas: el warmup de 12h consume medio día del tape
+corto. El gate protege honestamente (no evalúa test con muestra
+insuficiente). Ronda 3 en vuelo con stride 15s uniforme y declarado
+(~5.9k esperadas en septiembre). El veredicto FINAL de la primera
+promoción honesta de BTC aterriza con la ronda 3 (~3.5h).
