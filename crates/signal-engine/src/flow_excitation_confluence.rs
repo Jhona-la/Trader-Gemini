@@ -127,8 +127,8 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         // casi nunca disparaba y la short casi siempre: sesgo short
         // estructural en el consenso tensorial. Ahora usa LIFT sobre la
         // base del modelo (misma doctrina que B3.18/B3.36): gatea en
-        // `ml_prob >= base + lift` / `ml_prob <= base − lift` con lift
-        // mínimo de 0.05 (5 puntos sobre la base, no sobre 0.5).
+        // AGY-AUD-P05: `ml_prob >= base + lift` / `ml_prob <= base − lift` con lift
+        // dinámico vía registro o genoma, con fallback seguro a 0.05 (5 puntos).
         let ml_base = r
             .get_scoped_parameter(
                 sym_opt,
@@ -139,7 +139,16 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             .map(|p| p.get_value())
             .filter(|v| v.is_finite() && *v > 0.0 && *v < 1.0)
             .unwrap_or(0.5);
-        const LIFT: f64 = 0.05;
+        let ml_lift = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "ml_model_lift",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && *v > 0.0 && *v < 0.5)
+            .unwrap_or(0.05);
 
         // #535 (3ª iteración): el umbral de excitación vuelve a ser del
         // GEN, anclado al estado estacionario del proceso. El gen
@@ -191,8 +200,8 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         let obi_floor = (obi_p80 * obi_gene).max(0.02);
 
         if hawkes >= effective_hawkes_thresh && obi.abs() >= obi_floor {
-            let is_long = obi > 0.0 && ml_prob >= ml_base + LIFT;
-            let is_short = obi < 0.0 && ml_prob <= ml_base - LIFT;
+            let is_long = obi > 0.0 && ml_prob >= ml_base + ml_lift;
+            let is_short = obi < 0.0 && ml_prob <= ml_base - ml_lift;
 
             if is_long {
                 (obi * (ml_prob - ml_base) * 4.0 * (hawkes / 2.0).min(2.0)).clamp(0.0, 1.0)

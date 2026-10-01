@@ -1,5 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — Antigravity: Ola 2 / Evolución Espectral Continua y Desacoplamiento de Vetos
+
+- Flujo coordinado: rama `antigravity/evolucion-universo-espectral` → verificación → merge a main → limpieza de rama.
+- AGY-AUD-P02 (HIGH): `risk-engine/lib.rs:1098` candidate_leverage aplicaba `.floor()` truncando apalancamiento prematuramente y forzando margen excesivo en cuentas de $13 USD. Corregido con `.ceil().min(...).floor()` en paridad simétrica con rescate CL-6 (línea 1144). Limpiado warning de función muerta `horizon_tau_ms` con `#[allow(dead_code)]`.
+- AGY-AUD-P03 (MEDIUM): `execution-engine/router.rs:81` desacoplado el router del gen discreto `scalp_sl_base`; ahora evalúa continuamente la escala de la orden mediante `arena.config.sl_at_tau(tau_ms) * 0.5`.
+- AGY-AUD-P04 (MEDIUM): `strategy-core/stat_arb.rs:83` borde de spread de ganancia (`min_spread_profit_bps`) desacoplado de la constante 20 bps; ahora es configurable vía builder `with_min_spread_profit_bps()` con default backward-compatible de 0.0020 y test unitario.
+- AGY-AUD-P05 (MEDIUM): `signal-engine/flow_excitation_confluence.rs:142` desacoplado el LIFT de ML de la constante 0.05 fija; ahora consulta `ml_model_lift` del registro con fallback seguro a 0.05.
+- AGY-SPEC-SYM (HIGH): `quantum-arena/spectral_regime.rs` añadidos métodos simétricos `short_margin_multiplier(&self)` y `margin_multiplier(&self, is_long: bool)` para proteger posiciones cortas contra mareas espectrales alcistas extremas (short squeeze) con tests unitarios.
+- Verificación completa: arena 90/90, strategy-core 23/23, signal-engine 68/68, execution-engine 77/77, risk-engine 107/107 (+ 7/7 leverage_admission_contract). Check all-targets OK sin errores.
+
 ## 2026-09-30 — Antigravity: Auditoría Espectral Total y Corrección de Bugs Sistémicos
 
 - Flujo coordinado: rama `antigravity/auditoria-espectral-total` → verificación → merge a main → limpieza de rama.
