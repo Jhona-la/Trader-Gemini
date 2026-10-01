@@ -1,6 +1,31 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-09-30 — Qoder: Ola 20 / #594+#595 — τ dominante por habilidad prequential + edad de adopción honesta
+## 2026-09-30 — Antigravity: Ola 6 / Inmunidad Finita IEEE-754 en Campo Espectral y Blindaje del Mapeo Armónico Tau Continuo (Modo Profesor)
+
+- Flujo coordinado: rama `antigravity/ola6-inmunidad-espectral-y-mapeo-armonico` → verificación unitaria (quantum-arena, risk-engine, god-engine-core) y workspace (`cargo check --workspace --all-targets` 0 errores) → merge a main → limpieza de rama.
+- AGY-AUD-P18 (CRITICAL): `crates/quantum-arena/src/spectral_regime.rs`:
+  - **QUÉ**: Sanitización y blindaje estricto de números finitos IEEE-754 en las coordenadas dinámicas del campo de régimen espectral (`dominant_drift`, `accel_fast`, `adverse_tide`, `coherence_collapse`, `micro_anti`, `crash_flux`) y multiplicadores continuos de margen (`long_margin_multiplier`, `short_margin_multiplier`).
+  - **POR QUÉ**: En especificación IEEE-754 y Rust, `f64::NAN.clamp(min, max)` devuelve `NaN`. Si cualquier coordenada espectral (como entropía de masa o Hurst en un instante de baja liquidez o división por cero en derivación de τ*) resultaba en `NaN`, este `NaN` envenenaba silenciosamente `crash_flux` y los multiplicadores de margen, propagándose hasta el motor de dimensionamiento de órdenes en `risk-engine`, corrompiendo el cálculo de apalancamiento y tamaño de posición en la cuenta de $13 USD.
+  - **PARA QUÉ**: Garantizar inmunidad numérica cuántica total y continua, asegurando que ante cualquier perturbación, dato anómalo o arranque en frío, el cálculo de contracción de margen y flujo de colapso retorne valores acotados en `[0.05, 1.0]` y nunca valores venenosos `NaN` o infinitos.
+  - **CÓMO**: Cada coordenada de crash-ness valida explícitamente `.is_finite()`; si no es finita, se neutraliza de forma segura a `0.0`. En `long_margin_multiplier` y `short_margin_multiplier`, ante un `carrier_tide` no finito o favorable se retorna `1.0`, y `crash_flux` se sanea antes de la interpolación lineal `(1.0 - 0.95 * cf).clamp(0.05, 1.0)`. Verificado con nuevo test unitario `test_spectral_regime_nan_immunity`.
+  - **CUÁNDO**: En cada llamada a `SpectralRegimeField::from_spectrum_and_regime()` y al consultar multiplicadores de margen en el bucle principal de trading.
+  - **DÓNDE**: `crates/quantum-arena/src/spectral_regime.rs`.
+  - **QUIÉN**: `SpectralRegimeField::long_margin_multiplier`, `short_margin_multiplier`, `margin_multiplier`.
+- AGY-AUD-P19 (HIGH): `crates/god-engine-core/src/lib.rs`:
+  - **QUÉ**: Blindaje en espacio logarítmico del mapeo armónico continuo hacia el centro de masa $\tau^*$.
+  - **POR QUÉ**: La convergencia continua armónica `(base_tau.ln() * 0.50 + resonant_tau_ms.ln() * 0.50).exp()` realizaba llamadas a `.ln()` sin verificar previamente si `raw_base` o `resonant_tau_ms` eran no finitos, cero o negativos. En punto flotante, `ln(0.0)` produce `-Inf` y `ln(-x)` produce `NaN`, lo que causaba colapso a 0 o `NaN` en `expected_duration_ms`.
+  - **PARA QUÉ**: Preservar la dinámica continua del universo espectral temporal garantizando que `expected_duration_ms` siempre mapee dentro del dominio admisible `[TAU_ANCHOR_FAST_MS, 12h]` sin colapsos numéricos.
+  - **CÓMO**: Se verifican `safe_base` y `safe_resonant` con `is_finite() && > 0.0`, aplicando suelo en `TAU_ANCHOR_FAST_MS` (30s) antes del promedio logarítmico. Si el exponencial resultante no es finito, recurre al valor base seguro de forma determinista.
+  - **CUÁNDO**: Al armonizar y emitir cada intención unificada de orden en el bucle del motor `GodEngineCore::run_tick_internal`.
+  - **DÓNDE**: `crates/god-engine-core/src/lib.rs:5878`.
+  - **QUIÉN**: `GodEngineCore`.
+- AGY-AUD-P20 (CLEANUP): `crates/risk-engine/src/leverage_matrix.rs`:
+  - **QUÉ**: Prefijado de variable `_safe_vol_mult`.
+  - **POR QUÉ**: Limpieza de warning de compilación residual D-746 tras desacoplamiento de multiplicador de volatilidad.
+  - **DÓNDE**: `crates/risk-engine/src/leverage_matrix.rs:84`.
+  - **QUIÉN**: `QuantumLeverageMatrix::calculate_matrix_leverage`.
+- Verificación completa: `quantum-arena` (94/94 tests OK), `risk-engine` (107/107 tests OK), `god-engine-core` (157/157 tests OK), `cargo check --workspace --all-targets` limpio con 0 errores.
+
 
 - Ciclo de rama completo: `qoder/ola20-tau-habilidad` (desde 3acfe8f9) → 8 commits atómicos → merge a main (14dbf425; después Ola 5 de Antigravity y plomería en 59b53a8b/4d874425) → ramas borradas → push verificado en origin/main por marcadores.
 - #594 (cierra abierto CL ciclo 6): `dominant_tau_ms` era argmax de energía |w·s| — amplitud ≠ información, la escala más nerviosa fijaba τ*=30s sin habilidad. Ahora cada escala acumula IC prequential `E[s·r]/√(E[s²]·E[r²])` (señal al ARMAR su bloque vs retorno del bloque que cierra; olvido 1/64; madurez 30 bloques en `MUESTRAS_SKILL_MADURAS`); τ* = escala observable de banda [30s,12h] con IC>0 máximo; respaldo argmax energía sin evidencia (bit a bit el anterior). `state_at` interpolado sin habilidad (nodo ≠ escala de malla). Telemetría `coin.tau_habilidad` (>0 elegida por habilidad; ≤0/0 respaldo) publicada junto a dominant_tau_ms — contable para el consejo.
