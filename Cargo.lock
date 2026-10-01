@@ -1509,6 +1509,7 @@ dependencies = [
  "feature-engine",
  "lazy_static",
  "metacortex-engine",
+ "omniscient-registry",
  "quantum-arena",
  "rand 0.10.1",
  "rayon",

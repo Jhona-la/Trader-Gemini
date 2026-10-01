@@ -5946,12 +5946,15 @@ impl GodEngineCore {
                         // que emite), parte de su movimiento ya está explicado
                         // por el líder — el edge propio es menor. El
                         // modulador descuenta hasta 30% por sigmoide.
-                        // El net_role llega del registry (lo escribe el
-                        // publicador de contagion_matrix cuando esté cableado).
+                        // #598 (revisión cruzada CL): el publicador escribe el
+                        // slot POR MONEDA `c{id}:…` (set_for_coin) y la lectura
+                        // scoped `{SYM}_…`/global jamás lo encuentra — el
+                        // modulador nació muerto. El slot del escritor es el
+                        // mismo que lee correlation_guard (get_for_coin_or).
                         let contagion_net_role = self
                             .arena
                             .registry
-                            .get_scoped_value_or(&sym, "hawkes_contagion_net_role", 0.0);
+                            .get_for_coin_or(coin_id, "hawkes_contagion_net_role", 0.0);
                         unified_intent.confidence =
                             signal_engine::contagion_modulator::modulate_by_net_role(
                                 unified_intent.confidence,
@@ -7918,6 +7921,40 @@ mod w1_bocpd_tests {
             assert!(obs.run_length_posterior.iter().all(|p| p.is_finite() && *p >= 0.0));
             assert!(obs.segment_mean.iter().all(|m| m.is_finite()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_qo_598 {
+    //! QO-598 (revisión cruzada CL) — el modulador XLV·G consume el slot
+    //! POR MONEDA `c{id}:hawkes_contagion_net_role` (set_for_coin del
+    //! publicador de contagio, el MISMO que lee correlation_guard). La
+    //! lectura scoped `{SYM}_…`/global del cable original jamás encuentra
+    //! ese slot: el modulador nació muerto (siempre factor 1).
+
+    use super::*;
+
+    #[test]
+    fn qo_598_el_slot_del_publicador_es_de_moneda_no_scoped() {
+        let registry = omniscient_registry::OmniscientRegistry::new();
+        // El publicador (contagion_publisher) escribe por coin_id…
+        registry.set_for_coin(0, "hawkes_contagion_net_role", -8.0);
+        // …y el cable original (get_scoped_value_or con el símbolo) NO lo
+        // encuentra: el testigo del defecto.
+        assert_eq!(
+            registry.get_scoped_value_or("BTCUSDT", "hawkes_contagion_net_role", 0.0),
+            0.0,
+            "la lectura scoped no ve el slot de moneda — por eso el modulador estaba muerto"
+        );
+        // El consumidor corregido (y el de correlation_guard) SÍ lo lee.
+        assert_eq!(registry.get_for_coin_or(0, "hawkes_contagion_net_role", 0.0), -8.0);
+        // Y el contrato de fuente: el call site del modulador usa la lectura
+        // de moneda con la clave del publicador.
+        let src: String = include_str!("lib.rs").split_whitespace().collect();
+        assert!(
+            src.contains("get_for_coin_or(coin_id,\"hawkes_contagion_net_role\",0.0)"),
+            "el modulador XLV·G debe leer el slot de moneda del publicador"
+        );
     }
 }
 

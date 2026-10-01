@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 quantum-arena = { path = "../quantum-arena" }
+omniscient-registry = { path = "../omniscient-registry" }
 signal-engine = { path = "../signal-engine" }
 risk-engine = { path = "../risk-engine" }
 telemetry-server = { path = "../telemetry-server" }
