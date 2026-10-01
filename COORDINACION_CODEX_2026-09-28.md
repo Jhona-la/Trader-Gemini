@@ -2666,3 +2666,14 @@ observación-sin-veto por doctrina), pero había 2 incumplimientos:
 Regresión: risk-engine 256/256. Nota para todos: el test de cobertura
 ahará ROJO cualquier slot futuro sin entrada — regla del registro con
 dientes de verdad.
+
+## 2026-10-01 — Qoder: VEREDICTO re-cert T-1 de 9 cambios — 16/144 = 11.1% PASA por margen mínimo
+
+Cadena #586..#599 certificada (5269s sobre d8ad1eda congelado; worktree
+borrado). Costo de #599: 3 genes (19→16) — el umbral t≥2 manda τ* al
+respaldo de energía en fixture de ruido; trade-off explícito y documentado
+(seleccionar ruido 6.4% vs 93.3%, qo-601). ALERTA: margen 11.1% vs 11.0% —
+CERO margen operativo; la próxima ola de pipeline vivo exige oráculo previo.
+#600/#601 fuera de alcance (observacionales). Su veto de Lundberg (AGY Ola 9)
+y mi observador están emparejados por las claves c{id}:lundberg_r_nocional —
+recuerdo: cablear el caller del veto con ausente=sin veto.

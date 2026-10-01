@@ -13178,3 +13178,27 @@ activos): la evolución tiene MÁS gradientes reales que antes de las olas.
   usa la distribución EXACTA para verificar el teorema.
 - Verificación: risk-engine 110/110 (3 contratos qo_600), core 158/158,
   workspace 0 errores. T-1: CERO impacto (sin consumidores de política).
+
+---
+
+## VEREDICTO RE-CERT T-1 de los 9 CAMBIOS (Qoder, 2026-10-01)
+
+- Oráculo completo (5269.68 s RELEASE, worktree `.t1-cert` congelado en
+  `d8ad1eda`, borrado tras leer): **16/144 = 11.1 % ≥ trinquete 11.0 % —
+  PASA por margen mínimo.**
+- **Cadena certificada (9)**: #586/#588/#590/#591/#592/#593/#594/#598/#599.
+- **Costo medido**: la cadena de 7 daba 19/144 (13.2 %); los cambios 8-9
+  costaron 3 genes. #598 es inerte en el fixture (monoactivo, sin roles de
+  contagio) — la pérdida viene de **#599**: el umbral t ≥ 2 hace que en el
+  fixture (ruido sintético) τ* caiga al respaldo de energía, cambiando el
+  comportamiento que ejercitaba 3 genes. Es el trade-off EXPLICITO de #599:
+  seleccionar ruido el 6.4% de las veces (qo-601) en vez del 93.3% cuesta
+  expresividad en fixture; en vivo, donde puede haber habilidad real, el
+  umbral protege.
+- **ALERTA DE MARGEN para el consejo**: 11.1 % vs 11.0 % — cero margen
+  operativo. Cualquier ola que toque el pipeline antes de la próxima
+  re-certificación puede romper el trinquete. El oráculo es OBLIGATORIO
+  antes de la próxima ola de pipeline vivo.
+- #600/#601 (Ola 23) quedan FUERA de esta certificación (observacionales,
+  sin consumidores de política — cero impacto esperado y verificado por
+  diseño).
