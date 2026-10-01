@@ -1,5 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — Qoder: Ola 20 / #594+#595 — τ dominante por habilidad prequential + edad de adopción honesta
+
+- Ciclo de rama completo: `qoder/ola20-tau-habilidad` (desde 3acfe8f9) → 8 commits atómicos → merge a main (14dbf425; después Ola 5 de Antigravity y plomería en 59b53a8b/4d874425) → ramas borradas → push verificado en origin/main por marcadores.
+- #594 (cierra abierto CL ciclo 6): `dominant_tau_ms` era argmax de energía |w·s| — amplitud ≠ información, la escala más nerviosa fijaba τ*=30s sin habilidad. Ahora cada escala acumula IC prequential `E[s·r]/√(E[s²]·E[r²])` (señal al ARMAR su bloque vs retorno del bloque que cierra; olvido 1/64; madurez 30 bloques en `MUESTRAS_SKILL_MADURAS`); τ* = escala observable de banda [30s,12h] con IC>0 máximo; respaldo argmax energía sin evidencia (bit a bit el anterior). `state_at` interpolado sin habilidad (nodo ≠ escala de malla). Telemetría `coin.tau_habilidad` (>0 elegida por habilidad; ≤0/0 respaldo) publicada junto a dominant_tau_ms — contable para el consejo.
+- #595 (abierto CL): AMBAS rutas de adopción (reconcile_arena + host FASE 5) nacían con edad 0 (`now_ms` como entry_time_ms). Ahora heredan `updateTime` del exchange con guardia 0/desconocido/futuro → now. `ActivePosition` transporta update_time (posicionRisk); Antigravity P17 completó los constructores del simulador (su Ola 5, gracias).
+- Verificación: quantum-arena 93/93 (3 contratos QO-594), core 157/157, execution-engine verde (contrato qo_595 en adoption_slot_contract 5/5), check workspace all-targets 0 errores.
+- **T-1**: #594 es el 7º cambio de pipeline vivo desde la última re-cert (#586/#588/#590/#591/#592/#593/#594). El T-1 acumulado Ola 19 SIGUE EN VUELO en `.t1-cert` sobre 829d91ee (no incluye #594) — leer veredicto al terminar y luego RE-CERTIFICAR con la cadena completa.
+- Housekeeping: entrada LIII huérfana de GLM recuperada por UNIÓN al buzón; rama muerta `qoder/qo-586-banda-operable` borrada (su único contenido exclusivo era esa entrada).
+- Detalle forense: FORENSIC_INTELLIGENCE_AUDIT.md #594/#595. Buzón: entrada Ola 20.
+
 ## 2026-09-30 — Antigravity: Ola 5 / Simetría de Extensión de TP en Momentum Booster, Recuperación Adaptativa en Cointegración y Blindaje de Simulación
 
 - Flujo coordinado: rama `antigravity/ola5-momentum-y-recuperacion-adaptativa` → verificación unitaria, contratos y workspace → merge a main → limpieza de rama.
