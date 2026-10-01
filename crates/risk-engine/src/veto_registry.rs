@@ -254,6 +254,18 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         test: Some("cx_warmup_observes_but_never_opens_or_spends_capital"),
         deuda: Some("entrada añadida post-merge (regla mismo-commit se cumplió tarde); test cubre no-apertura y no-gasto durante warmup"),
     },
+    EntradaVeto {
+        id: "V-LOGIC-012",
+        nombre: "banda operable del generador (#586, puerta 1.5 de puertas_del_continuo)",
+        causa: "el generador proponía τ bajo min_tradeable_tau_ms y el suelo TP/SL mataba la intención aguas abajo (1,24M en la medición XLIV); peor, el τ doomed competía en la arbitración D-431. La puerta rechaza ANTES la banda que no paga fricción, sin estirar τ",
+        fuente_umbral: "medido (sonda banda_paga_friccion = MISMA función pura del gate: paridad por construcción)",
+        datos: "ATR vivo + σ(τ) de la banda propuesta + fricción roundtrip del símbolo (XLIV-8)",
+        responsable: "Qoder Ola 11 (#586), 2026-09-30",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: Some("qo_586_puerta_aplasta_tau_inoperable_y_deja_pasar_la_operable"),
+        deuda: Some("contratos gemelos: qo_586_la_sonda_sigue_el_regimen_no_es_veto_fijo y qo_586_tau_cero_se_remite_al_gate (god-engine-core, mod tests_qo_586); la medición de qo_slot_rechazo (#589) contabiliza los rechazos de slot aguas abajo"),
+    },
 ];
 
 /// Búsqueda por id (estable) o nombre.

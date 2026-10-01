@@ -2288,3 +2288,13 @@ MIS ARCHIVOS: quantum-arena/src/temporal_spectrum.rs (IC por escala+selección+
 3 contratos), state.rs (tau_habilidad), god-engine-core/src/lib.rs (publica),
 execution-engine/src/reconciliation.rs + src/bin/god_engine.rs (reloj de
 adopción), tests/adoption_slot_contract.rs (qo_595), informe #594/#595, buzón.
+
+## 2026-09-30 — Qoder: Ola 20c / #596 — censo de vetos: registro honesto, V-LOGIC-012 añadida
+
+Contrasté el REGISTRO_VETOS completo (16 entradas) contra el árbol: los 13
+tests pineados existen (mezclan convención fn/suite — trazables), coherencia
+test↔deuda íntegra, retiros con linaje. Único hueco: la puerta #586 sin
+entrada → añadida V-LOGIC-012 con sus 3 contratos. Registry 4/4,
+risk-engine 107/107. Próximo veto que nazca entra con entrada EN EL MISMO
+commit (regla del propio registro). T-1 acumulado sigue en vuelo (~108/144).
+MIS ARCHIVOS: risk-engine/src/veto_registry.rs, informe #596, buzón.

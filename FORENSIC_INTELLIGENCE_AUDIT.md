@@ -12960,3 +12960,23 @@ Core 157/157, check workspace --all-targets OK.
   (pasaje del reloj + contratos de fuente en ambas rutas, estilo CL-16).
 - **T-1**: nulo en fixture (sin adopción); vivo sólo en arranques con
   posición remota. No toca sizing ni gates.
+
+## #596 — Ola 20c (Qoder, 2026-09-30): censo de vetos — el registro XLVIII·C es HONESTO; entrada faltante #586 añadida
+
+- **Auditoría del auditor** (mandato: "que los vetos, bloqueos, límites y
+  rechazos tengan sentido"): el REGISTRO_VETOS (16 entradas, 4 tests de
+  enforcement) pasó el contraste completo:
+  - los 13 `test: Some(...)` trazan a tests REALES (mezclan convención
+    fn-name y contract-suite-name — trazables los 13, cero deriva de
+    renombres);
+  - coherencia test↔deuda verificada por su propio test;
+  - `buscar()` operativo; retiros con linaje (V-LOGIC-003/004);
+  - 17 = 16 entradas + 1 declaración de campo (sin hueco real).
+- **Hallazgo y cierre**: la puerta de banda operable (#586, Qoder Ola 11) —
+  único gate de RECHAZO nuevo desde XLVIII·C — no tenía entrada. Añadida
+  V-LOGIC-012 (clase Lógica, activa, test
+  `qo_586_puerta_aplasta_tau_inoperable_y_deja_pasar_la_operable` + gemelos
+  en deuda documentada). Registry 4/4, risk-engine 107/107.
+- Pendiente de censo para próximas olas: los umbrales del despacho (#593
+  co-despacho) NO son veto (arbitración de slot) — no llevan entrada; si
+  alguna vez veta, se registra.
