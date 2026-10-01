@@ -81,7 +81,7 @@ impl QuantumLeverageMatrix {
         } else {
             0.001
         };
-        let safe_vol_mult = if volatility_multiplier.is_finite() && volatility_multiplier > 0.0 {
+        let _safe_vol_mult = if volatility_multiplier.is_finite() && volatility_multiplier > 0.0 {
             volatility_multiplier
         } else {
             1.0

@@ -76,22 +76,46 @@ impl SpectralRegimeField {
             if elapsed_ms > 0.0 && elapsed_ms.is_finite() {
                 // Por hora, normalizado: 1 = τ* se mueve un eje completo (e≈2.72×) por hora.
                 let per_hour = (cur_ln - prev_ln) * 3_600_000.0 / elapsed_ms;
-                out.dominant_drift = (per_hour / 1.0).clamp(-1.0, 1.0);
+                out.dominant_drift = if per_hour.is_finite() {
+                    (per_hour / 1.0).clamp(-1.0, 1.0)
+                } else {
+                    0.0
+                };
             }
         }
         // Coordenadas de crash-ness (cada una en [0,1], combinación acotada):
         // (a) aceleración hacia lo rápido: deriva negativa fuerte.
-        let accel_fast = (-out.dominant_drift).clamp(0.0, 1.0);
+        let accel_fast = if out.dominant_drift.is_finite() {
+            (-out.dominant_drift).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         // (b) marea adversa intensa (se toma absoluta: la caída es -tide para
         // largos, pero crash-ness describe el EVENTO, no el lado).
-        let adverse_tide = out.carrier_tide.abs().clamp(0.0, 1.0);
+        let adverse_tide = if out.carrier_tide.is_finite() {
+            out.carrier_tide.abs().clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         // (c) colapso de entropía: energía coherente concentrada.
-        let coherence_collapse = (1.0 - out.mass_entropy).clamp(0.0, 1.0);
+        let coherence_collapse = if out.mass_entropy.is_finite() {
+            (1.0 - out.mass_entropy).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         // (d) anti-persistencia extrema en micro (reversión violenta).
-        let micro_anti = (0.5 - out.hurst_by_band[0]).max(0.0) / 0.5;
-        out.crash_flux =
-            (0.35 * accel_fast + 0.30 * adverse_tide + 0.20 * coherence_collapse + 0.15 * micro_anti)
-                .clamp(0.0, 1.0);
+        let micro_anti = if out.hurst_by_band[0].is_finite() {
+            (0.5 - out.hurst_by_band[0]).max(0.0) / 0.5
+        } else {
+            0.0
+        };
+        let raw_crash =
+            0.35 * accel_fast + 0.30 * adverse_tide + 0.20 * coherence_collapse + 0.15 * micro_anti;
+        out.crash_flux = if raw_crash.is_finite() {
+            raw_crash.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         // Espectro frío: sin ENERGÍA no hay régimen que declarar. (Ojo: τ*
         // resonante por defecto es el punto medio de las anclas, > 0 incluso
         // en frío — el indicador correcto de campo vivo es la energía total.)
@@ -130,20 +154,22 @@ impl SpectralRegimeField {
     /// El veto absoluto binario del enum queda SOLO como el extremo medido
     /// (legacy_view Crash, crash-ness > 0.80 con marea adversa).
     pub fn long_margin_multiplier(&self) -> f64 {
-        if self.carrier_tide >= 0.0 {
+        if !self.carrier_tide.is_finite() || self.carrier_tide >= 0.0 {
             return 1.0;
         }
-        (1.0 - 0.95 * self.crash_flux).clamp(0.05, 1.0)
+        let cf = if self.crash_flux.is_finite() { self.crash_flux } else { 0.0 };
+        (1.0 - 0.95 * cf).clamp(0.05, 1.0)
     }
 
     /// Multiplicador continuo de margen para posiciones Cortas:
     /// Si la marea portadora es intensamente ALCISTA (short squeeze / blow-off),
     /// contrae el margen del corto en proporción a la crash_flux inversa.
     pub fn short_margin_multiplier(&self) -> f64 {
-        if self.carrier_tide <= 0.0 {
+        if !self.carrier_tide.is_finite() || self.carrier_tide <= 0.0 {
             return 1.0;
         }
-        (1.0 - 0.95 * self.crash_flux).clamp(0.05, 1.0)
+        let cf = if self.crash_flux.is_finite() { self.crash_flux } else { 0.0 };
+        (1.0 - 0.95 * cf).clamp(0.05, 1.0)
     }
 
     /// Multiplicador de margen continuo simétrico según la dirección de la orden.
@@ -228,5 +254,21 @@ mod tests {
         assert_eq!(f.long_margin_multiplier(), 1.0);
         assert_eq!(f.margin_multiplier(false), f.short_margin_multiplier());
         assert_eq!(f.margin_multiplier(true), f.long_margin_multiplier());
+    }
+
+    #[test]
+    fn test_spectral_regime_nan_immunity() {
+        let f = SpectralRegimeField {
+            hurst_by_band: [f64::NAN, f64::NAN, f64::NAN],
+            dominant_tau_ms: f64::NAN,
+            dominant_drift: f64::NAN,
+            mass_entropy: f64::NAN,
+            carrier_tide: f64::NAN,
+            crash_flux: f64::NAN,
+        };
+        assert_eq!(f.long_margin_multiplier(), 1.0);
+        assert_eq!(f.short_margin_multiplier(), 1.0);
+        assert_eq!(f.margin_multiplier(true), 1.0);
+        assert_eq!(f.margin_multiplier(false), 1.0);
     }
 }
