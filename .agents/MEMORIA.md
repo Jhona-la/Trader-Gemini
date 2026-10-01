@@ -1388,4 +1388,3 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   `micro_resonant_tau_ms` y `macro_resonant_tau_ms` mediante `continuous_resonant_tau_ms_with_pesos`.
 - **Verificación**: `cargo check --workspace --all-targets` limpio (1m 28s). Tests de
   risk-engine (111 tests), strategy-core (36 tests) y quantum-arena pasan al 100%.
-

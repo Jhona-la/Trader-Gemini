@@ -2615,4 +2615,3 @@ símbolos sonda-bloqueados.
   2. `multivariate_coint.rs`: Reemplaza el literal fijo `expected_magnitude = 0.015` por la magnitud medida real `(|z| * std_dev).clamp(0.002, 0.20)`. Alinea con `trajectory_auditor.rs` y con el balance de fees.
   3. `temporal_spectrum.rs`: `continuous_energy_density` optimizada a O(1) calculando únicamente los dos nodos nodales adyacentes (i0, i1) en vez de evaluar 32 exponenciales en toda la malla. Reutilización de `pesos_espectrales()` en `micro_resonant_tau_ms` y `macro_resonant_tau_ms`.
 - **Estado**: Workspace verificado con `cargo check --workspace --all-targets` (1m 28s limpio), tests de risk-engine, strategy-core y quantum-arena pasando al 100%. Branch: `antigravity/ola8-spectral-cascade`.
-
