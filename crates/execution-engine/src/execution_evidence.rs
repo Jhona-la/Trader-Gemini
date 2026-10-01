@@ -22,6 +22,9 @@ struct PositionRow {
     entry_price: f64,
     #[serde(deserialize_with = "crate::order_types::string_or_f64")]
     leverage: f64,
+    /// #595: edad del exchange; default 0 (desconocido) si el venue no lo manda.
+    #[serde(rename = "updateTime", default)]
+    update_time: u64,
     #[serde(rename = "positionSide")]
     position_side: String,
 }
@@ -66,6 +69,7 @@ pub fn parse_active_positions(text: &str) -> Result<Vec<ActivePosition>, String>
                 entry_price: row.entry_price,
                 leverage: row.leverage,
                 is_long: row.amount > 0.0,
+                update_time: row.update_time,
             });
         }
     }
