@@ -1500,6 +1500,7 @@ mod tests {
     fn escala_con_habilidad(idx: usize, n: u64, ic: f64) -> ScaleState {
         let mut s = ScaleState::default();
         s.tau_ms = SPECTRUM_SCALES_MS[idx];
+        s.ewma_dev_vol = 0.01;
         s.skill_n = n;
         s.skill_ws = 1.0;
         s.skill_wr = 1.0;
@@ -1514,10 +1515,14 @@ mod tests {
         let s = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS, 0.5);
         let ic = s.habilidad_medida().expect("30 bloques maduros opinan");
         assert!((ic - 0.5).abs() < 1e-12);
-        // Sin dispersión (señal plana o retorno nulo) no hay IC: den ≤ 0.
-        let mut plano = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS, 0.0);
-        plano.skill_wsr = 0.0;
-        assert_eq!(plano.habilidad_medida(), None);
+        // IC exactamente 0 con dispersión es una MEDIDA válida (sin habilidad);
+        // no gana la selección (exige ic > 0) pero no es «sin evidencia».
+        let nula = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS, 0.0);
+        assert_eq!(nula.habilidad_medida(), Some(0.0));
+        // Escala quieta (retorno del bloque nulo): sin dispersión no hay IC.
+        let mut quieta = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS, 0.0);
+        quieta.skill_wr = 0.0;
+        assert_eq!(quieta.habilidad_medida(), None);
     }
 
     #[test]
@@ -1543,7 +1548,9 @@ mod tests {
         spec.scales[19].skill_n = MUESTRAS_SKILL_MADURAS - 1;
         spec.refresh_fusion();
         assert_eq!(spec.dominant_tau_ms, SPECTRUM_SCALES_MS[18]);
-        assert_eq!(spec.habilidad_en(spec.dominant_tau_ms), None);
+        // El respaldo de energía NO borra la evidencia: la escala elegida
+        // publica su IC medido (aquí negativo — por eso no pudo liderar).
+        assert_eq!(spec.habilidad_en(spec.dominant_tau_ms), Some(-0.5));
     }
 
     #[test]

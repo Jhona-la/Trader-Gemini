@@ -208,8 +208,9 @@ pub struct CoinArena {
     /// distintos. 0 = el espectro aún no ha arrancado.
     pub dominant_tau_ms: AtomicF64,
     /// #594 — IC prequential MEDIDO de la escala τ* publicada (habilidad
-    /// direccional señal→retorno del bloque propio). 0.0 = τ* vino del
-    /// respaldo de energía (sin evidencia madura) — contable para el consejo.
+    /// direccional señal→retorno del bloque propio). τ* sólo fue elegida
+    /// por habilidad si este valor es > 0; 0.0 o negativo = respaldo de
+    /// energía o escala sin evidencia — contable para el consejo.
     pub tau_habilidad: AtomicF64,
     pub hurst_exponent: AtomicF64,
     /// S-7 (ESPECTRALIZACIÓN): Hurst multifractal SELECCIONADO POR τ — el
