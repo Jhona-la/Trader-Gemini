@@ -12980,3 +12980,59 @@ Core 157/157, check workspace --all-targets OK.
 - Pendiente de censo para próximas olas: los umbrales del despacho (#593
   co-despacho) NO son veto (arbitración de slot) — no llevan entrada; si
   alguna vez veta, se registra.
+
+---
+
+## PROPUESTAS DE CONSEJO (Qoder, Ola 20d, 2026-09-30) — integraciones teóricas, PENDIENTES DEL OPERADOR
+
+Ninguna implementada: cada una entra por ola propia con su T-1 si el
+operador la manda. Zonas respetadas (Codex/RMT, CL/trailing, AGY/Hodge).
+
+**P-A · Cramér–Lundberg (teoría de ruina actuarial) — RECOMENDADA.**
+`ruin.rs` usa ruina de apostador simétrica (p=q=½) + tope de racha: la
+distribución de pérdidas REAL no es simétrica ni Bernoulli (asimetría TP/SL,
+fricción, colas). Propuesta: estimar la distribución de siniestros X
+(|stop|·qty por cierre) con EWMA de cola sobre cierres vivos, resolver el
+coeficiente de ajuste R de Lundberg (E[e^{RX}]=1, Newton 1-D) y dimensionar f
+con la cota clásica ψ(u) ≤ e^{−Ru} ⇒ f tal que e^{−Ru(f)} ≤ ε del dueño.
+Falsación: en tapes medidos, la frecuencia empírica de ruina por bootstrap
+debe quedar bajo la cota e^{−Ru}. Zona: risk-engine/ruin.rs+kelly. T-1:
+cambia el envelope de sizing (consumidores de streak_ruin_cap).
+
+**P-B · Gärtner–Ellis / Legendre: espectro multifractal f(α) — RECOMENDADA.**
+multifractal.rs acumula ζ(q) con q∈{1,2} y χ por concavidad (XLIV-6). La
+teoría canónica: τ(q) = (q−1)ζ... con rejilla q∈[−4,4], f(α) = qα−τ(q)
+(Legendre); el ANCHO de f(α) es LA medida de intermitencia (más rica que χ)
+y la fórmula de Halsey la valida contra los propios sumadores. Propuesta:
+generalizar los sumadores a q-grid (los sum_q ya pagan la deriva, AGY-003)
+y publicar ancho f(α) como feature de régimen (observación, sin política
+primero). Falsación: f(α) de un monofractal (fBm con H fijo) debe tener
+ancho ~0; caminata aleatoria → α=1/2 puntual. Zona: feature-engine
+(colisión baja). T-1: ninguna hasta cablear política.
+
+**P-C · Curvatura de Ricci (Ollivier) sobre el grafo de correlación —
+RECOMENDADA tras P-B.** La matriz de correlación viva (solver Jacobi de
+Codex) define un grafo; κ_Ollivier por arista (ball-probe discreta, O(d²)
+por arista con d~8 activos) mide la FRAGILIDAD GEOMÉTRICA del universo:
+κ muy negativa concentrada = canales de contagio aunque ρ moderado —
+complementa la vorticidad de Hodge (AGY P06 mide rotación del flujo; Ricci
+mide la forma del espacio mismo). Indicador: κ_min + concentración de
+curvatura negativa → escalamiento de tope de grupo (misma familia que
+systemic_rho). Falsación: grafo de ruido esférico → κ≈0 uniforme; estrella
+de paresperfectamente correlacionados → κ arista ≪ 0. Zona: Codex
+(random_matrix). T-1: observación primero.
+
+**P-D · Parada óptima de frontera libre (trailing continuo) — CONDICIONADA
+a CL-35c.** El trailing es heurística; el stopping óptimo perpetuo con
+GBM tiene frontera b = λ⁺/(λ⁺−1)·S (λ⁺ raíz de la ecuación característica
+con σ(τ) espectral, r, coste c) — el trailing con σ(τ) del banco pasa de
+distancia fija a frontera autoajustada. CL-35c (PR #26, draft) lleva
+"trailing al horizonte" discreto: ESTA es su extensión continua, no
+duplicado — proponerla a Claude como siguiente paso, no competir.
+Falsación: con σ constante y sin costes, la frontera debe reproducir la
+perpetua clásica (test analítico exacto). Zona: CL/host. T-1: trailing
+cambia la distribución de salidas — obligatorio.
+
+Criterio del consejo aplicado: cada propuesta tiene (i) objeto matemático
+canónico, (ii) punto de integración existente, (iii) test de falsación
+analítico o bootstrap, (iv) zona propia, (v) coste T-1 declarado.

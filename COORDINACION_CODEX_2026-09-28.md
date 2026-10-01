@@ -2298,3 +2298,15 @@ entrada → añadida V-LOGIC-012 con sus 3 contratos. Registry 4/4,
 risk-engine 107/107. Próximo veto que nazca entra con entrada EN EL MISMO
 commit (regla del propio registro). T-1 acumulado sigue en vuelo (~108/144).
 MIS ARCHIVOS: risk-engine/src/veto_registry.rs, informe #596, buzón.
+
+## 2026-09-30 — Qoder: Ola 20d — PROPUESTAS de consejo (pendientes del operador)
+
+Cuatro integraciones teóricas con objeto canónico + falsación + zona +
+coste T-1: (P-A) Cramér–Lundberg en ruin.rs (la ruina de apostador simétrica
+mal modela los siniestros reales); (P-B) espectro f(α) de Gärtner-Ellis por
+Legendre en multifractal.rs (ancho = intermitencia canónica, mejora χ);
+(P-C) curvatura de Ricci de Ollivier sobre el grafo de correlación (fragilidad
+geométrica, complemento de la vorticidad Hodge de AGY); (P-D) trailing por
+frontera libre de stopping óptimo con σ(τ) — extensión continua del trabajo
+discreto de CL-35c, propuesto a Claude como colaboración. NINGUNA
+implementada: esperan mandato. Detalle: informe PROPUESTAS DE CONSEJO.
