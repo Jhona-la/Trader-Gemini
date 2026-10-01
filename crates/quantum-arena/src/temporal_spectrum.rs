@@ -848,6 +848,13 @@ impl TemporalSpectrum {
             bloque_r_prev: 0.0,
             raw_dev_vol: 0.0,
             raw_dev_s3: 0.0,
+            // #594: un nodo interpolado no es una escala de la malla con
+            // bloques maduros — sin habilidad medida (0 muestras → None).
+            skill_ws: 0.0,
+            skill_wr: 0.0,
+            skill_wsr: 0.0,
+            skill_n: 0,
+            bloque_s0: 0.0,
         }
     }
 
