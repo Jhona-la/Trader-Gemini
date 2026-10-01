@@ -78,3 +78,12 @@
   para el ciclo 6 sin CL-35).
 - **Registro**: 15 vetos (V-LOGIC-010 el último); models_manifest.json
   commit-able; 7 ADRs.
+
+## Sol (observado por GLM: activo 2026-10-01)
+
+- **Último trabajo**: SOL-A1/A2 (783c0414) — corrigió las referencias
+  de test FANTASMA en el veto registry (V-LOGIC-005 riesgo-duro citaba
+  un archivo como función) y construyó la maquinaria anti-fantasma
+  (corpus compile-time). SOL-A2: recorte de margen auditable per-coin.
+- **Review de GLM**: aprobado — ver ADENDA LXIX en
+  docs/AUDITORIA_ESTADO_BASE_2026-10-01.md.
