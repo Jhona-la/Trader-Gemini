@@ -3252,6 +3252,27 @@ impl GodEngineCore {
                     .load(Ordering::Relaxed)
                     .clamp(0.50, 0.95),
             );
+            // #590 — el gen `obi_zscore_threshold` [0.1, 3.0] llevaba huérfano
+            // desde el renombre U-ERR-1 (su lector original era la función
+            // muerta `should_trigger_micro_scalp`). Se publica junto con el
+            // percentil-80 MEDIDO del OBI (AdaptiveQuantileEngine): el
+            // consumidor exige |OBI| >= p80·gen — la versión empírica de la
+            // rareza estadística que el gen anunciaba («z-score del OBI»),
+            // sin fabricar un z gaussiano que la distribución real no
+            // garantiza. Sin estos canales el gen era peso muerto que la
+            // evolución arrastraba sin gradiente.
+            set_reg(
+                "obi_zscore_gene",
+                self.arena
+                    .config
+                    .obi_zscore_threshold
+                    .load(Ordering::Relaxed)
+                    .clamp(0.1, 3.0),
+            );
+            set_reg(
+                "obi_p80_medido",
+                self.cuantiles[coin_id].dynamic_obi_threshold(),
+            );
             set_reg("bessel_alpha", 1.5);
             set_reg("hawkes_dt", 0.05);
             set_reg(

@@ -12785,3 +12785,35 @@ de decidir unificar el umbral. Cambio de observabilidad, cero política.
 **Verificación:** quantum-arena --lib 89/89 (1 contrato nuevo: la razón distingue
 colisión de capacidad — incluyendo el caso exacto del hueco τ=60s/τ=30s);
 god-engine-core --lib 154/154; check workspace --all-targets OK.
+
+### #590 — ✅ CIERRE IMPLEMENTADO: gen obi_zscore_threshold des-huerfanado con piso MEDIDO (Ola 15, 2026-09-30, Qoder)
+
+**Hallazgo (pendiente desde Ola 10):** el gen `obi_zscore_threshold` (rango [0.1, 3.0],
+default 1.0, con init/mutate/apply completos en el genoma) quedó sin consumidor cuando
+el renombre U-ERR-1 (8afcc677) eliminó `should_trigger_micro_scalp` — su único lector,
+que YA era código muerto (mea culpa Ola 8: 0 llamadores verificados). La evolución
+arrastraba el gen sin gradiente: peso muerto en el presupuesto del genoma.
+
+**Semántica original recuperada de 8afcc677^:** umbral mínimo del z-score CON SIGNO del
+OBI en la dirección del trade. El gate vivo (mi Ola 10) usaba el absoluto mágico 0.2.
+
+**Fix (Ola 15):** el piso del OBI en la única superficie de decisión pasa a ser
+MEDIDO + GENÓMICO:
+  - El core publica `obi_p80_medido` (AdaptiveQuantileEngine::dynamic_obi_threshold,
+    percentil-80 del OBI reciente del símbolo, piso 0.02, fallback 0.15) y
+    `obi_zscore_gene` (config clamp [0.1, 3.0]) al registro por moneda.
+  - `evaluate_for_coin` (flow_excitation_confluence): `|OBI| >= p80·gen` (piso mínimo
+    0.02; fallbacks: p80→0.15, gen→1.0).
+  - Por qué p80·gen y no un z gaussiano: la rareza que el gen anunciaba se mide
+    empíricamente contra la DISTRIBUCIÓN RECIENTE del propio símbolo — exigir el p80
+    (top-quintil del desbalance) es la versión honesta de «z ≥ 0.84» sin fabricar
+    normalidad que el libro no garantiza; el gen escala CUÁNTOS múltiplos del p80
+    se exigen. Adaptativo por símbolo/régimen, con gradiente evolutivo real.
+  - Delta de comportamiento con defaults: piso 0.15 vs el 0.2 mágico (ligeramente más
+    permisivo, ahora adaptativo). **T-1: cambio de gate a incluir en la próxima
+    re-certificación** (junto con #586/#588).
+
+**Verificación:** signal-engine 64/64 lib (1 contrato nuevo: gen 3.0 con p80 0.10
+bloquea OBI 0.25 que el 0.2 absoluto dejaba pasar; gen 0.5 lo deja disparar;
+fallback 0.15 sin telemetría mantiene el motor operando antes de que el p80 madure);
+god-engine-core 154/154; check workspace --all-targets OK.

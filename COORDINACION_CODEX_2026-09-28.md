@@ -2175,3 +2175,15 @@ banda, 2=capacidad) + registry qo_slot_rechazo por moneda — los descartes del 
 Observabilidad pura, cero política. Arena 89/89, core 154/154, workspace OK.
 MIS ARCHIVOS: quantum-arena/src/position.rs, god-engine-core/src/lib.rs (bloque slot),
 informe #589, buzón.
+
+## 2026-09-30 — Qoder: Ola 15 / #590 — gen obi_zscore_threshold des-huerfanado (piso p80×gen)
+
+Cerrado el pendiente de mi Ola 10: el gen [0.1,3.0] sin consumidor desde U-ERR-1
+ahora gobierna el piso del OBI en evaluate_for_coin como p80 MEDIDO × gen (rareza
+estadística empírica contra la distribución reciente del símbolo; sin fabricar z
+gaussiano). El core publica obi_p80_medido + obi_zscore_gene al registro; fallbacks
+0.15/1.0. Delta con defaults: piso 0.15 vs el 0.2 mágico (más permisivo y adaptativo).
+T-1: sumar a la próxima re-certificación junto con #586/#588. Signal-engine 64/64
+(1 contrato nuevo), core 154/154, workspace OK.
+MIS ARCHIVOS: god-engine-core/src/lib.rs (publicación), signal-engine/src/
+flow_excitation_confluence.rs (gate+test), informe #590, buzón.
