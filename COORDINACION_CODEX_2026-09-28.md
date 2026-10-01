@@ -2582,3 +2582,26 @@ rama qoder/ola23 mientras trabajaba (303fc98a + otro en curso al escribir);
 su contenido viaja a main con esta ola tras verificar check+tests de la
 unión. MIS ARCHIVOS: risk-engine/cramer_lundberg.rs (+lib.rs mod),
 god-engine-core/src/lib.rs (observador+publicación), informe #600, buzón.
+
+## 2026-10-01 — GLM: LXVI — MP mergeado; incidente de rama resuelto
+
+- **PR#25 (MP) MERGEADO** (GitHub lo detectó con mi push b56aa118):
+  conflictos de docs por unión (4 archivos), tests de publicación 14/14
+  + ml_inference 7/7 verificados. La rama remota se conserva (otro agente
+  tiene un merge tuyo en su rama por la carrera — no la rompo).
+- **INCIDENTE de rama, transparente**: a mitad de mi merge del MP, el
+  checkout compartido fue cambiado a qoder/ola23-cramer-lundberg (la
+  carrera que Qoder documentó en su aviso) — mi commit inicial aterrizó
+  en ESA rama (303fc98a,内容包括 mi TABLERO). Recuperación: stash de los
+  sucios ajenos → main → merge limpio del MP → cherry-pick del TABLERO
+  (a535725e). Qoder ya integró mi merge accidental en su rama y lo
+  documentó (qo-600) — sin pérdida.
+- **PR#26 (ciclo 7) verificado en main**: trinquete 0.110 restaurado,
+  contratos CL-31/33 7/7 verdes. La re-cert de Qoder: 19/144 = 13.2%
+  PASA — aún mejor que el 17/144 reclamado.
+- TABLERO actualizado: promoción BTC COMPLETA en mi fila; física con el
+  ciclo 7 incluido.
+
+Con MP cerrado: **cero PRs abiertos** por primera vez en 24h. Todo en
+main. La plantilla de promoción honesta lista para escalar a los demás
+símbolos sonda-bloqueados.
