@@ -12,6 +12,9 @@ pub struct MultifractalSpectrumEngine {
     pub last_price: f64,
     pub sum_q1: f64,
     pub sum_q2: f64,
+    /// AGY-AUD-003: counter for periodic exact recomputation of rolling sums
+    /// to prevent catastrophic floating-point drift after millions of ticks.
+    drift_recompute_counter: usize,
 }
 
 impl MultifractalSpectrumEngine {
@@ -25,6 +28,7 @@ impl MultifractalSpectrumEngine {
             last_price: 0.0,
             sum_q1: 0.0,
             sum_q2: 0.0,
+            drift_recompute_counter: 0,
         }
     }
 
@@ -55,6 +59,24 @@ impl MultifractalSpectrumEngine {
 
         self.sum_q1 = (self.sum_q1 + ret).max(0.0);
         self.sum_q2 = (self.sum_q2 + ret * ret).max(0.0);
+
+        // AGY-AUD-003: periodic exact recomputation to clear accumulated
+        // floating-point drift from millions of add/subtract cycles.
+        self.drift_recompute_counter += 1;
+        if self.drift_recompute_counter >= self.window_size {
+            self.drift_recompute_counter = 0;
+            let n = self.count.min(self.window_size);
+            let mut exact_q1 = 0.0f64;
+            let mut exact_q2 = 0.0f64;
+            for i in 0..n {
+                let idx = (self.head + self.window_size - n + i) % self.window_size;
+                let r = self.returns_history[idx];
+                exact_q1 += r;
+                exact_q2 += r * r;
+            }
+            self.sum_q1 = exact_q1.max(0.0);
+            self.sum_q2 = exact_q2.max(0.0);
+        }
 
         if self.count < 10 {
             return (0.50, 0.0);

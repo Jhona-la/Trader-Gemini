@@ -1,5 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — Antigravity: Auditoría Espectral Total y Corrección de Bugs Sistémicos
+
+- Flujo coordinado: rama `antigravity/auditoria-espectral-total` → verificación → merge a main → limpieza de rama.
+- AGY-AUD-001 (CRITICAL): `multivariate_coint.rs` sufría brickeo permanente ante structural breaks. Tras un salto de nivel, el rechazo por jump no actualizaba `last_spread`, bloqueando el estimador indefinidamente. Corregido con contador de rechazos consecutivos (reset automático tras 20 ticks sostenidos) + nuevo test de contrato.
+- AGY-AUD-002 (HIGH): `flow_impulse.rs` aplicaba gate discreto `confidence > 0.50`, violando el paradigma de continuo espectral. Se eliminó el gate duro; la confianza modula continuamente el intent y la orquestación aplica los umbrales genómicos.
+- AGY-AUD-003 (HIGH): `multifractal.rs` sumas rolling `sum_q1`/`sum_q2` sufrían deriva por cancelación de punto flotante en alta frecuencia. Añadida recomputación exacta periódica cada `window_size` ticks.
+- AGY-AUD-005 (HIGH): `quantum_kelly_risk.rs` limpiado código muerto de aceleradores que `.min(raw_kelly)` cancelaba. De-risking preservado inline (drawdown, pérdida consecutiva, topología, contracción en régimen de reversión y baja convicción neural).
+- AGY-AUD-006 (MEDIUM): `data-ingest/src/lib.rs` TokenBucket: protegido producto `elapsed_ms * fill_rate` contra overflow de `u32` en arranques fríos o pausas largas (`.min(self.capacity as f64)`).
+- Validación completa: 22/22 strategy-core (incluyendo nuevo test structural break), 64/64 signal-engine, 68/68 feature-engine, 154/154 god-engine-core, 18/18 data-ingest + 9/9 liquidation_contract. Total: 275/275 tests verdes.
+
 ## 2026-09-30 — Qoder: Ola 11 / #586 — puerta de banda operable en el generador
 
 - Flujo nuevo adoptado: rama `qoder/*` desde main → merge a main → borrar rama.

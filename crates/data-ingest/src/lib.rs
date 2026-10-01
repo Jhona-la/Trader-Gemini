@@ -63,7 +63,7 @@ impl TokenBucket {
             let now_ms = (get_monotonic_ms() & 0xFFFFFFFF) as u32;
 
             let elapsed_ms = (now_ms.wrapping_sub(last_ms)) as f64;
-            let added_tokens = (elapsed_ms * self.fill_rate) as u32;
+            let added_tokens = (elapsed_ms * self.fill_rate).min(self.capacity as f64) as u32;
 
             let total_tokens =
                 std::cmp::min(self.capacity, current_tokens.saturating_add(added_tokens));
