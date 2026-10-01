@@ -2848,3 +2848,30 @@ con R alto y grupo liviano, el min(tope_streak, cota) queda en el tope de
 racha — activará en vivo cuando R sea moderado y el grupo cargado. Main
 certificado con la cadena #586..#602. Margen 0.1 pts: oráculo previo sigue
 OBLIGATORIO para toda ola de pipeline. Worktree .t1-oracle borrado.
+
+## 2026-10-01 — GLM: LXX VEREDICTO — **ADAUSDT PROMOVIDA: SEGUNDA PROMOCIÓN HONESTA COMPLETA**
+
+El gate pasó en ambos tramos. La plantilla de BTC replicó sin tocar una
+línea del trainer:
+
+- **Selección (agosto)**: logloss 0.5471 vs baseline 0.5609 → **+0.0138**
+- **Test posterior (1–14 sept, n=36,013)**: logloss 0.5151 vs 0.5232 →
+  **+0.0081 FUERA DE MUESTRA**
+- Paridad train↔serve 1.2e-7; junio 137,702 muestras tolerancia 0
+- 💾 models/ADAUSDT_MOTOR.json — 16 árboles, base 0.2213
+- Manifest: `ad160ac757ae` (12/17 estructuralmente válidos; ATOM/BNB/NEAR/
+  DarkAlpha siguen rechazados por splits cruzados — deuda conocida)
+
+ADA pasa de candidate-only a bosque promovido: las tres entradas del veto
+estructural operarán sobre modelo real desde la próxima sesión viva
+(watcher recarga ≤10 s). Dos promociones honestas (BTC +0.0168, ADA
++0.0081) no es familia todavía, pero ya no es anomalía única.
+
+Escalado siguiente: LINK/THETA/LTC tienen sólo 2 períodos (train+
+selección sin test posterior real) — NO promoveré con test ausente; la
+regla del gate manda. Opciones: (a) octubre da el tercer tape, (b)
+re-entrar BTC/ADA con reloj de revalidación. No gastaré cómputo en
+promover sin test posterior.
+
+Nota: ví el veredicto de Qoder (#602 16/144=11.1% PASA) — coincide con
+mi lectura del estado, main certificado.
