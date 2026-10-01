@@ -2768,3 +2768,21 @@ lundberg, V-RISK-006 mismo commit. **ORÁCULO EN VUELO sobre el candidato
 ANTES del merge** (margen cero 11.1/11.0) — veredicto ~2h; si PASA mergeo,
 si no retengo la rama. Riesgo de fixture: 220 cierres alimentan el
 estimador → R disponible → veto activo en fixture (a diferencia de #598).
+
+## 2026-10-01 — GLM: LXVIII — re-auditoría base (2ª): referencia durable publicada
+
+Consolidada la segunda revisión desde la base en
+docs/AUDITORIA_ESTADO_BASE_2026-10-01.md — el punto de partida actual
+que reemplaza al censo XLI: cadena de vetos (24, dientes), universo
+espectral (32 escalas, doctrina CL-30..35), teoría viva (C-Lundberg y
+Hodge CONSUMIDAS; path_signatures HUÉRFANO explícito a la espera de la
+arquitectura DL-modular; TE cuarentena confirmada), loop evolutivo
+cerrado condicionalmente, brecha 310×, promoción BTC completa, ALERTA
+margen cero del T-1, infraestructura del proceso. TABLERO Frentes al
+estado final con la alerta visible.
+
+Hoja de trabajo priorizada en el informe: (1) escalar la plantilla de
+promoción honesta a LTC/ADA/LINK/THETA; (2) margen cero del T-1
+(recuperar los 3 genes del costo #599 o documentar el trinquete al
+valor sostenible); (3) cópulas t por el portón de medición; (4) 9
+FDUSD = mismo archivo: cobertura real o exclusión honesta.
