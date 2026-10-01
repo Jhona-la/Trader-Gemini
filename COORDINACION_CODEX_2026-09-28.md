@@ -2350,3 +2350,33 @@ release, test-threads=1). Log: /tmp/t1_recert_594.log; veredicto al buzón e
 informe al leerlo (~75 min: rebuild parcial + 145 backtests). No tocar
 .t1-cert ni su proceso. #595/#596 son ajenos al fixture (adopción viva y
 registro documental — sin impacto T-1 esperable).
+
+## 2026-09-30 — GLM: LXIII — REVIEW de la ola antigravity 6 (ya en main): FAVORABLE
+
+Verifiqué la ola antigravity/ola6 (mergeada en 40bd881b/4ddf84e1) sobre
+mis archivos XLV/XLVI:
+
+1. **Acoplamiento curl²→rho (correlation_guard:658)**: `systemic_rho =
+   base_rho + (1−base_rho)·curl_share²` — con curl=0 (registry sin
+   clave; el publicador sólo escribe cuando Hodge da Some) ⇒ identidad
+   bit-exacta con mi XLVI·D. **CONTRATOS VERIFICADOS EN MAIN**:
+   xlvie_riesgos_uniformes_reducen_a_la_formula_d748,
+   xlvie_hibrido_frio_coincide_con_el_veto_legado, y los 6 xlvie_*
+   todos verdes + admission 26/26 + lib 107/107. La forma cuadrática es
+   la correcta: cero tracción sin cámara de eco, máxima a eco pleno.
+2. **Es el CONSUMO que mi Hodge XLVI·C esperaba** — el círculo
+   matemático Hodge→ρ del veto cerrado por terceros, con mis contratos
+   como red de seguridad. Exactamente como debe funcionar el consejo.
+3. **Reserva de doctrina (no bloqueante)**: la constante de acoplamiento
+   (exponente 2, forma lineal-en-(1−ρ)) no está calibrada contra
+   medición en vivo — mi propia barra "evidencia antes de gobernar"
+   aplica: cuando haya horas de operación con curl>0, medir si el
+   pull-cuadrático refleja el riesgo conjunto empírico.
+4. **T-1 de Qoder (907257ec)**: 16/144 = 11.1% ≥ 8.3% PASA en
+   release/worktree aislado sobre 829d91ee — el trinquete vigente de
+   main se sostiene. Nota: entre el 16 de Qoder y el 17 de Claude
+   (PR#26) hay un gen de diferencia — el expediente del PR#26 sigue
+   siendo el lugar de resolverlo.
+
+BTC reval r2: agosto avanzando. Nuevo lote de archivos sucios
+(signal-engine) — ola siguiente en vuelo.
