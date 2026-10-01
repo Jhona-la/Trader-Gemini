@@ -13104,3 +13104,48 @@ activos): la evolución tiene MÁS gradientes reales que antes de las olas.
   ∈(0.2,0.8) + sanidad de ancho). feature-engine 70/70, core 157/157.
 - **T-1**: CERO impacto en pipeline vivo (observación sin consumidores) —
   no se suma a la re-cert.
+
+---
+
+## VEREDICTO RE-CERT T-1 con #594 (Qoder, 2026-10-01)
+
+- Oráculo completo (3122.63 s RELEASE, worktree aislado `.t1-cert` congelado
+  en 77acce64): **19/144 genes sensibles = 13.2 % ≥ trinquete 11.0 % (CL-35c)
+  — PASA.** La cadena de 7 cambios (#586/#588/#590/#591/#592/#593/#594) queda
+  CERTIFICADA; #594 además GANA 3 genes sensibles vs el acumulado anterior
+  (16/144 sobre 829d91ee): la selección de τ* por habilidad no degradó
+  expresividad genética. Worktree eliminado tras leer el veredicto (protocolo).
+
+## #598 — Ola 22 (Qoder, 2026-10-01): el modulador XLV·G nació muerto (revisión cruzada CL, verificado)
+
+- **Hallazgo de Claude, confirmado en mi zona**: el publicador de contagio
+  escribe el slot POR MONEDA `c{id}:hawkes_contagion_net_role`
+  (`set_for_coin`, omniscient-registry D38) y el llamador XLV·G leía con
+  `get_scoped_value_or(&sym, …)` — que sólo busca `{SYM}_…`/global, jamás
+  `c{id}:…`. El modulador de contagio jamás recibió un rol (factor siempre 1)
+  desde su cableado. El consumidor de risk-engine (correlation_guard:596) sí
+  leía bien — la divergencia de dos lectores sobre el mismo slot era el
+  testigo.
+- **Fix**: el llamador ahora lee `get_for_coin_or(coin_id, …)` — el MISMO
+  slot del escritor. Contrato qo_598: testigo del defecto (scoped NO ve el
+  slot) + consumidor corregido + contrato de fuente. god-engine-core gana la
+  dependencia directa omniscient-registry (ya la usaba transitive).
+- **T-1**: en el fixture monoactivo el publicador no escribe roles (<2 monedas)
+  → sin impacto medible; en vivo multiactivo el descuento (≤30%) ACTIVA por
+  primera vez — 8º cambio acumulado para la próxima re-cert.
+
+## #599 — Ola 22 (Qoder, 2026-10-01): significancia del IC en la selección de τ* (abierto de CL sobre #594)
+
+- **La precisión de CL es correcta**: con 32 escalas, el MÁXIMO de ICs de
+  puro ruido suele ser positivo (sesgo de selección) — el umbral IC > 0 de
+  #594 elegía escalas sin habilidad real.
+- **Criterio**: `umbral_ic_significativo(n) = 2/√(n−3)` (t ≥ 2 con el error
+  estándar de Fisher) — autoajustable por muestra (≈0.385 con 33 bloques,
+  ≈0.215 con 90), sin constantes mágicas. La selección de τ* por habilidad
+  exige ahora IC ≥ umbral; sin ninguna escala significativa → respaldo de
+  energía (intacto).
+- **Tests**: umbral exacto y monótono; escenario del sesgo (IC 0.35@n=30, el
+  máximo típico de ruido, ya no opina; IC 0.5@n=90 lidera); test de #594
+  actualizado a IC significativos. Arena 96/96, core 158/158, workspace 0 err.
+- **T-1**: 9º cambio acumulado (la selección de τ* puede caer al respaldo
+  antes de lo que caía).
