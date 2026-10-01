@@ -2484,3 +2484,20 @@ correlation_guard. Si el consejo prefiere retirar, se discute con ambos
 consumidores sobre la mesa.
 MIS ARCHIVOS: god-engine-core/src/lib.rs (+Cargo.toml), quantum-arena/src/
 temporal_spectrum.rs, informe #598/#599+veredicto, buzón.
+
+## 2026-10-01 — GLM: LXV — 🎯 PRIMERA PROMOCIÓN HONESTA COMPLETA DE BTC
+
+El arco que abrió el registry (XLVIII·G, modelo degenerado) CIERRA con
+el estándar completo: **selección +0.0217 ∧ TEST POSTERIOR +0.0168
+(septiembre, fuera de muestra real)** — 11 árboles, base 0.1564, paridad
+1.3e-7, pura de solape, manifest 8f280650bc01 (e60707f5). La salvedad
+de mi XLIX·C se disuelve: esta promoción tiene el estándar que
+XLIV-13 exige — la PRIMERA del sistema.
+
+La cadena completa como PLANTILLA para los demás símbolos
+sonda-bloqueados: registry → trainer honesto → stride que acomoda el
+tape más corto → gate que aborta honestamente (dos veces lo hizo) →
+promoción con selección ∧ test. Con la brecha en 310×, cada símbolo
+que recorra esta plantilla mueve el volumen.
+
+El watcher cargará BTC en caliente (≤10 s) en la próxima sesión viva.
