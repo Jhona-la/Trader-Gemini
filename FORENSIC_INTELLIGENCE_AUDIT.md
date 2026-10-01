@@ -12759,3 +12759,29 @@ política aprendida — invalida el PPO entrenado y exige re-certificación T-1.
 
 **Verificación:** god-engine-core --lib 154/154 (renombre sin cambio de comportamiento,
 como corresponde); check workspace --all-targets OK.
+
+### #589 — ✅ CIERRE: cobertura de la puerta de banda operable acreditada + telemetría de rechazo de slot (Ola 14, 2026-09-30, Qoder)
+
+**(a) Evidencia estructural — el pendiente «ramas 11-15 sin puerta de banda operable»
+se CIERRA sin código:** hay UN SOLO call site productivo de `evaluate_quantum_order`
+(lib.rs, dentro del bucle de candidatos). Los candidatos SOLO nacen de `fast_intent`
+y `slow_intent` — ambos pasan por `puertas_del_continuo`, donde vive la puerta QO-586.
+Las ramas 11-15 (tensor, impulso, tendencia lenta, consenso, confluencia resonante)
+no emiten intenciones separadas: son sub-señales de la construcción de banda (el
+finding de Claude «ramas 11-14 no pasan por conviccion_de_rama» es sobre el CÓMPUTO
+de confianza dentro de la banda, no sobre rutas de emisión). La sonda XLIV-7 es la
+única exención y es del ML-gate solamente (D1/XLIV: sin la sonda, monedas sin modelo
+jamás arrancan), no de las puertas ni del slot gate. Cobertura: 100% de las órdenes.
+
+**(b) Telemetría QO-589 — el descarte silencioso de slot queda medible.**
+`find_resonant_slot` devuelve None por DOS causas indistinguibles para el llamador:
+colisión same-direction en banda (|Δlnτ| < 0.80) o capacidad llena. Nuevo
+`PositionManager::razon_sin_slot` (u8: 1=colisión, 2=capacidad) + publish registry
+`qo_slot_rechazo` por moneda cuando un candidato no plano no consigue slot. Los
+descartes del hueco [0.60, 0.80) (fusión D-431 declara independientes a >= 0.60,
+slot bloquea a < 0.80) caen en razón 1: el consejo ya puede CONTAR cuántos son antes
+de decidir unificar el umbral. Cambio de observabilidad, cero política.
+
+**Verificación:** quantum-arena --lib 89/89 (1 contrato nuevo: la razón distingue
+colisión de capacidad — incluyendo el caso exacto del hueco τ=60s/τ=30s);
+god-engine-core --lib 154/154; check workspace --all-targets OK.

@@ -6019,6 +6019,16 @@ impl GodEngineCore {
             // The 0.80 log-distance policy is not measured spectral independence.
             let maybe_slot = coin.positions.find_resonant_slot(tau_intent_ms, is_long_intent);
             let raw_slot_available = maybe_slot.is_some();
+            // QO-589 — telemetría del rechazo de slot (observabilidad, no
+            // política): un candidato no plano que no consigue slot muere
+            // en silencio; sin esta razón el hueco de despacho [0.60, 0.80)
+            // de la fusión D-431 es inmedible y la decisión de consejo sobre
+            // el umbral vuela a ciegas.
+            if unified_intent.signal != SignalType::Flat && !raw_slot_available {
+                let razon =
+                    coin.positions.razon_sin_slot(tau_intent_ms, is_long_intent) as f64;
+                self.arena.registry.set_for_coin(coin_id, "qo_slot_rechazo", razon);
+            }
             let target_pos_slot = maybe_slot.unwrap_or(0);
             let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 

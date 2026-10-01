@@ -671,6 +671,39 @@ impl PositionManager {
         None
     }
 
+    /// QO-589 — RAZÓN del rechazo de slot (telemetría del embudo, no política).
+    /// `find_resonant_slot` devuelve None por DOS causas indistinguibles para
+    /// el llamador: colisión same-direction dentro de la banda (|Δlnτ| < 0.80)
+    /// o capacidad llena. Distinguirlas es obligatorio para medir el hueco de
+    /// despacho [0.60, 0.80) que la fusión D-431 declara independientes y el
+    /// slot bloquea: esos descartes caen en razón 1 y son los que el consejo
+    /// debe contar para decidir unificar el umbral.
+    pub const RAZON_COLISION_BANDA: u8 = 1;
+    pub const RAZON_CAPACIDAD_LLENA: u8 = 2;
+
+    pub fn razon_sin_slot(&self, tau_ms: f64, is_long: bool) -> u8 {
+        let slots = [&self.scalp, &self.swing, &self.position];
+        let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
+            tau_ms
+        } else {
+            30_000.0
+        };
+        let ln_target = safe_tau.ln();
+        for pos in slots.iter() {
+            if pos.is_open() {
+                let open_is_long = pos.is_long.load(Ordering::Relaxed);
+                if open_is_long == is_long {
+                    let open_tau = (pos.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
+                    let diff_ln = (ln_target - open_tau.ln()).abs();
+                    if diff_ln < 0.80 {
+                        return Self::RAZON_COLISION_BANDA;
+                    }
+                }
+            }
+        }
+        Self::RAZON_CAPACIDAD_LLENA
+    }
+
     /// QO-588 — GATE DE PIRÁMIDE LIMPIA (restauración del contrato legacy).
     /// `true` ⇒ hay una posición ABIERTA en la MISMA dirección cuyo retorno
     /// no realizado es < 28 pb (o no medible): apilar en esa dirección
@@ -1201,5 +1234,69 @@ mod tests {
             !pm.misma_direccion_sin_asegurar(60_000.0, true, 101.0),
             "la dirección OPUESTA no la juzga este gate (interferencia la trata find_resonant_slot)"
         );
+    }
+
+    /// QO-589 — la razón del rechazo distingue colisión de banda de
+    /// capacidad llena. Sólo tiene sentido preguntarla cuando
+    /// `find_resonant_slot` devolvió None (el llamador la gatea así):
+    /// distingue POR QUÉ murió un candidato que la fusión despachó.
+    #[test]
+    fn qo_589_razon_de_rechazo_distingue_colision_de_capacidad() {
+        let pm = PositionManager::default();
+        // Larga abierta a τ=30 s.
+        assert!(pm.scalp.open_with_tau_and_fee(
+            true,
+            100.0,
+            0.01,
+            13.0,
+            1_000,
+            101.0,
+            99.0,
+            PositionHorizon::Continuous,
+            0.5,
+            0.6,
+            0.0004,
+            30_000
+        ));
+        // |Δlnτ| = 0.29 < 0.80 ⇒ colisión (y find_resonant_slot la confirma):
+        assert_eq!(
+            pm.razon_sin_slot(40_000.0, true),
+            PositionManager::RAZON_COLISION_BANDA
+        );
+        assert!(pm.find_resonant_slot(40_000.0, true).is_none());
+        // EL HUECO [0.60, 0.80): τ=60 s ⇒ |Δlnτ| = ln(2) ≈ 0.693. La fusión
+        // D-431 lo despacha como candidato independiente (>= 0.60) y el slot
+        // lo bloquea: cae como COLISIÓN y queda medible para la decisión de
+        // consejo sobre unificar el umbral.
+        assert_eq!(
+            pm.razon_sin_slot(60_000.0, true),
+            PositionManager::RAZON_COLISION_BANDA
+        );
+
+        // Capacidad llena SIN colisión: tres cortos abiertos; la intención
+        // LARGA nunca colisiona con ellos ⇒ la única razón de None es que
+        // los tres slots físicos están ocupados.
+        let pm2 = PositionManager::default();
+        for slot in [&pm2.scalp, &pm2.swing, &pm2.position] {
+            assert!(slot.open_with_tau_and_fee(
+                false,
+                100.0,
+                0.01,
+                13.0,
+                1_000,
+                99.0,
+                101.0,
+                PositionHorizon::Continuous,
+                0.5,
+                0.6,
+                0.0004,
+                30_000
+            ));
+        }
+        assert_eq!(
+            pm2.razon_sin_slot(30_000.0, true),
+            PositionManager::RAZON_CAPACIDAD_LLENA
+        );
+        assert!(pm2.find_resonant_slot(30_000.0, true).is_none());
     }
 }
