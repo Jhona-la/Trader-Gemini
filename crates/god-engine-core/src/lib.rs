@@ -209,6 +209,25 @@ pub fn retorno_neto_pct(neto_usd: f64, nocional_usd: f64) -> Option<f64> {
 /// `prev = None` congelaba el 35 % del crash_flux).
 pub const CADENCIA_REGIMEN_MS: f64 = 60_000.0;
 
+/// #593 — UMBRAL DEL CONSEJO (decisión 2026-09-30): distancia armónica
+/// mínima |Δlnτ| para CO-DESPACHAR dos candidatos como bandas
+/// independientes. Misma dirección: 0.80 — exactamente la distancia que
+/// `find_resonant_slot` ya exige para admitir el apilado; por debajo, el
+/// segundo candidato same-direction moría en el slot como colisión (los
+/// descartes silenciosos del hueco [0.60, 0.80), contables desde la Ola 14
+/// vía `qo_slot_rechazo` razón 1). Aflojar el slot a 0.60 fue RECHAZADO:
+/// habría apilado exposición correlacionada en escalas vecinas (ratio
+/// < 2.23) contra la meta de crecimiento con tope de ruina. Direcciones
+/// opuestas conservan 0.60: el slot nunca colisiona por dirección
+/// contraria y el despacho concurrente D-431 queda íntegro para coberturas.
+pub fn umbral_codespacho_armonico(misma_direccion: bool) -> f64 {
+    if misma_direccion {
+        0.80
+    } else {
+        0.60
+    }
+}
+
 /// #592 — referencia de deriva para el campo de régimen a partir del ancla
 /// por moneda: devuelve `(prev_ln_tau, elapsed_ms, actualizar_ancla)`.
 /// Frío (ts=0 o bits=0) ⇒ sin previa y ancla nueva. Entre anclas la deriva
@@ -5434,7 +5453,15 @@ impl GodEngineCore {
                 };
                 let diff_ln = ((tau_f.max(10.0)).ln() - (tau_s.max(10.0)).ln()).abs();
 
-                if diff_ln >= 0.60 {
+                // #593 — UMBRAL DEL CONSEJO: same-direction co-despacha a
+                // >= 0.80 (la distancia que el slot admite); opuestas
+                // conservan 0.60 (D-431 íntegro para coberturas). Antes,
+                // un segundo candidato same-direction en [0.60, 0.80) se
+                // despachaba y moría en el slot como colisión silenciosa.
+                let umbral_despacho = umbral_codespacho_armonico(
+                    fast_intent.signal == slow_intent.signal,
+                );
+                if diff_ln >= umbral_despacho {
                     // DESACOPLAMIENTO ARMÓNICO CONTINUO:
                     // Frecuencias ortogonales (|Δ ln τ| >= 0.60) representan dinámicas físicas independientes.
                     // Ambas ondas pueden coexistir simultáneamente en ranuras armónicas separadas.
@@ -7906,6 +7933,43 @@ mod tests_qo_586 {
         assert!(
             (remitida.confidence - 0.70).abs() < 1e-12,
             "τ=0 atraviesa sin tocar confianza: la resolverá el gate"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_qo_593 {
+    use super::*;
+
+    /// #593 — UMBRAL DEL CONSEJO. La unificación cierra el hueco
+    /// [0.60, 0.80): un par same-direction a |Δlnτ| = ln(2) ≈ 0.693 (τ
+    /// 30 s vs 60 s — el caso exacto del hueco) YA NO co-despacha: el
+    /// umbral same-direction (0.80) supera 0.693, así que la fusión
+    /// arbitra a un candidato en vez de despachar uno que el slot
+    /// mataría como colisión (qo_589 prueba esa colisión).
+    #[test]
+    fn qo_593_umbral_del_consejo_unifica_el_hueco() {
+        assert_eq!(
+            umbral_codespacho_armonico(true),
+            0.80,
+            "same-direction: la distancia del slot, no menos"
+        );
+        assert_eq!(
+            umbral_codespacho_armonico(false),
+            0.60,
+            "opuestas: despacho concurrente D-431 íntegro para coberturas"
+        );
+        // El caso exacto del hueco (30 s vs 60 s) queda FUERA del
+        // co-despacho same-direction:
+        let hueco = (60_000.0f64 / 30_000.0).ln();
+        assert!(hueco >= 0.60 && hueco < 0.80, "el caso de prueba debe estar en [0.60, 0.80): {hueco}");
+        assert!(
+            hueco < umbral_codespacho_armonico(true),
+            "el hueco ya no co-despacha same-direction"
+        );
+        assert!(
+            hueco >= umbral_codespacho_armonico(false),
+            "el mismo par en direcciones opuestas SÍ co-despacha (cobertura)"
         );
     }
 }

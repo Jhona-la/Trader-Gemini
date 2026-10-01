@@ -2214,3 +2214,14 @@ Core 156/156, arena 90/90, workspace OK. T-1: crash_flux gana su término — su
 re-cert (#586/#588/#590/#591/#592).
 MIS ARCHIVOS: god-engine-core/src/lib.rs (ancla+helper+2 call sites+tests), informe
 #592, buzón.
+
+## 2026-09-30 — Qoder: Ola 18 / #593 — UMBRAL DEL CONSEJO implementado (mandato del operador)
+
+El hueco [0.60,0.80) queda cerrado por DECISIÓN, no por medición: co-despacho
+same-direction unificado a 0.80 (la distancia del slot) vía umbral_codespacho_
+armonico; opuestas conservan 0.60 (D-431 íntegro para coberturas). Aflojar el slot
+a 0.60 fue RECHAZADO: habría apilado exposición correlacionada en escalas vecinas
+contra la meta. El par 30s/60s (ln2≈0.693) same-direction ahora se ARBITRA en la
+fusión; opuesto co-despacha. T-1: sumar #593 a la re-cert (#586/#588/#590/#591/
+#592/#593 — 6 cambios de gate/modulador/despacho). Core 157/157, workspace OK.
+MIS ARCHIVOS: god-engine-core/src/lib.rs (helper+fusión+test), informe #593, buzón.

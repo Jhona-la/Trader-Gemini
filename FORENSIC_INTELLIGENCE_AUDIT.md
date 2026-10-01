@@ -12891,3 +12891,32 @@ negativa ⇒ crash_flux > 0; prev=None ⇒ drift 0 — el comportamiento viejo c
 testigo). Core 156/156, arena 90/90, signal-engine 68/68, workspace OK. Un E0425
 transitorio de signal-engine durante la compilación = edición concurrente de otra
 sesión (el check pasa limpio después).
+
+### #593 — ✅ IMPLEMENTADO: umbral del consejo — hueco [0.60, 0.80) unificado (Ola 18, 2026-09-30, Qoder — mandato directo del operador)
+
+**La decisión pendiente desde la Ola 14 queda implementada.** El defecto: la fusión
+D-431 co-despachaba candidatos como bandas independientes a |Δlnτ| ≥ 0.60, pero
+`find_resonant_slot` bloquea el apilado same-direction a < 0.80 — el segundo
+candidato same-direction en [0.60, 0.80) se despachaba y moría en el slot como
+colisión silenciosa (contable desde la Ola 14 vía `qo_slot_rechazo` razón 1).
+
+**La decisión del consejo (dos direcciones posibles, una rechazada):**
+  - RECHAZADA — aflojar el slot a 0.60: habría permitido apilar exposición
+    correlacionada en escalas vecinas (ratio de τ < 2.23), multiplicando el riesgo
+    de la misma apuesta contra la meta de crecimiento con tope de ruina (#588
+    acababa de restaurar la disciplina contraria).
+  - ADOPTADA — SUBIR el co-despacho same-direction de la fusión a 0.80: la fusión
+    arbitra a un candidato (superposición constructiva XLIV-10 / selección por
+    energía) en [0.60, 0.80); a ≥ 0.80 el despacho concurrente sigue. Las
+    direcciones OPUESTAS conservan 0.60 — el slot nunca colisiona por dirección
+    contraria y el despacho para coberturas queda íntegro.
+
+**Implementación:** helper puro `umbral_codespacho_armonico(misma_direccion) -> f64`
+(0.80 / 0.60) + wiring en la fusión (`umbral_despacho` por dirección del par).
+
+**T-1:** la semántica de despacho same-direction cambia en [0.60, 0.80) — sumar a la
+re-certificación (#586/#588/#590/#591/#592/#593).
+
+**Verificación:** contrato nuevo (el caso exacto del hueco, 30 s vs 60 s ⇒
+|Δlnτ| = ln 2 ≈ 0.693: same-direction YA NO co-despacha; el MISMO par opuesto SÍ).
+Core 157/157, check workspace --all-targets OK.
