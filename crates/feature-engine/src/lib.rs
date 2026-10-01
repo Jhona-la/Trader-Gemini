@@ -1,4 +1,5 @@
 pub mod hurst_dfa;
+pub mod copulas;
 pub mod correlation;
 pub mod ewma;
 pub mod hawkes;

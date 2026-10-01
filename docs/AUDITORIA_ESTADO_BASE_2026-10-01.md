@@ -11,10 +11,13 @@ PRs abiertos, `cargo check --workspace --all-targets` 0 errores.
 
 ## 1. Cadena de vetos — AUDITADA DOS VECES (LXVII + LXVIII)
 
-- **Registro**: 24 entradas ejecutables (V-RISK-001..005, V-LOGIC-001..015,
+- **Registro**: 25 entradas ejecutables (V-RISK-001..006, V-LOGIC-001..015,
   V-TECH-001..004), con id/causa/fuente-umbral/datos/responsable+fecha/
   clase/estado/test/deuda. La separación riesgo-duro vs lógica vs técnico
   es real y testificada: riesgo-duro ACTIVO sin test = fallo de suite.
+  (Corrección LXXI: este punto decía 24/V-RISK-001..005 — se escribió
+  horas antes del merge de V-RISK-006 Cramér-Lundberg, qo-602. El código
+  siempre tuvo 25; ver línea 120.)
 - **Dientes de cobertura** (LXVII): REJECT_NAMES↔registro en ambas
   direcciones — todo slot de rechazo tiene entrada; toda entrada apunta a
   compuerta real. Los siete slots técnicos que faltaban entraron
