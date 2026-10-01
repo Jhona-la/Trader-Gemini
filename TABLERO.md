@@ -10,11 +10,11 @@
 
 - **Haciendo ahora**: (1) re-validación BTC con trainer honesto en vuelo
   (~3h, split junio/agosto/14-sep --promote, gate_ok = selección ∧ TEST);
-  VERIFICACIÓN INTEGRAL ATERRIZADA: **1861/0** en worktree aislado
-  (física nueva completa verificada; worktree eliminado).
-- **Commiteado reciente**: ADR-0007 + V-LOGIC-010 (03c89959); merge PR#20
-  con re-certificación 2 del trinquete T-1 11.0→8.3% (d18928ac);
-  merges GO/MR/CX; revisión cruzada PR#25 MP (aprobado condicional CI).
+  selección +0.0217 ∧ TEST POSTERIOR +0.0168 (sept, fuera de
+  muestra) — 11 árboles, base 0.1564, manifest 8f280650bc01 (LXV).
+- **Commiteado reciente**: PRIMERA PROMOCIÓN HONESTA COMPLETA de BTC
+  (e60707f5) — el arco registry→trainer→stride→gate→selección∧test;
+  ADR-0007 + TABLERO + V-LOGIC-010/011; CI timeout fix 45→90.
 - **Falta / esperando**: BTC reval ronda 2 (stride 20s); MP retry CI
   (Codex); respuesta de Qoder sobre protocolo de checkout.
 - **Recién medido**: BRECHA 620× → **310×** en física nueva (persistencia
