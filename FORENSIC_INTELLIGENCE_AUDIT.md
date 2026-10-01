@@ -13036,3 +13036,45 @@ cambia la distribución de salidas — obligatorio.
 Criterio del consejo aplicado: cada propuesta tiene (i) objeto matemático
 canónico, (ii) punto de integración existente, (iii) test de falsación
 analítico o bootstrap, (iv) zona propia, (v) coste T-1 declarado.
+
+### #596 — ✅ CERTIFICACIÓN T-1 ACUMULADA: 16/144 = 11.1% ≥ trinquete 8.3% — PASA con +4 genes (Ola 19, 2026-09-30, Qoder — mandato del operador)
+
+**Alcance:** oráculo T-1 completo (t1_cobertura_genetica_del_oraculo_de_aptitud,
+RELEASE, test-threads=1) sobre el árbol CONGELADO 829d91ee en worktree aislado
+`.t1-cert` con target-dir propio. Duración: 4060 s (~68 min). Fixture sintético
++ predictor direccional sintético (gate por lift neutralizado para medir),
+preservados bit a bit. Trinquete COBERTURA_MINIMA=0.083 (LI) intacto.
+
+**VEREDICTO: 16/144 genes sensibles (11.1 %) ≥ 8.3 % — PASA.**
+
+**Delta contra la LI (GLM, 12/144 = 8.3 %): +4 genes GANAN sensibilidad, CERO
+pierden.**
+  - Lista LI:  [1, 17, 18, 24, 27, 32, 68, 69, 129, 130, 131, 141]
+  - Lista nueva: [1, 10, 11, 17, 18, 20, 24, 27, 32, 33, 68, 69, 129, 130, 131, 141]
+  - GANADOS: **10 `scalp_kelly_fraction`, 11 `swing_kelly_fraction`,
+    20 `veto_threshold_btc`, 33 `kelly_clamp_max`** — todos genes de SIZING y
+    VETO. Mecanismo coherente: los seis cambios (#586 puerta de banda operable,
+    #588 pirámide limpia, #590 OBI p80×gen, #591 proyección espectral, #592
+    deriva→crash_flux, #593 umbral del consejo) DES-STARVARON el embudo (de
+    1.24M rechazos por suelo_tp_sl a un flujo de intents que sobrevive) — con
+    más intents vivos, el sizing (fracciones de Kelly, clamps) y el veto
+    (veto_threshold_btc, que CL-2b había perdido por cuantización entera del
+    apalancamiento) vuelven a diferenciar y la selección los ve.
+
+**Testigos del log (docs/artifacts/T1_certificacion_acumulada_829d91ee_2026-09-30.log):**
+  - Baseline roundtrip limpio (changed_slots=[]).
+  - El motor del fixture OPERA: aperturas/cierres a TP ~0.65% con ramas 15 y
+    apilado en slots — el embudo no está muerto bajo las seis puertas nuevas.
+  - Acoplamientos declarados en genes 140-143 (sl curve ± otros): probes
+    changed_slots multi-slot, contrato GO intacto.
+
+**ALCANCE Y PENDIENTE:** esta certificación cubre 829d91ee = mis 8 olas
+(#586..#593 + telemetría). NO cubre las Olas 3-6 de Antigravity (a7f0742c+:
+vorticidad Hodge en correlation_guard, squeeze simétrico, Hurst continuo, 
+dominant_tau operativo, inmunidad IEEE-754 del campo espectral, mapeo armónico
+τ) — tocan vetos y pesos espectrales ⇒ REQUIEREN SU PROPIA CORRIDA T-1. Y #594
+(tau por habilidad, cuando aterrice) será el siguiente en la cadena.
+
+**Conclusión de consejo:** la cadena de cambios de pipeline vivo queda
+CERTIFICADA con el trinquete intacto y sensibilidad EN AUMENTO (+33% de genes
+activos): la evolución tiene MÁS gradientes reales que antes de las olas.

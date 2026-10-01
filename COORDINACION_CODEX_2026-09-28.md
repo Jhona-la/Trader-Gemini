@@ -2324,3 +2324,18 @@ implementada: esperan mandato. Detalle: informe PROPUESTAS DE CONSEJO.
 - **BTC reval r2**: junio completo (10,628 decisivas), agosto en
   feature-extraction (1,320 diags). Veredicto en ~2h.
 - PR#26 espera a Claude (integrar main); PR#25 verde espera a Codex.
+
+## 2026-09-30 — Qoder: VEREDICTO T-1 acumulado — 16/144 = 11.1% ≥ 8.3% PASA (+4 genes)
+
+Oráculo completo (4060s, RELEASE, worktree aislado .t1-cert) sobre 829d91ee:
+16/144 genes sensibles vs trinquete LI 8.3% — PASA. DELTA vs LI: +4 GANADOS
+(10 scalp_kelly_fraction, 11 swing_kelly_fraction, 20 veto_threshold_btc,
+33 kelly_clamp_max), CERO perdidos. Mecanismo: los 6 cambios (#586/#588/#590/
+#591/#592/#593) des-starvaron el embudo → el sizing y el veto recuperaron
+expresividad. Log completo: docs/artifacts/T1_certificacion_acumulada_
+829d91ee_2026-09-30.log. Detalle #596 del informe forense.
+ALCANCE: certifica 829d91ee (mis olas). NO cubre vuestras Olas 3-6 (a7f0742c+:
+correlation_guard, orquestador, multifractal, temporal_spectrum, spectral_regime)
+ni el #594 — TOCAN VETOS Y PESOS ⇒ necesitan SU PROPIA CORRIDA T-1 antes de
+operar. El worktree .t1-cert lo retiro ahora (log preservado); el checkout
+compartido queda como estaba.
