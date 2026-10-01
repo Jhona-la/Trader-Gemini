@@ -123,6 +123,18 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         deuda: None,
     },
     EntradaVeto {
+        id: "V-RISK-006",
+        nombre: "tope Lundberg del grupo (#602, Ola 24)",
+        causa: "el tope de ruina del grupo misma-apuesta se APRIETA con la cota actuarial ψ(m) ≤ e^{−R·m} cuando existe R medido por moneda: tope_efectivo = min(tope_streak, ln(1/ε)/R)",
+        fuente_umbral: "medido (R del estimador #600 sobre cierres netos por moneda; ε = 0.05 es POLÍTICA del dueño — ψ ≤ 5%, la convención del lundberg_margen_5pct publicado)",
+        datos: "c{id}:lundberg_r_nocional (registro, escrito por el core en cada cierre) + riesgo real del grupo same-bet al stop + ρ_PnL medida (D-748); telemetría qo_602_veto_lundberg",
+        responsable: "Qoder Ola 24 (#602), 2026-10-01; gate por Antigravity Ola 9",
+        clase: ClaseVeto::RiesgoDuro,
+        estado: EstadoVeto::Activo,
+        test: Some("ola9_veto_por_riesgo_cramer_lundberg_bounds"),
+        deuda: Some("contrato de call-site (claves ausentes ⇒ bit a bit el veto anterior) en correlation_admission_contract; el cableado exige oráculo T-1 antes del merge por margen cero 11.1/11.0"),
+    },
+    EntradaVeto {
         id: "V-LOGIC-001",
         nombre: "viabilidad (D-755)",
         causa: "σ(τ)−fricción no supera el spread: la geometría es inviable físicamente",

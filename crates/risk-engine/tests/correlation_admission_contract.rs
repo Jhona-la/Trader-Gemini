@@ -544,3 +544,46 @@ fn agy_aud_p06_contagion_amplification_in_dependency_exposure() {
     let e = dependency_exposure(&arena, 0, true, 0.5).unwrap();
     assert_eq!(e.same_bet_positions, 1);
 }
+
+/// #602 (Ola 24) — el call-site del veto de grupo consume el slot POR
+/// MONEDA del estimador Cramér-Lundberg (`c{id}:lundberg_r_nocional`,
+/// escrito por el core en cada cierre) con ε = 0.05 de política, y deja
+/// el tope_streak INTACTO cuando la clave está ausente (arranque frío:
+/// la cota no significa nada sin edge medido, D-754). Contable vía
+/// `qo_602_veto_lundberg`.
+#[test]
+fn qo_602_el_veto_de_grupo_consume_la_cota_lundberg_del_registro() {
+    let src: String = include_str!("../src/lib.rs").split_whitespace().collect();
+    // Fuente única: el R viene del slot de moneda del publicador (#600)…
+    assert!(
+        src.contains("get_for_coin_or(coin_id,\"lundberg_r_nocional\",0.0)"),
+        "el R debe leerse del slot de moneda que publica el estimador"
+    );
+    // …con arranque frío honesto (ausente/≤0 ⇒ None ⇒ tope intacto)…
+    assert!(
+        src.contains("(r_raw.is_finite()&&r_raw>0.0).then_some(r_raw)"),
+        "sin R medido no hay apriete — bit a bit el veto anterior"
+    );
+    // …el gate es el de la cota (no el plano)…
+    assert!(
+        src.contains("veto_por_riesgo_cramer_lundberg("),
+        "el call-site debe usar la variante con cota actuarial"
+    );
+    // …ε de política 0.05 (ψ ≤ 5%, convención del margen_5pct)…
+    assert!(
+        src.contains("r_lundberg,\n0.05,") || src.contains("r_lundberg,0.05,"),
+        "ε = 0.05 de política en el call-site"
+    );
+    // …y contable sólo con cota disponible.
+    assert!(
+        src.contains("qo_602_veto_lundberg"),
+        "los rechazos con cota activa deben ser contables para el consejo"
+    );
+    // El propio gate (Antigravity Ola 9) aprieta con margen_de_cota y cae
+    // al tope_streak sin R — verificado por su suite:
+    //   ola9_veto_por_riesgo_cramer_lundberg_bounds (risk-engine --lib).
+    let gate: String =
+        include_str!("../src/correlation_guard.rs").split_whitespace().collect();
+    assert!(gate.contains("margen_de_cota(r,epsilon)"));
+    assert!(gate.contains("_=>tope_streak,"));
+}

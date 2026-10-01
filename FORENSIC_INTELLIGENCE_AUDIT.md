@@ -13202,3 +13202,25 @@ activos): la evolución tiene MÁS gradientes reales que antes de las olas.
 - #600/#601 (Ola 23) quedan FUERA de esta certificación (observacionales,
   sin consumidores de política — cero impacto esperado y verificado por
   diseño).
+
+## #602 — Ola 24 (Qoder, 2026-10-01): el veto de grupo consume la cota de Lundberg (fin del arco #600)
+
+- **Qué**: el gate `veto_por_riesgo_cramer_lundberg` (Antigravity Ola 9)
+  tenía CERO callers — definido y probado pero muerto (la enfermedad que el
+  censo #596 documenta). Cableado en el ÚNICO call-site de la familia
+  (risk-engine/lib.rs, admisión de orden): el tope del grupo misma-apuesta
+  se APRIETA con `tope_efectivo = min(tope_streak, ln(1/ε)/R)`.
+- **Fuente única de R**: `c{id}:lundberg_r_nocional` — el slot que publica
+  el estimador #600 en cada cierre. Ausente/≤0 → None → tope_streak intacto
+  (bit a bit el comportamiento anterior; arranque frío D-754). ε = 0.05 es
+  POLÍTICA del dueño (ψ ≤ 5%, convención del `lundberg_margen_5pct`).
+- **Contable**: `qo_602_veto_lundberg` por moneda — rechazos con cota
+  disponible (paridad por construcción, patrón #586).
+- **Registro**: entrada V-RISK-006 (RiesgoDuro, activa) en el MISMO commit
+  (regla #596); deuda anotada: el cableado exige oráculo antes del merge
+  por margen cero 11.1/11.0.
+- **Tests**: contrato de call-site qo_602 (fuente única + arranque frío +
+  gate con cota + ε + contable) + suite Ola 9 del gate. risk-engine 115/115,
+  contratos 27/27, workspace 0 errores.
+- **T-1**: cambio de PIPELINE VIVO (veto activo cuando hay R) — oráculo
+  sobre el árbol candidato ANTES del merge (disciplina de margen cero).

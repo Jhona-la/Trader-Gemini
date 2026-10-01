@@ -585,11 +585,35 @@ impl RiskEngine {
         };
         let mut riesgos = dependence.same_bet_riesgos_hibridos(tope / 8.0);
         riesgos.push(riesgo_candidata);
-        if correlation_guard::veto_por_riesgo_real_medido(
+        // #602 (Ola 24): el tope del grupo se APRIETA con la cota actuarial
+        // de Cramér-Lundberg cuando existe R medido para esta moneda
+        // (`c{id}:lundberg_r_nocional`, publicado por el estimador #600 en
+        // cada cierre). Clave ausente o R ≤ 0 → None → tope_streak intacto
+        // (bit a bit el comportamiento anterior: disciplina de arranque
+        // frío D-754 — la cota no significa nada sin edge medido).
+        // ε = 0.05 es POLÍTICA del dueño (ψ(m) ≤ 5%, la misma convención
+        // del `lundberg_margen_5pct` que publica el estimador).
+        let r_raw = arena
+            .registry
+            .get_for_coin_or(coin_id, "lundberg_r_nocional", 0.0);
+        let r_lundberg = (r_raw.is_finite() && r_raw > 0.0).then_some(r_raw);
+        if correlation_guard::veto_por_riesgo_cramer_lundberg(
             &riesgos,
             dependence.same_bet_rho_efectivo(),
             tope,
+            r_lundberg,
+            0.05,
         ) {
+            // Contable para el consejo: el veto disparó CON la cota
+            // disponible (la misma función pura decide — paridad #586).
+            if r_lundberg.is_some() {
+                let previo = arena
+                    .registry
+                    .get_for_coin_or(coin_id, "qo_602_veto_lundberg", 0.0);
+                arena
+                    .registry
+                    .set_for_coin(coin_id, "qo_602_veto_lundberg", previo + 1.0);
+            }
             return rej(2);
         }
 
