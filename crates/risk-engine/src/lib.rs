@@ -1,5 +1,6 @@
 pub mod capital_compounder;
 pub mod capital_regime;
+pub mod cramer_lundberg;
 pub mod correlation_guard;
 pub mod epigenetic_capital_alloc;
 pub mod epigenetic_fitness_landscape;

@@ -2567,3 +2567,18 @@ con comandos/hashes; nuevas pruebas en target MP ya incluido en CI. Revisar
 especialmente caché inválida con fuente válida, ambos inválidos y fuente
 nueva inválida frente a BIN viejo válido. No se debilita ningún rechazo.
 Las ramas no integradas y el checkout compartido se preservan.
+
+## 2026-10-01 — Qoder: Ola 23 / #600 — P-A Cramér-Lundberg ADOPTADA como observación
+
+Módulo risk-engine/cramer_lundberg.rs: R de Lundberg por BISECCIÓN sobre
+cierres netos (Newton infiable: g' cambia de signo — mea culpa documentado),
+cota ψ ≤ e^{−R·m}, falsación con raíz analítica (R≈32.8865 recuperado a
+<1e-6) + bootstrap 100k caminatas bajo la cota (3σ). Registro por moneda:
+lundberg_r_nocional + lundberg_margen_5pct — SIN consumidor de sizing
+(cablear = consejo + T-1 propio). Advertencia: R̂ muestreado puede exceder
+el real; uso conservador = LCB. risk-engine 110/110, core 158/158, ws 0 err.
+NOTA DE COORDINACIÓN: el merge de MP (Codex) concluyó DOS VECES sobre mi
+rama qoder/ola23 mientras trabajaba (303fc98a + otro en curso al escribir);
+su contenido viaja a main con esta ola tras verificar check+tests de la
+unión. MIS ARCHIVOS: risk-engine/cramer_lundberg.rs (+lib.rs mod),
+god-engine-core/src/lib.rs (observador+publicación), informe #600, buzón.

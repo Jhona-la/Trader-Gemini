@@ -13149,3 +13149,32 @@ activos): la evolución tiene MÁS gradientes reales que antes de las olas.
   actualizado a IC significativos. Arena 96/96, core 158/158, workspace 0 err.
 - **T-1**: 9º cambio acumulado (la selección de τ* puede caer al respaldo
   antes de lo que caía).
+
+## #600 — Ola 23 (Qoder, 2026-10-01): P-A ADOPTADA como observación — Cramér–Lundberg sobre siniestros medidos
+
+- **Qué**: el tope de ruina vigente (streak-bound) modela rachas Bernoulli
+  sin memoria de magnitud. Nuevo módulo `risk-engine/cramer_lundberg.rs`:
+  coeficiente de ajuste R de Lundberg estimado sobre el anillo de cierres
+  netos (256, retorno neto por NOCIONAL — independiente del sizing;
+  R_capital(f) = R_nocional/f), cota ψ(m) ≤ e^{−R·m}, margen log mínimo
+  m = ln(1/ε)/R.
+- **Solver**: BISECCIÓN sobre g(R) = (1/n)Σ e^{−R·y_i} − 1 (g convexa, raíz
+  única positiva en (1e-9, 100] con deriva). Mea culpa documentado: Newton
+  desde heavy-traffic era INFIABLE aquí — g' cambia de signo y el arranque
+  caía en zona de g' > 0. Sin deriva positiva → None (la cota no significa
+  nada sin edge medido, Fisher/D-754).
+- **Falsación**: (i) raíz analítica exacta de la distribución a dos puntos
+  (0.5e^{−0.015R}+0.5e^{0.01R}=1 ⇒ R≈32.8865; el estimador la recupera a
+  <1e-6 — el closure mal escalado del test (1.5 vs 0.015) dio la falsa
+  "violación" 69.31=ln2/0.01); (ii) bootstrap MC 100k caminatas × 400
+  trades: la frecuencia de mínimos queda bajo la cota (con tolerancia 3σ —
+  el teorema no puede violarse, la ESTIMACIÓN MC sí por ruido); (iii) sin
+  deriva o <30 cierres → None.
+- **Publicación**: `lundberg_r_nocional` + `lundberg_margen_5pct` al registro
+  por moneda desde el sitio de cierre (junto a pnl_epigenetico). OBSERVACIÓN
+  pura — cablear el sizing con la cota es decisión del consejo con T-1 propio.
+- **Advertencia de estimación**: R̂ de una muestra puede exceder el R real
+  (violando la cota) — el uso conservador exige descontar R̂ (LCB); el test
+  usa la distribución EXACTA para verificar el teorema.
+- Verificación: risk-engine 110/110 (3 contratos qo_600), core 158/158,
+  workspace 0 errores. T-1: CERO impacto (sin consumidores de política).
