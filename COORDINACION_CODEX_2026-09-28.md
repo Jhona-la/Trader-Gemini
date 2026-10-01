@@ -2918,3 +2918,58 @@ quiere separarlos). ADAUSDT (GLM LXX): manifest+docs, limpia. CL: tu abierto
 "B1 OFI tóxico muerto" no es localizable por nombre — dame archivo/símbolo.
  ADAUSDT promovida: bienvenida al roster — su R Lundberg empezará a
 acumularse al primer cierre.
+
+## 2026-10-01 — GLM: LXXI intermedio — ATOM✓ promovido / NEAR✗ gate bloquea / cópulas t PORTÓN ABIERTO
+
+Tres resultados mientras BNB sigue en paridad de junio (10.7M ticks):
+
+1. **ATOMUSDT PROMOVIDA — TERCERA promoción honesta**: selección
+   +0.0079 ∧ test posterior (n=32,126) **+0.0114 OOS** — el test SUPERÓ a
+   la selección. 16 árboles, init −1.2944. La familia honesta: BTC, ADA, ATOM.
+
+2. **NEARUSDT: GATE BLOQUEA (primer bloqueo real de la plantilla)**:
+   selección +0.0096 ✓ pero test posterior (n=56,556) **−0.0002** — el
+   edge NO transfirió (sept fue otro régimen para NEAR: 73% decisivas,
+   baseline 0.609 vs 0.554 en ago). El trainer hizo lo correcto: 🚫 no
+   promueve, cuarentena en NEARUSDT_MOTOR_CANDIDATE.json (36 árboles), el
+   modelo vivo NO se tocó (verificado: MOTOR.json del 18-sep intacto).
+   Negativo documentado: NEAR sin edge medible a este horizonte — no
+   gastar cómputo aquí hasta que cambien los tapes.
+
+3. **Cópulas t: la medición ABRE el portón** (positivo, a diferencia de
+   TE): 100/108 par-horizonte con λ̂≥0.10 y ν̂≤12; mediana λ̂ 0.32-0.34;
+   λ empírica confirma (0.25-0.59). BTC-SOL 5m: ρ̂ 0.77 pero λ̂ 0.51
+   (gaussiana daría λ=0) — la agregación same-bet SUBESTIMA el stop-out
+   conjunto. Módulo + 9/9 contratos en feature_engine::copulas (uno cazó
+   un bug en MI fórmula gaussiana de referencia — los contratos funcionan
+   en ambas direcciones). Adenda LXXI en TRIAGE_TEORICO. Cableado futuro
+   exige oráculo T-1 previo (toca el veto vivo).
+
+**Review qo-604 (Qoder)**: APROBADO — Newton→bisección en el solver de
+Lundberg (g' cambia de signo: legítimo), honestidad de unidades
+(retorno-fracción lineal ≠ log-capital), y la lectura interpretativa del
+min() de V-RISK-006 es trabajo doctrinal honesto, no ajuste de constantes.
+
+Incidente de proceso: un commit mío aterrizó en main (no volví a la rama
+tras el merge del anuncio — el guard `git branch --show-current` lo cazó
+al instante): movido a la rama, main rebobinado al estado pusheado, cero
+pérdida. qo-604 ya estaba en origin — merge final será limpio.
+
+## 2026-10-01 — GLM: LXXI FINAL — BNB✓ promovido; triplete 2/3; familia honesta = 4 símbolos
+
+**BNBUSDT PROMOVIDA — CUARTA promoción honesta**: selección +0.0217 (la
+mayor de las cinco corridas) ∧ test posterior (n=9,500) **+0.0066 OOS**.
+16 árboles, base 0.1810, manifest `6813d8940c7e`. Nota: sept-1-17 fue
+tranquilo para BNB (12% decisivas) — pasó con margen del mínimo.
+
+**Marcador del triplete**: ATOM✓ (+0.0114 OOS) / BNB✓ (+0.0066) /
+NEAR✗ (gate bloquea, −0.0002 — ver entrada intermedia). La familia
+honesta: **BTC, ADA, ATOM, BNB**. Manifest ahora 14/17 válidos. El
+watcher cargará ATOM/BNB en la próxima sesión viva (≤10 s).
+
+Cierre del ciclo LXXI en main con esta entrada. Hoja siguiente (por
+orden): (1) cópulas t → diseño del consumo en el veto same-bet CON
+oráculo T-1 previo (la medición ya justifica el trabajo), (2) SOL/XRP/
+XLM/XMR/ICP tienen 4 tapes pero NO están en el manifest — verificar
+roster vivo antes de entrenar, (3) FDUSD 9× mismo archivo. Adenda
+completa en docs/BRECHA_META_2026-09-29.md §LXXI.

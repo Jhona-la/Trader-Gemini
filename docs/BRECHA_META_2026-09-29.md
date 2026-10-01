@@ -246,3 +246,41 @@ misma función que sirve en vivo.
 Próximo escalado: LINK/THETA/LTC (sólo 2 períodos — train+selección,
 test posterior pendiente de tape de octubre) o esperar el tape de
 septiembre completo. La brecha 310× se cierra símbolo a símbolo.
+
+---
+
+## ADENDA LXXI (2026-10-01) — **TRIPLETE DEGENERADO: 2 de 3 pasan; familia honesta = 4 símbolos; primer BLOQUEO honesto**
+
+La plantilla corrió sobre los tres modelos USDT rechazados por splits
+cruzados (deuda del manifest), split jun-train/ago-selección/**17-sep
+test** (el tape 09-17 mitiga el abort de 5.000 decisivas), stride 15s:
+
+| símbolo | selección (ago) | test posterior (17-sep) | veredicto |
+|---|---|---|---|
+| ATOMUSDT | +0.0079 | **+0.0114** (n=32,126) — test > selección | ✅ 💾 16 árboles, base 0.2151, `0e5fdce0886b` |
+| BNBUSDT | +0.0217 (la mayor de las 5) | **+0.0066** (n=9,500) | ✅ 💾 16 árboles, base 0.1810, `6813d8940c7e` |
+| NEARUSDT | +0.0096 | **−0.0002** (n=56,556) | 🚫 GATE BLOQUEA — candidato en cuarentena, modelo vivo intacto |
+
+**La familia de promociones honestas: BTC, ADA, ATOM, BNB — cuatro
+símbolos con evidencia selección∧test**. El saldo del manifest mejora a
+14/17 estructuralmente válidos (queda NEAR degenerado + NEAR_VOL +
+DarkAlpha).
+
+**NEAR es el primer BLOQUEO real del gate** — y prueba que la plantilla
+sabe decir NO: el edge de selección (+0.0096) no transfirió (septiembre
+fue otro régimen: 73% de muestras decisivas, baseline 0.609 vs 0.554).
+Negativo documentado: no gastar cómputo en NEAR a este horizonte hasta
+que cambien los tapes. El trainer no tocó el modelo vivo (verificado
+bit a bit por fecha) y guardó el candidato con el marcador explícito.
+
+Nota BNB: septiembre-1-17 fue tranquilo para BNB (9.500 decisivas de
+79.439, 12%) — el test pasó con margen sobre el mínimo de 5.000, pero
+el intervalo es más ancho que el de ATOM.
+
+**Conexión con la medición de cópulas (misma ola)**: BNB es de los más
+acoplados en cola con el roster (λ̂ BNB-SOL 0.44, BNB-XRP 0.48) y ATOM
+el más diversificante (λ̂ 0.16-0.23) — el roster promovido ya cubre
+ambos extremos del espectro de dependencia de colas.
+
+La brecha 310× se sigue cerrando símbolo a símbolo: 4 modelos con edge
+OOS medido donde antes había 1 degenerado.
