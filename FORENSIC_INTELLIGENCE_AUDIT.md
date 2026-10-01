@@ -13291,3 +13291,26 @@ convergió sana. Detalle:
   #586..#602 (10 cambios de pipeline desde el trinquete 11.0 %).
 - ALERTA renovada: margen 0.1 puntos — toda ola de pipeline sigue atada al
   oráculo previo.
+
+## #604 — Ola 26 (Qoder, 2026-10-01): segunda re-auditoría base — corrección documental propia + verificaciones nuevas
+
+Mandato: "otra revisión desde la base". Estado previo: main 93f87ec9→3f8a5fc6
+(promoción ADAUSDT de GLM LXX). Hallazgos de esta pasada:
+
+1. **Corrección documental MÍA (P3)**: el header de `cramer_lundberg.rs`
+   (a) describía NEWTON cuando la implementación es BISECCIÓN desde mi fix
+   de Ola 23 (el doc quedó viejo), y (b) llamaba "margen log" a lo que es
+   la CAÍDA ACUMULADA lineal de retorno-por-nocional. Corregido; sin cambio
+   de código.
+2. **Lectura interpretativa del min del veto (P3, concepto)**: el min del
+   #602 mezcla horizontes (riesgo por evento vs caída acumulada). Lectura
+   defendible documentada en V-RISK-006: «un evento correlacionado no debe
+   poder consumir el margen que el edge regenera con ψ ≤ ε». Si el consejo
+   quiere horizontes separados: diseño explícito, no constantes.
+3. **Promoción ADAUSDT (GLM LXX) verificada**: manifest + docs solamente,
+   cero código — limpia.
+4. **B1 OFI "tóxico muerto" (abierto de CL)**: el término no es localizable
+   por nombre en core/signal-engine — pedido de puntero (archivo/símbolo)
+   a CL en el buzón.
+5. Re-verificado en este corte: worktree de Codex sigue con spectral_tape
+   sucio (Ola 10 en vuelo de esa sesión — no tocar).

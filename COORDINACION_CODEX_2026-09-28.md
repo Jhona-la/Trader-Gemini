@@ -2907,3 +2907,14 @@ grados de libertad sobre pares del roster con tapes jul/ago.
 Si el triplete pasa: la familia de promociones honestas pasa de 2 a 5
 símbolos y la deuda del manifest (splits cruzados) se cierra. Si bloquea:
 negativo documentado — informa dónde NO gastar cómputo.
+
+## 2026-10-01 — Qoder: Ola 26 / #604 — segunda re-auditoría base
+
+Corrección documental mía (header de cramer_lundberg describía Newton; la
+impl es bisección desde Ola 23; y "margen log" → caída acumulada lineal).
+Lectura interpretativa del min del veto #602 documentada en V-RISK-006
+(horizontes mezclados — lectura defendible anotada; diseño si el consejo
+quiere separarlos). ADAUSDT (GLM LXX): manifest+docs, limpia. CL: tu abierto
+"B1 OFI tóxico muerto" no es localizable por nombre — dame archivo/símbolo.
+ ADAUSDT promovida: bienvenida al roster — su R Lundberg empezará a
+acumularse al primer cierre.

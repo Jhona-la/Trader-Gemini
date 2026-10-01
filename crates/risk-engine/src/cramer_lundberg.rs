@@ -9,8 +9,9 @@
 //! El modelo actuarial clásico (Cramér 1930, Lundberg 1926) usa la
 //! distribución completa de siniestros: si los retornos netos por trade
 //! y_i tienen deriva positiva, existe R > 0 (coeficiente de ajuste) que
-//! resuelve E[e^{−R·y}] = 1 y la probabilidad de que el capital caiga un
-//! margen log m antes de recuperarse cumple la cota
+//! resuelve E[e^{−R·y}] = 1 y la probabilidad de que la SUMA ACUMULADA
+//! S_n = Σy_i (retorno-fracción lineal, NO log-capital) caiga por debajo
+//! de −m antes de recuperarse cumple la cota
 //!
 //!   ψ(m) ≤ e^{−R·m}.
 //!
@@ -27,12 +28,13 @@
 //! - `observar(y)`: y = retorno neto por trade (fracción del nocional),
 //!   anillo de 256 cierres (≈ media robusta de régimen corto).
 //! - `lundberg()`: raíz positiva de g(R) = (1/n)Σ e^{−R·y_i} − 1 por
-//!   Newton acotado en (1e-9, 100]; g(0)=0 es la raíz trivial — se parte
-//!   de la aproximación heavy-traffic R₀ = 2·media/var y se exige
-//!   convergencia con |g| ≤ 1e-12 en ≤ 60 pasos. Sin deriva o sin
-//!   convergencia → `None`.
-//! - `margen_de_cota(r, epsilon)`: margen log mínimo m tal que la cota
-//!   promete ψ ≤ epsilon: m = ln(1/ε)/R (monótona en ambos argumentos).
+//!   BISECCIÓN en (1e-9, 100] (Newton es infiable aquí: g' cambia de
+//!   signo y crece a través de la raíz — ver comentario del método);
+//!   g(0)=0 es la raíz trivial. Sin deriva, sin cruce en el rango o
+//!   muestra < 30 cierres → `None`.
+//! - `margen_de_cota(r, epsilon)`: caída acumulada mínima m (en unidades
+//!   de retorno-fracción) tal que la cota promete ψ ≤ epsilon:
+//!   m = ln(1/ε)/R (monótona en ambos argumentos).
 //! - Falsación: bootstrap MC (semilla fija) verifica que la frecuencia
 //!   empírica de mínimos de capital queda BAJO la cota; distribución a
 //!   dos puntos con raíz analítica conocida verifica el solver.
