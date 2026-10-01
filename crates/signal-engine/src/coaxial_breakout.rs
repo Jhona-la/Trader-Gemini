@@ -129,12 +129,12 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
         let atr_5s = r
             .get_scoped_parameter(sym_opt, cid_opt, "atr_5s", "CoaxialBreakoutEngine")
             .map(|p| p.get_value())
-            .unwrap_or_else(|| atr_1s * 1.5);
+            .unwrap_or_else(|| atr_1s * 2.2360679775_f64);
 
         let atr_1m = r
             .get_scoped_parameter(sym_opt, cid_opt, "atr_1m", "CoaxialBreakoutEngine")
             .map(|p| p.get_value())
-            .unwrap_or_else(|| atr_1s * 3.0);
+            .unwrap_or_else(|| atr_1s * 7.7459666924_f64);
 
         // FIX #682: Sanitizar lecturas de ATR
         let safe_1s = if atr_1s.is_finite() && atr_1s > 0.0 {
@@ -200,7 +200,8 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
             return 0.0;
         }
         let squeeze = (comp_1s * comp_5s * 4.0).tanh();
-        safe_dir.signum() * squeeze
+        let dir_weight = (safe_dir / 1e-4).tanh();
+        dir_weight * squeeze
     }
 }
 

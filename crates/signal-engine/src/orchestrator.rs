@@ -359,13 +359,10 @@ impl TensorVoteOrchestrator {
         // del router, que la compara contra una fracción de precio.
         // `max_volatility` queda como valor de colas (clamp acotado) sólo si
         // el ATR no está disponible.
-        let coin_atr_key = format!("{}_atr_pct", symbol);
-        let atr_pct = self.arena.registry.get_value_or(&coin_atr_key, f64::NAN);
-        let atr_pct = if atr_pct.is_finite() && atr_pct > 0.0 {
-            atr_pct
-        } else {
-            self.arena.registry.get_value_or("atr_pct", f64::NAN)
-        };
+        let atr_pct = self
+            .arena
+            .registry
+            .get_scoped_value_or(symbol, "atr_pct", f64::NAN);
         let expected_volatility = if atr_pct.is_finite() && atr_pct > 0.0 {
             atr_pct
         } else if max_volatility.is_finite() {
@@ -381,7 +378,7 @@ impl TensorVoteOrchestrator {
         let min_conf_gene = self
             .arena
             .registry
-            .get_value_or(&format!("{}_min_confidence", symbol), base_min_conf);
+            .get_scoped_value_or(symbol, "min_confidence", base_min_conf);
         // MOD2/7-012: ×1.0 (no ×2) y techo 0.45: mayoría simple, no
         // supermayoría. Con min_conf 0.70 ⇒ cutoff 0.20 en vez de 0.40.
         let cutoff_floor = ((min_conf_gene - 0.50) * 1.0).clamp(0.0, 0.45);

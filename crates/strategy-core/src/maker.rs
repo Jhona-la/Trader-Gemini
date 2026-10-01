@@ -109,14 +109,17 @@ impl MakerEngine {
 
         // Skews
         // Si OBI > threshold (gran presión compradora), subimos los precios asimétricamente
-        // Usamos tensor_poly_a * 0.01 para representar el sesgo (ej: 0.01 a 0.2% dictado por ML) en vez de "0.0002"
-        let mut obi_skew = 0.0;
+        // Skews
+        // Si OBI excede el umbral de equilibrio, modulamos continuamente los precios asimétricamente.
+        // Erradica el salto escalón discontinuo que cambiaba bruscamente de 0 a dynamic_obi_skew.
         let dynamic_obi_skew = mid * (safe_poly_a * 0.01);
-        if obi > safe_obi_th {
-            obi_skew = dynamic_obi_skew;
-        } else if obi < -safe_obi_th {
-            obi_skew = -dynamic_obi_skew;
-        }
+        let obi_excess = (obi.abs() - safe_obi_th).max(0.0);
+        let obi_scale = if safe_obi_th < 1.0 {
+            (obi_excess / (1.0 - safe_obi_th).max(1e-4)).min(1.0)
+        } else {
+            0.0
+        };
+        let obi_skew = obi.signum() * dynamic_obi_skew * obi_scale;
 
         // Si inventory > 0 (estamos Long), bajamos los precios para salir rápido y evitar acumular
         // Normalizamos el inventario en USD de forma adimensional para evitar distorsión cuadrática en BTC vs Altcoins
