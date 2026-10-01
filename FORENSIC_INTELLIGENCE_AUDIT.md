@@ -12920,3 +12920,43 @@ re-certificación (#586/#588/#590/#591/#592/#593).
 **Verificación:** contrato nuevo (el caso exacto del hueco, 30 s vs 60 s ⇒
 |Δlnτ| = ln 2 ≈ 0.693: same-direction YA NO co-despacha; el MISMO par opuesto SÍ).
 Core 157/157, check workspace --all-targets OK.
+
+---
+
+## #594 — Ola 20 (Qoder, 2026-09-30): τ dominante por HABILIDAD prequential medida
+
+- **Defecto** (abierto por CL, ciclo 6): `dominant_tau_ms` = argmax de energía
+  |w·s| en banda [30 s,12 h] (C-05/AGY-AUD-P10). La energía mide AMPLITUD, no
+  información: la escala resuelta más nerviosa ganaba el argmax y τ* se
+  degradaba a 30 s aunque su señal no predijera nada.
+- **Física**: cada escala acumula IC prequential
+  `E[s·r]/√(E[s²]·E[r²])` con olvido 1/64, donde s = señal publicada AL ARMAR
+  su bloque de τ (causal: no ve el retorno que la puntúa) y r = retorno
+  realizado del bloque que cierra. Madurez: 30 bloques (`MUESTRAS_SKILL_MADURAS`).
+- **Criterio**: τ* = escala observable de banda con IC > 0 máximo; sin
+  evidencia madura, respaldo argmax de energía (comportamiento anterior
+  intacto bit a bit). `state_at` interpolado: sin habilidad (un nodo no es
+  una escala de malla con bloques).
+- **Telemetría**: `coin.tau_habilidad` (IC de la escala elegida; > 0 = elegida
+  por habilidad; ≤ 0/0 = respaldo o sin evidencia) publicado junto a
+  dominant_tau_ms (sitio D-745) — contable para el consejo.
+- **Tests**: 3 contratos (madurez; habilidad gana a energía; respaldo conserva
+  y publica el IC de su escala). Arena 93/93, core 157/157, workspace check
+  MARKER:0 (warnings preexistentes).
+- **T-1**: τ* alimenta σ(τ) (D-754), kelly_at_tau, banda operable (#586),
+  proyección espectral (#591) y ancla de régimen (#592) — SUMAR a la
+  re-certificación acumulada (7º cambio de pipeline vivo).
+
+## #595 — Ola 20 (Qoder, 2026-09-30): la adopción hereda la edad del exchange
+
+- **Defecto** (abierto por CL): ambas rutas de adopción — `reconcile_arena`
+  y host FASE 5 — pasaban `now_ms` como `entry_time_ms`: una posición del
+  exchange con horas de vida nacía con edad 0 y el trailing, los gates de
+  edad y la evidencia de aprendizaje la trataban como recién nacida.
+- **Fix**: `updateTime` del exchange (cota inferior honesta de edad) con
+  guardia 0/desconocido/futuro → `now`. `reconciliation.rs`
+  (`remote_update_time`) + `god_engine.rs` FASE 5 (`pos.update_time`).
+- **Test**: `qo_595_la_adopcion_guarda_la_edad_del_exchange_no_la_del_arranque`
+  (pasaje del reloj + contratos de fuente en ambas rutas, estilo CL-16).
+- **T-1**: nulo en fixture (sin adopción); vivo sólo en arranques con
+  posición remota. No toca sizing ni gates.
