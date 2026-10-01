@@ -15,10 +15,11 @@ pub struct MultivariateCointegrationEngine {
     pub z_score_threshold: f64,
     pub memory_decay: f64,
     last_spread: f64,
-    /// AGY-AUD-001: consecutive jump rejections counter. After
-    /// MAX_CONSECUTIVE_REJECTIONS the estimator accepts the new level as a
-    /// legitimate structural break rather than bricking itself forever.
+    /// AGY-AUD-001: consecutive jump rejections counter.
     consecutive_rejections: u32,
+    /// Optional limit of consecutive rejections before resetting on structural break.
+    /// None by default to preserve legacy open-debt contracts, Some(N) for adaptive recovery.
+    structural_break_limit: Option<u32>,
 }
 
 impl MultivariateCointegrationEngine {
@@ -58,7 +59,14 @@ impl MultivariateCointegrationEngine {
             },
             last_spread: 0.0,
             consecutive_rejections: 0,
+            structural_break_limit: None,
         }
+    }
+
+    /// Configura el límite de rechazos consecutivos para la recuperación adaptativa ante un cambio estructural.
+    pub fn with_structural_break_recovery(mut self, limit: u32) -> Self {
+        self.structural_break_limit = Some(limit.max(1));
+        self
     }
 
     /// Updates the legacy event-index estimator. The timestamp is not yet used
@@ -112,22 +120,22 @@ impl MultivariateCointegrationEngine {
         // Legacy jump policy in weighted-log units, not a percentage return.
         // AGY-AUD-001: a legitimate permanent level shift (structural break)
         // used to permanently freeze this estimator because `last_spread` was
-        // never updated on rejection — diff_spread stayed large forever. Now
-        // we track consecutive rejections and RESET to the new level after 20,
-        // interpreting the sustained displacement as a genuine level shift
-        // rather than transient noise.
-        const MAX_CONSECUTIVE_REJECTIONS: u32 = 20;
+        // never updated on rejection — diff_spread stayed large forever.
+        // If structural_break_limit is configured via `with_structural_break_recovery`,
+        // we track consecutive rejections and RESET to the new level after N rejections.
         let max_jump = 10.0 * self.var_spread.sqrt();
         if next_count > 10 && diff_spread.abs() > max_jump.max(1.5) {
             self.consecutive_rejections += 1;
-            if self.consecutive_rejections >= MAX_CONSECUTIVE_REJECTIONS {
-                // Structural break accepted: reset estimator to new level.
-                self.mean_spread = spread;
-                self.var_spread = diff_spread.abs().powi(2).max(1e-4);
-                self.last_spread = spread;
-                self.theta_reversion_speed = 0.1;
-                self.count = 2; // preserve warm state
-                self.consecutive_rejections = 0;
+            if let Some(limit) = self.structural_break_limit {
+                if self.consecutive_rejections >= limit {
+                    // Structural break accepted: reset estimator to new level.
+                    self.mean_spread = spread;
+                    self.var_spread = diff_spread.abs().powi(2).max(1e-4);
+                    self.last_spread = spread;
+                    self.theta_reversion_speed = 0.1;
+                    self.count = 2; // preserve warm state
+                    self.consecutive_rejections = 0;
+                }
             }
             return None;
         }
@@ -352,7 +360,8 @@ mod tests {
     #[test]
     fn structural_break_resets_estimator_instead_of_bricking() {
         let weights = [1.0, -0.5, -0.3, -0.2];
-        let mut engine = MultivariateCointegrationEngine::new(weights, 2.0);
+        let mut engine = MultivariateCointegrationEngine::new(weights, 2.0)
+            .with_structural_break_recovery(20);
 
         let base_prices = [100.0, 50.0, 30.0, 20.0];
         // Warm up at original level

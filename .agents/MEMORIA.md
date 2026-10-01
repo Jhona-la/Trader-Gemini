@@ -1,5 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — Antigravity: Ola 5 / Simetría de Extensión de TP en Momentum Booster, Recuperación Adaptativa en Cointegración y Blindaje de Simulación
+
+- Flujo coordinado: rama `antigravity/ola5-momentum-y-recuperacion-adaptativa` → verificación unitaria, contratos y workspace → merge a main → limpieza de rama.
+- AGY-AUD-P15 (CRITICAL): `strategy-core/src/momentum_booster.rs`: En `VolatileMomentumBooster::calculate_tp_extension`, la alineación de momentum multiplicaba el exceso de excitación Hawkes por `pos_dir`. Para una posición corta ganadora (`pos_dir = -1.0`), un impulso de Hawkes a favor de la posición resultaba en una alineación negativa (`momentum_alignment < 0`), anulando la extensión de Take-Profit dinámico y forzando salidas prematuras en shorts de alta convicción. Corregido para que si `positive_pnl > 0.0`, el impulso sea favorable a la posición independientemente de la dirección (`alignment_direction = if positive_pnl > 0.0 { 1.0 } else { pos_dir }`), restableciendo simetría total entre Long y Short con test unitario `test_momentum_booster_symmetric_short_expansion`.
+- AGY-AUD-P16 (HIGH): `strategy-core/src/multivariate_coint.rs`: Parametrizada la recuperación adaptativa ante cambios estructurales (structural breaks) mediante el builder configurable `with_structural_break_recovery(limit)`. Por defecto (`None`), preserva 100% la compatibilidad estricta con contratos de regresión de deuda abierta (`tests/basket_state_contract.rs:open_debt_jump_filter_can_freeze_after_a_persistent_level_change`), mientras que habilitado permite al estimador resetear su media y varianza a nuevos niveles de equilibrio sin brickearse de por vida ante saltos reales (`structural_break_resets_estimator_instead_of_bricking`).
+- AGY-AUD-P17 (HIGH): `execution-engine/src/simulator.rs`: Añadido campo `update_time: 0` en las instanciaciones de `ActivePosition` en el simulador de ejecución para garantizar coherencia con el timestamp de exchange introducido en #595, resolviendo el error de compilación `E0063` en `execution-engine` y permitiendo que toda la suite de ejecución pase en verde.
+- Verificación completa: `strategy-core` (35/35 tests OK, incluyendo suite completa de contratos), `execution-engine` (77 unit tests + 11 contract suites OK), `cargo check --workspace --all-targets` limpio con 0 errores.
+
 ## 2026-09-30 — Antigravity: Ola 4 / Parseo Cuántico con Notación Científica, Invarianza de Escala Multiactivo y Confinamiento Cuántico
 
 - Flujo coordinado: rama `antigravity/ola4-paridad-dimensional-y-parseo-cuantico` → verificación unitaria y workspace → merge a main → limpieza de rama.
