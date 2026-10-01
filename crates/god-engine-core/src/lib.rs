@@ -673,6 +673,9 @@ impl Default for W1ChangepointObserver {
 pub struct GodEngineCore {
     pub arena: Arc<GlobalArena>,
     outcome_context: outcome_context::OutcomeContext,
+    /// P-A (Ola 23): estimador Cramér–Lundberg por moneda sobre cierres
+    /// netos (observación al registro; sin consumidor de sizing).
+    lundberg_siniestros: Vec<risk_engine::cramer_lundberg::EstimadorSiniestros>,
     /// Host-owned drift veto: blocks entries, not local defensive exits.
     /// Recovery cannot clear the independent arena/executor kill switches.
     drift_entry_veto: bool,
@@ -951,6 +954,9 @@ impl GodEngineCore {
         Self {
             arena,
             outcome_context,
+            lundberg_siniestros: (0..n_coins)
+                .map(|_| risk_engine::cramer_lundberg::EstimadorSiniestros::new())
+                .collect(),
             drift_entry_veto: false,
             entry_reservations: vec![None; n_coins],
             diag_unverified_close_total: 0,
@@ -2920,6 +2926,28 @@ impl GodEngineCore {
                     // perdedor neto (comisiones medidas ~109 % del PnL bruto).
                     let pnl_epigenetico =
                         retorno_neto_pct(net_trade_pnl, entry * qty).unwrap_or(pnl_pct);
+
+                    // P-A (Ola 23): el cierre alimenta el estimador Cramér–
+                    // Lundberg (retorno neto por nocional). OBSERVACIÓN pura:
+                    // R y el margen de la cota ψ ≤ e^{−R·m} se publican al
+                    // registro por moneda — el consumo de sizing es decisión
+                    // del consejo con T-1 propio. Sin deriva positiva no hay
+                    // R (la cota no significa nada sin edge medido).
+                    if let Some(est) = self.lundberg_siniestros.get_mut(coin_id) {
+                        est.observar(pnl_epigenetico);
+                        if let Some(r) = est.lundberg() {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "lundberg_r_nocional", r);
+                            // Margen log que la cota promete al 5%: ln(20)/R.
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "lundberg_margen_5pct",
+                                (20.0_f64).ln() / r,
+                            );
+                        }
+                    }
+
                     coin.apply_spectral_epigenetic_feedback_with_time(pnl_epigenetico, position_age_ms, tau_trade_ms, event_time_ms);
 
                     // 2. Adaptacion continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
