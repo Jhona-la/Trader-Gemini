@@ -672,9 +672,9 @@
     "semantic_hash": ""
   },
   "crates/feature-engine/src/multifractal.rs": {
-    "mtime": 1790817643.3629045,
-    "seen": 1790817836.231226,
-    "ast_hash": "29f1f91a1c1b63ba3ae47cf1dfd2be42",
+    "mtime": 1790822916.4491413,
+    "seen": 1790823147.0066018,
+    "ast_hash": "0058d10ba8af64edd6738d419f5c8aac",
     "semantic_hash": ""
   },
   "crates/feature-engine/src/normalizer.rs": {
@@ -798,9 +798,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1790819739.3115437,
-    "seen": 1790819957.9565508,
-    "ast_hash": "260c5e739bdeabe88d1c5a91d0931e9e",
+    "mtime": 1790822916.4630396,
+    "seen": 1790823147.0066018,
+    "ast_hash": "b0552c96e9674171c96ca1541c7cae10",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/math_kernels.rs": {
@@ -1200,9 +1200,9 @@
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/temporal_spectrum.rs": {
-    "mtime": 1790818537.517636,
-    "seen": 1790819957.958094,
-    "ast_hash": "68bb84c577a15e2b882dae22c37f5b33",
+    "mtime": 1790822916.4689395,
+    "seen": 1790823147.0081673,
+    "ast_hash": "e45c6a9f6480aabaa8cc2e10696decbf",
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/tick_source.rs": {
@@ -1242,9 +1242,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/correlation_guard.rs": {
-    "mtime": 1790693190.0550346,
-    "seen": 1790817836.2328205,
-    "ast_hash": "e07783fd5cf08b4ea280886b0e2a6fd6",
+    "mtime": 1790822916.4950452,
+    "seen": 1790823147.0081673,
+    "ast_hash": "873377c8a54a2e2390110fda6b16b3b3",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/epigenetic_capital_alloc.rs": {
@@ -1290,9 +1290,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/orchestrator.rs": {
-    "mtime": 1790624408.7526994,
-    "seen": 1790817836.2328205,
-    "ast_hash": "0ffa207390b0c2fb5b1ff4b452b5d627",
+    "mtime": 1790822916.5016406,
+    "seen": 1790823147.0081673,
+    "ast_hash": "5264a2366f935743e6dfd7a8facecbed",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/regime.rs": {
@@ -1986,9 +1986,9 @@
     "semantic_hash": ""
   },
   "FORENSIC_INTELLIGENCE_AUDIT.md": {
-    "mtime": 1790819739.298306,
-    "seen": 1790819957.958094,
-    "ast_hash": "687be4b3db79622e98ba7e3b64ff02ae",
+    "mtime": 1790820164.0859456,
+    "seen": 1790823147.011332,
+    "ast_hash": "ae8e5507662934c7313deece4fdb93a8",
     "semantic_hash": ""
   },
   "INFORME_ASEGURAMIENTO_CUARTO.md": {
@@ -3282,9 +3282,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/correlation_admission_contract.rs": {
-    "mtime": 1790693190.0625062,
-    "seen": 1790817836.2328205,
-    "ast_hash": "5afcbf04e519458f07cc75618e6ebe6e",
+    "mtime": 1790822916.5070603,
+    "seen": 1790823147.0081673,
+    "ast_hash": "fa06e062aeaa05110c1159fcffd20787",
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/correlation_numeric_contract.rs": {
@@ -3378,9 +3378,9 @@
     "semantic_hash": ""
   },
   "crates/signal-engine/src/contagion_modulator.rs": {
-    "mtime": 1790640743.2054882,
-    "seen": 1790817836.2328205,
-    "ast_hash": "c88810349e36d4117260181c022263e9",
+    "mtime": 1790822916.5145888,
+    "seen": 1790823147.0081673,
+    "ast_hash": "18660c248aa0adb25d20daeeb7560eaa",
     "semantic_hash": ""
   },
   "crates/signal-engine/src/flow_excitation_confluence.rs": {
@@ -3732,9 +3732,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1790819830.6192563,
-    "seen": 1790819957.958094,
-    "ast_hash": "4f5baa9556b186738ad6737fcc35a678",
+    "mtime": 1790822916.4115472,
+    "seen": 1790823147.009749,
+    "ast_hash": "165f5e8ec76bb183bff62afbd31c7528",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3756,15 +3756,15 @@
     "semantic_hash": ""
   },
   "COORDINACION_CODEX_2026-09-28.md": {
-    "mtime": 1790819739.2737787,
-    "seen": 1790819957.958094,
-    "ast_hash": "10d171ebea9c613aa1d4cb6fdb71178c",
+    "mtime": 1790822916.4416397,
+    "seen": 1790823147.011332,
+    "ast_hash": "2fdb6021f368417f21197ec1a4217259",
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1790809156.5063,
-    "seen": 1790817836.2328205,
-    "ast_hash": "dcff4e9aa6eefd98cdb38a8df5915124",
+    "mtime": 1790823053.730215,
+    "seen": 1790823147.011332,
+    "ast_hash": "45177be2a796ad6468908f6e782a2aa3",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -4179,6 +4179,4146 @@
     "mtime": 1790818537.5241334,
     "seen": 1790819957.958094,
     "ast_hash": "90e91b69ce6903df8cf6444da8fe5173",
+    "semantic_hash": ""
+  },
+  ".t1-cert/Cargo.toml": {
+    "mtime": 1790820701.4812446,
+    "seen": 1790823147.0022156,
+    "ast_hash": "c76db8092c125588849d4ec08029547f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/LAUNCH_GOD_MODE.ps1": {
+    "mtime": 1790820701.570651,
+    "seen": 1790823147.0022156,
+    "ast_hash": "6f1e489ed0b692a444c48755d79f6fc6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/build.ps1": {
+    "mtime": 1790820701.603678,
+    "seen": 1790823147.0022156,
+    "ast_hash": "820d4b6dad165bf6a33766b8f1591ed2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/build.sh": {
+    "mtime": 1790820701.6064303,
+    "seen": 1790823147.0022156,
+    "ast_hash": "4e5bba2051b17ab9f0a2b8befc3d5deb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/build_loop.ps1": {
+    "mtime": 1790820701.6080282,
+    "seen": 1790823147.0022156,
+    "ast_hash": "439467a0fd0c4aee1fad1072aebbcb02",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genomes/active.json": {
+    "mtime": 1790820701.6155708,
+    "seen": 1790823147.0022156,
+    "ast_hash": "02b758058f1fe54de7c3b8cae598259d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genomes/backtest/active.json": {
+    "mtime": 1790820701.6187353,
+    "seen": 1790823147.0022156,
+    "ast_hash": "1d7fb2c82d789ce847ca649ac59f3274",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genomes/demo/active.json": {
+    "mtime": 1790820701.6306252,
+    "seen": 1790823147.0022156,
+    "ast_hash": "8a031525153b9c3978bb387455a9ec2b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genomes/history/gen_000001.json": {
+    "mtime": 1790820701.6337857,
+    "seen": 1790823147.0022156,
+    "ast_hash": "548604a2a1ce466cbcd2321406ec1759",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genomes/history/gen_000002.json": {
+    "mtime": 1790820701.6369874,
+    "seen": 1790823147.0022156,
+    "ast_hash": "02b758058f1fe54de7c3b8cae598259d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genomes/prod/active.json": {
+    "mtime": 1790820701.6416755,
+    "seen": 1790823147.0022156,
+    "ast_hash": "8a031525153b9c3978bb387455a9ec2b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genotypes/active_genome.json": {
+    "mtime": 1790820701.6559544,
+    "seen": 1790823147.0022156,
+    "ast_hash": "31ae569a13f5720a767f8056c6d3ed71",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genotypes/quantum_champion.json": {
+    "mtime": 1790820701.6626875,
+    "seen": 1790823147.0022156,
+    "ast_hash": "7f80415000b6ee638db3464898531093",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/models_manifest.json": {
+    "mtime": 1790820701.6689963,
+    "seen": 1790823147.0022156,
+    "ast_hash": "0a5c820cbf4a8391a3e9370c7cebaae4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/Cargo.toml": {
+    "mtime": 1790820701.675547,
+    "seen": 1790823147.0022156,
+    "ast_hash": "7ad49d747bfba7778c0a3038cfdbad09",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/auditor_interno.rs": {
+    "mtime": 1790820701.6796267,
+    "seen": 1790823147.0022156,
+    "ast_hash": "3b764b8daf9c3d4b025f2c9f810c9d48",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/behavioral_auditor.rs": {
+    "mtime": 1790820701.684023,
+    "seen": 1790823147.0022156,
+    "ast_hash": "ec165a5b806fa503cc3eb2ed163d5d9d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/cybernetic_resilience.rs": {
+    "mtime": 1790820701.688632,
+    "seen": 1790823147.0022156,
+    "ast_hash": "aad216abaddbfbd05d689765a74d4ffd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/drift_auditor.rs": {
+    "mtime": 1790820701.6927574,
+    "seen": 1790823147.0022156,
+    "ast_hash": "b439fd40c0c0fda35e0fc63f85b78eb2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/forensics.rs": {
+    "mtime": 1790820701.6951363,
+    "seen": 1790823147.0022156,
+    "ast_hash": "34b309ef1d66e730fa9f0391b01380d6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/lib.rs": {
+    "mtime": 1790820701.6968746,
+    "seen": 1790823147.0022156,
+    "ast_hash": "463dce3b38447274c7aab5ee4b22fa4b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/main.rs": {
+    "mtime": 1790820701.6983654,
+    "seen": 1790823147.0022156,
+    "ast_hash": "a3fd1f2971bb61b0a85e9d9985ee0dcf",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/resilience.rs": {
+    "mtime": 1790820701.7026002,
+    "seen": 1790823147.0022156,
+    "ast_hash": "d8953e0fb8b372d9b6f8cd85dcd5c459",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/state_validator.rs": {
+    "mtime": 1790820701.7058547,
+    "seen": 1790823147.0022156,
+    "ast_hash": "17432ba01172d0cc2583bc6ab474ca1f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/telemetry.rs": {
+    "mtime": 1790820701.7090514,
+    "seen": 1790823147.0022156,
+    "ast_hash": "2b5f4a7263424ef3a069f5651109b946",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/src/trajectory_auditor.rs": {
+    "mtime": 1790820701.7138548,
+    "seen": 1790823147.0022156,
+    "ast_hash": "74643d1c7c45878a842781d4d0f83aba",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/tests/auditor_open_diagnostics.rs": {
+    "mtime": 1790820701.7201602,
+    "seen": 1790823147.0022156,
+    "ast_hash": "ae52e53fcc0f4faab4f3b8c18bd6b6ef",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/tests/drift_recovery_contract.rs": {
+    "mtime": 1790820701.7245345,
+    "seen": 1790823147.0022156,
+    "ast_hash": "1b0b0302daaec0145d456f798481fdac",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/tests/drift_validation_contract.rs": {
+    "mtime": 1790820701.7277224,
+    "seen": 1790823147.0022156,
+    "ast_hash": "1e7e5e17aeed5c49f5b0b2d71927be9f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/tests/resilience_open_diagnostics.rs": {
+    "mtime": 1790820701.7309136,
+    "seen": 1790823147.0022156,
+    "ast_hash": "896844a8451d075470bb2ec04ae3f849",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/audit-engine/tests/trajectory_duration_contract.rs": {
+    "mtime": 1790820701.7340715,
+    "seen": 1790823147.0022156,
+    "ast_hash": "97867125be0675c6a6ce76e850033962",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/Cargo.toml": {
+    "mtime": 1790820701.738878,
+    "seen": 1790823147.0022156,
+    "ast_hash": "93bfb0b74b1bc91562e030477aca49c7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/src/bin/continuous_evolution_backtest.rs": {
+    "mtime": 1790820701.746305,
+    "seen": 1790823147.0022156,
+    "ast_hash": "eb3fb665ac713f4592fb644df9f969b8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/src/booktick_causality_contract.rs": {
+    "mtime": 1790820701.7501938,
+    "seen": 1790823147.0022156,
+    "ast_hash": "22716268c8138dba6c0cefd006dba66b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/src/booktick_replay.rs": {
+    "mtime": 1790820701.7554274,
+    "seen": 1790823147.0022156,
+    "ast_hash": "3cfaed3a5a1bb87234e0926248a92b50",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/src/label_evidence.rs": {
+    "mtime": 1790820701.759004,
+    "seen": 1790823147.0022156,
+    "ast_hash": "ca269bb1ecb1d6d98f21b6d2531f8cf3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/src/lib.rs": {
+    "mtime": 1790820701.7622046,
+    "seen": 1790823147.0022156,
+    "ast_hash": "3dea53de911adb9f9b8b40c9e431cfe0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/src/metrics.rs": {
+    "mtime": 1790820701.7662752,
+    "seen": 1790823147.0022156,
+    "ast_hash": "05c80b4ed929780bd24fec77c9d35b0b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/src/network_jitter.rs": {
+    "mtime": 1790820701.7694495,
+    "seen": 1790823147.0022156,
+    "ast_hash": "15b456aee2e91d7d23201dd2660cb968",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/src/tick_replayer.rs": {
+    "mtime": 1790820701.7710705,
+    "seen": 1790823147.0022156,
+    "ast_hash": "f1bf47cfdd656ca6f743bfa505685032",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/src/vectorized.rs": {
+    "mtime": 1790820701.774331,
+    "seen": 1790823147.0022156,
+    "ast_hash": "c72df6e4cb94446a29be3e19ef0c5f83",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/tests/bt_vivo_parity_audit.rs": {
+    "mtime": 1790820701.7796836,
+    "seen": 1790823147.0022156,
+    "ast_hash": "882db73737a6f3c7e9b87845cf943bb4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/tests/ex_post_metrics_contract.rs": {
+    "mtime": 1790820701.7837338,
+    "seen": 1790823147.0022156,
+    "ast_hash": "6564d169381b814184ea2a473781797c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/tests/label_evidence_contract.rs": {
+    "mtime": 1790820701.7875502,
+    "seen": 1790823147.0022156,
+    "ast_hash": "e76120fd2f4f3ad3481b2260ee4254f3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/tests/spectral_risk_contract.rs": {
+    "mtime": 1790820701.79248,
+    "seen": 1790823147.0022156,
+    "ast_hash": "e66eba13f8bca99f151dac4f52bbaaa5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/tests/support/t1_measurement.rs": {
+    "mtime": 1790820701.7996047,
+    "seen": 1790823147.0022156,
+    "ast_hash": "9ed31016b35d8d606cfce2ec84ea38b2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/tests/t1_cobertura_genetica.rs": {
+    "mtime": 1790820701.8045993,
+    "seen": 1790823147.0022156,
+    "ast_hash": "15da2faf0f4d7dd97a643b23787cb900",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/backtest-engine/tests/t1_measurement_contract.rs": {
+    "mtime": 1790820701.8092742,
+    "seen": 1790823147.0022156,
+    "ast_hash": "bdaf8f4017499f28bfcaae1d74ab7560",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/dark-alpha-engine/Cargo.toml": {
+    "mtime": 1790820701.8129337,
+    "seen": 1790823147.0022156,
+    "ast_hash": "0dd4a91388353ef4322a4f839fb24589",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/dark-alpha-engine/src/lib.rs": {
+    "mtime": 1790820701.82057,
+    "seen": 1790823147.0022156,
+    "ast_hash": "b7b52e5afef082c35cc79107e729c389",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/dark-alpha-engine/src/neuro_plasticity.rs": {
+    "mtime": 1790820701.8240097,
+    "seen": 1790823147.0022156,
+    "ast_hash": "65e018e8f54fbaf0ab2176db169c7765",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/dark-alpha-engine/src/online_ppo.rs": {
+    "mtime": 1790820701.8268645,
+    "seen": 1790823147.0022156,
+    "ast_hash": "f0c1d907660c79b040df24867c2fa2be",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/dark-alpha-engine/tests/neural_evidence_contract.rs": {
+    "mtime": 1790820701.8326092,
+    "seen": 1790823147.0022156,
+    "ast_hash": "ab56a431a29d4be9799d1ece366f6779",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-ingest/Cargo.toml": {
+    "mtime": 1790820701.838612,
+    "seen": 1790823147.0022156,
+    "ast_hash": "ff042a0ead2a44e7d6f4bfd1fde3ed08",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-ingest/src/dynamic_selector.rs": {
+    "mtime": 1790820701.8444312,
+    "seen": 1790823147.0022156,
+    "ast_hash": "2254316942c6a67026f3ec71c922df04",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-ingest/src/lib.rs": {
+    "mtime": 1790820701.8496335,
+    "seen": 1790823147.0022156,
+    "ast_hash": "92389a98cb88d7fe140e9484470ceaab",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-ingest/src/liquidation.rs": {
+    "mtime": 1790820701.8558657,
+    "seen": 1790823147.0022156,
+    "ast_hash": "5e03f4f07b34b6c9a6d5da8766091fba",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-ingest/src/tensor_parser.rs": {
+    "mtime": 1790820701.8594937,
+    "seen": 1790823147.0022156,
+    "ast_hash": "8108216434aaddbe5c81b86f9f057558",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-ingest/src/world_bank.rs": {
+    "mtime": 1790820701.8617587,
+    "seen": 1790823147.0022156,
+    "ast_hash": "b3931305d8675b3cd619d1068b746292",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-ingest/tests/dynamic_selector_contract.rs": {
+    "mtime": 1790820701.8687305,
+    "seen": 1790823147.0022156,
+    "ast_hash": "e947298c61b6ac82e09259810c0cab60",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-ingest/tests/liquidation_contract.rs": {
+    "mtime": 1790820701.8727863,
+    "seen": 1790823147.0022156,
+    "ast_hash": "17642c81ba1f475421ab0cd014d8a62f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/Cargo.toml": {
+    "mtime": 1790820701.8770032,
+    "seen": 1790823147.0022156,
+    "ast_hash": "300638914550cca250360e26c7f19639",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/api_client.rs": {
+    "mtime": 1790820701.8829477,
+    "seen": 1790823147.0022156,
+    "ast_hash": "6cbeafc0688cb94ae8f0f4ad167ea760",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/asset_selector.rs": {
+    "mtime": 1790820701.8847325,
+    "seen": 1790823147.0022156,
+    "ast_hash": "01f726d4a27bc010da3c41575ae53594",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/bypass.rs": {
+    "mtime": 1790820701.8879688,
+    "seen": 1790823147.0022156,
+    "ast_hash": "81f7b2a3dedca03e9ac22c89aa3f55ec",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/chaos_monkey.rs": {
+    "mtime": 1790820701.8908823,
+    "seen": 1790823147.0022156,
+    "ast_hash": "f0f9516b808c5c749eaa16528d9fd7a5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/dynamic_ranker.rs": {
+    "mtime": 1790820701.8931973,
+    "seen": 1790823147.0022156,
+    "ast_hash": "0ecf5e65b7a2cc87f4ef4812caca99ce",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/feature_vm.rs": {
+    "mtime": 1790820701.8955019,
+    "seen": 1790823147.0022156,
+    "ast_hash": "4c38cc4e6dd25ae3aec97cfaf8f86f13",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/historical.rs": {
+    "mtime": 1790820701.8966577,
+    "seen": 1790823147.0022156,
+    "ast_hash": "389b88287a2ba5a8521fc4bab3f7c693",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/lakehouse_mmap.rs": {
+    "mtime": 1790820701.8989818,
+    "seen": 1790823147.0022156,
+    "ast_hash": "ad955cac4b46610323f6a78a71f4e68b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/lib.rs": {
+    "mtime": 1790820701.9007924,
+    "seen": 1790823147.0022156,
+    "ast_hash": "fa219a8a23869463b2e05e5603089c18",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/macro_data.rs": {
+    "mtime": 1790820701.9031754,
+    "seen": 1790823147.0022156,
+    "ast_hash": "41a3616a446a1398decb5772707d9814",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/macro_feed.rs": {
+    "mtime": 1790820701.906074,
+    "seen": 1790823147.0022156,
+    "ast_hash": "d3a44db6d53fe97ec1b1e856268d0863",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/market_context.rs": {
+    "mtime": 1790820701.907676,
+    "seen": 1790823147.0022156,
+    "ast_hash": "5a0027144073ec4dd6b070d7f7dbe9c5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/multiplexer.rs": {
+    "mtime": 1790820701.9109125,
+    "seen": 1790823147.0022156,
+    "ast_hash": "14bc226736fe29f75478786aefe451e4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/omni_multiplexer.rs": {
+    "mtime": 1790820701.9140751,
+    "seen": 1790823147.0022156,
+    "ast_hash": "29dca3916be18c64aa2c4833010974a2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/onchain_feed.rs": {
+    "mtime": 1790820701.9156177,
+    "seen": 1790823147.0022156,
+    "ast_hash": "104083701039ea18e25e2541658bdc68",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/parser.rs": {
+    "mtime": 1790820701.9188042,
+    "seen": 1790823147.0022156,
+    "ast_hash": "a1b5f5e013312afb78ede3d6b6694426",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/persistence.rs": {
+    "mtime": 1790820701.9204123,
+    "seen": 1790823147.0022156,
+    "ast_hash": "f59ab1ca3e7d4f1ef8019708455e8502",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/resilient_stream.rs": {
+    "mtime": 1790820701.924785,
+    "seen": 1790823147.0022156,
+    "ast_hash": "7c00d121a3150b539378df1a960fcb5e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/state_db.rs": {
+    "mtime": 1790820701.9278946,
+    "seen": 1790823147.0038354,
+    "ast_hash": "fd2e02afb631207baef107a4993780a7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/storage.rs": {
+    "mtime": 1790820701.9295273,
+    "seen": 1790823147.0038354,
+    "ast_hash": "38f26e75f01d80699b6c142b45f659b1",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/telemetry_bus.rs": {
+    "mtime": 1790820701.9340062,
+    "seen": 1790823147.0038354,
+    "ast_hash": "75e0b35f417992d2e86201946514a9ed",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/teleonomia.rs": {
+    "mtime": 1790820701.9379144,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4e987b47b4342957112c3de8f26c8281",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/validation.rs": {
+    "mtime": 1790820701.9409623,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4e0573fd718b5125ba8dcb0c2369f457",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/src/ws_client.rs": {
+    "mtime": 1790820701.944023,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6a777c00bd621e7759cd92b905cf92c2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/data-pipeline/tests/spread_validation_contract.rs": {
+    "mtime": 1790820701.9491792,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4d39e85dbeb4d6597948c7ddc9c102f0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/Cargo.toml": {
+    "mtime": 1790820701.9539995,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1661cb7688a8066445e4a77f5f1ebff5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/anti_bias_governor.rs": {
+    "mtime": 1790820701.9587815,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1ef8e417ae2cfa8b91acd756d2fbd393",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/ast_mutator.rs": {
+    "mtime": 1790820701.9633982,
+    "seen": 1790823147.0038354,
+    "ast_hash": "ba5506beeafba01d1c327157436da6f0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/cma_es.rs": {
+    "mtime": 1790820701.9693274,
+    "seen": 1790823147.0038354,
+    "ast_hash": "abc285951371c75587123b5033c29bcb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/crossover_cauchy.rs": {
+    "mtime": 1790820701.9725292,
+    "seen": 1790823147.0038354,
+    "ast_hash": "15b78d5058a414fd5eb8dedd3da6edd1",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/entropy_fitness.rs": {
+    "mtime": 1790820701.9741082,
+    "seen": 1790823147.0038354,
+    "ast_hash": "89440659164e5d5a770616f110ace3f5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/fitness.rs": {
+    "mtime": 1790820701.9800267,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5ab67a587ef1e821d28407d9eff493dc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/lib.rs": {
+    "mtime": 1790820701.9851675,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a4d11d5b3c8d46b518da6ca6f3f3f1e1",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/meta.rs": {
+    "mtime": 1790820701.9908462,
+    "seen": 1790823147.0038354,
+    "ast_hash": "823d33d87e56df8e58b657fd2cdf77da",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/moe_neat_arena.rs": {
+    "mtime": 1790820701.9946425,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9272dd385dad6d01c7616d45f4af8a9c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/neat.rs": {
+    "mtime": 1790820701.9957788,
+    "seen": 1790823147.0038354,
+    "ast_hash": "22c0555edd478963e38d396e55518a2a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/online_daemon.rs": {
+    "mtime": 1790820702.0029793,
+    "seen": 1790823147.0038354,
+    "ast_hash": "87124c04175052c6bdc8db36e1be80d5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/online_random_forest.rs": {
+    "mtime": 1790820702.005761,
+    "seen": 1790823147.0038354,
+    "ast_hash": "91cd3d66f9540149fd44dee632ee2c1b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/polars_evolver.rs": {
+    "mtime": 1790820702.0084832,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f7e90adea6d5e7dfc7724e007560339d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/random_forest.rs": {
+    "mtime": 1790820702.0125787,
+    "seen": 1790823147.0038354,
+    "ast_hash": "bd31e86409ca39a18cd2585682bb3d6d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/return_evidence.rs": {
+    "mtime": 1790820702.0170803,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d4bc9714791073691f0fd56e43b169c7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/src/selection_stats.rs": {
+    "mtime": 1790820702.0199149,
+    "seen": 1790823147.0038354,
+    "ast_hash": "16bf463d7910c8bc6b22340cb2eb2b67",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/tests/cma_generation_contract.rs": {
+    "mtime": 1790820702.0278742,
+    "seen": 1790823147.0038354,
+    "ast_hash": "49eeaf0ec46fbff12a13998ba61831e0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/tests/cma_penalty_contract.rs": {
+    "mtime": 1790820702.0316408,
+    "seen": 1790823147.0038354,
+    "ast_hash": "08da0de8825a3342881ae29ec7daa636",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/tests/cma_supervision_contract.rs": {
+    "mtime": 1790820702.0361717,
+    "seen": 1790823147.0038354,
+    "ast_hash": "124feb474162c3dcbc9a19923a0eb8b6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/tests/fitness_evidence_contract.rs": {
+    "mtime": 1790820702.0405405,
+    "seen": 1790823147.0038354,
+    "ast_hash": "8464fbd0cfce5e188b1c5266623d9689",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/tests/return_evidence_contract.rs": {
+    "mtime": 1790820702.04594,
+    "seen": 1790823147.0038354,
+    "ast_hash": "df975c497349dd3192b02376f8413b18",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/evolution-engine/tests/shadow_forest_threshold_contract.rs": {
+    "mtime": 1790820702.0475185,
+    "seen": 1790823147.0038354,
+    "ast_hash": "aabec55d02f1203c37452ab2df3ac8df",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/Cargo.toml": {
+    "mtime": 1790820702.0507107,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1443b58c8e90b342f1b71f00e1b303eb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/binance_api.rs": {
+    "mtime": 1790820702.0571396,
+    "seen": 1790823147.0038354,
+    "ast_hash": "445108d95221bfd58a688cce49e56341",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/client.rs": {
+    "mtime": 1790820702.0603163,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a27910c6c70b398259891dd68e2f446e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/dynamic_symbols.rs": {
+    "mtime": 1790820702.0630586,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e04889480a4fa510f79fb65bcf3e0a2f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/entry_dispatch.rs": {
+    "mtime": 1790820702.0677688,
+    "seen": 1790823147.0038354,
+    "ast_hash": "82341c7b29148d40c540f9d71deff9ec",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/execution_evidence.rs": {
+    "mtime": 1790820702.0693514,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e8dd7c6a7c4294eca76cece0f9eb2e0c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/executor.rs": {
+    "mtime": 1790820702.0756643,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9134d182b7b4e1550f6dfc4a19862bf8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/hot_swap.rs": {
+    "mtime": 1790820702.0772505,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6acf2de6aabc72a9c1aafa5e9744fa72",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/income_evidence.rs": {
+    "mtime": 1790820702.086326,
+    "seen": 1790823147.0038354,
+    "ast_hash": "06102042552b2b06567b5e0fb434f991",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/lib.rs": {
+    "mtime": 1790820702.0911007,
+    "seen": 1790823147.0038354,
+    "ast_hash": "b2cb3dead7862d82f6de83a87c94c0ea",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/ntp.rs": {
+    "mtime": 1790820702.094491,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d88a0e8914d08617e887f2dd1c8a64d1",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/order_registry.rs": {
+    "mtime": 1790820702.0982323,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0acad2bc09153b8f9d8fd39de3637b5f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/order_types.rs": {
+    "mtime": 1790820702.1014385,
+    "seen": 1790823147.0038354,
+    "ast_hash": "70a0fe9eab18ba9990029fc79c4fa5a4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/quantum_multiplexer.rs": {
+    "mtime": 1790820702.104554,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4ff1b034309fda059a72b8df274cf5ee",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/quantum_socket.rs": {
+    "mtime": 1790820702.1061127,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f71f72cb1e16ce4807b26fdf3679c138",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/reconciliation.rs": {
+    "mtime": 1790820702.1108525,
+    "seen": 1790823147.0038354,
+    "ast_hash": "8b44d95e89628996a52dda0511f0401d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/router.rs": {
+    "mtime": 1790820702.114031,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7f00c8d9a74d120b56b4bbf8f9b85454",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/shadow.rs": {
+    "mtime": 1790820702.1181743,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a321f14c27d76d856abc680df197d6ba",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/simulator.rs": {
+    "mtime": 1790820702.1202705,
+    "seen": 1790823147.0038354,
+    "ast_hash": "32cd654a1ed79deaf4dd8b022fbacb16",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/trade_accounting.rs": {
+    "mtime": 1790820702.1245472,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e1820e2b12178c10255a592811d3bdc8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/user_data_stream.rs": {
+    "mtime": 1790820702.1293597,
+    "seen": 1790823147.0038354,
+    "ast_hash": "67cf7c8d3a1aacd36c6a6470d6cb4b61",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/src/ws_executor.rs": {
+    "mtime": 1790820702.1325486,
+    "seen": 1790823147.0038354,
+    "ast_hash": "17a0e2d2f463af2e116ec0bd37b61749",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/accounting_numeric_contract.rs": {
+    "mtime": 1790820702.1405036,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d6e8ba090f12ac3f13281e85c2e55a23",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/accounting_open_diagnostics.rs": {
+    "mtime": 1790820702.1478972,
+    "seen": 1790823147.0038354,
+    "ast_hash": "b392002becd3d78db7fb5f18af8fc162",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/adoption_slot_contract.rs": {
+    "mtime": 1790820702.1510673,
+    "seen": 1790823147.0038354,
+    "ast_hash": "dbf4741aa134f4169d9fb420e58166f3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/emergency_accounting_wiring_contract.rs": {
+    "mtime": 1790820702.155798,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1cfdcb616bf3abe49a64cc760c78c5a1",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/entry_route_contract.rs": {
+    "mtime": 1790820702.1605375,
+    "seen": 1790823147.0038354,
+    "ast_hash": "ba34e9fa68b00088bbdd37729dfafa6b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/exchange_response_contract.rs": {
+    "mtime": 1790820702.1648884,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a144ef6eacc8b0ebed156051f70386e5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/execution_evidence_contract.rs": {
+    "mtime": 1790820702.1664975,
+    "seen": 1790823147.0038354,
+    "ast_hash": "595d0ed850e39e13e54a7539ffbd03d5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/execution_open_diagnostics.rs": {
+    "mtime": 1790820702.1713006,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9a93968b1d4fb0aca9fbc6c049e08486",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/hedge_side_contract.rs": {
+    "mtime": 1790820702.1728349,
+    "seen": 1790823147.0038354,
+    "ast_hash": "49d6803826f092db36060ef6bc687591",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/income_consumer_wiring_contract.rs": {
+    "mtime": 1790820702.1771176,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4062ba9bf053c62278aa2a9bcfab3425",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/income_evidence_contract.rs": {
+    "mtime": 1790820702.180036,
+    "seen": 1790823147.0038354,
+    "ast_hash": "eda4cde6c1e4b6bcdb81614ffa53b8a0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/income_open_diagnostics.rs": {
+    "mtime": 1790820702.1869276,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1b07d59f1356b2c929e859d9508ad7c6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/order_evidence_contract.rs": {
+    "mtime": 1790820702.1931996,
+    "seen": 1790823147.0038354,
+    "ast_hash": "188d7bb12882d2282e056fd16e2e952a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/payload_admission_contract.rs": {
+    "mtime": 1790820702.1978307,
+    "seen": 1790823147.0038354,
+    "ast_hash": "cf47f96f5945025b60efda450ffb87cc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/payload_open_diagnostics.rs": {
+    "mtime": 1790820702.2027256,
+    "seen": 1790823147.0038354,
+    "ast_hash": "83c33998b441563d45ce22467e75bacb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/protection_gap_contract.rs": {
+    "mtime": 1790820702.2048242,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4db5c2028e35f75d9087d9019c41bbe9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/reconciliation_evidence_contract.rs": {
+    "mtime": 1790820702.209952,
+    "seen": 1790823147.0038354,
+    "ast_hash": "65a3ac684ec9d2fe4f2000a21bffdbc9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/registry_open_diagnostics.rs": {
+    "mtime": 1790820702.2142994,
+    "seen": 1790823147.0038354,
+    "ast_hash": "bf08309d7e52411b0269e6490ee3c46e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/shadow_open_diagnostics.rs": {
+    "mtime": 1790820702.2177515,
+    "seen": 1790823147.0038354,
+    "ast_hash": "c2b702bc9d686182850a1a1206dfaa4a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/execution-engine/tests/testnet_integration.rs": {
+    "mtime": 1790820702.2199028,
+    "seen": 1790823147.0038354,
+    "ast_hash": "932edad23b8bea567c08509175847e74",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/Cargo.toml": {
+    "mtime": 1790820702.2239547,
+    "seen": 1790823147.0038354,
+    "ast_hash": "8ed05856512ae32de7026dd86572f7db",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/correlation.rs": {
+    "mtime": 1790820702.2287028,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f74e84741b043194418197c0fbd6137c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/ewma.rs": {
+    "mtime": 1790820702.2325807,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7779eb1472282d756f38af5186752421",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/hawkes.rs": {
+    "mtime": 1790820702.236621,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9153e89313061c107c329c3db0e73fa4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/hawkes_cross.rs": {
+    "mtime": 1790820702.2408059,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f17c52a95647bd83c61147d220347fc2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/hurst_dfa.rs": {
+    "mtime": 1790820702.2447748,
+    "seen": 1790823147.0038354,
+    "ast_hash": "acab728d2665cb61a98c9c7abea07bde",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/kalman.rs": {
+    "mtime": 1790820702.249117,
+    "seen": 1790823147.0038354,
+    "ast_hash": "c1bd4b53376ab59abe4d0c02afd98cf2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/lead_lag.rs": {
+    "mtime": 1790820702.250261,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e81989a66a16fb9d4d3cf513b3bd1114",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/lib.rs": {
+    "mtime": 1790820702.2545536,
+    "seen": 1790823147.0038354,
+    "ast_hash": "80ea6013acb092519d471d8276f30e50",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/microstructure.rs": {
+    "mtime": 1790820702.2577572,
+    "seen": 1790823147.0038354,
+    "ast_hash": "290e3c61f2fa49936cb682616eaa2e73",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/multifractal.rs": {
+    "mtime": 1790820702.2616174,
+    "seen": 1790823147.0038354,
+    "ast_hash": "29f1f91a1c1b63ba3ae47cf1dfd2be42",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/normalizer.rs": {
+    "mtime": 1790820702.2631497,
+    "seen": 1790823147.0038354,
+    "ast_hash": "76c72d87557a49f4826e36c94cc87044",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/omni_strategies.rs": {
+    "mtime": 1790820702.2658465,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f7f04056d98ef57ac527f1ad4f0df66b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/path_signatures.rs": {
+    "mtime": 1790820702.2690442,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7a1410bd2d74b93091e4f36d110f4774",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/quantum_tensor_store.rs": {
+    "mtime": 1790820702.2722213,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e7d25fa6bd2f9fe827166583df7f8994",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/shannon_entropy.rs": {
+    "mtime": 1790820702.2738297,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3ff4f6dbd8ec4369157a539d2b093480",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/simd_neural_network.rs": {
+    "mtime": 1790820702.2765796,
+    "seen": 1790823147.0038354,
+    "ast_hash": "38f881670a5bcd3c687e906e50aaab5b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/spectral.rs": {
+    "mtime": 1790820702.2797558,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7ab4cda6904a4f48f958dabba4fba7d5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/tensor_ring.rs": {
+    "mtime": 1790820702.2823646,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5075fefda682165b34c60ecaa91eb508",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/transfer_entropy.rs": {
+    "mtime": 1790820702.2860408,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0ed536535e52d9c5f7f3dc38dcf9451c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/src/welford.rs": {
+    "mtime": 1790820702.289262,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e5de4bd38d658788fbd6b9efc821b5ea",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/correlation_input_contract.rs": {
+    "mtime": 1790820702.2941093,
+    "seen": 1790823147.0038354,
+    "ast_hash": "07b3f243ed09b2ca6af5151044667284",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/event_spectrum_v2_contract.rs": {
+    "mtime": 1790820702.297315,
+    "seen": 1790823147.0038354,
+    "ast_hash": "b6676fc4c0f4da318b566315873326fb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/ewma_configuration_contract.rs": {
+    "mtime": 1790820702.300557,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f6a12c989d533213d609a75c2c6aaab7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/ewma_physical_time_contract.rs": {
+    "mtime": 1790820702.3044806,
+    "seen": 1790823147.0038354,
+    "ast_hash": "c707c5ecabf0276eb9f73f00692ebe7f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/hawkes_chain_integration.rs": {
+    "mtime": 1790820702.307651,
+    "seen": 1790823147.0038354,
+    "ast_hash": "249525a9a6e8925b0df89b51e4172847",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/kalman_numeric_contract.rs": {
+    "mtime": 1790820702.310884,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4676b7827918734df283babd5dcb2651",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/legacy_correlation_diagnostics.rs": {
+    "mtime": 1790820702.315658,
+    "seen": 1790823147.0038354,
+    "ast_hash": "ae553bcd37ebd8b49a4ffcfa5080c221",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/legacy_statistics_diagnostics.rs": {
+    "mtime": 1790820702.3172538,
+    "seen": 1790823147.0038354,
+    "ast_hash": "adf410ef1db74ec5230dbae866d1f679",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/path_signature_contract.rs": {
+    "mtime": 1790820702.3220901,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e33ed2d439a6b82f5d66e7732aeba891",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/transfer_entropy_contract.rs": {
+    "mtime": 1790820702.32488,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6ce29b9764e7b154a4d3f69999ea9fe5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/transfer_entropy_real.rs": {
+    "mtime": 1790820702.330156,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a8430c4ff1dee9a8289c1a5187b44561",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/feature-engine/tests/welford_mode_contract.rs": {
+    "mtime": 1790820702.3343878,
+    "seen": 1790823147.0038354,
+    "ast_hash": "496c4634de381555e2d1063e0a80e2c3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/flight-recorder/Cargo.toml": {
+    "mtime": 1790820702.338548,
+    "seen": 1790823147.0038354,
+    "ast_hash": "ab39f76c150c327b30d401fc7984ddbd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/flight-recorder/src/lib.rs": {
+    "mtime": 1790820702.3425689,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d7d8cf6db3386e055bc8d3c07e117f4f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/Cargo.toml": {
+    "mtime": 1790820702.347839,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d4b519d659f58e40cf920ad46940df3f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/bin/nano_benchmark.rs": {
+    "mtime": 1790820702.355375,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4f312503b07743ec67a2d4f1a9230313",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/bin/test_ml.rs": {
+    "mtime": 1790820702.3569195,
+    "seen": 1790823147.0038354,
+    "ast_hash": "50dffb90586eb1a531eabc52dcbf1dfd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/bootloader.rs": {
+    "mtime": 1790820702.361313,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4dd1d51189f70ec79407f3c3f625c11d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/calibration.rs": {
+    "mtime": 1790820702.3633263,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3c243a336a4cf2796aedd874af7b9ac4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/conformal.rs": {
+    "mtime": 1790820702.3681333,
+    "seen": 1790823147.0038354,
+    "ast_hash": "503d87359e2aac63b2b04c74eb662577",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/contagion_publisher.rs": {
+    "mtime": 1790820702.3723972,
+    "seen": 1790823147.0038354,
+    "ast_hash": "65be728d384022d729be564549529a20",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/darwin.rs": {
+    "mtime": 1790820702.3760188,
+    "seen": 1790823147.0038354,
+    "ast_hash": "2ef2ef2dd4cbb2deb0d98febe3714152",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/diffusion.rs": {
+    "mtime": 1790820702.3792012,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4a54d6c02c4c5b594c02be28692f78aa",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/direction_diag.rs": {
+    "mtime": 1790820702.3824203,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9ffabf0529449360aaf217e253f2fc6a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/ensemble.rs": {
+    "mtime": 1790820702.3860228,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9e725979ede5345ed24d3ba9593b562d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/entry_reservation.rs": {
+    "mtime": 1790820702.389202,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3883610ec03112a3950d40cc457b4716",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/fitness_contract.rs": {
+    "mtime": 1790820702.3924153,
+    "seen": 1790823147.0038354,
+    "ast_hash": "54643d9a52bee3e3b3776a73fa8c85a9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/latency_accelerator.rs": {
+    "mtime": 1790820702.3966937,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7886eee8d3adbeb3f5774589298b8561",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/lib.rs": {
+    "mtime": 1790820702.4045959,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e1fd36d9456eb74f3473fa9a612a8c43",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/liquidation_feed.rs": {
+    "mtime": 1790820702.4077961,
+    "seen": 1790823147.0038354,
+    "ast_hash": "56e32875d6c7a970481af7d9d3fa8a19",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/math_kernels.rs": {
+    "mtime": 1790820702.4110165,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a514e88223175d24aa9ac5fec3bb04e4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/ml_coverage.rs": {
+    "mtime": 1790820702.413758,
+    "seen": 1790823147.0038354,
+    "ast_hash": "cf397d1efc29e244e9cd60be0ca3fe38",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/ml_inference.rs": {
+    "mtime": 1790820702.4188325,
+    "seen": 1790823147.0038354,
+    "ast_hash": "51a4f57c66f90954ee1f1f1e75e00f88",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/ml_registry.rs": {
+    "mtime": 1790820702.4247928,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1868ad7ecdb4c35a6d81d676fda36c51",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/orchestrator.rs": {
+    "mtime": 1790820702.4277754,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f2b2e796a4ecca153bc283a4d46d2866",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/order_flow_aggregator.rs": {
+    "mtime": 1790820702.4288998,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3919c4e713ac6018de1a62f342aaf003",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/outcome_context.rs": {
+    "mtime": 1790820702.433772,
+    "seen": 1790823147.0038354,
+    "ast_hash": "852cd32f8fb7f25a158f5e98d312bc21",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/quantum_kelly_risk.rs": {
+    "mtime": 1790820702.437624,
+    "seen": 1790823147.0038354,
+    "ast_hash": "aa4a6eec8e856bc0c8a0f06d4dd92ca6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/reality_physics.rs": {
+    "mtime": 1790820702.441811,
+    "seen": 1790823147.0038354,
+    "ast_hash": "808a07ba3bfcb82111dd75b1dbd84a6a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/slippage_predictor.rs": {
+    "mtime": 1790820702.4458451,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6b078e3815c42c97a15d6e3c2c84dccd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/stateful_engine.rs": {
+    "mtime": 1790820702.4493854,
+    "seen": 1790823147.0038354,
+    "ast_hash": "44c2d1c4c0d8b0dea2ac426fd03b4edd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/src/trailing.rs": {
+    "mtime": 1790820702.4531834,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d967a0c5121686d22548cd93967f5442",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/bocpd_temporal_contract.rs": {
+    "mtime": 1790820702.4589121,
+    "seen": 1790823147.0038354,
+    "ast_hash": "c28b687fb71827781cf31971a836b828",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/close_outcome_contract.rs": {
+    "mtime": 1790820702.4610481,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d738b68f583d2a2e1ed7e20d444266e6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/conformal_wiring_contract.rs": {
+    "mtime": 1790820702.4654977,
+    "seen": 1790823147.0038354,
+    "ast_hash": "bcb9c1b8d816bd1e7a9430e90fe9e82c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/darwin_genotype_open_diagnostics.rs": {
+    "mtime": 1790820702.4724813,
+    "seen": 1790823147.0038354,
+    "ast_hash": "668f688de0d32df1ab1b1ed3c833bd82",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/darwin_margin_contract.rs": {
+    "mtime": 1790820702.475765,
+    "seen": 1790823147.0038354,
+    "ast_hash": "ff3f526258b11b19596e06382e1d1304",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/decay_causality_contract.rs": {
+    "mtime": 1790820702.47894,
+    "seen": 1790823147.0038354,
+    "ast_hash": "084bef3522580cf7405f55f69ecba58e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/dfa_contract.rs": {
+    "mtime": 1790820702.4821317,
+    "seen": 1790823147.0038354,
+    "ast_hash": "b613fa672355f8b7f951a8da926b8984",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/entry_reservation_contract.rs": {
+    "mtime": 1790820702.4869106,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e0480d25561de93507743a88b38274c5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/ewma_initialization_contract.rs": {
+    "mtime": 1790820702.49264,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6326f040a9e0190f570c64cf0776adbf",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/fitness_numeric_contract.rs": {
+    "mtime": 1790820702.4947248,
+    "seen": 1790823147.0038354,
+    "ast_hash": "20476e18413c923b26d64919f850d5a3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/hodge_contagion_contract.rs": {
+    "mtime": 1790820702.4978862,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4f762a6c9d05e25b213b9ec7c0ee4112",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/liquidation_state_contract.rs": {
+    "mtime": 1790820702.5026832,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e3b38ea3786ffe0c1de8d2c6d6bdfad4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/ml_base_publication_contract.rs": {
+    "mtime": 1790820702.5074093,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a25ace1e32aa475de927232a9d685bbe",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/ml_model_contract.rs": {
+    "mtime": 1790820702.5106025,
+    "seen": 1790823147.0038354,
+    "ast_hash": "cc524bc02a20d7d1424e47db2e0e0b5a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/outcome_attribution_contract.rs": {
+    "mtime": 1790820702.5137677,
+    "seen": 1790823147.0038354,
+    "ast_hash": "82799ce7880a8dbef4f1469c583ac1e1",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/phase_authorization_contract.rs": {
+    "mtime": 1790820702.5165298,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6fdba4bbcfa7231017b5707d5af9ca57",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/platt_optimizer_contract.rs": {
+    "mtime": 1790820702.5206342,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f3b11f2b63e4cdc7348c8f3beb9cf5a8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/reality_physics_open_diagnostics.rs": {
+    "mtime": 1790820702.5249135,
+    "seen": 1790823147.0038354,
+    "ast_hash": "30e0d2ffc30824c228f7670a48a586a3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/resonancia_simetrica_contract.rs": {
+    "mtime": 1790820702.5277345,
+    "seen": 1790823147.0038354,
+    "ast_hash": "777920c1a1d3859ffac1767ab3c9f481",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/slippage_continuity_contract.rs": {
+    "mtime": 1790820702.5309334,
+    "seen": 1790823147.0038354,
+    "ast_hash": "b5debb6eb4b44525895fd5479026d9f8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/spectral_admission_diagnostics.rs": {
+    "mtime": 1790820702.5340946,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4d172d5b159b04c23a6771167ce7a1a9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/stateful_open_diagnostics.rs": {
+    "mtime": 1790820702.5388973,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5d20df366a1ddf5f1f6fa6aa7579a6be",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/god-engine-core/tests/stateful_transition_contract.rs": {
+    "mtime": 1790820702.5433052,
+    "seen": 1790823147.0038354,
+    "ast_hash": "fa335e6e71b5c177290b6d75f6d7edc7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/graph-4d/Cargo.toml": {
+    "mtime": 1790820702.546457,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9383f87b90e797752bd201352c604d1b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/graph-4d/src/lib.rs": {
+    "mtime": 1790820702.550342,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a12391569f9ea798a6a5c344c15a3b78",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/graph-architecture/Cargo.toml": {
+    "mtime": 1790820702.5531075,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9495f6da624cfc12fa5a002c1e105930",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/graph-architecture/src/lib.rs": {
+    "mtime": 1790820702.5590348,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7e0abc79608f392e4c062155aaa87ff1",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/graph-architecture/src/main.rs": {
+    "mtime": 1790820702.560611,
+    "seen": 1790823147.0038354,
+    "ast_hash": "849a1e491b8b29caecdd8b9266cf870f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/Cargo.toml": {
+    "mtime": 1790820702.5637636,
+    "seen": 1790823147.0038354,
+    "ast_hash": "eb020143dacf23a0c315122d2eb0cf78",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/cazador_constantes.rs": {
+    "mtime": 1790820702.5685327,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0bc2b95415aebc98021e46a081c32fad",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/compiler_sandbox.rs": {
+    "mtime": 1790820702.5701444,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4dff921ffc58a0a01cf8cbdb026dc305",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/consejo_seniors.rs": {
+    "mtime": 1790820702.5748546,
+    "seen": 1790823147.0038354,
+    "ast_hash": "fdc07befddb6baef94cc02bf06ee574d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/epigenoma_store.rs": {
+    "mtime": 1790820702.5780458,
+    "seen": 1790823147.0038354,
+    "ast_hash": "8868b53f01eca066b9c625b89dc6e705",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/evolutionary_templates.rs": {
+    "mtime": 1790820702.5780458,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5ecc89ab1b9a7f853178f77aec18f86b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/fases_autonomous.rs": {
+    "mtime": 1790820702.5798995,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e01b98bda68b2b8801b9deb2c0a7e378",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/hot_swap_controller.rs": {
+    "mtime": 1790820702.5830226,
+    "seen": 1790823147.0038354,
+    "ast_hash": "cdf5016f1d508d5815f5e80211bb2cd3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/immune_system.rs": {
+    "mtime": 1790820702.586562,
+    "seen": 1790823147.0038354,
+    "ast_hash": "b16fbf266048f32bd1073b21810f6dee",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/lib.rs": {
+    "mtime": 1790820702.5900197,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0bd0839d304211233a545aab3611711d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/online_learning.rs": {
+    "mtime": 1790820702.592407,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4b407634d7a27f6b94756baec3c4cc32",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/reminiscence_and_adn.rs": {
+    "mtime": 1790820702.5941193,
+    "seen": 1790823147.0038354,
+    "ast_hash": "21f8c306f28b2ab71a420a6cdb6c2271",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/src/shadow_graph_auditor.rs": {
+    "mtime": 1790820702.595848,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f621cc06865289363f9e6189c3395ea9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/tests/constant_hunter_open_diagnostics.rs": {
+    "mtime": 1790820702.5999131,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a580582ac4ce9c94670f3511b1c955da",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/tests/council_evidence_contract.rs": {
+    "mtime": 1790820702.604383,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e892fef313dbdeda6f73fd913bdd25d9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/tests/mutation_cycle_test.rs": {
+    "mtime": 1790820702.6062121,
+    "seen": 1790823147.0038354,
+    "ast_hash": "71e390ac85d760c76e1d1efc084dd83d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/tests/quantum_organism_test.rs": {
+    "mtime": 1790820702.6080015,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0eb55b1eb029f11ccba4bc0745759fd6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/metacortex-engine/tests/reminiscence_and_adn_test.rs": {
+    "mtime": 1790820702.610368,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7b1b35c8e20d3c328b9e6c699d463574",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/omniscient-registry/Cargo.toml": {
+    "mtime": 1790820702.6132903,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d8eb36577fa2aae4316fc5fde29c1d6e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/omniscient-registry/src/lib.rs": {
+    "mtime": 1790820702.617834,
+    "seen": 1790823147.0038354,
+    "ast_hash": "14acf1a56b953a5a8c9208dc41bf0f89",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/omniscient-registry/src/tests.rs": {
+    "mtime": 1790820702.619422,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1869e3e132e858f42245a9d70784e90b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/Cargo.toml": {
+    "mtime": 1790820702.6241875,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a0c3c84fae4994d6687fa1c3988a2a1c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/src/anomaly_detector.rs": {
+    "mtime": 1790820702.6273785,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1ded91ed5d66478a88f3f588f8688b8d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/src/crash_dump.rs": {
+    "mtime": 1790820702.6290083,
+    "seen": 1790823147.0038354,
+    "ast_hash": "ebc27b5564cdd7c69affe11dbd76a071",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/src/ebpf_core.rs": {
+    "mtime": 1790820702.6305945,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5d6d48b5413ac370cc758a25df699d16",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/src/lib.rs": {
+    "mtime": 1790820702.633298,
+    "seen": 1790823147.0038354,
+    "ast_hash": "71cc24f6b919fdfdbe6387bd24da02e4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/src/memory_audit.rs": {
+    "mtime": 1790820702.6348753,
+    "seen": 1790823147.0038354,
+    "ast_hash": "fd71542b0529957fd16d95a6a15e98b2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/src/memory_compaction.rs": {
+    "mtime": 1790820702.638115,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6221c4f6b5e5980e9be925fd734d4d40",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/src/observability_plane.rs": {
+    "mtime": 1790820702.6413538,
+    "seen": 1790823147.0038354,
+    "ast_hash": "2fbbea9bc7d5f49073e356a04a784e7a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/src/pmu_sensor.rs": {
+    "mtime": 1790820702.6413538,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6aced0506383eaec215a24271763e115",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/src/telemetry.rs": {
+    "mtime": 1790820702.644961,
+    "seen": 1790823147.0038354,
+    "ast_hash": "dae55a47e80691f18dff03a0cd82395a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/os-guardian/src/zero_latency_telemetry.rs": {
+    "mtime": 1790820702.646539,
+    "seen": 1790823147.0038354,
+    "ast_hash": "cd7305b0ba633444a1c825a05c8050fe",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/phase-runner/Cargo.toml": {
+    "mtime": 1790820702.6497085,
+    "seen": 1790823147.0038354,
+    "ast_hash": "125a3c8d02bdf503c1f02b598f42b22e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/phase-runner/src/lib.rs": {
+    "mtime": 1790820702.652834,
+    "seen": 1790823147.0038354,
+    "ast_hash": "ed27b1af9af7e1449ca7373b1894774c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/phase-runner/src/tests.rs": {
+    "mtime": 1790820702.655998,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7391d28b43b493c183b3baff348699c6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/Cargo.toml": {
+    "mtime": 1790820702.6592326,
+    "seen": 1790823147.0038354,
+    "ast_hash": "41b06035fe6a59fce3e36c1edf1171a4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/active_universe.rs": {
+    "mtime": 1790820702.6640236,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7ad33b5bc70a1c13fdf0a73fa94508a8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/adaptive_quantiles.rs": {
+    "mtime": 1790820702.6667435,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d3bb4d9602569763907621092cce94ef",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/arena_alloc.rs": {
+    "mtime": 1790820702.6683102,
+    "seen": 1790823147.0038354,
+    "ast_hash": "2829e2097d9afee1d2251d308c7019a5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/atomic_float.rs": {
+    "mtime": 1790820702.669959,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4405777931ca94bab09e406fbd473cc4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/config.rs": {
+    "mtime": 1790820702.6731112,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6fe28633c2c47d2127c7114b5e7be8bc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/feed_health.rs": {
+    "mtime": 1790820702.6746783,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1b16ebe5cc03b3d499ebf16e52da1328",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/genome.rs": {
+    "mtime": 1790820702.6789818,
+    "seen": 1790823147.0038354,
+    "ast_hash": "22b73d73108d5210d8d4d35ef232b5ce",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/genome_store.rs": {
+    "mtime": 1790820702.6821368,
+    "seen": 1790823147.0038354,
+    "ast_hash": "19f06efa1813be884047584eff2793a6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/horizon_policy.rs": {
+    "mtime": 1790820702.687294,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3de730770cd97a57f932a69455b501f5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/lib.rs": {
+    "mtime": 1790820702.6888845,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3e4f9e7b02ae2f6acd4bb618f5430374",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/net_multiplexer.rs": {
+    "mtime": 1790820702.6921067,
+    "seen": 1790823147.0038354,
+    "ast_hash": "034940b9b020a259c3b8eeeb08e8f71e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/paths.rs": {
+    "mtime": 1790820702.6936944,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0814b04ee32d8d86bcdb6a6ff6aae8c6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/position.rs": {
+    "mtime": 1790820702.6984925,
+    "seen": 1790823147.0038354,
+    "ast_hash": "aaa4fe91f4f0aa5cf3f7a4082db8135c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/protection_health.rs": {
+    "mtime": 1790820702.7016904,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d091f4bdb79b18621fa595390211b96b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/ring_buffer.rs": {
+    "mtime": 1790820702.7064228,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9b3a60b75f7457bf87079f9951054d7d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/spectral_regime.rs": {
+    "mtime": 1790820702.7108111,
+    "seen": 1790823147.0038354,
+    "ast_hash": "8e2ac1f80eeaae5c50c3c967bdad339b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/spectral_tape.rs": {
+    "mtime": 1790820702.7179651,
+    "seen": 1790823147.0038354,
+    "ast_hash": "b1c884ade92dbbd7121ff36cedf0b79b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/state.rs": {
+    "mtime": 1790820702.722705,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3d3f2209a974ef9190e1b5c66f526c43",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/state_continuity.rs": {
+    "mtime": 1790820702.7274961,
+    "seen": 1790823147.0038354,
+    "ast_hash": "d93e9c62e576f08e10f974a06f550f8a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/symbol_ranker_engine.rs": {
+    "mtime": 1790820702.7302718,
+    "seen": 1790823147.0038354,
+    "ast_hash": "be5a1e18194702b377322b9138eca4f9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/symbol_registry.rs": {
+    "mtime": 1790820702.734317,
+    "seen": 1790823147.0038354,
+    "ast_hash": "b5555204ee86ffc648fb27745bc1c65b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/symbols.rs": {
+    "mtime": 1790820702.7377014,
+    "seen": 1790823147.0038354,
+    "ast_hash": "97adfdb1f2a0fa25507c44a1992fb351",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/temporal_spectrum.rs": {
+    "mtime": 1790820702.7425377,
+    "seen": 1790823147.0038354,
+    "ast_hash": "68bb84c577a15e2b882dae22c37f5b33",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/tick_source.rs": {
+    "mtime": 1790820702.7442603,
+    "seen": 1790823147.0038354,
+    "ast_hash": "361e99ea8f79eaae1e1c10e32091d70b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/zero_alloc_pool.rs": {
+    "mtime": 1790820702.7465117,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a57aa911761c8c77e27c32fca1f2815e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/src/zero_copy_stream.rs": {
+    "mtime": 1790820702.748257,
+    "seen": 1790823147.0038354,
+    "ast_hash": "2c30ae3ade58b02e2a3f46ee1d42fbbc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/checkpoint_characterization.rs": {
+    "mtime": 1790820702.7531035,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3ff455815aba1d7771b1fee233e5d2af",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/genome_gate_open_diagnostics.rs": {
+    "mtime": 1790820702.7566597,
+    "seen": 1790823147.0038354,
+    "ast_hash": "231d2b0073e73bfc89392102ed482cfd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/genome_reader_diagnostics.rs": {
+    "mtime": 1790820702.7603254,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f5594639c6a4eaa92cbe5c379e64542e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/horizon_reader_parity.rs": {
+    "mtime": 1790820702.764081,
+    "seen": 1790823147.0038354,
+    "ast_hash": "46ca91625b4957bbc381ae2eb3a9ff4c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/order_quantity_contract.rs": {
+    "mtime": 1790820702.7681801,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e6a5da0d5ba56e896bb9ba99abea9b33",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/position_evidence_diagnostics.rs": {
+    "mtime": 1790820702.772995,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6b57f1b5e5a4d79978c10789cc72ac87",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/position_generation_contract.rs": {
+    "mtime": 1790820702.7764857,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3d49b51efa27af745e4e032feeb88c92",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/protection_rejection_contract.rs": {
+    "mtime": 1790820702.7783542,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4ea1186f78736511b50b95028afb3f1f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/quantile_numeric_contract.rs": {
+    "mtime": 1790820702.7825336,
+    "seen": 1790823147.0038354,
+    "ast_hash": "65d3fac95ff855b394c9bd77196fffea",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/slot_admission_open_diagnostics.rs": {
+    "mtime": 1790820702.784618,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5499520f689a7246ade636217e7c4207",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/spectral_interpolation_contract.rs": {
+    "mtime": 1790820702.7894392,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5e808f2e9eb0197ca4b5639c55bbac9e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/system_health_source_contract.rs": {
+    "mtime": 1790820702.7948785,
+    "seen": 1790823147.0038354,
+    "ast_hash": "cfa86beeebc966f0fa464eac3aa8bc33",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/temporal_band_contract.rs": {
+    "mtime": 1790820702.797004,
+    "seen": 1790823147.0038354,
+    "ast_hash": "df3c73b0188fe828f502221fdc700c1b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/universe_identity_diagnostics.rs": {
+    "mtime": 1790820702.8002088,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f9aeeab2dad5cdb9960ca78861c79d04",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/quantum-arena/tests/universe_selection_contract.rs": {
+    "mtime": 1790820702.8046503,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0f791d73af5e634bbf1b2e837dc070eb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/Cargo.toml": {
+    "mtime": 1790820702.807917,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0d9fa10b83a6a82ce5d37b4efe7445c4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/capital_compounder.rs": {
+    "mtime": 1790820702.8143294,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f21d60efe6c2c57063ad53f2350d02bd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/capital_regime.rs": {
+    "mtime": 1790820702.817037,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1b1faee5b16ed91d2b9979f40c3be0c9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/correlation_guard.rs": {
+    "mtime": 1790820702.8224144,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e07783fd5cf08b4ea280886b0e2a6fd6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/drawdown.rs": {
+    "mtime": 1790820702.8245573,
+    "seen": 1790823147.0038354,
+    "ast_hash": "b6dc9185af88cdbf9002196e75567373",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/epigenetic_capital_alloc.rs": {
+    "mtime": 1790820702.8272934,
+    "seen": 1790823147.0038354,
+    "ast_hash": "022c7a419b61ab4df8ffb703de776b0d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/epigenetic_fitness_landscape.rs": {
+    "mtime": 1790820702.8304744,
+    "seen": 1790823147.0038354,
+    "ast_hash": "95e9f251e85cbe427aede937c9fb61a2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/evidence.rs": {
+    "mtime": 1790820702.832071,
+    "seen": 1790823147.0038354,
+    "ast_hash": "c813824cdaf4ee606a9acf68dc566887",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/guard.rs": {
+    "mtime": 1790820702.8352797,
+    "seen": 1790823147.0038354,
+    "ast_hash": "bcc0a56792b296718edd83d8ccafda32",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/hodge.rs": {
+    "mtime": 1790820702.8412843,
+    "seen": 1790823147.0038354,
+    "ast_hash": "86ef0c3181074893009448749a07393e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/kelly.rs": {
+    "mtime": 1790820702.842866,
+    "seen": 1790823147.0038354,
+    "ast_hash": "cad4cca4e8bd4ebd881e37ffa01822dc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/kelly_envelope.rs": {
+    "mtime": 1790820702.846055,
+    "seen": 1790823147.0038354,
+    "ast_hash": "cf1a630f636e08fe2b4629625c0bfe24",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/leverage_matrix.rs": {
+    "mtime": 1790820702.8492725,
+    "seen": 1790823147.0038354,
+    "ast_hash": "bf2daf3a424484cfa115711b017aa499",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/lib.rs": {
+    "mtime": 1790820702.8540874,
+    "seen": 1790823147.0038354,
+    "ast_hash": "685afaf22528ef0776d7256123fb5200",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/orchestrator.rs": {
+    "mtime": 1790820702.8573215,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0ffa207390b0c2fb5b1ff4b452b5d627",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/random_matrix.rs": {
+    "mtime": 1790820702.8632,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1003141447ffa2ccfc11133727cec170",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/regime.rs": {
+    "mtime": 1790820702.8647585,
+    "seen": 1790823147.0038354,
+    "ast_hash": "111982503868c3d932dd677b9bc98ca4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/ruin.rs": {
+    "mtime": 1790820702.8679547,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4476707181f5345126c15a248444a9c0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/tp_sl.rs": {
+    "mtime": 1790820702.871373,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f6c3428d7d7ff1ffbb9a2c5d9401ec7b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/src/veto_registry.rs": {
+    "mtime": 1790820702.8756812,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a53930ba1b6eae987b4362b319d6e8b1",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/compounder_admission_contract.rs": {
+    "mtime": 1790820702.8819604,
+    "seen": 1790823147.0038354,
+    "ast_hash": "557353fd1a77399bddd285841f500116",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/compounding_audit.rs": {
+    "mtime": 1790820702.8879306,
+    "seen": 1790823147.0038354,
+    "ast_hash": "2b2fe1fb60b35cee935f0c60bd50512b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/correlation_admission_contract.rs": {
+    "mtime": 1790820702.891164,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5afcbf04e519458f07cc75618e6ebe6e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/correlation_numeric_contract.rs": {
+    "mtime": 1790820702.8938668,
+    "seen": 1790823147.0038354,
+    "ast_hash": "61de7fb93744ebf873248e21653fcb08",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/correlation_open_contracts.rs": {
+    "mtime": 1790820702.8986547,
+    "seen": 1790823147.0038354,
+    "ast_hash": "26ad2e7c778e05788141c7dfc1fd3fe5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/drawdown_portfolio_contract.rs": {
+    "mtime": 1790820702.9002593,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9511adff1050fb80c9a566a0836209b5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/epigenetic_allocation_contract.rs": {
+    "mtime": 1790820702.9056535,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4a075329541a174a6bb375367b9c8edc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/full_spectrum_contract.rs": {
+    "mtime": 1790820702.9104428,
+    "seen": 1790823147.0038354,
+    "ast_hash": "aa638adc81cf844f1a383d36965bd57b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/geometry_hurst_contract.rs": {
+    "mtime": 1790820702.914213,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f21679424b01bf6de7196aef57f83ae6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/leverage_admission_contract.rs": {
+    "mtime": 1790820702.9170258,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0751b27158dbc03dccccecfa2679a98b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/min_notional_symbol_contract.rs": {
+    "mtime": 1790820702.9183905,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1da21ebe8a966d27768d0ee270926fb7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/portfolio_admission_contract.rs": {
+    "mtime": 1790820702.9228365,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0925b9c647653459264c78fe06130537",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/regime_taxonomy_diagnostics.rs": {
+    "mtime": 1790820702.926366,
+    "seen": 1790823147.0038354,
+    "ast_hash": "8a3d68ac6159ebf532e6b2f89a57435f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/spectral_matrix_contract.rs": {
+    "mtime": 1790820702.9306445,
+    "seen": 1790823147.0038354,
+    "ast_hash": "c8c89ccae93c6143ed7bcc8de4714cbd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/spectral_risk_contract.rs": {
+    "mtime": 1790820702.9356034,
+    "seen": 1790823147.0038354,
+    "ast_hash": "ae7d9825e3cd5ccccf74d0f3b2fd8acb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/veto_evidence_contract.rs": {
+    "mtime": 1790820702.9389758,
+    "seen": 1790823147.0038354,
+    "ast_hash": "07b88733061ca11af627d6209549ed5b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/risk-engine/tests/veto_open_diagnostics.rs": {
+    "mtime": 1790820702.943074,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f7e173b1ae0f765cd2cfe2977dfa87be",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/Cargo.toml": {
+    "mtime": 1790820702.947473,
+    "seen": 1790823147.0038354,
+    "ast_hash": "30623c78b1d0a6ae1f4de2d841a07c65",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/coaxial_breakout.rs": {
+    "mtime": 1790820702.9524484,
+    "seen": 1790823147.0038354,
+    "ast_hash": "bcf26fbbf8e0911c1af6d15f29111743",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/conformal_reversion_filter.rs": {
+    "mtime": 1790820702.956494,
+    "seen": 1790823147.0038354,
+    "ast_hash": "43320f297fc2d47a4fd2ac445672682e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/contagion_modulator.rs": {
+    "mtime": 1790820702.9606156,
+    "seen": 1790823147.0038354,
+    "ast_hash": "c88810349e36d4117260181c022263e9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/flow_excitation_confluence.rs": {
+    "mtime": 1790820702.9636958,
+    "seen": 1790823147.0038354,
+    "ast_hash": "bc5fcced0372026b2d1472808beb6c0a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/flow_impulse.rs": {
+    "mtime": 1790820702.966653,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e034e8092c78ee374c8e811ba960c5eb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/game_theoretic_nash.rs": {
+    "mtime": 1790820702.9682271,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5161c1394c49e037954b6c3f4466a441",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/hawkes_bessel.rs": {
+    "mtime": 1790820702.97303,
+    "seen": 1790823147.0038354,
+    "ast_hash": "be1b8f703cdad34ecd339b6f6ea417c8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/lib.rs": {
+    "mtime": 1790820702.977839,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3a3aa553676e216e551e1d75911d12fc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/orchestrator.rs": {
+    "mtime": 1790820702.980942,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e6a34f7b6aa1a79e3d0338f5bee8dbd7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/perceptron_gate.rs": {
+    "mtime": 1790820702.9836414,
+    "seen": 1790823147.0038354,
+    "ast_hash": "8f3c576fe7e07628b32397651daf39ca",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/proyeccion_espectral.rs": {
+    "mtime": 1790820702.9867525,
+    "seen": 1790823147.0038354,
+    "ast_hash": "90e91b69ce6903df8cf6444da8fe5173",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/quantum_oscillator.rs": {
+    "mtime": 1790820702.9899192,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e16ab01ff938863565e68056f3dc0a16",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/renyi_tsallis_entropy.rs": {
+    "mtime": 1790820702.9920576,
+    "seen": 1790823147.0038354,
+    "ast_hash": "958e7eef0975c58e6c1d1757d1e40fa3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/soliton_wave.rs": {
+    "mtime": 1790820702.9943075,
+    "seen": 1790823147.0038354,
+    "ast_hash": "bf588d10fe5c6f46276d984d33e911ef",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/stochastic_resonance.rs": {
+    "mtime": 1790820702.9958875,
+    "seen": 1790823147.0038354,
+    "ast_hash": "2751d463c1578e18b7f3e090dc967dd7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/supersonic_shockwave.rs": {
+    "mtime": 1790820703.0007398,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5b30375adaf4feb1db249a2c5aab71c5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/src/trend_runner.rs": {
+    "mtime": 1790820703.0035324,
+    "seen": 1790823147.0038354,
+    "ast_hash": "90ce551727941ec8f1b88fa716be71b7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/tests/ensemble_characterization.rs": {
+    "mtime": 1790820703.0099945,
+    "seen": 1790823147.0038354,
+    "ast_hash": "e59c0fa6316d0df0cfae03fa5ee7c92d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/tests/multi_asset_identity_contract.rs": {
+    "mtime": 1790820703.0131187,
+    "seen": 1790823147.0038354,
+    "ast_hash": "5d6c4faf28ecedd39a87fa38123e19c3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/tests/physics_numeric_contract.rs": {
+    "mtime": 1790820703.0174005,
+    "seen": 1790823147.0038354,
+    "ast_hash": "2917308e1e1d327d31dfe3e04d337d2c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/signal-engine/tests/single_consensus_contract.rs": {
+    "mtime": 1790820703.0206053,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7a9bb4b07584a78636bb5cfdcac5ef18",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/Cargo.toml": {
+    "mtime": 1790820703.0248773,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f21080ccf459db15333986dc4b973a32",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/src/evolution_ledger.rs": {
+    "mtime": 1790820703.0280783,
+    "seen": 1790823147.0038354,
+    "ast_hash": "606f0ebf4a53a30ad5a49a5e72c514f7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/src/history_store.rs": {
+    "mtime": 1790820703.0312986,
+    "seen": 1790823147.0038354,
+    "ast_hash": "dd7c51631f522c9be08ae3337326a0f9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/src/lakehouse.rs": {
+    "mtime": 1790820703.0344067,
+    "seen": 1790823147.0038354,
+    "ast_hash": "142689baa7cbcf226bbc851e6be6e6af",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/src/ledger.rs": {
+    "mtime": 1790820703.0387993,
+    "seen": 1790823147.0038354,
+    "ast_hash": "38f3dd0182ca81e769c42e09ab6e8b91",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/src/lib.rs": {
+    "mtime": 1790820703.040419,
+    "seen": 1790823147.0038354,
+    "ast_hash": "ea534e6c5512649fa5b606e839847d41",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/src/mmap_bus.rs": {
+    "mtime": 1790820703.0436103,
+    "seen": 1790823147.0038354,
+    "ast_hash": "738cf42aaa962337cc6b1110d6cecc7f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/src/raw_zone.rs": {
+    "mtime": 1790820703.046814,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a3683cb5c833492acc165a258caa5da8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/src/temporal_store.rs": {
+    "mtime": 1790820703.04799,
+    "seen": 1790823147.0038354,
+    "ast_hash": "02e4fc7c7e794ec81df5be0b3364601c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/tests/mmap_admission_contract.rs": {
+    "mtime": 1790820703.0571032,
+    "seen": 1790823147.0038354,
+    "ast_hash": "8f56a153c3a33f9e18bbf60dd7d796bf",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/tests/mmap_open_diagnostics.rs": {
+    "mtime": 1790820703.061392,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a47d670461b4e888d852ea6007fe7025",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/storage-engine/tests/ownership_read_contract.rs": {
+    "mtime": 1790820703.0656588,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1c490482bda15e1a334eec2d85e65d48",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/Cargo.toml": {
+    "mtime": 1790820703.070005,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4504330a71902a509b5d03ecd338468e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/src/lib.rs": {
+    "mtime": 1790820703.0743632,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6307e7520673c3b8898557f98cf78a13",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/src/maker.rs": {
+    "mtime": 1790820703.077562,
+    "seen": 1790823147.0038354,
+    "ast_hash": "632c263375478a58f07e5bed00d644cb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/src/momentum_booster.rs": {
+    "mtime": 1790820703.0807478,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0bfa8acce18f5565fadd7f0d4163e436",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/src/multivariate_coint.rs": {
+    "mtime": 1790820703.0833492,
+    "seen": 1790823147.0038354,
+    "ast_hash": "fd72429fad2fa814c206308dd82c0ec5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/src/stat_arb.rs": {
+    "mtime": 1790820703.0881133,
+    "seen": 1790823147.0038354,
+    "ast_hash": "69dee25c164ea8c305bd9c18796b3bbd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/src/strategy_telemetry.rs": {
+    "mtime": 1790820703.0897255,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0c07bc7592d89709ef7d010d6373353b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/src/types.rs": {
+    "mtime": 1790820703.091376,
+    "seen": 1790823147.0038354,
+    "ast_hash": "3e34885792035a42e76f03d2b67bb01d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/src/vecm_arbitrage.rs": {
+    "mtime": 1790820703.0947156,
+    "seen": 1790823147.0038354,
+    "ast_hash": "47c4fe233f5d8b8c61e5a1837e9481c8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/tests/basket_state_contract.rs": {
+    "mtime": 1790820703.0994961,
+    "seen": 1790823147.0038354,
+    "ast_hash": "116dd8e411ad937ea990f07485934dd7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/tests/maker_quote_contract.rs": {
+    "mtime": 1790820703.1043036,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9a473472380e947a7965d47574df9efa",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/strategy-core/tests/pair_model_characterization.rs": {
+    "mtime": 1790820703.1091192,
+    "seen": 1790823147.0038354,
+    "ast_hash": "1222aed2d7f208b4e6d0cb65ee6f1772",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-engine/Cargo.toml": {
+    "mtime": 1790820703.1133928,
+    "seen": 1790823147.0038354,
+    "ast_hash": "7ef2cdef52aa41a3277379ed1a63d7ba",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-engine/src/atomic_telemetry.rs": {
+    "mtime": 1790820703.1177452,
+    "seen": 1790823147.0038354,
+    "ast_hash": "abb68a7facbc622fa67120d240459552",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-engine/src/dns_optimizer.rs": {
+    "mtime": 1790820703.11933,
+    "seen": 1790823147.0038354,
+    "ast_hash": "a733c2cb7574efbe556e378c905555cd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-engine/src/lib.rs": {
+    "mtime": 1790820703.1209147,
+    "seen": 1790823147.0038354,
+    "ast_hash": "4e12bbb04e2bf7011f189efb4d3e35f4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/Cargo.toml": {
+    "mtime": 1790820703.1262398,
+    "seen": 1790823147.0038354,
+    "ast_hash": "141e43d63127704b2695265ca9c3dd8e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/flight_recorder.rs": {
+    "mtime": 1790820703.1299996,
+    "seen": 1790823147.0038354,
+    "ast_hash": "fef270b9e0e06964a24d7782f2bbac44",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/forensic_auditor.rs": {
+    "mtime": 1790820703.1326294,
+    "seen": 1790823147.0038354,
+    "ast_hash": "cdab9cd1f2432c1c6049f5a7224ba79a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/lib.rs": {
+    "mtime": 1790820703.1347308,
+    "seen": 1790823147.0038354,
+    "ast_hash": "644bd74f8f561117b52dc6f04a7107ca",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/lock_free_logger.rs": {
+    "mtime": 1790820703.137866,
+    "seen": 1790823147.0038354,
+    "ast_hash": "20bb86a6fec9e946c1d29533851ba563",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/lockfree_bus.rs": {
+    "mtime": 1790820703.1394322,
+    "seen": 1790823147.0038354,
+    "ast_hash": "104185d648afd8d0e1f5581f01217cc9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/macros.rs": {
+    "mtime": 1790820703.1410637,
+    "seen": 1790823147.0038354,
+    "ast_hash": "59f5b55cb3e6b80cc6e90b6fe37dc2ea",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/profiler.rs": {
+    "mtime": 1790820703.1444464,
+    "seen": 1790823147.0038354,
+    "ast_hash": "036e402953fb240957015e13ee7ddfff",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/stream.rs": {
+    "mtime": 1790820703.1461582,
+    "seen": 1790823147.0038354,
+    "ast_hash": "fcdbf7c555b32d09cbfff7919fc7e643",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/telegram_bot.rs": {
+    "mtime": 1790820703.1479204,
+    "seen": 1790823147.0038354,
+    "ast_hash": "113f86bf17c7dc210a001433a491ef44",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/telemetry_mmap.rs": {
+    "mtime": 1790820703.1495886,
+    "seen": 1790823147.0038354,
+    "ast_hash": "0aedfa82ff935d362118b0ac3aa5a0cc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/tensor_telemetry.rs": {
+    "mtime": 1790820703.1513875,
+    "seen": 1790823147.0038354,
+    "ast_hash": "9558b5b2cf4b852e5a8edb33f6dfcdaa",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/zero_copy_bus.rs": {
+    "mtime": 1790820703.1533504,
+    "seen": 1790823147.0038354,
+    "ast_hash": "c7de96a11e3ebd4f27e0c381d5bc2a0f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/telemetry-server/src/zero_copy_ring.rs": {
+    "mtime": 1790820703.1560616,
+    "seen": 1790823147.0038354,
+    "ast_hash": "f8f9c1143d238aab453b27516a71fd18",
+    "semantic_hash": ""
+  },
+  ".t1-cert/deployment/entrypoint.sh": {
+    "mtime": 1790820703.186991,
+    "seen": 1790823147.0038354,
+    "ast_hash": "6a4e38cce246c155e6fa5eecb9c775e2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_admision_multiactivo_2026-09-28.json": {
+    "mtime": 1790820703.5621653,
+    "seen": 1790823147.005442,
+    "ast_hash": "4663e7e0953fb9a0fb7a57b041ab9f74",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_aprendizaje_causal_2026-09-28.json": {
+    "mtime": 1790820703.5657265,
+    "seen": 1790823147.005442,
+    "ast_hash": "5c20763ea51faf2af4245212ef063cee",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_calibracion_platt_2026-09-28.json": {
+    "mtime": 1790820703.5705252,
+    "seen": 1790823147.005442,
+    "ast_hash": "2c9301219fb00a73c4e3341268b15c1c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_causalidad_replay_2026-09-29.json": {
+    "mtime": 1790820703.573741,
+    "seen": 1790823147.005442,
+    "ast_hash": "c6dd0585ab026560e0d4840f64a77f52",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_conformal_contrato_2026-09-28.json": {
+    "mtime": 1790820703.5769298,
+    "seen": 1790823147.005442,
+    "ast_hash": "4f2aec5f3963cc87bdb24938f041730a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_contratos_espectrales_2026-09-28.json": {
+    "mtime": 1790820703.578529,
+    "seen": 1790823147.005442,
+    "ast_hash": "806afdb713dfbc7b355c860511191d3d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_firmas_contratos_teoricos_2026-09-29.json": {
+    "mtime": 1790820703.5816946,
+    "seen": 1790823147.005442,
+    "ast_hash": "666f0c815b66fd2a5bc5282af95f4ef7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XIII_2026-09-24.json": {
+    "mtime": 1790820703.585746,
+    "seen": 1790823147.005442,
+    "ast_hash": "7f2c72ea41cf7395233a6d3f74cad9cb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XII_2026-09-24.json": {
+    "mtime": 1790820703.5889368,
+    "seen": 1790823147.005442,
+    "ast_hash": "e15658afb3b9056514784bded4bb66b1",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XIV_2026-09-24.json": {
+    "mtime": 1790820703.59274,
+    "seen": 1790823147.005442,
+    "ast_hash": "bb841f8af5e5fa12972301d960056f97",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XIX_2026-09-24.json": {
+    "mtime": 1790820703.594826,
+    "seen": 1790823147.005442,
+    "ast_hash": "ce8d21d67ce6ad3f4580d5fb9265f670",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XI_2026-09-24.json": {
+    "mtime": 1790820703.598024,
+    "seen": 1790823147.005442,
+    "ast_hash": "7e65e3a62e99524e48b77069463ebd2f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XVIII_2026-09-24.json": {
+    "mtime": 1790820703.6012187,
+    "seen": 1790823147.005442,
+    "ast_hash": "3a5eaa9cd81867c983d6d6f6efef8127",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XVII_2026-09-24.json": {
+    "mtime": 1790820703.6044054,
+    "seen": 1790823147.005442,
+    "ast_hash": "134eb47b456ed7e8ed88113e3b9be216",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XVI_2026-09-24.json": {
+    "mtime": 1790820703.6092105,
+    "seen": 1790823147.005442,
+    "ast_hash": "0435ede6bf14883b4fab8ee3c691e42a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XV_2026-09-24.json": {
+    "mtime": 1790820703.6124046,
+    "seen": 1790823147.005442,
+    "ast_hash": "ac00b706a5946dc1b63229f3a59a6112",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXIII_2026-09-24.json": {
+    "mtime": 1790820703.6155634,
+    "seen": 1790823147.005442,
+    "ast_hash": "762e921ed72c7d6bee134a1628b2b67c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXII_2026-09-24.json": {
+    "mtime": 1790820703.6198735,
+    "seen": 1790823147.005442,
+    "ast_hash": "e70d30c3f9d59535846e0db8098b8835",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXIV_2026-09-25.json": {
+    "mtime": 1790820703.62459,
+    "seen": 1790823147.005442,
+    "ast_hash": "9f6ad9ca22bfe13d8262408417945a3d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXIX_2026-09-25.json": {
+    "mtime": 1790820703.6294384,
+    "seen": 1790823147.005442,
+    "ast_hash": "2e83671afb96a0b9bcd8287932f038e5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXI_2026-09-24.json": {
+    "mtime": 1790820703.6326382,
+    "seen": 1790823147.005442,
+    "ast_hash": "2e2401263adea9f994626373a0445c88",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXVIII_2026-09-25.json": {
+    "mtime": 1790820703.6386788,
+    "seen": 1790823147.005442,
+    "ast_hash": "928f652e5d53a0f2901b9189ca64c10c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXVII_2026-09-25.json": {
+    "mtime": 1790820703.6429944,
+    "seen": 1790823147.005442,
+    "ast_hash": "37791fd508c7ede78a024ef41deb0de4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXVI_2026-09-25.json": {
+    "mtime": 1790820703.646142,
+    "seen": 1790823147.005442,
+    "ast_hash": "050753356f92e80f2da38564fe5ee6b6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXV_2026-09-25.json": {
+    "mtime": 1790820703.6488383,
+    "seen": 1790823147.005442,
+    "ast_hash": "4a79408b2b8f1abd96f2fa8b00a00bdd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXXIII_2026-09-25.json": {
+    "mtime": 1790820703.6536198,
+    "seen": 1790823147.005442,
+    "ast_hash": "4729a8ab15968faa469148a2978d1388",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXXII_2026-09-25.json": {
+    "mtime": 1790820703.65897,
+    "seen": 1790823147.005442,
+    "ast_hash": "b07ab85b2681bcb025f9b1eef6b6b8da",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXXIV_2026-09-25.json": {
+    "mtime": 1790820703.662685,
+    "seen": 1790823147.005442,
+    "ast_hash": "8bcbc0cca4161b568fb712e2a990df6e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXXIX_2026-09-25.json": {
+    "mtime": 1790820703.6658497,
+    "seen": 1790823147.005442,
+    "ast_hash": "345b2a45ad3d0dd08e69d437376d13e0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXXI_2026-09-25.json": {
+    "mtime": 1790820703.669025,
+    "seen": 1790823147.005442,
+    "ast_hash": "83a50363077ecf4a05fa12bdfa500a76",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXXVIII_2026-09-25.json": {
+    "mtime": 1790820703.6748972,
+    "seen": 1790823147.005442,
+    "ast_hash": "fe40db06ec0d112aa82ade8198fb84be",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXXVII_2026-09-25.json": {
+    "mtime": 1790820703.676955,
+    "seen": 1790823147.005442,
+    "ast_hash": "b9f2d7ec535af06b309c13b3d70445f5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXXVI_2026-09-25.json": {
+    "mtime": 1790820703.6800992,
+    "seen": 1790823147.005442,
+    "ast_hash": "7f2f55c8b2c7c9ccd5ce5de5b0ce54b7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXXV_2026-09-25.json": {
+    "mtime": 1790820703.6838887,
+    "seen": 1790823147.005442,
+    "ast_hash": "7b42cc49f0d0278a1427e1e263119982",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XXX_2026-09-25.json": {
+    "mtime": 1790820703.6887586,
+    "seen": 1790823147.005442,
+    "ast_hash": "f38bacd43c1348b2121183ed891aa481",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_XX_2026-09-24.json": {
+    "mtime": 1790820703.6930463,
+    "seen": 1790823147.005442,
+    "ast_hash": "006770e53b2a5bc3df94d7c3cb229ad9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_fundamentos_X_2026-09-24.json": {
+    "mtime": 1790820703.6946244,
+    "seen": 1790823147.005442,
+    "ast_hash": "7c60c6ab773fe3ec48118f86d25686ec",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_integracion_ewma_reloj_2026-09-28.json": {
+    "mtime": 1790820703.6978486,
+    "seen": 1790823147.005442,
+    "ast_hash": "e0c276b859b1f855df6c201a8b898084",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_integracion_numerica_2026-09-28.json": {
+    "mtime": 1790820703.7032611,
+    "seen": 1790823147.005442,
+    "ast_hash": "823e92b5a5f59370f5ad26cef5dabcf4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_metricas_replay_2026-09-29.json": {
+    "mtime": 1790820703.707616,
+    "seen": 1790823147.005442,
+    "ast_hash": "5a3aa59f2938822a99db54e01c55ded3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_oraculo_genetico_2026-09-30.json": {
+    "mtime": 1790820703.7108796,
+    "seen": 1790823147.005442,
+    "ast_hash": "5493cc965d5e05711d687e960ea73089",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_registro_modelos_2026-09-30.json": {
+    "mtime": 1790820703.7140403,
+    "seen": 1790823147.005442,
+    "ast_hash": "8f482841900fb2d660e54cacc4f6d399",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/artifacts/auditoria_te_cobertura_evidencia_2026-09-29.json": {
+    "mtime": 1790820703.7177958,
+    "seen": 1790823147.005442,
+    "ast_hash": "31f6993aab9524352b35aaae9b9ccb6f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/god_mode_v10_validation.json": {
+    "mtime": 1790820703.7230756,
+    "seen": 1790823147.005442,
+    "ast_hash": "c9b9c14a10bf5cd7f1cda85b76532999",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/god_mode_v2_results.json": {
+    "mtime": 1790820703.7246485,
+    "seen": 1790823147.005442,
+    "ast_hash": "1aca5810c20ec1a31bc27281f6223990",
+    "semantic_hash": ""
+  },
+  ".t1-cert/run_god_engine.ps1": {
+    "mtime": 1790820705.846306,
+    "seen": 1790823147.005442,
+    "ast_hash": "4740bdafe0d13978e0ab14df658270bf",
+    "semantic_hash": ""
+  },
+  ".t1-cert/run_sim_5.ps1": {
+    "mtime": 1790820705.8478813,
+    "seen": 1790823147.005442,
+    "ast_hash": "874ec4a498969ec1621ad4fd2654c564",
+    "semantic_hash": ""
+  },
+  ".t1-cert/scripts/monitor_demo.ps1": {
+    "mtime": 1790820705.8558779,
+    "seen": 1790823147.005442,
+    "ast_hash": "8913fdfbd24e4c0aa70f0eda78a296ea",
+    "semantic_hash": ""
+  },
+  ".t1-cert/scripts/quality_gate.ps1": {
+    "mtime": 1790820705.8574846,
+    "seen": 1790823147.005442,
+    "ast_hash": "3eadd0f3f1409fa372c48974ff9ae988",
+    "semantic_hash": ""
+  },
+  ".t1-cert/scripts/revalidate_roster.ps1": {
+    "mtime": 1790820705.8606932,
+    "seen": 1790823147.005442,
+    "ast_hash": "4304a33f255b9a93ee6214e26ce83965",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/algo_fetch_probe.rs": {
+    "mtime": 1790820705.8665037,
+    "seen": 1790823147.005442,
+    "ast_hash": "9b598ff1ae1580b1b6fd4f66fe9d1d9f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/audit_forensic_backtest.rs": {
+    "mtime": 1790820705.871302,
+    "seen": 1790823147.005442,
+    "ast_hash": "c07011944cb67f70750110ea34767a00",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/auto_trainer_daemon.rs": {
+    "mtime": 1790820705.8729095,
+    "seen": 1790823147.005442,
+    "ast_hash": "cd4c20fba4784d2965fac3a974af0e72",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/backtest_windows.rs": {
+    "mtime": 1790820705.8760476,
+    "seen": 1790823147.005442,
+    "ast_hash": "7aef2df4b719586a13361aed93033762",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/benchmark.rs": {
+    "mtime": 1790820705.877647,
+    "seen": 1790823147.005442,
+    "ast_hash": "afce6f00ffc8d1e29d5fdadb7b2c97de",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/binance_vision_sync.rs": {
+    "mtime": 1790820705.8804026,
+    "seen": 1790823147.005442,
+    "ast_hash": "6dd053c1293a0a8b2f7ba599eb444135",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/config_compiler.rs": {
+    "mtime": 1790820705.8830905,
+    "seen": 1790823147.005442,
+    "ast_hash": "6f3f2400dcf04857729d6d21642e4ded",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/dashboard.rs": {
+    "mtime": 1790820705.884652,
+    "seen": 1790823147.005442,
+    "ast_hash": "637409759b003aec94dbce88ee2a13d0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/download_history.rs": {
+    "mtime": 1790820705.8862522,
+    "seen": 1790823147.005442,
+    "ast_hash": "e56e3b7e931285cca09ec1f524098dbf",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/evolution.rs": {
+    "mtime": 1790820705.890604,
+    "seen": 1790823147.005442,
+    "ast_hash": "99a236c968dafa18fac4827396e310e7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/evolver.rs": {
+    "mtime": 1790820705.8937898,
+    "seen": 1790823147.005442,
+    "ast_hash": "a924feca8c3ce8af8726116827da238a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/feature_exporter.rs": {
+    "mtime": 1790820705.895404,
+    "seen": 1790823147.005442,
+    "ast_hash": "32db39e95aadc9ea400ce9a2242c748d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/feature_validator.rs": {
+    "mtime": 1790820705.8969893,
+    "seen": 1790823147.005442,
+    "ast_hash": "96ec29a84ce7bc90b1747ce6fecd62ea",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/god_engine.rs": {
+    "mtime": 1790820705.906062,
+    "seen": 1790823147.005442,
+    "ast_hash": "36f9eee8d184cbdb65a4b9b53b5b77c2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/graph_server.rs": {
+    "mtime": 1790820705.9092517,
+    "seen": 1790823147.005442,
+    "ast_hash": "1b0524e1bf06bf2f44271ddf03b90faf",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/income_report.rs": {
+    "mtime": 1790820705.912434,
+    "seen": 1790823147.005442,
+    "ast_hash": "6688e1a18737d41cff7075917dc87f6f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/latency_flow_audit.rs": {
+    "mtime": 1790820705.9146647,
+    "seen": 1790823147.005442,
+    "ast_hash": "66dcd4d15f94f1881ba1d397884b5b27",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/macro_history_sync.rs": {
+    "mtime": 1790820705.9152205,
+    "seen": 1790823147.005442,
+    "ast_hash": "396b3010658d37b3520ade863c041ccd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/ml_path_probe.rs": {
+    "mtime": 1790820705.9183874,
+    "seen": 1790823147.0060446,
+    "ast_hash": "f12f9b65c2a137600073ffd42b04120f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/model_manifest.rs": {
+    "mtime": 1790820705.921177,
+    "seen": 1790823147.0060446,
+    "ast_hash": "fba0c6c429403b2e9a41780bdd4d13ff",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/multi_coin_simulator.rs": {
+    "mtime": 1790820705.9227808,
+    "seen": 1790823147.0060446,
+    "ast_hash": "6e7b47a448b195f5ea5d6a89f28e396d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/oco_probe.rs": {
+    "mtime": 1790820705.9259725,
+    "seen": 1790823147.0060446,
+    "ast_hash": "184b8f2e6d6ee40c67c2b6cd66844a4a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/oi_history_sync.rs": {
+    "mtime": 1790820705.9275906,
+    "seen": 1790823147.0060446,
+    "ast_hash": "32afcb7397ce139923cfacc323855cf2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/parquet_to_bin.rs": {
+    "mtime": 1790820705.9297998,
+    "seen": 1790823147.0060446,
+    "ast_hash": "7b826ef9555c23408893f0e3862a6975",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/spectral_bench.rs": {
+    "mtime": 1790820705.9319525,
+    "seen": 1790823147.0060446,
+    "ast_hash": "069363afec9eeba72c0ef35f39d27072",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/system_health.rs": {
+    "mtime": 1790820705.9362934,
+    "seen": 1790823147.0060446,
+    "ast_hash": "d14230c5d40bae110625f07c98f55105",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/tape_spread_fix.rs": {
+    "mtime": 1790820705.9379148,
+    "seen": 1790823147.0060446,
+    "ast_hash": "341f6468b911bb4dc53ed29d7321985a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/test_forest.rs": {
+    "mtime": 1790820705.9407115,
+    "seen": 1790823147.0060446,
+    "ast_hash": "390e62f97abf4025ce50bb460078e676",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/test_forest2.rs": {
+    "mtime": 1790820705.942296,
+    "seen": 1790823147.0060446,
+    "ast_hash": "08f67a2aa89f6938c6508b9e11201ff7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/train_dark_alpha.rs": {
+    "mtime": 1790820705.9454217,
+    "seen": 1790823147.0060446,
+    "ast_hash": "45d613184ca763030a8ffef7794982bc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/train_forest.rs": {
+    "mtime": 1790820705.9501607,
+    "seen": 1790823147.0060446,
+    "ast_hash": "e384989dace3b354e7dc1c3d1f9f6804",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/bin/walkforward_evolver.rs": {
+    "mtime": 1790820705.9523554,
+    "seen": 1790823147.0060446,
+    "ast_hash": "3fe5ed7109fe05c86ddf7b399b183ee5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/config.rs": {
+    "mtime": 1790820705.9544456,
+    "seen": 1790823147.0060446,
+    "ast_hash": "b7ace5ab7222e03f4569a6fd2c048634",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/dark_alpha_router.rs": {
+    "mtime": 1790820705.9560213,
+    "seen": 1790823147.0060446,
+    "ast_hash": "f4d6cf3d535976e8dfaa43a15406389b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/dark_alpha_sniffer.rs": {
+    "mtime": 1790820705.9576352,
+    "seen": 1790823147.0060446,
+    "ast_hash": "2e8f3e64bfbac148f8d41d555b1f6372",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/dashboard.rs": {
+    "mtime": 1790820705.9592233,
+    "seen": 1790823147.0060446,
+    "ast_hash": "33dfb0a7b08e5319183ba781f8bf540a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/env_manager.rs": {
+    "mtime": 1790820705.9608068,
+    "seen": 1790823147.0060446,
+    "ast_hash": "354071fa2ab7cbaa20984281a61200b8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/features/correlation.rs": {
+    "mtime": 1790820705.964008,
+    "seen": 1790823147.0060446,
+    "ast_hash": "dbcf298de9164bcacb73ed8a0e91bafe",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/features/ewma.rs": {
+    "mtime": 1790820705.9655938,
+    "seen": 1790823147.0060446,
+    "ast_hash": "3206e97ae436cd8b7783a8c4d9acb809",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/features/graph_4d.rs": {
+    "mtime": 1790820705.9671717,
+    "seen": 1790823147.0060446,
+    "ast_hash": "67fe70fc5b8e33dde8d17f5a0851a11f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/features/graph_architecture.rs": {
+    "mtime": 1790820705.9687617,
+    "seen": 1790823147.0060446,
+    "ast_hash": "af05f80ebe1541c590177d9ef092295d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/features/microstructure.rs": {
+    "mtime": 1790820705.971523,
+    "seen": 1790823147.0060446,
+    "ast_hash": "79836f14d067277141ab2876f00a4058",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/features/mod.rs": {
+    "mtime": 1790820705.9737682,
+    "seen": 1790823147.0060446,
+    "ast_hash": "48b57dd710e28c76b7e7a898fff51eea",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/features/omni_strategies.rs": {
+    "mtime": 1790820705.9753697,
+    "seen": 1790823147.0060446,
+    "ast_hash": "df3f618a3a94676801c0601909b994df",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/features/welford.rs": {
+    "mtime": 1790820705.978543,
+    "seen": 1790823147.0060446,
+    "ast_hash": "7d1d43897ce520d983e25824ab14ffea",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/lib.rs": {
+    "mtime": 1790820705.9801397,
+    "seen": 1790823147.0060446,
+    "ast_hash": "359c8a2bf3cf7c617d3ac48f2e520931",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/multi_asset_orchestrator.rs": {
+    "mtime": 1790820705.9832103,
+    "seen": 1790823147.0060446,
+    "ast_hash": "cc3615c8f83fb6a3837d5c9ca033215f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/orderbook.rs": {
+    "mtime": 1790820705.9847648,
+    "seen": 1790823147.0060446,
+    "ast_hash": "13235a94890becb5c762c5ed3f47afae",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/parsers.rs": {
+    "mtime": 1790820705.9879472,
+    "seen": 1790823147.0060446,
+    "ast_hash": "86b03a0659ae5df51bd75c82ebee64c8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/quantum_arena.rs": {
+    "mtime": 1790820705.989552,
+    "seen": 1790823147.0060446,
+    "ast_hash": "40ce681138475e7c62a950ee2e14a4a3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/quantum_ingester.rs": {
+    "mtime": 1790820705.9917006,
+    "seen": 1790823147.0060446,
+    "ast_hash": "b625a1879eaa585f491609a78547f8e8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/risk/mod.rs": {
+    "mtime": 1790820705.9947581,
+    "seen": 1790823147.0060446,
+    "ast_hash": "dddd4484b36fac2fac05ec52dc116d16",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/symbol_manager.rs": {
+    "mtime": 1790820705.9953122,
+    "seen": 1790823147.0060446,
+    "ast_hash": "e033169d0d9894fe6d164ca0c9e6628c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/src/trailing.rs": {
+    "mtime": 1790820705.9984665,
+    "seen": 1790823147.0060446,
+    "ast_hash": "3f36dc7140b2ba207b524f13ef32fb08",
+    "semantic_hash": ""
+  },
+  ".t1-cert/static/app.js": {
+    "mtime": 1790820706.0022593,
+    "seen": 1790823147.0060446,
+    "ast_hash": "2f9a9017c585e114146ecee8c0b74395",
+    "semantic_hash": ""
+  },
+  ".t1-cert/.agent/rules/trade.md": {
+    "mtime": 1790820701.3979106,
+    "seen": 1790823147.009749,
+    "ast_hash": "8c5faf319e0dd0c9ccc13ab95ae5310a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/.agent/workflows/geminidetailedworkflow.md": {
+    "mtime": 1790820701.4010913,
+    "seen": 1790823147.009749,
+    "ast_hash": "75b100cf69a9e12f4c79a4bb745d5fbc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/.agents/AGENTS.md": {
+    "mtime": 1790820701.405871,
+    "seen": 1790823147.009749,
+    "ast_hash": "748e29f53b404d68b1616eaecd60c38e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/.agents/MEMORIA.md": {
+    "mtime": 1790820701.4106753,
+    "seen": 1790823147.009749,
+    "ast_hash": "4f5baa9556b186738ad6737fcc35a678",
+    "semantic_hash": ""
+  },
+  ".t1-cert/.agents/rules/contexto-arquitectonico.md": {
+    "mtime": 1790820701.4149792,
+    "seen": 1790823147.009749,
+    "ast_hash": "8c5faf319e0dd0c9ccc13ab95ae5310a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/.agents/rules/graphify.md": {
+    "mtime": 1790820701.416546,
+    "seen": 1790823147.009749,
+    "ast_hash": "f1e53ecc9194573d3c28fc116c743a2e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/.agents/rules/parte-2-contexto-arqui.md": {
+    "mtime": 1790820701.4181552,
+    "seen": 1790823147.009749,
+    "ast_hash": "8c5faf319e0dd0c9ccc13ab95ae5310a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/.agents/rules/parte3arqui.md": {
+    "mtime": 1790820701.419749,
+    "seen": 1790823147.009749,
+    "ast_hash": "8c5faf319e0dd0c9ccc13ab95ae5310a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/.agents/workflows/graphify.md": {
+    "mtime": 1790820701.424455,
+    "seen": 1790823147.009749,
+    "ast_hash": "6d73634a678cf1e1c71930adf80bd1f0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/.github/workflows/replay-contracts.yml": {
+    "mtime": 1790820701.4446194,
+    "seen": 1790823147.009749,
+    "ast_hash": "d2282eb99e3bcd496238ceff177e8f55",
+    "semantic_hash": ""
+  },
+  ".t1-cert/AGENTS.md": {
+    "mtime": 1790820701.4525995,
+    "seen": 1790823147.009749,
+    "ast_hash": "5dc06a043b0afaa1e48a5759965063b7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/ARCHITECTURE.md": {
+    "mtime": 1790820701.4542363,
+    "seen": 1790823147.009749,
+    "ast_hash": "bb172de9056bc95daf76c7a0831e756c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/ATLAS_ANALITICO.md": {
+    "mtime": 1790820701.4608896,
+    "seen": 1790823147.009749,
+    "ast_hash": "1eb3a81a06bbfbb4abdcffd59b6362d8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/CERTIFICADO_SISTEMA_v1.md": {
+    "mtime": 1790820701.4638903,
+    "seen": 1790823147.009749,
+    "ast_hash": "68511517ab46e702be97d8a46413675c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/CLAUDE.md": {
+    "mtime": 1790820701.4669964,
+    "seen": 1790823147.009749,
+    "ast_hash": "2a77c37c935748f8056186c527d6f6d5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/COORDINACION_CODEX_2026-09-28.md": {
+    "mtime": 1790820701.4717817,
+    "seen": 1790823147.009749,
+    "ast_hash": "007df3c481c930c2f99539c2ddf310ad",
+    "semantic_hash": ""
+  },
+  ".t1-cert/FORENSIC_INTELLIGENCE_AUDIT.md": {
+    "mtime": 1790820701.504301,
+    "seen": 1790823147.009749,
+    "ast_hash": "ae8e5507662934c7313deece4fdb93a8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_CUARTO.md": {
+    "mtime": 1790820701.5069363,
+    "seen": 1790823147.009749,
+    "ast_hash": "231eebeeff7465917e3da47e046b2a5a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_DECIMO.md": {
+    "mtime": 1790820701.5092862,
+    "seen": 1790823147.009749,
+    "ast_hash": "ebc3050b2f233d6459022ae6bd4242b4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_DECIMOCUARTO.md": {
+    "mtime": 1790820701.511604,
+    "seen": 1790823147.009749,
+    "ast_hash": "6ad7f2a600b0c67113586fd09185919f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_DECIMOTERCERO.md": {
+    "mtime": 1790820701.5131457,
+    "seen": 1790823147.009749,
+    "ast_hash": "5e7a0e0c706205b94dc981693b298a5c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_DUODECIMA_OLA_X.md": {
+    "mtime": 1790820701.516312,
+    "seen": 1790823147.009749,
+    "ast_hash": "85f1a0249b0ba838c36e709ec5f4c7d1",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_DUODECIMO.md": {
+    "mtime": 1790820701.5179195,
+    "seen": 1790823147.009749,
+    "ast_hash": "5b4221fca227d693878def7f13fc3d3d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_F0F3.md": {
+    "mtime": 1790820701.5211496,
+    "seen": 1790823147.009749,
+    "ast_hash": "d7e0d8672b6960e351fb399c14aee3ee",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_NOVENO.md": {
+    "mtime": 1790820701.5233593,
+    "seen": 1790823147.009749,
+    "ast_hash": "ddcf6689c54d3fc0fb205ced0ec15789",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_OCTAVO.md": {
+    "mtime": 1790820701.525138,
+    "seen": 1790823147.009749,
+    "ast_hash": "ef8b58fac947bfb4db3a16cd7c15873a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_ONCEAVO.md": {
+    "mtime": 1790820701.528359,
+    "seen": 1790823147.009749,
+    "ast_hash": "8f225cfd5fa34dd5131e2e6a3feccf2c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_QUINTO.md": {
+    "mtime": 1790820701.5299659,
+    "seen": 1790823147.009749,
+    "ast_hash": "2d87f580803ffbf39055f2954128b77f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_R1R3.md": {
+    "mtime": 1790820701.5330677,
+    "seen": 1790823147.009749,
+    "ast_hash": "2a3b9639276f1f6cd48c2cf4eddcf503",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_SEPTIMO.md": {
+    "mtime": 1790820701.5362263,
+    "seen": 1790823147.009749,
+    "ast_hash": "03d27a8297cf28443b16d74a84aa0ee9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_SEXTO.md": {
+    "mtime": 1790820701.5394216,
+    "seen": 1790823147.009749,
+    "ast_hash": "4b624823f17f1936b6f1c4cb2c3d95da",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_ASEGURAMIENTO_TERCERO.md": {
+    "mtime": 1790820701.5426378,
+    "seen": 1790823147.009749,
+    "ast_hash": "630a7c25e0bc00a7a62710c914d4ab86",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_CERTIFICACION_QUINTA_OLA.md": {
+    "mtime": 1790820701.5453784,
+    "seen": 1790823147.009749,
+    "ast_hash": "58afdc184ea799c6a93ab874b2ed2828",
+    "semantic_hash": ""
+  },
+  ".t1-cert/INFORME_FORENSE_MAESTRO.md": {
+    "mtime": 1790820701.562648,
+    "seen": 1790823147.009749,
+    "ast_hash": "b27300944d803bb01aa84c6b0670820b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/PLAN_REPARACION_EVOLUCION_SENIOR.md": {
+    "mtime": 1790820701.5818331,
+    "seen": 1790823147.009749,
+    "ast_hash": "c1d115c021efe3a1fca61094086185f9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/README.md": {
+    "mtime": 1790820701.5845654,
+    "seen": 1790823147.009749,
+    "ast_hash": "def271cb00c533783dbf127ba3c2d6b7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/RESULTADO_CERTIFICACION_R2_30D.md": {
+    "mtime": 1790820701.5877426,
+    "seen": 1790823147.009749,
+    "ast_hash": "59015026884345305f374f414c83622d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/STRATEGIES.md": {
+    "mtime": 1790820701.5909545,
+    "seen": 1790823147.009749,
+    "ast_hash": "d04d183b0904c4246246bf9d94fde08c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/TABLERO.md": {
+    "mtime": 1790820701.5941548,
+    "seen": 1790823147.009749,
+    "ast_hash": "dcff4e9aa6eefd98cdb38a8df5915124",
+    "semantic_hash": ""
+  },
+  ".t1-cert/WALKTHROUGH_FORENSE_SISTEMICO.md": {
+    "mtime": 1790820701.5956879,
+    "seen": 1790823147.009749,
+    "ast_hash": "b3f7f664f7bf4c6e1973ac864ca3fdfd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/artifacts/live_latency_report.md": {
+    "mtime": 1790820701.6004577,
+    "seen": 1790823147.009749,
+    "ast_hash": "1124236180084bf5dacb55a406251217",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genotypes/BTC_USDT_SCALPING_perfect_genome.yaml": {
+    "mtime": 1790820701.6448016,
+    "seen": 1790823147.009749,
+    "ast_hash": "71fe7d0297b9c51551115c53e8e802df",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genotypes/BTC_USDT_SWING_perfect_genome.yaml": {
+    "mtime": 1790820701.646408,
+    "seen": 1790823147.009749,
+    "ast_hash": "32f95c870e2f6631a2a96d00f5308159",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genotypes/ETH_USDT_SCALPING_perfect_genome.yaml": {
+    "mtime": 1790820701.6480112,
+    "seen": 1790823147.009749,
+    "ast_hash": "c74677cd0379fd961a791530b3599ba4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genotypes/ETH_USDT_SWING_perfect_genome.yaml": {
+    "mtime": 1790820701.6512263,
+    "seen": 1790823147.009749,
+    "ast_hash": "4dac4a075abf079b7b15f2e5e767bb43",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genotypes/SOL_USDT_SCALPING_perfect_genome.yaml": {
+    "mtime": 1790820701.6528177,
+    "seen": 1790823147.009749,
+    "ast_hash": "fa8550ab82bd4d77912c7884ddcf5438",
+    "semantic_hash": ""
+  },
+  ".t1-cert/config_dir/genotypes/SOL_USDT_SWING_perfect_genome.yaml": {
+    "mtime": 1790820701.6543684,
+    "seen": 1790823147.009749,
+    "ast_hash": "61c834f19648c3dc19bf336888a64fed",
+    "semantic_hash": ""
+  },
+  ".t1-cert/crates/graph-architecture/index.html": {
+    "mtime": 1790820702.5558703,
+    "seen": 1790823147.009749,
+    "ast_hash": "9c49b8ca2e5f1433098078bea6d7cfb4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/dashboard/4d_graph.html": {
+    "mtime": 1790820703.1608205,
+    "seen": 1790823147.009749,
+    "ast_hash": "89d5e82113f15bb8a0de977e14f75d1e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/dashboard/crypto_4d_graph.html": {
+    "mtime": 1790820703.1623795,
+    "seen": 1790823147.009749,
+    "ast_hash": "91a4660cd8d452b68f7416147b644fad",
+    "semantic_hash": ""
+  },
+  ".t1-cert/dashboard/graph_ui/index.html": {
+    "mtime": 1790820703.1655679,
+    "seen": 1790823147.009749,
+    "ast_hash": "5aeab2707ec3bd74ada1242739815021",
+    "semantic_hash": ""
+  },
+  ".t1-cert/deployment/build_instructions.md": {
+    "mtime": 1790820703.1810663,
+    "seen": 1790823147.009749,
+    "ast_hash": "748547cc26a268e612cf5c6588a40a51",
+    "semantic_hash": ""
+  },
+  ".t1-cert/deployment/grafana/provisioning/dashboards/dashboard.yml": {
+    "mtime": 1790820703.1960628,
+    "seen": 1790823147.009749,
+    "ast_hash": "fd3b8d25ef3fc4c98a8361fff9ffcd9f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/deployment/grafana/provisioning/datasources/datasource.yml": {
+    "mtime": 1790820703.1992755,
+    "seen": 1790823147.009749,
+    "ast_hash": "37fa6d8bda4e6f6b4fa17d09ded9b06e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/deployment/loki-config.yaml": {
+    "mtime": 1790820703.2014818,
+    "seen": 1790823147.009749,
+    "ast_hash": "dc6b4957f5389a542808b060c8e3408e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/deployment/prometheus.yml": {
+    "mtime": 1790820703.2031572,
+    "seen": 1790823147.009749,
+    "ast_hash": "4491eec3ec50bfc25f3cd99163c5a9a7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/deployment/promtail.yml": {
+    "mtime": 1790820703.2058904,
+    "seen": 1790823147.009749,
+    "ast_hash": "1cd02961c8ad9c2dacd679160b3bbd9d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docker-compose.yml": {
+    "mtime": 1790820703.207435,
+    "seen": 1790823147.009749,
+    "ast_hash": "7629b761b623a2b7964861d4db09c85d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/ANALYSIS_LOSSES.md": {
+    "mtime": 1790820703.212182,
+    "seen": 1790823147.009749,
+    "ast_hash": "3cc85c771986a2fd659ce64993ea1d98",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/ARCHITECTURE.md": {
+    "mtime": 1790820703.2148724,
+    "seen": 1790823147.009749,
+    "ast_hash": "8399ccefc78208294a75be8b039e2671",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/ARCHITECTURE_METAL_CORE.md": {
+    "mtime": 1790820703.2164834,
+    "seen": 1790823147.009749,
+    "ast_hash": "04fec560a37a6cef87508b5b042a9f7a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
+    "mtime": 1790820703.2203205,
+    "seen": 1790823147.009749,
+    "ast_hash": "b4d7acfafe31edd391cb55ace29d7303",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_APRENDIZAJE_CAUSAL_2026-09-28.md": {
+    "mtime": 1790820703.2252555,
+    "seen": 1790823147.009749,
+    "ast_hash": "f975fd85d873741693ebe4eaf312493a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_BT_VIVO_2026-09-28.md": {
+    "mtime": 1790820703.2273896,
+    "seen": 1790823147.009749,
+    "ast_hash": "147fce7b0d924947fb09daca48725e72",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_CALIBRACION_PLATT_2026-09-28.md": {
+    "mtime": 1790820703.231708,
+    "seen": 1790823147.009749,
+    "ast_hash": "3e806b6f1c380d959497fde33fe44779",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_CAUSALIDAD_REPLAY_2026-09-29.md": {
+    "mtime": 1790820703.2360146,
+    "seen": 1790823147.009749,
+    "ast_hash": "cb1c4ff5db2ddbe56452e2d61b12eed9",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_CONFORMAL_CONTRATO_2026-09-28.md": {
+    "mtime": 1790820703.2392788,
+    "seen": 1790823147.009749,
+    "ast_hash": "02a1b246919e9ea3db1f72f3fbd90c2a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_CONTINUIDAD_ESPECTRAL_2026-09-24.md": {
+    "mtime": 1790820703.24407,
+    "seen": 1790823147.009749,
+    "ast_hash": "fb2b9a6989691e67864ddd57978eff79",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_CONTRATOS_ESPECTRALES_2026-09-28.md": {
+    "mtime": 1790820703.2488194,
+    "seen": 1790823147.009749,
+    "ast_hash": "b08c667ae4b831a5e6ffed32f8e43d5c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FIRMAS_CONTRATOS_TEORICOS_2026-09-29.md": {
+    "mtime": 1790820703.254688,
+    "seen": 1790823147.009749,
+    "ast_hash": "e89c4ff61ee1b9df6bc4252096122a7c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_2026-09-24.md": {
+    "mtime": 1790820703.2594056,
+    "seen": 1790823147.009749,
+    "ast_hash": "c1b97e7fb4cb70f331373392e3a21d58",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_III_2026-09-24.md": {
+    "mtime": 1790820703.274516,
+    "seen": 1790823147.009749,
+    "ast_hash": "0d29f115203c149b6317937453968f60",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_II_2026-09-24.md": {
+    "mtime": 1790820703.278804,
+    "seen": 1790823147.009749,
+    "ast_hash": "e8098e01d239c055e78d2fbaf6e0e486",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_IV_2026-09-24.md": {
+    "mtime": 1790820703.285858,
+    "seen": 1790823147.009749,
+    "ast_hash": "c57567747752fde0290b9b6d081ef812",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_IX_2026-09-24.md": {
+    "mtime": 1790820703.2895596,
+    "seen": 1790823147.009749,
+    "ast_hash": "aab51def4cdadf215b587559a04d7c95",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_VIII_2026-09-24.md": {
+    "mtime": 1790820703.2927282,
+    "seen": 1790823147.009749,
+    "ast_hash": "114aaa3ff1cf52fe4b70cdc5c89d5bbf",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_VII_2026-09-24.md": {
+    "mtime": 1790820703.2974422,
+    "seen": 1790823147.009749,
+    "ast_hash": "f0903a975b754fe6a8f602ce43f3fd3d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_VI_2026-09-24.md": {
+    "mtime": 1790820703.3006418,
+    "seen": 1790823147.009749,
+    "ast_hash": "7eaf02f6546e498d1fa70f8ad95179f2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_V_2026-09-24.md": {
+    "mtime": 1790820703.3060913,
+    "seen": 1790823147.009749,
+    "ast_hash": "8751709d2ccb6c4e5861ee3d30748a24",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIII_2026-09-24.md": {
+    "mtime": 1790820703.3095007,
+    "seen": 1790823147.009749,
+    "ast_hash": "a7e3f848db7cb42b55200895991bb574",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XII_2026-09-24.md": {
+    "mtime": 1790820703.3126557,
+    "seen": 1790823147.009749,
+    "ast_hash": "1bf396391b8a8a23959160de33f81b31",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIV_2026-09-24.md": {
+    "mtime": 1790820703.3174372,
+    "seen": 1790823147.009749,
+    "ast_hash": "f0e78dedae9ec98b13ef567275ba3fcd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIX_2026-09-24.md": {
+    "mtime": 1790820703.3206232,
+    "seen": 1790823147.009749,
+    "ast_hash": "1877018d811e32cc9f6fccdd707c9aa6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XI_2026-09-24.md": {
+    "mtime": 1790820703.3254316,
+    "seen": 1790823147.009749,
+    "ast_hash": "aff88b174df03494a49995556290ee09",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLIII_2026-09-26.md": {
+    "mtime": 1790820703.328602,
+    "seen": 1790823147.009749,
+    "ast_hash": "3f20f6351566ed2f934a8d8eca66e3d8",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLII_2026-09-26.md": {
+    "mtime": 1790820703.3339207,
+    "seen": 1790823147.009749,
+    "ast_hash": "3836675fb47835a5dc3bb08216c93814",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLIV_2026-09-26.md": {
+    "mtime": 1790820703.3376777,
+    "seen": 1790823147.009749,
+    "ast_hash": "57575a7184cd28181bd9a066b6e461a6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XLI_2026-09-26.md": {
+    "mtime": 1790820703.340865,
+    "seen": 1790823147.009749,
+    "ast_hash": "b5948900f90d3dbdcffa78aa5fbcbc71",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XL_2026-09-25.md": {
+    "mtime": 1790820703.3440523,
+    "seen": 1790823147.009749,
+    "ast_hash": "9fabbbadffd1f916ba56903a14fa3eac",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVIII_2026-09-24.md": {
+    "mtime": 1790820703.34721,
+    "seen": 1790823147.009749,
+    "ast_hash": "7f3366d3b197afd1fc19fd332e804c36",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVII_2026-09-24.md": {
+    "mtime": 1790820703.350436,
+    "seen": 1790823147.009749,
+    "ast_hash": "0e7cb7b51124c03e1429fa1bef130f10",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XVI_2026-09-24.md": {
+    "mtime": 1790820703.354744,
+    "seen": 1790823147.009749,
+    "ast_hash": "c194a2ef6db9babfe9ba09ab1c996dd0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XV_2026-09-24.md": {
+    "mtime": 1790820703.3591168,
+    "seen": 1790823147.009749,
+    "ast_hash": "21b808d78674a626dfa16e69e340a54d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIII_2026-09-24.md": {
+    "mtime": 1790820703.362285,
+    "seen": 1790823147.009749,
+    "ast_hash": "f9e331c1a922d623bb1411e1fd62d386",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXII_2026-09-24.md": {
+    "mtime": 1790820703.3670316,
+    "seen": 1790823147.009749,
+    "ast_hash": "88eee19076756e32e99bf086273346a0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIV_2026-09-25.md": {
+    "mtime": 1790820703.370229,
+    "seen": 1790823147.009749,
+    "ast_hash": "b15f76f201788dbaf72411ef123ab51f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXIX_2026-09-25.md": {
+    "mtime": 1790820703.374615,
+    "seen": 1790823147.009749,
+    "ast_hash": "171d0dd8cd46d8ab5d164622c80b355f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXI_2026-09-24.md": {
+    "mtime": 1790820703.379413,
+    "seen": 1790823147.009749,
+    "ast_hash": "6be41f91dc9f2b95c720795d809de021",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXVIII_2026-09-25.md": {
+    "mtime": 1790820703.384219,
+    "seen": 1790823147.009749,
+    "ast_hash": "ed6f37ff0ce083cfc65853295f3b1c11",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXVII_2026-09-25.md": {
+    "mtime": 1790820703.3885543,
+    "seen": 1790823147.009749,
+    "ast_hash": "bda0422301a8ca2e0fb8828a3d3bf5ac",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXVI_2026-09-25.md": {
+    "mtime": 1790820703.3917286,
+    "seen": 1790823147.009749,
+    "ast_hash": "bdd9f9f81def5a3464bbf6f6f0478d80",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXV_2026-09-25.md": {
+    "mtime": 1790820703.3960662,
+    "seen": 1790823147.009749,
+    "ast_hash": "b0881de0c142ab92183fbe75a6544b97",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIII_2026-09-25.md": {
+    "mtime": 1790820703.3992484,
+    "seen": 1790823147.009749,
+    "ast_hash": "ad23701e613c56392260a55385cff94c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXII_2026-09-25.md": {
+    "mtime": 1790820703.404049,
+    "seen": 1790823147.009749,
+    "ast_hash": "f991ad592d9f85d78810da85b5421bf7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIV_2026-09-25.md": {
+    "mtime": 1790820703.4072745,
+    "seen": 1790823147.009749,
+    "ast_hash": "2a5b352710285005da49efa2bf73e7d0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXIX_2026-09-25.md": {
+    "mtime": 1790820703.412092,
+    "seen": 1790823147.009749,
+    "ast_hash": "4308004741ad573e8003700fab8d69fc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXI_2026-09-25.md": {
+    "mtime": 1790820703.4148233,
+    "seen": 1790823147.009749,
+    "ast_hash": "430dc45061b2b090294ce557027d4b9b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVIII_2026-09-25.md": {
+    "mtime": 1790820703.4195166,
+    "seen": 1790823147.009749,
+    "ast_hash": "7490e190fc0008ccf11abdf8831e4ae3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVII_2026-09-25.md": {
+    "mtime": 1790820703.4243693,
+    "seen": 1790823147.009749,
+    "ast_hash": "523a0082ee6baef341aeeed23342ede5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXVI_2026-09-25.md": {
+    "mtime": 1790820703.4275186,
+    "seen": 1790823147.009749,
+    "ast_hash": "7581d4c847ae22e3d26392093796c63f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXXV_2026-09-25.md": {
+    "mtime": 1790820703.4307117,
+    "seen": 1790823147.009749,
+    "ast_hash": "4d5869533358e5b24837851df6d806cb",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XXX_2026-09-25.md": {
+    "mtime": 1790820703.4354653,
+    "seen": 1790823147.009749,
+    "ast_hash": "15953e1f125db25c8731579d0c43b84b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XX_2026-09-24.md": {
+    "mtime": 1790820703.4401772,
+    "seen": 1790823147.009749,
+    "ast_hash": "e18c8884b83549f49b534ecc7a01442c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_FUNDAMENTOS_CIENTIFICOS_X_2026-09-24.md": {
+    "mtime": 1790820703.443982,
+    "seen": 1790823147.009749,
+    "ast_hash": "8551b803541800db4b68f89ead6fd6e6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_INTEGRACION_EWMA_Y_RELOJ_2026-09-28.md": {
+    "mtime": 1790820703.4477303,
+    "seen": 1790823147.009749,
+    "ast_hash": "dbf80c0f472ce748777c6307f99cbcde",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_INTEGRACION_Y_CONTRATOS_NUMERICOS_2026-09-28.md": {
+    "mtime": 1790820703.4525738,
+    "seen": 1790823147.009749,
+    "ast_hash": "a030e2c27d13350ed721c9cedde5bdf4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_METRICAS_REPLAY_2026-09-29.md": {
+    "mtime": 1790820703.4573846,
+    "seen": 1790823147.009749,
+    "ast_hash": "d916c1439d7a425151e98707f37052f0",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_ORACULO_GENETICO_2026-09-30.md": {
+    "mtime": 1790820703.4605472,
+    "seen": 1790823147.009749,
+    "ast_hash": "b67538e9216ac0e4780b360bc757dd62",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_REGISTRO_MODELOS_2026-09-30.md": {
+    "mtime": 1790820703.463225,
+    "seen": 1790823147.009749,
+    "ast_hash": "928795cc63173cebe7933b7c8197b767",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/AUDITORIA_TE_COBERTURA_EVIDENCIA_2026-09-29.md": {
+    "mtime": 1790820703.4663692,
+    "seen": 1790823147.009749,
+    "ast_hash": "f8453153fd67881fd1e69d2e467758c3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/BATCH_BACKTEST_REPORT.md": {
+    "mtime": 1790820703.4695458,
+    "seen": 1790823147.009749,
+    "ast_hash": "bf3880b0d12e6d1e4370df6868efb22e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/BINANCE_API_MAP.md": {
+    "mtime": 1790820703.4711447,
+    "seen": 1790823147.009749,
+    "ast_hash": "dac768f462ad5768a5aa7473565b2f4e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/BRECHA_META_2026-09-29.md": {
+    "mtime": 1790820703.4758403,
+    "seen": 1790823147.009749,
+    "ast_hash": "9b6869fb554cc294375e58ecb676ffdd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/COMMANDS.md": {
+    "mtime": 1790820703.4774616,
+    "seen": 1790823147.009749,
+    "ast_hash": "28681042e1a37d9be614cd3e1e2f5c3c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/COMMANDS_V3.md": {
+    "mtime": 1790820703.4791255,
+    "seen": 1790823147.009749,
+    "ast_hash": "8f3f3dddd8fe6d711f2c1278dff17821",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/CONFIGURATION.md": {
+    "mtime": 1790820703.4823134,
+    "seen": 1790823147.009749,
+    "ast_hash": "6cd0410ca159e346b6f1d8abe1c3605c",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/CONSTITUTION_V6.md": {
+    "mtime": 1790820703.4839256,
+    "seen": 1790823147.009749,
+    "ast_hash": "634c179eb3f1235594a9c17552fbd52d",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/CONSTITUTION_V7.md": {
+    "mtime": 1790820703.4870906,
+    "seen": 1790823147.011332,
+    "ast_hash": "696b2caabbe5f7f1c7d8f45e357ec359",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/DEPLOYMENT.md": {
+    "mtime": 1790820703.4886947,
+    "seen": 1790823147.011332,
+    "ast_hash": "9461e0aa491e96dd6a3e81f39f22624f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/GOD_MODE_LAUNCH_REPORT.md": {
+    "mtime": 1790820703.491887,
+    "seen": 1790823147.011332,
+    "ast_hash": "aeae68594c3e36b6184de62c79b90b44",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/GOD_MODE_PROTOCOL.md": {
+    "mtime": 1790820703.4934793,
+    "seen": 1790823147.011332,
+    "ast_hash": "7c02b7025a3133223d855df9a314a6bc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/HORIZON.md": {
+    "mtime": 1790820703.4946032,
+    "seen": 1790823147.011332,
+    "ast_hash": "6c3be043b2ee8bb606d92082d6fce5cf",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/INVENTORY.md": {
+    "mtime": 1790820703.4961584,
+    "seen": 1790823147.011332,
+    "ast_hash": "5fe331f578a2256a123981e419318f00",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/MICRO_CAPITAL_OPERATIONS.md": {
+    "mtime": 1790820703.4993382,
+    "seen": 1790823147.011332,
+    "ast_hash": "b719c9c133784e8ff57c718974b4f63a",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/NANO_LATENCY_AUDIT.md": {
+    "mtime": 1790820703.500968,
+    "seen": 1790823147.011332,
+    "ast_hash": "e24ea5182beec5c9fd3dd52b7e8e4552",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/OMEGA_PROTOCOL.md": {
+    "mtime": 1790820703.502577,
+    "seen": 1790823147.011332,
+    "ast_hash": "e276186bc059e16d681d96c1895c1ce2",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/PREDICTION_ACCURACY_LOG.md": {
+    "mtime": 1790820703.5041773,
+    "seen": 1790823147.011332,
+    "ast_hash": "89771de187b617bd507bc3b94e13430e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/PROJECT_BIBLE.md": {
+    "mtime": 1790820703.5074086,
+    "seen": 1790823147.011332,
+    "ast_hash": "c15fd2be5329ed73b62f6eb3d52386fd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/PULSO-NOUVEAUCRAFT.md": {
+    "mtime": 1790820703.5090003,
+    "seen": 1790823147.011332,
+    "ast_hash": "104c7b786256dc6aada07a16760d5d62",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/RECOVERY_PROTOCOL.md": {
+    "mtime": 1790820703.5105982,
+    "seen": 1790823147.011332,
+    "ast_hash": "8aab23cecf72f145608fb9b869f0bc1f",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/RISK.md": {
+    "mtime": 1790820703.5132751,
+    "seen": 1790823147.011332,
+    "ast_hash": "8a258adfef706517e2f553ce7db1e168",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/STRATEGIES.md": {
+    "mtime": 1790820703.514829,
+    "seen": 1790823147.011332,
+    "ast_hash": "c8c5c14e310eed0f729b86274ee7abb4",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/SYMBOLS.md": {
+    "mtime": 1790820703.5174444,
+    "seen": 1790823147.011332,
+    "ast_hash": "8acc04a000b73e79b123ce364d0199be",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/TEMPORAL_SPECTRUM.md": {
+    "mtime": 1790820703.5195494,
+    "seen": 1790823147.011332,
+    "ast_hash": "4a3818f83b7d235f49219d02cf51defe",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/TRADING_KNOWLEDGE.md": {
+    "mtime": 1790820703.523386,
+    "seen": 1790823147.011332,
+    "ast_hash": "f2dc972ecb3e334735804a2eaae61679",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/TRIAGE_TEORICO_2026-09-29.md": {
+    "mtime": 1790820703.5266862,
+    "seen": 1790823147.011332,
+    "ast_hash": "654b3ab250c2b779432802d204ca5d32",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/VALIDATION_REPORT.md": {
+    "mtime": 1790820703.5277843,
+    "seen": 1790823147.011332,
+    "ast_hash": "c9e798a2e00ab13108946989194d7b29",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/adr/ADR-0001-latencia-lognormal-fills.md": {
+    "mtime": 1790820703.5324986,
+    "seen": 1790823147.011332,
+    "ast_hash": "ded8dcc6ccd0eda84848744c63a6d268",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/adr/ADR-0002-veto-tres-entradas-medidas.md": {
+    "mtime": 1790820703.5372972,
+    "seen": 1790823147.011332,
+    "ast_hash": "0d0af397635a94a0e3de3d3fb5a2e7fd",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/adr/ADR-0003-doctrina-meta-geometrica.md": {
+    "mtime": 1790820703.5429864,
+    "seen": 1790823147.011332,
+    "ast_hash": "7da4c3f36e5fc5b09ebd62a584ab13be",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/adr/ADR-0004-veto-registry-como-codigo.md": {
+    "mtime": 1790820703.5462077,
+    "seen": 1790823147.011332,
+    "ast_hash": "a4a20722c6c0332170ec4b235c3e26e5",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/adr/ADR-0005-triage-teorico-y-medicion.md": {
+    "mtime": 1790820703.5477912,
+    "seen": 1790823147.011332,
+    "ast_hash": "9196b6a94d1b5ef11bf165a1746011b6",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/adr/ADR-0006-bt-vivo-envoltorio.md": {
+    "mtime": 1790820703.5509603,
+    "seen": 1790823147.011332,
+    "ast_hash": "dd00f35b5ea0d2a0084b72d7b1aaa55b",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/adr/ADR-0007-worktree-aislado-verificaciones.md": {
+    "mtime": 1790820703.5541465,
+    "seen": 1790823147.011332,
+    "ast_hash": "617abc40dfa495b115675d5abf274925",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/adr/README.md": {
+    "mtime": 1790820703.5574076,
+    "seen": 1790823147.011332,
+    "ast_hash": "8974962bba0b74e331f8d23f7aaca2b3",
+    "semantic_hash": ""
+  },
+  ".t1-cert/docs/pip_list.txt": {
+    "mtime": 1790820703.726225,
+    "seen": 1790823147.011332,
+    "ast_hash": "7a2a0b6ef04fcfd87a1b7972f7a0cecc",
+    "semantic_hash": ""
+  },
+  ".t1-cert/graph_3d_lite.html": {
+    "mtime": 1790820703.733653,
+    "seen": 1790823147.011332,
+    "ast_hash": "fcce68e712514c2ad8b0e7f5f10a1994",
+    "semantic_hash": ""
+  },
+  ".t1-cert/graph_3d_topology.html": {
+    "mtime": 1790820703.7380087,
+    "seen": 1790823147.011332,
+    "ast_hash": "82021c0d4f491d4390a261a459ef81a7",
+    "semantic_hash": ""
+  },
+  ".t1-cert/implementation_plan_fee_slayer.md": {
+    "mtime": 1790820705.799395,
+    "seen": 1790823147.011332,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/static/index.html": {
+    "mtime": 1790820706.0043855,
+    "seen": 1790823147.011332,
+    "ast_hash": "7efaf154b09e2b780b87ddee204274ee",
+    "semantic_hash": ""
+  },
+  ".t1-cert/summary_table.md": {
+    "mtime": 1790820706.009239,
+    "seen": 1790823147.011332,
+    "ast_hash": "6f11b84b59d7209178ff9df76c73147e",
+    "semantic_hash": ""
+  },
+  ".t1-cert/task.md": {
+    "mtime": 1790820706.0108094,
+    "seen": 1790823147.011332,
+    "ast_hash": "39bf42308076878c1daea97098615a78",
+    "semantic_hash": ""
+  },
+  ".t1-cert/walkthrough.md": {
+    "mtime": 1790820706.016711,
+    "seen": 1790823147.011332,
+    "ast_hash": "fd06498f5cdc62810f954cc5e098d086",
     "semantic_hash": ""
   }
 }
