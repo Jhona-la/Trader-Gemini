@@ -203,10 +203,17 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             let is_long = obi > 0.0 && ml_prob >= ml_base + ml_lift;
             let is_short = obi < 0.0 && ml_prob <= ml_base - ml_lift;
 
+            // Ola 9 (SPECTRAL CONTINUITY): El factor de escala de excitación
+            // se normaliza contra el umbral crítico efectivo del proceso (anclado
+            // al estado estacionario + genoma), garantizando continuidad espectral:
+            // en el umbral exacto vale 1.0 y crece monótonamente hasta saturar en 2.0,
+            // eliminando el divisor literal 2.0 que desalineaba la señal según el gen.
+            let hawkes_scale = (hawkes / effective_hawkes_thresh.max(0.01)).min(2.0);
+
             if is_long {
-                (obi * (ml_prob - ml_base) * 4.0 * (hawkes / 2.0).min(2.0)).clamp(0.0, 1.0)
+                (obi * (ml_prob - ml_base) * 4.0 * hawkes_scale).clamp(0.0, 1.0)
             } else if is_short {
-                (obi * (ml_base - ml_prob) * 4.0 * (hawkes / 2.0).min(2.0)).clamp(-1.0, 0.0)
+                (obi * (ml_base - ml_prob) * 4.0 * hawkes_scale).clamp(-1.0, 0.0)
             } else {
                 0.0
             }
@@ -332,5 +339,34 @@ mod tests {
         assert!(engine2.init(registry_vacia).is_ok());
         let v2 = engine2.evaluate();
         assert!(v2 > 0.0, "OBI 0.20 >= piso fallback 0.15 debe votar long: {v2}");
+    }
+
+    /// Ola 9: Continuidad espectral en la escala de excitación Hawkes.
+    /// Verifica que en el umbral efectivo la escala normalizada vale exactamente 1.0,
+    /// y que crece suave y monótonamente conforme la intensidad Hawkes se incrementa.
+    #[test]
+    fn ola9_continuidad_espectral_hawkes_escala_con_umbral_efectivo() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        registry.set("order_book_imbalance", 0.5);
+        registry.set("ml_prob_motor", 0.85);
+        registry.set("ml_model_base", 0.50);
+        registry.set("hawkes_excitation_gene", 0.50); // effective_thresh = 1.60
+
+        let mut engine = FlowExcitationConfluenceEngine::new();
+        assert!(engine.init(Arc::clone(&registry)).is_ok());
+
+        // En hawkes = 1.60 exacto: factor = 1.60 / 1.60 = 1.0
+        registry.set("hawkes_intensity", 1.60);
+        let v_base = engine.evaluate();
+        assert!(v_base > 0.0);
+        // Formula esperada: 0.5 * (0.85 - 0.50) * 4.0 * 1.0 = 0.5 * 0.35 * 4.0 = 0.70
+        assert!((v_base - 0.70).abs() < 1e-6, "v_base esperado 0.70, dio {v_base}");
+
+        // En hawkes = 2.40: factor = 2.40 / 1.60 = 1.50
+        registry.set("hawkes_intensity", 2.40);
+        let v_high = engine.evaluate();
+        assert!(v_high > v_base, "mayor intensidad produce monotonicamente mayor senal");
+        // Formula esperada: 0.70 * 1.50 = 1.05 clamped to 1.0
+        assert_eq!(v_high, 1.0, "satura suavemente en 1.0");
     }
 }

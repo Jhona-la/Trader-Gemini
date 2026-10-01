@@ -498,22 +498,31 @@ impl DependencyExposure {
 ///   perfecta de fantasía no puede borrar la peor exposición aislada.
 /// - Entrada ≤ 0 o NaN en el vector ⇒ 0 (el llamador sanea con su fallback
 ///   antes; aquí es defensa terminal).
-pub fn veto_por_riesgo_real_medido(riesgos: &[f64], rho: Option<f64>, tope: f64) -> bool {
-    if riesgos.is_empty() || !tope.is_finite() || tope <= 0.0 {
-        return false;
+///
+/// Optimización zero-allocation (Ola 9): procesado en streaming de pasada
+/// única sin allocar `Vec<f64>` en heap, reduciendo la latencia de evaluación
+/// a nivel sub-microsegundo con garantía estricta de cero allocations.
+#[inline]
+pub fn calcular_riesgo_grupo(riesgos: &[f64], rho: Option<f64>) -> f64 {
+    if riesgos.is_empty() {
+        return 0.0;
     }
-    let r: Vec<f64> = riesgos
-        .iter()
-        .map(|x| if x.is_finite() && *x > 0.0 { *x } else { 0.0 })
-        .collect();
-    let n = r.len() as f64;
-    let suma: f64 = r.iter().sum::<f64>() * 1.0;
-    let suma_sq: f64 = r.iter().map(|x| x * x).sum();
-    let peor_individual = r.iter().cloned().fold(0.0_f64, f64::max);
-    let riesgo_grupo = match rho {
+    let mut suma = 0.0f64;
+    let mut suma_sq = 0.0f64;
+    let mut peor_individual = 0.0f64;
+    for &x in riesgos {
+        let val = if x.is_finite() && x > 0.0 { x } else { 0.0 };
+        suma += val;
+        suma_sq += val * val;
+        if val > peor_individual {
+            peor_individual = val;
+        }
+    }
+    let n = riesgos.len() as f64;
+    match rho {
         Some(rho) if rho.is_finite() && (-1.0..=1.0).contains(&rho) => {
             if n > 1.0 && rho < -1.0 / (n - 1.0) {
-                // ρ imposible para n exposiciones: no es cobertura.
+                // ρ imposible para n exposiciones: no es cobertura (adverso lineal).
                 suma
             } else {
                 let varianza = suma_sq + rho * (suma * suma - suma_sq);
@@ -521,9 +530,37 @@ pub fn veto_por_riesgo_real_medido(riesgos: &[f64], rho: Option<f64>, tope: f64)
             }
         }
         _ => suma,
-    };
+    }
+}
+
+#[inline]
+pub fn veto_por_riesgo_real_medido(riesgos: &[f64], rho: Option<f64>, tope: f64) -> bool {
+    if riesgos.is_empty() || !tope.is_finite() || tope <= 0.0 {
+        return false;
+    }
+    let riesgo_grupo = calcular_riesgo_grupo(riesgos, rho);
     riesgo_grupo.is_finite() && riesgo_grupo > tope
 }
+
+/// Veto de cartera que une la varianza de grupo equicorrelacionada con la cota
+/// actuarial de Cramér-Lundberg: si existe coeficiente de ajuste `r_lundberg > 0`
+/// para la tolerancia `epsilon` (p. ej. 0.05), el tope efectivo de margen de ruina
+/// es `min(tope_streak, ln(1/eps)/R)`.
+#[inline]
+pub fn veto_por_riesgo_cramer_lundberg(
+    riesgos: &[f64],
+    rho: Option<f64>,
+    tope_streak: f64,
+    r_lundberg: Option<f64>,
+    epsilon: f64,
+) -> bool {
+    let tope_efectivo = match r_lundberg.and_then(|r| crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(r, epsilon)) {
+        Some(m) if m.is_finite() && m > 0.0 => tope_streak.min(m),
+        _ => tope_streak,
+    };
+    veto_por_riesgo_real_medido(riesgos, rho, tope_efectivo)
+}
+
 
 /// Mezcla honesta de correlaciones medidas y no medidas del grupo same-bet:
 /// los medidos aportan su valor; cada NO medido aporta 1.0 (fue admitido al
@@ -1136,5 +1173,55 @@ mod xlvc_contagion_tests {
         assert!(amplified > -0.4, "debe ser > original (erosion)");
         // z=8: boost=0.5, r+(1-r)*0.5 = -0.4 + 1.4*0.5 = 0.3
         assert!((amplified - 0.3).abs() < 1e-6, "matematica exacta: -0.4+1.4*0.5=0.3, dio {amplified}");
+    }
+}
+
+#[cfg(test)]
+mod ola9_zero_alloc_and_lundberg_tests {
+    use super::*;
+
+    #[test]
+    fn ola9_calcular_riesgo_grupo_zero_alloc_exact_parity() {
+        // Riesgos uniformes r = 0.05, n = 4, rho = 0.5
+        let riesgos = [0.05, 0.05, 0.05, 0.05];
+        let r_grp = calcular_riesgo_grupo(&riesgos, Some(0.5));
+        // Formula analitica: r * sqrt(n + n*(n-1)*rho) = 0.05 * sqrt(4 + 4*3*0.5) = 0.05 * sqrt(10) = 0.158113883
+        let esperado = 0.05 * (4.0 + 12.0 * 0.5_f64).sqrt();
+        assert!((r_grp - esperado).abs() < 1e-12, "debe coincidir con la formula analitica");
+
+        // Rho invalida / None => suma lineal
+        let r_lineal = calcular_riesgo_grupo(&riesgos, None);
+        assert!((r_lineal - 0.20).abs() < 1e-12, "sin rho la agregacion es lineal");
+
+        // Caso adverso (rho < -1/(n-1)): n=4 => -1/3 = -0.3333... con rho = -0.5
+        let r_adverso = calcular_riesgo_grupo(&riesgos, Some(-0.5));
+        assert!((r_adverso - 0.20).abs() < 1e-12, "rho no realizable cae a suma lineal");
+
+        // Peor individual actua como cota inferior
+        let riesgos_desiguales = [0.01, 0.01, 0.08];
+        let r_desigual = calcular_riesgo_grupo(&riesgos_desiguales, Some(-0.4));
+        assert!(r_desigual >= 0.08, "el riesgo nunca puede ser menor al peor individual");
+    }
+
+    #[test]
+    fn ola9_veto_por_riesgo_cramer_lundberg_bounds() {
+        let riesgos = [0.04, 0.04, 0.04];
+        let tope_streak = 0.10;
+        let rho = Some(0.2);
+
+        // Sin R de Lundberg: el tope efectivo es tope_streak (0.10).
+        // Riesgo grupo = 0.04 * sqrt(3 + 3*2*0.2) = 0.04 * sqrt(4.2) = 0.08197 < 0.10 => no veto
+        assert!(!veto_por_riesgo_cramer_lundberg(&riesgos, rho, tope_streak, None, 0.05));
+
+        // Con R de Lundberg restrictivo (p. ej. R = 40.0 con eps = 0.05):
+        // Margen m = ln(1/0.05) / 40.0 = ln(20) / 40.0 = 2.9957 / 40.0 = 0.07489
+        // Como m (0.07489) < tope_streak (0.10), el tope efectivo baja a 0.07489
+        // Como riesgo_grupo (0.08197) > 0.07489 => VETO activado por cota de Cramér-Lundberg!
+        assert!(veto_por_riesgo_cramer_lundberg(&riesgos, rho, tope_streak, Some(40.0), 0.05));
+
+        // Con R de Lundberg holgado (p. ej. R = 15.0 con eps = 0.05):
+        // Margen m = ln(20) / 15.0 = 0.1997 > tope_streak (0.10), el tope efectivo se mantiene en 0.10
+        // riesgo_grupo (0.08197) < 0.10 => no veto
+        assert!(!veto_por_riesgo_cramer_lundberg(&riesgos, rho, tope_streak, Some(15.0), 0.05));
     }
 }

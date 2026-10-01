@@ -1388,3 +1388,10 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   `micro_resonant_tau_ms` y `macro_resonant_tau_ms` mediante `continuous_resonant_tau_ms_with_pesos`.
 - **Verificación**: `cargo check --workspace --all-targets` limpio (1m 28s). Tests de
   risk-engine (111 tests), strategy-core (36 tests) y quantum-arena pasan al 100%.
+
+## 2026-10-01 — Antigravity: Ola 9 — Prequential Volatility Memory Decay, Zero-Alloc Group Risk & Cramér-Lundberg Ruin Bounds, Spectral Hawkes Continuity
+
+- **spectral_tape.rs**: Prequential scoring adaptativo con decaimiento de memoria exponencial (`clim_lambda`) en `HorizonForecaster`. Erradica la petrificación no-ergódica de SSE acumulada de por vida, permitiendo que el R² prequencial refleje la capacidad predictiva reciente del horizonte temporal en vez de acumular indefinidamente shocks del pasado remoto.
+- **correlation_guard.rs**: Eliminación de alocación en heap (`Vec<f64>`) en `veto_por_riesgo_real_medido`. Cálculo de suma, suma cuadrática y peor individual en streaming de pasada única O(N) sin heap allocation. Función expuesta `calcular_riesgo_grupo`. Nueva compuerta `veto_por_riesgo_cramer_lundberg` integrando el coeficiente de ajuste de Lundberg R y la cota de supervivencia ψ(m) ≤ e^{-Rm} con el tope de racha Bernoulli.
+- **flow_excitation_confluence.rs**: Continuidad espectral y eliminación de escalón rígido en la escala de auto-excitación de Hawkes. Normalización dinámica por el umbral efectivo del proceso (`effective_hawkes_thresh`), permitiendo una modulación suave y monótona sin chattering ni saltos abruptos.
+- **Verificación**: Tests en quantum-arena (5/5), risk-engine (113/113), signal-engine (74/74) e integración correlation_admission_contract (26/26) al 100% verdes. `git diff --check` verificado con 0 advertencias de fin de línea.
