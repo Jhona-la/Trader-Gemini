@@ -167,3 +167,18 @@ Nota metodológica: cada símbolo sigue en exactamente 1 trade — la sonda
 de calidad. El multiplicador del volumen vino del lado de los modelos
 existentes (ATOM/NEAR con bosque ahora operan su sonda en ambas
 direcciones), no de nueva cobertura.
+
+## ADENDA LXIV (2026-09-30) — BTC ronda 2: train y selección PASAN; test aborta por geometría del tape
+
+Resultado ronda 2 (stride 20s explícito): junio 10,628 decisivas ✓,
+selección agosto mejora +0.018 (mejor que ronda 1), paridad train↔serve
+1.3e-7 ✓ — pero el TEST de septiembre aborta: 4,365 < 5,000 decisivas.
+Causa geométrica, no de modelo: septiembre dura 14 días (vs 31), el
+warmup de 12h consume medio día ⇒ a 20s el tape corto no alcanza el
+mínimo. El gate protege honestamente — el test NO se evalúa con muestra
+insuficiente.
+
+**Ronda 3 en vuelo** (stride 15s, declarado por adelantado — acomoda el
+tape más corto: septiembre ~5.9k decisivas esperadas): el stride es
+densidad de muestreo declarada, no parámetro del modelo; el mismo valor
+aplica a los tres tapes uniformemente.
