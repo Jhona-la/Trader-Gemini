@@ -539,9 +539,14 @@ impl RiskEngine {
             .config
             .global_correlation_threshold
             .load(Ordering::Relaxed);
-        // (Ola XLV) N_eff como telemetría (dimension del grupo para el
-        // sizing por factor; el gate usa dependency_exposure ya).
-        let _n_eff_telemetry: Option<f64> = None; // TODO: wire when matrix exposed
+        // (Ola XLV/LXVII) N_eff como telemetría: dimensión efectiva del
+        // grupo para el sizing por factor. El TODO original ("wire when
+        // matrix exposed") quedó huérfano desde D-748 — cerrado así: la
+        // matriz no se materializa (dependency_exposure trabaja por
+        // pares), así que el N_eff se publica DESPUÉS de dependency_exposure
+        // usando su ρ efectiva medida del grupo (XLVI·D) con la forma
+        // equicorrelada de Grinold-Kahn: N_eff = k/(1+(k−1)·ρ̄).
+        // Telemetría de diagnóstico, NO gate.
         let Some(dependence) = correlation_guard::dependency_exposure(
             arena,
             coin_id,
@@ -550,6 +555,15 @@ impl RiskEngine {
         ) else {
             return rej(REJ_INVALID_INPUT);
         };
+        {
+            let k = dependence.same_bet_positions as f64;
+            if let Some(rho) = dependence.same_bet_rho_efectivo() {
+                if k >= 1.0 && rho < 1.0 {
+                    let neff = k / (1.0 + (k - 1.0) * rho);
+                    arena.registry.set("n_eff_grupo", neff);
+                }
+            }
+        }
         // Las APIs MP/XLIV se conservan para diagnóstico e investigación.
         // (Ola XLVI·D/E, SPECTRAL-010) El veto agrega el RIESGO REAL de cada
         // miembro misma-apuesta al stop (qty·|entry−sl|/capital, medido del

@@ -139,7 +139,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         nombre: "ML-GATE B3.25 (roster)",
         causa: "sin modelo validado del roster no se opera tras la sonda (la evidencia falta)",
         fuente_umbral: "medido",
-        datos: "has_roster_model (models/{SYM}_MOTOR) + lift sobre base del propio modelo (CL-21)",
+        datos: "core (god-engine-core ml_gate_ok): has_roster_model (models/{SYM}_MOTOR) + lift sobre base del propio modelo (CL-21)",
         responsable: "B3.25/B3.36 (heredado), CL-21 (Claude), 2026-09-29",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
@@ -184,7 +184,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     },
     EntradaVeto {
         id: "V-LOGIC-006",
-        nombre: "suelo TP/SL por fricción",
+        nombre: "suelo_tp_sl (fricción roundtrip mínima de brackets)",
         causa: "brackets nunca más cerca que la fricción roundtrip (TP garantizado en pérdida neta)",
         fuente_umbral: "medido",
         datos: "roundtrip_friction única (taker×2 + piso + latencia difusiva muestreada XLVI·B)",
@@ -208,7 +208,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     },
     EntradaVeto {
         id: "V-LOGIC-008",
-        nombre: "geometría TP/SL inválida",
+        nombre: "geometria_invalida (TP/SL fuera de banda o inconsistentes)",
         causa: "TP/SL fuera de banda o inconsistentes con dirección",
         fuente_umbral: "literal + gen",
         datos: "brackets del host, Hurst muestreado por reloj (CL-26)",
@@ -235,7 +235,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         nombre: "confluencia resonante (rama 15, simétrica CL-31)",
         causa: "la confluencia de la rama 15 exige hurst_at(τ*) del mismo modo a largos y cortos",
         fuente_umbral: "gen (umbrales y suelos sin cambios en CL-31; sólo la condición simétrica)",
-        datos: "persistencia por bloques no solapados (CL-30) → hurst_at(τ*) → confluencia_resonante",
+        datos: "core (god-engine-core confluencia_resonante): persistencia por bloques no solapados (CL-30) → hurst_at(τ*) → confluencia_resonante",
         responsable: "CL-31 (Claude, PR#20 mergeado por GLM/LI), 2026-09-30",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
@@ -259,12 +259,96 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         nombre: "banda operable del generador (#586, puerta 1.5 de puertas_del_continuo)",
         causa: "el generador proponía τ bajo min_tradeable_tau_ms y el suelo TP/SL mataba la intención aguas abajo (1,24M en la medición XLIV); peor, el τ doomed competía en la arbitración D-431. La puerta rechaza ANTES la banda que no paga fricción, sin estirar τ",
         fuente_umbral: "medido (sonda banda_paga_friccion = MISMA función pura del gate: paridad por construcción)",
-        datos: "ATR vivo + σ(τ) de la banda propuesta + fricción roundtrip del símbolo (XLIV-8)",
+        datos: "core (god-engine-core banda_paga_friccion): ATR vivo + σ(τ) de la banda propuesta + fricción roundtrip del símbolo (XLIV-8)",
         responsable: "Qoder Ola 11 (#586), 2026-09-30",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
         test: Some("qo_586_puerta_aplasta_tau_inoperable_y_deja_pasar_la_operable"),
         deuda: Some("contratos gemelos: qo_586_la_sonda_sigue_el_regimen_no_es_veto_fijo y qo_586_tau_cero_se_remite_al_gate (god-engine-core, mod tests_qo_586); la medición de qo_slot_rechazo (#589) contabiliza los rechazos de slot aguas abajo"),
+    },
+    EntradaVeto {
+        id: "V-TECH-001",
+        nombre: "flat/coin",
+        causa: "señal Flat o símbolo sin registro — nada que evaluar (rechazo técnico de input, no veto de decisión)",
+        fuente_umbral: "literal (definición de la señal)",
+        datos: "intent.signal == Flat || coin_id fuera de registro",
+        responsable: "heredado (pre-censo), puesto al día GLM/LXVII, 2026-10-01",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: None,
+        deuda: Some("rechazo técnico de input: no requiere contrato de FP/FN de decisión; cubierto por el test de cobertura REJECT_NAMES↔registro"),
+    },
+    EntradaVeto {
+        id: "V-TECH-002",
+        nombre: "spec",
+        causa: "símbolo sin spec registrado (try_spec=None) — geometría y mínimos del exchange desconocidos (rechazo de evaluabilidad; el core aplica floors internos)",
+        fuente_umbral: "medido (exchangeInfo del registro dinámico)",
+        datos: "symbol_registry::try_spec(coin_id) → floors internos del core si None",
+        responsable: "heredado (espec nativa XLVI·E era), puesto al día GLM/LXVII, 2026-10-01",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: None,
+        deuda: Some("riesgo-duro sin contrato directo: el floor interno del core lo cubre cuando try_spec=None (asegurar_spec_nativo en tests); deuda de contrato explícito"),
+    },
+    EntradaVeto {
+        id: "V-LOGIC-013",
+        nombre: "EV (valor esperado)",
+        causa: "valor esperado de la geometría propuesta no supera el margen exigido — la apuesta no paga su propio riesgo",
+        fuente_umbral: "gen (gate_margin) + fricción medida",
+        datos: "EV de la geometría TP/SL vs margen, con la fricción roundtrip unificada",
+        responsable: "heredado (D-747 unificación), puesto al día GLM/LXVII, 2026-10-01",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: Some("xliv_friccion_de_ida_y_vuelta_usa_la_ley_difusiva"),
+        deuda: None,
+    },
+    EntradaVeto {
+        id: "V-LOGIC-014",
+        nombre: "fee_impact",
+        causa: "coste de fees/slip supera el beneficio esperado de la operación — fricción come el edge",
+        fuente_umbral: "medido (fees vivos + slippage de la física)",
+        datos: "fee breaker: fees estimados vs PnL esperado",
+        responsable: "heredado (fee-breaker XXXIX §13.5), puesto al día GLM/LXVII, 2026-10-01",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: None,
+        deuda: Some("XXXIX §13.5 abierto: rehabilitación del fee-breaker con evidencia nueva identificada sigue pendiente"),
+    },
+    EntradaVeto {
+        id: "V-LOGIC-015",
+        nombre: "orchestrator",
+        causa: "rechazo del orquestador multi-motor (consenso/coordinación entre ramas del continuo)",
+        fuente_umbral: "gen",
+        datos: "estado del orquestador (signal-engine/orchestrator)",
+        responsable: "heredado, puesto al día GLM/LXVII, 2026-10-01",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: None,
+        deuda: Some("contrato del orquestador pendiente — su lógica vive en signal-engine, fuera del censo actual"),
+    },
+    EntradaVeto {
+        id: "V-TECH-003",
+        nombre: "otros",
+        causa: "rechazo sin clasificar (bucket catch-all) — cada uso debería reclasificarse a su compuerta real",
+        fuente_umbral: "literal (fallback de conteo)",
+        datos: "rej(9) en rutas sin compuerta específica",
+        responsable: "heredado, puesto al día GLM/LXVII, 2026-10-01",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: None,
+        deuda: Some("bucket catch-all: auditoría de sus usos para reclasificar cada uno a su compuerta real (deuda estructural del REJECT_NAMES)"),
+    },
+    EntradaVeto {
+        id: "V-TECH-004",
+        nombre: "entrada_invalida",
+        causa: "input de la intención inválido (NaN, fuera de rango, capital roto) — rechazo técnico FMT-212",
+        fuente_umbral: "literal (contratos de dominio)",
+        datos: "confidence/capital/peak/clamps validados antes de cualquier comparación",
+        responsable: "FMT-212 (heredado), puesto al día GLM/LXVII, 2026-10-01",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: None,
+        deuda: Some("validación pre-clamp FMT-212: su contrato es de dominio (no fabrica permiso de NaN); test de cobertura lo registra"),
     },
 ];
 
@@ -379,5 +463,55 @@ mod tests {
             .filter(|e| e.fuente_umbral.starts_with("medido"))
             .count();
         assert!(medido >= literal, "la deuda de literales superó lo medido");
+    }
+
+    /// XLVII — EL TEST DE COBERTURA que el encabezado del módulo prometía:
+    /// cada nombre de REJECT_NAMES debe tener SU entrada en el registro
+    /// (por nombre). Si alguien añade un slot de rechazo sin entrada, este
+    /// test lo expone ROJO en el mismo commit — el diente que la
+    /// документación prometía desde XLVIII·C pero que no existía
+    /// (hallazgo de la re-auditoría desde la base, GLM/LXVII).
+    #[test]
+    fn cobertura_toda_compuerta_rej_tiene_entrada_en_el_registro() {
+        for (i, nombre) in crate::REJECT_NAMES.iter().enumerate() {
+            let encontrado = REGISTRO_VETOS.iter().any(|e| {
+                // La entrada puede cubrir el nombre exacto o documentarlo
+                // en su campo nombre/datos (p.ej. 'exposure0' ↔
+                // 'exposure0' en V-RISK-001).
+                e.nombre == *nombre
+                    || e.nombre.contains(*nombre)
+                    || e.datos.contains(*nombre)
+            });
+            assert!(
+                encontrado,
+                "REJECT_NAMES[{i}] = \"{nombre}\" NO tiene entrada en el registro — \
+                 el marco del operador exige id/causa/umbral/datos/responsable/fecha \
+                 para CADA compuerta. Añade la entrada o reclasifica el slot."
+            );
+        }
+    }
+
+    /// Y el inverso: cada entrada Activa del registro debe corresponder a
+    /// una compuerta real (nombre presente en REJECT_NAMES o veto del core
+    /// documentado en datos) — el registro no acumula fantasmas.
+    #[test]
+    fn cobertura_cada_entrada_activa_apunta_a_compuerta_real() {
+        for e in REGISTRO_VETOS.iter().filter(|e| e.estado == EstadoVeto::Activo) {
+            let en_rej = crate::REJECT_NAMES.iter().any(|n| {
+                e.nombre.contains(*n) || n.contains(&e.nombre.split(" (").next().unwrap_or(e.nombre))
+            });
+            let es_del_core = e.datos.contains("core")
+                || e.datos.contains("process_event")
+                || e.datos.contains("host")
+                || e.nombre.contains("kill-switch")
+                || e.nombre.contains("warmup");
+            assert!(
+                en_rej || es_del_core,
+                "{} ({}) no corresponde a ninguna compuerta REJECT ni del core documentada — \
+                 entrada fantasma o desactualizada",
+                e.id,
+                e.nombre
+            );
+        }
     }
 }
