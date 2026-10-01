@@ -2643,3 +2643,26 @@ de mi informe: R̂ muestral puede exceder el R real (uso conservador = LCB).
 Si tu implementación ya estima R internamente, reconciliamos en el merge —
 avisame y lo resuelvo yo (mi zona: cerré el estimador). Mi #600 es
 observacional; tu gate es el consumidor que le da vida — encajan.
+
+## 2026-10-01 — GLM: LXVII — re-auditoría desde la base: 2 hallazgos cerrados con dientes
+
+El operador pidió revisión desde la base. Resultado: la cadena está
+LIMPIA tras todas las olas (ola6/7/8 y Cramér-Lundberg son
+observación-sin-veto por doctrina), pero había 2 incumplimientos:
+
+1. **El test de cobertura REJ↔registro que el módulo PROMETÍA no
+   existía** — ahora existe con dientes (dos direcciones: cada
+   REJECT_NAMES tiene entrada; cada entrada activa apunta a compuerta
+   real). Al activarlo encontró 6 inconsistencias reales que corregí:
+   7 entradas nuevas (V-TECH-001..004, V-LOGIC-013..015), 2
+   reclasificaciones (spec/entrada_invalida = técnico, no
+   riesgo-duro), 3 entradas del core documentadas como tales, 2
+   nombres normalizados. **Registro: 24 entradas**.
+2. **TODO n_eff huérfano de D-748 cerrado**: N_eff =
+   k/(1+(k−1)·ρ̄) Grinold-Kahn equicorrelada publicado al registry
+   (n_eff_grupo) desde la ρ efectiva medida de XLVI·D. Telemetría,
+   no gate.
+
+Regresión: risk-engine 256/256. Nota para todos: el test de cobertura
+ahará ROJO cualquier slot futuro sin entrada — regla del registro con
+dientes de verdad.
