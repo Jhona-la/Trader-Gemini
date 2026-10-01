@@ -151,11 +151,27 @@ impl QuantumStrategy for QuantumOscillatorEngine {
             .map(|p| p.get_value())
             .unwrap_or(0.1);
 
+        let alpha = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "quantum_alpha",
+                "QuantumOscillatorEngine",
+            )
+            .map(|p| p.get_value())
+            .unwrap_or(0.5)
+            .clamp(0.01, 10.0);
+
         if !pos.is_finite() || !k_spring.is_finite() || !lambda.is_finite() {
             return 0.0;
         }
         let force = Self::compute_quantum_restoring_force(pos, k_spring, lambda);
-        force.clamp(-1.0, 1.0)
+        // AGY-AUD-P14: Modulación por envolvente de confinamiento cuántico:
+        // C(x) = exp(-alpha * x^2). En el pozo confinado (x moderado), la fuerza restauradora
+        // rige la reversión a la media. En estados del continuo / ruptura cuántica (|x| extremo),
+        // C(x) tiende a 0, evitando que el oscilador luche suicidamente contra rupturas supersónicas.
+        let confinement = (-alpha * pos * pos).exp().clamp(0.0, 1.0);
+        (force * confinement).clamp(-1.0, 1.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
@@ -202,5 +218,25 @@ mod tests {
             "Desviación positiva debe generar fuerza restauradora negativa"
         );
         assert!(eval >= -1.0 && eval <= 1.0);
+    }
+
+    #[test]
+    fn test_quantum_oscillator_breakout_suppression() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        // Desviación extrema de breakout (pos = 6.0)
+        registry.set("quantum_position_deviation", 6.0);
+        registry.set("quantum_k_spring", 1.0);
+        registry.set("quantum_lambda_anharmonic", 0.1);
+        registry.set("quantum_alpha", 0.5);
+
+        let mut engine = QuantumOscillatorEngine::new();
+        assert!(engine.init(registry).is_ok());
+
+        let eval = engine.evaluate();
+        // Confinamiento exp(-0.5 * 36) = exp(-18) < 1e-7: la fuerza restauradora debe amortiguarse a ~0
+        assert!(
+            eval.abs() < 1e-4,
+            "Breakout cuántico extremo debe tener voto amortiguado, no luchar contra la tendencia: {eval}"
+        );
     }
 }

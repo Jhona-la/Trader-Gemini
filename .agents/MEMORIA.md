@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — Antigravity: Ola 4 / Parseo Cuántico con Notación Científica, Invarianza de Escala Multiactivo y Confinamiento Cuántico
+
+- Flujo coordinado: rama `antigravity/ola4-paridad-dimensional-y-parseo-cuantico` → verificación unitaria y workspace → merge a main → limpieza de rama.
+- AGY-AUD-P11 (CRITICAL): `data-ingest/src/tensor_parser.rs`: `fast_parse_f64` no soportaba exponentes científicos (`e`/`E`). En Binance, cantidades y precios de altcoins de bajo satoshi (PEPE, SHIB) y tamaños fraccionarios (`1e-5`) se truncaban en la mantisa produciendo errores de hasta 100,000x. Implementado parseo de exponentes en O(1) con cero asignación en heap y corregido límite inclusivo `<= len` en `extract_tensor_feature` con suite de pruebas unitarias.
+- AGY-AUD-P12 (HIGH): `signal-engine/src/soliton_wave.rs`: Adimensionalización de velocidad en `SolitonWaveEngine` tenía guardia artificial `mid_price > 1.0`, colapsando la velocidad a valores brutos no normalizados en cualquier token sub-dólar (DOGE, ADA). Generalizada la normalización dimensional a `mid_price > 1e-8 && vel.abs() > 1e-12`, logrando invarianza de escala universal en todo el universo continuo multiactivo.
+- AGY-AUD-P13 (HIGH): `signal-engine/src/supersonic_shockwave.rs`: Número de Mach $M = v / c$ mezclaba dimensiones nominales y porcentuales (`mid_price > 1.0 && speed > 1.0`). Normalizada la velocidad de flujo a tasa relativa adimensional $\frac{1}{p}\frac{dp}{dt}$ y velocidad del sonido, garantizando homogeneidad física en cualquier activo.
+- AGY-AUD-P14 (HIGH): `signal-engine/src/quantum_oscillator.rs`: Modulada la fuerza restauradora $F(x) = -(kx + 4\lambda x^3)$ por la envolvente de confinamiento gaussiano cuántico $C(x) = \exp(-\alpha x^2)$. En estados confinados rige la reversión a la media; en estados de scattering / escape al continuo ($|x|$ extremo), la fuerza restauradora se amortigua limpiamente a 0, evitando que el oscilador vote contra rupturas y super-tendencias.
+- Verificación completa: `data-ingest` (19/19 tests OK), `signal-engine` (72 unit tests + 18 integration tests, 100% OK), check workspace all-targets completado con cero errores.
+
 ## 2026-09-30 — Antigravity: Ola 3 / Vorticidad de Hodge, Simetría de Squeeze, Continuidad de Hurst y Modulación Hawkes Unificada
 
 - Flujo coordinado: rama `antigravity/ola3-universo-espectral-continuo` → verificación workspace y contratos → merge a main → limpieza de rama.

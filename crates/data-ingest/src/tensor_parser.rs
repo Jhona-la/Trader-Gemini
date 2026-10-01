@@ -43,8 +43,34 @@ impl TensorParser {
             }
         }
 
+        // AGY-AUD-P11: Soporte de notación científica (e.g. 1e-5, 2.45e-4, 5E+3)
+        // Crítico en Binance para monedas de bajo satoshi y cantidades fraccionarias.
+        let mut exp_sign = 1.0;
+        let mut exp_val = 0.0;
+        if i < bytes.len() && (bytes[i] == b'e' || bytes[i] == b'E') {
+            i += 1;
+            if i < bytes.len() {
+                if bytes[i] == b'-' {
+                    exp_sign = -1.0;
+                    i += 1;
+                } else if bytes[i] == b'+' {
+                    i += 1;
+                }
+            }
+            while i < bytes.len() && bytes[i] >= b'0' && bytes[i] <= b'9' {
+                exp_val = exp_val * 10.0 + (bytes[i] - b'0') as f64;
+                i += 1;
+            }
+        }
+
+        let base = sign * (int_part + frac_part / frac_scale);
+        let res = if exp_val > 0.0 {
+            base * 10.0_f64.powf(exp_sign * exp_val)
+        } else {
+            base
+        };
+
         // FIX #636: Retorno estrictamente finito
-        let res = sign * (int_part + frac_part / frac_scale);
         if res.is_finite() {
             res
         } else {
@@ -61,7 +87,7 @@ impl TensorParser {
         let len = payload.len();
         let key_len = key.len();
 
-        while i + key_len < len {
+        while i + key_len <= len {
             if &payload[i..i + key_len] == key {
                 i += key_len;
                 if i < len && payload[i] == b'"' {
@@ -216,5 +242,29 @@ mod tests {
             empty_results.push((p, q));
         });
         assert_eq!(empty_results.len(), 0);
+    }
+
+    #[test]
+    fn test_tensor_parser_scientific_notation() {
+        // Validación de potencias negativas (altcoins de bajo precio / fracciones)
+        assert_eq!(TensorParser::fast_parse_f64(b"1e-5"), 0.00001);
+        assert!((TensorParser::fast_parse_f64(b"2.45e-4") - 0.000245).abs() < 1e-12);
+        assert!((TensorParser::fast_parse_f64(b"1.23E-06") - 0.00000123).abs() < 1e-14);
+
+        // Potencias positivas
+        assert_eq!(TensorParser::fast_parse_f64(b"5e3"), 5000.0);
+        assert_eq!(TensorParser::fast_parse_f64(b"+2.5E+2"), 250.0);
+
+        // Signos negativos
+        assert_eq!(TensorParser::fast_parse_f64(b"-3.5e-2"), -0.035);
+
+        // Integrado en JSON sin comillas y con comillas
+        let json_exp_unquoted = br#"{"p":1.5e-3,"q":2e4}"#;
+        assert_eq!(TensorParser::extract_tensor_feature(json_exp_unquoted, b"\"p\":"), Some(0.0015));
+        assert_eq!(TensorParser::extract_tensor_feature(json_exp_unquoted, b"\"q\":"), Some(20000.0));
+
+        let json_exp_quoted = br#"{"p":"4.56e-5","q":"1.0e2"}"#;
+        assert!((TensorParser::extract_tensor_feature(json_exp_quoted, b"\"p\":").unwrap() - 0.0000456).abs() < 1e-11);
+        assert_eq!(TensorParser::extract_tensor_feature(json_exp_quoted, b"\"q\":"), Some(100.0));
     }
 }
