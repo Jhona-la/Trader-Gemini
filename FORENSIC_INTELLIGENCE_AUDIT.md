@@ -13224,3 +13224,51 @@ activos): la evolución tiene MÁS gradientes reales que antes de las olas.
   contratos 27/27, workspace 0 errores.
 - **T-1**: cambio de PIPELINE VIVO (veto activo cuando hay R) — oráculo
   sobre el árbol candidato ANTES del merge (disciplina de margen cero).
+
+---
+
+## #603 — Ola 25 (Qoder, 2026-10-01): RE-AUDITORÍA BASE — revisión cruzada de las Olas 8/9, Sol A1/A2 y el estado post-convergencia
+
+Mandato del operador: "revisión desde la base, han cambiado muchas cosas".
+Alcance: supervivencia de mi cadena + revisión cruzada del trabajo ajeno
+reciente con ojos frescos. Resultado: **cero defectos nuevos** — la base
+convergió sana. Detalle:
+
+1. **Supervivencia (12/12 marcadores)**: QO-586, M6-H02, hawkes_excitation_
+   gene, STEADY_STATE_RATIO, umbral_codespacho_armonico, tau_habilidad,
+   referencia_de_regimen, proyeccion_espectral, qo_602_veto_lundberg,
+   V-RISK-006, espectro_f_alpha, qo_601 — todos vivos en main 35212b1d.
+2. **Ola 9 × #582 (composición Hawkes)**: `effective_hawkes_thresh =
+   STEADY_STATE_RATIO + excitation` con el gen leído del registro (:165) —
+   la normalización de Antigravity COMPONE con mi gen (no lo duplica ni lo
+   pisa). Coherente.
+3. **Sol A1 (dientes del censo)**: endureció la resolución de tests pineados
+   (corpus_contratos! + TESTS_EXISTENTES_RIESGO resueltos entre crates).
+   Mi V-RISK-006 pin `ola9_veto_por_riesgo_cramer_lundberg_bounds` está en
+   su corpus (:403) y los 8 tests del registro pasan. Los pines fantasma
+   históricos (protection_gap/resonancia/geometry — suites-archivo que mi
+   #596 dio por trazables) quedaron degradados a `test: None` + deuda —
+   su criterio es MÁS ESTRICTO que el mío y es el correcto.
+4. **Sol A2**: el recorte de margen silencioso ahora es medible por moneda
+   (`sol_a2_margen_reducido[_cociente]`) sin cambiar la matemática — escritor
+   verificado.
+5. **Teorema de Hodge O(N²) (Ola 8) verificado analíticamente**: sobre K_n,
+   L = nI − 11ᵀ, φ = div/n ⇒ Σ_{i<j}(div_i−div_j)² = n·Σdiv_i² − (Σdiv)²;
+   con div ⊥ kernel (Σdiv=0): ‖∇φ‖² = Σdiv_i²/n ✓. El teorema es exacto.
+6. **clim_lambda (Ola 9) × D-754b**: la compuerta de madurez cuenta por
+   vida (`matured`), los tres SSE decaen con el MISMO λ (razones bien
+   formadas), `clim_n` es recuento efectivo consistente. Sin hallazgo.
+7. **B3 Coaxial (abierto de CL)**: RE-VERIFICADO — el motor está cableado
+   vía trait del tensor_orchestrator (lib.rs:871) y lee features por el
+   lector polimórfico D-219 (sym+cid). El "vota 0" documentado por CL es
+   del árbol PRE-#582/Ola-9; el estado actual exige medición empírica
+   (fixture/tapes), no fix estático. Quede anotado para la próxima medición.
+8. **Mapa de observabilidad** (split-brain estado/registro — documentado,
+   no bug): `tau_habilidad`/`dominant_tau_ms` viven en el ARENA (AtomicF64,
+   store lib.rs:1754); `multifractal_*`, `lundberg_*`, `qo_slot_rechazo`,
+   `n_eff_grupo`, `sol_a2_*` en el REGISTRO. El lector del consejo debe
+   consultar ambos canales.
+9. **Contadores con escritor (9/9)**: qo_586_tau_inoperable, qo_slot_rechazo,
+   multifractal_d0/_ancho_falpha, lundberg_r_nocional (x2: estimador+veto),
+   qo_602_veto_lundberg, n_eff_grupo, sol_a2_margen_reducido, tau_habilidad
+   (arena). Ningún publicador caído en los merges.
