@@ -2187,3 +2187,17 @@ T-1: sumar a la próxima re-certificación junto con #586/#588. Signal-engine 64
 (1 contrato nuevo), core 154/154, workspace OK.
 MIS ARCHIVOS: god-engine-core/src/lib.rs (publicación), signal-engine/src/
 flow_excitation_confluence.rs (gate+test), informe #590, buzón.
+
+## 2026-09-30 — Qoder: Ola 16 / #591 — proyección espectral temporal al motor de señales (mandato del operador)
+
+El espectro de 32 escalas estaba confinado al núcleo: CERO claves espectrales en el
+registro, los motores votaban a ciegas de la dimensión temporal. Ahora el core
+publica por moneda señal proyectada (Σw·s/Σw), concentración (1−razón de
+participación) y masa resuelta — sobre pesos_espectrales hecha pub (misma masa
+canónica D-742+CL-32, sin recomputar). Nuevo ProyeccionEspectralEngine vota
+señal·concentración con abstención si masa<0.25; registrado como 11º voto del
+tensor_orchestrator. T-1: voto nuevo en consenso (sumar a re-cert). Signal-engine
+68/68, core 154/154, arena 89/89, workspace OK.
+MIS ARCHIVOS: quantum-arena/src/temporal_spectrum.rs (visibilidad pub),
+god-engine-core/src/lib.rs (publicación+registro), signal-engine/src/proyeccion_
+espectral.rs (NUEVO), signal-engine/src/lib.rs (mod), informe #591, buzón.

@@ -207,8 +207,10 @@ pub struct ScaleState {
 impl ScaleState {
     /// Peso heredado compartido por todos los lectores del mismo campo.
     /// No representa probabilidad, información mutua ni precisión calibrada.
+    /// (#591: pub para que el núcleo proyecte sobre la MISMA masa sin
+    /// recomputarla — una sola fuente, cero drift.)
     #[inline]
-    fn fusion_weight(&self) -> f64 {
+    pub fn fusion_weight(&self) -> f64 {
         if !self.persistence.is_finite() || !self.signal.is_finite() {
             return 0.0;
         }
@@ -1137,7 +1139,8 @@ impl TemporalSpectrum {
     /// CL-32: pesos de la masa espectral (entropía, Fisher, W₁, τ*, bandas):
     /// el peso heredado de la persistencia por la fracción RESUELTA de cada
     /// escala. Una sola fuente para todos los lectores de la masa.
-    fn pesos_espectrales(&self) -> [f64; 32] {
+    /// (#591: pub — el núcleo la consume para la proyección espectral.)
+    pub fn pesos_espectrales(&self) -> [f64; 32] {
         let resolucion = self.resolucion_efectiva_ms();
         let mut w = [0.0f64; 32];
         for (i, s) in self.scales.iter().enumerate() {

@@ -12817,3 +12817,40 @@ MEDIDO + GENÓMICO:
 bloquea OBI 0.25 que el 0.2 absoluto dejaba pasar; gen 0.5 lo deja disparar;
 fallback 0.15 sin telemetría mantiene el motor operando antes de que el p80 madure);
 god-engine-core 154/154; check workspace --all-targets OK.
+
+### #591 — ✅ IMPLEMENTADO: proyección espectral temporal en el motor de señales (Ola 16, 2026-09-30, Qoder — mandato directo del operador)
+
+**Hallazgo estructural:** el espectro temporal de 32 escalas vivía CONFINADO al
+núcleo — el motor de señales jamás lo leía (CERO claves espectrales en el registro).
+Diez motores votaban sobre micro-features del tick sin ninguna lectura del estado
+espectral del mercado: la dimensión temporal espectral que el sistema declara
+central era invisible para sus propios votantes.
+
+**Implementación (3 piezas):**
+  1. **Núcleo publica la proyección** (por moneda, sobre la MISMA masa canónica
+     `pesos_espectrales` — que integra observación D-742 y resolución CL-32; hecho
+     pub, sin recomputar, cero drift):
+     - `espectral_senal_proyectada` = Σ w_k·s_k / Σ w_k (consenso de momentum
+       ponderado por energía; s_k = tanh(z) de la escala);
+     - `espectral_concentracion` = 1 − razón de participación (Σw)²/(N·Σw²):
+       1 = un modo domina (señal limpia), 0 = masa difusa (ruido blanco);
+     - `espectral_masa_resuelta` = Σw_gated/Σw_bruto: cuánto espectro puede opinar.
+  2. **Nuevo motor** `signal_engine::proyeccion_espectral::ProyeccionEspectralEngine`:
+     voto = señal_proyectada · concentración ∈ [-1,1], con ABSTENCIÓN (0.0) si masa
+     < 0.25 (D-742: la proyección de escalas sin observar no es conocimiento),
+     sin telemetría o con no-finitos. `evaluate()` sin contexto de moneda = 0.0
+     (las proyecciones son per-moneda; una lectura global mezclaría símbolos).
+  3. **Registrado** en el `tensor_orchestrator` del core: 11º voto del consenso.
+
+**Física de la modulación:** un espectro CONCENTRADO (un modo dominante) respalda
+la dirección proyectada; un espectro DIFUSO (masa repartida) amortigua el voto hacia
+su media — la dirección de un ruido blanco no es información. La abstención en masa
+baja implementa D-742 del lado del consumidor.
+
+**T-1:** entra un voto nuevo al consenso tensorial (delta de comportamiento a incluir
+en la próxima re-certificación junto con #586/#588/#590).
+
+**Verificación:** signal-engine 68/68 lib (4 contratos nuevos: proyección exacta
+0.6·0.8=0.48, abstención en masa baja, abstención sin telemetría, amortiguación
+vendedora -0.5·0.4=-0.20); god-engine-core 154/154; quantum-arena 89/89; check
+workspace --all-targets OK.

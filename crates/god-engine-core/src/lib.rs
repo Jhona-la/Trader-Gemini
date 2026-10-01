@@ -762,6 +762,9 @@ impl GodEngineCore {
             signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::default(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::proyeccion_espectral::ProyeccionEspectralEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
             signal_engine::perceptron_gate::PerceptronGateEngine::new(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
@@ -3273,6 +3276,52 @@ impl GodEngineCore {
                 "obi_p80_medido",
                 self.cuantiles[coin_id].dynamic_obi_threshold(),
             );
+            // #591 — PROYECCIÓN ESPECTRAL TEMPORAL al motor de señales. El
+            // espectro (32 escalas) vivía confinado al núcleo: los motores
+            // votaban sobre micro-features sin NINGUNA lectura del estado
+            // espectral. Se publican tres proyecciones sobre la MISMA masa
+            // canónica (`pesos_espectrales`, que ya integra la observación
+            // D-742 y la resolución CL-32 — sin recomputar, sin drift):
+            //   · señal proyectada = Σ w_k·s_k / Σ w_k (consenso de momentum
+            //     ponderado por energía, s_k ∈ [-1,1]);
+            //   · concentración = 1 − razón de participación (Σw)²/(N·Σw²):
+            //     1 = un modo domina (señal limpia), 0 = masa difusa (ruido);
+            //   · masa resuelta = fracción del peso bruto que sobrevivió a
+            //     observación+resolución: cuánto espectro puede opinar.
+            {
+                let sum_raw = self.temporal_spectrum[coin_id]
+                    .scales
+                    .iter()
+                    .map(|s| s.fusion_weight())
+                    .sum::<f64>();
+                let w = self.temporal_spectrum[coin_id].pesos_espectrales();
+                let mut sum_w = 0.0;
+                let mut sum_w2 = 0.0;
+                let mut proj = 0.0;
+                for (i, escala) in self.temporal_spectrum[coin_id]
+                    .scales
+                    .iter()
+                    .enumerate()
+                {
+                    sum_w += w[i];
+                    sum_w2 += w[i] * w[i];
+                    proj += w[i] * escala.signal;
+                }
+                if sum_w.is_finite() && sum_w > 0.0 && sum_w2.is_finite() && sum_w2 > 0.0 {
+                    set_reg(
+                        "espectral_senal_proyectada",
+                        (proj / sum_w).clamp(-1.0, 1.0),
+                    );
+                    let pr = (sum_w * sum_w) / (32.0 * sum_w2);
+                    set_reg("espectral_concentracion", (1.0 - pr).clamp(0.0, 1.0));
+                    let masa = if sum_raw.is_finite() && sum_raw > 0.0 {
+                        (sum_w / sum_raw).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    set_reg("espectral_masa_resuelta", masa);
+                }
+            }
             set_reg("bessel_alpha", 1.5);
             set_reg("hawkes_dt", 0.05);
             set_reg(
