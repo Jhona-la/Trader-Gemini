@@ -12,6 +12,17 @@
       "error_estructural": null
     },
     {
+      "key": "ADAUSDT_MOTOR",
+      "archivo": "ADAUSDT_MOTOR.json",
+      "sha256": "ad160ac757ae82896415840c2b35c6a2cb8992ae62018e56cf72d5496d2843b5",
+      "bytes": 50861,
+      "base": 0.22130693027086337,
+      "n_arboles": 16,
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
+    },
+    {
       "key": "ATOMUSDT_MOTOR",
       "archivo": "ATOMUSDT_MOTOR.json",
       "sha256": "0f5695f36646d1e0e545f54330e75a65db9b872c30c3f4d56e3e694b2019268d",
@@ -177,5 +188,5 @@
       "error_estructural": null
     }
   ],
-  "generado_ms": 1790850146772
+  "generado_ms": 1790882858582
 }

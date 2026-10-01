@@ -209,3 +209,40 @@ la próxima sesión viva.
 
 Manifest: hash 8f280650bc01, 30,267 bytes. El camino a la meta sigue
 por los demás símbolos sonda-bloqueados — con este arco como plantilla.
+
+---
+
+## ADENDA LXX (2026-10-01) — **ADAUSDT: SEGUNDA PROMOCIÓN HONESTA COMPLETA — LA PLANTILLA REPLICA**
+
+Primer símbolo escalado con la plantilla de BTC tras su certificación.
+Tapes junio (train) / agosto (selección) / 1–14 septiembre (test posterior),
+stride 15 s uniforme declarado, presupuesto 150k muestras:
+
+| fase | resultado |
+|---|---|
+| Junio (train) | 137,702 muestras, paridad dim-a-dim tolerancia 0 |
+| Agosto (selección) | logloss 0.5471 vs 0.5609 — mejora **+0.0138** |
+| Paridad train↔serve | máx \|Δ\| = 1.2e-7 |
+| **Septiembre (test posterior, n=36,013)** | **logloss 0.5151 vs 0.5232 — mejora +0.0081 FUERA DE MUESTRA** |
+| Promoción | 💾 models/ADAUSDT_MOTOR.json — **16 árboles, base 0.2213, init −1.2581** |
+
+Gate `selección ∧ test posterior` superado en ambos tramos. Ada pasa de
+candidate-only a bosque promovido. Manifest: hash `ad160ac757ae`,
+50,861 bytes, estructuralmente válido (12/17 del inventario lo son;
+ATOM/BNB/NEAR/VOL y DarkAlpha siguen rechazados por splits cruzados).
+
+**La plantilla replica en un segundo símbolo sin tocar una línea del
+trainer** — la misma física, stride y gate produjeron evidencia OOS donde
+el intento candidato-only anterior no tenía estándar. Dos promociones
+(BTC +0.0168, ADA +0.0081 test posterior) no es una familia todavía, pero
+es la diferencia entre un hecho y una anomalía.
+
+Nota de honestidad del tape: 50,634 de 121k muestras de septiembre
+llegaron con dims no finitas del motor y se sanearon a 0.0 — idéntico al
+comportamiento de servicio; dims [4,5,9,10] muertas por contrato en ambos
+lados (paridad preservada). No hay fuga: el saneamiento es parte de la
+misma función que sirve en vivo.
+
+Próximo escalado: LINK/THETA/LTC (sólo 2 períodos — train+selección,
+test posterior pendiente de tape de octubre) o esperar el tape de
+septiembre completo. La brecha 310× se cierra símbolo a símbolo.
