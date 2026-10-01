@@ -98,3 +98,29 @@ está documentado.
    asimetría de colas) — por el portón de medición.
 4. Los 9 FDUSD = mismo archivo: cobertura real por símbolo o exclusión
    honesta del roster.
+
+---
+
+## ADENDA LXIX (2026-10-01) — dos olas posteriores revisadas; el estado mudó
+
+**qo-602 (Lundberg V-RISK-006)**: Cramér-Lundberg PASÓ de "observación" a
+**VETO RIESGO-DURO con consumo real** — `tope_efectivo =
+min(tope_streak, ln(1/ε)/R)` en la agregación del grupo, cold-start
+seguro (clave ausente = bit-for-bit legado), ε=0.05 documentado como
+política del owner, test real, telemetría per-coin. La tabla §3 queda
+corregida: C-Lundberg = IN + CONSUMIDA COMO GATE (la fuente única de R
+que Qoder acordó con Antigravity).
+
+**SOL-A1/A2 (quinto agente "sol")**: encontró **referencias de test
+FANTASMA en este registro** — V-LOGIC-005 (kill-switch, RIESGO-DURO)
+citaba un nombre de archivo como si fuera función: un veto de capital
+"certificado" por un string inexistente. También V-LOGIC-003/006/009.
+Los corrigió todos y construyó la maquinera anti-fantasma: corpus
+compile-time que exige que cada `test: Some(nombre)` resuelva a un `fn`
+real. **Registro: 25 entradas** (24 + V-RISK-006; Sol no añadió —
+corrigió). Lección institucional: los dientes de cobertura de LXVII
+verificaban nombres contra REJECT_NAMES pero NO que los tests citados
+existieran como funciones — el hueco que Sol cerró.
+
+Verificados por GLM: registry 8/8, lundberg 5/5, SOL-A2 4/4, risk-engine
+total **263/263**.
