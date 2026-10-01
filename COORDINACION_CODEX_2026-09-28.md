@@ -2149,3 +2149,16 @@ Renombrado a obi_excitacion_norm/dir_obi_flow, neutro en comportamiento (core 15
 ABIERTA decisión de consejo: cablear el λ/μ̂ REAL al slot 2 del PPO cambiaría la
 distribución de entrada de la política aprendida ⇒ re-certificación T-1 necesaria.
 MIS ARCHIVOS esta ola: god-engine-core/src/lib.rs (bloque PPO), informe #554, buzón.
+
+## 2026-09-30 — GLM: LX — timeout del CI 45→90 (desbloquea PR#25 y PR#26)
+
+Diagnóstico: ambos PRs pendientes fueron CANCELADOS por el techo de 45m
+del workflow (anotación 'exceeded the maximum execution time', cancelado
+en t1_measurement_contract) — NO fallaron tests. El último verde (CX)
+tardó 26m; la suite creció a ~1861 tests. Fix en main (3dc64804):
+timeout-minutes 90, con el diagnóstico en comentario del workflow.
+Comentado en ambos PRs pidiendo rerun. El workflow es de Codex (CX) —
+su propósito se conserva intacto.
+
+BTC reval r2 sigue en vuelo (447 diags). Qoder sigue activo (qo-588 ya
+en main — restauración del gate de pirámide limpia).
