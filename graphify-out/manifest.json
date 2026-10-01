@@ -798,9 +798,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1790825058.6931305,
-    "seen": 1790826052.160854,
-    "ast_hash": "93bc18dba37c418870b23e6b90d63578",
+    "mtime": 1790826747.1333437,
+    "seen": 1790827002.0182698,
+    "ast_hash": "5380c27d6d71eef7e664d6309412581c",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/math_kernels.rs": {
@@ -1278,9 +1278,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/leverage_matrix.rs": {
-    "mtime": 1790640743.196501,
-    "seen": 1790817836.2328205,
-    "ast_hash": "bf2daf3a424484cfa115711b017aa499",
+    "mtime": 1790826747.1407354,
+    "seen": 1790827002.018852,
+    "ast_hash": "a2b8e5a90d05c01474a1192e68e16493",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/lib.rs": {
@@ -1986,9 +1986,9 @@
     "semantic_hash": ""
   },
   "FORENSIC_INTELLIGENCE_AUDIT.md": {
-    "mtime": 1790825058.6644745,
-    "seen": 1790826052.163952,
-    "ast_hash": "edaa16795f94277f21e938109e01e38f",
+    "mtime": 1790826283.5641773,
+    "seen": 1790827002.0205338,
+    "ast_hash": "55204adc775bcc2eb7a97361408b6445",
     "semantic_hash": ""
   },
   "INFORME_ASEGURAMIENTO_CUARTO.md": {
@@ -3138,9 +3138,9 @@
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/spectral_regime.rs": {
-    "mtime": 1790819830.6315618,
-    "seen": 1790819957.958094,
-    "ast_hash": "8e2ac1f80eeaae5c50c3c967bdad339b",
+    "mtime": 1790826747.1375217,
+    "seen": 1790827002.018852,
+    "ast_hash": "751751d4fbcbeab9181f5b80c28e8e8a",
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/spectral_tape.rs": {
@@ -3264,9 +3264,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/veto_registry.rs": {
-    "mtime": 1790809156.514886,
-    "seen": 1790817836.2328205,
-    "ast_hash": "a53930ba1b6eae987b4362b319d6e8b1",
+    "mtime": 1790826183.804523,
+    "seen": 1790827002.018852,
+    "ast_hash": "65bd280c8fbac7ae74d0e6d39b09bb9d",
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/compounder_admission_contract.rs": {
@@ -3732,9 +3732,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1790825836.4298253,
-    "seen": 1790826052.163952,
-    "ast_hash": "f69d1bad8dc6e920402fc2d3cc58514c",
+    "mtime": 1790826747.1230884,
+    "seen": 1790827002.0199664,
+    "ast_hash": "f855a89c61369f6b9e066513feca2b68",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3756,9 +3756,9 @@
     "semantic_hash": ""
   },
   "COORDINACION_CODEX_2026-09-28.md": {
-    "mtime": 1790825058.6372025,
-    "seen": 1790826052.163952,
-    "ast_hash": "2b87e3866fc1a876584ca8c23de7a9af",
+    "mtime": 1790826925.0861454,
+    "seen": 1790827002.0205338,
+    "ast_hash": "46c536ca4027193c4acf95f5687bd669",
     "semantic_hash": ""
   },
   "TABLERO.md": {
