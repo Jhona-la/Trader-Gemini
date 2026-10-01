@@ -159,8 +159,13 @@ impl QuantumStrategy for JohansenVecmEngine {
             return 0.0;
         }
 
-        if z.abs() >= 1.5 {
-            (-z / 3.0).clamp(-1.0, 1.0)
+        // Activación continua en el continuo temporal-espectral:
+        // Erradica la discontinuidad abrupta que saltaba de 0.0 a -0.50 en |z| = 1.5.
+        let abs_z = z.abs();
+        if abs_z > 1.5 {
+            let excess = abs_z - 1.5;
+            let smooth_scale = (excess / 1.5).min(1.0);
+            (-z.signum() * smooth_scale).clamp(-1.0, 1.0)
         } else {
             0.0
         }

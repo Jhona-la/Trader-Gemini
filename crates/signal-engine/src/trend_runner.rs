@@ -177,14 +177,17 @@ impl QuantumStrategy for HighPayoffTrendRunner {
             0.0
         };
 
-        // Si no hay persistencia de tendencia (Hurst <= 0.52) o el flujo es neutro, convicción cero
-        if safe_hurst <= 0.52 || safe_dir.abs() < 1e-4 {
+        // Modulación C^∞ continua para persistencia de tendencia (Hurst > 0.50):
+        // Erradica el salto escalón del ~20% que ocurría al cruzar el umbral rígido H = 0.52.
+        let h_excess = (safe_hurst - 0.50).max(0.0);
+        let h_weight = (h_excess / 0.04).tanh();
+        if h_weight <= 1e-4 || safe_dir.abs() < 1e-6 {
             return 0.0;
         }
 
         let tp = Self::calculate_expanded_tp(0.02, safe_hurst, safe_vpin, safe_atr, 0.08);
-        // FIX #406: La señal debe portar el signo de la dirección del flujo de mercado
-        safe_dir.signum() * (tp * 10.0).tanh()
+        let dir_weight = (safe_dir / 1e-3).tanh();
+        dir_weight * h_weight * (tp * 10.0).tanh()
     }
 }
 
@@ -228,5 +231,30 @@ mod tests {
             "Hurst alto y dirección alcista deben generar señal positiva"
         );
         assert!(eval <= 1.0);
+    }
+
+    #[test]
+    fn test_trend_runner_continuous_hurst_transition() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        registry.set("cvpin", 0.20);
+        registry.set("atr_pct", 0.02);
+        registry.set("trend_direction", 1.0);
+
+        let mut runner = HighPayoffTrendRunner::new();
+        assert!(runner.init(registry.clone()).is_ok());
+
+        // Para H <= 0.50 (caminata aleatoria pura o reversión), señal es 0
+        registry.set("hurst_exponent", 0.50);
+        assert_eq!(runner.evaluate(), 0.0);
+
+        // Para H = 0.51, la señal es suavemente positiva sin saltar abruptamente
+        registry.set("hurst_exponent", 0.51);
+        let eval_51 = runner.evaluate();
+        assert!(eval_51 > 0.0 && eval_51 < 0.15);
+
+        // Para H = 0.53, crece continuamente
+        registry.set("hurst_exponent", 0.53);
+        let eval_53 = runner.evaluate();
+        assert!(eval_53 > eval_51);
     }
 }

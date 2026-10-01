@@ -1,6 +1,50 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-09-30 — Antigravity: Ola 6 / Inmunidad Finita IEEE-754 en Campo Espectral y Blindaje del Mapeo Armónico Tau Continuo (Modo Profesor)
+## 2026-09-30 — Antigravity: Ola 7 / Continuidad C^∞ en Señales Cuánticas, Arbitraje Espectral y Desacoplamiento de Skew en Maker (Modo Profesor)
+
+- Flujo coordinado: rama `antigravity/ola7-continuidad-en-senales-y-arbitraje-espectral` → verificación unitaria (`signal-engine` 73/73 tests OK, `strategy-core` 24/24 tests OK + `basket_state_contract` 7/7 OK) y workspace (`cargo check --workspace --all-targets` 0 errores) → merge a main → limpieza de rama.
+- AGY-AUD-P21 (CRITICAL): `crates/strategy-core/src/vecm_arbitrage.rs`:
+  - **QUÉ**: Erradicación de la discontinuidad escalón en la evaluación del Z-Score del motor de cointegración vectorial Johansen VECM.
+  - **POR QUÉ**: La lógica anterior contenía una compuerta discontinua `if z.abs() >= 1.5 { (-z / 3.0).clamp(-1.0, 1.0) } else { 0.0 }`. En $z = 1.499$, la señal devolvía `0.0`; en $z = 1.501$, la señal saltaba abruptamente a $-0.50$. Ese acantilado del 50% causaba temblores (chattering) e inestabilidad extrema en las señales cuando el spread oscilaba alrededor del umbral crítico.
+  - **PARA QUÉ**: Mantener la estricta continuidad matemática del universo continuo espectral, donde las fuerzas de reversión a la media nacen suavemente desde 0 en el umbral y crecen de manera proporcional a la significación estadística observada.
+  - **CÓMO**: Se implementó una función continua de exceso `let excess = abs_z - 1.5; let smooth_scale = (excess / 1.5).min(1.0); (-z.signum() * smooth_scale).clamp(-1.0, 1.0)`. En $|z| = 1.5$ la salida es exactamente 0.0; a medida que $|z|$ crece hacia 3.0, la escala se amplía continuamente hasta $\pm 1.0$, eliminando el salto de escalón sin romper la semántica de reversión a la media ni los contratos de regresión.
+  - **CUÁNDO**: En cada evaluación del consenso o estrategia VECM al consultar `JohansenVecmEngine::evaluate()`.
+  - **DÓNDE**: `crates/strategy-core/src/vecm_arbitrage.rs:162`.
+  - **QUIÉN**: `JohansenVecmEngine::evaluate`.
+- AGY-AUD-P22 (HIGH): `crates/signal-engine/src/trend_runner.rs`:
+  - **QUÉ**: Modulación $C^\infty$ continua en la persistencia de tendencia del exponente de Hurst y dirección en `HighPayoffTrendRunner`.
+  - **POR QUÉ**: La activación dependía del corte rígido `if safe_hurst <= 0.52 || safe_dir.abs() < 1e-4 { return 0.0; }`. Con $H = 0.5199$, la salida era `0.0`; con $H = 0.5201$, la salida saltaba bruscamente a $\approx 0.197$ (un salto del ~20% en convicción de señal). Además, `safe_dir.signum()` introducía discontinuidad escalón de $\pm 1$ alrededor de cero.
+  - **PARA QUÉ**: Asegurar derivabilidad y suavidad espectral continua, de modo que regímenes cercanos a la caminata aleatoria pura ($H \approx 0.50$) tengan convicción cero y aumenten suavemente sin generar choques bruscos en el consenso tensorial.
+  - **CÓMO**: Se modeló el exceso de persistencia como `let h_excess = (safe_hurst - 0.50).max(0.0); let h_weight = (h_excess / 0.04).tanh();` y la dirección como `let dir_weight = (safe_dir / 1e-3).tanh(); dir_weight * h_weight * (tp * 10.0).tanh()`. En $H \le 0.50$, la señal es 0.0; entre 0.50 y 0.54 sube suavemente sin escalón. Verificado con el nuevo test unitario `test_trend_runner_continuous_hurst_transition`.
+  - **CUÁNDO**: Al evaluar señales de expansión de tendencia en `HighPayoffTrendRunner::evaluate_for_coin`.
+  - **DÓNDE**: `crates/signal-engine/src/trend_runner.rs:180`.
+  - **QUIÉN**: `HighPayoffTrendRunner::evaluate_for_coin`.
+- AGY-AUD-P23 (HIGH): `crates/signal-engine/src/coaxial_breakout.rs`:
+  - **QUÉ**: Corrección física del fallback de difusión browniana en escalas multitemporales (1s, 5s, 1m) y continuidad direccional en `CoaxialBreakoutEngine`.
+  - **POR QUÉ**: Cuando el registro no disponía de `atr_5s` o `atr_1m` por falta de ticks o arranque en frío, el fallback aplicaba los multiplicadores arbitrarios `atr_1s * 1.5` y `atr_1s * 3.0`. En difusión browniana neutral, el ATR escala con la raíz del tiempo: $\sqrt{5} \approx 2.236$ y $\sqrt{60} \approx 7.746$. Los multiplicadores viejos (1.5 y 3.0) eran menores que la raíz del tiempo, haciendo que el ratio normalizado fuera falsamente $> 1.0$, forzando compresión negativa y anulando idénticamente a 0 la compresión coaxial `comp_1s = 0.0` y `comp_5s = 0.0`.
+  - **PARA QUÉ**: Preservar la neutralidad física estricta bajo caminata aleatoria (donde la compresión relativa es 0 sin sesgo de expansión falsa) y detectar compresión genuina cuando exista.
+  - **CÓMO**: Se actualizaron los fallbacks a `atr_1s * 2.2360679775_f64` y `atr_1s * 7.7459666924_f64`, y se suavizó la orientación direccional con `(safe_dir / 1e-4).tanh() * squeeze`.
+  - **CUÁNDO**: Al evaluar rupturas coaxiales multiescala en `CoaxialBreakoutEngine::evaluate_for_coin`.
+  - **DÓNDE**: `crates/signal-engine/src/coaxial_breakout.rs:130, 203`.
+  - **QUIÉN**: `CoaxialBreakoutEngine::evaluate_for_coin`.
+- AGY-AUD-P24 (HIGH): `crates/strategy-core/src/maker.rs`:
+  - **QUÉ**: Erradicación del salto escalón de cotización por desequilibrio en el libro de órdenes (OBI skew) en `MakerEngine`.
+  - **POR QUÉ**: La cotización pasiva aplicaba `if obi > safe_obi_th { obi_skew = dynamic_obi_skew; }`, provocando que al cruzar el umbral `safe_obi_th` por una fracción infinitesimal, el precio óptimo saltara discontinuamente con un desplazamiento completo de spread, produciendo oscilaciones y quoting jitter en el micro-libro.
+  - **PARA QUÉ**: Permitir cotizaciones adaptativas y fluidas en nanosegundos, donde el sesgo de precio sea proporcional al exceso de presión compradora o vendedora.
+  - **CÓMO**: Se sustituyó el escalón por una rampa continua acotada `let obi_excess = (obi.abs() - safe_obi_th).max(0.0); let obi_scale = if safe_obi_th < 1.0 { (obi_excess / (1.0 - safe_obi_th).max(1e-4)).min(1.0) } else { 0.0 }; let obi_skew = obi.signum() * dynamic_obi_skew * obi_scale;`.
+  - **CUÁNDO**: Al generar cotizaciones óptimas de hacedor de mercado en `MakerEngine::generate_quote`.
+  - **DÓNDE**: `crates/strategy-core/src/maker.rs:113`.
+  - **QUIÉN**: `MakerEngine::generate_quote`.
+- AGY-AUD-P25 (MEDIUM): `crates/signal-engine/src/orchestrator.rs`:
+  - **QUÉ**: Unificación de resolución de parámetros escopados por símbolo mediante `get_scoped_value_or`.
+  - **POR QUÉ**: `orchestrator.rs` utilizaba múltiples llamadas `format!("{}_atr_pct", symbol)` y fallback manual a `"atr_pct"`, asignando cadenas en el heap en el hot-path por cada tick y duplicando la lógica que el `OmniscientRegistry` ya provee nativamente.
+  - **PARA QUÉ**: Reducir sobrecarga de memoria en el hot-path y unificar la resolución jerárquica símbolo → global.
+  - **CÓMO**: Se sustituyeron las búsquedas manuales por `self.arena.registry.get_scoped_value_or(symbol, "atr_pct", f64::NAN)` y `get_scoped_value_or(symbol, "min_confidence", base_min_conf)`.
+  - **CUÁNDO**: Al calcular el consenso continuo para cada activo en `evaluate_continuous_consensus_for_coin`.
+  - **DÓNDE**: `crates/signal-engine/src/orchestrator.rs:362`.
+  - **QUIÉN**: `TensorVoteOrchestrator::evaluate_continuous_consensus_for_coin`.
+- Verificación completa: `signal-engine` (73/73 tests OK), `strategy-core` (24/24 unit tests + 7/7 basket contracts OK), `cargo check --workspace --all-targets` 100% limpio con 0 errores.
+
 
 - Flujo coordinado: rama `antigravity/ola6-inmunidad-espectral-y-mapeo-armonico` → verificación unitaria (quantum-arena, risk-engine, god-engine-core) y workspace (`cargo check --workspace --all-targets` 0 errores) → merge a main → limpieza de rama.
 - AGY-AUD-P18 (CRITICAL): `crates/quantum-arena/src/spectral_regime.rs`:
