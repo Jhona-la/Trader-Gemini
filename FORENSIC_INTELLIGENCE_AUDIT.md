@@ -12854,3 +12854,40 @@ en la próxima re-certificación junto con #586/#588/#590).
 0.6·0.8=0.48, abstención en masa baja, abstención sin telemetría, amortiguación
 vendedora -0.5·0.4=-0.20); god-engine-core 154/154; quantum-arena 89/89; check
 workspace --all-targets OK.
+
+### #592 — ✅ IMPLEMENTADO: la deriva de τ* alimenta el crash_flux (Ola 17, 2026-09-30, Qoder — responde señalización de Claude)
+
+**Confirmación de la señalización:** AMBOS call sites de
+`SpectralRegimeField::from_spectrum` pasaban `(spec, None, 1.0)` — la deriva de la
+escala dominante (término de aceleración hacia lo rápido, 0.35 del crash_flux, el
+PESO MAYOR del indicador de crash-ness) jamás computaba. El crash_flux llevaba toda
+su vida con 3 de sus 4 coordenadas: marea adversa, colapso de entropía y
+anti-persistencia micro, sin la aceleración.
+
+**Por qué no bastaba pasar `prev` por evento (la objeción de Claude era correcta):**
+la normalización por-hora `Δln(τ*)·3.6e6/elapsed_ms` satura el clamp con CUALQUIER
+salto de τ* entre milisegundos (el feed mueve τ* órdenes de magnitud entre ticks):
+cablear ingenuo = accel_fast ≡ 1 por ruido.
+
+**Fix (ancla de régimen con cadencia):**
+  - `regime_drift_prev: Vec<(AtomicU64 bits ln τ*, AtomicU64 ts)>` por moneda en el
+    core (frío = 0);
+  - `referencia_de_regimen(bits, prev_ts, now)` — helper PURO y testeado: frío ⇒
+    sin previa; ancla fresca (<60 s) ⇒ deriva continua anclada normalizada por
+    tiempo real; ancla vencida (≥ CADENCIA_REGIMEN_MS = 60 000, una vela de
+    referencia) ⇒ se renueva. La deriva se mide ENTRE observaciones del régimen,
+    no entre ticks;
+  - ambos call sites cableados: cargan el ancla, computan, renuevan si venció,
+    llaman a from_spectrum con (prev, elapsed) reales.
+
+**T-1:** el crash_flux gana su término dominante — modula el margen de largos
+(`free_cap *= 1−0.95·crash_flux` en el core) y las ramas de veto del régimen
+(crash_flux>0.80 ± marea). Cambio de comportamiento de un modulador de riesgo:
+sumar a la re-certificación (con #586/#588/#590/#591).
+
+**Verificación:** contratos nuevos (2): referencia_de_regimen (frío/fresca/vencida/
+reloj-retrocedido) y la deriva viva (τ* migra e-fold abajo en 60 s ⇒ deriva
+negativa ⇒ crash_flux > 0; prev=None ⇒ drift 0 — el comportamiento viejo como
+testigo). Core 156/156, arena 90/90, signal-engine 68/68, workspace OK. Un E0425
+transitorio de signal-engine durante la compilación = edición concurrente de otra
+sesión (el check pasa limpio después).

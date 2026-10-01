@@ -201,6 +201,35 @@ pub fn retorno_neto_pct(neto_usd: f64, nocional_usd: f64) -> Option<f64> {
     r.is_finite().then_some(r)
 }
 
+/// #592 — CADENCIA de la observación del régimen: una vela de referencia
+/// (60 s). La deriva de τ* que alimenta el crash_flux se mide ENTRE
+/// observaciones del régimen; por evento, la normalización por-hora de
+/// `dominant_drift` satura con cualquier salto de τ* entre milisegundos —
+/// ruido del feed, no migración de escala (señalización de Claude:
+/// `prev = None` congelaba el 35 % del crash_flux).
+pub const CADENCIA_REGIMEN_MS: f64 = 60_000.0;
+
+/// #592 — referencia de deriva para el campo de régimen a partir del ancla
+/// por moneda: devuelve `(prev_ln_tau, elapsed_ms, actualizar_ancla)`.
+/// Frío (ts=0 o bits=0) ⇒ sin previa y ancla nueva. Entre anclas la deriva
+/// es un estimador continuo anclado: τ* actual contra la última vela de
+/// referencia, normalizado por el tiempo REAL transcurrido.
+pub fn referencia_de_regimen(
+    prev_ln_bits: u64,
+    prev_ts_ms: u64,
+    now_ms: u64,
+) -> (Option<f64>, f64, bool) {
+    if prev_ts_ms == 0 || prev_ln_bits == 0 {
+        return (None, 1.0, true);
+    }
+    let elapsed = now_ms.saturating_sub(prev_ts_ms) as f64;
+    (
+        Some(f64::from_bits(prev_ln_bits)),
+        elapsed.max(1.0),
+        elapsed >= CADENCIA_REGIMEN_MS,
+    )
+}
+
 /// XLIV-10 — SUPERPOSICIÓN CONSTRUCTIVA SIN CONFIANZA FABRICADA.
 ///
 /// Cuando las bandas rápida y lenta coinciden en dirección y armónico, la
@@ -215,8 +244,7 @@ pub fn retorno_neto_pct(neto_usd: f64, nocional_usd: f64) -> Option<f64> {
 /// ventaja en las dos); si no, la fusión es la mayor de las dos. Se conserva
 /// el techo 0,96. Sin suelo.
 #[inline]
-pub fn confianza_superpuesta(a: f64, b: f64) -> f64 {
-    let (hi, lo) = (a.max(b), a.min(b));
+pub fn confianza_superpuesta(a: f64, b: f64) -> f64 {    let (hi, lo) = (a.max(b), a.min(b));
     if lo > 0.5 {
         (hi + 0.10 * lo).min(0.96)
     } else {
@@ -582,6 +610,15 @@ pub struct GodEngineCore {
     pub maker_engines: Vec<MakerEngine>,
     pub feature_engines: Vec<StatefulEngine>,
     pub tensor_orchestrator: signal_engine::orchestrator::TensorVoteOrchestrator,
+    /// #592 — ancla de la deriva de régimen por moneda: (bits de ln(τ*),
+    /// ts_ms de la observación anclada). El crash_flux necesita la deriva de
+    /// la escala dominante ENTRE observaciones del régimen (cadencia de una
+    /// vela de referencia); por evento, la normalización por-hora satura con
+    /// cualquier salto de τ* en milisegundos — ruido del feed, no migración
+    /// de escala (señalización de Claude: prev=None congelaba el 35 % del
+    /// crash_flux).
+    pub regime_drift_prev:
+        Vec<(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64)>,
     pub scalp_forest: Option<Arc<crate::ml_inference::NanoForest>>,
     pub swing_nn: Option<dark_alpha_engine::DarkAlphaEngine>,
     /// F4.7: ensamble online — ambos modelos opinan y el peso emerge del
@@ -892,6 +929,14 @@ impl GodEngineCore {
                 .collect(),
             hawkes_by_coin: (0..n_coins)
                 .map(|_| signal_engine::hawkes_bessel::HawkesBesselEngine::new())
+                .collect(),
+            regime_drift_prev: (0..n_coins)
+                .map(|_| {
+                    (
+                        std::sync::atomic::AtomicU64::new(0),
+                        std::sync::atomic::AtomicU64::new(0),
+                    )
+                })
                 .collect(),
             diag_council_vetoes: 0,
             diag_opened: 0,
@@ -1417,8 +1462,35 @@ impl GodEngineCore {
                     // continuo y los observables de teoría nueva: crash-ness
                     // (modula margen de largos), intermitencia de Kolmogorov
                     // (endurece pisos) y Fisher de escala (identificabilidad).
+                    // #592 — la deriva de τ* se mide contra el ANCLA de
+                    // régimen (cadencia 60 s): por evento, per-hora satura
+                    // con saltos de τ* en ms (ruido del feed). La ancla se
+                    // renueva cada vela de referencia; entre anclas, el
+                    // estimador es continuo y normalizado por tiempo real.
+                    let (regimen_prev_ln, regimen_elapsed) = {
+                        let ancla = &self.regime_drift_prev[coin_id];
+                        let cur_ln = if field.resonant_tau_ms.is_finite()
+                            && field.resonant_tau_ms > 0.0
+                        {
+                            field.resonant_tau_ms.ln()
+                        } else {
+                            0.0
+                        };
+                        let (prev, elapsed, actualizar) = referencia_de_regimen(
+                            ancla.0.load(Ordering::Relaxed),
+                            ancla.1.load(Ordering::Relaxed),
+                            event_time_ms,
+                        );
+                        if actualizar && cur_ln > 0.0 {
+                            ancla.0.store(cur_ln.to_bits(), Ordering::Relaxed);
+                            ancla.1.store(event_time_ms, Ordering::Relaxed);
+                        }
+                        (prev, elapsed)
+                    };
                     let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum(
-                        spec, None, 1.0,
+                        spec,
+                        regimen_prev_ln,
+                        regimen_elapsed,
                     );
                     self.arena.coins[coin_id].spectral_crash_flux.store(regime_field.crash_flux, Ordering::Relaxed);
                     let intermittency = spec
@@ -1865,8 +1937,35 @@ impl GodEngineCore {
                     // continuo y los observables de teoría nueva: crash-ness
                     // (modula margen de largos), intermitencia de Kolmogorov
                     // (endurece pisos) y Fisher de escala (identificabilidad).
+                    // #592 — la deriva de τ* se mide contra el ANCLA de
+                    // régimen (cadencia 60 s): por evento, per-hora satura
+                    // con saltos de τ* en ms (ruido del feed). La ancla se
+                    // renueva cada vela de referencia; entre anclas, el
+                    // estimador es continuo y normalizado por tiempo real.
+                    let (regimen_prev_ln, regimen_elapsed) = {
+                        let ancla = &self.regime_drift_prev[coin_id];
+                        let cur_ln = if field.resonant_tau_ms.is_finite()
+                            && field.resonant_tau_ms > 0.0
+                        {
+                            field.resonant_tau_ms.ln()
+                        } else {
+                            0.0
+                        };
+                        let (prev, elapsed, actualizar) = referencia_de_regimen(
+                            ancla.0.load(Ordering::Relaxed),
+                            ancla.1.load(Ordering::Relaxed),
+                            event_time_ms,
+                        );
+                        if actualizar && cur_ln > 0.0 {
+                            ancla.0.store(cur_ln.to_bits(), Ordering::Relaxed);
+                            ancla.1.store(event_time_ms, Ordering::Relaxed);
+                        }
+                        (prev, elapsed)
+                    };
                     let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum(
-                        spec, None, 1.0,
+                        spec,
+                        regimen_prev_ln,
+                        regimen_elapsed,
                     );
                     self.arena.coins[coin_id].spectral_crash_flux.store(regime_field.crash_flux, Ordering::Relaxed);
                     let intermittency = spec
@@ -7808,5 +7907,68 @@ mod tests_qo_586 {
             (remitida.confidence - 0.70).abs() < 1e-12,
             "τ=0 atraviesa sin tocar confianza: la resolverá el gate"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_qo_592 {
+    use super::*;
+
+    #[test]
+    fn qo_592_referencia_de_regimen_cadencia_y_frio() {
+        // Frío: sin ancla ⇒ sin previa, elapsed neutro, ancla nueva.
+        assert_eq!(referencia_de_regimen(0, 0, 1_000), (None, 1.0, true));
+
+        // Ancla fresca (<60 s): previa presente, elapsed real, NO renueva.
+        let bits = (0.5f64).to_bits();
+        let (prev, elapsed, actualizar) = referencia_de_regimen(bits, 60_000, 90_000);
+        assert_eq!(prev, Some(0.5));
+        assert!((elapsed - 30_000.0).abs() < 1e-9);
+        assert!(!actualizar, "renovar el ancla antes de la cadencia mataría la ventana de medición");
+
+        // Ancla vencida (>=60 s): se renueva.
+        let (_, _, actualizar2) = referencia_de_regimen(bits, 60_000, 120_001);
+        assert!(actualizar2);
+
+        // Reloj retrocedido (now < prev_ts): elapsed clamp 1 ms, no renueva.
+        let (prev3, elapsed3, act3) = referencia_de_regimen(bits, 120_000, 119_999);
+        assert_eq!(prev3, Some(0.5));
+        assert_eq!(elapsed3, 1.0);
+        assert!(!act3);
+    }
+
+    #[test]
+    fn qo_592_la_deriva_viva_alimenta_el_crash_flux() {
+        // Contrato del arreglo: con previa y deriva hacia lo rápido, el
+        // término de aceleración YA no está congelado. τ* migra 45s→30s en
+        // 60 s ⇒ per_hour = ln(30/45) ≈ −0.405 ⇒ accel_fast ≈ 0.405 (antes
+        // era SIEMPRE 0 con prev=None).
+        use quantum_arena::spectral_regime::SpectralRegimeField;
+        let mut spec = quantum_arena::temporal_spectrum::TemporalSpectrum::new();
+        // Precio con movimiento real: un espectro plano tiene energía total
+        // 0 y el guard de campo frío pone crash_flux=0 (guard honesto que
+        // este fixture debe respetar).
+        for t in 0..200u64 {
+            let p = 100.0 + 0.5 * ((t % 10) as f64);
+            spec.update(p, 1_000 + t * 1_000);
+        }
+        // La previa está anclada al τ* REAL del espectro +1 e-fold: migrar a
+        // cur = τ*/e en 60 s ⇒ per_hour = −60·(3.6e6/6e4 escalado)… en todo
+        // caso fuertemente negativo, sin depender del ancla por defecto.
+        let cur_ln = spec.spectral_field(true).resonant_tau_ms.max(1e-6).ln();
+        let campo = SpectralRegimeField::from_spectrum(&spec, Some(cur_ln + 1.0), 60_000.0);
+        assert!(
+            campo.dominant_drift < 0.0,
+            "migración hacia escalas rápidas ⇒ deriva negativa, obtuve {}",
+            campo.dominant_drift
+        );
+        assert!(
+            campo.crash_flux > 0.0,
+            "la aceleración rápida debe empujar el crash_flux, obtuve {}",
+            campo.crash_flux
+        );
+        // Y con prev=None (el comportamiento viejo) la deriva era 0:
+        let campo_frio = SpectralRegimeField::from_spectrum(&spec, None, 1.0);
+        assert_eq!(campo_frio.dominant_drift, 0.0);
     }
 }
