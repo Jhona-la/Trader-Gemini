@@ -5878,14 +5878,27 @@ impl GodEngineCore {
 
                         // Mapeo armónico continuo en el Universo Multivariante Continuo Temporal Espectral:
                         // Elimina la discretización binaria rígida y converge continuamente hacia el centro de masa tau*.
-                        let base_tau = if unified_intent.expected_duration_ms > 0 {
+                        let raw_base = if unified_intent.expected_duration_ms > 0 {
                             unified_intent.expected_duration_ms as f64
                         } else {
                             resonant_tau_ms
                         };
-                        let continuous_tau = (base_tau.ln() * 0.50 + resonant_tau_ms.ln() * 0.50).exp();
-                        unified_intent.expected_duration_ms =
-                            continuous_tau.clamp(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS, 43_200_000.0).round() as u64;
+                        let safe_base = if raw_base.is_finite() && raw_base > 0.0 {
+                            raw_base.max(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
+                        } else {
+                            quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
+                        };
+                        let safe_resonant = if resonant_tau_ms.is_finite() && resonant_tau_ms > 0.0 {
+                            resonant_tau_ms.max(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
+                        } else {
+                            quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
+                        };
+                        let continuous_tau = (safe_base.ln() * 0.50 + safe_resonant.ln() * 0.50).exp();
+                        unified_intent.expected_duration_ms = if continuous_tau.is_finite() {
+                            continuous_tau.clamp(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS, 43_200_000.0).round() as u64
+                        } else {
+                            quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS as u64
+                        };
                     }
                 }
             }
