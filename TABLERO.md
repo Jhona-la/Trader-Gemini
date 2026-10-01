@@ -29,9 +29,11 @@
   cruzada del PR #25 (MP) que pidió Codex, y mapa de las seis prioridades
   del operador (hoja de ruta, catálogo de vetos, ADRs).
 - **Commiteado**: ciclos 1 a 6 en main (PR #13, #17, #18, #19, #20).
-  Ciclo 7 en la rama, verificado: 8 crates y train_forest 1 387/0, T-1
-  17/144 (11,8 %).
-- **Falta**: CI del PR del ciclo 7 y su fusión; publicar la hoja de ruta.
+  Ciclo 7 en el PR #26, verificado: 8 crates y train_forest 1 387/0, T-1
+  17/144 (11,8 %); main integrado hasta la Ola 6 de Antigravity.
+  Revisión cruzada del PR #25 publicada en el propio PR.
+- **Falta**: CI del PR #26 (ya con el techo de 90 min) y su fusión;
+  publicar la hoja de ruta.
   Sobre la re-certificación 2: revisada; la caída de 10, 11, 20 y 33 no
   era sensibilidad falsa sino un defecto (CL-35), por eso CL-35c vuelve
   a 11,0 %. El 107 sí es una pérdida marginal del fixture.

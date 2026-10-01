@@ -139,8 +139,9 @@ que falla antes del arreglo.
   tendencia fuerte baja a 0,21–0,35 (3, 12 y 24 h, tres semillas). Mide
   concentración entre escalas: en ruido la ponen persistencias espurias.
   Sigue siendo telemetría (CL-28); no usarla como puerta sin calibrarla
-  contra un nulo barajado. Lo mismo vale para τ*, que es el centroide de
-  esos pesos (ver abierto `dominant_tau_ms`).
+  contra un nulo barajado. Lo mismo vale para τ* resonante, que es el
+  centroide de esos pesos. `dominant_tau_ms` ya no: desde #594 (Qoder) se
+  elige por habilidad prequential.
 - **Aviso sobre el fixture del T-1**: da 100 % de acierto neto en 220
   cierres. Es una serie con tendencia determinista fuerte (ciclo de 30 pb
   por vela frente a 11,5 pb de ruido) y un puente intravela que converge al
@@ -482,7 +483,7 @@ test que falla en `main` antes del arreglo.
   - CL-31: la rama 15 trata la persistencia sin lado (`confluencia_resonante`, con `hurst_at`). Antes comparaba [−1,1] con 0,52/0,48 y sólo emitía largos en la zona moderada.
   - CL-32: las escalas por debajo del intervalo medio entre eventos no votan (`resolucion_efectiva_ms`, como XLIV-6). A 1 evento/s se llevaban el 68 % del peso de la fusión y el 47 % de la masa espectral.
 - Abiertos (confirmados, sin arreglar todavía):
-  - `dominant_tau_ms` sigue siendo el argmax de |w·s| recortado a [30 s, 12 h]. Con pesos 1/vol, cae en la escala resuelta más rápida y se queda en 30 s. Elegir la escala dominante por habilidad medida exige otro criterio (p. ej. `SpectralForecastBank`).
+  - ~~`dominant_tau_ms` sigue siendo el argmax de |w·s| recortado a [30 s, 12 h]. Con pesos 1/vol, cae en la escala resuelta más rápida y se queda en 30 s. Elegir la escala dominante por habilidad medida exige otro criterio (p. ej. `SpectralForecastBank`).~~ **CERRADO por #594 (Qoder)**: τ dominante = escala con mayor IC prequential > 0. Queda abierto que el umbral es IC > 0 sin significancia ni corrección por el número de escalas maduras (inferido, sin medir: en ruido el máximo de varias IC suele ser positivo).
   - Rama 13/15: suelos literales de confianza (0,55/0,58); B1 OFI tóxico muerto en el núcleo; B3 Coaxial vota 0 y el gen 83 no tiene consumidor.
   - La adopción al arrancar sigue con `entry_time_ms = now`; la distancia del trailing sigue en ATR de 1 min.
   - Libro sintético de ±1 pb en eventos que no son de depth; gate de viabilidad ATR inalcanzable; veto de drawdown absorbente en backtest; `suelo_tp_sl` y la banda del genoma miden stops distintos.
