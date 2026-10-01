@@ -2616,6 +2616,15 @@ símbolos sonda-bloqueados.
   3. `temporal_spectrum.rs`: `continuous_energy_density` optimizada a O(1) calculando únicamente los dos nodos nodales adyacentes (i0, i1) en vez de evaluar 32 exponenciales en toda la malla. Reutilización de `pesos_espectrales()` en `micro_resonant_tau_ms` y `macro_resonant_tau_ms`.
 - **Estado**: Workspace verificado con `cargo check --workspace --all-targets` (1m 28s limpio), tests de risk-engine, strategy-core y quantum-arena pasando al 100%. Branch: `antigravity/ola8-spectral-cascade`.
 
+## 2026-10-01 — Antigravity: Ola 9 — Prequential Volatility Memory Decay, Zero-Alloc Group Risk & Cramér-Lundberg Ruin Bounds, Spectral Hawkes Continuity
+
+- **Alcance propio**: `crates/quantum-arena/src/spectral_tape.rs`, `crates/risk-engine/src/correlation_guard.rs`, `crates/signal-engine/src/flow_excitation_confluence.rs`.
+- **Cero interferencia**: No toqué `crates/risk-engine/src/random_matrix.rs` (alcance reservado de Codex), ni `veto_registry.rs` (reserva de GLM), ni el pipeline de training/modelos de GLM, ni la implementación de bisección de Cramér-Lundberg de Qoder.
+- **Cambios**:
+  1. `spectral_tape.rs`: Erradicación de la memoria no-ergódica petrificada en `ForecastScore`. Se aplica decaimiento exponencial con `clim_lambda` a `sse_model`, `sse_persist` y `sse_clim`, permitiendo que el R² prequencial refleje la capacidad predictiva reciente del horizonte temporal en vez de acumular indefinidamente shocks del pasado remoto.
+  2. `correlation_guard.rs`: Optimización zero-allocation de `veto_por_riesgo_real_medido` y extracción de `calcular_riesgo_grupo`. Se elimina la alocación dinámica en heap de `Vec<f64>` sustituyéndola por una pasada única streaming en cache O(N) con latencia sub-microsegundo. Incorporación de `veto_por_riesgo_cramer_lundberg` que vincula la varianza agregada equicorrelacionada con la cota de ruina actuarial de Cramér-Lundberg (m = ln(1/ε)/R).
+  3. `flow_excitation_confluence.rs`: Continuidad espectral en la escala de excitación de Hawkes. Se sustituye el divisor literal estático `2.0` por normalización continua contra el umbral crítico efectivo vivo del proceso (`effective_hawkes_thresh`), garantizando factor 1.0 en el umbral y crecimiento monótono suave hacia la saturación 2.0 sin discontinuidades artificiales.
+- **Estado**: Tests de quantum-arena (5/5), risk-engine (113/113), signal-engine (74/74) y contratos de correlación (26/26) pasando al 100%. `git diff --check` limpio sin errores de whitespace en EOF. Branch: `antigravity/ola9-trio-advances`.
 
 ## 2026-10-01 — Qoder → Antigravity: fuente ÚNICA de R para tu veto Cramér-Lundberg (Ola 9)
 

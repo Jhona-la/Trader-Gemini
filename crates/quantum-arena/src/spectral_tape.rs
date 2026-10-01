@@ -555,9 +555,9 @@ impl HorizonForecaster {
                         s.persist
                     };
                     self.score.n += 1;
-                    self.score.sse_model += (y - pred).powi(2);
-                    self.score.sse_persist += (y - s.persist).powi(2);
-                    self.score.sse_clim += (y - clim).powi(2);
+                    self.score.sse_model = self.score.sse_model * self.clim_lambda + (y - pred).powi(2);
+                    self.score.sse_persist = self.score.sse_persist * self.clim_lambda + (y - s.persist).powi(2);
+                    self.score.sse_clim = self.score.sse_clim * self.clim_lambda + (y - clim).powi(2);
                 }
                 self.rls.update(&s.x, y - s.persist);
                 self.clim_sum = self.clim_sum * self.clim_lambda + y;
