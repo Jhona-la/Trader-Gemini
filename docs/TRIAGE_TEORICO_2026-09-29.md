@@ -216,3 +216,18 @@ consumidor trazable. La inferencia de rentabilidad o paridad live no queda
 validada por métricas puras, pruebas verdes ni un inventario de modelos.
 No se añade HAC con lag arbitrario, modelo cuántico o teoría del milenio
 sin dato identificable, presupuesto de error, costo y falsación OOS.
+
+## ADENDA LXVIII (2026-10-01) — estatus explícito de los huérfanos
+
+**path_signatures (firmas de camino, Lyons nivel-2)**: IN pero SIN
+consumidor — el único módulo teórico implementado que no alimenta nada.
+Estatus honesto: **HUÉRFANO A LA ESPERA** de la arquitectura DL-modular
+del operador (capas iniciales de representación matemáticamente
+informada). No se cablea como features de un consumidor existente sin
+una hipótesis medible de qué aporta sobre las 54 dimensiones actuales
+— la regla anti-decoración del propio triage lo prohíbe. Si la
+arquitectura DL no llega, el módulo queda como contrato matemático
+verificado (Chen/reverso exactos) sin coste de mantenimiento.
+
+**transfer_entropy**: cuarentena CONFIRMADA (medición real dio
+~0.001 bits ambas direcciones — sin flujo direccional a esa escala).
