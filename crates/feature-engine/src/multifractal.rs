@@ -3,6 +3,20 @@ use std::f64;
 /// 🧬 ESPECTRO MULTIFRACTAL DE MANDELBROT (MULTIFRACTAL SPECTRUM ENGINE)
 /// Mide la dimensión multifractal de Hölder D(q) para discriminar entre caos ruidoso y tendencia inercial.
 /// Reemplaza el exponente monofractal de Hurst por un análisis de multifractalidad dinámico.
+/// #597 — resultado del espectro f(α) sobre la ventana del anillo.
+#[derive(Debug, Clone, Copy)]
+pub struct EspectroFAlpha {
+    /// Extremo izquierdo del soporte estimado (cajas calientes).
+    pub a_min: f64,
+    /// Extremo derecho del soporte estimado (cajas frías).
+    pub a_max: f64,
+    /// a_max − a_min: intermitencia canónica (telemetría, ver calibración).
+    pub ancho: f64,
+    /// Capacidad del soporte −τ(0) ∈ [0,1]: 1 = soporte lleno, < 1 = huecos
+    /// (racimado real de volatilidad). La magnitud falsable del espectro.
+    pub d0: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct MultifractalSpectrumEngine {
     pub window_size: usize,
@@ -104,6 +118,136 @@ impl MultifractalSpectrumEngine {
         (dynamic_hurst, multifractal_width)
     }
 
+    /// #597 (P-B del consejo) — espectro multifractal f(α) de Gärtner–Ellis
+    /// por transformada de Legendre, sobre la medida de |retornos| del anillo.
+    ///
+    /// Formalismo de Halsey: partición del anillo en cajas de b ∈ {1,2,4}
+    /// ticks, Z(q,b) = Σ p_caja^q con p la medida normalizada; τ(q) = +
+    /// pendiente (mínimos cuadrados) de ln Z contra ln b — convención
+    /// canónica τ(q) = q−1 en el monofractal y τ(0) = −D₀ = −1;α(q) = dτ/dq por diferencias centrales sobre la
+    /// rejilla q ∈ {−3,−2,−1,0,1,2,3}; f(α(q)) = qα − τ(q). El ANCHO del
+    /// soporte (α_máx − α_mín, puntos con f ≥ −0.05 por tamaño finito) es la
+    /// intermitencia canónica: → 0 para un monofractal (τ(q) = q−1 ⇒ α ≡ 1),
+    /// ancho bajo racimado de volatilidad real.
+    ///
+    /// `None` con < 32 muestras (partición b=4 exigiría pocas cajas), medida
+    /// nula o Z no finito — el llamador no debe usarlo (misma disciplina que
+    /// las anclas maduras del banco de pronóstico). Observación pura: sin
+    /// consumidor de política; el ancho se publica al registro para el consejo.
+    ///
+    /// NOTA DE CALIBRACIÓN (n=50, 3 puntos de escala): `ancho` queda al nivel
+    /// del ruido de muestreo (series iid y en cascada miden ≈1.2) — es
+    /// telemetría para comparar contra su PROPIA historia (registro), no para
+    /// umbrales absolutos. La magnitud falsable y robusta es `d0` (capacidad
+    /// del soporte, −τ(0)): inmune al ruido de amplitud, ~1 con soporte
+    /// lleno, < 1 con huecos (racimado real).
+    pub fn espectro_f_alpha(&self) -> Option<EspectroFAlpha> {
+        // Rejilla ±2 y partición {1,2,4}: con 50 muestras, b=8 deja 6 cajas
+        // (varianza inaceptable en q<0) y q=±3 dispara 2^±3 con ruido de
+        // tamaño finito — las colas extremas mienten más de lo que informan.
+        const Q: [f64; 5] = [-2.0, -1.0, 0.0, 1.0, 2.0];
+        const B: [usize; 3] = [1, 2, 4];
+        if self.count < 32 {
+            return None;
+        }
+        let n = self.count;
+        let mut p = [0.0f64; 50];
+        let mut total = 0.0;
+        for i in 0..n {
+            let idx = (self.head + self.window_size - n + i) % self.window_size;
+            let m = self.returns_history[idx].abs();
+            p[i] = m;
+            total += m;
+        }
+        if !(total.is_finite() && total > 0.0) {
+            return None;
+        }
+        for v in p.iter_mut().take(n) {
+            *v /= total;
+        }
+        // Regresión lineal de ln Z contra ln b (3 puntos). Convención
+        // canónica: τ(q) = +pendiente — para la medida uniforme
+        // ln Z = (1−q)ln n + (q−1)ln b ⇒ τ(q) = q−1 (τ(0) = −D₀ = −1).
+        let nb = B.len() as f64;
+        let (mut sx, mut sxx) = (0.0, 0.0);
+        for &b in &B {
+            let lb = (b as f64).ln();
+            sx += lb;
+            sxx += lb * lb;
+        }
+        let denom = sxx - sx * sx / nb;
+        if !(denom.is_finite() && denom.abs() > 1e-12) {
+            return None;
+        }
+        let mut tau = [0.0f64; 7];
+        for (k, &q) in Q.iter().enumerate() {
+            let (mut sy, mut sxy) = (0.0, 0.0);
+            for &b in &B {
+                let cajas = n / b;
+                if cajas < 1 {
+                    return None;
+                }
+                let mut z = 0.0f64;
+                for c in 0..cajas {
+                    let mut pc = 0.0f64;
+                    for i in (c * b)..((c + 1) * b) {
+                        pc += p[i];
+                    }
+                    // q < 0: las cajas vacías no son soporte de la medida.
+                    if q < 0.0 && pc <= 0.0 {
+                        continue;
+                    }
+                    if pc <= 0.0 && q >= 0.0 {
+                        continue;
+                    }
+                    z += pc.powf(q);
+                }
+                if !(z.is_finite() && z > 0.0) {
+                    return None;
+                }
+                let lb = (b as f64).ln();
+                let lz = z.ln();
+                sy += lz;
+                sxy += lb * lz;
+            }
+            let slope = (sxy - sx * sy / nb) / denom;
+            if !slope.is_finite() {
+                return None;
+            }
+            tau[k] = slope;
+        }
+        // Legendre sobre la rejilla: α central, f = qα − τ.
+        let mut a_min = f64::INFINITY;
+        let mut a_max = f64::NEG_INFINITY;
+        for k in 1..Q.len() - 1 {
+            let alpha = (tau[k + 1] - tau[k - 1]) / (Q[k + 1] - Q[k - 1]);
+            if !alpha.is_finite() {
+                continue;
+            }
+            let f = Q[k] * alpha - tau[k];
+            // Holgura de tamaño finito (50 muestras): las colas del soporte
+            // pueden caer levemente bajo 0 por ruido de muestreo.
+            if f < -0.25 {
+                continue;
+            }
+            a_min = a_min.min(alpha);
+            a_max = a_max.max(alpha);
+        }
+        if !(a_min.is_finite() && a_max.is_finite() && a_max >= a_min) {
+            return None;
+        }
+        let d0 = (-tau[2]).clamp(0.0, 1.0);
+        if !d0.is_finite() {
+            return None;
+        }
+        Some(EspectroFAlpha {
+            a_min,
+            a_max,
+            ancho: (a_max - a_min).max(0.0),
+            d0,
+        })
+    }
+
     /// Descomposición Wavelet de Haar de 1 nivel para análisis de micro-régimen (#96-#112)
     /// Retorna: `(energy_approx, energy_detail, detail_to_approx_ratio)`
     pub fn compute_haar_wavelet_energy(&self) -> (f64, f64, f64) {
@@ -157,6 +301,11 @@ pub struct MultiScaleHurstConfluence {
     pub engine_micro: MultifractalSpectrumEngine,
     pub engine_meso: MultifractalSpectrumEngine,
     pub engine_macro: MultifractalSpectrumEngine,
+    /// #597 — cadencia del espectro f(α): re-cómputo cada 16 consultas
+    /// (el cálculo es O(cajas) sobre 50 muestras; la publicación por evento
+    /// no necesita frescura sub-evento).
+    falpha_calls: u64,
+    falpha_cache: Option<EspectroFAlpha>,
 }
 
 impl Default for MultiScaleHurstConfluence {
@@ -171,7 +320,32 @@ impl MultiScaleHurstConfluence {
             engine_micro: MultifractalSpectrumEngine::new(10),
             engine_meso: MultifractalSpectrumEngine::new(25),
             engine_macro: MultifractalSpectrumEngine::new(50),
+            falpha_calls: 0,
+            falpha_cache: None,
         }
+    }
+
+    /// #597 — ancho del espectro f(α) del motor MACRO (50 muestras: la única
+    /// con ≥32 para la partición b=4). Observación, no política; `None`
+    /// sin evidencia madura. Cadencia interna 1/16 consultas.
+    pub fn ancho_f_alpha(&mut self) -> Option<f64> {
+        self.espectro_cacheada().map(|e| e.ancho)
+    }
+
+    /// #597 — capacidad del soporte D₀ (−τ(0)) del motor MACRO: 1 = sin
+    /// huecos, < 1 = racimado real. La magnitud falsable del espectro.
+    pub fn d0_f_alpha(&mut self) -> Option<f64> {
+        self.espectro_cacheada().map(|e| e.d0)
+    }
+
+    /// #597 — espectro completo cacheado (ancho + D₀ + extremos) del motor
+    /// MACRO, con cadencia interna 1/16 consultas. Observación, no política.
+    pub fn espectro_cacheada(&mut self) -> Option<EspectroFAlpha> {
+        self.falpha_calls = self.falpha_calls.wrapping_add(1);
+        if self.falpha_calls % 16 == 1 || self.falpha_cache.is_none() {
+            self.falpha_cache = self.engine_macro.espectro_f_alpha();
+        }
+        self.falpha_cache
     }
 
     #[inline(always)]
@@ -207,6 +381,102 @@ impl MultiScaleHurstConfluence {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #597 — LCG determinista (xorshift64) + Box-Muller.
+    fn xorshift(estado: &mut u64) -> f64 {
+        *estado ^= *estado << 13;
+        *estado ^= *estado >> 7;
+        *estado ^= *estado << 17;
+        ((*estado >> 11) as f64) / ((1u64 << 53) as f64)
+    }
+    fn gauss(estado: &mut u64) -> f64 {
+        let u1 = xorshift(estado).max(1e-12);
+        let u2 = xorshift(estado);
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    }
+
+    #[test]
+    fn qo_597_espectro_nulo_sin_madurez_y_vivo_al_cumplirla() {
+        let mut e = MultifractalSpectrumEngine::new(50);
+        let mut p = 100.0;
+        let mut lcg = 0x243F6A8885A308D3u64;
+        for _ in 0..31 {
+            p *= 1.0 + 0.01 * gauss(&mut lcg);
+            e.update(p);
+        }
+        assert!(e.espectro_f_alpha().is_none(), "31 muestras no particionan b=8");
+        for _ in 31..60 {
+            p *= 1.0 + 0.01 * gauss(&mut lcg);
+            e.update(p);
+        }
+        assert!(e.espectro_f_alpha().is_some(), "≥32 muestras particionan");
+    }
+
+    #[test]
+    fn qo_597_intermitencia_abre_el_espectro_mas_que_iid() {
+        // FALSACIÓN ROBUSTA (D₀, capacidad del soporte): la serie iid
+        // llena el anillo (|r| > 0 siempre) ⇒ D₀ ≈ 1; la cascada con
+        // 15 ticks de quietud EXACTA por cada 20 deja huecos reales ⇒
+        // D₀ < 1. Inmune al ruido de amplitud (lo que NO lo es el ancho
+        // a n=50 — ver calibración en el doc de `espectro_f_alpha`).
+        let mut iid = MultifractalSpectrumEngine::new(50);
+        let mut lcg = 0x9E3779B97F4A7C15u64;
+        let mut p = 100.0;
+        let mut di = None;
+        let mut wi = None;
+        for _ in 0..900 {
+            p *= 1.0 + 0.01 * gauss(&mut lcg);
+            iid.update(p);
+            if let Some(e) = iid.espectro_f_alpha() {
+                di = Some(e.d0);
+                wi = Some(e.ancho);
+            }
+        }
+        let mut inter = MultifractalSpectrumEngine::new(50);
+        let mut p2 = 100.0;
+        let mut de = None;
+        // Cascada multiplicativa (el multifractal canónico): 15 ticks de
+        // quietud EXACTA y 5 de ráfaga lognormal por bloque de 20.
+        for i in 0..900u64 {
+            let r = if i % 20 < 15 {
+                0.0
+            } else {
+                0.03 * (1.5 * gauss(&mut lcg)).exp()
+            };
+            p2 *= 1.0 + r;
+            inter.update(p2);
+            if let Some(e) = inter.espectro_f_alpha() {
+                de = Some(e.d0);
+            }
+        }
+        let (di, de, wi) = (
+            di.expect("iid maduro"),
+            de.expect("intermitente maduro"),
+            wi.expect("ancho iid"),
+        );
+        eprintln!("[qo-597] D0: iid={} cascada={} | ancho iid={}", di, de, wi);
+        assert!(di > 0.9, "el soporte iid debe estar lleno: D0={}", di);
+        assert!(
+            de < 0.8 && de > 0.2,
+            "la cascada con huecos debe partir el soporte: D0={}",
+            de
+        );
+        // El ancho queda al suelo de ruido a n=50 (≈1.2 en ambas): sólo
+        // sanidad de rango, sin umbral absoluto (telemetría de historia).
+        assert!(wi >= 0.0 && wi < 1.5, "ancho iid fuera de rango: {}", wi);
+        // Cadencia del confluence: dos lecturas consecutivas estables.
+        let mut conf = MultiScaleHurstConfluence::new();
+        let mut p3 = 50.0;
+        let mut ultimo = None;
+        for _ in 0..120 {
+            p3 *= 1.0 + 0.02 * gauss(&mut lcg);
+            conf.update(p3);
+            if let Some(w) = conf.ancho_f_alpha() {
+                ultimo = Some(w);
+            }
+        }
+        assert!(ultimo.is_some(), "el confluence publica el ancho macro");
+    }
 
     #[test]
     fn test_multifractal_spectrum_calculation() {

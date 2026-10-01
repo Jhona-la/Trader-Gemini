@@ -2172,6 +2172,25 @@ impl GodEngineCore {
                     .store(h_val as f64, Ordering::Relaxed);
             }
 
+            // #597 (P-B del consejo): espectro multifractal f(α) de
+            // Gärtner–Ellis (Legendre sobre la medida de |retornos| macro).
+            // OBSERVACIÓN pura — decidir su consumo de política es del
+            // consejo; ausencia de las claves = sin evidencia madura.
+            // `multifractal_d0`: capacidad del soporte (1 lleno, <1 huecos,
+            // la magnitud falsable); `multifractal_ancho_falpha`: intermitencia
+            // canónica (comparable sólo contra su propia historia).
+            {
+                let fe_obs = &mut self.feature_engines[coin_id];
+                if let Some(e) = fe_obs.multifractal.espectro_cacheada() {
+                    self.arena
+                        .registry
+                        .set_for_coin(coin_id, "multifractal_d0", e.d0);
+                    self.arena
+                        .registry
+                        .set_for_coin(coin_id, "multifractal_ancho_falpha", e.ancho);
+                }
+            }
+
             let mut closed_order = None;
 
             let atr_pct = self.feature_engines[coin_id].get_atr_pct();
