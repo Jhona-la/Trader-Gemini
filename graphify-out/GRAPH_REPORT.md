@@ -1,16 +1,16 @@
 # Graph Report - Trader Gemini  (2026-09-30)
 
 ## Corpus Check
-- 1344 files · ~2,745,985 words
+- 1344 files · ~2,749,304 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 22929 nodes · 35026 edges · 1504 communities (1235 shown, 127 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 483 edges (avg confidence: 0.85)
+- 22949 nodes · 35071 edges · 1506 communities (1237 shown, 127 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 484 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a7f0742c`
+- Built from commit: `4d874425`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -41,7 +41,7 @@
 - flight-recorder/src/lib.rs
 - QuantumTensorStore
 - crates/risk-engine/src/kelly_envelope.rs
-- crates/strategy-core/src/multivariate_coint.rs
+- MultivariateCointegrationEngine
 - 🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA
 - ShadowExecutor
 - verify_segment
@@ -187,7 +187,7 @@
 - app.js
 - BehavioralAuditorEngine
 - NetworkJitterSimulator
-- .extract_tensor_feature
+- crates/data-ingest/src/tensor_parser.rs
 - ChaosMonkey
 - 3. Hallazgos detallados
 - .new
@@ -329,7 +329,7 @@
 - 9. GESTIÓN DE FUTUROS PERPETUOS — BINANCE ESPECÍFICO
 - PROJECT_BIBLE.md
 - 1. VISIÓN Y ARQUITECTURA
-- ⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA
+- 🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI
 - 🔬 DÉCIMA OLA — ADENDA DE VALIDEZ: VENTAJA DE ENTRADA, DATOS SINTÉTICOS DEL FORENSE Y PRIMERA CORRIDA SOBRE DATOS REALES (2026-09-11)
 - 🔬 ONCEAVO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA
 - 🌊 DÉCIMA OLA FORENSE — AUDITORÍA DE RAÍZ A CIMA POST-REHABILITACIÓN F8/REHAB-7
@@ -812,7 +812,7 @@
 - .t1-cert/crates/metacortex-engine/src/epigenoma_store.rs
 - .t1-cert/crates/strategy-core/src/multivariate_coint.rs
 - LockFreeBus<T>
-- Auditoría científica III — autoevolución, causalidad y validez de la evidencia
+- Auditoría MX — métricas, evidencia y causalidad del replay
 - Auditoría de fundamentos científicos XXXIII — evidencia de liquidación, causalidad temporal y vetos
 - GO — Auditoría del oráculo genético y validez de sus mediciones
 - 🔧 CONFIGURATION GUIDE — TRADER GEMINI (PRO)
@@ -897,7 +897,7 @@
 - EpigeneticCapitalAllocEngine
 - EvolutionLedger
 - TelegramBot
-- 🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI
+- ⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA
 - ⚡ MÓDULO 4: EJECUCIÓN HFT, PROTOCOLO DE RED Y CONECTIVIDAD BINANCE
 - 🧪 MÓDULO 6: BACKTEST VECTORIZADO, PARIDAD 1:1 Y VERIFICACIÓN FORENSE (D-299 A D-310)
 - 📡 MÓDULO 1: INGESTIÓN, MICROESTRUCTURA L2 Y ALMACENAMIENTO (D-227 A D-240)
@@ -1377,11 +1377,13 @@
 - strategy-core
 - telemetry-engine
 - telemetry-server
+- wf_replay_segment
+- espectro_a_un_segundo_cl32
 
 ## God Nodes (most connected - your core abstractions)
 1. `🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA` - 207 edges
 2. `🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA` - 207 edges
-3. `Coordinación Codex / Claude / GLM — 2026-09-28` - 115 edges
+3. `Coordinación Codex / Claude / GLM — 2026-09-28` - 117 edges
 4. `Coordinación Codex / Claude / GLM — 2026-09-28` - 113 edges
 5. `OrderExecutor` - 80 edges
 6. `OrderExecutor` - 80 edges
@@ -1405,7 +1407,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (1504 total, 127 thin omitted)
+## Communities (1506 total, 127 thin omitted)
 
 ### Community 0 - "🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA"
 Cohesion: 0.01
@@ -1481,7 +1483,7 @@ Nodes (30): b3_14_ciclo_confirmacion_open_fill_close_swap(), b3_14_cierre_de_pap
 
 ### Community 18 - "Coordinación Codex / Claude / GLM — 2026-09-28"
 Cohesion: 0.02
-Nodes (113): 2026-09-28 — Codex CF: genoma, calibración y veto de entradas, 2026-09-28 — Codex OA: aprendizaje causal por posición y ensamble, 2026-09-28 — GLM: XLV·L auditoría de capitalización compuesta MERGEADA, 2026-09-28 — GLM: XLVI·A auditoría bt↔vivo MERGEADA (b8312ae6), 2026-09-29 — Claude (cloud): ciclo 3 (CL-8…CL-12) y aviso del ciclo 4, 2026-09-29 — Claude (cloud): ciclo 5 (CL-21…CL-29) y aviso del ciclo 6, 2026-09-29 — Claude (cloud, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08): ciclo 2, 2026-09-29 — Codex ST: alcance aislado y auditoría de firmas (+105 more)
+Nodes (115): 2026-09-28 — Codex CF: genoma, calibración y veto de entradas, 2026-09-28 — Codex OA: aprendizaje causal por posición y ensamble, 2026-09-28 — GLM: XLV·L auditoría de capitalización compuesta MERGEADA, 2026-09-28 — GLM: XLVI·A auditoría bt↔vivo MERGEADA (b8312ae6), 2026-09-29 — Claude (cloud): ciclo 3 (CL-8…CL-12) y aviso del ciclo 4, 2026-09-29 — Claude (cloud): ciclo 5 (CL-21…CL-29) y aviso del ciclo 6, 2026-09-29 — Claude (cloud, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08): ciclo 2, 2026-09-29 — Codex ST: alcance aislado y auditoría de firmas (+107 more)
 
 ### Community 19 - "String"
 Cohesion: 0.13
@@ -1511,7 +1513,7 @@ Nodes (11): NUM_FEATURES, NUM_TIMEFRAMES, QuantumTensorStore, AtomicU64, Box, N,
 Cohesion: 0.13
 Nodes (16): capital_chico_no_explota_leverage(), EdgePosterior, ExposureBudget, fraccion_crece_con_evidencia(), guardia_de_racha_limita_fraccion(), kelly_lcb_rechaza_edge_fantasma(), la_exploracion_arriesga_lo_minimo_ejecutable(), posterior_converge_y_lcb_es_conservador() (+8 more)
 
-### Community 26 - "crates/strategy-core/src/multivariate_coint.rs"
+### Community 26 - "MultivariateCointegrationEngine"
 Cohesion: 0.19
 Nodes (12): MAX_ASSETS, MultivariateCointegrationEngine, Option, Self, SignalIntent, SignalType, structural_break_resets_estimator_instead_of_bricking(), test_multivariate_cointegration_basket_allocations() (+4 more)
 
@@ -1584,12 +1586,12 @@ Cohesion: 0.05
 Nodes (40): 1. Decoradores Centralizados (`utils/common.py`), 1. El Circuito de Retroalimentación de Atribución, 1. Numba Structured Array (El "OhlcvStruct"), 2. Corrección BUG #12: NameError `tf` en WebSocket Live (`data/binance_loader.py`), 2. Flujo de Datos de Telemetría Cognitiva, 2. Market Ring Buffer (Numba JIT Class), 3. El Puente Neural y Auditoría Multiverso, 3. Forensic Fill Anatomy (V5.88) (+32 more)
 
 ### Community 44 - "crates/quantum-arena/src/temporal_spectrum.rs"
-Cohesion: 0.12
-Nodes (22): cl30_caminata_aleatoria_persistencia_nula(), cl30_tendencia_persiste(), cl32_la_masa_espectral_no_duplica_el_ultimo_evento(), cl32_las_escalas_no_resueltas_no_gobiernan_la_fusion(), d638b_la_banda_operativa_son_las_anclas_no_el_espectro(), d638b_tau_y_escala_temporal_son_inversas(), espectro_a_un_segundo_cl32(), FEED_CLOCK_RESOLUTION_MS (+14 more)
+Cohesion: 0.11
+Nodes (20): cl30_caminata_aleatoria_persistencia_nula(), cl30_tendencia_persiste(), d638b_la_banda_operativa_son_las_anclas_no_el_espectro(), d638b_tau_y_escala_temporal_son_inversas(), FEED_CLOCK_RESOLUTION_MS, FISHER_ESCALA_MAX, HABILIDAD_OLVIDO, MASS_RING (+12 more)
 
 ### Community 45 - "crates/execution-engine/src/reconciliation.rs"
-Cohesion: 0.07
-Nodes (48): adoptar_en_ranura_libre(), ArenaReconciliationReport, cantidad_abierta_del_lado(), diff_detects_open_positions_and_suspicious_orders(), entry(), PositionRiskEntry, reconcile(), reconcile_arena() (+40 more)
+Cohesion: 0.06
+Nodes (49): adoptar_en_ranura_libre(), ArenaReconciliationReport, cantidad_abierta_del_lado(), diff_detects_open_positions_and_suspicious_orders(), entry(), PositionRiskEntry, reconcile(), reconcile_arena() (+41 more)
 
 ### Community 46 - "🛡️ TRADER GEMINI: COMPLIANCE & RISK MANAGEMENT"
 Cohesion: 0.06
@@ -1689,15 +1691,15 @@ Nodes (14): PerceptronGateEngine, Arc, Debug, Formatter, OmniscientRegistry, Opt
 
 ### Community 70 - "QuantumOscillatorEngine"
 Cohesion: 0.13
-Nodes (14): QuantumOscillatorEngine, Arc, Debug, Formatter, OmniscientRegistry, Option, QuantumStrategy, Result (+6 more)
+Nodes (15): QuantumOscillatorEngine, Arc, Debug, Formatter, OmniscientRegistry, Option, QuantumStrategy, Result (+7 more)
 
 ### Community 71 - "SolitonWaveEngine"
 Cohesion: 0.14
-Nodes (14): Arc, Debug, Formatter, OmniscientRegistry, Option, QuantumStrategy, Result, Self (+6 more)
+Nodes (15): Arc, Debug, Formatter, OmniscientRegistry, Option, QuantumStrategy, Result, Self (+7 more)
 
 ### Community 72 - "SupersonicShockwaveEngine"
 Cohesion: 0.14
-Nodes (14): Arc, Debug, Formatter, OmniscientRegistry, Option, QuantumStrategy, Result, Self (+6 more)
+Nodes (15): Arc, Debug, Formatter, OmniscientRegistry, Option, QuantumStrategy, Result, Self (+7 more)
 
 ### Community 73 - "DarkAlphaRouter"
 Cohesion: 0.18
@@ -2095,8 +2097,8 @@ Nodes (6): BehavioralAuditorEngine, Default, Option, Self, test_behavioral_audit
 Cohesion: 0.38
 Nodes (5): NetworkJitterSimulator, Default, Self, test_network_jitter_nan_immunity(), test_network_jitter_sampling_and_slippage()
 
-### Community 172 - ".extract_tensor_feature"
-Cohesion: 0.27
+### Community 172 - "crates/data-ingest/src/tensor_parser.rs"
+Cohesion: 0.24
 Nodes (7): F, Option, TensorParser, test_extract_tensor_feature_and_decode_binance_trade(), test_tensor_parser_large_precision_and_trailing_characters(), test_tensor_parser_parse_force_orders(), test_tensor_parser_unquoted_and_malformed_bytes()
 
 ### Community 173 - "ChaosMonkey"
@@ -2276,8 +2278,8 @@ Cohesion: 0.25
 Nodes (5): PortfolioOrchestrator, PortfolioOrchestrator<'a>, GlobalArena, MarketRegime, Self
 
 ### Community 220 - ".calculate_tp_extension"
-Cohesion: 0.43
-Nodes (5): GlobalArena, test_momentum_booster_nan_and_negative_inputs_immunity(), test_momentum_booster_neutral_and_negative_pnl(), test_momentum_booster_strong_aligned_momentum_expansion(), VolatileMomentumBooster
+Cohesion: 0.39
+Nodes (6): GlobalArena, test_momentum_booster_nan_and_negative_inputs_immunity(), test_momentum_booster_neutral_and_negative_pnl(), test_momentum_booster_strong_aligned_momentum_expansion(), test_momentum_booster_symmetric_short_expansion(), VolatileMomentumBooster
 
 ### Community 221 - "main"
 Cohesion: 0.33
@@ -2635,9 +2637,9 @@ Nodes (7): 4. TROUBLESHOOTING Y ANÁLISIS FORENSE, A. Estructura de Archivos, �
 Cohesion: 0.25
 Nodes (8): 1.1 Narrativa del Sistema, 1.2 Diagrama de Flujo de Datos, 1.3 Ciclo de Vida de un Evento, 1.4 Decisiones de Diseño y Justificación, 1. VISIÓN Y ARQUITECTURA, Arquitectura Híbrida: python-binance + CCXT, Multi-Timeframe Data Support (Dic 2025), Persistencia: SQLite para Crash Recovery
 
-### Community 329 - "⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA"
-Cohesion: 0.25
-Nodes (8): 🚨 91. 12 Algoritmos Especializados en `crates/signal-engine` Huérfanos y Desconectados del Hot-Path, 🚨 92. Motor de Auditoría Interna Dual (`AuditorInterno`) Huérfano y Desconectado, 🚨 93. Auditor de Trayectorias en Tiempo Real (`TrajectoryAuditor`) Huérfano y Desconectado, 🚨 94. Predictor de Slippage por Profundidad de Libro de Kyle (`BookDepthSlippagePredictor`) Huérfano, 🚨 95. Inyección de Datos Sintéticos Constantes en Sniffer de Liquidaciones Hyperliquid, 🚨 96. Orquestador de Arbitraje Multiactivo Maker/StatArb (`MultiAssetOrchestrator`) Huérfano, 🚨 97. Inyector Zero-Allocation (`quantum_ingester.rs`) Atado a Estructura Legacy Desconectada, ⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA
+### Community 329 - "🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI"
+Cohesion: 0.13
+Nodes (14): 🚨 91. 12 Algoritmos Especializados en `crates/signal-engine` Huérfanos y Desconectados del Hot-Path, 🚨 92. Motor de Auditoría Interna Dual (`AuditorInterno`) Huérfano y Desconectado, 🚨 93. Auditor de Trayectorias en Tiempo Real (`TrajectoryAuditor`) Huérfano y Desconectado, 🚨 94. Predictor de Slippage por Profundidad de Libro de Kyle (`BookDepthSlippagePredictor`) Huérfano, 🚨 95. Inyección de Datos Sintéticos Constantes en Sniffer de Liquidaciones Hyperliquid, 🚨 96. Orquestador de Arbitraje Multiactivo Maker/StatArb (`MultiAssetOrchestrator`) Huérfano, 🚨 97. Inyector Zero-Allocation (`quantum_ingester.rs`) Atado a Estructura Legacy Desconectada, Diagnóstico de Grafo Vivo: Inteligencia Artificial, Microestructura, Ejecución HFT, Genoma Evolutivo, Señales Cuánticas y Conectividad Binance (534 Puntos de Fallo Analizados al Máximo Rigor Forense) (+6 more)
 
 ### Community 330 - "🔬 DÉCIMA OLA — ADENDA DE VALIDEZ: VENTAJA DE ENTRADA, DATOS SINTÉTICOS DEL FORENSE Y PRIMERA CORRIDA SOBRE DATOS REALES (2026-09-11)"
 Cohesion: 0.05
@@ -2664,8 +2666,8 @@ Cohesion: 0.25
 Nodes (8): 6.1 Censo cuantitativo de rigidez, 📈 6. MÓDULO 3 — ESTRATEGIA MULTIACTIVO, RÉGIMEN Y AUDITORÍA DE RIGIDEZ DE FILTROS, D-620 — El umbral `0.68605`: un literal etiquetado como decisión genómica · **S2**, D-621 / D-623 / D-624 — Constelación de literales sin derivación en el núcleo de decisión · **S3**, D-622 — Contaminación cruzada entre horizontes: el cooldown de swing depende de una pérdida de scalp · **S2**, D-625 — Los pisos literales anulan la decisión evolutiva: el patrón `.max(0.24)` · **S2**, D-626 / D-627 — El filtro conformal de swing: dos umbrales contradictorios y un error de categoría · **S2**, D-644 — Bandas de mutación incoherentes con las bandas de lectura: el caso del apalancamiento · **S2**
 
 ### Community 336 - "crates/evolution-engine/src/online_daemon.rs"
-Cohesion: 0.08
-Nodes (37): accumulated_trials(), armar_vigilancia(), cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar(), cl24_el_umbral_corto_del_pre_examen_es_el_espejo_del_largo(), d742_el_spread_del_examen_es_del_mercado_con_piso_de_medio_tick(), d742_profundidad_derivada_del_apalancamiento_publicado(), d743_longitud_minima_derivada_del_minimo_de_operaciones(), d743_particion_temporal_por_la_mediana() (+29 more)
+Cohesion: 0.09
+Nodes (33): accumulated_trials(), armar_vigilancia(), barra_de_mercado(), cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar(), cl24_el_umbral_corto_del_pre_examen_es_el_espejo_del_largo(), cl27_la_barra_del_examen_es_el_retorno_del_precio_por_reloj(), cl28_ni_el_ruido_ni_una_tendencia_alcanzan_el_umbral_de_la_fisher(), d743_longitud_minima_derivada_del_minimo_de_operaciones() (+25 more)
 
 ### Community 337 - "📉 Análisis Forense de Pérdidas (Fee Drag vs MFE)"
 Cohesion: 0.29
@@ -2749,7 +2751,7 @@ Nodes (18): MetacortexEngine, Arc, CompilationResult, CompilerSandbox, ConsejoDe
 
 ### Community 357 - "MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)"
 Cohesion: 0.05
-Nodes (37): 2026-09-28 — Codex: admisión multiactivo, contratos y publicación concurrente, 2026-09-28 — Codex: autorización recibida y reparación RMT, 2026-09-28 — Codex CF: contrato conformal por activo, 2026-09-28 — Codex: checkout aislado y publicación EWMA/W1 pendiente, 2026-09-28 — Codex: integración EWMA/W1 y publicación parcial verificable, 2026-09-28 — Codex OA: atribución causal y contrato numérico, 2026-09-28 — Codex: Platt con Newton factible (CAL-01/02/03), 2026-09-28 — Codex: PR12 ampliado por rotura posterior de main (+29 more)
+Nodes (39): 2026-09-28 — Codex: admisión multiactivo, contratos y publicación concurrente, 2026-09-28 — Codex: autorización recibida y reparación RMT, 2026-09-28 — Codex CF: contrato conformal por activo, 2026-09-28 — Codex: checkout aislado y publicación EWMA/W1 pendiente, 2026-09-28 — Codex: integración EWMA/W1 y publicación parcial verificable, 2026-09-28 — Codex OA: atribución causal y contrato numérico, 2026-09-28 — Codex: Platt con Newton factible (CAL-01/02/03), 2026-09-28 — Codex: PR12 ampliado por rotura posterior de main (+31 more)
 
 ### Community 358 - "13. GESTIÓN DE PORTAFOLIO AVANZADA"
 Cohesion: 0.40
@@ -2792,8 +2794,8 @@ Cohesion: 0.50
 Nodes (4): 🔬 4. MÓDULO 1 — INGESTIÓN, PARSERS, LIBROS L2 Y NORMALIZACIÓN, D-610 — `last_update_id` se parsea y jamás se valida: no existe detección de huecos de secuencia · **S1**, D-611 — `depth10@100ms` no es un libro L2: la afirmación de microestructura no está sostenida por la fuente de datos · **S2**, D-612 — Parsers y motores duplicados entre `src/` y `crates/` · **S3**
 
 ### Community 378 - "LiveEvolutionDaemon"
-Cohesion: 0.14
-Nodes (16): barra_de_mercado(), cl27_el_examen_del_daemon_se_alimenta_del_mercado_y_no_del_pnl(), cl27_la_barra_del_examen_es_el_retorno_del_precio_por_reloj(), live_evolution_armed_for_env(), LiveEvolutionDaemon, EvidenceEwma, EvolutionLedger, HashMap (+8 more)
+Cohesion: 0.18
+Nodes (12): cl27_el_examen_del_daemon_se_alimenta_del_mercado_y_no_del_pnl(), live_evolution_armed_for_env(), LiveEvolutionDaemon, EvidenceEwma, EvolutionLedger, HashMap, Instant, String (+4 more)
 
 ### Community 379 - ".new"
 Cohesion: 0.29
@@ -3103,10 +3105,6 @@ Nodes (10): COINS, GLOBAL, main(), Box, Error, Kline, MiMalloc, Result (+2 more)
 Cohesion: 0.25
 Nodes (3): hy_common_window_must_not_depend_on_disjoint_history(), CompactTick, tick()
 
-### Community 459 - "TemporalSpectrum"
-Cohesion: 0.14
-Nodes (4): Default, ScaleState, signal_at_es_continua_entre_escalas(), TemporalSpectrum
-
 ### Community 460 - "Auditoría científica XVI — identidad multiactivo, evidencia conjunta y contratos de asignación"
 Cohesion: 0.08
 Nodes (23): 10. Universo temporal-espectral y límites de las analogías avanzadas, 11. Matriz por los ocho módulos del maestro, 12. Verificación reproducible y mapa de archivos, 13. Hoja de ruta de cierre, sin sustituciones cosméticas, 1. Resultado ejecutivo, alcance y estado de resolución, 2. Paradigma de grafo vivo: diagnóstico desde la raíz al terminal, 3. FMT-088 — Asignación sin evidencia, capital ficticio y normalización no homogénea, 4. FMT-167 y FMT-034 — Cesta: transacción numérica no equivale a validez OU (+15 more)
@@ -3341,7 +3339,7 @@ Nodes (13): ADENDA MX — antes de añadir otra teoría, validar la medición, A
 
 ### Community 519 - ".t1-cert/crates/evolution-engine/src/online_daemon.rs"
 Cohesion: 0.08
-Nodes (38): accumulated_trials(), armar_vigilancia(), cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar(), cl24_el_umbral_corto_del_pre_examen_es_el_espejo_del_largo(), cl28_ni_el_ruido_ni_una_tendencia_alcanzan_el_umbral_de_la_fisher(), d742_el_spread_del_examen_es_del_mercado_con_piso_de_medio_tick(), d742_profundidad_derivada_del_apalancamiento_publicado(), d743_longitud_minima_derivada_del_minimo_de_operaciones() (+30 more)
+Nodes (41): accumulated_trials(), armar_vigilancia(), barra_de_mercado(), cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar(), cl24_el_umbral_corto_del_pre_examen_es_el_espejo_del_largo(), cl27_la_barra_del_examen_es_el_retorno_del_precio_por_reloj(), d742_el_spread_del_examen_es_del_mercado_con_piso_de_medio_tick(), d742_profundidad_derivada_del_apalancamiento_publicado() (+33 more)
 
 ### Community 520 - "response"
 Cohesion: 0.21
@@ -3352,8 +3350,8 @@ Cohesion: 0.16
 Nodes (8): LegacyRegimeView, nonzero_ln(), LegacyRegimeView, Option, Self, TemporalSpectrum, ruido_produce_crash_flux_bajo(), SpectralRegimeField
 
 ### Community 522 - ".pesos_espectrales"
-Cohesion: 0.18
-Nodes (7): cl28_ni_el_ruido_ni_una_tendencia_alcanzan_el_umbral_de_la_fisher(), factor_de_resolucion(), spectral_contract_learning_reaches_field_and_projection(), spectral_contract_maximum_energy_entropy_can_have_full_agreement(), SpectralFieldState, umbral_fisher_identificable(), xliv_fisher_de_escala_tiene_techo_y_umbral_alcanzable()
+Cohesion: 0.19
+Nodes (6): factor_de_resolucion(), spectral_contract_learning_reaches_field_and_projection(), spectral_contract_maximum_energy_entropy_can_have_full_agreement(), SpectralFieldState, umbral_fisher_identificable(), xliv_fisher_de_escala_tiene_techo_y_umbral_alcanzable()
 
 ### Community 523 - "crates/quantum-arena/tests/order_quantity_contract.rs"
 Cohesion: 0.26
@@ -3488,16 +3486,16 @@ Cohesion: 0.25
 Nodes (8): 2026-09-28 — Claude (cloud): auditoría de gates de evolución y régimen (PR #8), Corregido (commits atómicos, con tests), Defecto propio encontrado por Codex (XLIV-3) — arreglo reservado por Codex, Hallazgos de este tramo NO corregidos (diseño o zona ajena), Segundo tramo (XLIV-8 … XLIV-12, con 8b y 9b/9c), Señalado a los dueños (no tocado), Tercer tramo (tras el merge del PR #8), Viabilidad de la meta (consejo de seniors — números, no opinión)
 
 ### Community 561 - "Expedientes detallados"
-Cohesion: 0.04
-Nodes (45): 2026-09-29 — Publicación ST/TE/MX autorizada por el operador, Adenda de publicación y regresión conjunta — PR #21, ADENDA XLIX·A (GLM, 2026-09-30) — MX-19 REPARADO, Auditoría MX — métricas, evidencia y causalidad del replay, Ausencia, degeneración y límites de representación, Calidad y utilidad del artefacto, Cierre de validación, Cobertura y evaluación de calidad (+37 more)
+Cohesion: 0.07
+Nodes (27): Expedientes detallados, MX-01 — Un PnL no finito podía detener la auditoría por panic, MX-02 — Duración cero se confundía con pérdida total, MX-03 — Dominio de capital incompleto y propagación engañosa, MX-04 — Drawdown inválido era saneado a cero riesgo, MX-05 — Nocional negativo o infinito entraba como rotación válida, MX-06 — Default y muestra vacía fabricaban rendimiento observado, MX-07 — Epsilons absolutos rompían invariancia monetaria (+19 more)
 
 ### Community 562 - "open_candidate"
 Cohesion: 0.43
 Nodes (6): invalid_posterior_does_not_admit_a_new_candidate(), mature_micro_no_edge_keeps_the_minimal_probe_alive(), open_candidate(), positive_evidence_still_allows_a_feasible_micro_candidate(), Arc, GlobalArena
 
 ### Community 563 - ".new"
-Cohesion: 0.17
-Nodes (13): c05_dominant_tau_opera_dentro_de_la_banda_operativa(), cl30_zigzag_a_la_escala_revierte(), d742_las_escalas_vacias_no_gobiernan_la_fusion(), Option, ruido_puro_no_genera_conviccion_persistente(), spectral_contract_long_scale_retains_small_elapsed_mass(), spectral_contract_timestamp_zero_is_a_valid_origin(), StructureFunctions (+5 more)
+Cohesion: 0.25
+Nodes (13): c05_dominant_tau_opera_dentro_de_la_banda_operativa(), cl30_zigzag_a_la_escala_revierte(), d742_las_escalas_vacias_no_gobiernan_la_fusion(), ruido_puro_no_genera_conviccion_persistente(), signal_at_es_continua_entre_escalas(), spectral_contract_learning_refreshes_fusion_without_new_tick(), spectral_contract_long_scale_retains_small_elapsed_mass(), spectral_contract_timestamp_zero_is_a_valid_origin() (+5 more)
 
 ### Community 564 - "correlation_input_contract.rs"
 Cohesion: 0.36
@@ -3572,8 +3570,8 @@ Cohesion: 0.29
 Nodes (7): Adenda XXXVIII — integridad numérica, diario y veto por comisiones, FMT-279 — PnL inválido, desconocido y cero no son el mismo estado, FMT-280 — serialización reparada, durabilidad y muestra pendientes, FMT-281 — simulador auxiliar y falsa equivalencia entre entornos, FMT-282 — causalidad, unidades y completitud del fee-breaker, FMT-283 / FMT-278 / FMT-181 — continuaciones acotadas, Verificación, paradigma y siguientes condiciones de cierre
 
 ### Community 588 - "TABLERO COMPARTIDO — estado por agente"
-Cohesion: 0.29
-Nodes (6): Claude (observado por GLM: última actividad 2026-09-29), Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC), Frentes del sistema (no por agente), GLM (actualizado: 2026-09-30, 03c89959), Qoder (observado por GLM: actividad en checkout compartido 14:29 local), TABLERO COMPARTIDO — estado por agente
+Cohesion: 0.25
+Nodes (7): Antigravity (observado por GLM: en vuelo, sin commit/anuncio), Claude (observado por GLM: última actividad 2026-09-29), Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC), Frentes del sistema (no por agente), GLM (actualizado: 2026-09-30, 03c89959), Qoder (observado por GLM: actividad en checkout compartido 14:29 local), TABLERO COMPARTIDO — estado por agente
 
 ### Community 592 - "4. Diseño matemático objetivo: un campo continuo, no dos motores renombrados"
 Cohesion: 0.33
@@ -4085,7 +4083,7 @@ Nodes (15): anchored_code(), BRACKET_REJECTIONS, is_exchange_rejection(), note_r
 
 ### Community 746 - "TemporalSpectrum"
 Cohesion: 0.14
-Nodes (5): cl32_las_escalas_no_resueltas_no_gobiernan_la_fusion(), fraccion_no_resuelta_cl32(), Default, ScaleState, TemporalSpectrum
+Nodes (4): Default, ScaleState, signal_at_es_continua_entre_escalas(), TemporalSpectrum
 
 ### Community 747 - "FlowImpulseEngine"
 Cohesion: 0.12
@@ -4096,8 +4094,8 @@ Cohesion: 0.16
 Nodes (20): el_ledger_persiste_la_posesion_con_su_tau(), LedgerEvent, los_deltas_se_acumulan_y_el_nan_se_rechaza(), migrar_esquema_legado(), OwnershipRecord, pending_event(), PositionLedger, Connection (+12 more)
 
 ### Community 749 - "3. Hallazgos detallados"
-Cohesion: 0.08
-Nodes (26): 3. Hallazgos detallados, FMT-047 — La función de fitness no tiene todas las propiedades anunciadas, FMT-048 — La abstención se penaliza como inviabilidad aun cuando todas las oportunidades pierden, FMT-049 — Los retornos de la estrategia vigente se usan como si fueran retornos del mercado, FMT-050 — El simulador permite al candidato modificar el mundo con el que compite, FMT-051 — “Walk-forward” no constituye una validación independiente cuando la búsqueda consume su resultado, FMT-052 — El dataset online mezcla canales y objetivos de observación incompatibles, FMT-053 — La supuesta optimización de umbrales vuelve a ser constante (+18 more)
+Cohesion: 0.04
+Nodes (44): 1. Dictamen y alcance, 2. Matriz consolidada de esta ronda, 3. Hallazgos detallados, 4.1 Qué aportan —y qué no— las teorías más sofisticadas, 4. Integraciones científicas T21–T24: propósito, ecuaciones y límites, 5. Visualización diagnóstica: dónde se rompe el ciclo observado, 6.1 Verificación ejecutada, 6.2 Manifiesto de lectura completa de esta ronda (+36 more)
 
 ### Community 750 - "Auditoría científica VII — soporte espectral, evidencia y selección evolutiva"
 Cohesion: 0.08
@@ -4136,8 +4134,8 @@ Cohesion: 0.08
 Nodes (21): Default, SuperGenotype, .DESIGN_WIN_RATE, .DIMENSION, .MAX_FRICTION_SHARE_OF_RISK, .MIN_RR_GATE, .MIN_RR_MUTATION, .MIN_RR_REPAIR (+13 more)
 
 ### Community 759 - ".t1-cert/crates/quantum-arena/src/temporal_spectrum.rs"
-Cohesion: 0.11
-Nodes (21): cl30_caminata_aleatoria_persistencia_nula(), cl30_tendencia_persiste(), cl32_la_masa_espectral_no_duplica_el_ultimo_evento(), d638b_la_banda_operativa_son_las_anclas_no_el_espectro(), d638b_tau_y_escala_temporal_son_inversas(), espectro_a_un_segundo_cl32(), FEED_CLOCK_RESOLUTION_MS, FISHER_ESCALA_MAX (+13 more)
+Cohesion: 0.12
+Nodes (22): cl30_caminata_aleatoria_persistencia_nula(), cl30_tendencia_persiste(), cl32_la_masa_espectral_no_duplica_el_ultimo_evento(), cl32_las_escalas_no_resueltas_no_gobiernan_la_fusion(), d638b_la_banda_operativa_son_las_anclas_no_el_espectro(), d638b_tau_y_escala_temporal_son_inversas(), espectro_a_un_segundo_cl32(), FEED_CLOCK_RESOLUTION_MS (+14 more)
 
 ### Community 760 - "Auditoría de fundamentos científicos IX — Evidencia operativa, autoridad de parada y trazabilidad"
 Cohesion: 0.08
@@ -4356,8 +4354,8 @@ Cohesion: 0.22
 Nodes (13): AutoFeatureSet, CompiledFeature, OpCode, Default, Self, Vec, test_feature_vm_empty_feature_and_out_of_bounds_inputs(), test_feature_vm_execution_and_evaluation() (+5 more)
 
 ### Community 814 - "LiveEvolutionDaemon"
-Cohesion: 0.14
-Nodes (16): barra_de_mercado(), cl27_el_examen_del_daemon_se_alimenta_del_mercado_y_no_del_pnl(), cl27_la_barra_del_examen_es_el_retorno_del_precio_por_reloj(), live_evolution_armed_for_env(), LiveEvolutionDaemon, EvidenceEwma, EvolutionLedger, HashMap (+8 more)
+Cohesion: 0.18
+Nodes (12): cl27_el_examen_del_daemon_se_alimenta_del_mercado_y_no_del_pnl(), live_evolution_armed_for_env(), LiveEvolutionDaemon, EvidenceEwma, EvolutionLedger, HashMap, Instant, String (+4 more)
 
 ### Community 815 - "TrueOnlineRandomForest"
 Cohesion: 0.13
@@ -4491,9 +4489,9 @@ Nodes (12): MAX_ASSETS, MultivariateCointegrationEngine, Option, Self, SignalInt
 Cohesion: 0.16
 Nodes (14): INDEX_MASK, LockFreeBus, LockFreeBus<T>, RING_SIZE, AtomicU64, Default, Option, Self (+6 more)
 
-### Community 848 - "Auditoría científica III — autoevolución, causalidad y validez de la evidencia"
+### Community 848 - "Auditoría MX — métricas, evidencia y causalidad del replay"
 Cohesion: 0.11
-Nodes (18): 1. Dictamen y alcance, 2. Matriz consolidada de esta ronda, 4.1 Qué aportan —y qué no— las teorías más sofisticadas, 4. Integraciones científicas T21–T24: propósito, ecuaciones y límites, 5. Visualización diagnóstica: dónde se rompe el ciclo observado, 6.1 Verificación ejecutada, 6.2 Manifiesto de lectura completa de esta ronda, 6.3 Conservación e integridad documental (+10 more)
+Nodes (18): 2026-09-29 — Publicación ST/TE/MX autorizada por el operador, Adenda de publicación y regresión conjunta — PR #21, ADENDA XLIX·A (GLM, 2026-09-30) — MX-19 REPARADO, Auditoría MX — métricas, evidencia y causalidad del replay, Ausencia, degeneración y límites de representación, Calidad y utilidad del artefacto, Cierre de validación, Cobertura y evaluación de calidad (+10 more)
 
 ### Community 849 - "Auditoría de fundamentos científicos XXXIII — evidencia de liquidación, causalidad temporal y vetos"
 Cohesion: 0.11
@@ -4720,8 +4718,8 @@ Cohesion: 0.23
 Nodes (3): d658_mutacion_de_curvas_respeta_las_cotas_declaradas(), R, Self
 
 ### Community 905 - ".new"
-Cohesion: 0.23
-Nodes (13): c05_dominant_tau_opera_dentro_de_la_banda_operativa(), cl30_zigzag_a_la_escala_revierte(), d742_las_escalas_vacias_no_gobiernan_la_fusion(), ruido_puro_no_genera_conviccion_persistente(), signal_at_es_continua_entre_escalas(), spectral_contract_learning_refreshes_fusion_without_new_tick(), spectral_contract_long_scale_retains_small_elapsed_mass(), spectral_contract_timestamp_zero_is_a_valid_origin() (+5 more)
+Cohesion: 0.17
+Nodes (13): c05_dominant_tau_opera_dentro_de_la_banda_operativa(), cl30_zigzag_a_la_escala_revierte(), d742_las_escalas_vacias_no_gobiernan_la_fusion(), Option, ruido_puro_no_genera_conviccion_persistente(), spectral_contract_long_scale_retains_small_elapsed_mass(), spectral_contract_timestamp_zero_is_a_valid_origin(), StructureFunctions (+5 more)
 
 ### Community 906 - ".t1-cert/crates/signal-engine/tests/ensemble_characterization.rs"
 Cohesion: 0.15
@@ -4812,8 +4810,8 @@ Cohesion: 0.23
 Nodes (12): get_default_specs(), get_official_binance_spec(), Option, Result, String, Vec, spec(), SymbolSpec (+4 more)
 
 ### Community 928 - ".pesos_espectrales"
-Cohesion: 0.19
-Nodes (6): factor_de_resolucion(), spectral_contract_learning_reaches_field_and_projection(), spectral_contract_maximum_energy_entropy_can_have_full_agreement(), SpectralFieldState, umbral_fisher_identificable(), xliv_fisher_de_escala_tiene_techo_y_umbral_alcanzable()
+Cohesion: 0.18
+Nodes (7): cl28_ni_el_ruido_ni_una_tendencia_alcanzan_el_umbral_de_la_fisher(), factor_de_resolucion(), spectral_contract_learning_reaches_field_and_projection(), spectral_contract_maximum_energy_entropy_can_have_full_agreement(), SpectralFieldState, umbral_fisher_identificable(), xliv_fisher_de_escala_tiene_techo_y_umbral_alcanzable()
 
 ### Community 929 - "ZeroAllocArenaPoolEngine"
 Cohesion: 0.18
@@ -4831,9 +4829,9 @@ Nodes (10): EvolutionLedger, GenomeUpdateEvent, HashMap, Option, Self, Sender, S
 Cohesion: 0.22
 Nodes (10): Box, Client, Error, Option, Result, Self, String, TelegramBot (+2 more)
 
-### Community 933 - "🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI"
-Cohesion: 0.13
-Nodes (14): 🚨 91. 12 Algoritmos Especializados en `crates/signal-engine` Huérfanos y Desconectados del Hot-Path, 🚨 92. Motor de Auditoría Interna Dual (`AuditorInterno`) Huérfano y Desconectado, 🚨 93. Auditor de Trayectorias en Tiempo Real (`TrajectoryAuditor`) Huérfano y Desconectado, 🚨 94. Predictor de Slippage por Profundidad de Libro de Kyle (`BookDepthSlippagePredictor`) Huérfano, 🚨 95. Inyección de Datos Sintéticos Constantes en Sniffer de Liquidaciones Hyperliquid, 🚨 96. Orquestador de Arbitraje Multiactivo Maker/StatArb (`MultiAssetOrchestrator`) Huérfano, 🚨 97. Inyector Zero-Allocation (`quantum_ingester.rs`) Atado a Estructura Legacy Desconectada, Diagnóstico de Grafo Vivo: Inteligencia Artificial, Microestructura, Ejecución HFT, Genoma Evolutivo, Señales Cuánticas y Conectividad Binance (534 Puntos de Fallo Analizados al Máximo Rigor Forense) (+6 more)
+### Community 933 - "⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA"
+Cohesion: 0.25
+Nodes (8): 🚨 91. 12 Algoritmos Especializados en `crates/signal-engine` Huérfanos y Desconectados del Hot-Path, 🚨 92. Motor de Auditoría Interna Dual (`AuditorInterno`) Huérfano y Desconectado, 🚨 93. Auditor de Trayectorias en Tiempo Real (`TrajectoryAuditor`) Huérfano y Desconectado, 🚨 94. Predictor de Slippage por Profundidad de Libro de Kyle (`BookDepthSlippagePredictor`) Huérfano, 🚨 95. Inyección de Datos Sintéticos Constantes en Sniffer de Liquidaciones Hyperliquid, 🚨 96. Orquestador de Arbitraje Multiactivo Maker/StatArb (`MultiAssetOrchestrator`) Huérfano, 🚨 97. Inyector Zero-Allocation (`quantum_ingester.rs`) Atado a Estructura Legacy Desconectada, ⚛️ MÓDULO 7: SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA
 
 ### Community 934 - "⚡ MÓDULO 4: EJECUCIÓN HFT, PROTOCOLO DE RED Y CONECTIVIDAD BINANCE"
 Cohesion: 0.13
@@ -5760,8 +5758,8 @@ Cohesion: 0.33
 Nodes (6): b2_5_ml_prob_sigue_vivo_con_feed_stalled(), b3_18_el_ml_prob_del_gate_es_del_mismo_tick_y_lleva_al_forest(), install_testusdt_forest(), macro_split_forest(), NanoForestData, tick()
 
 ### Community 1179 - "opposed_scales"
-Cohesion: 0.29
-Nodes (5): opposed_scales(), spectral_contract_energy_is_consistent_at_grid_nodes(), spectral_contract_invalid_outcomes_cannot_train(), spectral_contract_invalid_queries_are_neutral(), spectral_contract_learning_refreshes_fusion_without_new_tick()
+Cohesion: 0.33
+Nodes (4): opposed_scales(), spectral_contract_energy_is_consistent_at_grid_nodes(), spectral_contract_invalid_outcomes_cannot_train(), spectral_contract_invalid_queries_are_neutral()
 
 ### Community 1182 - "🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI"
 Cohesion: 0.29
@@ -5809,7 +5807,7 @@ Nodes (3): curva_horizonte_pasa_por_los_anchos_legacy(), HorizonCurve, Self
 
 ### Community 1199 - "opposed_scales"
 Cohesion: 0.29
-Nodes (4): opposed_scales(), spectral_contract_energy_is_consistent_at_grid_nodes(), spectral_contract_invalid_outcomes_cannot_train(), spectral_contract_invalid_queries_are_neutral()
+Nodes (5): opposed_scales(), spectral_contract_energy_is_consistent_at_grid_nodes(), spectral_contract_invalid_outcomes_cannot_train(), spectral_contract_invalid_queries_are_neutral(), spectral_contract_learning_refreshes_fusion_without_new_tick()
 
 ### Community 1203 - ".t1-cert/crates/quantum-arena/tests/universe_identity_diagnostics.rs"
 Cohesion: 0.38
@@ -6223,6 +6221,10 @@ Nodes (3): bosque_con_base(), cl21_la_base_del_modelo_se_publica_por_simbolo_y_m
 Cohesion: 0.67
 Nodes (3): data_join(), data_root(), String
 
+### Community 1336 - "Option"
+Cohesion: 0.19
+Nodes (7): escala_con_habilidad(), qo_594_escalas_inmaduras_conservan_el_respaldo_de_energia(), qo_594_habilidad_requiere_evidencia_madura(), qo_594_tau_dominante_sigue_la_habilidad_madura(), Option, ScaleState, StructureFunctions
+
 ### Community 1340 - "12. EWMA-W1-14/15 — límites de integración todavía abiertos"
 Cohesion: 0.50
 Nodes (4): 12. EWMA-W1-14/15 — límites de integración todavía abiertos, EWMA-W1-14 (P2): ausencia de evidencia publicada como cero, EWMA-W1-15 (P2): coordenada de deriva declarada pero no alimentada, Topología diagnóstica de esta revisión
@@ -6347,22 +6349,30 @@ Nodes (3): Adenda científica III — auditoría de autoevolución y evidencia c
 Cohesion: 0.67
 Nodes (3): Adenda científica XIII — persistencia, arranque y recuperación causal (2026-09-24), T36: contrato de estado del grafo vivo, Verificación y alcance XIII
 
+### Community 1504 - "wf_replay_segment"
+Cohesion: 0.24
+Nodes (9): d742_el_spread_del_examen_es_del_mercado_con_piso_de_medio_tick(), d742_profundidad_derivada_del_apalancamiento_publicado(), median(), observed_market_env(), GlobalArena, GodEngineCore, RiskEnvelope, wf_replay_segment() (+1 more)
+
+### Community 1505 - "espectro_a_un_segundo_cl32"
+Cohesion: 0.38
+Nodes (4): cl32_la_masa_espectral_no_duplica_el_ultimo_evento(), cl32_las_escalas_no_resueltas_no_gobiernan_la_fusion(), espectro_a_un_segundo_cl32(), fraccion_no_resuelta_cl32()
+
 ## Knowledge Gaps
-- **7139 isolated node(s):** `trader-gemini-v5`, `build.sh script`, `RUSTFLAGS`, `audit-engine`, `backtest-engine` (+7134 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 10807 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **7146 isolated node(s):** `trader-gemini-v5`, `build.sh script`, `RUSTFLAGS`, `audit-engine`, `backtest-engine` (+7141 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 10814 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **127 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `🔬 DÉCIMA OLA — ADENDA DE VALIDEZ: VENTAJA DE ENTRADA, DATOS SINTÉTICOS DEL FORENSE Y PRIMERA CORRIDA SOBRE DATOS REALES (2026-09-11)` connect `🔬 DÉCIMA OLA — ADENDA DE VALIDEZ: VENTAJA DE ENTRADA, DATOS SINTÉTICOS DEL FORENSE Y PRIMERA CORRIDA SOBRE DATOS REALES (2026-09-11)` to `.t1-cert/INFORME_FORENSE_MAESTRO.md`, `23. 🆕 ADENDA 22 — EL MOTOR UNIVERSAL CONTINUO, MEDIDO (2026-09-19/20)`, `Adenda científica XXX — de la evidencia válida al veto justificable (2026-09-25)`, `ADENDA CIENTÍFICA XXV — VETOS Y RECHAZOS, 2026-09-25`, `Adenda científica XXXVII — reserva propia, riesgo admitido y cierre de emergencia`, `Adenda de auditoría científica XXXII — trazabilidad del consejo y vetos con evidencia`, `ADENDA FORENSE XXXV — EVIDENCIA NUMÉRICA, COMPARABILIDAD Y PROPIEDAD DE VETOS — 2026-09-25`, `Adenda XXXIII — grafo causal de liquidaciones y auditoría de filtros`, `Adenda XIV — auditoría de contratos científicos y autorización (2026-09-24)`, `Adenda XXXIX — paginación, identidad visible y aislamiento monetario`, `Adenda científica XXXI — contratos del consejo y fallos del feedback (2026-09-25)`, `Adenda de fundamentos XXVIII — conservación de evidencia y autoevolución causal (2026-09-25)`, `Adenda forense XXIV — inicialización, rechazo de evidencia y filtros (2026-09-25)`, `Adenda XXVII — topología de entrada y evidencia del actuador (2026-09-25)`, `Adenda XXXVIII — integridad numérica, diario y veto por comisiones`, `Adenda 2026-09-28 — EWMA, reloj de evidencia y alcance del oráculo`, `Adenda científica XII — FMT-138–144 y reparación local de FMT-092`, `ADENDA CIENTÍFICA XVI — identidad multiactivo, cotización y evidencia conjunta`, `ADENDA CIENTÍFICA XVII — selección de universo e identidad multiactivo`, `Adenda científica XXI — coherencia de medida y juez temporal; cinco deudas nuevas (2026-09-24)`, `Adenda científica XXII — preservación del predictor y gobernanza neuronal (2026-09-24)`, `Adenda científica XXIII — raíces observacionales del aprendizaje (2026-09-24)`, `Adenda XIX — contratos causales para posiciones y evolución (2026-09-24)`, `Adenda XV — revisión del continuo multivariante, filtros y estimadores (2026-09-24)`, `Adenda XVIII — integridad numérica, ejecución incierta y reconciliación multiactivo (2026-09-24)`, `AMPLIACIÓN CIENTÍFICA IV — CONTRATOS DE APRENDIZAJE, MICROESTRUCTURA Y DECISIÓN`, `Anexo FMT — Fundamentos científicos, causalidad y evolución verificable (2026-09-24)`, `🔭 Décima Ola — Adenda de auditoría integral: el medidor mentía y el fuego real no estaba cerrado (D-696 a D-740)`, `Adenda científica XXIX — procedencia económica, continuidad temporal y vetos defensivos`, `ADENDA FORENSE XXXIV — CAUSALIDAD, EJECUCIÓN Y EVOLUCIÓN IDENTIFICABLE — 2026-09-25`, `Ampliación XXXVI — auditoría causal de vetos, rechazos y certificación interna (2026-09-25)`, `Adenda científica II — auditoría del contrato matemático y del aprendizaje (24-09-2026)`, `Adenda científica III — auditoría de autoevolución y evidencia causal (24-09-2026)`, `Adenda científica XIII — persistencia, arranque y recuperación causal (2026-09-24)`, `Adenda XI — FMT-134 y nuevos FMT-135–137 (2026-09-24)`, `Adenda XX — integridad matemática del artefacto, boosting y evidencia de generalización (2026-09-24)`, `Adenda XXVI — conservación del contrato entre riesgo y terminal (2026-09-25)`?**
-  _High betweenness centrality (0.001) - this node is a cross-community bridge._
+- **Why does `Coordinación Codex / Claude / GLM — 2026-09-28` connect `Coordinación Codex / Claude / GLM — 2026-09-28` to `INFORME_FORENSE_MAESTRO.md`, `2026-09-29 — GLM: XLVIII·C registro sistemático de vetos (cff240d7)`, `Codex → GLM: revisión del commit 8389432c, sin modificarlo`?**
+  _High betweenness centrality (0.002) - this node is a cross-community bridge._
+- **Why does `CX — Causalidad del replay, calentamiento y disponibilidad de información` connect `CX — Causalidad del replay, calentamiento y disponibilidad de información` to `INFORME_FORENSE_MAESTRO.md`?**
+  _High betweenness centrality (0.002) - this node is a cross-community bridge._
 - **Why does `🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI` connect `🏛️ INFORME FORENSE MAESTRO — AUDITORÍA SISTÉMICA TOTAL DE TRADER GEMINI` to `14. 🎯 Hoja de Ruta Sistémica de Rehabilitación 1-a-1 (Niveles L-0 a L-4)`, `3. 💥 Los 7 Hallazgos Sistémicos Maestros de la Séptima Ola`, `INFORME_FORENSE_MAESTRO.md`, `🧪 MÓDULO 6: BACKTEST VECTORIZADO, PARIDAD 1:1 Y VERIFICACIÓN FORENSE (D-299 A D-310)`, `🎯 15. HOJA DE RUTA SISTÉMICA DE INTERVENCIÓN QUIRÚRGICA COMPLETA (NIVELES L-0 A L-5)`?**
   _High betweenness centrality (0.001) - this node is a cross-community bridge._
-- **Why does `Coordinación Codex / Claude / GLM — 2026-09-28` connect `Coordinación Codex / Claude / GLM — 2026-09-28` to `INFORME_FORENSE_MAESTRO.md`, `2026-09-29 — GLM: XLVIII·C registro sistemático de vetos (cff240d7)`, `Codex → GLM: revisión del commit 8389432c, sin modificarlo`?**
-  _High betweenness centrality (0.001) - this node is a cross-community bridge._
 - **What connects `trader-gemini-v5`, `build.sh script`, `RUSTFLAGS` to the rest of the system?**
-  _7139 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _7146 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA` be split into smaller, more focused modules?**
   _Cohesion score 0.00966183574879227 - nodes in this community are weakly interconnected._
 - **Should `crates/dark-alpha-engine/src/lib.rs` be split into smaller, more focused modules?**
