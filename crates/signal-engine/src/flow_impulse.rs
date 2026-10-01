@@ -91,7 +91,12 @@ impl FlowImpulseEngine {
             .config
             .turbo_coherence_threshold
             .load(Ordering::Relaxed);
-        if confidence > 0.50 && is_statistically_significant && coherence > turbo_coherence_threshold
+        // AGY-AUD-002: confidence gates signal CONTINUOUSLY, not as a binary
+        // switch at 0.50. The downstream TensorVoteOrchestrator and council
+        // apply genómic thresholds — this layer should not collapse a continuous
+        // tensor to a boolean veto. Statistical significance and coherence
+        // still gate the signal; confidence scales the intent's strength.
+        if is_statistically_significant && coherence > turbo_coherence_threshold
         {
             let signal_type = if direction_tensor > 0.0 {
                 SignalType::Long

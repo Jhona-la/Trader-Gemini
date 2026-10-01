@@ -12,6 +12,9 @@ pub struct MultifractalSpectrumEngine {
     pub last_price: f64,
     pub sum_q1: f64,
     pub sum_q2: f64,
+    /// AGY-AUD-003: counter for periodic exact recomputation of rolling sums
+    /// to prevent catastrophic floating-point drift after millions of ticks.
+    drift_recompute_counter: usize,
 }
 
 impl MultifractalSpectrumEngine {
@@ -25,6 +28,7 @@ impl MultifractalSpectrumEngine {
             last_price: 0.0,
             sum_q1: 0.0,
             sum_q2: 0.0,
+            drift_recompute_counter: 0,
         }
     }
 
@@ -55,6 +59,24 @@ impl MultifractalSpectrumEngine {
 
         self.sum_q1 = (self.sum_q1 + ret).max(0.0);
         self.sum_q2 = (self.sum_q2 + ret * ret).max(0.0);
+
+        // AGY-AUD-003: periodic exact recomputation to clear accumulated
+        // floating-point drift from millions of add/subtract cycles.
+        self.drift_recompute_counter += 1;
+        if self.drift_recompute_counter >= self.window_size {
+            self.drift_recompute_counter = 0;
+            let n = self.count.min(self.window_size);
+            let mut exact_q1 = 0.0f64;
+            let mut exact_q2 = 0.0f64;
+            for i in 0..n {
+                let idx = (self.head + self.window_size - n + i) % self.window_size;
+                let r = self.returns_history[idx];
+                exact_q1 += r;
+                exact_q2 += r * r;
+            }
+            self.sum_q1 = exact_q1.max(0.0);
+            self.sum_q2 = exact_q2.max(0.0);
+        }
 
         if self.count < 10 {
             return (0.50, 0.0);
@@ -158,27 +180,12 @@ impl MultiScaleHurstConfluence {
         let (h_meso, _) = self.engine_meso.update(price);
         let (h_macro, _) = self.engine_macro.update(price);
 
-        let c_micro: f64 = if h_micro > 0.55 {
-            1.0
-        } else if h_micro < 0.45 {
-            -1.0
-        } else {
-            0.0
-        };
-        let c_meso: f64 = if h_meso > 0.55 {
-            1.0
-        } else if h_meso < 0.45 {
-            -1.0
-        } else {
-            0.0
-        };
-        let c_macro: f64 = if h_macro > 0.55 {
-            1.0
-        } else if h_macro < 0.45 {
-            -1.0
-        } else {
-            0.0
-        };
+        // AGY-AUD-P09: Continuidad suave C^infinito en confluencia fractal:
+        // Erradica funciones escalón discretas (+1, 0, -1) con umbrales rígidos 0.55/0.45.
+        // Utiliza una modulación hiperbólica continua centrada en el punto nulo browniano H=0.50.
+        let c_micro = ((h_micro - 0.50) / 0.08).tanh();
+        let c_meso = ((h_meso - 0.50) / 0.08).tanh();
+        let c_macro = ((h_macro - 0.50) / 0.08).tanh();
 
         let confluence_score: f64 = (c_micro * 0.4 + c_meso * 0.3 + c_macro * 0.3).clamp(-1.0, 1.0);
 

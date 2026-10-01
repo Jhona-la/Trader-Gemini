@@ -201,6 +201,54 @@ pub fn retorno_neto_pct(neto_usd: f64, nocional_usd: f64) -> Option<f64> {
     r.is_finite().then_some(r)
 }
 
+/// #592 — CADENCIA de la observación del régimen: una vela de referencia
+/// (60 s). La deriva de τ* que alimenta el crash_flux se mide ENTRE
+/// observaciones del régimen; por evento, la normalización por-hora de
+/// `dominant_drift` satura con cualquier salto de τ* entre milisegundos —
+/// ruido del feed, no migración de escala (señalización de Claude:
+/// `prev = None` congelaba el 35 % del crash_flux).
+pub const CADENCIA_REGIMEN_MS: f64 = 60_000.0;
+
+/// #593 — UMBRAL DEL CONSEJO (decisión 2026-09-30): distancia armónica
+/// mínima |Δlnτ| para CO-DESPACHAR dos candidatos como bandas
+/// independientes. Misma dirección: 0.80 — exactamente la distancia que
+/// `find_resonant_slot` ya exige para admitir el apilado; por debajo, el
+/// segundo candidato same-direction moría en el slot como colisión (los
+/// descartes silenciosos del hueco [0.60, 0.80), contables desde la Ola 14
+/// vía `qo_slot_rechazo` razón 1). Aflojar el slot a 0.60 fue RECHAZADO:
+/// habría apilado exposición correlacionada en escalas vecinas (ratio
+/// < 2.23) contra la meta de crecimiento con tope de ruina. Direcciones
+/// opuestas conservan 0.60: el slot nunca colisiona por dirección
+/// contraria y el despacho concurrente D-431 queda íntegro para coberturas.
+pub fn umbral_codespacho_armonico(misma_direccion: bool) -> f64 {
+    if misma_direccion {
+        0.80
+    } else {
+        0.60
+    }
+}
+
+/// #592 — referencia de deriva para el campo de régimen a partir del ancla
+/// por moneda: devuelve `(prev_ln_tau, elapsed_ms, actualizar_ancla)`.
+/// Frío (ts=0 o bits=0) ⇒ sin previa y ancla nueva. Entre anclas la deriva
+/// es un estimador continuo anclado: τ* actual contra la última vela de
+/// referencia, normalizado por el tiempo REAL transcurrido.
+pub fn referencia_de_regimen(
+    prev_ln_bits: u64,
+    prev_ts_ms: u64,
+    now_ms: u64,
+) -> (Option<f64>, f64, bool) {
+    if prev_ts_ms == 0 || prev_ln_bits == 0 {
+        return (None, 1.0, true);
+    }
+    let elapsed = now_ms.saturating_sub(prev_ts_ms) as f64;
+    (
+        Some(f64::from_bits(prev_ln_bits)),
+        elapsed.max(1.0),
+        elapsed >= CADENCIA_REGIMEN_MS,
+    )
+}
+
 /// XLIV-10 — SUPERPOSICIÓN CONSTRUCTIVA SIN CONFIANZA FABRICADA.
 ///
 /// Cuando las bandas rápida y lenta coinciden en dirección y armónico, la
@@ -215,8 +263,7 @@ pub fn retorno_neto_pct(neto_usd: f64, nocional_usd: f64) -> Option<f64> {
 /// ventaja en las dos); si no, la fusión es la mayor de las dos. Se conserva
 /// el techo 0,96. Sin suelo.
 #[inline]
-pub fn confianza_superpuesta(a: f64, b: f64) -> f64 {
-    let (hi, lo) = (a.max(b), a.min(b));
+pub fn confianza_superpuesta(a: f64, b: f64) -> f64 {    let (hi, lo) = (a.max(b), a.min(b));
     if lo > 0.5 {
         (hi + 0.10 * lo).min(0.96)
     } else {
@@ -638,6 +685,15 @@ pub struct GodEngineCore {
     pub maker_engines: Vec<MakerEngine>,
     pub feature_engines: Vec<StatefulEngine>,
     pub tensor_orchestrator: signal_engine::orchestrator::TensorVoteOrchestrator,
+    /// #592 — ancla de la deriva de régimen por moneda: (bits de ln(τ*),
+    /// ts_ms de la observación anclada). El crash_flux necesita la deriva de
+    /// la escala dominante ENTRE observaciones del régimen (cadencia de una
+    /// vela de referencia); por evento, la normalización por-hora satura con
+    /// cualquier salto de τ* en milisegundos — ruido del feed, no migración
+    /// de escala (señalización de Claude: prev=None congelaba el 35 % del
+    /// crash_flux).
+    pub regime_drift_prev:
+        Vec<(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64)>,
     pub scalp_forest: Option<Arc<crate::ml_inference::NanoForest>>,
     pub swing_nn: Option<dark_alpha_engine::DarkAlphaEngine>,
     /// F4.7: ensamble online — ambos modelos opinan y el peso emerge del
@@ -821,6 +877,9 @@ impl GodEngineCore {
             signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::default(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::proyeccion_espectral::ProyeccionEspectralEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
             signal_engine::perceptron_gate::PerceptronGateEngine::new(),
         ));
         tensor_orchestrator.add_strategy(Box::new(
@@ -949,6 +1008,14 @@ impl GodEngineCore {
                 .collect(),
             hawkes_by_coin: (0..n_coins)
                 .map(|_| signal_engine::hawkes_bessel::HawkesBesselEngine::new())
+                .collect(),
+            regime_drift_prev: (0..n_coins)
+                .map(|_| {
+                    (
+                        std::sync::atomic::AtomicU64::new(0),
+                        std::sync::atomic::AtomicU64::new(0),
+                    )
+                })
                 .collect(),
             diag_council_vetoes: 0,
             diag_opened: 0,
@@ -1244,6 +1311,61 @@ impl GodEngineCore {
     ///      a 0,5: contra 0,5 un modelo con base 0,30 «contradecía» todo largo
     ///      por construcción;
     ///   4. vetos de flujo agregado (CVD) y de muro del libro (L2).
+    /// QO-586 — SONDA DE BANDA OPERABLE. Repite el cálculo del suelo de
+    /// viabilidad que hará el gate (`evaluate_quantum_order`) con la MISMA
+    /// función pura (`compute_tp_sl_with_target_rr`) y las MISMAS entradas
+    /// (ATR/precio/hurst del coin vivo, fricción del roundtrip con las
+    /// comisiones publicadas, σ pronosticada al τ pedido): una lectura
+    /// cuya τ no paga esa fricción será rechazada por REJ_TP_SL_FLOOR tras
+    /// recorrer todo el pipeline de fusión y sizing.
+    fn banda_paga_friccion(&self, coin_id: usize, tau_ms: f64) -> bool {
+        if coin_id >= self.arena.coins.len() || !tau_ms.is_finite() || tau_ms <= 0.0 {
+            return false;
+        }
+        let coin = &self.arena.coins[coin_id];
+        let price = coin.current_price.load(Ordering::Relaxed);
+        let atr = coin.current_atr.load(Ordering::Relaxed);
+        if !price.is_finite() || price <= 0.0 || !atr.is_finite() || atr <= 0.0 {
+            return false;
+        }
+        let atr_pct = atr / price;
+        let taker_fee = self.arena.config.live_taker_fee.load(Ordering::Relaxed);
+        let slip_floor = self
+            .arena
+            .config
+            .base_slippage_floor
+            .load(Ordering::Relaxed)
+            .max(0.00001);
+        let lat_ms = self
+            .arena
+            .config
+            .latency_penalty_ms
+            .load(Ordering::Relaxed)
+            .max(0.0);
+        let roundtrip_fee =
+            risk_engine::tp_sl::roundtrip_friction(taker_fee, slip_floor, atr_pct, lat_ms);
+        if !roundtrip_fee.is_finite() || roundtrip_fee < 0.0 {
+            return false;
+        }
+        let sl_mult = if coin_id == 0 {
+            self.arena.config.sl_atr_mult_btc.load(Ordering::Relaxed)
+        } else {
+            self.arena.config.sl_atr_multiplier.load(Ordering::Relaxed)
+        };
+        let probe = risk_engine::tp_sl::compute_tp_sl_with_target_rr(
+            risk_engine::tp_sl::TpSlInputs {
+                tau_ms,
+                atr_ratio: atr_pct,
+                hurst: coin.hurst_exponent.load(Ordering::Relaxed),
+                roundtrip_fee,
+                sl_atr_multiplier: sl_mult,
+                sigma_forecast: coin.sigma_forecast_at(tau_ms),
+            },
+            self.arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
+        );
+        !probe.below_tradeable_floor
+    }
+
     fn puertas_del_continuo(
         &self,
         coin_id: usize,
@@ -1261,6 +1383,27 @@ impl GodEngineCore {
             return SignalIntent::flat();
         }
         let mut out = intent;
+
+        // 1.5 QO-586 — PUERTA DE BANDA OPERABLE. La lectura de una banda
+        // cuya τ no paga la fricción del roundtrip no compite en la
+        // arbitración: sería rechazada por el gate (REJ_TP_SL_FLOOR, el
+        // rechazo dominante del embudo) tras todo el pipeline, y mientras
+        // tanto su τ doomed puede ganar la selección por densidad de
+        // energía espectral o interferir destructivamente con una lectura
+        // de banda operable, matando una orden que SÍ pagaba la fricción.
+        // El ATR vivo ya está en la sonda: en calma la banda se cierra
+        // sola; no es un veto fijo. `expected_duration_ms == 0` se remite
+        // al gate, que resuelve τ por `horizon_tau_ms_coin`.
+        if out.expected_duration_ms > 0
+            && !self.banda_paga_friccion(coin_id, out.expected_duration_ms as f64)
+        {
+            self.arena.registry.set_for_coin(
+                coin_id,
+                "qo_586_tau_inoperable",
+                out.expected_duration_ms as f64,
+            );
+            return SignalIntent::flat();
+        }
 
         // 2. Invariante bayesiano absoluto (D-472).
         if (out.signal == SignalType::Long && composite_score < 0.0)
@@ -1399,8 +1542,35 @@ impl GodEngineCore {
                     // continuo y los observables de teoría nueva: crash-ness
                     // (modula margen de largos), intermitencia de Kolmogorov
                     // (endurece pisos) y Fisher de escala (identificabilidad).
+                    // #592 — la deriva de τ* se mide contra el ANCLA de
+                    // régimen (cadencia 60 s): por evento, per-hora satura
+                    // con saltos de τ* en ms (ruido del feed). La ancla se
+                    // renueva cada vela de referencia; entre anclas, el
+                    // estimador es continuo y normalizado por tiempo real.
+                    let (regimen_prev_ln, regimen_elapsed) = {
+                        let ancla = &self.regime_drift_prev[coin_id];
+                        let cur_ln = if field.resonant_tau_ms.is_finite()
+                            && field.resonant_tau_ms > 0.0
+                        {
+                            field.resonant_tau_ms.ln()
+                        } else {
+                            0.0
+                        };
+                        let (prev, elapsed, actualizar) = referencia_de_regimen(
+                            ancla.0.load(Ordering::Relaxed),
+                            ancla.1.load(Ordering::Relaxed),
+                            event_time_ms,
+                        );
+                        if actualizar && cur_ln > 0.0 {
+                            ancla.0.store(cur_ln.to_bits(), Ordering::Relaxed);
+                            ancla.1.store(event_time_ms, Ordering::Relaxed);
+                        }
+                        (prev, elapsed)
+                    };
                     let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum(
-                        spec, None, 1.0,
+                        spec,
+                        regimen_prev_ln,
+                        regimen_elapsed,
                     );
                     self.arena.coins[coin_id].spectral_crash_flux.store(regime_field.crash_flux, Ordering::Relaxed);
                     let intermittency = spec
@@ -1570,6 +1740,13 @@ impl GodEngineCore {
                     self.arena.coins[coin_id]
                         .dominant_tau_ms
                         .store(spec.dominant_tau_ms, Ordering::Relaxed);
+                    // #594: habilidad medida de la escala elegida (≤ 0 si τ*
+                    // vino del respaldo de energía o no hay evidencia —
+                    // contable para el consejo).
+                    let habilidad = spec.habilidad_en(spec.dominant_tau_ms).unwrap_or(0.0);
+                    self.arena.coins[coin_id]
+                        .tau_habilidad
+                        .store(habilidad, Ordering::Relaxed);
                 }
                 self.arena.update_market_data(
                     coin_id,
@@ -1843,8 +2020,35 @@ impl GodEngineCore {
                     // continuo y los observables de teoría nueva: crash-ness
                     // (modula margen de largos), intermitencia de Kolmogorov
                     // (endurece pisos) y Fisher de escala (identificabilidad).
+                    // #592 — la deriva de τ* se mide contra el ANCLA de
+                    // régimen (cadencia 60 s): por evento, per-hora satura
+                    // con saltos de τ* en ms (ruido del feed). La ancla se
+                    // renueva cada vela de referencia; entre anclas, el
+                    // estimador es continuo y normalizado por tiempo real.
+                    let (regimen_prev_ln, regimen_elapsed) = {
+                        let ancla = &self.regime_drift_prev[coin_id];
+                        let cur_ln = if field.resonant_tau_ms.is_finite()
+                            && field.resonant_tau_ms > 0.0
+                        {
+                            field.resonant_tau_ms.ln()
+                        } else {
+                            0.0
+                        };
+                        let (prev, elapsed, actualizar) = referencia_de_regimen(
+                            ancla.0.load(Ordering::Relaxed),
+                            ancla.1.load(Ordering::Relaxed),
+                            event_time_ms,
+                        );
+                        if actualizar && cur_ln > 0.0 {
+                            ancla.0.store(cur_ln.to_bits(), Ordering::Relaxed);
+                            ancla.1.store(event_time_ms, Ordering::Relaxed);
+                        }
+                        (prev, elapsed)
+                    };
                     let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum(
-                        spec, None, 1.0,
+                        spec,
+                        regimen_prev_ln,
+                        regimen_elapsed,
                     );
                     self.arena.coins[coin_id].spectral_crash_flux.store(regime_field.crash_flux, Ordering::Relaxed);
                     let intermittency = spec
@@ -3239,6 +3443,73 @@ impl GodEngineCore {
                     .load(Ordering::Relaxed)
                     .clamp(0.50, 0.95),
             );
+            // #590 — el gen `obi_zscore_threshold` [0.1, 3.0] llevaba huérfano
+            // desde el renombre U-ERR-1 (su lector original era la función
+            // muerta `should_trigger_micro_scalp`). Se publica junto con el
+            // percentil-80 MEDIDO del OBI (AdaptiveQuantileEngine): el
+            // consumidor exige |OBI| >= p80·gen — la versión empírica de la
+            // rareza estadística que el gen anunciaba («z-score del OBI»),
+            // sin fabricar un z gaussiano que la distribución real no
+            // garantiza. Sin estos canales el gen era peso muerto que la
+            // evolución arrastraba sin gradiente.
+            set_reg(
+                "obi_zscore_gene",
+                self.arena
+                    .config
+                    .obi_zscore_threshold
+                    .load(Ordering::Relaxed)
+                    .clamp(0.1, 3.0),
+            );
+            set_reg(
+                "obi_p80_medido",
+                self.cuantiles[coin_id].dynamic_obi_threshold(),
+            );
+            // #591 — PROYECCIÓN ESPECTRAL TEMPORAL al motor de señales. El
+            // espectro (32 escalas) vivía confinado al núcleo: los motores
+            // votaban sobre micro-features sin NINGUNA lectura del estado
+            // espectral. Se publican tres proyecciones sobre la MISMA masa
+            // canónica (`pesos_espectrales`, que ya integra la observación
+            // D-742 y la resolución CL-32 — sin recomputar, sin drift):
+            //   · señal proyectada = Σ w_k·s_k / Σ w_k (consenso de momentum
+            //     ponderado por energía, s_k ∈ [-1,1]);
+            //   · concentración = 1 − razón de participación (Σw)²/(N·Σw²):
+            //     1 = un modo domina (señal limpia), 0 = masa difusa (ruido);
+            //   · masa resuelta = fracción del peso bruto que sobrevivió a
+            //     observación+resolución: cuánto espectro puede opinar.
+            {
+                let sum_raw = self.temporal_spectrum[coin_id]
+                    .scales
+                    .iter()
+                    .map(|s| s.fusion_weight())
+                    .sum::<f64>();
+                let w = self.temporal_spectrum[coin_id].pesos_espectrales();
+                let mut sum_w = 0.0;
+                let mut sum_w2 = 0.0;
+                let mut proj = 0.0;
+                for (i, escala) in self.temporal_spectrum[coin_id]
+                    .scales
+                    .iter()
+                    .enumerate()
+                {
+                    sum_w += w[i];
+                    sum_w2 += w[i] * w[i];
+                    proj += w[i] * escala.signal;
+                }
+                if sum_w.is_finite() && sum_w > 0.0 && sum_w2.is_finite() && sum_w2 > 0.0 {
+                    set_reg(
+                        "espectral_senal_proyectada",
+                        (proj / sum_w).clamp(-1.0, 1.0),
+                    );
+                    let pr = (sum_w * sum_w) / (32.0 * sum_w2);
+                    set_reg("espectral_concentracion", (1.0 - pr).clamp(0.0, 1.0));
+                    let masa = if sum_raw.is_finite() && sum_raw > 0.0 {
+                        (sum_w / sum_raw).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    set_reg("espectral_masa_resuelta", masa);
+                }
+            }
             set_reg("bessel_alpha", 1.5);
             set_reg("hawkes_dt", 0.05);
             set_reg(
@@ -3846,7 +4117,17 @@ impl GodEngineCore {
             let pos_dev =
                 ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
             set_reg("quantum_position_deviation", pos_dev);
-            let hawkes_intensity = (1.0 + current_obi.abs() * 2.0).clamp(0.1, 5.0) / 5.0;
+            // #554 — RENOMBRE HONESTO: esta magnitud NO es intensidad de
+            // Hawkes. Es la magnitud del OBI normalizada a [0.1, 1] (el
+            // proxy de aceleración que CERT-M2-C02 erradicó de la
+            // telemetría seguía vivo aquí, con nombre de Hawkes). El
+            // λ/μ̂ REAL ya está en alcance (`hawkes_ratio_real`, publicado
+            // arriba al registry): cablearlo al slot 2 del PPO cambiaría
+            // la distribución de entrada de la política aprendida —
+            // invalida el PPO entrenado y exige re-certificación T-1
+            // (decisión de consejo, ABIERTA). Hoy el slot lleva flujo-OBI
+            // con signo y se llama por su nombre.
+            let obi_excitacion_norm = (1.0 + current_obi.abs() * 2.0).clamp(0.1, 5.0) / 5.0;
             let dir_flow_sign = if current_obi.abs() > 0.05 {
                 current_obi.signum()
             } else if ofi.abs() > 0.05 {
@@ -3854,7 +4135,7 @@ impl GodEngineCore {
             } else {
                 macro_trend.signum()
             };
-            let dir_hawkes = hawkes_intensity * dir_flow_sign;
+            let dir_obi_flow = obi_excitacion_norm * dir_flow_sign;
             let regime_code = ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0);
             let dir_regime = regime_code
                 * (if macro_trend.abs() > 0.0005 {
@@ -3873,7 +4154,7 @@ impl GodEngineCore {
             let ppo_state = [
                 ofi_norm,
                 obi_norm,
-                dir_hawkes,
+                dir_obi_flow,
                 lead_lag_div.clamp(-1.5, 1.5),
                 dir_regime,
             ];
@@ -5242,7 +5523,15 @@ impl GodEngineCore {
                 };
                 let diff_ln = ((tau_f.max(10.0)).ln() - (tau_s.max(10.0)).ln()).abs();
 
-                if diff_ln >= 0.60 {
+                // #593 — UMBRAL DEL CONSEJO: same-direction co-despacha a
+                // >= 0.80 (la distancia que el slot admite); opuestas
+                // conservan 0.60 (D-431 íntegro para coberturas). Antes,
+                // un segundo candidato same-direction en [0.60, 0.80) se
+                // despachaba y moría en el slot como colisión silenciosa.
+                let umbral_despacho = umbral_codespacho_armonico(
+                    fast_intent.signal == slow_intent.signal,
+                );
+                if diff_ln >= umbral_despacho {
                     // DESACOPLAMIENTO ARMÓNICO CONTINUO:
                     // Frecuencias ortogonales (|Δ ln τ| >= 0.60) representan dinámicas físicas independientes.
                     // Ambas ondas pueden coexistir simultáneamente en ranuras armónicas separadas.
@@ -5644,12 +5933,11 @@ impl GodEngineCore {
                             .arena
                             .registry
                             .get_scoped_value_or(&sym, "hawkes_contagion_net_role", 0.0);
-                        if contagion_net_role < 0.0 {
-                            let magnitude = (-contagion_net_role).min(50.0);
-                            let discount = 0.30 * magnitude / (magnitude + 5.0);
-                            unified_intent.confidence =
-                                (unified_intent.confidence * (1.0 - discount)).clamp(0.0, 1.0);
-                        }
+                        unified_intent.confidence =
+                            signal_engine::contagion_modulator::modulate_by_net_role(
+                                unified_intent.confidence,
+                                contagion_net_role,
+                            );
 
                         // Mapeo armónico continuo en el Universo Multivariante Continuo Temporal Espectral:
                         // Elimina la discretización binaria rígida y converge continuamente hacia el centro de masa tau*.
@@ -5996,46 +6284,37 @@ impl GodEngineCore {
             // The 0.80 log-distance policy is not measured spectral independence.
             let maybe_slot = coin.positions.find_resonant_slot(tau_intent_ms, is_long_intent);
             let raw_slot_available = maybe_slot.is_some();
+            // QO-589 — telemetría del rechazo de slot (observabilidad, no
+            // política): un candidato no plano que no consigue slot muere
+            // en silencio; sin esta razón el hueco de despacho [0.60, 0.80)
+            // de la fusión D-431 es inmedible y la decisión de consejo sobre
+            // el umbral vuela a ciegas.
+            if unified_intent.signal != SignalType::Flat && !raw_slot_available {
+                let razon =
+                    coin.positions.razon_sin_slot(tau_intent_ms, is_long_intent) as f64;
+                self.arena.registry.set_for_coin(coin_id, "qo_slot_rechazo", razon);
+            }
             let target_pos_slot = maybe_slot.unwrap_or(0);
             let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 
-            // Additional legacy cutoff 1.50 with unrealized return >=28bps.
-            // It does NOT verify a protective stop or guarantee secured profit,
-            // and distant scales can still share portfolio risk.
-            let same_dir_unsecured = if raw_slot_available {
-                let slots = coin.positions.slots();
-                let ln_target = (tau_intent_ms.max(10.0)).ln();
-                slots.iter().any(|p| {
-                    if p.is_open() && p.is_long.load(Ordering::Relaxed) == is_long_intent {
-                        let p_tau = (p.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
-                        let diff_ln = (ln_target - p_tau.ln()).abs();
-                        // (Ola XLI·D9) Banda = distancia resonante CANÓNICA (0.80, la
-                        // misma de find_resonant_slot). El 1.50 legacy cancelaba el
-                        // despacho multi-banda declarado: bandas desacopladas a
-                        // |Δlnτ| ∈ [0.60, 1.50) se despachaban como candidatos
-                        // independientes y luego eran bloqueadas por esta puerta.
-                        if diff_ln < 0.80 {
-                            let ep = p.entry_price.load(Ordering::Relaxed);
-                            if ep > 0.0 && mid_price > 0.0 {
-                                let pnl = if is_long_intent {
-                                    (mid_price - ep) / ep
-                                } else {
-                                    (ep - mid_price) / ep
-                                };
-                                pnl < 0.0028
-                            } else {
-                                true
-                            }
-                        } else {
-                            false // Outside this policy band; independence is not established.
-                        }
-                    } else {
-                        false
-                    }
-                })
-            } else {
-                false
-            };
+            // QO-588 — GATE DE PIRÁMIDE LIMPIA (restauración). Historia del
+            // defecto: el contrato legacy exigía retorno no realizado >= 28 pb
+            // para apilar en la misma dirección; el D9 (Ola XLI) estrechó su
+            // banda de 1.50 a 0.80 para eliminar la contradicción con el
+            // despacho multi-banda — pero 0.80 es EXACTAMENTE la distancia que
+            // `find_resonant_slot` ya exige para devolver un slot, así que la
+            // rama `diff_ln < 0.80` quedó inalcanzable y la disciplina
+            // «piramidar sólo en ganancia» murió en silencio (señalización de
+            // Claude). Aquí la regla es uniforme e independiente de la
+            // distancia: |Δlnτ| grande declara energía ortogonal (D-431), no
+            // riesgo independiente — escalas distantes del mismo símbolo y
+            // signo comparten cartera. No acredita stop protector ni ganancia
+            // asegurada: sólo exige que la apuesta previa pague antes de
+            // doblarle la exposición.
+            let same_dir_unsecured = raw_slot_available
+                && coin
+                    .positions
+                    .misma_direccion_sin_asegurar(tau_intent_ms, is_long_intent, mid_price);
             let slot_available = raw_slot_available && !same_dir_unsecured;
 
             // --- APERTURA MULTI-HORIZONTE CONTINUA INTEGRAL ---
@@ -7607,5 +7886,222 @@ mod w1_bocpd_tests {
             assert!(obs.run_length_posterior.iter().all(|p| p.is_finite() && *p >= 0.0));
             assert!(obs.segment_mean.iter().all(|m| m.is_finite()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_qo_586 {
+    //! QO-586 — PUERTA DE BANDA OPERABLE en `puertas_del_continuo`
+    //! (D-743: UNA puerta para las dos lecturas del espectro). Contrato:
+    //! una lectura cuya τ no paga la fricción del roundtrip —la misma que
+    //! el gate rechazaría con REJ_TP_SL_FLOOR, el rechazo dominante del
+    //! embudo— queda plana ANTES de competir en la arbitración espectral;
+    //! una τ que SÍ la paga atraviesa intacta. Sin la puerta, el τ doomed
+    //! puede ganar la selección por densidad de energía (matando la orden
+    //! completa de una banda operable) o interferir destructivamente.
+    //! La sonda repite el cálculo del gate con la MISMA función pura:
+    //! paridad por construcción, física viva del régimen, no veto fijo.
+
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    fn arena_en_regimen(atr_pct: f64) -> std::sync::Arc<quantum_arena::GlobalArena> {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        arena.config.live_taker_fee.store(0.0004, Ordering::Relaxed);
+        arena
+            .config
+            .base_slippage_floor
+            .store(0.0001, Ordering::Relaxed);
+        arena
+            .config
+            .latency_penalty_ms
+            .store(50.0, Ordering::Relaxed);
+        arena.config.sl_atr_mult_btc.store(2.0, Ordering::Relaxed);
+        arena.config.tp_rr_ratio_btc.store(2.0, Ordering::Relaxed);
+        let coin = &arena.coins[0];
+        coin.current_price.store(100.0, Ordering::Relaxed);
+        coin.current_atr.store(100.0 * atr_pct, Ordering::Relaxed);
+        coin.hurst_exponent.store(0.5, Ordering::Relaxed);
+        arena
+    }
+
+    fn intencion(tau_ms: u64) -> SignalIntent {
+        SignalIntent {
+            signal: SignalType::Long,
+            confidence: 0.70,
+            expected_duration_ms: tau_ms,
+            ..SignalIntent::default()
+        }
+    }
+
+    fn puertas_de(core: &GodEngineCore, tau_ms: u64) -> SignalIntent {
+        // Entradas neutras: bayesiano y ML no opinan (score>0 en largo,
+        // ml_prob = base), CVD 0/0 y muros 0/0 no vetan. Lo único que
+        // decide aquí es la puerta de banda operable.
+        core.puertas_del_continuo(0, intencion(tau_ms), true, 0.5, 0.5, 0.5, 0.0)
+    }
+
+    #[test]
+    fn qo_586_la_sonda_sigue_el_regimen_no_es_veto_fijo() {
+        let calma = arena_en_regimen(0.00001);
+        let core_calma = GodEngineCore::new(Arc::clone(&calma));
+        assert!(
+            !core_calma.banda_paga_friccion(0, 30_000.0),
+            "calma extrema (1 pb de ATR): σ(30 s)·k no paga la fricción"
+        );
+        let volatil = arena_en_regimen(0.10);
+        let core_volatil = GodEngineCore::new(Arc::clone(&volatil));
+        assert!(
+            core_volatil.banda_paga_friccion(0, 30_000.0),
+            "ATR del 10 %: la MISMA τ paga la fricción con holgura"
+        );
+    }
+
+    #[test]
+    fn qo_586_puerta_aplasta_tau_inoperable_y_deja_pasar_la_operable() {
+        let calma = arena_en_regimen(0.00001);
+        let core = GodEngineCore::new(Arc::clone(&calma));
+
+        let aplastada = puertas_de(&core, 30_000);
+        assert_eq!(
+            aplastada.signal,
+            SignalType::Flat,
+            "la lectura con τ inoperable muere antes de competir"
+        );
+        assert_eq!(
+            calma
+                .registry
+                .get_for_coin_or(0, "qo_586_tau_inoperable", -1.0),
+            30_000.0,
+            "el τ aplastado queda telemetrizado por moneda para el forense"
+        );
+
+        let volatil = arena_en_regimen(0.10);
+        let core_vol = GodEngineCore::new(Arc::clone(&volatil));
+        let viva = puertas_de(&core_vol, 30_000);
+        assert_eq!(viva.signal, SignalType::Long);
+        assert!(
+            (viva.confidence - 0.70).abs() < 1e-12,
+            "la τ operable atraviesa SIN penalización (ML neutral)"
+        );
+        assert_eq!(
+            volatil.registry.get_for_coin_or(0, "qo_586_tau_inoperable", -1.0),
+            -1.0,
+            "la telemetría sólo registra τ inoperables: la banda viva no toca el registro"
+        );
+    }
+
+    #[test]
+    fn qo_586_tau_cero_se_remite_al_gate() {
+        // `horizon_tau_ms_coin` resuelve τ por dominant_tau_ms cuando la
+        // intención no trae duración: la puerta NO decide en ese caso.
+        let calma = arena_en_regimen(0.00001);
+        let core = GodEngineCore::new(Arc::clone(&calma));
+        let remitida = puertas_de(&core, 0);
+        assert_eq!(remitida.signal, SignalType::Long);
+        assert!(
+            (remitida.confidence - 0.70).abs() < 1e-12,
+            "τ=0 atraviesa sin tocar confianza: la resolverá el gate"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_qo_593 {
+    use super::*;
+
+    /// #593 — UMBRAL DEL CONSEJO. La unificación cierra el hueco
+    /// [0.60, 0.80): un par same-direction a |Δlnτ| = ln(2) ≈ 0.693 (τ
+    /// 30 s vs 60 s — el caso exacto del hueco) YA NO co-despacha: el
+    /// umbral same-direction (0.80) supera 0.693, así que la fusión
+    /// arbitra a un candidato en vez de despachar uno que el slot
+    /// mataría como colisión (qo_589 prueba esa colisión).
+    #[test]
+    fn qo_593_umbral_del_consejo_unifica_el_hueco() {
+        assert_eq!(
+            umbral_codespacho_armonico(true),
+            0.80,
+            "same-direction: la distancia del slot, no menos"
+        );
+        assert_eq!(
+            umbral_codespacho_armonico(false),
+            0.60,
+            "opuestas: despacho concurrente D-431 íntegro para coberturas"
+        );
+        // El caso exacto del hueco (30 s vs 60 s) queda FUERA del
+        // co-despacho same-direction:
+        let hueco = (60_000.0f64 / 30_000.0).ln();
+        assert!(hueco >= 0.60 && hueco < 0.80, "el caso de prueba debe estar en [0.60, 0.80): {hueco}");
+        assert!(
+            hueco < umbral_codespacho_armonico(true),
+            "el hueco ya no co-despacha same-direction"
+        );
+        assert!(
+            hueco >= umbral_codespacho_armonico(false),
+            "el mismo par en direcciones opuestas SÍ co-despacha (cobertura)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_qo_592 {
+    use super::*;
+
+    #[test]
+    fn qo_592_referencia_de_regimen_cadencia_y_frio() {
+        // Frío: sin ancla ⇒ sin previa, elapsed neutro, ancla nueva.
+        assert_eq!(referencia_de_regimen(0, 0, 1_000), (None, 1.0, true));
+
+        // Ancla fresca (<60 s): previa presente, elapsed real, NO renueva.
+        let bits = (0.5f64).to_bits();
+        let (prev, elapsed, actualizar) = referencia_de_regimen(bits, 60_000, 90_000);
+        assert_eq!(prev, Some(0.5));
+        assert!((elapsed - 30_000.0).abs() < 1e-9);
+        assert!(!actualizar, "renovar el ancla antes de la cadencia mataría la ventana de medición");
+
+        // Ancla vencida (>=60 s): se renueva.
+        let (_, _, actualizar2) = referencia_de_regimen(bits, 60_000, 120_001);
+        assert!(actualizar2);
+
+        // Reloj retrocedido (now < prev_ts): elapsed clamp 1 ms, no renueva.
+        let (prev3, elapsed3, act3) = referencia_de_regimen(bits, 120_000, 119_999);
+        assert_eq!(prev3, Some(0.5));
+        assert_eq!(elapsed3, 1.0);
+        assert!(!act3);
+    }
+
+    #[test]
+    fn qo_592_la_deriva_viva_alimenta_el_crash_flux() {
+        // Contrato del arreglo: con previa y deriva hacia lo rápido, el
+        // término de aceleración YA no está congelado. τ* migra 45s→30s en
+        // 60 s ⇒ per_hour = ln(30/45) ≈ −0.405 ⇒ accel_fast ≈ 0.405 (antes
+        // era SIEMPRE 0 con prev=None).
+        use quantum_arena::spectral_regime::SpectralRegimeField;
+        let mut spec = quantum_arena::temporal_spectrum::TemporalSpectrum::new();
+        // Precio con movimiento real: un espectro plano tiene energía total
+        // 0 y el guard de campo frío pone crash_flux=0 (guard honesto que
+        // este fixture debe respetar).
+        for t in 0..200u64 {
+            let p = 100.0 + 0.5 * ((t % 10) as f64);
+            spec.update(p, 1_000 + t * 1_000);
+        }
+        // La previa está anclada al τ* REAL del espectro +1 e-fold: migrar a
+        // cur = τ*/e en 60 s ⇒ per_hour = −60·(3.6e6/6e4 escalado)… en todo
+        // caso fuertemente negativo, sin depender del ancla por defecto.
+        let cur_ln = spec.spectral_field(true).resonant_tau_ms.max(1e-6).ln();
+        let campo = SpectralRegimeField::from_spectrum(&spec, Some(cur_ln + 1.0), 60_000.0);
+        assert!(
+            campo.dominant_drift < 0.0,
+            "migración hacia escalas rápidas ⇒ deriva negativa, obtuve {}",
+            campo.dominant_drift
+        );
+        assert!(
+            campo.crash_flux > 0.0,
+            "la aceleración rápida debe empujar el crash_flux, obtuve {}",
+            campo.crash_flux
+        );
+        // Y con prev=None (el comportamiento viejo) la deriva era 0:
+        let campo_frio = SpectralRegimeField::from_spectrum(&spec, None, 1.0);
+        assert_eq!(campo_frio.dominant_drift, 0.0);
     }
 }

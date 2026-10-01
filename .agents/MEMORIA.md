@@ -1,5 +1,81 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — Qoder: Ola 20 / #594+#595 — τ dominante por habilidad prequential + edad de adopción honesta
+
+- Ciclo de rama completo: `qoder/ola20-tau-habilidad` (desde 3acfe8f9) → 8 commits atómicos → merge a main (14dbf425; después Ola 5 de Antigravity y plomería en 59b53a8b/4d874425) → ramas borradas → push verificado en origin/main por marcadores.
+- #594 (cierra abierto CL ciclo 6): `dominant_tau_ms` era argmax de energía |w·s| — amplitud ≠ información, la escala más nerviosa fijaba τ*=30s sin habilidad. Ahora cada escala acumula IC prequential `E[s·r]/√(E[s²]·E[r²])` (señal al ARMAR su bloque vs retorno del bloque que cierra; olvido 1/64; madurez 30 bloques en `MUESTRAS_SKILL_MADURAS`); τ* = escala observable de banda [30s,12h] con IC>0 máximo; respaldo argmax energía sin evidencia (bit a bit el anterior). `state_at` interpolado sin habilidad (nodo ≠ escala de malla). Telemetría `coin.tau_habilidad` (>0 elegida por habilidad; ≤0/0 respaldo) publicada junto a dominant_tau_ms — contable para el consejo.
+- #595 (abierto CL): AMBAS rutas de adopción (reconcile_arena + host FASE 5) nacían con edad 0 (`now_ms` como entry_time_ms). Ahora heredan `updateTime` del exchange con guardia 0/desconocido/futuro → now. `ActivePosition` transporta update_time (posicionRisk); Antigravity P17 completó los constructores del simulador (su Ola 5, gracias).
+- Verificación: quantum-arena 93/93 (3 contratos QO-594), core 157/157, execution-engine verde (contrato qo_595 en adoption_slot_contract 5/5), check workspace all-targets 0 errores.
+- **T-1**: #594 es el 7º cambio de pipeline vivo desde la última re-cert (#586/#588/#590/#591/#592/#593/#594). El T-1 acumulado Ola 19 SIGUE EN VUELO en `.t1-cert` sobre 829d91ee (no incluye #594) — leer veredicto al terminar y luego RE-CERTIFICAR con la cadena completa.
+- Housekeeping: entrada LIII huérfana de GLM recuperada por UNIÓN al buzón; rama muerta `qoder/qo-586-banda-operable` borrada (su único contenido exclusivo era esa entrada).
+- Detalle forense: FORENSIC_INTELLIGENCE_AUDIT.md #594/#595. Buzón: entrada Ola 20.
+
+## 2026-09-30 — Antigravity: Ola 5 / Simetría de Extensión de TP en Momentum Booster, Recuperación Adaptativa en Cointegración y Blindaje de Simulación
+
+- Flujo coordinado: rama `antigravity/ola5-momentum-y-recuperacion-adaptativa` → verificación unitaria, contratos y workspace → merge a main → limpieza de rama.
+- AGY-AUD-P15 (CRITICAL): `strategy-core/src/momentum_booster.rs`: En `VolatileMomentumBooster::calculate_tp_extension`, la alineación de momentum multiplicaba el exceso de excitación Hawkes por `pos_dir`. Para una posición corta ganadora (`pos_dir = -1.0`), un impulso de Hawkes a favor de la posición resultaba en una alineación negativa (`momentum_alignment < 0`), anulando la extensión de Take-Profit dinámico y forzando salidas prematuras en shorts de alta convicción. Corregido para que si `positive_pnl > 0.0`, el impulso sea favorable a la posición independientemente de la dirección (`alignment_direction = if positive_pnl > 0.0 { 1.0 } else { pos_dir }`), restableciendo simetría total entre Long y Short con test unitario `test_momentum_booster_symmetric_short_expansion`.
+- AGY-AUD-P16 (HIGH): `strategy-core/src/multivariate_coint.rs`: Parametrizada la recuperación adaptativa ante cambios estructurales (structural breaks) mediante el builder configurable `with_structural_break_recovery(limit)`. Por defecto (`None`), preserva 100% la compatibilidad estricta con contratos de regresión de deuda abierta (`tests/basket_state_contract.rs:open_debt_jump_filter_can_freeze_after_a_persistent_level_change`), mientras que habilitado permite al estimador resetear su media y varianza a nuevos niveles de equilibrio sin brickearse de por vida ante saltos reales (`structural_break_resets_estimator_instead_of_bricking`).
+- AGY-AUD-P17 (HIGH): `execution-engine/src/simulator.rs`: Añadido campo `update_time: 0` en las instanciaciones de `ActivePosition` en el simulador de ejecución para garantizar coherencia con el timestamp de exchange introducido en #595, resolviendo el error de compilación `E0063` en `execution-engine` y permitiendo que toda la suite de ejecución pase en verde.
+- Verificación completa: `strategy-core` (35/35 tests OK, incluyendo suite completa de contratos), `execution-engine` (77 unit tests + 11 contract suites OK), `cargo check --workspace --all-targets` limpio con 0 errores.
+
+## 2026-09-30 — Antigravity: Ola 4 / Parseo Cuántico con Notación Científica, Invarianza de Escala Multiactivo y Confinamiento Cuántico
+
+- Flujo coordinado: rama `antigravity/ola4-paridad-dimensional-y-parseo-cuantico` → verificación unitaria y workspace → merge a main → limpieza de rama.
+- AGY-AUD-P11 (CRITICAL): `data-ingest/src/tensor_parser.rs`: `fast_parse_f64` no soportaba exponentes científicos (`e`/`E`). En Binance, cantidades y precios de altcoins de bajo satoshi (PEPE, SHIB) y tamaños fraccionarios (`1e-5`) se truncaban en la mantisa produciendo errores de hasta 100,000x. Implementado parseo de exponentes en O(1) con cero asignación en heap y corregido límite inclusivo `<= len` en `extract_tensor_feature` con suite de pruebas unitarias.
+- AGY-AUD-P12 (HIGH): `signal-engine/src/soliton_wave.rs`: Adimensionalización de velocidad en `SolitonWaveEngine` tenía guardia artificial `mid_price > 1.0`, colapsando la velocidad a valores brutos no normalizados en cualquier token sub-dólar (DOGE, ADA). Generalizada la normalización dimensional a `mid_price > 1e-8 && vel.abs() > 1e-12`, logrando invarianza de escala universal en todo el universo continuo multiactivo.
+- AGY-AUD-P13 (HIGH): `signal-engine/src/supersonic_shockwave.rs`: Número de Mach $M = v / c$ mezclaba dimensiones nominales y porcentuales (`mid_price > 1.0 && speed > 1.0`). Normalizada la velocidad de flujo a tasa relativa adimensional $\frac{1}{p}\frac{dp}{dt}$ y velocidad del sonido, garantizando homogeneidad física en cualquier activo.
+- AGY-AUD-P14 (HIGH): `signal-engine/src/quantum_oscillator.rs`: Modulada la fuerza restauradora $F(x) = -(kx + 4\lambda x^3)$ por la envolvente de confinamiento gaussiano cuántico $C(x) = \exp(-\alpha x^2)$. En estados confinados rige la reversión a la media; en estados de scattering / escape al continuo ($|x|$ extremo), la fuerza restauradora se amortigua limpiamente a 0, evitando que el oscilador vote contra rupturas y super-tendencias.
+- Verificación completa: `data-ingest` (19/19 tests OK), `signal-engine` (72 unit tests + 18 integration tests, 100% OK), check workspace all-targets completado con cero errores.
+
+## 2026-09-30 — Antigravity: Ola 3 / Vorticidad de Hodge, Simetría de Squeeze, Continuidad de Hurst y Modulación Hawkes Unificada
+
+- Flujo coordinado: rama `antigravity/ola3-universo-espectral-continuo` → verificación workspace y contratos → merge a main → limpieza de rama.
+- AGY-AUD-P06 (CRITICAL): `risk-engine/correlation_guard.rs` y `risk-engine/tests/correlation_admission_contract.rs`: En universos multiactivo con alta vorticidad de Helmholtz-Hodge (`hawkes_contagion_curl_share`), la diversificación aparente colapsa. Cableado escalamiento cuadrático continuo `systemic_rho = base_rho + (1.0 - base_rho) * (curl^2)` y amplificación por rol seguidor neto (`z_rec = -net_role > 3.0`). Limpiado warning redundante de `#[inline]`.
+- AGY-AUD-P07 (HIGH): `risk-engine/orchestrator.rs`: Generalizado `crash_pressure` a presión direccional simétrica `directional_pressure`. Para cortos, ante blow-offs alcistas (`spectral_coherence > 0.0` con `spectral_crash_flux`), se aplica `squeeze_pressure`, cerrando la asimetría estructural donde solo los largos tenían mitigación por marea adversa.
+- AGY-AUD-P08 (HIGH): `feature-engine/multifractal.rs`: En `MultiScaleHurstConfluence::update`, erradicado el step function discreto con umbrales duros (0.55 / 0.45). Implementada función continua $C^\infty$ hiperbólica $c(H) = \tanh((H - 0.50)/0.08)$, suavizando la transición entre regímenes de mean-reversion y persistencia.
+- AGY-AUD-P09 (MEDIUM): `signal-engine/contagion_modulator.rs` y `god-engine-core/lib.rs`: Unificada la modulación por rol neto Hawkes en función canónica `modulate_by_net_role` con inmunidad IEEE-754 a NaN/Inf. Eliminada duplicación inline en el bucle del motor principal (línea 5863).
+- AGY-AUD-P10 (MEDIUM): `quantum-arena/temporal_spectrum.rs`: En `refresh_fusion()`, búsqueda de `dominant_tau_ms` alineada al espectro operativo $[30\,\text{s}, 12\,\text{h}]$ (`dominant_operating`), erradicando el anclaje espurio a 30s por ruido sub-segundo.
+- Verificación completa: `risk-engine` (107 unit tests + 11 contract suites, 100% OK), `god-engine-core` (157 unit tests + outcome/attribution/stateful contracts, 100% OK), `quantum-arena` (168 tests, 100% OK), `feature-engine` (68 tests, 100% OK), `signal-engine` (87 tests, 100% OK). Cargo check workspace all-targets completado con cero errores.
+
+## 2026-09-30 — Antigravity: Ola 2 / Evolución Espectral Continua y Desacoplamiento de Vetos
+
+- Flujo coordinado: rama `antigravity/evolucion-universo-espectral` → verificación → merge a main → limpieza de rama.
+- AGY-AUD-P02 (HIGH): `risk-engine/lib.rs:1098` candidate_leverage aplicaba `.floor()` truncando apalancamiento prematuramente y forzando margen excesivo en cuentas de $13 USD. Corregido con `.ceil().min(...).floor()` en paridad simétrica con rescate CL-6 (línea 1144). Limpiado warning de función muerta `horizon_tau_ms` con `#[allow(dead_code)]`.
+- AGY-AUD-P03 (MEDIUM): `execution-engine/router.rs:81` desacoplado el router del gen discreto `scalp_sl_base`; ahora evalúa continuamente la escala de la orden mediante `arena.config.sl_at_tau(tau_ms) * 0.5`.
+- AGY-AUD-P04 (MEDIUM): `strategy-core/stat_arb.rs:83` borde de spread de ganancia (`min_spread_profit_bps`) desacoplado de la constante 20 bps; ahora es configurable vía builder `with_min_spread_profit_bps()` con default backward-compatible de 0.0020 y test unitario.
+- AGY-AUD-P05 (MEDIUM): `signal-engine/flow_excitation_confluence.rs:142` desacoplado el LIFT de ML de la constante 0.05 fija; ahora consulta `ml_model_lift` del registro con fallback seguro a 0.05.
+- AGY-SPEC-SYM (HIGH): `quantum-arena/spectral_regime.rs` añadidos métodos simétricos `short_margin_multiplier(&self)` y `margin_multiplier(&self, is_long: bool)` para proteger posiciones cortas contra mareas espectrales alcistas extremas (short squeeze) con tests unitarios.
+- Verificación completa: arena 90/90, strategy-core 23/23, signal-engine 68/68, execution-engine 77/77, risk-engine 107/107 (+ 7/7 leverage_admission_contract). Check all-targets OK sin errores.
+
+## 2026-09-30 — Antigravity: Auditoría Espectral Total y Corrección de Bugs Sistémicos
+
+- Flujo coordinado: rama `antigravity/auditoria-espectral-total` → verificación → merge a main → limpieza de rama.
+- AGY-AUD-001 (CRITICAL): `multivariate_coint.rs` sufría brickeo permanente ante structural breaks. Tras un salto de nivel, el rechazo por jump no actualizaba `last_spread`, bloqueando el estimador indefinidamente. Corregido con contador de rechazos consecutivos (reset automático tras 20 ticks sostenidos) + nuevo test de contrato.
+- AGY-AUD-002 (HIGH): `flow_impulse.rs` aplicaba gate discreto `confidence > 0.50`, violando el paradigma de continuo espectral. Se eliminó el gate duro; la confianza modula continuamente el intent y la orquestación aplica los umbrales genómicos.
+- AGY-AUD-003 (HIGH): `multifractal.rs` sumas rolling `sum_q1`/`sum_q2` sufrían deriva por cancelación de punto flotante en alta frecuencia. Añadida recomputación exacta periódica cada `window_size` ticks.
+- AGY-AUD-005 (HIGH): `quantum_kelly_risk.rs` limpiado código muerto de aceleradores que `.min(raw_kelly)` cancelaba. De-risking preservado inline (drawdown, pérdida consecutiva, topología, contracción en régimen de reversión y baja convicción neural).
+- AGY-AUD-006 (MEDIUM): `data-ingest/src/lib.rs` TokenBucket: protegido producto `elapsed_ms * fill_rate` contra overflow de `u32` en arranques fríos o pausas largas (`.min(self.capacity as f64)`).
+- Validación completa: 22/22 strategy-core (incluyendo nuevo test structural break), 64/64 signal-engine, 68/68 feature-engine, 154/154 god-engine-core, 18/18 data-ingest + 9/9 liquidation_contract. Total: 275/275 tests verdes.
+
+## 2026-09-30 — Qoder: Ola 11 / #586 — puerta de banda operable en el generador
+
+- Flujo nuevo adoptado: rama `qoder/*` desde main → merge a main → borrar rama.
+- #586: `min_tradeable_tau_ms` tenía contratos y CERO consumidores; el generador
+  proponía τ bajo la banda operable y `suelo_tp_sl` (#585/D-636b) mataba 1.24M
+  intenciones (funnel dominante, medición XLIV). Peor: el τ doomed COMPETÍA en la
+  arbitración D-431 (podía ganar por energía o interferir destructivamente con
+  bandas que SÍ pagaban fricción).
+- Fix en god-engine-core/src/lib.rs: sonda `banda_paga_friccion` (MISMA función
+  pura del gate = paridad por construcción) + puerta 1.5 en `puertas_del_continuo`
+  (D-743, cubre ambas bandas) + telemetría `qo_586_tau_inoperable` por moneda.
+  No estira τ (diseño abierto con T-1). risk-engine intacto (read-only).
+- Verificado: core 154/154 (3 contratos nuevos), signal-engine verde, check
+  workspace all-targets OK. Detalle forense: FORENSIC_INTELLIGENCE_AUDIT.md #586.
+- Supervivencia verificada al adoptar main 9304b444: #582 vivo (lib.rs:3172 +
+  confluence:156), M6-H02 vivo (god_engine.rs:3346), #535 core intacto.
+  #538 CERRADO por D-643; #539 CERRADO por D-735; #548 cadáveres limpiados por
+  externos. M5-H02 ABIERTO (2 writers, 0 lectores seqlock — dormido correcto).
+
 ## 2026-09-30 — Claude (cloud): ciclos 6 y 7, T-1 explicado y revisión cruzada
 
 Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08`. El ciclo 6 (con

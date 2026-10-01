@@ -20,6 +20,18 @@
 
 use feature_engine::hawkes_cross::ContagionRole;
 
+/// Descuenta la convicción de una señal dado un valor de net_role continuo.
+/// Protegido contra valores no finitos o roles líderes (net_role >= 0).
+#[inline]
+pub fn modulate_by_net_role(raw_confidence: f64, net_role: f64) -> f64 {
+    if !net_role.is_finite() || net_role >= 0.0 {
+        return raw_confidence.clamp(0.0, 1.0);
+    }
+    let magnitude = (-net_role).min(50.0); // cap para evitar overflow
+    let discount = 0.30 * magnitude / (magnitude + 5.0);
+    (raw_confidence * (1.0 - discount)).clamp(0.0, 1.0)
+}
+
 /// Descuenta la convicción de una señal en un activo SEGUIDOR.
 /// `raw_confidence` ∈ [0,1]; devuelve la convicción ajustada ∈ [0,1].
 ///
@@ -33,14 +45,7 @@ pub fn modulate_by_contagion(
     let Some(r) = role else {
         return raw_confidence;
     };
-    // Líder o neutro: sin descuento
-    if r.net_role >= 0.0 || !r.net_role.is_finite() {
-        return raw_confidence;
-    }
-    // Seguidor: descuento sigmoide acotado
-    let magnitude = (-r.net_role).min(50.0); // cap para evitar overflow
-    let discount = 0.30 * magnitude / (magnitude + 5.0);
-    (raw_confidence * (1.0 - discount)).clamp(0.0, 1.0)
+    modulate_by_net_role(raw_confidence, r.net_role)
 }
 
 #[cfg(test)]
@@ -79,5 +84,15 @@ mod tests {
         // factor = 1 - 0.30*2/(2+5) = 1 - 0.0857 = 0.914
         assert!(adjusted < 0.9 && adjusted > 0.8,
             "descuento suave, dio {:.4}", adjusted);
+    }
+
+    /// Modulación directa por net_role con defensas de IEEE-754.
+    #[test]
+    fn test_modulate_by_net_role_finite_immunity() {
+        assert_eq!(modulate_by_net_role(0.85, f64::NAN), 0.85);
+        assert_eq!(modulate_by_net_role(0.85, f64::INFINITY), 0.85);
+        assert_eq!(modulate_by_net_role(0.85, 2.5), 0.85);
+        let adjusted = modulate_by_net_role(0.8, -20.0);
+        assert!((adjusted - 0.8 * 0.76).abs() < 1e-6);
     }
 }

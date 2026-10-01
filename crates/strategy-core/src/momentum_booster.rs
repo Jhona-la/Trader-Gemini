@@ -43,9 +43,13 @@ impl VolatileMomentumBooster {
         let positive_pnl = raw_pnl_pct.max(0.0);
 
         // Alineación de momentum continuo: (+) si el flujo va a favor de la posición, (-) si va en contra
-        // Normalizamos el exceso de auto-excitación Hawkes (ratio base = 1.0)
+        // AGY-AUD-P15: Si la posición tiene PnL positivo (trade ganador), el impulso de Hawkes
+        // está empujando a favor de la posición independientemente de si es Long o Short.
+        // Anteriormente `excess_hawkes * pos_dir` invertía el signo para Short (-1.0),
+        // matando la extensión de TP para todas las posiciones cortas ganadoras.
         let excess_hawkes = (hawkes_ratio - 1.0).clamp(-2.0, 2.0);
-        let momentum_alignment = excess_hawkes * pos_dir;
+        let alignment_direction = if positive_pnl > 0.0 { 1.0 } else { pos_dir };
+        let momentum_alignment = excess_hawkes * alignment_direction;
 
         // Función de activación sigmoidea escalar para determinar qué tan alineado está el mercado
         let alignment_threshold = arena.config.dynamic_ofi_threshold.load(Ordering::Relaxed);
@@ -117,5 +121,14 @@ mod tests {
             &arena,
         );
         assert_eq!(boost, 1.0, "Inputs NaN deben retornar fallback seguro 1.0");
+    }
+
+    #[test]
+    fn test_momentum_booster_symmetric_short_expansion() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let boost_short = VolatileMomentumBooster::calculate_tp_extension(-1.0, 0.05, 3.0, 0.01, &arena);
+        let boost_long = VolatileMomentumBooster::calculate_tp_extension(1.0, 0.05, 3.0, 0.01, &arena);
+        assert!(boost_short > 1.0, "Short ganador debe expandir TP ante momentum: {boost_short}");
+        assert_eq!(boost_short, boost_long, "Simetría perfecta entre Long y Short ganadores");
     }
 }

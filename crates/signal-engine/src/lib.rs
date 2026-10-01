@@ -15,6 +15,7 @@ pub mod game_theoretic_nash;
 pub mod hawkes_bessel;
 pub mod orchestrator;
 pub mod perceptron_gate;
+pub mod proyeccion_espectral;
 pub mod quantum_oscillator;
 pub mod renyi_tsallis_entropy;
 pub mod soliton_wave;

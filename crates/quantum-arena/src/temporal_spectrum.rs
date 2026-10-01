@@ -202,13 +202,26 @@ pub struct ScaleState {
     /// escala, SIN corregir por masa (igual convención que raw_dev_vol).
     /// Alimenta las funciones de estructura de Kolmogorov.
     raw_dev_s3: f64,
+    /// #594 — IC prequential de la escala: E[s·r] con olvido, normalizado
+    /// por √(E[s²]·E[r²]), donde s es la señal publicada AL ARMAR el bloque
+    /// y r el retorno REALIZADO del bloque que cierra. Amplitud ≠ información:
+    /// la energía |w·s| no distingue una escala nerviosa de una hábil.
+    skill_ws: f64,
+    skill_wr: f64,
+    skill_wsr: f64,
+    skill_n: u64,
+    /// #594 — señal al armar el bloque en curso (s(t₀); no ve el retorno
+    /// que después la puntúa — causalidad por construcción).
+    bloque_s0: f64,
 }
 
 impl ScaleState {
     /// Peso heredado compartido por todos los lectores del mismo campo.
     /// No representa probabilidad, información mutua ni precisión calibrada.
+    /// (#591: pub para que el núcleo proyecte sobre la MISMA masa sin
+    /// recomputarla — una sola fuente, cero drift.)
     #[inline]
-    fn fusion_weight(&self) -> f64 {
+    pub fn fusion_weight(&self) -> f64 {
         if !self.persistence.is_finite() || !self.signal.is_finite() {
             return 0.0;
         }
@@ -218,6 +231,27 @@ impl ScaleState {
             1.0
         };
         (self.persistence.abs() * 2.0 * gain).clamp(0.02, 3.0)
+    }
+
+    /// #594 — habilidad direccional MEDIDA de la escala: IC prequential
+    /// señal(t₀) → retorno del bloque [t₀, t₀+τ). `None` sin evidencia
+    /// madura o sin dispersión — el llamador no debe usarlo (misma
+    /// disciplina que `habilidad_volatilidad` del banco de pronóstico).
+    #[inline]
+    pub fn habilidad_medida(&self) -> Option<f64> {
+        if self.skill_n < MUESTRAS_SKILL_MADURAS {
+            return None;
+        }
+        let den = self.skill_ws * self.skill_wr;
+        if !den.is_finite() || den <= 0.0 {
+            return None;
+        }
+        let ic = self.skill_wsr / den.sqrt();
+        if ic.is_finite() {
+            Some(ic.clamp(-1.0, 1.0))
+        } else {
+            None
+        }
     }
 }
 
@@ -229,6 +263,13 @@ const PERSISTENCIA_BLOQUES: f64 = 16.0;
 /// Anillo de snapshots de masa CRUDA por escala (energía w·|señal| sin
 /// normalizar) para el transporte de Wasserstein: MASS_RING muestras.
 const MASS_RING: usize = 256;
+
+/// #594 — olvido del IC prequential por escala: media de ~64 bloques de τ
+/// (vida media ≈ 44). Suficiente para estabilidad, corta para regímenes.
+const HABILIDAD_OLVIDO: f64 = 1.0 / 64.0;
+/// #594 — bloques maduros exigidos para que una escala opine por habilidad
+/// (misma disciplina que `MUESTRAS_MADURAS` del banco de pronóstico).
+pub const MUESTRAS_SKILL_MADURAS: u64 = 30;
 
 pub struct TemporalSpectrum {
     pub scales: [ScaleState; 32],
@@ -244,9 +285,10 @@ pub struct TemporalSpectrum {
     updates: u64,
     /// Score espectral fusionado (paridad de riesgo 1/vol) ∈ ~[-1,1].
     pub fused_score: f64,
-    /// Escala dominante (mayor |w·señal|) en ms — información, no decisión.
-    /// C-05 (INFORME 14, FASE 0): acotada a la banda operativa
-    /// [TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS] — ver `update`.
+    /// Escala dominante en ms — información, no decisión.
+    /// #594: primero la escala con habilidad direccional MEDIDA (IC
+    /// prequential > 0, madura, observable, banda operativa); sin evidencia,
+    /// el argmax de energía |w·s| dentro de la banda (C-05/AGY-AUD-P10).
     pub dominant_tau_ms: f64,
 }
 
@@ -273,6 +315,25 @@ impl TemporalSpectrum {
             fused_score: 0.0,
             dominant_tau_ms: 0.0,
         }
+    }
+
+    /// #594 — IC medido de la escala de la malla MÁS CERCANA a `tau_ms`
+    /// (telemetría; sin evidencia madura → None). Publicado al arena para
+    /// que el consejo distinga τ* por habilidad de τ* por respaldo.
+    pub fn habilidad_en(&self, tau_ms: f64) -> Option<f64> {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
+            return None;
+        }
+        let mut best = usize::MAX;
+        let mut best_d = f64::INFINITY;
+        for (i, s) in self.scales.iter().enumerate() {
+            let d = (s.tau_ms - tau_ms).abs();
+            if d < best_d {
+                best_d = d;
+                best = i;
+            }
+        }
+        self.scales.get(best)?.habilidad_medida()
     }
 
     /// Actualiza las 32 escalas por evento con timestamp estrictamente creciente.
@@ -340,8 +401,18 @@ impl TemporalSpectrum {
                 s.bloque_t0_ms = ts_ms;
                 s.bloque_ln_p0 = ln_p;
                 s.bloque_r_prev = 0.0;
+                // #594: la señal de REFERENCIA del bloque es la publicada
+                // en su arranque (de la iteración anterior — causal).
+                s.bloque_s0 = s.signal;
             } else if (ts_ms - s.bloque_t0_ms) as f64 >= s.tau_ms {
                 let r = ln_p - s.bloque_ln_p0;
+                // #594: el bloque que cierra puntúa a la señal con la que
+                // nació — IC prequential (amplitud ≠ información).
+                let (ws, wr, wsr) = (s.bloque_s0 * s.bloque_s0, r * r, s.bloque_s0 * r);
+                s.skill_ws += (ws - s.skill_ws) * HABILIDAD_OLVIDO;
+                s.skill_wr += (wr - s.skill_wr) * HABILIDAD_OLVIDO;
+                s.skill_wsr += (wsr - s.skill_wsr) * HABILIDAD_OLVIDO;
+                s.skill_n = s.skill_n.saturating_add(1);
                 let signo = |x: f64| {
                     if x > 0.0 {
                         1.0
@@ -356,6 +427,9 @@ impl TemporalSpectrum {
                 s.bloque_r_prev = r;
                 s.bloque_t0_ms = ts_ms;
                 s.bloque_ln_p0 = ln_p;
+                // Rearme del bloque siguiente: su señal de referencia es la
+                // publicada en ESTE instante (iteración anterior — causal).
+                s.bloque_s0 = s.signal;
             }
             // α de la escala para el dt transcurrido: el horizonte τ_i define
             // cuánto pesa ESTE tick en esa escala. Continuo en dt y τ.
@@ -427,6 +501,8 @@ impl TemporalSpectrum {
         let mut w_sig_sum = 0.0;
         let mut best_contrib = 0.0f64;
         let mut dominant = 0.0f64;
+        let mut best_operating_contrib = 0.0f64;
+        let mut dominant_operating = 0.0f64;
         // Respaldo H0: promedio de las señales ponderado sólo por lo que cada
         // escala puede observar.
         let mut obs_sum = 0.0;
@@ -444,6 +520,12 @@ impl TemporalSpectrum {
                 best_contrib = contrib;
                 dominant = s.tau_ms;
             }
+            if s.tau_ms >= TAU_ANCHOR_FAST_MS && s.tau_ms <= TAU_ANCHOR_SLOW_MS {
+                if contrib.abs() > best_operating_contrib.abs() {
+                    best_operating_contrib = contrib;
+                    dominant_operating = s.tau_ms;
+                }
+            }
         }
         self.fused_score = if w_sum > 1e-12 {
             (w_sig_sum / w_sum).clamp(-1.0, 1.0)
@@ -456,21 +538,40 @@ impl TemporalSpectrum {
         } else {
             0.0
         };
-        // C-05 (INFORME 14, FASE 0) — τ DEGENERADA. La fusión por paridad de
-        // riesgo (w ∝ 1/ewma_dev_vol) degenera: la vol de sorpresa de las
-        // escalas lentas es sistemáticamente menor, así que SIEMPRE pesan más
-        // y la escala dominante cruda queda pegada al extremo lento del
-        // espectro — escala 31 ≈ 146 años (verificado en vivo:
-        // data/position_journal.jsonl con tau_ms = 4611686018427 en 2/3 de
-        // las entradas), llevando a HorizonCurve.eval a extrapolar brackets
-        // absurdos (+65%/−32%).
-        //
-        // FIX: la τ que sale del espectro hacia la DECISIÓN se acota al
-        // espectro físico Y a la banda operativa de las anclas [30s, 12h].
-        // El espectro de OBSERVACIÓN sigue completo (las 32 escalas siguen
-        // alimentando fused_score/señales): el espectro puede VER más allá
-        // de la banda, pero la DECISIÓN opera en la banda.
-        self.dominant_tau_ms = dominant
+        // C-05 & AGY-AUD-P10: Si existe una escala dominante con masa medible dentro de
+        // la banda de decisión [30s, 12h], se adopta directamente para evitar la falacia
+        // de proyección de contorno (donde ruido a microsegundos ganaba el argmax y
+        // se pegaba permanentemente a 30s).
+        // #594 (OLA 20 · espectro): la energía |w·s| mide AMPLITUD, no información —
+        // la escala más nerviosa ganaba el argmax y degradaba τ* a 30 s aunque su
+        // señal no predijera nada. El τ dominante honesto es la escala cuya señal
+        // DEMOSTRÓ habilidad direccional fuera de muestra (IC prequential > 0,
+        // evidencia madura, escala observable dentro de la banda). Sin evidencia,
+        // el argmax de energía queda como respaldo (comportamiento C-05/P10).
+        let mut best_skill = 0.0f64;
+        let mut dominant_skill = 0.0f64;
+        for (i, s) in self.scales.iter().enumerate() {
+            if s.tau_ms < TAU_ANCHOR_FAST_MS
+                || s.tau_ms > TAU_ANCHOR_SLOW_MS
+                || observables[i] <= 0.0
+            {
+                continue;
+            }
+            if let Some(ic) = s.habilidad_medida() {
+                if ic > best_skill {
+                    best_skill = ic;
+                    dominant_skill = s.tau_ms;
+                }
+            }
+        }
+        let resolved_dominant = if best_skill > 0.0 {
+            dominant_skill
+        } else if best_operating_contrib.abs() > 1e-12 {
+            dominant_operating
+        } else {
+            dominant
+        };
+        self.dominant_tau_ms = resolved_dominant
             .clamp(SPECTRUM_SCALES_MS[0], SPECTRUM_SCALES_MS[31])
             .clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
     }
@@ -747,6 +848,13 @@ impl TemporalSpectrum {
             bloque_r_prev: 0.0,
             raw_dev_vol: 0.0,
             raw_dev_s3: 0.0,
+            // #594: un nodo interpolado no es una escala de la malla con
+            // bloques maduros — sin habilidad medida (0 muestras → None).
+            skill_ws: 0.0,
+            skill_wr: 0.0,
+            skill_wsr: 0.0,
+            skill_n: 0,
+            bloque_s0: 0.0,
         }
     }
 
@@ -1137,13 +1245,14 @@ impl TemporalSpectrum {
     /// CL-32: pesos de la masa espectral (entropía, Fisher, W₁, τ*, bandas):
     /// el peso heredado de la persistencia por lo OBSERVABLE de cada escala.
     /// Una sola fuente para todos los lectores de la masa.
+    /// (#591: pub — el núcleo la consume para la proyección espectral.)
     ///
     /// CL-35: lo observable es lo mismo que en la fusión D-742, masa del
     /// núcleo llenada × fracción resuelta. Sólo con la fracción resuelta, una
     /// escala de 12 h con cuatro segundos de datos pesaba igual que una de
     /// dos segundos: su persistencia arranca en 0 (suelo 0,02 del peso, el
     /// mismo para todas) y su |señal| es tanh(1) con una sola desviación.
-    fn pesos_espectrales(&self) -> [f64; 32] {
+    pub fn pesos_espectrales(&self) -> [f64; 32] {
         let (observables, _) = self.pesos_observables();
         let mut w = [0.0f64; 32];
         for (i, s) in self.scales.iter().enumerate() {
@@ -1407,6 +1516,79 @@ impl TemporalSpectrum {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #594 — escala de la banda operativa con IC forjado a mano.
+    fn escala_con_habilidad(idx: usize, n: u64, ic: f64) -> ScaleState {
+        let mut s = ScaleState::default();
+        s.tau_ms = SPECTRUM_SCALES_MS[idx];
+        s.ewma_dev_vol = 0.01;
+        s.skill_n = n;
+        s.skill_ws = 1.0;
+        s.skill_wr = 1.0;
+        s.skill_wsr = ic;
+        s
+    }
+
+    #[test]
+    fn qo_594_habilidad_requiere_evidencia_madura() {
+        let s = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS - 1, 0.5);
+        assert_eq!(s.habilidad_medida(), None, "29 bloques no opinan");
+        let s = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS, 0.5);
+        let ic = s.habilidad_medida().expect("30 bloques maduros opinan");
+        assert!((ic - 0.5).abs() < 1e-12);
+        // IC exactamente 0 con dispersión es una MEDIDA válida (sin habilidad);
+        // no gana la selección (exige ic > 0) pero no es «sin evidencia».
+        let nula = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS, 0.0);
+        assert_eq!(nula.habilidad_medida(), Some(0.0));
+        // Escala quieta (retorno del bloque nulo): sin dispersión no hay IC.
+        let mut quieta = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS, 0.0);
+        quieta.skill_wr = 0.0;
+        assert_eq!(quieta.habilidad_medida(), None);
+    }
+
+    #[test]
+    fn qo_594_tau_dominante_sigue_la_habilidad_madura() {
+        let mut spec = TemporalSpectrum::new();
+        // Reloj con historia: masa ≈ 1 en la banda y resolución fina.
+        spec.first_ts_ms = 0;
+        spec.last_ts_ms = 86_400_000;
+        spec.updates = 10_000;
+        // Escala 18: energía GANADORA pero habilidad NEGATIVA (anti-predice).
+        spec.scales[18] = escala_con_habilidad(18, MUESTRAS_SKILL_MADURAS, -0.5);
+        spec.scales[18].signal = 0.9;
+        spec.scales[18].persistence = 0.6;
+        // Escala 19: energía menor, habilidad positiva medida.
+        spec.scales[19] = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS, 0.3);
+        spec.scales[19].signal = 0.4;
+        spec.scales[19].persistence = 0.3;
+        spec.refresh_fusion();
+        assert_eq!(spec.dominant_tau_ms, SPECTRUM_SCALES_MS[19]);
+        // Telemetría: la escala elegida publica su IC; el testigo del defecto
+        // (sólo habilidad negativa) cae al respaldo de energía.
+        assert_eq!(spec.habilidad_en(spec.dominant_tau_ms), Some(0.3));
+        spec.scales[19].skill_n = MUESTRAS_SKILL_MADURAS - 1;
+        spec.refresh_fusion();
+        assert_eq!(spec.dominant_tau_ms, SPECTRUM_SCALES_MS[18]);
+        // El respaldo de energía NO borra la evidencia: la escala elegida
+        // publica su IC medido (aquí negativo — por eso no pudo liderar).
+        assert_eq!(spec.habilidad_en(spec.dominant_tau_ms), Some(-0.5));
+    }
+
+    #[test]
+    fn qo_594_escalas_inmaduras_conservan_el_respaldo_de_energia() {
+        let mut spec = TemporalSpectrum::new();
+        spec.first_ts_ms = 0;
+        spec.last_ts_ms = 86_400_000;
+        spec.updates = 10_000;
+        spec.scales[19] = escala_con_habilidad(19, 5, 0.9); // IC alto pero inmaduro
+        spec.scales[19].signal = 0.5;
+        spec.scales[19].persistence = 0.5;
+        spec.refresh_fusion();
+        // Sin evidencia madura el criterio es el argmax de energía en banda
+        // (comportamiento C-05/AGY-AUD-P10 intacto).
+        assert_eq!(spec.dominant_tau_ms, SPECTRUM_SCALES_MS[19]);
+        assert_eq!(spec.habilidad_en(spec.dominant_tau_ms), None);
+    }
 
     fn opposed_scales() -> TemporalSpectrum {
         let mut spec = TemporalSpectrum::new();

@@ -172,7 +172,9 @@ impl QuantumStrategy for SolitonWaveEngine {
         let vel = if vel.is_finite() { vel } else { return 0.0 };
         let amp = if amp.is_finite() { amp } else { return 0.0 };
         let pos = if pos.is_finite() { pos } else { return 0.0 };
-        let norm_vel = if mid_price > 1.0 && vel.abs() > 1e-6 {
+        // AGY-AUD-P12: Adimensionalizar velocidad respecto al precio nominal de forma
+        // universal para cualquier activo (invarianza de escala en todo el universo continuo).
+        let norm_vel = if mid_price > 1e-8 && vel.abs() > 1e-12 {
             (vel / mid_price) * 10.0
         } else {
             vel
@@ -238,5 +240,24 @@ mod tests {
             "Velocidad positiva y amplitud centrada deben producir señal positiva"
         );
         assert!(eval <= 1.0);
+    }
+
+    #[test]
+    fn test_soliton_sub_dollar_scale_invariance() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        // Simular token sub-dólar (DOGE a $0.15)
+        registry.set_scoped("DOGEUSDT", "soliton_amplitude", 0.7);
+        registry.set_scoped("DOGEUSDT", "soliton_velocity", 0.0015);
+        registry.set_scoped("DOGEUSDT", "soliton_pos", 0.0);
+        registry.set_scoped("DOGEUSDT", "mid_price", 0.15);
+
+        let mut engine = SolitonWaveEngine::new();
+        assert!(engine.init(registry).is_ok());
+
+        let eval = engine.evaluate_for_coin(5, "DOGEUSDT");
+        assert!(
+            eval > 0.0 && eval <= 1.0,
+            "Sub-dólar debe evaluar señal finita no-cero: {eval}"
+        );
     }
 }

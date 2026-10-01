@@ -145,6 +145,11 @@ pub struct ActivePosition {
     /// el margen reconstruido de una posición a 20x era el doble del real.
     /// 0 = el exchange no lo informó.
     pub leverage: f64,
+    /// #595 — última modificación reportada por el exchange (`updateTime`):
+    /// cota inferior de la edad de la posición. 0 = no informado. La
+    /// adopción (FASE 5) la usa como reloj de entrada en vez del arranque
+    /// del proceso.
+    pub update_time: u64,
 }
 
 #[allow(async_fn_in_trait)]

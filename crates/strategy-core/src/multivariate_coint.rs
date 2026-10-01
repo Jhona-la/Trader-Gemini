@@ -15,6 +15,11 @@ pub struct MultivariateCointegrationEngine {
     pub z_score_threshold: f64,
     pub memory_decay: f64,
     last_spread: f64,
+    /// AGY-AUD-001: consecutive jump rejections counter.
+    consecutive_rejections: u32,
+    /// Optional limit of consecutive rejections before resetting on structural break.
+    /// None by default to preserve legacy open-debt contracts, Some(N) for adaptive recovery.
+    structural_break_limit: Option<u32>,
 }
 
 impl MultivariateCointegrationEngine {
@@ -53,7 +58,15 @@ impl MultivariateCointegrationEngine {
                 0.98
             },
             last_spread: 0.0,
+            consecutive_rejections: 0,
+            structural_break_limit: None,
         }
+    }
+
+    /// Configura el límite de rechazos consecutivos para la recuperación adaptativa ante un cambio estructural.
+    pub fn with_structural_break_recovery(mut self, limit: u32) -> Self {
+        self.structural_break_limit = Some(limit.max(1));
+        self
     }
 
     /// Updates the legacy event-index estimator. The timestamp is not yet used
@@ -105,11 +118,28 @@ impl MultivariateCointegrationEngine {
             return None;
         }
         // Legacy jump policy in weighted-log units, not a percentage return.
-        // A legitimate permanent level shift can still freeze this estimator.
+        // AGY-AUD-001: a legitimate permanent level shift (structural break)
+        // used to permanently freeze this estimator because `last_spread` was
+        // never updated on rejection — diff_spread stayed large forever.
+        // If structural_break_limit is configured via `with_structural_break_recovery`,
+        // we track consecutive rejections and RESET to the new level after N rejections.
         let max_jump = 10.0 * self.var_spread.sqrt();
         if next_count > 10 && diff_spread.abs() > max_jump.max(1.5) {
-            return None; // Rejection alone cannot establish that a tick is corrupt.
+            self.consecutive_rejections += 1;
+            if let Some(limit) = self.structural_break_limit {
+                if self.consecutive_rejections >= limit {
+                    // Structural break accepted: reset estimator to new level.
+                    self.mean_spread = spread;
+                    self.var_spread = diff_spread.abs().powi(2).max(1e-4);
+                    self.last_spread = spread;
+                    self.theta_reversion_speed = 0.1;
+                    self.count = 2; // preserve warm state
+                    self.consecutive_rejections = 0;
+                }
+            }
+            return None;
         }
+        self.consecutive_rejections = 0; // normal tick resets the counter
 
         let delta = spread - self.mean_spread;
         let next_mean = self.mean_spread + delta / (next_count as f64).min(500.0);
@@ -322,5 +352,62 @@ mod tests {
         let intent = signal.unwrap();
         assert_eq!(intent.signal, SignalType::Short);
         assert_eq!(intent.horizon, TradeHorizon::Continuous);
+    }
+
+    /// AGY-AUD-001: after a structural break (persistent jump), the
+    /// estimator must reset to the new level after MAX_CONSECUTIVE_REJECTIONS
+    /// instead of bricking permanently.
+    #[test]
+    fn structural_break_resets_estimator_instead_of_bricking() {
+        let weights = [1.0, -0.5, -0.3, -0.2];
+        let mut engine = MultivariateCointegrationEngine::new(weights, 2.0)
+            .with_structural_break_recovery(20);
+
+        let base_prices = [100.0, 50.0, 30.0, 20.0];
+        // Warm up at original level
+        for i in 0..50 {
+            let noise = ((i % 5) as f64 - 2.0) * 0.05;
+            let prices = [
+                base_prices[0] + noise,
+                base_prices[1] + noise * 0.5,
+                base_prices[2] + noise * 0.3,
+                base_prices[3] + noise * 0.2,
+            ];
+            let _ = engine.update_and_evaluate(&prices, 1000 + i * 1000);
+        }
+
+        // Apply a permanent level shift in asset 0 (structural break with diff_spread = ln(6) ≈ 1.79 > 1.5)
+        let new_level_prices = [600.0, 50.0, 30.0, 20.0];
+        // Feed the new level for 25 ticks (more than MAX_CONSECUTIVE_REJECTIONS=20)
+        for i in 0..25 {
+            let noise = ((i % 5) as f64 - 2.0) * 0.05;
+            let prices = [
+                new_level_prices[0] + noise,
+                new_level_prices[1] + noise * 0.5,
+                new_level_prices[2] + noise * 0.3,
+                new_level_prices[3] + noise * 0.2,
+            ];
+            let _ = engine.update_and_evaluate(&prices, 100_000 + i * 1000);
+        }
+
+        // The estimator should NOT be bricked: it should have reset to the
+        // new level and its mean_spread should be near the new spread value,
+        // not the old one.
+        let old_spread: f64 = base_prices.iter()
+            .zip(weights.iter())
+            .map(|(p, w)| w * p.max(1e-12).ln())
+            .sum();
+        let new_spread: f64 = new_level_prices.iter()
+            .zip(weights.iter())
+            .map(|(p, w)| w * p.max(1e-12).ln())
+            .sum();
+        // mean_spread should be closer to the new level than the old one
+        let dist_old = (engine.mean_spread - old_spread).abs();
+        let dist_new = (engine.mean_spread - new_spread).abs();
+        assert!(
+            dist_new < dist_old,
+            "estimator should have reset to new level: mean={}, old={old_spread}, new={new_spread}",
+            engine.mean_spread
+        );
     }
 }

@@ -670,6 +670,79 @@ impl PositionManager {
 
         None
     }
+
+    /// QO-589 — RAZÓN del rechazo de slot (telemetría del embudo, no política).
+    /// `find_resonant_slot` devuelve None por DOS causas indistinguibles para
+    /// el llamador: colisión same-direction dentro de la banda (|Δlnτ| < 0.80)
+    /// o capacidad llena. Distinguirlas es obligatorio para medir el hueco de
+    /// despacho [0.60, 0.80) que la fusión D-431 declara independientes y el
+    /// slot bloquea: esos descartes caen en razón 1 y son los que el consejo
+    /// debe contar para decidir unificar el umbral.
+    pub const RAZON_COLISION_BANDA: u8 = 1;
+    pub const RAZON_CAPACIDAD_LLENA: u8 = 2;
+
+    pub fn razon_sin_slot(&self, tau_ms: f64, is_long: bool) -> u8 {
+        let slots = [&self.scalp, &self.swing, &self.position];
+        let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
+            tau_ms
+        } else {
+            30_000.0
+        };
+        let ln_target = safe_tau.ln();
+        for pos in slots.iter() {
+            if pos.is_open() {
+                let open_is_long = pos.is_long.load(Ordering::Relaxed);
+                if open_is_long == is_long {
+                    let open_tau = (pos.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
+                    let diff_ln = (ln_target - open_tau.ln()).abs();
+                    if diff_ln < 0.80 {
+                        return Self::RAZON_COLISION_BANDA;
+                    }
+                }
+            }
+        }
+        Self::RAZON_CAPACIDAD_LLENA
+    }
+
+    /// QO-588 — GATE DE PIRÁMIDE LIMPIA (restauración del contrato legacy).
+    /// `true` ⇒ hay una posición ABIERTA en la MISMA dirección cuyo retorno
+    /// no realizado es < 28 pb (o no medible): apilar en esa dirección
+    /// comparte riesgo correlacionado sobre una apuesta que aún no paga.
+    ///
+    /// POR QUÉ EXISTE: el gate legacy `pnl < 0.0028` vivía inline en el
+    /// núcleo detrás de `diff_ln < banda`; el D9 estrechó la banda a 0.80 —
+    /// la misma que `find_resonant_slot` ya exige para devolver un slot —
+    /// y la rama quedó INALCANZABLE (si hay same-dir a < 0.80, el slot es
+    /// None y este gate ni se evalúa): la amputación silenció la disciplina
+    /// «piramidar sólo en ganancia». Aquí la regla es uniforme e
+    /// independiente de la distancia: |Δlnτ| grande declara energía
+    /// ortogonal (D-431), NO riesgo independiente — escalas distantes del
+    /// mismo símbolo y mismo signo comparten cartera.
+    #[inline]
+    pub fn misma_direccion_sin_asegurar(
+        &self,
+        _tau_intent_ms: f64,
+        is_long: bool,
+        mid_price: f64,
+    ) -> bool {
+        for pos in self.slots().iter() {
+            if pos.is_open() && pos.is_long.load(Ordering::Relaxed) == is_long {
+                let ep = pos.entry_price.load(Ordering::Relaxed);
+                if !(ep > 0.0) || !(mid_price > 0.0) {
+                    return true;
+                }
+                let pnl = if is_long {
+                    (mid_price - ep) / ep
+                } else {
+                    (ep - mid_price) / ep
+                };
+                if !(pnl >= 0.0028) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }
 
 #[cfg(test)]
@@ -1075,5 +1148,155 @@ mod tests {
 
     fn qty_or_eq(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-9
+    }
+
+    /// QO-588 — GATE DE PIRÁMIDE LIMPIA. Contrato restaurado: apilar en la
+    /// misma dirección exige que la posición previa pague >= 28 pb, SEA
+    /// CUAL SEA la distancia de escala. La prueba estructural del defecto
+    /// que esto repara: `find_resonant_slot` devuelve None si hay same-dir
+    /// a |Δlnτ| < 0.80, y el gate legacy sólo se evaluaba cuando devolvía
+    /// Some ⇒ su rama `diff_ln < 0.80` era inalcanzable desde el D9.
+    #[test]
+    fn qo_588_piramide_solo_ganancia_en_cualquier_escala() {
+        let pm = PositionManager::default();
+        assert!(
+            !pm.misma_direccion_sin_asegurar(120_000.0, true, 100.0),
+            "sin posiciones abiertas ⇒ nada sin asegurar"
+        );
+
+        // Larga abierta a τ=30 s, entrada 100, mid 100.0 (plano).
+        assert!(pm.scalp.open_with_tau_and_fee(
+            true,
+            100.0,
+            0.01,
+            13.0,
+            1_000,
+            101.0,
+            99.0,
+            PositionHorizon::Continuous,
+            0.5,
+            0.6,
+            0.0004,
+            30_000
+        ));
+
+        // τ=120 s ⇒ |Δlnτ| = ln(4) ≈ 1.386 >= 0.80: el slot resonante ADMITE…
+        assert!(
+            pm.find_resonant_slot(120_000.0, true).is_some(),
+            "escala distinta se admite como slot resonante"
+        );
+        // …y apilar sigue VETADO mientras la previa no gane 28 pb:
+        assert!(
+            pm.misma_direccion_sin_asegurar(120_000.0, true, 99.5),
+            "perdiendo ⇒ sin asegurar (antes del arreglo: alcanzable jamás)"
+        );
+        assert!(
+            pm.misma_direccion_sin_asegurar(120_000.0, true, 100.0),
+            "plano (0 pb) ⇒ sin asegurar"
+        );
+        assert!(
+            pm.misma_direccion_sin_asegurar(120_000.0, true, 100.27),
+            "27 pb ⇒ sin asegurar"
+        );
+        assert!(
+            !pm.misma_direccion_sin_asegurar(120_000.0, true, 100.28),
+            "28 pb exactos (pnl >= 0.0028) ⇒ asegurada"
+        );
+        assert!(
+            !pm.misma_direccion_sin_asegurar(120_000.0, true, 101.0),
+            "1 % de ganancia ⇒ asegurada"
+        );
+    }
+
+    #[test]
+    fn qo_588_short_perdiente_veta_y_opuesta_no() {
+        let pm = PositionManager::default();
+        // Short abierta a τ=30 s, entrada 100; mid 101 ⇒ (ep−mid)/ep = −1 %.
+        assert!(pm.swing.open_with_tau_and_fee(
+            false,
+            100.0,
+            0.01,
+            13.0,
+            1_000,
+            99.0,
+            101.0,
+            PositionHorizon::Continuous,
+            0.5,
+            0.6,
+            0.0004,
+            30_000
+        ));
+        assert!(
+            pm.misma_direccion_sin_asegurar(60_000.0, false, 101.0),
+            "short perdiendo ⇒ apilar short vetado"
+        );
+        assert!(
+            !pm.misma_direccion_sin_asegurar(60_000.0, true, 101.0),
+            "la dirección OPUESTA no la juzga este gate (interferencia la trata find_resonant_slot)"
+        );
+    }
+
+    /// QO-589 — la razón del rechazo distingue colisión de banda de
+    /// capacidad llena. Sólo tiene sentido preguntarla cuando
+    /// `find_resonant_slot` devolvió None (el llamador la gatea así):
+    /// distingue POR QUÉ murió un candidato que la fusión despachó.
+    #[test]
+    fn qo_589_razon_de_rechazo_distingue_colision_de_capacidad() {
+        let pm = PositionManager::default();
+        // Larga abierta a τ=30 s.
+        assert!(pm.scalp.open_with_tau_and_fee(
+            true,
+            100.0,
+            0.01,
+            13.0,
+            1_000,
+            101.0,
+            99.0,
+            PositionHorizon::Continuous,
+            0.5,
+            0.6,
+            0.0004,
+            30_000
+        ));
+        // |Δlnτ| = 0.29 < 0.80 ⇒ colisión (y find_resonant_slot la confirma):
+        assert_eq!(
+            pm.razon_sin_slot(40_000.0, true),
+            PositionManager::RAZON_COLISION_BANDA
+        );
+        assert!(pm.find_resonant_slot(40_000.0, true).is_none());
+        // EL HUECO [0.60, 0.80): τ=60 s ⇒ |Δlnτ| = ln(2) ≈ 0.693. La fusión
+        // D-431 lo despacha como candidato independiente (>= 0.60) y el slot
+        // lo bloquea: cae como COLISIÓN y queda medible para la decisión de
+        // consejo sobre unificar el umbral.
+        assert_eq!(
+            pm.razon_sin_slot(60_000.0, true),
+            PositionManager::RAZON_COLISION_BANDA
+        );
+
+        // Capacidad llena SIN colisión: tres cortos abiertos; la intención
+        // LARGA nunca colisiona con ellos ⇒ la única razón de None es que
+        // los tres slots físicos están ocupados.
+        let pm2 = PositionManager::default();
+        for slot in [&pm2.scalp, &pm2.swing, &pm2.position] {
+            assert!(slot.open_with_tau_and_fee(
+                false,
+                100.0,
+                0.01,
+                13.0,
+                1_000,
+                99.0,
+                101.0,
+                PositionHorizon::Continuous,
+                0.5,
+                0.6,
+                0.0004,
+                30_000
+            ));
+        }
+        assert_eq!(
+            pm2.razon_sin_slot(30_000.0, true),
+            PositionManager::RAZON_CAPACIDAD_LLENA
+        );
+        assert!(pm2.find_resonant_slot(30_000.0, true).is_none());
     }
 }

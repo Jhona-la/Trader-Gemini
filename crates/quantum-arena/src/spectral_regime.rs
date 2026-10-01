@@ -135,6 +135,25 @@ impl SpectralRegimeField {
         }
         (1.0 - 0.95 * self.crash_flux).clamp(0.05, 1.0)
     }
+
+    /// Multiplicador continuo de margen para posiciones Cortas:
+    /// Si la marea portadora es intensamente ALCISTA (short squeeze / blow-off),
+    /// contrae el margen del corto en proporción a la crash_flux inversa.
+    pub fn short_margin_multiplier(&self) -> f64 {
+        if self.carrier_tide <= 0.0 {
+            return 1.0;
+        }
+        (1.0 - 0.95 * self.crash_flux).clamp(0.05, 1.0)
+    }
+
+    /// Multiplicador de margen continuo simétrico según la dirección de la orden.
+    pub fn margin_multiplier(&self, is_long: bool) -> f64 {
+        if is_long {
+            self.long_margin_multiplier()
+        } else {
+            self.short_margin_multiplier()
+        }
+    }
 }
 
 /// Vista legada del campo (mapeo 1:1 con risk-engine::regime::MarketRegime).
@@ -193,5 +212,21 @@ mod tests {
             crash_flux: 0.9,
         };
         assert_eq!(f.long_margin_multiplier(), 1.0);
+    }
+
+    #[test]
+    fn marea_alcista_concentrada_reduce_margen_de_cortos() {
+        let f = SpectralRegimeField {
+            hurst_by_band: [0.30, 0.45, 0.50],
+            dominant_tau_ms: 8_000.0,
+            dominant_drift: 0.9,
+            mass_entropy: 0.10,
+            carrier_tide: 0.80, // marea alcista intensa
+            crash_flux: 0.85,
+        };
+        assert!(f.short_margin_multiplier() < 0.3);
+        assert_eq!(f.long_margin_multiplier(), 1.0);
+        assert_eq!(f.margin_multiplier(false), f.short_margin_multiplier());
+        assert_eq!(f.margin_multiplier(true), f.long_margin_multiplier());
     }
 }

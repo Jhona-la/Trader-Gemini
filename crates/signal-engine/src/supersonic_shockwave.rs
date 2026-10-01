@@ -137,13 +137,14 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 
-        // D-349: Homogeneizar dimensionalmente velocidad y velocidad del sonido respecto al precio nominal
-        let speed_norm = if mid_price > 1.0 && speed.abs() > 1.0 {
+        // AGY-AUD-P13: Homogeneizar dimensionalmente velocidad y velocidad del sonido
+        // de forma universal e invariante a la escala de precios nominales.
+        let speed_norm = if mid_price > 1e-8 && speed.abs() > 1e-12 {
             speed / mid_price
         } else {
             speed
         };
-        let sound_norm = if mid_price > 1.0 && sound > 1.0 {
+        let sound_norm = if mid_price > 1e-8 && sound > 1.0 {
             sound / mid_price
         } else {
             sound
@@ -203,5 +204,23 @@ mod tests {
             "Velocidad supersónica positiva debe generar señal de choque positiva"
         );
         assert!(eval <= 1.0);
+    }
+
+    #[test]
+    fn test_supersonic_sub_dollar_scale_invariance() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        // Simular token sub-dólar (DOGE a $0.15)
+        registry.set_scoped("DOGEUSDT", "order_flow_speed", 0.0030); // 2%/s
+        registry.set_scoped("DOGEUSDT", "atr_pct", 0.001); // 0.1% velocidad del sonido relativa
+        registry.set_scoped("DOGEUSDT", "mid_price", 0.15);
+
+        let mut engine = SupersonicShockwaveEngine::new();
+        assert!(engine.init(registry).is_ok());
+
+        let eval = engine.evaluate_for_coin(5, "DOGEUSDT");
+        assert!(
+            eval > 0.0 && eval <= 1.0,
+            "Sub-dólar debe evaluar señal supersónica finita no-cero: {eval}"
+        );
     }
 }

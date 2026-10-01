@@ -7,6 +7,7 @@ pub struct StatArbEngine {
     count: usize,
     sum: f64,
     z_score_threshold: f64,
+    pub min_spread_profit_bps: f64,
 }
 
 impl StatArbEngine {
@@ -24,7 +25,16 @@ impl StatArbEngine {
             count: 0,
             sum: 0.0,
             z_score_threshold: safe_thresh,
+            min_spread_profit_bps: 0.0020,
         }
+    }
+
+    /// Configura el umbral de spread mínimo para cubrir comisiones y fricción dinámicamente.
+    pub fn with_min_spread_profit_bps(mut self, bps: f64) -> Self {
+        if bps.is_finite() && bps >= 0.0 {
+            self.min_spread_profit_bps = bps;
+        }
+        self
     }
 
     /// Toma los precios de dos activos correlacionados y devuelve la intención de arbitraje sobre el Activo A.
@@ -79,8 +89,8 @@ impl StatArbEngine {
             return SignalIntent::flat();
         }
         let expected_spread_edge = (spread - mean).abs();
-        // FIX #576: Exigir un borde mínimo de 20 bps para cubrir 4 comisiones taker (16 bps) + slippage
-        let min_spread_profit_bps = 0.0020;
+        // AGY-AUD-P04: borde mínimo adaptativo (self.min_spread_profit_bps) para cubrir comisiones + fricción
+        let min_spread_profit_bps = self.min_spread_profit_bps;
 
         // FIX #784: StatArb emite señales de forma puramente funcional/stateless
         // Previene estados fantasma si RiskEngine o Consejo vetan la orden downstream
@@ -191,5 +201,14 @@ mod tests {
         let intent_dislocated = engine.update(base_btc + 1500.0, base_eth);
         assert_eq!(intent_dislocated.signal, SignalType::Short);
         assert!(intent_dislocated.confidence > 0.0 && intent_dislocated.confidence <= 1.0);
+    }
+
+    #[test]
+    fn test_stat_arb_configurable_min_spread_profit_bps() {
+        let engine_default = StatArbEngine::new(20, 2.0);
+        assert_eq!(engine_default.min_spread_profit_bps, 0.0020);
+
+        let engine_custom = StatArbEngine::new(20, 2.0).with_min_spread_profit_bps(0.0008);
+        assert_eq!(engine_custom.min_spread_profit_bps, 0.0008);
     }
 }

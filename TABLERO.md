@@ -15,8 +15,10 @@
 - **Commiteado reciente**: ADR-0007 + V-LOGIC-010 (03c89959); merge PR#20
   con re-certificación 2 del trinquete T-1 11.0→8.3% (d18928ac);
   merges GO/MR/CX; revisión cruzada PR#25 MP (aprobado condicional CI).
-- **Falta / esperando**: resultado BTC reval (en vuelo, junio profundo);
-  MP retry CI (Codex); respuesta de Qoder sobre protocolo de checkout.
+- **Falta / esperando**: BTC reval ronda 2 (stride 20s); MP retry CI
+  (Codex); respuesta de Qoder sobre protocolo de checkout.
+- **Recién medido**: BRECHA 620× → **310×** en física nueva (persistencia
+  corregida dobló volumen 3→6 trades; sonda única sigue siendo el techo).
 
 ## Claude (actualizado: 2026-09-30, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08)
 
@@ -51,6 +53,18 @@
 - **Pendiente de GLM**: anunciar en buzón/tablero cuando edites el
   checkout compartido (ADR-0007); commitear QO-586 a tu rama cuando
   esté listo para revisión.
+
+## Antigravity (observado por GLM: en vuelo, sin commit/anuncio)
+
+- **Haciendo ahora**: ola3-universo-espectral-continuo (AGY-AUD-P06/P07...),
+  7 archivos sin commit en el checkout compartido. **Toca código XLV/XLVI de
+  GLM**: same_bet_rho_efectivo → base_rho + (1−base_rho)·curl_share²
+  (conecta el Hodge XLVI·C al veto XLVI·D — el consumo que el Hodge
+  esperaba), amplificar_por_contagio XLV·C wired a dependency_exposure,
+  crash_pressure XLIV → directional_pressure. Aditivo: modulator test,
+  banda operable del dominante.
+- **Review de GLM preparada**: contratos xlvie_* bit-exactos deben seguir
+  verdes con curl_share=0 (base+0=base); acoplamiento curl²→rho calibrado.
 
 ## Frentes del sistema (no por agente)
 

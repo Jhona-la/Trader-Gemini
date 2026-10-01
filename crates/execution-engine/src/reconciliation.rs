@@ -426,6 +426,16 @@ pub fn reconcile_arena_checked(
         let remote_net_qty = remote_position.map(|p| p.position_amt).unwrap_or(0.0);
         let remote_price = remote_position.map(|p| p.entry_price).unwrap_or(0.0);
         let remote_leverage = remote_position.map(|p| p.leverage).unwrap_or(0.0);
+        // #595 — la posición del exchange trae su ÚLTIMA MODIFICACIÓN
+        // (updateTime): es la cota inferior honesta de la edad de la
+        // adopción. Pasar `now` fabricaba edad 0 para una posición con
+        // horas de vida — el trailing, los gates de edad y la evidencia de
+        // aprendizaje la trataban como recién nacida. 0 (desconocido) o
+        // futuro (reloj del exchange adelantado) → cae a now.
+        let remote_update_time = remote_position
+            .map(|p| p.update_time)
+            .filter(|t| *t > 0 && *t <= now_ms)
+            .unwrap_or(now_ms);
         let coin = &arena.coins[coin_idx];
         let local_open: Vec<_> = coin
             .positions
@@ -576,12 +586,14 @@ pub fn reconcile_arena_checked(
                 // D-729 (unión): además, si la entrada no es válida (precio o
                 // cantidad), la posición NO se abre y tampoco se reserva margen.
                 let adopted_entry_fee = notional * 0.0004;
+                // #595: el reloj de la adopción es el del EXCHANGE (updateTime,
+                // cota inferior de la edad), no el arranque del proceso.
                 let adoptada = coin.positions.position.open_with_fee(
                     is_long,
                     price,
                     abs_qty,
                     margin,
-                    now_ms,
+                    remote_update_time,
                     0.0,
                     0.0,
                     quantum_arena::position::PositionHorizon::Continuous,

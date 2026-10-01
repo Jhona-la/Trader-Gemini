@@ -1091,8 +1091,11 @@ impl RiskEngine {
             // de 0 trades en la certificación 30d (min_notional ~500-640
             // rechazos/día con señales sanas de conf 0.7+). El fee_impact
             // check de abajo sigue limitando el costo.
+            // CL-6 / AGY-AUD: usar .ceil() antes del cap para que el apalancamiento
+            // alcance el mínimo sin forzar margen adicional innecesario.
             let candidate_leverage = (dynamic_min_notional / final_margin.max(0.01)) * 1.02;
             dynamic_leverage = candidate_leverage
+                .ceil()
                 .min(genome_max_leverage)
                 .min(max_lev_cap)
                 .floor();
@@ -1264,6 +1267,7 @@ impl RiskEngine {
 ///
 /// En ningún caso se consulta la etiqueta discreta para elegir parámetros:
 /// ésta sólo desempata el extremo del continuo cuando no hay nada mejor.
+#[allow(dead_code)]
 fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
     horizon_tau_ms_coin(intent, arena, usize::MAX)
 }

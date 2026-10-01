@@ -127,8 +127,8 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         // casi nunca disparaba y la short casi siempre: sesgo short
         // estructural en el consenso tensorial. Ahora usa LIFT sobre la
         // base del modelo (misma doctrina que B3.18/B3.36): gatea en
-        // `ml_prob >= base + lift` / `ml_prob <= base − lift` con lift
-        // mínimo de 0.05 (5 puntos sobre la base, no sobre 0.5).
+        // AGY-AUD-P05: `ml_prob >= base + lift` / `ml_prob <= base − lift` con lift
+        // dinámico vía registro o genoma, con fallback seguro a 0.05 (5 puntos).
         let ml_base = r
             .get_scoped_parameter(
                 sym_opt,
@@ -139,7 +139,16 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             .map(|p| p.get_value())
             .filter(|v| v.is_finite() && *v > 0.0 && *v < 1.0)
             .unwrap_or(0.5);
-        const LIFT: f64 = 0.05;
+        let ml_lift = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "ml_model_lift",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && *v > 0.0 && *v < 0.5)
+            .unwrap_or(0.05);
 
         // #535 (3ª iteración): el umbral de excitación vuelve a ser del
         // GEN, anclado al estado estacionario del proceso. El gen
@@ -162,9 +171,37 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         let excitation = (hawkes_gene - 0.50).max(0.0) * 2.0;
         let effective_hawkes_thresh = crate::hawkes_bessel::STEADY_STATE_RATIO + excitation;
 
-        if hawkes >= effective_hawkes_thresh && obi.abs() >= 0.2 {
-            let is_long = obi > 0.0 && ml_prob >= ml_base + LIFT;
-            let is_short = obi < 0.0 && ml_prob <= ml_base - LIFT;
+        // #590 — el piso del OBI deja de ser la constante mágica 0.2 y pasa
+        // a ser MEDIDO + GENÓMICO: percentil-80 del OBI del símbolo (su
+        // distribución reciente) escalado por el gen obi_zscore_threshold
+        // [0.1, 3.0] — la rareza estadística que el gen anunciaba, empírica
+        // y adaptativa por símbolo/régimen. Fallbacks: p80 0.15 (el propio
+        // fallback del motor cuantílico), gen 1.0 (su default).
+        let obi_gene = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "obi_zscore_gene",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && (0.1..=3.0).contains(v))
+            .unwrap_or(1.0);
+        let obi_p80 = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "obi_p80_medido",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .unwrap_or(0.15);
+        let obi_floor = (obi_p80 * obi_gene).max(0.02);
+
+        if hawkes >= effective_hawkes_thresh && obi.abs() >= obi_floor {
+            let is_long = obi > 0.0 && ml_prob >= ml_base + ml_lift;
+            let is_short = obi < 0.0 && ml_prob <= ml_base - ml_lift;
 
             if is_long {
                 (obi * (ml_prob - ml_base) * 4.0 * (hawkes / 2.0).min(2.0)).clamp(0.0, 1.0)
@@ -255,5 +292,45 @@ mod tests {
         registry.set("hawkes_intensity", 1.9);
         let v = engine.evaluate();
         assert!(v > 0.0, "ráfaga 1.9 sobre umbral 1.60 debe votar long: {v}");
+    }
+
+    /// #590 — el gen `obi_zscore_threshold` [0.1, 3.0] gobierna el piso del
+    /// OBI como p80 MEDIDO × gen: rareza estadística empírica, no la
+    /// constante mágica 0.2. Con gen 3.0 y p80 0.10, un OBI 0.25 (que el
+    /// 0.2 absoluto dejaba pasar) YA NO dispara; con gen 0.5 el piso baja a
+    /// 0.05 y el mismo OBI dispara.
+    #[test]
+    fn qo_590_gen_de_obi_gobierna_el_piso_medido() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        registry.set("hawkes_intensity", 2.0);
+        registry.set("order_book_imbalance", 0.25);
+        registry.set("ml_prob_motor", 0.85);
+        registry.set("ml_model_base", 0.50);
+        registry.set("obi_p80_medido", 0.10);
+        registry.set("obi_zscore_gene", 3.0);
+
+        let mut engine = FlowExcitationConfluenceEngine::new();
+        assert!(engine.init(Arc::clone(&registry)).is_ok());
+
+        // Piso = 0.10·3.0 = 0.30 > |OBI|=0.25 ⇒ sin señal (el viejo 0.2
+        // absoluto la habría dejado pasar).
+        assert_eq!(engine.evaluate(), 0.0);
+
+        // Gen 0.5: piso = 0.05 ≤ 0.25 ⇒ dispara.
+        registry.set("obi_zscore_gene", 0.5);
+        let v = engine.evaluate();
+        assert!(v > 0.0, "OBI 0.25 sobre piso 0.05 debe votar long: {v}");
+
+        // Sin telemetría el piso cae al fallback del motor cuantílico
+        // (0.15): el motor sigue operando antes de que el p80 madure.
+        let registry_vacia = Arc::new(OmniscientRegistry::new());
+        registry_vacia.set("hawkes_intensity", 2.0);
+        registry_vacia.set("order_book_imbalance", 0.20);
+        registry_vacia.set("ml_prob_motor", 0.85);
+        registry_vacia.set("ml_model_base", 0.50);
+        let mut engine2 = FlowExcitationConfluenceEngine::new();
+        assert!(engine2.init(registry_vacia).is_ok());
+        let v2 = engine2.evaluate();
+        assert!(v2 > 0.0, "OBI 0.20 >= piso fallback 0.15 debe votar long: {v2}");
     }
 }

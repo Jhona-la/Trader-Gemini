@@ -189,55 +189,33 @@ impl QuantumKellyRiskEngine {
         let capital_ratio = (safe_current_cap / safe_base_cap.max(1.0)).max(1.0);
         let capital_derisk_factor = (1.0 + 0.5 * sample_confidence) / (1.0 + capital_ratio.ln());
 
-        // Regime-adaptive Kelly multiplier
-        let regime_mult = if safe_hurst > 0.55 {
-            1.25 // Trending regime: Scale up Kelly for compound growth
-        } else if safe_hurst < 0.42 {
-            0.85 // Mean-reverting: Conservative Kelly
-        } else {
-            1.00
-        };
-
-        // --- STREAK MULTIPLIER (PHASE 46) ---
-        let win_streak = self.current_win_streak.load(Ordering::Relaxed);
-        let loss_streak = self.current_loss_streak.load(Ordering::Relaxed);
-        let streak_mult = if win_streak > 0.0 {
-            1.0 + (win_streak * 0.20).min(1.5) // Acelera hasta 2.5x en rachas ganadoras prolongadas
-        } else if loss_streak > 0.0 {
-            (1.0 / (1.0 + loss_streak * 0.5)).max(0.1) // Se comprime agresivamente ante rachas perdedoras (Protección Capital)
-        } else {
-            1.0
-        };
 
         // --- FASE 52: Multivariate Kelly Tensor Field ---
         // Attenuate kelly if global cross-correlation is high (global covariance).
         let topology_attenuation = (1.0 - (safe_cov.abs() * 0.8)).clamp(0.20, 1.00);
 
-        // --- FASE 4: SIMD Neural Confidence Multiplier ---
-        // Amplificar interés compuesto solo si la red neuronal está altamente segura (>80%)
-        let neural_mult = if safe_neural > 0.80 {
-            1.0 + (safe_neural * 1.5) // Acelera agresivamente
-        } else if safe_neural < 0.40 {
-            0.1 // Protege el capital si hay duda sistémica
-        } else {
-            1.0
-        };
-
-        // QO-M0.5 (auditoría matemática): el stack de multiplicadores
-        // (streak hasta 2.5×, neural hasta 2.45×, regime 1.25×) podía
-        // EMPUJAR POR ENCIMA del Kelly crudo — super-Kelly es exactamente
-        // lo que la teoría prohíbe (máxima ruina, no máximo crecimiento).
-        // Los multiplicadores ahora sólo PUEDEN REDUCIR: el producto se
-        // topea a 1× raw_kelly. Des-riesgar tras drawdown/corrupción de
-        // topología sigue vivo; acelerar sobre Kelly muere.
-        let optimal_kelly = (raw_kelly
-            * dd_de_risk_factor
+        // AGY-AUD-005: the accelerators (streak/neural/regime that exceed 1.0)
+        // were dead code — .min(raw_kelly) guaranteed they never increased the
+        // output beyond raw Kelly. Only de-risking factors actually bind.
+        // Compute the product of de-risking factors only; each ∈ (0, 1].
+        let derisking_product = dd_de_risk_factor
             * capital_derisk_factor
-            * regime_mult
-            * streak_mult
             * topology_attenuation
-            * neural_mult)
-            .min(raw_kelly);
+            // Hurst-adaptive: persistent regime preserves full Kelly,
+            // mean-reverting regime compresses (the only regime effect that
+            // isn't dead code under the raw_kelly cap).
+            * if safe_hurst < 0.42 { 0.85 } else { 1.0 }
+            // Loss streak compression (the de-risk branch of streak logic).
+            * if self.current_loss_streak.load(Ordering::Relaxed) > 0.0 {
+                let ls = self.current_loss_streak.load(Ordering::Relaxed);
+                (1.0 / (1.0 + ls * 0.5)).max(0.1)
+            } else {
+                1.0
+            }
+            // Low neural confidence: protect capital.
+            * if safe_neural < 0.40 { 0.1 } else { 1.0 };
+
+        let optimal_kelly = (raw_kelly * derisking_product).min(raw_kelly);
         let safe_expectancy = if expectancy_bps.is_finite() {
             expectancy_bps
         } else {

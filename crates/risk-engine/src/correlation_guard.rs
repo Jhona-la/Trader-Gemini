@@ -587,9 +587,15 @@ pub fn dependency_exposure(
             Some(1.0)
         } else {
             let other_ticks = coin.tick_ring.snapshot_recent(MAX_TICKS_MUESTRA);
-            hayashi_yoshida_correlation(&candidate_ticks, &other_ticks).or_else(|| {
+            let raw_rho = hayashi_yoshida_correlation(&candidate_ticks, &other_ticks).or_else(|| {
                 correlacion_de_retornos(&candidate_ticks, &other_ticks, threshold)
-            })
+            });
+            // AGY-AUD-P06: Excitación de contagio Hawkes cruzado:
+            // Si el activo es un seguidor neto recibiendo contagio fuerte (net_role < -3.0):
+            // se amplifica la correlación observada mediante amplificar_por_contagio.
+            let net_role = arena.registry.get_for_coin_or(asset_id, "hawkes_contagion_net_role", 0.0);
+            let z_contagio = if net_role < -3.0 { Some(-net_role) } else { None };
+            CorrelationGuardEngine::amplificar_por_contagio(raw_rho, z_contagio)
         };
         for (slot_idx, side_outer) in sides.into_iter().enumerate() {
             // Ranura cerrada: no cuenta (semántica original del flatten).
@@ -638,8 +644,19 @@ pub fn dependency_exposure(
             }
         }
     }
-    // XLVI·D: ρ efectiva del grupo (no medidos ⇒ 1.0, continuidad lineal).
-    result.same_bet_rho_efectivo_bits = rho_efectivo_grupo(&rhos_same_bet).to_bits();
+    // XLVI·D / AGY-AUD-P06: ρ efectiva del grupo ajustada por la vorticidad de Helmholtz-Hodge:
+    // En una cámara de eco cíclica de contagio (curl_share -> 1.0), el flujo de feedback anula la
+    // diversificación lineal (todas las correlaciones convergen a dependencia sistémica).
+    // rho_efectivo se interpola hacia 1.0 proporcionalmente a curl_share^2.
+    let curl_share = arena
+        .registry
+        .get_value_fast("hawkes_contagion_curl_share")
+        .filter(|c| c.is_finite() && *c >= 0.0)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
+    let base_rho = rho_efectivo_grupo(&rhos_same_bet);
+    let systemic_rho = (base_rho + (1.0 - base_rho) * (curl_share * curl_share)).clamp(-1.0, 1.0);
+    result.same_bet_rho_efectivo_bits = systemic_rho.to_bits();
     Some(result)
 }
 
@@ -681,7 +698,6 @@ impl CorrelationGuardEngine {
     /// Auditoría PR #5 (D-750b): antes se comparaba `|r|`, de modo que una
     /// cobertura con r = −0,7 contaba como exposición duplicada y el guard
     /// vetaba justo la operación que diversifica.
-    #[inline]
     /// (Ola XLV·C) AMPLIFICADOR DE CONTAGIO: cuando el kernel de Hawkes
     /// cross (feature-engine, 7da858ef) detecta contagio direccional
     /// significativo (z > 3) entre el líder y el seguidor, la correlación

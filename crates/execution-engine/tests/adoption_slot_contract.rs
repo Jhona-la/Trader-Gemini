@@ -65,3 +65,38 @@ fn cl16_el_host_adopta_por_ranura_y_reserva_solo_si_abre() {
         .expect("reserva condicionada a la adopción");
     assert!(condicion < reserva, "el margen se reserva dentro de la adopción aceptada");
 }
+
+/// #595 — la edad de una posición adoptada la fija el EXCHANGE
+/// (updateTime), no el arranque del proceso: una posición con horas de
+/// vida no puede nacer con edad 0 (trailing, gates de edad y evidencia
+/// de aprendizaje la tratarían como recién nacida).
+#[test]
+fn qo_595_la_adopcion_guarda_la_edad_del_exchange_no_la_del_arranque() {
+    let pm = PositionManager::default();
+    let slot = adoptar_en_ranura_libre(&pm, true, 100.0, 0.5, 10.0, 42_000).expect("adopción");
+    assert_eq!(
+        pm.get_slot(slot).entry_time_ms.load(Ordering::Relaxed),
+        42_000,
+        "el reloj de la adopción es el que el llamador pasa"
+    );
+    // Ruta host (FASE 5): updateTime con guardia 0/desconocido o futuro.
+    let host: String = include_str!("../../../src/bin/god_engine.rs")
+        .split_whitespace()
+        .collect();
+    assert!(
+        host.contains("pos.update_time>0&&pos.update_time<=now_ms{pos.update_time}else{now_ms}"),
+        "el host debe adoptar con la edad del exchange"
+    );
+    // Ruta reconcile_arena: remote_update_time filtrado y pasado al open.
+    let recon: String = include_str!("../src/reconciliation.rs")
+        .split_whitespace()
+        .collect();
+    assert!(
+        recon.contains(".filter(|t|*t>0&&*t<=now_ms)"),
+        "reconcile debe filtrar updateTime (0/desconocido, futuro)"
+    );
+    assert!(
+        recon.contains("remote_update_time,"),
+        "reconcile debe pasar remote_update_time a open_with_fee"
+    );
+}

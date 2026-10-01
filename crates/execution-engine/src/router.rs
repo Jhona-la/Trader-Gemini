@@ -63,25 +63,27 @@ impl QuantumOrderRouter {
         }
 
         // 2. Extrema Convicción / Breakout (Volatilidad Esperada Alta)
-        // FASE 3: umbrales leídos del GENOMA vía el arena del executor —
-        // antes eran los literales 0.85/0.015. La confianza mínima usa el
-        // gen min_confidence_btc; el gate de volatilidad se deriva de
-        // scalp_sl_base: si el movimiento esperado supera la mitad del
-        // stop, un limit arriesga quedarse fuera Y que el stop vuele.
+        // Continuo Espectral: umbrales leídos del GENOMA y evaluados en la escala
+        // temporal continua del horizonte tau de la orden vía sl_at_tau — no
+        // con scalp_sl_base discreto. Si la volatilidad esperada supera la
+        // mitad del stop continuo a esa tau, un limit arriesga quedarse fuera.
         let (conf_gate, vol_gate) = {
             let exec = self.executor.load();
             match exec.arena.load_full() {
-                Some(arena) => (
-                    arena
-                        .config
-                        .min_confidence_btc
-                        .load(std::sync::atomic::Ordering::Relaxed),
-                    arena
-                        .config
-                        .scalp_sl_base
-                        .load(std::sync::atomic::Ordering::Relaxed)
-                        * 0.5,
-                ),
+                Some(arena) => {
+                    let tau_ms = if decision.expected_lifetime_ms > 0 {
+                        decision.expected_lifetime_ms as f64
+                    } else {
+                        quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
+                    };
+                    (
+                        arena
+                            .config
+                            .min_confidence_btc
+                            .load(std::sync::atomic::Ordering::Relaxed),
+                        arena.config.sl_at_tau(tau_ms) * 0.5,
+                    )
+                }
                 // Sin arena inyectada (tests/boot temprano): conserva el
                 // umbral conservador histórico hasta que el engine lo provea.
                 None => (0.85, 0.015),

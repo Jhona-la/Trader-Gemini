@@ -482,3 +482,65 @@ fn xlvie_dependency_exposure_mide_riesgo_real_del_snapshot() {
         "riesgo real qty·|entry−sl|/capital = 8·1/100, medido {r}"
     );
 }
+
+/// AGY-AUD-P06: Cuando el universo presenta alta vorticidad de Helmholtz-Hodge
+/// (hawkes_contagion_curl_share elevado), rho_efectivo escala continuamente
+/// hacia 1.0 (dependencia sistémica), reduciendo la ilusión de diversificación.
+#[test]
+fn agy_aud_p06_hodge_curl_share_systemic_rho_escalation() {
+    use risk_engine::correlation_guard::dependency_exposure;
+    let (arena, _) = fixture();
+    // Inyectar ticks con desfase angular para obtener correlación positiva moderada (0 < r < 1)
+    for i in 0..200 {
+        let p0 = 100.0 * (0.01 * (i as f64 * 0.7).sin()).exp();
+        let p1 = 100.0 * (0.01 * (i as f64 * 0.7 + 0.8).sin()).exp();
+        arena.coins[0].tick_ring.push(CompactTick {
+            timestamp: 1000 + i * 10,
+            bid_price: p0,
+            ask_price: p0,
+            bid_qty: 1.0,
+            ask_qty: 1.0,
+        });
+        arena.coins[1].tick_ring.push(CompactTick {
+            timestamp: 1000 + i * 10,
+            bid_price: p1,
+            ask_price: p1,
+            bid_qty: 1.0,
+            ask_qty: 1.0,
+        });
+    }
+    open(&arena, 1, 0, true);
+
+    // Sin curl_share publicado: rho base normal
+    let e_base = dependency_exposure(&arena, 0, true, 0.5).unwrap();
+    let rho_base = e_base.same_bet_rho_efectivo().unwrap();
+    assert!(rho_base > 0.1 && rho_base < 0.95, "rho base moderado: {rho_base}");
+
+    // Con curl_share = 0.80 (fuerte feedback cíclico en cascada)
+    arena.registry.set("hawkes_contagion_curl_share", 0.80);
+    let e_systemic = dependency_exposure(&arena, 0, true, 0.5).unwrap();
+    let rho_systemic = e_systemic.same_bet_rho_efectivo().unwrap();
+
+    assert!(
+        rho_systemic > rho_base,
+        "rho sistémico {rho_systemic} debe superar rho base {rho_base} ante curl alto"
+    );
+    // Verificación de la interpolación cuadrática: rho + (1 - rho) * 0.8^2 = rho + (1 - rho) * 0.64
+    let expected = (rho_base + (1.0 - rho_base) * 0.64).clamp(-1.0, 1.0);
+    assert!((rho_systemic - expected).abs() < 1e-6);
+}
+
+/// AGY-AUD-P06: Un activo seguidor neto bajo fuerte excitación de contagio (net_role < -3.0)
+/// amplifica su correlación observada mediante amplificar_por_contagio.
+#[test]
+fn agy_aud_p06_contagion_amplification_in_dependency_exposure() {
+    use risk_engine::correlation_guard::dependency_exposure;
+    let (arena, _) = fixture();
+    pair_ticks(&arena, false);
+    open(&arena, 1, 0, true);
+
+    // Activo 1 como seguidor extremo recibiendo contagio Hawkes: net_role = -8.0 (z = 8.0)
+    arena.registry.set_for_coin(1, "hawkes_contagion_net_role", -8.0);
+    let e = dependency_exposure(&arena, 0, true, 0.5).unwrap();
+    assert_eq!(e.same_bet_positions, 1);
+}

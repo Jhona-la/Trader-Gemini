@@ -12639,3 +12639,400 @@ El consumidor vivo evalúa `intensity_ratio(event_time)` — siempre en fase 0 (
 **Conclusión:** el gen de excitación vuelve al circuito evolutivo con significado escala-libre, y la superficie de decisión viva por fin discrimina «ráfaga sobre el ritmo normal del símbolo» en lugar de «actividad». La cadena #535 queda completa de punta a punta: μ̂ (medición) → ratio al registry (canal) → gen (control) → gate (decisión). Queda M5-H02 como siguiente eslabón mayor.
 
 *(Fin de la Ola 10 — append solamente, conforme al mandato de documentación.)*
+
+### #586 — ✅ CIERRE IMPLEMENTADO: PUERTA DE BANDA OPERABLE en el generador (Ola 11, 2026-09-30, Qoder)
+
+**Hallazgo (patrón superficie muerta, 3ª vez):** `SuperGenotype::min_tradeable_tau_ms` /
+`tradeable_band_ms` (quantum-arena/src/genome.rs:2457+) existen con suite de contratos
+(temporal_band_contract.rs) y CERO consumidores vivos. El generador del continuo acota τ al
+suelo FÍSICO del espectro (`TAU_ANCHOR_FAST_MS`) pero nunca a la banda OPERABLE (curva SL del
+genoma × fricción viva), y `suelo_tp_sl` (risk-engine/src/lib.rs, D-636b & #585,
+`tpsl_gate.below_tradeable_floor → REJ_TP_SL_FLOOR`) masacra el embudo: diagnóstico T-1 de
+Claude (XLIV) = 1.241.740 intenciones rechazadas por el suelo vs 1.605 por comisiones.
+
+**El daño NO era sólo desperdicio de pipeline.** La arbitración multi-banda (D-431 & #565,
+despacho concurrente integral) hace que una intención FAST con τ doomed:
+  (a) en el mismo armónico y misma dirección, pueda ganar la selección de
+      `best_duration` por densidad de energía espectral → la orden completa muere en el
+      gate aunque la banda lenta SÍ pagaba la fricción;
+  (b) en dirección opuesta, cancele por interferencia destructiva una señal slow operable.
+La banda que no puede monetizarse a su propio τ estaba VOTANDO en la fusión.
+
+**Fix (rama qoder/qo-586-banda-operable):**
+  1. `GodEngineCore::banda_paga_friccion(coin_id, tau_ms)` — sonda que repite el cálculo
+     del gate con la MISMA función pura (`tp_sl::compute_tp_sl_with_target_rr`) y las
+     MISMAS entradas arena-vivas (ATR/precio/hurst del coin, `roundtrip_friction` con
+     comisiones publicadas + piso de slippage + latencia, `sl_atr_mult_btc`/`sl_atr_multiplier`,
+     σ pronosticada al τ, `tp_rr_ratio_btc`). Paridad exacta por construcción (D-637/D-682:
+     una sola ley, identidad estructural no disciplinaria).
+  2. PUERTA 1.5 en `puertas_del_continuo` (después de viabilidad, antes del invariante
+     bayesiano): `expected_duration_ms > 0 && !banda_paga_friccion ⇒ SignalIntent::flat()`.
+     Cubre AMBAS bandas (fast 4858 y slow 5141) porque D-743 obliga a que toda puerta
+     viva ahí. No es veto fijo: con ATR vivo, en calma la banda se cierra sola y en
+     volatilidad se abre — la sonda sigue al régimen.
+  3. Telemetría forense por moneda: `registry.set_for_coin(coin_id, "qo_586_tau_inoperable", τ)`
+     sólo cuando la puerta aplasta (la banda viva no toca el registro).
+  4. `expected_duration_ms == 0` se remite al gate (resuelve τ por `horizon_tau_ms_coin`);
+     la puerta no decide en ese caso.
+
+**Qué NO hace el fix:** no estira τ (el estiramiento espectral con validación de
+persistencia merece su propia ola con medición T-1), no toca risk-engine (uso read-only
+de su API pública), no toca las ramas 11-15 (zona CL de Claude).
+
+**Verificación:** god-engine-core --lib 154/154 (151 previos + 3 contratos nuevos:
+sonda-sigue-al-régimen, puerta-aplasta/deja-pasar+telemetría, remisión τ=0);
+signal-engine 63/63 lib + suites de integración en verde; `cargo check --workspace
+--all-targets` OK (warnings preexistentes). Cero regresiones en tests_d743_puertas_del_continuo.
+
+**Pendiente relacionado:** el embudo aún puede morir por el suelo en las ramas 11-15
+(intenciones que no pasan por puertas_del_continuo) — mismas puertas candidatas para
+una ola posterior. La extensión "estirar τ al borde de banda con persistencia_at" queda
+como diseño abierto (requiere T-1).
+
+### #588 — ✅ CIERRE IMPLEMENTADO: gate de pirámide limpia restaurado + veredicto FMT-285 (Ola 12, 2026-09-30, Qoder — responde señalización de Claude)
+
+**Hallazgo A (señalización de Claude, confirmada con prueba estructural): el gate
+«piramidar sólo en ganancia» estaba MUERTO desde el D9.** El contrato legacy exigía
+retorno no realizado ≥ 28 pb para apilar en la misma dirección. El D9 (Ola XLI)
+estrechó su banda de 1.50 a 0.80 —legítimamente, para eliminar la contradicción con
+el despacho multi-banda D-431— pero 0.80 es EXACTAMENTE la distancia que
+`find_resonant_slot` (quantum-arena/src/position.rs:639) ya exige para devolver un
+slot (devuelve None si hay same-dir a |Δlnτ| < 0.80). Como `same_dir_unsecured` sólo
+se evaluaba cuando el slot existía (raw_slot_available=true), su rama `diff_ln < 0.80`
+era INALCANZABLE: la condición `pnl < 0.0028` nunca se ejecutó desde el D9 ⇒ apilar
+hasta llenar los 3 slots en la misma dirección estaba permitido AUNQUE la posición
+previa estuviera perdiendo — triple riesgo correlacionado sobre una apuesta que no
+paga, exactamente la deuda que el guard de correlación documenta («distant scales
+can still share portfolio risk», admitido en el propio comentario muerto).
+
+**Fix:** método `PositionManager::misma_direccion_sin_asegurar(tau, is_long, mid)`
+(position.rs) con la regla uniforme e independiente de distancia: cualquier posición
+abierta same-direction con pnl < 28 pb (o entrada/mid no medible ⇒ conservador)
+veta el apilado. Cableado en god-engine-core/src/lib.rs sustituyendo el bloque
+muerto. |Δlnτ| grande declara energía ortogonal (D-431), NO riesgo independiente.
+El gate no acredita stop protector ni ganancia asegurada — sólo exige que la apuesta
+previa pague antes de doblarle la exposición.
+
+**Hallazgo B (veredicto, sin cambio de código): `partition_income` (FMT-285) NO es
+código muerto — es el ORÁCULO PURO del contrato de cuarentena.** La ruta productiva
+(`collect_income_window`) aplica el mismo contrato inline durante el recorrido
+(FMT-285b, income_evidence.rs:48/:203): cuarentena por registro sin abortar la
+ventana, dedup por identidad, conflicto apartado. «Sólo se llama desde tests» es su
+diseño; se añadió doc explícita para que no vuelva a ser señalado.
+
+**Hallazgo C (documentado, sin arreglar — decisión de diseño): hueco de despacho
+[0.60, 0.80).** La fusión D-431 despacha candidatos armónicos independientes a
+|Δlnτ| ≥ 0.60, pero `find_resonant_slot` bloquea el same-direction a < 0.80: un
+segundo candidato same-direction en [0.60, 0.80) se despacha y se descarta en
+silencio (slot None → el intent no abre, sin telemetría de rechazo). Unificar a 0.60
+o 0.80 (o telemetrizar el descarte) es decisión del consejo: toca el semántico de
+independencia de bandas que CL-32/XLIV-6 también discuten.
+
+**Verificación:** quantum-arena --lib 88/88 (2 contratos nuevos: pirámide-sólo-
+ganancia-en-cualquier-escala — incluyendo umbral exacto 28 pb — y short-perdiente-
+veta-opuesta-no); god-engine-core --lib 154/154; check workspace --all-targets OK
+(warnings preexistentes). La prueba estructural del defecto es sobre código
+commiteado: find_resonant_slot devuelve None ante colisión same-dir < 0.80 y el
+gate sólo corría con slot Some ⇒ rama inalcanzable ⇒ gate muerto.
+
+### #554 — ✅ CIERRE IMPLEMENTADO: renombre honesto del pseudo-hawkes del PPO (Ola 13, 2026-09-30, Qoder)
+
+**Estado verificado al HEAD actual (mejor de lo temido):** el pseudo NO colisiona con
+el registro — el único writer de la clave "hawkes_intensity" es el λ/μ̂ REAL
+(CERT-M2-C02, lib.rs set_reg). El pseudo sobrevivía como VARIABLE LOCAL:
+`let hawkes_intensity = (1.0 + |OBI|·2).clamp(0.1, 5.0)/5.0` (lib.rs, bloque del
+PPO), multiplicada por el signo de flujo y metida como slot 2 (`dir_hawkes`) del
+vector de estado del PPO.
+
+**El defecto real era de NOMENCLATRA-SEMÁNTICA sobre política aprendida:** el PPO
+aprende pesos para un slot que su nombre declara "intensidad Hawkes con signo de
+flujo", pero el dato que recibe desde siempre es la MAGNITUD DEL OBI normalizada.
+Todo diagnóstico/auditoría del PPO que razonara sobre "el slot de Hawkes" razonaba
+sobre OBI. (El proxy de aceleración/ATR que CERT-M2-C02 erradicó de la telemetría
+tenía este primo superviviente.)
+
+**Fix (neutro en comportamiento):** renombre `hawkes_intensity` → `obi_excitacion_norm`
+y `dir_hawkes` → `dir_obi_flow`, con comentario que (a) declara el contenido real del
+slot, (b) deja ABIERTA la decisión de consejo: cablear el λ/μ̂ REAL (`hawkes_ratio_real`,
+ya en alcance del mismo tick) al slot 2 cambiaría la distribución de entrada de la
+política aprendida — invalida el PPO entrenado y exige re-certificación T-1.
+
+**Verificación:** god-engine-core --lib 154/154 (renombre sin cambio de comportamiento,
+como corresponde); check workspace --all-targets OK.
+
+### #589 — ✅ CIERRE: cobertura de la puerta de banda operable acreditada + telemetría de rechazo de slot (Ola 14, 2026-09-30, Qoder)
+
+**(a) Evidencia estructural — el pendiente «ramas 11-15 sin puerta de banda operable»
+se CIERRA sin código:** hay UN SOLO call site productivo de `evaluate_quantum_order`
+(lib.rs, dentro del bucle de candidatos). Los candidatos SOLO nacen de `fast_intent`
+y `slow_intent` — ambos pasan por `puertas_del_continuo`, donde vive la puerta QO-586.
+Las ramas 11-15 (tensor, impulso, tendencia lenta, consenso, confluencia resonante)
+no emiten intenciones separadas: son sub-señales de la construcción de banda (el
+finding de Claude «ramas 11-14 no pasan por conviccion_de_rama» es sobre el CÓMPUTO
+de confianza dentro de la banda, no sobre rutas de emisión). La sonda XLIV-7 es la
+única exención y es del ML-gate solamente (D1/XLIV: sin la sonda, monedas sin modelo
+jamás arrancan), no de las puertas ni del slot gate. Cobertura: 100% de las órdenes.
+
+**(b) Telemetría QO-589 — el descarte silencioso de slot queda medible.**
+`find_resonant_slot` devuelve None por DOS causas indistinguibles para el llamador:
+colisión same-direction en banda (|Δlnτ| < 0.80) o capacidad llena. Nuevo
+`PositionManager::razon_sin_slot` (u8: 1=colisión, 2=capacidad) + publish registry
+`qo_slot_rechazo` por moneda cuando un candidato no plano no consigue slot. Los
+descartes del hueco [0.60, 0.80) (fusión D-431 declara independientes a >= 0.60,
+slot bloquea a < 0.80) caen en razón 1: el consejo ya puede CONTAR cuántos son antes
+de decidir unificar el umbral. Cambio de observabilidad, cero política.
+
+**Verificación:** quantum-arena --lib 89/89 (1 contrato nuevo: la razón distingue
+colisión de capacidad — incluyendo el caso exacto del hueco τ=60s/τ=30s);
+god-engine-core --lib 154/154; check workspace --all-targets OK.
+
+### #590 — ✅ CIERRE IMPLEMENTADO: gen obi_zscore_threshold des-huerfanado con piso MEDIDO (Ola 15, 2026-09-30, Qoder)
+
+**Hallazgo (pendiente desde Ola 10):** el gen `obi_zscore_threshold` (rango [0.1, 3.0],
+default 1.0, con init/mutate/apply completos en el genoma) quedó sin consumidor cuando
+el renombre U-ERR-1 (8afcc677) eliminó `should_trigger_micro_scalp` — su único lector,
+que YA era código muerto (mea culpa Ola 8: 0 llamadores verificados). La evolución
+arrastraba el gen sin gradiente: peso muerto en el presupuesto del genoma.
+
+**Semántica original recuperada de 8afcc677^:** umbral mínimo del z-score CON SIGNO del
+OBI en la dirección del trade. El gate vivo (mi Ola 10) usaba el absoluto mágico 0.2.
+
+**Fix (Ola 15):** el piso del OBI en la única superficie de decisión pasa a ser
+MEDIDO + GENÓMICO:
+  - El core publica `obi_p80_medido` (AdaptiveQuantileEngine::dynamic_obi_threshold,
+    percentil-80 del OBI reciente del símbolo, piso 0.02, fallback 0.15) y
+    `obi_zscore_gene` (config clamp [0.1, 3.0]) al registro por moneda.
+  - `evaluate_for_coin` (flow_excitation_confluence): `|OBI| >= p80·gen` (piso mínimo
+    0.02; fallbacks: p80→0.15, gen→1.0).
+  - Por qué p80·gen y no un z gaussiano: la rareza que el gen anunciaba se mide
+    empíricamente contra la DISTRIBUCIÓN RECIENTE del propio símbolo — exigir el p80
+    (top-quintil del desbalance) es la versión honesta de «z ≥ 0.84» sin fabricar
+    normalidad que el libro no garantiza; el gen escala CUÁNTOS múltiplos del p80
+    se exigen. Adaptativo por símbolo/régimen, con gradiente evolutivo real.
+  - Delta de comportamiento con defaults: piso 0.15 vs el 0.2 mágico (ligeramente más
+    permisivo, ahora adaptativo). **T-1: cambio de gate a incluir en la próxima
+    re-certificación** (junto con #586/#588).
+
+**Verificación:** signal-engine 64/64 lib (1 contrato nuevo: gen 3.0 con p80 0.10
+bloquea OBI 0.25 que el 0.2 absoluto dejaba pasar; gen 0.5 lo deja disparar;
+fallback 0.15 sin telemetría mantiene el motor operando antes de que el p80 madure);
+god-engine-core 154/154; check workspace --all-targets OK.
+
+### #591 — ✅ IMPLEMENTADO: proyección espectral temporal en el motor de señales (Ola 16, 2026-09-30, Qoder — mandato directo del operador)
+
+**Hallazgo estructural:** el espectro temporal de 32 escalas vivía CONFINADO al
+núcleo — el motor de señales jamás lo leía (CERO claves espectrales en el registro).
+Diez motores votaban sobre micro-features del tick sin ninguna lectura del estado
+espectral del mercado: la dimensión temporal espectral que el sistema declara
+central era invisible para sus propios votantes.
+
+**Implementación (3 piezas):**
+  1. **Núcleo publica la proyección** (por moneda, sobre la MISMA masa canónica
+     `pesos_espectrales` — que integra observación D-742 y resolución CL-32; hecho
+     pub, sin recomputar, cero drift):
+     - `espectral_senal_proyectada` = Σ w_k·s_k / Σ w_k (consenso de momentum
+       ponderado por energía; s_k = tanh(z) de la escala);
+     - `espectral_concentracion` = 1 − razón de participación (Σw)²/(N·Σw²):
+       1 = un modo domina (señal limpia), 0 = masa difusa (ruido blanco);
+     - `espectral_masa_resuelta` = Σw_gated/Σw_bruto: cuánto espectro puede opinar.
+  2. **Nuevo motor** `signal_engine::proyeccion_espectral::ProyeccionEspectralEngine`:
+     voto = señal_proyectada · concentración ∈ [-1,1], con ABSTENCIÓN (0.0) si masa
+     < 0.25 (D-742: la proyección de escalas sin observar no es conocimiento),
+     sin telemetría o con no-finitos. `evaluate()` sin contexto de moneda = 0.0
+     (las proyecciones son per-moneda; una lectura global mezclaría símbolos).
+  3. **Registrado** en el `tensor_orchestrator` del core: 11º voto del consenso.
+
+**Física de la modulación:** un espectro CONCENTRADO (un modo dominante) respalda
+la dirección proyectada; un espectro DIFUSO (masa repartida) amortigua el voto hacia
+su media — la dirección de un ruido blanco no es información. La abstención en masa
+baja implementa D-742 del lado del consumidor.
+
+**T-1:** entra un voto nuevo al consenso tensorial (delta de comportamiento a incluir
+en la próxima re-certificación junto con #586/#588/#590).
+
+**Verificación:** signal-engine 68/68 lib (4 contratos nuevos: proyección exacta
+0.6·0.8=0.48, abstención en masa baja, abstención sin telemetría, amortiguación
+vendedora -0.5·0.4=-0.20); god-engine-core 154/154; quantum-arena 89/89; check
+workspace --all-targets OK.
+
+### #592 — ✅ IMPLEMENTADO: la deriva de τ* alimenta el crash_flux (Ola 17, 2026-09-30, Qoder — responde señalización de Claude)
+
+**Confirmación de la señalización:** AMBOS call sites de
+`SpectralRegimeField::from_spectrum` pasaban `(spec, None, 1.0)` — la deriva de la
+escala dominante (término de aceleración hacia lo rápido, 0.35 del crash_flux, el
+PESO MAYOR del indicador de crash-ness) jamás computaba. El crash_flux llevaba toda
+su vida con 3 de sus 4 coordenadas: marea adversa, colapso de entropía y
+anti-persistencia micro, sin la aceleración.
+
+**Por qué no bastaba pasar `prev` por evento (la objeción de Claude era correcta):**
+la normalización por-hora `Δln(τ*)·3.6e6/elapsed_ms` satura el clamp con CUALQUIER
+salto de τ* entre milisegundos (el feed mueve τ* órdenes de magnitud entre ticks):
+cablear ingenuo = accel_fast ≡ 1 por ruido.
+
+**Fix (ancla de régimen con cadencia):**
+  - `regime_drift_prev: Vec<(AtomicU64 bits ln τ*, AtomicU64 ts)>` por moneda en el
+    core (frío = 0);
+  - `referencia_de_regimen(bits, prev_ts, now)` — helper PURO y testeado: frío ⇒
+    sin previa; ancla fresca (<60 s) ⇒ deriva continua anclada normalizada por
+    tiempo real; ancla vencida (≥ CADENCIA_REGIMEN_MS = 60 000, una vela de
+    referencia) ⇒ se renueva. La deriva se mide ENTRE observaciones del régimen,
+    no entre ticks;
+  - ambos call sites cableados: cargan el ancla, computan, renuevan si venció,
+    llaman a from_spectrum con (prev, elapsed) reales.
+
+**T-1:** el crash_flux gana su término dominante — modula el margen de largos
+(`free_cap *= 1−0.95·crash_flux` en el core) y las ramas de veto del régimen
+(crash_flux>0.80 ± marea). Cambio de comportamiento de un modulador de riesgo:
+sumar a la re-certificación (con #586/#588/#590/#591).
+
+**Verificación:** contratos nuevos (2): referencia_de_regimen (frío/fresca/vencida/
+reloj-retrocedido) y la deriva viva (τ* migra e-fold abajo en 60 s ⇒ deriva
+negativa ⇒ crash_flux > 0; prev=None ⇒ drift 0 — el comportamiento viejo como
+testigo). Core 156/156, arena 90/90, signal-engine 68/68, workspace OK. Un E0425
+transitorio de signal-engine durante la compilación = edición concurrente de otra
+sesión (el check pasa limpio después).
+
+### #593 — ✅ IMPLEMENTADO: umbral del consejo — hueco [0.60, 0.80) unificado (Ola 18, 2026-09-30, Qoder — mandato directo del operador)
+
+**La decisión pendiente desde la Ola 14 queda implementada.** El defecto: la fusión
+D-431 co-despachaba candidatos como bandas independientes a |Δlnτ| ≥ 0.60, pero
+`find_resonant_slot` bloquea el apilado same-direction a < 0.80 — el segundo
+candidato same-direction en [0.60, 0.80) se despachaba y moría en el slot como
+colisión silenciosa (contable desde la Ola 14 vía `qo_slot_rechazo` razón 1).
+
+**La decisión del consejo (dos direcciones posibles, una rechazada):**
+  - RECHAZADA — aflojar el slot a 0.60: habría permitido apilar exposición
+    correlacionada en escalas vecinas (ratio de τ < 2.23), multiplicando el riesgo
+    de la misma apuesta contra la meta de crecimiento con tope de ruina (#588
+    acababa de restaurar la disciplina contraria).
+  - ADOPTADA — SUBIR el co-despacho same-direction de la fusión a 0.80: la fusión
+    arbitra a un candidato (superposición constructiva XLIV-10 / selección por
+    energía) en [0.60, 0.80); a ≥ 0.80 el despacho concurrente sigue. Las
+    direcciones OPUESTAS conservan 0.60 — el slot nunca colisiona por dirección
+    contraria y el despacho para coberturas queda íntegro.
+
+**Implementación:** helper puro `umbral_codespacho_armonico(misma_direccion) -> f64`
+(0.80 / 0.60) + wiring en la fusión (`umbral_despacho` por dirección del par).
+
+**T-1:** la semántica de despacho same-direction cambia en [0.60, 0.80) — sumar a la
+re-certificación (#586/#588/#590/#591/#592/#593).
+
+**Verificación:** contrato nuevo (el caso exacto del hueco, 30 s vs 60 s ⇒
+|Δlnτ| = ln 2 ≈ 0.693: same-direction YA NO co-despacha; el MISMO par opuesto SÍ).
+Core 157/157, check workspace --all-targets OK.
+
+---
+
+## #594 — Ola 20 (Qoder, 2026-09-30): τ dominante por HABILIDAD prequential medida
+
+- **Defecto** (abierto por CL, ciclo 6): `dominant_tau_ms` = argmax de energía
+  |w·s| en banda [30 s,12 h] (C-05/AGY-AUD-P10). La energía mide AMPLITUD, no
+  información: la escala resuelta más nerviosa ganaba el argmax y τ* se
+  degradaba a 30 s aunque su señal no predijera nada.
+- **Física**: cada escala acumula IC prequential
+  `E[s·r]/√(E[s²]·E[r²])` con olvido 1/64, donde s = señal publicada AL ARMAR
+  su bloque de τ (causal: no ve el retorno que la puntúa) y r = retorno
+  realizado del bloque que cierra. Madurez: 30 bloques (`MUESTRAS_SKILL_MADURAS`).
+- **Criterio**: τ* = escala observable de banda con IC > 0 máximo; sin
+  evidencia madura, respaldo argmax de energía (comportamiento anterior
+  intacto bit a bit). `state_at` interpolado: sin habilidad (un nodo no es
+  una escala de malla con bloques).
+- **Telemetría**: `coin.tau_habilidad` (IC de la escala elegida; > 0 = elegida
+  por habilidad; ≤ 0/0 = respaldo o sin evidencia) publicado junto a
+  dominant_tau_ms (sitio D-745) — contable para el consejo.
+- **Tests**: 3 contratos (madurez; habilidad gana a energía; respaldo conserva
+  y publica el IC de su escala). Arena 93/93, core 157/157, workspace check
+  MARKER:0 (warnings preexistentes).
+- **T-1**: τ* alimenta σ(τ) (D-754), kelly_at_tau, banda operable (#586),
+  proyección espectral (#591) y ancla de régimen (#592) — SUMAR a la
+  re-certificación acumulada (7º cambio de pipeline vivo).
+
+## #595 — Ola 20 (Qoder, 2026-09-30): la adopción hereda la edad del exchange
+
+- **Defecto** (abierto por CL): ambas rutas de adopción — `reconcile_arena`
+  y host FASE 5 — pasaban `now_ms` como `entry_time_ms`: una posición del
+  exchange con horas de vida nacía con edad 0 y el trailing, los gates de
+  edad y la evidencia de aprendizaje la trataban como recién nacida.
+- **Fix**: `updateTime` del exchange (cota inferior honesta de edad) con
+  guardia 0/desconocido/futuro → `now`. `reconciliation.rs`
+  (`remote_update_time`) + `god_engine.rs` FASE 5 (`pos.update_time`).
+- **Test**: `qo_595_la_adopcion_guarda_la_edad_del_exchange_no_la_del_arranque`
+  (pasaje del reloj + contratos de fuente en ambas rutas, estilo CL-16).
+- **T-1**: nulo en fixture (sin adopción); vivo sólo en arranques con
+  posición remota. No toca sizing ni gates.
+
+## #596 — Ola 20c (Qoder, 2026-09-30): censo de vetos — el registro XLVIII·C es HONESTO; entrada faltante #586 añadida
+
+- **Auditoría del auditor** (mandato: "que los vetos, bloqueos, límites y
+  rechazos tengan sentido"): el REGISTRO_VETOS (16 entradas, 4 tests de
+  enforcement) pasó el contraste completo:
+  - los 13 `test: Some(...)` trazan a tests REALES (mezclan convención
+    fn-name y contract-suite-name — trazables los 13, cero deriva de
+    renombres);
+  - coherencia test↔deuda verificada por su propio test;
+  - `buscar()` operativo; retiros con linaje (V-LOGIC-003/004);
+  - 17 = 16 entradas + 1 declaración de campo (sin hueco real).
+- **Hallazgo y cierre**: la puerta de banda operable (#586, Qoder Ola 11) —
+  único gate de RECHAZO nuevo desde XLVIII·C — no tenía entrada. Añadida
+  V-LOGIC-012 (clase Lógica, activa, test
+  `qo_586_puerta_aplasta_tau_inoperable_y_deja_pasar_la_operable` + gemelos
+  en deuda documentada). Registry 4/4, risk-engine 107/107.
+- Pendiente de censo para próximas olas: los umbrales del despacho (#593
+  co-despacho) NO son veto (arbitración de slot) — no llevan entrada; si
+  alguna vez veta, se registra.
+
+---
+
+## PROPUESTAS DE CONSEJO (Qoder, Ola 20d, 2026-09-30) — integraciones teóricas, PENDIENTES DEL OPERADOR
+
+Ninguna implementada: cada una entra por ola propia con su T-1 si el
+operador la manda. Zonas respetadas (Codex/RMT, CL/trailing, AGY/Hodge).
+
+**P-A · Cramér–Lundberg (teoría de ruina actuarial) — RECOMENDADA.**
+`ruin.rs` usa ruina de apostador simétrica (p=q=½) + tope de racha: la
+distribución de pérdidas REAL no es simétrica ni Bernoulli (asimetría TP/SL,
+fricción, colas). Propuesta: estimar la distribución de siniestros X
+(|stop|·qty por cierre) con EWMA de cola sobre cierres vivos, resolver el
+coeficiente de ajuste R de Lundberg (E[e^{RX}]=1, Newton 1-D) y dimensionar f
+con la cota clásica ψ(u) ≤ e^{−Ru} ⇒ f tal que e^{−Ru(f)} ≤ ε del dueño.
+Falsación: en tapes medidos, la frecuencia empírica de ruina por bootstrap
+debe quedar bajo la cota e^{−Ru}. Zona: risk-engine/ruin.rs+kelly. T-1:
+cambia el envelope de sizing (consumidores de streak_ruin_cap).
+
+**P-B · Gärtner–Ellis / Legendre: espectro multifractal f(α) — RECOMENDADA.**
+multifractal.rs acumula ζ(q) con q∈{1,2} y χ por concavidad (XLIV-6). La
+teoría canónica: τ(q) = (q−1)ζ... con rejilla q∈[−4,4], f(α) = qα−τ(q)
+(Legendre); el ANCHO de f(α) es LA medida de intermitencia (más rica que χ)
+y la fórmula de Halsey la valida contra los propios sumadores. Propuesta:
+generalizar los sumadores a q-grid (los sum_q ya pagan la deriva, AGY-003)
+y publicar ancho f(α) como feature de régimen (observación, sin política
+primero). Falsación: f(α) de un monofractal (fBm con H fijo) debe tener
+ancho ~0; caminata aleatoria → α=1/2 puntual. Zona: feature-engine
+(colisión baja). T-1: ninguna hasta cablear política.
+
+**P-C · Curvatura de Ricci (Ollivier) sobre el grafo de correlación —
+RECOMENDADA tras P-B.** La matriz de correlación viva (solver Jacobi de
+Codex) define un grafo; κ_Ollivier por arista (ball-probe discreta, O(d²)
+por arista con d~8 activos) mide la FRAGILIDAD GEOMÉTRICA del universo:
+κ muy negativa concentrada = canales de contagio aunque ρ moderado —
+complementa la vorticidad de Hodge (AGY P06 mide rotación del flujo; Ricci
+mide la forma del espacio mismo). Indicador: κ_min + concentración de
+curvatura negativa → escalamiento de tope de grupo (misma familia que
+systemic_rho). Falsación: grafo de ruido esférico → κ≈0 uniforme; estrella
+de paresperfectamente correlacionados → κ arista ≪ 0. Zona: Codex
+(random_matrix). T-1: observación primero.
+
+**P-D · Parada óptima de frontera libre (trailing continuo) — CONDICIONADA
+a CL-35c.** El trailing es heurística; el stopping óptimo perpetuo con
+GBM tiene frontera b = λ⁺/(λ⁺−1)·S (λ⁺ raíz de la ecuación característica
+con σ(τ) espectral, r, coste c) — el trailing con σ(τ) del banco pasa de
+distancia fija a frontera autoajustada. CL-35c (PR #26, draft) lleva
+"trailing al horizonte" discreto: ESTA es su extensión continua, no
+duplicado — proponerla a Claude como siguiente paso, no competir.
+Falsación: con σ constante y sin costes, la frontera debe reproducir la
+perpetua clásica (test analítico exacto). Zona: CL/host. T-1: trailing
+cambia la distribución de salidas — obligatorio.
+
+Criterio del consejo aplicado: cada propuesta tiene (i) objeto matemático
+canónico, (ii) punto de integración existente, (iii) test de falsación
+analítico o bootstrap, (iv) zona propia, (v) coste T-1 declarado.

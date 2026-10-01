@@ -17,7 +17,12 @@ concurrency:
 jobs:
   replay-contracts:
     runs-on: windows-2022
-    timeout-minutes: 45
+    # LX (GLM, 2026-09-30): 45 → 90. El CX verde tardó 26m; el ciclo 7 de
+    # Claude (PR#26) y el MP (PR#25) golpearon el techo de 45m y fueron
+    # CANCELADOS mid-test (anotación "exceeded the maximum execution time"),
+    # no fallaron tests. La suite creció (~1861 locales); el espíritu del
+    # workflow (CX, Codex) se conserva — sólo se le da aire.
+    timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: '2'
       CARGO_INCREMENTAL: '0'
