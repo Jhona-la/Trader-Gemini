@@ -207,6 +207,11 @@ pub struct CoinArena {
     /// dimensionado y la gestión de la MISMA posición vivían en horizontes
     /// distintos. 0 = el espectro aún no ha arrancado.
     pub dominant_tau_ms: AtomicF64,
+    /// #594 — IC prequential MEDIDO de la escala τ* publicada (habilidad
+    /// direccional señal→retorno del bloque propio). τ* sólo fue elegida
+    /// por habilidad si este valor es > 0; 0.0 o negativo = respaldo de
+    /// energía o escala sin evidencia — contable para el consejo.
+    pub tau_habilidad: AtomicF64,
     pub hurst_exponent: AtomicF64,
     /// S-7 (ESPECTRALIZACIÓN): Hurst multifractal SELECCIONADO POR τ — el
     /// H de la escala que el motor opera AHORA (micro si τ<2min, meso si
@@ -438,6 +443,7 @@ impl CoinArena {
             ml_prob: AtomicF64::new(w_base),
             current_atr: AtomicF64::new(0.0),
             dominant_tau_ms: AtomicF64::new(0.0),
+            tau_habilidad: AtomicF64::new(0.0),
             sigma_forecast: [
                 AtomicF64::new(0.0),
                 AtomicF64::new(0.0),

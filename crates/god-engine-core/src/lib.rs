@@ -1683,6 +1683,13 @@ impl GodEngineCore {
                     self.arena.coins[coin_id]
                         .dominant_tau_ms
                         .store(spec.dominant_tau_ms, Ordering::Relaxed);
+                    // #594: habilidad medida de la escala elegida (≤ 0 si τ*
+                    // vino del respaldo de energía o no hay evidencia —
+                    // contable para el consejo).
+                    let habilidad = spec.habilidad_en(spec.dominant_tau_ms).unwrap_or(0.0);
+                    self.arena.coins[coin_id]
+                        .tau_habilidad
+                        .store(habilidad, Ordering::Relaxed);
                 }
                 self.arena.update_market_data(
                     coin_id,
