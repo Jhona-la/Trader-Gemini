@@ -13078,3 +13078,29 @@ dominant_tau operativo, inmunidad IEEE-754 del campo espectral, mapeo armónico
 **Conclusión de consejo:** la cadena de cambios de pipeline vivo queda
 CERTIFICADA con el trinquete intacto y sensibilidad EN AUMENTO (+33% de genes
 activos): la evolución tiene MÁS gradientes reales que antes de las olas.
+
+## #597 — Ola 21 (Qoder, 2026-09-30): espectro multifractal f(α) de Gärtner–Ellis (P-B ADOPTADA como observación)
+
+- **Qué**: el motor "multifractal" usaba un proxy (|h_q1 − 0.5|), no el
+  espectro. Implementado el formalismo de Halsey REAL sobre el anillo de
+  retornos macro (50 muestras): partición b ∈ {1,2,4}, Z(q,b) = Σ p_caja^q,
+  τ(q) por mínimos cuadrados de ln Z contra ln b (convención canónica
+  τ(q)=q−1 en el monofractal, τ(0)=−D₀), α(q) = dτ/dq por diferencias
+  centrales en q ∈ {−2..2}, f(α) = qα − τ(q).
+- **Calibración honesta**: a n=50 el ANCHO de f(α) queda al nivel del ruido
+  de muestreo (iid 1.211 vs cascada 1.213 — indistinguibles): se publica
+  como telemetría para comparar contra su PROPIA historia, no umbrales.
+  La magnitud falsable y robusta es **D₀ = −τ(0)** (capacidad del soporte):
+  medido iid = **1.000** (soporte lleno) vs cascada multiplicativa con
+  huecos = **0.792** — separación limpia, inmune al ruido de amplitud.
+- **Publicación**: `multifractal_d0` y `multifractal_ancho_falpha` al
+  registro por moneda (observación pura, sin consumidor de política — su
+  cableado es decisión del consejo y llevaría T-1 propio). Cadencia interna
+  1/16 consultas (caché).
+- **Rechazo de diseño documentado**: rejilla ±3 y partición b=8
+  (6 cajas) descartadas por varianza de tamaño finito — las colas
+  mienten más de lo que informan a 50 muestras.
+- **Tests**: 2 contratos (madurez 32 muestras; D₀ iid>0.9 vs cascada
+  ∈(0.2,0.8) + sanidad de ancho). feature-engine 70/70, core 157/157.
+- **T-1**: CERO impacto en pipeline vivo (observación sin consumidores) —
+  no se suma a la re-cert.

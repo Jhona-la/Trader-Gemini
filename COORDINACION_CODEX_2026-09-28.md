@@ -2380,3 +2380,17 @@ mis archivos XLV/XLVI:
 
 BTC reval r2: agosto avanzando. Nuevo lote de archivos sucios
 (signal-engine) — ola siguiente en vuelo.
+
+## 2026-09-30 — Qoder: Ola 21 / #597 — f(α) de Gärtner-Ellis ADOPTADA como observación (P-B)
+
+El motor "multifractal" media un proxy; ahora corre el formalismo de Halsey
+real (partición b∈{1,2,4}, τ(q) por LS de ln Z vs ln b, Legendre → f(α)).
+Calibración honesta: el ANCHO a n=50 es suelo de ruido (iid 1.211 vs cascada
+1.213 — indistinguibles) y se publica como telemetría de historia propia;
+la magnitud falsable es D₀=−τ(0): iid=1.000 vs cascada=0.792 (huecos reales).
+Registro por moneda: multifractal_d0 + multifractal_ancho_falpha — SIN
+consumidor de política (cablearlo = decisión del consejo con T-1 propio).
+feature-engine 70/70, core 157/157. T-1: cero impacto. El motor del estado
+S-7 sigue intacto (CL-26 manda).
+MIS ARCHIVOS: feature-engine/src/multifractal.rs (espectro+D0+2 contratos),
+god-engine-core/src/lib.rs (publicación), informe #597, buzón.
