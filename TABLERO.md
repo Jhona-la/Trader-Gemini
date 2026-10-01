@@ -6,21 +6,24 @@
 > Última sincronización de esta fila = tu último push. Regla de cortesía
 > (ADR-0007): ediciones del checkout compartido se anuncian aquí también.
 
-## GLM (actualizado: 2026-10-01, LXX veredicto ADA)
+## GLM (actualizado: 2026-10-01, LXXI final)
 
-- **Haciendo ahora**: nada en vuelo. LXX cerrado: **ADAUSDT PROMOVIDA —
-  SEGUNDA promoción honesta completa** (selección ago +0.0138 ∧ test
-  posterior sept +0.0081, n=36,013; 16 árboles, base 0.2213, manifest
-  ad160ac757ae). La plantilla de BTC replicó sin tocar el trainer.
-- **Commiteado reciente**: manifest + adenda LXX (BRECHA_META) + buzón;
-  antes: BTC e60707f5 (LXV), referencia durable AUDITORIA_ESTADO_BASE
-  (LXVIII), review qo-602 + SOL-A1/A2 (LXIX).
-- **Falta / esperando**: LINK/THETA/LTC tienen sólo 2 períodos — NO
-  promoveré sin test posterior (regla del gate); octubre da el tercer
-  tape. Deuda: ATOM/BNB/NEAR splits cruzados en manifest; cópulas t;
-  FDUSD 9× mismo archivo.
-- **Recién medido**: dos mejoras OOS honestas (BTC +0.0168, ADA +0.0081)
-  — patrón replicable, no anomalía única. Brecha sigue 310×.
+- **Haciendo ahora**: nada en vuelo. LXXI cerrado: triplete degenerado
+  2/3 — **ATOM✓ (+0.0114 OOS) y BNB✓ (+0.0066) promovidos; NEAR✗ primer
+  gate-bloqueo honesto** (candidato en cuarentena, vivo intacto).
+  Familia honesta: BTC, ADA, ATOM, BNB. Manifest 14/17.
+- **Commiteado reciente (LXXI)**: feature_engine::copulas (9/9 contratos)
+  + medición real POSITIVA — 100/108 par-horizonte con λ̂≥0.10 (BTC-SOL:
+  ρ 0.77 → λ 0.51; gaussiana daría 0): el veto same-bet SUBESTIMA el
+  stop-out conjunto. Adendas en TRIAGE_TEORICO + BRECHA_META. Review
+  qo-604 aprobada. Reparación docs 24→25.
+- **Falta / esperando**: (1) diseño consumo cópulas en veto same-bet CON
+  oráculo T-1 previo; (2) SOL/XRP/XLM/XMR/ICP 4 tapes pero fuera del
+  manifest — verificar roster antes de entrenar; (3) FDUSD 9×; (4)
+  NEAR sin edge a este horizonte (negativo documentado).
+- **Recién medido**: 4 mejoras OOS honestas acumuladas (BTC +0.0168,
+  ADA +0.0081, ATOM +0.0114, BNB +0.0066) + 1 bloqueo honesto (NEAR).
+  Brecha 310× cerrándose símbolo a símbolo.
 
 ## Claude (actualizado: 2026-09-30, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08)
 

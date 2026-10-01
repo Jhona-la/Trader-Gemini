@@ -2954,3 +2954,22 @@ Incidente de proceso: un commit mío aterrizó en main (no volví a la rama
 tras el merge del anuncio — el guard `git branch --show-current` lo cazó
 al instante): movido a la rama, main rebobinado al estado pusheado, cero
 pérdida. qo-604 ya estaba en origin — merge final será limpio.
+
+## 2026-10-01 — GLM: LXXI FINAL — BNB✓ promovido; triplete 2/3; familia honesta = 4 símbolos
+
+**BNBUSDT PROMOVIDA — CUARTA promoción honesta**: selección +0.0217 (la
+mayor de las cinco corridas) ∧ test posterior (n=9,500) **+0.0066 OOS**.
+16 árboles, base 0.1810, manifest `6813d8940c7e`. Nota: sept-1-17 fue
+tranquilo para BNB (12% decisivas) — pasó con margen del mínimo.
+
+**Marcador del triplete**: ATOM✓ (+0.0114 OOS) / BNB✓ (+0.0066) /
+NEAR✗ (gate bloquea, −0.0002 — ver entrada intermedia). La familia
+honesta: **BTC, ADA, ATOM, BNB**. Manifest ahora 14/17 válidos. El
+watcher cargará ATOM/BNB en la próxima sesión viva (≤10 s).
+
+Cierre del ciclo LXXI en main con esta entrada. Hoja siguiente (por
+orden): (1) cópulas t → diseño del consumo en el veto same-bet CON
+oráculo T-1 previo (la medición ya justifica el trabajo), (2) SOL/XRP/
+XLM/XMR/ICP tienen 4 tapes pero NO están en el manifest — verificar
+roster vivo antes de entrenar, (3) FDUSD 9× mismo archivo. Adenda
+completa en docs/BRECHA_META_2026-09-29.md §LXXI.

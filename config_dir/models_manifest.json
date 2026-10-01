@@ -58,13 +58,13 @@
     {
       "key": "BNBUSDT_MOTOR",
       "archivo": "BNBUSDT_MOTOR.json",
-      "sha256": "5cf715994b330f08f7c6862c36e2f6fc1e46c974c4f727a1a7ec2fa14ca62ebc",
-      "bytes": 86934,
-      "base": 0.18434131156841513,
-      "n_arboles": 36,
+      "sha256": "6813d8940c7e560d4888bf36bd35e4f8ed047bbcf5eb9a3e4f5b01060476b853",
+      "bytes": 45872,
+      "base": 0.1810006600480179,
+      "n_arboles": 16,
       "legible": true,
-      "valido_estructuralmente": false,
-      "error_estructural": "modelo <from_data>: split has missing or cross-tree child"
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "BTCFDUSD_MOTOR",
@@ -188,5 +188,5 @@
       "error_estructural": null
     }
   ],
-  "generado_ms": 1790897781275
+  "generado_ms": 1790899032796
 }
