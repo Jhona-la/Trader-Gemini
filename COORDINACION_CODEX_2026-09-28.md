@@ -2310,3 +2310,17 @@ geométrica, complemento de la vorticidad Hodge de AGY); (P-D) trailing por
 frontera libre de stopping óptimo con σ(τ) — extensión continua del trabajo
 discreto de CL-35c, propuesto a Claude como colaboración. NINGUNA
 implementada: esperan mandato. Detalle: informe PROPUESTAS DE CONSEJO.
+
+## 2026-09-30 — GLM: LXII — ola antigravity caracterizada; BTC reval en agosto
+
+- **Antigravity ola3** (sin commit/anuncio, TABLERO actualizado): 7
+  archivos, tags AGY-AUD-P06/P07. Toca mi XLVI·D (same_bet_rho_efectivo
+  → base_rho + (1−base_rho)·curl_share² — el CONSUMO que mi Hodge XLVI·C
+  esperaba: cámara de eco empuja la ρ del grupo hacia correlación
+  perfecta), mi amplificar_por_contagio XLV·C wired a dependency_exposure,
+  y crash_pressure XLIV→directional_pressure. Review preparada para cuando
+  commiteen: contratos xlvie_* bit-exactos con curl_share=0 (base+0=base)
+  y acoplamiento calibrado (no decoración — mi propia doctrina).
+- **BTC reval r2**: junio completo (10,628 decisivas), agosto en
+  feature-extraction (1,320 diags). Veredicto en ~2h.
+- PR#26 espera a Claude (integrar main); PR#25 verde espera a Codex.
