@@ -1624,6 +1624,85 @@ mod tests {
         assert_eq!(spec.habilidad_en(spec.dominant_tau_ms), None);
     }
 
+    /// #601 — MEDICIÓN Monte Carlo del sesgo de selección que CL dejó
+    /// «inferido, sin medir» sobre #594/#599. Nulo: ICs de puro ruido
+    /// (pares s,r independientes) en las escalas de BANDA elegibles. El
+    /// criterio pre-#599 (IC > 0) selecciona ruido con probabilidad
+    /// 1 − 0.5^k (k = escalas maduras de banda; analítica ≈ 93.75% con
+    /// k = 4); el umbral t ≥ 2 la baja a 1 − (1−0.0228)^k (analítica
+    /// ≈ 8.8%). Las escalas comparten el precio real (ICs correlacionados),
+    /// así que este nulo independiente es la COTA SUPERIOR conservadora
+    /// del sesgo. Determinista (LCG fijo).
+    #[test]
+    fn qo_601_medicion_monte_carlo_del_sesgo_de_seleccion() {
+        fn xorshift(estado: &mut u64) -> f64 {
+            *estado ^= *estado << 13;
+            *estado ^= *estado >> 7;
+            *estado ^= *estado << 17;
+            ((*estado >> 11) as f64) / ((1u64 << 53) as f64)
+        }
+        let gauss = |estado: &mut u64| {
+            let u1 = xorshift(estado).max(1e-12);
+            let u2 = xorshift(estado);
+            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+        };
+        const ESCALAS_BANDA: usize = 4; // índices 18..=21 dentro de [30 s, 12 h]
+        const N: u64 = MUESTRAS_SKILL_MADURAS + 3;
+        let ensayos = 4000usize;
+        let (mut sin_umbral, mut con_umbral) = (0usize, 0usize);
+        let mut lcg = 0xA0761D6478BD642Fu64;
+        let umbral = umbral_ic_significativo(N).expect("33 bloques");
+        for _ in 0..ensayos {
+            let (mut positiva, mut significativa) = (false, false);
+            for _ in 0..ESCALAS_BANDA {
+                let (mut ws, mut wr, mut wsr) = (0.0f64, 0.0f64, 0.0f64);
+                for _ in 0..N {
+                    let s = gauss(&mut lcg);
+                    let r = gauss(&mut lcg);
+                    ws += s * s;
+                    wr += r * r;
+                    wsr += s * r;
+                }
+                let ic = wsr / (ws * wr).sqrt();
+                if ic > 0.0 {
+                    positiva = true;
+                }
+                if ic >= umbral {
+                    significativa = true;
+                }
+            }
+            if positiva {
+                sin_umbral += 1;
+            }
+            if significativa {
+                con_umbral += 1;
+            }
+        }
+        let tasa_sin = sin_umbral as f64 / ensayos as f64;
+        let tasa_con = con_umbral as f64 / ensayos as f64;
+        eprintln!(
+            "[qo-601] selección espuria en puro ruido (k=4, n=33): pre-#599 (IC>0) = {:.1}% | post-#599 (t≥2) = {:.1}% (analítica: 93.75% / 8.8%)",
+            100.0 * tasa_sin,
+            100.0 * tasa_con
+        );
+        assert!(
+            tasa_sin >= 0.90,
+            "el criterio IC>0 debe seleccionar ruido casi siempre: {:.3}",
+            tasa_sin
+        );
+        assert!(
+            tasa_con <= 0.15,
+            "el umbral t≥2 debe dejar la selección espuria en minoría: {:.3}",
+            tasa_con
+        );
+        assert!(
+            tasa_con < 0.5 * tasa_sin,
+            "el umbral debe reducir el sesgo al menos 2x: {:.3} vs {:.3}",
+            tasa_con,
+            tasa_sin
+        );
+    }
+
     #[test]
     fn qo_599_el_maximo_de_ics_de_ruido_no_opina_sin_significancia() {
         // Umbral autoajustable: 2/√(n−3), None sin muestras suficientes.
