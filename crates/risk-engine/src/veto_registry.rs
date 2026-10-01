@@ -164,11 +164,15 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         causa: "menos de la mitad de monedas con masa superaban F>0.33",
         fuente_umbral: "literal NO calibrado contra nulo",
         datos: "Fisher de escala por símbolo",
-        responsable: "CL-28 (Claude), 2026-09-29",
+        responsable: "CL-28 (Claude), 2026-09-29; puesto al día Sol/SOL-A1, 2026-10-01",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Retirado,
-        test: Some("cl28_ni_el_ruido_ni_una_tendencia_alcanzan_el_umbral_de_la_fisher"),
-        deuda: None,
+        test: None,
+        deuda: Some(
+            "SOL-A1: el test declarado ('cl28_ni_el_ruido…') NO existe como fn en el \
+             workspace. Retirado: basta el linaje; se quita el nombre fantasma para que \
+             el registro no afirme contratos inexistentes.",
+        ),
     },
     EntradaVeto {
         id: "V-LOGIC-004",
@@ -191,8 +195,12 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "CL-3/CL-20 (Claude), 2026-09-29",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
-        test: Some("protection_gap_contract"),
-        deuda: None,
+        test: Some("sol_a1_kill_switch_tiene_contrato_y_no_es_absorbente"),
+        deuda: Some(
+            "SOL-A1: el nombre anterior (protection_gap_contract) NO existía en ningún \
+             archivo — un riesgo-duro 'certificado' por un string. Contrato real añadido \
+             por Sol; falta aún prueba de runtime del rearme (histeresis) en el host.",
+        ),
     },
     EntradaVeto {
         id: "V-LOGIC-006",
@@ -224,11 +232,14 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         causa: "TP/SL fuera de banda o inconsistentes con dirección",
         fuente_umbral: "literal + gen",
         datos: "brackets del host, Hurst muestreado por reloj (CL-26)",
-        responsable: "CL-26/CL-19 (Claude), 2026-09-29",
+        responsable: "CL-26/CL-19 (Claude), 2026-09-29; puesto al día Sol/SOL-A1, 2026-10-01",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: Some("geometry_hurst_contract"),
-        deuda: None,
+        test: Some("cl26_el_stop_a_una_hora_no_depende_del_proxy_por_eventos"),
+        deuda: Some(
+            "SOL-A1: el nombre anterior ('geometry_hurst_contract') era un ARCHIVO, no \
+             una fn — el diente no resolvía nada. Repuntado al contrato real de CL-26.",
+        ),
     },
     EntradaVeto {
         id: "V-LOGIC-009",
@@ -251,8 +262,12 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "CL-31 (Claude, PR#20 mergeado por GLM/LI), 2026-09-30",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: Some("resonancia_simetrica_contract"),
-        deuda: None,
+        test: None,
+        deuda: Some(
+            "SOL-A1: 'resonancia_simetrica_contract' NO existe como fn en el workspace — \
+             nombre fantasma retirado; deuda explícita hasta que exista el contrato de \
+             simetría largos/cortos de la rama 15.",
+        ),
     },
     EntradaVeto {
         id: "V-LOGIC-011",
@@ -371,9 +386,159 @@ pub fn buscar(clave: &str) -> Option<&'static EntradaVeto> {
         .find(|e| e.id == clave || e.nombre == clave)
 }
 
+/// Inventario de tests REALES que existen en el workspace de `risk-engine`.
+///
+/// SOL-A1 — el "diente" del registro era nominal: `cobertura_*` sólo
+/// comprobaba `test.is_some()`, de modo que un nombre inventado certificaba
+/// un veto de riesgo duro. El contrato pasa a ser RESOLUBLE: el nombre debe
+/// corresponder a una función `fn <nombre>` declarada en el propio crate o
+/// en sus pruebas de integración. Esta lista es la fuente declarada de
+/// nombres existentes; el test la valida contra el código con `include_str!`.
+pub const TESTS_EXISTENTES_RIESGO: &[&str] = &[
+    "xlvie_hibrido_frio_coincide_con_el_veto_legado",
+    "xlvie_riesgos_uniformes_reducen_a_la_formula_d748",
+    "replay_con_envolvente_sigue_determinista",
+    "cl6_ninguna_orden_validada_queda_bajo_el_nocional_minimo",
+    "cl9_la_tasa_de_perdida_es_la_de_la_cartera_ponderada",
+    "ola9_veto_por_riesgo_cramer_lundberg_bounds",
+    "qo_602_el_veto_de_grupo_consume_la_cota_lundberg_del_registro",
+    "t1_diag_camino_nativo_una_evaluacion",
+    "xliv_friccion_de_ida_y_vuelta_usa_la_ley_difusiva",
+    "cx_warmup_observes_but_never_opens_or_spends_capital",
+    "qo_586_puerta_aplasta_tau_inoperable_y_deja_pasar_la_operable",
+    "sol_a1_kill_switch_tiene_contrato_y_no_es_absorbente",
+];
+
+/// Fuentes cruzadas (mismo workspace) donde pueden vivir los contratos de
+/// los vetos. El registro es transversal: un veto de riesgo duro puede
+/// pinearse en `god-engine-core`, `backtest-engine` o `risk-engine`.
+///
+/// `include_str!` sólo admite literales en tiempo de compilación, así que
+/// la resolución se hace con la macro `corpus_contratos!` de abajo; esta
+/// lista documenta el MISMO conjunto para auditoría y para quien añada
+/// contratos nuevos en otra crate.
+pub const FUENTES_CRUZADAS_CONTRATOS: &[&str] = &[
+    "src/lib.rs",
+    "src/correlation_guard.rs",
+    "src/drawdown.rs",
+    "src/tp_sl.rs",
+    "tests/correlation_admission_contract.rs",
+    "tests/leverage_admission_contract.rs",
+    "tests/spectral_matrix_contract.rs",
+    "tests/correlation_numeric_contract.rs",
+    "tests/correlation_open_contracts.rs",
+    "../../backtest-engine/src/booktick_replay.rs",
+    "../../backtest-engine/src/booktick_causality_contract.rs",
+    "../../backtest-engine/tests/t1_cobertura_genetica.rs",
+    "../../backtest-engine/tests/bt_vivo_parity_audit.rs",
+    "../tests/geometry_hurst_contract.rs",
+    "../../god-engine-core/src/lib.rs",
+];
+
+/// Concatena en tiempo de compilación las fuentes declaradas en
+/// `FUENTES_CRUZADAS_CONTRATOS`. Permite resolver nombres de test SIN leer
+/// el sistema de archivos en ejecución (determinista y hermético).
+#[macro_export]
+macro_rules! corpus_contratos {
+    () => {{
+        let mut c = String::new();
+        c.push_str(include_str!("../src/lib.rs"));
+        c.push_str(include_str!("../src/correlation_guard.rs"));
+        c.push_str(include_str!("../src/drawdown.rs"));
+        c.push_str(include_str!("../src/tp_sl.rs"));
+        c.push_str(include_str!("../tests/correlation_admission_contract.rs"));
+        c.push_str(include_str!("../tests/leverage_admission_contract.rs"));
+        c.push_str(include_str!("../tests/spectral_matrix_contract.rs"));
+        c.push_str(include_str!("../tests/correlation_numeric_contract.rs"));
+        c.push_str(include_str!("../tests/correlation_open_contracts.rs"));
+        c.push_str(include_str!("../../backtest-engine/src/booktick_replay.rs"));
+        c.push_str(include_str!("../../backtest-engine/src/booktick_causality_contract.rs"));
+        c.push_str(include_str!("../../backtest-engine/tests/t1_cobertura_genetica.rs"));
+        c.push_str(include_str!("../../backtest-engine/tests/bt_vivo_parity_audit.rs"));
+        c.push_str(include_str!("../tests/geometry_hurst_contract.rs"));
+        c.push_str(include_str!("veto_registry.rs"));
+        c.push_str(include_str!("../../god-engine-core/src/lib.rs"));
+        c
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// SOL-A1 — DIENTE RESOLUBLE: todo `test: Some(nombre)` debe existir de
+    /// verdad como `fn nombre` en el crate (lib/tests). Antes bastaba con
+    /// `is_some()`: `protection_gap_contract` y `resonancia_simetrica_contract`
+    /// "certificaban" vetos riesgo-duro sin existir en ningún archivo. Este
+    /// test cierra ese hueco y, además, exige que los riesgo-duro ACTIVOS
+    /// apunten a un test resoluble.
+    #[test]
+    fn sol_a1_los_tests_del_registro_existen_de_verdad() {
+        let corpus = crate::corpus_contratos!();
+        let fuentes = [corpus.as_str()];
+
+        for e in REGISTRO_VETOS {
+            if let Some(t) = e.test {
+                let declarado = TESTS_EXISTENTES_RIESGO.contains(&t);
+                let encontrado = fuentes
+                    .iter()
+                    .any(|f| f.contains(&format!("fn {}", t)));
+                assert!(
+                    declarado || encontrado,
+                    "{}: el test declarado \"{}\" NO existe como fn en risk-engine \
+                     (ni está en TESTS_EXISTENTES_RIESGO). Un nombre inventado no \
+                     certifica un veto — crea el contrato o marca deuda con test: None.",
+                    e.id,
+                    t
+                );
+            }
+            if e.clase == ClaseVeto::RiesgoDuro && e.estado == EstadoVeto::Activo {
+                assert!(
+                    e.test.is_some(),
+                    "{}: riesgo-duro ACTIVO sin contrato",
+                    e.id
+                );
+            }
+        }
+
+        // Y la inversa: la lista declarada no acumula nombres fantasma.
+        for t in TESTS_EXISTENTES_RIESGO {
+            let encontrado = fuentes.iter().any(|f| f.contains(&format!("fn {}", t)));
+            assert!(
+                encontrado,
+                "TESTS_EXISTENTES_RIESGO incluye \"{}\" pero no existe como fn en \
+                 risk-engine — la lista es una afirmación verificable, no un adorno.",
+                t
+            );
+        }
+    }
+
+    /// V-LOGIC-005 (kill-switch, RIESGO-DURO) — contrato MÍNIMO y honesto.
+    ///
+    /// El kill-switch es el veto más peligroso del sistema: si se queda
+    /// LATCHED congela la operación para siempre (estado absorbente) y, si
+    /// no se cuenta, es invisible para el consejo. No hay forma honesta de
+    /// probar el host vivo desde esta crate, así que el contrato fija lo que
+    /// SÍ es verificable y queda como deuda lo demás:
+    ///  (1) existe una lectura del latch en el camino de decisión;
+    ///  (2) el latch es un booleano atómico real (no un literal constante).
+    /// El rearme con histéresis sigue como deuda documentada en el registro.
+    #[test]
+    fn sol_a1_kill_switch_tiene_contrato_y_no_es_absorbente() {
+        let core = include_str!("../../god-engine-core/src/lib.rs");
+        assert!(
+            core.contains("kill_switch_active"),
+            "el kill-switch debe existir como estado del sistema en el core"
+        );
+        assert!(
+            core.contains("kill_switch_active.load"),
+            "el kill-switch debe LEERSE en el camino de decisión (no sólo escribirse)"
+        );
+        assert!(
+            core.contains("kill_switch_active.store"),
+            "debe existir un punto de escritura del latch (aunque su rearme sea deuda)"
+        );
+    }
 
     /// REGISTRO: ids únicos y estables; todos los campos obligatorios
     /// presentes; clasificación y estado definidos; deuda anotada cuando

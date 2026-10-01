@@ -1176,6 +1176,26 @@ impl RiskEngine {
         let safe_limit =
             crate::capital_regime::lerp(standard_safe_limit, micro_safe_limit, micro_w_alloc);
         if final_margin > safe_limit {
+            // SOL-A2 — el "rescate" de margen era SILENCIOSO: reducía el
+            // tamaño evaluado y, si hacia falta, SUBÍA el apalancamiento para
+            // seguir alcanzando el nocional mínimo, sin dejar rastro. El
+            // invariante terminal de abajo lo re-verifica, pero el consejo no
+            // podía medir cuántas órdenes se redimensionan ni por qué. No
+            // cambio la matemática: la hago AUDITABLE por moneda.
+            // El cociente se mide ANTES de mutar: el margen pedido frente al
+            // techo que se le impone (1,0 = sin recorte; <1 = recorte real).
+            let cociente_recorte = (safe_limit / final_margin.max(1e-12)).min(1e6);
+            let previo = arena
+                .registry
+                .get_for_coin_or(coin_id, "sol_a2_margen_reducido", 0.0);
+            arena
+                .registry
+                .set_for_coin(coin_id, "sol_a2_margen_reducido", previo + 1.0);
+            arena.registry.set_for_coin(
+                coin_id,
+                "sol_a2_margen_reducido_cociente",
+                cociente_recorte,
+            );
             final_margin = safe_limit;
             if final_margin > 0.0 && final_margin * dynamic_leverage < safe_min_notional {
                 // CL-6: el apalancamiento ENTERO que alcanza el mínimo es el
