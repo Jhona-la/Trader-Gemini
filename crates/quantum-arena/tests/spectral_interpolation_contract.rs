@@ -18,9 +18,22 @@ fn interpolated_observables_do_not_commute_with_nonlinear_maps() {
     assert!((state.signal - state.momentum_z.tanh()).abs() > 0.25);
 }
 
+/// CL-35: sin datos no hay nada observado y la masa es 0 (D-742). El contrato
+/// fija el álgebra de la interpolación sobre masas conocidas, así que primero
+/// se observa la malla: 20 000 s de precio constante con un evento por segundo
+/// dejan la masa del núcleo y la fracción resuelta en 1 (en f64) para las
+/// escalas 18 y 19.
+fn espectro_observado() -> TemporalSpectrum {
+    let mut spec = TemporalSpectrum::new();
+    for i in 0..20_000u64 {
+        spec.update(100.0, 1_000 + i * 1_000);
+    }
+    spec
+}
+
 #[test]
 fn nodal_activity_mass_can_be_positive_at_a_directional_cancellation() {
-    let mut spec = TemporalSpectrum::new();
+    let mut spec = espectro_observado();
     for (i, signal) in [(18, 0.8), (19, -0.8)] {
         spec.scales[i].signal = signal;
         spec.scales[i].persistence = 0.5;

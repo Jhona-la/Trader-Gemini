@@ -1243,14 +1243,20 @@ impl TemporalSpectrum {
     }
 
     /// CL-32: pesos de la masa espectral (entropía, Fisher, W₁, τ*, bandas):
-    /// el peso heredado de la persistencia por la fracción RESUELTA de cada
-    /// escala. Una sola fuente para todos los lectores de la masa.
+    /// el peso heredado de la persistencia por lo OBSERVABLE de cada escala.
+    /// Una sola fuente para todos los lectores de la masa.
     /// (#591: pub — el núcleo la consume para la proyección espectral.)
+    ///
+    /// CL-35: lo observable es lo mismo que en la fusión D-742, masa del
+    /// núcleo llenada × fracción resuelta. Sólo con la fracción resuelta, una
+    /// escala de 12 h con cuatro segundos de datos pesaba igual que una de
+    /// dos segundos: su persistencia arranca en 0 (suelo 0,02 del peso, el
+    /// mismo para todas) y su |señal| es tanh(1) con una sola desviación.
     pub fn pesos_espectrales(&self) -> [f64; 32] {
-        let resolucion = self.resolucion_efectiva_ms();
+        let (observables, _) = self.pesos_observables();
         let mut w = [0.0f64; 32];
         for (i, s) in self.scales.iter().enumerate() {
-            w[i] = s.fusion_weight() * factor_de_resolucion(s.tau_ms, resolucion);
+            w[i] = s.fusion_weight() * observables[i];
         }
         w
     }
@@ -1493,6 +1499,21 @@ impl TemporalSpectrum {
 }
 
 #[cfg(test)]
+impl TemporalSpectrum {
+    /// CL-35: los contratos del álgebra del campo fijan señales y
+    /// persistencias a mano sobre un espectro sin datos. Sin datos, nada está
+    /// observado y la masa es 0 (D-742). Esto declara observada toda la malla
+    /// (≫ 146 años) con la resolución del reloj, así que cada escala cuenta
+    /// con su fracción resuelta tal como la fijaban esos contratos.
+    fn observado_por_completo(mut self) -> Self {
+        self.first_ts_ms = 0;
+        self.last_ts_ms = 1_000_000_000_000_000;
+        self.refresh_fusion();
+        self
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1576,7 +1597,7 @@ mod tests {
         spec.scales[18].epigenetic_gain = 2.0;
         spec.scales[20].signal = -0.8;
         spec.scales[20].persistence = -0.5;
-        spec
+        spec.observado_por_completo()
     }
 
     #[test]
@@ -1709,6 +1730,7 @@ mod tests {
             s.signal = 1.0;
             s.persistence = 0.5;
         }
+        let spec = spec.observado_por_completo();
         let field = spec.spectral_field(true);
         // CL-32: la masa se reparte según la fracción resuelta de cada
         // escala; con consenso perfecto la entropía es la de ese reparto.
@@ -1975,6 +1997,38 @@ mod tests {
         assert!(f < 0.1, "masa espectral en escalas no resueltas: {f}");
     }
 
+    /// CL-35: la masa espectral tampoco deja opinar a lo que no se ha
+    /// observado (D-742). Tras unos pocos eventos, cada escala lenta publica
+    /// |señal| ≈ tanh(1) con una sola desviación, y el peso de su persistencia
+    /// es el suelo 0,02, igual para todas. Sin la masa del núcleo, las escalas
+    /// de horas a siglos pesaban como las observadas y el centroide τ* salía en
+    /// 12 h: en el fixture del T-1 la rama 15 abría a los 2 s de datos tres
+    /// cortos con horizontes de 1,5 a 12 h.
+    #[test]
+    fn cl35_lo_no_observado_no_pesa_en_la_masa() {
+        let mut spec = TemporalSpectrum::new();
+        let mut estado = 0x2545_F491_4F6C_DD1Du64;
+        let mut lp = 0.0f64;
+        let t0 = 1_700_000_000_000u64;
+        let mut t = t0;
+        for _ in 0..3u64 {
+            lp += 2e-4 * normal_cl30(&mut estado);
+            spec.update(60_000.0 * lp.exp(), t);
+            t += 2_000;
+        }
+        let observado = (t - 2_000 - t0) as f64;
+        let pesos = spec.pesos_espectrales();
+        let masa: Vec<f64> = (0..32).map(|i| pesos[i] * spec.scales[i].signal.abs()).collect();
+        let total: f64 = masa.iter().sum();
+        let no_vista: f64 = (0..32)
+            .filter(|&i| spec.scales[i].tau_ms > 100.0 * observado)
+            .map(|i| masa[i])
+            .sum();
+        assert!(no_vista / total < 0.05, "masa en escalas no observadas: {}", no_vista / total);
+        let tau_star = spec.continuous_resonant_tau_ms();
+        assert!(tau_star < 10.0 * observado, "τ* = {tau_star} ms con {observado} ms de datos");
+    }
+
     #[test]
     fn signal_at_es_continua_entre_escalas() {
         let mut spec = TemporalSpectrum::new();
@@ -2122,6 +2176,7 @@ fn xliv_fisher_de_escala_tiene_techo_y_umbral_alcanzable() {
         for i in 0..32 {
             spec.scales[i].signal = if (14..14 + k).contains(&i) { 1.0 } else { 0.0 };
         }
+        let spec = spec.observado_por_completo();
         // CL-32: bloque sobre escalas resueltas por el reloj (τ ≥ 268 ms).
         let w = spec.scales[14].fusion_weight();
         for i in 14..14 + k {

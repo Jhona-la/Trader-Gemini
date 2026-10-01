@@ -145,6 +145,77 @@
   #538 CERRADO por D-643; #539 CERRADO por D-735; #548 cadáveres limpiados por
   externos. M5-H02 ABIERTO (2 writers, 0 lectores seqlock — dormido correcto).
 
+## 2026-09-30 — Claude (cloud): ciclos 6 y 7, T-1 explicado y revisión cruzada
+
+Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08`. El ciclo 6 (con
+el PR #10) lo fusionó GLM como PR #20 (0942c4aa) mientras esta sesión estaba
+parada, y bajó el trinquete del T-1 a 8,3 %. El ciclo 7 va en un PR nuevo
+desde la misma rama, con main 296b090c integrado. Cada arreglo con su test
+que falla antes del arreglo.
+
+- **Ciclo 6 (espectro)**: CL-30 persistencia sobre bloques no solapados
+  (+0,94 en ruido antes); CL-31 rama 15 sin lado; CL-32 las escalas por
+  debajo del intervalo entre eventos no votan. PR #10 (XLIV-8c, XLIV-13)
+  integrado: con él, `train_forest` puntúa el test posterior.
+- **Ciclo 7**:
+  - CL-33: trades y klines del host (bid = ask = 0) se deciden con el último libro medido, no con ±1 pb inventado. Un OFI de libro quieto vuelve a ser 0.
+  - CL-34: la escalera del trailing mide en la dispersión del horizonte de la posición (`dispersion_al_horizonte`), no en el ATR de 1 min. Una posición de 4 h ya no se cierra como un scalp.
+  - CL-35: la masa espectral (entropía, Fisher, W₁, τ*, bandas) pesa sólo lo observado, como la fusión D-742. Con 4 s de datos, 65 % de la masa estaba en escalas no vistas y τ* salía en 6,5 h.
+  - CL-35b: golden re-certificado (la sonda abre a τ = 30 s, no a 12 h; 1001,47074438 → 1000,04427745) y test de CL-28 re-enunciado (abajo).
+  - CL-35c: el trinquete del T-1 vuelve a 11,0 % (la re-certificación 2 de GLM lo había bajado a 8,3 %).
+- **T-1**: el ciclo 6 bajó a 12/144. La bisección (sonda de genes por
+  commit) da el 107 a CL-30 y los 10, 11, 20 y 33 a CL-32. CL-32 destapó
+  CL-35: en el fixture la rama 15 abría a los 2 s tres cortos a 12 h que
+  perdían, el fixture pasaba de 170 a 22 cierres y con PF ≤ 1 el Kelly
+  queda en exploración (sólo lee kelly_clamp_min). CL-35 devuelve los
+  cuatro (220 cierres). El 107 (colchón, banda [0,5; 0,98]) sólo muerde
+  si el margen Kelly pasa de la mitad del capital asignado: antes de CL-30
+  en 2 de 174 cierres con el capital ×2,63; ahora el fixture llega a ×1,67.
+  Contrafactual: forzar la persistencia sesgada SÓLO en el Kelly S-1 no lo
+  recupera. Árbol final: 17/144 (11,8 %), con la misma lista de genes
+  sobre main ee438edb y sobre main d0441aad (lo que main trajo después no
+  toca código del backtest); la perturbación de cada gen sólo cambia su
+  propia coordenada. La re-certificación 2 de GLM leyó la caída como
+  sensibilidad falsa; para 10, 11, 20 y 33 no lo era (un defecto la
+  tapaba), así que CL-35c vuelve al 11,0 %.
+- **Fisher de escala tras CL-35**: con la masa restringida a lo observado,
+  en ruido la mediana es 0,36–0,40 (sobre el umbral 0,33) y con una
+  tendencia fuerte baja a 0,21–0,35 (3, 12 y 24 h, tres semillas). Mide
+  concentración entre escalas: en ruido la ponen persistencias espurias.
+  Sigue siendo telemetría (CL-28); no usarla como puerta sin calibrarla
+  contra un nulo barajado. Lo mismo vale para τ* resonante, que es el
+  centroide de esos pesos. `dominant_tau_ms` ya no: desde #594 (Qoder) se
+  elige por habilidad prequential.
+- **Aviso sobre el fixture del T-1**: da 100 % de acierto neto en 220
+  cierres. Es una serie con tendencia determinista fuerte (ciclo de 30 pb
+  por vela frente a 11,5 pb de ruido) y un puente intravela que converge al
+  máximo, mínimo y cierre de la vela en curso. El T-1 mide expresividad
+  genética, no rentabilidad; no leer sus capitales como evidencia.
+- **Build**: los worktrees que comparten CARGO_TARGET_DIR no recompilan al
+  cambiar de commit (la primera bisección corrió cuatro veces el mismo
+  binario). El contenedor cambió de CPU y `target-cpu=native` dejó
+  binarios con AVX512-FP16: borrar `<target>/x86_64-pc-windows-gnu`. Con
+  el cargo actual los ejecutables de test están en
+  `<target>/<triple>/debug/build/<crate>/<hash>/out/`, no en `deps/`.
+
+### Revisión cruzada (verificada contra main ee438edb, avisada en el buzón)
+- GLM: la medición de la brecha (xlviiB) no carga `{SYM}_MOTOR` (el replay
+  no llama `load_global`) y los seis tapes corren con la identidad de
+  LTCUSDT (`asegurar_spec_nativo` no reescribe el spec de la moneda 0). El
+  620× es el piso sin modelo.
+- GLM/Qoder: el modulador de contagio XLV·G no recibe dato (escritor
+  `c{id}:…`, lector `{SYM}_…`/global). El consejo propone retirarlo.
+
+### Triaje del arsenal (consejo de 9 agentes; complementa TRIAGE_TEORICO)
+Ninguna teoría avanzada ataca el cuello de botella medido. «Ahora», en el
+orden del operador: arnés y linaje de modelos; ganancia de información
+fuera de muestra contra un nulo por permutación; contrafactual en sombra de
+las intenciones vetadas; DSR en toda promoción; quitar poder de veto a χ
+multifractal (multiplica pisos sin validar) y al cortacircuitos de
+drawdown hasta medirlos. Descartados por ahora (sin edge que refinar):
+rough vol, Hawkes MLE, HJB/BSDE, Malliavin, GP, cópulas, MP/TW/RIE,
+Lyapunov, TDA, MFG, RL, cuántico, redes tensoriales.
+
 ## 2026-09-30 — publicación pública MR autorizada explícitamente
 
 - Operador: «Sí, publicar MR y abrir su PR» a pregunta que identifica
@@ -456,7 +527,7 @@ test que falla en `main` antes del arreglo.
   - CL-31: la rama 15 trata la persistencia sin lado (`confluencia_resonante`, con `hurst_at`). Antes comparaba [−1,1] con 0,52/0,48 y sólo emitía largos en la zona moderada.
   - CL-32: las escalas por debajo del intervalo medio entre eventos no votan (`resolucion_efectiva_ms`, como XLIV-6). A 1 evento/s se llevaban el 68 % del peso de la fusión y el 47 % de la masa espectral.
 - Abiertos (confirmados, sin arreglar todavía):
-  - `dominant_tau_ms` sigue siendo el argmax de |w·s| recortado a [30 s, 12 h]. Con pesos 1/vol, cae en la escala resuelta más rápida y se queda en 30 s. Elegir la escala dominante por habilidad medida exige otro criterio (p. ej. `SpectralForecastBank`).
+  - ~~`dominant_tau_ms` sigue siendo el argmax de |w·s| recortado a [30 s, 12 h]. Con pesos 1/vol, cae en la escala resuelta más rápida y se queda en 30 s. Elegir la escala dominante por habilidad medida exige otro criterio (p. ej. `SpectralForecastBank`).~~ **CERRADO por #594 (Qoder)**: τ dominante = escala con mayor IC prequential > 0. Queda abierto que el umbral es IC > 0 sin significancia ni corrección por el número de escalas maduras (inferido, sin medir: en ruido el máximo de varias IC suele ser positivo).
   - Rama 13/15: suelos literales de confianza (0,55/0,58); B1 OFI tóxico muerto en el núcleo; B3 Coaxial vota 0 y el gen 83 no tiene consumidor.
   - La adopción al arrancar sigue con `entry_time_ms = now`; la distancia del trailing sigue en ATR de 1 min.
   - Libro sintético de ±1 pb en eventos que no son de depth; gate de viabilidad ATR inalcanzable; veto de drawdown absorbente en backtest; `suelo_tp_sl` y la banda del genoma miden stops distintos.

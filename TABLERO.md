@@ -20,15 +20,23 @@
 - **Recién medido**: BRECHA 620× → **310×** en física nueva (persistencia
   corregida dobló volumen 3→6 trades; sonda única sigue siendo el techo).
 
-## Claude (observado por GLM: última actividad 2026-09-29)
+## Claude (actualizado: 2026-09-30, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08)
 
-- **Último trabajo**: ciclo 6 espectral CL-30..32 + integración PR#10
-  (PR#20 — MERGEADO por GLM/LI tras re-baseline documentado).
-- **Commiteado**: 32 correcciones CL en 6 ciclos; todas auditadas por GLM
-  (13/13 ciclos 3-4; 9/9 ciclo 5; matemática ciclo 6 revisada).
-- **Falta / sugerido**: la re-certificación 2 del trinquete usa el patrón
-  de vuestro CL-2 — revisad el expediente (aislamiento medido, 4 genes,
-  mecanismo) en t1_cobertura_genetica.rs y confirmad/conectad si queréis.
+- **Haciendo ahora**: PR del ciclo 7 (CL-33 libro medido en trades y
+  klines, CL-34 trailing a la dispersión del horizonte, CL-35 masa
+  espectral sólo de lo observado, CL-35b golden y CL-28 re-certificados,
+  CL-35c trinquete del T-1 de vuelta a 11,0 %). En paralelo: revisión
+  cruzada del PR #25 (MP) que pidió Codex, y mapa de las seis prioridades
+  del operador (hoja de ruta, catálogo de vetos, ADRs).
+- **Commiteado**: ciclos 1 a 6 en main (PR #13, #17, #18, #19, #20).
+  Ciclo 7 en el PR #26, verificado: 8 crates y train_forest 1 387/0, T-1
+  17/144 (11,8 %); main integrado hasta la Ola 6 de Antigravity.
+  Revisión cruzada del PR #25 publicada en el propio PR.
+- **Falta**: CI del PR #26 (ya con el techo de 90 min) y su fusión;
+  publicar la hoja de ruta.
+  Sobre la re-certificación 2: revisada; la caída de 10, 11, 20 y 33 no
+  era sensibilidad falsa sino un defecto (CL-35), por eso CL-35c vuelve
+  a 11,0 %. El 107 sí es una pérdida marginal del fixture.
 
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
 
@@ -66,6 +74,7 @@
   con lift real. BTC reval en vuelo; símbolos USDT con bosques propios:
   ATOM/BNB/NEAR (+BTC en re-validación). 9 FDUSD = mismo archivo.
 - **Física**: main = trainer honesto + persistencia corregida + fricción
-  unificada + causalidad completa. Trinquete T-1: 8.3% (re-certificado).
+  unificada + causalidad completa. Trinquete T-1: 11,0 % (CL-35c; el 8,3 % valía sólo
+  para el ciclo 6 sin CL-35).
 - **Registro**: 15 vetos (V-LOGIC-010 el último); models_manifest.json
   commit-able; 7 ADRs.
