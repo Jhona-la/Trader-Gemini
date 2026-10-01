@@ -25,7 +25,7 @@
   "23": "flight-recorder/src/lib.rs",
   "24": "QuantumTensorStore",
   "25": "crates/risk-engine/src/kelly_envelope.rs",
-  "26": "crates/strategy-core/src/multivariate_coint.rs",
+  "26": "MultivariateCointegrationEngine",
   "27": "🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA",
   "28": "ShadowExecutor",
   "29": "verify_segment",
@@ -1335,6 +1335,7 @@
   "1333": ".t1-cert/crates/god-engine-core/tests/phase_authorization_contract.rs",
   "1334": ".t1-cert/crates/omniscient-registry/src/tests.rs",
   "1335": ".t1-cert/crates/quantum-arena/src/paths.rs",
+  "1336": "Option",
   "1337": ".t1-cert/crates/risk-engine/tests/regime_taxonomy_diagnostics.rs",
   "1338": ".t1-cert/crates/signal-engine/tests/multi_asset_identity_contract.rs",
   "1339": ".t1-cert/crates/strategy-core/tests/maker_quote_contract.rs",
@@ -1501,5 +1502,7 @@
   "1500": ".t1-cert/src/features/graph_architecture.rs",
   "1501": ".t1-cert/src/features/mod.rs",
   "1502": ".t1-cert/src/lib.rs",
-  "1503": ".t1-cert/src/risk/mod.rs"
+  "1503": ".t1-cert/src/risk/mod.rs",
+  "1504": "wf_replay_segment",
+  "1505": "espectro_a_un_segundo_cl32"
 }
