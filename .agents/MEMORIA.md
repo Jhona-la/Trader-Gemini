@@ -1368,3 +1368,24 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   Check25,41s; hashes re-verificados. Informe§18/JSON qa_mp08_final.
   Publicar en PR25 y pedir review del nuevo SHA; no atribuirle CI del padre.
   GO34324749 permanece en PR24 separada, sin código productivo cambiado.
+
+## 2026-10-01 — Antigravity: Ola 8 — Teorema Analítico de Hodge O(N^2) Zero-Alloc, Reversión Adaptativa en Cointegración y Densidad Espectral O(1)
+
+- **hodge.rs**: Teorema analítico cerrado de Helmholtz-Hodge sobre grafos completos K_n:
+  L = n·I - 1·1^T. Con div ortogonal al kernel (Σ div_i = 0), el potencial es φ = div / n.
+  La energía de Dirichlet del gradiente satisface idénticamente ‖∇φ‖² = (1/n) · Σ div_i².
+  Erradicación total de eliminación gaussiana O(N³), pivoteo y alocaciones de heap. Complejidad
+  reducida a O(N²) evaluando cada par una sola vez con buffer de stack para N ≤ 64 (roster ≤ 16).
+  Tests: 6/6 verdes en risk-engine + nuevo test `test_hodge_analytical_invariance_multi_asset`.
+- **multivariate_coint.rs**: Erradicación del literal fijo `expected_magnitude = 0.015`.
+  Se reemplaza por la magnitud medida real del proceso Ornstein-Uhlenbeck:
+  `expected_magnitude = (|z_score| * std_dev).clamp(0.002, 0.20)`. Alineación con
+  `trajectory_auditor.rs` y con la economía real del EV vs fees. Nuevo test:
+  `test_multivariate_cointegration_measured_expected_magnitude`.
+- **temporal_spectrum.rs**: Optimización de `continuous_energy_density`: cálculo nodal O(1)
+  evaluando únicamente los dos nodos de interpolación activos (i0, i1) en vez de evaluar
+  32 exponenciales para toda la malla. Reutilización de `pesos_espectrales()` en
+  `micro_resonant_tau_ms` y `macro_resonant_tau_ms` mediante `continuous_resonant_tau_ms_with_pesos`.
+- **Verificación**: `cargo check --workspace --all-targets` limpio (1m 28s). Tests de
+  risk-engine (111 tests), strategy-core (36 tests) y quantum-arena pasan al 100%.
+

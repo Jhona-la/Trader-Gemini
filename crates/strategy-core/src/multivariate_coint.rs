@@ -183,6 +183,8 @@ impl MultivariateCointegrationEngine {
 
         // Si el spread se desvía más allá del umbral y la vida media es razonable (< 50 periodos)
         if half_life_periods <= 50.0 {
+            // Magnitud esperada físicamente del retorno a la media: E[|ΔS|] = |z| · σ_spread
+            let expected_magnitude = (z_score.abs() * std_dev).clamp(0.002, 0.20);
             if z_score < -self.z_score_threshold {
                 // Spread subvaluado -> Comprar el cluster (Long)
                 let confidence = (-z_score / 3.0).clamp(0.5, 0.99);
@@ -190,7 +192,7 @@ impl MultivariateCointegrationEngine {
                     signal: SignalType::Long,
                     confidence,
                     horizon: TradeHorizon::Continuous,
-                    expected_magnitude: 0.015,
+                    expected_magnitude,
                     ..Default::default()
                 });
             } else if z_score > self.z_score_threshold {
@@ -200,7 +202,7 @@ impl MultivariateCointegrationEngine {
                     signal: SignalType::Short,
                     confidence,
                     horizon: TradeHorizon::Continuous,
-                    expected_magnitude: 0.015,
+                    expected_magnitude,
                     ..Default::default()
                 });
             }
@@ -409,5 +411,29 @@ mod tests {
             "estimator should have reset to new level: mean={}, old={old_spread}, new={new_spread}",
             engine.mean_spread
         );
+    }
+
+    #[test]
+    fn test_multivariate_cointegration_measured_expected_magnitude() {
+        let weights = [1.0, -0.5, -0.3, -0.2];
+        let mut engine = MultivariateCointegrationEngine::new(weights, 2.0);
+
+        let base_prices = [100.0, 50.0, 30.0, 20.0];
+        for i in 0..100 {
+            let noise = ((i % 5) as f64 - 2.0) * 0.1;
+            let prices = [
+                base_prices[0] + noise,
+                base_prices[1] + noise * 0.5,
+                base_prices[2] + noise * 0.3,
+                base_prices[3] + noise * 0.2,
+            ];
+            let _ = engine.update_and_evaluate(&prices, 1000 + i * 1000);
+        }
+
+        // Shock para generar señal
+        let shock_prices = [75.0, 50.0, 30.0, 20.0];
+        let signal = engine.update_and_evaluate(&shock_prices, 200000).expect("señal activa");
+        assert!(signal.expected_magnitude > 0.002, "expected magnitude no debe ser cero");
+        assert!(signal.expected_magnitude <= 0.20, "expected magnitude acotada");
     }
 }

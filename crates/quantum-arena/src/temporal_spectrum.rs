@@ -810,17 +810,21 @@ impl TemporalSpectrum {
         let i0 = idx.floor().clamp(0.0, 30.0) as usize;
         let i1 = i0 + 1;
         let frac = (idx - i0 as f64).clamp(0.0, 1.0);
-        let pesos = self.pesos_espectrales();
-        let energy = |i: usize| {
-            let w = pesos[i];
+        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
+        let resolucion = self.resolucion_efectiva_ms();
+        let energy_at_node = |i: usize| {
+            let s = &self.scales[i];
+            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+            let observable = mass * factor_de_resolucion(s.tau_ms, resolucion);
+            let w = s.fusion_weight() * observable;
             if w > 0.0 {
-                w * self.scales[i].signal.abs()
+                w * s.signal.abs()
             } else {
                 0.0
             }
         };
         // Interpolar la MISMA masa de la malla preserva su contrato en cada nodo.
-        energy(i0) * (1.0 - frac) + energy(i1) * frac
+        energy_at_node(i0) * (1.0 - frac) + energy_at_node(i1) * frac
     }
 
     /// Pendiente local exacta del interpolante lineal por tramos en ln(tau).
@@ -1076,9 +1080,14 @@ impl TemporalSpectrum {
 
     /// Escala resonante continua universal tau* (centroide logarítmico del espectro de 32 partes).
     pub fn continuous_resonant_tau_ms(&self) -> f64 {
+        let pesos = self.pesos_espectrales();
+        self.continuous_resonant_tau_ms_with_pesos(&pesos)
+    }
+
+    #[inline]
+    fn continuous_resonant_tau_ms_with_pesos(&self, pesos: &[f64; 32]) -> f64 {
         let mut total_e = 0.0;
         let mut weighted_ln = 0.0;
-        let pesos = self.pesos_espectrales();
         for (i, s) in self.scales.iter().enumerate() {
             let w = pesos[i];
             if w == 0.0 {
@@ -1099,10 +1108,10 @@ impl TemporalSpectrum {
 
     /// Escala resonante continua de alta frecuencia (modo reactivo del espectro continuo sin cortes fijos).
     pub fn micro_resonant_tau_ms(&self) -> f64 {
-        let pivot_ln = self.continuous_resonant_tau_ms().ln();
+        let pesos = self.pesos_espectrales();
+        let pivot_ln = self.continuous_resonant_tau_ms_with_pesos(&pesos).ln();
         let mut total_e = 0.0;
         let mut weighted_ln = 0.0;
-        let pesos = self.pesos_espectrales();
         for (i, s) in self.scales.iter().enumerate() {
             let ln_tau = s.tau_ms.max(1e-6).ln();
             let weight_fast = if ln_tau <= pivot_ln {
@@ -1129,10 +1138,10 @@ impl TemporalSpectrum {
 
     /// Escala resonante continua de baja frecuencia (modo portador del espectro continuo sin cortes fijos).
     pub fn macro_resonant_tau_ms(&self) -> f64 {
-        let pivot_ln = self.continuous_resonant_tau_ms().ln();
+        let pesos = self.pesos_espectrales();
+        let pivot_ln = self.continuous_resonant_tau_ms_with_pesos(&pesos).ln();
         let mut total_e = 0.0;
         let mut weighted_ln = 0.0;
-        let pesos = self.pesos_espectrales();
         for (i, s) in self.scales.iter().enumerate() {
             let ln_tau = s.tau_ms.max(1e-6).ln();
             let weight_slow = if ln_tau >= pivot_ln {

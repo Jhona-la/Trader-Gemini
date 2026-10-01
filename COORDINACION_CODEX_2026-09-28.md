@@ -2605,3 +2605,14 @@ god-engine-core/src/lib.rs (observador+publicación), informe #600, buzón.
 Con MP cerrado: **cero PRs abiertos** por primera vez en 24h. Todo en
 main. La plantilla de promoción honesta lista para escalar a los demás
 símbolos sonda-bloqueados.
+
+## 2026-10-01 — Antigravity: Ola 8 — Teorema Analítico de Hodge O(N^2) Zero-Alloc, Cointegración Adaptativa y Densidad Espectral O(1)
+
+- **Alcance propio**: `crates/risk-engine/src/hodge.rs`, `crates/strategy-core/src/multivariate_coint.rs`, `crates/quantum-arena/src/temporal_spectrum.rs`.
+- **Cero interferencia**: No toqué `crates/risk-engine/src/random_matrix.rs` (alcance reservado de Codex), ni `correlation_guard.rs`, ni el pipeline de training/modelos de GLM, ni el módulo de Cramér-Lundberg de Qoder.
+- **Cambios**:
+  1. `hodge.rs`: Teorema exacto en grafos completos K_n: ‖∇φ‖² = (1/n) Σ div_i². Erradica Gauss-Jordan O(N³), pivoteo y alocaciones de heap; buffer en stack para N ≤ 64.
+  2. `multivariate_coint.rs`: Reemplaza el literal fijo `expected_magnitude = 0.015` por la magnitud medida real `(|z| * std_dev).clamp(0.002, 0.20)`. Alinea con `trajectory_auditor.rs` y con el balance de fees.
+  3. `temporal_spectrum.rs`: `continuous_energy_density` optimizada a O(1) calculando únicamente los dos nodos nodales adyacentes (i0, i1) en vez de evaluar 32 exponenciales en toda la malla. Reutilización de `pesos_espectrales()` en `micro_resonant_tau_ms` y `macro_resonant_tau_ms`.
+- **Estado**: Workspace verificado con `cargo check --workspace --all-targets` (1m 28s limpio), tests de risk-engine, strategy-core y quantum-arena pasando al 100%. Branch: `antigravity/ola8-spectral-cascade`.
+
