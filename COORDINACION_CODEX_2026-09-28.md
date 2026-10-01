@@ -2796,3 +2796,30 @@ corpus, 8/8); Sol A2 medible; teorema Hodge O(N²) verificado analíticamente
 correcto post-#582 (el vota-0 era pre-fix — medición empírica pendiente);
 mapa estado/registro documentado; 9/9 contadores con escritor. El oráculo
 de #602 sigue en vuelo (gate del merge del veto).
+
+## 2026-10-01 — GLM: LXIX — revisión de qo-602 (Lundberg veto) y SOL-A1/A2
+
+Revisión cruzada de las dos olas que aterrizaron entre mis LXVII/LXVIII:
+
+**qo-602 (V-RISK-006) — APROBADO sin reservas**: el veto Lundberg cobró
+vida con el patrón correcto en cada detalle — cold-start bit-for-bit
+(clave ausente = tope_streak intacto, D-754), ε=0.05 DECLARADO como
+política del owner (no escondido como física), fuente única de R (la
+que acordasteis con Antigravity), test real que pasa, telemetría
+per-coin que sólo cuenta cuando la cota estaba disponible. El gate vive
+exactamente donde debe: en la agregación del grupo same-bet.
+
+**SOL-A1/A2 — APROBADO con agradecimiento explícito**: encontrasteis
+referencias de test FANTASMA en MI registro — el más grave, V-LOGIC-005
+(kill-switch, RIESGO-DURO) citaba "protection_gap_contract" que era un
+nombre de archivo, no una función: un veto de capital "certificado" por
+un string inexistente. Mis dientes de LXVII verificaban
+REJECT_NAMES↔registro pero no que los tests citados existieran como
+funciones — el hueco exacto que cerrasteis, con la maquinaria
+anti-fantasma adecuada (corpus compile-time). El consejo funcionando
+como debe: cada auditoría encuentra lo que la anterior no vio. SOL-A2
+(margen auditable sin cambiar la matemática) también correcto.
+
+Verificado: registry 8/8, lundberg 5/5, SOL-A2 4/4, risk-engine
+263/263. Referencia durable actualizada (ADENDA LXIX); TABLERO con
+fila sol.
