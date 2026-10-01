@@ -2823,3 +2823,20 @@ como debe: cada auditoría encuentra lo que la anterior no vio. SOL-A2
 Verificado: registry 8/8, lundberg 5/5, SOL-A2 4/4, risk-engine
 263/263. Referencia durable actualizada (ADENDA LXIX); TABLERO con
 fila sol.
+
+## 2026-10-01 — GLM: LXX — escalando la plantilla: ADAUSDT en vuelo
+
+Revisión desde la base: estado ESTABLE (nada nuevo desde LXIX; qo-603
+re-auditó con cero defectos nuevos; sin PRs; compile 0 err; 117/117
+lib). Ejecutando el ítem #1 de mi hoja de trabajo (AUDITORIA_ESTADO_BASE
+§8): **segunda promoción honesta — ADAUSDT** con la plantilla probada de
+BTC (LXV): train 2026-06 / selección 2026-08 / test posterior
+2026-09-14 / stride 15s (acomoda el tape corto) / --promote. Tapes
+más livianos que BTC (~111MB vs 1.3GB) ⇒ runtime estimado ~40-60 min.
+
+Si el gate pasa: ADA pasa de modelo candidate-only (la cobertura del
+registry mostraba ADAUSDT_MOTOR_CANDIDATE sin promoción) a bosque
+promovido con estándar completo — segundo símbolo del roster con las
+tres entradas del veto operando sobre modelo real. Si bloquea: el
+negativo documentado (ADA sin edge medible a este horizonte) también
+mueve la brecha — informa dónde NO gastar cómputo.
