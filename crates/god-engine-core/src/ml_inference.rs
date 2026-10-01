@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
+use std::path::Path;
 use std::sync::Arc;
 
 lazy_static::lazy_static! {
@@ -164,10 +165,10 @@ impl NanoForest {
         Ok(required)
     }
 
-    /// Parsea el JSON fuente y (best-effort) recompila el .bin de caché.
+    /// Parsea el JSON fuente, sin escribir ni activar modelos.
     /// B3.9-aud: la compilación del .bin la decide el CALLER, después de
     /// validar el contrato — un modelo rechazado no debe envenenar la caché.
-    fn parse_json(json_path: &str) -> Result<NanoForestData, Box<dyn std::error::Error>> {
+    fn parse_json(json_path: &Path) -> Result<NanoForestData, Box<dyn std::error::Error>> {
         let file = File::open(json_path)?;
         let reader = BufReader::new(file);
         Ok(serde_json::from_reader(reader)?)
@@ -182,12 +183,22 @@ impl NanoForest {
         // .bin obsoleto podía PISAR la recarga de un .json más nuevo según
         // el orden de read_dir. Ahora el .bin pasado como path se valida
         // contra su .json hermano.
-        let (json_path, bin_path) = if path.ends_with(".json") {
-            (path.to_string(), path.replace(".json", ".bin"))
-        } else if path.ends_with(".bin") {
-            (path.replace(".bin", ".json"), path.to_string())
-        } else {
-            (path.to_string(), path.replace(".json", ".bin"))
+        // MP-02: sólo cambia la extensión FINAL, nunca componentes del
+        // directorio o del stem. Un JSON de nombre no convencional sigue
+        // siendo legible, pero no tiene pareja de caché implícita: antes
+        // un path sin ".json" se sobrescribía con sus propios bytes binarios.
+        let source = Path::new(path);
+        let (json_path, bin_path) = match source.extension().and_then(|s| s.to_str()) {
+            Some("json") => (source.to_path_buf(), source.with_extension("bin")),
+            Some("bin") => (source.with_extension("json"), source.to_path_buf()),
+            _ => {
+                let data = Self::parse_json(source)?;
+                let required_features = Self::validate_dim_contract(&data, path)?;
+                return Ok(Self {
+                    data,
+                    required_features,
+                });
+            }
         };
 
         // Verificar frescura: si el JSON es más nuevo que el BIN, el BIN es obsoleto
@@ -204,27 +215,48 @@ impl NanoForest {
             _ => false,
         };
 
-        let (data, from_bin) = if !is_stale && std::path::Path::new(&bin_path).exists() {
+        let load_validated_json = || -> Result<_, Box<dyn std::error::Error>> {
+            let data = Self::parse_json(&json_path)?;
+            let required_features =
+                Self::validate_dim_contract(&data, &json_path.to_string_lossy())?;
+            Ok((data, required_features))
+        };
+        let ((data, required_features), from_bin) = if !is_stale && bin_path.exists() {
             match std::fs::read(&bin_path)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
                 .and_then(|bin_data| {
                     bincode::deserialize(&bin_data)
                         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
+                })
+                .and_then(|parsed| {
+                    // MP-08: decoding bytes is not structural acceptance. A
+                    // broken derived cache must not block its valid JSON source.
+                    let required =
+                        Self::validate_dim_contract(&parsed, &bin_path.to_string_lossy())?;
+                    Ok((parsed, required))
                 }) {
                 Ok(parsed) => (parsed, true),
-                Err(_) => (Self::parse_json(&json_path)?, false),
+                Err(cache_error) => (
+                    load_validated_json().map_err(|source_error| {
+                        format!(
+                            "cache {} rejected ({cache_error}); JSON source {} rejected ({source_error})",
+                            bin_path.display(),
+                            json_path.display()
+                        )
+                    })?,
+                    false,
+                ),
             }
         } else {
-            // Fallback to JSON (fresh compile below)
-            (Self::parse_json(&json_path)?, false)
+            // A newer JSON is authoritative: no fallback to its stale BIN if
+            // it fails validation. Preserve rejection and the last live model.
+            (load_validated_json()?, false)
         };
         // B3.9 — contrato de dimensión: el modelo debe vivir dentro del
         // vector que ESTE binario construye. Rechazo ruidoso, no silencio.
         // Aplica IGUAL al camino del .bin (caché) — y el .bin sólo se
         // escribe DESPUÉS de validar: un modelo rechazado no contamina la
         // caché para el próximo arranque.
-        let required_features = Self::validate_dim_contract(&data, path)
-            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
         if !from_bin {
             if let Ok(encoded) = bincode::serialize(&data) {
                 let _ = std::fs::write(&bin_path, encoded);
@@ -239,10 +271,7 @@ impl NanoForest {
     /// Loads the forest into the global static cache under a specific key
     pub fn load_global(key: &str, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let forest = Self::load_model(path)?;
-        let current_map = crate::ml_inference::GLOBAL_FORESTS.load();
-        let mut new_map = (**current_map).clone();
-        new_map.insert(key.to_string(), Arc::new(forest));
-        crate::ml_inference::GLOBAL_FORESTS.store(Arc::new(new_map));
+        Self::store_global(key, forest);
         Ok(())
     }
 
@@ -251,10 +280,19 @@ impl NanoForest {
     /// predictor sintético (t1: siempre-confiado, para medir expresividad
     /// genética condicional a la cooperación de la predicción).
     pub fn store_global(key: &str, forest: NanoForest) {
-        let current_map = crate::ml_inference::GLOBAL_FORESTS.load();
-        let mut new_map = (**current_map).clone();
-        new_map.insert(key.to_string(), Arc::new(forest));
-        crate::ml_inference::GLOBAL_FORESTS.store(Arc::new(new_map));
+        // MP-01: load-clone-store is NOT an atomic update of the map. Two
+        // writers for different assets could erase each other's publication.
+        // RCU retries against the latest snapshot if another writer won CAS.
+        // Parse/validation/allocation of the forest stay outside the retry;
+        // only the map and key are cloned, with no I/O or activation side effects.
+        // Same-key writers still use publication order, not model-generation order.
+        let key = key.to_string();
+        let forest = Arc::new(forest);
+        GLOBAL_FORESTS.rcu(|current| {
+            let mut next = (**current).clone();
+            next.insert(key.clone(), Arc::clone(&forest));
+            Arc::new(next)
+        });
     }
 
     /// Predicts using a specific global forest.

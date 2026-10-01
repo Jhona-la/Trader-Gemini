@@ -216,6 +216,44 @@ drawdown hasta medirlos. Descartados por ahora (sin edge que refinar):
 rough vol, Hawkes MLE, HJB/BSDE, Malliavin, GP, cópulas, MP/TW/RIE,
 Lyapunov, TDA, MFG, RL, cuántico, redes tensoriales.
 
+## 2026-09-30 — MR CI verde; MP sigue local
+
+- CI36718230501 SUCCESS sobre e17c88b4 a13:40:06Z. PR23 OPEN,0reviews;
+  falta revisión cruzada, no merge. Esto NO es CI de MP.
+- MP código3f2be42d, informe083f4321,306/0/3 y check31,16s. Publicación
+  pública específica consultada, aún pendiente. Main remotoee438edb.
+- Sin nuevas ramas integradas para borrar; preservar MP/MR/Claude/GLM.
+
+
+## 2026-09-30 — MP cierre local306/0/3; publicación pendiente
+
+- Código3f2be42d: core/suites198/0/1 +replay108/0/2 =306/0/3 disjuntos.
+  Diez tests MP incluidos, repeticiones no duplicadas. Check31,16s aprobado.
+- Informe/JSON de publicación multiactivo con7 expedientes:2 candidatos y
+  5 abiertos (uno remite MR-03). Sin cambio de modelos/host/trainer/riesgo.
+- MR/PR23: check y registry verdes, replay en curso. Revisión solicitada
+  en issuecomment-5912446341; sin acuse ni aprobación inferida.
+- MP en rama propia local; autorización específica pública consultada.
+  No push/PR/merge MP todavía. No borrar MR/Claude/GLM ni backups pendientes.
+
+
+## 2026-09-30 — Codex MP: publicación multiactivo y rutas (LOCAL)
+
+- Rama codex/model-publication-contract desde mainee438edb; código3f2be42d.
+  No incluye MR/e17c88b4, preservada en PR23. GLM mantiene checkout77d6632a
+  con PR20 local; remoto PR20 sigue OPEN/DRAFT. No interferir en su cierre.
+- MP-01: carga/clonado/store perdía altas concurrentes (RED183/256 en memoria,
+  4/24 desde archivos). RCU común a store/load_global conserva otros activos.
+- MP-02: replace alteraba padres/stem y convertía fuente sin extensión a BIN.
+  Parejas con Path::with_extension; nombres no convencionales JSON sin caché.
+- RED3/5 -> GREEN10/0. Núcleo+cinco suites198/0/1; check all-targets31,16s.
+  Concurrencia2 tests x20 pasa; no sumarla como40 tests nuevos. Replay en curso.
+- Informe/JSON MP:2 candidatos,5 abiertos; MP-07 remite MR-03, no duplicar.
+  Versiones, bundle coherente, writers directos, watcher y linaje siguen abiertos.
+- Publicación MP específica consultada por repo público, todavía no realizada.
+  MR CI en curso/sin review, no merge. Sin training/promoción/operación/T-1.
+
+
 ## 2026-09-30 — publicación pública MR autorizada explícitamente
 
 - Operador: «Sí, publicar MR y abrir su PR» a pregunta que identifica
@@ -1292,3 +1330,41 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   No autoriza trading, training, promoción ni rebajar el trinquete T-1.
 - GO9cda4677 conserva hashes validados126/0/2; MP40f8685b debe reconciliar
   mainfbf8e9ea y validar su composición antes de publicar. No mezclar ramas.
+
+## 2026-09-30 — MP/GO publicación autorizada; MP integrada localmente con MR
+
+- Operador respondió Hazlo a publicación pública MP/GO en dos PR con CI
+  y revisión cruzada. Levanta bloqueo anterior; no autoriza operación/modelos.
+- GO publicada PR24,3ba8c2d6, fuente9cda4677 validada126/0/2. No está en MP.
+- MP40f8685b incorpora mainfbf8e9ea (MR integrado por GLM). Cinco conflictos
+  de documentación/CI resueltos conservando ambos padres en orden; hashes
+  MP originales intactos. Check26,60s pasa, regresión integrada en curso.
+- MR/PR23 y main CI aún en curso al verificar; merge no acredita gate.
+  PR10/20 abiertas,20 draft. Checkout compartido ajeno intacto.
+- CIERRE MP integrado:203/0/1 núcleo/suites +108/0/2 replay =311/0/3.
+  Cinco tests MR adicionales explican aumento desde306; no inflar fixes.
+  Hashes fuente MP idénticos; check26,60s. Publicar PR propia, sin GO dentro,
+  y esperar CI/review del candidato. Sin training, operación o T-1 completo.
+
+## 2026-09-30 — MP-08: caché inválida que bloqueaba fuente válida
+
+- MP PR25/e69797e1 y GO PR24/34324749 reconcilian main6228, sólo coordinación.
+  Ambos padres íntegros/en orden; checks all-targets5,46s/26,67s. Sin review.
+- QA MP reproduce RED13/1: BIN deserializable con ciclo impide JSON válido.
+  Validación movida dentro de aceptación BIN; fallback sólo a JSON validado.
+  Ambas fuentes inválidas preservan modelo/archivos; JSON nuevo inválido no
+  hace rollback a BIN viejo. Errores conservan causas de caché y fuente.
+- GREEN14/0; seis clases inválidas x2 rutas dentro de UN test. Check final
+  all-targets25,41s; núcleo/suites207/0/1, replay todavía en curso en este corte.
+  Informe/JSON MP§16–17;3 candidatos/5 abiertos, no8 bugs cerrados.
+- MR integrado por GLM, CI36725338162 SUCCESS posterior al merge. Nuevo
+  aislamiento GLM CX verde/combinado rojo acota efecto marginal; falta dato
+  por gen para re-baseline. No tocar rama/procesos GLM ni PR10/20 de Claude.
+- Main compartido limpio; ramas activas/backups no integrados preservados.
+  No training/promoción/operación/T-1/golden/umbral cambiado ni garantía de lucro.
+
+- CIERRE MP-08: código6ec084e9,207/0/1 núcleo +108/0/2 replay =315/0/3;
+  cuatro nuevos tests MP incluidos, no sumar otra vez12 casos internos.
+  Check25,41s; hashes re-verificados. Informe§18/JSON qa_mp08_final.
+  Publicar en PR25 y pedir review del nuevo SHA; no atribuirle CI del padre.
+  GO34324749 permanece en PR24 separada, sin código productivo cambiado.

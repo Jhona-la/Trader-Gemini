@@ -1932,6 +1932,27 @@ trinquete0,110; no se obtienen aprobados cambiando la referencia.
 Regresión local117/0/2; contratos rápidos9/0. T-1 completo no ejecutado,
 CI remota/revisión/publicación GO pendientes. Sin cambio de producción.
 
+## ADENDA MP — Qué significa una publicación correcta del grafo multiactivo
+
+Para activos A y B distintos, sus actualizaciones deben componer:
+U_A(U_B(M)) = U_B(U_A(M)). Dos stores de copias del mismo M no cumplen esa
+propiedad; el último puede borrar al otro. MP-01 lo reproduce y usa RCU con
+retry sobre el snapshot vigente. Leer un mapa completo no equivale a conservar
+todas las actualizaciones ni a publicar un ensamble completo de forma atómica.
+
+Las unidades del análisis son claves, versiones y orden de eventos, no retorno.
+Los parámetros32/24 escritores y8 rondas sólo fuerzan contención en fixtures;
+no son límites de mercado. No se modificó el veto por modelo ausente: se repara
+una causa técnica de esa ausencia. No adjudicar el fallo a un genoma sin trazar
+qué predictor existía y cuál utilizó la decisión.
+
+MP-02 mantiene padres/stem de rutas y preserva bytes de fuentes no convencionales.
+La identidad de JSON, caché, predictor y evidencia OOS sigue siendo una cadena
+de contratos distintos, no cuatro nombres del mismo hecho. Véanse el
+[informe MP](docs/AUDITORIA_PUBLICACION_MULTIACTIVO_2026-09-30.md) y su matriz
+de dos candidatos/cinco abiertos; no inferir ventaja cuántica o crecimiento
+garantizado de la corrección de concurrencia ni del uso de teoría avanzada.
+
 ## ADENDA MR — qué significa cada evidencia del modelo (2026-09-30)
 
 La cadena correcta distingue: archivo presente → JSON legible → estructura
@@ -1947,3 +1968,23 @@ los seis expedientes y controles. Ninguna nueva teoría matemática corrige
 por sí sola una validación desconectada o un linaje no observado. Habilidad
 multiactivo/multiescala exige datos y tests con soporte temporal efectivo;
 resolución del reloj, complejidad de modelos y nombres cuánticos no bastan.
+
+## ADENDA MP-08 — deserializar no es validar; rechazar no siempre es detener
+
+El [nuevo expediente MP-08](docs/AUDITORIA_PUBLICACION_MULTIACTIVO_2026-09-30.md)
+distingue D(B), bytes BIN deserializables, de V(B), estructura ejecutable válida.
+La implementación anterior recuperaba desde JSON sólo cuando fallaba D y
+rechazaba sin recuperación cuando fallaba V. Un ciclo en caché y fuente JSON
+válida reproduce esa discontinuidad técnica; no es un cambio de régimen financiero.
+
+Ahora el par selección/validación forma una rama completa: BIN elegible y válido
+se conserva; BIN inválido intenta JSON válido; ambas fuentes inválidas rechazan.
+Si el JSON es más nuevo e inválido, no se acepta una caché vieja por conveniencia.
+El último modelo publicado sobrevive a cargas fallidas. Estas condiciones se
+comprueban con fixtures de timestamps explícitos, no con operaciones reales.
+
+La corrección elimina una causa concreta de bloqueo sin eliminar la protección
+estructural. V no equivale a evidencia estadística, hash de serving, permiso de
+promoción ni adecuación al activo/horizonte. Identidad, generaciones, coherencia
+multihead y watcher permanecen abiertos; ninguna ecuación avanzada los acredita
+por sí sola. No se cambia el diseño temporal del motor ni se mide rentabilidad.

@@ -47,6 +47,10 @@ jobs:
           rustc +nightly-2026-06-30 --version
       - name: Check all workspace targets
         run: cargo +nightly-2026-06-30 check --workspace --all-targets --locked
+      - name: Model publication and loader contracts
+        # Synthetic models only. No real-model inventory, training or promotion.
+        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test model_publication_contract --test ml_model_contract --test ml_base_publication_contract -- --test-threads=1
+
       - name: Model inventory structural evidence contracts
         # Synthetic files only; no training, promotion or live-model loading.
         run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --lib ml_registry::tests -- --test-threads=1

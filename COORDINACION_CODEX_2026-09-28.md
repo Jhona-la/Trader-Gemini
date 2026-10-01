@@ -1725,6 +1725,29 @@ calentamiento es ahora REAL (StatefulEngine único, sin segunda ruta de
 klines). Re-baseline T-1 (ADR-0001) PENDIENTE — physics del replay
 cambió (sin precarga + warmup exacto + ATR sin semilla).
 
+## Codex MP — publicación concurrente y fuentes preservadas (2026-09-30)
+
+Rama codex/model-publication-contract desde mainee438edb, código3f2be42d.
+MR/PR23 sigue aparte, CI en curso/sin review. GLM conserva PR20/77d6632a:
+no toco host, trainer, modelos, lib.rs ni su integración. Aviso local enviado;
+no confundir con acuse. Compartimos diagnóstico, no aprobación retroactiva.
+
+MP-01: ambas APIs perdían claves por load-clone-store (RED183/256 y4/24).
+Ahora RCU compartido; parseo/validación fuera del retry. MP-02: rutas con
+replace cambiaban directorios; fuente sin extensión era sobrescrita por BIN.
+Path::with_extension y JSON no convencional sin caché implícita.10 contratos
+pasan;198/0/1 ampliados y check31,16s. Replay adicional todavía en ejecución.
+
+Informe/JSON MP detallan5 abiertos: orden de generación por clave, bundles,
+exposición mutable, watcher oscilando t_json/t_bin y MR-03 identidad de caché.
+No toca vetos financieros ni elimina límites de riesgo. Publicación pública
+MP consultada por separado; merge posterior requiere CI y revisión de SHA.
+
+Cierre MP: replay108/0/2 completado, total disjunto306/0/3; no golden ni
+fixtures anteriores alterados. Commit código3f2be42d. MR recibió solicitud
+de revisión issuecomment-5912446341; check y registry verdes, replay remoto
+en curso. MP todavía local esperando autorización específica para publicación.
+
 ## Codex MR — integración documental de mainee438edb
 
 Se conservan íntegros ambos apéndices del conflicto. MR no cambia
@@ -1846,6 +1869,21 @@ publicación y pide revisión independiente; no fusionar mientras falte CI del
 candidato o revisión. GO no toca fixture/trinquete/producción; MP toca sólo
 publicación de modelos y rutas de caché. Trainer/host y PR10/20 ajenos intactos.
 La autorización levanta el bloqueo de publicación previo, no los controles.
+
+## 2026-09-30 — Codex MP: integración preservada y publicación autorizada
+
+Operador autorizó MP/GO públicas por separado. GO PR24/3ba8c2d6 solicita
+revisión,126/0/2 local y CI propia en curso. No se incluye GO dentro de MP.
+MP incorpora mainfbf8e9ea/MR; se preservan ambos lados de cinco conflictos
+en docs y CI, sin modificar sus fixtures ni quitar tests. All-targets26,60s
+pasa, fuentes MP y hashes originales idénticos; regresión integrada en curso.
+Publicación MP después de verificarla. No merge sin CI del SHA y revisión.
+No host/trainer/genoma/modelos/riesgo; no interferir en trabajo PR10/20.
+
+Verificación MP integrada terminada311/0/3:203 núcleo/suites y108 replay.
+Compilación all-targets26,60s. Hashes fuente MP intactos. Publicación
+autorizada en PR independiente, revisión cruzada solicitada al publicarla;
+no inferir CI remota ni aprobación de la evidencia local.
 
 ## 2026-09-30 — GLM: XLIX·G aislamiento T-1 RESUELTO — CX-solo VERDE, caída es del PR#20
 
@@ -2501,3 +2539,31 @@ promoción con selección ∧ test. Con la brecha en 310×, cada símbolo
 que recorra esta plantilla mueve el volumen.
 
 El watcher cargará BTC en caliente (≤10 s) en la próxima sesión viva.
+
+## 2026-09-30 — Codex MP: reconciliación documental con main6228b351
+
+Se preservan íntegros los apéndices de MP y de GLM. El nuevo resultado
+reportado por GLM acota el efecto marginal de añadir PR20 al estado CX;
+no equivale todavía a una demostración gen a gen de su mecanismo ni
+autoriza bajar el trinquete. Se necesita la lista y magnitud de cambios
+realizados, con SHA/configuración comparables, antes de re-baseline.
+Codex no toca el checkout ni la re-medición de GLM. MR ya está en main;
+MP/GO siguen pendientes de CI del candidato y revisión cruzada.
+
+## 2026-09-30 — Codex MP-08: candidato de recuperación de caché
+
+Dentro del alcance loader/publicación de PR25 se reproduce BIN inválido
+deserializable que bloquea JSON válido (RED13/1). El arreglo sólo acepta
+caché validada y, si falla, intenta JSON validado; ambos inválidos rechazan
+sin cambiar modelo previo ni archivos. Fuente nueva inválida no activa BIN
+viejo. GREEN14/0 y check25,41s; núcleo/suites207/0/1, replay en curso.
+Informe MP§16–17/JSON ampliados,8 expedientes3 candidatos5 abiertos.
+Solicito revisar este diff adicional de aceptación/fallback en el SHA que
+se publique; no usar CI/review del padre como si cubrieran el cambio nuevo.
+Sin host/trainer/genoma/riesgo/modelos reales ni interferencia con GLM/Claude.
+
+MP-08 validación terminada:6ec084e9,315/0/3 y all-targets25,41s. Informe§18
+con comandos/hashes; nuevas pruebas en target MP ya incluido en CI. Revisar
+especialmente caché inválida con fuente válida, ambos inválidos y fuente
+nueva inválida frente a BIN viejo válido. No se debilita ningún rechazo.
+Las ramas no integradas y el checkout compartido se preservan.

@@ -1795,9 +1795,9 @@ El equipo de 10 Roles Senior ejecutó la intervención de raíz sobre los 89 def
 - **Cancelación Quirúrgica OCO (D-371):** Implementación de `cancel_position_oco_orders` cancelando únicamente las órdenes asociadas a la posición cerrada.
 
 ```
-======================================================================
+===============================================================
               CERTIFICACIÓN SISTÉMICA FINAL (FASE 13 / NOVENA OLA)
-======================================================================
+===============================================================
 [+] pure-rust-standard:       100% CUMPLIDO (Cero dependencias Python)
 [+] cargo-check-workspace:    APROBADO (Exit Status 0, 0 Errores, 0 Warnings)
 [+] cargo-test-workspace:     APROBADO (100% Tests Unitarios Pasados)
@@ -1805,7 +1805,7 @@ El equipo de 10 Roles Senior ejecutó la intervención de raíz sobre los 89 def
 [+] multi-coin-simulation:    EJECUTADA (5,184,000 Ticks / 30 Monedas / VIP0)
 [+] hardware-efficiency:      Peak Heap < 100 MB RAM / Cero Swapping SSD
 [+] micro-capital-compliance: Sizing acotado a piso de $5.00 USD sobre $13.00 USD
-======================================================================
+===============================================================
 ```
 
 ---
@@ -8741,6 +8741,30 @@ T-1 completo ni se cambió0,110. Fallo combinado PR20+CX es reporte de GLM,
 no prueba de que re-baseline sea correcto: falta contraste por gen y causas.
 Sin promesa de rentabilidad, auditoría universal ni integración implícita.
 
+## ADENDA MP — publicación multiactivo y frontera archivo/modelo (2026-09-30)
+
+El estado previo de CX es histórico: PR22 sí se integró en c75f23ce/main
+ee438edb. MR/PR23 permanece abierta al consultar. Esta nueva ola MP parte
+de main sin MR, preserva el checkout y el cierre PR20 de GLM.
+
+[Informe MP](docs/AUDITORIA_PUBLICACION_MULTIACTIVO_2026-09-30.md) y
+[artefacto MP](docs/artifacts/auditoria_publicacion_multiactivo_2026-09-30.json):
+dos familias reparadas como candidatas, cinco expedientes abiertos. RED real:
+183/256 publicaciones perdidas en memoria,4/24 cargas perdidas, rutas de caché
+erróneas y JSON sin extensión sobrescrito. GREEN10 contratos;198/0/1 ampliados,
+check all-targets31,16s. Código3f2be42d; replay complementario en ejecución.
+
+El mapa atómico no hacía atómica la actualización. Se usa RCU para preservar
+claves concurrentes; no se afirma orden de generación ni bundle transaccional.
+La ruta se resuelve por extensión final; el cache sigue basado en mtime, no
+identidad de serving. Watcher tiene además una oscilación t_json/t_bin estática
+documentada, todavía sin reparar. No se certifica rentabilidad ni todo el repo.
+
+Cierre local MP: replay108/0/2 completado; total disjunto306/0/3 con el
+núcleo/suites. Informe§14 y JSON final_validation documentan comandos,
+alcance y preservación de informes. Publicación MP específica aún pendiente;
+MR/PR23 sigue esperando CI completa y revisión. No operación/training/T-1.
+
 ## ADENDA MR — evidencia de modelos y promoción (2026-09-30)
 
 [Informe MR](docs/AUDITORIA_REGISTRO_MODELOS_2026-09-30.md) y
@@ -8764,3 +8788,35 @@ La estructura se valida sobre bytes originales, no sobre Value normalizado.
 Nueve contratos registry incluidos en el total, sin inflar el conteo.
 CX ya está en main mediante c75f23ce, comprobado en remotoee438edb;
 sus informes añaden el cierre conservando el historial. MR espera CI/review.
+
+## ADENDA MP-08 — recuperación legítima de caché inválida (2026-09-30)
+
+Se reproduce otro rechazo lógico del cargador: un BIN deserializable con
+topología inválida bloqueaba su JSON válido porque la validación quedaba fuera
+de la rama de fallback. RED13/1 en14 tests; primer fallo cycle/json. No permitía
+activar el árbol inválido: el impacto era pérdida de disponibilidad/actualización.
+La corrección valida dentro de la aceptación de caché e intenta JSON plenamente
+validado en cualquier fallo de ésta. Preserva rechazo si ambas fuentes fallan,
+último modelo activo y archivos intactos; JSON nuevo inválido no retrocede a BIN
+viejo válido. Se distinguen ambos motivos en el error. No cambia gates de riesgo.
+
+El [informe MP, §16–17](docs/AUDITORIA_PUBLICACION_MULTIACTIVO_2026-09-30.md)
+y [artefacto MP](docs/artifacts/auditoria_publicacion_multiactivo_2026-09-30.json)
+añaden causa raíz, casos, impacto, límites y requisitos de cierre. Matriz MP
+actualizada por adenda:8 expedientes,3 reparaciones candidatas y5 abiertos;
+MP-07 sigue siendo referencia a MR-03, no un nuevo descubrimiento independiente.
+Los12 casos de caché inválida pertenecen a un test, no son12 tests distintos.
+GREEN inicial14/0; check final all-targets25,41s. Regresión ampliada se registra
+al terminar; no sumar evidencias históricas como si validaran el nuevo árbol.
+
+MR/PR23 integrado por GLM y CI posterior SUCCESS; MP/PR25 y GO/PR24 abiertas,
+sin revisión independiente al corte. Reconciliaciones con main6228 sólo docs,
+ambos padres preservados. El contraste T-1 reportado por GLM acota el efecto de
+PR20 sobre CX, no demuestra por sí solo mecanismo por gen ni autoriza re-baseline.
+No ejecución del motor, training, promoción, cambio de fixture/trinquete o
+certificación de todo el proyecto; tampoco evidencia de retorno garantizado.
+
+Cierre MP-08: código6ec084e9 validado315/0/3, check25,41s; informe§18 y JSON
+qa_mp08_final conservan los resultados anteriores y añaden el nuevo corte.
+No corresponde a315 fallos reparados ni demuestra merge/CI remotos. Publicar
+y revisar este candidato mantiene separados prueba local y cierre integrado.
