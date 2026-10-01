@@ -143,9 +143,11 @@ impl<'a> PortfolioOrchestrator<'a> {
         // el margen de TODOS los largos cuando cualquier moneda subía con
         // fuerza. Sólo cuenta la crash-ness de las monedas cuya marea
         // portadora (`spectral_coherence`) es BAJISTA — la misma regla que
-        // aplica el núcleo a su propio recorte de `free_cap`.
-        let mut crash_pressure = 0.0f64;
-        if intent_is_long {
+        // Ola XLIV & AGY-AUD-P07: SIMETRÍA DIRECCIONAL EN PRESIÓN ESPECTRAL DE COLCHÓN.
+        // Para largos: contrae por crash_pressure (marea portadora bajista + crash flux).
+        // Para cortos: contrae simétricamente por squeeze_pressure (marea portadora alcista + crash flux),
+        // protegiendo posiciones cortas contra short squeezes violentos y blow-off tops.
+        let directional_pressure = if intent_is_long {
             let crash_max = self
                 .arena
                 .coins
@@ -155,8 +157,19 @@ impl<'a> PortfolioOrchestrator<'a> {
                 .filter(|f| f.is_finite())
                 .fold(0.0f64, f64::max)
                 .clamp(0.0, 1.0);
-            crash_pressure = 0.25 * crash_max;
-        }
+            0.25 * crash_max
+        } else {
+            let squeeze_max = self
+                .arena
+                .coins
+                .iter()
+                .filter(|c| c.spectral_coherence.load(Ordering::Relaxed) > 0.0)
+                .map(|c| c.spectral_crash_flux.load(Ordering::Relaxed))
+                .filter(|f| f.is_finite())
+                .fold(0.0f64, f64::max)
+                .clamp(0.0, 1.0);
+            0.25 * squeeze_max
+        };
         if regime == crate::regime::MarketRegime::Crash && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
         }
@@ -207,7 +220,7 @@ impl<'a> PortfolioOrchestrator<'a> {
         let exposure_limit = (crate::capital_regime::margin_cushion(
             self.arena.config.margin_cushion_pct.load(Ordering::Relaxed),
             escasez,
-        ) - crash_pressure)
+        ) - directional_pressure)
             .max(0.05);
 
         // GROSS exposure cap: margen comprometido en AMBAS direcciones a la

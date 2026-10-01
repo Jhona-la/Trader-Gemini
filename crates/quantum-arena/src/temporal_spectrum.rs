@@ -429,6 +429,8 @@ impl TemporalSpectrum {
         let mut w_sig_sum = 0.0;
         let mut best_contrib = 0.0f64;
         let mut dominant = 0.0f64;
+        let mut best_operating_contrib = 0.0f64;
+        let mut dominant_operating = 0.0f64;
         // Respaldo H0: promedio de las señales ponderado sólo por lo que cada
         // escala puede observar.
         let mut obs_sum = 0.0;
@@ -446,6 +448,12 @@ impl TemporalSpectrum {
                 best_contrib = contrib;
                 dominant = s.tau_ms;
             }
+            if s.tau_ms >= TAU_ANCHOR_FAST_MS && s.tau_ms <= TAU_ANCHOR_SLOW_MS {
+                if contrib.abs() > best_operating_contrib.abs() {
+                    best_operating_contrib = contrib;
+                    dominant_operating = s.tau_ms;
+                }
+            }
         }
         self.fused_score = if w_sum > 1e-12 {
             (w_sig_sum / w_sum).clamp(-1.0, 1.0)
@@ -458,21 +466,16 @@ impl TemporalSpectrum {
         } else {
             0.0
         };
-        // C-05 (INFORME 14, FASE 0) — τ DEGENERADA. La fusión por paridad de
-        // riesgo (w ∝ 1/ewma_dev_vol) degenera: la vol de sorpresa de las
-        // escalas lentas es sistemáticamente menor, así que SIEMPRE pesan más
-        // y la escala dominante cruda queda pegada al extremo lento del
-        // espectro — escala 31 ≈ 146 años (verificado en vivo:
-        // data/position_journal.jsonl con tau_ms = 4611686018427 en 2/3 de
-        // las entradas), llevando a HorizonCurve.eval a extrapolar brackets
-        // absurdos (+65%/−32%).
-        //
-        // FIX: la τ que sale del espectro hacia la DECISIÓN se acota al
-        // espectro físico Y a la banda operativa de las anclas [30s, 12h].
-        // El espectro de OBSERVACIÓN sigue completo (las 32 escalas siguen
-        // alimentando fused_score/señales): el espectro puede VER más allá
-        // de la banda, pero la DECISIÓN opera en la banda.
-        self.dominant_tau_ms = dominant
+        // C-05 & AGY-AUD-P10: Si existe una escala dominante con masa medible dentro de
+        // la banda de decisión [30s, 12h], se adopta directamente para evitar la falacia
+        // de proyección de contorno (donde ruido a microsegundos ganaba el argmax y
+        // se pegaba permanentemente a 30s).
+        let resolved_dominant = if best_operating_contrib.abs() > 1e-12 {
+            dominant_operating
+        } else {
+            dominant
+        };
+        self.dominant_tau_ms = resolved_dominant
             .clamp(SPECTRUM_SCALES_MS[0], SPECTRUM_SCALES_MS[31])
             .clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
     }

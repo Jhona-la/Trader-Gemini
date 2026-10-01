@@ -1,5 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-09-30 — Antigravity: Ola 3 / Vorticidad de Hodge, Simetría de Squeeze, Continuidad de Hurst y Modulación Hawkes Unificada
+
+- Flujo coordinado: rama `antigravity/ola3-universo-espectral-continuo` → verificación workspace y contratos → merge a main → limpieza de rama.
+- AGY-AUD-P06 (CRITICAL): `risk-engine/correlation_guard.rs` y `risk-engine/tests/correlation_admission_contract.rs`: En universos multiactivo con alta vorticidad de Helmholtz-Hodge (`hawkes_contagion_curl_share`), la diversificación aparente colapsa. Cableado escalamiento cuadrático continuo `systemic_rho = base_rho + (1.0 - base_rho) * (curl^2)` y amplificación por rol seguidor neto (`z_rec = -net_role > 3.0`). Limpiado warning redundante de `#[inline]`.
+- AGY-AUD-P07 (HIGH): `risk-engine/orchestrator.rs`: Generalizado `crash_pressure` a presión direccional simétrica `directional_pressure`. Para cortos, ante blow-offs alcistas (`spectral_coherence > 0.0` con `spectral_crash_flux`), se aplica `squeeze_pressure`, cerrando la asimetría estructural donde solo los largos tenían mitigación por marea adversa.
+- AGY-AUD-P08 (HIGH): `feature-engine/multifractal.rs`: En `MultiScaleHurstConfluence::update`, erradicado el step function discreto con umbrales duros (0.55 / 0.45). Implementada función continua $C^\infty$ hiperbólica $c(H) = \tanh((H - 0.50)/0.08)$, suavizando la transición entre regímenes de mean-reversion y persistencia.
+- AGY-AUD-P09 (MEDIUM): `signal-engine/contagion_modulator.rs` y `god-engine-core/lib.rs`: Unificada la modulación por rol neto Hawkes en función canónica `modulate_by_net_role` con inmunidad IEEE-754 a NaN/Inf. Eliminada duplicación inline en el bucle del motor principal (línea 5863).
+- AGY-AUD-P10 (MEDIUM): `quantum-arena/temporal_spectrum.rs`: En `refresh_fusion()`, búsqueda de `dominant_tau_ms` alineada al espectro operativo $[30\,\text{s}, 12\,\text{h}]$ (`dominant_operating`), erradicando el anclaje espurio a 30s por ruido sub-segundo.
+- Verificación completa: `risk-engine` (107 unit tests + 11 contract suites, 100% OK), `god-engine-core` (157 unit tests + outcome/attribution/stateful contracts, 100% OK), `quantum-arena` (168 tests, 100% OK), `feature-engine` (68 tests, 100% OK), `signal-engine` (87 tests, 100% OK). Cargo check workspace all-targets completado con cero errores.
+
 ## 2026-09-30 — Antigravity: Ola 2 / Evolución Espectral Continua y Desacoplamiento de Vetos
 
 - Flujo coordinado: rama `antigravity/evolucion-universo-espectral` → verificación → merge a main → limpieza de rama.

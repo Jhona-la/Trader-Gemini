@@ -180,27 +180,12 @@ impl MultiScaleHurstConfluence {
         let (h_meso, _) = self.engine_meso.update(price);
         let (h_macro, _) = self.engine_macro.update(price);
 
-        let c_micro: f64 = if h_micro > 0.55 {
-            1.0
-        } else if h_micro < 0.45 {
-            -1.0
-        } else {
-            0.0
-        };
-        let c_meso: f64 = if h_meso > 0.55 {
-            1.0
-        } else if h_meso < 0.45 {
-            -1.0
-        } else {
-            0.0
-        };
-        let c_macro: f64 = if h_macro > 0.55 {
-            1.0
-        } else if h_macro < 0.45 {
-            -1.0
-        } else {
-            0.0
-        };
+        // AGY-AUD-P09: Continuidad suave C^infinito en confluencia fractal:
+        // Erradica funciones escalón discretas (+1, 0, -1) con umbrales rígidos 0.55/0.45.
+        // Utiliza una modulación hiperbólica continua centrada en el punto nulo browniano H=0.50.
+        let c_micro = ((h_micro - 0.50) / 0.08).tanh();
+        let c_meso = ((h_meso - 0.50) / 0.08).tanh();
+        let c_macro = ((h_macro - 0.50) / 0.08).tanh();
 
         let confluence_score: f64 = (c_micro * 0.4 + c_meso * 0.3 + c_macro * 0.3).clamp(-1.0, 1.0);
 
