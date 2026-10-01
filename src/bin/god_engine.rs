@@ -1829,7 +1829,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         pos.entry_price,
                         pos.qty.abs(),
                         calculated_margin,
-                        now_ms,
+                        // #595: edad honesta — updateTime del exchange (cota
+                        // inferior), no el arranque del proceso. 0/desconocido
+                        // o reloj adelantado → cae a now.
+                        if pos.update_time > 0 && pos.update_time <= now_ms {
+                            pos.update_time
+                        } else {
+                            now_ms
+                        },
                     );
                     if let Some(slot) = adopted_slot {
                         arena_real
