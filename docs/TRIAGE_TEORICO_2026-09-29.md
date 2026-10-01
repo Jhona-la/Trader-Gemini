@@ -231,3 +231,41 @@ verificado (Chen/reverso exactos) sin coste de mantenimiento.
 
 **transfer_entropy**: cuarentena CONFIRMADA (medición real dio
 ~0.001 bits ambas direcciones — sin flujo direccional a esa escala).
+
+---
+
+## ADENDA LXXI (2026-10-01) — CÓPULAS t: MEDIDAS Y EL PORTÓN SE ABRE (positivo, a diferencia de TE)
+
+`feature_engine::copulas` (τ-a exacto, ρ por inversión elíptica, t-Student
+sin deps con Lanczos+fracción continua, MLE de ν sobre grid, λ de cola
+cerrada y empírica; 9/9 contratos — uno de ellos cazó un bug en mi propia
+fórmula gaussiana de referencia). Medición real: tapes de agosto-2026,
+9 símbolos del roster, 36 pares, rejilla espectral {1m, 5m, 15m} (1h
+queda fuera: 744 puntos < mínimo de 1.500 — necesita tapes multimes).
+
+**Veredicto: 100/108 par-horizonte con λ̂≥0.10 y ν̂≤12** — estructura de
+cola MASIVA que la ρ̄ lineal del veto same-bet NO ve:
+
+- Mediana λ̂ = 0.32 (5m) / 0.34 (15m): cuando un símbolo está en su cola
+  5%, su par co-excede su propia cola ~1/3 de las veces (independencia
+  implicaría ~5%). λ empírica no paramétrica (0.25–0.59) CONFIRMA el
+  ajuste — no es artefacto de la t.
+- ν̂ mayormente 2–6: dependencia de colas muy pesadas.
+- Caso extremo: BTC-SOL 5m ρ̂=0.77 pero λ̂=0.51 — una gaussiana con
+  ρ=0.77 da λ=0. La agregación del grupo same-bet (r·√(k+k(k−1)ρ̄))
+  SUBESTIMA estructuralmente el stop-out conjunto.
+- Pares más acoplados en cola: SOL-XRP (λ̂≈0.50), BTC-SOL (0.51),
+  BTC-XRP (0.46), BNB-SOL (0.44). Más diversificantes: ATOM-* (0.16–0.23),
+  NEAR-ATOM (0.12–0.17) — ATOM es el activo que más cola no compartida
+  aporta al roster.
+
+**Contrato de consumo futuro (ola subsiguiente, NO cableado aquí)**:
+publicar (ρ̂, ν̂, λ̂) por par desde tapes mensuales → registry
+c{par}:lambda_cola → el veto same-bet consume λ̂ para inflar el riesgo
+efectivo del grupo (p.ej. ρ_efectivo = ρ̄ + (1−ρ̄)·λ̂, o piso de N_eff
+desde λ̂). El cableado toca el pipeline vivo ⇒ **oráculo T-1 ANTES del
+merge** (margen 0.1 pts) y diseño de horizonte explícito — la misma
+lectura interpretativa que qo-604 exige para el min() de V-RISK-006.
+
+La medición completa (tablas 5m/15m) está reproducible:
+`cargo test --release -p feature-engine --test copula_real -- --ignored --nocapture`.
