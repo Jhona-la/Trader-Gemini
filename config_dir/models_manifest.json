@@ -7,7 +7,9 @@
       "bytes": 216137,
       "base": 0.2006304974492555,
       "n_arboles": 50,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "ATOMUSDT_MOTOR",
@@ -16,7 +18,9 @@
       "bytes": 32764,
       "base": 0.20117961576337004,
       "n_arboles": 11,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": false,
+      "error_estructural": "modelo <from_data>: split has missing or cross-tree child"
     },
     {
       "key": "AVAXFDUSD_MOTOR",
@@ -25,7 +29,9 @@
       "bytes": 216137,
       "base": 0.2006304974492555,
       "n_arboles": 50,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "BNBFDUSD_MOTOR",
@@ -34,7 +40,9 @@
       "bytes": 216137,
       "base": 0.2006304974492555,
       "n_arboles": 50,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "BNBUSDT_MOTOR",
@@ -43,7 +51,9 @@
       "bytes": 86934,
       "base": 0.18434131156841513,
       "n_arboles": 36,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": false,
+      "error_estructural": "modelo <from_data>: split has missing or cross-tree child"
     },
     {
       "key": "BTCFDUSD_MOTOR",
@@ -52,16 +62,20 @@
       "bytes": 216137,
       "base": 0.2006304974492555,
       "n_arboles": 50,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "BTCUSDT_MOTOR",
       "archivo": "BTCUSDT_MOTOR.json",
-      "sha256": "fdd48ee70d780c7809e07a6f60c8a8f4121e9f10f5885710ab6cbd3c10d31092",
-      "bytes": 16870,
-      "base": 0.15658183476803975,
-      "n_arboles": 6,
-      "legible": true
+      "sha256": "8f280650bc011d3a2eb30c3682ea0346e3cf6e217cec4b8dc2eb149f5e810b9d",
+      "bytes": 30267,
+      "base": 0.15641846186313166,
+      "n_arboles": 11,
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "DOGEFDUSD_MOTOR",
@@ -70,7 +84,9 @@
       "bytes": 216137,
       "base": 0.2006304974492555,
       "n_arboles": 50,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "DOTFDUSD_MOTOR",
@@ -79,7 +95,9 @@
       "bytes": 216137,
       "base": 0.2006304974492555,
       "n_arboles": 50,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "DarkAlpha_BTCUSDT",
@@ -88,7 +106,9 @@
       "bytes": 321012,
       "base": null,
       "n_arboles": null,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": false,
+      "error_estructural": "missing field `children_left` at line 15882 column 1"
     },
     {
       "key": "ETHFDUSD_MOTOR",
@@ -97,7 +117,9 @@
       "bytes": 216137,
       "base": 0.2006304974492555,
       "n_arboles": 50,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "LINKFDUSD_MOTOR",
@@ -106,7 +128,9 @@
       "bytes": 216137,
       "base": 0.2006304974492555,
       "n_arboles": 50,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "NEARUSDT_MOTOR",
@@ -115,7 +139,9 @@
       "bytes": 75636,
       "base": 0.2321635632882616,
       "n_arboles": 26,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": false,
+      "error_estructural": "modelo <from_data>: split has missing or cross-tree child"
     },
     {
       "key": "NEARUSDT_VOL",
@@ -124,7 +150,9 @@
       "bytes": 32149,
       "base": 0.5097201702178684,
       "n_arboles": 11,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": false,
+      "error_estructural": "modelo <from_data>: split has missing or cross-tree child"
     },
     {
       "key": "SOLFDUSD_MOTOR",
@@ -133,7 +161,9 @@
       "bytes": 216137,
       "base": 0.2006304974492555,
       "n_arboles": 50,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     },
     {
       "key": "XRPFDUSD_MOTOR",
@@ -142,8 +172,10 @@
       "bytes": 216137,
       "base": 0.2006304974492555,
       "n_arboles": 50,
-      "legible": true
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     }
   ],
-  "generado_ms": 1790754139487
+  "generado_ms": 1790850146772
 }

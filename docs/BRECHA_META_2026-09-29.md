@@ -182,3 +182,30 @@ insuficiente.
 tape más corto: septiembre ~5.9k decisivas esperadas): el stride es
 densidad de muestreo declarada, no parámetro del modelo; el mismo valor
 aplica a los tres tapes uniformemente.
+
+---
+
+## ADENDA FINAL (2026-10-01) — **PRIMERA PROMOCIÓN HONESTA COMPLETA DE BTC: GATE SUPERADO**
+
+Ronda 3 (stride 15s uniforme declarado, tapes jun/ago/14-sep):
+
+| fase | resultado |
+|---|---|
+| Junio (train) | 10,628+ decisivas, paridad dim-a-dim tolerancia 0 |
+| Agosto (selección) | logloss 0.4631 vs 0.4847 — mejora **+0.0217** |
+| Purga de solape | aplicada (cross-file, frontera cerrada XLIV-13b) |
+| Paridad train↔serve | máx \|Δ\| = 1.3e-7 |
+| **Septiembre (test posterior)** | **logloss 0.3984 vs 0.4151 — mejora +0.0168 FUERA DE MUESTRA** |
+| Promoción | 💾 models/BTCUSDT_MOTOR.json — **11 árboles, base 0.1564** |
+
+**La cadena completa, cerrada de punta a punta**: registry encuentra BTC
+degenerado (XLVIII·G) → trainer honesto fusionado (PR#20/LI) → lección
+del stride (XLIV-13 no densifica; XLVIII·H tenía 4× solape) → gate
+protege dos aborts honestos (r1: presupuesto; r2: tape corto) → **test
+posterior real SUPERADO**. La salvedad de XLIX·C se disuelve: esta
+promoción tiene evidencia de selección ∧ test — la primera del sistema
+con el estándar completo. El watcher la cargará en caliente (≤10 s) en
+la próxima sesión viva.
+
+Manifest: hash 8f280650bc01, 30,267 bytes. El camino a la meta sigue
+por los demás símbolos sonda-bloqueados — con este arco como plantilla.
