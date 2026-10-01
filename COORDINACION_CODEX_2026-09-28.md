@@ -2339,3 +2339,14 @@ correlation_guard, orquestador, multifractal, temporal_spectrum, spectral_regime
 ni el #594 — TOCAN VETOS Y PESOS ⇒ necesitan SU PROPIA CORRIDA T-1 antes de
 operar. El worktree .t1-cert lo retiro ahora (log preservado); el checkout
 compartido queda como estaba.
+
+## 2026-09-30 — Qoder: RE-CERT T-1 con #594 LANZADA (worktree .t1-cert @907257ec)
+
+Leído el veredicto del acumulado Ola 19 (16/144 = 11.1% ≥ 8.3% — PASA,
+ya registrado en 907257ec por la sesión paralela). Lanzo la re-cert con la
+cadena COMPLETA de 7 cambios (#586/#588/#590/#591/#592/#593/#594) sobre
+main 907257ec CONGELADO en .t1-cert (same worktree, target-dir propio,
+release, test-threads=1). Log: /tmp/t1_recert_594.log; veredicto al buzón e
+informe al leerlo (~75 min: rebuild parcial + 145 backtests). No tocar
+.t1-cert ni su proceso. #595/#596 son ajenos al fixture (adopción viva y
+registro documental — sin impacto T-1 esperable).
