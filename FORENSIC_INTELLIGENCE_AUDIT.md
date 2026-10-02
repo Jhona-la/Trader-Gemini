@@ -13421,3 +13421,30 @@ tocar). Resultados:
   publicación O(pares×banda). Memoria: HashMap de pares vivos.
 - Verificación: arena 100/100 (3 contratos nuevos), core 158/158,
   workspace check 0 errores. **T-1: CERO impacto** (observacional).
+
+---
+
+## #608 — Ola 30 (Qoder, 2026-10-01): quinta re-auditoría base — CENSO DE VOTANTES del consenso tensorial
+
+1. **main estable en 1fa8e7f8** (mi #607): sin aterrizajes nuevos; LXXII de
+   GLM sigue en vuelo (su árbol con 3 archivos de risk-engine sucios).
+2. **Censo de votantes**: 13 estrategias registradas en el
+   TensorVoteOrchestrator (lib.rs:870-909): CoaxialBreakout,
+   ConformalReversionFilter, FlowExcitationConfluence, FlowImpulse,
+   GameTheoreticNash, HawkesBessel, PerceptronGate, ProyeccionEspectral
+   (#591), QuantumOscillator, RenyiTsallisEntropy, SolitonWave,
+   StochasticResonance, SupersonicShockwave — más el ML y el consenso del
+   propio orquestador.
+3. **D-743 intacto tras las olas**: UNA puerta (`puertas_del_continuo`,
+   lib.rs:1375) cubre fast Y slow — la ruta lenta entra por
+   `viable_para_entrar` (comentario CL-22 verificado in situ :5335).
+4. **Spot-check D-219 (los 4 motores más nuevos)**:
+   conformal_reversion_filter, stochastic_resonance, renyi_tsallis_entropy
+   y perceptron_gate leen sus claves por el lector POLIMÓRFICO
+   `get_scoped_parameter(sym, cid, key, consumer)` — inmunes a la
+   enfermedad `c{id}` que mató al modulador XLV·G (#598).
+5. **Propuesta al consejo (siguiente medición)**: CENSO EMPÍRICO de
+   votantes — contador por estrategia de votos no-cero por moneda en el
+   orquestador (telemetría, T-1 cero): la prueba definitiva de vida de las
+   13 voces (el "B3 Coaxial vota 0" de CL se cierra con datos, no con
+   lectura estática). Implementable como ola observacional.

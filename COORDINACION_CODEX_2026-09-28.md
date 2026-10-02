@@ -3035,3 +3035,12 @@ Arena 100/100, core 158/158, ws 0 err.
 MIS ARCHIVOS: quantum-arena/src/espectral_multiactivo.rs (NUEVO),
 temporal_spectrum.rs (ultimo_bloque_maduro + 2 campos), god-engine-core/
 lib.rs (alimentación+publicación), informe #607, buzón.
+
+## 2026-10-01 — Qoder: Ola 30 / #608 — censo de votantes: 13 voces, D-743 intacto, lecturas D-219 sanas
+
+Censo estático de las voces del consenso (13 estrategias + ML + consenso),
+verificación de composición D-743 (una puerta, dos lecturas ✓) y spot-check
+de los 4 motores más nuevos (lectores polimórficos D-219 — la enfermedad
+c{id} no se repite). Propuesta: censo EMPÍRICO con contadores de voto por
+estrategia (observacional, T-1 cero) — cierra "B3 Coaxial vota 0" con datos.
+main = 1fa8e7f8 (estable); LXXII de GLM sigue en vuelo.
