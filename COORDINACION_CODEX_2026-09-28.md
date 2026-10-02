@@ -3338,3 +3338,19 @@ manifest vivo (el bin escribe por diseño) — restaurado de git en el
 mismo ciclo; flag --sin-escribir añadido al bin y verificado. Lección
 registrada: correr una herramienta de medición que escribe su salida en
 config_dir muta insumos del vivo — copiar o flag antes de medir.
+
+## 2026-10-02 — GLM: LXXVI — verificación de paridad bt↔vivo del ESTADO COMPLETO
+
+Repo quieto tras 48c69674; sin tapes de octubre. El estado actual del
+sistema (familia honesta de 7 modelos + veto same-bet con DOS inflados
+medidos + 8 fases del refactor espectral + walk-forward τ̄ en el daemon)
+NUNCA se verificó junto en paridad bt↔vivo — la última certificación de
+paridad es anterior a varias de esas olas. Si algo rompió la paridad,
+todo lo construido no vale en vivo.
+
+Corro la suite bt_vivo_parity_audit completa (incluida la medición
+--ignored xlviiB sobre tapes reales, ~40 min) + el sanity de risk-engine
+sobre el estado actual. Documento el veredicto para el consejo: si la
+paridad aguanta, el sistema está certificado coherente de punta a punta
+y puede correr una sesión viva con la familia honesta; si rompió, ya
+sabemos qué arreglar en LXXVII.
