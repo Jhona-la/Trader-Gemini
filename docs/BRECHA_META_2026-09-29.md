@@ -284,3 +284,35 @@ ambos extremos del espectro de dependencia de colas.
 
 La brecha 310× se sigue cerrando símbolo a símbolo: 4 modelos con edge
 OOS medido donde antes había 1 degenerado.
+
+---
+
+## ADENDA LXXII (2026-10-01) — cuarteto del roster + el veto same-bet aprende colas
+
+### Roster verificado (bootloader.rs:301-328): 26 USDT vivos
+La pregunta "¿entrenar SOL/XRP/XLM/XMR/ICP?" se responde contra el roster:
+**SOL(3)/XRP(4)/XLM(15)/ICP(17) dentro; XMR FUERA** (sólo existe en la lista
+del simulador forense — sus 4 tapes NO lo traen al vivo; entrenarlo
+produciría un modelo inerte; negativo documentado). **Paradoja FDUSD**:
+los 10 modelos FDUSD se cargan al arranque pero jamás se consultan (roster
+100% USDT) — inerte por diseño del universo; decisión pendiente del
+consejo: remoción o marcado explícito.
+
+### Cuarteto (plantilla honesta, test 09-14)
+
+| símbolo | selección (ago) | test posterior | veredicto |
+|---|---|---|---|
+| ICPUSDT | **−0.0004** (< margen) | −0.0021 (n=36,988) | 🚫 DOBLE gate — sin edge, cuarentena |
+| SOLUSDT | en vuelo | en vuelo | — |
+| XRPUSDT | en vuelo | en vuelo | — |
+| XLMUSDT | en vuelo | en vuelo | — |
+
+### El veto same-bet aprende colas (consumo LXXI)
+Tercera etapa de inflado hacia 1 componiendo sobre el complemento de
+independencia: (1−ρ) = (1−base)(1−curl²)(1−λ̂). `inflar_cola` bit-exact sin
+manifest (D-754); λ̂_grupo = máx candidato-miembro (peor caso); telemetría
+lxxii_lambda_grupo. **Insumo: config_dir/copulas_manifest.json committable
+— 153 pares λ̂≥0.05 a 5m (18 símbolos, ago-2026)**, regenerable por ola
+(bin copulas_manifest). V-RISK-002 actualizado en el mismo commit;
+pre-aprobación pre-merge de qo-606. **Merge condicionado al oráculo T-1**
+(worktree aislado 2db11284, en vuelo al escribir esta adenda).
