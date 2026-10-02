@@ -57,7 +57,13 @@ fn asegurar_cargado() {
     if STORE.get().is_some() {
         return;
     }
-    let Ok(texto) = std::fs::read_to_string("config_dir/copulas_manifest.json") else {
+    // Rutas en orden: cwd vivo (raíz del workspace) y cwd de crate bajo
+    // el workspace (los tests de backtest-engine corren desde su crate —
+    // sin este fallback el oráculo T-1 no ejercitaría el inflado).
+    let texto = std::fs::read_to_string("config_dir/copulas_manifest.json")
+        .or_else(|_| std::fs::read_to_string("../config_dir/copulas_manifest.json"))
+        .ok();
+    let Some(texto) = texto else {
         // Sin manifest ⇒ store vacío PERMANENTE del proceso: legado
         // bit-exact, sin reintentos (el insumo es estático por ola).
         let _ = STORE.set(StorePares {
