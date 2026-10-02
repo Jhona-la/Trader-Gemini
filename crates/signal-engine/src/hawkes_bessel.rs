@@ -101,6 +101,41 @@ const MU_INST_MAX: f64 = 200.0;
 const MU_SEED_MAX: f64 = 50.0;
 
 impl HawkesBesselEngine {
+    /// #617 (Ola 39) — VOTO ESPECTRAL de la excitación Hawkes: el kernel
+    /// exponencial e^{−β·τ_k/1000} evaluado a CADA escala de la malla —
+    /// la excitación de un evento decae con la constante β=0.5 (τ=2s), así
+    /// que las escalas rápidas ven la excitación PLENA y las lentas apenas
+    /// la memoria. La escala k vota `λ(τ_k)/μ − STEADY_STATE_RATIO`
+    /// (excitación > estado estacionario = cascada), firmado por el
+    /// desplazamiento (dirección de la cascada). Escalas donde el kernel
+    /// ya murió (τ ≫ 2/β) votan ~0: la excitación es un fenómeno
+    /// espectralmente LOCAL.
+    /// Observacional: el voto vivo queda bit a bit (T-1 cero).
+    pub fn voto_espectral(
+        desplazamientos: &[f64; 32],
+        excitacion_base: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        let mut por_escala = [0.0f64; 32];
+        for k in 0..32 {
+            // τ de la escala en SEGUNDOS (la malla está en ms).
+            let tau_s = quantum_arena_scale_ms(k) / 1000.0;
+            // Kernel Hawkes: excitación residual a esa escala.
+            let kernel = (-0.5 * tau_s).exp();
+            // Ratio λ/μ a esa escala: base + α·kernel contra μ.
+            let lambda_k = excitacion_base.max(0.0) + 0.5 * kernel;
+            let ratio_exceso = lambda_k - STEADY_STATE_RATIO;
+            let signo = if desplazamientos[k] > 0.0 {
+                1.0
+            } else if desplazamientos[k] < 0.0 {
+                -1.0
+            } else {
+                0.0
+            };
+            por_escala[k] = (signo * ratio_exceso.max(0.0).min(1.0)).clamp(-1.0, 1.0);
+        }
+        crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
     pub fn new() -> Self {
         Self {
             registry: None,
@@ -495,5 +530,60 @@ mod tests {
         let eval = engine.evaluate();
         assert!(eval > 0.0, "dirección positiva + intensidad > 0");
         assert!(eval <= 1.0);
+    }
+}
+
+/// #617 — τ de la escala k de la malla en ms (referencia local sin
+/// dependencia circular con quantum-arena; los valores son los de
+/// SPECTRUM_SCALES_MS: 1e-6 · 4^k).
+fn quantum_arena_scale_ms(k: usize) -> f64 {
+    1e-6 * 4f64.powi(k as i32)
+}
+
+#[cfg(test)]
+mod qo_617_tests {
+    use super::*;
+    use crate::voto_espectral::ESCALAS_VOTO;
+
+    #[test]
+    fn qo_617_excitacion_es_espectralmente_local() {
+        let mut x = [0.0; ESCALAS_VOTO];
+        for (k, v) in x.iter_mut().enumerate() {
+            *v = if k % 2 == 0 { 0.5 } else { -0.5 };
+        }
+        let voto = HawkesBesselEngine::voto_espectral(&x, 2.5);
+        // Las escalas RÁPIDAS (k bajo, τ chico) tienen kernel ≈ e^{−τ/2} ≈ 1:
+        // la excitación está PLENA ahí.
+        let escala_rapida = voto.en_escala(0).abs();
+        // Las escalas LENTAS (k alto, τ ≫ 2s) tienen kernel ≈ 0: sin excitación.
+        let escala_lenta = voto.en_escala(25).abs();
+        assert!(
+            escala_rapida > escala_lenta,
+            "la excitación Hawkes es espectralmente local: rápida {} vs lenta {}",
+            escala_rapida,
+            escala_lenta
+        );
+        // Antisimetría del voto firmado.
+        let mut x_neg = x;
+        for v in &mut x_neg {
+            *v = -*v;
+        }
+        let voto_neg = HawkesBesselEngine::voto_espectral(&x_neg, 2.5);
+        for k in 0..ESCALAS_VOTO {
+            assert!(
+                (voto.en_escala(k) + voto_neg.en_escala(k)).abs() < 1e-10,
+                "antisimetría en {}: {} vs {}",
+                k,
+                voto.en_escala(k),
+                voto_neg.en_escala(k)
+            );
+        }
+        // Sin excitación base: el ratio no supera el estado estacionario
+        // en las escalas lentas (kernel muerto) ⇒ voto 0 ahí.
+        let voto_frio = HawkesBesselEngine::voto_espectral(&x, 1.5);
+        assert!(
+            voto_frio.en_escala(25).abs() < 0.05,
+            "sin excitación y kernel muerto ⇒ abstención en la escala lenta"
+        );
     }
 }
