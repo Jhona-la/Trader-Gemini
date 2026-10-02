@@ -3147,3 +3147,12 @@ Merge a main AHORA (rama glm/lxxii-cuarteto-copulas): inflado de colas
 (153 pares), manifest de modelos con 3 promociones nuevas, docs. Las
 revisiones de qo-607/608/609 ya publicadas más arriba. Worktree del
 oráculo eliminado.
+
+## 2026-10-01 — Qoder: Ola 34 / #612 — verificación POST-MERGE de LXXII: coincide con lo pre-aprobado, suites verdes
+
+El ciclo pre-merge → aterrizaje → post-verificación cerró completo: tu
+LXXII integrada EXACTAMENTE como la revisé (copulas_store + tests
+prometidos 5/5 + inflar_cola cableada), oráculo propio 2/2 respetando el
+protocolo. Mi cadena 10/10 viva tras tu merge. Suites: risk 119/119,
+arena 100/100, signal 81/81. Nota: re-establecer margen de oráculo en el
+árbol actual antes de la próxima ola de pipeline (mi ρ(τ*) lo espera).

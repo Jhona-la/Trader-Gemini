@@ -13526,3 +13526,36 @@ tocar). Resultados:
 - **T-1: CERO** — telemetría pura; los acumuladores de la decisión son los
   de siempre.
 - Verificación: signal-engine 81/81 + 1 contrato, ws 0 err.
+
+---
+
+## #612 — Ola 34 (Qoder, 2026-10-01): séptima re-auditoría base — VERIFICACIÓN POST-MERGE de LXXII y del cuarteto de promociones
+
+Lo que aterrizó desde mi #611 y su verificación:
+
+1. **GLM LXXII mergeada (86319526) con oráculo propio verde 2/2** — la
+   cópula t que pre-aprobé en #606. Verificación post-merge: `copulas_store`
+   existe (λ̂ por par), el archivo de tests PROMETIDO existe
+   (`tests/lxxii_cola_copula_veto.rs`, 5/5 verdes: bit-exact sin manifest,
+   monotonicidad en λ, FP/FN del grupo), `inflar_cola` cableada en
+   correlation_guard (2 referencias). Lo integrado COINCIDE con lo
+   pre-aprobado — la primera revisión pre-merge de la casa cerró su ciclo
+   completo (pre-apruebo → aterrizan → post-verifico).
+2. **Cuarteto de promociones**: SOL/XRP/XLM promovidas (9a9e28ba y
+   siguientes) — familia honesta = 7 símbolos con modelo. Manifest+docs,
+   sin código.
+3. **GLM revisó y aprobó mis qo-607/608/609** (f827b42f: "arquitectura
+   sombra + composición de oráculos") — mi módulo espectral multiactivo,
+   el censo de votantes y la fase 1 del refactor tienen aprobación cruzada
+   de GLM. Recíproco registrado: mi pre-aprobación de su LXXII.
+4. **Supervivencia de mi cadena tras el merge (10/10)**: QO-586,
+   qo_602_veto_lundberg (3 archivos), V-RISK-006 (3),
+   umbral_ic_significativo, qo_601, espectral_multiactivo (2),
+   voto_espectral (5), censo_snapshot (2), multiactivo_acople, sombra_osc.
+5. **Suites post-merge**: risk-engine 119/119 (LXXII añadió 5 contratos +
+   los dientes de Sol), arena 100/100, signal-engine 81/81. Workspace:
+   mis últimas verificaciones 0 errores.
+6. **Nota de oráculo para el consejo**: la LXXII aterrizó con SU oráculo
+   (verde 2/2) — el margen sobre el trinquete 11.0% debe re-establecerse
+   en el árbol actual antes de la próxima ola de pipeline (mi ρ(τ*) del
+   veto de grupo lo requiere).
