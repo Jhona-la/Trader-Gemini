@@ -13314,3 +13314,77 @@ Mandato: "otra revisión desde la base". Estado previo: main 93f87ec9→3f8a5fc6
    a CL en el buzón.
 5. Re-verificado en este corte: worktree de Codex sigue con spectral_tape
    sucio (Ola 10 en vuelo de esa sesión — no tocar).
+
+---
+
+## #605 — Ola 27 (Qoder, 2026-10-01): tercera re-auditoría base — el mapa real de la autoevolución (isla muerta de 4 módulos + DSR vivo)
+
+Mandato: tercera revisión desde la base. Estado: main 04c51367 → b8963ebb
+(GLM LXXI: ATOM/BNB al manifest — 4ª y 5ª promociones honestas). Hallazgo
+central, forma técnica precisa de la queja del operador («no es verdadera-
+mente autoadaptativo»):
+
+**F1 · DOS implementaciones DSR**: la VIVA es `selection_stats::edge_
+survives_multiplicity` (umbral 0.95, multiplicidad ACUMULADA desde el
+arranque — D-746, cableada en la promoción del daemon con bloqueo real:
+online_daemon.rs ~1775). La MUERTA es `anti_bias_governor::calculate_
+deflated_sharpe` (umbral 0.90, por-llamada, Bailey/LdP con tanh-CDF) —
+cero callers. El triaje «DSR en toda promoción» está SATISFECHO en el
+daemon; el duplicado sobra.
+
+**F2 · Isla muerta de 4 módulos**: `neat`, `crossover_cauchy`,
+`moe_neat_arena`, `anti_bias_governor` — exportados, con tests internos,
+CERO consumidores (el «MOE/NEAT arena» ni siquiera usa neat pese al
+nombre). El bin legado `evolver` (opt-in) consume entropy_fitness y
+mutate_cmaes; el resto de la isla no tiene arnés. Los 4 anotados en su
+primera línea con el censo y las opciones.
+
+**F3 · El sustrato REAL del bucle vivo**: mutación genome::mutate_cmaes →
+WF con el MOTOR REAL (consejo+ML+fees+envelope) → DSR vivo con
+multiplicidad acumulada → promote por embudo (GenomeEnvelope) → watchdog
+de degradación post-promoción (D-747). Fino pero HONESTO: cada puerta es
+medida. Lo que falta no es honestidad sino AMPLITUD de búsqueda: el arsenal
+(NEAT/MOE/Pareto) nunca entró al bucle.
+
+**Opciones de consejo**: (A) cablear moe_neat_arena como generador de
+candidatos del daemon — es la ambición del operador, trabajo real + T-1
+(los candidatos generados cambian qué se promueve); (B) eliminar la isla
+(doctrina de cadáveres) — contradice la ambición; (C) mantener anotada
+(hecho). Recomendación: C ahora, A como ola futura con oráculo propio.
+
+**Verificado también**: promotion ADA/ATOM/BNB = manifest+docs (limpio);
+online_random_forest VIVO (freno del bosque, daemon:767); AST-mutator vivo
+(señal forense, daemon:1001); worktree Codex con spectral_tape sucio = su
+Ola 10 en vuelo (no tocar).
+- evolution-engine --lib verde tras anotar. Cero T-1 (comentarios).
+
+---
+
+## #606 — Ola 28 (Qoder, 2026-10-01): cuarta re-auditoría base — PRIMERA REVISIÓN PRE-MERGE de la casa (LXXII de GLM + Ola 10 de Codex en vuelo)
+
+Novedad de modalidad: con los árboles de trabajo de las sesiones activas
+pude revisar el trabajo AJENO ANTES de que aterrice (solo-lectura, sin
+tocar). Resultados:
+
+1. **GLM LXXII (cópulas t, EN VUELO en 3 archivos de risk-engine) —
+   PRE-APROBADA sin objeciones**: tercera etapa de inflado de ρ del grupo
+   por dependencia de COLA medida (λ̂ de cópula t; 100/108 pares λ̂≥0.10 en
+   la medición LXXI; BTC-SOL ρ̂0.77→λ̂0.51 donde la gaussiana da 0 — el
+   defecto canónico de la cópula gaussiana). Álgebra exacta del complemento
+   ((1−ρ)=(1−base)(1−curl²)(1−λ̂)), λ̂_grupo = MÁXIMO sobre pares
+   candidato-miembro (peor caso, conservador), bit-exact sin manifest
+   (D-754, igual disciplina que mi V-RISK-006), contable
+   (lxxii_lambda_grupo), deuda honesta (cópula estática 5m de un mes —
+   dinámica es ola futura). **Nota de refinamiento (no bloqueante)**: los
+   pares INTERNOS miembro-miembro también tienen λ̂ en su manifest; el
+   alcance actual (solo pares del candidato) es el mínimo honesto — la
+   equicorrelación asume ρ̄ uniforme, inflar con el λ del candidato es un
+   proxy defendible.
+2. **Codex Ola 10 (spectral_tape, EN VUELO en su worktree) — dirección
+   correcta**: test de causalidad del scoring prequential (predicción y
+   climatología CONGELADAS AL EMITIR — el pronóstico no puede beneficiarse
+   de información posterior a su emisión). Refuerza el contrato CL-35; sin
+   solape con mi cadena (#594/#599 viven en temporal_spectrum, no
+   spectral_tape).
+3. main estable en bbc19819 (mi #605); sin aterrizajes nuevos desde mi
+   última pasada — esta ola aportó la MODALIDAD pre-merge, no defectos.
