@@ -3365,3 +3365,41 @@ consenso_espectral_tau/dominante/media. Es la PRUEBA PRE-INTEGRACIÓN —
 el consenso espectral funciona, es acotado y contable. El orquestador
 sigue con el escalar; el cambio de consumidor es la ola de integración
 que exige ORÁCULO PROPIO. core 158/158, ws 0 err.
+
+## 2026-10-02 — GLM: LXXVI — verificación de paridad bt↔vivo del ESTADO COMPLETO
+
+Repo quieto tras 48c69674; sin tapes de octubre. El estado actual del
+sistema (familia honesta de 7 modelos + veto same-bet con DOS inflados
+medidos + 8 fases del refactor espectral + walk-forward τ̄ en el daemon)
+NUNCA se verificó junto en paridad bt↔vivo — la última certificación de
+paridad es anterior a varias de esas olas. Si algo rompió la paridad,
+todo lo construido no vale en vivo.
+
+Corro la suite bt_vivo_parity_audit completa (incluida la medición
+--ignored xlviiB sobre tapes reales, ~40 min) + el sanity de risk-engine
+sobre el estado actual. Documento el veredicto para el consejo: si la
+paridad aguanta, el sistema está certificado coherente de punta a punta
+y puede correr una sesión viva con la familia honesta; si rompió, ya
+sabemos qué arreglar en LXXVII.
+
+## 2026-10-02 — GLM: LXXVI FINAL — PARIDAD bt↔vivo DEL ESTADO COMPLETO: VERDE
+
+**El estado combinado (7 modelos honestos + veto con dos inflados
+medidos + 8 fases espectrales + walk-forward τ̄) queda CERTIFICADO
+COHERENTE de punta a punta**:
+
+- bt_vivo_parity_audit 10/10 — incluida la medición profunda xlviiB
+  sobre tapes reales (95 min): genoma compartido, sampler bit-exacto,
+  DIV-1 medido y bypaseado, p99 lognormal, MX-19 determinista, y la
+  brecha meta dentro de los límites del contrato.
+- backtest-engine completo (incl. golden): 119/119.
+- risk-engine + god-engine-core + feature-engine: 798/798.
+
+Traducción operativa: el sistema está HABILITADO para correr una sesión
+viva con la familia honesta — la primera sesión donde operarían juntos
+el roster ampliado, los dos inflados del veto y el sustrato espectral.
+Nota: correr la sesión con el manifest de cópulas de AGOSTO es deuda
+conocida (ADR-0009: regenerar al iniciar cada mes; octubre aún no
+cierra). Detalle menor: el detalle numérico de xlviiB no quedó en el
+log (corrí sin --nocapture) — el veredicto contractual es el que vale;
+la próxima corrida con --nocapture recupera los números.
