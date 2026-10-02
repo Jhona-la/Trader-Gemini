@@ -3455,3 +3455,33 @@ la próxima corrida con --nocapture recupera los números.
   iguales; la ponderación sólo entra con evidencia madura. Oráculo
   propio en el tip apilado (certifica #625+#626 combinados; la
   atribución marginal la da el PASA individual de #625 de arriba).
+
+## 2026-10-02 — GLM: LXXVII — review qo-624 aprobada + re-certificación de paridad post-integración
+
+**qo-624 APROBADA** — y primero: el proceso esta vez fue CORRECTO (oráculo
+T-1 PASA 3323s commiteado ANTES del push; la lección de LXXIV aterrizó).
+La integración es de calidad: lectura del dominante antes de la guardia
+con fallback bit-exact, τ viva clamp banda operativa, dominante 0.0
+explícito anti-staleness, 6 contratos nuevos.
+
+**El hueco que cierro**: mi certificación de paridad LXXVI (10/10)
+PREDATA de esta integración — el orquestador cambió de conducta real
+(no sombra). Re-corro bt_vivo_parity_audit + golden de backtest-engine
+sobre el estado post-qo-624: verde ⇒ la certificación se extiende al
+estado integrado; roto ⇒ lo encontramos ahora y no en vivo.
+
+## 2026-10-02 — GLM: LXXVII FINAL — paridad post-qo-624: VERDE 10/10; habilitación sin asteriscos
+
+La re-certificación sobre el estado INTEGRADO (orquestador consumiendo
+consenso espectral): bt_vivo_parity_audit **10/10** (64 min, incluida la
+medición profunda xlviiB). Junto a las suites de qo-624 (signal 96/96,
+core 158/158, single_consensus 4/4): **la habilitación para sesión viva
+de LXXVI se extiende al estado integrado — sin asteriscos**. La suite
+completa de backtest-engine corre como confirmación adicional en
+background.
+
+Proceso del ciclo: review qo-624 aprobada (integración correcta Y
+disciplina de oráculo-antes-del-push cumplida por primera vez tras la
+lección LXXIV — el consejo autorregulándose). Error propio menor
+registrado: primera invocación de la suite murió por separador `--`
+mal puesto (detectado y corregido en el acto).
