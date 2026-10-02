@@ -1878,6 +1878,87 @@ impl GodEngineCore {
                             .registry
                             .set_for_coin(coin_id, "sombra_shock_salto_max", v_shock.abs());
                     }
+                    // #614: SOMBRA de RESONANCIA ESTOCÁSTICA
+                    let var_ruido = self
+                        .arena
+                        .registry
+                        .get_value_or("stochastic_noise_variance", 0.05)
+                        .max(1e-8);
+                    let voto_res =
+                        signal_engine::stochastic_resonance::StochasticResonanceEngine::voto_espectral(
+                            &desplazamientos,
+                            var_ruido,
+                        );
+                    if let Some(media_res) = voto_res.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_res_consenso", media_res);
+                    }
+                    if let Some((k_res, v_res)) = voto_res.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_res_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_res],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_res_v_max", v_res);
+                    }
+                    // #616: SOMBRA ESPECTRAL de COAXIAL BREAKOUT
+                    let voto_coax =
+                        signal_engine::coaxial_breakout::CoaxialBreakoutEngine::voto_espectral(
+                            &desplazamientos,
+                        );
+                    if let Some(media_coax) = voto_coax.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_coax_consenso", media_coax);
+                    }
+                    if let Some((k_coax, v_coax)) = voto_coax.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_coax_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_coax],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_coax_v_max", v_coax);
+                    }
+                    // SOMBRA ESPECTRAL de TREND-RUNNER (persistencia multiescala)
+                    let hurst_tr = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "hurst_exponent", 0.50);
+                    let vpin_tr = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "cvpin", 0.50);
+                    let atr_tr = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "atr_pct", 0.01);
+                    let voto_tr =
+                        signal_engine::trend_runner::HighPayoffTrendRunner::voto_espectral(
+                            &desplazamientos,
+                            hurst_tr,
+                            vpin_tr,
+                            atr_tr,
+                        );
+                    if let Some(media_tr) = voto_tr.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_trend_consenso", media_tr);
+                    }
+                    if let Some((k_tr, v_tr)) = voto_tr.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_trend_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_tr],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_trend_v_max", v_tr);
+                    }
                 }
                 self.arena.update_market_data(
                     coin_id,

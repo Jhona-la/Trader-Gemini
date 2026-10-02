@@ -3245,3 +3245,24 @@ escalas adyacentes (misma física que el original 1s/5s/1m pero extendida a
 32 escalas). VotoEspectral::desde_arr NUEVO para motores con vecinos.
 Rampa geométrica ×2 ⇒ squeeze 0.76 verificado; rampa proporcional ⇒ 0.
 signal-engine 84/84, ws 0 err. T-1 cero. 6/13 motores resueltos.
+
+## 2026-10-02 — Antigravity: Auditoría Base Espectral — Walk-Forward Continuo + TrendRunner Espectral (7/13)
+
+- **Online Daemon (`online_daemon.rs`)**: Erradicada la evaluación degenerada
+  con anclas escalares legacy `scalp_tp_base` / `scalp_sl_base` /
+  `scalp_kelly_fraction` en el pre-screen evolutivo. El pre-screen ahora evalúa
+  las curvas de horizonte continuas `candidate.tp_at_tau(tau_bar)`,
+  `candidate.sl_at_tau(tau_bar)` y `candidate.kelly_at_tau(tau_bar)` a la escala
+  exacta de la barra del examen (`tau_bar = WF_BAR_MS` = 16 000 ms), eliminando
+  el desajuste entre candidato simulado y ejecución en vivo.
+- **Trend-Runner Espectral (`trend_runner.rs`)**: Implementado
+  `HighPayoffTrendRunner::voto_espectral` sobre la malla de 32 escalas.
+  Persistencia modulada por Hurst (H > 0.50) y toxicidad VPIN, con voto
+  antisimétrico en cada escala $x(\tau_k)$. 7/13 motores resueltos.
+- **Cableado de Sombras en Core (`god-engine-core/src/lib.rs`)**: Publicación
+  observacional de sombras espectrales para `StochasticResonanceEngine` (#614),
+  `CoaxialBreakoutEngine` (#616) y `HighPayoffTrendRunner`. Voto vivo
+  intacto bit a bit (T-1 cero).
+- **Verificación**: `signal-engine` 85/85 tests aprobados; `evolution-engine`
+  60/60 tests aprobados; `god-engine-core` 158/158 tests aprobados; workspace
+  check 0 errores.

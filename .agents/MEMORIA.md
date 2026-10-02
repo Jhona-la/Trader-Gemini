@@ -1,5 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-02 — Antigravity: Auditoría Base Espectral — Walk-Forward Continuo + TrendRunner Espectral (Modo Profesor)
+
+- Flujo coordinado: rama `antigravity/auditoria-base-espectral` → verificación unitaria completa (`signal-engine` 85/85 tests OK, `evolution-engine` 60/60 tests OK, `god-engine-core` 158/158 tests OK) y workspace (`cargo check --workspace --all-targets` 0 errores) → merge a main → push remoto → limpieza de rama.
+- AGY-AUD-P26 (CRITICAL): `crates/evolution-engine/src/online_daemon.rs`:
+  - **QUÉ**: Erradicación de la evaluación degenerada de anclas escalares discretas (`scalp_tp_base`, `scalp_sl_base`, `scalp_kelly_fraction`) en la simulación walk-forward del pre-screen evolutivo.
+  - **POR QUÉ**: El pre-screen mutaba las curvas continuas de horizonte (`tp_horizon_curve`, `sl_horizon_curve`, `kelly_horizon_curve`), pero evaluaba a los 2 000 mutantes candidatos contra los retornos reales de mercado usando las anclas escalares legacy `candidate.scalp_tp_base` y `candidate.scalp_sl_base` (ancladas en 15 s) y `candidate.scalp_kelly_fraction`. El juez real del host (`GodEngineCore`) opera sobre las curvas continuas $a + b \ln(\tau)$. Esto creaba un desacoplamiento donde el pre-screen seleccionaba mutantes basados en parámetros que diferían de la evaluación continua real.
+  - **PARA QUÉ**: Asegurar coherencia matemática estricta y paridad idéntica entre la pre-selección de genomas y la evaluación viva del motor cuántico a la escala exacta de las barras del examen.
+  - **CÓMO**: Se evaluaron las curvas continuas a la escala exacta de la barra del walk-forward (`let tau_bar = WF_BAR_MS as f64` = 16 000 ms): `let tp = candidate.tp_at_tau(tau_bar).max(0.0001);`, `let sl = candidate.sl_at_tau(tau_bar).max(0.0001);`, y `let kelly = candidate.kelly_at_tau(tau_bar).clamp(0.05, 0.50);`. El PnL y la evolución del capital simulado ahora escalan proporcionalmente a `kelly` continuo en lugar del escalar truncado.
+  - **CUÁNDO**: En cada ciclo de pre-filtrado del demonio de evolución online (`sample_realized_returns` / `walk_forward`).
+  - **DÓNDE**: `crates/evolution-engine/src/online_daemon.rs:1525, 1605`.
+  - **QUIÉN**: `OnlineEvolutionDaemon::evaluate_candidate_prescreen`.
+- AGY-AUD-P27 (HIGH): `crates/signal-engine/src/trend_runner.rs`:
+  - **QUÉ**: Implementación de `voto_espectral` multiescala (32 escalas temporales) en `HighPayoffTrendRunner`.
+  - **POR QUÉ**: El motor de expansión de tendencia solo emitía un voto escalar $v \in [-1, 1]$, impidiendo que el consenso espectral evalúe qué bandas temporales $\tau_k$ contienen inercia direccional persistente frente al ruido microestructural.
+  - **PARA QUÉ**: Permitir que el consenso tensorial espectral determine la escala de máxima convicción ($\tau^*$) y proyecte la expansión de recorrido sin colapsar las 32 dimensiones a un único escalar plano.
+  - **CÓMO**: Se implementó `HighPayoffTrendRunner::voto_espectral(desplazamientos, hurst, vpin, atr_pct)` utilizando `VotoEspectral::desde_espectro`. Cada escala $\tau_k$ se evalúa con su desplazamiento $x(\tau_k)$, ponderada suavemente por el exceso de Hurst $(H - 0.50)$ y penalizada por toxicidad de flujo VPIN. Test unitario `qo_espectral_trend_runner_escala_antisimetrica` verifica antisimetría estricta, acotación en $[-1, 1]$ y abstención total cuando $H \le 0.50$.
+  - **CUÁNDO**: Al procesar la sombra espectral y el consenso tensorial en cada tick.
+  - **DÓNDE**: `crates/signal-engine/src/trend_runner.rs:85`.
+  - **QUIÉN**: `HighPayoffTrendRunner::voto_espectral`.
+- AGY-AUD-P28 (HIGH): `crates/god-engine-core/src/lib.rs`:
+  - **QUÉ**: Publicación observacional de sombras espectrales en el registro omnisciente para `StochasticResonanceEngine`, `CoaxialBreakoutEngine` y `HighPayoffTrendRunner`.
+  - **POR QUÉ**: Las implementaciones espectrales de los motores 4/13, 6/13 y 7/13 no tenían sombras observacionales publicadas en el core vivo, impidiendo la trazabilidad del comportamiento espectral en tiempo real.
+  - **PARA QUÉ**: Permitir la auditoría de consenso espectral sombra en vivo antes de la migración del orquestador, garantizando cero impacto en el PnL operativo actual (voto vivo bit a bit, T-1 cero).
+  - **CÓMO**: Se añadieron las publicaciones de `sombra_res_*`, `sombra_coax_*` y `sombra_trend_*` (tau máxima, amplitud máxima y consenso de banda) en `process_tick_dual`.
+  - **CUÁNDO**: En cada actualización de datos de mercado por tick para cada activo en `GodEngineCore::process_tick_dual`.
+  - **DÓNDE**: `crates/god-engine-core/src/lib.rs:1880-1965`.
+  - **QUIÉN**: `GodEngineCore::process_tick_dual`.
+
 ## 2026-09-30 — Antigravity: Ola 7 / Continuidad C^∞ en Señales Cuánticas, Arbitraje Espectral y Desacoplamiento de Skew en Maker (Modo Profesor)
 
 - Flujo coordinado: rama `antigravity/ola7-continuidad-en-senales-y-arbitraje-espectral` → verificación unitaria (`signal-engine` 73/73 tests OK, `strategy-core` 24/24 tests OK + `basket_state_contract` 7/7 OK) y workspace (`cargo check --workspace --all-targets` 0 errores) → merge a main → limpieza de rama.

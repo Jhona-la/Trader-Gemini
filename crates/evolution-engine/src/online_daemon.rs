@@ -1522,8 +1522,13 @@ impl LiveEvolutionDaemon {
                 //        donde WR_estimado = 0.50 + selectivity * 0.70 — PURAMENTE TEÓRICA.
                 // AHORA: Walk-forward sobre returns_history real. Simula las decisiones
                 //        del genoma candidato contra los retornos REALES observados.
-                let tp = candidate.scalp_tp_base.max(0.0001);
-                let sl = candidate.scalp_sl_base.max(0.0001);
+                // EVALUACIÓN ESPECTRAL CONTINUA (C-10 / FMT-134): se evalúan las CURVAS
+                // continuas al horizonte de la barra de examen (WF_BAR_MS = 16 000 ms),
+                // no anclas escalares estáticas aisladas del continuo.
+                let tau_bar = WF_BAR_MS as f64;
+                let tp = candidate.tp_at_tau(tau_bar).max(0.0001);
+                let sl = candidate.sl_at_tau(tau_bar).max(0.0001);
+                let kelly = candidate.kelly_at_tau(tau_bar).clamp(0.05, 0.50);
                 let ml_thr_long = candidate.ml_threshold_long;
                 let ml_thr_short = candidate.ml_threshold_short;
 
@@ -1602,9 +1607,9 @@ impl LiveEvolutionDaemon {
                         let net_ret = effective_ret - roundtrip_fee;
 
                         wf_pnl +=
-                            net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);
+                            net_ret * wf_capital * kelly;
                         wf_capital +=
-                            net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);
+                            net_ret * wf_capital * kelly;
                         if wf_capital > wf_peak {
                             wf_peak = wf_capital;
                         }

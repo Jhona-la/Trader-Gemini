@@ -82,6 +82,41 @@ impl HighPayoffTrendRunner {
             0.02
         }
     }
+
+    /// Voto espectral multiescala (32 escalas): evalúa la inercia y persistencia
+    /// de la tendencia sobre el desplazamiento direccional x(τ_k) de cada escala temporal.
+    pub fn voto_espectral(
+        desplazamientos: &[f64; crate::voto_espectral::ESCALAS_VOTO],
+        hurst: f64,
+        vpin: f64,
+        atr_pct: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        let safe_hurst = if hurst.is_finite() { hurst } else { 0.50 };
+        let safe_vpin = if vpin.is_finite() { vpin } else { 0.50 };
+        let safe_atr = if atr_pct.is_finite() && atr_pct > 0.0 {
+            atr_pct
+        } else {
+            0.01
+        };
+
+        let h_excess = (safe_hurst - 0.50).max(0.0);
+        let h_weight = (h_excess / 0.04).tanh();
+        if h_weight <= 1e-4 {
+            return crate::voto_espectral::VotoEspectral::default();
+        }
+
+        let tp = Self::calculate_expanded_tp(0.02, safe_hurst, safe_vpin, safe_atr, 0.08);
+        let tp_factor = (tp * 10.0).tanh();
+
+        crate::voto_espectral::VotoEspectral::desde_espectro(desplazamientos, |x| {
+            if x.abs() < 1e-6 {
+                0.0
+            } else {
+                let dir_weight = (x / 1e-3).tanh();
+                dir_weight * h_weight * tp_factor
+            }
+        })
+    }
 }
 
 impl QuantumStrategy for HighPayoffTrendRunner {
@@ -256,5 +291,38 @@ mod tests {
         registry.set("hurst_exponent", 0.53);
         let eval_53 = runner.evaluate();
         assert!(eval_53 > eval_51);
+    }
+
+    #[test]
+    fn qo_espectral_trend_runner_escala_antisimetrica() {
+        use crate::voto_espectral::ESCALAS_VOTO;
+        let mut desplazamientos = [0.0; ESCALAS_VOTO];
+        for (k, v) in desplazamientos.iter_mut().enumerate() {
+            *v = 0.002 * (k as f64 - 15.5);
+        }
+
+        // Con H <= 0.50 el voto espectral debe abstenerse (todo 0)
+        let voto_neutro = HighPayoffTrendRunner::voto_espectral(&desplazamientos, 0.48, 0.20, 0.01);
+        for k in 0..ESCALAS_VOTO {
+            assert_eq!(voto_neutro.en_escala(k), 0.0);
+        }
+
+        // Con H = 0.70 (fuerte persistencia), el voto es antisimétrico y no cero
+        let voto_persistente = HighPayoffTrendRunner::voto_espectral(&desplazamientos, 0.70, 0.20, 0.01);
+        for k in 0..ESCALAS_VOTO {
+            let idx = ESCALAS_VOTO - 1 - k;
+            let vk = voto_persistente.en_escala(k);
+            let v_opp = voto_persistente.en_escala(idx);
+            assert!(
+                (vk + v_opp).abs() < 1e-12,
+                "Antisimetría espectral rota en escala {}: {} vs {}",
+                k,
+                vk,
+                v_opp
+            );
+            assert!(vk.abs() <= 1.0);
+        }
+        assert!(voto_persistente.en_escala(0) < 0.0);
+        assert!(voto_persistente.en_escala(31) > 0.0);
     }
 }
