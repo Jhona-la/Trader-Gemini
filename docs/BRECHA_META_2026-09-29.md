@@ -303,9 +303,16 @@ consejo: remoción o marcado explícito.
 | símbolo | selección (ago) | test posterior | veredicto |
 |---|---|---|---|
 | ICPUSDT | **−0.0004** (< margen) | −0.0021 (n=36,988) | 🚫 DOBLE gate — sin edge, cuarentena |
-| SOLUSDT | en vuelo | en vuelo | — |
-| XRPUSDT | en vuelo | en vuelo | — |
-| XLMUSDT | en vuelo | en vuelo | — |
+| SOLUSDT | +0.0058 | **+0.0203** (n=17,408) — el OOS más fuerte de la familia | ✅ 11 árboles |
+| XRPUSDT | +0.0075 | **+0.0080** (n=20,263) | ✅ 6 árboles |
+| XLMUSDT | +0.0075 | **+0.0053** (n=23,144) | ✅ 16 árboles |
+
+**CIERRE DEL CUARTETO: 3/4. La familia honesta = BTC, ADA, ATOM, BNB,
+SOL, XRP, XLM — SIETE símbolos con evidencia selección∧test** (mediana
+OOS ≈ +0.008; máximo SOL +0.0203). Cobertura del roster: 7/26 ≈ 27%
+honesta (+NEAR degenerado-contando-existencia). Dos bloqueos honestos en
+nueve corridas (NEAR, ICP) — el gate discrimina: la plantilla no promueve
+ruido.
 
 ### El veto same-bet aprende colas (consumo LXXI)
 Tercera etapa de inflado hacia 1 componiendo sobre el complemento de

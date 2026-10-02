@@ -177,6 +177,28 @@
       "error_estructural": null
     },
     {
+      "key": "SOLUSDT_MOTOR",
+      "archivo": "SOLUSDT_MOTOR.json",
+      "sha256": "e8e89720922466f2345d4df33bcb04e5ad2a4be90834fb11762891ccd1f7e41c",
+      "bytes": 34285,
+      "base": 0.2238815557229552,
+      "n_arboles": 11,
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
+    },
+    {
+      "key": "XLMUSDT_MOTOR",
+      "archivo": "XLMUSDT_MOTOR.json",
+      "sha256": "3de13088bd6f904f489c552afd39a79ab8dffe1239ed2d14b9693c171c9485a9",
+      "bytes": 49889,
+      "base": 0.2778420190050169,
+      "n_arboles": 16,
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
+    },
+    {
       "key": "XRPFDUSD_MOTOR",
       "archivo": "XRPFDUSD_MOTOR.json",
       "sha256": "0b8bef51c26f6480557fc8a74729fbecf5ee35b3cd1c49559c60876c6163a845",
@@ -186,7 +208,18 @@
       "legible": true,
       "valido_estructuralmente": true,
       "error_estructural": null
+    },
+    {
+      "key": "XRPUSDT_MOTOR",
+      "archivo": "XRPUSDT_MOTOR.json",
+      "sha256": "a17d751b59e6b6e2292e4fbe68045772c3e2b73d788e9e5d2bb51ed755ee33b9",
+      "bytes": 18178,
+      "base": 0.20741485834643442,
+      "n_arboles": 6,
+      "legible": true,
+      "valido_estructuralmente": true,
+      "error_estructural": null
     }
   ],
-  "generado_ms": 1790899032796
+  "generado_ms": 1790915381233
 }
