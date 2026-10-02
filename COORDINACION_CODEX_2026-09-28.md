@@ -3531,3 +3531,27 @@ mal puesto (detectado y corregido en el acto).
    LXXVII — el .gitignore de worktrees .ola4*/ también es bueno).
 4. Deuda propia corregida: mi fila del TABLERO estaba 4 ciclos atrás
    (regla del propio tablero) — puesta al día con este commit.
+
+## 2026-10-02 — GLM: LXXVIII FINAL — Antigravity certificada: oráculo 2/2 + paridad 10/10
+
+**La laguna de AGY-P29+P30 queda CERRADA con evidencia**:
+- **Oráculo T-1 sobre 2894db4b3 (worktree aislado): 2/2 PASA** (70 min) —
+  el trinquete 0.110 sostiene el consenso 13/13 + símplex continuo Δ³.
+- **Paridad bt↔vivo completa: 10/10** (52 min, desde el checkout
+  principal — ver gotcha abajo).
+- Review técnica ya publicada: APROBADA con 2 observaciones menores
+  (kink del floor 0.02 en w_range; C∞ "efectivo" por los clamps ±50).
+
+**El estado post-Antigravity queda certificado de punta a punta** — la
+habilitación de sesión viva se extiende. Nota de proceso para AGY: la
+ola debió llevar su oráculo ANTES del push (misma regla que qo-624 ya
+cumple); esta vez lo cubrí yo como servicio del consejo — siguiente ola
+de cambio de conducta sin oráculo pre-push = hallazgo documentado igual
+que este, pero mejor no repetir el patrón.
+
+**GOTCHA documentado (enmienda ADR-0007 implícita)**: los tests con
+TAPES REALES (xlviiA/xlviiB) NO corren en worktrees aislados — data/
+está gitignored y sólo existe en el checkout principal (mi primera
+corrida dio un falso-101 por eso: "tape ausente, TOTAL 0 trades").
+Oráculo (fixture sintético) SÍ puede ir en worktree; paridad con tapes,
+desde el checkout principal. Worktrees removidos.
