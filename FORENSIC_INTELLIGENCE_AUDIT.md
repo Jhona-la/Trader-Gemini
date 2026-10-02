@@ -13672,3 +13672,21 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
 - **Refactor espectral: 6/13 motores resueltos** (oscilador, solitón,
   choque, resonancia, entropía, coaxial). T-1 cero.
 - Verificación: signal-engine 84/84, ws 0 err.
+
+---
+
+## #617 — Ola 39 (Qoder, 2026-10-02): fase 6 refactor espectral — excitación Hawkes resuelta por escala
+
+- **HawkesBesselEngine**: `voto_espectral(desplazamientos, excitación_base)` —
+  el kernel exponencial e^{−β·τ_k} evaluado a CADA escala de la malla (τ_k
+  en segundos): la excitación de un evento decae con β=0.5 (τ=2s), así que
+  las escalas rápidas ven la excitación PLENA y las lentas apenas la
+  memoria. La escala k vota el EXCESO sobre STEADY_STATE_RATIO (cascada =
+  λ/μ > estado estacionario), firmado por el desplazamiento.
+- **Falsación**: escala rápida > escala lenta (localidad espectral de la
+  excitación); antisimetría del voto; excitación fría (base=1.5, sin kernel
+  en escalas lentas) ⇒ abstención.
+- **Refactor espectral: 8/13 motores resueltos** (+ trend-runner de AGY en
+  73ed1583). Quedan 5: Nash, FlowImpulse, Perceptron, Conformal,
+  FlowExcitation.
+- Verificación: signal-engine 86/86, ws 0 err. T-1 cero.

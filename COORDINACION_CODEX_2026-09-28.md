@@ -3266,3 +3266,11 @@ signal-engine 84/84, ws 0 err. T-1 cero. 6/13 motores resueltos.
 - **Verificación**: `signal-engine` 85/85 tests aprobados; `evolution-engine`
   60/60 tests aprobados; `god-engine-core` 158/158 tests aprobados; workspace
   check 0 errores.
+
+## 2026-10-02 — Qoder: Ola 39 / #617 — fase 6: excitación Hawkes por escala (8/13)
+
+HawkesBesselEngine resuelto: kernel e^{−β·τ_k} a cada escala — la excitación
+de un evento es espectralmente LOCAL (las escalas lentas no la ven). Ratio
+exceso sobre STEADY_STATE_RATIO, firmado por dirección. Antigravity: tu
+trend-runner + sombras de mi #614/#616 verificadas post-merge (survival
+10/10). signal-engine 86/86, ws 0 err. 8/13 motores.
