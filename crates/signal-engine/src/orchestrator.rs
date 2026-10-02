@@ -1,4 +1,5 @@
 use crate::SignalType;
+use std::sync::atomic::{AtomicU64, Ordering};
 use strategy_core::{QuantumStrategy, TradeHorizon};
 
 #[derive(Debug, Clone, Copy)]
@@ -39,11 +40,23 @@ pub struct TensorDecision {
 pub struct TensorVoteOrchestrator {
     strategies: Vec<Box<dyn QuantumStrategy>>,
     arena: std::sync::Arc<quantum_arena::GlobalArena>,
+    /// #611 (Ola 33) — CENSO EMPÍRICO DE VOTANTES: por estrategia, cuántas
+    /// evaluaciones produjeron voto no-cero vs el total. La prueba de vida
+    /// de las voces del consenso (el "vota 0" de CL se cierra con datos,
+    /// no con lectura estática). Telemetría: sin efecto en la decisión.
+    censo_total: Vec<AtomicU64>,
+    censo_no_cero: Vec<AtomicU64>,
+    nombres: Vec<&'static str>,
+    consensos_desde_publicacion: AtomicU64,
 }
 
 impl TensorVoteOrchestrator {
     pub fn new(arena: std::sync::Arc<quantum_arena::GlobalArena>) -> Self {
         Self {
+            censo_total: Vec::new(),
+            censo_no_cero: Vec::new(),
+            nombres: Vec::new(),
+            consensos_desde_publicacion: AtomicU64::new(0),
             strategies: Vec::new(),
             arena,
         }
@@ -63,8 +76,28 @@ impl TensorVoteOrchestrator {
         mut strategy: Box<dyn QuantumStrategy>,
     ) -> Result<(), String> {
         strategy.init(std::sync::Arc::clone(&self.arena.registry))?;
+        // #611: el nombre debe vivir tanto como el censo (filtrado a
+        // &'static — fuga acotada: una vez por estrategia registrada).
+        let nombre: &'static str = Box::leak(strategy.name().to_string().into_boxed_str());
+        self.nombres.push(nombre);
+        self.censo_total.push(AtomicU64::new(0));
+        self.censo_no_cero.push(AtomicU64::new(0));
         self.strategies.push(strategy);
         Ok(())
+    }
+
+    /// #611 — instantánea del censo empírico: (nombre, total, no_cero) por
+    /// estrategia registrada. Lectura para el forense y los contratos; la
+    /// vía en vivo es el registro (censo_total_*/censo_no_cero_*).
+    pub fn censo_snapshot(&self) -> Vec<(&'static str, u64, u64)> {
+        self.nombres
+            .iter()
+            .zip(self.censo_total.iter())
+            .zip(self.censo_no_cero.iter())
+            .map(|((nombre, total), nc)| {
+                (*nombre, total.load(Ordering::Relaxed), nc.load(Ordering::Relaxed))
+            })
+            .collect()
     }
 
     /// Legacy horizon entry point; Continuous is the only representable variant.
@@ -310,8 +343,26 @@ impl TensorVoteOrchestrator {
         let mut short_votes = 0.0;
         let mut active_weight = 0.0;
         let mut max_volatility = 0.0f64;
-        for s in all {
+        // #611 — censo empírico: por estrategia, total de evaluaciones y
+        // las que produjeron voto no-cero. Telemetría pura: no toca la
+        // decisión (los acumuladores de abajo son los de siempre).
+        let mut censo_muestras: Vec<(&'static str, u64, u64)> = Vec::new();
+        for (idx, s) in all.iter().enumerate() {
             let output = s.evaluate_for_coin(coin_id, symbol);
+            let (total_prev, nc_prev) = (
+                self.censo_total.get(idx).map(|a| a.load(Ordering::Relaxed)).unwrap_or(0),
+                self.censo_no_cero.get(idx).map(|a| a.load(Ordering::Relaxed)).unwrap_or(0),
+            );
+            let no_cero = u64::from(output.is_finite() && output.abs() > 1e-9);
+            if let Some(a) = self.censo_total.get(idx) {
+                a.store(total_prev + 1, Ordering::Relaxed);
+            }
+            if let Some(a) = self.censo_no_cero.get(idx) {
+                a.store(nc_prev + no_cero, Ordering::Relaxed);
+            }
+            if let Some(nombre) = self.nombres.get(idx) {
+                censo_muestras.push((nombre, total_prev + 1, nc_prev + no_cero));
+            }
             if !output.is_finite() {
                 continue;
             }
@@ -324,6 +375,25 @@ impl TensorVoteOrchestrator {
             active_weight += abs_w;
             if abs_w > max_volatility {
                 max_volatility = abs_w;
+            }
+        }
+        // Publicación cadenciosa (en coin 0 — el censista global): cada
+        // 1024 consensos, el mapa vivo de voces al registro.
+        if coin_id == 0 {
+            let n = self
+                .consensos_desde_publicacion
+                .fetch_add(1, Ordering::Relaxed);
+            if n % 1024 == 0 {
+                for (nombre, total, no_cero) in &censo_muestras {
+                    self.arena.registry.set(
+                        &format!("censo_total_{}", nombre),
+                        *total as f64,
+                    );
+                    self.arena.registry.set(
+                        &format!("censo_no_cero_{}", nombre),
+                        *no_cero as f64,
+                    );
+                }
             }
         }
         if active_weight == 0.0 {
