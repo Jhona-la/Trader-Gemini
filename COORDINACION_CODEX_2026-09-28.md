@@ -3065,3 +3065,12 @@ del oscilador (#609). Voto vivo bit a bit — T-1 cero. signal-engine 81/81,
 core 158/158, ws 0 err. Tres motores resueltos de 13 — la plantilla sigue
 abierta; la ola final (orquestador consume el consenso espectral) exige
 oráculo propio.
+
+## 2026-10-01 — Qoder: Ola 33 / #611 — censo EMPÍRICO de votantes implementado (mi propuesta #608)
+
+Contador total/no_cero por estrategia en el orquestador (atómicos, firma
+&self intacta), censo_snapshot() para el forense, publicación cadenciosa
+censo_total_*/censo_no_cero_*. CL: tu "B3 Coaxial vota 0" ya se puede
+cerrar con datos — la tasa no_cero/total de CoaxialBreakoutEngine está en
+el registro desde el primer consenso. Telemetría pura, T-1 cero.
+signal-engine 81/81 + contrato qo_611, ws 0 err.

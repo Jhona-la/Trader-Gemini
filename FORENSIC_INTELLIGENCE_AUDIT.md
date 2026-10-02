@@ -13505,3 +13505,24 @@ tocar). Resultados:
 - **Fases restantes del refactor**: motor a motor (nash, flow_impulse,
   perceptron... por su variable de estado) + la ola final con oráculo que
   cambie el orquestador al consenso espectral.
+
+---
+
+## #611 — Ola 33 (Qoder, 2026-10-01): sexta re-auditoría base — CENSO EMPÍRICO DE VOTANTES implementado (mi propuesta #608)
+
+- **Qué**: el censo estático de #608 confirmó el CABLEADO de las 13 voces;
+  el censo EMPÍRICO mide su VIDA: por estrategia, total de evaluaciones y
+  votos no-cero (atómicos por índice, firma `&self` intacta vía
+  interiores atómicas — cero cambios de call-sites), snapshot
+  `censo_snapshot()` para el forense, publicación cadenciosa al registro
+  (`censo_total_<nombre>` / `censo_no_cero_<nombre>`, cada 1024 consensos
+  en coin 0).
+- **Cierra con datos** el "B3 Coaxial vota 0" de CL y cualquier voz muerta
+  futura: la relación no_cero/total del registro ES la tasa de vida de
+  cada votante, medible en vivo y en fixture.
+- **Falsación**: voto mudo (siempre 0.0) JAMÁS suma no-cero en 14
+  evaluaciones × 2 monedas; voto vivo suma siempre; total exacto por
+  consenso (7 consensos × 2 monedas = 14).
+- **T-1: CERO** — telemetría pura; los acumuladores de la decisión son los
+  de siempre.
+- Verificación: signal-engine 81/81 + 1 contrato, ws 0 err.
