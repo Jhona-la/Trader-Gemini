@@ -13357,3 +13357,34 @@ online_random_forest VIVO (freno del bosque, daemon:767); AST-mutator vivo
 (señal forense, daemon:1001); worktree Codex con spectral_tape sucio = su
 Ola 10 en vuelo (no tocar).
 - evolution-engine --lib verde tras anotar. Cero T-1 (comentarios).
+
+---
+
+## #606 — Ola 28 (Qoder, 2026-10-01): cuarta re-auditoría base — PRIMERA REVISIÓN PRE-MERGE de la casa (LXXII de GLM + Ola 10 de Codex en vuelo)
+
+Novedad de modalidad: con los árboles de trabajo de las sesiones activas
+pude revisar el trabajo AJENO ANTES de que aterrice (solo-lectura, sin
+tocar). Resultados:
+
+1. **GLM LXXII (cópulas t, EN VUELO en 3 archivos de risk-engine) —
+   PRE-APROBADA sin objeciones**: tercera etapa de inflado de ρ del grupo
+   por dependencia de COLA medida (λ̂ de cópula t; 100/108 pares λ̂≥0.10 en
+   la medición LXXI; BTC-SOL ρ̂0.77→λ̂0.51 donde la gaussiana da 0 — el
+   defecto canónico de la cópula gaussiana). Álgebra exacta del complemento
+   ((1−ρ)=(1−base)(1−curl²)(1−λ̂)), λ̂_grupo = MÁXIMO sobre pares
+   candidato-miembro (peor caso, conservador), bit-exact sin manifest
+   (D-754, igual disciplina que mi V-RISK-006), contable
+   (lxxii_lambda_grupo), deuda honesta (cópula estática 5m de un mes —
+   dinámica es ola futura). **Nota de refinamiento (no bloqueante)**: los
+   pares INTERNOS miembro-miembro también tienen λ̂ en su manifest; el
+   alcance actual (solo pares del candidato) es el mínimo honesto — la
+   equicorrelación asume ρ̄ uniforme, inflar con el λ del candidato es un
+   proxy defendible.
+2. **Codex Ola 10 (spectral_tape, EN VUELO en su worktree) — dirección
+   correcta**: test de causalidad del scoring prequential (predicción y
+   climatología CONGELADAS AL EMITIR — el pronóstico no puede beneficiarse
+   de información posterior a su emisión). Refuerza el contrato CL-35; sin
+   solape con mi cadena (#594/#599 viven en temporal_spectrum, no
+   spectral_tape).
+3. main estable en bbc19819 (mi #605); sin aterrizajes nuevos desde mi
+   última pasada — esta ola aportó la MODALIDAD pre-merge, no defectos.
