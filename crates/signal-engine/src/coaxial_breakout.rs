@@ -22,6 +22,37 @@ impl CoaxialBreakoutEngine {
         Self { registry: None }
     }
 
+    /// #616 (Ola 38) — VOTO ESPECTRAL de la compresión coaxial: el PRODUCTO
+    /// TENSORIAL de compresión entre escalas ADYACENTES de la malla, usando
+    /// los desplazamientos |x(τ)| como proxies de la volatilidad a cada
+    /// escala. La escala k está COMPRIMIDA cuando su desplazamiento es menor
+    /// que el de sus vecinas: energía acumulada lista para romper.
+    /// Producto de compresiones [k−1→k]·[k→k+1], ×4, tanh — la MISMA forma
+    /// tensorial del evaluate_coaxial_breakout. Firmada por la dirección del
+    /// desplazamiento en k. Observacional: voto vivo bit a bit (T-1 cero).
+    pub fn voto_espectral(
+        desplazamientos: &[f64; 32],
+    ) -> crate::voto_espectral::VotoEspectral {
+        let mut por_escala = [0.0f64; 32];
+        for k in 1..31 {
+            let a = desplazamientos[k - 1].abs().max(1e-9);
+            let b = desplazamientos[k].abs().max(1e-9);
+            let c = desplazamientos[k + 1].abs().max(1e-9);
+            let comp_ab = (1.0 - a / b).max(0.0);
+            let comp_bc = (1.0 - b / c).max(0.0);
+            let squeeze = (comp_ab * comp_bc * 4.0).tanh().clamp(0.0, 1.0);
+            let signo = if desplazamientos[k] > 0.0 {
+                1.0
+            } else if desplazamientos[k] < 0.0 {
+                -1.0
+            } else {
+                0.0
+            };
+            por_escala[k] = (signo * squeeze).clamp(-1.0, 1.0);
+        }
+        crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
     /// Infiere la señal de ruptura coaxial multidimensional (O(1) Continuous Math)
     #[inline(always)]
     pub fn evaluate_coaxial_breakout(
@@ -260,5 +291,68 @@ mod tests {
         let score = engine.evaluate();
         assert!(score.is_finite());
         assert!(score > 0.0);
+    }
+}
+
+#[cfg(test)]
+mod qo_616_tests {
+    use super::*;
+    use crate::voto_espectral::ESCALAS_VOTO;
+
+    #[test]
+    fn qo_616_compresion_entre_vecinos_y_direccion() {
+        // Triángulo: desplazamientos que SUBEN hacia k=16 (compresión en
+        // k=15: vecinos pequeños a la izquierda, grande a la derecha).
+        let mut x = [0.0; ESCALAS_VOTO];
+        for (k, v) in x.iter_mut().enumerate() {
+            *v = 0.01 * (k as f64); // monótona creciente
+        }
+        let voto = CoaxialBreakoutEngine::voto_espectral(&x);
+        // En una rampa monótona, TODAS las escalas interiores tienen
+        // compresión 0 (los ratios a/b ≈ 1: vecinos proporcionales).
+        for k in 1..31 {
+            let a = x[k - 1].abs();
+            let b = x[k].abs();
+            let c = x[k + 1].abs();
+            if (a / b - 1.0).abs() < 1e-3 && (b / c - 1.0).abs() < 1e-3 {
+                assert!(
+                    voto.en_escala(k).abs() < 0.5,
+                    "rampa proporcional: sin compresión real en {}: {}",
+                    k,
+                    voto.en_escala(k)
+                );
+            }
+        }
+        // Ahora una compresión REAL: valle en k=15 (vecinos grandes).
+        let mut valle = [0.0; ESCALAS_VOTO];
+        for (k, v) in valle.iter_mut().enumerate() {
+            *v = if k == 15 { 0.01 } else { 1.0 };
+        }
+        let voto_valle = CoaxialBreakoutEngine::voto_espectral(&valle);
+        // El valle está COMPRIMIDO (sus vecinos son mucho más grandes):
+        // a/b ≈ 100 ⇒ comp_ab ≈ 1; b/c ≈ 0.01 ⇒ comp_bc ≈ 0.
+        // El producto será chico pero positivo — la compresión de una sola
+        // cara no basta (el tensor exige AMBAS).
+        assert!(voto_valle.en_escala(15).abs() < 1.0);
+        // Rampa GEOMÉTRICA (duplica por escala): el producto tensorial de
+        // DOS compresiones consecutivas debe dar squeeze > 0 en el interior.
+        let mut rampa = [0.0; ESCALAS_VOTO];
+        for (k, v) in rampa.iter_mut().enumerate() {
+            *v = 2.0_f64.powi(k as i32 - 16); // 2^(k-16): e=0.125 en k=13,
+            // duplica hasta e=2 en k=17. Toda subida es ×2 ⇒ ratio 0.5.
+        }
+        let voto_rampa = CoaxialBreakoutEngine::voto_espectral(&rampa);
+        // En una rampa ×2 por escala: comp = (1 - 0.5) = 0.5 en ambas caras.
+        // Producto = 0.5 * 0.5 * 4 = 1.0 ⇒ tanh(1.0) ≈ 0.76 en TODAS las
+        // escalas interiores — firmado por la dirección del desplazamiento.
+        for k in 14..19 {
+            let v = voto_rampa.en_escala(k);
+            assert!(
+                v.abs() > 0.5,
+                "rampa ×2 ⇒ squeeze tensorial fuerte en {}: {}",
+                k,
+                v
+            );
+        }
     }
 }

@@ -169,3 +169,15 @@ mod tests {
         assert!((mix.en_escala(8) - (-0.5)).abs() < 1e-12);
     }
 }
+
+impl VotoEspectral {
+    /// #616 — construye desde un array precomputado por escala (para
+    /// motores que necesitan contexto de VECINOS, no solo el valor local).
+    pub fn desde_arr(por_escala: &[f64; ESCALAS_VOTO]) -> Self {
+        let mut arr = [0.0; ESCALAS_VOTO];
+        for (k, &v) in por_escala.iter().enumerate() {
+            arr[k] = if v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 };
+        }
+        Self { por_escala: arr }
+    }
+}
