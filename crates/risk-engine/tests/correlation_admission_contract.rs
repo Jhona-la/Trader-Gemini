@@ -587,3 +587,42 @@ fn qo_602_el_veto_de_grupo_consume_la_cota_lundberg_del_registro() {
     assert!(gate.contains("margen_de_cota(r,epsilon)"));
     assert!(gate.contains("_=>tope_streak,"));
 }
+
+/// #613 (Ola 35) — el veto de grupo consume la coherencia espectral a la
+/// escala de τ* (`qo_613_rho_tau`, media del IC cruzado firmado publicado
+/// por el core desde el módulo multiactivo #607). SOLO TIGHTEN: si el IC
+/// supera al escalar, aprieta (contable `qo_613_aprietes`); clave ausente
+/// o IC ≤ escalar ⇒ ρ de siempre, bit a bit (D-754 + D-750b: el IC es
+/// SIGNED, la anticorrelación nunca afloja).
+#[test]
+fn qo_613_el_veto_consume_la_coherencia_espectral_de_tau() {
+    let src: String = include_str!("../src/lib.rs").split_whitespace().collect();
+    // Fuente única: la clave la publica el core (coherencia media a τ*)…
+    assert!(
+        src.contains("\"qo_613_rho_tau\""),
+        "el core debe publicar la coherencia espectral a la escala de τ*"
+    );
+    // …el veto la consume SOLO para apretar (nunca para aflojar)…
+    assert!(
+        src.contains("rho_ic.is_finite()&&rho_ic>base"),
+        "el apriete exige ic > escalar — nunca afloja"
+    );
+    // …es contable…
+    assert!(
+        src.contains("qo_613_aprietes"),
+        "los aprietes deben ser contables para el consejo"
+    );
+    // …y la clave ausente deja el veto bit a bit (fallback al escalar).
+    assert!(
+        src.contains("Some(base)"),
+        "sin evidencia espectral ⇒ ρ escalar intacto"
+    );
+    // El módulo que publica los ICs existe y tiene el agregador.
+    let multi: String = include_str!("../../quantum-arena/src/espectral_multiactivo.rs")
+        .split_whitespace()
+        .collect();
+    assert!(
+        multi.contains("coherencia_media_con_todas"),
+        "el agregador de ρ̄ espectral vive en el módulo multiactivo"
+    );
+}

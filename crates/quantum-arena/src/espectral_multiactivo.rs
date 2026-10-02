@@ -226,6 +226,33 @@ impl EspectralMultiactivo {
         }
         mejor
     }
+
+    /// #613 — media del IC SIGNED de `moneda` contra TODAS las otras
+    /// monedas con evidencia madura en `escala`. Es la ρ̄ espectral del
+    /// grupo a esa escala: el reemplazo directo del ρ̄ escalar del veto de
+    /// grupo cuando la orden opera a esa τ. Signo preservado (anticorrela-
+    /// ción = cobertura, D-750b); `None` sin pares maduros.
+    pub fn coherencia_media_con_todas(&self, moneda: usize, escala: usize) -> Option<f64> {
+        if moneda >= self.max_coins || escala >= ESCALAS {
+            return None;
+        }
+        let mut suma = 0.0f64;
+        let mut cuenta = 0u64;
+        for otra in 0..self.max_coins {
+            if otra == moneda {
+                continue;
+            }
+            if let Some(ic) = self.coherencia_par(moneda, otra, escala) {
+                suma += ic;
+                cuenta += 1;
+            }
+        }
+        if cuenta == 0 {
+            None
+        } else {
+            Some(suma / cuenta as f64)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -345,5 +372,32 @@ mod tests {
             .acople_banda(0, crate::temporal_spectrum::TAU_ANCHOR_FAST_MS, crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS)
             .expect("banda con evidencia");
         assert!(acople > 0.5, "acople de banda alto con co-movimiento total: {}", acople);
+    }
+}
+
+#[cfg(test)]
+mod qo_613_tests {
+    use super::*;
+
+    #[test]
+    fn qo_613_coherencia_media_con_todas_solo_cuenta_maduras() {
+        let mut uni = EspectralMultiactivo::new(4);
+        let tau = 1000.0;
+        // Pares (0,1) y (0,2) maduros con la misma serie (ic→1); (0,3) sin
+        // madurar. La media de 0 contra todas debe promediar SOLO las maduras.
+        // Serie determinista alternante (r_i = ±a): ra y rb idénticos ⇒ ic=1.
+        for i in 0..40u64 {
+            let ts = (i + 1) * 1000;
+            let r = if i % 2 == 0 { 0.02 } else { -0.02 };
+            uni.observar_maduracion(0, tau, 19, ts, r);
+            uni.observar_maduracion(1, tau, 19, ts, r);
+            uni.observar_maduracion(2, tau, 19, ts, r);
+        }
+        let media = uni.coherencia_media_con_todas(0, 19).expect("2 pares maduros");
+        assert!(media > 0.9, "misma serie ⇒ media alta: {}", media);
+        // La moneda 3 sin datos no aporta — el promedio no se diluye.
+        assert!(media <= 1.0);
+        // Escala sin evidencia en ninguna ⇒ None.
+        assert_eq!(uni.coherencia_media_con_todas(0, 5), None);
     }
 }

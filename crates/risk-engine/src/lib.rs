@@ -598,9 +598,40 @@ impl RiskEngine {
             .registry
             .get_for_coin_or(coin_id, "lundberg_r_nocional", 0.0);
         let r_lundberg = (r_raw.is_finite() && r_raw > 0.0).then_some(r_raw);
+        // #613 (Ola 35): el ρ̄ del grupo se APRIETA con la coherencia
+        // espectral a la escala de τ* (`qo_613_rho_tau`, publicado por el
+        // core desde el módulo multiactivo #607). Solo TIGHTEN: si el IC
+        // espectral supera al escalar medido, la orden opera en una escala
+        // donde el grupo está MÁS acoplado de lo que el PnL agregado ve.
+        // Clave ausente (sin pares maduros a esa escala, fixture mono-
+        // activo) o IC ≤ escalar ⇒ ρ de siempre, bit a bit. D-750b: el IC
+        // es SIGNED — la anticorrelación (cobertura) NUNCA afloja.
+        let rho_escalar = dependence.same_bet_rho_efectivo();
+        let rho_ic = arena
+            .registry
+            .get_for_coin_or(coin_id, "qo_613_rho_tau", f64::NAN);
+        let rho_final = match rho_escalar {
+            Some(base) => {
+                if rho_ic.is_finite() && rho_ic > base {
+                    if rho_ic > 1.0 {
+                        return rej(2); // IC clampeado a 1 en el módulo; defensa
+                    }
+                    let previo = arena
+                        .registry
+                        .get_for_coin_or(coin_id, "qo_613_aprietes", 0.0);
+                    arena
+                        .registry
+                        .set_for_coin(coin_id, "qo_613_aprietes", previo + 1.0);
+                    Some(rho_ic)
+                } else {
+                    Some(base)
+                }
+            }
+            None => rho_escalar,
+        };
         if correlation_guard::veto_por_riesgo_cramer_lundberg(
             &riesgos,
-            dependence.same_bet_rho_efectivo(),
+            rho_final,
             tope,
             r_lundberg,
             0.05,
