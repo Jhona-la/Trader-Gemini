@@ -3044,3 +3044,13 @@ de los 4 motores más nuevos (lectores polimórficos D-219 — la enfermedad
 c{id} no se repite). Propuesta: censo EMPÍRICO con contadores de voto por
 estrategia (observacional, T-1 cero) — cierra "B3 Coaxial vota 0" con datos.
 main = 1fa8e7f8 (estable); LXXII de GLM sigue en vuelo.
+
+## 2026-10-01 — Qoder: Ola 31 / #609 — REFACTOR ESPECTRAL fase 1: sustrato + oscilador exemplar + sombra
+
+Arranca la refactorización de los motores bajo teoría espectral: VotoEspectral
+(32 escalas, desde_escalar continuidad atrás, consenso ponderado) + el
+oscilador cuántico como primer motor resuelto (pozo + confinamiento AGY-P14
+por escala, x(τ)=momentum_z) + sombra observacional en core (sombra_osc_*).
+Voto vivo bit a bit — T-1 cero. Fases siguientes: un motor por ola + ola
+final de cambio de orquestador CON ORÁCULO. Los que quieran adoptar un motor:
+la plantilla es voto_espectral + desde_espectro — hablen por el buzón.

@@ -13448,3 +13448,32 @@ tocar). Resultados:
    orquestador (telemetría, T-1 cero): la prueba definitiva de vida de las
    13 voces (el "B3 Coaxial vota 0" de CL se cierra con datos, no con
    lectura estática). Implementable como ola observacional.
+
+---
+
+## #609 — Ola 31 (Qoder, 2026-10-01): REFACTOR ESPECTRAL de motores — FASE 1 (sustrato + oscilador exemplar + sombra)
+
+- **Qué**: los 13 votantes del consenso emiten ESCALARES — su opinión no
+  distingue escala. Fase 1 de la refactorización bajo teoría espectral:
+  (1) `signal-engine/voto_espectral.rs` — la moneda común:
+  `VotoEspectral` (32 escalas; desde_escalar = caso degenerado de los
+  motores no refactorizados, continuidad hacia atrás; desde_espectro =
+  motor resuelto; consenso ponderado por escala; dominante sin convicción
+  ⇒ None), (2) el **oscilador cuántico** como PRIMER motor refactorizado:
+  `voto_espectral(desplazamientos, k, λ, α)` — el pozo anarmónico con el
+  confinamiento AGY-P14 evaluado en x(τ) = momentum_z de CADA escala de la
+  malla, (3) sombra observacional en el core: el consenso espectral se
+  computa AL LADO del voto vivo y se publica (`sombra_osc_dominante_tau`,
+  `sombra_osc_dominante_v`, `sombra_osc_consenso`).
+- **T-1: CERO** — el voto vivo del motor (registry escalar) queda bit a
+  bit; el día del cambio, el orquestador consume `VotoEspectral::consenso`
+  en lugar del escalar — UNA ola con oráculo propio.
+- **Falsación**: antisimetría x→−x (pozo impar), confinamiento por escala
+  (la escala de ruptura |x|=6 vota más débil que la confinada |x|=1),
+  cero desplazamiento ⇒ sin dominante, continuidad del consenso al
+  escalar (2 votos planos ⇒ media ponderada exacta en las 32 escalas),
+  pesos inválidos ⇒ sin convicción inventada.
+- **Fases futuras**: motor a motor (soliton, shockwave, nash... emiten
+  espectros resueltos por su variable de estado) + una ola final con
+  oráculo que cambie el orquestador al consenso espectral.
+- Verificación: signal-engine 79/79 (5 contratos), core 158/158, ws 0 err.
