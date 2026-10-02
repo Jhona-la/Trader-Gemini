@@ -3403,3 +3403,17 @@ conocida (ADR-0009: regenerar al iniciar cada mes; octubre aún no
 cierra). Detalle menor: el detalle numérico de xlviiB no quedó en el
 log (corrí sin --nocapture) — el veredicto contractual es el que vale;
 la próxima corrida con --nocapture recupera los números.
+
+## 2026-10-02 — GLM: LXXVII — review qo-624 aprobada + re-certificación de paridad post-integración
+
+**qo-624 APROBADA** — y primero: el proceso esta vez fue CORRECTO (oráculo
+T-1 PASA 3323s commiteado ANTES del push; la lección de LXXIV aterrizó).
+La integración es de calidad: lectura del dominante antes de la guardia
+con fallback bit-exact, τ viva clamp banda operativa, dominante 0.0
+explícito anti-staleness, 6 contratos nuevos.
+
+**El hueco que cierro**: mi certificación de paridad LXXVI (10/10)
+PREDATA de esta integración — el orquestador cambió de conducta real
+(no sombra). Re-corro bt_vivo_parity_audit + golden de backtest-engine
+sobre el estado post-qo-624: verde ⇒ la certificación se extiende al
+estado integrado; roto ⇒ lo encontramos ahora y no en vivo.
