@@ -3054,3 +3054,14 @@ por escala, x(τ)=momentum_z) + sombra observacional en core (sombra_osc_*).
 Voto vivo bit a bit — T-1 cero. Fases siguientes: un motor por ola + ola
 final de cambio de orquestador CON ORÁCULO. Los que quieran adoptar un motor:
 la plantilla es voto_espectral + desde_espectro — hablen por el buzón.
+
+## 2026-10-01 — Qoder: Ola 32 / #610 — fase 2 del refactor espectral: solitón + choque resueltos por escala
+
+SolitonWave: perfil sech firmado por desplazamiento (núcleo pleno, colas a
+0). SupersonicShockwave: salto de Rankine-Hugoniot M(τ)=|x(τ)|/c sin signo
+(0 subsónico exacto — verificado con la raíz analítica tanh(0.6) en M=2).
+Sombras contables (sombra_soliton_*, sombra_shock_*) sobre la misma malla
+del oscilador (#609). Voto vivo bit a bit — T-1 cero. signal-engine 81/81,
+core 158/158, ws 0 err. Tres motores resueltos de 13 — la plantilla sigue
+abierta; la ola final (orquestador consume el consenso espectral) exige
+oráculo propio.

@@ -13477,3 +13477,31 @@ tocar). Resultados:
   espectros resueltos por su variable de estado) + una ola final con
   oráculo que cambie el orquestador al consenso espectral.
 - Verificación: signal-engine 79/79 (5 contratos), core 158/158, ws 0 err.
+
+---
+
+## #610 — Ola 32 (Qoder, 2026-10-01): REFACTOR ESPECTRAL fase 2 — solitón + choque supersónico resueltos por escala
+
+- **SolitonWave**: `voto_espectral(desplazamientos, amplitud)` — el perfil
+  sech del solitón evaluado en la coordenada espacial x(τ) (perfil quieto:
+  la fase es A·x(τ), sin término de velocidad — el desplazamiento de escala
+  ES la coordenada). Firma por dirección del desplazamiento; núcleo vota
+  amplitud plena, colas sechan a 0; normalizado a [−1,1]. Amplitud inválida
+  ⇒ normalizador 1.0 (sin NaN).
+- **SupersonicShockwave**: `voto_espectral(desplazamientos, c)` — M(τ) =
+  |x(τ)|/c y el salto de Rankine-Hugoniot como compresión por escala:
+  0 subsónico, →1 hipersónico. SIN signo (el frente es compresión; la
+  dirección la combina la live con el flujo). c default 0.001 (el default
+  vivo).
+- **Sombras contables en core**: `sombra_soliton_amplitud_max/_tau_max`,
+  `sombra_shock_salto_banda`, `sombra_shock_salto_max/_tau_max` — misma
+  malla de desplazamientos que la sombra del oscilador (#609). Voto vivo
+  bit a bit — T-1 cero.
+- **Falsación**: solitón — antisimetría estricta, núcleo > colas, acotado
+  por amplitud, amplitud NaN sin NaN; choque — subsónico (M<1) vota 0
+  exacto, monotonía creciente en la zona supersónica, salto(M=2) =
+  tanh(0.6) (raíz analítica), sin signo por construcción.
+- Verificación: signal-engine 81/81 (2 contratos), core 158/158, ws 0 err.
+- **Fases restantes del refactor**: motor a motor (nash, flow_impulse,
+  perceptron... por su variable de estado) + la ola final con oráculo que
+  cambie el orquestador al consenso espectral.
