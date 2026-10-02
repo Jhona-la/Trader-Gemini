@@ -519,7 +519,12 @@ pub struct GlobalArena {
     pub kill_switch_active: AtomicBool,
     pub last_ws_latency_ms: AtomicU64,
     pub server_time_offset_ms: std::sync::atomic::AtomicI64,
-    pub market_regime: std::sync::atomic::AtomicU8, // 0: Range, 1: BullRun, 2: Crash, 3: Chaotic
+    pub market_regime: std::sync::atomic::AtomicU8, // 0: Range, 1: BullRun, 2: Crash, 3: Chaotic (MAP discreto)
+    /// Distribución espectral continua del régimen de mercado [p_range, p_bull, p_crash, p_chaos]
+    pub regime_p_range: AtomicF64,
+    pub regime_p_bull: AtomicF64,
+    pub regime_p_crash: AtomicF64,
+    pub regime_p_chaos: AtomicF64,
     pub panic_memory_dump: AtomicBool,              // Flag de pánico por memoria
     pub registry: Arc<OmniscientRegistry>,
     pub global_covariance_tensor: AtomicF64,
@@ -608,6 +613,10 @@ impl GlobalArena {
             last_ws_latency_ms: AtomicU64::new(0),
             server_time_offset_ms: std::sync::atomic::AtomicI64::new(0),
             market_regime: std::sync::atomic::AtomicU8::new(0),
+            regime_p_range: AtomicF64::new(1.0),
+            regime_p_bull: AtomicF64::new(0.0),
+            regime_p_crash: AtomicF64::new(0.0),
+            regime_p_chaos: AtomicF64::new(0.0),
             panic_memory_dump: AtomicBool::new(false),
             registry: Arc::new(OmniscientRegistry::new()),
             global_covariance_tensor: AtomicF64::new(1.0), // Base variance multiplier

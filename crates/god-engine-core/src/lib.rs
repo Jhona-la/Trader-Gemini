@@ -1893,77 +1893,6 @@ impl GodEngineCore {
                             .registry
                             .set_for_coin(coin_id, "sombra_shock_salto_max", v_shock.abs());
                     }
-                    // #623 (Ola 44) — SOMBRA DEL CONSENSO ESPECTRAL: los 13
-                    // motores ya tienen voto_espectral(); aquí se componen en
-                    // el consenso espectral (media ponderada por escala) y
-                    // se publica su escala dominante + media de banda. Es la
-                    // prueba pre-integración: el consenso espectral compone,
-                    // es acotado, y es contable. El orquestador sigue con
-                    // el escalar — el cambio de consumidor exige oráculo.
-                    let votos_espectrales = [
-                        signal_engine::quantum_oscillator::QuantumOscillatorEngine::voto_espectral(
-                            &desplazamientos, 1.0, 0.1, 0.5,
-                        ),
-                        signal_engine::soliton_wave::SolitonWaveEngine::voto_espectral(
-                            &desplazamientos, 1.0,
-                        ),
-                        signal_engine::supersonic_shockwave::SupersonicShockwaveEngine::voto_espectral(
-                            &desplazamientos, 0.001,
-                        ),
-                        signal_engine::stochastic_resonance::StochasticResonanceEngine::voto_espectral(
-                            &desplazamientos, 0.05,
-                        ),
-                        signal_engine::coaxial_breakout::CoaxialBreakoutEngine::voto_espectral(
-                            &desplazamientos,
-                        ),
-                        signal_engine::hawkes_bessel::HawkesBesselEngine::voto_espectral(
-                            &desplazamientos, 2.5,
-                        ),
-                        signal_engine::game_theoretic_nash::GameTheoreticNashEngine::voto_espectral(
-                            &desplazamientos, 0.5,
-                        ),
-                        signal_engine::flow_impulse::FlowImpulseEngine::voto_espectral(
-                            &desplazamientos, 2.0,
-                        ),
-                        signal_engine::perceptron_gate::PerceptronGateEngine::voto_espectral(
-                            &desplazamientos,
-                        ),
-                        signal_engine::conformal_reversion_filter::ConformalReversionFilterEngine::voto_espectral(
-                            &desplazamientos, 0.10,
-                        ),
-                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral(
-                            &desplazamientos, 2.5,
-                        ),
-                    ];
-                    let pesos = [1.0; 11];
-                    let consenso_espectral =
-                        signal_engine::voto_espectral::VotoEspectral::consenso(
-                            &votos_espectrales,
-                            &pesos,
-                        );
-                    if let Some((k_dom, v_dom)) = consenso_espectral.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "consenso_espectral_tau",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_dom],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "consenso_espectral_dominante", v_dom);
-                    } else {
-                        // #624 — espectro plano ⇒ dominante 0 EXPLÍCITO: el
-                        // valor del registro es SIEMPRE el del tick en curso.
-                        // Sin esto, el orquestador leería el dominante del
-                        // último tick con convicción (staleness).
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "consenso_espectral_dominante", 0.0);
-                    }
-                    if let Some(media) = consenso_espectral.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "consenso_espectral_media", media);
-                    }
                     // #614: SOMBRA de RESONANCIA ESTOCÁSTICA
                     let var_ruido = self
                         .arena
@@ -1990,6 +1919,7 @@ impl GodEngineCore {
                             .registry
                             .set_for_coin(coin_id, "sombra_res_v_max", v_res);
                     }
+
                     // #616: SOMBRA ESPECTRAL de COAXIAL BREAKOUT
                     let voto_coax =
                         signal_engine::coaxial_breakout::CoaxialBreakoutEngine::voto_espectral(
@@ -2010,6 +1940,68 @@ impl GodEngineCore {
                             .registry
                             .set_for_coin(coin_id, "sombra_coax_v_max", v_coax);
                     }
+
+                    // #617: SOMBRA ESPECTRAL de HAWKES-BESSEL
+                    let hawkes_exc = self
+                        .arena
+                        .registry
+                        .get_value_or("hawkes_excitation_base", 2.5);
+                    let voto_hawkes =
+                        signal_engine::hawkes_bessel::HawkesBesselEngine::voto_espectral(
+                            &desplazamientos,
+                            hawkes_exc,
+                        );
+
+                    // #618: SOMBRA ESPECTRAL de GAME-THEORETIC NASH
+                    let nash_drift = self
+                        .arena
+                        .registry
+                        .get_value_or("nash_equilibrium_drift", 0.5);
+                    let voto_nash =
+                        signal_engine::game_theoretic_nash::GameTheoreticNashEngine::voto_espectral(
+                            &desplazamientos,
+                            nash_drift,
+                        );
+
+                    // #619: SOMBRA ESPECTRAL de FLOW IMPULSE
+                    let flow_alpha = self
+                        .arena
+                        .registry
+                        .get_value_or("flow_impulse_alpha", 2.0);
+                    let voto_flow =
+                        signal_engine::flow_impulse::FlowImpulseEngine::voto_espectral(
+                            &desplazamientos,
+                            flow_alpha,
+                        );
+
+                    // #620: SOMBRA ESPECTRAL de PERCEPTRON GATE
+                    let voto_perceptron =
+                        signal_engine::perceptron_gate::PerceptronGateEngine::voto_espectral(
+                            &desplazamientos,
+                        );
+
+                    // #621: SOMBRA ESPECTRAL de CONFORMAL REVERSION FILTER
+                    let conf_eps = self
+                        .arena
+                        .registry
+                        .get_value_or("conformal_epsilon", 0.10);
+                    let voto_conformal =
+                        signal_engine::conformal_reversion_filter::ConformalReversionFilterEngine::voto_espectral(
+                            &desplazamientos,
+                            conf_eps,
+                        );
+
+                    // #622: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE
+                    let flow_exc = self
+                        .arena
+                        .registry
+                        .get_value_or("flow_confluence_threshold", 2.5);
+                    let voto_confluence =
+                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral(
+                            &desplazamientos,
+                            flow_exc,
+                        );
+
                     // SOMBRA ESPECTRAL de TREND-RUNNER (persistencia multiescala)
                     let hurst_tr = self
                         .arena
@@ -2044,6 +2036,75 @@ impl GodEngineCore {
                         self.arena
                             .registry
                             .set_for_coin(coin_id, "sombra_trend_v_max", v_tr);
+                    }
+
+                    // #615: SOMBRA ESPECTRAL de RENYI-TSALLIS ENTROPY
+                    let voto_entropy =
+                        signal_engine::renyi_tsallis_entropy::RenyiTsallisEntropyEngine::default()
+                            .voto_espectral(&desplazamientos);
+                    if let Some(media_ent) = voto_entropy.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_entropia_consenso", media_ent);
+                    }
+                    if let Some((k_ent, v_ent)) = voto_entropy.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_entropia_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_ent],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_entropia_v_max", v_ent);
+                    }
+
+                    // #623 (Ola 44 & Antigravity): CONSENSO ESPECTRAL INTEGRAL (13 MOTORES):
+                    // Todos los 13 motores con voto_espectral() componen en el consenso espectral
+                    // (media ponderada por escala, normalizada) y se publica su escala dominante +
+                    // media de banda. Es la síntesis temporal espectral multiescala sin sesgo discreto.
+                    let votos_espectrales = [
+                        voto_sombra,
+                        voto_soliton,
+                        voto_shock,
+                        voto_res,
+                        voto_coax,
+                        voto_hawkes,
+                        voto_nash,
+                        voto_flow,
+                        voto_perceptron,
+                        voto_conformal,
+                        voto_confluence,
+                        voto_tr,
+                        voto_entropy,
+                    ];
+                    let pesos = [1.0; 13];
+                    let consenso_espectral =
+                        signal_engine::voto_espectral::VotoEspectral::consenso(
+                            &votos_espectrales,
+                            &pesos,
+                        );
+                    if let Some((k_dom, v_dom)) = consenso_espectral.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "consenso_espectral_tau",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_dom],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "consenso_espectral_dominante", v_dom);
+                    } else {
+                        // #624 — espectro plano ⇒ dominante 0 EXPLÍCITO: el
+                        // valor del registro es SIEMPRE el del tick en curso.
+                        // Sin esto, el orquestador leería el dominante del
+                        // último tick con convicción (staleness).
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "consenso_espectral_dominante", 0.0);
+                    }
+                    if let Some(media) = consenso_espectral.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "consenso_espectral_media", media);
                     }
                 }
                 self.arena.update_market_data(
@@ -2117,11 +2178,40 @@ impl GodEngineCore {
                         }
                         None => 0.0,
                     };
-                    let new_regime = if z_btc > crate::diffusion::Z95 && btc_hurst > h_trend {
+                    // AGY-ESPECTRAL: Régimen de Mercado como Símplex Continuo [p_range, p_bull, p_crash, p_chaos] in Δ³
+                    // Erradica la discontinuidad de escalón rígido y provee soporte multivariante continuo temporal espectral.
+                    let safe_z = if z_btc.is_finite() { z_btc } else { 0.0 };
+                    let safe_h = if btc_hurst.is_finite() { btc_hurst } else { 0.50 };
+
+                    // Activaciones suaves continuas C^∞ (sigmoides sin singularidad)
+                    let w_trend = 1.0 / (1.0 + (-(safe_h - h_trend) / 0.03).clamp(-50.0, 50.0).exp());
+                    let w_chaos = 1.0 / (1.0 + (-(h_chaos - safe_h) / 0.03).clamp(-50.0, 50.0).exp());
+                    let w_bull = w_trend * (1.0 / (1.0 + (-(safe_z - crate::diffusion::Z95) / 0.5).clamp(-50.0, 50.0).exp()));
+                    let w_crash = w_trend * (1.0 / (1.0 + (-(-safe_z - crate::diffusion::Z95) / 0.5).clamp(-50.0, 50.0).exp()));
+                    let w_range = (1.0 - w_bull - w_crash - w_chaos).max(0.02);
+
+                    let sum_w = (w_range + w_bull + w_crash + w_chaos).max(1e-9);
+                    let p_range = (w_range / sum_w).clamp(0.0, 1.0);
+                    let p_bull = (w_bull / sum_w).clamp(0.0, 1.0);
+                    let p_crash = (w_crash / sum_w).clamp(0.0, 1.0);
+                    let p_chaos = (w_chaos / sum_w).clamp(0.0, 1.0);
+
+                    // Publicación de la distribución espectral continua
+                    self.arena.regime_p_range.store(p_range, Ordering::Relaxed);
+                    self.arena.regime_p_bull.store(p_bull, Ordering::Relaxed);
+                    self.arena.regime_p_crash.store(p_crash, Ordering::Relaxed);
+                    self.arena.regime_p_chaos.store(p_chaos, Ordering::Relaxed);
+                    self.arena.registry.set("market_regime_p_range", p_range);
+                    self.arena.registry.set("market_regime_p_bull", p_bull);
+                    self.arena.registry.set("market_regime_p_crash", p_crash);
+                    self.arena.registry.set("market_regime_p_chaos", p_chaos);
+
+                    // Estimador MAP (Maximum A Posteriori) discreto para compatibilidad regresiva
+                    let new_regime = if p_bull > p_range && p_bull > p_crash && p_bull > p_chaos {
                         1u8 // BullRun
-                    } else if z_btc < -crate::diffusion::Z95 && btc_hurst > h_trend {
+                    } else if p_crash > p_range && p_crash > p_bull && p_crash > p_chaos {
                         2u8 // Crash
-                    } else if btc_hurst < h_chaos {
+                    } else if p_chaos > p_range && p_chaos > p_bull && p_chaos > p_crash {
                         3u8 // Chaotic / Mean Reverting
                     } else {
                         0u8 // Range
