@@ -3302,3 +3302,22 @@ el portón cierra. Si deriva, el mecanismo de actualización rodante gana
 su existencia (ola futura CON oráculo). Mido con el mismo bin
 copulas_manifest sobre los tres meses con tapes y comparo los pares
 solapados. Sin tocar código vivo — no hay oráculo.
+
+## 2026-10-02 — GLM: LXXV FINAL — λ̂ DERIVA: cópula dinámica justificada; ADR-0009 regla mensual
+
+**Veredicto del portón: la deriva es REAL** (144 pares en ≥2 meses):
+mediana 0.106, 53% de pares >0.10, correlación entre meses r=0.55-0.89,
+y el peor par cambia de identidad CADA MES (SOL-XRP → DOGE-LINK →
+DOGE-XRP → SOL-XRP). Operar octubre con λ̂ de agosto = error sistemático
+de inflado de cola en la mitad de los pares.
+
+**ADR-0009**: regenerar el manifest con el último mes completo al
+iniciar cada mes (misma cadencia que la revalidación de modelos
+ADR-0008); el campo `mes` ES la vigencia. Ventanas rodantes/EWMA de λ̂
+quedan como CANDIDATO MEDIDO (ola futura con oráculo).
+
+Incidente de proceso propio: la medición de sep SOBREESCRIBIÓ el
+manifest vivo (el bin escribe por diseño) — restaurado de git en el
+mismo ciclo; flag --sin-escribir añadido al bin y verificado. Lección
+registrada: correr una herramienta de medición que escribe su salida en
+config_dir muta insumos del vivo — copiar o flag antes de medir.
