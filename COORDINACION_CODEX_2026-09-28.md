@@ -3508,3 +3508,24 @@ mal puesto (detectado y corregido en el acto).
   - `risk-engine`: 119/119 tests unitarios OK.
   - `evolution-engine`: 60/60 tests unitarios OK.
   - Workspace: `cargo check` 100% limpio con 0 errores.
+
+## 2026-10-02 — Antigravity: AGY-AUD-P31 — Conexión del Símplex Continuo de Régimen al Colchón Direccional de Riesgo (Modo Profesor)
+
+- **QUÉ**:
+  Integración directa del símplex continuo de régimen de mercado $[p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}}] \in \Delta^3$ en el cálculo de `directional_pressure` y compuerta de admisión en `PortfolioOrchestrator::allow_trade`.
+- **POR QUÉ**:
+  El cálculo previo de `directional_pressure` solo leía `spectral_crash_flux` por moneda individual y omitía la probabilidad sistémica macro $p_{\text{crash}}$ del mercado, dejando desprotegida a la cuenta de $13 USD si una moneda no había actualizado su flujo por baja cadencia de ticks. Además, para posiciones cortas no existía protección continua frente a *short squeezes* durante rallies sistémicos ($p_{\text{bull}} \to 1.0$).
+- **PARA QUÉ**:
+  Asegurar que el margen admisible para la cuenta micro de $13 USD se contraiga suavemente y de forma $C^\infty$ ante estrés sistémico, evitando saltos de escalón de apalancamiento, llamadas de margen y colapsos de capital.
+- **CÓMO**:
+  1. Para largos: `directional_pressure = 0.25 * crash_max.max(systemic_crash)`, donde `systemic_crash = self.arena.regime_p_crash.load(Ordering::Relaxed).clamp(0.0, 1.0)`.
+  2. Para cortos: `directional_pressure = 0.25 * squeeze_max.max(systemic_bull)`, donde `systemic_bull = self.arena.regime_p_bull.load(Ordering::Relaxed).clamp(0.0, 1.0)`.
+  3. Veto sistémico continuo: `let systemic_crash_veto = { let p = self.arena.regime_p_crash.load(Ordering::Relaxed); p.is_finite() && p >= 0.90 }; if (regime == MarketRegime::Crash || systemic_crash_veto) && intent_is_long { return false; }`.
+  4. Test de contrato exhaustivo `continuous_regime_simplex_contracts_margin_smoothly` en `crates/risk-engine/tests/portfolio_admission_contract.rs`.
+- **CUÁNDO**: En cada evaluación de admisión de orden en `PortfolioOrchestrator::allow_trade`.
+- **DÓNDE**: `crates/risk-engine/src/orchestrator.rs:150-188`.
+- **QUIÉN**: `PortfolioOrchestrator::allow_trade`.
+- **VERIFICACIÓN**:
+  - `portfolio_admission_contract`: 7/7 tests OK (incluyendo nuevo contrato continuo).
+  - `risk-engine`: 119/119 unit tests OK.
+

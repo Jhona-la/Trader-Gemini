@@ -18,7 +18,18 @@
   - **CÓMO**: Se agregaron los campos atómicos `regime_p_range`, `regime_p_bull`, `regime_p_crash`, `regime_p_chaos` a `GlobalArena`. Se calcularon las activaciones suaves $C^\infty$ mediante sigmoides con exponentes acotados $[-50, 50]$, publicándose atómicamente y actualizando el `market_regime` MAP para compatibilidad hacia atrás.
   - **CUÁNDO**: Al procesar la microestructura de BTC en cada tick.
   - **DÓNDE**: `crates/quantum-arena/src/state.rs:522, 613` y `crates/god-engine-core/src/lib.rs:2155-2195`.
-  - **QUIÉN**: `GlobalArena` y `GodEngineCore`.
+- AGY-AUD-P31 (HIGH): `crates/risk-engine/src/orchestrator.rs` y `crates/risk-engine/tests/portfolio_admission_contract.rs`:
+  - **QUÉ**: Conexión del símplex continuo de régimen de mercado $[p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}}] \in \Delta^3$ al cálculo del colchón direccional de riesgo (`directional_pressure`) y veto sistémico en `PortfolioOrchestrator::allow_trade`.
+  - **POR QUÉ**: El cálculo previo de `directional_pressure` solo leía `spectral_crash_flux` por moneda individual y omitía la probabilidad sistémica macro $p_{\text{crash}}$ del mercado, dejando desprotegida a la cuenta de $13 USD si una moneda no había actualizado su flujo por baja cadencia de ticks. Además, para posiciones cortas no existía protección continua frente a *short squeezes* durante rallies sistémicos ($p_{\text{bull}} \to 1.0$).
+  - **PARA QUÉ**: Asegurar que el margen admisible para la cuenta micro de $13 USD se contraiga suavemente y de forma $C^\infty$ ante estrés sistémico, evitando saltos de escalón de apalancamiento, llamadas de margen y colapsos de capital.
+  - **CÓMO**:
+    - Para largos: `directional_pressure = 0.25 * crash_max.max(systemic_crash)`, donde `systemic_crash = self.arena.regime_p_crash.load(Ordering::Relaxed).clamp(0.0, 1.0)`.
+    - Para cortos: `directional_pressure = 0.25 * squeeze_max.max(systemic_bull)`, donde `systemic_bull = self.arena.regime_p_bull.load(Ordering::Relaxed).clamp(0.0, 1.0)`.
+    - Veto sistémico continuo: `let systemic_crash_veto = { let p = self.arena.regime_p_crash.load(Ordering::Relaxed); p.is_finite() && p >= 0.90 }; if (regime == MarketRegime::Crash || systemic_crash_veto) && intent_is_long { return false; }`.
+    - Test de contrato: `continuous_regime_simplex_contracts_margin_smoothly` en `portfolio_admission_contract.rs`.
+  - **CUÁNDO**: En cada evaluación de admisión de orden en `PortfolioOrchestrator::allow_trade`.
+  - **DÓNDE**: `crates/risk-engine/src/orchestrator.rs:150-188`.
+  - **QUIÉN**: `PortfolioOrchestrator::allow_trade`.
 
 ## 2026-10-02 — Qoder: Ola 46 / #625 — λ/μ̂ REAL al slot Hawkes del PPO
 
