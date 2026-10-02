@@ -29,6 +29,45 @@ impl std::fmt::Debug for FlowImpulseEngine {
 }
 
 impl FlowImpulseEngine {
+
+    /// #619 (Ola 41) — VOTO ESPECTRAL del impulso de flujo: el tensor de
+    /// flujo se evalúa a CADA escala — el desplazamiento x(τ_k) ES el
+    /// tensor de flujo direccional a esa escala (OBI/OFI agregados en la
+    /// banda τ), modulado por la excitación Hawkes local (el kernel
+    /// e^{−β·τ} de #617) y la coherencia flujo×excitación. La escala
+    /// rápida ve el impulso CRUDO (señal sin filtrar); la lenta ve el
+    /// impulso ATENUADO por el kernel (el flujo es un fenómeno de alta
+    /// frecuencia que decae con la escala temporal).
+    /// Observacional: el voto vivo queda bit a bit (T-1 cero).
+    pub fn voto_espectral(
+        desplazamientos: &[f64; 32],
+        excitacion_base: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        let mut por_escala = [0.0f64; 32];
+        for k in 0..32 {
+            let x = desplazamientos[k];
+            if !x.is_finite() || x == 0.0 {
+                continue;
+            }
+            // Kernel Hawkes a esa escala (misma forma que #617): la
+            // excitación decae con τ — el flujo es de ALTA frecuencia.
+            let tau_s = (1e-6 * 4f64.powi(k as i32)) / 1000.0;
+            let kernel = (-0.5 * tau_s).exp();
+            let excitacion_k = excitacion_base.max(0.0) * kernel;
+            // Coherencia: |flujo| × |excitación| (misma forma que el
+            // evaluate_flow_impulse vivo).
+            let flujo = x.clamp(-1.0, 1.0);
+            let coherencia = (flujo.abs() * excitacion_k).sqrt();
+            // Confianza continua: coherencia × factor de escala × 2, tanh.
+            // El factor de escala ES el kernel — las escalas lentas ven
+            // el impulso atenuado exponencialmente.
+            let confianza = (coherencia * kernel * 2.0).tanh();
+            let signo = if x > 0.0 { 1.0 } else { -1.0 };
+            por_escala[k] = (signo * confianza).clamp(-1.0, 1.0);
+        }
+        crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
     /// Infiere la intención direccional a partir del impulso de flujo (O(1)).
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
@@ -343,5 +382,53 @@ mod tests {
             !n.contains("scalp") && !n.contains("swing") && !n.contains("turbo"),
             "identidad con etiqueta de banda/marketing: {n}"
         );
+    }
+}
+
+#[cfg(test)]
+mod qo_619_tests {
+    use super::*;
+    use crate::voto_espectral::ESCALAS_VOTO;
+
+    #[test]
+    fn qo_619_impulso_de_flujo_es_de_alta_frecuencia_espectral() {
+        let mut x = [0.0; ESCALAS_VOTO];
+        for (k, v) in x.iter_mut().enumerate() {
+            *v = 0.4 * (k as f64 - 15.5).signum();
+        }
+        let voto = FlowImpulseEngine::voto_espectral(&x, 2.0);
+        // El impulso decae con la escala: la RÁPIDA (k bajo) retiene la
+        // excitación plena; la LENTA (k alto) la ve atenuada por el kernel.
+        let rapida = voto.en_escala(1).abs();
+        let lenta = voto.en_escala(25).abs();
+        assert!(
+            rapida > lenta,
+            "el impulso de flujo es espectralmente de alta frecuencia: rápida {} vs lenta {}",
+            rapida,
+            lenta
+        );
+        // Antisimetría.
+        let mut x_neg = x;
+        for v in &mut x_neg {
+            *v = -*v;
+        }
+        let voto_neg = FlowImpulseEngine::voto_espectral(&x_neg, 2.0);
+        for k in 0..ESCALAS_VOTO {
+            if x[k] != 0.0 {
+                assert!(
+                    (voto.en_escala(k) + voto_neg.en_escala(k)).abs() < 1e-10,
+                    "antisimetría en {}: {} vs {}",
+                    k,
+                    voto.en_escala(k),
+                    voto_neg.en_escala(k)
+                );
+            }
+        }
+        // Sin excitación (base=0): coherencia=0 ⇒ voto 0 en todas las escalas.
+        let frio = FlowImpulseEngine::voto_espectral(&x, 0.0);
+        assert_eq!(frio.dominante(), None, "sin excitación Hawkes no hay impulso");
+        // Flujo nulo ⇒ voto 0.
+        let cero = FlowImpulseEngine::voto_espectral(&[0.0; ESCALAS_VOTO], 2.0);
+        assert_eq!(cero.dominante(), None);
     }
 }
