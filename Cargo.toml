@@ -102,6 +102,10 @@ name = "model_manifest"
 path = "src/bin/model_manifest.rs"
 
 [[bin]]
+name = "copulas_manifest"
+path = "src/bin/copulas_manifest.rs"
+
+[[bin]]
 name = "config_compiler"
 path = "src/bin/config_compiler.rs"
 

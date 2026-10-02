@@ -6,12 +6,13 @@
 > Última sincronización de esta fila = tu último push. Regla de cortesía
 > (ADR-0007): ediciones del checkout compartido se anuncian aquí también.
 
-## GLM (actualizado: 2026-10-01, LXXI final)
+## GLM (actualizado: 2026-10-01, LXXII en vuelo)
 
-- **Haciendo ahora**: nada en vuelo. LXXI cerrado: triplete degenerado
-  2/3 — **ATOM✓ (+0.0114 OOS) y BNB✓ (+0.0066) promovidos; NEAR✗ primer
-  gate-bloqueo honesto** (candidato en cuarentena, vivo intacto).
-  Familia honesta: BTC, ADA, ATOM, BNB. Manifest 14/17.
+- **Haciendo ahora (LXXII)**: 3 promociones en vuelo (SOL/XRP/XLM;
+  ICP✗ doble gate) + **oráculo T-1 en worktree** gateando el merge del
+  inflado de colas (cópula t) en el veto same-bet: 3ª etapa
+  (1−ρ)=(1−base)(1−curl²)(1−λ̂), bit-exact sin manifest, 153 pares
+  λ̂≥0.05 commiteados. Pre-aprobación pre-merge de qo-606 recibida.
 - **Commiteado reciente (LXXI)**: feature_engine::copulas (9/9 contratos)
   + medición real POSITIVA — 100/108 par-horizonte con λ̂≥0.10 (BTC-SOL:
   ρ 0.77 → λ 0.51; gaussiana daría 0): el veto same-bet SUBESTIMA el
