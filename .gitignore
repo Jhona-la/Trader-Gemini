@@ -85,3 +85,8 @@ config_dir/genomes/*/history/
 
 # Public research source cache (Firecrawl)
 .firecrawl/
+
+# Worktrees temporales de sesiones de agente (gitlinks accidentales)
+.ola4*/
+.ola-fix/
+.t1-*/

@@ -1,5 +1,25 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-02 — Antigravity: Revisión Base Cuántica — Consenso Espectral Integral (13/13 Motores) + Símplex Continuo de Régimen (Modo Profesor)
+
+- Flujo coordinado: rama `antigravity/revision-base-cuantica` → verificación unitaria (`quantum-arena` 101/101 tests OK, `signal-engine` 96/96 tests OK, `god-engine-core` 158/158 tests OK, `risk-engine` 119/119 tests OK, `evolution-engine` 60/60 tests OK) y workspace (`cargo check` 0 errores) → commit y sincronización.
+- AGY-AUD-P29 (CRITICAL): `crates/god-engine-core/src/lib.rs`:
+  - **QUÉ**: Consenso espectral unificado e integral incorporando la totalidad de los 13 motores cuánticos del sistema y erradicación de constantes duras.
+  - **POR QUÉ**: El consenso sombra previo solo incluía 11 motores (`pesos = [1.0; 11]`), omitiendo `HighPayoffTrendRunner` y `RenyiTsallisEntropyEngine`. Además, utilizaba parámetros literales fijos (`1.0, 0.1, 0.5`, etc.) en lugar de leer los parámetros dinámicos evolucionados del registro omnisciente, duplicando cálculos que ya se realizaban para las sombras individuales.
+  - **PARA QUÉ**: Garantizar completitud y consistencia matemática total en la síntesis espectral multiescala (32 escalas temporales), unificando las decisiones de todos los subsistemas cuánticos.
+  - **CÓMO**: Se estructuró la evaluación individual de sombras en secuencia una sola vez por tick con parámetros dinámicos del registro, publicando la telemetría `sombra_*` (incluyendo la nueva telemetría `sombra_entropia_*`), y alimentando el array `votos_espectrales` de 13 posiciones con `pesos = [1.0; 13]`.
+  - **CUÁNDO**: En cada tick de mercado (`process_tick_dual`).
+  - **DÓNDE**: `crates/god-engine-core/src/lib.rs:1880-2025`.
+  - **QUIÉN**: `GodEngineCore::process_tick_dual`.
+- AGY-AUD-P30 (HIGH): `crates/quantum-arena/src/state.rs` y `crates/god-engine-core/src/lib.rs`:
+  - **QUÉ**: Símplex continuo de régimen de mercado $[p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}}] \in \Delta^3$ con funciones de activación suaves $C^\infty$.
+  - **POR QUÉ**: El régimen global se colapsaba mediante cortes rígidos de escalón en $z_{\text{btc}} = \pm 1.96$ y Hurst fijo en números enteros discretos (0, 1, 2, 3), causando discontinuidades abruptas en las derivadas de modulación de margen y colchones de riesgo.
+  - **PARA QUÉ**: Asegurar continuidad en el universo espectral temporal continuo, permitiendo transiciones probabilísticas suaves sin saltos impulsivos en la gestión de capital y control de riesgo de la cuenta de $13 USD.
+  - **CÓMO**: Se agregaron los campos atómicos `regime_p_range`, `regime_p_bull`, `regime_p_crash`, `regime_p_chaos` a `GlobalArena`. Se calcularon las activaciones suaves $C^\infty$ mediante sigmoides con exponentes acotados $[-50, 50]$, publicándose atómicamente y actualizando el `market_regime` MAP para compatibilidad hacia atrás.
+  - **CUÁNDO**: Al procesar la microestructura de BTC en cada tick.
+  - **DÓNDE**: `crates/quantum-arena/src/state.rs:522, 613` y `crates/god-engine-core/src/lib.rs:2155-2195`.
+  - **QUIÉN**: `GlobalArena` y `GodEngineCore`.
+
 ## 2026-10-02 — Qoder: Ola 46 / #625 — λ/μ̂ REAL al slot Hawkes del PPO
 
 - Flujo: rama `qoder/ola46-ppo-hawkes-real` (worktree `.ola46`, base

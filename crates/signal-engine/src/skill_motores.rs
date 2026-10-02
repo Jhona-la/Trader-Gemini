@@ -28,7 +28,9 @@
 use crate::voto_espectral::{VotoEspectral, ESCALAS_VOTO};
 use quantum_arena::temporal_spectrum::{umbral_ic_significativo, MUESTRAS_SKILL_MADURAS};
 
-pub const MOTORES: usize = 11;
+/// Los 13 motores con `voto_espectral()` de la composición del consenso
+/// (11 originales de #623 + trend-runner y RenyiTsallis, AGY P29).
+pub const MOTORES: usize = 13;
 pub const PISO_EXPLORACION: f64 = 0.15;
 const OLVIDO: f64 = 1.0 / 64.0;
 const EPS_VOTO: f64 = 1e-9;
