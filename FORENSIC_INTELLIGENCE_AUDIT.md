@@ -13388,3 +13388,36 @@ tocar). Resultados:
    spectral_tape).
 3. main estable en bbc19819 (mi #605); sin aterrizajes nuevos desde mi
    última pasada — esta ola aportó la MODALIDAD pre-merge, no defectos.
+
+---
+
+## #607 — Ola 29 (Qoder, 2026-10-01): MÓDULO ESPECTRAL MULTIACTIVO — dependencia entre activos RESUELTA EN ESCALA
+
+- **Qué**: la dependencia entre monedas era un escalar (ρ lineal D-748, λ̂
+  de cópula LXXII, n_eff). Nuevo módulo
+  `quantum-arena/espectral_multiactivo.rs`: para cada PAR (a,b) y cada
+  escala τ_k, IC prequential de los retornos de bloque no solapados
+  (maquinaria CL-30 existente): ic(k) = E[r_a·r_b]/√(E[r_a²]·E[r_b²])
+  con olvido 1/64. Un par locked a 1 minuto e independiente a 1 hora ya
+  es medible como tal.
+- **Mecánica**: `TemporalSpectrum::ultimo_bloque_maduro(escala)` expone el
+  cierre (ts, r) de cada escala; el core alimenta el emparejador por
+  evento. Emparejamiento con guardia de recencia 0.5·τ (ventanas
+  CONTEMPORÁNEAS — el bloque previo del otro, gap=τ, queda vetado: sino
+  la mitad de las muestras son productos desalineados y el ic de un par
+  idéntico se diluye a ≈0.5 — hallazgo de falsación de mi propio test),
+  borde por ts (sin duplicados), madurez 30 muestras.
+- **Falsación**: par idéntico → ic>0.95 (medido 1.00 con rejilla realista);
+  pares independientes → |ic|<0.4; recencia veta bloques viejos; borde no
+  duplica; extremo-a-extremo con DOS TemporalSpectrum reales sobre la
+  misma serie → ic(τ=275s) > 0.9. 3 contratos.
+- **Publicación (contable)**: `multiactivo_acople_banda` (media |IC| de
+  banda [30s,12h] contra los pares vivos), `multiactivo_mejor_ic` +
+  `multiactivo_mejor_tau` (el acople par-escala dominante) — registro por
+  moneda. OBSERVACIONAL: sin consumidor de política; el ρ(τ*) del veto de
+  grupo (sustituir el ρ̄ escalar por el ρ de la escala que opera la orden)
+  es decisión del consejo con T-1 propio.
+- **Coste**: O(escala×monedas) por evento en maduración (raro por escala),
+  publicación O(pares×banda). Memoria: HashMap de pares vivos.
+- Verificación: arena 100/100 (3 contratos nuevos), core 158/158,
+  workspace check 0 errores. **T-1: CERO impacto** (observacional).
