@@ -3230,3 +3230,10 @@ amplifica más la señal FUERTE, no la débil clásica. La física canónica
 de resonancia estocástica amplifica lo sub-umbral; el que vive en el repo
 no lo hace. Anotado para el consejo (corregir la heurística o aceptarla
 como amplificador de señal-confiable). signal-engine 82/82, ws 0 err.
+
+## 2026-10-01 — Qoder: Ola 37 / #615 — fase 4: entropía Rényi-Tsallis por escala (5/13)
+
+RenyiTsallisEntropyEngine resuelto: entropía binaria de certeza p=0.5+|x|/2
+mapeo SATURANTE (el loto |x|/(1+|x|) daba p=0.61 para |x|=1.55 — casi
+indistinguible del máximo de entropía). Alta |x| = certeza = voto firme.
+signal-engine 83/83, ws 0 err. T-1 cero. 5/13 motores resueltos.

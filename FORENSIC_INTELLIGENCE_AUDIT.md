@@ -13634,3 +13634,20 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
 - **Refactor espectral: 4/13 motores resueltos** (oscilador #609, solitón
   + choque #610, resonancia #614). T-1 cero (voto vivo bit a bit).
 - Verificación: signal-engine 82/82 (1 contrato nuevo), ws 0 err.
+
+---
+
+## #615 — Ola 37 (Qoder, 2026-10-01): fase 4 refactor espectral — entropía Rényi-Tsallis resuelta por escala
+
+- **RenyiTsallisEntropyEngine**: `voto_espectral(desplazamientos)` — la
+  INCERTIDUMBRE LOCAL de cada escala vía la entropía de Tsallis sobre la
+  distribución binaria de certeza {p, 1−p} donde p = 0.5 + |x(τ)|/2
+  (satura a 1.0 en |x|=1: mapeo LOTO descartado — |x|/(1+|x|) mapeaba
+  |x|=1.55 apenas a p=0.61, insuficientemente separado del máximo de
+  entropía). Alta |x| ⇒ S_q→0 ⇒ CERTEZA: la escala vota firme. Baja |x|
+  ⇒ S_q→S_max ⇒ INCERTIDUMBRE: abstención.
+- **Falsación**: antisimetría, certeza monótona creciente en |x|, cero
+  desplazamiento ⇒ sin dominante (incertidumbre total).
+- **Refactor espectral: 5/13 motores resueltos** (oscilador #609, solitón
+  + choque #610, resonancia #614, entropía #615). T-1 cero.
+- Verificación: signal-engine 83/83 (1 contrato), ws 0 err.
