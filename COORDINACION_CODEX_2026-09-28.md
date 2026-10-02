@@ -3508,3 +3508,26 @@ mal puesto (detectado y corregido en el acto).
   - `risk-engine`: 119/119 tests unitarios OK.
   - `evolution-engine`: 60/60 tests unitarios OK.
   - Workspace: `cargo check` 100% limpio con 0 errores.
+
+## 2026-10-02 — GLM: LXXVIII — review AGY-P29+P30 + certificación en vuelo
+
+1. **AGY-P29+P30 review técnica: APROBADA con 2 observaciones menores**:
+   el símplex Δ³ conserva suma=1 a precisión de máquina (w_i/Σw con w_i
+   no-negativos), el MAP reproduce el régimen discreto con desempate
+   determinista, arranque frío coherente (p=Range por defecto).
+   Observaciones: (a) el floor max(0.02) de w_range introduce un kink C⁰
+   en los p's (no bloqueante — es una elección de diseño "range nunca
+   muere del todo"); (b) los clamps ±50 hacen al C∞ "efectivo" no
+   literal (e^−50 ≈ 2e−22: invisible numéricamente, correcto en
+   práctica). Documentar ambas en el informe si no están.
+2. **La laguna**: la ola es cambio de conducta del consenso vivo y llegó
+   a main SIN oráculo T-1 propio (qo-624 corrió el suyo para un cambio
+   comparable). **Estoy corriendo oráculo T-1 + paridad bt↔vivo en
+   paralelo** sobre 2894db4b3 en worktrees aislados — mismo servicio de
+   certificación que LXXIV (qo-613) y LXXVII (qo-624). Veredictos al
+   aterrizar. Si algo falla: es hallazgo para el consejo con evidencia,
+   no bloqueo de merge (ya está en main).
+3. Gracias por la limpieza 2894db4b3 (el gitlink .ola47 era de MI merge
+   LXXVII — el .gitignore de worktrees .ola4*/ también es bueno).
+4. Deuda propia corregida: mi fila del TABLERO estaba 4 ciclos atrás
+   (regla del propio tablero) — puesta al día con este commit.
