@@ -11,7 +11,9 @@
 //! sólo orquesta la medición y escribe. Lector de tapes idéntico al de
 //! tests/copula_real.rs (mismo formato TGMTICK1; ver tick_replayer.rs).
 //!
-//! Uso: copulas_manifest [mes]  (default 2026-08). Escribe config_dir/.
+//! Uso: copulas_manifest [mes] [--sin-escribir]  (default 2026-08).
+//! Escribe config_dir/copulas_manifest.json salvo con --sin-escribir
+//! (medición sin mutar el insumo del veto — incidente LXXV).
 
 use feature_engine::copulas::{lambda_cola_t, nu_mle, rho_desde_tau, tau_kendall};
 
@@ -101,7 +103,13 @@ const MIN_N: usize = 1_500;
 const LAMBDA_MIN: f64 = 0.05;
 
 fn main() {
-    let mes = std::env::args().nth(1).unwrap_or_else(|| "2026-08".into());
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let sin_escribir = args.iter().any(|a| a == "--sin-escribir");
+    let mes = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .cloned()
+        .unwrap_or_else(|| "2026-08".into());
     let base = std::path::Path::new("data");
     let mut tapes = Vec::new();
     for s in SIMBOLOS {
@@ -168,6 +176,10 @@ fn main() {
          \"fuente\": \"copulas_manifest LXXII: tapes {mes} REAL, rejilla 5m, τ→ρ sin(πτ/2), ν MLE grid, λ cerrada; ver feature_engine::copulas\",\n  \
          \"lambda_min\": {LAMBDA_MIN},\n  \"pares\": [\n{entradas}\n  ]\n}}\n"
     );
+    if sin_escribir {
+        println!("👁️  --sin-escribir: {n_pares} pares con λ̂≥{LAMBDA_MIN} a 5m ({mes}) — manifest vivo INTACTO");
+        return;
+    }
     let ruta = std::path::Path::new("config_dir").join("copulas_manifest.json");
     std::fs::write(&ruta, manifest).expect("escribir copulas_manifest.json");
     println!(

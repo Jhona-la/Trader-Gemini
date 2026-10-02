@@ -3308,3 +3308,33 @@ espectral — el kernel Hawkes e^{−β·τ} lo atenúa exponencialmente en esca
 largas. Coherencia |flujo|×|excitación| con decaimiento kernel×tanh (misma
 forma tensorial que el vivo). signal-engine 88/88, ws 0 err. 10/13.
 Quedan 3: Perceptron, Conformal, FlowExcitation.
+
+## 2026-10-02 — GLM: LXXV — medición de ESTABILIDAD de λ̂ entre meses (portón de la cópula dinámica)
+
+Repo quieto tras 67e108c3; sin tapes de octubre (revalidaciones esperan).
+Pregunta del portón: ¿la dependencia de cola λ̂ por par DERIVA entre
+meses? Si λ̂(jun)≈λ̂(ago)≈λ̂(sep-14) en los pares solapados, el manifest
+estático a 5m está justificado y la "cópula dinámica" es decoración que
+el portón cierra. Si deriva, el mecanismo de actualización rodante gana
+su existencia (ola futura CON oráculo). Mido con el mismo bin
+copulas_manifest sobre los tres meses con tapes y comparo los pares
+solapados. Sin tocar código vivo — no hay oráculo.
+
+## 2026-10-02 — GLM: LXXV FINAL — λ̂ DERIVA: cópula dinámica justificada; ADR-0009 regla mensual
+
+**Veredicto del portón: la deriva es REAL** (144 pares en ≥2 meses):
+mediana 0.106, 53% de pares >0.10, correlación entre meses r=0.55-0.89,
+y el peor par cambia de identidad CADA MES (SOL-XRP → DOGE-LINK →
+DOGE-XRP → SOL-XRP). Operar octubre con λ̂ de agosto = error sistemático
+de inflado de cola en la mitad de los pares.
+
+**ADR-0009**: regenerar el manifest con el último mes completo al
+iniciar cada mes (misma cadencia que la revalidación de modelos
+ADR-0008); el campo `mes` ES la vigencia. Ventanas rodantes/EWMA de λ̂
+quedan como CANDIDATO MEDIDO (ola futura con oráculo).
+
+Incidente de proceso propio: la medición de sep SOBREESCRIBIÓ el
+manifest vivo (el bin escribe por diseño) — restaurado de git en el
+mismo ciclo; flag --sin-escribir añadido al bin y verificado. Lección
+registrada: correr una herramienta de medición que escribe su salida en
+config_dir muta insumos del vivo — copiar o flag antes de medir.
