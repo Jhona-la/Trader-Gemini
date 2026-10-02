@@ -1878,6 +1878,69 @@ impl GodEngineCore {
                             .registry
                             .set_for_coin(coin_id, "sombra_shock_salto_max", v_shock.abs());
                     }
+                    // #623 (Ola 44) — SOMBRA DEL CONSENSO ESPECTRAL: los 13
+                    // motores ya tienen voto_espectral(); aquí se componen en
+                    // el consenso espectral (media ponderada por escala) y
+                    // se publica su escala dominante + media de banda. Es la
+                    // prueba pre-integración: el consenso espectral compone,
+                    // es acotado, y es contable. El orquestador sigue con
+                    // el escalar — el cambio de consumidor exige oráculo.
+                    let votos_espectrales = [
+                        signal_engine::quantum_oscillator::QuantumOscillatorEngine::voto_espectral(
+                            &desplazamientos, 1.0, 0.1, 0.5,
+                        ),
+                        signal_engine::soliton_wave::SolitonWaveEngine::voto_espectral(
+                            &desplazamientos, 1.0,
+                        ),
+                        signal_engine::supersonic_shockwave::SupersonicShockwaveEngine::voto_espectral(
+                            &desplazamientos, 0.001,
+                        ),
+                        signal_engine::stochastic_resonance::StochasticResonanceEngine::voto_espectral(
+                            &desplazamientos, 0.05,
+                        ),
+                        signal_engine::coaxial_breakout::CoaxialBreakoutEngine::voto_espectral(
+                            &desplazamientos,
+                        ),
+                        signal_engine::hawkes_bessel::HawkesBesselEngine::voto_espectral(
+                            &desplazamientos, 2.5,
+                        ),
+                        signal_engine::game_theoretic_nash::GameTheoreticNashEngine::voto_espectral(
+                            &desplazamientos, 0.5,
+                        ),
+                        signal_engine::flow_impulse::FlowImpulseEngine::voto_espectral(
+                            &desplazamientos, 2.0,
+                        ),
+                        signal_engine::perceptron_gate::PerceptronGateEngine::voto_espectral(
+                            &desplazamientos,
+                        ),
+                        signal_engine::conformal_reversion_filter::ConformalReversionFilterEngine::voto_espectral(
+                            &desplazamientos, 0.10,
+                        ),
+                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral(
+                            &desplazamientos, 2.5,
+                        ),
+                    ];
+                    let pesos = [1.0; 11];
+                    let consenso_espectral =
+                        signal_engine::voto_espectral::VotoEspectral::consenso(
+                            &votos_espectrales,
+                            &pesos,
+                        );
+                    if let Some((k_dom, v_dom)) = consenso_espectral.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "consenso_espectral_tau",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_dom],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "consenso_espectral_dominante", v_dom);
+                    }
+                    if let Some(media) = consenso_espectral.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "consenso_espectral_media", media);
+                    }
                     // #614: SOMBRA de RESONANCIA ESTOCÁSTICA
                     let var_ruido = self
                         .arena
