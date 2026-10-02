@@ -434,6 +434,8 @@ pub struct DependencyExposure {
     /// (correlación perfecta). Con cero medidos => 1.0: el presupuesto
     /// LINEAL legado del `None` original es el caso límite, no un
     /// comportamiento nuevo. Bits para preservar Eq.
+    /// XLVI·F/AGY: + etapa curl_share² (Hodge) hacia 1. LXXII: + etapa
+    /// λ̂ de cópulas t hacia 1 (manifiesto medido; ausente ⇒ bit-exact).
     pub same_bet_rho_efectivo_bits: u64,
     /// XLVI·E (SPECTRAL-010): riesgo REAL de cada miembro misma-apuesta al
     /// stop, como fracción de capital: `qty·|entry−sl|/capital`. Bits 0 =
@@ -593,6 +595,9 @@ pub fn dependency_exposure(
     // XLVI·D: correlación PnL de cada miembro del grupo same-bet contra la
     // candidata (None = no medida) — para la ρ efectiva del grupo.
     let mut rhos_same_bet: Vec<Option<f64>> = Vec::new();
+    // LXXII: coin_ids de los miembros misma-apuesta (para el λ̂ de cópulas
+    // por par contra la candidata).
+    let mut same_bet_assets: Vec<usize> = Vec::new();
     // XLVI·E (SPECTRAL-010): riesgo REAL al stop de cada miembro, como
     // fracción del capital unificado — el veto agregará estos, no una
     // escala única supuesta.
@@ -652,6 +657,7 @@ pub fn dependency_exposure(
             if CorrelationGuardEngine::es_la_misma_apuesta(pnl_rho, threshold) {
                 result.same_bet_positions += 1;
                 rhos_same_bet.push(pnl_rho);
+                same_bet_assets.push(asset_id);
                 // XLVI·E: riesgo real al stop si el snapshot lo sostiene.
                 // Bits 0 = no medido (sin stop utilizable, lado del stop
                 // inconsistente con la dirección, o capital inválido).
@@ -693,8 +699,43 @@ pub fn dependency_exposure(
         .clamp(0.0, 1.0);
     let base_rho = rho_efectivo_grupo(&rhos_same_bet);
     let systemic_rho = (base_rho + (1.0 - base_rho) * (curl_share * curl_share)).clamp(-1.0, 1.0);
-    result.same_bet_rho_efectivo_bits = systemic_rho.to_bits();
+    // LXXII (copulas t): TERCERA etapa de inflado hacia 1 — la
+    // dependencia de COLA medida (λ̂ por par, manifest de cópulas). Las
+    // tres etapas componen multiplicativamente sobre el complemento de
+    // independencia: 1−ρ_final = (1−base)·(1−curl²)·(1−λ̂_max). La
+    // medición LXXI (100/108 pares λ̂≥0.10; BTC-SOL ρ̂0.77→λ̂0.51 donde
+    // gaussiana daría 0) demostró que la ρ lineal SUBESTIMA el stop-out
+    // conjunto. λ̂ ausente (sin manifest, par sin medir) ⇒ bit a bit el
+    // systemic_rho legado — disciplina D-754, como V-RISK-006 sin R.
+    let lambda_grupo = same_bet_assets
+        .iter()
+        .filter_map(|&otro| crate::copulas_store::lambda_entre(candidate_id, otro))
+        .fold(None::<f64>, |acc, l| {
+            Some(match acc {
+                Some(m) => m.max(l),
+                None => l,
+            })
+        });
+    let final_rho = inflar_cola(systemic_rho, lambda_grupo);
+    if let Some(l) = lambda_grupo {
+        // Contable del consejo: el veto operó con inflado de cola medido.
+        arena
+            .registry
+            .set_for_coin(candidate_id, "lxxii_lambda_grupo", l);
+    }
+    result.same_bet_rho_efectivo_bits = final_rho.to_bits();
     Some(result)
+}
+
+/// LXXII (copulas t): inflado de COLA hacia 1 sobre el complemento de
+/// independencia: ρ_final = ρ + (1−ρ)·λ̂, i.e. (1−ρ_final) = (1−ρ)(1−λ̂).
+/// `None` (sin medición) o λ=0 ⇒ **bit a bit** ρ de entrada (D-754).
+/// Acotado a [−1,1]; λ fuera de (0,1] no llega aquí (el store lo filtra).
+pub fn inflar_cola(rho_sistemica: f64, lambda: Option<f64>) -> f64 {
+    match lambda {
+        Some(l) if l > 0.0 => (rho_sistemica + (1.0 - rho_sistemica) * l).clamp(-1.0, 1.0),
+        _ => rho_sistemica,
+    }
 }
 
 impl CorrelationGuardEngine {

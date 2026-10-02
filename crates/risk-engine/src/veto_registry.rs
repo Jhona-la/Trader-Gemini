@@ -77,14 +77,14 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     EntradaVeto {
         id: "V-RISK-002",
         nombre: "correlacion/exposición estructural",
-        causa: "grupo misma-apuesta excede el tope de ruina bajo agregación medida",
+        causa: "grupo misma-apuesta excede el tope de ruina bajo agregación medida; LXXII: la ρ agregada incluye TRES etapas hacia 1 componiendo sobre el complemento de independencia (1−ρ = (1−base)(1−curl²)(1−λ̂)): media XLVI·D, vorticidad Hodge (AGY-P06), y dependencia de COLA de cópula t medida (λ̂ por par — 100/108 pares λ̂≥0.10 en la medición LXXI; BTC-SOL ρ̂0.77→λ̂0.51 donde gaussiana daría 0: la ρ lineal subestima el stop-out conjunto)",
         fuente_umbral: "medido",
-        datos: "riesgo real por posición (snapshot qty·|entry−sl|/cap) + ρ_PnL HY×signo + q cartera (CL-9)",
-        responsable: "XLVI·D/E (GLM), 2026-09-29",
+        datos: "riesgo real por posición (snapshot qty·|entry−sl|/cap) + ρ_PnL HY×signo (base) + hawkes_contagion_curl_share (etapa 2) + λ̂ de config_dir/copulas_manifest.json generado por el bin copulas_manifest (etapa 3, telemetría lxxii_lambda_grupo)",
+        responsable: "XLVI·D/E (GLM), 2026-09-29; inflado de cola LXXII (GLM), 2026-10-01",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
         test: Some("xlvie_riesgos_uniformes_reducen_a_la_formula_d748"),
-        deuda: None,
+        deuda: Some("contratos LXXII en tests/lxxii_cola_copula_veto.rs: bit-exact sin manifest, monotonicidad en λ, FP/FN grupo con λ 0.5 veta lo que ρ̄ admite; la cópula es ESTÁTICA a 5m del mes del manifest — dinámica (ventanas) es ola futura"),
     },
     EntradaVeto {
         id: "V-RISK-003",
