@@ -41,6 +41,46 @@ impl FlowExcitationConfluenceEngine {
     pub fn new() -> Self {
         Self { registry: None }
     }
+
+    /// #622 (Ola 43) — VOTO ESPECTRAL de la confluencia de excitación:
+    /// la confluencia Hawkes×flujo se evalúa a CADA escala. El
+    /// desplazamiento x(τ_k) ES el flujo direccional a esa banda; la
+    /// excitación decae con el kernel e^{−β·τ} (misma física que #617 y
+    /// #619). La confluencia exige flujo y excitación SIMULTÁNEOS a esa
+    /// escala: el producto |x|·excitación_local, con el UMBRAL EFECTIVO
+    /// escalado por τ (effective_hawkes_thresh de AGY-P09, ahora por
+    /// escala). Las escalas rápidas ven la confluencia plena; las lentas
+    /// apenas la memoria del flujo.
+    /// Observacional: el voto vivo queda bit a bit (T-1 cero).
+    pub fn voto_espectral(
+        desplazamientos: &[f64; 32],
+        excitacion_base: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        let mut por_escala = [0.0f64; 32];
+        for k in 0..32 {
+            let x = desplazamientos[k];
+            if !x.is_finite() || x == 0.0 {
+                continue;
+            }
+            let tau_s = (1e-6 * 4f64.powi(k as i32)) / 1000.0;
+            let kernel = (-0.5 * tau_s).exp();
+            let excitacion_k = excitacion_base.max(0.0) * kernel;
+            // Umbral efectivo por escala: el estado estacionario + un
+            // incremento suave con τ (las escalas lentas exigen más
+            // evidencia para declarar confluencia — menos eventos).
+            let umbral_efectivo = crate::hawkes_bessel::STEADY_STATE_RATIO
+                + 0.5 * (k as f64 / 31.0);
+            if excitacion_k < umbral_efectivo {
+                continue; // sin excitación suficiente a esta escala
+            }
+            // Confluencia: flujo direccional modulado por el exceso de
+            // excitación sobre el umbral (más excitación = más convicción).
+            let exceso = ((excitacion_k - umbral_efectivo) / 2.0).min(1.0);
+            let confluencia = (x.clamp(-1.0, 1.0) * (0.5 + exceso)).clamp(-1.0, 1.0);
+            por_escala[k] = confluencia;
+        }
+        crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
 }
 
 impl QuantumStrategy for FlowExcitationConfluenceEngine {
@@ -368,5 +408,53 @@ mod tests {
         assert!(v_high > v_base, "mayor intensidad produce monotonicamente mayor senal");
         // Formula esperada: 0.70 * 1.50 = 1.05 clamped to 1.0
         assert_eq!(v_high, 1.0, "satura suavemente en 1.0");
+    }
+}
+
+#[cfg(test)]
+mod qo_622_tests {
+    use super::*;
+    use crate::voto_espectral::ESCALAS_VOTO;
+    use crate::hawkes_bessel::STEADY_STATE_RATIO;
+
+    #[test]
+    fn qo_622_confluencia_por_escala_exige_excitacion() {
+        let mut x = [0.0; ESCALAS_VOTO];
+        for (k, v) in x.iter_mut().enumerate() {
+            *v = 0.3 * (k as f64 - 15.5).signum();
+        }
+        // Excitación ALTA: supera el umbral en las escalas rápidas (kernel
+        // pleno) pero no en las lentas (kernel muerto + umbral creciente).
+        let alta = STEADY_STATE_RATIO + 2.0;
+        let voto = FlowExcitationConfluenceEngine::voto_espectral(&x, alta);
+        // Escala rápida: kernel ≈ 1 ⇒ excitación ≈ alta > umbral ⇒ CONFLUENCIA.
+        let escala_rapida = voto.en_escala(1).abs();
+        // Escala lenta: kernel ≈ 0 ⇒ excitación ≈ 0 < umbral ⇒ ABSTENCIÓN.
+        let escala_lenta = voto.en_escala(28).abs();
+        assert!(
+            escala_rapida > escala_lenta,
+            "confluencia es de alta frecuencia: rápida {} vs lenta {}",
+            escala_rapida,
+            escala_lenta
+        );
+        // Excitación BAJA: no supera el umbral en NINGUNA escala ⇒ todo 0.
+        let baja = 0.5;
+        let voto_bajo = FlowExcitationConfluenceEngine::voto_espectral(&x, baja);
+        assert_eq!(voto_bajo.dominante(), None, "sin excitación suficiente no hay confluencia");
+        // Antisimetría cuando la confluencia activa.
+        let mut x_neg = x;
+        for v in &mut x_neg {
+            *v = -*v;
+        }
+        let voto_neg = FlowExcitationConfluenceEngine::voto_espectral(&x_neg, alta);
+        for k in 0..ESCALAS_VOTO {
+            if x[k] != 0.0 {
+                assert!(
+                    (voto.en_escala(k) + voto_neg.en_escala(k)).abs() < 1e-10,
+                    "antisimetría en {}",
+                    k
+                );
+            }
+        }
     }
 }
