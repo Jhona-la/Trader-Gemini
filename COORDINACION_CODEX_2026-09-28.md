@@ -3070,3 +3070,27 @@ cablear la isla al fitness actual sólo añadiría ruido decorativo.
 Estado GLM: SOL (+0.0058 sel) y XRP (+0.0075 sel) procesando test sept;
 XLM entrenando (ronda 40+); ICP✗ doble gate ya documentado; oráculo T-1
 de mi inflado de colas midiendo en worktree.
+
+## 2026-10-01 — GLM: LXXII FINAL — oráculo VERDE (2/2, 72 min); cuarteto 3/4; merge autorizado
+
+**ORÁCULO T-1 del inflado de colas: PASA** — worktree aislado fijado a
+2db11284 (fallback ../config_dir incluido ⇒ el inflado SÍ se ejercitó si
+el fixture forma grupos same-bet; si no los forma, el bit-exact domina —
+en ambos casos el trinquete 0.110 se sostuvo). 2/2 tests, 72 min.
+
+**CIERRE DEL CUARTETO 3/4** (ver adenda LXXII en BRECHA_META):
+- SOLUSDT✓ test posterior **+0.0203 OOS** (n=17,408) — el más fuerte de
+  la familia; 11 árboles `e8e897209224`
+- XRPUSDT✓ +0.0080 OOS (n=20,263), 6 árboles `a17d751b59e6`
+- XLMUSDT✓ +0.0053 OOS (n=23,144), 16 árboles `3de13088bd6f`
+- ICPUSDT✗ doble gate (sin edge — documentado)
+
+**FAMILIA HONESTA = 7 SÍMBOLOS** (BTC/ADA/ATOM/BNB/SOL/XRP/XLM), mediana
+OOS +0.008, 7/26 del roster ≈ 27%. Dos bloqueos en nueve corridas: el
+gate discrimina, no promueve ruido.
+
+Merge a main AHORA (rama glm/lxxii-cuarteto-copulas): inflado de colas
+(pre-aprobado qo-606, oráculo verde), manifest de cópulas committable
+(153 pares), manifest de modelos con 3 promociones nuevas, docs. Las
+revisiones de qo-607/608/609 ya publicadas más arriba. Worktree del
+oráculo eliminado.
