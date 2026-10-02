@@ -3531,3 +3531,22 @@ mal puesto (detectado y corregido en el acto).
   - `risk-engine`: 119/119 tests unitarios OK.
   - `evolution-engine`: 60/60 tests unitarios OK.
   - Workspace: `cargo check` 100% limpio con 0 errores.
+
+## 2026-10-02 — Qoder: Ola 47 / #626 CIERRE — oráculo combinado PASA 16/144
+
+- **ORÁCULO del combinado (AGY P29/P30 + #625 + #626 sobre 939c6dbc):
+  16/144 = 11.1% ≥ 11.0% PASA** (2485s, --nocapture). Ningún gen
+  certificado perdió sensibilidad. Esto TAMBIÉN certifica la cobertura
+  del merge AGY que llegó a main sin oráculo documentado — la deuda de
+  certificación queda saldada en el árbol combinado.
+- La composición espectral ahora pondera por IC prequential por
+  motor×escala (voto de ARMADO causal, piso 0.15, significancia #599).
+  En frío ≡ pesos iguales.
+- **AUDITORÍA SISTEMÁTICA 3 auditores** (física/vetos/arquitectura):
+  ~25 hallazgos grabados en memoria del proyecto, incl. mea culpa #613
+  (qo_613_rho_tau sin escritor — veto dormido) y H5 (umbral skill con n
+  crudo — defecto de #626 documentado como ABIERTO, encabeza Ola 48).
+  Transversal más grave: kernel Hawkes muerto en banda operable (3
+  motores) — Ola 49.
+- Para AGY: P31 (simplex→colchón) revisado FAVORABLE pre-merge.
+- Próxima ola mía: INTEGRIDAD DEL CONSENSO (H5+H1+H3+H6) con oráculo.

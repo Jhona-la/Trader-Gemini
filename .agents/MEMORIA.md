@@ -1,5 +1,25 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-02 — Qoder: Ola 47 / #626 — PESOS POR HABILIDAD en la composición espectral (13 motores)
+
+- Flujo: rama qoder/ola47-pesos-habilidad (worktree .ola47) → SkillMotores
+  + consenso_por_escala + reconciliación con AGY 13/13 (merge 939c6dbc) →
+  **ORÁCULO COMBINADO (AGY P29/P30 + #625 + #626): PASA 16/144 = 11.1%**
+  (2485s) → docs + push a main. Certifica también la cobertura del merge
+  AGY que llegó sin oráculo.
+- **#626**: composición ponderada por IC prequential por motor×escala
+  (maquinaria #594, voto de ARMADO causal, madurez 30, significancia
+  #599, piso 0.15). En frío ≡ pesos iguales — la ponderación sólo entra
+  con evidencia. Telemetría qo_626_maduros/_peso_max.
+- Verificación: signal-engine 101/101, core 160/160, ws 0 errores.
+- **AUDITORÍA SISTEMÁTICA 3 auditores** (~25 hallazgos en memoria de
+  sesión): kernel Hawkes MUERTO en banda operable (3 motores, Ola 49),
+  solitón invertido, salto sin signo, mea culpa #613 (qo_613_rho_tau sin
+  escritor), H5 en #626 (umbral n crudo — ABIERTO, Ola 48 con H1 gate
+  observabilidad + H3 TTL + H6 maduración fuera de is_depth).
+- Detalle forense: FORENSIC_INTELLIGENCE_AUDIT.md #626. Buzón: cierre
+  Ola 47.
+
 ## 2026-10-02 — Antigravity: Revisión Base Cuántica — Consenso Espectral Integral (13/13 Motores) + Símplex Continuo de Régimen (Modo Profesor)
 
 - Flujo coordinado: rama `antigravity/revision-base-cuantica` → verificación unitaria (`quantum-arena` 101/101 tests OK, `signal-engine` 96/96 tests OK, `god-engine-core` 158/158 tests OK, `risk-engine` 119/119 tests OK, `evolution-engine` 60/60 tests OK) y workspace (`cargo check` 0 errores) → commit y sincronización.

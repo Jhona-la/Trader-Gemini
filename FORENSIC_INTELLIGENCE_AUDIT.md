@@ -13889,3 +13889,35 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
   --nocapture, 2688.36s sobre 726a99d2). Misma cobertura que main
   certificado: ningún gen perdió sensibilidad. Lista de inertes idéntica
   en estructura a la de #624 (128 inertes, mismos sensibles).
+
+## #626 — Ola 47 (Qoder, 2026-10-02): PESOS POR HABILIDAD en la composición espectral (13 motores)
+
+- **Qué**: la composición del consenso espectral pasa de pesos iguales a
+  PESOS POR HABILIDAD MEDIDA. `SkillMotores` (signal-engine/skill_motores.rs,
+  NUEVO): por motor×escala acumula IC prequential E[v·r]/√(E[v²]·E[r²])
+  con la maquinaria de #594 (EWMA olvido 1/64, madurez 30) alimentada por
+  las maduraciones de bloque, puntuando el voto de ARMADO de cada motor
+  (snapshot en la maduración anterior — causal, anti look-ahead) contra el
+  retorno realizado. Peso = 0.15 + 0.85·IC sólo si maduro Y significativo
+  (umbral #599 2/√(n−3)); piso de exploración 0.15; anti-alineado ⇒ piso.
+  `VotoEspectral::consenso_por_escala` normaliza por Σw EN CADA escala.
+- **Propiedad de arranque**: en frío todos al piso ⇒ composición
+  matemáticamente equivalente a pesos iguales — la ponderación SÓLO entra
+  con evidencia madura (continuidad hacia atrás con #623).
+- **RECONCILIACIÓN con AGY P29 (13/13)**: merge 939c6dbc — el wiring se
+  injerta en el bloque reestructurado de AGY (votos como locales con
+  parámetros del registro + voto_tr y voto_entropy); MOTORES=13.
+- Telemetría: qo_626_maduros (pares motor×escala con peso>piso),
+  qo_626_peso_max. 5 tests: frío≡iguales, causalidad del armado,
+  antialineado⇒piso, dedup por ts, abstención no cuenta.
+- **Verificación**: signal-engine 101/101, core 160/160, ws 0 errores.
+- **ORÁCULO T-1 del COMBINADO (AGY P29/P30 + #625 + #626): PASA 16/144
+  = 11.1%** (2485.58s, release single-thread --nocapture, sobre 939c6dbc).
+  Ningún gen certificado perdió sensibilidad; recupera la certificación
+  que el merge de AGY a main no trajo documentada.
+- **ABIERTO conocido (auditor C, hallado pre-push)**: H5 — el umbral de
+  significancia usa n crudo (→0 en sesiones largas) contra IC con N
+  efectivo ≈128 (olvido 1/64): en sesiones largas puede admitir ruido
+  como habilidad. Encabeza la Ola 48 con H1 (gate de observabilidad en
+  composición/dominante), H3 (TTL cross-stream) y H6 (maduración fuera
+  de is_depth).
