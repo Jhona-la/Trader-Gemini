@@ -30,6 +30,21 @@
   - **CUÁNDO**: En cada evaluación de admisión de orden en `PortfolioOrchestrator::allow_trade`.
   - **DÓNDE**: `crates/risk-engine/src/orchestrator.rs:150-188`.
   - **QUIÉN**: `PortfolioOrchestrator::allow_trade`.
+- AGY-AUD-P32 (CRITICAL): `crates/execution-engine/src/entry_dispatch.rs`, `crates/execution-engine/src/executor.rs`, `crates/execution-engine/tests/entry_route_contract.rs` y `src/bin/god_engine.rs`:
+  - **QUÉ**: Ruteo de órdenes de entrada activas protegido por deslizamiento dinámico mediante `EntryRoute::Ioc` (Immediate-Or-Cancel con precio límite adaptativo) y cierre de arista muerta de ejecución.
+  - **POR QUÉ**: Anteriormente, el 100% de las entradas en `god_engine.rs` se despachaban como órdenes `EntryRoute::Market` incondicionales (`type=MARKET`). En libros delgados, desbalances súbitos de liquidez o mechas de alta volatilidad, las órdenes a mercado agresivas sufrían deslizamientos descontrolados (50 a 200 bps), lo cual en una micro-cuenta de $13 USD destruye de 2% a 4% del capital únicamente en el costo de entrada antes de que empiece a operar el trade. Además, `QuantumOrderRouter::route_order` contenía lógica de ruteo IOC que permanecía como arista muerta sin conectar con `god_engine.rs`.
+  - **PARA QUÉ**: Garantizar ejecución instantánea como agresor (taker fill) cuando el libro de órdenes es saludable, pero con un techo de precio estricto que aborta/cancela de inmediato (`IOC`) si el deslizamiento excede la tolerancia admisible derivada de la volatilidad instantánea (ATR) y el piso genético evolucionado, blindando el capital micro de $13 USD contra absorciones predatorias y mechas de liquidación.
+  - **CÓMO**:
+    - Extensión de `EntryRoute` con la variante `EntryRoute::Ioc { price: f64 }` en `crates/execution-engine/src/entry_dispatch.rs`.
+    - Validación matemática en `EntryRequest::validate`: verificación de que `price > 0.0`, finito, y `tick_size > 0.0` y finito para rutas IOC.
+    - Despacho en `OrderExecutor::submit_entry` invocando `self.execute_ioc_order(...)` con `timeInForce: IOC` y redondeo direccional al tick size exacto del símbolo (`round_price_to_tick(price, tick_size, !is_long)`).
+    - En `src/bin/god_engine.rs`, derivación de la cota de deslizamiento dinámico en nanosegundos:
+      `dyn_slip = (base_slip + entry_atr_pct * 0.20).clamp(0.0005, 0.0035)`
+      `ioc_price = OrderExecutor::round_price_to_tick(raw_ioc_price, dyn_tick_size, !final_is_long)`
+    - 12/12 contratos de ejecución aprobados en `crates/execution-engine/tests/entry_route_contract.rs`.
+  - **CUÁNDO**: En cada evaluación y despacho de orden de entrada en `src/bin/god_engine.rs`.
+  - **DÓNDE**: `crates/execution-engine/src/entry_dispatch.rs`, `crates/execution-engine/src/executor.rs`, `crates/execution-engine/tests/entry_route_contract.rs`, `src/bin/god_engine.rs:4095-4105, 4195-4230`.
+  - **QUIÉN**: `OrderExecutor`, `dispatch_entry`, `god_engine.rs`.
 
 ## 2026-10-02 — Qoder: Ola 46 / #625 — λ/μ̂ REAL al slot Hawkes del PPO
 

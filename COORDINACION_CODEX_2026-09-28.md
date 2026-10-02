@@ -3529,3 +3529,27 @@ mal puesto (detectado y corregido en el acto).
   - `portfolio_admission_contract`: 7/7 tests OK (incluyendo nuevo contrato continuo).
   - `risk-engine`: 119/119 unit tests OK.
 
+## 2026-10-02 — Antigravity: AGY-AUD-P32 — Dynamic Slippage Guarded Execution & IOC Entry Routing (Modo Profesor)
+
+- **QUÉ**:
+  Ruteo de órdenes de entrada activas protegido por deslizamiento dinámico mediante `EntryRoute::Ioc` (Immediate-Or-Cancel con precio límite adaptativo) y cierre de la arista muerta de ejecución en `crates/execution-engine/src/entry_dispatch.rs`, `crates/execution-engine/src/executor.rs` y `src/bin/god_engine.rs`.
+- **POR QUÉ**:
+  Anteriormente, el 100% de las entradas en `god_engine.rs` se despachaban como órdenes `EntryRoute::Market` incondicionales (`type=MARKET`). En libros delgados, desbalances súbitos de liquidez o mechas de alta volatilidad, las órdenes a mercado agresivas sufrían deslizamientos descontrolados (50 a 200 bps), lo cual en una micro-cuenta de $13 USD destruye de 2% a 4% del capital únicamente en el costo de entrada antes de que empiece a operar el trade. Además, `QuantumOrderRouter::route_order` contenía lógica de ruteo IOC que permanecía como arista muerta sin conectar con `god_engine.rs`.
+- **PARA QUÉ**:
+  Garantizar ejecución instantánea como agresor (taker fill) cuando el libro de órdenes es saludable, pero con un techo de precio estricto que aborta/cancela de inmediato (`IOC`) si el deslizamiento excede la tolerancia admisible derivada de la volatilidad instantánea (ATR) y el piso genético evolucionado, blindando el capital micro de $13 USD contra absorciones predatorias y mechas de liquidación.
+- **CÓMO**:
+  1. Extensión de `EntryRoute` con la variante `EntryRoute::Ioc { price: f64 }` en `crates/execution-engine/src/entry_dispatch.rs`.
+  2. Validación matemática rigurosa en `EntryRequest::validate`: verificación de que `price > 0.0`, sea finito y que `tick_size > 0.0` y finito para rutas IOC.
+  3. Despacho en `OrderExecutor::submit_entry` invocando `self.execute_ioc_order(...)` con `timeInForce: IOC` y redondeo direccional al tick size exacto del símbolo (`round_price_to_tick(price, tick_size, !is_long)`).
+  4. En `src/bin/god_engine.rs`, derivación de la cota de deslizamiento dinámico en nanosegundos:
+     $$\text{dyn\_slip} = \text{clamp}(\text{base\_slippage\_floor} + 0.20 \times \text{atr\_pct},\; 0.0005,\; 0.0035)$$
+     $$P_{\text{ioc}} = \text{round\_price\_to\_tick}(P_{\text{ref}} \times (1 \pm \text{dyn\_slip}),\; \text{dyn\_tick\_size},\; \text{is\_sell})$$
+  5. 12/12 contratos de ejecución validados en `crates/execution-engine/tests/entry_route_contract.rs`.
+- **CUÁNDO**: En cada evaluación y despacho de orden de entrada en `src/bin/god_engine.rs`.
+- **DÓNDE**: `crates/execution-engine/src/entry_dispatch.rs`, `crates/execution-engine/src/executor.rs`, `crates/execution-engine/tests/entry_route_contract.rs`, `src/bin/god_engine.rs:4095-4105, 4195-4230`.
+- **QUIÉN**: `OrderExecutor`, `dispatch_entry`, `god_engine.rs`.
+- **VERIFICACIÓN**:
+  - `entry_route_contract`: 12/12 tests OK (incluyendo nuevos contratos IOC).
+  - Workspace: `cargo check --bin god_engine` 100% limpio con 0 errores.
+
+

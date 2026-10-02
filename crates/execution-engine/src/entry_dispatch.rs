@@ -11,6 +11,7 @@ pub enum EntryRoute {
     Market,
     Maker { price: f64 },
     Iceberg { price: f64, visible_quantity: f64 },
+    Ioc { price: f64 },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -50,7 +51,7 @@ impl EntryRequest<'_> {
         }
         let price = match self.route {
             EntryRoute::Market => return Ok(()),
-            EntryRoute::Maker { price } => price,
+            EntryRoute::Maker { price } | EntryRoute::Ioc { price } => price,
             EntryRoute::Iceberg {
                 price,
                 visible_quantity,
@@ -129,6 +130,18 @@ impl EntryTransport for OrderExecutor {
                     request.is_long,
                     request.quantity,
                     request.step_size,
+                    request.client_order_id,
+                )
+                .await
+            }
+            EntryRoute::Ioc { price } => {
+                self.execute_ioc_order(
+                    request.symbol,
+                    request.is_long,
+                    request.quantity,
+                    price,
+                    request.step_size,
+                    request.tick_size,
                     request.client_order_id,
                 )
                 .await

@@ -125,6 +125,7 @@ async fn leverage_failure_prevents_every_entry_route() {
             price: 100.0,
             visible_quantity: 0.2,
         },
+        EntryRoute::Ioc { price: 100.0 },
     ] {
         let mut mock = MockTransport::new();
         mock.confirmation_error = true;
@@ -146,6 +147,7 @@ async fn every_route_confirms_one_x_and_preserves_named_units_and_identity() {
             price: 100.0,
             visible_quantity: 0.2,
         },
+        EntryRoute::Ioc { price: 100.0 },
     ] {
         let mock = MockTransport::new();
         dispatch_entry(&mock, &request(route)).await.unwrap();
@@ -345,3 +347,47 @@ async fn real_adapter_paper_path_obeys_the_dispatch_contract_without_network() {
     assert!(ex.set_leverage("", 1).await.is_err());
     assert!(ex.set_leverage("AUDITUSDT", 1).await.is_ok());
 }
+
+#[tokio::test]
+async fn real_adapter_paper_path_executes_ioc() {
+    let ex = paper_executor();
+    assert!(dispatch_entry(&ex, &request(EntryRoute::Ioc { price: 100.0 }))
+        .await
+        .is_ok());
+}
+
+#[tokio::test]
+async fn ioc_entry_validates_finite_price_and_tick() {
+    let mock = MockTransport::new();
+    let baseline = request(EntryRoute::Ioc { price: 100.0 });
+
+    // 1. Precio válido y tick válido -> Ok
+    assert!(dispatch_entry(&mock, &baseline).await.is_ok());
+
+    // 2. Precios inválidos: negativos, cero, NaN, Inf -> Err
+    for bad in [-100.0, 0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(dispatch_entry(
+            &mock,
+            &EntryRequest {
+                route: EntryRoute::Ioc { price: bad },
+                ..baseline
+            }
+        )
+        .await
+        .is_err());
+    }
+
+    // 3. Ticks inválidos: cero, negativos, NaN -> Err
+    for bad_tick in [0.0, -0.1, f64::NAN, f64::INFINITY] {
+        assert!(dispatch_entry(
+            &mock,
+            &EntryRequest {
+                tick_size: bad_tick,
+                ..baseline
+            }
+        )
+        .await
+        .is_err());
+    }
+}
+
