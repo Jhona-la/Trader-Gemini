@@ -707,15 +707,9 @@ pub fn dependency_exposure(
     // gaussiana daría 0) demostró que la ρ lineal SUBESTIMA el stop-out
     // conjunto. λ̂ ausente (sin manifest, par sin medir) ⇒ bit a bit el
     // systemic_rho legado — disciplina D-754, como V-RISK-006 sin R.
-    let lambda_grupo = same_bet_assets
-        .iter()
-        .filter_map(|&otro| crate::copulas_store::lambda_entre(candidate_id, otro))
-        .fold(None::<f64>, |acc, l| {
-            Some(match acc {
-                Some(m) => m.max(l),
-                None => l,
-            })
-        });
+    // LXXIII (nota qo-606): λ̂_grupo = máx sobre TODOS los pares del
+    // grupo — candidato-miembro Y miembro-miembro (ver lambda_grupo_max).
+    let lambda_grupo = lambda_grupo_max(candidate_id, &same_bet_assets);
     let final_rho = inflar_cola(systemic_rho, lambda_grupo);
     if let Some(l) = lambda_grupo {
         // Contable del consejo: el veto operó con inflado de cola medido.
@@ -725,6 +719,30 @@ pub fn dependency_exposure(
     }
     result.same_bet_rho_efectivo_bits = final_rho.to_bits();
     Some(result)
+}
+
+/// LXXIII (nota qo-606): λ̂ del grupo como MÁXIMO sobre todos los pares
+/// — candidato-miembro Y miembro-miembro. Dos miembros con cola
+/// fuertemente compartida elevan el stop-out conjunto aunque la candidata
+/// esté menos acoplada a cada uno: la equicorrelación ρ̄ escalar necesita
+/// el PEOR par del grupo, no el peor par contra la candidata. Sin
+/// mediciones ⇒ None (bit-exact legado). Grupos pequeños ⇒ O(k²)
+/// consultas al mapa del store.
+pub fn lambda_grupo_max(candidata: usize, miembros: &[usize]) -> Option<f64> {
+    let grupo = std::iter::once(candidata).chain(miembros.iter().copied());
+    let mut mejor: Option<f64> = None;
+    let v: Vec<usize> = grupo.collect();
+    for i in 0..v.len() {
+        for j in (i + 1)..v.len() {
+            if let Some(l) = crate::copulas_store::lambda_entre(v[i], v[j]) {
+                mejor = Some(match mejor {
+                    Some(m) => m.max(l),
+                    None => l,
+                });
+            }
+        }
+    }
+    mejor
 }
 
 /// LXXII (copulas t): inflado de COLA hacia 1 sobre el complemento de
