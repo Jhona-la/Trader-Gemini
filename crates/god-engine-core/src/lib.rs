@@ -694,6 +694,9 @@ pub struct GodEngineCore {
     /// #607 (Ola 29): IC cruzado por par×escala entre monedas (observación
     /// al registro; el ρ(τ*) de grupo es decisión del consejo con T-1).
     espectral_ma: quantum_arena::espectral_multiactivo::EspectralMultiactivo,
+    /// #626 (Ola 47): habilidad prequential por motor×escala por moneda —
+    /// alimenta los pesos de la composición del consenso espectral.
+    skill_motores: Vec<signal_engine::skill_motores::SkillMotores>,
     /// Host-owned drift veto: blocks entries, not local defensive exits.
     /// Recovery cannot clear the independent arena/executor kill switches.
     drift_entry_veto: bool,
@@ -978,6 +981,9 @@ impl GodEngineCore {
             espectral_ma: quantum_arena::espectral_multiactivo::EspectralMultiactivo::new(
                 n_coins,
             ),
+            skill_motores: (0..n_coins)
+                .map(|_| signal_engine::skill_motores::SkillMotores::new())
+                .collect(),
             drift_entry_veto: false,
             entry_reservations: vec![None; n_coins],
             diag_unverified_close_total: 0,
@@ -1935,12 +1941,47 @@ impl GodEngineCore {
                             &desplazamientos, 2.5,
                         ),
                     ];
-                    let pesos = [1.0; 11];
+                    // #626 (Ola 47) — PESOS POR HABILIDAD: cada maduración
+                    // de bloque puntúa los votos de ARMADO de los motores
+                    // contra el retorno realizado (IC prequential, olvido
+                    // 1/64, madurez 30, significancia #599) y re-snapshot-ea
+                    // el armado del bloque nuevo. En frío todos al piso ⇒
+                    // composición equivalente a los pesos iguales de #623;
+                    // la ponderación SÓLO entra con evidencia madura. Es el
+                    // cierre espectral de D-752: la convicción se GANA con
+                    // historial propio, no se asume igual para once físicas.
+                    for escala in 0..32 {
+                        if let Some((ts_mad, r_mad)) = spec.ultimo_bloque_maduro(escala) {
+                            if coin_id < self.skill_motores.len() {
+                                self.skill_motores[coin_id].observar_maduracion(
+                                    escala,
+                                    ts_mad,
+                                    r_mad,
+                                    &votos_espectrales,
+                                );
+                            }
+                        }
+                    }
+                    let pesos = if coin_id < self.skill_motores.len() {
+                        self.skill_motores[coin_id].pesos()
+                    } else {
+                        [[signal_engine::skill_motores::PISO_EXPLORACION; 32];
+                            signal_engine::skill_motores::MOTORES]
+                    };
                     let consenso_espectral =
-                        signal_engine::voto_espectral::VotoEspectral::consenso(
+                        signal_engine::voto_espectral::VotoEspectral::consenso_por_escala(
                             &votos_espectrales,
                             &pesos,
                         );
+                    if coin_id < self.skill_motores.len() {
+                        let (maduros, pmax) = self.skill_motores[coin_id].diagnostico_banda();
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "qo_626_maduros", maduros as f64);
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "qo_626_peso_max", pmax);
+                    }
                     if let Some((k_dom, v_dom)) = consenso_espectral.dominante() {
                         self.arena.registry.set_for_coin(
                             coin_id,

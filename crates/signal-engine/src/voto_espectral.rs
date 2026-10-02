@@ -111,6 +111,36 @@ impl VotoEspectral {
         }
         Self { por_escala }
     }
+
+    /// #626 — CONSENSO PONDERADO POR ESCALA: el peso del motor m depende
+    /// de la escala k (su habilidad prequential medida ahí). Normalización
+    /// por Σw EN CADA escala; pesos no finitos/≤0 se saltan; Σw ~0 en una
+    /// escala ⇒ esa escala vota 0 (sin inventar). Con pesos uniformes es
+    /// matemáticamente `consenso` (continuidad hacia atrás con #623).
+    pub fn consenso_por_escala(
+        votos: &[VotoEspectral],
+        pesos: &[[f64; ESCALAS_VOTO]],
+    ) -> VotoEspectral {
+        let mut por_escala = [0.0; ESCALAS_VOTO];
+        for (k, salida) in por_escala.iter_mut().enumerate() {
+            let mut suma_w = 0.0f64;
+            let mut suma_wv = 0.0f64;
+            for (v, fila) in votos.iter().zip(pesos.iter()) {
+                let w = fila[k];
+                if !w.is_finite() || w <= 0.0 {
+                    continue;
+                }
+                suma_w += w;
+                suma_wv += w * v.en_escala(k);
+            }
+            *salida = if suma_w > 1e-12 {
+                (suma_wv / suma_w).clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
+        }
+        Self { por_escala }
+    }
 }
 
 #[cfg(test)]

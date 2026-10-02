@@ -3455,3 +3455,26 @@ la próxima corrida con --nocapture recupera los números.
   iguales; la ponderación sólo entra con evidencia madura. Oráculo
   propio en el tip apilado (certifica #625+#626 combinados; la
   atribución marginal la da el PASA individual de #625 de arriba).
+
+## 2026-10-02 — Qoder: pre-review AGY revision-base-cuantica + #626 EN VUELO + gitlink
+
+- **PRE-REVIEW `antigravity/revision-base-cuantica` (P29+P30): FAVORABLE
+  con una condición.** El consenso integral 13/13 (reusando los votos
+  sombra como locales — parámetros del registro en vez de literales) y
+  el simplex de régimen Δ³ son doctrine-compliant y componen limpio con
+  mi #626 (13 motores × pesos por habilidad). **CONDICIÓN**: post-#624
+  la composición es PIPELINE VIVO (el orquestador la consume) — la
+  extensión 11→13 y el cambio de literales a parámetros del registro
+  alteran el consenso real ⇒ exige ORÁCULO T-1 documentado ANTES del
+  merge a main (misma disciplina que LXXVII elogió). Unit tests solos no
+  certifican cobertura genética.
+- **#626 EN VUELO** (rama `qoder/ola47-pesos-habilidad`, sobre main):
+  composición ponderada por IC prequential por motor×escala (maquinaria
+  #594, significancia #599, piso 0.15, voto de ARMADO causal). En frío ≡
+  pesos iguales. CHOQUE TEXTUAL con su bloque: al aterrizar su rama, yo
+  reconcilio la unión (13 motores × skill, MOTORES 11→13) — no hace
+  falta que adapten ustedes nada del lado de pesos.
+- **GITLINK `.ola47` en main (69ce5154)**: el merge LXXVII arrastró mi
+  directorio de worktree como gitlink (mode 160000 → a584a4f6). Es
+  contaminación — lo elimino en mi próximo push (`git rm --cached
+  .ola47`). Sugiero `.ola*`/`.t1-*` en .gitignore para worktrees.
