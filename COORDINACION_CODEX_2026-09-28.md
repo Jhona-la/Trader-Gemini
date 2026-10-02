@@ -3346,3 +3346,13 @@ peso espectral en CAMPANA sobre la banda operativa [8..23] — la señal
 más limpia vive lejos del ruido sub-segundo y de la inercia macro. Piso
 0.15 de exploración preservado (curiosidad mínima anti-bloqueo).
 signal-engine 89/89, ws 0 err. 11/13. Quedan 2: Conformal, FlowExcitation.
+
+## 2026-10-02 — Qoder: Ola 43 / #621+#622 — FASE FINAL: 13/13 MOTORES ESPECTRALES
+
+ConformalReversionFilter (score por escala: z=x(τ), tendencia=signo de
+k+1) y FlowExcitationConfluence (confluencia Hawkes×flujo con umbral
+efectivo creciente en τ). EL REFACTOR ESPECTRAL ESTÁ COMPLETO: las 13
+voces del consenso tienen voto_espectral(). La integración final (el
+orquestador consume VotoEspectral::consenso) es la siguiente ola — con
+ORÁCULO PROPIO OBLIGATORIO (cambia el consenso vivo). signal-engine
+91/91, ws 0 err. Mapa completo de los 13 en el informe.

@@ -13749,3 +13749,47 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
 - **Refactor espectral: 11/13 motores.** Quedan 2: Conformal,
   FlowExcitation.
 - Verificación: signal-engine 89/89, ws 0 err. T-1 cero.
+
+---
+
+## #621 + #622 — Ola 43 (Qoder, 2026-10-02): FASE FINAL del REFACTOR ESPECTRAL — 13/13 MOTORES RESUELTOS
+
+- **ConformalReversionFilterEngine** (#621): `voto_espectral(desplaza-
+  mientos, α)` — el score conformal de reversión evaluado a CADA escala:
+  z = x(τ_k) (precio vs su media de horizonte τ), tendencia = signo de la
+  escala adyacente k+1 (la inercia que la reversión acompaña, D-676).
+  Bidireccional por construcción.
+- **FlowExcitationConfluenceEngine** (#622): `voto_espectral(desplaza-
+  mientos, excitación)` — la confluencia Hawkes×flujo a CADA escala con
+  umbral efectivo CRECIENTE en τ (las escalas lentas exigen más evidencia):
+  excitación decae con el kernel, flujo es el desplazamiento firmado.
+  Alta frecuencia espectral (misma física que #617/#619).
+- **EL REFACTOR ESPECTRAL ESTÁ COMPLETO: 13/13 motores** tienen
+  `voto_espectral()` — el sustrato `VotoEspectral` (#609) con sus
+  constructores `desde_escalar`/`desde_espectro`/`desde_arr`, el compositor
+  `consenso` ponderado, y ahora TODAS las voces del consenso pueden
+  opinar por escala. La fase final de integración (el orquestador consume
+  `VotoEspectral::consenso` en lugar del escalar) es la ola que sigue,
+  con oráculo propio OBLIGATORIO.
+- Falsación: conformal — reversión long en pares con tendencia positiva,
+  short en impares, significancia crece con |z|; confluencia — alta
+  frecuencia (rápida > lenta), sin excitación ⇒ abstención, antisimetría.
+- Verificación: signal-engine 91/91 (3 contratos nuevos), ws 0 err.
+  T-1 cero.
+
+### MAPA COMPLETO DEL REFACTOR (13/13):
+| Motor | Ola | Física espectral |
+|---|---|---|
+| QuantumOscillator | #609 | Pozo anarmónico + confinamiento AGY-P14 por escala |
+| SolitonWave | #610 | Perfil sech firmado (núcleo pleno, colas a 0) |
+| SupersonicShockwave | #610 | Salto Rankine-Hugoniot M(τ)=\|x(τ)\|/c |
+| StochasticResonance | #614 | Pozo bi-estable amplificando (quirk SNR documentado) |
+| RenyiTsallisEntropy | #615 | Entropía binaria de certeza p=0.5+\|x\|/2 |
+| CoaxialBreakout | #616 | Producto tensorial de compresión entre vecinos |
+| HighPayoffTrendRunner | AGY (73ed1583) | Persistencia modulada por Hurst + VPIN |
+| HawkesBessel | #617 | Kernel e^{−β·τ} (excitación local) |
+| GameTheoreticNash | #618 | Minimax con adversario espectral k/31 |
+| FlowImpulse | #619 | Flujo de alta frecuencia (kernel decae) |
+| PerceptronGate | #620 | Compuerta con peso en campana [8..23] |
+| ConformalReversionFilter | #621 | Score conformal: z=x(τ), tendencia=k+1 |
+| FlowExcitationConfluence | #622 | Confluencia Hawkes×flujo con umbral τ-creciente |
