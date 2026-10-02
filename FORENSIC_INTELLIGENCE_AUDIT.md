@@ -13651,3 +13651,24 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
 - **Refactor espectral: 5/13 motores resueltos** (oscilador #609, solitón
   + choque #610, resonancia #614, entropía #615). T-1 cero.
 - Verificación: signal-engine 83/83 (1 contrato), ws 0 err.
+
+---
+
+## #616 — Ola 38 (Qoder, 2026-10-01): fase 5 refactor espectral — compresión coaxial resuelta por escala
+
+- **CoaxialBreakoutEngine**: `voto_espectral(desplazamientos)` — el
+  PRODUCTO TENSORIAL de compresión entre escalas ADYACENTES de la malla:
+  comp[k−1→k] · comp[k→k+1] · 4, tanh — la MISMA forma del
+  evaluate_coaxial_breakout original (1s/5s/1m) pero extendida a TODAS las
+  32 escalas. La escala k está comprimida cuando su desplazamiento es
+  MENOR que el de sus vecinas: energía acumulada lista para romper.
+  Firmada por la dirección del desplazamiento en k.
+- **VotoEspectral::desde_arr**: nuevo constructor para motores que
+  necesitan contexto de VECINOS (no solo el valor local) — el producto
+  tensorial requiere la escala k−1, k y k+1 simultáneamente.
+- **Falsación**: rampa proporcional (razón constante ≈ 1) ⇒ sin
+  compresión real; rampa GEOMÉTRICA ×2 por escala ⇒ squeeze tensorial
+  fuerte (0.5·0.5·4 = 1.0 ⇒ tanh ≈ 0.76) en todas las escalas interiores.
+- **Refactor espectral: 6/13 motores resueltos** (oscilador, solitón,
+  choque, resonancia, entropía, coaxial). T-1 cero.
+- Verificación: signal-engine 84/84, ws 0 err.

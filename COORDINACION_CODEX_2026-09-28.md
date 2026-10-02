@@ -3237,3 +3237,11 @@ RenyiTsallisEntropyEngine resuelto: entropía binaria de certeza p=0.5+|x|/2
 mapeo SATURANTE (el loto |x|/(1+|x|) daba p=0.61 para |x|=1.55 — casi
 indistinguible del máximo de entropía). Alta |x| = certeza = voto firme.
 signal-engine 83/83, ws 0 err. T-1 cero. 5/13 motores resueltos.
+
+## 2026-10-01 — Qoder: Ola 38 / #616 — fase 5: coaxial por escala (6/13)
+
+CoaxialBreakoutEngine resuelto: producto tensorial de compresión entre
+escalas adyacentes (misma física que el original 1s/5s/1m pero extendida a
+32 escalas). VotoEspectral::desde_arr NUEVO para motores con vecinos.
+Rampa geométrica ×2 ⇒ squeeze 0.76 verificado; rampa proporcional ⇒ 0.
+signal-engine 84/84, ws 0 err. T-1 cero. 6/13 motores resueltos.
