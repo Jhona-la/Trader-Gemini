@@ -676,6 +676,9 @@ pub struct GodEngineCore {
     /// P-A (Ola 23): estimador Cramér–Lundberg por moneda sobre cierres
     /// netos (observación al registro; sin consumidor de sizing).
     lundberg_siniestros: Vec<risk_engine::cramer_lundberg::EstimadorSiniestros>,
+    /// #607 (Ola 29): IC cruzado por par×escala entre monedas (observación
+    /// al registro; el ρ(τ*) de grupo es decisión del consejo con T-1).
+    espectral_ma: quantum_arena::espectral_multiactivo::EspectralMultiactivo,
     /// Host-owned drift veto: blocks entries, not local defensive exits.
     /// Recovery cannot clear the independent arena/executor kill switches.
     drift_entry_veto: bool,
@@ -957,6 +960,9 @@ impl GodEngineCore {
             lundberg_siniestros: (0..n_coins)
                 .map(|_| risk_engine::cramer_lundberg::EstimadorSiniestros::new())
                 .collect(),
+            espectral_ma: quantum_arena::espectral_multiactivo::EspectralMultiactivo::new(
+                n_coins,
+            ),
             drift_entry_veto: false,
             entry_reservations: vec![None; n_coins],
             diag_unverified_close_total: 0,
@@ -1539,6 +1545,23 @@ impl GodEngineCore {
             // vuelve una VISTA del continuo, no la fuente.
             if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
                 spec.update(current_price, event_time_ms);
+                // #607 (Ola 29) — ESPECTRAL MULTIACTIVO: cada maduración de
+                // bloque de ESTA moneda se empareja contra el último bloque
+                // maduro de las otras a la misma escala (recencia 1.5·τ,
+                // borde por ts) — IC cruzado por par×escala. OBSERVACIÓN
+                // pura: sin consumidor de política (el ρ(τ*) del veto de
+                // grupo es decisión del consejo con T-1 propio).
+                for escala in 0..32 {
+                    if let Some((ts, r)) = spec.ultimo_bloque_maduro(escala) {
+                        self.espectral_ma.observar_maduracion(
+                            coin_id,
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[escala],
+                            escala,
+                            ts,
+                            r,
+                        );
+                    }
+                }
                 if coin_id < self.arena.coins.len() {
                     let field = spec.spectral_field(true);
                     self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
@@ -1753,6 +1776,29 @@ impl GodEngineCore {
                     self.arena.coins[coin_id]
                         .tau_habilidad
                         .store(habilidad, Ordering::Relaxed);
+                    // #607 (Ola 29): acople espectral MULTIACTIVO de esta
+                    // moneda — media |IC| de banda contra sus pares con
+                    // evidencia madura, y el mejor acople par-escala.
+                    // Observación contable (sin consumidor de política).
+                    let (lo, hi) = (
+                        quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                        quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                    );
+                    if let Some(a) = self.espectral_ma.acople_banda(coin_id, lo, hi) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "multiactivo_acople_banda", a);
+                    }
+                    if let Some((otro, tau, ic)) = self.espectral_ma.mejor_acople(coin_id, lo, hi)
+                    {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "multiactivo_mejor_ic", ic);
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "multiactivo_mejor_tau", tau);
+                        let _ = otro; // el par específico: traza, no política
+                    }
                 }
                 self.arena.update_market_data(
                     coin_id,

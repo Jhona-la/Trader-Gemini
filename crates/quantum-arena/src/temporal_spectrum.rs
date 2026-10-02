@@ -213,6 +213,10 @@ pub struct ScaleState {
     /// #594 — señal al armar el bloque en curso (s(t₀); no ve el retorno
     /// que después la puntúa — causalidad por construcción).
     bloque_s0: f64,
+    /// #607 — cierre del ÚLTIMO bloque maduro: (ts, retorno). El módulo
+    /// espectral multiactivo empareja estos cierres entre monedas.
+    ultimo_bloque_ts: u64,
+    ultimo_bloque_r: f64,
 }
 
 impl ScaleState {
@@ -355,6 +359,20 @@ impl TemporalSpectrum {
         self.scales.get(best)?.habilidad_medida()
     }
 
+    /// #607 — el ÚLTIMO bloque maduro de `escala`: (ts de cierre, retorno
+    /// del bloque). `None` si esa escala nunca maduró en esta moneda. Es la
+    /// materia prima del emparejamiento espectral multiactivo.
+    pub fn ultimo_bloque_maduro(&self, escala: usize) -> Option<(u64, f64)> {
+        if escala >= 32 {
+            return None;
+        }
+        let s = &self.scales[escala];
+        if s.ultimo_bloque_ts == 0 {
+            return None;
+        }
+        Some((s.ultimo_bloque_ts, s.ultimo_bloque_r))
+    }
+
     /// Actualiza las 32 escalas por evento con timestamp estrictamente creciente.
     pub fn update(&mut self, price: f64, ts_ms: u64) {
         if !price.is_finite() || price <= 0.0 {
@@ -444,6 +462,10 @@ impl TemporalSpectrum {
                 let agree = signo(r) * signo(s.bloque_r_prev);
                 s.persistence += (agree - s.persistence) / PERSISTENCIA_BLOQUES;
                 s.bloque_r_prev = r;
+                // #607: el cierre queda publicado para el emparejamiento
+                // multiactivo (misma escala, otras monedas).
+                s.ultimo_bloque_ts = ts_ms;
+                s.ultimo_bloque_r = r;
                 s.bloque_t0_ms = ts_ms;
                 s.bloque_ln_p0 = ln_p;
                 // Rearme del bloque siguiente: su señal de referencia es la
@@ -883,6 +905,8 @@ impl TemporalSpectrum {
             skill_wsr: 0.0,
             skill_n: 0,
             bloque_s0: 0.0,
+            ultimo_bloque_ts: 0,
+            ultimo_bloque_r: 0.0,
         }
     }
 
