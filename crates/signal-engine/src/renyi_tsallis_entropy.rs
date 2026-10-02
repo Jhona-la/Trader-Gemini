@@ -164,6 +164,34 @@ impl Default for RenyiTsallisEntropyEngine {
     }
 }
 
+impl RenyiTsallisEntropyEngine {
+    /// #615 (Ola 37) — VOTO ESPECTRAL de entropía: la INCERTIDUMBRE LOCAL
+    /// de cada escala medida con la entropía de Tsallis sobre la
+    /// distribución binaria de certeza {p, 1−p} donde p = 0.5 + |x(τ)|/2.
+    /// Alta |x| ⇒ p→1 ⇒ entropía baja ⇒ CERTEZA: la escala vota fuerte en
+    /// la dirección de su desplazamiento. Baja |x| ⇒ p→0.5 ⇒ entropía
+    /// máxima ⇒ INCERTIDUMBRE: la escala se abstiene.
+    /// Observacional: el voto vivo queda bit a bit (T-1 cero).
+    pub fn voto_espectral(
+        &self,
+        desplazamientos: &[f64; 32],
+    ) -> crate::voto_espectral::VotoEspectral {
+        crate::voto_espectral::VotoEspectral::desde_espectro(desplazamientos, |x| {
+            if !x.is_finite() || x == 0.0 {
+                return 0.0;
+            }
+            let p = (0.5 + x.abs() / 2.0).clamp(0.0, 1.0);
+            let s_q = self.calculate_tsallis_entropy(&[p, 1.0 - p]);
+            // Normalizar por la máxima entropía binaria S_q(0.5) para
+            // acotar la certeza en [0,1].
+            let s_max = self.calculate_tsallis_entropy(&[0.5, 0.5]).max(1e-9);
+            let certeza = (1.0 - (s_q / s_max).clamp(0.0, 1.0)).clamp(0.0, 1.0);
+            let signo = if x > 0.0 { 1.0 } else { -1.0 };
+            (signo * certeza).clamp(-1.0, 1.0)
+        })
+    }
+}
+
 impl strategy_core::QuantumStrategy for RenyiTsallisEntropyEngine {
     fn name(&self) -> &str {
         "RenyiTsallisEntropyEngine"
@@ -334,5 +362,46 @@ mod tests {
             v > 0.0,
             "DOGE debe votar con SU desequilibrio alcista, no con el global vendedor ({v})"
         );
+    }
+}
+
+#[cfg(test)]
+mod qo_615_tests {
+    use super::*;
+    use crate::voto_espectral::ESCALAS_VOTO;
+
+    #[test]
+    fn qo_615_certeza_por_escala_y_antisimetria() {
+        let engine = RenyiTsallisEntropyEngine::new(1.5, 2.0);
+        let mut x = [0.0; ESCALAS_VOTO];
+        for (k, v) in x.iter_mut().enumerate() {
+            *v = 0.1 * (k as f64 - 15.5);
+        }
+        let voto = engine.voto_espectral(&x);
+        // Antisimetría.
+        for kk in 0..ESCALAS_VOTO {
+            let idx = ESCALAS_VOTO - 1 - kk;
+            if (x[kk] + x[idx]).abs() < 1e-12 && x[kk] != 0.0 {
+                assert!(
+                    (voto.en_escala(kk) + voto.en_escala(idx)).abs() < 1e-10,
+                    "antisimetría en {}: {} vs {}",
+                    kk,
+                    voto.en_escala(kk),
+                    voto.en_escala(idx)
+                );
+            }
+        }
+        // MAYOR |x| ⇒ MAYOR certeza (menos entropía local).
+        let certeza_pequena = voto.en_escala(16).abs(); // |x| = 0.05
+        let certeza_grande = voto.en_escala(0).abs(); // |x| = 1.55
+        assert!(
+            certeza_grande > certeza_pequena,
+            "desplazamiento fuerte ⇒ más certeza: {} vs {}",
+            certeza_grande,
+            certeza_pequena
+        );
+        // Cero desplazamiento ⇒ voto 0 (incertidumbre total).
+        let cero = engine.voto_espectral(&[0.0; ESCALAS_VOTO]);
+        assert_eq!(cero.dominante(), None);
     }
 }
