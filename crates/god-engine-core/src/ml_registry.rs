@@ -62,6 +62,13 @@ pub struct ModelEntry {
     /// Motivo de rechazo estructural, independiente de la legibilidad JSON.
     #[serde(default)]
     pub error_estructural: Option<String>,
+    /// LXXIII: el artefacto se CARGA al arranque pero ninguna clave del
+    /// universo vivo lo consultará (p.ej. los {SYM}FDUSD_MOTOR con roster
+    /// 100% USDT — la clave jamás se genera en inferencia). Marca de
+    /// honestidad del inventario: los 10 FDUSD son peso muerto visible,
+    /// no cobertura. La remoción física es decisión del consejo.
+    #[serde(default)]
+    pub inerte_en_roster: Option<String>,
 }
 
 /// Inventario de fuentes locales; no es un registro de aprobaciones ni activaciones.
@@ -136,6 +143,18 @@ pub fn escanear_models(models_dir: &Path, generado_ms: u64) -> ModelManifest {
                     }
                     Err(e) => (None, None, false, Some(e.to_string())),
                 };
+            // LXXIII: marca de inercia en roster — la clave del FDUSD jamás
+            // se genera en inferencia (universo 100% USDT del bootloader);
+            // honestidad del inventario, la remoción es del consejo.
+            let inerte_en_roster = if stem.ends_with("FDUSD_MOTOR") {
+                Some(
+                    "roster vivo 100% USDT (bootloader): la clave {SYM}FDUSD_MOTOR \
+                     nunca se consulta — se carga al arranque pero es peso muerto"
+                        .to_string(),
+                )
+            } else {
+                None
+            };
             entries.push(ModelEntry {
                 key: stem.to_string(),
                 archivo: path
@@ -150,6 +169,7 @@ pub fn escanear_models(models_dir: &Path, generado_ms: u64) -> ModelManifest {
                 legible,
                 valido_estructuralmente: Some(error_estructural.is_none()),
                 error_estructural,
+                inerte_en_roster,
             });
         }
     }

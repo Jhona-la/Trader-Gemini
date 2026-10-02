@@ -7,7 +7,7 @@
 //! debe vetar un tamaño que la ρ̄ lineal admite — el stop-out conjunto
 //! subestimado es exactamente el falso-negativo que LXXI midió.
 
-use risk_engine::correlation_guard::{inflar_cola, veto_por_riesgo_cramer_lundberg};
+use risk_engine::correlation_guard::{inflar_cola, lambda_grupo_max, veto_por_riesgo_cramer_lundberg};
 
 #[test]
 fn lxxii_sin_medicion_es_bit_a_bit_el_legado() {
@@ -105,6 +105,22 @@ mod store {
             fuera.iter().any(|p| p.contains("ZZQ3USDT")),
             "el símbolo muerto debe ser visible, no silencioso: {fuera:?}"
         );
+
+        // Fase 1b (LXXIII): λ̂ del grupo = máx sobre TODOS los pares —
+        // el par miembro-miembro (1,2) λ=0.4 es el único medido y domina
+        // aunque la candidata (0) sólo lo comparte por pertenecer al grupo.
+        // (El manifest de arriba ya cargó el par ZZQ1-ZZQ2=0.4.)
+        use risk_engine::correlation_guard::lambda_grupo_max;
+        // candidato-miembro medido (ZZQ1-ZZQ2 = ids 0,1)
+        assert_eq!(lambda_grupo_max(0, &[1]), Some(0.4));
+        // CASO LXXIII: candidata 3 SIN pares medidos con nadie, pero sus
+        // miembros 0 y 1 tienen el par interno medido — la cola interna
+        // del grupo cuenta aunque la candidata no la tenga.
+        assert_eq!(lambda_grupo_max(3, &[0, 1]), Some(0.4));
+        // grupos sin ningún par medido ⇒ None ⇒ bit-exact legado
+        assert_eq!(lambda_grupo_max(3, &[1]), None);
+        assert_eq!(lambda_grupo_max(0, &[3]), None);
+        assert_eq!(lambda_grupo_max(3, &[]), None);
 
         // Fase 2: λ fuera de [0,1] rechaza EL PARSEO aunque el store ya
         // esté inicializado (parsear corre ANTES de tocar el OnceLock).
