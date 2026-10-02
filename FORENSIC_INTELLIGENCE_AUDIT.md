@@ -13709,3 +13709,24 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
 - **Refactor espectral: 9/13 motores resueltos.** Quedan 4: FlowImpulse,
   Perceptron, Conformal, FlowExcitation.
 - Verificación: signal-engine 87/87, ws 0 err. T-1 cero.
+
+---
+
+## #619 — Ola 41 (Qoder, 2026-10-02): fase 8 refactor espectral — impulso de flujo resuelto por escala
+
+- **FlowImpulseEngine**: `voto_espectral(desplazamientos, excitación_base)` —
+  el tensor de flujo se evalúa a CADA escala: el desplazamiento x(τ_k) ES
+  el flujo direccional a esa banda (OBI/OFI agregados), modulado por la
+  excitación Hawkes LOCAL (kernel e^{−β·τ} de #617). El flujo es un
+  fenómeno de ALTA frecuencia espectral: las escalas rápidas retienen el
+  impulso pleno; las lentas lo ven atenuado exponencialmente (la señal de
+  libro de órdenes no persiste a τ ≫ 2s).
+- **Coherencia**: |flujo|·|excitación| — la MISMA forma tensorial del
+  evaluate_flow_impulse vivo (simétrica Long/Short), multiplicada por el
+  kernel espectral antes del tanh de confianza.
+- **Falsación**: escala rápida > escala lenta (alta frecuencia espectral);
+  antisimetría; sin excitación (base=0) ⇒ coherencia=0 ⇒ sin voto; flujo
+  nulo ⇒ sin dominante.
+- **Refactor espectral: 10/13 motores.** Quedan 3: Perceptron, Conformal,
+  FlowExcitation.
+- Verificación: signal-engine 88/88, ws 0 err. T-1 cero.

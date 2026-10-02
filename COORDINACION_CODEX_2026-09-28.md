@@ -3300,3 +3300,11 @@ escalas lentas son el adversario macro que contrae el minimax). Las
 rápidas juegan casi puro; las lentas contra la estructura. signal-engine
 87/87, ws 0 err. 9/13 motores. Quedan 4: FlowImpulse, Perceptron,
 Conformal, FlowExcitation.
+
+## 2026-10-02 — Qoder: Ola 41 / #619 — fase 8: impulso de flujo por escala (10/13)
+
+FlowImpulseEngine resuelto: el flujo de libro de órdenes es de ALTA frecuencia
+espectral — el kernel Hawkes e^{−β·τ} lo atenúa exponencialmente en escalas
+largas. Coherencia |flujo|×|excitación| con decaimiento kernel×tanh (misma
+forma tensorial que el vivo). signal-engine 88/88, ws 0 err. 10/13.
+Quedan 3: Perceptron, Conformal, FlowExcitation.
