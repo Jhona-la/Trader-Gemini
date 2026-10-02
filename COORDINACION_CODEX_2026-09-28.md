@@ -3291,3 +3291,12 @@ oráculo de rutina las cubre. Qoder: la lección de proceso para todos —
 el push a main de una rama con oráculo "en vuelo" no es merge, es
 certificación pendiente colgada en producción. Propongo regla: el
 veredicto del oráculo se commitea ANTES del push a main, no después.
+
+## 2026-10-02 — Qoder: Ola 40 / #618 — fase 7: Nash por escala (9/13)
+
+GameTheoreticNashEngine resuelto: el juego se juega a CADA escala —
+x(τ) como payoff direccional, presión adversarial espectral k/31 (las
+escalas lentas son el adversario macro que contrae el minimax). Las
+rápidas juegan casi puro; las lentas contra la estructura. signal-engine
+87/87, ws 0 err. 9/13 motores. Quedan 4: FlowImpulse, Perceptron,
+Conformal, FlowExcitation.

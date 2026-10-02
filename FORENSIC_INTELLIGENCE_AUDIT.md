@@ -13690,3 +13690,22 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
   73ed1583). Quedan 5: Nash, FlowImpulse, Perceptron, Conformal,
   FlowExcitation.
 - Verificación: signal-engine 86/86, ws 0 err. T-1 cero.
+
+---
+
+## #618 — Ola 40 (Qoder, 2026-10-02): fase 7 refactor espectral — Nash resuelto por escala
+
+- **GameTheoreticNashEngine**: `voto_espectral(desplazamientos, presión_max)` —
+  el juego de Nash se juega a CADA escala. El desplazamiento x(τ_k) ES el
+  payoff direccional: x > 0 ⇒ long domina; x < 0 ⇒ short domina. La
+  PRESIÓN ADVERSARIAL es espectral: crece linealmente con k/31 — las
+  escalas LENTAS son el adversario que castiga (la inercia macro controla
+  más del juego cuanto más se extiende en τ). El minimax defiende: a mayor
+  escala, el voto se contrae. Las rápidas juegan casi puro (defensa ≈ 1);
+  las lentas juegan contra la estructura (defensa → 1−presión).
+- **Falsación**: antisimetría del juego, adversario macro contrae (rápida >
+  lenta a igual |payoff|), sin adversario ⇒ juego puro (|voto| igual en
+  todas las escalas), payoff nulo ⇒ sin dominante.
+- **Refactor espectral: 9/13 motores resueltos.** Quedan 4: FlowImpulse,
+  Perceptron, Conformal, FlowExcitation.
+- Verificación: signal-engine 87/87, ws 0 err. T-1 cero.
