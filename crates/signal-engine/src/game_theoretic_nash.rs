@@ -81,6 +81,46 @@ impl GameTheoreticNashEngine {
             0.0
         }
     }
+
+    /// #618 (Ola 40) — VOTO ESPECTRAL del equilibrio de Nash: el juego se
+    /// juega a CADA escala. El desplazamiento x(τ_k) ES el payoff direccional
+    /// a esa escala (long_payoff = x si x > 0, short_payoff = |x| si x < 0).
+    /// La PRESIÓN ADVERSARIAL es espectral: las escalas LENTAS (k alto) son
+    /// el adversario que castiga (la inercia macro controla más del juego
+    /// cuanto más se extiende en τ) — presión = (k/31)·máx. El minimax
+    /// defiende: a mayor escala (adversario más fuerte), el voto se contrae.
+    /// Las escalas rápidas juegan el juego casi puro (defensa ≈ 1); las
+    /// lentas juegan contra la inercia estructural (defensa → 1−máx).
+    /// Observacional: el voto vivo queda bit a bit (T-1 cero).
+    pub fn voto_espectral(
+        desplazamientos: &[f64; 32],
+        presion_adversarial_max: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        let max_adv = if presion_adversarial_max.is_finite() {
+            presion_adversarial_max.clamp(0.0, 0.9)
+        } else {
+            0.1
+        };
+        let mut por_escala = [0.0f64; 32];
+        for k in 0..32 {
+            let x = desplazamientos[k];
+            if !x.is_finite() || x == 0.0 {
+                continue;
+            }
+            // Payoff direccional: x > 0 ⇒ long domina; x < 0 ⇒ short domina.
+            let (long_payoff, short_payoff) = if x > 0.0 {
+                (x, 0.0)
+            } else {
+                (0.0, x.abs())
+            };
+            // Presión adversarial espectral: crece linealmente con k/31.
+            // La escala 0 juega casi sin adversario; la 31 juega contra
+            // la inercia estructural completa.
+            let adversarial = max_adv * (k as f64 / 31.0);
+            por_escala[k] = Self::compute_minimax_strategy(long_payoff, short_payoff, adversarial);
+        }
+        crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
 }
 
 impl QuantumStrategy for GameTheoreticNashEngine {
@@ -218,5 +258,54 @@ mod tests {
         let signal = engine.evaluate();
         assert!(signal > 0.0);
         assert!((-1.0..=1.0).contains(&signal));
+    }
+}
+
+#[cfg(test)]
+mod qo_618_tests {
+    use super::*;
+    use crate::voto_espectral::ESCALAS_VOTO;
+
+    #[test]
+    fn qo_618_nash_espectral_adversario_macro_contrae() {
+        let mut x = [0.0; ESCALAS_VOTO];
+        for (k, v) in x.iter_mut().enumerate() {
+            *v = 0.3 * (k as f64 - 15.5).signum();
+        }
+        let voto = GameTheoreticNashEngine::voto_espectral(&x, 0.5);
+        // Antisimetría: el juego es simétrico en payoff.
+        let mut x_neg = x;
+        for v in &mut x_neg {
+            *v = -*v;
+        }
+        let voto_neg = GameTheoreticNashEngine::voto_espectral(&x_neg, 0.5);
+        for k in 0..ESCALAS_VOTO {
+            if x[k] != 0.0 {
+                assert!(
+                    (voto.en_escala(k) + voto_neg.en_escala(k)).abs() < 1e-10,
+                    "antisimetría en {}: {} vs {}",
+                    k,
+                    voto.en_escala(k),
+                    voto_neg.en_escala(k)
+                );
+            }
+        }
+        // El ADVERSARIO espectral (k alto ⇒ más presión) CONTRAE el voto:
+        // a igual payoff, la escala lenta vota MENOS que la rápida.
+        let idx_rapido = 2;
+        let idx_lento = 28;
+        assert!(
+            voto.en_escala(idx_rapido).abs() > voto.en_escala(idx_lento).abs(),
+            "adversario macro contrae: rápido {} vs lento {}",
+            voto.en_escala(idx_rapido).abs(),
+            voto.en_escala(idx_lento).abs()
+        );
+        // Sin adversario: ambas escalas votan igual (juego puro).
+        let voto_libre = GameTheoreticNashEngine::voto_espectral(&x, 0.0);
+        let dif = (voto_libre.en_escala(idx_rapido).abs() - voto_libre.en_escala(idx_lento).abs()).abs();
+        assert!(dif < 1e-10, "sin adversario, juego puro en todas las escalas");
+        // Payoff nulo ⇒ voto 0 (sin juego no hay equilibrio).
+        let cero = GameTheoreticNashEngine::voto_espectral(&[0.0; ESCALAS_VOTO], 0.5);
+        assert_eq!(cero.dominante(), None);
     }
 }
