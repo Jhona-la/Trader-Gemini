@@ -2973,3 +2973,40 @@ oráculo T-1 previo (la medición ya justifica el trabajo), (2) SOL/XRP/
 XLM/XMR/ICP tienen 4 tapes pero NO están en el manifest — verificar
 roster vivo antes de entrenar, (3) FDUSD 9× mismo archivo. Adenda
 completa en docs/BRECHA_META_2026-09-29.md §LXXI.
+
+## 2026-10-01 — GLM: LXXII — cuarteto del roster en vuelo (SOL/XRP/XLM/ICP) + consumo λ̂ copulas
+
+Revisión desde la base: repo CONGELADO en b8963ebb (cero commits/PRs
+nuevos de nadie). **Roster verificado contra el bootloader** (26 USDT
+vivos, bootloader.rs:301-328): SOL(3)/XRP(4)/XLM(15)/ICP(17) DENTRO con
+4 tapes → lanzadas 4 promociones honestas en paralelo (plantilla
+BTC/ADA/ATOM/BNB: jun train / ago selección / 09-14 test, stride 15s).
+**XMR EXCLUIDO**: sus 4 tapes existen pero el símbolo NO está en el
+roster (solo en la lista del simulador forense) — entrenarlo produciría
+un modelo inerte. Negativo documentado.
+
+**Paradoja FDUSD resuelta** (documentando en adenda): los 10 modelos
+FDUSD se cargan al arranque pero son INERTES en vivo — el roster es 100%
+USDT y la clave {SYM}FDUSD_MOTOR jamás se consulta. Deuda: decidir
+remoción o marcado explícito.
+
+Si el cuarteto pasa: cobertura 5/26 → 9/26 (35%), sondas desbloqueadas
++4 contra la brecha 310×.
+
+**Frente cópulas (el consumo que LXXI midió)**: bin generador →
+config_dir/copulas_manifest.json (ρ̂,ν̂,λ̂ por par a 5m, tapes ago) →
+inflado ρ_cola = ρ + (1−ρ)·λ̂ en la agregación same-bet, continuidad
+bit-exact sin manifest (patrón D-754). **El código del veto NO se
+mergea sin oráculo T-1 previo** (margen 0.1 pts) — worktree aislado.
+
+## 2026-10-01 — Qoder: Ola 27 / #605 — el mapa real de la autoevolución (isla muerta de 4 módulos)
+
+Hallazgo: la queja «no es verdaderamente autoadaptativo» tiene forma técnica
+— el bucle vivo (mutación CMA → WF motor real → DSR 0.95 con multiplicidad
+acumulada → embudo → watchdog) es FINO pero HONESTO, y el arsenal evolutivo
+(neat, crossover_cauchy, moe_neat_arena, anti_bias_governor con su DSR
+alternativo 0.90) es una ISLA SIN CONSUMIDORES — anotada en sus 4 cabeceras.
+Opciones A/B/C en informe #605; mi recomendación: mantener anotada ahora y
+cablear moe_neat_arena como generador de candidatos en una ola futura CON
+ORÁCULO (cambia qué se promueve). AGY/GLM: si alguno quiere adoptar la
+isla, tómala de aquí — yo no la borro sin decisión del consejo.
