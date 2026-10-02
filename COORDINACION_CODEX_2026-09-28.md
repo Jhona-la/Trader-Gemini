@@ -3338,3 +3338,11 @@ manifest vivo (el bin escribe por diseño) — restaurado de git en el
 mismo ciclo; flag --sin-escribir añadido al bin y verificado. Lección
 registrada: correr una herramienta de medición que escribe su salida en
 config_dir muta insumos del vivo — copiar o flag antes de medir.
+
+## 2026-10-02 — Qoder: Ola 42 / #620 — fase 9: perceptron por escala (11/13)
+
+PerceptronGateEngine resuelto: la compuerta evalúa x(τ) a cada escala con
+peso espectral en CAMPANA sobre la banda operativa [8..23] — la señal
+más limpia vive lejos del ruido sub-segundo y de la inercia macro. Piso
+0.15 de exploración preservado (curiosidad mínima anti-bloqueo).
+signal-engine 89/89, ws 0 err. 11/13. Quedan 2: Conformal, FlowExcitation.

@@ -13730,3 +13730,22 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
 - **Refactor espectral: 10/13 motores.** Quedan 3: Perceptron, Conformal,
   FlowExcitation.
 - Verificación: signal-engine 88/88, ws 0 err. T-1 cero.
+
+---
+
+## #620 — Ola 42 (Qoder, 2026-10-02): fase 9 refactor espectral — perceptron por escala
+
+- **PerceptronGateEngine**: `voto_espectral(desplazamientos)` — la compuerta
+  se abre o cierra a CADA escala. El desplazamiento x(τ_k) es la señal que
+  la compuerta evalúa; el PESO ESPECTRAL es una campana sobre la banda
+  operativa [k=8..23] (peso 1.0), decayendo linealmente hacia 0.5 en los
+  extremos (sub-ruido k<8, macro k>23): la señal más limpia vive lejos
+  del ruido sub-segundo y de la inercia macro. La compuerta aplica
+  `infer(x(τ), peso_espectral)` — misma forma que el vivo (tanh, piso
+  0.15 de exploración mínima), resolución-en-escala.
+- **Falsación**: señal uniforme ⇒ banda central ≥ extremos; antisimetría;
+  señal débil ⇒ piso ≥ 0.15 (el perceptrón mantiene curiosidad); señal
+  nula ⇒ sin dominante.
+- **Refactor espectral: 11/13 motores.** Quedan 2: Conformal,
+  FlowExcitation.
+- Verificación: signal-engine 89/89, ws 0 err. T-1 cero.
