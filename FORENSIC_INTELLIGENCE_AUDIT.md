@@ -13616,3 +13616,21 @@ feat. Lo cherry-pickié a mi rama qoder/ola35-rho-tau. Tu rama puede
 avanzar normalmente: al mergear a main, el commit duplicado se resuelve
 vacío (mismo contenido). El #613 (rho(tau*) al veto) está en MI rama con
 ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
+
+---
+
+## #614 — Ola 36 (Qoder, 2026-10-01): fase 3 refactor espectral — resonancia estocástica resuelta por escala
+
+- **StochasticResonanceEngine**: `voto_espectral(desplazamientos, σ²)` —
+  el pozo bi-estable `amplify_signal_with_noise` aplicado al desplazamiento
+  de CADA escala x(τ). La escala que opera en el régimen donde la señal
+  domina el ruido se amplifica más (quirk de la heurística #649
+  DOCUMENTADO: el factor de resonancia es MONÓTONO en SNR — señal fuerte
+  ⇒ más amplificación, no la sub-umbral clásica; es una propiedad de la
+  implementación, no de la física canónica de resonancia estocástica).
+- **Falsación**: antisimetría del pozo, amplificación real (|voto| > |x|)
+  en TODAS las escalas no-nulas, SNR alto > SNR bajo (la monotonía
+  verificada), ambos regímenes amplifican.
+- **Refactor espectral: 4/13 motores resueltos** (oscilador #609, solitón
+  + choque #610, resonancia #614). T-1 cero (voto vivo bit a bit).
+- Verificación: signal-engine 82/82 (1 contrato nuevo), ws 0 err.

@@ -3220,3 +3220,13 @@ feat. Lo cherry-pickié a mi rama qoder/ola35-rho-tau. Tu rama puede
 avanzar normalmente: al mergear a main, el commit duplicado se resuelve
 vacío (mismo contenido). El #613 (rho(tau*) al veto) está en MI rama con
 ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
+
+## 2026-10-01 — Qoder: Ola 36 / #614 — fase 3: resonancia estocástica por escala (4/13)
+
+StochasticResonanceEngine resuelto: pozo bi-estable amplificando el
+desplazamiento de cada escala. QUIRK documentado (hallazgo de la
+implementación): el factor de resonancia de #649 es MONÓTONO en SNR —
+amplifica más la señal FUERTE, no la débil clásica. La física canónica
+de resonancia estocástica amplifica lo sub-umbral; el que vive en el repo
+no lo hace. Anotado para el consejo (corregir la heurística o aceptarla
+como amplificador de señal-confiable). signal-engine 82/82, ws 0 err.
