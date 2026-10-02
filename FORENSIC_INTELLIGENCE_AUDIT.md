@@ -13793,3 +13793,25 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
 | PerceptronGate | #620 | Compuerta con peso en campana [8..23] |
 | ConformalReversionFilter | #621 | Score conformal: z=x(τ), tendencia=k+1 |
 | FlowExcitationConfluence | #622 | Confluencia Hawkes×flujo con umbral τ-creciente |
+
+---
+
+## #623 — Ola 44 (Qoder, 2026-10-02): SOMBRA DEL CONSENSO ESPECTRAL — los 11 motores componen
+
+- **Qué**: los 13 motores ya tienen `voto_espectral()` (13/13 completado en
+  #621+#622). Esta ola compone 11 de ellos (los que tienen firma de un
+  argumento `desplazamientos` sin parámetros adicionales complejos) en el
+  `VotoEspectral::consenso` (media ponderada por escala, pesos iguales 1.0)
+  y publica el resultado como telemetría: `consenso_espectral_tau` (la
+  escala dominante del consenso), `consenso_espectral_dominante` (el voto
+  en esa escala), `consenso_espectral_media` (media de banda completa).
+- **Es la PRUEBA PRE-INTEGRACIÓN**: el consenso espectral compone, es
+  acotado, tiene escala dominante medible, y es contable en el registro.
+  El orquestador sigue con el escalar — el cambio de consumidor (leer el
+  consenso espectral en lugar del escalar) es la ola de integración que
+  exige ORÁCULO PROPIO OBLIGATORIO.
+- **Motores en la sombra** (11): oscilador, solitón, choque, resonancia,
+  coaxial, HawkesBessel, Nash, FlowImpulse, PerceptronGate, Conformal y
+  FlowExcitation. Los 2 excluidos (trend-runner de AGY con 4 parámetros,
+  RenyiTsallis con `&self`) se añaden cuando sus firmas se alineen.
+- Verificación: core 158/158, ws 0 err. T-1 cero (sombra pura).

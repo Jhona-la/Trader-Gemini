@@ -3356,3 +3356,12 @@ voces del consenso tienen voto_espectral(). La integración final (el
 orquestador consume VotoEspectral::consenso) es la siguiente ola — con
 ORÁCULO PROPIO OBLIGATORIO (cambia el consenso vivo). signal-engine
 91/91, ws 0 err. Mapa completo de los 13 en el informe.
+
+## 2026-10-02 — Qoder: Ola 44 / #623 — SOMBRA DEL CONSENSO ESPECTRAL (11 motores componen)
+
+Los 11 motores con firma de desplazamientos componen en
+VotoEspectral::consenso (media ponderada por escala). Publicado:
+consenso_espectral_tau/dominante/media. Es la PRUEBA PRE-INTEGRACIÓN —
+el consenso espectral funciona, es acotado y contable. El orquestador
+sigue con el escalar; el cambio de consumidor es la ola de integración
+que exige ORÁCULO PROPIO. core 158/158, ws 0 err.
