@@ -1,6 +1,9 @@
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
 use strategy_core::QuantumStrategy;
+use crate::voto_espectral::VotoEspectral;
+
+pub const ESCALAS_OSCILADOR: usize = 32;
 
 /// ⚛️ ALGORITMO #80: SUAVIZADOR POR OSCILADOR ANARMÓNICO CUÁNTICO (QUANTUM OSCILLATOR ENGINE)
 /// Simula el comportamiento del estado fundamental del precio en un pozo de potencial anarmónico V(x) = 1/2 k x^2 + lambda x^4,
@@ -75,6 +78,30 @@ impl QuantumOscillatorEngine {
         } else {
             0.0
         }
+    }
+
+    /// #609 (Ola 31) — VOTO ESPECTRAL del pozo: la fuerza restauradora con
+    /// el confinamiento de AGY-P14, evaluada en el DESPLAZAMIENTO DE CADA
+    /// ESCALA x(τ) de la malla del TemporalSpectrum (momentum_z por banda).
+    /// Es la refactorización espectral del motor: el voto deja de ser el
+    /// escalar del libro actual (`quantum_position_deviation`) y pasa a ser
+    /// un espectro que τ* del consejo puede rebanar. Puro y sin estado —
+    /// la sombra observacional del core lo computa AL LADO del voto vivo
+    /// (bit a bit intacto hasta el cambio ordenado con oráculo).
+    pub fn voto_espectral(
+        desplazamientos: &[f64; ESCALAS_OSCILADOR],
+        k_spring: f64,
+        lambda_anharmonic: f64,
+        alpha: f64,
+    ) -> VotoEspectral {
+        VotoEspectral::desde_espectro(desplazamientos, |x| {
+            let force = Self::compute_quantum_restoring_force(x, k_spring, lambda_anharmonic);
+            let confinement = Self::compute_superposition_probability(x, alpha);
+            // El confinamiento es |ψ(x)|² ∈ [0,1]-acotado: actúa de peso —
+            // multiplicar la fuerza por su raíz preserva el signo y el
+            // amortiguamiento de ruptura de AGY-P14.
+            (force * confinement.sqrt()).clamp(-1.0, 1.0)
+        })
     }
 }
 
@@ -237,6 +264,59 @@ mod tests {
         assert!(
             eval.abs() < 1e-4,
             "Breakout cuántico extremo debe tener voto amortiguado, no luchar contra la tendencia: {eval}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod qo_609_tests {
+    use super::*;
+    use crate::voto_espectral::ESCALAS_VOTO;
+
+    #[test]
+    fn qo_609_voto_espectral_antisimetrico_y_confinado() {
+        let mut x_pos = [0.0; ESCALAS_VOTO];
+        let mut x_neg = [0.0; ESCALAS_VOTO];
+        let mut x_extremo = [0.0; ESCALAS_VOTO];
+        for (k, v) in x_pos.iter_mut().enumerate() {
+            *v = 0.1 * (k as f64 + 1.0); // desplazamientos crecientes
+            x_neg[k] = -*v;
+            x_extremo[k] = 10.0; // estado del continuo (ruptura)
+        }
+        let (k, l, a) = (1.0, 0.1, 0.5);
+        let voto_pos = QuantumOscillatorEngine::voto_espectral(&x_pos, k, l, a);
+        let voto_neg = QuantumOscillatorEngine::voto_espectral(&x_neg, k, l, a);
+        let voto_extremo = QuantumOscillatorEngine::voto_espectral(&x_extremo, k, l, a);
+        // Antisimetría: x → −x ⇒ voto → −voto (el pozo es impar).
+        for kk in 0..ESCALAS_VOTO {
+            let vp = voto_pos.en_escala(kk);
+            let vn = voto_neg.en_escala(kk);
+            assert!((vp + vn).abs() < 1e-12, "escala {}: {} vs {}", kk, vp, vn);
+            assert!(vp.abs() <= 1.0);
+        }
+        // Confinamiento AGY-P14: en |x|=10 el voto se amortigua a ~0.
+        for kk in 0..ESCALAS_VOTO {
+            assert!(voto_extremo.en_escala(kk).abs() < 1e-3);
+        }
+        // Desplazamientos nulos ⇒ voto nulo.
+        let cero = QuantumOscillatorEngine::voto_espectral(&[0.0; ESCALAS_VOTO], k, l, a);
+        assert_eq!(cero.dominante(), None, "sin convicción no hay dominante");
+    }
+
+    #[test]
+    fn qo_609_confinamiento_amortigua_la_escala_extrema() {
+        // AGY-P14 por escala: la misma desviación extrema (estado del
+        // continuo) vota MÁS DEBIL que la moderada — el oscilador no lucha
+        // contra rupturas, escala a escala.
+        let mut x = [0.0; ESCALAS_VOTO];
+        x[5] = 1.0; // desplazamiento moderado (confinado)
+        x[25] = 6.0; // desplazamiento extremo (ruptura)
+        let voto = QuantumOscillatorEngine::voto_espectral(&x, 1.0, 0.1, 0.5);
+        assert!(
+            voto.en_escala(25).abs() < voto.en_escala(5).abs(),
+            "la escala de ruptura debe votar más débil: moderada={} extrema={}",
+            voto.en_escala(5).abs(),
+            voto.en_escala(25).abs()
         );
     }
 }

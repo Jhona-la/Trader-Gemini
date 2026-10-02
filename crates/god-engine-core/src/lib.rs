@@ -1799,6 +1799,46 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "multiactivo_mejor_tau", tau);
                         let _ = otro; // el par específico: traza, no política
                     }
+                    // #609 (Ola 31): SOMBRA ESPECTRAL del oscilador cuántico —
+                    // el pozo anarmónico con confinamiento AGY-P14 evaluado en
+                    // el desplazamiento de CADA escala (momentum_z de la malla).
+                    // El voto VIVO del motor (registry escalar) queda bit a
+                    // bit; el consenso espectral es la ola futura con oráculo.
+                    let mut desplazamientos = [0.0f64; 32];
+                    for (k, s) in spec.scales.iter().enumerate() {
+                        desplazamientos[k] = if s.momentum_z.is_finite() {
+                            s.momentum_z.clamp(-10.0, 10.0)
+                        } else {
+                            0.0
+                        };
+                    }
+                    let voto_sombra =
+                        signal_engine::quantum_oscillator::QuantumOscillatorEngine::voto_espectral(
+                            &desplazamientos,
+                            self.arena.registry.get_value_or("quantum_k_spring", 1.0),
+                            self.arena
+                                .registry
+                                .get_value_or("quantum_lambda_anharmonic", 0.1),
+                            self.arena
+                                .registry
+                                .get_value_or("quantum_alpha", 0.5)
+                                .clamp(0.01, 10.0),
+                        );
+                    if let Some((k_dom, v_dom)) = voto_sombra.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_osc_dominante_tau",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_dom],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_osc_dominante_v", v_dom);
+                    }
+                    if let Some(media) = voto_sombra.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_osc_consenso", media);
+                    }
                 }
                 self.arena.update_market_data(
                     coin_id,
