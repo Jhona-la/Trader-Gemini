@@ -459,6 +459,21 @@ pub fn libro_efectivo(precio: f64, bid: f64, ask: f64, ultimo: Option<(f64, f64)
     (precio * 0.9999, precio * 1.0001)
 }
 
+/// #625 (Ola 46) — EXCESO DE EXCITACIÓN HAWKES λ/μ̂ sobre el estado
+/// estacionario, saturado a (−1, 1): 0 = régimen normal (el slot se
+/// abstiene), →+1 cascada, →−1 calma extrema. La MISMA semántica del
+/// exceso que el confluencia (#582) y el voto espectral (#617). Pura y
+/// testeable: el slot Hawkes del PPO la firma con la dirección del flujo.
+#[inline]
+pub fn excitacion_hawkes_norm(ratio: f64) -> f64 {
+    const SS: f64 = signal_engine::hawkes_bessel::STEADY_STATE_RATIO;
+    if ratio.is_finite() && ratio > 0.0 {
+        ((ratio - SS) / SS).tanh()
+    } else {
+        0.0
+    }
+}
+
 /// D-752 — etiquetas de rama. `SignalIntent::volume_flow_rate` YA transportaba
 /// un identificador de rama (1..14) para la traza de apertura, y sobrevive a
 /// la arbitración porque todas las fusiones usan `..fast_intent` / `..winner`.
@@ -3560,7 +3575,16 @@ impl GodEngineCore {
                         .registry
                         .set("perceptron_hebbian_weight", cur_hebbian);
 
-                    let hawkes_r = self.feature_engines[coin_id].cvpin.current_vpin();
+                    // #625 — PARIDAD EVALUATE/UPDATE del slot Hawkes: el
+                    // gradiente del PPO aprende de la MISMA variable que
+                    // vota a la entrada (λ/μ̂ real exceso sobre SS, firma
+                    // del flujo). Antes el update usaba VPIN con nombre de
+                    // hawkes_r: el peso 2 se acreditaba por una variable
+                    // distinta de la que votaba.
+                    let hawkes_ratio_close = match self.hawkes_by_coin.get(coin_id) {
+                        Some(hk) => hk.intensity_ratio(event_time_ms as f64 / 1000.0),
+                        None => 1.0,
+                    };
                     let close_dir_sign = if obi.abs() > 0.05 {
                         obi.signum()
                     } else if ofi_value.abs() > 0.05 {
@@ -3574,7 +3598,7 @@ impl GodEngineCore {
                     let ppo_close_features = [
                         (ofi_value / 0.35).clamp(-1.5, 1.5),
                         (obi / 0.35).clamp(-1.5, 1.5),
-                        hawkes_r.clamp(0.0, 1.0) * close_dir_sign,
+                        excitacion_hawkes_norm(hawkes_ratio_close) * close_dir_sign,
                         lead_lag_div.clamp(-1.5, 1.5),
                         ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0)
                             * (if dir_macro.abs() > 0.0005 {
@@ -4441,17 +4465,16 @@ impl GodEngineCore {
             let pos_dev =
                 ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
             set_reg("quantum_position_deviation", pos_dev);
-            // #554 — RENOMBRE HONESTO: esta magnitud NO es intensidad de
-            // Hawkes. Es la magnitud del OBI normalizada a [0.1, 1] (el
-            // proxy de aceleración que CERT-M2-C02 erradicó de la
-            // telemetría seguía vivo aquí, con nombre de Hawkes). El
-            // λ/μ̂ REAL ya está en alcance (`hawkes_ratio_real`, publicado
-            // arriba al registry): cablearlo al slot 2 del PPO cambiaría
-            // la distribución de entrada de la política aprendida —
-            // invalida el PPO entrenado y exige re-certificación T-1
-            // (decisión de consejo, ABIERTA). Hoy el slot lleva flujo-OBI
-            // con signo y se llama por su nombre.
-            let obi_excitacion_norm = (1.0 + current_obi.abs() * 2.0).clamp(0.1, 5.0) / 5.0;
+            // #625 (Ola 46) — EL SLOT HAWKES DEL PPO LLEVA LA EXCITACIÓN
+            // REAL λ/μ̂. La decisión de consejo abierta desde #554 se
+            // ejecuta: el slot 2 llevaba la magnitud del OBI con nombre
+            // de Hawkes (el proxy de aceleración que CERT-M2-C02
+            // erradicó); ahora lleva el exceso de λ/μ̂ sobre el estado
+            // estacionario (misma semántica que #582/#617), saturado con
+            // tanh y firmado por el flujo: en régimen normal el slot es 0
+            // (sin opinión), en cascada ±1. La política adaptada a la
+            // distribución vieja queda invalidada — esta ola corre con
+            // ORÁCULO T-1 propio antes del merge.
             let dir_flow_sign = if current_obi.abs() > 0.05 {
                 current_obi.signum()
             } else if ofi.abs() > 0.05 {
@@ -4459,7 +4482,8 @@ impl GodEngineCore {
             } else {
                 macro_trend.signum()
             };
-            let dir_obi_flow = obi_excitacion_norm * dir_flow_sign;
+            let dir_hawkes_excitacion =
+                excitacion_hawkes_norm(hawkes_ratio_real) * dir_flow_sign;
             let regime_code = ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0);
             let dir_regime = regime_code
                 * (if macro_trend.abs() > 0.0005 {
@@ -4478,7 +4502,7 @@ impl GodEngineCore {
             let ppo_state = [
                 ofi_norm,
                 obi_norm,
-                dir_obi_flow,
+                dir_hawkes_excitacion,
                 lead_lag_div.clamp(-1.5, 1.5),
                 dir_regime,
             ];
@@ -7302,6 +7326,48 @@ pub fn hurst_duration_modulation(expected_duration_ms: u64, hurst: f64) -> u64 {
         modulated.max(15_000.0).min(dur)
     };
     bounded.round() as u64
+}
+
+#[cfg(test)]
+mod tests_qo_625 {
+    use super::excitacion_hawkes_norm;
+    use signal_engine::hawkes_bessel::STEADY_STATE_RATIO as SS;
+
+    /// #625 — el mapeo del slot Hawkes del PPO: 0 en régimen normal
+    /// (abstención), positivo en cascada, negativo en calma, acotado.
+    #[test]
+    fn qo_625_mapeo_de_excitacion() {
+        // Régimen normal = estado estacionario ⇒ sin opinión.
+        assert_eq!(excitacion_hawkes_norm(SS), 0.0);
+        // Cascada (3× el ritmo) ⇒ positivo creciente.
+        let cascada = excitacion_hawkes_norm(3.0);
+        assert!(cascada > 0.5 && cascada < 1.0, "cascada: {cascada}");
+        // Calma extrema (0.1) ⇒ negativo, acotado.
+        let calma = excitacion_hawkes_norm(0.1);
+        assert!(calma < -0.5 && calma > -1.0, "calma: {calma}");
+        // Saturación monótona: nunca escapa de (−1, 1).
+        assert!(excitacion_hawkes_norm(1000.0) <= 1.0);
+        // No finito o ≤0 ⇒ 0 (sin inventar).
+        assert_eq!(excitacion_hawkes_norm(f64::NAN), 0.0);
+        assert_eq!(excitacion_hawkes_norm(0.0), 0.0);
+        assert_eq!(excitacion_hawkes_norm(-3.0), 0.0);
+    }
+
+    /// #625 — continuidad C^∞ alrededor del estado estacionario (sin
+    /// escalón: doctrina del continuo espectral) y forma analítica tanh
+    /// del exceso relativo.
+    #[test]
+    fn qo_625_continua_y_forma_analitica() {
+        let a = excitacion_hawkes_norm(SS - 1e-9);
+        let b = excitacion_hawkes_norm(SS + 1e-9);
+        assert!(a.abs() < 1e-9 && b.abs() < 1e-9);
+        // Ratio 2·SS ⇒ exceso relativo 1.0 ⇒ tanh(1.0).
+        assert!((excitacion_hawkes_norm(SS * 2.0) - 1.0_f64.tanh()).abs() < 1e-12);
+        // Antisimetría en coordenada relativa: SS·(1+e) vs SS·(1−e).
+        let up = excitacion_hawkes_norm(SS * 1.5);
+        let dn = excitacion_hawkes_norm(SS * 0.5);
+        assert!((up + dn).abs() < 1e-12);
+    }
 }
 
 #[cfg(test)]
