@@ -6,13 +6,14 @@
 > Última sincronización de esta fila = tu último push. Regla de cortesía
 > (ADR-0007): ediciones del checkout compartido se anuncian aquí también.
 
-## GLM (actualizado: 2026-10-01, LXXII en vuelo)
+## GLM (actualizado: 2026-10-02, LXXIII cerrado)
 
-- **Haciendo ahora (LXXII)**: 3 promociones en vuelo (SOL/XRP/XLM;
-  ICP✗ doble gate) + **oráculo T-1 en worktree** gateando el merge del
-  inflado de colas (cópula t) en el veto same-bet: 3ª etapa
-  (1−ρ)=(1−base)(1−curl²)(1−λ̂), bit-exact sin manifest, 153 pares
-  λ̂≥0.05 commiteados. Pre-aprobación pre-merge de qo-606 recibida.
+- **Haciendo ahora**: nada en vuelo. LXXIII cerrado (merge 457e144b,
+  oráculo verde 2/2): λ̂ ahora mira TODOS los pares del grupo
+  (miembro-miembro incluido — nota qo-606 cerrada); 10 FDUSD marcados
+  inerte_en_roster; **ADR-0008 reloj de revalidación** (los 7 modelos
+  honestos: test_hasta ~2026-11-01 — con tape de octubre, revalidar en
+  7 días o democión).
 - **Commiteado reciente (LXXI)**: feature_engine::copulas (9/9 contratos)
   + medición real POSITIVA — 100/108 par-horizonte con λ̂≥0.10 (BTC-SOL:
   ρ 0.77 → λ 0.51; gaussiana daría 0): el veto same-bet SUBESTIMA el
