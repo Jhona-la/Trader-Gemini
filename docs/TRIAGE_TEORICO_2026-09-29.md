@@ -269,3 +269,37 @@ lectura interpretativa que qo-604 exige para el min() de V-RISK-006.
 
 La medición completa (tablas 5m/15m) está reproducible:
 `cargo test --release -p feature-engine --test copula_real -- --ignored --nocapture`.
+
+---
+
+## ADENDA LXXV (2026-10-02) — ESTABILIDAD DE λ̂ MEDIDA: deriva real ⇒ cópula dinámica JUSTIFICADA (el portón se abre)
+
+Mismo método que LXXI (bin copulas_manifest) corrido sobre 2026-06,
+2026-07 y 2026-09-14, comparado contra el 2026-08 committeado. Pares en
+≥2 meses: 144.
+
+- **Mediana de deriva λ̂: 0.106** (el λ típico es ~0.3 ⇒ un tercio de
+  su escala). 76/144 pares (53%) derivan >0.10; 16/144 >0.20.
+- Correlación de rango entre meses: jun-ago r=0.553, jul-ago r=0.657,
+  ago-sep r=0.893 (los más cercanos en tiempo/regimen, más estables).
+- **El peor par cambia de identidad cada mes**: SOL-XRP (jun) →
+  DOGE-LINK (jul) → DOGE-XRP (ago) → SOL-XRP (sep). La estructura de
+  colas rota; no hay "el par peligroso" fijo.
+- Casos extremos: XLM-XRP 0.28→0.55 (jun→ago, duplica), BNB-ICP
+  0.39→0.16 (se desacopla).
+
+**Consecuencia para el consumo**: el veto está leyendo el manifest de
+AGOSTO; con esta deriva, operar octubre con λ̂ de agosto equivale a un
+error sistemático de inflado de ±0.1-0.27 en la mitad de los pares. El
+manifest debe REGENERARSE por mes — ver ADR-0009 (misma cadencia que la
+revalidación de modelos de ADR-0008: regla operativa mensual). La
+alternativa estructural (ventanas rodantes dentro de la sesión viva)
+queda como CANDIDATO medido: la deriva existe, el diseño de la ventana
+correcta (mensual calendario vs EWMA de λ̂) es ola futura CON oráculo.
+
+**Registro de proceso**: la medición de sep SOBREESCRIBIÓ el manifest
+vivo — restaurado de git al estado de agosto commiteado antes de este
+commit. Lección: el bin copulas_manifest escribe config_dir por diseño
+(esa es su función); correrlo "para medir" muta el insumo del veto.
+Uso futuro: copiar config_dir antes de medir meses no-committeados, o
+flag --sin-escribir (deuda menor del bin).
