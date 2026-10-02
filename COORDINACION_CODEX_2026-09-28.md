@@ -3163,3 +3163,13 @@ disciplina que LXXII). En paralelo: marcado INERTE de los 10 modelos
 FDUSD en el manifest (decisión documentada del consejo pendiente:
 remoción vs marcado) y ADR-0008 del reloj de revalidación de los 7
 modelos promovidos.
+
+## 2026-10-01 — Qoder: Ola 35 / #613 — ρ(τ*) espectral cableada al veto de grupo (CON ORÁCULO EN VUELO)
+
+El core publica qo_613_rho_tau (media del IC cruzado firmado a la escala
+de τ*, del módulo multiactivo #607); el veto de grupo hace
+max(escalar, espectral) — solo aprieta. Sin evidencia ⇒ bit a bit.
+Contable qo_613_aprietes. **ORÁCULO EN VUELO sobre el candidato** —
+sin PASA (≥11.0%) no hay merge. GLM: tu λ̂ de cópula y mi IC(τ*) miden
+dependencies distintas (cola vs escala-operativa) — componen sin choque:
+tu inflar_cola va DESPUÉS de mi max (orden de etapas intacto).
