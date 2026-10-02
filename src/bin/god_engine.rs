@@ -4094,6 +4094,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let iceberg_slices = engine_real.arena.config.iceberg_slice_count.load(Ordering::Relaxed).max(2.0);
                         let notional_volume = final_qty.abs() * current_price;
                         let final_qty = final_qty.abs();
+                        let entry_atr_pct = engine_real
+                            .arena
+                            .coins
+                            .get(coin_id)
+                            .map(|c| {
+                                let px = c.current_price.load(Ordering::Relaxed).max(1e-12);
+                                c.current_atr.load(Ordering::Relaxed) / px
+                            })
+                            .filter(|a| a.is_finite() && *a > 0.0)
+                            .unwrap_or(0.0);
 
                         let rejected_reservation = reservation.clone();
                         let rollback_positions = move |arena: &Arc<quantum_arena::GlobalArena>| {
@@ -4186,7 +4196,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     visible_quantity: iceberg_qty,
                                 }
                             } else {
-                                EntryRoute::Market
+                                // AGY-AUD-P32: Dynamic Slippage Guarded IOC Entry Routing.
+                                // Instead of unconditional taker Market order with unbounded slippage risk,
+                                // route as Immediate-Or-Cancel (IOC) with an adaptive limit ceiling derived from
+                                // the evolved base_slippage_floor and instantaneous volatility (atr_pct).
+                                let base_slip = arena_clone.config.base_slippage_floor.load(Ordering::Relaxed).max(0.0001);
+                                let dyn_slip = (base_slip + entry_atr_pct * 0.20).clamp(0.0005, 0.0035);
+                                let ref_price = if final_is_long {
+                                    if dap > 0.0 { dap } else { current_price }
+                                } else {
+                                    if dbp > 0.0 { dbp } else { current_price }
+                                };
+                                let raw_ioc_price = if final_is_long {
+                                    ref_price * (1.0 + dyn_slip)
+                                } else {
+                                    ref_price * (1.0 - dyn_slip)
+                                };
+                                let ioc_price = execution_engine::executor::OrderExecutor::round_price_to_tick(
+                                    raw_ioc_price,
+                                    dyn_tick_size,
+                                    !final_is_long,
+                                );
+                                if ioc_price > 0.0 && ioc_price.is_finite() {
+                                    EntryRoute::Ioc { price: ioc_price }
+                                } else {
+                                    EntryRoute::Market
+                                }
                             };
                             let entry_request = EntryRequest {
                                 symbol: &parsed_sym_str,

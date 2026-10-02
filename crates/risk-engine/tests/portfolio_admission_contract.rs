@@ -122,3 +122,46 @@ fn crash_pressure_only_from_adverse_tide() {
     // Los cortos no pagan presión de crash.
     assert!(guard.allow_trade(false, 89.0, MarketRegime::Range, 5.0));
 }
+
+/// AGY-AUD-P31: El símplex continuo de régimen de mercado contrae suavemente el margen
+/// admisible y ejerce veto de crash sistémico sin saltos discretos ni colisiones.
+#[test]
+fn continuous_regime_simplex_contracts_margin_smoothly() {
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    arena
+        .config
+        .global_max_drawdown
+        .store(0.1, Ordering::Relaxed);
+    arena
+        .config
+        .margin_cushion_pct
+        .store(0.90, Ordering::Relaxed);
+    let guard = PortfolioOrchestrator::new(&arena);
+
+    // Baseline: con simplex en estado por defecto (p_range=1.0, resto 0), tope es 90.0
+    assert!(guard.allow_trade(true, 90.0, MarketRegime::Range, 5.0));
+    assert!(!guard.allow_trade(true, 90.01, MarketRegime::Range, 5.0));
+
+    // 1. Presión continua de Crash: p_crash = 0.40 contrae el colchón por 0.25 * 0.40 = 0.10 (10 pp)
+    // El tope baja de 90 a 80.
+    arena.regime_p_crash.store(0.40, Ordering::Relaxed);
+    assert!(guard.allow_trade(true, 80.0, MarketRegime::Range, 5.0));
+    assert!(!guard.allow_trade(true, 80.01, MarketRegime::Range, 5.0));
+
+    // Los cortos no son penalizados por p_crash (siguen en 90.0)
+    assert!(guard.allow_trade(false, 90.0, MarketRegime::Range, 5.0));
+
+    // 2. Presión continua de Squeeze para cortos: p_bull = 0.60 contrae el colchón de cortos por 0.25 * 0.60 = 0.15 (15 pp)
+    // El tope para cortos baja de 90 a 75.
+    arena.regime_p_bull.store(0.60, Ordering::Relaxed);
+    assert!(guard.allow_trade(false, 75.0, MarketRegime::Range, 5.0));
+    assert!(!guard.allow_trade(false, 75.01, MarketRegime::Range, 5.0));
+
+    // 3. Veto de Crash sistémico continuo: si p_crash >= 0.90, las compras quedan absolutamente vetadas
+    // incluso si el enum discreto está en Range.
+    arena.regime_p_crash.store(0.92, Ordering::Relaxed);
+    assert!(!guard.allow_trade(true, 1.0, MarketRegime::Range, 5.0));
+    // Los cortos permanecen permitidos (pueden surfear la caída con margen acotado por p_bull)
+    assert!(guard.allow_trade(false, 75.0, MarketRegime::Range, 5.0));
+}
+

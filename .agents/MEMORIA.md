@@ -38,7 +38,33 @@
   - **CÓMO**: Se agregaron los campos atómicos `regime_p_range`, `regime_p_bull`, `regime_p_crash`, `regime_p_chaos` a `GlobalArena`. Se calcularon las activaciones suaves $C^\infty$ mediante sigmoides con exponentes acotados $[-50, 50]$, publicándose atómicamente y actualizando el `market_regime` MAP para compatibilidad hacia atrás.
   - **CUÁNDO**: Al procesar la microestructura de BTC en cada tick.
   - **DÓNDE**: `crates/quantum-arena/src/state.rs:522, 613` y `crates/god-engine-core/src/lib.rs:2155-2195`.
-  - **QUIÉN**: `GlobalArena` y `GodEngineCore`.
+- AGY-AUD-P31 (HIGH): `crates/risk-engine/src/orchestrator.rs` y `crates/risk-engine/tests/portfolio_admission_contract.rs`:
+  - **QUÉ**: Conexión del símplex continuo de régimen de mercado $[p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}}] \in \Delta^3$ al cálculo del colchón direccional de riesgo (`directional_pressure`) y veto sistémico en `PortfolioOrchestrator::allow_trade`.
+  - **POR QUÉ**: El cálculo previo de `directional_pressure` solo leía `spectral_crash_flux` por moneda individual y omitía la probabilidad sistémica macro $p_{\text{crash}}$ del mercado, dejando desprotegida a la cuenta de $13 USD si una moneda no había actualizado su flujo por baja cadencia de ticks. Además, para posiciones cortas no existía protección continua frente a *short squeezes* durante rallies sistémicos ($p_{\text{bull}} \to 1.0$).
+  - **PARA QUÉ**: Asegurar que el margen admisible para la cuenta micro de $13 USD se contraiga suavemente y de forma $C^\infty$ ante estrés sistémico, evitando saltos de escalón de apalancamiento, llamadas de margen y colapsos de capital.
+  - **CÓMO**:
+    - Para largos: `directional_pressure = 0.25 * crash_max.max(systemic_crash)`, donde `systemic_crash = self.arena.regime_p_crash.load(Ordering::Relaxed).clamp(0.0, 1.0)`.
+    - Para cortos: `directional_pressure = 0.25 * squeeze_max.max(systemic_bull)`, donde `systemic_bull = self.arena.regime_p_bull.load(Ordering::Relaxed).clamp(0.0, 1.0)`.
+    - Veto sistémico continuo: `let systemic_crash_veto = { let p = self.arena.regime_p_crash.load(Ordering::Relaxed); p.is_finite() && p >= 0.90 }; if (regime == MarketRegime::Crash || systemic_crash_veto) && intent_is_long { return false; }`.
+    - Test de contrato: `continuous_regime_simplex_contracts_margin_smoothly` en `portfolio_admission_contract.rs`.
+  - **CUÁNDO**: En cada evaluación de admisión de orden en `PortfolioOrchestrator::allow_trade`.
+  - **DÓNDE**: `crates/risk-engine/src/orchestrator.rs:150-188`.
+  - **QUIÉN**: `PortfolioOrchestrator::allow_trade`.
+- AGY-AUD-P32 (CRITICAL): `crates/execution-engine/src/entry_dispatch.rs`, `crates/execution-engine/src/executor.rs`, `crates/execution-engine/tests/entry_route_contract.rs` y `src/bin/god_engine.rs`:
+  - **QUÉ**: Ruteo de órdenes de entrada activas protegido por deslizamiento dinámico mediante `EntryRoute::Ioc` (Immediate-Or-Cancel con precio límite adaptativo) y cierre de arista muerta de ejecución.
+  - **POR QUÉ**: Anteriormente, el 100% de las entradas en `god_engine.rs` se despachaban como órdenes `EntryRoute::Market` incondicionales (`type=MARKET`). En libros delgados, desbalances súbitos de liquidez o mechas de alta volatilidad, las órdenes a mercado agresivas sufrían deslizamientos descontrolados (50 a 200 bps), lo cual en una micro-cuenta de $13 USD destruye de 2% a 4% del capital únicamente en el costo de entrada antes de que empiece a operar el trade. Además, `QuantumOrderRouter::route_order` contenía lógica de ruteo IOC que permanecía como arista muerta sin conectar con `god_engine.rs`.
+  - **PARA QUÉ**: Garantizar ejecución instantánea como agresor (taker fill) cuando el libro de órdenes es saludable, pero con un techo de precio estricto que aborta/cancela de inmediato (`IOC`) si el deslizamiento excede la tolerancia admisible derivada de la volatilidad instantánea (ATR) y el piso genético evolucionado, blindando el capital micro de $13 USD contra absorciones predatorias y mechas de liquidación.
+  - **CÓMO**:
+    - Extensión de `EntryRoute` con la variante `EntryRoute::Ioc { price: f64 }` en `crates/execution-engine/src/entry_dispatch.rs`.
+    - Validación matemática en `EntryRequest::validate`: verificación de que `price > 0.0`, finito, y `tick_size > 0.0` y finito para rutas IOC.
+    - Despacho en `OrderExecutor::submit_entry` invocando `self.execute_ioc_order(...)` con `timeInForce: IOC` y redondeo direccional al tick size exacto del símbolo (`round_price_to_tick(price, tick_size, !is_long)`).
+    - En `src/bin/god_engine.rs`, derivación de la cota de deslizamiento dinámico en nanosegundos:
+      `dyn_slip = (base_slip + entry_atr_pct * 0.20).clamp(0.0005, 0.0035)`
+      `ioc_price = OrderExecutor::round_price_to_tick(raw_ioc_price, dyn_tick_size, !final_is_long)`
+    - 12/12 contratos de ejecución aprobados en `crates/execution-engine/tests/entry_route_contract.rs`.
+  - **CUÁNDO**: En cada evaluación y despacho de orden de entrada en `src/bin/god_engine.rs`.
+  - **DÓNDE**: `crates/execution-engine/src/entry_dispatch.rs`, `crates/execution-engine/src/executor.rs`, `crates/execution-engine/tests/entry_route_contract.rs`, `src/bin/god_engine.rs:4095-4105, 4195-4230`.
+  - **QUIÉN**: `OrderExecutor`, `dispatch_entry`, `god_engine.rs`.
 
 ## 2026-10-02 — Qoder: Ola 46 / #625 — λ/μ̂ REAL al slot Hawkes del PPO
 

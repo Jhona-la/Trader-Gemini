@@ -147,6 +147,11 @@ impl<'a> PortfolioOrchestrator<'a> {
         // Para largos: contrae por crash_pressure (marea portadora bajista + crash flux).
         // Para cortos: contrae simétricamente por squeeze_pressure (marea portadora alcista + crash flux),
         // protegiendo posiciones cortas contra short squeezes violentos y blow-off tops.
+        // AGY-AUD-P31: Conexión del símplex continuo de régimen de mercado al colchón direccional de riesgo.
+        // A la presión de crash_max por moneda se añade la probabilidad sistémica p_crash del mercado,
+        // contrayendo el margen admisible continuamente sin escalones discretos.
+        // Para cortos: contrae simétricamente por squeeze_pressure y p_bull, protegiendo
+        // posiciones cortas contra short squeezes violentos y blow-off tops.
         let directional_pressure = if intent_is_long {
             let crash_max = self
                 .arena
@@ -157,7 +162,9 @@ impl<'a> PortfolioOrchestrator<'a> {
                 .filter(|f| f.is_finite())
                 .fold(0.0f64, f64::max)
                 .clamp(0.0, 1.0);
-            0.25 * crash_max
+            let p_crash = self.arena.regime_p_crash.load(Ordering::Relaxed);
+            let systemic_crash = if p_crash.is_finite() { p_crash.clamp(0.0, 1.0) } else { 0.0 };
+            0.25 * crash_max.max(systemic_crash)
         } else {
             let squeeze_max = self
                 .arena
@@ -168,9 +175,15 @@ impl<'a> PortfolioOrchestrator<'a> {
                 .filter(|f| f.is_finite())
                 .fold(0.0f64, f64::max)
                 .clamp(0.0, 1.0);
-            0.25 * squeeze_max
+            let p_bull = self.arena.regime_p_bull.load(Ordering::Relaxed);
+            let systemic_bull = if p_bull.is_finite() { p_bull.clamp(0.0, 1.0) } else { 0.0 };
+            0.25 * squeeze_max.max(systemic_bull)
         };
-        if regime == crate::regime::MarketRegime::Crash && intent_is_long {
+        let systemic_crash_veto = {
+            let p = self.arena.regime_p_crash.load(Ordering::Relaxed);
+            p.is_finite() && p >= 0.90
+        };
+        if (regime == crate::regime::MarketRegime::Crash || systemic_crash_veto) && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
         }
         // D-403: Permitir operaciones Short durante BullRun (scalping contratendencia con stops ceñidos)

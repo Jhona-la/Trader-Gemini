@@ -1366,7 +1366,7 @@ impl OrderExecutor {
 
     // FIX #738: Redondeo direccional de precio: ceil para SELL, floor para BUY
     #[inline(always)]
-    fn round_price_to_tick(price: f64, tick_size: f64, is_sell: bool) -> f64 {
+    pub fn round_price_to_tick(price: f64, tick_size: f64, is_sell: bool) -> f64 {
         if !tick_size.is_finite() || tick_size <= 0.0 || !price.is_finite() {
             return 0.0;
         }
