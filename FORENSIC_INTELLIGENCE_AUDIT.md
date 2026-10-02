@@ -13860,3 +13860,32 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
   con la integración. La cifra exacta quedó fuera de la ventana de
   captura del log (tail-60); la próxima re-cert con --nocapture la
   recupera.
+
+## #625 — Ola 46 (Qoder, 2026-10-02): λ/μ̂ REAL al slot Hawkes del PPO (entrada + update)
+
+- **Qué**: el slot 2 del `ppo_state` (semántica documentada: Hawkes) llevaba
+  la magnitud del OBI normalizada — el pseudo de aceleración que #554
+  renombró honestamente dejando la decisión de cableado ABIERTA. Esta ola
+  la ejecuta: `excitacion_hawkes_norm(hawkes_ratio_real) · dir_flow_sign`
+  — el exceso REAL de λ/μ̂ sobre STEADY_STATE_RATIO, saturado con tanh
+  (0 = régimen normal = abstención; →±1 cascada/calma), firmado por el
+  flujo. Misma semántica de exceso que #582 (confluencia) y #617 (voto
+  espectral Hawkes).
+- **HALLAZGO extra — paridad evaluate/update**: el camino de
+  ACTUALIZACIÓN del PPO (cierre de trade, `ppo_close_features`) usaba
+  `cvpin.current_vpin()` — VPIN — en el MISMO slot 2. El peso 2 aprendía
+  (gradiente `feat·sign·advantage`) de una variable distinta de la que
+  votaba a la entrada: política incoherente invisible a los tests del
+  motor. Cableado también ahí con λ/μ̂ al timestamp del cierre. Regla
+  resultante: al tocar cualquier slot del PPO, el slot homólogo del
+  update cambia en el MISMO commit.
+- Helper puro `excitacion_hawkes_norm` (pub, testeable) + 2 tests
+  (mapeo: SS→0, cascada/calma acotadas, guard no-finito; continuidad C∞,
+  forma analítica tanh del exceso relativo, antisimetría).
+- **Verificación**: god-engine-core 160/160 (2 nuevos), check workspace
+  all-targets limpio (7m31s).
+- **ORÁCULO T-1** (invalida la política adaptada — cambio de pipeline
+  vivo): **PASA 16/144 = 11.1% ≥ 11.0%** (release single-thread
+  --nocapture, 2688.36s sobre 726a99d2). Misma cobertura que main
+  certificado: ningún gen perdió sensibilidad. Lista de inertes idéntica
+  en estructura a la de #624 (128 inertes, mismos sensibles).

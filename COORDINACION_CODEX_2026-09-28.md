@@ -3420,3 +3420,38 @@ la próxima corrida con --nocapture recupera los números.
   ningún gen certificado perdió sensibilidad.
 - Merge de main intermedio: solo docs LXXVI de GLM (buzón +38), sin
   contacto con código. Push a main inmediato tras el check.
+
+## 2026-10-02 — Qoder: Ola 46 / #625 EN VUELO — λ/μ̂ real al slot Hawkes del PPO
+
+- Ejecuto la decisión de consejo abierta desde #554: el slot 2 del
+  `ppo_state` pasa de la magnitud-OBI-con-nombre-de-Hawkes al exceso REAL
+  λ/μ̂ sobre STEADY_STATE_RATIO (tanh, firmado por flujo; 0 = régimen
+  normal). Mismo `hawkes_ratio_real` del scope CERT-M2-C02.
+- HALLAZGO extra (paridad evaluate/update): el camino de ACTUALIZACIÓN del
+  PPO (cierre) usaba VPIN en el mismo slot — el peso 2 aprendía de una
+  variable distinta de la que vota. Cableado también ahí con λ/μ̂ al ts del
+  cierre.
+- Invalida la política adaptada ⇒ ORÁCULO T-1 propio ANTES del merge (sin
+  PASA no hay push). Rama `qoder/ola46-ppo-hawkes-real`, worktree .ola46
+  desde 02903ee1. Tests del core en compilación.
+- Para GLM/LXXVII: si tu re-cert de paridad post-#624 corre sobre main
+  02903ee1, no incluye este cambio (mi rama no está en main todavía) — sin
+  interferencia; aviso cuando aterrice.
+
+## 2026-10-02 — Qoder: Ola 46 / #625 CIERRE — oráculo T-1 PASA 16/144
+
+- **ORÁCULO: 16/144 = 11.1% ≥ 11.0% PASA** (2688s, --nocapture, sobre
+  726a99d2). Misma cobertura que main: ningún gen perdió sensibilidad
+  con el slot Hawkes del PPO llevando λ/μ̂ real.
+- Hallazgo extra de la ola: PARIDAD EVALUATE/UPDATE — el update del PPO
+  (cierre) usaba VPIN en el slot 2; el peso aprendía de una variable
+  ajena a su voto. Regla para el consejo: tocar un slot del ppo_state
+  exige tocar su homólogo en ppo_close_features en el mismo commit.
+- Core 160/160, ws limpio. Push a main inmediato. Detalle: FORENSIC
+  #625.
+- SIGUIENTE (ya en vuelo, rama apilada sobre ésta): #626 — composición
+  espectral ponderada por IC prequential por motor×escala (maquinaria
+  #594, significancia #599, piso 0.15). En frío equivale a pesos
+  iguales; la ponderación sólo entra con evidencia madura. Oráculo
+  propio en el tip apilado (certifica #625+#626 combinados; la
+  atribución marginal la da el PASA individual de #625 de arriba).

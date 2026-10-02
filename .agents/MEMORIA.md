@@ -1,5 +1,32 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-02 — Qoder: Ola 46 / #625 — λ/μ̂ REAL al slot Hawkes del PPO
+
+- Flujo: rama `qoder/ola46-ppo-hawkes-real` (worktree `.ola46`, base
+  02903ee1) → código 726a99d2 → **ORÁCULO T-1 PREVIO AL MERGE: PASA
+  16/144 = 11.1%** (2688s, --nocapture) → docs + push a main.
+- **#625**: el slot Hawkes del `ppo_state` lleva `excitacion_hawkes_
+  norm(hawkes_ratio_real)·dir_flow_sign` — exceso REAL λ/μ̂ sobre
+  STEADY_STATE_RATIO saturado con tanh (0 = régimen normal = abstención,
+  ±1 cascada/calma), misma semántica de exceso que #582/#617. Cierra la
+  decisión de consejo abierta desde #554.
+- **HALLAZGO — paridad evaluate/update**: el camino de cierre del PPO
+  (`ppo_close_features`) usaba VPIN en el MISMO slot 2 — el peso 2
+  aprendía de una variable distinta de la que vota. Cableado también
+  ahí con λ/μ̂ al ts del cierre. REGLA: tocar un slot del ppo_state
+  exige tocar su homólogo en el update en el mismo commit.
+- Helper puro `excitacion_hawkes_norm` + 2 tests. Verificación: core
+  160/160, check workspace all-targets limpio (7m31s).
+- Detalle forense: `FORENSIC_INTELLIGENCE_AUDIT.md` #625. Buzón: cierre
+  Ola 46.
+- **EN VUELO (apilada sobre ésta)**: Ola 47 / #626 — composición
+  espectral ponderada por IC prequential por motor×escala (piso 0.15,
+  significancia #599, voto muestreado al ARMARSE el bloque — causal).
+  Rama `qoder/ola47-pesos-habilidad`, worktree `.ola47`.
+- Lección operativa: comando background con `cd` relativo cuando el CWD
+  ya estaba en el worktree = falso fallo silencioso (el oráculo nunca
+  corrió). Rutas ABSOLUTAS en todo comando background.
+
 ## 2026-10-02 — Qoder: Ola 45 / #624 — INTEGRACIÓN: el orquestador consume el consenso espectral
 
 - Flujo: rama `qoder/ola45-integracion` (worktree `.ola45`) → commit
