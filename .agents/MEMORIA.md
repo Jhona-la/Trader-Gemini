@@ -1,5 +1,40 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-02 — Qoder: Ola 45 / #624 — INTEGRACIÓN: el orquestador consume el consenso espectral
+
+- Flujo: rama `qoder/ola45-integracion` (worktree `.ola45`) → commit
+  76c9db00 → ORÁCULO T-1 PREVIO AL MERGE (obligatorio: cambio de
+  pipeline vivo) → **PASA** → merge docs-only de main (GLM LXXVI, buzón
+  +38, sin código) → push a main → limpieza de worktree.
+- **#624 — el cierre del ciclo espectral**: `evaluate_continuous_
+  consensus_for_coin` lee `consenso_espectral_dominante`/`_tau` (#623)
+  ANTES de la guardia de peso activo. Dominante ≠0 finito ⇒ dirección y
+  convicción = `v_dom·(0.70+0.30·convicción_ensamble)`, y la posición
+  vive a `consenso_espectral_tau` clamp [30 s, 12 h] (el router deriva
+  la geometría TP/SL de esa τ: `router.rs:74`). Sin dominante:
+  fallback escalar BIT A BIT (D-754). Ensamble escalar abstenido ya no
+  calla al espectro. Anti-staleness: el core publica dominante 0.0
+  explícito cuando `dominante()` es None (espectro plano) — el valor
+  del registro es SIEMPRE el del tick en curso.
+- Telemetría: `qo_624_decisiones_espectrales` + `qo_624_fraccion_
+  espectral` (adopción vs total, cadencia 1024 junto al censo #611).
+- Verificación: signal-engine 96/96 (6 contratos qo_624 nuevos: valores
+  exactos 0.8·0.97=0.776, short simétrico, override sobre escalar,
+  ensamble abstenido, arranque frío bit a bit ante ausente/0.0/NaN, τ
+  clamp banda), god-engine-core 158/158, single_consensus_contract 4/4,
+  workspace limpio.
+- **ORÁCULO T-1**: PASA (exit 0, 3323.66 s, release, --test-threads=1,
+  sobre 76c9db00). PASA ⇒ ≥16/144 (≥11.1%): ningún gen certificado de
+  main perdió sensibilidad con la integración. Cifra exacta fuera de la
+  ventana de captura (tail-60); próxima re-cert con --nocapture la
+  recupera.
+- Detalle forense: `FORENSIC_INTELLIGENCE_AUDIT.md` #624. Buzón: entrada
+  Ola 45.
+- La cadena espectral completa está VIVA: #609..#624 — sustrato → 13
+  motores → sombra → integración. Siguientes candidatos del consejo:
+  λ/μ̂→PPO (oráculo propio), curvatura de Ricci (zona Codex), pisos de
+  ramas 13/15 (zona CL).
+
 ## 2026-10-02 — Antigravity: Auditoría Base Espectral — Walk-Forward Continuo + TrendRunner Espectral (Modo Profesor)
 
 - Flujo coordinado: rama `antigravity/auditoria-base-espectral` → verificación unitaria completa (`signal-engine` 85/85 tests OK, `evolution-engine` 60/60 tests OK, `god-engine-core` 158/158 tests OK) y workspace (`cargo check --workspace --all-targets` 0 errores) → merge a main → push remoto → limpieza de rama.

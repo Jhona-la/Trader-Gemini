@@ -13815,3 +13815,48 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
   FlowExcitation. Los 2 excluidos (trend-runner de AGY con 4 parámetros,
   RenyiTsallis con `&self`) se añaden cuando sus firmas se alineen.
 - Verificación: core 158/158, ws 0 err. T-1 cero (sombra pura).
+
+## #624 — Ola 45 (Qoder, 2026-10-02): INTEGRACIÓN — el orquestador consume el consenso espectral
+
+- **Qué**: `evaluate_continuous_consensus_for_coin` lee
+  `consenso_espectral_dominante` y `consenso_espectral_tau` del registro
+  (publicados por #623 por moneda) ANTES de la guardia de peso activo.
+  Cuando el dominante es ≠0 y finito, ESE voto dirige la decisión:
+  dirección y convicción (`v_dom·(0.70+0.30·convicción_ensamble)`, la
+  misma modulación de la proyección escalar) y la posición vive a
+  `consenso_espectral_tau` clampeada a la banda operativa [30 s, 12 h]
+  (`TAU_ANCHOR_FAST_MS..TAU_ANCHOR_SLOW_MS`). Sin dominante (arranque
+  frío, espectro plano): fallback escalar BIT A BIT (disciplina D-754).
+- **Física del cambio de consumidor**: el router usa
+  `expected_lifetime_ms` como τ de la orden (`router.rs:74` ⇒ geometría
+  TP/SL por curva de horizonte). Con la integración, la geometría de la
+  posición nace de la ESCALA QUE HABLÓ — el cierre del ciclo
+  espectral: espectro → voto por escala → consenso → τ → geometría.
+- **Dos decisiones de diseño relevantes**:
+  1. La lectura espectral va ANTES de `if active_weight == 0.0`: un
+     ensamble escalar que se abstiene (voto 0 unánime) ya no puede
+     callar al espectro — el veredicto es puramente espectral con
+     convicción de ensamble 0 (los ratios 0/0 se sanean a 0.0 por la
+     sanitización NaN existente).
+  2. Anti-staleness en el core: cuando `dominante()` es None (espectro
+     plano), #623 NO publicaba y el registro retenía el dominante del
+     último tick con convicción. Ahora se publica 0.0 EXPLÍCITO: el
+     valor del registro es SIEMPRE el del tick en curso.
+- **Telemetría**: `qo_624_decisiones_espectrales` (contador absoluto) y
+  `qo_624_fraccion_espectral` (adopción vs total), publicados junto al
+  censo #611 con cadencia 1024.
+- **Contratos nuevos** (6): dirección/convicción/τ espectral exactos
+  (0.8·0.97=0.776), short simétrico, override sobre la proyección
+  escalar, espectro habla con ensamble abstenido, arranque frío bit a
+  bit (ausente/0.0/NaN), τ clampeada a banda.
+- **Verificación**: signal-engine 96/96, god-engine-core 158/158,
+  single_consensus_contract 4/4, `cargo check --workspace --all-targets`
+  limpio.
+- **ORÁCULO T-1** (cambio de pipeline VIVO, obligatorio previo al
+  merge): **PASA** — exit 0, 1 passed, ejecución 3323.66 s (release,
+  --test-threads=1) sobre el árbol candidato 76c9db00. La aserción
+  `cobertura >= 0.110` se sostuvo; con conteos enteros PASA ⇒ ≥16/144
+  (≥11.1%) — ningún gen certificado de main (11.1%) perdió sensibilidad
+  con la integración. La cifra exacta quedó fuera de la ventana de
+  captura del log (tail-60); la próxima re-cert con --nocapture la
+  recupera.

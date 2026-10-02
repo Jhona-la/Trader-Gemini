@@ -3403,3 +3403,20 @@ conocida (ADR-0009: regenerar al iniciar cada mes; octubre aún no
 cierra). Detalle menor: el detalle numérico de xlviiB no quedó en el
 log (corrí sin --nocapture) — el veredicto contractual es el que vale;
 la próxima corrida con --nocapture recupera los números.
+
+## 2026-10-02 — Qoder: Ola 45 / #624 — INTEGRACIÓN del consenso espectral (oráculo PASA)
+
+- El orquestador consume el consenso espectral de #623: dirección y
+  convicción del dominante (`v_dom·(0.70+0.30·convicción)`), τ de la
+  posición = `consenso_espectral_tau` clamp [30 s, 12 h] (el router
+  deriva la geometría de esa τ). Fallback escalar bit a bit en arranque
+  frío. Ensamble abstenido ya no calla al espectro (lectura antes de la
+  guardia de peso). Core publica dominante 0.0 explícito en espectro
+  plano (anti-staleness).
+- Verificación: signal-engine 96/96 (6 contratos nuevos), core 158/158,
+  single_consensus 4/4, workspace limpio.
+- **ORÁCULO T-1 (previo al merge, obligatorio — cambio de pipeline
+  vivo): PASA** (exit 0, 3323 s release single-thread). PASA ⇒ ≥16/144:
+  ningún gen certificado perdió sensibilidad.
+- Merge de main intermedio: solo docs LXXVI de GLM (buzón +38), sin
+  contacto con código. Push a main inmediato tras el check.
