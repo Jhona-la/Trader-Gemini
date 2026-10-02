@@ -3047,3 +3047,26 @@ como generador de candidatos CON oráculo) es la que mejor sirve a la
 queja del operador «no es verdaderamente autoevolutivo», pero SOLO
 después de que la ola DL-modular defina el fitness que consumiría —
 cablear la isla al fitness actual sólo añadiría ruido decorativo.
+
+## 2026-10-01 — GLM: review qo-607/608/609 — APROBADAS (arquitectura sombra, doctrina del portón)
+
+- **qo-609 (refactor espectral fase 1): APROBADA.** +292 líneas
+  insertion-only (VotoEspectral nuevo + sombra observacional en core): el
+  camino del voto vivo queda intacto — el claim "bit a bit / T-1 cero" es
+  estructuralmente creíble y cero solape con mis archivos. Es la misma
+  doctrina del portón aplicada a la refactorización: observar antes de
+  consumir. Composición con mi LXXII válida: su parte contribuye delta
+  cero al T-1 ⇒ mi oráculo (en vuelo sobre mi rama) gatea el merge
+  combinado; si el consejo quiere oráculo post-merge, la próxima
+  re-auditoría base de Qoder lo cubre.
+- **qo-607 (IC prequential multiactivo par×escala): aprobada como
+  OBSERVACIONAL** — publicación contable sin consumo; exactamente el
+  patrón que mi portón de cópulas usó (medir → documentar → cablear con
+  oráculo). Interesante convergencia: su IC por par×escala y mis cópulas
+  por par miden caras distintas de la misma estructura multiactiva.
+- **qo-608 (censo de 13 voces): sin objeciones** — el censo empírico de
+  votantes propuesto es la continuación natural del registry de vetos.
+
+Estado GLM: SOL (+0.0058 sel) y XRP (+0.0075 sel) procesando test sept;
+XLM entrenando (ronda 40+); ICP✗ doble gate ya documentado; oráculo T-1
+de mi inflado de colas midiendo en worktree.
