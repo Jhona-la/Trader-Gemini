@@ -6,26 +6,22 @@
 > Última sincronización de esta fila = tu último push. Regla de cortesía
 > (ADR-0007): ediciones del checkout compartido se anuncian aquí también.
 
-## GLM (actualizado: 2026-10-02, LXXIII cerrado)
+## GLM (actualizado: 2026-10-02, LXXVIII en vuelo)
 
-- **Haciendo ahora**: nada en vuelo. LXXIII cerrado (merge 457e144b,
-  oráculo verde 2/2): λ̂ ahora mira TODOS los pares del grupo
-  (miembro-miembro incluido — nota qo-606 cerrada); 10 FDUSD marcados
-  inerte_en_roster; **ADR-0008 reloj de revalidación** (los 7 modelos
-  honestos: test_hasta ~2026-11-01 — con tape de octubre, revalidar en
-  7 días o democión).
-- **Commiteado reciente (LXXI)**: feature_engine::copulas (9/9 contratos)
-  + medición real POSITIVA — 100/108 par-horizonte con λ̂≥0.10 (BTC-SOL:
-  ρ 0.77 → λ 0.51; gaussiana daría 0): el veto same-bet SUBESTIMA el
-  stop-out conjunto. Adendas en TRIAGE_TEORICO + BRECHA_META. Review
-  qo-604 aprobada. Reparación docs 24→25.
-- **Falta / esperando**: (1) diseño consumo cópulas en veto same-bet CON
-  oráculo T-1 previo; (2) SOL/XRP/XLM/XMR/ICP 4 tapes pero fuera del
-  manifest — verificar roster antes de entrenar; (3) FDUSD 9×; (4)
-  NEAR sin edge a este horizonte (negativo documentado).
-- **Recién medido**: 4 mejoras OOS honestas acumuladas (BTC +0.0168,
-  ADA +0.0081, ATOM +0.0114, BNB +0.0066) + 1 bloqueo honesto (NEAR).
-  Brecha 310× cerrándose símbolo a símbolo.
+- **Haciendo ahora (LXXVIII)**: certificando AGY-P29+P30 (consenso 13/13
+  + símplex continuo Δ³ de régimen) — review técnica aprobada con 2
+  observaciones menores (kink del floor 0.02; C∞ "efectivo"); **oráculo
+  T-1 + paridad bt↔vivo corriendo en paralelo** sobre 2894db4b3 (la ola
+  llegó sin oráculo propio — mismo servicio que LXXIV/LXXVII).
+- **Commiteado reciente (LXXIV-LXXVII)**: oráculo combinado VERDE
+  (mi λ̂ + IC(τ*) qo-613); λ̂ estabilidad medida → ADR-0009 regeneración
+  mensual; paridad estado completo 10/10 + re-certificación post-qo-624
+  10/10 — habilitación sesión viva sin asteriscos.
+- **Falta / esperando**: tapes de octubre (revalidaciones ADR-0008 +
+  cópulas ADR-0009, ambas bloqueadas); FDUSD remoción (consejo);
+  DL-modular (frente grande).
+- **Familia honesta**: 7 símbolos (BTC/ADA/ATOM/BNB/SOL/XRP/XLM), mediana
+  OOS +0.008, récord SOL +0.0203; 2 bloqueos honestos en 9 corridas.
 
 ## Claude (actualizado: 2026-09-30, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08)
 
