@@ -64,6 +64,34 @@ impl SolitonWaveEngine {
             (2.0 * amplitude).clamp(0.0, 100.0)
         }
     }
+
+    /// #610 (Ola 32) — VOTO ESPECTRAL del solitón: el perfil sech evaluado
+    /// en el DESPLAZAMIENTO DE CADA ESCALA x(τ) (momentum_z de la malla) —
+    /// la coordenada espacial de la onda; perfil quieto (t=0: la fase es
+    /// A·x(τ), sin término de velocidad — el desplazamiento de escala ES la
+    /// coordenada). Firma por la dirección del desplazamiento; el núcleo
+    /// del pulso (x≈0) vota amplitud plena, las colas sechan a 0.
+    /// Observacional: el voto vivo queda bit a bit (T-1 cero).
+    pub fn voto_espectral(
+        desplazamientos: &[f64; 32],
+        amplitud: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        let a = if amplitud.is_finite() && amplitud > 0.0 {
+            amplitud
+        } else {
+            1.0
+        };
+        crate::voto_espectral::VotoEspectral::desde_espectro(desplazamientos, |x| {
+            if !x.is_finite() || x == 0.0 {
+                return 0.0;
+            }
+            let env = Self::compute_soliton_amplitude(a, 0.0, x, 0.0);
+            // env = A·sech(A·x) ∈ [0, A] — normalizado por A: sech ∈ (0,1].
+            let sech = if a > 0.0 { (env / a).clamp(0.0, 1.0) } else { 0.0 };
+            let signo = if x > 0.0 { 1.0 } else { -1.0 };
+            (signo * sech).clamp(-1.0, 1.0)
+        })
+    }
 }
 
 impl QuantumStrategy for SolitonWaveEngine {
@@ -259,5 +287,45 @@ mod tests {
             eval > 0.0 && eval <= 1.0,
             "Sub-dólar debe evaluar señal finita no-cero: {eval}"
         );
+    }
+}
+
+#[cfg(test)]
+mod qo_610_tests {
+    use super::*;
+    use crate::voto_espectral::ESCALAS_VOTO;
+
+    #[test]
+    fn qo_610_soliton_nucleo_pleno_colas_sech_y_antisimetria() {
+        let a = 1.0;
+        let mut x = [0.0; ESCALAS_VOTO];
+        for (k, v) in x.iter_mut().enumerate() {
+            *v = 0.1 * (k as f64 - 15.5); // de −1.55 a +1.65 alrededor de 0
+        }
+        let voto = SolitonWaveEngine::voto_espectral(&x, a);
+        // Antisimetría estricta.
+        for kk in 0..ESCALAS_VOTO {
+            let idx_espejo = ESCALAS_VOTO - 1 - kk;
+            if x[kk] != 0.0 && (x[kk] + x[idx_espejo]).abs() < 1e-12 {
+                assert!(
+                    (voto.en_escala(kk) + voto.en_escala(idx_espejo)).abs() < 1e-12,
+                    "antisimetría rota en {}: {} vs {}",
+                    kk,
+                    voto.en_escala(kk),
+                    voto.en_escala(idx_espejo)
+                );
+            }
+        }
+        // El núcleo (x más chico) vota más fuerte que las colas.
+        let nucleo = voto.en_escala(15).abs(); // x = −0.05, el más cercano a 0
+        let cola = voto.en_escala(0).abs(); // x = −1.55
+        assert!(nucleo > cola, "núcleo {} debe superar la cola {}", nucleo, cola);
+        // Acotado por la amplitud.
+        for kk in 0..ESCALAS_VOTO {
+            assert!(voto.en_escala(kk).abs() <= a + 1e-12);
+        }
+        // Amplitud inválida ⇒ 1.0 normalizador, sin inventar NaN.
+        let voto_nan = SolitonWaveEngine::voto_espectral(&x, f64::NAN);
+        assert!(voto_nan.en_escala(15).abs() <= 1.0 && voto_nan.en_escala(15) != 0.0);
     }
 }

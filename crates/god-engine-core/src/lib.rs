@@ -1839,6 +1839,45 @@ impl GodEngineCore {
                             .registry
                             .set_for_coin(coin_id, "sombra_osc_consenso", media);
                     }
+                    // #610 (Ola 32): sombras del SOLITÓN (perfil sech firmado)
+                    // y del CHOQUE supersónico (salto Rankine-Hugoniot
+                    // M(τ)=|x(τ)|/c) — misma malla de desplazamientos.
+                    let voto_soliton = signal_engine::soliton_wave::SolitonWaveEngine::voto_espectral(
+                        &desplazamientos,
+                        self.arena.registry.get_value_or("soliton_amplitude", 1.0),
+                    );
+                    if let Some((k_sol, v_sol)) = voto_soliton.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_soliton_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_sol],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_soliton_amplitud_max", v_sol.abs());
+                    }
+                    let voto_shock =
+                        signal_engine::supersonic_shockwave::SupersonicShockwaveEngine::voto_espectral(
+                            &desplazamientos,
+                            self.arena
+                                .registry
+                                .get_value_or("spread_speed_of_sound", 0.001),
+                        );
+                    if let Some(media_shock) = voto_shock.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_shock_salto_banda", media_shock);
+                    }
+                    if let Some((k_shock, v_shock)) = voto_shock.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_shock_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_shock],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_shock_salto_max", v_shock.abs());
+                    }
                 }
                 self.arena.update_market_data(
                     coin_id,
