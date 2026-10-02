@@ -13559,3 +13559,28 @@ Lo que aterrizó desde mi #611 y su verificación:
    (verde 2/2) — el margen sobre el trinquete 11.0% debe re-establecerse
    en el árbol actual antes de la próxima ola de pipeline (mi ρ(τ*) del
    veto de grupo lo requiere).
+
+---
+
+## #613 — Ola 35 (Qoder, 2026-10-01): ρ(τ*) ESPECTRAL en el veto de grupo — el consumidor que da vida al módulo multiactivo (#607)
+
+- **Qué**: el veto de grupo misma-apuesta (V-RISK-002) usaba un ρ̄ escalar
+  del PnL agregado — ciego a la ESCALA donde el grupo está acoplado. El
+  core ahora publica `qo_613_rho_tau`: la media del IC cruzado SIGNED
+  (módulo #607) contra todas las otras monedas EN LA ESCALA MÁS CERCANA A
+  τ* de la orden. El veto hace `max(ρ escalar, IC espectral)`: SOLO
+  TIGHTEN — si la orden opera en una escala donde el grupo está más
+  acoplado de lo que el PnL agregado ve, el apriete es inmediato.
+- **D-750b preservado**: el IC es SIGNED — la anticorrelación (cobertura)
+  NUNCA afloja por debajo del escalar (el max se lo come).
+- **D-754 arranque frío**: clave ausente (fixture monoactivo, sin pares
+  maduros a esa escala) ⇒ ρ escalar intacto, bit a bit.
+- **Contable**: `qo_613_aprietes` por moneda — evaluaciones donde el
+  espectral apretó (con o sin disparo del veto).
+- **Defensa IEEE-754**: IC > 1.0 (registro corrupto) ⇒ rechazo inmediato.
+- **Tests**: contrato de fuente qo_613 (core publica, veto consume solo-
+  aprieta, contable, fallback) + `coherencia_media_con_todas` (el
+  agregador, media de pares maduros, None sin evidencia). risk-engine
+  119/119, arena 101/101, core 158/158, ws 0 err.
+- **T-1/ORÁCULO**: LAUNCHADO sobre el candidato (2a3b68ef) — veredicto
+  pendiente al cierre. **Sin PASA no hay merge** (margen cero vigente).
