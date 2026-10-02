@@ -1935,6 +1935,14 @@ impl GodEngineCore {
                         self.arena
                             .registry
                             .set_for_coin(coin_id, "consenso_espectral_dominante", v_dom);
+                    } else {
+                        // #624 — espectro plano ⇒ dominante 0 EXPLÍCITO: el
+                        // valor del registro es SIEMPRE el del tick en curso.
+                        // Sin esto, el orquestador leería el dominante del
+                        // último tick con convicción (staleness).
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "consenso_espectral_dominante", 0.0);
                     }
                     if let Some(media) = consenso_espectral.media_banda(0, 31) {
                         self.arena

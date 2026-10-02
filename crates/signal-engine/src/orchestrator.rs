@@ -48,6 +48,10 @@ pub struct TensorVoteOrchestrator {
     censo_no_cero: Vec<AtomicU64>,
     nombres: Vec<&'static str>,
     consensos_desde_publicacion: AtomicU64,
+    /// #624 (Ola 45) — decisiones dirigidas por el CONSENSO ESPECTRAL
+    /// (#623). Telemetría de adopción: cuántas veces habló la escala
+    /// dominante vs el total (publicada junto al censo, cadencia 1024).
+    decisiones_espectrales: AtomicU64,
 }
 
 impl TensorVoteOrchestrator {
@@ -57,6 +61,7 @@ impl TensorVoteOrchestrator {
             censo_no_cero: Vec::new(),
             nombres: Vec::new(),
             consensos_desde_publicacion: AtomicU64::new(0),
+            decisiones_espectrales: AtomicU64::new(0),
             strategies: Vec::new(),
             arena,
         }
@@ -339,6 +344,28 @@ impl TensorVoteOrchestrator {
                 horizon: TradeHorizon::Continuous,
             };
         }
+        // #624 (Ola 45) — CONSUMO DEL CONSENSO ESPECTRAL: la sombra #623
+        // del core compone los votos por escala de los 11 motores con
+        // voto_espectral() y publica su escala dominante. Cuando existe
+        // (≠0, finito), ESE es el veredicto del motor universal: dirección
+        // y convicción de la escala que habló, y la posición vive a ESA τ
+        // (la escala que la generó, no una interpolación por confianza).
+        // Se lee ANTES de la guardia de peso activo: un ensamble escalar
+        // que se abstiene (voto 0 unánime) no puede callar al espectro.
+        // Sin dominante (arranque frío, espectro plano) el consenso
+        // escalar queda bit a bit (disciplina D-754 de fallback).
+        let v_dom = self
+            .arena
+            .registry
+            .get_for_coin_or(coin_id, "consenso_espectral_dominante", 0.0);
+        let tau_dom = self
+            .arena
+            .registry
+            .get_for_coin_or(coin_id, "consenso_espectral_tau", 0.0);
+        let espectral_activo = v_dom.is_finite() && v_dom.abs() > 1e-9;
+        if espectral_activo {
+            self.decisiones_espectrales.fetch_add(1, Ordering::Relaxed);
+        }
         let mut long_votes = 0.0;
         let mut short_votes = 0.0;
         let mut active_weight = 0.0;
@@ -394,9 +421,19 @@ impl TensorVoteOrchestrator {
                         *no_cero as f64,
                     );
                 }
+                // #624 — adopción del consenso espectral: decisiones
+                // dirigidas por la escala dominante vs total evaluado.
+                let espectral = self.decisiones_espectrales.load(Ordering::Relaxed);
+                let total = (n + 1) as f64;
+                self.arena
+                    .registry
+                    .set("qo_624_decisiones_espectrales", espectral as f64);
+                self.arena
+                    .registry
+                    .set("qo_624_fraccion_espectral", espectral as f64 / total);
             }
         }
-        if active_weight == 0.0 {
+        if active_weight == 0.0 && !espectral_activo {
             return TensorDecision {
                 signal: SignalType::Flat,
                 net_confidence: 0.0,
@@ -405,6 +442,9 @@ impl TensorVoteOrchestrator {
                 horizon: TradeHorizon::Continuous,
             };
         }
+        // Con ensamble escalar abstenido y espectro hablando, los ratios
+        // 0/0 se sanean abajo (NaN ⇒ 0.0); la convicción del ensamble es
+        // 0 y el veredicto es puramente espectral.
         let prob_long = long_votes / active_weight;
         let prob_short = short_votes / active_weight;
         let avg_conviction = active_weight / all.len().max(1) as f64;
@@ -421,6 +461,15 @@ impl TensorVoteOrchestrator {
             net_confidence
         } else {
             0.0
+        };
+        // #624 — override espectral: la convicción neta del motor es el
+        // voto de la escala dominante, con la MISMA modulación por
+        // convicción del ensamble (la coherencia entre bandas pesa igual
+        // que en la proyección escalar).
+        let net_confidence = if espectral_activo {
+            v_dom * (0.70 + 0.30 * effective_conviction)
+        } else {
+            net_confidence
         };
 
         // R1.6 — `expected_volatility` es VOLATILIDAD DE PRECIO ESPERADA
@@ -467,7 +516,18 @@ impl TensorVoteOrchestrator {
         // (10x) — sin modos binarios de horizonte.
         let conf = net_confidence.abs().clamp(0.0, 1.0);
         let scale = 1.0 + 9.0 * conf;
-        let expected_lifetime_ms = ((base_duration as f64) * scale).max(30_000.0) as u64;
+        let expected_lifetime_ms = if espectral_activo
+            && tau_dom.is_finite()
+            && tau_dom >= quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
+        {
+            // #624 — la posición vive a la escala que habló: τ del consenso
+            // espectral, clampeada a la banda operativa [30 s, 12 h].
+            tau_dom
+                .min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS)
+                as u64
+        } else {
+            ((base_duration as f64) * scale).max(30_000.0) as u64
+        };
         if net_confidence.abs() > cutoff_floor {
             if net_confidence > 0.0 {
                 TensorDecision {
@@ -637,6 +697,148 @@ mod tests {
             a.net_confidence > 0.0 && a.net_confidence <= 1.0,
             "confianza fuera del rango del quórum: {}",
             a.net_confidence
+        );
+    }
+
+    /// #624 (Ola 45) — CONTRATO DE INTEGRACIÓN ESPECTRAL.
+    ///
+    /// El orquestador consume el consenso espectral (#623): cuando la
+    /// escala dominante tiene voto ≠0, ESE voto dirige la señal, modula
+    /// por la convicción del ensamble, y la posición vive a ESA τ. Sin
+    /// dominante publicado el consenso escalar decide bit a bit.
+    #[test]
+    fn qo_624_espectral_dirige_direccion_confianza_y_tau() {
+        let arena = arena_con_min_conf(0.51);
+        let mut orch = TensorVoteOrchestrator::new(std::sync::Arc::clone(&arena));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "M",
+            value: 0.9,
+        }));
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_dominante", 0.8);
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_tau", 3_600_000.0);
+
+        let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        assert_eq!(d.signal, SignalType::Long);
+        // conf = v_dom·(0.70 + 0.30·convicción_ensamble) = 0.8·0.97.
+        assert!(
+            (d.net_confidence - 0.776).abs() < 1e-9,
+            "confianza espectral: {}",
+            d.net_confidence
+        );
+        // La posición vive a la escala que habló, no a la interpolación.
+        assert_eq!(d.expected_lifetime_ms, 3_600_000);
+
+        // Short simétrico: mismo |voto|, misma τ.
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_dominante", -0.8);
+        let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        assert_eq!(d.signal, SignalType::Short);
+        assert_eq!(d.expected_lifetime_ms, 3_600_000);
+    }
+
+    /// #624 — el dominante espectral GANA a la proyección escalar: es la
+    /// opinión resuelta del mismo ensamble, no un voto más.
+    #[test]
+    fn qo_624_espectral_sobre_la_proyeccion_escalar() {
+        let arena = arena_con_min_conf(0.51);
+        let mut orch = TensorVoteOrchestrator::new(std::sync::Arc::clone(&arena));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "Bear",
+            value: -0.9,
+        }));
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_dominante", 0.8);
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_tau", 600_000.0);
+
+        let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        assert_eq!(d.signal, SignalType::Long);
+        assert_eq!(d.expected_lifetime_ms, 600_000);
+    }
+
+    /// #624 — un ensamble escalar ABSTENIDO no calla al espectro: la
+    /// guardia de peso activo cede cuando hay dominante espectral.
+    #[test]
+    fn qo_624_espectro_habla_cuando_el_ensamble_se_abstiene() {
+        let arena = arena_con_min_conf(0.51);
+        let mut orch = TensorVoteOrchestrator::new(std::sync::Arc::clone(&arena));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "Silencio",
+            value: 0.0,
+        }));
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_dominante", 0.9);
+
+        let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        assert_eq!(d.signal, SignalType::Long);
+        // Convicción del ensamble 0 ⇒ conf = 0.9·0.70.
+        assert!((d.net_confidence - 0.63).abs() < 1e-9);
+    }
+
+    /// #624 — arranque frío bit a bit: sin dominante publicado (ausente,
+    /// 0.0 explícito o no finito), la decisión es la del consenso escalar.
+    #[test]
+    fn qo_624_arranque_frio_fallback_escalar_bit_a_bit() {
+        let arena = arena_con_min_conf(0.51);
+        let mut orch = TensorVoteOrchestrator::new(std::sync::Arc::clone(&arena));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "A",
+            value: 0.6,
+        }));
+
+        let frio = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        assert_eq!(frio.signal, SignalType::Long);
+
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_dominante", 0.0);
+        let plano = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        assert_eq!(frio.signal, plano.signal);
+        assert_eq!(frio.net_confidence, plano.net_confidence);
+        assert_eq!(frio.expected_lifetime_ms, plano.expected_lifetime_ms);
+
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_dominante", f64::NAN);
+        let nan = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        assert_eq!(frio.signal, nan.signal);
+        assert_eq!(frio.net_confidence, nan.net_confidence);
+        assert_eq!(frio.expected_lifetime_ms, nan.expected_lifetime_ms);
+    }
+
+    /// #624 — τ fuera de la banda operativa: por debajo del ancla rápida
+    /// interpola por confianza; por encima de 12 h se clampa al techo.
+    #[test]
+    fn qo_624_tau_clampeada_a_la_banda_operativa() {
+        let arena = arena_con_min_conf(0.51);
+        let mut orch = TensorVoteOrchestrator::new(std::sync::Arc::clone(&arena));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "M",
+            value: 0.9,
+        }));
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_dominante", 0.8);
+
+        arena.registry.set_for_coin(0, "consenso_espectral_tau", 1_000.0);
+        let baja = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        assert!(baja.expected_lifetime_ms >= 30_000);
+
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_tau", 100_000_000.0);
+        let alta = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        assert_eq!(
+            alta.expected_lifetime_ms as f64,
+            quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS
         );
     }
 }
