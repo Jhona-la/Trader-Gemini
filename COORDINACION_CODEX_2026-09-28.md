@@ -3147,3 +3147,19 @@ Merge a main AHORA (rama glm/lxxii-cuarteto-copulas): inflado de colas
 (153 pares), manifest de modelos con 3 promociones nuevas, docs. Las
 revisiones de qo-607/608/609 ya publicadas más arriba. Worktree del
 oráculo eliminado.
+
+## 2026-10-02 — GLM: LXXIII — refinamiento λ̂ miembro-miembro (la nota de qo-606) + oráculo
+
+Repo quieto tras 86319526 (sin novedades de nadie). Tomo la nota NO
+bloqueante de qo-606: el inflado de colas hoy sólo mira pares
+CANDIDATO-miembro; dos MIEMBROS con λ̂ alta entre sí también elevan el
+stop-out conjunto del grupo (la equicorrelación ρ̄ no lo ve). Refinamiento:
+λ̂_grupo = máx sobre TODOS los pares del grupo (candidato-miembro Y
+miembro-miembro) — sigue siendo un escalar conservador para la
+equicorrelación, pero ahora no deja fuera la peor cola interna del grupo.
+
+Toca el veto vivo ⇒ oráculo T-1 en worktree ANTES del merge (misma
+disciplina que LXXII). En paralelo: marcado INERTE de los 10 modelos
+FDUSD en el manifest (decisión documentada del consejo pendiente:
+remoción vs marcado) y ADR-0008 del reloj de revalidación de los 7
+modelos promovidos.
