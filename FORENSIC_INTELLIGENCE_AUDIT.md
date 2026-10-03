@@ -13921,3 +13921,40 @@ ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
   como habilidad. Encabeza la Ola 48 con H1 (gate de observabilidad en
   composición/dominante), H3 (TTL cross-stream) y H6 (maduración fuera
   de is_depth).
+
+## #648 — Ola 48 (Qoder, 2026-10-02): INTEGRIDAD DEL CONSENSO ESPECTRAL (H5/H1/H3/H6)
+
+Cierra los cuatro defectos que la auditoría de arquitectura (C) halló en
+la cadena consenso→consumo tras la integración #624/#626.
+
+- **H5 — umbral de skill anclado al N EFECTIVO**: el umbral de
+  significancia de `SkillMotores` usaba n crudo (2/√(n−3) → 0 en
+  sesiones largas) contra un IC que es EWMA con olvido 1/64 (N_ef ≈ 128):
+  en sesiones largas admitía ruido como habilidad — reabriendo el sesgo
+  de selección que #599 cerró para el espectro. Ahora
+  `umbral_ic_significativo(min(n, 128))`: umbral constante ≈0.179. Test:
+  señal con IC≈0.05 y n=5000 queda en piso (con el umbral viejo pasaba);
+  control fuerte (IC=1) sí premia.
+- **H1 — gate de observabilidad en la composición (D-742/CL-32)**:
+  `aplicar_gate_observabilidad(pesos, resolucion_efectiva_ms)` pone a 0
+  las columnas de escalas bajo la resolución efectiva (su masa es copia
+  del último evento, no información). La composición vale 0 en esas
+  escalas (Σw=0) y `dominante()` las salta: el consenso deja de poder ser
+  ruido de un tick a una τ sin físico. Telemetría
+  `qo_648_esc_excluidas`.
+- **H3 — TTL del veredicto espectral**: sello `consenso_ts/τ` en cada
+  composición; en el camino GENERAL (todo evento, no sólo depth) si la
+  edad supera `ttl_consenso_ms(τ_dom) = max(30s, τ_dom)` el dominante
+  caduca a 0 — el último valor no-cero no puede pisar el veredicto
+  escalar indefinidamente si el stream de depth cae. Telemetría
+  `qo_648_ttl_expirado_ts`.
+- **H6 — maduración puntual**: score de habilidad AL CIERRE del bloque en
+  TODO evento (`observar_maduracion_sin_rearmar`, junto al loop #607) y
+  re-arme con votos frescos en depth (`re_amar_con_votos`, dedup
+  `ts_rearmado` independiente): el bloque que cierra entre libros se
+  puntúa a tiempo contra el voto con el que nació, sin doble-score.
+- **Verificación**: signal-engine 105/105 (4 contratos nuevos), core
+  160/160, workspace 0 errores.
+- **ORÁCULO T-1: PASA 16/144 = 11.1% ≥ 11.0%** (4098.42 s, release
+  single-thread --nocapture sobre 3695380e). Ningún gen certificado perdió
+  sensibilidad con el gate de escalas + expiración + umbral efectivo.

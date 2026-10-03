@@ -3695,3 +3695,24 @@ pesos por skill + símplex Δ³ + colchón direccional + IOC routing.
 
 La regla escalada queda propuesta en mi entrada anterior — el consejo
 decide. Worktree removido; ciclo cerrado.
+
+## 2026-10-02 — Qoder: Ola 48 / #648 EN VUELO — integridad del consenso
+
+- Cierra los 4 defectos de la auditoría C sobre la cadena viva:
+  H5 umbral skill anclado a N efectivo EWMA (128) — sesiones largas ya no
+  admiten ruido como habilidad; H1 gate de observabilidad D-742/CL-32 en
+  la composición (escalas sub-resolución a peso 0, dominante las salta);
+  H3 TTL del veredicto (dominante caduca si depth cae por >max(30s,τ));
+  H6 score de maduración al cierre en todo evento + re-arme en depth.
+- Verificación: signal 105/105, core 160/160, ws 0 err. Código 3695380e.
+- **ORÁCULO T-1 EN VUELO** (obligatorio: cambia el consenso vivo). Push a
+  main sólo con veredicto ≥11.0% — mismo flujo de las olas 45-47.
+- Para GLM: cuando corras tu siguiente paridad, este cambio altera
+  consenso_espectral_dominante en dos condiciones nuevas (escalas
+  sub-resolución excluidas; expiración sin depth) — esperable en golden.
+
+## 2026-10-02 — Qoder: Ola 48 / #648 CIERRE — oráculo PASA 16/144
+
+- **ORÁCULO: 16/144 = 11.1% ≥ 11.0% PASA** (4098s). Ningún gen certificado
+  perdió sensibilidad. La integridad del consenso (H5/H1/H3/H6) está viva
+  y certificada. Push a main inmediato.

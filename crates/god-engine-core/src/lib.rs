@@ -697,6 +697,12 @@ pub struct GodEngineCore {
     /// #626 (Ola 47): habilidad prequential por motor×escala por moneda —
     /// alimenta los pesos de la composición del consenso espectral.
     skill_motores: Vec<signal_engine::skill_motores::SkillMotores>,
+    /// #648/H3 (Ola 48): ts de la última composición espectral y su τ
+    /// dominante por moneda — para EXPIRAR el veredicto si el stream de
+    /// depth cae (sin esto, el último dominante no-cero pisaba el
+    /// veredicto escalar en cada trade-tick indefinidamente).
+    consenso_ts: Vec<u64>,
+    consenso_tau_ms: Vec<f64>,
     /// Host-owned drift veto: blocks entries, not local defensive exits.
     /// Recovery cannot clear the independent arena/executor kill switches.
     drift_entry_veto: bool,
@@ -984,6 +990,8 @@ impl GodEngineCore {
             skill_motores: (0..n_coins)
                 .map(|_| signal_engine::skill_motores::SkillMotores::new())
                 .collect(),
+            consenso_ts: vec![0; n_coins],
+            consenso_tau_ms: vec![0.0; n_coins],
             drift_entry_veto: false,
             entry_reservations: vec![None; n_coins],
             diag_unverified_close_total: 0,
@@ -1581,6 +1589,39 @@ impl GodEngineCore {
                             ts,
                             r,
                         );
+                        // #648/H6 (Ola 48) — el score de habilidad ocurre
+                        // AL CIERRE del bloque, en TODO evento (no sólo
+                        // depth): el bloque que cierra entre libros se
+                        // puntúa a tiempo contra el voto con el que nació.
+                        // El re-arme con votos frescos ocurre en depth.
+                        if coin_id < self.skill_motores.len() {
+                            self.skill_motores[coin_id]
+                                .observar_maduracion_sin_rearmar(escala, ts, r);
+                        }
+                    }
+                }
+                // #648/H3 (Ola 48) — EXPIRACIÓN del veredicto espectral:
+                // si el stream de depth cayó, el último dominante no-cero
+                // no puede pisar el veredicto escalar en cada trade-tick
+                // indefinidamente. Sin depth fresco por más de un período
+                // de la escala dominante (mín 30 s), el dominante caduca.
+                if coin_id < self.consenso_ts.len()
+                    && coin_id < self.consenso_tau_ms.len()
+                    && self.consenso_ts[coin_id] > 0
+                {
+                    let ttl = signal_engine::skill_motores::ttl_consenso_ms(
+                        self.consenso_tau_ms[coin_id],
+                    );
+                    let edad = event_time_ms.saturating_sub(self.consenso_ts[coin_id]);
+                    if edad > ttl {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "consenso_espectral_dominante", 0.0);
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "qo_648_ttl_expirado_ts",
+                            event_time_ms as f64,
+                        );
                     }
                 }
                 if coin_id < self.arena.coins.len() {
@@ -2084,33 +2125,39 @@ impl GodEngineCore {
                         voto_entropy,
                     ];
                     // #626 (Ola 47, reconciliado con AGY 13/13) — PESOS POR
-                    // HABILIDAD: cada maduración de bloque puntúa los votos
-                    // de ARMADO de los 13 motores contra el retorno realizado
-                    // (IC prequential, olvido 1/64, madurez 30, significancia
-                    // #599) y re-snapshot-ea el armado del bloque nuevo. En
+                    // HABILIDAD: el score ocurre AL CIERRE en el camino
+                    // general (#648/H6); aquí, con votos frescos, sólo se
+                    // RE-ARMA el snapshot de los bloques que nacieron. En
                     // frío todos al piso ⇒ composición equivalente a los
                     // pesos iguales; la ponderación SÓLO entra con evidencia
                     // madura. Es el cierre espectral de D-752: la convicción
                     // se GANA con historial propio, no se asume igual para
                     // trece físicas.
-                    for escala in 0..32 {
-                        if let Some((ts_mad, r_mad)) = spec.ultimo_bloque_maduro(escala) {
-                            if coin_id < self.skill_motores.len() {
-                                self.skill_motores[coin_id].observar_maduracion(
-                                    escala,
-                                    ts_mad,
-                                    r_mad,
-                                    &votos_espectrales,
-                                );
-                            }
+                    if coin_id < self.skill_motores.len() {
+                        for escala in 0..32 {
+                            self.skill_motores[coin_id]
+                                .re_amar_con_votos(escala, &votos_espectrales);
                         }
                     }
-                    let pesos = if coin_id < self.skill_motores.len() {
+                    let mut pesos = if coin_id < self.skill_motores.len() {
                         self.skill_motores[coin_id].pesos()
                     } else {
                         [[signal_engine::skill_motores::PISO_EXPLORACION; 32];
                             signal_engine::skill_motores::MOTORES]
                     };
+                    // #648/H1 (Ola 48) — GATE DE OBSERVABILIDAD (D-742/CL-32):
+                    // las escalas por debajo de la resolución efectiva (su
+                    // masa es copia del último evento) votan con peso 0 —
+                    // la composición vale 0 ahí y el dominante las salta.
+                    // El consenso deja de poder ser ruido de un tick a una
+                    // τ sin físico.
+                    let excluidas = signal_engine::skill_motores::aplicar_gate_observabilidad(
+                        &mut pesos,
+                        spec.resolucion_efectiva_ms(),
+                    );
+                    self.arena
+                        .registry
+                        .set_for_coin(coin_id, "qo_648_esc_excluidas", excluidas as f64);
                     let consenso_espectral =
                         signal_engine::voto_espectral::VotoEspectral::consenso_por_escala(
                             &votos_espectrales,
@@ -2126,14 +2173,22 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "qo_626_peso_max", pmax);
                     }
                     if let Some((k_dom, v_dom)) = consenso_espectral.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "consenso_espectral_tau",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_dom],
-                        );
+                        let tau_dom_ms =
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_dom];
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "consenso_espectral_tau", tau_dom_ms);
                         self.arena
                             .registry
                             .set_for_coin(coin_id, "consenso_espectral_dominante", v_dom);
+                        // #648/H3 — sello de frescura: la expiración del
+                        // camino general cuenta desde ESTA composición.
+                        if coin_id < self.consenso_ts.len()
+                            && coin_id < self.consenso_tau_ms.len()
+                        {
+                            self.consenso_ts[coin_id] = event_time_ms;
+                            self.consenso_tau_ms[coin_id] = tau_dom_ms;
+                        }
                     } else {
                         // #624 — espectro plano ⇒ dominante 0 EXPLÍCITO: el
                         // valor del registro es SIEMPRE el del tick en curso.
@@ -2142,6 +2197,9 @@ impl GodEngineCore {
                         self.arena
                             .registry
                             .set_for_coin(coin_id, "consenso_espectral_dominante", 0.0);
+                        if coin_id < self.consenso_ts.len() {
+                            self.consenso_ts[coin_id] = event_time_ms;
+                        }
                     }
                     if let Some(media) = consenso_espectral.media_banda(0, 31) {
                         self.arena
