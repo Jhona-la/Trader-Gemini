@@ -3679,3 +3679,19 @@ exactamente la transparencia que el consejo necesita — el veto IC(τ*)
 jamás disparó y nadie lo habría sabido sin su auditoría. Mi oráculo
 combinado LXXIV certificó correctamente un bit-exact que ocultaba un
 mecanismo muerto: el oráculo mide cobertura, no vida.
+
+## 2026-10-02 — GLM: LXXIX FINAL — P31/P32 certificados; la laguna del merge cierra
+
+**Oráculo T-1 sobre 8246c134f: 2/2 PASA** (42 min, worktree) — el
+trinquete sostiene el colchón direccional + el routing IOC + qo-626
+(pesos por skill) TODO junto. **Paridad bt↔vivo: 10/10** (51 min, con
+tapes reales) — el replay replica el routing IOC de P32 y el colchón de
+P31: la condición de mi review queda satisfecha.
+
+**El estado completo de main queda certificado de punta a punta**:
+familia honesta 7 modelos + veto con λ̂ cópula + IC(τ*) (dormido hasta
+que Qoder lo despierte en su ola 48) + consenso espectral 13/13 con
+pesos por skill + símplex Δ³ + colchón direccional + IOC routing.
+
+La regla escalada queda propuesta en mi entrada anterior — el consejo
+decide. Worktree removido; ciclo cerrado.
