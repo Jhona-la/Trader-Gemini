@@ -94,13 +94,23 @@ impl QuantumOscillatorEngine {
         lambda_anharmonic: f64,
         alpha: f64,
     ) -> VotoEspectral {
+        let safe_alpha = if alpha.is_finite() && alpha > 0.0 {
+            alpha.clamp(0.01, 10.0)
+        } else {
+            0.5
+        };
         VotoEspectral::desde_espectro(desplazamientos, |x| {
-            let force = Self::compute_quantum_restoring_force(x, k_spring, lambda_anharmonic);
-            let confinement = Self::compute_superposition_probability(x, alpha);
-            // El confinamiento es |ψ(x)|² ∈ [0,1]-acotado: actúa de peso —
-            // multiplicar la fuerza por su raíz preserva el signo y el
-            // amortiguamiento de ruptura de AGY-P14.
-            (force * confinement.sqrt()).clamp(-1.0, 1.0)
+            let safe_x = if x.is_finite() { x.clamp(-10.0, 10.0) } else { 0.0 };
+            let force = Self::compute_quantum_restoring_force(safe_x, k_spring, lambda_anharmonic);
+            // #650 (Ola 50) — PARIDAD con el vivo (AGY-P14): la MISMA
+            // envolvente C(x) = e^{−α·x²} ∈ (0,1] que modula la fuerza del
+            // motor vivo. La sombra usaba √|ψ|² = (α/π)^{1/4}·e^{−αx²/2}:
+            // exponente a la MITAD (supresión de ruptura 3-4 órdenes más
+            // débil que el vivo, p.ej. x=6, α=0.5: e^{−9} vs e^{−18}) y
+            // una constante (α/π)^{1/4} que supera 1 para α > π (rompía la
+            // cota antes del clamp).
+            let confinement = (-safe_alpha * safe_x * safe_x).exp().clamp(0.0, 1.0);
+            (force * confinement).clamp(-1.0, 1.0)
         })
     }
 }

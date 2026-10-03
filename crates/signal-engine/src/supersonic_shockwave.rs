@@ -55,20 +55,37 @@ impl SupersonicShockwaveEngine {
         }
     }
 
-    /// #610 (Ola 32) — VOTO ESPECTRAL del choque supersónico: el número de
-    /// Mach POR ESCALA M(τ) = |x(τ)|/c (el desplazamiento de escala como
-    /// velocidad de flujo, c la velocidad del sonido del spread) y el salto
-    /// de Rankine-Hugoniot como compresión: 0 subsónico (la escala no está
-    /// en choque), →1 hipersónico. Magnitud de compresión SIN signo — la
-    /// dirección la aporta el flujo que la live combina. Observacional:
-    /// el voto vivo queda bit a bit (T-1 cero).
+    /// #650 (Ola 50) — VOTO ESPECTRAL del choque supersónico, con firma
+    /// direccional y unidades coherentes: `voto_k = tanh(x(τ_k)) ·
+    /// salto(M)` con `M = |x|/c_z` en ESPACIO DE Z (c_z = umbral sónico en
+    /// desviaciones — el core pasa 1.0 = 1σ). La compresión del salto
+    /// Rankine-Hugoniot es MAGNITUD; la DIRECCIÓN la aporta el flujo de esa
+    /// escala con tanh (continua, sin escalón de signo).
+    ///
+    /// Lo que ELIMINA (auditor A, verificado): (a) el voto era SIN signo
+    /// [0,1] — en la composición del consenso (media de votos firmados)
+    /// inyectaba un sesgo LARGO permanente de ~0.76 en cada escala activa;
+    /// (b) c llegaba en unidades de PRECIO del vivo (0.001) contra x en
+    /// z-scores O(1) ⇒ M ~ 10³ saturado ⇒ salto ≈ 0.76 constante sin
+    /// discriminación espectral. Con c_z = 1σ, sólo las escalas con
+    /// desplazamiento超 sónico (>1σ) declaran choque.
+    /// Observacional: el voto vivo queda bit a bit (T-1 cero).
     pub fn voto_espectral(
         desplazamientos: &[f64; 32],
-        velocidad_sonido: f64,
+        velocidad_sonido_z: f64,
     ) -> crate::voto_espectral::VotoEspectral {
+        let c_z = if velocidad_sonido_z.is_finite() && velocidad_sonido_z > 0.0 {
+            velocidad_sonido_z.clamp(0.1, 10.0)
+        } else {
+            1.0
+        };
         crate::voto_espectral::VotoEspectral::desde_espectro(desplazamientos, |x| {
-            let m = Self::compute_mach_number(x, velocidad_sonido);
-            Self::compute_shockwave_jump(m)
+            if !x.is_finite() {
+                return 0.0;
+            }
+            let m = Self::compute_mach_number(x.abs().min(10.0), c_z);
+            (x.clamp(-10.0, 10.0).tanh() * Self::compute_shockwave_jump(m))
+                .clamp(-1.0, 1.0)
         })
     }
 }
@@ -249,38 +266,44 @@ mod qo_610_tests {
 
     #[test]
     fn qo_610_shock_subsónico_cero_y_monótono_en_mach() {
-        let c = 0.001; // la velocidad del sonido del default vivo
+        // #650 — umbral sónico en ESPACIO DE Z (1σ): sólo |x|>1 declara choque.
+        let c = 1.0;
         let mut x = [0.0; ESCALAS_VOTO];
-        // Desplazamientos que barren subsónico → hipersónico con c=0.001:
-        // |x| de 0.0001 (M=0.1) a 0.01 (M=10).
         for (k, v) in x.iter_mut().enumerate() {
-            *v = 0.0001 * (k as f64 + 1.0);
+            *v = 0.1 * (k as f64 - 15.5); // −1.55 … +1.65
         }
         let voto = SupersonicShockwaveEngine::voto_espectral(&x, c);
-        // Subsónico (M<1 ⇒ |x|<c=0.001: escalas 0..8) ⇒ salto 0.
-        for k in 0..9 {
+        // Subsónico (|x|<1 ⇒ M<1: escalas 6..25) ⇒ salto 0.
+        for k in 6..26 {
             assert_eq!(voto.en_escala(k), 0.0, "escala {} subsónica debe votar 0", k);
         }
-        // Monótono creciente en la zona supersónica.
-        let mut previo = 0.0;
-        for k in 9..ESCALAS_VOTO {
-            let v = voto.en_escala(k);
-            assert!(v >= previo, "el salto debe ser monótono en Mach: {} < {}", previo, v);
-            previo = v;
-        }
-        // El salto en M=2 es tanh(0.6) — la raíz analítica de la fórmula.
-        let m2 = SupersonicShockwaveEngine::compute_mach_number(0.002, c);
-        assert!((m2 - 2.0).abs() < 1e-9);
-        let salto_m2 = SupersonicShockwaveEngine::compute_shockwave_jump(m2);
-        assert!((salto_m2 - 0.6_f64.tanh()).abs() < 1e-12);
-        // Sin signo: |x| y −|x| miden la misma compresión.
+        // Supersónico FIRMA DO por el flujo: positivo donde x>0, negativo
+        // donde x<0 (antes era [0,1] sin signo = sesgo largo permanente).
+        assert!(voto.en_escala(30) > 0.0);
+        assert!(voto.en_escala(1) < 0.0);
+        // Monótono en |x| dentro de cada lado (el salto crece con M).
+        assert!(voto.en_escala(30).abs() > voto.en_escala(27).abs());
+        assert!(voto.en_escala(0).abs() > voto.en_escala(3).abs());
+        // Antisimetría estricta: −x da el voto espejo.
         let mut x_neg = x;
         for v in &mut x_neg {
             *v = -*v;
         }
-        let voto_neg = SupersonicShockwaveEngine::voto_espectral(&x_neg, c);
+        let neg = SupersonicShockwaveEngine::voto_espectral(&x_neg, c);
         for k in 0..ESCALAS_VOTO {
-            assert!((voto.en_escala(k) - voto_neg.en_escala(k)).abs() < 1e-12);
+            assert!(
+                (voto.en_escala(k) + neg.en_escala(k)).abs() < 1e-12,
+                "antisimetría en {k}"
+            );
         }
+        // El salto en M=2 es tanh(0.6) — raíz analítica.
+        let m2 = SupersonicShockwaveEngine::compute_mach_number(2.0, c);
+        assert!((m2 - 2.0).abs() < 1e-9);
+        let salto_m2 = SupersonicShockwaveEngine::compute_shockwave_jump(m2);
+        assert!((salto_m2 - 0.6_f64.tanh()).abs() < 1e-12);
+        // c inválida o fuera de rango ⇒ 1σ sin inventar.
+        let c_rara = SupersonicShockwaveEngine::voto_espectral(&x, f64::NAN);
+        assert_eq!(c_rara.en_escala(30), voto.en_escala(30));
     }
+
 }

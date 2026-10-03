@@ -1912,9 +1912,12 @@ impl GodEngineCore {
                     let voto_shock =
                         signal_engine::supersonic_shockwave::SupersonicShockwaveEngine::voto_espectral(
                             &desplazamientos,
-                            self.arena
-                                .registry
-                                .get_value_or("spread_speed_of_sound", 0.001),
+                            // #650: el umbral sónico de la SOMBRA vive en
+                            // espacio de z (x = momentum_z O(1)); el del
+                            // vivo (`spread_speed_of_sound`) está en
+                            // unidades de precio — mezclarlos saturaba M
+                            // a ~10³. 1.0 = una desviación.
+                            1.0,
                         );
                     if let Some(media_shock) = voto_shock.media_banda(0, 31) {
                         self.arena
