@@ -6,6 +6,7 @@ pub mod execution_evidence;
 pub mod executor;
 pub mod hot_swap;
 pub mod income_evidence;
+pub mod ioc_evidence;
 pub mod ntp;
 pub mod order_registry;
 pub mod order_types;

@@ -209,6 +209,9 @@ pub trait ExecutionProvider: Send + Sync {
     ) -> Result<(), String>;
 
     /// FASE 8: Immediate-Or-Cancel. Liquidity snipe without exposing to the book.
+    /// CL-39: `Ok(())` sólo si la orden ejecutó algo (total o parcial).
+    /// Terminal sin ejecución ⇒ `Err("IOC_UNFILLED…")` (no ambiguo); sin
+    /// evidencia terminal ⇒ `Err("AMBIGUOUS…")`.
     async fn execute_ioc_order(
         &self,
         symbol: &str,
@@ -2599,6 +2602,12 @@ impl ExecutionProvider for OrderExecutor {
         tick_size: f64,
         client_order_id: &str,
     ) -> Result<(), String> {
+        if !quantity.is_finite() || quantity <= 0.0 {
+            return Err(
+                "SEGURIDAD: quantity inválido (infinito, NaN o <= 0.0). Orden abortada."
+                    .to_string(),
+            );
+        }
         let final_quantity = Self::round_to_step_size(quantity, step_size);
         if final_quantity == 0.0 {
             return Err("Volumen 0".to_string());
@@ -2614,6 +2623,19 @@ impl ExecutionProvider for OrderExecutor {
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
         let timestamp = self.get_synced_timestamp();
         self.check_rate_limits(timestamp)?;
+
+        // CL-39: la intención queda referenciada por clientOrderId antes del
+        // envío, como en MARKET (F1.5): si la respuesta se pierde, la
+        // reconciliación la resuelve por consulta.
+        self.order_registry.register_intent(
+            client_order_id,
+            symbol,
+            side,
+            if is_long { "LONG" } else { "SHORT" },
+            ORDER_TYPE_LIMIT,
+            final_quantity,
+            timestamp,
+        );
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -2641,8 +2663,15 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_f64(final_price);
         buf.push_str("&newClientOrderId=");
         buf.push_str(client_order_id);
+        // CL-39: con el ACK por defecto Binance responde `NEW`; con RESULT,
+        // el estado TERMINAL de la IOC y su executedQty.
+        buf.push_str("&newOrderRespType=RESULT");
         buf.push_str("&timestamp=");
         buf.push_u64(timestamp);
+
+        if buf.is_overflow() {
+            return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
+        }
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
@@ -2652,11 +2681,37 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        let res = self.client.execute_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res {
-            self.update_limits(limits);
+        // CL-39: una IOC aceptada NO es un llenado. Antes se devolvía Ok(())
+        // ante cualquier 2xx sin leer el cuerpo: una IOC expirada sin
+        // ejecución (HTTP 200, EXPIRED, executedQty=0) se confirmaba y dejaba
+        // una posición fantasma en el arena; un 5xx o -1007 salía como
+        // rechazo y el host revertía una orden que pudo ejecutarse. Ahora
+        // decide la evidencia de la propia orden (ver `ioc_evidence`):
+        // ejecución > 0 ⇒ Ok; terminal sin ejecución ⇒ IOC_UNFILLED (el host
+        // revierte); sin evidencia terminal ⇒ AMBIGUOUS (el host conserva la
+        // reserva y reconcilia).
+        match self.client.execute_order_payload_body(buf.as_str()).await {
+            Ok((limits, body)) => {
+                self.update_limits(&limits);
+                let resultado =
+                    crate::ioc_evidence::clasificar_respuesta_ioc(&body, symbol, client_order_id)?;
+                self.order_registry.apply_ack(resultado.ack(), timestamp);
+                // Igual que `record_query_resolution`: una instantánea
+                // terminal sin ejecución no borra fills ya recibidos por WS.
+                if let Some(merged) = self.order_registry.get(client_order_id) {
+                    if merged.executed_qty.is_finite() && merged.executed_qty > 0.0 {
+                        return Ok(());
+                    }
+                }
+                crate::ioc_evidence::resultado_para_el_host(&resultado, client_order_id)
+            }
+            Err(e) => {
+                if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
+                    return Err(self.handle_rate_limit_error(&e));
+                }
+                Err(e)
+            }
         }
-        res.map(|_| ())
     }
 
     /// FASE 22: Advanced API Exploitation - Iceberg Limit Orders
