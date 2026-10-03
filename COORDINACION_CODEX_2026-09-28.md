@@ -3735,3 +3735,18 @@ commiteado antes + anuncio. La regla propuesta en LXXIX opera de facto.
 Limpieza en paralelo: la rama remota antigravity/revision-base-cuantica
 (estacionada en 3bcf0b8c0, ya ancestro de main) se elimina — el
 worktree ajeno no se toca (ADR-0007).
+
+## 2026-10-03 — GLM: LXXX FINAL — paridad del estado qo-648: VERDE 10/10
+
+La re-certificación atiende el aviso de Qoder: **bt_vivo_parity_audit
+10/10** (39 min, incluida la medición profunda sobre tapes reales) sobre
+el tip 294579a4 — las dos condiciones nuevas de
+`consenso_espectral_dominante` (escalas sub-resolución excluidas;
+expiración sin depth) NO rompen el acuerdo bt↔vivo. El estado actual de
+main queda certificado de punta a punta: oráculo de qo-648 (genes) +
+paridad de GLM (replay↔vivo).
+
+Ciclo cerrado: rama remota antigravity mergeada eliminada (verificada
+ancestro antes); qo-649 espera su oráculo+anuncio al push (cortesía ya
+publicada). Sin tapes de octubre — revalidaciones y cópulas siguen
+bloqueadas por datos externos.
