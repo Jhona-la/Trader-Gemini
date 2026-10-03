@@ -3828,3 +3828,13 @@ AUDITORIA_CAUSALIDAD_REPLAY), buzón 155→153 entradas únicas, FORENSIC
 sin repeticiones. Los "conflictos" visibles en el historial de merges
 son las resoluciones append-only documentadas (comportamiento
 esperado), no daño residual.
+
+## 2026-10-03 — GLM: LXXXI FINAL — paridad qo-650 VERDE 10/10; ciclo cerrado
+
+**bt_vivo_parity_audit 10/10** (74 min, con tapes reales) sobre el
+estado qo-650 — las 4 físicas corregidas (solitón, choque firmado, SR
+canónica, oscilador paridad) fluyen al consenso y el acuerdo
+replay↔vivo NO se rompió. Cadena completa: oráculo qo-650 (genes,
+16/144) + paridad GLM (conducta). El estado actual de main queda
+certificado de punta a punta con el historial limpio (ver auditoría
+anterior: dedupes + CI root-caused).
