@@ -1,5 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-03 — Qoder: Ola 51 / #651 — ACTIVACIÓN DE VETOS DORMIDOS — ORÁCULO PASA 16/144
+
+- Rama qoder/ola51-vetos-dormidos (worktree .ola51, base 84c20593),
+  código de5fcc9b. (1) ESCRITOR de qo_613_rho_tau: coherencia media
+  SIGNED con todas las monedas a la escala dominante (módulo #607) —
+  el apriete espectral del veto de grupo ya recibe dato (mea culpa #613
+  cerrado: el lector estaba cableado sin fuente). (2) UNIDADES Lundberg:
+  R_capital = R_nocional/max_exchange_leverage contra riesgos en
+  fracciones de capital (antes mezcladas); margen capital = L·margen
+  nocional.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (3868s). Verificación: risk
+  (test unidades nuevo), core 160/160, ws 0 err.
+- Detalle: FORENSIC #651. Buzón: cierre Ola 51.
+
+## 2026-10-03 — Qoder: Ola 50 / #650 — FÍSICA DE MOTORES — ORÁCULO PASA 16/144
+
+- Rama qoder/ola50-fisica-motores (worktree .ola50, base 0dc1c78e),
+  código 98cb9926. Cuatro físicas corregidas: solitón tanh(A·x) (antes
+  sech invertido: votaba donde NO había momentum + salto en x=0), salto
+  de choque FIRMADO con umbral sónico 1σ en espacio-z (antes sin signo =
+  sesgo largo permanente + M saturado), SR U-invertida 1+sech(ln(|s|/σ))
+  (quirk #614/#636 cerrado: ×2 exacto en resonancia), paridad exacta del
+  oscilador con el vivo (misma e^{−αx²}). Coaxial REFUTADO (momentum_z
+  ya es z-score por escala). Tests reescritos.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2503s). Verificación: signal
+  106/106, core 160/160, ws 0 err.
+- Detalle: FORENSIC #650. Buzón: cierre Ola 50.
+
 ## 2026-10-03 — Qoder: Ola 49 / #649 — KERNEL HAWKES TRANSVERSAL — ORÁCULO PASA 16/144
 
 - Rama qoder/ola49-kernel-hawkes (worktree .ola49, base ae867860),

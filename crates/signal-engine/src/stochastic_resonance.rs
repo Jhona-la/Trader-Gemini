@@ -22,11 +22,22 @@ impl StochasticResonanceEngine {
         Self { registry: None }
     }
 
-    /// Amplifica una señal sub-umbral combinándola con la intensidad de ruido \sigma en O(1)
-    /// Simétrica para señales Long (> 0) y Short (< 0) mediante pozo de potencial bi-estable
+    /// Amplifica una señal combinándola con la intensidad de ruido σ en O(1)
+    /// Simétrica para señales Long (> 0) y Short (< 0) mediante pozo de potencial bi-estable.
+    /// #650 (Ola 50) — RESONANCIA CANÓNICA en U-invertida: la ganancia
+    /// `1 + sech(ln(|s|/σ))` PICA en |s| = σ (el régimen de resonancia:
+    /// señal al nivel del ruido, donde el ruido ayuda a cruzar el umbral),
+    /// decae a ×1 cuando |s| ≫ σ (señal fuerte pasa SIN cambio) y ×1 cuando
+    /// |s| ≪ σ (señal enterrada: no hay dirección que amplificar). C∞,
+    /// acotada (ganancia ∈ [1, 2]), antisimétrica.
+    ///
+    /// Lo que REEMPLAZA (quirk #614 documentado en #636, confirmado por
+    /// auditoría): sigmoid(|s|/σ) era MONÓTONA creciente — amplificaba la
+    /// señal FUERTE ×2 y la sub-umbral sólo ×1.5 (lo inverso de la
+    /// resonancia), y en el régimen vivo |x| ≫ σ era un ×2 casi constante
+    /// que no discriminaba nada.
     #[inline(always)]
     pub fn amplify_signal_with_noise(weak_signal: f64, noise_variance: f64) -> f64 {
-        // FIX #649: Sanitizar parámetros de resonancia estocástica
         let safe_signal = if weak_signal.is_finite() {
             weak_signal
         } else {
@@ -37,10 +48,13 @@ impl StochasticResonanceEngine {
         } else {
             0.0001
         };
-
-        let ratio = (-safe_signal.abs() / safe_noise).clamp(-50.0, 50.0);
-        let resonance_factor = (1.0 / (1.0 + ratio.exp())).clamp(0.0, 1.0);
-        let res = safe_signal * (1.0 + resonance_factor);
+        // σ = raíz de la varianza del ruido.
+        let sigma = safe_noise.sqrt();
+        // U-invertida en escala logarítmica: pico exacto en |s| = σ.
+        let ratio = (safe_signal.abs().max(1e-12) / sigma).ln();
+        let ratio = if ratio.is_finite() { ratio.clamp(-50.0, 50.0) } else { 0.0 };
+        let resonance_gain = 1.0 + 2.0 / (ratio.exp() + (-ratio).exp());
+        let res = safe_signal * resonance_gain;
         if res.is_finite() {
             res
         } else {
@@ -236,19 +250,30 @@ mod qo_614_tests {
                 );
             }
         }
-        // La amplificación es MAYOR cuando la señal domina el ruido
-        // (ratio SNR alto ⇒ factor de resonancia → 1): el pozo bi-estable
-        // de esta implementación amplifica la señal FUERTE, no la débil.
-        // Documentado como quirk de la heurística #649.
-        let voto_snr_alto = StochasticResonanceEngine::voto_espectral(&x, 1e-8);
+        // #650 — RESONANCIA CANÓNICA: la amplificación es MÁXIMA en el
+        // régimen de resonancia (|s|≈σ) y decae a ×1 cuando la señal
+        // domina (pasa casi sin cambio). Nota: el piso de varianza 1e-6
+        // (σ ≥ 1e-3) acota cuán "dominante" puede ser la señal; usamos la
+        // escala de mayor |x| (k=31: 0.155, ratio 155σ) para verla pasar.
+        let voto_snr_alto = StochasticResonanceEngine::voto_espectral(&x, 1e-6);
+        let amplificado = voto.en_escala(31).abs() / x[31].abs();
+        let dominante = voto_snr_alto.en_escala(31).abs() / x[31].abs();
         assert!(
-            voto_snr_alto.en_escala(16).abs() > voto.en_escala(16).abs(),
-            "señal dominando el ruido ⇒ más amplificación: {} vs {}",
-            voto_snr_alto.en_escala(16).abs(),
-            voto.en_escala(16).abs()
+            amplificado > dominante,
+            "régimen de resonancia amplifica más que señal dominante: {amplificado} vs {dominante}"
         );
-        // Ambos regímenes amplifican (factor > 1 en ambos casos).
-        assert!(voto_snr_alto.en_escala(16).abs() > x[16].abs());
-        assert!(voto.en_escala(16).abs() > x[16].abs());
+        // Señal dominante ⇒ ganancia ≈ 1 (pasa sin cambio, <1.5%).
+        assert!(
+            (dominante - 1.0).abs() < 0.015,
+            "señal dominante pasa sin cambio: ganancia {dominante}"
+        );
+        // Ganancia pico EXACTO en |s| = σ: ×2.
+        let sigma = 0.05f64.sqrt();
+        let pico = StochasticResonanceEngine::amplify_signal_with_noise(sigma, 0.05);
+        assert!((pico - 2.0 * sigma).abs() < 1e-9, "pico {}", pico);
+        // Enterrada (|s|≪σ): pasa casi sin cambio.
+        let enterrada = StochasticResonanceEngine::amplify_signal_with_noise(1e-9, 0.05);
+        assert!(enterrada.abs() < 1e-8);
     }
+
 }

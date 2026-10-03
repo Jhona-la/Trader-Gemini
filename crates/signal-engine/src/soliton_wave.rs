@@ -65,31 +65,33 @@ impl SolitonWaveEngine {
         }
     }
 
-    /// #610 (Ola 32) — VOTO ESPECTRAL del solitón: el perfil sech evaluado
-    /// en el DESPLAZAMIENTO DE CADA ESCALA x(τ) (momentum_z de la malla) —
-    /// la coordenada espacial de la onda; perfil quieto (t=0: la fase es
-    /// A·x(τ), sin término de velocidad — el desplazamiento de escala ES la
-    /// coordenada). Firma por la dirección del desplazamiento; el núcleo
-    /// del pulso (x≈0) vota amplitud plena, las colas sechan a 0.
+    /// #650 (Ola 50) — VOTO ESPECTRAL del solitón, con el pulso del lado
+    /// correcto: `voto_k = tanh(A·x(τ_k))`. El solitón ES el pulso localizado
+    /// de momentum — la escala donde el desplazamiento es fuerte ES donde
+    /// viaja la onda; la convicción crece con |x| y satura (C∞, acotado,
+    /// sin saltos).
+    ///
+    /// Lo que ELIMINA (auditor A, verificado): el perfil sech(A·x) votaba
+    /// MÁXIMO (±1) donde el momentum era ~0 — máxima convicción justo donde
+    /// la escala NO tiene información — y ~0 donde el momentum era fuerte:
+    /// física INVERTIDA. Además el signo por desplazamiento infinitesimal
+    /// daba un salto de magnitud ~2 en x=0. La amplitud A gobierna el ancho
+    /// de respuesta (pendiente del tanh) — su rol de parámetro del motor.
     /// Observacional: el voto vivo queda bit a bit (T-1 cero).
     pub fn voto_espectral(
         desplazamientos: &[f64; 32],
         amplitud: f64,
     ) -> crate::voto_espectral::VotoEspectral {
         let a = if amplitud.is_finite() && amplitud > 0.0 {
-            amplitud
+            amplitud.clamp(1e-3, 10.0)
         } else {
             1.0
         };
         crate::voto_espectral::VotoEspectral::desde_espectro(desplazamientos, |x| {
-            if !x.is_finite() || x == 0.0 {
+            if !x.is_finite() {
                 return 0.0;
             }
-            let env = Self::compute_soliton_amplitude(a, 0.0, x, 0.0);
-            // env = A·sech(A·x) ∈ [0, A] — normalizado por A: sech ∈ (0,1].
-            let sech = if a > 0.0 { (env / a).clamp(0.0, 1.0) } else { 0.0 };
-            let signo = if x > 0.0 { 1.0 } else { -1.0 };
-            (signo * sech).clamp(-1.0, 1.0)
+            (x.clamp(-10.0, 10.0) * a).tanh().clamp(-1.0, 1.0)
         })
     }
 }
@@ -316,16 +318,23 @@ mod qo_610_tests {
                 );
             }
         }
-        // El núcleo (x más chico) vota más fuerte que las colas.
-        let nucleo = voto.en_escala(15).abs(); // x = −0.05, el más cercano a 0
-        let cola = voto.en_escala(0).abs(); // x = −1.55
-        assert!(nucleo > cola, "núcleo {} debe superar la cola {}", nucleo, cola);
-        // Acotado por la amplitud.
+        // #650 — el pulso vive donde el momentum es FUERTE: la cola
+        // (|x| grande = la onda viaja ahí) vota más que el núcleo quieto.
+        // (El sech viejo lo tenía al revés: máxima convicción en x≈0.)
+        let nucleo = voto.en_escala(15).abs(); // x = −0.05, sin información
+        let cola = voto.en_escala(0).abs(); // x = −1.55, momentum fuerte
+        assert!(cola > nucleo, "cola {} debe superar el núcleo {}", cola, nucleo);
+        // CONTINUIDAD en x=0: sin salto de magnitud ni cambio de signo brusco.
+        let mut x_grad = [0.0; ESCALAS_VOTO];
+        x_grad[7] = 1e-9;
+        let suave = SolitonWaveEngine::voto_espectral(&x_grad, a);
+        assert!(suave.en_escala(7).abs() < 1e-8);
+        // Acotado.
         for kk in 0..ESCALAS_VOTO {
-            assert!(voto.en_escala(kk).abs() <= a + 1e-12);
+            assert!(voto.en_escala(kk).abs() <= 1.0 + 1e-12);
         }
         // Amplitud inválida ⇒ 1.0 normalizador, sin inventar NaN.
         let voto_nan = SolitonWaveEngine::voto_espectral(&x, f64::NAN);
-        assert!(voto_nan.en_escala(15).abs() <= 1.0 && voto_nan.en_escala(15) != 0.0);
+        assert!(voto_nan.en_escala(0).is_finite());
     }
 }

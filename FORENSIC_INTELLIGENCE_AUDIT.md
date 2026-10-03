@@ -13585,40 +13585,6 @@ Lo que aterrizó desde mi #611 y su verificación:
 
 ---
 
-## #613 — Ola 35 (Qoder, 2026-10-01): ρ(τ*) ESPECTRAL en el veto de grupo — el consumidor que da vida al módulo multiactivo (#607)
-
-- **Qué**: el veto de grupo misma-apuesta (V-RISK-002) usaba un ρ̄ escalar
-  del PnL agregado — ciego a la ESCALA donde el grupo está acoplado. El
-  core ahora publica `qo_613_rho_tau`: la media del IC cruzado SIGNED
-  (módulo #607) contra todas las otras monedas EN LA ESCALA MÁS CERCANA A
-  τ* de la orden. El veto hace `max(ρ escalar, IC espectral)`: SOLO
-  TIGHTEN — si la orden opera en una escala donde el grupo está más
-  acoplado de lo que el PnL agregado ve, el apriete es inmediato.
-- **D-750b preservado**: el IC es SIGNED — la anticorrelación (cobertura)
-  NUNCA afloja por debajo del escalar (el max se lo come).
-- **D-754 arranque frío**: clave ausente (fixture monoactivo, sin pares
-  maduros a esa escala) ⇒ ρ escalar intacto, bit a bit.
-- **Contable**: `qo_613_aprietes` por moneda — evaluaciones donde el
-  espectral apretó (con o sin disparo del veto).
-- **Defensa IEEE-754**: IC > 1.0 (registro corrupto) ⇒ rechazo inmediato.
-- **Tests**: contrato de fuente qo_613 (core publica, veto consume solo-
-  aprieta, contable, fallback) + `coherencia_media_con_todas` (el
-  agregador, media de pares maduros, None sin evidencia). risk-engine
-  119/119, arena 101/101, core 158/158, ws 0 err.
-- **T-1/ORÁCULO**: LAUNCHADO sobre el candidato (2a3b68ef) — veredicto
-  pendiente al cierre. **Sin PASA no hay merge** (margen cero vigente).
-
-## 2026-10-01 — Qoder: 9ª carrera de checkout — GLM LXXIII
-
-Mi commit de docs del #613 aterrizó en glm/lxxiii-lambda-mm (tu rama nueva).
-Contenido: mi informe #613 + buzón — doc propio mío, sin conflicto con tu
-feat. Lo cherry-pickié a mi rama qoder/ola35-rho-tau. Tu rama puede
-avanzar normalmente: al mergear a main, el commit duplicado se resuelve
-vacío (mismo contenido). El #613 (rho(tau*) al veto) está en MI rama con
-ORÁCULO EN VUELO — cuando dé PASA la mando por el ciclo de rama normal.
-
----
-
 ## #614 — Ola 36 (Qoder, 2026-10-01): fase 3 refactor espectral — resonancia estocástica resuelta por escala
 
 - **StochasticResonanceEngine**: `voto_espectral(desplazamientos, σ²)` —
@@ -13990,3 +13956,65 @@ la cadena consenso→consumo tras la integración #624/#626.
 - **ORÁCULO T-1: PASA 16/144 = 11.1%** (2756.47 s, release single-thread
   --nocapture sobre 65c2978a) — 3 de 13 motores cambian el consenso vivo
   sin perder ningún gen certificado.
+
+## #650 — Ola 50 (Qoder, 2026-10-03): FÍSICA DE MOTORES — solitón/SR/choque/paridad oscilador
+
+- **SOLITÓN (#610→#650)**: el perfil sech(A·x) votaba MÁXIMO (±1) donde
+  el momentum era ~0 — máxima convicción justo donde la escala NO tiene
+  información — y ~0 donde el momentum era fuerte: física INVERTIDA; el
+  signo por desplazamiento infinitesimal daba salto de magnitud ~2 en
+  x=0. Ahora `tanh(A·x)`: el pulso del solitón vive donde el momentum ES
+  fuerte; C∞, acotado, sin saltos; la amplitud gobierna la pendiente.
+- **CHOQUE (#610→#650)**: (a) el voto era SIN signo [0,1] — en la
+  composición del consenso inyectaba sesgo LARGO permanente (~0.76 por
+  escala activa); (b) c llegaba en unidades de PRECIO del vivo (0.001)
+  contra x z-scores O(1) ⇒ M~10³ saturado sin discriminación espectral.
+  Ahora `tanh(x)·salto(M)` con umbral sónico en espacio-z (1σ del core):
+  firma direccional del flujo; sólo |x|>1σ declara choque.
+- **SR (#614→#650, cierra el quirk documentado en #636)**: sigmoid(|s|/σ)
+  MONÓTONA amplificaba la señal fuerte ×2 y la sub-umbral ×1.5 — lo
+  inverso de la resonancia canónica — y en el régimen vivo (|x|≫σ) era
+  ×2 casi constante. Ahora U-invertida `1+sech(ln(|s|/σ))`: ganancia ×2
+  EXACTA en |s|=σ (regimen de resonancia), decae a ×1 cuando la señal
+  domina (pasa sin cambio) o queda enterrada. C∞, acotada [1,2],
+  antisimétrica.
+- **OSCILADOR (#609→#650)**: la sombra usaba √|ψ|² =
+  (α/π)^{1/4}·e^{−αx²/2} — exponente a la MITAD y constante que supera 1
+  para α>π — supresión de ruptura 3-4 órdenes más débil que el vivo
+  (AGY-P14 usa e^{−αx²}; x=6, α=0.5: e^{−9} vs e^{−18}). Ahora la MISMA
+  envolvente del vivo: paridad exacta sombra↔vivo.
+- **REFUTADO (auditor A, verificación propia)**: coaxial — momentum_z YA
+  es z-score por escala (dev/ewma_dev_vol con vol medida A ESE nivel):
+  los |x| son comparables entre escalas y la corrección √(τ_k/τ_{k−1})
+  no aplica; la "rampa geométrica" es información real de estructura
+  inter-escala, no geometría de malla.
+- **Verificación**: signal-engine 106/106 (tests reescritos: cola>núcleo,
+  continuidad x=0, firma del choque, ganancia ×2 exacta en el pico,
+  antisimetrías), core 160/160, ws 0 errores.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2503.03 s, release single-thread
+  --nocapture sobre 98cb9926) — 4 de 13 motores cambian el consenso vivo
+  sin perder ningún gen certificado.
+
+## #651 — Ola 51 (Qoder, 2026-10-03): ACTIVACIÓN DE VETOS DORMIDOS — escritor qo_613_rho_tau + unidades Lundberg
+
+- **ESCRITOR qo_613_rho_tau** (core): publica la coherencia media SIGNED de
+  la moneda con todas las demás a la ESCALA DOMINANTE (mapeo de τ* al
+  índice de malla más cercano; `coherencia_media_con_todas` del módulo
+  #607). El lector del veto de grupo (#613, risk-engine) llevaba DORMIDO
+  desde su ola: se cableó el lector sin publicar la clave — mea culpa
+  documentado en la auditoría B (verificado con git grep en 4 árboles).
+  El fixture monoactivo del T-1 no podía delatarlo y su contrato era
+  grep-de-string. Sin pares maduros a esa escala ⇒ nada publicado ⇒
+  lector NaN ⇒ ρ de siempre, bit a bit (arranque frío D-754).
+- **CONVERSIÓN DE UNIDADES Lundberg** (#602→#651): el estimador observa
+  retornos POR NOCIONAL (R_nocional) pero `riesgos[]` y el tope son
+  fracciones de CAPITAL. Física: siniestros de capital = nocional ×
+  apalancamiento L ⇒ R_capital = R_nocional/L y el margen en unidades de
+  capital = L·(ln(1/ε)/R_nocional). El caller usa
+  `max_exchange_leverage` (en scope) — conservador para L menores. Sin
+  la conversión, la cota ψ≤e^{−Rm} comparaba unidades mezcladas.
+- **Verificación**: risk-engine test de unidades (margen capital = L×
+  margen nocional exacto; identidad con L=1), core 160/160, ws 0 err.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (3868.23 s, release single-thread
+  --nocapture sobre de5fcc9b) — ambos vetos dormidos se ACTIVAN sin
+  perder ningún gen certificado.

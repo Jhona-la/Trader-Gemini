@@ -594,10 +594,19 @@ impl RiskEngine {
         // frío D-754 — la cota no significa nada sin edge medido).
         // ε = 0.05 es POLÍTICA del dueño (ψ(m) ≤ 5%, la misma convención
         // del `lundberg_margen_5pct` que publica el estimador).
+        // #651 (Ola 51) — CONVERSIÓN DE UNIDADES: el estimador observa
+        // retornos POR NOCIONAL ⇒ R_nocional; los `riesgos[]` y el tope
+        // son fracciones de CAPITAL. Los siniestros de capital son los de
+        // nocional × apalancamiento L ⇒ R_capital = R_nocional / L y el
+        // margen en unidades de capital = L · (ln(1/ε)/R_nocional). Sin
+        // la conversión, el margen quedaba en unidades de nocional
+        // mezcladas contra fracciones de capital. Se usa el apalancamiento
+        // máx. del spec (en scope): conservador para L menores.
         let r_raw = arena
             .registry
             .get_for_coin_or(coin_id, "lundberg_r_nocional", 0.0);
-        let r_lundberg = (r_raw.is_finite() && r_raw > 0.0).then_some(r_raw);
+        let r_lundberg = (r_raw.is_finite() && r_raw > 0.0)
+            .then(|| r_raw / max_exchange_leverage.max(1.0));
         // #613 (Ola 35): el ρ̄ del grupo se APRIETA con la coherencia
         // espectral a la escala de τ* (`qo_613_rho_tau`, publicado por el
         // core desde el módulo multiactivo #607). Solo TIGHTEN: si el IC
@@ -1413,5 +1422,28 @@ mod reject_direction_tests {
         assert!(REJECT_COUNTERS_DIR[0][REJ_CONFIDENCE].load(Ordering::Relaxed) >= long0 + 1);
         assert!(REJECT_COUNTERS_DIR[1][REJ_CONFIDENCE].load(Ordering::Relaxed) >= short0 + 2);
         assert!(reject_report().contains("confianza="));
+    }
+    /// #651 — CONVERSIÓN DE UNIDADES Lundberg: R_nocional/L contra R
+    /// crudo. La cota en unidades de capital es L·(ln(1/eps)/R_nocional);
+    /// con L=10 el margen capital es 10x el nocional (equivalentemente
+    /// R_capital = R_nocional/10).
+    #[test]
+    fn qo_651_lundberg_conversion_de_unidades() {
+        let m_nocional =
+            crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(0.02, 0.05).unwrap();
+        let m_capital_l10 =
+            crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(0.02 / 10.0, 0.05)
+                .unwrap();
+        assert!(
+            (m_capital_l10 / m_nocional - 10.0).abs() < 1e-9,
+            "margen capital = L x margen nocional: {} vs {}",
+            m_capital_l10,
+            m_nocional
+        );
+        // Sin apalancamiento (L=1) la conversión es identidad.
+        let m_l1 =
+            crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(0.02 / 1.0, 0.05)
+                .unwrap();
+        assert!((m_l1 - m_nocional).abs() < 1e-12);
     }
 }
