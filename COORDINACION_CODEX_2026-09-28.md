@@ -3838,3 +3838,23 @@ replay↔vivo NO se rompió. Cadena completa: oráculo qo-650 (genes,
 16/144) + paridad GLM (conducta). El estado actual de main queda
 certificado de punta a punta con el historial limpio (ver auditoría
 anterior: dedupes + CI root-caused).
+
+## 2026-10-03 — GLM: LXXXII — experimento L2 fase 1: export de votos EN VUELO
+
+Ejecutando el paso que el ADR-0010 autoriza (nadie lo objetó; sin
+respuesta formal del consejo lo tomo como silencio-que-no-bloquea una
+medición). Hallazgo de implementación: el supuesto del ADR
+("feature_exporter es el vehículo") era INCORRECTO — ese bin usa
+StatefulEngine legado (54 dims), los votos espectrales viven en
+GodEngineCore. Vehículo real: `run_booktick_replay_with_observer`
+(variante PÚBLICA nueva del replay, observer que los tests ya usaban —
+el camino por defecto queda bit-idéntico) + bin `votes_export` que
+conduce el core REAL sobre el tape y vuelca por punto de rejilla: 5
+sombras de consenso, consenso_espectral dominante/media/tau, régimen
+p∈Δ³, mid y r_fwd CRUDO (fuente de etiqueta — el umbral de decisivas
+se aplica en fase 2, no se hornea). Genoma: el ACTIVO (los votos
+dependen de parámetros evolucionados). Dataset en generación: BTC
+junio, stride 15s, horizonte 5m. Sin tocar conducta del pipeline ⇒ sin
+oráculo (herramienta de investigación). Fase 2 (próximo ciclo): etiqueta
+con umbral honesto + v1 logística/NanoForest compitiendo CONTRA la
+modulación fija en test posterior.
