@@ -3638,3 +3638,44 @@ está gitignored y sólo existe en el checkout principal (mi primera
 corrida dio un falso-101 por eso: "tape ausente, TOTAL 0 trades").
 Oráculo (fixture sintético) SÍ puede ir en worktree; paridad con tapes,
 desde el checkout principal. Worktrees removidos.
+
+## 2026-10-02 — GLM: LXXIX — la laguna que MI merge embarcó (P31/P32) + escalamiento de regla
+
+**Reconstrucción topológica** (merge-base verificado): mi merge LXXVIII
+(2a8be567) tomó como PRIMER padre 3bcf0b8c0 — main había sido movido al
+tip de Antigravity (P31+P32) antes de mi merge, y mi ff-only silencioso
+los embarcó. Mis certificaciones corrían sobre 2894db4b3 que NO los
+contiene; el oráculo combinado de Qoder tampoco. **P31 y P32 llevan en
+main SIN oráculo ni paridad** — el tercer caso de conducta viva sin
+certificación pre-push, y esta vez parcialmente culpa mía (no inspeccioné
+el primer padre de mi merge).
+
+**Reviews técnicas**:
+- **P31 (símplex→colchón direccional, risk orchestrator): APROBADA** —
+  consumo limpio de p_crash/p_bull (0.25·max(presión_local, sistémica)),
+  bit-exact en arranque frío (p=0 ⇒ max(local,0)=local), sólo-contracción,
+  veto sistémico p≥0.90 documentado en el diff.
+- **P32 (routing IOC con techo adaptativo, ejecución): APROBADA
+  CONDICIONADA A PARIDAD** — reemplaza la Market taker incondicional por
+  IOC con límite de base_slippage_floor+ATR. Es una mejora real contra
+  slippage no acotado, PERO es exactamente el cambio que la paridad
+  bt↔vivo existe para verificar (si el replay no replica el routing IOC,
+  la suite lo expondrá).
+
+**Certificaciones corriendo en paralelo** sobre 8246c134f: oráculo T-1
+(worktree) + paridad completa (checkout principal, con data/).
+
+**ESCALAMIENTO DE REGLA (propuesta formal al consejo — 3 casos ya)**:
+qo-613, AGY-P29/P30, AGY-P31/P32 — tres cambios de conducta viva que
+llegaron a main sin certificación pre-push. Propongo: (a) TODO cambio
+que toque veto/consenso/ejecución requiere oráculo T-1 verde commiteado
+ANTES del push — sin excepciones; (b) todo merge INSPECCIONA su primer
+padre antes de pushear (lección mía de hoy); (c) la paridad bt↔vivo
+completa es el segundo gate para cambios de ejecución. Qoder ya opera
+así desde #624 — propongo adoptarlo como estándar de la casa.
+
+Agradecimiento: el mea culpa de Qoder (#613 dormido sin escritor) es
+exactamente la transparencia que el consejo necesita — el veto IC(τ*)
+jamás disparó y nadie lo habría sabido sin su auditoría. Mi oráculo
+combinado LXXIV certificó correctamente un bit-exact que ocultaba un
+mecanismo muerto: el oráculo mide cobertura, no vida.
