@@ -4113,6 +4113,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .filter(|a| a.is_finite() && *a > 0.0)
                             .unwrap_or(0.0);
 
+                        // CL-41: lo que el riesgo validó para ESTA orden se lee
+                        // de la ranura reservada (no de la primera abierta):
+                        // su margen, que ya está en `used_margin`, y el
+                        // apalancamiento validado (nocional / margen).
+                        let (margen_propio, apalancamiento_validado) = {
+                            let ranura = engine_real.arena.coins[coin_id].positions.get_slot(reservation.slot);
+                            let margen = ranura.margin_used.load(Ordering::Relaxed);
+                            let nocional = ranura.quantity.load(Ordering::Relaxed).abs()
+                                * ranura.entry_price.load(Ordering::Relaxed);
+                            (margen, risk_engine::envio::apalancamiento_validado(nocional, margen))
+                        };
                         let rejected_reservation = reservation.clone();
                         let rollback_positions = move |arena: &Arc<quantum_arena::GlobalArena>| {
                             if let Err(reason) = rejected_reservation.cancel(arena) {
@@ -4143,33 +4154,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 return;
                             }
 
-                            // Sincronización Binance Leverage con Core Sizing y protección -2019 (D-382)
-                            // MOD6/8-010: lector saturado — ver GlobalArena::used_margin_saturated.
-                            let used_margin = arena_clone.used_margin.load(Ordering::Relaxed).max(0.0);
-                            let free_margin = (arena_clone.unified_capital.load(Ordering::Relaxed) - used_margin).max(0.0);
-                            let required_margin = notional_volume / exec_leverage as f64;
-                            let mut effective_leverage = exec_leverage;
-
-                            if required_margin > free_margin * 0.85 && free_margin > 0.0 {
-                                let needed_leverage = (notional_volume / (free_margin * 0.80)).ceil().clamp(1.0, 20.0) as u32;
-                                if needed_leverage > effective_leverage {
-                                    telemetry_engine::telemetry!(
-                                        "⚡ [LEVERAGE-ADAPT] Ajustando apalancamiento para {} de {}x a {}x para evitar rechazo -2019 (notional: {:.2} USDT, margen libre: {:.2} USDT)",
-                                        parsed_sym_str, effective_leverage, needed_leverage, notional_volume, free_margin
-                                    );
-                                    effective_leverage = needed_leverage;
+                            // Sincronización Binance Leverage con Core Sizing y protección -2019 (D-382).
+                            // CL-41: misma función que el replay; el margen libre
+                            // no descuenta la reserva de esta orden y el
+                            // apalancamiento enviado nunca supera el validado.
+                            let free_margin = risk_engine::envio::margen_libre_sin_la_propia(
+                                arena_clone.unified_capital.load(Ordering::Relaxed),
+                                arena_clone.used_margin.load(Ordering::Relaxed),
+                                margen_propio,
+                            );
+                            let effective_leverage = match risk_engine::envio::apalancamiento_de_envio(
+                                exec_leverage,
+                                apalancamiento_validado,
+                                notional_volume,
+                                free_margin,
+                            ) {
+                                Ok(apalancamiento) => {
+                                    if apalancamiento != exec_leverage {
+                                        telemetry_engine::telemetry!(
+                                            "⚡ [LEVERAGE-ADAPT] {} de {}x a {}x (validado {:?}x, notional: {:.2} USDT, margen libre: {:.2} USDT)",
+                                            parsed_sym_str, exec_leverage, apalancamiento, apalancamiento_validado, notional_volume, free_margin
+                                        );
+                                    }
+                                    apalancamiento
                                 }
-                            }
-
-                            let final_required_margin = notional_volume / effective_leverage as f64;
-                            if final_required_margin > free_margin * 0.95 {
-                                telemetry_engine::telemetry!(
-                                    "🚨 [MARGIN-GUARD] Orden abortada para {}: margen requerido {:.2} USDT excede 95% del margen libre ({:.2} USDT). Ejecutando Rollback.",
-                                    parsed_sym_str, final_required_margin, free_margin
-                                );
-                                rollback_positions(&arena_clone);
-                                return;
-                            }
+                                Err(veto) => {
+                                    telemetry_engine::telemetry!(
+                                        "🚨 [MARGIN-GUARD] Orden abortada para {}: {:?} (notional {:.2} USDT, margen libre {:.2} USDT, validado {:?}x). Ejecutando Rollback.",
+                                        parsed_sym_str, veto, notional_volume, free_margin, apalancamiento_validado
+                                    );
+                                    rollback_positions(&arena_clone);
+                                    return;
+                                }
+                            };
 
                             let entry_executor = exec_clone.load_full();
                             let sym_filter = match entry_executor.get_symbol_filter(&parsed_sym_str).await {
