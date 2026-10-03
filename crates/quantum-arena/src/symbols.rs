@@ -5,8 +5,20 @@ lazy_static::lazy_static! {
     static ref DYNAMIC_UNIVERSE: ArcSwap<Vec<String>> = ArcSwap::from_pointee(get_default_symbols());
 }
 
+/// CL-37 — grafía canónica de un símbolo: ASCII en MAYÚSCULAS, la que usan
+/// Binance en sus respuestas, el registro de specs y los stems de `models/`.
+pub fn simbolo_canonico(s: &str) -> String {
+    s.to_ascii_uppercase()
+}
+
+/// CL-37 — el universo se publica en la grafía canónica y con el MISMO orden
+/// de slots. El bootloader lo daba en minúsculas mientras el registro iba en
+/// MAYÚSCULAS: `try_symbol(i)` ≠ `try_spec(i).symbol` y toda clave que
+/// distingue mayúsculas (`{SYM}_MOTOR`, `{SYM}_VOL`, el funding con scope,
+/// el NN sólo-BTC) fallaba en todos los slots.
 pub fn update_dynamic_universe(new_universe: Vec<String>) {
-    DYNAMIC_UNIVERSE.store(Arc::new(new_universe));
+    let canonico: Vec<String> = new_universe.iter().map(|s| simbolo_canonico(s)).collect();
+    DYNAMIC_UNIVERSE.store(Arc::new(canonico));
 }
 
 pub fn get_active_universe_ref() -> Arc<Vec<String>> {
