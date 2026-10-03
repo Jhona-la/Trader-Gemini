@@ -52,6 +52,12 @@ pub struct TensorVoteOrchestrator {
     /// (#623). Telemetría de adopción: cuántas veces habló la escala
     /// dominante vs el total (publicada junto al censo, cadencia 1024).
     decisiones_espectrales: AtomicU64,
+    /// #652/H7 — distribución del dominante espectral: evaluaciones con
+    /// clave publicada y las que superan el cutoff. La zona muerta de
+    /// señales débiles unánimes sólo se recalibra con la distribución
+    /// MEDIDA (observacional, sin tocar la decisión).
+    vdom_evaluados: AtomicU64,
+    vdom_sobre_corte: AtomicU64,
 }
 
 impl TensorVoteOrchestrator {
@@ -62,6 +68,8 @@ impl TensorVoteOrchestrator {
             nombres: Vec::new(),
             consensos_desde_publicacion: AtomicU64::new(0),
             decisiones_espectrales: AtomicU64::new(0),
+            vdom_evaluados: AtomicU64::new(0),
+            vdom_sobre_corte: AtomicU64::new(0),
             strategies: Vec::new(),
             arena,
         }
@@ -362,7 +370,18 @@ impl TensorVoteOrchestrator {
             .arena
             .registry
             .get_for_coin_or(coin_id, "consenso_espectral_tau", 0.0);
-        let espectral_activo = v_dom.is_finite() && v_dom.abs() > 1e-9;
+        // #652/H2 (Ola 52) — el veredicto espectral sólo DIRIGE cuando su
+        // escala es OPERABLE (τ ≥ 30 s). Un dominante a τ < 30 s rompía el
+        // contrato "la posición vive a la escala que habló": el else
+        // interpolaba la vida por confianza y el router dimensionaba la
+        // geometría con una τ que NO era la del voto — y la orden moriría
+        // en la puerta de banda operable (#586) de todos modos. Con τ
+        // inoperable el veredicto espectral NO se consume: fallback
+        // escalar bit a bit (la dirección espectral no puede comprar
+        // geometría a una escala que el sistema no opera).
+        let tau_operable = tau_dom.is_finite()
+            && tau_dom >= quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS;
+        let espectral_activo = v_dom.is_finite() && v_dom.abs() > 1e-9 && tau_operable;
         if espectral_activo {
             self.decisiones_espectrales.fetch_add(1, Ordering::Relaxed);
         }
@@ -431,6 +450,21 @@ impl TensorVoteOrchestrator {
                 self.arena
                     .registry
                     .set("qo_624_fraccion_espectral", espectral as f64 / total);
+                // #652/H7 — distribución del dominante: evaluados vs
+                // sobre-cutoff (fracción). La zona muerta H7 se
+                // recalibra con esta distribución medida.
+                let evaluados = self.vdom_evaluados.load(Ordering::Relaxed);
+                let sobre = self.vdom_sobre_corte.load(Ordering::Relaxed);
+                self.arena
+                    .registry
+                    .set("qo_652_vdom_evaluados", evaluados as f64);
+                self.arena
+                    .registry
+                    .set("qo_652_vdom_sobre_corte", sobre as f64);
+                self.arena.registry.set(
+                    "qo_652_fraccion_sobre_corte",
+                    sobre as f64 / evaluados.max(1) as f64,
+                );
             }
         }
         if active_weight == 0.0 && !espectral_activo {
@@ -462,12 +496,28 @@ impl TensorVoteOrchestrator {
         } else {
             0.0
         };
-        // #624 — override espectral: la convicción neta del motor es el
-        // voto de la escala dominante, con la MISMA modulación por
-        // convicción del ensamble (la coherencia entre bandas pesa igual
-        // que en la proyección escalar).
+        // #652/H4 — override espectral con modulación INDEPENDIENTE: la
+        // convicción neta es el voto de la escala dominante modulado por
+        // la COHERENCIA INTER-ESPECTRAL — cuánto respalda el resto del
+        // espectro (media de banda) a su escala dominante: coherencia =
+        // |media_banda|/|v_dom| ∈ [0,1]. Antes la modulación usaba la
+        // convicción ESCALAR del ensamble — los mismos motores que
+        // componen v_dom — la misma información contaba dos veces
+        // (hallazgo H4 de la auditoría de arquitectura).
+        let media_espectral = self.arena.registry.get_for_coin_or(
+            coin_id,
+            "consenso_espectral_media",
+            0.0,
+        );
+        let coherencia_inter = if espectral_activo && v_dom.abs() > 1e-9 {
+            (media_espectral / v_dom)
+                .clamp(0.0, 1.0)
+                .min(1.0)
+        } else {
+            0.0
+        };
         let net_confidence = if espectral_activo {
-            v_dom * (0.70 + 0.30 * effective_conviction)
+            v_dom * (0.70 + 0.30 * coherencia_inter)
         } else {
             net_confidence
         };
@@ -528,6 +578,13 @@ impl TensorVoteOrchestrator {
         } else {
             ((base_duration as f64) * scale).max(30_000.0) as u64
         };
+        // #652/H7 — distribución contable: evaluaciones con dominante
+        // publicado y las que superan el cutoff (recalibrar la zona
+        // muerta exige la distribución medida, no opinión).
+        self.vdom_evaluados.fetch_add(1, Ordering::Relaxed);
+        if v_dom.is_finite() && v_dom.abs() > cutoff_floor {
+            self.vdom_sobre_corte.fetch_add(1, Ordering::Relaxed);
+        }
         if net_confidence.abs() > cutoff_floor {
             if net_confidence > 0.0 {
                 TensorDecision {
@@ -720,25 +777,39 @@ mod tests {
         arena
             .registry
             .set_for_coin(0, "consenso_espectral_tau", 3_600_000.0);
-
+        // Sin media publicada ⇒ coherencia inter = 0 ⇒ conf = 0.8·0.70.
         let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert_eq!(d.signal, SignalType::Long);
-        // conf = v_dom·(0.70 + 0.30·convicción_ensamble) = 0.8·0.97.
         assert!(
-            (d.net_confidence - 0.776).abs() < 1e-9,
-            "confianza espectral: {}",
+            (d.net_confidence - 0.56).abs() < 1e-9,
+            "confianza espectral sin respaldo de banda: {}",
             d.net_confidence
         );
-        // La posición vive a la escala que habló, no a la interpolación.
         assert_eq!(d.expected_lifetime_ms, 3_600_000);
 
-        // Short simétrico: mismo |voto|, misma τ.
+        // #652/H4 — coherencia INTER-espectral: la banda respalda al
+        // dominante (media = v_dom) ⇒ modulación plena: conf = 0.8·1.0.
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_media", 0.8);
+        let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        assert!(
+            (d.net_confidence - 0.8).abs() < 1e-9,
+            "confianza con respaldo pleno de banda: {}",
+            d.net_confidence
+        );
+
+        // Short simétrico: mismo |voto|, misma τ, misma coherencia.
         arena
             .registry
             .set_for_coin(0, "consenso_espectral_dominante", -0.8);
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_media", -0.8);
         let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert_eq!(d.signal, SignalType::Short);
         assert_eq!(d.expected_lifetime_ms, 3_600_000);
+        assert!((d.net_confidence - 0.8).abs() < 1e-9);
     }
 
     /// #624 — el dominante espectral GANA a la proyección escalar: es la
@@ -761,6 +832,9 @@ mod tests {
         let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert_eq!(d.signal, SignalType::Long);
         assert_eq!(d.expected_lifetime_ms, 600_000);
+        // La modulación NO usa la convicción escalar del mismo ensamble
+        // (doble conteo H4): sin media ⇒ 0.8·0.70 = 0.56, NO 0.8·0.97.
+        assert!((d.net_confidence - 0.56).abs() < 1e-9);
     }
 
     /// #624 — un ensamble escalar ABSTENIDO no calla al espectro: la
@@ -776,10 +850,14 @@ mod tests {
         arena
             .registry
             .set_for_coin(0, "consenso_espectral_dominante", 0.9);
+        // #652/H2: τ operable — sin ella el veredicto espectral no dirige.
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_tau", 120_000.0);
 
         let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert_eq!(d.signal, SignalType::Long);
-        // Convicción del ensamble 0 ⇒ conf = 0.9·0.70.
+        // Convicción del ensamble 0 y sin media ⇒ conf = 0.9·0.70.
         assert!((d.net_confidence - 0.63).abs() < 1e-9);
     }
 
@@ -828,9 +906,19 @@ mod tests {
             .registry
             .set_for_coin(0, "consenso_espectral_dominante", 0.8);
 
+        // #652/H2 — τ INOPERABLE (< 30 s): el espectral NO dirige —
+        // fallback escalar (la dirección espectral no compra geometría a
+        // una escala que el sistema no opera). La vida interpola.
         arena.registry.set_for_coin(0, "consenso_espectral_tau", 1_000.0);
         let baja = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert!(baja.expected_lifetime_ms >= 30_000);
+        // Escalar el que decide: conf = 0.97 (ya modulada por el
+        // ensamble) — NO el 0.8·0.70=0.56 que daría el espectral.
+        assert!(
+            (baja.net_confidence - 0.97).abs() < 1e-9,
+            "fallback escalar con tau inoperable: {}",
+            baja.net_confidence
+        );
 
         arena
             .registry
