@@ -90,6 +90,22 @@ pub const MAX_EVENTS: usize = 128;
 /// superan, las pausas quedan por debajo (piso 1.0 con ventana vacía).
 pub const STEADY_STATE_RATIO: f64 = 1.0 + DEFAULT_ALPHA / DEFAULT_BETA;
 
+/// #649 (Ola 49) — EXCESO DE EXCITACIÓN HAWKES λ/μ̂ sobre el estado
+/// estacionario, saturado a (−1, 1): 0 = régimen normal (abstención),
+/// →+1 cascada, →−1 calma extrema. La MONEDA de la casa (#582, #617,
+/// #625, PPO): todo consumidor de λ/μ̂ expresa su convicción en esta
+/// escala-libre. Vive AQUÍ (junto a STEADY_STATE_RATIO, su única
+/// constante) y el core la re-exporta — fuente única.
+#[inline]
+pub fn excitacion_hawkes_norm(ratio: f64) -> f64 {
+    const SS: f64 = STEADY_STATE_RATIO;
+    if ratio.is_finite() && ratio > 0.0 {
+        ((ratio - SS) / SS).tanh()
+    } else {
+        0.0
+    }
+}
+
 /// #535 — Memoria del estimador de μ (EWMA de la tasa de llegada). τ = 60 s
 /// separa la banda de adaptación (minutos) de la banda del kernel (τ = 2 s):
 /// una ráfaga de ≤10 s mueve μ̂ a lo sumo ~15 %, preservando la señal de
@@ -101,37 +117,34 @@ const MU_INST_MAX: f64 = 200.0;
 const MU_SEED_MAX: f64 = 50.0;
 
 impl HawkesBesselEngine {
-    /// #617 (Ola 39) — VOTO ESPECTRAL de la excitación Hawkes: el kernel
-    /// exponencial e^{−β·τ_k/1000} evaluado a CADA escala de la malla —
-    /// la excitación de un evento decae con la constante β=0.5 (τ=2s), así
-    /// que las escalas rápidas ven la excitación PLENA y las lentas apenas
-    /// la memoria. La escala k vota `λ(τ_k)/μ − STEADY_STATE_RATIO`
-    /// (excitación > estado estacionario = cascada), firmado por el
-    /// desplazamiento (dirección de la cascada). Escalas donde el kernel
-    /// ya murió (τ ≫ 2/β) votan ~0: la excitación es un fenómeno
-    /// espectralmente LOCAL.
+    /// #649 (Ola 49) — VOTO ESPECTRAL de la excitación Hawkes, versión
+    /// kernel-honesta. El voto de la escala k es `tanh(x(τ_k)) ·
+    /// excitacion_hawkes_norm(ratio)`: la DIRECCIÓN es el momentum de esa
+    /// escala (suave, sin escalón de signo) y la CONVICCIÓN es el exceso
+    /// REAL λ/μ̂ sobre el estado estacionario — una propiedad GLOBAL del
+    /// proceso, no una función de la escala.
+    ///
+    /// Lo que ELIMINA esta versión (auditor A, transversal): el kernel
+    /// `e^{−β·τ_s}` con τ en SEGUNDOS daba e^{−15}…e^{−21600} en la banda
+    /// operable [30 s, 12 h] — una "intensidad a escala 12 h" evaluada con
+    /// un decaimiento de 2 s no existe físicamente. Con el literal
+    /// excitacion_base=2.5 de la composición, el voto degeneraba a ±0.9
+    /// plano (un sign(x) disfrazado); la mezcla dimensional sumaba la
+    /// tasa β=0.5 al ratio λ/μ̂. La per-escala vive en x(τ_k) — que ya ES
+    /// la resolución espectral del flujo — y la excitación modula global.
     /// Observacional: el voto vivo queda bit a bit (T-1 cero).
     pub fn voto_espectral(
         desplazamientos: &[f64; 32],
-        excitacion_base: f64,
+        ratio_lambda_mu: f64,
     ) -> crate::voto_espectral::VotoEspectral {
+        let excitacion = excitacion_hawkes_norm(ratio_lambda_mu);
         let mut por_escala = [0.0f64; 32];
         for k in 0..32 {
-            // τ de la escala en SEGUNDOS (la malla está en ms).
-            let tau_s = quantum_arena_scale_ms(k) / 1000.0;
-            // Kernel Hawkes: excitación residual a esa escala.
-            let kernel = (-0.5 * tau_s).exp();
-            // Ratio λ/μ a esa escala: base + α·kernel contra μ.
-            let lambda_k = excitacion_base.max(0.0) + 0.5 * kernel;
-            let ratio_exceso = lambda_k - STEADY_STATE_RATIO;
-            let signo = if desplazamientos[k] > 0.0 {
-                1.0
-            } else if desplazamientos[k] < 0.0 {
-                -1.0
-            } else {
-                0.0
-            };
-            por_escala[k] = (signo * ratio_exceso.max(0.0).min(1.0)).clamp(-1.0, 1.0);
+            let x = desplazamientos[k];
+            if !x.is_finite() {
+                continue;
+            }
+            por_escala[k] = (x.clamp(-10.0, 10.0).tanh() * excitacion).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
     }
@@ -533,57 +546,71 @@ mod tests {
     }
 }
 
-/// #617 — τ de la escala k de la malla en ms (referencia local sin
-/// dependencia circular con quantum-arena; los valores son los de
-/// SPECTRUM_SCALES_MS: 1e-6 · 4^k).
-fn quantum_arena_scale_ms(k: usize) -> f64 {
-    1e-6 * 4f64.powi(k as i32)
-}
-
 #[cfg(test)]
 mod qo_617_tests {
     use super::*;
     use crate::voto_espectral::ESCALAS_VOTO;
 
+    /// #649 — el voto es la dirección suave de la escala por el exceso
+    /// REAL de excitación: régimen normal ⇒ abstención TOTAL (el defecto
+    /// viejo: con base literal 2.5 votaba ±0.9 plano en TODA escala).
     #[test]
-    fn qo_617_excitacion_es_espectralmente_local() {
+    fn qo_649_régimen_normal_abstiene_y_cascada_convence() {
         let mut x = [0.0; ESCALAS_VOTO];
         for (k, v) in x.iter_mut().enumerate() {
             *v = if k % 2 == 0 { 0.5 } else { -0.5 };
         }
-        let voto = HawkesBesselEngine::voto_espectral(&x, 2.5);
-        // Las escalas RÁPIDAS (k bajo, τ chico) tienen kernel ≈ e^{−τ/2} ≈ 1:
-        // la excitación está PLENA ahí.
-        let escala_rapida = voto.en_escala(0).abs();
-        // Las escalas LENTAS (k alto, τ ≫ 2s) tienen kernel ≈ 0: sin excitación.
-        let escala_lenta = voto.en_escala(25).abs();
-        assert!(
-            escala_rapida > escala_lenta,
-            "la excitación Hawkes es espectralmente local: rápida {} vs lenta {}",
-            escala_rapida,
-            escala_lenta
-        );
-        // Antisimetría del voto firmado.
+        // Estado estacionario: exceso 0 ⇒ voto 0 en TODAS las escalas.
+        let frio = HawkesBesselEngine::voto_espectral(&x, STEADY_STATE_RATIO);
+        for k in 0..ESCALAS_VOTO {
+            assert!(
+                frio.en_escala(k).abs() < 1e-12,
+                "SS ⇒ abstención en {k}: {}",
+                frio.en_escala(k)
+            );
+        }
+        // Cascada 3×: convicción = tanh((3−1.6)/1.6) ≈ 0.70 en TODAS las
+        // escalas — la excitación es GLOBAL, no función de la escala (el
+        // kernel viejo la mataba en [30 s, 12 h]).
+        let cascada = HawkesBesselEngine::voto_espectral(&x, 3.0);
+        let esperado = ((3.0 - STEADY_STATE_RATIO) / STEADY_STATE_RATIO).tanh() * 0.5f64.tanh();
+        for k in 0..ESCALAS_VOTO {
+            assert!(
+                (cascada.en_escala(k) - esperado * if k % 2 == 0 { 1.0 } else { -1.0 }).abs()
+                    < 1e-12,
+                "escala {k}: {}",
+                cascada.en_escala(k)
+            );
+        }
+        // Antisimetría estricta.
         let mut x_neg = x;
         for v in &mut x_neg {
             *v = -*v;
         }
-        let voto_neg = HawkesBesselEngine::voto_espectral(&x_neg, 2.5);
+        let neg = HawkesBesselEngine::voto_espectral(&x_neg, 3.0);
         for k in 0..ESCALAS_VOTO {
-            assert!(
-                (voto.en_escala(k) + voto_neg.en_escala(k)).abs() < 1e-10,
-                "antisimetría en {}: {} vs {}",
-                k,
-                voto.en_escala(k),
-                voto_neg.en_escala(k)
-            );
+            assert!((cascada.en_escala(k) + neg.en_escala(k)).abs() < 1e-12);
         }
-        // Sin excitación base: el ratio no supera el estado estacionario
-        // en las escalas lentas (kernel muerto) ⇒ voto 0 ahí.
-        let voto_frio = HawkesBesselEngine::voto_espectral(&x, 1.5);
-        assert!(
-            voto_frio.en_escala(25).abs() < 0.05,
-            "sin excitación y kernel muerto ⇒ abstención en la escala lenta"
-        );
+        // CONTINUIDAD en x=0 (el viejo saltaba ±convicción por sign()).
+        let mut x_grad = [0.0; ESCALAS_VOTO];
+        x_grad[7] = 1e-9;
+        let suave = HawkesBesselEngine::voto_espectral(&x_grad, 3.0);
+        assert!(suave.en_escala(7).abs() < 1e-9);
+        // Ratio no finito o ≤0 ⇒ abstención (sin inventar).
+        for malo in [f64::NAN, 0.0, -3.0] {
+            let v = HawkesBesselEngine::voto_espectral(&x, malo);
+            assert_eq!(v.en_escala(4), 0.0);
+        }
+    }
+
+    /// #649 — la moneda de la casa vive junto a su constante: exceso
+    /// saturado, SS⇒0, calma negativa, guardias.
+    #[test]
+    fn qo_649_moneda_excitacion_hawkes_norm() {
+        assert_eq!(excitacion_hawkes_norm(STEADY_STATE_RATIO), 0.0);
+        assert!(excitacion_hawkes_norm(3.0) > 0.5);
+        assert!(excitacion_hawkes_norm(0.1) < -0.5);
+        assert_eq!(excitacion_hawkes_norm(f64::NAN), 0.0);
+        assert_eq!(excitacion_hawkes_norm(0.0), 0.0);
     }
 }

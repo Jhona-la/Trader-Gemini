@@ -30,40 +30,35 @@ impl std::fmt::Debug for FlowImpulseEngine {
 
 impl FlowImpulseEngine {
 
-    /// #619 (Ola 41) — VOTO ESPECTRAL del impulso de flujo: el tensor de
-    /// flujo se evalúa a CADA escala — el desplazamiento x(τ_k) ES el
-    /// tensor de flujo direccional a esa escala (OBI/OFI agregados en la
-    /// banda τ), modulado por la excitación Hawkes local (el kernel
-    /// e^{−β·τ} de #617) y la coherencia flujo×excitación. La escala
-    /// rápida ve el impulso CRUDO (señal sin filtrar); la lenta ve el
-    /// impulso ATENUADO por el kernel (el flujo es un fenómeno de alta
-    /// frecuencia que decae con la escala temporal).
+    /// #649 (Ola 49) — VOTO ESPECTRAL del impulso de flujo, kernel-honesto:
+    /// `voto_k = tanh(2·x(τ_k)) · excitacion_hawkes_norm(ratio)`. El tensor
+    /// de flujo x(τ_k) YA es la agregación del flujo en la banda τ_k — la
+    /// per-escala vive en él, no en un kernel. La excitación Hawkes (exceso
+    /// real λ/μ̂ sobre SS) modula la convicción GLOBAL: un impulso de flujo
+    /// en régimen normal no convence; en cascada, sí.
+    ///
+    /// Lo que ELIMINA (auditor A): el kernel e^{−β·τ_s} con τ en segundos
+    /// mataba el voto en [30 s, 12 h] (e^{−15}…) y se contaba DOS veces
+    /// (dentro de excitacion_k y otra vez en confianza ⇒ e^{−2βτ}); la
+    /// malla hardcodeada 1e-6·4^k ms ni siquiera coincidía con la del
+    /// espectro. El escalón de sign() se vuelve tanh (continuidad).
     /// Observacional: el voto vivo queda bit a bit (T-1 cero).
     pub fn voto_espectral(
         desplazamientos: &[f64; 32],
-        excitacion_base: f64,
+        ratio_lambda_mu: f64,
     ) -> crate::voto_espectral::VotoEspectral {
+        let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
+            ratio_lambda_mu,
+        );
         let mut por_escala = [0.0f64; 32];
         for k in 0..32 {
             let x = desplazamientos[k];
-            if !x.is_finite() || x == 0.0 {
+            if !x.is_finite() {
                 continue;
             }
-            // Kernel Hawkes a esa escala (misma forma que #617): la
-            // excitación decae con τ — el flujo es de ALTA frecuencia.
-            let tau_s = (1e-6 * 4f64.powi(k as i32)) / 1000.0;
-            let kernel = (-0.5 * tau_s).exp();
-            let excitacion_k = excitacion_base.max(0.0) * kernel;
-            // Coherencia: |flujo| × |excitación| (misma forma que el
-            // evaluate_flow_impulse vivo).
-            let flujo = x.clamp(-1.0, 1.0);
-            let coherencia = (flujo.abs() * excitacion_k).sqrt();
-            // Confianza continua: coherencia × factor de escala × 2, tanh.
-            // El factor de escala ES el kernel — las escalas lentas ven
-            // el impulso atenuado exponencialmente.
-            let confianza = (coherencia * kernel * 2.0).tanh();
-            let signo = if x > 0.0 { 1.0 } else { -1.0 };
-            por_escala[k] = (signo * confianza).clamp(-1.0, 1.0);
+            // Respuesta AGUDA del tensor de flujo: el impulso es la
+            // característica más nítida del flujo (pendiente ×2 del tanh).
+            por_escala[k] = ((x.clamp(-10.0, 10.0) * 2.0).tanh() * excitacion).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
     }
@@ -389,46 +384,44 @@ mod tests {
 mod qo_619_tests {
     use super::*;
     use crate::voto_espectral::ESCALAS_VOTO;
+    use crate::hawkes_bessel::STEADY_STATE_RATIO;
 
+    /// #649 — el impulso convive con la excitación GLOBAL: régimen normal
+    /// ⇒ abstención total; cascada ⇒ tanh(2x) en TODAS las escalas (el
+    /// kernel viejo mataba la banda operable y contaba el kernel dos veces).
     #[test]
-    fn qo_619_impulso_de_flujo_es_de_alta_frecuencia_espectral() {
+    fn qo_649_impulso_kernel_honesto() {
         let mut x = [0.0; ESCALAS_VOTO];
         for (k, v) in x.iter_mut().enumerate() {
             *v = 0.4 * (k as f64 - 15.5).signum();
         }
-        let voto = FlowImpulseEngine::voto_espectral(&x, 2.0);
-        // El impulso decae con la escala: la RÁPIDA (k bajo) retiene la
-        // excitación plena; la LENTA (k alto) la ve atenuada por el kernel.
-        let rapida = voto.en_escala(1).abs();
-        let lenta = voto.en_escala(25).abs();
-        assert!(
-            rapida > lenta,
-            "el impulso de flujo es espectralmente de alta frecuencia: rápida {} vs lenta {}",
-            rapida,
-            lenta
-        );
-        // Antisimetría.
+        // Estado estacionario ⇒ abstención total.
+        let frio = FlowImpulseEngine::voto_espectral(&x, STEADY_STATE_RATIO);
+        assert_eq!(frio.dominante(), None);
+        // Cascada 3x: tanh(0.8) * tanh(1.4/1.6) en TODAS las escalas.
+        let cascada = FlowImpulseEngine::voto_espectral(&x, 3.0);
+        let esperado = (0.8f64).tanh() * ((3.0 - STEADY_STATE_RATIO) / STEADY_STATE_RATIO).tanh();
+        for k in 0..ESCALAS_VOTO {
+            let dir = if k as f64 - 15.5 > 0.0 { 1.0 } else { -1.0 };
+            assert!(
+                (cascada.en_escala(k) - esperado * dir).abs() < 1e-12,
+                "escala {k}: {}",
+                cascada.en_escala(k)
+            );
+        }
+        // Antisimetría estricta.
         let mut x_neg = x;
         for v in &mut x_neg {
             *v = -*v;
         }
-        let voto_neg = FlowImpulseEngine::voto_espectral(&x_neg, 2.0);
+        let neg = FlowImpulseEngine::voto_espectral(&x_neg, 3.0);
         for k in 0..ESCALAS_VOTO {
-            if x[k] != 0.0 {
-                assert!(
-                    (voto.en_escala(k) + voto_neg.en_escala(k)).abs() < 1e-10,
-                    "antisimetría en {}: {} vs {}",
-                    k,
-                    voto.en_escala(k),
-                    voto_neg.en_escala(k)
-                );
-            }
+            assert!((cascada.en_escala(k) + neg.en_escala(k)).abs() < 1e-12);
         }
-        // Sin excitación (base=0): coherencia=0 ⇒ voto 0 en todas las escalas.
-        let frio = FlowImpulseEngine::voto_espectral(&x, 0.0);
-        assert_eq!(frio.dominante(), None, "sin excitación Hawkes no hay impulso");
-        // Flujo nulo ⇒ voto 0.
-        let cero = FlowImpulseEngine::voto_espectral(&[0.0; ESCALAS_VOTO], 2.0);
-        assert_eq!(cero.dominante(), None);
+        // Respuesta MAS AGUDA que el portador (pendiente x2 del tanh).
+        let pico = FlowImpulseEngine::voto_espectral(&x, 3.0).en_escala(20).abs();
+        let portador =
+            crate::hawkes_bessel::HawkesBesselEngine::voto_espectral(&x, 3.0).en_escala(20).abs();
+        assert!(pico > portador, "impulso {pico} vs portador {portador}");
     }
 }

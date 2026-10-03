@@ -460,19 +460,10 @@ pub fn libro_efectivo(precio: f64, bid: f64, ask: f64, ultimo: Option<(f64, f64)
 }
 
 /// #625 (Ola 46) — EXCESO DE EXCITACIÓN HAWKES λ/μ̂ sobre el estado
-/// estacionario, saturado a (−1, 1): 0 = régimen normal (el slot se
-/// abstiene), →+1 cascada, →−1 calma extrema. La MISMA semántica del
-/// exceso que el confluencia (#582) y el voto espectral (#617). Pura y
-/// testeable: el slot Hawkes del PPO la firma con la dirección del flujo.
-#[inline]
-pub fn excitacion_hawkes_norm(ratio: f64) -> f64 {
-    const SS: f64 = signal_engine::hawkes_bessel::STEADY_STATE_RATIO;
-    if ratio.is_finite() && ratio > 0.0 {
-        ((ratio - SS) / SS).tanh()
-    } else {
-        0.0
-    }
-}
+/// estacionario. #649 (Ola 49): la fuente única vive en signal-engine
+/// (junto a STEADY_STATE_RATIO) y el core la RE-EXPORTA — sus call-sites
+/// (#625 PPO, #649 votos espectrales) no cambian.
+pub use signal_engine::hawkes_bessel::excitacion_hawkes_norm;
 
 /// D-752 — etiquetas de rama. `SignalIntent::volume_flow_rate` YA transportaba
 /// un identificador de rama (1..14) para la traza de apertura, y sobrevive a
@@ -1988,15 +1979,22 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "sombra_coax_v_max", v_coax);
                     }
 
-                    // #617: SOMBRA ESPECTRAL de HAWKES-BESSEL
-                    let hawkes_exc = self
-                        .arena
-                        .registry
-                        .get_value_or("hawkes_excitation_base", 2.5);
+                    // #649 (Ola 49) — RATIO λ/μ̂ REAL y FRESCO de esta
+                    // moneda: la única cantidad Hawkes que los tres motores
+                    // con excitación consumen (semántica de la moneda de la
+                    // casa: exceso sobre SS). Los knobs del registro
+                    // (`hawkes_excitation_base` 2.5, `flow_impulse_alpha`
+                    // 2.0, `flow_confluence_threshold` 2.5) eran literales
+                    // sin escritor — el proceso medido los reemplaza.
+                    let ratio_hawkes_fresco = match self.hawkes_by_coin.get(coin_id) {
+                        Some(hk) => hk.intensity_ratio(event_time_ms as f64 / 1000.0),
+                        None => 1.0,
+                    };
+                    // #617→#649: SOMBRA ESPECTRAL de HAWKES-BESSEL
                     let voto_hawkes =
                         signal_engine::hawkes_bessel::HawkesBesselEngine::voto_espectral(
                             &desplazamientos,
-                            hawkes_exc,
+                            ratio_hawkes_fresco,
                         );
 
                     // #618: SOMBRA ESPECTRAL de GAME-THEORETIC NASH
@@ -2010,15 +2008,11 @@ impl GodEngineCore {
                             nash_drift,
                         );
 
-                    // #619: SOMBRA ESPECTRAL de FLOW IMPULSE
-                    let flow_alpha = self
-                        .arena
-                        .registry
-                        .get_value_or("flow_impulse_alpha", 2.0);
+                    // #619→#649: SOMBRA ESPECTRAL de FLOW IMPULSE
                     let voto_flow =
                         signal_engine::flow_impulse::FlowImpulseEngine::voto_espectral(
                             &desplazamientos,
-                            flow_alpha,
+                            ratio_hawkes_fresco,
                         );
 
                     // #620: SOMBRA ESPECTRAL de PERCEPTRON GATE
@@ -2038,15 +2032,11 @@ impl GodEngineCore {
                             conf_eps,
                         );
 
-                    // #622: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE
-                    let flow_exc = self
-                        .arena
-                        .registry
-                        .get_value_or("flow_confluence_threshold", 2.5);
+                    // #622→#649: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE
                     let voto_confluence =
                         signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral(
                             &desplazamientos,
-                            flow_exc,
+                            ratio_hawkes_fresco,
                         );
 
                     // SOMBRA ESPECTRAL de TREND-RUNNER (persistencia multiescala)
