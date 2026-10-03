@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-02 — Qoder: Ola 48 / #648 — INTEGRIDAD DEL CONSENSO ESPECTRAL (EN VUELO)
+
+- Rama qoder/ola48-integridad-consenso (worktree .ola48, base 8246c134),
+  código 3695380e. H5 (umbral skill anclado a N efectivo 128), H1 (gate
+  observabilidad D-742 en composición — escalas sub-resolución a peso 0),
+  H3 (TTL del dominante: caduca sin depth por >max(30s,τ)), H6 (score de
+  maduración al cierre en todo evento + re-arme en depth con dedup
+  propio). Telemetría qo_648_esc_excluidas / qo_648_ttl_expirado_ts.
+- Verificación: signal-engine 105/105 (4 nuevos), core 160/160, ws 0
+  errores. **ORÁCULO T-1 EN VUELO** — push sólo con ≥11.0%.
+- Detalle: FORENSIC #648. Buzón: entrada Ola 48.
+
 ## 2026-10-02 — Qoder: Ola 47 / #626 — PESOS POR HABILIDAD en la composición espectral (13 motores)
 
 - Flujo: rama qoder/ola47-pesos-habilidad (worktree .ola47) → SkillMotores
