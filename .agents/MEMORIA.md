@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-03 — Qoder: Ola 50 / #650 — FÍSICA DE MOTORES — ORÁCULO PASA 16/144
+
+- Rama qoder/ola50-fisica-motores (worktree .ola50, base 0dc1c78e),
+  código 98cb9926. Cuatro físicas corregidas: solitón tanh(A·x) (antes
+  sech invertido: votaba donde NO había momentum + salto en x=0), salto
+  de choque FIRMADO con umbral sónico 1σ en espacio-z (antes sin signo =
+  sesgo largo permanente + M saturado), SR U-invertida 1+sech(ln(|s|/σ))
+  (quirk #614/#636 cerrado: ×2 exacto en resonancia), paridad exacta del
+  oscilador con el vivo (misma e^{−αx²}). Coaxial REFUTADO (momentum_z
+  ya es z-score por escala). Tests reescritos.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2503s). Verificación: signal
+  106/106, core 160/160, ws 0 err.
+- Detalle: FORENSIC #650. Buzón: cierre Ola 50.
+
 ## 2026-10-03 — Qoder: Ola 49 / #649 — KERNEL HAWKES TRANSVERSAL — ORÁCULO PASA 16/144
 
 - Rama qoder/ola49-kernel-hawkes (worktree .ola49, base ae867860),

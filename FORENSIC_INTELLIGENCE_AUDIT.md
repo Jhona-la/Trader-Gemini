@@ -13990,3 +13990,41 @@ la cadena consenso→consumo tras la integración #624/#626.
 - **ORÁCULO T-1: PASA 16/144 = 11.1%** (2756.47 s, release single-thread
   --nocapture sobre 65c2978a) — 3 de 13 motores cambian el consenso vivo
   sin perder ningún gen certificado.
+
+## #650 — Ola 50 (Qoder, 2026-10-03): FÍSICA DE MOTORES — solitón/SR/choque/paridad oscilador
+
+- **SOLITÓN (#610→#650)**: el perfil sech(A·x) votaba MÁXIMO (±1) donde
+  el momentum era ~0 — máxima convicción justo donde la escala NO tiene
+  información — y ~0 donde el momentum era fuerte: física INVERTIDA; el
+  signo por desplazamiento infinitesimal daba salto de magnitud ~2 en
+  x=0. Ahora `tanh(A·x)`: el pulso del solitón vive donde el momentum ES
+  fuerte; C∞, acotado, sin saltos; la amplitud gobierna la pendiente.
+- **CHOQUE (#610→#650)**: (a) el voto era SIN signo [0,1] — en la
+  composición del consenso inyectaba sesgo LARGO permanente (~0.76 por
+  escala activa); (b) c llegaba en unidades de PRECIO del vivo (0.001)
+  contra x z-scores O(1) ⇒ M~10³ saturado sin discriminación espectral.
+  Ahora `tanh(x)·salto(M)` con umbral sónico en espacio-z (1σ del core):
+  firma direccional del flujo; sólo |x|>1σ declara choque.
+- **SR (#614→#650, cierra el quirk documentado en #636)**: sigmoid(|s|/σ)
+  MONÓTONA amplificaba la señal fuerte ×2 y la sub-umbral ×1.5 — lo
+  inverso de la resonancia canónica — y en el régimen vivo (|x|≫σ) era
+  ×2 casi constante. Ahora U-invertida `1+sech(ln(|s|/σ))`: ganancia ×2
+  EXACTA en |s|=σ (regimen de resonancia), decae a ×1 cuando la señal
+  domina (pasa sin cambio) o queda enterrada. C∞, acotada [1,2],
+  antisimétrica.
+- **OSCILADOR (#609→#650)**: la sombra usaba √|ψ|² =
+  (α/π)^{1/4}·e^{−αx²/2} — exponente a la MITAD y constante que supera 1
+  para α>π — supresión de ruptura 3-4 órdenes más débil que el vivo
+  (AGY-P14 usa e^{−αx²}; x=6, α=0.5: e^{−9} vs e^{−18}). Ahora la MISMA
+  envolvente del vivo: paridad exacta sombra↔vivo.
+- **REFUTADO (auditor A, verificación propia)**: coaxial — momentum_z YA
+  es z-score por escala (dev/ewma_dev_vol con vol medida A ESE nivel):
+  los |x| son comparables entre escalas y la corrección √(τ_k/τ_{k−1})
+  no aplica; la "rampa geométrica" es información real de estructura
+  inter-escala, no geometría de malla.
+- **Verificación**: signal-engine 106/106 (tests reescritos: cola>núcleo,
+  continuidad x=0, firma del choque, ganancia ×2 exacta en el pico,
+  antisimetrías), core 160/160, ws 0 errores.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2503.03 s, release single-thread
+  --nocapture sobre 98cb9926) — 4 de 13 motores cambian el consenso vivo
+  sin perder ningún gen certificado.

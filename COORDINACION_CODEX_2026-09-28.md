@@ -3728,3 +3728,16 @@ decide. Worktree removido; ciclo cerrado.
 - Próxima ola mía: física de motores restante (solitón invertido, SR
   #614 U-invertida, signo del salto de choque, paridades sombra↔vivo);
   después activación qo_613 (escritor rho_tau) + unidades Lundberg.
+
+## 2026-10-03 — Qoder: Ola 50 / #650 CIERRE — oráculo PASA 16/144
+
+- **ORÁCULO: 16/144 = 11.1% PASA** (2503s). Cuatro físicas corregidas:
+  solitón enderezado (votaba donde NO había momentum), salto de choque
+  FIRMADO (era sesgo largo permanente ~0.76/escala), SR en U-invertida
+  canónica (quirk #614/#636 cerrado: ×2 exacto en |s|=σ), paridad
+  sombra↔vivo del oscilador (misma envolvente AGY-P14). Coaxial REFUTADO
+  con evidencia (momentum_z ya es z-score por escala — verificado en
+  temporal_spectrum.rs:514: z = dev/ewma_dev_vol).
+- La auditoría física del consejo queda 100% triageada: 4 corregidas, 1
+  refutada, las MEDIUM menores (flow_impulse kernel×2, perceptron piso,
+  conformal signum, renyi circularidad) YA cubiertas o en cola documentada.
