@@ -148,9 +148,25 @@ fn malformed_json_and_invalid_envelope_cannot_emit_partial_records() {
 }
 
 #[test]
-fn legacy_number_scanner_still_drops_scientific_exponents() {
-    // OPEN: existing generic scanner is outside the new checked liquidation path.
-    assert_eq!(TensorParser::fast_parse_f64(b"1e3"), 1.0);
+fn legacy_number_scanner_reads_scientific_exponents() {
+    // CERRADO por AGY-AUD-P11 (ad560626, Ola 4): el escáner genérico lee la
+    // notación científica. Antes este testigo OPEN afirmaba la pérdida del
+    // exponente (`1e3` -> 1,0) y quedó rojo en main cuando se arregló.
+    let casos: [(&[u8], f64); 5] = [
+        (b"1e3", 1_000.0),
+        (b"5E+3", 5_000.0),
+        (b"2.45e-4", 2.45e-4),
+        (b"-1.5e-2", -1.5e-2),
+        (b"42", 42.0),
+    ];
+    for (bytes, esperado) in casos {
+        let leido = TensorParser::fast_parse_f64(bytes);
+        assert!(
+            ((leido - esperado) / esperado).abs() < 1e-12,
+            "{}: leído {leido}, esperado {esperado}",
+            String::from_utf8_lossy(bytes)
+        );
+    }
 }
 
 #[test]
