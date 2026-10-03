@@ -2880,6 +2880,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // --------------------------------
 
         let mut shadow_forest = evolution_engine::random_forest::ShadowForest::new(initial_capital, initial_genome.clone(), 10);
+        // CL-40: los universos del bosque evalúan SU genoma (no adoptan el
+        // activo por su cuenta); se anota la generación de la que se
+        // plantaron para replantar sólo cuando el almacén sancione otra.
+        if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
+            if env.genome.to_vector() == initial_genome.to_vector() {
+                shadow_forest.generacion_base = env.generation;
+            }
+        }
 
         // XXXVI: per-observation accounting proxy, NOT independent backtest/live evidence.
         // Recovery owns only a core entry veto; global/executor latches are independent.
@@ -4593,6 +4601,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if msg_count.is_multiple_of(5000) {
                 telemetry_server::telemetry_log!("⏱️ [TELEMETRY] Processed 5000 ticks/klines. Cumulative Fees: ${:.4}. Last tick: {} ns", total_fees, start.elapsed().as_nanos());
 
+                // CL-40: si el núcleo vivo ya opera una generación más nueva
+                // (demonio o cosecha), el bosque se replanta alrededor de
+                // ella ANTES de cosechar: un mutante del genoma anterior no
+                // debe poder sustituir a la generación sancionada.
+                let aplicada = engine_real.applied_generation.load(Ordering::SeqCst);
+                if aplicada > shadow_forest.generacion_base {
+                    if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
+                        if env.generation == aplicada
+                            && shadow_forest.seguir_generacion(env.generation, &env.genome)
+                        {
+                            telemetry!(
+                                "🌲 [SHADOW FOREST] Replantado alrededor de la generación {}",
+                                env.generation
+                            );
+                        }
+                    }
+                }
+
                 // FASE 12: Cosecha Cuántica en vivo (ShadowForest)
                 let (winner, leaderboard) = shadow_forest.harvest_best_genome();
                 let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::ShadowLeaderboard(leaderboard));
@@ -4615,7 +4641,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ) {
                         Ok(env) => {
                             env.genome.apply_to_arena(&engine_real.arena);
-                            shadow_forest.replant(env.genome.clone());
+                            shadow_forest.seguir_generacion(env.generation, &env.genome);
                         }
                         Err(e) => telemetry!(
                             "🚫 [T-03] Cosecha rechazada por el gate del almacén — arena intacto: {}",

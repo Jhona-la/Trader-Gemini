@@ -23,6 +23,12 @@ pub struct ShadowForest {
     /// drawdown del fitness unificado (antes la cosecha comparaba PnL
     /// crudo — el único promotor fuera del objetivo D-652).
     pub peak_capital: Vec<f64>,
+    /// CL-40: generación del almacén alrededor de la cual se plantaron los
+    /// universos (0 = ninguna sancionada). Sus núcleos ya no adoptan el
+    /// genoma activo por su cuenta (`RecargaGenoma::Fija`): cuando el núcleo
+    /// vivo aplica una generación más nueva, el host replanta con
+    /// `seguir_generacion`.
+    pub generacion_base: u64,
 }
 
 /// Operaciones cerradas acumuladas por un universo (todas las monedas).
@@ -82,6 +88,7 @@ impl ShadowForest {
             genomes,
             trades_at_replant,
             peak_capital,
+            generacion_base: 0,
         }
     }
 
@@ -213,6 +220,17 @@ impl ShadowForest {
         (winner, leaderboard)
     }
 
+    /// CL-40: replanta alrededor de `genoma` sólo si su generación es más
+    /// nueva que la base actual. Devuelve si replantó.
+    pub fn seguir_generacion(&mut self, generacion: u64, genoma: &SuperGenotype) -> bool {
+        if generacion <= self.generacion_base {
+            return false;
+        }
+        self.replant(genoma.clone());
+        self.generacion_base = generacion;
+        true
+    }
+
     /// Resetea los capitales y muta todos los árboles basándose en el nuevo Alpha
     pub fn replant(&mut self, new_alpha: SuperGenotype) {
         for (i, engine) in self.engines.iter_mut().enumerate() {
@@ -301,6 +319,31 @@ mod tests {
             .store(14.0, Ordering::Relaxed);
         let (winner, _) = forest.harvest_best_genome();
         assert!(winner.is_none(), "tras replantar la muestra vuelve a empezar");
+    }
+
+    /// CL-40: el bosque replanta cuando el almacén sanciona una generación
+    /// más nueva, y sólo entonces (sus núcleos ya no la adoptan solos).
+    #[test]
+    fn cl40_el_bosque_sigue_la_generacion_sancionada() {
+        let base = SuperGenotype::default();
+        let mut forest = ShadowForest::new(13.0, base.clone(), 2);
+        assert_eq!(forest.generacion_base, 0);
+
+        let mut nuevo = base.clone();
+        nuevo.tech_threshold = 0.29;
+        forest.engines[1].arena.unified_capital.store(14.0, Ordering::Relaxed);
+        assert!(forest.seguir_generacion(3, &nuevo));
+        assert_eq!(forest.generacion_base, 3);
+        assert_eq!(forest.genomes[0].tech_threshold, 0.29, "el control es el genoma sancionado");
+        assert_eq!(
+            forest.engines[1].arena.unified_capital.load(Ordering::Relaxed),
+            13.0,
+            "replantar reinicia el capital de cada universo"
+        );
+
+        assert!(!forest.seguir_generacion(3, &base), "la misma generación no replanta");
+        assert!(!forest.seguir_generacion(2, &base), "una generación vieja no replanta");
+        assert_eq!(forest.genomes[0].tech_threshold, 0.29);
     }
 
     #[test]
