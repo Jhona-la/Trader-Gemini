@@ -14028,3 +14028,27 @@ la cadena consenso→consumo tras la integración #624/#626.
 - **ORÁCULO T-1: PASA 16/144 = 11.1%** (2503.03 s, release single-thread
   --nocapture sobre 98cb9926) — 4 de 13 motores cambian el consenso vivo
   sin perder ningún gen certificado.
+
+## #651 — Ola 51 (Qoder, 2026-10-03): ACTIVACIÓN DE VETOS DORMIDOS — escritor qo_613_rho_tau + unidades Lundberg
+
+- **ESCRITOR qo_613_rho_tau** (core): publica la coherencia media SIGNED de
+  la moneda con todas las demás a la ESCALA DOMINANTE (mapeo de τ* al
+  índice de malla más cercano; `coherencia_media_con_todas` del módulo
+  #607). El lector del veto de grupo (#613, risk-engine) llevaba DORMIDO
+  desde su ola: se cableó el lector sin publicar la clave — mea culpa
+  documentado en la auditoría B (verificado con git grep en 4 árboles).
+  El fixture monoactivo del T-1 no podía delatarlo y su contrato era
+  grep-de-string. Sin pares maduros a esa escala ⇒ nada publicado ⇒
+  lector NaN ⇒ ρ de siempre, bit a bit (arranque frío D-754).
+- **CONVERSIÓN DE UNIDADES Lundberg** (#602→#651): el estimador observa
+  retornos POR NOCIONAL (R_nocional) pero `riesgos[]` y el tope son
+  fracciones de CAPITAL. Física: siniestros de capital = nocional ×
+  apalancamiento L ⇒ R_capital = R_nocional/L y el margen en unidades de
+  capital = L·(ln(1/ε)/R_nocional). El caller usa
+  `max_exchange_leverage` (en scope) — conservador para L menores. Sin
+  la conversión, la cota ψ≤e^{−Rm} comparaba unidades mezcladas.
+- **Verificación**: risk-engine test de unidades (margen capital = L×
+  margen nocional exacto; identidad con L=1), core 160/160, ws 0 err.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (3868.23 s, release single-thread
+  --nocapture sobre de5fcc9b) — ambos vetos dormidos se ACTIVAN sin
+  perder ningún gen certificado.

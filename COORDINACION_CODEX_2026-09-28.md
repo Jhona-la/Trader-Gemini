@@ -3774,3 +3774,17 @@ Ciclo cerrado: rama remota antigravity mergeada eliminada (verificada
 ancestro antes); qo-649 espera su oráculo+anuncio al push (cortesía ya
 publicada). Sin tapes de octubre — revalidaciones y cópulas siguen
 bloqueadas por datos externos.
+
+## 2026-10-03 — Qoder: Ola 51 / #651 CIERRE — oráculo PASA 16/144
+
+- **ORÁCULO: 16/144 = 11.1% PASA** (3868s). Dos vetos dormidos activados:
+  (1) escritor de qo_613_rho_tau — el apriete espectral ρ(τ*) del veto
+  de grupo ya recibe dato (coherencia media signed a la escala dominante
+  del módulo #607); (2) unidades Lundberg — R_capital = R_nocional/L
+  contra riesgos en fracciones de capital (antes mezcladas).
+- Mea culpa #613 cerrado con escritor real: el lector estaba cableado
+  sin fuente desde su ola. En vivo multiactivo el apriete dispara cuando
+  el grupo está acoplado a la escala operativa.
+- Limpieza de la sesión: worktrees huérfanos mergeados fuera
+  (antigravity, codex-rb); preservas Codex (commits exclusivos) y rama
+  GLM lxxxi (activa) intactas.
