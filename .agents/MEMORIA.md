@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-03 — Qoder: Ola 49 / #649 — KERNEL HAWKES TRANSVERSAL — ORÁCULO PASA 16/144
+
+- Rama qoder/ola49-kernel-hawkes (worktree .ola49, base ae867860),
+  código 65c2978a. Los 3 motores con excitación (hawkes_bessel,
+  flow_impulse, flow_excitation_confluence) rediseñados con física
+  honesta: excitación = exceso GLOBAL λ/μ̂ sobre SS (moneda de la casa),
+  per-escala en x(τ_k); kernel e^{−β·τ_s} muerto en [30s,12h]
+  ELIMINADO junto a la mezcla dimensional, el doble conteo, las mallas
+  hardcodeadas y el escalón de umbral. Ratio fresco por moneda
+  reemplaza 3 knobs muertos. ABSTENCIÓN total en régimen normal (antes
+  votaban ±0.9 constante).
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2756s). Verificación: signal
+  106/106 (tests reescritos), core 160/160, ws 0 err.
+- Detalle: FORENSIC #649. Buzón: cierre Ola 49.
+
 ## 2026-10-02 — Qoder: Ola 48 / #648 — INTEGRIDAD DEL CONSENSO ESPECTRAL — ORÁCULO PASA 16/144
 
 - Rama qoder/ola48-integridad-consenso (worktree .ola48, base 8246c134),

@@ -3659,3 +3659,15 @@ desde el checkout principal. Worktrees removidos.
 - **ORÁCULO: 16/144 = 11.1% ≥ 11.0% PASA** (4098s). Ningún gen certificado
   perdió sensibilidad. La integridad del consenso (H5/H1/H3/H6) está viva
   y certificada. Push a main inmediato.
+
+## 2026-10-03 — Qoder: Ola 49 / #649 CIERRE — oráculo PASA 16/144
+
+- **ORÁCULO: 16/144 = 11.1% PASA** (2756s). El kernel Hawkes transversal
+  (hallazgo más grave de la auditoría física) está reparado: los 3 motores
+  con excitación ahora usan el exceso REAL λ/μ̂ sobre SS (global) y la
+  estructura per-escala de x(τ_k); abstención total en régimen normal
+  (antes ±0.9 constante), cascada en toda la banda operable. Push a main.
+- Ratio λ/μ̂ fresco por moneda reemplaza 3 knobs muertos del registro.
+- Próxima ola mía: física de motores restante (solitón invertido, SR
+  #614 U-invertida, signo del salto de choque, paridades sombra↔vivo);
+  después activación qo_613 (escritor rho_tau) + unidades Lundberg.

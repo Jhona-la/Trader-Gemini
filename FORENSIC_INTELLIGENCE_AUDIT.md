@@ -13958,3 +13958,35 @@ la cadena consenso→consumo tras la integración #624/#626.
 - **ORÁCULO T-1: PASA 16/144 = 11.1% ≥ 11.0%** (4098.42 s, release
   single-thread --nocapture sobre 3695380e). Ningún gen certificado perdió
   sensibilidad con el gate de escalas + expiración + umbral efectivo.
+
+## #649 — Ola 49 (Qoder, 2026-10-03): KERNEL HAWKES TRANSVERSAL — física honesta en los 3 motores con excitación
+
+- **Defecto (auditor A transversal, verificado propio)**: el kernel
+  e^{−0.5·τ_s} con τ en SEGUNDOS daba e^{−15}…e^{−21600} en la banda
+  operable [30 s, 12 h]; los knobs del registro (`hawkes_excitation_base`
+  2.5, `flow_impulse_alpha` 2.0, `flow_confluence_threshold` 2.5 — CERO
+  escritores) enmascaraban el kernel muerto: hawkes_bessel degeneraba a
+  ±0.9 plano (sign(x) disfrazado), confluence votaba sólo escalas ≲1 s.
+  Extra: mezcla dimensional (β sumada a ratio λ/μ̂), kernel contado 2× en
+  flow_impulse, mallas hardcodeadas (1e-6·4^k) inconsistentes con el
+  espectro, escalón de umbral (`continue`) violando C∞.
+- **Rediseño**: la excitación Hawkes es una propiedad GLOBAL del proceso —
+  el exceso real λ/μ̂ sobre SS (la moneda de la casa #625/#582) — no una
+  función de la escala; la per-escala vive en x(τ_k), que ya ES la
+  resolución espectral. hawkes_bessel: `tanh(x_k)·excit_norm` (dirección
+  suave × convicción real). flow_impulse: `tanh(2·x_k)·excit_norm`
+  (respuesta aguda del tensor). confluence: `tanh(x_k)·√(|x_k|·|excit|)`
+  (coherencia geométrica continua). Core: ratio λ/μ̂ FRESCO por moneda
+  (intensity_ratio al ts del evento) reemplaza los 3 knobs muertos;
+  `excitacion_hawkes_norm` migrada a signal-engine junto a SS con
+  re-export en el core (fuente única).
+- **Cambio de conducta clave**: en régimen normal (ratio = SS) los tres
+  motores ahora SE ABSTIENEN (voto 0) — antes votaban ±0.9 constante; el
+  consenso pierde tres voces ruidosas permanentes y gana voces que sólo
+  hablan cuando el proceso está realmente excitado.
+- **Verificación**: signal-engine 106/106 (tests reescritos: abstención
+  SS, cascada en TODA la banda, continuidad en x=0, antisimetría,
+  guardias, moneda), core 160/160, ws 0 errores.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2756.47 s, release single-thread
+  --nocapture sobre 65c2978a) — 3 de 13 motores cambian el consenso vivo
+  sin perder ningún gen certificado.
