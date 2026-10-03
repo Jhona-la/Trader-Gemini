@@ -1852,6 +1852,42 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "multiactivo_mejor_tau", tau);
                         let _ = otro; // el par específico: traza, no política
                     }
+                    // #651 (Ola 51) — ESCRITOR de qo_613_rho_tau: el lector
+                    // del veto de grupo (#613, risk-engine) llevaba DORMIDO
+                    // desde su ola — se cableó el lector sin publicar la
+                    // clave (mea culpa documentado; el fixture monoactivo
+                    // del T-1 no podía delatarlo). Publica la coherencia
+                    // media SIGNED de esta moneda con todas las demás a la
+                    // ESCALA DOMINANTE (τ* de #594): ρ(τ*) sólo aprieta
+                    // cuando el grupo está más acoplado de lo que el PnL
+                    // agregado ve. Sin pares maduros a esa escala ⇒ nada
+                    // (NaN en el lector ⇒ ρ de siempre, bit a bit).
+                    {
+                        let tau_dom = spec.dominant_tau_ms;
+                        if tau_dom.is_finite() && tau_dom > 0.0 {
+                            let mut escala_dom = 0usize;
+                            let mut mejor_d = f64::INFINITY;
+                            for (k, &tau_k) in quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS
+                                .iter()
+                                .enumerate()
+                            {
+                                let d = (tau_k - tau_dom).abs();
+                                if d < mejor_d {
+                                    mejor_d = d;
+                                    escala_dom = k;
+                                }
+                            }
+                            if let Some(ic) =
+                                self.espectral_ma.coherencia_media_con_todas(coin_id, escala_dom)
+                            {
+                                if ic.is_finite() {
+                                    self.arena
+                                        .registry
+                                        .set_for_coin(coin_id, "qo_613_rho_tau", ic);
+                                }
+                            }
+                        }
+                    }
                     // #609 (Ola 31): SOMBRA ESPECTRAL del oscilador cuántico —
                     // el pozo anarmónico con confinamiento AGY-P14 evaluado en
                     // el desplazamiento de CADA escala (momentum_z de la malla).
