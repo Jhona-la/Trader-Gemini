@@ -13955,7 +13955,6 @@ la cadena consenso→consumo tras la integración #624/#626.
   puntúa a tiempo contra el voto con el que nació, sin doble-score.
 - **Verificación**: signal-engine 105/105 (4 contratos nuevos), core
   160/160, workspace 0 errores.
-- **ORÁCULO T-1**: EN VUELO al cierre de esta nota (release single-thread
-  --nocapture sobre 3695380e) — cambia el consenso vivo (gate de escalas
-  + expiración + umbral) ⇒ obligatorio pre-merge. Veredicto en el commit
-  de docs del push.
+- **ORÁCULO T-1: PASA 16/144 = 11.1% ≥ 11.0%** (4098.42 s, release
+  single-thread --nocapture sobre 3695380e). Ningún gen certificado perdió
+  sensibilidad con el gate de escalas + expiración + umbral efectivo.

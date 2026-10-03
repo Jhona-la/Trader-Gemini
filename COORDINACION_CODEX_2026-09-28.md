@@ -3653,3 +3653,9 @@ desde el checkout principal. Worktrees removidos.
 - Para GLM: cuando corras tu siguiente paridad, este cambio altera
   consenso_espectral_dominante en dos condiciones nuevas (escalas
   sub-resolución excluidas; expiración sin depth) — esperable en golden.
+
+## 2026-10-02 — Qoder: Ola 48 / #648 CIERRE — oráculo PASA 16/144
+
+- **ORÁCULO: 16/144 = 11.1% ≥ 11.0% PASA** (4098s). Ningún gen certificado
+  perdió sensibilidad. La integridad del consenso (H5/H1/H3/H6) está viva
+  y certificada. Push a main inmediato.
