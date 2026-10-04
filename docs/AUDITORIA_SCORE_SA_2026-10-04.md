@@ -352,3 +352,47 @@ check distinto de tests; evidencia local distinta de CI y main. JSON añade
 un recibo nuevo sin alterar el contenido del corte inicial. Afirmaciones
 de rendimiento, omnisciencia, continuo sin discretización o ventaja cuántica
 no verificadas no se presentan como resultado. Persisten gates de§8.
+
+## 12. Composición local SA con RA f275/main237, sin integrar OOS-F01
+
+Padres del candidato:SA701fa98e6d9e5788f2c7203c7da1135ad9ff3f77 y
+RAf275bae39dd81531cfb71b8ddaadb1023f02c6f5. El merge trae parser,
+admisión de riesgo y contexto OOS de RA; NO validate_is_oos_split de la
+serie OOSacbc, que sigue aparte. No activar genomas ni modelos por componer.
+
+Sólo hubo conflictos documentales MEM/COORD/plan, resueltos por unión.
+Plan15 se reubica entre14y16, sin cambiar sus líneas; ambos padres conservan
+su orden relativo. QA no vacías:MEM1583/1816,COORD3539/3703,PLAN122/631.
+Los cuatro helpers/tests SA permanecen idénticos al padre SA; helper/test
+OOS,parser yorchestrator idénticos al padre RA. Workflow conserva contratos
+de ambos padres. CLI sólo suma la corrección RA del prefijo warmup; no cambia
+selección SA. HashCLI compuesto:
+B76A3EC359873F9E14E598CEFF01D9D5B3585D60341E13D337D220B4D6295BF5.
+
+Pruebas actuales:13retención+9selección+6contextOOS+19parser=47aprobadas,
+0fallidas,0ignoradas. Son contratos de esas áreas, no todo el workspace.
+Primer intento parser conrustc sinexterns falló al COMPILAR por dependencias
+memchr/fast_float/serde_json; error de invocación, no REDconductual ni bug.
+Repetición correcta conCargo -p data-pipeline,locked,offline,j2 ejecutó19/0,
+incluyendo7tests previos. No se borraron tests ni se cambiaron fuentes para
+hacerlo pasar. Tiempo87,5170729s; no sumar repeticiones para cobertura.
+
+Alltargets del candidato exit0/136,8175224s,nightly2026-06-30,dev,locked,
+offline,j2. Tras checkOOS ajeno propio terminado, refresco8fuentes SA distintas
+con SHAestables; Cargo serializado entre agentes, no runner interrumpido.
+Logchecktarget/sa-score-evidence/check-composed-RAf275.log:
+83D47D6AA574DC7755C5E5D8FAB99BF710B44946E3328AE115C2D7F29786523F.
+
+| Log en target/sa-score-evidence | SHA256 |
+| --- | --- |
+| composed-score.log | EF8A513FC78373CEFA51F6503F6E946D79AD3336C182A42BA6D5D623DDC2BC9D |
+| composed-selection.log | 6C8356F9A413309C8BE859FB0627A1E9118134C986829E432FDC7B48546FF3A8 |
+| composed-oos-context.log | AE282F16E9712BE90577BBC2EE0AEE78733203C9DB76328E672B197347884141 |
+| composed-parser-cargo.log | 42ADAFCBA28E355DCC7748FB45FAB6EDA98567F25E71456DAA329D4CEF6E9CFC |
+
+Adendas canónicas del plan y rollback añadidas también en este candidato.
+El inventario main237/RA37383 es posterior a f275 y no está incluido aún en
+este merge. No usar sus referencias como si fueran archivo local presente.
+No push/PR de SA, publicación consultada pendiente; no está en main.
+La CI187/0/3 del headRA74be no cubre SA nueva ni este candidato compuesto.
+ResidualesSA-R03/R04/R05 y consumidores de métricas siguen pendientes.

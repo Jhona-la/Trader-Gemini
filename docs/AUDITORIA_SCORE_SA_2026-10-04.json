@@ -192,5 +192,19 @@
     "pushed":false,"PR":null,"merged_to_remote_main":false,
     "external_ack_received":false,"model_or_genome_promotion":false,"growth72h_demonstrated":false,
     "initial_cut_preserved":true
+  },
+  "composition_RAf275_receipt": {
+    "parents":["701fa98e6d9e5788f2c7203c7da1135ad9ff3f77","f275bae39dd81531cfb71b8ddaadb1023f02c6f5"],
+    "nonempty_line_preservation":{"memory":[1583,1816],"coordination":[3539,3703],"plan":[122,631]},
+    "source_identity_against_each_parent_verified":true,"workflow_union_preserved":true,
+    "SA_helpers_and_tests_byte_unchanged":true,
+    "composed_CLI_sha256":"B76A3EC359873F9E14E598CEFF01D9D5B3585D60341E13D337D220B4D6295BF5",
+    "unique_contracts":{"retention":13,"selection":9,"OOS_context":6,"parser":19,"total_passed":47,"failed":0,"ignored":0},
+    "parser_initial_invocation_error":{"kind":"rustc without extern dependencies","compile_failed":true,"behavior_tests_executed":false,"source_bug_claimed":false},
+    "parser_correct_invocation":{"tool":"cargo nightly2026-06-30,locked,offline,j2","passed":19,"exit":0,"seconds":87.5170729,"log_sha256":"42ADAFCBA28E355DCC7748FB45FAB6EDA98567F25E71456DAA329D4CEF6E9CFC"},
+    "all_targets":{"exit":0,"seconds":136.8175224,"source_mtimes_refreshed":8,"source_bytes_unchanged":true,"log_sha256":"83D47D6AA574DC7755C5E5D8FAB99BF710B44946E3328AE115C2D7F29786523F"},
+    "includes_partition_guard_OOS_F01":false,"includes_later_RA37383_inventory":false,
+    "PR":null,"pushed":false,"in_remote_main":false,
+    "model_genome_or_trading_execution":false,"growth72h_measured":false
   }
 }

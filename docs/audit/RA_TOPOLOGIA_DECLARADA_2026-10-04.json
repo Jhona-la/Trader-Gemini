@@ -1,0 +1,842 @@
+{
+  "schema_version": 1,
+  "snapshot": "12456048d7c5cbafb23a75a530b3e030d53be913",
+  "generated_on": "2026-10-04",
+  "source_command": "cargo +nightly-2026-06-30 metadata --no-deps --locked --offline --format-version 1",
+  "package_count": 24,
+  "target_count": 202,
+  "internal_declared_edge_count": 88,
+  "edge_direction": "package_requires_provider",
+  "evidence_kind": "declared_manifest_graph_not_runtime_callgraph",
+  "feature_resolution_verified": false,
+  "external_dependencies_included": false,
+  "semantic_audit_complete": false,
+  "packages": [
+    {
+      "name": "audit-engine",
+      "version": "0.1.0",
+      "manifest": "crates/audit-engine/Cargo.toml",
+      "manifest_blob": "2d8ef18c14ed0d0beb5048c5b566e9556594dc7c",
+      "declared_targets_count": 7,
+      "dependencies": [
+        {
+          "package": "graph-4d",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "omniscient-registry",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "phase-runner",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "backtest-engine",
+      "version": "0.1.0",
+      "manifest": "crates/backtest-engine/Cargo.toml",
+      "manifest_blob": "258a9aa088c27ae6a6d26859bfbcaf99a224af68",
+      "declared_targets_count": 9,
+      "dependencies": [
+        {
+          "package": "data-pipeline",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "execution-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "god-engine-core",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "risk-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "signal-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "dark-alpha-engine",
+      "version": "0.1.0",
+      "manifest": "crates/dark-alpha-engine/Cargo.toml",
+      "manifest_blob": "5a34ce6e90022c489f51fd1c33377565b41c2d1e",
+      "declared_targets_count": 2,
+      "dependencies": [
+        {
+          "package": "telemetry-server",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "data-ingest",
+      "version": "0.1.0",
+      "manifest": "crates/data-ingest/Cargo.toml",
+      "manifest_blob": "88141ef6ec35f1da6f439e5f5628615818f55387",
+      "declared_targets_count": 3,
+      "dependencies": [
+        {
+          "package": "data-pipeline",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "data-pipeline",
+      "version": "0.1.0",
+      "manifest": "crates/data-pipeline/Cargo.toml",
+      "manifest_blob": "dc870782cfe44a0df751a071353b12d132c6c246",
+      "declared_targets_count": 3,
+      "dependencies": [
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "storage-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "evolution-engine",
+      "version": "0.1.0",
+      "manifest": "crates/evolution-engine/Cargo.toml",
+      "manifest_blob": "c8070ba6a25a9dde1100a5880c8d3c05f92fa4fc",
+      "declared_targets_count": 7,
+      "dependencies": [
+        {
+          "package": "backtest-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "dark-alpha-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "data-pipeline",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "god-engine-core",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "metacortex-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "os-guardian",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "risk-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "signal-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "storage-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "strategy-core",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "telemetry-server",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "execution-engine",
+      "version": "0.1.0",
+      "manifest": "crates/execution-engine/Cargo.toml",
+      "manifest_blob": "2ba6c914b143e112af6ccdb0cf872bb37b63ef1b",
+      "declared_targets_count": 22,
+      "dependencies": [
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "risk-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "signal-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "feature-engine",
+      "version": "0.1.0",
+      "manifest": "crates/feature-engine/Cargo.toml",
+      "manifest_blob": "0b28d9a833ff1fa23f809cc95fb8be376f7c3aba",
+      "declared_targets_count": 14,
+      "dependencies": []
+    },
+    {
+      "name": "flight-recorder",
+      "version": "0.1.0",
+      "manifest": "crates/flight-recorder/Cargo.toml",
+      "manifest_blob": "0a408993b69a08715148592953d39eb65d0f1ead",
+      "declared_targets_count": 1,
+      "dependencies": []
+    },
+    {
+      "name": "god-engine-core",
+      "version": "0.1.0",
+      "manifest": "crates/god-engine-core/Cargo.toml",
+      "manifest_blob": "c5d022ec546fb1767fd4c0ffdfb517a5877fbb49",
+      "declared_targets_count": 31,
+      "dependencies": [
+        {
+          "package": "audit-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "dark-alpha-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "data-pipeline",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "feature-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "metacortex-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "omniscient-registry",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "risk-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "signal-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "storage-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "strategy-core",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "telemetry-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "telemetry-server",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "graph-4d",
+      "version": "0.1.0",
+      "manifest": "crates/graph-4d/Cargo.toml",
+      "manifest_blob": "f1633db1587f0341655f771140e8e6604d0359fb",
+      "declared_targets_count": 1,
+      "dependencies": []
+    },
+    {
+      "name": "graph-architecture",
+      "version": "0.1.0",
+      "manifest": "crates/graph-architecture/Cargo.toml",
+      "manifest_blob": "61271e0727de79baa7d113bc1e4c77c09987ec20",
+      "declared_targets_count": 2,
+      "dependencies": []
+    },
+    {
+      "name": "metacortex-engine",
+      "version": "0.1.0",
+      "manifest": "crates/metacortex-engine/Cargo.toml",
+      "manifest_blob": "a4f1cfbbbee5e0274fe56f271375349ec6c14e6d",
+      "declared_targets_count": 6,
+      "dependencies": [
+        {
+          "package": "os-guardian",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "storage-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "omniscient-registry",
+      "version": "0.1.0",
+      "manifest": "crates/omniscient-registry/Cargo.toml",
+      "manifest_blob": "5409ad663f2cbec10c55ec936f2045293000905f",
+      "declared_targets_count": 1,
+      "dependencies": []
+    },
+    {
+      "name": "os-guardian",
+      "version": "0.1.0",
+      "manifest": "crates/os-guardian/Cargo.toml",
+      "manifest_blob": "f2f312d5b6af448286ece4a895dee1f2105696a7",
+      "declared_targets_count": 1,
+      "dependencies": [
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "telemetry-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "phase-runner",
+      "version": "0.1.0",
+      "manifest": "crates/phase-runner/Cargo.toml",
+      "manifest_blob": "5d538039b879c18dc7274612452cff80a7ad4828",
+      "declared_targets_count": 1,
+      "dependencies": [
+        {
+          "package": "os-guardian",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "quantum-arena",
+      "version": "0.1.0",
+      "manifest": "crates/quantum-arena/Cargo.toml",
+      "manifest_blob": "68e0775e7fb4fa6d42897653fe762fb573f2b441",
+      "declared_targets_count": 17,
+      "dependencies": [
+        {
+          "package": "omniscient-registry",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "telemetry-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "risk-engine",
+      "version": "0.1.0",
+      "manifest": "crates/risk-engine/Cargo.toml",
+      "manifest_blob": "0b33eec2dae9bdfe963633e4f4e476f19f13236d",
+      "declared_targets_count": 22,
+      "dependencies": [
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "signal-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "telemetry-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "signal-engine",
+      "version": "0.1.0",
+      "manifest": "crates/signal-engine/Cargo.toml",
+      "manifest_blob": "51bba1ef3a86fa7bed91fd7090ceab24bbfcaf74",
+      "declared_targets_count": 6,
+      "dependencies": [
+        {
+          "package": "dark-alpha-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "feature-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "omniscient-registry",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "strategy-core",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "telemetry-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "storage-engine",
+      "version": "0.1.0",
+      "manifest": "crates/storage-engine/Cargo.toml",
+      "manifest_blob": "6fb0f924fada2023162cbfe3e6543db00c8d3f20",
+      "declared_targets_count": 4,
+      "dependencies": [
+        {
+          "package": "telemetry-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "strategy-core",
+      "version": "0.1.0",
+      "manifest": "crates/strategy-core/Cargo.toml",
+      "manifest_blob": "5f64aa6e24e2c3835dda7dae8c4eb660e0c03def",
+      "declared_targets_count": 4,
+      "dependencies": [
+        {
+          "package": "data-pipeline",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "feature-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "omniscient-registry",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "telemetry-server",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "telemetry-engine",
+      "version": "0.1.0",
+      "manifest": "crates/telemetry-engine/Cargo.toml",
+      "manifest_blob": "5fea2697819d35533e8c2fb5ab50fc9f90db7c6f",
+      "declared_targets_count": 1,
+      "dependencies": []
+    },
+    {
+      "name": "telemetry-server",
+      "version": "0.1.0",
+      "manifest": "crates/telemetry-server/Cargo.toml",
+      "manifest_blob": "f82fce64377b2e82fbd589a26f6d38753225365f",
+      "declared_targets_count": 1,
+      "dependencies": [
+        {
+          "package": "os-guardian",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    },
+    {
+      "name": "trader-gemini-v5",
+      "version": "0.1.0",
+      "manifest": "Cargo.toml",
+      "manifest_blob": "6692b130ba403848e1a85f87bad6f303114648dd",
+      "declared_targets_count": 36,
+      "dependencies": [
+        {
+          "package": "audit-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "backtest-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "dark-alpha-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "data-ingest",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "data-pipeline",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "evolution-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "execution-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "feature-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "god-engine-core",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "graph-4d",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "graph-architecture",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "metacortex-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "omniscient-registry",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "os-guardian",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "phase-runner",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "quantum-arena",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "risk-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "signal-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "strategy-core",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "telemetry-engine",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        },
+        {
+          "package": "telemetry-server",
+          "alias": null,
+          "kind": "normal",
+          "optional": false,
+          "target_condition": null
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1242 @@
+{
+  "schema_version": 1,
+  "audit": "RA",
+  "date": "2026-10-04",
+  "language": "es",
+  "baseline": "949d29c1b823b14839be9e17a230a5aa3cd212b6",
+  "branch": "codex/root-audit-2026-10-04",
+  "report": "AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md",
+  "scope": {
+    "tracked_files_at_baseline": 1427,
+    "all_files_semantically_audited": false,
+    "live_orders": false,
+    "training": false,
+    "profitability_certified": false
+  },
+  "findings": [
+    {
+      "id": "RA-I-01",
+      "priority": "P2",
+      "status": "patched_local",
+      "summary": "Entero completo, offset, overflow y presencia de reloj",
+      "path": "crates/data-pipeline/src/parser.rs"
+    },
+    {
+      "id": "RA-I-02",
+      "priority": "P2",
+      "status": "patched_local",
+      "summary": "Booleano completo del agresor",
+      "path": "crates/data-pipeline/src/parser.rs"
+    },
+    {
+      "id": "RA-I-03",
+      "priority": "P2",
+      "status": "partial_patch_local",
+      "summary": "Espaciado mixto y suma finita; cierre estructural abierto",
+      "path": "crates/data-pipeline/src/parser.rs"
+    },
+    {
+      "id": "RA-I-04",
+      "priority": "P2",
+      "status": "open_latent",
+      "summary": "Token bucket reutiliza crédito temporal",
+      "path": "crates/data-ingest/src/lib.rs"
+    },
+    {
+      "id": "RA-R-01",
+      "priority": "P1",
+      "status": "open",
+      "summary": "Leverage adaptado invalida techo de margen previamente admitido",
+      "path": "crates/risk-engine/src/envio.rs"
+    },
+    {
+      "id": "RA-R-02",
+      "priority": "P2",
+      "status": "patched_local",
+      "summary": "No finito no es presión nula",
+      "path": "crates/risk-engine/src/orchestrator.rs"
+    },
+    {
+      "id": "RA-E-01",
+      "priority": "P1",
+      "status": "open",
+      "summary": "Identidad de activo en slot0 del replay",
+      "path": "src/bin/evolution.rs"
+    },
+    {
+      "id": "RA-E-02",
+      "priority": "P1",
+      "status": "open",
+      "summary": "Microtrayectoria sintética condicionada al cierre",
+      "path": "crates/evolution-engine/src/online_daemon.rs"
+    },
+    {
+      "id": "RA-E-03",
+      "priority": "P2",
+      "status": "open",
+      "summary": "Latencia evaluada difiere de genoma replantado",
+      "path": "crates/evolution-engine/src/random_forest.rs"
+    },
+    {
+      "id": "RA-E-04",
+      "priority": "P1",
+      "status": "open",
+      "summary": "Drawdown actual usado como máximo histórico",
+      "path": "crates/evolution-engine/src/random_forest.rs"
+    },
+    {
+      "id": "RA-E-05",
+      "priority": "P2",
+      "status": "patched_local",
+      "summary": "Warmup igual al prefijo IS disponible",
+      "path": "src/bin/evolution.rs"
+    },
+    {
+      "id": "RA-S-01",
+      "priority": "P1",
+      "status": "open",
+      "summary": "Voto tardío contra retorno anterior al snapshot",
+      "path": "crates/signal-engine/src/skill_motores.rs"
+    },
+    {
+      "id": "RA-S-02",
+      "priority": "P1",
+      "status": "open_revalidated",
+      "summary": "Predicción Pending recalculada a vencimiento",
+      "path": "crates/quantum-arena/src/spectral_tape.rs"
+    },
+    {
+      "id": "RA-S-03",
+      "priority": "P2",
+      "status": "open",
+      "summary": "Voto de escala sin soporte histórico suficiente",
+      "path": "crates/signal-engine/src/voto_espectral.rs"
+    },
+    {
+      "id": "RA-S-04",
+      "priority": "P2",
+      "status": "open_revalidated",
+      "summary": "Conteo bruto para momentos con olvido",
+      "path": "crates/quantum-arena/src/temporal_spectrum.rs"
+    },
+    {
+      "id": "RA-S-05",
+      "priority": "P3",
+      "status": "open",
+      "summary": "Discontinuidad residual pese a afirmación C-infinito",
+      "path": "crates/signal-engine/src/trend_runner.rs"
+    }
+  ],
+  "receipts": [
+    {
+      "id": "parser-initial-red",
+      "runner": "isolated real module",
+      "passed": 8,
+      "failed": 10,
+      "serde_json": "1.0.151"
+    },
+    {
+      "id": "parser-initial-green",
+      "runner": "isolated real module",
+      "passed": 18,
+      "failed": 0,
+      "serde_json": "1.0.151"
+    },
+    {
+      "id": "parser-adversarial",
+      "runner": "additional probes",
+      "passed": 4,
+      "failed": 1,
+      "serde_json": "1.0.150"
+    },
+    {
+      "id": "parser-refined",
+      "runner": "isolated real module",
+      "passed": 19,
+      "failed": 0,
+      "serde_json": "1.0.150"
+    },
+    {
+      "id": "parser-adversarial-refined",
+      "runner": "additional probes excluding repeated module tests",
+      "passed": 5,
+      "failed": 0,
+      "serde_json": "1.0.150"
+    },
+    {
+      "id": "risk-red",
+      "runner": "rustc real risk code with synthetic arena",
+      "passed": 22,
+      "failed": 4
+    },
+    {
+      "id": "risk-green",
+      "runner": "rustc real risk code with synthetic arena",
+      "passed": 26,
+      "failed": 0
+    },
+    {
+      "id": "oos-red",
+      "runner": "rustc std-only helper with previous fixed boundary",
+      "passed": 2,
+      "failed": 4
+    },
+    {
+      "id": "oos-green",
+      "runner": "rustc production helper",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "id": "workspace-intermediate",
+      "exit_code": 0,
+      "duration": "8m24s",
+      "final_snapshot": false
+    },
+    {
+      "id": "workspace-merge-main0580",
+      "exit_code": 0,
+      "duration": "11m32s including lock wait",
+      "merge_commit": "b558816",
+      "command": "cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j 2"
+    },
+    {
+      "id": "workspace-merge-main7c4",
+      "exit_code": 0,
+      "duration": "8.16s",
+      "source_commit": "c57376b",
+      "final_source_snapshot": true,
+      "tests_executed": false
+    }
+  ],
+  "git": {
+    "public_publication_authorized": true,
+    "publication_scope": "RA only; MW separate",
+    "deleted_branches": [],
+    "merged_into_main": false,
+    "pr": "https://github.com/Jhona-la/Trader-Gemini/pull/28",
+    "is_draft": true,
+    "published_initial_head": "ad3f09a579b6ab4bbba40b255ad560bb9ec40cdd",
+    "latest_inventory_base": "7c4cea4036ee67e8b73809fac7c8763280a2291a",
+    "reconciled_main": "7c4cea4036ee67e8b73809fac7c8763280a2291a",
+    "integration_commit": "c57376b",
+    "ci_for_this_candidate": {"run_id": 37209982889, "observed_status": "in_progress", "conclusion": null}
+  },
+  "limitations": [
+    "T-1 completo pendiente para RA; requerido por plan qo-655 antes de integrar",
+    "Cargo local con crates reales interrumpido en dependencias; no tests ejecutados",
+    "Sin paridad operacional en esta ola",
+    "Runners aislados no equivalen a ejecución integral",
+    "Residual de cierre ] ] con encabezados compactos en profundidad",
+    "Sin benchmark de latencia",
+    "Sin garantía de rentabilidad",
+    "Referencias vivas pueden avanzar; consultar adendas"
+  ],
+  "latest_status": {
+    "cut": "2026-10-04 while local full T-1 compiles dependencies",
+    "source_commit": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+    "main_snapshot": "856e59ba267c150ec98a1a3cbf0ebc3ff3935564",
+    "glm_plan_snapshot": "d777175f4a09b6f88ea57578650111efca58cbff",
+    "documentary_merges": [
+      "f10434d6679529f59c0c356ba2f5114e22137d72",
+      "381e5f7d42733f95f8f75c6c9baeb1f2f9c61bd0"
+    ],
+    "rust_changed_by_documentary_merges": false,
+    "main_contains_RA": false,
+    "ci": {
+      "run_id": 37211025915,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Jhona-la/Trader-Gemini/actions/runs/37211025915",
+      "parser": {
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0
+      },
+      "risk": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0
+      },
+      "oos": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      "actual_crates": true,
+      "tested_merge": "135390b48d2a2154dc7dba774bac4578398add52",
+      "tested_merge_parents": ["7c4cea4036ee67e8b73809fac7c8763280a2291a", "496f902d668b9a1914fe27488246b6a56ef1c1a7"]
+    },
+    "full_t1": {
+      "status": "compiling_dependencies",
+      "result": null,
+      "source_commit": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+      "command": "cargo +nightly-2026-06-30 test -p backtest-engine --release --locked --offline -j 2 --test t1_cobertura_genetica -- --test-threads=1 --nocapture",
+      "log": "target/ra-t1-2026-10-04.log"
+    },
+    "cross_review": {
+      "kind": "independent_automated_static",
+      "scope": "four RA commits and consumers",
+      "new_blockers_confirmed": 0,
+      "human_approval": false,
+      "external_acknowledgment": false
+    },
+    "checks": [
+      {
+        "merge": "f10434d6",
+        "exit_code": 0,
+        "duration": "1m30s"
+      },
+      {
+        "merge": "381e5f7d",
+        "exit_code": 0,
+        "duration": "15.14s"
+      }
+    ],
+    "coverage": {
+      "snapshot": "496f902d",
+      "tracked_files": 1434,
+      "crates_files": 433,
+      "semantic_complete": false,
+      "inventory_is_not_semantic_review": true
+    },
+    "planning": {
+      "contracts_document": "PLAN_MAESTRO_SINCRONIZACION.md",
+      "operating_document": "PLAN_MAESTRO_2026-10-04.md",
+      "goal": {
+        "target_multiplier": 2,
+        "window_hours": 72,
+        "log_growth_per_day": 0.23104906018664842,
+        "daily_compounded_return": 0.2599210498948732,
+        "profitability_verified": false
+      },
+      "owner_assignments": "observed lanes; new RA allocations proposed, unacknowledged",
+      "dependencies": {
+        "G0": [],
+        "G1": [
+          "G0"
+        ],
+        "G2": [
+          "G1"
+        ],
+        "G3": [
+          "G0"
+        ],
+        "G4": [
+          "G3"
+        ],
+        "G5": [
+          "G1",
+          "G2"
+        ],
+        "G7": [
+          "G0"
+        ],
+        "G6": [
+          "G2",
+          "G4",
+          "G5",
+          "G7"
+        ],
+        "G8": [
+          "G6"
+        ]
+      }
+    },
+    "mathematical_review": {
+      "report_section": 17,
+      "evidence_kind": "static_source_and_independent_arithmetic",
+      "verified_state_defects": 2,
+      "pending_model_validations": 3,
+      "not_five_new_bugs": true,
+      "findings": [
+        {
+          "id": "MG-01",
+          "classification": "known_heuristic_validation_pending",
+          "status": "open",
+          "path": "crates/risk-engine/src/correlation_guard.rs",
+          "summary": "Reserve bound reused as event-risk ceiling; leverage conversion and binding capacity require model contract",
+          "closing_contract": "G4"
+        },
+        {
+          "id": "MG-02",
+          "classification": "verified_state_defect",
+          "priority": "P2",
+          "status": "open",
+          "path": "crates/god-engine-core/src/lib.rs",
+          "line": 3495,
+          "summary": "Some to None leaves positive Lundberg evidence published",
+          "closing_contract": "G4"
+        },
+        {
+          "id": "MG-03",
+          "classification": "accepted_approximation_validation_pending",
+          "status": "open",
+          "path": "crates/risk-engine/src/correlation_guard.rs",
+          "line": 508,
+          "summary": "Candidate-mean equicorrelation does not preserve general group quadratic form",
+          "closing_contract": "G4"
+        },
+        {
+          "id": "MG-04",
+          "classification": "estimand_consumer_validation_pending",
+          "status": "open",
+          "path": "crates/quantum-arena/src/espectral_multiactivo.rs",
+          "line": 71,
+          "summary": "Uncentered cosine used to tighten risk correlation",
+          "closing_contract": "G4"
+        },
+        {
+          "id": "MG-05",
+          "classification": "verified_state_defect",
+          "priority": "P2",
+          "status": "open",
+          "path": "crates/god-engine-core/src/lib.rs",
+          "line": 1874,
+          "summary": "An unobserved dominant scale inherits another scale's scalar IC",
+          "closing_contract": "G2"
+        }
+      ],
+      "examples": {
+        "last_published_R": 0.7807479816498293,
+        "replaced_before_last_root": 50,
+        "current_R": null,
+        "epsilon05_threshold": 0.07489330683884977,
+        "epsilon01_threshold": 0.11512925464970229,
+        "margin_L9_R100": 0.2696159046198592,
+        "equicorrelation_risk": 0.24708541033415954,
+        "full_matrix_risk": 0.2530375466210499,
+        "cosine_EWMA": 0.990077332718274,
+        "centered_corr": 0,
+        "cold_scale_risk": 0.21688706738761535,
+        "stale_scale_risk": 0.272910241654651,
+        "coverage": 26.923076923076923,
+        "one_symbol_pp": 3.8461538461538463
+      }
+    }
+  },
+  "integration_followup": {
+    "date": "2026-10-04",
+    "report_section": 18,
+    "main_snapshot": "c6ce7333f670c021db56b2c987680bbd7ebe8c7a",
+    "documentary_merge": "12456048d7c5cbafb23a75a530b3e030d53be913",
+    "merge_parents": ["b6dfb374b95e6d7cda7ca9f39421d5580f241fae", "c6ce7333f670c021db56b2c987680bbd7ebe8c7a"],
+    "code_equivalent_to": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+    "all_targets_exit": 0,
+    "all_targets_seconds": 37.88,
+    "ra_integrated_in_main": false,
+    "coverage": {
+      "snapshot": "12456048d7c5cbafb23a75a530b3e030d53be913",
+      "artifact": "audit/RA_COBERTURA_2026-10-04.tsv",
+      "tracked_entries": 1435,
+      "crates_entries": 433,
+      "state": "inventory_only_not_semantic_certification",
+      "all_files_semantically_audited": false
+    },
+    "coordination": {
+      "glm_plan_acknowledgement": "253d0cd2ef34b7ecb348d97ec5b042d08e015b1a",
+      "ra_review_announced_not_received": true,
+      "l2_full_gate": "partial_direction_better_logloss_worse_wiring_blocked",
+      "new_codex_scope": "MG02 and MG05 evidence expiry; separate worktree",
+      "new_codex_branch": "codex/evidence-expiry-2026-10-04",
+      "new_codex_base": "c6ce7333f670c021db56b2c987680bbd7ebe8c7a"
+    },
+    "cleanup": {
+      "removed_local_ref": "refs/heads/glm/lxxxiv-l2v1",
+      "removed_ref_oid": "eb617f548ab1a3050ee97b244ff747a174849716",
+      "remote_ref_already_absent": true,
+      "exclusive_commits": 0,
+      "occupied_worktree": false,
+      "commit_preserved_in_main": true,
+      "exclusive_branches_preserved": true
+    },
+    "ci_at_observation": {"run_id": 37221376454, "head": "b6dfb374b95e6d7cda7ca9f39421d5580f241fae", "status": "in_progress"},
+    "full_t1_at_observation": "release_dependencies_still_compiling_no_test_result",
+    "human_ra_approval_received": false
+  },
+  "subsequent_coordination": {
+    "date": "2026-10-04",
+    "report_section": 19,
+    "main_snapshot": "5ab07f3589a1ab273794bf373b40b9f120a5b438",
+    "glm_receipt": "ec7b314df7ed223b60367bfe1890dec3d844a965",
+    "agent_review_received": true,
+    "agent_review_scope": "direction approved for scanner and nonfinite risk; T1 and parity required",
+    "human_github_approval_received": false,
+    "l2_v1_full_gate": "partial_definitive_wiring_blocked",
+    "l2_numbers_independently_reproduced": false,
+    "parity_contract_tests": {"defined": 10, "ignored_manual_measurements": 2, "universal_operational_parity_certified": false},
+    "removed_local_ref": "refs/heads/glm/lxxxv-l2fase3",
+    "removed_ref_oid": "ec7b314df7ed223b60367bfe1890dec3d844a965",
+    "remote_ref_already_absent": true,
+    "commit_preserved_in_main": true,
+    "code_equivalent_to": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+    "full_t1_result": null
+  },
+  "existing_findings_revalidation": {
+    "source_snapshot": "c6ce7333f670c021db56b2c987680bbd7ebe8c7a",
+    "report_section": 20,
+    "method": "independent static review; parent source reread and arithmetic",
+    "new_findings_count": 0,
+    "runtime_or_profitability_certified": false,
+    "RA-R-01": {"status": "confirmed_open", "ceiling": 50, "admitted_margin": 14, "final_margin": 70, "does_not_require_race": true},
+    "RA-E-03": {"status": "confirmed_open_shadow_forest_initial_only", "stored_latency_ms": 50, "initial_evaluation_latency_ms": 25, "cli_reproduces_this_claim": false},
+    "RA-E-04": {"status": "confirmed_open_shadow_forest", "control_fitness": 0.07410797215372183, "mutant_current_dd_fitness": 0.14310084364067324, "mutant_max_dd_fitness": -0.5500463369192721, "all_backtests_have_this_defect": false}
+  },
+  "declared_topology_receipt": {
+    "snapshot": "12456048d7c5cbafb23a75a530b3e030d53be913",
+    "report_section": 21,
+    "artifact": "audit/RA_TOPOLOGIA_DECLARADA_2026-10-04.json",
+    "package_count": 24,
+    "target_count": 202,
+    "internal_declared_edge_count": 88,
+    "normal_dependency_graph_acyclic": true,
+    "root_reachable_packages_including_root": 23,
+    "not_reachable_by_normal_dependency": ["flight-recorder"],
+    "all_manifest_blobs_checked": true,
+    "all_declared_edges_checked": true,
+    "runtime_disconnection_proven": false,
+    "operational_synchrony_certified": false,
+    "feature_resolution_verified": false,
+    "all_files_semantically_audited": false,
+    "new_findings_count": 0
+  },
+  "completed_ci_followup": {
+    "report_section": 22,
+    "run_id": 37221376454,
+    "conclusion": "success",
+    "completed_at": "2026-10-04T18:50:22Z",
+    "head": "b6dfb374b95e6d7cda7ca9f39421d5580f241fae",
+    "tested_merge": "7c1ae865ea5ba633e97b3d4d60e9386d4be65d56",
+    "tested_merge_parents": ["856e59ba267c150ec98a1a3cbf0ebc3ff3935564", "b6dfb374b95e6d7cda7ca9f39421d5580f241fae"],
+    "identity_verified_by_log_and_commit_api": true,
+    "target_results": 13,
+    "passed": 187,
+    "failed": 0,
+    "ignored": 3,
+    "full_t1_executed_by_this_workflow": false,
+    "later_head_certified_by_this_result": false,
+    "human_github_approval_received": false
+  },
+  "telemetry_existing_findings_revalidation": {
+    "source_snapshot": "5ab07f3589a1ab273794bf373b40b9f120a5b438",
+    "report_section": 23,
+    "existing_ids": ["D-127", "D-237", "80", "101"],
+    "new_findings_count": 0,
+    "method": "full module/test reads; tracked Rust reference search; source and official unsafe/volatile contracts",
+    "library_blob": "2e499f222b7f35ea54270c43b905efd23bcfa3a9",
+    "mmap_blob": "72f30c7d36f07dd7086bce5d02e40870a69cf177",
+    "memory_safety_contract": "confirmed_open_for_concurrent_safe_API_use",
+    "severity": "P1_conditional_concurrent_use",
+    "seqlock_counter_makes_payload_atomic": false,
+    "core_consumer": "telemetry_server::FlightRecorder",
+    "tracked_core_constructor_initializes_none": true,
+    "tracked_wiring_assignment_found": false,
+    "old_empty_template_claim_matches_this_blob": false,
+    "formats_interchangeable": false,
+    "executed_interleaving_or_miri_loom": false,
+    "runtime_corruption_observed": false,
+    "code_modified": false
+  },
+  "second_independent_candidate_review": {
+    "source_snapshot": "0ddb3d4230ff7048b1e1c3392b5098182813880f",
+    "functional_source_equivalent_to": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+    "report_section": 24,
+    "new_blockers_introduced_in_reviewed_changes": 0,
+    "scope": "parser, nonfinite admission, OOS assembly and callers",
+    "rust_tests_executed_by_reviewer": false,
+    "human_github_approval": false,
+    "original_findings_array_unchanged": true,
+    "additional_open_contracts": [
+      {"id": "RA-OOS-F01", "severity": "P2", "status": "open_static_confirmed", "preexisting_not_introduced_by_RA": true, "summary": "one-row CLI tape reaches train_len minus one indexing", "blob": "e8d8052c1294b56b4079cc9182e894ef1d22e85a", "closing_contract": "G5", "cli_executed": false},
+      {"id": "RA-OOS-F02", "severity": "P2_design_measurement", "status": "open_period_semantics_validation", "preexisting_not_introduced_by_RA": true, "summary": "ReplayStats panel spans context plus OOS; exclusive OOS semantics require a contract", "blob": "21b08076fa93abfcea3a82ef89fa50f51f51bed6", "closing_contract": "G8", "runtime_measurement": false, "CLI_panel_consumption_found": false, "promotion_impact_proven": false}
+    ]
+  },
+  "documentary_merge_candidate_check": {
+    "report_section": 25,
+    "head_parent": "0ddb3d4230ff7048b1e1c3392b5098182813880f",
+    "main_parent": "5ab07f3589a1ab273794bf373b40b9f120a5b438",
+    "functional_source_equivalent_to": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+    "all_targets_command": "cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j 2",
+    "all_targets_exit": 0,
+    "cargo_reported_seconds": 224,
+    "all_targets_session": 43677,
+    "own_redundant_queued_checker_retired_after_success": true,
+    "other_runners_stopped": false,
+    "full_t1_state": "two_tests_executing_after_134m33s_release_build_no_final_result",
+    "ra_integrated_in_remote_main": false,
+    "later_published_head_ci_required": true,
+    "other_repairs_included": false
+  },
+  "qoder_acknowledgement_and_documentary_merge": {
+    "report_section": 26,
+    "head_parent": "03a7a6b436a1b9b6d0e8ca7cfc31175e8feacfe1",
+    "main_parent": "3979f58b575264ffb7a6cdb7902240909249fe81",
+    "functional_source_equivalent_to": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+    "text_conflicts_resolved_by_preservation": 2,
+    "all_targets_exit": 0,
+    "cargo_reported_seconds": 13.96,
+    "all_targets_session": 95854,
+    "received_qoder_receipt": {
+      "source_tip": "7c4cea4036ee67e8b73809fac7c8763280a2291a",
+      "sensitive_genes": 16,
+      "genome_dimension": 144,
+      "reported_test_seconds": 4221,
+      "reported_regression_passed": 828,
+      "reported_regression_failed": 0,
+      "reported_motor_roster": 18,
+      "reproduced_on_RA": false
+    },
+    "full_RA_t1_state": "still_executing_no_final_result",
+    "previous_head_ci_run": 37229237858,
+    "later_head_certified_by_previous_ci": false,
+    "ra_integrated_in_remote_main": false,
+    "live_activation_or_model_promotion_performed": false,
+    "other_repairs_included": false
+  },
+  "glm_veto_registry_followup": {
+    "report_section": "26.1",
+    "head_parent": "4c817fc26e4d28d5d4529a2f878ee15d15398f70",
+    "main_parent": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+    "updated_entries": ["V-RISK-002", "V-RISK-005"],
+    "changed_description_strings": 6,
+    "policy_or_consumer_changed": false,
+    "reported_GLM_tests_passed": 283,
+    "GLM_tests_reproduced_here": false,
+    "own_all_targets_exit": 0,
+    "cargo_reported_seconds": 112,
+    "own_all_targets_session": 58434,
+    "stale_evidence_contract_closed_by_registry_text": false,
+    "all_vetos_certified": false,
+    "ra_integrated_in_remote_main": false
+  },
+  "quantum_oscillator_math_review": {
+    "source_snapshot": "b245cdcfaa3e21acb7d933ebca0932dc353ede0d",
+    "report_section": 27,
+    "module_blob": "d6c23aff84c9d2579155fa5faa23d424a7145817",
+    "original_findings_array_unchanged": true,
+    "additional_open_contract": {
+      "id": "RA-Q-F01",
+      "severity": "P2_math_API_latent",
+      "status": "open_static_confirmed",
+      "summary": "clipped Gaussian density labelled collapse probability without normalization/domain contract",
+      "alpha_10_raw_density_at_zero": 1.78412411615277,
+      "alpha_10_clipped_density_at_zero": 1,
+      "clipped_density_Simpson_minus4_plus4": 0.763129082301738,
+      "quadrature_intervals": 80000,
+      "tracked_Rust_calls_found": 3,
+      "tracked_non_test_Rust_consumer_found": false,
+      "runtime_order_or_promotion_impact_proven": false
+    },
+    "direct_API_parity_counterexample": {"x": 12, "k": 1, "lambda": 0.1, "alpha": 0.1, "live_expression": -0.000228530051400478, "shadow_expression": -0.0186139712026188, "current_core_callers_clamp_out_this_x": true, "current_route_regression_proven": false},
+    "kernel_equality_does_not_mean_equal_inputs": true,
+    "quantum_state_solver_present_in_this_module": false,
+    "Rust_tests_executed_for_this_review": false,
+    "code_modified": false
+  },
+  "forest_patch_independent_review": {
+    "report_section": 28,
+    "branch": "codex/forest-evaluation-2026-10-04",
+    "base": "5ab07f3589a1ab273794bf373b40b9f120a5b438",
+    "patch_file_sha256": "E8C7D240A4562A5EAD4450220C2DF07D9B8F5B743EF49B66272878EB179344AD",
+    "reviewed_file_hash_stable": true,
+    "new_blockers_in_reviewed_scope": 0,
+    "review_method": "read-only production and test review with call-site comparison",
+    "tests_executed_by_reviewer": false,
+    "repair_integrated_in_RA": false,
+    "drawdown_scope": "observed_realized_capital_not_MTM_or_intra_event_extrema",
+    "RED_GREEN_execution_still_required": true
+  },
+  "multifractal_semantics_review": {
+    "source_snapshot": "b245cdcfaa3e21acb7d933ebca0932dc353ede0d",
+    "report_section": 29,
+    "module_blob": "fe95ca70affc680051b8330dbd9c3ece6fe40b30",
+    "stateful_blob": "60aa06f21974f537058e04eebce1bbe85a83fc0b",
+    "original_findings_array_unchanged": true,
+    "additional_open_contract": {"id": "RA-S-F01", "severity": "P2_statistical_feature_semantics", "status": "open_static_confirmed", "summary": "absolute-return moment ratio exported as directional Hurst without a temporal-dependence estimator", "equal_magnitude_n50_formula_value": 0.557717286512636, "observed_feature_indices": [37,38,39], "model_split_use_or_economic_impact_measured": false},
+    "windows_in_observations": [10,25,50],
+    "physical_time_input_to_this_estimator": false,
+    "D0_occupancy_not_amplitude_is_intentional": true,
+    "all_nonzero_n50_tau0": -1.02944684452678,
+    "all_nonzero_n50_clipped_D0": 1,
+    "D0_policy_consumer_found_in_review": false,
+    "separate_RecursiveHurst_invalidated_by_this_review": false,
+    "Rust_tests_executed_for_this_review": false,
+    "code_modified": false
+  },
+  "evidence_expiry_effective_oracles": {
+    "report_section": 30,
+    "branch": "codex/evidence-expiry-2026-10-04",
+    "base": "c6ce7333f670c021db56b2c987680bbd7ebe8c7a",
+    "existing_ids": ["MG-02", "MG-05"],
+    "tests_sha256": "797AF948C6E4B82EA385B9DB518956B34FC013E48EDBB2779E253E25718C77E3",
+    "same_test_bytes_in_RED_and_GREEN": true,
+    "negative_oracle": {"passed": 1, "failed": 12, "ignored": 0, "exit": 101, "variant": "legacy publication extracted into helper; IC still depth-only"},
+    "positive_oracle": {"passed": 13, "failed": 0, "ignored": 0, "exit": 0},
+    "lundberg_units_regression": {"passed": 6, "failed": 0, "ignored": 0, "filtered_out": 122, "exit": 0},
+    "earlier_fixture_compile_failure_counted_as_RED": false,
+    "parent_reexecuted_13_tests": false,
+    "parent_cotejo_of_diff_tests_and_logs": true,
+    "independent_patch_review_complete": true,
+    "independent_review_new_blockers_in_scope": 0,
+    "same_scale_historical_IC_freshness_certified": false,
+    "real_close_losing_R_or_feedback_changing_tau_executed": false,
+    "negative_scalar_base_direct_fixture_executed": false,
+    "repair_integrated_in_RA_or_main": false,
+    "absent_R_mask": 0,
+    "absent_margin_is_measured_bound": false,
+    "absent_IC_mask": -1,
+    "absence_distinguishable_from_measured_IC_minus1": false,
+    "multi_key_or_order_snapshot_certified": false,
+    "MG_full_T1_executed": false,
+    "all_targets_final_check_executed": true,
+    "all_targets_result": {"exit": 0, "cargo_reported_seconds": 153, "session": 23272},
+    "local_commit": "605a4d7f3c2a138ca7e826b7cb131a096f393f90",
+    "local_commit_parents": ["c6ce7333f670c021db56b2c987680bbd7ebe8c7a", "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd"]
+  },
+  "accepted_feature_clock_followup": {
+    "report_section": 31,
+    "source_snapshot": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+    "module_blob": "60aa06f21974f537058e04eebce1bbe85a83fc0b",
+    "additional_open_contract": {"id": "RA-I-F01", "severity": "P2_state_transition", "status": "patched_local_not_integrated", "summary": "rejected ticks advance last_event_ms before volume/derived/counter guards, altering cooldown and streak amortization", "live_order_impact_observed": false},
+    "repair_branch": "codex/feature-clock-2026-10-04",
+    "repair_source_modified": true,
+    "repair_source_sha256": "5A5940CBEEE5F5EC7984449BBDF86157A6C56F8BA3B840120A1E0DC5ED318A5C",
+    "tests_sha256": "BB96D9C922FDD1F1DE6F1823F8BC4170FAC24A5C698C384B64858756DD4CF706",
+    "regression_tests_added": 3,
+    "RED_state": "executed_18_passed_7_failed_0_ignored_exit101",
+    "GREEN_executed": true,
+    "GREEN_result": {"passed": 25, "failed": 0, "ignored": 0, "exit": 0},
+    "independent_review_new_blockers_in_scope": 0,
+    "unit_stateful_result": {"passed": 18, "failed": 0, "ignored": 0, "filtered_out": 145},
+    "independent_review_or_expanded_checks_complete": true,
+    "all_targets_result": {"exit": 0, "cargo_reported_seconds": 205, "session": 27451},
+    "local_commit": "f3018b35b2eeb99e0c41d1a842d96012d86558c2",
+    "original_findings_array_unchanged": true,
+    "repair_integrated_in_RA_or_main": false
+  },
+  "full_RA_T1_completed_receipt": {
+    "report_section": 32,
+    "source_frozen": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+    "session": 29055,
+    "command": "cargo +nightly-2026-06-30 test -p backtest-engine --release --locked --offline -j 2 --test t1_cobertura_genetica -- --test-threads=1 --nocapture",
+    "exit": 0,
+    "passed": 2,
+    "failed": 0,
+    "ignored": 0,
+    "release_build_seconds": 8073,
+    "test_seconds": 4636.44,
+    "observed_sensitive_perturbations": 16,
+    "coordinates": 144,
+    "historical_ratchet": 0.110,
+    "baseline_roundtrip_changed_slots": [],
+    "synthetic_fixture_rows": 3000,
+    "synthetic_predictor_base": 0.5,
+    "initial_fixture_capital": 1000,
+    "log_sha256": "C6414A989C15F87F31B2A85FC9D543D21EA0341DBF464AE52CCDEB858D4AE9F6",
+    "binary_sha256": "BB837CDB756110F68FF3B1D5707D6A77AF70F60614A6C7DA792782D12642AC7C",
+    "test_sha256": "A10C43BA6F881B92CDDB83D96AC4AF8D59E9DB7FDADB1B35B7DB4C1E3FE602CE",
+    "fixture_helper_sha256": "1D874D34C30E3D7FCDB2A35C28D1C869837F6AB0939C5D9749A4645C73CC71C0",
+    "MG_or_clock_or_forest_patch_included": false,
+    "independent_gene_sensitivity_proven": false,
+    "global_gene_inertia_proven": false,
+    "economic_target_or_production_parity_certified": false,
+    "RA_integrated_into_main": false,
+    "later_head_CI_required": true
+  },
+  "post_T1_branch_reconciliation": {
+    "report_section": "32.1",
+    "remote_main": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+    "published_RA_head": "b245cdcfaa3e21acb7d933ebca0932dc353ede0d",
+    "PR_28_draft": true,
+    "CI_37230580226_state_at_receipt": "in_progress",
+    "RA_exclusive_commits_at_published_head": 16,
+    "MG_exclusive_local_commits": 1,
+    "clock_exclusive_local_commits": 1,
+    "public_MG_clock_publication_consent_received": false,
+    "merged_inactive_local_GLM_refs_removed_previously": 2,
+    "commits_or_files_deleted": false,
+    "other_exclusive_or_occupied_branches_preserved": true
+  },
+  "explicit_CI_contract_followup": {
+    "report_section": 33,
+    "receipt_cut_UTC": "2026-10-04T21:00:56Z",
+    "remote_main": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+    "compilation_is_not_test_execution": true,
+    "prior_workflow_steps_removed": false,
+    "ignored_tests_enabled": false,
+    "compiler_or_timeout_changed": false,
+    "public_consent_for_new_series_received_at_cut": false,
+    "series": [
+      {"branch": "codex/evidence-expiry-2026-10-04", "functional_commit": "605a4d7f3c2a138ca7e826b7cb131a096f393f90", "local_head": "7aadf509f766a143880875210961c581c2ce75dd", "added_CI_target": "evidence_expiry_contract", "source_and_test_bytes_unchanged_in_CI_adenda": true, "remote_CI_execution_received": false},
+      {"branch": "codex/feature-clock-2026-10-04", "functional_commit": "f3018b35b2eeb99e0c41d1a842d96012d86558c2", "local_head": "36b0063c60e271e1b9895aac40432e7ede959a2f", "added_CI_target": "stateful_transition_contract", "source_and_test_bytes_unchanged_in_CI_adenda": true, "remote_CI_execution_received": false},
+      {"branch": "codex/forest-evaluation-2026-10-04", "functional_commit": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15", "local_head": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15", "added_CI_target": "evolution-engine_lib", "remote_CI_execution_received": false}
+    ],
+    "all_series_integrated_into_RA_or_main": false,
+    "published_RA_head": "b245cdcfaa3e21acb7d933ebca0932dc353ede0d",
+    "CI_37230580226_at_last_query": "in_progress",
+    "additional_branch_cleanup_performed_in_this_followup": false,
+    "merged_or_inactive_with_zero_exclusive_refs_remaining": "none_outside_main_or_occupied_worktree",
+    "external_editor_ack_of_new_scientific_proposals_received": false
+  },
+  "forest_effective_oracle_receipt": {
+    "report_section": 34,
+    "existing_ids": ["RA-E03", "RA-E04"],
+    "status": "patched_local_not_published_not_integrated",
+    "local_commit": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+    "commit_parents": ["5ab07f3589a1ab273794bf373b40b9f120a5b438", "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd"],
+    "source_sha256": "E8C7D240A4562A5EAD4450220C2DF07D9B8F5B743EF49B66272878EB179344AD",
+    "test_module_sha256": "527D991D1BAD59A01181748271059C5784542D5A2DF97C8254D01C15AFD861AA",
+    "new_tests": 11,
+    "original_test_functions_byte_preserved": 5,
+    "baseline_forest_source_identical_in_5ab_and_main_e3": true,
+    "RED_production": "baseline5ab_with_expanded_tests",
+    "RED_result": {"passed": 7, "failed": 9, "ignored": 0, "filtered_out": 57, "exit": 101},
+    "RED_compilation_succeeded": true,
+    "initial_GREEN_result": {"passed": 16, "failed": 0, "ignored": 0, "filtered_out": 57, "exit": 0},
+    "restored_GREEN_result": {"passed": 16, "failed": 0, "ignored": 0, "filtered_out": 57, "exit": 0},
+    "final_library_result": {"passed": 73, "failed": 0, "ignored": 0, "exit": 0},
+    "parent_reexecuted_worker_tests": false,
+    "parent_cotejo_of_source_formulas_hashes_logs": true,
+    "independent_review_executed_Rust_tests": false,
+    "independent_review_new_blockers_in_scope": 0,
+    "all_targets_result": {"exit": 0, "cargo_reported_seconds": 150, "session": 96306},
+    "diff_against_each_parent_reviewed": true,
+    "RED_log_sha256": "88FE3ADEE9697F2CCD53EB8941CF90D6A8980A013B3EAB42BFADC053F9A96023",
+    "restored_GREEN_log_sha256": "D3B30A6217C6B9721B0C74FCEA77B38061A7B26066493380BFA7A88552A18ACA",
+    "final_library_log_sha256": "58694C9555618D6423395F5BF31C32D3C2474B77CFCB0DAE1F7BDB9066E314A3",
+    "all_targets_log_sha256": "6A40DEA9531E7FEB6E3EA75D4468CBB93A58790749431083A5903F5E6DC99155",
+    "automatic_contemporaneous_log_to_source_OID_seal": false,
+    "drawdown_scope": "observed_realized_capital_not_MTM_or_intra_event_extrema",
+    "winner_proxy_OOS_or_invalid_control_policy_changed": false,
+    "full_T1_or_host_replay_parity_executed_for_this_patch": false,
+    "parent_started_training_promotion_or_live_trading": false
+  },
+  "branch_ref_census":
+    {
+      "remote_main": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+      "inventory_method": "for-each-ref plus rev-list ancestry and worktree occupancy; not semantic review of every exclusive diff",
+      "symbolic_origin_HEAD_excluded": true,
+      "refs": [
+        {
+          "ref": "refs/heads/backup-before-cleanup",
+          "oid": "26afeb794811c456cfd12c4659218ccc2d5c972b",
+          "missing_main_commits": 850,
+          "exclusive_commits": 3,
+          "occupied_worktree": false,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/heads/codex/evidence-expiry-2026-10-04",
+          "oid": "7aadf509f766a143880875210961c581c2ce75dd",
+          "missing_main_commits": 0,
+          "exclusive_commits": 2,
+          "occupied_worktree": true,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/heads/codex/feature-clock-2026-10-04",
+          "oid": "36b0063c60e271e1b9895aac40432e7ede959a2f",
+          "missing_main_commits": 0,
+          "exclusive_commits": 2,
+          "occupied_worktree": true,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/heads/codex/forest-evaluation-2026-10-04",
+          "oid": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+          "missing_main_commits": 0,
+          "exclusive_commits": 1,
+          "occupied_worktree": true,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/heads/codex/model-reload-contract",
+          "oid": "3139f444a2dcfd7b8ec1aca2aebb54c48ec46ff6",
+          "missing_main_commits": 52,
+          "exclusive_commits": 4,
+          "occupied_worktree": false,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/heads/codex/root-audit-2026-10-04",
+          "oid": "b245cdcfaa3e21acb7d933ebca0932dc353ede0d",
+          "missing_main_commits": 0,
+          "exclusive_commits": 16,
+          "occupied_worktree": true,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/heads/feat/quant-sr-codex-horizonte",
+          "oid": "6209704acc77bbc0c088cfd206fd82118aaed3d0",
+          "missing_main_commits": 448,
+          "exclusive_commits": 4,
+          "occupied_worktree": false,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/heads/main",
+          "oid": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+          "missing_main_commits": 0,
+          "exclusive_commits": 0,
+          "occupied_worktree": true,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/heads/v7-unificacion-wip",
+          "oid": "48421129a9f03a101b1ace0e1789e35aff402148",
+          "missing_main_commits": 780,
+          "exclusive_commits": 1,
+          "occupied_worktree": false,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/remotes/origin/claude/auditoria-deslizamiento-apalancamiento-sqtc08",
+          "oid": "6f02388e822401884e15368b6348ee4e260e4019",
+          "missing_main_commits": 21,
+          "exclusive_commits": 1,
+          "occupied_worktree": false,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/remotes/origin/codex/root-audit-2026-10-04",
+          "oid": "b245cdcfaa3e21acb7d933ebca0932dc353ede0d",
+          "missing_main_commits": 0,
+          "exclusive_commits": 16,
+          "occupied_worktree": false,
+          "deletion_eligible": false
+        },
+        {
+          "ref": "refs/remotes/origin/main",
+          "oid": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+          "missing_main_commits": 0,
+          "exclusive_commits": 0,
+          "occupied_worktree": false,
+          "deletion_eligible": false
+        }
+      ],
+      "eligible_for_deletion": [],
+      "other_branches_deleted": false,
+      "receipt_utc": "2026-10-04T21:06:21Z",
+      "merged_pull_request_receipts": [
+        {
+          "number": 23,
+          "state": "MERGED",
+          "merge_commit": "589a591db26fc4e30af931d71b0fb1f9cc3103f4",
+          "merged_at": "2026-09-30T14:11:15Z",
+          "merge_commit_is_ancestor_of_origin_main": true,
+          "head_branch": "codex/model-registry-evidence"
+        },
+        {
+          "number": 24,
+          "state": "MERGED",
+          "merge_commit": "22bf9d275b8e2a7642342e0fe3b65eb9ec293af1",
+          "merged_at": "2026-09-30T16:28:59Z",
+          "merge_commit_is_ancestor_of_origin_main": true,
+          "head_branch": "codex/genome-oracle-evidence"
+        },
+        {
+          "number": 25,
+          "state": "MERGED",
+          "merge_commit": "b56aa1187cc416e618cc57e0d68559d2f41adb42",
+          "merged_at": "2026-10-01T14:49:24Z",
+          "merge_commit_is_ancestor_of_origin_main": true,
+          "head_branch": "codex/model-publication-contract"
+        },
+        {
+          "number": 26,
+          "state": "MERGED",
+          "merge_commit": "b4ce1da179041087d7a3db8eb2e69fe46c4005ec",
+          "merged_at": "2026-10-01T04:55:50Z",
+          "merge_commit_is_ancestor_of_origin_main": true,
+          "head_branch": "claude/auditoria-deslizamiento-apalancamiento-sqtc08"
+        },
+        {
+          "number": 27,
+          "state": "MERGED",
+          "merge_commit": "949d29c1b823b14839be9e17a230a5aa3cd212b6",
+          "merged_at": "2026-10-04T10:17:21Z",
+          "merge_commit_is_ancestor_of_origin_main": true,
+          "head_branch": "claude/auditoria-deslizamiento-apalancamiento-sqtc08"
+        }
+      ],
+      "PR_28_is_merged": false,
+      "ancestry_guarantees_no_later_semantic_reversion": false
+    },
+  "CI_b245_final_receipt": {
+    "report_section": 36,
+    "run": 37230580226,
+    "result": "success",
+    "head": "b245cdcfaa3e21acb7d933ebca0932dc353ede0d",
+    "tested_merge": "62c2ea0d7fc0c72595ea237d7ceff702f200dc4b",
+    "tested_merge_parents": ["e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd", "b245cdcfaa3e21acb7d933ebca0932dc353ede0d"],
+    "parents_confirmed_from_log_and_API": true,
+    "job_started_UTC": "2026-10-04T20:02:48Z",
+    "job_completed_UTC": "2026-10-04T21:06:19Z",
+    "target_results": 13,
+    "passed": 187,
+    "failed": 0,
+    "ignored": 3,
+    "parser_passed": 19,
+    "nonfinite_admission_passed": 7,
+    "OOS_context_passed": 6,
+    "parity": {"passed": 8, "failed": 0, "ignored_manual_tape_experiments": 2},
+    "log_sha256": "14F08965268EA9B1C05F19FB7E306FB5C7FB1574C5BACD0C16E3DA980386DB00",
+    "new_documentary_head_certified_by_this_receipt": false,
+    "MG_or_clock_or_forest_patch_included": false,
+    "full_T1_replaced_by_fast_CI_test": false,
+    "whole_system_or_economic_target_certified": false
+  },
+  "legacy_exclusive_change_review":
+    {
+      "report_section": 37,
+      "reviewer": "independent_read_only_subagent",
+      "main_fixed": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+      "server_consulted_by_reviewer": false,
+      "reviewed_ref_OIDs_stable": true,
+      "non_merge_exclusive_cherry_plus_count": 12,
+      "whole_branch_patch_equivalence_proven": false,
+      "TH_partial_cleanup": {
+        "merge": "570a7bf3",
+        "first_parent": "56a00f46",
+        "equivalent_main_commit": "01f8ca68",
+        "stable_patch_id": "c485000ba73965ca531601b8f74269eed408e3db"
+      },
+      "scope_sizes_reported_by_reviewer": [
+        {
+          "ref": "backup-before-cleanup",
+          "exclusive": 3,
+          "missing_main": 850,
+          "largest_commit_routes": 16596,
+          "largest_commit_binary_routes": 3621
+        },
+        {
+          "ref": "feat/quant-sr-codex-horizonte",
+          "exclusive": 4,
+          "missing_main": 448,
+          "net_fork_delta_routes": 12,
+          "added_lines": 1500,
+          "removed_lines": 60
+        },
+        {
+          "ref": "v7-unificacion-wip",
+          "exclusive": 1,
+          "missing_main": 780,
+          "delta_routes": 82,
+          "added_lines": 4108,
+          "removed_lines": 1923
+        },
+        {
+          "ref": "codex/model-reload-contract",
+          "exclusive": 4,
+          "missing_main": 52,
+          "net_delta_routes": 11,
+          "added_lines": 974,
+          "removed_lines": 59
+        },
+        {
+          "ref": "origin/claude/auditoria-deslizamiento-apalancamiento-sqtc08",
+          "exclusive": 1,
+          "missing_main": 21,
+          "only_memory_delta": true,
+          "added_lines": 7,
+          "removed_lines": 3
+        }
+      ],
+      "full_semantic_or_runtime_certification": false,
+      "refs_deleted": false,
+      "RA_published_head_at_receipt": "ff99849a20ec0780f402c59bd88a612cf68e5d95",
+      "new_CI_run": 37235240759,
+      "new_CI_state_at_receipt": "in_progress",
+      "this_metadata_followup_published_at_receipt": false
+    },
+    "restart_causal_review_2026_10_04_2225": {
+      "cut": "2026-10-04T22:25:08Z",
+      "main": "44bc8ab98b7d23a44add3c9d0b9b54d34e9f6a1e",
+      "previous_main": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+      "RA_merge_at_cut": "resolved_by_union_check_pending",
+      "CI_head": "ff99849a20ec0780f402c59bd88a612cf68e5d95",
+      "CI_run": 37235240759,
+      "CI_state_at_cut": "in_progress_old_base",
+      "new_agent_ack": false,
+      "all_files_semantically_audited": false,
+      "live_orders": false,
+      "training": false,
+      "profitability_certified": false,
+      "IC_same_tau_followup": {
+        "id": "MG05",
+        "status": "open_existing_followup",
+        "independent_static_review": true,
+        "parent_calculation_checked": true,
+        "tau_ms": 274877.906944,
+        "paired_samples": 40,
+        "unpaired_updates": 100,
+        "gap_ms": 27500000,
+        "gap_tau": 100.0444171950221,
+        "IC_before_and_after": 1,
+        "reader_rho_example": {
+          "base": 0.6,
+          "final": 1
+        },
+        "actual_order_rejection_measured": false,
+        "registry_timestamp_is_creation_not_freshness": true
+      },
+      "SA_negative_penalty": {
+        "id": "RA-SA-F01",
+        "priority": "P2",
+        "status": "open_preexisting_other_consumer",
+        "related_id": "FMT-011",
+        "source": "src/bin/evolution.rs",
+        "initial_capital": 13,
+        "final_capital": 11.7,
+        "DD_limit": 0.3,
+        "DD": [
+          0.11,
+          0.2
+        ],
+        "scores": [
+          -13862.618943292175,
+          -13142.589952285081
+        ],
+        "higher_risk_scores_better": true,
+        "method": "source_trace_and_independent_algebra_not_replay",
+        "promotion_or_loss_measured": false
+      },
+      "OOS_partition": {
+        "id": "RA-OOS-F01",
+        "status": "patched_local_separate_branch",
+        "branch": "codex/oos-partition-2026-10-04",
+        "commit": "9a3bb756529002b21f1e85e3571e2ffd9a6fbeac",
+        "RED": {
+          "passed": 9,
+          "failed": 5,
+          "exit_code": 101,
+          "baseline_kind": "extracted_legacy_guard_not_full_CLI"
+        },
+        "GREEN": {
+          "passed": 14,
+          "failed": 0,
+          "exit_code": 0
+        },
+        "all_targets": {
+          "exit_code": 0,
+          "seconds": 268
+        },
+        "independent_static_review_new_blockers": 0,
+        "CLI_executed": false,
+        "T1_full_executed": false,
+        "published": false,
+        "in_main": false
+      },
+      "branches_deleted_this_round": []
+    },
+    "restart_causal_review_verification_receipt": {
+      "candidate_base": "44bc8ab98b7d23a44add3c9d0b9b54d34e9f6a1e",
+      "all_targets": {
+        "exit_code": 0,
+        "seconds": 169,
+        "log_sha256": "099AF3FC960167ECFD9854527C2EB54EBD20945C8180AF12BDB2411F5A1446E9"
+      },
+      "CI_run": 37235240759,
+      "CI_head": "ff99849a20ec0780f402c59bd88a612cf68e5d95",
+      "CI_conclusion": "success",
+      "CI_completed_at": "2026-10-04T22:24:35Z",
+      "latest_remote_main_seen": "2302278b496aeafbdb71d5516a39933426ea424f",
+      "latest_main_delta": {
+        "only_docs": true,
+        "files": 3,
+        "added_lines": 80,
+        "removed_lines": 0
+      },
+      "FDUSD_model_deletion_or_move": false,
+      "CI_is_not_new_candidate_evidence": true
+    },
+    "restart_main230_candidate_receipt": {
+      "parents": [
+        "cd2e00324c3fccdb9750e4f1794154d0e2911817",
+        "2302278b496aeafbdb71d5516a39933426ea424f"
+      ],
+      "all_targets_exit_code": 0,
+      "all_targets_seconds": 5.41,
+      "log_sha256": "E29844A035F318FD63041AE147F7064C04901ABDFDF8AF1D24015F2297B85E56",
+      "CI_preceding_head_receipt": {
+        "run": 37235240759,
+        "head": "ff99849a20ec0780f402c59bd88a612cf68e5d95",
+        "tested_merge": "800c5f67f24b427d735d4b2530492c24d5329c0e",
+        "parents": [
+          "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+          "ff99849a20ec0780f402c59bd88a612cf68e5d95"
+        ],
+        "passed": 187,
+        "failed": 0,
+        "ignored": 3,
+        "result_targets": 13,
+        "log_sha256": "277D11D0D183F7C546F014DA8B8BC05BF8A7ECFF9A1BEDB14E905D324A17490D"
+      },
+      "new_CI_required": true,
+      "PR_should_remain_draft": true,
+      "source_repair_OOS_remains_separate": true,
+      "delete_model_decision_executed": false
+    },
+    "restart_main62_documentary_merge_receipt": {
+      "parents": ["74be3ed561d155ea4d3e349c53fca46a5b6385a2", "62afe0f714a0e047f0712efac829e90e09682c0d"],
+      "only_documentary_delta_against_RA_parent": true,
+      "conflict_resolution": "append union; only conflict markers removed",
+      "nonempty_line_subsequence_preserved": {"coordination": [3618,3541], "plan": [581,106]},
+      "all_targets": {
+        "first_exit": 101,
+        "first_seconds": 25.8880011,
+        "first_log_sha256": "7F3BE22B81FAF699FA927C668859C18324CE643368A47B203ECDC82C43BA29F1",
+        "shared_cache_provenance_inference": true,
+        "refreshed_existing_Rust_files": 9,
+        "source_byte_hashes_unchanged": true,
+        "repeat_exit": 0,
+        "repeat_seconds": 130.408228,
+        "repeat_log_sha256": "9635D9805D12E855648C4E1B5C3F15A1851AB62B73045CA61541BB284905D48A",
+        "tests_executed_by_check": false
+      },
+      "tracked_rust_census": {"total":465,"under_crates":409,"under_tests_directories":139,"outside_tests_directories":326,"semantic_review_of_all_files":false},
+      "independent_local_series": {
+        "OOS": {"commit":"684e47082b57fb962cbd4fad05fac5b998be15ba","contract_passed":14,"contract_failed":0,"all_targets_exit":0,"included_in_RA":false,"in_remote_main":false},
+        "SA": {"initial_commit":"28c0004239b93490f790a03b3c581991e436c984","followup_committed_at_receipt":false,"contract_passed":22,"contract_failed":0,"review_blockers":0,"all_targets_exit":0,"included_in_RA":false,"in_remote_main":false}
+      },
+      "active_qoder_branch": "qoder/f1-matematica",
+      "external_ack_received": false,
+      "CI_head74_run":37240563716,
+      "CI_head74_status_at_receipt":"in_progress",
+      "new_CI_required":true,
+      "PR_should_remain_draft":true,
+      "branches_deleted":[],
+      "model_or_genome_activation":false,
+      "growth72h_demonstrated":false
+    },
+    "restart_main237_F1_and_ruin_receipt": {
+      "candidate_parents":["9bada4c018542326ef026c2f67f5c745315b77ab","23701ecb05486eb13b661d3d50afaadbc9a0015a"],
+      "main_delta":{"docs_only":true,"files":3,"added_lines":120,"removed_lines":1},
+      "Qoder_F1_inventory":{"reported":23,"high":2,"medium":8,"low":13,"all_independently_reproduced_by_Codex":false,"source_repairs_in_this_delta":false},
+      "ruin_contract":{"id":"RA-RUIN-F01","related_Qoder_id":"F1-B4","status":"open_reproduced_local","severity":"medium_contract; downstream extreme impact conditional","source":"crates/risk-engine/src/ruin.rs:67","source_sha256":"7AE99C6174DE9AC4B8D59E4EC264D10FEE35C2AEC1BC47BB7D6D0044B7ACCBCB","NaN_and_infinities_returned_unchanged":true,"probe_includes_actual_helper":true,"constant_stub_matches_actual_source":true,"red_passed":3,"red_failed":3,"red_exit":101,"probe_sha256":"24D21CA31BE174D69AA8B118E67BB51882345DEC597765B31D0ED37A0DC29427","log_sha256":"36C30F74DC4C74E15DD4492AB58D9FFCDFC65528FC4FC71139658508696EEB72","downstream_raw_exposure_nonfinite_guard_observed":true,"live_order_or_real_loss_demonstrated":false,"source_repaired":false,"owner_proposed":"Claude/risk, cross-review pending"},
+      "ruin_doc_sign_contradiction_confirmed":true,
+      "loss_probability_LCB_conservatism_requires_review":true,
+      "main_and_origin_main_at_fetch":"23701ecb05486eb13b661d3d50afaadbc9a0015a",
+      "SA_documented_local_commit":"701fa98e6d9e5788f2c7203c7da1135ad9ff3f77",
+      "new_agent_ack_received":false,"branches_deleted_by_Codex":[],
+      "trading_or_model_promotion":false,"full_project_semantic_audit":false
+    },
+    "exhaustive_per_file_plan_candidate_receipt": {
+      "plan":"docs/PLAN_REVISION_EXHAUSTIVA_2026-10-04.md",
+      "master_plan_section":16,
+      "snapshot":"23701ecb05486eb13b661d3d50afaadbc9a0015a",
+      "inventory_tsv":"docs/audit/COBERTURA_MAIN237_2026-10-04.tsv",
+      "inventory_json":"docs/audit/COBERTURA_MAIN237_2026-10-04.json",
+      "classification_is_not_semantic_review":true,
+      "all_versioned_classes_in_scope":true,
+      "ignored_untracked_runtime_resources_require_separate_annex":true,
+      "phases_preserve_shared_F0_F8":true,
+      "foundations_before_consumer_edits":true,
+      "coverage_receipt_key":["snapshot","path","oid","contract"],
+      "all_targets":{"exit":0,"seconds":154.188755,"profile":"dev","source_timestamp_refresh_count":9,"source_bytes_unchanged":true,"log_sha256":"DE2D2B2B212AE96A81CDF29B29CE954ACC5C85CEDD2FC78D60DA1075EBA5A0D9","tests_executed_by_check":false},
+      "preservation_checks":{"memory_nonempty_lines":[1774,1596],"coordination_nonempty_lines":[3661,3564],"plan_nonempty_lines":[603,106],"historical_json_roots_checked":39,"updated_barrido_identical_to_main237":true},
+      "CI_head74_status_at_2323Z":"in_progress",
+      "new_CI_required":true,"new_human_review_required":true,
+      "all_files_audited":false,"growth72h_demonstrated":false
+    }
+}
