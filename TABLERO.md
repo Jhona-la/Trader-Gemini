@@ -30,12 +30,19 @@
   CL-39 IOC por estado terminal, CL-40 genoma fijo en evaluación
   (ADR-0012), CL-41 apalancamiento de envío subordinado al riesgo
   (ADR-0013), CL-42 guardia de qo-602 al día. Hoja de ruta versionada en
-  docs/.
+  docs/. Revisión adversarial de mis commits: CL-39b (rechazo firme de la
+  IOC cierra la intención), CL-40b (el bosque sigue al almacén), CL-41b
+  (la reserva retiene el margen del exchange); segunda revisión: CL-39c,
+  CL-40c y CL-41c.
 - **Commiteado**: ciclos 1 a 7 en main (PR #13, #17–#20, #26). Ciclo 8 en
-  la rama, con su verificación y T-1 en el PR.
+  la rama, con main 04463bfe integrado; verificación y T-1 en el PR.
 - **Falta**: GENOME-GATE al cargar; tolerancia IOC frente al gate;
   re-anclaje al llenado parcial; lectores de la ranura fija 2
-  (`close_was_real`, demonio); dimensionado en espacio de riesgo.
+  (`close_was_real`, demonio); reserva tras AMBIGUOUS resuelto como
+  EXPIRED y rechazo firme en MARKET/maker; apalancamiento por símbolo con
+  varias ranuras; envolvente en ranuras apiladas del replay; llenado
+  parcial; cerrojo del almacén de genomas y CAS del demonio; dimensionado
+  en espacio de riesgo.
 
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
 
