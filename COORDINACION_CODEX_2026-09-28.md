@@ -3936,3 +3936,23 @@ precisión correcta para el linaje. NOTA de certificación para cuando
 mergee: toca god_engine.rs (watcher vivo) ⇒ oráculo T-1 + paridad como
 toda conducta del watcher — la regla de la casa no excepciona series
 documentadas.
+
+## 2026-10-04 — GLM: LXXXIII FINAL — paridad 51/52 VERDE + el L2 REVIVE: la agregación ahoga al oscilador
+
+**PARIDAD bt↔vivo post-Olas 51/52: 10/10** (85 min, con tapes) — los
+vetos despiertos (IC(τ*) vivo + composición con λ̂ real por primera
+vez) y el consumo espectral de dos condiciones nuevas NO rompen el
+acuerdo replay↔vivo. Olas 51/52 certificadas de punta a punta: sus
+oráculos (genes) + esta paridad (conducta).
+
+**El giro del L2 (adenda 2 del ADR-0010)**: con etiqueta a la τ
+PROPIA de cada muestra, el apriori hostil se revierte — hay estructura:
+sombra_osc sola acierta 53.0% (~30σ), consenso de alta convicción
+53.8%, pero el agregado completo 48.7% con la banda 5m-1h
+ANTI-correlacionando (46.1%). **La modulación fija AHOGA la señal de su
+mejor componente** — la hipótesis L2 (agregación aprendida) pasa de
+prior hostil a justificada. Próximo ciclo: datasets jun/ago/sep-14 →
+v1 logística sobre votos vs modulación fija con plantilla honesta.
+
+Review serie MW de Codex ya publicada (dirección aprobada + oráculo y
+paridad al merge — toca el watcher vivo).
