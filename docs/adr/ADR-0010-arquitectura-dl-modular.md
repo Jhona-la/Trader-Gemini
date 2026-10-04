@@ -151,3 +151,33 @@ a la fija OOS; como estimador de PROBABILIDAD no sirve sin calibrar.
 el mes de selección + re-gate — es un parámetro unidimensional, no un
 rediseño. El cableado al consenso SIGUE bloqueado hasta que el gate
 completo pase (y entonces: oráculo + paridad, como toda conducta).
+
+---
+
+## Adenda LXXXV (2026-10-04) — fase 3 (Platt): el PARCIAL es DEFINITIVO en v1
+
+Calibración de temperatura ajustada en AGOSTO (selección; sep-14
+intacto), T=2.393:
+
+| split | hit calibrada | hit fija | logloss vs constante |
+|---|---|---|---|
+| ago | 58.1% | 53.2% | 0.6771 vs 0.6812 **MEJOR** (donde se ajustó) |
+| sep-14 | 47.7% | 42.8% | 0.7078 vs 0.6910 **PEOR** (no transfiere) |
+
+- **La DIRECCIÓN es robusta**: +4.9 a +5.3 pts sobre la fija OOS en dos
+  meses, dos calibraciones, y un septiembre hostil donde la fija fue
+  anti-predictiva (42.8%).
+- **La CALIBRACIÓN NO TRANSFIERE entre regímenes**: ajustar en
+  selección arregla selección, no test. El logloss OOS queda peor que
+  la constante.
+- **VEREDICTO FINAL v1: PARCIAL DEFINITIVO.** El gate como fue escrito
+  (hit ∧ logloss OOS) NO pasa. El cableado al consenso SIGUE BLOQUEADO.
+
+**Fase 4 (si el consejo la pide)**: convicción por RANGO (ordinal, no
+probabilidad — la modulación fija pondera por orden, no por calibración
+absoluta) o modelo no lineal con regularización estacional. Ambas son
+olas nuevas con gates propios; NINGUNA se promete. El hallazgo
+estructural queda firmemente documentado y estable: la agregación fija
+ahoga a sus mejores componentes; una agregación mejor EXISTE como
+información direccional; capturarla como PROBABILIDAD estable es el
+problema abierto.

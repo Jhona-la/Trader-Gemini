@@ -26,6 +26,7 @@ pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64, total_trades: 
 
 pub mod fitness_contract;
 pub mod entry_reservation;
+pub mod evidence_publication;
 pub mod contagion_publisher;
 pub mod bootloader;
 pub mod calibration;
@@ -1600,6 +1601,16 @@ impl GodEngineCore {
                         }
                     }
                 }
+                // #651/MG05: IC SIGNED a la escala dominante vigente en
+                // TODO evento, también sin depth y antes de retornos por
+                // kill-switch. Escala fría o tau inválida retira el IC
+                // anterior; el lector conserva exactamente su rho escalar.
+                evidence_publication::publicar_coherencia(
+                    &self.arena.registry,
+                    &self.espectral_ma,
+                    coin_id,
+                    spec.dominant_tau_ms,
+                );
                 // #648/H3 (Ola 48) — EXPIRACIÓN del veredicto espectral:
                 // si el stream de depth cayó, el último dominante no-cero
                 // no puede pisar el veredicto escalar en cada trade-tick
@@ -1860,42 +1871,6 @@ impl GodEngineCore {
                             .registry
                             .set_for_coin(coin_id, "multiactivo_mejor_tau", tau);
                         let _ = otro; // el par específico: traza, no política
-                    }
-                    // #651 (Ola 51) — ESCRITOR de qo_613_rho_tau: el lector
-                    // del veto de grupo (#613, risk-engine) llevaba DORMIDO
-                    // desde su ola — se cableó el lector sin publicar la
-                    // clave (mea culpa documentado; el fixture monoactivo
-                    // del T-1 no podía delatarlo). Publica la coherencia
-                    // media SIGNED de esta moneda con todas las demás a la
-                    // ESCALA DOMINANTE (τ* de #594): ρ(τ*) sólo aprieta
-                    // cuando el grupo está más acoplado de lo que el PnL
-                    // agregado ve. Sin pares maduros a esa escala ⇒ nada
-                    // (NaN en el lector ⇒ ρ de siempre, bit a bit).
-                    {
-                        let tau_dom = spec.dominant_tau_ms;
-                        if tau_dom.is_finite() && tau_dom > 0.0 {
-                            let mut escala_dom = 0usize;
-                            let mut mejor_d = f64::INFINITY;
-                            for (k, &tau_k) in quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS
-                                .iter()
-                                .enumerate()
-                            {
-                                let d = (tau_k - tau_dom).abs();
-                                if d < mejor_d {
-                                    mejor_d = d;
-                                    escala_dom = k;
-                                }
-                            }
-                            if let Some(ic) =
-                                self.espectral_ma.coherencia_media_con_todas(coin_id, escala_dom)
-                            {
-                                if ic.is_finite() {
-                                    self.arena
-                                        .registry
-                                        .set_for_coin(coin_id, "qo_613_rho_tau", ic);
-                                }
-                            }
-                        }
                     }
                     // #609 (Ola 31): SOMBRA ESPECTRAL del oscilador cuántico —
                     // el pozo anarmónico con confinamiento AGY-P14 evaluado en
@@ -2537,6 +2512,15 @@ impl GodEngineCore {
             if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
                 let mid = (bid + ask) * 0.5;
                 spec.update(mid, event_time_ms);
+                // MG05: también los callers directos deben retirar evidencia
+                // de la escala anterior. En process_event -> dual, dt=0 no
+                // modifica el espectro ni duplica maduraciones del IC.
+                evidence_publication::publicar_coherencia(
+                    &self.arena.registry,
+                    &self.espectral_ma,
+                    coin_id,
+                    spec.dominant_tau_ms,
+                );
                 if coin_id < self.arena.coins.len() {
                     let field = spec.spectral_field(true);
                     self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
@@ -3491,20 +3475,16 @@ impl GodEngineCore {
                     // R y el margen de la cota ψ ≤ e^{−R·m} se publican al
                     // registro por moneda — el consumo de sizing es decisión
                     // del consejo con T-1 propio. Sin deriva positiva no hay
-                    // R (la cota no significa nada sin edge medido).
+                    // R (la cota no significa nada sin edge medido). MG02:
+                    // publicar también None retira R/margen anteriores y
+                    // enmascara el fallback global, sin cambiar ln(20)/R.
                     if let Some(est) = self.lundberg_siniestros.get_mut(coin_id) {
                         est.observar(pnl_epigenetico);
-                        if let Some(r) = est.lundberg() {
-                            self.arena
-                                .registry
-                                .set_for_coin(coin_id, "lundberg_r_nocional", r);
-                            // Margen log que la cota promete al 5%: ln(20)/R.
-                            self.arena.registry.set_for_coin(
-                                coin_id,
-                                "lundberg_margen_5pct",
-                                (20.0_f64).ln() / r,
-                            );
-                        }
+                        evidence_publication::publicar_lundberg(
+                            &self.arena.registry,
+                            coin_id,
+                            est.lundberg(),
+                        );
                     }
 
                     coin.apply_spectral_epigenetic_feedback_with_time(pnl_epigenetico, position_age_ms, tau_trade_ms, event_time_ms);
@@ -3512,6 +3492,14 @@ impl GodEngineCore {
                     // 2. Adaptacion continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
                     if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
                         spec.apply_epigenetic_outcome(tau_trade_ms, is_win, pnl_pct);
+                        // MG05: el feedback recalcula la dominante; retirar
+                        // el IC anterior antes de una posible nueva admisión.
+                        evidence_publication::publicar_coherencia(
+                            &self.arena.registry,
+                            &self.espectral_ma,
+                            coin_id,
+                            spec.dominant_tau_ms,
+                        );
                     }
 
                     // 3. Grade only opinions frozen at this position's opening.
