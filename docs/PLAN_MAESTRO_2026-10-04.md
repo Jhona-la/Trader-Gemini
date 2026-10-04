@@ -92,6 +92,11 @@ en el gradiente. Es código, no peso aprendido.
   científica incluye identidad, causalidad, DD histórico y admisión
   compuesta antes de interpretar fitness/skill/sizing económicamente.
   Esperar tapes nuevos no bloquea esos contratos. MW sigue separado.
+- **Corte posterior Codex**: main c6ce integrado en RA12456048 (documentos),
+  [adenda de sincronización §13](PLAN_MAESTRO_SINCRONIZACION.md#13-actualización-posterior-integración-documental-y-reservas-de-vigencia).
+  Censo1435 rutas/blob,433 crates; no revisión semántica total. MG02/MG05
+  reservados en otra rama/worktree; T1 RA todavía sin resultado al cerrar
+  ese recibo. Acuse del plan GLM253d leído; review RA anunciada, no aprobada.
 
 ### Antigravity
 - Símplex continuo Δ³ + colchón direccional en el orquestador + IOC

@@ -733,3 +733,73 @@ retorno aτA. No cambiar deliberadamente la política finita durante esta repara
 MG02/MG05 se añaden como dependencias de G4/G2 en el plan. Las tres validaciones
 matemáticas no se convierten en cambios de riesgo sin especificación y contraste.
 No se modificó Rust mientras T-1 certifica el candidato acotado RA.
+
+## 18. Segundo corte de sincronización, cobertura y Git
+
+Esta adenda conserva los cortes previos. Base remota observada main
+`c6ce7333f670c021db56b2c987680bbd7ebe8c7a`; GLM completó su merge LXXXIV.
+Integración propia `12456048d7c5cbafb23a75a530b3e030d53be913`, padres b6dfb374 y
+c6ce7333: conflicto sólo en bitácora, resuelto por unión. Comparaciones de
+ambos padres realizadas; `cargo +nightly-2026-06-30 check --workspace
+--all-targets --locked --offline -j 2` exit0, 37,88 s. Diff de crates, src,
+Cargo, workflow y configuración frente a496f902d vacío. No es RA integrado
+en main ni prueba de equivalencia operacional en demo/producción.
+
+### 18.1 Evidencia de coordinación, sin aprobación inferida
+
+GLM `253d0cd2` acusa recibo de firma/enlaces y anuncia calibración L2 fase3,
+reconciliación de planes y review PR28. La revisión anunciada aún no consta
+como resultado. ADR-0010 LXXXIV declara gate parcial: dirección relativa
+mejor, logloss peor; cableado bloqueado. Se mantiene esa distinción en el
+plan §13. Sep-14 observado no se vuelve ciego por congelar el ajuste en agosto;
+la propuesta separa re-gate histórico de una nueva confirmación no seleccionada.
+No se verificaron aquí filas, dependencia estadística o dataset del trainer;
+las cifras L2 se atribuyen al recibo GLM, no a una medición independiente RA.
+
+MG02/MG05 se reparan en otra rama propia sobre c6ce; **siguen abiertos en RA**
+hasta recibir oráculos y verificar integración. La clave ausente puede recuperar
+el global y NaN se normaliza a0 en omniscient-registry: publicar un NaN o borrar
+un escalar no demuestra invalidación correcta. El contrato debe cubrir también
+los lectores, ámbito, retorno a evidencia válida y transiciones frías.
+
+### 18.2 Censo completo de rutas; revisión semántica incompleta
+
+[Artefacto TSV](audit/RA_COBERTURA_2026-10-04.tsv),
+[semántica del recibo](audit/README_RA_COBERTURA_2026-10-04.md): 1435 entradas
+en12456048,433 en crates; ruta/modo/tipo/OID y estado inventariado. El propio
+censo es posterior al snapshot. No cubre archivos ignorados, datos externos
+o modelos en ejecución. No suma búsquedas, tests o lectura de tramos como
+1435 archivos auditados ni modifica retroactivamente el inventario1427 original.
+La auditoría debe avanzar con recibos por ruta/blob/contrato y consumidores.
+
+### 18.3 Todas las referencias observadas frente a main c6ce
+
+| Referencia / OID congelado | Exclusivos | Decisión y fundamento |
+|---|---:|---|
+| backup-before-cleanup /26afeb794 | 3 | Conservar: incluye artefactos y cambios antiguos extensos; no certificar equivalencia por comparación del árbol completo. |
+| codex/model-reload-contract /3139f444 | 4 | Conservar MW, publicación fuera del permiso RA; evidencia de recarga requiere su propio gate. |
+| feat/quant-sr-codex-horizonte /6209704a | 4 | Conservar TH: recibos/horizontes pendientes de reconciliación; no integrados por título. |
+| v7-unificacion-wip /48421129 | 1 | Conservar: preservación WIP extensa; integrar sin auditoría puede reintroducir rutas eliminadas después. |
+| origin/claude/auditoria-deslizamiento-apalancamiento-sqtc08 /6f02388e | 1 | Conservar adenda de memoria posterior a PR27; PR merged no implica rama actual enteramente integrada. |
+| glm/lxxxv-l2fase3 y origin equivalente /253d0cd2 | 1 | Conservar: rama ocupada por GLM en checkout operativo, trabajo activo. |
+| codex/root-audit-2026-10-04 /12456048 | 12 | Conservar: PR28 draft, faltan gates; main no contiene RA. |
+| origin/codex/root-audit-2026-10-04 /b6dfb374 | 11 | Antes de publicar1245; además faltan dos commits de main en ese corte remoto. |
+| codex/evidence-expiry-2026-10-04 /c6ce7333 | 0 | Conservar: worktree ocupado, reparación nueva en curso. |
+| main y origin/main /c6ce7333 | 0 | Raíz de comparación, no candidato de limpieza. |
+| glm/lxxxiv-l2v1 /eb617f548 | 0 | Retirada local tras ancestry+ausencia de worktree+CAS; remota ya ausente. Commit preservado en main. |
+
+`origin/HEAD` simbólico no es una rama independiente. Censo de todos los refs
+presentes después del fetch, no prueba de ausencia de ramas en repositorios
+ajenos. Los OIDs no cambian aunque otros agentes muevan sus nombres después.
+No se borró ningún worktree, archivo, dataset o commit. El nombre local GLM
+puede recrearse desde eb617f548 si fuera necesario.
+
+### 18.4 Gates que permanecen abiertos
+
+CI37221376454 del head b6df estaba en ejecución en el corte leído: all-targets
+y publicación/carga pasaron; contratos RA y suites posteriores todavía no
+finalizaban. CI37211025915 SUCCESS32/0 sigue siendo recibo de otro candidato.
+El T1 completo local29055 continúa compilando dependencias de release, sin
+resultado de tests. No se cancela ni se sustituye por fastT1, por el T1 Qoder
+o por paridad GLM. El nuevo head documental exige su CI correspondiente.
+Review humana de RA no recibida en GitHub. Se mantiene draft y no se fuerza merge.

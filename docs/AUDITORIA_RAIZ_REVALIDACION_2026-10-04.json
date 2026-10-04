@@ -414,5 +414,44 @@
         "one_symbol_pp": 3.8461538461538463
       }
     }
+  },
+  "integration_followup": {
+    "date": "2026-10-04",
+    "report_section": 18,
+    "main_snapshot": "c6ce7333f670c021db56b2c987680bbd7ebe8c7a",
+    "documentary_merge": "12456048d7c5cbafb23a75a530b3e030d53be913",
+    "merge_parents": ["b6dfb374b95e6d7cda7ca9f39421d5580f241fae", "c6ce7333f670c021db56b2c987680bbd7ebe8c7a"],
+    "code_equivalent_to": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+    "all_targets_exit": 0,
+    "all_targets_seconds": 37.88,
+    "ra_integrated_in_main": false,
+    "coverage": {
+      "snapshot": "12456048d7c5cbafb23a75a530b3e030d53be913",
+      "artifact": "audit/RA_COBERTURA_2026-10-04.tsv",
+      "tracked_entries": 1435,
+      "crates_entries": 433,
+      "state": "inventory_only_not_semantic_certification",
+      "all_files_semantically_audited": false
+    },
+    "coordination": {
+      "glm_plan_acknowledgement": "253d0cd2ef34b7ecb348d97ec5b042d08e015b1a",
+      "ra_review_announced_not_received": true,
+      "l2_full_gate": "partial_direction_better_logloss_worse_wiring_blocked",
+      "new_codex_scope": "MG02 and MG05 evidence expiry; separate worktree",
+      "new_codex_branch": "codex/evidence-expiry-2026-10-04",
+      "new_codex_base": "c6ce7333f670c021db56b2c987680bbd7ebe8c7a"
+    },
+    "cleanup": {
+      "removed_local_ref": "refs/heads/glm/lxxxiv-l2v1",
+      "removed_ref_oid": "eb617f548ab1a3050ee97b244ff747a174849716",
+      "remote_ref_already_absent": true,
+      "exclusive_commits": 0,
+      "occupied_worktree": false,
+      "commit_preserved_in_main": true,
+      "exclusive_branches_preserved": true
+    },
+    "ci_at_observation": {"run_id": 37221376454, "head": "b6dfb374b95e6d7cda7ca9f39421d5580f241fae", "status": "in_progress"},
+    "full_t1_at_observation": "release_dependencies_still_compiling_no_test_result",
+    "human_ra_approval_received": false
   }
 }

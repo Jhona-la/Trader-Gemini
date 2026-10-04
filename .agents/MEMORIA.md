@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: main c6ce, censo por blob y reservas de vigencia
+
+- Merge propio RA12456048 conserva GLM LXXXIV gate parcial y ambas bitácoras;
+  ambos padres revisados, all-targets exit0/37,88s, Rust/CLI/CI idéntico a496f.
+- RA§18/JSON.integration_followup y plan§13 añaden acuse del plan por GLM253d,
+  review anunciada aún no recibida, frontera de re-gate y reservas MG02/MG05.
+  Nueva rama/worktree codex/evidence-expiry-2026-10-04 sobre c6ce; no toca RA
+  durante T1 ni procesos. Los bugs aún no se dan por cerrados en el informe RA.
+- Censo docs/audit/RA_COBERTURA_2026-10-04.tsv:1435 rutas en1245,433 crates;
+  cada modo/tipo/OID coincide con ls-tree, sin duplicados. Estado únicamente
+  inventariado; no es lectura semántica total. JSON conserva historia b6df.
+- Retirada sólo referencia local glm/lxxxiv-l2v1 eb617f548, integrada y sin
+  worktree ocupado; remota ya ausente. Commit preservado en main. GLM LXXXV
+  activo, MW/TH/V7/backup/Claude con exclusivos y ramas ocupadas se conservan.
+- CI del head b6df y T1 completo local aún sin resultado final en este corte;
+  draft RA no se fuerza a main ni se confunde acuse del plan con aprobación RA.
+
 ## 2026-10-04 — Codex: planes sincronizados y revisión matemática MG
 
 - Main856/Qoder y plan GLMd777 unidos localmente en RA por f10434d6/381e5f7d;
