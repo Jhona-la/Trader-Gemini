@@ -458,6 +458,57 @@ impl Position {
         result
     }
 
+    /// CL-45: confirma la ocupante con la cantidad que el exchange EJECUTÓ.
+    /// Una IOC puede terminar con una parte ejecutada; antes la reserva se
+    /// confirmaba con la cantidad, el margen y la comisión de la orden
+    /// completa y el arena creía tener más posición que el exchange. Si
+    /// `ejecutada` < cantidad, la ranura se escala por r = ejecutada/cantidad:
+    /// la diferencia de margen (negativa) se suma a `used_margin` bajo el
+    /// cerrojo y antes de publicar el margen nuevo (como CL-41c), y se
+    /// devuelve la parte de la comisión de entrada que no se pagó. Una
+    /// `ejecutada` mayor que la cantidad se recorta (el exchange redondea);
+    /// una no finita o no positiva sólo confirma (sin evidencia de cantidad).
+    /// Sobre una ocupante ya confirmada (p. ej. por la reconciliación) no
+    /// vuelve a escalar: es idempotente, como `confirm_generation`.
+    /// `entry_price` no se re-ancla al precio medio del llenado.
+    pub fn confirmar_llenado_generation(
+        &self,
+        generation: u64,
+        ejecutada: f64,
+        used_margin: &AtomicF64,
+    ) -> Result<f64, PositionTransitionError> {
+        self.lock_transition();
+        let result = if self.generation.load(Ordering::Acquire) != generation {
+            Err(PositionTransitionError::GenerationMismatch)
+        } else if !self.is_open.load(Ordering::Acquire) {
+            Err(PositionTransitionError::Closed)
+        } else if self.exchange_confirmed.load(Ordering::Acquire) {
+            Ok(0.0)
+        } else {
+            let cantidad = self.quantity.load(Ordering::Relaxed);
+            let mut devuelta = 0.0;
+            if ejecutada.is_finite() && ejecutada > 0.0 && cantidad > 0.0 && ejecutada < cantidad {
+                let r = ejecutada / cantidad;
+                let margen = self.margin_used.load(Ordering::Relaxed);
+                let margen_nuevo = margen * r;
+                let delta = margen_nuevo - margen;
+                if delta != 0.0 {
+                    used_margin.fetch_add(delta, Ordering::AcqRel);
+                }
+                self.margin_used.store(margen_nuevo, Ordering::Relaxed);
+                let comision = self.entry_fee.load(Ordering::Relaxed);
+                let comision_nueva = comision * r;
+                devuelta = comision - comision_nueva;
+                self.entry_fee.store(comision_nueva, Ordering::Relaxed);
+                self.quantity.store(ejecutada, Ordering::Relaxed);
+            }
+            self.exchange_confirmed.store(true, Ordering::Release);
+            Ok(devuelta)
+        };
+        self.unlock_transition();
+        result
+    }
+
     /// A confirmation for an old occupant must not confirm a reused slot.
     /// The caller is responsible for supplying actual execution evidence.
     pub fn confirm_generation(&self, generation: u64) -> Result<(), PositionTransitionError> {

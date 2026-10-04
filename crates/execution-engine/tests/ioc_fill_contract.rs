@@ -2,9 +2,10 @@
 //! cantidad ejecutada de la PROPIA orden deciden si hubo entrada. Respuestas
 //! sintéticas; sin red.
 use execution_engine::ioc_evidence::{
-    clasificar_respuesta_ioc, error_cierra_la_intencion, resultado_para_el_host, ResultadoIoc,
-    IOC_UNFILLED,
+    cantidad_ejecutada_terminal, clasificar_respuesta_ioc, error_cierra_la_intencion,
+    resultado_para_el_host, ResultadoIoc, IOC_UNFILLED,
 };
+use execution_engine::{OrderRegistry, TrackedOrder};
 
 const SYM: &str = "AUDITUSDT";
 const ID: &str = "cL_ioc1";
@@ -133,4 +134,25 @@ fn cl39c_solo_un_error_firme_cierra_la_intencion() {
         ),
         "el cierre local va detrás de la decisión firme/ambigua"
     );
+}
+
+/// La orden tal como la deja el registro tras aplicar la respuesta `body`.
+fn orden(body: &str) -> TrackedOrder {
+    let r = clasificar_respuesta_ioc(body, SYM, ID).expect("evidencia válida");
+    let reg = OrderRegistry::new();
+    reg.register_intent(ID, SYM, "BUY", "LONG", "LIMIT", 1.2, 1);
+    reg.apply_ack(r.ack(), 2);
+    reg.get(ID).expect("orden registrada")
+}
+
+/// CL-45: sólo una orden terminal con ejecución aporta cantidad.
+#[test]
+fn cl45_cantidad_ejecutada_sale_de_la_orden_terminal() {
+    let parcial = orden(&cuerpo("EXPIRED", "1.2", Some("0.5"), "4.506"));
+    assert_eq!(cantidad_ejecutada_terminal(Some(&parcial)), Some(0.5));
+    let llena = orden(&cuerpo("FILLED", "1.2", Some("1.2"), "4.507"));
+    assert_eq!(cantidad_ejecutada_terminal(Some(&llena)), Some(1.2));
+    let vacia = orden(&cuerpo("EXPIRED", "1.2", Some("0"), "0"));
+    assert_eq!(cantidad_ejecutada_terminal(Some(&vacia)), None);
+    assert_eq!(cantidad_ejecutada_terminal(None), None);
 }

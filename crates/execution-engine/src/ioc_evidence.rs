@@ -19,7 +19,7 @@
 //! Reutiliza sin cambios los validadores estrictos de `execution_evidence`
 //! (un campo ausente no se toma por cero).
 use crate::execution_evidence::{parse_query_order_response, terminal_maker_executed_quantity};
-use crate::OrderAck;
+use crate::{OrderAck, OrderStatus, TrackedOrder};
 
 /// Prefijo del error no ambiguo de una IOC terminada sin ejecución.
 pub const IOC_UNFILLED: &str = "IOC_UNFILLED";
@@ -78,4 +78,16 @@ pub fn resultado_para_el_host(r: &ResultadoIoc, client_order_id: &str) -> Result
             ack.status
         )),
     }
+}
+
+/// CL-45: cantidad ejecutada de una orden YA TERMINAL según el registro
+/// (respuesta `RESULT` fusionada con los fills del WS). `None` si la orden no
+/// está, sigue activa, su estado es desconocido o no ejecutó nada: entonces
+/// no hay evidencia de cantidad y el host confirma como antes.
+pub fn cantidad_ejecutada_terminal(orden: Option<&TrackedOrder>) -> Option<f64> {
+    let o = orden?;
+    if o.status.is_active() || o.status == OrderStatus::Unknown {
+        return None;
+    }
+    (o.executed_qty.is_finite() && o.executed_qty > 0.0).then_some(o.executed_qty)
 }

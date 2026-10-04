@@ -4292,6 +4292,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     EntryRoute::Market
                                 }
                             };
+                            // CL-45: sólo la IOC responde con su estado terminal
+                            // (RESULT); MARKET responde ACK, sin la ejecución.
+                            let ruta_ioc = matches!(route, EntryRoute::Ioc { .. });
                             let entry_request = EntryRequest {
                                 symbol: &parsed_sym_str,
                                 is_long: final_is_long,
@@ -4338,7 +4341,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // B3.14 — la entrada EXISTE en el exchange:
                                     // los cierres de esta posición contabilizan
                                     // (los vetados/rechazados son papel).
-                                    if let Err(reason) = reservation.confirm(&arena_clone) {
+                                    // CL-45: con lo EJECUTADO. Una IOC parcial
+                                    // confirmaba antes la cantidad, el margen y la
+                                    // comisión de la orden completa.
+                                    let ejecutada = if ruta_ioc {
+                                        execution_engine::ioc_evidence::cantidad_ejecutada_terminal(
+                                            entry_executor.registry().get(&client_id).as_ref(),
+                                        )
+                                    } else {
+                                        None
+                                    };
+                                    if let Err(reason) = reservation.confirmar_llenado(&arena_clone, ejecutada) {
                                         quantum_arena::protection_health::mark_dirty();
                                         telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
                                     }
