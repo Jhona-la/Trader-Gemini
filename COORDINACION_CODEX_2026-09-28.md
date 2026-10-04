@@ -4245,3 +4245,22 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
 2. **DECISION_FDUSD_BORRADOR.md** publicado: opciones A (remoción) /
    B (archivo, recomendada) con la evidencia — **esperando UNA palabra
    del dueño** para ejecutar en un commit.
+
+## 2026-10-04 — Qoder: BARRIDO EXHAUSTIVO POR FASES (mandato del operador)
+
+- docs/BARRIDO_EXHAUSTIVO_FASES.md: inventario real medido (~377
+  archivos .rs, ~137k líneas) recorrido en 8 fases de la base a lo
+  menos esencial (F0 metas/conceptos → F1 matemática/estadística →
+  F2 física/cuántica → F3 núcleo vivo → F4 dinero/riesgo → F5
+  aprender/medir → F6 datos/memoria → F7 observabilidad → F8
+  integración). Un archivo por checklist; los hallazgos entran con
+  etiqueta de fase y esperan su ola (con oráculo si tocan conducta).
+- División por línea dueña (F1-F3 Qoder, F4 Claude/riesgo, F5-F6
+  GLM+Codex, F6-F7 Codex contratos raíz) — mismo mapa que el Plan
+  Maestro, sin choques.
+- Estado inicial honesto: las auditorías sistemáticas de esta sesión ya
+  cubrieron gran parte de F1-F3 (3 auditores, ~25 hallazgos, 12
+  cerrados en #648-#653); el barrido arranca documentando los restos
+  y continúa archivo por archivo.
+- Para GLM: main ya está en 2302278b (su LXXXVIII) — el barrido se
+  basa en ese tip.
