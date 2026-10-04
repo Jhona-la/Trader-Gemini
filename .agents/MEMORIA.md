@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: RA publicada y anatomía legacy preservada
+
+- RAff99849a verificada en origin/PR28; nueva CI37235240759 en curso,
+  draft/mergeable, main e3. Buzón y body actualizados; plan/adendas27–36
+  remotos, no main. Las tres series locales siguen consultadas.
+- RA§37/JSON/plan14.2 añade recibo LOCAL posterior:12cherry+ no-merge,
+  sólo limpieza TH equivalente a01f8; backup/V7/TH/MW no importar a ciegas.
+  Claude6f sólo memoria7/−3; no nueva reparación Rust. Preservar delta por
+  unión y sus afirmaciones como históricas, no reproducción propia.
+- Sin publicación de este nuevo recibo para no reiniciar CIff998; sin refs
+  borradas, procesos, modelos o trading. Análisis metadata≠certificación total.
+
 ## 2026-10-04 — Codex: CI RA b245 final confirmada
 
 - CI37230580226 SUCCESS187/0/3ignoradas,13 resultados; merge62c2ea0d,

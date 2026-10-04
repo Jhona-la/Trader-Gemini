@@ -1793,3 +1793,68 @@ este SUCCESS no se renombra como prueba de ese head. La fuente funcional
 del T1 propio permanece496, con la diferencia descriptiva de seis cadenas
 de vetos; MG/reloj/bosque no se incluyen. Publicación de esas tres series
 sigue consultada, main aún e3 y merge final de RA condicionado a sus gates.
+
+## 37. Anatomía de exclusivos legacy: recibo local posterior a la publicación
+
+Revisor independiente de sólo lectura, contra main fijo e3adf74e. Las cinco
+refs objetivo y la ref de control conservaron sus OIDs durante su análisis.
+No consultó el servidor; el fetch/censo§35 es del padre. Se revisaron commits
+exclusivos, numstat, nombres de rutas y patch-id; para Claude el diff completo.
+Esto **no** es una auditoría semántica de todas esas fuentes ni una ejecución
+de sus contratos. No se modificaron refs, índices, archivos o procesos.
+
+| Ref y exclusivos/faltantes | Anatomía informada por el revisor | Decisión de conservación |
+|---|---|---|
+| backup26afeb79:3/850 | Python, reorganización legacy, fuentes Rust y gran volumen generado/binario | No importar masivamente ni tratar un título de commit como prueba de funcionalidad |
+| TH6209704a:4/448 | Helper de horizonte, contratos de posición/envolvente, documentos y merge de limpieza | Revisar contratos contra APIs actuales; equivalencia sólo del componente identificado |
+| V7wip48421129:1/780 | 82 rutas, varias capas de ejecución/riesgo/replay/evolución/configuración | WIP transversal; preservar y descomponer antes de integrar |
+| MW3139f444:4/52 | Helper/reload, host, tests, workflow y recibos | Serie aparte de RA; preservar sus contratos y políticas pendientes de revisión |
+| Claude6f02388e:1/21 | Sólo memoria, +7/−3 líneas; recibo histórico PR27/CI/tests | Reconciliar delta por unión; no sustituir la memoria vigente |
+
+### 37.1 Qué significan los tamaños y qué no prueban
+
+Los numstats son del delta contra padre o fork, no la diferencia indiscriminada
+entre main actual y una rama antigua. El conteo grande se hizo sin detección
+de renames; los binarios no tienen cifras de líneas de texto. No mide esfuerzo,
+bugs ni valor económico.
+
+Backup: ca4dde0b cambia strategies/ml_strategy.py +3/−3; su asunto describe
+un alcance mayor que ese diff. 36ec67e0 abarca1704rutas/508binarias y
++2741320/−4149476líneas;26afeb79 abarca16596rutas/3621binarias y
++20899/−7322408líneas. Mezcla generados, target/target_locked, reorganizaciones
+y fuentes antiguas/nuevas. Es un archivo histórico, no un paquete listo de
+mejoras vigentes. No se han leído millones de líneas ni validado esos binarios.
+
+TH:56a00f46 altera core/risk y añade helper/contrato;f11575d3 agrega diagnóstico
+de envolventes;6209704a añade1070líneas en7documentos. Neto fork→tip:
+12rutas,+1500/−60. Los tres archivos nuevos de helper/contratos no estaban
+bajo esos nombres en main fijo; eso no demuestra ausencia de una reimplementación.
+
+V7:48421129 tiene82rutas,+4108/−1923:59bajo crates,6bins,5configs y otros
+artefactos/documentos. Corelib+314/−726, reconciliation.rs+237/0 y replay
++327/−53 ilustran que no es un único cambio aislado de nomenclatura.
+
+MW:4commits,d1cfe0b7/eaabd7a7/e7bd8f78/3139f444; neto11rutas,+974/−59.
+Helpermodel_reload.rs+100/0, contrato+253/0 y cambios del host/workflow.
+Los nombres nuevos no están en main fijo; sin certificar reload, watcher,
+atomicidad o compatibilidad con el inventario de modelos actual.
+
+### 37.2 Equivalencia parcial y frontera de integración
+
+git cherry marca «+» los12exclusivos no-merge. No existe equivalencia completa
+demostrada de esos commits; «+» tampoco refuta que parte de su funcionalidad
+haya sido subsumida por cambios posteriores. El merge570a7bf3 no entra en ese
+conteo. Su delta contra56a00f46 tiene el mismo patch-id estable que01f8ca68,
+ancestro de main: c485000ba73965ca531601b8f74269eed408e3db. Esa normalización
+de parche acredita la limpieza temporal específica, **no toda la rama TH**.
+
+Claude6f sólo cambia memoria: no contiene código Rust/CLI/CI exclusivo.
+Sus cifras históricas de tests/CI son afirmaciones del autor, no verificadas
+por este revisor. Sustituir el archivo entero desde esa ref perdería entradas
+posteriores Qoder/Codex; debe preservarse el delta por unión y mantener su
+corte de versión. Ninguna de estas refs se elimina por este recibo.
+
+La adenda se guarda localmente después de publicar ff99849a. La nueva CI
+37235240759 está en curso sobre ese head; no se cancela para publicar metadatos.
+No se afirma que este recibo adicional ya esté en GitHub/main. Siguiente paso:
+reconciliación semántica por contrato y candidato conjunto, no merge masivo.

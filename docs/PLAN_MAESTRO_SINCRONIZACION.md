@@ -660,3 +660,13 @@ propio§32 sigue siendo un recibo distinto. No garantía financiera ni aprobaci�
 de todos los fallos abiertos. Publicar las adendas autorizadas requiere nueva
 identidad/CI de PR28, sin cancelar ya la ejecución completada. Las tres series
 funcionales aisladas mantienen sus propias consultas y gates de integración.
+
+### 14.2 Recibo local legacy, sin churn de CI
+
+RA§37/JSON recibe anatomía de backup/TH/V7/MW/Claude frente a e3:12exclusivos
+no-merge cherry+, equivalencia sólo de limpieza TH/01f8, no de la rama.
+Claude6f es delta documental de memoria7/−3, sin código exclusivo. Preservar
+contenido por unión; las otras ramas requieren revisión semántica específica,
+no importar generados/WIP masivamente. Revisor no ejecutó Cargo ni certificó
+políticas, sólo leyó metadatos y el delta Claude. Recibo local posterior a
+publicar ff99849a; CI37235240759 en curso, no reiniciada por esta adenda.

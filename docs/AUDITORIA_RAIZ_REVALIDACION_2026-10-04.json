@@ -985,5 +985,68 @@
     "MG_or_clock_or_forest_patch_included": false,
     "full_T1_replaced_by_fast_CI_test": false,
     "whole_system_or_economic_target_certified": false
-  }
+  },
+  "legacy_exclusive_change_review":
+    {
+      "report_section": 37,
+      "reviewer": "independent_read_only_subagent",
+      "main_fixed": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+      "server_consulted_by_reviewer": false,
+      "reviewed_ref_OIDs_stable": true,
+      "non_merge_exclusive_cherry_plus_count": 12,
+      "whole_branch_patch_equivalence_proven": false,
+      "TH_partial_cleanup": {
+        "merge": "570a7bf3",
+        "first_parent": "56a00f46",
+        "equivalent_main_commit": "01f8ca68",
+        "stable_patch_id": "c485000ba73965ca531601b8f74269eed408e3db"
+      },
+      "scope_sizes_reported_by_reviewer": [
+        {
+          "ref": "backup-before-cleanup",
+          "exclusive": 3,
+          "missing_main": 850,
+          "largest_commit_routes": 16596,
+          "largest_commit_binary_routes": 3621
+        },
+        {
+          "ref": "feat/quant-sr-codex-horizonte",
+          "exclusive": 4,
+          "missing_main": 448,
+          "net_fork_delta_routes": 12,
+          "added_lines": 1500,
+          "removed_lines": 60
+        },
+        {
+          "ref": "v7-unificacion-wip",
+          "exclusive": 1,
+          "missing_main": 780,
+          "delta_routes": 82,
+          "added_lines": 4108,
+          "removed_lines": 1923
+        },
+        {
+          "ref": "codex/model-reload-contract",
+          "exclusive": 4,
+          "missing_main": 52,
+          "net_delta_routes": 11,
+          "added_lines": 974,
+          "removed_lines": 59
+        },
+        {
+          "ref": "origin/claude/auditoria-deslizamiento-apalancamiento-sqtc08",
+          "exclusive": 1,
+          "missing_main": 21,
+          "only_memory_delta": true,
+          "added_lines": 7,
+          "removed_lines": 3
+        }
+      ],
+      "full_semantic_or_runtime_certification": false,
+      "refs_deleted": false,
+      "RA_published_head_at_receipt": "ff99849a20ec0780f402c59bd88a612cf68e5d95",
+      "new_CI_run": 37235240759,
+      "new_CI_state_at_receipt": "in_progress",
+      "this_metadata_followup_published_at_receipt": false
+    }
 }
