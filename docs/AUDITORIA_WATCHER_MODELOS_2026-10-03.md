@@ -333,3 +333,77 @@ No se publicó esta rama al guardar el commit. La compilación integral aún
 estaba en progreso; el commit no certifica su resultado. Los hashes del
 artefacto corresponden a las fuentes del runner13/0. La validación final y
 la autorización pública se registrarán separadamente cuando existan.
+
+## 13. Contratos de cierre para la siguiente reparación
+
+Esta sección especifica criterios comprobables; no afirma que estén implementados.
+El orden propuesto es identidad y ciclo de vida antes de ampliar la sofisticación
+del predictor: sin atribución verificable, una mejora medida en backtest no puede
+vincularse con seguridad al modelo que respondió en demo o producción.
+
+| Expediente | Invariante necesario | Prueba de aceptación mínima |
+|---|---|---|
+| MW-04 | Una revocación explícita identifica clave y generación; la ausencia temporal de un archivo no se interpreta como una orden administrativa. | Revocar una generación con JSON, BIN y snapshot retenido; comprobar la política acordada en nuevas inferencias y en decisiones ya emitidas. Repetir con reinicio y ausencia transitoria de disco. |
+| MW-05 | Fuente, caché, esquema de features y predictor publicado pertenecen a una identidad verificable; cada decisión referencia esa identidad. | Combinar JSON de generación A con BIN válido de generación B, incluso con mtimes iguales o invertidos; rechazar la mezcla o regenerar desde A, sin publicar B como si fuese A. |
+| MW-06 | La latencia se mide entre eventos definidos, con carga, concurrencia y fallos documentados. Una cadencia no sustituye una distribución de latencia. | Medir detección, lectura, validación y publicación por separado; incluir directorio grande, disco lento, archivo inválido y múltiples claves. Informar percentiles y máximos observados sin presentarlos como cotas universales. |
+| MW-07 | Cambiar bytes relevantes no puede quedar oculto detrás de igualdad de metadata si se exige detección de contenido. | Publicar dos contenidos válidos de igual longitud y mtime; exigir identificación inequívoca de la versión aplicada y verificar que una escritura incompleta nunca se publica. |
+
+Para MW-04 hay una elección operativa pendiente: qué ocurre con una decisión que
+retuvo un snapshot antes de la revocación. El watcher por sí solo no puede probar
+que el consumidor cancela una orden, ni debería inventar esa política. La prueba
+debe recorrer publicación, inferencia, decisión y ejecución bajo la misma versión
+de contrato, sin ejecutar operaciones reales en esta fase.
+
+Para MW-05/07, un hash calculado únicamente en el inventario no basta. El dato
+necesita acompañar a los bytes efectivamente validados y al snapshot publicado.
+También debe definirse cómo se evita una mezcla durante escrituras concurrentes.
+La alternativa de releer todos los archivos en cada scan tiene un coste de E/S
+que debe medirse; no se declara gratis ni se impone como solución sin presupuesto.
+
+La evidencia posterior debe distinguir estas magnitudes:
+
+- **Validez estructural:** el artefacto puede leerse y cumple el contrato del loader.
+- **Identidad de serving:** se sabe qué versión efectiva respondió a cada decisión.
+- **Elegibilidad estadística:** existe evidencia causal y fuera de muestra para su uso.
+- **Resultado económico:** se contabilizan costes, fills, exposición y riesgo realizados.
+
+Ninguna de las cuatro implica por sí sola las siguientes. Un modelo bien formado
+puede carecer de habilidad; un modelo con evidencia histórica puede degradarse;
+y una decisión correctamente atribuida puede perder dinero. Esta separación es
+necesaria para investigar la divergencia backtest/demo, no una garantía financiera.
+
+## 14. Revisión del consumidor y precisión de procedencia
+
+La lectura final de `NanoForest::load_model` y `load_global` confirma dos
+contratos distintos: `load_global` sólo publica después de que `load_model`
+devuelve un modelo válido; pero la ruta solicitada puede resolverse a su BIN
+hermano por la política de frescura existente. Por ello el log MW se precisa
+a `Loaded ... (requested path: ...)`, sin atribuir al JSON los bytes servidos.
+El mensaje de rechazo también identifica la ruta solicitada. No cambia la
+selección, validación, caché ni publicación del loader.
+
+Este ajuste y su aserción estática están en el commit local
+`e7bd8f785ce2d29d20635f877df0d12925fed4d5`, posterior al código inicial
+`d1cfe0b7`. El mismo runner focalizado se volvió a ejecutar: **13 pasan,
+0 fallan, 0 ignoradas**, 0,10 s. Es una repetición de la misma suite con
+una aserción reforzada, no 13 pruebas adicionales ni cierre de MW-05.
+
+La compilación integral seguía en curso al guardar este ajuste. Los hashes
+del corte inicial se preservan; `validation_followup` del artefacto registra
+los nuevos hashes de host y contrato. El módulo de seguimiento no cambió.
+
+## 15. Estado pendiente, sin certificación anticipada
+
+Corte de seguimiento: 2026-10-03, 19:34 America/Bogota. La compilación
+`cargo +nightly-2026-06-30 check --workspace --all-targets --locked -j 2`
+continúa en el worktree nuevo, con nuevas dependencias generadas. No ha
+devuelto un resultado final observado. La ausencia de errores impresos no
+se convierte en aprobación. Después de terminar debe repetirse de forma
+incremental, porque el ajuste de host/test de §14 se hizo durante esa primera
+compilación. No se han ejecutado aquí las suites completas de loader ni T-1.
+
+El worktree permanece en la rama propia; no se publicó MW, no se abrió su PR
+ni se fusionó con main. La autorización pública específica se solicitó y no
+se ha recibido respuesta en este corte. La revisión cruzada se pidió en el
+buzón local con los dos commits de código; no se presupone recepción. Los
+recibos MP/GO de §7 sí están confirmados y no dependen de ese permiso pendiente.

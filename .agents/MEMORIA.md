@@ -15,6 +15,17 @@
 - Retirada sólo referencia local GLM LXXXI integrada y sin worktree, recuperable
   desde2d4d72b8 en main. MW publicación específica consultada; no merge sin CI/review.
 
+- Adenda del mismo corte: código d1cfe0b7 + precisión de procedencia e7bd8f78;
+  logs indican requested path porque el loader puede resolver JSON a BIN.
+  Misma suite13/0 repetida en0,10s; hashes del refinamiento en JSON MW.
+  A las19:34 America/Bogota, cargo check workspace/all-targets/locked -j2
+  seguía compilando dependencias en el worktree nuevo; sin éxito inferido.
+  Al terminar, repetir check incremental: el último ajuste de host/test se
+  hizo durante la primera compilación. No correr T-1 ni workspace test completo.
+  Falta autorización pública MW, CI remoto y review; no publicar por permiso MP/GO.
+  Se solicitó review local del código en el buzón ignorado; no consta acuse.
+  SC01/02 documentan C0≠C∞ y cardinalidad≠preservación de genes, sin alterar fórmulas.
+
 ## 2026-10-03 — Qoder: Ola 51 / #651 — ACTIVACIÓN DE VETOS DORMIDOS — ORÁCULO PASA 16/144
 
 - Rama qoder/ola51-vetos-dormidos (worktree .ola51, base 84c20593),

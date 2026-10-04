@@ -43,5 +43,38 @@
   "genome_risk_thresholds_changed":false,
   "whole_project_certified":false,
   "directory_enumeration_failure":"Abort current scan before applying candidates; report error and retry later",
-  "profitability_evidence":false
+  "profitability_evidence":false,
+  "next_acceptance_contracts":{
+    "MW-04":"Explicit key/generation revocation with agreed in-flight snapshot semantics; temporary file absence is not an administrative revocation",
+    "MW-05":"Bind source, cache, feature schema and published predictor; test mixed generations with equal or reversed mtimes",
+    "MW-06":"Measure detection/read/validation/publication latency under documented contention and failure; no universal bound inferred from polling cadence",
+    "MW-07":"Detect changed valid bytes despite equal size/mtime and prevent partial-write publication",
+    "implemented_by_this_wave":false,
+    "evidence_layers":["structural_validity","serving_identity","statistical_eligibility","economic_outcome"]
+  },
+  "validation_followup":{
+    "code_commit":"e7bd8f785ce2d29d20635f877df0d12925fed4d5",
+    "change":"Log requested path without asserting loaded content provenance; strengthen static wiring assertion",
+    "green":{"passed":13,"failed":0,"ignored":0,"seconds":0.10,"same_suite_not_additional_tests":true},
+    "source_sha256":{
+      "crates/god-engine-core/src/model_reload.rs":"EADA08EAD055ABF2AFA8669B821BD97E5C8FC4226E81CCC6784E7D6E3BA27962",
+      "crates/god-engine-core/tests/model_reload_contract.rs":"C3683E797384BD57AB830EE3D961A6016E8474DA5EA7D8FBCA2ED462390C3B36",
+      "src/bin/god_engine.rs":"AD0A8C4760F82F4A0F3878C3239EDFABCD251CD82B1CC12E003DCB55806DA004"
+    },
+    "workspace_all_targets":"still_in_progress_at_followup_cut"
+  },
+  "handoff_cut":{
+    "local_time":"2026-10-03T19:34:00-05:00",
+    "workspace_all_targets":"running; no final result observed",
+    "command":"cargo +nightly-2026-06-30 check --workspace --all-targets --locked -j 2",
+    "incremental_recheck_required_after_completion":true,
+    "recheck_reason":"Host and static contract refined during first compilation",
+    "full_loader_suites_executed_this_wave":false,
+    "t1_executed_this_wave":false,
+    "cross_review":"requested in local ignored coordination mailbox; no acknowledgment observed",
+    "mw_publication_permission":"awaiting specific user answer",
+    "mw_pushed":false,
+    "mw_pr_created":false,
+    "mw_merged":false
+  }
 }

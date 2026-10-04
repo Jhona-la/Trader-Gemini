@@ -3870,3 +3870,10 @@ en memoria ni BIN legacy de clave original. Testigo sintético confirma selecci�
 se requiere política explícita de revocación, no limpieza automática por ausencia.
 No se ejecuta democión alguna. Rama local glm/lxxxi-dl-modular retirada sólo
 tras verificar integración/ausencia de worktree; commit2d4d72b8 en main.
+
+MW revisión local: código inicial d1cfe0b7 y precisión posterior e7bd8f78.
+El log especifica requested path, no identidad efectiva del BIN/JSON servido.
+Runner focalizado repetido13/0 en0,10s, no13 contratos adicionales. Añadidos
+criterios de cierre MW04/05/06/07 al informe. Solicitud pasiva de review en
+buzón local ignorado; sin acuse ni aprobación inferidos. All-targets sigue
+en curso y la autorización pública específica MW continúa pendiente.
