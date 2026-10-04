@@ -422,3 +422,80 @@ fetch/prune; el commit sigue recuperable desde main. Se conservan backup, TH,
 V7, MW, el commit documental posterior de Claude y GLM LXXXV con exclusivos.
 También se conservan las dos ramas propias ocupadas. No hay borrado forzado
 de contenido ni equivalencia semántica inferida por el título de un commit.
+
+### 13.4 Recibo posterior GLM LXXXV
+
+Main5ab07f35 incorpora ec7b314d: calibración de temperatura T=2,393 en agosto
+produce logloss0,6771 frente a0,6812 allí, pero0,7078 frente a0,6910 en sep-14.
+Son cifras del recibo GLM/ADR-0010, no reproducción independiente de RA.
+Veredicto L2v1 parcial definitivo; cableado bloqueado. El mapa de planes §5b
+de GLM conserva estado/ruta, contratos A/B/C y cobertura G0–G8 como funciones
+complementarias. Se preservan también las advertencias de frontera de §13.1.
+
+Recibida review **de agente** en COORDINACION, commit ec7b314d: dirección RA
+aprobada para scanner y riesgo no finito, con T1/paridad exigidos al merge.
+No es aprobación humana GitHub ni certificación del OOS/continuo completo.
+Los recibos anteriores que decían review no recibida describen su propio corte.
+El nuevo main es documental: no altera Rust/CLI/CI de496f; RA se reconcilia
+en su checkout aislado por unión. Retirada referencia local GLM LXXXVec7b314d
+tras ancestry a5ab, OID fijo y ausencia de worktree; remota ya ausente. Commit
+preservado en main. No se borran exclusivas de Claude/MW/TH/V7/backup.
+
+### 13.5 Revalidación de dependencias antes de investigar nueva teoría
+
+[RA§20](AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#20-revalidación-adversarial-de-expedientes-existentes-sobre-el-nuevo-main)
+confirma R01, E03 y E04 en c6ce con revisor independiente/relectura/aritmética.
+R01 sigue en G4: readmitir el margen final, no sólo corregir su contabilidad.
+E03/E04 siguen en G3/G7: equivalencia del fenotipo inicial del ShadowForest y
+DD histórico de su trayectoria, no déficit de la última foto. No extender al
+CLI ni a todos los backtests; no cuentan como nuevos expedientes o arreglos.
+Estos contratos condicionan cómo interpretar el genoma antes de añadir teorías.
+
+### 13.6 Mapa verificable de la base hacia la cima
+
+[Topología declarada](audit/RA_TOPOLOGIA_DECLARADA_2026-10-04.json) y
+[explicación por niveles](audit/README_RA_COBERTURA_2026-10-04.md#topología-declarada-recibo-estructural-no-grafo-vivo-certificado):
+24 paquetes,202 targets,88 aristas, manifiestos por hash y cotejo completo
+de la declaración. Sirve para repartir contratos; no sustituye al grafo
+operativo, no verifica features, sincronía ni todos los archivos. Flight-recorder
+queda fuera del cierre normal de la raíz: localizar su consumidor antes de
+atribuir desconexión. El mapa G0–G8 sigue siendo el orden causal de verificación.
+
+Reserva adicional Codex E03/E04 en `codex/forest-evaluation-2026-10-04`,
+worktree separado `forest-evaluation`, base5ab07f35: únicamente coherencia
+genoma/fenotipo inicial y trayectoria de capital observada de ShadowForest.
+Pruebas RED→GREEN, conservar CL40 y no cambiar fitness, mínimo de operaciones,
+gates, almacén, entrenamiento o procesos. Cosecha y re-registro del mismo
+genoma no pueden borrar historia; sólo replantación abre una época nueva.
+La reserva no es reparación aceptada ni acuse de otro editor. MG02/MG05
+permanece en su checkout distinto; RA no recibe código mientras corre T1.
+
+### 13.7 Recibo CI posterior, sin reutilizar identidad
+
+CI37221376454 de b6df terminó SUCCESS:187/0/3ignoradas,13 resultados de targets;
+merge7c1ae865 y ambos padres confirmados por log/API (detalle RA§22). Parser19,
+riesgo7 y OOS6 sin ignoradas. No es ejecución del head0ddb o su merge5ab en
+preparación, no T1 completo ni aprobación humana. Conservar las observaciones
+anteriores en progreso como cortes históricos; G0 exige la nueva identidad.
+
+### 13.8 Telemetría: seguridad antes de cableado
+
+RA§23 revalida D127/D237 y consumidor#80/#101 sobre blobs de5ab: frame no
+atómico, secuencia sin exclusión por slot y fallback de lectura no validada.
+Es P1 bajo uso concurrente seguro de la API; no corrupción operacional medida
+ni nuevo ID. El core usa recorder mmap de telemetry-server, inicializaNone y
+no se encontró wiring en Rust versionado; el crate flight-recorder sí tiene
+implementación/tests, no la plantilla antigua. Los formatos difieren. Primero
+especificar seguridad, reloj, pérdida/overwrite y consumidor; no cablear una
+implementación insegura sólo para completar el grafo. Sin cambiar Rust RA.
+
+### 13.9 Revisión cruzada adicional y períodos de evidencia
+
+RA§24/JSON: revisor independiente no encuentra bloqueadores nuevos atribuibles
+al parser/riesgo no finito/contexto OOS de496f. No equivale a tests Rust ni
+humano GitHub. Residual Depth confirmado y snapshot atómico aún no acreditado.
+Seguimientos preexistentes RA-OOS-F01 (CLI una fila→índice inválido, G5) y
+RA-OOS-F02 (panel con numerador OOS/reloj contexto+OOS, G8) quedan abiertos,
+separados del inventario original16. W mide filas disponibles, no madurez
+validada. Requieren rechazo previo tipado y período económico explícito;
+no añadir una nueva cifra mínima arbitraria ni cambiar fuente durante T1.

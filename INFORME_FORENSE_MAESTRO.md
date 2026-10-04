@@ -8842,3 +8842,13 @@ retenidos) y tres validaciones de modelos/políticas quedan separados de los16 R
 El plan compartido§§6–12 explica cálculos de compuesto, supuestos, grafo G0–G8,
 criterios de cierre y cobertura pendiente. No se borra evidencia previa ni se
 declara una certificación económica o auditoría semántica de todos los archivos.
+
+### Adenda RA — revalidación por versión y topología
+
+[RA §§19–23](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#19-recibo-posterior-de-revisión-glm-y-gates-no-equivalentes)
+conserva review GLM condicionada y CI b6df187/0/3ignoradas, sin transferir el
+recibo al head posterior. R01/E03/E04 siguen confirmados con mecanismos y
+contraejemplos precisados. El grafo Cargo24/202/88 es estructural, no runtime.
+D127/D237 siguen con contrato concurrente abierto: volatile y contador no hacen
+atómico el payload. #80 usa la implementación mmap distinta; #101 ya no es
+plantilla vacía en main5ab. No borrar históricos ni duplicar estos expedientes.

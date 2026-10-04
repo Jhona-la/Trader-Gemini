@@ -14107,3 +14107,14 @@ problemas de causalidad, soporte temporal, muestra efectiva, identidad y
 composición de riesgo. PR28 es borrador, no certificación ni integración a main.
 All-targets compiló; tests aislados no sustituyen CI/T1 pendientes. Sin operación,
 training, promoción, cambio de fixture o promesa de rentabilidad.
+
+### Adenda RA posterior — expedientes existentes, interpretación vigente
+
+El [informe RA §§20–23](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#20-revalidación-adversarial-de-expedientes-existentes-sobre-el-nuevo-main)
+revalida R01/E03/E04 y D127/D237 sobre snapshots/hash explícitos. No son nuevos
+IDs ni reparaciones integradas. La descripción #101 de una plantilla add ya
+no coincide con el crate actual; #80 conserva consumidor mmap distinto y
+constructor None sin wiring encontrado en Rust versionado. La seguridad
+concurrente debe preceder al cableado. El censo1435 y grafo24/202/88 no son
+revisión semántica total. CI posterior187/0/3ignoradas pertenece a b6df, no
+al nuevo merge documental; T1 completo y nueva CI siguen con gates propios.

@@ -46,3 +46,49 @@ El censo facilita distribuir revisión sin solapamientos. No atribuye a
 Claude/GLM/Qoder lecturas no recibidas ni convierte reservas propuestas en
 asignaciones aceptadas. Los hallazgos y sus límites permanecen en el
 [informe RA](../AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md).
+
+## Topología declarada: recibo estructural, no grafo vivo certificado
+
+[RA_TOPOLOGIA_DECLARADA_2026-10-04.json](RA_TOPOLOGIA_DECLARADA_2026-10-04.json)
+describe los **24 paquetes del workspace (23 crates más el paquete raíz),
+202 targets y 88 aristas internas declaradas** del mismo snapshot12456048.
+Fuente: `cargo +nightly-2026-06-30 metadata --no-deps --locked --offline
+--format-version 1`. Cada manifiesto conserva su OID; cada arista distingue
+dependencia normal/dev/build, alias, opcionalidad y condición de plataforma.
+No incluye bibliotecas externas ni resuelve activación efectiva de features.
+
+La orientación A→B significa **A requiere B**, no A envía un evento a B.
+En el subgrafo de dependencias normales no hay ciclo; esto es propiedad de
+la declaración de compilación, no prueba de ausencia de ciclos de feedback,
+deadlocks, carreras, llamadas recursivas o retrasos entre nodos operativos.
+Un target es un elemento declarado de Cargo (lib/bin/test/etc.), no una
+estrategia, un proceso en marcha o un contrato ya probado.
+
+| Nivel de dependencia normal | Paquetes |
+|---:|---|
+| 0 | feature-engine, flight-recorder, graph-4d, graph-architecture, omniscient-registry, telemetry-engine |
+| 1 | quantum-arena, storage-engine |
+| 2 | data-pipeline, os-guardian |
+| 3 | data-ingest, metacortex-engine, phase-runner, telemetry-server |
+| 4 | audit-engine, dark-alpha-engine, strategy-core |
+| 5 | signal-engine |
+| 6 | risk-engine |
+| 7 | execution-engine, god-engine-core |
+| 8 | backtest-engine |
+| 9 | evolution-engine |
+| 10 | trader-gemini-v5 |
+
+El nivel es `1 + máximo nivel de los proveedores normales` (0 si no hay
+proveedores internos normales). Es una guía de lectura de abajo hacia arriba,
+no profundidad neuronal ni latencia medida. La raíz alcanza23/24 paquetes
+por esas aristas. `flight-recorder` no aparece en su cierre transitivo de
+dependencias normales: **no se demuestra que esté muerto o desconectado**;
+un ejecutable independiente puede comunicar por IPC/archivos/u otra ruta.
+Su uso exige localizar productor/consumidor y observar evidencia real.
+
+Validación del artefacto: JSON con claves únicas; conjuntos exactos de
+paquetes/aristas/atributos y conteos cotejados con metadata; blobs de los
+24 manifiestos comparados con Git12456048; aciclicidad y alcance recalculados.
+Para el grafo vivo faltan contratos por arista: identidad de activo, reloj,
+unidad, generación, vigencia/invalidación, entrega/ack, reintento, backlog,
+latencia y consumidor. No se infiere sincronía perfecta de la topología.

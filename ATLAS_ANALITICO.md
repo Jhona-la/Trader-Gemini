@@ -2009,3 +2009,12 @@ MG02/MG05 muestran evidencia obsoleta por estado/escala, no pérdidas medidas.
 Plan compartido§§6–12 liga raíz/decisión/terminal, soporte temporal, causalidad,
 genoma y capital con gates y responsables observados/propuestos. El dominio
 1ns–100años no fabrica historia; se exige soporte, error y coste de cómputo.
+
+### Adenda RA — significado de secuencias y dependencias
+
+[RA §23](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#23-revalidación-de-telemetría-dos-implementaciones-seguridad-y-consumidor)
+explica por qué validar una secuencia después de copiar un frame no legaliza
+una carrera de datos, y por qué tickets únicos no excluyen dos escritores al
+reutilizar un slot. El grafo de manifiestos y el consumidor se contrastan por
+separado. Su nivel de dependencia es un orden de lectura, no reloj/latencia ni
+conectividad neuronal demostrada. Sin modificar el hot-path ni certificar runtime.

@@ -1,5 +1,42 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: segundo recibo cruzado y check del merge documental
+
+- RA conserva main5ab por unión documental; Rust/CLI/CI siguen iguales a496f.
+  Check del checkout candidato: all-targets/locked/offline, nightly2026-06-30,
+  exit0 en3m44s (sesión43677, caché target del checkout principal, sin enlazar
+  ejecutables). El antiguo checker propio21251 en lock se retiró por identidad
+  PID/hora/comando tras este éxito; no se detuvo ningún runner ajeno.
+- CI b6df37221376454 SUCCESS187/0/3ignoradas; merge7c1ae865 y padres por log/API.
+  No acredita head posterior. Segunda review independiente de OOS/callers,
+  parser/riesgo sin bloqueadores nuevos introducidos; no review humana GitHub.
+- RA§§21–24: topología declarada24/202/88 con hashes y alcance; D127/D237
+  revalidados, volatile/secuencia no dan atomicidad del frame. #101 ya no es
+  plantilla vacía; core usa implementación mmap distinta, iniciaNone sin wiring
+  encontrado en Rust versionado. Sin Miri/Loom o corrupción runtime medida.
+- Seguimientos nuevos separados: RA-OOS-F01 una fila llega a train_len-1 (fallo
+  estático); F02 contrato de período del panel (no impacto en promoción probado).
+  Original16RA intacto, MG02/MG05 siguen aparte. Tres informes maestros enlazados.
+- Forest E03/E04 tiene parche local y11 tests nuevos en otro checkout, GREEN y
+  control RED ejecutados aún pendientes; no cierre. MG02/MG05 también separado.
+  T1 RA completo YA EJECUTA2tests tras134m33s de compilación; sin resultado
+  final todavía. No cambiar su fuente/fixture/trinquete ni promover modelos.
+
+## 2026-10-04 — Codex: recibida review GLM; tres expedientes revalidados
+
+- Main5ab incorpora LXXXV ec7b: gate L2v1 parcial definitivo/cableado bloqueado;
+  review DE AGENTE aprueba dirección scanner/riesgo, pide T1 y paridad. No es
+  humana GitHub ni revisión del OOS completo. RA trae sus tres docs por unión.
+- RA§§19–20/JSON conservan cortes: R01 secuencial70>techo50 tras reajustar;
+  E03 latencia25 vs gen50 sólo ShadowForest inicial; E04 DD actual borra caída
+  al recuperar en cosecha. Revisión independiente, relectura y aritmética;
+  no tres bugs nuevos ni brecha/PnL real medidos. CLI y otros backtests no
+  reproducen esas dos alegaciones del bosque. Siguen abiertos.
+- Retirada local GLM LXXXVec7b ya ancestro de5ab y no ocupada, CAS; remota ya
+  ausente. Commit preservado en main. Exclusivos/otros worktrees conservados.
+- Check de merge5ab esperando directorio debug; T1 release propio sigue en
+  compilación. No se matan runners ni se fuerza la PR antes de sus gates.
+
 ## 2026-10-04 — Codex: main c6ce, censo por blob y reservas de vigencia
 
 - Merge propio RA12456048 conserva GLM LXXXIV gate parcial y ambas bitácoras;

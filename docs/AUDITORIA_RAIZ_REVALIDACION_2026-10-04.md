@@ -803,3 +803,373 @@ El T1 completo local29055 continúa compilando dependencias de release, sin
 resultado de tests. No se cancela ni se sustituye por fastT1, por el T1 Qoder
 o por paridad GLM. El nuevo head documental exige su CI correspondiente.
 Review humana de RA no recibida en GitHub. Se mantiene draft y no se fuerza merge.
+
+## 19. Recibo posterior de revisión GLM y gates no equivalentes
+
+Main5ab07f3589a1ab273794bf373b40b9f120a5b438 integró GLM LXXXVec7b314d.
+Sólo cambian bitácora, plan operativo y ADR-0010; no Rust/CI/CLI frente a c6ce.
+Las entradas del nuevo ciclo se conservan junto a las propias por unión.
+Los OIDs/tablas anteriores son cortes históricos, no nombres que se actualizan
+retroactivamente. El censo TSV sigue fijado a12456048, no al último main.
+
+### 19.1 Qué revisión llegó
+
+La entrada GLM LXXXV FINAL aprueba la **dirección** de scanner y del rechazo
+de estados no finitos; reconoce la frontera JSON incompleta y validación de
+todos los pares antes del filtro direccional. Exige T1 y paridad al integrar.
+Su recibo describe PR28/2050 líneas/735 de informe, alcance funcional igual
+a496f; los heads siguientes sólo añadieron documentos. No se infiere revisión
+de todas las líneas, del OOS, ni validación económica de los modelos. Es review
+cruzada de agente, no review humana GitHub. Se reconoce ahora su recepción sin
+borrar los cortes anteriores que todavía la esperaban.
+
+### 19.2 Qué no prueba una suite llamada paridad
+
+`crates/backtest-engine/tests/bt_vivo_parity_audit.rs` contiene diez tests,
+dos ignorados de medición manual con tape real. Los restantes fijan knobs,
+dirección adversa del slippage, sampler, sensibilidad y determinismo/prefijo.
+Algunos contrastan el mismo helper o fórmulas locales: su éxito no demuestra
+que host y replay recorran todas las transiciones con idénticas reservas,
+timestamps, parseo, llenados, modelo cargado y reintentos. El propio test de
+prefijo declara que agregados no demuestran por sí solos ausencia de anticipación.
+La CI antigua8/0/2ignored es recibo de esos contratos, no paridad operacional
+universal. No activar ignorados cambiando CWD/fixture a ciegas ni contabilizarlos
+como ejecutados; una paridad nueva necesita inputs/snapshots y traza observada.
+
+T1 es otra medición: un extremo por coordenada, un fixture BTC, predictor
+direccional sintético y ocho estadísticas; no aptitud canónica ni inercia global.
+No mide diversidad multiasset ni rentabilidad real. El runner completo continúa
+en release; el bloqueo del check documental es contención del directorio de
+compilación, no resultado fallido del código ni razón para cancelar otro agente.
+
+### 19.3 Calibración y limpieza selectiva
+
+GLM informa T=2,393: agosto logloss0,6771<0,6812, septiembre0,7078>0,6910.
+El gate completo L2v1 queda parcial definitivo y cableado bloqueado. El fallo
+de transferencia no se remedia llamando espectro a un régimen; necesita
+validación del estimador y del proceso de selección en contextos nuevos.
+No se reprodujo aquí su dataset ni se acredita una fuga sólo por esta diferencia.
+
+Retirada local glm/lxxxv-l2fase3, OIDec7b314df7ed223b60367bfe1890dec3d844a965,
+ancestro de5ab, cero exclusivos, no ocupada, eliminación CAS. Remota ya ausente
+tras fetch/prune; commit recuperable desde main. No se borraron datos/commits.
+
+## 20. Revalidación adversarial de expedientes existentes sobre el nuevo main
+
+Un revisor delegado independiente examinó R-01/E-03/E-04 por objetos Git de
+`c6ce7333f670c021db56b2c987680bbd7ebe8c7a`; los merges hasta5ab son documentales.
+Codex releyó las anclas de riesgo/envío/reserva/bosque/fitness y recalculó los
+ejemplos siguientes. El reporte RA no existe en c6ce: para definir la alegación
+se consultó el documento posterior, pero las líneas Rust pertenecen al snapshot
+fijado. Método estático y aritmético, sin ejecutar host, promociones o backtests.
+Son **tres expedientes ya abiertos**, no tres bugs nuevos ni tres reparaciones.
+
+### 20.1 R-01: una reserva contablemente correcta puede violar el techo admitido
+
+La cadena es RiskEngine→PortfolioOrchestrator (`risk-engine/src/lib.rs:1293`)
+→reserva del core (`god-engine-core/src/lib.rs:7262,7365`)→adaptación del host
+(`src/bin/god_engine.rs:4171–4214`)→`EntryReservation::reajustar_margen`
+(`entry_reservation.rs:64`)→`Position::reajustar_margen_generation`
+(`quantum-arena/src/position.rs:433`). El reajuste comprueba generación,
+estado abierto y confirmación; suma la diferencia a used_margin bajo el cerrojo
+antes de publicar el margen de la ranura. **No recibe ni verifica el techo**
+que el orquestador admitió. La guarda de envío del95% del libre no es ese techo.
+
+Ejemplo: capital100, mínimo nocional5 ⇒ room20 ⇒ peso micro0. Gen colchón0,5,
+presión direccional0 y sin posiciones ajenas ⇒ techo50. Reserva14 a5× ⇒ N70.
+Envío exploratorio1×, libre sin su propia reserva100 ⇒ margen70: no cruza el
+disparador85 ni la guarda95, se acepta por `envio.rs:81–106`. El reajuste
+publica70 y contabiliza70, violando el techo50. No necesita intercalación de
+hilos; la carrera de snapshot es otro contrato. El replay repite el reajuste
+sin readmisión (`booktick_replay.rs:754–777`). No se afirma que todos los gates
+anteriores produzcan esta orden en datos reales ni que haya causado un fill.
+
+CL-41/41b/41c sí limitan leverage, corrigen N/L y ordenan la publicación;
+esos arreglos no se deshacen. Falta readmitir **el resultado final del sizing**
+con la misma restricción de cartera y semántica de exclusión de reserva propia,
+o un contrato atómico equivalente, tanto host como replay. Debe haber oráculos
+de aceptación/veto, no-mutación al rechazo, generación y posiciones coexistentes.
+
+### 20.2 E-03: el defecto de equivalencia está en el ShadowForest inicial
+
+`evolution-engine/src/random_forest.rs:65–79` aplica mutation al arena y luego
+sobrescribe latency_penalty_ms con25. Guarda mutation sin esa sobrescritura.
+La cosecha devuelve self.genomes[best_idx] (`:215`) y el host promueve/relee/aplica
+ese genoma (`god_engine.rs:4675–4708`). El almacén no sustituye la latencia por
+la efectivamente examinada. `replant` (`random_forest.rs:278–279`) aplica la
+mutación sin override; por eso el desajuste es **de la construcción inicial**
+y depende de si ya hubo replantación. CL-40 fija la política del candidato,
+pero no convierte25ms en el genoma almacenado ni en peor caso demostrado.
+
+Con gen latency50ms, examen inicial usa25 y publicación/replantación puede
+usar50. El término de difusión dependiente de sqrt(latencia), a ATR constante,
+crece por sqrt(2)=1,4142135624. Es prueba de distinta configuración, no de
+inversión efectiva del ganador ni de latencia medida del proveedor.
+
+No extender esta alegación al CLI: evolution.rs:317–322 evalúa test_cfg,
+conserva el clon ganador, lo evalúa en OOS y promueve best_config. La latencia
+no se sustituye por25 en ese recorrido. Cierre: equivalencia del genoma entero
+almacenado/evaluado/devuelto antes y después de replantar; si se usa un escenario
+de estrés, debe identificarse separado del fenotipo y probarse su dominio.
+
+### 20.3 E-04: recuperación de capital borra el riesgo de selección en el bosque
+
+`random_forest.rs:171–186` actualiza el pico sólo al cosechar y calcula el
+drawdown **actual** `(peak−cap)/peak`. No conserva el peor drawdown de la
+trayectoria. Lo entrega como max_drawdown_pct a fitness::compute. La función
+compartida calcula correctamente lo que recibe, pero no reconstruye historia
+perdida: F=ln(Cf/C0)−λ·DD², λ=4ln2=2,7725887222, preferencia heredada de riesgo,
+no probabilidad de ruina ni promesa de Kelly. Con30 cierres válidos y crecimiento
+OOS positivo, el factor OOS no modifica estos ejemplos:
+
+| Trayectoria | DD usado al final | DD máximo observable | F resultante |
+|---|---:|---:|---:|
+| Control13→14 | 0 | 0 | 0,0741079722 |
+| Mutante13→6,5→15, cosecha actual | 0 | 0,5 omitido | 0,1431008436 |
+| Mismo mutante con contrato máximo | 0,5 | 0,5 | −0,5500463369 |
+
+La selección se invierte. Cosechar durante la caída no conserva después su
+penalización. Incluso el pico puede perder una subida no observada entre
+cosechas; medir cada evento es una cuestión de cobertura de valoración.
+No generalizar a todos los backtests: backtest-engine/lib.rs:431–442 y
+booktick_replay.rs:577–584 acumulan máximo, y evolution-engine/lib.rs:494–526
+lo toma de su equity_curve (sin que eso certifique cobertura completa OOS).
+Cierre: observar pico/DD máximo en el contrato de trayectoria de cada universo,
+definir reinicio al replantar y comprobar caída/recuperación entre cosechas,
+control, mínimo de trades y selección. No medir sólo el déficit de la foto final.
+
+Estos hallazgos explican mecanismos posibles de brecha demo/backtest; aún no
+cuantifican frecuencia o pérdidas operacionales. Mantener R-01 en G4 y E-03/E-04
+en G3/G7; no atribuir la brecha económica total a estos tres contraejemplos.
+
+## 21. Topología del workspace desde manifiestos, con frontera de interpretación
+
+Se añadió un [artefacto estructural JSON](audit/RA_TOPOLOGIA_DECLARADA_2026-10-04.json)
+y su [lectura por niveles](audit/README_RA_COBERTURA_2026-10-04.md#topología-declarada-recibo-estructural-no-grafo-vivo-certificado).
+El snapshot12456048 contiene24 paquetes (23 crates y raíz),202 targets y88
+aristas internas declaradas. Se cotejaron los24 blobs de manifiestos y todos
+los atributos de aristas con `cargo metadata --no-deps --locked --offline`.
+El subgrafo de dependencias normales es acíclico; la raíz alcanza23 paquetes.
+El paquete independiente flight-recorder no está en ese cierre transitivo.
+Esto abre una **verificación de consumidor**, no acredita otro bug.
+
+Se distingue de la topología operacional: dependencia Cargo no es entrega de
+evento, target no es motor activo y aciclicidad no demuestra coherencia causal
+de una red con realimentación. Las features efectivas, bibliotecas externas,
+IPC, canales de registros/arena y calendario de ejecución no se certifican
+por este artefacto. Por eso su estado es estructural, no revisión semántica
+completa ni prueba de omnisciencia. Para convertirlo en grafo vivo verificable,
+G0–G8 exige por cada enlace productor→consumidor: activo, unidad, reloj,
+versión/genoma, vigencia, invalidación, rechazo explicable y recibo de entrega.
+Esta evidencia no cambia los16 expedientes RA ni cierra R01/E03/E04/MG02/MG05.
+
+## 22. CI posterior terminada: identidad y alcance exacto
+
+La ejecución [37221376454](https://github.com/Jhona-la/Trader-Gemini/actions/runs/37221376454)
+terminó SUCCESS el2026-10-04T18:50:22Z. Su head es b6dfb374b95e6d7cda7ca9f39421d5580f241fae,
+no0ddb ni el merge documental5ab en preparación. Checkout/log y API de commits
+coinciden en el merge probado7c1ae865ea5ba633e97b3d4d60e9386d4be65d56, padres
+856e59ba267c150ec98a1a3cbf0ebc3ff3935564 y b6dfb374b95e6d7cda7ca9f39421d5580f241fae.
+No atribuir este resultado a una referencia que todavía no se examinó.
+
+El log contiene13 resultados de targets: **187 pasan,0 fallan,3 ignoradas**.
+Desglose: publicación/carga1+12+14 (una ignorada); contratos RA19+7+6, cero
+ignoradas; inventario9; backtest-lib53; paridad8 con2 manuales ignoradas;
+métricas expost21, etiquetas25, riesgo espectral3 y fast-T1 measurement9.
+All-targets terminó en verde. El test rápido no ejecuta el T1 completo;
+las ignoradas no se contabilizan como ejecución, y los filtros no certifican
+todos los targets/pruebas del workspace ni el desempeño operacional.
+
+El merge propio main5ab→RA está resuelto por unión documental y espera el
+check local de todos los targets; T1 completo release sigue compilando
+sobre Rust496 sin resultado. PR28 permanece draft, sin GitHub review humana.
+Hay recibo favorable condicionado de GLM, descrito en§19. Para integrar se
+necesita el recibo del candidato publicado posterior, T1 y paridad pertinentes;
+no se rebaja ese criterio por observar la CI anterior en verde.
+
+## 23. Revalidación de telemetría: dos implementaciones, seguridad y consumidor
+
+Corte Rust: main `5ab07f3589a1ab273794bf373b40b9f120a5b438`. Se leyeron
+completos los dos módulos y sus pruebas; se buscaron referencias en todo el
+Rust versionado con `git grep`, y se contrastó la semántica de las primitivas
+con documentación oficial. Método estático: **no se ejecutó un interleaving,
+Miri/Loom ni un proceso de producción**. No es un fallo introducido por RA.
+Revalida D-127/D-237 y el consumidor #80/#101, sin añadir IDs duplicados.
+
+### 23.1 D-127/D-237: la secuencia no proporciona seguridad al payload
+
+`crates/flight-recorder/src/lib.rs`, blob
+`2e499f222b7f35ea54270c43b905efd23bcfa3a9`, expone `record_with_time` y
+`get_recent_records` como API segura y declara Send/Sync. El cursor y la
+secuencia son atómicos; el frame de64 bytes en UnsafeCell no lo es. El writer
+usa `write_volatile` después de incrementar la secuencia; el reader copia con
+`read_volatile` y sólo después vuelve a verificarla. Si el writer empieza entre
+la primera comprobación del reader y su copia, puede superponer accesos al mismo
+payload. Descartar una lectura después de la carrera no hace segura esa lectura.
+Tras diez spins, el reader incluso copia el frame sin validación de secuencia.
+
+Hay además colisión de productores al reutilizar el mismo slot. El cursor
+reparte tickets, no reserva el payload hasta completar su escritura. Con
+capacidad1, una intercalación permitida por las operaciones actuales es:
+
+| Paso | Productor/lector | Estado relevante |
+|---:|---|---|
+| 1 | W1 recibe ticket0/slot0, incrementa secuencia0→1 y se suspende | Slot ocupado, contador impar |
+| 2 | W2 recibe ticket1/slot0, incrementa1→2 | No hubo CAS/adquisición exclusiva; contador par con W1 pendiente |
+| 3 | W1/W2 escriben, o R ve2 y copia | Payload no atómico con accesos potencialmente superpuestos |
+| 4 | Cada writer incrementa al terminar | Un contador final estable no demuestra una escritura indivisible |
+
+La [documentación de read_volatile](https://doc.rust-lang.org/std/ptr/fn.read_volatile.html)
+y [write_volatile](https://doc.rust-lang.org/std/ptr/fn.write_volatile.html)
+explica que no sincronizan hilos ni vuelven atómicos los accesos; la
+[referencia de Rust](https://doc.rust-lang.org/reference/behavior-considered-undefined.html)
+clasifica las carreras de datos como comportamiento indefinido. Por ello la
+alegación es **seguridad de memoria P1 bajo uso concurrente de la API**, no
+sólo precisión de telemetría. Alinear64 bytes o cambiar Relaxed por SeqCst en
+el contador no convierte todo el frame en atómico ni excluye a los escritores.
+El comentario FIX#946 no acredita cierre del contrato. Las cinco pruebas del
+módulo son funcionales de un hilo; no certifican este dominio concurrente.
+
+Cierre necesario antes de cablearlo: una representación/política con accesos
+legales al payload y propiedad exclusiva de escritura por slot, más semántica
+de sobrecarga, generación del ticket, wrap y lector. Si se conserva una copia
+optimista, debe operar sobre almacenamiento válido para concurrencia, no sobre
+una copia ordinaria que luego se descarta. Añadir oráculos de productores/lector
+solapados y control de overwrite; utilizar un detector/model checker compatible
+como evidencia adicional, no como sustituto del argumento de seguridad.
+La complejidad/latencia de cualquier alternativa debe medirse. No se aplica aquí
+un mutex, un umbral de spins nuevo ni un cambio de hot-path sin ese contrato.
+
+### 23.2 #80/#101: consumidor distinto y evidencia de desconexión acotada
+
+`crates/telemetry-server/src/flight_recorder.rs`, blob
+`72f30c7d36f07dd7086bce5d02e40870a69cf177`, tiene otro FlightEvent: timestamp,
+trace_id, event_type u8 y47 bytes. El crate anterior usa timestamp_ns,
+event_type u16, coin_id, flags y seis f64. **No son formatos intercambiables**.
+La implementación mmap sólo tiene head atómico y copia64 bytes al slot; dos
+productores separados por capacity tickets pueden escribir el mismo slot
+sin exclusión. Tampoco se acredita seguridad multihilo por unsafe Sync/Send.
+No se declara probada su frecuencia ni corrupción observada en un mmap vivo.
+
+El núcleo contiene `Option<Arc<telemetry_server::FlightRecorder>>`
+(`god-engine-core/src/lib.rs:756`), lo inicia enNone (`:1020`) y llama record
+sólo dentro del Some (`:5827`). La búsqueda de todo el Rust versionado no
+encontró asignación/constructor del recorder fuera de sus tests. El contrato
+de cableado de#80 sigue sin demostración en esa inicialización. La topología
+Cargo por sí sola no bastaba para concluir esto; aquí se añadió el consumidor.
+No se afirma que un binario externo/no versionado no pueda inicializarlo.
+
+La descripción antigua de#101 como plantilla `add(2,2)` ya **no corresponde
+a este blob**: existe una implementación y cinco tests, aunque no dependa de
+ella la raíz. Se preserva el expediente histórico y se corrige su interpretación
+mediante esta adenda. Tampoco se traslada aquí la vieja alegación de f32:
+el payload de ese crate es f64, no necesariamente el de sus otros consumidores.
+Los cambios de truncado y capacidad en mmap están
+presentes; no son el defecto que acaba de revalidarse. Consolidar propiedad,
+formato, reloj y consumidor sin borrar el otro historial; conectar primero un
+recorder inseguro no sería una rehabilitación. Estos recibos no aumentan los
+16RA ni certifican todos los contratos de los tres archivos del recorrido.
+
+## 24. Segunda revisión cruzada del candidato RA y seguimiento OOS
+
+Un revisor delegado read-only contrastó los objetos de
+`0ddb3d4230ff7048b1e1c3392b5098182813880f`, funcionalmente iguales a496f,
+y los cambios parser0d3dcece, riesgo44e1d4fd y OOSf7b3830c. No encontró
+bloqueadores nuevos **introducidos por esos cambios en su alcance**. Codex
+releyó los callers y anclas señalados. El dictamen no es revisión humana
+GitHub, ejecución Rust ni aprobación de todos los archivos.
+
+El helper OOS devuelve colaIS+OOS y mide W antes de anexar el futuro. El CLI
+crea particiones posicionalmente disjuntas y pasa W al replay; allí `i<W`
+suprime entradas y `i>=W` delimita cierres. Recálculo separado: IS/OOS de
+7000/3000,42000/18000,50000/1000 y70000/30000 dan W de7000,42000,50000 y50000,
+con todas las filas OOS conservadas. Los seis tests productivos del ensamblado
+no ejecutan el CLI/motor completo. W es cantidad de filas, no cantidad de
+observaciones válidas: el replay descarta precios inválidos antes de actualizar
+ATR. Calentamiento suficiente es otro contrato de soporte, no una garantía de W.
+
+Se revalidó el residual Depth ya declarado: con bids/asks compactos y cierres
+espaciados, `{"bids":[["10","2"] ],"asks":[["11","3"] ]}` puede producir
+(5,3) en vez de(2,3). La prueba del revisor fue una traslación aislada del
+scanner, no otro cargo test. Riesgo valida todo par no finito antes de filtrar
+dirección; la política finita examinada se conserva. Eso no da un snapshot
+transaccional de todas las lecturas atómicas.
+
+### 24.1 RA-OOS-F01: tape de una fila admitido hasta índice inválido
+
+P2, abierto, preexistente. `src/bin/evolution.rs` del candidato, blob
+`e8d8052c1294b56b4079cc9182e894ef1d22e85a`, sólo rechaza len0 antes del split.
+Con una fila, `train_len=floor(0,7*1)=0`; las particiones vacías se construyen
+legalmente, pero el primer ensayo calcula `timestamps[train_len-1]` (`:346`),
+y el informe vuelve a hacerlo (`:485,487`). Se produce underflow/índice inválido
+en vez de un rechazo de dataset explicado, antes del nuevo helper OOS.
+No se ejecutó el binario: lectura y recálculo del índice, sin red/modelos/tapes.
+La ruta necesita preflight de particiones/soporte y retorno tipado antes de
+ensayar, consultar red o promover, con tests de cero/una/pocas filas, máximo
+de contexto y prueba de que un rechazo no publica nada. No imponer aquí un
+nuevo mínimo económico sin especificar su soporte.
+
+### 24.2 RA-OOS-F02: duración de contexto incluida en el panel post-OOS
+
+P2 de diseño/medición, abierto, preexistente; no regresión del cálculo puro. Replay blob
+`21b08076fa93abfcea3a82ef89fa50f51f51bed6`, `booktick_replay.rs:609`, envía
+`last.ts-first.ts` de **todo** colaIS+OOS a ex_post_metrics. PnL/trades se
+cuentan desde W. Así, el numerador de la actividad OOS y el denominador del
+reloj no describen el mismo período cuando el caller interpreta el panel
+como OOS exclusivo. CAGR, proxies anualizados, Calmar y turnover/día dependen
+de ese span; WR/PF no reciben directamente esta alteración de duración.
+El helper arregla la frontera de entrada, no este contrato de reporte.
+La búsqueda no encontró consumo de `oos_rep.metrics` en el CLI evolution:
+no se acredita aquí que haya alterado su ranking/promoción, que el panel se
+muestre mal rotulado actualmente, ni que la función sea incorrecta si se define
+deliberadamente como medición del replay completo. Lo abierto es la semántica
+del período para reutilizarlo como evidencia OOS exclusiva.
+
+Ejemplo puramente dimensional:10 días de contexto y1 día OOS convierten
+turnover/día OOS en1/11 del valor del mismo nocional/capital en el día medido,
+y el factor de anualización por trade en1/sqrt(11)≈0,3015113446. Para CAGR
+se reduce por11 la tasa log anualizada, **no** necesariamente el porcentaje
+CAGR simple por11. No es una rentabilidad observada ni una cota universal.
+
+Cierre: etiquetar/declarar el período evaluado y su frontera temporal, sin
+retrotraer a IS la duración económica de OOS; decidir manejo de filas inválidas,
+timestamps iguales/desordenados y ausencia de OOS antes de medir. Invariancia
+del panel exclusivo ante variar sólo contexto inocuo y pruebas de denominador
+cero. OOS≤10 filas retorna stats por defecto (`:278`), no medición válida; las
+métricas ex-post por defecto son NaN. Su política de soporte y señal de estado
+deben ser explícitas, no presentarse como resultados económicos de esa ventana.
+
+Estos **dos contratos de seguimiento adicionales** (un fallo de entrada y una
+validación de diseño/período) no modifican los16 IDs
+del corte original ni se presentan como regresiones causadas por RA. Se
+registran separados en JSON y en G5/G8; no están reparados o ejecutados.
+
+## 25. Recibo local del merge documental, antes de publicación posterior
+
+Checkout candidato: HEAD0ddb3d4230ff7048b1e1c3392b5098182813880f con
+MERGE_HEAD5ab07f3589a1ab273794bf373b40b9f120a5b438. Conflicto de bitácora
+resuelto por unión; cambios de GLM en plan/ADR conservados, no sustituidos.
+Comparación contra cada padre y fuente496: ninguna diferencia nueva en
+Rust/CLI/Cargo/CI. Adendas propias son evidencia/documentación, no parches MG
+o ShadowForest ni modificación de los originales auditados.
+
+Comando ejecutado desde RA:
+
+```powershell
+$env:CARGO_TARGET_DIR = 'C:\Users\jhona\Documents\Proyectos\Trader Gemini\target'
+cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j 2
+```
+
+Sesión43677: **exit0, dev3m44s**. Se usó la caché disponible separada del
+lock ocupado por las pruebas DEV; check no enlazó ni ejecutó el motor operativo.
+El checker propio redundante39632/sesión21251, todavía esperando lock, se
+retiró sólo tras validar PID, nombre, hora13:50:25 y comando. No se detuvieron
+el compilador MG, el runner del bosque ni T1 release; no es un fallo de tests
+ni una modificación de gates. Una compilación verde tampoco certifica runtime.
+
+T1 completo sobre fuente496 terminó compilación release en134m33s y empezó
+sus dos tests; todavía sin resultado final en este corte. No cambiar predictor,
+fixture, vector o mínimo para obtener verde. El nuevo commit documental deberá
+tener su propia CI/revisión de identidad; el recibo b6df permanece histórico.
+RA sigue draft hasta sus gates; main→RA no acredita RA→main. MG02/MG05 y
+E03/E04 conservan ramas/checkout separados y verificación pendiente.
