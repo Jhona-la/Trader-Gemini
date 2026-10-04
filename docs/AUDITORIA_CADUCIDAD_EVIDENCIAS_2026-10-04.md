@@ -183,3 +183,17 @@ main vigente, all-targets, paridad pertinente y evidencia genética/multiasset
 propia si la política de promoción lo requiere. Mantener esta serie fuera de
 RA mientras su T1 use la fuente congelada. No sustituir el objetivo72h por una
 reparación de metadatos ni presentar13tests como certificación del sistema.
+
+## Cobertura automática del contrato, añadida sin retirar regresiones
+
+El commit local `605a4d7f` conserva el código, las pruebas y el informe anterior.
+La revisión del workflow detectó que `check --all-targets` compila este target,
+pero los comandos `test` de CI no lo ejecutaban. Por ello se añade un paso
+explícito para `evidence_expiry_contract`, usando el mismo compilador y sin
+retirar contratos existentes, activar tests ignorados ni modificar el timeout.
+
+El comando de ese paso coincide con el target de 13 pruebas GREEN local; el
+workflow utiliza `--locked` y CI dispone de red para resolver el lock existente.
+Esto especifica una comprobación futura, no es un nuevo resultado de CI.
+La serie sigue local y separada de RA; la publicación pública y el merge
+permanecen sujetos a confirmación, CI del candidato y revisión pertinentes.

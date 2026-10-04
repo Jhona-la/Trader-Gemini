@@ -51,6 +51,9 @@ jobs:
         # Synthetic models only. No real-model inventory, training or promotion.
         run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test model_publication_contract --test ml_model_contract --test ml_base_publication_contract -- --test-threads=1
 
+      - name: Scoped risk evidence withdrawal contracts
+        # Real estimators/readers with synthetic events; no live trading or training.
+        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test evidence_expiry_contract -- --test-threads=1
       - name: Model inventory structural evidence contracts
         # Synthetic files only; no training, promotion or live-model loading.
         run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --lib ml_registry::tests -- --test-threads=1

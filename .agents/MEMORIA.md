@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex MG: ejecutar el contrato también en CI
+
+- Sobre `605a4d7f` se añade únicamente el paso explícito de CI
+  `evidence_expiry_contract`, su explicación y esta memoria. All-targets
+  compila el target, pero no sustituye la ejecución de sus 13 pruebas.
+- No se retira ninguna regresión, no se cambia el código GREEN, el timeout,
+  el compilador ni la política. Sin resultado CI de esta adenda todavía;
+  publicación pública consultada y merge condicionado a sus gates.
+
 ## 2026-10-04 — Codex MG02/MG05: publicación retirada, no IC universalmente fresco
 
 - Rama evidence-expiry sobrec6ce, reconciliada con maine3adf74 por unión;
