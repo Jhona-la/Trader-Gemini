@@ -91,7 +91,13 @@ fn cl39_el_envio_de_la_ioc_lee_su_estado_terminal() {
         "clasificar_respuesta_ioc(",
         "apply_ack(",
         "handle_rate_limit_error(",
+        "mark_local_reject(",
     ] {
         assert!(ioc.contains(requerido), "la IOC debe usar {requerido}");
     }
+    // CL-39b: la intención se registra después de la última salida previa
+    // al envío (el buffer desbordado no deja una intención huérfana).
+    let registro = ioc.find("register_intent(").unwrap();
+    let desborde = ioc.find("is_overflow()").unwrap();
+    assert!(desborde < registro, "intención registrada antes de poder abortar sin enviar");
 }

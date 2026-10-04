@@ -2624,19 +2624,6 @@ impl ExecutionProvider for OrderExecutor {
         let timestamp = self.get_synced_timestamp();
         self.check_rate_limits(timestamp)?;
 
-        // CL-39: la intención queda referenciada por clientOrderId antes del
-        // envío, como en MARKET (F1.5): si la respuesta se pierde, la
-        // reconciliación la resuelve por consulta.
-        self.order_registry.register_intent(
-            client_order_id,
-            symbol,
-            side,
-            if is_long { "LONG" } else { "SHORT" },
-            ORDER_TYPE_LIMIT,
-            final_quantity,
-            timestamp,
-        );
-
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
             "https://testnet.binancefuture.com/fapi/v1/order?"
@@ -2681,6 +2668,19 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
+        // CL-39: la intención queda referenciada por clientOrderId justo antes
+        // del envío, como en MARKET (F1.5): si la respuesta se pierde, la
+        // reconciliación la resuelve por consulta.
+        self.order_registry.register_intent(
+            client_order_id,
+            symbol,
+            side,
+            if is_long { "LONG" } else { "SHORT" },
+            ORDER_TYPE_LIMIT,
+            final_quantity,
+            timestamp,
+        );
+
         // CL-39: una IOC aceptada NO es un llenado. Antes se devolvía Ok(())
         // ante cualquier 2xx sin leer el cuerpo: una IOC expirada sin
         // ejecución (HTTP 200, EXPIRED, executedQty=0) se confirmaba y dejaba
@@ -2706,6 +2706,11 @@ impl ExecutionProvider for OrderExecutor {
                 crate::ioc_evidence::resultado_para_el_host(&resultado, client_order_id)
             }
             Err(e) => {
+                // CL-39b: un rechazo firme (la orden nunca existió) cierra la
+                // intención; un error ambiguo la deja viva para la consulta.
+                if !e.starts_with("AMBIGUOUS") {
+                    self.order_registry.mark_local_reject(client_order_id, timestamp);
+                }
                 if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
                     return Err(self.handle_rate_limit_error(&e));
                 }
