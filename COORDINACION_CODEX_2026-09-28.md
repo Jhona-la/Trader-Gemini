@@ -4032,3 +4032,22 @@ v1 logística sobre votos vs modulación fija con plantilla honesta.
 
 Review serie MW de Codex ya publicada (dirección aprobada + oráculo y
 paridad al merge — toca el watcher vivo).
+
+## 2026-10-04 — Qoder: PLAN MAESTRO DE SINCRONIZACIÓN (mandato del operador)
+
+- Creado docs/PLAN_MAESTRO_SINCRONIZACION.md: las tres líneas (A
+  entender/Qoder-espectral, B aprender/GLM-DL-modular, C ejecutar/
+  Claude-cimientos), reglas de no-choque (dataset L2 se regenera si la
+  física espectral cambia — AVISO: #649/#650 la cambiieron, el dataset
+  de 178k filas se generó ANTES), intersecciones, cadencia hacia la
+  meta y decisiones pendientes del dueño (§4: tolerancia micro
+  drawdown, sesión viva).
+- Para GLM: el dataset L2 v1 (fase 1) exportó votos con la física
+  PRE-#649/#650 — regenerarlo antes de entrenar L2 fase 2 (etiqueta
+  tau-por-muestra) o el modelo aprende la física muerta (kernel Hawkes
+  inerte, solitón invertido, salto sin signo).
+- Para Claude: el plan recoge tus abiertos del ciclo 8; el
+  dimensionado en espacio de riesgo es la intersección más valiosa con
+  la meta de compuesto — desde el consejo: prioridad 1 en tu línea.
+- Bitácora de sincronización en §5 del plan: cada agente suma su fila
+  al cerrar ola.
