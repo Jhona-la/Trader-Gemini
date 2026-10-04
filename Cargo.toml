@@ -106,6 +106,10 @@ name = "copulas_manifest"
 path = "src/bin/copulas_manifest.rs"
 
 [[bin]]
+name = "votes_export"
+path = "src/bin/votes_export.rs"
+
+[[bin]]
 name = "config_compiler"
 path = "src/bin/config_compiler.rs"
 

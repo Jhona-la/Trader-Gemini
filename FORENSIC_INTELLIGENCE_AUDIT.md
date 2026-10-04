@@ -14018,3 +14018,37 @@ la cadena consenso→consumo tras la integración #624/#626.
 - **ORÁCULO T-1: PASA 16/144 = 11.1%** (3868.23 s, release single-thread
   --nocapture sobre de5fcc9b) — ambos vetos dormidos se ACTIVAN sin
   perder ningún gen certificado.
+
+## #652 — Ola 52 (Qoder, 2026-10-03): COHERENCIA DIRECCIÓN-τ DEL CONSUMO ESPECTRAL (H2/H4/H7)
+
+Cierra los tres hallazgos restantes de la auditoría de arquitectura (C):
+con ésta, los 7/7 resueltos (H1/H3/H5/H6 en #648; H2/H4/H7 aquí).
+
+- **H2 — τ inoperable no dirige**: `espectral_activo` exige ahora τ ≥
+  30 s (TAU_ANCHOR_FAST_MS). Un dominante a τ < 30 s rompía el contrato
+  "la posición vive a la escala que habló": el else interpolaba la vida
+  por confianza y el router dimensionaba la geometría con una τ que NO
+  era la del voto — y la orden moriría en la puerta de banda operable
+  (#586) de todos modos. Con τ inoperable: fallback escalar bit a bit —
+  la dirección espectral no puede comprar geometría a una escala que el
+  sistema no opera.
+- **H4 — modulación independiente**: el override espectral modulaba por
+  la convicción ESCALAR del ensamble — los mismos motores que componen
+  v_dom: la misma información contaba dos veces. Ahora modula la
+  COHERENCIA INTER-ESPECTRAL `|media_banda/v_dom|` ∈ [0,1]: cuánto
+  respalda el resto del espectro a su escala dominante. Sin media ⇒
+  conf = v_dom·0.70; con respaldo pleno (media = v_dom) ⇒ v_dom·1.0.
+- **H7 — distribución contable**: contadores atómicos
+  `vdom_evaluados`/`vdom_sobre_corte` + `qo_652_fraccion_sobre_corte`
+  publicada con cadencia 1024. La zona muerta de señales unánimes
+  débiles (|v_dom| típico 0.1-0.2 < cutoff 0.20) sólo se recalibra con
+  la distribución MEDIDA — ahora es observable.
+- **Verificación**: signal-engine 106/106 (tests con valores exactos:
+  0.56/0.8/0.63/0.97 según media y τ), core 160/160, ws 0 errores.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (3074.57 s, release single-thread
+  --nocapture sobre 3eacccf2) — cambia la decisión viva sin perder
+  ningún gen certificado.
+- **Lección operativa**: oráculo relanzado tras eliminar 8 procesos
+  huérfanos de un lanzamiento con salida descartada (commit && test & >
+  /dev/null en una cadena) — el oráculo SIEMPRE como comando background
+  dedicado con captura.

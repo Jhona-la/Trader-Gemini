@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-03 — Qoder: Ola 52 / #652 — COHERENCIA DIRECCIÓN-τ DEL CONSUMO — ORÁCULO PASA 16/144
+
+- Rama qoder/ola52-coherencia-consumo (worktree .ola52, base 7fdd12dd),
+  código 3eacccf2. H2: el espectral sólo dirige con τ operable (≥30s);
+  fallback escalar con τ inoperable. H4: modulación por coherencia
+  INTER-espectral |media_banda/v_dom| (fuente independiente). H7:
+  distribución del dominante contable (qo_652_fraccion_sobre_corte).
+  Auditoría arquitectura (C) 7/7 CERRADA.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (3074s). Verificación: signal
+  106/106 (valores exactos por media/τ), core 160/160, ws 0 err.
+- Detalle: FORENSIC #652. Buzón: cierre Ola 52.
+
 ## 2026-10-03 — Qoder: Ola 51 / #651 — ACTIVACIÓN DE VETOS DORMIDOS — ORÁCULO PASA 16/144
 
 - Rama qoder/ola51-vetos-dormidos (worktree .ola51, base 84c20593),
