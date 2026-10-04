@@ -2882,12 +2882,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut shadow_forest = evolution_engine::random_forest::ShadowForest::new(initial_capital, initial_genome.clone(), 10);
         // CL-40: los universos del bosque evalúan SU genoma (no adoptan el
         // activo por su cuenta); se anota la generación de la que se
-        // plantaron para replantar sólo cuando el almacén sancione otra.
+        // plantaron (si el almacén trae ya otro genoma, se replanta).
         if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
-            if env.genome.to_vector() == initial_genome.to_vector() {
-                shadow_forest.generacion_base = env.generation;
-            }
+            shadow_forest.seguir_generacion(env.generation, &env.genome);
         }
+        // Fecha del `active.json` que el bosque ya leyó: sólo se relee cuando
+        // cambia (mismo filtro que `refresh_models` del núcleo).
+        let mut mtime_bosque = std::fs::metadata(quantum_arena::genome_store::active_json_path())
+            .and_then(|m| m.modified())
+            .ok();
 
         // XXXVI: per-observation accounting proxy, NOT independent backtest/live evidence.
         // Recovery owns only a core entry veto; global/executor latches are independent.
@@ -4618,16 +4621,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if msg_count.is_multiple_of(5000) {
                 telemetry_server::telemetry_log!("⏱️ [TELEMETRY] Processed 5000 ticks/klines. Cumulative Fees: ${:.4}. Last tick: {} ns", total_fees, start.elapsed().as_nanos());
 
-                // CL-40: si el núcleo vivo ya opera una generación más nueva
-                // (demonio o cosecha), el bosque se replanta alrededor de
-                // ella ANTES de cosechar: un mutante del genoma anterior no
-                // debe poder sustituir a la generación sancionada.
-                let aplicada = engine_real.applied_generation.load(Ordering::SeqCst);
-                if aplicada > shadow_forest.generacion_base {
+                // CL-40: si el almacén sancionó una generación más nueva
+                // (el demonio la aplica directo al arena; el contador del
+                // núcleo sólo se mueve en `refresh_models`), el bosque se
+                // replanta alrededor de ella ANTES de cosechar: un mutante
+                // del genoma anterior no debe poder sustituir a la
+                // generación sancionada.
+                let mtime_almacen = std::fs::metadata(quantum_arena::genome_store::active_json_path())
+                    .and_then(|m| m.modified())
+                    .ok();
+                if mtime_almacen.is_some() && mtime_almacen != mtime_bosque {
+                    mtime_bosque = mtime_almacen;
                     if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
-                        if env.generation == aplicada
-                            && shadow_forest.seguir_generacion(env.generation, &env.genome)
-                        {
+                        if shadow_forest.seguir_generacion(env.generation, &env.genome) {
                             telemetry!(
                                 "🌲 [SHADOW FOREST] Replantado alrededor de la generación {}",
                                 env.generation

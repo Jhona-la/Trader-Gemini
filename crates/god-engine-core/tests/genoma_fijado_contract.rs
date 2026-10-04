@@ -136,7 +136,19 @@ fn cl40_el_host_replanta_el_bosque_por_generacion() {
     assert!(!host.contains(&replantar), "el host replanta sin anotar la generación");
     let seguir = ["shadow_forest", ".seguir_generacion("].concat();
     assert!(
-        host.matches(&seguir).count() >= 2,
-        "el host debe seguir la generación tras la cosecha y antes de cosechar"
+        host.matches(&seguir).count() >= 3,
+        "el host debe seguir la generación al plantar, antes de cosechar y tras la cosecha"
+    );
+    // Antes de cosechar decide la generación del ALMACÉN: el demonio aplica
+    // su promoción directo al arena y el contador del núcleo
+    // (`applied_generation`) sólo avanza en `refresh_models`.
+    let cosecha = host.find(".harvest_best_genome()").expect("cosecha del bosque");
+    let antes = &host[..cosecha];
+    let replanta = antes.rfind(&seguir).expect("la replantación va antes de la cosecha");
+    assert!(cosecha - replanta < 2_000, "la replantación no está junto a la cosecha");
+    let bloque = antes[..replanta].rfind("CL-40: si el almacén").unwrap_or(replanta);
+    assert!(
+        !host[bloque..cosecha].contains("engine_real.applied_generation"),
+        "la replantación previa no puede depender del contador del núcleo"
     );
 }

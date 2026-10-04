@@ -26,9 +26,14 @@ sorteaban a mano (`applied_generation = u64::MAX`).
    `GOD_NO_HOT_RELOAD` sigue apagando la recarga del núcleo vivo.
 2. El bosque sombra anota la generación de la que se plantó
    (`generacion_base`) y el host lo replanta con `seguir_generacion`
-   ANTES de cosechar cuando el núcleo vivo aplica una generación más nueva,
+   ANTES de cosechar cuando el almacén sanciona una generación más nueva,
    y tras su propia cosecha. Un mutante del genoma anterior no puede
-   sustituir a la generación sancionada.
+   sustituir a la generación sancionada. El host mira el almacén (por la
+   fecha de `active.json`, como `refresh_models`) y no el contador
+   `applied_generation` del núcleo: el demonio aplica sus promociones y
+   rollbacks directo al arena y ese contador no se mueve. Re-registrar el
+   mismo genoma en otra generación no replanta (conserva capital y
+   mutantes).
 
 ## Consecuencias
 

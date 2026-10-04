@@ -221,13 +221,22 @@ impl ShadowForest {
     }
 
     /// CL-40: replanta alrededor de `genoma` sólo si su generación es más
-    /// nueva que la base actual. Devuelve si replantó.
+    /// nueva que la base actual y el genoma no es ya el control (un
+    /// re-registro del mismo genoma con otra generación no borra la muestra
+    /// de la cosecha). Devuelve si replantó.
     pub fn seguir_generacion(&mut self, generacion: u64, genoma: &SuperGenotype) -> bool {
         if generacion <= self.generacion_base {
             return false;
         }
-        self.replant(genoma.clone());
         self.generacion_base = generacion;
+        if self
+            .genomes
+            .first()
+            .is_some_and(|control| crate::online_daemon::same_genome(control, genoma))
+        {
+            return false;
+        }
+        self.replant(genoma.clone());
         true
     }
 
@@ -344,6 +353,15 @@ mod tests {
         assert!(!forest.seguir_generacion(3, &base), "la misma generación no replanta");
         assert!(!forest.seguir_generacion(2, &base), "una generación vieja no replanta");
         assert_eq!(forest.genomes[0].tech_threshold, 0.29);
+
+        // Re-registro del mismo genoma con una generación nueva: avanza la
+        // base y conserva la muestra (capital y mutantes intactos).
+        forest.engines[1].arena.unified_capital.store(14.0, Ordering::Relaxed);
+        let mutante = forest.genomes[1].clone();
+        assert!(!forest.seguir_generacion(4, &nuevo));
+        assert_eq!(forest.generacion_base, 4);
+        assert_eq!(forest.engines[1].arena.unified_capital.load(Ordering::Relaxed), 14.0);
+        assert!(crate::online_daemon::same_genome(&forest.genomes[1], &mutante));
     }
 
     #[test]
