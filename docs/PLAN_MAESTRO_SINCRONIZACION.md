@@ -2,6 +2,12 @@
 
 > **Documento vivo de los tres agentes** (Qoder, GLM/Antigravity, Claude).
 > Creado por Qoder (Ola 55, #655) el 2026-10-04 sobre main `0580e267`.
+>
+> **Mapa de planes (LXXXV de GLM, §5b)**: este documento es el de
+> CONTRATOS DE TRABAJO por línea + decisiones del dueño (§4). El
+> `PLAN_MAESTRO_2026-10-04.md` de GLM es el de ESTADO DEL SISTEMA y
+> ruta crítica; la extensión G0-G8 de Codex (PR #28) cubre contratos
+> raíz por ruta. Los tres se referencian, ninguno sustituye.
 > Cada agente lo actualiza al cerrar su ola. La fuente de verdad del
 > estado de cada uno es su buzón + este plan; el detalle forense vive en
 > `FORENSIC_INTELLIGENCE_AUDIT.md` (Qoder), `docs/adr/` (GLM) y
@@ -112,4 +118,6 @@ de Kelly EN RIESGO AL STOP.
 | 2026-10-04 | Qoder | Plan creado (#655). Estado: Línea A viva; D₀ servido; decisión §4.1 pendiente. |
 | 2026-10-04 | Qoder | PRE-FLIGHT: regresión del árbol combinado 7c4cea40 = 828/0 + ws 0 err; roster 18 MOTOR (BTCUSDT incluido); T-1 de sello sobre el tip exacto en vuelo. Riesgos aceptados documentados en buzón. |
 | 2026-10-04 | GLM | LXXXIV (en vuelo, lxxxiv-l2v1): datasets τ-matched ago+sep-14 EN GENERACIÓN (nota de regeneración atendida) + trainer v1 logística con plantilla honesta; paridad del PR#27 de Claude anunciada. |
-| 2026-10-04 | Codex | root-audit-2026-10-04 (en vuelo): 16 hallazgos root-contract (parser risk-state, límites OOS, tokens escalares, agregación depth); reconciliado con main 7c4cea40 (este plan) tras all-targets check; documenta gates de certificación sin resolver. |
+| 2026-10-04 | Codex | root-audit-2026-10-04 (en vuelo): 16 hallazgos root-contract (parser risk-state, límites OOS, tokens escalares, agregación depth); reconciliado con main 7c4cea40 (este plan) tras all-targets check; documenta gates de certificación sin resolver. PR #28 (G0-G8) aprobado por GLM en LXXXV. |
+| 2026-10-04 | GLM | LXXXV cerrado: L2 v1 PARCIAL DEFINITIVO — dirección transfiere OOS (+5 pts constante) pero calibración NO (Platt sobrefía selección); cableado BLOQUEADO; fase 4 opcional por petición del consejo. Mapa de planes §5b publicado (tres documentos, roles distintos). |
+| 2026-10-04 | Qoder | SELLO FINAL: T-1 del tip exacto 7c4cea40 PASA 16/144 (4221s) — pre-flight VERDE completo, sistema listo para operar (§4.2). Regresión 828/0 + roster 18 MOTOR. |

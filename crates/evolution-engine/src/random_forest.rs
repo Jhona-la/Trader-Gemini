@@ -19,10 +19,14 @@ pub struct ShadowForest {
     pub genomes: Vec<SuperGenotype>,
     /// D-689: operaciones cerradas de cada universo en la última replantación.
     pub trades_at_replant: Vec<usize>,
-    /// QO-E2c — pico de capital por universo: alimenta el término de
-    /// drawdown del fitness unificado (antes la cosecha comparaba PnL
-    /// crudo — el único promotor fuera del objetivo D-652).
+    /// Pico del capital realizado (`unified_capital`) observado por universo
+    /// desde la replantación, al terminar cada broadcast y en cada cosecha.
+    /// No incluye MTM ni extremos entre observaciones.
     pub peak_capital: Vec<f64>,
+    /// E04: máximo drawdown de esas observaciones, conservado entre cosechas.
+    /// NaN expone una historia inválida (capital no finito/no positivo); una
+    /// recuperación no la convierte en riesgo cero. Sólo replant la reinicia.
+    pub max_drawdown_pct: Vec<f64>,
     /// CL-40: generación del almacén alrededor de la cual se plantaron los
     /// universos (0 = ninguna sancionada). Sus núcleos ya no adoptan el
     /// genoma activo por su cuenta (`RecargaGenoma::Fija`): cuando el núcleo
@@ -39,6 +43,22 @@ fn closed_trades(engine: &GodEngineCore) -> usize {
         .iter()
         .map(|c| c.metrics.trade_count.load(Ordering::Relaxed))
         .sum()
+}
+
+/// O(1), sin asignaciones: observa el capital del universo, no sus posiciones.
+fn observe_capital(capital: f64, peak: &mut f64, max_dd: &mut f64) {
+    if !capital.is_finite() || capital <= 0.0 || !peak.is_finite() || *peak <= 0.0 {
+        *max_dd = f64::NAN;
+        return;
+    }
+    if capital > *peak {
+        *peak = capital;
+    }
+    let dd = (*peak - capital) / *peak;
+    // Comparar explícitamente conserva NaN; f64::max ocultaría la invalidez.
+    if dd > *max_dd {
+        *max_dd = dd;
+    }
 }
 
 impl ShadowForest {
@@ -67,13 +87,7 @@ impl ShadowForest {
             let mut engine = GodEngineCore::new(arena);
             // HyperRealistic para que incluya todos los fees y latencias simuladas
             engine.reality.mode = god_engine_core::reality_physics::EngineMode::HyperRealistic;
-            // Simulamos el peor caso estadístico de latencia API Binance (AWS AP-Northeast a Tokyo)
-            // para que las mutaciones sobrevivan en el mundo real, no en simulaciones ideales.
-            engine
-                .arena
-                .config
-                .latency_penalty_ms
-                .store(25.0, std::sync::atomic::Ordering::Relaxed);
+            // E03: la latencia evaluada es la del genoma aplicado y guardado.
 
             engines.push(engine);
             genomes.push(mutation);
@@ -81,6 +95,10 @@ impl ShadowForest {
 
         let trades_at_replant = engines.iter().map(closed_trades).collect();
         let peak_capital = vec![initial_capital; engines.len()];
+        let max_drawdown_pct = vec![
+            if initial_capital.is_finite() && initial_capital > 0.0 { 0.0 } else { f64::NAN };
+            engines.len()
+        ];
 
         Self {
             initial_capital,
@@ -88,6 +106,7 @@ impl ShadowForest {
             genomes,
             trades_at_replant,
             peak_capital,
+            max_drawdown_pct,
             generacion_base: 0,
         }
     }
@@ -123,10 +142,18 @@ impl ShadowForest {
         // FASE 14: Suspensión Cuántica por OS Guardian.
         // Si Windows está asfixiado en RAM, no malgastamos ciclos en los clones de sombra.
         if main_arena.panic_memory_dump.load(Ordering::Relaxed) {
+            // La suspensión del motor no borra la observación contable actual.
+            for (i, engine) in self.engines.iter().enumerate() {
+                observe_capital(
+                    engine.arena.unified_capital.load(Ordering::Relaxed),
+                    &mut self.peak_capital[i],
+                    &mut self.max_drawdown_pct[i],
+                );
+            }
             return;
         }
 
-        for engine in self.engines.iter_mut() {
+        for (i, engine) in self.engines.iter_mut().enumerate() {
             // Actualizamos la arena interna del engine
             engine
                 .arena
@@ -155,11 +182,16 @@ impl ShadowForest {
                 omni_features,
                 is_buyer_maker,
             );
+            observe_capital(
+                engine.arena.unified_capital.load(Ordering::Relaxed),
+                &mut self.peak_capital[i],
+                &mut self.max_drawdown_pct[i],
+            );
         }
     }
 
     /// Evalúa todos los genomas y devuelve el mejor si superó al de control,
-    /// además devuelve el Leaderboard (PnL de todos los universos).
+    /// además devuelve el Leaderboard (fitness de todos los universos).
     pub fn harvest_best_genome(&mut self) -> (Option<(SuperGenotype, f64)>, Vec<f64>) {
         // QO-E2c — OBJETIVO UNIFICADO: la cosecha comparaba PnL CRUDO (el
         // único promotor fuera del fitness D-652 — divergencia de objetivos
@@ -168,41 +200,30 @@ impl ShadowForest {
         // inacción INVIABLE) y el ganador debe superar al CONTROL en
         // fitness, no en dólares: un mutante con $1 más y +40% de
         // drawdown YA NO gana.
-        for (i, engine) in self.engines.iter().enumerate() {
-            let cap = engine.arena.unified_capital.load(Ordering::Relaxed);
-            if i < self.peak_capital.len() && cap > self.peak_capital[i] {
-                self.peak_capital[i] = cap;
-            }
-        }
-
-        let fitness_of = |i: usize| -> f64 {
-            let engine = &self.engines[i];
-            let cap = engine.arena.unified_capital.load(Ordering::Relaxed);
-            let peak = self.peak_capital.get(i).copied().unwrap_or(cap.max(self.initial_capital));
-            let dd = if peak > 0.0 { (peak - cap) / peak } else { 0.0 };
-            crate::fitness::compute(&crate::fitness::FitnessInputs {
-                initial_capital: self.initial_capital,
-                final_capital: cap,
-                max_drawdown_pct: dd,
-                total_trades: closed_trades(engine) as u32,
-                min_trades_required: MIN_HARVEST_TRADES as u32,
-                oos_start_capital: self.initial_capital,
-                oos_end_capital: cap,
-            })
-        };
-
         let mut leaderboard = Vec::with_capacity(self.engines.len());
         let mut best_fit = f64::NEG_INFINITY;
         let mut best_idx = 0usize;
         for i in 0..self.engines.len() {
-            let f = fitness_of(i);
+            let engine = &self.engines[i];
+            let cap = engine.arena.unified_capital.load(Ordering::Relaxed);
+            observe_capital(cap, &mut self.peak_capital[i], &mut self.max_drawdown_pct[i]);
+            // La misma lectura de capital actualiza la historia y puntúa.
+            let f = crate::fitness::compute(&crate::fitness::FitnessInputs {
+                initial_capital: self.initial_capital,
+                final_capital: cap,
+                max_drawdown_pct: self.max_drawdown_pct[i],
+                total_trades: closed_trades(engine) as u32,
+                min_trades_required: MIN_HARVEST_TRADES as u32,
+                oos_start_capital: self.initial_capital,
+                oos_end_capital: cap,
+            });
             leaderboard.push(f);
             if f > best_fit {
                 best_fit = f;
                 best_idx = i;
             }
         }
-        let control_fit = fitness_of(0);
+        let control_fit = leaderboard[0];
         let best_trades = self.closed_since_replant(best_idx);
 
         // Puerta: muestra mínima (D-689) y superioridad en el MISMO
@@ -257,6 +278,13 @@ impl ShadowForest {
             if let Some(p) = self.peak_capital.get_mut(i) {
                 *p = self.initial_capital;
             }
+            if let Some(dd) = self.max_drawdown_pct.get_mut(i) {
+                *dd = if self.initial_capital.is_finite() && self.initial_capital > 0.0 {
+                    0.0
+                } else {
+                    f64::NAN
+                };
+            }
             engine
                 .arena
                 .config
@@ -286,6 +314,240 @@ impl ShadowForest {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn set_capital(forest: &ShadowForest, i: usize, capital: f64) {
+        forest.engines[i].arena.unified_capital.store(capital, Ordering::Relaxed);
+    }
+
+    fn set_trades(forest: &ShadowForest, i: usize, trades: usize) {
+        forest.engines[i].arena.coins[0].metrics.trade_count.store(trades, Ordering::Relaxed);
+    }
+
+    // Exercise the public event path; latency_panic prevents new entries in
+    // this accounting fixture. The capital observations are injected, not MTM.
+    fn broadcast_observation(forest: &mut ShadowForest, event_time: u64) {
+        let main_arena = Arc::clone(&forest.engines[0].arena);
+        forest.broadcast_tick(
+            0, true, false, false, 100.0, 1.0, 99.99, 100.01, 10.0, 10.0,
+            0.0, 0.0, event_time, &main_arena, &[0.0; 54], false, true,
+        );
+    }
+
+    fn expected_fitness(capital: f64, max_dd: f64, trades: usize) -> f64 {
+        crate::fitness::compute(&crate::fitness::FitnessInputs {
+            initial_capital: 13.0,
+            final_capital: capital,
+            max_drawdown_pct: max_dd,
+            total_trades: trades as u32,
+            min_trades_required: MIN_HARVEST_TRADES as u32,
+            oos_start_capital: 13.0,
+            oos_end_capital: capital,
+        })
+    }
+
+    fn assert_genome_configurations(forest: &ShadowForest) {
+        // Compare against the existing apply_to_arena projection, including
+        // horizon curves and their scalar views, without redefining that map.
+        let expected_arena = GlobalArena::build_in_own_stack(13.0);
+        for (i, (engine, genome)) in forest.engines.iter().zip(&forest.genomes).enumerate() {
+            genome.apply_to_arena(&expected_arena);
+            assert_eq!(
+                SuperGenotype::current_from_arena(&engine.arena).to_vector(),
+                SuperGenotype::current_from_arena(&expected_arena).to_vector(),
+                "configuration differs from stored genome in universe {i}",
+            );
+        }
+    }
+
+    #[test]
+    fn e03_constructor_evaluates_the_stored_50ms_latency() {
+        let mut base = SuperGenotype::default();
+        base.latency_penalty_ms = 50.0;
+        let forest = ShadowForest::new(13.0, base, 1);
+        assert_eq!(forest.genomes[0].latency_penalty_ms, 50.0);
+        assert_eq!(forest.engines[0].arena.config.latency_penalty_ms.load(Ordering::Relaxed), 50.0);
+    }
+
+    #[test]
+    fn e03_control_and_mutants_evaluate_their_own_genome_configurations() {
+        let mut base = SuperGenotype::default();
+        base.latency_penalty_ms = 50.0;
+        let forest = ShadowForest::new(13.0, base, 4);
+        assert_genome_configurations(&forest);
+    }
+
+    #[test]
+    fn e03_replant_applies_the_new_control_and_mutant_configurations() {
+        let mut forest = ShadowForest::new(13.0, SuperGenotype::default(), 4);
+        let mut alpha = SuperGenotype::default();
+        alpha.latency_penalty_ms = 75.0;
+        forest.replant(alpha);
+        assert_eq!(forest.genomes[0].latency_penalty_ms, 75.0);
+        assert_genome_configurations(&forest);
+        broadcast_observation(&mut forest, 1_600_000_000_000);
+        assert_genome_configurations(&forest);
+    }
+
+    #[test]
+    fn e04_harvest_recovery_keeps_max_dd_and_the_stable_control_wins() {
+        let mut forest = ShadowForest::new(13.0, SuperGenotype::default(), 2);
+        for i in 0..2 { set_trades(&forest, i, 30); }
+        forest.harvest_best_genome(); // initial 13
+        set_capital(&forest, 1, 6.5);
+        forest.harvest_best_genome(); // observe the 50% loss
+        set_capital(&forest, 0, 14.0);
+        set_capital(&forest, 1, 15.0);
+        for _ in 0..3 {
+            let (winner, scores) = forest.harvest_best_genome();
+            assert_eq!(scores[0], expected_fitness(14.0, 0.0, 30));
+            assert_eq!(scores[1], expected_fitness(15.0, 0.5, 30));
+            assert!(scores[0] > scores[1], "a recovered loss must still penalize fitness");
+            assert!(winner.is_none(), "control 13->14 must beat mutant 13->6.5->15");
+        }
+    }
+
+    #[test]
+    fn e04_broadcast_records_peak_and_loss_between_harvests() {
+        let mut forest = ShadowForest::new(13.0, SuperGenotype::default(), 2);
+        for i in 0..2 { set_trades(&forest, i, 30); }
+        set_capital(&forest, 1, 26.0);
+        broadcast_observation(&mut forest, 1_600_000_000_000);
+        set_capital(&forest, 1, 13.0);
+        broadcast_observation(&mut forest, 1_600_000_000_001);
+        set_capital(&forest, 0, 14.0);
+        set_capital(&forest, 1, 15.0);
+        broadcast_observation(&mut forest, 1_600_000_000_002);
+        let (winner, scores) = forest.harvest_best_genome();
+        assert_eq!(scores[1], expected_fitness(15.0, 0.5, 30));
+        assert_eq!(forest.peak_capital[1], 26.0);
+        assert!(scores[0] > scores[1]);
+        assert!(winner.is_none());
+    }
+
+    #[test]
+    fn e04_same_genome_registration_and_generation_keep_history_and_sample() {
+        let base = SuperGenotype::default();
+        let mut forest = ShadowForest::new(13.0, base.clone(), 2);
+        set_trades(&forest, 1, 30);
+        set_capital(&forest, 1, 6.5);
+        broadcast_observation(&mut forest, 1_600_000_000_000);
+        set_capital(&forest, 1, 15.0);
+        for generation in [1, 7, 7, 0] {
+            assert!(!forest.seguir_generacion(generation, &base));
+            assert_eq!(forest.closed_since_replant(1), 30);
+            let (_, scores) = forest.harvest_best_genome();
+            assert_eq!(scores[1], expected_fitness(15.0, 0.5, 30));
+        }
+        assert_eq!(forest.generacion_base, 7);
+    }
+
+    #[test]
+    fn e04_replant_resets_peak_drawdown_and_recent_trade_gate_together() {
+        assert_eq!(MIN_HARVEST_TRADES, 15);
+        let base = SuperGenotype::default();
+        let mut forest = ShadowForest::new(13.0, base.clone(), 2);
+        set_trades(&forest, 1, 30);
+        set_capital(&forest, 1, 26.0);
+        broadcast_observation(&mut forest, 1_600_000_000_000);
+        set_capital(&forest, 1, 6.5);
+        broadcast_observation(&mut forest, 1_600_000_000_001);
+        forest.harvest_best_genome();
+        forest.replant(base);
+        assert_eq!(forest.peak_capital, vec![13.0; 2]);
+        assert_eq!(forest.closed_since_replant(1), 0);
+        set_capital(&forest, 1, 14.0);
+        for (recent, eligible) in [(0, false), (MIN_HARVEST_TRADES - 1, false), (MIN_HARVEST_TRADES, true)] {
+            set_trades(&forest, 1, 30 + recent);
+            let (winner, scores) = forest.harvest_best_genome();
+            assert_eq!(scores[1], expected_fitness(14.0, 0.0, 30 + recent));
+            assert_eq!(winner.is_some(), eligible, "recent trades = {recent}");
+        }
+    }
+
+    #[test]
+    fn e04_invalid_capital_observations_cannot_disappear_after_recovery() {
+        let base = SuperGenotype::default();
+        let mut forest = ShadowForest::new(13.0, base.clone(), 2);
+        for via_broadcast in [false, true] {
+            for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
+                forest.replant(base.clone());
+                let trades = closed_trades(&forest.engines[1]) + 30;
+                set_trades(&forest, 1, trades);
+                set_capital(&forest, 1, invalid);
+                if via_broadcast {
+                    broadcast_observation(&mut forest, 1_600_000_000_000);
+                } else {
+                    let (winner, scores) = forest.harvest_best_genome();
+                    assert!(winner.is_none());
+                    assert_eq!(scores[1], crate::fitness::INVIABLE);
+                }
+                set_capital(&forest, 1, 15.0);
+                assert!(!forest.seguir_generacion(7, &base));
+                let (winner, scores) = forest.harvest_best_genome();
+                assert_eq!(scores[1], crate::fitness::INVIABLE, "invalid={invalid}, broadcast={via_broadcast}");
+                assert!(winner.is_none());
+                forest.replant(base.clone());
+                set_trades(&forest, 1, trades + MIN_HARVEST_TRADES);
+                set_capital(&forest, 1, 14.0);
+                assert!(forest.harvest_best_genome().0.is_some(), "replant starts valid observations again");
+            }
+        }
+    }
+
+    #[test]
+    fn e04_depth_and_kline_broadcasts_also_record_observed_capital() {
+        let base = SuperGenotype::default();
+        let mut forest = ShadowForest::new(13.0, base.clone(), 2);
+        for (is_depth, is_kline_closed) in [(true, false), (false, true)] {
+            forest.replant(base.clone());
+            let trades = closed_trades(&forest.engines[1]) + 30;
+            set_trades(&forest, 1, trades);
+            let main_arena = Arc::clone(&forest.engines[0].arena);
+            for (offset, capital) in [(0, 26.0), (1, 13.0), (2, 15.0)] {
+                set_capital(&forest, 1, capital);
+                forest.broadcast_tick(
+                    0, false, is_kline_closed, is_depth, 100.0, 1.0,
+                    99.99, 100.01, 10.0, 10.0, 0.0, 0.0,
+                    1_600_000_000_000 + offset, &main_arena, &[0.0; 54], false, true,
+                );
+            }
+            let (_, scores) = forest.harvest_best_genome();
+            assert_eq!(scores[1], expected_fitness(15.0, 0.5, trades));
+        }
+    }
+
+    #[test]
+    fn e04_memory_suspension_preserves_the_observed_capital_history() {
+        let mut forest = ShadowForest::new(13.0, SuperGenotype::default(), 2);
+        let main_arena = GlobalArena::build_in_own_stack(13.0);
+        main_arena.panic_memory_dump.store(true, Ordering::Relaxed);
+        set_trades(&forest, 1, 30);
+        for (offset, capital) in [(0, 26.0), (1, 13.0), (2, 15.0)] {
+            set_capital(&forest, 1, capital);
+            forest.broadcast_tick(
+                0, true, false, false, 100.0, 1.0, 99.99, 100.01,
+                10.0, 10.0, 0.0, 0.0, 1_600_000_000_000 + offset,
+                &main_arena, &[0.0; 54], false, true,
+            );
+        }
+        assert_eq!(forest.engines[1].arena.coins[0].current_price.load(Ordering::Relaxed), 0.0);
+        let (_, scores) = forest.harvest_best_genome();
+        assert_eq!(scores[1], expected_fitness(15.0, 0.5, 30));
+    }
+
+    #[test]
+    fn e04_positive_finite_capital_extremes_keep_finite_observed_risk() {
+        for initial in [f64::from_bits(2), f64::MIN_POSITIVE, f64::MAX] {
+            let mut forest = ShadowForest::new(initial, SuperGenotype::default(), 2);
+            set_trades(&forest, 1, 30);
+            set_capital(&forest, 1, initial / 2.0);
+            let (_, scores) = forest.harvest_best_genome();
+            assert!(scores[1].is_finite(), "positive finite endpoints: {initial}");
+            set_capital(&forest, 1, initial);
+            let (_, recovered) = forest.harvest_best_genome();
+            assert_eq!(recovered[1], -crate::fitness::DRAWDOWN_LAMBDA * 0.5 * 0.5);
+        }
+    }
 
     #[test]
     fn test_shadow_forest_instantiation_and_harvest() {
