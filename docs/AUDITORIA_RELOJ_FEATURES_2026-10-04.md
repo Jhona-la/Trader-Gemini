@@ -159,3 +159,16 @@ usado como «sin cierre». No cierre en0 ejecutado ni impacto real demostrado;
 definir presencia explícita con compatibilidad antes de cambiar ese contrato.
 El core sigue descartando Result y modificando OFI/otros estados; este patch
 no certifica atomicidad del evento completo, estimadores downstream o panic.
+
+## Ejecución explícita del contrato en CI
+
+El commit local `f3018b35` conserva la reparación y sus recibos RED/GREEN.
+El workflow heredado compila todos los targets, pero no ejecutaba las pruebas
+de `stateful_transition_contract`. Se añade un paso explícito con el mismo
+target de 25 pruebas GREEN, el mismo compilador y el lock existente. No se
+retiran las regresiones previas, no se activan tests ignorados y no se altera
+el timeout ni la fuente de producción/pruebas ya revisada.
+
+La adenda CI establece qué debe ejecutar el candidato remoto; no demuestra
+que CI haya terminado ni convierte un check de compilación en un oráculo.
+Publicación pública consultada y merge condicionado a los gates pertinentes.

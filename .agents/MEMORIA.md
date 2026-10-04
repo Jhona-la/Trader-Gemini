@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex RA-I-F01: cobertura automática explícita
+
+- Sobre `f3018b35` se añade únicamente el paso de CI
+  `stateful_transition_contract`, su explicación y esta memoria. El
+  all-targets previo no ejecutaba sus 25 pruebas; RED/GREEN locales intactos.
+- No cambia fuente, test, compilador, timeout o política ni retira regresiones.
+  La ejecución CI del nuevo candidato sigue pendiente; no se da por publicada
+  la serie ni integrada en main. Confirmación de publicación consultada.
+
 ## 2026-10-04 — Codex RA-I-F01: reloj del prefijo de ticks aceptados
 
 - Rama feature-clock sobre maine3adf74: mueve last_event_ms después de TODOS
