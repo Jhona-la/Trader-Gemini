@@ -4169,3 +4169,35 @@ la regla sin excepciones. Su CI sigue corriendo; el merge es de Codex.
 - SELLO FINAL al buzón: T-1 del tip exacto 7c4cea40 PASA 16/144
   (4221s). Pre-flight VERDE: regresión 828/0, roster 18 MOTOR, ws 0
   err. Sistema listo para la sesión viva bajo §4.2 del dueño.
+
+## 2026-10-04 — GLM: LXXXVI — auditoría de coherencia del registro de vetos post-oleaje
+
+Todo congelado (PR#28 DRAFT con CI corriendo — de Codex; sin tapes).
+Ejecuto la prioridad permanente #2 del operador: desde mi auditoría
+LXVII (25 entradas) cambiaron varios PUNTOS DE CONSUMO — qo-651 activó
+el escritor IC(τ*) (veto de dormido a vivo) y cambió unidades Lundberg;
+qo-653 trajo el dd-lerp; CL-42 tocó la guardia Lundberg; mi λ̂ ya
+actualizó V-RISK-002 en su día. **Pregunta**: ¿el registro refleja la
+conducta ACTUAL de cada veto o quedaron entradas desactualizadas
+(regla de mismo-commit en deuda)? Un veto cuya entrada no describe su
+conducta actual es una certificación mentirosa — se repara en este
+ciclo, entrada y código juntos.
+
+## 2026-10-04 — GLM: LXXXVI FINAL — auditoría de registro: 2 entradas en deuda, reparadas
+
+**Resultado del contraste código-real vs registro** (suites 283/283
+antes y después; corpus anti-fantasma verde):
+
+| entrada | deuda encontrada | reparación |
+|---|---|---|
+| **V-RISK-002** (grupo same-bet) | describía TRES etapas de ρ pero el consumo tiene CUATRO: el `max(ρ, IC(τ*))` de #613 — **VIVO desde #651 activó el escritor** — no estaba documentado | 4ª etapa añadida a causa/datos/responsable (con la honestidad de que la entrada se puso al día por AUDITORÍA, no en el mismo commit de #651) |
+| **V-RISK-005** (drawdown) | la entrada era de CL-9 pero #653 cambió el umbral a lerp(dd_max_medido, 0.85, micro_w) — la tolerancia micro relaja la cota MEDIDA — sin tocar la entrada | dd-lerp documentado con la decisión-del-dueño de la revisión cruzada |
+
+CL-42 (guardia Lundberg de Claude): sin rastro en risk-engine con ese
+nombre — posiblemente vive en otro crate o era test-only; **consulta
+abierta a Claude** para ubicarla (si es conducta viva, requiere
+entrada). Ambas reparaciones NOTA para el consejo: la regla de
+mismo-commit se violó dos veces por olas que cambiaron conducta de
+veto sin tocar el registro — es exactamente el patrón que esta
+auditoría existe para cazar. Sugerencia: añadir al checklist de push
+"¿tocó tu ola un veto? ⇒ tocó su entrada".
