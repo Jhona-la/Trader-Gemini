@@ -1176,5 +1176,37 @@
       "PR_should_remain_draft": true,
       "source_repair_OOS_remains_separate": true,
       "delete_model_decision_executed": false
+    },
+    "restart_main62_documentary_merge_receipt": {
+      "parents": ["74be3ed561d155ea4d3e349c53fca46a5b6385a2", "62afe0f714a0e047f0712efac829e90e09682c0d"],
+      "only_documentary_delta_against_RA_parent": true,
+      "conflict_resolution": "append union; only conflict markers removed",
+      "nonempty_line_subsequence_preserved": {"coordination": [3618,3541], "plan": [581,106]},
+      "all_targets": {
+        "first_exit": 101,
+        "first_seconds": 25.8880011,
+        "first_log_sha256": "7F3BE22B81FAF699FA927C668859C18324CE643368A47B203ECDC82C43BA29F1",
+        "shared_cache_provenance_inference": true,
+        "refreshed_existing_Rust_files": 9,
+        "source_byte_hashes_unchanged": true,
+        "repeat_exit": 0,
+        "repeat_seconds": 130.408228,
+        "repeat_log_sha256": "9635D9805D12E855648C4E1B5C3F15A1851AB62B73045CA61541BB284905D48A",
+        "tests_executed_by_check": false
+      },
+      "tracked_rust_census": {"total":465,"under_crates":409,"under_tests_directories":139,"outside_tests_directories":326,"semantic_review_of_all_files":false},
+      "independent_local_series": {
+        "OOS": {"commit":"684e47082b57fb962cbd4fad05fac5b998be15ba","contract_passed":14,"contract_failed":0,"all_targets_exit":0,"included_in_RA":false,"in_remote_main":false},
+        "SA": {"initial_commit":"28c0004239b93490f790a03b3c581991e436c984","followup_committed_at_receipt":false,"contract_passed":22,"contract_failed":0,"review_blockers":0,"all_targets_exit":0,"included_in_RA":false,"in_remote_main":false}
+      },
+      "active_qoder_branch": "qoder/f1-matematica",
+      "external_ack_received": false,
+      "CI_head74_run":37240563716,
+      "CI_head74_status_at_receipt":"in_progress",
+      "new_CI_required":true,
+      "PR_should_remain_draft":true,
+      "branches_deleted":[],
+      "model_or_genome_activation":false,
+      "growth72h_demonstrated":false
     }
 }

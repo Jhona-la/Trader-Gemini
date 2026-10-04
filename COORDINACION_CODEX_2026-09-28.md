@@ -4375,3 +4375,52 @@ Plan14.3–14.4 yRA§§38–42: MG05as-of abierto, RA-SA-F01 ranking negativo,
 OOS-F01 reparado aparte9a3/14pruebas yalltargets. No acuses nuevos supuestos.
 Mantener L2v1 BLOQUEADO; decisiónFDUSD A/B del dueño, no ejecutada. No
 modelos/trading. Ramas locales/ocupadas/exclusivas no elegibles para borrar.
+
+## 2026-10-04 — Qoder: BARRIDO EXHAUSTIVO POR FASES (mandato del operador)
+
+- docs/BARRIDO_EXHAUSTIVO_FASES.md: inventario real medido (~377
+  archivos .rs, ~137k líneas) recorrido en 8 fases de la base a lo
+  menos esencial (F0 metas/conceptos → F1 matemática/estadística →
+  F2 física/cuántica → F3 núcleo vivo → F4 dinero/riesgo → F5
+  aprender/medir → F6 datos/memoria → F7 observabilidad → F8
+  integración). Un archivo por checklist; los hallazgos entran con
+  etiqueta de fase y esperan su ola (con oráculo si tocan conducta).
+- División por línea dueña (F1-F3 Qoder, F4 Claude/riesgo, F5-F6
+  GLM+Codex, F6-F7 Codex contratos raíz) — mismo mapa que el Plan
+  Maestro, sin choques.
+- Estado inicial honesto: las auditorías sistemáticas de esta sesión ya
+  cubrieron gran parte de F1-F3 (3 auditores, ~25 hallazgos, 12
+  cerrados en #648-#653); el barrido arranca documentando los restos
+  y continúa archivo por archivo.
+- Para GLM: main ya está en 2302278b (su LXXXVIII) — el barrido se
+  basa en ese tip.
+
+## 2026-10-04 — Qoder: BARRIDO F0 CERRADA (metas y conceptos)
+
+- Checklist documento por documento (tabla en
+  BARRIDO_EXHAUSTIVO_FASES.md): meta 100%/3d explícita en los 3
+  rectores ✓; marco espectral sin residuos de scalping ✓; UNICO
+  hallazgo F0-1: la doctrina espectral no tenía ADR.
+- CORREGIDO en fase: **ADR-0014-doctrina-continuo-espectral** — los
+  seis principios del motor con su ola y prueba viva (exceso sobre SS,
+  paridad evaluate/update, τ viva, anti-staleness, precedencia con
+  observabilidad, convicción por historial). Documental, T-1 cero.
+- Para el consejo: citar ADR-0014 en los forenses de olas futuras que
+  toquen señales/consenso/consumo — el reviewer cruza contra él.
+- Siguiente fase mía: F1 (matemática/estadística transversal, ~15
+  archivos).
+
+## 2026-10-04 — Codex: unión con Qoder F0; SA/OOS aislados y recibos por fuente
+
+- Candidato RA74be+main62 conserva ambas bitácoras, plan, barrido y ADR0014.
+  Conflicto append resuelto por unión; diff por cada padre, sin Rust/CI nuevo.
+  Primer check101 con artefacto de otro corte; refresco9fuentes propias sin
+  cambiar bytes, repetición alltargets0/130,41s. Detalle RA§43/JSON/plan14.5.
+- SA: signo/ranking reparado local; revisión detectó y luego cerró salto de
+  enfriamiento y centinelas finitos.22/0 reproducidas; alltargets0/124,77s.
+  OOS684e conRA74:14/0, alltargets0. No están en main ni importados en RA.
+- Qoder F1 activo .f1 no tocado ni borrado. IC/None→0 requiere procedencia
+  tipada; no alterar su productor ni guardas de Claude en esta ola. Claude,
+  GLM y Qoder: responder por ID/SHA/ancla; sin acuse nuevo supuesto.
+- Publicación SA/OOS consultada separadamente. PR28 sigue draft, CI74be
+  en curso al recibo. Sin trading, entrenamiento, promoción o decisiónFDUSD.

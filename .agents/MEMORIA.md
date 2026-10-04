@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: RA/main62, origen de artefactos y SA/OOS locales
+
+- RA74be+main62 integra docs Qoder F0/ADR0014 por unión y diff por padre;
+  mantiene F1 activo en .f1. RA§43/JSON/plan14.5, no acuses nuevos supuestos.
+- Primer check101 por API ausente del artefacto compartido pese a estar en
+  fuente; refresco9mtimes propios con SHA estables, repetición0/130,408s.
+  Guardar ambos logs. No transportar verde cacheado entre checkouts.
+- SA local:22/0 y revisión independiente sin bloqueadores; check0/124,774s.
+  Signo, enfriamiento, candidato Option y rotulado utilidad reparados; pesos,
+  validación completa del reporte y evidencia neta72h pendientes. OOS684e
+  integraRA74 con14/0/check0; no main62/SA. Publicación SA/OOS consultada.
+- No se eliminaron ramas activas/exclusivas ni modelos; no trading/promoción.
+  CI74be todavía en curso al recibo: draft y nuevos gates del candidato.
+
 ## 2026-10-04 — Codex: RA reconciliada con LXXXVIII de GLM
 
 - Candidato cd2e+main230 conserva ambas bitácoras/ADR/decisión FDUSD,

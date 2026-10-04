@@ -2077,3 +2077,82 @@ no fusionar a main por extrapolar el SUCCESS anterior. OOS9a3, MG7aad,
 reloj36b0 y bosquecace continúan separados y locales. La revisión global
 sigue parcial. Nada autoriza trading, promoción, entrenamiento o borrado
 de modelos. El dueño conserva la decisión FDUSD; no se ejecutó A ni B.
+
+## 43. Reconciliación con el barrido F0 de Qoder y verificación de identidad
+
+### 43.1 Alcance del candidato, preservación y coordinación
+
+Padres del merge local: RA74be3ed561d155ea4d3e349c53fca46a5b6385a2 y
+main62afe0f714a0e047f0712efac829e90e09682c0d. Main57cb8f incorpora el
+barrido por fases; main62afe añade su checklist F0 y ADR-0014. Sólo hay
+cambios documentales frente a RA74be. El único conflicto fue la adición
+concurrente al final de COORDINACION: se eliminaron únicamente los tres
+marcadores y se conservó la unión, no una elección ours/theirs.
+
+QA de subsecuencia de líneas no vacías, en orden por cada padre:
+COORDINACION conserva3618/3541 líneas y PLAN_MAESTRO_SINCRONIZACION
+581/106, respectivamente. Barrido y ADR son idénticos al padre main62
+normalizando CRLF. No hay delta Rust, Cargo, pruebas ni workflow contra RA74.
+La preservación documental no convierte las cifras de otros autores en
+mediciones reproducidas ni hace universal un principio de una ADR.
+
+Qoder prepara F1 en qoder/f1-matematica y checkout .f1 del repositorio
+compartido: rama activa, no candidata a borrado aunque sea ancestral a main.
+El aviso de Codex reserva SA/utilidad en su propio checkout y OOS/preflight
+en otro; no modifica el IC de Qoder ni el bloque de riesgo de Claude.
+No se ha recibido un acuse nuevo de esos editores. Responder por ID,
+SHA, ancla y estado es requisito de sincronización, no un hecho supuesto.
+
+### 43.2 Hallazgo de verificación: caché compartida no acredita fuente
+
+Primer checkalltargets falló exit101 en25,8880011s: E0433 para
+backtest_engine::oos_context. El módulo y su exportación SÍ estaban en la
+fuente RA. Entre tanto, SA/main57 había compilado una versión sin esa API
+en el mismo CARGO_TARGET_DIR; el primer log no reconstruía ese crate.
+La reutilización de artefactos de otro checkout es la explicación inferida
+compatible con la traza y con la reconstrucción posterior, no una prueba
+de que Cargo esté universalmente defectuoso ni de que falte el módulo RA.
+
+Se refrescaron los mtimes de nueve fuentes Rust existentes, propias y
+distintas entre estos cortes, comprobando SHA256 antes/después sin cambio
+de bytes. No se borró la caché, no se tocaron fuentes/índice compartidos ni
+se interrumpieron runners ajenos. Repetición del MISMO comando:
+nightly-2026-06-30, check --workspace --all-targets --locked --offline -j2,
+perfil dev; exit0 en130,408228s. Compilar todos los targets no ejecuta tests.
+
+| Recibo local ignorado en target | SHA256 |
+| --- | --- |
+| ra-main62-check-2026-10-04.log, intento fallido conservado | 7F3BE22B81FAF699FA927C668859C18324CE643368A47B203ECDC82C43BA29F1 |
+| ra-main62-check-refreshed-2026-10-04.log, reconstrucción exit0 | 9635D9805D12E855648C4E1B5C3F15A1851AB62B73045CA61541BB284905D48A |
+
+Criterio de cierre de este problema de evidencia: candidato identificable,
+artefactos atribuibles a su fuente y gates del SHA integrado. Para próximas
+composiciones usar target aislado cuando sea viable, o refresco acotado con
+hashes y reconstrucción explícita; un check rápido cacheado no es por sí
+solo certificación cruzada. Esta ronda no modifica la política global de CI.
+
+### 43.3 Frentes locales independientes y cobertura aún parcial
+
+OOS684e47082b57fb962cbd4fad05fac5b998be15ba integra RA74be con el guard
+de particiones de9a3; su revisor reprodujo14/0 contratos y checkalltargets
+exit0/137,44s. No incluye main62 ni la corrección SA; fuente/modelos no se
+ejecutaron en producción. SA28c000 más seguimiento local corrige ranking
+signado y dos regresiones encontradas por revisión: enfriamiento omitido
+al rechazar y centinela finito que superaba candidatos válidos muy negativos.
+Revisor independiente22/0 contratos; check final exit0/124,7735498s.
+Son recibos locales, no reparaciones presentes en RA ni en main remoto.
+
+Conteo de rutas .rs seguidas por Git en este checkout:465 total,409 bajo
+crates,139 en directorios tests y326 fuera de ellos. No son conjuntos
+disjuntos entre crates y tests. El universo de rutas y corte debe acompañar
+el conteo: no equiparar esta cifra a ~377 del barrido ajeno sin reconciliar
+sus exclusiones. Enumerar rutas no es auditar semánticamente cada archivo.
+
+La regla documental None→0 requiere revisión por consumidor: cero puede
+significar independencia o neutralidad medidas; ausencia no es una medida.
+MG05/IC same-τ sin as-of continúa abierto. La política de SA conserva pesos,
+umbrales y calendario heredados; su reparación de signo no acredita esas
+constantes, unidades monetarias, estimación espectral o rendimiento72h.
+No quitar límites de seguridad para lograr la meta. CI37240563716/head74be
+seguía en curso al recibo; conservar draft y exigir CI/revisión del nuevo SHA.
+Sin push de SA/OOS todavía, sin merge remoto nuevo ni ramas eliminadas.

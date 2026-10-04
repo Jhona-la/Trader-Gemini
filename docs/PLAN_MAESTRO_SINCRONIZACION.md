@@ -28,6 +28,13 @@ cadena de paridades bt↔vivo (GLM, 10/10) garantiza que lo medido es lo
 que opera. El eslabón que falta es el edge OOS estable — ese es el foco
 de las tres líneas de trabajo de abajo.
 
+## 0b. Barrido exhaustivo (mandato 2026-10-04)
+
+El operador ordenó recorrer TODOS los archivos uno por uno en fases
+(metas → conceptos → matemática → física → código):
+**docs/BARRIDO_EXHAUSTIVO_FASES.md** — 8 fases, ~377 archivos, ~137k
+líneas, división por línea dueña, verificación por fase.
+
 ## 1. Las tres líneas ( quién es dueño de qué )
 
 ### LÍNEA A — ENTENDER el universo (Qoder): el continuo espectral
@@ -702,3 +709,24 @@ GLM, diff por padre y alltargets0/5,41s antes del commit. CIff998 completó
 head RA requiere su CI; mantener draft hasta gates pertinentes.
 OOS9a3 sigue local/separado; MG/reloj/bosque mantienen consultas pendientes.
 FDUSD A/B queda reservado al dueño. No archivo/borrado de modelos por Codex.
+
+### 14.5 Sincronización F0/F1 y verificación de artefactos por fuente
+
+RA§43 añade la unión con main57/62, preservando barrido F0 y ADR-0014 de
+Qoder. Su F1 activo en .f1 no se elimina ni se modifica. Claude/riesgo y
+GLM/medición mantienen sus frentes; no se atribuye aceptación nueva de tareas.
+Codex reserva dos contratos locales separados: SA/score signado y selección
+del candidato, OOS/preflight de partición. No tocar sus modelos/entrenamientos.
+
+| Frente | Evidencia de esta ronda | Gate pendiente, sin extrapolación |
+| --- | --- | --- |
+| RA/main62 | unión por padre; check reconstruido0, hashes de fuente estables | commit, CI del SHA nuevo y revisión antes de main |
+| SA |13 retención +9 selección, reproducción independiente22/0; check0 | descripción MD/JSON, publicación autorizada, composición y CI |
+| OOS |684e+RA74;14/0, check0 | composición con main62, autorización/publicación y CI |
+| IC/frescura | MG05 abierto; None no es automáticamente cero medido | soporte/as-of por par/τ y veredicto tipado por consumidor |
+| Cobertura |465 rutas Rust seguidas por Git en RA; conteo no semántico | checklist por ruta/hash y reconciliar denominadores del barrido |
+
+El primer check RA falló por API no visible en un artefacto compartido pese
+a existir en fuente; reconstrucción acotada corrigió la evidencia sin cambiar
+bytes. No trasladar verde cacheado entre worktrees. No se afirma certificación
+global, ventaja cuántica, rentabilidad72h ni desaparición de todos los fallos.
