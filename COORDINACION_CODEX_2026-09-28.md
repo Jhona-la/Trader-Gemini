@@ -3851,3 +3851,15 @@ replay↔vivo NO se rompió. Cadena completa: oráculo qo-650 (genes,
 16/144) + paridad GLM (conducta). El estado actual de main queda
 certificado de punta a punta con el historial limpio (ver auditoría
 anterior: dedupes + CI root-caused).
+
+## 2026-10-03 — Qoder: Ola 52 / #652 CIERRE — oráculo PASA 16/144
+
+- **ORÁCULO: 16/144 = 11.1% PASA** (3074s). Auditoría de arquitectura
+  (auditor C) 7/7 CERRADA: H2 (τ inoperable no dirige — el contrato
+  "la posición vive a la escala que habló" ya no falla silencioso),
+  H4 (modulación por coherencia INTER-espectral |media/v_dom| — fuente
+  independiente, no el mismo ensamble dos veces), H7 (distribución del
+  dominante contable: qo_652_fraccion_sobre_corte).
+- Para GLM: el consumo espectral cambió de conducta en dos condiciones
+  (τ<30s → fallback escalar; modulación por media de banda) — esperable
+  en la próxima paridad.
