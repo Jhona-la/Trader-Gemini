@@ -2127,6 +2127,10 @@ impl ExecutionProvider for OrderExecutor {
             buf.push_str(&payload.signature);
 
             if buf.is_overflow() {
+                // CL-47: la intención ya estaba registrada (la ruta WS la
+                // necesita) y esta orden nunca sale: se cierra.
+                self.order_registry
+                    .mark_local_reject(&payload.client_order_id, payload.timestamp);
                 return Err(
                     "SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string(),
                 );
@@ -2146,6 +2150,12 @@ impl ExecutionProvider for OrderExecutor {
                     Ok(())
                 }
                 Err(e) => {
+                    // CL-47: como la IOC (CL-39b), un rechazo firme cierra la
+                    // intención; uno ambiguo la deja viva para la consulta.
+                    if crate::ioc_evidence::error_cierra_la_intencion(e) {
+                        self.order_registry
+                            .mark_local_reject(&payload.client_order_id, payload.timestamp);
+                    }
                     if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
                         return Err(self.handle_rate_limit_error(e));
                     }
@@ -2227,17 +2237,6 @@ impl ExecutionProvider for OrderExecutor {
         } else {
             client_order_id_param.to_string()
         };
-        // F1.5: registrar la intención antes del envío.
-        self.order_registry.register_intent(
-            &client_order_id,
-            symbol,
-            side,
-            if is_long { "LONG" } else { "SHORT" },
-            ORDER_TYPE_MARKET,
-            final_quantity,
-            timestamp,
-        );
-
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
             "https://testnet.binancefuture.com/fapi/v1/order?"
@@ -2266,6 +2265,19 @@ impl ExecutionProvider for OrderExecutor {
         if buf.is_overflow() {
             return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
         }
+
+        // F1.5: registrar la intención antes del envío. CL-47: después de la
+        // última salida previa al envío, como la IOC (CL-39b): un buffer
+        // desbordado no deja una intención huérfana.
+        self.order_registry.register_intent(
+            &client_order_id,
+            symbol,
+            side,
+            if is_long { "LONG" } else { "SHORT" },
+            ORDER_TYPE_MARKET,
+            final_quantity,
+            timestamp,
+        );
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
@@ -2322,6 +2334,11 @@ impl ExecutionProvider for OrderExecutor {
                 Ok(())
             }
             Err(e) => {
+                // CL-47: como la IOC (CL-39b), un rechazo firme cierra la
+                // intención; uno ambiguo la deja viva para la consulta.
+                if crate::ioc_evidence::error_cierra_la_intencion(e) {
+                    self.order_registry.mark_local_reject(&client_order_id, timestamp);
+                }
                 if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
                     return Err(self.handle_rate_limit_error(e));
                 }

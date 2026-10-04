@@ -127,12 +127,54 @@ fn cl39c_solo_un_error_firme_cierra_la_intencion() {
     }
 
     let src: String = include_str!("../src/executor.rs").split_whitespace().collect();
-    assert_eq!(src.matches("mark_local_reject(").count(), 1, "un único cierre local");
     assert!(
         src.contains(
             "ifcrate::ioc_evidence::error_cierra_la_intencion(&e){self.order_registry.mark_local_reject("
         ),
         "el cierre local va detrás de la decisión firme/ambigua"
+    );
+}
+
+/// Cuerpo compacto de la implementación de `f` (la última definición: la
+/// primera es la declaración del trait).
+fn cuerpo_de<'a>(src: &'a str, f: &str) -> &'a str {
+    let desde = src
+        .rfind(&format!("asyncfn{f}("))
+        .unwrap_or_else(|| panic!("impl de {f}"));
+    let resto = &src[desde + 1..];
+    &resto[..resto.find("asyncfn").unwrap_or(resto.len())]
+}
+
+/// CL-47: los envíos MARKET y genérico registraban la intención y, ante un
+/// rechazo firme (-2019 margen insuficiente, 429), la dejaban en `New` para
+/// siempre: nadie purga una orden activa y la reconciliación la reportaba
+/// como sospechosa en cada ciclo. Además MARKET la registraba antes de poder
+/// abortar por buffer desbordado. Ahora los tres envíos siguen la regla de la
+/// IOC (CL-39b).
+#[test]
+fn cl47_todo_envio_cierra_su_intencion_ante_un_rechazo_firme() {
+    let src: String = include_str!("../src/executor.rs").split_whitespace().collect();
+    for f in ["execute_order", "execute_raw_qty_with_client_id", "execute_ioc_order"] {
+        let c = cuerpo_de(&src, f);
+        assert!(c.contains("register_intent("), "{f} registra su intención");
+        assert!(
+            ["(e)", "(&e)"].iter().any(|x| c.contains(&format!(
+                "ifcrate::ioc_evidence::error_cierra_la_intencion{x}{{self.order_registry.mark_local_reject("
+            ))),
+            "{f}: un rechazo firme cierra la intención"
+        );
+    }
+    let market = cuerpo_de(&src, "execute_raw_qty_with_client_id");
+    assert!(
+        market.find("is_overflow()").unwrap() < market.find("register_intent(").unwrap(),
+        "MARKET registra la intención tras la última salida previa al envío"
+    );
+    let generico = cuerpo_de(&src, "execute_order");
+    let desborde = generico.find("ifbuf.is_overflow(){").expect("desborde del envío genérico");
+    let retorno = desborde + generico[desborde..].find("returnErr(").unwrap();
+    assert!(
+        generico[desborde..retorno].contains("mark_local_reject("),
+        "el desborde del envío genérico cierra la intención ya registrada"
     );
 }
 
