@@ -592,5 +592,21 @@
     "ra_integrated_in_remote_main": false,
     "live_activation_or_model_promotion_performed": false,
     "other_repairs_included": false
+  },
+  "glm_veto_registry_followup": {
+    "report_section": "26.1",
+    "head_parent": "4c817fc26e4d28d5d4529a2f878ee15d15398f70",
+    "main_parent": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+    "updated_entries": ["V-RISK-002", "V-RISK-005"],
+    "changed_description_strings": 6,
+    "policy_or_consumer_changed": false,
+    "reported_GLM_tests_passed": 283,
+    "GLM_tests_reproduced_here": false,
+    "own_all_targets_exit": 0,
+    "cargo_reported_seconds": 112,
+    "own_all_targets_session": 58434,
+    "stale_evidence_contract_closed_by_registry_text": false,
+    "all_vetos_certified": false,
+    "ra_integrated_in_remote_main": false
   }
 }

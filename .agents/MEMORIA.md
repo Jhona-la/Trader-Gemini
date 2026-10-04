@@ -1,5 +1,16 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: LXXXVI recibido, registro no equivale a vigencia
+
+- RA incorpora main e3adf74 (LXXXVI GLM): seis cadenas descriptivas de vetos
+  002/005 y bitácora por unión; sin cambio de política/consumidor/CLI/CI.
+  Diff por padre y all-targets candidato exit0,1m52s (sesión58434).
+- RA§26.1/JSON distingue283/283 atribuido a GLM de check propio. «Medido»
+  no convierte políticas0,85/epsilon0,05 en estimadores. MG05 sigue abierto:
+  actualizar una ficha no caduca el escalar heredado. No certifica todos vetos.
+- T1 propio RA en ejecución, fixture/binario intactos. Ramas MG/forest aparte;
+  RED/GREEN efectivos aún pendientes. Nueva CI requerida al push de este corte.
+
 ## 2026-10-04 — Codex: acuse Qoder3979 y segundo merge documental
 
 - Main3979 (sólo plan/coordinación) entra en RA03a7 por unión: dos conflictos

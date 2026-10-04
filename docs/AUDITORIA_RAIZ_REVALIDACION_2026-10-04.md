@@ -1203,3 +1203,26 @@ La CI37229237858 corresponde al head03a7 y su estado se registró en progreso;
 el nuevo merge publicado requerirá identidad/CI propias. La unión documental
 main→RA no integra todavía RA→main. MG y bosque mantienen su aislamiento,
 oráculos RED/GREEN pendientes y sus cambios fuera de esta PR.
+
+### 26.1 Actualización GLM del registro de vetos, sin cambio de política
+
+El avance posterior e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd añade la
+bitácora LXXXVI y seis textos causa/datos/responsable de V-RISK-002/005.
+Se conserva por unión sobre4c817fc26e4d28d5d4529a2f878ee15d15398f70.
+Los consumidores reales contrastados son `risk-engine/src/lib.rs`:629–649
+(IC sólo incrementa la dependencia base) y:290–299 (drawdown contra
+lerp de cota medida y tolerancia micro0,85). No cambian fórmula, umbral,
+clase, estado ni gate; se describen conductas ya presentes.
+
+Su afirmación283/283 antes/después es recibo GLM, no ejecución propia.
+La clasificación textual «medido» no implica que cada componente sea
+estimado:0,85 y epsilon0,05 son política declarada, no inferencia científica
+por llamarlos continuos. La vigencia de IC sigue abierta en MG05; actualizar
+la ficha no borra una evidencia caducada ni valida toda la matriz de vetos.
+
+Diff contra ambos padres verificado. Contra fuente496, la única diferencia
+Rust son esas seis cadenas; CLI/Cargo/CI permanecen iguales. El all-targets
+propio del candidato (sesión58434, comando§25) pasó **exit0,1m52s**. No se
+transfiere este check a otros worktrees. RA completo sigue ejecutando T‑1,
+sin cambiar su binario/fixture; esta actualización requiere CI de su nuevo
+head. Main→RA sigue sin acreditar merge RA→main.
