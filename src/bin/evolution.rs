@@ -90,16 +90,6 @@ fn evolve_main() {
     println!("🌌 RUST QUANTUM EVOLUTION ENGINE (SIMULATED ANNEALING)");
     println!("============================================================");
 
-    let path = format!("models/{}_MOTOR.json", symbol);
-    if let Err(_) = NanoForest::load_global(&format!("{}_MOTOR", symbol), &path) {
-        println!(
-            "⚠️ Failed to load NanoForest from {}. It might not exist yet.",
-            path
-        );
-    } else {
-        println!("✅ NanoForest Loaded for Evolution: {}", path);
-    }
-
     let file_path = format!("data/{}_ticks.bin", symbol);
     let file = match File::open(&file_path) {
         Ok(f) => f,
@@ -145,6 +135,34 @@ fn evolve_main() {
         return;
     }
 
+    // RA-OOS-F01: validar soporte estructural ANTES de activar modelos,
+    // consultar FRED, ensayar o promover. No cambia el split ni añade un
+    // mínimo de aprendizaje: dos segmentos presentes no acreditan calidad.
+    let requested_train_len = (len as f64 * 0.7) as usize;
+    let train_len = match backtest_engine::oos_context::validate_is_oos_split(
+        len,
+        requested_train_len,
+    ) {
+        Ok(split) => split,
+        Err(reason) => {
+            eprintln!(
+                "❌ Evolution dataset rejected: {:?} (ticks={}, IS={}, OOS={}). No trials or promotion performed.",
+                reason, len, requested_train_len, len.saturating_sub(requested_train_len)
+            );
+            return;
+        }
+    };
+
+    let path = format!("models/{}_MOTOR.json", symbol);
+    if let Err(_) = NanoForest::load_global(&format!("{}_MOTOR", symbol), &path) {
+        println!(
+            "⚠️ Failed to load NanoForest from {}. It might not exist yet.",
+            path
+        );
+    } else {
+        println!("✅ NanoForest Loaded for Evolution: {}", path);
+    }
+
     let ptr = mmap.as_ptr() as *const BinTick;
     let ticks = unsafe { std::slice::from_raw_parts(ptr.add(offset), len) };
 
@@ -167,8 +185,6 @@ fn evolve_main() {
         lows.push(t.bid_price);
         volumes.push(t.bid_qty + t.ask_qty);
     }
-
-    let train_len = (len as f64 * 0.7) as usize;
 
     // ── X-006 (REHAB-2b): preparación ÚNICA del motor honesto ──────────────
     // Ticks reales → ReplayTick (repr del disco), omni FRED histórico, config.

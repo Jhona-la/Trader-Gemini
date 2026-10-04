@@ -5,6 +5,57 @@
 mod oos_context;
 
 use oos_context::prepend_is_context;
+use oos_context::{validate_is_oos_split, PartitionError};
+
+#[test]
+fn empty_tape_has_a_typed_error() {
+    assert_eq!(validate_is_oos_split(0, 0), Err(PartitionError::EmptyTape));
+}
+
+#[test]
+fn one_row_legacy_split_is_rejected_before_indexing() {
+    let len = 1;
+    let train_len = (len as f64 * 0.7) as usize;
+    assert_eq!(validate_is_oos_split(len, train_len), Err(PartitionError::EmptyInSample));
+}
+
+#[test]
+fn nonempty_tape_cannot_have_an_empty_is_partition() {
+    assert_eq!(validate_is_oos_split(10, 0), Err(PartitionError::EmptyInSample));
+}
+
+#[test]
+fn nonempty_tape_cannot_have_an_empty_oos_partition() {
+    assert_eq!(validate_is_oos_split(10, 10), Err(PartitionError::EmptyOutOfSample));
+}
+
+#[test]
+fn split_beyond_the_tape_is_not_silently_clamped() {
+    assert_eq!(validate_is_oos_split(10, 11), Err(PartitionError::SplitBeyondTape));
+}
+
+#[test]
+fn two_rows_are_structurally_valid_not_certified_for_learning() {
+    assert_eq!(validate_is_oos_split(2, 1), Ok(1));
+}
+
+#[test]
+fn accepted_legacy_splits_preserve_both_partitions_and_safe_indices() {
+    for total_len in 2..=10_000 {
+        let train_len = (total_len as f64 * 0.7) as usize;
+        let split = validate_is_oos_split(total_len, train_len).unwrap();
+        assert_eq!(split, train_len);
+        assert!(split - 1 < total_len);
+        assert!(split < total_len);
+        assert!(total_len - split > 0);
+    }
+}
+
+#[test]
+fn maximum_lengths_are_checked_without_overflow() {
+    assert_eq!(validate_is_oos_split(usize::MAX, usize::MAX - 1), Ok(usize::MAX - 1));
+    assert_eq!(validate_is_oos_split(1, usize::MAX), Err(PartitionError::SplitBeyondTape));
+}
 
 fn assert_boundary(is_len: usize, oos_len: usize, expected_start: usize, expected_warmup: usize) {
     let in_sample: Vec<usize> = (0..is_len).collect();
