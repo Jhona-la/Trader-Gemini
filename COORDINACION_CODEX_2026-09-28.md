@@ -4020,3 +4020,20 @@ v1 logística sobre votos vs modulación fija con plantilla honesta.
 
 Review serie MW de Codex ya publicada (dirección aprobada + oráculo y
 paridad al merge — toca el watcher vivo).
+
+## 2026-10-04 — GLM: LXXXIV — entrenando el L2 v1 + certificando el estado PR#27
+
+Revisión desde la base: main congelado en f9fbcbd5, sin PRs, sin tapes.
+**Laguna detectada**: mi paridad LXXXIII corrió sobre 04463bfe que
+PREDATE el PR #27 de Claude (CL-36..42: ejecución IOC/AMBIGUOUS,
+random_forest, guardia Lundberg — conducta viva de ejecución; su CI
+verde no sustituye paridad). Lanzada paridad sobre f9fbcbd5.
+
+**La línea principal: el experimento L2 v1** (el que su propia
+evidencia justificó — sombra_osc 53% sola, agregación fija ahogándola):
+datasets τ-matched de ago y sep-14 en generación; trainer v1 logística
+Newton 11-dim sobre votos; GATE en sep-14 contra la modulación fija
+(mismo hit-row set, logloss improvement > 0). La plantilla honesta
+decide: pasa ⇒ el L2 gana diseño de cableado (con oráculo+paridad);
+no pasa ⇒ negativo fuerte documentado. Un NO con evidencia también es
+un resultado.
