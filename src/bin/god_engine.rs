@@ -4322,13 +4322,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     quantum_arena::protection_health::mark_dirty();
                                     let observation = entry_executor
                                         .resolve_via_rest(&parsed_sym_str, &client_id).await;
-                                    // Even a terminal parent does not settle maker
-                                    // children; Accepted can mean NEW with no fill.
-                                    // Neither permits mutating an unversioned slot.
-                                    telemetry_engine::telemetry_err!(
-                                        "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={} consulta={:?}. Reserva conservada; NO se certifica fill ni se hace rollback. Resolver atribución de orden/fills/protección.",
-                                        parsed_sym_str, client_id, e, observation
-                                    );
+                                    // CL-46: la consulta decide la reserva. Antes sólo
+                                    // se registraba: un terminal sin ejecución dejaba
+                                    // una posición que sólo existía en el arena, y uno
+                                    // con ejecución quedaba sin confirmar (su cierre
+                                    // contaba como papel). La reserva es la de ESTA
+                                    // intención (generación); un terminal del padre no
+                                    // resuelve hijos maker, y Accepted con la orden
+                                    // aún NEW no es un llenado: ambos se conservan.
+                                    use execution_engine::ioc_evidence::{destino_tras_consulta, DestinoReserva};
+                                    let orden = entry_executor.registry().get(&client_id);
+                                    match destino_tras_consulta(&e, observation, orden.as_ref()) {
+                                        DestinoReserva::Revertir => {
+                                            telemetry_engine::telemetry!(
+                                                "❌ [ENTRY] {} id={} envío={} consulta={:?}: terminal sin ejecución — Rollback de la reserva.",
+                                                parsed_sym_str, client_id, e, observation
+                                            );
+                                            rollback_positions(&arena_clone);
+                                        }
+                                        DestinoReserva::Confirmar { ejecutada } => {
+                                            telemetry_engine::telemetry!(
+                                                "✅ [ENTRY] {} id={} envío={} consulta={:?}: ejecutada {:.8} — reserva confirmada; protección por el vigilante.",
+                                                parsed_sym_str, client_id, e, observation, ejecutada
+                                            );
+                                            if let Err(reason) = reservation.confirmar_llenado(&arena_clone, Some(ejecutada)) {
+                                                telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
+                                            }
+                                            quantum_arena::protection_health::mark_dirty();
+                                        }
+                                        DestinoReserva::Conservar => {
+                                            telemetry_engine::telemetry_err!(
+                                                "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={} consulta={:?}. Reserva conservada; NO se certifica fill ni se hace rollback. Resolver atribución de orden/fills/protección.",
+                                                parsed_sym_str, client_id, e, observation
+                                            );
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     telemetry_engine::telemetry!(

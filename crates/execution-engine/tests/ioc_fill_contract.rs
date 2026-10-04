@@ -2,10 +2,10 @@
 //! cantidad ejecutada de la PROPIA orden deciden si hubo entrada. Respuestas
 //! sintéticas; sin red.
 use execution_engine::ioc_evidence::{
-    cantidad_ejecutada_terminal, clasificar_respuesta_ioc, error_cierra_la_intencion,
-    resultado_para_el_host, ResultadoIoc, IOC_UNFILLED,
+    cantidad_ejecutada_terminal, clasificar_respuesta_ioc, destino_tras_consulta,
+    error_cierra_la_intencion, resultado_para_el_host, DestinoReserva, ResultadoIoc, IOC_UNFILLED,
 };
-use execution_engine::{OrderRegistry, TrackedOrder};
+use execution_engine::{OrderRegistry, OrderResolution, TrackedOrder};
 
 const SYM: &str = "AUDITUSDT";
 const ID: &str = "cL_ioc1";
@@ -155,4 +155,29 @@ fn cl45_cantidad_ejecutada_sale_de_la_orden_terminal() {
     let vacia = orden(&cuerpo("EXPIRED", "1.2", Some("0"), "0"));
     assert_eq!(cantidad_ejecutada_terminal(Some(&vacia)), None);
     assert_eq!(cantidad_ejecutada_terminal(None), None);
+}
+
+/// CL-46: la consulta REST de una entrada ambigua decide la reserva.
+#[test]
+fn cl46_destino_de_la_reserva_tras_la_consulta() {
+    let ambiguo = "AMBIGUOUS: HTTP 503 body=";
+    let parcial = orden(&cuerpo("EXPIRED", "1.2", Some("0.5"), "4.506"));
+    let llena = orden(&cuerpo("FILLED", "1.2", Some("1.2"), "4.507"));
+    let viva = {
+        let reg = OrderRegistry::new();
+        reg.register_intent(ID, SYM, "BUY", "LONG", "LIMIT", 1.2, 1);
+        reg.get(ID).unwrap()
+    };
+    let casos: [(&str, OrderResolution, Option<&TrackedOrder>, DestinoReserva); 7] = [
+        (ambiguo, OrderResolution::Rejected, None, DestinoReserva::Revertir),
+        (ambiguo, OrderResolution::Accepted, Some(&parcial), DestinoReserva::Confirmar { ejecutada: 0.5 }),
+        (ambiguo, OrderResolution::Accepted, Some(&llena), DestinoReserva::Confirmar { ejecutada: 1.2 }),
+        (ambiguo, OrderResolution::Accepted, Some(&viva), DestinoReserva::Conservar),
+        (ambiguo, OrderResolution::Accepted, None, DestinoReserva::Conservar),
+        (ambiguo, OrderResolution::Timeout, None, DestinoReserva::Conservar),
+        ("MAKER_CHASE_UNVERIFIED: hijo mcT_1", OrderResolution::Rejected, None, DestinoReserva::Conservar),
+    ];
+    for (error, consulta, o, esperado) in casos {
+        assert_eq!(destino_tras_consulta(error, consulta, o), esperado, "{error} {consulta:?}");
+    }
 }
