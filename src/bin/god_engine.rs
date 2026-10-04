@@ -1735,10 +1735,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 syms,
                                 positions
                             ),
-                            Err(e) => telemetry_server::telemetry_log!(
-                                "🚨 [SISTEMA INMUNE] Aplanado FALLÓ: {} — INTERVENCIÓN MANUAL URGENTE.",
-                                e
-                            ),
+                            Err(e) => {
+                                telemetry_server::telemetry_log!(
+                                    "🚨 [SISTEMA INMUNE] Aplanado FALLÓ: {} — INTERVENCIÓN MANUAL URGENTE.",
+                                    e
+                                );
+                                // CL-44 (ADR-0014): lo que quedó vivo se
+                                // re-protege ya (el vigilante corre bajo el
+                                // latch), no a los 60 s.
+                                quantum_arena::protection_health::mark_dirty();
+                            }
                         }
                         latched = true;
                     }
@@ -2505,10 +2511,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                     let executor = exec_wd.load_full();
-                    if executor.is_kill_switch_active() {
-                        quantum_arena::protection_health::clear_dirty();
-                        continue; // kill-switch: no colocar protecciones nuevas
-                    }
+                    // CL-44 (FMT-232, ADR-0014): la auditoría corre también con
+                    // el kill-switch armado. Antes lo saltaba entera: tras X-009
+                    // o un aplanado fallido la posición viva quedaba sin
+                    // re-bracket ni cierre de escalada. Todo lo que hace aquí
+                    // reduce riesgo: piernas protectoras (CL-20), purga de
+                    // huérfanas y cierre reduce-only (CL-3). Si el sistema
+                    // inmune aplana a la vez, una pierna colocada entre su
+                    // cancelación y su cierre queda huérfana sobre una posición
+                    // plana; es reductora (no abre exposición) y la purga de la
+                    // auditoría siguiente la cancela.
                     let Ok(positions) = executor.fetch_position_risk().await else {
                         continue;
                     };
@@ -4534,6 +4546,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     );
                                                     exec_clone.load().trigger_kill_switch();
                                                     arena_clone.kill_switch_active.store(true, Ordering::SeqCst);
+                                                    // CL-44 (ADR-0014): el latch no abandona
+                                                    // la posición. El vigilante la audita en
+                                                    // 5 s: re-bracket o, con rechazos
+                                                    // repetidos, cierre de escalada; y el
+                                                    // núcleo sigue gestionando su SL local.
+                                                    quantum_arena::protection_health::mark_dirty();
                                                     // SIN rollback: el estado local refleja la
                                                     // posición que el exchange aún sostiene.
                                                 }
