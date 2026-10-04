@@ -121,6 +121,7 @@ cierre con informe forense por fase.
 |---|---|---|---|
 | F0 | CERRADA 2026-10-04 | 1 (F0-1, corregido en fase: ADR-0014) | docs-only |
 | F1 | CERRADA 2026-10-04 | 23 (2 HIGH, 8 MED, 13 LOW) | docs-only; A1 y A4 re-verificados contra el árbol |
+| F2 | CERRADA 2026-10-04 | 43 (7 HIGH, 16 MED, 20 LOW) + hallazgo estructural sombra/vivo + inventario milenio | docs-only; A1/A3/A5/B1/C1/C4 re-verificados |
 
 ## F0 — RESULTADO (cerrada 2026-10-04, Qoder)
 
@@ -217,3 +218,155 @@ Tres auditores en paralelo, un archivo por entrada de checklist:
 5. LOWs: ola de limpieza agrupada.
 
 **F1 CERRADA**. Siguiente: F2 (física/cuántica, ~74 archivos, zona Qoder).
+
+## F2 — RESULTADO (cerrada 2026-10-04, Qoder)
+
+Tres auditores en paralelo, un archivo por entrada de checklist:
+
+- **Auditor A**: 16 motores de signal-engine (física evaluate vivo
+  vs voto_espectral).
+- **Auditor B**: sustrato quantum-arena (temporal_spectrum, state,
+  espectral_multiactivo, spectral_tape, ranker...) + feature-engine
+  básico.
+- **Auditor C**: teorías cruzadas (feature-engine avanzado +
+  strategy-core) + inventario crítico de teorías del milenio.
+
+### HALLAZGO ESTRUCTURAL (transversal a los tres)
+
+**Los arreglos de física #649/#650 viven SOLO en la sombra espectral**
+(voto_espectral → consenso → consumo #624). Los `evaluate*` VIVOS que
+alimentan el ensamble escalar de fallback (D-754) y las features del
+PPO conservan la física vieja: hawkes `signum·tanh(λ/μ̂)` vota ±0.92
+CONSTANTE en régimen normal (F2-A1, verificado), solitón vivo con
+`signum·sech` invertido (F2-A3, verificado), flow_impulse con umbral
+1.2 < SS=1.6 tautológico (F2-A2), Mach con bases temporales mezcladas
+(F2-A11). Como #649 hizo que lo espectral se ABSTENGA en régimen
+normal, el fallback escalar con física rota conserva mucho peso en la
+decisión real. Es deuda del diseño sombra-primero (Olas 31-45): la ola
+de integración consumió el consenso sin erradicar los caminos viejos.
+**Ola mayor de erradicación requerida, con oráculo.**
+
+### Hallazgos (etiqueta `F2:` — esperan su ola)
+
+**Auditor A — signal-engine (14)**
+
+| # | Archivo:lín | Sev | Defecto |
+|---|---|---|---|
+| F2-A1 | hawkes_bessel.rs:369 | **HIGH** | Vivo: `sign(dir)·tanh(λ/μ̂)` — régimen normal (1.6) vota ±0.92 constante, sin abstención; signum salta en dir=0. La moneda `excitacion_hawkes_norm` de #649 NO se usa aquí |
+| F2-A2 | flow_impulse.rs:174-179 | **HIGH** | Vivo `vote()`: umbral 1.2 < SS=1.6 ⇒ gate abierto en régimen normal; escalones C⁰ en 1.2 y 0.2; pesos fijos 0.6/0.4 vs genómicos del evaluate — 3 superficies con física distinta |
+| F2-A3 | soliton_wave.rs:213-216 | **HIGH** | Vivo: `vel.signum()·amp/cosh(...)` — física vieja (sech) divergente del espectral tanh(A·x) de #650; paridad rota |
+| F2-A4 | hawkes_bessel.rs:147, flow_impulse.rs:61 | MED | Excitación FIRMADA multiplica tanh(x): la calma invierte el sentido del momentum; confluence usa abs() — inconsistente entre los 3 motores |
+| F2-A5 | god-engine-core lib.rs:5757 | MED | El host pasa `hawkes_r = cvpin.current_vpin()` (probabilidad [0,1]) como ratio λ/μ̂ al flow_impulse de respaldo — unidades rotas; con umbral 1.2 ese camino nunca dispara |
+| F2-A6 | flow_excitation_confluence.rs:243-252 | MED | Umbral `hawkes>=th && |obi|>=piso`: salto C⁰ de magnitud plena al cruzar; is_long/short binarios |
+| F2-A7 | proyeccion_espectral.rs:29,69 | MED | `masa<0.25`⇒0 vs 0.25+ε⇒señal·conc: discontinuidad de magnitud plena |
+| F2-A8 | coaxial_breakout.rs:44-51 | MED | Espectral firma con `sign(x)` duro vs vivo `tanh(dir/1e-4)` — paridad divergente |
+| F2-A9 | perceptron_gate.rs:34-35,58-64 | MED | `signum`+piso 0.15: señal 1e-300 ⇒ ±0.15; perfil de peso con kinks en k=8/23 no derivados de la banda operable |
+| F2-A10 | stochastic_resonance.rs:147-160 | MED | Vivo: varianza de ruido fallback `atr_pct` (por-barra) contra señal OBI adimensional — pico de resonancia mal registrado |
+| F2-A11 | supersonic_shockwave.rs:176-187 | MED | Vivo: Mach = (vel/mid por-SEGUNDO)/(atr_pct por-BARRA) — bases temporales mezcladas (~60×); la sombra ya usa espacio-z |
+| F2-A12 | conformal_reversion_filter.rs:103-109 | LOW | Tendencia por `sign(x[k+1])` duro (presente en ambas rutas — paridad ok) |
+| F2-A13 | renyi_tsallis_entropy.rs:152-157 + core:2128 | LOW | Gates duros 0.60/0.15; espectral siempre q=1.5 sin leer registro; `tsallis_q_entropy` parece q pero se usa como valor |
+| F2-A14 | game_theoretic_nash.rs:47,75-77; trend_runner.rs:102-108 | LOW | "Equilibrio" sin juego definido; constantes mágicas 0.02/0.08/0.04/1e-3 (paridad ok entre rutas) |
+
+**Auditor B — sustrato (13)**
+
+| # | Archivo:lín | Sev | Defecto |
+|---|---|---|---|
+| F2-B1 | god-engine-core lib.rs:2742-2748 | **HIGH** | `hurst_scale_matched` selecciona H por BANDAS DURAS (τ<2min→micro, <1h→meso): la H que dimensiona TP/SL salta discontinuamente al cruzar 120s/1h. Interpolar H(τ) en ln τ — el horizonte es continuo (verificado) |
+| F2-B2 | lib.rs:1877-1888; temporal_spectrum.rs:346-359 | MED | Mapeo τ*→escala por distancia ABSOLUTA en malla base-4: sesgo 2×; τ*=30s clamp cae al nodo 16 (17s, fuera de banda) — `tau_habilidad`/`qo_613_rho_tau` leen la escala equivocada. Vecino más cercano en ln τ |
+| F2-B3 | lib.rs:1678; temporal_spectrum.rs:1485-1522 | MED | W₁ a lag=64 UPDATES (reloj de eventos): 0.6 s a 100 ev/s vs 64 s a 1 ev/s; el BOCPD mezcla con timestamps físicos. Lag en tiempo físico |
+| F2-B4 | temporal_spectrum.rs:1381-1384 | MED | `mass<0.10` excluye escalas de la regresión ζ(p) con pertenencia dura: ζ/χ saltan al madurar escalas — χ modula pisos vivos. Peso continuo de masa |
+| F2-B5 | state.rs:709-735 | MED | Decaimiento 0.995 POR EVENTO del CVD/OBI: la memoria física varía ×100 entre feeds — rompe comparabilidad entre monedas. Decaimiento −expm1(−dt/τ) en ms |
+| F2-B6 | feature-engine/hawkes.rs:46-68 | MED | Impulso adimensional POR EVENTO sumado a intensidad PER-SEGUNDO: λ* ∝ tasa de eventos (no invariante ante re-escala); ts≤last aún excita |
+| F2-B7 | symbol_ranker_engine.rs:132-141 | MED | `lev_penalty=(vol_score/5).clamp(1,5)`: tope del rango inalcanzable (vol_score≤5.52) — rango dinámico muerto |
+| F2-B8 | espectral_multiactivo.rs:78-92 | MED | El IC cruzado ρ(τ) del veto de grupo NO aplica significancia #599: media de IC sin umbral t≥2 mete ruido de selección al veto |
+| F2-B9 | state.rs:231-233 | LOW | Doc de `spectral_intermittency` dice χ=(1−ζ3)⁺ K41 pero el core escribe ((3/2)ζ₂−ζ₃)⁺ |
+| F2-B10 | temporal_spectrum.rs:723-724 | LOW | Inyección epigenética con puerta dura `kernel>0.05` — salto de ganancia |
+| F2-B11 | temporal_spectrum.rs:620-622 | LOW | Espectro frío publica `dominant_tau_ms`=30s con masa 0, consumido como horizonte fallback — 0= sin opinión |
+| F2-B12 | temporal_spectrum.rs:944-946 | LOW | `confluence_ratio` con denominador 32 fijo: diluido por escalas no observadas |
+| F2-B13 | normalizer.rs:57 | LOW | Garman-Klass siembra varianza 0.0001 ajena al instrumento (~20 velas de sesgo) |
+
+**Auditor C — teorías cruzadas (16)**
+
+| # | Archivo:lín | Sev | Defecto |
+|---|---|---|---|
+| F2-C1 | feature-engine/lead_lag.rs:57-78 | **HIGH** | "Lead-lag" sin lags ni reloj: EWMA 0.6/0.4 + escalones 0.50/0.25. VIVO: slot 3 del PPO de cierre (core lib.rs:3869) y registry (verificado) |
+| F2-C2 | lead_lag.rs:61 | MED | Staleness: `buffer.back()` sin edad máxima — OFI de BTC viejo cuenta como momentum |
+| F2-C3 | god-engine-core/stateful_engine.rs:716 | MED | Kalman R=price·0.0005 en unidades de precio, no precio² ⇒ ganancia ~price× sobre-reactiva; cadena kalman→price_ring→jerk_t write-only |
+| F2-C4 | feature-engine/multifractal.rs:104-118 | **HIGH** | El "Hurst" de `update()` no es Hurst: ratio amplitud L1/L2 con ln(n) fijo de ventana; alimenta la confluencia viva. `espectro_f_alpha` honesto pero 3 escalas/n=50 (verificado) |
+| F2-C5 | feature-engine/hawkes_cross.rs:62-107 | MED | max-z sobre rejilla de lags sin corrección por comparaciones múltiples; base Poisson subestima con clústeres ⇒ z inflado. VIVO vía contagion_publisher→curl_share |
+| F2-C6 | strategy-core/vecm_arbitrage.rs:46-114 | **HIGH** | "Johansen" sin traza/rango ni VECM: z-score rolling + beta LMS. MUERTO (solo tests) |
+| F2-C7 | feature-engine/correlation.rs:118-124 | MED | Correlación con cesta que se incluye a sí misma (sesgo +1/N). MUERTO en motor |
+| F2-C8 | quantum_tensor_store.rs:63-76 | MED | "Lyapunov" = L2 entre features heterogéneos; módulo muerto |
+| F2-C9 | simd_neural_network.rs:24-33 | MED | Init "He/Xavier ortogonal" es sin(i·17+j·31+7)·c; infer/train sin llamadores |
+| F2-C10 | tensor_ring.rs:35-76 | MED | Derivadas sobre precio nominal (no log): no invariante de escala; Δt irregular tratado uniforme |
+| F2-C11 | strategy-core/momentum_booster.rs:50,55 | MED | Ancla hawkes−1.0 vs SS=1.6 del núcleo; reutiliza `dynamic_ofi_threshold` como umbral Hawkes. MUERTO |
+| F2-C12 | maker.rs:115-127 | LOW | Sin Avellaneda-Stoikov (documentado legacy); inventario/100 USD literal. MUERTO |
+| F2-C13 | stat_arb.rs:48,97 | LOW | Beta fija 1.0; señales escalón. MUERTO |
+| F2-C14 | multivariate_coint.rs:155-165 | LOW | θ de UNA observación; vida media en ticks de evento (ts ignorado). MUERTO |
+| F2-C15 | copulas.rs, path_signatures.rs, transfer_entropy.rs | INFO | Matemática correcta y honesta; SIN consumidor — medición deliberadamente no cableada |
+| F2-C16 | omni_strategies.rs:36-40,96-102 | LOW | Indicadores TA en tiempo-evento (14/26 arbitrarios); "Fibonacci proxy" 1e-6 literal. VIVO: 22/54 features del tensor |
+
+**Patrón dominante (C)**: los módulos que NOMBRAN teorías fuertes
+(VECM, Kalman, Lyapunov, lead-lag, Hurst) o no la implementan o están
+muertos; los honestos (firmas, cópulas, TE) están descableados. Los
+VIVOS con física débil: lead_lag (PPO), multifractal-update
+(confluencia), omni (tensor).
+
+### Inventario crítico de teorías (mandato del dueño: problemas del milenio)
+
+Prioridad valor/coste (física honesta, NO name-dropping):
+1. **SÍ — Primer toque analítico (BM/OU hitting, inversa-Gaussiana)**:
+   P(τ_stop<τ) en forma cerrada para TP/SL y escalera trailing. Cierra
+   R8-A (abierto desde la ola XLIV) y CL-34 con exactitud. Coste bajo.
+2. **SÍ — Secuencial anytime-valid (e-values, martingales de Ville)**:
+   reemplaza umbrales fijos IC>0/z>3/Fisher>0.33 por confianza
+   inmune al optional stopping y al barrido de escalas/pares — ataca
+   F2-C5, F2-B8 y la selección de τ* (F1-A1). Coste bajo-medio, sin
+   tocar PnL.
+3. **SÍ — Fokker-Planck/OU con reloj físico**: MLE/CLS discretizado
+   (θ, σ, half-life en SEGUNDOS) para re-animar coint/VECM muertos;
+   corrige F2-C14 y da τ de reversión coherente con el espectro.
+4. **CONDICIONAL — W₁ sobre distribución de profundidad L2**:
+   deslizamiento esperado por renormalización de cola (1D = |CDFa−CDFb|
+   integrado). Sólo tras acumular evidencia IOC. Coste medio.
+5-10. **NO (razones físicas)**: KPZ/Burgers (sin frente espacial;
+   ζ(q) ya lo mide), Navier-Stokes (no hay campo de velocidad medible),
+   NLS/Gross-Pitaevskii (duplicaría soliton KdV + λ/μ̂), Yang-Mills
+   (ningún observable gauge nuevo; RMT ya limpia), Riemann/zeta
+   (matrices 18×18 no lo exigen), KAM/CFT 2D (ni near-integrable ni
+   conforme en tape L2). Mención: Cont-Stoikov de colas si se revive
+   el maker.
+
+### Verificados limpios (evidencia simbólica/conductual)
+
+- Arreglos previos VIVOS donde corresponden: D-742/CL-32 (fusión+masa),
+  AGY-P10 (τ* operativa), #594 causal, #599 t≥2 en el banco, XLIV-6
+  (ζ₃=1.5 + sub-resolución), #649/#650 en la sombra espectral.
+- spectral_tape (tasas con masa exacta, R invariante en τ, prequential
+  causal), ewma/welford, hurst_dfa, adaptive_quantiles, feed/protection
+  health, state_continuity, active_universe, position (entry_tau antes
+  de is_open), horizon_policy, spectral FFT V2, microstructure OFI
+  (D-709), emparejamiento multiactivo sin doble conteo, spectral_regime
+  (crash_flux continuo), UNA sola masa en fusión/entropía/Fisher/W₁
+  (#591), quantum_oscillator (paridad exacta), voto_espectral (sustrato),
+  contagion_modulator, cópulas/firmas/TE (matemática), proceso Hawkes
+  interno (μ̂ EWMA, purga, monotonía). Causalidad: sin información
+  futura en ningún motor.
+
+### Cola de olas que abre F2 (prioridad)
+
+1. **ERRADICACIÓN del patrón sombra/vivo** (F2-A1/A2/A3/A5 + A11):
+   los evaluate vivos adoptan la moneda y física de #649/#650 — oráculo
+   obligatorio, es el cambio de mayor radio del consenso+fallback+PPO.
+2. **F2-B1** H(τ) continua por interpolación en ln τ (dimensiona TP/SL)
+   + **F2-C1** lead-lag real (con lags y reloj) al PPO.
+3. **F2-C4** Hurst honesto en la confluencia viva + **F2-B5/B6**
+   relojes físicos (decaimiento por ms, Hawkes en tiempo físico).
+4. Inventario milenio #1-3 (primer toque, e-values, OU físico) —
+   olas de nueva teoría con medición observacional primero.
+5. F2-B2/B4/B8 (mapeo ln τ, ζ continuo, significancia ρ(τ)) +
+   LOWs agrupados.
+
+**F2 CERRADA**. Siguiente: F3 (núcleo vivo god-engine-core, ~97
+archivos, zona Qoder) — hereda el hallazgo estructural como contexto
+de primera clase.

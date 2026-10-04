@@ -1258,5 +1258,36 @@
       "external_resource_annex_complete":false,"owner_acknowledgments":0,
       "OOS_composition":{"commit":"acbc3b61c983997e011b6ed5d8e0824fd3b67f3e","parents":["684e47082b57fb962cbd4fad05fac5b998be15ba","f275bae39dd81531cfb71b8ddaadb1023f02c6f5"],"contracts_passed":14,"contracts_failed":0,"all_targets_exit":0,"all_targets_seconds":92.89,"in_remote_main":false,"contains_SA":false,"contains_new_inventory":false},
       "complete_semantic_review":false,"growth72h_demonstrated":false
+    },
+    "mainEA5d_F2_coordination_receipt": {
+      "candidate_parents":["37383cd83239725215df9dac1fbca1b28189ff96","ea5d1985aaf928bc7fe670ce4d185234bb8675a9"],
+      "main237_delta":{"files":4,"added_lines":205,"removed_lines":0,"docs_only":true},
+      "union_delta_before_adenda":{"added_lines":203,"nonempty_parent_lines_preserved":true,"memory":[1834,1611],"coordination":[3718,3595],"plan":[642,108],"JSON_historical_roots_unchanged":43,"barrido_identical_to_incoming":true},
+      "F2_inventory":{"reported_total":43,"reported_severity":{"HIGH":7,"MED":16,"LOW":20},"independent_table_total":43,"independent_table_severity":{"HIGH":7,"MED":23,"LOW":12,"INFO":1},"count_issue_id":"RA-DOC-F02","count_issue_status":"open_documentary_reproduced","all_source_findings_independently_reproduced":false,"source_repairs_in_main_delta":false},
+      "inventory_snapshot_remains":"23701ecb05486eb13b661d3d50afaadbc9a0015a",
+      "new_theory_implemented":false,
+      "scientific_admission_conditions":["process_boundary_domain","physical_units_and_clock","numerical_error_or_exact_oracle","causal_null_and_filtration","multiple_selection_procedure","net_OOS_capacity_and_risk"],
+      "local_series":{"SA":{"commit":"d73cca8cdc5191f9c0ccb6b66cebfee583cdd87d","contracts_passed":47,"contracts_failed":0,"all_targets_exit":0,"in_remote_main":false},"OOS":{"commit":"acbc3b61c983997e011b6ed5d8e0824fd3b67f3e","contracts_passed":14,"contracts_failed":0,"all_targets_exit":0,"in_remote_main":false}},
+      "SA_OOS_publication_answer_received":false,"external_ack_received":false,
+      "new_CI_and_review_required":true,"PR_should_remain_draft":true,
+      "branches_deleted":[],"model_or_genome_activation":false,"growth72h_demonstrated":false
+    },
+    "Hawkes_live_spectral_cross_review_receipt": {
+      "source_cut_RA":"37383cd83239725215df9dac1fbca1b28189ff96","source_cut_main":"ea5d1985aaf928bc7fe670ce4d185234bb8675a9",
+      "reviewer":"Parfit","read_only":true,"reviewer_executed_tests":false,
+      "parent_contrasted_functions_sources_and_arithmetic":true,
+      "finding":{"id":"RA-SIG-F01","deduplicated_with":"F2-A1","status":"open_semantic_confirmed_by_source_and_arithmetic","priority_from_F2":"HIGH","scalar_vote_at_ratio1p6":0.9216685544064713,"spectral_vote_at_ratio1p6":0,"deadzone_absolute_direction":0.000001,"jump_at_zero_claim_correct":false,"constant_on_every_normal_tick_claim_correct":false,"scalar_live_fallback_connected":true,"spectral_override_observed":true,"always_affects_final_direction":false,"invalid_registry_ratio_fallback":1,"live_orders_or_PnL_measured":false},
+      "documentary_rectification":{"id":"RA-DOC-F03","PPO_Hawkes_slot2_already_normalized":true,"entry_close_credit_parity_certified":false,"real_Hawkes_trade_writer_connected":true,"historical_comment_not_current_state":true,"VPIN_passed_as_Hawkes_observable_confirmed":true,"host_calls":"evaluate_flow_impulse","threshold_1p2_belongs_to":"FlowImpulseEngine::vote","host_never_fires_due_to_threshold1p2_demonstrated":false},
+      "source_SHA256":{"hawkes":"15F27129150E22960BD86B87CEB71AC6D71445BDE78AB093B1A40C9A14AB2714","core":"D4D5D00017336FFD9C26C6144FB68514584454C9DB2E9063D7B2064616A12DD6","orchestrator":"51BA6F62735DB2745171A98779252F16754F1EB756B19092004FED97C838E8BC","flow":"BEE3B01CC547916176027155311480A07849237EE6FEB81ABBAC5E041B75F8B3","confluence":"948351180C568FCCC5A4938F5B742C97EBC10F2B39EBC9406F1B06760CE484D5","math":"AA5ED7785C28AFD1880021645649FAFA30BB92BBF840D4E84AA63784E93CA4E0"},
+      "all_targets":{"exit":0,"seconds":135.3599377,"timestamp_refresh_files":8,"source_bytes_unchanged":true,"log_sha256":"7A3CDBA698C1EA53D025966E1A6AB275217C44647841CAB7F7C40BAD8C9B89BE","tests_executed_by_check":false},
+      "source_repaired":false,"external_owner_ack":false,"growth72h_demonstrated":false
+    },
+    "Hawkes_existing_unit_test_receipt": {
+      "source_cut_RA":"37383cd83239725215df9dac1fbca1b28189ff96",
+      "command":"cargo +nightly-2026-06-30 test -p signal-engine --lib hawkes_bessel::tests --locked --offline -j 2",
+      "exit":0,"seconds":56.4373833,"passed":9,"failed":0,"ignored":0,"filtered_out":97,
+      "log_sha256":"AE31D9553964A82A2A25F29EDAFA401F854691CB272FC4C23F7B501763F64C29",
+      "new_scalar_spectral_parity_oracle_executed":false,"source_repaired":false,
+      "CLI_live_orders_models_or_economic_tests":false,"growth72h_demonstrated":false
     }
 }

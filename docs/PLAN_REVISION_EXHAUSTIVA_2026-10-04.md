@@ -307,3 +307,22 @@ maestro§17; rollback/anexoexterno añadidos;0bloqueadores documentales nuevos.
 Consumidores ambiguos y gates económicos siguen pendientes. No ejecutó
 fuentes/CLI/Cargo ni revisó el TSV. Esa independencia no es aprobación
 humana de PR, ejecución de fase ni acreditación de rentabilidad.
+
+## 12. Delta de corte mainEA5d y continuidad de las fases
+
+main237→ea5d1985 modifica MEMORIA, COORDINACION, BARRIDO y maestro: cuatro
+documentos,+205/−0, ninguna fuente Rust/Cargo/CI. El censo fijo no se
+reescribe: conservar su snapshot y revisar el delta con nuevos OIDs. F2
+del otro auditor es inventario comunicado, no cierre de reparaciones ni
+lectura independiente de todas las filas por Codex. RA§48 y maestro§18
+registran la discrepancia de severidades y la admisión científica limitada
+de primeros pasos/e-values; no añadir teoría al motor antes de sus gates.
+
+Para cada próxima unidad: leer el contrato completo y sus consumidores,
+separar teoría de heurística, probar invariantes/límites y abstención,
+guardar RED/GREEN identificable, compilar la composición, revisar en otra
+línea y sólo después publicar/integrar. Owner propuesto exige acuse; una
+rama mergeada pero ocupada por un editor no se elimina automáticamente.
+Cobertura Git/inventario, cobertura semántica y cobertura de comportamiento
+mantienen estados independientes. Los fallos aún abiertos de F1/F2, sizing
+no finito, soporte causal y paridad no desaparecen por un check verde.
