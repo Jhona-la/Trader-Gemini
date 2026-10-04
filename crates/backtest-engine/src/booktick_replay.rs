@@ -743,19 +743,32 @@ pub fn live_envelope_gate(
         pos_margin,
     );
     let validado = risk_engine::envio::apalancamiento_validado(notional_ord, pos_margin);
-    if risk_engine::envio::apalancamiento_de_envio(
+    match risk_engine::envio::apalancamiento_de_envio(
         exec_leverage,
         validado,
         notional_volume,
         free_margin,
-    )
-    .is_err()
-    {
-        *veto_counter += 1;
-        rollback_local_position(arena, coin_id);
-        return false;
+    ) {
+        Ok(apalancamiento) => {
+            // CL-41b: como el host, la reserva retiene el margen que
+            // retendría el exchange a este apalancamiento.
+            let generacion = pos.generation.load(Ordering::Acquire);
+            if let Ok(delta) = pos.reajustar_margen_generation(
+                generacion,
+                risk_engine::envio::margen_de_envio(notional_volume, apalancamiento),
+            ) {
+                if delta != 0.0 {
+                    arena.used_margin.fetch_add(delta, Ordering::Relaxed);
+                }
+            }
+            true
+        }
+        Err(_) => {
+            *veto_counter += 1;
+            rollback_local_position(arena, coin_id);
+            false
+        }
     }
-    true
 }
 
 /// P-1b — VOL-BRAKE: réplica EXACTA de god_engine.rs:3846-3858 (el host vivo).
@@ -913,8 +926,12 @@ mod tests {
         assert!(kept, "bootstrap no veta entrada sostenible");
         assert_eq!(vetoes, 0);
         assert!(arena.coins[0].positions.position.is_open());
-        // El rollback NÓN tocó contabilidad: margen y capital intactos.
-        assert!((arena.used_margin.load(Ordering::Relaxed) - 10.0).abs() < 1e-9);
+        // CL-41b: la reserva retiene el margen del exchange. El riesgo validó
+        // 10× (margen 10 de nocional 100) y el arranque envía a 1×: el
+        // exchange retiene 100. El capital no cambia (sólo el fee de entrada).
+        let margen_ranura = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
+        assert!((margen_ranura - 100.0).abs() < 1e-9);
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 100.0).abs() < 1e-9);
         assert!((arena.unified_capital.load(Ordering::Relaxed) - 999.95).abs() < 1e-9);
     }
 
@@ -970,6 +987,40 @@ mod tests {
         let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes);
         assert!(kept, "la orden validada cabe en el margen del exchange; vetada por su propia reserva");
         assert_eq!(vetoes, 0);
+    }
+
+    #[test]
+    fn cl41b_la_reserva_retiene_el_margen_del_exchange() {
+        // Capital 13. A: nocional 13 validado a 5× (reserva 2,6); arranque
+        // 1× ⇒ se envía a 2× y el exchange retiene 6,5. B: nocional 13
+        // validado a 2× (reserva 6,5). El exchange tiene 13 − 6,5 = 6,5
+        // libres y B necesita 6,5 > 95 % ⇒ veto. Con la reserva de A en 2,6
+        // el margen libre parecía 10,4 y B pasaba a 2× (-2019 en el
+        // exchange).
+        use quantum_arena::position::PositionHorizon;
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let mut env = RiskEnvelope::new();
+        let mut vetoes = 0u64;
+        let abrir = |coin: usize, margen: f64| {
+            arena.coins[coin].positions.position.open_with_fee(
+                true, 100.0, 0.13, margen, 1_700_000_000_000, 101.0, 99.0,
+                PositionHorizon::Continuous, 0.6, 0.5, 0.0,
+            );
+            arena.used_margin.fetch_add(margen, Ordering::Relaxed);
+        };
+        abrir(0, 2.6);
+        assert!(live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes));
+        let margen_a = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
+        assert!((margen_a - 6.5).abs() < 1e-9, "A se envía a 2×: el exchange retiene 6,5; leído {margen_a}");
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 6.5).abs() < 1e-9);
+
+        abrir(1, 6.5);
+        assert!(
+            !live_envelope_gate(&arena, &mut env, 1, 100.0, 0.001, false, &mut vetoes),
+            "B no cabe en el margen que el exchange tiene libre"
+        );
+        assert_eq!(vetoes, 1);
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 6.5).abs() < 1e-9);
     }
 
     #[test]

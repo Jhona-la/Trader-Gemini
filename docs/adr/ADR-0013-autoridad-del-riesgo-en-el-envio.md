@@ -31,7 +31,14 @@ copia esa cadena. Dos defectos:
 2. El apalancamiento validado se reconstruye de la ranura reservada
    (nocional / margen) y el margen libre no descuenta la reserva propia
    (`margen_libre_sin_la_propia`).
-3. Se conservan el arranque exploratorio (1× con menos de 30 cierres) y el
+3. Tras decidir el apalancamiento de envío, la reserva pasa a retener el
+   margen que retendrá el exchange (`margen_de_envio` = nocional /
+   apalancamiento, nunca menor que el validado) y `used_margin` recibe la
+   diferencia (CL-41b). Sin esto, con el arranque a 1× el exchange retenía
+   varias veces el margen contable y el margen libre de la siguiente
+   entrada salía optimista (la guarda -2019 dejaba pasar órdenes que el
+   exchange rechaza).
+4. Se conservan el arranque exploratorio (1× con menos de 30 cierres) y el
    veto de la envolvente: cambiarlos es política de riesgo del dueño.
 
 ## Consecuencias
@@ -39,8 +46,14 @@ copia esa cadena. Dos defectos:
 - Las decisiones de riesgo duras (apalancamiento y liquidación) quedan del
   lado del risk-engine; el host sólo puede bajar el apalancamiento, nunca
   subirlo por encima de lo validado.
+- La contabilidad de margen del arena es la del exchange: el límite de
+  exposición del orquestador y el tamaño de las entradas siguientes ven el
+  margen realmente bloqueado.
 - Queda abierto, y documentado: la envolvente sólo decide el apalancamiento
   del exchange (margen bloqueado), no el nocional, que fija el núcleo; el
   dimensionamiento en espacio de riesgo (riesgo al stop ≈ Kelly fraccional)
-  sigue sin existir. La envolvente también evalúa su capital descontando
-  la reserva propia (`cap_now`); no se toca aquí porque cambia sus vetos.
+  sigue sin existir. Por la misma razón, el arranque a 1× de D-116 no
+  reduce el riesgo al stop (el nocional no cambia): sólo aleja la
+  liquidación y bloquea más margen. La envolvente también evalúa su capital
+  descontando la reserva propia (`cap_now`); no se toca aquí porque cambia
+  sus vetos.

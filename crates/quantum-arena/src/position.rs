@@ -422,6 +422,34 @@ impl Position {
         result
     }
 
+    /// CL-41b: la reserva sin confirmar pasa a retener el margen que retendrá
+    /// el exchange con el apalancamiento de envío (nocional / apalancamiento),
+    /// que nunca supera el validado y por tanto nunca baja el margen.
+    /// Devuelve la diferencia (nuevo − anterior) para `used_margin`. Un margen
+    /// no finito o no positivo no cambia nada.
+    pub fn reajustar_margen_generation(
+        &self,
+        generation: u64,
+        nuevo_margen: f64,
+    ) -> Result<f64, PositionTransitionError> {
+        self.lock_transition();
+        let result = if self.generation.load(Ordering::Acquire) != generation {
+            Err(PositionTransitionError::GenerationMismatch)
+        } else if !self.is_open.load(Ordering::Acquire) {
+            Err(PositionTransitionError::Closed)
+        } else if self.exchange_confirmed.load(Ordering::Acquire) {
+            Err(PositionTransitionError::AlreadyConfirmed)
+        } else if !(nuevo_margen.is_finite() && nuevo_margen > 0.0) {
+            Ok(0.0)
+        } else {
+            let anterior = self.margin_used.load(Ordering::Relaxed);
+            self.margin_used.store(nuevo_margen, Ordering::Relaxed);
+            Ok(nuevo_margen - anterior)
+        };
+        self.unlock_transition();
+        result
+    }
+
     /// A confirmation for an old occupant must not confirm a reused slot.
     /// The caller is responsible for supplying actual execution evidence.
     pub fn confirm_generation(&self, generation: u64) -> Result<(), PositionTransitionError> {

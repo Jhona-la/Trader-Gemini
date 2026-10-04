@@ -23,6 +23,17 @@ fn open_candidate(arena: &Arc<GlobalArena>) {
     arena.unified_capital.fetch_add(-0.01, Ordering::Relaxed);
 }
 
+/// CL-41b: la reserva admitida retiene el margen del exchange (nocional 5 /
+/// apalancamiento de envío), nunca menos que el validado (1, es decir 5×).
+fn assert_reserva_del_exchange(arena: &Arc<GlobalArena>) {
+    let ranura = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
+    let usado = arena.used_margin.load(Ordering::Relaxed);
+    assert!((usado - ranura).abs() < 1e-12, "used_margin {usado} != ranura {ranura}");
+    assert!(ranura >= 1.0 - 1e-12, "la reserva bajó del margen validado: {ranura}");
+    let apalancamiento = 5.0 / ranura;
+    assert!((apalancamiento - apalancamiento.round()).abs() < 1e-9 && apalancamiento.round() >= 1.0);
+}
+
 /// D-750 (fusión PR #5): sin edge probado (PF = 1) en régimen micro, la
 /// envolvente NO veta la sonda mínima — la mantiene viva con apuesta
 /// exactamente la orden mínima ejecutable, bajo control de ruina. La
@@ -47,7 +58,7 @@ fn mature_micro_no_edge_keeps_the_minimal_probe_alive() {
     ));
     assert_eq!(vetoes, 0);
     assert!(arena.coins[0].positions.position.is_open());
-    assert_eq!(arena.used_margin.load(Ordering::Relaxed), 1.0);
+    assert_reserva_del_exchange(&arena);
 }
 
 #[test]
@@ -70,7 +81,7 @@ fn positive_evidence_still_allows_a_feasible_micro_candidate() {
     ));
     assert_eq!(vetoes, 0);
     assert!(arena.coins[0].positions.position.is_open());
-    assert_eq!(arena.used_margin.load(Ordering::Relaxed), 1.0);
+    assert_reserva_del_exchange(&arena);
 }
 
 #[test]

@@ -99,6 +99,14 @@ pub fn apalancamiento_de_envio(
     Ok(apalancamiento)
 }
 
+/// CL-41b: margen que retiene el exchange con el apalancamiento de envío.
+/// La reserva pasa a este valor (nunca menor que el validado, porque el
+/// envío nunca supera el apalancamiento validado): el margen libre de la
+/// siguiente entrada es así el del exchange, no el de la validación.
+pub fn margen_de_envio(nocional: f64, apalancamiento: u32) -> f64 {
+    nocional / apalancamiento.max(1) as f64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,6 +153,14 @@ mod tests {
         assert_eq!(apalancamiento_de_envio(0, Some(5), 13.0, 13.0), Err(VetoEnvio::Envolvente));
         assert_eq!(apalancamiento_de_envio(3, None, 13.0, 13.0), Err(VetoEnvio::SinValidacion));
         assert_eq!(apalancamiento_de_envio(3, Some(5), f64::NAN, 13.0), Err(VetoEnvio::SinValidacion));
+    }
+
+    #[test]
+    fn el_margen_de_envio_es_el_del_exchange() {
+        // Validado 5× (reserva 2,6 de 13 de nocional), enviado a 2×: el
+        // exchange retiene 6,5.
+        assert_eq!(margen_de_envio(13.0, 2), 6.5);
+        assert_eq!(margen_de_envio(13.0, 0), 13.0);
     }
 
     #[test]

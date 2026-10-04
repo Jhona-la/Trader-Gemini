@@ -4190,6 +4190,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     return;
                                 }
                             };
+                            // CL-41b: la reserva retiene el margen que retendrá el
+                            // exchange a este apalancamiento (≥ el validado):
+                            // el margen libre de la siguiente entrada es el real.
+                            if let Err(reason) = reservation.reajustar_margen(
+                                &arena_clone,
+                                risk_engine::envio::margen_de_envio(notional_volume, effective_leverage),
+                            ) {
+                                telemetry_engine::telemetry_err!(
+                                    "[ENTRY] {}: reserva no reajustable ({:?}); envío retenido. Rollback.",
+                                    parsed_sym_str, reason
+                                );
+                                rollback_positions(&arena_clone);
+                                return;
+                            }
 
                             let entry_executor = exec_clone.load_full();
                             let sym_filter = match entry_executor.get_symbol_filter(&parsed_sym_str).await {
