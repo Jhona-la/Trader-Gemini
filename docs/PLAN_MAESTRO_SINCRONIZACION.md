@@ -28,6 +28,13 @@ cadena de paridades bt↔vivo (GLM, 10/10) garantiza que lo medido es lo
 que opera. El eslabón que falta es el edge OOS estable — ese es el foco
 de las tres líneas de trabajo de abajo.
 
+## 0b. Barrido exhaustivo (mandato 2026-10-04)
+
+El operador ordenó recorrer TODOS los archivos uno por uno en fases
+(metas → conceptos → matemática → física → código):
+**docs/BARRIDO_EXHAUSTIVO_FASES.md** — 8 fases, ~377 archivos, ~137k
+líneas, división por línea dueña, verificación por fase.
+
 ## 1. Las tres líneas ( quién es dueño de qué )
 
 ### LÍNEA A — ENTENDER el universo (Qoder): el continuo espectral
