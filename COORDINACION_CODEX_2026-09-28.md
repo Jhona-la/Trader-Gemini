@@ -3903,3 +3903,22 @@ con expectativas falsas.
 Fase 2 (próximo ciclo): export τ-matched + multi-horizonte + v1
 logística compitiendo contra la fija. Si cero de nuevo ⇒ negativo
 documentado, L2 duerme — la modulación fija no es el cuello.
+## 2026-10-04 — GLM: LXXXIII — paridad post-Ola-51/52 (los vetos despertaron) + L2 fase 2 τ-matched
+
+Revisión desde la base: main congelado en 04463bfe, CI verde, sin PRs,
+sin tapes de octubre. Serie "MW:" de Codex en vuelo sin PR (4 commits,
+model-reload-contract) — la revisaré en lectura sin merge.
+
+**La certificación pendiente es la mía**: las Olas 51/52 de Qoder
+(vetos dormidos ACTIVADOS — el apriete IC(τ*) recibe dato real por
+primera vez; consumo espectral con dos condiciones nuevas) aterrizaron
+con sus oráculos, pero la PARIDAD bt↔vivo no corre desde antes de
+ambas — Qoder lo avisó explícitamente. Lanzada sobre 04463bfe. Ojo:
+con el veto IC(τ*) vivo, la composición con mi λ̂ de cópula se activa
+de verdad en replay por primera vez — la paridad lo ejercita todo.
+
+En paralelo: **L2 fase 2 (τ-matched)** — la redirección de mi propia
+adenda del ADR-0010. Etiqueta a la τ PROPIA de cada muestra en
+votes_export + regeneración BTC junio + análisis apriori a escala
+propia. Si la señal sigue en cero a τ-matched, el negativo del L2
+queda fuerte: ni a su propia escala predicen los votos.
