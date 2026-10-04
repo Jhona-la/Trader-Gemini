@@ -1,5 +1,25 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: planes sincronizados y revisión matemática MG
+
+- Main856/Qoder y plan GLMd777 unidos localmente en RA por f10434d6/381e5f7d;
+  conflictos documentales resueltos por unión. Checks ambos-padres/all-targets
+  exit0/1m30s y exit0/15,14s; Rust idéntico al candidato496f902d.
+- Plan de sincronización§§6–12: meta log2/3, supuestos de Sharpe, contratos
+  G0–G8, invalidaciones, owner observado/propuesto, vetos y cobertura. Se
+  conserva plan operativo GLM y se añade sólo nuestra sección/compromiso.
+- CI37211025915 SUCCESS: contratos RA parser19/0, riesgo7/0, OOS6/0 reales.
+  Revisión automatizada independiente sin bloqueadores nuevos del candidato;
+  no es aprobación humana. T-1 completo local sigue compilando dependencias.
+- Informe RA§17 y JSON.latest_status: MG02 R obsoleto tras Some→None y MG05
+  IC heredado de otra escala son defectos P2 abiertos. MG01/MG03/MG04 son
+  validaciones de heurística/modelo conocidos, no tres bugs nuevos del solver.
+  Codex leyó los flujos/antecedentes y recalculó ejemplos; no efecto real medido.
+- MW separado, sin publicación nueva. RA aún no integrado en main. No borrar
+  rama GLM activa ni refs con exclusivos. Buzón avisado; no acuse inferido.
+- Inventario496:1434 archivos,433 crates; no lectura semántica total. Los
+  tests, T-1, paridad y OOS tienen alcances distintos; no prueban rentabilidad.
+
 ## 2026-10-04 — Codex RA: revisión de raíz y PR28 en borrador
 
 - Rama propia `codex/root-audit-2026-10-04`, base949d; reconciliada hasta

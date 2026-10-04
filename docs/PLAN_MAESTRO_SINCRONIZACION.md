@@ -114,3 +114,257 @@ de Kelly EN RIESGO AL STOP.
 | 2026-10-04 | Qoder | PRE-FLIGHT: regresión del árbol combinado 7c4cea40 = 828/0 + ws 0 err; roster 18 MOTOR (BTCUSDT incluido); T-1 de sello sobre el tip exacto en vuelo. Riesgos aceptados documentados en buzón. |
 | 2026-10-04 | GLM | LXXXIV (en vuelo, lxxxiv-l2v1): datasets τ-matched ago+sep-14 EN GENERACIÓN (nota de regeneración atendida) + trainer v1 logística con plantilla honesta; paridad del PR#27 de Claude anunciada. |
 | 2026-10-04 | Codex | root-audit-2026-10-04 (en vuelo): 16 hallazgos root-contract (parser risk-state, límites OOS, tokens escalares, agregación depth); reconciliado con main 7c4cea40 (este plan) tras all-targets check; documenta gates de certificación sin resolver. |
+
+## 6. Consolidación técnica y alcance de las afirmaciones (Codex)
+
+Esta adenda conserva las secciones anteriores como registro de sus autores y
+precisa sus condiciones de validez. No declara consenso, aprobación humana,
+auditoría exhaustiva ni rentabilidad que no estén respaldados por un recibo.
+El [plan operativo de GLM](PLAN_MAESTRO_2026-10-04.md) conserva los frentes por
+agente; este documento detalla dependencias, contratos y aceptación. Ambos
+deben enlazarse y usar los mismos IDs de entrega, no mantener estados económicos
+incompatibles. La consolidación editorial no asigna trabajo unilateralmente.
+
+Corte de coordinación: main `856e59ba`, plan GLM `d777175f`, candidato Rust
+RA `496f902d`. Integración documental local: `f10434d6` y `381e5f7d`.
+Los dos merges preservaron cada padre y pasaron all-targets, respectivamente
+exit0/1m30s y exit0/15,14s. El código Rust y los contratos no cambiaron respecto
+de496f902d. No significa todavía integración de RA en main remoto.
+
+### 6.1 Qué significa exactamente la meta de compuesto
+
+Para capital neto positivo y sin flujos externos, la duplicación a72h implica:
+
+```text
+G72 = ln(V(t+72h)/V(t)) = ln(2) = 0,6931471805599453
+g_diario = ln(2)/3 = 0,2310490601866484 por día
+r_diario_equivalente = exp(g_diario)-1 = 0,2599210498948732
+```
+
+`G72` es incremento logarítmico, no porcentaje simple; `r_diario_equivalente`
+es25,9921% compuesto diario. Las comisiones, funding, slippage, pérdidas,
+posiciones abiertas valoradas y costes operativos deben entrar en `V`.
+Con depósitos o retiradas se requiere una serie ajustada por flujos, no tratar
+una aportación como beneficio. Capital inicial13USD es un escenario del plan,
+no una medición actual del saldo ni prueba de viabilidad de tamaños mínimos.
+
+Sharpe≈0,68 tiene una derivación **condicionada**, no es una condición universal:
+si el exceso de retorno sigue una difusión con μ constante por día y σ por
+raíz de día, rebalanceo continuo, exposición libre, sin costes ni restricciones,
+la tasa log esperada es `g(f)=fμ−f²σ²/2`. Maximizarla da
+`f*=μ/σ²`, `g*=μ²/(2σ²)=S_diario²/2`, y por tanto
+`S_diario=sqrt(2 ln(2)/3)=0,6797779934458726` para esa tasa esperada.
+No fija la probabilidad de duplicar en cada ventana, el drawdown ni la ruina.
+Con saltos, colas, error de estimación, restricciones y costes cambia el problema.
+La referencia a Sharpe2–6 de fondos en§0 no tiene aquí una muestra verificable;
+no se usa como benchmark ni como gate. Esta derivación es nuestra ilustración
+de difusión, no una ecuación atribuida al artículo original de Kelly.
+
+El criterio de crecimiento logarítmico y su distinción respecto de maximizar
+capital esperado provienen del [trabajo original de Kelly,1956](https://www.kiv.zcu.cz/~vavra/zti/KELLY.PDF).
+No convierten una ventaja estadística no medida en una garantía de rendimiento.
+
+### 6.2 Qué medir para aceptar o refutar una aproximación a la meta
+
+- Serie neta de capital por evento y por día, moneda de valoración, flujos,
+  latencia, inventario y versión de tarifas. Separar PnL realizado y no realizado.
+- Distribución de `G72`, crecimiento log neto medio, incertidumbre, frecuencia
+  de ventanas que duplican, peor drawdown, pérdida esperada de cola y capacidad.
+  Las ventanas72h solapadas no son observaciones independientes.
+- Aportación marginal por activo/escala y costes de aumentar exposición. Más
+  símbolos, más operaciones o más señales no implican más crecimiento neto.
+- Registrar todos los ensayos del genoma y del modelo, incluidos los negativos,
+  y reservar un test posterior no reutilizado para selección. El
+  [Deflated Sharpe Ratio de Bailey y López de Prado](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf)
+  aborda multiplicidad y no normalidad; no corrige por sí solo datos causales
+  defectuosos ni acredita cobertura universal bajo dependencia temporal.
+- Declarar método de inferencia y sensibilidad a dependencia, selección y cambios
+  de distribución. Un bootstrap por bloques debe justificar sus bloques; sustituir
+  un conteo nominal por otro número sin estimarlo no resuelve el problema.
+
+Los niveles de confianza, presupuesto de pérdida, horizonte de ruina y capacidad
+de capital son especificaciones explícitas pendientes del operador cuando no
+estén ya fijadas y versionadas. No se inventan para conseguir que pase un gate.
+
+## 7. Línea D — Codex: contratos de confianza desde la raíz
+
+Estado observado: RA contiene16 expedientes, cuatro correcciones acotadas,
+una parcial y once abiertos, descritos en el
+[informe raíz](AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md) y su
+[artefacto](AUDITORIA_RAIZ_REVALIDACION_2026-10-04.json).
+MW/model-reload-contract permanece separado; una revisión favorable de dirección
+no publica ni certifica su watcher. No se mezcla MW con la autorización RA.
+
+RA corrige tokens escalares, admisión de estado no finito y frontera de contexto
+OOS; el parser de profundidad conserva un residual estructural declarado.
+Su CI [37211025915](https://github.com/Jhona-la/Trader-Gemini/actions/runs/37211025915)
+terminó SUCCESS: parser19/0, riesgo7/0, OOS6/0 con crates reales. Las26 pruebas
+del harness aislado de riesgo no son el conteo de ese target CI. La revisión
+independiente automatizada de496f902d contra7c4cea no encontró bloqueadores
+nuevos en el alcance de los cuatro commits; no es aprobación humana de GLM/Claude.
+T-1 completo local sigue en compilación; no hay resultado ni paridad RA.
+
+Compromiso Codex: cerrar recibos del candidato y mantener visibles los contratos
+pendientes de identidad, causalidad, DD histórico y admisión compuesta. Su cierre
+condiciona la interpretación económica de fitness, habilidad y sizing. Los
+repartos propuestos abajo requieren acuse; no se convierten en reservas aceptadas.
+
+## 8. Grafo de dependencias y criterios de aceptación
+
+Los nodos indican contratos, no ocho motores de trading separados. La ruta
+principal comparte estado y evidencia entre activos y escalas:
+
+```text
+G0 versión y certificación
+ ├─ G1 identidad/datos → G2 causalidad/skill → G5 evidencia OOS
+ ├─ G3 trayectoria de capital → G4 admisión y riesgo multiactivo
+ └─ G7 identidad del artefacto cargado
+G2 + G4 + G5 + G7 → G6 ejecución/paridad → G8 medición económica
+G8 → aprendizaje controlado → nueva versión G0, sin reescribir su pasado
+```
+
+El nodo raíz acredita identidad, tiempo y datos/capital disponibles. El nodo
+de decisión combina evidencia informada y admisión compuesta. Los nodos
+terminales son fill, parcial, rechazo y resultado ambiguo conciliado: cada uno
+conserva intención/versiones y sólo aporta feedback compatible con su evidencia.
+La retroalimentación entre versiones no autoriza aprender del futuro ni convertir
+un rechazo en una operación simulada ganadora.
+
+| ID y raíz del contrato | Responsable observado o propuesto | Entregable y aceptación falsable | Invalida o bloquea |
+|---|---|---|---|
+| G0 versión | Codex RA; GLM ofrece certificación | SHA de candidato/base/merge, comparación contra **cada padre**, all-targets, contratos, T-1 y recibo de revisión. No cerrar con compile solo. | Todo recibo sin versión o con código cambiado. |
+| G1 identidad | Codex propone coordinación con Claude/GLM | Resolver RA-E01: símbolo CLI, coin_id, modelo, specs y etiquetas idénticos en selección, replay y envío. Contraprueba ETH sin registro/modelo BTC implícito. | Fitness y datasets afectados por activo equivocado. |
+| G2 causalidad | Qoder espectral observado; RA-S01/S02/S04 propuestos para revisión conjunta | Fijar predicción y referencia al emitir, madurar después, prueba de invariancia de prefijo; no puntuar retornos anteriores al voto. Bajo olvido, estimar soporte efectivo y dependencia, no usar n acumulado ilimitado. | Skill, pesos, etiquetas y selección derivados del protocolo anterior. |
+| G3 trayectoria del genoma | Claude evolución observado; RA-E03/E04 propuestos | Genoma/parametrización evaluados=publicados=cargados. Persistir high-water mark y DDmax intratrayectoria; pérdida seguida de recuperación no borra el máximo. | Fitness, ranking y promoción de candidatos afectados. |
+| G4 admisión compuesta | Claude sizing y Qoder riesgo observados; RA-R01 propuesto | Fijar apalancamiento ejecutable antes de validar/reservar; nocional, margen, SL y límites concuerdan. Contraprueba margen14@5x→1x frente a techo50. Validar unidades y supuestos de ruina/colas/covarianza. | Autorizaciones previas si cambian leverage, límite, snapshot o specs. |
+| G5 aprendizaje y OOS | GLM L2 observado | Manifest de datos, física, activos, horizontes y etiquetas; candidato/baseline congelados en mismas filas, test posterior íntegro, multiplicidad e incertidumbre. RA-E02: no vender interpolación condicionada al cierre como microdato observado causal. | Dataset ante cambio de identidad, física, etiquetas o reloj; test reutilizado no sigue siendo test independiente. |
+| G6 ejecución | Claude y servicio de paridad GLM observados | Misma intención, reserva, orden y resultado económico en replay/demo; parciales, rechazo firme y resultado ambiguo con conciliación. Paridad enumera casos, SHA y limitaciones. | Certificación anterior después de cambios en sizing, envío, cierre o reconciliación. |
+| G7 carga/evolución | Codex MW separado; Claude GENOME-GATE observado | Hash/versión/slots del artefacto evaluado y cargado; rollback válido y fallo transaccional. T-1 y paridad propios antes de integrar watcher. | Resultados de un modelo/genoma distinto al realmente activo. |
+| G8 resultado neto | Evaluación conjunta propuesta, no owner aceptado | Métricas§6.2, contraste OOS y sombra, costes/capacidad y tolerancias fijadas antes de lectura del resultado. Un resultado negativo se conserva. | Una promesa de crecimiento basada sólo en hit-rate, sensibilidad genética o compile. |
+
+No todos los contratos pueden ejecutarse en serie: reparación G1–G4 y análisis
+de históricos válidos pueden avanzar mientras se esperan tapes nuevos. Los
+tapes de octubre bloquean los experimentos que los requieren, **no todo lo demás**.
+El riesgo R01 no se da por corregido sólo porque el envío valide apalancamiento:
+debe demostrar consistencia de admisión/reserva/envío para el mismo snapshot.
+
+### 8.1 Frentes del plan GLM reconciliados sin borrar su historial
+
+GLM reporta paridad PR27 verde10/10 en d777175f. Ese recibo pertenece a su corte
+y escenarios; no certifica RA ni toda operación IOC. En el mismo corte,55,4%
+contra47,8% y peso−3,5 de consenso_media son **in-sample**; el gate sep-14 estaba
+pendiente. El coeficiente describe un ajuste, no demuestra causalmente que la
+agregación destruye señal. Si L2 no pasa, conservar el negativo; un modelo no
+lineal necesita otro protocolo/test, no una subida automática de peldaño.
+
+`7/26=26,9231%`; un símbolo adicional son3,8462 **puntos porcentuales** si el
+denominador permanece26. No es≈3,5%, ni retorno/volumen marginal probado.
+Roster18 con MOTOR y roster26 del plan GLM miden poblaciones distintas: se
+exige manifest del universo antes de combinarlos. La brecha310× y10 trades/día
+necesitan período, escenario y derivación; no se deducen de100%/72h.
+
+D₀ ya está publicado por qo-654 antes de main856; queda definir y contrastar
+su consumidor, no repetir su publicación como pendiente. La cópula dinámica
+requiere G4/G5: ventana, soporte, unidades, incertidumbre y fallback contra la
+versión vigente. FDUSD archivo/remoción sigue como decisión de mantenimiento,
+separada de una promoción científica; este plan no borra modelos.
+
+### 8.2 Evidencia de vigencia: dos defectos y tres validaciones MG
+
+El [informe raíz§17](AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#17-revisión-matemática-multiactivo-mg-defectos-y-validaciones-separados)
+añade MG02 (Some→None no invalida R publicado, G4) y MG05 (escala sin evidencia
+hereda IC de otra, G2/G4). Requieren transición y consumo del respaldo correctos
+antes de tratar esas claves como evidencia vigente. MG01, MG03 y MG04 revisan
+respectivamente la interpretación de Lundberg, proyección equicorrelacionada
+y coseno usado como correlación. Son validaciones de modelos/políticas conocidas,
+no tres bugs nuevos del solver. Los contraejemplos se recalcularon; no son una
+medición de pérdidas o frecuencia operacional. No se modifica Rust durante T-1.
+
+## 9. Motor continuo multivariante: contrato de diseño, no etiqueta
+
+El espacio de decisión debe poder representar activo `a`, tiempo de evento `t`,
+escala `τ>0`, estado y covariación conjunta. Una representación propuesta es
+`x(a,t,log τ)` con soporte, incertidumbre y antigüedad por componente; la
+elección de variables/unidades requiere especificación antes de implementación.
+Scalping/swing no deben determinar motores excluyentes ni fronteras económicas.
+Los estados de volatilidad también tienen incertidumbre y variación continua;
+un simplex de probabilidades no elimina por sí solo todos los cortes rígidos.
+
+El dominio conceptual1ns–100años no obliga a inventar observaciones ni calcular
+toda escala cada nanosegundo. Reloj, timestamps, frecuencia de datos, latencia,
+memoria y duración histórica limitan el soporte medido. Modelar o extrapolar
+una escala sin historia debe marcarse como tal y no aumentar su confianza.
+Se propone adaptación por evento con refinamiento de malla/cuadratura donde el
+error estimado y la información lo justifiquen, y un presupuesto computacional
+medido. Discretización numérica explícita no equivale a dividir estrategias.
+
+Aceptación propuesta: estabilidad de decisiones al refinar la malla, unidades
+compatibles, masa normalizada sólo sobre soporte informado, covariación conjunta
+por escala, pruebas de activos fríos y flujos asíncronos; complejidad/latencia
+p50/p95/p99 medidas bajo replay reproducible. RA-S03 queda abierto: normalizar
+puede cancelar el pequeño peso de una escala aún no observada.
+
+## 10. Registro obligatorio de vetos, filtros y límites
+
+Cada guardia requiere ubicación/consumidor, motivo tipado, magnitud/unidad,
+origen de umbral, ámbito por activo/cartera, snapshot y reacción permitida.
+Clasificar por **invariante técnico**, **regla de exchange**, **presupuesto
+del operador**, **hipótesis estadística** o **heurística económica** evita
+confundir un requisito de seguridad con un hiperparámetro sin fundamento.
+
+Para revisar una guardia: contraejemplo de bloqueo legítimo e ilegítimo, tasa de
+activación y oportunidades bloqueadas en sombra, efecto marginal y alternativa
+contrastada. Los rechazos no deben cambiar estado parcialmente ni bloquear la
+gestión/cierre de posiciones por una regla exclusiva de nuevas entradas.
+NaN/Inf no es un régimen extremo válido. Un umbral económico adaptativo necesita
+estimador causal, incertidumbre, dominio y límites; no se elimina por llamarlo
+arbitrario ni se optimiza con el mismo test con que se pretende certificarlo.
+
+Este registro sigue pendiente de cobertura completa; no se declara aquí que
+todos los filtros del repositorio estén inventariados o hayan sido validados.
+
+## 11. Integración científica y auditoría archivo por archivo
+
+Antes de incorporar una teoría: pregunta falsable, variables observables,
+ecuación y unidades, condiciones, error numérico, coste, baseline, ablación,
+OOS y motivo para preferirla. Hawkes, modelos de estado, copulas, optimización
+robusta o aprendizaje online deben demostrar una ventaja para ese contrato.
+La analogía física no sustituye estimación; una función con nombre cuántico
+no demuestra ejecución cuántica ni ventaja computacional.
+
+Los [problemas del milenio de Clay](https://www.claymath.org/millennium-problems/)
+no son un catálogo de ecuaciones resueltas para trading. Se aceptará una técnica
+transferida sólo por su relación definida con el problema y su contraste; no
+por prestigio o complejidad. La excelencia aquí exige exactitud y falsabilidad.
+
+Inventario observado de496f902d:1434 archivos versionados,433 bajo `crates/`.
+Es cobertura **de inventario**, no1434 revisiones semánticas. El informe RA§12
+enumera las rutas examinadas y sus límites. La siguiente auditoría debe mantener
+una fila por ruta/blob: inventariado, leído, flujo/teoría revisados, prueba,
+hallazgos y dependencias; binarios/datasets se revisan con método específico,
+no como si fueran código. Nuevos blobs invalidan el recibo sólo de su ruta y
+de los consumidores afectados. Ningún archivo se marca revisado por un `rg`.
+
+## 12. Protocolo de sincronización y próximos entregables
+
+1. Inicio de ola: leer plan, memoria y buzón; publicar owner, rama/worktree,
+   SHA base, alcance y rutas reservadas. Acuse explícito antes de asumir reparto.
+2. Trabajo en rama propia y checkout aislado. No compartir índice, detener
+   procesos ajenos ni lanzar promociones/trading como paso de certificación.
+3. Cierre: recibo con SHA, comando, fixture/dataset, salida, alcance y pendientes;
+   actualizar **la propia sección** del plan operativo y los contratos aquí.
+4. Integración: comparar cada padre, ejecutar controles pertinentes, preservar
+   todas las entradas en conflictos; publicar sólo el alcance autorizado.
+5. Borrar una rama sólo tras comprobar en main el SHA o equivalencia revisada,
+   ausencia de exclusivos y de worktree/actividad. Una PR merged no prueba que
+   su rama actual carezca de commits posteriores. Revalidar refs antes de borrar.
+
+Primer entregable Codex: recibos RA/T-1 y consolidación documental; segundo:
+censo de cobertura y cierre de G1–G4 en lotes con pruebas negativas, coordinando
+las reservas. Después G5–G8 y refinamiento del continuo. No se prometen fechas
+de rentabilidad ni cierre total sin observar resultados. GLM conserva su gate
+L2 y Claude/Qoder sus frentes; las propuestas de reparto aún no son aceptaciones.
+
+| Fecha | Agente | Adenda de estado |
+|---|---|---|
+| 2026-10-04 | Codex | CI RA32/0 verificada; revisión automatizada sin bloqueadores nuevos; T-1 local en compilación. Plan GLM integrado localmente por381e5f7d y main856 porf10434d6; no equivale a RA→main. Acuse externo RA ausente. |

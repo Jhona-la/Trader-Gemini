@@ -1998,3 +1998,14 @@ IS sin confundir sus estimandos. Las referencias espectrales son coordenadas
 de un dominio, no prueba de soporte histórico a cada escala. Se preserva lo
 anterior y se documentan límites, contraejemplos y criterios de falsación.
 No se introduce una promesa de rentabilidad ni una teoría por su nombre.
+
+### Adenda MG y plan continuo multiactivo
+
+Informe RA§17: margen mínimo de Lundberg no es automáticamente techo de
+exposición; coeficiente disponible no equivale a término vinculante. La media
+de aristas de la candidata no preserva toda matriz; coseno sin centrar no es
+correlación centrada. Se añaden ejemplos aritméticos y límites de interpretación.
+MG02/MG05 muestran evidencia obsoleta por estado/escala, no pérdidas medidas.
+Plan compartido§§6–12 liga raíz/decisión/terminal, soporte temporal, causalidad,
+genoma y capital con gates y responsables observados/propuestos. El dominio
+1ns–100años no fabrica historia; se exige soporte, error y coste de cómputo.

@@ -231,5 +231,188 @@
     "Sin benchmark de latencia",
     "Sin garantía de rentabilidad",
     "Referencias vivas pueden avanzar; consultar adendas"
-  ]
+  ],
+  "latest_status": {
+    "cut": "2026-10-04 while local full T-1 compiles dependencies",
+    "source_commit": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+    "main_snapshot": "856e59ba267c150ec98a1a3cbf0ebc3ff3935564",
+    "glm_plan_snapshot": "d777175f4a09b6f88ea57578650111efca58cbff",
+    "documentary_merges": [
+      "f10434d6679529f59c0c356ba2f5114e22137d72",
+      "381e5f7d42733f95f8f75c6c9baeb1f2f9c61bd0"
+    ],
+    "rust_changed_by_documentary_merges": false,
+    "main_contains_RA": false,
+    "ci": {
+      "run_id": 37211025915,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Jhona-la/Trader-Gemini/actions/runs/37211025915",
+      "parser": {
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0
+      },
+      "risk": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0
+      },
+      "oos": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      "actual_crates": true,
+      "tested_merge": "135390b48d2a2154dc7dba774bac4578398add52",
+      "tested_merge_parents": ["7c4cea4036ee67e8b73809fac7c8763280a2291a", "496f902d668b9a1914fe27488246b6a56ef1c1a7"]
+    },
+    "full_t1": {
+      "status": "compiling_dependencies",
+      "result": null,
+      "source_commit": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+      "command": "cargo +nightly-2026-06-30 test -p backtest-engine --release --locked --offline -j 2 --test t1_cobertura_genetica -- --test-threads=1 --nocapture",
+      "log": "target/ra-t1-2026-10-04.log"
+    },
+    "cross_review": {
+      "kind": "independent_automated_static",
+      "scope": "four RA commits and consumers",
+      "new_blockers_confirmed": 0,
+      "human_approval": false,
+      "external_acknowledgment": false
+    },
+    "checks": [
+      {
+        "merge": "f10434d6",
+        "exit_code": 0,
+        "duration": "1m30s"
+      },
+      {
+        "merge": "381e5f7d",
+        "exit_code": 0,
+        "duration": "15.14s"
+      }
+    ],
+    "coverage": {
+      "snapshot": "496f902d",
+      "tracked_files": 1434,
+      "crates_files": 433,
+      "semantic_complete": false,
+      "inventory_is_not_semantic_review": true
+    },
+    "planning": {
+      "contracts_document": "PLAN_MAESTRO_SINCRONIZACION.md",
+      "operating_document": "PLAN_MAESTRO_2026-10-04.md",
+      "goal": {
+        "target_multiplier": 2,
+        "window_hours": 72,
+        "log_growth_per_day": 0.23104906018664842,
+        "daily_compounded_return": 0.2599210498948732,
+        "profitability_verified": false
+      },
+      "owner_assignments": "observed lanes; new RA allocations proposed, unacknowledged",
+      "dependencies": {
+        "G0": [],
+        "G1": [
+          "G0"
+        ],
+        "G2": [
+          "G1"
+        ],
+        "G3": [
+          "G0"
+        ],
+        "G4": [
+          "G3"
+        ],
+        "G5": [
+          "G1",
+          "G2"
+        ],
+        "G7": [
+          "G0"
+        ],
+        "G6": [
+          "G2",
+          "G4",
+          "G5",
+          "G7"
+        ],
+        "G8": [
+          "G6"
+        ]
+      }
+    },
+    "mathematical_review": {
+      "report_section": 17,
+      "evidence_kind": "static_source_and_independent_arithmetic",
+      "verified_state_defects": 2,
+      "pending_model_validations": 3,
+      "not_five_new_bugs": true,
+      "findings": [
+        {
+          "id": "MG-01",
+          "classification": "known_heuristic_validation_pending",
+          "status": "open",
+          "path": "crates/risk-engine/src/correlation_guard.rs",
+          "summary": "Reserve bound reused as event-risk ceiling; leverage conversion and binding capacity require model contract",
+          "closing_contract": "G4"
+        },
+        {
+          "id": "MG-02",
+          "classification": "verified_state_defect",
+          "priority": "P2",
+          "status": "open",
+          "path": "crates/god-engine-core/src/lib.rs",
+          "line": 3495,
+          "summary": "Some to None leaves positive Lundberg evidence published",
+          "closing_contract": "G4"
+        },
+        {
+          "id": "MG-03",
+          "classification": "accepted_approximation_validation_pending",
+          "status": "open",
+          "path": "crates/risk-engine/src/correlation_guard.rs",
+          "line": 508,
+          "summary": "Candidate-mean equicorrelation does not preserve general group quadratic form",
+          "closing_contract": "G4"
+        },
+        {
+          "id": "MG-04",
+          "classification": "estimand_consumer_validation_pending",
+          "status": "open",
+          "path": "crates/quantum-arena/src/espectral_multiactivo.rs",
+          "line": 71,
+          "summary": "Uncentered cosine used to tighten risk correlation",
+          "closing_contract": "G4"
+        },
+        {
+          "id": "MG-05",
+          "classification": "verified_state_defect",
+          "priority": "P2",
+          "status": "open",
+          "path": "crates/god-engine-core/src/lib.rs",
+          "line": 1874,
+          "summary": "An unobserved dominant scale inherits another scale's scalar IC",
+          "closing_contract": "G2"
+        }
+      ],
+      "examples": {
+        "last_published_R": 0.7807479816498293,
+        "replaced_before_last_root": 50,
+        "current_R": null,
+        "epsilon05_threshold": 0.07489330683884977,
+        "epsilon01_threshold": 0.11512925464970229,
+        "margin_L9_R100": 0.2696159046198592,
+        "equicorrelation_risk": 0.24708541033415954,
+        "full_matrix_risk": 0.2530375466210499,
+        "cosine_EWMA": 0.990077332718274,
+        "centered_corr": 0,
+        "cold_scale_risk": 0.21688706738761535,
+        "stale_scale_risk": 0.272910241654651,
+        "coverage": 26.923076923076923,
+        "one_symbol_pp": 3.8461538461538463
+      }
+    }
+  }
 }

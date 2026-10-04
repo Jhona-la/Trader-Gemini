@@ -580,3 +580,156 @@ Commits funcionales: parser `0d3dcece`, riesgo `44e1d4fd`, OOS `f7b3830c`,
 CI `741d7995`; informe inicial `ad3f09a5`. Sólo la rama RA se publica. El merge
 de main hacia RA no significa que RA haya llegado a main. La PR se mantiene
 en borrador hasta recibir CI, T-1 y revisión del candidato correspondiente.
+
+## 16. Adenda de sincronización y CI efectivamente ejecutada
+
+Nuevo corte remoto observado: main `856e59ba`, sólo plan/coordinación frente a
+7c4cea; GLM publicó localmente su plan `d777175f` sobre su rama de trabajo.
+Se integraron ambos en RA por `f10434d6` y `381e5f7d`, con unión de las entradas
+en conflicto. Contra el primer padre los merges sólo modifican documentos;
+contra el otro se conservan los cambios Rust RA y Qoder. All-targets antes de
+cada commit: exit0/1m30s y exit0/15,14s. No se movió el checkout compartido.
+GLM sigue activo: su rama no se borra aunque estos dos commits ya estén en RA.
+
+[CI37211025915](https://github.com/Jhona-la/Trader-Gemini/actions/runs/37211025915)
+terminó SUCCESS, job111462096917: all-targets y todas sus suites enumeradas
+pasaron. El log de los targets nuevos confirma parser19/0, riesgo7/0 y OOS6/0,
+ninguna ignorada en esos32 contratos. Este recibo con crates reales supera la
+limitación de los runners aislados; **no borra** el historial del Cargo local
+interrumpido. La suite rápida T1_measurement9/0 no es T-1 completo.
+
+Revisión automatizada independiente de496f902d contra7c4cea: sin bloqueadores
+nuevos en parser0d3d, riesgo44e1, OOSf7b3 y CI741d. Revisó consumidores, fallback
+E→T, política finita y frontera warmup. No es aprobación humana; el CLI completo
+de evolución, snapshots concurrentes, latencia y operación real no quedaron
+certificados. El residual Depth sigue abierto, no se oculta como corrección total.
+
+El T-1 completo local fue iniciado sobre496f902d, con release/locked/offline,
+dos jobs, test-threads1 y log en target/ra-t1-2026-10-04.log. En este corte
+continúa **compilando dependencias**, sin tests ejecutados ni resultado.
+Los merges documentales no cambian su fuente Rust; no se atribuye el T-1 de
+Qoder sobre7c4 ni la paridad GLM de PR27 al candidato RA.
+
+Se amplió el [plan compartido](PLAN_MAESTRO_SINCRONIZACION.md) con contratos
+G0–G8 y se actualizó la sección Codex del [plan operativo GLM](PLAN_MAESTRO_2026-10-04.md).
+Las propuestas de reparto son propuestas, no compromisos aceptados. El buzón
+local registra el aviso y la solicitud de revisión; no presupone acuse externo.
+No hay merge RA→main todavía, ni eliminación de ramas con commits exclusivos.
+
+## 17. Revisión matemática multiactivo MG: defectos y validaciones separados
+
+Fuente: código496f902d, idéntico en los bloques citados tras los merges
+documentales. Revisor delegado sólo lectura, seguido de lectura del publicador,
+estimador, consumidor y antecedentes por Codex y recálculo independiente de
+los contraejemplos. Evidencia **estática y aritmética**, no prueba de frecuencia
+operacional, simulación de pérdidas ni tests Cargo nuevos. Los16 expedientes RA
+conservan sus IDs y conteos: los cinco expedientes MG no son cinco bugs nuevos.
+
+### MG-01 — Validación del significado y capacidad de vinculación de Lundberg
+
+**Tipo:** contrato matemático/política heredada; pendiente, no nuevo bug del solver.
+`cramer_lundberg.rs:149` define `m=ln(1/ε)/R`, reserva mínima que permite
+`exp(−Rm)≤ε` para el proceso lineal y condiciones declaradas. En
+`correlation_guard.rs:552` se usa `min(tope_streak,m)` como techo del riesgo
+de un evento. Por tanto cambiar una tolerancia de ruina a otra menor puede
+relajar el veto: R40, riesgo0,08, ε0,05 produce m0,0748933 y veta; ε0,01
+produce m0,1151293 y permite. El cálculo cumple el código pero no demuestra
+por sí mismo una cota de exposición de cartera ni ruina compuesta.
+
+El consumidor `risk-engine/src/lib.rs:609` convierte R por leverage máximo
+del spec. Con R≤100, ε0,05 y Lmax≥9, m_capital≥0,2696159046; un techo
+streak≤0,25 siempre domina. Es un resultado condicionado a esos parámetros:
+**tener R medido no significa que Lundberg esté causando rechazos**.
+Además, la conversión real de nocional a capital requiere `f=N/C`; leverage
+máximo permitido no es automáticamente la exposición realmente reservada.
+
+Antecedente #604 ya reconoce la interpretación heurística del min y mezcla
+de horizontes; no se contabiliza de nuevo como descubrimiento. Cierre:
+especificar reserva/proceso/exposición y condiciones; demostrar la garantía
+anunciada o mantener explícitamente una heurística. Telemetría debe separar
+R disponible, techo activo y rechazo atribuible. No se propone eliminar el veto.
+
+### MG-02 — Coeficiente publicado obsoleto tras perder su raíz válida
+
+**Tipo/severidad:** estado y vigencia de evidencia, P2; defecto verificado abierto.
+El estimador devuelve None cuando la media deja de ser positiva, faltan
+muestras o no hay cruce válido (`cramer_lundberg.rs:93`). El publicador
+`god-engine-core/src/lib.rs:3495` escribe R y margen **sólo con Some** y no
+invalida las claves con None. El lector `risk-engine/src/lib.rs:617` interpreta
+cualquier R positivo retenido como utilizable en la admisión posterior.
+
+Reproducción aritmética de su anillo/bisección:256 cierres alternos
++0,015/−0,01, después256 pérdidas−0,01, recalculando tras cada cierre. La última
+raíz publicable es0,78074798165 tras reemplazar50 elementos; al terminar el
+estimador devuelve None, pero la escritura condicional conserva esa raíz.
+No es un fallo de convergencia ni la deuda de cobertura estadística de R̂:
+es una transición de estado `Some→None` mal propagada al consumidor.
+
+Impacto probado: evidencia vigente y evidencia servida divergen. El efecto
+monetario no se acredita por este ejemplo; MG01 puede hacer no vinculante
+ese término en algunos specs. Cierre: invalidación explícita de R y sus métricas
+derivadas, prueba de transición a None y consumo exacto del respaldo vigente;
+registrar ventana/versión/tiempo. La estimación de incertidumbre de R es otra deuda.
+
+### MG-03 — La proyección equicorrelacionada no es la matriz del grupo
+
+**Tipo:** validación de aproximación declarada, pendiente; no duplicar ADR-0002.
+`dependency_exposure` mide aristas contra la candidata y `rho_efectivo_grupo`
+las promedia (`correlation_guard.rs:571`); `calcular_riesgo_grupo:508` aplica
+esa únicaρ a todos los términos cruzados. Así, las aristas internas y su
+relación con pesos desiguales no se preservan en general.
+
+Contraejemplo PSD:ρCA=ρCB=0,9, ρAB=1, pesos/riesgos[0,122;0,122;0,01],
+umbral de grupo0,85, sin inflación de cópula ni R. La equicorrelaciónρ0,9
+da0,2470854103; la forma cuadrática con todas las aristas da0,2530375466.
+Quedan a lados distintos de0,25. La matriz es PSD (determinante0 y menores
+principales no negativos); no se fabricó una correlación imposible.
+
+El ADR-0002 acepta esa proyección. El ejemplo refuta equivalencia general o
+conservadurismo universal, **no** la existencia del diseño aceptado. Los riesgos
+al stop tampoco son automáticamente desviaciones típicas calibradas. Cierre:
+definir estimando/garantía, contrastar matrices completas y pesos desiguales,
+documentar error y fallback. Cambiar el modelo necesita experimento propio.
+
+### MG-04 — Coseno sin centrar e interpretación como correlación de riesgo
+
+**Tipo:** contrato entre estimando y consumidor, pendiente; no error de implementación
+del IC de #607. `espectral_multiactivo.rs:71` acumula E[a²], E[b²], E[ab]
+con olvido1/64, no medias centradas; el cociente es un coseno de retornos.
+El lector `risk-engine/src/lib.rs:630` lo usa para apretarρ del riesgo de grupo.
+
+Con256 bloques contemporáneos, a=0,01+0,001·[+,+,−,−] y
+b=0,01+0,001·[+,−,+,−] periódicos, el acumulador da IC0,9900773327,
+mientras la correlación centrada de ese conjunto es0. La deriva común explica
+la discrepancia; una señal de dirección/co-movimiento no es necesariamente
+covarianza de fluctuaciones. No se declara que centrar sea siempre la política
+correcta ni que la ecuación documentada sea defectuosa.
+
+Cierre: definir qué dependencia necesita el veto, unidades y tratamiento de
+deriva/volatilidad; comparar ambos estimandos con esos bloques y retornos
+constantes, sin confundir incertidumbre de selección con riesgo de capital.
+
+### MG-05 — Cambio de escala hereda evidencia delτ anterior
+
+**Tipo/severidad:** semántica temporal y falsa atribución de evidencia, P2;
+defecto verificado abierto. El publicador `god-engine-core/src/lib.rs:1874`
+elige la escala más cercana alτ dominante y escribe `qo_613_rho_tau` sólo
+si hay IC finito. Un cambio a escala sin pares maduros no borra ni identifica
+el IC publicado antes. El consumidor `risk-engine/src/lib.rs:631` no verifica
+escala/edad: ausencia inicial da respaldo, pero ausencia posterior puede dar
+el dato de otra escala. Eso contradice el fallback descrito en #651.
+
+Trigger:τA publica0,9 y luego dominaτB sin evidencia. Con grupo ya identificado,
+ρ escalar0,2, riesgos[0,14;0,14], R ausente y techo0,25, el respaldo produce
+0,2168870674 y permite; el IC retenido produce0,2729102417 y veta. Se demuestra
+un rechazo distinto **por el dato de otra escala**, no rentabilidad perdida
+ni frecuencia real. El arranque frío anterior a la primera publicación sí funciona.
+
+Cierre: pruebaτA→τB no madura debe recuperar el respaldo; publicar identidad
+de escala y vigencia junto con el valor, o invalidarlo explícitamente de manera
+compatible con los lectores. Probar tambiénτ inválido, pares que caducan y
+retorno aτA. No cambiar deliberadamente la política finita durante esta reparación.
+
+MG02/MG05 se añaden como dependencias de G4/G2 en el plan. Las tres validaciones
+matemáticas no se convierten en cambios de riesgo sin especificación y contraste.
+No se modificó Rust mientras T-1 certifica el candidato acotado RA.

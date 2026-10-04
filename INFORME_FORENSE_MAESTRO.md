@@ -8832,3 +8832,13 @@ Once expedientes y el residual estructural L2 siguen abiertos. Los conteos de
 tests no son conteos de bugs ni acreditan los 1427 archivos del inventario.
 PR24/25 ya están integradas; MW permanece separada. Los recibos anteriores
 no se borran: la adenda RA distingue versiones, runners y snapshots.
+
+### Adenda RA/MG — sincronización y contratos matemáticos
+
+El informe raíz§§16–17 y JSON.latest_status añaden CI real32/0, integración
+documental de planes Qoder/GLM y revisión automatizada acotada. T-1 local sigue
+en compilación; RA no está integrado en main. Dos defectos de vigencia (R e IC
+retenidos) y tres validaciones de modelos/políticas quedan separados de los16 RA.
+El plan compartido§§6–12 explica cálculos de compuesto, supuestos, grafo G0–G8,
+criterios de cierre y cobertura pendiente. No se borra evidencia previa ni se
+declara una certificación económica o auditoría semántica de todos los archivos.
