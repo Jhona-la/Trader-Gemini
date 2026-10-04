@@ -1,5 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Qoder: Ola 54 / #654 — DISTRIBUCIÓN DE D₀ MEDIDA (observacional)
+
+- Rama qoder/ola54-d0-distribucion (worktree .ola54, base 949d29c1).
+  EWMA de d0/d0² por moneda (multifractal_d0_media/_sd, olvido 1/64)
+  publicada junto a #597: prerrequisito servido para la decisión del
+  consumidor del multifractal. T-1 cero (sin consumidor). Core 163/163.
+- Detalle: FORENSIC #654. Buzón: entrada Ola 54.
+
 ## 2026-10-04 — Claude (cloud): ciclo 8, cimientos (identidad, IOC, genoma, apalancamiento)
 
 Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` sobre main
