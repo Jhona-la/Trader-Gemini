@@ -1,0 +1,503 @@
+# RA — Revisión desde la base: contratos, causalidad y composición
+
+## 1. Dictamen y alcance verificable
+
+Fecha: 2026-10-04. Base de investigación: `949d29c1b823b14839be9e17a230a5aa3cd212b6`
+(main tras PR27, CL-36…42). Rama propia: `codex/root-audit-2026-10-04`.
+Se reutiliza un worktree aislado; no se modifica el checkout operativo compartido.
+La serie MW anterior sigue separada en `codex/model-reload-contract`.
+
+La revisión produce **16 expedientes**, no 16 cierres ni 16 descubrimientos
+independientes de todo el historial. Cinco familias tienen reparaciones locales
+en curso de verificación: I-01/02/03, R-02 y E-05. Los demás conservan estado
+abierto. Los antecedentes se enlazan; una reparación vieja correcta no acredita
+que todos los contratos vecinos también lo sean.
+
+Participaron tres subagentes con alcances disjuntos: riesgo/admisión,
+estimación espectral y genoma/evolución. El agente principal revisa sus evidencias,
+trabaja en ingesta, integra y valida. Son revisiones automatizadas, no una
+certificación externa. Los contraejemplos aritméticos y las lecturas estáticas
+no se presentan como ejecuciones del sistema completo.
+
+El inventario de la base contiene **1427 archivos versionados**. No se afirma
+haber auditado semánticamente cada archivo. Tampoco se ejecutaron órdenes,
+training, promociones, pruebas contra un exchange ni experimentos de rentabilidad.
+Los resultados históricos de otros agentes se identifican como tales.
+
+## 2. Grafo de contratos desde la raíz
+
+```mermaid
+flowchart LR
+  A[Bytes y reloj de mercado] --> B[Parser: valor y ausencia distintos]
+  B --> C[Estado por activo y escala]
+  C --> D[Señal fijada antes del resultado]
+  D --> E[Decisión y admisión de riesgo]
+  E --> F[Envío y reserva efectiva]
+  F --> G[Fill, costes y trayectoria de capital]
+  G --> H[Evaluación causal del candidato]
+  H --> I[Publicación de identidad evaluada]
+  I --> C
+```
+
+El fallo de una arista puede invalidar un cálculo local correcto: un booleano
+inventado contamina flujo; un voto fijado tarde contamina habilidad; una reducción
+de leverage aumenta margen; un drawdown actual no representa máximo histórico.
+Continuidad temporal y multiactivo exigen contratos entre estas etapas, no sólo
+más dimensiones o más ecuaciones.
+
+## 3. Matriz de la ola
+
+| ID | Nivel | Estado del primer corte | Contrato |
+|---|---|---|---|
+| RA-I-01 | P2 | reparación local, RED/GREEN | entero completo, rango y ausencia de reloj |
+| RA-I-02 | P2 | reparación local, RED/GREEN | booleano completo del agresor |
+| RA-I-03 | P2 | reparación local, RED/GREEN | profundidad íntegra bajo espaciado y suma finita |
+| RA-I-04 | P2 | abierto, latente | capacidad del token bucket frente a crédito temporal |
+| RA-R-01 | P1 | abierto, estático/aritmético | techo de cartera después de adaptar leverage |
+| RA-R-02 | P2 | reparación local en validación | estado de riesgo desconocido no equivale a calma |
+| RA-E-01 | P1 | abierto, estático | identidad del símbolo examinado |
+| RA-E-02 | P1 | abierto, estático/aritmético | reconstrucción intrabar condicionada al cierre |
+| RA-E-03 | P2 | abierto, estático | latencia evaluada frente a latencia publicada |
+| RA-E-04 | P1 | abierto, estático/aritmético | máximo drawdown frente a drawdown actual |
+| RA-E-05 | P2 | reparación local en validación | frontera IS/OOS y warmup efectivo |
+| RA-S-01 | P1 | abierto, estático/aritmético | voto tardío puntuado contra retorno ya observado |
+| RA-S-02 | P1 | abierto conocido, revalidado | predicción emitida frente a predicción recalculada |
+| RA-S-03 | P2 | abierto, estático/aritmético | soporte histórico de escalas largas |
+| RA-S-04 | P2 | abierto, estático/aritmético | tamaño efectivo de muestra bajo olvido |
+| RA-S-05 | P3 | abierto, matemático | salto de TrendRunner frente a afirmación C∞ |
+
+La clasificación P1 indica riesgo para integridad de decisión/evaluación; no
+prueba una pérdida monetaria observada. Ningún total de tests equivale al número
+de bugs corregidos.
+
+## 4. Ingestión y normalización
+
+### RA-I-01 — Un prefijo numérico no es un timestamp válido
+
+**Fuente:** `crates/data-pipeline/src/parser.rs`, extractores públicos y
+`BookTickerEvent::parse_from_json`; consumidor `ws_client.rs:285–439` en la base.
+
+El extractor devolvía cero si no había dígitos y aceptaba prefijos como 12 en
+`12x`, `12.5` o `12e3`. La multiplicación decimal no comprobaba overflow.
+En el runner RED, 2^64 no se rechazó (no fue un panic aritmético observado);
+un offset `usize::MAX` sí provocó panic al cortar el slice. Un espacio válido
+tras el separador podía convertirse en timestamp cero. La finitud de los
+precios no valida el reloj que acompaña a esos precios.
+
+La reparación comprueba límites del slice, presencia de dígitos, overflow,
+ceros iniciales y frontera del token. Acepta los cuatro espacios JSON dentro
+del alcance del scanner. Si la clave compacta E está presente pero es inválida,
+rechaza el evento: no la trata como ausencia ni recurre a T. El fallback a T
+cuando E falta, y el cero legacy cuando ambos faltan, se conservan; la validación
+posterior sigue siendo responsable de ese cero.
+
+**Alcance:** se exige un entero sin signo para este campo; no se sostiene que
+los exponentes sean inválidos en JSON general. La gramática JSON también admite
+fracciones y exponentes, y define los cuatro caracteres de whitespace y los
+literales completos ([RFC8259, §§2,3,6](https://www.rfc-editor.org/rfc/rfc8259)).
+No se convirtió el scanner en un validador estructural completo: claves
+duplicadas, rutas anidadas y formatos no compactos requieren trabajo adicional.
+
+### RA-I-02 — Un agresor no se clasifica mirando una sola letra
+
+**Fuente:** `parser.rs`, AggTradeEvent; `ws_client.rs:443–453` consume el
+booleano para actualizar el flujo. Antes, cualquier cosa no iniciada en t era
+false; `null`, 0 o un string se aceptaban como un lado válido. Un salto de línea
+antes de true se interpretaba como false. Esto es distinto de rechazar ruido:
+se fabrica una observación direccional.
+
+El arreglo exige true/false completos y una frontera de token, y reconoce
+whitespace JSON. Se conserva la validación previa de precio/cantidad. Relación
+con el histórico D-117: la corrección de espacios/tabuladores no cerraba la
+validación léxica completa ni CR/LF. No se atribuye al arreglo una tasa de
+corrección de trades en producción; no se midió su frecuencia real.
+
+### RA-I-03 — El fast path puede borrar un lado válido del libro
+
+**Fuente:** `DepthEvent::parse_from_json` y `extract_wall_sum`.
+Con bids compactos y asks espaciados, el lado compacto daba una suma positiva
+y se evitaba el fallback; asks quedaba artificialmente en cero. El caso simétrico
+también falla. Además, sumar dos cantidades finitas de 1e308 producía infinito,
+aceptado tanto en el fast path como en el fallback.
+
+Ahora se exige reconocer las dos claves compactas para tomar el fast path;
+con espaciado mixto se usa el fallback ya existente. Se rechazan agregados no
+finitos en ambos caminos. El testigo pasa de (2,0) a (2,3).
+**No cierre global de L2:** sigue siendo un agregado de cantidades, no un libro
+con secuencia, precios por nivel y reconstrucción snapshot/delta. D-118 y el
+contrato completo de L2 no quedan resueltos por este parche.
+
+### RA-I-04 — El crédito temporal puede reutilizarse sin respetar la capacidad
+
+**Fuente:** `crates/data-ingest/src/lib.rs:65–78`. Antecedentes: #47, #186,
+#524 y #1490 del informe histórico; el CAS único sí resuelve la carrera antigua,
+pero no demuestra la corrección de la ecuación de reposición.
+
+Con capacidad 5, tasa 100 tokens/ms y un milisegundo transcurrido, se añaden 5
+tokens; el tiempo consumido se trunca a `floor(5/100)=0`. La siguiente llamada
+observa el mismo crédito y repone otra vez. Incluso con tasas bajas, la historia
+acumulada mientras estaba lleno no se descarta necesariamente al saturar.
+Es un contraejemplo de la fórmula, no una prueba de carga concurrente.
+
+La búsqueda de consumidores sólo encontró definición/tests dentro del proyecto;
+no se presenta como el rate limiter operativo del exchange. Sigue abierto:
+hay que especificar fracciones, saturación, wrap temporal y concurrencia antes
+de elegir otra representación. No se introduce un mutex o un límite arbitrario
+sin medir ni se altera el control de red real.
+
+## 5. Riesgo: validez local frente a validez de la composición
+
+### RA-R-01 — Menos leverage puede consumir más margen que el admitido
+
+**Fuentes:** `risk-engine/src/orchestrator.rs:243`, `envio.rs:96`,
+`src/bin/god_engine.rs:4203`, `booktick_replay.rs:772` (base investigada).
+CL-41 subordina el apalancamiento al validado; CL-41b/c mantienen la reserva
+real sin margen fantasma. Esos arreglos no revalidan el techo de cartera para
+la misma entrada una vez que cambia su margen.
+
+Contraejemplo aritmético: capital 100, techo de margen 50, reserva 14, leverage
+validado 5, nocional 70. El envío exploratorio a 1 necesita 70. Cabe bajo el
+disparador 85 y la guarda 95 del margen libre 100, pero excede el techo 50.
+El margen efectivo es `M=N/L`: disminuir L reduce proximidad a liquidación,
+pero aumenta M. No son el mismo invariante.
+
+Se necesita una admisión de sustitución de reserva —sin contar dos veces la
+propia— contra el mismo techo, coherente con la cartera, antes de confirmar el
+envío. Permanece abierto; no se cambia el umbral 0,95 para ocultarlo ni se
+presenta una comprobación textual del helper como test de composición.
+
+### RA-R-02 — NaN/Inf borran la presión de riesgo
+
+**Fuente:** `risk-engine/src/orchestrator.rs:154–186` en la base.
+Los componentes sistémicos no finitos se convertían en cero; el veto exigía
+finitud para activarse. También se descartaban flujos espectrales no finitos.
+Por tanto, cambiar únicamente p_crash=0,92 por NaN podía pasar de rechazo a
+admisión en régimen Range con capital/margen válidos.
+
+La reparación local aplica rechazo conservador ante estado no finito y conserva
+la política de datos finitos y el arranque frío válido. Su evidencia ejecutada
+se registra en la adenda de validación, no se presume aquí. No se demuestra que
+el productor operativo publique actualmente NaN/Inf. Las lecturas atómicas
+individuales tampoco constituyen un snapshot coherente de toda la cartera.
+
+## 6. Genoma, examen y atribución del rendimiento
+
+### RA-E-01 — Elegir una cinta no cambia automáticamente la identidad del slot
+
+**Fuentes:** `src/bin/evolution.rs:44,209`, `quantum-arena/src/symbol_registry.rs:84`,
+`backtest-engine/src/booktick_replay.rs:418`, `god-engine-core/src/lib.rs:4126`.
+El CLI registra BTC antes de procesar --symbol. Registrar después ETH es aditivo;
+el replay sigue enviando coin_id=0. En un registro recién iniciado, ETH puede
+estar en otro índice mientras la cinta elegida contiene ETH y el núcleo consulta
+el modelo/especificaciones del índice BTC. Las mayúsculas de CL-37 no reparan
+este desacuerdo de identidad.
+
+**Cierre requerido:** un binding explícito cinta→símbolo→índice→spec→modelo que
+recorra el examen; probar al menos dos símbolos sin depender de un registro
+global previo. Es estático; no se ejecutó el CLI ni se cargó modelo real.
+
+### RA-E-02 — El examen intrabar inventa un prefijo usando el cierre futuro
+
+**Fuente:** `evolution-engine/src/online_daemon.rs:481–500`, consumidor de examen
+alrededor de 1733. Se calcula el precio de cierre con el retorno de la barra y
+se generan ocho precios lineales, separados por 2000 ms, que recibe el núcleo.
+
+Con apertura 100 y cierre 108, el primer evento vale 101. Cambiar sólo el cierre
+cambia ese evento anterior al cierre, las features y el lado del agresor derivado
+de la pendiente. Que omni use prev_ret no hace causal esa reconstrucción.
+
+**Alcance del dictamen:** un puente sintético condicionado a los dos extremos
+puede servir como escenario declarado; no acredita el camino intrabar histórico
+ni aptitud OOS sobre microestructura observada. Seleccionar candidatos con ese
+camino puede premiar regularidad inventada. Se requiere separar escenarios
+sintéticos de evidencia de promoción y ejecutar un test de independencia de
+prefijos. No se afirma haber medido cuánto PnL espurio produce.
+
+### RA-E-03 — Latencia del genoma examinado no coincide con la publicada
+
+**Fuente:** `evolution-engine/src/random_forest.rs:75` y replant alrededor de 278.
+El constructor aplica la mutación, fuerza latency_penalty_ms=25 y conserva el
+genoma original para cosecharlo. Replant no reproduce esa sobrescritura.
+
+Un candidato con 50 ms puede examinarse primero a 25, publicarse con 50 y después
+examinarse con 50 al replantar. Llamar 25 «peor caso» no lo convierte en una cota.
+**Cierre:** hacer explícito si la latencia es gen, perfil de estrés o dato exógeno;
+guardar la identidad efectiva del examen y probar constructor/replant/publicación.
+No se cambia una cifra por otra ni se acredita una latencia del proveedor.
+
+### RA-E-04 — Recuperar capital borra la penalización del drawdown histórico
+
+**Fuente:** `random_forest.rs:165–187`. La cosecha mantiene peak_capital pero
+envía `(peak-capital_actual)/peak` al campo max_drawdown_pct. Falta conservar
+el máximo de esa magnitud durante la trayectoria.
+
+Con suficientes cierres para pasar el mínimo, control 13→14 y mutante
+13→6,5→15 producen drawdown actual cero para el mutante recuperado, aunque su
+máximo observado fue 50 %. Con la utilidad vigente
+`ln(Cf/C0) − 4 ln(2)·DD²`, el mutante obtiene aproximadamente 0,1431 si DD=0
+y −0,5500 si DD=0,5; el control obtiene 0,0741. Cambia la elección del ganador.
+Es aritmética sobre la función declarada, no una simulación de trading.
+
+**Cierre:** acumular máximo drawdown en cada evento de valoración relevante,
+definir su reinicio por cohorte y transferir ese mismo observable a la cosecha.
+Observar sólo en harvest además puede perder caídas intermedias. Permanece
+abierto: añadir un campo sin conectarlo a la valoración no bastaría.
+
+### RA-E-05 — Warmup fijo puede consumir o anular la validación OOS
+
+**Fuente:** `src/bin/evolution.rs:529–548` y guardia del replay alrededor de 278.
+El contexto es la cola IS de longitud min(train_len,50000), pero warmup_ticks
+se fijaba en 50000 incluso cuando ese prefijo era menor.
+
+Con 10000 ticks y split 70/30, sólo existen 7000 de contexto y 3000 OOS; la
+guardia devuelve estadísticas por defecto. Con 60000 hay 42000 de contexto
+y se saltan 8000 filas OOS adicionales. Es una frontera incorrecta, no una
+demostración de que la estrategia no opera ni de que el OOS sea bueno.
+
+**Corrección local:** derivar rango IS y warmup de la misma longitud efectiva,
+sin leer el futuro y sin cambiar el máximo histórico 50000 ni el split.
+La adenda registra pruebas del helper productivo y cableado. Esto no certifica
+que 50000 observaciones sean suficientes estadísticamente ni cierra RA-E-01.
+
+## 7. Estimación espectral: tiempo, soporte y significado estadístico
+
+### RA-S-01 — Voto fijado tarde, retorno puntuado desde antes del voto
+
+**Fuentes:** `signal-engine/src/skill_motores.rs:156–190` y
+`god-engine-core/src/lib.rs:2177`. La maduración en un trade cierra un bloque,
+pero el snapshot de votos se rearma en el siguiente depth. Si ese depth llega
+dentro del siguiente bloque, su voto se puntúa después contra todo el retorno
+desde el cierre anterior, no sólo contra el retorno posterior a su emisión.
+
+Ejemplo: bloque de 68720 ms, apertura 100; depth a 60000 ms, precio 101 y voto
+positivo; cierre 101. Se acredita ln(101/100) aunque después de emitir no hubo
+retorno. La repetición con movimientos alternantes puede producir habilidad
+aparente perfecta. El deduplicado de qo-648 resuelve doble conteo, no el desfase.
+
+**Cierre:** ligar voto, precio de referencia, instante y horizonte de su emisión.
+O conservar el voto disponible en el inicio real del bloque, o medir sólo el
+intervalo posterior al nuevo voto; son contratos distintos que necesitan pruebas
+de retraso de depth. No se arregla cambiando el umbral de significancia.
+
+### RA-S-02 — El score usa una predicción recalculada al vencimiento
+
+**Fuente:** `quantum-arena/src/spectral_tape.rs:551–584`.
+**Antecedente:** el informe forense ya pedía congelar predicción y climatología
+al emitir (alrededor de línea 13383 en la base). Se revalida; no es hallazgo nuevo.
+
+Pending conserva features/persistencia, pero al vencer se calcula de nuevo la
+predicción con coeficientes actuales. Con ventanas desplazadas h/4, actualizaciones
+intermedias pueden contener parte del mismo intervalo. Un ejemplo RLS con x=1,
+coeficiente emitido 0, P=1, lambda=0,75 y una actualización con residual 1 lleva
+el coeficiente a 4/7. Para objetivo 1 se puntúa error 9/49 en lugar del error
+1 de la predicción realmente emitida.
+
+**Cierre:** guardar y puntuar ambos pronósticos emitidos, con identidad de
+modelo, antes de actualizar; probar que una actualización intermedia no cambia
+el error atribuido a una predicción pendiente. No basta con puntuar antes de la
+actualización de ESA muestra si otras ya cambiaron el modelo.
+
+### RA-S-03 — Tener coordenada temporal no equivale a tener historia en ella
+
+**Fuentes:** gate de observabilidad en `skill_motores.rs:247`, composición en
+`voto_espectral.rs:132` y su consumo en el núcleo. El gate excluye escalas por
+debajo de resolución, pero no mide historia disponible para escalas muy largas.
+La composición normaliza cada columna de escala independientemente.
+
+El contraejemplo 100@0→101@1000 ms da masa diminuta en la escala 31 (≈146 años),
+pero puede dar momentum_z≈1 y voto solitón≈0,7616. Trece votos de 0,8 en otras
+escalas y 0,9 allí hacen dominante a esa escala aunque sólo haya un segundo
+de historia. No se demuestra una decisión ejecutada: qo-652 y otras compuertas
+pueden impedir ese horizonte. El defecto está en la evidencia que declara la
+composición antes de esos consumidores.
+
+CL-35 sí corrigió masa en otra ruta. Multiplicar TODOS los pesos de una columna
+por el mismo soporte no corrige ésta: el factor se cancela al dividir por su suma.
+**Cierre:** propagar soporte/incertidumbre como magnitud no cancelable y probar
+maduración entre escalas sin convertirlas en etiquetas scalping/swing.
+
+### RA-S-04 — Muestra acumulada no es muestra efectiva de momentos con olvido
+
+**Fuente:** `temporal_spectrum.rs:449–456,604`. Los momentos usan alpha=1/64;
+la significancia sigue leyendo skill_n acumulado. Qo-648 corrigió esta clase
+de error en SkillMotores, no en este selector.
+
+Para pesos geométricos q=63/64 e independencia,
+`Neff=(sum w)^2/sum(w^2) → (1+q)/(1−q)=127`.
+El contador puede llegar a 5000 mientras la memoria informativa no crece así.
+En el contraejemplo del acumulador, la magnitud llamada IC es ≈0,0604: supera
+un umbral ≈0,0283 con n=5000, pero no ≈0,1796 con 127.
+
+La independencia es un supuesto favorable, no acreditado; autocorrelación,
+selección entre escalas y normalización no centrada exigen análisis adicional.
+El nombre IC y un corte t≥2 no constituyen por sí solos un test estadístico
+calibrado. **Cierre:** pesos/Neff verificables y validación bajo dependencia;
+no reemplazar el contador por otro número sin explicar la derivación.
+
+### RA-S-05 — TrendRunner no es C∞ en la frontera implementada
+
+**Fuente:** `signal-engine/src/trend_runner.rs:102`, afirmación alrededor de 215.
+Se define h=tanh(max(H−0,5,0)/0,04), pero se retorna cero mientras h≤10^-4.
+La frontera H*=0,5+0,04·atanh(10^-4)≈0,5000040000000133 tiene límite derecho
+positivo para desplazamiento/TP no nulos y valor izquierdo cero. No es C0 allí,
+luego tampoco C∞. Hay además un corte explícito de desplazamiento cerca de cero.
+
+El salto es pequeño y su impacto económico no está medido. La prioridad P3
+refleja sobreafirmación matemática y discontinuidad, no una catástrofe demostrada.
+**Cierre:** describir la función real o justificar y validar otra familia;
+no sustituir automáticamente cada condicional por tanh.
+
+## 8. Revisión adversarial, antecedentes y límites de cierre
+
+La revisión independiente del primer parche I-03 encontró una regresión:
+`{"bids":[["10","1e308"] ],"asks" : [["11","1e308"]]}` era rechazado.
+El scanner rápido atravesaba el cierre espaciado, sumaba ambos lados y la
+guardia nueva validaba ese agregado provisional antes de elegir el fallback.
+El refinamiento elige primero la ruta y sólo valida las sumas de la ruta usada.
+Se añadió el contraejemplo y su espejo como contrato versionado. Resultado
+posterior: 19/19 contratos y 5/5 sondas adicionales, con serde_json 1.0.150.
+Las siete pruebas de módulo repetidas dentro de las sondas no se suman como
+evidencia independiente.
+
+**Residual I-03 explícito:** ambos encabezados compactos con cierres `] ]`
+siguen pudiendo confundir el scanner por su búsqueda de `]]`. Este defecto
+estructural previo queda abierto; se cerraron el lado perdido por encabezados
+mixtos y el agregado infinito, no todos los formatos posibles de profundidad.
+No se atribuye latencia nanosegundo a este parche: no se hizo benchmark.
+
+Antecedentes de los expedientes espectrales, para evitar contar reaperturas como
+hallazgos inéditos:
+
+| Expediente | Antecedente y diferencia comprobada |
+|---|---|
+| S-01 | qo-648/H6 describe cierre y rearme siguiente; RA añade el contraejemplo del movimiento ya observado antes del snapshot. |
+| S-02 | Codex Ola 10, FORENSIC alrededor de 13383, ya exige congelar predicción y climatología al emitir. Mismo defecto abierto. |
+| S-03 | CL-35 protege la masa espectral; RA identifica otra ruta en la composición de votos donde no se propaga esa protección. |
+| S-04 | qo-648/H5 ya corrige muestra efectiva en SkillMotores; falta propagación a TemporalSpectrum. |
+| S-05 | AGY-AUD-P22 trató la frontera anterior H≈0,52; RA identifica el salto residual cerca de 0,500004. |
+
+R-02 rechaza estados no finitos de todos los slots, incluso sin posición y en
+la dirección aparentemente favorable. Es una política conservadora de nueva
+admisión ante corrupción/desconocimiento, no la estimación de presión=100 %.
+Los ceros de arranque válidos siguen admitidos. No convierte lecturas atómicas
+separadas en una transacción coherente; tampoco añade diagnóstico tipado del
+motivo de rechazo. Ambos son límites pendientes. Los clamps finitos y los
+umbrales legacy se conservan: mantener compatibilidad no certifica su teoría.
+
+## 9. Criterio matemático para una evolución útil
+
+Un dominio temporal continuo puede aproximarse con una malla finita y refinable.
+Eso no acredita información observada a 1 ns ni a 100 años. Cada activo/escala
+necesita unidades, soporte temporal, disponibilidad causal, incertidumbre,
+coste computacional y error de aproximación explícitos. Interpolar una función
+continua y disponer de evidencia a todas sus escalas son propiedades distintas.
+
+Los siguientes cálculos tienen funciones distintas y no deben confundirse:
+
+- **Neff:** estima cuánta información conservan unos pesos. La fórmula geométrica
+  127 presupone independencia; dependencia serial y selección requieren ajuste.
+- **R² prequential:** compara errores de predicciones fijadas antes de conocer
+  la etiqueta con un baseline igualmente causal. Recalcular la predicción a
+  posteriori cambia el objeto que se evalúa, aunque la ecuación SSE sea correcta.
+- **Máximo drawdown:** mide la peor caída desde un pico en la trayectoria, no
+  sólo el déficit actual. Recuperarse no borra el riesgo sufrido durante selección.
+- **Margen=N/L:** reducir leverage L reduce exposición financiada por unidad de
+  margen, pero aumenta el margen necesario para un nocional N fijo. Debe
+  readmitirse la reserva resultante contra el mismo techo de cartera.
+- **Warmup IS:** aporta estado pasado; su longitud exacta determina qué filas
+  quedan excluidas del score OOS. No puede incluir filas futuras por un literal.
+
+La agenda de investigación debe priorizar estimación multiescala causal,
+calibración bajo dependencia, incertidumbre y control de cartera compuesto.
+Una nueva teoría necesita un estimando definido, hipótesis comprobables,
+baseline, prueba de ablación y validación OOS neta de costes. El nombre de un
+problema del milenio, una analogía física o la etiqueta «cuántico» no sustituye
+esa correspondencia ni prueba superioridad. Esta ola no añade teoría ornamental.
+
+La meta de duplicar en 72 horas exige multiplicar por `2^(t/3)` tras t días.
+Es una especificación aspiracional del usuario, no un rendimiento demostrado,
+una garantía ni un criterio para relajar vetos de solvencia o integridad.
+Esta revisión no midió rentabilidad, capacidad, ruina ni costes de ejecución.
+
+## 10. Recibos de pruebas: no mezclar runners ni snapshots
+
+| Corte | Ejecución | Resultado | Qué acredita / qué no |
+|---|---|---|---|
+| Parser inicial RED | módulo real, harness aislado, serde_json 1.0.151 | 8 pasan / 10 fallan, 0,51 s | Reproduce contratos rotos; no runtime completo. |
+| Parser primer GREEN | mismo harness | 18/0, 0,82 s | No detectaba todavía el contraejemplo de la revisión cruzada. |
+| Parser revisión | serde_json 1.0.150, igual al lock raíz | 18/0 y sondas 4/1 | Detecta regresión en la validación de la ruta descartada. |
+| Parser refinado | serde_json 1.0.150, lock temporal | 19/0, 0,01 s; 5/0 sondas adicionales | Cierra contraejemplos versionados; no JSON completo ni benchmark. |
+| Riesgo RED/GREEN | rustc, código real de riesgo con arena sintético | 22/4 → 26/0 | Incluye 7 nuevos + 7 cartera + 12 régimen de capital. No sustituye arena real. |
+| OOS RED/GREEN | rustc, helper de producción std-only | 2/4 → 6/0, GREEN 0,90 s | Prefijo exacto y OOS íntegro; no acredita PnL ni todo evolution. |
+| Workspace intermedio | check --workspace --all-targets --locked --offline -j 2 | exit 0, 8m24s | Hubo ediciones durante la compilación: no es recibo final del candidato. |
+| MW anterior recuperado | sesión antigua, rama MW | exit 0, 41m04s | Sólo aquella serie; no se imputa como prueba de RA. |
+
+Tiempos de tests excluyen compilación salvo filas que dicen check. El lock raíz
+no se modificó. La primera resolución aislada de serde_json 1.0.151 se conserva
+en el historial de evidencia y se revalidó con 1.0.150, no se oculta.
+
+El workflow añade tres contratos seleccionados sin retirar los anteriores ni
+debilitar umbrales. Las ejecuciones Cargo con crates reales y el check final de
+integración se anotarán en una adenda con su resultado exacto. No se ejecutó
+el T-1 completo, paridad operacional ni una suite completa del workspace.
+
+## 11. Inventario Git y reconciliación, por objetos inmutables
+
+Una primera enumeración coincidió con la eliminación/integración de una rama
+GLM. Ese resultado se descartó y se repitió fijando OIDs y base. Las diferencias
+no se calculan contra nombres que pueden moverse durante la enumeración.
+Snapshot de inventario: main `89d0d3b63bda0f55cf3c29c1c572150e3c7d3e82`.
+
+| Referencia al corte | OID | Commits exclusivos frente al main del corte | Disposición |
+|---|---|---:|---|
+| backup-before-cleanup | 26afeb794811c456cfd12c4659218ccc2d5c972b | 3 | Preservar backup; no equivalencia demostrada. |
+| codex/model-reload-contract | 3139f444a2dcfd7b8ec1aca2aebb54c48ec46ff6 | 4 | MW separado, publicación no autorizada en este permiso RA. |
+| codex/root-audit-2026-10-04 | 949d29c1b823b14839be9e17a230a5aa3cd212b6 | 0 antes de estos commits | Rama activa de esta ola. |
+| feat/quant-sr-codex-horizonte | 6209704acc77bbc0c088cfd206fd82118aaed3d0 | 4 | Preservar correcciones TH y documentación. |
+| main | 89d0d3b63bda0f55cf3c29c1c572150e3c7d3e82 | 0 | Rama principal protegida del borrado. |
+| qoder/ola54-d0-distribucion | 949d29c1b823b14839be9e17a230a5aa3cd212b6 | 0 en aquel momento | Worktree activo; no borrar por mera ancestralidad. |
+| v7-unificacion-wip | 48421129a9f03a101b1ace0e1789e35aff402148 | 1 | Preservar WIP. |
+| origin/claude/auditoria-deslizamiento-apalancamiento-sqtc08 | 6f02388e822401884e15368b6348ee4e260e4019 | 1 | Commit documental posterior al head de PR27; no borrar. |
+| origin/main | mismo OID main del corte | 0 | Referencia principal. |
+
+`origin/HEAD` es simbólica y no se cuenta como rama de trabajo. El head integrado
+de PR27 fue `15fb393ab07908f12214d09995e2d2b582dae64c`; la rama Claude se reutilizó
+y avanzó a 6f02388e. Una PR merged no autoriza a eliminar commits añadidos después.
+En este corte no había otra rama inactiva y enteramente integrada elegible para
+borrado. No se borró ninguna rama en esta ronda.
+
+PR24 GO y PR25 MP ya están integradas; los recibos históricos se preservan en sus
+informes. CI del main inicial949: run37194885331 SUCCESS. Ese éxito no cubre RA.
+GLM dejó revisión favorable local de MW y pidió T-1/paridad al integrarlo; MW no
+se incorpora a esta ola para simular una certificación no ejecutada.
+
+Durante la revisión main avanzó a f9fbcbd5e y luego a 0580e267a. El segundo
+incluye qo-654 (momentos EWMA de D0 por moneda), además de votes_export tau-matched
+y documentación de GLM. El inventario anterior conserva su fecha lógica y no
+se presenta como estado final. La reconciliación exige comparar ambos padres
+y compilar todos los targets antes de cerrar el merge en nuestra rama.
+
+## 12. Cobertura y siguiente orden de trabajo
+
+Rutas examinadas semánticamente en esta ola (no certificación de todo su contenido):
+parser y validación/data-pipeline, ws_client/data-ingest, token bucket/data-ingest;
+orchestrator/envio/risk-engine; tramos de entrada/reserva/publicación en
+god-engine-core y booktick_replay; CLI evolution y registro de activos;
+evolution-engine/random_forest y online_daemon; skill_motores, temporal_spectrum,
+spectral_tape, voto_espectral y trend_runner; contratos nuevos, workflow y
+antecedentes documentales citados. El inventario de los demás archivos no es
+equivalente a lectura semántica. Las líneas citadas son de la base de investigación.
+
+Orden recomendado por dependencia:
+
+1. Integridad de admisión compuesta R-01 y explicación tipada del rechazo.
+2. Identidad E-01, fijación causal S-01/S-02 e interpretación E-02 antes de
+   optimizar resultados: sin estos contratos, una mejor fitness puede ser falsa.
+3. Trayectoria máxima E-04 y equivalencia de genoma evaluado/publicado E-03.
+4. Soporte temporal S-03 y estadística bajo olvido S-04, con pruebas de prefijo,
+   maduración y ruido nulo; después, evaluar teorías adicionales por ablación.
+5. Residuales de estructura del parser, crédito temporal y continuidad declarada.
+
+Los cinco parches locales no resuelven esos once expedientes abiertos ni el
+residual estructural de I-03. No se declara autonomía evolutiva certificada,
+ausencia total de bugs, auditoría completa de 1427 archivos ni rentabilidad.

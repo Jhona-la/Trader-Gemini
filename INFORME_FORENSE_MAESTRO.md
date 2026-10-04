@@ -8820,3 +8820,15 @@ Cierre MP-08: código6ec084e9 validado315/0/3, check25,41s; informe§18 y JSON
 qa_mp08_final conservan los resultados anteriores y añaden el nuevo corte.
 No corresponde a315 fallos reparados ni demuestra merge/CI remotos. Publicar
 y revisar este candidato mantiene separados prueba local y cierre integrado.
+
+## 2026-10-04 — RA: nueva revisión desde main949d, no certificación global
+
+Se añade el [informe RA](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md) y su
+[artefacto estructurado](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.json).
+Contienen 16 expedientes con causa, contraejemplo, efecto, antecedentes y criterio
+de cierre. Cinco familias reciben parches locales: enteros/reloj, booleanos,
+profundidad mixta/agregado finito, admisión no finita y frontera OOS real.
+Once expedientes y el residual estructural L2 siguen abiertos. Los conteos de
+tests no son conteos de bugs ni acreditan los 1427 archivos del inventario.
+PR24/25 ya están integradas; MW permanece separada. Los recibos anteriores
+no se borran: la adenda RA distingue versiones, runners y snapshots.

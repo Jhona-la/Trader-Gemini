@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "audit": "RA",
+  "date": "2026-10-04",
+  "language": "es",
+  "baseline": "949d29c1b823b14839be9e17a230a5aa3cd212b6",
+  "branch": "codex/root-audit-2026-10-04",
+  "report": "AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md",
+  "scope": {
+    "tracked_files_at_baseline": 1427,
+    "all_files_semantically_audited": false,
+    "live_orders": false,
+    "training": false,
+    "profitability_certified": false
+  },
+  "findings": [
+    {
+      "id": "RA-I-01",
+      "priority": "P2",
+      "status": "patched_local",
+      "summary": "Entero completo, offset, overflow y presencia de reloj",
+      "path": "crates/data-pipeline/src/parser.rs"
+    },
+    {
+      "id": "RA-I-02",
+      "priority": "P2",
+      "status": "patched_local",
+      "summary": "Booleano completo del agresor",
+      "path": "crates/data-pipeline/src/parser.rs"
+    },
+    {
+      "id": "RA-I-03",
+      "priority": "P2",
+      "status": "partial_patch_local",
+      "summary": "Espaciado mixto y suma finita; cierre estructural abierto",
+      "path": "crates/data-pipeline/src/parser.rs"
+    },
+    {
+      "id": "RA-I-04",
+      "priority": "P2",
+      "status": "open_latent",
+      "summary": "Token bucket reutiliza crédito temporal",
+      "path": "crates/data-ingest/src/lib.rs"
+    },
+    {
+      "id": "RA-R-01",
+      "priority": "P1",
+      "status": "open",
+      "summary": "Leverage adaptado invalida techo de margen previamente admitido",
+      "path": "crates/risk-engine/src/envio.rs"
+    },
+    {
+      "id": "RA-R-02",
+      "priority": "P2",
+      "status": "patched_local",
+      "summary": "No finito no es presión nula",
+      "path": "crates/risk-engine/src/orchestrator.rs"
+    },
+    {
+      "id": "RA-E-01",
+      "priority": "P1",
+      "status": "open",
+      "summary": "Identidad de activo en slot0 del replay",
+      "path": "src/bin/evolution.rs"
+    },
+    {
+      "id": "RA-E-02",
+      "priority": "P1",
+      "status": "open",
+      "summary": "Microtrayectoria sintética condicionada al cierre",
+      "path": "crates/evolution-engine/src/online_daemon.rs"
+    },
+    {
+      "id": "RA-E-03",
+      "priority": "P2",
+      "status": "open",
+      "summary": "Latencia evaluada difiere de genoma replantado",
+      "path": "crates/evolution-engine/src/random_forest.rs"
+    },
+    {
+      "id": "RA-E-04",
+      "priority": "P1",
+      "status": "open",
+      "summary": "Drawdown actual usado como máximo histórico",
+      "path": "crates/evolution-engine/src/random_forest.rs"
+    },
+    {
+      "id": "RA-E-05",
+      "priority": "P2",
+      "status": "patched_local",
+      "summary": "Warmup igual al prefijo IS disponible",
+      "path": "src/bin/evolution.rs"
+    },
+    {
+      "id": "RA-S-01",
+      "priority": "P1",
+      "status": "open",
+      "summary": "Voto tardío contra retorno anterior al snapshot",
+      "path": "crates/signal-engine/src/skill_motores.rs"
+    },
+    {
+      "id": "RA-S-02",
+      "priority": "P1",
+      "status": "open_revalidated",
+      "summary": "Predicción Pending recalculada a vencimiento",
+      "path": "crates/quantum-arena/src/spectral_tape.rs"
+    },
+    {
+      "id": "RA-S-03",
+      "priority": "P2",
+      "status": "open",
+      "summary": "Voto de escala sin soporte histórico suficiente",
+      "path": "crates/signal-engine/src/voto_espectral.rs"
+    },
+    {
+      "id": "RA-S-04",
+      "priority": "P2",
+      "status": "open_revalidated",
+      "summary": "Conteo bruto para momentos con olvido",
+      "path": "crates/quantum-arena/src/temporal_spectrum.rs"
+    },
+    {
+      "id": "RA-S-05",
+      "priority": "P3",
+      "status": "open",
+      "summary": "Discontinuidad residual pese a afirmación C-infinito",
+      "path": "crates/signal-engine/src/trend_runner.rs"
+    }
+  ],
+  "receipts": [
+    {
+      "id": "parser-initial-red",
+      "runner": "isolated real module",
+      "passed": 8,
+      "failed": 10,
+      "serde_json": "1.0.151"
+    },
+    {
+      "id": "parser-initial-green",
+      "runner": "isolated real module",
+      "passed": 18,
+      "failed": 0,
+      "serde_json": "1.0.151"
+    },
+    {
+      "id": "parser-adversarial",
+      "runner": "additional probes",
+      "passed": 4,
+      "failed": 1,
+      "serde_json": "1.0.150"
+    },
+    {
+      "id": "parser-refined",
+      "runner": "isolated real module",
+      "passed": 19,
+      "failed": 0,
+      "serde_json": "1.0.150"
+    },
+    {
+      "id": "parser-adversarial-refined",
+      "runner": "additional probes excluding repeated module tests",
+      "passed": 5,
+      "failed": 0,
+      "serde_json": "1.0.150"
+    },
+    {
+      "id": "risk-red",
+      "runner": "rustc real risk code with synthetic arena",
+      "passed": 22,
+      "failed": 4
+    },
+    {
+      "id": "risk-green",
+      "runner": "rustc real risk code with synthetic arena",
+      "passed": 26,
+      "failed": 0
+    },
+    {
+      "id": "oos-red",
+      "runner": "rustc std-only helper with previous fixed boundary",
+      "passed": 2,
+      "failed": 4
+    },
+    {
+      "id": "oos-green",
+      "runner": "rustc production helper",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "id": "workspace-intermediate",
+      "exit_code": 0,
+      "duration": "8m24s",
+      "final_snapshot": false
+    }
+  ],
+  "git": {
+    "public_publication_authorized": true,
+    "publication_scope": "RA only; MW separate",
+    "deleted_branches": [],
+    "merged_into_main": false,
+    "pr": null,
+    "ci_for_this_candidate": null
+  },
+  "limitations": [
+    "No T-1 completo ni paridad operacional en esta ola",
+    "Runners aislados no equivalen a ejecución integral",
+    "Residual de cierre ] ] con encabezados compactos en profundidad",
+    "Sin benchmark de latencia",
+    "Sin garantía de rentabilidad",
+    "Referencias vivas pueden avanzar; consultar adendas"
+  ]
+}

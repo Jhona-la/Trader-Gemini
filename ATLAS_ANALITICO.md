@@ -1988,3 +1988,13 @@ estructural. V no equivale a evidencia estadística, hash de serving, permiso de
 promoción ni adecuación al activo/horizonte. Identidad, generaciones, coherencia
 multihead y watcher permanecen abiertos; ninguna ecuación avanzada los acredita
 por sí sola. No se cambia el diseño temporal del motor ni se mide rentabilidad.
+
+## 2026-10-04 — Contratos de base RA y significado de los cálculos
+
+El [informe RA](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md), §§2 y 9,
+añade el grafo bytes→estado→predicción→admisión→reserva→evaluación→publicación.
+Explica Neff bajo olvido, R² prequential, máximo drawdown, margen=N/L y warmup
+IS sin confundir sus estimandos. Las referencias espectrales son coordenadas
+de un dominio, no prueba de soporte histórico a cada escala. Se preserva lo
+anterior y se documentan límites, contraejemplos y criterios de falsación.
+No se introduce una promesa de rentabilidad ni una teoría por su nombre.
