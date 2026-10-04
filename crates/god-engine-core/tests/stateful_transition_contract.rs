@@ -4,6 +4,11 @@ fn snapshot(e: &StatefulEngine) -> Vec<u64> {
     let mut v = vec![
         e.tick_count,
         e.current_ts,
+        e.last_event_ms,
+        e.last_scalp_exit_ms,
+        e.scalp_loss_streak as u64,
+        e.scalp_long_loss_streak as u64,
+        e.scalp_short_loss_streak as u64,
         e.kline_start_ms,
         e.last_trade_is_sell as u64,
     ];
@@ -148,6 +153,7 @@ fn zero_timestamp_is_a_valid_initialized_clock() {
     e.process_tick(101.0, 3.0, 1);
     assert_eq!(e.kline_start_ms, 0);
     assert_eq!(e.kline_volume, 5.0);
+    assert_eq!(e.last_event_ms, 1);
 }
 #[test]
 fn equal_timestamps_and_zero_volume_remain_accepted() {
@@ -156,6 +162,58 @@ fn equal_timestamps_and_zero_volume_remain_accepted() {
     e.process_tick(101.0, 0.0, 1000);
     assert_eq!(e.tick_count, 2);
     assert_eq!(e.last_price, 101.0);
+    assert_eq!(e.last_event_ms, 1000);
+}
+
+#[test]
+fn rejected_future_ticks_do_not_release_cooldown_or_forget_directional_losses() {
+    use god_engine_core::stateful_engine::FeatureInputError as E;
+    for (price, volume, expected) in [
+        (102.0, f64::NAN, E::InvalidVolume),
+        (102.0, f64::INFINITY, E::InvalidVolume),
+        (102.0, f64::NEG_INFINITY, E::InvalidVolume),
+        (102.0, -1.0, E::InvalidVolume),
+        (1e200, 1e200, E::NonFiniteDerivedValue),
+    ] {
+        let mut e = seeded();
+        e.last_scalp_exit_ms = e.last_event_ms;
+        e.scalp_loss_streak = 3;
+        e.scalp_long_loss_streak = 3;
+        e.scalp_short_loss_streak = 2;
+        let before = snapshot(&e);
+        assert!(!e.can_open_position_ms(1000.0));
+        assert_eq!(e.get_active_directional_streak_ms(true, 1000.0), 3);
+        assert_eq!(e.get_active_directional_streak_ms(false, 1000.0), 2);
+
+        // Eight base horizons would release cooldown and erase these losses
+        // if a rejected observation were allowed to publish its timestamp.
+        assert_eq!(e.try_process_tick(price, volume, 9100), Err(expected));
+        assert_eq!(snapshot(&e), before, "price={price}, volume={volume}");
+        assert!(!e.can_open_position_ms(1000.0));
+        assert_eq!(e.get_active_directional_streak_ms(true, 1000.0), 3);
+        assert_eq!(e.get_active_directional_streak_ms(false, 1000.0), 2);
+    }
+}
+
+#[test]
+fn future_rejection_does_not_shadow_the_next_accepted_clock() {
+    let mut dirty = seeded();
+    let mut clean = seeded();
+    assert!(dirty.try_process_tick(102.0, f64::NAN, 120_000).is_err());
+    dirty.try_process_tick(102.0, 1.0, 1200).unwrap();
+    clean.try_process_tick(102.0, 1.0, 1200).unwrap();
+    assert_eq!(dirty.last_event_ms, 1200);
+    assert_eq!(snapshot(&dirty), snapshot(&clean));
+}
+
+#[test]
+fn exhausted_tick_counter_rejects_without_advancing_any_clock() {
+    use god_engine_core::stateful_engine::FeatureInputError as E;
+    let mut e = seeded();
+    e.tick_count = u64::MAX;
+    let before = snapshot(&e);
+    assert_eq!(e.try_process_tick(102.0, 1.0, 9100), Err(E::CounterExhausted));
+    assert_eq!(snapshot(&e), before);
 }
 
 #[test]

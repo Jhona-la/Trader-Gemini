@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex RA-I-F01: reloj del prefijo de ticks aceptados
+
+- Rama feature-clock sobre maine3adf74: mueve last_event_ms después de TODOS
+  los guards de try_process_tick; inputs válidos, prioridad de errores y
+  fórmulas idénticos. El reloj rechazado podía adelantar cooldown/olvido.
+- Misma testshaBB96D9C9: actualRED18pass7fail→GREEN25pass0fail; sourcegreen
+  5A5940CB. Unitariosstateful18/0 y workspacealltargets exit0/3m25s (27451).
+  Review independiente hashestable sin blockers nuevos; no doble cargo.
+- Informe docs/AUDITORIA_RELOJ_FEATURES_2026-10-04.md explica mecanismo,
+  fixtures, hashes y límites. No whole-core rollback, finitud downstream o
+  sentinelcierre0 resueltos. CI/publicación/llegada a main pendientes.
+- MGlib/forest/RAfuente496 y sus runners intactos; no modelos, genomas,
+  ejecución live, entrenamiento o rentabilidad72h certificados por este bloque.
+
 ## 2026-10-04 — Qoder: Ola 55 / #655 — PLAN MAESTRO DE SINCRONIZACIÓN
 
 - docs/PLAN_MAESTRO_SINCRONIZACION.md (mandato del operador): tres
