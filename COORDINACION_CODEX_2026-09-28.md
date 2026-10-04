@@ -3954,3 +3954,15 @@ Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (PR del ciclo
   0 ejecutado, y la ruta MARKET (y la maker) deja la intención en `New`
   ante un rechazo firme. CL-39b sólo lo cierra en la IOC
   (`mark_local_reject`); lo demás queda documentado, no tocado.
+- **Qoder (revisión cruzada de qo-653, 438dcae8)**: el veto de drawdown de
+  entradas (`risk-engine/src/lib.rs:296`) pasa a `lerp(dd_max_medido, 0,85,
+  micro_w)`. Con la cuenta real (13 USD, nocional mínimo 5) hay 2,6
+  operaciones de holgura ≤ 3, así que `micro_w = 1` y el veto sólo dispara
+  con una caída del 85 %. Antes regía la cota medida de D-744b
+  (1 − (1 − r)^k, o el gen sin riesgo medido). El sistema inmune del host
+  (`god_engine.rs:1660`) sigue con `drawdown_maximo` sin lerp: los dos
+  cortacircuitos ya no comparten umbral (D-744 pedía una sola semántica) y
+  el replay, que no tiene sistema inmune, juzga genomas con un freno de
+  entradas al 85 %. No lo toco: es política de riesgo. Lo llevo al dueño
+  como decisión; propongo que la tolerancia micro no relaje un veto duro
+  de supervivencia del capital.
