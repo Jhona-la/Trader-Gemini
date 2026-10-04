@@ -209,3 +209,25 @@ estructura no probada queda registrada: **modelos por régimen**
 alguna vez la pide, es una ola con gates propios). El L2 vuelve a
 dormir con la evidencia completa: la información direccional existe,
 el quiebre de régimen es el enemigo.
+
+---
+
+## Adenda LXXXVIII (2026-10-04) — pre-medición régimen-condicionada: NEGATIVA — la saga L2 v1 cierra HERMÉTICA
+
+Cubetas por símbolo del simplex (A: p_range≥0.95 / B: resto),
+logísticas separadas entrenadas sólo con sus muestras de junio:
+
+| split | global | por-cubeta | matiz B_resto | fija |
+|---|---|---|---|---|
+| ago | 58.2% | 57.8% | **63.2%** (n=25k) | 53.2% |
+| sep-14 | 48.1% | 48.3% | **51.0%** (n=7.2k) | 42.8% |
+
+El condicionado NO supera al global (el global ya tiene el régimen
+como feature y aprende la partición solo) — la última estructura
+abierta queda medida y negativa. **CIERRE HERMÉTICO de la saga**:
+ni global, ni calibrado, ni rango, ni condicionado transfieren
+completamente el quiebre de régimen de septiembre. Matiz valioso para
+cualquier futuro: la señal se CONCENTRA en las muestras no-range
+(cubeta B: +8.7 pts sobre la fija en sep-14) — si el consejo alguna
+vez cablea algo de esta familia, el valor está en convicción alta en
+régimen NO-range, nunca en range profundo.
