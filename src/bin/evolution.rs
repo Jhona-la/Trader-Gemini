@@ -526,22 +526,11 @@ fn evolve_main() {
     // el walk-forward estándar usa el final del training como warmup
     // para que Hurst/EMAs/espectro estén calientes al iniciar el test.
     // Sin esto: OOS arranca frío → Hurst=0.5 → price-action muerto → 0 trades.
-    let context_ticks: Vec<backtest_engine::booktick_replay::ReplayTick> = ticks
-        [train_len.saturating_sub(50_000)..train_len]
-        .iter()
-        .map(|t| backtest_engine::booktick_replay::ReplayTick {
-            ts_ms: t.timestamp,
-            bid: t.bid_price,
-            ask: t.ask_price,
-            bid_qty: t.bid_qty,
-            ask_qty: t.ask_qty,
-        })
-        .collect();
-    let mut oos_with_context = context_ticks;
-    oos_with_context.extend_from_slice(&oos_replay);
+    let (oos_with_context, warmup_ticks) =
+        backtest_engine::oos_context::prepend_is_context(&train_replay, &oos_replay, 50_000);
     let oos_cfg = backtest_engine::booktick_replay::ReplayConfig {
         initial_capital,
-        warmup_ticks: 50_000, // el contexto IS es warmup (PnL no se cuenta)
+        warmup_ticks, // sólo el prefijo IS realmente disponible (PnL no se cuenta)
         trade_only: true,
         shift_atr_frac: 0.10, // histórico (DIV-1)
     };
