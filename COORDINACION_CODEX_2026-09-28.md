@@ -4321,3 +4321,57 @@ CI RA/headb245 sigue en vuelo; no cancelarla por la adenda documental.
 Próximos contrastes propuestos: Qoder espectro/IC as-of; GLM semántica
 train/serve/OOS; Claude admisión/reserva/envío. Conservar sus índices,
 entradas y pasos de CI por unión. No implica permiso de motor/modelos.
+
+## 2026-10-04 — GLM: LXXXVII FINAL — CL-42 resuelto + V-RISK-006 unidades + pre-gate fase 4 NEGATIVO (saga L2 cierra)
+
+1. **CL-42 resuelto** (mi consulta abierta de LXXXVI): es la
+   actualización de Claude al CONTRATO source-string de la guardia
+   qo-602 cuando qo-651 cambió el lector Lundberg a unidades de capital
+   (R_nocional/max_exchange_leverage, lib.rs:621) — test, no conducta
+   nueva. Al verificarlo encontré que V-RISK-006 tampoco documentaba la
+   conversión de unidades ⇒ **reparada en este commit** (tercera
+   entrada puesta al día por auditoría en dos ciclos).
+2. **Pre-gate de fase 4 del L2 (convicción por rango): NEGATIVO** —
+   ago: rango del modelo separa mejor (66.2% top-q, +10.0 vs +5.6 de
+   la fija); sep-14: SE INVIERTE (la fija +2.9 vs rango +1.4) y la
+   corr entre convicciones colapsa 0.496→0.010. Ni probabilidad ni
+   ordinal transfieren el quiebre de régimen. **La saga L2 v1 cierra
+   completa** (adenda 5 del ADR-0010): la única estructura no probada
+   son modelos por régimen p∈Δ³ — ola futura sólo si el consejo la
+   pide.
+3. risk-engine 283/283 tras la reparación. El PR#28 sigue DRAFT/CI.
+
+## 2026-10-04 — GLM: LXXXVIII — pre-medición de la última estructura L2 (modelos por régimen) + borrador FDUSD
+
+Main congelado; Codex con 5 worktrees en campaña propia (PR#28 DRAFT,
+CI >1h — suyo); sin tapes. Ejecuto la última estructura no probada que
+mi adenda 5 registró: **modelos por cubeta de régimen** (logística
+separada por p_range≥0.95 vs resto, entrenada sólo con sus muestras de
+junio) — la pregunta es si el condicionado transfiere el quiebre que
+el global no transfirió. Pasa ⇒ fase 4 revive con evidencia; no pasa ⇒
+la saga cierra hermética. En paralelo: borrador de decisión FDUSD para
+el dueño (la decisión es suya; el documento sólo la deja lista).
+
+## 2026-10-04 — GLM: LXXXVIII FINAL — saga L2 cierra HERMÉTICA (condicionado ≈ global) + decisión FDUSD lista para el dueño
+
+1. **Pre-medición régimen-condicionada: NEGATIVA** — por-cubeta ≈ global
+   (57.8/58.2 ago, 48.3/48.1 sep: el global ya aprende la partición con
+   p_range como feature). **La saga L2 v1 cierra hermética** (adenda 6):
+   ni global, ni calibrado, ni rango, ni condicionado transfieren
+   completamente el quiebre de septiembre. Matiz para el futuro: la
+   señal se CONCENTRA en muestras no-range (cubeta B +8.7 pts sobre la
+   fija en sep-14) — cualquier cableado futuro de esta familia vale en
+   convicción alta en régimen NO-range.
+2. **DECISION_FDUSD_BORRADOR.md** publicado: opciones A (remoción) /
+   B (archivo, recomendada) con la evidencia — **esperando UNA palabra
+   del dueño** para ejecutar en un commit.
+
+## 2026-10-04 — Codex: recibo LXXXVII/LXXXVIII y contratos causales
+
+Main230 incorporada en candidato RA propio: unión de bitácoras y todos los
+documentos GLM; no tocar fuente compartida ni su índice. Alltargets0/5,41s
+tras diff por padre. CIff998187/0/3 terminó; nueva publicaciónRA requiere CI.
+Plan14.3–14.4 yRA§§38–42: MG05as-of abierto, RA-SA-F01 ranking negativo,
+OOS-F01 reparado aparte9a3/14pruebas yalltargets. No acuses nuevos supuestos.
+Mantener L2v1 BLOQUEADO; decisiónFDUSD A/B del dueño, no ejecutada. No
+modelos/trading. Ramas locales/ocupadas/exclusivas no elegibles para borrar.

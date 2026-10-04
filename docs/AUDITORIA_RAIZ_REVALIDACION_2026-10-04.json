@@ -1048,5 +1048,133 @@
       "new_CI_run": 37235240759,
       "new_CI_state_at_receipt": "in_progress",
       "this_metadata_followup_published_at_receipt": false
+    },
+    "restart_causal_review_2026_10_04_2225": {
+      "cut": "2026-10-04T22:25:08Z",
+      "main": "44bc8ab98b7d23a44add3c9d0b9b54d34e9f6a1e",
+      "previous_main": "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+      "RA_merge_at_cut": "resolved_by_union_check_pending",
+      "CI_head": "ff99849a20ec0780f402c59bd88a612cf68e5d95",
+      "CI_run": 37235240759,
+      "CI_state_at_cut": "in_progress_old_base",
+      "new_agent_ack": false,
+      "all_files_semantically_audited": false,
+      "live_orders": false,
+      "training": false,
+      "profitability_certified": false,
+      "IC_same_tau_followup": {
+        "id": "MG05",
+        "status": "open_existing_followup",
+        "independent_static_review": true,
+        "parent_calculation_checked": true,
+        "tau_ms": 274877.906944,
+        "paired_samples": 40,
+        "unpaired_updates": 100,
+        "gap_ms": 27500000,
+        "gap_tau": 100.0444171950221,
+        "IC_before_and_after": 1,
+        "reader_rho_example": {
+          "base": 0.6,
+          "final": 1
+        },
+        "actual_order_rejection_measured": false,
+        "registry_timestamp_is_creation_not_freshness": true
+      },
+      "SA_negative_penalty": {
+        "id": "RA-SA-F01",
+        "priority": "P2",
+        "status": "open_preexisting_other_consumer",
+        "related_id": "FMT-011",
+        "source": "src/bin/evolution.rs",
+        "initial_capital": 13,
+        "final_capital": 11.7,
+        "DD_limit": 0.3,
+        "DD": [
+          0.11,
+          0.2
+        ],
+        "scores": [
+          -13862.618943292175,
+          -13142.589952285081
+        ],
+        "higher_risk_scores_better": true,
+        "method": "source_trace_and_independent_algebra_not_replay",
+        "promotion_or_loss_measured": false
+      },
+      "OOS_partition": {
+        "id": "RA-OOS-F01",
+        "status": "patched_local_separate_branch",
+        "branch": "codex/oos-partition-2026-10-04",
+        "commit": "9a3bb756529002b21f1e85e3571e2ffd9a6fbeac",
+        "RED": {
+          "passed": 9,
+          "failed": 5,
+          "exit_code": 101,
+          "baseline_kind": "extracted_legacy_guard_not_full_CLI"
+        },
+        "GREEN": {
+          "passed": 14,
+          "failed": 0,
+          "exit_code": 0
+        },
+        "all_targets": {
+          "exit_code": 0,
+          "seconds": 268
+        },
+        "independent_static_review_new_blockers": 0,
+        "CLI_executed": false,
+        "T1_full_executed": false,
+        "published": false,
+        "in_main": false
+      },
+      "branches_deleted_this_round": []
+    },
+    "restart_causal_review_verification_receipt": {
+      "candidate_base": "44bc8ab98b7d23a44add3c9d0b9b54d34e9f6a1e",
+      "all_targets": {
+        "exit_code": 0,
+        "seconds": 169,
+        "log_sha256": "099AF3FC960167ECFD9854527C2EB54EBD20945C8180AF12BDB2411F5A1446E9"
+      },
+      "CI_run": 37235240759,
+      "CI_head": "ff99849a20ec0780f402c59bd88a612cf68e5d95",
+      "CI_conclusion": "success",
+      "CI_completed_at": "2026-10-04T22:24:35Z",
+      "latest_remote_main_seen": "2302278b496aeafbdb71d5516a39933426ea424f",
+      "latest_main_delta": {
+        "only_docs": true,
+        "files": 3,
+        "added_lines": 80,
+        "removed_lines": 0
+      },
+      "FDUSD_model_deletion_or_move": false,
+      "CI_is_not_new_candidate_evidence": true
+    },
+    "restart_main230_candidate_receipt": {
+      "parents": [
+        "cd2e00324c3fccdb9750e4f1794154d0e2911817",
+        "2302278b496aeafbdb71d5516a39933426ea424f"
+      ],
+      "all_targets_exit_code": 0,
+      "all_targets_seconds": 5.41,
+      "log_sha256": "E29844A035F318FD63041AE147F7064C04901ABDFDF8AF1D24015F2297B85E56",
+      "CI_preceding_head_receipt": {
+        "run": 37235240759,
+        "head": "ff99849a20ec0780f402c59bd88a612cf68e5d95",
+        "tested_merge": "800c5f67f24b427d735d4b2530492c24d5329c0e",
+        "parents": [
+          "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+          "ff99849a20ec0780f402c59bd88a612cf68e5d95"
+        ],
+        "passed": 187,
+        "failed": 0,
+        "ignored": 3,
+        "result_targets": 13,
+        "log_sha256": "277D11D0D183F7C546F014DA8B8BC05BF8A7ECFF9A1BEDB14E905D324A17490D"
+      },
+      "new_CI_required": true,
+      "PR_should_remain_draft": true,
+      "source_repair_OOS_remains_separate": true,
+      "delete_model_decision_executed": false
     }
 }

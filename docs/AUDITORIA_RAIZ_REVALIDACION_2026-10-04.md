@@ -1858,3 +1858,222 @@ La adenda se guarda localmente después de publicar ff99849a. La nueva CI
 37235240759 está en curso sobre ese head; no se cancela para publicar metadatos.
 No se afirma que este recibo adicional ya esté en GitHub/main. Siguiente paso:
 reconciliación semántica por contrato y candidato conjunto, no merge masivo.
+
+## 38. Reinicio sobre main44bc8: evidencia vigente y conflicto preservado
+
+Corte de investigación: 2026-10-04T22:25Z. Esta ronda vuelve a contrastar
+fuente y recibos vigentes; **no reinicia ni borra la historia anterior**.
+Al comienzo se observó main e3; el fetch y la concurrencia lo llevaron a
+44bc8ab98b7d23a44add3c9d0b9b54d34e9f6a1e, padres e3adf74e y7d51ea83.
+El delta LXXXVII de GLM se leyó completo:19líneas de bitácora,28 de ADR-0010
+y una descripción de V-RISK-006 (+48/−1); ninguna fórmula/política nueva.
+
+GLM documenta un pre-gate negativo de convicción por rango en septiembre y
+mantiene bloqueado el cableado L2v1. Se conserva esa conclusión operativa,
+pero sus porcentajes/correlaciones son mediciones atribuidas a GLM, no
+reproducidas por Codex en esta ronda. Dos cortes no prueban imposibilidad
+universal de todos los modelos; tampoco autorizan activar uno ni sustituir
+el continuo por motores discretos. Nuevas hipótesis requieren datos/ablaciones
+y gates propios, no inferir ventaja de una teoría sofisticada.
+
+PR28 seguía headff998, draft, sin reviews humanos registrados. CI37235240759
+ya tenía checkalltargets y contratos de publicación aprobados; al corte
+22:21:48Z aún estaba en curso. main avanzó después y GitHub informó conflicto.
+El resultado de una CI contra base e3 no debe presentarse como validación
+del candidato reconciliado con44bc8.
+
+Se incorporó44bc8 en el checkout RA propio con merge sin commit. El único
+conflicto fue la bitácora: se eliminaron marcadores, conservando íntegros los
+bloques Codex y GLM por unión. Contra el padre RA, el delta es exactamente
+el LXXXVII (+48/−1,3archivos). Contra el padre main permanecen las reparaciones
+y adendas RA. El candidato se somete a checkworkspacealltargets antes de
+cerrar el merge; el recibo final se añade posteriormente. No se modifica
+la fuente compartida ni se decide por encima de una integración ajena.
+
+El censo actualizado sólo ofreció main/originmain como refs ya alcanzadas,
+no ramas de trabajo elegibles para borrar. Claude6f, MW, TH, V7, backup,
+MG, reloj, bosque y RA retienen exclusivos o ocupación. OOS tiene una nueva
+rama propia. Ninguna se borra porque una PR histórica usó el mismo nombre.
+Los commits PR23–27 ya probados como ancestros permanecen recuperables;
+eso no prueba ausencia de regresiones posteriores.
+
+## 39. Revalidación causal: memoria estadística no equivale a evidencia vigente
+
+### 39.1 MG05 — IC histórico de la misma escala sobrevive a la desincronización
+
+Seguimiento del ID existente MG05, **no otro hallazgo duplicado ni cierre**.
+Fuentes main44bc8 y MG7aad. Productor
+d28407b00055bfa5b851ef229adfd371293538f8; lector
+9c89cf3a45e3a5b2cd16a0b1d476012f7d5a3e68; helper MG
+b0d34fe01fe4e08476ed05e8def2996fc4b3d30b.
+
+observar_maduracion rechaza productos entre bloques separados más de0,5τ.
+Ese guard regula la incorporación de muestras. No retira/envejece el
+acumulado si dejan de existir parejas contemporáneas. coherencia_par consulta
+n y momentos, sin recibir as-of. Por tanto, None/cold no significa lo mismo
+que un Some maduro pero antiguo. MG corrige el primero y la escala fría,
+pero conserva el segundo. Volver A→B fría→A en su test restaura A y no
+certifica recencia. Parameter.timestamp registra creación de la clave:
+set_value no lo actualiza, por lo que no sirve como timestamp del soporte.
+
+Contraejemplo calculado independientemente, no ejecución Rust/fills:
+escala19,τ=274877,906944ms;40pares de cierres separados275000ms con retornos
+iguales alternando±0,02. EWMA con olvido1/64 produce n40 y
+ea²=eb²=eab=0,00018694927809238183, por tanto IC=1.
+A continuación100cierres sólo del activo0, separación final27500000ms,
+100,0444171950221τ. Ninguno incorpora una nueva pareja; los momentos/IC siguen
+idénticos. El parent cotejó producer/reader y recalculó los momentos.
+
+MG puede republicar ese1. El lector sólo recibe f64: si alcanza la rama con
+ρescalar0,6, max(ρ,IC)=1 y aumenta qo_613_aprietes. Es endurecimiento causal
+del coeficiente, no demostración de orden rechazada ni pérdida económica.
+El módulo aún afirma en su cabecera «cero consumidores de política» aunque
+ya existe este lector; esa descripción observacional está desactualizada.
+
+Contrato propuesto: separar archivo estadístico histórico de evidencia
+consumible. Devolver procedencia por par/escala: ts de ambos cierres, epoch,
+muestras, τ y as-of solicitado. El consumidor debe verificar admisibilidad
+de ese soporte, no la hora de republicación. Conservar incertidumbre/ausencia
+sin usar −1 como identidad semántica única. No imponer otro TTL universal
+ni borrar necesariamente un estimador histórico útil. La elección de soporte
+exige coordinación productor→publicador→lector; no se cambió en esta ronda.
+
+### 39.2 RA-SA-F01 — Persistencia de inversión de signo en otro consumidor
+
+P2, abierto, preexistente. Relacionado con FMT-011, que documentaba CMA;
+su reparación posterior no elimina este consumidor independiente.
+src/bin/evolution.rs calcula score=10000·max(ln(C/C0),−20) y, si
+DD>DDmax/3, lo multiplica por d=clamp(exp(−20·exceso),0,01,1).
+Selecciona scores descendentes. Para score<0, disminuir d **aumenta**
+el score: una penalización de riesgo puede favorecer mayor drawdown.
+
+Recálculo JS independiente del bloque, no backtest:
+C0=13,C=11,7,DDmax=0,3; scorebase=−1053,605156578264.
+DD0,11:d0,8187307530779817; DD0,20:d0,13533528323661262.
+Con igual número suficiente de trades, idéntica supervivencia y la penalización
+lineal de pérdida de13000puntos, los scores son−13862,618943292175 frente a
+−13142,589952285081: el segundo, más arriesgado, clasifica mejor por
+720,028991007094puntos. Ambos DD están bajo0,3; la penalización absoluta no
+se activa y no corrige ese orden. Trayectorias algebraicamente admisibles:
+13→11,57→11,7 y13→10,4→11,7. No se generaron fills para ellas.
+
+Esto prueba una incoherencia de selección IS y aceptación del SA. No prueba
+que se haya promovido ese perdedor: el gate OOS neto y otras penalizaciones
+siguen existiendo. La misma fórmula con score positivo sí decrece, por lo
+que no debe afirmarse fallo en todo candidato. El nombre «Bayesiana» del
+comentario no aporta posterior, likelihood ni estimador que explique el coste.
+
+Corrección propuesta: una transformación cuya puntuación nunca mejore al
+aumentar severidad, para ambos signos, con unidad/cero explícitos; mantener
+los umbrales actuales mientras se valida esa propiedad. Añadir pruebas de
+ranking negativo/positivo/cero, identity sin exceso y extremos finitos;
+cotejar contra la utilidad canónica y medir OOS antes de atribuir edge.
+No se implementa a ciegas otra constante o teoría ni se declara CMA regresado.
+
+## 40. RA-OOS-F01: cierre estructural local, fuera de PR28
+
+Rama codex/oos-partition-2026-10-04; base5a543831, commit
+9a3bb756529002b21f1e85e3571e2ffd9a6fbeac. Toca helper oos_context,
+su contrato y CLI evolution, más un informe propio detallado.
+RED9/5→GREEN14/0 con las mismas14pruebas; alltargets exit0 en4m28s.
+El RED extrae el guard len0 del CLI al helper real; **no es ejecución
+integral del CLI sin cambios** ni un error de compilación.
+El informe de la rama conserva hashes, logs, límites y explicación formal.
+
+El invariante 0<train_len<total_len protege train_len−1,train_len y la
+resta de longitudes. Se conserva70/30, máximo300000 y el comportamiento
+válido; preflight antes de modelo/FRED/trials/promote, después de mmap/setup.
+Dos filas admitidas estructuralmente no acreditan aprendizaje. Revisión
+independiente estática0nuevosblockers; no repitió pruebas ni Cargo.
+
+Sin ejecución del CLI ni prueba de efectos externos con fixture de una fila;
+sin T1 nuevo, OOS económico, red, promoción o trading. Tampoco cambia la
+política histórica de return/exit0 para errores de datos. RA-OOS-F02,
+calidad del tape y soporte estadístico continúan abiertos. El arreglo no
+está en PR28 ni main y no hereda automáticamente sus sellos.
+
+### 40.1 Cobertura de esta ronda y criterio de preparación
+
+Dictamen: **Necesita revisión; parcial**. Alcance acotado: particiones,
+vigencia del IC, signo del fitness SA, identidad de integración y naturaleza
+de la meta. Inventario de1435archivos anterior no equivale a semántica completa.
+Las tablas de cobertura se añaden desde un registro de unidades/evidencias;
+sus denominadores son de esta ronda, no número de archivos, consultas ni tests.
+No se certifica omnisciencia, toda teoría, todas las escalas o crecimiento72h.
+
+### 40.2 Calidad de la auditoría y robustez: cinco unidades, no el proyecto entero
+
+«Defectos observados» cuenta unidades con defecto pendiente / inventario
+acotado aplicable. 0/N no significa N aprobaciones ni cobertura exhaustiva.
+Las categorías se solapan y no deben sumarse en un porcentaje de calidad.
+
+Calidad y utilidad del artefacto:
+
+| Categoría | Defectos observados | Evaluación |
+| --- | --- | --- |
+| Utilidad/completitud | 0 / 5 | Se contestan cinco preguntas acotadas; evidencia económica72h sigue incompleta. |
+| Claridad analítica | 0 / 5 | Se distinguen cálculo, reparación local, historia e integración; no certificación total. |
+| Visual/interacción | N/A | MD/JSON; sin interfaz ni aceptación visual renderizada. |
+
+Corrección analítica y robustez:
+
+| Categoría | Defectos observados | Evaluación |
+| --- | --- | --- |
+| Autoridad/fuentes | 0 / 5 | Fuente/blobs/recibos identificados; meta sin medición nueva. |
+| Valores/cálculos | 1 / 3 | Inversión SA demostrada; IC recalculado algebraicamente, no Rust/fills. |
+| Acuerdo de gráficos | N/A | No se añadieron gráficos cuantitativos. |
+| Procedencia | 0 / 3 | Tres trazas con fórmulas, hashes y límites; no todos los consumidores. |
+| Consistencia entre artefactos | 0 / 2 | Historia JSON preservada y estados RA/OOS separados; control final necesario. |
+| Calidad de datos | 1 / 3 | IC sin as-of abierto; particiones arregladas localmente; soporte económico distinto. |
+| Conclusiones | 0 / 5 | Afirmaciones acotadas; medición de la meta incompleta, no éxito observado. |
+
+Registro reproducible propio: target/ra-review-coverage-2026-10-04-2225.json.
+El helper de cobertura confirmó su contabilidad, no su verdad o exhaustividad.
+
+## 41. Recibo de verificación y nuevo avance documental de main
+
+Check del candidato RA con padre44bc8 terminó exit0 en2m49s, antes del cierre
+del merge. Logtarget/ra-main44bc8-check-2026-10-04.log, SHA256
+099AF3FC960167ECFD9854527C2EB54EBD20945C8180AF12BDB2411F5A1446E9.
+Las adendas posteriores sólo modifican documentación/JSON/memoria; no Rust,
+pruebas, Cargo ni CI. No se atribuye a este check una ejecución de tests.
+
+CI37235240759/headff998 terminó SUCCESS22:24:35Z; todos sus pasos aprobados.
+Es resultado del corte publicado, no del nuevo merge/main ni del arreglo
+OOS-F01. Mientras corría, main avanzó a2302278b496aeafbdb71d5516a39933426ea424f
+(LXXXVIII GLM). El delta44bc8→230 se leyó completo:3documentos,+80/−0,
+sin fuente/CI. Registra pre-medición condicionada negativa y borrador FDUSD.
+Se conserva el bloqueo L2 y la decisión FDUSD reservada al dueño; no se
+elimina ni mueve ningún modelo. Atribución de medidas GLM, no reproducción.
+
+La descripción «cierre hermético» caracteriza su campaña experimental;
+no certifica imposibilidad universal de aprendizaje continuo ni sustituye
+prueba económica neta/capacidad. La división p_range≥0,95 es una hipótesis
+de esa pre-medición, no nuevo motor universal adoptado por Codex.
+El siguiente candidato requiere unión documental con230 y sus gates antes
+de declarar PR lista o mergeada. No usar CI verde de base anterior como sello
+de una integración que todavía no ocurrió.
+
+## 42. Candidato RA con main230 comprobado; identidades de CI separadas
+
+Segundo merge local preparado desde cd2e00324c3fccdb9750e4f1794154d0e2911817
+y main2302278b496aeafbdb71d5516a39933426ea424f, sin conflictos de contenido.
+Contra cada padre se revisó el delta: GLM LXXXVIII se conserva entero; las
+adendas RA permanecen. Sólo se retiraron dos líneas vacías nuevas al EOF,
+sin quitar información. Checkworkspacealltargets exit0 en5,41s, antes
+del commit; logSHA256E29844A035F318FD63041AE147F7064C04901ABDFDF8AF1D24015F2297B85E56.
+Ninguna fuente Rust/CI difiere del candidato ya comprobado con44bc8.
+
+El log de CIff998 confirma187aprobadas,0fallidas,3ignoradas,13resultados.
+Merge realmente probado:800c5f67f24b427d735d4b2530492c24d5329c0e;
+padres e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd y
+ff99849a20ec0780f402c59bd88a612cf68e5d95, cotejados por API.
+LogSHA256277D11D0D183F7C546F014DA8B8BC05BF8A7ECFF9A1BEDB14E905D324A17490D.
+Las tres ignoradas son inventario real manual y dos mediciones de tapes;
+no se habilitaron ni contaron como aprobadas. No es el T1 completo.
+
+La publicación del nuevo head RA debe conservar draft y pedir nueva CI;
+no fusionar a main por extrapolar el SUCCESS anterior. OOS9a3, MG7aad,
+reloj36b0 y bosquecace continúan separados y locales. La revisión global
+sigue parcial. Nada autoriza trading, promoción, entrenamiento o borrado
+de modelos. El dueño conserva la decisión FDUSD; no se ejecutó A ni B.

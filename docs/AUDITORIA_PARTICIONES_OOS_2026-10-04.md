@@ -118,3 +118,58 @@ No borrar la rama mientras tenga exclusivos o esté ocupada. La validación
 de soporte económico deberá expresar ausencia/insuficiencia, no inventar
 métricas cero o rentabilidad para segmentos que no las soportan.
 
+## 7. Integración local autorizada con RA74 (2026-10-04)
+
+Esta adenda conserva los cortes anteriores como historia. El operador
+autorizó el merge local, no publicación ni integración a main. Padres:
+
+- OOS: be4cacf3a2344a838e4bbc29984e7d940ddb8d16.
+- RA: 74be3ed561d155ea4d3e349c53fca46a5b6385a2, que contiene
+  main2302278b496aeafbdb71d5516a39933426ea424f.
+
+Se ejecutó `git merge --no-commit 74be3ed561d155ea4d3e349c53fca46a5b6385a2`
+con estado previo limpio en el checkout oos-partition. El único conflicto
+fue memoria, resuelto mediante apply_patch por unión, sin descartar historia.
+La comprobación por subsecuencia exacta preservó1747/1747 líneas no vacías
+del padre OOS y1762/1762 del padre RA en su orden original. Los otros
+documentos/planes recibidos son idénticos al padre RA.
+
+Se revisaron diffs contra CADA padre. Frente a RA, las únicas diferencias
+funcionales son helper OOS, sus tests y src/bin/evolution.rs. Frente a OOS,
+veto_registry.rs recibe sólo una ampliación descriptiva de unidades, sin
+cambiar consumidor ni umbral. Las tres fuentes OOS permanecen exactamente
+idénticas a9a3bb756529002b21f1e85e3571e2ffd9a6fbeac: mismos blobs y SHA256
+de§4, sin nueva fórmula, mínimo económico ni política de promoción.
+
+Comandos efectivos de esta integración, desde el checkout OOS:
+
+```powershell
+rustc +nightly-2026-06-30 --test crates/backtest-engine/tests/oos_context_contract.rs -o target/oos-integration-74be-20261004/oos-context-contract.exe
+./target/oos-integration-74be-20261004/oos-context-contract.exe --test-threads=1
+$env:CARGO_TARGET_DIR = 'C:/Users/jhona/Documents/Proyectos/Trader Gemini/target'
+cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j2
+```
+
+Rustc:1.98.0-nightly (096694416 2026-06-29). Compilación std-only exit0;
+ejecución14 aprobadas/0 fallidas/0 ignoradas, exit0. No RED nuevo:§3 conserva
+el control negativo original. Check runner24234 exit0,22:46:31Z–22:48:49Z,
+137,44s totales; Cargo informa2m15s, perfil dev [unoptimized + debuginfo].
+CARGO_PROFILE_DEV_DEBUG y CARGO_PROFILE_DEV_OPT_LEVEL estuvieron unset;
+sin override de perfil ni cambios a configuración. Warnings visibles,
+sin cargo fix/fmt. Caché DEV compartida, ninguna fuente root/RA editada.
+
+Recibos en target/oos-integration-74be-20261004 (ignorado), SHA256:
+
+| Recibo | SHA256 |
+| --- | --- |
+| std-test.log | 215200DA2E69A79917B350227A08EC53D2A2B0128F7E214B7243693D14FF826E |
+| workspace-check.log | 1870C6D0C95A99A407FA8C70C123B60812263EC6A08952CE63E2D6A8F2D72F04 |
+| identity-union.log, previo a esta adenda | 535D0334E4DFE5318B9AC2C68642BF9DB08FF2091E6E4A31E58FB46CB300A99B |
+| diff-parent-oos.patch.log, previo a esta adenda | 19B2038EF02B86409BC685CA1323CC146203B23D7CFD9BF59B802830E2476989 |
+| diff-parent-ra.patch.log, previo a esta adenda | DC5D43C588223973119ABD2B8413514F28B4EA23CDB22194A1620CADF42AAB44 |
+
+Main57cb8f0f, informado después por el parent como nuevo corte documental,
+NO se incorpora ni queda validado por estos recibos. SA se implementa en
+otro checkout y tampoco forma parte del merge. No se ejecutaron CLI,
+modelos reales, T1, entrenamiento, promociones ni trading; no push/PR,
+limpieza o cancelación de procesos. Los límites de§5 siguen abiertos.

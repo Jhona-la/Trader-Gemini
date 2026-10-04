@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: OOS-F01 integrado localmente con RA74
+
+- Merge autorizado de be4cacf3 + 74be3ed5 (RA publicada y main230), sólo
+  checkout oos-partition. Main57cb8f0f y reparación SA quedan fuera.
+- Memoria en conflicto resuelta por unión: todas las líneas no vacías de
+  ambos padres conservadas en orden; planes/docs recibidos idénticos a RA74.
+- Tres fuentes OOS idénticas a9a3bb756. Diff por ambos padres revisado;
+  el cambio recibido de veto_registry es descriptivo, no política nueva.
+- Reejecución std-only14/0/0, exit0; checkworkspacealltargets/locked/offline
+  nightly06-30 exit0,137,44s, caché root DEV/defaults, runner24234 finalizado.
+- Informe OOS§7 y target/oos-integration-74be-20261004 guardan comandos,
+  hashes/logs. No CI remota nueva, push/PR, CLI/modelos/T1/trading ni limpieza.
+
 ## 2026-10-04 — Codex: OOS-F01 aislado y verificado
 
 - Commit funcional9a3bb756 sobreRA5a: preflight tipado0<split<len antes
@@ -10,6 +23,35 @@
   No CLI ejecutado, T1 nuevo, promoción, red ni publicación de esta serie.
 - RA publicó su reconciliación documental con main230 aparte; no equivale
   a integrar OOS en main. Esta memoria no altera fuente/pruebas del9a3.
+
+## 2026-10-04 — Codex: RA reconciliada con LXXXVIII de GLM
+
+- Candidato cd2e+main230 conserva ambas bitácoras/ADR/decisión FDUSD,
+  diff por padre; checkalltargets0/5,41s antes del commit, logE29844A0.
+- CI anteriorff998 SUCCESS187/0/3, merge800c5f67 padres e3/ff998
+  confirmados; nuevo headRA requiere CI propia y sigue draft. RA§42/JSON.
+- OOS9a3 separado probado14/0 ycompilado; MG/reloj/bosque siguen locales,
+  sin respuesta a consultas de publicación. No confundir con main.
+- A/B de FDUSD reservado al dueño: ningún modelo eliminado/archivado.
+
+## 2026-10-04 — Codex: reinicio main44bc8 y contratos causales pendientes
+
+Recibo posterior: check candidato44bc8 exit0/2m49s, hash099AF3FC enRA§41.
+CIff998 SUCCESS22:24:35Z; no acredita nuevo main ni OOS9a3. Main ahora2302278
+(GLM LXXXVIII, sólo3docs +80): conservado bloqueoL2 y decisiónFDUSD del dueño.
+QA de cobertura propia5unidades/tablas enRA§40.2; parcial, no todoelproyecto.
+
+- Main avanzó e3→44bc8 (GLM LXXXVII, docs/descripción de veto). RA integra
+  por unión de bitácoras en checkout propio; checkalltargets en curso antes
+  de commit. PR28/headff998 continúa CI y draft; su corte no valida main nuevo.
+- Revalidado MG05: IC histórico mismaτ sin as-of permanece1 tras100τ sin
+  pareja reciente. Timestamp registry es creación, no frescura. Sin nueva
+  política/TTL arbitrario; no orden rechazada ni pérdida medida.
+- RA-SA-F01: otro consumidor del fallo de signo de FMT-011, en CLI SA;
+  DD mayor puede mejorar score negativo. Diagnóstico/recálculo, no parche CMA.
+- OOS-F01 separado: commit9a3bb756, RED9/5→GREEN14/0, alltargets0/4m28s
+  y review estática0blockers. No CLI/T1 ni promoción. RA§§38–40 yplan14.3
+  conservan fuentes, límites y propuestas sin acuse externo supuesto.
 
 ## 2026-10-04 — Codex: RA publicada y anatomía legacy preservada
 
