@@ -66,3 +66,34 @@ modulación FIJA del consenso, fuera de muestra?
 ADR-0003 (meta geométrica), ADR-0008 (revalidación de modelos — el L2
 hereda el reloj), ADR-0009 (cópulas mensuales — input del L3),
 TRIAGE_TEORICO §LXXVIII (huérfanos), qo-605 (isla evolutiva).
+
+---
+
+## Adenda LXXXII (2026-10-03) — fase 1 ejecutada: dataset servible + apriori HOSTIL (y por eso valioso)
+
+Dataset v1: BTC junio, 178,539 puntos (stride 15s), genoma ACTIVO g2,
+replay real, features point-in-time. Reproducible:
+`TG_GENOME_ENV=backtest votes_export BTCUSDT --in data/BTCUSDT_2026-06_REAL.bin --out ...`
+
+**Medición apriori (antes de entrenar nada)**:
+- corr(consenso_dom, r_fwd_5m) = +0.006; hit direccional 49.1% PLANO en
+  todos los pisos de convicción (|voto|>0.05 … >0.3).
+- Ninguna sombra individual tiene señal: corr −0.003..+0.005, hit
+  48.8-50.3%.
+- Condicionado por régimen NO rescata: no-range 50.0%, range profundo
+  47.7% (peor). Única chispa: p_chaos>0.10 → 52.7% (n=3,476; ~3.2σ
+  SIN corrección por ~10 comparaciones — pista débil, no hallazgo).
+- Contexto: junio fue 97% régimen range (p_range mediana 0.969).
+
+**Defecto de diseño v1 detectado**: etiqueta a horizonte FIJO 5m cuando
+la τ del consenso VARÍA por muestra (la posición vive a
+consenso_espectral_tau). La pregunta correcta es dirección A LA ESCALA
+PROPIA de cada muestra.
+
+**Redirección de la fase 2 (la honesta)**: (a) exportar r_fwd a la τ
+por-muestra (y/o multi-horizonte 15m/1h); (b) sólo entonces entrenar;
+(c) la hipótesis deja de ser "amplificar señal lineal" (no hay) y pasa
+a ser "estructura condicional/no-lineal" — con prior hostil declarado.
+Si la fase 2 también da cero a τ propia ⇒ negativo documentado y el L2
+vuelve a dormir hasta que el L1 evolucione: la modulación fija no es el
+cuello de botella.

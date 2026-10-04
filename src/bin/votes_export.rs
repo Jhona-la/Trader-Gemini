@@ -78,7 +78,11 @@ fn main() {
             "--stride-ms" => stride_ms = args.get(i + 1).expect("--stride-ms N").parse().unwrap(),
             "--horizon-ms" => horizon_ms = args.get(i + 1).expect("--horizon-ms N").parse().unwrap(),
             "--max-rows" => max_rows = args.get(i + 1).expect("--max-rows N").parse().unwrap(),
-            other if !other.starts_with("--") => simbolo = other.to_string(),
+            other if !other.starts_with("--") => {
+                simbolo = other.to_string();
+                i += 1;
+                continue;
+            }
             other => panic!("argumento desconocido {other}"),
         }
         i += 2;

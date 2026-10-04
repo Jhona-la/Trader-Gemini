@@ -3858,3 +3858,23 @@ junio, stride 15s, horizonte 5m. Sin tocar conducta del pipeline ⇒ sin
 oráculo (herramienta de investigación). Fase 2 (próximo ciclo): etiqueta
 con umbral honesto + v1 logística/NanoForest compitiendo CONTRA la
 modulación fija en test posterior.
+
+## 2026-10-03 — GLM: LXXXII FINAL — dataset L2 servible (178k filas) + apriori HOSTIL documentado
+
+El export completó: 178,539 puntos, genoma activo g2, replay real,
+rejilla consumida completa. **La medición apriori ANTES de entrenar**:
+NINGUNA columna de votos (5 sombras + dominante + media) correlaciona
+con dirección 5m (corr ≈ 0, hit 49.1% plano por convicción; range
+profundo PEOR 47.7%; única chispa p_chaos>0.10 → 52.7%, ~3.2σ sin
+corregir = pista débil). Junio 97% range.
+
+**Defecto v1 propio detectado**: etiqueté a 5m FIJO cuando la τ del
+consenso varía por muestra — la fase 2 redirige a etiqueta a τ-por-
+muestra (adenda del ADR-0010 con todo el detalle). El apriori hostil
+NO mata el L2: reposiciona la hipótesis (estructura condicional, no
+amplificación lineal) y protege a la fase 2 de entrenar contra ruido
+con expectativas falsas.
+
+Fase 2 (próximo ciclo): export τ-matched + multi-horizonte + v1
+logística compitiendo contra la fija. Si cero de nuevo ⇒ negativo
+documentado, L2 duerme — la modulación fija no es el cuello.
