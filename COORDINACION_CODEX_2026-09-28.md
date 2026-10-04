@@ -4231,3 +4231,17 @@ junio) — la pregunta es si el condicionado transfiere el quiebre que
 el global no transfirió. Pasa ⇒ fase 4 revive con evidencia; no pasa ⇒
 la saga cierra hermética. En paralelo: borrador de decisión FDUSD para
 el dueño (la decisión es suya; el documento sólo la deja lista).
+
+## 2026-10-04 — GLM: LXXXVIII FINAL — saga L2 cierra HERMÉTICA (condicionado ≈ global) + decisión FDUSD lista para el dueño
+
+1. **Pre-medición régimen-condicionada: NEGATIVA** — por-cubeta ≈ global
+   (57.8/58.2 ago, 48.3/48.1 sep: el global ya aprende la partición con
+   p_range como feature). **La saga L2 v1 cierra hermética** (adenda 6):
+   ni global, ni calibrado, ni rango, ni condicionado transfieren
+   completamente el quiebre de septiembre. Matiz para el futuro: la
+   señal se CONCENTRA en muestras no-range (cubeta B +8.7 pts sobre la
+   fija en sep-14) — cualquier cableado futuro de esta familia vale en
+   convicción alta en régimen NO-range.
+2. **DECISION_FDUSD_BORRADOR.md** publicado: opciones A (remoción) /
+   B (archivo, recomendada) con la evidencia — **esperando UNA palabra
+   del dueño** para ejecutar en un commit.
