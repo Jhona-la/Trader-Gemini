@@ -766,3 +766,17 @@ Inventario/leído/reparado/probado/integrado/desplegado son estados distintos.
 Roles propuestos y reservas por ancla, sin acuses supuestos. Nada de borrar
 ramas exclusivas/ocupadas, impulsar modelos o relajar seguridad por meta72h.
 Registro de planificación explícito, no porcentaje ficticio de corrección.
+
+## 17. Correspondencia canónica de métricas72h (adenda, no borrado)
+
+Revisión independiente halló colisión: G72 en§6.1/§6.2 es LOGRETORNO; G72
+en el plan exhaustivo§2 es FACTOR. Para nuevos recibos usar nombres sin
+ambigüedad: growth_factor_72h=E(t+72h)/E(t), objetivo>=2;
+log_growth_72h=ln(growth_factor_72h), objetivo>=ln2. Ejemplo2→ln2,1→0.
+Conservar fórmulas históricas y traducir por su definición, nunca comparar
+factor con umbral log. Métrica G72 sin unidad/linaje BLOQUEA G8 hasta aclarar.
+No se afirma migración de todos los consumidores o medición económica.
+
+Plan exhaustivo§10 añade rollback transversal y owners propuestos/cierre
+de anexo externo. C-versionado no equivale a C-sistema completo. Pruebas
+aisladas y autoridades independientes; no promoción/trading por esta adenda.

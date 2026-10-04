@@ -92,3 +92,24 @@ paquetes/aristas/atributos y conteos cotejados con metadata; blobs de los
 Para el grafo vivo faltan contratos por arista: identidad de activo, reloj,
 unidad, generación, vigencia/invalidación, entrega/ack, reintento, backlog,
 latencia y consumidor. No se infiere sincronía perfecta de la topología.
+
+## Nuevo corte main237 y plan archivo-a-archivo (adenda, no sustitución)
+
+[COBERTURA_MAIN237_2026-10-04.tsv](COBERTURA_MAIN237_2026-10-04.tsv) y
+[recibo JSON](COBERTURA_MAIN237_2026-10-04.json): árbol inmutable23701ecb,
+1432rutas,461Rust,23directorioscrates y24manifiestosCargo.136Rust bajo
+tests/ incluye1soporte. Clases/fases/owners sólo heurísticas por ruta;
+todos inventariado_no_certificado. QA propia y del subagente verifica
+conjuntos/OIDs/modos/orden, hashes, conteos y estados, no contenidos.
+
+[Plan exhaustivo](../PLAN_REVISION_EXHAUSTIVA_2026-10-04.md) conserva
+F0–F8 con subfases de fundamentos, métodos por clase, recibos por contrato,
+rollback y cobertura externa separada. C-versionado no es C-sistema.
+644JSON de grafo y11artefactos de grafo también siguen pendientes; no
+certificar sincronía operativa mediante topologías exportadas.
+
+Las cifras1435/433 de este README arriba corresponden a12456048, no
+a main237.461Rustmain y465RustRA se diferencian además por4fuentes nuevas
+RA (helper OOS/test, testparser ytestestado no finito). No equiparar conteo
+de todas las rutas bajo crates con conteo de .rs bajo crates. El universo
+debe acompañar cada cifra; un cambio de árbol pide reconciliar por ruta/OID.

@@ -2273,3 +2273,60 @@ completados; entrada/riesgo/OOS en ejecución. No cancelarla por churn de
 docs ni trasladar su resultado a este merge. Nueva CI/review antes de main.
 SA local22/0 yOOS14/0 separados; sizingRUIN sigueRED3/3, no ocultarlo entre
 suites aprobadas. Cobertura parcial, sin rendimiento72h ni operaciones.
+
+## 46. CI del corte publicado completa y revisión del plan corregida
+
+CI37240563716/head74be terminó SUCCESS23:28:56Z. El log contabiliza
+187 aprobadas,0 fallidas,3 ignoradas y13 resultados de targets; ignoradas
+son inventario manual y dos mediciones de tapes, no ejecutadas/aprobadas.
+SHA256 del log local target/ci-37240563716-head74be.log:
+ACC00BBE66AACDD5CEEB9CA41A1333234016085EEFEDB8728D4C72414BE52083.
+Checkout realmente probado7343aab2610ac52a904448f79d07969753902049,
+padres2302278b496aeafbdb71d5516a39933426ea424f y
+74be3ed561d155ea4d3e349c53fca46a5b6385a2, verificados por API.
+No es f275/main237 ni incluye SA/OOS nuevas. Nueva publicación RA requiere
+su CI, revisión y gates; no se fusiona por reutilizar este resultado.
+
+Revisión independiente del plan, Sartre:1 bloqueador de definición y2
+mejoras iniciales. G72 era logretorno en maestro§6.1 pero factor en nuevo
+plan§2. Ambas fórmulas individualmente correctas, identificador compartido
+riesgoso. Adendas plan§10/master§17 fijan growth_factor_72h>=2 y
+log_growth_72h>=ln2, correspondencia histórica y ejemplos2/ln2 y1/0.
+Se conserva el texto anterior; un G72 ambiguo bloquea G8 hasta aclarar su
+linaje. No se afirma migración de código/paneles/datasets. Búsqueda puntual
+de G72 encrates/src no encontró coincidencias; no prueba ausencia de
+campos equivalentes o consumidores externos.
+
+También se añade rollback transversal al recibo13, con destino compatible,
+trigger/responsable/respaldo y prueba; y C-versionado frente a C-sistema,
+owners propuestos y cierre del anexo externo. Segunda revisión:0bloqueadores
+documentales nuevos; consumidores/medición económica aún pendientes.
+El revisor sólo leyó documentos, sin Cargo/código/red o ediciones; no se
+usa como certificación de toda la implementación.
+
+El plan nuevo está comprometido enRAf275 y sus adendas son documentales.
+SA se compone localmente con ese padre; OOS se mantiene en su propia serie.
+Los hashes/compilación/CI de cada candidato se registrarán separadamente,
+sin importar arreglos locales a main por declaración. No se canceló CI74be,
+no se eliminaron ramas/modelos ni se ejecutó trading o promoción.
+
+## 47. Cobertura main237 completada como inventario y candidata a revisión
+
+Galileo creó sóloTSV/JSON nuevos, sin índice/refs/fuente/planes. Parent
+revalidó contra ls-tree fijo:1432rutas únicas, modos/tipos/OIDs/orden exactos,
+461Rust,21triage,24manifiestos/23crates; sumas porfase/clase/paquete/owner/
+estado y SHA256 reales.0archivos certificados; todos inventariados.
+Plan exhaustivo§11 yREADME de cobertura detallan denominadores y método.
+No atribuir al censo las revisiones de SA, OOS oF1 del autor.
+
+TSV34f5139dfaaad6317924af71584c77a2724123a38918f30c42e2c63247017aae;
+JSONfdd2b412698d9c4d7d8f0ff044fd6d47c047f999aeb5129bea0a7f22dcf8e215.
+Captura Git63a7ebd98c76899f6cb18e950b99481fb7a340d5135f3a4f8e9a8b0c1599d754.
+Este censo es main237, no working tree ni archivos ignorados; no publica
+secretos ni lee modelos/contenidos para clasificar. Anexo externo pendiente.
+
+OOSacbc3b61c983997e011b6ed5d8e0824fd3b67f3e compone684e+RAf275;
+14/0 reejecutadas yalltargets0/92,89s, fuente OOS3blobs idénticos9a3.
+Memoria/COORD e informes conservados por padre; reportOOS§8 tiene recibos.
+No trae SA ni nuevo inventario. Serie separada, local y publicación consultada;
+no está en main por producir ese commit. Ningún runner ajeno interrumpido.

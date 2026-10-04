@@ -1238,5 +1238,25 @@
       "CI_head74_status_at_2323Z":"in_progress",
       "new_CI_required":true,"new_human_review_required":true,
       "all_files_audited":false,"growth72h_demonstrated":false
+    },
+    "head74_CI_and_exhaustive_plan_review_receipt": {
+      "CI":{"run":37240563716,"head":"74be3ed561d155ea4d3e349c53fca46a5b6385a2","conclusion":"success","completed_at":"2026-10-04T23:28:56Z","tested_merge":"7343aab2610ac52a904448f79d07969753902049","parents":["2302278b496aeafbdb71d5516a39933426ea424f","74be3ed561d155ea4d3e349c53fca46a5b6385a2"],"parents_verified_by_API":true,"passed":187,"failed":0,"ignored":3,"result_targets":13,"log_sha256":"ACC00BBE66AACDD5CEEB9CA41A1333234016085EEFEDB8728D4C72414BE52083","is_not_new_candidate_evidence":true},
+      "plan_review":{"reviewer":"Sartre","initial_definition_blockers":1,"initial_nonblocking_recommendations":2,"definition_blocker":"G72 logreturn vs capital factor","definition_fix":"growth_factor_72h>=2; log_growth_72h>=ln2; historical mapping, no ambiguous comparisons","rollback_receipt_requirement_added":true,"external_coverage_owners_and_gate_added":true,"followup_documentary_blockers":0,"consumer_migration_complete":false,"read_only":true,"source_runtime_validation":false},
+      "RA_candidate_before_final_docs":"f275bae39dd81531cfb71b8ddaadb1023f02c6f5",
+      "new_CI_and_review_required":true,"branches_deleted":[],"trading_or_model_activation":false
+    },
+    "per_path_inventory_completion_receipt": {
+      "snapshot":"23701ecb05486eb13b661d3d50afaadbc9a0015a",
+      "paths":1432,"Rust_paths":461,"crate_directories":23,"cargo_manifest_paths":24,
+      "Rust_under_tests_directory":136,"test_support_paths":1,"manual_triage":21,
+      "primary_phase_counts":{"F0":46,"F1":29,"F2":70,"F3":32,"F4":39,"F5":58,"F6":78,"F7":930,"F8":150},
+      "tsv_sha256":"34f5139dfaaad6317924af71584c77a2724123a38918f30c42e2c63247017aae",
+      "json_sha256":"fdd2b412698d9c4d7d8f0ff044fd6d47c047f999aeb5129bea0a7f22dcf8e215",
+      "ls_tree_sha256":"63a7ebd98c76899f6cb18e950b99481fb7a340d5135f3a4f8e9a8b0c1599d754",
+      "parent_revalidated_exact_sets_oids_modes_order_hashes_counts_and_states":true,
+      "all_rows":"inventariado_no_certificado","certified_by_inventory":0,
+      "external_resource_annex_complete":false,"owner_acknowledgments":0,
+      "OOS_composition":{"commit":"acbc3b61c983997e011b6ed5d8e0824fd3b67f3e","parents":["684e47082b57fb962cbd4fad05fac5b998be15ba","f275bae39dd81531cfb71b8ddaadb1023f02c6f5"],"contracts_passed":14,"contracts_failed":0,"all_targets_exit":0,"all_targets_seconds":92.89,"in_remote_main":false,"contains_SA":false,"contains_new_inventory":false},
+      "complete_semantic_review":false,"growth72h_demonstrated":false
     }
 }

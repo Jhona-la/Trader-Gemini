@@ -1,5 +1,27 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: inventario exacto main237 listo
+
+- COBERTURA_MAIN237TSV/JSON:1432rutas,461Rust,23crates/24manifiestos,
+  136testsdirincluye1soporte,21triage; QA independiente/parentsets/OIDs/
+  modos/orden/hash/conteosPASS.0certificadas, ownerspropuestos/sinacuse.
+- Planexhaustivo§11/README/RA§47/JSON conservancensosprevios,clasificación
+  ≠lectura yC-versionado≠C-sistema. Rollback/G72canónico revisados.
+- OOSacbc compone684e+f275,14/0/check0/92,89s,3blobs9a3preservados.
+  No SA/inventario ni main remoto. Publicaciónpropia consultada, aúnlocal.
+
+## 2026-10-04 — Codex: CI74be verde; métricas canónicas del plan
+
+- CI37240563716SUCCESS23:28:56Z,187/0/3ignoradas,13targets; merge7343aab
+  padres230/74be verificadosAPI. NO f275/main237/SA/OOS. RA§46/JSON.
+- Reviewplan1bloqueador deG72(logvsfactor) corregidodocumentalmente;
+  nuevo§10/master§17nombrescanónicos ycorrespondenciahistórica. G8ambiguo
+  bloqueado hasta revisarconsumidores. Reviewseguimiento0blockersdocumentales.
+- Rollbacktransversal yanexoexternoC-versionado/C-sistema añadidos;
+  ownerspropuestos,noacuses. NuevoinventarioTSV/JSON enpreparación.
+- FuenteRA compilada; publicaciónactualizada requiereCI/review propios.
+  SA/OOS localescompuestosaparte,sinpromoción,trading oborradoderamas.
+
 ## 2026-10-04 — Codex: mandato ampliado de cobertura ruta-a-ruta
 
 - Plan nuevo PLAN_REVISION_EXHAUSTIVA_2026-10-04 ymaster§16: fundamentos

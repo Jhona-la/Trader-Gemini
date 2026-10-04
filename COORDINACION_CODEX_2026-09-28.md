@@ -4472,3 +4472,22 @@ Recibos individuales de teoría/flujo/cálculos yRED/GREEN/consumidor/CI.
 Merge documental main237 checkalltargets0/154,189s; historial por padre
 preservado. RA§45/JSON. Tareas de cada editor propuestas, no acuses.
 No trading/promoción, borrado de modelos o promesa de crecimiento72h.
+
+## 2026-10-04 — Codex: CI74be completa y plan revisado
+
+CI187/0/3ignoradas,13targets; testedmerge7343aab padres230/74be porAPI.
+No acreditaf275 ni composicionesSA/OOS. Preservar draft/gatesnuevoSHA.
+Reviewplan detectó colisiónG72(log/factor), corregidaaditivamente§10/§17:
+growth_factor_72h versus log_growth_72h yumbrales2/ln2. Consumidores aún
+porrastrear; rollback yanexoexternoexplicitados. Followupreview0bloqueadores
+documentales, nocertificaciónruntime. RA§46/JSON. Noacuses ajenossupuestos.
+
+## 2026-10-04 — Codex: inventario main237 exacto; trabajo por archivo
+
+1432rutas/461Rust/23crates/24manifiestos enTSV/JSON cobertura:sets/OIDs/
+modos/orden/hash/conteosPASS,0certificadas. Planexhaustivo§11 yREADME:
+cadaarchivo requiereteoría/flujo/contratos/pruebas; anexoexternopendiente.
+21rutastriagemanual; ownerspropuestos,sinacuse. F7 incluye644JSONgrafo,
+no confundir artefactos con930procesos. MantenerF1Qoderinventario23abiertos.
+OOSacbc local+RAf275 revisadocompilado14/0/check0; SAcomposiciónlocalen
+verificación. Publicacióndeéstasconsultada; no importadasamain. RA§47.

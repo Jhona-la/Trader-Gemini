@@ -124,6 +124,9 @@ Plantilla mínima de cada recibo:
 10. Comandos/códigos/logs/hashes; warnings/ignoradas y resultados no ocultados.
 11. Compilación del candidato; integración por padre; CI del SHA realmente probado.
 12. Prueba OOS/económica si procede, límites, review cruzada y estado de despliegue.
+13. Rollback: destino compatible de código/esquema/config/estado/modelo,
+    disparador, responsable, respaldo verificable y prueba de reversión.
+    Revertir código no restaura por sí mismo mmap, reservas o formatos.
 
 Estados separados: inventariado → leído → teoría/flujo contrastado → defecto
 reproducido → reparado local → probado → integrado → revalidado/desplegado.
@@ -231,3 +234,76 @@ imposibilidad de nuevos fallos. Cambios futuros disparan revalidación por
 OID/arista. Crecimiento72h sólo se declara medido con evaluación neta causal
 representativa; nunca se promete consistencia por este plan o por ciencia
 avanzada. Sin autorización de trading/promoción/entrenamiento en esta ronda.
+
+## 10. Adenda de revisión: nomenclatura canónica, reversión y anexo externo
+
+Revisor independiente detectó una colisión de definición: maestro§6.1 usa
+G72 para incremento LOGARÍTMICO, mientras este plan§2 usa G72 como FACTOR.
+Se conservan ambos textos como historia, pero el contrato canónico nuevo es:
+
+- growth_factor_72h (G72_factor) = E(t+72h)/E(t), adimensional, objetivo>=2.
+- log_growth_72h (g72_log) = ln(growth_factor_72h), objetivo>=ln2.
+- G72 de maestro§6.1 y su distribución§6.2 se interpretan como g72_log,
+  NUNCA como G72_factor. G72 de§2 de este plan corresponde a G72_factor.
+
+Duplicación:factor2/log0,693147; capital igual:factor1/log0. No comparar
+una métrica con el umbral de la otra. Todo recibo nuevo usa nombres completos,
+unidad y transformación; un campo G72 sin linaje/semántica es ambiguo y
+BLOQUEA G8 hasta reconciliarlo. Esta corrección documental no demuestra
+que código/paneles/datasets ya hayan migrado: se deben rastrear consumidores.
+
+Rollback se exige en el recibo13 de toda reparación, también esquemas y
+configuración. El ensayo es aislado, con respaldo/hash y compatibilidad;
+despliegue/carga/activación real requieren su autoridad separada.
+
+El anexo de cobertura externa tiene dos gates: C-versionado (todas rutas del
+árbol y sus recibos) y C-sistema (también recursos no versionados/runtime).
+Owners PROPUESTOS: GLM manifiestos de datos/modelos; Claude órdenes/specs y
+estado de ejecución; Qoder productores/features y bancos; Codex concilia
+el índice de recursos y evidencias de linaje. Sin acuse no son asignaciones.
+Cada recurso requiere ubicación lógica sin secreto, hash/formato/versión,
+identidad temporal, productor/cargador, contrato y prueba de compatibilidad.
+Recurso ausente, no accesible o sin prueba queda pendiente con impacto/gate,
+no aprobado ni omitido. C-sistema no cierra mientras haya recursos críticos
+sin inventario/contrato; acceso/publicación/ejecución no autorizados se piden
+separadamente. El censo Git por sí solo sólo sirve a C-versionado.
+
+## 11. Recibo del inventario y del método, no de auditoría completa
+
+Inventario main237 creado por subagente Galileo y revalidado por Codex:
+1432 rutas únicas,461Rust (405 dentro de crates/56 fuera),23 directorios
+de crates y24manifiestosCargo.136Rust bajo tests/ incluye1soporte; no es
+conteo de funciones #[test].21rutas requieren triage manual. Todas1432
+filas son inventariado_no_certificado;0certificadas por este artefacto.
+
+| Fase primaria sugerida | Rutas |
+| --- | ---: |
+| F0 |46|
+| F1 |29|
+| F2 |70|
+| F3 |32|
+| F4 |39|
+| F5 |58|
+| F6 |78|
+| F7 |930|
+| F8 |150|
+
+F7 contiene644JSON de grafo y11otros artefactos de grafo, además de docs/
+plataforma. No son930módulos operativos. Cada artefacto también requiere
+contrato de esquema/procedencia y cotejo de referencias con su fuente;
+parsear un grafo o verificar un OID no certifica conexiones vivas.
+Duplicados por OID pueden compartir oráculo de contenido, pero cada ruta
+conserva recibo de contexto/consumidor y no se da por revisada en bloque.
+
+TSV SHA25634f5139dfaaad6317924af71584c77a2724123a38918f30c42e2c63247017aae;
+JSON SHA256fdd2b412698d9c4d7d8f0ff044fd6d47c047f999aeb5129bea0a7f22dcf8e215.
+Metadatos/modos/OIDs/snapshot/orden/conjunto exactos yconteos porfase/clase/
+paquete/owner/estado cotejados con ls-tree. Owner sigue propuesto_sin_acuse.
+Para detalles de clasificación y denominadores usar el JSON, no sumas de
+categorías que se solapan (crate, tipoRust, directoriotests).
+
+Revisión documental independiente Sartre: colisiónG72 cerrada por§10 y
+maestro§17; rollback/anexoexterno añadidos;0bloqueadores documentales nuevos.
+Consumidores ambiguos y gates económicos siguen pendientes. No ejecutó
+fuentes/CLI/Cargo ni revisó el TSV. Esa independencia no es aprobación
+humana de PR, ejecución de fase ni acreditación de rentabilidad.
