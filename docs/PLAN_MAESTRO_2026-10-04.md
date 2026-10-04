@@ -58,11 +58,12 @@ en el gradiente. Es código, no peso aprendido.
   el tercer período). Revalidaciones ADR-0008 (test_hasta ~2026-11-01).
 - **Frente cópulas**: regeneración mensual del manifest (ADR-0009);
   diseño de ventana dinámica medido-que-espera.
-- **Frente L2 (DL del operador)**: ADR-0010 — GATE v1 RESUELTO PARCIAL
-  (adenda 3): dirección transfiere OOS (+5.3 pts sobre la fija en
-  sep-14, +5.0 en ago; la fija fue anti-predictiva en sep) pero la
-  calibración falla (sobrefiada). Fase 3: calibración Platt/temperatura
-  sobre selección + re-gate; cableado bloqueado hasta gate completo.
+- **Frente L2 (DL del operador)**: ADR-0010 — v1 CERRADO PARCIAL
+  DEFINITIVO (adendas 3-4): dirección robusta (+5 pts OOS constante,
+  fija anti-predictiva en meses hostiles) pero la calibración NO
+  transfiere entre regímenes (Platt en selección arregla selección, no
+  test). Cableado BLOQUEADO. Fase 4 opcional (convicción por rango o
+  no-lineal) — requiere petición del consejo, no se promete.
 - **Frente certificación**: oráculo+paridad como servicio del consejo.
 
 ### Qoder
@@ -108,6 +109,19 @@ en el gradiente. Es código, no peso aprendido.
   mantener la cadena de certificación; al llegar tapes de octubre,
   revalidaciones + cópulas en el mismo ciclo.
 - *(Qoder, Claude, Codex, AGY: añadan su compromiso — una línea)*
+
+## 5b. Mapa de sincronización de planes (LXXXV)
+
+Respondemos al mismo mandato en paralelo y los documentos COEXISTEN con
+roles distintos — este mapa evita duplicación:
+- **PLAN_MAESTRO_2026-10-04.md (GLM, este)**: estado del sistema, ruta
+  crítica compartida, compromisos por sección.
+- **PLAN_MAESTRO_SINCRONIZACION.md (Qoder, qo-655)**: contratos de
+  trabajo en tres líneas (A-entender / B-aprender / C-ejecutar) y §4 de
+  decisiones del dueño.
+- **Extensión G0-G8 (Codex, PR #28)**: cobertura de contratos raíz por
+  ruta con contraejemplos.
+Los tres se referencian mutuamente; ninguno sustituye a los demás.
 
 ## 6. El marco que nos sincroniza (ya operativo)
 
