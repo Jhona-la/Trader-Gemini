@@ -3966,3 +3966,57 @@ Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (PR del ciclo
   entradas al 85 %. No lo toco: es política de riesgo. Lo llevo al dueño
   como decisión; propongo que la tolerancia micro no relaje un veto duro
   de supervivencia del capital.
+
+## 2026-10-04 — GLM: LXXXIII — paridad post-Ola-51/52 (los vetos despertaron) + L2 fase 2 τ-matched
+
+Revisión desde la base: main congelado en 04463bfe, CI verde, sin PRs,
+sin tapes de octubre. Serie "MW:" de Codex en vuelo sin PR (4 commits,
+model-reload-contract) — la revisaré en lectura sin merge.
+
+**La certificación pendiente es la mía**: las Olas 51/52 de Qoder
+(vetos dormidos ACTIVADOS — el apriete IC(τ*) recibe dato real por
+primera vez; consumo espectral con dos condiciones nuevas) aterrizaron
+con sus oráculos, pero la PARIDAD bt↔vivo no corre desde antes de
+ambas — Qoder lo avisó explícitamente. Lanzada sobre 04463bfe. Ojo:
+con el veto IC(τ*) vivo, la composición con mi λ̂ de cópula se activa
+de verdad en replay por primera vez — la paridad lo ejercita todo.
+
+En paralelo: **L2 fase 2 (τ-matched)** — la redirección de mi propia
+adenda del ADR-0010. Etiqueta a la τ PROPIA de cada muestra en
+votes_export + regeneración BTC junio + análisis apriori a escala
+propia. Si la señal sigue en cero a τ-matched, el negativo del L2
+queda fuerte: ni a su propia escala predicen los votos.
+
+## 2026-10-04 — GLM: review serie "MW:" de Codex (model-reload-contract, en vuelo sin PR)
+
+Leída completa (4 commits, +974/−59): **DIRECCIÓN APROBADA**. El
+ModelReloadTracker es un detector de cambios (path+mtime+bytes, UNA
+fuente por clave) con el scope honestamente delimitado — el propio
+código dice lo que NO es ("no es hash de contenido, generación ni
+certificado de promoción"). 255 líneas de contratos, auditoría del
+ciclo de vida del watcher de 409 líneas con no-claims explícitos, y la
+distinción ruta-solicitada vs identidad-cargada (e7bd8f78) es la
+precisión correcta para el linaje. NOTA de certificación para cuando
+mergee: toca god_engine.rs (watcher vivo) ⇒ oráculo T-1 + paridad como
+toda conducta del watcher — la regla de la casa no excepciona series
+documentadas.
+
+## 2026-10-04 — GLM: LXXXIII FINAL — paridad 51/52 VERDE + el L2 REVIVE: la agregación ahoga al oscilador
+
+**PARIDAD bt↔vivo post-Olas 51/52: 10/10** (85 min, con tapes) — los
+vetos despiertos (IC(τ*) vivo + composición con λ̂ real por primera
+vez) y el consumo espectral de dos condiciones nuevas NO rompen el
+acuerdo replay↔vivo. Olas 51/52 certificadas de punta a punta: sus
+oráculos (genes) + esta paridad (conducta).
+
+**El giro del L2 (adenda 2 del ADR-0010)**: con etiqueta a la τ
+PROPIA de cada muestra, el apriori hostil se revierte — hay estructura:
+sombra_osc sola acierta 53.0% (~30σ), consenso de alta convicción
+53.8%, pero el agregado completo 48.7% con la banda 5m-1h
+ANTI-correlacionando (46.1%). **La modulación fija AHOGA la señal de su
+mejor componente** — la hipótesis L2 (agregación aprendida) pasa de
+prior hostil a justificada. Próximo ciclo: datasets jun/ago/sep-14 →
+v1 logística sobre votos vs modulación fija con plantilla honesta.
+
+Review serie MW de Codex ya publicada (dirección aprobada + oráculo y
+paridad al merge — toca el watcher vivo).
