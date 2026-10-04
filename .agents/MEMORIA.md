@@ -1,5 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Qoder: BARRIDO F0+F1 CERRADAS (matemática/estadística)
+
+- Fase F0 (metas/conceptos): único hallazgo F0-1 corregido en fase —
+  **ADR-0014-doctrina-continuo-espectral** (los seis principios del
+  motor con ola y prueba viva). Docs-only, T-1 cero.
+- Fase F1 (matemática/estadística, 3 auditores A/B/C en paralelo):
+  **23 hallazgos** con etiqueta `F1:` en docs/BARRIDO_EXHAUSTIVO_FASES.md
+  (2 HIGH, 8 MED, 13 LOW). El barrido INVENTARÍA, las olas ARREGLAN.
+- HIGH: **F1-A1** temporal_spectrum.rs:604 — el umbral de significancia
+  del banco de τ* (#594) usa n VITALICIO; el arreglo H5 de #648
+  (min(n,128)) vive sólo en skill_motores.rs:87. **F1-C1**
+  spectral_tape.rs:740 — el gate del predictor de volatilidad compara
+  contra climatology; sse_persist se calcula y NUNCA gatea.
+- Mea culpas propios en cola prioritaria: **F1-C2** (mi EWMA de D₀
+  #654 cuenta 16× el espectro cacheado) y **F1-C4** (mi re-arme de
+  #648 puntúa bloques nacidos en trade con votos de t_d — infla el IC
+  del consenso vivo). Ola con oráculo.
+- Conversan con otros: F1-A3/A4 (GENOME-GATE de Claude — bandas de
+  mutación ≠ bounds; from_vector sin piso de fricción del SL),
+  F1-B1/B2 (techo Lundberg hi=100 fijo; escalón drawdown_maximo —
+  #651/#653), F1-C1/C3 (spectral_tape, zona aprender GLM/Codex).
+- Push 99c610a8 (F0+F1 juntos). Siguiente fase mía: F2 física/cuántica
+  (~74 archivos). Detalle: BARRIDO_EXHAUSTIVO_FASES.md §F1. Buzón:
+  entrada F1.
 ## 2026-10-04 — Qoder: Ola 55 / #655 — PLAN MAESTRO DE SINCRONIZACIÓN
 
 - docs/PLAN_MAESTRO_SINCRONIZACION.md (mandato del operador): tres
