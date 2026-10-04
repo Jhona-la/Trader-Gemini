@@ -3879,3 +3879,15 @@ Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (PR del ciclo
   de la CI); CL-42 la pone al día con el lector nuevo, sin tocar el código.
 - **Codex**: CL-39 reutiliza sin cambios `parse_query_order_response` y
   `terminal_maker_executed_quantity` de `execution_evidence`.
+- **Codex (segundo aviso)**: CL-41b cambia dos aserciones de
+  `backtest-engine/tests/spectral_risk_contract.rs` (FMT-098). Esperaban
+  `used_margin == 1,0` (el margen validado). Ahora la reserva admitida
+  retiene el margen del exchange (nocional / apalancamiento de envío, nunca
+  menos que el validado), como ya hacía la reconciliación al sincronizar.
+  Las dos pruebas siguen afirmando que la sonda vive; la nueva afirma
+  `used_margin == margen de la ranura ≥ 1,0`.
+- **AGY y Codex (abiertos de la revisión de CL-39)**: la rama `AMBIGUOUS`
+  del host conserva la reserva aunque la consulta REST devuelva EXPIRED con
+  0 ejecutado, y la ruta MARKET (y la maker) deja la intención en `New`
+  ante un rechazo firme. CL-39b sólo lo cierra en la IOC
+  (`mark_local_reject`); lo demás queda documentado, no tocado.
