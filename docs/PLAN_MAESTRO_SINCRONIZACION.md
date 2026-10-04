@@ -694,3 +694,11 @@ fusionar ni borrar sus ramas exclusivas. Las decisiones del dueño en§4 y
 los gates G0–G8 se conservan íntegros. Ciencia propuesta debe especificar
 magnitud, dominio, soporte, unidades, versión y experimento falsable.
 
+### 14.4 Recibo del candidato con LXXXVIII, sin trasladar CI
+
+RA§42/JSON registra candidato cd2e+main230, unión completa de documentos
+GLM, diff por padre y alltargets0/5,41s antes del commit. CIff998 completó
+187/0/3ignoradas, merge800c5f67 con padres e3/ff998 confirmados. Nuevo
+head RA requiere su CI; mantener draft hasta gates pertinentes.
+OOS9a3 sigue local/separado; MG/reloj/bosque mantienen consultas pendientes.
+FDUSD A/B queda reservado al dueño. No archivo/borrado de modelos por Codex.

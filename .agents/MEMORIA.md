@@ -1,5 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: RA reconciliada con LXXXVIII de GLM
+
+- Candidato cd2e+main230 conserva ambas bitácoras/ADR/decisión FDUSD,
+  diff por padre; checkalltargets0/5,41s antes del commit, logE29844A0.
+- CI anteriorff998 SUCCESS187/0/3, merge800c5f67 padres e3/ff998
+  confirmados; nuevo headRA requiere CI propia y sigue draft. RA§42/JSON.
+- OOS9a3 separado probado14/0 ycompilado; MG/reloj/bosque siguen locales,
+  sin respuesta a consultas de publicación. No confundir con main.
+- A/B de FDUSD reservado al dueño: ningún modelo eliminado/archivado.
+
 ## 2026-10-04 — Codex: reinicio main44bc8 y contratos causales pendientes
 
 Recibo posterior: check candidato44bc8 exit0/2m49s, hash099AF3FC enRA§41.

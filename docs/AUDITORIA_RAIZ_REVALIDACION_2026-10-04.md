@@ -2054,4 +2054,28 @@ El siguiente candidato requiere unión documental con230 y sus gates antes
 de declarar PR lista o mergeada. No usar CI verde de base anterior como sello
 de una integración que todavía no ocurrió.
 
+## 42. Candidato RA con main230 comprobado; identidades de CI separadas
+
+Segundo merge local preparado desde cd2e00324c3fccdb9750e4f1794154d0e2911817
+y main2302278b496aeafbdb71d5516a39933426ea424f, sin conflictos de contenido.
+Contra cada padre se revisó el delta: GLM LXXXVIII se conserva entero; las
+adendas RA permanecen. Sólo se retiraron dos líneas vacías nuevas al EOF,
+sin quitar información. Checkworkspacealltargets exit0 en5,41s, antes
+del commit; logSHA256E29844A035F318FD63041AE147F7064C04901ABDFDF8AF1D24015F2297B85E56.
+Ninguna fuente Rust/CI difiere del candidato ya comprobado con44bc8.
+
+El log de CIff998 confirma187aprobadas,0fallidas,3ignoradas,13resultados.
+Merge realmente probado:800c5f67f24b427d735d4b2530492c24d5329c0e;
+padres e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd y
+ff99849a20ec0780f402c59bd88a612cf68e5d95, cotejados por API.
+LogSHA256277D11D0D183F7C546F014DA8B8BC05BF8A7ECFF9A1BEDB14E905D324A17490D.
+Las tres ignoradas son inventario real manual y dos mediciones de tapes;
+no se habilitaron ni contaron como aprobadas. No es el T1 completo.
+
+La publicación del nuevo head RA debe conservar draft y pedir nueva CI;
+no fusionar a main por extrapolar el SUCCESS anterior. OOS9a3, MG7aad,
+reloj36b0 y bosquecace continúan separados y locales. La revisión global
+sigue parcial. Nada autoriza trading, promoción, entrenamiento o borrado
+de modelos. El dueño conserva la decisión FDUSD; no se ejecutó A ni B.
+
 

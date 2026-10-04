@@ -1149,5 +1149,32 @@
       },
       "FDUSD_model_deletion_or_move": false,
       "CI_is_not_new_candidate_evidence": true
+    },
+    "restart_main230_candidate_receipt": {
+      "parents": [
+        "cd2e00324c3fccdb9750e4f1794154d0e2911817",
+        "2302278b496aeafbdb71d5516a39933426ea424f"
+      ],
+      "all_targets_exit_code": 0,
+      "all_targets_seconds": 5.41,
+      "log_sha256": "E29844A035F318FD63041AE147F7064C04901ABDFDF8AF1D24015F2297B85E56",
+      "CI_preceding_head_receipt": {
+        "run": 37235240759,
+        "head": "ff99849a20ec0780f402c59bd88a612cf68e5d95",
+        "tested_merge": "800c5f67f24b427d735d4b2530492c24d5329c0e",
+        "parents": [
+          "e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd",
+          "ff99849a20ec0780f402c59bd88a612cf68e5d95"
+        ],
+        "passed": 187,
+        "failed": 0,
+        "ignored": 3,
+        "result_targets": 13,
+        "log_sha256": "277D11D0D183F7C546F014DA8B8BC05BF8A7ECFF9A1BEDB14E905D324A17490D"
+      },
+      "new_CI_required": true,
+      "PR_should_remain_draft": true,
+      "source_repair_OOS_remains_separate": true,
+      "delete_model_decision_executed": false
     }
 }
