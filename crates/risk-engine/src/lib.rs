@@ -15,6 +15,7 @@ pub mod orchestrator;
 pub mod random_matrix;
 pub mod regime;
 pub mod drawdown;
+pub mod envio;
 pub mod ruin;
 pub mod tp_sl;
 pub mod veto_registry;

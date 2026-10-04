@@ -69,6 +69,25 @@ mod audit_xiii_tests {
         );
         assert_eq!(parse_warmup_kline(&[]), None);
     }
+
+    /// CL-37 — el universo de arranque sale en la grafía canónica, sin
+    /// duplicados y dentro de la capacidad del arena: es el mapa slot↔símbolo
+    /// que comparten host, núcleo, riesgo y reserva durante toda la sesión.
+    #[tokio::test]
+    async fn cl37_universo_de_arranque_canonico_unico_y_dentro_de_capacidad() {
+        let (_, syms) = SystemDiagnostics::execute_phase_1_and_2(false)
+            .await
+            .expect("bootloader");
+        assert!(!syms.is_empty() && syms.len() <= quantum_arena::state::MAX_COINS);
+        let mut vistos = std::collections::HashSet::new();
+        for s in &syms {
+            assert!(
+                !s.is_empty() && s.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()),
+                "{s}: el universo debe ir en MAYÚSCULAS ASCII (grafía de models/ y del registro)"
+            );
+            assert!(vistos.insert(s.clone()), "{s} duplicado");
+        }
+    }
 }
 
 /// Orquestador de Secuencia de Arranque (Fase 1: System Bootloader)
@@ -326,7 +345,9 @@ impl SystemDiagnostics {
             "renderusdt".to_string(),
             "ldousdt".to_string(),
         ];
-        Ok((0, syms))
+        // CL-37: grafía canónica (MAYÚSCULAS), la del registro y de `models/`.
+        // Los streams del WS se construyen aparte en minúsculas.
+        Ok((0, syms.into_iter().map(|s| s.to_ascii_uppercase()).collect()))
     }
 
     /// X-017 (REHAB-6): OHLCV COMPLETO por kline — antes solo closes con

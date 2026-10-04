@@ -23,6 +23,12 @@ pub struct ShadowForest {
     /// drawdown del fitness unificado (antes la cosecha comparaba PnL
     /// crudo — el único promotor fuera del objetivo D-652).
     pub peak_capital: Vec<f64>,
+    /// CL-40: generación del almacén alrededor de la cual se plantaron los
+    /// universos (0 = ninguna sancionada). Sus núcleos ya no adoptan el
+    /// genoma activo por su cuenta (`RecargaGenoma::Fija`): cuando el núcleo
+    /// vivo aplica una generación más nueva, el host replanta con
+    /// `seguir_generacion`.
+    pub generacion_base: u64,
 }
 
 /// Operaciones cerradas acumuladas por un universo (todas las monedas).
@@ -82,6 +88,7 @@ impl ShadowForest {
             genomes,
             trades_at_replant,
             peak_capital,
+            generacion_base: 0,
         }
     }
 
@@ -213,6 +220,29 @@ impl ShadowForest {
         (winner, leaderboard)
     }
 
+    /// CL-40: replanta alrededor de `genoma` si no es ya el control (un
+    /// re-registro del mismo genoma con otra generación no borra la muestra
+    /// de la cosecha). Devuelve si replantó.
+    ///
+    /// CL-40c: decide el genoma, no el número de generación. El host sólo la
+    /// llama cuando el almacén cambia (fecha de `active.json`) o tras su
+    /// propia promoción, y el almacén puede repetir o bajar números (dos
+    /// promotores leen el mismo padre; un `active.json` ilegible cuenta como
+    /// generación 0), mientras el demonio y la cosecha aplican su genoma al
+    /// arena sin mirar el número. `generacion_base` sólo registra la mayor.
+    pub fn seguir_generacion(&mut self, generacion: u64, genoma: &SuperGenotype) -> bool {
+        self.generacion_base = self.generacion_base.max(generacion);
+        if self
+            .genomes
+            .first()
+            .is_some_and(|control| crate::online_daemon::same_genome(control, genoma))
+        {
+            return false;
+        }
+        self.replant(genoma.clone());
+        true
+    }
+
     /// Resetea los capitales y muta todos los árboles basándose en el nuevo Alpha
     pub fn replant(&mut self, new_alpha: SuperGenotype) {
         for (i, engine) in self.engines.iter_mut().enumerate() {
@@ -301,6 +331,69 @@ mod tests {
             .store(14.0, Ordering::Relaxed);
         let (winner, _) = forest.harvest_best_genome();
         assert!(winner.is_none(), "tras replantar la muestra vuelve a empezar");
+    }
+
+    /// CL-40: el bosque replanta cuando el almacén sanciona una generación
+    /// más nueva, y sólo entonces (sus núcleos ya no la adoptan solos).
+    #[test]
+    fn cl40_el_bosque_sigue_la_generacion_sancionada() {
+        let base = SuperGenotype::default();
+        let mut forest = ShadowForest::new(13.0, base.clone(), 2);
+        assert_eq!(forest.generacion_base, 0);
+
+        let mut nuevo = base.clone();
+        nuevo.tech_threshold = 0.29;
+        forest.engines[1].arena.unified_capital.store(14.0, Ordering::Relaxed);
+        assert!(forest.seguir_generacion(3, &nuevo));
+        assert_eq!(forest.generacion_base, 3);
+        assert_eq!(forest.genomes[0].tech_threshold, 0.29, "el control es el genoma sancionado");
+        assert_eq!(
+            forest.engines[1].arena.unified_capital.load(Ordering::Relaxed),
+            13.0,
+            "replantar reinicia el capital de cada universo"
+        );
+
+        // Re-registro del mismo genoma con una generación nueva: avanza la
+        // base y conserva la muestra (capital y mutantes intactos).
+        forest.engines[1].arena.unified_capital.store(14.0, Ordering::Relaxed);
+        let mutante = forest.genomes[1].clone();
+        assert!(!forest.seguir_generacion(4, &nuevo));
+        assert_eq!(forest.generacion_base, 4);
+        assert_eq!(forest.engines[1].arena.unified_capital.load(Ordering::Relaxed), 14.0);
+        assert!(crate::online_daemon::same_genome(&forest.genomes[1], &mutante));
+    }
+
+    /// CL-40c: el almacén puede repetir o bajar el número de generación (dos
+    /// promotores que leen el mismo padre, un `active.json` ilegible que
+    /// cuenta como 0) mientras el demonio y la cosecha aplican su genoma al
+    /// arena. El bosque sigue al genoma, no al número.
+    #[test]
+    fn cl40c_el_bosque_sigue_al_genoma_aunque_el_numero_no_avance() {
+        let base = SuperGenotype::default();
+        let mut forest = ShadowForest::new(13.0, base.clone(), 2);
+        let mut nuevo = base.clone();
+        nuevo.tech_threshold = 0.29;
+        assert!(forest.seguir_generacion(3, &nuevo));
+
+        // Otro promotor escribió la MISMA generación con otro genoma.
+        let mut otro = base.clone();
+        otro.tech_threshold = 0.31;
+        assert!(forest.seguir_generacion(3, &otro), "generación repetida con otro genoma");
+        assert_eq!(forest.genomes[0].tech_threshold, 0.31);
+
+        // El almacén retrocedió (generación 1) y se aplicó un genoma nuevo.
+        assert!(forest.seguir_generacion(1, &nuevo), "generación menor con otro genoma");
+        assert_eq!(forest.genomes[0].tech_threshold, 0.29);
+        assert_eq!(forest.generacion_base, 3, "la base registra la mayor vista");
+
+        // El mismo genoma, releído del JSON (serde sin float_roundtrip puede
+        // moverlo 1 ulp la primera vez), es estable a partir de ahí.
+        let releido: SuperGenotype =
+            serde_json::from_str(&serde_json::to_string(&forest.genomes[0]).unwrap()).unwrap();
+        forest.seguir_generacion(5, &releido);
+        let otra_vez: SuperGenotype =
+            serde_json::from_str(&serde_json::to_string(&releido).unwrap()).unwrap();
+        assert!(!forest.seguir_generacion(6, &otra_vez), "la copia releída es estable");
     }
 
     #[test]

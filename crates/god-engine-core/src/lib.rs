@@ -45,6 +45,7 @@ pub mod order_flow_aggregator;
 pub mod outcome_context;
 pub mod quantum_kelly_risk;
 pub mod reality_physics;
+pub mod recarga_genoma;
 pub mod reexport_storage {
     pub use storage_engine::mmap_bus;
 }
@@ -778,6 +779,10 @@ pub struct GodEngineCore {
     /// X-019: mtime del último sobre de genomas visto — evita disco+parse
     /// en el hot loop cuando no hay evolución nueva.
     genomes_mtime: Option<std::time::SystemTime>,
+    /// CL-40: sólo el núcleo conectado a la ejecución sigue al almacén; el
+    /// que evalúa un genoma concreto (examen, bosque sombra, backtests) lo
+    /// conserva.
+    pub recarga_genoma: recarga_genoma::RecargaGenoma,
     /// R4.3 — calibrador conformal real (antes: constante 0.95).
     pub conformal: conformal::ConformalCalibrator,
     /// D-619 (DÉCIMA OLA): mapa aprendido de la puntuación de confianza a la
@@ -1030,6 +1035,7 @@ impl GodEngineCore {
             ),
             applied_generation: std::sync::atomic::AtomicU64::new(0),
             genomes_mtime: None,
+            recarga_genoma: recarga_genoma::RecargaGenoma::para(outcome_context),
             conformal: conformal::ConformalCalibrator::new(),
             confidence_calibrator: calibration::PlattCalibrator::new(),
             conformal_by_coin: (0..n_coins)
@@ -1284,7 +1290,10 @@ impl GodEngineCore {
     /// un stat() barato y parse solo si el archivo cambió.
     pub fn refresh_models(&mut self) {
         self.scalp_forest = crate::ml_inference::NanoForest::get_global("UNIVERSAL");
-        if std::env::var_os("GOD_NO_HOT_RELOAD").is_some() {
+        if !self
+            .recarga_genoma
+            .sigue_al_almacen(std::env::var_os("GOD_NO_HOT_RELOAD").is_some())
+        {
             return;
         }
         let mtime_now = std::fs::metadata(quantum_arena::genome_store::active_json_path())

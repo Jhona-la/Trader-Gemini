@@ -1,5 +1,106 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Claude (cloud): ciclo 8, cimientos (identidad, IOC, genoma, apalancamiento)
+
+Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` sobre main
+04463bfe. Cada arreglo lleva un test que falla en main antes del cambio.
+ADR-0011, 0012 y 0013 nuevos; hoja de ruta del 2026-10-01 versionada en
+`docs/HOJA_DE_RUTA_CIMIENTOS_2026-10-01.md` (sus números de ADR eran
+provisionales; la nota de cabecera da la correspondencia).
+
+- CL-36: el testigo OPEN `legacy_number_scanner_still_drops_scientific_exponents`
+  seguía rojo en main desde AGY-AUD-P11 (que arregló el escáner). Ahora
+  afirma la lectura correcta.
+- CL-37 (ADR-0011): un solo nombre por símbolo, MAYÚSCULAS. El bootloader
+  daba el universo en minúsculas y los bosques se cargan por stem
+  (`ATOMUSDT_MOTOR`): la clave `atomusdt_MOTOR` nunca coincidía y en vivo
+  la base del bosque caía al 0,5 neutro en todos los slots.
+- CL-38 (ADR-0011): el demonio de rotación ya no reescribe el universo vivo
+  ni re-suscribe el WS. El host congela `symbol_to_id`: tras la primera
+  rotación el slot i del núcleo dejaba de ser el símbolo que el host le
+  enruta. Rotar exige reiniciar.
+- CL-39: una IOC aceptada no es un llenado. AGY-P32 trataba cualquier HTTP
+  2xx como fill. Ahora pide `newOrderRespType=RESULT` y lee el estado
+  terminal con los validadores de Codex (`execution_evidence`): EXPIRED sin
+  ejecución ⇒ `IOC_UNFILLED` (rollback limpio); sin evidencia terminal ⇒
+  `AMBIGUOUS` (reserva pendiente, resolución por REST).
+- CL-40 (ADR-0012): sólo el núcleo de ejecución sigue al almacén de
+  genomas. `refresh_models` sustituía el candidato por `active.json` en el
+  examen del demonio, el bosque sombra, el SA y los mutantes de los
+  backtests de evolución (el examen juzgaba al activo frente a sí mismo).
+  El bosque sombra replanta por generación (`seguir_generacion`).
+- CL-41 (ADR-0013): el host nunca envía más apalancamiento que el validado
+  (`risk_engine::envio`, misma función en host y replay). El margen libre
+  descontaba la reserva de la propia orden (vetos falsos en micro) y la
+  adaptación D-382 subía hasta 20× por encima del riesgo.
+- Revisión adversarial de mis propios commits (4 defectos confirmados, arreglados):
+  - CL-39b: la IOC registraba la intención antes de firmar; un rechazo
+    firme (la orden nunca existió) la dejaba en `New` para siempre. Ahora se
+    registra justo antes del envío y `mark_local_reject` la cierra; un error
+    `AMBIGUOUS` la deja viva para la consulta.
+  - CL-40b: el host replantaba el bosque sólo si `applied_generation` subía,
+    y el demonio aplica sus promociones directo al arena sin moverlo. Ahora
+    mira el almacén (fecha de `active.json`) y re-registrar el mismo genoma
+    no replanta.
+  - CL-41b: la reserva seguía con el margen validado aunque el envío fuera a
+    1× (el exchange retenía hasta 10× más): el margen libre de la siguiente
+    entrada salía optimista. La reserva pasa a `margen_de_envio` en host y
+    replay (la reconciliación ya hacía lo mismo al sincronizar).
+- Segunda revisión (22 agentes, sobre los arreglos anteriores; 12
+  confirmados, 4 eran míos y se arreglan):
+  - CL-39c: la decisión firme/ambigua del cierre local
+    (`ioc_evidence::error_cierra_la_intencion`) tiene contrato.
+  - CL-40c: el bosque decide por el genoma del almacén, no por el número de
+    generación (el almacén puede repetirlo o bajarlo); la cosecha aplica y
+    planta el genoma releído (serde sin `float_roundtrip` mueve 1 ulp) y la
+    fecha de `active.json` se toma antes de leerlo.
+  - CL-41c: el reajuste suma la diferencia a `used_margin` bajo el cerrojo y
+    antes de publicar la ranura (con el orden anterior un cierre intercalado
+    dejaba margen fantasma), y el host decide el envío en el hilo del núcleo,
+    antes del spawn, como el replay.
+- CL-42: la guardia de qo-602 seguía esperando el lector de Lundberg
+  anterior a qo-651 (de5fcc9b): roja en main (fuera de la CI).
+- Verificación del árbol final (con main 04463bfe): 8 crates
+  `--all-targets` 1453 pasan, 0 fallan, 8 ignoradas; check del workspace
+  `--locked` en verde; T-1 16/144 (11,1 %) ≥ trinquete 11,0 %.
+- T-1, gen 12 (perdido con el lote c71be62b): bisección por merge lo fija en
+  qo-586 (d74b158b, puerta de banda operable). La sonda tiene paridad con el
+  gate de riesgo: es efecto del fixture, no defecto.
+- Abiertos (confirmados, sin arreglar):
+  - GENOME-GATE al cargar: los genomas versionados violan los slots 21, 54
+    y 107 y la RR en τ_lo; el rollback a las generaciones 1 y 2 falla en el
+    gate. Inventario hecho; arreglo pendiente.
+  - Tolerancia de la IOC (5–35 pb) frente al gate; re-anclaje de la ranura
+    al llenado parcial; `close_was_real` lee la ranura fija 2; el demonio
+    usa `positions.position.is_open()` (ranura 2) en vez de `is_any_open`;
+    `feed_health` y el bosque UNIVERSAL son estado global en el examen.
+  - La envolvente sólo decide el apalancamiento del exchange, no el
+    nocional (que fija el núcleo): dimensionar en espacio de riesgo sigue
+    pendiente. La envolvente evalúa su capital descontando la reserva
+    propia (`cap_now`); no se tocó porque cambia sus vetos.
+  - La rama `AMBIGUOUS` del host conserva la reserva aunque la consulta
+    REST diga EXPIRED con 0 ejecutado; la ruta MARKET (y la maker) deja
+    intenciones en `New` ante un rechazo firme (mismo defecto que CL-39b).
+  - Con CL-41b el límite de exposición del orquestador suma el margen del
+    exchange: una sonda a 1× consume más techo que antes (es lo real).
+  - Binance fija el apalancamiento por símbolo: con dos ranuras del mismo
+    símbolo a apalancamientos distintos, el exchange recalcula ambas y el
+    arena sólo la propia (la reconciliación se salta el símbolo).
+  - El replay no evalúa la envolvente en la 2.ª/3.ª ranura de una moneda
+    con otra abierta (`is_any_open`); el host sí. Candidato: disparar el
+    gate por la reserva del núcleo (y en el demonio, que lee la ranura 2).
+  - Llenado parcial de la IOC: la reserva se confirma con la cantidad y el
+    margen de la orden completa. La deriva de la reconciliación escribe la
+    ranura sin su cerrojo.
+  - Almacén de genomas: `promote` sin cerrojo entre la cosecha y el
+    demonio (generaciones repetidas; tmp de nombre fijo); el demonio
+    promueve el incumbente leído al empezar su ronda aunque la cosecha
+    haya promovido otro, y su vigilancia post-promoción no se rearma
+    cuando la cosecha cambia el genoma vivo (rollback al padre
+    equivocado).
+  - Toolchain sin fijar (la nube sólo tiene nightly 09-27; la CI usa
+    nightly-2026-06-30).
+
 ## 2026-10-03 — Qoder: Ola 53 / #653 — DD-LERP COMPUESTO — ORÁCULO PASA 16/144
 
 - Rama qoder/ola53-dd-lerp (worktree .ola53, base 04463bfe), código

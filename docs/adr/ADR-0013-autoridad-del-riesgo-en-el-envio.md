@@ -1,0 +1,80 @@
+# ADR-0013 — El host nunca envía más apalancamiento que el validado
+
+- **Estado**: Aceptado
+- **Fecha**: 2026-10-03
+- **Responsables**: Claude (ciclo 8, CL-41); revisión cruzada en el PR del
+  ciclo 8
+
+## Contexto
+
+El núcleo abre la ranura con la orden que validó el risk-engine (margen
+`volume_usd`, nocional `margen · leverage`) y suma ese margen a
+`arena.used_margin`. Después, el host recalcula el apalancamiento de envío
+con la envolvente Kelly y lo adapta al margen libre (D-382), y el replay
+copia esa cadena. Dos defectos:
+
+1. El margen libre era `capital − used_margin`, que ya descuenta la reserva
+   de esa misma orden. En capital micro se vetaban órdenes que caben y se
+   subía el apalancamiento sin necesidad.
+2. La adaptación subía hasta 20× sin mirar el apalancamiento validado, y la
+   envolvente podía pedir más que él: el host decidía por encima del riesgo
+   y la liquidación quedaba más cerca de lo que el riesgo aceptó. El host
+   además leía el margen de la primera ranura abierta, no de la reservada.
+
+## Decisión
+
+1. Una sola función pura, `risk_engine::envio::apalancamiento_de_envio`,
+   decide el envío en el host y en el replay: parte del apalancamiento de
+   la envolvente recortado al validado; si el margen requerido supera el
+   85 % del libre, lo sube como mucho hasta el validado; si aun así pasa
+   del 95 %, veta.
+2. El apalancamiento validado se reconstruye de la ranura reservada
+   (nocional / margen) y el margen libre no descuenta la reserva propia
+   (`margen_libre_sin_la_propia`).
+3. Tras decidir el apalancamiento de envío, la reserva pasa a retener el
+   margen que retendrá el exchange (`margen_de_envio` = nocional /
+   apalancamiento, nunca menor que el validado) y `used_margin` recibe la
+   diferencia (CL-41b). Sin esto, con el arranque a 1× el exchange retenía
+   varias veces el margen contable y el margen libre de la siguiente
+   entrada salía optimista (la guarda -2019 dejaba pasar órdenes que el
+   exchange rechaza).
+4. En el host, la decisión de envío y el reajuste corren en el hilo del
+   núcleo, antes del `spawn` de la E/S y del siguiente evento, como en el
+   replay (CL-41c). La diferencia de margen entra en `used_margin` bajo el
+   cerrojo de la ranura y antes de publicar su margen nuevo, igual que la
+   reserva del núcleo: un cierre que lea el margen nuevo no deja margen
+   fantasma con su resta saturada.
+5. Se conservan el arranque exploratorio (1× con menos de 30 cierres) y el
+   veto de la envolvente: cambiarlos es política de riesgo del dueño.
+
+## Consecuencias
+
+- Las decisiones de riesgo duras (apalancamiento y liquidación) quedan del
+  lado del risk-engine; el host sólo puede bajar el apalancamiento, nunca
+  subirlo por encima de lo validado.
+- La contabilidad de margen del arena es la del exchange: el límite de
+  exposición del orquestador y el tamaño de las entradas siguientes ven el
+  margen realmente bloqueado.
+- Queda abierto, y documentado: la envolvente sólo decide el apalancamiento
+  del exchange (margen bloqueado), no el nocional, que fija el núcleo; el
+  dimensionamiento en espacio de riesgo (riesgo al stop ≈ Kelly fraccional)
+  sigue sin existir. Por la misma razón, el arranque a 1× de D-116 no
+  reduce el riesgo al stop (el nocional no cambia): sólo aleja la
+  liquidación y bloquea más margen. La envolvente también evalúa su capital
+  descontando la reserva propia (`cap_now`); no se toca aquí porque cambia
+  sus vetos.
+- Abierto tras la revisión del ciclo 8 (confirmado, sin arreglar):
+  - Binance fija el apalancamiento por símbolo. Con dos ranuras abiertas en
+    el mismo símbolo y apalancamientos de envío distintos, el exchange
+    recalcula el margen de ambas al último y el arena sólo reajusta la
+    propia; la reconciliación se salta el símbolo
+    (`MultipleLocalAllocations`). Candidato: enviar al apalancamiento ya
+    vigente del símbolo o vetar.
+  - El replay no evalúa la envolvente ni reajusta la reserva en la segunda
+    y tercera ranura de una moneda con otra ya abierta (`pos_was_open =
+    is_any_open`); el host sí, porque decide por la orden del núcleo.
+    Candidato: disparar el gate por la reserva del núcleo.
+  - Un llenado parcial de la IOC confirma la reserva con la cantidad y el
+    margen de la orden completa.
+  - La rama de deriva de la reconciliación escribe `quantity` y
+    `margin_used` sin el cerrojo de la ranura.

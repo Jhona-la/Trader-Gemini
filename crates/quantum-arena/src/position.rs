@@ -422,6 +422,42 @@ impl Position {
         result
     }
 
+    /// CL-41b: la reserva sin confirmar pasa a retener el margen que retendrá
+    /// el exchange con el apalancamiento de envío (nocional / apalancamiento),
+    /// que nunca supera el validado y por tanto nunca baja el margen.
+    /// CL-41c: la diferencia (nuevo − anterior) se suma a `used_margin` bajo el
+    /// cerrojo y ANTES de publicar el margen nuevo de la ranura, como la
+    /// reserva del núcleo: un cierre que lea el margen nuevo encuentra ya la
+    /// diferencia sumada y su resta saturada no deja margen fantasma. Devuelve
+    /// esa diferencia. Un margen no finito o no positivo no cambia nada.
+    pub fn reajustar_margen_generation(
+        &self,
+        generation: u64,
+        nuevo_margen: f64,
+        used_margin: &AtomicF64,
+    ) -> Result<f64, PositionTransitionError> {
+        self.lock_transition();
+        let result = if self.generation.load(Ordering::Acquire) != generation {
+            Err(PositionTransitionError::GenerationMismatch)
+        } else if !self.is_open.load(Ordering::Acquire) {
+            Err(PositionTransitionError::Closed)
+        } else if self.exchange_confirmed.load(Ordering::Acquire) {
+            Err(PositionTransitionError::AlreadyConfirmed)
+        } else if !(nuevo_margen.is_finite() && nuevo_margen > 0.0) {
+            Ok(0.0)
+        } else {
+            let anterior = self.margin_used.load(Ordering::Relaxed);
+            let delta = nuevo_margen - anterior;
+            if delta != 0.0 {
+                used_margin.fetch_add(delta, Ordering::AcqRel);
+            }
+            self.margin_used.store(nuevo_margen, Ordering::Relaxed);
+            Ok(delta)
+        };
+        self.unlock_transition();
+        result
+    }
+
     /// A confirmation for an old occupant must not confirm a reused slot.
     /// The caller is responsible for supplying actual execution evidence.
     pub fn confirm_generation(&self, generation: u64) -> Result<(), PositionTransitionError> {
@@ -747,6 +783,77 @@ impl PositionManager {
 
 #[cfg(test)]
 mod tests {
+    /// CL-41c: el reajuste suma la diferencia a `used_margin` ANTES de
+    /// publicar el margen nuevo de la ranura y bajo el cerrojo de transición
+    /// (como la reserva del núcleo, «reservation-before-publication»). Un
+    /// cierre que lea el margen nuevo y reste con saturación deja 0.
+    #[test]
+    fn cl41c_el_reajuste_publica_el_margen_despues_de_reservarlo() {
+        let pos = Position::default();
+        let usado = AtomicF64::new(2.6);
+        assert!(pos.open_with_fee(
+            true, 100.0, 0.13, 2.6, 1_700_000_000_000, 101.0, 99.0,
+            PositionHorizon::Continuous, 0.6, 0.7, 0.0,
+        ));
+        let generacion = pos.generation.load(Ordering::Acquire);
+        let delta = pos.reajustar_margen_generation(generacion, 6.5, &usado).unwrap();
+        assert!((delta - 3.9).abs() < 1e-12);
+        assert!((usado.load(Ordering::Acquire) - 6.5).abs() < 1e-12);
+        assert!((pos.margin_used.load(Ordering::Acquire) - 6.5).abs() < 1e-12);
+        let (_, _, _, margen, _) = pos.close_with_fee();
+        let _ = usado.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| Some((v - margen).max(0.0)));
+        assert!(usado.load(Ordering::Acquire).abs() < 1e-12);
+        // Cerrada: no reajusta ni toca la contabilidad.
+        assert!(pos.reajustar_margen_generation(generacion, 13.0, &usado).is_err());
+        assert!(usado.load(Ordering::Acquire).abs() < 1e-12);
+    }
+
+    /// CL-41c: con el reajuste de un hilo y el cierre (resta saturada, como
+    /// el núcleo) de otro, nunca queda margen fantasma en `used_margin`.
+    #[test]
+    fn cl41c_reajuste_y_cierre_concurrentes_no_dejan_margen_fantasma() {
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
+        let pos = Arc::new(Position::default());
+        let usado = Arc::new(AtomicF64::new(0.0));
+        let fin = Arc::new(AtomicBool::new(false));
+        let cerrador = {
+            let (pos, usado, fin) = (Arc::clone(&pos), Arc::clone(&usado), Arc::clone(&fin));
+            std::thread::spawn(move || {
+                while !fin.load(Ordering::Acquire) {
+                    let (_, _, _, margen, _) = pos.close_with_fee();
+                    if margen > 0.0 {
+                        let _ = usado.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| Some((v - margen).max(0.0)));
+                    }
+                    std::hint::spin_loop();
+                }
+            })
+        };
+        for i in 0..20_000u64 {
+            // Como el núcleo, sólo se abre una ranura libre (abrir encima de
+            // una abierta la sobrescribe sin cerrarla).
+            while pos.is_open() {
+                std::hint::spin_loop();
+            }
+            // Reserva antes de publicar, como el núcleo.
+            usado.fetch_add(2.6, Ordering::AcqRel);
+            if !pos.open_with_fee(
+                true, 100.0, 0.13, 2.6, 1_700_000_000_000 + i, 101.0, 99.0,
+                PositionHorizon::Continuous, 0.6, 0.7, 0.0,
+            ) {
+                usado.fetch_sub(2.6, Ordering::AcqRel);
+                continue;
+            }
+            let generacion = pos.generation.load(Ordering::Acquire);
+            let _ = pos.reajustar_margen_generation(generacion, 6.5, &usado);
+        }
+        fin.store(true, Ordering::Release);
+        cerrador.join().unwrap();
+        let (_, _, _, margen, _) = pos.close_with_fee();
+        let _ = usado.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| Some((v - margen).max(0.0)));
+        assert!(usado.load(Ordering::Acquire).abs() < 1e-9, "margen fantasma: {}", usado.load(Ordering::Acquire));
+    }
+
     /// T-4 (DÉCIMA OLA) — PRUEBA DE ESTRÉS DE CONCURRENCIA PARA D-659.
     ///
     /// Este test es la razón por la que la carrera ABA vivió sin detectarse:

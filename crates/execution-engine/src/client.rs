@@ -315,7 +315,23 @@ impl BinanceClient {
         &self,
         full_url: &str,
     ) -> Result<(BinanceRateLimits, crate::order_types::OrderAck), String> {
-        use crate::order_types::{parse_order_body, parse_reject_body, truncate, OrderAck};
+        use crate::order_types::{parse_order_body, OrderAck};
+        let (limits, body) = self.execute_order_payload_body(full_url).await?;
+        // A successful submission can precede a truncated/invalid
+        // response. A parse error is not proof of non-execution.
+        let ack: OrderAck = parse_order_body(&body).map_err(|e| format!("AMBIGUOUS: {}", e))?;
+        Ok((limits, ack))
+    }
+
+    /// CL-39: el POST de orden con la MISMA clasificación de fallos que
+    /// `execute_order_payload_typed`, devolviendo el cuerpo 2xx sin parsear
+    /// para que el llamador lo valide con su propio contrato (la IOC exige
+    /// estado terminal y `executedQty` presentes, sin defaults a cero).
+    pub async fn execute_order_payload_body(
+        &self,
+        full_url: &str,
+    ) -> Result<(BinanceRateLimits, String), String> {
+        use crate::order_types::{parse_reject_body, truncate};
 
         let api_key = self.api_key.load();
         let response = self
@@ -345,11 +361,7 @@ impl BinanceClient {
                     )
                 })?;
                 if status.is_success() {
-                    // A successful submission can precede a truncated/invalid
-                    // response. A parse error is not proof of non-execution.
-                    let ack: OrderAck =
-                        parse_order_body(&body).map_err(|e| format!("AMBIGUOUS: {}", e))?;
-                    Ok((limits, ack))
+                    Ok((limits, body))
                 } else if status.is_client_error() {
                     use crate::order_types::{error_codes, BinanceApiError};
                     let unknown_execution = status.as_u16() == 408

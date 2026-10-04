@@ -2880,6 +2880,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // --------------------------------
 
         let mut shadow_forest = evolution_engine::random_forest::ShadowForest::new(initial_capital, initial_genome.clone(), 10);
+        // CL-40: los universos del bosque evalúan SU genoma (no adoptan el
+        // activo por su cuenta); se anota la generación de la que se
+        // plantaron (si el almacén trae ya otro genoma, se replanta).
+        // Fecha del `active.json` que el bosque ya leyó: sólo se relee cuando
+        // cambia (mismo filtro que `refresh_models` del núcleo). Se toma ANTES
+        // de leer: una escritura entre medias se vuelve a leer, no se pierde.
+        let mut mtime_bosque = std::fs::metadata(quantum_arena::genome_store::active_json_path())
+            .and_then(|m| m.modified())
+            .ok();
+        if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
+            shadow_forest.seguir_generacion(env.generation, &env.genome);
+        }
 
         // XXXVI: per-observation accounting proxy, NOT independent backtest/live evidence.
         // Recovery owns only a core entry veto; global/executor latches are independent.
@@ -4105,6 +4117,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .filter(|a| a.is_finite() && *a > 0.0)
                             .unwrap_or(0.0);
 
+                        // CL-41: lo que el riesgo validó para ESTA orden se lee
+                        // de la ranura reservada (no de la primera abierta):
+                        // su margen, que ya está en `used_margin`, y el
+                        // apalancamiento validado (nocional / margen).
+                        let (margen_propio, apalancamiento_validado) = {
+                            let ranura = engine_real.arena.coins[coin_id].positions.get_slot(reservation.slot);
+                            let margen = ranura.margin_used.load(Ordering::Relaxed);
+                            let nocional = ranura.quantity.load(Ordering::Relaxed).abs()
+                                * ranura.entry_price.load(Ordering::Relaxed);
+                            (margen, risk_engine::envio::apalancamiento_validado(nocional, margen))
+                        };
                         let rejected_reservation = reservation.clone();
                         let rollback_positions = move |arena: &Arc<quantum_arena::GlobalArena>| {
                             if let Err(reason) = rejected_reservation.cancel(arena) {
@@ -4113,13 +4136,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         };
 
-                        rt_handle.spawn(async move {
+                        // CL-41c: la decisión de envío y el reajuste de la reserva
+                        // corren aquí, en el hilo del núcleo y antes del siguiente
+                        // evento, como en el replay: la validación de la siguiente
+                        // entrada ya ve el margen del exchange y ningún cierre del
+                        // núcleo se intercala con el reajuste. El spawn sólo hace
+                        // la E/S con el exchange.
+                        let decision_envio: Option<u32> = 'envio: {
                             if exec_leverage == 0 {
                                 telemetry_engine::telemetry!(
                                     "🛡️ [ENVOLVENTE] Entrada bloqueada: evidencia insuficiente o capital no sostiene el riesgo mínimo (Kelly bayesiano). Ejecutando Rollback de estado."
                                 );
-                                rollback_positions(&arena_clone);
-                                return;
+                                rollback_positions(&engine_real.arena);
+                                break 'envio None;
                             }
 
                             // B3.6 — veto del breaker de fees: el símbolo
@@ -4131,37 +4160,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     "🛑 [FEE-BREAKER] Entrada de {} vetada (símbolo suspendido — fees > bruto ganador). Rollback de estado.",
                                     parsed_sym_str
                                 );
-                                rollback_positions(&arena_clone);
-                                return;
+                                rollback_positions(&engine_real.arena);
+                                break 'envio None;
                             }
 
-                            // Sincronización Binance Leverage con Core Sizing y protección -2019 (D-382)
-                            // MOD6/8-010: lector saturado — ver GlobalArena::used_margin_saturated.
-                            let used_margin = arena_clone.used_margin.load(Ordering::Relaxed).max(0.0);
-                            let free_margin = (arena_clone.unified_capital.load(Ordering::Relaxed) - used_margin).max(0.0);
-                            let required_margin = notional_volume / exec_leverage as f64;
-                            let mut effective_leverage = exec_leverage;
-
-                            if required_margin > free_margin * 0.85 && free_margin > 0.0 {
-                                let needed_leverage = (notional_volume / (free_margin * 0.80)).ceil().clamp(1.0, 20.0) as u32;
-                                if needed_leverage > effective_leverage {
-                                    telemetry_engine::telemetry!(
-                                        "⚡ [LEVERAGE-ADAPT] Ajustando apalancamiento para {} de {}x a {}x para evitar rechazo -2019 (notional: {:.2} USDT, margen libre: {:.2} USDT)",
-                                        parsed_sym_str, effective_leverage, needed_leverage, notional_volume, free_margin
-                                    );
-                                    effective_leverage = needed_leverage;
+                            // Sincronización Binance Leverage con Core Sizing y protección -2019 (D-382).
+                            // CL-41: misma función que el replay; el margen libre
+                            // no descuenta la reserva de esta orden y el
+                            // apalancamiento enviado nunca supera el validado.
+                            let free_margin = risk_engine::envio::margen_libre_sin_la_propia(
+                                engine_real.arena.unified_capital.load(Ordering::Relaxed),
+                                engine_real.arena.used_margin.load(Ordering::Relaxed),
+                                margen_propio,
+                            );
+                            let effective_leverage = match risk_engine::envio::apalancamiento_de_envio(
+                                exec_leverage,
+                                apalancamiento_validado,
+                                notional_volume,
+                                free_margin,
+                            ) {
+                                Ok(apalancamiento) => {
+                                    if apalancamiento != exec_leverage {
+                                        telemetry_engine::telemetry!(
+                                            "⚡ [LEVERAGE-ADAPT] {} de {}x a {}x (validado {:?}x, notional: {:.2} USDT, margen libre: {:.2} USDT)",
+                                            parsed_sym_str, exec_leverage, apalancamiento, apalancamiento_validado, notional_volume, free_margin
+                                        );
+                                    }
+                                    apalancamiento
                                 }
-                            }
-
-                            let final_required_margin = notional_volume / effective_leverage as f64;
-                            if final_required_margin > free_margin * 0.95 {
-                                telemetry_engine::telemetry!(
-                                    "🚨 [MARGIN-GUARD] Orden abortada para {}: margen requerido {:.2} USDT excede 95% del margen libre ({:.2} USDT). Ejecutando Rollback.",
-                                    parsed_sym_str, final_required_margin, free_margin
+                                Err(veto) => {
+                                    telemetry_engine::telemetry!(
+                                        "🚨 [MARGIN-GUARD] Orden abortada para {}: {:?} (notional {:.2} USDT, margen libre {:.2} USDT, validado {:?}x). Ejecutando Rollback.",
+                                        parsed_sym_str, veto, notional_volume, free_margin, apalancamiento_validado
+                                    );
+                                    rollback_positions(&engine_real.arena);
+                                    break 'envio None;
+                                }
+                            };
+                            // CL-41b: la reserva retiene el margen que retendrá el
+                            // exchange a este apalancamiento (≥ el validado):
+                            // el margen libre de la siguiente entrada es el real.
+                            if let Err(reason) = reservation.reajustar_margen(
+                                &engine_real.arena,
+                                risk_engine::envio::margen_de_envio(notional_volume, effective_leverage),
+                            ) {
+                                telemetry_engine::telemetry_err!(
+                                    "[ENTRY] {}: reserva no reajustable ({:?}); envío retenido. Rollback.",
+                                    parsed_sym_str, reason
                                 );
-                                rollback_positions(&arena_clone);
-                                return;
+                                rollback_positions(&engine_real.arena);
+                                break 'envio None;
                             }
+                            Some(effective_leverage)
+                        };
+
+                        rt_handle.spawn(async move {
+                            // Vetada en el hilo del núcleo: la reserva ya se revirtió.
+                            let Some(effective_leverage) = decision_envio else {
+                                return;
+                            };
 
                             let entry_executor = exec_clone.load_full();
                             let sym_filter = match entry_executor.get_symbol_filter(&parsed_sym_str).await {
@@ -4593,6 +4650,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if msg_count.is_multiple_of(5000) {
                 telemetry_server::telemetry_log!("⏱️ [TELEMETRY] Processed 5000 ticks/klines. Cumulative Fees: ${:.4}. Last tick: {} ns", total_fees, start.elapsed().as_nanos());
 
+                // CL-40: si el almacén sancionó una generación más nueva
+                // (el demonio la aplica directo al arena; el contador del
+                // núcleo sólo se mueve en `refresh_models`), el bosque se
+                // replanta alrededor de ella ANTES de cosechar: un mutante
+                // del genoma anterior no debe poder sustituir a la
+                // generación sancionada.
+                let mtime_almacen = std::fs::metadata(quantum_arena::genome_store::active_json_path())
+                    .and_then(|m| m.modified())
+                    .ok();
+                if mtime_almacen.is_some() && mtime_almacen != mtime_bosque {
+                    mtime_bosque = mtime_almacen;
+                    if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
+                        if shadow_forest.seguir_generacion(env.generation, &env.genome) {
+                            telemetry!(
+                                "🌲 [SHADOW FOREST] Replantado alrededor de la generación {}",
+                                env.generation
+                            );
+                        }
+                    }
+                }
+
                 // FASE 12: Cosecha Cuántica en vivo (ShadowForest)
                 let (winner, leaderboard) = shadow_forest.harvest_best_genome();
                 let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::ShadowLeaderboard(leaderboard));
@@ -4614,8 +4692,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &format!("cosecha shadow forest: +${:.2} vs control", pnl_gained),
                     ) {
                         Ok(env) => {
+                            // CL-40c: el arena y el bosque usan el genoma tal
+                            // como quedó en el almacén (lo que leerán el
+                            // demonio y el próximo arranque): serde_json sin
+                            // `float_roundtrip` puede mover 1 ulp algún gen, y
+                            // el bosque compararía su control en memoria con
+                            // la copia releída y replantaría sin motivo.
+                            let mtime_promocion = std::fs::metadata(quantum_arena::genome_store::active_json_path())
+                                .and_then(|m| m.modified())
+                                .ok();
+                            let env = quantum_arena::genome_store::GenomeEnvelope::load_active()
+                                .filter(|leido| leido.generation == env.generation)
+                                .unwrap_or(env);
                             env.genome.apply_to_arena(&engine_real.arena);
-                            shadow_forest.replant(env.genome.clone());
+                            shadow_forest.seguir_generacion(env.generation, &env.genome);
+                            mtime_bosque = mtime_promocion;
                         }
                         Err(e) => telemetry!(
                             "🚫 [T-03] Cosecha rechazada por el gate del almacén — arena intacto: {}",

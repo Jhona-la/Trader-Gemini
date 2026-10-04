@@ -640,9 +640,11 @@ impl ReplayTick {
 ///      con z/k del régimen micro (D-641).
 ///   4. D-116: n<30 ⇒ bootstrap leverage 1; operable ⇒
 ///      `min(core_leverage, env_cap)`; no-operable ⇒ VETO.
-///   5. D-382: LEVERAGE-ADAPT (sube a ceil(notional/(0.8·free)) si el
-///      requerido > 85% del margen libre) + MARGIN-GUARD (abort si el
-///      requerido final > 95% del margen libre).
+///   5. D-382 / CL-41 (`risk_engine::envio`): LEVERAGE-ADAPT (sube a
+///      ceil(notional/(0.8·free)) si el requerido > 85% del margen libre,
+///      nunca por encima del apalancamiento validado) + MARGIN-GUARD (abort
+///      si el requerido final > 95% del margen libre). El margen libre no
+///      descuenta la reserva de esta misma orden.
 ///   6. Veto = rollback EXACTO del vivo: `close_with_fee`, liberar
 ///      `used_margin`, reembolsar `entry_fee` (la entrada nunca existió ⇒
 ///      sin PnL, sin fee neto — B3.14: papel que no contamina).
@@ -711,11 +713,6 @@ pub fn live_envelope_gate(
     // D-116: envolvente AUTORITATIVA + bootstrap exploratorio (leverage 1).
     let envelope_n = envelope.posterior.n();
     let notional_ord = qty.abs() * entry_price;
-    let _core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
-        (notional_ord / pos_margin).round().clamp(1.0, 50.0) as u32
-    } else {
-        (5.05 / cap_now.max(1.0)).ceil().clamp(1.0, 20.0) as u32
-    };
     let exec_leverage: u32 = if envelope_n < 30.0 {
         1
     } else if operable {
@@ -750,34 +747,41 @@ pub fn live_envelope_gate(
         0
     };
 
-    // Veto puro de la envolvente (el host retorna ANTES de los margin guards).
-    if exec_leverage == 0 {
-        *veto_counter += 1;
-        rollback_local_position(arena, coin_id);
-        return false;
-    }
-
-    // D-382 — LEVERAGE-ADAPT + MARGIN-GUARD (notional al precio de decisión).
+    // Veto de la envolvente (exec = 0) y D-382 — LEVERAGE-ADAPT +
+    // MARGIN-GUARD (nocional al precio de decisión) — con la MISMA función
+    // que el host (CL-41): el margen libre no descuenta la reserva de esta
+    // orden y el apalancamiento de envío nunca supera el validado.
     let notional_volume = qty.abs() * mid;
-    // MOD6/8-010: lector saturado — ver GlobalArena::used_margin_saturated.
-    let used_margin = arena.used_margin.load(Ordering::Relaxed).max(0.0);
-    let free_margin = (arena.unified_capital.load(Ordering::Relaxed) - used_margin).max(0.0);
-    let mut effective_leverage = exec_leverage;
-    let required_margin = notional_volume / effective_leverage as f64;
-    if required_margin > free_margin * 0.85 && free_margin > 0.0 {
-        let needed_leverage =
-            (notional_volume / (free_margin * 0.80)).ceil().clamp(1.0, 20.0) as u32;
-        if needed_leverage > effective_leverage {
-            effective_leverage = needed_leverage;
+    let free_margin = risk_engine::envio::margen_libre_sin_la_propia(
+        arena.unified_capital.load(Ordering::Relaxed),
+        arena.used_margin.load(Ordering::Relaxed),
+        pos_margin,
+    );
+    let validado = risk_engine::envio::apalancamiento_validado(notional_ord, pos_margin);
+    match risk_engine::envio::apalancamiento_de_envio(
+        exec_leverage,
+        validado,
+        notional_volume,
+        free_margin,
+    ) {
+        Ok(apalancamiento) => {
+            // CL-41b: como el host, la reserva retiene el margen que
+            // retendría el exchange a este apalancamiento (CL-41c: la
+            // diferencia entra en `used_margin` bajo el cerrojo de la ranura).
+            let generacion = pos.generation.load(Ordering::Acquire);
+            let _ = pos.reajustar_margen_generation(
+                generacion,
+                risk_engine::envio::margen_de_envio(notional_volume, apalancamiento),
+                &arena.used_margin,
+            );
+            true
+        }
+        Err(_) => {
+            *veto_counter += 1;
+            rollback_local_position(arena, coin_id);
+            false
         }
     }
-    let final_required_margin = notional_volume / effective_leverage as f64;
-    if final_required_margin > free_margin * 0.95 {
-        *veto_counter += 1;
-        rollback_local_position(arena, coin_id);
-        return false;
-    }
-    true
 }
 
 /// P-1b — VOL-BRAKE: réplica EXACTA de god_engine.rs:3846-3858 (el host vivo).
@@ -935,8 +939,12 @@ mod tests {
         assert!(kept, "bootstrap no veta entrada sostenible");
         assert_eq!(vetoes, 0);
         assert!(arena.coins[0].positions.position.is_open());
-        // El rollback NÓN tocó contabilidad: margen y capital intactos.
-        assert!((arena.used_margin.load(Ordering::Relaxed) - 10.0).abs() < 1e-9);
+        // CL-41b: la reserva retiene el margen del exchange. El riesgo validó
+        // 10× (margen 10 de nocional 100) y el arranque envía a 1×: el
+        // exchange retiene 100. El capital no cambia (sólo el fee de entrada).
+        let margen_ranura = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
+        assert!((margen_ranura - 100.0).abs() < 1e-9);
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 100.0).abs() < 1e-9);
         assert!((arena.unified_capital.load(Ordering::Relaxed) - 999.95).abs() < 1e-9);
     }
 
@@ -965,17 +973,67 @@ mod tests {
     #[test]
     fn margin_guard_veta_notional_imposible_en_capital_micro() {
         // Capital 13, margen 12, leverage del core 50 (notional 600): ni a
-        // 20× el margen requerido cabe en el 95% del margen libre ⇒ abort
-        // (paridad con el MARGIN-GUARD -2019 del vivo).
+        // 20× (tope de envío) el margen requerido (30) cabe en el 95 % del
+        // margen libre (12,99, sin descontar la reserva propia — CL-41) ⇒
+        // abort (paridad con el MARGIN-GUARD -2019 del vivo).
         let arena = GlobalArena::build_in_own_stack(13.0);
         let mut env = RiskEnvelope::new();
         let mut vetoes = 0u64;
         open_test_position(&arena, 100.0, 6.0, 12.0, 0.01); // notional 600
         let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes);
-        assert!(!kept, "margin-guard debía abortar (600/20 > 0.95·1)");
+        assert!(!kept, "margin-guard debía abortar (600/20 > 0.95·12,99)");
         assert_eq!(vetoes, 1);
         assert!(!arena.coins[0].positions.position.is_open());
         assert!((arena.unified_capital.load(Ordering::Relaxed) - 13.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn cl41_la_reserva_propia_no_veta_una_entrada_que_cabe() {
+        // Capital 13 y sólo esta orden: el núcleo reservó 7 de margen a 20×
+        // (nocional 140). El exchange tiene los 13 libres y la orden cabe a
+        // 14×. El margen libre se medía restando la propia reserva (13 − 7):
+        // ni a 20× cabía en el 95 % de 6 y se vetaba.
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let mut env = RiskEnvelope::new();
+        let mut vetoes = 0u64;
+        open_test_position(&arena, 100.0, 1.4, 7.0, 0.0);
+        let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes);
+        assert!(kept, "la orden validada cabe en el margen del exchange; vetada por su propia reserva");
+        assert_eq!(vetoes, 0);
+    }
+
+    #[test]
+    fn cl41b_la_reserva_retiene_el_margen_del_exchange() {
+        // Capital 13. A: nocional 13 validado a 5× (reserva 2,6); arranque
+        // 1× ⇒ se envía a 2× y el exchange retiene 6,5. B: nocional 13
+        // validado a 2× (reserva 6,5). El exchange tiene 13 − 6,5 = 6,5
+        // libres y B necesita 6,5 > 95 % ⇒ veto. Con la reserva de A en 2,6
+        // el margen libre parecía 10,4 y B pasaba a 2× (-2019 en el
+        // exchange).
+        use quantum_arena::position::PositionHorizon;
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let mut env = RiskEnvelope::new();
+        let mut vetoes = 0u64;
+        let abrir = |coin: usize, margen: f64| {
+            arena.coins[coin].positions.position.open_with_fee(
+                true, 100.0, 0.13, margen, 1_700_000_000_000, 101.0, 99.0,
+                PositionHorizon::Continuous, 0.6, 0.5, 0.0,
+            );
+            arena.used_margin.fetch_add(margen, Ordering::Relaxed);
+        };
+        abrir(0, 2.6);
+        assert!(live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes));
+        let margen_a = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
+        assert!((margen_a - 6.5).abs() < 1e-9, "A se envía a 2×: el exchange retiene 6,5; leído {margen_a}");
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 6.5).abs() < 1e-9);
+
+        abrir(1, 6.5);
+        assert!(
+            !live_envelope_gate(&arena, &mut env, 1, 100.0, 0.001, false, &mut vetoes),
+            "B no cabe en el margen que el exchange tiene libre"
+        );
+        assert_eq!(vetoes, 1);
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 6.5).abs() < 1e-9);
     }
 
     #[test]

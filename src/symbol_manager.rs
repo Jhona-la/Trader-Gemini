@@ -98,17 +98,13 @@ pub async fn evolve_symbols_daemon() {
                         let _ = tokio::fs::rename("data/dynamic_config.json.tmp", "data/dynamic_config.json").await;
                     }
                 }
-                // F4.6 — ACTUALIZACIÓN EN VIVO: antes solo se reescribían los
-                // archivos y el motor seguía con el universo VIEJO hasta
-                // reiniciar (cambio fantasma). Ahora:
-                // 1) el universo dinámico del arena se actualiza al instante;
-                // 2) los SymbolSpec (tick/step/minNotional REALES de cada
-                //    símbolo nuevo) entran al registro — sin esto, ejecutar un
-                //    símbolo nuevo usaba defaults con riesgo de -4014/-4164.
-                quantum_arena::symbols::update_dynamic_universe(top_symbols.clone());
+                // CL-38: el universo vivo NO se reescribe (un slot no cambia
+                // de símbolo en la vida del proceso; ver el daemon con
+                // re-suscripción). Sólo entran los SymbolSpec, que el registro
+                // fusiona por nombre sin mover índices (FIX #905).
                 quantum_arena::symbol_registry::update_registry(specs);
                 println!(
-                    "✅ [SYMBOL MANAGER] Universo vivo + registro de specs actualizados ({} símbolos)",
+                    "✅ [SYMBOL MANAGER] Propuesta persistida y specs refrescados ({} símbolos); el universo vivo no cambia",
                     top_symbols.len()
                 );
             }
@@ -123,20 +119,23 @@ pub async fn evolve_symbols_daemon() {
 
 /// QO-U1b — Daemon del symbol manager CON re-suscripción del WS.
 ///
-/// HALLAZGO (auditoría de APIs): `loop_streams_str` se congelaba al
-/// arranque — al rotar el universo, los símbolos nuevos entraban al
-/// arena/registry pero JAMÁS recibían ticks: la conexión WS seguía
-/// suscrita a los streams viejos (universo fantasma). El loop de
-/// re-conexión ya relee `ws_url.load()` fresco en cada reconnect y
-/// `tx_ws_control` fuerza la señal — sólo faltaba que ALGUIEN actualizara
-/// la URL al rotar.
-///
-/// Al confirmar `changed`: reconstruye la lista de streams para el nuevo
-/// universo (mismo formato que el arranque: `{sym}@trade/depth5/kline_1h`
-/// + `!forceOrder@arr`), actualiza el ArcSwap y dispara la re-conexión.
+/// CL-38 (identidad de símbolo): el daemon ya NO reescribe el universo vivo
+/// ni re-suscribe el WS. La rotación en caliente rompía la identidad
+/// slot↔símbolo: el host enruta cada tick con un `symbol_to_id` construido
+/// una vez al arrancar (y con él los libros, ballenas, spoofing, la guardia
+/// D-610 y el calentamiento de velas), mientras núcleo, riesgo, reserva,
+/// fills y reconciliación resuelven por el universo vivo. Su primer tick es
+/// inmediato y ponía el roster primero: el slot 2 seguía recibiendo los
+/// ticks de su símbolo de arranque pero se decidía con el modelo, el spec,
+/// el funding y la reserva del símbolo que el universo rotado ponía ahí. La
+/// transición de calentamiento, además, devolvía el WS a los streams del
+/// bootloader. Ahora el daemon PROPONE: persiste el universo propuesto y
+/// refresca specs (fusión por nombre, sin mover índices). El universo de
+/// una sesión es fijo; añadir símbolos en caliente exige que el host haga
+/// crecer sus estructuras por slot, y queda como trabajo aparte.
 pub async fn evolve_symbols_daemon_with_resubscribe(
-    ws_url: std::sync::Arc<arc_swap::ArcSwap<String>>,
-    tx_ws_control: tokio::sync::mpsc::Sender<()>,
+    _ws_url: std::sync::Arc<arc_swap::ArcSwap<String>>,
+    _tx_ws_control: tokio::sync::mpsc::Sender<()>,
 ) {
     println!("🌍 [SYMBOL MANAGER] Radar Cuántico Global activo (con re-suscripción WS, 1H)...");
 
@@ -208,42 +207,11 @@ pub async fn evolve_symbols_daemon_with_resubscribe(
                         let _ = tokio::fs::rename("data/dynamic_config.json.tmp", "data/dynamic_config.json").await;
                     }
                 }
-                quantum_arena::symbols::update_dynamic_universe(top_symbols.clone());
+                // CL-38: sin reescribir el universo vivo ni re-suscribir el WS
+                // (ver la doc del daemon). Los specs se fusionan por nombre.
                 quantum_arena::symbol_registry::update_registry(specs);
                 println!(
-                    "✅ [SYMBOL MANAGER] Universo vivo + registro actualizados ({} símbolos)",
-                    top_symbols.len()
-                );
-
-                // ══ QO-U1b: RE-SUSCRIPCIÓN DEL WEBSOCKET ═════════════════
-                // Reconstruir la lista de streams para el NUEVO universo y
-                // actualizar la URL que el loop de reconnect lee fresco.
-                let mut streams = String::new();
-                for (i, sym) in top_symbols.iter().enumerate() {
-                    let sym_lower = sym.to_lowercase();
-                    streams.push_str(&sym_lower);
-                    streams.push_str("@trade/");
-                    streams.push_str(&sym_lower);
-                    streams.push_str("@depth5/");
-                    streams.push_str(&sym_lower);
-                    streams.push_str("@kline_1m");
-                    if i < top_symbols.len() - 1 {
-                        streams.push('/');
-                    }
-                }
-                streams.push_str("/!forceOrder@arr");
-                let base_ws = if is_testnet_env {
-                    "wss://stream.binancefuture.com/stream"
-                } else {
-                    "wss://fstream.binance.com/stream"
-                };
-                let new_url = format!("{}?streams={}", base_ws, streams);
-                ws_url.store(std::sync::Arc::new(new_url));
-                // Forzar re-conexión: el loop aborta la conexión actual y
-                // relee la URL fresca (ya actualizada arriba).
-                let _ = tx_ws_control.try_send(());
-                println!(
-                    "🔌 [QO-U1b] WS re-suscripción: {} símbolos — el universo fantasma muere aquí",
+                    "✅ [SYMBOL MANAGER] Propuesta persistida y specs refrescados ({} símbolos); el universo vivo no cambia en esta sesión",
                     top_symbols.len()
                 );
             }
@@ -283,6 +251,24 @@ pub fn merge_universe_with_hysteresis(
     limit: usize,
     roster: &std::collections::HashSet<String>,
 ) -> Vec<String> {
+    // CL-38: las tres entradas en la grafía canónica. El universo de arranque
+    // llegaba en minúsculas y los candidatos del escáner en MAYÚSCULAS: el
+    // margen anti-thrash (F4.6) comparaba "bnbusdt" con "BNBUSDT" y nunca
+    // retenía a un incumbente.
+    let canon = |v: &[String]| -> Vec<String> {
+        v.iter()
+            .map(|s| quantum_arena::symbols::simbolo_canonico(s))
+            .collect()
+    };
+    let current = canon(current);
+    let top_candidates = canon(top_candidates);
+    let roster: std::collections::HashSet<String> = roster
+        .iter()
+        .map(|s| quantum_arena::symbols::simbolo_canonico(s))
+        .collect();
+    let current = &current[..];
+    let top_candidates = &top_candidates[..];
+    let roster = &roster;
     let margin_set: std::collections::HashSet<&String> = top_candidates
         .iter()
         .take(limit.saturating_add(3))
@@ -348,6 +334,47 @@ mod tests {
 
     fn roster_of(syms: &[&str]) -> std::collections::HashSet<String> {
         syms.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// CL-38 — el daemon de rotación no reescribe el universo vivo ni
+    /// re-suscribe el WS: el host enruta con un `symbol_to_id` fijado al
+    /// arrancar y una reordenación en caliente hacía que un slot recibiera
+    /// los ticks de un símbolo y se decidiera con el modelo, el spec y la
+    /// reserva de otro. Guardia sobre la fuente de producción (antes de los
+    /// tests de este archivo).
+    #[test]
+    fn cl38_el_daemon_no_reescribe_el_universo_vivo_ni_el_ws() {
+        let fuente = include_str!("symbol_manager.rs");
+        let produccion = fuente
+            .split(&["#[cfg(", "test)]"].concat())
+            .next()
+            .unwrap();
+        for prohibido in [
+            ["update_dynamic_", "universe("].concat(),
+            ["ws_url.", "store("].concat(),
+            ["tx_ws_control.", "try_send("].concat(),
+        ] {
+            assert!(
+                !produccion.contains(&prohibido),
+                "symbol_manager.rs no debe llamar a {prohibido} en vivo (CL-38)"
+            );
+        }
+    }
+
+    /// CL-38 — el margen anti-thrash retiene a los incumbentes aunque el
+    /// universo vivo llegue en otra grafía que los candidatos del escáner.
+    #[test]
+    fn cl38_la_histeresis_compara_en_la_grafia_canonica() {
+        let current: Vec<String> = ["btcusdt", "ethusdt", "solusdt"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let candidates: Vec<String> = ["BTCUSDT", "XRPUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let merged = merge_universe_with_hysteresis(&current, &candidates, 3, &roster_of(&[]));
+        assert_eq!(merged, vec!["BTCUSDT", "ETHUSDT", "SOLUSDT"]);
     }
 
     #[test]

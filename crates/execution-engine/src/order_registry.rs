@@ -275,6 +275,23 @@ impl OrderRegistry {
             });
     }
 
+    /// CL-39b: un rechazo FIRME del exchange (la orden nunca existió) cierra
+    /// la intención registrada antes del envío; sin esto quedaba en `New`
+    /// para siempre (nadie la purga) y la reconciliación la reportaba en cada
+    /// ciclo. Sólo toca una intención local pura: `New`, sin `order_id` ni
+    /// ejecución. Una orden que el exchange ya reconoció no se toca.
+    pub fn mark_local_reject(&self, client_order_id: &str, now_ms: u64) -> bool {
+        let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
+        match map.get_mut(client_order_id) {
+            Some(o) if o.status == OrderStatus::New && o.order_id == 0 && o.executed_qty == 0.0 => {
+                o.status = OrderStatus::Rejected;
+                o.updated_ms = now_ms;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Aplica un ack REST (respuesta de POST o GET /fapi/v1/order).
     pub fn apply_ack(&self, ack: &OrderAck, now_ms: u64) {
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
@@ -525,6 +542,25 @@ impl OrderRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// CL-39b: el rechazo firme cierra sólo una intención local pura; la
+    /// purga de terminales la retira después.
+    #[test]
+    fn cl39b_el_rechazo_firme_cierra_solo_la_intencion_local() {
+        let r = OrderRegistry::new();
+        r.register_intent("ioc-1", "BTCUSDT", "BUY", "LONG", "LIMIT", 1.0, 1_000);
+        assert!(r.mark_local_reject("ioc-1", 2_000));
+        assert_eq!(r.get_status("ioc-1"), Some(OrderStatus::Rejected));
+        assert!(r.active_orders().is_empty());
+        assert_eq!(r.prune_terminated(3_000), 1);
+
+        // Una orden que el exchange ya reconoció (order_id) no se toca.
+        r.register_intent("ioc-2", "BTCUSDT", "BUY", "LONG", "LIMIT", 1.0, 1_000);
+        r.apply_ack(&OrderAck { order_id: 7, ..ack("ioc-2", "NEW", 0.0, 0.0) }, 1_500);
+        assert!(!r.mark_local_reject("ioc-2", 2_000));
+        assert_eq!(r.get_status("ioc-2"), Some(OrderStatus::New));
+        assert!(!r.mark_local_reject("desconocida", 2_000));
+    }
 
     fn ack(id: &str, status: &str, executed: f64, avg: f64) -> OrderAck {
         OrderAck {
