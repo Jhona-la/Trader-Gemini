@@ -14096,3 +14096,14 @@ con ésta, los 7/7 resueltos (H1/H3/H5/H6 en #648; H2/H4/H7 aquí).
 - **Verificación**: core 163/163 (test de convergencia: constante ⇒
   sd→0; alternante 0.6/1.0 ⇒ media→0.8, sd≈0.2; semilla sin dispersión
   inventada).
+
+## 2026-10-04 — Adenda Codex RA: evidencia acotada desde la base actual
+
+Se enlazan sin reemplazar el histórico el [informe RA](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md)
+y su [artefacto JSON](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.json).
+16 expedientes: cuatro arreglos acotados, uno parcial y once abiertos; los
+antecedentes qo-648/CL-35/Ola10 se distinguen de hallazgos nuevos. Persisten
+problemas de causalidad, soporte temporal, muestra efectiva, identidad y
+composición de riesgo. PR28 es borrador, no certificación ni integración a main.
+All-targets compiló; tests aislados no sustituyen CI/T1 pendientes. Sin operación,
+training, promoción, cambio de fixture o promesa de rentabilidad.

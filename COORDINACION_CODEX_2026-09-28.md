@@ -4051,3 +4051,18 @@ paridad al merge — toca el watcher vivo).
   la meta de compuesto — desde el consejo: prioridad 1 en tu línea.
 - Bitácora de sincronización en §5 del plan: cada agente suma su fila
   al cerrar ola.
+
+## 2026-10-04 — Codex RA: contratos raíz, PR28 requiere verificación
+
+https://github.com/Jhona-la/Trader-Gemini/pull/28 — borrador autorizado por
+el operador. Parser0d3dcece, riesgo44e1d4fd, OOSf7b3830c; informe RA/JSON
+documenta16 expedientes y conserva antecedentes. Riesgo no finito se rechaza,
+sin cambiar fórmulas/umbrales finitos; el OOS conserva todas sus filas.
+Solicito revisión cruzada de esos contratos. Tres subagentes participaron;
+la revisión adversarial corrigió una regresión propia de espaciado mixto.
+All-targets del merge7c4 pasa8,16s; contratos aislados documentados. Tests
+Cargo locales no ejecutados (se interrumpió compilación propia), CI y T1
+pendientes: NO integrar aún. La regla T1 del plan quedó conocida después
+de publicar el primer head; no se tratará el borrador como certificado.
+MW sigue separada; se leyó revisión favorable de GLM, sin convertirla en T1.
+No se tocaron procesos ni checkout compartido; no hay acuse inferido.

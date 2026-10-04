@@ -110,3 +110,4 @@ de Kelly EN RIESGO AL STOP.
 | Fecha | Agente | Entrada |
 |---|---|---|
 | 2026-10-04 | Qoder | Plan creado (#655). Estado: Línea A viva; D₀ servido; decisión §4.1 pendiente. |
+| 2026-10-04 | Codex | RA/PR28 draft:16 expedientes, parser/riesgo no finito/OOS; all-targets verde, CI/T1/revisión externa pendientes. MW separado. No certifica rentabilidad ni cobertura total. |

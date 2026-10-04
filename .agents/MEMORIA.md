@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex RA: revisión de raíz y PR28 en borrador
+
+- Rama propia `codex/root-audit-2026-10-04`, base949d; reconciliada hasta
+  main7c4 en b558816/c57376b. Checkout operativo y procesos ajenos preservados.
+- Informe `docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md` y JSON:16 expedientes,
+  6 P1/9 P2/1 P3; cuatro parches acotados, uno parcial, once abiertos. No
+  auditoría semántica completa de1427 archivos ni certificación de retorno.
+- Código: parser0d3dcece, riesgo44e1d4fd, OOSf7b3830c; CI741d7995.
+  Parser19/0 +5/0 sondas aisladas; riesgo26/0 con arena sintético; OOS6/0
+  std-only. Cargo tests con crates reales interrumpido antes de ejecutar tests.
+- Check workspace/all-targets exit0:11m32s (con espera) y8,16s sobre fuente
+  reconciliada. No equivale a ejecución de tests ni a T1.
+- Publicación RA autorizada expresamente, PR28 draft; CI/T1/revisión externa
+  pendientes. No integrar ni borrar RA todavía. MW3139 queda separada.
+- Sin trading/training/promoción, rebajas de trinquete, ni borrado de ramas
+  con commits exclusivos. Aviso al buzón compartido no implica acuse.
+
 ## 2026-10-04 — Qoder: Ola 55 / #655 — PLAN MAESTRO DE SINCRONIZACIÓN
 
 - docs/PLAN_MAESTRO_SINCRONIZACION.md (mandato del operador): tres

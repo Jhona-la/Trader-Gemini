@@ -501,3 +501,82 @@ Orden recomendado por dependencia:
 Los cinco parches locales no resuelven esos once expedientes abiertos ni el
 residual estructural de I-03. No se declara autonomía evolutiva certificada,
 ausencia total de bugs, auditoría completa de 1427 archivos ni rentabilidad.
+
+## 13. Publicación autorizada y verificación analítica del informe
+
+El usuario autorizó expresamente publicar **RA** y abrir su PR pública;
+no amplió ese permiso a MW. Se publicó el head inicial `ad3f09a5` y se abrió
+[PR28](https://github.com/Jhona-la/Trader-Gemini/pull/28) como **borrador**.
+CI del candidato: [run37209982889](https://github.com/Jhona-la/Trader-Gemini/actions/runs/37209982889),
+observada en curso; whitespace/conflict markers e instalación del compiler
+pasaron, all-targets seguía en ejecución. No es un recibo SUCCESS.
+
+La revisión cruzada estática de 44e1d4fd y f7b3830c no confirmó bloqueadores en
+su alcance. Comprobó equivalencia de `train_replay` con la conversión anterior,
+frontera `i < warmup`, y conservación del comportamiento finito de riesgo.
+No es una aprobación GitHub de GLM/Claude ni una certificación del runtime.
+Se pidió revisión mediante el buzón compartido; no se presume acuse.
+
+La ejecución Cargo seleccionada local de los tres contratos **no terminó**:
+se interrumpió deliberadamente su primera compilación de dependencias para
+liberar el lock del check final. Se identificó y detuvo exclusivamente el
+árbol propio cargo19552 y sus rustc, comprobando PID/inicio/padre; ninguna
+prueba había llegado a ejecutarse. El exit0xffffffff resultante es interrupción,
+no evidencia de regresión funcional ni resultado verde. No se interrumpieron
+la paridad ni las compilaciones de otros agentes. CI conserva los tres targets.
+
+La skill `validate-data` se aplicó como QA del informe existente: 16 IDs únicos,
+rutas de evidencia existentes y reconciliación 6 P1 +9 P2 +1 P3 =16; 4 parches
+acotados +1 parcial +11 abiertos =16. Se recalcularon independientemente los
+ejemplos: Neff=127, margen14→70 frente a techo50, y H*=0,500004000000013.
+El umbral implementado es `2/sqrt(n−3)` (no `n−2`): 0,02829276035 con5000 y
+0,1796053020 con127. La fitness del ejemplo es 0,07410797215 para el control,
+0,1431008436 para el mutante con drawdown actual0, y −0,5500463369 con DDmax0,5.
+Se mantienen separados aritmética, política heredada y calibración estadística.
+
+Dictamen de comunicación: **compartible con salvedades** como auditoría y
+candidato; **no listo para integrar** mientras falten sus controles. No se
+convirtió el Markdown solicitado en una app ni se reemplazaron informes previos.
+
+## 14. Segundo corte de ramas y plan concurrente
+
+Referencia remota fijada: `7c4cea4036ee67e8b73809fac7c8763280a2291a`.
+Frente a ella, backup conserva3 commits exclusivos; MW4; TH4; WIP1; Claude1;
+GLM `glm/lxxxiv-l2v1`1, tanto local como remoto; RA5 en su publicación inicial.
+`main` local estaba en f9fbcbd5e, tres commits detrás del remoto y sin exclusivos.
+No se movió el main compartido mientras GLM trabaja. Se preservó también el
+worktree detached `.t1-regresion`, cuya base7c4 no acredita resultados de RA.
+La rama/worktree Qoder de la primera foto ya no aparecía: no fue borrada por Codex.
+No había otra rama inactiva completamente integrada para eliminar con seguridad.
+
+El nuevo `PLAN_MAESTRO_SINCRONIZACION.md` (qo-655) es documentación, no resultado
+experimental. Se conserva su contenido; sus afirmaciones de certificación y
+rentabilidad no se adoptan como pruebas propias. La paridad10/10 que reporta
+GLM cubre escenarios/versiones definidos, no todos los comportamientos futuros.
+El requisito T-1 del plan para cambios de pipeline vivo se registra como
+**pendiente RA**; el envío inicial de PR28 precedió a la lectura de ese plan.
+No se marca ready ni se integra omitiendo ese control.
+
+El main0580 añadió qo-654 al core y la exportación tau-matched de GLM. Se
+inspeccionaron ambos diffs: los cambios RA no ocupan esos bloques. Qo-655 añade
+sólo memoria, coordinación y el plan; no cambia Rust. Los recibos de compilación
+y reconciliación final se añaden a continuación una vez observados.
+
+## 15. Recibo local final de integración
+
+Merge de main0580 en RA: `b558816`, después de comparar ambos padres y
+`cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j 2`
+con **exit0, 11m32s** (tiempo reportado por Cargo, incluye espera del lock).
+Merge documental de main7c4: `c57376b`, mismo check **exit0, 8,16s** antes del
+commit. Ambos conservaron los cambios de cada padre sin conflicto textual.
+Hay advertencias; no se ejecutó cargo fix ni se maquilló CI para quitarlas.
+
+La fuente Rust final queda ligada a c57376b. Las adendas posteriores son sólo
+documentación/evidencia. Este recibo acredita compilabilidad de todos los targets,
+incluidos los contratos nuevos, **no su ejecución integral**. La compilación
+Cargo de tests interrumpida y el T-1 pendiente siguen declarados como tales.
+
+Commits funcionales: parser `0d3dcece`, riesgo `44e1d4fd`, OOS `f7b3830c`,
+CI `741d7995`; informe inicial `ad3f09a5`. Sólo la rama RA se publica. El merge
+de main hacia RA no significa que RA haya llegado a main. La PR se mantiene
+en borrador hasta recibir CI, T-1 y revisión del candidato correspondiente.

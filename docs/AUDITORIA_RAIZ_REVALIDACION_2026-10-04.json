@@ -192,6 +192,21 @@
       "exit_code": 0,
       "duration": "8m24s",
       "final_snapshot": false
+    },
+    {
+      "id": "workspace-merge-main0580",
+      "exit_code": 0,
+      "duration": "11m32s including lock wait",
+      "merge_commit": "b558816",
+      "command": "cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j 2"
+    },
+    {
+      "id": "workspace-merge-main7c4",
+      "exit_code": 0,
+      "duration": "8.16s",
+      "source_commit": "c57376b",
+      "final_source_snapshot": true,
+      "tests_executed": false
     }
   ],
   "git": {
@@ -199,11 +214,18 @@
     "publication_scope": "RA only; MW separate",
     "deleted_branches": [],
     "merged_into_main": false,
-    "pr": null,
-    "ci_for_this_candidate": null
+    "pr": "https://github.com/Jhona-la/Trader-Gemini/pull/28",
+    "is_draft": true,
+    "published_initial_head": "ad3f09a579b6ab4bbba40b255ad560bb9ec40cdd",
+    "latest_inventory_base": "7c4cea4036ee67e8b73809fac7c8763280a2291a",
+    "reconciled_main": "7c4cea4036ee67e8b73809fac7c8763280a2291a",
+    "integration_commit": "c57376b",
+    "ci_for_this_candidate": {"run_id": 37209982889, "observed_status": "in_progress", "conclusion": null}
   },
   "limitations": [
-    "No T-1 completo ni paridad operacional en esta ola",
+    "T-1 completo pendiente para RA; requerido por plan qo-655 antes de integrar",
+    "Cargo local con crates reales interrumpido en dependencias; no tests ejecutados",
+    "Sin paridad operacional en esta ola",
     "Runners aislados no equivalen a ejecución integral",
     "Residual de cierre ] ] con encabezados compactos en profundidad",
     "Sin benchmark de latencia",
