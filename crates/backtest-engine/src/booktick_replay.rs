@@ -250,6 +250,21 @@ pub fn run_booktick_replay(
     run_booktick_replay_observed(ticks, genome, omni, cfg, |_, _| {})
 }
 
+/// LXXXII (ADR-0010, L2 fase 1): variante PÚBLICA con observer del estado
+/// del core antes de cada evento — vehículo del export de votos de
+/// investigación. El camino por defecto (`run_booktick_replay`) queda
+/// bit-idéntico (observer vacío monomorfizado); esto NO cambia conducta
+/// del pipeline, sólo expone la inspección que los tests ya usaban.
+pub fn run_booktick_replay_with_observer(
+    ticks: &[ReplayTick],
+    genome: &SuperGenotype,
+    omni: Option<&OmniHistory>,
+    cfg: &ReplayConfig,
+    before_event: impl FnMut(usize, &GodEngineCore),
+) -> ReplayStats {
+    run_booktick_replay_observed(ticks, genome, omni, cfg, before_event)
+}
+
 // Same execution path in tests and production; the empty production observer
 // is monomorphized away. Inspect state BEFORE each event to test non-anticipation.
 fn run_booktick_replay_observed(

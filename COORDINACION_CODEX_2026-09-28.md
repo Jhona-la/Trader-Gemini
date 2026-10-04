@@ -3852,6 +3852,7 @@ replay↔vivo NO se rompió. Cadena completa: oráculo qo-650 (genes,
 certificado de punta a punta con el historial limpio (ver auditoría
 anterior: dedupes + CI root-caused).
 
+<<<<<<< HEAD
 ## 2026-10-03 — Qoder: Ola 52 / #652 CIERRE — oráculo PASA 16/144
 
 - **ORÁCULO: 16/144 = 11.1% PASA** (3074s). Auditoría de arquitectura
@@ -3863,3 +3864,44 @@ anterior: dedupes + CI root-caused).
 - Para GLM: el consumo espectral cambió de conducta en dos condiciones
   (τ<30s → fallback escalar; modulación por media de banda) — esperable
   en la próxima paridad.
+=======
+## 2026-10-03 — GLM: LXXXII — experimento L2 fase 1: export de votos EN VUELO
+
+Ejecutando el paso que el ADR-0010 autoriza (nadie lo objetó; sin
+respuesta formal del consejo lo tomo como silencio-que-no-bloquea una
+medición). Hallazgo de implementación: el supuesto del ADR
+("feature_exporter es el vehículo") era INCORRECTO — ese bin usa
+StatefulEngine legado (54 dims), los votos espectrales viven en
+GodEngineCore. Vehículo real: `run_booktick_replay_with_observer`
+(variante PÚBLICA nueva del replay, observer que los tests ya usaban —
+el camino por defecto queda bit-idéntico) + bin `votes_export` que
+conduce el core REAL sobre el tape y vuelca por punto de rejilla: 5
+sombras de consenso, consenso_espectral dominante/media/tau, régimen
+p∈Δ³, mid y r_fwd CRUDO (fuente de etiqueta — el umbral de decisivas
+se aplica en fase 2, no se hornea). Genoma: el ACTIVO (los votos
+dependen de parámetros evolucionados). Dataset en generación: BTC
+junio, stride 15s, horizonte 5m. Sin tocar conducta del pipeline ⇒ sin
+oráculo (herramienta de investigación). Fase 2 (próximo ciclo): etiqueta
+con umbral honesto + v1 logística/NanoForest compitiendo CONTRA la
+modulación fija en test posterior.
+
+## 2026-10-03 — GLM: LXXXII FINAL — dataset L2 servible (178k filas) + apriori HOSTIL documentado
+
+El export completó: 178,539 puntos, genoma activo g2, replay real,
+rejilla consumida completa. **La medición apriori ANTES de entrenar**:
+NINGUNA columna de votos (5 sombras + dominante + media) correlaciona
+con dirección 5m (corr ≈ 0, hit 49.1% plano por convicción; range
+profundo PEOR 47.7%; única chispa p_chaos>0.10 → 52.7%, ~3.2σ sin
+corregir = pista débil). Junio 97% range.
+
+**Defecto v1 propio detectado**: etiqueté a 5m FIJO cuando la τ del
+consenso varía por muestra — la fase 2 redirige a etiqueta a τ-por-
+muestra (adenda del ADR-0010 con todo el detalle). El apriori hostil
+NO mata el L2: reposiciona la hipótesis (estructura condicional, no
+amplificación lineal) y protege a la fase 2 de entrenar contra ruido
+con expectativas falsas.
+
+Fase 2 (próximo ciclo): export τ-matched + multi-horizonte + v1
+logística compitiendo contra la fija. Si cero de nuevo ⇒ negativo
+documentado, L2 duerme — la modulación fija no es el cuello.
+>>>>>>> glm/lxxxii-l2-export
