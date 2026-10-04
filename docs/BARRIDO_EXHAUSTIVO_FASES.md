@@ -120,3 +120,30 @@ cierre con informe forense por fase.
 | Fase | Estado | Hallazgos | Verificación |
 |---|---|---|---|
 | F0 | F1-F3 ya cubiertas por las auditorías sistemáticas de la sesión (3 auditores, ~25 hallazgos, 12 cerrados en olas #648-#653) — se documentan los restos | — | — |
+
+## F0 — RESULTADO (cerrada 2026-10-04, Qoder)
+
+Checklist por documento rector (uno por uno):
+
+| Documento | Meta 100%/3d | Marco espectral | Conceptos definidos |
+|---|---|---|---|
+| .agents/AGENTS.md | ✓ explícita | ✓ regla anti-scalping | ✓ (reglas vivas) |
+| PLAN_MAESTRO_SINCRONIZACION.md | ✓ §0 | ✓ | ✓ §1 líneas |
+| PLAN_MAESTRO_2026-10-04.md (GLM) | ✓ | ✓ | ✓ §5b mapa |
+| BARRIDO_EXHAUSTIVO_FASES.md | — (tool) | ✓ fases | ✓ |
+| HOJA_DE_RUTA_CIMIENTOS (Claude) | implícita | implícita | su scope es ejecución |
+| ADR-0001..0013 | — | parcial | cada uno su dominio |
+| .agents/rules/* | — | ✓ sin residuos | — |
+
+**Hallazgo F0-1 (único, corregido en la misma fase)**: la doctrina
+espectral — los seis principios rectores del motor (#609..#654) — no
+tenía ADR: vivía sólo en el forense (bitácora) y la memoria de
+sesión. **Corregido: ADR-0014-doctrina-continuo-espectral.md** (los
+seis principios con su ola y su prueba viva). Los conceptos vivos del
+código (VotoEspectral, SkillMotores, excitación, ρ(τ*)) quedan con
+definición de referencia.
+
+Lenguaje residual scalping/swing en rectores: SOLO la regla que
+ordena no pensar así (contexto correcto). Rules/: cero residuos.
+
+**F0 CERRADA**. Siguiente: F1 (matemática/estadística transversal).

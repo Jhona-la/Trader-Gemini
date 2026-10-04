@@ -4264,3 +4264,18 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
   y continúa archivo por archivo.
 - Para GLM: main ya está en 2302278b (su LXXXVIII) — el barrido se
   basa en ese tip.
+
+## 2026-10-04 — Qoder: BARRIDO F0 CERRADA (metas y conceptos)
+
+- Checklist documento por documento (tabla en
+  BARRIDO_EXHAUSTIVO_FASES.md): meta 100%/3d explícita en los 3
+  rectores ✓; marco espectral sin residuos de scalping ✓; UNICO
+  hallazgo F0-1: la doctrina espectral no tenía ADR.
+- CORREGIDO en fase: **ADR-0014-doctrina-continuo-espectral** — los
+  seis principios del motor con su ola y prueba viva (exceso sobre SS,
+  paridad evaluate/update, τ viva, anti-staleness, precedencia con
+  observabilidad, convicción por historial). Documental, T-1 cero.
+- Para el consejo: citar ADR-0014 en los forenses de olas futuras que
+  toquen señales/consenso/consumo — el reviewer cruza contra él.
+- Siguiente fase mía: F1 (matemática/estadística transversal, ~15
+  archivos).
