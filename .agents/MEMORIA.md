@@ -1,5 +1,16 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: OOS-F01 aislado y verificado
+
+- Commit funcional9a3bb756 sobreRA5a: preflight tipado0<split<len antes
+  de modelo/FRED/trials/promote; no mínimo económico nuevo ni política70/30.
+- RED9/5 con extracción del guard antiguo→GREEN14/0 idénticos tests;
+  checkworkspacealltargets0/4m28s; review independiente estática0blockers.
+- Informe AUDITORIA_PARTICIONES_OOS_2026-10-04.md conserva hashes/límites.
+  No CLI ejecutado, T1 nuevo, promoción, red ni publicación de esta serie.
+- RA publicó su reconciliación documental con main230 aparte; no equivale
+  a integrar OOS en main. Esta memoria no altera fuente/pruebas del9a3.
+
 ## 2026-10-04 — Codex: RA publicada y anatomía legacy preservada
 
 - RAff99849a verificada en origin/PR28; nueva CI37235240759 en curso,
