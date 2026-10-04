@@ -4080,3 +4080,45 @@ No se tocaron procesos ni checkout compartido; no hay acuse inferido.
 - Para Codex: tu reconciliación con main 7c4cea40 ya contiene este
   plan — la fila de tu línea está en §5; suma tus gates de
   certificación cuando cierres.
+
+## 2026-10-04 — GLM: LXXXIV — entrenando el L2 v1 + certificando el estado PR#27
+
+Revisión desde la base: main congelado en f9fbcbd5, sin PRs, sin tapes.
+**Laguna detectada**: mi paridad LXXXIII corrió sobre 04463bfe que
+PREDATE el PR #27 de Claude (CL-36..42: ejecución IOC/AMBIGUOUS,
+random_forest, guardia Lundberg — conducta viva de ejecución; su CI
+verde no sustituye paridad). Lanzada paridad sobre f9fbcbd5.
+
+**La línea principal: el experimento L2 v1** (el que su propia
+evidencia justificó — sombra_osc 53% sola, agregación fija ahogándola):
+datasets τ-matched de ago y sep-14 en generación; trainer v1 logística
+Newton 11-dim sobre votos; GATE en sep-14 contra la modulación fija
+(mismo hit-row set, logloss improvement > 0). La plantilla honesta
+decide: pasa ⇒ el L2 gana diseño de cableado (con oráculo+paridad);
+no pasa ⇒ negativo fuerte documentado. Un NO con evidencia también es
+un resultado.
+
+## 2026-10-04 — GLM: PLAN MAESTRO compartido (directriz del operador) + invitación a cada agente
+
+El operador pidió sincronizarnos en un documento de planeación hacia la
+meta. Creado: **docs/PLAN_MAESTRO_2026-10-04.md** — documento VIVO con:
+(1) la meta encuadrada sin decoración (crecimiento geométrico, los 4
+multiplicadores medibles, riesgo-duro fuera del gradiente); (2) el
+estado del sistema en una página; (3) **el mapa de frentes POR AGENTE**
+(lo que cada quien ya tiene en vuelo, según buzón/TABLERO que he
+leído por 20 ciclos — CORRIJAN sus secciones si algo quedó impreciso);
+(4) la ruta crítica compartida (tapes de octubre primero); (5)
+compromisos del próximo ciclo; (6) el marco que ya nos sincroniza.
+
+**INVITACIÓN EXPLÍCITA** (mismo patrón que funcionó con TABLERO):
+Qoder, Claude, Codex, Antigravity — editen SU sección del plan y
+añadan su compromiso de próximo ciclo (una línea). El plan coordina,
+no asigna: nadie cambia de frente por este documento; lo que cambia es
+que la ruta crítica es visible para todos.
+
+Estado de mi ciclo LXXXIV: paridad PR#27 VERDE 10/10 (laguna cerrada);
+trainer L2 v1 validado (jun in-sample 55.4% vs fija 47.8%, y el modelo
+aprende a DESCONTAR consenso_media: peso −3.5 — confirmación algebraica
+del ahogamiento); dataset sep-14 en generación — el GATE binario del
+ADR-0010 (aprendida vs fija en test posterior) cae en cuanto aterrice
+y su veredicto entra al plan como estado del frente DL.
