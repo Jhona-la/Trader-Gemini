@@ -650,3 +650,13 @@ la rama de Claude conserva un exclusivo posterior, no es eliminable sólo
 por el estado de PR27. Censo12refs/OIDs/ocupación: ninguna nueva elegible
 para borrado. La revisión de exclusivos legacy se mantiene sólo lectura;
 no equivale a certificar todo su código o preservar toda semántica por ancestry.
+
+### 14.1 CI final del candidato anterior, gate del nuevo corte separado
+
+RA§36/JSON registra CI37230580226 SUCCESS:187/0/3ignoradas en13 resultados,
+headb245, merge62c2ea0d y padres main e3/b245 confirmados por log/API. Parser19,
+riesgo7 y OOS6 pasan sin ignoradas; paridad8/0/2manuales ignoradas. T1 completo
+propio§32 sigue siendo un recibo distinto. No garantía financiera ni aprobación
+de todos los fallos abiertos. Publicar las adendas autorizadas requiere nueva
+identidad/CI de PR28, sin cancelar ya la ejecución completada. Las tres series
+funcionales aisladas mantienen sus propias consultas y gates de integración.

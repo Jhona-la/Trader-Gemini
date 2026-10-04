@@ -1759,3 +1759,37 @@ Enlaces/anclas nuevos y orden de subsecciones verificados. Sólo adendas de
 informes/plan/memoria en RA; su Rust/CLI/Cargo/CI siguen intactos. La revisión
 de enlaces, el inventario por blob y la compilación no son lectura semántica
 de todos los archivos ni certificación matemática/económica del sistema.
+
+## 36. CI b245 final: recibo confirmado, no transferencia al siguiente head
+
+CI [37230580226](https://github.com/Jhona-la/Trader-Gemini/actions/runs/37230580226)
+terminó SUCCESS. Job20:02:48Z→21:06:19Z del2026-10-04, con13 resultados
+de targets:187aprobadas,0fallidas,3ignoradas. Log/API confirman headb245cdcf
+y merge exacto `62c2ea0d7fc0c72595ea237d7ceff702f200dc4b`, padres main
+e3adf74e y b245cdcf. Los pendientes de los recibos anteriores son históricos;
+éste los resuelve sólo para esa identidad.
+
+Parser19/0, admisión no finita7/0 y contexto OOS6/0, sin ignoradas. Regresión
+backtest-lib53/0, paridad8/0/2ignoradas, métricas21/0, etiquetas25/0 y
+riesgo espectral3/0. Los contratos de modelos suman1+12+14pases, con una
+inspección de inventario real ignorada; inventario estructural9/0 y
+medición genética rápida9/0. Todos los pasos de workflow y all-targets
+terminaron correctamente. El padre recalculó el agregado desde los13 resultados.
+
+Las tres ignoradas conservan su finalidad: inspección local de modelos reales,
+medición de radio en tape real y medición de brecha de la meta con campeón
+en tapes reales. No se habilitaron para esta CI ni se cuentan como aprobadas.
+La paridad aquí cubre ocho contratos ejecutados, no todas las transiciones
+del host, fills reales o rentabilidad; el fastT1 no sustituye al completo§32.
+
+Log local ignorado `target/ra-ci-b245-37230580226.log`, SHA256
+14F08965268EA9B1C05F19FB7E306FB5C7FB1574C5BACD0C16E3DA980386DB00.
+Nightly2026-06-30, runner windows-2022. El warning del runtime Node de la
+acción no es un test fallido; no se alteró el workflow para ocultarlo.
+
+La publicación autorizada de las adendas documentales agrega recibos, no
+cambia Rust/CLI/Cargo/CI. Al cambiar el head de PR28 se exigirá la CI nueva:
+este SUCCESS no se renombra como prueba de ese head. La fuente funcional
+del T1 propio permanece496, con la diferencia descriptiva de seis cadenas
+de vetos; MG/reloj/bosque no se incluyen. Publicación de esas tres series
+sigue consultada, main aún e3 y merge final de RA condicionado a sus gates.

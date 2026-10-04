@@ -961,5 +961,29 @@
       ],
       "PR_28_is_merged": false,
       "ancestry_guarantees_no_later_semantic_reversion": false
-    }
+    },
+  "CI_b245_final_receipt": {
+    "report_section": 36,
+    "run": 37230580226,
+    "result": "success",
+    "head": "b245cdcfaa3e21acb7d933ebca0932dc353ede0d",
+    "tested_merge": "62c2ea0d7fc0c72595ea237d7ceff702f200dc4b",
+    "tested_merge_parents": ["e3adf74e36aa48c122e83a72d1b7f6c3cbad90bd", "b245cdcfaa3e21acb7d933ebca0932dc353ede0d"],
+    "parents_confirmed_from_log_and_API": true,
+    "job_started_UTC": "2026-10-04T20:02:48Z",
+    "job_completed_UTC": "2026-10-04T21:06:19Z",
+    "target_results": 13,
+    "passed": 187,
+    "failed": 0,
+    "ignored": 3,
+    "parser_passed": 19,
+    "nonfinite_admission_passed": 7,
+    "OOS_context_passed": 6,
+    "parity": {"passed": 8, "failed": 0, "ignored_manual_tape_experiments": 2},
+    "log_sha256": "14F08965268EA9B1C05F19FB7E306FB5C7FB1574C5BACD0C16E3DA980386DB00",
+    "new_documentary_head_certified_by_this_receipt": false,
+    "MG_or_clock_or_forest_patch_included": false,
+    "full_T1_replaced_by_fast_CI_test": false,
+    "whole_system_or_economic_target_certified": false
+  }
 }

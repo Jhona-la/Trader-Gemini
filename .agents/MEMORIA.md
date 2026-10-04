@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: CI RA b245 final confirmada
+
+- CI37230580226 SUCCESS187/0/3ignoradas,13 resultados; merge62c2ea0d,
+  padres e3/b245 confirmados por log/API. Parser19/riesgo7/OOS6 pasan;
+  paridad8pases/2medicionesmanuales ignoradas. Loghash14F08965 enRA§36.
+- El nuevo corte documental0043 y su recibo no modifican fuente RA;
+  publicación autorizada ahora puede avanzar sin cancelar el CI anterior.
+  Nueva identidad requiere nueva CI, no transferir SUCCESS/T1 a otro código.
+- MG7aad/reloj36b0/bosquecace siguen locales y consultados; main e3. MR23,
+  GO24, MP25 yClaude26/27 sí mergeados/ancestros, su refClaude tiene un
+  exclusivo posterior y se conserva. No toda semántica certificada por ancestry.
+
 ## 2026-10-04 — Codex: cierre E03/E04 y contratos explícitos de CI
 
 - Bosque localcace007d, padres5ab+maine3; sourceE8C7 estable, RED7/9→
