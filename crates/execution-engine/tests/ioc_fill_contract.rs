@@ -2,7 +2,8 @@
 //! cantidad ejecutada de la PROPIA orden deciden si hubo entrada. Respuestas
 //! sintéticas; sin red.
 use execution_engine::ioc_evidence::{
-    clasificar_respuesta_ioc, resultado_para_el_host, ResultadoIoc, IOC_UNFILLED,
+    clasificar_respuesta_ioc, error_cierra_la_intencion, resultado_para_el_host, ResultadoIoc,
+    IOC_UNFILLED,
 };
 
 const SYM: &str = "AUDITUSDT";
@@ -100,4 +101,36 @@ fn cl39_el_envio_de_la_ioc_lee_su_estado_terminal() {
     let registro = ioc.find("register_intent(").unwrap();
     let desborde = ioc.find("is_overflow()").unwrap();
     assert!(desborde < registro, "intención registrada antes de poder abortar sin enviar");
+}
+
+/// CL-39c: sólo un error firme cierra la intención local. Con un error
+/// ambiguo la orden pudo ejecutarse: cerrarla dejaría de seguir una posición
+/// real. La guardia exige además que el ejecutor pase por esta decisión.
+#[test]
+fn cl39c_solo_un_error_firme_cierra_la_intencion() {
+    for ambiguo in [
+        "AMBIGUOUS: HTTP 503 body=",
+        "AMBIGUOUS: HTTP 408 body=",
+        r#"AMBIGUOUS: HTTP 400 body={"code":-1007,"msg":"Timeout"}"#,
+        "AMBIGUOUS: HTTP 200 unreadable response body",
+        "AMBIGUOUS: Network Error: connection reset",
+    ] {
+        assert!(!error_cierra_la_intencion(ambiguo), "{ambiguo}");
+    }
+    for firme in [
+        "HTTP_429_RATE_LIMITED retry_after=1",
+        "HTTP_418_IP_BANNED",
+        "BINANCE_REJECT code=-2019 Margin is insufficient.",
+    ] {
+        assert!(error_cierra_la_intencion(firme), "{firme}");
+    }
+
+    let src: String = include_str!("../src/executor.rs").split_whitespace().collect();
+    assert_eq!(src.matches("mark_local_reject(").count(), 1, "un único cierre local");
+    assert!(
+        src.contains(
+            "ifcrate::ioc_evidence::error_cierra_la_intencion(&e){self.order_registry.mark_local_reject("
+        ),
+        "el cierre local va detrás de la decisión firme/ambigua"
+    );
 }

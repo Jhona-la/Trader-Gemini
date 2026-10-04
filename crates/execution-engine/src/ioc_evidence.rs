@@ -61,6 +61,14 @@ pub fn clasificar_respuesta_ioc(
     }
 }
 
+/// CL-39b: un error del envío cierra la intención local sólo si es firme (la
+/// orden nunca llegó a existir: rechazo 4xx con código, 429, 418). Un error
+/// `AMBIGUOUS` (5xx, 408, -1006/-1007, cuerpo ilegible, red) la deja viva:
+/// la orden pudo ejecutarse y la consulta por REST la resuelve.
+pub fn error_cierra_la_intencion(error: &str) -> bool {
+    !error.starts_with("AMBIGUOUS")
+}
+
 /// Lo que ve el host: `Ok(())` sólo si la orden ejecutó algo.
 pub fn resultado_para_el_host(r: &ResultadoIoc, client_order_id: &str) -> Result<(), String> {
     match r {

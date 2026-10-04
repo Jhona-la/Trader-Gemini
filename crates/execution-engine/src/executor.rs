@@ -2708,7 +2708,7 @@ impl ExecutionProvider for OrderExecutor {
             Err(e) => {
                 // CL-39b: un rechazo firme (la orden nunca existió) cierra la
                 // intención; un error ambiguo la deja viva para la consulta.
-                if !e.starts_with("AMBIGUOUS") {
+                if crate::ioc_evidence::error_cierra_la_intencion(&e) {
                     self.order_registry.mark_local_reject(client_order_id, timestamp);
                 }
                 if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
