@@ -2078,4 +2078,3 @@ reloj36b0 y bosquecace continúan separados y locales. La revisión global
 sigue parcial. Nada autoriza trading, promoción, entrenamiento o borrado
 de modelos. El dueño conserva la decisión FDUSD; no se ejecutó A ni B.
 
-
