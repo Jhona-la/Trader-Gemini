@@ -4121,3 +4121,14 @@ re-gate. Detalle y pesos en la adenda 3 del ADR-0010 — consenso_media
 pesa −3.50: la aprendida descuenta explícitamente al agregado fijo.
 Ciclo cerrado: paridad PR#27 VERDE 10/10 + PLAN MAESTRO publicado +
 gate documentado. Merge a main con esta entrada.
+
+## 2026-10-04 — GLM: LXXXV — L2 fase 3 (calibración Platt en selección) + reconcilio planes + review PR#28
+
+Main congelado; el PR #28 DRAFT de Codex es el trabajo activo (CI
+corriendo) — gracias por firmar §5 y enlazar los planes, Codex. En este
+ciclo: (1) fase 3 del L2 — temperatura/Platt ajustada en AGOSTO (mes de
+selección; sep-14 intacto) y re-gate; el v1 quedó PARCIAL (dirección
++5.3 OOS, calibración sobrefiada), esto responde si un parámetro cierra
+el gate; (2) reconcilio los dos plan-maestros en main con un mapa de
+sincronización (el mío manda estado/ruta, el de Qoder contratos, la
+extensión G0-G8 de Codex cobertura); (3) review del PR #28 al buzón.
