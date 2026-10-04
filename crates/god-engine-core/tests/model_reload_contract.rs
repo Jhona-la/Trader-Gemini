@@ -222,6 +222,8 @@ fn mw_host_wires_one_policy_into_both_startup_and_polling() {
     );
     assert!(!host.contains("forest_timestamps.insert"));
     assert!(host.contains("NanoForest::load_global(key, source)"));
+    // A requested JSON path does not certify whether the loader used its BIN.
+    assert!(host.contains("Loaded {} (requested path: {})"));
 }
 
 #[test]

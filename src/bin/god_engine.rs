@@ -34,9 +34,9 @@ fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTra
         Ok(events) => for event in events {
             match event.result {
                 Ok(()) => telemetry_server::telemetry_log!(
-                    "🧠 [ML-RELOAD] Loaded {} from {}", event.key, event.path.display()),
+                    "🧠 [ML-RELOAD] Loaded {} (requested path: {})", event.key, event.path.display()),
                 Err(error) => telemetry_server::telemetry_log!(
-                    "⚠️ [ML-RELOAD] Rejected {} from {}: {} (will retry)",
+                    "⚠️ [ML-RELOAD] Rejected {} (requested path: {}): {} (will retry)",
                     event.key, event.path.display(), error),
             }
         },
