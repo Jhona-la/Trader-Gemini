@@ -374,11 +374,18 @@ fn evolve_main() {
         };
         let mut score = total_growth.ln().max(-20.0) * 10_000.0; // 1.0x = 0 pts; e^x crece lineal en log
 
-        // FASE 17: Aplicar la penalización de Drawdown Bayesiana
+        // RA-SA-F01: retención heurística de drawdown, no un posterior bayesiano.
+        // Un score mayor gana: atenuar una pérdida hacia cero la premiaría.
         let dd_threshold = test_cfg.global_max_drawdown / 3.0; // Deseable is 1/3 of max drawdown
         if dd > dd_threshold {
             let decay = f64::exp(-(dd - dd_threshold) * 20.0).clamp(0.01, 1.0);
-            score *= decay; // Destruir la puntuación exponencialmente basado en Max Drawdown
+            score = match evolution_engine::score_retention::penalize_signed_score(score, decay) {
+                Ok(penalized) => penalized,
+                Err(reason) => {
+                    eprintln!("⚠️ Iter {i}: invalid drawdown score ({reason:?}); candidate excluded");
+                    continue;
+                }
+            };
         }
 
         // Regularity Penalties
