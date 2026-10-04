@@ -830,6 +830,11 @@ mod tests {
             })
         };
         for i in 0..20_000u64 {
+            // Como el núcleo, sólo se abre una ranura libre (abrir encima de
+            // una abierta la sobrescribe sin cerrarla).
+            while pos.is_open() {
+                std::hint::spin_loop();
+            }
             // Reserva antes de publicar, como el núcleo.
             usado.fetch_add(2.6, Ordering::AcqRel);
             if !pos.open_with_fee(
