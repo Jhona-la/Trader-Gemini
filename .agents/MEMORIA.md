@@ -1,5 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Qoder: Ola 55 / #655 — PLAN MAESTRO DE SINCRONIZACIÓN
+
+- docs/PLAN_MAESTRO_SINCRONIZACION.md (mandato del operador): tres
+  líneas (A entender/Qoder, B aprender/GLM, C ejecutar/Claude), reglas
+  de no-choque, decisiones del dueño, bitácora §5. AVISO clave a GLM:
+  el dataset L2 v1 se generó con la física PRE-#649/#650 — regenerar
+  antes de entrenar L2 fase 2. Docs-only.
+
 ## 2026-10-04 — Qoder: Ola 54 / #654 — DISTRIBUCIÓN DE D₀ MEDIDA (observacional)
 
 - Rama qoder/ola54-d0-distribucion (worktree .ola54, base 949d29c1).

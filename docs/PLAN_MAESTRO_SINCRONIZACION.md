@@ -1,0 +1,112 @@
+# PLAN MAESTRO DE SINCRONIZACIÓN — Crecimiento Exponencial Compuesto
+
+> **Documento vivo de los tres agentes** (Qoder, GLM/Antigravity, Claude).
+> Creado por Qoder (Ola 55, #655) el 2026-10-04 sobre main `0580e267`.
+> Cada agente lo actualiza al cerrar su ola. La fuente de verdad del
+> estado de cada uno es su buzón + este plan; el detalle forense vive en
+> `FORENSIC_INTELLIGENCE_AUDIT.md` (Qoder), `docs/adr/` (GLM) y
+> `docs/HOJA_DE_RUTA_CIMIENTOS_2026-10-01.md` (Claude).
+
+## 0. La meta y su física
+
+**100% cada 3 días desde 13 USD, por interés compuesto.** En log: 0.231/día.
+Requiere Sharpe diario ≈ 0.68 a Kelly pleno sin fricción — los mejores
+fondos operan en 2-6 anualizado. **La meta no se discute: se sirve.** Lo
+que exige de nosotros es excelencia en cada capa: ningún bps regalado en
+ejecución, ningún edge no medido, ninguna señal no espectral.
+
+La estrategia honesta hacia la meta (consenso de seniors, 2026-09-28):
+maximizar el crecimiento log con tope de ruina y **medirlo fuera de
+muestra**. El T-1 mide expresividad genética, no rentabilidad; la
+cadena de paridades bt↔vivo (GLM, 10/10) garantiza que lo medido es lo
+que opera. El eslabón que falta es el edge OOS estable — ese es el foco
+de las tres líneas de trabajo de abajo.
+
+## 1. Las tres líneas ( quién es dueño de qué )
+
+### LÍNEA A — ENTENDER el universo (Qoder): el continuo espectral
+**Estado: VIVO de punta a punta** (#609..#654, 48 hallazgos con oráculo).
+
+- 13/13 motores votan por escala con física honesta (kernel Hawkes real,
+  solitón enderezado, SR canónica, choque firmado, paridad sombra↔vivo).
+- Consenso espectral con pesos por habilidad prequential (IC por
+  motor×escala, significancia #599, piso 0.15) y gate de observabilidad
+  (D-742) — el orquestador lo consume con τ operable y TTL.
+- Vetos con dato medido: ρ(τ*) multiactivo activo (#651), Lundberg con
+  unidades de capital (#651), drawdown con tolerancia micro compuesta
+  (#653, ver decisión pendiente §4).
+- Distribuciones servidas para calibrar consumidores: D₀ (#654),
+  |v_dom| vs cutoff (#652).
+
+**Siguiente (Qoder)**: (a) decisión del dueño sobre tolerancia micro y
+unificación de cortacircuitos (§4); (b) consumidor del D₀ con la
+distribución medida; (c) medición de adopción espectral en vivo
+(`qo_624_fraccion_espectral`, `qo_652_fraccion_sobre_corte`) sobre la
+primera sesión viva — si el espectro nunca domina, auditar por qué.
+
+### LÍNEA B — APRENDER del universo (GLM): DL-modular, escalera falsable
+**Estado: L2 fase 2 en vuelo** (ADR-0010).
+
+- L0/L1 hechos; L2 fase 1 (dataset de votos 178k filas BTC + apriori
+  hostil) mergeado; tau-matched completo; fase 2 (etiqueta
+  τ-por-muestra) anunciada.
+- **Regla de la casa para la escalera**: ningún peldaño sube sin ganar
+  a un nulo por permutación fuera de muestra (DSR en toda promoción).
+
+**Siguiente (GLM)**: L2 fase 2 → primer modelo tau-matched; la familia
+honesta (7 símbolos) para el contraste. Coordinación con Línea A: el
+dataset exporta los votos del consenso espectral de Qoder — si la
+física cambia (cambió en #649/#650), regenerar el dataset.
+
+### LÍNEA C — EJECUTAR sin perder un bps (Claude): cimientos
+**Estado: ciclo 8 cerrado** (CL-36..42, 1453 tests verdes, T-1 16/144).
+
+- Identidad de símbolos, IOC con evidencia terminal, genoma único
+  seguido por el núcleo, apalancamiento validado en envío.
+- **Abiertos documentados** (su MEMORIA 2026-10-04): GENOME-GATE al
+  cargar (slots 21/54/107 + RR), IOC parcial, dimensionar en espacio de
+  riesgo, intenciones `New` en rechazo firme de MARKET/maker.
+
+**Siguiente (Claude)**: GENOME-GATE (bloquea promociones sanas),
+dimensionado en espacio de riesgo (la propuesta XLIV: riesgo =
+fracción de Kelly acotada por ruina; nocional = riesgo/SL) — es el
+cambio de sizing que la meta de compuesto necesita para apostar cerca
+de Kelly EN RIESGO AL STOP.
+
+## 2. Intersecciones y reglas de no-choque
+
+| Intersección | Regla |
+|---|---|
+| Qoder cambia física de motores → GLM | El dataset L2 se regenera (los votos cambiaron). Avisar en buzón con etiqueta `[dataset-inval]`. |
+| GLM promueve modelo tau-matched → Qoder | El apriori hostil se recalibra contra el consenso espectral vivo de la sesión, no contra el fixture. |
+| Claude cambia sizing/ejecución → ambos | Toda paridad bt↔vivo se re-corre antes de operar (GLM la automatizó: 10/10). |
+| Oráculo T-1 | Trinquete 11.0%, margen 0.1 pts: **toda ola que toca pipeline vivo lo corre antes del push**. Sin excepciones — 10 olas consecutivas lo han demostrado. |
+| Buzón | UNIÓN en conflictos; cada cierre de ola lleva entrada; las revisiones cruzadas (Claude↔Qoder ya funcionan) se responden en la misma ola o la siguiente. |
+
+## 3. Cadencia hacia la meta
+
+1. **Ya**: sistema espectral vivo + certificado; ejecución íntegra;
+   dataset de aprendizaje servible.
+2. **Siguiente sesión viva** (operador): correr con la familia honesta,
+   telemetría completa (censo, adopción espectral, distribución D₀,
+   tau-matched) — es la primera sesión donde el ciclo completo opera.
+3. **Cierre del año 1 del plan**: edge OOS medido (Línea B) sobre
+   ejecución sin fricción (Línea C) entendiendo cada escala (Línea A).
+   Con edge medido, el sizing en espacio de riesgo lleva el compuesto;
+   sin edge medido, ningún apalancamiento lo lleva.
+
+## 4. Decisiones pendientes del dueño (operador)
+
+1. **Tolerancia micro del drawdown** (escalada por Claude, Ola 53):
+   ¿0.85 (D-641, compuesto) o cota medida pura (supervivencia)?
+   Recomendación del consejo: unificar los dos cortacircuitos en
+   `lerp(dd_max_medido, TOL, micro_w)` con TOL como knob explícito.
+2. **Sesión viva**: autorizar la corrida con la familia honesta cuando
+   GLM cierre L2 fase 2 (el manifest de cópulas de agosto es deuda
+   conocida — ADR-0009: regenerar al iniciar cada mes).
+
+## 5. Bitácora de sincronización
+
+| Fecha | Agente | Entrada |
+|---|---|---|
+| 2026-10-04 | Qoder | Plan creado (#655). Estado: Línea A viva; D₀ servido; decisión §4.1 pendiente. |
