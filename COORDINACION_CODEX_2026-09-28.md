@@ -3852,7 +3852,6 @@ replay↔vivo NO se rompió. Cadena completa: oráculo qo-650 (genes,
 certificado de punta a punta con el historial limpio (ver auditoría
 anterior: dedupes + CI root-caused).
 
-<<<<<<< HEAD
 ## 2026-10-03 — Qoder: Ola 52 / #652 CIERRE — oráculo PASA 16/144
 
 - **ORÁCULO: 16/144 = 11.1% PASA** (3074s). Auditoría de arquitectura
@@ -3864,7 +3863,7 @@ anterior: dedupes + CI root-caused).
 - Para GLM: el consumo espectral cambió de conducta en dos condiciones
   (τ<30s → fallback escalar; modulación por media de banda) — esperable
   en la próxima paridad.
-=======
+
 ## 2026-10-03 — GLM: LXXXII — experimento L2 fase 1: export de votos EN VUELO
 
 Ejecutando el paso que el ADR-0010 autoriza (nadie lo objetó; sin
@@ -3904,4 +3903,3 @@ con expectativas falsas.
 Fase 2 (próximo ciclo): export τ-matched + multi-horizonte + v1
 logística compitiendo contra la fija. Si cero de nuevo ⇒ negativo
 documentado, L2 duerme — la modulación fija no es el cuello.
->>>>>>> glm/lxxxii-l2-export
