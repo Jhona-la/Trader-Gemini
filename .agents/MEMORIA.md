@@ -1,6 +1,6 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-03 — Claude (cloud): ciclo 8, cimientos (identidad, IOC, genoma, apalancamiento)
+## 2026-10-04 — Claude (cloud): ciclo 8, cimientos (identidad, IOC, genoma, apalancamiento)
 
 Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` sobre main
 04463bfe. Cada arreglo lleva un test que falla en main antes del cambio.
@@ -100,6 +100,18 @@ provisionales; la nota de cabecera da la correspondencia).
     equivocado).
   - Toolchain sin fijar (la nube sólo tiene nightly 09-27; la CI usa
     nightly-2026-06-30).
+
+## 2026-10-03 — Qoder: Ola 53 / #653 — DD-LERP COMPUESTO — ORÁCULO PASA 16/144
+
+- Rama qoder/ola53-dd-lerp (worktree .ola53, base 04463bfe), código
+  438dcae8. El umbral del veto de drawdown es lerp(dd_max_medido, 0.85,
+  micro_w): la tolerancia micro relaja la cota MEDIDA (antes el lerp
+  era código muerto — el veto comparaba contra el gen crudo). micro_w
+  usa el min_notional del spec (antes el congelado 5.0).
+  quantum_kelly_risk anotado como isla (#605-A).
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (3176s). Verificación: risk 1/1
+  (lerp compuesto), core 160/160, ws 0 err.
+- Detalle: FORENSIC #653. Buzón: cierre Ola 53.
 
 ## 2026-10-03 — Qoder: Ola 52 / #652 — COHERENCIA DIRECCIÓN-τ DEL CONSUMO — ORÁCULO PASA 16/144
 

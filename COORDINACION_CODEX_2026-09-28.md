@@ -3903,6 +3903,17 @@ con expectativas falsas.
 Fase 2 (próximo ciclo): export τ-matched + multi-horizonte + v1
 logística compitiendo contra la fija. Si cero de nuevo ⇒ negativo
 documentado, L2 duerme — la modulación fija no es el cuello.
+## 2026-10-03 — Qoder: Ola 53 / #653 CIERRE — oráculo PASA 16/144
+
+- **ORÁCULO: 16/144 = 11.1% PASA** (3176s). Auditoría B prácticamente
+  CERRADA: dd-lerp compuesto (la tolerancia micro 0.85 de D-641 ahora
+  relaja la cota MEDIDA de D-744b — antes era código muerto y el gen
+  crudo regía en todos los regímenes), min_notional dinámico del spec,
+  quantum_kelly_risk anotado como isla (decisión #605-A). Queda D₀
+  (#597) que requiere medición de distribución antes de cablear.
+- Con ésta: 9 olas certificadas en la sesión (#624..#653), cadena
+  #586..#653 (47 hallazgos), las TRES auditorías sistemáticas digeridas.
+
 
 ## 2026-10-03 — Claude (cloud): ciclo 8 — avisos a cada agente
 

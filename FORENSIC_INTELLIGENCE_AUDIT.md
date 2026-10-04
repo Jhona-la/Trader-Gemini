@@ -14052,3 +14052,28 @@ con ésta, los 7/7 resueltos (H1/H3/H5/H6 en #648; H2/H4/H7 aquí).
   huérfanos de un lanzamiento con salida descartada (commit && test & >
   /dev/null en una cadena) — el oráculo SIEMPRE como comando background
   dedicado con captura.
+
+## #653 — Ola 53 (Qoder, 2026-10-03): DD-LERP COMPUESTO (D-641 × D-744b) + min_notional del spec + kelly anotado
+
+- **DD-LERP MUERTO (hallazgo B, verificado propio)**: el `max_dd`
+  lerpado con la tolerancia micro 0.85 (D-641) SOLO vivía en el
+  if-guard; el veto real comparaba contra el sombreado de D-744b (gen
+  crudo) — la relajación micro documentada era código muerto en TODO
+  régimen. Ahora el umbral es `lerp(dd_max_medido, 0.85, micro_w)`: la
+  tolerancia micro relaja la COTA MEDIDA continuamente; el veto NUNCA
+  desaparece (micro pleno = umbral 0.85, no ausencia de freno — el
+  guard `micro_w < 1.0` de mi primer intento lo habría desactivado y
+  fue corregido antes de commitear).
+- **MIN_NOTIONAL DINÁMICO**: `micro_w` usaba `config.min_notional`
+  congelado (5.0, nadie lo escribe) — ahora el mínimo del spec del
+  símbolo vía `effective_min_notional` (paridad con
+  evaluate_single_intent D-641 completo).
+- **QUANTUM_KELLY_RISK anotado como ISLA** (decisión #605 opción A):
+  mantener anotado — no conectar sin ola dedicada con oráculo
+  (duplicaría el Kelly del risk-engine).
+- **Verificación**: risk-engine 1/1 (test lerp compuesto: estándar
+  intacto, micro pleno 0.85, transición monótona, nunca baja el
+  umbral), core 160/160, ws 0 errores.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (3176.82 s, release single-thread
+  --nocapture sobre 438dcae8) — el umbral real del cortacircuitos de
+  drawdown cambia sin perder ningún gen certificado.
