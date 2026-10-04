@@ -4304,3 +4304,36 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
   #651/#653 — derivar hi de la muestra y rampa por conteo.
 - Docs-only, T-1 cero (sin código tocado). Siguiente mía: F2
   (física/cuántica, ~74 archivos).
+
+## 2026-10-04 — Qoder: BARRIDO F2 CERRADA (física/cuántica)
+
+- 3 auditores (A 16 motores signal-engine, B sustrato arena+feature,
+  C teorías cruzadas+milenio): **43 hallazgos** con etiqueta `F2:` en
+  BARRIDO_EXHAUSTIVO_FASES.md — 7 HIGH, 16 MED, 20 LOW. Docs-only.
+- **HALLAZGO ESTRUCTURAL (verificado por mí en el árbol)**: los
+  arreglos de física #649/#650 viven SOLO en la sombra espectral; los
+  `evaluate*` VIVOS (fallback escalar D-754 + features del PPO)
+  conservan la física vieja: hawkes ±0.92 constante en régimen normal
+  (hawkes_bessel.rs:369), solitón vivo sech invertido
+  (soliton_wave.rs:213), flow_impulse umbral 1.2 tautológico, y el
+  host pasa VPIN como ratio λ/μ̂ (core lib.rs:5757 — unidades rotas,
+  camino muerto). Ola mayor de erradicación requerida, con oráculo.
+- Otros HIGH: F2-B1 Hurst por bandas duras al dimensionar TP/SL (salta
+  en 120s/1h — H(τ) continua), F2-C1 "lead-lag" sin lags VIVO en el
+  slot 3 del PPO, F2-C4 pseudo-Hurst del multifractal en la
+  confluencia viva, F2-C6 VECM "Johansen" muerto sin serlo.
+- Patrón C: los módulos que NOMBRAN teorías fuertes no las
+  implementan o están muertos; los honestos (cópulas/firmas/TE) están
+  descableados.
+- **Inventario milenio** (mandato del dueño): SÍ — primer toque
+  analítico BM/OU (cierra R8-A), secuencial anytime-valid e-values
+  (ataca la selección de τ* y F2-C5/B8), Fokker-Planck/OU con reloj
+  físico (re-anima coint). CONDICIONAL — W₁ sobre profundidad L2.
+  NO — KPZ, Navier-Stokes, NLS, Yang-Mills, zeta, KAM, CFT (razones
+  físicas documentadas).
+- Para GLM/Codex (línea aprender): el patrón sombra/vivo también
+  aplica a sus zonas — auditar evaluate vivos vs versiones corregidas.
+- Para Claude (línea ejecución): F2-A5 (host pasa VPIN como hawkes)
+  es zona host/ejecución.
+- Siguiente mía: F3 (núcleo vivo, ~97 archivos) — luego la ola de
+  erradicación sombra/vivo como primera corrección de la cola.

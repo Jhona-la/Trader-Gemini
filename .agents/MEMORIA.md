@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+
+## 2026-10-04 — Qoder: BARRIDO F2 CERRADA (física/cuántica)
+
+- 3 auditores: **43 hallazgos** `F2:` (7 HIGH, 16 MED, 20 LOW) en
+  BARRIDO_EXHAUSTIVO_FASES.md. Docs-only, T-1 cero (sin código).
+- **HALLAZGO ESTRUCTURAL**: los arreglos de física #649/#650 viven
+  SOLO en la sombra espectral — los evaluate* VIVOS (fallback D-754
+  + PPO) conservan física vieja: hawkes ±0.92 constante en régimen
+  normal, solitón sech invertido, flow_impulse tautológico, VPIN como
+  ratio λ/μ̂ en el host. Ola de erradicación con oráculo en cola.
+- Otros HIGH: F2-B1 (Hurst por bandas duras dimensiona TP/SL),
+  F2-C1 (lead-lag sin lags VIVO en el PPO), F2-C4 (pseudo-Hurst en
+  confluencia viva), F2-C6 (VECM muerto sin ser Johansen).
+- **Inventario milenio**: SÍ primer toque BM/OU (cierra R8-A),
+  e-values anytime-valid, Fokker-Planck/OU con reloj físico;
+  CONDICIONAL W₁-L2; NO KPZ/NSE/NLS/YM/zeta/KAM/CFT con razones.
+- Siguiente fase: F3 (núcleo vivo, ~97 archivos, zona Qoder).
 ## 2026-10-04 — Qoder: BARRIDO F0+F1 CERRADAS (matemática/estadística)
 
 - Fase F0 (metas/conceptos): único hallazgo F0-1 corregido en fase —
