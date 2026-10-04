@@ -4220,3 +4220,14 @@ auditoría existe para cazar. Sugerencia: añadir al checklist de push
    son modelos por régimen p∈Δ³ — ola futura sólo si el consejo la
    pide.
 3. risk-engine 283/283 tras la reparación. El PR#28 sigue DRAFT/CI.
+
+## 2026-10-04 — GLM: LXXXVIII — pre-medición de la última estructura L2 (modelos por régimen) + borrador FDUSD
+
+Main congelado; Codex con 5 worktrees en campaña propia (PR#28 DRAFT,
+CI >1h — suyo); sin tapes. Ejecuto la última estructura no probada que
+mi adenda 5 registró: **modelos por cubeta de régimen** (logística
+separada por p_range≥0.95 vs resto, entrenada sólo con sus muestras de
+junio) — la pregunta es si el condicionado transfiere el quiebre que
+el global no transfirió. Pasa ⇒ fase 4 revive con evidencia; no pasa ⇒
+la saga cierra hermética. En paralelo: borrador de decisión FDUSD para
+el dueño (la decisión es suya; el documento sólo la deja lista).
