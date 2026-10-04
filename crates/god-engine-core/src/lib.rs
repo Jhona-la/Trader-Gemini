@@ -1749,9 +1749,12 @@ impl GodEngineCore {
                 self.kline_close_memory[coin_id] = current_price;
             }
 
-            if self.arena.kill_switch_active.load(Ordering::Relaxed) {
-                return (None, None);
-            }
+            // CL-43 (FMT-232, ADR-0014): el kill-switch NO corta aquí. Antes
+            // este `return (None, None)` saltaba la gestión de ranuras (SL,
+            // trailing, BE, zombie, tóxico) de todas las monedas: con el latch
+            // armado, una posición abierta se quedaba sin defensa local. El
+            // latch se aplica como bloqueo de ENTRADAS dentro de
+            // `process_tick_dual` (`entries_blocked`), donde el cierre viaja.
 
             if self
                 .arena
@@ -2609,9 +2612,12 @@ impl GodEngineCore {
             }
 
             // 1. Quantum Kill-Switch Check
-            if self.arena.kill_switch_active.load(Ordering::Relaxed) {
-                return (None, None, None);
-            }
+            // CL-43 (FMT-232, ADR-0014): el latch bloquea lo que AUMENTA el
+            // riesgo (entradas y cotización maker), nunca las salidas. Antes
+            // devolvía `(None, None, None)` aquí, antes de la sección 1: con
+            // el latch armado ninguna ranura se gestionaba. Ahora entra en
+            // `entries_blocked` y la frontera X-012 devuelve el cierre.
+            let kill_latched = self.arena.kill_switch_active.load(Ordering::Acquire);
 
             // 2. Latency Interlock & Entry Permissions
             let latency_threshold_ms = self
@@ -2637,6 +2643,7 @@ impl GodEngineCore {
             }
             let liquidation_severity = liquidation_view.ok().flatten().unwrap_or(0.0);
             let entries_blocked = !allow_entries
+                || kill_latched
                 || self.drift_entry_veto
                 || quantum_arena::feed_health::is_stalled()
                 || is_latency_panic

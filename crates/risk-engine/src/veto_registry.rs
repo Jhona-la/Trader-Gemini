@@ -199,7 +199,10 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         deuda: Some(
             "SOL-A1: el nombre anterior (protection_gap_contract) NO existía en ningún \
              archivo — un riesgo-duro 'certificado' por un string. Contrato real añadido \
-             por Sol; falta aún prueba de runtime del rearme (histeresis) en el host.",
+             por Sol; falta aún prueba de runtime del rearme (histeresis) en el host. \
+             CL-43 (ADR-0014): el núcleo bloquea sólo entradas bajo el latch; contrato de \
+             comportamiento en god-engine-core/tests/close_outcome_contract.rs \
+             (kill_switch_preserves_local_stop_close_and_blocks_new_entry).",
         ),
     },
     EntradaVeto {
