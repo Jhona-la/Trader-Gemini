@@ -38,7 +38,13 @@ copia esa cadena. Dos defectos:
    varias veces el margen contable y el margen libre de la siguiente
    entrada salía optimista (la guarda -2019 dejaba pasar órdenes que el
    exchange rechaza).
-4. Se conservan el arranque exploratorio (1× con menos de 30 cierres) y el
+4. En el host, la decisión de envío y el reajuste corren en el hilo del
+   núcleo, antes del `spawn` de la E/S y del siguiente evento, como en el
+   replay (CL-41c). La diferencia de margen entra en `used_margin` bajo el
+   cerrojo de la ranura y antes de publicar su margen nuevo, igual que la
+   reserva del núcleo: un cierre que lea el margen nuevo no deja margen
+   fantasma con su resta saturada.
+5. Se conservan el arranque exploratorio (1× con menos de 30 cierres) y el
    veto de la envolvente: cambiarlos es política de riesgo del dueño.
 
 ## Consecuencias
@@ -57,3 +63,18 @@ copia esa cadena. Dos defectos:
   liquidación y bloquea más margen. La envolvente también evalúa su capital
   descontando la reserva propia (`cap_now`); no se toca aquí porque cambia
   sus vetos.
+- Abierto tras la revisión del ciclo 8 (confirmado, sin arreglar):
+  - Binance fija el apalancamiento por símbolo. Con dos ranuras abiertas en
+    el mismo símbolo y apalancamientos de envío distintos, el exchange
+    recalcula el margen de ambas al último y el arena sólo reajusta la
+    propia; la reconciliación se salta el símbolo
+    (`MultipleLocalAllocations`). Candidato: enviar al apalancamiento ya
+    vigente del símbolo o vetar.
+  - El replay no evalúa la envolvente ni reajusta la reserva en la segunda
+    y tercera ranura de una moneda con otra ya abierta (`pos_was_open =
+    is_any_open`); el host sí, porque decide por la orden del núcleo.
+    Candidato: disparar el gate por la reserva del núcleo.
+  - Un llenado parcial de la IOC confirma la reserva con la cantidad y el
+    margen de la orden completa.
+  - La rama de deriva de la reconciliación escribe `quantity` y
+    `margin_used` sin el cerrojo de la ranura.

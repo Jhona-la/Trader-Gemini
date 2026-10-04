@@ -4136,13 +4136,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         };
 
-                        rt_handle.spawn(async move {
+                        // CL-41c: la decisión de envío y el reajuste de la reserva
+                        // corren aquí, en el hilo del núcleo y antes del siguiente
+                        // evento, como en el replay: la validación de la siguiente
+                        // entrada ya ve el margen del exchange y ningún cierre del
+                        // núcleo se intercala con el reajuste. El spawn sólo hace
+                        // la E/S con el exchange.
+                        let decision_envio: Option<u32> = 'envio: {
                             if exec_leverage == 0 {
                                 telemetry_engine::telemetry!(
                                     "🛡️ [ENVOLVENTE] Entrada bloqueada: evidencia insuficiente o capital no sostiene el riesgo mínimo (Kelly bayesiano). Ejecutando Rollback de estado."
                                 );
-                                rollback_positions(&arena_clone);
-                                return;
+                                rollback_positions(&engine_real.arena);
+                                break 'envio None;
                             }
 
                             // B3.6 — veto del breaker de fees: el símbolo
@@ -4154,8 +4160,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     "🛑 [FEE-BREAKER] Entrada de {} vetada (símbolo suspendido — fees > bruto ganador). Rollback de estado.",
                                     parsed_sym_str
                                 );
-                                rollback_positions(&arena_clone);
-                                return;
+                                rollback_positions(&engine_real.arena);
+                                break 'envio None;
                             }
 
                             // Sincronización Binance Leverage con Core Sizing y protección -2019 (D-382).
@@ -4163,8 +4169,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // no descuenta la reserva de esta orden y el
                             // apalancamiento enviado nunca supera el validado.
                             let free_margin = risk_engine::envio::margen_libre_sin_la_propia(
-                                arena_clone.unified_capital.load(Ordering::Relaxed),
-                                arena_clone.used_margin.load(Ordering::Relaxed),
+                                engine_real.arena.unified_capital.load(Ordering::Relaxed),
+                                engine_real.arena.used_margin.load(Ordering::Relaxed),
                                 margen_propio,
                             );
                             let effective_leverage = match risk_engine::envio::apalancamiento_de_envio(
@@ -4187,24 +4193,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "🚨 [MARGIN-GUARD] Orden abortada para {}: {:?} (notional {:.2} USDT, margen libre {:.2} USDT, validado {:?}x). Ejecutando Rollback.",
                                         parsed_sym_str, veto, notional_volume, free_margin, apalancamiento_validado
                                     );
-                                    rollback_positions(&arena_clone);
-                                    return;
+                                    rollback_positions(&engine_real.arena);
+                                    break 'envio None;
                                 }
                             };
                             // CL-41b: la reserva retiene el margen que retendrá el
                             // exchange a este apalancamiento (≥ el validado):
                             // el margen libre de la siguiente entrada es el real.
                             if let Err(reason) = reservation.reajustar_margen(
-                                &arena_clone,
+                                &engine_real.arena,
                                 risk_engine::envio::margen_de_envio(notional_volume, effective_leverage),
                             ) {
                                 telemetry_engine::telemetry_err!(
                                     "[ENTRY] {}: reserva no reajustable ({:?}); envío retenido. Rollback.",
                                     parsed_sym_str, reason
                                 );
-                                rollback_positions(&arena_clone);
-                                return;
+                                rollback_positions(&engine_real.arena);
+                                break 'envio None;
                             }
+                            Some(effective_leverage)
+                        };
+
+                        rt_handle.spawn(async move {
+                            // Vetada en el hilo del núcleo: la reserva ya se revirtió.
+                            let Some(effective_leverage) = decision_envio else {
+                                return;
+                            };
 
                             let entry_executor = exec_clone.load_full();
                             let sym_filter = match entry_executor.get_symbol_filter(&parsed_sym_str).await {

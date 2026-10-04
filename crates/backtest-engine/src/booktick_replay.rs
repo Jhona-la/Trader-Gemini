@@ -766,16 +766,14 @@ pub fn live_envelope_gate(
     ) {
         Ok(apalancamiento) => {
             // CL-41b: como el host, la reserva retiene el margen que
-            // retendría el exchange a este apalancamiento.
+            // retendría el exchange a este apalancamiento (CL-41c: la
+            // diferencia entra en `used_margin` bajo el cerrojo de la ranura).
             let generacion = pos.generation.load(Ordering::Acquire);
-            if let Ok(delta) = pos.reajustar_margen_generation(
+            let _ = pos.reajustar_margen_generation(
                 generacion,
                 risk_engine::envio::margen_de_envio(notional_volume, apalancamiento),
-            ) {
-                if delta != 0.0 {
-                    arena.used_margin.fetch_add(delta, Ordering::Relaxed);
-                }
-            }
+                &arena.used_margin,
+            );
             true
         }
         Err(_) => {

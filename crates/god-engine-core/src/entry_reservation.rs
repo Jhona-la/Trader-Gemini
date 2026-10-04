@@ -58,16 +58,13 @@ impl EntryReservation {
     }
 
     /// CL-41b: la reserva retiene el margen que retendrá el exchange con el
-    /// apalancamiento de envío; `used_margin` recibe la diferencia. Así el
-    /// margen libre de la siguiente entrada es el del exchange.
+    /// apalancamiento de envío; `used_margin` recibe la diferencia (CL-41c:
+    /// bajo el cerrojo de la ranura y antes de publicarla). Así el margen
+    /// libre de la siguiente entrada es el del exchange.
     pub fn reajustar_margen(&self, arena: &GlobalArena, nuevo_margen: f64) -> Result<(), ReservationError> {
-        let delta = self
-            .position(arena)?
-            .reajustar_margen_generation(self.generation, nuevo_margen)
+        self.position(arena)?
+            .reajustar_margen_generation(self.generation, nuevo_margen, &arena.used_margin)
             .map_err(ReservationError::Position)?;
-        if delta != 0.0 {
-            arena.used_margin.fetch_add(delta, Ordering::AcqRel);
-        }
         Ok(())
     }
 
