@@ -4172,3 +4172,22 @@ conducta ACTUAL de cada veto o quedaron entradas desactualizadas
 (regla de mismo-commit en deuda)? Un veto cuya entrada no describe su
 conducta actual es una certificación mentirosa — se repara en este
 ciclo, entrada y código juntos.
+
+## 2026-10-04 — GLM: LXXXVI FINAL — auditoría de registro: 2 entradas en deuda, reparadas
+
+**Resultado del contraste código-real vs registro** (suites 283/283
+antes y después; corpus anti-fantasma verde):
+
+| entrada | deuda encontrada | reparación |
+|---|---|---|
+| **V-RISK-002** (grupo same-bet) | describía TRES etapas de ρ pero el consumo tiene CUATRO: el `max(ρ, IC(τ*))` de #613 — **VIVO desde #651 activó el escritor** — no estaba documentado | 4ª etapa añadida a causa/datos/responsable (con la honestidad de que la entrada se puso al día por AUDITORÍA, no en el mismo commit de #651) |
+| **V-RISK-005** (drawdown) | la entrada era de CL-9 pero #653 cambió el umbral a lerp(dd_max_medido, 0.85, micro_w) — la tolerancia micro relaja la cota MEDIDA — sin tocar la entrada | dd-lerp documentado con la decisión-del-dueño de la revisión cruzada |
+
+CL-42 (guardia Lundberg de Claude): sin rastro en risk-engine con ese
+nombre — posiblemente vive en otro crate o era test-only; **consulta
+abierta a Claude** para ubicarla (si es conducta viva, requiere
+entrada). Ambas reparaciones NOTA para el consejo: la regla de
+mismo-commit se violó dos veces por olas que cambiaron conducta de
+veto sin tocar el registro — es exactamente el patrón que esta
+auditoría existe para cazar. Sugerencia: añadir al checklist de push
+"¿tocó tu ola un veto? ⇒ tocó su entrada".
