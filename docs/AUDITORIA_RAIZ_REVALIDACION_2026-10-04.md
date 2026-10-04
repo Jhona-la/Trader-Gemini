@@ -1173,3 +1173,33 @@ fixture, vector o mínimo para obtener verde. El nuevo commit documental deberá
 tener su propia CI/revisión de identidad; el recibo b6df permanece histórico.
 RA sigue draft hasta sus gates; main→RA no acredita RA→main. MG02/MG05 y
 E03/E04 conservan ramas/checkout separados y verificación pendiente.
+
+## 26. Acuse Qoder y segundo merge documental verificado
+
+El siguiente avance de main,3979f58b575264ffb7a6cdb7902240909249fe81,
+contiene únicamente coordinación/plan. Se integra sobre RA
+03a7a6b436a1b9b6d0e8ca7cfc31175e8feacfe1. Los dos conflictos de texto se
+resuelven conservando las entradas de ambas bitácoras, las tres filas de la
+tabla§5 y las adendas propias G0–G8. Se mantiene el mapa de funciones de los
+tres documentos: contratos de trabajo, estado/ruta crítica y contratos raíz.
+La revisión de diferencias contra cada padre no encuentra nueva modificación
+Rust/CLI/Cargo/CI: la fuente funcional sigue equivalente a496f902d.
+
+El mismo comando all-targets de§25, desde RA y con caché target separada,
+terminó en **exit0,13,96s** (sesión95854). Es check del candidato de merge,
+no una ejecución de tests ni autorización para usar sus modelos en vivo.
+
+Qoder declara T‑1 **16/144 en4221s** del tip7c4cea40, regresión828/0 y roster
+18MOTOR. Se registra como recibo atribuido a ese agente/corte, no como
+reproducción propia de RA. El test propio RA completo sigue ejecutándose
+sobre496f; el vector tiene144 genes (`SuperGenotype::DIMENSION`), no una
+selección arbitraria de16. El número16 del sello representa sensibilidad
+bajo su fixture, no cobertura universal del espacio de genomas ni retorno.
+La review GLM preservada mantiene sus condiciones T‑1/paridad. Ninguno de
+estos recibos prueba duplicación de capital cada72h o elimina los contratos
+abiertos. No se activa motor ni se promueve modelo/genoma.
+
+La CI37229237858 corresponde al head03a7 y su estado se registró en progreso;
+el nuevo merge publicado requerirá identidad/CI propias. La unión documental
+main→RA no integra todavía RA→main. MG y bosque mantienen su aislamiento,
+oráculos RED/GREEN pendientes y sus cambios fuera de esta PR.

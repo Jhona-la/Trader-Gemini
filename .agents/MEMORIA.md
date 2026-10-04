@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: acuse Qoder3979 y segundo merge documental
+
+- Main3979 (sólo plan/coordinación) entra en RA03a7 por unión: dos conflictos
+  de texto preservados, mapa de roles y tabla§5 sin perder G0–G8. Diff por
+  padre y fuente496 sin Rust/CLI/Cargo/CI nuevo. Check candidato all-targets
+  exit0,13,96s (sesión95854), caché separada; no ejecución de motor.
+- Recibo Qoder16/144 en4221s es de7c4cea40, no de RA; regresión828/0 y roster
+  18 atribuidos a su sello. GLM review sigue condicionada a T1/paridad. T1 RA
+  sigue ejecutando2tests sobre496 y no tiene resultado final en este corte.
+- RA§26/JSON agregados sin cambiar los16 IDs originales ni recibos anteriores.
+  CI03a7 requiere reemplazo/identidad al nuevo push; RA→main aún pendiente.
+  MG02/MG05 y E03/E04 continúan aislados, sin cierre ni publicación. Ninguna
+  autorización de sesión viva, cambio de modelo o garantía económica inferida.
+
 ## 2026-10-04 — Codex: segundo recibo cruzado y check del merge documental
 
 - RA conserva main5ab por unión documental; Rust/CLI/CI siguen iguales a496f.

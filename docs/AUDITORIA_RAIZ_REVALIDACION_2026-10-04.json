@@ -566,5 +566,31 @@
     "ra_integrated_in_remote_main": false,
     "later_published_head_ci_required": true,
     "other_repairs_included": false
+  },
+  "qoder_acknowledgement_and_documentary_merge": {
+    "report_section": 26,
+    "head_parent": "03a7a6b436a1b9b6d0e8ca7cfc31175e8feacfe1",
+    "main_parent": "3979f58b575264ffb7a6cdb7902240909249fe81",
+    "functional_source_equivalent_to": "496f902d668b9a1914fe27488246b6a56ef1c1a7",
+    "text_conflicts_resolved_by_preservation": 2,
+    "all_targets_exit": 0,
+    "cargo_reported_seconds": 13.96,
+    "all_targets_session": 95854,
+    "received_qoder_receipt": {
+      "source_tip": "7c4cea4036ee67e8b73809fac7c8763280a2291a",
+      "sensitive_genes": 16,
+      "genome_dimension": 144,
+      "reported_test_seconds": 4221,
+      "reported_regression_passed": 828,
+      "reported_regression_failed": 0,
+      "reported_motor_roster": 18,
+      "reproduced_on_RA": false
+    },
+    "full_RA_t1_state": "still_executing_no_final_result",
+    "previous_head_ci_run": 37229237858,
+    "later_head_certified_by_previous_ci": false,
+    "ra_integrated_in_remote_main": false,
+    "live_activation_or_model_promotion_performed": false,
+    "other_repairs_included": false
   }
 }
