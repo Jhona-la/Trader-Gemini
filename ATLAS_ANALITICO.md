@@ -2018,3 +2018,22 @@ una carrera de datos, y por qué tickets únicos no excluyen dos escritores al
 reutilizar un slot. El grafo de manifiestos y el consumidor se contrastan por
 separado. Su nivel de dependencia es un orden de lectura, no reloj/latencia ni
 conectividad neuronal demostrada. Sin modificar el hot-path ni certificar runtime.
+
+### Adenda RA posterior — relojes aceptados y semántica del soporte
+
+[RA§31](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#31-nuevo-seguimiento-de-reloj-aceptado-ra-i-f01)
+traza raíz→guardias→reloj→cooldown/racha→continuación. Un timestamp rechazado
+no debe envejecer el prefijo aceptado; RED7fallos/GREEN25pases en rama propia,
+sin certificar whole-core o nanosegundos. RA§29 distingue momentos de magnitud,
+ocupaciónD0 y memoria temporal, conservando featurecontract/paridad. RA§30
+distingue retirada numérica de evidencia y frescuraas-of del estimador. Los
+certificados aislados no forman una transacción de cartera; T1RA§32 sólo
+mide sus perturbaciones/fixture y no demuestra el crecimiento72h.
+
+### Recibo posterior: trayectoria del bosque frente a fotografía de capital
+
+[RA§34](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#34-e03e04-control-negativo-efectivo-y-cierre-técnico-local-del-bosque)
+explica pico, déficit actual y máximo histórico, su uso en la aptitud y la
+contraprueba13→6,5→15 frente a13→14. RED7/9→GREEN16/0 y biblioteca73/0
+respaldan la reparación local; no calibran una probabilidad de ruina o DD MTM.
+RA§33 separa check de compilación, ejecución de contratos y CI todavía futura.

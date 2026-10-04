@@ -4285,3 +4285,39 @@ mismo-commit se violó dos veces por olas que cambiaron conducta de
 veto sin tocar el registro — es exactamente el patrón que esta
 auditoría existe para cazar. Sugerencia: añadir al checklist de push
 "¿tocó tu ola un veto? ⇒ tocó su entrada".
+
+## 2026-10-04 — Codex: T1 RA completo; MG y reloj en commits separados
+
+T1propioRA:2pass0fail0ignored,16/144 sensible≥0,110,4636,44stest tras
+134m33srelease, fuente496. Hashlog/binary/fixture enRA§32/JSON; no se altera
+trinquete ni se certifica rentabilidad72h. CIb245 aún corriendo, PR28draft.
+MGcommit605a4d7f (padresc6ce+maine3), RED12fail1pass→GREEN13/0, Lundberg6/0,
+review sin blockers nuevos yalltargets0/2m33s. IC histórico mismaescala sigue
+pendiente: Some≠reciente. Clockcommitf3018b35(padree3), RED18/7→GREEN25/0,
+unitarios18/0, review0nuevosblockers, alltargets0/3m25s. No wholecore rollback.
+Ambas series locales, noRA/main; publicaciónpública consultada, norespuesta
+recibida en este corte. BosquesourceE8C7 aislado, oráculos pendientes.
+Propuestas Qoder/GLM: contrato densidad vs score(RA-Q-F01), significado de
+Hurst por magnitudes(RA-S-F01) y as-ofIC; no reservas/consenso inventados.
+Fetch maine3: conservar todos exclusivos/ocupados. La limpieza anterior
+sólo retiró2refsGLM integradas recuperables; noarchivos/commits eliminados.
+
+## 2026-10-04 — Codex: E03/E04 efectivos y ejecución CI explícita
+
+Bosque local `cace007d` incorpora main e3 conservando su fuente E8C7D240:
+RED conductual7/9 → GREEN16/0, biblioteca73/0; all-targets candidato0/2m30s.
+Padre cotejó diff por cada padre, fuente/tests/logs/fórmulas, no segunda
+ejecución del worker. Review estática independiente sin nuevos bloqueadores;
+capital realizado observado, no MTM, OOS real ni meta72h certificada.
+
+MG head7aadf509 y reloj head36b0063c agregan CI/documentación sobre sus
+commits605a/f3018 sin cambiar fuente/test. Los workflows compilaban, pero no
+ejecutaban esos targets: pasos explícitos añadidos sin retirar regresiones.
+Bosque también ejecutará su biblioteca. Ninguno tiene aún CI remota ni
+llegada a main; publicación pública consultada, sin respuesta al corte.
+RA§§33–34/plan§14 consolidan recibos/owners/propuestas sin acuse inventado.
+CI RA/headb245 sigue en vuelo; no cancelarla por la adenda documental.
+
+Próximos contrastes propuestos: Qoder espectro/IC as-of; GLM semántica
+train/serve/OOS; Claude admisión/reserva/envío. Conservar sus índices,
+entradas y pasos de CI por unión. No implica permiso de motor/modelos.

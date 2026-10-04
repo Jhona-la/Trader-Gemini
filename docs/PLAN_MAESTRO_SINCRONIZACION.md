@@ -518,3 +518,135 @@ condiciones de su recibo §13.4, no como pase incondicional de todos los gates.
 No se atribuye a Codex autorización para la sesión viva §4.2 ni se inicia motor.
 RA03a7 fue publicado; traer3979 de nuevo exige diff por padre y check antes
 de publicar el siguiente corte. MG/forest siguen en sus checkouts separados.
+
+### 13.11 Contrato matemático del oscilador y límite de reutilización
+
+RA§27 añade RA-Q-F01 separado del inventario16: helper de densidad gaussiana
+recortada/cola clamped sin normalización de probabilidad. API latente: tres
+calls Rust encontrados, todos tests; sin impacto en órdenes probado. Propuesta
+a Qoder (no acuse/reserva aceptada): definir score vs densidad, soporte/unidades,
+estado inválido y pruebas de masa. No cambiar kernel vivo durante T‑1.
+La paridad #650 se conserva dentro del dominio actual; API directa x12 revela
+frontera distinta, pero callers actuales la excluyen. No sumar un segundo bug
+operativo por ese contraejemplo. Fuerza derivada de potencial clásico no es
+solver de estado cuántico: analogía física requiere interpretación y evidencia.
+
+### 13.12 Recibo de bosque y semántica de features temporales
+
+RA§28: review independiente de parche E03/E04/hash estable, sin bloqueadores
+nuevos hallados en alcance. No tests ejecutados por revisor ni integración;
+DD realizado observado, noMTM/intraevento. RED/GREEN y gates propios pendientes.
+RA§29 añade RA-S-F01 separado: el proxy de magnitudes llamadoHurst no mide
+memoria temporal, aunque sus features37–39 sí llegan a train/serve. Ventanas
+10/25/50 son observaciones, no τ físicas. Propuesta Qoder+GLM de contrato y
+calibración, no reserva aceptada; no cambiar tensor sin paridad/retrain/OOS.
+D0 mide ocupación de soporte, no amplitud/clustering general; no se fabrica
+otro bug por esa elección. QuantumKellyRiskEngine ya es isla declarada #653,
+no cablearla duplicando el sizing. Interpretación científica precede a teoría
+adicional; no hay validación de toda la matemática ni rentabilidad certificada.
+
+### 13.13 Vigencia de evidencias: reproducibilidad antes de integración
+
+RA§30: MG02/MG05 tiene RED1/12→GREEN13/0 con mismo hash de test, regresión
+Lundberg6/0 y fixture de mutabilidad reparado/no contado como RED. MáscaraR0
+e IC-1 retira evidencia por moneda sin reactivar globals; neutralidad del IC
+frente a base negativa es parte del contrato, no permiso para borrar vetos.
+No snapshot conjunto ni T1MG; review independiente/all-targets pendientes.
+Rama evidence-expiry permanece separada de RA y fuente496 congelada. Owner
+Codex, bloque acotado al helper/publicación/tests; no reserva ajena asumida.
+
+### 13.14 Frontera del reloj aceptado, G1 antes de G4/G7
+
+RA-I-F01/RA§31: el reloj de features cambia ante algunos rechazos y alimenta
+cooldown/olvido de rachas. Nuevo worktree/ramacodex/feature-clock-2026-10-04,
+dos archivos disjuntos de MG/forest. Reserva comunicada en buzón compartido;
+no acuse de editor externo. Tests ampliados primero, RED/GREEN efectivos y
+revisión antes de commit. Mover timestamp tras guards conserva política;
+no inventar frecuencia nanosegundo ni acelerar tiempo sin observaciones.
+Este expediente es separado de los16 originales; no hay cierre todavía.
+
+### 13.15 Actualización posterior: límites cruzados y reparación comprobada
+
+RA§30.1: revisión MG sin bloqueadores nuevos, pero mantener abierto consumo
+as-of del IC histórico en la misma escala. Rechazar nuevas parejas desalineadas
+no retira necesariamente una correlación acumulada; Some≠reciente. Cierre
+real/feedback/base negativa directa y coste no cubiertos por13 controles.
+RA§31.1: reloj aceptado actualRED18/7→GREEN25/0, misma prueba y fuente separada;
+no modificación de política. Review/unitarios/all-targets todavía en curso.
+Ambas series quedan fuera de RA/main hasta sus gates. Preservar cortes anteriores
+como historial; no dar por integradas propuestas o reservas no reconocidas.
+
+### 13.16 T1 RA completo y límites del gate G0
+
+RA§32: propioT1 fuente496/binarionightly intacto terminó2pass0fail0ignored,
+16/144 perturbaciones sensibles≥ratchet0,110,4636,44s tras134m33sbuild. No
+inercia global del resto128, coordenadas independientes, lucro real ni meta72h.
+No incluye MG/bosque/reloj. MGcommit605a4d7f (padresc6ce+maine3) queda local
+tras all-targets0/2m33s; review sin blockers nuevos, frescura IC histórico aún
+abierta. Reloj25/0+unitarios18/0, revisión local favorable; all-targets sigue
+en curso. CIb245 aún en ejecución y PR28draft; no afirmar llegadaRA a main.
+Consulta pública para publicar seriesMG/reloj separadas pendiente, no bloqueo
+de documentación/QA ni autorización para saltar CI, activar modelos o trading.
+
+### 13.17 Commits listos dentro de alcance, integración aún pendiente
+
+MG605a4d7f y reloj f3018b35 quedan en ramas propias locales; ambos tienen
+oráculos efectivos, revisión cruzada de hash sin blockers nuevos y all-targets
+verdes (MG2m33s/reloj3m25s). Informes propios detallan los límites. No están
+enRA ni main, publicación pública consultada. G0 no permite confundir sus
+checks con candidato conjunto/T1 ni borrar ramas ocupadas o exclusivas.
+Último fetch: main e3, RApublicada16exclusivos, MG1/reloj1, Claude remoto1;
+MW/TH/V7/backup conservados. Buzón compartido actualizado con fuente/owner
+y pendientes; Qoder/GLM no han reconocido las propuestas científicas nuevas.
+
+## 14. Corte operativo consolidado y secuencia de cierre
+
+Corte de esta adenda: 2026-10-04T21:00:56Z. Último fetch: main y origin/main
+`e3adf74e`; checkout compartido sin merge abierto, sólo `.workbuddy-ai/`
+ajeno sin versionar. Codex no alteró ese índice ni detuvo procesos ajenos.
+La sincronización externa usa plan/coordinación versionados y buzón compartido:
+los avisos están publicados en el buzón, pero los nuevos repartos científicos
+no tienen acuse de los otros editores. Delegación interna no equivale a ese acuse.
+
+| Entrega | Owner del trabajo observado | Evidencia efectiva | Estado de adopción/gate siguiente |
+|---|---|---|---|
+| RA raíz, PR28/headb245 | Codex; review de agente GLM condicionada | T1 propio2/0,16/144; all-targets; revisiones con alcance | CI actual en curso, draft; publicación de adendas y gates del candidato pendientes |
+| MG02/MG05, head7aadf509 | Codex | RED1/12→GREEN13/0, Lundberg6/0, revisión, all-targets0 | Local; consulta de publicación pendiente; IC histórico as-of sigue abierto |
+| Reloj aceptado, head36b0063c | Codex | RED18/7→GREEN25/0, unitarios18/0, revisión, all-targets0 | Local; consulta de publicación pendiente; no atomicidad whole-core/cierre0 |
+| E03/E04, headcace007d | Codex, worker y revisor independientes | RED7/9→GREEN16/0, biblioteca73/0, revisión, all-targets0 | Local; publicación consultada; T1/paridad/CI propios pendientes |
+| Semántica Hurst y densidad | Codex auditó; Qoder/GLM propuestos para contraste | Contrapruebas matemáticas y rutas por hash; no impacto económico medido | Contrato/semántica pendientes de acuse; no cambiar tensor o política en silencio |
+| G8 crecimiento neto72h | Evaluación conjunta propuesta | Objetivo definido§6; no demostración neta OOS de duplicación | Fijar experimento, riesgo/soporte/costes y test no reutilizado antes de promoción |
+
+Secuencia de integración:
+
+1. Conservar los recibos históricos y los resultados negativos; publicar sólo
+   el alcance autorizado. Las adendas de caducidad/reloj/bosque añaden pruebas
+   explícitas a CI sin retirar las anteriores ni transferir resultados RA.
+2. Antes del merge de cada serie, cotejar main vigente y **cada padre**,
+   preservar todas las entradas/pasos de CI en conflictos y volver a probar
+   los contratos afectados por la unión. La compilación no sustituye ejecución.
+3. Ejecutar paridad y T1 pertinentes para los cambios de pipeline; validar
+   identidad de la fuente/datos/genoma que realmente se carga. No mezclar
+   certificados aislados como un certificado del candidato conjunto.
+4. Confirmar el SHA/equivalencia revisada en main remoto y ausencia de
+   exclusivos/ocupación/actividad antes de borrar referencias locales/remotas.
+   RA16, MG2, reloj2, MW4, TH4, V7wip1, backup3 y Claude remoto1 tenían
+   exclusivos al censo; el bosque pasó después a su commit local conjunto.
+5. Sobre esa base, cerrar causalidad, frescura as-of, admisión compuesta y
+   modelos/features antes de atribuir mejoras a una teoría nueva. La capa
+   continua§9 necesita soporte/antigüedad/incertidumbre/covariación por activo
+   y escala, no sólo reemplazar etiquetas por nombres espectrales.
+
+Próximas revisiones cruzadas propuestas: Qoder, semántica del espectro y
+vigencia del IC; GLM, contrato train/serve y confirmación OOS de features;
+Claude, identidad/admisión/reserva/envío y trayectoria económica. No son
+tareas aceptadas hasta recibir acuse. Codex mantiene los recibos, las reservas
+propias y el cierre técnico por bloques; cada editor conserva su índice.
+No hay autorización de entrenamiento, promoción ni sesión viva en esta adenda.
+
+Reconciliación posterior RA§35/JSON: los merge commits de PR23/MR,24/GO,
+25/MP y26/27/Claude sí son ancestros de origin/main. PR28 sigue abierta;
+la rama de Claude conserva un exclusivo posterior, no es eliminable sólo
+por el estado de PR27. Censo12refs/OIDs/ocupación: ninguna nueva elegible
+para borrado. La revisión de exclusivos legacy se mantiene sólo lectura;
+no equivale a certificar todo su código o preservar toda semántica por ancestry.

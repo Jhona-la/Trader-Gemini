@@ -14118,3 +14118,33 @@ constructor None sin wiring encontrado en Rust versionado. La seguridad
 concurrente debe preceder al cableado. El censo1435 y grafo24/202/88 no son
 revisión semántica total. CI posterior187/0/3ignoradas pertenece a b6df, no
 al nuevo merge documental; T1 completo y nueva CI siguen con gates propios.
+
+### Adenda matemática RA — oscilador, sin cambio de física viva
+
+[RA§27](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#27-revisión-matemática-del-oscilador-densidad-dominio-y-analogía)
+documenta RA-Q-F01: densidad recortada mal interpretada como probabilidad,
+normalización perdida paraalpha10 y cola clamped. Helper latente, sólo tests
+en Rust versionado; sin PnL/órdenes afectados demostrado. #650 conserva la
+igualdad del kernel dentro del dominio actual; contraprueba API fuera de él
+no prueba regresión de sus callers. Se distingue potencial clásico, score,
+densidad y estado cuántico; sin editar Rust, sustituir oráculos o inflar16IDs.
+
+### Adenda RA posterior — aprendizaje, caducidad y fronteras de estado
+
+[RA§29](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#29-semántica-del-multifractalhurst-y-continuidad-temporal-real)
+separa significado científico de paridad de valores en train/serve: proxy de
+magnitudes no estima por sí solo memoria temporal. D0ocupación deliberada y
+QuantumKelly isla#653 no se confunden con nuevos bugs o permiso para wiring.
+[RA§30](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#30-mg02mg05-oráculos-efectivos-recibidos-reparación-todavía-aislada)
+recibe MGRED12fail1pass→GREEN13/0 y review; SomeIC histórico≠reciente. Reloj
+RA-I-F01 queda corregido en otra rama25/0, no atomicidad del core. T1RA§32
+final2/0,16/144 pertenece a fuente496: no certifica esas ramas ni meta72h.
+
+### Recibo posterior Codex: coherencia genética y máximo riesgo observado
+
+[RA§34](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#34-e03e04-control-negativo-efectivo-y-cierre-técnico-local-del-bosque)
+detalla los oráculos E03/E04: RED7/9, GREEN16/0, biblioteca73/0, fuente
+E8C7D240 y all-targets0 del merge localcace007d. No cambia lambda, gates,
+OOS o promoción; capital observado no es MTM ni garantía de rentabilidad.
+RA§33 explica por qué compilar tests no sustituye ejecutarlos y conserva
+todos los pasos CI. Plan§14 consolida secuencia y propuestas sin acuse externo.

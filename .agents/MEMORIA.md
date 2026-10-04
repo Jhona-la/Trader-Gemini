@@ -1,5 +1,54 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: cierre E03/E04 y contratos explícitos de CI
+
+- Bosque localcace007d, padres5ab+maine3; sourceE8C7 estable, RED7/9→
+  GREEN16/0, biblioteca73/0 yalltargets0/2m30s. Padre cotejó fuente/logs,
+  no segunda ejecución de oráculos. DD realizado observado, noMTM/edgeOOS.
+- Heads locales MG7aadf509/reloj36b0063c añaden únicamente CI/documentación
+  sobre605a/f3018; conservan fuente/pruebas. Compilar targets no ejecutaba
+  sus contratos: se agregaron pasos explícitos sin retirar regresiones.
+- RA§§33–34 y plan§14 consolidan owners, recibos/gates y propuestas sin
+  acuse externo; JSON mantiene historia. RA/CIb245 en curso, main e3,
+  nuevas adendas y tres series sin integración. Publicación pública
+  consultada, aún sin respuesta al corte21:00:56Z; no modelos/trading.
+
+## 2026-10-04 — Codex: T1 RA final, arreglos locales y subcontratos abiertos
+
+- PropioT1 RA exit0,2pass0fail0ignored,16/144 con cambio≥ratchet0,110;
+  fuente496 congelada, release134m33s+4636,44stest. Binario/log/fixture hashes
+  enRA§32/JSON. No meta72h/paridadprod/inercia global ni genes independientes.
+- MGcommit605a4d7f, padresc6ce+maine3, checkalltargets0/2m33s yreview0nuevos
+  bloqueadores. RED12fail1pass→GREEN13/0+Lundberg6/0. Consumoas-of deIC
+  histórico mismaτ aúnabierto, no confundirSome conreciente; noT1MG ni snapshot.
+- Relojfeature-clock: source5A5940CB/testBB96D9C9, actualRED18/7→GREEN25/0,
+  unitariosstateful18/0 yreviewhashestable0blockers. Alltargets exit0/3m25s;
+  commit localf3018b35 sobremaine3, pendiente de publicación/integración.
+  Sentinelcierre0/coredescartaResult pendientes fuera de reparaciónlocal.
+- CIb245 en curso, PR28draft, aún noRA→main; MG/relojseparados locales.
+  Consentimiento solicitado para sus PRspúblicas, sin inferir live/models.
+  BosqueE03/E04 sigue aislado con runner propio; no alterarfixture/trinquete.
+
+## 2026-10-04 — Codex: semántica científica, caducidad y reloj aceptado
+
+- RA§27 añade RA-Q-F01: densidad gaussiana recortada no normalizada; API sólo
+  tests encontrada, sin impacto económico demostrado. #650 conserva su dominio
+  actual, fuerza de potencial clásico no es solver cuántico. RA§29 añade
+  RA-S-F01: cociente de magnitudes exportado como Hurst sin dependencia temporal;
+  features37–39 train/serve presentes, uso predictivo no medido. No cambiar
+  tensor sin versión/retrain/OOS. D0ocupación deliberada, no otro bug inventado.
+- RA§28: review independiente E03/E04 hashE8C7, sin bloqueadores nuevos en
+  alcance; tests efectivos aún pendientes, DD realizado observado/noMTM.
+- MG separado: actualRED1pass12fail→GREEN13pass0fail, mismo hash797AF948;
+  Lundberg6/0. Padre cotejó fuente/tests/logs; review independiente en curso.
+  R0/IC-1 conserva ausencia del lector y bloquea fallback global; no snapshot
+  multiclave ni T1MG, no integración. E0596 previo no es RED de lógica.
+- Nuevo RA-I-F01: try_process_tick publica last_event_ms antes de rechazos;
+  cooldown/olvido usan ese reloj y snapshot no lo incluía. Worktreefeature-clock
+  sobremaine3, sólo stateful_engine+stateful_transition_contract. REDcompila,
+  fuente aún sin reparar; no tocar fuenteRA/T1, MGlib ni forest. Original16
+  intacto. CIb245 aún en curso; T1RA sin final al corte de estas adendas.
+
 ## 2026-10-04 — Codex: LXXXVI recibido, registro no equivale a vigencia
 
 - RA incorpora main e3adf74 (LXXXVI GLM): seis cadenas descriptivas de vetos

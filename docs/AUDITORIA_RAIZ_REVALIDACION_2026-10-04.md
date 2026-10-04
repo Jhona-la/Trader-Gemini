@@ -1226,3 +1226,536 @@ propio del candidato (sesión58434, comando§25) pasó **exit0,1m52s**. No se
 transfiere este check a otros worktrees. RA completo sigue ejecutando T‑1,
 sin cambiar su binario/fixture; esta actualización requiere CI de su nuevo
 head. Main→RA sigue sin acreditar merge RA→main.
+
+## 27. Revisión matemática del oscilador: densidad, dominio y analogía
+
+Corte b245cdcf, módulo completo `signal-engine/src/quantum_oscillator.rs`,
+blob d6c23aff84c9d2579155fa5faa23d424a7145817; voto espectral blob
+a170fcce199beae30e312bd6327ee266cf441788. También leídos tests del módulo,
+physics_numeric_contract y escritores/consumidores del core. Sin editar Rust,
+ejecutar motor ni atribuir estas verificaciones a una suite cargo.
+
+### 27.1 RA-Q-F01: densidad recortada presentada como probabilidad
+
+P2 matemático/API latente, estáticamente confirmado. El helper público
+`compute_superposition_probability` (:62–82) evalúa
+`sqrt(alpha/pi)*exp(-alpha*x²)`, con alpha restringido a[0,01,10], pero recorta
+el valor a[0,1]. La expresión sin ese recorte es una **densidad gaussiana**,
+sigma=1/sqrt(2alpha), no una probabilidad de un evento puntual. Una densidad
+puede superar1; la probabilidad de un intervalo se obtiene integrándola.
+La distinción y fórmula de referencia están en el
+[manual de distribución normal de NIST](https://itl.nist.gov/div898/handbook/eda/section3/eda3661.htm).
+
+Para alpha10, la densidad central correcta es1,78412411615277; el helper
+devuelve1. Cuadratura Simpson independiente en PowerShell sobre[-4,4],
+80000 subintervalos/h=0,0001, integrando min(1,densidad), da0,7631290823
+aproximadamente en vez de1. Es recálculo numérico de la expresión, no ejecución
+del Rust ni tolerancia certificada de integrador. El recorte central pierde
+masa. Además clampa x a[-10,10]: con alpha1, todos los x>10 devuelven el
+valor constante2,09882811567721e-44. Sobre todo R esa cola constante positiva
+no es integrable; si se declara sólo un dominio finito, tampoco se renormaliza
+explícitamente su densidad truncada. Sanitizar NaN a x0 también representa un
+centro conocido, no evidencia de una posición observada.
+
+Búsqueda versionada Rust: sólo se encontraron tres invocaciones del helper,
+todas en sus tests; ninguno prueba integral, unidades o cola fuera del dominio.
+No se demuestra aquí que afecte órdenes, consenso, ranking o rentabilidad.
+Los índices de graphify antiguos no son consumidores productivos actuales.
+El bug es el contrato matemático de la API bajo su interpretación documentada;
+si se desea un score acotado, debe explicarse como score, no como densidad
+normalizada/probabilidad de colapso. Cierre: escoger semántica, declarar soporte
+y estado inválido, y comprobar masa de intervalos, normalización y fronteras
+alpha>pi/|x|>10. No se cambia la política viva por este hallazgo latente.
+
+### 27.2 Paridad de envolvente: válida en su dominio, no idéntica sin límites
+
+La reparación #650 sí iguala la forma exp(-alpha*x²) entre sombra y vivo para
+la misma entrada finita |x|≤10 y alpha válido. No se refuta ese arreglo.
+La API directa sombra clampa x antes de la envolvente; evaluate_for_coin
+clampa x en la fuerza pero conserva pos original en la envolvente (:207–214).
+Con misma entrada x12,k1,lambda0,1,alpha0,1, fuerza común-410:
+vivo=-0,000228530051400478 y sombra=-0,0186139712026188, razón81,450868665.
+Con alpha≤0 también difieren las políticas de respaldo si se invoca la API
+directamente. Es contraprueba aritmética de paridad universal, no trade real.
+
+El caller actual core clampa desplazamientos espectrales a[-10,10] (:1908)
+y alpha a[0,01,10] (:1923); el escritor vivo clampa pos_dev a[-3,3] (:4733).
+Por tanto no se acredita ejecución de ese contraejemplo en tales rutas actuales.
+Además momentum_z por banda y desviación EMA/ATR no son la misma observación:
+igualar el kernel no obliga a igualar votos de entradas distintas. Seguimiento
+de diseño/dominio, no nuevo bloqueador operativo ni segundo bug de trading.
+Antes de reutilizar la API fuera del dominio, especificar sanidad común y tests
+de equivalencia punto a punto, distinguiendo transferencia espectral de física.
+
+### 27.3 Qué cálculo se implementa realmente
+
+La fuerza-(k*x+4lambda*x³) es la derivada negativa del potencial clásico
+V=k*x²/2+lambda*x⁴. Se usa como kernel de reversión acotado y amortiguado;
+no se integra aquí una trayectoria cuántica ni se resuelve Hpsi=Epsi.
+La [formulación del oscilador armónico de MIT](https://www.ocw.mit.edu/courses/5-61-physical-chemistry-fall-2017/29b4eef1ae44a28c9d2e506f9170caa6_MIT5_61F17_lec8.pdf)
+incluye el operador cinético y condiciones de estado. Añadir lambda*x⁴ no
+conserva automáticamente su estado fundamental gaussiano: al dividir Hpsi por
+una psi gaussiana aparece ese término x⁴, no una energía constante.
+Esta última observación es nuestra comprobación algebraica, no una afirmación
+del material citado sobre este código. La cabecera «estado fundamental» y
+«cero desfase» necesita una definición/prueba o etiquetarse como analogía:
+evaluación instantánea sin estado no demuestra filtrado estocástico de fase0.
+Sin evidencia OOS/ablación no se atribuye ventaja predictiva a nombres físicos.
+
+RA-Q-F01 se guarda separado de los16 IDs originales; 27.2–27.3 son límites
+de dominio/interpretación. Ninguna corrección o medición operacional se declara.
+
+## 28. Revisión cruzada del parche aislado ShadowForest E03/E04
+
+Revisor independiente sólo lectura, worktree forest-evaluation con base5ab07f35.
+Parche local de random_forest.rs SHA256
+E8C7D240A4562A5EAD4450220C2DF07D9B8F5B743EF49B66272878EB179344AD
+idéntico antes/después/cierre; Codex recotejó el hash. Los once archivos de
+contexto cotejados por el revisor tampoco cambiaron. No es commit integrado
+ni lectura de main; los tests en vuelo todavía no constituyen un GREEN.
+
+No se hallaron bloqueadores nuevos en el alcance leído: constructor aplica y
+guarda la misma mutación sin override25ms; replant preserva correspondencia;
+núcleo aislado con RecargaGenoma::Fija y promoción del clon guardado sin tocar
+latencia. Observe_capital conserva máximo DD entre broadcasts/cosechas, también
+al suspender por memoria. Harvest usa una lectura de capital para observación
+y fitness. Capital inválido deja NaN/inviable persistente en la época; same-gen
+preserva historia y replant reinicia pico/DD/baseline de operaciones.
+
+Lambda, mínimo15, filtro de entorno y promoción permanecen iguales. Se conserva
+la diferencia heredada entre trades acumulados usados en fitness y elegibilidad
+de15 cerrados **desde replant**. O(1) sin asignaciones por universo, O(n) para
+todo broadcast/suspensión; sin benchmark de latencia. Tests leídos abarcan
+50/75ms, caída/recuperación, observación entre cosechas, misma/nueva generación,
+0/14/15 cierres, no finitos/no positivos, depth/kline y memoria suspendida.
+No fueron ejecutados por el revisor. El DD es realizado **observado**, no MTM
+ni extremo intraproceso. Fixtures que inyectan capital no acreditan fills.
+El control-Inf puede seguir siendo superado bajo política heredada; no se
+añadió aquí un criterio de control finito/OOS. Antes de integrar: RED real con
+producción anterior y nuevos tests, restauración por hash, GREEN y suite
+pertinente. La review estática no reemplaza esos recibos ni una review humana.
+
+## 29. Semántica del multifractal/Hurst y continuidad temporal real
+
+Módulo feature-engine/src/multifractal.rs completo, blob
+fe95ca70affc680051b8330dbd9c3ece6fe40b30; consumidores StatefulEngine blob
+60aa06f21974f537058e04eebce1bbe85a83fc0b. Corte b245. Se contrastaron tests,
+publicación de features, ensamblado train/serve y telemetría del core. Sin
+ejecutar Rust, entrenar, alterar modelos o cambiar unidades del vector vigente.
+
+### 29.1 RA-S-F01: proxy de magnitud interpretado como persistencia Hurst
+
+P2 de contrato estadístico/interpretación, abierto y preexistente. Update
+toma |ln(price/last_price)|, acumula sumas de magnitudes y sus cuadrados y
+devuelve `H_n=0,5+ln(mean_abs/(RMS*0,7978845608))/ln(n)` con floors/clamps.
+Fija h_q2=0,5. No estima la escala de incrementos para varios lags, rango
+reescalado de sumas con signo, autocorrelación o dependencia temporal. El orden
+y signo desaparecen de estos dos momentos de la ventana. Llamarlo Hurst y
+afirmar >0,55=tendencia/<0,45=reversión no está respaldado por ese cálculo.
+
+Contraprueba algebraica: retornos +a constantes y retornos ±a alternados
+tienen igual mean_abs=RMS=a, pese a trayectorias acumuladas muy distintas.
+Con n50 por encima de floors, ambos dan H_n=0,557717286512636. Recálculo en
+PowerShell de la fórmula, no resultado de una prueba Rust ni H real asignado
+a esas series deterministas. La feature no distingue ese cambio; no se afirma
+que todo el sistema pierda dirección, pues otras features sí contienen orden.
+La [investigación de la Reserva Federal sobre memoria corta/larga](https://www.federalreserve.gov/pubs/ifdp/2008/956/ifdp956.htm)
+describe el rango reescalado mediante sumas temporales centradas y las
+limitaciones por correlación de corto plazo. Usar una alternativa validada
+requiere especificar proceso/estimador; tampoco basta sustituirlo ciegamente
+por R/S para prometer capacidad predictiva.
+
+El efecto de interpretación alcanza datos realmente publicados: StatefulEngine
+:771–774 guarda h_mic/h_mes/h_mac en f32; get_spectral_ml_features(:1193)
+los devuelve en[3..6]. Core consume ese bloque (:4201,4240,4276) y
+train_forest:374–375 lo ensambla en índices globales37,38,39 del vector54.
+No se midió que un modelo cargado use esos splits, su peso predictivo, PnL o
+promociones afectadas. Compartir helper conserva paridad de valores train/serve,
+pero no certifica la semántica Hurst. Cambiar feature viva sin reentrenar el
+mismo contrato rompe otra propiedad ya pagada; no se hace aquí.
+
+Cierre: declarar estos valores como proxies de forma/concentración de magnitud
+si ésa es la intención, o validar un estimador de dependencia/escala con lags,
+soporte, sesgos y estados sin evidencia. Versionar semántica e índices y probar
+signo/permutación, IID, dependencia corta/larga y cadencia irregular; retrain y
+OOS sólo si cambia el vector. Sin inventar un nuevo umbral de persistencia.
+
+### 29.2 Lo que aún queda fijo y lo que no debe confundirse
+
+MultiScaleHurstConfluence crea ventanas10/25/50 **observaciones**, sin recibir
+timestamps. No son horizontes físicos de1ns–100años. La misma ventana puede
+cubrir milisegundos o minutos según feed/activo. Comentarios aún dicen
+Scalp/Swing, pero eso no prueba que el enum Continuous se haya revertido ni
+que haya dos motores de trading separados. Los flags y el score0,4/0,3/0,3
+son ignorados por los callers StatefulEngine leídos (_score/_micro_p/_macro_p),
+por lo que no se atribuye a esos pesos un veto activo. La migración del tensor
+de features a soporte temporal continuo es un contrato pendiente, no un simple
+renombrado o destrucción de ventanas útiles de aproximación numérica.
+
+| Salida | Qué calcula este módulo | Interpretación que no está acreditada |
+|---|---|---|
+| H_micro/meso/macro | Cociente de momentos de magnitud por ventana10/25/50 | Hurst/persistencia direccional medidos o cobertura temporal universal |
+| D0 | Ocupación de cajas de1/2/4 observaciones vía pendiente q0, limitada[0,1] | Detector general de clustering de amplitud o dimensión asintótica certificada |
+| Ancho f(alpha) | Legendre en q{-2,-1,0,1,2} y tres tamaños, soporte finito | Separación IID/cascada robusta por ancho o prueba de gran desviación asintótica |
+
+D0 ignora amplitud mientras las cajas permanezcan positivas: con n50 y
+todos los retornos no nulos, Z0 es50/25/12 y tau0=-1,02944684453 se clampa a1,
+independientemente de magnitudes. Eso es **coherente con ocupación**; no es un
+nuevo bug por no medir otra cosa. El test de #597 sí distingue huecos EXACTOS
+de una serie de soporte lleno y la calibración ya reconoce ancho ruidoso. Una
+ráfaga con retornos pequeños positivos entre bloques puede conservar D0=1:
+no usar la palabra «racimado real» como certificado general de volatilidad.
+El cache1/16, EWMA deD0 1/64 y ventanas por evento necesitan reloj/muestra
+efectiva para cualquier futuro gate; repetir un valor cacheado no crea muestra
+independiente. No se encontró en esta revisión un consumidor de política deD0;
+sus escritores/telemetría #654 no equivalen a un sizing multiactivo ya adaptado.
+
+QuantumKellyRiskEngine fue leído y su ausencia de callers productivos
+reconfirmada por búsqueda Rust: sólo pub módulo/tests. La isla #653 ya está
+declarada y no se conecta para dar apariencia de grafo completo; duplicaría
+el sizing de risk-engine. Tampoco se generaliza RA-S-F01 a RecursiveHurst por
+klines: es un cálculo independiente no revalidado por esta contraprueba.
+
+Este seguimiento se registra separado de los16 expedientes históricos. No
+certifica la teoría completa ni todos los archivos, y no justifica aumentar
+exposición para intentar alcanzar la meta72h.
+
+## 30. MG02/MG05: oráculos efectivos recibidos, reparación todavía aislada
+
+Worktree evidence-expiry, rama codex/evidence-expiry-2026-10-04, basec6ce7333.
+El padre leyó el diff completo, helper, los13 tests y controles RED/GREEN
+conservados. SHA256 tests idéntico en ambas variantes y fuente final:
+797AF948C6E4B82EA385B9DB518956B34FC013E48EDBB2779E253E25718C77E3.
+Fuente GREEN lib5D0F90F1659D6FE2974A1444EBF79D62B04766874844541EE8FBF4CBD743DF42;
+helper78EAF1C0871415D03C49019D22D413AA623E572B6126A06A001C02FF0E639654.
+Informe detallado propio del bloque `docs/AUDITORIA_CADUCIDAD_EVIDENCIAS_2026-10-04.md`
+en ese checkout; no se presupone que ya exista en RA/main.
+
+RED efectivo:1pass/12fail/0ignored,exit101. GREEN:13pass/0fail/0ignored,exit0;
+Lundberg6pass/0fail/0ignored/122filtered,exit0. Un intento anterior con cinco
+errores de mutabilidadE0596 no se cuenta como fallo lógico de la implementación.
+El RED extrae la publicación anterior a un helper que escribe sólo Some
+finito y conserva el writerIC dentro de depth; no es una suite que existiera
+sin ese módulo en el commit base. Misma prueba, variantes del productor y
+frontera de publicación, conservadas bajo target/evidence-expiry.
+
+El cambio retira R/margen al perder raíz y IC al cambiar a escala fría/invalidar
+tau. Máscaras por moneda permanecen para impedir que el fallback global reactive
+la evidencia caducada. R=0 conserva la ausencia que interpreta el lectorR>0;
+IC=-1 no endurece base escalar alguna en[-1,1]. IC=0 no sería neutro ante una
+base negativa. No cambia fórmula ln(20)/R, conversión de unidades, lector,
+estimator, política epsilon ni genoma. Margen0 significa ausencia diagnóstica,
+no cota de riesgo nulo; IC=-1 no distingue ausencia de anticorrelación medida.
+
+Pruebas con estimador/registro/lector reales: Some→None→recuperación; R no
+finito; A madura→B fría→A; tau inválida; evento trade sin depth; dual directo;
+retorno kill-switch; máscaras global/coin/símbolo; separación de arenas;
+veto/aprietes efectivos en RiskEngine; compatibilidad finita; lecturas
+concurrentes y handoff tras publicación terminada. El padre cotejó los logs,
+no reprodujo por segunda vez los13 controles. La revisión independiente del
+parche exacto sigue en curso. No se suma un nuevo ID ni se declara MG integrado.
+
+Coherencia por clave/coin con un escritor, no snapshot conjunto
+R/margen/IC/tau/capital/posición/orden. Las pruebas permiten mezclar generaciones
+entre claves durante publicación. Compartir registry comparte estado; no
+revocan órdenes ya validadas. No all-targets final, T1MG, stress, benchmark,
+Loom/Miri, modelo cargado ni rendimiento financiero certificado en este corte.
+Warnings de entorno genómico no definido/DarkAlpha fallback son del fixture;
+no se silencian alterando entorno o fuentes de la prueba genética RA.
+
+### 30.1 Recibo cruzado MG posterior: publicación no es frescura del estimador
+
+Review independiente del hash lib/helper/test de§30, estable antes/después/al
+cierre: sin nuevos bloqueadores hallados. No reejecutó cargo. El reader coin→
+global y base[-1,1] sostienen la máscara, pero los logs por sí solos no traen
+sello automático del OID/hash; el recibo se acompaña de copias RED/GREEN
+cotejadas. No se simula aprobación humana o integración final.
+
+Residual MG05: `coherencia_par` no recibe as-of y devuelve el IC acumulado
+si n≥madurez/denominador válido; excluir pares nuevos desalineados no caduca
+un enlace ya maduro. Un Some de la misma escala puede ser histórico. Este
+parche retira None/no finito/tau fría o inválida, no acredita frescura por
+tiempo. Subcontrato heredado abierto, no nuevo ID/regresión ni justificación
+para TTL inventado. Medir último soporte contemporáneo por par/escala y
+definir consumo as-of antes de certificar «evidencia vigente» completa.
+Tests13 no incluyen cierre real que pierda R, feedback real que cambie tau,
+base escalar negativa directa o coste de publicar más a menudo. Registrar
+límites junto al resultado favorable, no ocultarlos tras el número de tests.
+
+### 30.2 Commit local MG tras cotejo de padres y all-targets
+
+MG605a4d7f3c2a138ca7e826b7cb131a096f393f90, padresc6ce7333 y main e3adf74.
+Diff frente a ambos padres, fuentesreview intactas y check del candidato
+all-targets/locked/offline exit0,2m33s (23272). Exactas rutas propias stageadas;
+bitácoras/ADR/fichas descriptivas upstream preservadas por merge. No PR/pushMG
+ni integración a main en este corte. Sin T1MG/paridad económica certificada.
+
+## 31. Nuevo seguimiento de reloj aceptado: RA-I-F01
+
+P2 transición de estado, confirmado por lectura de main e3adf74, blob
+stateful_engine60aa06f21974f537058e04eebce1bbe85a83fc0b. `try_process_tick`
+(:674) valida precio y después publica last_event_ms antes de verificar
+volumen, contador y productos/retorno finitos. Un rechazo posterior deja
+current_ts y features anteriores, pero adelanta este reloj. Contradice el
+contrato público de no mutación ante rechazo y crea dos edades distintas de
+un mismo prefijo aceptado. Los tests de transición omitían last_event_ms.
+
+No es sólo telemetría: racha_amortizada(:493), can_open_position_ms(:527) y
+get_active_directional_streak_ms consumen ese reloj. En un prefijo válido con
+último evento/cierre1100ms, base1000ms y rachas3, un rechazo por volumenNaN
+con timestamp9100ms adelanta8bases; floor(log2(1+8))=3 borra pérdidas efectivas
+y puede liberar enfriamiento. Es contraprueba algebraica/API, no orden
+operacional observada. La ruta process_event sanea volumen no finito a0 antes
+del caller; no se afirma que cualquier NaN externo llegue a esta API. El
+notional/retorno derivado y callers directos aún requieren su propia frontera.
+
+Reserva disjunta Codex feature-clock, sobre main e3 en un cuarto worktree.
+Sólo stateful_engine.rs y stateful_transition_contract.rs; no lib.rsMG ni
+random_forest.rs. Snapshot ampliado, tres controles nuevos de reloj/cooldown/
+continuación/contador y frontera cero/empate. RED en compilación, sin resultado
+todavía; la fuente productiva aún no se movió. Reparación prevista: publicar
+reloj después de TODOS los guards, preservar fórmulas/políticas y aceptar los
+mismos datos válidos. GREEN, revisión, all-targets y gates de integración
+requeridos; sin unir a RA durante T1. Seguimiento separado del inventario16.
+
+### 31.1 Reparación local del reloj: RED efectivo y GREEN efectivo
+
+Misma suite SHA256BB96D9C922FDD1F1DE6F1823F8BC4170FAC24A5C698C384B64858756DD4CF706.
+Fuente originalSHA256A41A75456CB241C9AA16C6BF6707F2E222FDB0E1058AD7F4B349C981E03773CB:
+RED compiló5m33s,25tests18pass/7fail/0ignored,exit101,0,02s. Fallan volumen
+inválido, nocional/retorno/volumen acumulado no finitos, contador agotado,
+rechazo futuro seguido de aceptación y reloj/cooldown/rachas futuros. No error
+de compilación atribuido a lógica. Fuente corregidaSHA256
+5A5940CBEEE5F5EC7984449BBDF86157A6C56F8BA3B840120A1E0DC5ED318A5C:
+GREEN25pass/0fail/0ignored,exit0,0,02s tras39,45sbuild. Sólo mueve el max
+del reloj después de los guards y precisa «aceptado» en su comentario.
+
+El nuevo informe AUDITORIA_RELOJ_FEATURES_2026-10-04.md está en feature-clock,
+no en RA/main todavía. Inputs válidos, EMA/Kalman/ML/fórmulas y errores tipados
+conservados. Review independiente, unitarios stateful y all-targets en curso.
+No rollback completo del core, orden enviada, PnL ni genoma certificado. RA
+mantiene su fuente496 y T1; no copiar este GREEN a sus recibos congelados.
+
+### 31.2 Revisión cruzada posterior y residuales fuera del arreglo
+
+Hashsource5A5940CB y testBB96D9C9 estables antes/después/cierre de revisión
+independiente, sin bloqueadores nuevos hallados. No ejecutó cargo ni cotejó
+GREEN: esos recibos son del padre. Todos los Err preceden ahora a la primera
+mutación en esta función y los guards no consultan last_event_ms; mover su
+max conserva inputs válidos. Reloj de ticks aceptados, no tiempo de pared.
+Unitarios internos stateful:18pass/0fail/0ignored/145filtered,0,05s, build3m13s.
+Check all-targets aún en ejecución en el corte de este recibo.
+
+Residual heredado: last_scalp_exit_ms==0 sigue representando «sin cierre» aunque
+timestamp0 sea válido para ticks. El writer de cierre del core asigna el
+event_time_ms; un cierre en0 sería indistinguible del estado inicial en los
+lectores de cooldown/racha. No cierre real en0 ejecutado ni impacto operativo
+observado; requiere presencia tipada o marcador independiente con compatibilidad,
+no sustituir0 por un tiempo arbitrario. `record_trade_outcome` mantiene además
+otros relojes y bandas; no se afirma que esta reparación los haya unificado.
+El wrapper del core descarta Result y continúa OFI/otras mutaciones: rechazo
+atómico del whole-core, saneamiento downstream y recuperación de panic pendientes.
+
+### 31.3 Cierre técnico local del reloj, sin integración
+
+Commitf3018b35b2eeb99e0c41d1a842d96012d86558c2, padre maine3adf74.
+All-targets exit0,3m25s (27451), fuente/hashreview/GREEN intactos. Incluye
+sólo estado, tests, informe propio y memoria de esa serie. No push/PR en este
+corte; consentimiento de publicación pública solicitado. No se une a RA para
+atribuirle T1 de una implementación distinta. Revisar el candidato conjunto
+cuando se integren las series, no sumar certificados aislados como atomicidad.
+
+## 32. Resultado T1 completo propio de RA, identidad y alcance
+
+Sesión29055 finalizó exit0. Comando ejecutado desde RA sin alterar fixture,
+predictor, entorno, comparador ni trinquete:
+
+```text
+cargo +nightly-2026-06-30 test -p backtest-engine --release --locked --offline -j 2 --test t1_cobertura_genetica -- --test-threads=1 --nocapture
+```
+
+Build release134m33s; dos tests completos2pass/0fail/0ignored en4636,44s.
+El oráculo reporta16/144=11,1111% perturbaciones con cambio de estadísticas,
+por encima del mínimo0,110. Baseline roundtrip changed_slots=[].
+Los128 sin cambio bajo ESTE extremo/fixture NO son128 genes universalmente
+muertos. Campos alterados por from_vector pueden estar acoplados; ejprobe143
+no realiza el valor pedido y cambia otros slots. Las trazas conservan esa
+limitación, no se interpreta como sensibilidad independiente de coordenadas.
+
+Fuente funcional congelada496f902d668b9a1914fe27488246b6a56ef1c1a7. Merges
+documentales posteriores hasta b245 sólo añaden en Rust seis cadenas de fichas
+de veto; el binario release no se reconstruyó para esos textos. Reloj/MG/bosque
+no incluidos. Nightly2026-06-30, Windows. TestSHA256
+A10C43BA6F881B92CDDB83D96AC4AF8D59E9DB7FDADB1B35B7DB4C1E3FE602CE;
+helper de fixture/comparador1D874D34C30E3D7FCDB2A35C28D1C869837F6AB0939C5D9749A4645C73CC71C0.
+Ejecutable t1_cobertura_genetica-d2e218a7f6c0d233.exe SHA256
+BB837CDB756110F68FF3B1D5707D6A77AF70F60614A6C7DA792782D12642AC7C.
+Log local ignorado target/ra-t1-2026-10-04.log SHA256
+C6414A989C15F87F31B2A85FC9D543D21EA0341DBF464AE52CCDEB858D4AE9F6.
+
+Predictor sintético direccional base0,5, salida ±3 por feature0, datos de
+serie(3000), BTCUSDT, capital inicial1000. El ruido histórico no centrado,
+especs de fixture y neutralización del gate de ML siguen intactos. Diagnóstico
+separado:235aperturas/cierres,20vetosconsejo,0vetosML, capital1814,81267 y
+WR1 en esa serie. Son salidas de fixture, NO consistencia financiera, WRreal,
+72horas multiasset ni cuenta13USD. TG_GENOME_ENV sin definir/DarkAlpha fallback
+documentados, no alterados para aprobar la prueba.
+
+Este resultado sí elimina el pendiente «T1 RA en ejecución» para la fuente
+congelada; no certifica head futuro o nueva política. CI37230580226 de b245
+aún en curso en la consulta posterior; review cruzada de agente y revisión
+automatizada no equivalen a aprobación humana. PR28 sigue draft y RA no llegó
+a main en este corte. Nuevo recibo publicado exige verificar su CI/identidad;
+paridad pertinente y los fallos abiertos conservan sus propios gates.
+
+### 32.1 Estado operativo de integración y ramas tras el recibo
+
+Fetch remoto posterior confirma origin/main e3adf74, PR28/headb245 aún draft
+con CI37230580226 en progreso. MG605a y reloj f3018 están sólo locales, cada
+uno con1commit exclusivo; RA publicada tiene16 exclusivos. Bosque sin commit,
+sourcehashE8C7 y pruebas efectivas aún pendientes. MW4, TH4, V7wip1, backup3
+y rama remotaClaude1 conservan exclusivos y no se borran/mergean a ciegas.
+Worktrees ocupados no se limpian por tener0 commits exclusivos. Ningún merge
+abierto quedó en los checkouts propios ya cerrados; no intervención en raíz.
+La limpieza anterior sólo retiró2refs locales GLM integradas, commits
+recuperables desde main; remotas ya ausentes. No datos/archivos borrados.
+
+## 33. Brecha de CI: compilar un target no ejecutaba sus nuevos contratos
+
+La revisión de los workflows de las series aisladas encontró que
+`check --all-targets` incluía sus tests en compilación, pero los comandos
+`cargo test` no ejecutaban los targets nuevos de caducidad ni reloj. El
+workflow tampoco tenía un paso explícito de la biblioteca del bosque.
+Un all-targets aprobado no podía usarse como prueba automática de esos
+contratos conductuales. Se añade la ejecución explícita, sin retirar ninguna
+regresión previa, cambiar compilador/timeout o activar pruebas ignoradas.
+
+| Serie local | Commit funcional | Adenda de CI/último head | Ejecución que CI deberá realizar |
+|---|---|---|---|
+| MG02/MG05 | 605a4d7f | 7aadf509 | evidence_expiry_contract: 13 controles GREEN locales |
+| Reloj aceptado RA-I-F01 | f3018b35 | 36b0063c | stateful_transition_contract: 25 controles GREEN locales |
+| Bosque RA-E03/E04 | cace007d | cace007d | Biblioteca evolution-engine: 73 controles GREEN locales |
+
+MG y reloj conservan byte a byte la fuente/pruebas ya revisadas en las
+adendas CI. El padre comprobó la conservación de todas las líneas anteriores
+del workflow y la identidad del comando/target; es validación estructural,
+no una ejecución de GitHub Actions. El bosque agrega su paso al mismo contrato
+heredado. Los tres heads son locales y no están incluidos en RA publicada.
+
+La CI37230580226 de RA/headb245 continúa en ejecución en el último cotejo.
+No cancelar esa ejecución por una adenda documental ni atribuirle los
+contratos de estas tres implementaciones distintas. Si se publican sus PRs,
+se exigirá CI de su candidato y una unión explícita de todos los pasos cuando
+se integren, sin reemplazar una serie por la otra.
+
+## 34. E03/E04: control negativo efectivo y cierre técnico local del bosque
+
+### 34.1 Qué resultado llegó y qué se preservó
+
+El worker terminó sus runners offline y entregó los logs del worktree
+forest-evaluation. Fuente final E8C7D240 idéntica a la revisión estática§28.
+El padre releyó el diff completo, los once tests añadidos, la fuente de
+fitness y las aserciones fallidas; cotejó hashes y resultados, sin segunda
+ejecución de esos tests. Las cinco funciones antiguas están intactas y el
+baseline del archivo es idéntico en 5ab07f35 y main e3adf74e.
+
+| Control ejecutado | Aprobadas | Fallidas | Ignoradas | Exit |
+|---|---:|---:|---:|---:|
+| GREEN inicial del bosque | 16 | 0 | 0 | 0 |
+| Biblioteca inicial | 73 | 0 | 0 | 0 |
+| RED: producción baseline + pruebas ampliadas | 7 | 9 | 0 | 101 |
+| GREEN del bosque después de restaurar | 16 | 0 | 0 | 0 |
+| Biblioteca final | 73 | 0 | 0 | 0 |
+
+RED es conductual: compila y falla en nueve aserciones, incluidas 25≠50 ms,
+pérdida/recuperación, broadcasts depth/kline, suspensión de memoria e
+invalidez que se ocultaba tras recuperar. Dos controles nuevos de replantación
+ya pasaban antes: no se pretende que fallen todos los casos. Primera compilación
+97m45s; tests GREEN del bosque1,10s, restaurados0,98s; biblioteca final1,59s.
+Test-module SHA256527D991D1BAD59A01181748271059C5784542D5A2DF97C8254D01C15AFD861AA.
+
+### 34.2 Reparación, cálculo y límites económicos
+
+E03 elimina el override25ms y mantiene el valor del genoma aplicado/guardado.
+50/75ms son fixtures de contraprueba, no nuevos umbrales. E04 registra pico y
+máximo drawdown del capital realizado **observado** después de broadcasts y
+en cosecha, incluso cuando se suspende el motor por memoria. En cosecha usa
+la misma lectura para observar y puntuar; no hace atómico todo el ciclo.
+
+Para la trayectoria13→6,5→15, el máximo drawdown sigue siendo0,5 al recuperar;
+el déficit final es0. Con lambda heredada4ln2, el componente de fitness cambia
+de ln(15/13)=0,1431008436 a−0,5500463369. El control13→14 obtiene0,0741079722.
+Ese contraejemplo explica para qué se conserva la historia: atribuir al
+candidato el riesgo que realmente se observó, no sólo la última foto.
+
+NaN/Inf/capital no positivo dejan historia inviable hasta replant. El mismo
+genoma y cambios sólo del número de generación no borran su muestra. Replant
+reinicia pico/DD/baseline manteniendo CL40 y el gate de15 operaciones. No
+cambia lambda, el proxy OOS, el filtro de entorno ni el almacén/promoción.
+Conteo estructural: 8 bytes/universo más cabecera Vec y O(1) por observación;
+sin benchmark. Capital/contadores inyectados no son fills, MTM, DD intraevento,
+validación OOS del control ni certificación de superioridad de un candidato.
+
+### 34.3 Candidato conjunto propio, no integración en main
+
+El padre incorporó e3 en el checkout propio, comparó ambos padres y ejecutó
+all-targets/locked/offline con nightly2026-06-30: exit0 en2m30s, sesión96306.
+Commit local `cace007d7f790b4b0d31a8038e1b8d9a81f90e15`, padres5ab07f35
+y e3adf74e, sin merge abierto ni cambios propios pendientes. Contra e3 sólo
+bosque, su pasoCI, informe y memoria; las adendas de main se conservan contra5ab.
+
+Informe detallado propio: AUDITORIA_TRAYECTORIA_BOSQUE_2026-10-04.md en su rama.
+Logs locales ignorados, hashes cotejados después del runner:
+
+- RED:88FE3ADEE9697F2CCD53EB8941CF90D6A8980A013B3EAB42BFADC053F9A96023.
+- GREEN restaurado:D3B30A6217C6B9721B0C74FCEA77B38061A7B26066493380BFA7A88552A18ACA.
+- Biblioteca final:58694C9555618D6423395F5BF31C32D3C2474B77CFCB0DAE1F7BDB9066E314A3.
+- All-targets:6A40DEA9531E7FEB6E3EA75D4468CBB93A58790749431083A5903F5E6DC99155.
+
+Los logs no sellan automáticamente cada fuente/OID; se conserva la distinción
+entre control ejecutado por el worker, cotejo del padre y review estática.
+Publicación pública del bosque consultada por separado y aún sin respuesta;
+CI/T1/paridad pertinentes e integración en main pendientes. RA-T1 fuente496
+no incluye esta reparación. Queda cerrado el pendiente de ejecución§28 para
+este hash, no el drawdown económico universal ni todos los expedientes RA.
+
+## 35. Reconciliación verificable de refs y PRs, sin borrar exclusivos
+
+Censo posterior 2026-10-04T21:06:21Z: 12 refs no simbólicas, con OID,
+divergencia contra origin/main y ocupación de worktree. origin/HEAD queda
+excluido como alias; main local/remoto coinciden en e3adf74e. El JSON conserva
+cada fila, no sólo un recuento. Ninguna referencia adicional cumple el criterio
+de eliminación. Los worktrees propios cerrados no tienen merge abierto;
+RA sólo mantiene las adendas documentales por guardar en este corte.
+
+| Familia de refs | Commits exclusivos respecto de main | Decisión al censo |
+|---|---:|---|
+| RA local/remota, b245 | 16 en cada ref | PR28 abierta/draft; conservar |
+| MG local, 7aadf509 | 2 | Tests y CI propios, publicación pendiente |
+| Reloj local, 36b0063c | 2 | Tests y CI propios, publicación pendiente |
+| Bosque local, cace007d | 1 | Candidato con main incorporado; gates pendientes |
+| MW local | 4 | Serie separada no autorizada por RA; conservar |
+| TH local | 4 | Rama antigua divergente; revisar antes de integrar |
+| V7wip local | 1 | Trabajo exclusivo; no borrar |
+| backup local | 3 | Trabajo exclusivo, no evidencia de redundancia |
+| Claude remota | 1 | PR27 merged no acredita este commit posterior |
+
+Consulta GitHub y prueba de ancestry local confirman que los commits de
+merge de PR23(MR), PR24(GO), PR25(MP), PR26 y PR27(Claude) son ancestros de
+origin/main. Fechas/OIDs exactos en JSON; PR28 no está mergeada. Es evidencia
+de integración de **esos commits**, no prueba de que cada efecto permanezca
+sin cambios posteriores. El exclusivo actual de la rama de Claude impide
+borrarla sólo por el estado merged de PR27.
+
+La limpieza anterior sigue limitada a las dos refs locales GLM ya integradas;
+no se eliminaron commits, archivos o refs exclusivas en este seguimiento.
+Un revisor de sólo lectura analiza los exclusivos legacy para distinguir
+anatomía de cambios y equivalencia de parches; no se asume su resultado ni
+se hace un merge automático de cientos de commits antiguos faltantes.
+
+QA del corte documental: JSON válido y claves únicas por objeto; las23
+propiedades publicadas de b245, incluidos16 hallazgos originales, se conservan.
+Enlaces/anclas nuevos y orden de subsecciones verificados. Sólo adendas de
+informes/plan/memoria en RA; su Rust/CLI/Cargo/CI siguen intactos. La revisión
+de enlaces, el inventario por blob y la compilación no son lectura semántica
+de todos los archivos ni certificación matemática/económica del sistema.
