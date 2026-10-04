@@ -33,7 +33,12 @@ sorteaban a mano (`applied_generation = u64::MAX`).
    `applied_generation` del núcleo: el demonio aplica sus promociones y
    rollbacks directo al arena y ese contador no se mueve. Re-registrar el
    mismo genoma en otra generación no replanta (conserva capital y
-   mutantes).
+   mutantes). Decide el genoma, no el número (CL-40c): el almacén puede
+   repetir o bajar generaciones (dos promotores con el mismo padre, un
+   `active.json` ilegible que cuenta como 0) y los dos promotores aplican
+   al arena sin mirarlo. Tras su propia promoción, la cosecha aplica y
+   planta el genoma releído del almacén (serde sin `float_roundtrip` puede
+   moverlo 1 ulp) y anota la fecha de su escritura.
 
 ## Consecuencias
 
@@ -42,3 +47,13 @@ sorteaban a mano (`applied_generation = u64::MAX`).
 - Un núcleo nuevo que deba seguir al almacén tiene que construirse con
   `new_with_outcome_context(.., ExchangeLocalEstimate)`; construir con
   `new` es evaluar un genoma fijo.
+- Abierto tras la revisión del ciclo 8 (confirmado, sin arreglar): el
+  almacén no serializa a sus dos promotores del mismo proceso (`promote`
+  lee el padre y escribe sin cerrojo; un fichero temporal de nombre fijo)
+  y el demonio promueve el incumbente que leyó al empezar su ronda aunque
+  la cosecha haya promovido otro entre medias. Su vigilancia
+  post-promoción tampoco se rearma cuando la cosecha cambia el genoma
+  vivo: puede atribuir a su generación los retornos de otro genoma y hacer
+  rollback al padre equivocado. Un `active.json` restaurado a mano con una
+  generación menor lo sigue el bosque pero no `refresh_models` del núcleo
+  (exige reiniciar).

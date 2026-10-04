@@ -2883,14 +2883,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // CL-40: los universos del bosque evalúan SU genoma (no adoptan el
         // activo por su cuenta); se anota la generación de la que se
         // plantaron (si el almacén trae ya otro genoma, se replanta).
-        if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
-            shadow_forest.seguir_generacion(env.generation, &env.genome);
-        }
         // Fecha del `active.json` que el bosque ya leyó: sólo se relee cuando
-        // cambia (mismo filtro que `refresh_models` del núcleo).
+        // cambia (mismo filtro que `refresh_models` del núcleo). Se toma ANTES
+        // de leer: una escritura entre medias se vuelve a leer, no se pierde.
         let mut mtime_bosque = std::fs::metadata(quantum_arena::genome_store::active_json_path())
             .and_then(|m| m.modified())
             .ok();
+        if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
+            shadow_forest.seguir_generacion(env.generation, &env.genome);
+        }
 
         // XXXVI: per-observation accounting proxy, NOT independent backtest/live evidence.
         // Recovery owns only a core entry veto; global/executor latches are independent.
@@ -4677,8 +4678,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &format!("cosecha shadow forest: +${:.2} vs control", pnl_gained),
                     ) {
                         Ok(env) => {
+                            // CL-40c: el arena y el bosque usan el genoma tal
+                            // como quedó en el almacén (lo que leerán el
+                            // demonio y el próximo arranque): serde_json sin
+                            // `float_roundtrip` puede mover 1 ulp algún gen, y
+                            // el bosque compararía su control en memoria con
+                            // la copia releída y replantaría sin motivo.
+                            let mtime_promocion = std::fs::metadata(quantum_arena::genome_store::active_json_path())
+                                .and_then(|m| m.modified())
+                                .ok();
+                            let env = quantum_arena::genome_store::GenomeEnvelope::load_active()
+                                .filter(|leido| leido.generation == env.generation)
+                                .unwrap_or(env);
                             env.genome.apply_to_arena(&engine_real.arena);
                             shadow_forest.seguir_generacion(env.generation, &env.genome);
+                            mtime_bosque = mtime_promocion;
                         }
                         Err(e) => telemetry!(
                             "🚫 [T-03] Cosecha rechazada por el gate del almacén — arena intacto: {}",

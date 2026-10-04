@@ -152,3 +152,28 @@ fn cl40_el_host_replanta_el_bosque_por_generacion() {
         "la replantación previa no puede depender del contador del núcleo"
     );
 }
+
+#[test]
+fn cl40c_el_host_usa_el_genoma_releido_y_mira_la_fecha_antes_de_leer() {
+    // Guardia sobre la fuente. (1) Al arrancar, la fecha de `active.json` se
+    // toma ANTES de leerlo: una escritura entre medias se relee, no se
+    // pierde. (2) Tras su propia promoción, la cosecha aplica y planta el
+    // genoma RELEÍDO del almacén (el que verán el demonio y el próximo
+    // arranque) y anota la fecha, para no replantar por 1 ulp de serde.
+    let host: String = include_str!("../../../src/bin/god_engine.rs").split_whitespace().collect();
+    let plantado = host.find("ShadowForest::new(").expect("bosque sombra");
+    let fecha = host[plantado..].find("letmutmtime_bosque=").expect("fecha del almacén") + plantado;
+    let lectura = host[plantado..].find("GenomeEnvelope::load_active()").expect("lectura") + plantado;
+    assert!(fecha < lectura, "al arrancar, la fecha va antes de la lectura");
+
+    let promocion = host.find("\"shadow_forest_harvest\"").expect("promoción de la cosecha");
+    let resto = &host[promocion..];
+    let siguiente = resto.find(".seguir_generacion(").expect("la cosecha planta el bosque");
+    let tramo = &resto[..siguiente];
+    assert!(tramo.contains("GenomeEnvelope::load_active()"), "la cosecha relee el almacén");
+    assert!(tramo.contains(".apply_to_arena("), "aplica el genoma releído");
+    assert!(
+        resto[siguiente..].find("mtime_bosque=").is_some_and(|i| i < 400),
+        "la cosecha anota la fecha de su propia escritura"
+    );
+}
