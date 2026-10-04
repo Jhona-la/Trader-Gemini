@@ -1176,5 +1176,67 @@
       "PR_should_remain_draft": true,
       "source_repair_OOS_remains_separate": true,
       "delete_model_decision_executed": false
+    },
+    "restart_main62_documentary_merge_receipt": {
+      "parents": ["74be3ed561d155ea4d3e349c53fca46a5b6385a2", "62afe0f714a0e047f0712efac829e90e09682c0d"],
+      "only_documentary_delta_against_RA_parent": true,
+      "conflict_resolution": "append union; only conflict markers removed",
+      "nonempty_line_subsequence_preserved": {"coordination": [3618,3541], "plan": [581,106]},
+      "all_targets": {
+        "first_exit": 101,
+        "first_seconds": 25.8880011,
+        "first_log_sha256": "7F3BE22B81FAF699FA927C668859C18324CE643368A47B203ECDC82C43BA29F1",
+        "shared_cache_provenance_inference": true,
+        "refreshed_existing_Rust_files": 9,
+        "source_byte_hashes_unchanged": true,
+        "repeat_exit": 0,
+        "repeat_seconds": 130.408228,
+        "repeat_log_sha256": "9635D9805D12E855648C4E1B5C3F15A1851AB62B73045CA61541BB284905D48A",
+        "tests_executed_by_check": false
+      },
+      "tracked_rust_census": {"total":465,"under_crates":409,"under_tests_directories":139,"outside_tests_directories":326,"semantic_review_of_all_files":false},
+      "independent_local_series": {
+        "OOS": {"commit":"684e47082b57fb962cbd4fad05fac5b998be15ba","contract_passed":14,"contract_failed":0,"all_targets_exit":0,"included_in_RA":false,"in_remote_main":false},
+        "SA": {"initial_commit":"28c0004239b93490f790a03b3c581991e436c984","followup_committed_at_receipt":false,"contract_passed":22,"contract_failed":0,"review_blockers":0,"all_targets_exit":0,"included_in_RA":false,"in_remote_main":false}
+      },
+      "active_qoder_branch": "qoder/f1-matematica",
+      "external_ack_received": false,
+      "CI_head74_run":37240563716,
+      "CI_head74_status_at_receipt":"in_progress",
+      "new_CI_required":true,
+      "PR_should_remain_draft":true,
+      "branches_deleted":[],
+      "model_or_genome_activation":false,
+      "growth72h_demonstrated":false
+    },
+    "restart_main237_F1_and_ruin_receipt": {
+      "candidate_parents":["9bada4c018542326ef026c2f67f5c745315b77ab","23701ecb05486eb13b661d3d50afaadbc9a0015a"],
+      "main_delta":{"docs_only":true,"files":3,"added_lines":120,"removed_lines":1},
+      "Qoder_F1_inventory":{"reported":23,"high":2,"medium":8,"low":13,"all_independently_reproduced_by_Codex":false,"source_repairs_in_this_delta":false},
+      "ruin_contract":{"id":"RA-RUIN-F01","related_Qoder_id":"F1-B4","status":"open_reproduced_local","severity":"medium_contract; downstream extreme impact conditional","source":"crates/risk-engine/src/ruin.rs:67","source_sha256":"7AE99C6174DE9AC4B8D59E4EC264D10FEE35C2AEC1BC47BB7D6D0044B7ACCBCB","NaN_and_infinities_returned_unchanged":true,"probe_includes_actual_helper":true,"constant_stub_matches_actual_source":true,"red_passed":3,"red_failed":3,"red_exit":101,"probe_sha256":"24D21CA31BE174D69AA8B118E67BB51882345DEC597765B31D0ED37A0DC29427","log_sha256":"36C30F74DC4C74E15DD4492AB58D9FFCDFC65528FC4FC71139658508696EEB72","downstream_raw_exposure_nonfinite_guard_observed":true,"live_order_or_real_loss_demonstrated":false,"source_repaired":false,"owner_proposed":"Claude/risk, cross-review pending"},
+      "ruin_doc_sign_contradiction_confirmed":true,
+      "loss_probability_LCB_conservatism_requires_review":true,
+      "main_and_origin_main_at_fetch":"23701ecb05486eb13b661d3d50afaadbc9a0015a",
+      "SA_documented_local_commit":"701fa98e6d9e5788f2c7203c7da1135ad9ff3f77",
+      "new_agent_ack_received":false,"branches_deleted_by_Codex":[],
+      "trading_or_model_promotion":false,"full_project_semantic_audit":false
+    },
+    "exhaustive_per_file_plan_candidate_receipt": {
+      "plan":"docs/PLAN_REVISION_EXHAUSTIVA_2026-10-04.md",
+      "master_plan_section":16,
+      "snapshot":"23701ecb05486eb13b661d3d50afaadbc9a0015a",
+      "inventory_tsv":"docs/audit/COBERTURA_MAIN237_2026-10-04.tsv",
+      "inventory_json":"docs/audit/COBERTURA_MAIN237_2026-10-04.json",
+      "classification_is_not_semantic_review":true,
+      "all_versioned_classes_in_scope":true,
+      "ignored_untracked_runtime_resources_require_separate_annex":true,
+      "phases_preserve_shared_F0_F8":true,
+      "foundations_before_consumer_edits":true,
+      "coverage_receipt_key":["snapshot","path","oid","contract"],
+      "all_targets":{"exit":0,"seconds":154.188755,"profile":"dev","source_timestamp_refresh_count":9,"source_bytes_unchanged":true,"log_sha256":"DE2D2B2B212AE96A81CDF29B29CE954ACC5C85CEDD2FC78D60DA1075EBA5A0D9","tests_executed_by_check":false},
+      "preservation_checks":{"memory_nonempty_lines":[1774,1596],"coordination_nonempty_lines":[3661,3564],"plan_nonempty_lines":[603,106],"historical_json_roots_checked":39,"updated_barrido_identical_to_main237":true},
+      "CI_head74_status_at_2323Z":"in_progress",
+      "new_CI_required":true,"new_human_review_required":true,
+      "all_files_audited":false,"growth72h_demonstrated":false
     }
 }

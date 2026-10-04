@@ -28,6 +28,13 @@ cadena de paridades bt↔vivo (GLM, 10/10) garantiza que lo medido es lo
 que opera. El eslabón que falta es el edge OOS estable — ese es el foco
 de las tres líneas de trabajo de abajo.
 
+## 0b. Barrido exhaustivo (mandato 2026-10-04)
+
+El operador ordenó recorrer TODOS los archivos uno por uno en fases
+(metas → conceptos → matemática → física → código):
+**docs/BARRIDO_EXHAUSTIVO_FASES.md** — 8 fases, ~377 archivos, ~137k
+líneas, división por línea dueña, verificación por fase.
+
 ## 1. Las tres líneas ( quién es dueño de qué )
 
 ### LÍNEA A — ENTENDER el universo (Qoder): el continuo espectral
@@ -702,3 +709,60 @@ GLM, diff por padre y alltargets0/5,41s antes del commit. CIff998 completó
 head RA requiere su CI; mantener draft hasta gates pertinentes.
 OOS9a3 sigue local/separado; MG/reloj/bosque mantienen consultas pendientes.
 FDUSD A/B queda reservado al dueño. No archivo/borrado de modelos por Codex.
+
+### 14.5 Sincronización F0/F1 y verificación de artefactos por fuente
+
+RA§43 añade la unión con main57/62, preservando barrido F0 y ADR-0014 de
+Qoder. Su F1 activo en .f1 no se elimina ni se modifica. Claude/riesgo y
+GLM/medición mantienen sus frentes; no se atribuye aceptación nueva de tareas.
+Codex reserva dos contratos locales separados: SA/score signado y selección
+del candidato, OOS/preflight de partición. No tocar sus modelos/entrenamientos.
+
+| Frente | Evidencia de esta ronda | Gate pendiente, sin extrapolación |
+| --- | --- | --- |
+| RA/main62 | unión por padre; check reconstruido0, hashes de fuente estables | commit, CI del SHA nuevo y revisión antes de main |
+| SA |13 retención +9 selección, reproducción independiente22/0; check0 | descripción MD/JSON, publicación autorizada, composición y CI |
+| OOS |684e+RA74;14/0, check0 | composición con main62, autorización/publicación y CI |
+| IC/frescura | MG05 abierto; None no es automáticamente cero medido | soporte/as-of por par/τ y veredicto tipado por consumidor |
+| Cobertura |465 rutas Rust seguidas por Git en RA; conteo no semántico | checklist por ruta/hash y reconciliar denominadores del barrido |
+
+El primer check RA falló por API no visible en un artefacto compartido pese
+a existir en fuente; reconstrucción acotada corrigió la evidencia sin cambiar
+bytes. No trasladar verde cacheado entre worktrees. No se afirma certificación
+global, ventaja cuántica, rentabilidad72h ni desaparición de todos los fallos.
+
+### 14.6 Recibo F1 de Qoder y riesgo no finito reproducido
+
+Main23701 publica23F1 (2HIGH/8MED/13LOW), docs-only; se conserva por unión
+en RA. No todos reproducidos por Codex. Proponer prioridades y obtener acuse
+antes de tocar productor vivo: QoderA1/C2/C4; GLM/CodexC1/C3; ClaudeA3/A4
+yB1/B2/B4. SA/OOS mantienen ramas propias y contratos separados.
+
+RA-RUIN-F01/F1-B4 se reproduce en el helper real:NaN/±Inf retornan intactos,
+RED3pass/3fail, no pérdidas/órdenes demostradas. Existe defensa de exposición
+no finita en consumidor; seguirla por rama. Claude mantiene ownership:
+exigir fallo explícito/noexposición, preservar finitos y medir consumidores.
+No confundir retorno0 de sizing con probabilidad0 de ruina ni ausencia de IC.
+
+Meta72h: utilidad/genoma sano y matemática explicada son condiciones de
+medición, no evidencia de rentabilidad. Gates G0–G8 siguen abiertos donde
+corresponde. Detalle RA§44/JSON; inventario F1 enBarrido del autor.
+
+## 16. Plan exhaustivo por ruta desde los fundamentos (ampliación del mandato)
+
+[PLAN_REVISION_EXHAUSTIVA_2026-10-04](PLAN_REVISION_EXHAUSTIVA_2026-10-04.md)
+define metas→conceptos→matemática→estadística→física/cuántica→algoritmos→
+implementación; conserva fases F0–F8 del barrido e introduce subfases y
+contratos de entrada F6 antes de consumidores. Censo nuevo por ruta/OID
+main237, TSV+JSON; automático/inventariado, no auditado o certificado.
+No reemplaza el censo histórico ni los23hallazgosF1 del autor.
+
+Cada archivo requiere recibo propio de finalidad/cálculo/unidades/dominio,
+flujo, hallazgos y comportamiento; RED/GREEN, compilación, efectos externos,
+review y candidato/CI definidos por riesgo. Docs/config/binarios/logs/datos
+también tienen método, no se omiten. OIDs cambiados abren revalidación.
+Inventario/leído/reparado/probado/integrado/desplegado son estados distintos.
+
+Roles propuestos y reservas por ancla, sin acuses supuestos. Nada de borrar
+ramas exclusivas/ocupadas, impulsar modelos o relajar seguridad por meta72h.
+Registro de planificación explícito, no porcentaje ficticio de corrección.

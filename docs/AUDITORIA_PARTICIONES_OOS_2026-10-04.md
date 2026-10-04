@@ -173,3 +173,73 @@ NO se incorpora ni queda validado por estos recibos. SA se implementa en
 otro checkout y tampoco forma parte del merge. No se ejecutaron CLI,
 modelos reales, T1, entrenamiento, promociones ni trading; no push/PR,
 limpieza o cancelación de procesos. Los límites de§5 siguen abiertos.
+
+## 8. Integración local autorizada con RA f275/main237 (2026-10-04)
+
+Padres del nuevo merge local:
+
+- OOS: 684e47082b57fb962cbd4fad05fac5b998be15ba.
+- RA: f275bae39dd81531cfb71b8ddaadb1023f02c6f5, que incorpora
+  main23701ecb05486eb13b661d3d50afaadbc9a0015a y el plan RA.
+
+Se ejecutó `git merge --no-commit --no-ff f275bae39dd81531cfb71b8ddaadb1023f02c6f5`
+con estado previo limpio, sólo en este checkout OOS. Memoria fue el único
+conflicto y se resolvió con apply_patch por unión. No se tomó un padre entero
+como sustituto del otro. El verificador reproducible
+target/oos-integration-f275-20261004/verify-preservation.ps1 comprueba todos
+los documentos que difieren entre padres:6 presentes en OOS y8 en RA.
+Cada línea no vacía original se conserva exactamente y en orden; incluye
+MEM/COORD, ambos informes RA, planes, barrido y ADR0014. Se comprueba también
+el informe OOS anterior. No es una revisión semántica de sus afirmaciones.
+
+Antes de esta adenda: memoria1782/1782 y1816/1816; coordinación3618/3618
+y3703/3703, respectivamente. Los documentos recibidos de RA son idénticos
+a f275; sólo se agregan recibos propios arriba en MEM/COORD y en este§8.
+Los diffs del candidato contra CADA padre se revisan y guardan en target.
+Frente a684e no hay delta Rust/Cargo/CI; frente aRA sólo las tres fuentes
+OOS constituyen delta funcional. Mismo70/30, sin nuevo mínimo económico,
+fórmula, modelo o política de promoción; permanecen los límites de§5.
+
+Para evitar artefactos legacy compartidos se refrescaron únicamente los
+mtimes de los tres archivos OOS que difieren de RA. Sus SHA256 se cotejaron
+antes/después, idénticos a§4; sus blobs permanecen:
+
+| Fuente | Blob Git |
+| --- | --- |
+| crates/backtest-engine/src/oos_context.rs | e0699fe5c547f6fe4cb8403c1e505c73d8a755f1 |
+| crates/backtest-engine/tests/oos_context_contract.rs | 429c56f8955724541e19b16986f7c1818c448c23 |
+| src/bin/evolution.rs | f1f520ff006cdd1dde17620c6613f2959fbbf3c9 |
+
+Comandos efectivos, desde este checkout:
+
+```powershell
+rustc +nightly-2026-06-30 --test crates/backtest-engine/tests/oos_context_contract.rs -o target/oos-integration-f275-20261004/oos-context-contract.exe
+./target/oos-integration-f275-20261004/oos-context-contract.exe --test-threads=1
+$env:CARGO_TARGET_DIR = 'C:/Users/jhona/Documents/Proyectos/Trader Gemini/target'
+cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j2
+```
+
+Binario std-only recién compilado, no reutilizado:14 aprobadas/0 fallidas/
+0 ignoradas, exit0, importa el helper real actual; no los6contratos legacy.
+No se repite ni se atribuye como nuevo el RED histórico de§3.
+Check completo runner27697: exit0,23:29:17Z–23:30:50Z,92,89s totales;
+Cargo informa1m30s y dev [unoptimized + debuginfo]. Overrides de perfil
+DEV unset, configuración del proyecto intacta. Warnings visibles; sin
+cargo fix/fmt. El runner finalizó normalmente y liberó su lock compartido;
+se avisó al parent para su Cargo SA sin iniciar más Cargo propio.
+
+SHA256 de recibos locales en target/oos-integration-f275-20261004:
+
+| Recibo | SHA256 |
+| --- | --- |
+| source-refresh.log | 847A875F50F0340ADC64B471765DBB79A585522F2A9AD1D1F8B9142081778D4E |
+| std-test.log | 8FDD06E670341FEA2263D20F4807616CDE90D666274D53F6030093A597C97BB3 |
+| workspace-check.log | 3150A6E5385D2ADF7D3F21C07BF208D1F6D5F0B459690BC4B882519273C97740 |
+| preservation-pre-docs.log | F1B39B8A5F1D8AD9F717F999CF3336AB546E1F94105BF8C1DFA6BEE855205FDA |
+
+El corte es exactamente RA f275/main237, no otros avances documentales ni
+el nuevo inventario en elaboración por otro worker. Se conserva el barrido
+F0/F1 ya versionado, sin confundirlo con esa nueva cobertura. SA no forma
+parte de este merge y su parser/pruebas no se ejecutaron aquí. No fetch,
+push/PR, CLI/modelos reales, red, entrenamiento, promoción, trading, T1,
+limpieza ni cancelaciones. No certificación económica o auditoría total.

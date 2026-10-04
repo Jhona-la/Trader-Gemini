@@ -1,5 +1,21 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: OOS-F01 reconciliado con RA f275/main237
+
+- Merge local autorizado 684e4708 + f275bae3, sin perseguir otro main ni
+  fetch. Único conflicto MEM resuelto por unión; COORD/planes/documentos
+  conservados por cada padre. Verificador: 6 documentos OOS y 8 RA,
+  todas las líneas no vacías originales en orden, sin pérdida de bloques.
+- Sólo 3 mtimes OOS refrescados; SHA256 antes/después y blobs exactamente
+  9a3bb756. Mismo 70/30, sin mínimos económicos ni modelos nuevos.
+- Binario std-only recién compilado: 14/0/0, exit0, no contexto legacy6
+  cacheado. Check alltargets/locked/offline/-j2 nightly06-30: exit0,
+  92,89s, dev/defaults/rootcache; runner27697 finalizó23:30:50Z y liberó lock.
+- Informe OOS§8 y target/oos-integration-f275-20261004 guardan recibos.
+  F275 incluye sólo su corte documental/plan; el nuevo inventario de otro
+  worker no está incorporado. SA/otros checkouts, CLI/modelos/T1 intactos;
+  sin publicación, entrenamiento/trading, limpieza o cancelación de procesos.
+
 ## 2026-10-04 — Codex: OOS-F01 integrado localmente con RA74
 
 - Merge autorizado de be4cacf3 + 74be3ed5 (RA publicada y main230), sólo
@@ -23,6 +39,43 @@
   No CLI ejecutado, T1 nuevo, promoción, red ni publicación de esta serie.
 - RA publicó su reconciliación documental con main230 aparte; no equivale
   a integrar OOS en main. Esta memoria no altera fuente/pruebas del9a3.
+
+## 2026-10-04 — Codex: mandato ampliado de cobertura ruta-a-ruta
+
+- Plan nuevo PLAN_REVISION_EXHAUSTIVA_2026-10-04 ymaster§16: fundamentos
+  antes de consumidores, todas clasesversionadas, recibos porruta/OID/contrato,
+  pruebas por riesgo y nueva coberturaTSV/JSONmain237; no auditoría completa.
+- Merge9bada+main237 documental preserva ambos padres; checkalltargets
+  exit0/154,189s con9fuentes/hashestables. RA§45/JSON guarda procedencia.
+- CI74be sigue en curso23:23Z, no cancelada por docs ni trasladada al merge.
+  SA22/0 yOOS14/0 locales; sizingRUIN sigueRED3/3, reservado aClaude.
+  Sin permisos implícitos de operación ni rentabilidad72h certificada.
+
+## 2026-10-04 — Codex: F1/main237 incorporado y cap no finito abierto
+
+- Main237 trae sólo3docs,+120/−1,23 hallazgos F1 Qoder. Memoria/COORD
+  conservados por unión, no reparaciones atribuidas. RA§44/JSON/plan14.6.
+- RA-RUIN-F01/F1-B4: helper real devuelveNaN/±Inf; probeRED3/3exit101,
+  sin arena/modelos/órdenes. Consumidor rechaza raw_exposure no finita;
+  no inferir pérdida real. Arreglo de riesgo reservado aClaude con revisión.
+- Explicación f_cap menor al bajar q contradice fórmula/tests; LCB de q
+  y políticas200/.05/.25 no certifican ruina. Documentar antes de rediseñar.
+- SA701fa/OOS684e siguen locales distintos; CI74be no acredita este corte.
+  No acuses nuevos supuestos, no ramas/modelos eliminados ni promoción.
+
+## 2026-10-04 — Codex: RA/main62, origen de artefactos y SA/OOS locales
+
+- RA74be+main62 integra docs Qoder F0/ADR0014 por unión y diff por padre;
+  mantiene F1 activo en .f1. RA§43/JSON/plan14.5, no acuses nuevos supuestos.
+- Primer check101 por API ausente del artefacto compartido pese a estar en
+  fuente; refresco9mtimes propios con SHA estables, repetición0/130,408s.
+  Guardar ambos logs. No transportar verde cacheado entre checkouts.
+- SA local:22/0 y revisión independiente sin bloqueadores; check0/124,774s.
+  Signo, enfriamiento, candidato Option y rotulado utilidad reparados; pesos,
+  validación completa del reporte y evidencia neta72h pendientes. OOS684e
+  integraRA74 con14/0/check0; no main62/SA. Publicación SA/OOS consultada.
+- No se eliminaron ramas activas/exclusivas ni modelos; no trading/promoción.
+  CI74be todavía en curso al recibo: draft y nuevos gates del candidato.
 
 ## 2026-10-04 — Codex: RA reconciliada con LXXXVIII de GLM
 
@@ -241,6 +294,31 @@ QA de cobertura propia5unidades/tablas enRA§40.2; parcial, no todoelproyecto.
   pendientes. No integrar ni borrar RA todavía. MW3139 queda separada.
 - Sin trading/training/promoción, rebajas de trinquete, ni borrado de ramas
   con commits exclusivos. Aviso al buzón compartido no implica acuse.
+
+## 2026-10-04 — Qoder: BARRIDO F0+F1 CERRADAS (matemática/estadística)
+
+- Fase F0 (metas/conceptos): único hallazgo F0-1 corregido en fase —
+  **ADR-0014-doctrina-continuo-espectral** (los seis principios del
+  motor con ola y prueba viva). Docs-only, T-1 cero.
+- Fase F1 (matemática/estadística, 3 auditores A/B/C en paralelo):
+  **23 hallazgos** con etiqueta `F1:` en docs/BARRIDO_EXHAUSTIVO_FASES.md
+  (2 HIGH, 8 MED, 13 LOW). El barrido INVENTARÍA, las olas ARREGLAN.
+- HIGH: **F1-A1** temporal_spectrum.rs:604 — el umbral de significancia
+  del banco de τ* (#594) usa n VITALICIO; el arreglo H5 de #648
+  (min(n,128)) vive sólo en skill_motores.rs:87. **F1-C1**
+  spectral_tape.rs:740 — el gate del predictor de volatilidad compara
+  contra climatology; sse_persist se calcula y NUNCA gatea.
+- Mea culpas propios en cola prioritaria: **F1-C2** (mi EWMA de D₀
+  #654 cuenta 16× el espectro cacheado) y **F1-C4** (mi re-arme de
+  #648 puntúa bloques nacidos en trade con votos de t_d — infla el IC
+  del consenso vivo). Ola con oráculo.
+- Conversan con otros: F1-A3/A4 (GENOME-GATE de Claude — bandas de
+  mutación ≠ bounds; from_vector sin piso de fricción del SL),
+  F1-B1/B2 (techo Lundberg hi=100 fijo; escalón drawdown_maximo —
+  #651/#653), F1-C1/C3 (spectral_tape, zona aprender GLM/Codex).
+- Push 99c610a8 (F0+F1 juntos). Siguiente fase mía: F2 física/cuántica
+  (~74 archivos). Detalle: BARRIDO_EXHAUSTIVO_FASES.md §F1. Buzón:
+  entrada F1.
 
 ## 2026-10-04 — Qoder: Ola 55 / #655 — PLAN MAESTRO DE SINCRONIZACIÓN
 
