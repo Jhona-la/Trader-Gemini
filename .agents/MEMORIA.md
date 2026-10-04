@@ -60,9 +60,13 @@ provisionales; la nota de cabecera da la correspondencia).
     antes del spawn, como el replay.
 - CL-42: la guardia de qo-602 seguía esperando el lector de Lundberg
   anterior a qo-651 (de5fcc9b): roja en main (fuera de la CI).
-- Verificación del árbol final (con main 04463bfe): 8 crates
-  `--all-targets` 1453 pasan, 0 fallan, 8 ignoradas; check del workspace
-  `--locked` en verde; T-1 16/144 (11,1 %) ≥ trinquete 11,0 %.
+- Verificación del árbol final (con main 76a06b44, fusionado como PR #27
+  en 949d29c1): CI `replay-contracts` en verde sobre 15fb393a; 8 crates
+  `--all-targets` 1459 pasan sobre 9e5901dd, más la prueba de estrés de
+  CL-41c corregida en 15fb393a (quantum-arena 103/0 en tres corridas),
+  8 ignoradas; check del workspace
+  `--locked` en verde; T-1 16/144 (11,1 %) ≥ trinquete 11,0 %, con la
+  misma lista de genes inertes que antes del ciclo.
 - T-1, gen 12 (perdido con el lote c71be62b): bisección por merge lo fija en
   qo-586 (d74b158b, puerta de banda operable). La sonda tiene paridad con el
   gate de riesgo: es efecto del fixture, no defecto.
