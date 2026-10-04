@@ -181,3 +181,31 @@ estructural queda firmemente documentado y estable: la agregación fija
 ahoga a sus mejores componentes; una agregación mejor EXISTE como
 información direccional; capturarla como PROBABILIDAD estable es el
 problema abierto.
+
+---
+
+## Adenda LXXXVII (2026-10-04) — pre-gate de fase 4 (convicción por rango): NEGATIVO — la saga L2 v1 cierra completa
+
+Métrica: hit del quintil superior por cada medida de convicción
+(orden, no probabilidad — la hipótesis de que la modulación pondera
+por ORDEN y la calibración absoluta no importa):
+
+| split | rango modelo top-q | spread | convicción fija top-q | spread |
+|---|---|---|---|---|
+| ago | 66.2% | **+10.0 pts** | 62.7% | +5.6 |
+| sep-14 | 49.2% | +1.4 | 50.4% | **+2.9** |
+
+En el quiebre de régimen de septiembre la ORDENACIÓN de confianza del
+modelo se desacopla de su utilidad (corr con la convicción fija cae de
+0.496 a 0.010) y la fija separa mejor. **Ni probabilidad ni rango
+transfieren** — el régimen hostil destruye la estructura de confianza
+completa del modelo, no sólo su calibración.
+
+**CIERRE DE LA SAGA L2 v1**: dirección robusta (+5 pts OOS constante,
+dos calibraciones, dos métricas de convicción) / probabilidad y ordinal
+NO transfieren / cableado BLOQUEADO definitivamente en v1. La única
+estructura no probada queda registrada: **modelos por régimen**
+(entrenar condicionado al símbolo p∈Δ³ del simplex — si el consejo
+alguna vez la pide, es una ola con gates propios). El L2 vuelve a
+dormir con la evidencia completa: la información direccional existe,
+el quiebre de régimen es el enemigo.
