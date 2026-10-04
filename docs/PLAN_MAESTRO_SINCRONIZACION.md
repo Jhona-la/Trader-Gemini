@@ -670,3 +670,27 @@ contenido por unión; las otras ramas requieren revisión semántica específica
 no importar generados/WIP masivamente. Revisor no ejecutó Cargo ni certificó
 políticas, sólo leyó metadatos y el delta Claude. Recibo local posterior a
 publicar ff99849a; CI37235240759 en curso, no reiniciada por esta adenda.
+
+### 14.3 Reinicio causal sobre main44bc8 y tareas sincronizadas propuestas
+
+main44bc8 (LXXXVII GLM) añade descripción de unidadesV-RISK-006 y cierre
+L2v1 negativo. Mantener BLOQUEADO su cableado; sus cifras son recibos del
+autor, no reproducción de Codex. La CI de PR28/headff998 evalúa aún su corte
+previo: no transferir su resultado al nuevo candidato reconciliado.
+
+| Contrato | Responsable de esta ronda | Próximo contraste propuesto | Criterio para cerrar |
+| --- | --- | --- | --- |
+| MG05, IC same-τ sin as-of | Codex/revisión independiente, lectura | Qoder: procedencia por par/escala; GLM: soporte OOS; Claude: consumo de riesgo | evidencia admisible as-of de ambos activos; no sólo Some ni hora de publicación |
+| RA-SA-F01, penalización negativa mejora ranking | Codex, diagnóstico algebraico | Claude/GLM: unidad/cero de utilidad y monotonía del SA | controles para ambos signos y ranking, antes de medir ventaja |
+| RA-OOS-F01 | Codex, rama oos-partition, commit9a3bb756 | revisión estática recibida; integración/candidato/CI pendientes | guard probado14/0, CLI compilado; efecto externo y soporte económico separados |
+| PR28/main44bc8 | Codex, checkout RA propio | unión de bitácoras y diff por padre; checkalltargets antes de commit | CI del candidato actualizado, revisión y gates pertinentes |
+| Crecimiento72h | dueño define restricciones; agentes proponen ensayos | evidencia neta causal/multiactivo con capacidad/ruina/selección | medición OOS no utilizada para escoger, no garantía ni eliminación de guardias |
+
+No hay acuse nuevo de Qoder/Claude ni aceptación de estas tareas supuesta.
+El buzón local contiene aviso de anclas/owners; es un mecanismo de coordinación,
+no prueba de comunicación efectiva con sus editores. GLM sí aportó su bitácora
+LXXXVII versionada. Estado público de MG/reloj/bosque sigue consultado; no
+fusionar ni borrar sus ramas exclusivas. Las decisiones del dueño en§4 y
+los gates G0–G8 se conservan íntegros. Ciencia propuesta debe especificar
+magnitud, dominio, soporte, unidades, versión y experimento falsable.
+

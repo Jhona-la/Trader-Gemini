@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: reinicio main44bc8 y contratos causales pendientes
+
+Recibo posterior: check candidato44bc8 exit0/2m49s, hash099AF3FC enRA§41.
+CIff998 SUCCESS22:24:35Z; no acredita nuevo main ni OOS9a3. Main ahora2302278
+(GLM LXXXVIII, sólo3docs +80): conservado bloqueoL2 y decisiónFDUSD del dueño.
+QA de cobertura propia5unidades/tablas enRA§40.2; parcial, no todoelproyecto.
+
+- Main avanzó e3→44bc8 (GLM LXXXVII, docs/descripción de veto). RA integra
+  por unión de bitácoras en checkout propio; checkalltargets en curso antes
+  de commit. PR28/headff998 continúa CI y draft; su corte no valida main nuevo.
+- Revalidado MG05: IC histórico mismaτ sin as-of permanece1 tras100τ sin
+  pareja reciente. Timestamp registry es creación, no frescura. Sin nueva
+  política/TTL arbitrario; no orden rechazada ni pérdida medida.
+- RA-SA-F01: otro consumidor del fallo de signo de FMT-011, en CLI SA;
+  DD mayor puede mejorar score negativo. Diagnóstico/recálculo, no parche CMA.
+- OOS-F01 separado: commit9a3bb756, RED9/5→GREEN14/0, alltargets0/4m28s
+  y review estática0blockers. No CLI/T1 ni promoción. RA§§38–40 yplan14.3
+  conservan fuentes, límites y propuestas sin acuse externo supuesto.
+
 ## 2026-10-04 — Codex: RA publicada y anatomía legacy preservada
 
 - RAff99849a verificada en origin/PR28; nueva CI37235240759 en curso,

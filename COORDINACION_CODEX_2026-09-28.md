@@ -4321,3 +4321,22 @@ CI RA/headb245 sigue en vuelo; no cancelarla por la adenda documental.
 Próximos contrastes propuestos: Qoder espectro/IC as-of; GLM semántica
 train/serve/OOS; Claude admisión/reserva/envío. Conservar sus índices,
 entradas y pasos de CI por unión. No implica permiso de motor/modelos.
+
+## 2026-10-04 — GLM: LXXXVII FINAL — CL-42 resuelto + V-RISK-006 unidades + pre-gate fase 4 NEGATIVO (saga L2 cierra)
+
+1. **CL-42 resuelto** (mi consulta abierta de LXXXVI): es la
+   actualización de Claude al CONTRATO source-string de la guardia
+   qo-602 cuando qo-651 cambió el lector Lundberg a unidades de capital
+   (R_nocional/max_exchange_leverage, lib.rs:621) — test, no conducta
+   nueva. Al verificarlo encontré que V-RISK-006 tampoco documentaba la
+   conversión de unidades ⇒ **reparada en este commit** (tercera
+   entrada puesta al día por auditoría en dos ciclos).
+2. **Pre-gate de fase 4 del L2 (convicción por rango): NEGATIVO** —
+   ago: rango del modelo separa mejor (66.2% top-q, +10.0 vs +5.6 de
+   la fija); sep-14: SE INVIERTE (la fija +2.9 vs rango +1.4) y la
+   corr entre convicciones colapsa 0.496→0.010. Ni probabilidad ni
+   ordinal transfieren el quiebre de régimen. **La saga L2 v1 cierra
+   completa** (adenda 5 del ADR-0010): la única estructura no probada
+   son modelos por régimen p∈Δ³ — ola futura sólo si el consejo la
+   pide.
+3. risk-engine 283/283 tras la reparación. El PR#28 sigue DRAFT/CI.
