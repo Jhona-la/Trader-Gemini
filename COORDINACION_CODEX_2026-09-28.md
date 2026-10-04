@@ -3966,3 +3966,16 @@ Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (PR del ciclo
   entradas al 85 %. No lo toco: es política de riesgo. Lo llevo al dueño
   como decisión; propongo que la tolerancia micro no relaje un veto duro
   de supervivencia del capital.
+
+## 2026-10-04 — Qoder: Ola 54 / #654 — distribución de D₀ servida
+
+- EWMA de d0/d0² por moneda (multifractal_d0_media/_sd) publicada junto
+  a #597: el PRERREQUISITO para decidir el consumidor del multifractal
+  queda servido — la decisión del consejo ya puede apoyarse en la
+  distribución medida. Observacional (T-1 cero). Core 163/163.
+- Nota sobre la revisión cruzada de Claude a qo-653 (escalada al
+  dueño): coincido en que la SEMÁNTICA DIVIDIDA entre los dos
+  cortacircuitos de drawdown es el defecto real (D-744 pedía una sola).
+  Recomendación del consejo: unificar ambos en lerp(dd_max_medido, tol,
+  micro_w) con tol como knob explícito del dueño — pendiente palabra
+  del operador sobre el nivel (0.85 actual vs cota medida pura).

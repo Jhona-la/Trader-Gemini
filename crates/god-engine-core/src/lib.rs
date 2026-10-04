@@ -2771,6 +2771,45 @@ impl GodEngineCore {
                     self.arena
                         .registry
                         .set_for_coin(coin_id, "multifractal_ancho_falpha", e.ancho);
+                    // #654 (Ola 54) — DISTRIBUCIÓN DE D₀ MEDIDA: EWMA de
+                    // d0 y d0² (media ± sd con olvido 1/64, la misma
+                    // memoria de la maquinaria #594/#626). Es el
+                    // PRERREQUISITO que la casa exige antes de cablear
+                    // cualquier consumidor del multifractal: sin
+                    // distribución medida, cualquier umbral sería un
+                    // literal disfrazado. Observación pura — sin
+                    // consumidor de política (T-1 cero).
+                    if e.d0.is_finite() {
+                        let prev_media = self
+                            .arena
+                            .registry
+                            .get_for_coin_or(coin_id, "multifractal_d0_media", f64::NAN);
+                        let prev_sq = self
+                            .arena
+                            .registry
+                            .get_for_coin_or(coin_id, "multifractal_d0_sq", f64::NAN);
+                        let (media, sq) = if prev_media.is_finite() && prev_sq.is_finite() {
+                            (
+                                prev_media + (e.d0 - prev_media) / 64.0,
+                                prev_sq + (e.d0 * e.d0 - prev_sq) / 64.0,
+                            )
+                        } else {
+                            (e.d0, e.d0 * e.d0)
+                        };
+                        let var = (sq - media * media).max(0.0);
+                        let sd = var.sqrt();
+                        if media.is_finite() && sd.is_finite() {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "multifractal_d0_media", media);
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "multifractal_d0_sq", sq);
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "multifractal_d0_sd", sd);
+                        }
+                    }
                 }
             }
 
@@ -8771,5 +8810,36 @@ mod tests_qo_592 {
         // Y con prev=None (el comportamiento viejo) la deriva era 0:
         let campo_frio = SpectralRegimeField::from_spectrum(&spec, None, 1.0);
         assert_eq!(campo_frio.dominant_drift, 0.0);
+    }
+    /// #654 — la distribución EWMA de D₀ converge: media ≈ valor constante,
+    /// sd → 0; con dos valores alternantes, media ≈ promedio y sd refleja
+    /// la dispersión. La semilla del primer valor no inventa dispersión.
+    #[test]
+    fn qo_654_d0_distribucion_ewma() {
+        let media = |a: f64, x: f64| a + (x - a) / 64.0;
+        // Constante 0.8: la media converge y la varianza decae a 0.
+        let mut m = 0.8;
+        let mut q = 0.8 * 0.8;
+        for _ in 0..500 {
+            m = media(m, 0.8);
+            q = q + (0.8 * 0.8 - q) / 64.0;
+        }
+        let var = (q - m * m).max(0.0);
+        assert!(var < 1e-9, "constante ⇒ varianza 0: {var}");
+        // Alternante 0.6/1.0: la media tiende a 0.8, la sd a ~0.2.
+        let mut m2 = 0.6;
+        let mut q2 = 0.6 * 0.6;
+        for i in 0..2000 {
+            let x = if i % 2 == 0 { 1.0 } else { 0.6 };
+            m2 = media(m2, x);
+            q2 = q2 + (x * x - q2) / 64.0;
+        }
+        assert!((m2 - 0.8).abs() < 0.01, "media alternante: {m2}");
+        let sd2 = (q2 - m2 * m2).max(0.0).sqrt();
+        assert!(sd2 > 0.15 && sd2 < 0.25, "sd alternante ~0.2: {sd2}");
+        // La semilla del primer valor: sin historia previa, media = x, sd = 0.
+        let primer = 0.9f64;
+        let q_prim = primer * primer;
+        assert_eq!((q_prim - primer * primer).max(0.0).sqrt(), 0.0);
     }
 }

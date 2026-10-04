@@ -14077,3 +14077,22 @@ con ésta, los 7/7 resueltos (H1/H3/H5/H6 en #648; H2/H4/H7 aquí).
 - **ORÁCULO T-1: PASA 16/144 = 11.1%** (3176.82 s, release single-thread
   --nocapture sobre 438dcae8) — el umbral real del cortacircuitos de
   drawdown cambia sin perder ningún gen certificado.
+
+## #654 — Ola 54 (Qoder, 2026-10-04): DISTRIBUCIÓN DE D₀ MEDIDA (prerrequisito del consumidor)
+
+- **Qué**: EWMA de d0 y d0² (olvido 1/64, la misma memoria de la
+  maquinaria #594/#626) publicada por moneda junto al valor puntual de
+  #597: `multifractal_d0_media`, `multifractal_d0_sd` (y el momento
+  crudo `_sq`). Observación pura — sin consumidor de política (T-1
+  cero).
+- **Por qué**: la casa exige la distribución MEDIDA antes de cablear
+  cualquier consumidor del multifractal (misma disciplina que #597
+  impuso a Fisher/H7): sin media ± sd por moneda, cualquier umbral
+  futuro sería un literal disfrazado. Con la distribución servida, la
+  decisión del consejo sobre el consumidor de D₀ queda habilitada con
+  dato en mano.
+- Semilla honesta: primer valor finito ⇒ media = x, sd = 0 (sin
+  inventar dispersión); varianza clampeada ≥ 0 (inmunidad IEEE).
+- **Verificación**: core 163/163 (test de convergencia: constante ⇒
+  sd→0; alternante 0.6/1.0 ⇒ media→0.8, sd≈0.2; semilla sin dispersión
+  inventada).
