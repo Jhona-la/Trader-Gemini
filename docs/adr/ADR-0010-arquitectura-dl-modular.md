@@ -97,3 +97,27 @@ a ser "estructura condicional/no-lineal" — con prior hostil declarado.
 Si la fase 2 también da cero a τ propia ⇒ negativo documentado y el L2
 vuelve a dormir hasta que el L1 evolucione: la modulación fija no es el
 cuello de botella.
+
+---
+
+## Adenda LXXXIII (2026-10-04) — fase 2 τ-matched: el apriori HOSTIL se REVIERTE — hay estructura
+
+Dataset τ-matched (175,679 filas, etiqueta a la τ propia de cada
+muestra, genoma activo g2, BTC junio):
+
+- **sombra_osc SOLA: hit 53.0%** a escala propia (n=175k, ±0.1 — ~30σ).
+- **Consenso con convicción |voto|>0.5: hit 53.8%** (n=60,803, ±0.2).
+- Pero el consenso AGREGADO completo: 48.7% — y la banda 5m-1h
+  **anti-correlaciona** (46.1%): la agregación fija AHOGA la señal del
+  oscilador en convicción media. La agregación es PEOR que su mejor
+  componente.
+- Distribución τ: bimodal (42% <30s, 36% >1h — el clamp de banda
+  operativa). sombra_res y sombra_entropia anti-señal (47.2-47.4%).
+
+**La hipótesis L2 queda JUSTIFICADA con evidencia**: una agregación
+aprendida podría conservar la señal del oscilador en vez de diluirla.
+La fase de entrenamiento (v1 logística sobre votos vs modulación fija,
+plantilla honesta con meses separados) pasa de "prior hostil" a "prior
+estructurado": el objetivo explícito es NO PERDER lo que sombra_osc ya
+sabe. Caveats declarados: un mes, un símbolo, sin costos — el gate de
+la plantilla decide.
