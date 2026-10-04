@@ -58,9 +58,11 @@ en el gradiente. Es código, no peso aprendido.
   el tercer período). Revalidaciones ADR-0008 (test_hasta ~2026-11-01).
 - **Frente cópulas**: regeneración mensual del manifest (ADR-0009);
   diseño de ventana dinámica medido-que-espera.
-- **Frente L2 (DL del operador)**: ADR-0010 — fase 2 τ-matched encontró
-  estructura (sombra_osc 53%); v1 logística compitiendo contra la
-  modulación fija con plantilla honesta; veredicto inminente.
+- **Frente L2 (DL del operador)**: ADR-0010 — GATE v1 RESUELTO PARCIAL
+  (adenda 3): dirección transfiere OOS (+5.3 pts sobre la fija en
+  sep-14, +5.0 en ago; la fija fue anti-predictiva en sep) pero la
+  calibración falla (sobrefiada). Fase 3: calibración Platt/temperatura
+  sobre selección + re-gate; cableado bloqueado hasta gate completo.
 - **Frente certificación**: oráculo+paridad como servicio del consejo.
 
 ### Qoder
