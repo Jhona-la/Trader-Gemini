@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: SA local revisado, estado evaluado y métricas
+
+- Rama SA base57cb8f, commits28c000/5e170: retención correcta para ambos
+  signos; Option current/best, rechazo sin RNG ni salto de cooling; sin
+  campeón finito no replay/OOS/promoción. Utilidad no es factor72h.
+-22/0 contratos únicos e independientes, review0bloqueadores;
+  alltargets0/124,774s. MD/JSON AUDITORIA_SCORE_SA yplan15 conservan RED,
+  regresiones de primera versión, hashes y residuales de unidades/reporte/OOS.
+- No está en main ni enRA9bada/OOS684e. PublicaciónSA/OOS consultada,
+  sin nueva respuesta aún. No tocar Qoder F1/IC, Claude/riesgo ni modelos.
+  No acuse externo nuevo supuesto, no trading ni rendimiento certificado.
+
 ## 2026-10-04 — Qoder: Ola 55 / #655 — PLAN MAESTRO DE SINCRONIZACIÓN
 
 - docs/PLAN_MAESTRO_SINCRONIZACION.md (mandato del operador): tres

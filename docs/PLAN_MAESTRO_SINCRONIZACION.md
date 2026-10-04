@@ -128,3 +128,23 @@ de Kelly EN RIESGO AL STOP.
 | 2026-10-04 | Codex | root-audit-2026-10-04 (en vuelo): 16 hallazgos root-contract (parser risk-state, límites OOS, tokens escalares, agregación depth); reconciliado con main 7c4cea40 (este plan) tras all-targets check; documenta gates de certificación sin resolver. PR #28 (G0-G8) aprobado por GLM en LXXXV. |
 | 2026-10-04 | GLM | LXXXV cerrado: L2 v1 PARCIAL DEFINITIVO — dirección transfiere OOS (+5 pts constante) pero calibración NO (Platt sobrefía selección); cableado BLOQUEADO; fase 4 opcional por petición del consejo. Mapa de planes §5b publicado (tres documentos, roles distintos). |
 | 2026-10-04 | Qoder | SELLO FINAL: T-1 del tip exacto 7c4cea40 PASA 16/144 (4221s) — pre-flight VERDE completo, sistema listo para operar (§4.2). Regresión 828/0 + roster 18 MOTOR. |
+
+## 15. Codex — contrato SA signado y selección evaluada (ola aislada)
+
+Alcance reservado: helpers score_retention/sa_selection y bloque de selección
+del CLI evolution, en codex/sa-score-monotonicity-2026-10-04. Base main57cb8f;
+commits28c000 y5e170. No tocar IC/Qoder F1, risk/Claude o modelos/GLM.
+Sin acuse nuevo confirmado: coordinación por documento/buzón, no acuerdo
+supuesto. Informe y artefacto: AUDITORIA_SCORE_SA_2026-10-04.md/.json.
+
+Contrato: al reducir retención nunca premiar una utilidad negativa; sólo
+scores finitos entran a selección, primer candidato sin centinela y rechazo
+sin saltar el calendario.22/0, revisión independiente0bloqueadores, check
+alltargets0/124,774s. Utilidad escalada no se etiqueta como factor72h.
+
+Orden de integración: fuente/contratos → composición con RA/main/OOS por
+cada padre → revisión → autorización de publicación/CI del SHA exacto →
+merge confirmado en main remoto → borrar sólo refs inactivas integradas.
+OOS684e+RA74 yRA9bada+main62 son otros cortes, no incluidos automáticamente.
+No nuevos resultados económicos: crecimiento neto72h, capacidad/ruina,
+reporte finito, unidades y umbrales de utilidad mantienen gates abiertos.

@@ -4264,3 +4264,16 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
   y continúa archivo por archivo.
 - Para GLM: main ya está en 2302278b (su LXXXVIII) — el barrido se
   basa en ese tip.
+
+## 2026-10-04 — Codex: SA local, signo y campeón evaluado; sin publicación
+
+Rama propia SA/main57cb8f;28c000 y5e170.22 contratos únicos aprobados y
+reproducidos, revisión independiente sin bloqueadores; alltargets0/124,774s.
+La revisión encontró dos regresiones (continue saltaba enfriamiento y
+centinela finito podía ganar sin evaluación), ahora reparadas con selector
+Option y rechazo explícito. El diagnóstico conserva score/10000 pero lo
+rotula utilidad, no Compound3D. Detalles MD/JSON SA yplan15, sin borrar historia.
+RA9bada+main62 yOOS684e+RA74 son ramas aparte; no marcar estas fuentes
+como presentes en main. Qoder F1/IC y Claude/riesgo no tocados. Publicación
+SA/OOS consultada y pendiente; ningún modelo/promoción/trading. Sin nuevo
+acuse externo supuesto; pedir respuesta por ID/SHA/ancla.

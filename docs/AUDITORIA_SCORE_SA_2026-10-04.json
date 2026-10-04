@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "id": "RA-SA-F01-2026-10-04",
+  "as_of": "2026-10-04T22:51:00Z",
+  "status": "local_contract_green_integration_pending",
+  "branch": "codex/sa-score-monotonicity-2026-10-04",
+  "base": "57cb8f0fdaefbef177ff131b66851aa000de621f",
+  "source": {
+    "files": [
+      "src/bin/evolution.rs",
+      "crates/evolution-engine/src/lib.rs",
+      "crates/evolution-engine/src/score_retention.rs",
+      "crates/evolution-engine/tests/score_retention_contract.rs"
+    ],
+    "scope": "SA drawdown transformation only; not runtime trading, CMA, global report validity or economic certification",
+    "evidenceFlow": [
+      {
+        "title": "Source extraction",
+        "detail": "Read the SA maximization score and extracted its old multiplication into a new checked standalone helper; RED is not execution of untouched CLI."
+      },
+      {
+        "title": "Test QA correction",
+        "detail": "Initial7/6 contains one incorrect binary-threshold test expectation. Corrected .30/3 threshold yields RED8/5 before helper repair."
+      },
+      {
+        "title": "Repair",
+        "detail": "Same corrected13tests GREEN13/0; CLI calls exported helper; positive multiplication unchanged."
+      }
+    ],
+    "metricDefinitions": [
+      {
+        "label": "SA utility",
+        "definition": "Maximized ranking points after loggrowth and penalties; not capital factor or G72",
+        "formula": "f=10000*max(ln(C/C0),-20); penalties then applied"
+      },
+      {
+        "label": "Signed retention",
+        "definition": "At fixed finite score and0<r<=1, smaller r must never improve maximized utility",
+        "formula": "f>=0 ? f*r : f/r"
+      },
+      {
+        "label": "Test counts",
+        "definition": "Unique #[test] cases, not internal parameter scenarios; repeated runs not additive"
+      }
+    ]
+  },
+  "finding": {
+    "id": "RA-SA-F01",
+    "severity": "high",
+    "status": "local_repaired_candidate",
+    "old_formula": "f*r for either sign",
+    "new_formula": "f>=0 ? f*r : f/r",
+    "fixed_policy": [
+      "D/3",
+      "exp(-20*(DD-D/3))",
+      "clamp(.01,1)",
+      "remaining monetary/activity/survival/absoluteDD penalties"
+    ],
+    "not_changed": [
+      "CMA",
+      "OOS gate",
+      "genomes/models",
+      "live risk or exchange execution",
+      "cooling/reheating schedule"
+    ]
+  },
+  "comparison": {
+    "classification": "synthetic_algebraic_not_market_results",
+    "capital_initial": 13,
+    "capital_terminal": 11.7,
+    "dd_max": 0.3,
+    "rows": [
+      {
+        "dd": 0.11,
+        "retention": 0.8187307530779817,
+        "old_score": -13862.618943292175,
+        "new_score": -14286.876244256477
+      },
+      {
+        "dd": 0.2,
+        "retention": 0.13533528323661262,
+        "old_score": -13142.589952285081,
+        "new_score": -20785.147608079416
+      }
+    ],
+    "old_high_minus_low": 720.028991007094,
+    "held_fixed": [
+      "terminal capital",
+      "DDmax",
+      "sufficient trades",
+      "duration",
+      "survival threshold avoiding200000penalty",
+      "neitherDD exceedsmax"
+    ]
+  },
+  "tests": {
+    "initial_red": {
+      "passed": 7,
+      "failed": 6,
+      "ignored": 0,
+      "exit": 101,
+      "own_test_error": true
+    },
+    "corrected_red": {
+      "passed": 8,
+      "failed": 5,
+      "ignored": 0,
+      "exit": 101
+    },
+    "green": {
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "exit": 0
+    },
+    "test_hash_identical_between_corrected_red_and_green": true,
+    "workspace_check": "pending_at_initial_cut",
+    "independent_review": "pending_at_initial_cut"
+  },
+  "hashes": {
+    "red_helper": "7B182FC8AFD52E0DE2AF5FFE4518898307AF402DA2B1C5C63CF4B795A0C47896",
+    "initial_tests": "7B4EF4F474394DD9B21EB23ACA53329B1E94A8DE15641AB0F9DC7A4D1A972915",
+    "initial_red_log": "9FD3DF31DF0E1EAEEA77C16E61CDFC94E3E4B76566A95F902A9F3AD7F70C575C",
+    "corrected_tests": "3862FFB7377A9BCD1DC68805AAB88BC0C8B1E00BD1A392EA12A68FCF4B25283A",
+    "corrected_red_log": "29E50F6205C00B7F093C1768DD390EEF6E0AB2A7B64524966527C20E144DB654",
+    "green_helper": "1E776DF4DEEEE9633719C43B32E2850780E71FE29C3B0502235D29CB1F595457",
+    "green_log": "640BC355648F3D380599F95DC3803F5D4A8D23E4F1E52ACBE72ABCB3B770DC0E",
+    "cli": "0D2043A4246CA861F8576DFA9A24EAEDCF889FCAB23CA7C91E9B834F95A2F521"
+  },
+  "residuals": [
+    {
+      "id": "SA-R02",
+      "status": "open_source_confirmed",
+      "description": "Compound3D label uses penalized score/10000, not a capital factor normalized to72h."
+    },
+    {
+      "id": "SA-R03",
+      "status": "open_design",
+      "description": "Monetary penalty scales with initialcapital while loggrowth doesnot; DD threshold optimized within candidate. Monotonicity proof holdsDfixed."
+    },
+    {
+      "id": "SA-R04",
+      "status": "open_source_residual",
+      "description": "NaNDD bypasses comparison; helper is not complete reportvalidation, durationobserved nor proof of an evaluated admissiblechampion."
+    },
+    {
+      "id": "SA-R05",
+      "status": "unmeasured",
+      "description": "No net OOS multiasset/capacity/72h growth evidence or fullnewT1."
+    }
+  ],
+  "publication": {
+    "pushed": false,
+    "pr": null,
+    "merged": false,
+    "authorization": "not assumed from prior scoped RA authorization"
+  },
+  "references": [
+    {
+      "title": "Kelly1956",
+      "url": "https://www.kiv.zcu.cz/~vavra/zti/KELLY.PDF",
+      "kind": "primary_research"
+    },
+    {
+      "title": "DeflatedSharpeRatio",
+      "url": "https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf",
+      "kind": "primary_research"
+    },
+    {
+      "title": "MillenniumProblems",
+      "url": "https://www.claymath.org/millennium-problems/",
+      "kind": "primary_institution"
+    }
+  ],
+  "followup_selection_receipt": {
+    "base_main":"57cb8f0fdaefbef177ff131b66851aa000de621f",
+    "initial_score_commit":"28c0004239b93490f790a03b3c581991e436c984",
+    "functional_followup_commit":"5e170c39b550e7ed922564dd1fe22debffad512f",
+    "review_findings_closed":["SA-REV01 rejection skipped cooling","SA-REV02 finite sentinel outranked valid evaluated losses"],
+    "selection_state":"Option scores; first finite evaluation accepted; no champion means return before replay/OOS/promotion",
+    "incumbent_metropolis_expression_unchanged":true,
+    "selection_tests":{"red_passed":5,"red_failed":4,"red_exit":101,"red_kind":"explicit extracted sentinel scaffold and structural first-callsite guard; not full CLI execution","green_passed":9,"green_failed":0,"green_exit":0,"runtime_helper_contracts":8,"structural_callsite_contracts":1},
+    "final_unique_tests":{"passed":22,"failed":0,"ignored":0,"independently_reproduced":true},
+    "independent_review":{"agent":"Chandrasekhar","receipt_utc":"2026-10-04T23:03:00Z","blockers":0,"red_reexecuted":false,"CLI_executed":false,"Cargo_executed":false},
+    "workspace_check":{"exit":0,"seconds":124.7735498,"command":"cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j 2","profile":"dev","log_sha256":"BFEB3933A173CF4AD906F34013C22A908F027A34BC9403A38199120E875A15B9","source_timestamp_refresh_count":9,"source_byte_hashes_unchanged":true,"tests_executed_by_check":false},
+    "source_hashes":{"selection_helper":"511A2A1DB7CBAFCC69FBBC975DA652549AE54090565E3C378A14D5D39EAB8D2C","selection_tests":"76BE79B8C88F3399564CAA6C1413F4335DEE38B7D3395266A2D3BC0D1E567C9F","CLI":"9019CBADB01F3CB399EA0CB3057D39A7D6596E7176B79509E30A24DCF0D96A1F","engine_export":"A02011933915B09B061F6E30968425327F183E5D48070ABCAED3EA64EF4DF776"},
+    "evidence_hashes":{"selection_red_scaffold":"70DCDE693580F26A664388C80718B14513B8E10DAC725A6D6AE2392A81D0B100","selection_red_log":"49F6EDBAEAD1842DC27A11A9CE7FC9E81CD9850DD1DE20EB623CD1E336DB6A4B","selection_green_log":"6C8356F9A413309C8BE859FB0627A1E9118134C986829E432FDC7B48546FF3A8","selection_final_log":"251BB88AC26DE80FEDDB328FB5679EC491282021367AF478AF92419F644804FA"},
+    "current_residual_states":{"SA-R02":"diagnostic label repaired locally; no measured72h growth","SA-R03":"open units,calibration,candidate optimized DD threshold","SA-R04":"sentinels/champion repaired; full report finite validation, observed duration and operational exit remain open","SA-R05":"net multiasset OOS/capacity/72h evidence absent"},
+    "workflow_adds_fail_fast_standalone_contracts":true,
+    "composition_with_RA9bada_or_OOS684e_done":false,
+    "public_authorization_question":"pending at receipt; no new scoped answer received",
+    "pushed":false,"PR":null,"merged_to_remote_main":false,
+    "external_ack_received":false,"model_or_genome_promotion":false,"growth72h_demonstrated":false,
+    "initial_cut_preserved":true
+  }
+}
