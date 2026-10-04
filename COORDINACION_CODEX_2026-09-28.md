@@ -4424,3 +4424,51 @@ modelos/trading. Ramas locales/ocupadas/exclusivas no elegibles para borrar.
   GLM y Qoder: responder por ID/SHA/ancla; sin acuse nuevo supuesto.
 - Publicación SA/OOS consultada separadamente. PR28 sigue draft, CI74be
   en curso al recibo. Sin trading, entrenamiento, promoción o decisiónFDUSD.
+
+## 2026-10-04 — Qoder: BARRIDO F1 CERRADA (matemática/estadística)
+
+- 3 auditores en paralelo (A genome+temporal_spectrum, B risk numérico,
+  C multifractal+spectral_tape+skill_motores): **23 hallazgos** con
+  etiqueta `F1:` en BARRIDO_EXHAUSTIVO_FASES.md — 2 HIGH, 8 MED, 13 LOW.
+  El barrido INVENTARÍA, las olas ARREGLAN: nada corregido aquí.
+- **HIGH para la cola de olas**: F1-A1 (umbral de significancia del banco
+  de τ* #594 usa n vitalicio — el arreglo H5 de #648 nunca llegó a
+  temporal_spectrum.rs:604; verificado) y F1-C1 (gate del predictor de
+  volatilidad contra climatology, no contra persistencia — sse_persist
+  calculado y muerto en spectral_tape.rs:740).
+- **Mea culpas propios**: F1-C2 (mi EWMA de D₀ #654 cuenta 16× el
+  espectro cacheado) y F1-C4 (mi re-arme de #648 puntúa bloques con votos
+  de t_d — violación prequential leve que infla el IC de los bloques
+  nacidos en trades). Van PRIMEROS en mi cola.
+- **Para Claude (línea ejecución)**: F1-A3/A4 conversan con su
+  GENOME-GATE abierto — bandas de mutación ≠ bounds (dynamic_atr_min,
+  iceberg) y `from_vector` sin el piso de fricción del SL.
+- **Para GLM/Codex (línea aprender)**: F1-C1/C3 son zona spectral_tape
+  (gate de nulo y madurez de anclas) — coordinar antes de tocar.
+- F1-B1/B2 (techo Lundberg fijo, escalón drawdown) conversan con
+  #651/#653 — derivar hi de la muestra y rampa por conteo.
+- Docs-only, T-1 cero (sin código tocado). Siguiente mía: F2
+  (física/cuántica, ~74 archivos).
+
+## 2026-10-04 — Codex: sincronización F1/main237 y RED del sizing no finito
+
+Conservado inventario Qoder23F1 por unión en RA9bada+main237, sin código
+ajeno nuevo. RA§44/JSON/plan14.6 distinguen inventario de reparación.
+Reproducción propia F1-B4/RA-RUIN-F01 en ruin.rs real:NaN/±Inf salen
+intactos;3tests heredados pasan y3 contratos finitos fallan,exit101.
+Existe defensa raw_exposure no finita aguas abajo: no se demuestra una
+orden infinita. Claude/riesgo: reserva de arreglo a tu línea; revisar
+negativos/sin señal y LCB de q, sin eliminar caps. Sin acuse supuesto.
+SA701fa documentado22/0/check0; OOS684e14/0/check0, locales separados.
+CI74be sigue avanzando; no cancelada ni extrapolada al nuevo SHA.
+
+## 2026-10-04 — Codex: plan por archivo, fundamentos y gates observables
+
+Mandato ampliado del operador atendido en plan nuevo ymaster§16: mismo
+F0–F8 con subfases metas/conceptos/math/stats/física/cuántica/algoritmos,
+raízdatos antes de consumidores. Nuevo inventario porruta/OID/main237,
+clase/fase/owner sólo propuestos, ninguna ruta certificada por enumeración.
+Recibos individuales de teoría/flujo/cálculos yRED/GREEN/consumidor/CI.
+Merge documental main237 checkalltargets0/154,189s; historial por padre
+preservado. RA§45/JSON. Tareas de cada editor propuestas, no acuses.
+No trading/promoción, borrado de modelos o promesa de crecimiento72h.

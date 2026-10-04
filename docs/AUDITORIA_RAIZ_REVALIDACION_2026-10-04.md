@@ -2156,3 +2156,120 @@ constantes, unidades monetarias, estimación espectral o rendimiento72h.
 No quitar límites de seguridad para lograr la meta. CI37240563716/head74be
 seguía en curso al recibo; conservar draft y exigir CI/revisión del nuevo SHA.
 Sin push de SA/OOS todavía, sin merge remoto nuevo ni ramas eliminadas.
+
+## 44. Sincronización F1 recién publicada y control de ruina reproducido
+
+### 44.1 Inventario ajeno preservado; estados y responsabilidades
+
+Main23701ecb05486eb13b661d3d50afaadbc9a0015a aporta sólo documentación:
+62afe→23701 cambia tres archivos,+120/−1. Qoder registra23 hallazgos F1
+(2HIGH,8MED,13LOW), incluyendo n vitalicio frente a momentos EWMA,
+gate de volatilidad contra climatología pero no persistencia, muestras de
+D0 cacheadas repetidas y rearme prequential con información posterior.
+Se leyó íntegro el delta. No se confirma aquí cada hallazgo mediante nueva
+ejecución: inventario del autor, no reparación ni cobertura completa de F1.
+
+El merge local9bada+23701 conserva memoria y COORD por unión, sin ours/theirs;
+barrido actualizado idéntico al nuevo padre. El cambio de su fila F0 es una
+actualización explícita de Qoder, no eliminación por Codex. F2 física/cuántica
+es su siguiente frente. La rama temporal F1 ya no figura en el censo actual:
+no la borró Codex ni se atribuye su desaparición a nuestra limpieza.
+
+Propuesta de revisión cruzada, pendiente de acuse: Qoder revisa F1-A1/C2/C4
+en su productor; GLM/Codex coordina el nulo/admisibilidad F1-C1/C3 antes de
+tocar spectral_tape; Claude mantiene GENOME-GATE y límites de dimensionado.
+Codex conserva SA/OOS/contratos raíz aislados. Los fallos de temporalidad,
+evidencia y unidades preceden nuevas teorías; nombres avanzados no reparan
+sesgo prequential ni dependencia de escala de una función de utilidad.
+
+### 44.2 RA-RUIN-F01 — cap de dimensionado deja salir no finitos
+
+Relacionado con F1-B4 del inventario Qoder, pero reproducido aquí sobre el
+helper REAL crates/risk-engine/src/ruin.rs:67. Su rama
+if !f.is_finite() || f<=0 {return f} devuelve NaN,+Inf y−Inf sin aplicar
+streak_cap ni tope0,25. El nombre clamp y su descripción de aplicación
+uniforme no garantizan el rango para ese dominio. No es una probabilidad
+de ruina que pueda reemplazarse libremente por0: f es fracción de sizing.
+
+Prueba aislada rustc/nightly2026-06-30 incluye ruin.rs real y copia sólo las
+constantes SURVIVAL_FLOOR=.05 yTRADE_HORIZON=200 de kelly_envelope.rs para
+evitar cargar arena/modelos. Tres tests heredados pasan y tres contratos
+de salida finita nuevos fallan:3/3,exit101. Este RED confirma un defecto,
+no una suite GREEN ni reparación. No se ejecutaron órdenes o procesos vivos.
+
+| Procedencia | SHA256 |
+| --- | --- |
+| ruin.rs real, sin modificar | 7AE99C6174DE9AC4B8D59E4EC264D10FEE35C2AEC1BC47BB7D6D0044B7ACCBCB |
+| probe target/ra-ruin-evidence/ruin_contract_probe.rs | 24D21CA31BE174D69AA8B118E67BB51882345DEC597765B31D0ED37A0DC29427 |
+| log target/ra-ruin-evidence/red.log | 36C30F74DC4C74E15DD4492AB58D9FFCDFC65528FC4FC71139658508696EEB72 |
+
+Camino de impacto: risk-engine/lib.rs:384 remite el cap a evaluate_single_intent;
+lib.rs:525 usa el cap seguido por max(0), ylib.rs:536 rechaza raw_exposure
+no finita. Eso impide inferir automáticamente una orden con exposición
+infinita: hay otra defensa. En f64, max puede enmascarar NaN como0 y acabar
+en rechazo por cero sin razón de invalidez. Otros lectores son Kelly,
+leverage_matrix y envolvente: requieren sus propios contratos de frontera.
+No se ha demostrado pérdida real ni que todos estos caminos dejen pasar.
+
+Severidad de contrato: MEDIA, impacto operacional extremo condicionado a
+consumidores/defensas. Abierto en fuente; reservado a Claude/riesgo para
+revisión cruzada, no parche simultáneo. Cierre: veredicto no finito explícito
+o salida segura que NO autorice exposición; conservación de entradas finitas
+y de semántica de negativos/sin señal; tests por consumidor e integración.
+No suavizar/eliminar el control para aumentar frecuencia de entradas.
+
+### 44.3 Errores de explicación y límites de la teoría de rachas
+
+En ruin.rs:29 la frase «menos q ⇒ ... f_cap menor» contradice fórmula/tests:
+para 0<q<1 yH>1, al bajar q baja |ln(H)/ln(q)| y A^(1/k),A∈(0,1),
+produce un cap MAYOR (sin cambiar clamps). Es defecto documental de signo,
+no evidencia de código invertido. Las etiquetas LCB de q también merecen
+revisión: bajar probabilidad de pérdida relaja el cap; no llamarlo conservador
+por usar el límite inferior sin revisar qué posterior y convención consume.
+
+ln(H)/ln(1/q) estima un tamaño de racha mediante aproximación de conteo;
+no calcula la distribución exacta del máximo de rachas dependientes ni
+certifica una probabilidad de ruina de cartera con gaps/funding/liquidación.
+TRADE_HORIZON200, floor.05 ycap.25 son políticas explícitas heredadas, no
+leyes universales. Conservar controles; documentar calibración, supuestos,
+dependencia temporal, incertidumbre y unidades antes de rediseñarlos.
+
+Composición/CI de RA actualizada sigue su gate separado. SA701fa incluye
+su informe/artefacto local; OOS684e sigue distinto. Main yorigin/main23701
+coinciden en el último fetch; sólo1remota Claude yRA permanecen además de
+main. Locales con exclusividad o checkout ocupado no se borran. No prometer
+que todo cambio está en main ni que el barrido inventariado resolvió bugs.
+
+## 45. Mandato ampliado: plan ruta-a-ruta y recibo del candidato main237
+
+El nuevo PLAN_REVISION_EXHAUSTIVA_2026-10-04 conserva planes existentes
+y fases F0–F8, con subfases metas, conceptos, matemática, estadística,
+física/cuántica y algoritmos ANTES de cambiar consumidores. La raíz de
+datos/reloj se contrasta antes del núcleo aunque el barrido la enumere F6.
+Cada ruta del árbol main237 entra en un nuevo TSV/JSON, sin excluir scripts,
+docs/config/binarios/datos versionados. Fuera del Git snapshot se requiere
+anexo por recurso/formato/hash; no cargar modelos ni exponer secretos.
+
+Clasificación automática, lectura, reproducción, reparación y certificación
+son estados diferentes. El censo no aumenta por sí mismo los archivos
+leídos ni cierra los23F1 del autor. Recibos separados por ruta/OID/contrato,
+historia aditiva y revalidación de consumidores al cambiar OID. No tomar
+búsquedas, mtime o check global como lectura. La plantilla obliga a explicar
+para qué sirve cada fórmula, dominio/unidad, significado y límites; incluye
+señal/veto/genoma/latencia y raíz→decisión→terminal. El espectro requiere
+soporte/resolución/error:1ns o100años no inventan datos o información futura.
+
+QA anterior al commit del merge9bada+main237: ambos padres preservados
+(MEMORIA1774/1596,COORD3661/3564,PLAN603/106 líneas no vacías);
+barrido actualizado idéntico al padre237 y39raícesJSON históricas iguales.
+Diff contra RA sólo documental. Checkalltargets tras refresco acotado9fuentes/
+hashestables exit0/154,188755s, perfildev,offline,locked,j2. Log en
+target/ra-main237-check-2026-10-04.log, SHA256
+DE2D2B2B212AE96A81CDF29B29CE954ACC5C85CEDD2FC78D60DA1075EBA5A0D9.
+Adendas/plan/censo posteriores sólo documentales, sin cambiar Rust/CI.
+
+CI74be seguía en curso23:23Z: alltargets ycontratosdepublicación/modelos
+completados; entrada/riesgo/OOS en ejecución. No cancelarla por churn de
+docs ni trasladar su resultado a este merge. Nueva CI/review antes de main.
+SA local22/0 yOOS14/0 separados; sizingRUIN sigueRED3/3, no ocultarlo entre
+suites aprobadas. Cobertura parcial, sin rendimiento72h ni operaciones.

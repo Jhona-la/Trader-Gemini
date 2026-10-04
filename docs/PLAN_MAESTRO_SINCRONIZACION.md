@@ -730,3 +730,39 @@ El primer check RA falló por API no visible en un artefacto compartido pese
 a existir en fuente; reconstrucción acotada corrigió la evidencia sin cambiar
 bytes. No trasladar verde cacheado entre worktrees. No se afirma certificación
 global, ventaja cuántica, rentabilidad72h ni desaparición de todos los fallos.
+
+### 14.6 Recibo F1 de Qoder y riesgo no finito reproducido
+
+Main23701 publica23F1 (2HIGH/8MED/13LOW), docs-only; se conserva por unión
+en RA. No todos reproducidos por Codex. Proponer prioridades y obtener acuse
+antes de tocar productor vivo: QoderA1/C2/C4; GLM/CodexC1/C3; ClaudeA3/A4
+yB1/B2/B4. SA/OOS mantienen ramas propias y contratos separados.
+
+RA-RUIN-F01/F1-B4 se reproduce en el helper real:NaN/±Inf retornan intactos,
+RED3pass/3fail, no pérdidas/órdenes demostradas. Existe defensa de exposición
+no finita en consumidor; seguirla por rama. Claude mantiene ownership:
+exigir fallo explícito/noexposición, preservar finitos y medir consumidores.
+No confundir retorno0 de sizing con probabilidad0 de ruina ni ausencia de IC.
+
+Meta72h: utilidad/genoma sano y matemática explicada son condiciones de
+medición, no evidencia de rentabilidad. Gates G0–G8 siguen abiertos donde
+corresponde. Detalle RA§44/JSON; inventario F1 enBarrido del autor.
+
+## 16. Plan exhaustivo por ruta desde los fundamentos (ampliación del mandato)
+
+[PLAN_REVISION_EXHAUSTIVA_2026-10-04](PLAN_REVISION_EXHAUSTIVA_2026-10-04.md)
+define metas→conceptos→matemática→estadística→física/cuántica→algoritmos→
+implementación; conserva fases F0–F8 del barrido e introduce subfases y
+contratos de entrada F6 antes de consumidores. Censo nuevo por ruta/OID
+main237, TSV+JSON; automático/inventariado, no auditado o certificado.
+No reemplaza el censo histórico ni los23hallazgosF1 del autor.
+
+Cada archivo requiere recibo propio de finalidad/cálculo/unidades/dominio,
+flujo, hallazgos y comportamiento; RED/GREEN, compilación, efectos externos,
+review y candidato/CI definidos por riesgo. Docs/config/binarios/logs/datos
+también tienen método, no se omiten. OIDs cambiados abren revalidación.
+Inventario/leído/reparado/probado/integrado/desplegado son estados distintos.
+
+Roles propuestos y reservas por ancla, sin acuses supuestos. Nada de borrar
+ramas exclusivas/ocupadas, impulsar modelos o relajar seguridad por meta72h.
+Registro de planificación explícito, no porcentaje ficticio de corrección.
