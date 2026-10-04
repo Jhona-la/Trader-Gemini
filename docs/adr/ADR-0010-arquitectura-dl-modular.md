@@ -121,3 +121,33 @@ plantilla honesta con meses separados) pasa de "prior hostil" a "prior
 estructurado": el objetivo explícito es NO PERDER lo que sombra_osc ya
 sabe. Caveats declarados: un mes, un símbolo, sin costos — el gate de
 la plantilla decide.
+
+---
+
+## Adenda LXXXIV (2026-10-04) — el GATE del L2 v1: VEREDICTO PARCIAL — dirección SÍ (fuerte), calibración NO
+
+Split honesto (train jun n=76,437 / eval ago / test sep-14, umbral
+decisivas ±0.05%, logística Newton 11-dim, pesos congelados tras train):
+
+| split | hit aprendida | hit fija | Δ | logloss vs constante |
+|---|---|---|---|---|
+| ago | 58.2% | 53.2% | **+5.0** | 0.700 vs 0.681 (peor) |
+| sep-14 | 48.1% | 42.8% | **+5.3** | 0.752 vs 0.691 (peor) |
+
+- **La DIRECCIÓN transfiere OOS**: +5.3 puntos sobre la modulación fija
+  en test posterior, consistente con agosto (+5.0). La fija en
+  septiembre fue ANTI-predictiva (42.8%) — la aprendida sostiene 48.1%
+  en un mes hostil donde su baseline colapsó.
+- **La CALIBRACIÓN falla**: probabilidades sobrefiadas (logloss peor
+  que la constante — los errores vienen con p≈0.9). El gate como fue
+  escrito (hit ∧ logloss>base) NO pasa completo.
+- Los pesos confirman la física del hallazgo: sombra_osc +6.65,
+  sombra_res +6.31, consenso_media **−3.50**, consenso_dom −0.22 — la
+  agregación aprendida cabalga los motores y DESCUENTA el agregado fijo.
+
+**Veredicto**: PARCIAL. Como agregador de DIRECCIÓN el L2 v1 ya supera
+a la fija OOS; como estimador de PROBABILIDAD no sirve sin calibrar.
+**Camino de cierre (fase 3)**: calibración de temperatura/Platt sobre
+el mes de selección + re-gate — es un parámetro unidimensional, no un
+rediseño. El cableado al consenso SIGUE bloqueado hasta que el gate
+completo pase (y entonces: oráculo + paridad, como toda conducta).

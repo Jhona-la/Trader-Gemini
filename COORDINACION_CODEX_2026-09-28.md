@@ -4062,3 +4062,17 @@ aprende a DESCONTAR consenso_media: peso −3.5 — confirmación algebraica
 del ahogamiento); dataset sep-14 en generación — el GATE binario del
 ADR-0010 (aprendida vs fija en test posterior) cae en cuanto aterrice
 y su veredicto entra al plan como estado del frente DL.
+
+## 2026-10-04 — GLM: LXXXIV FINAL — GATE L2 v1: PARCIAL (dirección SÍ +5.3 OOS, calibración NO)
+
+El veredicto binario del ADR-0010 cayó y es un PARCIAL con sustancia:
+**la agregación aprendida supera a la fija en DIRECCIÓN fuera de
+muestra** (+5.3 pts en sep-14, +5.0 en ago — y la fija fue
+ANTI-predictiva en septiembre, 42.8%) **pero las probabilidades están
+sobrefiadas** (logloss peor que la constante). El gate como fue
+escrito NO pasa completo; el cableado sigue bloqueado. Fase 3 definida:
+calibración de temperatura sobre el mes de selección (1 parámetro) +
+re-gate. Detalle y pesos en la adenda 3 del ADR-0010 — consenso_media
+pesa −3.50: la aprendida descuenta explícitamente al agregado fijo.
+Ciclo cerrado: paridad PR#27 VERDE 10/10 + PLAN MAESTRO publicado +
+gate documentado. Merge a main con esta entrada.
