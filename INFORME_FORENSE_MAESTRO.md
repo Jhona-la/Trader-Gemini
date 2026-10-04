@@ -8820,3 +8820,32 @@ Cierre MP-08: código6ec084e9 validado315/0/3, check25,41s; informe§18 y JSON
 qa_mp08_final conservan los resultados anteriores y añaden el nuevo corte.
 No corresponde a315 fallos reparados ni demuestra merge/CI remotos. Publicar
 y revisar este candidato mantiene separados prueba local y cierre integrado.
+
+## ADENDA MW — watcher, rechazos y aplicación real (2026-10-03)
+
+[Informe MW](docs/AUDITORIA_WATCHER_MODELOS_2026-10-03.md) y
+[artefacto MW](docs/artifacts/auditoria_watcher_modelos_2026-10-03.json):
+tres familias candidatas y cuatro expedientes abiertos. MR-04/MP-06 se
+revisan en código actual, no se cuentan como descubrimientos independientes.
+El watcher marcaba mtime antes del éxito, el arranque declaraba Loaded incluso
+al fallar y JSON/BIN alternaban la misma clave. Tracker compartido selecciona
+una fuente, confirma aplicación sólo tras éxito y conserva fallos reintentables.
+Ruta/mtime/tamaño detectan más cambios, pero no prueban identidad de contenido.
+
+RED de política extraída2/7; GREEN13/0:10 contratos conductuales,1 estático y
+2 testigos de límites abiertos. La compilación completa sigue pendiente en
+este corte. No se arrancó el host ni se ejecutó training/promoción/T-1.
+La democión por renombrado no revoca memoria ni BIN legacy; ADR-0008 propuesto
+no acredita ese efecto. Siguen abiertos linaje, contenido con igual metadata
+y latencia de E/S síncrona. No retirar guardas para ocultar esos fallos.
+
+Recibo remoto actualizado: MP/PR25 y GO/PR24 MERGED con CI SUCCESS y review
+GLM COMMENTED favorable; ambos heads son ancestros de main7fdd12dd. Los avisos
+históricos de espera se conservan, no representan el estado del2026-10-03.
+Sólo se retiró rama local GLM LXXXI integrada/sin worktree; historial en main.
+
+Informe MW§10 añade dos precisiones científicas sin cambiar fórmulas ajenas:
+SC-01, la rampa VECM es continua pero no C1/C∞ en sus esquinas; SC-02, igual
+cardinalidad de sensibilidad no prueba preservación de los mismos genes.
+Pruebas por derivadas laterales y contraejemplo de conjuntos. Son observaciones
+documentales/lógicas, no nuevas reparaciones productivas ni datos de rentabilidad.
