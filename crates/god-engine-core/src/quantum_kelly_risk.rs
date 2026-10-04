@@ -2,6 +2,12 @@
 //!
 //! Computes mathematical expectancy E[X], dynamic optimal Kelly fraction f*,
 //! and volatility-adaptive compounding position sizes for a dynamically fetched base capital.
+//!
+//! #653 (Ola 53) — ISLA SIN CONSUMIDORES (auditor B): este módulo no tiene
+//! ningún caller en el árbol vivo (sólo `pub mod` y tests); el sizing real
+//! vive en risk-engine (quantum_kelly inline + leverage_matrix). Decisión
+//! del consejo (#605, opción A): mantener anotado — NO conectarlo sin una
+//! ola dedicada con oráculo (duplicaría el Kelly del risk-engine).
 
 use quantum_arena::atomic_float::AtomicF64;
 use std::sync::atomic::Ordering;

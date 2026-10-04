@@ -261,12 +261,20 @@ impl RiskEngine {
         // la tolerancia de 0,85 diseñada para permitir la recuperación del
         // crecimiento compuesto; en régimen estándar rige el gen; entre ambos,
         // transición continua. Antes el gen quedaba anulado en producción.
-        let micro_w = crate::capital_regime::micro_weight(
-            current_capital,
-            arena.config.min_notional.load(Ordering::Relaxed),
-        );
-        let max_dd = crate::capital_regime::lerp(configured_dd, 0.85, micro_w);
-        if self.peak_capital > 0.0 && max_dd > 0.0 && max_dd < 1.0 {
+        // #653 (Ola 53): DOS defectos del hallazgo B cerrados —
+        // (1) micro_w usaba `config.min_notional` congelado (5.0, nadie lo
+        // escribe): ahora el mínimo DINÁMICO del spec del símbolo (paridad
+        // con evaluate_single_intent D-641 completo).
+        // (2) el lerp micro era CÓDIGO MUERTO: el `max_dd` lerpado sólo
+        // vivía en el if-guard; el veto real comparaba contra el
+        // sombreado de D-744b (gen crudo). Ahora la tolerancia micro se
+        // compone con la cota medida: umbral = lerp(dd_max_medido, 0.85,
+        // micro_w) — el régimen micro relaja la cota MEDIDA, no la salta.
+        let min_notional_dyn = quantum_arena::symbol_registry::try_spec(coin_id)
+            .map(|s| crate::capital_regime::effective_min_notional(s.min_notional))
+            .unwrap_or_else(|| arena.config.min_notional.load(Ordering::Relaxed));
+        let micro_w = crate::capital_regime::micro_weight(current_capital, min_notional_dyn);
+        if self.peak_capital > 0.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
             // CL-9: la caída es de la cuenta; la tasa de pérdida también
             // (antes la de la moneda candidata: una moneda perdedora o sin
@@ -278,12 +286,15 @@ impl RiskEngine {
                 )
             }));
             // D-744b: sin riesgo medido rige el gen; el veto nunca se salta.
-            let max_dd = crate::drawdown::drawdown_maximo(
+            let dd_max_medido = crate::drawdown::drawdown_maximo(
                 arena.riesgo_por_operacion.load(Ordering::Relaxed),
                 q_perdida,
                 arena.config.global_max_drawdown.load(Ordering::Relaxed),
             );
-            if dd >= max_dd {
+            // D-641 × D-744b compuestos: la tolerancia micro (0.85 pleno)
+            // relaja la COTA MEDIDA continuamente; el estándar la respeta.
+            let umbral = crate::capital_regime::lerp(dd_max_medido, 0.85, micro_w);
+            if dd >= umbral {
                 return rej(REJ_DRAWDOWN);
             }
         }
@@ -1445,5 +1456,22 @@ mod reject_direction_tests {
             crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(0.02 / 1.0, 0.05)
                 .unwrap();
         assert!((m_l1 - m_nocional).abs() < 1e-12);
+    }
+    /// #653 — el lerp micro compone con la cota MEDIDA (D-641 × D-744b):
+    /// umbral = lerp(dd_max_medido, 0.85, micro_w). En régimen estándar la
+    /// cota medida rige; en micro pleno la tolerancia 0.85 la relaja — pero
+    /// el veto NUNCA desaparece (antes el lerp era código muerto: sólo vivía
+    /// en el if-guard y el veto comparaba contra el gen crudo).
+    #[test]
+    fn qo_653_dd_lerp_micro_compone_con_cota_medida() {
+        // Estándar (w=0): la cota medida rige intacta.
+        assert_eq!(crate::capital_regime::lerp(0.20, 0.85, 0.0), 0.20);
+        // Micro pleno (w=1): tolerancia 0.85 — relajada pero PRESENTE.
+        assert_eq!(crate::capital_regime::lerp(0.20, 0.85, 1.0), 0.85);
+        // Transición continua y monótona.
+        let medio = crate::capital_regime::lerp(0.20, 0.85, 0.5);
+        assert!((medio - 0.525).abs() < 1e-12);
+        // La relajación micro nunca BAJA el umbral estándar (sólo sube).
+        assert!(crate::capital_regime::lerp(0.20, 0.85, 0.5) > 0.20);
     }
 }
