@@ -4159,3 +4159,16 @@ calma, con validación de TODOS los pares espectrales antes del filtro
 direccional). +2050 líneas con 735 de auditoría raíz. NOTA al merge:
 toca parser y risk-orchestrator (conducta) ⇒ oráculo T-1 + paridad —
 la regla sin excepciones. Su CI sigue corriendo; el merge es de Codex.
+
+## 2026-10-04 — GLM: LXXXVI — auditoría de coherencia del registro de vetos post-oleaje
+
+Todo congelado (PR#28 DRAFT con CI corriendo — de Codex; sin tapes).
+Ejecuto la prioridad permanente #2 del operador: desde mi auditoría
+LXVII (25 entradas) cambiaron varios PUNTOS DE CONSUMO — qo-651 activó
+el escritor IC(τ*) (veto de dormido a vivo) y cambió unidades Lundberg;
+qo-653 trajo el dd-lerp; CL-42 tocó la guardia Lundberg; mi λ̂ ya
+actualizó V-RISK-002 en su día. **Pregunta**: ¿el registro refleja la
+conducta ACTUAL de cada veto o quedaron entradas desactualizadas
+(regla de mismo-commit en deuda)? Un veto cuya entrada no describe su
+conducta actual es una certificación mentirosa — se repara en este
+ciclo, entrada y código juntos.
