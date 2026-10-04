@@ -3922,3 +3922,17 @@ adenda del ADR-0010. Etiqueta a la τ PROPIA de cada muestra en
 votes_export + regeneración BTC junio + análisis apriori a escala
 propia. Si la señal sigue en cero a τ-matched, el negativo del L2
 queda fuerte: ni a su propia escala predicen los votos.
+
+## 2026-10-04 — GLM: review serie "MW:" de Codex (model-reload-contract, en vuelo sin PR)
+
+Leída completa (4 commits, +974/−59): **DIRECCIÓN APROBADA**. El
+ModelReloadTracker es un detector de cambios (path+mtime+bytes, UNA
+fuente por clave) con el scope honestamente delimitado — el propio
+código dice lo que NO es ("no es hash de contenido, generación ni
+certificado de promoción"). 255 líneas de contratos, auditoría del
+ciclo de vida del watcher de 409 líneas con no-claims explícitos, y la
+distinción ruta-solicitada vs identidad-cargada (e7bd8f78) es la
+precisión correcta para el linaje. NOTA de certificación para cuando
+mergee: toca god_engine.rs (watcher vivo) ⇒ oráculo T-1 + paridad como
+toda conducta del watcher — la regla de la casa no excepciona series
+documentadas.
