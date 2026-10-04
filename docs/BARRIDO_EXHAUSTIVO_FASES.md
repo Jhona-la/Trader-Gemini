@@ -119,7 +119,8 @@ cierre con informe forense por fase.
 
 | Fase | Estado | Hallazgos | Verificación |
 |---|---|---|---|
-| F0 | F1-F3 ya cubiertas por las auditorías sistemáticas de la sesión (3 auditores, ~25 hallazgos, 12 cerrados en olas #648-#653) — se documentan los restos | — | — |
+| F0 | CERRADA 2026-10-04 | 1 (F0-1, corregido en fase: ADR-0014) | docs-only |
+| F1 | CERRADA 2026-10-04 | 23 (2 HIGH, 8 MED, 13 LOW) | docs-only; A1 y A4 re-verificados contra el árbol |
 
 ## F0 — RESULTADO (cerrada 2026-10-04, Qoder)
 
@@ -147,3 +148,72 @@ Lenguaje residual scalping/swing en rectores: SOLO la regla que
 ordena no pensar así (contexto correcto). Rules/: cero residuos.
 
 **F0 CERRADA**. Siguiente: F1 (matemática/estadística transversal).
+
+## F1 — RESULTADO (cerrada 2026-10-04, Qoder)
+
+Tres auditores en paralelo, un archivo por entrada de checklist:
+
+- **Auditor A**: genome.rs + temporal_spectrum.rs (matemática del
+  genoma y del banco de escalas #594).
+- **Auditor B**: cramer_lundberg, drawdown, ruin, capital_regime,
+  hodge, micro_weight (risk-engine numérico).
+- **Auditor C**: multifractal.rs + spectral_tape.rs + skill_motores.rs
+  (medida espectral y bancos de habilidad).
+
+### Hallazgos (etiqueta `F1:` — esperan su ola; el barrido INVENTARÍA)
+
+| # | Archivo:lín | Sev | Defecto |
+|---|---|---|---|
+| F1-A1 | temporal_spectrum.rs:604 | **HIGH** | `umbral_ic_significativo(s.skill_n)` con n VITALICIO, pero los momentos del banco de τ* (#594) son EWMA olvido 1/64 (N_ef≈127): tras ~10³ bloques el umbral 2/√(n−3) cae bajo el SE real y la "significancia" degenera a IC>0 — τ* puede elegirse por ruido en sesiones largas. Es EXACTAMENTE el H5 que #648 cerró en SkillMotores (skill_motores.rs:87 usa `min(n, N_EFECTIVO_EWMA)`): el banco #594 nunca recibió el arreglo. Verificado contra el árbol |
+| F1-A2 | genome.rs (tests) | MED | Test de simetría de curvas compara sólo longitudes, no valores; slots 13-16 del vector sin consumidor vivo |
+| F1-A3 | genome.rs (mutación vs bounds) | MED | Bandas de mutación ≠ bounds de validación: `dynamic_atr_min` muta en [1e-4,1e-2] pero bound-lo=1e-7; iceberg ×20 salto — el mutante puede violar el GENOME-GATE al cargar (conversa con el defecto abierto de Claude en la carga de genomas versionados) |
+| F1-A4 | genome.rs:2704 | MED | `normalize_sl_curve_friction_floor` se aplica en mutate (1772, 1992) pero NO en `from_vector` (sólo `enforce_curve_rr`): un genoma reconstruido desde vector puede traer SL bajo el piso de fricción. Verificado contra el árbol |
+| F1-A5 | genome.rs | LOW | `new_random` genera fuera de bounds en 4 genes |
+| F1-A6 | genome.rs | LOW | maker_only congelado (sin lector vivo) |
+| F1-A7 | genome.rs | LOW | kelly_horizon_curve puede exceder 1 |
+| F1-A8 | temporal_spectrum.rs | LOW | 6 interpoladores hardcodean la malla en vez de leer `SPECTRUM_SCALES_MS` |
+| F1-A9 | core (#601) | LOW | El Monte Carlo del censo usa k=4 pero el espectro operativo tiene 5 escalas reales |
+| F1-A10 | temporal_spectrum.rs | LOW | `habilidad_en` interpola con sesgo lineal en malla log |
+| F1-B1 | cramer_lundberg.rs:116 | MED | Techo de bisección `hi=100` fijo en unidades de R, pero R escala como 1/escala_de_y: con retornos de 0.1-0.5% un R legítimo de 500-5000 devuelve `None` (sin cota) pese a haber edge. Derivar `hi` de la muestra. Refuerza la conversión de unidades #651: R por-nocional vive exactamente en el régimen micro del sistema |
+| F1-B2 | drawdown.rs:112-120 | MED | Escalón de borde en `drawdown_maximo`: con r=0 (arranque) el umbral es el gen (0.95) y con el PRIMER riesgo medido cae de golpe a ~0.3 — tras reinicio con caída acumulada el freno dispara instantáneo. Interpolar con el conteo de muestras |
+| F1-B3 | cramer_lundberg.rs:96-102 | LOW | `var2` calculado y descartado — trabajo muerto O(n) |
+| F1-B4 | ruin.rs:67-71 | LOW | `clamp_ruin` propaga NaN intacto — devolver 0.0 para no-finito |
+| F1-B5 | capital_regime.rs:123-129 | LOW | `log_lerp` discontinuo en el borde `standard=0` (usos reales siempre >0) |
+| F1-B6 | hodge.rs:28-29 | LOW | Docstring anuncia gaussiana O(N³); la implementación ya es el teorema analítico O(n²) |
+| F1-C1 | spectral_tape.rs:740 | **HIGH** | `habilidad_volatilidad` autoriza con `skill_vs_climatology` (nulo débil: la media), no contra persistencia — `sse_persist` se calcula pero NUNCA gatea; un modelo que pierde contra el nulo correcto publica. Exigir skill>0 contra el máximo de ambos nulos |
+| F1-C2 | god-engine-core lib.rs:2782 (#654, DE QODER) | MED | El EWMA de D₀ actualiza en cada tick con `espectro_cacheada()` que refresca cada 16 llamadas ⇒ cada lectura cuenta 16× — memoria efectiva ~4 espectros, no 64. Dedup por lectura fresca |
+| F1-C3 | spectral_tape.rs:692-700 | MED | `sigma_at` interpola entre anclas sin gate de madurez — el filtro D-754b sólo vive en `sigmas_en_anclas`; una ancla inmadura contamina consultas intermedias |
+| F1-C4 | skill_motores.rs:157-184 (#648, DE QODER) | MED | Bloque nacido en trade se puntúa con snapshot viejo (correcto), pero su re-arme llega en el depth siguiente con votos computados a t_d — información dentro de la propia ventana del bloque entra al voto "de armado" e infla el IC. Puntuar con el voto del último depth ANTERIOR al nacimiento |
+| F1-C5 | multifractal.rs | LOW | Doc promete holgura −0.05 vs código −0.25 |
+| F1-C6 | multifractal.rs | LOW | Bordes q=±2 nunca contribuyen al ancho (diferencias centrales sólo) |
+| F1-C7 | multifractal.rs | LOW | `cajas=n/b` entera descarta la cola |
+
+### Verificados LIMPIOS (evidencia algebraica/simbólica)
+
+- Curvas ln(τ) del genoma: 144/144 genes alineados entre sí y con la malla.
+- Malla espectral ×4 ÚNICA en fusión y masa (sin hardcodeos divergentes
+  en los caminos auditados; los 6 de F1-A8 son lecturas, no duplicados).
+- Semillas y clamps de EWMAs (post-XLIV-3/PR#11).
+- Resolución efectiva (D-742/CL-32) viva en fusión y masa espectral.
+- Hodge: identidad de Dirichlet ‖∇φ‖²=(1/n)Σdiv² verificada simbólicamente.
+- random_matrix: Jacobi estable, tolerancia 64εn, effective_bets acotado
+  por Cauchy-Schwarz.
+- micro_weight C¹ y monótono (D-641).
+- Prequential estrictamente causal del tape; `clim_lambda` con semivida
+  ≈177 muestras (NO petrifica); RLS con cresta.
+- IC coseno de skill_motores con olvido exacto y umbral Fisher correcto.
+- Signos de Legendre y falsación D₀ (iid→0.9 vs cascada→0.2-0.8).
+
+### Cola de olas que abre F1 (prioridad del dueño de la línea A)
+
+1. **F1-C4 + F1-C2** (míos, tocan el consenso vivo): dedup D₀ y re-arme
+   prequential estricto — oráculo obligatorio.
+2. **F1-A1 + F1-C1** (HIGH de significancia/nulo): umbral N_efectivo en el
+   banco #594 y gate contra persistencia en el tape — oráculo obligatorio.
+3. **F1-A3 + F1-A4** (conversan con GENOME-GATE abierto de Claude):
+   bandas de mutación = bounds y piso de fricción en from_vector.
+4. **F1-B1 + F1-B2** (conversan con #651/#653): techo de bisección derivado
+   de la muestra y rampa del drawdown_maximo.
+5. LOWs: ola de limpieza agrupada.
+
+**F1 CERRADA**. Siguiente: F2 (física/cuántica, ~74 archivos, zona Qoder).

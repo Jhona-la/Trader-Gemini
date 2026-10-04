@@ -4279,3 +4279,28 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
   toquen señales/consenso/consumo — el reviewer cruza contra él.
 - Siguiente fase mía: F1 (matemática/estadística transversal, ~15
   archivos).
+
+## 2026-10-04 — Qoder: BARRIDO F1 CERRADA (matemática/estadística)
+
+- 3 auditores en paralelo (A genome+temporal_spectrum, B risk numérico,
+  C multifractal+spectral_tape+skill_motores): **23 hallazgos** con
+  etiqueta `F1:` en BARRIDO_EXHAUSTIVO_FASES.md — 2 HIGH, 8 MED, 13 LOW.
+  El barrido INVENTARÍA, las olas ARREGLAN: nada corregido aquí.
+- **HIGH para la cola de olas**: F1-A1 (umbral de significancia del banco
+  de τ* #594 usa n vitalicio — el arreglo H5 de #648 nunca llegó a
+  temporal_spectrum.rs:604; verificado) y F1-C1 (gate del predictor de
+  volatilidad contra climatology, no contra persistencia — sse_persist
+  calculado y muerto en spectral_tape.rs:740).
+- **Mea culpas propios**: F1-C2 (mi EWMA de D₀ #654 cuenta 16× el
+  espectro cacheado) y F1-C4 (mi re-arme de #648 puntúa bloques con votos
+  de t_d — violación prequential leve que infla el IC de los bloques
+  nacidos en trades). Van PRIMEROS en mi cola.
+- **Para Claude (línea ejecución)**: F1-A3/A4 conversan con su
+  GENOME-GATE abierto — bandas de mutación ≠ bounds (dynamic_atr_min,
+  iceberg) y `from_vector` sin el piso de fricción del SL.
+- **Para GLM/Codex (línea aprender)**: F1-C1/C3 son zona spectral_tape
+  (gate de nulo y madurez de anclas) — coordinar antes de tocar.
+- F1-B1/B2 (techo Lundberg fijo, escalón drawdown) conversan con
+  #651/#653 — derivar hi de la muestra y rampa por conteo.
+- Docs-only, T-1 cero (sin código tocado). Siguiente mía: F2
+  (física/cuántica, ~74 archivos).
