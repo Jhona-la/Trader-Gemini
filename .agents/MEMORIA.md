@@ -20,15 +20,15 @@
   - `cargo test -p risk-engine --lib`: 140/140 tests pasados.
   - `cargo test -p god-engine-core --lib`: 166/166 tests pasados.
 
-## 2026-10-05 — Qoder: OLA 60 EN VUELO (e-values Ville)
+## 2026-10-05 — Qoder: OLA 60 CERRADA — e-values Ville — ORÁCULO PASA 16/144
 
-- Rama qoder/ola60-evalues (661a/b, APILADA sobre la 59): EProceso de
-  Ville como significancia anytime-valid del banco de τ* y de los
-  pesos del consenso (Fisher subsumido; fin del diagnóstico #594).
-  Milenio #2 del inventario F2 implementado.
-- Verif: arena 108/108, signal 108/108, ws check 0. Oráculos de las
-  olas 59 y 60 en cola secuencial (el tip 60 certifica ambas).
-- Detalle: FORENSIC #661. Buzón: entrada Ola 60.
+- Rama qoder/ola60-evalues (661a/b/c): EProceso de Ville como
+  significancia ANYTIME-VALID del banco de τ* y de los pesos del
+  consenso. Fisher subsumido; fin del diagnóstico #594 («en ruido el
+  máximo de varias IC suele ser positivo»). Milenio #2 del inventario
+  F2 implementado. **ORÁCULO: PASA 16/144 = 11.1%** (2441.92 s sobre
+  762cfaae — certifica 59+60 juntos).
+- Detalle: FORENSIC #661. Buzón: entrada + cierre Ola 60.
 
 ## 2026-10-05 — Qoder: OLA 59 EN VUELO (relojes físicos + limpieza)
 

@@ -14326,7 +14326,6 @@ en cola desde entonces.
 tests #594 reescritos con helper que alimenta ambas vías),
 signal-engine 108/108, check workspace exit 0.
 
-**ORÁCULO T-1**: EN VUELO al cierre de esta redacción — se lanza al
-completarse el de la Ola 59 (misma cadena, CPU sin contienda). El
-veredicto del tip 60 certifica 59+60 juntos (la rama 60 contiene
-todos los commits de la 59).
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (2441.92 s, sobre 762cfaae —
+certifica la cadena 59+60 completa). Ningún gen certificado perdió
+sensibilidad con los relojes físicos, la limpieza Y los e-values.
