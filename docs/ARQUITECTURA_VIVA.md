@@ -120,11 +120,44 @@ conflicto) + MEMORIA → **push por refspec** `git push origin rama:main`
 worktree+rama. Si tocó un VETO ⇒ tocó su entrada del registro de vetos
 (en el mismo commit — regla GLM LXXXVI).
 
-## 6. Deuda viva (resumen; detalle en BARRIDO_EXHAUSTIVO_FASES.md)
+## 6. Deuda viva (verificada contra el árbol 2026-10-05, post Ω8/LXXXXII)
 
-Cola Qoder: F2-B2 (mapeo ln τ), F2-B4 (ζ continuo), F2-B8 (significancia
-ρ(τ)), F3-A3..A7 (sombras/knobs, stale-by-one, ATR√5, BTC auto-ref),
-F3-B2..B10, F3-C2..C13. Pendiente del consejo: S5 (DSR promociones) y
-Ω4 (calibración de vetos con contrafactual) — coordinar antes de tocar.
-Teorías milenio aprobadas pendientes: e-values anytime-valid (ataca la
-selección de τ*), W₁-L2 (condicional a evidencia IOC).
+**Qoder (cola propia, verificada por grep en este corte):**
+- F2-B2 `habilidad_en` mapea τ→escala por distancia ABSOLUTA en malla
+  base-4 (sesgo 2×; τ*=30 s clamp cae al nodo 17 s fuera de banda) —
+  cambiar a vecino más cercano en ln τ. temporal_spectrum.rs:~355.
+- F2-B3 W₁ medido a lag=64 UPDATES (0.6 s a 100 ev/s vs 64 s a 1 ev/s)
+  — lag en tiempo físico. temporal_spectrum.rs:1491.
+- F2-B4 `mass < 0.10` excluye escalas de la regresión ζ(p) con
+  pertenencia DURA (ζ/χ saltan al madurar escalas; χ modula pisos
+  vivos) — peso continuo de masa. temporal_spectrum.rs:1388.
+- F2-B8 el IC cruzado ρ(τ) del veto de grupo NO aplica significancia
+  (#599) — umbral autoajustado 2/√(n−3). espectral_multiactivo.rs.
+- F3-A3/A4 sombras con knobs muertos o defaults: `stochastic_noise_
+  variance` SIN escritor (la sombra SR lee 0.05 eterno), quantum_k_spring/
+  soliton_amplitude/nash_equilibrium_drift/conformal_epsilon sin escritor
+  productivo (verificado: 0 escritores en core) — publicar del genoma o
+  retirar la lectura. lib.rs:~1984-2102.
+- F3-A5 sombra trend_runner stale-by-one (lee hurst/cvpin/atr_pct del
+  tick previo). F3-A6 atr_5s ≈ ATR 1s (no √5). F3-A7 BTC/ETH
+  auto-referenciales en lead-lag (parcial: la 57 añadió historia por
+  coin, la auto-referencia del líder sigue).
+- F3-B2 `qo_624_fraccion_espectral` = todas las monedas / coin 0
+  (inflada ~N×) — orchestrator.rs:452. F3-B3 hawkes per-tick con
+  ema_ofi como delta. F3-B4 familia legacy can_open_at_muerto.
+- F3-C2 `execute_reduce_only_market` sin intención registrada ni
+  tipado (la SALIDA de dinero con la evidencia más débil). F3-C3
+  contabilidad bracket por TIPO de orden (fills ajenos contaminan
+  Kelly). F3-C5 dedup core↔bracket sin lado. F3-C4/C6 fee core
+  fabricado 2·(maker+taker) / fetch_open_positions tragado.
+- LOWs agrupados: F2-B7/B9-B13, F3-A8-A13, F3-B5-B10, F3-C7-C13 —
+  ola de limpieza mecánica.
+
+**Consejo (coordinar antes de tocar):**
+- S5/DSR: `anti_bias_governor.rs` SIN CONSUMIDOR (censo #605; el DSR
+  vivo del daemon es selection_stats umbral 0.95) — decidir cablear o
+  eliminar en el consejo. AGY lo tiene en su foco (Ω4).
+- Ω4 calibración de vetos con contrafactual en sombra (AGY).
+- e-values anytime-valid (milenio #2 — ataca la selección de τ* y la
+  multiplicidad del veto de grupo F2-B8). W₁-L2 (condicional a IOC).
+- GLM: colas F5/F6 (tubería de promoción + datos) — ver su buzón.
