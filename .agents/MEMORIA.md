@@ -1,5 +1,25 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-05 — Antigravity: OLA Ω9 CERRADA — S5 OOS Partition & DSR Multiplicity Control (Bailey & LdP) + Ω4 Micro Veto Audit
+
+- Rama `antigravity/quant-sr-omega-dsr-vetos`, commit atómico, merge a `main` y pusheado a `origin/main`.
+- **S5 CERRADO (VALIDACIÓN CAUSAL OUT-OF-SAMPLE Y CONTROL DE MULTIPLICIDAD DSR EN DARWIN)**:
+  - En `crates/god-engine-core/src/darwin.rs` (`evolve_online`): erradicada la evaluación y promoción sobre la ventana completa in-sample (overfitting). Implementada partición cronológica causal estricta: 50% inicial de ticks para entrenamiento GA in-sample (`train_stream`), 50% posterior no visto para validación Out-Of-Sample ciega (`oos_stream`).
+  - Tanto el candidato campeón como el baseline activo se evalúan sobre `oos_stream`. La compuerta de promoción exige que el candidato supere al baseline en out-of-sample (`meets_promotion_margin(candidate_oos_fitness, baseline_oos_fitness)`).
+  - Integrado control de multiplicidad DSR (Bailey & López de Prado 2014, ec. 5) con $N = \text{pop\_size} \times \text{generations} = 100$ pruebas: evaluado el benchmark de Gumbel $E[\max SR] \approx \sigma_{\text{SR}} \cdot [(1-\gamma)\Phi^{-1}(1-1/N) + \gamma \Phi^{-1}(1-1/(Ne))]$, garantizando que el fitness promovido no sea un falso positivo por azar.
+  - Test unitario dedicado `s5_oos_partition_temporal_contract` verificando causalidad temporal estricta $\max(t_{\text{train}}) \le \min(t_{\text{oos}})$, cotas de Gumbel y compuerta OOS.
+- **CENTRALIZACIÓN ARQUITECTÓNICA DE SELECCIÓN ESTADÍSTICA (DRY)**:
+  - Creado `crates/risk-engine/src/selection_stats.rs` y exportado en `crates/risk-engine/src/lib.rs`. Permite consumo unificado por `god-engine-core` y `evolution-engine` sin dependencias circulares.
+  - Implementación analítica canónica: `compute_moments` (asimetría $\gamma_3$, curtosis $\gamma_4$), `sharpe`, `psr`, `expected_max_sharpe`, `dsr` y aproximación racional de Acklam para $\Phi^{-1}$ (error relativo $< 1.15 \times 10^{-9}$).
+  - 9/9 tests unitarios verdes en `risk-engine` (incluyendo regresión histórica D-741).
+- **Ω4 CERRADO (AUDITORÍA DE VETOS MICRO $13 USD)**:
+  - Verificada la compatibilidad matemática de `correlation_guard.rs` y `veto_registry.rs` con cuentas micro: confirmada la admisión de transacciones con $\rho < 0$ (coberturas/hedges) sin veto espurio (varianza reducida $k + k(k-1)\rho < k$).
+  - 140/140 tests unitarios verdes en `risk-engine`.
+- **VERIFICACIÓN COMPLETA**:
+  - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+  - `cargo test -p risk-engine --lib`: 140/140 tests pasados.
+  - `cargo test -p god-engine-core --lib`: 166/166 tests pasados.
+
 ## 2026-10-05 — Qoder: OLA 60 EN VUELO (e-values Ville)
 
 - Rama qoder/ola60-evalues (661a/b, APILADA sobre la 59): EProceso de
