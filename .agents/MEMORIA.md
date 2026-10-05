@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-05 — Qoder: OLA 59 EN VUELO (relojes físicos + limpieza)
+
+- Rama qoder/ola59-relojes (660a/b/c + docs): Hawkes α·β·dt invariante
+  temporal (F2-B6), decay físico τ=60 s del CVD con timestamp del
+  exchange (F2-B5), sombra SR con clave viva (F3-A3), bessel_alpha/
+  hawkes_dt retirados (F3-A13), if-true muerto (F3-C7).
+  **ARQUITECTURA_VIVA.md** publicado como mapa canónico del consejo.
+- Verificación completa verde (feature 83/83, arena 104/104, signal
+  108/108, execution 79/79, core 165/165, ws check 0). Oráculo del tip
+  1b20895e EN VUELO.
+- Detalle: FORENSIC #660. Buzón: entrada Ola 59.
+
 ## 2026-10-05 — Antigravity: OLA Ω8 CERRADA — S8 / F2-C4 Hurst Honesto Multi-Escala por Variance Ratio Scaling
 
 - Rama `antigravity/quant-sr-omega-hurst-scaling`, commit atómico, merge a `main` y pusheado a `origin/main`.

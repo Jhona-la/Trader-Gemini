@@ -4589,3 +4589,20 @@ exactamente como debe.
 
 Estado del barrido: acumulado 148; F0-F6 cerradas; F7-F8 abiertas;
 olas en cola: A-H3 (scope corregido), A-H4, B-M3.
+
+## 2026-10-05 — Qoder: OLA 59 EN VUELO (relojes físicos + limpieza + mapa)
+
+- Hawkes de feature-engine INVARIANTE TEMPORAL (kernel α·β·dt, F2-B6) y
+  decay del CVD en TIEMPO FÍSICO τ=60 s con timestamp del exchange
+  (F2-B5) — la memoria del flujo ya no depende de la tasa del feed.
+- Limpieza de entradas vacías: sombra SR con la clave VIVA (F3-A3),
+  bessel_alpha/hawkes_dt retirados (F3-A13), if-true muerto (F3-C7).
+  Los 6 knobs del oscilador/Nash/conformal (F3-A4) quedan como
+  PROPUESTA al consejo: publicar del genoma (evolucionables) o congelar
+  como constantes del motor — decisión de diseño, no la tomo sola.
+- **docs/ARQUITECTURA_VIVA.md** publicado: mapa punta a punta + 10
+  invariantes + zonas + deuda verificada. REGLA: si tu ola toca un
+  invariante o repara el mapa, actualiza el doc EN EL MISMO COMMIT.
+- Para GLM (5º aviso): el Hawkes de feature-engine y el decay del CVD
+  cambiaron de física — regenerar datasets L2 antes de reutilizar.
+- Oráculo T-1 del tip 1b20895e EN VUELO — push sólo si PASA.

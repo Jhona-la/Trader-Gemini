@@ -14242,3 +14242,49 @@ suites ok 0 fallos, feature-engine 82/82.
 
 **ORÁCULO T-1: PASA 16/144 = 11.1%** (3264.55 s, sobre e091b61a) —
 ≥ trinquete 11.0%.
+
+## #660 — Ola 59 (Qoder, 2026-10-05): RELOJES FÍSICOS + LIMPIEZA + ARQUITECTURA_VIVA
+
+Rama qoder/ola59-relojes (worktree .ola59, base 89cba430/Ω8), commits
+660a/b/c + docs. Cuatro defectos F2/F3 + el documento canónico del
+consejo.
+
+- **F2-B6 / #660a** — Hawkes de feature-engine con INVARIANZA TEMPORAL:
+  el impulso del evento se integra sobre el Δt que representa (kernel
+  α·β·dt del proceso): con feeds densos cada evento aporta
+  proporcionalmente menos y λ deja de inflarse con la TASA de eventos
+  del feed (antes λ ∝ eventos/s — no invariante ante re-escala
+  temporal). Retrógrados (ts < last) NO excitan (antes excitaban con
+  historia desalineada — el test OPEN que lo documentaba se reescribe a
+  la física corregida). Piso de 1 ms (#904): los intra-milisegundo
+  conservan su quantum.
+- **F2-B5 / #660b** — DECAY FÍSICO del flujo agregado (CVD/OBI):
+  factor = exp(−dt/τ) con τ=60 s y reloj monotónico por coin
+  (`last_agg_trade_ms` atómico). Antes: 0.995 POR EVENTO — la memoria
+  efectiva variaba ×100 entre feeds de 1 y 100 ev/s, rompiendo la
+  comparabilidad entre monedas (doctrina ADR-0014: tiempo continuo).
+  Requirió: `timestamp_ms` (campo "T" del exchange) parseado en
+  `AggTradeEvent` (extract_u64_from, ausente ⇒ 0 sin reloj) y cableado
+  en ambos call-sites (core + ws del host). Contrato `qo_660_decay_
+  fisico_agg`: 60 s ⇒ e^{-1} EXACTO; mismo ms no decae; retrógrado no
+  altera el reloj.
+- **F3-A3 / #660c** — la sombra SR lee la clave VIVA
+  (`microstructure_noise_variance`, escrita con atr_pct·0.1 al tick):
+  antes leía `stochastic_noise_variance` con CERO escritores en todo el
+  workspace — la sombra del consenso corría con 0.05 eterno, sorda a la
+  volatilidad real.
+- **F3-A13 / #660c** — `bessel_alpha` (publicación sin lector) y
+  `hawkes_dt` (literal 0.05 publicado cada tick que el solitón leía
+  como fallback) RETIRADOS. F3-C7: `if true {}` muerto borrado del
+  executor.
+- **ARQUITECTURA_VIVA.md** — documento canónico de sincronización del
+  consejo: pipeline punta a punta con archivos ancla, 10 invariantes
+  duros con ola de origen, zonas por agente, protocolo de ola completo
+  y deuda viva VERIFICADA por grep (cada entrada con file:line).
+
+**Verificación**: feature-engine 83/83 (hawkes 5/5 incluidos), arena
+104/104 (contrato qo_660), data-pipeline 63/63, signal 108/108,
+execution 79/79, core 165/165 + suites 0 fallos; ws check exit 0.
+
+**ORÁCULO T-1**: EN VUELO al cierre de esta redacción (release,
+--test-threads=1, --nocapture, sobre 1b20895e) — veredicto en el push.
