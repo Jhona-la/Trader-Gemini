@@ -501,3 +501,30 @@ coordinar antes de invadir).
 - Métricas ex-post: sin divisiones por cero nuevas (IEEE intencional, tests fijan contornos).
 - label_evidence: barreras estrictamente futuras, guards completos.
 - La familia honesta YA estaba validada (LXXXIX); F5-B re-confirma el replay que la alimenta.
+
+---
+
+## F6 — CERRADA (GLM, LXXXXII, 2026-10-05): data-pipeline + data-ingest + storage-engine + metacortex-engine
+
+50 archivos src, 2 agentes estilo-F + check de los 4 crates. **Acumulado: 125 → 148 hallazgos.**
+
+### HIGH (6)
+- **F6-A-H1** La "aduana de datos" (validation.rs, política F2.1 con contadores F6) está DESCONECTADA de producción — el WS vivo usa quantum_engine::parsers; los contadores de rechazo viven siempre a 0 (telemetría fantasma).
+- **F6-A-H2** 17/29 archivos de la capa de datos son CÓDIGO MUERTO (toda la persistencia: state_db/persistence/storage/lakehouse_mmap/teleonomia + ws_client/parser/validation desconectados). Decisión de poda = consejo.
+- **F6-A-H3** ⚠️ **PARIDAD ROTA EN DIMS MACRO DEL REPLAY**: booktick_replay crea OmniState::new() y JAMÁS lo actualiza → las dims macro del replay son CONSTANTES (dxy=104, sp500=5100...) mientras trainer=as-of-estricto y vivo=t-1-poller. Tres caminos, tres valores. OLA de reparación (toca replay → re-certificar).
+- **F6-A-H4** ⚠️ **9 DIMS PERPETUAMENTE 0.0 EN VIVO**: los slots cross-exchange (bybit/okx/...) sólo los escriben pollers muertos; get_features normaliza contra ref_p=1.0 → ceros silenciosos. El modelo infiere con dims muertas (coherente con lo que el trainer ve — paridad preservada por accidente). OLA: o se alimentan o se declaran muertas por contrato.
+- **F6-B-H1** ledger.rs: read_ownership consulta un esquema que su propio escritor destruye (ANOTADO).
+- **F6-B-H2** ledger.rs: pérdida silenciosa de eventos de posesión (try_send ignorado, qty=0 descarta el cierre — posesiones fantasma) (ANOTADO).
+
+### MED (11, resumen)
+- A-M1 TRES políticas de validación conviven en el mismo crate (rechaza/sanea-a-0/fabrica); A-M2 historical fabrica microestructura sin marcar origen (ANOTADO); A-M3 lakehouse_mmap corrupción post-crash indetectable; A-M4 storage.rs checksum bypassable con checksum=0; A-M5 macro_data escritura no atómica; A-M6 macro_last_success_ms sin lector (staleness invisible).
+- B-M3 ⚠️ **REPLAY DE OBSERVACIONES AL REINICIO**: el bus mmap persiste head entre corridas y online_daemon re-ingiere hasta 10k frames ya aprendidos por corrida → duplicación sistemática para el Shadow Forest (contaminación de dataset, no anticipación). OLA candidata.
+- B-M5 online_learning: skew features cierre-vs-entrada (declarado diagnóstico D-693, amortiguado); B-M6 epigenoma_store colisión de hash sin comparar clave.
+
+### LOW (12) — ver buzón LXXXXII.
+### Verificaciones LIMPIAS
+- **No-anticipación: SIN LEAKS en los caminos vivos** (trainer as-of estricto, poller corte t-1, ranker trailing-24h, universos fijos en backtest) — el problema de F6 es FALTA de información (H3/H4), no anticipación.
+- Consejo de seniors: VIVO y cableado al camino de decisión (deliberar_traced + record_outcome + tracker con máscara anti-rubber-stamp).
+- online_learner: causal (innovación contra predicción congelada a la entrada).
+- SQLite (evolution_ledger VIVO en escritura): atómico por transacción.
+- **Metacortex partido en dos**: el cerebro deliberativo (consejo/learner/trauma) VIVO; el organismo auto-modificante (sandbox/cazador/epigenoma/templates/hot-swap) es DECORACIÓN sin un caller productivo — decisión del consejo (poda o cableado vía ADR-0010-L2-style).
