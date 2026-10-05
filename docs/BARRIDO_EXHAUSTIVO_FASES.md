@@ -543,3 +543,29 @@ acotada: no invalida nada de lo promovido.
 - online_learner: causal (innovación contra predicción congelada a la entrada).
 - SQLite (evolution_ledger VIVO en escritura): atómico por transacción.
 - **Metacortex partido en dos**: el cerebro deliberativo (consejo/learner/trauma) VIVO; el organismo auto-modificante (sandbox/cazador/epigenoma/templates/hot-swap) es DECORACIÓN sin un caller productivo — decisión del consejo (poda o cableado vía ADR-0010-L2-style).
+
+---
+
+## F7 — CERRADA (GLM, LXXXXVII, 2026-10-05): audit-engine + telemetry-server + os-guardian + crates pequeños
+
+36 archivos src, 2 agentes estilo-F, check 9/9 crates verde. **Acumulado: 148 → 171 hallazgos.**
+
+### HIGH (6)
+- **F7-A-H1** zero_copy_bus: anillo de 64MB write-only (emit sin lector; flusher simulado; RAM clavada quemándose en círculo).
+- **F7-A-H2** drift_auditor NO es el drift EWMA+BOCPD de la doctrina — es centinela contable con shadow SINTÉTICO (0.95·real); el BOCPD real vive en god-engine-core y no está conectado al audit-engine.
+- **F7-A-H3** FlightRecorder muerto (siempre None) + crate flight-recorder huérfano completo (ningún Cargo.toml lo declara) con duplicado funcional.
+- **F7-B-H1** (mismo que A-H3, verificado independiente).
+- **F7-B-H2** TRES GLOBAL_TELEMETRY distintos (os-guardian/telemetry-server/storage) — colisión nominal de wiring; el de os-guardian drena-y-descarta 1M slots.
+- **F7-B-H3** anomaly_detector ESTRUCTURALMENTE incapaz de disparar en Windows (ebpf_core devuelve constantes; reglas umbralizadas contra datos que jamás varían).
+
+### MED (9): eBPF 100% marketing (cero bytes de eBPF real; Windows fabrica PMU con ruido _rdtsc — números que PARECEN mediciones); crash_dump sin cablear ("volcado de emergencia" jamás invocado); telemetry_log! degradado a println! bloqueante en el bin principal; audit-engine 4 módulos sin cablear (SPRT mal rotulado); forensics miente sobre disponibilidad; forensic_auditor descarta INSERT en silencio + ruta relativa al CWD; profiler asume 3GHz硬; telemetry 4 sistemas paralelos con 1 vivo (mmap_bus de storage); tests.rs huérfanos nunca compilados (omniscient/phase-runner).
+
+### LOW (10): ver buzón.
+
+### Verificaciones LIMPIAS
+- omniscient-registry: MUY VIVO (el registry central de verdad, hot-path).
+- os-guardian núcleo Win32 real: VirtualLock/JobObject/memory-auditor con panic latch — 60% músculo real.
+- telegram_bot: credenciales SOLO de env vars (sin hardcodeo; .env no trackeado).
+- No-anticipación: drift/trajectory auditors sin lookahead.
+- graph-architecture/graph-4d: herramientas dev legítimas (Panóptico con latencias reales).
+- **Síntesis de la decoración milenio**: flight-recorder (crate), zero_latency_telemetry, ebpf/pmu/observability_plane (teatro de instrumentación Linux trasplantado a Windows como mock), crash_dump, dns_optimizer, tests huérfanos.
