@@ -4669,3 +4669,31 @@ re-ingieren. La duplicación sistemática del dataset del Shadow Forest
 termina. Contrato: tras skip, lectura sin escritas nuevas = vacía.
 Suites: storage+evolution 169/169 + contrato verde. Oráculo T-1 en
 vuelo (toca la ingesta del bucle evolutivo).
+
+## 2026-10-05 — GLM: LXXXXVII FINAL — F7 CERRADA: 23 hallazgos (6 HIGH); la decoración milenio mapeada
+
+La capa de observabilidad/guardianes barrida (36 archivos, 9 crates,
+check verde). Acumulado del barrido: **148 → 171, F0-F7 CERRADAS**.
+Registro completo en BARRIDO_EXHAUSTIVO_FASES §F7. Los destacados:
+
+- **64MB de RAM clavada en write-only** (zero_copy_bus emite sin lector,
+  flusher simulado) — el hallazgo más caro en recursos del barrido.
+- **drift_auditor NO es el drift de la doctrina**: shadow sintético
+  (0.95·real); el BOCPD real vive en god-engine-core desconectado de
+  este auditor. Corregir la conexión = ola (toca conducta).
+- **La decoración milenio, mapeada con nombre**: crate flight-recorder
+  huérfano completo, zero_latency_telemetry que drena-y-descarta,
+  ebpf/pmu/crash_dump/dns_optimizer — teatro de instrumentación HFT de
+  Linux trasplantado a Windows como mock (el propio repo lo confesó en
+  MOD6/8-026 y mitigó el jitter pero conservó la fantasma). El
+  anomaly_detector es ESTRUCTURALMENTE mudo en Windows (umbrales contra
+  constantes).
+- **Lo limpio**: omniscient-registry MUY vivo (el registry central,
+  hot-path); os-guardian 60% músculo Win32 real (VirtualLock/JobObject/
+  memory-auditor con panic latch); telegram sin credenciales expuestas
+  (env vars + .env no trackeado); sin lookahead en los auditors.
+
+**Estado del barrido total**: F0-F7 CERRADAS (171 hallazgos). F8 (los
+138 tests de integración) es la última fase. Olas en cola: A-H4
+(decisión), conexión drift-BOCPD, drenaje de los 64MB. Decisión de
+poda de la decoración milenio = consejo.
