@@ -512,6 +512,21 @@ coordinar antes de invadir).
 - **F6-A-H1** La "aduana de datos" (validation.rs, política F2.1 con contadores F6) está DESCONECTADA de producción — el WS vivo usa quantum_engine::parsers; los contadores de rechazo viven siempre a 0 (telemetría fantasma).
 - **F6-A-H2** 17/29 archivos de la capa de datos son CÓDIGO MUERTO (toda la persistencia: state_db/persistence/storage/lakehouse_mmap/teleonomia + ws_client/parser/validation desconectados). Decisión de poda = consejo.
 - **F6-A-H3** ⚠️ **CORREGIDO por el propio auditor (LXXXXIII, supersession)**: la redacción original ("dims macro del replay son CONSTANTES") era IMPRECISA — las **6 series FRED** (sp500/nasdaq/vix/us10y/dxy/oil) SÍ se alimentan en replay con corte t-1 causal desde la ola CX (booktick_replay.rs:373-400, cambio de día civil → valor del día previo). **La ruptura real, enumerada**: de las 54 features de `get_features()`, el replay congela en defaults las que el VIVO actualiza vía pollers vivos — `run_macro_rest_poller` escribe **gold** (553) y binance_spot como ref (530); `run_sentiment_onchain_poller` escribe **fear_greed** (631), **funding por símbolo** (647, agg_funding_rate + registry `funding_rate`), **OI por símbolo** (694), LS/taker (784/807 zona). En replay: gold=2300 default, fear_greed=50 default, funding/OI/LS/taker = defaults, frente al vivo que las refresca. **SCOPE de la ola**: alimentar en replay las que tengan fuente histórica (funding/OI históricos existen en Binance Vision) o declarar constantes-por-contrato las que no. NOTA: `votes_export` pasa omni=None — el dataset L2 corrió con las 6 FRED neutras (sin impacto en sus conclusiones: los votos son telemetría de motores, no el vector 54D; documentado).
+
+**RESUELTO (LXXXXIV, verificación profunda)**: la exposición de A-H3 es
+MUCHO menor que lo temido — **los 7 bosques promovidos (48D) están
+SEGUROS**: su bloque macro son las FRED-4 (omni[21-24] → dims 44-48),
+cargadas con valores reales as-of t-1 en el trainer por las MISMAS
+series que el feed vivo publica (contrato ml_inference.rs:380-385);
+gold/fear_greed/funding/OI/LS/taker NO son features del bosque. La
+exposición restante es el **tensor 54D de DarkAlpha** (dims 46/48/50-53:
+trainer omni=0 → gold=0.0/fear_greed=1.0-fallback; replay=defaults;
+vivo=variable con pollers) — una NN del ensamble de BTC → **deuda
+documentada DarkAlpha-54D** (realinear exige decisión de re-entrenar la
+NN, no una ola mecónica). Bonus: `fr_elasticity` es característica
+muerta (escrita por update_macro_features, jamás leída — train_forest
+lo documenta en sus líneas 60-64). El hallazgo pasa de OLA a deuda
+acotada: no invalida nada de lo promovido.
 - **F6-A-H4** ⚠️ **9 DIMS PERPETUAMENTE 0.0 EN VIVO**: los slots cross-exchange (bybit/okx/...) sólo los escriben pollers muertos; get_features normaliza contra ref_p=1.0 → ceros silenciosos. El modelo infiere con dims muertas (coherente con lo que el trainer ve — paridad preservada por accidente). OLA: o se alimentan o se declaran muertas por contrato.
 - **F6-B-H1** ledger.rs: read_ownership consulta un esquema que su propio escritor destruye (ANOTADO).
 - **F6-B-H2** ledger.rs: pérdida silenciosa de eventos de posesión (try_send ignorado, qty=0 descarta el cierre — posesiones fantasma) (ANOTADO).
