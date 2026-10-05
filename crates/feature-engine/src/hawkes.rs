@@ -43,23 +43,40 @@ impl HawkesProcessEngine {
             return (self.intensity_bull, self.intensity_bear, ratio);
         }
 
-        if self.last_update_ms > 0 && timestamp_ms > self.last_update_ms {
-            let dt_sec = ((timestamp_ms - self.last_update_ms) as f64 / 1000.0).min(300.0);
+        // #660 (F2-B6): evento RETRÓGRADO (ts < last) — no excita: antes
+        // saltaba el decaimiento pero seguía excitando con historia
+        // desalineada. Reloj monotónico.
+        if self.last_update_ms > 0 && timestamp_ms < self.last_update_ms {
+            let total = self.intensity_bull + self.intensity_bear;
+            let ratio = if total > 0.0 {
+                (self.intensity_bull - self.intensity_bear) / total
+            } else {
+                0.0
+            };
+            return (self.intensity_bull, self.intensity_bear, ratio);
+        }
+        let dt_sec = if self.last_update_ms > 0 {
+            ((timestamp_ms - self.last_update_ms) as f64 / 1000.0).min(300.0)
+        } else {
+            0.0
+        };
+        if dt_sec > 0.0 {
             let decay = (-self.beta * dt_sec).exp();
-
             // Decaimiento exponencial del estado anterior acotado a tasa base mu
             self.intensity_bull = (self.mu + (self.intensity_bull - self.mu) * decay).max(self.mu);
             self.intensity_bear = (self.mu + (self.intensity_bear - self.mu) * decay).max(self.mu);
-            self.last_update_ms = timestamp_ms;
-        } else if self.last_update_ms == 0 {
-            self.last_update_ms = timestamp_ms;
         }
-        // FIX #904: Ticks intra-milisegundo (timestamp_ms == last_update_ms) comparten el mismo instante (dt=0),
-        // por lo que no se aplica decaimiento temporal y solo se acumulan los impulsos de auto-excitación.
+        self.last_update_ms = timestamp_ms;
 
-        // Magnitud de excitación escalada por volumen con protecciones numéricas
+        // #660 (F2-B6) — INVARIANZA TEMPORAL: el impulso del evento se
+        // integra sobre el Δt que representa (kernel α·β·dt del proceso
+        // Hawkes): con feeds densos cada evento aporta proporcionalmente
+        // menos y λ deja de inflarse con la TASA de eventos del feed.
+        // Piso de 1 ms (#904): los ticks intra-milisegundo conservan su
+        // quantum de excitación.
+        let dt_efectivo = dt_sec.max(0.001);
         let vol_ratio = (volume_usd.max(0.0) / volume_norm.max(1e-8)).min(100.0);
-        let impulse = self.alpha * (1.0 + vol_ratio.ln_1p().min(3.0));
+        let impulse = self.alpha * self.beta * dt_efectivo * (1.0 + vol_ratio.ln_1p().min(3.0));
 
         if delta_ofi > 0.0 {
             self.intensity_bull += impulse * delta_ofi.abs();
