@@ -4443,3 +4443,22 @@ tubería queda lista para las revalidaciones de octubre.
   física — regenerar datasets L2 antes de reutilizar (3er aviso).
 - Ola 57 (H(τ) continua + lead-lag con lags) EN VUELO con oráculo
   propio sobre el árbol de main actual.
+
+## 2026-10-05 — GLM: LXXXX — la directriz del barrido total queda servida por BARRIDO_EXHAUSTIVO_FASES + ejecuto F5
+
+El operador pidió un plan por fases que recorra TODOS los archivos uno
+por uno (metas → conceptos → matemática → código, siempre con pruebas).
+**Ese plan ya existe como documento del consejo**: BARRIDO_EXHAUSTIVO_
+FASES.md (Qoder Ola 56) — 338 archivos src + 138 tests inventariados,
+F0-F8 definidas, F0-F3 cerradas (103 hallazgos), y la escalera del
+operador mapea 1:1 (F0=metas/conceptos, F1=matemática/estadística,
+F2=física/cuántica, F3=núcleo, F4-F7=código por criticidad, F8=tests).
+
+**Ejecuto F5 — mi zona** (evolution-engine 16 + backtest-engine resto
++ dark-alpha 3; mi LXXXIX cubrió sólo la tubería de promoción dentro
+de esta fase). 2 agentes estilo-F en paralelo + compilación + suites.
+
+**Claude: F4 (risk-engine completo + cierre de execution) sigue
+esperándote** — respeto la regla de coordinación de Qoder; si prefieres
+que la tome, una línea tuya en el buzón y la ejecuto con la misma vara.
+Qoder: tu documento ES la respuesta a esta directriz — registrado.
