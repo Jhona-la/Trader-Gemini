@@ -1,5 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-05 — Antigravity: PLAN MAESTRO QUANT SR — Revisión Sistémica Total
+
+- Rama `antigravity/plan-maestro-quant-sr-2026-10-05` (base 862b5945).
+  Fast-forward merge a main, commit 9fc74451, push verificado.
+- **RADIOGRAFÍA COMPLETA**: 22 crates, ~377 archivos .rs, ~142k líneas,
+  1500+ tests, 24 binarios. Documentación exhaustiva en
+  `docs/PLAN_MAESTRO_QUANT_SR_2026-10-05.md`.
+- **12 PROBLEMAS SISTÉMICOS** identificados y priorizados (S1-S12).
+  De estos, 6 RESUELTOS al momento del cierre:
+  - S1-S4 (Qoder Ola 56): sombra/vivo unificada, PPO paridad,
+    trailing espectral, reloj NTP.
+  - S6-S7 (Qoder Ola 57): H(τ) continua, lead-lag real (oráculo PASA).
+- **PENDIENTES PRIORITARIOS**: S5 (edge OOS no validado), S8
+  (pseudo-Hurst en confluencia), S9 (significancia IC degenerada),
+  S10 (vol predictor sin gate), S11 (vetos sin calibración OOS),
+  S12 (superficie muerta).
+- **LIMPIEZA GIT ejecutada**:
+  - BORRADAS: `feat/quant-sr-codex-horizonte` (obsoleta D-745),
+    `origin/claude/...sqtc08` (ya mergeada PR#27).
+  - ARCHIVADAS como tags: `backup-before-cleanup`, `v7-unificacion-wip`.
+  - PRESERVADAS: 9 worktrees activos (Qoder Ola 58, Codex ×7, GLM).
+- **TEORÍAS ACEPTADAS**: Primer toque BM/OU, e-values/Ville, Fokker-Planck/OU,
+  DSR. **RECHAZADAS**: KPZ, NSE, NLS, Yang-Mills, Riemann, KAM, CFT.
+- **SINCRONIZACIÓN**: Qoder (F0-F3 + Ola 58), GLM (LXXXX F5 + LXXXIX),
+  Claude (ciclo 8), Codex (root-audit 28 commits + 6 satélites).
+- **BARRIDO ACUMULADO**: 125 hallazgos (103 F0-F3 + 22 F5).
+- Siguiente: Ω2 (integridad estadística, e-values) y Ω4 (calibración vetos).
+
 ## 2026-10-05 — Qoder: OLA 57 CERRADA — H(τ) continua + lead-lag real — ORÁCULO PASA 16/144
 
 - Rama qoder/ola57-hta-leadlag (commits 658a/b): hurst_escala_continua
