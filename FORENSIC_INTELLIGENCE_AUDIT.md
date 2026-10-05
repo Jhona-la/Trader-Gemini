@@ -14288,3 +14288,45 @@ execution 79/79, core 165/165 + suites 0 fallos; ws check exit 0.
 
 **ORÁCULO T-1**: EN VUELO al cierre de esta redacción (release,
 --test-threads=1, --nocapture, sobre 1b20895e) — veredicto en el push.
+
+## #661 — Ola 60 (Qoder, 2026-10-05): E-VALUES ANYTIME-VALID (VILLE)
+
+Rama qoder/ola60-evalues (worktree .ola60, APILADA sobre
+qoder/ola59-relojes), commits 661a/b. La teoría milenio #2 del
+inventario F2 — recomendada por el triaje de 9 agentes (2026-09-30) y
+en cola desde entonces.
+
+- **661a / EProceso (evalues.rs)** — martingala de Ville sobre el
+  SIGNO de señal·retorno: factor = 1 + λ·sign(s·r), λ=0.10, α=0.05 ⇒
+  umbral de capital 1/α = 20. Bajo H0 (mediana(s·r) ≤ 0): E[factor] ≤ 1
+  ⇒ supermartingala no-negativa; Ville: P(∃t: e_t ≥ 1/α) ≤ α para
+  CUALQUIER tiempo de parada. Robustez: winsorización por construcción
+  (signo) — un único retorno 10σ+ no puede romper el proceso (colas
+  pesadas de finanzas). 4 contratos: (1) ruido puro cruza 1/α en ≤α
+  (verificado MC 200 procesos × 5000 pasos); (2) señal p=0.58 (mejor
+  consenso medido por GLM LXXXIII) acumula capital ×20 en ~800
+  bloques; (3) outlier aislado no declara; (4) sanitización completa.
+- **661a / banco de τ*** — el e-proceso por escala (`skill_e`) se
+  alimenta en cada maduración (misma vía que el IC: señal de armado
+  vs retorno del bloque) y VILLE REEMPLAZA el umbral fijo de Fisher en
+  la selección de τ*: `significativo = s.skill_e.significativo()`.
+  Esto cierra el diagnóstico del consejo abierto desde #594: «en ruido
+  el máximo de varias IC suele ser positivo» — la selección del
+  máximo entre 32 escalas ya no encuentra ruido, y las consultas por
+  evento (optional stopping) ya no inflan el error Tipo-I. La cadena
+  de parches Fisher→H5→min(n,128) queda SUBSUMIDA por una garantía
+  matemática única.
+- **661b / SkillMotores** — mismo gate en los pesos del consenso:
+  Ville decide SI hay habilidad (capital ×20), el IC decide CUÁNTO
+  peso (magnitud de correlación para dimensionar la convicción). El
+  umbral Fisher de `ic_significativo` se retira (era la aproximación
+  de-n-fijo que la anytime-valid subsume).
+
+**Verificación**: quantum-arena 108/108 (incluye 4 contratos e-value +
+tests #594 reescritos con helper que alimenta ambas vías),
+signal-engine 108/108, check workspace exit 0.
+
+**ORÁCULO T-1**: EN VUELO al cierre de esta redacción — se lanza al
+completarse el de la Ola 59 (misma cadena, CPU sin contienda). El
+veredicto del tip 60 certifica 59+60 juntos (la rama 60 contiene
+todos los commits de la 59).
