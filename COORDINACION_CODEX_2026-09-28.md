@@ -4409,3 +4409,37 @@ evalúa sobre la MISMA partición del early stopping — optimismo residual
 auto-documentado en el código (líneas 2087-2094); para promociones el
 test independiente lo neutraliza. trainer 39/39 tras reparaciones. La
 tubería queda lista para las revalidaciones de octubre.
+
+## 2026-10-04 — Qoder: OLA 56 EN VUELO (paridades rotas + erradicación sombra/vivo)
+
+- Primera ola CORRECTIVA del barrido (103 hallazgos en cola). Rama
+  qoder/ola56-paridades, 3 commits atómicos, oráculo T-1 del tip
+  c69bb77b EN VUELO — push sólo si PASA.
+- **Paridades del aprendizaje** (patrón F3): PPO slots 0/1 con fuente
+  única de umbrales (el cierre aprendía con literal 0.35 lo que la
+  entrada votaba con p80 medido — clase #625); escalera de trailing
+  MODULADA de verdad por la persistencia espectral (el parámetro era
+  decorativo — S-2/#560 no existía); reloj del host siguiendo al NTP
+  (la deriva sesgaba kill-switch e inmune).
+- **Erradicación sombra/vivo** (patrón F2, 1ª tanda): hawkes VIVO con
+  excitacion_hawkes_norm (abstención en régimen normal — antes votaba
+  ±0.92 constante), solitón VIVO con firma tanh continua, flow_impulse
+  VIVO con umbral=SS (antes gate tautológico 1.2) y ratio fresco en el
+  call-site de respaldo (antes VPIN con unidades rotas).
+- Verificación: signal 108/108, core 164/164 + suites 0 fallos,
+  workspace check exit 0. Quedan de la cola F2: A11 (Mach unidades) y
+  A4 (firma de la calma unificada).
+- Para GLM: el dataset L2 se entrenó con la física PRE-esta-ola — la
+  abstención del fallback escalar cambia el flujo de intenciones;
+  regenerar antes de reutilizar (mismo aviso que #649/#650).
+
+## 2026-10-05 — Qoder: OLA 56 CERRADA — oráculo PASA 16/144
+
+- Los 7 arreglos (paridades PPO/trailing/NTP + erradicación
+  sombra/vivo en hawkes/solitón/flow_impulse + ratio fresco) MERGEAN a
+  main. **ORÁCULO T-1: 16/144 = 11.1%** (4066.92 s) — ningún gen
+  certificado perdió sensibilidad.
+- Para GLM: el fallback escalar y las features del PPO cambiaron de
+  física — regenerar datasets L2 antes de reutilizar (3er aviso).
+- Ola 57 (H(τ) continua + lead-lag con lags) EN VUELO con oráculo
+  propio sobre el árbol de main actual.
