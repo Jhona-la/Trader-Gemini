@@ -1,5 +1,26 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-05 — Antigravity: OLA Ω8 CERRADA — S8 / F2-C4 Hurst Honesto Multi-Escala por Variance Ratio Scaling
+
+- Rama `antigravity/quant-sr-omega-hurst-scaling`, commit atómico, merge a `main` y pusheado a `origin/main`.
+- **S8 / F2-C4 CERRADO**: Erradicado el "pseudo-Hurst" marginal de Geary ($L_1 / L_2$) en `crates/feature-engine/src/multifractal.rs` (líneas 50-165). Dicho cálculo medía curtosis/colas pesadas y colapsaba falsamente $H < 0.40$ (anti-persistencia artificial) ante cualquier pico de volatilidad o cola leptocúrtica en mercados financieros, distorsionando la confluencia fractal viva y el dimensionamiento de brackets TP/SL.
+- **LEY DE ESCALAMIENTO FÍSICO TEMPORAL MULTIESCALA**:
+  - Implementado el estimador formal de escalamiento de varianza multitemporal (Lo & MacKinlay / Variance Ratio) sobre retornos logarítmicos continuos acumulados:
+    $$\text{Var}(r^{(k)}) \propto k^{2H} \implies 2H = \frac{d \ln \text{Var}(k)}{d \ln k}$$
+  - Cómputo exacto $O(1)$ sin asignaciones de heap (stack-allocated array de 50 elementos) de momentos acumulados para $k \in \{1, 2, 4\}$:
+    - Escala 1 (1 tick): $\text{Var}_1 = \frac{1}{N} \sum (r_i - \bar{r})^2$.
+    - Escala 2 (2 ticks acumulados): $\text{Var}_2 = \frac{1}{N-1} \sum (r^{(2)}_i - 2\bar{r})^2$.
+    - Escala 4 (4 ticks acumulados): $\text{Var}_4 = \frac{1}{N-3} \sum (r^{(4)}_i - 4\bar{r})^2$.
+  - Regresión multiescala conjunta $y = 2H x$: $H_{\text{raw}} = \frac{y_1 + 2y_2}{10 \ln 2}$.
+  - Regularización Bayesiana hacia el prior de mercado eficiente browniano $H_0 = 0.50$ con ponderación de muestra finita $w = \frac{N}{N + 12}$: $H = 0.50 + w (H_{\text{raw}} - 0.50)$, garantizando estabilidad estricta en ventanas de 10-50 ticks.
+  - Ancho multifractal dinámico: $|H_2 - H_4|$ cuantificando la discrepancia de persistencia entre escalas de agregación.
+  - Inmunidad a precio constante ($H = 0.50$, width = 0.0), NaNs e invariancia estricta ante cambios de escala de precio.
+  - Test unitario dedicado `f2_c4_honest_variance_ratio_hurst_scaling` (83/83 tests pasados en feature-engine).
+- **VERIFICACIÓN COMPLETA**:
+  - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+  - `cargo test -p feature-engine --lib`: 83/83 tests pasados.
+  - `cargo test -p god-engine-core --lib`: 165/165 tests pasados.
+
 ## 2026-10-05 — Antigravity: OLA Ω6-Ω7 CERRADA — F4 Dinero/Riesgo, Paridad Micro-Cuenta $13 USD y SDE Continuo
 
 - Rama `antigravity/quant-sr-omega-revision-total`, commit atómico, fast-forward/merge a `main` y pusheado a `origin/main`.
