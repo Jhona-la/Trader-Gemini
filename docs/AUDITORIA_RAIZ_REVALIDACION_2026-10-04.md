@@ -2563,3 +2563,80 @@ Se ejecutaron las pruebas del proceso/registro ya existentes, sin CLI,
 ni ejecutó aquí un oráculo comparativo de ambas rutas y del selector.
 El defecto queda abierto y la aritmética comparativa conserva su carácter
 de recálculo, no se presenta como RED/GREEN de reparación.
+
+## 49. Sincronización F3 y verificación de integración por corte
+
+### 49.1. Qué llegó realmente a main y qué no
+
+Se observaron local main, origin/main y ls-remote en749d171b5902c5f1aab4e5b23c09f3147670377d.
+El commit incorpora08c0492c de Qoder: tres documentos,+160/−0 respectoEA5d,
+sin código Rust, manifiesto o workflow modificado. No confundir el registro
+de36hallazgos con36reparaciones. IDs únicos y conteo de tabla F3 verificados:
+3HIGH,14MED,19LOW. El acumulado103es documental; F3-A2 refiere a F2-A5,
+por lo que no demuestra103causas independientes. Tampoco certifica que los
+archivos inventariados hayan recibido pruebas de comportamiento.
+
+Codex conserva su revisión F2 y el texto completo de Qoder en la unión,
+resolviendo el único conflicto de coordinación por adición. La memoria y
+el barrido se auto-unen pero igualmente requieren comparación por padre.
+El plan exhaustivo§13 y maestro§19 explicitan responsabilidades y oráculos.
+No se tomó control del host, trailing o PPO reservados en la ola de Qoder.
+
+### 49.2. Revisión cruzada de RA y alcance de la CI
+
+Erdos emitió APPROVE estático para headf608/baseEA5d: leyó el diff funcional,
+contratos y consumidores relevantes; los nueve blobs funcionales conservan
+identidad con74be. Cotejó los censos1432/1435 con sus árboles, diff-check
+correcto y ausencia de certificación semántica por enumeración. No ejecutó
+Cargo, tests, red u operaciones. Es revisión de agente, no aprobación humana.
+
+Persisten scanner de profundidad estructural, partición mínima de la cinta
+(guardia OOS-F01 en serie separada), linaje causal y snapshots no transaccionales.
+CI37245434644 se inició con headf608 y baseEA5d; checkalltargets y contratos
+de publicación/carga de modelos pasaron al consultar. No atribuir su estado
+ni el de74be a la composición nueva con749d. El código heredado conserva sus
+recibos anteriores; los nuevos resultados se anexan después de verificarse.
+
+### 49.3. Integraciones locales y bloqueo de publicación acotado
+
+SA se guardó localmente en94790c5c41186821c5f0931468f67ecf5a223a35, con padres
+d73/f608,22contratos específicos ycheckalltargets0/155,744s. No fue publicada.
+Auto-review rechazó un comando combinado commit/push por falta de respuesta
+específica de publicación SA/OOS en el repositorio público. No ejecutó parte
+alguna de aquel comando. Luego aceptó la alternativa exclusivamente local,
+sin red/push/PR. SA§14/JSON rectifican la interpretación previa de autoridad.
+Consulta explícita renovada: dos PR con sus códigos, pruebas e informes,
+sin secretos/datos operativos y con CI/revisión antes del merge. RA conserva
+su autorización previa independiente; no se bloquea su trabajo por SA/OOS.
+
+OOS mantiene su guardia separada,14contratos previamente aprobados y nueva
+verificación de composición en curso. RUIN-F01 se trabaja LOCALMENTE: la
+lectura de ocho consumidores encontró que un cero tras dato corrupto puede
+reabrirse en interpolación. La reparación debe validar antes de interpolar
+y probar aceptación sana junto al rechazo; aún no se certifica en este corte.
+No se modificaron bootstrap, límites monetarios ni la fórmula de ruina para
+ajustarla a una rentabilidad deseada. No existe medición de duplicación72h.
+
+### 49.4. Compilación local y preservación de la nueva composición
+
+Antes del commit, se revalidaron como subsecuencias ordenadas todas las
+líneas no vacías de los tres documentos presentes en ambos padres:
+MEMORIA1860/1628, COORDINACION3761/3626, BARRIDO319/410 (RAf608/main749d).
+No se eliminó contenido histórico; las46propiedades raíz originales del
+JSON se conservan sin alteraciones. Fuente Rust/manifiestos/workflow no
+presentan delta contraf608; contra749d mantienen sólo las reparaciones RA.
+
+Con Cargo libre tras la verificación OOS, se refrescaron mtimes de8fuentes
+Rust del delta RA/main yRA/OOS; SHA256 antes/después invariantes. Check:
+`cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j 2`,
+perfildev por defecto, exit0 en146.9637889s, warnings preservados. Recibo
+`target/ra-main749d-check-2026-10-04.log` del checkout principal, SHA256
+8B60CCC5A77AFFB07B888D9A38F0E32FCEB59876D6AD40F0061FCE14903F0827.
+No ejecuta tests ni equivale a CI remota. La fuente revisada no cambia
+por las adendas documentales posteriores. Slot Cargo liberado para RUIN.
+
+Revisión incremental Erdos: APPROVE de los7documentos en la composición
+f608/749d, sin bloqueadores nuevos,47raíces JSON en su corte y fuentes/CI
+idénticas. El recibo de compilación anterior es la raíz48añadida después;
+Codex cotejó su exit/tiempo/hash con la salida real y revalidó las46raíces
+históricas recursivamente. No se atribuye al revisor esa adenda posterior.

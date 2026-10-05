@@ -1289,5 +1289,30 @@
       "log_sha256":"AE31D9553964A82A2A25F29EDAFA401F854691CB272FC4C23F7B501763F64C29",
       "new_scalar_spectral_parity_oracle_executed":false,"source_repaired":false,
       "CLI_live_orders_models_or_economic_tests":false,"growth72h_demonstrated":false
+    },
+    "F3_main749d_coordination_receipt": {
+      "parents":["f608737803406e5e6f5cf0045755c1fbafb55558","749d171b5902c5f1aab4e5b23c09f3147670377d"],
+      "main_delta_from_EA5d":{"files":3,"added_lines":160,"removed_lines":0,"docs_only":true},
+      "F3_table":{"unique_ids":36,"HIGH":3,"MED":14,"LOW":19,"counts_independently_verified":true,"all_source_findings_independently_reproduced":false},
+      "cumulative_reported_entries":103,"cumulative_entries_proven_independent_causes":false,
+      "explicit_cross_phase_relation":["F3-A2","F2-A5"],
+      "nonempty_parent_lines_preserved":{"memory":[1860,1628],"coordination":[3761,3626],"barrido":[319,410]},
+      "functional_source_and_workflow_identical_to_f608":true,
+      "review_of_f608_against_EA5d":{"agent":"Erdos","decision":"APPROVE","static_only":true,"new_blockers":0,"source_files_reviewed":9,"inventory_rows_verified":[1432,1435],"Cargo_or_tests_executed":false,"human_approval":false},
+      "CI37245434644":{"head":"f608737803406e5e6f5cf0045755c1fbafb55558","base":"ea5d1985aaf928bc7fe670ce4d185234bb8675a9","applies_to_new_composition":false},
+      "SA":{"local_commit":"94790c5c41186821c5f0931468f67ecf5a223a35","specific_tests_passed":22,"failed":0,"check_exit":0,"check_seconds":155.7442739,"pushed":false,"PR":null},
+      "SA_OOS_publication":{"status":"pending_specific_answer","combined_SA_commit_push_rejected_by_auto_review":true,"any_part_of_rejected_command_executed":false,"subsequent_local_only_SA_commit_accepted":true,"new_scoped_question_submitted":true},
+      "RUIN_F01":{"local_work_only":true,"helper_zero_can_be_reopened_by_consumer_interpolation":true,"requires_pre_interpolation_guard":true,"closure_certified":false},
+      "branches_deleted":[],"all_changes_in_main":false,
+      "external_agent_ack_received":false,"model_or_genome_activation":false,"growth72h_demonstrated":false
+    },
+    "F3_main749d_compile_receipt": {
+      "command":"cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j 2",
+      "exit":0,"seconds":146.9637889,"profile":"dev",
+      "source_timestamp_refresh_files":8,"source_byte_hashes_unchanged":true,
+      "log_relative_to_primary_checkout":"target/ra-main749d-check-2026-10-04.log",
+      "log_sha256":"8B60CCC5A77AFFB07B888D9A38F0E32FCEB59876D6AD40F0061FCE14903F0827",
+      "tests_executed_by_check":false,"remote_CI_for_new_composition_verified":false,
+      "source_repair_in_this_merge":false,"historical_JSON_root_values_preserved":46
     }
 }

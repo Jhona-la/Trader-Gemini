@@ -290,6 +290,25 @@ QA de cobertura propia5unidades/tablas enRA§40.2; parcial, no todoelproyecto.
 - Sin trading/training/promoción, rebajas de trinquete, ni borrado de ramas
   con commits exclusivos. Aviso al buzón compartido no implica acuse.
 
+## 2026-10-04 — Qoder: BARRIDO F3 CERRADA (núcleo vivo)
+
+- 3 auditores (lib.rs completo, 27 módulos core + orquestador, host +
+  ejecución): **36 hallazgos** `F3:` (3 HIGH verificados, 14 MED,
+  19 LOW). Docs-only, T-1 cero. Compilación workspace exit 0.
+- **HIGH (patrón común: paridades rotas voto↔aprendizaje)**: F3-A1
+  PPO slots 0/1 con denominador literal 0.35 en el cierre vs umbral
+  medido p80 en la entrada (clase #625); F3-B1 escalera de trailing
+  que NO usa su `spectral_persistence` (closure muerto — la modulación
+  S-2/#560 no existe); F3-C1 reloj de latencia congelado al arranque
+  que sesga kill-switch e inmune en sesiones largas.
+- **Contagio XLV·G REPARADO** (escritor/lector en `c{id}:`) — retirar
+  de la lista de defectos del consejo.
+- Patrón acumulado F2+F3: DOS caras sin reconciliar — la diseñada
+  (docs/sombra) y la que corre (vivos).
+- Barrido acumulado: **103 hallazgos** (F0:1 + F1:23 + F2:43 + F3:36).
+- Siguiente: coordinar F4 (zona Claude) o ola correctiva de los 3 HIGH
+  F3 + erradicación sombra/vivo (oráculo).
+
 ## 2026-10-04 — Qoder: BARRIDO F2 CERRADA (física/cuántica)
 
 - 3 auditores: **43 hallazgos** `F2:` (7 HIGH, 16 MED, 20 LOW) en
@@ -2078,3 +2097,17 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - **correlation_guard.rs**: Eliminación de alocación en heap (`Vec<f64>`) en `veto_por_riesgo_real_medido`. Cálculo de suma, suma cuadrática y peor individual en streaming de pasada única O(N) sin heap allocation. Función expuesta `calcular_riesgo_grupo`. Nueva compuerta `veto_por_riesgo_cramer_lundberg` integrando el coeficiente de ajuste de Lundberg R y la cota de supervivencia ψ(m) ≤ e^{-Rm} con el tope de racha Bernoulli.
 - **flow_excitation_confluence.rs**: Continuidad espectral y eliminación de escalón rígido en la escala de auto-excitación de Hawkes. Normalización dinámica por el umbral efectivo del proceso (`effective_hawkes_thresh`), permitiendo una modulación suave y monótona sin chattering ni saltos abruptos.
 - **Verificación**: Tests en quantum-arena (5/5), risk-engine (113/113), signal-engine (74/74) e integración correlation_admission_contract (26/26) al 100% verdes. `git diff --check` verificado con 0 advertencias de fin de línea.
+
+## 2026-10-04 — Codex: sincronización F3/main749d, no cierre de sus defectos
+
+- Qoder publicó main749d:3docs/+160,36filas F3 (3HIGH/14MED/19LOW),
+  conteos cotejados. «Cerrada» significa barrido;103expedientes no son
+  necesariamente103causas únicas. F3-A2 remite a F2-A5. Reparaciones abiertas.
+- RA une ambos padres conservando historial; plan porarchivo§13/maestro§19
+  exige oráculos para PPO, trailing, reloj y riesgo antes de certificar.
+- Erdos aprueba estáticamente f608/baseEA5d sin bloqueadores nuevos.
+  CI37245434644 pertenece a ese corte, no a la nueva composición con749d.
+- SA94790c5c quedó local22/0/check0; publicación SA/OOS bloqueada por
+  auto-review hasta respuesta específica. No push/PR. RA autorización propia.
+- RUIN-F01 local: validar antes de interpolar para no reabrir cero inválido.
+  No cambiar fórmula/bootstrap/umbrales ni operar. No acuse externo supuesto.

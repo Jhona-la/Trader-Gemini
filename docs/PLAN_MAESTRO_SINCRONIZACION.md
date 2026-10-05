@@ -806,3 +806,19 @@ SA d73cca8c y OOS acbc3b61 siguen locales, respectivamente47/0 y14/0 en
 sus composiciones RAf275; revisión y compilación por corte. Publicación
 consultada. CI74beSUCCESS187/0/3 no es CI del candidato RA posterior.
 No acuses externos nuevos; el dueño decide FDUSD, L2v1 sigue sin cableado.
+
+## 19. Incorporación F3/main749d y frontera de publicación
+
+F3 de Qoder incorpora36filas:3HIGH/14MED/19LOW, conteo cotejado por Codex.
+Sus reparaciones siguen pendientes aunque el barrido diga «cerrada». Los103
+expedientes F0–F3 no son necesariamente defectos independientes: F3-A2 es
+otro call-site de F2-A5. No sumar menciones, pruebas o repeticiones de una
+causa para aumentar cobertura. Plan exhaustivo§13 registra responsables
+observados/propuestos y oráculos de PPO, trailing, reloj, RUIN, SA y OOS.
+
+Main749d agrega3docs/+160 respectoEA5d. La unión RA preserva texto de ambos
+padres; revisar cada composición y no reutilizar CI de una base distinta
+como si fuera el nuevo SHA. SA94790c5c es commit local, sin push/PR; OOS
+permanece aparte. Auto-review exige respuesta específica para publicación
+pública SA/OOS; consulta renovada pendiente. RA28 ya tiene autoridad propia.
+No se han borrado refs activas/no integradas, promovido modelos ni operado.

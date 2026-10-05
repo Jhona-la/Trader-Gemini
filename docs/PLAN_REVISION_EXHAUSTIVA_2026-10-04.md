@@ -326,3 +326,29 @@ rama mergeada pero ocupada por un editor no se elimina automáticamente.
 Cobertura Git/inventario, cobertura semántica y cobertura de comportamiento
 mantienen estados independientes. Los fallos aún abiertos de F1/F2, sizing
 no finito, soporte causal y paridad no desaparecen por un check verde.
+
+## 13. Corte F3/main749d: avanzar por contratos, no por etiquetas de cierre
+
+El otro auditor publicó36filas F3 (3HIGH/14MED/19LOW) en main749d171b.
+Se cotejaron sus IDs y severidades con la tabla; su revisión completa de
+fuentes es un recibo del autor, no una segunda lectura de Codex. El delta
+EA5d→749d es únicamente MEMORIA/COORDINACION/BARRIDO,+160líneas. «F3 cerrada»
+designa aquí el barrido documental: no cierra las reparaciones ni la paridad.
+Los103expedientes acumulados tampoco equivalen a103causas distintas; conservar
+IDs originales y relaciones duplicado/manifestación/dependencia (F3-A2/F2-A5).
+
+Orden de próximas unidades sin colisiones:
+
+| Unidad | Responsable/estado observable | Prueba de cierre exigida |
+| --- | --- | --- |
+| F3-A1 PPO slots0/1 | Qoder anuncia ola; no acuse de nuestra propuesta | mismos observables y transformaciones en votar/aprender; trazado por evento y slot |
+| F3-B1 trailing | Qoder anuncia ola | sensibilidad al insumo espectral con baseline, continuidad donde aplica y stops que no retroceden indebidamente |
+| F3-C1 reloj | Qoder anuncia ola; coordinar host con Claude | offset actualizado, cambios de generación y correcciones positivas/negativas, replay sin reloj de pared accidental |
+| RUIN-F01 | Codex/Locke, rama local dedicada | no-finitos no abren órdenes tras clamp/interpolación; controles saludables admitidos; fórmula finita conservada |
+| SA / OOS-F01 | Codex, reparaciones locales separadas | contratos específicos, check de composición, autorización pública, CI y revisión antes de integrar |
+
+El recibo por archivo de §5 debe acompañar estas unidades. Una prueba de un
+helper no certifica su consumidor ni toda la fase. Mantener separado el
+soporte causal/económico de la admisión numérica: ningún resultado aquí
+demuestra crecimiento neto de2veces en72h. C-versionado sigue el snapshot
+fijo; nuevos deltas se documentan por OID sin reescribir el inventario.
