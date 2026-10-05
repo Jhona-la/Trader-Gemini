@@ -89,6 +89,9 @@ pub struct AggTradeEvent {
     pub price: f64,
     pub qty: f64,
     pub is_buyer_maker: bool,
+    /// #660 (F2-B5) — transact time del exchange (ms) para el decaimiento
+    /// FÍSICO del flujo agregado; ausente ⇒ 0 (sin reloj).
+    pub timestamp_ms: u64,
 }
 
 impl AggTradeEvent {
@@ -107,10 +110,18 @@ impl AggTradeEvent {
         let first_non_ws = after_m.iter().position(|&b| b != b' ' && b != b'\t')?;
         let is_buyer_maker = after_m.get(first_non_ws) == Some(&b't'); // "t"rue or "f"alse
 
+        // #660 (F2-B5): "T" = transact time del exchange en ms (entero sin
+        // comillas); ausente ⇒ 0 (sin reloj: el decay físico no aplica
+        // hasta el primer ts válido).
+        let timestamp_ms = BookTickerEvent::extract_u64_from(bytes, 0, b"\"T\":")
+            .map(|(v, _)| v)
+            .unwrap_or(0);
+
         Some(Self {
             price,
             qty,
             is_buyer_maker,
+            timestamp_ms,
         })
     }
 }

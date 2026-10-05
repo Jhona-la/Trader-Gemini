@@ -1986,10 +1986,16 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "sombra_shock_salto_max", v_shock.abs());
                     }
                     // #614: SOMBRA de RESONANCIA ESTOCÁSTICA
+                    // #660 (F3-A3): lee la clave que el core SÍ escribe
+                    // (`microstructure_noise_variance` = atr_pct·0.1 al
+                    // tick). Antes leía `stochastic_noise_variance` —
+                    // cero escritores en todo el workspace: la sombra del
+                    // consenso vivo corría con el default 0.05 eterno,
+                    // sorda a la volatilidad real.
                     let var_ruido = self
                         .arena
                         .registry
-                        .get_value_or("stochastic_noise_variance", 0.05)
+                        .get_value_or("microstructure_noise_variance", 0.05)
                         .max(1e-8);
                     let voto_res =
                         signal_engine::stochastic_resonance::StochasticResonanceEngine::voto_espectral(
@@ -2400,8 +2406,12 @@ impl GodEngineCore {
                 // motor mutilado. Con la actualización aquí, todo llamador
                 // alimenta la misma fuente con el mismo dato; las llamadas
                 // externas se retiran para no contar dos veces.
-                self.arena
-                    .update_agg_trade(coin_id, is_buyer_maker, trade_qty);
+                self.arena.update_agg_trade(
+                    coin_id,
+                    is_buyer_maker,
+                    trade_qty,
+                    event_time_ms,
+                );
                 // ESPECTRO PREDICTIVO (D-742b): el mismo trade alimenta las
                 // tasas de todas las escalas y madura los pronósticos cuyo
                 // horizonte acaba de vencer. `is_buyer_maker` = el comprador
@@ -4196,8 +4206,6 @@ impl GodEngineCore {
                     set_reg("espectral_masa_resuelta", masa);
                 }
             }
-            set_reg("bessel_alpha", 1.5);
-            set_reg("hawkes_dt", 0.05);
             set_reg(
                 "microstructure_noise_variance",
                 (atr_pct * 0.1).max(0.00001),
