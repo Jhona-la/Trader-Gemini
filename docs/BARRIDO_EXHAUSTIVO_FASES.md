@@ -478,3 +478,26 @@ diseñamos y la que corre.
 **F3 CERRADA**. Barrido acumulado: F0(1) + F1(23) + F2(43) + F3(36) =
 **103 hallazgos**. Siguiente: F4 (dinero/riesgo, zona Claude —
 coordinar antes de invadir).
+
+---
+
+## F5 — CERRADA (GLM, LXXXX, 2026-10-05): evolution-engine + backtest-engine resto + dark-alpha
+
+16+12 archivos, 2 agentes estilo-F. **Acumulado del barrido: 103 → 125 hallazgos.**
+
+### HIGH (3)
+- **F5-A-H1** `evolution-engine/src/lib.rs` (666 líneas): bucle "TRUE EVOLUTION" isla muerta NO anotada; su gate promueve con 1 trade + PnL>0 (sin DSR/incumbente/OOS) y frozen_macro inyecta literales 2024. **REPARADO (anotación qo-605-style este commit)**; decisión cablear/eliminar = consejo (isla ahora 6 módulos, no 4).
+- **F5-A-H2** `god_engine.rs:4700` + `random_forest.rs:163`: cosecha ShadowForest promueve SIN control de multiplicidad y la promoción `shadow_forest_harvest` NO arma el watchdog de rollback (sólo el daemon lo arma) — la puerta viva más floja. **OLA de reparación pendiente (toca conducta → oráculo)**.
+- **F5-B-H1** `god-engine-core/src/lib.rs:966`: fallback de DarkAlpha = red ALEATORIA (Xavier, sin entrenar) que VOTA en el ensamble vivo cuando falta el artefacto — la ausencia no es ausencia, es opinión con ruido estructural sobre ml_prob de BTC. Fix natural: fallback None. **OLA pendiente (toca conducta → oráculo)**.
+
+### MED (16, resumen)
+- A-M1 juez DSR certifica contra simulador (declarado, riesgo estructural); A-M2 train/serve desalineado del forest online (features de cierre vs inferencia en entrada); A-M3 lookahead suave del prescreen (σ de ventana completa); A-M4 AST-mutator cambia umbrales sin armado (D-689); A-M5 DSR divergente en isla muerta (trampa de re-cableado); A-M6 CMA penalización incommensurable; A-M7 polars_evolver muerto (anotado este commit); A-M8 entropy_fitness mayormente muerto.
+- B-M1 `c1.or(c2)` descarta segundo cierre intratick (sub-contabilización silenciosa — OLA); B-M2 dos lectores .bin, dos políticas de validación; B-M3 neuro_plasticity muerto total (145 líneas).
+
+### LOW (9) — ver tablas completas en buzón LXXXX.
+### Verificaciones LIMPIAS
+- Embudo del daemon vivo: BIEN cableado (prescreen causal → WF motor real OOS ≥30 trades → incumbente compite → DSR 0.95 Bailey-LdP ec.5 con multiplicidad acumulada → promote bounds → watchdog rollback no-reinicio D-747 → arming por entorno).
+- Paridad del replay: APROBADA bit-a-bit (before_event antes de aduana; warmup no saltable; omni t-1; shift_atr_frac 0.10 contratado).
+- Métricas ex-post: sin divisiones por cero nuevas (IEEE intencional, tests fijan contornos).
+- label_evidence: barreras estrictamente futuras, guards completos.
+- La familia honesta YA estaba validada (LXXXIX); F5-B re-confirma el replay que la alimenta.
