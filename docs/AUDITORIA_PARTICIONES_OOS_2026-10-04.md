@@ -243,3 +243,106 @@ F0/F1 ya versionado, sin confundirlo con esa nueva cobertura. SA no forma
 parte de este merge y su parser/pruebas no se ejecutaron aquí. No fetch,
 push/PR, CLI/modelos reales, red, entrenamiento, promoción, trading, T1,
 limpieza ni cancelaciones. No certificación económica o auditoría total.
+
+## 9. Merge preparado con RA f608; all-targets pendiente
+
+Padres previstos: OOS acbc3b61c983997e011b6ed5d8e0824fd3b67f3e y
+RA f608737803406e5e6f5cf0045755c1fbafb55558. Se ejecutó el merge local
+con --no-commit --no-ff desde estado limpio. Único conflicto: memoria,
+resuelto con apply_patch por unión. Los9documentos presentes en OOS y
+10enRA que difieren entre padres preservan todas sus líneas no vacías
+en orden, incluida coordinación, planes e inventario recibido. QA por
+ambos padres y diff --check pasan; esto no reaudita las afirmaciones RA.
+
+RA f275→f608 sólo añade documentos. Las3fuentes OOS mantienen exactamente
+los blobs y SHA256 de§4/§8 y el comportamiento de9a3; no delta Rust/Cargo/CI
+frente al padre OOS. SA queda fuera de esta composición.
+
+Compilación nueva con rustc +nightly-2026-06-30 --test del contrato real,
+seguida de oos-context-contract.exe --test-threads=1:14/0/0, exit0.
+Recibos en target/oos-integration-f608-20261004; SHA256:
+
+- std-test.log: 8FDD06E670341FEA2263D20F4807616CDE90D666274D53F6030093A597C97BB3.
+- preservation-pre-docs.log: 89C1B21BFB7A4D75729A8D7592800A3B1C3171A672170DE1F82E4EE490EED62B.
+
+No Cargo ejecutado en este corte: el operador reserva la caché para SA.
+El merge queda preparado, sin commit, hasta el aviso y el check all-targets
+del candidato. Los checks anteriores no acreditan esta composición.
+Publicación/integración autorizadas por el operador; parent tramita PRs y
+gates. Este recibo no publica ni modifica otro checkout, modelos o procesos.
+
+## 10. Recibo all-targets f608; merge local preparado sin commit
+
+El aviso posterior liberó el slot SA y autorizó este check OOS. Los padres
+previstos siguen siendo acbc3b61c983997e011b6ed5d8e0824fd3b67f3e y
+f608737803406e5e6f5cf0045755c1fbafb55558; no se persiguió otro main ni SA.
+Antes de compilar se refrescaron sólo mtimes de9archivos Rust existentes,
+con SHA256 idéntico antes/después. La unión de diffs usó origin/main fijado
+en749d171b5902c5f1aab4e5b23c09f3147670377d y la rama local SA
+codex/sa-score-monotonicity-2026-10-04 end73cca8cdc5191f9c0ccb6b66cebfee583cdd87d.
+La abreviatura sin sufijo no existe; se resolvió esa ref local sin fetch.
+Esto no incorpora esos commits: sólo identifica fuentes para invalidar caché.
+
+El refresco incluyó backtest lib/context/contrato, parser/contrato,
+evolution-engine lib (delta respecto a SA), risk orchestrator/contrato y
+src/bin/evolution.rs. Se omitieron los4archivos SA ausentes, sin crearlos.
+El manifiesto source-refresh-union.log contiene rutas, mtimes y ambos hashes.
+
+```powershell
+$env:CARGO_TARGET_DIR = 'C:/Users/jhona/Documents/Proyectos/Trader Gemini/target'
+cargo +nightly-2026-06-30 check --workspace --all-targets --locked --offline -j2
+```
+
+Intento único OOS en esta fase, runner30323: exit0, inicio UTC
+2026-10-05T00:36:40.2770675Z, fin2026-10-05T00:39:11.6594434Z,
+151.383s totales. Cargo informa2m29s, dev [unoptimized + debuginfo].
+Overrides DEV debug/opt-level unset; configuración del repo intacta.
+Warnings visibles, sin errores, cargo fix/fmt ni cancelaciones. Runner
+finalizado normalmente; slot Cargo liberado y comunicado al parent.
+El error de resolución de la ref abreviada no es fallo de compilación,
+ni RED de contrato. No se atribuyen aquí fallos/checks del checkout SA.
+
+Los14contratos std-only frescos de§9 pasan14/0/0 sobre las mismas fuentes
+actuales; no se sustituyen por los6legacy ni se vuelve a atribuir el RED
+histórico de§3 como ejecución nueva. Las3fuentes OOS conservan exactamente
+los blobs de§8 y los bytes de9a3. Diff funcional frente al padre OOS: cero;
+frente a RA: sólo esas3fuentes. Mismo70/30, sin mínimos/modelos nuevos.
+
+QA documental por ambos padres:9documentos OOS y10RA preservan cada línea
+no vacía en orden. JSON parseado y contrastado recursivamente:41/41 claves
+raíz del RA JSON en OOS,46/46 en RA y15/15 del inventario RA; valores y orden
+de arrays preservados. No equivale a reauditar las afirmaciones documentales.
+Verificadores y diffs por padre quedan en el target ignorado; diff --check
+por cada padre debe permanecer limpio al entregar el índice preparado.
+
+SHA256 de recibos en target/oos-integration-f608-20261004:
+
+| Recibo | SHA256 |
+| --- | --- |
+| workspace-check-01.log | E1D89CC50F34B899CB8603D879E6C1AC0BC7F84EF23A548EA403C01C14462941 |
+| source-refresh-union.log | D35176495A89A829108F1169827E995D5501608CDFE5E90BA8EC26A6A35D8B66 |
+| std-test.log | 8FDD06E670341FEA2263D20F4807616CDE90D666274D53F6030093A597C97BB3 |
+| json-preservation.log | 5265F311D6B5F18889579F50588F66C3BBF453AB24C031D43CD94BF31A313BE0 |
+
+La autorización de publicación/integración indicada en§9 queda como
+historia. La instrucción posterior del operador pausa también el commit
+local mientras concreta la autorización de publicación SA/OOS, tras el
+rechazo auto-review de su comando combinado SA commit+push. No se ejecutó
+ese comando desde OOS. Este merge queda preparado, sin commit nuevo,
+push ni PR. Sólo11documentos en el índice, sin incorporar SA ni modificar
+otro checkout; no CLI/modelos reales, entrenamiento, promoción o trading.
+Los límites de§5 continúan abiertos; no es certificación completa.
+
+### 10.1. Cierre exclusivamente local autorizado
+
+La instrucción posterior autoriza cerrar este merge mediante commit local
+OOS, después del check ya registrado, manteniendo publicación pendiente.
+Es preparación local, no un bypass de la autorización de publicación:
+no push, PR ni red. El recibo de pausa anterior se conserva como historia.
+Se mantienen exactamente los padres acbc3b61/f6087378, los11documentos
+del índice y las3fuentes OOS9a3; SA94790c5c y main749d no se incorporan.
+Sólo se añade esta aclaración y el recibo de memoria después del gate;
+sin nuevo Cargo ni modificación de fuentes/configuración compiladas.
+QA de preservación por ambos padres, JSON, hashes y diff --check se
+repite antes del commit. SHA del cierre y estado posterior se guardan en
+target/oos-integration-f608-20261004/local-commit-receipt.log.

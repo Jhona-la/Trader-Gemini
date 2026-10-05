@@ -1,5 +1,34 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: cierre OOS local autorizado; publicación pendiente
+
+- Orden posterior autoriza commit exclusivamente local del merge
+  acbc3b61 + f6087378, con check0/151.383s y contratos14/0/0 ya registrados.
+  Informe OOS§10.1; no nuevo Cargo, SA/main749d ni otros checkouts.
+- Publicación pendiente: sin push/PR/red; preparación local, no bypass
+  de autorización. Se conserva la pausa histórica. Recibo de cierre en
+  target/oos-integration-f608-20261004/local-commit-receipt.log.
+
+## 2026-10-04 — Codex: OOS f608 all-targets verde, commit en pausa
+
+- Candidato acbc3b61 + f6087378: check workspace/all-targets nightly06-30
+  locked/offline/-j2 exit0 en151.383s; fin2026-10-05T00:39:11Z. Dev/defaults,
+  rootcache,9mtimes refrescados con SHA256 estable; slot Cargo liberado.
+- Std-only14/0/0 del candidato;3blobs OOS idénticos a9a3. Unión documental
+  por ambos padres y valores/arrays JSON preservados; informe OOS§10 y
+  target/oos-integration-f608-20261004 conservan recibos y límites.
+- Orden posterior: dejar preparado SIN commit/push/PR mientras parent
+  concreta autorización específica. La autorización previa permanece en
+  historia, no se borra. SA no incorporada; ningún otro checkout modificado.
+
+## 2026-10-04 — Codex: OOS preparado con RA f608, gate pendiente
+
+- Merge acbc3b61 + f6087378 preparado sin commit; unión documental por
+  padre y 3blobs OOS9a3 preservados. Std-only fresco14/0/0; informe OOS§9.
+- Cargo reservado al parent/SA: alltargets de este candidato pendiente de
+  su aviso, no extrapolar checks anteriores. Publicación/integración ya
+  autorizadas por el operador; parent realiza PRs/gates. SA no incorporada.
+
 ## 2026-10-04 — Codex: OOS-F01 reconciliado con RA f275/main237
 
 - Merge local autorizado 684e4708 + f275bae3, sin perseguir otro main ni
@@ -39,6 +68,41 @@
   No CLI ejecutado, T1 nuevo, promoción, red ni publicación de esta serie.
 - RA publicó su reconciliación documental con main230 aparte; no equivale
   a integrar OOS en main. Esta memoria no altera fuente/pruebas del9a3.
+
+## 2026-10-04 — Codex: F2/mainEA5d contrastado sin asumir conclusiones
+
+- RA§48/master§18/plan§12 conservan ambos padres por unión y43raícesJSON.
+  Checkalltargets0/135,360s,8mtimes propios/SHA iguales; no fuente nueva.
+- F2conteo43: tablas7HIGH/23MED/12LOW/1INFO vsresumen7/16/20. DOC-F02
+  abierto. RevisiónF2-A1 confirmafallbackHawkes distinto al espectral,pero
+  PPOslot2ya normalizado; hostVPIN llamaflowevaluate,no voteumbral1.2.
+  DOC-F03 precisaambas inferencias; no PnL/fills. Ownerspropuestos/sinacuse.
+- Censo1432main237 inmutable,EA5d4docs; BM/OU/e-values condicionados a
+  dominio/nulo/selección/OOS, no teoríanueva implementada ni garantía72h.
+- SA d73 47/0 yOOSacbc14/0 locales,publicaciónconsultada. PR28nuevoSHA
+  exigeCI/review propios. No refs/modelos borrados, trading ni promociones.
+
+## 2026-10-04 — Codex: inventario exacto main237 listo
+
+- COBERTURA_MAIN237TSV/JSON:1432rutas,461Rust,23crates/24manifiestos,
+  136testsdirincluye1soporte,21triage; QA independiente/parentsets/OIDs/
+  modos/orden/hash/conteosPASS.0certificadas, ownerspropuestos/sinacuse.
+- Planexhaustivo§11/README/RA§47/JSON conservancensosprevios,clasificación
+  ≠lectura yC-versionado≠C-sistema. Rollback/G72canónico revisados.
+- OOSacbc compone684e+f275,14/0/check0/92,89s,3blobs9a3preservados.
+  No SA/inventario ni main remoto. Publicaciónpropia consultada, aúnlocal.
+
+## 2026-10-04 — Codex: CI74be verde; métricas canónicas del plan
+
+- CI37240563716SUCCESS23:28:56Z,187/0/3ignoradas,13targets; merge7343aab
+  padres230/74be verificadosAPI. NO f275/main237/SA/OOS. RA§46/JSON.
+- Reviewplan1bloqueador deG72(logvsfactor) corregidodocumentalmente;
+  nuevo§10/master§17nombrescanónicos ycorrespondenciahistórica. G8ambiguo
+  bloqueado hasta revisarconsumidores. Reviewseguimiento0blockersdocumentales.
+- Rollbacktransversal yanexoexternoC-versionado/C-sistema añadidos;
+  ownerspropuestos,noacuses. NuevoinventarioTSV/JSON enpreparación.
+- FuenteRA compilada; publicaciónactualizada requiereCI/review propios.
+  SA/OOS localescompuestosaparte,sinpromoción,trading oborradoderamas.
 
 ## 2026-10-04 — Codex: mandato ampliado de cobertura ruta-a-ruta
 
@@ -295,6 +359,22 @@ QA de cobertura propia5unidades/tablas enRA§40.2; parcial, no todoelproyecto.
 - Sin trading/training/promoción, rebajas de trinquete, ni borrado de ramas
   con commits exclusivos. Aviso al buzón compartido no implica acuse.
 
+## 2026-10-04 — Qoder: BARRIDO F2 CERRADA (física/cuántica)
+
+- 3 auditores: **43 hallazgos** `F2:` (7 HIGH, 16 MED, 20 LOW) en
+  BARRIDO_EXHAUSTIVO_FASES.md. Docs-only, T-1 cero (sin código).
+- **HALLAZGO ESTRUCTURAL**: los arreglos de física #649/#650 viven
+  SOLO en la sombra espectral — los evaluate* VIVOS (fallback D-754
+  + PPO) conservan física vieja: hawkes ±0.92 constante en régimen
+  normal, solitón sech invertido, flow_impulse tautológico, VPIN como
+  ratio λ/μ̂ en el host. Ola de erradicación con oráculo en cola.
+- Otros HIGH: F2-B1 (Hurst por bandas duras dimensiona TP/SL),
+  F2-C1 (lead-lag sin lags VIVO en el PPO), F2-C4 (pseudo-Hurst en
+  confluencia viva), F2-C6 (VECM muerto sin ser Johansen).
+- **Inventario milenio**: SÍ primer toque BM/OU (cierra R8-A),
+  e-values anytime-valid, Fokker-Planck/OU con reloj físico;
+  CONDICIONAL W₁-L2; NO KPZ/NSE/NLS/YM/zeta/KAM/CFT con razones.
+- Siguiente fase: F3 (núcleo vivo, ~97 archivos, zona Qoder).
 ## 2026-10-04 — Qoder: BARRIDO F0+F1 CERRADAS (matemática/estadística)
 
 - Fase F0 (metas/conceptos): único hallazgo F0-1 corregido en fase —

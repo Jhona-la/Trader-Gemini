@@ -1,0 +1,612 @@
+{
+  "schema": "trader_gemini.git_path_inventory.v1",
+  "title": "Inventario ruta-a-ruta del árbol main237; no certificación semántica",
+  "task_date": "2026-10-04",
+  "author": "Codex",
+  "status": "inventariado_no_certificado",
+  "owner_status": "propuesto_sin_acuse",
+  "source": {
+    "provider": "Git local; árbol de commit inmutable solicitado por operador",
+    "operator_label": "main237",
+    "snapshot_commit": "23701ecb05486eb13b661d3d50afaadbc9a0015a",
+    "snapshot_tree": "916ad85d0d55d90b559cea3dfdf504a64e902efc",
+    "commit_author_time": "2026-10-04T18:00:56-05:00",
+    "commit_committer_time": "2026-10-04T18:00:56-05:00",
+    "enumerated_at_utc": "2026-10-04T23:22:39.951Z",
+    "validated_at_utc": "2026-10-04T23:30:11.030Z",
+    "cwd": "C:/Users/jhona/.codex/worktrees/model-lineage-audit/Trader Gemini",
+    "command": "git --no-optional-locks ls-tree -rz 23701ecb05486eb13b661d3d50afaadbc9a0015a",
+    "environment": {
+      "GIT_OPTIONAL_LOCKS": "0"
+    },
+    "working_tree_used_as_inventory_source": false,
+    "symbolic_main_used_as_inventory_source": false,
+    "remote_fetched": false,
+    "raw_bytes": 174189,
+    "raw_sha256": "63a7ebd98c76899f6cb18e950b99481fb7a340d5135f3a4f8e9a8b0c1599d754",
+    "utf8_roundtrip": true,
+    "path_control_characters_detected": 0,
+    "phase_numbering_reference": {
+      "snapshot": "23701ecb05486eb13b661d3d50afaadbc9a0015a",
+      "modo": "100644",
+      "tipo": "blob",
+      "oid": "77c241ea894a8712246c1e6690c1f6e097d34687",
+      "ruta": "docs/BARRIDO_EXHAUSTIVO_FASES.md",
+      "read_command": "git --no-optional-locks show 23701ecb05486eb13b661d3d50afaadbc9a0015a:docs/BARRIDO_EXHAUSTIVO_FASES.md",
+      "scope": "Solo referencia de numeración y zonas F0–F8; sus cifras o cierres no sustituyen el conteo de ls-tree ni una revisión por ruta."
+    }
+  },
+  "artifacts": {
+    "inventory_tsv": {
+      "path": "docs/audit/COBERTURA_MAIN237_2026-10-04.tsv",
+      "sha256": "34f5139dfaaad6317924af71584c77a2724123a38918f30c42e2c63247017aae",
+      "bytes": 479901,
+      "data_rows": 1432,
+      "lines_including_header": 1433,
+      "encoding": "UTF-8 sin BOM",
+      "line_endings": "LF",
+      "final_newline": true,
+      "fields": [
+        "snapshot",
+        "modo",
+        "tipo",
+        "oid",
+        "ruta",
+        "clase",
+        "fase_primaria",
+        "owner_propuesto",
+        "estado_owner",
+        "estado",
+        "reason",
+        "paquete_por_manifest",
+        "crate_por_ruta",
+        "rust",
+        "test_por_ruta",
+        "manual_triage"
+      ],
+      "path_encoding": "Ruta relativa exacta UTF-8, sin normalización ni comillas. No se observaron TAB, CR, LF o barra inversa; no fue necesario escape.",
+      "row_order": "Orden original de git ls-tree -rz; una fila por ruta aunque se repita el OID."
+    },
+    "receipt_json": {
+      "path": "docs/audit/COBERTURA_MAIN237_2026-10-04.json",
+      "role": "Procedencia, conteos, reglas sugeridas y validación estructural; no certificado del sistema."
+    },
+    "these_outputs_present_in_source_snapshot": false
+  },
+  "counts": {
+    "total": 1432,
+    "by_phase": {
+      "F0": 46,
+      "F1": 29,
+      "F2": 70,
+      "F3": 32,
+      "F4": 39,
+      "F5": 58,
+      "F6": 78,
+      "F7": 930,
+      "F8": 150
+    },
+    "by_class": {
+      "artefacto_auditoria_json": 44,
+      "artefacto_grafo_json": 644,
+      "artefacto_grafo_otro": 11,
+      "config_o_artefacto_json": 4,
+      "configuracion_o_plataforma": 14,
+      "configuracion_potencialmente_sensible": 1,
+      "datos_csv": 4,
+      "documentacion_markdown": 145,
+      "fuente_rust": 314,
+      "genoma_config_serializado": 16,
+      "informe_evolucion_parquet": 1,
+      "interfaz_web": 9,
+      "lock_cargo": 1,
+      "log_o_diagnostico_versionado": 2,
+      "manifiesto_cargo": 24,
+      "modelo_serializado_json": 4,
+      "otro_manual_triage": 1,
+      "parche_versionado": 1,
+      "regla_o_memoria_agente": 11,
+      "respaldo_genoma": 1,
+      "rust_test_o_sonda_por_ruta": 147,
+      "script_operativo": 31,
+      "texto_auxiliar": 1,
+      "workflow_ci": 1
+    },
+    "by_package": {
+      "Cargo.toml": 1003,
+      "crates/audit-engine/Cargo.toml": 17,
+      "crates/backtest-engine/Cargo.toml": 17,
+      "crates/dark-alpha-engine/Cargo.toml": 5,
+      "crates/data-ingest/Cargo.toml": 8,
+      "crates/data-pipeline/Cargo.toml": 26,
+      "crates/evolution-engine/Cargo.toml": 23,
+      "crates/execution-engine/Cargo.toml": 44,
+      "crates/feature-engine/Cargo.toml": 35,
+      "crates/flight-recorder/Cargo.toml": 2,
+      "crates/god-engine-core/Cargo.toml": 57,
+      "crates/graph-4d/Cargo.toml": 2,
+      "crates/graph-architecture/Cargo.toml": 4,
+      "crates/metacortex-engine/Cargo.toml": 18,
+      "crates/omniscient-registry/Cargo.toml": 3,
+      "crates/os-guardian/Cargo.toml": 11,
+      "crates/phase-runner/Cargo.toml": 3,
+      "crates/quantum-arena/Cargo.toml": 44,
+      "crates/risk-engine/Cargo.toml": 43,
+      "crates/signal-engine/Cargo.toml": 25,
+      "crates/storage-engine/Cargo.toml": 12,
+      "crates/strategy-core/Cargo.toml": 12,
+      "crates/telemetry-engine/Cargo.toml": 4,
+      "crates/telemetry-server/Cargo.toml": 14
+    },
+    "by_crate": {
+      "audit-engine": 17,
+      "backtest-engine": 17,
+      "dark-alpha-engine": 5,
+      "data-ingest": 8,
+      "data-pipeline": 26,
+      "evolution-engine": 23,
+      "execution-engine": 44,
+      "feature-engine": 35,
+      "flight-recorder": 2,
+      "fuera_de_crates": 1003,
+      "god-engine-core": 57,
+      "graph-4d": 2,
+      "graph-architecture": 4,
+      "metacortex-engine": 18,
+      "omniscient-registry": 3,
+      "os-guardian": 11,
+      "phase-runner": 3,
+      "quantum-arena": 44,
+      "risk-engine": 43,
+      "signal-engine": 25,
+      "storage-engine": 12,
+      "strategy-core": 12,
+      "telemetry-engine": 4,
+      "telemetry-server": 14
+    },
+    "by_owner_proposed": {
+      "Claude": 39,
+      "Codex": 1102,
+      "GLM": 114,
+      "Qoder": 177
+    },
+    "by_test_path": {
+      "herramienta_diagnostica_por_nombre": 6,
+      "modulo_test_por_nombre": 5,
+      "sin_patron_test": 1285,
+      "suite_integracion_o_soporte_por_directorio": 136
+    },
+    "by_status": {
+      "inventariado_no_certificado": 1432
+    },
+    "by_owner_status": {
+      "propuesto_sin_acuse": 1432
+    },
+    "by_mode": {
+      "100644": 1432
+    },
+    "by_type": {
+      "blob": 1432
+    },
+    "rust": {
+      "total": 461,
+      "in_crates": 405,
+      "outside_crates": 56,
+      "by_crate": {
+        "audit-engine": 16,
+        "backtest-engine": 16,
+        "dark-alpha-engine": 4,
+        "data-ingest": 7,
+        "data-pipeline": 25,
+        "evolution-engine": 22,
+        "execution-engine": 43,
+        "feature-engine": 34,
+        "flight-recorder": 1,
+        "fuera_de_crates": 56,
+        "god-engine-core": 56,
+        "graph-4d": 1,
+        "graph-architecture": 2,
+        "metacortex-engine": 17,
+        "omniscient-registry": 2,
+        "os-guardian": 10,
+        "phase-runner": 2,
+        "quantum-arena": 43,
+        "risk-engine": 42,
+        "signal-engine": 24,
+        "storage-engine": 11,
+        "strategy-core": 11,
+        "telemetry-engine": 3,
+        "telemetry-server": 13
+      }
+    },
+    "tests": {
+      "rust_under_tests_directory": 136,
+      "rust_under_tests_support_directory": 1,
+      "rust_under_tests_directory_without_support": 135,
+      "rust_test_module_by_name": 5,
+      "rust_diagnostic_tool_by_name": 6,
+      "rust_with_test_or_probe_path_pattern": 147,
+      "rust_without_test_path_pattern": 314,
+      "inline_tests_count": null,
+      "executed_tests": 0
+    },
+    "manual_triage": 21,
+    "certified_files": 0,
+    "cargo_manifest_paths": 24,
+    "crate_directory_names": 23
+  },
+  "count_definitions": {
+    "total": "Registros NUL de ls-tree recursivo; no objetos únicos ni archivos del working tree.",
+    "phase_class": "Particiones disjuntas: cada ruta tiene exactamente una fase primaria y una clase heurística.",
+    "package": "Cargo.toml más cercano por ancestro de ruta entre los manifiestos inventariados. El raíz incluye docs, modelos, datos y grafo. No se leyeron [package], members o targets; no es membership verificado del build.",
+    "crate": "Primer directorio después de crates/; fuera_de_crates para el resto. No implica compilación ni activación.",
+    "Rust": "Sufijo exacto .rs; 405 dentro de crates + 56 fuera = 461. Sumatoria por crate también 461.",
+    "tests": "Clasificación por rutas/nombres, no funciones #[test] ni suites aprobadas. Los 136 .rs bajo tests/ incluyen 1 soporte y 135 fuera de support/; 5 módulos por nombre y 6 sondas son categorías adicionales disjuntas. Tests inline no leídos: null, no cero.",
+    "manual_triage": "Rutas sin patrón de fase suficiente o clase otro_manual_triage; todas conservadas y asignadas a F7/manual_triage.",
+    "owner": "Propuesta de triage por línea, no reserva, instrucción recibida, asignación aceptada ni acuse.",
+    "certified_files": "Cero; coincidencia de modo/tipo/OID no es revisión del contenido.",
+    "classes": "Extensión/nombre/prefijo/tipo Git, no MIME ni comprobación de formato. Un .env potencialmente sensible no confirma que contenga secretos."
+  },
+  "methodology": {
+    "grain": "modo tipo OID TAB ruta NUL",
+    "hashes": "OID SHA-1 de 40 dígitos observado en Git; SHA-256 para recibos de bytes.",
+    "steps": [
+      "Resolver el commit completo y su tree OID. No usar HEAD, main móvil o contenidos del working tree para enumerar.",
+      "Capturar ls-tree -rz en memoria, separar registros por NUL y metadatos/ruta por el primer TAB. Conservar exactamente modo, tipo, OID y ruta.",
+      "No filtrar entradas por extensión, rol, tamaño o sensibilidad. Incluir modelos, genomas, datos, logs, informes y artefactos de grafo.",
+      "Aplicar reglas de clase y fase por ruta, sin lectura de contenido de fuentes/modelos/datos/secretos. Leer únicamente el Barrido del mismo snapshot como referencia de fases.",
+      "Usar la primera regla de fase coincidente; clase otro_manual_triage fuerza P99/F7/manual_triage. Agregar owner propuesto y sin acuse; mantener inventariado_no_certificado para cada fila.",
+      "Ubicar paquete por ancestro Cargo.toml y crate por directorio. Contar .rs y patrones de test sin examinar cuerpos de funciones.",
+      "Crear los dos nuevos artefactos solo mediante apply_patch; TSV en 23 parches menores de 24000 caracteres.",
+      "Volver a enumerar el mismo árbol y comparar sets, orden, unicidad, modos, tipos, OIDs y snapshot. Validar todos los estados y sumas de categorías.",
+      "Calcular SHA-256 sobre los bytes reales del TSV escrito; derivar los conteos de ese TSV, no de cifras de informes anteriores.",
+      "Releer ambos artefactos y reconciliar hash, conteos y metadatos con ls-tree fijo. No ejecutar Cargo, red, agentes, commit o push."
+    ],
+    "phase_definitions": {
+      "F0": "Metas y conceptos",
+      "F1": "Matemática y estadística transversal",
+      "F2": "Física y cuántica: sustrato espectral",
+      "F3": "Núcleo vivo",
+      "F4": "Dinero y riesgo",
+      "F5": "Aprender y medir: evolución y backtest",
+      "F6": "Datos y memoria",
+      "F7": "Observabilidad y plataforma; triage manual",
+      "F8": "Integración y verificación final"
+    },
+    "phase_rules_in_order": [
+      {
+        "id": "P01",
+        "phase": "F8",
+        "rule": "tests/* en cualquier nivel; tests.rs/test.rs/test_*.rs/*_test.rs; *_probe.rs/benchmark.rs/nano_benchmark.rs/spectral_bench.rs."
+      },
+      {
+        "id": "P02",
+        "phase": "F8",
+        "rule": ".github/workflows/*; scripts/quality_gate.ps1 o scripts/revalidate_roster.ps1."
+      },
+      {
+        "id": "P03",
+        "phase": "F0",
+        "rule": ".agent/*/.agents/*; AGENTS.md/CLAUDE.md; docs/adr/*; prefijos PLAN_/HOJA_DE_RUTA_/BARRIDO_EXHAUSTIVO/CONSTITUTION_/PROJECT_BIBLE/implementation_plan_; rector_basenames."
+      },
+      {
+        "id": "P04",
+        "phase": "F1",
+        "rule": "Basename .rs sin extensión incluido en math_basename_candidates; precede a zona de crate."
+      },
+      {
+        "id": "P05",
+        "phase": "crate_phase_map",
+        "rule": "crates/<directorio>/*, según zona reconocida del Barrido."
+      },
+      {
+        "id": "P06",
+        "phase": "F5",
+        "rule": "config_dir/genomes/* o config_dir/genotypes/*; incluye respaldos y reportes de esa zona."
+      },
+      {
+        "id": "P07",
+        "phase": "F6",
+        "rule": "models/*, data/*, config_dir/models_manifest.json o config_dir/copulas_manifest.json."
+      },
+      {
+        "id": "P08",
+        "phase": "F5",
+        "rule": "src/bin/* con basename en cli_F5."
+      },
+      {
+        "id": "P09",
+        "phase": "F6",
+        "rule": "src/bin/* con basename en cli_F6."
+      },
+      {
+        "id": "P10",
+        "phase": "F7",
+        "rule": "src/bin/* con basename en cli_F7."
+      },
+      {
+        "id": "P11",
+        "phase": "F3",
+        "rule": "src/bin/god_engine.rs o src/bin/config_compiler.rs."
+      },
+      {
+        "id": "P12",
+        "phase": "F2",
+        "rule": "src/features/* o src/quantum_arena.rs."
+      },
+      {
+        "id": "P13",
+        "phase": "F4",
+        "rule": "src/risk/mod.rs o src/trailing.rs."
+      },
+      {
+        "id": "P14",
+        "phase": "F6",
+        "rule": "Wrappers exactos de wrappers_F6."
+      },
+      {
+        "id": "P15",
+        "phase": "F3",
+        "rule": "Wrappers exactos de wrappers_F3."
+      },
+      {
+        "id": "P16",
+        "phase": "F7",
+        "rule": "graphify-out/*, dashboard/*, static/*, src/dashboard.rs, graph_3d_*.html."
+      },
+      {
+        "id": "P17",
+        "phase": "F7",
+        "rule": "docs/artifacts/*, artifacts/*, COORDINACION_* o evidence_document_prefixes."
+      },
+      {
+        "id": "P18",
+        "phase": "F7",
+        "rule": "deployment/*, launchers/*, .cargo/*; Cargo.toml/lock, rust-toolchain.toml, Dockerfile/docker-compose.yml; build*.ps1/sh, run_*.ps1, LAUNCH*.bat/ps1; .gitignore/.gitattributes/.dockerignore/.agignore, template.env; scripts/monitor_demo.ps1."
+      },
+      {
+        "id": "P19",
+        "phase": "F7",
+        "rule": "*.log/*.log.gz, rustc-ice-* o equity_curve.csv."
+      },
+      {
+        "id": "P99",
+        "phase": "F7",
+        "rule": "Sin patrón de fase suficiente o clase otro_manual_triage; siempre manual_triage=true."
+      }
+    ],
+    "pattern_parameters": {
+      "crate_phase_map": {
+        "quantum-arena": "F2",
+        "signal-engine": "F2",
+        "feature-engine": "F2",
+        "strategy-core": "F2",
+        "god-engine-core": "F3",
+        "execution-engine": "F4",
+        "risk-engine": "F4",
+        "evolution-engine": "F5",
+        "backtest-engine": "F5",
+        "dark-alpha-engine": "F5",
+        "data-pipeline": "F6",
+        "data-ingest": "F6",
+        "storage-engine": "F6",
+        "metacortex-engine": "F6",
+        "telemetry-server": "F7",
+        "telemetry-engine": "F7",
+        "audit-engine": "F7",
+        "os-guardian": "F7",
+        "flight-recorder": "F7",
+        "graph-4d": "F7",
+        "graph-architecture": "F7",
+        "phase-runner": "F7",
+        "omniscient-registry": "F7"
+      },
+      "math_basename_candidates": [
+        "genome",
+        "temporal_spectrum",
+        "espectral_multiactivo",
+        "skill_motores",
+        "cramer_lundberg",
+        "ruin",
+        "drawdown",
+        "capital_regime",
+        "calibration",
+        "random_matrix",
+        "hodge",
+        "multifractal",
+        "spectral_tape",
+        "veto_registry",
+        "math_kernels",
+        "kelly",
+        "kelly_envelope",
+        "copulas",
+        "correlation",
+        "ewma",
+        "kalman",
+        "hurst_dfa",
+        "shannon_entropy",
+        "transfer_entropy",
+        "welford",
+        "adaptive_quantiles"
+      ],
+      "rector_basenames": [
+        "ARCHITECTURE.md",
+        "ARCHITECTURE_METAL_CORE.md",
+        "ATLAS_ANALITICO.md",
+        "README.md",
+        "STRATEGIES.md",
+        "TEMPORAL_SPECTRUM.md",
+        "TRADING_KNOWLEDGE.md",
+        "HORIZON.md",
+        "RISK.md"
+      ],
+      "cli_F5": [
+        "evolution.rs",
+        "evolver.rs",
+        "walkforward_evolver.rs",
+        "auto_trainer_daemon.rs",
+        "train_dark_alpha.rs",
+        "train_forest.rs",
+        "audit_forensic_backtest.rs",
+        "backtest_windows.rs",
+        "multi_coin_simulator.rs"
+      ],
+      "cli_F6": [
+        "binance_vision_sync.rs",
+        "download_history.rs",
+        "feature_exporter.rs",
+        "feature_validator.rs",
+        "macro_history_sync.rs",
+        "oi_history_sync.rs",
+        "parquet_to_bin.rs",
+        "model_manifest.rs",
+        "copulas_manifest.rs",
+        "tape_spread_fix.rs",
+        "votes_export.rs"
+      ],
+      "cli_F7": [
+        "dashboard.rs",
+        "graph_server.rs",
+        "system_health.rs",
+        "latency_flow_audit.rs",
+        "income_report.rs"
+      ],
+      "wrappers_F6": [
+        "src/parsers.rs",
+        "src/quantum_ingester.rs",
+        "src/orderbook.rs",
+        "src/env_manager.rs",
+        "src/symbol_manager.rs"
+      ],
+      "wrappers_F3": [
+        "src/lib.rs",
+        "src/config.rs",
+        "src/multi_asset_orchestrator.rs",
+        "src/dark_alpha_router.rs",
+        "src/dark_alpha_sniffer.rs"
+      ],
+      "evidence_document_prefixes": [
+        "AUDITORIA_",
+        "INFORME_",
+        "FORENSIC_",
+        "CERTIFICADO_",
+        "CERTIFICACION_",
+        "RESULTADO_CERTIFICACION_",
+        "WALKTHROUGH_",
+        "ANALYSIS_",
+        "BATCH_BACKTEST_REPORT",
+        "BRECHA_META_",
+        "GOD_MODE_LAUNCH_REPORT",
+        "NANO_LATENCY_AUDIT",
+        "PREDICTION_ACCURACY_LOG",
+        "VALIDATION_REPORT",
+        "TRIAGE_TEORICO_"
+      ]
+    },
+    "class_rules_in_order": [
+      "Git tipo commit => gitlink; modo 120000 => enlace_simbolico, si existieran.",
+      "*.env/.env/*.env.* o pem/key/p12/pfx => configuracion_potencialmente_sensible.",
+      "graphify-out/* => artefacto_grafo_json si .json, de lo contrario artefacto_grafo_otro.",
+      "models/* => modelo_serializado_json si .json, de lo contrario modelo_otro.",
+      "config_dir/genomes/* o genotypes/* => respaldo_genoma si .bak, informe_evolucion_parquet si .parquet, resto genoma_config_serializado.",
+      "*.rs => fuente_rust o rust_test_o_sonda_por_ruta según patrón de test.",
+      "Cargo.toml => manifiesto_cargo; Cargo.lock => lock_cargo.",
+      "*.log/*.log.gz o rustc-ice-* => log_o_diagnostico_versionado.",
+      ".agent/*/.agents/* o AGENTS.md/CLAUDE.md => regla_o_memoria_agente.",
+      ".github/workflows/* => workflow_ci.",
+      "*.md => documentacion_markdown.",
+      "*.json bajo docs/artifacts/ => artefacto_auditoria_json; demás => config_o_artefacto_json.",
+      "*.csv => datos_csv; *.parquet => datos_parquet.",
+      "*.html/css/js => interfaz_web; *.ps1/bat/sh => script_operativo.",
+      "*.patch => parche_versionado; *.sig => firma_serializada.",
+      "*.bin/exe/dll/onnx/pt/pth/safetensors/npy/npz/zip/gz => binario_o_comprimido_por_extension.",
+      "*.toml/yaml/yml/conf o Dockerfile/.gitignore/.gitattributes/.dockerignore/.agignore => configuracion_o_plataforma.",
+      "*.txt => texto_auxiliar; resto => otro_manual_triage."
+    ],
+    "owner_proposals": {
+      "phase_default": {
+        "F0": "Qoder",
+        "F1": "Qoder",
+        "F2": "Qoder",
+        "F3": "Qoder",
+        "F4": "Claude",
+        "F5": "GLM",
+        "F6": "GLM",
+        "F7": "Codex",
+        "F8": "Codex"
+      },
+      "F6_Codex_overrides": "src/{parser,tensor_parser,validation,lakehouse_mmap,persistence,state_db,storage}.rs en data-pipeline/data-ingest; crates/storage-engine/*; models/*; sufijo _manifest.json.",
+      "meaning": "Triage propuesto por línea; no acuse ni reserva de edición. F8 propone a Codex como coordinador del recibo, no ejecutor exclusivo de todas las suites.",
+      "accepted_assignments_or_acknowledgments": 0,
+      "messages_or_reservations_created": false
+    }
+  },
+  "exclusions_and_limits": {
+    "snapshot_paths_excluded": 0,
+    "all_snapshot_entries_included": true,
+    "untracked": "Fuera del universo del árbol fijo, no escaneados para completarlo.",
+    "ignored": "Ignorados no versionados fuera del universo. Cualquier ruta versionada presente en el snapshot se incluye aunque una regla ignore la ruta.",
+    "runtime": "Sin inventario de procesos, mmap, target, cachés, logs vivos, ficheros externos o descargados.",
+    "directories": "ls-tree -r sin -t inventaría hojas recursivas, no filas adicionales de nodos intermedios de directorio.",
+    "submodules": "Un gitlink se conservaría sin expandir repositorios externos. En este corte todos los registros son blob.",
+    "secret_content_read": false,
+    "source_model_data_content_read_for_classification": false,
+    "actual_mime_or_binary_detection_performed": false,
+    "git_object_content_integrity_verified": false,
+    "contents_unread_are_not_certified": true,
+    "no_economic_target_guaranteed": true
+  },
+  "certification": {
+    "files_certified_by_this_inventory": 0,
+    "semantic_review_performed": false,
+    "behavior_tests_executed": 0,
+    "Cargo_executed": false,
+    "network_used": false,
+    "subagents_used": false,
+    "commit_created": false,
+    "push_performed": false,
+    "F1_author_statement": {
+      "author": "Qoder",
+      "document": "docs/BARRIDO_EXHAUSTIVO_FASES.md",
+      "oid": "77c241ea894a8712246c1e6690c1f6e097d34687",
+      "declaration": "F1 CERRADA 2026-10-04 según el autor del Barrido.",
+      "all_paths_validated_by_this_inventory": false,
+      "distinction": "F1 cerrada por autor ≠ todas las rutas del árbol validadas. No transferir el cierre a las filas de este inventario."
+    },
+    "owners_are_only_proposed": true,
+    "owner_acknowledgments": 0,
+    "absence_of_bugs_claimed": false,
+    "profitability_or_performance_claimed": false
+  },
+  "validation": {
+    "exact_path_set": true,
+    "unique_rows": true,
+    "exact_modes": true,
+    "exact_types": true,
+    "exact_oids": true,
+    "exact_snapshot_every_row": true,
+    "all_inventory_uncertified": true,
+    "all_owners_proposed_without_ack": true,
+    "order_matches_git_ls_tree": true,
+    "classification_fields_complete": true,
+    "manual_triage_F7": true,
+    "all_group_sums_equal_total": true,
+    "observed_at_utc": "2026-10-04T23:30:11.030Z",
+    "reference_snapshot": "23701ecb05486eb13b661d3d50afaadbc9a0015a",
+    "raw_source_hash_matches_first_enumeration": true,
+    "counts_derived_from_written_tsv": true,
+    "sums_expected_total": 1432,
+    "scope": "Correspondencia estructural y metadatos; no semántica, fórmulas, políticas de riesgo ni resultados del sistema."
+  },
+  "sidecar_write_scope": {
+    "paths_authored": [
+      "docs/audit/COBERTURA_MAIN237_2026-10-04.tsv",
+      "docs/audit/COBERTURA_MAIN237_2026-10-04.json"
+    ],
+    "write_method": "codex --codex-run-as-apply-patch; permiso escalado únicamente para crear estos artefactos en RA.",
+    "git_mutating_commands_used": [],
+    "sources_agents_coord_plan_existing_reports_modified": false,
+    "index_refs_merges_modified_by_sidecar": false,
+    "parallel_operator_work": "El operador sigue su merge documental y el plan en paralelo; esta tarea no intenta apropiarse ni corregir sus cambios."
+  }
+}

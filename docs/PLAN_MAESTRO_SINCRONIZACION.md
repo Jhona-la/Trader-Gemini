@@ -129,6 +129,8 @@ de Kelly EN RIESGO AL STOP.
 | 2026-10-04 | Codex | root-audit-2026-10-04 (en vuelo): 16 hallazgos root-contract (parser risk-state, límites OOS, tokens escalares, agregación depth); reconciliado con main 7c4cea40 (este plan) tras all-targets check; documenta gates de certificación sin resolver. PR #28 (G0-G8) aprobado por GLM en LXXXV. |
 | 2026-10-04 | GLM | LXXXV cerrado: L2 v1 PARCIAL DEFINITIVO — dirección transfiere OOS (+5 pts constante) pero calibración NO (Platt sobrefía selección); cableado BLOQUEADO; fase 4 opcional por petición del consejo. Mapa de planes §5b publicado (tres documentos, roles distintos). |
 | 2026-10-04 | Qoder | SELLO FINAL: T-1 del tip exacto 7c4cea40 PASA 16/144 (4221s) — pre-flight VERDE completo, sistema listo para operar (§4.2). Regresión 828/0 + roster 18 MOTOR. |
+| 2026-10-04 | GLM | LXXXVIII: saga L2 cierra HERMÉTICA (condicionado≈global; señal concentrada en no-range +8.7 pts). DECISION_FDUSD_BORRADOR.md publicado — esperando palabra del dueño (recomendada B: archivo). |
+| 2026-10-04 | Qoder | BARRIDO §0b: F0 CERRADA (ADR-0014 doctrina espectral) y F1 CERRADA (23 hallazgos, 2 HIGH: umbral n vitalicio del banco #594, gate vs climatology; mea culpas F1-C2/C4) — docs-only, push 23701ecb. Cola de olas priorizada en BARRIDO_EXHAUSTIVO_FASES.md. F2 (física/cuántica) EN VUELO con 3 auditores. |
 
 ## 6. Consolidación técnica y alcance de las afirmaciones (Codex)
 
@@ -766,3 +768,41 @@ Inventario/leído/reparado/probado/integrado/desplegado son estados distintos.
 Roles propuestos y reservas por ancla, sin acuses supuestos. Nada de borrar
 ramas exclusivas/ocupadas, impulsar modelos o relajar seguridad por meta72h.
 Registro de planificación explícito, no porcentaje ficticio de corrección.
+
+## 17. Correspondencia canónica de métricas72h (adenda, no borrado)
+
+Revisión independiente halló colisión: G72 en§6.1/§6.2 es LOGRETORNO; G72
+en el plan exhaustivo§2 es FACTOR. Para nuevos recibos usar nombres sin
+ambigüedad: growth_factor_72h=E(t+72h)/E(t), objetivo>=2;
+log_growth_72h=ln(growth_factor_72h), objetivo>=ln2. Ejemplo2→ln2,1→0.
+Conservar fórmulas históricas y traducir por su definición, nunca comparar
+factor con umbral log. Métrica G72 sin unidad/linaje BLOQUEA G8 hasta aclarar.
+No se afirma migración de todos los consumidores o medición económica.
+
+Plan exhaustivo§10 añade rollback transversal y owners propuestos/cierre
+de anexo externo. C-versionado no equivale a C-sistema completo. Pruebas
+aisladas y autoridades independientes; no promoción/trading por esta adenda.
+
+## 18. Sincronización F2/mainEA5d y condiciones de teoría nueva
+
+Se conservan las 43 filas F2 de Qoder y su reserva F3, sin cerrar sus bugs.
+RA§48 documenta discrepancia reproducida de conteo: resumen7HIGH/16MED/20LOW
+frente a tablas7HIGH/23MED/12LOW/1INFO. Solicitar reconciliación al autor;
+no reclasificar ni sumar menciones de bitácora como expedientes distintos.
+
+Prioridad: rastrear shadow y consumidores operativos, con oráculo/unidades/
+abstención/fallback antes de modificar consensos o tensores. F2-A1 se revisa
+independientemente sin interferir en el código de Qoder/Claude. El censo
+main237 continúa inmutable; EA5d cambia cuatro docs, no fuente ejecutable.
+La delta de cobertura se registra por OID, no como 1432 archivos auditados.
+
+Investigación BM/OU/e-values: admisión CONDICIONADA a dominio, filtración,
+validez del nulo, barreras, familia múltiple, error numérico y comparación
+OOS neta. RA§48.3 enlaza fuentes primarias y requisitos. No declarar R8-A
+cerrado por una idea ni inmunidad al barrido de escalas por renombrar z/IC.
+Sin nueva teoría implementada, promoción o rentabilidad72h demostrada.
+
+SA d73cca8c y OOS acbc3b61 siguen locales, respectivamente47/0 y14/0 en
+sus composiciones RAf275; revisión y compilación por corte. Publicación
+consultada. CI74beSUCCESS187/0/3 no es CI del candidato RA posterior.
+No acuses externos nuevos; el dueño decide FDUSD, L2v1 sigue sin cableado.
