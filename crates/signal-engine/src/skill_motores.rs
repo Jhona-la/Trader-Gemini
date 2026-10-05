@@ -106,6 +106,11 @@ pub struct SkillMotores {
     /// cierre (camino general), el re-arme con votos frescos en el
     /// siguiente depth. Dedup independiente del de score.
     ts_rearmado: [u64; ESCALAS_VOTO],
+    /// #659 (F1-C4) — snapshot del ÚLTIMO depth por escala: es el voto
+    /// CAUSAL para armar el bloque que nazca después — el voto del re-arme
+    /// diferido (t_d) contenía información de la propia ventana del bloque
+    /// nuevo e inflaba el IC.
+    voto_ultimo_depth: [[f64; ESCALAS_VOTO]; MOTORES],
 }
 
 impl Default for SkillMotores {
@@ -121,6 +126,7 @@ impl SkillMotores {
             voto_armado: [[0.0; ESCALAS_VOTO]; MOTORES],
             ts_procesado: [0; ESCALAS_VOTO],
             ts_rearmado: [0; ESCALAS_VOTO],
+            voto_ultimo_depth: [[0.0; ESCALAS_VOTO]; MOTORES],
         }
     }
 
@@ -146,6 +152,10 @@ impl SkillMotores {
                 self.voto_armado[m][escala] = v.en_escala(escala);
             }
         }
+        // #659: el re-arme INLINE de este camino es causal (votos al ts
+        // exacto del nacimiento) — marca el dedup para que el re-arme
+        // diferido del siguiente depth NO lo pise con un snapshot viejo.
+        self.ts_rearmado[escala] = ts;
     }
 
     /// Ola 48/H6 — puntúa la maduración SIN re-armar: para el camino de
@@ -164,10 +174,13 @@ impl SkillMotores {
         }
     }
 
-    /// Ola 48/H6 — RE-ARME con votos frescos (camino depth): si un bloque
-    /// cerró desde el último re-arme, el snapshot de armado pasa a ser el
-    /// voto actual — el voto con el que NACE el bloque nuevo. Barato: sin
-    /// lectura del espectro, usa el ts_procesado interno.
+    /// Ola 48/H6 — RE-ARME (camino depth): si un bloque cerró desde el
+    /// último re-arme, el snapshot de armado pasa a ser el voto con el que
+    /// NACE el bloque nuevo. #659 (F1-C4): ese voto es el snapshot del
+    /// ÚLTIMO DEPTH ANTERIOR al cierre (causal) — antes se usaba el voto
+    /// del propio depth del re-arme (t_d), que arrastra información de la
+    /// ventana del bloque nuevo e infla el IC. El snapshot se actualiza
+    /// SIEMPRE al final: es el candidato para el próximo nacimiento.
     #[inline]
     pub fn re_amar_con_votos(&mut self, escala: usize, votos_actuales: &[VotoEspectral]) {
         if escala >= ESCALAS_VOTO {
@@ -176,9 +189,12 @@ impl SkillMotores {
         if self.ts_procesado[escala] > self.ts_rearmado[escala] {
             self.ts_rearmado[escala] = self.ts_procesado[escala];
             for m in 0..MOTORES {
-                if let Some(v) = votos_actuales.get(m) {
-                    self.voto_armado[m][escala] = v.en_escala(escala);
-                }
+                self.voto_armado[m][escala] = self.voto_ultimo_depth[m][escala];
+            }
+        }
+        for m in 0..MOTORES {
+            if let Some(v) = votos_actuales.get(m) {
+                self.voto_ultimo_depth[m][escala] = v.en_escala(escala);
             }
         }
     }
@@ -407,17 +423,31 @@ mod tests {
     fn qo_648_score_sin_rearmar_y_rearme() {
         let mut sm = SkillMotores::new();
         madurar(&mut sm, 4, 1_000, 0.0, 0.7); // arma con 0.7
-        // El bloque cierra en un TRADE: score sin re-armar.
+        // depth d1: el snapshot del último depth pasa a +0.9.
+        sm.re_amar_con_votos(4, &votos_constantes(0.9));
+        // El bloque cierra en un TRADE: score sin re-armar (arma sigue 0.7).
         sm.observar_maduracion_sin_rearmar(4, 2_000, 0.05);
         assert_eq!(sm.acum[0][4].n, 1);
-        // El depth re-arma con el voto fresco (−0.3) SIN puntuar de nuevo.
+        // depth d2 con voto −0.3 DESPUÉS del nacimiento del bloque nuevo:
+        // #659 (F1-C4) — el re-arme usa el snapshot PREVIO (+0.9), no el
+        // voto fresco de t_d (contenía información de la ventana del
+        // bloque nuevo — look-ahead que inflaba el IC).
         sm.re_amar_con_votos(4, &votos_constantes(-0.3));
         assert_eq!(sm.acum[0][4].n, 1, "el re-arme no debe puntuar");
-        // El siguiente cierre puntúa el ARMADO −0.3 contra su retorno.
+        assert_eq!(sm.voto_armado[0][4], 0.9, "arma con el último depth ANTERIOR al nacimiento");
+        assert_eq!(sm.voto_ultimo_depth[0][4], -0.3, "el snapshot ya prepara el próximo armado");
+        // El siguiente cierre puntúa el ARMADO +0.9 contra su retorno.
         sm.observar_maduracion_sin_rearmar(4, 3_000, -0.05);
         assert_eq!(sm.acum[0][4].n, 2);
-        // Re-arme repetido sin bloque nuevo: no-op.
-        sm.re_amar_con_votos(4, &votos_constantes(0.9));
+        // El cierre en 3_000 dejó maduración pendiente: este depth re-arma
+        // el bloque nacido en 3_000 con el snapshot previo (−0.3) y deja
+        // el snapshot listo para el próximo (0.4).
+        sm.re_amar_con_votos(4, &votos_constantes(0.4));
+        assert_eq!(sm.voto_armado[0][4], -0.3, "arma con el último depth previo al nacimiento");
+        assert_eq!(sm.voto_ultimo_depth[0][4], 0.4);
+        // Sin maduración nueva: no-op de armado.
+        sm.re_amar_con_votos(4, &votos_constantes(0.5));
+        assert_eq!(sm.voto_armado[0][4], -0.3, "sin maduración nueva el armado no cambia");
     }
 
     /// Ola 48/H3 — TTL: piso 30 s, escala dominante cuando es mayor.
