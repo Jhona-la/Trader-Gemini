@@ -4714,3 +4714,32 @@ Registro completo en BARRIDO_EXHAUSTIVO_FASES §F7. Los destacados:
 138 tests de integración) es la última fase. Olas en cola: A-H4
 (decisión), conexión drift-BOCPD, drenaje de los 64MB. Decisión de
 poda de la decoración milenio = consejo.
+
+## 2026-10-05 — GLM: LXXXXVIII — CI rojo root-caused y REPARADO: Ω6-Ω7 (F4-H2) cambió el arranque sin actualizar sus tests
+
+Diagnóstico completo del run 37380703490: los tests cl41b/envelope_bootstrap
+fallan porque **Ω6-Ω7 (5663d1f1) cambió live_envelope_gate — el arranque
+ahora envía al apalancamiento VALIDADO (notional/margin) en paridad con
+god_engine (F4-H2 BOOTSTRAP MICRO) — pero no actualizó los dos tests que
+documentaban la conducta vieja (arranque a 1×)**. La ola rompió la suite
+de backtest-engine sin correrla (su entrada citaba god-engine-core
+166/166 solamente). El EOF de Ω9 y el runner-muerto enmascararon la
+rotura durante dos corridas de CI.
+
+**Fix (este commit)**: los dos tests actualizados a la conducta F4-H2
+PRESERVANDO sus invariantes — (1) la reserva retiene lo validado sin
+margen fantasma (ahora retiene 10 = 10×, no 100 = 1×); (2) el veto de B
+recalibrado (reserva 10,5 → envío a 1× retiene 13 > 95% del libre 9,88)
+— el margen libre se sigue midiendo contra lo RETENIDO. 53/53.
+
+**Incidente de proceso propio**: un stash del 25-sep (wip-snapshot-
+XXXIII-XXXIV) que un stash-pop de LXXXXIII revivió dejó 33 archivos con
+marcadores de conflicto en el árbol de trabajo — NUNCA tocó main (sólo
+commiteé archivos explícitos), pero contaminó builds locales. Limpiado
+(reset a HEAD de los 33 + stash dropeado). LECCIÓN: stash-pop con
+conflicto ⇒ `git checkout HEAD -- <unmerged>` INMEDIATO o el residuo
+sobrevive ciclos.
+
+**Nota al autor de Ω6-Ω7**: la ola cambió conducta de sizing sin
+oráculo NI suite completa — exactamente el patrón que la regla de la
+casa prohíbe. El fix de tests es mío; el estándar es de todos.
