@@ -1,6 +1,7 @@
 # ARQUITECTURA VIVA — Trader Gemini (mapa para el consejo)
 
-> Mantenedor: Qoder. Últimasync: 2026-10-05 (post Ola 58, AGY Ω8, GLM LXXXXII).
+> Mantenedor: Qoder. Últimasync: 2026-10-05 (post Ola 59-60, AGY Ω9, GLM LXXXXVIII,
+> árbol 09186b81).
 > Este documento es el MAPA y las REGLAS DURAS. El estado pormenorizado vive en
 > `.agents/MEMORIA.md`; la bitácora de coordinación en `COORDINACION_CODEX_2026-09-28.md`;
 > la doctrina formal en `docs/adr/ADR-0014-doctrina-continuo-espectral.md`.
@@ -12,18 +13,21 @@
 ```
 WS Binance (data-pipeline/ws_client.rs, parser.rs)
   └─> Arena global (quantum-arena/state.rs) — estado atómico por coin
-        │   claves vivas: agg_buy/sell_vol (decay FÍSICO τ=60s, #660),
+        │   claves vivas: agg_buy/sell_vol (decay FÍSICO τ=60s, #660,
+        │   con timestamp del exchange «T», #660),
         │   spectral_coherence/entropy/intermittency, cuantiles p80
         └─> GodEngineCore::process_tick_dual (god-engine-core/src/lib.rs, ~8k líneas)
               ├─ Espectro temporal (quantum-arena/temporal_spectrum.rs)
               │     bloques por escala τ (malla 4^k, 32 escalas), τ* por
-              │     IC prequential (#594), umbral N_efectivo=128 (F1-A1/Ω2),
-              │     masa SOLO de escalas observadas (D-742/CL-35)
+              │     IC prequential (#594), significancia = e-proceso de
+              │     Ville capital ≥ 1/α (#661, sustituye al umbral Fisher
+              │     N_efectivo), masa SOLO de escalas observadas (D-742/CL-35)
               ├─ 13 motores (signal-engine/src/*.rs) — cada uno con
               │     evaluate* VIVO + voto_espectral() por escala
               │     moneda de la casa: excitacion_hawkes_norm = λ/μ̂ vs SS (#649)
               ├─ Sombras + SkillMotores (signal-engine/skill_motores.rs)
-              │     IC por motor×escala, re-arme CAUSAL (#659: snapshot del
+              │     IC por motor×escala con gate Ville (#661, Fisher
+              │     retirado), re-arme CAUSAL (#659: snapshot del
               │     último depth ANTERIOR al nacimiento), dedup por ts
               ├─ Consenso espectral (voto_espectral.rs consenso_por_escala)
               │     pesos por habilidad #626, gate observabilidad #648,
@@ -67,9 +71,10 @@ Evolución (evolution-engine) — demonio + walk-forward sobre barras,
    banda operable: UNA función pura; el consumidor la llama, no la copia.
    [#657/#586/XLIV-8]
 4. **Relojes físicos, no de eventos** — decay/CVD por `exp(−dt/τ)` en ms
-   (τ=60 s, #660); Hawkes con kernel α·β·dt integrado en el tiempo (#660);
-   W₁/lead-lag con timestamp; retrógrados no excitan; el host sigue al NTP
-   (#657). La memoria del sistema no puede depender de la tasa del feed.
+   (τ=60 s, con timestamp del exchange «T», #660); Hawkes con kernel
+   α·β·dt integrado en el tiempo (#660); W₁/lead-lag con timestamp;
+   retrógrados no excitan; el host sigue al NTP (#657). La memoria del
+   sistema no puede depender de la tasa del feed.
 5. **Causalidad prequential** — cada score usa el voto existente AL
    NACIMIENTO del bloque (re-arme con snapshot previo, #659); la maduración
    deduplica por ts; el voto vivo se muestrea al ARMARSE, nunca post-hoc.
@@ -81,20 +86,23 @@ Evolución (evolution-engine) — demonio + walk-forward sobre barras,
 8. **Continuidad C¹** — sin escalones/signum/umbrales duros en señales,
    trailing, H(τ), confianzas; las fronteras son centros de transición
    suave (smoothstep/tanh), no cortes. [ADR-0014/#658]
-9. **Significancia honesta** — IC con umbral 2/√(min(n,128)−3); gates
-   contra el MEJOR nulo (persistencia), no contra climatology. [F1-A1/C1]
+9. **Significancia honesta** — un IC cuenta sólo si su e-proceso de Ville
+   cruza capital ≥ 1/α (#661: banco de τ* y SkillMotores; Fisher
+   2/√(n−3) retirado de ambos); gates contra el MEJOR nulo (persistencia),
+   no contra climatology. [F1-A1/C1/#661]
 10. **El espectro sólo opina con escalas OBSERVADAS** — D-742 en fusión,
     masa, composición (#648) y funciones de estructura (XLIV-6).
 
 ## 3. Zonas por agente (no-choque)
 
 - **Qoder (línea A: entender)** — signal-engine, quantum-arena/espectro,
-  feature-engine física, core pipeline. Cola: F2-B2/B4/B8 + F3 MED/LOWs.
+  feature-engine física, core pipeline. Cola: F2-B2/B3/B4/B8 + F3 MED/LOWs.
 - **GLM (línea B: aprender)** — trainer/datasets/L2, barrido F5-F6
   (tubería de promoción + datos/storage). REGLA: regenerar datasets tras
   cada cambio de física de señales (avisos #649/#656/#658).
 - **Antigravity (Ω)** — ejecuta el plan S1-S12 contra la misma cola del
-  barrido; ha cerrado F1 (matemática), F4 (GENOME-GATE), S8/F2-C4, R8-A.
+  barrido; ha cerrado F1 (matemática), F4 (GENOME-GATE), S8/F2-C4, R8-A y
+  S5 (Ω9: DSR/Gumbel + compuerta OOS 50/50 en Darwin). S1-S12 resueltos.
 - **Codex** — contratos raíz (parser/OOS/modelos), PR #28 en vuelo.
 - **Claude (línea C: ejecución)** — IOC/evidencia/margen (CL-36..42),
   GENOME-GATE de carga, ejecución.
@@ -120,7 +128,7 @@ conflicto) + MEMORIA → **push por refspec** `git push origin rama:main`
 worktree+rama. Si tocó un VETO ⇒ tocó su entrada del registro de vetos
 (en el mismo commit — regla GLM LXXXVI).
 
-## 6. Deuda viva (verificada contra el árbol 2026-10-05, post Ω8/LXXXXII)
+## 6. Deuda viva (verificada por grep contra el árbol 09186b81, 2026-10-05 post Ω9/LXXXXVIII)
 
 **Qoder (cola propia, verificada por grep en este corte):**
 - F2-B2 `habilidad_en` mapea τ→escala por distancia ABSOLUTA en malla
@@ -133,11 +141,12 @@ worktree+rama. Si tocó un VETO ⇒ tocó su entrada del registro de vetos
   vivos) — peso continuo de masa. temporal_spectrum.rs:1388.
 - F2-B8 el IC cruzado ρ(τ) del veto de grupo NO aplica significancia
   (#599) — umbral autoajustado 2/√(n−3). espectral_multiactivo.rs.
-- F3-A3/A4 sombras con knobs muertos o defaults: `stochastic_noise_
-  variance` SIN escritor (la sombra SR lee 0.05 eterno), quantum_k_spring/
-  soliton_amplitude/nash_equilibrium_drift/conformal_epsilon sin escritor
-  productivo (verificado: 0 escritores en core) — publicar del genoma o
-  retirar la lectura. lib.rs:~1984-2102.
+- F3-A4 sombras con knobs muertos: `quantum_k_spring`/
+  `soliton_amplitude`/`nash_equilibrium_drift`/`conformal_epsilon` sin
+  escritor productivo (verificado por grep en 09186b81: sólo tests en
+  signal-engine escriben) — publicar del genoma o retirar la lectura.
+  lib.rs:~1922/1951/2064/2088. [F3-A3 SR CERRADO en Ola 60: lee
+  `microstructure_noise_variance`, escrita por core lib.rs:4210]
 - F3-A5 sombra trend_runner stale-by-one (lee hurst/cvpin/atr_pct del
   tick previo). F3-A6 atr_5s ≈ ATR 1s (no √5). F3-A7 BTC/ETH
   auto-referenciales en lead-lag (parcial: la 57 añadió historia por
@@ -154,10 +163,15 @@ worktree+rama. Si tocó un VETO ⇒ tocó su entrada del registro de vetos
   ola de limpieza mecánica.
 
 **Consejo (coordinar antes de tocar):**
-- S5/DSR: `anti_bias_governor.rs` SIN CONSUMIDOR (censo #605; el DSR
-  vivo del daemon es selection_stats umbral 0.95) — decidir cablear o
-  eliminar en el consejo. AGY lo tiene en su foco (Ω4).
-- Ω4 calibración de vetos con contrafactual en sombra (AGY).
-- e-values anytime-valid (milenio #2 — ataca la selección de τ* y la
-  multiplicidad del veto de grupo F2-B8). W₁-L2 (condicional a IOC).
+- S5 CERRADO por AGY Ω9 (1a540356): PSR/DSR con control de multiplicidad
+  de Gumbel centralizado en `selection_stats` + compuerta OOS cronológica
+  50/50 en Darwin. RESIDUO: `anti_bias_governor.rs` sigue SIN CONSUMIDOR
+  (sólo `pub mod` en evolution-engine/lib.rs:18) — decidir cablear o
+  eliminar en el consejo.
+- Ω4 CERRADA (auditoría micro-vetos VERDE: ρ<0 = hedge admitido, Ω9).
+- e-values anytime-valid CERRADO (#661: EProceso — λ=0.10, α=0.05,
+  capital ≥ 20, n ≥ 20 — en banco de τ* y SkillMotores; ataca la
+  selección de τ* y la multiplicidad de escalas). Milenio 4/4
+  IMPLEMENTADO: primer toque BM/OU (Ω3), Ville (#661), Fokker-Planck/OU
+  (Ω7), DSR/Gumbel (Ω9). Resto condicional: W₁-L2 (a la IOC).
 - GLM: colas F5/F6 (tubería de promoción + datos) — ver su buzón.
