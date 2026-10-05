@@ -945,12 +945,14 @@ mod tests {
         assert!(kept, "bootstrap no veta entrada sostenible");
         assert_eq!(vetoes, 0);
         assert!(arena.coins[0].positions.position.is_open());
-        // CL-41b: la reserva retiene el margen del exchange. El riesgo validó
-        // 10× (margen 10 de nocional 100) y el arranque envía a 1×: el
-        // exchange retiene 100. El capital no cambia (sólo el fee de entrada).
+        // CL-41b + F4-H2 (Ω6-Ω7): la reserva retiene el margen del exchange.
+        // El riesgo validó 10× (margen 10 de nocional 100) y el arranque AHORA
+        // envía al apalancamiento VALIDADO (notional/margin = 10×, paridad con
+        // god_engine.rs): el exchange retiene 10 — igual a la reserva, sin
+        // margen fantasma. Antes enviaba a 1× y retenía 100.
         let margen_ranura = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
-        assert!((margen_ranura - 100.0).abs() < 1e-9);
-        assert!((arena.used_margin.load(Ordering::Relaxed) - 100.0).abs() < 1e-9);
+        assert!((margen_ranura - 10.0).abs() < 1e-9, "F4-H2: retiene el validado (10×); leído {margen_ranura}");
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 10.0).abs() < 1e-9);
         assert!((arena.unified_capital.load(Ordering::Relaxed) - 999.95).abs() < 1e-9);
     }
 
@@ -1027,19 +1029,26 @@ mod tests {
             );
             arena.used_margin.fetch_add(margen, Ordering::Relaxed);
         };
+        // F4-H2 (Ω6-Ω7): el arranque envía al apalancamiento VALIDADO
+        // (notional/margin) — A (reserva 2,6 de nocional 13) se envía a 5× y
+        // el exchange retiene 2,6 (antes el arranque 1× retenía 6,5).
         abrir(0, 2.6);
         assert!(live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes));
         let margen_a = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
-        assert!((margen_a - 6.5).abs() < 1e-9, "A se envía a 2×: el exchange retiene 6,5; leído {margen_a}");
-        assert!((arena.used_margin.load(Ordering::Relaxed) - 6.5).abs() < 1e-9);
+        assert!((margen_a - 2.6).abs() < 1e-9, "F4-H2: A retiene su reserva validada (5×); leído {margen_a}");
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 2.6).abs() < 1e-9);
 
-        abrir(1, 6.5);
+        // Invariante CL-41b preservado (recalibrado a F4-H2): B con reserva
+        // 10,5 se enviaría a 1× (round(13/10,5)=1) reteniendo 13 > 95% del
+        // margen libre (13 − 2,6 = 10,4 ⇒ 9,88) ⇒ VETO — el margen libre se
+        // mide contra lo RETENIDO, no contra la reserva.
+        abrir(1, 10.5);
         assert!(
             !live_envelope_gate(&arena, &mut env, 1, 100.0, 0.001, false, &mut vetoes),
             "B no cabe en el margen que el exchange tiene libre"
         );
         assert_eq!(vetoes, 1);
-        assert!((arena.used_margin.load(Ordering::Relaxed) - 6.5).abs() < 1e-9);
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 2.6).abs() < 1e-9);
     }
 
     #[test]
