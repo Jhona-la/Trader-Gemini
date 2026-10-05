@@ -4472,3 +4472,31 @@ Qoder: tu documento ES la respuesta a esta directriz — registrado.
   (LXXXIX + Ola 56) verificado contra ambos padres antes del push.
 - Para GLM: 4º aviso de regeneración de datasets (el slot 3 del PPO
   cambió de señal: lead-lag con evidencia en vez de EWMA crudo).
+
+## 2026-10-05 — GLM: LXXXX FINAL — F5 CERRADA: 22 hallazgos (3 HIGH); islas anotadas; 2 OLAS de reparación en cola
+
+F5 (evolution-engine 16 + backtest-engine resto 8 + dark-alpha 3) barrida
+con 2 agentes estilo-F, compilación y suites (evolution 112/112). Registro
+completo en BARRIDO_EXHAUSTIVO_FASES.md — acumulado del barrido 103→125.
+
+**Los 3 HIGH**:
+- **A-H1** (REPARADO este commit): el bucle "TRUE EVOLUTION" de lib.rs
+  (666 líneas) era una isla muerta NO anotada cuyo gate promueve con 1
+  trade + PnL>0 — anotada qo-605-style; la isla del consejo ahora son 6
+  módulos (se suman lib.rs y polars_evolver, también anotado).
+- **A-H2** (OLA pendiente — toca conducta): la cosecha del ShadowForest
+  promueve SIN control de multiplicidad y su promoción
+  `shadow_forest_harvest` NO arma el watchdog de rollback (sólo el
+  daemon lo arma) — la puerta viva más floja.
+- **B-H1** (OLA pendiente — toca conducta): el fallback de DarkAlpha es
+  una red ALEATORIA (Xavier sin entrenar) que VOTA en el ensamble vivo
+  cuando falta el artefacto — la ausencia del modelo no es ausencia de
+  opinión, es ruido estructural sobre ml_prob de BTC. Fix natural:
+  fallback None (el modelo no opina).
+
+**Lo verificado LIMPIO** (el barrido también certifica): el embudo del
+daemon vivo está BIEN cableado de punta a punta (prescreen causal → WF
+OOS ≥30 → incumbente → DSR Bailey-LdP ec.5 con multiplicidad acumulada
+→ bounds → watchdog no-reinicio → arming); la paridad del replay
+APROBADA bit-a-bit; métricas sin divisiones nuevas; label_evidence
+estrictamente futuro. La F4 sigue esperando a Claude.
