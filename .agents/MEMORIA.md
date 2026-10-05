@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-05 — Qoder: OLA 57 CERRADA — H(τ) continua + lead-lag real — ORÁCULO PASA 16/144
+
+- Rama qoder/ola57-hta-leadlag (commits 658a/b): hurst_escala_continua
+  con smoothstep en ln τ (nodos bit a bit con el escalón viejo, C¹ en
+  120s/1h — el Hurst que dimensiona TP/SL ya no salta, F2-B1) y
+  LeadLagAlphaEngine reescrito (lags físicos {0.5..10 s} medidos por
+  correlación cruzada, reloj monotónico, frescura 8 s, firma sólo si
+  el líder ADELANTA con ρ>0.25, F2-C1/C2 — antes EWMA sin lags vivo en
+  el slot 3 del PPO).
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2265.87 s). Verificación:
+  feature-engine 82/82 (5 contratos qo_658), core 164/164 + suites.
+- Detalle: FORENSIC #658. Buzón: cierre Ola 57.
+
 
 ## 2026-10-04 — Qoder: BARRIDO F3 CERRADA (núcleo vivo)
 
