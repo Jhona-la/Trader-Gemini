@@ -1,6 +1,25 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-05 — Antigravity: PLAN MAESTRO QUANT SR — Revisión Sistémica Total
+## 2026-10-05 — Antigravity: OLA Ω2-Ω3-Ω5 CERRADA — Integración Cuántica, Estadística y Primer Toque Analítico
+
+- Rama `antigravity/omega-integracion-cuantica-total` (base 13eff9c9), commit `47b6fc74`, mergeado a `main` y pusheado a origin.
+- **F1-A1 / S9 CERRADO**: Anclaje de `umbral_ic_significativo(s.skill_n.min(N_EFECTIVO_EWMA))` en `temporal_spectrum.rs` con $N_{\text{efectivo}} = 128$. Evita el colapso del umbral a cero en sesiones largas y elimina la selección de τ* por ruido.
+- **F1-C1 / S10 CERRADO**: Implementado `skill_vs_best_null()` en `ForecastScore` (`spectral_tape.rs`), exigiendo $R^2 > 0$ frente a ambos nulos (climatología Y persistencia). `habilidad_volatilidad` ahora bloquea modelos que pierden contra la persistencia.
+- **F1-B1 / F1-B3 CERRADOS**: Techo adaptativo `hi` de bisección en `cramer_lundberg.rs` derivado de la aproximación de difusión $R \approx 2\mu/\sigma^2$ usando `var2`. Permite cotas legítimas para micro-retornos (0.1%-0.5%) en cuentas micro ($13 USD) en lugar de fallar en `hi=100`.
+- **F1-B4 CERRADO**: Inmunidad a `NaN` en `clamp_ruin` (`ruin.rs`), retornando `0.0` para cualquier entrada no finita antes de modular con el piso de racha.
+- **F1-A4 CERRADO**: `from_vector` en `genome.rs` ahora ejecuta `normalize_sl_curve_friction_floor`, garantizando paridad exacta con `mutate` y previniendo que genomas deserializados violen el piso de fricción de SL.
+- **F1-A3 CERRADO**: Cotas de mutación de `dynamic_atr_min` y `dynamic_ema_trend` alineadas con `get_lower_bounds` (1e-7).
+- **R8-A / CL-34 / Ω3 CERRADOS**: Derivación matemática exacta en forma cerrada del **Primer Toque Analítico** (Brownian Motion con drift) e Inversa-Gaussiana en `tp_sl.rs`:
+  - `normal_cdf(z)`: aproximación analítica de alta precisión (A&S 7.1.26, error < 7.5e-8).
+  - `probabilidad_tocar_sl_antes_de_tp(tp, sl, \mu, \sigma)`: probabilidad exacta en tiempo continuo de tocar la barrera inferior antes de la superior.
+  - `probabilidad_primer_toque_stop_antes_de_tau(sl, \mu, \sigma, \tau)`: distribución analítica del tiempo de primer paso antes del horizonte $\tau$.
+- **Ω5 CERRADA**: Eliminación física de 3 archivos huérfanos/muertos (`src/quantum_ingester.rs`, `src/features/graph_4d.rs`, `src/features/graph_architecture.rs`).
+- **VERIFICACIÓN COMPLETA**:
+  - `cargo check --workspace --all-targets`: 0 errores.
+  - `cargo test -p quantum-arena --lib`: 103/103 tests pasados.
+  - `cargo test -p risk-engine --lib`: 128/128 tests pasados (incluyendo las nuevas pruebas analíticas de primer toque).
+- Siguiente foco: S5 (DSR en promociones del demonio) y Ω4 (calibración de vetos con contrafactual en sombra).
+
 
 - Rama `antigravity/plan-maestro-quant-sr-2026-10-05` (base 862b5945).
   Fast-forward merge a main, commit 9fc74451, push verificado.

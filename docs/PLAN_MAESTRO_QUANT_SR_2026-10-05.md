@@ -40,30 +40,40 @@
 | ~~S6~~ | ~~Hurst discontinuo por bandas duras~~ | ✅ H(τ) continua interpolada en ln τ |
 | ~~S7~~ | ~~Lead-lag sin lags~~ | ✅ Lead-lag real con desfases + reloj físico |
 
+### ✅ RESUELTOS (Antigravity Ola Ω2-Ω3-Ω5, mergeada en main, 231 tests verdes)
+
+| # | Problema | Resolución |
+|---|---|---|
+| ~~S9~~ | ~~Significancia IC degenerada (F1-A1)~~ | ✅ Anclaje a `N_EFECTIVO_EWMA = 128` en `temporal_spectrum.rs` |
+| ~~S10~~ | ~~Vol predictor sin gate (F1-C1)~~ | ✅ Gate contra persistencia Y climatología (`skill_vs_best_null`) |
+| ~~R8-A/CL-34~~ | ~~Primer toque analítico~~ | ✅ Solución analítica cerrada BM con deriva + Inversa-Gaussiana en `tp_sl.rs` |
+| ~~F1-B1/B3~~ | ~~Techo bisección Lundberg~~ | ✅ Techo adaptativo derivado de `var2` para microcuentas ($13 USD) |
+| ~~F1-B4~~ | ~~Propagación de NaN en ruina~~ | ✅ Inmunidad a NaN en `clamp_ruin` (0.0 para no-finito) |
+| ~~F1-A3/A4~~ | ~~Piso SL en vector y mutación~~ | ✅ `normalize_sl_curve_friction_floor` en `from_vector` y mutación |
+| ~~Ω5~~ | ~~Archivos huérfanos muertos~~ | ✅ Eliminados `quantum_ingester.rs`, `graph_4d.rs`, `graph_architecture.rs` |
+
 ### CRITICAL — Pendientes (resolver antes de producción)
 
 | # | Problema | Ubicación | Impacto |
 |---|---|---|---|
-| **S5** | Edge OOS no validado | Transversal | Puede estar operando con edge=0 real |
+| **S5** | Edge OOS no validado | Transversal | DSR en promociones del demonio |
 
 ### HIGH (resolver en la primera semana)
 
 | # | Problema | Ubicación | Impacto |
 |---|---|---|---|
 | **S8** | Pseudo-Hurst en confluencia (F2-C4) | multifractal.rs:104 | Pisos modulados por estadístico falso |
-| **S9** | Significancia IC degenerada (F1-A1) | temporal_spectrum.rs:604 | τ* por ruido en sesiones largas |
-| **S10** | Volatility predictor sin gate (F1-C1) | spectral_tape.rs:740 | Señales sin validar publican |
 | **S11** | Vetos sin calibración OOS | risk-engine (múltiples) | Pueden bloquear operaciones rentables |
-| **S12** | Superficie muerta (~30 módulos/features) | Todas las fases | Latencia innecesaria |
+| **S12** | Superficie muerta (~25 módulos/features) | Todas las fases | Latencia innecesaria |
 
 ## FASES DE CORRECCIÓN (Ω0-Ω6)
 
 ### Ω0 — Limpieza Git (hoy) → CERRADA
-### Ω1 — Erradicación sombra/vivo (S1-S3) → Coordinar con Qoder
-### Ω2 — Integridad estadística (S5, S9, S10) → E-values, DSR
-### Ω3 — Continuidad C∞ (S6, S7, S8) → Primer toque, Fokker-Planck
+### Ω1 — Erradicación sombra/vivo (S1-S4, S6-S7) → CERRADA (Qoder Olas 56-57)
+### Ω2 — Integridad estadística (S9, S10) → CERRADA parte 1; S5 (DSR) en curso
+### Ω3 — Continuidad C∞ y Primer Toque (R8-A, CL-34) → CERRADA parte 1; Fokker-Planck en curso
 ### Ω4 — Calibración de vetos (S11) → Coordinar con Claude (F4)
-### Ω5 — Limpieza muerta (S12) → Ola mecánica
+### Ω5 — Limpieza muerta (S12) → CERRADA parte 1 (3 huérfanos purgados)
 ### Ω6 — Validación OOS continua (S5) → Walk-forward + DSR
 
 ## ESTADO DE RAMAS (auditado 2026-10-05)
