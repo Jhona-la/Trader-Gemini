@@ -26,7 +26,8 @@
 //!   redondeo FP) — la ponderación SÓLO entra con evidencia madura.
 
 use crate::voto_espectral::{VotoEspectral, ESCALAS_VOTO};
-use quantum_arena::temporal_spectrum::{umbral_ic_significativo, MUESTRAS_SKILL_MADURAS};
+use quantum_arena::evalues::EProceso;
+use quantum_arena::temporal_spectrum::MUESTRAS_SKILL_MADURAS;
 
 /// Los 13 motores con `voto_espectral()` de la composición del consenso
 /// (11 originales de #623 + trend-runner y RenyiTsallis, AGY P29).
@@ -48,11 +49,24 @@ struct AcumIc {
     wr: f64,
     wsr: f64,
     n: u64,
+    /// #661 — E-PROCESO de Ville sobre el signo de voto·retorno: la
+    /// significancia anytime-valid que sustituye al umbral fijo. El IC
+    /// sigue midiendo la MAGNITUD (para el tamaño del peso); el
+    /// e-proceso decide SI hay habilidad (inmune al optional stopping
+    /// de la composición por evento y a la multiplicidad de la
+    /// selección del máximo entre escalas).
+    e_proceso: EProceso,
 }
 
 impl AcumIc {
-    const fn nuevo() -> Self {
-        Self { ws: 0.0, wr: 0.0, wsr: 0.0, n: 0 }
+    fn nuevo() -> Self {
+        Self {
+            ws: 0.0,
+            wr: 0.0,
+            wsr: 0.0,
+            n: 0,
+            e_proceso: EProceso::new(),
+        }
     }
 
     fn observar(&mut self, v: f64, r: f64) {
@@ -65,6 +79,8 @@ impl AcumIc {
         self.wr += (wr - self.wr) * OLVIDO;
         self.wsr += (wsr - self.wsr) * OLVIDO;
         self.n = self.n.saturating_add(1);
+        // #661: la misma observación alimenta el e-proceso.
+        self.e_proceso.observar(v, r);
     }
 
     /// IC maduro y SIGNIFICATIVO (umbral #599 contra el sesgo de
@@ -76,16 +92,20 @@ impl AcumIc {
         if self.n < MUESTRAS_SKILL_MADURAS {
             return None;
         }
+        // #661 — Ville REPLAZA el umbral fijo de Fisher: el e-proceso es
+        /// anytime-valid (cualquier número de consultas) y corrige la
+        /// multiplicidad de la selección del máximo entre escalas — el
+        /// consejo diagnosticó que «en ruido el máximo de varias IC suele
+        /// ser positivo»; el capital ×20 no se cruza por azar.
+        if !self.e_proceso.significativo() {
+            return None;
+        }
         let den = self.ws * self.wr;
         if !den.is_finite() || den <= 0.0 {
             return None;
         }
         let ic = self.wsr / den.sqrt();
-        if !ic.is_finite() {
-            return None;
-        }
-        let umbral = umbral_ic_significativo(self.n.min(N_EFECTIVO_EWMA))?;
-        if ic > umbral {
+        if ic.is_finite() && ic > 0.0 {
             Some(ic)
         } else {
             None
