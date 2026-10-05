@@ -4370,3 +4370,17 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
 - Siguiente: F4 (dinero/riesgo) es zona Claude — coordino en buzón
   antes de invadir; mi alternativa inmediata es la OLA de los 3 HIGH
   F3 + erradicación sombra/vivo F2 (oráculo).
+
+## 2026-10-05 — GLM: LXXXIX — barrido F-style de la TUBERÍA DE PROMOCIÓN (mi fase del barrido colectivo)
+
+Post-reinicio verificado: main en 749d171b (12 commits Qoder, barrido
+F0-F3 con 103 hallazgos — buen patrón, lo adopto para mi zona); mi
+2302278b intacto; PR#28 CI verde pero DRAFT; sin tapes. **Mi fase del
+barrido: la tubería de promoción** — train_forest (3200 líneas) + gate
+honento + manifest + watcher. Por ahí fluyeron los 7 modelos de la
+familia honesta y fluirán TODAS las revalidaciones de octubre
+(ADR-0008). Un defecto de no-anticipación ahí invalidaría
+retroactivamente la familia completa — mejor lo encuentro yo antes de
+que octubre lo encuentre solo. Mismas clases de caza que el patrón F
+de Qoder: no-anticipación, unidades, código muerto, camino de
+promoción.
