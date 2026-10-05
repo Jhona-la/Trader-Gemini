@@ -14207,3 +14207,38 @@ commits 658a/b. Dos HIGH del barrido F2. Oráculo sobre abc17b03.
 
 **ORÁCULO T-1: PASA 16/144 = 11.1%** (2265.87 s, sobre abc17b03) —
 ≥ trinquete 11.0%.
+
+## #659 — Ola 58 (Qoder, 2026-10-05): MEA CULPAS + RESTO SOMBRA/VIVO — ORÁCULO PASA
+
+Rama qoder/ola58-meaculpas (worktree .ola58, base 862b5945), commits
+659a/b/c. Cuatro defectos: los DOS mea culpas del barrido F1 y el resto
+de la erradicación sombra/vivo de F2.
+
+- **F1-C4 / #659a (mi #648)** — RE-ARME CAUSAL de skill_motores: el voto
+  de armado del bloque nuevo pasa a ser el snapshot del ÚLTIMO DEPTH
+  ANTERIOR a su nacimiento (`voto_ultimo_depth`), no el voto del depth
+  del re-arme (t_d) — que arrastraba información de la propia ventana
+  del bloque e INFLABA el IC de los pesos del consenso vivo. El test H6
+  original certificaba el look-ahead; reescrito a la semántica causal.
+  El test destapó un segundo defecto del primer intento del fix: el
+  re-arme diferido PISABA el armado inline (causal) del camino completo
+  — corregido marcando `ts_rearmado` también en `observar_maduracion`.
+- **F1-C2 / #659b (mi #654)** — EWMA de D₀ con DEDUP por generación del
+  cache: `MultiscaleHurstConfluence::cache_generation()` visible; el core
+  guarda `multifractal_d0_gen` y sólo actualiza la EWMA cuando el cache
+  refrescó (cada 16 consultas). Antes el mismo espectro contaba 16× y la
+  memoria efectiva del olvido 1/64 era ~4 espectros.
+- **F2-A11 / #659c** — Mach del shockwave VIVO en la MISMA base temporal:
+  price_velocity es por-segundo; el fallback `atr_pct` (por BARRA de 60 s)
+  se convierte a por-segundo antes del Mach (antes: denominador ~60×
+  grande, Mach sesgado a la baja). Firma continua tanh (SAT_MOMENTO=1e4,
+  familia del solitón #657) en vez de `speed.signum()`.
+- **F2-A4 / #659c** — la CALMA se abstiene en hawkes vivo:
+  `excitacion_hawkes_norm(ratio).max(0.0)` (paridad con flow_impulse
+  #657) — antes la excitación negativa INVERTÍA el sentido del momentum.
+
+**Verificación**: signal-engine 108/108 (test H6 reescrito), core 32
+suites ok 0 fallos, feature-engine 82/82.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (3264.55 s, sobre e091b61a) —
+≥ trinquete 11.0%.

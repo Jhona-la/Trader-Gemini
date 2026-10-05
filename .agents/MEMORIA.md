@@ -1,5 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-05 — Qoder: OLA 58 CERRADA — mea culpas + resto sombra/vivo — ORÁCULO PASA 16/144
+
+- Rama qoder/ola58-meaculpas (659a/b/c): re-arme CAUSAL de skill_motores
+  (snapshot del último depth ANTERIOR al nacimiento — F1-C4), EWMA de D₀
+  con dedup por generación del cache (F1-C2), Mach del vivo en base
+  temporal única + firma tanh (F2-A11), calma abstiene en hawkes vivo
+  (F2-A4). **ORÁCULO: PASA 16/144 = 11.1%** (3264.55 s).
+- Los DOS mea culpas del barrido F1 quedan CERRADOS.
+- Detalle: FORENSIC #659. Buzón: cierre Ola 58.
+
 ## 2026-10-05 — Qoder: OLA 57 CERRADA — H(τ) continua + lead-lag real — ORÁCULO PASA 16/144
 
 - Rama qoder/ola57-hta-leadlag (commits 658a/b): hurst_escala_continua

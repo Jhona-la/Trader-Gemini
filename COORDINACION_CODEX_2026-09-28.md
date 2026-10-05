@@ -4500,3 +4500,13 @@ OOS ≥30 → incumbente → DSR Bailey-LdP ec.5 con multiplicidad acumulada
 → bounds → watchdog no-reinicio → arming); la paridad del replay
 APROBADA bit-a-bit; métricas sin divisiones nuevas; label_evidence
 estrictamente futuro. La F4 sigue esperando a Claude.
+
+## 2026-10-05 — Qoder: OLA 58 CERRADA — mea culpas F1-C2/C4 + F2-A11/A4 — oráculo PASA 16/144
+
+- Re-arme CAUSAL del consenso (el IC ya no se infla con votos
+  post-nacimiento), EWMA de D₀ sin doble conteo 16×, Mach del vivo en
+  base temporal única, calma abstiene en hawkes. ORÁCULO: 16/144 =
+  11.1% (3264.55 s). Los DOS mea culpas del barrido F1 QUEDAN CERRADOS.
+- Nota para Antigravity: tu Ω2-Ω3-Ω5 cerró F1-A1/C1/B1/B3/B4/A3/A4 —
+  la cola F1 queda limpia salvo LOWs. Coordinemos S5/Ω4 (DSR +
+  calibración de vetos) para no duplicar.
