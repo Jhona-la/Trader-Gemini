@@ -2507,6 +2507,40 @@ impl GodEngineCore {
         }
     }
 
+    /// #657 (F3-A1) — UMBRALES DINÁMICOS DE PARIDAD evaluate/update: la
+    /// fuente ÚNICA del denominador de obi_norm/ofi_norm. La entrada vota
+    /// con estos umbrales (curva del genoma a τ + piso medido p80 con
+    /// intermittency); el cierre del PPO aprende con los MISMOS. Antes el
+    /// cierre usaba el literal 0.35: el peso 0/1 aprendía de una escala
+    /// distinta de la que vota (clase #625, slots 0/1).
+    fn intermittency_mult_de(&self, coin_id: usize) -> f64 {
+        1.0 + 0.5 * self.arena.coins[coin_id]
+            .spectral_intermittency
+            .load(Ordering::Relaxed)
+            .clamp(0.0, 1.0)
+    }
+
+    fn umbral_obi_dinamico(&self, coin_id: usize, tau_ms: f64) -> f64 {
+        let piso = self.cuantiles[coin_id].dynamic_obi_threshold()
+            * self.intermittency_mult_de(coin_id);
+        self.arena
+            .config
+            .obi_threshold_at_tau(tau_ms)
+            .max(piso)
+            .clamp(0.0, 1.0)
+    }
+
+    fn umbral_ofi_dinamico(&self, coin_id: usize) -> f64 {
+        let piso = self.cuantiles[coin_id].dynamic_ofi_threshold()
+            * self.intermittency_mult_de(coin_id);
+        self.arena
+            .config
+            .dynamic_ofi_threshold
+            .load(Ordering::Relaxed)
+            .max(piso)
+            .max(f64::MIN_POSITIVE)
+    }
+
     /// Procesa un tick en el motor universal continuo unificado.
     /// Retorna: (new_order, closed_order, maker_quote)
     #[inline(always)]
@@ -3862,9 +3896,17 @@ impl GodEngineCore {
                         -1.0
                     };
                     let dir_macro = self.feature_engines[coin_id].get_macro_trend();
+                    // #657 (F3-A1) — PARIDAD EVALUATE/UPDATE slots 0/1: el
+                    // gradiente aprende de las MISMAS variables y en la MISMA
+                    // escala con las que vota la entrada (ema_ofi/prev_obi
+                    // contra los umbrales dinámicos medidos). Antes: ofi
+                    // instantáneo contra el literal 0.35.
+                    let ema_ofi_close = self.feature_engines[coin_id].ofi_model.ema_ofi;
+                    let prev_obi_close = self.feature_engines[coin_id].obi_accel.prev_obi;
                     let ppo_close_features = [
-                        (ofi_value / 0.35).clamp(-1.5, 1.5),
-                        (obi / 0.35).clamp(-1.5, 1.5),
+                        (ema_ofi_close / self.umbral_ofi_dinamico(coin_id)).clamp(-1.5, 1.5),
+                        (prev_obi_close / self.umbral_obi_dinamico(coin_id, tau_trade_ms))
+                            .clamp(-1.5, 1.5),
                         excitacion_hawkes_norm(hawkes_ratio_close) * close_dir_sign,
                         lead_lag_div.clamp(-1.5, 1.5),
                         ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0)
@@ -4522,12 +4564,9 @@ impl GodEngineCore {
             // muestra garantiza. Se copia la fila de la moneda (es `Copy`)
             // para no retener un préstamo de `self` dentro de las ramas.
             let registro_ramas = self.rama_registro[coin_id];
-            let dynamic_obi_thr = self
-                .arena
-                .config
-                .obi_threshold_at_tau(tau_dom)
-                .max(piso_obi_medido)
-                .clamp(0.0, 1.0); // |OBI| ∈ [-1,1] por construcción
+            // #657 (F3-A1): fuente única — mismos umbrales vota la entrada
+            // que aprende el cierre del PPO.
+            let dynamic_obi_thr = self.umbral_obi_dinamico(coin_id, tau_dom);
             // El umbral de tendencia se compara con `macro_trend`, que es
             // (EMA₉ − EMA₂₁)/EMA₂₁ sobre velas de 1 min. Su suelo es el valor
             // que la difusión declara SIGNIFICATIVO al 95 % con la
@@ -4546,13 +4585,7 @@ impl GodEngineCore {
                 .load(Ordering::Relaxed)
                 .max(piso_tendencia)
                 .max(0.0);
-            let dynamic_ofi_thr = self
-                .arena
-                .config
-                .dynamic_ofi_threshold
-                .load(Ordering::Relaxed)
-                .max(piso_ofi_medido)
-                .max(f64::MIN_POSITIVE); // sólo evita la división por cero
+            let dynamic_ofi_thr = self.umbral_ofi_dinamico(coin_id);
 
             let micro_trend = self.feature_engines[coin_id].get_micro_trend();
             let macro_trend = self.feature_engines[coin_id].get_macro_trend();
@@ -5754,7 +5787,16 @@ impl GodEngineCore {
                 }
 
                 if fast_intent.signal == SignalType::Flat {
-                    let hawkes_r = self.feature_engines[coin_id].cvpin.current_vpin();
+                    // #657 (F2-A5/F3-A2) — UNIDADES: flow_impulse espera el
+                    // RATIO λ/μ̂ (estado estacionario 1.6); se le pasaba VPIN
+                    // (probabilidad ∈[0,1]): con el umbral el camino quedaba
+                    // muerto. Ratio fresco del proceso por moneda.
+                    let hawkes_r = match self.hawkes_by_coin.get(coin_id) {
+                        Some(hk) => {
+                            hk.intensity_ratio(event_time_ms as f64 / 1000.0)
+                        }
+                        None => 1.0,
+                    };
                     if let Some(mut impulso_intent) =
                         signal_engine::flow_impulse::FlowImpulseEngine::evaluate_flow_impulse(
                             &self.arena,
