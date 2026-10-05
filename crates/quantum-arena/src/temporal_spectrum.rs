@@ -210,6 +210,11 @@ pub struct ScaleState {
     skill_wr: f64,
     skill_wsr: f64,
     skill_n: u64,
+    /// #661 — e-proceso de Ville por escala: la significancia
+    /// anytime-valid del banco de τ*. El umbral fijo de Fisher es la
+    /// aproximación de-n-fijo; el capital ×20 del e-proceso no se cruza
+    /// por optional stopping ni por la multiplicidad del máximo.
+    skill_e: crate::evalues::EProceso,
     /// #594 — señal al armar el bloque en curso (s(t₀); no ve el retorno
     /// que después la puntúa — causalidad por construcción).
     bloque_s0: f64,
@@ -455,6 +460,8 @@ impl TemporalSpectrum {
                 s.skill_wr += (wr - s.skill_wr) * HABILIDAD_OLVIDO;
                 s.skill_wsr += (wsr - s.skill_wsr) * HABILIDAD_OLVIDO;
                 s.skill_n = s.skill_n.saturating_add(1);
+                // #661: la misma maduración alimenta el e-proceso.
+                s.skill_e.observar(s.bloque_s0, r);
                 let signo = |x: f64| {
                     if x > 0.0 {
                         1.0
@@ -607,9 +614,9 @@ impl TemporalSpectrum {
                 // #599 / F1-A1: un IC positivo aislado es el máximo típico de ruido
                 // entre 32 escalas — exige significancia t ≥ 2 para opinar,
                 // anclando n al N_EFECTIVO_EWMA para consistencia en sesiones largas.
-                let significativo = umbral_ic_significativo(s.skill_n.min(N_EFECTIVO_EWMA))
-                    .map(|umbral| ic >= umbral)
-                    .unwrap_or(false);
+                // #661 — Ville REPLAZA el umbral fijo: capital ≥ 1/α
+                // (anytime-valid, inmune a la multiplicidad del máximo).
+                let significativo = s.skill_e.significativo();
                 if significativo && ic > best_skill {
                     best_skill = ic;
                     dominant_skill = s.tau_ms;
@@ -910,6 +917,7 @@ impl TemporalSpectrum {
             skill_wr: 0.0,
             skill_wsr: 0.0,
             skill_n: 0,
+            skill_e: crate::evalues::EProceso::new(),
             bloque_s0: 0.0,
             ultimo_bloque_ts: 0,
             ultimo_bloque_r: 0.0,
@@ -1589,6 +1597,12 @@ mod tests {
         s.skill_ws = 1.0;
         s.skill_wr = 1.0;
         s.skill_wsr = ic;
+        // #661: el e-proceso se alimenta con las mismas n observaciones
+        // del signo que fabrica el IC (ic>0 ⇒ productos positivos, ic<0
+        // ⇒ negativos): capital = (1+λ)^n para habilidad perfecta.
+        for _ in 0..n {
+            s.skill_e.observar(1.0, ic.signum() * 0.01);
+        }
         s
     }
 

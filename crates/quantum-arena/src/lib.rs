@@ -4,6 +4,7 @@ pub mod arena_alloc;
 pub mod atomic_float;
 pub mod config;
 pub mod espectral_multiactivo;
+pub mod evalues;
 pub mod feed_health;
 pub mod genome;
 pub mod genome_store;
