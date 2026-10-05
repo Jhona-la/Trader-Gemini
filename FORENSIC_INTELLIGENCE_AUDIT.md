@@ -14172,3 +14172,38 @@ el voto positivo en régimen normal, exactamente el defecto); core
 ningún gen certificado de main perdió sensibilidad con las siete
 correcciones. Re-lanzado tras el reinicio del host (primer intento
 muerto a los ~34 min).
+
+## #658 — Ola 57 (Qoder, 2026-10-05): H(τ) CONTINUA + LEAD-LAG REAL — ORÁCULO PASA
+
+Rama qoder/ola57-hta-leadlag (worktree .ola57, base 749d171b),
+commits 658a/b. Dos HIGH del barrido F2. Oráculo sobre abc17b03.
+
+- **F2-B1 / #658a** — H(τ) CONTINUA: `hurst_escala_continua(tau, micro,
+  meso, macro)` con smoothstep en ln τ. Los NODOS de banda (τ ≤ 60 s,
+  τ ≥ 2 h) son BIT A BIT con el escalón viejo; las transiciones
+  micro→meso (60 s–4 min) y meso→macro (30 min–2 h) son C¹ con las
+  fronteras viejas (120 s / 1 h) como centros. La H que dimensiona la
+  geometría TP/SL ya no SALTA al cruzar la frontera — el horizonte es
+  continuo, como manda ADR-0014.
+- **F2-C1/C2 / #658b** — LEAD-LAG REAL: `LeadLagAlphaEngine` reescrito.
+  Antes: EWMA compuesto 0.6/0.4 SIN lags ni reloj, umbrales duros
+  0.50/0.25, `buffer.back()` sin frescura — vivo en el slot 3 del PPO.
+  Ahora: correlación cruzada líder(t)×alt(t+lag) por interpolación
+  lineal sobre la historia propia del coin (HashMap por coin_id) en la
+  REJILLA DE LAGS físicos {0.5, 1, 2, 5, 10 s}; el lag óptimo firma la
+  divergencia SÓLO si es positivo (el líder ADELANTA) con |ρ| > 0.25
+  sobre ≥12 muestras; momentum del líder con CADUCIDAD 8 s (OFI viejo
+  no es momentum — cierra F2-C2); divergencia continua
+  `tanh((líder−alt)·0.8)·ρ` sin escalones; reloj monotónico (eventos
+  retrógrados descartados); sin reloj se ABSTIENE (compat honesta).
+  Call-sites del core con `event_time_ms` y `coin_id`.
+- Test del líder-rezagado: primera versión con seno periódico FALLÓ por
+  correlaciones espurias a múltiplos del período — reescrito con pulso
+  único (lección: medir lead-lag con series periódicas es ambiguo por
+  construcción).
+
+**Verificación**: feature-engine 82/82 (5 contratos qo_658), core
+164/164 + suites 0 fallos.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (2265.87 s, sobre abc17b03) —
+≥ trinquete 11.0%.
