@@ -14096,3 +14096,75 @@ con ésta, los 7/7 resueltos (H1/H3/H5/H6 en #648; H2/H4/H7 aquí).
 - **Verificación**: core 163/163 (test de convergencia: constante ⇒
   sd→0; alternante 0.6/1.0 ⇒ media→0.8, sd≈0.2; semilla sin dispersión
   inventada).
+
+## #657 — Ola 56 (Qoder, 2026-10-04): PARIDADES ROTAS + ERRADICACIÓN SOMBRA/VIVO
+
+Primera ola correctiva del barrido F0-F3 (103 hallazgos en cola).
+Rama qoder/ola56-pariedades (worktree .ola56, base 749d171b).
+Siete defectos, tres commits atómicos (657a/b/c), todos de conducta
+⇒ oráculo T-1 del tip c69bb77b (veredicto abajo).
+
+- **F3-A1 / #657a (HIGH)** — PARIDAD evaluate/update del PPO en slots
+  0/1: la entrada votaba `obi/dynamic_obi_thr` y `ofi/dynamic_ofi_thr`
+  (umbrales medidos p80 + curva del genoma a τ + intermittency) pero el
+  cierre actualizaba con `(ofi_value/0.35)` y `(obi/0.35)` — denominador
+  LITERAL y variable instantánea en vez de `ema_ofi`/`prev_obi` con las
+  que vota. El peso 0/1 aprendía de una escala distinta de la que vota
+  (clase #625, que cerró sólo el slot 2). FIX: fuente única
+  `umbral_obi_dinamico`/`umbral_ofi_dinamico` + `intermittency_mult_de`
+  — la entrada y el cierre consumen los MISMOS helpers (paridad por
+  construcción). El cierre usa `tau_trade_ms` (la τ con la que vivió la
+  posición) para la curva OBI del genoma.
+- **F3-B1 / #657a (HIGH)** — La escalera de trailing RECIBÍA
+  `spectral_persistence` y NO la usaba (closure `_lvl` jamás llamado):
+  la modulación espectral S-2/#560 prometida en el doc no existía. FIX:
+  `extend = lerp(0.80, 1.20, t)` multiplica los TRIGGERS de
+  half/profit/runner — tendencial: se activan más tarde y (gains
+  derivados de triggers) locks más lejanos = el trade corre;
+  mean-revert: cosecha temprana. Browniano (t=0.5) ⇒ extend=1.0 ⇒ BIT A
+  BIT con la escalera base. El breakeven de fees NO se modula (guarda
+  neta). Nota de diseño: el primer intento usaba `/extend` y el cálculo
+  numérico del propio test destapó que la cadena amplificaba al revés
+  (MR dejaba locks más lejanos) — corregido a `*extend` antes de
+  commitear. Doc del parámetro actualizado a la implementación real.
+- **F2-A5/F3-A2 / #657a (MED)** — El call-site de respaldo de
+  flow_impulse pasaba `cvpin.current_vpin()` (probabilidad [0,1]) como
+  ratio λ/μ̂ (SS=1.6): unidades rotas y camino muerto bajo el umbral.
+  FIX: `hawkes_by_coin[coin].intensity_ratio(ts)` fresco del proceso
+  (mismo camino que #625).
+- **F3-C1 / #657b (HIGH)** — Reloj de latencia CONGELADO al arranque:
+  `epoch_baseline_ms` nunca incorporaba el offset NTP actualizado cada
+  15 s por el sincronizador. La deriva del reloj local en sesiones
+  largas sesgaba `latency_ms` — que alimenta el kill-switch de
+  volatilidad sintética (10 ticks) y los strikes del sistema inmune
+  (3/3 ⇒ flatten): deriva positiva = aplanados falsos, negativa =
+  stalls ocultos. FIX: el hot-loop releé
+  `arena.server_time_offset_ms` y corrige el baseline con
+  `(offset_actual − offset_t0)`.
+- **F2-A1 / #657c (HIGH)** — hawkes_bessel VIVO: `sign(dir)·tanh(λ/μ̂)`
+  votaba ±0.92 CONSTANTE en régimen normal (ratio≈1.6) sin abstención;
+  signum saltaba en dir=0. FIX: `(dir/1e-3).tanh() ·
+  excitacion_hawkes_norm(ratio)` — la MISMA moneda de la casa de #649:
+  0 en SS, ±1 en cascada/calma. El fallback escalar D-754 ya no hereda
+  la física rota. (La calma vota levemente contra el flujo — la
+  unificación de firma F2-A4 queda para la siguiente ola.)
+- **F2-A3 / #657c (HIGH)** — soliton VIVO: `vel.signum()·sech(...)` —
+  la física invertida que #650 erradicó sólo en sombra + salto pleno
+  en vel=0. FIX: firma CONTINUA `(norm_vel·SAT_MOMENTO).tanh()·amp_val`
+  (familia tanh(A·x) del voto #650; SAT_MOMENTO=1e4 ⇒ 1 bp/s ≈ tanh(1)),
+  la envolvente cosh sigue aportando la amplitud.
+- **F2-A2 / #657c (HIGH)** — flow_impulse `vote()` VIVO: umbral 1.2 <
+  SS=1.6 (gate TAUTOLÓGICO: abierto en régimen normal) + escalones C⁰
+  en 0.2 + pesos 0.6/0.4 fijos. FIX: `excitacion_hawkes_norm(hawkes)`
+  como gate continuo (calma se abstiene), flujo continuo
+  `(obi+ofi).clamp(±3)·GANANCIA_FLUJO(0.8).tanh()` — paridad con el
+  voto espectral #649.
+
+**Verificación**: signal-engine 108/108 (3 contratos qo_657 nuevos +
+test de registry hawkes reescrito a la física nueva — el viejo afirmaba
+el voto positivo en régimen normal, exactamente el defecto); core
+164/164 + TODAS las suites de integración 0 fallos; check workspace
+--all-targets exit 0 (6m37s).
+
+**ORÁCULO T-1**: EN VUELO al cierre de esta redacción (release,
+--test-threads=1, --nocapture, tip c69bb77b) — veredicto en el push.
