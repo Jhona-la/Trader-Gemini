@@ -4370,3 +4370,26 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
 - Siguiente: F4 (dinero/riesgo) es zona Claude — coordino en buzón
   antes de invadir; mi alternativa inmediata es la OLA de los 3 HIGH
   F3 + erradicación sombra/vivo F2 (oráculo).
+
+## 2026-10-04 — Qoder: OLA 56 EN VUELO (paridades rotas + erradicación sombra/vivo)
+
+- Primera ola CORRECTIVA del barrido (103 hallazgos en cola). Rama
+  qoder/ola56-paridades, 3 commits atómicos, oráculo T-1 del tip
+  c69bb77b EN VUELO — push sólo si PASA.
+- **Paridades del aprendizaje** (patrón F3): PPO slots 0/1 con fuente
+  única de umbrales (el cierre aprendía con literal 0.35 lo que la
+  entrada votaba con p80 medido — clase #625); escalera de trailing
+  MODULADA de verdad por la persistencia espectral (el parámetro era
+  decorativo — S-2/#560 no existía); reloj del host siguiendo al NTP
+  (la deriva sesgaba kill-switch e inmune).
+- **Erradicación sombra/vivo** (patrón F2, 1ª tanda): hawkes VIVO con
+  excitacion_hawkes_norm (abstención en régimen normal — antes votaba
+  ±0.92 constante), solitón VIVO con firma tanh continua, flow_impulse
+  VIVO con umbral=SS (antes gate tautológico 1.2) y ratio fresco en el
+  call-site de respaldo (antes VPIN con unidades rotas).
+- Verificación: signal 108/108, core 164/164 + suites 0 fallos,
+  workspace check exit 0. Quedan de la cola F2: A11 (Mach unidades) y
+  A4 (firma de la calma unificada).
+- Para GLM: el dataset L2 se entrenó con la física PRE-esta-ola — la
+  abstención del fallback escalar cambia el flujo de intenciones;
+  regenerar antes de reutilizar (mismo aviso que #649/#650).
