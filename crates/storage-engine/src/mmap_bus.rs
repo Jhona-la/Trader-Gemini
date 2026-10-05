@@ -298,6 +298,30 @@ impl MmapTelemetryReader {
 
     /// Attempts a bounded batch from the legacy ring; not a lossless journal.
     /// Cached mapping avoids handle churn, but batch work is not constant time.
+    /// LXXXXIV (B-M3 del barrido F6): avanza el cursor de lectura al HEAD
+    /// actual SIN ingerir nada. Para SESIONES NUEVAS del consumidor: el bus
+    /// persiste su head entre corridas y un lector que arranque en 0
+    /// re-ingiere hasta MAX_BATCH_READ frames de sesiones ANTERIORES ya
+    /// aprendidos — duplicación sistemática del dataset (contaminación, no
+    /// anticipación: los frames son completos y pasados). Con esto, la
+    /// primera lectura de una sesión devuelve sólo lo escrito desde su
+    /// arranque.
+    pub fn skip_to_head(&mut self) -> std::io::Result<usize> {
+        if self.mmap.is_none() {
+            self.mmap = Some(Self::open_mmap(&self.path)?);
+        }
+        let mmap = match &self.mmap {
+            Some(m) => m,
+            None => return Ok(0),
+        };
+        Self::validate_len(mmap.len() as u64)?;
+        let head_ptr = unsafe { &*(mmap.as_ptr() as *const AtomicUsize) };
+        let current_head = head_ptr.load(Ordering::Acquire);
+        let saltado = current_head.saturating_sub(self.last_read_idx);
+        self.last_read_idx = current_head;
+        Ok(saltado)
+    }
+
     pub fn read_latest_frames(&mut self) -> std::io::Result<Vec<TelemetryFrame>> {
         if self.mmap.is_none() {
             // Absence/corruption is not an observed empty batch. Keep None
@@ -362,6 +386,28 @@ impl MmapTelemetryReader {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn lxxxxiv_skip_to_head_salta_sin_ingerir() {
+        // B-M3: sesion nueva no re-ingiere lo previo. El contrato usa el
+        // mismo path de archivo temporal del resto de tests del modulo.
+        let dir = std::env::temp_dir().join(format!("mmap_bm3_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.mmap");
+        let _ = std::fs::remove_file(&path);
+        {
+            let mut bus = MmapTelemetryBus::new(&path).unwrap();
+            bus.write_trace(12, 30, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+            bus.write_trace(12, 30, [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
+        }
+        let mut lector = MmapTelemetryReader::new(&path);
+        let saltados = lector.skip_to_head().unwrap();
+        assert!(saltados >= 2, "debe saltar al menos los 2 frames escritos: {saltados}");
+        let frames = lector.read_latest_frames().unwrap();
+        assert!(frames.is_empty(), "tras skip, la lectura sin escritas nuevas debe ser vacia: {}", frames.len());
+        let _ = std::fs::remove_file(&path);
+    }
+
     use super::*;
 
     #[test]

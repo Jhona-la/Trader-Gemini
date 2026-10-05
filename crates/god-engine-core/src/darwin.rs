@@ -410,6 +410,20 @@ impl DarwinDaemon {
             master_stream.len()
         );
 
+        // S5 / RA-OOS: Partición causal temporal honesta (50% in-sample / 50% out-of-sample).
+        // Evita sobreajuste y garantiza generalización estadística causal.
+        let total_ticks = master_stream.len();
+        let (train_stream, oos_stream) = if total_ticks >= 100 {
+            let split_idx = total_ticks / 2;
+            (&master_stream[..split_idx], &master_stream[split_idx..])
+        } else {
+            println!(
+                "[Darwin] Ventana de ticks insuficiente ({} < 100) para partición causal OOS; evolución abortada.",
+                total_ticks
+            );
+            return;
+        };
+
         let pop_size = 20; // Fast mini-evolution
         let generations = 5;
         let mutation_rate = 0.3;
@@ -439,7 +453,7 @@ impl DarwinDaemon {
                 .par_iter()
                 .map(|genome| {
                     let (final_cap, fitness) = evaluate_genotype(
-                        genome, &master_stream, initial_capital, replay_max_drawdown, active_coins,
+                        genome, train_stream, initial_capital, replay_max_drawdown, active_coins,
                     );
                     (genome.clone(), final_cap, fitness)
                 })
@@ -584,23 +598,34 @@ impl DarwinDaemon {
             population = next_gen;
         }
 
-        let (_, baseline_fitness) = evaluate_genotype(
-            &current_active, &master_stream, initial_capital, replay_max_drawdown, active_coins,
+        // S5: Evaluación Out-Of-Sample (OOS) causal ciega de baseline y candidato campeón
+        let (_, baseline_oos_fitness) = evaluate_genotype(
+            &current_active, oos_stream, initial_capital, replay_max_drawdown, active_coins,
+        );
+        let (_, candidate_oos_fitness) = evaluate_genotype(
+            &best_all_time.0, oos_stream, initial_capital, replay_max_drawdown, active_coins,
         );
 
-        println!("[Darwin] Online Evolution Complete.");
-        println!("         Current Active Fitness: {:.4}", baseline_fitness);
-        println!("         Evolved Genome Fitness: {:.4}", best_all_time.1);
+        let n_trials = pop_size * generations;
+        let e_max_sr = risk_engine::selection_stats::expected_max_sharpe(n_trials, 1.0);
+
+        println!("[Darwin] Online Evolution Complete (S5 OOS Partition).");
+        println!("         IS Train Ticks: {}, OOS Eval Ticks: {}", train_stream.len(), oos_stream.len());
+        println!("         In-Sample Champion Fitness: {:.4}", best_all_time.1);
+        println!("         OOS Baseline Fitness: {:.4}", baseline_oos_fitness);
+        println!("         OOS Candidate Fitness: {:.4}", candidate_oos_fitness);
+        println!("         DSR Multiplicity Expectation E[max SR] (N={}): {:.4} * sigma", n_trials, e_max_sr);
 
         // Missing/invalid evidence is not a measured loss. The inherited finite
         // margin is a policy, not significance or a structural-change detector.
-        let clears_margin = meets_promotion_margin(best_all_time.1, baseline_fitness);
+        // S5: El candidato debe superar al baseline EN LA VENTANA OOS NO VISTA.
+        let clears_margin = meets_promotion_margin(candidate_oos_fitness, baseline_oos_fitness);
 
         let allow_hotswap = std::env::var("ENABLE_ONLINE_DARWIN_MUTATION")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
         if clears_margin && allow_hotswap {
-            println!("[Darwin] 🧬 Candidate cleared the configured in-window margin; authorized legacy promotion.");
+            println!("[Darwin] 🧬 Candidate cleared the configured OOS margin; authorized legacy promotion.");
             best_all_time.0.apply_to_arena(&self.live_arena);
 
             let mut full_genotype =
@@ -628,8 +653,8 @@ impl DarwinDaemon {
                 full_genotype,
                 "darwin_daemon",
                 &format!(
-                    "fitness {:.4} (baseline {:.4})",
-                    best_all_time.1, baseline_fitness
+                    "oos_fitness {:.4} (baseline_oos {:.4}, is_fitness {:.4}, N={})",
+                    candidate_oos_fitness, baseline_oos_fitness, best_all_time.1, n_trials
                 ),
             ) {
                 Ok(env) => println!(
@@ -748,5 +773,40 @@ mod tests {
         assert_eq!(candidate, baseline);
         assert!(candidate.0.is_finite());
         assert_eq!(candidate.1, f64::NEG_INFINITY); // three ticks are not thirty closes
+    }
+
+    #[test]
+    fn s5_oos_partition_temporal_contract() {
+        // S5: Causalidad temporal estricta de la partición IS/OOS
+        let ticks: Vec<TickEvent> = (0..200)
+            .map(|i| TickEvent {
+                coin_id: 0,
+                timestamp: 1000 + i * 10,
+                bid_price: 100.0,
+                ask_price: 100.02,
+                bid_qty: 1.0,
+                ask_qty: 1.0,
+            })
+            .collect();
+
+        let split = ticks.len() / 2;
+        let train = &ticks[..split];
+        let oos = &ticks[split..];
+
+        let max_train_ts = train.iter().map(|t| t.timestamp).max().unwrap();
+        let min_oos_ts = oos.iter().map(|t| t.timestamp).min().unwrap();
+        assert!(
+            max_train_ts <= min_oos_ts,
+            "Causalidad rota: train max {max_train_ts} > oos min {min_oos_ts}"
+        );
+
+        // Control de multiplicidad DSR (N = 100 pruebas)
+        let e_max = risk_engine::selection_stats::expected_max_sharpe(100, 1.0);
+        assert!(e_max > 2.0 && e_max < 3.0, "E[max SR] para N=100 debe ser ~2.5, got {e_max}");
+
+        // OOS Promotion Margin: rechaza candidato si no bate al baseline OOS por margen
+        assert!(meets_promotion_margin(1.20, 1.00));
+        assert!(!meets_promotion_margin(1.02, 1.00)); // margen < 5%
+        assert!(!meets_promotion_margin(f64::NEG_INFINITY, 1.00));
     }
 }
