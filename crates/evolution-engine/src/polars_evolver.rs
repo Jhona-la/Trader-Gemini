@@ -1,3 +1,7 @@
+//! [SIN CONSUMIDOR — censo GLM F5-A M7, 2026-10-05] `start_polars_evolver_daemon`
+//! NO tiene callers. Su pseudo-sharpe multiplica métricas incommensurables
+//! (familia erradicada D-652) y promueve con sharpe>0 sin OOS/DSR/incumbente
+//! — NO resucitar sin el embudo del daemon vivo.
 use backtest_engine::run_backtest_native;
 use quantum_arena::genome::SuperGenotype as Genotype;
 use serde::{Deserialize, Serialize};

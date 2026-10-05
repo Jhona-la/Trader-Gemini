@@ -1,3 +1,10 @@
+// [SIN CONSUMIDOR — censo GLM F5-A H1, 2026-10-05] `start_evolution_loop`
+// NO tiene callers (reemplazado por LiveEvolutionDaemon en el host). Su gate
+// de promoción promueve basura (1 trade + PnL>0, sin DSR/incumbente/OOS) y
+// su `frozen_macro` inyecta literales de 2024 — NO cablear sin rediseño con
+// el embudo del daemon vivo (WF_MIN_TRADES=30, DSR D-746, incumbente D-740).
+// Isla extendida del censo qo-605 (ahora 6 módulos: +lib.rs +polars_evolver).
+
 use god_engine_core::GodEngineCore;
 use quantum_arena::{GlobalArena, TickEvent};
 use rayon::prelude::*;
