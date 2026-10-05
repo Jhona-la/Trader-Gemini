@@ -1,3 +1,8 @@
+//! [TRAMPA DE REACTIVACIÓN — censo GLM F6-A M2, 2026-10-05] fetch_agg_trades
+//! FABRICA microestructura (bid/ask sintéticos spread 1.5bps + depth 25%)
+//! sin marcar origen — NO participa del contrato TGMTICK1/TGMSYNT1 (D-691).
+//! Muerto en prod: si se reviven los métodos de HistoricalLoader, exigir
+//! magic TGMSYNT1 y trazabilidad de origen.
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
