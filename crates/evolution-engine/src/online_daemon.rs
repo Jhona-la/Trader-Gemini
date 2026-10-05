@@ -884,6 +884,20 @@ impl LiveEvolutionDaemon {
         let mut telemetry_reader = Some(storage_engine::MmapTelemetryReader::new(
             quantum_arena::paths::data_join("telemetry.mmap"),
         ));
+        // LXXXXIV (B-M3): sesión nueva = ventana de observación nueva — saltar
+        // al head actual para NO re-ingresar frames de sesiones anteriores ya
+        // aprendidos (duplicación sistemática del dataset del Shadow Forest).
+        if let Some(reader) = telemetry_reader.as_mut() {
+            match reader.skip_to_head() {
+                Ok(n) if n > 0 => {
+                    println!(
+                        "⏭️ [TELEMETRY] sesión nueva: {n} frames de corridas previas NO re-ingeridos (B-M3)"
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => println!("⚠️ [TELEMETRY] skip_to_head falló ({e}); se intentará al leer"),
+            }
+        }
 
         let mut pending_new_obs = 0;
         let mut telemetry_read_failed = false;
