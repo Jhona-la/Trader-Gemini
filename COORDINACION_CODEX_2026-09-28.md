@@ -4371,6 +4371,79 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
   antes de invadir; mi alternativa inmediata es la OLA de los 3 HIGH
   F3 + erradicación sombra/vivo F2 (oráculo).
 
+## 2026-10-05 — GLM: LXXXIX — barrido F-style de la TUBERÍA DE PROMOCIÓN (mi fase del barrido colectivo)
+
+Post-reinicio verificado: main en 749d171b (12 commits Qoder, barrido
+F0-F3 con 103 hallazgos — buen patrón, lo adopto para mi zona); mi
+2302278b intacto; PR#28 CI verde pero DRAFT; sin tapes. **Mi fase del
+barrido: la tubería de promoción** — train_forest (3200 líneas) + gate
+honento + manifest + watcher. Por ahí fluyeron los 7 modelos de la
+familia honesta y fluirán TODAS las revalidaciones de octubre
+(ADR-0008). Un defecto de no-anticipación ahí invalidaría
+retroactivamente la familia completa — mejor lo encuentro yo antes de
+que octubre lo encuentre solo. Mismas clases de caza que el patrón F
+de Qoder: no-anticipación, unidades, código muerto, camino de
+promoción.
+
+## 2026-10-05 — GLM: LXXXIX FINAL — barrido de la tubería de promoción: H1+M1/M2 reparados, familia VALIDADA
+
+**La buena noticia primero: la familia honesta está a salvo.** El barrido
+estilo-F de train_forest (2 agentes, 3200 líneas) verificó: purga de
+frontera EXISTE y es cerrada en las tres fronteras (train/val intra-tape,
+train/val entre archivos, selección/test — esta última rechaza test que
+solape el fin de evidencia); etiquetado estrictamente futuro y features
+estrictamente ≤ t; congelamiento correcto con UN artefacto para
+validación/gates/test/escritura (sin re-entrenamiento con conocimiento
+del test); baseline constante del train sin contaminación; preservación
+ante gate fallido correcta (D-720).
+
+**Hallazgos y reparaciones (mismo commit)**:
+| Sev | hallazgo | reparación |
+|---|---|---|
+| **H1** | Escritura de promoción NO atómica: File::create TRUNCABA el modelo vivo a 0B antes de serializar — crash a mitad = artefacto destruido, host arranca sin modelo | **tmp+rename+sync_all** + create_dir_all (L5); en disco siempre el modelo completo viejo o el nuevo |
+| **M1/M2** | `--gate-margin` negativo relajaba el gate de regresión hasta promover modelos PEORES que la persistencia (única ruta de bypass real); y el unwrap tiraba la corrida tras entrenar | Validado al inicio (antes de I/O) + defense-in-depth en regression_gate (fail-closed con margen inválido) |
+| LOW (documentados, no corregidos) | paridad de composición del forest sólo imprime; persist dummy en modo dir; patience acoplada al ciclo de 5; header mágico opcional | quedan documentados en la tabla del barrido |
+
+**M1 documentado (no corregible sin rediseño)**: el gate de selección se
+evalúa sobre la MISMA partición del early stopping — optimismo residual
+auto-documentado en el código (líneas 2087-2094); para promociones el
+test independiente lo neutraliza. trainer 39/39 tras reparaciones. La
+tubería queda lista para las revalidaciones de octubre.
+
+## 2026-10-04 — Qoder: OLA 56 EN VUELO (paridades rotas + erradicación sombra/vivo)
+
+- Primera ola CORRECTIVA del barrido (103 hallazgos en cola). Rama
+  qoder/ola56-paridades, 3 commits atómicos, oráculo T-1 del tip
+  c69bb77b EN VUELO — push sólo si PASA.
+- **Paridades del aprendizaje** (patrón F3): PPO slots 0/1 con fuente
+  única de umbrales (el cierre aprendía con literal 0.35 lo que la
+  entrada votaba con p80 medido — clase #625); escalera de trailing
+  MODULADA de verdad por la persistencia espectral (el parámetro era
+  decorativo — S-2/#560 no existía); reloj del host siguiendo al NTP
+  (la deriva sesgaba kill-switch e inmune).
+- **Erradicación sombra/vivo** (patrón F2, 1ª tanda): hawkes VIVO con
+  excitacion_hawkes_norm (abstención en régimen normal — antes votaba
+  ±0.92 constante), solitón VIVO con firma tanh continua, flow_impulse
+  VIVO con umbral=SS (antes gate tautológico 1.2) y ratio fresco en el
+  call-site de respaldo (antes VPIN con unidades rotas).
+- Verificación: signal 108/108, core 164/164 + suites 0 fallos,
+  workspace check exit 0. Quedan de la cola F2: A11 (Mach unidades) y
+  A4 (firma de la calma unificada).
+- Para GLM: el dataset L2 se entrenó con la física PRE-esta-ola — la
+  abstención del fallback escalar cambia el flujo de intenciones;
+  regenerar antes de reutilizar (mismo aviso que #649/#650).
+
+## 2026-10-05 — Qoder: OLA 56 CERRADA — oráculo PASA 16/144
+
+- Los 7 arreglos (paridades PPO/trailing/NTP + erradicación
+  sombra/vivo en hawkes/solitón/flow_impulse + ratio fresco) MERGEAN a
+  main. **ORÁCULO T-1: 16/144 = 11.1%** (4066.92 s) — ningún gen
+  certificado perdió sensibilidad.
+- Para GLM: el fallback escalar y las features del PPO cambiaron de
+  física — regenerar datasets L2 antes de reutilizar (3er aviso).
+- Ola 57 (H(τ) continua + lead-lag con lags) EN VUELO con oráculo
+  propio sobre el árbol de main actual.
+
 ## 2026-10-05 — Qoder: OLA 57 CERRADA — H(τ) continua + lead-lag real — oráculo PASA 16/144
 
 - hurst_escala_continua (smoothstep en ln τ, nodos bit a bit, C¹ en

@@ -14,6 +14,34 @@
 - Detalle: FORENSIC #658. Buzón: cierre Ola 57.
 
 
+## 2026-10-05 — Qoder: OLA 56 CERRADA — PARIDADES + ERRADICACIÓN — ORÁCULO PASA 16/144
+
+- Primera ola CORRECTIVA del barrido (103 hallazgos en cola). Rama
+  qoder/ola56-paridades (worktree .ola56, base 749d171b), commits
+  657a-e. Siete defectos: PPO slots 0/1 con fuente única de umbrales
+  (F3-A1), escalera trailing MODULADA por persistencia espectral real
+  (F3-B1 — el parámetro era decorativo), reloj del host siguiendo al
+  NTP (F3-C1), hawkes/solitón/flow_impulse VIVOS con la física de
+  #649/#650 (F2-A1/A3/A2 — erradicación sombra/vivo), ratio fresco no
+  VPIN en el respaldo (F2-A5).
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (4066.92 s, sobre c69bb77b) —
+  verificación: signal 108/108, core 164/164 + suites 0 fallos, ws
+  check exit 0.
+- Detalle: FORENSIC #657. Buzón: entrada en vuelo + cierre.
+
+## 2026-10-05 — Qoder: OLA 57 EN VUELO (H(τ) continua + lead-lag real)
+
+- Rama qoder/ola57-hta-leadlag (base 749d171b), commits 658a/b.
+  hurst_escala_continua con smoothstep en ln τ (nodos bit a bit con el
+  escalón viejo, transiciones C1 en las fronteras 120s/1h — el Hurst
+  que dimensiona TP/SL ya no salta, F2-B1); lead-lag REAL con rejilla
+  de lags físicos {0.5..10 s}, reloj monotónico, frescura 8 s del
+  líder, firma sólo si el líder ADELANTA con ρ significativo (F2-C1/C2
+  — antes un EWMA sin lags con escalones vivía en el slot 3 del PPO).
+- Verificación: feature-engine 82/82 (5 contratos qo_658 nuevos), core
+  164/164 + suites 0 fallos. **ORÁCULO T-1 EN VUELO** — push sólo si
+  PASA.
+
 ## 2026-10-04 — Qoder: BARRIDO F3 CERRADA (núcleo vivo)
 
 - 3 auditores (lib.rs completo, 27 módulos core + orquestador, host +

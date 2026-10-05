@@ -366,7 +366,13 @@ impl QuantumStrategy for HawkesBesselEngine {
             .filter(|v| v.is_finite() && *v > 0.0)
             .unwrap_or(1.0);
 
-        direction.signum() * core_intensity.tanh().clamp(0.0, 1.0)
+        // #657 (F2-A1) — ERRADICACIÓN sombra/vivo: el evaluate VIVO usa la
+        // MISMA moneda de la casa que el voto espectral #649 — exceso
+        // λ/μ̂ sobre STEADY_STATE_RATIO (0 en régimen normal = ABSTENCIÓN),
+        // firmado por el momentum CONTINUO (no signum: salto en dir=0).
+        // Antes: signum·tanh(λ/μ̂) votaba ±0.92 constante en régimen
+        // normal — el fallback escalar D-754 heredaba la física rota.
+        (direction / 1e-3).tanh() * excitacion_hawkes_norm(core_intensity)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
@@ -534,15 +540,25 @@ mod tests {
 
     #[test]
     fn test_hawkes_engine_evaluate_with_registry() {
+        // #657 (F2-A1): la física viva = #649 — ABSTENCIÓN en régimen
+        // normal (ratio SS ⇒ voto 0), cascada firma con el momentum.
         let registry = Arc::new(OmniscientRegistry::new());
         registry.set("order_flow_direction", 1.0);
-
+        registry.set("hawkes_intensity", STEADY_STATE_RATIO);
         let mut engine = HawkesBesselEngine::new();
-        assert!(engine.init(registry).is_ok());
+        assert!(engine.init(Arc::clone(&registry)).is_ok());
+        let en_ss = engine.evaluate();
+        assert!(
+            en_ss.abs() < 1e-9,
+            "régimen normal (λ/μ̂=SS) se abstiene, votó {en_ss}"
+        );
 
-        let eval = engine.evaluate();
-        assert!(eval > 0.0, "dirección positiva + intensidad > 0");
-        assert!(eval <= 1.0);
+        registry.set("hawkes_intensity", 4.0);
+        let mut engine2 = HawkesBesselEngine::new();
+        assert!(engine2.init(registry).is_ok());
+        let cascada = engine2.evaluate();
+        assert!(cascada > 0.3, "cascada con momentum + vota alto, votó {cascada}");
+        assert!(cascada <= 1.0);
     }
 }
 
