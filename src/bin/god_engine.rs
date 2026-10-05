@@ -839,11 +839,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Telemetry Async Formatter (Lock-Free Offload)
     // Telemetry Async Formatter (Lock-Free Offload)
-    let (tx_log_worker, rx_log_worker) = crossbeam_channel::bounded::<(bool, bool, usize)>(1000);
+    let (tx_log_worker, rx_log_worker) = crossbeam_channel::bounded::<(u64, bool, usize)>(1000);
     let dash_tx_clone = telemetry_tx.clone();
     let symbols_for_log = symbols.clone();
     std::thread::spawn(move || {
-        while let Ok((is_scalp, is_long, coin_id)) = rx_log_worker.recv() {
+        while let Ok((tau_ms, is_long, coin_id)) = rx_log_worker.recv() {
             let side_str = if is_long { "LONG" } else { "SHORT" };
             // FIX #1518: Acceso seguro al símbolo por coin_id para evitar pánicos fuera de límites
             let default_sym = format!("COIN_{}", coin_id);
@@ -851,17 +851,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get(coin_id)
                 .map(|s| s.as_str())
                 .unwrap_or(&default_sym);
-            if is_scalp {
-                let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
-                    "success".to_string(),
-                    format!("⚡ SCALP {} on {}", side_str, parsed_sym),
-                ));
-            } else {
-                let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
-                    "success".to_string(),
-                    format!("🚀 SWING {} on {}", side_str, parsed_sym),
-                ));
-            }
+            let tau_sec = if tau_ms > 0 { tau_ms as f64 / 1000.0 } else { 30.0 };
+            let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
+                "success".to_string(),
+                format!("🌌 CONTINUO [τ={:.1}s] {} on {}", tau_sec, side_str, parsed_sym),
+            ));
         }
     });
 
@@ -3897,13 +3891,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let _core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
                             (notional_ord / pos_margin).round().clamp(1.0, 50.0) as u32
                         } else {
-                            (5.05 / cap_now.max(1.0)).ceil().clamp(1.0, 20.0) as u32
+                            (5.05 / (cap_now * 0.10).max(1.0)).ceil().clamp(1.0, 10.0) as u32
                         };
+                        let tau_entry = entry_reservation
+                            .as_ref()
+                            .map(|r| {
+                                engine_real.arena.coins[coin_id]
+                                    .positions
+                                    .get_slot(r.slot)
+                                    .entry_tau_ms
+                                    .load(Ordering::Relaxed)
+                            })
+                            .unwrap_or(0)
+                            as f64;
                         if envelope_n < 30.0 {
-                            // BOOTSTRAP: riesgo mínimo para acumular evidencia.
-                            // La envolvente told "no" porque no sabe — dejamos
-                            // que el sistema APRENDA con skin in the game mínimo.
-                            exec_leverage = 1;
+                            // F4-H2 (BOOTSTRAP MICRO): acumular evidencia con el apalancamiento
+                            // validado por el core/arena, garantizando que el nocional mínimo de Binance
+                            // ($5 USDT) no consuma más del margen presupuestado en una cuenta micro ($13 USDT).
+                            // A apalancamiento 1x, $5.05 de nocional consume 38.8% del capital en margen,
+                            // estrangulando el margen libre y provocando vetos de margen prematuros.
+                            let boot_lev = if pos_margin > 0.0 && notional_ord > 0.0 {
+                                (notional_ord / pos_margin).round().clamp(1.0, 10.0) as u32
+                            } else {
+                                _core_leverage.clamp(1, 10)
+                            };
+                            exec_leverage = boot_lev.clamp(1, 10);
                         } else if operable {
                             // C-08 (INFORME 14): la envolvente bayesiana
                             // (LCB + shrinkage + guard de ruina) es ahora
@@ -3932,17 +3944,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // CL-4: la τ es la de la RANURA RESERVADA para esta
                             // orden, no la de `positions.position` (ranura 2):
                             // el núcleo abre en la primera ranura libre.
-                            let tau_entry = entry_reservation
-                                .as_ref()
-                                .map(|r| {
-                                    engine_real.arena.coins[coin_id]
-                                        .positions
-                                        .get_slot(r.slot)
-                                        .entry_tau_ms
-                                        .load(Ordering::Relaxed)
-                                })
-                                .unwrap_or(0)
-                                as f64;
                             // D-745b: el apalancamiento se divide por el stop
                             // REAL DE ESTA ORDEN, no por la curva genómica
                             // evaluada en τ. `compute_tp_sl` fija el stop por
@@ -3992,7 +3993,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             exec_leverage = 0; // SIN ORDEN: la matemática dijo NO
                         }
-                        let _ = tx_log_worker.try_send((true, is_long, coin_id));
+                        let _ = tx_log_worker.try_send((tau_entry as u64, is_long, coin_id));
 
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
                         if ml_prob > 0.80 || ml_prob < 0.20 {

@@ -46,7 +46,7 @@
 //! sustituyendo el ρ̄ escalar por el ρ de la escala que opera la orden —
 //! es decisión del consejo con T-1 propio.
 
-use crate::temporal_spectrum::{SPECTRUM_SCALES_MS, MUESTRAS_SKILL_MADURAS};
+use crate::temporal_spectrum::SPECTRUM_SCALES_MS;
 use std::collections::HashMap;
 
 const ESCALAS: usize = 32;

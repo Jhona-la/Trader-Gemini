@@ -664,9 +664,31 @@ pub fn reconcile_arena_checked(
                     let old_margin = target_slot
                         .margin_used
                         .load(std::sync::atomic::Ordering::Relaxed);
-                    let lev_deriva = remote_leverage;
-                    let new_margin = if safe_price > 0.0 {
+                    // F4-H1: Sanitizar lev_deriva contra división por cero o NaN.
+                    // Si remote_leverage no es válido (<= 0 o no finito), deducir del apalancamiento previo
+                    // o usar 10.0 como piso seguro.
+                    let lev_deriva = if remote_leverage.is_finite() && remote_leverage >= 1.0 {
+                        remote_leverage
+                    } else {
+                        let old_qty = target_slot.quantity.load(std::sync::atomic::Ordering::Relaxed).abs();
+                        if old_margin > 0.0 && old_qty > 0.0 && safe_price > 0.0 {
+                            let implied = (old_qty * safe_price) / old_margin;
+                            if implied.is_finite() && implied >= 1.0 {
+                                implied
+                            } else {
+                                10.0
+                            }
+                        } else {
+                            10.0
+                        }
+                    };
+                    let computed_margin = if safe_price > 0.0 {
                         (target_abs * safe_price) / lev_deriva
+                    } else {
+                        old_margin
+                    };
+                    let new_margin = if computed_margin.is_finite() && computed_margin >= 0.0 {
+                        computed_margin
                     } else {
                         old_margin
                     };
@@ -892,5 +914,45 @@ mod tests {
             .position
             .exchange_confirmed
             .load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    #[test]
+    fn f4_h1_drift_reconciliation_zero_or_nan_leverage_immunity() {
+        quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        arena.coins[0].current_price.store(60_000.0, std::sync::atomic::Ordering::Relaxed);
+        arena.coins[0].positions.position.open_with_horizon(
+            true,
+            60_000.0,
+            0.001,
+            6.0,
+            1000,
+            61_000.0,
+            59_000.0,
+            quantum_arena::position::PositionHorizon::Continuous,
+        );
+        arena.used_margin.store(6.0, std::sync::atomic::Ordering::Relaxed);
+
+        // Remote reports quantity drift with leverage = 5.0
+        let remote = vec![PositionRiskEntry {
+            symbol: "BTCUSDT".into(),
+            position_amt: 0.002, // drifted from 0.001
+            entry_price: 60_000.0,
+            leverage: 5.0,
+            update_time: 2000,
+            ..Default::default()
+        }];
+
+        let adjs = reconcile_arena(&remote, &arena, 2000);
+        assert_eq!(adjs, 1);
+
+        // Verify used_margin is strictly finite and matches (0.002 * 60000.0) / 5.0 = 24.0
+        let used = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(used.is_finite(), "used_margin must be finite, got {}", used);
+        assert_eq!(used, 24.0, "used_margin must be 24.0, got {}", used);
+
+        let slot_margin = arena.coins[0].positions.position.margin_used.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(slot_margin.is_finite(), "slot margin must be finite, got {}", slot_margin);
+        assert_eq!(slot_margin, 24.0, "slot margin must be 24.0, got {}", slot_margin);
     }
 }

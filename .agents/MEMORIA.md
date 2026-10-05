@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-05 — Antigravity: OLA Ω6-Ω7 CERRADA — F4 Dinero/Riesgo, Paridad Micro-Cuenta $13 USD y SDE Continuo
+
+- Rama `antigravity/quant-sr-omega-revision-total`, commit atómico, fast-forward/merge a `main` y pusheado a `origin/main`.
+- **F4-H1 CERRADO**: Sanitización de `lev_deriva` en `reconciliation.rs` (líneas 667-684) contra división por cero o `NaN` (`lev_deriva >= 1.0`, deducción del apalancamiento previo implícito o fallback `10.0`), asegurando que `new_margin` y `used_margin` sean estrictamente finitos y no-negativos. Test unitario dedicado `f4_h1_drift_reconciliation_zero_or_nan_leverage_immunity`. (79/79 tests pasados en execution-engine).
+- **F4-H2 CERRADO & PARIDAD BT↔VIVO**: En `god_engine.rs` y `booktick_replay.rs`, erradicado el hardcode `exec_leverage = 1` en fase de bootstrap (`envelope_n < 30.0`), el cual forzaba un consumo de margen de $5.05 (38.8% del capital total de $13 USD) en órdenes de $5.00 min notional de Binance Futures, estrangulando el colateral y bloqueando la cuenta tras 2 operaciones. Ahora calcula `boot_lev.clamp(1, 10)` alineado con el apalancamiento validado por el arena/core (~$1.01 de margen).
+- **F4-H4 CERRADO**: Rechazos firmes del exchange en `executor.rs` (`execute_market_order`, `execute_raw_order`, `execute_limit_order`) ahora invocan inmediatamente `order_registry.mark_local_reject()`, eliminando órdenes e intenciones zombis huérfanas en estado `New` que bloqueaban slots de ejecución.
+- **F4-H3 / GENOME-GATE CERRADO**: `load_active()` en `genome_store.rs` ahora pasa todo genoma activo deserializado por `SuperGenotype::from_vector()`, garantizando normalización contra cotas evolutivas, invariantes de curvatura RR (`enforce_curve_rr`) y pisos de fricción de SL. Saneados los archivos de configuración (`config_dir/genomes/{active,demo,backtest,prod}/active.json`) con `tech_threshold: 0.24`, `zombie_timeout_ms: 14400000.0`, `margin_cushion_pct: 0.98`. (103/103 tests pasados en quantum-arena).
+- **Ω6 CONTINUO ESPECTRAL & TELEMETRÍA**: Erradicado el interruptor booleano legacy scalping/swing en el worker de telemetría asíncrona de `god_engine.rs`. El canal `tx_log_worker` ahora transporta el horizonte temporal físico continuo exacto `tau_entry` en milisegundos (`u64`), emitiendo telemetría unificada `🌌 CONTINUO [τ={:.1}s] {side} on {symbol}`.
+- **Ω7 SDE CONTINUO ORNSTEIN-UHLENBECK**: En `vecm_arbitrage.rs` de `strategy-core`, implementado el modelo analítico físico continuo $dX_t = \theta(\mu - X_t)dt + \sigma dW_t$:
+  - Estimación recursiva exacta de momentos muestrales con tracking explícito de suma de pesos $s_w$ ($W_t = W_{t-1} \lambda + 1$).
+  - Regresión discreta exacta Gauss-Markov $b = e^{-\theta \Delta t}, a = \mu(1-b)$, varianza residual centrada $\text{SSE} = \overline{y^2} - 2b \overline{xy} + b^2 \overline{x^2} - a^2$.
+  - Vida media analítica continua $t_{1/2} = \ln 2 / \theta$ en segundos y varianza ergódica estacionaria de Fokker-Planck $\text{Var}_\infty = \sigma^2 / (2\theta)$.
+  - Test unitario completo `test_continuous_ornstein_uhlenbeck_sde_properties` (26/26 tests pasados en strategy-core).
+- **VERIFICACIÓN COMPLETA**:
+  - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+  - `cargo test -p strategy-core --lib`: 26/26 tests pasados.
+  - `cargo test -p execution-engine --lib`: 79/79 tests pasados.
+  - `cargo test -p quantum-arena --lib`: 103/103 tests pasados.
+
 ## 2026-10-05 — Antigravity: OLA Ω2-Ω3-Ω5 CERRADA — Integración Cuántica, Estadística y Primer Toque Analítico
 
 - Rama `antigravity/omega-integracion-cuantica-total` (base 13eff9c9), commit `47b6fc74`, mergeado a `main` y pusheado a origin.

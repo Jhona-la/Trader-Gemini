@@ -2146,6 +2146,10 @@ impl ExecutionProvider for OrderExecutor {
                     Ok(())
                 }
                 Err(e) => {
+                    // F4-H4: rechazo firme cierra la intención en el OrderRegistry
+                    if crate::ioc_evidence::error_cierra_la_intencion(e) {
+                        self.order_registry.mark_local_reject(&payload.client_order_id, payload.timestamp);
+                    }
                     if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
                         return Err(self.handle_rate_limit_error(e));
                     }
@@ -2322,6 +2326,10 @@ impl ExecutionProvider for OrderExecutor {
                 Ok(())
             }
             Err(e) => {
+                // F4-H4: rechazo firme cierra la intención en el OrderRegistry
+                if crate::ioc_evidence::error_cierra_la_intencion(e) {
+                    self.order_registry.mark_local_reject(&client_order_id, timestamp);
+                }
                 if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
                     return Err(self.handle_rate_limit_error(e));
                 }
@@ -2445,6 +2453,10 @@ impl ExecutionProvider for OrderExecutor {
                 Ok(())
             }
             Err(e) => {
+                // F4-H4: rechazo firme cierra la intención en el OrderRegistry
+                if crate::ioc_evidence::error_cierra_la_intencion(e) {
+                    self.order_registry.mark_local_reject(client_order_id, timestamp);
+                }
                 if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
                     return Err(self.handle_rate_limit_error(e));
                 }

@@ -182,6 +182,146 @@ impl Default for JohansenVecmEngine {
     }
 }
 
+/// 🔬 ESTIMADOR ANALÍTICO DE DIFUSIÓN ORNSTEIN-UHLENBECK / FOKKER-PLANCK EN TIEMPO CONTINUO
+///
+/// Modela el proceso continuo estocástico de reversión a la media:
+///   dX_t = θ (μ - X_t) dt + σ dW_t
+///
+/// Donde:
+///   - θ > 0: velocidad de reversión física (s⁻¹)
+///   - μ: media de equilibrio invariante
+///   - σ > 0: volatilidad instantánea de difusión (s⁻¹/²)
+///   - t_{1/2} = ln(2) / θ: vida media física en segundos
+///   - Var_∞ = σ² / (2θ): varianza estacionaria derivada de la ecuación de Fokker-Planck
+///   - Z_t = (X_t - μ) / √(σ² / (2θ)): Z-Score ergódico invariante
+#[derive(Debug, Clone)]
+pub struct ContinuousOrnsteinUhlenbeckSde {
+    pub theta: f64,
+    pub mu: f64,
+    pub sigma: f64,
+    pub last_value: f64,
+    pub last_ts_ms: u64,
+    pub count: u64,
+    // Momentos de transición AR(1) continua
+    s_w: f64,
+    s_x: f64,
+    s_y: f64,
+    s_xx: f64,
+    s_xy: f64,
+    s_yy: f64,
+}
+
+impl Default for ContinuousOrnsteinUhlenbeckSde {
+    fn default() -> Self {
+        Self::new(0.1, 0.0, 0.01)
+    }
+}
+
+impl ContinuousOrnsteinUhlenbeckSde {
+    pub fn new(theta_init: f64, mu_init: f64, sigma_init: f64) -> Self {
+        Self {
+            theta: theta_init.max(1e-5),
+            mu: mu_init,
+            sigma: sigma_init.max(1e-6),
+            last_value: 0.0,
+            last_ts_ms: 0,
+            count: 0,
+            s_w: 0.0,
+            s_x: 0.0,
+            s_y: 0.0,
+            s_xx: 0.0,
+            s_xy: 0.0,
+            s_yy: 0.0,
+        }
+    }
+
+    /// Vida media de reversión física en segundos: t_{1/2} = ln(2) / θ
+    #[inline]
+    pub fn half_life_seconds(&self) -> f64 {
+        if self.theta > 1e-9 {
+            std::f64::consts::LN_2 / self.theta
+        } else {
+            f64::INFINITY
+        }
+    }
+
+    /// Varianza estacionaria ergódica (Fokker-Planck): σ² / (2θ)
+    #[inline]
+    pub fn stationary_variance(&self) -> f64 {
+        if self.theta > 1e-9 {
+            (self.sigma * self.sigma) / (2.0 * self.theta)
+        } else {
+            1.0
+        }
+    }
+
+    /// Z-Score estacionario del valor actual: (X - μ) / √(Var_∞)
+    #[inline]
+    pub fn stationary_zscore(&self, x: f64) -> f64 {
+        let sd = self.stationary_variance().sqrt().max(1e-8);
+        ((x - self.mu) / sd).clamp(-10.0, 10.0)
+    }
+
+    /// Actualiza el estimador con una nueva observación física (valor, timestamp en ms)
+    pub fn update(&mut self, value: f64, ts_ms: u64) -> f64 {
+        if !value.is_finite() {
+            return self.stationary_zscore(self.last_value);
+        }
+        if self.count == 0 || ts_ms <= self.last_ts_ms {
+            self.last_value = value;
+            self.last_ts_ms = ts_ms;
+            self.count += 1;
+            return 0.0;
+        }
+
+        let dt_sec = (ts_ms - self.last_ts_ms) as f64 / 1000.0;
+        if dt_sec < 1e-4 {
+            // Demasiado rápido para actualizar θ de tiempo continuo sin inestabilidad numérica
+            return self.stationary_zscore(value);
+        }
+
+        let x = self.last_value;
+        let y = value;
+
+        // Actualización recursiva exponencial con memoria decayente (vida media ~100 observaciones)
+        let decay = (-dt_sec / 300.0).exp().clamp(0.80, 0.999);
+        self.s_w = self.s_w * decay + 1.0;
+        self.s_x = self.s_x * decay + x;
+        self.s_y = self.s_y * decay + y;
+        self.s_xx = self.s_xx * decay + x * x;
+        self.s_xy = self.s_xy * decay + x * y;
+        self.s_yy = self.s_yy * decay + y * y;
+        self.count += 1;
+
+        if self.count >= 10 {
+            // Regresión discreta exacta: y = a + b * x
+            // donde b = exp(-θ dt), a = μ (1 - b)
+            let n_eff = self.s_w.max(1.0);
+            let denom = (n_eff * self.s_xx - self.s_x * self.s_x).max(1e-12);
+            let b = ((n_eff * self.s_xy - self.s_x * self.s_y) / denom).clamp(0.001, 0.9999);
+            let a = (self.s_y - b * self.s_x) / n_eff;
+
+            let est_theta = (-b.ln() / dt_sec).clamp(1e-4, 50.0);
+            let est_mu = a / (1.0 - b).max(1e-6);
+
+            // Residuos y estimación de sigma de difusión (Fokker-Planck)
+            let raw_sse = (self.s_yy - 2.0 * b * self.s_xy + b * b * self.s_xx) / n_eff - a * a;
+            let sse = raw_sse.max(1e-12);
+            let est_sigma = (sse * 2.0 * est_theta / (1.0 - (-2.0 * est_theta * dt_sec).exp()).max(1e-6)).sqrt().clamp(1e-6, 10.0);
+
+            // Suavizado C1 de parámetros
+            self.theta = self.theta * 0.95 + est_theta * 0.05;
+            self.mu = self.mu * 0.95 + est_mu * 0.05;
+            self.sigma = self.sigma * 0.95 + est_sigma * 0.05;
+        }
+
+        self.last_value = value;
+        self.last_ts_ms = ts_ms;
+
+        self.stationary_zscore(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,5 +384,35 @@ mod tests {
         let eval_score = vecm.evaluate();
         // Since z > 1.5, evaluate returns a negative score for mean reversion
         assert!(eval_score < 0.0);
+    }
+
+    #[test]
+    fn test_continuous_ornstein_uhlenbeck_sde_properties() {
+        let mut ou = ContinuousOrnsteinUhlenbeckSde::new(0.2, 10.0, 0.5);
+        assert!((ou.half_life_seconds() - (std::f64::consts::LN_2 / 0.2)).abs() < 1e-6);
+        assert!(ou.stationary_variance() > 0.0);
+
+        // Feed trajectory that reverts around 10.0 with 1-second intervals
+        let mut ts = 1_000_000u64;
+        let mut val = 10.0;
+        for i in 0..100 {
+            ts += 1000;
+            // Mean reverting step + small noise
+            val = 10.0 + (val - 10.0) * (-0.2f64).exp() + (if i % 2 == 0 { 0.1 } else { -0.1 });
+            let z = ou.update(val, ts);
+            assert!(z.is_finite());
+        }
+
+        // Half-life must be positive and finite
+        let hl = ou.half_life_seconds();
+        assert!(hl.is_finite() && hl > 0.0);
+
+        // Large shock should yield significant Z-Score
+        let shock_z = ou.update(25.0, ts + 1000);
+        assert!(shock_z > 2.0);
+
+        // NaN immunity
+        let nan_z = ou.update(f64::NAN, ts + 2000);
+        assert!(nan_z.is_finite());
     }
 }

@@ -147,7 +147,12 @@ impl GenomeEnvelope {
         };
         match std::fs::read_to_string(active_path()) {
             Ok(data) => match serde_json::from_str::<GenomeEnvelope>(&data) {
-                Ok(envelope) => Some(envelope),
+                Ok(mut envelope) => {
+                    // F4-H3: Normalización y saneamiento estricto del genoma activo respecto a
+                    // cotas evolutivas e invariantes de curva (clamp, enforce_curve_rr, normalize_sl_curve_friction_floor).
+                    envelope.genome = SuperGenotype::from_vector(&envelope.genome.to_vector());
+                    Some(envelope)
+                }
                 Err(e) => {
                     // R-05: un genoma que existe pero no parsea es un evento
                     // crítico de linaje. NO se cae a ningún fallback: caer

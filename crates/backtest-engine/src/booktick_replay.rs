@@ -714,7 +714,13 @@ pub fn live_envelope_gate(
     let envelope_n = envelope.posterior.n();
     let notional_ord = qty.abs() * entry_price;
     let exec_leverage: u32 = if envelope_n < 30.0 {
-        1
+        // F4-H2 (BOOTSTRAP MICRO): paridad con god_engine.rs
+        let boot_lev = if pos_margin > 0.0 && notional_ord > 0.0 {
+            (notional_ord / pos_margin).round().clamp(1.0, 10.0) as u32
+        } else {
+            (5.05 / (cap_now * 0.10).max(1.0)).ceil().clamp(1.0, 10.0) as u32
+        };
+        boot_lev.clamp(1, 10)
     } else if operable {
         let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
         // CERT-M8-C01 — PARIDAD SIZING BT↔VIVO: el host (god_engine.rs
