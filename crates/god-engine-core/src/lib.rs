@@ -957,15 +957,21 @@ impl GodEngineCore {
                 Some(model)
             } else {
                 telemetry_server::telemetry_log!(
-                    "⚠️ [DARK ALPHA] Failed to parse models/DarkAlpha_BTCUSDT.json. Using fallback."
+                    "⚠️ [DARK ALPHA] Failed to parse models/DarkAlpha_BTCUSDT.json. Sin modelo — el NN NO opina."
                 );
-                Some(dark_alpha_engine::DarkAlphaEngine::new(54, 64, 32))
+                // LXXXXI (B-H1 del barrido F5): el fallback era una red
+                // ALEATORIA (Xavier sin entrenar) que VOTABA en el ensamble
+                // Blier — ruido estructural sobre ml_prob de BTC. La ausencia
+                // del artefacto es AUSENCIA de opinión (None), consistente
+                // con la doctrina CL-15 que ya erradicó el 0.5-neutral.
+                None
             }
         } else {
             telemetry_server::telemetry_log!(
-                "⚠️ [DARK ALPHA] models/DarkAlpha_BTCUSDT.json not found. Using fallback."
+                "⚠️ [DARK ALPHA] models/DarkAlpha_BTCUSDT.json not found. Sin modelo — el NN NO opina."
             );
-            Some(dark_alpha_engine::DarkAlphaEngine::new(54, 64, 32))
+            // LXXXXI (B-H1): ídem — ausencia = no-opinión, no red aleatoria.
+            None
         };
 
         let ppo_engine = dark_alpha_engine::online_ppo::OnlinePpoPolicyEngine::new([

@@ -275,6 +275,11 @@ const HABILIDAD_OLVIDO: f64 = 1.0 / 64.0;
 /// (misma disciplina que `MUESTRAS_MADURAS` del banco de pronóstico).
 pub const MUESTRAS_SKILL_MADURAS: u64 = 30;
 
+/// F1-A1 / H5: Tamaño efectivo del estimador EWMA (λ=1/64 ⇒ N_ef ≈ 2/λ = 128).
+/// El umbral de significancia se ancla aquí en sesiones largas para evitar
+/// que n→∞ colapse el umbral a cero y admita ruido como habilidad genuina.
+pub const N_EFECTIVO_EWMA: u64 = 128;
+
 /// #599 — umbral de significancia del IC para la selección de τ* (t ≥ 2 con
 /// el error estándar de Fisher 1/√(n−3)). El MÁXIMO de varios IC de puro
 /// ruido suele ser positivo (sesgo de selección entre 32 escalas,
@@ -599,9 +604,10 @@ impl TemporalSpectrum {
                 continue;
             }
             if let Some(ic) = s.habilidad_medida() {
-                // #599: un IC positivo aislado es el máximo típico de ruido
-                // entre 32 escalas — exige significancia t ≥ 2 para opinar.
-                let significativo = umbral_ic_significativo(s.skill_n)
+                // #599 / F1-A1: un IC positivo aislado es el máximo típico de ruido
+                // entre 32 escalas — exige significancia t ≥ 2 para opinar,
+                // anclando n al N_EFECTIVO_EWMA para consistencia en sesiones largas.
+                let significativo = umbral_ic_significativo(s.skill_n.min(N_EFECTIVO_EWMA))
                     .map(|umbral| ic >= umbral)
                     .unwrap_or(false);
                 if significativo && ic > best_skill {

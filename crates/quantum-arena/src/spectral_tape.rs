@@ -397,6 +397,27 @@ impl ForecastScore {
             0.0
         }
     }
+
+
+    /// F1-C1: Habilidad fuera de muestra frente al nulo exigente: el mínimo error
+    /// entre climatología y persistencia (min(sse_clim, sse_persist)).
+    /// Es > 0 si y solo si el modelo bate TANTO a la media como a la persistencia.
+    pub fn skill_vs_best_null(&self) -> f64 {
+        let sse_null = if self.sse_clim > 0.0 && self.sse_persist > 0.0 {
+            self.sse_clim.min(self.sse_persist)
+        } else if self.sse_clim > 0.0 {
+            self.sse_clim
+        } else if self.sse_persist > 0.0 {
+            self.sse_persist
+        } else {
+            0.0
+        };
+        if sse_null > 0.0 {
+            1.0 - self.sse_model / sse_null
+        } else {
+            0.0
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -723,9 +744,9 @@ impl SpectralForecastBank {
         self.tape.flow_imbalance(k, now_ms)
     }
 
-    /// ¿Hay ya evidencia fuera de muestra de que el pronóstico de volatilidad
-    /// bate a la climatología en las anclas maduras? (media de las que ya
-    /// puntúan). Sin muestras devuelve `None` — el llamador no debe usarlo.
+    /// F1-C1 / S10: ¿Hay ya evidencia fuera de muestra de que el pronóstico de volatilidad
+    /// bate al nulo más exigente (climatología Y persistencia) en las anclas maduras?
+    /// (media de las que ya puntúan). Sin muestras devuelve `None` — el llamador no debe usarlo.
     pub fn habilidad_volatilidad(&self) -> Option<f64> {
         let maduras: Vec<&HorizonForecaster> = self
             .varianza
@@ -737,7 +758,7 @@ impl SpectralForecastBank {
         }
         let s: f64 = maduras
             .iter()
-            .map(|f| f.score.skill_vs_climatology())
+            .map(|f| f.score.skill_vs_best_null())
             .sum();
         Some(s / maduras.len() as f64)
     }

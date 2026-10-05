@@ -289,6 +289,23 @@ pub fn accumulated_trials(previas: usize, ronda: usize) -> usize {
 /// incumbente gana su propia ronda) no borra nada: de lo contrario el
 /// watchdog de rollback jamás reúne las observaciones que necesita para
 /// vencer y un genoma degradado sobrevive re-promoviéndose a sí mismo.
+/// LXXXXI (A-H2 del barrido F5): ¿la generación ACTIVA del almacén es más
+/// nueva que la que el watchdog vigila? Cubre promociones EXTERNAS al daemon
+/// (cosecha del ShadowForest en el host, promoción manual): antes, la cosecha
+/// promovía sin armar la vigilancia y el genoma cosechado corría SIN red de
+/// seguridad post-promoción. Con esto el watchdog sigue a la generación activa,
+/// quien sea que la haya promovido.
+pub fn detectar_promocion_externa(
+    activa: Option<u64>,
+    vigilada: Option<u64>,
+) -> Option<()> {
+    match (activa, vigilada) {
+        (Some(a), Some(v)) if a > v => Some(()),
+        (Some(a), None) if a > 0 => Some(()),
+        _ => None,
+    }
+}
+
 pub fn armar_vigilancia(
     es_mismo_genoma: bool,
     promoted_generation: &mut Option<(u64, u64)>,
@@ -1283,7 +1300,29 @@ impl LiveEvolutionDaemon {
         // almacén versionado (champion real), no un champion_path que
         // nadie escribe. Antes: cada ciclo clonaba SuperGenotype::default()
         // y las promociones destruían el linaje evolutivo acumulado.
-        let current_genome = quantum_arena::genome_store::GenomeEnvelope::load_active()
+        let current_envelope = quantum_arena::genome_store::GenomeEnvelope::load_active();
+        // LXXXXI (A-H2): watchdog sigue a la generación ACTIVA del almacén —
+        // una promoción externa (shadow_forest_harvest del host, manual) arma
+        // la vigilancia al ciclo siguiente (≤ un período del daemon).
+        if let Some(env) = current_envelope.as_ref() {
+            let vigilada = self.promoted_generation.map(|(g, _)| g);
+            if detectar_promocion_externa(Some(env.generation), vigilada).is_some() {
+                let reiniciada = armar_vigilancia(
+                    false, // generación DISTINTA a la vigilada: ventana nueva
+                    &mut self.promoted_generation,
+                    &mut self.post_promo_returns,
+                    env.generation,
+                    env.parent_generation,
+                );
+                if reiniciada {
+                    println!(
+                        "🐕 [WATCHDOG-EXTERN] Promoción externa detectada (gen {}, padre {}) — vigilancia de rollback ARMADA (cosecha/manual cubiertos).",
+                        env.generation, env.parent_generation
+                    );
+                }
+            }
+        }
+        let current_genome = current_envelope
             .map(|env| env.genome)
             .or_else(|| {
                 std::fs::read(&self.champion_path).ok().and_then(|bytes| {
@@ -1908,6 +1947,20 @@ mod evidence_regressions {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lxxxxi_promocion_externa_detecta_salto_de_generacion() {
+        use super::detectar_promocion_externa;
+        // salto: activa > vigilada => promoción externa (cosecha/manual)
+        assert!(detectar_promocion_externa(Some(6), Some(5)).is_some());
+        assert!(detectar_promocion_externa(Some(7), None).is_some()); // nunca vigilada, gen>0
+        // misma generación (la que el daemon acaba de promover) => nada
+        assert!(detectar_promocion_externa(Some(6), Some(6)).is_none());
+        // genoma más viejo (rollback del almacén) => la vigilancia NO se toca
+        assert!(detectar_promocion_externa(Some(4), Some(5)).is_none());
+        assert!(detectar_promocion_externa(None, Some(5)).is_none());
+        assert!(detectar_promocion_externa(Some(0), None).is_none());
+    }
+
     use super::*;
 
     /// D-742 — el semi-spread del examen sale del MERCADO. Con el código

@@ -4501,6 +4501,28 @@ OOS ≥30 → incumbente → DSR Bailey-LdP ec.5 con multiplicidad acumulada
 APROBADA bit-a-bit; métricas sin divisiones nuevas; label_evidence
 estrictamente futuro. La F4 sigue esperando a Claude.
 
+## 2026-10-05 — GLM: LXXXXI — las 2 OLAS de los HIGH de F5 (un oráculo para ambas)
+
+Ejecuto las reparaciones en cola (repo congelado; F4 sigue esperando a
+Claude; Qoder en Ola 58 silenciosa):
+
+**B-H1 — DarkAlpha fallback = None**: la ausencia del artefacto era una
+red ALEATORIA (Xavier) votando en el ensamble Brier — ruido estructural
+sobre ml_prob de BTC. Ahora ausencia = no-opinión (doctrina CL-15
+extendida al NN). El `Option` ya se manejaba: sin voto en None.
+
+**A-H2 — el watchdog sigue a la generación ACTIVA**: en vez de parchar
+el call-site de la cosecha, el daemon detecta SALTOS de generación al
+inicio de cada ciclo (`detectar_promocion_externa`) y arma la
+vigilancia — cubre cosecha del bosque, promoción manual, y cualquier
+puerta futura que use GenomeEnvelope::promote. Contrato: salto detecta,
+misma-gen no, genoma-viejo (rollback) no. **DEUDA registrada**: el DSR
+de la cosecha (multiplicidad best-of-N sin deflactar) es estadística de
+selección mayor — no se improvisa en esta ola.
+
+Suites: evolution 113/113, god-core 368/368. **Oráculo T-1 en vuelo**
+(ambas tocan conducta viva).
+
 ## 2026-10-05 — Qoder: OLA 58 CERRADA — mea culpas F1-C2/C4 + F2-A11/A4 — oráculo PASA 16/144
 
 - Re-arme CAUSAL del consenso (el IC ya no se infla con votos

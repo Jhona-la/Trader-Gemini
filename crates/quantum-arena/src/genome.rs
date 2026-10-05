@@ -1829,9 +1829,9 @@ impl SuperGenotype {
             maker_spread_pct: mutate_val(self.maker_spread_pct, 0.0001, 0.01),
             maker_obi_threshold: mutate_val(self.maker_obi_threshold, 0.1, 0.95),
             target_volatility: mutate_val(self.target_volatility, 0.005, 0.1),
-            dynamic_atr_min: mutate_val(self.dynamic_atr_min, 0.0001, 0.01),
+            dynamic_atr_min: mutate_val(self.dynamic_atr_min, 0.0000001, 0.01),
             dynamic_obi_threshold: mutate_val(self.dynamic_obi_threshold, 0.05, 0.95),
-            dynamic_ema_trend: mutate_val(self.dynamic_ema_trend, 0.0001, 0.01),
+            dynamic_ema_trend: mutate_val(self.dynamic_ema_trend, 0.0000001, 0.01),
             dynamic_ofi_threshold: mutate_val(self.dynamic_ofi_threshold, 0.05, 0.95),
             capital_split_scalp: mutate_val(self.capital_split_scalp, 0.1, 1.0),
             kelly_clamp_min: mutate_val(self.kelly_clamp_min, 0.001, 0.1),
@@ -2877,6 +2877,9 @@ impl SuperGenotype {
         // SL(τ) en todo el espectro: a_sl -= ln(factor)) hasta restablecer el
         // invariante — determinista y sin tocar la pendiente evolucionada.
         g.enforce_curve_rr();
+        // F1-A4: Paridad con mutate (líneas 1772, 1992): el piso de fricción
+        // debe garantizarse en la reconstrucción por vector.
+        g.sl_horizon_curve = Self::normalize_sl_curve_friction_floor(g.sl_horizon_curve);
         g.derive_anchors_from_curves();
         g.sync_continuous_curves();
         g

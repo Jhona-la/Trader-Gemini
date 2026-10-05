@@ -99,9 +99,8 @@ impl EstimadorSiniestros {
             var2 += d * d;
         }
         let var2 = (var2 / n).max(1e-18);
-        let _ = var2;
         // BISECCIÓN sobre g(R) = (1/n)Σ e^{−R·y_i} − 1. Con deriva positiva
-        // g(0⁺) < 0 (g'(0) = −media < 0); si g(100) > 0 hay cambio de signo
+        // g(0⁺) < 0 (g'(0) = −media < 0); si g(hi) > 0 hay cambio de signo
         // y la raíz es única en el intervalo (g es convexa: Σ e^{−Ry} tiene
         // a lo sumo DOS cruces con 0, el trivial en R=0 y la raíz buscada).
         // Newton es INFIABLE aquí: g' cambia de signo (crece a través de la
@@ -113,12 +112,27 @@ impl EstimadorSiniestros {
             }
             acc / n - 1.0
         };
-        let (mut lo, mut hi) = (1e-9_f64, 100.0_f64);
-        let g_hi = g(hi);
-        if !(g_hi.is_finite() && g_hi > 0.0) {
-            return None; // sin cruce en el rango acotado: raíz > 100 (edge
-                         // extremo) o muestra degenerada — sin cota honesta
+        // F1-B1 / F1-B3: Techo adaptativo derivado de la aproximación de difusión
+        // R ≈ 2μ/σ² usando var2. En micro-retornos (0.1%-0.5%) R puede ser 200-5000;
+        // un hi fijo de 100 devolvía None falsamente a pesar de existir edge legítimo.
+        let mut hi = (4.0 * media / var2).max(100.0).min(100_000.0);
+        let mut g_hi = g(hi);
+        if g_hi <= 0.0 {
+            for _ in 0..8 {
+                hi *= 2.0;
+                if hi > 100_000.0 {
+                    break;
+                }
+                g_hi = g(hi);
+                if g_hi.is_finite() && g_hi > 0.0 {
+                    break;
+                }
+            }
         }
+        if !(g_hi.is_finite() && g_hi > 0.0) {
+            return None; // sin cruce en el rango acotado
+        }
+        let mut lo = 1e-9_f64;
         if g(lo) > 0.0 {
             return None;
         }
