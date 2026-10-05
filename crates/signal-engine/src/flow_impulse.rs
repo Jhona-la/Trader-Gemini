@@ -171,12 +171,20 @@ impl FlowImpulseEngine {
             1.0
         };
 
-        if safe_hawkes >= 1.2 && (safe_obi.abs() >= 0.2 || safe_ofi.abs() >= 0.2) {
-            let flow = safe_obi * 0.6 + safe_ofi * 0.4;
-            (flow * (safe_hawkes / 2.0).min(2.0)).clamp(-1.0, 1.0)
-        } else {
-            0.0
+        // #657 (F2-A2) — ERRADICACIÓN sombra/vivo: la MISMA moneda del
+        // voto espectral #649 — excitación = exceso λ/μ̂ sobre
+        // STEADY_STATE_RATIO. El umbral 1.2 fijo era TAUTOLÓGICO (1.2 <
+        // SS ⇒ gate abierto en régimen normal) y los cortes 0.2 eran
+        // escalones C⁰. La calma se abstiene (excit ≥ 0 — la firma
+        // negativa se unifica con hawkes en la ola F2-A4); el flujo
+        // entra continuo con la ganancia canónica del motor.
+        const GANANCIA_FLUJO: f64 = 0.8;
+        let excit = crate::hawkes_bessel::excitacion_hawkes_norm(safe_hawkes);
+        if excit <= 0.0 {
+            return 0.0;
         }
+        let flow = (safe_obi + safe_ofi).clamp(-3.0, 3.0);
+        (flow * GANANCIA_FLUJO).tanh() * excit
     }
 }
 
@@ -350,11 +358,13 @@ mod tests {
         // El global quedó en manos de un vendedor fuerte (otra moneda):
         registry.set("order_book_imbalance", -0.9);
         registry.set("order_flow_imbalance", -0.8);
-        registry.set("hawkes_intensity", 2.0);
-        // El core escribe el contexto de SOL (set_scoped + set_for_coin):
+        registry.set("hawkes_intensity", 1.6);
+        // El core escribe el contexto de SOL (set_scoped + set_for_coin).
+        // #657 (F2-A2): hawkes escopado en CASCADA (3.0) — el global queda
+        // en SS (si leyera el global, se abstendría).
         registry.set_scoped("SOLUSDT", "order_book_imbalance", 0.8);
         registry.set_scoped("SOLUSDT", "order_flow_imbalance", 0.6);
-        registry.set_scoped("SOLUSDT", "hawkes_intensity", 1.6);
+        registry.set_scoped("SOLUSDT", "hawkes_intensity", 3.0);
 
         let mut engine = FlowImpulseEngine::default();
         assert!(strategy_core::QuantumStrategy::init(&mut engine, registry).is_ok());
@@ -423,5 +433,36 @@ mod qo_619_tests {
         let portador =
             crate::hawkes_bessel::HawkesBesselEngine::voto_espectral(&x, 3.0).en_escala(20).abs();
         assert!(pico > portador, "impulso {pico} vs portador {portador}");
+    }
+}
+
+#[cfg(test)]
+mod qo_657_tests {
+    use super::*;
+    use crate::hawkes_bessel::STEADY_STATE_RATIO;
+
+    /// #657 (F2-A2): el umbral del vivo es el ESTADO ESTACIONARIO —
+    /// régimen normal se abstiene aunque el flujo sea fuerte (antes el
+    /// gate 1.2 < SS era tautológico); la cascada vota continuo.
+    #[test]
+    fn qo_657_flow_impulse_vote_umbral_ss() {
+        assert_eq!(
+            FlowImpulseEngine::vote(0.8, 0.5, STEADY_STATE_RATIO),
+            0.0,
+            "régimen normal se abstiene"
+        );
+        assert_eq!(
+            FlowImpulseEngine::vote(0.8, 0.5, 1.2),
+            0.0,
+            "calma (1.2 < SS) no vota — antes era el gate tautológico"
+        );
+        let cascada = FlowImpulseEngine::vote(0.8, 0.5, 4.0);
+        assert!(cascada > 0.3, "cascada vota alto, votó {cascada}");
+        // Continuidad en el umbral: sin escalón al cruzar SS.
+        let a = FlowImpulseEngine::vote(0.8, 0.5, STEADY_STATE_RATIO + 1e-9);
+        assert!(a.abs() < 1e-6, "transición continua en SS, votó {a}");
+        // Flujo continuo: 0.2 ya no es escalón.
+        let debil = FlowImpulseEngine::vote(0.1, 0.05, 4.0);
+        assert!(debil > 0.0 && debil < cascada, "flujo débil vota menos");
     }
 }
