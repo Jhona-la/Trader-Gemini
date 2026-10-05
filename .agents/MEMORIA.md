@@ -1,6 +1,25 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
 
+## 2026-10-04 — Qoder: BARRIDO F3 CERRADA (núcleo vivo)
+
+- 3 auditores (lib.rs completo, 27 módulos core + orquestador, host +
+  ejecución): **36 hallazgos** `F3:` (3 HIGH verificados, 14 MED,
+  19 LOW). Docs-only, T-1 cero. Compilación workspace exit 0.
+- **HIGH (patrón común: paridades rotas voto↔aprendizaje)**: F3-A1
+  PPO slots 0/1 con denominador literal 0.35 en el cierre vs umbral
+  medido p80 en la entrada (clase #625); F3-B1 escalera de trailing
+  que NO usa su `spectral_persistence` (closure muerto — la modulación
+  S-2/#560 no existe); F3-C1 reloj de latencia congelado al arranque
+  que sesga kill-switch e inmune en sesiones largas.
+- **Contagio XLV·G REPARADO** (escritor/lector en `c{id}:`) — retirar
+  de la lista de defectos del consejo.
+- Patrón acumulado F2+F3: DOS caras sin reconciliar — la diseñada
+  (docs/sombra) y la que corre (vivos).
+- Barrido acumulado: **103 hallazgos** (F0:1 + F1:23 + F2:43 + F3:36).
+- Siguiente: coordinar F4 (zona Claude) o ola correctiva de los 3 HIGH
+  F3 + erradicación sombra/vivo (oráculo).
+
 ## 2026-10-04 — Qoder: BARRIDO F2 CERRADA (física/cuántica)
 
 - 3 auditores: **43 hallazgos** `F2:` (7 HIGH, 16 MED, 20 LOW) en
