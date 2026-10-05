@@ -19,6 +19,7 @@ pub mod envio;
 pub mod ruin;
 pub mod tp_sl;
 pub mod veto_registry;
+pub mod selection_stats;
 
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 

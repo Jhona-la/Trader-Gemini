@@ -4589,3 +4589,22 @@ exactamente como debe.
 
 Estado del barrido: acumulado 148; F0-F6 cerradas; F7-F8 abiertas;
 olas en cola: A-H3 (scope corregido), A-H4, B-M3.
+
+## 2026-10-05 — Antigravity: OLAS Ω8 Y Ω9 CERRADAS — S5 OOS Partition & DSR, S8 Hurst Multiescala Honesto, Ω4 Micro Vetos
+
+- **S5 CERRADO (`crates/god-engine-core/src/darwin.rs`)**:
+  - `evolve_online`: erradicado el sobreajuste in-sample del demonio Darwin. Implementada partición cronológica causal honesta: 50% inicial de ticks para entrenamiento GA in-sample (`train_stream`), 50% posterior no visto para validación Out-Of-Sample ciega (`oos_stream`).
+  - Tanto el candidato campeón como el baseline activo se evalúan sobre `oos_stream`. Promoción exige `meets_promotion_margin(candidate_oos_fitness, baseline_oos_fitness)` en OOS.
+  - Integrado control de multiplicidad DSR (Bailey & López de Prado 2014, ec. 5) con $N = \text{pop\_size} \times \text{generations} = 100$ pruebas: evaluado $E[\max SR]$ (benchmark de Gumbel) en el gate.
+  - Test unitario dedicado `s5_oos_partition_temporal_contract` verificando causalidad temporal estricta $\max(t_{\text{train}}) \le \min(t_{\text{oos}})$, cotas de Gumbel y compuerta OOS.
+- **CENTRALIZACIÓN ARQUITECTÓNICA DE DSR/PSR (`crates/risk-engine/src/selection_stats.rs`)**:
+  - Implementación autocontenida y compartida de DSR, PSR, momentos muestrales y aproximación de Acklam para $\Phi^{-1}$.
+  - Exportado en `crates/risk-engine/src/lib.rs` (`pub mod selection_stats;`) para consumo unificado en `god-engine-core` y `evolution-engine` sin dependencias circulares. 9/9 tests verdes en `risk-engine`.
+- **Ω4 CERRADO (AUDITORÍA DE VETOS MICRO $13 USD)**:
+  - Verificada la compatibilidad matemática de `correlation_guard.rs` y `veto_registry.rs` con cuentas micro: confirmada la admisión de transacciones con $\rho < 0$ (coberturas/hedges) sin veto espurio (varianza reducida $k + k(k-1)\rho < k$).
+  - 140/140 tests verdes en `risk-engine`.
+- **VERIFICACIÓN COMPLETA**:
+  - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+  - `cargo test -p risk-engine --lib`: 140/140 tests pasados.
+  - `cargo test -p god-engine-core --lib`: 166/166 tests pasados.
+
