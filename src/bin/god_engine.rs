@@ -3134,7 +3134,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // FASE 23: QUANTUM LATENCY KILL-SWITCH (Optimized via TSC)
-            let now_ms = epoch_baseline_ms + instant_baseline.elapsed().as_millis() as i64;
+            // #657 (F3-C1) — el reloj SIGUE al NTP: el hot-loop relee el
+            // offset ACTUAL (el sincronizador lo actualiza cada 15 s) en
+            // vez del offset congelado al arranque. La deriva del reloj
+            // local en sesiones largas sesgaba latency_ms — que alimenta
+            // el kill-switch de volatilidad sintética y los strikes del
+            // sistema inmune (aplanados falsos / stalls ocultos).
+            let ntp_offset_actual = engine_real
+                .arena
+                .server_time_offset_ms
+                .load(Ordering::Relaxed);
+            let now_ms = epoch_baseline_ms + (ntp_offset_actual - ntp_offset_ms)
+                + instant_baseline.elapsed().as_millis() as i64;
             let latency_ms = now_ms - event_time;
             let mut latency_panic = false;
 
