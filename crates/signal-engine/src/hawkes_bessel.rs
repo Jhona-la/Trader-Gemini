@@ -372,7 +372,10 @@ impl QuantumStrategy for HawkesBesselEngine {
         // firmado por el momentum CONTINUO (no signum: salto en dir=0).
         // Antes: signum·tanh(λ/μ̂) votaba ±0.92 constante en régimen
         // normal — el fallback escalar D-754 heredaba la física rota.
-        (direction / 1e-3).tanh() * excitacion_hawkes_norm(core_intensity)
+        // #659 (F2-A4): la CALMA se abstiene (excit ≥ 0, paridad con
+        // flow_impulse #657) — antes la excitación negativa INVERTÍA el
+        // sentido del momentum: calma + flujo alcista votaba bajista.
+        (direction / 1e-3).tanh() * excitacion_hawkes_norm(core_intensity).max(0.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {

@@ -178,15 +178,24 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         } else {
             speed
         };
+        // #659 (F2-A11) — MISMA BASE TEMPORAL para el Mach: price_velocity
+        // es una tasa por SEGUNDO; `spread_speed_of_sound` (unidades de
+        // precio/s, escritor del core) normaliza a 1/s, pero el fallback
+        // `atr_pct` llega POR BARRA de 60 s — sin la conversión el
+        // denominador quedaba ~60× grande y el Mach sesgado a la baja.
+        const BARRA_S: f64 = 60.0;
         let sound_norm = if mid_price > 1e-8 && sound > 1.0 {
             sound / mid_price
         } else {
-            sound
+            sound / BARRA_S
         };
 
         let mach = Self::compute_mach_number(speed_norm.abs(), sound_norm);
         let jump = Self::compute_shockwave_jump(mach);
-        speed.signum() * jump
+        // #659 (F2-A11): firma CONTINUA del flujo (familia tanh del
+        // solitón #657 — sin escalón de signum en speed=0).
+        const SAT_MOMENTO: f64 = 1e4;
+        (speed_norm * SAT_MOMENTO).tanh() * jump
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
