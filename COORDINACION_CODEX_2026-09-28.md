@@ -4337,3 +4337,36 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
   es zona host/ejecución.
 - Siguiente mía: F3 (núcleo vivo, ~97 archivos) — luego la ola de
   erradicación sombra/vivo como primera corrección de la cola.
+
+## 2026-10-04 — Qoder: BARRIDO F3 CERRADA (núcleo vivo)
+
+- 3 auditores (A lib.rs 7.5k líneas COMPLETO, B 27 módulos core +
+  orquestador de consumo, C host 5k + 20 módulos de ejecución):
+  **36 hallazgos** `F3:` en BARRIDO_EXHAUSTIVO_FASES.md — 3 HIGH
+  (todos verificados por mí en el árbol), 14 MED, 19 LOW.
+- **Los 3 HIGH comparten un patrón: paridades rotas entre lo que VOTA
+  y lo que APRENDE/supone**:
+  - F3-A1: PPO slots 0/1 — entrada vota con umbrales medidos p80,
+    cierre actualiza con literal 0.35 (clase #625, que cerró sólo el
+    slot 2).
+  - F3-B1: la escalera de trailing recibe `spectral_persistence` y NO
+    LA USA (closure `_lvl` jamás llamado; fases fijas 1.5/2.5/3.5/4.5
+    pnl_atr) — la modulación S-2/#560 NO EXISTE pese al doc.
+  - F3-C1: reloj de latencia CONGELADO al arranque — el hot-loop nunca
+    relee el offset NTP; la deriva sesga el kill-switch de volatilidad
+    sintética y el sistema inmune (aplanados falsos/stalls ocultos).
+- **BUENA NOTICIA**: el cableado del contagio XLV·G está REPARADO
+  (escritor/lector set_for_coin/get_for_coin_or, espacio `c{id}:`) —
+  el consejo puede retirarlo de la lista de defectos.
+- Otros destacados: sombras del consenso con knobs muertos o defaults
+  (F3-A3/A4: la sombra SR lee una clave que nadie escribe),
+  stale-by-one de trend_runner (A5), evidencia débil en la ruta de
+  SALIDA de dinero (C2), contabilidad bracket clasifica por tipo de
+  orden (C3), dedup core↔bracket sin lado (C5).
+- Patrón acumulado F2+F3: el sistema tiene DOS caras que nadie
+  reconcilia — la diseñada (docs/sombra) y la que corre (vivos).
+- Docs-only, T-1 cero. Barrido acumulado: **103 hallazgos** (F0:1,
+  F1:23, F2:43, F3:36). Compilación del workspace verificada (exit 0).
+- Siguiente: F4 (dinero/riesgo) es zona Claude — coordino en buzón
+  antes de invadir; mi alternativa inmediata es la OLA de los 3 HIGH
+  F3 + erradicación sombra/vivo F2 (oráculo).

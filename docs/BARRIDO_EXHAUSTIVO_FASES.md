@@ -122,6 +122,7 @@ cierre con informe forense por fase.
 | F0 | CERRADA 2026-10-04 | 1 (F0-1, corregido en fase: ADR-0014) | docs-only |
 | F1 | CERRADA 2026-10-04 | 23 (2 HIGH, 8 MED, 13 LOW) | docs-only; A1 y A4 re-verificados contra el árbol |
 | F2 | CERRADA 2026-10-04 | 43 (7 HIGH, 16 MED, 20 LOW) + hallazgo estructural sombra/vivo + inventario milenio | docs-only; A1/A3/A5/B1/C1/C4 re-verificados |
+| F3 | CERRADA 2026-10-04 | 36 (3 HIGH, 14 MED, 19 LOW) — patrón paridades rotas voto/aprendizaje | docs-only; A1/B1/C1 verificados; ws check exit 0 |
 
 ## F0 — RESULTADO (cerrada 2026-10-04, Qoder)
 
@@ -370,3 +371,110 @@ Prioridad valor/coste (física honesta, NO name-dropping):
 **F2 CERRADA**. Siguiente: F3 (núcleo vivo god-engine-core, ~97
 archivos, zona Qoder) — hereda el hallazgo estructural como contexto
 de primera clase.
+
+## F3 — RESULTADO (cerrada 2026-10-04, Qoder)
+
+Tres auditores en paralelo, un archivo por entrada de checklist:
+
+- **Auditor A**: god-engine-core/src/lib.rs COMPLETO (7.547 líneas —
+  el pipeline del núcleo vivo).
+- **Auditor B**: los 27 módulos del core (stateful_engine/PPO,
+  trailing, calibration, conformal, darwin, ensemble, ml_*, diffusion,
+  reality_physics...) + signal-engine/orchestrator.rs (consumo #624).
+- **Auditor C**: el host src/bin/god_engine.rs (4.958 líneas) + los 20
+  módulos de execution-engine.
+
+### Hallazgos (etiqueta `F3:` — esperan su ola)
+
+**Auditor A — pipeline lib.rs (13)**
+
+| # | Archivo:lín | Sev | Defecto |
+|---|---|---|---|
+| F3-A1 | lib.rs:4713-4775 vs 3865-3876 | **HIGH** | Paridad evaluate/update PPO rota en slots 0/1: la entrada vota `obi/dynamic_obi_thr` y `ofi/dynamic_ofi_thr` (umbrales medidos p80); el cierre actualiza con `(ofi_value/0.35)` y `(obi/0.35)` — denominador LITERAL y variable distinta. El peso 0/1 aprende de una escala que no es la que vota. Clase #625 (que cerró sólo el slot 2). Verificado |
+| F3-A2 | lib.rs:5757 | MED | Call-site ADICIONAL del patrón F2-A5: VPIN pasada como hawkes_ratio con `hawkes_ratio_real` FRESCO en scope (:3990, mismo tick) |
+| F3-A3 | lib.rs:1984-1987 vs 4131 | MED | Sombra SR lee `stochastic_noise_variance` con default 0.05 — CERO escritores; el core publica la clave DISTINTA `microstructure_noise_variance`. Knob muerto alimentando el consenso VIVO |
+| F3-A4 | lib.rs:1916-2102 | MED | `quantum_k_spring`, `quantum_lambda_anharmonic`, `quantum_alpha`, `soliton_amplitude`, `nash_equilibrium_drift`, `conformal_epsilon`: sin escritor productivo (sólo tests) — sombras del consenso con defaults hardcodeados, insumos NO equiparados entre los 13 motores |
+| F3-A5 | lib.rs:2091-2102 vs 4032-4043 | MED | Sombra trend_runner lee `hurst_exponent`/`cvpin`/`atr_pct` que set_reg escribe DESPUÉS en el mismo evento: consume el tick PREVIO (stale-by-one asimétrico; los otros 12 usan desplazamientos frescos) |
+| F3-A6 | lib.rs:4015-4019 | MED | `atr_5s = v_t·0.5 + atr_pct·precio·0.5` ≈ ATR 1s, no v_t·√5; coaxial normaliza por √5 ⇒ sesgo de compresión permanente en comp_5s (el fallback AGY-P23 lo anula el escritor) |
+| F3-A7 | lib.rs:2695-2701 | MED | BTC/ETH consumen su propio OFI vía predict_altcoin_impulse: slot 3 del PPO y divergencia auto-referenciales para los líderes |
+| F3-A8 | lib.rs:861-879 | LOW | Boot carga BTCUSDT_MOTOR bajo clave global "UNIVERSAL" → campo `scalp_forest` sin lector productivo |
+| F3-A9 | lib.rs:2230-2241 | LOW | Espectro plano resetea dominante pero NO `consenso_espectral_tau` (hoy enmascarado por #624 — acoplamiento frágil) |
+| F3-A10 | lib.rs:2487-2507 | LOW | `revert_quantum_ghost_position` cierra TODOS los slots de la moneda ante un rechazo, sin `closed_order` — divergencia local/exchange |
+| F3-A11 | lib.rs:861-910, 4114-4126 | LOW | El espectro entra DOS veces a la decisión (proyeccion_espectral + override #624) y el invariante bayesiano valida parcialmente la decisión espectral con el propio espectro |
+| F3-A12 | lib.rs:3789, 5832-5835 | LOW | Relojes mezclados chrono::Utc/SystemTime/now con event_time_ms — no-determinismo en replay |
+| F3-A13 | lib.rs:4128-4129 | LOW | `bessel_alpha`=1.5 sin lector; `hawkes_dt`=0.05 publicado cada tick — literales disfrazados de config |
+
+**Auditor B — módulos core + orquestador (10)**
+
+| # | Archivo:lín | Sev | Defecto |
+|---|---|---|---|
+| F3-B1 | trailing.rs:71,167-173,180-304 | **HIGH** | `spectral_persistence` entra a la función y NO AFECTA NADA: el closure `_lvl` (l.173) jamás se llama; `be_trigger` y las transiciones de fase (1.5/2.5/3.5/4.5 pnl_atr) son fijas. La modulación espectral S-2/#560 de la escalera NO EXISTE pese al doc que la promete. Entrada muerta en el mecanismo de SALIDA. Verificado |
+| F3-B2 | orchestrator.rs:386 vs 428-452 | MED | `qo_624_fraccion_espectral` = decisiones de TODAS las monedas / (n+1) de coin 0: fracción inflada ~N× (puede dar >100%) — telemetría que gobierna la recalibración H7 |
+| F3-B3 | stateful_engine.rs:909-916 | MED | Hawkes per-tick: escritor muerto en hot path; pasa `ema_ofi` (NIVEL) como `delta_ofi` (excita por magnitud cada tick); eventos depth (vol=0) aún excitan |
+| F3-B4 | stateful_engine.rs:327-447 | MED | Familia legacy `can_open_at_tau`: sin callers de producción pero conserva el bug de unidades que D-754 documenta como arreglado (v_t>0.0015 compara $ contra fracción; reloj ticks×100ms) — trampa de recableado con tests que lo afirman |
+| F3-B5 | orchestrator.rs:512-518 | LOW | H4 documentada como \|media/v_dom\| pero implementada con signo (banda opuesta ⇒ 0): la impl es la segura, doc/código discrepan |
+| F3-B6 | orchestrator.rs:584-587 | LOW | `vdom_sobre_corte` cuenta dominantes con τ inoperable (descartados por H2): distribución H7 mezclada |
+| F3-B7 | ensemble.rs:201-211 | LOW | `nn_penalty` castiga sólo a DarkAlphaNN con el z del ENSAMBLE: un forest malo hunde al NN; atribución unidireccional |
+| F3-B8 | math_kernels.rs:373-375 | LOW | `DynamicKelly` muerto; en frío devuelve 0.10 fabricado si se recableara |
+| F3-B9 | stateful_engine.rs:1301-1330 + 3 módulos | LOW | Superficie muerta: export_f32 (5/144 slots), simd_nn jamás entrenada, OrderFlowAggregator, LatencyAccelerator, BookDepthSlippagePredictor |
+| F3-B10 | bootloader.rs:216-254 | LOW | Warmup REST: respuesta no-JSON consume 3 reintentos SIN backoff y el fallo final es println — arranque sigue con estimadores fríos sin marca |
+
+**Auditor C — host + ejecución (13)**
+
+| # | Archivo:lín | Sev | Defecto |
+|---|---|---|---|
+| F3-C1 | god_engine.rs:2913-2915, 3137 | **HIGH** | Reloj de latencia CONGELADO al arranque: `epoch_baseline_ms = local_t0 + offset_NTP_t0`; el hot-loop nunca relee `server_time_offset_ms` (actualizado cada 15 s). La deriva en sesiones de días sesga `latency_ms` que alimenta el kill-switch de volatilidad sintética y los strikes del sistema inmune (3/3 → flatten): deriva positiva = aplanados falsos; negativa = stalls enmascarados. Verificado |
+| F3-C2 | executor.rs:2855-2873 | MED | `execute_reduce_only_market` — la ruta de SALIDA de dinero — sin intención registrada, sin tipar el 2xx, coid interno: invisible al OrderRegistry salvo WS |
+| F3-C3 | user_data_stream.rs:501-543 | MED | Contabilidad bracket clasifica por TIPO: cualquier fill STOP/TP de otro cliente en el símbolo encola BracketClose con entry de ranura arbitraria → contamina Kelly/WR/totales |
+| F3-C4 | god_engine.rs:3720-3724 | MED | Fee del cierre-core fabricado `(maker+taker)`; la ruta real es IOC-taker + market-taker ⇒ 2·taker. total_fees/total_gross_pnl sesgados |
+| F3-C5 | god_engine.rs:2826-2830, 3395-3424 | MED | Dedup core↔bracket por SÍMBOLO (no símbolo+lado): cierres LONG y SHORT simultáneos en hedge tragan el segundo |
+| F3-C6 | god_engine.rs:1344 + execution_evidence.rs:35-77 | MED | `fetch_open_positions` estricto + host `unwrap_or_default()`: snapshot rechazado ⇒ FASE 5/adopción saltada sin telemetría |
+| F3-C7 | entry_dispatch.rs:100-104; executor.rs:1156 | LOW | `configure_leverage` en CADA entrada (POST extra por entrada); `if true {}` muerto en hot_swap |
+| F3-C8 | god_engine.rs:3526-3528 | LOW | Transición reescribe URL del WS con base hardcoded, descartando BEST_WS_ENDPOINT y el ganador de la carrera de latencia |
+| F3-C9 | god_engine.rs:1089-1136 | LOW | Bucles infinitos de arranque sin tope: claves inválidas = proceso "vivo" que nunca arranca ni falla |
+| F3-C10 | executor.rs:2431-2433 | LOW | `execute_limit_order` WS devuelve Ok sin confirm_ws_dispatch (muerto hoy, armado si se activa WS) |
+| F3-C11 | router.rs:96-104 + 3 módulos | LOW | Módulos muertos con física divergente: QuantumOrderRouter (round no direccional, slip ≠ P32), QuantumSocketPool reintenta POST, Multiplexer, HotSwap |
+| F3-C12 | client.rs:401-424 | LOW | Cancel sin clasificar error de red como AMBIGUOUS: cancel aplicado reportado fallo → falsas escaladas al watchdog |
+| F3-C13 | order_registry.rs:481,525 | LOW | `cleanup_stale_orders` sin llamador: intenciones New atascadas viven todo el proceso |
+
+### Verificados limpios
+
+Paridad slot-2 Hawkes #625 VIVA en ambos caminos; TTL #648 y else{dominante=0}
+bien ordenados; sonda #586 con la función pura del gate; dedup por ts en
+las dos observar_maduracion; Kelly con LCB del PF; coin_id acotado.
+Calibration (Platt Newton/KKT), conformal (D-618+ACI), diffusion
+(varianzas exactas), entry_reservation (CL-41b/c), recarga_genoma
+(CL-40), ml_inference/registry (MP), reality_physics (D-753), math_kernels
+vivos (Welford/Kahan/VPIN/entropía/Hurst DFA/Amihud), darwin (M5-H01),
+orchestrator FSM revocable. **Cableado del contagio REPARADO**
+(escritor set_for_coin ↔ lector get_for_coin_or, espacio `c{id}:` —
+cierra el defecto XLV·G). Orquestador vs ADR-0014: P3/P4/P5 e H2/fallback
+✓ (desviaciones B2/B5/B6). En ejecución: CL-39/39b/39c, CL-41c,
+roundtrip_friction única (XLIV-8), OCO parcial, rate-limit, redondeo
+D-629/D-630, income con dedup, NTP de generación única, CL-38.
+
+### Patrón dominante F3
+
+**Paridades rotas entre lo que VOTA y lo que APRENDE/supone**: PPO
+slots 0/1 (A1), trailing que no usa su insumo espectral (B1), reloj
+que no sigue al NTP (C1). Sumado al patrón F2 (física corregida sólo
+en sombra), el sistema tiene DOS caras que nadie reconcilia: la que
+diseñamos y la que corre.
+
+### Cola de olas que abre F3 (prioridad)
+
+1. **F3-A1** paridad PPO slots 0/1 + **F3-B1** escalera espectral
+   real + **F3-C1** reloj NTP en el hot-loop — los tres HIGH con
+   oráculo.
+2. Erradicación sombra/vivo F2 (A1/A2/A3/A5) — puede ir en la misma
+   ola de paridades si el oráculo aguanta el radio.
+3. F3-A3/A4 (sombras con knobs muertos — equiparar insumos de los 13
+   motores) + F3-A5 stale-by-one.
+4. F3-C2/C3/C5 (evidencia del camino de SALIDA de dinero) +
+   F3-B2/B3.
+5. Limpieza de superficie muerta (A8/A13, B4/B8/B9, C7..C13) — ola
+   mecánica agrupada.
+
+**F3 CERRADA**. Barrido acumulado: F0(1) + F1(23) + F2(43) + F3(36) =
+**103 hallazgos**. Siguiente: F4 (dinero/riesgo, zona Claude —
+coordinar antes de invadir).
