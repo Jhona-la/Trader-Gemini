@@ -65,7 +65,10 @@ pub fn streak_ruin_cap(q: f64) -> f64 {
 /// fracción de sizing: streak-bound + axioma 25%. `q` = probabilidad de
 /// pérdida estimada (LCB si hay evidencia; 0.60 conservador si no).
 pub fn clamp_ruin(f: f64, q: f64) -> f64 {
-    if !f.is_finite() || f <= 0.0 {
+    if !f.is_finite() {
+        return 0.0;
+    }
+    if f <= 0.0 {
         return f;
     }
     f.min(streak_ruin_cap(q)).min(0.25)
@@ -104,5 +107,7 @@ mod tests {
         // f≤0 pasa intacto (los productores lo usan como "sin señal").
         assert_eq!(clamp_ruin(0.0, 0.5), 0.0);
         assert_eq!(clamp_ruin(-0.1, 0.5), -0.1);
+        // F1-B4: NaN se neutraliza a 0.0
+        assert_eq!(clamp_ruin(f64::NAN, 0.5), 0.0);
     }
 }

@@ -395,6 +395,104 @@ pub fn compute_tp_sl_with_target_rr(input: TpSlInputs, target_rr: f64) -> TpSl {
     out
 }
 
+/// Función de distribución acumulada de la normal estándar Φ(z).
+/// Aproximación analítica de alta precisión (Abramowitz & Stegun 7.1.26, error absoluto < 7.5e-8).
+#[inline]
+pub fn normal_cdf(z: f64) -> f64 {
+    if !z.is_finite() {
+        return 0.0;
+    }
+    if z == 0.0 {
+        return 0.5;
+    }
+    if z < -10.0 {
+        return 0.0;
+    }
+    if z > 10.0 {
+        return 1.0;
+    }
+    let abs_z = z.abs();
+    let t = 1.0 / (1.0 + 0.2316419 * abs_z);
+    let poly = t * (0.319381530
+        + t * (-0.356563782
+            + t * (1.781477937
+                + t * (-1.821255978 + t * 1.330274429))));
+    let phi = 0.3989422804014327 * (-0.5 * abs_z * abs_z).exp(); // 1/√(2π)
+    let cdf = 1.0 - phi * poly;
+    if z >= 0.0 {
+        cdf.clamp(0.0, 1.0)
+    } else {
+        (1.0 - cdf).clamp(0.0, 1.0)
+    }
+}
+
+/// R8-A / CL-34 / Ω3: Probabilidad analítica en forma cerrada de que un Movimiento
+/// Browniano con deriva μ y volatilidad σ toque el Stop Loss (-sl) antes
+/// que el Take Profit (+tp).
+///
+/// En martingala pura (μ ≈ 0): P(hit SL first) = tp / (tp + sl) = RR / (1 + RR).
+/// Con deriva a favor (μ > 0): decae exponencialmente.
+#[inline]
+pub fn probabilidad_tocar_sl_antes_de_tp(tp_pct: f64, sl_pct: f64, mu: f64, sigma: f64) -> f64 {
+    if !tp_pct.is_finite() || tp_pct <= 0.0 || !sl_pct.is_finite() || sl_pct <= 0.0 {
+        return 1.0;
+    }
+    let sig2 = sigma * sigma;
+    if !sig2.is_finite() || sig2 <= 1e-16 {
+        return if mu <= 0.0 { 1.0 } else { 0.0 };
+    }
+    let theta = 2.0 * mu / sig2;
+    if theta.abs() < 1e-6 {
+        // Límite browniano neutral (regla de la palanca / martingala)
+        return (tp_pct / (tp_pct + sl_pct)).clamp(0.0, 1.0);
+    }
+    // P(hit -sl before +tp) = (e^{θ·tp} - 1) / (e^{θ(tp + sl)} - 1)
+    let num = (theta * tp_pct).exp_m1();
+    let den = (theta * (tp_pct + sl_pct)).exp_m1();
+    if !num.is_finite() || !den.is_finite() || den.abs() <= 1e-16 {
+        return if mu <= 0.0 { 1.0 } else { 0.0 };
+    }
+    (num / den).clamp(0.0, 1.0)
+}
+
+/// R8-A / CL-34 / Ω3: Probabilidad analítica de primer toque del Stop Loss antes
+/// del horizonte temporal τ (distribución Inversa-Gaussiana en forma cerrada).
+///
+/// P(τ_sl ≤ τ) = Φ((-sl - μ·t)/(σ·√t)) + e^{-2μ·sl/σ²} · Φ((-sl + μ·t)/(σ·√t))
+/// donde t = τ en segundos.
+#[inline]
+pub fn probabilidad_primer_toque_stop_antes_de_tau(
+    sl_pct: f64,
+    mu_por_seg: f64,
+    sigma_por_seg: f64,
+    tau_sec: f64,
+) -> f64 {
+    if !sl_pct.is_finite() || sl_pct <= 0.0 || !tau_sec.is_finite() || tau_sec <= 0.0 {
+        return 0.0;
+    }
+    let sqrt_t = tau_sec.sqrt();
+    let sig = sigma_por_seg.max(1e-8);
+    let sig_sqrt_t = sig * sqrt_t;
+    let b = sl_pct;
+    // Para el stop adverso a distancia b:
+    let d1 = (-b - mu_por_seg * tau_sec) / sig_sqrt_t;
+    let term1 = normal_cdf(d1);
+
+    let exponent = -2.0 * mu_por_seg * b / (sig * sig);
+    if exponent > 700.0 {
+        return term1.clamp(0.0, 1.0);
+    }
+    let d2 = (-b + mu_por_seg * tau_sec) / sig_sqrt_t;
+    let term2 = exponent.exp() * normal_cdf(d2);
+
+    let prob = term1 + term2;
+    if prob.is_finite() {
+        prob.clamp(0.0, 1.0)
+    } else {
+        term1.clamp(0.0, 1.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -799,5 +897,42 @@ mod tests {
         assert_eq!(s0, latency_seed(1000, 0), "reproducible");
         assert_ne!(latency_seed(1000, 0), latency_seed(1000, 1), "activos distintos");
         assert_ne!(latency_seed(1000, 0), latency_seed(1001, 0), "eventos distintos");
+    }
+
+    #[test]
+    fn test_normal_cdf_exactitud_y_simetria() {
+        assert_eq!(normal_cdf(0.0), 0.5);
+        assert!((normal_cdf(1.95996) - 0.975).abs() < 1e-4);
+        assert!((normal_cdf(-1.95996) - 0.025).abs() < 1e-4);
+        assert_eq!(normal_cdf(f64::NAN), 0.0);
+    }
+
+    #[test]
+    fn test_probabilidad_tocar_sl_antes_de_tp_neutral_and_drift() {
+        // En martingala neutra (mu = 0), P(hit SL) = TP / (TP + SL)
+        // Con TP = 0.02 y SL = 0.01 (RR = 2): P(hit SL) = 0.02 / 0.03 = 2/3 ≈ 0.6667
+        let p_neutral = probabilidad_tocar_sl_antes_de_tp(0.02, 0.01, 0.0, 0.001);
+        assert!((p_neutral - 2.0 / 3.0).abs() < 1e-4, "neutral={p_neutral}");
+
+        // Con deriva a favor (mu > 0), la probabilidad de tocar SL disminuye
+        let p_fav = probabilidad_tocar_sl_antes_de_tp(0.02, 0.01, 0.0005, 0.001);
+        assert!(p_fav < p_neutral, "favorable={p_fav} < neutral={p_neutral}");
+
+        // Con deriva adversa (mu < 0), la probabilidad de tocar SL aumenta
+        let p_adv = probabilidad_tocar_sl_antes_de_tp(0.02, 0.01, -0.0005, 0.001);
+        assert!(p_adv > p_neutral, "adverse={p_adv} > neutral={p_neutral}");
+    }
+
+    #[test]
+    fn test_probabilidad_primer_toque_stop_antes_de_tau() {
+        // A tau -> 0, P(touch) -> 0
+        let p_zero = probabilidad_primer_toque_stop_antes_de_tau(0.01, 0.0, 0.0001, 1e-6);
+        assert!(p_zero < 1e-6, "p_zero={p_zero}");
+
+        // A mayor tiempo, mayor probabilidad de tocar
+        let p_short = probabilidad_primer_toque_stop_antes_de_tau(0.01, 0.0, 0.0001, 60.0);
+        let p_long = probabilidad_primer_toque_stop_antes_de_tau(0.01, 0.0, 0.0001, 3600.0);
+        assert!(p_long > p_short, "monotonía temporal: {p_long} > {p_short}");
+        assert!(p_long <= 1.0);
     }
 }
