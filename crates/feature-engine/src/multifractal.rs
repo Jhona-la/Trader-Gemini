@@ -348,6 +348,15 @@ impl MultiScaleHurstConfluence {
         self.falpha_cache
     }
 
+    /// #659 (F1-C2) — GENERACIÓN del cache: número de consultas totales;
+    /// cambia exactamente cuando el cache refresca (cada 16). El consumidor
+    /// de la EWMA lo usa para DEDUP: sin esto, el mismo espectro contaba
+    /// 16× y la memoria efectiva del olvido 1/64 era ~4 espectros.
+    #[inline(always)]
+    pub fn cache_generation(&self) -> u64 {
+        self.falpha_calls
+    }
+
     #[inline(always)]
     pub fn update(&mut self, price: f64) -> (f64, f64, f64, f64, bool, bool) {
         let (h_micro, _) = self.engine_micro.update(price);

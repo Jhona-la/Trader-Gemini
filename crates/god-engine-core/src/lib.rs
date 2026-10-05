@@ -2823,7 +2823,17 @@ impl GodEngineCore {
                     // distribución medida, cualquier umbral sería un
                     // literal disfrazado. Observación pura — sin
                     // consumidor de política (T-1 cero).
-                    if e.d0.is_finite() {
+                    // #659 (F1-C2) — DEDUP por generación del cache: el
+                    // espectro se refresca cada 16 consultas; sin esta
+                    // guardia el mismo d0 contaba 16× y la memoria
+                    // efectiva del olvido 1/64 era ~4 espectros.
+                    let gen_cache = fe_obs.multifractal.cache_generation();
+                    let gen_prev = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "multifractal_d0_gen", f64::NAN);
+                    let es_fresco = !gen_prev.is_finite() || gen_cache as f64 != gen_prev;
+                    if e.d0.is_finite() && es_fresco {
                         let prev_media = self
                             .arena
                             .registry
@@ -2852,6 +2862,9 @@ impl GodEngineCore {
                             self.arena
                                 .registry
                                 .set_for_coin(coin_id, "multifractal_d0_sd", sd);
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "multifractal_d0_gen", gen_cache as f64);
                         }
                     }
                 }
