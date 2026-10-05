@@ -1153,7 +1153,6 @@ impl OrderExecutor {
 
     pub fn hot_swap_credentials(&self, new_key: String, new_secret: String, is_testnet: bool) {
         self.api_secret.store(Arc::new(new_secret));
-        if true {}
         self.client.hot_swap_credentials(new_key, is_testnet);
     }
 

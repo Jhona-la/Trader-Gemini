@@ -182,9 +182,6 @@ impl QuantumStrategy for SolitonWaveEngine {
             .unwrap_or(0.0);
         let t_time = registry
             .get_scoped_parameter(sym_opt, cid_opt, "soliton_time", "SolitonWaveEngine")
-            .or_else(|| {
-                registry.get_scoped_parameter(sym_opt, cid_opt, "hawkes_dt", "SolitonWaveEngine")
-            })
             .map(|p| p.get_value())
             .unwrap_or(0.05)
             .clamp(0.001, 1.0);

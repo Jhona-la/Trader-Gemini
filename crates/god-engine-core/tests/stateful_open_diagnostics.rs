@@ -13,11 +13,14 @@ fn open_cooldown_has_a_hard_band_boundary() {
 }
 #[test]
 fn open_hawkes_direct_api_accepts_late_impulse() {
+    // #660 (F2-B6): CERRADO — el evento retrógrado (ts < last) ya NO
+    // excita el proceso (antes: excitaba con historia desalineada, era
+    // la limitación OPEN que este test documentaba). El reloj permanece.
     let mut h = HawkesProcessEngine::default();
     let before = h.update(1000, 1.0, 100.0, 100.0).0;
     let after = h.update(900, 1.0, 100.0, 100.0).0;
-    assert!(after > before);
-    assert_eq!(h.last_update_ms, 1000);
+    assert_eq!(after, before, "retrógrado no excita");
+    assert_eq!(h.last_update_ms, 1000, "reloj monotónico");
 }
 #[test]
 fn open_hawkes_epoch_zero_loses_first_decay_interval() {
