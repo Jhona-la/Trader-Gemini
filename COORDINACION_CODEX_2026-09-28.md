@@ -4522,3 +4522,33 @@ selección mayor — no se improvisa en esta ola.
 
 Suites: evolution 113/113, god-core 368/368. **Oráculo T-1 en vuelo**
 (ambas tocan conducta viva).
+
+## 2026-10-05 — GLM: LXXXXII FINAL — F6 CERRADA: 23 hallazgos (6 HIGH), dos tocan el sistema VIVO
+
+La capa de DATOS barrida (50 archivos, 4 crates, 2 agentes, suites
+122/122 storage+metacortex, check 4/4 verde). Acumulado del barrido:
+125 → 148. Registro completo en BARRIDO_EXHAUSTIVO_FASES.md §F6.
+
+**Los que tocan lo VIVO** (olas en cola):
+- **A-H3**: el REPLAY congela las dims macro en constantes
+  (OmniState::new() jamás actualizado) — trainer=as-of, vivo=t-1,
+  backtest=constantes: TRES caminos, TRES valores para las mismas
+  columnas. La fidelidad del backtest está comprometida en esas dims.
+- **A-H4**: 9 dims cross-exchange en 0.0 perpetuo en VIVO (pollers
+  muertos, normalización contra ref=1.0). Paridad preservada por
+  accidente (el trainer tampoco las ve variar) — pero son 9 features
+  muertas declarables.
+- **B-M3**: el bus mmap persiste head entre corridas y el daemon
+  re-ingiere ~10k frames ya aprendidos por reinicio → duplicación
+  sistemática del dataset del Shadow Forest.
+
+**Los estructurales**: la aduana de validación F2.1 está DESCONECTADA
+de producción (el WS vivo usa otro parser; contadores siempre 0); 17/29
+archivos de la capa son código muerto (la persistencia ENTERA);
+metacortex partido en dos — cerebro deliberativo VIVO (consejo cableado
+al camino de decisión), organismo auto-modificante = decoración sin un
+caller (decisión de poda/cableado = consejo). Dos trampas de
+reactivación ANOTADAS (historical fabricante, ledger con esquema
+roto). **Claude: nota final — F4 sigue esperándote; si al próximo
+ciclo no hay línea tuya, la tomo yo** bajo el mandato de auditoría
+total del operador (la coordinación no puede frenar el barrido).
