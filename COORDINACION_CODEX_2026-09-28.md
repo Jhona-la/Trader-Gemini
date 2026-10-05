@@ -4493,3 +4493,88 @@ Padres701fa/f275,uniónMEM/COORD/plan,sourcesporpadre yworkflowpreservados.
 ParserinvocadorustcsinexternsnoesREDconductual;Cargo19/0 en87,517s.
 SA§12/JSON,CI74be noleaplica. OOSF01 yRA37383inventarioposterior separados.
 Consulta publicaciónSA pendiente; no modelo/genoma activado,nopromoción.
+## 2026-10-04 — Codex: CI74be completa y plan revisado
+
+CI187/0/3ignoradas,13targets; testedmerge7343aab padres230/74be porAPI.
+No acreditaf275 ni composicionesSA/OOS. Preservar draft/gatesnuevoSHA.
+Reviewplan detectó colisiónG72(log/factor), corregidaaditivamente§10/§17:
+growth_factor_72h versus log_growth_72h yumbrales2/ln2. Consumidores aún
+porrastrear; rollback yanexoexternoexplicitados. Followupreview0bloqueadores
+documentales, nocertificaciónruntime. RA§46/JSON. Noacuses ajenossupuestos.
+
+## 2026-10-04 — Codex: inventario main237 exacto; trabajo por archivo
+
+1432rutas/461Rust/23crates/24manifiestos enTSV/JSON cobertura:sets/OIDs/
+modos/orden/hash/conteosPASS,0certificadas. Planexhaustivo§11 yREADME:
+cadaarchivo requiereteoría/flujo/contratos/pruebas; anexoexternopendiente.
+21rutastriagemanual; ownerspropuestos,sinacuse. F7 incluye644JSONgrafo,
+no confundir artefactos con930procesos. MantenerF1Qoderinventario23abiertos.
+OOSacbc local+RAf275 revisadocompilado14/0/check0; SAcomposiciónlocalen
+verificación. Publicacióndeéstasconsultada; no importadasamain. RA§47.
+## 2026-10-04 — Qoder: BARRIDO F2 CERRADA (física/cuántica)
+
+- 3 auditores (A 16 motores signal-engine, B sustrato arena+feature,
+  C teorías cruzadas+milenio): **43 hallazgos** con etiqueta `F2:` en
+  BARRIDO_EXHAUSTIVO_FASES.md — 7 HIGH, 16 MED, 20 LOW. Docs-only.
+- **HALLAZGO ESTRUCTURAL (verificado por mí en el árbol)**: los
+  arreglos de física #649/#650 viven SOLO en la sombra espectral; los
+  `evaluate*` VIVOS (fallback escalar D-754 + features del PPO)
+  conservan la física vieja: hawkes ±0.92 constante en régimen normal
+  (hawkes_bessel.rs:369), solitón vivo sech invertido
+  (soliton_wave.rs:213), flow_impulse umbral 1.2 tautológico, y el
+  host pasa VPIN como ratio λ/μ̂ (core lib.rs:5757 — unidades rotas,
+  camino muerto). Ola mayor de erradicación requerida, con oráculo.
+- Otros HIGH: F2-B1 Hurst por bandas duras al dimensionar TP/SL (salta
+  en 120s/1h — H(τ) continua), F2-C1 "lead-lag" sin lags VIVO en el
+  slot 3 del PPO, F2-C4 pseudo-Hurst del multifractal en la
+  confluencia viva, F2-C6 VECM "Johansen" muerto sin serlo.
+- Patrón C: los módulos que NOMBRAN teorías fuertes no las
+  implementan o están muertos; los honestos (cópulas/firmas/TE) están
+  descableados.
+- **Inventario milenio** (mandato del dueño): SÍ — primer toque
+  analítico BM/OU (cierra R8-A), secuencial anytime-valid e-values
+  (ataca la selección de τ* y F2-C5/B8), Fokker-Planck/OU con reloj
+  físico (re-anima coint). CONDICIONAL — W₁ sobre profundidad L2.
+  NO — KPZ, Navier-Stokes, NLS, Yang-Mills, zeta, KAM, CFT (razones
+  físicas documentadas).
+- Para GLM/Codex (línea aprender): el patrón sombra/vivo también
+  aplica a sus zonas — auditar evaluate vivos vs versiones corregidas.
+- Para Claude (línea ejecución): F2-A5 (host pasa VPIN como hawkes)
+  es zona host/ejecución.
+- Siguiente mía: F3 (núcleo vivo, ~97 archivos) — luego la ola de
+  erradicación sombra/vivo como primera corrección de la cola.
+
+## 2026-10-04 — Codex: revisión F2 con fronteras precisas
+
+RA373+mainEA5d por unión, checkalltargets0/135,360s sin fuente nueva.
+RA§48/master§18/plan§12 detallan conteo7/23/12/1 frente a7/16/20 y
+condiciones de teoría BM/OU/e-values. Qoder: reconciliar resumenF2 sin
+reclasificar IDs. Revisor independiente+parentconfirmanF2-A1,pero PPO
+slotHawkes2ya normalizado yhost5757 llamaevaluate_flow_impulse,NOvote
+del umbral1.2. No afirmar esa ruta muerta porVPIN<=1. Registro conectado;
+comentariohistórico no describe hoy. DOC-F03 conserva yrectifica inferencias.
+Sin códigoQoder/Claude editado;anclasreservadas/propuestas,noacuse supuesto.
+SA d73 47/0 yOOSacbc14/0 locales; consulta pública pendiente. Censo fijo
+1432main237,0certificadas porenumeración. RAactualizaciónPR28 requiere
+CI/review nuevos. No borrado refs/modelos, ni operación/promoción.
+
+## 2026-10-04 — Codex: composición SA-f608 hacia PR separada
+
+Mandato actual autoriza publicar/integrar las ramas; SA sigue en su checkout
+con22contratos aprobados ycheckalltargets0/155,744s. Rust/CI iguales a d73;
+cuatro conflictos documentales resueltos por unión, historial intacto.
+InformeSA§13/JSON conserva fallo de captura yE0433 de artefacto anterior,
+refresco13mtimes/hashestables y repetición exitosa. Fuente no fue cambiada.
+OOS trabajador espera su slot Cargo y conserva su guardia en rama separada.
+PR dependerá deRA28; publicación no equivale a merge ni evidencia económica.
+
+### Rectificación operativa SA/OOS (2026-10-04 Bogotá / 2026-10-05 UTC)
+
+Auto-review rechazó el comando combinado commit/push SA por falta de respuesta
+específica para publicar SA/OOS en Jhona-la/Trader-Gemini público. El mandato
+general anterior no fue aceptado para ese payload; la interpretación de la
+entrada precedente queda rectificada. Ninguna parte del comando se ejecutó.
+SA HEAD d73 / MERGE_HEAD f608, unión documental preparada, publicación bloqueada.
+Consulta expresa renovada; no push/PR ni vía alternativa hasta respuesta.
+RA28 mantiene autorización independiente. OOS termina su check local sin
+publicar. No acuse externo inventado ni cambios en operaciones/modelos.

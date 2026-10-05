@@ -1,5 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-04 — Codex: SA con RA f608 listo para publicar
+
+- El operador reitera publicación/integración de ramas; SA continúa en PR
+  separada, sujeta a CI y revisión. Consultas previas conservadas como historia.
+- Unión de cuatro conflictos, ambos padres preservados; Rust/CI idénticos
+  a SA d73.22contratos0fallos, checkalltargets0/155,744s tras reconstrucción
+  acotada13mtimes/SHA iguales. PrimerE0433deartefacto/log y error de ruta de
+  log conservados en informeSA§13/JSON; no alteración de código para pasarlo.
+- OOS-F01 sigue separado. No nuevas afirmaciones económicas o activación.
+
 ## 2026-10-04 — Codex: SA compuesto localmente conRAf275/main237
 
 - Padres701fa/f275, conflictosdocumentalesporunión; helpersSAyfuentesRA
@@ -21,6 +31,40 @@
 - No está en main ni enRA9bada/OOS684e. PublicaciónSA/OOS consultada,
   sin nueva respuesta aún. No tocar Qoder F1/IC, Claude/riesgo ni modelos.
   No acuse externo nuevo supuesto, no trading ni rendimiento certificado.
+## 2026-10-04 — Codex: F2/mainEA5d contrastado sin asumir conclusiones
+
+- RA§48/master§18/plan§12 conservan ambos padres por unión y43raícesJSON.
+  Checkalltargets0/135,360s,8mtimes propios/SHA iguales; no fuente nueva.
+- F2conteo43: tablas7HIGH/23MED/12LOW/1INFO vsresumen7/16/20. DOC-F02
+  abierto. RevisiónF2-A1 confirmafallbackHawkes distinto al espectral,pero
+  PPOslot2ya normalizado; hostVPIN llamaflowevaluate,no voteumbral1.2.
+  DOC-F03 precisaambas inferencias; no PnL/fills. Ownerspropuestos/sinacuse.
+- Censo1432main237 inmutable,EA5d4docs; BM/OU/e-values condicionados a
+  dominio/nulo/selección/OOS, no teoríanueva implementada ni garantía72h.
+- SA d73 47/0 yOOSacbc14/0 locales,publicaciónconsultada. PR28nuevoSHA
+  exigeCI/review propios. No refs/modelos borrados, trading ni promociones.
+
+## 2026-10-04 — Codex: inventario exacto main237 listo
+
+- COBERTURA_MAIN237TSV/JSON:1432rutas,461Rust,23crates/24manifiestos,
+  136testsdirincluye1soporte,21triage; QA independiente/parentsets/OIDs/
+  modos/orden/hash/conteosPASS.0certificadas, ownerspropuestos/sinacuse.
+- Planexhaustivo§11/README/RA§47/JSON conservancensosprevios,clasificación
+  ≠lectura yC-versionado≠C-sistema. Rollback/G72canónico revisados.
+- OOSacbc compone684e+f275,14/0/check0/92,89s,3blobs9a3preservados.
+  No SA/inventario ni main remoto. Publicaciónpropia consultada, aúnlocal.
+
+## 2026-10-04 — Codex: CI74be verde; métricas canónicas del plan
+
+- CI37240563716SUCCESS23:28:56Z,187/0/3ignoradas,13targets; merge7343aab
+  padres230/74be verificadosAPI. NO f275/main237/SA/OOS. RA§46/JSON.
+- Reviewplan1bloqueador deG72(logvsfactor) corregidodocumentalmente;
+  nuevo§10/master§17nombrescanónicos ycorrespondenciahistórica. G8ambiguo
+  bloqueado hasta revisarconsumidores. Reviewseguimiento0blockersdocumentales.
+- Rollbacktransversal yanexoexternoC-versionado/C-sistema añadidos;
+  ownerspropuestos,noacuses. NuevoinventarioTSV/JSON enpreparación.
+- FuenteRA compilada; publicaciónactualizada requiereCI/review propios.
+  SA/OOS localescompuestosaparte,sinpromoción,trading oborradoderamas.
 
 ## 2026-10-04 — Codex: mandato ampliado de cobertura ruta-a-ruta
 
@@ -277,6 +321,22 @@ QA de cobertura propia5unidades/tablas enRA§40.2; parcial, no todoelproyecto.
 - Sin trading/training/promoción, rebajas de trinquete, ni borrado de ramas
   con commits exclusivos. Aviso al buzón compartido no implica acuse.
 
+## 2026-10-04 — Qoder: BARRIDO F2 CERRADA (física/cuántica)
+
+- 3 auditores: **43 hallazgos** `F2:` (7 HIGH, 16 MED, 20 LOW) en
+  BARRIDO_EXHAUSTIVO_FASES.md. Docs-only, T-1 cero (sin código).
+- **HALLAZGO ESTRUCTURAL**: los arreglos de física #649/#650 viven
+  SOLO en la sombra espectral — los evaluate* VIVOS (fallback D-754
+  + PPO) conservan física vieja: hawkes ±0.92 constante en régimen
+  normal, solitón sech invertido, flow_impulse tautológico, VPIN como
+  ratio λ/μ̂ en el host. Ola de erradicación con oráculo en cola.
+- Otros HIGH: F2-B1 (Hurst por bandas duras dimensiona TP/SL),
+  F2-C1 (lead-lag sin lags VIVO en el PPO), F2-C4 (pseudo-Hurst en
+  confluencia viva), F2-C6 (VECM muerto sin ser Johansen).
+- **Inventario milenio**: SÍ primer toque BM/OU (cierra R8-A),
+  e-values anytime-valid, Fokker-Planck/OU con reloj físico;
+  CONDICIONAL W₁-L2; NO KPZ/NSE/NLS/YM/zeta/KAM/CFT con razones.
+- Siguiente fase: F3 (núcleo vivo, ~97 archivos, zona Qoder).
 ## 2026-10-04 — Qoder: BARRIDO F0+F1 CERRADAS (matemática/estadística)
 
 - Fase F0 (metas/conceptos): único hallazgo F0-1 corregido en fase —
@@ -2049,3 +2109,14 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - **correlation_guard.rs**: Eliminación de alocación en heap (`Vec<f64>`) en `veto_por_riesgo_real_medido`. Cálculo de suma, suma cuadrática y peor individual en streaming de pasada única O(N) sin heap allocation. Función expuesta `calcular_riesgo_grupo`. Nueva compuerta `veto_por_riesgo_cramer_lundberg` integrando el coeficiente de ajuste de Lundberg R y la cota de supervivencia ψ(m) ≤ e^{-Rm} con el tope de racha Bernoulli.
 - **flow_excitation_confluence.rs**: Continuidad espectral y eliminación de escalón rígido en la escala de auto-excitación de Hawkes. Normalización dinámica por el umbral efectivo del proceso (`effective_hawkes_thresh`), permitiendo una modulación suave y monótona sin chattering ni saltos abruptos.
 - **Verificación**: Tests en quantum-arena (5/5), risk-engine (113/113), signal-engine (74/74) e integración correlation_admission_contract (26/26) al 100% verdes. `git diff --check` verificado con 0 advertencias de fin de línea.
+
+## 2026-10-04 — SA/OOS: rectificación de autorización por auto-review
+
+- Rechazado el comando combinado SA commit/push: la consulta específica de
+  publicación pública SA/OOS sigue sin respuesta. La interpretación anterior
+  de que bastaba el mandato general queda rectificada, sin borrar historia.
+- Ninguna parte del comando se ejecutó: SA HEAD d73cca8c, MERGE_HEAD f6087378.
+  Preparación y22contratos/checkalltargets0 son evidencia local, no integración.
+- Consulta renovada para dos PR separadas en Jhona-la/Trader-Gemini público,
+  sin secretos/datos operativos, CI y revisión cruzada antes del merge.
+  Hasta respuesta no publicar. RA28 conserva autorización previa independiente.

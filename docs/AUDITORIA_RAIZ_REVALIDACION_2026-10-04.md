@@ -2273,3 +2273,293 @@ completados; entrada/riesgo/OOS en ejecución. No cancelarla por churn de
 docs ni trasladar su resultado a este merge. Nueva CI/review antes de main.
 SA local22/0 yOOS14/0 separados; sizingRUIN sigueRED3/3, no ocultarlo entre
 suites aprobadas. Cobertura parcial, sin rendimiento72h ni operaciones.
+
+## 46. CI del corte publicado completa y revisión del plan corregida
+
+CI37240563716/head74be terminó SUCCESS23:28:56Z. El log contabiliza
+187 aprobadas,0 fallidas,3 ignoradas y13 resultados de targets; ignoradas
+son inventario manual y dos mediciones de tapes, no ejecutadas/aprobadas.
+SHA256 del log local target/ci-37240563716-head74be.log:
+ACC00BBE66AACDD5CEEB9CA41A1333234016085EEFEDB8728D4C72414BE52083.
+Checkout realmente probado7343aab2610ac52a904448f79d07969753902049,
+padres2302278b496aeafbdb71d5516a39933426ea424f y
+74be3ed561d155ea4d3e349c53fca46a5b6385a2, verificados por API.
+No es f275/main237 ni incluye SA/OOS nuevas. Nueva publicación RA requiere
+su CI, revisión y gates; no se fusiona por reutilizar este resultado.
+
+Revisión independiente del plan, Sartre:1 bloqueador de definición y2
+mejoras iniciales. G72 era logretorno en maestro§6.1 pero factor en nuevo
+plan§2. Ambas fórmulas individualmente correctas, identificador compartido
+riesgoso. Adendas plan§10/master§17 fijan growth_factor_72h>=2 y
+log_growth_72h>=ln2, correspondencia histórica y ejemplos2/ln2 y1/0.
+Se conserva el texto anterior; un G72 ambiguo bloquea G8 hasta aclarar su
+linaje. No se afirma migración de código/paneles/datasets. Búsqueda puntual
+de G72 encrates/src no encontró coincidencias; no prueba ausencia de
+campos equivalentes o consumidores externos.
+
+También se añade rollback transversal al recibo13, con destino compatible,
+trigger/responsable/respaldo y prueba; y C-versionado frente a C-sistema,
+owners propuestos y cierre del anexo externo. Segunda revisión:0bloqueadores
+documentales nuevos; consumidores/medición económica aún pendientes.
+El revisor sólo leyó documentos, sin Cargo/código/red o ediciones; no se
+usa como certificación de toda la implementación.
+
+El plan nuevo está comprometido enRAf275 y sus adendas son documentales.
+SA se compone localmente con ese padre; OOS se mantiene en su propia serie.
+Los hashes/compilación/CI de cada candidato se registrarán separadamente,
+sin importar arreglos locales a main por declaración. No se canceló CI74be,
+no se eliminaron ramas/modelos ni se ejecutó trading o promoción.
+
+## 47. Cobertura main237 completada como inventario y candidata a revisión
+
+Galileo creó sóloTSV/JSON nuevos, sin índice/refs/fuente/planes. Parent
+revalidó contra ls-tree fijo:1432rutas únicas, modos/tipos/OIDs/orden exactos,
+461Rust,21triage,24manifiestos/23crates; sumas porfase/clase/paquete/owner/
+estado y SHA256 reales.0archivos certificados; todos inventariados.
+Plan exhaustivo§11 yREADME de cobertura detallan denominadores y método.
+No atribuir al censo las revisiones de SA, OOS oF1 del autor.
+
+TSV34f5139dfaaad6317924af71584c77a2724123a38918f30c42e2c63247017aae;
+JSONfdd2b412698d9c4d7d8f0ff044fd6d47c047f999aeb5129bea0a7f22dcf8e215.
+Captura Git63a7ebd98c76899f6cb18e950b99481fb7a340d5135f3a4f8e9a8b0c1599d754.
+Este censo es main237, no working tree ni archivos ignorados; no publica
+secretos ni lee modelos/contenidos para clasificar. Anexo externo pendiente.
+
+OOSacbc3b61c983997e011b6ed5d8e0824fd3b67f3e compone684e+RAf275;
+14/0 reejecutadas yalltargets0/92,89s, fuente OOS3blobs idénticos9a3.
+Memoria/COORD e informes conservados por padre; reportOOS§8 tiene recibos.
+No trae SA ni nuevo inventario. Serie separada, local y publicación consultada;
+no está en main por producir ese commit. Ningún runner ajeno interrumpido.
+
+## 48. Revalidación de F2 y del corte mainEA5d: coherencia de evidencia y teoría
+
+### 48.1. Corte, procedencia y alcance de la sincronización
+
+Se incorpora ea5d1985aaf928bc7fe670ce4d185234bb8675a9 sobre RA37383cd8.
+Desde main237, el delta remoto contiene cuatro documentos (+205/−0), no
+fuentes Rust, manifiestos Cargo ni workflows. Qoder comunica 43 entradas F2
+de física/cuántica y reserva F3; GLM conserva la decisión FDUSD pendiente
+del dueño. Se preserva el texto de ambos autores, sin convertir el cierre
+del inventario F2 en cierre de sus defectos o aprobación económica.
+
+La unión local resuelve tres conflictos exclusivamente documentales.
+Antes de nuevas adendas se comprobaron, en orden, todas las líneas no
+vacías de cada padre: MEMORIA 1834/1611, COORDINACION 3718/3595 y plan
+maestro 642/108. El barrido es idéntico al documento entrante; las 43
+raíces JSON previas conservan valores profundos iguales. La unión produce
+203 líneas nuevas frente a RA: la diferencia con 205 del delta remoto son
+separadores vacíos, no pérdida de hallazgos ni cambio de fuente.
+
+El inventario TSV/JSON sigue anclado a main237. No se reetiquetan sus 1432
+filas como revisadas en mainEA5d: este último cambia los OIDs de cuatro
+documentos. Es obligatorio registrar ese delta y revisar sus contratos;
+el índice fijo permite reconstruir el corte original y no certifica el
+working tree, los recursos externos ni todos los caminos operativos.
+
+### 48.2. RA-DOC-F02: recuento de severidades F2 inconsistente
+
+Estado: abierto documental, reproducido independientemente. El resumen
+del autor declara 43 hallazgos: 7 HIGH, 16 MED y 20 LOW. Al contar una sola
+vez las filas identificadas F2-A*, F2-B* y F2-C* de las tres tablas se
+obtienen 43: 7 HIGH, 23 MED, 12 LOW y 1 INFO. No se sumaron menciones en
+bitácoras ni la cola de olas; INFO es la entrada F2-C15, no un fallo LOW.
+El total coincide, la distribución no. El contador reconoce únicamente
+filas con ID, archivo y severidad, excluyendo títulos, ejemplos y prosa.
+
+El defecto no demuestra un fallo del motor ni invalida por sí mismo las
+43 descripciones. Sí afecta al presupuesto de revisión, a la cola por
+riesgo y a una eventual matriz consolidada: un consumidor puede presentar
+una distribución falsa aunque lea un total correcto. Se conserva la
+clasificación original de cada fila y se solicita al autor reconciliar
+resumen y tablas mediante adenda trazable. No se cambian severidades por
+decisión editorial de Codex ni se consideran los 43 bugs nuevos distintos
+de expedientes anteriores sin deduplicación por contrato/consumidor.
+
+Criterio de cierre: resumen derivado de IDs únicos, mismo corte/OIDs,
+taxonomía explícita para INFO, prueba del contador y reconciliación en
+memoria/COORD/maestro, sin duplicar un defecto por aparecer en varios
+informes. Hasta entonces usar las tablas como fuente de conteo y mostrar
+la discrepancia; ninguna suma es evidencia de cobertura semántica total.
+
+### 48.3. Admisión científica condicionada, no adopción por prestigio
+
+Primer toque BM/OU queda como investigación propuesta, no cierre probado
+de R8-A/CL-34. Se deben especificar proceso, coordenada precio/logprecio,
+drift/difusión y unidades, estado inicial, barreras y política de salida.
+Un resultado de una barrera constante no cubre automáticamente dos salidas
+competidoras TP/SL ni una barrera trailing dependiente de la trayectoria.
+La referencia de Martin, Kearney y Craster describe exactitud en casos
+especiales y aproximaciones asintóticas de OU, no una fórmula cerrada
+universal. Interpretamos esto como requisito de delimitar el dominio de
+la propuesta F2, no como prohibición de investigar primeros pasos.
+[Fuente primaria: primer paso OU](https://arxiv.org/abs/1810.13010).
+
+La aceptación requerirá referencia analítica o numérica por dominio,
+conservación de probabilidad, error de discretización/convergencia,
+reloj físico y oráculos sintéticos antes de comparación neta OOS.
+Parámetros ajustados en la misma muestra que evalúa la política deben
+separarse causalmente. Un modelo BM/OU mal especificado no valida colas
+de saltos, fills, capacidad o pérdidas por fricción de un libro real.
+Nada de esta adenda implementa un solver, activa estrategia o certifica
+la meta de duplicación cada 72 horas.
+
+E-values/e-processes son otra línea candidata, pero un IC, z-score o
+confianza arbitraria no se vuelve anytime-valid al renombrarlo. Un
+e-value exige esperanza bajo el nulo <=1; para parada adaptativa se debe
+construir y justificar el proceso y su filtración. E-BH controla FDR
+incluso con dependencia entre e-values válidos; la condición de validez
+de cada entrada y el procedimiento múltiple siguen siendo esenciales.
+No se debe trasladar esa garantía al máximo crudo de escalas/pares ni
+al producto de evidencias dependientes sin condiciones. Esto delimita
+la integración propuesta: contratos de nulo, universo y secuencia de
+selección antes de cambiar vetos.
+[Fuente primaria: e-BH](https://academic.oup.com/jrsssb/article/84/3/822/7056146).
+
+El recibo de experimentación debe fijar observable neto, unidad de apuesta,
+nulo de habilidad y exposición, familia de activos/horizontes/modelos,
+filtración causal, tratamiento de muestras faltantes y política de
+reinicio. Primero medir falsos descubrimientos bajo nulos simulados y
+señales controladas, después evaluar estabilidad temporal y OOS. No
+rebajar límites de riesgo para aumentar descubrimientos o perseguir el
+objetivo de crecimiento. Regímenes continuos y multiactivo no eliminan
+restricciones de exchange, integridad de datos ni presupuesto de riesgo.
+
+### 48.4. Próximas fronteras y reservas entre agentes
+
+La distinción shadow/operativo de F2-A1/A2/A3/A5/A11 se incorpora como
+prioridad transversal. No basta una fórmula corregida en un módulo: el
+recibo debe seguir productor, unidad, estado, selector, consumidor y
+efecto bajo abstención/fallback. Se solicita revisión independiente
+acotada de F2-A1; no se rehacen a la vez las fuentes de Qoder/Claude ni
+se adjudican como reproducidos todos los informes F2. Reservas y avisos
+en el buzón son propuestas de coordinación, no acuses del otro editor.
+
+SA d73cca8c y OOS acbc3b61 permanecen locales y separados. SA+RAf275
+ejecutó 47 contratos únicos (13 retención, 9 selección, 6 contexto OOS,
+19 parser); OOS+RAf275 ejecutó 14. Ambas compilaciones all-targets pasan.
+RA no incluye esos dos nuevos parches por declarar sus resultados, y
+mainEA5d tampoco. El ensayo incompleto de parser sin externs fue error
+de invocación; el resultado de parser citado proviene de Cargo real.
+La publicación SA/OOS está consultada, todavía sin respuesta registrada.
+
+CI del head público 74be terminó con 187 aprobadas, 0 fallidas y 3
+ignoradas sobre merge7343aab (padres230/74be). No valida este candidato
+ni los parches SA/OOS. PR28 debe conservar borrador y exigir CI/revisión
+del nuevo SHA antes de merge. No hay rama inactiva sin exclusivos que
+se pueda retirar con seguridad; no se borran refs ocupadas ni modelos.
+
+### 48.5. RA-SIG-F01/F2-A1: paridad Hawkes y rectificación de inferencias
+
+Estado: defecto semántico abierto, confirmado por lectura y aritmética;
+prioridad HIGH heredada de F2-A1 para revisión, impacto económico aún no
+medido. Parfit leyó las funciones completas y sus consumidores, sin editar,
+ejecutar Rust/Cargo, motor, modelos o red. Codex contrastó las funciones
+críticas y los seis hashes de fuente. No se contabiliza como un segundo
+bug independiente del ID F2-A1: es su revalidación con alcance más preciso.
+
+En hawkes_bessel.rs:303–369, evaluate_for_coin obtiene dirección escopada,
+se abstiene si no finita o |dirección|<=1e-6 y transforma ratio ausente/
+inválido/no positivo en1. El voto restante es sign(dirección)*tanh(ratio).
+El helper normalizado (:100) calcula tanh((ratio−SS)/SS), con SS=1.6;
+voto_espectral (:136) lo multiplica por tanh(clamp(x[k],−10,10)). Los
+consumidores interpretan de forma distinta el mismo nivel de actividad.
+
+Con dirección+1 y desplazamiento x[k]=0.5, recálculo JavaScript de las
+fórmulas, no ejecución del sistema:
+
+| Ratio | Escalar | Exceso normalizado | Espectral |
+| ---: | ---: | ---: | ---: |
+| 1.0 | +0.761594 | −0.358357 | −0.165603 |
+| 1.6 | +0.921669 | 0 | 0 |
+| 3.0 | +0.995055 | +0.703906 | +0.325287 |
+
+El ancla SS provoca convicción escalar alta frente a abstención espectral.
+La regla escalar es simétrica: no demuestra sesgo exclusivamente alcista
+o bajista. Tampoco es una constante por tick en todo flujo normal: el ratio
+instantáneo varía con eventos y decaimiento. La función completa NO salta
+en dirección cero; su banda muerta concentra los saltos en ±1e-6. Con
+ratio1.6, dirección1e-6 da0 y1.000001e-6 da aproximadamente+0.921669.
+Fuera de la banda elimina la magnitud direccional. El tratamiento de
+ausencia añade otra frontera: con dirección válida, registro inválido
+produce voto ±tanh(1), no abstención. El helper inválido da0, pero el host
+también tiene fallback1 antes de algunas llamadas; no afirmar una política
+global de ausencia correcta sin rastrear cada productor.
+
+Topología diagnóstica de los consumidores relevantes, sin promesa de fills:
+
+```text
+trades → Hawkes por moneda (segundos) → ratio λ/μ̂
+  ├─ registro escopado → evaluate_for_coin → ensamble escalar ─┐
+  ├─ excitación normalizada → voto espectral → dominante ──────┤
+  │                   selector espectral/respaldos → tensor_cont
+  │                     → tensor_boost → composite → filtros posteriores
+  └─ excitación normalizada × orientación → PPO slot2 entrada/cierre
+```
+
+Registro del votante core:899, evaluación/ponderación orchestrator:396,
+override espectral :519 y consumo core:4828–4859 están presentes. Cuando
+hay dominante válido/operable, net_confidence se reemplaza por la versión
+espectral modulada por coherencia interespectral. Sin él, opera el
+respaldo escalar. Por ello el defecto no es API muerta, pero tampoco
+contamina siempre la dirección final. Permanecen filtros y sizing después:
+no se deduce una orden ni su rentabilidad del contraejemplo de votos.
+
+Rectificación RA-DOC-F03, sin borrar el texto de Qoder: el slot Hawkes del
+PPO ya usa excitacion_hawkes_norm en entrada (:4752) y cierre (:3851).
+F2-A1 NO demuestra física vieja en ese slot. La observación al cierre y
+las reglas de orientación difieren de la entrada; la asignación de crédito
+requiere otro contrato, no está certificada por compartir normalizador.
+record_event (:2376) y el escritor del ratio (:3989/:4043) sí están
+cableados. El bloque histórico de comentario en hawkes_bessel.rs:333 está
+precedido por una advertencia que conserva el mislabel antiguo: leerlo
+como estado actual conduciría a una conclusión falsa de proceso muerto.
+
+Rectificación adicional F2-A5: core:5757 pasa current_vpin() como argumento
+hawkes_ratio a evaluate_flow_impulse. La confusión de observable continúa
+confirmada, aunque ambos cocientes sean adimensionales: no expresan el
+mismo fenómeno ni la misma distribución. Pero ese llamador NO invoca
+FlowImpulseEngine::vote, donde está el umbral1.2. evaluate_flow_impulse
+(:69–157) aplica otros gates de z/coherencia y parámetros genómicos. La
+conclusión «nunca dispara porque VPIN<=1<1.2» no se sostiene para ese
+llamador. No se ha ejecutado un intent/fill para cuantificar su impacto.
+
+Para cerrar F2-A1: decidir el contrato direccional/excitación y ausencia,
+trazar todas sus representaciones, construir oráculos Rust de ambas rutas
+y del selector con/sin dominante, medir discontinuidades y crédito causal,
+versionar cualquier tensor/modelo afectado y comparar OOS neto. Cambiar
+una fórmula local sin esos consumidores puede trasladar el desacuerdo a
+otro camino. Owner propuesto Qoder/señales, Claude para observable del
+host y GLM para crédito/PPO; se solicita acuse antes de editar sus anclas.
+
+Fuentes del checkout RA373 y mainEA5d coinciden por blob. SHA256 cotejados:
+Hawkes15F27129150E22960BD86B87CEB71AC6D71445BDE78AB093B1A40C9A14AB2714;
+coreD4D5D00017336FFD9C26C6144FB68514584454C9DB2E9063D7B2064616A12DD6;
+orchestrator51BA6F62735DB2745171A98779252F16754F1EB756B19092004FED97C838E8BC;
+flowBEE3B01CC547916176027155311480A07849237EE6FEB81ABBAC5E041B75F8B3;
+confluence948351180C568FCCC5A4938F5B742C97EBC10F2B39EBC9406F1B06760CE484D5;
+mathAA5ED7785C28AFD1880021645649FAFA30BB92BBF840D4E84AA63784E93CA4E0.
+
+### 48.6. Recibo de compilación del candidato y límites
+
+Check workspace/all-targets/locked/offline, nightly2026-06-30, dev, j2:
+exit0 en135.3599377s. Se refrescaron únicamente mtimes de ocho fuentes
+Rust propias del delta RA/main, con hashes de bytes invariables antes
+del check, sin limpiar cachés ni modificar contenido. Log local
+target/ra-mainEA5d-check-2026-10-04.log, SHA256
+7A3CDBA698C1EA53D025966E1A6AB275217C44647841CAB7F7C40BAD8C9B89BE.
+Adendas posteriores sólo documentales; warnings existentes preservados,
+sin cargo fix ni formato global. Check compila pero no ejecuta pruebas.
+Se ejecuta además la selección unitarias Hawkes existente en el mismo
+corte; su resultado tendrá recibo separado y no cubre automáticamente
+paridad escalar/espectral ni economía del sistema.
+
+Recibo posterior de esa selección: cargo test -p signal-engine --lib
+hawkes_bessel::tests --locked --offline -j2, mismo nightly/perfil de test,
+exit0/56.4373833s,9 aprobadas,0 fallidas,0 ignoradas,97 filtradas. SHA256
+del log target/ra-hawkes-existing-tests-2026-10-04.log:
+AE31D9553964A82A2A25F29EDAFA401F854691CB272FC4C23F7B501763F64C29.
+Se ejecutaron las pruebas del proceso/registro ya existentes, sin CLI,
+órdenes o modelos. Un verde heredado no refuta RA-SIG-F01: no se añadió
+ni ejecutó aquí un oráculo comparativo de ambas rutas y del selector.
+El defecto queda abierto y la aritmética comparativa conserva su carácter
+de recálculo, no se presenta como RED/GREEN de reparación.

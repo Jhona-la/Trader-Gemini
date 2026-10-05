@@ -206,5 +206,34 @@
     "includes_partition_guard_OOS_F01":false,"includes_later_RA37383_inventory":false,
     "PR":null,"pushed":false,"in_remote_main":false,
     "model_genome_or_trading_execution":false,"growth72h_measured":false
+  },
+  "composition_RAf608_publication_preparation": {
+    "parents":["d73cca8cdc5191f9c0ccb6b66cebfee583cdd87d","f608737803406e5e6f5cf0045755c1fbafb55558"],
+    "latest_user_instruction_authorizes_publication_and_integration":true,
+    "publication_scope":"SA code/tests/reports in existing public repo via separate PR; CI and cross-review before merge",
+    "nonempty_parent_lines_preserved":{"memory":[1834,1860],"coordination":[3720,3761],"master":[658,663],"per_file_plan":[225,275]},
+    "Rust_and_workflow_identical_to_SA_parent":true,
+    "specific_contracts":{"passed":22,"failed":0,"ignored":0,"retention":13,"selection":9},
+    "logs":{"retention":"EF8A513FC78373CEFA51F6503F6E946D79AD3336C182A42BA6D5D623DDC2BC9D","selection":"251BB88AC26DE80FEDDB328FB5679EC491282021367AF478AF92419F644804FA"},
+    "initial_logging_failure":{"cause":"missing log directory","valid_compile_receipt":false},
+    "first_captured_check":{"exit":101,"seconds":18.1589043,"error":"E0433 oos_context absent in artifact despite module present in source","sha256":"B39D9B15463DBB8553172F5028C04FEF9F908448165F915C9761A1D4178372F8","source_repaired_to_hide_failure":false},
+    "refreshed_check":{"exit":0,"seconds":155.7442739,"existing_Rust_mtimes_refreshed":13,"source_bytes_unchanged":true,"sha256":"7FF59139950E39FD99420B2C5A700AD008853D29A4A2B43694B802F2B810A638","profile":"dev","tests_executed_by_check":false},
+    "partition_guard_OOS_F01_included":false,"remote_CI_pending":true,
+    "pushed_at_receipt":false,"in_remote_main_at_receipt":false,"growth72h_demonstrated":false
+  },
+  "publication_approval_review_block": {
+    "verified_at_utc":"2026-10-05T00:39:15Z",
+    "supersedes_authorization_interpretation_in":"composition_RAf608_publication_preparation",
+    "authority":"automatic approval reviewer",
+    "reason":"specific SA/OOS public-publication question has no answer; general integration mandate deemed insufficient for this payload and destination",
+    "rejected_command_kind":"combined git add,commit,push",
+    "any_part_of_rejected_command_executed":false,
+    "HEAD":"d73cca8cdc5191f9c0ccb6b66cebfee583cdd87d",
+    "MERGE_HEAD":"f608737803406e5e6f5cf0045755c1fbafb55558",
+    "new_scoped_SA_OOS_question_submitted":true,
+    "publication_status":"blocked_pending_explicit_scoped_answer",
+    "RA_prior_publication_authorization_affected":false,
+    "local_validation_receipts_preserved":true,
+    "pushed":false,"PR":null,"merged_to_remote_main":false
   }
 }

@@ -396,3 +396,75 @@ este merge. No usar sus referencias como si fueran archivo local presente.
 No push/PR de SA, publicación consultada pendiente; no está en main.
 La CI187/0/3 del headRA74be no cubre SA nueva ni este candidato compuesto.
 ResidualesSA-R03/R04/R05 y consumidores de métricas siguen pendientes.
+
+## 13. Composición SA con RA f608 y preparación de publicación
+
+El mandato vigente del operador reitera publicar e integrar las ramas del
+proyecto. Esta autorización permite continuar SA hacia una PR separada en
+el repositorio conocido, conservando CI y revisión antes del merge. Las
+anotaciones anteriores de consulta pendiente describen cortes históricos;
+no representan el estado de autorización de esta adenda. La integración
+de código no activa un genoma ni ejecuta el optimizador.
+
+Padres: d73cca8cdc5191f9c0ccb6b66cebfee583cdd87d y
+f608737803406e5e6f5cf0045755c1fbafb55558. El cambio entrante es documental:
+plan, inventario y revalidación F2. Los cuatro conflictos se resuelven por
+unión. QA comprueba las líneas no vacías y su orden relativo de cada padre:
+memoria1834/1860, coordinación3720/3761, maestro658/663 y plan225/275.
+Todos los Rust y el workflow permanecen idénticos al padre SA d73; el
+prefijo OOS de RA sigue integrado y la validación de partición OOS-F01
+continúa en la otra serie. Se conservan los valores anteriores del JSON.
+
+Contratos específicos recompilados con rustc nightly2026-06-30, edition2024:
+13 de retención y9 de selección,22 aprobados,0 fallidos,0 ignorados. Los
+logs bajo target/sa-score-evidence del checkout principal tienen SHA256:
+score-retention-f608.log EF8A513FC78373CEFA51F6503F6E946D79AD3336C182A42BA6D5D623DDC2BC9D;
+sa-selection-f608.log 251BB88AC26DE80FEDDB328FB5679EC491282021367AF478AF92419F644804FA.
+El total47 de§12 incluye parser/contexto y pertenece a aquella ejecución;
+no se infla el conteo sumando repeticiones de los22.
+
+La compilación requirió resolver un problema de procedencia del artefacto:
+un primer intento no pudo guardar el log porque faltaba su directorio y no
+constituye recibo válido. Después, un check capturado devolvió101 en18.159s:
+el binario no encontraba oos_context en backtest_engine, aunque lib.rs:5
+lo exportaba y el helper existía. Log check-composed-RAf608.log,
+SHA256 B39D9B15463DBB8553172F5028C04FEF9F908448165F915C9761A1D4178372F8.
+Es consistente con la interferencia de caché compartida ya registrada en
+RA; no se modificó fuente para ocultar el error ni se atribuyó a la fórmula SA.
+
+Se refrescaron mtimes de13 fuentes Rust propias del delta respecto a main,
+incluidas las heredadas de RA, verificando bytes invariantes. El check
+workspace/all-targets/locked/offline/j2 terminó0 en155.7442739s, perfildev,
+misma toolchain; log check-composed-RAf608-refresh.log,
+SHA256 7FF59139950E39FD99420B2C5A700AD008853D29A4A2B43694B802F2B810A638.
+Quedan ambos resultados; el check exitoso no ejecuta pruebas, y las fuentes
+siguen idénticas al SA revisado. Cargo quedó libre antes del check OOS.
+
+La revisión independiente previa de los22 contratos continúa aplicando a
+esos mismos bytes. CI remota y revisión de la composición pública quedan
+pendientes al momento de este recibo. La PR dependerá de RA28; la llegada
+a main y limpieza de la rama se verificarán después de su merge, nunca a
+partir de un push. SA-R03/R04/R05, métricas económicas y consumidores de
+G72 conservan sus estados abiertos, sin certificación de retorno72h.
+
+## 14. Rectificación de autorización: publicación bloqueada por auto-review
+
+El 2026-10-05 00:39 UTC (2026-10-04, Bogotá) se verifica que la revisión
+automática rechazó el comando combinado de commit y push de SA. Consideró
+insuficiente el mandato general para publicar el contenido concreto SA en
+el repositorio público Jhona-la/Trader-Gemini, porque la consulta específica
+SA/OOS aún no tenía respuesta. La interpretación de autorización de §13 es
+histórica y queda RECTIFICADA por esta adenda; no es una autorización vigente.
+
+No se ejecutó ninguna parte de ese comando: HEAD sigue d73cca8c y MERGE_HEAD
+f6087378. No existe un push ni PR SA de esta composición. Los cuatro archivos
+conservan las uniones resueltas en disco pero el índice todavía exige cerrar
+el merge. No se considera que compilar equivalga a haber integrado/publicado.
+
+Se solicitó al operador autorización expresa para publicar SA y OOS en dos
+PR separadas, con código, pruebas e informes, sin secretos ni datos operativos,
+y merge condicionado a CI y revisión cruzada. Hasta recibirla, la publicación
+se mantiene bloqueada. La verificación y documentación local continúan; RA28
+tiene autorización previa independiente. No se intenta eludir el rechazo por
+otro canal. Los resultados técnicos y hashes de §13 permanecen válidos como
+recibos locales y no demuestran retorno económico ni operación en producción.

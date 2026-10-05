@@ -267,3 +267,62 @@ Recurso ausente, no accesible o sin prueba queda pendiente con impacto/gate,
 no aprobado ni omitido. C-sistema no cierra mientras haya recursos críticos
 sin inventario/contrato; acceso/publicación/ejecución no autorizados se piden
 separadamente. El censo Git por sí solo sólo sirve a C-versionado.
+
+## 11. Recibo del inventario y del método, no de auditoría completa
+
+Inventario main237 creado por subagente Galileo y revalidado por Codex:
+1432 rutas únicas,461Rust (405 dentro de crates/56 fuera),23 directorios
+de crates y24manifiestosCargo.136Rust bajo tests/ incluye1soporte; no es
+conteo de funciones #[test].21rutas requieren triage manual. Todas1432
+filas son inventariado_no_certificado;0certificadas por este artefacto.
+
+| Fase primaria sugerida | Rutas |
+| --- | ---: |
+| F0 |46|
+| F1 |29|
+| F2 |70|
+| F3 |32|
+| F4 |39|
+| F5 |58|
+| F6 |78|
+| F7 |930|
+| F8 |150|
+
+F7 contiene644JSON de grafo y11otros artefactos de grafo, además de docs/
+plataforma. No son930módulos operativos. Cada artefacto también requiere
+contrato de esquema/procedencia y cotejo de referencias con su fuente;
+parsear un grafo o verificar un OID no certifica conexiones vivas.
+Duplicados por OID pueden compartir oráculo de contenido, pero cada ruta
+conserva recibo de contexto/consumidor y no se da por revisada en bloque.
+
+TSV SHA25634f5139dfaaad6317924af71584c77a2724123a38918f30c42e2c63247017aae;
+JSON SHA256fdd2b412698d9c4d7d8f0ff044fd6d47c047f999aeb5129bea0a7f22dcf8e215.
+Metadatos/modos/OIDs/snapshot/orden/conjunto exactos yconteos porfase/clase/
+paquete/owner/estado cotejados con ls-tree. Owner sigue propuesto_sin_acuse.
+Para detalles de clasificación y denominadores usar el JSON, no sumas de
+categorías que se solapan (crate, tipoRust, directoriotests).
+
+Revisión documental independiente Sartre: colisiónG72 cerrada por§10 y
+maestro§17; rollback/anexoexterno añadidos;0bloqueadores documentales nuevos.
+Consumidores ambiguos y gates económicos siguen pendientes. No ejecutó
+fuentes/CLI/Cargo ni revisó el TSV. Esa independencia no es aprobación
+humana de PR, ejecución de fase ni acreditación de rentabilidad.
+
+## 12. Delta de corte mainEA5d y continuidad de las fases
+
+main237→ea5d1985 modifica MEMORIA, COORDINACION, BARRIDO y maestro: cuatro
+documentos,+205/−0, ninguna fuente Rust/Cargo/CI. El censo fijo no se
+reescribe: conservar su snapshot y revisar el delta con nuevos OIDs. F2
+del otro auditor es inventario comunicado, no cierre de reparaciones ni
+lectura independiente de todas las filas por Codex. RA§48 y maestro§18
+registran la discrepancia de severidades y la admisión científica limitada
+de primeros pasos/e-values; no añadir teoría al motor antes de sus gates.
+
+Para cada próxima unidad: leer el contrato completo y sus consumidores,
+separar teoría de heurística, probar invariantes/límites y abstención,
+guardar RED/GREEN identificable, compilar la composición, revisar en otra
+línea y sólo después publicar/integrar. Owner propuesto exige acuse; una
+rama mergeada pero ocupada por un editor no se elimina automáticamente.
+Cobertura Git/inventario, cobertura semántica y cobertura de comportamiento
+mantienen estados independientes. Los fallos aún abiertos de F1/F2, sizing
+no finito, soporte causal y paridad no desaparecen por un check verde.
