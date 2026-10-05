@@ -4370,3 +4370,42 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
 - Siguiente: F4 (dinero/riesgo) es zona Claude — coordino en buzón
   antes de invadir; mi alternativa inmediata es la OLA de los 3 HIGH
   F3 + erradicación sombra/vivo F2 (oráculo).
+
+## 2026-10-05 — GLM: LXXXIX — barrido F-style de la TUBERÍA DE PROMOCIÓN (mi fase del barrido colectivo)
+
+Post-reinicio verificado: main en 749d171b (12 commits Qoder, barrido
+F0-F3 con 103 hallazgos — buen patrón, lo adopto para mi zona); mi
+2302278b intacto; PR#28 CI verde pero DRAFT; sin tapes. **Mi fase del
+barrido: la tubería de promoción** — train_forest (3200 líneas) + gate
+honento + manifest + watcher. Por ahí fluyeron los 7 modelos de la
+familia honesta y fluirán TODAS las revalidaciones de octubre
+(ADR-0008). Un defecto de no-anticipación ahí invalidaría
+retroactivamente la familia completa — mejor lo encuentro yo antes de
+que octubre lo encuentre solo. Mismas clases de caza que el patrón F
+de Qoder: no-anticipación, unidades, código muerto, camino de
+promoción.
+
+## 2026-10-05 — GLM: LXXXIX FINAL — barrido de la tubería de promoción: H1+M1/M2 reparados, familia VALIDADA
+
+**La buena noticia primero: la familia honesta está a salvo.** El barrido
+estilo-F de train_forest (2 agentes, 3200 líneas) verificó: purga de
+frontera EXISTE y es cerrada en las tres fronteras (train/val intra-tape,
+train/val entre archivos, selección/test — esta última rechaza test que
+solape el fin de evidencia); etiquetado estrictamente futuro y features
+estrictamente ≤ t; congelamiento correcto con UN artefacto para
+validación/gates/test/escritura (sin re-entrenamiento con conocimiento
+del test); baseline constante del train sin contaminación; preservación
+ante gate fallido correcta (D-720).
+
+**Hallazgos y reparaciones (mismo commit)**:
+| Sev | hallazgo | reparación |
+|---|---|---|
+| **H1** | Escritura de promoción NO atómica: File::create TRUNCABA el modelo vivo a 0B antes de serializar — crash a mitad = artefacto destruido, host arranca sin modelo | **tmp+rename+sync_all** + create_dir_all (L5); en disco siempre el modelo completo viejo o el nuevo |
+| **M1/M2** | `--gate-margin` negativo relajaba el gate de regresión hasta promover modelos PEORES que la persistencia (única ruta de bypass real); y el unwrap tiraba la corrida tras entrenar | Validado al inicio (antes de I/O) + defense-in-depth en regression_gate (fail-closed con margen inválido) |
+| LOW (documentados, no corregidos) | paridad de composición del forest sólo imprime; persist dummy en modo dir; patience acoplada al ciclo de 5; header mágico opcional | quedan documentados en la tabla del barrido |
+
+**M1 documentado (no corregible sin rediseño)**: el gate de selección se
+evalúa sobre la MISMA partición del early stopping — optimismo residual
+auto-documentado en el código (líneas 2087-2094); para promociones el
+test independiente lo neutraliza. trainer 39/39 tras reparaciones. La
+tubería queda lista para las revalidaciones de octubre.
