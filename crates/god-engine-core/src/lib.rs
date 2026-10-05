@@ -2693,12 +2693,17 @@ impl GodEngineCore {
                 .map(|s| s.symbol)
                 .unwrap_or_default();
             if sym.starts_with("BTC") {
-                self.lead_lag_engine.update_leader(true, ofi_value);
+                self.lead_lag_engine
+                    .update_leader(true, ofi_value, event_time_ms as f64);
             } else if sym.starts_with("ETH") {
-                self.lead_lag_engine.update_leader(false, ofi_value);
+                self.lead_lag_engine
+                    .update_leader(false, ofi_value, event_time_ms as f64);
             }
-            let (leader_mom, lead_lag_div) =
-                self.lead_lag_engine.predict_altcoin_impulse(ofi_value);
+            // #658 (F2-C1): lead-lag REAL — lags físicos medidos por
+            // correlación cruzada contra la historia del propio coin.
+            let (leader_mom, lead_lag_div) = self
+                .lead_lag_engine
+                .predict_altcoin_impulse_con_reloj(coin_id, ofi_value, event_time_ms as f64);
 
             let obi = if total_vol > 0.0 {
                 (bid_qty - ask_qty) / total_vol
@@ -2739,13 +2744,18 @@ impl GodEngineCore {
                     .map(|s| s.dominant_tau_ms)
                     .unwrap_or(600_000.0);
                 let fe_h = &self.feature_engines[coin_id];
-                let h_scale = if tau_dom_h < 120_000.0 {
-                    fe_h.hurst_micro
-                } else if tau_dom_h < 3_600_000.0 {
-                    fe_h.hurst_meso
-                } else {
-                    fe_h.hurst_macro
-                };
+                // #658 (F2-B1) — H(τ) CONTINUA: interpolación smoothstep
+                // en ln τ alrededor de las fronteras de banda (120 s y 1 h).
+                // Antes: bandas DURAS — la H que dimensiona TP/SL saltaba
+                // discontinuamente al cruzar la frontera. En los nodos de
+                // banda (τ ≤ 60 s, τ ≥ 2 h) el valor es bit a bit con el
+                // escalón viejo; en las transiciones es C¹.
+                let h_scale = hurst_escala_continua(
+                    tau_dom_h,
+                    fe_h.hurst_micro,
+                    fe_h.hurst_meso,
+                    fe_h.hurst_macro,
+                );
                 let h_val = if h_scale.is_finite() && h_scale > 0.0 {
                     h_scale
                 } else {
@@ -8841,5 +8851,65 @@ mod tests_qo_592 {
         let primer = 0.9f64;
         let q_prim = primer * primer;
         assert_eq!((q_prim - primer * primer).max(0.0).sqrt(), 0.0);
+    }
+}
+
+/// #658 (F2-B1) — H(τ) CONTINUA: el Hurst que dimensiona la geometría
+/// TP/SL como función SUAVE de la τ dominante, no bandas duras. En los
+/// nodos de banda (τ ≤ 60 s ⇒ micro; τ ≥ 2 h ⇒ macro) es BIT A BIT con
+/// el escalón viejo; entre 60 s–4 min transiciona micro→meso y entre
+/// 30 min–2 h meso→macro con smoothstep en ln τ (C¹). Las fronteras
+/// viejas (120 s / 1 h) quedan como CENTROS de las transiciones.
+#[inline]
+pub fn hurst_escala_continua(tau_ms: f64, h_micro: f32, h_meso: f32, h_macro: f32) -> f32 {
+    fn smoothstep_ln(tau: f64, lo: f64, hi: f64) -> f64 {
+        if !tau.is_finite() || tau <= lo {
+            return 0.0;
+        }
+        if tau >= hi {
+            return 1.0;
+        }
+        let u = ((tau / lo).ln() / (hi / lo).ln()).clamp(0.0, 1.0);
+        u * u * (3.0 - 2.0 * u)
+    }
+    let t1 = smoothstep_ln(tau_ms, 60_000.0, 240_000.0); // micro → meso
+    let t2 = smoothstep_ln(tau_ms, 1_800_000.0, 7_200_000.0); // meso → macro
+    let h = h_micro as f64 + t1 * (h_meso as f64 - h_micro as f64)
+        + t2 * (h_macro as f64 - h_meso as f64);
+    h as f32
+}
+
+#[cfg(test)]
+mod tests_qo_658 {
+    use super::hurst_escala_continua;
+
+    /// #658 (F2-B1): nodos de banda bit a bit con el escalón viejo,
+    /// transición C¹ en las fronteras (sin salto al cruzar 120 s / 1 h).
+    #[test]
+    fn qo_658_hurst_escala_continua() {
+        let (m, me, ma) = (0.42f32, 0.55f32, 0.62f32);
+        // Nodos: bit a bit con el escalón.
+        assert_eq!(hurst_escala_continua(30_000.0, m, me, ma), m);
+        assert_eq!(hurst_escala_continua(120_000.0 * 3.0, m, me, ma), me);
+        assert_eq!(hurst_escala_continua(7_200_000.0 * 4.0, m, me, ma), ma);
+        // Continuidad en las fronteras viejas: el salto duro era
+        // |meso−micro| = 0.13; ahora la diferencia entre vecinos es
+        // una fracción pequeña de eso.
+        let a = hurst_escala_continua(119_000.0, m, me, ma);
+        let b = hurst_escala_continua(121_000.0, m, me, ma);
+        assert!(
+            (b - a).abs() < 0.02,
+            "sin salto en 120 s: {a} → {b} (antes saltaba |meso−micro|)"
+        );
+        let c = hurst_escala_continua(3_540_000.0, m, me, ma);
+        let d = hurst_escala_continua(3_660_000.0, m, me, ma);
+        assert!(
+            (d - c).abs() < 0.02,
+            "sin salto en 1 h: {c} → {d}"
+        );
+        // Acotación y no-finitos.
+        let h = hurst_escala_continua(600_000.0, m, me, ma);
+        assert!(h >= m.min(me.min(ma)) - 1e-6 && h <= m.max(me.max(ma)) + 1e-6);
+        assert!(hurst_escala_continua(f64::NAN, m, me, ma) == m);
     }
 }
