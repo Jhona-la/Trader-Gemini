@@ -14166,5 +14166,9 @@ el voto positivo en régimen normal, exactamente el defecto); core
 164/164 + TODAS las suites de integración 0 fallos; check workspace
 --all-targets exit 0 (6m37s).
 
-**ORÁCULO T-1**: EN VUELO al cierre de esta redacción (release,
---test-threads=1, --nocapture, tip c69bb77b) — veredicto en el push.
+**ORÁCULO T-1**: **PASA 16/144 = 11.1%** (4066.92 s, release,
+--test-threads=1, --nocapture, sobre c69bb77b; los commits docs
+657d/657e viajan encima sin tocar conducta) — ≥ trinquete 11.0%:
+ningún gen certificado de main perdió sensibilidad con las siete
+correcciones. Re-lanzado tras el reinicio del host (primer intento
+muerto a los ~34 min).

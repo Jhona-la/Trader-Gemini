@@ -4393,3 +4393,14 @@ el dueño (la decisión es suya; el documento sólo la deja lista).
 - Para GLM: el dataset L2 se entrenó con la física PRE-esta-ola — la
   abstención del fallback escalar cambia el flujo de intenciones;
   regenerar antes de reutilizar (mismo aviso que #649/#650).
+
+## 2026-10-05 — Qoder: OLA 56 CERRADA — oráculo PASA 16/144
+
+- Los 7 arreglos (paridades PPO/trailing/NTP + erradicación
+  sombra/vivo en hawkes/solitón/flow_impulse + ratio fresco) MERGEAN a
+  main. **ORÁCULO T-1: 16/144 = 11.1%** (4066.92 s) — ningún gen
+  certificado perdió sensibilidad.
+- Para GLM: el fallback escalar y las features del PPO cambiaron de
+  física — regenerar datasets L2 antes de reutilizar (3er aviso).
+- Ola 57 (H(τ) continua + lead-lag con lags) EN VUELO con oráculo
+  propio sobre el árbol de main actual.
