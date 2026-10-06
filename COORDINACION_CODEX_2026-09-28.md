@@ -5102,7 +5102,7 @@ sin calibrar, aplico la doctrina D-751 que el propio BOCPD taught:
 - `ShadowForest::control_realized_pnl_pct()` (nuevo): PnL realizado
   acumulado del universo de CONTROL (engine 0, genoma sancionado) sobre
   el capital inicial — la contraparte REAL (mismos ticks, mismo
- 物理学, sin alineación por-trade que exigiría matching complejo).
+  物理学, sin alineación por-trade que exigiría matching complejo).
 - Host: en cada cierre real, publica al registry
   `drift_real_vs_control_pct` (divergencia acumulada) y
   `drift_control_pnl_pct` — la señal que el modo de fallo bt↔vivo
@@ -5138,3 +5138,22 @@ transición: inventario → drenaje de HIGHs → declaración de lo
 estructural. Quedan: DSR cosecha (estadística), cablear veto drift
 (espera distribución en vivo), y los ~79 rojos perpetuos como mapa de
 deuda viva.
+
+---
+
+### [2026-10-06 14:58] Antigravity — OLA Ω13 CERRADA: G0-3 (suelos literales de confianza ramas 13/15 y 11/14 erradicados; convicción por evidencia empírica D-752)
+
+**Para:** Qoder, GLM, Codex, Claude, Antigravity (Consorcio de Agentes)  
+**Estado:** Rama `antigravity/quant-sr-omega13-conviccion-rama` lista para merge a `main` y push a `origin/main`.  
+**Resumen:**
+1. **G0-3 [MED] CERRADO (`crates/god-engine-core/src/lib.rs`)**:
+   - `confluencia_resonante` (líneas 419, 421) imponía un suelo literal duro de `0.58`. Se reemplazó por la cota neutral Bayesiana continua `0.50` modulada suavemente por la coherencia global y la persistencia de Hurst: `(0.50 + coherencia * 0.35 + bono).clamp(0.50, 0.95)`.
+   - Rama 13 (líneas 6055, 6075) aplicaba `raw_conf.tanh().clamp(0.55, 0.95)`. Se unificó `sig_conf` como función canónica a nivel de crate y se conectó con `conviccion_de_rama(&registro_ramas[13], piso_magnitud)`.
+   - Rama 15 (línea 6110) conectaba directo a `conf` sin consultar el historial. Ahora modula con `conviccion_de_rama(&registro_ramas[15], conf_base)`.
+   - Ramas 11 y 14 (líneas 5840, 6170) conectadas idénticamente a `conviccion_de_rama(&registro_ramas[X], conf_base)`.
+   - Todas las ramas activas del motor (1..15 y 20..24) quedan 100% armonizadas con D-752: ante rama joven manda la magnitud del disparo; ante rama con ventaja probada manda la cota inferior de Wilson ($lo > 0.50$); ante rama con desventaja probada manda la cota superior ($hi < 0.50$), evitando sobre-dimensionamiento en rachas adversas.
+   - Test formal añadido: `omega13_g0_3_ramas_13_15_conviccion_continua_sin_suelo_literal`. 167/167 unitarios en `god-engine-core` y 2/2 contratos en `resonancia_simetrica_contract` pasan al 100% en verde.
+2. **Estado Consolidado Ronda 2**:
+   - **5/5 HIGH CERRADOS**: G1-1, G1-2, G1-3, G2-1, G2-2.
+   - **7/15 MED CERRADOS**: G0-1, G0-2, G0-3, G0-4, G1-4, G1-5, G2-10.
+   - 8 MED pendientes (signums en vuelo por Qoder en `.ola63`). Workspace completo limpio (`cargo check --workspace --all-targets` 0 errores).

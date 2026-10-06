@@ -612,12 +612,15 @@ router τ viva, banda #586, relojes físicos, Ville, exceso Hawkes). El drift:
   (p_crash >= 0.90) o fallback sin símplex; si p_crash < 0.90, la contracción
   continua directional_pressure (0.25·p) modula el margen sin saltos X→0.
   Test de contrato formal añadido en portfolio_admission_contract.rs.
-- G0-2 [MED] god-engine-core/lib.rs:6017 — rama 13 fija su umbral con
-  `swing_tp_base` (ancla a τ=12h) teniendo τ viva `swing_duration_ms`
-  disponible. Debe ser `tp_at_tau(τ viva)`.
-- G0-3 [MED] lib.rs:419/5699/6032 — suelos literales de confianza ramas
-  13/15 (0.55/0.58) sin `conviccion_de_rama` (D-752): deuda declarada
-  desde ciclo 7 CL, SIGUE viva tras 15 olas.
+- G0-2 [MED] CERRADO (Ola Ω11 AGY) god-engine-core/lib.rs:6017 — rama 13
+  desacoplada del ancla fija `swing_tp_base` (12h) hacia `tp_at_tau(swing_duration_ms)`
+  dinámico evaluado a la tau viva de la onda.
+- G0-3 [MED] CERRADO (Ola Ω13 AGY) lib.rs:419/5840/6055/6110/6170 — suelos
+  literales de confianza en ramas 13/15 (0.55/0.58) y ramas 11/14 erradicados.
+  `confluencia_resonante` modula suavemente desde la cota neutral Bayesiana 0.50
+  y todas las ramas conectan con `conviccion_de_rama` gobernadas por evidencia
+  empírica (D-752). Test formal `omega13_g0_3_ramas_13_15_conviccion_continua_sin_suelo_literal`
+  (167/167 verdes en god-engine-core).
 - G0-4 [MED] gen `capital_split_scalp` — se muta en el GA y NO tiene
   consumidor de sizing: gen muerto de la dicotomía que infla la dimensión
   de pruebas del DSR (N=pop×gen de Ω9). Retirar del vector.
@@ -715,7 +718,7 @@ duros supervivientes, y abstención-SS incompleta:
 - **AGY (Ω11) CERRADA**: G0-2 (ancla fija swing_tp_base reemplazada por config.tp_at_tau dinámico a tau viva en rama 13 de lib.rs:6017) +
   G2-10 (lead-lag sin auto-referencia en BTC/ETH: BTC líder macro puro div=0.0; ETH evalúa sólo contra BTC en predict_eth_impulse_con_reloj; alts evalúan matriz ponderada; test dedicado añadido) +
   G1-5 (unificación DRY canónica de selection_stats re-exportado desde risk_engine en evolution-engine/src/lib.rs; archivo duplicado eliminado). 84/84 + 54/54 + 166/166 verdes, workspace 0 errores.
-- **Ola mecánica posterior**: G2-3..G2-9 (signums C¹), G1-4 (S₂ verdadero en temporal_spectrum.rs tras Ola 62), G0-6/G1-7/G2-12 (limpieza).
-- **Consejo**: G0-1 (veto MAP discreto — política de fusión suave),
-  G0-3/G2-14 (suelos de confianza ramas 13/15 — rediseño D-752), G0-9
-  (¿2 anclas bastan para el espacio genético?).
+- **AGY (Ω12) CERRADA**: G1-4 (segundo momento central Kolmogorov insesgado en S2 de temporal_spectrum.rs) + G0-1 (veto MAP discreto de Crash suavizado a contracción continua de margen). 113/113 + 140/140 verdes.
+- **AGY (Ω13) CERRADA**: G0-3 (suelos literales de confianza ramas 13/15 y 11/14 erradicados; confluencia_resonante modulada desde base 0.50 y cableado integral de conviccion_de_rama). 167/167 verdes en god-engine-core.
+- **Ola mecánica posterior**: G2-3..G2-9 (signums C¹ en vuelo por Qoder), G0-6/G1-7/G2-12 (limpieza).
+- **Consejo**: G0-9 (¿2 anclas bastan para el espacio genético?).
