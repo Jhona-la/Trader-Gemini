@@ -591,3 +591,125 @@ acotada: no invalida nada de lo promovido.
 - Los #[ignore] restantes justificados (testnet, ~40min, inventario local).
 - La convención open_→regresión-al-aterrizar EXISTE y funciona (genome_gate FMT-216, #660) — la deriva es de mantenimiento, no de diseño.
 - **Síntesis F8**: el patrón dominante no es test roto sino test-que-certifica-el-defecto (~8% del total) — la deuda técnica del sistema está INVENTARIADA y nombrada; el riesgo es la deriva de nombres y la ausencia de muralla CI para 4 crates.
+
+# ═══════════════════════════════════════════════════════════════════
+# RONDA 2 (2026-10-06) — REVISIÓN DESDE LA BASE contra el árbol a01227cc
+# (mandato del operador: «han cambiado muchas cosas» — desde el barrido
+# F0-F3 aterrizaron olas 56-61 Qoder + Ω2-Ω9 AGY + F5-F8 GLM/LXXXXIX)
+# 3 auditores paralelo: G0 metas/conceptos, G1 matemática/estadística,
+# G2 física/motores. 33 hallazgos (5 HIGH, 15 MED, 13 LOW). Docs-only.
+# ═══════════════════════════════════════════════════════════════════
+
+## §G0 — METAS Y CONCEPTOS (10: 5 MED, 5 LOW)
+
+Doctrina (ADR-0014 + ARQUITECTURA_VIVA §2) sobrevivió las 15 olas en los
+ejes estructurales (enums Continuous únicos, sizing por curvas kelly_at_tau,
+router τ viva, banda #586, relojes físicos, Ville, exceso Hawkes). El drift:
+
+- G0-1 [MED] risk-engine/orchestrator.rs:186 — el veto de largos usa el MAP
+  DISCRETO del símplex (argmax): p_crash≈0.34 (apenas argmax de 4) da veto
+  TOTAL mientras la contracción continua P31 aplica 0.25·p. Salto de margen
+  X→0 en la frontera del argmax. Remedio: fusión suave veto→contracción.
+- G0-2 [MED] god-engine-core/lib.rs:6017 — rama 13 fija su umbral con
+  `swing_tp_base` (ancla a τ=12h) teniendo τ viva `swing_duration_ms`
+  disponible. Debe ser `tp_at_tau(τ viva)`.
+- G0-3 [MED] lib.rs:419/5699/6032 — suelos literales de confianza ramas
+  13/15 (0.55/0.58) sin `conviccion_de_rama` (D-752): deuda declarada
+  desde ciclo 7 CL, SIGUE viva tras 15 olas.
+- G0-4 [MED] gen `capital_split_scalp` — se muta en el GA y NO tiene
+  consumidor de sizing: gen muerto de la dicotomía que infla la dimensión
+  de pruebas del DSR (N=pop×gen de Ω9). Retirar del vector.
+- G0-5 [MED] god_engine.rs:4020 — fallback de brackets del host RECONSTRUYE
+  la curva desde anclas en vez de la fuente única `config.tp_at_tau`:
+  si ast_mutator muta la curva en caliente sin re-sincronizar, sirve
+  geometría obsoleta.
+- G0-6 [LOW] state.rs:521 — átomos `scalp/swing_used_margin` fantasma (0
+  escritores, 0 lectores). G0-7 [LOW] flow_excitation_confluence:243 salto
+  en la frontera del piso OBI (C¹). G0-8 [LOW] slots/naming scalp/swing en
+  position.rs/stateful_engine.rs (residuo léxico). G0-9 [LOW] espacio
+  genético parametrizado por anclas de 2 puntos — no expresa curvatura
+  (nota de consejo). G0-10 [LOW] epigenoma TOML + binarios legacy siguen
+  serializando scalp/swing con defaults mágicos.
+
+## §G1 — MATEMÁTICA/ESTADÍSTICA (8: 3 HIGH, 2 MED, 3 LOW)
+
+Las fórmulas LOCALES de las 3 piezas centrales nuevas (Ville, DSR, Hurst
+VR) están correctas; cada fix tiene un defecto de INTEGRACIÓN estadística:
+
+- **G1-1 [HIGH] Ville NO cubre la multiplicidad — mea culpa #661.**
+  evalues.rs:17 + temporal_spectrum.rs:213 + skill_motores.rs:54 afirman
+  inmunidad a «la multiplicidad del máximo»; Ville da P(∃t: e≥1/α)≤α POR
+  PROCESO. Con 448 e-procesos/moneda (32 skill_e + 13×32 motor×escala) a
+  α=0.05, FWER≈1: en ruido ~22 pares cruzan capital≥20 en horizonte largo
+  (el Fisher viejo daba 2.2%/par — el fix es MÁS laxo por par). Corrección:
+  umbral M/α por familia (640 τ*; 8320 motor×escala) o e-proceso fusionado.
+- **G1-2 [HIGH] Hurst VR sesgado ≈−0.03/−0.04 en nulo iid** (AGY Ω8).
+  multifractal.rs:126-163: var1 = s1/n y centrado con media estimada ⇒
+  Var(d)=(2−4/n)σ² ⇒ E[VR₂](n=10)≈1.78 ⇒ confluencia ≈−0.35 EN RUIDO
+  PURO (sus tests no tienen caso nulo iid). H=0.46 vs 0.50 encoge
+  dispersion_al_horizonte ~10% (stops apretados de más). Corrección:
+  /(n−1) + centrar por escala (o compensar 4σ²/n) + test nulo iid.
+- **G1-3 [HIGH] DSR de Ω9 es TELEMETRÍA en darwin.rs** —
+  expected_max_sharpe se calcula (:610) y se IMPRIME (:617); la compuerta
+  real es meets_promotion_margin = margen 5% de fitness cuya doc dice «NOT
+  statistical significance». El campeón sigue siendo max IS. La MEMORIA de
+  Ω9 dice «garantizando que el fitness promovido no sea falso positivo» —
+  NO está cableado en darwin (online_daemon:1832 sí lo tiene). Corrección:
+  exigir DSR≥0.95 sobre retornos OOS como conjunción del gate.
+- G1-4 [MED] temporal_spectrum.rs:1483 — ζ(2) mide (E|dev|)² no E[dev²]:
+  sesgo alto de ζ₂ con colas ⇒ χ espurio (χ modula pisos vivos).
+  Corrección: EWMA de dev² para S₂.
+- G1-5 [MED] selection_stats.rs DUPLICADO en risk-engine y
+  evolution-engine (diff vacío hoy; drift silencioso garantizado).
+- G1-6 [LOW] sr_sigma=1/√(n−1) aproxima σ entre pruebas (conservador con
+  GA correlacionado — documentar). G1-7 [LOW] exportaciones muertas Fisher
+  (umbral_ic_significativo, N_EFECTIVO_EWMA). G1-8 [LOW] comentario de
+  potencia evalues: cruce esperado n≈272 con p=0.58, no ~800.
+
+## §G2 — FÍSICA/MOTORES (15: 2 HIGH, 8 MED, 5 LOW)
+
+Núcleo Hawkes-transversal (#649/#657/#659), relojes físicos (#660) y
+trailing espectral (#657) SÓLIDOS. Dos familias residuales: signums/gates
+duros supervivientes, y abstención-SS incompleta:
+
+- **G2-1 [HIGH] flow_excitation_confluence.rs:68 — la CALMA vota más que
+  la cascada**: `excitacion_hawkes_norm(ratio).abs()` — λ/μ̂→0.1 da
+  |excit|≈0.734 > cascada 3× (0.703). El motor vota fuerte en mercados
+  muertos — invierte la semántica del exceso-SS en el CONSENSO VIVO y
+  rompe paridad con sus dos hermanos (.max(0.0)). Fix: .max(0.0).
+- **G2-2 [HIGH] flow_impulse.rs:91-133 (camino VIVO fallback fast_intent)
+  — excitación = ratio CRUDO sin exceso-SS**: #657 arregló las unidades
+  pero coherence=√(|flow|·ratio) y z=|ratio|/σ no valen 0 en régimen
+  normal. La abstención-SS de #649 NO existe en este camino. Fix:
+  excit = excitacion_hawkes_norm(ratio) + tanh(flow/ε) por signum.
+- G2-3 [MED] confluence:243 gate duro hawkes/obi (salto 0→0.13 en la
+  frontera). G2-4 [MED] perceptron_gate:34 signum+piso 0.15 (voto nunca
+  vive en (−0.15,0.15)). G2-5 [MED] coaxial sombra :44 signum duro (el
+  vivo usa tanh). G2-6 [MED] conformal :103 tendencia=signum del vecino
+  k+1. G2-7 [MED] trend_runner :115/224 escala 1e-3 colapsa la amplitud
+  espectral (tanh satura con |x|>3e-3). G2-8 [MED] shockwave :187 rastreo
+  dimensional por magnitud `sound > 1.0` — sub-dólares cae a absoluto:
+  Mach inflado cientos de × (el defecto #650 reaparece para DOGE/PEPE).
+  G2-9 [MED] renyi :152 doble gate duro literal (tsallis<0.60, |obi|>0.15).
+- G2-10 [MED] lib.rs:2751 — lead-lag AUTO-REFERENCIAL confirmado (F3-A7):
+  BTC/ETH alimentados como líderes y evaluados para SÍ MISMOS (ρ≈1
+  trivial, lag siempre acreditado).
+- G2-11 [LOW] knobs muertos CONFIRMADOS (quantum_k_spring/lambda/alpha,
+  nash_drift, conformal_epsilon + game_payoffs sin escritor). G2-12 [LOW]
+  hawkes_bessel:328 comentario OBSOLETO que invita a «re-parar» lo ya
+  pareado (riesgo de doble fix). G2-13 [LOW] paridad de INPUTS solitón
+  (sombra lee knob muerto 1.0, vivo usa OFI). G2-14 [LOW] suelos
+  literales ramas 13/15 (=G0-3). G2-15 [LOW] cortes duros fused ±0.38/0.22.
+
+## Propuesta de asignación (ronda 2)
+
+- **Qoder (ola 62, inmediata)**: G1-1 (mea culpa Ville ×M) + G2-1 (.abs
+  calma-vota) + G2-2 (exceso-SS en flow_impulse vivo). Con oráculo.
+- **AGY (Ω10)**: G1-2 (sesgo nulo Hurst VR — su módulo multifractal) +
+  G1-3 (cablear DSR en darwin) + G0-4 (retirar gen muerto capital_split).
+- **GLM**: G1-5 (unificar selection_stats en un crate hoja).
+- **Ola mecánica posterior (Qoder)**: G2-3..G2-9 (signums C¹), G0-2
+  (ancla→τ viva rama 13), G1-4 (S₂ verdadero), G0-6/G1-7/G2-12 (limpieza).
+- **Consejo**: G0-1 (veto MAP discreto — política de fusión suave),
+  G0-3/G2-14 (suelos de confianza ramas 13/15 — rediseño D-752), G0-9
+  (¿2 anclas bastan para el espacio genético?).

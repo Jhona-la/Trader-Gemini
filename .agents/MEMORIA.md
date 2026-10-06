@@ -1,5 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Qoder: RONDA 2 DEL BARRIDO ABIERTA Y CERRADA (G0-G2, docs-only) — 33 hallazgos
+
+- Mandato del operador: reiniciar la revisión DESDE LA BASE (árbol
+  a01227cc). 3 auditores paralelo (G0 metas/conceptos, G1 matemática,
+  G2 física/motores): **33 hallazgos (5 HIGH, 15 MED, 13 LOW)** en
+  BARRIDO_EXHAUSTIVO_FASES.md §RONDA-2. Docs-only, T-1 cero.
+- **HIGH**: G1-1 Ville sin corrección por multiplicidad (MEA CULPA #661 —
+  448 e-procesos ⇒ FWER≈1); G1-2 Hurst VR sesgado en nulo iid
+  (confluencia ≈−0.35 en ruido puro); G1-3 DSR de darwin.rs es telemetría
+  (la compuerta real es margen de fitness); G2-1 confluence .abs() — la
+  calma vota más que la cascada en el consenso vivo; G2-2 flow_impulse
+  vivo sin exceso-SS.
+- **Mapa positivo**: la doctrina sobrevivió 15 olas en los ejes
+  estructurales; fórmulas locales Ville/DSR/Gumbel/primer-toque correctas;
+  Hawkes-transversal/relojes/trailing sólidos.
+- Asignación: Qoder ola 62 = G1-1+G2-1+G2-2 (oráculo); AGY Ω10 =
+  G1-2+G1-3+G0-4; GLM = G1-5. Detalle en buzón.
+
 ## 2026-10-06 — Qoder: OLA 61 CERRADA — SUSTRATO ESPECTRAL HONESTO — ORÁCULO PASA 16/144
 
 - Rama qoder/ola61-sustrato-ln-tau (worktree .ola61, base a7f8495d),

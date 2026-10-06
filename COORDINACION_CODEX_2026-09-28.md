@@ -4863,3 +4863,39 @@ zonas — el barrido fue tan multiagente como el sistema que barrió.
   restante: F2-B8 (IC cruzado ρ(τ) sin significancia — módulo evalues
   listo) + F3 MED/LOWs.
 
+
+## [Qoder — RONDA 2 del barrido / G0-G2] REVISIÓN DESDE LA BASE — 33 hallazgos (2026-10-06)
+
+- Mandato del operador: reiniciar la revisión desde la base (el árbol
+  cambió masivamente desde F0-F3: olas 56-61 + Ω2-Ω9 + F5-F8). 3
+  auditores en paralelo contra a01227cc. **33 hallazgos: 5 HIGH, 15
+  MED, 13 LOW** — detalle completo en BARRIDO_EXHAUSTIVO_FASES.md §RONDA-2.
+- **Los 5 HIGH (resumen para el consejo)**:
+  1. **G1-1 (MEA CULPA de #661/Qoder)**: Ville NO cubre multiplicidad —
+     448 e-procesos/moneda a α=0.05 ⇒ FWER≈1 en ruido; los comentarios
+     del fix afirman lo contrario. Fix: umbral M/α por familia (640 τ*,
+     8320 motor×escala). Ola 62 Qoder, inmediata.
+  2. **G1-2 (AGY)**: Hurst VR con sesgo −0.03/−0.04 en nulo iid — la
+     confluencia lee ≈−0.35 EN RUIDO PURO (sin test nulo iid). Zona
+     multifractal.rs de Ω8.
+  3. **G1-3 (AGY)**: el «DSR de S5/Ω9» en darwin.rs es TELEMETRÍA — se
+     calcula y se imprime pero la compuerta real es margen de fitness
+     5%. No deflacta la selección max-IS. Cablear DSR≥0.95 OOS.
+  4. **G2-1 (Qoder)**: confluence espectral con `.abs()` — la CALMA
+     (λ/μ̂→0.1) vota 0.734, MÁS que la cascada 3× (0.703): el motor vota
+     fuerte en mercados muertos DENTRO del consenso vivo.
+  5. **G2-2 (Qoder)**: flow_impulse VIVO (fallback fast_intent) usa el
+     ratio CRUDO sin exceso-SS — la abstención en régimen normal de #649
+     no existe en ese camino.
+- **Verificado LIMPIO** (mapa positivo de la ronda): doctrina estructural
+  (enums Continuous, sizing por curvas, router τ viva, banda #586,
+  relojes físicos, exceso Hawkes en 3 motores + PPO), fórmulas locales
+  Ville/DSR/Gumbel/Acklam/primer-toque/VR-regresión, W₁ físico + anillo
+  (#662), OLS ponderado ζ, skill_motores causal, solitón/SR/oscilador/
+  nash-minimax/entropías, trailing espectral modulado, relojes del arena.
+- **Asignación propuesta** (detalle en §RONDA-2): Qoder ola 62 = G1-1 +
+  G2-1 + G2-2 (con oráculo). AGY Ω10 = G1-2 + G1-3 + G0-4 (gen muerto
+  capital_split_scalp contamina el N del DSR). GLM = G1-5
+  (selection_stats duplicado). Ola mecánica Qoder: signums G2-3..G2-9.
+- AVISO A TODOS: G2-12 — comentario obsoleto en hawkes_bessel.rs:328
+  invita a «re-parar» lo ya pareado (riesgo de doble fix). No tocar.
