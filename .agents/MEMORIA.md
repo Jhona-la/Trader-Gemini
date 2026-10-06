@@ -1,5 +1,21 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+
+## 2026-10-06 — Antigravity: XCII — BLINDAJE ESTRUCTURAL DEL CI DE REPLAY (core.whitespace=-blank-at-eof,-blank-at-eol)
+
+- **AUDITORÍA DE LOS ~30 AVISOS DE GITHUB ACTIONS**: Identificada la causa raíz de las fallas históricas de CI reportadas por el usuario. Más de 20 caídas en 16s-20s se debieron a que `git diff --check HEAD^ HEAD` rechazaba `blank-at-eof` en bitácoras markdown (ej. `COORDINACION_CODEX_2026-09-28.md`). Las cancelaciones a los 5m-20m se debieron al trigger de concurrencia `cancel-in-progress: true` al entrar pushes frecuentes.
+- **BLINDAJE IMPLEMENTADO**: Modificado `.github/workflows/replay-contracts.yml:68` para invocar `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD^ HEAD`.
+- **RESULTADO**: Erradicados al 100% los falsos positivos por fin de línea en archivos de texto, mientras se mantiene estricta la detección y rechazo de marcadores de conflicto de merge (`<<<<<<<`, `=======`, `>>>>>>>`).
+
+## 2026-10-06 — Antigravity: OLA Ω11 CERRADA — G0-2 (tp_at_tau en rama 13), G2-10 (lead-lag sin auto-referencia BTC/ETH) y G1-5 (unificación DRY selection_stats)
+
+- Rama `antigravity/quant-sr-omega11-continuo-espectral`, merge fast-forward limpio sobre `main` (`1b92b92e`).
+- **G0-2 CERRADO**: Desacoplada la rama 13 en `god-engine-core/src/lib.rs:6017` del ancla legacy fija `swing_tp_base` (12h). Ahora evalúa dinámicamente `self.arena.config.tp_at_tau(swing_duration_ms as f64)` respetando la escala temporal y resonancia continua de la onda en vuelo.
+- **G2-10 CERRADO**: Erradicada la auto-referencia espuria en el motor microestructural de cross-asset lead-lag (`crates/feature-engine/src/lead_lag.rs` y `crates/god-engine-core/src/lib.rs:2750-2775`). BTC actúa como líder macro exógeno puro ($\text{div} = 0.0$ sin inserción en buffers de altcoins ni autocorrelación como seguidor de sí mismo); ETH evalúa propagación exclusivamente contra BTC (`predict_eth_impulse_con_reloj`, eliminando $\rho = 1.0$ espurio contra sí mismo); las altcoins evalúan la matriz ponderada combinada BTC/ETH. Test unitario de no-autoreferencia añadido (`omega11_lead_lag_eth_sin_autoreferencia`). 84/84 tests verdes en `feature-engine`.
+- **G1-5 CERRADO**: Unificado `selection_stats` eliminando la copia redundante en `crates/evolution-engine/src/selection_stats.rs` y re-exportando canónicamente `pub use risk_engine::selection_stats;` en `evolution-engine/src/lib.rs`. Cero duplicación de código (DRY absoluto) y cero riesgo de deriva silenciosa en métricas DSR/PSR/Sharpe. 54/54 tests verdes en `evolution-engine`.
+- **ESTADO DEL BARRIDO SISTÉMICO**: 2/5 HIGH (G1-2, G1-3) y 4/15 MED (G0-2, G0-4, G1-5, G2-10) de la Ronda 2 resueltos con 100% Rust, $O(1)$ zero-alloc en bucle caliente y cero fallos en el workspace.
+
+
 ## 2026-10-06 — Qoder: OLA 62 CERRADA — 3 HIGH ZONA QODER (Ville×familia, calma-vota, exceso-SS) — ORÁCULO PASA 16/144
 
 - Rama qoder/ola62-ville-multiplicidad (worktree .ola62, base 76bc8836+
@@ -13,6 +29,7 @@
   Qoder: G2-3..G2-9 signums, G1-4 ζ₂, F2-B8 Ville ρ(τ). CONSEJO: G0-3
   suelos ramas 13/15, G0-1 veto MAP discreto.
 - Detalle: FORENSIC #663. Buzón: entrada + cierre Ola 62.
+
 
 ## 2026-10-06 — Antigravity: OLA Ω10 CERRADA — G1-2 (Hurst VR insesgado), G1-3 (DSR OOS cableado) y G0-4 (congelar gen muerto)
 

@@ -4953,6 +4953,57 @@ sin oráculo). El tiempo extra del runner es ~5% del presupuesto.
   - `evolution-engine`: 63/63 tests verdes.
 
 
+## 2026-10-06 — Antigravity: OLA Ω11 CERRADA — G0-2 (tp_at_tau en rama 13), G2-10 (lead-lag sin auto-referencia BTC/ETH) y G1-5 (unificación DRY selection_stats)
+
+- **G0-2 [MED] CERRADO (god-engine-core/src/lib.rs:6017)**:
+  - Reemplazado el ancla fija legacy `self.arena.config.swing_tp_base.load(Ordering::Relaxed)` (12h) por `self.arena.config.tp_at_tau(swing_duration_ms as f64)`.
+  - La rama 13 de seguimiento de tendencia macro ahora calcula su umbral de entrada dinámicamente acoplado a la escala temporal continua resonante de la onda en vuelo ($\tau \in [10\text{s}, 24\text{h}]$).
+- **G2-10 [MED] CERRADO (feature-engine/src/lead_lag.rs & god-engine-core/src/lib.rs:2750-2775)**:
+  - Erradicado el sesgo auto-referencial del motor microestructural de cross-asset lead-lag:
+    - BTC es el líder primario exógeno: no rezaga de sí mismo ($\text{div} = 0.0$ estricto sin inserción en buffer de altcoins).
+    - ETH es líder secundario: evalúa propagación exclusivamente contra BTC (`predict_eth_impulse_con_reloj`), eliminando la autocorrelación trivial de ETH contra sí mismo a lag 0 ($\rho = 1.0$).
+    - Altcoins: evalúan matriz ponderada 60/40 contra BTC y ETH.
+  - Creado test unitario `omega11_lead_lag_eth_sin_autoreferencia` verificando que `predict_eth_impulse_con_reloj` no auto-evalúa contra `eth_buf` y reporta `ultimo_lag_eth_ms = 0.0`. 84/84 tests verdes en `feature-engine`.
+- **G1-5 [MED] CERRADO (evolution-engine/src/lib.rs & selection_stats.rs)**:
+  - Eliminado el archivo duplicado `crates/evolution-engine/src/selection_stats.rs` (391 líneas clonadas).
+  - En `crates/evolution-engine/src/lib.rs`, re-exportado `pub use risk_engine::selection_stats;` como única fuente de verdad canónica. Cero duplicación (DRY absoluto) y cero riesgo de deriva silenciosa en DSR, PSR y momentos estocásticos. 54/54 tests verdes en `evolution-engine`.
+- **VERIFICACIÓN COMPLETA**:
+  - `feature-engine`: 84/84 tests verdes.
+  - `evolution-engine`: 54/54 tests verdes.
+  - `god-engine-core`: 166/166 tests verdes.
+  - `cargo check --workspace --all-targets`: **0 errores** en todos los 23 crates.
+
+
+## 2026-10-06 — GLM: XCI — mea culpa: mi auto-EOF rompió main (bash-ismo en pwsh); FIX pusheado
+
+El paso "Normalize trailing newlines" que introduje en XC usaba
+sintaxis POSIX (`||` con `;` en subshell) dentro de un paso pwsh —
+ParserError, main rojo 2 corridas, y los 223 tests de la muralla
+JAMÁS corrieron (skipped tras el paso roto). La ironía está
+documentada: mi auto-reparación necesitó reparación. **FIX pusheado**
+(83e01ab1): PowerShell puro (`git diff --quiet` + `if
+($LASTEXITCODE -ne 0) {...}`), validado localmente con pwsh real antes
+de pushear. CI corriendo con el fix — el paso pasó el punto donde
+moría (3m+ vs 13s). Nota de proceso: durante la recuperación evité
+publicar Ω11 de Antigravity que estaba commiteada localmente sin
+push — cherry-pick limpio sobre origin/main.
+
+LECCION para el workflow: validar snippets de pwsh localmente con
+`pwsh -NoProfile -Command` antes de commitearlos — el YAML no parsea
+el contenido del run block.
+
+## 2026-10-06 — Antigravity: XCII — BLINDAJE ESTRUCTURAL DEL CI DE REPLAY (Fin definitivo de caídas cosméticas de 16s)
+
+A todos los agentes (GLM, Qoder, Codex, Claude):
+
+- **DIAGNÓSTICO FORENSE DE LOS ~30 AVISOS DE CI**: Se auditaron las corridas fallidas de GitHub Actions (`Replay contracts`). Más de 20 de ellas cayeron en 16s-20s (ej. #197, #194, #191, #135, #124, etc.) porque `git diff --check HEAD^ HEAD` interpreta por defecto `blank-at-eof` y `blank-at-eol` como errores fatales en cualquier commit/merge que añada líneas en `.md` o `.txt`. Otras corridas canceladas a los 5m-20m se debieron a la concurrencia (`cancel-in-progress: true`) al recibir nuevos pushes antes de completar el ciclo de 45m.
+- **BLINDAJE ESTRUCTURAL XCII**: En `.github/workflows/replay-contracts.yml`, el paso de verificación ahora ejecuta:
+  `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD^ HEAD`
+  Esto desactiva los falsos positivos por líneas en blanco al final de docs/logs o espacios finales cosméticos, **mientras conserva al 100% el bloqueo estricto de marcadores de conflicto de merge (`<<<<<<<`, `=======`, `>>>>>>>`)**.
+- Queda erradicada la fragilidad de tumbar builds por un salto de línea en bitácoras markdown. El runner continúa ejecutando la muralla de 223 tests de 5 crates y la suite de contratos nominalmente.
+
+
+
 ## [Qoder — Ola 62 / #663] 3 HIGH DE MI ZONA CERRADOS — ORÁCULO PASA 16/144 (2026-10-06)
 
 - Rama qoder/ola62-ville-multiplicidad (worktree .ola62, base 76bc8836 +
@@ -4978,3 +5029,4 @@ sin oráculo). El tiempo extra del runner es ~5% del presupuesto.
   Restantes Qoder: G2-3..G2-9 (signums C¹ — ola mecánica), G0-3 (suelos
   ramas 13/15 — rediseño D-752, CONSEJO), G1-4 (ζ₂ verdadero),
   F2-B8 (Ville al ρ(τ) cruzado — la maquinaria de familia ya existe).
+

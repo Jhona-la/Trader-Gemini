@@ -2748,18 +2748,28 @@ impl GodEngineCore {
             let sym = quantum_arena::symbol_registry::try_spec(coin_id)
                 .map(|s| s.symbol)
                 .unwrap_or_default();
-            if sym.starts_with("BTC") {
+            let is_btc = sym.starts_with("BTC");
+            let is_eth = sym.starts_with("ETH");
+            if is_btc {
                 self.lead_lag_engine
                     .update_leader(true, ofi_value, event_time_ms as f64);
-            } else if sym.starts_with("ETH") {
+            } else if is_eth {
                 self.lead_lag_engine
                     .update_leader(false, ofi_value, event_time_ms as f64);
             }
-            // #658 (F2-C1): lead-lag REAL — lags físicos medidos por
-            // correlación cruzada contra la historia del propio coin.
-            let (leader_mom, lead_lag_div) = self
-                .lead_lag_engine
-                .predict_altcoin_impulse_con_reloj(coin_id, ofi_value, event_time_ms as f64);
+            // #658 (F2-C1) & G2-10 (Ola Ω11): lead-lag REAL sin auto-referencia.
+            // BTC es el líder primario macro: no rezaga de sí mismo (div = 0.0).
+            // ETH es líder secundario: sólo rezaga de BTC (no de sí mismo).
+            // Altcoins: evalúan la propagación combinada contra ambos líderes (BTC y ETH).
+            let (leader_mom, lead_lag_div) = if is_btc {
+                (self.lead_lag_engine.momentum_lider(event_time_ms as f64), 0.0)
+            } else if is_eth {
+                self.lead_lag_engine
+                    .predict_eth_impulse_con_reloj(coin_id, ofi_value, event_time_ms as f64)
+            } else {
+                self.lead_lag_engine
+                    .predict_altcoin_impulse_con_reloj(coin_id, ofi_value, event_time_ms as f64)
+            };
 
             let obi = if total_vol > 0.0 {
                 (bid_qty - ask_qty) / total_vol
@@ -6014,7 +6024,9 @@ impl GodEngineCore {
                         swing_stretch_z >= 0.0 && swing_stretch_z <= crate::diffusion::Z95;
 
                     let macd_diff = (ema_fast - ema_slow) / ema_slow;
-                    let swing_tp = self.arena.config.swing_tp_base.load(Ordering::Relaxed);
+                    // G0-2 (Ola Ω11): desacoplar la rama 13 del ancla fija swing_tp_base (12h)
+                    // y alinearla con la geometría continua evaluada a la tau viva de la onda.
+                    let swing_tp = self.arena.config.tp_at_tau(swing_duration_ms as f64);
                     let threshold =
                         (swing_tp * 0.003).max(0.0001) * (1.0 / hurst_exponent.max(0.1));
 

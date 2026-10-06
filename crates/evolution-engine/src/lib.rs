@@ -14,7 +14,8 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 pub mod fitness;
-pub mod selection_stats;
+// G1-5 (Ola Ω11): unificar selection_stats en risk_engine como fuente canónica única (DRY).
+pub use risk_engine::selection_stats;
 pub mod anti_bias_governor;
 pub mod ast_mutator;
 pub mod cma_es;
