@@ -198,21 +198,16 @@ pub struct ScaleState {
     /// Suma del núcleo de |dev| SIN corregir por la masa observada; la
     /// estimación pública `ewma_dev_vol` es `raw_dev_vol / masa` (D-742).
     raw_dev_vol: f64,
-    /// (Ola Ω12 · G1-4) Segundo momento del núcleo: EWMA de dev² por escala,
-    /// SIN corregir por masa (igual convención que raw_dev_vol).
-    /// Da el verdadero segundo momento central E[dev²] = raw_dev_s2 / masa,
-    /// sin el sesgo sistemático de Jensen de (E[|dev|])².
+    /// #664 (G1-4) / Ω12 — convergencia de dos sesiones: segundo momento
+    /// del núcleo, EWMA de dev² SIN corregir por masa (convención
+    /// raw_dev_vol). Da el verdadero E[dev²] = raw_dev_s2/masa, sin el
+    /// sesgo de Jensen de (E|dev|)² (~36% en gaussiana, >50% en colas
+    /// cripto) que sesgaba ζ₂ y χ=((3/2)ζ₂−ζ₃)⁺.
     raw_dev_s2: f64,
     /// (Ola XLI·C2) Tercer momento absoluto del núcleo: EWMA de |dev|³ por
     /// escala, SIN corregir por masa (igual convención que raw_dev_vol).
     /// Alimenta las funciones de estructura de Kolmogorov.
     raw_dev_s3: f64,
-    /// #664 (G1-4): segundo momento del núcleo — EWMA de dev² SIN corregir
-    /// por masa. La regresión ζ(2) debe medir E[dev²]=S₂, no (E|dev|)²:
-    /// con colas pesadas a escala fina, (S₁)² deja ζ₂ (y χ=(3/2)ζ₂−ζ₃,
-    /// que modula pisos vivos) sesgado alto por una constante que NO
-    /// cancela si la forma de la distribución varía con τ.
-    raw_dev_s2: f64,
     /// #594 — IC prequential de la escala: E[s·r] con olvido, normalizado
     /// por √(E[s²]·E[r²]), donde s es la señal publicada AL ARMAR el bloque
     /// y r el retorno REALIZADO del bloque que cierra. Amplitud ≠ información:
@@ -571,7 +566,6 @@ impl TemporalSpectrum {
             // opina.
             let abs_dev = dev.abs();
             s.raw_dev_vol = s.raw_dev_vol * (1.0 - alpha) + alpha * abs_dev;
-            s.raw_dev_s2 = s.raw_dev_s2 * (1.0 - alpha) + alpha * abs_dev * abs_dev;
             s.raw_dev_s3 = s.raw_dev_s3 * (1.0 - alpha) + alpha * abs_dev * abs_dev * abs_dev;
             // #664 (G1-4): S₂ verdadero (E[dev²]) para la regresión ζ(2).
             s.raw_dev_s2 = s.raw_dev_s2 * (1.0 - alpha) + alpha * dev * dev;
@@ -985,7 +979,6 @@ impl TemporalSpectrum {
             raw_dev_vol: 0.0,
             raw_dev_s2: 0.0,
             raw_dev_s3: 0.0,
-            raw_dev_s2: 0.0,
             // #594: un nodo interpolado no es una escala de la malla con
             // bloques maduros — sin habilidad medida (0 muestras → None).
             skill_ws: 0.0,
