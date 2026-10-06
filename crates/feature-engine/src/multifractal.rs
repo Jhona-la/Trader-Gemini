@@ -113,7 +113,7 @@ impl MultifractalSpectrumEngine {
         }
         mean_r /= n as f64;
 
-        // Varianza escala 1 (1 tick)
+        // Varianza escala 1 (1 tick) insesgada: divisor (n - 1)
         let mut s1 = 0.0f64;
         for i in 0..n {
             let d = rets[i] - mean_r;
@@ -123,16 +123,19 @@ impl MultifractalSpectrumEngine {
             // Precio constante o fluctuaciones imperceptibles: régimen neutro
             return (0.50, 0.0);
         }
-        let var1 = (s1 / n as f64).max(1e-16);
+        let var1 = (s1 / (n - 1) as f64).max(1e-16);
 
         // Varianza escala 2 (2 ticks acumulados)
+        // Corrección de Lo & MacKinlay (1988) para estimador de retornos traslapados con media muestral:
+        // c_k = (n - k + 1) * (1 - k / n)
         let mut s2 = 0.0f64;
         let n2 = n - 1;
         for i in 1..n {
             let d = (rets[i] + rets[i - 1]) - 2.0 * mean_r;
             s2 += d * d;
         }
-        let var2 = (s2 / n2 as f64).max(1e-16);
+        let c2 = (n2 as f64) * (1.0 - 2.0 / (n as f64));
+        let var2 = (s2 / c2.max(1.0)).max(1e-16);
         let h2 = 0.5 * (var2 / var1).ln() / std::f64::consts::LN_2;
 
         let (h_raw, multifractal_width) = if n >= 16 {
@@ -143,7 +146,8 @@ impl MultifractalSpectrumEngine {
                 let d = (rets[i] + rets[i - 1] + rets[i - 2] + rets[i - 3]) - 4.0 * mean_r;
                 s4 += d * d;
             }
-            let var4 = (s4 / n4 as f64).max(1e-16);
+            let c4 = (n4 as f64) * (1.0 - 4.0 / (n as f64));
+            let var4 = (s4 / c4.max(1.0)).max(1e-16);
             let h4 = 0.5 * (var4 / var1).ln() / (2.0 * std::f64::consts::LN_2);
 
             // Regresión conjunta multiescala (k=2, k=4): H = (y1 + 2*y2) / (10 * ln 2)
@@ -649,5 +653,31 @@ mod tests {
         let (h_flat, w_flat) = e_flat.update(100.0);
         assert_eq!(h_flat, 0.50);
         assert_eq!(w_flat, 0.0);
+
+        // 4. G1-2: Caso nulo i.i.d. puro (paseo aleatorio browniano sin sesgo)
+        let mut e_iid = MultifractalSpectrumEngine::new(50);
+        let mut p_iid = 100.0;
+        let mut rng_state: u64 = 0x853c49e6748fea9b;
+        let mut h_sum = 0.0;
+        let n_trials = 40;
+        for _ in 0..n_trials {
+            for _ in 0..50 {
+                rng_state ^= rng_state << 13;
+                rng_state ^= rng_state >> 7;
+                rng_state ^= rng_state << 17;
+                let u1 = ((rng_state & 0xFFFF_FFFF) as f64) / 4294967296.0;
+                let ret = (u1 - 0.5) * 0.005;
+                p_iid *= 1.0 + ret;
+                e_iid.update(p_iid);
+            }
+            let (h_sample, _) = e_iid.update(p_iid);
+            h_sum += h_sample;
+        }
+        let h_avg = h_sum / n_trials as f64;
+        assert!(
+            (h_avg - 0.50).abs() < 0.02,
+            "En nulo i.i.d. browniano, el Hurst promedio debe ser 0.50 +/- 0.02, dio: {}",
+            h_avg
+        );
     }
 }

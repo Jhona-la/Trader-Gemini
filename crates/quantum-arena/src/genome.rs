@@ -1833,7 +1833,7 @@ impl SuperGenotype {
             dynamic_obi_threshold: mutate_val(self.dynamic_obi_threshold, 0.05, 0.95),
             dynamic_ema_trend: mutate_val(self.dynamic_ema_trend, 0.0000001, 0.01),
             dynamic_ofi_threshold: mutate_val(self.dynamic_ofi_threshold, 0.05, 0.95),
-            capital_split_scalp: mutate_val(self.capital_split_scalp, 0.1, 1.0),
+            capital_split_scalp: self.capital_split_scalp, // G0-4: congelado sin mutacion (sizing gobernado por kelly_at_tau)
             kelly_clamp_min: mutate_val(self.kelly_clamp_min, 0.001, 0.1),
             kelly_clamp_max: mutate_val(self.kelly_clamp_max, 0.1, 1.0),
             explosive_leverage_multiplier: mutate_val(

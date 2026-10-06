@@ -336,16 +336,18 @@ fn evaluate_genotype(
     initial: f64,
     max_drawdown_policy: f64,
     active_coins: usize,
-) -> (f64, f64) {
+) -> (f64, f64, Vec<f64>) {
     if !initial.is_finite() || initial <= 0.0 || !max_drawdown_policy.is_finite() {
-        return (initial, f64::NEG_INFINITY);
+        return (initial, f64::NEG_INFINITY, Vec::new());
     }
     let arena = replay_arena(genome, initial, max_drawdown_policy);
     let mut engine = GodEngineCore::new(arena.clone());
     let mut synth = OmniSynth::new(active_coins);
     let mut peak_capital = initial;
+    let mut prev_cap = initial;
     let mut max_drawdown = 0.0_f64;
     let mut trades = 0_u32;
+    let mut trade_returns = Vec::with_capacity(64);
     for tick in stream {
         arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price,
             tick.bid_qty, tick.ask_qty, tick.timestamp);
@@ -356,14 +358,21 @@ fn evaluate_genotype(
             trades += 1;
             let capital = arena.unified_capital.load(Ordering::Relaxed);
             if !capital.is_finite() || capital <= 0.0 {
-                return (capital, f64::NEG_INFINITY);
+                return (capital, f64::NEG_INFINITY, trade_returns);
             }
+            if prev_cap > 0.0 {
+                let r = (capital - prev_cap) / prev_cap;
+                if r.is_finite() {
+                    trade_returns.push(r);
+                }
+            }
+            prev_cap = capital;
             peak_capital = peak_capital.max(capital);
             max_drawdown = max_drawdown.max((peak_capital - capital) / peak_capital);
         }
     }
     let final_capital = arena.unified_capital.load(Ordering::Relaxed);
-    (final_capital, crate::fitness_compute(initial, final_capital, max_drawdown, trades))
+    (final_capital, crate::fitness_compute(initial, final_capital, max_drawdown, trades), trade_returns)
 }
 
 pub struct DarwinDaemon {
@@ -452,7 +461,7 @@ impl DarwinDaemon {
             let mut results: Vec<_> = population
                 .par_iter()
                 .map(|genome| {
-                    let (final_cap, fitness) = evaluate_genotype(
+                    let (final_cap, fitness, _) = evaluate_genotype(
                         genome, train_stream, initial_capital, replay_max_drawdown, active_coins,
                     );
                     (genome.clone(), final_cap, fitness)
@@ -569,9 +578,7 @@ impl DarwinDaemon {
                 if rand::rng().random_bool(mutation_rate) {
                     child.scalp_obi_threshold *= rand::rng().random_range(0.9..1.1);
                 }
-                if rand::rng().random_bool(mutation_rate) {
-                    child.capital_split_scalp *= rand::rng().random_range(0.8..1.2);
-                }
+                // G0-4: capital_split_scalp congelado sin mutacion (gen muerto de dicotomia; sizing por kelly_at_tau)
                 if rand::rng().random_bool(mutation_rate) {
                     child.min_confidence *= rand::rng().random_range(0.9..1.1);
                 }
@@ -588,7 +595,7 @@ impl DarwinDaemon {
                 child.sl_curve_a = child.sl_curve_a.clamp(-10.5, -3.0);
                 child.sl_curve_b = child.sl_curve_b.clamp(-0.2, 0.35);
                 child.scalp_obi_threshold = child.scalp_obi_threshold.clamp(0.05, 0.95);
-                child.capital_split_scalp = child.capital_split_scalp.clamp(0.1, 1.0);
+                child.capital_split_scalp = 0.5; // G0-4: fijado neutro a 50%
                 child.min_confidence = child.min_confidence.clamp(0.50, 0.95);
                 child.explosive_leverage_multiplier =
                     child.explosive_leverage_multiplier.clamp(1.0, 10.0);
@@ -598,16 +605,17 @@ impl DarwinDaemon {
             population = next_gen;
         }
 
-        // S5: Evaluación Out-Of-Sample (OOS) causal ciega de baseline y candidato campeón
-        let (_, baseline_oos_fitness) = evaluate_genotype(
+        // S5 / G1-3: Evaluación Out-Of-Sample (OOS) causal ciega de baseline y candidato campeón
+        let (_, baseline_oos_fitness, _) = evaluate_genotype(
             &current_active, oos_stream, initial_capital, replay_max_drawdown, active_coins,
         );
-        let (_, candidate_oos_fitness) = evaluate_genotype(
+        let (_, candidate_oos_fitness, candidate_oos_returns) = evaluate_genotype(
             &best_all_time.0, oos_stream, initial_capital, replay_max_drawdown, active_coins,
         );
 
         let n_trials = pop_size * generations;
         let e_max_sr = risk_engine::selection_stats::expected_max_sharpe(n_trials, 1.0);
+        let dsr_verdict = risk_engine::selection_stats::edge_survives_multiplicity(&candidate_oos_returns, n_trials);
 
         println!("[Darwin] Online Evolution Complete (S5 OOS Partition).");
         println!("         IS Train Ticks: {}, OOS Eval Ticks: {}", train_stream.len(), oos_stream.len());
@@ -615,17 +623,17 @@ impl DarwinDaemon {
         println!("         OOS Baseline Fitness: {:.4}", baseline_oos_fitness);
         println!("         OOS Candidate Fitness: {:.4}", candidate_oos_fitness);
         println!("         DSR Multiplicity Expectation E[max SR] (N={}): {:.4} * sigma", n_trials, e_max_sr);
+        println!("         DSR OOS Candidate: {:.4} (passes: {}, n_trades: {}) — {}", dsr_verdict.dsr, dsr_verdict.passes, candidate_oos_returns.len(), dsr_verdict.note);
 
-        // Missing/invalid evidence is not a measured loss. The inherited finite
-        // margin is a policy, not significance or a structural-change detector.
-        // S5: El candidato debe superar al baseline EN LA VENTANA OOS NO VISTA.
+        // G1-3: Compuerta estricta conjunta: superación del baseline OOS por margen Y supervivencia al DSR (>= 0.95)
         let clears_margin = meets_promotion_margin(candidate_oos_fitness, baseline_oos_fitness);
+        let clears_dsr = dsr_verdict.passes;
 
         let allow_hotswap = std::env::var("ENABLE_ONLINE_DARWIN_MUTATION")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
-        if clears_margin && allow_hotswap {
-            println!("[Darwin] 🧬 Candidate cleared the configured OOS margin; authorized legacy promotion.");
+        if clears_margin && clears_dsr && allow_hotswap {
+            println!("[Darwin] 🧬 Candidate cleared both OOS margin AND DSR multiplicity gate ({:.4} >= 0.95); authorized promotion.", dsr_verdict.dsr);
             best_all_time.0.apply_to_arena(&self.live_arena);
 
             let mut full_genotype =
@@ -746,7 +754,7 @@ mod tests {
     fn empty_replay_preserves_missing_evidence_instead_of_a_finite_loss() {
         let source = GlobalArena::build_in_own_stack(100.0);
         let genome = Genotype::current_from_arena(&source);
-        let (capital, score) = evaluate_genotype(&genome, &[], 100.0, 0.2, 1);
+        let (capital, score, _) = evaluate_genotype(&genome, &[], 100.0, 0.2, 1);
         assert_eq!(capital, 100.0);
         assert_eq!(score, f64::NEG_INFINITY);
         assert!(!meets_promotion_margin(0.1, score));
@@ -808,5 +816,21 @@ mod tests {
         assert!(meets_promotion_margin(1.20, 1.00));
         assert!(!meets_promotion_margin(1.02, 1.00)); // margen < 5%
         assert!(!meets_promotion_margin(f64::NEG_INFINITY, 1.00));
+
+        // G1-3: Compuerta DSR con control de multiplicidad
+        // Caso insuficiente (<20 trades): rechazo
+        let short_returns = vec![0.01; 5];
+        let v_short = risk_engine::selection_stats::edge_survives_multiplicity(&short_returns, 100);
+        assert!(!v_short.passes, "Menos de 20 trades debe fallar la compuerta DSR");
+
+        // Caso ruido (media ~ 0): rechazo al 95%
+        let noise_returns: Vec<f64> = (0..50).map(|i| if i % 2 == 0 { 0.001 } else { -0.001 }).collect();
+        let v_noise = risk_engine::selection_stats::edge_survives_multiplicity(&noise_returns, 100);
+        assert!(!v_noise.passes, "Ruido sin edge debe ser bloqueado por DSR (dio {})", v_noise.dsr);
+
+        // Caso edge genuino (Sharpe alto robusto frente a N=100 pruebas): aprobacion
+        let strong_returns: Vec<f64> = (0..50).map(|i| 0.005 + ((i % 5) as f64) * 0.0002).collect();
+        let v_strong = risk_engine::selection_stats::edge_survives_multiplicity(&strong_returns, 100);
+        assert!(v_strong.passes, "Edge genuino debe superar el umbral DSR 0.95 (dio {})", v_strong.dsr);
     }
 }
