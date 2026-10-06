@@ -166,7 +166,7 @@ impl LeadLagAlphaEngine {
 
     /// Momentum compuesto del líder (peso BTC/ETH 60/40) con CADUCIDAD
     /// por edad: un líder sin muestra fresca no opina.
-    fn momentum_lider(&self, ahora_ms: f64) -> f64 {
+    pub fn momentum_lider(&self, ahora_ms: f64) -> f64 {
         let aporte = |buf: &VecDeque<(f64, f64)>| -> f64 {
             match buf.back() {
                 Some(&(ts, ofi)) if ahora_ms - ts <= MAX_EDAD_MS => ofi,
@@ -212,6 +212,34 @@ impl LeadLagAlphaEngine {
         }
         let exceso = leader_momentum - alt_ofi;
         let div = (exceso.clamp(-3.0, 3.0) * 0.8).tanh() * rho;
+        (leader_momentum, div)
+    }
+
+    /// G2-10 (Ola Ω11): Señal de propagación para ETH evaluado EXCLUSIVAMENTE contra BTC como líder macro.
+    /// Erradica la auto-referencia espuria ETH contra ETH que acreditaba lag=0 o auto-correlación trivial rho=1.
+    pub fn predict_eth_impulse_con_reloj(
+        &mut self,
+        coin_id: usize,
+        eth_ofi: f64,
+        ts_ms: f64,
+    ) -> (f64, f64) {
+        if !eth_ofi.is_finite() || !ts_ms.is_finite() {
+            return (0.0, 0.0);
+        }
+        self.push_alt(coin_id, eth_ofi, ts_ms);
+        let leader_momentum = self.momentum_lider(ts_ms);
+        let alt = match self.alt_bufs.get(&coin_id) {
+            Some(b) => b,
+            None => return (leader_momentum, 0.0),
+        };
+        let (lag_btc, rho_btc) = self.lag_optimo(&self.btc_buf, alt, ts_ms);
+        self.ultimo_lag_btc_ms = lag_btc;
+        self.ultimo_lag_eth_ms = 0.0;
+        if lag_btc <= 0.0 {
+            return (leader_momentum, 0.0);
+        }
+        let exceso = leader_momentum - eth_ofi;
+        let div = (exceso.clamp(-3.0, 3.0) * 0.8).tanh() * rho_btc;
         (leader_momentum, div)
     }
 
@@ -338,5 +366,23 @@ mod tests {
         let (mom, div) = e.predict_altcoin_impulse_con_reloj(1, f64::NAN, f64::NAN);
         assert_eq!(mom, 0.0);
         assert_eq!(div, 0.0);
+    }
+
+    #[test]
+    fn omega11_lead_lag_eth_sin_autoreferencia() {
+        let mut e = LeadLagAlphaEngine::new(200);
+        let t0 = 4_000_000.0;
+        // Alimentar ETH idéntico en buffer de líder y en OFI de alt
+        for i in 0..40 {
+            let t = t0 + i as f64 * 250.0;
+            let impulso = ((i as f64) * 0.05).sin() * 1.2;
+            e.update_leader(false, impulso, t); // ETH como líder
+        }
+        // Llamar predict_eth_impulse_con_reloj: btc_buf está vacío, por lo que NO debe auto-evaluar contra ETH
+        let (mom, div) = e.predict_eth_impulse_con_reloj(1, 1.0, t0 + 41.0 * 250.0);
+        assert_eq!(e.ultimo_lag_eth_ms, 0.0, "ETH no debe generar lag de sí mismo");
+        assert_eq!(e.ultimo_lag_btc_ms, 0.0, "Sin BTC no hay lag de BTC");
+        assert_eq!(div, 0.0, "Sin liderazgo de BTC la divergencia debe ser 0.0");
+        assert!(mom.abs() > 0.0, "Momentum de líder existe por ponderación");
     }
 }
