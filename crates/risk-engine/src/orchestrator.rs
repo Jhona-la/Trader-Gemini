@@ -179,11 +179,17 @@ impl<'a> PortfolioOrchestrator<'a> {
             let systemic_bull = if p_bull.is_finite() { p_bull.clamp(0.0, 1.0) } else { 0.0 };
             0.25 * squeeze_max.max(systemic_bull)
         };
-        let systemic_crash_veto = {
-            let p = self.arena.regime_p_crash.load(Ordering::Relaxed);
-            p.is_finite() && p >= 0.90
-        };
-        if (regime == crate::regime::MarketRegime::Crash || systemic_crash_veto) && intent_is_long {
+        // G0-1 (Ola Ω12) & AGY-AUD-P31: FUSIÓN SUAVE VETO → CONTRACCIÓN CONTINUA.
+        // El veto absoluto de largos se reserva para caída libre sistémica de alta confianza
+        // (p_crash >= 0.90) o para tests/mocks explícitos cuando el símplex continuo no está
+        // inicializado (p_crash <= 0.0). Para regímenes continuos con p_crash < 0.90, la contracción
+        // continua en `directional_pressure` (0.25 * p_crash) modula el colchón suavemente
+        // sin provocar el salto discontinuo X → 0 del argmax (MAP) discreto.
+        let p_crash_val = self.arena.regime_p_crash.load(Ordering::Relaxed);
+        let systemic_crash_veto = p_crash_val.is_finite() && p_crash_val >= 0.90;
+        let fallback_discrete_veto = (!p_crash_val.is_finite() || p_crash_val <= 0.0)
+            && regime == crate::regime::MarketRegime::Crash;
+        if (systemic_crash_veto || fallback_discrete_veto) && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
         }
         // D-403: Permitir operaciones Short durante BullRun (scalping contratendencia con stops ceñidos)

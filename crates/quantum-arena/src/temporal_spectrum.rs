@@ -198,6 +198,11 @@ pub struct ScaleState {
     /// Suma del núcleo de |dev| SIN corregir por la masa observada; la
     /// estimación pública `ewma_dev_vol` es `raw_dev_vol / masa` (D-742).
     raw_dev_vol: f64,
+    /// (Ola Ω12 · G1-4) Segundo momento del núcleo: EWMA de dev² por escala,
+    /// SIN corregir por masa (igual convención que raw_dev_vol).
+    /// Da el verdadero segundo momento central E[dev²] = raw_dev_s2 / masa,
+    /// sin el sesgo sistemático de Jensen de (E[|dev|])².
+    raw_dev_s2: f64,
     /// (Ola XLI·C2) Tercer momento absoluto del núcleo: EWMA de |dev|³ por
     /// escala, SIN corregir por masa (igual convención que raw_dev_vol).
     /// Alimenta las funciones de estructura de Kolmogorov.
@@ -557,8 +562,9 @@ impl TemporalSpectrum {
             // vol es la media observada (suma del núcleo / masa llenada) y el
             // peso de la fusión multiplica por esa masa: lo no observado no
             // opina.
-            s.raw_dev_vol = s.raw_dev_vol * (1.0 - alpha) + alpha * dev.abs();
             let abs_dev = dev.abs();
+            s.raw_dev_vol = s.raw_dev_vol * (1.0 - alpha) + alpha * abs_dev;
+            s.raw_dev_s2 = s.raw_dev_s2 * (1.0 - alpha) + alpha * abs_dev * abs_dev;
             s.raw_dev_s3 = s.raw_dev_s3 * (1.0 - alpha) + alpha * abs_dev * abs_dev * abs_dev;
             let mass = 1.0 - (-elapsed / s.tau_ms).exp();
             s.ewma_dev_vol = if mass > 0.0 { s.raw_dev_vol / mass } else { 0.0 };
@@ -968,6 +974,7 @@ impl TemporalSpectrum {
             bloque_ln_p0: 0.0,
             bloque_r_prev: 0.0,
             raw_dev_vol: 0.0,
+            raw_dev_s2: 0.0,
             raw_dev_s3: 0.0,
             // #594: un nodo interpolado no es una escala de la malla con
             // bloques maduros — sin habilidad medida (0 muestras → None).
@@ -1486,7 +1493,15 @@ impl TemporalSpectrum {
     #[inline]
     fn dev_moment_by(&self, p: u32, s: &ScaleState, mass: f64) -> f64 {
         match p {
-            2 => s.ewma_dev_vol * s.ewma_dev_vol,
+            // (Ola Ω12 · G1-4) Verdadero segundo momento central E[dev²] acumulado sin
+            // el sesgo descendente de Jensen de (E[|dev|])².
+            2 => {
+                if mass > 0.0 {
+                    s.raw_dev_s2 / mass
+                } else {
+                    0.0
+                }
+            }
             3 => {
                 if mass > 0.0 {
                     s.raw_dev_s3 / mass
@@ -2682,4 +2697,34 @@ fn qo_662_zeta_peso_continuo_sin_salto_al_madurar() {
         "salto de zeta al madurar la escala 13: {zeta_antes} -> {zeta_despues}"
     );
 }
+
+#[test]
+fn omega12_g1_4_segundo_momento_central_sin_sesgo_jensen() {
+    let mut spec = TemporalSpectrum::new();
+    let mut price = 100.0f64;
+    // Alimentar con fluctuaciones de retorno con varianza no nula
+    let mut t = 1_000u64;
+    for i in 0..1000 {
+        let ret = if i % 10 == 0 { 0.015 } else { -0.0015 };
+        price *= 1.0 + ret;
+        t += 100;
+        spec.update(price, t);
+    }
+    // Para las escalas que tienen masa observada:
+    let mut verificados = 0;
+    for s in &spec.scales {
+        let elapsed = (t - 1000) as f64;
+        let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+        if mass > 0.10 {
+            let m2 = spec.dev_moment_by(2, s, mass);
+            let m1_sq = s.ewma_dev_vol * s.ewma_dev_vol;
+            // Desigualdad de Jensen: E[X²] >= (E[|X|])²
+            assert!(m2 >= m1_sq, "m2={m2} debe ser >= m1_sq={m1_sq} por desigualdad de Jensen");
+            assert!(m2 > 0.0);
+            verificados += 1;
+        }
+    }
+    assert!(verificados >= 4, "Debe haber al menos 4 escalas verificadas");
+}
+
 

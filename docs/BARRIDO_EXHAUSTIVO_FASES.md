@@ -606,10 +606,12 @@ Doctrina (ADR-0014 + ARQUITECTURA_VIVA §2) sobrevivió las 15 olas en los
 ejes estructurales (enums Continuous únicos, sizing por curvas kelly_at_tau,
 router τ viva, banda #586, relojes físicos, Ville, exceso Hawkes). El drift:
 
-- G0-1 [MED] risk-engine/orchestrator.rs:186 — el veto de largos usa el MAP
-  DISCRETO del símplex (argmax): p_crash≈0.34 (apenas argmax de 4) da veto
-  TOTAL mientras la contracción continua P31 aplica 0.25·p. Salto de margen
-  X→0 en la frontera del argmax. Remedio: fusión suave veto→contracción.
+- G0-1 [MED] CERRADO (Ola Ω12 AGY) risk-engine/orchestrator.rs:186 — el veto
+  de largos fue desacoplado del MAP discreto (argmax) espurio cuando el
+  símplex continuo está activo: sólo veta en colapso sistémico medido
+  (p_crash >= 0.90) o fallback sin símplex; si p_crash < 0.90, la contracción
+  continua directional_pressure (0.25·p) modula el margen sin saltos X→0.
+  Test de contrato formal añadido en portfolio_admission_contract.rs.
 - G0-2 [MED] god-engine-core/lib.rs:6017 — rama 13 fija su umbral con
   `swing_tp_base` (ancla a τ=12h) teniendo τ viva `swing_duration_ms`
   disponible. Debe ser `tp_at_tau(τ viva)`.
@@ -656,9 +658,11 @@ VR) están correctas; cada fix tiene un defecto de INTEGRACIÓN estadística:
   Ω9 dice «garantizando que el fitness promovido no sea falso positivo» —
   NO está cableado en darwin (online_daemon:1832 sí lo tiene). Corrección:
   exigir DSR≥0.95 sobre retornos OOS como conjunción del gate.
-- G1-4 [MED] temporal_spectrum.rs:1483 — ζ(2) mide (E|dev|)² no E[dev²]:
-  sesgo alto de ζ₂ con colas ⇒ χ espurio (χ modula pisos vivos).
-  Corrección: EWMA de dev² para S₂.
+- G1-4 [MED] CERRADO (Ola Ω12 AGY) temporal_spectrum.rs:1483 — ζ(2) ahora
+  usa el verdadero segundo momento central E[dev²] = raw_dev_s2 / masa,
+  eliminando el sesgo sistemático de la desigualdad de Jensen de (E|dev|)²
+  en distribuciones leptocúrticas. Test formal de Jensen añadido en
+  temporal_spectrum.rs (omega12_g1_4_segundo_momento_central_sin_sesgo_jensen).
 - G1-5 [MED] selection_stats.rs DUPLICADO en risk-engine y
   evolution-engine (diff vacío hoy; drift silencioso garantizado).
 - G1-6 [LOW] sr_sigma=1/√(n−1) aproxima σ entre pruebas (conservador con
