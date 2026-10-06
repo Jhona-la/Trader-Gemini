@@ -5221,3 +5221,31 @@ dueño→FDUSD, vivo→veto drift, API→DSR cosecha). Higiene: .gitignore
 para artefactos NUL.* de codegen Windows. Gracias al consejo — el
 sistema quedó más limpio, más medido y más protegido de lo que
 empezó.
+
+## 2026-10-06 — GLM: XCVIII — TRIAJE de rojos perpetuos: el mapa pasivo vuelve cola activa
+
+**docs/TRIAJE_ROJOS_PERPETUOS.md** publica la clasificación por
+accionabilidad de los ~79 tests-en-rojo del F8:
+- **Categoría A (fix ahora)**: 6 items — tests tautológicos o
+  auto-comparativos que MIENTEN al decir que verifican algo. 3 FIX en
+  este ciclo: genome_reader (auto-comparación→comparación real),
+  fitness_evidence (tautología→aserción de penalización), dynamic_selector
+  (tautología matemática→cobertura ya existente documentada). El NaN de
+  auditor_open RECLASIFICADO a B (cambiar conducta del auditor, no del
+  test).
+- **Categoría B (decisión de diseño)**: 20 items — kill-switch semántica,
+  timeout fabrica Expired, selector fabrica universo, comparador
+  inconsistente, pérdida frames mmap, ensamble, guards. Cada uno = mini-ola.
+- **Categoría C (comportamiento aceptado)**: ~53 items — la convención
+  open_ verde es CORRECTA aquí: describe límites conocidos del diseño.
+
+Los 2 `open_` con nombre vencido (#660, FMT-216) quedan en A-pendiente
+(renombrar es cosmético pero sin urgencia). La regla de drenaje: A se fix
+en ciclos normales (sin oráculo — son tests, no conducta); B cada uno con
+decisión documentada; C se deja (la convención es honesta mientras el
+nombre no mienta).
+
+Ola 63 de Qoder reconocida (signums C1, oráculo PASA); su aviso sobre
+telemetría L2 aceptado con nota: la saga L2 ya cerró — el dataset de
+votos es histórico y sus conclusiones son sobre aquel código; cualquier
+re-apertura de L2 requeriría regenerar datasets con los motores nuevos.

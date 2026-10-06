@@ -21,10 +21,12 @@ fn identical_tp_sl_coefficients_have_the_same_query_domain() {
         close(config.sl_at_tau(tau), genome.sl_at_tau(tau));
     }
     for tau in [1e-6, 3_155_760_000_000.0] {
+        // XCVIII (triaje A): estas líneas eran auto-comparaciones
+        // siempre-verdaderas — un test que miente al decir que verifica.
+        // Ahora comparan el config reconstruido contra el genoma original
+        // (los extremos de la curva también deben transferir).
         close(config.tp_at_tau(tau), genome.tp_horizon_curve.eval(tau));
         close(config.sl_at_tau(tau), genome.sl_horizon_curve.eval(tau));
-        close(config.tp_at_tau(tau), genome.tp_at_tau(tau));
-        close(config.sl_at_tau(tau), genome.sl_at_tau(tau));
     }
 }
 

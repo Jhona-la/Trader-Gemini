@@ -39,9 +39,13 @@ fn open_debt_zero_daily_net_return_receives_no_slot_regardless_of_path_variation
     assert!(DynamicSelector::try_parse_and_rank_tickers(&data, 0.0)
         .unwrap()
         .is_empty());
-    // Both100->100->100 and100->150->100 have zero net return, but different variation.
-    let variation = (1.5_f64.ln()).powi(2) + (1.0_f64 / 1.5).ln().powi(2);
-    assert!(variation > 0.0);
+    // XCVIII (triaje A): la versión anterior era `assert!(variation > 0.0)`
+    // — una tautología matemática que no ejercitaba NINGÚN código. La
+    // aserción REAL: el selector con pct=0 no selecciona AUNQUE la
+    // variación intra-día del path fuera no-trivial (ese es el open-debt
+    // que el nombre del test describe). Ya está cubierto por el assert
+    // anterior (pct=0 ⇒ sin slot); este comentario preserva la intención.
+    let _variation = (1.5_f64.ln()).powi(2) + (1.0_f64 / 1.5).ln().powi(2);
 }
 
 #[test]
