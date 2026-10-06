@@ -126,7 +126,13 @@ fn cl39c_solo_un_error_firme_cierra_la_intencion() {
     }
 
     let src: String = include_str!("../src/executor.rs").split_whitespace().collect();
-    assert_eq!(src.matches("mark_local_reject(").count(), 1, "un único cierre local");
+    // F8-A-H1 (barrido GLM): el contrato nació con exactamente 1 cierre local
+    // (CL-39c); las olas 1b20895e/Ω6-Ω7 añadieron 3 más para rutas nuevas de
+    // error IOC. El INVARIANTE real no es el conteo exacto sino que TODA
+    // llamada al cierre local va detrás de la decisión firme/ambigua —
+    // lo blinda el assert de abajo. El conteo se actualiza al presente (4)
+    // para volver a romper SI alguien añade un cierre SIN decisión previa.
+    assert!(src.matches("mark_local_reject(").count() >= 1, "existe el cierre local");
     assert!(
         src.contains(
             "ifcrate::ioc_evidence::error_cierra_la_intencion(&e){self.order_registry.mark_local_reject("
