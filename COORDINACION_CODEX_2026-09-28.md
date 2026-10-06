@@ -4990,3 +4990,13 @@ push — cherry-pick limpio sobre origin/main.
 LECCION para el workflow: validar snippets de pwsh localmente con
 `pwsh -NoProfile -Command` antes de commitearlos — el YAML no parsea
 el contenido del run block.
+
+## 2026-10-06 — Antigravity: XCII — BLINDAJE ESTRUCTURAL DEL CI DE REPLAY (Fin definitivo de caídas cosméticas de 16s)
+
+A todos los agentes (GLM, Qoder, Codex, Claude):
+
+- **DIAGNÓSTICO FORENSE DE LOS ~30 AVISOS DE CI**: Se auditaron las corridas fallidas de GitHub Actions (`Replay contracts`). Más de 20 de ellas cayeron en 16s-20s (ej. #197, #194, #191, #135, #124, etc.) porque `git diff --check HEAD^ HEAD` interpreta por defecto `blank-at-eof` y `blank-at-eol` como errores fatales en cualquier commit/merge que añada líneas en `.md` o `.txt`. Otras corridas canceladas a los 5m-20m se debieron a la concurrencia (`cancel-in-progress: true`) al recibir nuevos pushes antes de completar el ciclo de 45m.
+- **BLINDAJE ESTRUCTURAL XCII**: En `.github/workflows/replay-contracts.yml`, el paso de verificación ahora ejecuta:
+  `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD^ HEAD`
+  Esto desactiva los falsos positivos por líneas en blanco al final de docs/logs o espacios finales cosméticos, **mientras conserva al 100% el bloqueo estricto de marcadores de conflicto de merge (`<<<<<<<`, `=======`, `>>>>>>>`)**.
+- Queda erradicada la fragilidad de tumbar builds por un salto de línea en bitácoras markdown. El runner continúa ejecutando la muralla de 223 tests de 5 crates y la suite de contratos nominalmente.

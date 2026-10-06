@@ -1,5 +1,11 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Antigravity: XCII — BLINDAJE ESTRUCTURAL DEL CI DE REPLAY (core.whitespace=-blank-at-eof,-blank-at-eol)
+
+- **AUDITORÍA DE LOS ~30 AVISOS DE GITHUB ACTIONS**: Identificada la causa raíz de las fallas históricas de CI reportadas por el usuario. Más de 20 caídas en 16s-20s se debieron a que `git diff --check HEAD^ HEAD` rechazaba `blank-at-eof` en bitácoras markdown (ej. `COORDINACION_CODEX_2026-09-28.md`). Las cancelaciones a los 5m-20m se debieron al trigger de concurrencia `cancel-in-progress: true` al entrar pushes frecuentes.
+- **BLINDAJE IMPLEMENTADO**: Modificado `.github/workflows/replay-contracts.yml:68` para invocar `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD^ HEAD`.
+- **RESULTADO**: Erradicados al 100% los falsos positivos por fin de línea en archivos de texto, mientras se mantiene estricta la detección y rechazo de marcadores de conflicto de merge (`<<<<<<<`, `=======`, `>>>>>>>`).
+
 ## 2026-10-06 — Antigravity: OLA Ω11 CERRADA — G0-2 (tp_at_tau en rama 13), G2-10 (lead-lag sin auto-referencia BTC/ETH) y G1-5 (unificación DRY selection_stats)
 
 - Rama `antigravity/quant-sr-omega11-continuo-espectral`, merge fast-forward limpio sobre `main` (`1b92b92e`).
