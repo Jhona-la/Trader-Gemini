@@ -35,33 +35,20 @@ fn genome_protection_prices(
     entry_price: f64,
     entry_tau_ms: u64,
 ) -> (f64, f64) {
-    use quantum_arena::temporal_spectrum::{
-        HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS,
-    };
+    use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
     // C-05 (informe decimocuarto) — CLAMP AL DOMINIO DE LAS ANCLAS: la
     // fusión espectral viva puede degenerar (journal con tau_ms =
-    // 4 611 686 018 427 ≈ 146 años) y `HorizonCurve::eval` extrapola
-    // EXPONENCIALMENTE fuera de banda ⇒ brackets a +65%/−32%: el
-    // invariante de protección producía desnudez. La curva sólo tiene
+    // 4 611 686 018 427 ≈ 146 años) y la extrapolación exponencial
+    // fuera de banda producía desnudez (+65%/−32%). La curva sólo tiene
     // validez ENTRE sus anclas: τ≤0 (adoptada sin diario) colapsa al
-    // ancla rápida — igual que antes — y τ degenerada colapsa al ancla
-    // lenta (máximo de la curva, jamás más allá).
+    // ancla rápida y τ degenerada colapsa al ancla lenta.
     let tau_eff = (entry_tau_ms as f64).clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
     let o = Ordering::Relaxed;
-    let tp_frac = HorizonCurve::through_two_points(
-        TAU_ANCHOR_FAST_MS,
-        arena.config.scalp_tp_base.load(o),
-        TAU_ANCHOR_SLOW_MS,
-        arena.config.swing_tp_base.load(o),
-    )
-    .eval(tau_eff);
-    let sl_frac = HorizonCurve::through_two_points(
-        TAU_ANCHOR_FAST_MS,
-        arena.config.scalp_sl_base.load(o),
-        TAU_ANCHOR_SLOW_MS,
-        arena.config.swing_sl_base.load(o),
-    )
-    .eval(tau_eff);
+    // G0-5 (Ola Ω14): FUENTE ÚNICA de brackets continuos desde arena.config.tp_at_tau / sl_at_tau.
+    // Erradica la reconstrucción manual mediante anclas escalares legacy,
+    // preservando la geometría continua cuando el genoma muta (a, b) en caliente.
+    let tp_frac = arena.config.tp_at_tau(tau_eff);
+    let sl_frac = arena.config.sl_at_tau(tau_eff);
     // B3.2: VIABILIDAD POR FRICCIÓN como invariante de TODA protección
     // (entrada-fallback, watchdog, restore, adopción). La curva del genoma
     // decide la forma; la fricción pone el suelo: stop ≥ mínimo viable y
@@ -4045,19 +4032,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .get(coin_id)
                                 .filter(|s| s.dominant_tau_ms > 0.0)
                                 .map(|s| s.dominant_tau_ms)
-                                .unwrap_or(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS);
-                            let tp_frac = quantum_arena::temporal_spectrum::HorizonCurve::through_two_points(
-                                quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-                                engine_real.arena.config.scalp_tp_base.load(Ordering::Relaxed),
-                                quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-                                engine_real.arena.config.swing_tp_base.load(Ordering::Relaxed),
-                            ).eval(tau_eff);
-                            let sl_frac = quantum_arena::temporal_spectrum::HorizonCurve::through_two_points(
-                                quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-                                engine_real.arena.config.scalp_sl_base.load(Ordering::Relaxed),
-                                quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-                                engine_real.arena.config.swing_sl_base.load(Ordering::Relaxed),
-                            ).eval(tau_eff);
+                                .unwrap_or(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
+                                .clamp(
+                                    quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                                    quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                                );
+                            // G0-5 (Ola Ω14): FUENTE ÚNICA de brackets continuos desde arena.config.tp_at_tau / sl_at_tau.
+                            let tp_frac = engine_real.arena.config.tp_at_tau(tau_eff);
+                            let sl_frac = engine_real.arena.config.sl_at_tau(tau_eff);
                             // B3.2: el fallback de entrada también nace viable —
                             // pisos de fricción idénticos a genome_protection_prices.
                             // B3.19: + deslizamiento por latencia, como el gate.
@@ -4985,3 +4967,85 @@ fn format_tau(tau_ms: f64) -> String {
         format!("{:.1}d", tau_ms / 86_400_000.0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        
+        // Mutamos las curvas continuas en caliente para verificar que genome_protection_prices
+        // responde a la curva activa y no a las anclas fijas obsoletas.
+        // Curva TP: a = ln(0.04), b = 0.0 (plana en 4%)
+        // Curva SL: a = ln(0.02), b = 0.0 (plana en 2%)
+        arena.config.tp_curve_a.store(0.04f64.ln(), Ordering::Relaxed);
+        arena.config.tp_curve_b.store(0.0, Ordering::Relaxed);
+        arena.config.sl_curve_a.store(0.02f64.ln(), Ordering::Relaxed);
+        arena.config.sl_curve_b.store(0.0, Ordering::Relaxed);
+
+        // Sin fricción artificial para aislar la paridad geométrica
+        arena.config.live_taker_fee.store(0.0001, Ordering::Relaxed);
+        arena.config.base_slippage_floor.store(0.00001, Ordering::Relaxed);
+        arena.config.latency_penalty_ms.store(0.0, Ordering::Relaxed);
+
+        let entry_price = 50_000.0;
+        let tau_test_ms = 120_000; // 2 minutos
+
+        let (tp, sl) = genome_protection_prices(&arena, "BTCUSDT", true, entry_price, tau_test_ms);
+
+        let expected_tp_frac = arena.config.tp_at_tau(tau_test_ms as f64);
+        let expected_sl_frac = arena.config.sl_at_tau(tau_test_ms as f64);
+
+        // Verificamos que las curvas entreguen exactamente los valores mutados
+        assert!((expected_tp_frac - 0.04).abs() < 1e-6, "expected_tp_frac debe ser 0.04");
+        assert!((expected_sl_frac - 0.02).abs() < 1e-6, "expected_sl_frac debe ser 0.02");
+
+        // Verificamos que TP > entry_price y SL < entry_price para long
+        assert!(tp > entry_price, "TP debe ser superior al precio de entrada");
+        assert!(sl < entry_price, "SL debe ser inferior al precio de entrada");
+
+        // Calculamos paridad esperada considerando posibles friction_floors
+        let fee_rt = risk_engine::tp_sl::roundtrip_friction(0.0001, 0.00001, 0.0, 0.0);
+        let (expected_sl_floor, expected_tp_floor) =
+            quantum_arena::genome::SuperGenotype::friction_floors(fee_rt, expected_sl_frac, expected_tp_frac);
+
+        let expected_tp = entry_price * (1.0 + expected_tp_floor);
+        let expected_sl = entry_price * (1.0 - expected_sl_floor);
+
+        assert!(
+            (tp - expected_tp).abs() < 1e-4,
+            "TP calculado ({}) debe coincidir bit a bit con fuente única ({})",
+            tp,
+            expected_tp
+        );
+        assert!(
+            (sl - expected_sl).abs() < 1e-4,
+            "SL calculado ({}) debe coincidir bit a bit con fuente única ({})",
+            sl,
+            expected_sl
+        );
+    }
+
+    #[test]
+    fn omega14_g0_5_c05_clamp_anclas_invariante() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let entry_price = 100.0;
+
+        // Caso tau degenerada / no inicializada (0 ms) -> debe clamar a TAU_ANCHOR_FAST_MS
+        let (tp_fast, sl_fast) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, 0);
+        let (tp_anchor_fast, sl_anchor_fast) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, TAU_ANCHOR_FAST_MS as u64);
+        assert_eq!(tp_fast, tp_anchor_fast, "Tau = 0 debe colapsar a ancla rápida");
+        assert_eq!(sl_fast, sl_anchor_fast, "Tau = 0 debe colapsar a ancla rápida");
+
+        // Caso tau degenerada cósmica (146 años) -> debe clamar a TAU_ANCHOR_SLOW_MS
+        let (tp_slow, sl_slow) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, 4_611_686_018_427);
+        let (tp_anchor_slow, sl_anchor_slow) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, TAU_ANCHOR_SLOW_MS as u64);
+        assert_eq!(tp_slow, tp_anchor_slow, "Tau cósmica debe colapsar a ancla lenta");
+        assert_eq!(sl_slow, sl_anchor_slow, "Tau cósmica debe colapsar a ancla lenta");
+    }
+}
+

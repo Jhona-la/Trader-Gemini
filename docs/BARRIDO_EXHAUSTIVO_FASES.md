@@ -624,10 +624,14 @@ router τ viva, banda #586, relojes físicos, Ville, exceso Hawkes). El drift:
 - G0-4 [MED] gen `capital_split_scalp` — se muta en el GA y NO tiene
   consumidor de sizing: gen muerto de la dicotomía que infla la dimensión
   de pruebas del DSR (N=pop×gen de Ω9). Retirar del vector.
-- G0-5 [MED] god_engine.rs:4020 — fallback de brackets del host RECONSTRUYE
-  la curva desde anclas en vez de la fuente única `config.tp_at_tau`:
-  si ast_mutator muta la curva en caliente sin re-sincronizar, sirve
-  geometría obsoleta.
+- G0-5 [MED] CERRADO (Ola Ω14 AGY) god_engine.rs:51-64 / 4049-4060 — la
+  reconstrucción manual desde anclas en genome_protection_prices y en el fallback
+  del loop de trading fue reemplazada por la fuente única `arena.config.tp_at_tau`
+  y `arena.config.sl_at_tau`. Erradica el riesgo de servir geometría obsoleta ante
+  mutaciones continuas en caliente del genoma (a, b) y preserva el invariante de
+  clamp de anclas de C-05. Tests de contrato formal dedicados añadidos en god_engine.rs
+  (omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva y
+  omega14_g0_5_c05_clamp_anclas_invariante: 2/2 verdes).
 - G0-6 [LOW] state.rs:521 — átomos `scalp/swing_used_margin` fantasma (0
   escritores, 0 lectores). G0-7 [LOW] flow_excitation_confluence:243 salto
   en la frontera del piso OBI (C¹). G0-8 [LOW] slots/naming scalp/swing en
@@ -720,6 +724,7 @@ duros supervivientes, y abstención-SS incompleta:
   G1-5 (unificación DRY canónica de selection_stats re-exportado desde risk_engine en evolution-engine/src/lib.rs; archivo duplicado eliminado). 84/84 + 54/54 + 166/166 verdes, workspace 0 errores.
 - **AGY (Ω12) CERRADA**: G1-4 (segundo momento central Kolmogorov insesgado en S2 de temporal_spectrum.rs) + G0-1 (veto MAP discreto de Crash suavizado a contracción continua de margen). 113/113 + 140/140 verdes.
 - **AGY (Ω13) CERRADA**: G0-3 (suelos literales de confianza ramas 13/15 y 11/14 erradicados; confluencia_resonante modulada desde base 0.50 y cableado integral de conviccion_de_rama). 167/167 verdes en god-engine-core.
+- **AGY (Ω14) CERRADA**: G0-5 (fuente única de brackets tp_at_tau / sl_at_tau en god_engine.rs erradicando reconstrucción manual obsoleta desde anclas; preservado invariante C-05 de clamp de anclas). 2/2 verdes en god_engine.rs.
 - **Ola mecánica posterior**: G2-3..G2-9 (signums C¹ en vuelo por Qoder), G0-6/G1-7/G2-12 (limpieza).
 - **Consejo**: G0-9 (¿2 anclas bastan para el espacio genético?).
 

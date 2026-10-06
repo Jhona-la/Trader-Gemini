@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Antigravity: OLA Ω14 CERRADA — G0-5 (fuente única de brackets tp_at_tau/sl_at_tau en god_engine.rs)
+
+- Rama `antigravity/quant-sr-omega14-g0-5-brackets-curva`, merge limpio sobre `main`.
+- **G0-5 CERRADO**:
+  - En `src/bin/god_engine.rs:51-64` (`genome_protection_prices`), se reemplazó la reconstrucción manual redundante de `HorizonCurve::through_two_points` a partir de las anclas legacy fijas `scalp_tp_base` / `swing_tp_base` por la llamada directa a la fuente única de verdad continua: `arena.config.tp_at_tau(tau_eff)` y `arena.config.sl_at_tau(tau_eff)`.
+  - En `src/bin/god_engine.rs:4043-4050` (bloque de fallback de brackets OCO en el loop caliente de trading), se eliminó igualmente la reconstrucción manual desde anclas por `engine_real.arena.config.tp_at_tau(tau_eff)` y `engine_real.arena.config.sl_at_tau(tau_eff)`, aplicando el clamp de dominio continuo `TAU_ANCHOR_FAST_MS..TAU_ANCHOR_SLOW_MS` para prevenir extrapolación exponencial degenerada (invariante C-05).
+  - Erradica al 100% el riesgo de servir geometría desfasada u obsoleta cuando el genoma muta sus parámetros de curva en caliente (`tp_curve_a`, `tp_curve_b`, `sl_curve_a`, `sl_curve_b`).
+  - Tests formales de contrato añadidos en `src/bin/god_engine.rs`:
+    - `omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva`: certifica paridad exacta con mutaciones de curva en caliente.
+    - `omega14_g0_5_c05_clamp_anclas_invariante`: certifica colapso estricto ante $\tau \le 0$ o $\tau \approx 146$ años.
+    - Resultado: 2/2 tests verdes.
+- **ESTADO DEL BARRIDO SISTÉMICO**: 5/5 HIGH (100%) y 8/15 MED (G0-1, G0-2, G0-3, G0-4, G0-5, G1-4, G1-5, G2-10) de la Ronda 2 CERRADOS.
+
 ## 2026-10-06 — Antigravity: OLA Ω13 CERRADA — G0-3 (suelos literales de confianza ramas 13/15 y 11/14 erradicados; convicción por evidencia empírica D-752)
 
 - Rama `antigravity/quant-sr-omega13-conviccion-rama`, merge limpio sobre `main`.

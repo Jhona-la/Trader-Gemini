@@ -109,6 +109,7 @@ El estado del universo se describe mediante el tensor continuo espectral $S(\ome
 | **`veto_por_riesgo_cramer_lundberg`** | `risk-engine/src/correlation_guard.rs:552` | **VÁLIDO** | Acota la probabilidad de ruina del grupo mediante el coeficiente de ajuste $R$ medido. Para $\rho < 0$ (hedges), la varianza se reduce cuadráticamente ($k + k(k-1)\rho < k$). |
 | **Suelos Literales Ramas 13/15** | `god-engine-core/src/lib.rs:419,6055,6110` | **ERRADICADO (Ola Ω13)** | Erradicados los pisos 0.55/0.58; `confluencia_resonante` modula suavemente desde 0.50 y ramas 11, 13, 14, 15 conectan con `conviccion_de_rama` (D-752). |
 | **Veto MAP de Régimen Crash** | `risk-engine/src/orchestrator.rs:182` | **ERRADICADO (Ola Ω12)** | Sustituido el corte discontinuo $X \to 0$ por contracción suave continua $0.25 \cdot p_{\text{crash}}$, reservando veto absoluto solo a $p_{\text{crash}} \ge 0.90$. |
+| **Fuente Única Brackets Curva (G0-5)** | `god_engine.rs:51-64,4049-4060` | **ERRADICADO (Ola Ω14)** | Reemplazada la reconstrucción manual desde anclas por `arena.config.tp_at_tau` / `sl_at_tau`, garantizando respuesta continua inmediata a mutaciones (a, b) en caliente y preservando clamp C-05. |
 | **Segundo Momento Kolmogorov Sesgado** | `quantum-arena/src/temporal_spectrum.rs:1483` | **ERRADICADO (Ola Ω12)** | Reemplazado $(E|dev|)^2$ por $E[dev^2] = raw\_dev\_s2 / mass$, eliminando el sesgo sistemático de Jensen de $36.3\%$. |
 | **Desacople Rama 13 de ancla fija** | `god-engine-core/src/lib.rs:6017` | **ERRADICADO (Ola Ω11)** | Rama 13 ahora evalúa $tp\_at\_tau(swing\_duration\_ms)$ dinámico en vez de $swing\_tp\_base$ fijo de 12h. |
 | **Lead-Lag con Autocorrelación Espuria** | `feature-engine/src/lead_lag.rs:53` | **ERRADICADO (Ola Ω11)** | BTC opera como líder macro exógeno puro sin auto-referencia ($\rho=1.0$ a lag 0 erradicado). |
@@ -142,15 +143,16 @@ graph TD
   3. `G1-3 [HIGH]`: DSR cableado como compuerta formal conjunta en `darwin.rs` ($DSR \ge 0.95$ OOS) (AGY Ola Ω10).
   4. `G2-1 [HIGH]`: Confluence `.max(0.0)` en vez de `.abs()` — la calma absuelve (Qoder Ola 62).
   5. `G2-2 [HIGH]`: `flow_impulse` exceso-SS en fallback vivo (Qoder Ola 62).
-- **7/15 MED CERRADOS**:
+- **8/15 MED CERRADOS**:
   1. `G0-1 [MED]`: Veto MAP de Crash suavizado a contracción continua de margen (AGY Ola Ω12).
   2. `G0-2 [MED]`: Rama 13 desacoplada de `swing_tp_base` hacia `tp_at_tau(swing_duration_ms)` (AGY Ola Ω11).
   3. `G0-3 [MED]`: Suelos literales de ramas 13/15 erradicados; convicción gobernada por evidencia empírica (AGY Ola Ω13).
   4. `G0-4 [MED]`: Gen residual muerto `capital_split_scalp` congelado en genoma (AGY Ola Ω10).
-  5. `G1-4 [MED]`: Segundo momento central Kolmogorov insesgado en $S_2(\tau)$ (AGY Ola Ω12).
-  6. `G1-5 [MED]`: Unificación DRY canónica de `selection_stats` (AGY Ola Ω11).
-  7. `G2-10 [MED]`: Lead-lag cross-asset sin autocorrelación espuria (AGY Ola Ω11).
-- **8 MED Pendientes Activos**:
+  5. `G0-5 [MED]`: Fuente única de brackets `tp_at_tau` / `sl_at_tau` en `god_engine.rs` erradicando reconstrucción de anclas (AGY Ola Ω14).
+  6. `G1-4 [MED]`: Segundo momento central Kolmogorov insesgado en $S_2(\tau)$ (AGY Ola Ω12).
+  7. `G1-5 [MED]`: Unificación DRY canónica de `selection_stats` (AGY Ola Ω11).
+  8. `G2-10 [MED]`: Lead-lag cross-asset sin autocorrelación espuria (AGY Ola Ω11).
+- **7 MED Pendientes Activos**:
   - `G2-3..G2-9 [MED]`: Suavizado de signums duros a funciones $C^1$ (en vuelo por Qoder en `.ola63`).
   - `F2-B8 [MED]`: Extensión de e-proceso de Ville al $\rho(\tau)$ cruzado multiactivo.
 
@@ -175,11 +177,12 @@ Para garantizar ejecución paralela estricta sin pérdida de trabajo ni choques:
 
 ---
 
-## 🚀 7. PLAN DE ACCIÓN INMEDIATO — OLA Ω13
+## 🚀 7. PLAN DE ACCIÓN INMEDIATO — OLA Ω14 CERRADA & SIGUIENTE
 
-1. **G0-3 [MED] en `crates/god-engine-core/src/lib.rs:419, 5699, 6032`**:
-   - Suavizar los suelos literales de confianza en ramas 13/15 (actualmente 0.55 y 0.58 fijos) mediante la convicción espectral continua de rama `conviccion_de_rama` (D-752).
-2. **Verificación de Paridad del Oráculo Replay T-1**:
-   - Evaluar que las decisiones continúen reproduciéndose bit-a-bit contra datos reales de Binance sin incurrir en lookahead bias.
-3. **Validación de Capacidad Micro-Capital (\$13 USD)**:
-   - Medir en backtest que con las correcciones de G0-1, G1-4 y G0-2, la tasa de aperturas legítimas se incremente sin violar la cota de ruina de Cramér-Lundberg.
+1. **G0-5 [MED] CERRADO (Ola Ω14 AGY)**:
+   - Fuente única `arena.config.tp_at_tau` y `arena.config.sl_at_tau` en `god_engine.rs` erradicando reconstrucción de anclas obsoletas. Tests 2/2 verdes.
+2. **Monitoreo de Qoder (.ola63)**:
+   - G2-3..G2-9 en vuelo por Qoder para suavizado $C^1$ de signums y cortes duros residuales.
+3. **Siguiente Bloque Prioritario**:
+   - F2-B8 / Extensión de e-proceso de Ville a cointegración espectral y correlación cruzada multiactivo.
+   - Verificación de paridad integral del oráculo replay T-1 y contratos de simulación micro-capital ($13 USD).
