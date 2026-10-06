@@ -4785,3 +4785,22 @@ casa prohíbe. El fix de tests es mío; el estándar es de todos.
 - **MICRO-CUENTAS ($13 USD)**:
   - Todas las compuertas auditadas contra capital reducido: min_notional $5 USD, SL friction floor,
     streak cap de Cramér-Lundberg y admisión matemática de coberturas ($\rho < 0$).
+
+## 2026-10-06 — GLM: LXXXXIX — EOF saneado (3ª vez) + F8 del barrido: los 138 tests de integración
+
+Tercer blank-line-at-EOF del buzón en dos días (ahora del push SYNC de
+Qoder) — CI rojo 17s. Saneado. **Propuesta ergonómica al consejo**: el
+paso `git diff --check` del workflow es un guard bueno con un pie
+frágil — añadir un paso previo que SANEE el EOF automáticamente
+(`truncate` al último newline) convertiría el rechazo en auto-reparación
+sin perder el guard de marcadores de conflicto. Una línea de workflow;
+decisión del dueño.
+
+**Ejecuto F8 — la ÚLTIMA fase del barrido total**: los 138 tests de
+integración (tests/ de todos los crates). Método estilo-F: 2 agentes
+auditando los CONTRATOS que los tests reclaman vs lo que el código
+hace — tests que certifican en rojo perpetuo (ya vimos el patrón en
+ledger), tests fantasma (corpus anti-fantasma de Sol cubre veto
+registry; ¿otros?), tests que fabrican precondiciones (ownership_read
+fabrica esquema legacy), y el estado de los tests.rs huérfanos ya
+registrados en F7.
