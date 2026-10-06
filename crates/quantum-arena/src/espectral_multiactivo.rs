@@ -46,10 +46,18 @@
 //! sustituyendo el ρ̄ escalar por el ρ de la escala que opera la orden —
 //! es decisión del consejo con T-1 propio.
 
+use crate::evalues::EProceso;
 use crate::temporal_spectrum::SPECTRUM_SCALES_MS;
 use std::collections::HashMap;
 
 const ESCALAS: usize = 32;
+
+/// #665 (F2-B8): tamaño de la FAMILIA de e-procesos que el veto de
+/// grupo efectivamente escanea — C(MAX_COINS,2) pares × las ~5 escalas
+/// de la banda operable [30 s, 12 h] (nodos 18..22 de la malla 4^k µs).
+/// Alimenta el umbral Bonferroni M/α del gate Ville de la ruta del veto
+/// (`coherencia_media_con_todas` → qo_613_rho_tau).
+pub const FAMILIA_VETO_GRUPO: usize = (crate::state::MAX_COINS * (crate::state::MAX_COINS - 1) / 2) * 5;
 /// Guardia de recencia del emparejamiento: los bloques de ambos deben
 /// cerrar dentro de 0.5·τ el uno del otro (contemporáneos) (bloques de τ no solapados y
 /// aproximadamente contemporáneos — sino el par mezcla regímenes).
@@ -65,10 +73,19 @@ struct IcEscala {
     eb2: f64,
     eab: f64,
     n: u64,
+    /// #665 (F2-B8): e-proceso de Ville del IC CRUZADO — apuesta sobre
+    /// si el signo del co-movimiento (ra·rb) agrees con el signo del IC
+    /// acumulado ANTES de la observación (causal). Bajo H0 (IC=0) es
+    /// supermartingala; con acoplamiento real, el capital crece.
+    e: EProceso,
 }
 
 impl IcEscala {
     fn acumular(&mut self, ra: f64, rb: f64) {
+        // Causal: la señal es el signo del IC VIGENTE (pre-observación).
+        let senal = if self.eab >= 0.0 { 1.0 } else { -1.0 };
+        let retorno = (ra * rb).signum();
+        self.e.observar(senal, retorno);
         self.ea2 += (ra * ra - self.ea2) * OLVIDO;
         self.eb2 += (rb * rb - self.eb2) * OLVIDO;
         self.eab += (ra * rb - self.eab) * OLVIDO;
@@ -89,6 +106,17 @@ impl IcEscala {
         } else {
             None
         }
+    }
+
+    /// #665 (F2-B8): IC significativo bajo Ville con corrección de
+    /// FAMILIA — la ruta del veto de grupo escanea C(N,2)·banda celdas
+    /// (par, escala); sin la corrección, en ruido el máximo de varias
+    /// IC cruza (misma patología que #663 cerró en el banco de τ*).
+    fn ic_veto(&self) -> Option<f64> {
+        if !self.e.significativo_familia(FAMILIA_VETO_GRUPO) {
+            return None;
+        }
+        self.ic()
     }
 }
 
@@ -178,6 +206,17 @@ impl EspectralMultiactivo {
         self.enlaces.get(&clave)?.escalas[escala].ic()
     }
 
+    /// #665 (F2-B8): versión de VETO — el IC sólo cuenta si su e-proceso
+    /// cruza el umbral de FAMILIA (C(N,2)·banda). Telemetría pura sigue
+    /// usando `coherencia_par`.
+    pub fn coherencia_par_veto(&self, a: usize, b: usize, escala: usize) -> Option<f64> {
+        if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
+            return None;
+        }
+        let clave = if a < b { (a as u16, b as u16) } else { (b as u16, a as u16) };
+        self.enlaces.get(&clave)?.escalas[escala].ic_veto()
+    }
+
     fn escalas_en_banda(lo: f64, hi: f64) -> impl Iterator<Item = usize> {
         (0..ESCALAS).filter(move |&k| SPECTRUM_SCALES_MS[k] >= lo && SPECTRUM_SCALES_MS[k] <= hi)
     }
@@ -242,7 +281,7 @@ impl EspectralMultiactivo {
             if otra == moneda {
                 continue;
             }
-            if let Some(ic) = self.coherencia_par(moneda, otra, escala) {
+            if let Some(ic) = self.coherencia_par_veto(moneda, otra, escala) {
                 suma += ic;
                 cuenta += 1;
             }
@@ -386,7 +425,9 @@ mod qo_613_tests {
         // Pares (0,1) y (0,2) maduros con la misma serie (ic→1); (0,3) sin
         // madurar. La media de 0 contra todas debe promediar SOLO las maduras.
         // Serie determinista alternante (r_i = ±a): ra y rb idénticos ⇒ ic=1.
-        for i in 0..40u64 {
+        // #665: la ruta del veto exige además capital Ville de FAMILIA
+        // (2175 celdas ⇒ umbral 43500 ⇒ ≥104 aciertos con λ=0.10).
+        for i in 0..120u64 {
             let ts = (i + 1) * 1000;
             let r = if i % 2 == 0 { 0.02 } else { -0.02 };
             uni.observar_maduracion(0, tau, 19, ts, r);
@@ -399,5 +440,58 @@ mod qo_613_tests {
         assert!(media <= 1.0);
         // Escala sin evidencia en ninguna ⇒ None.
         assert_eq!(uni.coherencia_media_con_todas(0, 5), None);
+    }
+}
+
+#[cfg(test)]
+mod qo_665_tests {
+    use super::*;
+
+    /// #665 (F2-B8): el IC cruZado del VETO exige significancia Ville de
+    /// familia — 40 muestras perfectamente correlacionadas NO bastan
+    /// (capital 1.1^40≈45 < 43500); ~104 sí. La telemetría pura
+    /// (`coherencia_par`) sigue sin gate.
+    #[test]
+    fn qo_665_ic_veto_exige_capital_de_familia() {
+        let mut uni = EspectralMultiactivo::new(4);
+        let tau = 1000.0;
+        let feed = |uni: &mut EspectralMultiactivo, hasta: u64| {
+            for i in 0..hasta {
+                let ts = (i + 1) * 1000;
+                let r = if i % 2 == 0 { 0.02 } else { -0.02 };
+                uni.observar_maduracion(0, tau, 19, ts, r);
+                uni.observar_maduracion(1, tau, 19, ts, r);
+            }
+        };
+        feed(&mut uni, 40);
+        // Madurez n≥30 ✓, capital 45 < umbral ⇒ veto gate cerrado.
+        assert!(uni.coherencia_par(0, 1, 19).is_some(), "telemetria pura sin gate");
+        assert_eq!(uni.coherencia_par_veto(0, 1, 19), None, "40 perfectas no cruzan familia");
+        feed(&mut uni, 110);
+        assert!(uni.coherencia_par_veto(0, 1, 19).is_some(), "120 perfectas cruzan (1.1^120 ≈ 92k > 43500)");
+    }
+
+    /// #665: ruido independiente — el IC puro puede flotar, el gate del
+    /// veto NUNCA abre aunque n≫30 (la patología que #663 cerró en τ*).
+    #[test]
+    fn qo_665_ruido_no_abre_el_veto() {
+        let mut uni = EspectralMultiactivo::new(4);
+        let tau = 1000.0;
+        let mut lcg = 0x1234_5678_9ABC_DEF0u64;
+        for i in 0..600u64 {
+            let ts = (i + 1) * 1000;
+            lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let ra = if (lcg >> 63) & 1 == 0 { 0.02 } else { -0.02 };
+            lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let rb = if (lcg >> 63) & 1 == 0 { 0.02 } else { -0.02 };
+            uni.observar_maduracion(0, tau, 19, ts, ra);
+            uni.observar_maduracion(1, tau, 19, ts, rb);
+        }
+        // La telemetría puede madurar; el veto NO declara acoplamiento.
+        assert_eq!(
+            uni.coherencia_par_veto(0, 1, 19),
+            None,
+            "600 muestras de ruido independiente no abren el veto de familia"
+        );
     }
 }
