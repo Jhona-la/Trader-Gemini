@@ -273,6 +273,18 @@ const PERSISTENCIA_BLOQUES: f64 = 16.0;
 /// normalizar) para el transporte de Wasserstein: MASS_RING muestras.
 const MASS_RING: usize = 256;
 
+/// #662 (F2-B3) — cadencia mínima de captura del anillo de masas. Con una
+/// captura por UPDATE el anillo cubría 2,56 s de reloj a 100 ev/s y el lag
+/// físico de 60 s quedaba sin historia. A 250 ms/captura, 256 entradas
+/// cubren 64 s de reloj del exchange a CUALQUIER tasa de feed.
+const W1_SNAP_CADENCIA_MS: u64 = 250;
+
+/// #662 (F2-B3) — lag FÍSICO del transporte W₁ (60 s de reloj del
+/// exchange), no un conteo de updates: 64 updates eran 0,64 s a 100 ev/s
+/// y 64 s a 1 ev/s — la reestructuración del régimen es una cantidad
+/// temporal y se mide en tiempo, no en eventos.
+pub const W1_LAG_FISICO_MS: u64 = 60_000;
+
 /// #594 — olvido del IC prequential por escala: media de ~64 bloques de τ
 /// (vida media ≈ 44). Suficiente para estabilidad, corta para regímenes.
 const HABILIDAD_OLVIDO: f64 = 1.0 / 64.0;
@@ -304,12 +316,34 @@ pub fn umbral_ic_significativo(n_bloques: u64) -> Option<f64> {
     }
 }
 
+/// #662 (F2-B4) — peso CONTINUO de la masa de una escala en la regresión
+/// ζ(p): rampa C¹ (smoothstep 3t²−2t³) centrada en el corte viejo de 0,10
+/// (0 en ≤0,05; 1 en ≥0,15; 0,5 en 0,10). Con pertenencia dura cada escala
+/// que maduraba cruzaba el umbral con peso PLENO y ζ/χ saltaban — y χ
+/// modula pisos vivos del sistema. Invariante 8: fronteras = centros de
+/// transición suave, no cortes.
+#[inline]
+pub fn peso_masa_continuo(mass: f64) -> f64 {
+    if !mass.is_finite() || mass <= 0.0 {
+        return 0.0;
+    }
+    const LO: f64 = 0.05;
+    const HI: f64 = 0.15;
+    let t = ((mass - LO) / (HI - LO)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 pub struct TemporalSpectrum {
     pub scales: [ScaleState; 32],
     last_ts_ms: u64,
     /// (Ola XLII·D) Historial circular de masas por escala para W₁.
     mass_ring: [[f64; 32]; MASS_RING],
+    /// #662 (F2-B3): timestamp del exchange de cada captura del anillo —
+    /// el emparejamiento del transporte es contra RELOJ FÍSICO.
+    mass_ring_ts: [u64; MASS_RING],
     mass_ring_len: usize,
+    /// #662 (F2-B3): ts de la última captura (cadencia de 250 ms).
+    last_snap_ts: u64,
     /// Primer instante observado: define la masa del núcleo que los datos ya
     /// llenaron en cada escala (D-742).
     first_ts_ms: u64,
@@ -342,7 +376,9 @@ impl TemporalSpectrum {
             scales,
             last_ts_ms: 0,
             mass_ring: [[0.0; 32]; MASS_RING],
+            mass_ring_ts: [0; MASS_RING],
             mass_ring_len: 0,
+            last_snap_ts: 0,
             first_ts_ms: 0,
             updates: 0,
             fused_score: 0.0,
@@ -357,10 +393,17 @@ impl TemporalSpectrum {
         if !tau_ms.is_finite() || tau_ms <= 0.0 {
             return None;
         }
+        // #662 (F2-B2): la malla es multiplicativa (τ_k = 4^k µs) — el
+        // vecino de una τ arbitraria se mide en ln τ. Con distancia
+        // ABSOLUTA, τ*=35 s caía al nodo de 17,2 s aunque en ejes de
+        // escala estuviera más cerca del de 68,7 s, y la telemetría
+        // reportaba la habilidad de una escala que el sistema no opera
+        // (sesgo hacia el nodo inferior en cada frontera de la malla).
+        let target_ln = tau_ms.ln();
         let mut best = usize::MAX;
         let mut best_d = f64::INFINITY;
         for (i, s) in self.scales.iter().enumerate() {
-            let d = (s.tau_ms - tau_ms).abs();
+            let d = (s.tau_ms.ln() - target_ln).abs();
             if d < best_d {
                 best_d = d;
                 best = i;
@@ -528,14 +571,23 @@ impl TemporalSpectrum {
         }
         // (Ola XLII·D) Snapshot de masa para el transporte de Wasserstein:
         // energía cruda w·|señal| por escala, anillo de MASS_RING.
+        // #662 (F2-B3): el anillo indexa TIEMPO FÍSICO, no updates —
+        // captura con cadencia mínima W1_SNAP_CADENCIA_MS para que 256
+        // entradas cubran 64 s de reloj a cualquier tasa de feed (antes:
+        // una captura por update = 2,56 s de historia a 100 ev/s).
+        if self.mass_ring_len == 0
+            || ts_ms.saturating_sub(self.last_snap_ts) >= W1_SNAP_CADENCIA_MS
         {
             let pesos = self.pesos_espectrales();
             let mut snap = [0.0f64; 32];
             for (i, sc) in self.scales.iter().enumerate() {
                 snap[i] = (pesos[i] * sc.signal.abs()).max(0.0);
             }
-            self.mass_ring[self.mass_ring_len % MASS_RING] = snap;
+            let idx = self.mass_ring_len % MASS_RING;
+            self.mass_ring[idx] = snap;
+            self.mass_ring_ts[idx] = ts_ms;
             self.mass_ring_len = self.mass_ring_len.wrapping_add(1);
+            self.last_snap_ts = ts_ms;
         }
         self.refresh_fusion();
     }
@@ -1373,7 +1425,11 @@ impl TemporalSpectrum {
         FEED_CLOCK_RESOLUTION_MS.max(dt_medio)
     }
 
-    /// Regresión OLS de ln S_p contra ln τ sobre escalas con masa suficiente.
+    /// Regresión OLS ponderada de ln S_p contra ln τ. #662 (F2-B4): la
+    /// pertenencia de cada escala es un peso CONTINUO de su masa (rampa
+    /// C¹ centrada en el corte viejo de 0,10) — con pertenencia DURA,
+    /// ζ(p)/χ saltaban cada vez que una escala maduraba cruzando el umbral
+    /// (y χ modula pisos vivos).
     fn regress_log_log(&self, p: u32) -> Option<(f64, usize)> {
         let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
         // Ola XLIV: las escalas por debajo de la resolución efectiva publican
@@ -1381,7 +1437,7 @@ impl TemporalSpectrum {
         // arrastraba la pendiente: ζ₃ ≈ 0,56 en un precio browniano cuyo
         // valor sobre las escalas reales es 1,5.
         let resolucion = self.resolucion_efectiva_ms();
-        let mut n = 0usize;
+        let mut n_eff = 0.0f64;
         let mut sx = 0.0;
         let mut sy = 0.0;
         let mut sxx = 0.0;
@@ -1390,10 +1446,11 @@ impl TemporalSpectrum {
             if s.tau_ms < resolucion {
                 continue;
             }
-            // Sólo escalas cuyo núcleo tiene ≥10% de masa: por debajo, la EWMA
-            // es aún semilla y el momento no representa la escala.
+            // Sólo escalas con algo de masa en el núcleo: lo aún semilla no
+            // representa la escala, pero madura CONTINUAMENTE (sin salto).
             let mass = 1.0 - (-elapsed / s.tau_ms).exp();
-            if mass < 0.10 {
+            let w = peso_masa_continuo(mass);
+            if w <= 1e-9 {
                 continue;
             }
             let m = self.dev_moment_by(p, s, mass);
@@ -1402,20 +1459,22 @@ impl TemporalSpectrum {
             }
             let x = s.tau_ms.ln();
             let y = m.ln();
-            n += 1;
-            sx += x;
-            sy += y;
-            sxx += x * x;
-            sxy += x * y;
+            n_eff += w;
+            sx += w * x;
+            sy += w * y;
+            sxx += w * x * x;
+            sxy += w * x * y;
         }
-        if n < 4 {
+        // Sustancia mínima en tamaño efectivo de muestra (antes: 4 escalas
+        // con pertenencia dura).
+        if n_eff < 4.0 {
             return None;
         }
-        let denom = n as f64 * sxx - sx * sx;
+        let denom = n_eff * sxx - sx * sx;
         if denom.abs() < 1e-12 {
             return None;
         }
-        Some(((n as f64 * sxy - sx * sy) / denom, n))
+        Some(((n_eff * sxy - sx * sy) / denom, n_eff.round() as usize))
     }
 
     #[inline]
@@ -1453,7 +1512,7 @@ impl TemporalSpectrum {
 
     // ═══════════════════════════════════════════════════════════════════
     // Ola XLII·D — TRANSPORTE ÓPTIMO DE WASSERSTEIN-1 ENTRE MASAS
-    // ESPECTRALES (ahora vs hace N eventos)
+    // ESPECTRALES (ahora vs hace un lag FÍSICO, #662/F2-B3)
     //
     // Contrato (protocolo del repo):
     // - Variable: dos distribuciones de masa espectral q_prev, q_now sobre
@@ -1494,15 +1553,21 @@ impl TemporalSpectrum {
         Some(e)
     }
 
-    /// W₁ entre la masa actual y la capturada hace `lag` updates.
-    /// `lag = 0` o sin masa en cualquiera de los dos instantes → None.
-    pub fn spectral_transport_w1(&self, lag: u32) -> Option<f64> {
-        if lag == 0 || self.updates < lag as u64 {
+    /// #662 (F2-B3) — W₁ entre la masa actual y la de hace `lag_ms` de
+    /// RELOJ FÍSICO (timestamp del exchange). El lag por UPDATES mezclaba
+    /// tasas de feed (64 updates = 0,64 s a 100 ev/s vs 64 s a 1 ev/s);
+    /// la reestructuración del régimen es temporal y se mide en tiempo.
+    /// Empareja contra el snapshot MÁS RECIENTE con ts ≤ last_ts − lag_ms;
+    /// sesión más corta que el lag o masa nula en cualquiera de los dos
+    /// instantes → None. `lag_ms = 0` → None.
+    pub fn spectral_transport_w1_fisico(&self, lag_ms: u64) -> Option<f64> {
+        if lag_ms == 0 {
             return None;
         }
+        let target = self.last_ts_ms.checked_sub(lag_ms)?;
         // Reconstruir la masa previa desde el snapshot de masas por escala.
         let now = self.spectral_mass()?;
-        let prev = self.mass_history_at(lag)?;
+        let (prev, _) = self.mass_history_before(target)?;
         let step = 4f64.ln();
         let mut cdf_prev = 0.0;
         let mut cdf_now = 0.0;
@@ -1515,15 +1580,24 @@ impl TemporalSpectrum {
         Some(w1)
     }
 
-    /// Masa de hace `lag` updates, reconstruida desde el anillo de masas por
-    /// escala que mantiene update(). El snapshot más reciente está en
-    /// (len−1) % RING; hace `lag` updates, en (len−1−lag) % RING — la
-    /// aritmética circular cubre vueltas completas del anillo.
-    fn mass_history_at(&self, lag: u32) -> Option<[f64; 32]> {
-        let back = (lag as usize).checked_add(1)?;
-        let cursor = self.mass_ring_len.checked_sub(back)?;
-        let idx = cursor % MASS_RING;
-        let raw = self.mass_ring[idx];
+    /// Snapshot de masa más reciente capturado en o antes de `target_ms`,
+    /// normalizado. El anillo guarda ≤ MASS_RING capturas ordenadas por
+    /// inserción; el índice absoluto (len−1−k) mod RING recupera el orden
+    /// cronológico también tras vueltas completas.
+    pub(crate) fn mass_history_before(&self, target_ms: u64) -> Option<([f64; 32], u64)> {
+        let vivos = self.mass_ring_len.min(MASS_RING);
+        let mut mejor_ts: Option<u64> = None;
+        let mut mejor_idx = 0usize;
+        for k in 0..vivos {
+            let idx = (self.mass_ring_len - 1 - k) % MASS_RING;
+            let ts = self.mass_ring_ts[idx];
+            if ts <= target_ms && mejor_ts.map_or(true, |m| ts > m) {
+                mejor_ts = Some(ts);
+                mejor_idx = idx;
+            }
+        }
+        let ts = mejor_ts?;
+        let raw = self.mass_ring[mejor_idx];
         let total: f64 = raw.iter().sum();
         if !(total > 1e-12) {
             return None;
@@ -1532,7 +1606,7 @@ impl TemporalSpectrum {
         for i in 0..32 {
             out[i] = raw[i] / total;
         }
-        Some(out)
+        Some((out, ts))
     }
 
     /// Información de Fisher 1-D de la masa espectral respecto a ln(τ).
@@ -1589,7 +1663,7 @@ mod tests {
     use super::*;
 
     /// #594 — escala de la banda operativa con IC forjado a mano.
-    fn escala_con_habilidad(idx: usize, n: u64, ic: f64) -> ScaleState {
+    pub(crate) fn escala_con_habilidad(idx: usize, n: u64, ic: f64) -> ScaleState {
         let mut s = ScaleState::default();
         s.tau_ms = SPECTRUM_SCALES_MS[idx];
         s.ewma_dev_vol = 0.01;
@@ -2438,9 +2512,11 @@ fn xlii_d_w1_masa_identica_es_cero() {
         t += 100;
         spec.update(price, t);
     }
-    // lag dentro del anillo y con masa en ambos puntos: W1 >= 0 y finito.
-    let w1 = spec.spectral_transport_w1(50).expect("masa presente");
+    // Sesión de 30 s: lag físico de 5 s con masa en ambos puntos → W₁ ≥ 0
+    // y finito; lag de 60 s excede la historia observada → None.
+    let w1 = spec.spectral_transport_w1_fisico(5_000).expect("masa presente");
     assert!(w1 >= 0.0 && w1.is_finite());
+    assert!(spec.spectral_transport_w1_fisico(60_000).is_none());
     // Contra sí mismo (lag congelado no existe; el contrato minimo es que
     // masa identica daría 0 — verificado estructuralmente por la CDF).
 }
@@ -2457,10 +2533,138 @@ fn xlii_d_w1_reestructuracion_acota_por_malla() {
         t += 50;
         spec.update(price, t);
     }
-    let w1 = spec.spectral_transport_w1(100).expect("masa presente");
+    let w1 = spec.spectral_transport_w1_fisico(5_000).expect("masa presente");
     let rango = 31.0 * 4f64.ln();
     assert!(w1 <= rango, "w1={} > rango {}", w1, rango);
     // La reversión violenta alimenta escalas rapidas: la masa DEBE haberse
-    // movido algo entre hace 100 updates y ahora.
+    // movido algo entre hace 5 s y ahora.
     assert!(w1 > 0.0, "reestructuracion no trivial esperada");
 }
+
+// ═════════════════ Ola 61 / #662 (F2-B2/B3/B4): sustrato espectral ═════════════════
+
+#[test]
+fn qo_662_habilidad_en_vecino_es_en_ln_tau() {
+    use crate::temporal_spectrum::tests::escala_con_habilidad;
+    let mut spec = TemporalSpectrum::new();
+    // Malla 4^k/10^6 ms (4 µs .. 146 años, ratio 4): nodos 17 (17,2 s) y
+    // 18 (68,7 s) rodean la banda operable [30 s, 12 h].
+    spec.scales[17] = escala_con_habilidad(17, MUESTRAS_SKILL_MADURAS, 0.3);
+    spec.scales[18] = escala_con_habilidad(18, MUESTRAS_SKILL_MADURAS, 0.7);
+    // La malla es multiplicativa: el vecino honesto de una τ se decide en
+    // ln τ, con frontera en la media geométrica √(τ17·τ18) = 34,4 s. En
+    // (34,4 s .. 41 s) la distancia ABSOLUTA elegía el nodo INFERIOR
+    // (17,2 s) aunque τ estuviera más cerca de 68,7 s en ejes de escala:
+    // τ = 35 s → ln-d 0,68 (nodo 18) vs 0,71 (nodo 17), pero Δ-absoluta
+    // 17,8 s (nodo 17) vs 33,7 s (nodo 18). Sesgo hacia el nodo inferior
+    // en CADA frontera: la telemetría tau_habilidad de un τ* de banda
+    // baja caía al nodo de abajo, fuera de la banda operable.
+    assert_eq!(spec.habilidad_en(35_000.0), Some(0.7));
+    // Debajo de la media geométrica ambos criterios eligen el nodo 17:
+    // el clamp de banda 30 s pertenece honestamente al nodo 17,2 s.
+    assert_eq!(spec.habilidad_en(30_000.0), Some(0.3));
+    assert_eq!(spec.habilidad_en(10_000.0), Some(0.3));
+    assert_eq!(spec.habilidad_en(100_000.0), Some(0.7));
+}
+
+#[test]
+fn qo_662_w1_lag_fisico_alcanza_60s_a_cualquier_tasa_de_feed() {
+    // Fase 1 (0..35 s): reversión violenta — masa en escalas rápidas.
+    // Fase 2 (35..70 s): deriva monotónica — masa migrada a escalas lentas.
+    // El contrato ALCANCE: el emparejamiento resuelve 60 s de reloj ATRÁS
+    // con precisión de cadencia a 100 ev/s y a 1 ev/s. El anillo viejo
+    // (una captura por update) retenía 2,56 s a 100 ev/s: el lag de 64
+    // updates miraba 0,64 s, ambos extremos DENTRO de la fase 2.
+    let construir = |paso_ms: u64| {
+        let mut spec = TemporalSpectrum::new();
+        let mut t = 1_000u64;
+        let mut price = 100.0f64;
+        while t <= 70_000 {
+            let ret = if t > 35_000 {
+                0.001
+            } else if (t / paso_ms) % 2 == 0 {
+                0.004
+            } else {
+                -0.004
+            };
+            price *= 1.0 + ret;
+            spec.update(price, t);
+            t += paso_ms;
+        }
+        spec
+    };
+    let rapido = construir(10);
+    let lento = construir(1_000);
+    // El emparejamiento resuelve t=10 s con precisión de UNA cadencia
+    // (250 ms). El primer evento lo absorbe el arranque del espectro, así
+    // que la fase del anillo deriva del primer snapshot — el contrato es
+    // el ALCANCE (ts ≤ target, a ≤ 1 cadencia), no la fase exacta.
+    let (_, ts_rapido) = rapido
+        .mass_history_before(10_000)
+        .expect("historia de 60 s a 100 ev/s");
+    assert!(
+        ts_rapido <= 10_000 && ts_rapido >= 10_000 - 2 * 250,
+        "a 100 ev/s el emparejamiento derivo {ts_rapido} ms (target 10 s)"
+    );
+    let (_, ts_lento) = lento
+        .mass_history_before(10_000)
+        .expect("historia de 60 s a 1 ev/s");
+    assert!(
+        ts_lento <= 10_000 && ts_lento >= 10_000 - 2 * 250,
+        "a 1 ev/s el emparejamiento derivo {ts_lento} ms (target 10 s)"
+    );
+    let un_nodo = 4f64.ln();
+    let w_rapido = rapido
+        .spectral_transport_w1_fisico(60_000)
+        .expect("60 s de historia a 100 ev/s");
+    let w_lento = lento
+        .spectral_transport_w1_fisico(60_000)
+        .expect("60 s de historia a 1 ev/s");
+    assert!(
+        w_rapido > 0.5 * un_nodo,
+        "cambio de regimen en 60 s a 100 ev/s debe mover la masa: {w_rapido}"
+    );
+    assert!(
+        w_lento > 0.25 * un_nodo,
+        "cambio de regimen en 60 s a 1 ev/s debe mover la masa: {w_lento}"
+    );
+}
+
+#[test]
+fn qo_662_zeta_peso_continuo_sin_salto_al_madurar() {
+    // Rampa C¹: 0 bajo 0,05; 1 sobre 0,15; 0,5 exacto en el corte viejo.
+    assert_eq!(peso_masa_continuo(0.0), 0.0);
+    assert_eq!(peso_masa_continuo(0.049), 0.0);
+    assert!((peso_masa_continuo(0.10) - 0.5).abs() < 1e-12);
+    assert!((peso_masa_continuo(0.15) - 1.0).abs() < 1e-12);
+    assert_eq!(peso_masa_continuo(0.60), 1.0);
+    assert_eq!(peso_masa_continuo(f64::NAN), 0.0);
+
+    // Comportamiento: la escala 13 (τ = 67,1 s) cruza masa 0,10 en
+    // elapsed = −τ·ln(0,9) ≈ 7,24 s de sesión (t ≈ 8,24 s desde el primer
+    // evento en t = 1 s). Con pasos de 100 ms capturamos ζ en t = 8,0 s
+    // (masa 0,099, ANTES del corte) y t = 8,4 s (masa 0,104, DESPUÉS) con
+    // la MISMA paridad del ciclo de 2 pasos — los momentos de las escalas
+    // rápidas están en la misma fase y el único cambio real es la
+    // pertenencia de la escala 13. Con el corte duro el flip 0→1 movía la
+    // pendiente de golpe (χ modula pisos vivos); con la rampa es continuo.
+    let mut spec = TemporalSpectrum::new();
+    let mut price = 100.0f64;
+    let mut zeta_antes = 0.0;
+    let mut t = 1_000u64;
+    while t <= 8_400 {
+        price *= 1.0 + if (t / 100) % 2 == 0 { 0.002 } else { -0.002 };
+        spec.update(price, t);
+        if t == 8_000 {
+            zeta_antes = spec.regress_log_log(2).expect("regresion antes del cruce").0;
+        }
+        t += 100;
+    }
+    let (zeta_despues, n_eff) = spec.regress_log_log(2).expect("regresion despues del cruce");
+    assert!(n_eff >= 4, "muestra efectiva {n_eff}");
+    assert!(
+        (zeta_despues - zeta_antes).abs() < 1e-2,
+        "salto de zeta al madurar la escala 13: {zeta_antes} -> {zeta_despues}"
+    );
+}
+

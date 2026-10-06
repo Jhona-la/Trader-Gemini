@@ -1677,11 +1677,14 @@ impl GodEngineCore {
                     self.arena.coins[coin_id].spectral_intermittency.store(intermittency, Ordering::Relaxed);
                     let fisher = spec.fisher_scale_information().unwrap_or(-1.0);
                     self.arena.coins[coin_id].spectral_fisher.store(fisher, Ordering::Relaxed);
-                    // (Ola XLII·D) Transporte W1 a 64 updates (~1/4 del
-                    // anillo): reestructuración del régimen. Publicada al
-                    // registry para telemetría; consumo de gates = próxima
-                    // ola (frenar aperturas en τ en tránsito).
-                    let w1_medido = spec.spectral_transport_w1(64);
+                    // (Ola XLII·D / #662 F2-B3) Transporte W1 a 60 s de
+                    // RELOJ FÍSICO del exchange (antes 64 updates: 0,64 s
+                    // a 100 ev/s): reestructuración del régimen. Publicada
+                    // al registry para telemetría; consumo de gates =
+                    // próxima ola (frenar aperturas en τ en tránsito).
+                    let w1_medido = spec.spectral_transport_w1_fisico(
+                        quantum_arena::temporal_spectrum::W1_LAG_FISICO_MS,
+                    );
                     self.arena.registry.set_for_coin(
                         coin_id,
                         "spectral_w1_transport",
@@ -2634,11 +2637,14 @@ impl GodEngineCore {
                     self.arena.coins[coin_id].spectral_intermittency.store(intermittency, Ordering::Relaxed);
                     let fisher = spec.fisher_scale_information().unwrap_or(-1.0);
                     self.arena.coins[coin_id].spectral_fisher.store(fisher, Ordering::Relaxed);
-                    // (Ola XLII·D) Transporte W1 a 64 updates (~1/4 del
-                    // anillo): reestructuración del régimen. Publicada al
-                    // registry para telemetría; consumo de gates = próxima
-                    // ola (frenar aperturas en τ en tránsito).
-                    let w1_medido = spec.spectral_transport_w1(64);
+                    // (Ola XLII·D / #662 F2-B3) Transporte W1 a 60 s de
+                    // RELOJ FÍSICO del exchange (antes 64 updates: 0,64 s
+                    // a 100 ev/s): reestructuración del régimen. Publicada
+                    // al registry para telemetría; consumo de gates =
+                    // próxima ola (frenar aperturas en τ en tránsito).
+                    let w1_medido = spec.spectral_transport_w1_fisico(
+                        quantum_arena::temporal_spectrum::W1_LAG_FISICO_MS,
+                    );
                     self.arena.registry.set_for_coin(
                         coin_id,
                         "spectral_w1_transport",
