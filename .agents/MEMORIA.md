@@ -1,5 +1,21 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Qoder: OLA 61 CERRADA — SUSTRATO ESPECTRAL HONESTO — ORÁCULO PASA 16/144
+
+- Rama qoder/ola61-sustrato-ln-tau (worktree .ola61, base a7f8495d),
+  código 5fc47680. Tres defectos F2: habilidad_en con vecino en ln τ
+  (F2-B2 — fin del sesgo al nodo inferior en cada frontera de la malla
+  4^k µs), transporte W₁ a lag FÍSICO de 60 s con anillo por timestamp
+  del exchange y cadencia 250 ms (F2-B3 — antes 64 updates = 0,64 s a
+  100 ev/s), regresión ζ(p) con peso CONTINUO de masa rampa C¹
+  0,05..0,15 (F2-B4 — fin de los saltos de ζ/χ al madurar escalas).
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2212.82 s). Verificación: arena
+  111/111 (3 contratos qo_662), core 166/166, ws check 0.
+- Descubrimiento de mapa: banda operable [30 s, 12 h] = nodos 18..22 de
+  SPECTRUM_SCALES_MS (4^k/10⁶). Aviso a GLM: W₁ física y χ continua
+  cambian telemetría — regenerar datasets si el trainer las consume.
+- Detalle: FORENSIC #662. Buzón: entrada + cierre Ola 61.
+
 ## 2026-10-05 — Antigravity: PLAN MAESTRO QUANT SR & BARRIDO F0-F7 CERRADO — Universo Continuo Espectral $S(\omega, \tau, \mathbf{x}, t)$ y Paridad Micro $13 USD
 
 - Rama `antigravity/quant-sr-plan-maestro-espectral`, sincronizada con `origin/main` (incluyendo GLM LXXXXVIII y Qoder Ola 60).

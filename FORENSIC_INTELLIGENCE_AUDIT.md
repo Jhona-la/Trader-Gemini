@@ -14329,3 +14329,56 @@ signal-engine 108/108, check workspace exit 0.
 **ORÁCULO T-1: PASA 16/144 = 11.1%** (2441.92 s, sobre 762cfaae —
 certifica la cadena 59+60 completa). Ningún gen certificado perdió
 sensibilidad con los relojes físicos, la limpieza Y los e-values.
+
+## #662 — Ola 61 (Qoder, 2026-10-06): SUSTRATO ESPECTRAL HONESTO (ln τ, W₁ FÍSICO, MASA CONTINUA) — ORÁCULO PASA
+
+Rama `qoder/ola61-sustrato-ln-tau` (worktree `.ola61`, base a7f8495d),
+código 5fc47680. Tres defectos F2 del sustrato del espectro temporal
+(mismo archivo que alimenta τ*, la telemetría de habilidad, la
+reestructuración W₁ y la intermitencia χ que modula pisos vivos):
+
+- **F2-B2 / `habilidad_en` vecino en ln τ** — la malla es multiplicativa
+  (τ_k = 4^k µs, ratio 4: 4 µs .. 146 años); el vecino de una τ
+  arbitraria se medía por distancia ABSOLUTA, que en cada frontera
+  elige el nodo INFERIOR: τ*=35 s → Δ-abs 17,8 s (nodo 17,2 s) vs
+  33,7 s (nodo 68,7 s), pero en ejes de escala ln-d 0,71 vs 0,68 — el
+  nodo honesto es el SUPERIOR. La telemetría `coin.tau_habilidad`
+  reportaba la habilidad de la escala de abajo (fuera de banda para
+  τ* de banda baja). Fix: distancia en ln τ (frontera = media
+  geométrica √(τ_k·τ_{k+1})).
+- **F2-B3 / W₁ a lag FÍSICO** — `spectral_transport_w1(64)` medía el
+  transporte contra hace 64 UPDATES: 0,64 s a 100 ev/s vs 64 s a
+  1 ev/s. La reestructuración del régimen es una cantidad TEMPORAL;
+  medirla en eventos la hacía dependiente de la tasa del feed (la
+  memoria del sistema no puede depender de la tasa — invariante 4 de
+  ARQUITECTURA_VIVA). Fix de dos piezas: (a) el anillo de masas
+  captura con cadencia mínima de 250 ms (256 entradas ⇒ 64 s de
+  reloj a CUALQUIER tasa; antes, a 100 ev/s retenía 2,56 s) y guarda
+  el timestamp del exchange de cada captura; (b)
+  `spectral_transport_w1_fisico(lag_ms)` empareja contra el snapshot
+  más reciente con ts ≤ last − lag; el core llama con
+  W1_LAG_FISICO_MS = 60 s. Contrato de ALCANCE verificado: a 100 ev/s
+  y a 1 ev/s el emparejamiento resuelve t−60 s con precisión de una
+  cadencia. Sesión más corta que el lag ⇒ None (antes: lag imposible
+  silencioso).
+- **F2-B4 / ζ(p) con peso CONTINUO de masa** — `regress_log_log`
+  excluía escalas con `mass < 0.10` con pertenencia DURA: cada escala
+  que maduraba cruzaba el umbral con peso PLENO y ζ₂/ζ₃/χ saltaban
+  (χ modula pisos vivos — un salto ahí es un salto de riesgo). Fix:
+  pertenencia = rampa C¹ (smoothstep 3t²−2t³) de 0,05 a 0,15,
+  centrada en el corte viejo 0,10; regresión OLS ponderada con
+  n_eff = Σw ≥ 4 como gate de sustancia. Contrato: ζ a ±0,2 s del
+  cruce de masa 0,10 de la escala 13 cambia < 1e-2 con la MISMA
+  paridad de fase de los momentos.
+
+**Verificación**: quantum-arena 111/111 (3 contratos qo_662 nuevos + 2
+tests XLII·D reescritos al contrato físico), god-engine-core 166/166,
+check workspace --all-targets exit 0.
+
+**Descubrimiento de mapa**: SPECTRUM_SCALES_MS = 4^k/10⁶ (4 µs .. 146
+años, ratio 4) — la banda operable [30 s, 12 h] son los nodos 18..22.
+Documentado en los comentarios del fix y los tests.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (2212.82 s, release, sobre
+5fc47680). Ningún gen certificado perdió sensibilidad con el vecindario
+ln τ, el transporte físico y la masa continua.

@@ -1,7 +1,6 @@
 # ARQUITECTURA VIVA — Trader Gemini (mapa para el consejo)
 
-> Mantenedor: Qoder. Últimasync: 2026-10-05 (post Ola 59-60, AGY Ω9, GLM LXXXXVIII,
-> árbol 09186b81).
+> Mantenedor: Qoder. Últimasync: 2026-10-06 (post Ola 61, árbol 5fc47680).
 > Este documento es el MAPA y las REGLAS DURAS. El estado pormenorizado vive en
 > `.agents/MEMORIA.md`; la bitácora de coordinación en `COORDINACION_CODEX_2026-09-28.md`;
 > la doctrina formal en `docs/adr/ADR-0014-doctrina-continuo-espectral.md`.
@@ -96,7 +95,7 @@ Evolución (evolution-engine) — demonio + walk-forward sobre barras,
 ## 3. Zonas por agente (no-choque)
 
 - **Qoder (línea A: entender)** — signal-engine, quantum-arena/espectro,
-  feature-engine física, core pipeline. Cola: F2-B2/B3/B4/B8 + F3 MED/LOWs.
+  feature-engine física, core pipeline. Cola: F2-B8 + F3 MED/LOWs.
 - **GLM (línea B: aprender)** — trainer/datasets/L2, barrido F5-F6
   (tubería de promoción + datos/storage). REGLA: regenerar datasets tras
   cada cambio de física de señales (avisos #649/#656/#658).
@@ -131,14 +130,10 @@ worktree+rama. Si tocó un VETO ⇒ tocó su entrada del registro de vetos
 ## 6. Deuda viva (verificada por grep contra el árbol 09186b81, 2026-10-05 post Ω9/LXXXXVIII)
 
 **Qoder (cola propia, verificada por grep en este corte):**
-- F2-B2 `habilidad_en` mapea τ→escala por distancia ABSOLUTA en malla
-  base-4 (sesgo 2×; τ*=30 s clamp cae al nodo 17 s fuera de banda) —
-  cambiar a vecino más cercano en ln τ. temporal_spectrum.rs:~355.
-- F2-B3 W₁ medido a lag=64 UPDATES (0.6 s a 100 ev/s vs 64 s a 1 ev/s)
-  — lag en tiempo físico. temporal_spectrum.rs:1491.
-- F2-B4 `mass < 0.10` excluye escalas de la regresión ζ(p) con
-  pertenencia DURA (ζ/χ saltan al madurar escalas; χ modula pisos
-  vivos) — peso continuo de masa. temporal_spectrum.rs:1388.
+- [F2-B2/B3/B4 CERRADOS por #662/Ola 61: vecino ln τ en habilidad_en,
+  W₁ a lag físico de 60 s con anillo por timestamp del exchange (cadencia
+  250 ms), ζ(p) con peso continuo de masa (rampa C¹ 0,05..0,15). Banda
+  operable [30 s, 12 h] = nodos 18..22 de la malla 4^k µs.]
 - F2-B8 el IC cruzado ρ(τ) del veto de grupo NO aplica significancia
   (#599) — umbral autoajustado 2/√(n−3). espectral_multiactivo.rs.
 - F3-A4 sombras con knobs muertos: `quantum_k_spring`/

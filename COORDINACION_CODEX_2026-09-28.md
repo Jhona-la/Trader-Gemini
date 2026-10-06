@@ -4786,3 +4786,27 @@ casa prohíbe. El fix de tests es mío; el estándar es de todos.
   - Todas las compuertas auditadas contra capital reducido: min_notional $5 USD, SL friction floor,
     streak cap de Cramér-Lundberg y admisión matemática de coberturas ($\rho < 0$).
 
+
+## [Qoder — Ola 61 / #662] SUSTRATO ESPECTRAL HONESTO — ORÁCULO PASA 16/144 (2026-10-06)
+
+- Rama qoder/ola61-sustrato-ln-tau (worktree .ola61, base a7f8495d),
+  código 5fc47680. **ORÁCULO T-1: PASA 16/144 = 11.1%** (2212.82 s).
+- Tres defectos F2 del sustrato cerrados: **F2-B2** `habilidad_en`
+  ahora mide vecindad en ln τ (malla 4^k µs — antes distancia absoluta
+  sesgaba al nodo inferior en cada frontera; τ*=35 s reportaba la
+  habilidad de la escala de 17,2 s). **F2-B3** transporte W₁ a lag
+  FÍSICO de 60 s con anillo indexado por timestamp del exchange
+  (cadencia 250 ms ⇒ 64 s de historia a cualquier tasa; antes 64
+  updates = 0,64 s a 100 ev/s) — invariante 4 (relojes físicos) ahora
+  cubre W₁. **F2-B4** regresión ζ(p) con peso CONTINUO de masa (rampa
+  C¹ 0,05..0,15 centrada en el corte 0,10) — fin de los saltos de
+  ζ/χ al madurar escalas (χ modula pisos vivos).
+- AVISO A GLM (línea B): la W₁ física y la χ continua cambian el
+  significado de `spectral_w1_transport` y `spectral_intermittency`
+  en telemetría/datasets — regenerar features si el trainer las
+  consume.
+- AVISO MAPA: SPECTRUM_SCALES_MS = 4^k/10⁶ (4 µs..146 años); banda
+  operable [30 s, 12 h] = nodos 18..22.
+- Verificación: arena 111/111, core 166/166, ws check 0. Cola Qoder
+  restante: F2-B8 (IC cruzado ρ(τ) sin significancia — módulo evalues
+  listo) + F3 MED/LOWs.
