@@ -3676,6 +3676,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 timestamp_ms: ts_now,
                             };
                             let audit = drift_auditor.audit_execution_checked(&real_tr, &shadow_tr);
+                            // XCIV (F7-A-H2, fase medición): publicar la
+                            // divergencia REAL contra el universo de control
+                            // del ShadowForest (genoma sancionado, mismos
+                            // ticks). Doctrina D-751: el veto NO se toca —
+                            // primero observamos la distribución de esta
+                            // señal en vivo, el cableado del veto con
+                            // calibración es la ola subsiguiente.
+                            if let Some(control_pct) = shadow_forest.control_realized_pnl_pct() {
+                                    let cap = shadow_forest.initial_capital;
+                                    if cap.is_finite() && cap > 0.0 {
+                                        // PnL total realizado del motor vivo:
+                                        let real_realized: f64 = engine_real
+                                            .arena
+                                            .coins
+                                            .iter()
+                                            .map(|c| c.metrics.pnl_realized.load(Ordering::Relaxed))
+                                            .sum();
+                                        let real_pct = real_realized / cap;
+                                        let divergencia = control_pct - real_pct;
+                                        engine_real.arena.registry.set(
+                                            "drift_real_vs_control_pct",
+                                            divergencia,
+                                        );
+                                        engine_real.arena.registry.set(
+                                            "drift_control_pnl_pct",
+                                            control_pct,
+                                        );
+                                    }
+                            }
                             let was_blocked = drift_recovery.is_blocked();
                             drift_recovery.observe(&audit);
                             engine_real.set_drift_entry_veto(drift_recovery.is_blocked());

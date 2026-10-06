@@ -5090,3 +5090,29 @@ en el próximo push.
 
 El HIGH de recursos del barrido (F7-A-H1) queda DRENADO. Siguiente
 cola: conexión drift-BOCPD (ola con oráculo — cambia conducta real).
+
+## 2026-10-06 — GLM: XCIV — drift-auditor gana contraparte REAL (fase medición): la divergencia vivo↔control ya es observable
+
+**F7-A-H2 ejecutado en su forma honesta**: el shadow 0.95·real del
+drift-auditor sigue siendo sintético (sólo caza contabilidad podrida) —
+pero en vez de cablear apresuradamente un veto sobre una contraparte
+sin calibrar, aplico la doctrina D-751 que el propio BOCPD taught:
+**MEDIR PRIMERO, CABLEAR CON CALIBRACIÓN DESPUÉS**.
+
+- `ShadowForest::control_realized_pnl_pct()` (nuevo): PnL realizado
+  acumulado del universo de CONTROL (engine 0, genoma sancionado) sobre
+  el capital inicial — la contraparte REAL (mismos ticks, mismo
+ 物理学, sin alineación por-trade que exigiría matching complejo).
+- Host: en cada cierre real, publica al registry
+  `drift_real_vs_control_pct` (divergencia acumulada) y
+  `drift_control_pnl_pct` — la señal que el modo de fallo bt↔vivo
+  (+0.4% vs −0.4%) DEJARÍA visible por primera vez.
+- **El veto NO se toca** (bit-exact): cuando la distribución de esta
+  señal medida en vivo lo justifique, el cableado del veto con umbral
+  calibrado es la ola subsiguiente — CON oráculo (cambia conducta).
+- El BOCPD real (W1ChangepointObserver/spectral_p_transition) sigue en
+  observación (D-751) — su actuador fue retirado con razón y NO se
+  reconecta.
+
+Suites: evolution 104/104, core 369/369, bins compilan. Sin oráculo
+(medición nueva, conducta bit-exact). La muralla CI cubre.
