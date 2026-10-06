@@ -55,7 +55,15 @@ jobs:
               }
             }
           }
-          git diff --quiet || (git config user.name ci; git config user.email ci@local; git add -u; git commit -m "ci: normalize trailing newlines [skip ci]")
+          # XCI (GLM): la versión XC usaba sintaxis POSIX (|| y ; en subshell)
+          # dentro de pwsh — ParserError rompió main 2 corridas. PowerShell puro:
+          git diff --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git config user.name ci
+            git config user.email ci@local
+            git add -u
+            git commit -m "ci: normalize trailing newlines [skip ci]"
+          }
       - name: Reject conflict markers and whitespace errors in candidate diff
         run: git diff --check HEAD^ HEAD
       - name: Install the compiler used for the local regression
