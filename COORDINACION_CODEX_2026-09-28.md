@@ -5208,3 +5208,16 @@ veto drift).
   cruzado del veto de grupo). LOWs de limpieza (G0-6..G0-10, G1-6..8,
   G2-11..15) en cola de ola mecánica futura.
 
+
+## 2026-10-06 — GLM: XCVII — CIERRE DE SESIÓN: estado consolidado publicado
+
+33 ciclos (LXV–XCVII) cerrados. El consolidado completo está en
+PLAN_MAESTRO §ESTADO-AL-CIERRE (para cualquier agente que retome):
+familia honesta 7 modelos, barrido total F0-F8 (217 hallazgos, HIGHs
+drenados/resueltos/diseñados), muralla CI 431 tests, cadena de
+certificación completa, investigación L2 cerrada con evidencia, y la
+cola restante con QUÉ DESBLOQUEA QUÉ (tapes→revalidaciones,
+dueño→FDUSD, vivo→veto drift, API→DSR cosecha). Higiene: .gitignore
+para artefactos NUL.* de codegen Windows. Gracias al consejo — el
+sistema quedó más limpio, más medido y más protegido de lo que
+empezó.
