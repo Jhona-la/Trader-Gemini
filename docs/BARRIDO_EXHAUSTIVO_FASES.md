@@ -527,7 +527,7 @@ NN, no una ola mecónica). Bonus: `fr_elasticity` es característica
 muerta (escrita por update_macro_features, jamás leída — train_forest
 lo documenta en sus líneas 60-64). El hallazgo pasa de OLA a deuda
 acotada: no invalida nada de lo promovido.
-- **F6-A-H4** ⚠️ **9 DIMS PERPETUAMENTE 0.0 EN VIVO**: los slots cross-exchange (bybit/okx/...) sólo los escriben pollers muertos; get_features normaliza contra ref_p=1.0 → ceros silenciosos. El modelo infiere con dims muertas (coherente con lo que el trainer ve — paridad preservada por accidente). OLA: o se alimentan o se declaran muertas por contrato.
+- **F6-A-H4** ⚠️ **9 DIMS PERPETUAMENTE 0.0 EN VIVO**: los slots cross-exchange (bybit/okx/...) sólo los escriben pollers muertos; get_features normaliza contra ref_p=1.0 → ceros silenciosos. El modelo infiere con dims muertas (coherente con lo que el trainer ve — paridad preservada por accidente). OLA: o se alimentan o se declaran muertas por contrato. **RESUELTA POR DECLARACIÓN (XCV, 2026-10-06)**: contrato `xcv_dims_cross_exchange_muertas_por_contrato` fija los slots 1..10 como ceros estructurales (bits exactos) con mensaje accionable (re-entrenar si un poller se activa); doc-comentario en get_features(). La cola de F6 queda VACÍA: A-H3 resuelta por verificación, B-M3 reparada certificada, A-H4 declarada.
 - **F6-B-H1** ledger.rs: read_ownership consulta un esquema que su propio escritor destruye (ANOTADO).
 - **F6-B-H2** ledger.rs: pérdida silenciosa de eventos de posesión (try_send ignorado, qty=0 descarta el cierre — posesiones fantasma) (ANOTADO).
 
@@ -612,19 +612,26 @@ router τ viva, banda #586, relojes físicos, Ville, exceso Hawkes). El drift:
   (p_crash >= 0.90) o fallback sin símplex; si p_crash < 0.90, la contracción
   continua directional_pressure (0.25·p) modula el margen sin saltos X→0.
   Test de contrato formal añadido en portfolio_admission_contract.rs.
-- G0-2 [MED] god-engine-core/lib.rs:6017 — rama 13 fija su umbral con
-  `swing_tp_base` (ancla a τ=12h) teniendo τ viva `swing_duration_ms`
-  disponible. Debe ser `tp_at_tau(τ viva)`.
-- G0-3 [MED] lib.rs:419/5699/6032 — suelos literales de confianza ramas
-  13/15 (0.55/0.58) sin `conviccion_de_rama` (D-752): deuda declarada
-  desde ciclo 7 CL, SIGUE viva tras 15 olas.
+- G0-2 [MED] CERRADO (Ola Ω11 AGY) god-engine-core/lib.rs:6017 — rama 13
+  desacoplada del ancla fija `swing_tp_base` (12h) hacia `tp_at_tau(swing_duration_ms)`
+  dinámico evaluado a la tau viva de la onda.
+- G0-3 [MED] CERRADO (Ola Ω13 AGY) lib.rs:419/5840/6055/6110/6170 — suelos
+  literales de confianza en ramas 13/15 (0.55/0.58) y ramas 11/14 erradicados.
+  `confluencia_resonante` modula suavemente desde la cota neutral Bayesiana 0.50
+  y todas las ramas conectan con `conviccion_de_rama` gobernadas por evidencia
+  empírica (D-752). Test formal `omega13_g0_3_ramas_13_15_conviccion_continua_sin_suelo_literal`
+  (167/167 verdes en god-engine-core).
 - G0-4 [MED] gen `capital_split_scalp` — se muta en el GA y NO tiene
   consumidor de sizing: gen muerto de la dicotomía que infla la dimensión
   de pruebas del DSR (N=pop×gen de Ω9). Retirar del vector.
-- G0-5 [MED] god_engine.rs:4020 — fallback de brackets del host RECONSTRUYE
-  la curva desde anclas en vez de la fuente única `config.tp_at_tau`:
-  si ast_mutator muta la curva en caliente sin re-sincronizar, sirve
-  geometría obsoleta.
+- G0-5 [MED] CERRADO (Ola Ω14 AGY) god_engine.rs:51-64 / 4049-4060 — la
+  reconstrucción manual desde anclas en genome_protection_prices y en el fallback
+  del loop de trading fue reemplazada por la fuente única `arena.config.tp_at_tau`
+  y `arena.config.sl_at_tau`. Erradica el riesgo de servir geometría obsoleta ante
+  mutaciones continuas en caliente del genoma (a, b) y preserva el invariante de
+  clamp de anclas de C-05. Tests de contrato formal dedicados añadidos en god_engine.rs
+  (omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva y
+  omega14_g0_5_c05_clamp_anclas_invariante: 2/2 verdes).
 - G0-6 [LOW] state.rs:521 — átomos `scalp/swing_used_margin` fantasma (0
   escritores, 0 lectores). G0-7 [LOW] flow_excitation_confluence:243 salto
   en la frontera del piso OBI (C¹). G0-8 [LOW] slots/naming scalp/swing en
@@ -715,7 +722,41 @@ duros supervivientes, y abstención-SS incompleta:
 - **AGY (Ω11) CERRADA**: G0-2 (ancla fija swing_tp_base reemplazada por config.tp_at_tau dinámico a tau viva en rama 13 de lib.rs:6017) +
   G2-10 (lead-lag sin auto-referencia en BTC/ETH: BTC líder macro puro div=0.0; ETH evalúa sólo contra BTC en predict_eth_impulse_con_reloj; alts evalúan matriz ponderada; test dedicado añadido) +
   G1-5 (unificación DRY canónica de selection_stats re-exportado desde risk_engine en evolution-engine/src/lib.rs; archivo duplicado eliminado). 84/84 + 54/54 + 166/166 verdes, workspace 0 errores.
-- **Ola mecánica posterior**: G2-3..G2-9 (signums C¹), G1-4 (S₂ verdadero en temporal_spectrum.rs tras Ola 62), G0-6/G1-7/G2-12 (limpieza).
-- **Consejo**: G0-1 (veto MAP discreto — política de fusión suave),
-  G0-3/G2-14 (suelos de confianza ramas 13/15 — rediseño D-752), G0-9
-  (¿2 anclas bastan para el espacio genético?).
+- **AGY (Ω12) CERRADA**: G1-4 (segundo momento central Kolmogorov insesgado en S2 de temporal_spectrum.rs) + G0-1 (veto MAP discreto de Crash suavizado a contracción continua de margen). 113/113 + 140/140 verdes.
+- **AGY (Ω13) CERRADA**: G0-3 (suelos literales de confianza ramas 13/15 y 11/14 erradicados; confluencia_resonante modulada desde base 0.50 y cableado integral de conviccion_de_rama). 167/167 verdes en god-engine-core.
+- **AGY (Ω14) CERRADA**: G0-5 (fuente única de brackets tp_at_tau / sl_at_tau en god_engine.rs erradicando reconstrucción manual obsoleta desde anclas; preservado invariante C-05 de clamp de anclas). 2/2 verdes en god_engine.rs.
+- **Ola mecánica posterior**: G2-3..G2-9 (signums C¹ en vuelo por Qoder), G0-6/G1-7/G2-12 (limpieza).
+- **Consejo**: G0-9 (¿2 anclas bastan para el espacio genético?).
+
+---
+
+## DISEÑO DSR-COSECHA (XCVI, 2026-10-06): F5-A-H2 pasa a "diseñado, requiere API"
+
+**El problema**: harvest_best_genome promueve best-of-N (~9 mutantes) sin
+control de multiplicidad DSR. El daemon ya tiene la solución correcta
+(edge_survives_multiplicity, Bailey-LdP ec.5, multiplicidad acumulada
+D-746) — pero NO puede aplicarse a la cosecha hoy:
+
+1. **El DSR exige serie de retornos por observación**: computa Sharpe y
+   momentos superiores de N≥20 trades. La cosecha tiene UNA observación
+   por universo (fitness agregado: capital inicial→final con DD²) — un
+   Sharpe de n=1 no existe estadísticamente.
+2. **La API que falta**: GodEngineCore no expone el historial de PnL
+   por trade de los engines sombra. Extenderla atraviesa el arena y es
+   una ola propia.
+
+**La tentación rechazada**: construir una "serie" sintética de un punto
+y alimentarla al DSR — sería estadísticamente inválida (decoración
+peligrosa que fingiría rigor). La honestidad del sistema exige decir
+"no se puede hacer bien todavía".
+
+**Guardia interina (YA activa)**:
+- El ganador debe superar al **CONTROL** (incumbente sancionado, no un
+  lucky-best-of-N) — hurdle real.
+- Desde LXXXXI, el watchdog sigue a la generación ACTIVA del almacén:
+  cualquier promoción externa (incluida la cosecha) arma la vigilancia
+  de rollback (t≤−2.0 sobre ≥20 obs).
+
+**Requisito para cerrar**: API de retornos por trade de los engines
+sombra (ola futura si el consejo la aprueba). Entonces el DSR de la
+cosecha es: `edge_survives_multiplicity(returns_of_best, num_trees)`.

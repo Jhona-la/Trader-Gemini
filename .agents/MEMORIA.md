@@ -1,5 +1,31 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+
+## 2026-10-06 — Antigravity: OLA Ω14 CERRADA — G0-5 (fuente única de brackets tp_at_tau/sl_at_tau en god_engine.rs)
+
+- Rama `antigravity/quant-sr-omega14-g0-5-brackets-curva`, merge limpio sobre `main`.
+- **G0-5 CERRADO**:
+  - En `src/bin/god_engine.rs:51-64` (`genome_protection_prices`), se reemplazó la reconstrucción manual redundante de `HorizonCurve::through_two_points` a partir de las anclas legacy fijas `scalp_tp_base` / `swing_tp_base` por la llamada directa a la fuente única de verdad continua: `arena.config.tp_at_tau(tau_eff)` y `arena.config.sl_at_tau(tau_eff)`.
+  - En `src/bin/god_engine.rs:4043-4050` (bloque de fallback de brackets OCO en el loop caliente de trading), se eliminó igualmente la reconstrucción manual desde anclas por `engine_real.arena.config.tp_at_tau(tau_eff)` y `engine_real.arena.config.sl_at_tau(tau_eff)`, aplicando el clamp de dominio continuo `TAU_ANCHOR_FAST_MS..TAU_ANCHOR_SLOW_MS` para prevenir extrapolación exponencial degenerada (invariante C-05).
+  - Erradica al 100% el riesgo de servir geometría desfasada u obsoleta cuando el genoma muta sus parámetros de curva en caliente (`tp_curve_a`, `tp_curve_b`, `sl_curve_a`, `sl_curve_b`).
+  - Tests formales de contrato añadidos en `src/bin/god_engine.rs`:
+    - `omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva`: certifica paridad exacta con mutaciones de curva en caliente.
+    - `omega14_g0_5_c05_clamp_anclas_invariante`: certifica colapso estricto ante $\tau \le 0$ o $\tau \approx 146$ años.
+    - Resultado: 2/2 tests verdes.
+- **ESTADO DEL BARRIDO SISTÉMICO**: 5/5 HIGH (100%) y 8/15 MED (G0-1, G0-2, G0-3, G0-4, G0-5, G1-4, G1-5, G2-10) de la Ronda 2 CERRADOS.
+
+## 2026-10-06 — Antigravity: OLA Ω13 CERRADA — G0-3 (suelos literales de confianza ramas 13/15 y 11/14 erradicados; convicción por evidencia empírica D-752)
+
+- Rama `antigravity/quant-sr-omega13-conviccion-rama`, merge limpio sobre `main`.
+- **G0-3 CERRADO**:
+  - En `crates/god-engine-core/src/lib.rs:419, 421`, en `confluencia_resonante`, se erradicó el suelo literal hardcodeado `0.58`. La confianza se calcula ahora de forma continua y suave a partir de la cota neutral Bayesiana $0.50$ modulada por la coherencia global y la persistencia de Hurst: `(0.50 + coherencia * 0.35 + bono).clamp(0.50, 0.95)`.
+  - En `crates/god-engine-core/src/lib.rs:6055, 6075` (Rama 13), se eliminó el suelo literal discontinuo `raw_conf.tanh().clamp(0.55, 0.95)`. Se formalizó `sig_conf` como función canónica pura a nivel de crate y se conectó la emisión de señales con `conviccion_de_rama(&registro_ramas[13], piso_magnitud)`.
+  - En `crates/god-engine-core/src/lib.rs:6110` (Rama 15), se conectó la salida de `confluencia_resonante` con `conviccion_de_rama(&registro_ramas[15], conf_base)`, cerrando el bucle adaptativo donde la evidencia acumulada por los cierres de la rama gobierna dinámicamente la confianza.
+  - En `crates/god-engine-core/src/lib.rs:5840, 6170` (Ramas 11 y 14 de consenso tensorial), se cableó igualmente `conviccion_de_rama(&registro_ramas[X], conf_base)`.
+  - Test formal añadido: `omega13_g0_3_ramas_13_15_conviccion_continua_sin_suelo_literal` (167/167 tests unitarios en `god-engine-core` y 2/2 contratos en `resonancia_simetrica_contract` pasan en verde).
+- **ESTADO DEL BARRIDO SISTÉMICO**: 5/5 HIGH (G1-1, G1-2, G1-3, G2-1, G2-2) y 7/15 MED (G0-1, G0-2, G0-3, G0-4, G1-4, G1-5, G2-10) de la Ronda 2 CERRADOS. Workspace completo verificado (`cargo check --workspace --all-targets` exit 0).
+
+
 ## 2026-10-06 — Qoder: OLA 63 CERRADA — CONTINUIDAD C1 (G2-3..G2-9) + ζ₂ — ORÁCULO PASA 16/144
 
 - Rama qoder/ola63-signums-c1 (worktree .ola63, base d1116297 + merges
@@ -14,6 +40,7 @@
 - **ORÁCULO T-1: PASA 16/144 = 11.1%** (3906.35 s). Verificación: arena
   113/113, signal 112/112, risk 140/140, core 166/166, ws check 0.
 - Detalle: FORENSIC #664. Buzón: entrada + cierre Ola 63.
+
 
 ## 2026-10-06 — Antigravity: OLA Ω12 CERRADA — G1-4 (segundo momento central Kolmogorov insesgado en S2) y G0-1 (fusión suave veto→contracción continua de régimen)
 

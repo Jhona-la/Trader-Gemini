@@ -98,6 +98,27 @@ impl ShadowForest {
             .saturating_sub(self.trades_at_replant.get(i).copied().unwrap_or(0))
     }
 
+    /// XCIV (F7-A-H2, fase medición): PnL REALIZADO acumulado del universo
+    /// de CONTROL (engine 0, genoma sancionado) sobre el capital inicial —
+    /// la contraparte REAL para el drift-audit (el shadow 0.95·real del
+    /// host es sintético y sólo caza contabilidad podrida, no divergencia
+    /// bt↔vivo). Doctrina D-751: PUBLICAR primero, observar la distribución
+    /// en vivo, y cablear el veto con calibración cuando la señal medida
+    /// lo justifique — el veto NO se toca en esta ola.
+    pub fn control_realized_pnl_pct(&self) -> Option<f64> {
+        let engine = self.engines.first()?;
+        let realized: f64 = engine
+            .arena
+            .coins
+            .iter()
+            .map(|c| c.metrics.pnl_realized.load(Ordering::Relaxed))
+            .sum();
+        if !realized.is_finite() || self.initial_capital <= 0.0 {
+            return None;
+        }
+        Some(realized / self.initial_capital)
+    }
+
     /// Alimenta un evento en vivo a todos los universos paralelos en la sombra
     #[inline(always)]
     pub fn broadcast_tick(

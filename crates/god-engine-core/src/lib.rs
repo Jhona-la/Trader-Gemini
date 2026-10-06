@@ -146,6 +146,12 @@ pub fn conviccion_de_rama(registro: &TasaAcierto, piso_por_magnitud: f64) -> f64
     }
 }
 
+/// D-105: Mapeo de convicción Bayesiana calibrada para Kelly sizing realista
+#[inline]
+pub fn sig_conf(score: f64) -> f64 {
+    (0.50 + 0.40 * score.abs().clamp(0.0, 1.0)).clamp(0.51, 0.90)
+}
+
 /// XLIV-9 — DIRECCIÓN QUE EL MERCADO TOMÓ DURANTE UNA POSICIÓN.
 ///
 /// `pnl_pct` es el movimiento BRUTO del mid frente a la entrada, con el signo
@@ -416,9 +422,11 @@ pub fn confluencia_resonante(
         && coherencia_corta > 0.12
         && marea_macro <= 0.00020;
     if largo {
-        Some((true, (0.58 + coherencia_larga * 0.35 + bono).clamp(0.58, 0.95)))
+        let conf_base = (0.50 + coherencia_larga * 0.35 + bono).clamp(0.50, 0.95);
+        Some((true, conf_base))
     } else if corto {
-        Some((false, (0.58 + coherencia_corta * 0.35 + bono).clamp(0.58, 0.95)))
+        let conf_base = (0.50 + coherencia_corta * 0.35 + bono).clamp(0.50, 0.95);
+        Some((false, conf_base))
     } else {
         None
     }
@@ -5123,10 +5131,7 @@ impl GodEngineCore {
                 let not_overextended_short =
                     price_stretch >= min_stretch_short && stretch_z <= crate::diffusion::Z95;
 
-                // D-105: Mapeo de convicción Bayesiana calibrada para Kelly sizing realista
-                let sig_conf = |score: f64| -> f64 {
-                    (0.50 + 0.40 * score.abs().clamp(0.0, 1.0)).clamp(0.51, 0.90)
-                };
+                // D-105: Mapeo de convicción Bayesiana calibrada (ver fn sig_conf a nivel de crate)
 
                 // MOD2/7-014: antes `hurst_val < 0.42` — un tercer literal
                 // de banda que contradecía las demás ramas. Banda canónica.
@@ -5825,12 +5830,13 @@ impl GodEngineCore {
                         SignalType::Flat => false,
                     };
                     if tensor_allowed {
+                        let conf_base = tensor_cont
+                            .net_confidence
+                            .abs()
+                            .clamp(0.50, 0.95);
                         fast_intent = SignalIntent {
                             signal: tensor_cont.signal,
-                            confidence: tensor_cont
-                                .net_confidence
-                                .abs()
-                                .clamp(0.50, 0.95),
+                            confidence: conviccion_de_rama(&registro_ramas[11], conf_base),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 11.0,
@@ -6040,11 +6046,12 @@ impl GodEngineCore {
                     {
                         let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
                             .max((swing_nn_pred - ml_model_base).max(0.0) * 2.0);
-                        let confidence = if raw_conf.is_finite() {
-                            raw_conf.tanh().clamp(0.55, 0.95)
+                        let piso_magnitud = if raw_conf.is_finite() {
+                            sig_conf(raw_conf.tanh())
                         } else {
-                            0.55
+                            0.51
                         };
+                        let confidence = conviccion_de_rama(&registro_ramas[13], piso_magnitud);
                         slow_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence,
@@ -6061,11 +6068,12 @@ impl GodEngineCore {
                     {
                         let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
                             .max((ml_model_base - swing_nn_pred).max(0.0) * 2.0);
-                        let confidence = if raw_conf.is_finite() {
-                            raw_conf.tanh().clamp(0.55, 0.95)
+                        let piso_magnitud = if raw_conf.is_finite() {
+                            sig_conf(raw_conf.tanh())
                         } else {
-                            0.55
+                            0.51
                         };
+                        let confidence = conviccion_de_rama(&registro_ramas[13], piso_magnitud);
                         slow_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence,
@@ -6091,20 +6099,21 @@ impl GodEngineCore {
 
                     // Confluencia armónica constructiva en el centroide espectral tau*
                     // (condiciones en `confluencia_resonante`, CL-31).
-                    if let Some((is_long, conf)) = confluencia_resonante(
+                    if let Some((is_long, conf_base)) = confluencia_resonante(
                         fused,
                         tau_star_hurst,
                         field_long.global_coherence,
                         field_short.global_coherence,
                         macro_trend,
                     ) {
+                        let confidence = conviccion_de_rama(&registro_ramas[15], conf_base);
                         slow_intent = SignalIntent {
                             signal: if is_long {
                                 SignalType::Long
                             } else {
                                 SignalType::Short
                             },
-                            confidence: conf,
+                            confidence,
                             expected_duration_ms: tau_star_duration,
                             horizon: strategy_core::TradeHorizon::Continuous,
                             volume_flow_rate: 15.0,
@@ -6152,12 +6161,13 @@ impl GodEngineCore {
                     && not_chasing_long
                     && tensor_cont.net_confidence.abs() > tensor_min_conf * 0.95
                 {
+                    let conf_base = tensor_cont
+                        .net_confidence
+                        .abs()
+                        .clamp(tensor_min_conf * 0.95, 1.0);
                     slow_intent = SignalIntent {
                         signal: tensor_cont.signal,
-                        confidence: tensor_cont
-                            .net_confidence
-                            .abs()
-                            .clamp(tensor_min_conf * 0.95, 1.0),
+                        confidence: conviccion_de_rama(&registro_ramas[14], conf_base),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         expected_duration_ms: swing_duration_ms,
                         // D-678: rama 14 · consenso tensorial.
@@ -6169,12 +6179,13 @@ impl GodEngineCore {
                     && not_chasing_short
                     && tensor_cont.net_confidence.abs() > tensor_min_conf * 0.95
                 {
+                    let conf_base = tensor_cont
+                        .net_confidence
+                        .abs()
+                        .clamp(tensor_min_conf * 0.95, 1.0);
                     slow_intent = SignalIntent {
                         signal: tensor_cont.signal,
-                        confidence: tensor_cont
-                            .net_confidence
-                            .abs()
-                            .clamp(tensor_min_conf * 0.95, 1.0),
+                        confidence: conviccion_de_rama(&registro_ramas[14], conf_base),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         expected_duration_ms: swing_duration_ms,
                         // D-678: rama 14 · consenso tensorial.
@@ -8430,6 +8441,56 @@ mod tests_d752_d756 {
         let a = conviccion_de_rama(&registro(400, 240), piso);
         let b = conviccion_de_rama(&registro(400, 300), piso);
         assert!(a < b, "la convicción no es monótona en la tasa medida: {a} / {b}");
+    }
+
+    /// Ola Ω13 (G0-3 [MED]) — RAMAS 13 Y 15 SIN SUELOS LITERALES DUROS.
+    ///
+    /// QUÉ GARANTIZA:
+    /// 1. `confluencia_resonante` ya no impone un suelo literal hardcodeado de 0.58.
+    ///    La confianza se origina suavemente en la cota neutral Bayesiana 0.50 y modula
+    ///    continuamente según la coherencia armónica y la persistencia de Hurst.
+    /// 2. Ambas ramas (13 y 15) conectan con `conviccion_de_rama`, permitiendo que
+    ///    la evidencia empírica observada por sus cierres gobierne la dimensión de la
+    ///    confianza, cerrando el bucle adaptativo de D-752.
+    /// 3. `sig_conf` es monótona, C¹ suave y acotada en [0.51, 0.90].
+    #[test]
+    fn omega13_g0_3_ramas_13_15_conviccion_continua_sin_suelo_literal() {
+        // 1. confluencia_resonante en el umbral no clava 0.58
+        let res_long = confluencia_resonante(0.40, 0.50, 0.15, 0.10, 0.0);
+        assert!(res_long.is_some());
+        let (is_long, conf_base) = res_long.unwrap();
+        assert!(is_long);
+        // Base = 0.50 + 0.15 * 0.35 = 0.5525 (menor que el viejo suelo 0.58)
+        assert!(conf_base < 0.58, "conf_base {conf_base} debería ser continuo y menor que 0.58 cuando la coherencia es moderada");
+        assert!(conf_base >= 0.50, "conf_base {conf_base} no debe ser inferior a la probabilidad neutral 0.50");
+
+        // 2. Modulación continua por coherencia y Hurst
+        let res_alta_coherencia = confluencia_resonante(0.40, 0.60, 0.40, 0.10, 0.0).unwrap();
+        assert!(res_alta_coherencia.1 > conf_base, "Mayor coherencia y Hurst deben incrementar monótonamente la convicción");
+
+        // 3. conviccion_de_rama gobierna las ramas 13 y 15
+        let reg_vacio = registro(0, 0);
+        let reg_ganador = registro(300, 240); // 80% acierto
+        let reg_perdedor = registro(300, 60);  // 20% acierto
+
+        // Ante rama joven / sin datos, manda la magnitud física continua del disparo
+        assert_eq!(conviccion_de_rama(&reg_vacio, conf_base), conf_base);
+
+        // Ante rama probadamente ganadora, la convicción asciende a la cota de Wilson
+        let (lo_gana, _) = reg_ganador.intervalo(Z95);
+        assert_eq!(conviccion_de_rama(&reg_ganador, conf_base), lo_gana);
+        assert!(lo_gana > conf_base);
+
+        // Ante rama probadamente perdedora, la convicción cae a la cota superior de Wilson
+        // erradicando el piso ficticio de 0.55/0.58 que causaba pérdidas persistentes
+        let (_, hi_pierde) = reg_perdedor.intervalo(Z95);
+        assert_eq!(conviccion_de_rama(&reg_perdedor, conf_base), hi_pierde);
+        assert!(hi_pierde < 0.50, "Rama perdedora debe descender por debajo de 0.50 (dio {hi_pierde})");
+
+        // 4. sig_conf
+        assert_eq!(sig_conf(0.0), 0.51);
+        assert!(sig_conf(0.50) > 0.51);
+        assert!(sig_conf(1.0) <= 0.90);
     }
 
     /// D-752 — EL FRENO DEL BOSQUE EXIGE TAMAÑO DE MUESTRA.
