@@ -124,11 +124,13 @@ graph TD
 ```
 
 ### Inventario Consolidado del Barrido:
-- **Total Hallazgos Acumulados (F0 - F7)**: **171 hallazgos** rigurosamente inventariados y tipificados.
-- **Estado de F8 (Integración Final)**:
-  - Verificación contrato por contrato de las 136 suites de integración.
-  - Paridad bit-a-bit del simulador `booktick_replay` frente al motor en vivo `god_engine.rs`.
-  - Oráculo de preservación de edge con umbral del 11.0% (trinquete 16/144 trades).
+- **Barrido Total F0 - F8 CERRADO**: **217 hallazgos** acumulados y tipificados (GLM LXXXXIX).
+- **Ronda 2 del Barrido (G0 - G2, 33 hallazgos)**:
+  - **G1-2 [HIGH] CERRADO (Ola Ω10)**: Hurst VR con estimador insesgado de Lo & MacKinlay ($c_k = (n-k+1)(1-k/n)$) erradicando sesgo en nulo i.i.d. y stop apretado indebido.
+  - **G1-3 [HIGH] CERRADO (Ola Ω10)**: DSR cableado como compuerta formal conjunta en `darwin.rs` (`clears_margin && clears_dsr && allow_hotswap`), exigiendo $DSR \ge 0.95$ sobre retornos OOS bajo $N=100$ pruebas.
+  - **G0-4 [MED] CERRADO (Ola Ω10)**: Congelado gen muerto `capital_split_scalp` en `SuperGenotype` y neutralizado a 0.50 en `darwin.rs`, eliminando drift en mutación del GA.
+  - **G1-1, G2-1, G2-2**: En vuelo por Qoder (Ola 62 con oráculo).
+  - **G1-5**: En vuelo por GLM (centralización de `selection_stats`).
 
 ---
 

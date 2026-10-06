@@ -1,5 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Antigravity: OLA Ω10 CERRADA — G1-2 (Hurst VR insesgado), G1-3 (DSR OOS cableado) y G0-4 (congelar gen muerto)
+
+- Rama `antigravity/quant-sr-omega10-g1g2`, rebase limpio sobre `origin/main` (`7b4c4bf1`).
+- **G1-2 CERRADO**: Corrección analítica de Lo & MacKinlay (1988) para varianza de retornos traslapados multiescala en `multifractal.rs:116-165` ($c_k = (n - k + 1)(1 - k/n)$). Erradicado el sesgo de $-0.04$ en nulo i.i.d. Test nulo de paseo aleatorio browniano añadido: $\mathbb{E}[H] = 0.50 \pm 0.02$. 83/83 tests verdes en `feature-engine`.
+- **G1-3 CERRADO**: Cableada la compuerta formal de DSR OOS en `darwin.rs:333-367, 601-630`. `evaluate_genotype` ahora extrae la serie de retornos de operaciones cerradas, y la promoción requiere conjuntamente `clears_margin && clears_dsr && allow_hotswap` con $DSR \ge 0.95$ bajo control de multiplicidad de Gumbel ($N = 100$ pruebas). 166/166 tests verdes en `god-engine-core`.
+- **G0-4 CERRADO**: Congelado el gen residual `capital_split_scalp` en `genome.rs:1836` y en `darwin.rs:580-600` (fijado a 0.50 neutro sin mutación). Se erradica la deriva de mutación en parámetros muertos. 111/111 tests verdes en `quantum-arena`.
+- **ESTADO DEL BARRIDO SISTÉMICO**: 2/5 HIGH de la Ronda 2 (G1-2, G1-3) resueltos y 1 MED (G0-4) resuelto.
+
 ## 2026-10-06 — Qoder: RONDA 2 DEL BARRIDO ABIERTA Y CERRADA (G0-G2, docs-only) — 33 hallazgos
 
 - Mandato del operador: reiniciar la revisión DESDE LA BASE (árbol

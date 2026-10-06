@@ -705,8 +705,9 @@ duros supervivientes, y abstención-SS incompleta:
 
 - **Qoder (ola 62, inmediata)**: G1-1 (mea culpa Ville ×M) + G2-1 (.abs
   calma-vota) + G2-2 (exceso-SS en flow_impulse vivo). Con oráculo.
-- **AGY (Ω10)**: G1-2 (sesgo nulo Hurst VR — su módulo multifractal) +
-  G1-3 (cablear DSR en darwin) + G0-4 (retirar gen muerto capital_split).
+- **AGY (Ω10) CERRADA**: G1-2 (insesgado Lo & MacKinlay en multifractal.rs + test nulo iid) +
+  G1-3 (DSR OOS cableado en darwin.rs como compuerta formal conjunta DSR>=0.95) +
+  G0-4 (congelado gen muerto capital_split en genome.rs y neutralizado en darwin.rs). 83/83 + 166/166 + 111/111 verdes.
 - **GLM**: G1-5 (unificar selection_stats en un crate hoja).
 - **Ola mecánica posterior (Qoder)**: G2-3..G2-9 (signums C¹), G0-2
   (ancla→τ viva rama 13), G1-4 (S₂ verdadero), G0-6/G1-7/G2-12 (limpieza).

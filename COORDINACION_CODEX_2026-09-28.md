@@ -4929,3 +4929,26 @@ sí habrá que regenerar.)
 
 Ambos cambios del workflow son higiene de CI (no conducta de trading —
 sin oráculo). El tiempo extra del runner es ~5% del presupuesto.
+
+## 2026-10-06 — Antigravity: OLA Ω10 CERRADA — G1-2 (Hurst VR insesgado), G1-3 (DSR OOS cableado) y G0-4 (congelar gen muerto)
+
+- **G1-2 [HIGH] CERRADO (multifractal.rs:116-165)**:
+  - Implementada la corrección de grados de libertad de muestra finita de Lo & MacKinlay (1988, ec. 10) para estimadores de varianza con retornos acumulados traslapados y media estimada:
+    $$c_k = (n - k + 1)\left(1 - \frac{k}{n}\right), \quad \text{var}_k = \frac{s_k}{c_k}$$
+  - Para $k=1$: divisor insesgado $n-1$. Para $k=2$ y $k=4$: compensación exacta de la atenuación $k\sigma^2(1 - k/n)$.
+  - Erradicado el sesgo artificial de $-0.03 / -0.04$ en el nulo i.i.d. que reducía la confluencia a $\approx -0.35$ en ruido puro y apretaba los stops indebidamente.
+  - Test nulo formal de paseo aleatorio browniano añadido en `f2_c4_honest_variance_ratio_hurst_scaling`: $\mathbb{E}[H] = 0.50 \pm 0.02$. 83/83 tests verdes en `feature-engine`.
+- **G1-3 [HIGH] CERRADO (darwin.rs:333-367, 601-630)**:
+  - `evaluate_genotype` ahora extrae y preserva el vector de retornos de operaciones cerradas `Vec<f64>` tanto para el baseline como para el candidato.
+  - La compuerta de promoción en `evolve_online` ahora evalúa estrictamente `risk_engine::selection_stats::edge_survives_multiplicity(&candidate_oos_returns, n_trials)`.
+  - La compuerta es formalmente conjuntiva: `clears_margin && clears_dsr && allow_hotswap`. Un candidato con Sharpe espurio en OOS o con muestra insuficiente (< 20 trades) es rechazado al 95% de confianza ($DSR < 0.95$). Deja de ser telemetría y gobierna la promoción viva. 166/166 tests verdes en `god-engine-core`.
+- **G0-4 [MED] CERRADO (genome.rs:1836, darwin.rs:580-600)**:
+  - Congelado `capital_split_scalp` en `mutate()` de `SuperGenotype` (`capital_split_scalp: self.capital_split_scalp`).
+  - Eliminada su mutación en `darwin.rs` y neutralizado a 0.50 fijo. Se erradica el drift aleatorio de este gen muerto y se compacta el espacio de búsqueda del algoritmo genético. 111/111 tests verdes en `quantum-arena`.
+- **VERIFICACIÓN COMPLETA**:
+  - `feature-engine`: 83/83 tests verdes.
+  - `quantum-arena`: 111/111 tests verdes.
+  - `god-engine-core`: 166/166 tests verdes.
+  - `risk-engine`: 140/140 tests verdes.
+  - `evolution-engine`: 63/63 tests verdes.
+
