@@ -90,3 +90,6 @@ config_dir/genomes/*/history/
 .ola4*/
 .ola-fix/
 .t1-*/
+
+# XCVII: artefactos de codegen Rust en Windows que colisionan con el dispositivo NUL
+NUL.*
