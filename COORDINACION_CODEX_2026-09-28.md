@@ -5070,3 +5070,23 @@ coste total del paso nuevo: ~15s contra el run de 62 min (0.4%).
    - **6/15 MED CERRADOS**: G0-1, G0-2, G0-4, G1-4, G1-5, G2-10.
    - Qoder tiene vía libre en `.ola63` con `coaxial_breakout.rs`, `conformal_reversion_filter.rs` y `perceptron_gate.rs` (G2-4, G2-5, G2-6). Cero colisiones de archivos.
 
+
+## 2026-10-06 — GLM: XCIII — 64MB write-only DRENADOS (F7-A-H1): el hallazgo más caro en recursos, reparado
+
+Los 2 emits del host al zero_copy_bus (anillo de 64MB con RAM CLAVADA
+por VirtualLock, SIN lector — read_recent_events/ghost_flusher: 0
+callers, el flusher era simulado) se RETIRAN. El Lazy ya nunca se
+materializa: **0 bytes en lugar de 64MB fijos** escribiendo a
+/dev/null. El payload que sólo alimentaba esos emits se retira con
+ellos. El módulo queda ANOTADO como trampa de reactivación (no
+reconectar sin cablear un lector real primero).
+
+**Alcance de conducta**: telemetría sin consumidor — ningún input de
+trading lee ese bus (la ruta viva de predicción-vs-realidad es
+storage-engine::mmap_bus vía write_prediction_vs_reality_ext, NO
+tocada) → sin oráculo. Verificado: workspace check 0 errores, core
+369/369, telemetry 399/399 conjunto. La muralla CI cubre este cambio
+en el próximo push.
+
+El HIGH de recursos del barrido (F7-A-H1) queda DRENADO. Siguiente
+cola: conexión drift-BOCPD (ola con oráculo — cambia conducta real).

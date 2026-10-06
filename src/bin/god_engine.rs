@@ -4615,31 +4615,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     f64::from_bits(unified_capital.load(std::sync::atomic::Ordering::Relaxed))
                 );
 
-                // FASE 18: Emitir al Zero-Copy Bus (Ring Buffer pre-allocado)
-                // Cero locks, cero allocations. 3-5ns delay en lugar de milisegundos.
-                let mut payload = [0.0; 6];
-                payload[0] = total_net_pnl; // NET PnL
-                payload[1] = 0.0;
-                payload[2] = total_unrealized_pnl;
-                payload[3] = 0.0;
-                payload[4] = win_rate;
-                payload[5] = 0.0;
+                // FASE 18 (XCIII, F7-A-H1): los emits al Zero-Copy Bus se
+                // RETIRAN — ver comentario de abajo. El payload que alimentaban
+                // se retira con ellos (era sólo para esos emits).
 
-                if latency_panic {
-                    telemetry_server::zero_copy_bus::GLOBAL_TELEMETRY.emit(
-                        telemetry_server::zero_copy_bus::SUBSYSTEM_GOD_ENGINE,
-                        telemetry_server::zero_copy_bus::EVT_LATENCY_PANIC,
-                        0,
-                        [lat as f64, 0.0, 0.0, 0.0, 0.0, 0.0]
-                    );
-                }
-
-                telemetry_server::zero_copy_bus::GLOBAL_TELEMETRY.emit(
-                    telemetry_server::zero_copy_bus::SUBSYSTEM_GOD_ENGINE,
-                    telemetry_server::zero_copy_bus::EVT_OMNI_UPDATE_FAST,
-                    0,
-                    payload
-                );
+                // XCIII (F7-A-H1 del barrido): los emits a zero_copy_bus se
+                // RETIRAN — el anillo de 64MB con RAM clavada (VirtualLock)
+                // no tiene LECTOR (read_recent_events/ghost_flusher: 0 callers;
+                // el flusher era simulado). Cada emit materializaba el Lazy y
+                // fijaba 64MB para escribir a /dev/null. El consumidor vivo de
+                // predicción-vs-realidad es storage-engine::mmap_bus (seqlock,
+                // persistido, el daemon lo lee) vía write_prediction_vs_reality_ext
+                // en god-engine-core — esa ruta NO se toca. Si algún día se
+                // cablea un lector real para este bus, restaurar los emits.
 
                 // Enviar también al ws clásico temporalmente si es estricto, o preferiblemente
                 // dejar que un background task procese el ring buffer.
