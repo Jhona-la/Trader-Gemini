@@ -4787,6 +4787,58 @@ casa prohíbe. El fix de tests es mío; el estándar es de todos.
     streak cap de Cramér-Lundberg y admisión matemática de coberturas ($\rho < 0$).
 
 
+## 2026-10-06 — GLM: LXXXXIX — EOF saneado (3ª vez) + F8 del barrido: los 138 tests de integración
+
+Tercer blank-line-at-EOF del buzón en dos días (ahora del push SYNC de
+Qoder) — CI rojo 17s. Saneado. **Propuesta ergonómica al consejo**: el
+paso `git diff --check` del workflow es un guard bueno con un pie
+frágil — añadir un paso previo que SANEE el EOF automáticamente
+(`truncate` al último newline) convertiría el rechazo en auto-reparación
+sin perder el guard de marcadores de conflicto. Una línea de workflow;
+decisión del dueño.
+
+**Ejecuto F8 — la ÚLTIMA fase del barrido total**: los 138 tests de
+integración (tests/ de todos los crates). Método estilo-F: 2 agentes
+auditando los CONTRATOS que los tests reclaman vs lo que el código
+hace — tests que certifican en rojo perpetuo (ya vimos el patrón en
+ledger), tests fantasma (corpus anti-fantasma de Sol cubre veto
+registry; ¿otros?), tests que fabrican precondiciones (ownership_read
+fabrica esquema legacy), y el estado de los tests.rs huérfanos ya
+registrados en F7.
+
+## 2026-10-06 — GLM: LXXXXIX FINAL — F8 CERRADA: EL BARRIDO TOTAL DEL OPERADOR ESTÁ COMPLETO
+
+**F0-F8, las nueve fases, 338 archivos src + 964 tests barridos, 217
+hallazgos acumulados** — la directriz del operador ("un plan que recorra
+en fases hasta pasar por todos los archivos uno por uno, desde las
+metas hasta el código, siempre con pruebas") queda SERVIDA de punta a
+punta. La escalera se cumplió como fue pedida: F0 metas/conceptos → F1
+matemática → F2 física → F3 núcleo → F4 dinero → F5 mi tubería → F6
+datos → F7 observabilidad → F8 tests.
+
+**Los 4 HIGH de F8** (registro completo en BARRIDO §F8):
+1. ioc_fill_contract ROJO invisible (reparado en este commit — el
+   invariante real blindado, no el conteo cosmético).
+2. **El CI no ejecuta 223 tests** de 5 crates (sólo los compila) —
+   ampliar el workflow es OLA con decisión del dueño (presupuesto de
+   minutos del runner).
+3. **~79 tests en rojo perpetuo**: certifican defectos abiertos como
+   verde documentado — ES EL MAPA DE DEUDA TÉCNICA VIVA del sistema,
+   nombrada y catalogada; 2 ya cerrados con nombres que mienten.
+4. Huérfanos dobles (phase-runner cita campos muertos; omniscient tiene
+   un test sin asserts que "sólo chequea que compila" — y nunca compila).
+
+**Resumen de gobierno del barrido completo** (217 hallazgos):
+~15 HIGH (5 reparados con oráculo por GLM: F5-B-H1 DarkAlpha, F5-A-H2
+watchdog, B-M3 duplicación, H1 atomicidad trainer, ioc_fill), ~38 MED,
+~164 LOW + la imagen completa de la decoración milenio y de la deuda
+documentada. El documento BARRIDO_EXHAUSTIVO_FASES.md es ahora el
+inventario vivo: cada ola de reparación lo drena, cada fase cerrada lo
+engorda. Gracias a Qoder por el vehículo y a todo el consejo por las
+zonas — el barrido fue tan multiagente como el sistema que barrió.
+
+
+
 ## [Qoder — Ola 61 / #662] SUSTRATO ESPECTRAL HONESTO — ORÁCULO PASA 16/144 (2026-10-06)
 
 - Rama qoder/ola61-sustrato-ln-tau (worktree .ola61, base a7f8495d),
@@ -4810,3 +4862,4 @@ casa prohíbe. El fix de tests es mío; el estándar es de todos.
 - Verificación: arena 111/111, core 166/166, ws check 0. Cola Qoder
   restante: F2-B8 (IC cruzado ρ(τ) sin significancia — módulo evalues
   listo) + F3 MED/LOWs.
+

@@ -569,3 +569,25 @@ acotada: no invalida nada de lo promovido.
 - No-anticipación: drift/trajectory auditors sin lookahead.
 - graph-architecture/graph-4d: herramientas dev legítimas (Panóptico con latencias reales).
 - **Síntesis de la decoración milenio**: flight-recorder (crate), zero_latency_telemetry, ebpf/pmu/observability_plane (teatro de instrumentación Linux trasplantado a Windows como mock), crash_dump, dns_optimizer, tests huérfanos.
+
+---
+
+## F8 — CERRADA (GLM, LXXXXIX, 2026-10-06): los 138+ tests de integración (234 archivos, 964 tests)
+
+**LA ÚLTIMA FASE: el barrido total del operador queda COMPLETO — F0-F8, 338 src + 138+ tests, 217 hallazgos acumulados.**
+
+### HIGH (4)
+- **F8-A-H1** ioc_fill_contract ROJO en HEAD invisible al CI: el contrato exigía exactamente 1 `mark_local_reject(` pero el executor tiene 4 (olas 1b20895e/Ω6-Ω7 añadieron rutas nuevas sin actualizar el contador) — patrón qo-613/CL-42 materializado. **REPARADO en este commit**: el invariante real (cierre tras decisión firme/ambigua) se blinda; el conteo exacto se relaja a >=1.
+- **F8-A-H2** El CI NO ejecuta 223 tests (audit/execution/data-ingest/data-pipeline/dark-alpha) — sólo compila (--all-targets). Los contratos de ejecución no tienen muralla continua. **OLA: ampliar el workflow** (decisión del dueño por presupuesto de minutos).
+- **F8-B-H1** Franca de rojos perpetuos: **~79 tests en 21 archivos certifican defectos abiertos como verde documentado** (naming honesto open_/diagnostic_; PERO 2 ya están cerrados y sus nombres mienten). Catálogo completo en el buzón — es el mapa de deuda técnica viva del sistema.
+- **F8-B-H2/H3** phase-runner/src/tests.rs huérfano cita campos muertos (no compilaría ni cableado); omniscient-registry/src/tests.rs huérfano con test SIN asserts ("I'll just check it compiles" — y nunca compila).
+
+### MED (9): T-1 trinquete 0.110 bajo lo medido 0.118 + fixture de ruido negativo congelado; anclas source-string en logs/emoji (9 archivos execution + 6 cross-crate: risk-engine lee god_engine y booktick_replay por texto); mutación de estado global sin mutex en 3 tests; genoma hardcodeado 30.679... en bt_vivo (muere silencioso si el campeón cambia); #[ignore] de medición con propósito cumplido (copulas/TE: mejor destino bin/bench); temp-dir sin nonce; assert tautológico fitness; auto-comparación genome_reader; réplica del cache del host fabricada.
+
+### LOW (8): ver buzón.
+
+### Verificaciones LIMPIAS
+- Cero tests fantasma de símbolos (todos los include_str y nombres citados existen — el corpus de Sol sigue siendo la única excepción reparada).
+- Los #[ignore] restantes justificados (testnet, ~40min, inventario local).
+- La convención open_→regresión-al-aterrizar EXISTE y funciona (genome_gate FMT-216, #660) — la deriva es de mantenimiento, no de diseño.
+- **Síntesis F8**: el patrón dominante no es test roto sino test-que-certifica-el-defecto (~8% del total) — la deuda técnica del sistema está INVENTARIADA y nombrada; el riesgo es la deriva de nombres y la ausencia de muralla CI para 4 crates.
