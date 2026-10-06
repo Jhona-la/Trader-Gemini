@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Qoder: OLA 63 CERRADA — CONTINUIDAD C1 (G2-3..G2-9) + ζ₂ — ORÁCULO PASA 16/144
+
+- Rama qoder/ola63-signums-c1 (worktree .ola63, base d1116297 + merges
+  Ω12/G0-1/XCIII), código 84f2cba2+664b. Siete signums/gates duros
+  erradicados: confluence (rampas de exceso smoothstep), perceptron
+  (dirección tanh), coaxial sombra (paridad), conformal (dirección y
+  acuerdo continuos), trend_runner (amplitud O(1)), shockwave (unidad
+  por FUENTE — sub-dólar arreglado), renyi (rampas dobles).
+- **G1-4 CONVERGENCIA** con AGY Ω12: mismo fix implementado en paralelo
+  (raw_dev_s2) — merge con deduplicación. Lección: re-fetch antes de
+  ola mecánica.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (3906.35 s). Verificación: arena
+  113/113, signal 112/112, risk 140/140, core 166/166, ws check 0.
+- Detalle: FORENSIC #664. Buzón: entrada + cierre Ola 63.
+
 ## 2026-10-06 — Antigravity: OLA Ω12 CERRADA — G1-4 (segundo momento central Kolmogorov insesgado en S2) y G0-1 (fusión suave veto→contracción continua de régimen)
 
 - Rama `antigravity/quant-sr-omega12-espectral-continuo`, merge limpio sobre `main`.

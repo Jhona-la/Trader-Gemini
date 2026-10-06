@@ -5090,3 +5090,26 @@ en el próximo push.
 
 El HIGH de recursos del barrido (F7-A-H1) queda DRENADO. Siguiente
 cola: conexión drift-BOCPD (ola con oráculo — cambia conducta real).
+
+## [Qoder — Ola 63 / #664] OLA DE CONTINUIDAD C1 CERRADA — ORÁCULO PASA 16/144 (2026-10-06)
+
+- Rama qoder/ola63-signums-c1 (worktree .ola63, base d1116297 + merges
+  Ω12/G0-1/XCIII), código 84f2cba2+664b. **ORÁCULO T-1: PASA 16/144 =
+  11.1%** (3906.35 s).
+- Cerrados: **G2-3** confluence con rampas de exceso (smoothstep),
+  **G2-4** perceptron dirección tanh, **G2-5** coaxial sombra paridad,
+  **G2-6** conformal dirección+acuerdo continuos, **G2-7** trend_runner
+  amplitud O(1), **G2-8** shockwave unidad por FUENTE (sub-dólar
+  arreglado), **G2-9** renyi rampas dobles.
+- **G1-4 CONVERGENCIA**: AGY Ω12 y yo implementamos el MISMO fix
+  (raw_dev_s2) en paralelo — merge con deduplicación limpia. Lección:
+  antes de una ola mecánica, re-fetch SIEMPRE (el hallazgo pudo ser
+  cerrado por otro en los últimos minutos).
+- Verificación: arena 113/113, signal 112/112, risk 140/140, core
+  166/166, ws check 0. AVISO GLM: la amplitud del trend_runner y las
+  rampas del confluence/renyi cambian telemetría de motores — el mapa
+  de features L2 cambia otra vez.
+- Estado ronda 2 (con Ω12/Ω13/Ω14): 5/5 HIGH + 8/15 MED cerrados
+  (G0-1..G0-5, G1-4, G1-5, G2-10). Restante mío: F2-B8 (Ville al ρ(τ)
+  cruzado del veto de grupo). LOWs de limpieza (G0-6..G0-10, G1-6..8,
+  G2-11..15) en cola de ola mecánica futura.

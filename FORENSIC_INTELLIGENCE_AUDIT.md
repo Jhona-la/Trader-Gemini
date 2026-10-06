@@ -14425,3 +14425,52 @@ calma abstienen y cascada 3σ emite en flow_impulse), god-engine-core
 certificado perdió sensibilidad: la familia de Ville encarece declarar
 habilidad pero el respaldo de energía (bit a bit pre-#594) conserva toda
 la expresividad genética.
+
+## #664 — Ola 63 (Qoder, 2026-10-06): OLA DE CONTINUIDAD C¹ (G2-3..G2-9) + ζ₂ VERDADERO (G1-4) — ORÁCULO PASA
+
+Rama `qoder/ola63-signums-c1` (worktree `.ola63`, base d1116297 + merge
+Ω12/G0-1/GLM-XCIII), código 84f2cba2+664b. La ola mecánica de la ronda 2:
+
+- **G2-3 / confluence con pertenencia continua** — el gate duro
+  `hawkes ≥ umbral && |obi| ≥ piso` saltaba de 0 a obi·lift·4·scale al
+  cruzar cualquiera de los dos umbrales. Ahora rampas smoothstep C¹ de
+  exceso (ancho 30% del umbral Hawkes, 50% del piso OBI); dentro de la
+  región el peso es 1 (comportamiento conservado). Test ola9 reescrito
+  al contrato continuo: 0 en el umbral exacto, 0.5 en el punto medio,
+  pleno a umbral+ancho, monótono.
+- **G2-4 / perceptron** — `signum()·piso` saltaba ±gate al cruzar
+  score=0 y el voto nunca vivía en (−0.15, 0.15). Dirección continua
+  `(score·10).tanh()·gate_strength`; señal débil ⇒ voto pequeño no-nulo
+  (curiosidad proporcional, sin salto).
+- **G2-5 / coaxial sombra** — signum duro → `(x/1e-4).tanh()`: paridad
+  con el camino vivo (:234).
+- **G2-6 / conformal** — tendencia del vecino k+1 como tanh continua +
+  dirección de reversión continua (−z tanh) y ACUERDO continuo
+  ((−z·trend) tanh ≥ 0): con trend=±1 reproduce el comportamiento viejo,
+  cruzando 0 decae continuo.
+- **G2-7 / trend_runner** — escala 1e-3 (era del desplazamiento crudo)
+  saturaba tanh a signum con momentum_z O(1): colapso de amplitud
+  espectral. Ahora x.tanh() — graduación conservada (contrato
+  qo_664: 0.5 < 2.5 en media de banda).
+- **G2-8 / shockwave dimensional** — la unidad del sonido se decide por
+  FUENTE del parámetro, no por magnitud: `spread_speed_of_sound`
+  (precio/s) ⇒ /mid_price; `atr_pct` (fracción/barra) ⇒ /60. El umbral
+  `sound > 1.0` clasificaba mal sub-dólares (DOGE/PEPE) y el Mach
+  quedaba inflado cientos de × — el defecto #650 reaparecía.
+- **G2-9 / renyi** — doble gate duro (tsallis<0.60, |obi|>0.15) → rampas
+  smoothstep (orden [0.40,0.60], desequilibrio [0.15,0.30]). Contrato
+  qo_664: sin salto en ninguno de los dos umbrales.
+- **G1-4 / ζ₂ verdadero** — CONVERGENCIA de dos sesiones: AGY Ω12 y esta
+  ola implementaron INDEPENDIENTEMENTE el mismo fix (EWMA raw_dev_s2,
+  E[dev²] en vez de (E|dev|)² — sesgo de Jensen ~36% gaussiana).
+  Merge con deduplicación del campo; comentario combinado. Su test
+  omega12 + mis suites pasan juntos.
+
+**Verificación**: quantum-arena 113/113, signal-engine 112/112 (contratos
+qo_664 renyi/trend/amplitud), risk-engine 140/140, god-engine-core
+166/166, check workspace --all-targets 0 errores (todo post-merge con
+Ω12/G0-1/XCIII).
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (3906.35 s, release). Ningún gen
+certificado perdió sensibilidad con la erradicación de los siete
+signums/gates y el ζ₂ insesgado.
