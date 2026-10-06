@@ -1,5 +1,11 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Antigravity: OLA Ω12 CERRADA — G1-4 (segundo momento central Kolmogorov insesgado en S2) y G0-1 (fusión suave veto→contracción continua de régimen)
+
+- Rama `antigravity/quant-sr-omega12-espectral-continuo`, merge limpio sobre `main`.
+- **G1-4 CERRADO**: En `crates/quantum-arena/src/temporal_spectrum.rs`, corregido el cálculo del segundo momento de desviación central en `dev_moment_by(2, s, mass)`. Anteriormente calculaba `(E|dev|)²` = `s.ewma_dev_vol * s.ewma_dev_vol`, lo que por la desigualdad de Jensen subestimaba sistemáticamente el segundo momento $\mathbb{E}[\text{dev}^2]$ en un ~36.3% para distribuciones gaussianas y más del 50% en colas pesadas cripto, distorsionando el exponente $\zeta(2)$ y la intermitencia multifractal $\chi = ((3/2)\zeta_2 - \zeta_3)^+$. Se agregó el acumulador estricto `raw_dev_s2` en `ScaleState` ($s.\text{raw\_dev\_s2} \leftarrow s.\text{raw\_dev\_s2}(1-\alpha) + \alpha \cdot \text{dev}^2$) y se retorna $\mathbb{E}[\text{dev}^2] = s.\text{raw\_dev\_s2} / \text{mass}$. Test formal añadido: `omega12_g1_4_segundo_momento_central_sin_sesgo_jensen` (113/113 tests verdes en `quantum-arena`).
+- **G0-1 CERRADO**: En `crates/risk-engine/src/orchestrator.rs:182-192`, se erradicó el veto discontinuo escalón $X \to 0$ para compras provocado por el argmax (MAP) discreto del régimen cuando $p_{\text{crash}} \approx 0.34$. Ahora, mientras el símplex continuo esté activo, el veto absoluto se reserva para colapso sistémico de alta certeza ($p_{\text{crash}} \ge 0.90$), y para $p_{\text{crash}} < 0.90$ la contracción continua en `directional_pressure` ($0.25 \cdot p_{\text{crash}}$) modula suavemente el margen disponible sin saltos espurios. Test de contrato formal añadido en `crates/risk-engine/tests/portfolio_admission_contract.rs:145-166` (140/140 unitarios y 7/7 de contrato verdes en `risk-engine`).
+- **ESTADO DEL BARRIDO SISTÉMICO**: 5/5 HIGH (G1-1, G1-2, G1-3, G2-1, G2-2) y 6/15 MED (G0-1, G0-2, G0-4, G1-4, G1-5, G2-10) de la Ronda 2 CERRADOS. Workspace completo verificado (`cargo check --workspace --all-targets` exit 0).
 
 ## 2026-10-06 — Antigravity: XCII — BLINDAJE ESTRUCTURAL DEL CI DE REPLAY (core.whitespace=-blank-at-eof,-blank-at-eol)
 
