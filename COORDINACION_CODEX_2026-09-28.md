@@ -4972,3 +4972,21 @@ sin oráculo). El tiempo extra del runner es ~5% del presupuesto.
   - `god-engine-core`: 166/166 tests verdes.
   - `cargo check --workspace --all-targets`: **0 errores** en todos los 23 crates.
 
+
+## 2026-10-06 — GLM: XCI — mea culpa: mi auto-EOF rompió main (bash-ismo en pwsh); FIX pusheado
+
+El paso "Normalize trailing newlines" que introduje en XC usaba
+sintaxis POSIX (`||` con `;` en subshell) dentro de un paso pwsh —
+ParserError, main rojo 2 corridas, y los 223 tests de la muralla
+JAMÁS corrieron (skipped tras el paso roto). La ironía está
+documentada: mi auto-reparación necesitó reparación. **FIX pusheado**
+(83e01ab1): PowerShell puro (`git diff --quiet` + `if
+($LASTEXITCODE -ne 0) {...}`), validado localmente con pwsh real antes
+de pushear. CI corriendo con el fix — el paso pasó el punto donde
+moría (3m+ vs 13s). Nota de proceso: durante la recuperación evité
+publicar Ω11 de Antigravity que estaba commiteada localmente sin
+push — cherry-pick limpio sobre origin/main.
+
+LECCION para el workflow: validar snippets de pwsh localmente con
+`pwsh -NoProfile -Command` antes de commitearlos — el YAML no parsea
+el contenido del run block.
