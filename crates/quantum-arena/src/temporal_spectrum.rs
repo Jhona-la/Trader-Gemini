@@ -202,6 +202,12 @@ pub struct ScaleState {
     /// escala, SIN corregir por masa (igual convención que raw_dev_vol).
     /// Alimenta las funciones de estructura de Kolmogorov.
     raw_dev_s3: f64,
+    /// #664 (G1-4): segundo momento del núcleo — EWMA de dev² SIN corregir
+    /// por masa. La regresión ζ(2) debe medir E[dev²]=S₂, no (E|dev|)²:
+    /// con colas pesadas a escala fina, (S₁)² deja ζ₂ (y χ=(3/2)ζ₂−ζ₃,
+    /// que modula pisos vivos) sesgado alto por una constante que NO
+    /// cancela si la forma de la distribución varía con τ.
+    raw_dev_s2: f64,
     /// #594 — IC prequential de la escala: E[s·r] con olvido, normalizado
     /// por √(E[s²]·E[r²]), donde s es la señal publicada AL ARMAR el bloque
     /// y r el retorno REALIZADO del bloque que cierra. Amplitud ≠ información:
@@ -448,6 +454,7 @@ impl TemporalSpectrum {
                 s.ewma_price = price;
                 s.ewma_dev_vol = 0.0;
                 s.raw_dev_vol = 0.0;
+                s.raw_dev_s2 = 0.0;
                 s.signal = 0.0;
                 s.bloque_armado = true;
                 s.bloque_t0_ms = ts_ms;
@@ -560,6 +567,8 @@ impl TemporalSpectrum {
             s.raw_dev_vol = s.raw_dev_vol * (1.0 - alpha) + alpha * dev.abs();
             let abs_dev = dev.abs();
             s.raw_dev_s3 = s.raw_dev_s3 * (1.0 - alpha) + alpha * abs_dev * abs_dev * abs_dev;
+            // #664 (G1-4): S₂ verdadero (E[dev²]) para la regresión ζ(2).
+            s.raw_dev_s2 = s.raw_dev_s2 * (1.0 - alpha) + alpha * dev * dev;
             let mass = 1.0 - (-elapsed / s.tau_ms).exp();
             s.ewma_dev_vol = if mass > 0.0 { s.raw_dev_vol / mass } else { 0.0 };
 
@@ -969,6 +978,7 @@ impl TemporalSpectrum {
             bloque_r_prev: 0.0,
             raw_dev_vol: 0.0,
             raw_dev_s3: 0.0,
+            raw_dev_s2: 0.0,
             // #594: un nodo interpolado no es una escala de la malla con
             // bloques maduros — sin habilidad medida (0 muestras → None).
             skill_ws: 0.0,
@@ -1486,7 +1496,16 @@ impl TemporalSpectrum {
     #[inline]
     fn dev_moment_by(&self, p: u32, s: &ScaleState, mass: f64) -> f64 {
         match p {
-            2 => s.ewma_dev_vol * s.ewma_dev_vol,
+            // #664 (G1-4): S₂ = E[dev²] (raw corregido por masa), NO
+            // (E|dev|)² — la pendiente ζ₂ y el χ heredaban el sesgo de
+            // colas de la confusión S₁²≈S₂ (exacta sólo en gaussiana).
+            2 => {
+                if mass > 0.0 {
+                    s.raw_dev_s2 / mass
+                } else {
+                    0.0
+                }
+            }
             3 => {
                 if mass > 0.0 {
                     s.raw_dev_s3 / mass

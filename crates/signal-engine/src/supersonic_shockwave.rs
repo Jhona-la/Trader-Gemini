@@ -144,27 +144,6 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        let sound = registry
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "spread_speed_of_sound",
-                "SupersonicShockwaveEngine",
-            )
-            .or_else(|| {
-                registry.get_scoped_parameter(
-                    sym_opt,
-                    cid_opt,
-                    "atr_pct",
-                    "SupersonicShockwaveEngine",
-                )
-            })
-            .map(|p| p.get_value())
-            .unwrap_or(0.001);
-
-        if !speed.is_finite() || !sound.is_finite() {
-            return 0.0;
-        }
 
         let mid_price = registry
             .get_scoped_parameter(sym_opt, cid_opt, "mid_price", "SupersonicShockwaveEngine")
@@ -178,17 +157,45 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         } else {
             speed
         };
-        // #659 (F2-A11) — MISMA BASE TEMPORAL para el Mach: price_velocity
-        // es una tasa por SEGUNDO; `spread_speed_of_sound` (unidades de
-        // precio/s, escritor del core) normaliza a 1/s, pero el fallback
-        // `atr_pct` llega POR BARRA de 60 s — sin la conversión el
-        // denominador quedaba ~60× grande y el Mach sesgado a la baja.
+        // #664 (G2-8): la unidad se decide por la FUENTE del parámetro,
+        // no por su magnitud — el umbral `sound > 1.0` clasificaba mal
+        // el sonido de tokens sub-dólar (precio/s < 1) como «por barra»
+        // y el Mach quedaba inflado cientos de × (el defecto #650
+        // reaparecía para DOGE/PEPE).
+        // `spread_speed_of_sound` (escritor del core) es precio/s ⇒ se
+        // normaliza por mid_price; `atr_pct` es fracción POR BARRA de
+        // 60 s ⇒ se convierte a fracción/segundo aquí.
         const BARRA_S: f64 = 60.0;
-        let sound_norm = if mid_price > 1e-8 && sound > 1.0 {
-            sound / mid_price
-        } else {
-            sound / BARRA_S
-        };
+        let sound_segundo = registry
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "spread_speed_of_sound",
+                "SupersonicShockwaveEngine",
+            )
+            .map(|p| {
+                let v = p.get_value();
+                if mid_price > 1e-8 && v.is_finite() {
+                    v / mid_price
+                } else {
+                    v
+                }
+            })
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "atr_pct",
+                    "SupersonicShockwaveEngine",
+                )
+                .map(|p| p.get_value() / BARRA_S)
+            })
+            .unwrap_or(0.001);
+        let sound_norm = sound_segundo;
+
+        if !speed.is_finite() || !sound_norm.is_finite() || sound_norm <= 0.0 {
+            return 0.0;
+        }
 
         let mach = Self::compute_mach_number(speed_norm.abs(), sound_norm);
         let jump = Self::compute_shockwave_jump(mach);

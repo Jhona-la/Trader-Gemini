@@ -100,13 +100,9 @@ impl ConformalReversionFilterEngine {
         for k in 0..31 {
             // k+1 = escala adyacente más lenta: la tendencia que la
             // reversión debe acompañar (D-676: dirección, no «sube»).
-            let tendencia = if desplazamientos[k + 1] > 0.0 {
-                1.0
-            } else if desplazamientos[k + 1] < 0.0 {
-                -1.0
-            } else {
-                0.0
-            };
+            // #664 (G2-6): tendencia CONTINUA — el signum duro hacía
+            // saltar el voto de ±strength a 0 al cruzar x(τ_{k+1})=0.
+            let tendencia = (desplazamientos[k + 1] / 1e-4).tanh();
             // Score conformal: z = x(τ_k) contra su base; aceptación
             // bidireccional (el registro puede restringir en vivo, aquí
             // es la forma pura).
@@ -132,17 +128,21 @@ impl ConformalReversionFilterEngine {
         if strength <= 0.0 {
             return 0.0;
         }
-        // D-676: la aceptación conformal se consulta para la dirección de la
-        // señal, no para «sube» en todos los casos.
-        if z < 0.0 && trend >= 0.0 && accept_long {
-            // Precio bajo su base con tendencia alcista: la reversión acompaña.
-            strength
-        } else if z > 0.0 && trend <= 0.0 && accept_short {
-            // Precio sobre su base con tendencia bajista.
-            -strength
-        } else {
-            0.0
+        // #664 (G2-6): dirección de reversión CONTINUA (opuesta a z) y
+        // ACUERDO continuo con la tendencia adyacente (la reversión
+        // acompaña cuando la escala lenta se opone a z). Con trend=±1
+        // reproduce el comportamiento viejo; con trend cruzando 0 el
+        // voto decae continuo a 0 en vez de saltar.
+        let direccion = -(z / 1e-3).tanh();
+        let acuerdo = (-(z * trend) / 1e-6).tanh().max(0.0);
+        let v = strength * direccion * acuerdo;
+        if v > 0.0 && !accept_long {
+            return 0.0;
         }
+        if v < 0.0 && !accept_short {
+            return 0.0;
+        }
+        v
     }
 }
 

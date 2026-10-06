@@ -41,13 +41,10 @@ impl CoaxialBreakoutEngine {
             let comp_ab = (1.0 - a / b).max(0.0);
             let comp_bc = (1.0 - b / c).max(0.0);
             let squeeze = (comp_ab * comp_bc * 4.0).tanh().clamp(0.0, 1.0);
-            let signo = if desplazamientos[k] > 0.0 {
-                1.0
-            } else if desplazamientos[k] < 0.0 {
-                -1.0
-            } else {
-                0.0
-            };
+            // #664 (G2-5): dirección CONTINUA — paridad con el camino
+            // vivo, que usa (dir/1e-4).tanh() (:234); el signum duro
+            // hacía saltar el voto ±2·squeeze al cruzar x(τ_k)=0.
+            let signo = (desplazamientos[k] / 1e-4).tanh();
             por_escala[k] = (signo * squeeze).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)

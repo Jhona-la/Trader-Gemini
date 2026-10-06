@@ -32,7 +32,10 @@ impl PerceptronGateEngine {
         let activation = abs_score * weight;
         // Exploración mínima (0.15) para evitar bloqueo cognitivo permanente tras pérdidas
         let gate_strength = ((activation - 0.5) * 5.0).tanh().clamp(0.15, 1.0);
-        signal_score.signum() * gate_strength
+        // #664 (G2-4): dirección CONTINUA (tanh) — el signum hacía saltar
+        // la magnitud del voto ±gate_strength al cruzar score=0 (nunca
+        // vivía en (−0.15, 0.15), violando C¹/invariante 8).
+        (signal_score * 10.0).tanh() * gate_strength
     }
 
     /// #620 (Ola 42) — VOTO ESPECTRAL de la compuerta perceptrón: la
@@ -257,16 +260,23 @@ mod qo_620_tests {
                 k
             );
         }
-        // Señal débil ⇒ la compuerta NO se cierra del todo (piso 0.15 de
-        // exploración — el perceptrón mantiene curiosidad mínima).
+        // Señal débil ⇒ la compuerta NO se cierra del todo: con la
+        // dirección continua (#664/G2-4) el voto es pequeño pero NO CERO
+        // (la compuerta mantiene curiosidad proporcional a la señal; el
+        // piso duro 0.15 saltaba de 0 a 0.15 al cruzar score=0).
         let mut x_debil = [0.0; ESCALAS_VOTO];
         for v in x_debil.iter_mut() {
             *v = 0.01;
         }
         let voto_debil = PerceptronGateEngine::voto_espectral(&x_debil);
         assert!(
-            voto_debil.en_escala(15) >= 0.15,
-            "piso de exploración 0.15: {}",
+            voto_debil.en_escala(15) > 0.0,
+            "senal debil deja voto no nulo: {}",
+            voto_debil.en_escala(15)
+        );
+        assert!(
+            voto_debil.en_escala(15) < 0.15,
+            "senal debil no dispara el piso: {}",
             voto_debil.en_escala(15)
         );
         // Señal nula ⇒ voto 0.

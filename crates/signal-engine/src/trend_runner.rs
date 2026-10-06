@@ -112,7 +112,10 @@ impl HighPayoffTrendRunner {
             if x.abs() < 1e-6 {
                 0.0
             } else {
-                let dir_weight = (x / 1e-3).tanh();
+                // #664 (G2-7): x es momentum_z (O(1)) — la escala 1e-3
+                // de la era del desplazamiento crudo saturaba el tanh a
+                // signum y colapsaba la amplitud espectral.
+                let dir_weight = x.tanh();
                 dir_weight * h_weight * tp_factor
             }
         })
@@ -221,7 +224,8 @@ impl QuantumStrategy for HighPayoffTrendRunner {
         }
 
         let tp = Self::calculate_expanded_tp(0.02, safe_hurst, safe_vpin, safe_atr, 0.08);
-        let dir_weight = (safe_dir / 1e-3).tanh();
+        // #664 (G2-7): escala O(1) para momentum_z (ídem voto_espectral).
+        let dir_weight = safe_dir.tanh();
         dir_weight * h_weight * (tp * 10.0).tanh()
     }
 }
@@ -324,5 +328,25 @@ mod tests {
         }
         assert!(voto_persistente.en_escala(0) < 0.0);
         assert!(voto_persistente.en_escala(31) > 0.0);
+    }
+}
+
+#[cfg(test)]
+mod qo_664_tests {
+    use super::*;
+
+    /// #664 (G2-7): la amplitud espectral NO colapsa — con momentum_z
+    /// O(1), tanh(x) conserva graduación (la escala 1e-3 saturaba a
+    /// signum y todo |x|>3e-3 votaba igual).
+    #[test]
+    fn qo_664_trend_runner_amplitud_no_colapsa() {
+        let d_medio = [0.5f64; 32];
+        let d_fuerte = [2.5f64; 32];
+        let v_medio = HighPayoffTrendRunner::voto_espectral(&d_medio, 0.58, 0.10, 0.005);
+        let v_fuerte = HighPayoffTrendRunner::voto_espectral(&d_fuerte, 0.58, 0.10, 0.005);
+        let m_medio = v_medio.media_banda(0, 31).unwrap_or(0.0);
+        let m_fuerte = v_fuerte.media_banda(0, 31).unwrap_or(0.0);
+        assert!(m_fuerte > m_medio, "graduacion conservada: {m_medio} < {m_fuerte}");
+        assert!(m_medio > 0.0, "voto no nulo con momentum moderado: {m_medio}");
     }
 }

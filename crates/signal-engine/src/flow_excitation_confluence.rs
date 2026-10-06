@@ -248,27 +248,39 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             .unwrap_or(0.15);
         let obi_floor = (obi_p80 * obi_gene).max(0.02);
 
-        if hawkes >= effective_hawkes_thresh && obi.abs() >= obi_floor {
-            let is_long = obi > 0.0 && ml_prob >= ml_base + ml_lift;
-            let is_short = obi < 0.0 && ml_prob <= ml_base - ml_lift;
+        // #664 (G2-3): pertenencia CONTINUA por exceso (rampas C¹
+        // smoothstep de ancho relativo) — con el gate duro el voto
+        // saltaba de 0 a obi·lift·4·hawkes_scale al cruzar cualquiera
+        // de los dos umbrales. Dentro de la región (exceso ≥ ancho)
+        // el peso es 1: el comportamiento en región se conserva.
+        let rampa = |exceso: f64, ancho: f64| {
+            let t = (exceso / ancho.max(1e-9)).clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let w_hawkes = rampa(
+            hawkes - effective_hawkes_thresh,
+            0.30 * effective_hawkes_thresh.max(0.01),
+        );
+        let w_obi = rampa(obi.abs() - obi_floor, 0.50 * obi_floor);
 
-            // Ola 9 (SPECTRAL CONTINUITY): El factor de escala de excitación
-            // se normaliza contra el umbral crítico efectivo del proceso (anclado
-            // al estado estacionario + genoma), garantizando continuidad espectral:
-            // en el umbral exacto vale 1.0 y crece monótonamente hasta saturar en 2.0,
-            // eliminando el divisor literal 2.0 que desalineaba la señal según el gen.
-            let hawkes_scale = (hawkes / effective_hawkes_thresh.max(0.01)).min(2.0);
+        let is_long = obi > 0.0 && ml_prob >= ml_base + ml_lift;
+        let is_short = obi < 0.0 && ml_prob <= ml_base - ml_lift;
 
-            if is_long {
-                (obi * (ml_prob - ml_base) * 4.0 * hawkes_scale).clamp(0.0, 1.0)
-            } else if is_short {
-                (obi * (ml_base - ml_prob) * 4.0 * hawkes_scale).clamp(-1.0, 0.0)
-            } else {
-                0.0
-            }
+        // Ola 9 (SPECTRAL CONTINUITY): El factor de escala de excitación
+        // se normaliza contra el umbral crítico efectivo del proceso (anclado
+        // al estado estacionario + genoma), garantizando continuidad espectral:
+        // en el umbral exacto vale 1.0 y crece monótonamente hasta saturar en 2.0,
+        // eliminando el divisor literal 2.0 que desalineaba la señal según el gen.
+        let hawkes_scale = (hawkes / effective_hawkes_thresh.max(0.01)).min(2.0);
+
+        let voto = if is_long {
+            (obi * (ml_prob - ml_base) * 4.0 * hawkes_scale).clamp(0.0, 1.0)
+        } else if is_short {
+            (obi * (ml_base - ml_prob) * 4.0 * hawkes_scale).clamp(-1.0, 0.0)
         } else {
             0.0
-        }
+        };
+        voto * w_hawkes * w_obi
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
@@ -404,17 +416,35 @@ mod tests {
         let mut engine = FlowExcitationConfluenceEngine::new();
         assert!(engine.init(Arc::clone(&registry)).is_ok());
 
-        // En hawkes = 1.60 exacto: factor = 1.60 / 1.60 = 1.0
+        // #664 (G2-3): pertenencia CONTINUA — EN el umbral el voto es 0
+        // y crece suave hasta el pleno a umbral+ancho (30% del umbral,
+        // 0.48 aquí); el factor hawkes_scale sigue valiendo 1.0 en el
+        // umbral y saturando en 2.0.
         registry.set("hawkes_intensity", 1.60);
         let v_base = engine.evaluate();
-        assert!(v_base > 0.0);
-        // Formula esperada: 0.5 * (0.85 - 0.50) * 4.0 * 1.0 = 0.5 * 0.35 * 4.0 = 0.70
-        assert!((v_base - 0.70).abs() < 1e-6, "v_base esperado 0.70, dio {v_base}");
+        assert_eq!(v_base, 0.0, "en el umbral exacto el peso de exceso es 0");
+        // Punto medio de la rampa (umbral + ancho/2): smoothstep(0.5)=0.5
+        // y el factor de escala crece con la intensidad: 1.84/1.60 = 1.15
+        registry.set("hawkes_intensity", 1.60 + 0.24);
+        let v_medio = engine.evaluate();
+        assert!(
+            (v_medio - 0.70 * 1.15 * 0.5).abs() < 1e-6,
+            "punto medio de la rampa: {v_medio}"
+        );
+        // Pleno (umbral + ancho): peso 1; el factor de escala es
+        // 2.08/1.60 = 1.30 ⇒ 0.70 · 1.30 = 0.91
+        registry.set("hawkes_intensity", 1.60 + 0.48);
+        let v_pleno = engine.evaluate();
+        assert!(
+            (v_pleno - 0.70 * 1.30).abs() < 1e-6,
+            "v_pleno esperado 0.91, dio {v_pleno}"
+        );
+        assert!(v_medio < v_pleno, "monotonia en la rampa");
 
-        // En hawkes = 2.40: factor = 2.40 / 1.60 = 1.50
+        // En hawkes = 2.40: pleno y factor = 2.40 / 1.60 = 1.50
         registry.set("hawkes_intensity", 2.40);
         let v_high = engine.evaluate();
-        assert!(v_high > v_base, "mayor intensidad produce monotonicamente mayor senal");
+        assert!(v_high > v_pleno, "mayor intensidad produce monotonicamente mayor senal");
         // Formula esperada: 0.70 * 1.50 = 1.05 clamped to 1.0
         assert_eq!(v_high, 1.0, "satura suavemente en 1.0");
     }

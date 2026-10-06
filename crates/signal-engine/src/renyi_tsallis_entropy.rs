@@ -139,7 +139,7 @@ impl RenyiTsallisEntropyEngine {
     /// Voto puro (compartido por el camino global legado de `evaluate` y el
     /// escopado por moneda de `evaluate_for_coin`).
     #[inline(always)]
-    fn vote(tsallis_q: f64, obi: f64) -> f64 {
+    pub(crate) fn vote(tsallis_q: f64, obi: f64) -> f64 {
         // FIX #681: Sanitizar lecturas de registro
         let safe_tsallis = if tsallis_q.is_finite() && tsallis_q >= 0.0 {
             tsallis_q
@@ -148,13 +148,19 @@ impl RenyiTsallisEntropyEngine {
         };
         let safe_obi = if obi.is_finite() { obi } else { 0.0 };
 
-        // Si la entropía es baja (orden estructurado en el flujo) y hay desequilibrio direccional, amplificar
-        if safe_tsallis < 0.60 && safe_obi.abs() > 0.15 {
-            let conviction = (1.0 - safe_tsallis) * safe_obi;
-            conviction.clamp(-1.0, 1.0)
-        } else {
-            0.0
-        }
+        // #664 (G2-9): pertenencia CONTINUA (smoothstep C¹) en vez de
+        // los gates duros `tsallis < 0.60 && |obi| > 0.15` — el voto
+        // saltaba de 0 a ~(1−tsallis)·obi al cruzar cualquiera de los
+        // dos umbrales. Rampa de orden: 1 con entropía ≤0.40, 0 en ≥0.60;
+        // rampa de desequilibrio: 1 con |obi| ≥0.30, 0 en ≤0.15.
+        let smooth = |t: f64| {
+            let t = t.clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let orden = smooth((0.60 - safe_tsallis) / 0.20);
+        let desequilibrio = smooth((safe_obi.abs() - 0.15) / 0.15);
+        let conviction = (1.0 - safe_tsallis) * safe_obi * orden * desequilibrio;
+        conviction.clamp(-1.0, 1.0)
     }
 }
 
@@ -403,5 +409,30 @@ mod qo_615_tests {
         // Cero desplazamiento ⇒ voto 0 (incertidumbre total).
         let cero = engine.voto_espectral(&[0.0; ESCALAS_VOTO]);
         assert_eq!(cero.dominante(), None);
+    }
+}
+
+#[cfg(test)]
+mod qo_664_tests {
+    use super::*;
+
+    /// #664 (G2-9): la convicción Rényi-Tsallis es CONTINUA en ambos
+    /// umbrales — antes saltaba de 0 a (1−tsallis)·obi al cruzar
+    /// |obi|=0.15 o tsallis=0.60.
+    #[test]
+    fn qo_664_renyi_continua_en_los_umbrales() {
+        // Piso OBI: antes v(0.155) saltaba a (1−0.55)·0.155 ≈ 0.07 con
+        // v(0.145)=0; ahora la rampa [0.15, 0.30] hace el paso diminuto.
+        let bajo_piso = RenyiTsallisEntropyEngine::vote(0.55, 0.145);
+        let sobre_piso = RenyiTsallisEntropyEngine::vote(0.55, 0.155);
+        assert!((sobre_piso - bajo_piso).abs() < 0.01, "sin salto en el piso: {bajo_piso} {sobre_piso}");
+        // Dentro de la rampa: monótono y no nulo.
+        let interior1 = RenyiTsallisEntropyEngine::vote(0.55, 0.18);
+        let interior2 = RenyiTsallisEntropyEngine::vote(0.55, 0.25);
+        assert!(interior1 > 0.0 && interior2 > interior1, "monotono en |obi|: {interior1} {interior2}");
+        // Umbral de entropía 0.60: rampa [0.40, 0.60] — sin salto.
+        let bajo_h = RenyiTsallisEntropyEngine::vote(0.58, 0.30);
+        let sobre_h = RenyiTsallisEntropyEngine::vote(0.62, 0.30);
+        assert!(bajo_h >= 0.0 && (bajo_h - sobre_h).abs() < 0.01, "sin salto en tsallis=0.60: {bajo_h} {sobre_h}");
     }
 }
