@@ -4785,4 +4785,3 @@ casa prohíbe. El fix de tests es mío; el estándar es de todos.
 - **MICRO-CUENTAS ($13 USD)**:
   - Todas las compuertas auditadas contra capital reducido: min_notional $5 USD, SL friction floor,
     streak cap de Cramér-Lundberg y admisión matemática de coberturas ($\rho < 0$).
-
