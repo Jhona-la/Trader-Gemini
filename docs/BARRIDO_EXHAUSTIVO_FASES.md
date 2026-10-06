@@ -527,7 +527,7 @@ NN, no una ola mecónica). Bonus: `fr_elasticity` es característica
 muerta (escrita por update_macro_features, jamás leída — train_forest
 lo documenta en sus líneas 60-64). El hallazgo pasa de OLA a deuda
 acotada: no invalida nada de lo promovido.
-- **F6-A-H4** ⚠️ **9 DIMS PERPETUAMENTE 0.0 EN VIVO**: los slots cross-exchange (bybit/okx/...) sólo los escriben pollers muertos; get_features normaliza contra ref_p=1.0 → ceros silenciosos. El modelo infiere con dims muertas (coherente con lo que el trainer ve — paridad preservada por accidente). OLA: o se alimentan o se declaran muertas por contrato.
+- **F6-A-H4** ⚠️ **9 DIMS PERPETUAMENTE 0.0 EN VIVO**: los slots cross-exchange (bybit/okx/...) sólo los escriben pollers muertos; get_features normaliza contra ref_p=1.0 → ceros silenciosos. El modelo infiere con dims muertas (coherente con lo que el trainer ve — paridad preservada por accidente). OLA: o se alimentan o se declaran muertas por contrato. **RESUELTA POR DECLARACIÓN (XCV, 2026-10-06)**: contrato `xcv_dims_cross_exchange_muertas_por_contrato` fija los slots 1..10 como ceros estructurales (bits exactos) con mensaje accionable (re-entrenar si un poller se activa); doc-comentario en get_features(). La cola de F6 queda VACÍA: A-H3 resuelta por verificación, B-M3 reparada certificada, A-H4 declarada.
 - **F6-B-H1** ledger.rs: read_ownership consulta un esquema que su propio escritor destruye (ANOTADO).
 - **F6-B-H2** ledger.rs: pérdida silenciosa de eventos de posesión (try_send ignorado, qty=0 descarta el cierre — posesiones fantasma) (ANOTADO).
 

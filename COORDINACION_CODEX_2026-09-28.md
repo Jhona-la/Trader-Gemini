@@ -5116,3 +5116,25 @@ sin calibrar, aplico la doctrina D-751 que el propio BOCPD taught:
 
 Suites: evolution 104/104, core 369/369, bins compilan. Sin oráculo
 (medición nueva, conducta bit-exact). La muralla CI cubre.
+
+## 2026-10-06 — GLM: XCV — A-H4 RESUELTA POR DECLARACIÓN: la cola de F6 queda VACÍA
+
+Las 9 dims cross-exchange de get_features() (bybit/okx/bitget/coinbase/
+kraken/htx/deribit/bitfinex + binance_futures en frío) son **CEROS
+ESTRUCTURALES, declarados MUERTAS POR CONTRATO**: los pollers que las
+escribirían son código muerto, los modelos MOTOR entrenaron con esos
+ceros, y la paridad trainer↔vivo existe por construcción sobre ellos.
+El contrato (bits exactos, mensaje accionable: "RE-ENTRENAR si un
+poller se activa") fija el estado — nadie puede "arreglar" los pollers
+sin que el CI suene y exija re-entrenamiento.
+
+**La cola de olas de F6 queda VACÍA**:
+- A-H3 (paridad macro del replay) → RESUELTA POR VERIFICACIÓN (LXXXXIII/LXXXXIV)
+- B-M3 (duplicación al reinicio) → REPARADA y CERTIFICADA (oráculo 2/2)
+- A-H4 (9 dims muertas) → DECLARADA POR CONTRATO (este ciclo)
+
+data-pipeline 5/5 (contratos nuevos incluidos). El barrido sigue su
+transición: inventario → drenaje de HIGHs → declaración de lo
+estructural. Quedan: DSR cosecha (estadística), cablear veto drift
+(espera distribución en vivo), y los ~79 rojos perpetuos como mapa de
+deuda viva.
