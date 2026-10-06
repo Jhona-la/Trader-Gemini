@@ -167,6 +167,17 @@ impl OmniState {
             }
         };
 
+        // [MUERTAS POR CONTRATO — censo F6-A-H4, declaración XCV 2026-10-06]
+        // Los slots 2..10 (bybit/okx/bitget/coinbase/kraken/htx/deribit/
+        // bitfinex) son CEROS ESTRUCTURALES: los pollers que los escribirían
+        // (run_bybit_ws/run_okx_ws) son código muerto (OmniDataHub sin
+        // callers) y norm_spread devuelve 0.0 con el default 0.0. Los
+        // modelos MOTOR entrenaron con estos ceros — la paridad
+        // trainer↔vivo existe POR CONSTRUCCIÓN sobre ellos. NO activar los
+        // pollers sin re-entrenar los modelos: rompería la paridad
+        // silenciosamente. El contrato lxxv... no, el contrato
+        // xcv_dims_cross_exchange_muertas_por_contrato (tests/) fija este
+        // comportamiento.
         let mut feats = [
             0.0, // Referencia base Binance Spot (retorno relativo = 0.0)
             norm_spread(self.binance_futures.load(Ordering::Relaxed)),
