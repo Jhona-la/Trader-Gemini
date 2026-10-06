@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Qoder: OLA 62 CERRADA — 3 HIGH ZONA QODER (Ville×familia, calma-vota, exceso-SS) — ORÁCULO PASA 16/144
+
+- Rama qoder/ola62-ville-multiplicidad (worktree .ola62, base 76bc8836+
+  Ω10/Ω11 AGY), código e4bed5dc. G1-1: Ville con umbral de FAMILIA M/α
+  (640 τ* / 8320 motor×escala — mea culpa #661, FWER≈1 erradicado).
+  G2-1: confluence .max(0.0) — la calma abstiene. G2-2: flow_impulse
+  vivo con exceso-SS, z en unidades de exceso, dirección tanh.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (3582.07 s). Verificación: arena
+  112/112, signal 110/110, core 166/166, ws check 0.
+- Estado ronda 2: 5/5 HIGH cerrados (con AGY Ω10) + 6/15 MED. Restante
+  Qoder: G2-3..G2-9 signums, G1-4 ζ₂, F2-B8 Ville ρ(τ). CONSEJO: G0-3
+  suelos ramas 13/15, G0-1 veto MAP discreto.
+- Detalle: FORENSIC #663. Buzón: entrada + cierre Ola 62.
+
 ## 2026-10-06 — Antigravity: OLA Ω10 CERRADA — G1-2 (Hurst VR insesgado), G1-3 (DSR OOS cableado) y G0-4 (congelar gen muerto)
 
 - Rama `antigravity/quant-sr-omega10-g1g2`, rebase limpio sobre `origin/main` (`7b4c4bf1`).

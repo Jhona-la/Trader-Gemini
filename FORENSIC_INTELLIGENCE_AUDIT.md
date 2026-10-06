@@ -14382,3 +14382,46 @@ Documentado en los comentarios del fix y los tests.
 **ORÁCULO T-1: PASA 16/144 = 11.1%** (2212.82 s, release, sobre
 5fc47680). Ningún gen certificado perdió sensibilidad con el vecindario
 ln τ, el transporte físico y la masa continua.
+
+## #663 — Ola 62 (Qoder, 2026-10-06): VILLE CON MULTIPLICIDAD DE FAMILIA + CALMA ABSTIENE + EXCESO-SS EN FLOW_IMPULSE — ORÁCULO PASA
+
+Rama `qoder/ola62-ville-multiplicidad` (worktree `.ola62`, base 76bc8836 +
+Ω10/Ω11 de AGY), código e4bed5dc. Los 3 HIGH de la zona Qoder de la ronda 2:
+
+- **G1-1 / Ville con umbral de FAMILIA (mea culpa de #661)** — Ville acota
+  P(∃t: e ≥ 1/α) ≤ α POR PROCESO; con 448 e-procesos por moneda (32 del
+  banco de τ* + 13×32=416 del consenso) el FWER era ≈1 en ruido: los
+  comentarios de #661 afirmaban inmunidad a «la multiplicidad del máximo»,
+  matemáticamente falso. Fix: `significativo_familia(M)` con umbral
+  Bonferroni M/α — 640 para la selección de τ* (32 escalas),
+  8320 para `ic_significativo` (416 pares motor×escala, constante
+  NUM_PARES_MOTOR_ESCALA). Comentarios corregidos en los tres módulos.
+  Coste de potencia honesto: ~69/97 maduraciones netas-aciertadas para
+  cruzar (λ=0.10, p=0.58 ⇒ n≈585/820 observaciones al 58% de acierto).
+- **G2-2 / exceso-SS en el flow_impulse VIVO** — `evaluate_flow_impulse`
+  (fallback del fast_intent) usaba el ratio λ/μ̂ CRUDO como tensor de
+  excitación: en régimen normal (ratio=SS=1.6) daba z≈0.64 de línea base
+  y disparaba en cualquier pico normal. Fix: excitación =
+  excitacion_hawkes_norm(ratio).max(0.0) (misma moneda de la casa que
+  #649), z-gate sobre el EXCESO bruto (ratio−SS)/SS con el σ del genoma
+  recalibrado a unidades de exceso (σ/SS), y dirección continua
+  tanh(flow/1e-3) en vez de signum (invariante 8). El test viejo usaba
+  un ratio NEGATIVO (−3.0, no físico) que sólo pasaba por leer el ratio
+  crudo: reescrito con cascada física 6.4 (exceso 3σ).
+- **G2-1 / calma abstiene en el confluence espectral** — el voto_usaba
+  `.abs()` sobre la excitación: λ/μ̂→0.1 (calma extrema) votaba 0.734,
+  MÁS que una cascada 3× (0.703) — el motor opinaba fuerte en mercados
+  muertos dentro del consenso vivo, rompiendo paridad con sus dos hermanos
+  (.max(0.0)) y con su propio gate (hawkes ≥ SS). Fix: .max(0.0).
+
+**Verificación**: quantum-arena 112/112 (contrato qo_663 Bonferroni:
+umbral 640/8320, cruce en n=68 exacto), signal-engine 110/110 (contratos
+qo_663: calma/SS abstienen y cascada vota en confluence; régimen normal/
+calma abstienen y cascada 3σ emite en flow_impulse), god-engine-core
+166/166, check workspace --all-targets 0 errores.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (3582.07 s, release, sobre e4bed5dc
+— alargado por contienda de CPU con builds paralelos). Ningún gen
+certificado perdió sensibilidad: la familia de Ville encarece declarar
+habilidad pero el respaldo de energía (bit a bit pre-#594) conserva toda
+la expresividad genética.

@@ -1,7 +1,6 @@
 # ARQUITECTURA VIVA — Trader Gemini (mapa para el consejo)
 
-> Mantenedor: Qoder. Últimasync: 2026-10-06 (post Ola 61, árbol 5fc47680).
-> Este documento es el MAPA y las REGLAS DURAS. El estado pormenorizado vive en
+> Mantenedor: Qoder. Últimasync: 2026-10-06 (post Ola 62 / Ω11).
 > `.agents/MEMORIA.md`; la bitácora de coordinación en `COORDINACION_CODEX_2026-09-28.md`;
 > la doctrina formal en `docs/adr/ADR-0014-doctrina-continuo-espectral.md`.
 > REGLA DE ORO: si tu cambio contradice un invariante de §2, o repara el mapa
@@ -23,7 +22,8 @@ WS Binance (data-pipeline/ws_client.rs, parser.rs)
               │     N_efectivo), masa SOLO de escalas observadas (D-742/CL-35)
               ├─ 13 motores (signal-engine/src/*.rs) — cada uno con
               │     evaluate* VIVO + voto_espectral() por escala
-              │     moneda de la casa: excitacion_hawkes_norm = λ/μ̂ vs SS (#649)
+              │     moneda de la casa: excitacion_hawkes_norm = λ/μ̂ vs SS
+              │     (.max(0.0): calma abstiene, TAMBIÉN en evaluate* vivos #663)
               ├─ Sombras + SkillMotores (signal-engine/skill_motores.rs)
               │     IC por motor×escala con gate Ville (#661, Fisher
               │     retirado), re-arme CAUSAL (#659: snapshot del
@@ -86,9 +86,10 @@ Evolución (evolution-engine) — demonio + walk-forward sobre barras,
    trailing, H(τ), confianzas; las fronteras son centros de transición
    suave (smoothstep/tanh), no cortes. [ADR-0014/#658]
 9. **Significancia honesta** — un IC cuenta sólo si su e-proceso de Ville
-   cruza capital ≥ 1/α (#661: banco de τ* y SkillMotores; Fisher
-   2/√(n−3) retirado de ambos); gates contra el MEJOR nulo (persistencia),
-   no contra climatology. [F1-A1/C1/#661]
+   cruza el umbral de FAMILIA M/α donde hay selección múltiple (#663:
+   640 para el banco de τ*, 8320 para los 416 pares motor×escala;
+   #661 retiró Fisher); gates contra el MEJOR nulo (persistencia),
+   no contra climatology. [F1-A1/C1/#661/#663]
 10. **El espectro sólo opina con escalas OBSERVADAS** — D-742 en fusión,
     masa, composición (#648) y funciones de estructura (XLIV-6).
 
@@ -130,10 +131,17 @@ worktree+rama. Si tocó un VETO ⇒ tocó su entrada del registro de vetos
 ## 6. Deuda viva (verificada por grep contra el árbol 09186b81, 2026-10-05 post Ω9/LXXXXVIII)
 
 **Qoder (cola propia, verificada por grep en este corte):**
-- [F2-B2/B3/B4 CERRADOS por #662/Ola 61: vecino ln τ en habilidad_en,
-  W₁ a lag físico de 60 s con anillo por timestamp del exchange (cadencia
-  250 ms), ζ(p) con peso continuo de masa (rampa C¹ 0,05..0,15). Banda
-  operable [30 s, 12 h] = nodos 18..22 de la malla 4^k µs.]
+- [RONDA 2 §G: G1-1/G2-1/G2-2 CERRADOS por #663/Ola 62 (Ville familia
+  M/α 640/8320, calma abstiene en confluence, exceso-SS en flow_impulse
+  vivo); G1-2/G1-3/G0-4 por AGY Ω10; G0-2/G2-10/G1-5 por AGY Ω11.
+  5/5 HIGH + 6/15 MED resueltos.]
+- G2-3..G2-9 ola mecánica: signums/gates duros residuales (confluence
+  gate OBI, perceptron signum+piso, coaxial sombra, conformal vecino,
+  trend_runner escala 1e-3, shockwave sub-dólar, renyi doble gate).
+- G1-4 ζ(2) mide (E|dev|)² no E[dev²] — χ sesgado alto. temporal_spectrum.
+- F2-B8 IC cruzado ρ(τ) del veto de grupo sin significancia — la
+  maquinaria de familia Ville (#663) ya existe para cablearlo.
+  espectral_multiactivo.rs.
 - F2-B8 el IC cruzado ρ(τ) del veto de grupo NO aplica significancia
   (#599) — umbral autoajustado 2/√(n−3). espectral_multiactivo.rs.
 - F3-A4 sombras con knobs muertos: `quantum_k_spring`/

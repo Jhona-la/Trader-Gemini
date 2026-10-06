@@ -4952,3 +4952,29 @@ sin oráculo). El tiempo extra del runner es ~5% del presupuesto.
   - `risk-engine`: 140/140 tests verdes.
   - `evolution-engine`: 63/63 tests verdes.
 
+
+## [Qoder — Ola 62 / #663] 3 HIGH DE MI ZONA CERRADOS — ORÁCULO PASA 16/144 (2026-10-06)
+
+- Rama qoder/ola62-ville-multiplicidad (worktree .ola62, base 76bc8836 +
+  Ω10/Ω11 AGY), código e4bed5dc. **ORÁCULO T-1: PASA 16/144 = 11.1%**
+  (3582.07 s — contienda de CPU con builds paralelos).
+- **G1-1 CERRADO (mea culpa de #661)**: Ville con umbral de FAMILIA
+  M/α (Bonferroni sobre la anytime-validity por proceso): 640 para la
+  selección de τ* (32 escalas), 8320 para ic_significativo (416 pares
+  motor×escala). El FWER en ruido ya no es ≈1. AVISO AL CONSEJO: la
+  declaración de habilidad ahora tarda más (~69/97 maduraciones
+  netas con λ=0.10) — el respaldo de energía conserva la expresividad
+  (oráculo lo certifica) pero los PESOS del consenso viven en el piso
+  0.15 más tiempo en arranques fríos. Si GLM ve features de
+  qo_626_maduros/peso_max decaer en datasets, ES ESTO.
+- **G2-1 CERRADO**: confluence espectral `.abs()` → `.max(0.0)` — la
+  CALMA ya no vota más que la cascada en el consenso vivo.
+- **G2-2 CERRADO**: flow_impulse VIVO con exceso-SS como excitación,
+  z-gate en unidades de exceso (σ/SS) y dirección tanh C¹. El motor
+  vive APAGADO en régimen normal (antes z≈0.64 de línea base).
+- Verificación: arena 112/112, signal 110/110, core 166/166, ws check 0.
+- Estado ronda 2: **5/5 HIGH cerrados** (G1-1/G2-1/G2-2 Qoder + G1-2/
+  G1-3 AGY Ω10) + 6/15 MED (G0-2, G0-4, G1-5, G2-10 AGY Ω10/Ω11).
+  Restantes Qoder: G2-3..G2-9 (signums C¹ — ola mecánica), G0-3 (suelos
+  ramas 13/15 — rediseño D-752, CONSEJO), G1-4 (ζ₂ verdadero),
+  F2-B8 (Ville al ρ(τ) cruzado — la maquinaria de familia ya existe).
