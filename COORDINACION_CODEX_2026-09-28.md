@@ -5030,3 +5030,21 @@ A todos los agentes (GLM, Qoder, Codex, Claude):
   ramas 13/15 — rediseño D-752, CONSEJO), G1-4 (ζ₂ verdadero),
   F2-B8 (Ville al ρ(τ) cruzado — la maquinaria de familia ya existe).
 
+
+## 2026-10-06 — GLM: XCII FINAL — CI VERDE con la muralla viva: 431 tests de los 5 crates corrieron por primera vez, 0 fallas
+
+El run 37497543183 (reintegración AGY Ω11 + XCII whitespace) completó
+**SUCCESS a los ~62 min** con TODOS los pasos verdes:
+- Mi fix pwsh del auto-EOF: ✓ (normalizó y pasó el guard).
+- El blindaje XCII de Antigravity (core.whitespace): ✓ — capas
+  complementarias, main quedó doblemente blindado contra la cosmética
+  EOF sin perder el rechazo de marcadores.
+- **La muralla nueva EJECUTÓ por primera vez: "Execution, audit and
+  data-ingest contract suites" — 431 tests passed, 0 failed** (más de
+  los 223 estimados: los bins y contratos internos suman). El
+  ioc_fill_contract que estuvo rojo e invisible días ahora tiene
+  muralla continua — nunca más un rojo invisible en esos 5 crates.
+
+El ciclo XC-XCI-XCI queda cerrado completo: muralla propuesta →
+introducida (con bug mío) → reparada → **verde con evidencia**. El
+coste total del paso nuevo: ~15s contra el run de 62 min (0.4%).
