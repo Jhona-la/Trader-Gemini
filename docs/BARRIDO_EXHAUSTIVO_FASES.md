@@ -708,9 +708,10 @@ duros supervivientes, y abstención-SS incompleta:
 - **AGY (Ω10) CERRADA**: G1-2 (insesgado Lo & MacKinlay en multifractal.rs + test nulo iid) +
   G1-3 (DSR OOS cableado en darwin.rs como compuerta formal conjunta DSR>=0.95) +
   G0-4 (congelado gen muerto capital_split en genome.rs y neutralizado en darwin.rs). 83/83 + 166/166 + 111/111 verdes.
-- **GLM**: G1-5 (unificar selection_stats en un crate hoja).
-- **Ola mecánica posterior (Qoder)**: G2-3..G2-9 (signums C¹), G0-2
-  (ancla→τ viva rama 13), G1-4 (S₂ verdadero), G0-6/G1-7/G2-12 (limpieza).
+- **AGY (Ω11) CERRADA**: G0-2 (ancla fija swing_tp_base reemplazada por config.tp_at_tau dinámico a tau viva en rama 13 de lib.rs:6017) +
+  G2-10 (lead-lag sin auto-referencia en BTC/ETH: BTC líder macro puro div=0.0; ETH evalúa sólo contra BTC en predict_eth_impulse_con_reloj; alts evalúan matriz ponderada; test dedicado añadido) +
+  G1-5 (unificación DRY canónica de selection_stats re-exportado desde risk_engine en evolution-engine/src/lib.rs; archivo duplicado eliminado). 84/84 + 54/54 + 166/166 verdes, workspace 0 errores.
+- **Ola mecánica posterior**: G2-3..G2-9 (signums C¹), G1-4 (S₂ verdadero en temporal_spectrum.rs tras Ola 62), G0-6/G1-7/G2-12 (limpieza).
 - **Consejo**: G0-1 (veto MAP discreto — política de fusión suave),
   G0-3/G2-14 (suelos de confianza ramas 13/15 — rediseño D-752), G0-9
   (¿2 anclas bastan para el espacio genético?).

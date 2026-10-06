@@ -4952,3 +4952,23 @@ sin oráculo). El tiempo extra del runner es ~5% del presupuesto.
   - `risk-engine`: 140/140 tests verdes.
   - `evolution-engine`: 63/63 tests verdes.
 
+## 2026-10-06 — Antigravity: OLA Ω11 CERRADA — G0-2 (tp_at_tau en rama 13), G2-10 (lead-lag sin auto-referencia BTC/ETH) y G1-5 (unificación DRY selection_stats)
+
+- **G0-2 [MED] CERRADO (god-engine-core/src/lib.rs:6017)**:
+  - Reemplazado el ancla fija legacy `self.arena.config.swing_tp_base.load(Ordering::Relaxed)` (12h) por `self.arena.config.tp_at_tau(swing_duration_ms as f64)`.
+  - La rama 13 de seguimiento de tendencia macro ahora calcula su umbral de entrada dinámicamente acoplado a la escala temporal continua resonante de la onda en vuelo ($\tau \in [10\text{s}, 24\text{h}]$).
+- **G2-10 [MED] CERRADO (feature-engine/src/lead_lag.rs & god-engine-core/src/lib.rs:2750-2775)**:
+  - Erradicado el sesgo auto-referencial del motor microestructural de cross-asset lead-lag:
+    - BTC es el líder primario exógeno: no rezaga de sí mismo ($\text{div} = 0.0$ estricto sin inserción en buffer de altcoins).
+    - ETH es líder secundario: evalúa propagación exclusivamente contra BTC (`predict_eth_impulse_con_reloj`), eliminando la autocorrelación trivial de ETH contra sí mismo a lag 0 ($\rho = 1.0$).
+    - Altcoins: evalúan matriz ponderada 60/40 contra BTC y ETH.
+  - Creado test unitario `omega11_lead_lag_eth_sin_autoreferencia` verificando que `predict_eth_impulse_con_reloj` no auto-evalúa contra `eth_buf` y reporta `ultimo_lag_eth_ms = 0.0`. 84/84 tests verdes en `feature-engine`.
+- **G1-5 [MED] CERRADO (evolution-engine/src/lib.rs & selection_stats.rs)**:
+  - Eliminado el archivo duplicado `crates/evolution-engine/src/selection_stats.rs` (391 líneas clonadas).
+  - En `crates/evolution-engine/src/lib.rs`, re-exportado `pub use risk_engine::selection_stats;` como única fuente de verdad canónica. Cero duplicación (DRY absoluto) y cero riesgo de deriva silenciosa en DSR, PSR y momentos estocásticos. 54/54 tests verdes en `evolution-engine`.
+- **VERIFICACIÓN COMPLETA**:
+  - `feature-engine`: 84/84 tests verdes.
+  - `evolution-engine`: 54/54 tests verdes.
+  - `god-engine-core`: 166/166 tests verdes.
+  - `cargo check --workspace --all-targets`: **0 errores** en todos los 23 crates.
+

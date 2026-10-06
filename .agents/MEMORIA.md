@@ -1,5 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Antigravity: OLA Ω11 CERRADA — G0-2 (tp_at_tau en rama 13), G2-10 (lead-lag sin auto-referencia BTC/ETH) y G1-5 (unificación DRY selection_stats)
+
+- Rama `antigravity/quant-sr-omega11-continuo-espectral`, merge fast-forward limpio sobre `main` (`1b92b92e`).
+- **G0-2 CERRADO**: Desacoplada la rama 13 en `god-engine-core/src/lib.rs:6017` del ancla legacy fija `swing_tp_base` (12h). Ahora evalúa dinámicamente `self.arena.config.tp_at_tau(swing_duration_ms as f64)` respetando la escala temporal y resonancia continua de la onda en vuelo.
+- **G2-10 CERRADO**: Erradicada la auto-referencia espuria en el motor microestructural de cross-asset lead-lag (`crates/feature-engine/src/lead_lag.rs` y `crates/god-engine-core/src/lib.rs:2750-2775`). BTC actúa como líder macro exógeno puro ($\text{div} = 0.0$ sin inserción en buffers de altcoins ni autocorrelación como seguidor de sí mismo); ETH evalúa propagación exclusivamente contra BTC (`predict_eth_impulse_con_reloj`, eliminando $\rho = 1.0$ espurio contra sí mismo); las altcoins evalúan la matriz ponderada combinada BTC/ETH. Test unitario de no-autoreferencia añadido (`omega11_lead_lag_eth_sin_autoreferencia`). 84/84 tests verdes en `feature-engine`.
+- **G1-5 CERRADO**: Unificado `selection_stats` eliminando la copia redundante en `crates/evolution-engine/src/selection_stats.rs` y re-exportando canónicamente `pub use risk_engine::selection_stats;` en `evolution-engine/src/lib.rs`. Cero duplicación de código (DRY absoluto) y cero riesgo de deriva silenciosa en métricas DSR/PSR/Sharpe. 54/54 tests verdes en `evolution-engine`.
+- **ESTADO DEL BARRIDO SISTÉMICO**: 2/5 HIGH (G1-2, G1-3) y 4/15 MED (G0-2, G0-4, G1-5, G2-10) de la Ronda 2 resueltos con 100% Rust, $O(1)$ zero-alloc en bucle caliente y cero fallos en el workspace.
+
 ## 2026-10-06 — Antigravity: OLA Ω10 CERRADA — G1-2 (Hurst VR insesgado), G1-3 (DSR OOS cableado) y G0-4 (congelar gen muerto)
 
 - Rama `antigravity/quant-sr-omega10-g1g2`, rebase limpio sobre `origin/main` (`7b4c4bf1`).
