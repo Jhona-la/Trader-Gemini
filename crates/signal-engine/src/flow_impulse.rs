@@ -87,16 +87,27 @@ impl FlowImpulseEngine {
         let w_ofi = arena.config.weight_ofi.load(Ordering::Relaxed);
 
         // Tensor math: Map inputs to continuous activation space (-1.0 to 1.0) using genomic weights
+        const SS_RATIO: f64 = crate::hawkes_bessel::STEADY_STATE_RATIO;
         let flow_tensor = (obi * w_obi + ofi * w_ofi) / (w_obi + w_ofi).max(0.01);
-        let excitement_tensor = hawkes_ratio;
+        // #663 (G2-2): el tensor de excitación es el EXCESO λ/μ̂ sobre
+        // el estado estacionario (misma moneda de la casa que #649):
+        // 0 en régimen normal (abstención), >0 sólo en cascada, y la
+        // calma se recorta a 0 (no excita). Antes el ratio CRUDO
+        // (SS=1.6) hacía que coherence y z_score no valieran 0 jamás —
+        // el motor vivía encendido en régimen normal.
+        let excitement_tensor =
+            crate::hawkes_bessel::excitacion_hawkes_norm(hawkes_ratio)
+                .max(0.0);
         // Coherence: Flow magnitude and Hawkes Excitement intensity (Symmetric for Long & Short)
-        let coherence = (flow_tensor.abs() * excitement_tensor.abs()).sqrt();
+        let coherence = (flow_tensor.abs() * excitement_tensor).sqrt();
 
-        // Direction vector: +1.0 for Long, -1.0 for Short. Flujo neutro (0.0) no emite señal direccional.
-        let direction_tensor = flow_tensor.signum();
-        if direction_tensor == 0.0 {
+        // Direction vector: continua C¹ (tanh) en lugar de signum —
+        // #663 (G2-2): el escalón ±1 violaba el invariante 8. Flujo
+        // neutro (|flow| ≤ 1e-6) no emite señal direccional.
+        if flow_tensor.abs() <= 1e-6 {
             return None;
         }
+        let direction_tensor = (flow_tensor / 1e-3).tanh();
 
         // Entropy penalty: higher entropy exponentially decays the confidence (using genomic poly constants)
         let poly_a = arena.config.tensor_poly_a.load(Ordering::Relaxed);
@@ -115,11 +126,20 @@ impl FlowImpulseEngine {
             .turbo_z_score_stdev
             .load(Ordering::Relaxed)
             .max(1e-6);
-        let z_score = excitement_tensor.abs() / turbo_z_score_stdev;
-        // FIX #405: hawkes_ratio es no-negativo (intensidad >= 0). La alineación direccional depende de la magnitud del flujo.
-        let is_directionally_aligned = flow_tensor.abs() > 1e-6;
+        // Z-gate (#663 G2-2): sobre el EXCESO bruto (ratio−SS)/SS — el σ
+        // del genoma (turbo_z_score_stdev) estaba calibrado en escala de
+        // ratio; expresado en unidades de exceso se divide por SS=1.6.
+        // En régimen normal (ratio≈SS) el exceso es 0 ⇒ z=0 ⇒ abstención
+        // (antes el ratio crudo daba z≈0.64 de línea base y el motor
+        // disparaba en cualquier pico normal por encima de ratio 2.7).
+        let exceso_bruto = if hawkes_ratio.is_finite() && hawkes_ratio > 0.0 {
+            (hawkes_ratio - SS_RATIO) / SS_RATIO
+        } else {
+            0.0
+        };
+        let z_score = exceso_bruto.max(0.0) / (turbo_z_score_stdev / SS_RATIO);
         let is_statistically_significant =
-            z_score > dynamic_z_score_threshold && is_directionally_aligned;
+            z_score > dynamic_z_score_threshold;
 
         let turbo_coherence_threshold = arena
             .config
@@ -278,19 +298,45 @@ mod tests {
     #[test]
     fn impulso_bajista_es_simetrico() {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
-        // Flujo fuertemente vendedor con excitación hawkes bajista de alta intensidad
+        // #663: ratio FÍSICO de cascada (+6.4 ⇒ exceso 3σ sobre SS=1.6).
+        // El −3.0 viejo era una intensidad negativa (no física) que sólo
+        // pasaba el z-gate por leer el ratio CRUDO sin cero en SS.
         let signal = FlowImpulseEngine::evaluate_flow_impulse(
-            &arena, -0.9, -0.9, -3.0, 0.01, 60000.0, 0.005, 1000,
+            &arena, -0.9, -0.9, 6.4, 0.01, 60000.0, 0.005, 1000,
         );
         assert!(
             signal.is_some(),
-            "Flujo bajista extremo con excitación debe emitir señal"
+            "Flujo bajista extremo con cascada debe emitir señal"
         );
         assert_eq!(
             signal.unwrap().signal,
             SignalType::Short,
             "Debe ser señal Short"
         );
+    }
+
+    /// #663 (G2-2): el camino VIVO del flow_impulse se abstiene en
+    /// régimen normal y en calma — la excitación es el EXCESO sobre SS,
+    /// no el ratio crudo. Antes ratio=SS daba z≈0.64 de línea base.
+    #[test]
+    fn qo_663_regimen_normal_y_calma_abstienen_flow_impulse() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        // Régimen normal (λ/μ̂ = SS = 1.6): exceso 0 ⇒ None.
+        assert!(FlowImpulseEngine::evaluate_flow_impulse(
+            &arena, 0.8, 0.8, 1.6, 0.1, 60000.0, 0.005, 1000,
+        )
+        .is_none());
+        // Calma profunda (λ/μ̂ = 0.5): exceso negativo recortado ⇒ None.
+        assert!(FlowImpulseEngine::evaluate_flow_impulse(
+            &arena, 0.8, 0.8, 0.5, 0.1, 60000.0, 0.005, 1000,
+        )
+        .is_none());
+        // Cascada clara (λ/μ̂ = 6.4 ⇒ exceso 3, z = 3/1.5625 = 1.92):
+        // debe emitir.
+        assert!(FlowImpulseEngine::evaluate_flow_impulse(
+            &arena, 0.8, 0.8, 6.4, 0.01, 60000.0, 0.005, 1000,
+        )
+        .is_some());
     }
 
     #[test]

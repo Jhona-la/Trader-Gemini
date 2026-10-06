@@ -15,7 +15,15 @@
 //! señal·retorno ≤ 0), cada factor tiene esperanza ≤ 1 y el producto es
 //! una SUPERMARTINGALA. La desigualdad de Ville da la garantía
 //! ANYTIME-VALID: P(∃t: e_t ≥ 1/α) ≤ α — para CUALQUIER tiempo de
-//! parada, incluyendo consultas continuas y selección del máximo.
+//! parada, incluyendo consultas continuas.
+//!
+//! #663 (G1-1, mea culpa de #661): Ville NO cubre por sí sola la
+//! MULTIPLICIDAD de la selección del máximo — la cota es POR PROCESO.
+//! Con M e-procesos consultados en la misma decisión (32 escalas del
+//! banco de τ*; 13×32 = 416 pares motor×escala del consenso), el FWER
+//! es ≤ M·α ≈ 1. Los consumidores de SELECCIÓN usan
+//! `significativo_familia(M)` con umbral M/α (Bonferroni sobre la
+//! familia, misma anytime-validity).
 //!
 //! Robustez: el factor apuesta sobre el SIGNO de señal·retorno
 //! (winsorizado por construcción a ±1) — inmune a las colas pesadas de
@@ -94,10 +102,32 @@ impl EProceso {
     /// ¿El proceso ha cruzado el umbral de Ville (capital ≥ 1/α)?
     /// Esta es la significancia ANYTIME-VALID: puede consultarse en
     /// cualquier momento, cualquier número de veces, sin inflar el error
-    /// de Tipo I más allá de α.
+    /// de Tipo I más allá de α — **POR PROCESO**.
     #[inline]
     pub fn significativo(&self) -> bool {
         self.n >= N_MIN_EVALUE && self.capital >= 1.0 / self.alfa
+    }
+
+    /// #663 (G1-1): significancia corregida por MULTIPLICIDAD de
+    /// FAMILIA. Ville acota P(∃t: e ≥ 1/α) ≤ α POR PROCESO; con M
+    /// procesos consultados en la misma selección, la unión da
+    /// P(alguno cruza) ≤ M·α (FWER≈1 con M=448 y α=0.05). El umbral de
+    /// familia M/α restaura la garantía global bajo la MISMA
+    /// anytime-validity: cada par (señal,retorno) alimenta exactamente
+    /// un factor, así que la cota por proceso sigue siendo válida y la
+    /// corrección de Bonferroni sobre la familia es conservadora.
+    /// Con λ=0.10 y acierto p: cruce esperado a n ≈ ln(M/α)/(p·ln1.1+...
+    /// con p=0.58: M=32⇒585 obs, M=416⇒820 obs.
+    #[inline]
+    pub fn significativo_familia(&self, num_pruebas: usize) -> bool {
+        let m = num_pruebas.max(1) as f64;
+        self.n >= N_MIN_EVALUE && self.capital >= m / self.alfa
+    }
+
+    /// Umbral de capital de la familia (telemetría/tests).
+    #[inline]
+    pub fn umbral_familia(num_pruebas: usize) -> f64 {
+        (num_pruebas.max(1) as f64) / ALFA_SIGNIFICANCIA
     }
 
     /// Capital actual (telemetría: qo_661_evalue).
@@ -212,5 +242,34 @@ mod tests {
         assert_eq!(e.capital(), 1.0);
         assert_eq!(e.n(), 3);
         assert!(!e.significativo());
+    }
+}
+
+#[cfg(test)]
+mod qo_663_tests {
+    use super::*;
+
+    /// #663 (G1-1): umbral de FAMILIA — Bonferroni M/α sobre la
+    /// anytime-validity por proceso. 32 escalas ⇒ 640; 416 pares
+    /// motor×escala ⇒ 8320. Un capital que era significativo POR
+    /// PROCESO (≥20) ya no alcanza en familia.
+    #[test]
+    fn qo_663_umbral_de_familia_bonferroni() {
+        assert!((EProceso::umbral_familia(1) - 20.0).abs() < 1e-9);
+        assert!((EProceso::umbral_familia(32) - 640.0).abs() < 1e-9);
+        assert!((EProceso::umbral_familia(416) - 8320.0).abs() < 1e-9);
+
+        let mut e = EProceso::new();
+        for _ in 0..30 {
+            e.observar(1.0, 0.01); // capital = 1.1^30 ≈ 17.4
+        }
+        assert!(e.significativo() == false); // 17.4 < 20
+        for _ in 30..67 {
+            e.observar(1.0, 0.01); // capital = 1.1^67 ≈ 591
+        }
+        assert!(!e.significativo_familia(32), "591 < 640");
+        e.observar(1.0, 0.01); // 1.1^68 ≈ 651
+        assert!(e.significativo_familia(32), "651 >= 640");
+        assert!(!e.significativo_familia(416), "651 < 8320");
     }
 }

@@ -65,10 +65,18 @@ impl FlowExcitationConfluenceEngine {
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
     ) -> crate::voto_espectral::VotoEspectral {
+        // #663 (G2-1): la excitación es el EXCESO sobre el estado
+        // estacionario, recortado a ≥0 — la CALMA (λ/μ̂ → 0.1, excit
+        // ≈ −0.73) ABSTIENE como en los dos motores hermanos
+        // (hawkes_bessel .max(0.0), flow_impulse excit ≤ 0 ⇒ 0) y en
+        // el propio gate vivo (hawkes ≥ SS). El `.abs()` anterior
+        // invertía la semántica: la calma votaba 0.734, MÁS que una
+        // cascada 3× (0.703) — el motor opinaba fuerte en mercados
+        // muertos dentro del consenso vivo.
         let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
             ratio_lambda_mu,
         )
-        .abs();
+        .max(0.0);
         let mut por_escala = [0.0f64; 32];
         for k in 0..32 {
             let x = desplazamientos[k];
@@ -461,5 +469,48 @@ mod qo_622_tests {
         for k in 0..ESCALAS_VOTO {
             assert!((cascada.en_escala(k) + neg.en_escala(k)).abs() < 1e-12);
         }
+    }
+}
+
+#[cfg(test)]
+mod qo_663_tests {
+    use super::*;
+
+    /// #663 (G2-1): la CALMA abstiene en el voto espectral del
+    /// confluence — excit = exceso .max(0). Antes el `.abs()` hacía que
+    /// λ/μ̂→0.1 (calma extrema) votara 0.734, MÁS que una cascada 3×.
+    #[test]
+    fn qo_663_calma_no_vota_mas_que_la_cascada() {
+        let desplazamientos = [0.5f64; 32];
+        let calma = FlowExcitationConfluenceEngine::voto_espectral(
+            &desplazamientos,
+            0.1,
+        );
+        let cascada = FlowExcitationConfluenceEngine::voto_espectral(
+            &desplazamientos,
+            4.8,
+        );
+        let ss = FlowExcitationConfluenceEngine::voto_espectral(
+            &desplazamientos,
+            1.6,
+        );
+        for k in 0..32 {
+            assert_eq!(
+                calma.en_escala(k), 0.0,
+                "calma extrema debe abstenerse en toda escala"
+            );
+            assert_eq!(
+                ss.en_escala(k), 0.0,
+                "estado estacionario debe abstenerse"
+            );
+        }
+        let max_calma = (0..32).map(|k| calma.en_escala(k)).fold(0.0, f64::max);
+        let max_cascada =
+            (0..32).map(|k| cascada.en_escala(k)).fold(0.0, f64::max);
+        assert!(
+            max_cascada > max_calma,
+            "cascada {max_cascada} debe superar calma {max_calma}"
+        );
+        assert!(max_cascada > 0.0, "cascada debe votar");
     }
 }

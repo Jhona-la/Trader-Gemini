@@ -212,8 +212,10 @@ pub struct ScaleState {
     skill_n: u64,
     /// #661 — e-proceso de Ville por escala: la significancia
     /// anytime-valid del banco de τ*. El umbral fijo de Fisher es la
-    /// aproximación de-n-fijo; el capital ×20 del e-proceso no se cruza
-    /// por optional stopping ni por la multiplicidad del máximo.
+    /// aproximación de-n-fijo; el capital del e-proceso no se cruza
+    /// por optional stopping. #663 (G1-1): la MULTIPLICIDAD del máximo
+    /// entre escalas se corrige con el umbral de familia M/α=640 en la
+    /// selección (`significativo_familia(32)`).
     skill_e: crate::evalues::EProceso,
     /// #594 — señal al armar el bloque en curso (s(t₀); no ve el retorno
     /// que después la puntúa — causalidad por construcción).
@@ -668,7 +670,11 @@ impl TemporalSpectrum {
                 // anclando n al N_EFECTIVO_EWMA para consistencia en sesiones largas.
                 // #661 — Ville REPLAZA el umbral fijo: capital ≥ 1/α
                 // (anytime-valid, inmune a la multiplicidad del máximo).
-                let significativo = s.skill_e.significativo();
+                // #663 (G1-1): la selección de τ* toma el MÁXIMO entre
+                // las 32 escalas — corrección de FAMILIA M/α (Bonferroni
+                // sobre 32 e-procesos: umbral 640, no 20). Ville por
+                // proceso no cubría la multiplicidad del máximo.
+                let significativo = s.skill_e.significativo_familia(32);
                 if significativo && ic > best_skill {
                     best_skill = ic;
                     dominant_skill = s.tau_ms;
@@ -1674,7 +1680,16 @@ mod tests {
         // #661: el e-proceso se alimenta con las mismas n observaciones
         // del signo que fabrica el IC (ic>0 ⇒ productos positivos, ic<0
         // ⇒ negativos): capital = (1+λ)^n para habilidad perfecta.
-        for _ in 0..n {
+        // #663 (G1-1): las escalas MADURAS reciben evidencia suficiente
+        // para cruzar el umbral de FAMILIA M/α=640 de la selección de τ*
+        // (1.1^69 ≈ 670) — los tests de selección por habilidad exigen
+        // capital de familia, no el 20 por proceso.
+        let n_e = if n >= MUESTRAS_SKILL_MADURAS && ic != 0.0 {
+            n.max(70)
+        } else {
+            n
+        };
+        for _ in 0..n_e {
             s.skill_e.observar(1.0, ic.signum() * 0.01);
         }
         s

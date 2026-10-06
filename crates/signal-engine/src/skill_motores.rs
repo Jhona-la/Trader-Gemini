@@ -32,6 +32,10 @@ use quantum_arena::temporal_spectrum::MUESTRAS_SKILL_MADURAS;
 /// Los 13 motores con `voto_espectral()` de la composición del consenso
 /// (11 originales de #623 + trend-runner y RenyiTsallis, AGY P29).
 pub const MOTORES: usize = 13;
+/// #663 (G1-1): tamaño de la FAMILIA de e-procesos consultada por la
+/// composición del consenso (13 motores × 32 escalas) — alimenta el
+/// umbral Bonferroni M/α del gate de Ville.
+pub const NUM_PARES_MOTOR_ESCALA: usize = MOTORES * 32;
 pub const PISO_EXPLORACION: f64 = 0.15;
 const OLVIDO: f64 = 1.0 / 64.0;
 const EPS_VOTO: f64 = 1e-9;
@@ -53,8 +57,9 @@ struct AcumIc {
     /// significancia anytime-valid que sustituye al umbral fijo. El IC
     /// sigue midiendo la MAGNITUD (para el tamaño del peso); el
     /// e-proceso decide SI hay habilidad (inmune al optional stopping
-    /// de la composición por evento y a la multiplicidad de la
-    /// selección del máximo entre escalas).
+    /// de la composición por evento). #663 (G1-1): la multiplicidad de
+    /// los 13×32=416 pares motor×escala se corrige con el umbral de
+    /// familia M/α=8320 en `ic_significativo`.
     e_proceso: EProceso,
 }
 
@@ -93,11 +98,12 @@ impl AcumIc {
             return None;
         }
         // #661 — Ville REPLAZA el umbral fijo de Fisher: el e-proceso es
-        /// anytime-valid (cualquier número de consultas) y corrige la
-        /// multiplicidad de la selección del máximo entre escalas — el
-        /// consejo diagnosticó que «en ruido el máximo de varias IC suele
-        /// ser positivo»; el capital ×20 no se cruza por azar.
-        if !self.e_proceso.significativo() {
+        /// anytime-valid (cualquier número de consultas). #663 (G1-1):
+        /// la composición consulta 13 motores × 32 escalas = 416
+        /// e-procesos — umbral de FAMILIA M/α = 8320 (Bonferroni), no
+        /// el 20 por proceso: en ruido el máximo de 416 procesos con
+        /// umbral 20 cruza casi seguro.
+        if !self.e_proceso.significativo_familia(NUM_PARES_MOTOR_ESCALA) {
             return None;
         }
         let den = self.ws * self.wr;
@@ -351,7 +357,9 @@ mod tests {
         // Aún inmaduro (n=2): piso.
         assert_eq!(w[0][19], PISO_EXPLORACION);
         // Maduramos bloques alineados: armado +1, retorno +0.05 constante.
-        for i in 3..40u64 {
+        // #663 (G1-1): el gate de Ville ahora es de FAMILIA M/α=8320
+        // (416 pares) — 1.1^97 ≈ 8640 cruza; ~100 maduraciones.
+        for i in 3..=100u64 {
             madurar(&mut sm, 19, i * 1_000, 0.05, 1.0);
         }
         let w = sm.pesos();
