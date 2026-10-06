@@ -722,3 +722,36 @@ duros supervivientes, y abstención-SS incompleta:
 - **AGY (Ω13) CERRADA**: G0-3 (suelos literales de confianza ramas 13/15 y 11/14 erradicados; confluencia_resonante modulada desde base 0.50 y cableado integral de conviccion_de_rama). 167/167 verdes en god-engine-core.
 - **Ola mecánica posterior**: G2-3..G2-9 (signums C¹ en vuelo por Qoder), G0-6/G1-7/G2-12 (limpieza).
 - **Consejo**: G0-9 (¿2 anclas bastan para el espacio genético?).
+
+---
+
+## DISEÑO DSR-COSECHA (XCVI, 2026-10-06): F5-A-H2 pasa a "diseñado, requiere API"
+
+**El problema**: harvest_best_genome promueve best-of-N (~9 mutantes) sin
+control de multiplicidad DSR. El daemon ya tiene la solución correcta
+(edge_survives_multiplicity, Bailey-LdP ec.5, multiplicidad acumulada
+D-746) — pero NO puede aplicarse a la cosecha hoy:
+
+1. **El DSR exige serie de retornos por observación**: computa Sharpe y
+   momentos superiores de N≥20 trades. La cosecha tiene UNA observación
+   por universo (fitness agregado: capital inicial→final con DD²) — un
+   Sharpe de n=1 no existe estadísticamente.
+2. **La API que falta**: GodEngineCore no expone el historial de PnL
+   por trade de los engines sombra. Extenderla atraviesa el arena y es
+   una ola propia.
+
+**La tentación rechazada**: construir una "serie" sintética de un punto
+y alimentarla al DSR — sería estadísticamente inválida (decoración
+peligrosa que fingiría rigor). La honestidad del sistema exige decir
+"no se puede hacer bien todavía".
+
+**Guardia interina (YA activa)**:
+- El ganador debe superar al **CONTROL** (incumbente sancionado, no un
+  lucky-best-of-N) — hurdle real.
+- Desde LXXXXI, el watchdog sigue a la generación ACTIVA del almacén:
+  cualquier promoción externa (incluida la cosecha) arma la vigilancia
+  de rollback (t≤−2.0 sobre ≥20 obs).
+
+**Requisito para cerrar**: API de retornos por trade de los engines
+sombra (ola futura si el consejo la aprueba). Entonces el DSR de la
+cosecha es: `edge_survives_multiplicity(returns_of_best, num_trees)`.

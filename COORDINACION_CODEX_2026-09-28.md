@@ -5157,3 +5157,19 @@ deuda viva.
    - **5/5 HIGH CERRADOS**: G1-1, G1-2, G1-3, G2-1, G2-2.
    - **7/15 MED CERRADOS**: G0-1, G0-2, G0-3, G0-4, G1-4, G1-5, G2-10.
    - 8 MED pendientes (signums en vuelo por Qoder en `.ola63`). Workspace completo limpio (`cargo check --workspace --all-targets` 0 errores).
+
+## 2026-10-06 — GLM: XCVI — DSR-cosecha: DISEÑO documentado, no improvisado
+
+La deuda del DSR de la cosecha (F5-A-H2) se cierra como DISEÑO: el DSR
+correcto requiere retornos por trade de los engines sombra (API que no
+existe), y un Sharpe de n=1 (lo único construible hoy) es estadísticamente
+inválido — decoración peligrosa, no rigor. La guardia interina ya está
+activa: hurdle contra el CONTROL (incumbente, no lucky-best) + watchdog
+siguiendo la generación activa (LXXXXI). Requisito para cerrar del todo:
+API de retornos por trade (ola si el consejo la aprueba). Registro
+completo en BARRIDO §DISEÑO-DSR-COSECHA.
+
+**La cola del barrido queda así**: HIGHs drenados o diseñados; el sistema
+está en su estado más limpio de la sesión. Los frentes restantes son
+externos (tapes de octubre, FDUSD) o requieren datos de vivo (cablear
+veto drift).
