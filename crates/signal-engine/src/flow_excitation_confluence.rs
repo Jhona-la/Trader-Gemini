@@ -263,8 +263,15 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         );
         let w_obi = rampa(obi.abs() - obi_floor, 0.50 * obi_floor);
 
-        let is_long = obi > 0.0 && ml_prob >= ml_base + ml_lift;
-        let is_short = obi < 0.0 && ml_prob <= ml_base - ml_lift;
+        // #666 (H2-4): TERCERA puerta CONTINUA — el gate de ML
+        // (ml_prob ≥ base ± lift) quedaba binario: el voto saltaba de 0 a
+        // obi·lift·4·scale al cruzar el umbral. Rampa smoothstep de ancho
+        // lift: dentro (≥ 2·lift de exceso) peso 1, comportamiento en
+        // región profunda conservado.
+        let w_ml_long = rampa(ml_prob - (ml_base + ml_lift), ml_lift.max(1e-4));
+        let w_ml_short = rampa((ml_base - ml_lift) - ml_prob, ml_lift.max(1e-4));
+        let is_long = obi > 0.0;
+        let is_short = obi < 0.0;
 
         // Ola 9 (SPECTRAL CONTINUITY): El factor de escala de excitación
         // se normaliza contra el umbral crítico efectivo del proceso (anclado
@@ -274,9 +281,9 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         let hawkes_scale = (hawkes / effective_hawkes_thresh.max(0.01)).min(2.0);
 
         let voto = if is_long {
-            (obi * (ml_prob - ml_base) * 4.0 * hawkes_scale).clamp(0.0, 1.0)
+            (obi * (ml_prob - ml_base) * 4.0 * hawkes_scale).clamp(0.0, 1.0) * w_ml_long
         } else if is_short {
-            (obi * (ml_base - ml_prob) * 4.0 * hawkes_scale).clamp(-1.0, 0.0)
+            (obi * (ml_base - ml_prob) * 4.0 * hawkes_scale).clamp(-1.0, 0.0) * w_ml_short
         } else {
             0.0
         };

@@ -101,13 +101,15 @@ impl FlowImpulseEngine {
         // Coherence: Flow magnitude and Hawkes Excitement intensity (Symmetric for Long & Short)
         let coherence = (flow_tensor.abs() * excitement_tensor).sqrt();
 
-        // Direction vector: continua C¹ (tanh) en lugar de signum —
-        // #663 (G2-2): el escalón ±1 violaba el invariante 8. Flujo
-        // neutro (|flow| ≤ 1e-6) no emite señal direccional.
+        // Direction vector: continua C¹ (tanh) sobre la escala NATURAL del
+        // flujo O(1). #666 (H2-2): el divisor 1e-3 de la era del
+        // desplazamiento crudo saturaba a signum encubierto (entradas
+        // |flow|>0.005 ⇒ ±0.9999) — misma escala que trend_runner #664.
+        // Flujo neutro (|flow| ≤ 1e-6) no emite señal direccional.
         if flow_tensor.abs() <= 1e-6 {
             return None;
         }
-        let direction_tensor = (flow_tensor / 1e-3).tanh();
+        let direction_tensor = flow_tensor.tanh();
 
         // Entropy penalty: higher entropy exponentially decays the confidence (using genomic poly constants)
         let poly_a = arena.config.tensor_poly_a.load(Ordering::Relaxed);

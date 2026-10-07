@@ -375,7 +375,9 @@ impl QuantumStrategy for HawkesBesselEngine {
         // #659 (F2-A4): la CALMA se abstiene (excit ≥ 0, paridad con
         // flow_impulse #657) — antes la excitación negativa INVERTÍA el
         // sentido del momentum: calma + flujo alcista votaba bajista.
-        (direction / 1e-3).tanh() * excitacion_hawkes_norm(core_intensity).max(0.0)
+        // #666 (H2-2): divisor O(1) — direction es un flujo normalizado
+        // O(1); /1e-3 saturaba a signum encubierto.
+        direction.tanh() * excitacion_hawkes_norm(core_intensity).max(0.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {

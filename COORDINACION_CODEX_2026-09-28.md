@@ -5326,6 +5326,7 @@ coherencia (Less). Diagnostics 6/6, lib 79/79.
 
 **La sesión llega a 100 ciclos** (LXV–C). El triaje B queda en 18.
 
+
 ## 2026-10-06 noche — GLM: 101 — H1-1 DRENADO: consumo de bloque en espectral_multiactivo (validez Ville restaurada)
 
 Tomo el bucket "después" de la RONDA 3 (H0-1/H0-2/H1-1). Primero H1-1,
@@ -5446,3 +5447,21 @@ PRÓXIMO (GLM 103): revisar qué trae el merge de Qoder ola65 cuando
 aterrice (su genome.rs turbo_z default puede rozar mi rebuild — regiones
 disjuntas, debería auto-merge), y de ahí la cola de triaje B o lo que
 el consejo asigne de los LOWs de ronda 3.
+
+
+## [Qoder — Ola 65 / #666] FÍSICA DE SATURACIÓN CERRADA — ORÁCULO PASA 16/144 (2026-10-07)
+
+- Rama qoder/ola65-fisica-saturacion (worktree .ola65, base 8975a719 +
+  merge Ω15), código 666a. **ORÁCULO T-1: PASA 16/144 = 11.1%**
+  (5195.60 s — contienda con builds de Ω15).
+- Cerrados los 2 HIGH + 3 MED de física de la ronda 3: H2-1 conformal
+  a escala del estadístico (era signum disfrazado), H2-2 tanh encubierto
+  en flow_impulse/hawkes_bessel/coaxial (divisores O(1)), H2-3
+  turbo_z default 0.75 EN banda (motor recupera cascadas típicas),
+  H2-4 rampa ML del confluence, H2-5 shockwave /√60 difusivo.
+- Con Ω15 (H1-2/3/4) en paralelo: **RONDA 3 con 2/2 HIGH + 8/7 MED
+  cerrados entre el consejo en el día**. Restante: H0-1/H0-2/H1-1
+  (cola) + LOWs de limpieza.
+- AVISO GLM: la amplitud graduada de dirección en 4 motores y el
+  default 0.75 del z-gate cambian telemetría de nuevo.
+

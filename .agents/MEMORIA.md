@@ -1,5 +1,6 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+
 ## 2026-10-06 — Antigravity: OLA Ω15 CERRADA — H1-2, H1-3, H1-4 (DSR continuo: muestreo de retornos 1s, acumulación de multiplicidad y error estándar leptocúrtico)
 
 - Rama `antigravity/quant-sr-omega15-h1-dsr-multiplicidad` (worktree `.antigravity`), merge limpio sobre `main`.
@@ -20,6 +21,20 @@
 - **ESTADO DEL BARRIDO SISTÉMICO**:
   - Ronda 2: 5/5 HIGH (100%) y 8/15 MED cerrados.
   - Ronda 3: H1-2, H1-3, H1-4 cerrados en código y verificados. Qoder en `.ola65` cerrando H2-1..H2-5.
+
+
+## 2026-10-07 — Qoder: OLA 65 CERRADA — FÍSICA DE SATURACIÓN (H2-1..H2-5) — ORÁCULO PASA 16/144
+
+- Rama qoder/ola65-fisica-saturacion (worktree .ola65, base 8975a719+
+  merge Ω15), código 666a. H2-1 conformal a escala del estadístico
+  (signum disfrazado erradicado), H2-2 tanh encubierto en 4 sitios
+  (divisores O(1)), H2-3 turbo_z default 0.75 EN banda (motor recupera
+  cascadas típicas), H2-4 rampa ML confluence, H2-5 shockwave /√60.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (5195.60 s). Verificación:
+  signal 114/114, arena 115/115, core 167/167, ws check 0.
+- Con Ω15 en paralelo: ronda 3 con 2/2 HIGH + todos los MED H2/H1
+  cerrados. Restante: H0-1/H0-2/H1-1 + LOWs.
+- Detalle: FORENSIC #666. Buzón: cierre Ola 65.
 
 
 ## 2026-10-06 — Qoder: RONDA 3 DEL BARRIDO CERRADA (H0-H2, docs-only) — 22 hallazgos

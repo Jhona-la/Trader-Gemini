@@ -14509,3 +14509,41 @@ cerrado. Restan sólo LOWs de limpieza (G0-6..G0-10, G1-6..G1-8,
 G2-11..G2-15) — estado fantasma scalp/swing_used_margin, exportaciones
 muertas Fisher, knobs muertos documentados, comentario obsoleto
 hawkes_bessel, paridad de inputs solitón, naming residuo.
+
+## #666 — Ola 65 (Qoder, 2026-10-06/07): FÍSICA DE SATURACIÓN (H2-1..H2-5) — ORÁCULO PASA
+
+Rama `qoder/ola65-fisica-saturacion` (worktree `.ola65`, base 8975a719 +
+merge Ω15), código 666a.
+
+- **H2-1 / conformal a escala del estadístico** — los divisores 1e-3/1e-6
+  de la 63 estaban 3-6 órdenes bajo la escala operativa (|z|≥1.645): en
+  TODA la región emisora direccion≡±1 y acuerdo≡0/1 — el "tanh continuo"
+  era un signum disfrazado con ventana de flip ~5e-7·|z|⁻¹. Fix: −z/2 y
+  −z·trend/0.5 (divisores O(1)); la dirección y el acuerdo GRADÚAN en la
+  región emisora. Contrato qo_666: z moderado no satura, acuerdo gradúa
+  con trend.
+- **H2-2 / familia tanh encubierto erradicada** — flow_impulse
+  (flow/1e-3→flow.tanh()), hawkes_bessel (direction/1e-3→tanh natural),
+  coaxial sombra Y vivo (x/1e-4→x.tanh()): entradas O(1) saturaban a
+  ±0.9999 con |x|>0.005. La amplitud espectral se conserva graduada
+  (contrato qo_616 reescrito: graduación monótona verificado por escala).
+- **H2-3 / turbo_z default en banda** — 2.5 estaba FUERA de la banda de
+  mutación [0.1,1.5]: from_vector clampeaba a 1.5 y el z-gate del
+  flow_impulse exigía exceso ≥2.7σ (λ/μ̂>4.3) — apagado en cascadas
+  típicas (1-2σ). Fix: default 0.75 ⇒ dispara desde exceso ≈0.5
+  (λ/μ̂≈2.4).
+- **H2-4 / tercera puerta del confluence CONTINUA** — el gate ML
+  (ml_prob ≥ base±lift) saltaba de 0 a obi·lift·4·scale al cruzar.
+  Rampa smoothstep de ancho lift; región profunda conservada.
+- **H2-5 / shockwave difusivo** — el fallback ATR como velocidad del
+  sonido usaba drift /60; bajo difusión E|rango_60s|=σ√60 ⇒ ÷√60.
+  /60 subrestimaba el sonido 7.75× (Mach inflado). Contrato qo_666:
+  Mach 1.2 difusivo da salto débil, Mach 10 satura.
+
+**Verificación**: signal-engine 114/114 (contratos qo_666 conformal +
+shockwave, qo_616 reescrito a graduación), quantum-arena 115/115
+(genome default), god-engine-core 167/167, check workspace 0.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (5195.60 s, release — contienda
+severa de CPU con builds paralelos de Ω15). Ningún gen certificado
+perdió sensibilidad con los cinco fixes de saturación.

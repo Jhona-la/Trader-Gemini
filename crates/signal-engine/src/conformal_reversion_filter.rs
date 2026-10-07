@@ -102,7 +102,8 @@ impl ConformalReversionFilterEngine {
             // reversión debe acompañar (D-676: dirección, no «sube»).
             // #664 (G2-6): tendencia CONTINUA — el signum duro hacía
             // saltar el voto de ±strength a 0 al cruzar x(τ_{k+1})=0.
-            let tendencia = (desplazamientos[k + 1] / 1e-4).tanh();
+            // #666 (H2-1): z-score O(1) — tanh natural sin saturación.
+            let tendencia = desplazamientos[k + 1].tanh();
             // Score conformal: z = x(τ_k) contra su base; aceptación
             // bidireccional (el registro puede restringir en vivo, aquí
             // es la forma pura).
@@ -133,8 +134,11 @@ impl ConformalReversionFilterEngine {
         // acompaña cuando la escala lenta se opone a z). Con trend=±1
         // reproduce el comportamiento viejo; con trend cruzando 0 el
         // voto decae continuo a 0 en vez de saltar.
-        let direccion = -(z / 1e-3).tanh();
-        let acuerdo = (-(z * trend) / 1e-6).tanh().max(0.0);
+        // #666 (H2-1): divisores a la ESCALA DEL ESTADÍSTICO — con
+        // 1e-3/1e-6 y |z|≥1.645 (única región emisora), direccion≡±1 y
+        // acuerdo≡0/1: el "tanh continuo" era un signum disfrazado.
+        let direccion = -(z / 2.0).tanh();
+        let acuerdo = (-(z * trend) / 0.5).tanh().max(0.0);
         let v = strength * direccion * acuerdo;
         if v > 0.0 && !accept_long {
             return 0.0;
@@ -325,5 +329,29 @@ mod qo_621_tests {
         // Verificamos la antisimetría con el caso que SÍ produce señal.
         assert!(significancia_debil >= 0.0);
         assert!(significancia_fuerte >= 0.0);
+    }
+}
+
+#[cfg(test)]
+mod qo_666_tests {
+    use super::*;
+
+    /// #666 (H2-1): el voto conformal GRADÚA en la región emisora —
+    /// con los divisores viejos (1e-3/1e-6), todo |z|>1.645 daba
+    /// direccion≡±1 y acuerdo≡0/1 (signum disfrazado); ahora z moderado
+    /// produce dirección moderada.
+    #[test]
+    fn qo_666_conformal_gradua_direccion_y_acuerdo() {
+        // Con trend=±1 (acuerdo pleno), la dirección debe graduar con z.
+        let z_med = ConformalReversionFilterEngine::score(-2.0, 1.0, true, true, 0.05);
+        let z_fuerte = ConformalReversionFilterEngine::score(-4.0, 1.0, true, true, 0.05);
+        assert!(z_med > 0.0 && z_fuerte > z_med, "graduacion en z: {z_med} < {z_fuerte}");
+        // Direccion moderada: |score| < strength_max·tanh(1) — no saturado a pleno.
+        // z=-2 ⇒ dir = tanh(1) ≈ 0.76 del pleno; el score debe ser < 0.9·strength.
+        assert!(z_med < 0.9, "z moderado no satura: {z_med}");
+        // Acuerdo gradúa con trend: trend débil reduce el voto continuo.
+        let full = ConformalReversionFilterEngine::score(-3.0, 1.0, true, true, 0.05);
+        let debil = ConformalReversionFilterEngine::score(-3.0, 0.1, true, true, 0.05);
+        assert!(full > debil && debil > 0.0, "acuerdo graduado con trend: {full} > {debil} > 0");
     }
 }
