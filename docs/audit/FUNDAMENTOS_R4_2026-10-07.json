@@ -4,7 +4,8 @@
   "cdf_implementation": "Python statistics.NormalDist, not Rust Acklam/Abramowitz-Stegun approximations",
   "provenance": {
     "review_base_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
-    "execution_checkout_head": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+    "execution_checkout_head": "42652f70badadb9be66c0fb138b88918c8cc54dc",
+    "source_scope": "Git blob bytes at review_base_commit, not the current working tree; the counterexample is historical, not a regression test of HEAD.",
     "source_sha256": {
       "crates/risk-engine/src/selection_stats.rs": "81b4d800c691dc7e0b71a142d2a5e44a80e3c48c95357c434f3dfdd74df102fc",
       "crates/god-engine-core/src/darwin.rs": "a2a323c0251e2d49067b2e8b363417e751305795153e368f2a83a29cadeead9b",

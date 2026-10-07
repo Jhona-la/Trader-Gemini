@@ -12,7 +12,9 @@ Evidencia reproducible: `scripts/audit_selection_assumptions.py` y
 `docs/audit/FUNDAMENTOS_R4_2026-10-07.json`. El script es un **port matemático
 Python y un modelo de trazas**, no ejecuta Rust ni reproduce operaciones del
 motor. Los resultados prueban limitaciones de supuestos/expresiones, no una
-tasa de fallo observada del bot. El JSON incluye HEAD y SHA-256 de fuentes.
+tasa de fallo observada del bot. El JSON incluye HEAD de ejecución y SHA-256
+de los blobs Git de la base inmutable. Reejecutarlo en un HEAD posterior
+reproduce el contraejemplo histórico; no declara que ese HEAD conserve el bug.
 
 ## Meta y contrato de evidencia
 

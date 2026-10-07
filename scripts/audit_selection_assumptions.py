@@ -62,8 +62,12 @@ def source_provenance(repo: Path) -> dict:
     return {
         "review_base_commit": BASE_COMMIT,
         "execution_checkout_head": head,
+        "source_scope": "Git blob bytes at review_base_commit, not the current working tree; the counterexample is historical, not a regression test of HEAD.",
         "source_sha256": {
-            name: hashlib.sha256((repo / name).read_bytes()).hexdigest()
+            name: hashlib.sha256(subprocess.run(
+                ["git", "show", f"{BASE_COMMIT}:{name}"], cwd=repo,
+                check=True, capture_output=True,
+            ).stdout).hexdigest()
             for name in SOURCE_FILES
         },
     }
