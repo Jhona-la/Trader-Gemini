@@ -5316,3 +5316,51 @@ lib que certificaba la inconsistencia (Equal) actualizado a la
 coherencia (Less). Diagnostics 6/6, lib 79/79.
 
 **La sesión llega a 100 ciclos** (LXV–C). El triaje B queda en 18.
+
+## 2026-10-06 noche — GLM: 101 — H1-1 DRENADO: consumo de bloque en espectral_multiactivo (validez Ville restaurada)
+
+Tomo el bucket "después" de la RONDA 3 (H0-1/H0-2/H1-1). Primero H1-1,
+el de consecuencia estadística más seria.
+
+**El hallazgo refinado**: el doble-conteo de bloques ocurre cuando el
+desfase de fases δ entre los cierres de bloque de dos monedas ronda
+0.5·τ — la frontera EXACTA de la guardia de recencia admite el mismo
+bloque desde ambos lados, y con jitter de stream se cruza
+recurrentemente (lo demostré con traza: jitter 450/550 ms con τ=1 s →
+el código viejo acumulaba ~299 muestras en 300 rondas donde sólo hay
+150 productos de bloques frescos — el "n efectivo ~mitad del contado"
+del hallazgo, literal).
+
+**Por qué es MÁS grave que madurez inflada**: muestras 1-dependientes
+(consecutivas compartiendo un bloque) rompen la garantía de
+supermartingala del e-proceso #665 bajo H0 — apuesta dos veces sobre
+el mismo co-movimiento. La validez del gate Ville de FAMILIA del veto
+de grupo quedaba comprometida en ese régimen.
+
+**Fix aplicado ≠ sugerencia**: "alimentar solo dirección canónica"
+crearía zonas muertas para δ>0.5τ (el par dejaría de acumular). En su
+lugar, CONSUMO DE BLOQUE por par-escala: tras acumular una muestra
+(a,b), ninguno de sus dos bloques puede re-alimentar ese par. Cada
+bloque participa exactamente una vez, la alternación de disparadores
+se preserva (test: δ=0.8·τ sigue produciendo 1 muestra/ronda vía el
+socio temprano), n cuenta productos genuinamente frescos.
+
++3 tests de falsación (δ=0.5·τ exacto → n==rondas; jitter de frontera
+→ n==150/300 sin reutilizaciones; δ=0.8·τ → sin zona muerta) y accessor
+público `muestras_par` (telemetría del n honesto para futuras
+auditorías de madurez). NOTAOLVIDO: con consumo, la ventana efectiva
+del EWMA (1/64 por muestra) se estira ~2× en tiempo de reloj para pares
+en régimen de frontera — es el costo honesto; compensar por fase
+reintroduciría la deshonestidad.
+
+Suites: quantum-arena lib 118/118, correlation_admission_contract
+28/28, god-engine-core compila. **ORÁCULO T-1 ANTES DEL PUSH: PASA** —
+16/144 genes sensibles (11.1% ≥ 11.0%), 2/2, 4846 s release, cobertura
+idéntica a la base #665.
+
+SIGO con H0-2 (arbitración atribuye al índice mayor) y H0-1 (nichos
+muertos del walk-forward) en ciclos propios — cada uno con su decisión
+de diseño documentada.
+
+LOW para la ola de limpieza: god-engine-core lib.rs:1593 dice
+"recencia 1.5·τ" — comentario VIEJO (la constante es 0.5 desde la 62).

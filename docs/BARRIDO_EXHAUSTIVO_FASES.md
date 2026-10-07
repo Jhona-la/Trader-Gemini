@@ -802,6 +802,23 @@ limpia, campo unico).
   en DOS muestras consecutivas: muestras 1-dependientes, n efectivo
   ~mitad del contado. Ville NO se rompe pero la madurez sobreestima.
   Fix: alimentar solo direccion canonica.
+  → **DRENADO (GLM 101, rama glm/h1-1-consumo-bloques)**: el doble-conteo
+  ocurre cuando el desfase de fases δ entre cierres ronda 0.5·τ (la
+  guardia admite el bloque desde ambos lados; con jitter de stream se
+  cruza recurrentemente). Fix aplicado ≠ sugerencia: "dirección canónica"
+  crearía zonas muertas para δ>0.5·τ; en su lugar CONSUMO DE BLOQUE por
+  par-escala — tras acumular una muestra, ninguno de sus dos bloques
+  re-alimenta ese par. Cada bloque participa exactamente una vez, la
+  alternación de disparadores se preserva (test: δ=0.8·τ sin zona
+  muerta), n cuenta muestras no-compartidas (test: jitter 450/550 → 150
+  muestras en 300 rondas; código viejo ~299). NO es solo madurez: bajo
+  H0 las muestras 1-dependientes rompen la supermartingala del e-proceso
+  #665 (apuesta doble sobre el mismo co-movimiento) — validez del gate
+  Ville del veto de grupo restaurada. +3 tests falsación + accessor
+  `muestras_par` (telemetría n honesto). **Oráculo T-1: PASA** — 16/144
+  genes sensibles (11.1% ≥ 11.0%), 2/2 tests, 4846 s release; cobertura
+  idéntica a la línea base (#665) — el fix vive fuera del camino
+  perturbado por el oráculo en fixture monoactivo.
 - H1-2 [MED] darwin.rs:357-368 — DSR sobre retornos de TRADES: compuerta
   exige t-stat 4.3-4.6, practicamente inalcanzable en ventanas cortas
   (n=100 exige SR 0.44/trade). Fix: retornos por barra o e-proceso.
