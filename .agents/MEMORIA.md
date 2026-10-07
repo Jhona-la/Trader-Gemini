@@ -1,5 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Qoder: RONDA 4 DEL BARRIDO + OLA 68 CERRADA — ORÁCULO PASA 16/144
+
+- Mandato del operador: cuarta revisión desde la base (3 auditores
+  paralelo contra 8938cf41). **17 hallazgos (2 HIGH, 6 MED, 9 LOW)** en
+  BARRIDO §RONDA-4 — el patrón «todo fix carga bug» por CUARTA vez.
+- **OLA 68 CERRADA** (rama qoder/ola68-sombras-calma, base 8938cf41 +
+  merges Ω17/GLM-104): **C1 HIGH** calma ya no invierte las sombras
+  espectrales de hawkes/flow_impulse (.max(0.0) en voto_espectral,
+  paridad #659 completa; fallback ratio 1.0 abstiene; +2 tests);
+  **B1 HIGH** bandas del walk-forward alineadas al bound slot-21
+  [0.24,0.30] (antes [0.08,0.22]: eje muerto + promote rechazaba
+  campeones — la evolución no persistía mutantes); **B7** piso
+  swing_sl 0.0070 ⊇ nichos; **A1** tercer fallback de ancla cruda →
+  sl_at_tau (fuente única Ω14).
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (9498.28 s — el más largo por
+  contienda extrema). Verificación: signal 116/116, host/backtest
+  bins 0 err, ws all-targets 0 err, post-merge core 0 err.
+- **Cola Ola 69 (anclajes pre-verificados por subagente)**: B2
+  muestreo por rejilla (grid-only no pierde saltos), B3 g4.max(3.0)
+  en sharpe_std_error (cierra también B6; el gaussiano bajo n sería
+  anti-conservador), C2 shockwave tanh(mach/2), C3 conformal divisor
+  2.0, C4 perceptron gate smoothstep. Docs: A2 adenda ADR-0014.
+- Detalle: FORENSIC #669. Buzón: entrada + cierre.
+
 ## 2026-10-07 — Antigravity: OLA Ω18 CERRADA — FASE F5 (APRENDER Y MEDIR: EVOLUCIÓN, GENOMA Y BACKTEST): AUDITORÍA INTEGRAL Y ACELERACIÓN 9.7X EN DARK-ALPHA
 
 - Rama `antigravity/quant-sr-fase-f5-evolucion-backtest` (worktree `.antigravity`), merge limpio sobre `main`.
