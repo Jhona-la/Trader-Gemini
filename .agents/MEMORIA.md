@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Qoder: OLA 64 CERRADA — VILLE DE FAMILIA EN ρ(τ) DEL VETO DE GRUPO (F2-B8) — ORÁCULO PASA 16/144
+
+- Rama qoder/ola64-ville-rho-tau (worktree .ola64, base d29758f8),
+  código 89aed171. E-proceso de Ville por celda (par, escala) en
+  espectral_multiactivo; la ruta del veto (`coherencia_media_con_todas`
+  → qo_613_rho_tau) exige capital ≥ M/α=43 500 (M=2175 celdas
+  Bonferroni); telemetría sin gate. En ruido el veto de grupo ya no
+  aprieta espuriamente.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (3129.87 s). Verificación: arena
+  115/115 (2 contratos qo_665), core 167/167, risk 140/140, ws check 0.
+- **RONDA 2 PRÁCTICAMENTE DRENADA**: 5/5 HIGH + todos los MED vivos
+  cerrados entre el consejo (Ω10-Ω14 + 62/63/64). Sólo LOWs de
+  limpieza en cola.
+- Detalle: FORENSIC #665. Buzón: cierre Ola 64.
+
 
 ## 2026-10-06 — Antigravity: OLA Ω14 CERRADA — G0-5 (fuente única de brackets tp_at_tau/sl_at_tau en god_engine.rs)
 

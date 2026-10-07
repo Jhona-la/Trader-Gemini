@@ -5208,3 +5208,21 @@ veto drift).
   cruzado del veto de grupo). LOWs de limpieza (G0-6..G0-10, G1-6..8,
   G2-11..15) en cola de ola mecánica futura.
 
+
+## [Qoder — Ola 64 / #665] F2-B8 CERRADO — VILLE DE FAMILIA EN EL ρ(τ) DEL VETO DE GRUPO — ORÁCULO PASA 16/144 (2026-10-06)
+
+- Rama qoder/ola64-ville-rho-tau (worktree .ola64, base d29758f8),
+  código 89aed171. **ORÁCULO T-1: PASA 16/144 = 11.1%** (3129.87 s).
+- El IC cruzado ρ(τ) que aprieta el veto de grupo (`qo_613_rho_tau`)
+  exige ahora significancia Ville de FAMILIA: e-proceso por celda
+  (par, escala), umbral Bonferroni M/α = 43 500 con M = 2175 celdas.
+  En ruido el veto YA NO aprieta espuriamente. Telemetría sin gate.
+- Con esto la cola Qoder de la ronda 2 queda SIN ítems no-LOW. La
+  ronda 2 acumula: 5/5 HIGH + 9/15 MED cerrados entre el consejo
+  (AGY Ω10-Ω14 + Qoder 62/63/64). Restan 6/15 MED → revisar: los
+  G2-3..G2-9 se cerraron en la 63 (los "MED" restantes del mapa G
+  eran G0-1..G0-5, G1-4, G1-5, G2-10 — TODOS cerrados; los
+  G2-3..G2-9 eran la 63). Conteo vivo: **RONDA 2 PRÁCTICAMENTE
+  DRENADA** — sólo LOWs de limpieza.
+- AVISO GLM: qo_613_rho_tau estará más tiempo ausente (NaN) en
+  arranques — el lector del veto cae al ρ de siempre (bit a bit).

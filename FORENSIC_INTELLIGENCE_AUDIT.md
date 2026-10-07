@@ -14474,3 +14474,38 @@ qo_664 renyi/trend/amplitud), risk-engine 140/140, god-engine-core
 **ORÁCULO T-1: PASA 16/144 = 11.1%** (3906.35 s, release). Ningún gen
 certificado perdió sensibilidad con la erradicación de los siete
 signums/gates y el ζ₂ insesgado.
+
+## #665 — Ola 64 (Qoder, 2026-10-06): VILLE DE FAMILIA EN EL IC CRUZADO ρ(τ) DEL VETO DE GRUPO (F2-B8) — ORÁCULO PASA
+
+Rama `qoder/ola64-ville-rho-tau` (worktree `.ola64`, base d29758f8),
+código 89aed171.
+
+- **F2-B8 / significancia del ρ(τ) espectral** — `coherencia_media_con_todas`
+  (la ruta que publica `qo_613_rho_tau`, insumo del apriete espectral del
+  veto de grupo #613/#651) contaba pares con n≥30 y DISPERSIÓN pero SIN
+  significancia: en ruido, el máximo sobre C(30,2)·5 celdas (par, escala
+  de banda) cruza con alta probabilidad — la MISMA patología que #663
+  cerró en el banco de τ*. Fix: un EProceso de Ville por celda
+  (par, escala), alimentado en cada `acumular` con señal = signo del IC
+  vigente (pre-observación, causal) y retorno = signo(ra·rb). La ruta
+  del veto exige `significativo_familia(FAMILIA_VETO_GRUPO)` con
+  M = C(MAX_COINS,2)·escalas_de_banda = 435·5 = 2175 celdas ⇒ umbral
+  Bonferroni 43 500. La telemetría pura (`coherencia_par`) queda sin
+  gate (observacional). Coste de potencia: ~113 aciertos netos con
+  λ=0.10 para declarar acoplamiento — el veto de grupo sólo aprieta con
+  evidencia cruzada sólida.
+- Contratos qo_665: (1) 120 maduraciones perfectamente correlacionadas
+  cruzan (1.1^120 ≈ 92k > 43.5k), 40 no; (2) 600 muestras de ruido
+  independiente NUNCA abren el veto aunque n≫30.
+
+**Verificación**: quantum-arena 115/115, god-engine-core 167/167,
+risk-engine 140/140, check workspace 0.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (3129.87 s, release, sobre
+89aed171). Ningún gen certificado perdió sensibilidad.
+
+**ESTADO RONDA 2**: con esta ola, TODO lo no-LOW de la cola Qoder está
+cerrado. Restan sólo LOWs de limpieza (G0-6..G0-10, G1-6..G1-8,
+G2-11..G2-15) — estado fantasma scalp/swing_used_margin, exportaciones
+muertas Fisher, knobs muertos documentados, comentario obsoleto
+hawkes_bessel, paridad de inputs solitón, naming residuo.
