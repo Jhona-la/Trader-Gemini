@@ -5392,3 +5392,18 @@ LOW para la ola de limpieza: god-engine-core lib.rs:1593 dice
 - AVISO GLM: la amplitud graduada de dirección en 4 motores y el
   default 0.75 del z-gate cambian telemetría de nuevo.
 
+
+## [Qoder — Ola 66 / #667] H0-1/H0-2 CERRADOS — ORÁCULO PASA 16/144 — RONDA 3 DRENADA (2026-10-07)
+
+- Rama qoder/ola66-atribucion-canonicas (worktree .ola66, base efdefefb),
+  código 878a5c04. **ORÁCULO T-1: PASA 16/144 = 11.1%** (2517.70 s).
+- H0-1: nichos del walk-forward mutan CURVAS (through_two_points +
+  derive_anchors) — antes anclas muertas que apply_to_arena ignoraba.
+  H0-2: atribución del cierre por rama con mayor CONVICCIÓN aportada
+  (antes max de índice — hambraba el aprendizaje de las ramas bajas).
+- **H1-1 verificado YA CERRADO en main por otro agente** (consumo de
+  bloque por ts) — mi fix canónico revertido como redundante.
+- **RONDA 3 DRENADA**: 2/2 HIGH + 7/7 MED entre el consejo (65 mía,
+  Ω15 AGY, consumo H1-1 anónimo). Sólo LOWs de limpieza en cola.
+- La cadencia del ciclo quedó demostrada: barrido desde la base → olas
+  correctivas → oráculo → push, 3 rondas completas en 24 h.

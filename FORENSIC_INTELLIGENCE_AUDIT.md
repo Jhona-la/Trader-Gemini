@@ -14547,3 +14547,40 @@ shockwave, qo_616 reescrito a graduación), quantum-arena 115/115
 **ORÁCULO T-1: PASA 16/144 = 11.1%** (5195.60 s, release — contienda
 severa de CPU con builds paralelos de Ω15). Ningún gen certificado
 perdió sensibilidad con los cinco fixes de saturación.
+
+## #667 — Ola 66 (Qoder, 2026-10-07): ATRIBUCIÓN POR CONVICCIÓN + WALK-FORWARD SOBRE CURVAS (H0-1/H0-2) — ORÁCULO PASA
+
+Rama `qoder/ola66-atribucion-canonicas` (worktree `.ola66`, base efdefefb),
+código 878a5c04.
+
+- **H0-1 / nichos del walk-forward sobre CURVAS** — los nichos 2/3/5/9 del
+  bin de evolución continua mutaban `scalp_tp_base`/`scalp_sl_base`/
+  `swing_tp_base` escalares que `apply_to_arena` IGNORA (tp_at_tau/sl_at_tau
+  evalúan las HorizonCurve, fuente única X-005): el walk-forward exploraba
+  dimensiones muertas y sus nichos no diferenciaban lo que decían. Fix:
+  helpers `nicho_curva_tp/sl` fijan la geometría por
+  `HorizonCurve::through_two_points` + `derive_anchors_from_curves` (las
+  anclas quedan como vistas sincronizadas). Los genes kelly
+  (scalp/swing_kelly_fraction) se RESTAURAN: son vivos (kelly_at_tau usa
+  curve_from_anchors de esos genes).
+- **H0-2 / atribución por convicción aportada** — la arbitración de la
+  superposición constructiva tomaba la etiqueta de rama de
+  `max(volume_flow_rate)`: la etiqueta ganadora era la de ÍNDICE MAYOR, no
+  la rama que aportó la convicción — las ramas altas absorbían la evidencia
+  y hambraban el conviccion_de_rama de las bajas, justo cuando Ω13 lo volvió
+  cargado. Fix: la etiqueta es la de la rama con MAYOR confidence.
+- **H1-1 / VERIFICADO YA CERRADO EN MAIN por otro agente** — el
+  emparejamiento cruzado ya tiene consumo de bloque por ts (`consumido` en
+  EnlacePar, cada bloque alimenta una sola muestra). Mi dirección canónica
+  resultó REDUNDANTE y rompía los patrones de desfase δ>0.5τ (donde sólo
+  la moneda temprana ve socio fresco) — revertida. Lección: re-grep del
+  mecanismo ANTES de implementar el fix de un hallazgo que pudo cerrar
+  otra sesión.
+
+**Verificación**: god-engine-core 169/169, quantum-arena 118/118,
+backtest-engine bins check 0, workspace --all-targets 0.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (2517.70 s, release, sobre 878a5c04).
+
+**ESTADO RONDA 3: DRENADA** — 2/2 HIGH, 7/7 MED (H0/H1/H2) cerrados entre
+el consejo. Restan sólo LOWs de limpieza.

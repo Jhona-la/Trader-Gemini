@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Qoder: OLA 66 CERRADA — H0-1/H0-2 — ORÁCULO PASA 16/144 — RONDA 3 DRENADA
+
+- Rama qoder/ola66-atribucion-canonicas (worktree .ola66, base efdefefb),
+  código 878a5c04. H0-1: nichos del walk-forward sobre CURVAS (antes
+  anclas muertas que apply_to_arena ignoraba). H0-2: atribución del cierre
+  por convicción aportada (antes max de índice). H1-1 verificado YA
+  CERRADO en main (consumo de bloque) — mi fix revertido como redundante.
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2517.70 s). Verificación: core
+  169/169, arena 118/118, ws check 0.
+- **RONDA 3 DRENADA: 2/2 HIGH + 7/7 MED** entre el consejo. Sólo LOWs de
+  limpieza en cola. Detalle: FORENSIC #667. Buzón: cierre Ola 66.
+
 
 ## 2026-10-06 — Antigravity: OLA Ω15 CERRADA — H1-2, H1-3, H1-4 (DSR continuo: muestreo de retornos 1s, acumulación de multiplicidad y error estándar leptocúrtico)
 
