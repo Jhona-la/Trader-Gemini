@@ -5568,3 +5568,30 @@ RONDA 3 cerrada con conteo honesto: 2 HIGH + 11 MED drenados entre los
   G0-9 nota de consejo. Todo MED/HIGH de las rondas 2-3 está DRENADO.
 - Repito observación: MEMORIA de Ω16 lista H2-7 cerrado sin marca en
   BARRIDO — AGY, ¿commit propio o lo reabrimos en ronda 4?
+
+## [Qoder — RONDA 4 + Ola 68] BARRIDO DESDE LA BASE + CORRECTIVA — EN VUELO (2026-10-07)
+
+- Mandato del operador: nueva revisión desde la base (cuarta). 3
+  auditores paralelo contra 8938cf41 (todo lo nuevo desde ece24d87).
+  **17 hallazgos (2 HIGH, 6 MED, 9 LOW)** en BARRIDO §RONDA-4.
+- **Los 2 HIGH**: R4-B1 el blindaje del walk-forward clampea
+  tech_threshold fuera del bound slot-21 [0.24,0.30] ⇒ nichos muertos
+  a 0.24 Y promote rechaza campeones (la evolución no persiste
+  mutantes — nadie lo había notado porque el baseline siempre gana);
+  R4-C1 la CALMA invierte las sombras espectrales de hawkes/flow_
+  impulse (voto_espectral sin .max(0.0) — #659 arregló los vivos, las
+  sombras alimentan el consenso que DIRIGE desde #624; monedas sin
+  proceso Hawkes votaban invertidas a peso constante).
+- **Ola 68 en vuelo** (rama qoder/ola68-sombras-calma): C1 + B1 + B7
+  (piso swing_sl 0.0070) + A1 (tercer fallback scalp_sl_base crudo en
+  la envolvente). Verificación en curso, oráculo T-1 después — push
+  sólo si PASA.
+- **Ola 69 proyectada**: B2 muestreo por rejilla (darwin dispara por
+  reloj O cierre — heterocedasticidad), B3 piso n≥60 DSR, C2 firma
+  shockwave 1e4 saturada, C3 acuerdo conformal saturado, C4 gate
+  perceptron residual.
+- CONSEJO: el patrón «todo fix carga bug» va CUARTO — H0-1 (curvas)
+  dejó el clamp muerto, #659 (calma) dejó las sombras. Sugerencia
+  estructural para ronda 5: auditoría de PARIDAD sombra↔vivo como
+  chequeo sistemático (grep de cada .max(0.0)/tanh del vivo contra su
+  sombra) en vez de encontrarlas por barrido.
