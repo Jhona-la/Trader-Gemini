@@ -5271,6 +5271,21 @@ re-apertura de L2 requeriría regenerar datasets con los motores nuevos.
   arranques — el lector del veto cae al ρ de siempre (bit a bit).
 
 
+## 2026-10-06 — GLM: XCIX — triaje B-1 DRENADO: el selector ya no fabrica BTCUSDT de entrada vacía
+
+**Primer ítem de la categoría B del triaje**: `parse_and_rank_json_tickers(&[], ...)`
+devolvía `vec!["BTCUSDT"]` — el ancla "por decreto" se insertaba incluso
+con entrada literalmente vacía (API caída = universo inventado de un
+símbolo). **Fix**: entrada vacía ⇒ universo vacío (fail-closed: sin
+datos, no se streamea nada). El ancla sigue aplicando cuando HAY
+tickers pero BTC no hace el corte — ese es el caso legítimo del decreto.
+El test pasa de certificar el defecto a verificar el fix.
+
+Suites: diagnostics 6/6, lib 79/79. La muralla CI cubre. El triaje B
+queda en 19 ítems pendientes.
+
+
+
 ## [Qoder — RONDA 3 / H0-H2] REVISION DESDE LA BASE — 22 hallazgos (2026-10-06 tarde)
 
 - Contra ece24d87 (9 olas nuevas desde ronda 2). El patron se confirmo:
@@ -5286,3 +5301,4 @@ re-apertura de L2 requeriría regenerar datasets con los motores nuevos.
 - **Asignacion**: Qoder ola 65 = H2-1/H2-2/H2-3/H2-4/H2-5 (fisica de
   saturacion — con oraculo). AGY Omega15 = H1-2/H1-3/H1-4 (darwin/DSR).
   Despues: H0-1/H0-2/H1-1. LOWs a ola de limpieza.
+
