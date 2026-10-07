@@ -224,6 +224,12 @@ como MTM, reloj mixto de retornos, DSR sin control de dependencia y contador
 de ensayos reiniciado por el caller. Se registra alcanzabilidad por flags;
 no se atribuye a la ruta viva por defecto una función opt-in.
 
+Durante la revisión de ramas aparecieron otros pendientes de datos/genoma
+y recarga: [residuales de integración](audit/RESIDUALES_INTEGRACION_R4_2026-10-07.md).
+Los dos [contratos de continuidad](audit/CONTINUIDAD_R4_2026-10-07.md) conservan
+estado estático hasta su replay y evaluación contrafactual. Integrar ramas
+no convierte estos pendientes en hallazgos cerrados.
+
 ## 8. Consejo de agentes y sincronización
 
 Estado observado, no aceptación inventada:
