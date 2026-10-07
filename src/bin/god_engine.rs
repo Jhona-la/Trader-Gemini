@@ -1954,12 +1954,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|v| v.trim() == "true")
             .unwrap_or(false);
         if enable_legacy_darwin {
-            let daemon = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&arena_real));
+            // R4-Q1: conserve trial multiplicity across worker invocations.
+            // Rebuilding the daemon per round resets cumulative_trials to zero.
+            // This retains in-process history; restart persistence is separate.
+            let daemon = Arc::new(god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&arena_real)));
             rt_for_darwin.spawn(async move {
                 telemetry_server::telemetry_log!("🧬 [DARWIN-DAEMON] Iniciando Motor Cuántico Evolutivo Legacy...");
                 loop {
                     tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-                    let daemon_clone = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&daemon.live_arena));
+                    let daemon_clone = Arc::clone(&daemon);
                     let _ = tokio::task::spawn_blocking(move || {
                         daemon_clone.evolve_online();
                     }).await;
