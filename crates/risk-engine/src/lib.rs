@@ -522,9 +522,14 @@ impl RiskEngine {
         let conviccion = 1.0
             + (intent.confidence - arena.config.min_confidence_btc.load(Ordering::Relaxed))
                 .max(0.0);
+        let micro_kelly_input = kelly_adjusted * conviccion;
+        // A zero returned for invalid size must not be blended with the
+        // positive standard candidate, which would reopen this rejected input.
+        if !micro_kelly_input.is_finite() {
+            return rej(REJ_INVALID_INPUT);
+        }
         let micro_kelly =
-            crate::ruin::clamp_ruin(kelly_adjusted * conviccion, crate::ruin::CONSERVATIVE_Q)
-                .max(0.0);
+            crate::ruin::clamp_ruin(micro_kelly_input, crate::ruin::CONSERVATIVE_Q).max(0.0);
         let kelly_for_scale =
             crate::capital_regime::lerp(kelly_adjusted, micro_kelly, micro_w_alloc);
 
