@@ -199,8 +199,8 @@ mod tests {
         };
         let mut e = EProceso::new();
         let mut cruzo = false;
-        // p=0.58: E[sign]=0.16 ⇒ log-capital ≈ n·λ·0.16·(ajuste) —
-        // cruza 20 en ~n=800.
+        // p=0.58: E[ln factor] = 0.58·ln(1.1) + 0.42·ln(0.9) ≈ 0.0110/obs
+        // — cruza 20 en ~n=272.
         for _ in 0..4_000 {
             let acierta = (rng() % 100) < 58;
             let r = if acierta { 0.02 } else { -0.019 };
