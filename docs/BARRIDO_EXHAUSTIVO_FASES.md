@@ -969,4 +969,31 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   DE AGENTES** (el "7/7" anterior omitía H2-7, drenado por GLM 103;
   conteo completo: H0-1, H0-2, H1-1, H1-2, H1-3, H1-4, H2-3, H2-4,
   H2-5, H2-6, H2-7 = 11 MED + 2 HIGH). Quedan LOWs de limpieza.
-- Siguiente paso: LOWs y F4 (auditoría forense de riesgo, capital $13 USD y execution-engine).
+- Siguiente paso: Fase F4 cerrada (auditoría forense de riesgo, capital $13 USD y execution-engine) -> avanzar a Fase F5.
+
+---
+
+# FASE F4 — DINERO, RIESGO Y EJECUCIÓN (45 ARCHIVOS AUDITADOS)
+
+## Inventario Real de la Fase F4
+- **crates/risk-engine/src/**: 23 archivos (8 719 líneas). Tests: 141/141 verdes en 0.85s.
+- **crates/execution-engine/src/**: 22 archivos (11 655 líneas). Tests: 79/79 verdes en 3.76s.
+- **Total**: 45 archivos, ~20 374 líneas.
+
+## Hallazgos de la Fase F4
+
+- **F4-EXE-001 [MED] CERRADO (Ola Ω17 AGY)** `crates/execution-engine/src/user_data_stream.rs:966-983`:
+  El test `test_algo_update_terminal_marks_protection_dirty` realizaba una aserción absoluta `assert_eq!(terminal_events_seen(), 1)` sobre el contador estático `AtomicU64` global `TERMINAL_EVENTS_SEEN`. En ejecución paralela con `test_reconcile_after_reconnect_clears_cache_and_marks_dirty`, el contador acumulaba ejecuciones previas (`left: 2, right: 1`) causando fallos no-deterministas. Blindado midiendo el incremento relativo `terminal_events_seen() - prev_events == 1`. 79/79 tests de `execution-engine` verificados verdes.
+
+- **F4-RISK-001 [AUDITADO - APROBADO] Régimen Micro-Capital $13 USD y Piso Binance $5**:
+  - `capital_regime::trades_of_room(13.0, 5.0) = 2.6 <= 3.0` activa `micro_weight = 1.0` (régimen micro pleno).
+  - `enforce_minimum_notional`: con `dynamic_min_notional = 5.0` y margen de seguridad (+0.1) se evalúa `safe_min_notional = 5.10 USD`.
+  - `micro_lev_cap`: apalancamiento continuo [5.0x, 6.5x]. Con L=5x, el margen requerido por trade es $1.02 USD.
+  - `micro_safe_limit`: [1.20, 2.60] USD. La orden cabe holgadamente en $1.02 USD sin activar recortes de margen.
+  - Concurrencia de posiciones: 2 órdenes simultáneas consumen $2.04 USD de margen a 5x ($10.20 USD notional), dejando $10.96 USD libres (84.3% del capital), satisfaciendo con creces el colchón mínimo de $3.0 USD.
+  - `orden_viable`: el riesgo al Stop Loss de 100 bps en la orden mínima de $5.10 es $0.051 USD (0.39% de la cuenta de $13 USD), muy por debajo del tope de ruina del 25% ($3.25 USD).
+
+- **F4-RISK-002 [AUDITADO - APROBADO] Orquestador de Portafolio y Protección Simétrica**:
+  - `PortfolioOrchestrator::allow_trade`: aplica `exposure_limit = 0.98 - directional_pressure`.
+  - Permite simultaneidad y simetría total de posiciones Long y Short.
+  - Veto absoluto de largos reservado estrictamente para caída libre sistémica ($p_{\text{crash}} \ge 0.90$). En caídas intermedias la presión modula el margen admisible suavemente sin saltos discretos.

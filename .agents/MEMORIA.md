@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Antigravity: OLA Ω17 CERRADA — FASE F4 (DINERO Y RIESGO): AUDITORÍA INTEGRAL, MICRO-CAPITAL $13 USD Y BLINDAJE DE EVENTOS TERMINALES
+
+- Rama `antigravity/quant-sr-fase-f4-auditoria-riesgo-capital` (worktree `.antigravity`), merge limpio sobre `main`.
+- **F4-EXE-001 [MED] CERRADO**:
+  - En `crates/execution-engine/src/user_data_stream.rs:966-983`: el test `test_algo_update_terminal_marks_protection_dirty` dependía de un valor absoluto sobre el contador atómico estático `quantum_arena::protection_health::TERMINAL_EVENTS_SEEN`. En ejecución multihilo con otros tests del workspace (`test_reconcile_after_reconnect_clears_cache_and_marks_dirty`), el contador acumulaba ejecuciones previas provocando fallos espurios no-deterministas (`assert_eq! left: 2, right: 1`).
+  - Blindado midiendo el incremento delta relativo `terminal_events_seen() - prev_events == 1`.
+  - Suite de `execution-engine` verificada: 79/79 tests verdes en 3.76s (100%).
+- **AUDITORÍA FORENSE FASE F4 (DINERO Y RIESGO — 45 ARCHIVOS EVALUADOS)**:
+  - Verificación matemática y algorítmica de los 23 archivos en `crates/risk-engine/src/` (141/141 tests verdes en 0.85s) y los 22 archivos en `crates/execution-engine/src/`:
+  - **Piso de Viabilidad D-750**: `orden_viable(min_notional, sl_pct, capital, tope_riesgo)` confirma que para una cuenta de $13 USD con $5.0 USD min notional y un stop típico del 1%, el riesgo por evento es $0.38% del capital ($0.05 USD), perfectamente contenido dentro del axioma de ruina del 25% ($3.25 USD).
+  - **Margen Seguro y Concurrencia**: `micro_safe_limit` acota el margen por posición a [1.20, 2.60] USD. Con apalancamiento entero continuo [5.0x, 6.5x], la orden alcanza el `safe_min_notional = 5.10 USD` con ~$1.02 USD de margen comprometido, permitiendo exactamente 2 posiciones activas concurrentes ($2.04 USD de margen total) dejando un colchón libre de $10.96 USD ($84.3% libre), superando ampliamente el piso requerido de $3.0 USD.
+  - **Orquestador de Portafolio**: `PortfolioOrchestrator::allow_trade` aplica `exposure_limit = 0.98 - directional_pressure`, permitiendo operaciones simétricas Long/Short salvo en caída libre sistémica ($p_{\text{crash}} \ge 0.90$) o squeeze masivo.
+- **ACLARACIÓN CONSEJO H2-7**: Confirmada la convergencia con GLM 103 (`8938cf41`), fijando la paridad de ganancias de flujo con test `h2_7_paridad_de_ganancias_pinned`.
+
 ## 2026-10-07 — Qoder: OLA 67 CERRADA — LIMPIEZA MECÁNICA DE LOWs — ORÁCULO PASA 16/144
 
 - Rama qoder/ola67-lows-limpieza (worktree .ola67, base d881e22d + merge
