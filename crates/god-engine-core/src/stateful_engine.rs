@@ -145,7 +145,7 @@ pub struct StatefulEngine {
     /// cosas distintas según el símbolo, la hora y el entorno (vivo vs
     /// forense). El enfriamiento es TIEMPO.
     pub last_scalp_exit_ms: u64,
-    /// Reloj de evento más reciente visto por el motor de features. Permite
+    /// Reloj del evento más reciente aceptado por el motor de features. Permite
     /// medir el enfriamiento sin cambiar la firma pública de
     /// `can_open_position`.
     pub last_event_ms: u64,
@@ -680,12 +680,6 @@ impl StatefulEngine {
         if price <= 0.0 || !price.is_finite() {
             return Err(FeatureInputError::InvalidPrice);
         }
-        // D-754: el reloj del motor de features. El enfriamiento y el olvido
-        // de rachas se miden contra EL, no contra `tick_count`.
-        if event_time_ms > self.last_event_ms {
-            self.last_event_ms = event_time_ms;
-        }
-
         if !_volume.is_finite() || _volume < 0.0 {
             return Err(FeatureInputError::InvalidVolume);
         }
@@ -701,6 +695,12 @@ impl StatefulEngine {
                 && !((price - self.last_price) / self.last_price).is_finite())
         {
             return Err(FeatureInputError::NonFiniteDerivedValue);
+        }
+        // D-754 / RA-I-F01: publish the accepted feature clock only after
+        // every input guard. Cooldown and streak amortization must not age
+        // on a rejected volume, exhausted counter or nonfinite derivative.
+        if event_time_ms > self.last_event_ms {
+            self.last_event_ms = event_time_ms;
         }
         self.current_ts = event_time_ms;
         // Kline warmup sets last_price but never initializes the tick EMA or

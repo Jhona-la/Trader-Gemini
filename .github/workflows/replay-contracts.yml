@@ -95,6 +95,10 @@ jobs:
       - name: Shadow forest genome and observed capital contracts
         # Offline library tests; no training, promotion or live engine session.
         run: cargo +nightly-2026-06-30 test -p evolution-engine --lib --locked -- --test-threads=1
+
+      - name: Accepted feature clock transition contracts
+        # Synthetic rejected/accepted ticks; no live trading, models or training.
+        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test stateful_transition_contract -- --test-threads=1
       - name: Model inventory structural evidence contracts
         # Synthetic files only; no training, promotion or live-model loading.
         run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --lib ml_registry::tests -- --test-threads=1
