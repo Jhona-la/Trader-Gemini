@@ -89,6 +89,14 @@ impl DynamicSymbolSelector {
         items: &[Value],
         is_testnet: bool,
     ) -> (Vec<String>, Vec<String>) {
+        // XCIX (triaje B-1): entrada VACÍA ⇒ universo VACÍO. El ancla
+        // BTCUSDT "por decreto" aplica cuando HAY tickers pero BTC no hace
+        // el corte — fabricarla de literalmente cero datos (API caída,
+        // respuesta corrupta) es inventar un universo de la nada: sin
+        // datos, no se streamea nada y el caller decide.
+        if items.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
         let mut heap = BinaryHeap::new();
 
         for item in items {
