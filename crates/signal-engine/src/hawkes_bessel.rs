@@ -137,7 +137,12 @@ impl HawkesBesselEngine {
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
     ) -> crate::voto_espectral::VotoEspectral {
-        let excitacion = excitacion_hawkes_norm(ratio_lambda_mu);
+        // R4-C1 (#659 paridad sombra/vivo): la CALMA se abstiene — sin el
+        // .max(0.0) la excitación negativa INVERTÍA el sentido de cada
+        // escala (calma + flujo alcista votaba bajista dentro del consenso
+        // que dirige desde #624). Con ratio sin proceso (fallback 1.0) el
+        // voto colapsa a 0 = abstención.
+        let excitacion = excitacion_hawkes_norm(ratio_lambda_mu).max(0.0);
         let mut por_escala = [0.0f64; 32];
         for k in 0..32 {
             let x = desplazamientos[k];
@@ -607,6 +612,19 @@ mod qo_617_tests {
         for malo in [f64::NAN, 0.0, -3.0] {
             let v = HawkesBesselEngine::voto_espectral(&x, malo);
             assert_eq!(v.en_escala(4), 0.0);
+        }
+        // R4-C1: la CALMA se abstiene — antes la excitación negativa
+        // INVERTÍA el sentido del voto (calma + flujo alcista votaba
+        // bajista en el consenso espectral). Con flujo alcista fuerte:
+        for calma in [1.0, 1.2, 1.59] {
+            let v = HawkesBesselEngine::voto_espectral(&x, calma);
+            for k in 0..ESCALAS_VOTO {
+                assert_eq!(
+                    v.en_escala(k),
+                    0.0,
+                    "calma (ratio={calma}) debe abstenerse en escala {k}"
+                );
+            }
         }
     }
 
