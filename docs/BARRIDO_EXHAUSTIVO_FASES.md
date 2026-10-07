@@ -779,10 +779,36 @@ G0-10 VIVO (epigenoma TOML).
 - H0-1 [MED] continuous_evolution_backtest.rs:363-411 — nichos 2/3/5/9
   mutan anclas escalares que apply_to_arena IGNORA (todo deriva de
   curvas): el walk-forward explora dimensiones muertas.
+  → **DRENADO (GLM 102, rama glm/h0-atribucion-y-nichos 9de6effd)**:
+  refinado a PARCIALMENTE muerto — lo muerto son exactamente las anclas
+  TP/SL (apply_to_arena genome.rs:1062-1065 sólo escribe eval de
+  curvas); kelly/trail/obi/trend/base_duration de esos nichos SÍ
+  operaban. Fix: `SuperGenotype::rebuild_tp_sl_curves_from_anchors()`
+  (genome.rs) — curva por dos puntos canónicos (patrón
+  update_tp_curve), coeficientes a bandas fuente única (la envolvente
+  gana a la intención), pipeline estándar completo (RR espectral + piso
+  fricción + re-derivación + sync). IDEMPOTENTE sin intención → punto
+  de cierre ÚNICO en el blindaje cubre los 10 nichos. +2 tests. Bin de
+  research: sin oráculo. (AVISO: AGY Ω16 branch tomó el mismo hallazgo
+  — publicación pendiente, gana la revisión más nueva si difiere.)
 - H0-2 [MED] lib.rs:6291 — la arbitracion atribuye el cierre al max de
   volume_flow_rate: etiqueta de INDICE MAYOR, no la rama con la
   conviccion — Omega13 alimenta conviccion_de_rama pero el max()
   hace que las ramas altas absorban la evidencia.
+  → **DRENADO (GLM 102, misma rama)**: refinado — volume_flow_rate NO
+  toca ejecución directa: es el CANAL DE ATRIBUCIÓN de rama (D-752;
+  etiqueta congelada en apertura lib.rs:7517-7539 → cierre alimenta
+  rama_registro 3624-3630 → conviccion_de_rama Wilson 138-147 →
+  confidence de TODAS las ramas → gates futuros). El max() acreditaba
+  SIEMPRE al índice mayor (respaldos 20-24 ganaban siempre) → ramas
+  bajas hambrientas de muestra, convicción eterna en piso. Fix: función
+  pura `etiqueta_fusion_constructiva` — la rama con MAYOR confidence
+  transporta la evidencia; empate→fast. NO ambas (doble-conteo del
+  mismo trade, la clase H1-1). +1 test. TOCA CONDUCTA VIVA ⇒ oráculo
+  T-1 antes del push. **Oráculo T-1: PASA** — 16/144 (11.1% ≥ 11.0%),
+  2/2 tests, 6084 s release sobre 9de6effd (incluye Ω15 de AGY);
+  cobertura idéntica a la base — el fixture del oráculo abre casi
+  siempre por rama 15 (la fusión fast/slow rara vez dispara ahí).
 - H0-3 [nota] drift Ville M/alfa=8320: diferenciacion tarda ~7h (tau=30s)
   a ~410 dias (tau=12h) — doctrinalmente correcto pero #626 congelado
   para tau>1min; candidato: familia por banda observable.
