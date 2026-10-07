@@ -404,9 +404,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 g.scalp_trail_act_atr = g.scalp_trail_act_atr.clamp(0.8, 1.8);
                 g
             } else if i < (num_mutants * 40 / 100).max(4) {
-                // Nicho 4: KAN Neural & DarkAlpha (Alta ponderación neural)
+                // Nicho 4: KAN Neural & DarkAlpha (Alta ponderación neural).
+                // R4-B1: banda DENTRO del bound evolutivo slot-21 [0.24, 0.30]
+                // (D-625) — el clamp viejo [0.120, 0.220] dejaba TODO el nicho
+                // en 0.24 tras apply_to_arena y promote RECHAZABA a los
+                // campeones por "gen 21 fuera de bounds". Banda baja = más
+                // señales tech pasan = mayor ponderación neural (la intención
+                // original del nicho, ahora factible).
                 let mut g = current_genome.mutate_cmaes_seeded(0.25, deterministic_seed);
-                g.tech_threshold = g.tech_threshold.clamp(0.120, 0.220);
+                g.tech_threshold = g.tech_threshold.clamp(0.240, 0.270);
                 g
             } else if i < (num_mutants * 50 / 100).max(5) {
                 // Nicho 5: Mean-Reversion & Wall Bounce (Absorción en muros L2)
@@ -447,7 +453,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 current_genome.mutate_cmaes_seeded(0.55, deterministic_seed)
             };
             // Blindaje Cuántico: cotas estrictas para todos los mutantes (impedir que nazcan mutantes cobardes o suicidas)
-            mutant_genome.tech_threshold = mutant_genome.tech_threshold.clamp(0.080, 0.220);
+            // R4-B1: banda = bound evolutivo slot-21 [0.24, 0.30] (D-625) —
+            // el clamp viejo [0.080, 0.220] colapsaba TODOS los mutantes a
+            // 0.24 en el arena y promote/validate los rechazaba.
+            mutant_genome.tech_threshold = mutant_genome.tech_threshold.clamp(0.24, 0.30);
             mutant_genome.scalp_kelly_fraction =
                 mutant_genome.scalp_kelly_fraction.clamp(0.12, 0.38);
             mutant_genome.dynamic_obi_threshold =
@@ -455,7 +464,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             mutant_genome.dynamic_ofi_threshold =
                 mutant_genome.dynamic_ofi_threshold.clamp(0.15, 0.35);
             mutant_genome.scalp_sl_base = mutant_genome.scalp_sl_base.clamp(0.0030, 0.0150);
-            mutant_genome.swing_sl_base = mutant_genome.swing_sl_base.clamp(0.0080, 0.0350);
+            // R4-B7: el piso 0.0080 silenciaba el ancla lenta del nicho 2
+            // (0.0075) — el rebuild post-blindaje propagaba la distorsión
+            // (+6.7%) a la curva. Banda ⊇ los slow-anchors de los nichos
+            // 2/3/5 (0.0075/0.0120/0.0085).
+            mutant_genome.swing_sl_base = mutant_genome.swing_sl_base.clamp(0.0070, 0.0350);
             mutant_genome.scalp_trail_act_atr = mutant_genome.scalp_trail_act_atr.clamp(1.0, 2.5);
             mutant_genome.scalp_trail_step_atr = mutant_genome.scalp_trail_step_atr.clamp(1.0, 2.5);
             mutant_genome.scalp_trail_atr_mult_base =
