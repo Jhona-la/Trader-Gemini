@@ -5761,3 +5761,29 @@ SA HEAD d73 / MERGE_HEAD f608, unión documental preparada, publicación bloquea
 Consulta expresa renovada; no push/PR ni vía alternativa hasta respuesta.
 RA28 mantiene autorización independiente. OOS termina su check local sin
 publicar. No acuse externo inventado ni cambios en operaciones/modelos.
+
+## 2026-10-03 — Codex MW: reserva y contrato del watcher
+
+Worktree model-lineage-audit / rama codex/model-reload-contract desde7fdd12dd.
+MP/GO verificados MERGED con CI SUCCESS y heads en main; no se rehacen. Viejo
+worktree Codex ya no existe; no se atribuye su retirada a ningún agente.
+MR-04/MP-06 aún presentes: timestamps de fallo marcados aplicados, éxito falso
+en startup y oscilación JSON/BIN. Arreglo sólo en módulo nuevo model_reload,
+declaración en lib, bloques startup/watcher de god_engine y contratos/CI.
+RED2/7 extraído del polling; GREEN13/0; all-targets aún en curso en este aviso.
+Informe MW/JSON diferencian3 familias candidatas y4 abiertas. Sin cambios en
+votes_export/replay observer/state.rs/spectral_tape/skill/genoma/trainer/riesgo.
+No operación ni T-1. Publicación MW específica consultada, review posterior.
+
+Precisión ADR-0008 (propuesto): renombrar JSON a CANDIDATE no revoca modelo
+en memoria ni BIN legacy de clave original. Testigo sintético confirma selección;
+se requiere política explícita de revocación, no limpieza automática por ausencia.
+No se ejecuta democión alguna. Rama local glm/lxxxi-dl-modular retirada sólo
+tras verificar integración/ausencia de worktree; commit2d4d72b8 en main.
+
+MW revisión local: código inicial d1cfe0b7 y precisión posterior e7bd8f78.
+El log especifica requested path, no identidad efectiva del BIN/JSON servido.
+Runner focalizado repetido13/0 en0,10s, no13 contratos adicionales. Añadidos
+criterios de cierre MW04/05/06/07 al informe. Solicitud pasiva de review en
+buzón local ignorado; sin acuse ni aprobación inferidos. All-targets sigue
+en curso y la autorización pública específica MW continúa pendiente.

@@ -1066,6 +1066,32 @@ provisionales; la nota de cabecera da la correspondencia).
   106/106 (valores exactos por media/τ), core 160/160, ws 0 err.
 - Detalle: FORENSIC #652. Buzón: cierre Ola 52.
 
+## 2026-10-03 — Codex MW: seguimiento de recarga y recibos MP/GO
+
+- Nuevo worktree model-lineage-audit, rama codex/model-reload-contract, base7fdd12dd.
+  Compartido GLM LXXXII y Qoder ola52 preservados. No operación/promoción/training.
+- MP/PR25 y GO/PR24 MERGED con CI SUCCESS y review GLM favorable COMMENTED;
+  heads ef2afefb/34324749 ancestros de main. Pendientes anteriores son historia.
+- MW corrige MR-04/MP-06: stamp aplicado sólo tras carga exitosa, logging veraz
+  y fuente única JSON/BIN para startup/polling. Agrega ruta/tamaño al detector.
+- RED política extraída2/7; GREEN13/0 (10 conductuales,1 wiring,2 diagnósticos
+  abiertos), all-targets en curso al corte. Informe/JSON AUDITORIA_WATCHER_MODELOS.
+- Abiertos: democión no revoca cache/memoria, identidad fuente/cache, contenido
+  idéntica metadata y latencia síncrona. No se afirma13 bugs cerrados ni OOS.
+- Retirada sólo referencia local GLM LXXXI integrada y sin worktree, recuperable
+  desde2d4d72b8 en main. MW publicación específica consultada; no merge sin CI/review.
+
+- Adenda del mismo corte: código d1cfe0b7 + precisión de procedencia e7bd8f78;
+  logs indican requested path porque el loader puede resolver JSON a BIN.
+  Misma suite13/0 repetida en0,10s; hashes del refinamiento en JSON MW.
+  A las19:34 America/Bogota, cargo check workspace/all-targets/locked -j2
+  seguía compilando dependencias en el worktree nuevo; sin éxito inferido.
+  Al terminar, repetir check incremental: el último ajuste de host/test se
+  hizo durante la primera compilación. No correr T-1 ni workspace test completo.
+  Falta autorización pública MW, CI remoto y review; no publicar por permiso MP/GO.
+  Se solicitó review local del código en el buzón ignorado; no consta acuse.
+  SC01/02 documentan C0≠C∞ y cardinalidad≠preservación de genes, sin alterar fórmulas.
+
 ## 2026-10-03 — Qoder: Ola 51 / #651 — ACTIVACIÓN DE VETOS DORMIDOS — ORÁCULO PASA 16/144
 
 - Rama qoder/ola51-vetos-dormidos (worktree .ola51, base 84c20593),

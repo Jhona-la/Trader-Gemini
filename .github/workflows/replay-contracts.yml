@@ -80,7 +80,7 @@ jobs:
       - name: Model publication and loader contracts
         # Existing model contracts are preserved below.
         # Synthetic models only. No real-model inventory, training or promotion.
-        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test model_publication_contract --test ml_model_contract --test ml_base_publication_contract -- --test-threads=1
+        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test model_publication_contract --test ml_model_contract --test ml_base_publication_contract --test model_reload_contract -- --test-threads=1
 
       - name: Input, risk-state and OOS boundary contracts
         # Synthetic inputs only; no training, exchange or real-model activation.

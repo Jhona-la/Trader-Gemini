@@ -1,0 +1,80 @@
+{
+  "schema":"trader-gemini-audit-mw-v1",
+  "date":"2026-10-03",
+  "base":"7fdd12dd4459c7c4c29d6117dd658a7e98686f14",
+  "branch":"codex/model-reload-contract",
+  "code_commit":"d1cfe0b7675b53bf7e4398365220f2870021b1b0",
+  "scope":"Filesystem reload tracking and host wiring; no whole-project certification",
+  "findings":[
+    {"id":"MW-01","priority":"P2","status":"candidate_fixed","related":["MR-04"],"mechanism":"Applied timestamp was advanced before loader success; startup reported success on failure","fix":"Success-only tracking and shared truthful outcome reporting"},
+    {"id":"MW-02","priority":"P2","status":"candidate_fixed","related":["MP-06"],"mechanism":"JSON and BIN share one stamp but have distinct mtimes; stable cycles reload both","fix":"One source per key: JSON first, standalone BIN preserved"},
+    {"id":"MW-03","priority":"P2","status":"candidate_partial","mechanism":"mtime alone misses source path and file-size transitions","fix":"Track path,mtime,bytes; not content identity","residual":"MW-07"},
+    {"id":"MW-04","priority":"P1","status":"open_witness_and_static","mechanism":"Renaming JSON to CANDIDATE leaves the original key in memory and/or a reloadable standalone BIN","reference":"docs/adr/ADR-0008-reloj-revalidacion-modelos.md","closure":"Explicit generation-aware revocation and legacy migration; no implicit deletion on transient absence"},
+    {"id":"MW-05","priority":"P1","status":"open_existing_reference","related":["MR-03","MP-07"],"mechanism":"JSON hash, eligible cache and active predictor not bound to one lineage"},
+    {"id":"MW-06","priority":"P2","status":"open_static","mechanism":"Synchronous filesystem/loading in async task; 10-second sleep is not a 10-second latency bound","runtime_latency_measured":false},
+    {"id":"MW-07","priority":"P2","status":"open_witness","mechanism":"Different content with identical path,mtime,size remains invisible","witness":"one->two with same metadata; scan does not reload"}
+  ],
+  "validation":{
+    "toolchain":"nightly-2026-06-30",
+    "runner":"rustc --edition=2024 --test on the same production policy module included by path",
+    "red":{"passed":2,"failed":7,"ignored":0,"seconds":0.09,"scope":"extracted old polling policy, not live host"},
+    "green_initial":{"passed":9,"failed":0,"ignored":0,"seconds":0.07},
+    "green_final":{"passed":13,"failed":0,"ignored":0,"seconds":0.93,"behavioral":10,"static_wiring":1,"open_diagnostics":2},
+    "workspace_all_targets":"in_progress_at_initial_cut",
+    "source_sha256":{
+      "crates/god-engine-core/src/model_reload.rs":"EADA08EAD055ABF2AFA8669B821BD97E5C8FC4226E81CCC6784E7D6E3BA27962",
+      "crates/god-engine-core/tests/model_reload_contract.rs":"98ECC41D60119C1A2B6502A838032909D964AE24107B92F1568FEA1F2EFBC3B2",
+      "src/bin/god_engine.rs":"003DB032C88747C5F79559C6C18BC4C1A1421C5A3D9C83C7BB6F2796944E2BE7"
+    }
+  },
+  "integration_receipts":{
+    "GO":{"pr":24,"head":"343247492586a9b6c0337a21ef096cb3ea846df5","merge":"22bf9d275b8e2a7642342e0fe3b65eb9ec293af1","ci":36734061201,"ci_status":"SUCCESS","ancestor_of_base":true,"review":"GLM COMMENTED favorable"},
+    "MP":{"pr":25,"head":"ef2afefb2aee9589b0eb3c4edd5055d2bb275456","merge":"b56aa1187cc416e618cc57e0d68559d2f41adb42","ci":36735220912,"ci_status":"SUCCESS","ancestor_of_base":true,"review":"GLM COMMENTED favorable; CI condition met before merge"}
+  },
+  "branch_cleanup":{"deleted_local":"glm/lxxxi-dl-modular","tip":"2d4d72b8f1aaf2931044ea14dce2011acc2aa1dc","ancestor_of_main":true,"active_worktree":false,"force_used":false,"recoverable_from_main":true},
+  "scientific_observations":[
+    {"id":"SC-01","priority":"P2","status":"open_documentation","source":"crates/strategy-core/src/vecm_arbitrage.rs:165","claim_reference":"96c4beaf and AGY Ola7 title in memory","finding":"Continuous piecewise linear ramp is not C1 at +/-1.5 and +/-3, hence not C-infinity","proof":"Left/right derivatives are 0,-2/3 at positive 1.5 and -2/3,0 at positive 3","formula_check_not_engine_run":true,"trading_formula_changed":false},
+    {"id":"SC-02","priority":"P2","status":"open_inference","claim_reference":"Qoder Ola45 memory entry: >=16/144 implies no gene lost sensitivity","finding":"Equal or higher cardinality does not establish subset preservation","counterexample":{"before":"1..16","after":"2..17","same_count":16,"lost":[1],"gained":[17]},"actual_gene_loss_in_that_wave_proven":false,"t1_threshold_unchanged":0.110}
+  ],
+  "inventory":{"base_tracked_files":1414,"base_rust_files":452,"rust_files_matching_scalp_or_swing":83,"lexical_search_is_semantic_audit":false},
+  "publication":{"mw":"specific_public_authorization_requested","merged":false},
+  "operational_actions":[],
+  "real_models_loaded_or_modified":false,
+  "genome_risk_thresholds_changed":false,
+  "whole_project_certified":false,
+  "directory_enumeration_failure":"Abort current scan before applying candidates; report error and retry later",
+  "profitability_evidence":false,
+  "next_acceptance_contracts":{
+    "MW-04":"Explicit key/generation revocation with agreed in-flight snapshot semantics; temporary file absence is not an administrative revocation",
+    "MW-05":"Bind source, cache, feature schema and published predictor; test mixed generations with equal or reversed mtimes",
+    "MW-06":"Measure detection/read/validation/publication latency under documented contention and failure; no universal bound inferred from polling cadence",
+    "MW-07":"Detect changed valid bytes despite equal size/mtime and prevent partial-write publication",
+    "implemented_by_this_wave":false,
+    "evidence_layers":["structural_validity","serving_identity","statistical_eligibility","economic_outcome"]
+  },
+  "validation_followup":{
+    "code_commit":"e7bd8f785ce2d29d20635f877df0d12925fed4d5",
+    "change":"Log requested path without asserting loaded content provenance; strengthen static wiring assertion",
+    "green":{"passed":13,"failed":0,"ignored":0,"seconds":0.10,"same_suite_not_additional_tests":true},
+    "source_sha256":{
+      "crates/god-engine-core/src/model_reload.rs":"EADA08EAD055ABF2AFA8669B821BD97E5C8FC4226E81CCC6784E7D6E3BA27962",
+      "crates/god-engine-core/tests/model_reload_contract.rs":"C3683E797384BD57AB830EE3D961A6016E8474DA5EA7D8FBCA2ED462390C3B36",
+      "src/bin/god_engine.rs":"AD0A8C4760F82F4A0F3878C3239EDFABCD251CD82B1CC12E003DCB55806DA004"
+    },
+    "workspace_all_targets":"still_in_progress_at_followup_cut"
+  },
+  "handoff_cut":{
+    "local_time":"2026-10-03T19:34:00-05:00",
+    "workspace_all_targets":"running; no final result observed",
+    "command":"cargo +nightly-2026-06-30 check --workspace --all-targets --locked -j 2",
+    "incremental_recheck_required_after_completion":true,
+    "recheck_reason":"Host and static contract refined during first compilation",
+    "full_loader_suites_executed_this_wave":false,
+    "t1_executed_this_wave":false,
+    "cross_review":"requested in local ignored coordination mailbox; no acknowledgment observed",
+    "mw_publication_permission":"awaiting specific user answer",
+    "mw_pushed":false,
+    "mw_pr_created":false,
+    "mw_merged":false
+  }
+}

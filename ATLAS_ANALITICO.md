@@ -2037,3 +2037,24 @@ explica pico, déficit actual y máximo histórico, su uso en la aptitud y la
 contraprueba13→6,5→15 frente a13→14. RED7/9→GREEN16/0 y biblioteca73/0
 respaldan la reparación local; no calibran una probabilidad de ruina o DD MTM.
 RA§33 separa check de compilación, ejecución de contratos y CI todavía futura.
+
+## ADENDA MW — observado no equivale a aplicado (2026-10-03)
+
+El estado del watcher se expresa por `A_k=(ruta,mtime,bytes)` del último éxito.
+Un candidato observado S_k distinto provoca un intento; sólo éxito actualiza
+A_k. Un rechazo conserva A_k y permite reintentar. Antes, actualizar A_k antes
+del loader convertía un fallo transitorio en ausencia silenciosa de actualización.
+Dos productores JSON/BIN de la misma clave añadían oscilación sin nuevos datos.
+
+El [informe MW](docs/AUDITORIA_WATCHER_MODELOS_2026-10-03.md) separa detector
+de cambio, aceptación estructural, promoción estadística y revocación efectiva.
+Timestamp+tamaño no identifica bytes. Renombrar una fuente no elimina snapshots
+ni su caché legacy. Cadencia10s no prueba disponibilidad≤10s. Se reparan estados
+y selección de fuente, sin adjudicar habilidad espectral o rentabilidad al arreglo.
+
+Adenda científica SC-01/02 en informe MW§10: la rampa VECM observada es C0,
+lineal por tramos, no C∞ (derivadas laterales0/−2/3 en1.5 y−2/3/0 en3).
+Igual cardinalidad de sensibilidad no implica mismos genes: A={1..16},
+B={2..17} conserva16 y pierde1/gana17. Se precisa el alcance documental,
+no se cambian fórmulas ni umbral T-1. Inventario1414 archivos/452 Rust y83
+coincidencias léxicas scalp/swing no equivale a auditoría semántica completa.

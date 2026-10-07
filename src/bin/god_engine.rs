@@ -22,6 +22,29 @@ use quantum_engine::config::TensorConfig;
 use quantum_engine::env_manager::EnvManager;
 use telemetry_engine::telemetry;
 
+/// MW: startup and polling share source selection and success-only bookkeeping.
+/// Loading is not statistical promotion; errors must remain visible and retryable.
+fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTracker) {
+    let scan = tracker.scan(std::path::Path::new("models"), |key, path| {
+        let source = path.to_str().ok_or_else(|| "model path is not UTF-8".to_string())?;
+        god_engine_core::ml_inference::NanoForest::load_global(key, source)
+            .map_err(|error| error.to_string())
+    });
+    match scan {
+        Ok(events) => for event in events {
+            match event.result {
+                Ok(()) => telemetry_server::telemetry_log!(
+                    "🧠 [ML-RELOAD] Loaded {} (requested path: {})", event.key, event.path.display()),
+                Err(error) => telemetry_server::telemetry_log!(
+                    "⚠️ [ML-RELOAD] Rejected {} (requested path: {}): {} (will retry)",
+                    event.key, event.path.display(), error),
+            }
+        },
+        Err(error) => telemetry_server::telemetry_log!(
+            "⚠️ [ML-RELOAD] Cannot scan models: {} (will retry)", error),
+    }
+}
+
 /// B1.2/B1.3: precios de protección desde las CURVAS del genoma — mismo
 /// criterio del camino en vivo (X-030/X-016): curva de horizonte por dos
 /// puntos (bases scalp/swing del arena.config, ambas genes) evaluada en la
@@ -1147,38 +1170,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // El genoma inicial fue validado. Aprobamos la transición al Orchestrator.
     darwin_approved.store(true, Ordering::Relaxed);
 
-    let mut forest_timestamps: std::collections::HashMap<String, std::time::SystemTime> =
-        std::collections::HashMap::new();
-
-    // Initial load of all models (.json es la fuente de verdad; el .bin es
-    // caché del propio loader — B3.19: cargar AMBOS por stem hacía doble
-    // trabajo y dejaba el resultado al orden de read_dir)
-    if let Ok(entries) = std::fs::read_dir("models") {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            let ext = path.extension().and_then(|s| s.to_str());
-            // Un .bin sólo se carga si su .json hermano NO existe (stem
-            // legacy sin json); con .json presente, el loader deriva la
-            // pareja y regenera la caché él mismo.
-            let json_hermano = path.with_extension("json");
-            let cargable = ext == Some("json")
-                || (ext == Some("bin") && !json_hermano.exists());
-            if cargable {
-                if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    if let Ok(meta) = std::fs::metadata(&path) {
-                        if let Ok(modified) = meta.modified() {
-                            forest_timestamps.insert(file_stem.to_string(), modified);
-                            let _ = god_engine_core::ml_inference::NanoForest::load_global(
-                                file_stem,
-                                path.to_str().unwrap(),
-                            );
-                            telemetry_server::telemetry_log!("🧠 Loaded ML Model: {}", file_stem);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let mut forest_reload = god_engine_core::model_reload::ModelReloadTracker::default();
+    refresh_ml_models(&mut forest_reload);
 
     // XLVII·C: copia para el diagnóstico de cobertura (el closure del
     // watcher no debe capturar `symbols`, usado más abajo).
@@ -1216,32 +1209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            if let Ok(entries) = std::fs::read_dir("models") {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    let path = entry.path();
-                    let ext = path.extension().and_then(|s| s.to_str());
-                    if ext == Some("json") || ext == Some("bin") {
-                        if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            if let Ok(meta) = std::fs::metadata(&path) {
-                                if let Ok(modified) = meta.modified() {
-                                    let last_ts = forest_timestamps.get(file_stem);
-                                    if last_ts != Some(&modified) {
-                                        forest_timestamps.insert(file_stem.to_string(), modified);
-                                        if god_engine_core::ml_inference::NanoForest::load_global(
-                                            file_stem,
-                                            path.to_str().unwrap(),
-                                        )
-                                        .is_ok()
-                                        {
-                                            telemetry_server::telemetry_log!("🔥 [HOT-RELOAD] NanoForest AI Brain hot-swapped for {}!", file_stem);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            refresh_ml_models(&mut forest_reload);
         }
     });
 
