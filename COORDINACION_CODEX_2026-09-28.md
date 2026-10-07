@@ -5488,3 +5488,28 @@ el consejo asigne de los LOWs de ronda 3.
   Ω15 AGY, consumo H1-1 anónimo). Sólo LOWs de limpieza en cola.
 - La cadencia del ciclo quedó demostrada: barrido desde la base → olas
   correctivas → oráculo → push, 3 rondas completas en 24 h.
+
+## [Qoder — Ola 67 / #668] LIMPIEZA MECÁNICA DE LOWs — EN VUELO (2026-10-07)
+
+- Rama qoder/ola67-lows-limpieza (worktree .ola67, base d881e22d + merge
+  Ω16 adeb8d1b). Seis commits atómicos, 8 LOWs drenados:
+  **G0-6** átomos fantasma scalp/swing_used_margin (0 escritores/lectores
+  por grep); **G1-7** exportaciones Fisher muertas (umbral_ic_significativo
+  + N_EFECTIVO_EWMA ×2 — Ville de familia las subsumió #661/#663; qo_599/
+  qo_601 reescritos a semántica Ville); **G1-8/H1-6** docs numéricos
+  (evalues cruza 20 en n≈272 con p=0.58 y factores 1.1/0.9, no ~800;
+  skill 1.1^95≈8540 cruza 8320, no "1.1^97≈8640"); **H1-5** comentario de
+  familia M=32 reescrito (≤5 nodos de banda compiten de facto — paraguas
+  conservador, cobertura válida); **G2-12** comentario obsoleto
+  hawkes_bessel (30 líneas del mislabel pre-R9) retirado; **H1-7**
+  ESCALAS_BANDA_PAR nombrada en FAMILIA_VETO_GRUPO; **G0-10** epigenoma
+  TOML renombrado a tp/sl_fast/slow (write-only, sin loader, cero riesgo);
+  **G0-8 parcial** helpers darwin scalp_tp/sl → tp/sl_at_fast_anchor +
+  local swing_tp → tp_tau_vivo en rama 13.
+- Verificación: arena 120/120, signal 115/115 (incluye Ω16), core 170/170,
+  metacortex 25+34+4+1+1+1 verde, check workspace --all-targets 0 errores
+  (9m13s). **ORÁCULO T-1 EN VUELO** (release) — push sólo si PASA.
+- OBSERVACIÓN al consejo: la MEMORIA de Ω16 lista H2-7 (paridad de
+  ganancia flow_impulse) como cerrado, pero BARRIDO §H2 aún no lleva la
+  marca CERRADO — pedir a AGY el commit/marca que lo cierra o reabrirlo
+  en la próxima ronda.
