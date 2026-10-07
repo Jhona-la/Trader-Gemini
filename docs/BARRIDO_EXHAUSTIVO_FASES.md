@@ -819,15 +819,24 @@ limpia, campo unico).
   genes sensibles (11.1% ≥ 11.0%), 2/2 tests, 4846 s release; cobertura
   idéntica a la línea base (#665) — el fix vive fuera del camino
   perturbado por el oráculo en fixture monoactivo.
-- H1-2 [MED] darwin.rs:357-368 — DSR sobre retornos de TRADES: compuerta
-  exige t-stat 4.3-4.6, practicamente inalcanzable en ventanas cortas
-  (n=100 exige SR 0.44/trade). Fix: retornos por barra o e-proceso.
-- H1-3 [MED] darwin.rs:388,608-635 — multiplicidad ENTRE rondas sin
-  control: DSR como test de muestra FIJA bajo optional stopping — la
-  receta que mordio dos veces. Fix: e-proceso por linaje o Bonferroni.
-- H1-4 [MED] selection_stats.rs:103 — sigma_SR=1/sqrt(n-1) IID-normal
-  con trades gamma4>>3: benchmark E[maxSR] CORTO, DSR anti-conservador.
-  El sigma correcto ya vive en psr(): conectarlo es gratis.
+- H1-2 [MED] CERRADO (Ola Ω15 AGY) darwin.rs:347-375 — muestreo periódico
+  continuo de retornos marked-to-market del portafolio (cada 1s de mercado)
+  en evaluate_genotype. Erradica la muestra raquítica de trades discretos que
+  exigía un t-stat inalcanzable de >4.5 en ventanas cortas OOS, proveyendo
+  soporte muestral homogéneo N>=25 para computar momentos DSR. Test formal:
+  omega15_h1_2_muestreo_periodico_continuo_retornos (11/11 verdes en darwin).
+- H1-3 [MED] CERRADO (Ola Ω15 AGY) darwin.rs:378-386,636-645 — DarwinDaemon
+  ahora incorpora `cumulative_trials: AtomicUsize` monótonamente creciente
+  (D-746). La multiplicidad total arrastra las pruebas de todas las rondas
+  evolutivas del proceso, erradicando el optional stopping entre corridas
+  periódicas del GA online. Test formal:
+  omega15_h1_3_darwin_daemon_multiplicidad_acumulada_monotona (11/11 verdes).
+- H1-4 [MED] CERRADO (Ola Ω15 AGY) selection_stats.rs:60-110 — error estándar
+  de Sharpe asintótico no-normal `sharpe_std_error(m, sr)` formalizado (Mertens
+  2002, Bailey-LdP 2012/2014 ec. 4 y 7), incorporando sesgo γ₃ y curtosis
+  leptocúrtica γ₄ en el cálculo de `sr_sigma` para `expected_max_sharpe`.
+  Benchmark E[max SR] riguroso y conservador frente a colas pesadas cripto.
+  Test formal: omega15_h1_4_dsr_sharpe_std_error_leptocurtico (10/10 verdes en selection_stats).
 - H1-5..9 [LOW]: familia 32 vs <=5 efectiva en tau*, docs numericos
   desincronizados, FAMILIA constantes duras, G1-7 exportaciones muertas
   VIVAS.
@@ -868,5 +877,5 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
 
 - Qoder ola 65: H2-1 + H2-2 + H2-3 + H2-4 + H2-5 (fisica de
   saturacion — con oraculo).
-- AGY Omega15: H1-2 + H1-3 + H1-4 (darwin/DSR — su zona).
+- AGY Omega15 CERRADA: H1-2 + H1-3 + H1-4 (darwin/DSR — retornos continuos 1s, multiplicidad acumulada monótona y sharpe_std_error no-normal). 10/10 + 11/11 verdes.
 - Despues: H0-1/H0-2/H1-1; LOWs a ola de limpieza.

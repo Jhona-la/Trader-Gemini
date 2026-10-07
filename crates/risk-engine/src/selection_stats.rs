@@ -61,13 +61,36 @@ pub fn sharpe(m: &ReturnMoments) -> f64 {
 /// PSR — Probabilistic Sharpe Ratio (Bailey & LdP 2012, eq. 4).
 #[inline]
 pub fn psr(m: &ReturnMoments, sr: f64, sr_benchmark: f64) -> f64 {
-    let n = m.n as f64;
-    let denom_sq = 1.0 - m.skewness * sr + (m.kurtosis - 1.0) / 4.0 * sr * sr;
-    if denom_sq <= 1e-12 {
+    let se = sharpe_std_error(m, sr);
+    if se <= 1e-12 {
         return 0.5;
     }
-    let z = (sr - sr_benchmark) * (n - 1.0).sqrt() / denom_sq.sqrt();
+    let z = (sr - sr_benchmark) / se;
     normal_cdf(z)
+}
+
+/// Error estándar asintótico del estimador de Sharpe bajo retornos no-normales
+/// (Mertens 2002, Lo 2002, Bailey & López de Prado 2012 eq. 4, 2014 eq. 7).
+///
+/// ```text
+/// σ_SR = √[ (1 − γ₃·SR + ((γ₄ − 1)/4)·SR²) / (n − 1) ]
+/// ```
+///
+/// Para distribuciones leptocúrticas (γ₄ > 3) como retornos cripto, σ_SR es
+/// estrictamente mayor que el i.i.d. gaussiano 1/√(n−1), elevando el listón
+/// de deflación E[max SR] para evitar falsos positivos por colas pesadas.
+#[inline]
+pub fn sharpe_std_error(m: &ReturnMoments, sr: f64) -> f64 {
+    let n = m.n as f64;
+    if n < 2.0 {
+        return 0.0;
+    }
+    let denom_sq = 1.0 - m.skewness * sr + (m.kurtosis - 1.0) / 4.0 * sr * sr;
+    if denom_sq <= 1e-12 {
+        1.0 / (n - 1.0).sqrt()
+    } else {
+        (denom_sq / (n - 1.0)).sqrt()
+    }
 }
 
 /// Constante de Euler–Mascheroni (γ), la que aparece en la aproximación de
@@ -92,7 +115,10 @@ pub fn expected_max_sharpe(n_trials: usize, sr_sigma: f64) -> f64 {
     }
 }
 
-/// DSR — Deflated Sharpe Ratio (Bailey & LdP 2014).
+/// DSR — Deflated Sharpe Ratio (Bailey & LdP 2014, eq. 7 y 8).
+/// H1-4: Utiliza el error estándar asintótico no-normal `sharpe_std_error` que incorpora
+/// el sesgo γ₃ y la curtosis γ₄ pesada de la muestra, garantizando que el listón
+/// de deflación E[max SR] sea riguroso y conservador frente a ruido leptocúrtico.
 #[inline]
 pub fn dsr(m: &ReturnMoments, n_trials: usize) -> f64 {
     let sr = sharpe(m);
@@ -100,7 +126,7 @@ pub fn dsr(m: &ReturnMoments, n_trials: usize) -> f64 {
     if n_obs < 2.0 {
         return 0.0;
     }
-    let sr_sigma = 1.0 / (n_obs - 1.0).sqrt();
+    let sr_sigma = sharpe_std_error(m, sr);
     let sr_benchmark = expected_max_sharpe(n_trials, sr_sigma);
     psr(m, sr, sr_benchmark)
 }
@@ -330,5 +356,35 @@ mod tests {
         assert!((normal_cdf(0.0) - 0.5).abs() < 1e-6);
         assert!((normal_cdf(1.96) - 0.975).abs() < 1e-4);
         assert!((normal_cdf(-1.96) - 0.025).abs() < 1e-4);
+    }
+
+    #[test]
+    fn omega15_h1_4_dsr_sharpe_std_error_leptocurtico() {
+        // Serie con alta curtosis (outliers / colas pesadas cripto)
+        let mut returns: Vec<f64> = vec![0.001; 100];
+        returns[10] = 0.05;
+        returns[20] = -0.05;
+        returns[30] = 0.08;
+        returns[40] = -0.07;
+
+        let m = compute_moments(&returns).unwrap();
+        assert!(m.kurtosis > 3.0, "Kurtosis debe ser leptocúrtica (>3), dio {}", m.kurtosis);
+
+        let sr = sharpe(&m);
+        let se_no_normal = sharpe_std_error(&m, sr);
+        let se_iid_gauss = 1.0 / (m.n as f64 - 1.0).sqrt();
+
+        // El error estándar no-normal debe ser estrictamente mayor que el gaussiano ingenuo
+        assert!(
+            se_no_normal > se_iid_gauss,
+            "se_no_normal ({:.6}) debe ser mayor que se_iid_gauss ({:.6})",
+            se_no_normal,
+            se_iid_gauss
+        );
+
+        // En consecuencia, el benchmark E[max SR] es más exigente
+        let bm_no_normal = expected_max_sharpe(100, se_no_normal);
+        let bm_gauss = expected_max_sharpe(100, se_iid_gauss);
+        assert!(bm_no_normal > bm_gauss, "El benchmark E[max SR] debe ser más estricto con colas pesadas");
     }
 }

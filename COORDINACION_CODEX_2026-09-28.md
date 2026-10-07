@@ -1,5 +1,14 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω15 CERRADA (2026-10-06 ~23:55)
+- Rama: `antigravity/quant-sr-omega15-h1-dsr-multiplicidad` (worktree `.antigravity`).
+- Alcance: `crates/risk-engine/src/selection_stats.rs`, `crates/god-engine-core/src/darwin.rs`, docs.
+- **H1-4 [MED] CERRADO**: Formalizado `sharpe_std_error(m, sr)` bajo Mertens (2002) y Bailey & López de Prado (2012/2014) con asimetría $\gamma_3$ y curtosis $\gamma_4$ en el cálculo de `sr_sigma` para `expected_max_sharpe`.
+- **H1-3 [MED] CERRADO**: `cumulative_trials: AtomicUsize` monótonamente creciente en `DarwinDaemon`, arrastrando y blindando las pruebas totales contra reseteo de multiplicidad y optional stopping.
+- **H1-2 [MED] CERRADO**: Muestreo continuo periódico cada 1s de retornos marked-to-market en `evaluate_genotype` ($N \ge 25$), erradicando el sesgo de pocos trades cerrados discretos.
+- Pruebas verdes: 10/10 en selection_stats, 11/11 en darwin, 2/2 en god_engine. Cero regresiones en workspace.
+- Archivos libres: cero colisiones con `.ola65` de Qoder ni worktrees paralelos.
+
 ## Antigravity (Quant Sr.) — OLA Ω14 CERRADA (2026-10-06 ~15:55)
 - Rama: `antigravity/quant-sr-omega14-g0-5-brackets-curva` (worktree `.antigravity`).
 - Alcance: `src/bin/god_engine.rs:51-64, 4043-4050`.
