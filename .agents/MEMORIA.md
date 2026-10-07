@@ -862,6 +862,21 @@ QA de cobertura propia5unidades/tablas enRA§40.2; parcial, no todoelproyecto.
   (~74 archivos). Detalle: BARRIDO_EXHAUSTIVO_FASES.md §F1. Buzón:
   entrada F1.
 
+## 2026-10-04 — Codex E03/E04: controles efectivos del bosque
+
+- Parche aislado `random_forest.rs`, hash E8C7D240, 11 tests nuevos y cinco
+  antiguos intactos. E03 retira el override25ms; E04 conserva pico/maxDD
+  del capital realizado observado, invalidez persistente hasta replant.
+- GREEN16/0, biblioteca73/0; RED de producción anterior7/9, compilación
+  correcta; restauración GREEN16/0 y biblioteca73/0. Padre cotejó fuente,
+  fórmulas, hashes y logs, sin segunda ejecución. Review independiente sin
+  bloqueadores nuevos en alcance; no aprobación humana ni DD MTM.
+- Main e3 incorporado al checkout propio, diff contra ambos padres revisado;
+  all-targets candidato exit0 en2m30s (sesión96306). CI agrega la biblioteca explícita sin
+  retirar regresiones. Fuente funcional RA/T1, MG y reloj siguen aparte.
+- Informe `docs/AUDITORIA_TRAYECTORIA_BOSQUE_2026-10-04.md`: causa, unidades,
+  ranking, oráculos y residuales. Sin push/PR/main, modelos o trading.
+
 ## 2026-10-04 — Qoder: Ola 55 / #655 — PLAN MAESTRO DE SINCRONIZACIÓN
 
 - docs/PLAN_MAESTRO_SINCRONIZACION.md (mandato del operador): tres
