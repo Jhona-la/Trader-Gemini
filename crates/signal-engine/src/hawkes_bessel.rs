@@ -325,36 +325,22 @@ impl QuantumStrategy for HawkesBesselEngine {
             return 0.0;
         }
 
-        // M2-C02 — CERRADO (R9, 2026-09-19): el core AHORA excita el
-        // proceso real (record_event por trade en process_event) y publica
-        // λ/μ VERDADERO al registry — el proxy de aceleración fue retirado.
-        // El historial del mislabel se conserva abajo como advertencia.
+        // M2-C02 — CERRADO (R9, 2026-09-19; verificado H2-8 RONDA 3,
+        // 2026-10-07): el core excita el proceso real por SÍMBOLO
+        // (`hawkes_by_coin`, record_event por trade) y publica λ/μ
+        // VERDADERO al registry como 'hawkes_intensity'
+        // (god-engine-core/src/lib.rs:~4180,
+        // `hawkes_ratio_real.clamp(0.1, 10)`).
         //
-        // Lo que realmente pasa: este evaluate lee el param de registry
-        // 'hawkes_intensity', pero el ÚNICO escritor en producción
-        // (god-engine-core/src/lib.rs:1856-1859) publica
-        //     (1.0 + (a_t.abs()/atr_abs).clamp(0,4)).clamp(0.1,5)
-        // = `1 + |aceleración|/ATR`: un proxy de aceleración de
-        // volatilidad. NO es un proceso de Hawkes — no hay historia de
-        // eventos, ni suma de auto-excitación Σα·e^(−β·(t−tᵢ)), ni
-        // branching ratio. El comentario CERT anterior afirmaba que "el
-        // core ya computa el proceso de Hawkes con su propia historia de
-        // trades": FALSO.
-        //
-        // Consecuencia: la matemática Hawkes correcta de este engine
-        // (record_event / intensity / intensity_ratio / branching_ratio)
-        // es CÓDIGO MUERTO en producción — record_event sigue siendo
-        // &mut self (incallable vía el trait QuantumStrategy::evaluate que
-        // da &self) y tiene CERO llamadores de producción. La detección de
-        // cascadas de liquidación (auto-excitación con memoria) que motivó
-        // QO-M2.2 fue degradada en silencio a un proxy de aceleración.
-        // Otros consumidores del mismo proxy (clave 'hawkes_intensity'):
-        // flow_excitation_confluence.rs y flow_impulse.rs.
-        //
-        // FIX REAL (pendiente, NO hecho — requiere tocar el core, archivo
-        // caliente): cablear una fuente de eventos (trades/liquidaciones)
-        // hacia un HawkesBesselEngine por moneda y publicar
-        // intensity_ratio(now) como 'hawkes_intensity', en vez del proxy.
+        // HISTORIA CERRADA (no re-parar — era el riesgo de este bloque
+        // viejo, hallazgo H2-8): antes de M2-C02 el slot 'hawkes_intensity'
+        // llevaba un PROXY de aceleración 1+|a_t|/ATR (mislabel de la
+        // auditoría décima). Aquel texto advertía "FIX REAL pendiente, NO
+        // hecho" — PENDIENTE YA CUMPLIDO: la matemática Σα·e^(−βΔt) de
+        // este engine está VIVA en producción vía el proceso por símbolo
+        // del core. Los consumidores del slot
+        // (flow_excitation_confluence, flow_impulse) leen intensidad real
+        // desde entonces.
         let core_intensity = r
             .get_scoped_parameter(
                 sym_opt,
