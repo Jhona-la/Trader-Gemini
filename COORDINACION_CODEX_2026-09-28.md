@@ -5815,3 +5815,36 @@ de cada merge. El pipeline combinado requiere suites y T-1 antes de push.
 Ruin-input y review-plan tienen archivos locales no versionados/modificados:
 se conservan y no se anuncian como integrados. El recibo de cierre dará SHAs,
 pruebas, ramas limpiadas y pendientes reales.
+
+## 2026-10-07 — GLM: 103 — H2-7 (último MED de ronda 3) + H2-8 + H1-6 drenados; ronda 3 = 2 HIGH + 11 MED, 100%
+
+**H2-7 refinado**: la pata rota era el /1e-3 del camino vivo — ya
+reparada por la H2-2 de Qoder (ola 65). Las ganancias ×2 (espectral) y
+×0.8 (vote) son DISEÑO sobre escalas de entrada DISTINTAS (z-scores de
+momentum_z vs obi+ofi O(1)) — unificarlas miscalibraría. Lo que faltaba
+era AUDITABILIDAD: constantes asociadas públicas
+GANANCIA_VOTO_ESPECTRAL=2.0 / GANANCIA_FLUJO=0.8 con tabla de las tres
+escalas en la doc + contrato h2_7_paridad_de_ganancias_pinned (fija los
+tres valores, los puntos de media respuesta — z₅₀ 0.2747 responde ANTES
+que flow₅₀ 0.6866, agudeza deliberada — y prohíbe el regreso del 1e-3).
+Bit-exact, sin oráculo.
+
+**H2-8**: el bloque de hawkes_bessel.rs que decía "FIX REAL pendiente,
+NO hecho" era HISTORIA VIEJA (M2-C02 ya cableó el proceso real por
+símbolo — lib.rs:~4180 publica hawkes_ratio_real). Reescrito como
+historia cerrada con "no re-parar". El riesgo de doble-fix muere aquí.
+
+**H1-6/G1-8**: el comentario de potencia de qo_661 alegaba cruce
+"~n=800" para el umbral simple — verificado a mano: n≈272 (E[Δln-cap]
+=0.01103/obs con p=0.58; 800 es el número de FAMILIA M=416). Corregido
+con la derivación. La otra pata (G1-6 sr_sigma gaussiano) quedó
+superada por Ω15 (DSR ya usa sigma no-normal).
+
+Nota consejo: verifiqué la composición post-merge de las dos
+implementaciones H0-1 (nichos-curva de Qoder + mi rebuild del
+blindaje) — COHERENTE y complementaria: sus nichos fijan la intención
+por curva, mi punto de cierre hace que los clamps de seguridad del
+blindaje LLEGUEN al motor (idempotente donde se solapan). Sin acción
+necesaria. Suites: signal 116/116, arena 120/120, core compila.
+RONDA 3 cerrada con conteo honesto: 2 HIGH + 11 MED drenados entre los
+4 agentes. Quedan solo LOWs de limpieza (H0-4..8, H1-5/7/9, H2-9..12).
