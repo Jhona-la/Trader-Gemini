@@ -1988,3 +1988,52 @@ estructural. V no equivale a evidencia estadística, hash de serving, permiso de
 promoción ni adecuación al activo/horizonte. Identidad, generaciones, coherencia
 multihead y watcher permanecen abiertos; ninguna ecuación avanzada los acredita
 por sí sola. No se cambia el diseño temporal del motor ni se mide rentabilidad.
+
+## 2026-10-04 — Contratos de base RA y significado de los cálculos
+
+El [informe RA](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md), §§2 y 9,
+añade el grafo bytes→estado→predicción→admisión→reserva→evaluación→publicación.
+Explica Neff bajo olvido, R² prequential, máximo drawdown, margen=N/L y warmup
+IS sin confundir sus estimandos. Las referencias espectrales son coordenadas
+de un dominio, no prueba de soporte histórico a cada escala. Se preserva lo
+anterior y se documentan límites, contraejemplos y criterios de falsación.
+No se introduce una promesa de rentabilidad ni una teoría por su nombre.
+
+### Adenda MG y plan continuo multiactivo
+
+Informe RA§17: margen mínimo de Lundberg no es automáticamente techo de
+exposición; coeficiente disponible no equivale a término vinculante. La media
+de aristas de la candidata no preserva toda matriz; coseno sin centrar no es
+correlación centrada. Se añaden ejemplos aritméticos y límites de interpretación.
+MG02/MG05 muestran evidencia obsoleta por estado/escala, no pérdidas medidas.
+Plan compartido§§6–12 liga raíz/decisión/terminal, soporte temporal, causalidad,
+genoma y capital con gates y responsables observados/propuestos. El dominio
+1ns–100años no fabrica historia; se exige soporte, error y coste de cómputo.
+
+### Adenda RA — significado de secuencias y dependencias
+
+[RA §23](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#23-revalidación-de-telemetría-dos-implementaciones-seguridad-y-consumidor)
+explica por qué validar una secuencia después de copiar un frame no legaliza
+una carrera de datos, y por qué tickets únicos no excluyen dos escritores al
+reutilizar un slot. El grafo de manifiestos y el consumidor se contrastan por
+separado. Su nivel de dependencia es un orden de lectura, no reloj/latencia ni
+conectividad neuronal demostrada. Sin modificar el hot-path ni certificar runtime.
+
+### Adenda RA posterior — relojes aceptados y semántica del soporte
+
+[RA§31](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#31-nuevo-seguimiento-de-reloj-aceptado-ra-i-f01)
+traza raíz→guardias→reloj→cooldown/racha→continuación. Un timestamp rechazado
+no debe envejecer el prefijo aceptado; RED7fallos/GREEN25pases en rama propia,
+sin certificar whole-core o nanosegundos. RA§29 distingue momentos de magnitud,
+ocupaciónD0 y memoria temporal, conservando featurecontract/paridad. RA§30
+distingue retirada numérica de evidencia y frescuraas-of del estimador. Los
+certificados aislados no forman una transacción de cartera; T1RA§32 sólo
+mide sus perturbaciones/fixture y no demuestra el crecimiento72h.
+
+### Recibo posterior: trayectoria del bosque frente a fotografía de capital
+
+[RA§34](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#34-e03e04-control-negativo-efectivo-y-cierre-técnico-local-del-bosque)
+explica pico, déficit actual y máximo histórico, su uso en la aptitud y la
+contraprueba13→6,5→15 frente a13→14. RED7/9→GREEN16/0 y biblioteca73/0
+respaldan la reparación local; no calibran una probabilidad de ruina o DD MTM.
+RA§33 separa check de compilación, ejecución de contratos y CI todavía futura.

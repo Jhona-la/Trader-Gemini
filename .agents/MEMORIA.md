@@ -411,6 +411,296 @@
   164/164 + suites 0 fallos. **ORÁCULO T-1 EN VUELO** — push sólo si
   PASA.
 
+## 2026-10-04 — Codex: F2/mainEA5d contrastado sin asumir conclusiones
+
+- RA§48/master§18/plan§12 conservan ambos padres por unión y43raícesJSON.
+  Checkalltargets0/135,360s,8mtimes propios/SHA iguales; no fuente nueva.
+- F2conteo43: tablas7HIGH/23MED/12LOW/1INFO vsresumen7/16/20. DOC-F02
+  abierto. RevisiónF2-A1 confirmafallbackHawkes distinto al espectral,pero
+  PPOslot2ya normalizado; hostVPIN llamaflowevaluate,no voteumbral1.2.
+  DOC-F03 precisaambas inferencias; no PnL/fills. Ownerspropuestos/sinacuse.
+- Censo1432main237 inmutable,EA5d4docs; BM/OU/e-values condicionados a
+  dominio/nulo/selección/OOS, no teoríanueva implementada ni garantía72h.
+- SA d73 47/0 yOOSacbc14/0 locales,publicaciónconsultada. PR28nuevoSHA
+  exigeCI/review propios. No refs/modelos borrados, trading ni promociones.
+
+## 2026-10-04 — Codex: inventario exacto main237 listo
+
+- COBERTURA_MAIN237TSV/JSON:1432rutas,461Rust,23crates/24manifiestos,
+  136testsdirincluye1soporte,21triage; QA independiente/parentsets/OIDs/
+  modos/orden/hash/conteosPASS.0certificadas, ownerspropuestos/sinacuse.
+- Planexhaustivo§11/README/RA§47/JSON conservancensosprevios,clasificación
+  ≠lectura yC-versionado≠C-sistema. Rollback/G72canónico revisados.
+- OOSacbc compone684e+f275,14/0/check0/92,89s,3blobs9a3preservados.
+  No SA/inventario ni main remoto. Publicaciónpropia consultada, aúnlocal.
+
+## 2026-10-04 — Codex: CI74be verde; métricas canónicas del plan
+
+- CI37240563716SUCCESS23:28:56Z,187/0/3ignoradas,13targets; merge7343aab
+  padres230/74be verificadosAPI. NO f275/main237/SA/OOS. RA§46/JSON.
+- Reviewplan1bloqueador deG72(logvsfactor) corregidodocumentalmente;
+  nuevo§10/master§17nombrescanónicos ycorrespondenciahistórica. G8ambiguo
+  bloqueado hasta revisarconsumidores. Reviewseguimiento0blockersdocumentales.
+- Rollbacktransversal yanexoexternoC-versionado/C-sistema añadidos;
+  ownerspropuestos,noacuses. NuevoinventarioTSV/JSON enpreparación.
+- FuenteRA compilada; publicaciónactualizada requiereCI/review propios.
+  SA/OOS localescompuestosaparte,sinpromoción,trading oborradoderamas.
+
+## 2026-10-04 — Codex: mandato ampliado de cobertura ruta-a-ruta
+
+- Plan nuevo PLAN_REVISION_EXHAUSTIVA_2026-10-04 ymaster§16: fundamentos
+  antes de consumidores, todas clasesversionadas, recibos porruta/OID/contrato,
+  pruebas por riesgo y nueva coberturaTSV/JSONmain237; no auditoría completa.
+- Merge9bada+main237 documental preserva ambos padres; checkalltargets
+  exit0/154,189s con9fuentes/hashestables. RA§45/JSON guarda procedencia.
+- CI74be sigue en curso23:23Z, no cancelada por docs ni trasladada al merge.
+  SA22/0 yOOS14/0 locales; sizingRUIN sigueRED3/3, reservado aClaude.
+  Sin permisos implícitos de operación ni rentabilidad72h certificada.
+
+## 2026-10-04 — Codex: F1/main237 incorporado y cap no finito abierto
+
+- Main237 trae sólo3docs,+120/−1,23 hallazgos F1 Qoder. Memoria/COORD
+  conservados por unión, no reparaciones atribuidas. RA§44/JSON/plan14.6.
+- RA-RUIN-F01/F1-B4: helper real devuelveNaN/±Inf; probeRED3/3exit101,
+  sin arena/modelos/órdenes. Consumidor rechaza raw_exposure no finita;
+  no inferir pérdida real. Arreglo de riesgo reservado aClaude con revisión.
+- Explicación f_cap menor al bajar q contradice fórmula/tests; LCB de q
+  y políticas200/.05/.25 no certifican ruina. Documentar antes de rediseñar.
+- SA701fa/OOS684e siguen locales distintos; CI74be no acredita este corte.
+  No acuses nuevos supuestos, no ramas/modelos eliminados ni promoción.
+
+## 2026-10-04 — Codex: RA/main62, origen de artefactos y SA/OOS locales
+
+- RA74be+main62 integra docs Qoder F0/ADR0014 por unión y diff por padre;
+  mantiene F1 activo en .f1. RA§43/JSON/plan14.5, no acuses nuevos supuestos.
+- Primer check101 por API ausente del artefacto compartido pese a estar en
+  fuente; refresco9mtimes propios con SHA estables, repetición0/130,408s.
+  Guardar ambos logs. No transportar verde cacheado entre checkouts.
+- SA local:22/0 y revisión independiente sin bloqueadores; check0/124,774s.
+  Signo, enfriamiento, candidato Option y rotulado utilidad reparados; pesos,
+  validación completa del reporte y evidencia neta72h pendientes. OOS684e
+  integraRA74 con14/0/check0; no main62/SA. Publicación SA/OOS consultada.
+- No se eliminaron ramas activas/exclusivas ni modelos; no trading/promoción.
+  CI74be todavía en curso al recibo: draft y nuevos gates del candidato.
+
+## 2026-10-04 — Codex: RA reconciliada con LXXXVIII de GLM
+
+- Candidato cd2e+main230 conserva ambas bitácoras/ADR/decisión FDUSD,
+  diff por padre; checkalltargets0/5,41s antes del commit, logE29844A0.
+- CI anteriorff998 SUCCESS187/0/3, merge800c5f67 padres e3/ff998
+  confirmados; nuevo headRA requiere CI propia y sigue draft. RA§42/JSON.
+- OOS9a3 separado probado14/0 ycompilado; MG/reloj/bosque siguen locales,
+  sin respuesta a consultas de publicación. No confundir con main.
+- A/B de FDUSD reservado al dueño: ningún modelo eliminado/archivado.
+
+## 2026-10-04 — Codex: reinicio main44bc8 y contratos causales pendientes
+
+Recibo posterior: check candidato44bc8 exit0/2m49s, hash099AF3FC enRA§41.
+CIff998 SUCCESS22:24:35Z; no acredita nuevo main ni OOS9a3. Main ahora2302278
+(GLM LXXXVIII, sólo3docs +80): conservado bloqueoL2 y decisiónFDUSD del dueño.
+QA de cobertura propia5unidades/tablas enRA§40.2; parcial, no todoelproyecto.
+
+- Main avanzó e3→44bc8 (GLM LXXXVII, docs/descripción de veto). RA integra
+  por unión de bitácoras en checkout propio; checkalltargets en curso antes
+  de commit. PR28/headff998 continúa CI y draft; su corte no valida main nuevo.
+- Revalidado MG05: IC histórico mismaτ sin as-of permanece1 tras100τ sin
+  pareja reciente. Timestamp registry es creación, no frescura. Sin nueva
+  política/TTL arbitrario; no orden rechazada ni pérdida medida.
+- RA-SA-F01: otro consumidor del fallo de signo de FMT-011, en CLI SA;
+  DD mayor puede mejorar score negativo. Diagnóstico/recálculo, no parche CMA.
+- OOS-F01 separado: commit9a3bb756, RED9/5→GREEN14/0, alltargets0/4m28s
+  y review estática0blockers. No CLI/T1 ni promoción. RA§§38–40 yplan14.3
+  conservan fuentes, límites y propuestas sin acuse externo supuesto.
+
+## 2026-10-04 — Codex: RA publicada y anatomía legacy preservada
+
+- RAff99849a verificada en origin/PR28; nueva CI37235240759 en curso,
+  draft/mergeable, main e3. Buzón y body actualizados; plan/adendas27–36
+  remotos, no main. Las tres series locales siguen consultadas.
+- RA§37/JSON/plan14.2 añade recibo LOCAL posterior:12cherry+ no-merge,
+  sólo limpieza TH equivalente a01f8; backup/V7/TH/MW no importar a ciegas.
+  Claude6f sólo memoria7/−3; no nueva reparación Rust. Preservar delta por
+  unión y sus afirmaciones como históricas, no reproducción propia.
+- Sin publicación de este nuevo recibo para no reiniciar CIff998; sin refs
+  borradas, procesos, modelos o trading. Análisis metadata≠certificación total.
+
+## 2026-10-04 — Codex: CI RA b245 final confirmada
+
+- CI37230580226 SUCCESS187/0/3ignoradas,13 resultados; merge62c2ea0d,
+  padres e3/b245 confirmados por log/API. Parser19/riesgo7/OOS6 pasan;
+  paridad8pases/2medicionesmanuales ignoradas. Loghash14F08965 enRA§36.
+- El nuevo corte documental0043 y su recibo no modifican fuente RA;
+  publicación autorizada ahora puede avanzar sin cancelar el CI anterior.
+  Nueva identidad requiere nueva CI, no transferir SUCCESS/T1 a otro código.
+- MG7aad/reloj36b0/bosquecace siguen locales y consultados; main e3. MR23,
+  GO24, MP25 yClaude26/27 sí mergeados/ancestros, su refClaude tiene un
+  exclusivo posterior y se conserva. No toda semántica certificada por ancestry.
+
+## 2026-10-04 — Codex: cierre E03/E04 y contratos explícitos de CI
+
+- Bosque localcace007d, padres5ab+maine3; sourceE8C7 estable, RED7/9→
+  GREEN16/0, biblioteca73/0 yalltargets0/2m30s. Padre cotejó fuente/logs,
+  no segunda ejecución de oráculos. DD realizado observado, noMTM/edgeOOS.
+- Heads locales MG7aadf509/reloj36b0063c añaden únicamente CI/documentación
+  sobre605a/f3018; conservan fuente/pruebas. Compilar targets no ejecutaba
+  sus contratos: se agregaron pasos explícitos sin retirar regresiones.
+- RA§§33–34 y plan§14 consolidan owners, recibos/gates y propuestas sin
+  acuse externo; JSON mantiene historia. RA/CIb245 en curso, main e3,
+  nuevas adendas y tres series sin integración. Publicación pública
+  consultada, aún sin respuesta al corte21:00:56Z; no modelos/trading.
+
+## 2026-10-04 — Codex: T1 RA final, arreglos locales y subcontratos abiertos
+
+- PropioT1 RA exit0,2pass0fail0ignored,16/144 con cambio≥ratchet0,110;
+  fuente496 congelada, release134m33s+4636,44stest. Binario/log/fixture hashes
+  enRA§32/JSON. No meta72h/paridadprod/inercia global ni genes independientes.
+- MGcommit605a4d7f, padresc6ce+maine3, checkalltargets0/2m33s yreview0nuevos
+  bloqueadores. RED12fail1pass→GREEN13/0+Lundberg6/0. Consumoas-of deIC
+  histórico mismaτ aúnabierto, no confundirSome conreciente; noT1MG ni snapshot.
+- Relojfeature-clock: source5A5940CB/testBB96D9C9, actualRED18/7→GREEN25/0,
+  unitariosstateful18/0 yreviewhashestable0blockers. Alltargets exit0/3m25s;
+  commit localf3018b35 sobremaine3, pendiente de publicación/integración.
+  Sentinelcierre0/coredescartaResult pendientes fuera de reparaciónlocal.
+- CIb245 en curso, PR28draft, aún noRA→main; MG/relojseparados locales.
+  Consentimiento solicitado para sus PRspúblicas, sin inferir live/models.
+  BosqueE03/E04 sigue aislado con runner propio; no alterarfixture/trinquete.
+
+## 2026-10-04 — Codex: semántica científica, caducidad y reloj aceptado
+
+- RA§27 añade RA-Q-F01: densidad gaussiana recortada no normalizada; API sólo
+  tests encontrada, sin impacto económico demostrado. #650 conserva su dominio
+  actual, fuerza de potencial clásico no es solver cuántico. RA§29 añade
+  RA-S-F01: cociente de magnitudes exportado como Hurst sin dependencia temporal;
+  features37–39 train/serve presentes, uso predictivo no medido. No cambiar
+  tensor sin versión/retrain/OOS. D0ocupación deliberada, no otro bug inventado.
+- RA§28: review independiente E03/E04 hashE8C7, sin bloqueadores nuevos en
+  alcance; tests efectivos aún pendientes, DD realizado observado/noMTM.
+- MG separado: actualRED1pass12fail→GREEN13pass0fail, mismo hash797AF948;
+  Lundberg6/0. Padre cotejó fuente/tests/logs; review independiente en curso.
+  R0/IC-1 conserva ausencia del lector y bloquea fallback global; no snapshot
+  multiclave ni T1MG, no integración. E0596 previo no es RED de lógica.
+- Nuevo RA-I-F01: try_process_tick publica last_event_ms antes de rechazos;
+  cooldown/olvido usan ese reloj y snapshot no lo incluía. Worktreefeature-clock
+  sobremaine3, sólo stateful_engine+stateful_transition_contract. REDcompila,
+  fuente aún sin reparar; no tocar fuenteRA/T1, MGlib ni forest. Original16
+  intacto. CIb245 aún en curso; T1RA sin final al corte de estas adendas.
+
+## 2026-10-04 — Codex: LXXXVI recibido, registro no equivale a vigencia
+
+- RA incorpora main e3adf74 (LXXXVI GLM): seis cadenas descriptivas de vetos
+  002/005 y bitácora por unión; sin cambio de política/consumidor/CLI/CI.
+  Diff por padre y all-targets candidato exit0,1m52s (sesión58434).
+- RA§26.1/JSON distingue283/283 atribuido a GLM de check propio. «Medido»
+  no convierte políticas0,85/epsilon0,05 en estimadores. MG05 sigue abierto:
+  actualizar una ficha no caduca el escalar heredado. No certifica todos vetos.
+- T1 propio RA en ejecución, fixture/binario intactos. Ramas MG/forest aparte;
+  RED/GREEN efectivos aún pendientes. Nueva CI requerida al push de este corte.
+
+## 2026-10-04 — Codex: acuse Qoder3979 y segundo merge documental
+
+- Main3979 (sólo plan/coordinación) entra en RA03a7 por unión: dos conflictos
+  de texto preservados, mapa de roles y tabla§5 sin perder G0–G8. Diff por
+  padre y fuente496 sin Rust/CLI/Cargo/CI nuevo. Check candidato all-targets
+  exit0,13,96s (sesión95854), caché separada; no ejecución de motor.
+- Recibo Qoder16/144 en4221s es de7c4cea40, no de RA; regresión828/0 y roster
+  18 atribuidos a su sello. GLM review sigue condicionada a T1/paridad. T1 RA
+  sigue ejecutando2tests sobre496 y no tiene resultado final en este corte.
+- RA§26/JSON agregados sin cambiar los16 IDs originales ni recibos anteriores.
+  CI03a7 requiere reemplazo/identidad al nuevo push; RA→main aún pendiente.
+  MG02/MG05 y E03/E04 continúan aislados, sin cierre ni publicación. Ninguna
+  autorización de sesión viva, cambio de modelo o garantía económica inferida.
+
+## 2026-10-04 — Codex: segundo recibo cruzado y check del merge documental
+
+- RA conserva main5ab por unión documental; Rust/CLI/CI siguen iguales a496f.
+  Check del checkout candidato: all-targets/locked/offline, nightly2026-06-30,
+  exit0 en3m44s (sesión43677, caché target del checkout principal, sin enlazar
+  ejecutables). El antiguo checker propio21251 en lock se retiró por identidad
+  PID/hora/comando tras este éxito; no se detuvo ningún runner ajeno.
+- CI b6df37221376454 SUCCESS187/0/3ignoradas; merge7c1ae865 y padres por log/API.
+  No acredita head posterior. Segunda review independiente de OOS/callers,
+  parser/riesgo sin bloqueadores nuevos introducidos; no review humana GitHub.
+- RA§§21–24: topología declarada24/202/88 con hashes y alcance; D127/D237
+  revalidados, volatile/secuencia no dan atomicidad del frame. #101 ya no es
+  plantilla vacía; core usa implementación mmap distinta, iniciaNone sin wiring
+  encontrado en Rust versionado. Sin Miri/Loom o corrupción runtime medida.
+- Seguimientos nuevos separados: RA-OOS-F01 una fila llega a train_len-1 (fallo
+  estático); F02 contrato de período del panel (no impacto en promoción probado).
+  Original16RA intacto, MG02/MG05 siguen aparte. Tres informes maestros enlazados.
+- Forest E03/E04 tiene parche local y11 tests nuevos en otro checkout, GREEN y
+  control RED ejecutados aún pendientes; no cierre. MG02/MG05 también separado.
+  T1 RA completo YA EJECUTA2tests tras134m33s de compilación; sin resultado
+  final todavía. No cambiar su fuente/fixture/trinquete ni promover modelos.
+
+## 2026-10-04 — Codex: recibida review GLM; tres expedientes revalidados
+
+- Main5ab incorpora LXXXV ec7b: gate L2v1 parcial definitivo/cableado bloqueado;
+  review DE AGENTE aprueba dirección scanner/riesgo, pide T1 y paridad. No es
+  humana GitHub ni revisión del OOS completo. RA trae sus tres docs por unión.
+- RA§§19–20/JSON conservan cortes: R01 secuencial70>techo50 tras reajustar;
+  E03 latencia25 vs gen50 sólo ShadowForest inicial; E04 DD actual borra caída
+  al recuperar en cosecha. Revisión independiente, relectura y aritmética;
+  no tres bugs nuevos ni brecha/PnL real medidos. CLI y otros backtests no
+  reproducen esas dos alegaciones del bosque. Siguen abiertos.
+- Retirada local GLM LXXXVec7b ya ancestro de5ab y no ocupada, CAS; remota ya
+  ausente. Commit preservado en main. Exclusivos/otros worktrees conservados.
+- Check de merge5ab esperando directorio debug; T1 release propio sigue en
+  compilación. No se matan runners ni se fuerza la PR antes de sus gates.
+
+## 2026-10-04 — Codex: main c6ce, censo por blob y reservas de vigencia
+
+- Merge propio RA12456048 conserva GLM LXXXIV gate parcial y ambas bitácoras;
+  ambos padres revisados, all-targets exit0/37,88s, Rust/CLI/CI idéntico a496f.
+- RA§18/JSON.integration_followup y plan§13 añaden acuse del plan por GLM253d,
+  review anunciada aún no recibida, frontera de re-gate y reservas MG02/MG05.
+  Nueva rama/worktree codex/evidence-expiry-2026-10-04 sobre c6ce; no toca RA
+  durante T1 ni procesos. Los bugs aún no se dan por cerrados en el informe RA.
+- Censo docs/audit/RA_COBERTURA_2026-10-04.tsv:1435 rutas en1245,433 crates;
+  cada modo/tipo/OID coincide con ls-tree, sin duplicados. Estado únicamente
+  inventariado; no es lectura semántica total. JSON conserva historia b6df.
+- Retirada sólo referencia local glm/lxxxiv-l2v1 eb617f548, integrada y sin
+  worktree ocupado; remota ya ausente. Commit preservado en main. GLM LXXXV
+  activo, MW/TH/V7/backup/Claude con exclusivos y ramas ocupadas se conservan.
+- CI del head b6df y T1 completo local aún sin resultado final en este corte;
+  draft RA no se fuerza a main ni se confunde acuse del plan con aprobación RA.
+
+## 2026-10-04 — Codex: planes sincronizados y revisión matemática MG
+
+- Main856/Qoder y plan GLMd777 unidos localmente en RA por f10434d6/381e5f7d;
+  conflictos documentales resueltos por unión. Checks ambos-padres/all-targets
+  exit0/1m30s y exit0/15,14s; Rust idéntico al candidato496f902d.
+- Plan de sincronización§§6–12: meta log2/3, supuestos de Sharpe, contratos
+  G0–G8, invalidaciones, owner observado/propuesto, vetos y cobertura. Se
+  conserva plan operativo GLM y se añade sólo nuestra sección/compromiso.
+- CI37211025915 SUCCESS: contratos RA parser19/0, riesgo7/0, OOS6/0 reales.
+  Revisión automatizada independiente sin bloqueadores nuevos del candidato;
+  no es aprobación humana. T-1 completo local sigue compilando dependencias.
+- Informe RA§17 y JSON.latest_status: MG02 R obsoleto tras Some→None y MG05
+  IC heredado de otra escala son defectos P2 abiertos. MG01/MG03/MG04 son
+  validaciones de heurística/modelo conocidos, no tres bugs nuevos del solver.
+  Codex leyó los flujos/antecedentes y recalculó ejemplos; no efecto real medido.
+- MW separado, sin publicación nueva. RA aún no integrado en main. No borrar
+  rama GLM activa ni refs con exclusivos. Buzón avisado; no acuse inferido.
+- Inventario496:1434 archivos,433 crates; no lectura semántica total. Los
+  tests, T-1, paridad y OOS tienen alcances distintos; no prueban rentabilidad.
+
+## 2026-10-04 — Codex RA: revisión de raíz y PR28 en borrador
+
+- Rama propia `codex/root-audit-2026-10-04`, base949d; reconciliada hasta
+  main7c4 en b558816/c57376b. Checkout operativo y procesos ajenos preservados.
+- Informe `docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md` y JSON:16 expedientes,
+  6 P1/9 P2/1 P3; cuatro parches acotados, uno parcial, once abiertos. No
+  auditoría semántica completa de1427 archivos ni certificación de retorno.
+- Código: parser0d3dcece, riesgo44e1d4fd, OOSf7b3830c; CI741d7995.
+  Parser19/0 +5/0 sondas aisladas; riesgo26/0 con arena sintético; OOS6/0
+  std-only. Cargo tests con crates reales interrumpido antes de ejecutar tests.
+- Check workspace/all-targets exit0:11m32s (con espera) y8,16s sobre fuente
+  reconciliada. No equivale a ejecución de tests ni a T1.
+- Publicación RA autorizada expresamente, PR28 draft; CI/T1/revisión externa
+  pendientes. No integrar ni borrar RA todavía. MW3139 queda separada.
+- Sin trading/training/promoción, rebajas de trinquete, ni borrado de ramas
+  con commits exclusivos. Aviso al buzón compartido no implica acuse.
+
 ## 2026-10-04 — Qoder: BARRIDO F3 CERRADA (núcleo vivo)
 
 - 3 auditores (lib.rs completo, 27 módulos core + orquestador, host +
@@ -470,6 +760,7 @@
 - Push 99c610a8 (F0+F1 juntos). Siguiente fase mía: F2 física/cuántica
   (~74 archivos). Detalle: BARRIDO_EXHAUSTIVO_FASES.md §F1. Buzón:
   entrada F1.
+
 ## 2026-10-04 — Qoder: Ola 55 / #655 — PLAN MAESTRO DE SINCRONIZACIÓN
 
 - docs/PLAN_MAESTRO_SINCRONIZACION.md (mandato del operador): tres
@@ -2217,3 +2508,17 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - **correlation_guard.rs**: Eliminación de alocación en heap (`Vec<f64>`) en `veto_por_riesgo_real_medido`. Cálculo de suma, suma cuadrática y peor individual en streaming de pasada única O(N) sin heap allocation. Función expuesta `calcular_riesgo_grupo`. Nueva compuerta `veto_por_riesgo_cramer_lundberg` integrando el coeficiente de ajuste de Lundberg R y la cota de supervivencia ψ(m) ≤ e^{-Rm} con el tope de racha Bernoulli.
 - **flow_excitation_confluence.rs**: Continuidad espectral y eliminación de escalón rígido en la escala de auto-excitación de Hawkes. Normalización dinámica por el umbral efectivo del proceso (`effective_hawkes_thresh`), permitiendo una modulación suave y monótona sin chattering ni saltos abruptos.
 - **Verificación**: Tests en quantum-arena (5/5), risk-engine (113/113), signal-engine (74/74) e integración correlation_admission_contract (26/26) al 100% verdes. `git diff --check` verificado con 0 advertencias de fin de línea.
+
+## 2026-10-04 — Codex: sincronización F3/main749d, no cierre de sus defectos
+
+- Qoder publicó main749d:3docs/+160,36filas F3 (3HIGH/14MED/19LOW),
+  conteos cotejados. «Cerrada» significa barrido;103expedientes no son
+  necesariamente103causas únicas. F3-A2 remite a F2-A5. Reparaciones abiertas.
+- RA une ambos padres conservando historial; plan porarchivo§13/maestro§19
+  exige oráculos para PPO, trailing, reloj y riesgo antes de certificar.
+- Erdos aprueba estáticamente f608/baseEA5d sin bloqueadores nuevos.
+  CI37245434644 pertenece a ese corte, no a la nueva composición con749d.
+- SA94790c5c quedó local22/0/check0; publicación SA/OOS bloqueada por
+  auto-review hasta respuesta específica. No push/PR. RA autorización propia.
+- RUIN-F01 local: validar antes de interpolar para no reabrir cero inválido.
+  No cambiar fórmula/bootstrap/umbrales ni operar. No acuse externo supuesto.

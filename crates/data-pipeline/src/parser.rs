@@ -1,3 +1,17 @@
+#[inline(always)]
+fn json_whitespace(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\r' | b'\n')
+}
+
+// Token boundary only; this scanner is not a complete JSON/schema validator.
+#[inline(always)]
+fn scalar_has_boundary(bytes: &[u8], mut end: usize) -> bool {
+    while bytes.get(end).is_some_and(|b| json_whitespace(*b)) {
+        end += 1;
+    }
+    matches!(bytes.get(end), None | Some(b',' | b'}' | b']'))
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct BookTickerEvent {
     pub bid_price: f64,
@@ -35,8 +49,13 @@ impl BookTickerEvent {
         // Extract Event Time (E) or Transaction Time (T) from the entire byte slice (offset 0)
         let event_time = if let Some((t, _)) = Self::extract_u64_from(bytes, 0, b"\"E\":") {
             t
+        } else if memchr::memmem::find(bytes, b"\"E\":").is_some() {
+            // A present but invalid event clock must not become absence or T.
+            return None;
         } else if let Some((t, _)) = Self::extract_u64_from(bytes, 0, b"\"T\":") {
             t
+        } else if memchr::memmem::find(bytes, b"\"T\":").is_some() {
+            return None;
         } else {
             0
         };
@@ -54,7 +73,7 @@ impl BookTickerEvent {
     #[inline(always)]
     pub fn extract_f64_from(bytes: &[u8], i: usize, key: &[u8]) -> Option<(f64, usize)> {
         // memmem::find es acelerado por hardware (SIMD)
-        let found_idx = memchr::memmem::find(&bytes[i..], key)?;
+        let found_idx = memchr::memmem::find(bytes.get(i..)?, key)?;
         let start = i + found_idx + key.len();
 
         // Find the closing quote using memchr (also SIMD)
@@ -68,17 +87,28 @@ impl BookTickerEvent {
 
     #[inline(always)]
     pub fn extract_u64_from(bytes: &[u8], i: usize, key: &[u8]) -> Option<(u64, usize)> {
-        let found_idx = memchr::memmem::find(&bytes[i..], key)?;
-        let start = i + found_idx + key.len();
+        let found_idx = memchr::memmem::find(bytes.get(i..)?, key)?;
+        let mut start = i + found_idx + key.len();
+        while bytes.get(start).is_some_and(|b| json_whitespace(*b)) {
+            start += 1;
+        }
 
         let mut end = start;
         while end < bytes.len() && bytes[end].is_ascii_digit() {
             end += 1;
         }
+        // Strict unsigned integer field: never accept a prefix of a different
+        // numeric/string token, an empty value, or an out-of-domain integer.
+        if end == start
+            || (end - start > 1 && bytes[start] == b'0')
+            || !scalar_has_boundary(bytes, end)
+        {
+            return None;
+        }
 
         let mut val = 0u64;
         for &b in &bytes[start..end] {
-            val = val * 10 + (b - b'0') as u64;
+            val = val.checked_mul(10)?.checked_add((b - b'0') as u64)?;
         }
         Some((val, end))
     }
@@ -107,8 +137,18 @@ impl AggTradeEvent {
 
         let m_idx = memchr::memmem::find(bytes, b"\"m\":")?;
         let after_m = &bytes[m_idx + 4..];
-        let first_non_ws = after_m.iter().position(|&b| b != b' ' && b != b'\t')?;
-        let is_buyer_maker = after_m.get(first_non_ws) == Some(&b't'); // "t"rue or "f"alse
+        let first_non_ws = after_m.iter().position(|&b| !json_whitespace(b))?;
+        let value = &after_m[first_non_ws..];
+        let (is_buyer_maker, token_len) = if value.starts_with(b"true") {
+            (true, 4)
+        } else if value.starts_with(b"false") {
+            (false, 5)
+        } else {
+            return None;
+        };
+        if !scalar_has_boundary(value, token_len) {
+            return None;
+        }
 
         // #660 (F2-B5): "T" = transact time del exchange en ms (entero sin
         // comillas); ausente ⇒ 0 (sin reloj: el decay físico no aplica
@@ -186,12 +226,21 @@ impl DepthEvent {
             return None;
         }
 
-        let bid_wall = Self::extract_wall_sum(bytes, b"\"bids\":[");
-        let ask_wall = Self::extract_wall_sum(bytes, b"\"asks\":[");
-
-        if bid_wall > 0.0 || ask_wall > 0.0 {
-            Some(Self { bid_wall, ask_wall })
-        } else {
+        let both_canonical = memchr::memmem::find(bytes, b"\"bids\":[").is_some()
+            && memchr::memmem::find(bytes, b"\"asks\":[").is_some();
+        if both_canonical {
+            let bid_wall = Self::extract_wall_sum(bytes, b"\"bids\":[");
+            let ask_wall = Self::extract_wall_sum(bytes, b"\"asks\":[");
+            if !bid_wall.is_finite() || !ask_wall.is_finite() {
+                return None;
+            }
+            if bid_wall > 0.0 || ask_wall > 0.0 {
+                return Some(Self { bid_wall, ask_wall });
+            }
+        }
+        // Choose the route before validating sums: provisional fast-path
+        // scans must not reject a mixed-spacing message handled by serde.
+        {
             // Fallback en caso de espaciado no canónico (e.g. `"bids" : [`)
             if let Ok(json) = serde_json::from_slice::<serde_json::Value>(bytes) {
                 let data = if json.get("data").is_some() && !json["data"].is_null() {
@@ -222,6 +271,9 @@ impl DepthEvent {
                             }
                         }
                     }
+                }
+                if !b_wall.is_finite() || !a_wall.is_finite() {
+                    return None;
                 }
                 Some(Self {
                     bid_wall: b_wall,

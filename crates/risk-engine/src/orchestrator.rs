@@ -152,42 +152,34 @@ impl<'a> PortfolioOrchestrator<'a> {
         // contrayendo el margen admisible continuamente sin escalones discretos.
         // Para cortos: contrae simétricamente por squeeze_pressure y p_bull, protegiendo
         // posiciones cortas contra short squeezes violentos y blow-off tops.
-        let directional_pressure = if intent_is_long {
-            let crash_max = self
-                .arena
-                .coins
-                .iter()
-                .filter(|c| c.spectral_coherence.load(Ordering::Relaxed) < 0.0)
-                .map(|c| c.spectral_crash_flux.load(Ordering::Relaxed))
-                .filter(|f| f.is_finite())
-                .fold(0.0f64, f64::max)
-                .clamp(0.0, 1.0);
-            let p_crash = self.arena.regime_p_crash.load(Ordering::Relaxed);
-            let systemic_crash = if p_crash.is_finite() { p_crash.clamp(0.0, 1.0) } else { 0.0 };
-            0.25 * crash_max.max(systemic_crash)
-        } else {
-            let squeeze_max = self
-                .arena
-                .coins
-                .iter()
-                .filter(|c| c.spectral_coherence.load(Ordering::Relaxed) > 0.0)
-                .map(|c| c.spectral_crash_flux.load(Ordering::Relaxed))
-                .filter(|f| f.is_finite())
-                .fold(0.0f64, f64::max)
-                .clamp(0.0, 1.0);
-            let p_bull = self.arena.regime_p_bull.load(Ordering::Relaxed);
-            let systemic_bull = if p_bull.is_finite() { p_bull.clamp(0.0, 1.0) } else { 0.0 };
-            0.25 * squeeze_max.max(systemic_bull)
-        };
-        // G0-1 (Ola Ω12) & AGY-AUD-P31: FUSIÓN SUAVE VETO → CONTRACCIÓN CONTINUA.
-        // El veto absoluto de largos se reserva para caída libre sistémica de alta confianza
-        // (p_crash >= 0.90) o para tests/mocks explícitos cuando el símplex continuo no está
-        // inicializado (p_crash <= 0.0). Para regímenes continuos con p_crash < 0.90, la contracción
-        // continua en `directional_pressure` (0.25 * p_crash) modula el colchón suavemente
-        // sin provocar el salto discontinuo X → 0 del argmax (MAP) discreto.
-        let p_crash_val = self.arena.regime_p_crash.load(Ordering::Relaxed);
-        let systemic_crash_veto = p_crash_val.is_finite() && p_crash_val >= 0.90;
-        let fallback_discrete_veto = (!p_crash_val.is_finite() || p_crash_val <= 0.0)
+        // P2: unknown pressure is not calm. Validate both systemic inputs and
+        // every spectral pair before filtering by direction; finite cold zeros
+        // remain admissible. Reuse the values checked here for this decision.
+        let p_crash = self.arena.regime_p_crash.load(Ordering::Relaxed);
+        let p_bull = self.arena.regime_p_bull.load(Ordering::Relaxed);
+        if !p_crash.is_finite() || !p_bull.is_finite() {
+            return false;
+        }
+        let mut directional_max = 0.0f64;
+        for coin in self.arena.coins.iter() {
+            let tide = coin.spectral_coherence.load(Ordering::Relaxed);
+            let flux = coin.spectral_crash_flux.load(Ordering::Relaxed);
+            if !tide.is_finite() || !flux.is_finite() {
+                return false;
+            }
+            if (intent_is_long && tide < 0.0) || (!intent_is_long && tide > 0.0) {
+                directional_max = directional_max.max(flux);
+            }
+        }
+        let systemic_pressure = if intent_is_long { p_crash } else { p_bull };
+        let directional_pressure = 0.25
+            * directional_max
+                .clamp(0.0, 1.0)
+                .max(systemic_pressure.clamp(0.0, 1.0));
+        // Preserve Omega12 continuity while rejecting nonfinite evidence above.
+        // Reuse the validated snapshot instead of reloading systemic pressure.
+        let systemic_crash_veto = p_crash >= 0.90;
+        let fallback_discrete_veto = p_crash <= 0.0
             && regime == crate::regime::MarketRegime::Crash;
         if (systemic_crash_veto || fallback_discrete_veto) && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.

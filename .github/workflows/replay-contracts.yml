@@ -78,8 +78,18 @@ jobs:
       - name: Check all workspace targets
         run: cargo +nightly-2026-06-30 check --workspace --all-targets --locked
       - name: Model publication and loader contracts
+        # Existing model contracts are preserved below.
         # Synthetic models only. No real-model inventory, training or promotion.
         run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test model_publication_contract --test ml_model_contract --test ml_base_publication_contract -- --test-threads=1
+
+      - name: Input, risk-state and OOS boundary contracts
+        # Synthetic inputs only; no training, exchange or real-model activation.
+        run: |
+          cargo +nightly-2026-06-30 test -p data-pipeline --locked --test parser_input_contract -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 test -p risk-engine --locked --test nonfinite_admission_contract -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 test -p backtest-engine --locked --test oos_context_contract -- --test-threads=1
 
       - name: Model inventory structural evidence contracts
         # Synthetic files only; no training, promotion or live-model loading.
