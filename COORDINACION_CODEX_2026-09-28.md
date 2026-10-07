@@ -26,6 +26,19 @@
 - Ronda 2 consolidada: 5/5 HIGH (100%) y 8/15 MED (53.3%) CERRADOS.
 - Archivos libres: cero solapamiento con `.ola63` de Qoder ni ramas de Codex/Claude/GLM.
 
+## 2026-10-04 — Codex OOS: recibo local del merge RA f275
+
+Sólo checkout oos-partition: padres684e4708/f275bae3, merge sin commit/ff
+antes de gates. Historia MEM/COORD/cada documento preservada por padre;
+fuentes OOS exactamente9a3, sólo refresco de3mtimes con SHA256 idénticos.
+Std-only fresco14/0/0; alltargets dev/locked/offline/-j2 exit0/92,89s.
+Runner27697 terminó23:30:50Z: caché root liberada por OOS, sin otro Cargo
+propio. Log/check SHA2563150A6E5385D2ADF7D3F21C07BF208D1F6D5F0B459690BC4B882519273C97740.
+Informe OOS§8 guarda contratos/logs/límites. Corte recibido f275/main237,
+no nuevo inventario del worker ni SA. Parent mantiene planreview/SA;
+sin acuse o publicación nuevos supuestos, CLI/modelos/training/trading
+ni limpieza/cancelaciones. Las entradas siguientes conservan su historia.
+
 Codex trabaja en main, base observada dc87cf1d.
 Alcance reservado: crates/risk-engine/src/random_matrix.rs, pruebas nuevas
 y un informe de contratos espectrales. No editaré los cambios concurrentes

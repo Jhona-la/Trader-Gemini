@@ -411,6 +411,75 @@
   164/164 + suites 0 fallos. **ORÁCULO T-1 EN VUELO** — push sólo si
   PASA.
 
+## 2026-10-04 — Codex: cierre OOS local autorizado; publicación pendiente
+
+- Orden posterior autoriza commit exclusivamente local del merge
+  acbc3b61 + f6087378, con check0/151.383s y contratos14/0/0 ya registrados.
+  Informe OOS§10.1; no nuevo Cargo, SA/main749d ni otros checkouts.
+- Publicación pendiente: sin push/PR/red; preparación local, no bypass
+  de autorización. Se conserva la pausa histórica. Recibo de cierre en
+  target/oos-integration-f608-20261004/local-commit-receipt.log.
+
+## 2026-10-04 — Codex: OOS f608 all-targets verde, commit en pausa
+
+- Candidato acbc3b61 + f6087378: check workspace/all-targets nightly06-30
+  locked/offline/-j2 exit0 en151.383s; fin2026-10-05T00:39:11Z. Dev/defaults,
+  rootcache,9mtimes refrescados con SHA256 estable; slot Cargo liberado.
+- Std-only14/0/0 del candidato;3blobs OOS idénticos a9a3. Unión documental
+  por ambos padres y valores/arrays JSON preservados; informe OOS§10 y
+  target/oos-integration-f608-20261004 conservan recibos y límites.
+- Orden posterior: dejar preparado SIN commit/push/PR mientras parent
+  concreta autorización específica. La autorización previa permanece en
+  historia, no se borra. SA no incorporada; ningún otro checkout modificado.
+
+## 2026-10-04 — Codex: OOS preparado con RA f608, gate pendiente
+
+- Merge acbc3b61 + f6087378 preparado sin commit; unión documental por
+  padre y 3blobs OOS9a3 preservados. Std-only fresco14/0/0; informe OOS§9.
+- Cargo reservado al parent/SA: alltargets de este candidato pendiente de
+  su aviso, no extrapolar checks anteriores. Publicación/integración ya
+  autorizadas por el operador; parent realiza PRs/gates. SA no incorporada.
+
+## 2026-10-04 — Codex: OOS-F01 reconciliado con RA f275/main237
+
+- Merge local autorizado 684e4708 + f275bae3, sin perseguir otro main ni
+  fetch. Único conflicto MEM resuelto por unión; COORD/planes/documentos
+  conservados por cada padre. Verificador: 6 documentos OOS y 8 RA,
+  todas las líneas no vacías originales en orden, sin pérdida de bloques.
+- Sólo 3 mtimes OOS refrescados; SHA256 antes/después y blobs exactamente
+  9a3bb756. Mismo 70/30, sin mínimos económicos ni modelos nuevos.
+- Binario std-only recién compilado: 14/0/0, exit0, no contexto legacy6
+  cacheado. Check alltargets/locked/offline/-j2 nightly06-30: exit0,
+  92,89s, dev/defaults/rootcache; runner27697 finalizó23:30:50Z y liberó lock.
+- Informe OOS§8 y target/oos-integration-f275-20261004 guardan recibos.
+  F275 incluye sólo su corte documental/plan; el nuevo inventario de otro
+  worker no está incorporado. SA/otros checkouts, CLI/modelos/T1 intactos;
+  sin publicación, entrenamiento/trading, limpieza o cancelación de procesos.
+
+## 2026-10-04 — Codex: OOS-F01 integrado localmente con RA74
+
+- Merge autorizado de be4cacf3 + 74be3ed5 (RA publicada y main230), sólo
+  checkout oos-partition. Main57cb8f0f y reparación SA quedan fuera.
+- Memoria en conflicto resuelta por unión: todas las líneas no vacías de
+  ambos padres conservadas en orden; planes/docs recibidos idénticos a RA74.
+- Tres fuentes OOS idénticas a9a3bb756. Diff por ambos padres revisado;
+  el cambio recibido de veto_registry es descriptivo, no política nueva.
+- Reejecución std-only14/0/0, exit0; checkworkspacealltargets/locked/offline
+  nightly06-30 exit0,137,44s, caché root DEV/defaults, runner24234 finalizado.
+- Informe OOS§7 y target/oos-integration-74be-20261004 guardan comandos,
+  hashes/logs. No CI remota nueva, push/PR, CLI/modelos/T1/trading ni limpieza.
+
+## 2026-10-04 — Codex: OOS-F01 aislado y verificado
+
+- Commit funcional9a3bb756 sobreRA5a: preflight tipado0<split<len antes
+  de modelo/FRED/trials/promote; no mínimo económico nuevo ni política70/30.
+- RED9/5 con extracción del guard antiguo→GREEN14/0 idénticos tests;
+  checkworkspacealltargets0/4m28s; review independiente estática0blockers.
+- Informe AUDITORIA_PARTICIONES_OOS_2026-10-04.md conserva hashes/límites.
+  No CLI ejecutado, T1 nuevo, promoción, red ni publicación de esta serie.
+- RA publicó su reconciliación documental con main230 aparte; no equivale
+  a integrar OOS en main. Esta memoria no altera fuente/pruebas del9a3.
+
 ## 2026-10-04 — Codex: F2/mainEA5d contrastado sin asumir conclusiones
 
 - RA§48/master§18/plan§12 conservan ambos padres por unión y43raícesJSON.
