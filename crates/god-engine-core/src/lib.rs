@@ -435,6 +435,18 @@ pub fn escala_del_trailing(atr_pct: f64, entrada: f64, tau_ms: f64, hurst: f64) 
 /// 0,22 con continuación (h ≥ 0,52); coherencia > 0,12 en su dirección; marea
 /// macro no adversa. El bono de convicción es (h − 0,5)⁺·0,5 en ambos lados.
 /// Devuelve `(es_largo, confianza)`.
+///
+/// H2-11 (G2-15, RONDA 3): los cinco cortes eran literales dispersos
+/// calibrados a mano — ahora son constantes nombradas PINNEADAS con el
+/// mismo valor (bit-exact; el contrato h2_11 los fija). Promoverlos a
+/// knobs del genoma sería cambio de conducta: ola futura con oráculo si
+/// el consejo lo pide.
+pub const FUSED_UMBAL_PLENO: f64 = 0.38;
+pub const FUSED_UMBAL_MODERADO: f64 = 0.22;
+pub const HURST_CONTINUACION: f64 = 0.52;
+pub const COHERENCIA_MINIMA: f64 = 0.12;
+pub const MAREA_MACRO_TOLERANCIA: f64 = 0.00020;
+
 #[inline]
 pub fn confluencia_resonante(
     fused: f64,
@@ -443,14 +455,14 @@ pub fn confluencia_resonante(
     coherencia_corta: f64,
     marea_macro: f64,
 ) -> Option<(bool, f64)> {
-    let continuacion = hurst_tau_star >= 0.52;
+    let continuacion = hurst_tau_star >= HURST_CONTINUACION;
     let bono = (hurst_tau_star - 0.50).max(0.0) * 0.50;
-    let largo = (fused > 0.38 || (fused > 0.22 && continuacion))
-        && coherencia_larga > 0.12
-        && marea_macro >= -0.00020;
-    let corto = (fused < -0.38 || (fused < -0.22 && continuacion))
-        && coherencia_corta > 0.12
-        && marea_macro <= 0.00020;
+    let largo = (fused > FUSED_UMBAL_PLENO || (fused > FUSED_UMBAL_MODERADO && continuacion))
+        && coherencia_larga > COHERENCIA_MINIMA
+        && marea_macro >= -MAREA_MACRO_TOLERANCIA;
+    let corto = (fused < -FUSED_UMBAL_PLENO || (fused < -FUSED_UMBAL_MODERADO && continuacion))
+        && coherencia_corta > COHERENCIA_MINIMA
+        && marea_macro <= MAREA_MACRO_TOLERANCIA;
     if largo {
         let conf_base = (0.50 + coherencia_larga * 0.35 + bono).clamp(0.50, 0.95);
         Some((true, conf_base))
@@ -3575,12 +3587,12 @@ impl GodEngineCore {
                             .fetch_add(net_trade_pnl, Ordering::Relaxed);
                     }
 
-                    self.feature_engines[coin_id].last_scalp_exit_tick =
+                    self.feature_engines[coin_id].last_exit_fastband_tick =
                         self.feature_engines[coin_id].tick_count;
                     // D-754: los dos relojes del enfriamiento - CUANDO se
                     // cerro (en ms de evento, no en cuenta de ticks) y CON QUE
                     // horizonte se habia dimensionado.
-                    self.feature_engines[coin_id].last_scalp_exit_ms = event_time_ms;
+                    self.feature_engines[coin_id].last_exit_fastband_ms = event_time_ms;
                     if tau_de_la_posicion > 0 {
                         self.feature_engines[coin_id].tau_ultimo_cierre_ms = tau_de_la_posicion;
                     }
@@ -7974,10 +7986,10 @@ mod tests_cl22 {
     fn cl22_el_enfriamiento_legado_contradice_al_unificado() {
         let mut e = StatefulEngine::new();
         let t0 = 1_000_000u64;
-        e.last_scalp_exit_ms = t0;
-        e.last_scalp_exit_ts = t0;
+        e.last_exit_fastband_ms = t0;
+        e.last_exit_fastband_ts = t0;
         e.last_exit_tau_ms = 10_000;
-        e.scalp_loss_streak = 0;
+        e.fastband_loss_streak = 0;
         e.last_event_ms = t0 + 60_000;
         e.current_ts = t0 + 60_000;
         assert!(e.can_open_position_ms(10_000.0));

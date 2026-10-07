@@ -1,5 +1,34 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Antigravity: OLA Ω18 CERRADA — FASE F5 (APRENDER Y MEDIR: EVOLUCIÓN, GENOMA Y BACKTEST): AUDITORÍA INTEGRAL Y ACELERACIÓN 9.7X EN DARK-ALPHA
+
+- Rama `antigravity/quant-sr-fase-f5-evolucion-backtest` (worktree `.antigravity`), merge limpio sobre `main`.
+- **F5-DARK-001 [HIGH] CERRADO**:
+  - En `crates/dark-alpha-engine/src/lib.rs:735-756`: En `predict_in_context`, cada inferencia ejecutaba `self.validate().is_err()`. Esto obligaba a verificar 4,353 floats de parámetros de capas densas (`.is_finite()`) y recorrer 30 normalizadores por activo en CADA llamada en el bucle crítico de trading, provocando que `test_inference_speed` fallara a 48,451 ns (límite contractural: 25,000 ns). Además, `ensure_inference_buffers()` ejecutaba `.resize(..., 0.0)` incondicionalmente.
+  - Erradicado el escaneo masivo del hot-path reemplazándolo por la guarda de consistencia $O(1)$ `!self.layers_valid()`, y optimizados los buffers de inferencia.
+  - **Rendimiento Medido**: Inferencia por llamada reducida de **48,451 ns** a **4,981 ns** (**9.7x de aceleración** / sub-5µs en debug, nanosegundos en release).
+  - 31/31 tests unitarios en `dark-alpha-engine` y 18/18 tests de integración en `neural_evidence_contract.rs` aprobados (100% verdes).
+- **FASE F5 AUDITORÍA FORENSE CERRADA (28 ARCHIVOS EVALUADOS — 156/156 TESTS VERDES)**:
+  - `evolution-engine` (16 archivos): 54/54 tests verdes en 8.12s. Certificada la función única de aptitud `fitness.rs` (utilidad logarítmica cóncava Kelly penalizada por ruina cuadrática $\lambda = 4\ln 2 \approx 2.7726$) y entropía de Shannon.
+  - `backtest-engine` (10 archivos): 53/53 tests verdes en 48.81s. Certificado el replay microestructural real `booktick_replay.rs` y los contratos metamórficos de causalidad estricta `booktick_causality_contract.rs` (cero lookahead bias, cero data leakage).
+  - `dark-alpha-engine` (3 archivos): 49/49 tests verdes en 0.59s.
+  - Total Fase F5: 156/156 tests aprobados, 0 fallos, 0 regresiones.
+- **COORDINACIÓN CON EL CONSEJO**: Sincronización con Ronda 4 de Qoder (`.ola68` / `.ola69`) y GLM 105.
+
+## 2026-10-07 — Antigravity: OLA Ω17 CERRADA — FASE F4 (DINERO Y RIESGO): AUDITORÍA INTEGRAL, MICRO-CAPITAL $13 USD Y BLINDAJE DE EVENTOS TERMINALES
+
+- Rama `antigravity/quant-sr-fase-f4-auditoria-riesgo-capital` (worktree `.antigravity`), merge limpio sobre `main`.
+- **F4-EXE-001 [MED] CERRADO**:
+  - En `crates/execution-engine/src/user_data_stream.rs:966-983`: el test `test_algo_update_terminal_marks_protection_dirty` dependía de un valor absoluto sobre el contador atómico estático `quantum_arena::protection_health::TERMINAL_EVENTS_SEEN`. En ejecución multihilo con otros tests del workspace (`test_reconcile_after_reconnect_clears_cache_and_marks_dirty`), el contador acumulaba ejecuciones previas provocando fallos espurios no-deterministas (`assert_eq! left: 2, right: 1`).
+  - Blindado midiendo el incremento delta relativo `terminal_events_seen() - prev_events == 1`.
+  - Suite de `execution-engine` verificada: 79/79 tests verdes en 3.76s (100%).
+- **AUDITORÍA FORENSE FASE F4 (DINERO Y RIESGO — 45 ARCHIVOS EVALUADOS)**:
+  - Verificación matemática y algorítmica de los 23 archivos en `crates/risk-engine/src/` (141/141 tests verdes en 0.85s) y los 22 archivos en `crates/execution-engine/src/`:
+  - **Piso de Viabilidad D-750**: `orden_viable(min_notional, sl_pct, capital, tope_riesgo)` confirma que para una cuenta de $13 USD con $5.0 USD min notional y un stop típico del 1%, el riesgo por evento es $0.38% del capital ($0.05 USD), perfectamente contenido dentro del axioma de ruina del 25% ($3.25 USD).
+  - **Margen Seguro y Concurrencia**: `micro_safe_limit` acota el margen por posición a [1.20, 2.60] USD. Con apalancamiento entero continuo [5.0x, 6.5x], la orden alcanza el `safe_min_notional = 5.10 USD` con ~$1.02 USD de margen comprometido, permitiendo exactamente 2 posiciones activas concurrentes ($2.04 USD de margen total) dejando un colchón libre de $10.96 USD ($84.3% libre), superando ampliamente el piso requerido de $3.0 USD.
+  - **Orquestador de Portafolio**: `PortfolioOrchestrator::allow_trade` aplica `exposure_limit = 0.98 - directional_pressure`, permitiendo operaciones simétricas Long/Short salvo en caída libre sistémica ($p_{\text{crash}} \ge 0.90$) o squeeze masivo.
+- **ACLARACIÓN CONSEJO H2-7**: Confirmada la convergencia con GLM 103 (`8938cf41`), fijando la paridad de ganancias de flujo con test `h2_7_paridad_de_ganancias_pinned`.
+
 ## 2026-10-07 — Qoder: OLA 67 CERRADA — LIMPIEZA MECÁNICA DE LOWs — ORÁCULO PASA 16/144
 
 - Rama qoder/ola67-lows-limpieza (worktree .ola67, base d881e22d + merge

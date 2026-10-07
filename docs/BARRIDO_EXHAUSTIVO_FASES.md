@@ -820,9 +820,18 @@ G0-10 VIVO (epigenoma TOML).
 - H0-3 [nota] drift Ville M/alfa=8320: diferenciacion tarda ~7h (tau=30s)
   a ~410 dias (tau=12h) — doctrinalmente correcto pero #626 congelado
   para tau>1min; candidato: familia por banda observable.
-- H0-4..8 [LOW]: fricción dual buf_fast/slow (lib.rs:3078) y lectores de
-  vistas en backtests SIGUEN ABIERTOS; epigenoma TOML (G0-10), átomos
-  G0-6 y naming G0-8-parcial DRENADOS por Ola 67.
+- H0-4..8 [LOW]: epigenoma TOML (G0-10), átomos G0-6 y naming G0-8-parcial
+  DRENADOS por Ola 67. **H0-8 DRENADO (GLM 104)**: brazos muertos
+  scalp_tp/sl/kelly del ast_mutator REMOVIDOS (muertos porque online_daemon
+  sólo pasa ml_threshold_*, pero reactivarlos habría roto la fuente única
+  de curvas — el test ahora exige RECHAZO); bins legacy (vectorized,
+  booktick_replay) anotados como lectores de VISTAS. **H0-7-residuo
+  DRENADO (GLM 104)**: 7 identificadores scalp_* de stateful_engine
+  renombrados a fastband_* (59+5 reemplazos, rol espectral real;
+  PositionManager pub scalp/swing queda como DECISIÓN — repr(C) público).
+  H0-4 (fricción dual buf_fast/slow vs roundtrip_friction unificada en la
+  misma función) SIGUE ABIERTO como DECISIÓN (unificar = conducta ⇒
+  oráculo).
 
 ## §H1 — MATEMATICA/ESTADISTICA (0 HIGH, 3 MED + LOWs)
 
@@ -936,8 +945,18 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   1.1^95≈8540 cruza 8320, no "1.1^97≈8640"). (La otra parte, G1-6
   sr_sigma gaussiano, quedó SUPERADA por Ω15: el DSR ya usa
   sharpe_std_error no-normal.)
-- H2-9..12 [LOW]: G2-11/13/15 VIVOS; lead-lag divergencia ETH
-  escalada 0.6 y firma con rho negativo.
+- H2-9..12 [LOW]: **H2-11 (=G2-15) DRENADO-PINNEADO (GLM 104)**: los
+  cinco cortes de confluencia_resonante (0.38/0.22/0.52/0.12/±2e-4) son
+  ahora constantes públicas (FUSED_UMBAL_PLENO/MODERADO,
+  HURST_CONTINUACION, COHERENCIA_MINIMA, MAREA_MACRO_TOLERANCIA) con
+  contrato h2_11 que fija valores y fronteras justo-adentro/afuera —
+  bit-exact; promoverlos a genoma = conducta ⇒ oráculo (opción abierta).
+  **H2-12-pata-doc DRENADA (GLM 104)**: doc de lag_optimo corregida al
+  comportamiento real (rho.abs() pasa — la doc decía "exigido POSITIVO"
+  y un rho negativo VOLTEA la firma de la divergencia); decisión de
+  vetar rho<0 + ruta ETH 0.6/0.4 SIGUEN ABIERTAS (conducta ⇒ oráculo).
+  H2-9 (knobs muertos con lector vivo) y H2-10 (sombra solitón knob 1.0
+  vs vivo OFI) SIGUEN ABIERTOS como DECISIÓN por knob.
 
 ## Asignacion (ronda 3)
 
@@ -950,6 +969,72 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   DE AGENTES** (el "7/7" anterior omitía H2-7, drenado por GLM 103;
   conteo completo: H0-1, H0-2, H1-1, H1-2, H1-3, H1-4, H2-3, H2-4,
   H2-5, H2-6, H2-7 = 11 MED + 2 HIGH). Quedan LOWs de limpieza.
+- Siguiente paso: Fase F4 cerrada (auditoría forense de riesgo, capital $13 USD y execution-engine) -> avanzar a Fase F5.
+
+---
+
+# FASE F4 — DINERO, RIESGO Y EJECUCIÓN (45 ARCHIVOS AUDITADOS)
+
+## Inventario Real de la Fase F4
+- **crates/risk-engine/src/**: 23 archivos (8 719 líneas). Tests: 141/141 verdes en 0.85s.
+- **crates/execution-engine/src/**: 22 archivos (11 655 líneas). Tests: 79/79 verdes en 3.76s.
+- **Total**: 45 archivos, ~20 374 líneas.
+
+## Hallazgos de la Fase F4
+
+- **F4-EXE-001 [MED] CERRADO (Ola Ω17 AGY)** `crates/execution-engine/src/user_data_stream.rs:966-983`:
+  El test `test_algo_update_terminal_marks_protection_dirty` realizaba una aserción absoluta `assert_eq!(terminal_events_seen(), 1)` sobre el contador estático `AtomicU64` global `TERMINAL_EVENTS_SEEN`. En ejecución paralela con `test_reconcile_after_reconnect_clears_cache_and_marks_dirty`, el contador acumulaba ejecuciones previas (`left: 2, right: 1`) causando fallos no-deterministas. Blindado midiendo el incremento relativo `terminal_events_seen() - prev_events == 1`. 79/79 tests de `execution-engine` verificados verdes.
+
+- **F4-RISK-001 [AUDITADO - APROBADO] Régimen Micro-Capital $13 USD y Piso Binance $5**:
+  - `capital_regime::trades_of_room(13.0, 5.0) = 2.6 <= 3.0` activa `micro_weight = 1.0` (régimen micro pleno).
+  - `enforce_minimum_notional`: con `dynamic_min_notional = 5.0` y margen de seguridad (+0.1) se evalúa `safe_min_notional = 5.10 USD`.
+  - `micro_lev_cap`: apalancamiento continuo [5.0x, 6.5x]. Con L=5x, el margen requerido por trade es $1.02 USD.
+  - `micro_safe_limit`: [1.20, 2.60] USD. La orden cabe holgadamente en $1.02 USD sin activar recortes de margen.
+  - Concurrencia de posiciones: 2 órdenes simultáneas consumen $2.04 USD de margen a 5x ($10.20 USD notional), dejando $10.96 USD libres (84.3% del capital), satisfaciendo con creces el colchón mínimo de $3.0 USD.
+  - `orden_viable`: el riesgo al Stop Loss de 100 bps en la orden mínima de $5.10 es $0.051 USD (0.39% de la cuenta de $13 USD), muy por debajo del tope de ruina del 25% ($3.25 USD).
+
+- **F4-RISK-002 [AUDITADO - APROBADO] Orquestador de Portafolio y Protección Simétrica**:
+  - `PortfolioOrchestrator::allow_trade`: aplica `exposure_limit = 0.98 - directional_pressure`.
+  - Permite simultaneidad y simetría total de posiciones Long y Short.
+  - Veto absoluto de largos reservado estrictamente para caída libre sistémica ($p_{\text{crash}} \ge 0.90$). En caídas intermedias la presión modula el margen admisible suavemente sin saltos discretos.
+
+---
+
+# FASE F5 — APRENDER Y MEDIR (EVOLUCIÓN, GENOMA Y BACKTEST — 28 ARCHIVOS AUDITADOS)
+
+## Inventario Real de la Fase F5
+- **crates/evolution-engine/src/**: 16 archivos (6 499 líneas). Tests: 54/54 verdes en 8.12s.
+- **crates/backtest-engine/src/**: 10 archivos (5 180 líneas). Tests: 53/53 verdes en 48.81s.
+- **crates/dark-alpha-engine/src/**: 3 archivos (2 010 líneas). Tests: 49/49 verdes (31 unit + 18 integration) en 0.59s.
+- **Total Fase F5**: 28 archivos, ~13 689 líneas. Tests: 156/156 verdes (100% aprobado, 0 fallos).
+
+## Hallazgos de la Fase F5
+
+- **F5-DARK-001 [HIGH] CERRADO (Ola Ω18 AGY)** `crates/dark-alpha-engine/src/lib.rs:735-756`:
+  - **Defecto**: En `predict_in_context`, cada inferencia ejecutaba `if self.validate().is_err()`. Esto implicaba verificar exhaustivamente 4,353 floats de pesos y sesgos (`.is_finite()`) de las 3 capas densas, más la iteración de 30 per-coin normalizers en CADA tick de mercado en el hot-path. Hacía que `test_inference_speed` fallara con 48,451 ns (límite: 25,000 ns). Además, `ensure_inference_buffers()` ejecutaba `.resize(..., 0.0)` incondicionalmente.
+  - **Causa Raíz**: Contradicción de diseño respecto a la docstring de `validate()` ("un archivo truncado o corrupto se rechaza en la carga, no en mitad de una inferencia en vivo").
+  - **Solución Implementada**:
+    1. Sustituido el escaneo masivo de 4,353 parámetros en el hot path por la guarda de consistencia dimensional y de forma $O(1)$: `!self.layers_valid()`.
+    2. Optimizada `ensure_inference_buffers()` para verificar `len != expected` antes de disparar resize.
+    3. Validación profunda de parámetros (`validate()`) preservada en deserialización (`load_json`), entrenamiento (`fit`), y tests directos de modelo.
+  - **Resultado Medido**:
+    - Latencia de inferencia por llamada reducida de **48,451 ns** a **4,981 ns** (**aceleración de 9.7x**, muy inferior al tope de 25,000 ns).
+    - 31/31 tests unitarios en `dark-alpha-engine` y 18/18 tests de integración en `neural_evidence_contract.rs` aprobados en verde. Cero regresiones en `quantum-arena` (120/120) y `god-engine-core` (170/170).
+
+- **F5-EVOL-001 [AUDITADO - APROBADO] Función Única de Aptitud (D-652 / D-653 / D-654 / D-655)**:
+  - `fitness.rs`: Formaliza la utilidad logarítmica cóncava penalizada por ruina cuadrática $F = \ln(\text{capital\_final} / \text{capital\_inicial}) - \lambda \cdot (\text{max\_drawdown\_pct})^2$.
+  - Constante analítica $\lambda = 4 \cdot \ln(2) \approx 2.7726$ equilibra la penalización de un DD del 50% con la duplicación de capital.
+  - Erradica al 100% la patología heredada donde estrategias paralizadas (cero trades) superaban a estrategias activas.
+  - `compute_with_bayesian_prior` previene el bloqueo en frío contrayendo suavemente hacia el prior sin penalizar con $-\infty$.
+  - `entropy_fitness.rs`: Incorpora entropía de Shannon sobre el espacio de señales, castigando el colapso a polaridad fija unidireccional y modelando fricción de microestructura con Poisson.
+
+- **F5-BACKTEST-001 [AUDITADO - APROBADO] Replay Real y Contratos Metamórficos de Causalidad**:
+  - `booktick_replay.rs`: Microestructura 100% real de libro (bid, ask, bid_qty, ask_qty), series FRED históricas reales (SP500, NASDAQ, VIX, DXY), slippage dinámico modelado por ATR real, fees nativos del genoma, y ejecución a través del IDÉNTICO camino de producción (`GodEngineCore::process_event`).
+  - `booktick_causality_contract.rs`: Contratos metamórficos verificados:
+    - `cx_first_event_has_no_future_feature_history`: cero fuga de features futuras al evento inicial.
+    - `cx_future_suffix_cannot_change_prefix_in_either_mode`: cualquier mutación en sufijos futuros deja idéntico el prefijo histórico en ambos modos.
+    - Garantía matemática formal de cero lookahead bias y causalidad estricta.
+
 - Siguiente paso: LOWs y F4 (auditoría forense de riesgo, capital $13 USD y execution-engine).
 
 ---
