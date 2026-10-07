@@ -6315,21 +6315,7 @@ impl GodEngineCore {
                         } else {
                             slow_intent.expected_duration_ms
                         };
-<<<<<<< HEAD
-                        // #667 (H0-2): la etiqueta ganadora es la de la rama
-                        // que APORTÓ la convicción (max de confidence), no la
-                        // de índice mayor — con `.max()` de
-                        // volume_flow_rate las ramas altas absorbían la
-                        // evidencia de las bajas y hambraban su
-                        // conviccion_de_rama (D-752) justo cuando Ω13 la
-                        // volvió cargada.
-                        let etiqueta_ganadora =
-                            if slow_intent.confidence > fast_intent.confidence {
-                                slow_intent.volume_flow_rate
-                            } else {
-                                fast_intent.volume_flow_rate
-                            };
-=======
+
                         // H0-2 (RONDA 3): atribución honesta — la rama
                         // con mayor convicción transporta la evidencia
                         // (ver `etiqueta_fusion_constructiva`).
@@ -6339,17 +6325,15 @@ impl GodEngineCore {
                             slow_intent.confidence,
                             slow_intent.volume_flow_rate,
                         );
->>>>>>> origin/main
+
                         candidates[0] = SignalIntent {
                             signal: fast_intent.signal,
                             confidence: boosted_conf,
                             expected_duration_ms: best_duration,
                             horizon: strategy_core::TradeHorizon::Continuous,
-<<<<<<< HEAD
-                            volume_flow_rate: etiqueta_ganadora,
-=======
+
                             volume_flow_rate: etiqueta_conviccion,
->>>>>>> origin/main
+
                             ..fast_intent
                         };
                         num_candidates = 1;
