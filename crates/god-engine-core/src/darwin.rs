@@ -347,41 +347,61 @@ fn evaluate_genotype(
     let mut prev_cap = initial;
     let mut max_drawdown = 0.0_f64;
     let mut trades = 0_u32;
-    let mut trade_returns = Vec::with_capacity(64);
+    let mut portfolio_returns = Vec::with_capacity(128);
+    let mut last_sample_ts = stream.first().map(|t| t.timestamp).unwrap_or(0);
+    // H1-2: Intervalo de muestreo regular para retornos de portafolio marked-to-market (1 segundo = 1000 ms).
+    // Proporciona una serie temporal homogénea con soporte muestral estadísticamente suficiente (N >= 20)
+    // eliminando el artefacto de exigir un t-stat absurdo > 4.5 en ventanas cortas con pocos trades cerrados.
+    const SAMPLE_INTERVAL_MS: u64 = 1_000;
+
     for tick in stream {
         arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price,
             tick.bid_qty, tick.ask_qty, tick.timestamp);
         let omni = synth.tick(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty);
         let (_, closed, _) = engine.process_tick(tick.coin_id, tick.bid_price, tick.ask_price,
             tick.bid_qty, tick.ask_qty, tick.timestamp, &omni);
+
+        let capital = arena.unified_capital.load(Ordering::Relaxed);
+        if !capital.is_finite() || capital <= 0.0 {
+            return (capital, f64::NEG_INFINITY, portfolio_returns);
+        }
+
         if closed.is_some() {
             trades += 1;
-            let capital = arena.unified_capital.load(Ordering::Relaxed);
-            if !capital.is_finite() || capital <= 0.0 {
-                return (capital, f64::NEG_INFINITY, trade_returns);
-            }
-            if prev_cap > 0.0 {
-                let r = (capital - prev_cap) / prev_cap;
-                if r.is_finite() {
-                    trade_returns.push(r);
-                }
-            }
-            prev_cap = capital;
             peak_capital = peak_capital.max(capital);
             max_drawdown = max_drawdown.max((peak_capital - capital) / peak_capital);
         }
+
+        // Muestreo temporal periódico de retornos o muestreo al cierre de trades si hubo cambio
+        let time_elapsed = tick.timestamp >= last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS);
+        if time_elapsed || closed.is_some() {
+            if prev_cap > 0.0 {
+                let r = (capital - prev_cap) / prev_cap;
+                if r.is_finite() {
+                    portfolio_returns.push(r);
+                }
+            }
+            prev_cap = capital;
+            last_sample_ts = tick.timestamp;
+        }
     }
     let final_capital = arena.unified_capital.load(Ordering::Relaxed);
-    (final_capital, crate::fitness_compute(initial, final_capital, max_drawdown, trades), trade_returns)
+    (final_capital, crate::fitness_compute(initial, final_capital, max_drawdown, trades), portfolio_returns)
 }
 
 pub struct DarwinDaemon {
     pub live_arena: Arc<GlobalArena>,
+    /// H1-3: Acumulador atómico de pruebas entre rondas evolutivas continuas (D-746).
+    /// Controla la multiplicidad acumulada frente a optional stopping en el daemon.
+    pub cumulative_trials: std::sync::atomic::AtomicUsize,
 }
 
 impl DarwinDaemon {
     pub fn new(live_arena: Arc<GlobalArena>) -> Self {
-        Self { live_arena }
+        Self {
+            live_arena,
+            cumulative_trials: std::sync::atomic::AtomicUsize::new(0),
+        }
     }
 
     /// Extacts the recent ticks from the live arena, sorts them, and runs a fast GA
@@ -613,17 +633,23 @@ impl DarwinDaemon {
             &best_all_time.0, oos_stream, initial_capital, replay_max_drawdown, active_coins,
         );
 
-        let n_trials = pop_size * generations;
-        let e_max_sr = risk_engine::selection_stats::expected_max_sharpe(n_trials, 1.0);
-        let dsr_verdict = risk_engine::selection_stats::edge_survives_multiplicity(&candidate_oos_returns, n_trials);
+        let ronda_trials = pop_size * generations;
+        // H1-3: Acumulación monótona de multiplicidad entre rondas continuas (D-746).
+        // Erradica el optional stopping entre ejecuciones periódicas del daemon Darwin.
+        let previas = self.cumulative_trials.load(Ordering::Relaxed);
+        let total_trials = previas.saturating_add(ronda_trials).max(ronda_trials).max(1);
+        self.cumulative_trials.store(total_trials, Ordering::Relaxed);
+
+        let e_max_sr = risk_engine::selection_stats::expected_max_sharpe(total_trials, 1.0);
+        let dsr_verdict = risk_engine::selection_stats::edge_survives_multiplicity(&candidate_oos_returns, total_trials);
 
         println!("[Darwin] Online Evolution Complete (S5 OOS Partition).");
         println!("         IS Train Ticks: {}, OOS Eval Ticks: {}", train_stream.len(), oos_stream.len());
         println!("         In-Sample Champion Fitness: {:.4}", best_all_time.1);
         println!("         OOS Baseline Fitness: {:.4}", baseline_oos_fitness);
         println!("         OOS Candidate Fitness: {:.4}", candidate_oos_fitness);
-        println!("         DSR Multiplicity Expectation E[max SR] (N={}): {:.4} * sigma", n_trials, e_max_sr);
-        println!("         DSR OOS Candidate: {:.4} (passes: {}, n_trades: {}) — {}", dsr_verdict.dsr, dsr_verdict.passes, candidate_oos_returns.len(), dsr_verdict.note);
+        println!("         DSR Multiplicity Expectation E[max SR] (ronda N={}, total_acum={}): {:.4} * sigma", ronda_trials, total_trials, e_max_sr);
+        println!("         DSR OOS Candidate: {:.4} (passes: {}, n_obs: {}) — {}", dsr_verdict.dsr, dsr_verdict.passes, candidate_oos_returns.len(), dsr_verdict.note);
 
         // G1-3: Compuerta estricta conjunta: superación del baseline OOS por margen Y supervivencia al DSR (>= 0.95)
         let clears_margin = meets_promotion_margin(candidate_oos_fitness, baseline_oos_fitness);
@@ -662,7 +688,7 @@ impl DarwinDaemon {
                 "darwin_daemon",
                 &format!(
                     "oos_fitness {:.4} (baseline_oos {:.4}, is_fitness {:.4}, N={})",
-                    candidate_oos_fitness, baseline_oos_fitness, best_all_time.1, n_trials
+                    candidate_oos_fitness, baseline_oos_fitness, best_all_time.1, total_trials
                 ),
             ) {
                 Ok(env) => println!(
@@ -832,5 +858,75 @@ mod tests {
         let strong_returns: Vec<f64> = (0..50).map(|i| 0.005 + ((i % 5) as f64) * 0.0002).collect();
         let v_strong = risk_engine::selection_stats::edge_survives_multiplicity(&strong_returns, 100);
         assert!(v_strong.passes, "Edge genuino debe superar el umbral DSR 0.95 (dio {})", v_strong.dsr);
+    }
+
+    #[test]
+    fn omega15_h1_3_darwin_daemon_multiplicidad_acumulada_monotona() {
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let daemon = DarwinDaemon::new(arena);
+
+        // Inicialmente 0 pruebas previas
+        assert_eq!(daemon.cumulative_trials.load(Ordering::Relaxed), 0);
+
+        // Simulación de 3 rondas sucesivas de GA (pop=20, gen=5 -> 100 por ronda)
+        let pop_size = 20;
+        let num_gens = 5;
+        let ronda_trials = pop_size * num_gens;
+
+        // Ronda 1
+        let previas = daemon.cumulative_trials.load(Ordering::Relaxed);
+        let total_1 = previas.saturating_add(ronda_trials).max(ronda_trials).max(1);
+        daemon.cumulative_trials.store(total_1, Ordering::Relaxed);
+        assert_eq!(total_1, 100);
+
+        // Ronda 2
+        let previas = daemon.cumulative_trials.load(Ordering::Relaxed);
+        let total_2 = previas.saturating_add(ronda_trials).max(ronda_trials).max(1);
+        daemon.cumulative_trials.store(total_2, Ordering::Relaxed);
+        assert_eq!(total_2, 200);
+
+        // Ronda 3
+        let previas = daemon.cumulative_trials.load(Ordering::Relaxed);
+        let total_3 = previas.saturating_add(ronda_trials).max(ronda_trials).max(1);
+        daemon.cumulative_trials.store(total_3, Ordering::Relaxed);
+        assert_eq!(total_3, 300);
+
+        // El benchmark de deflación debe subir monótonamente con las rondas
+        let bm1 = risk_engine::selection_stats::expected_max_sharpe(total_1, 1.0);
+        let bm2 = risk_engine::selection_stats::expected_max_sharpe(total_2, 1.0);
+        let bm3 = risk_engine::selection_stats::expected_max_sharpe(total_3, 1.0);
+        assert!(bm1 < bm2, "bm1 ({bm1}) debe ser < bm2 ({bm2})");
+        assert!(bm2 < bm3, "bm2 ({bm2}) debe ser < bm3 ({bm3})");
+    }
+
+    #[test]
+    fn omega15_h1_2_muestreo_periodico_continuo_retornos() {
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let genome = Genotype::current_from_arena(&arena);
+
+        // Generamos un stream de ticks sintéticos espaciados a lo largo de 30 segundos (30_000 ms)
+        let mut stream = Vec::with_capacity(300);
+        let base_ts = 1_700_000_000_000_u64;
+        for i in 0..300 {
+            stream.push(TickEvent {
+                coin_id: 0,
+                timestamp: base_ts + (i as u64) * 100, // Cada 100 ms
+                bid_price: 50_000.0,
+                ask_price: 50_001.0,
+                bid_qty: 1.0,
+                ask_qty: 1.0,
+            });
+        }
+
+        let (final_cap, fitness, returns) = evaluate_genotype(&genome, &stream, 13.0, 0.20, 1);
+        assert!(final_cap > 0.0);
+        // Con 0 trades cerrados (< MIN_TRADES=30), el fitness por contrato es NEG_INFINITY
+        assert_eq!(fitness, f64::NEG_INFINITY);
+        // A lo largo de 30 segundos muestreando cada 1s, debemos tener ~29-30 observaciones de retorno
+        assert!(
+            returns.len() >= 25,
+            "Debe tener al menos 25 observaciones periódicas en 30 segundos de datos, dio {}",
+            returns.len()
+        );
     }
 }

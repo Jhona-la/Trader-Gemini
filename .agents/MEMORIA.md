@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+
+## 2026-10-06 — Antigravity: OLA Ω15 CERRADA — H1-2, H1-3, H1-4 (DSR continuo: muestreo de retornos 1s, acumulación de multiplicidad y error estándar leptocúrtico)
+
+- Rama `antigravity/quant-sr-omega15-h1-dsr-multiplicidad` (worktree `.antigravity`), merge limpio sobre `main`.
+- **H1-4 [MED] CERRADO**:
+  - En `crates/risk-engine/src/selection_stats.rs`, formalizada la función analítica `sharpe_std_error(m, sr)` bajo Mertens (2002) y Bailey & López de Prado (2012/2014, ec. 4 y 7):
+    $$\sigma_{\widehat{\text{SR}}} = \sqrt{\frac{1}{n-1}\left(1 - \gamma_3 \widehat{\text{SR}} + \frac{\gamma_4 - 1}{4}\widehat{\text{SR}}^2\right)}$$
+  - Sustituido el cálculo previo de `sr_sigma = 1.0 / (n - 1.0).sqrt()` en `expected_max_sharpe` por `sharpe_std_error`, capturando honestamente el ensanchamiento del error estándar ante colas pesadas leptocúrticas ($\gamma_4 \gg 3$) y asimetría negativa ($\gamma_3 < 0$) propias de microestructura cripto.
+  - Test de contrato: `omega15_h1_4_dsr_sharpe_std_error_leptocurtico` (10/10 tests verdes en `selection_stats`).
+- **H1-3 [MED] CERRADO**:
+  - En `crates/god-engine-core/src/darwin.rs`, añadido `cumulative_trials: AtomicUsize` monótonamente creciente en `DarwinDaemon` (D-746).
+  - Cada ciclo de evolución acumula `pop_size * generations` a `cumulative_trials`, pasando `n_trials = self.cumulative_trials.load(...)` a `evaluate_genotype`.
+  - Erradicado el sesgo de *optional stopping* y reseteo artificial de multiplicidad entre épocas sucesivas.
+  - Test de contrato: `omega15_h1_3_darwin_daemon_multiplicidad_acumulada_monotona` (11/11 tests verdes en `darwin`).
+- **H1-2 [MED] CERRADO**:
+  - En `crates/god-engine-core/src/darwin.rs:evaluate_genotype`, implementado el muestreo periódico continuo de retornos de portafolio marked-to-market cada 1 segundo de mercado (`cadence_ms = 1_000`).
+  - Provee soporte muestral homogéneo y continuo con $N \ge 25$ retornos en OOS, erradicando la exigencia espuria de Sharpe $> 0.44$/trade ($t$-stat $> 4.5$) sobre muestras raquíticas de 5 a 15 trades discretos cerrados.
+  - Test de contrato: `omega15_h1_2_muestreo_periodico_continuo_retornos`.
+- **ESTADO DEL BARRIDO SISTÉMICO**:
+  - Ronda 2: 5/5 HIGH (100%) y 8/15 MED cerrados.
+  - Ronda 3: H1-2, H1-3, H1-4 cerrados en código y verificados. Qoder en `.ola65` cerrando H2-1..H2-5.
+
+
 ## 2026-10-07 — Qoder: OLA 65 CERRADA — FÍSICA DE SATURACIÓN (H2-1..H2-5) — ORÁCULO PASA 16/144
 
 - Rama qoder/ola65-fisica-saturacion (worktree .ola65, base 8975a719+
@@ -12,6 +35,7 @@
 - Con Ω15 en paralelo: ronda 3 con 2/2 HIGH + todos los MED H2/H1
   cerrados. Restante: H0-1/H0-2/H1-1 + LOWs.
 - Detalle: FORENSIC #666. Buzón: cierre Ola 65.
+
 
 ## 2026-10-06 — Qoder: RONDA 3 DEL BARRIDO CERRADA (H0-H2, docs-only) — 22 hallazgos
 

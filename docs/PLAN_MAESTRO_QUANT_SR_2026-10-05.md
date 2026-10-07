@@ -156,18 +156,25 @@ graph TD
   - `G2-3..G2-9 [MED]`: Suavizado de signums duros a funciones $C^1$ (en vuelo por Qoder en `.ola63`).
   - `F2-B8 [MED]`: Extensión de e-proceso de Ville al $\rho(\tau)$ cruzado multiactivo.
 
+### 5.2 Estado Consolidado de la Ronda 3 (H0 - H2, 22 Hallazgos)
+- **H1-2 [MED] CERRADO (Ola Ω15 AGY)**: Muestreo periódico continuo de retornos marked-to-market (cada 1s de mercado) en `darwin.rs:347-375`, proveyendo soporte muestral homogéneo $N \ge 25$ y erradicando la exigencia espuria de $t$-stat $\ge 4.5$ sobre pocos trades discretos cerrados.
+- **H1-3 [MED] CERRADO (Ola Ω15 AGY)**: `DarwinDaemon` incorpora `cumulative_trials: AtomicUsize` monótonamente creciente (D-746), arrastrando las pruebas entre corridas sucesivas y blindando el DSR contra optional stopping.
+- **H1-4 [MED] CERRADO (Ola Ω15 AGY)**: Error estándar asintótico no-normal de Sharpe `sharpe_std_error(m, sr)` formalizado en `selection_stats.rs` (Bailey-LdP 2012/2014 ec. 4 y 7), considerando sesgo $\gamma_3$ y curtosis pesada $\gamma_4$ en el benchmark $E[\max \text{SR}]$.
+- **H1-1 [MED] CERRADO (GLM 101)**: Consumo de bloque por par-escala en `espectral_multiactivo.rs`.
+- **H2-1..H2-5 [HIGH/MED]**: En vuelo por Qoder en `.ola65` (física de saturación $C^1$).
+
 ---
 
 ## 🤝 6. PROTOCOLO DE COORDINACIÓN INTER-AGENTES Y GOBERNANZA GIT
 
 Para garantizar ejecución paralela estricta sin pérdida de trabajo ni choques:
 1. **Ramas Personales y Worktrees Aislados**:
-   - Cada agente opera exclusivamente en su propio worktree (`.antigravity`, `.ola63`, `.codex/*`).
+   - Cada agente opera exclusivamente en su propio worktree (`.antigravity`, `.ola63`, `.ola65`, `.codex/*`).
    - Está **estrictamente prohibido** el uso de `git add -A`. Se realiza `git add` explícito únicamente de los archivos modificados.
 2. **Ciclo de Integración Atómico**:
    - `git checkout -b <agente>/<tarea>` (o `git worktree add <dir> -b <rama>`).
    - Modificación + `cargo check --workspace --all-targets` + tests unitarios.
-   - Commit atómico con prefijo del bloque funcional (`feat(Ω12): ...`).
+   - Commit atómico con prefijo del bloque funcional (`feat(Ω15): ...`).
    - Verificación de whitespace sin falsos positivos: `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD^ HEAD`.
    - Rebase / Merge fast-forward sobre `main`.
    - `git push origin main`.
@@ -177,12 +184,12 @@ Para garantizar ejecución paralela estricta sin pérdida de trabajo ni choques:
 
 ---
 
-## 🚀 7. PLAN DE ACCIÓN INMEDIATO — OLA Ω14 CERRADA & SIGUIENTE
+## 🚀 7. PLAN DE ACCIÓN INMEDIATO — OLA Ω15 CERRADA & SIGUIENTE
 
-1. **G0-5 [MED] CERRADO (Ola Ω14 AGY)**:
-   - Fuente única `arena.config.tp_at_tau` y `arena.config.sl_at_tau` en `god_engine.rs` erradicando reconstrucción de anclas obsoletas. Tests 2/2 verdes.
-2. **Monitoreo de Qoder (.ola63)**:
-   - G2-3..G2-9 en vuelo por Qoder para suavizado $C^1$ de signums y cortes duros residuales.
+1. **Ola Ω15 AGY CERRADA**:
+   - H1-2, H1-3, H1-4 cerrados al 100%. Tests 10/10 en `selection_stats` y 11/11 en `darwin` verdes.
+2. **Monitoreo de Qoder (.ola65)**:
+   - H2-1..H2-5 en resolución por Qoder para física de saturación y signums encubiertos.
 3. **Siguiente Bloque Prioritario**:
-   - F2-B8 / Extensión de e-proceso de Ville a cointegración espectral y correlación cruzada multiactivo.
-   - Verificación de paridad integral del oráculo replay T-1 y contratos de simulación micro-capital ($13 USD).
+   - H0-1 y H0-2: Arbitración de convicción de rama vs índice mayor y mutación de anclas en backtest continuo.
+   - Sincronización continua de paridad del oráculo replay T-1 en micro-capital ($13 USD).
