@@ -429,6 +429,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             mutant_genome.scalp_trail_atr_mult_base =
                 mutant_genome.scalp_trail_atr_mult_base.clamp(1.0, 2.5);
 
+            // H0-1 (RONDA 3): las anclas TP/SL son VISTAS desde REHAB-1 —
+            // los nichos 2/3/5/9 y este blindaje escribían DIMENSIONES
+            // MUERTAS (apply_to_arena sólo lee curvas: el fenotipo
+            // "scalper TP corto / soliton amplio / wall-bounce / swing
+            // fractal" nunca llegaba al motor). Punto de cierre ÚNICO:
+            // reconstruir las curvas desde la intención de ancla. Es
+            // idempotente para los mutantes que no movieron anclas (los
+            // nichos 1/4/6/7/8/10 reproducen su curva) y efecto real para
+            // los que sí — el walk-forward deja de explorar el eje muerto.
+            mutant_genome.rebuild_tp_sl_curves_from_anchors();
+
             mutant_genome.apply_to_arena(&mutant_arena);
             let mut mutant_engine = GodEngineCore::new(mutant_arena);
             mutant_engine.reality.mode =

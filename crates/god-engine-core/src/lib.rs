@@ -290,6 +290,36 @@ pub fn confianza_modulada(confianza: f64, multiplicador: f64) -> f64 {
     (confianza * multiplicador).clamp(0.0, 0.98)
 }
 
+/// H0-2 (RONDA 3) — LA FUSIÓN CONSTRUCTIVA ACREDITA LA EVIDENCIA A LA
+/// RAMA QUE LA TRANSPORTA.
+///
+/// En la colisión de mismo armónico con misma señal, el candidato fusionado
+/// llevaba `volume_flow_rate: fast.max(slow)` — y ese campo es el canal de
+/// atribución de rama (D-752): la etiqueta congelada en apertura decide qué
+/// `TasaAcierto` acumula el cierre, y ese registro alimenta la
+/// `conviccion_de_rama` (Wilson) de cada motor. El `max()` acreditaba
+/// SIEMPRE la evidencia al índice mayor — cualquier respaldo 20-24 ganaba
+/// contra las ramas 1-10 del camino principal, que quedaban hambrientas de
+/// muestra y con convicción eterna en el piso por magnitud.
+///
+/// Atribución honesta: la rama con MAYOR `confidence` en el momento de la
+/// fusión es la que transporta la convicción. Empate → fast (determinista).
+/// NO se acredita a ambas ramas: sería doble-conteo del mismo trade en dos
+/// registros (la clase de defecto que H1-1 cerró en el e-proceso Ville).
+#[inline]
+pub fn etiqueta_fusion_constructiva(
+    conf_fast: f64,
+    etiqueta_fast: f64,
+    conf_slow: f64,
+    etiqueta_slow: f64,
+) -> f64 {
+    if conf_slow > conf_fast {
+        etiqueta_slow
+    } else {
+        etiqueta_fast
+    }
+}
+
 /// D-756 — ESCALADA DE EXIGENCIA TRAS UNA RACHA DE PÉRDIDAS.
 ///
 /// QUÉ ESTABA MAL: la exigencia de desequilibrio de libro tras dos pérdidas
@@ -1590,10 +1620,12 @@ impl GodEngineCore {
                 spec.update(current_price, event_time_ms);
                 // #607 (Ola 29) — ESPECTRAL MULTIACTIVO: cada maduración de
                 // bloque de ESTA moneda se empareja contra el último bloque
-                // maduro de las otras a la misma escala (recencia 1.5·τ,
-                // borde por ts) — IC cruzado por par×escala. OBSERVACIÓN
-                // pura: sin consumidor de política (el ρ(τ*) del veto de
-                // grupo es decisión del consejo con T-1 propio).
+                // maduro de las otras a la misma escala (recencia 0.5·τ
+                // desde la Ola 62, borde por ts, y consumo de bloque por
+                // par-escala desde H1-1) — IC cruzado por par×escala.
+                // Consumidor de política VIVO desde #651/#665: publica
+                // qo_613_rho_tau (media SIGNED con gate Ville de familia)
+                // para el veto de grupo — cambios de conducta ⇒ oráculo.
                 for escala in 0..32 {
                     if let Some((ts, r)) = spec.ultimo_bloque_maduro(escala) {
                         self.espectral_ma.observar_maduracion(
@@ -6283,12 +6315,21 @@ impl GodEngineCore {
                         } else {
                             slow_intent.expected_duration_ms
                         };
+                        // H0-2 (RONDA 3): atribución honesta — la rama
+                        // con mayor convicción transporta la evidencia
+                        // (ver `etiqueta_fusion_constructiva`).
+                        let etiqueta_conviccion = etiqueta_fusion_constructiva(
+                            fast_intent.confidence,
+                            fast_intent.volume_flow_rate,
+                            slow_intent.confidence,
+                            slow_intent.volume_flow_rate,
+                        );
                         candidates[0] = SignalIntent {
                             signal: fast_intent.signal,
                             confidence: boosted_conf,
                             expected_duration_ms: best_duration,
                             horizon: strategy_core::TradeHorizon::Continuous,
-                            volume_flow_rate: fast_intent.volume_flow_rate.max(slow_intent.volume_flow_rate),
+                            volume_flow_rate: etiqueta_conviccion,
                             ..fast_intent
                         };
                         num_candidates = 1;
@@ -8567,6 +8608,41 @@ mod tests_d752_d756 {
         }
         // Y no colisionan con las del camino principal.
         assert!(RAMA_ML_RECENTRADO as usize > 14);
+    }
+
+    /// H0-2 (RONDA 3) — LA FUSIÓN CONSTRUCTIVA NO HAMBREA A LAS RAMAS BAJAS.
+    ///
+    /// `volume_flow_rate` es el canal de atribución (D-752): la etiqueta del
+    /// candidato fusionado decide qué `TasaAcierto` aprende del cierre. El
+    /// `max()` viejo acreditaba SIEMPRE al índice mayor — una rama 2 del
+    /// camino principal fusionada con un respaldo 20-24 perdía su evidencia
+    /// aunque fuese ella la que transportaba toda la convicción, y su cota
+    /// de Wilson nunca acumulaba muestra. Este test fija la atribución
+    /// honesta: la rama con mayor `confidence` en la fusión.
+    #[test]
+    fn h0_2_la_fusion_constructiva_acredita_a_la_rama_con_conviccion() {
+        // La rama 2 (camino principal) tiene TODA la convicción; el respaldo
+        // 22 apenas la respalda. La evidencia del cierre es de la 2.
+        assert_eq!(
+            etiqueta_fusion_constructiva(0.80, 2.0, 0.52, RAMA_REVERSION_ANTIPERSISTENTE),
+            2.0,
+            "la rama con la convicción transporta la evidencia, no el índice mayor"
+        );
+        // Simétrico: el respaldo con mayor convicción gana legítimamente —
+        // el fix no sesga contra los respaldos, sólo contra el índice.
+        assert_eq!(
+            etiqueta_fusion_constructiva(0.55, 2.0, 0.85, RAMA_REVERSION_ANTIPERSISTENTE),
+            RAMA_REVERSION_ANTIPERSISTENTE
+        );
+        // Empate EXACTO → fast (determinista, documentado en el contrato).
+        assert_eq!(etiqueta_fusion_constructiva(0.70, 3.0, 0.70, 13.0), 3.0);
+        // Contraste con el defecto: el max() viejo habría dado 22.0 y 13.0
+        // en los dos primeros casos SIN importar la convicción.
+        assert!(
+            (2.0f64.max(RAMA_REVERSION_ANTIPERSISTENTE) - RAMA_REVERSION_ANTIPERSISTENTE).abs()
+                < 1e-12,
+            "sanity: el max() viejo sí elegía al respaldo — el defecto era real"
+        );
     }
 
     /// D-756 — LA EXIGENCIA TRAS RACHA ESCALA Y NUNCA RELAJA.
