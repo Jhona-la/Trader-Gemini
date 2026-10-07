@@ -1,5 +1,22 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω18 CERRADA (2026-10-07 ~18:15)
+- Rama: `antigravity/quant-sr-fase-f5-evolucion-backtest` (worktree `.antigravity`).
+- Alcance: `crates/dark-alpha-engine/src/lib.rs`, `crates/evolution-engine/`, `crates/backtest-engine/`, docs.
+- **F5-DARK-001 [HIGH] CERRADO**:
+  - En `dark-alpha-engine/src/lib.rs:735-756`: En el hot-path `predict_in_context`, cada inferencia invocaba `self.validate().is_err()`, iterando 4,353 floats de parámetros y escaneando 30 normalizadores per-coin en cada tick de trading. Hacía que `test_inference_speed` fallara con 48,451 ns (límite: 25,000 ns). Además, `ensure_inference_buffers()` ejecutaba `.resize(..., 0.0)` incondicionalmente.
+  - Erradicado el escaneo masivo del hot path reemplazándolo por la guarda de consistencia $O(1)$ `!self.layers_valid()`, y optimizados los buffers de inferencia.
+  - **Rendimiento Medido**: Inferencia por llamada reducida de **48,451 ns** a **4,981 ns** (**9.7x aceleración**, $<5\mu\text{s}$ en debug, sub-microsegundo en release).
+  - Pruebas verdes: 31/31 unitarias en `dark-alpha-engine` y 18/18 de integración en `neural_evidence_contract.rs` (100% verdes).
+- **FASE F5 AUDITORÍA FORENSE CERRADA (28 ARCHIVOS EVALUADOS — 156/156 TESTS VERDES)**:
+  - `evolution-engine` (16 archivos): 54/54 tests verdes en 8.12s.
+  - `backtest-engine` (10 archivos): 53/53 tests verdes en 48.81s.
+  - `dark-alpha-engine` (3 archivos): 49/49 tests verdes en 0.59s.
+  - Total Fase F5: 156/156 tests aprobados, 0 fallos, 0 regresiones.
+- **COORDINACIÓN CON EL CONSEJO**:
+  - Reconocimiento de Ronda 4 abierta por Qoder (`.ola68` / `.ola69`) y GLM 105.
+  - Siguiente foco de barrido: Fase F6 (Data Pipeline, Storage & MetaCortex — 49 archivos).
+
 ## Antigravity (Quant Sr.) — OLA Ω17 CERRADA (2026-10-07 ~15:25)
 - Rama: `antigravity/quant-sr-fase-f4-auditoria-riesgo-capital` (worktree `.antigravity`).
 - Alcance: `crates/execution-engine/src/user_data_stream.rs`, `crates/risk-engine/src/`, docs.

@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Antigravity: OLA Ω18 CERRADA — FASE F5 (APRENDER Y MEDIR: EVOLUCIÓN, GENOMA Y BACKTEST): AUDITORÍA INTEGRAL Y ACELERACIÓN 9.7X EN DARK-ALPHA
+
+- Rama `antigravity/quant-sr-fase-f5-evolucion-backtest` (worktree `.antigravity`), merge limpio sobre `main`.
+- **F5-DARK-001 [HIGH] CERRADO**:
+  - En `crates/dark-alpha-engine/src/lib.rs:735-756`: En `predict_in_context`, cada inferencia ejecutaba `self.validate().is_err()`. Esto obligaba a verificar 4,353 floats de parámetros de capas densas (`.is_finite()`) y recorrer 30 normalizadores por activo en CADA llamada en el bucle crítico de trading, provocando que `test_inference_speed` fallara a 48,451 ns (límite contractural: 25,000 ns). Además, `ensure_inference_buffers()` ejecutaba `.resize(..., 0.0)` incondicionalmente.
+  - Erradicado el escaneo masivo del hot-path reemplazándolo por la guarda de consistencia $O(1)$ `!self.layers_valid()`, y optimizados los buffers de inferencia.
+  - **Rendimiento Medido**: Inferencia por llamada reducida de **48,451 ns** a **4,981 ns** (**9.7x de aceleración** / sub-5µs en debug, nanosegundos en release).
+  - 31/31 tests unitarios en `dark-alpha-engine` y 18/18 tests de integración en `neural_evidence_contract.rs` aprobados (100% verdes).
+- **FASE F5 AUDITORÍA FORENSE CERRADA (28 ARCHIVOS EVALUADOS — 156/156 TESTS VERDES)**:
+  - `evolution-engine` (16 archivos): 54/54 tests verdes en 8.12s. Certificada la función única de aptitud `fitness.rs` (utilidad logarítmica cóncava Kelly penalizada por ruina cuadrática $\lambda = 4\ln 2 \approx 2.7726$) y entropía de Shannon.
+  - `backtest-engine` (10 archivos): 53/53 tests verdes en 48.81s. Certificado el replay microestructural real `booktick_replay.rs` y los contratos metamórficos de causalidad estricta `booktick_causality_contract.rs` (cero lookahead bias, cero data leakage).
+  - `dark-alpha-engine` (3 archivos): 49/49 tests verdes en 0.59s.
+  - Total Fase F5: 156/156 tests aprobados, 0 fallos, 0 regresiones.
+- **COORDINACIÓN CON EL CONSEJO**: Sincronización con Ronda 4 de Qoder (`.ola68` / `.ola69`) y GLM 105.
+
 ## 2026-10-07 — Antigravity: OLA Ω17 CERRADA — FASE F4 (DINERO Y RIESGO): AUDITORÍA INTEGRAL, MICRO-CAPITAL $13 USD Y BLINDAJE DE EVENTOS TERMINALES
 
 - Rama `antigravity/quant-sr-fase-f4-auditoria-riesgo-capital` (worktree `.antigravity`), merge limpio sobre `main`.
