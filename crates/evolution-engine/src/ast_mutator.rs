@@ -106,18 +106,17 @@ impl ASTMutator {
                 config.ml_threshold_short.store(new_val, Ordering::Release);
                 Ok(())
             }
-            "scalp_sl_base" => {
-                config.scalp_sl_base.store(new_val, Ordering::Release);
-                Ok(())
-            }
-            "scalp_tp_base" => {
-                config.scalp_tp_base.store(new_val, Ordering::Release);
-                Ok(())
-            }
-            "scalp_kelly_fraction" => {
-                config.scalp_kelly_fraction.store(new_val, Ordering::Release);
-                Ok(())
-            }
+            // H0-8 (RONDA 3): los brazos "scalp_sl_base"/"scalp_tp_base"/
+            // "scalp_kelly_fraction" fueron REMOVIDOS a propósito. Eran
+            // muertos (el único caller vivo — online_daemon — pasa sólo
+            // ml_threshold_*), pero reactivarlos rompería la FUENTE ÚNICA
+            // DE CURVAS (REHAB-1): escribir el ancla-escalar de QuantumConfig
+            // NO mueve tp/sl_horizon_curve, así que el genoma mutado y el
+            // motor operado divergirían en silencio — exactamente la
+            // regresión que apply_to_arena:1062 erradicó. Si la evolución
+            // necesita mutar TP/SL en caliente, debe reconstruir la CURVA
+            // (ver SuperGenotype::rebuild_tp_sl_curves_from_anchors) —
+            // no este canal.
             "global_max_drawdown" => {
                 config.global_max_drawdown.store(new_val, Ordering::Release);
                 Ok(())
@@ -196,10 +195,27 @@ mod tests {
         assert_eq!(config.ml_threshold_long.load(Ordering::Relaxed), 0.62);
         assert_ne!(config.ml_threshold_long.load(Ordering::Relaxed), initial_val);
 
-        mutator
-            .mutate_atomic_config(&config, "scalp_kelly_fraction", 0.35)
-            .expect("atomic mutation must succeed");
-        assert_eq!(config.scalp_kelly_fraction.load(Ordering::Relaxed), 0.35);
+        // H0-8 (RONDA 3): las anclas TP/SL/kelly escalares de
+        // QuantumConfig están PROHIBIDAS como canal de mutación — escribir
+        // el ancla no mueve la curva (fuente única REHAB-1) y el genoma
+        // mutado divergiría del motor operado en silencio. El contrato:
+        // el brazo RECHAZA en vez de mutar.
+        assert!(
+            mutator
+                .mutate_atomic_config(&config, "scalp_kelly_fraction", 0.35)
+                .is_err(),
+            "el canal scalp_* debe estar cerrado: mutar el ancla sin la curva rompe la fuente única"
+        );
+        assert!(
+            mutator
+                .mutate_atomic_config(&config, "scalp_tp_base", 0.02)
+                .is_err()
+        );
+        assert!(
+            mutator
+                .mutate_atomic_config(&config, "scalp_sl_base", 0.004)
+                .is_err()
+        );
 
         // Unknown parameter returns error
         assert!(mutator.mutate_atomic_config(&config, "unknown_gene", 1.0).is_err());

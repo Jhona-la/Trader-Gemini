@@ -141,6 +141,10 @@ pub fn run_vectorized_hybrid(
     let mut trades = 0;
 
     // FIX #621 & #1515: Acotamiento inferior y verificación de finitud de TP y SL
+    // H0-8 (RONDA 3): scalp_tp_base/scalp_sl_base son VISTAS de las curvas
+    // (derivadas por darwin.rs:159); en VIVO el motor decide por curva
+    // (config.rs tp_at_tau). Este bin legido las lee como atajos de
+    // diagnóstico — la fuente de verdad sigue siendo la curva.
     let tp_ratio = if cfg.scalp_tp_base.is_finite() && cfg.scalp_tp_base > 0.0 {
         cfg.scalp_tp_base.clamp(0.001, 0.50)
     } else {

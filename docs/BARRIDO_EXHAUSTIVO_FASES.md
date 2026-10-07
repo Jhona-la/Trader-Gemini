@@ -820,9 +820,18 @@ G0-10 VIVO (epigenoma TOML).
 - H0-3 [nota] drift Ville M/alfa=8320: diferenciacion tarda ~7h (tau=30s)
   a ~410 dias (tau=12h) — doctrinalmente correcto pero #626 congelado
   para tau>1min; candidato: familia por banda observable.
-- H0-4..8 [LOW]: fricción dual buf_fast/slow (lib.rs:3078) y lectores de
-  vistas en backtests SIGUEN ABIERTOS; epigenoma TOML (G0-10), átomos
-  G0-6 y naming G0-8-parcial DRENADOS por Ola 67.
+- H0-4..8 [LOW]: epigenoma TOML (G0-10), átomos G0-6 y naming G0-8-parcial
+  DRENADOS por Ola 67. **H0-8 DRENADO (GLM 104)**: brazos muertos
+  scalp_tp/sl/kelly del ast_mutator REMOVIDOS (muertos porque online_daemon
+  sólo pasa ml_threshold_*, pero reactivarlos habría roto la fuente única
+  de curvas — el test ahora exige RECHAZO); bins legacy (vectorized,
+  booktick_replay) anotados como lectores de VISTAS. **H0-7-residuo
+  DRENADO (GLM 104)**: 7 identificadores scalp_* de stateful_engine
+  renombrados a fastband_* (59+5 reemplazos, rol espectral real;
+  PositionManager pub scalp/swing queda como DECISIÓN — repr(C) público).
+  H0-4 (fricción dual buf_fast/slow vs roundtrip_friction unificada en la
+  misma función) SIGUE ABIERTO como DECISIÓN (unificar = conducta ⇒
+  oráculo).
 
 ## §H1 — MATEMATICA/ESTADISTICA (0 HIGH, 3 MED + LOWs)
 
@@ -936,8 +945,18 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   1.1^95≈8540 cruza 8320, no "1.1^97≈8640"). (La otra parte, G1-6
   sr_sigma gaussiano, quedó SUPERADA por Ω15: el DSR ya usa
   sharpe_std_error no-normal.)
-- H2-9..12 [LOW]: G2-11/13/15 VIVOS; lead-lag divergencia ETH
-  escalada 0.6 y firma con rho negativo.
+- H2-9..12 [LOW]: **H2-11 (=G2-15) DRENADO-PINNEADO (GLM 104)**: los
+  cinco cortes de confluencia_resonante (0.38/0.22/0.52/0.12/±2e-4) son
+  ahora constantes públicas (FUSED_UMBAL_PLENO/MODERADO,
+  HURST_CONTINUACION, COHERENCIA_MINIMA, MAREA_MACRO_TOLERANCIA) con
+  contrato h2_11 que fija valores y fronteras justo-adentro/afuera —
+  bit-exact; promoverlos a genoma = conducta ⇒ oráculo (opción abierta).
+  **H2-12-pata-doc DRENADA (GLM 104)**: doc de lag_optimo corregida al
+  comportamiento real (rho.abs() pasa — la doc decía "exigido POSITIVO"
+  y un rho negativo VOLTEA la firma de la divergencia); decisión de
+  vetar rho<0 + ruta ETH 0.6/0.4 SIGUEN ABIERTAS (conducta ⇒ oráculo).
+  H2-9 (knobs muertos con lector vivo) y H2-10 (sombra solitón knob 1.0
+  vs vivo OFI) SIGUEN ABIERTOS como DECISIÓN por knob.
 
 ## Asignacion (ronda 3)
 
