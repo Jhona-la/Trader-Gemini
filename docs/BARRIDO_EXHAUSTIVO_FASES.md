@@ -805,7 +805,10 @@ G0-10 VIVO (epigenoma TOML).
   pura `etiqueta_fusion_constructiva` — la rama con MAYOR confidence
   transporta la evidencia; empate→fast. NO ambas (doble-conteo del
   mismo trade, la clase H1-1). +1 test. TOCA CONDUCTA VIVA ⇒ oráculo
-  T-1 antes del push (en vuelo al cierre de esta edición).
+  T-1 antes del push. **Oráculo T-1: PASA** — 16/144 (11.1% ≥ 11.0%),
+  2/2 tests, 6084 s release sobre 9de6effd (incluye Ω15 de AGY);
+  cobertura idéntica a la base — el fixture del oráculo abre casi
+  siempre por rama 15 (la fusión fast/slow rara vez dispara ahí).
 - H0-3 [nota] drift Ville M/alfa=8320: diferenciacion tarda ~7h (tau=30s)
   a ~410 dias (tau=12h) — doctrinalmente correcto pero #626 congelado
   para tau>1min; candidato: familia por banda observable.
