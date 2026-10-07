@@ -771,7 +771,12 @@ impl SuperGenotype {
             fractional_clip_max: pi * 3.0,
             bft_consensus_tolerance: w_base * 0.3,
             turbo_coherence_threshold: pi / 10.0,
-            turbo_z_score_stdev: 2.5,
+            // #666 (H2-3): default DENTRO de la banda de mutación
+            // [0.1, 1.5] — 2.5 quedaba clamped a 1.5 por from_vector y
+            // dejaba el z-gate del flow_impulse apagado (disparaba sólo
+            // con exceso ≥ ~2.7σ; cascada típica 1-2σ nunca). 0.75 ⇒
+            // dispara desde exceso ≈ 0.5 (λ/μ̂ ≈ 2.4).
+            turbo_z_score_stdev: 0.75,
             sl_atr_multiplier: golden_ratio / 2.0,
             coaxial_squeeze_threshold: e_const / 8.0,
             tensor_op_add_bias: taker_base * 200.0,

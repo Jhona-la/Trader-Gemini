@@ -165,7 +165,10 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         // `spread_speed_of_sound` (escritor del core) es precio/s ⇒ se
         // normaliza por mid_price; `atr_pct` es fracción POR BARRA de
         // 60 s ⇒ se convierte a fracción/segundo aquí.
-        const BARRA_S: f64 = 60.0;
+        // #666 (H2-5): bajo difusión, E[rango_60s] = σ√60 — el análogo
+        // en velocidad-por-segundo del rango ATR es ÷√60, no ÷60 (drift).
+        // ÷60 subrestimaba la velocidad del sonido 7.75× ⇒ Mach inflado.
+        const BARRA_S: f64 = 7.7459666924; // √60
         let sound_segundo = registry
             .get_scoped_parameter(
                 sym_opt,
@@ -322,4 +325,37 @@ mod qo_610_tests {
         assert_eq!(c_rara.en_escala(30), voto.en_escala(30));
     }
 
+}
+
+#[cfg(test)]
+mod qo_666_tests {
+    use super::*;
+    use omniscient_registry::OmniscientRegistry;
+    use std::sync::Arc;
+
+    /// #666 (H2-5): el fallback ATR como velocidad del sonido usa la
+    /// física DIFUSIVA /√60 — bajo difusión E|rango_60s|=σ√60, así el
+    /// análogo por segundo del rango es ÷√60. Con el drift /60 la
+    /// velocidad quedaba 7.75× subrestimada (Mach inflado).
+    #[test]
+    fn qo_666_fallback_atr_es_difusivo() {
+        // Registro con sólo atr_pct (sin spread_speed_of_sound) y mid alto
+        // para que speed_norm = speed/mid: 1.0/60 s = fracción/segundo.
+        let registry = Arc::new(OmniscientRegistry::new());
+        // speed_norm = 72/60000 = 0.0012/s; sound_difusivo = atr/√60 =
+        // 0.001/s ⇒ Mach = 1.2 ⇒ jump(1.2) = tanh(0.22) ≈ 0.21 débil.
+        // Con el VIEJO drift /60: sound = 1.29e-4 ⇒ Mach ≈ 9.3 ⇒ jump ≈ 1
+        // — el test discrimina difusión vs drift por la magnitud del voto.
+        registry.set("order_flow_speed", 72.0);
+        registry.set("atr_pct", 0.0077459666924); // = √60/1000
+        registry.set("mid_price", 60_000.0);
+        let mut engine = SupersonicShockwaveEngine::default();
+        engine.init(Arc::clone(&registry)).ok();
+        let v = engine.evaluate();
+        assert!(v > 0.0 && v < 0.2, "Mach 1.2 difusivo = salto debil: {v}");
+        // Y a Mach ~10 (0.01/s): jump saturado.
+        registry.set("order_flow_speed", 600.0);
+        let v10 = engine.evaluate();
+        assert!(v10 > 0.7 && v10 > 3.0 * v, "Mach 10 satura vs Mach 1.2 debil: {v10} vs {v}");
+    }
 }
