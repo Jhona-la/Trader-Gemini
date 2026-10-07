@@ -41,10 +41,13 @@ fn open_debt_commissions_mix_currencies_and_discard_rebates() {
 }
 
 #[test]
-fn open_debt_second_selector_fabricates_btc_without_observations() {
+// XCIX (triaje B-1) REPARADO: la entrada vacía ya NO fabrica BTCUSDT —
+// sin datos, universo vacío (fail-closed). El ancla sigue aplicando
+// cuando hay tickers reales.
+fn empty_ticker_feed_produces_empty_universe_not_fabricated_btc() {
     let (large, small) = DynamicSymbolSelector::parse_and_rank_json_tickers(&[], false);
-    assert_eq!(large, vec!["BTCUSDT"]);
-    assert_eq!(small, vec!["BTCUSDT"]);
+    assert!(large.is_empty(), "sin datos no se inventa universo: {large:?}");
+    assert!(small.is_empty(), "sin datos no se inventa top-10: {small:?}");
 }
 
 #[test]

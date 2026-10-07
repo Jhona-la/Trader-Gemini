@@ -5270,3 +5270,15 @@ re-apertura de L2 requeriría regenerar datasets con los motores nuevos.
 - AVISO GLM: qo_613_rho_tau estará más tiempo ausente (NaN) en
   arranques — el lector del veto cae al ρ de siempre (bit a bit).
 
+## 2026-10-06 — GLM: XCIX — triaje B-1 DRENADO: el selector ya no fabrica BTCUSDT de entrada vacía
+
+**Primer ítem de la categoría B del triaje**: `parse_and_rank_json_tickers(&[], ...)`
+devolvía `vec!["BTCUSDT"]` — el ancla "por decreto" se insertaba incluso
+con entrada literalmente vacía (API caída = universo inventado de un
+símbolo). **Fix**: entrada vacía ⇒ universo vacío (fail-closed: sin
+datos, no se streamea nada). El ancla sigue aplicando cuando HAY
+tickers pero BTC no hace el corte — ese es el caso legítimo del decreto.
+El test pasa de certificar el defecto a verificar el fix.
+
+Suites: diagnostics 6/6, lib 79/79. La muralla CI cubre. El triaje B
+queda en 19 ítems pendientes.
