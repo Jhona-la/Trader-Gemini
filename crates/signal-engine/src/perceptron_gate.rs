@@ -30,8 +30,14 @@ impl PerceptronGateEngine {
         }
         let abs_score = signal_score.abs();
         let activation = abs_score * weight;
-        // Exploración mínima (0.15) para evitar bloqueo cognitivo permanente tras pérdidas
-        let gate_strength = ((activation - 0.5) * 5.0).tanh().clamp(0.15, 1.0);
+        // R4-C4: rampa C¹ con piso de exploración — el viejo
+        // tanh((a−0.5)·5).clamp(0.15,1) tenía un kink C⁰ en a≈0.53
+        // (derivada 0→4.9 al salir del clamp). Smoothstep sobre
+        // [0.5, 1.5] con piso 0.15: misma intención (exploración
+        // mínima contra el bloqueo cognitivo tras pérdidas), sin
+        // quiebre de derivada.
+        let t = (activation - 0.5).clamp(0.0, 1.0);
+        let gate_strength = 0.15 + 0.85 * (t * t * (3.0 - 2.0 * t));
         // #668 / H2-6 (RONDA 3): ganancia C¹ continua graduada (2.5) en vez
         // de 10.0. Con 10.0 cualquier score moderado (|x| ≥ 0.3) saturaba a
         // ±0.995 actuando como un signum encubierto (G2-4). Con ganancia 2.5,
@@ -294,13 +300,23 @@ mod qo_620_tests {
         // Con peso unitario y score moderado 0.3:
         // Antes con ganancia 10.0: (0.3 * 10.0).tanh() = (3.0).tanh() ≈ 0.995 (SATURADO)
         // Ahora con ganancia 2.5: (0.3 * 2.5).tanh() = (0.75).tanh() ≈ 0.635 (GRADUADO)
+        // R4-C4: el gate ahora es smoothstep C¹ con piso 0.15 (el
+        // tanh((a−0.5)·5).clamp tenía kink C⁰ en a≈0.53).
         let out_moderado = PerceptronGateEngine::infer(0.3, 1.0);
-        let gate_strength = (((0.3f64 * 1.0 - 0.5) * 5.0).tanh()).clamp(0.15, 1.0);
+        let t = (0.3f64 * 1.0 - 0.5).clamp(0.0, 1.0);
+        let gate_strength = 0.15 + 0.85 * (t * t * (3.0 - 2.0 * t));
         let tanh_esperado = (0.3 * 2.5f64).tanh();
         assert!((out_moderado - tanh_esperado * gate_strength).abs() < 1e-10);
         assert!(
             out_moderado < 0.90,
             "el score moderado 0.3 no debe saturar a ±1 (fue {out_moderado})"
+        );
+        // Piso de exploración intacto: score bajo ⇒ gate ≈ 0.15.
+        let out_bajo = PerceptronGateEngine::infer(0.05, 1.0);
+        let gate_bajo = 0.15 + 0.85 * (0.0f64 * 0.0 * 3.0);
+        assert!(
+            (out_bajo - (0.05 * 2.5f64).tanh() * gate_bajo).abs() < 1e-10,
+            "score bajo conserva el piso de exploración 0.15 (fue {out_bajo})"
         );
 
         // Monotonía estricta en el rango operativo:

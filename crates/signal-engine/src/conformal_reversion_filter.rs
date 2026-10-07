@@ -138,7 +138,12 @@ impl ConformalReversionFilterEngine {
         // 1e-3/1e-6 y |z|≥1.645 (única región emisora), direccion≡±1 y
         // acuerdo≡0/1: el "tanh continuo" era un signum disfrazado.
         let direccion = -(z / 2.0).tanh();
-        let acuerdo = (-(z * trend) / 0.5).tanh().max(0.0);
+        // R4-C3: divisor 0.5 dejaba la media respuesta en |z·trend|=0.28,
+        // ~6× bajo el emisor típico (|z|≥1.645) — acuerdo saturaba a
+        // 0/1 con |trend|≥0.5. Divisor 2.0: en la región emisora con
+        // |tendencia| moderada el acuerdo gradúa (tanh(1.645·0.5/2)=0.38;
+        // tanh(1.645·1.0/2)=0.69).
+        let acuerdo = (-(z * trend) / 2.0).tanh().max(0.0);
         let v = strength * direccion * acuerdo;
         if v > 0.0 && !accept_long {
             return 0.0;

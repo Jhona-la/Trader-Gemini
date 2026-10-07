@@ -204,8 +204,12 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         let jump = Self::compute_shockwave_jump(mach);
         // #659 (F2-A11): firma CONTINUA del flujo (familia tanh del
         // solitón #657 — sin escalón de signum en speed=0).
-        const SAT_MOMENTO: f64 = 1e4;
-        (speed_norm * SAT_MOMENTO).tanh() * jump
+        // R4-C2: firma a la ESCALA DEL ESTADÍSTICO — el divisor 1e4
+        // saturaba speed_norm O(1e-4..1e-2)/s a signum disfrazado
+        // (media respuesta en 5e-5); tanh(mach/2) es el análogo vivo de
+        // la sombra (tanh natural en z) y conserva ambos contratos de
+        // qo_666: mach 1.2 → 0.53·jump, mach 10 → 0.9997·jump.
+        (speed_norm / sound_norm / 2.0).tanh() * jump
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
