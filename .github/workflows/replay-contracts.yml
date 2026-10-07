@@ -37,37 +37,10 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2 # first parent is required for the candidate diff check
-      - name: Normalize trailing newlines in text files touched by the candidate
-        # XC (GLM, 2026-10-06): 4 blank-line-at-EOF failures in 2 days (Omega9,
-        # GLM, Qoder x2) each turned main red for a full runner cycle. The
-        # whitespace guard below still rejects conflict markers; this step only
-        # normalizes the FINAL newline of text files changed by the candidate
-        # so an append-only log file cannot fail the build on cosmetics.
-        run: |
-          $files = git diff --name-only HEAD^ HEAD
-          foreach ($f in $files) {
-            if ((Test-Path $f) -and ($f -match '\.(md|json|ya?ml|toml|rs|txt)$')) {
-              $content = [System.IO.File]::ReadAllText($f)
-              $normalized = $content.TrimEnd("`r`n") + "`n"
-              if ($normalized -ne $content) {
-                [System.IO.File]::WriteAllText($f, $normalized)
-                Write-Host "normalized trailing newline: $f"
-              }
-            }
-          }
-          # XCI (GLM): la versión XC usaba sintaxis POSIX (|| y ; en subshell)
-          # dentro de pwsh — ParserError rompió main 2 corridas. PowerShell puro:
-          git diff --quiet
-          if ($LASTEXITCODE -ne 0) {
-            git config user.name ci
-            git config user.email ci@local
-            git add -u
-            git commit -m "ci: normalize trailing newlines [skip ci]"
-          }
       - name: Reject conflict markers in candidate diff
-        # XCII (Antigravity): Blindaje estructural definitivo contra falsos positivos cosméticos (20+ caídas históricas en 16s).
-        # core.whitespace=-blank-at-eof,-blank-at-eol desactiva el fallo por saltos de línea al final de docs/logs (.md, .txt)
-        # y espacios al final de línea, pero preserva el bloqueo estricto de marcadores de conflicto (<<<<<<<, =======, >>>>>>>).
+        # R4: inspect the checkout candidate without rewriting files or moving HEAD.
+        # A normalization commit would make HEAD^..HEAD omit the candidate changes.
+        # Ignore cosmetic trailing whitespace while preserving conflict-marker checks.
         run: git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD^ HEAD
       - name: Install the compiler used for the local regression
         run: |
@@ -87,7 +60,7 @@ jobs:
         run: |
           cargo +nightly-2026-06-30 test -p data-pipeline --locked --test parser_input_contract -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +nightly-2026-06-30 test -p risk-engine --locked --test nonfinite_admission_contract -- --test-threads=1
+          cargo +nightly-2026-06-30 test -p risk-engine --locked --test nonfinite_admission_contract --test c07_ruin_composition_contract -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +nightly-2026-06-30 test -p backtest-engine --locked --test oos_context_contract -- --test-threads=1
 

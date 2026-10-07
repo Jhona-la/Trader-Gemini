@@ -1,5 +1,35 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Codex R4: revisión desde base y recuperación Git EN CURSO
+
+- Base fijada `adeb8d1b`; trabajo en ramas aisladas
+  `codex/quant-foundations-2026-10-07` (plan/evidencia) y
+  `codex/integration-recovery-2026-10-07` (ramas pendientes).
+- Plan operativo `docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md`:
+  R0–R9, contratos científicos, vetos por composición, linaje y criterios OOS.
+- Ledger `docs/audit/REVISION_2026-10-07.json`: 1.434 rutas, 460 Rust,
+  23 crates + raíz, 655 archivos graphify-out. Todos **inventariados**, no
+  auditados. Herramienta `scripts/audit_inventory.py` generate/check/delta:
+  7/7 contratos Python y check exacto 1.434/1.434, delta base vacío.
+- Erratas corregidas en plan QUANT SR: nocional≠margen, log≠retorno simple,
+  TP/SL exponenciales, banda operativa 30s–12h, REST≠NTP; teorías/latencias
+  propuestas no se presentan como evidencia medida.
+- Hallazgos en `docs/audit/FUNDAMENTOS_R4_2026-10-07.md`: Q1 contador Darwin
+  reiniciado por caller; Q2 saldo realizado descrito como MTM; Q3 reloj mixto;
+  Q4 dependencia temporal DSR sin validar. Q1–Q3 legacy opt-in, Q4 compartido.
+  El port Python es diagnóstico sintético, NO ejecución Rust ni resultado del bot.
+- Q1 corregido localmente compartiendo `Arc<DarwinDaemon>` entre workers;
+  regresión/compilación y publicación se documentarán al cerrar integración.
+  Persistencia entre reinicios, MTM/reloj e inferencia siguen pendientes.
+- Dos fichas MED de continuidad en `CONTINUIDAD_R4_2026-10-07.md`:
+  confirmación estática, no replay ni evidencia para eliminar los vetos.
+- Git NO estaba completamente integrado: root-audit/PR28 y satélites tienen
+  commits exclusivos; model-reload también. Archivos sin commit en
+  ruin-input/review-plan preservados. Qoder ola67 y GLM flow_impulse activos.
+  Aviso local publicado en buzón `.firecrawl`; no inventar acuses de otros editores.
+- Esta entrada describe trabajo en curso: no es recibo de push/merge, T-1,
+  CI ni validación de rentabilidad de 100% cada 72h.
+
 ## 2026-10-07 — Antigravity: OLA Ω16 CERRADA — H2-6 (graduación C¹ continua sin saturación prematura en PerceptronGateEngine)
 
 - Rama `antigravity/quant-sr-omega16-h0-1-dimensiones-curvas` (worktree `.antigravity`), merge limpio sobre `main`.

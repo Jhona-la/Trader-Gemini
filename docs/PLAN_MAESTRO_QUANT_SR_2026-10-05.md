@@ -3,6 +3,12 @@
 ### Crecimiento Exponencial e Interés Compuesto (100% cada 3 Días) sobre Micro-Capital de $13 USD
 *Revisión Integral desde la Base · Sincronización Inter-Agentes (Antigravity, Qoder, GLM, Codex, Claude)*
 
+> Revalidación R4, 2026-10-07: [plan por archivo](PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md).
+> Las olas cerradas conservan su evidencia histórica; no certifican toda la
+> base actual. La meta financiera continúa sin validación económica OOS.
+> Las analogías físicas siguientes requieren correspondencia y falsación;
+> no son demostraciones de ventaja predictiva por sí mismas.
+
 ---
 
 ## 🏛️ 1. IDENTIDAD, DOCTRINA Y MANDATO CUÁNTICO
@@ -10,12 +16,13 @@
 ### 1.1 Metas Financieras y Físicas
 - **Capital Base**: **$13.00 USD**.
 - **Entorno de Mercado**: Binance Futures USD-M (USDT / USDC colateral).
-- **Restricción de Suelo**: `min_notional = $5.00 USD` (Binance Exchange Info).
-- **Relación de Holgura Inicial**: $N = \text{capital} / \text{min\_notional} = 13.00 / 5.00 = 2.6$ operaciones mínimas que caben simultáneamente. A \$13 USD, el sistema puede sostener exactamente **2 posiciones simultáneas** consumiendo el $76.92\%$ del colateral disponible a \$5 notional cada una, reservando el $23.08\%$ (\$3.00 USD) como colchón de liquidación y margen libre.
+- **Restricción de Suelo**: `min_notional` se obtiene de la especificación vigente de cada símbolo; 5 USD es un ejemplo de fixture, no una constante universal certificada.
+- **Nocional, margen y riesgo**: para nocional $N$ y apalancamiento $L$, el margen inicial aproximado es $N/L$, sujeto a las reglas del instrumento y la cuenta. El cociente $13/5$ no determina cuántas posiciones son admisibles. La admisión debe descontar reservas, costes, margen de mantenimiento, riesgo al stop y dependencia del portafolio; no se deduce un colchón de liquidación de ese cociente.
 - **Tasa de Crecimiento Compuesto Continuo**:
   $$K(t) = K_0 \cdot 2^{t / T_{\text{meta}}}, \quad T_{\text{meta}} = 3 \text{ días} = 259,200 \text{ segundos}$$
   Tasa instantánea continua de crecimiento geométrico:
-  $$g = \frac{\ln 2}{3 \times 86,400 \text{ s}} \approx 2.6743 \times 10^{-6} \text{ s}^{-1} \approx 23.105\% \text{ diario}$$
+  $$g = \frac{\ln 2}{3 \times 86,400 \text{ s}} \approx 2.67418 \times 10^{-6} \text{ s}^{-1} = 0.23104906\ \text{día}^{-1}$$
+  Esta es una tasa logarítmica. El rendimiento simple diario equivalente es $2^{1/3}-1\approx25.9921\%$; ambas magnitudes describen el objetivo, no resultados medidos.
 - **Curva de Multiplicación Teórica Proyectada**:
   - Día 0: \$13.00 USD (Base)
   - Día 3: \$26.00 USD ($2\times$)
@@ -23,7 +30,7 @@
   - Día 9: \$104.00 USD ($8\times$)
   - Día 12: \$208.00 USD ($16\times$)
   - Día 15: \$416.00 USD ($32\times$)
-- **Rendimiento de Cómputo**: Cero tolerancia a latencias de garbage collection. 100% Rust sin dependencias de Python en el hot-path. Ejecución de decisiones, cálculo de tensores y gestión de riesgo en **nanosegundos ($O(1)$ sin alocaciones de heap)**, optimizado para el portátil de 16GB RAM (CPU-bound, cero GPU dedicada).
+- **Rendimiento de Cómputo**: objetivo de baja latencia en Rust y uso acotado de memoria en el camino crítico. La complejidad depende del número de activos, escalas, motores y operaciones de cada ruta; ser Rust no demuestra $O(1)$, ausencia de asignaciones ni latencia en nanosegundos. Se requieren benchmarks p50/p95/p99, perfiles de asignación y condiciones de carga del hardware real.
 
 ---
 
@@ -32,10 +39,14 @@
 ### 2.1 Erradicación de Dicotomías Discretas
 Queda estrictamente prohibido pensar en categorías binarias o compartimentadas:
 1. **No existe "Scalping" vs "Swing"**: El mercado es un continuo temporal. Cada operación nace con un horizonte físico intrínseco continuo $\tau \in [\tau_{\min}, \tau_{\max}]$, medido en segundos o milisegundos reales:
-   $$\tau \in [10^{-2}\text{ s}, 10^{6}\text{ s}]$$
+   En la base R4, las anclas operativas de curvas son `TAU_ANCHOR_FAST_MS=30000`
+   y `TAU_ANCHOR_SLOW_MS=43200000`: **30 s a 12 h**. La malla representable,
+   el horizonte observado y el dominio admitido por cada consumidor son
+   conceptos distintos; otros rangos son propuestas hasta medirlos.
    Las curvas de Take Profit y Stop Loss se evalúan como variedades continuas sobre el genoma:
-   $$\text{TP}(\tau) = a_{\text{tp}} + b_{\text{tp}} \ln \tau, \quad \text{SL}(\tau) = a_{\text{sl}} + b_{\text{sl}} \ln \tau$$
-2. **No existen "Regímenes de Volatilidad" Discretos**: La volatilidad y el régimen de mercado no son interruptores discretos (Low/High/Range/Crash). Son un **símplex continuo 4D** $\Delta^3 = \{p \in [0, 1]^4 : \sum p_i = 1\}$ sobre una variedad Riemanniana dotada de la Métrica de Información de Fisher:
+   $$\text{TP}(\tau) = \exp(a_{\text{tp}} + b_{\text{tp}} \ln(\tau/1\text{ ms})), \quad \text{SL}(\tau) = \exp(a_{\text{sl}} + b_{\text{sl}} \ln(\tau/1\text{ ms}))$$
+   Corresponde a `HorizonCurve::eval` en `temporal_spectrum.rs`: el código recibe el valor numérico de $\tau$ en milisegundos. Un cambio de unidad requiere transformar el intercepto; los consumidores deben respetar su dominio operativo.
+2. **Representación continua del estado**: la volatilidad es una variable continua. El código también usa un símplex $\Delta^3 = \{p \in [0, 1]^4 : \sum p_i = 1\}$ para cuatro componentes de estado; es una representación finita, no una prueba de calibración probabilística. La métrica de Fisher siguiente es una propuesta de geometría que requiere consumidor y validación explícitos:
    $$ds^2 = g_{ij}(\theta) d\theta^i d\theta^j, \quad g_{ij} = \mathbb{E}\left[\frac{\partial \ln p}{\partial \theta^i} \frac{\partial \ln p}{\partial \theta^j}\right]$$
 3. **Multiactivo Cuántico Unificado**: Los 30 activos del universo dinámico no son series temporales aisladas. Forman un **grafo interactuante continuo** acoplado por flujos de órdenes, flujos de contagio de Hawkes, cópulas de cola extrema y paridades de cambio.
 
@@ -45,18 +56,19 @@ El estado del universo se describe mediante el tensor continuo espectral $S(\ome
 - $\tau$: Escala de agregación temporal del banco de 32 anclas espectrales logarítmicas de base 4:
   $$\tau_k = \tau_0 \cdot 4^k, \quad k \in [0, 31]$$
 - $\mathbf{x} \in \mathbb{R}^{54}$: Tensor macro y microestructural continuo.
-- $t$: Tiempo físico real sincronizado contra el reloj NTP de Binance Futures vía `/fapi/v1/time`.
+- $t$: Tiempo del evento y tiempo local con procedencia explícita. `/fapi/v1/time` consulta la hora del servidor por REST; no es un protocolo NTP. Medir offset, RTT e incertidumbre y preservar un reloj monotónico para duraciones.
 
 ---
 
 ## 🔬 3. TEORÍAS MATEMÁTICAS, ESTADÍSTICAS Y PROBLEMAS DEL MILENIO
 
 ### 3.1 Dinámica de Fluidos de Navier-Stokes y Microestructura del Libro
+- **Estado: analogía de investigación, no modelo financiero validado**. La ecuación de fluidos no demuestra una ley del libro de órdenes. Definir observables, unidades, condiciones de frontera y contraste OOS antes de usarla como señal o veto.
 - **Ecuación del Flujo de Liquidez**:
   $$\frac{\partial \mathbf{u}}{\partial t} + (\mathbf{u} \cdot \nabla)\mathbf{u} = -\frac{1}{\rho}\nabla P + \nu \nabla^2 \mathbf{u} + \mathbf{f}_{\text{OFI}}$$
   - $\mathbf{u}(p, t)$: Velocidad del flujo de órdenes en el espacio de precios $p$.
   - $\nu$: Viscosidad cinemática, gobernada por la profundidad del libro de órdenes (market depth).
-  - Cuando la profundidad colapsa ($\nu \to 0$), el sistema entra en régimen de turbulencia inercial de Kolmogorov ($E(k) \sim k^{-5/3}$), generando cascadas de slippage y micro-shocks modelados analíticamente.
+  - La identificación de profundidad con viscosidad y una ley $E(k)\sim k^{-5/3}$ son hipótesis que requieren medición; no se deducen automáticamente de un colapso de profundidad financiera.
 
 ### 3.2 Descomposición de Helmholtz-Hodge sobre Grafos de Contagio
 - **Descomposición del 1-Forma de Flujo en el Grafo Multiactivo $K_n$**:
@@ -79,16 +91,16 @@ El estado del universo se describe mediante el tensor continuo espectral $S(\ome
 ### 3.4 Martingalas de Ville y E-Values (Anytime-Valid Sequential Testing)
 - **Desigualdad Maximal de Ville**:
   $$\mathbb{P}\left(\exists t \ge 1: M_t \ge \frac{1}{\alpha}\right) \le \alpha$$
-  - Inmunidad total al *Optional Stopping*, *Data Snooping* y multiplicidad de múltiples escalas temporales.
+  - Control de observación secuencial sólo si $M_t$ es un e-proceso válido bajo la hipótesis nula y su filtración. La selección de escalas/motores/activos necesita además una familia y corrección declaradas; datos reutilizados o apuestas no predecibles pueden invalidar la garantía.
   - Corrección de Familia Bonferroni para el banco espectral (32 escalas $\times$ 13 motores = 416 pares):
     $$\text{Umbral de Familia} = \frac{M}{\alpha} = \frac{416}{0.05} = 8320$$
   - **Implementación**: [`crates/quantum-arena/src/evalues.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/quantum-arena/src/evalues.rs) (Cerrado por Qoder en Olas 60 y 62, commits `5b83168e` y `e4bed5dc`).
 
-### 3.5 Teoría de Matrices Aleatorias (RMT) y Conjetura de Riemann
+### 3.5 Teoría de Matrices Aleatorias (RMT)
 - **Filtrado Espectral de Correlación (Marchenko-Pastur & Wigner-Dyson)**:
   Para una matriz de covarianza empírica $\mathbf{C}$ con $N=30$ activos y ventana $T$:
   $$\lambda_{\max}^{\text{ruido}} = \sigma^2 \left(1 + \sqrt{\frac{N}{T}}\right)^2$$
-  Autovalores $\lambda_i \le \lambda_{\max}^{\text{ruido}}$ son ruido térmico i.i.d. y se limpian; únicamente los autovalores $\lambda_i > \lambda_{\max}^{\text{ruido}}$ representan modos de mercado coherentes.
+  El borde es una referencia bajo supuestos del modelo nulo, no una clasificación infalible de cada autovalor. Dependencia temporal, asincronía, colas y tamaño efectivo modifican su interpretación; validar la matriz reconstruida y la utilidad del filtro. No se deduce edge financiero de conexiones con la hipótesis de Riemann.
   - **Implementación**: [`crates/risk-engine/src/random_matrix.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/risk-engine/src/random_matrix.rs).
 
 ### 3.6 Deflated Sharpe Ratio (DSR) y Control de Multiplicidad de Bailey-López de Prado
@@ -137,6 +149,8 @@ graph TD
 ```
 
 ### 5.1 Estado Consolidado de la Ronda 2 (G0 - G2, 38 Hallazgos)
+Snapshot histórico de esa ronda; sus pendientes no representan la cola de R4.
+Olas 63/64/65/66 posteriores figuran en MEMORIA y en el buzón.
 - **5/5 HIGH CERRADOS AL 100%**:
   1. `G1-1 [HIGH]`: Ville con umbral de familia Bonferroni $M/\alpha = 640 / 8320$ (Qoder Ola 62).
   2. `G1-2 [HIGH]`: Hurst VR con estimador insesgado de Lo & MacKinlay ($c_k = (n-k+1)(1-k/n)$) (AGY Ola Ω10).
@@ -157,13 +171,14 @@ graph TD
   - `F2-B8 [MED]`: Extensión de e-proceso de Ville al $\rho(\tau)$ cruzado multiactivo.
 
 ### 5.2 Estado Consolidado de la Ronda 3 (H0 - H2, 22 Hallazgos)
-- **H1-2 [MED] CERRADO (Ola Ω15 AGY)**: Muestreo periódico continuo de retornos marked-to-market (cada 1s de mercado) en `darwin.rs:347-375`, proveyendo soporte muestral homogéneo $N \ge 25$ y erradicando la exigencia espuria de $t$-stat $\ge 4.5$ sobre pocos trades discretos cerrados.
-- **H1-3 [MED] CERRADO (Ola Ω15 AGY)**: `DarwinDaemon` incorpora `cumulative_trials: AtomicUsize` monótonamente creciente (D-746), arrastrando las pruebas entre corridas sucesivas y blindando el DSR contra optional stopping.
+- **H1-2 REABIERTO como R4-Q2/Q3 (2026-10-07)**: Ω15 añadió observaciones, pero el evaluador lee saldo realizado (`unified_capital`) y mezcla cadencia temporal con cierres. No acredita MTM ni muestras homogéneas; faltan contratos de equity y reloj. Evidencia en `audit/FUNDAMENTOS_R4_2026-10-07.md`.
+- **H1-3 REABIERTO como R4-Q1 (2026-10-07)**: el contador existe en `DarwinDaemon`, pero el host reconstruye la instancia dentro de cada ronda y pierde la acumulación. Corrección local R4: compartir un `Arc` persistente entre workers; compilación/regresión e integración pendientes en el recibo de cierre. La persistencia entre reinicios y la validez del test secuencial siguen abiertas.
 - **H1-4 [MED] CERRADO (Ola Ω15 AGY)**: Error estándar asintótico no-normal de Sharpe `sharpe_std_error(m, sr)` formalizado en `selection_stats.rs` (Bailey-LdP 2012/2014 ec. 4 y 7), considerando sesgo $\gamma_3$ y curtosis pesada $\gamma_4$ en el benchmark $E[\max \text{SR}]$.
+  **Límite R4-Q4**: ese ajuste de no-normalidad no corrige autocorrelación. El error temporal y la dispersión entre candidatos requieren validación adicional; no se declara DSR calibrado para el sistema.
 - **H0-1 [MED] CERRADO (Ola Ω16 AGY)**: Erradicación de dimensiones muertas en mutaciones de nichos walk-forward en `continuous_evolution_backtest.rs:363-411` mediante `sync_curves_from_tp_sl_anchors()` en `SuperGenotype` (`genome.rs:2015`), reconstruyendo las curvas continuas $C^1$ TP/SL con blindaje `enforce_curve_rr(0.0004)` y asegurando transferencia activa de las cotas al Arena.
 - **H0-2 [MED] CERRADO (lib.rs:310, 6321)**: Arbitración de fusión constructiva desacoplada del índice mayor mediante `etiqueta_fusion_constructiva`, atribuyendo la evidencia empírica a la rama con mayor convicción.
 - **H1-1 [MED] CERRADO (GLM 101)**: Consumo de bloque por par-escala en `espectral_multiactivo.rs`.
-- **H2-1..H2-5 [HIGH/MED]**: En vuelo por Qoder en `.ola65` (física de saturación $C^1$).
+- **H2-1..H2-5 [HIGH/MED]**: ola65 integrada según MEMORIA del 2026-10-07; R4 revisa contratos nuevos sin duplicar ese arreglo.
 
 ---
 
@@ -186,14 +201,19 @@ Para garantizar ejecución paralela estricta sin pérdida de trabajo ni choques:
 
 ---
 
-## 🚀 7. PLAN DE ACCIÓN INMEDIATO — OLAS Ω15 Y Ω16 CERRADAS & SIGUIENTE
+## 7. Snapshot histórico de olas Ω15/Ω16 y reapertura R4
+
+Las entradas siguientes son recibos históricos. El plan vigente de la nueva
+revisión es `PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md`; R4-Q1/Q2/Q3/Q4
+reabren ciclo de vida, marcado, reloj e inferencia aunque las suites anteriores
+fueran verdes. No presentar esta lista como certificación al 100% del sistema.
 
 1. **Ola Ω15 AGY CERRADA**:
-   - H1-2, H1-3, H1-4 cerrados al 100%. Tests 10/10 en `selection_stats` y 11/11 en `darwin` verdes.
+   - Recibo Ω15: tests 10/10 en `selection_stats` y 11/11 en `darwin` verdes en su ola. Reaperturas R4 descritas arriba.
 2. **Ola Ω16 AGY CERRADA**:
    - H0-1 cerrado al 100%. Activación continua de curvas desde anclas en `SuperGenotype` y `continuous_evolution_backtest.rs`. Test de contrato verde.
    - H0-2 confirmado cerrado en `lib.rs`.
-3. **Monitoreo de Qoder (.ola65)**:
-   - H2-1..H2-5 en resolución por Qoder para física de saturación y signums encubiertos.
+3. **Qoder**:
+   - Ola65/66 integradas; ola67 de limpieza observada activa al iniciar R4.
 4. **Siguiente Bloque Prioritario**:
-   - Limpieza de LOWs de Ronda 3 y oráculo T-1 en micro-capital ($13 USD).
+   - Contratos R4 de medición/inferencia, composición de riesgo y recuperación de ramas; limpieza LOW coordinada con Qoder.
