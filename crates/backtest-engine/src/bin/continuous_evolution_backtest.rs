@@ -83,6 +83,36 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> Vec<TickEvent> {
     ticks
 }
 
+
+/// #667 (H0-1): los nichos del walk-forward mutan las CURVAS continuas
+/// (tp a + b·ln τ — la fuente única que `apply_to_arena` sirve) y
+/// re-derivan las anclas como vistas. Antes mutaban `scalp_tp_base` /
+/// `swing_tp_base` escalares que `apply_to_arena` IGNORA (todo se deriva
+/// de las curvas): el walk-forward exploraba dimensiones muertas y sus
+/// nichos no diferenciaban lo que decían diferenciar.
+fn nicho_curva_tp(g: &mut quantum_arena::genome::SuperGenotype, tp_fast: f64, tp_slow: f64) {
+    use quantum_arena::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+    g.tp_horizon_curve = HorizonCurve::through_two_points(
+        TAU_ANCHOR_FAST_MS,
+        tp_fast,
+        TAU_ANCHOR_SLOW_MS,
+        tp_slow,
+    );
+    g.derive_anchors_from_curves();
+}
+
+#[allow(dead_code)]
+fn nicho_curva_sl(g: &mut quantum_arena::genome::SuperGenotype, sl_fast: f64, sl_slow: f64) {
+    use quantum_arena::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+    g.sl_horizon_curve = HorizonCurve::through_two_points(
+        TAU_ANCHOR_FAST_MS,
+        sl_fast,
+        TAU_ANCHOR_SLOW_MS,
+        sl_slow,
+    );
+    g.derive_anchors_from_curves();
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // E3 — ENTORNO DE GENOMA AISLADO: las promociones de este backtest van a
@@ -360,16 +390,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else if i < (num_mutants * 20 / 100).max(2) {
                 // Nicho 2: Especialista en Scalping L2 y OFI (TP corto, SL ceñido, Kelly controlado)
                 let mut g = current_genome.mutate_cmaes_seeded(0.15, deterministic_seed);
-                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0120, 0.0240);
-                g.scalp_sl_base = (g.scalp_sl_base * 0.85).clamp(0.0030, 0.0075);
+                // #667 (H0-1): geometría por CURVA (fuente única).
+                nicho_curva_tp(&mut g, 0.0120, 0.0240);
+                nicho_curva_sl(&mut g, 0.0030, 0.0075);
                 g.scalp_kelly_fraction = g.scalp_kelly_fraction.clamp(0.15, 0.35);
                 g.base_duration_ms = 10_000.0;
                 g
             } else if i < (num_mutants * 30 / 100).max(3) {
                 // Nicho 3: Soliton Wavelet & Multiscale Trend (TP amplio, Trailing ATR)
                 let mut g = current_genome.mutate_cmaes_seeded(0.20, deterministic_seed);
-                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0180, 0.0400);
-                g.scalp_sl_base = (g.scalp_sl_base * 1.15).clamp(0.0050, 0.0120);
+                nicho_curva_tp(&mut g, 0.0180, 0.0400);
+                nicho_curva_sl(&mut g, 0.0050, 0.0120);
                 g.scalp_trail_act_atr = g.scalp_trail_act_atr.clamp(0.8, 1.8);
                 g
             } else if i < (num_mutants * 40 / 100).max(4) {
@@ -381,8 +412,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Nicho 5: Mean-Reversion & Wall Bounce (Absorción en muros L2)
                 let mut g = current_genome.mutate_cmaes_seeded(0.20, deterministic_seed);
                 g.weight_obi = (g.weight_obi * 1.8).clamp(0.5, 2.5);
-                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0120, 0.0250);
-                g.scalp_sl_base = (g.scalp_sl_base * 0.90).clamp(0.0035, 0.0085);
+                nicho_curva_tp(&mut g, 0.0120, 0.0250);
+                nicho_curva_sl(&mut g, 0.0035, 0.0085);
                 g
             } else if i < (num_mutants * 60 / 100).max(6) {
                 // Nicho 6: Volatility Squeeze Breakout (Compresión y explosión ATR/Bollinger)
@@ -407,7 +438,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Nicho 9: Fractal Mandelbrot Trend Surfer (Hurst > 0.60, tendencias hiperbólicas)
                 let mut g = current_genome.mutate_cmaes_seeded(0.25, deterministic_seed);
                 g.trend_threshold = g.trend_threshold.clamp(0.55, 0.85);
-                g.swing_tp_base = g.swing_tp_base.clamp(0.020, 0.060);
+                // #667: TP lento amplio por curva (ancla lenta = swing view).
+                nicho_curva_tp(&mut g, 0.0120, 0.060);
                 g.swing_kelly_fraction = g.swing_kelly_fraction.clamp(0.15, 0.35);
                 g
             } else {
