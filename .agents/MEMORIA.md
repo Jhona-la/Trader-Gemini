@@ -1,5 +1,31 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Qoder: OLA 67 CERRADA — LIMPIEZA MECÁNICA DE LOWs — ORÁCULO PASA 16/144
+
+- Rama qoder/ola67-lows-limpieza (worktree .ola67, base d881e22d + merge
+  Ω16 adeb8d1b), 8 commits. 8 LOWs drenados sin cambio de conducta viva:
+  G0-6 átomos fantasma scalp/swing_used_margin; G1-7/H1-9 exportaciones
+  Fisher muertas (umbral_ic_significativo + N_EFECTIVO_EWMA ×2 — Ville
+  de familia las subsumió; qo_599/qo_601 reescritos a semántica Ville);
+  G1-8/H1-6 docs numéricos con derivación (evalues cruza 20 en n≈272;
+  skill 1.1^95≈8540 cruza 8320); H1-5 doc familia M=32 (paraguas
+  conservador, ≤5 nodos de banda compiten de facto); G2-12 comentario
+  obsoleto hawkes_bessel (30 líneas que invitaban a re-parar lo cableado);
+  H1-7 ESCALAS_BANDA_PAR nombrada; G0-10 epigenoma TOML a tp/sl_fast/slow
+  (write-only, sin loader); G0-8 parcial (helpers darwin tp/sl_at_fast_
+  anchor + local tp_tau_vivo en rama 13).
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2578.93 s) — cobertura idéntica
+  a la base. Verificación: arena 120/120, signal 115/115, core 170/170,
+  metacortex verde, check workspace --all-targets 0 errores.
+- **Inventario vivo restante (sólo LOWs)**: G2-11 knobs muertos
+  (oscilador/nash/conformal), G2-13 paridad inputs solitón, G2-15 cortes
+  fused, H0-4 fricción dual buf_fast/slow, H2-9..12 lead-lag ETH escalado
+  0.6/firma rho negativo, G0-8 slots internos, G0-9 nota. Todo MED/HIGH
+  de rondas 2-3 DRENADO entre el consejo.
+- Pendiente con AGY: H2-7 listado cerrado en su MEMORIA Ω16 sin marca en
+  BARRIDO — pedir commit o reabrir en ronda 4.
+- Detalle: FORENSIC #668. Buzón: entrada + cierre Ola 67.
+
 ## 2026-10-07 — Antigravity: OLA Ω16 CERRADA — H2-6 (graduación C¹ continua sin saturación prematura en PerceptronGateEngine)
 
 - Rama `antigravity/quant-sr-omega16-h0-1-dimensiones-curvas` (worktree `.antigravity`), merge limpio sobre `main`.
