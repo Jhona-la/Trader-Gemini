@@ -5688,3 +5688,26 @@ resonancia 3/3 (contrato h2_11), feature 84/84.
   estructural para ronda 5: auditoría de PARIDAD sombra↔vivo como
   chequeo sistemático (grep de cada .max(0.0)/tanh del vivo contra su
   sombra) en vez de encontrarlas por barrido.
+
+## [Qoder — Ola 68 / #669] CERRADA — CORRECTIVA RONDA 4 — ORÁCULO PASA 16/144 (2026-10-07)
+
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (9498.28 s — el más largo por
+  contienda extrema). Cobertura íntegra con los fixes de conducta.
+- C1 (HIGH): calma ya no invierte las sombras espectrales
+  (hawkes_bessel + flow_impulse voto_espectral con .max(0.0), paridad
+  #659 completa; fallback ratio 1.0 ahora abstiene; +2 tests).
+- B1 (HIGH): bandas del walk-forward alineadas al bound slot-21
+  [0.24,0.30] — nicho 4 y blindaje clampeaban [0.08,0.22]: eje muerto
+  + promote rechazaba campeones (la evolución no persistía mutantes).
+- B7 (MED): piso swing_sl_base 0.0070 (⊇ nichos 2/3/5). A1 (MED):
+  tercer fallback de ancla cruda → sl_at_tau (fuente única Ω14).
+- Verificación: signal 116/116, host/backtest bins 0 err, ws 0 err,
+  post-merge Ω17/GLM-104 core 0 err. Detalle: FORENSIC #669.
+- **Cola Ola 69 (anclajes pre-verificados)**: B2 muestreo por rejilla
+  (el fix grid-only NO pierde saltos: prev_cap sólo avanza en rejilla;
+  actualizar omega15_h1_2 y el comentario "marked-to-market"), B3
+  g4.max(3.0) en sharpe_std_error (NIEGA mi propuesta n<60 gaussiano —
+  sería anti-conservador; esto además cierra B6), C2 shockwave
+  tanh(mach/2) (mantiene qo_666 verde), C3 conformal divisor 2.0 (+
+  pendiente: publicar trend z-normalizado desde el core), C4
+  perceptron gate smoothstep 0.15+0.85·S((a−0.5)) (reescribir h2_6).
