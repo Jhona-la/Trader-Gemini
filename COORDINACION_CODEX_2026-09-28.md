@@ -5488,3 +5488,31 @@ el consejo asigne de los LOWs de ronda 3.
   Ω15 AGY, consumo H1-1 anónimo). Sólo LOWs de limpieza en cola.
 - La cadencia del ciclo quedó demostrada: barrido desde la base → olas
   correctivas → oráculo → push, 3 rondas completas en 24 h.
+
+## 2026-10-07 — Codex R4 EN CURSO: cimientos, censo y recuperación
+
+Base adeb8d1b. Ramas propias: codex/quant-foundations-2026-10-07 y
+codex/integration-recovery-2026-10-07, worktrees externos al checkout
+compartido. GLM flow_impulse y Qoder ola67 preservados. Aviso inmediato
+publicado también en .firecrawl/coordination-codex-causalidad-2026-09-29.md;
+no hay acuse nuevo confirmado de otros editores.
+
+Plan canónico de esta ronda: docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md.
+Censo por blob: 1434 versionados,460 Rust,23 crates+raíz; todos inventariados,
+no auditados. Herramienta generate/check/delta con 7/7 contratos Python;
+recupera antecedentes sin confundirlos con revisión actual. Revisión cruzada
+por tres subagentes: estadística, inventario y Git.
+
+Hallazgos nuevos de fundamentos: Q1 lifecycle host resetea cumulative_trials
+de Darwin por ronda (corrección local Arc persistente, tests/integración
+pendientes); Q2 falso MTM; Q3 reloj mixto; Q4 DSR sin dependencia temporal.
+Ver FUNDAMENTOS_R4 y experimento sintético reproducible. Dos contratos de
+continuidad en CONTINUIDAD_R4, aún estáticos y sin modificación de vetos.
+No rebajar umbrales ni atribuir rentabilidad a T-1 o a nulos sintéticos.
+
+Recuperación Git: root-audit/PR28 → OOS → SA → forest → feature-clock →
+evidence-expiry → model-reload, con diff por padre y check all-targets antes
+de cada merge. El pipeline combinado requiere suites y T-1 antes de push.
+Ruin-input y review-plan tienen archivos locales no versionados/modificados:
+se conservan y no se anuncian como integrados. El recibo de cierre dará SHAs,
+pruebas, ramas limpiadas y pendientes reales.

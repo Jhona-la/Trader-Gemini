@@ -1,0 +1,172 @@
+{
+  "audit": "R4 selection assumptions, 2026-10-07",
+  "evidence_kind": "Python mathematical port + trace model; not Rust execution or trading results",
+  "cdf_implementation": "Python statistics.NormalDist, not Rust Acklam/Abramowitz-Stegun approximations",
+  "provenance": {
+    "review_base_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+    "execution_checkout_head": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+    "source_sha256": {
+      "crates/risk-engine/src/selection_stats.rs": "81b4d800c691dc7e0b71a142d2a5e44a80e3c48c95357c434f3dfdd74df102fc",
+      "crates/god-engine-core/src/darwin.rs": "a2a323c0251e2d49067b2e8b363417e751305795153e368f2a83a29cadeead9b",
+      "crates/god-engine-core/src/lib.rs": "10b3852109821a0227adc997b3e09f4735d8c2a84ceecd18c97ebae35b41fbfd",
+      "crates/evolution-engine/src/online_daemon.rs": "dd31f23896ccc14b5a4d30cb699e8526d88aa6e767e2086cf732bec191624971",
+      "src/bin/god_engine.rs": "bbe0875bb53cc0b4f325cd9981333d203043056898bb5f11b19aa0ee6f606384"
+    }
+  },
+  "seed": 20261007,
+  "duplication": {
+    "n_trials": 100,
+    "original_observations": 40,
+    "original_dsr": 0.24835742805012162,
+    "repeated_observations": 400,
+    "repeat_factor": 10,
+    "repeated_dsr": 0.9997245805061727,
+    "interpretation": "Repeated values add no independent innovations; nominal confidence increases."
+  },
+  "ar1_null": [
+    {
+      "phi": 0.0,
+      "population_mean": 0.0,
+      "observations": 500,
+      "simulations": 1000,
+      "assumed_n_trials": 100,
+      "passing_dsr_ge_0_95": 0,
+      "passing_fraction": 0.0,
+      "median_dsr": 0.005931473523100771
+    },
+    {
+      "phi": 0.9,
+      "population_mean": 0.0,
+      "observations": 500,
+      "simulations": 1000,
+      "assumed_n_trials": 100,
+      "passing_dsr_ge_0_95": 189,
+      "passing_fraction": 0.189,
+      "median_dsr": 0.01804038661711277
+    },
+    {
+      "phi": 0.95,
+      "population_mean": 0.0,
+      "observations": 500,
+      "simulations": 1000,
+      "assumed_n_trials": 100,
+      "passing_dsr_ge_0_95": 245,
+      "passing_fraction": 0.245,
+      "median_dsr": 0.004608721327573992
+    }
+  ],
+  "realized_clock": {
+    "scope": "Port of darwin.rs sampling/drawdown expressions on an exogenous account trace.",
+    "input": [
+      {
+        "timestamp_ms": 0,
+        "cash": 100.0,
+        "unrealized": 0.0,
+        "closed": false
+      },
+      {
+        "timestamp_ms": 500,
+        "cash": 100.0,
+        "unrealized": -20.0,
+        "closed": false
+      },
+      {
+        "timestamp_ms": 1000,
+        "cash": 100.0,
+        "unrealized": -40.0,
+        "closed": false
+      },
+      {
+        "timestamp_ms": 1500,
+        "cash": 100.0,
+        "unrealized": -10.0,
+        "closed": false
+      },
+      {
+        "timestamp_ms": 2000,
+        "cash": 100.0,
+        "unrealized": 0.0,
+        "closed": false
+      },
+      {
+        "timestamp_ms": 2100,
+        "cash": 101.0,
+        "unrealized": 0.0,
+        "closed": true
+      },
+      {
+        "timestamp_ms": 2200,
+        "cash": 100.0,
+        "unrealized": 0.0,
+        "closed": true
+      },
+      {
+        "timestamp_ms": 3000,
+        "cash": 100.0,
+        "unrealized": 0.0,
+        "closed": false
+      },
+      {
+        "timestamp_ms": 3200,
+        "cash": 100.0,
+        "unrealized": 0.0,
+        "closed": false
+      }
+    ],
+    "samples": [
+      {
+        "timestamp_ms": 1000,
+        "delta_t_ms": 1000,
+        "realized_return": 0.0,
+        "marked_equity": 60.0
+      },
+      {
+        "timestamp_ms": 2000,
+        "delta_t_ms": 1000,
+        "realized_return": 0.0,
+        "marked_equity": 100.0
+      },
+      {
+        "timestamp_ms": 2100,
+        "delta_t_ms": 100,
+        "realized_return": 0.01,
+        "marked_equity": 101.0
+      },
+      {
+        "timestamp_ms": 2200,
+        "delta_t_ms": 100,
+        "realized_return": -0.009900990099009901,
+        "marked_equity": 100.0
+      },
+      {
+        "timestamp_ms": 3200,
+        "delta_t_ms": 1000,
+        "realized_return": 0.0,
+        "marked_equity": 100.0
+      }
+    ],
+    "reported_realized_drawdown": 0.009900990099009901,
+    "marked_equity_drawdown": 0.4
+  },
+  "counter_lifecycle": {
+    "scope": "Lifecycle trace derived from src/bin/god_engine.rs:1960-1965; not Rust execution.",
+    "host_round_counts": [
+      100,
+      100,
+      100
+    ],
+    "persistent_instance_expected_counts": [
+      100,
+      200,
+      300
+    ],
+    "execution_requires": "ENABLE_LEGACY_DARWIN_DAEMON=true",
+    "publication_also_requires": "ENABLE_ONLINE_DARWIN_MUTATION=true or 1"
+  },
+  "target_units": {
+    "log_growth_per_day": 0.23104906018664842,
+    "equivalent_daily_simple_return": 0.2599210498948732,
+    "idealized_gbm_full_kelly_daily_signal_to_noise": 0.6797779934458726,
+    "assumptions": "Continuous-time GBM, known constant drift/volatility, zero costs/risk-free rate, unrestricted full Kelly; not a guarantee or an observed Sharpe."
+  }
+}

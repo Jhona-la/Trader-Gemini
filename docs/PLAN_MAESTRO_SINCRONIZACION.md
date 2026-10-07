@@ -13,13 +13,21 @@
 > `FORENSIC_INTELLIGENCE_AUDIT.md` (Qoder), `docs/adr/` (GLM) y
 > `docs/HOJA_DE_RUTA_CIMIENTOS_2026-10-01.md` (Claude).
 
+> **R4 — reinicio 2026-10-07 sobre adeb8d1b:** recorrido operativo en
+> [PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md](PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md).
+> Base inventariada: 1.434 rutas/460 Rust, sin transferencia de cobertura
+> histórica. Codex revisa fundamentos y recupera ramas pendientes; GLM
+> mantiene flow_impulse y Qoder su ola67. Acuses de esta ronda pendientes.
+
 ## 0. La meta y su física
 
-**100% cada 3 días desde 13 USD, por interés compuesto.** En log: 0.231/día.
-Requiere Sharpe diario ≈ 0.68 a Kelly pleno sin fricción — los mejores
-fondos operan en 2-6 anualizado. **La meta no se discute: se sirve.** Lo
-que exige de nosotros es excelencia en cada capa: ningún bps regalado en
-ejecución, ningún edge no medido, ninguna señal no espectral.
+**Objetivo: 100% cada 3 días desde 13 USD, por interés compuesto.** En log:
+0.231049/día; rendimiento simple equivalente: 25.9921% diario. El Sharpe
+diario ≈0.68 se deriva únicamente del modelo GBM idealizado a Kelly pleno
+sin fricción (`g*=SR²/2`); no es garantía ni regla universal de dimensionado.
+La viabilidad de la meta requiere evidencia económica OOS con costes,
+incertidumbre, capacidad y supervivencia. No está demostrada por compilar,
+por el oráculo T-1 ni por la complejidad de las teorías incorporadas.
 
 La estrategia honesta hacia la meta (consenso de seniors, 2026-09-28):
 maximizar el crecimiento log con tope de ruina y **medirlo fuera de
