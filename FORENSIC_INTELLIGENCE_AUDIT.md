@@ -14584,3 +14584,61 @@ backtest-engine bins check 0, workspace --all-targets 0.
 
 **ESTADO RONDA 3: DRENADA** — 2/2 HIGH, 7/7 MED (H0/H1/H2) cerrados entre
 el consejo. Restan sólo LOWs de limpieza.
+
+## #668 — Ola 67: LIMPIEZA MECÁNICA DE LOWs (rondas 2-3 del barrido) (2026-10-07)
+
+Rama qoder/ola67-lows-limpieza (worktree .ola67, base d881e22d + merge
+Ω16 adeb8d1b), 7 commits atómicos. Ocho LOWs drenados, CERO cambio de
+conducta viva (verificado por oráculo):
+
+1. **G0-6** — átomos fantasma `scalp/swing_used_margin` retirados de
+   GlobalArena (state.rs): 0 escritores / 0 lectores por grep en todo el
+   workspace; cero construcciones literales externas del struct.
+2. **G1-7/H1-9** — exportaciones Fisher muertas retiradas:
+   `umbral_ic_significativo` + `N_EFECTIVO_EWMA` (temporal_spectrum) y
+   `N_EFECTIVO_EWMA` (skill_motores). Ville de familia (#661/#663) las
+   subsumió; 0 usos productivos por grep. qo_599 reescrito a semántica
+   Ville (el helper fabrica capital (1+λ)^n: n=30 ⇒ ~17 < 640 ruido;
+   n=90 ⇒ ~5313 cruza) y qo_601 conserva la medición del sesgo con el
+   umbral t≥2 inline como evidencia histórica del criterio pre-Ville.
+3. **G1-8/H1-6** — docs numéricos desincronizados corregidos con
+   derivación explícita: evalues "cruza 20 en ~n=800" → **n≈272**
+   (E[ln factor] = 0.58·ln1.1 + 0.42·ln0.9 ≈ 0.011/obs; ln20/0.011 ≈ 272);
+   skill "1.1^97 ≈ 8640" → **1.1^95 ≈ 8540 cruza 8320** (ln8320/ln1.1 =
+   94.7 ⇒ n=95). Los umbrales de familia (585/820 obs) ya eran correctos.
+4. **H1-5** — comentario de familia M=32 reescrito: ≤5 nodos de banda
+   [30s,12h] compiten de facto por τ*; M=32 es el paraguas conservador
+   de la malla completa (Bonferroni sigue válido, gate ~6× más duro que
+   el mínimo por banda — endurecer no rompe la cobertura).
+5. **G2-12** — 30 líneas del comentario obsoleto de hawkes_bessel
+   retiradas: describían el mislabel pre-R9 (proxy de aceleración) con un
+   "FIX REAL pendiente" que invitaba a re-parar lo YA cableado (λ/μ̂ real
+   por moneda #535/CERT-M2-C02 + exceso-SS #657/#659/#666).
+6. **H1-7** — ESCALAS_BANDA_PAR (5) const nombrada: FAMILIA_VETO_GRUPO
+   ahora deriva de MAX_COINS × banda explícita, sin literal mágico.
+7. **G0-10** — EpigenomaSymbolParams renombrado scalp/sl/swing →
+   tp/sl_fast/slow (vocabulario continuo U-ERR-5). TOML write-only sin
+   loader productivo: cero riesgo de compatibilidad.
+8. **G0-8 parcial** — helpers Genotype::scalp_tp/scalp_sl →
+   tp/sl_at_fast_anchor (misma HorizonCurve evaluada a TAU_ANCHOR_FAST_MS;
+   5 llamadores en tests del mismo archivo) y local swing_tp de rama 13
+   → tp_tau_vivo (el valor YA era tp_at_tau desde Ω11 G0-2). El residuo
+   de slots internos position.rs/stateful_engine.rs queda documentado.
+
+**Verificación**: quantum-arena 120/120, signal-engine 115/115 (incluye
+Ω16 de AGY), god-engine-core 170/170, metacortex 25+34+4+1+1+1 verde,
+`cargo check --workspace --all-targets` 0 errores (9m13s bajo contienda).
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (2578.93 s, release, --test-threads=1
+--nocapture, sobre a05ff2d2+merge-Ω16). Cobertura IDÉNTICA a la línea
+base: los mismos 16 genes sensibles; ningún gen certificado perdió
+sensibilidad con la limpieza.
+
+Lecciones: (a) un comentario que describe un defecto YA reparado es un
+riesgo de doble-fix activo (G2-12); (b) las docs numéricas de potencia
+deben derivarse (E[ln factor]) no estimarse; (c) al retirar exportaciones
+muertas hay que reescribir SUS tests a la semántica viva, no borrarlos.
+
+OBSERVACIÓN al consejo: la MEMORIA de Ω16 lista H2-7 (paridad de ganancia
+flow_impulse) como cerrado pero BARRIDO §H2 no lleva la marca — pedir el
+commit a AGY o reabrirlo en la próxima ronda.

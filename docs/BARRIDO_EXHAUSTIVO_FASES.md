@@ -632,13 +632,18 @@ router τ viva, banda #586, relojes físicos, Ville, exceso Hawkes). El drift:
   clamp de anclas de C-05. Tests de contrato formal dedicados añadidos en god_engine.rs
   (omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva y
   omega14_g0_5_c05_clamp_anclas_invariante: 2/2 verdes).
-- G0-6 [LOW] state.rs:521 — átomos `scalp/swing_used_margin` fantasma (0
-  escritores, 0 lectores). G0-7 [LOW] flow_excitation_confluence:243 salto
-  en la frontera del piso OBI (C¹). G0-8 [LOW] slots/naming scalp/swing en
-  position.rs/stateful_engine.rs (residuo léxico). G0-9 [LOW] espacio
-  genético parametrizado por anclas de 2 puntos — no expresa curvatura
-  (nota de consejo). G0-10 [LOW] epigenoma TOML + binarios legacy siguen
-  serializando scalp/swing con defaults mágicos.
+- G0-6 [LOW] CERRADO (Ola 67 Qoder) state.rs:521 — átomos `scalp/
+  swing_used_margin` retirados (0 escritores, 0 lectores verificados por
+  grep; oráculo PASA). G0-7 [LOW] CERRADO vía G2-3 (Ola 63 — mismo sitio
+  confluence:243, rampas smoothstep de exceso). G0-8 [LOW] PARCIAL
+  CERRADO (Ola 67): helpers Genotype::scalp_tp/sl → tp/sl_at_fast_anchor
+  (misma curva al ancla) + local swing_tp de rama 13 → tp_tau_vivo (el
+  valor ya era tp_at_tau desde Ω11); el residuo de slots internos en
+  position.rs/stateful_engine.rs queda documentado (sin costo semántico).
+  G0-9 [LOW] espacio genético parametrizado por anclas de 2 puntos — no
+  expresa curvatura (nota de consejo). G0-10 [LOW] CERRADO (Ola 67):
+  epigenoma TOML renombrado a tp/sl_fast/slow (write-only sin loader en
+  producción, cero riesgo de compat; mutation_cycle_test actualizado).
 
 ## §G1 — MATEMÁTICA/ESTADÍSTICA (8: 3 HIGH, 2 MED, 3 LOW)
 
@@ -673,9 +678,12 @@ VR) están correctas; cada fix tiene un defecto de INTEGRACIÓN estadística:
 - G1-5 [MED] selection_stats.rs DUPLICADO en risk-engine y
   evolution-engine (diff vacío hoy; drift silencioso garantizado).
 - G1-6 [LOW] sr_sigma=1/√(n−1) aproxima σ entre pruebas (conservador con
-  GA correlacionado — documentar). G1-7 [LOW] exportaciones muertas Fisher
-  (umbral_ic_significativo, N_EFECTIVO_EWMA). G1-8 [LOW] comentario de
-  potencia evalues: cruce esperado n≈272 con p=0.58, no ~800.
+  GA correlacionado — documentar). G1-7 [LOW] CERRADO (Ola 67 Qoder)
+  exportaciones muertas Fisher retiradas (umbral_ic_significativo +
+  N_EFECTIVO_EWMA ×2 — 0 usos productivos por grep; Ville de familia las
+  subsumió en #661/#663; qo_599/qo_601 reescritos a semántica Ville).
+  G1-8 [LOW] CERRADO (Ola 67): evalues documenta n≈272 (E[ln factor] =
+  0.58·ln1.1 + 0.42·ln0.9 ≈ 0.011/obs) y skill 1.1^95≈8540 cruza 8320.
 
 ## §G2 — FÍSICA/MOTORES (15: 2 HIGH, 8 MED, 5 LOW)
 
@@ -707,8 +715,9 @@ duros supervivientes, y abstención-SS incompleta:
   trivial, lag siempre acreditado).
 - G2-11 [LOW] knobs muertos CONFIRMADOS (quantum_k_spring/lambda/alpha,
   nash_drift, conformal_epsilon + game_payoffs sin escritor). G2-12 [LOW]
-  hawkes_bessel:328 comentario OBSOLETO que invita a «re-parar» lo ya
-  pareado (riesgo de doble fix). G2-13 [LOW] paridad de INPUTS solitón
+  CERRADO (Ola 67 Qoder): las 30 líneas del mislabel pre-R9 retiradas de
+  hawkes_bessel — describían el proxy de aceleración YA reemplazado por
+  λ/μ̂ real e invitaban a re-parar lo cableado. G2-13 [LOW] paridad de INPUTS solitón
   (sombra lee knob muerto 1.0, vivo usa OFI). G2-14 [LOW] suelos
   literales ramas 13/15 (=G0-3). G2-15 [LOW] cortes duros fused ±0.38/0.22.
 
@@ -811,8 +820,9 @@ G0-10 VIVO (epigenoma TOML).
 - H0-3 [nota] drift Ville M/alfa=8320: diferenciacion tarda ~7h (tau=30s)
   a ~410 dias (tau=12h) — doctrinalmente correcto pero #626 congelado
   para tau>1min; candidato: familia por banda observable.
-- H0-4..8 [LOW]: segunda nocion de friccion buf_fast/slow (lib.rs:3078),
-  epigenoma TOML, atomos G0-6, naming, lectores de vistas en backtests.
+- H0-4..8 [LOW]: fricción dual buf_fast/slow (lib.rs:3078) y lectores de
+  vistas en backtests SIGUEN ABIERTOS; epigenoma TOML (G0-10), átomos
+  G0-6 y naming G0-8-parcial DRENADOS por Ola 67.
 
 ## §H1 — MATEMATICA/ESTADISTICA (0 HIGH, 3 MED + LOWs)
 
@@ -862,9 +872,13 @@ limpia, campo unico).
   leptocúrtica γ₄ en el cálculo de `sr_sigma` para `expected_max_sharpe`.
   Benchmark E[max SR] riguroso y conservador frente a colas pesadas cripto.
   Test formal: omega15_h1_4_dsr_sharpe_std_error_leptocurtico (10/10 verdes en selection_stats).
-- H1-5..9 [LOW]: familia 32 vs <=5 efectiva en tau*, docs numericos
-  desincronizados, FAMILIA constantes duras, G1-7 exportaciones muertas
-  VIVAS.
+- H1-5..9 [LOW] DRENADOS (Ola 67 Qoder): H1-5 doc de familia M=32
+  reescrito (paraguas conservador de la malla; ≤5 nodos de banda
+  [30s,12h] compiten de facto), H1-6/H1-8 docs numéricos corregidos
+  (evalues n≈272; skill 1.1^95≈8540 cruza 8320), H1-7 ESCALAS_BANDA_PAR
+  nombrada en FAMILIA_VETO_GRUPO (el 5 ya era derivado de MAX_COINS,
+  ahora también la banda lo es), H1-9/G1-7 exportaciones muertas
+  retiradas. Oráculo T-1: PASA 16/144.
 
 ## §H2 — FISICA/MOTORES (2 HIGH, 4 MED + LOWs)
 
@@ -894,8 +908,8 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
 - H2-6 [MED] CERRADO (Ola Ω16 AGY) perceptron_gate.rs:35-42 — sustituido factor rígido 10.0 por const GANANCIA_PERCEPTRON: f64 = 2.5. Elimina la saturación prematura que degradaba a signum encubierto ante entradas |x| >= 0.3. Respuesta diferenciable C¹ y continua en [-1.0, 1.0]. Test formal: h2_6_graduacion_continua_sin_saturacion_prematura (5/5 tests de perceptron_gate verdes).
 - H2-7 [MED] paridad de GANANCIA flow_impulse rota: tres calibraciones
   del mismo flujo (espectral x2, vote x0.8, vivo /1e-3).
-- H2-8..12 [LOW]: G2-12/11/13/15 VIVOS; lead-lag divergencia ETH
-  escalada 0.6 y firma con rho negativo.
+- H2-8..12 [LOW]: G2-12 CERRADO (Ola 67); G2-11/13/15 VIVOS; lead-lag
+  divergencia ETH escalada 0.6 y firma con rho negativo.
 
 ## Asignacion (ronda 3)
 
