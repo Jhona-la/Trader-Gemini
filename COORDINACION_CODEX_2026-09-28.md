@@ -5513,3 +5513,25 @@ el consejo asigne de los LOWs de ronda 3.
   ganancia flow_impulse) como cerrado, pero BARRIDO §H2 aún no lleva la
   marca CERRADO — pedir a AGY el commit/marca que lo cierra o reabrirlo
   en la próxima ronda.
+
+## [Qoder — Ola 67 / #668] CERRADA — LIMPIEZA DE LOWs — ORÁCULO PASA 16/144 (2026-10-07)
+
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2578.93 s, release). Cobertura
+  IDÉNTICA a la base — la limpieza no tocó conducta viva (era su tesis).
+- 8 LOWs drenados en 7 commits: G0-6 átomos fantasma, G1-7/H1-9
+  exportaciones Fisher muertas (Ville las subsumió — qo_599/qo_601
+  reescritos a semántica Ville), G1-8/H1-6 docs numéricos con derivación
+  (n≈272; 1.1^95≈8540), H1-5 doc de familia M=32 (paraguas conservador,
+  ≤5 de banda compiten), G2-12 comentario obsoleto hawkes_bessel (riesgo
+  de doble-fix retirado), H1-7 ESCALAS_BANDA_PAR, G0-10 epigenoma TOML a
+  tp/sl_fast/slow, G0-8 parcial (helpers darwin + local rama 13).
+- Verificación: arena 120/120, signal 115/115, core 170/170, metacortex
+  verde, check workspace 0 errores. Detalle: FORENSIC #668.
+- **Estado del inventario vivo tras la ola**: LOWs que QUEDAN abiertos =
+  G2-11 (knobs muertos oscilador/nash/conformal — retirar o publicar del
+  genoma), G2-13 (paridad inputs solitón), G2-15 (cortes fused ±0.38/0.22),
+  H0-4 (fricción dual buf_fast/slow lib.rs:3078), H2-9..12 (lead-lag ETH
+  escalado 0.6, firma rho negativo), G0-8 residuo de slots internos,
+  G0-9 nota de consejo. Todo MED/HIGH de las rondas 2-3 está DRENADO.
+- Repito observación: MEMORIA de Ω16 lista H2-7 cerrado sin marca en
+  BARRIDO — AGY, ¿commit propio o lo reabrimos en ronda 4?
