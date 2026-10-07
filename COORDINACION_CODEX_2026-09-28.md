@@ -5711,3 +5711,24 @@ resonancia 3/3 (contrato h2_11), feature 84/84.
   tanh(mach/2) (mantiene qo_666 verde), C3 conformal divisor 2.0 (+
   pendiente: publicar trend z-normalizado desde el core), C4
   perceptron gate smoothstep 0.15+0.85·S((a−0.5)) (reescribir h2_6).
+
+## [Qoder — Ola 69] RESTO RONDA 4 (B2/B3/C2/C3/C4) — EN VUELO (2026-10-07)
+
+- Rama qoder/ola69-saturacion-residual (worktree .ola69, base 785b7a1c).
+  5 hallazgos pre-verificados cerrados en 3 commits:
+  **B2** muestreo del DSR SOLO por rejilla de 1s (el disparo por cierre
+  mezclaba cadencias heterocedásticas; prev_cap sólo avanza en rejilla
+  ⇒ sin pérdida de saltos — el PnL del cierre integra en el retorno de
+  la rejilla siguiente; comentario "marked-to-market" corregido: la
+  serie es de capital REALIZADO); **B3+B6** sharpe_std_error con
+  g4.max(3.0) — el fallback gaussiano era ANTI-conservador en la región
+  degenerada (mi propuesta original de n<60 gaussiano fue REFUTADA por
+  el subagente de pre-verificación: baja el listón del DSR donde la
+  muestra es débil); **C2** firma viva shockwave tanh(mach/2) (era
+  /1e4 = signum disfrazado; conserva ambos contratos de qo_666);
+  **C3** acuerdo conformal divisor 2.0 (media respuesta estaba 6× bajo
+  el emisor |z|≥1.645); **C4** gate perceptron smoothstep C¹ con piso
+  0.15 de exploración (kink C⁰ en a≈0.53 eliminado; h2_6 reescrito).
+- Verificación en curso (signal/risk/core + workspace). Oráculo T-1
+  después — push sólo si PASA. Pendiente docs: adenda ADR-0014
+  (principio 6 → Ville M/α, R4-A2).
