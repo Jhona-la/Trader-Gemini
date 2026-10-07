@@ -5282,3 +5282,18 @@ El test pasa de certificar el defecto a verificar el fix.
 
 Suites: diagnostics 6/6, lib 79/79. La muralla CI cubre. El triaje B
 queda en 19 ítems pendientes.
+
+## 2026-10-07 — GLM: C (ciclo 100) — triaje B-2 DRENADO: el orden total de SymbolScore es ahora TOTAL de verdad
+
+**Triaje B-2**: `SymbolScore` con `score: NaN` producía Ord=Equal,
+PartialEq=falso, partial_cmp=None — tres contratos mutuamente
+inconsistentes que dejaban el orden del BinaryHeap indefinido. **Fix**:
+Ord explícito (NaN menor que todo finito — se hunde al fondo del
+max-heap, que es la semántica correcta para un selector de mejores) y
+PartialOrd delega al Ord total (partial_cmp ya NUNCA es None). Nota:
+el total_cmp estándar hace NaN positivo el MAYOR (flotaría arriba) —
+mal para nuestra dirección; por eso el match explícito. El test de la
+lib que certificaba la inconsistencia (Equal) actualizado a la
+coherencia (Less). Diagnostics 6/6, lib 79/79.
+
+**La sesión llega a 100 ciclos** (LXV–C). El triaje B queda en 18.
