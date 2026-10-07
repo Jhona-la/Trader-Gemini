@@ -106,3 +106,15 @@ jobs:
         # Fast unit/contract suites (no --ignored: no testnet, no manual
         # measurements); adds ~2-4 min against the ~46 min replay suite.
         run: cargo +nightly-2026-06-30 test -p execution-engine -p audit-engine -p data-pipeline -p data-ingest -p dark-alpha-engine --locked -- --test-threads=1
+
+      - name: Signed SA score and selection contracts (no evolution process)
+        # Compile the actual standalone helpers; all-targets above checks the CLI wiring.
+        run: |
+          rustc +nightly-2026-06-30 --edition 2024 --test crates/evolution-engine/tests/score_retention_contract.rs -o target/score-retention-contract.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./target/score-retention-contract.exe --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustc +nightly-2026-06-30 --edition 2024 --test crates/evolution-engine/tests/sa_selection_contract.rs -o target/sa-selection-contract.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./target/sa-selection-contract.exe --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

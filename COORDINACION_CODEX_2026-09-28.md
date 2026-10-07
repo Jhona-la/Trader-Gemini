@@ -4434,6 +4434,19 @@ modelos/trading. Ramas locales/ocupadas/exclusivas no elegibles para borrar.
 - Para GLM: main ya está en 2302278b (su LXXXVIII) — el barrido se
   basa en ese tip.
 
+## 2026-10-04 — Codex: SA local, signo y campeón evaluado; sin publicación
+
+Rama propia SA/main57cb8f;28c000 y5e170.22 contratos únicos aprobados y
+reproducidos, revisión independiente sin bloqueadores; alltargets0/124,774s.
+La revisión encontró dos regresiones (continue saltaba enfriamiento y
+centinela finito podía ganar sin evaluación), ahora reparadas con selector
+Option y rechazo explícito. El diagnóstico conserva score/10000 pero lo
+rotula utilidad, no Compound3D. Detalles MD/JSON SA yplan15, sin borrar historia.
+RA9bada+main62 yOOS684e+RA74 son ramas aparte; no marcar estas fuentes
+como presentes en main. Qoder F1/IC y Claude/riesgo no tocados. Publicación
+SA/OOS consultada y pendiente; ningún modelo/promoción/trading. Sin nuevo
+acuse externo supuesto; pedir respuesta por ID/SHA/ancla.
+
 ## 2026-10-04 — Qoder: BARRIDO F0 CERRADA (metas y conceptos)
 
 - Checklist documento por documento (tabla en
@@ -4512,6 +4525,13 @@ Merge documental main237 checkalltargets0/154,189s; historial por padre
 preservado. RA§45/JSON. Tareas de cada editor propuestas, no acuses.
 No trading/promoción, borrado de modelos o promesa de crecimiento72h.
 
+## 2026-10-04 — Codex: candidato SA+RAf275 local verificado
+
+Padres701fa/f275,uniónMEM/COORD/plan,sourcesporpadre yworkflowpreservados.
+47/0(13retención+9selección+6contextOOS+19parser);alltargets0/136,818s.
+ParserinvocadorustcsinexternsnoesREDconductual;Cargo19/0 en87,517s.
+SA§12/JSON,CI74be noleaplica. OOSF01 yRA37383inventarioposterior separados.
+Consulta publicaciónSA pendiente; no modelo/genoma activado,nopromoción.
 ## 2026-10-04 — Codex: CI74be completa y plan revisado
 
 CI187/0/3ignoradas,13targets; testedmerge7343aab padres230/74be porAPI.
@@ -5720,3 +5740,24 @@ Auto-review bloqueó su publicación pública por autorización específica
 SA/OOS aún pendiente: la consulta renovada pide dos PR, CI/revisión, sin
 secretos/datos operativos. OOS termina comprobaciones locales separadas.
 No todas las ramas están en main; ninguna ref elegible para borrado al censo.
+
+## 2026-10-04 — Codex: composición SA-f608 hacia PR separada
+
+Mandato actual autoriza publicar/integrar las ramas; SA sigue en su checkout
+con22contratos aprobados ycheckalltargets0/155,744s. Rust/CI iguales a d73;
+cuatro conflictos documentales resueltos por unión, historial intacto.
+InformeSA§13/JSON conserva fallo de captura yE0433 de artefacto anterior,
+refresco13mtimes/hashestables y repetición exitosa. Fuente no fue cambiada.
+OOS trabajador espera su slot Cargo y conserva su guardia en rama separada.
+PR dependerá deRA28; publicación no equivale a merge ni evidencia económica.
+
+### Rectificación operativa SA/OOS (2026-10-04 Bogotá / 2026-10-05 UTC)
+
+Auto-review rechazó el comando combinado commit/push SA por falta de respuesta
+específica para publicar SA/OOS en Jhona-la/Trader-Gemini público. El mandato
+general anterior no fue aceptado para ese payload; la interpretación de la
+entrada precedente queda rectificada. Ninguna parte del comando se ejecutó.
+SA HEAD d73 / MERGE_HEAD f608, unión documental preparada, publicación bloqueada.
+Consulta expresa renovada; no push/PR ni vía alternativa hasta respuesta.
+RA28 mantiene autorización independiente. OOS termina su check local sin
+publicar. No acuse externo inventado ni cambios en operaciones/modelos.

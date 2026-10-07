@@ -480,6 +480,38 @@
 - RA publicó su reconciliación documental con main230 aparte; no equivale
   a integrar OOS en main. Esta memoria no altera fuente/pruebas del9a3.
 
+
+## 2026-10-04 — Codex: SA con RA f608 listo para publicar
+
+- El operador reitera publicación/integración de ramas; SA continúa en PR
+  separada, sujeta a CI y revisión. Consultas previas conservadas como historia.
+- Unión de cuatro conflictos, ambos padres preservados; Rust/CI idénticos
+  a SA d73.22contratos0fallos, checkalltargets0/155,744s tras reconstrucción
+  acotada13mtimes/SHA iguales. PrimerE0433deartefacto/log y error de ruta de
+  log conservados en informeSA§13/JSON; no alteración de código para pasarlo.
+- OOS-F01 sigue separado. No nuevas afirmaciones económicas o activación.
+
+## 2026-10-04 — Codex: SA compuesto localmente conRAf275/main237
+
+- Padres701fa/f275, conflictosdocumentalesporunión; helpersSAyfuentesRA
+  idénticosporpadre,workflowconservaambos. CLIwarmupRA +selecciónSA.
+-47/0 contratos(13+9+6+19),alltargets0/136,818s,parserCargo0/87,517s.
+  Parserrustcsinexternsfallócompilación: errorinvocación,nobugniRED.
+  Refresco8mtimes/hashesestables yCargo serializado, no modelos/operación.
+- ReportSA§12/JSON; no OOSguardF01 ni nuevoinventarioRA37383 todavía.
+  PublicaciónSAconsultada, pendiente; main remoto no contieneesteSA.
+
+## 2026-10-04 — Codex: SA local revisado, estado evaluado y métricas
+
+- Rama SA base57cb8f, commits28c000/5e170: retención correcta para ambos
+  signos; Option current/best, rechazo sin RNG ni salto de cooling; sin
+  campeón finito no replay/OOS/promoción. Utilidad no es factor72h.
+-22/0 contratos únicos e independientes, review0bloqueadores;
+  alltargets0/124,774s. MD/JSON AUDITORIA_SCORE_SA yplan15 conservan RED,
+  regresiones de primera versión, hashes y residuales de unidades/reporte/OOS.
+- No está en main ni enRA9bada/OOS684e. PublicaciónSA/OOS consultada,
+  sin nueva respuesta aún. No tocar Qoder F1/IC, Claude/riesgo ni modelos.
+  No acuse externo nuevo supuesto, no trading ni rendimiento certificado.
 ## 2026-10-04 — Codex: F2/mainEA5d contrastado sin asumir conclusiones
 
 - RA§48/master§18/plan§12 conservan ambos padres por unión y43raícesJSON.
@@ -2591,3 +2623,14 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
   auto-review hasta respuesta específica. No push/PR. RA autorización propia.
 - RUIN-F01 local: validar antes de interpolar para no reabrir cero inválido.
   No cambiar fórmula/bootstrap/umbrales ni operar. No acuse externo supuesto.
+
+## 2026-10-04 — SA/OOS: rectificación de autorización por auto-review
+
+- Rechazado el comando combinado SA commit/push: la consulta específica de
+  publicación pública SA/OOS sigue sin respuesta. La interpretación anterior
+  de que bastaba el mandato general queda rectificada, sin borrar historia.
+- Ninguna parte del comando se ejecutó: SA HEAD d73cca8c, MERGE_HEAD f6087378.
+  Preparación y22contratos/checkalltargets0 son evidencia local, no integración.
+- Consulta renovada para dos PR separadas en Jhona-la/Trader-Gemini público,
+  sin secretos/datos operativos, CI y revisión cruzada antes del merge.
+  Hasta respuesta no publicar. RA28 conserva autorización previa independiente.

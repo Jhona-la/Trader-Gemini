@@ -764,6 +764,26 @@ Meta72h: utilidad/genoma sano y matemática explicada son condiciones de
 medición, no evidencia de rentabilidad. Gates G0–G8 siguen abiertos donde
 corresponde. Detalle RA§44/JSON; inventario F1 enBarrido del autor.
 
+## 15. Codex — contrato SA signado y selección evaluada (ola aislada)
+
+Alcance reservado: helpers score_retention/sa_selection y bloque de selección
+del CLI evolution, en codex/sa-score-monotonicity-2026-10-04. Base main57cb8f;
+commits28c000 y5e170. No tocar IC/Qoder F1, risk/Claude o modelos/GLM.
+Sin acuse nuevo confirmado: coordinación por documento/buzón, no acuerdo
+supuesto. Informe y artefacto: AUDITORIA_SCORE_SA_2026-10-04.md/.json.
+
+Contrato: al reducir retención nunca premiar una utilidad negativa; sólo
+scores finitos entran a selección, primer candidato sin centinela y rechazo
+sin saltar el calendario.22/0, revisión independiente0bloqueadores, check
+alltargets0/124,774s. Utilidad escalada no se etiqueta como factor72h.
+
+Orden de integración: fuente/contratos → composición con RA/main/OOS por
+cada padre → revisión → autorización de publicación/CI del SHA exacto →
+merge confirmado en main remoto → borrar sólo refs inactivas integradas.
+OOS684e+RA74 yRA9bada+main62 son otros cortes, no incluidos automáticamente.
+No nuevos resultados económicos: crecimiento neto72h, capacidad/ruina,
+reporte finito, unidades y umbrales de utilidad mantienen gates abiertos.
+
 ## 16. Plan exhaustivo por ruta desde los fundamentos (ampliación del mandato)
 
 [PLAN_REVISION_EXHAUSTIVA_2026-10-04](PLAN_REVISION_EXHAUSTIVA_2026-10-04.md)

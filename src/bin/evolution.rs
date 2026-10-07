@@ -250,8 +250,8 @@ fn evolve_main() {
     let mut current_config = Genotype::load_or_default();
 
     let mut best_config = current_config.clone();
-    let mut current_score = -9999999.0;
-    let mut best_score = -9999999.0;
+    // No numerical sentinel may outrank an evaluated finite loss.
+    let mut selection = evolution_engine::sa_selection::SaScoreState::new();
     let mut temp = initial_temp;
 
     println!(
@@ -390,11 +390,20 @@ fn evolve_main() {
         };
         let mut score = total_growth.ln().max(-20.0) * 10_000.0; // 1.0x = 0 pts; e^x crece lineal en log
 
-        // FASE 17: Aplicar la penalización de Drawdown Bayesiana
+        // RA-SA-F01: retención heurística de drawdown, no un posterior bayesiano.
+        // Un score mayor gana: atenuar una pérdida hacia cero la premiaría.
         let dd_threshold = test_cfg.global_max_drawdown / 3.0; // Deseable is 1/3 of max drawdown
         if dd > dd_threshold {
             let decay = f64::exp(-(dd - dd_threshold) * 20.0).clamp(0.01, 1.0);
-            score *= decay; // Destruir la puntuación exponencialmente basado en Max Drawdown
+            score = match evolution_engine::score_retention::penalize_signed_score(score, decay) {
+                Ok(penalized) => penalized,
+                Err(reason) => {
+                    eprintln!("⚠️ Iter {i}: invalid drawdown score ({reason:?}); candidate excluded");
+                    // Invalid utility reaches selection as a rejection, not a rank.
+                    // Keep the unconditional cooling/reheating step below.
+                    f64::NAN
+                }
+            };
         }
 
         // Regularity Penalties
@@ -415,27 +424,15 @@ fn evolve_main() {
         } // Aniquilación inmediata (Penalización Absoluta)
 
         if i % 20 == 0 {
-            println!("🔄 Iter {}: Curr Score = {:.2} (Best: {:.2}) | IS Cap: {:.2}, Trades: {}, WinRate: {:.2} | Temp: {:.2}", i, score, best_score, capital, trades, out_stats[0], temp);
+            println!("🔄 Iter {}: Curr Score = {:.2} (Best: {:.2}) | IS Cap: {:.2}, Trades: {}, WinRate: {:.2} | Temp: {:.2}", i, score, selection.best_score().unwrap_or(f64::NEG_INFINITY), capital, trades, out_stats[0], temp);
         }
 
         // Acceptance Probability (Metropolis-Hastings)
-        let mut accept = false;
-        if score > current_score {
-            accept = true;
-        } else {
-            let prob = std::f64::consts::E.powf((score - current_score) / temp);
-            if random_f64(0.0, 1.0) < prob {
-                accept = true;
-            }
-        }
-
-        if accept {
-            current_score = score;
+        let decision = selection.consider(score, temp, || random_f64(0.0, 1.0));
+        if decision.accepted {
             current_config = test_cfg.clone();
         }
-
-        if score > best_score {
-            best_score = score;
+        if decision.improved_best {
             best_config = test_cfg.clone();
         }
 
@@ -445,8 +442,9 @@ fn evolve_main() {
         } // Re-heating (Quantum Tunneling)
 
         if i % 1000 == 0 || i == iterations - 1 {
+            let best_score = selection.best_score().unwrap_or(f64::NEG_INFINITY);
             println!(
-                "🧬 Iter {}: Best Score = {:.2} | Compound 3D: {:.2}x | Temp: {:.2}",
+                "🧬 Iter {}: Best Score = {:.2} | Scaled utility (score/10000, NOT 3D growth) = {:.6} | Temp: {:.2}",
                 i,
                 best_score,
                 best_score / 10000.0,
@@ -454,6 +452,12 @@ fn evolve_main() {
             );
         }
     }
+
+    let Some(best_score) = selection.best_score() else {
+        eprintln!("❌ No finite SA candidate was evaluated; no champion, OOS test or promotion");
+        return;
+    };
+    println!("📋 Evaluated champion utility: {best_score:.2} points (not a capital factor)");
 
     let _best_out_pnl = vec![0.0; train_len];
     let mut best_out_stats = [0.0; 10];
