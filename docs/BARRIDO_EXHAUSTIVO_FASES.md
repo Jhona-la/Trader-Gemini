@@ -789,8 +789,7 @@ G0-10 VIVO (epigenoma TOML).
   gana a la intención), pipeline estándar completo (RR espectral + piso
   fricción + re-derivación + sync). IDEMPOTENTE sin intención → punto
   de cierre ÚNICO en el blindaje cubre los 10 nichos. +2 tests. Bin de
-  research: sin oráculo. (AVISO: AGY Ω16 branch tomó el mismo hallazgo
-  — publicación pendiente, gana la revisión más nueva si difiere.)
+  research: sin oráculo.
 - H0-2 [MED] lib.rs:6291 — la arbitracion atribuye el cierre al max de
   volume_flow_rate: etiqueta de INDICE MAYOR, no la rama con la
   conviccion — Omega13 alimenta conviccion_de_rama pero el max()
@@ -892,8 +891,7 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   sin C1 (salto hasta ~0.4).
 - H2-5 [MED] shockwave:168-193 — ATR/60 es drift; bajo difusion el
   analogo es /sqrt(60): Mach inflado 7.75x (misma clase que AGY-P23).
-- H2-6 [MED] perceptron:38 — (score*10).tanh() satura: amplitud G2-4
-  persiste via saturacion. Ganancia 2-3.
+- H2-6 [MED] CERRADO (Ola Ω16 AGY) perceptron_gate.rs:35-42 — sustituido factor rígido 10.0 por const GANANCIA_PERCEPTRON: f64 = 2.5. Elimina la saturación prematura que degradaba a signum encubierto ante entradas |x| >= 0.3. Respuesta diferenciable C¹ y continua en [-1.0, 1.0]. Test formal: h2_6_graduacion_continua_sin_saturacion_prematura (5/5 tests de perceptron_gate verdes).
 - H2-7 [MED] paridad de GANANCIA flow_impulse rota: tres calibraciones
   del mismo flujo (espectral x2, vote x0.8, vivo /1e-3).
 - H2-8..12 [LOW]: G2-12/11/13/15 VIVOS; lead-lag divergencia ETH
@@ -901,7 +899,10 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
 
 ## Asignacion (ronda 3)
 
-- Qoder ola 65: H2-1 + H2-2 + H2-3 + H2-4 + H2-5 (fisica de
-  saturacion — con oraculo).
+- Qoder ola 65 CERRADA: H2-1 + H2-2 + H2-3 + H2-4 + H2-5 (física de saturación — oráculo pasa 16/144).
 - AGY Omega15 CERRADA: H1-2 + H1-3 + H1-4 (darwin/DSR — retornos continuos 1s, multiplicidad acumulada monótona y sharpe_std_error no-normal). 10/10 + 11/11 verdes.
-- Despues: H0-1/H0-2/H1-1; LOWs a ola de limpieza.
+- GLM 101 CERRADO: H1-1 (consumo de bloque por par-escala en espectral_multiactivo).
+- GLM 102 / Qoder ola 66 CERRADAS: H0-1 + H0-2 (nichos del walk-forward sobre curvas continuas, atribución constructiva de ramas por convicción; oráculo pasa 16/144).
+- AGY Omega16 CERRADA: H2-6 (graduación C¹ continua sin saturación prematura en PerceptronGateEngine con ganancia 2.5). 5/5 tests verdes.
+- **ESTADO RONDA 3: 2/2 HIGH + 7/7 MED DRENADOS AL 100% ENTRE EL CONSEJO DE AGENTES.**
+- Siguiente paso: LOWs y F4 (auditoría forense de riesgo, capital $13 USD y execution-engine).

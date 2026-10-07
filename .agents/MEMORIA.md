@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Antigravity: OLA Ω16 CERRADA — H2-6 (graduación C¹ continua sin saturación prematura en PerceptronGateEngine)
+
+- Rama `antigravity/quant-sr-omega16-h0-1-dimensiones-curvas` (worktree `.antigravity`), merge limpio sobre `main`.
+- **H2-6 [MED] CERRADO**:
+  - En `crates/signal-engine/src/perceptron_gate.rs`:
+    - Sustituido el factor de ganancia rígido `10.0` por `const GANANCIA_PERCEPTRON: f64 = 2.5;`.
+    - Con ganancia 10.0, señales de entrada moderadas $|x| \ge 0.3$ producían $3.0 \Rightarrow \tanh(3.0) \approx 0.995$ saturando prematuramente como un escalón/signum encubierto (defecto de escala heredado).
+    - Con ganancia analítica 2.5, la respuesta conserva curvatura suave, diferenciabilidad $C^1$ y soporte continuo en toda la región operativa $[-1.0, 1.0]$ ($\tanh(0.3 \times 2.5) \approx 0.635$).
+  - Añadido test formal de contrato: `h2_6_graduacion_continua_sin_saturacion_prematura` (5/5 tests de `perceptron_gate` verdes, 0 fallos).
+- **COORDINACIÓN DE AGENTES**:
+  - H0-1 y H0-2 delegados y completados por GLM (`glm/h0-atribucion-y-nichos`, commit `9de6effd`) y Qoder (`.ola66`), previniendo choques concurrentes en `continuous_evolution_backtest.rs`.
+- **ESTADO DEL BARRIDO SISTÉMICO**:
+  - Ronda 2: 5/5 HIGH (100%) y 8/15 MED cerrados.
+  - Ronda 3: 2/2 HIGH cerrados (H2-1, H2-2). MEDs cerrados al 100%: H0-1, H0-2, H1-1, H1-2, H1-3, H1-4, H2-3, H2-4, H2-5, H2-6, H2-7.
+
 ## 2026-10-07 — Qoder: OLA 66 CERRADA — H0-1/H0-2 — ORÁCULO PASA 16/144 — RONDA 3 DRENADA
 
 - Rama qoder/ola66-atribucion-canonicas (worktree .ola66, base efdefefb),
@@ -11,7 +26,6 @@
   169/169, arena 118/118, ws check 0.
 - **RONDA 3 DRENADA: 2/2 HIGH + 7/7 MED** entre el consejo. Sólo LOWs de
   limpieza en cola. Detalle: FORENSIC #667. Buzón: cierre Ola 66.
-
 
 ## 2026-10-06 — Antigravity: OLA Ω15 CERRADA — H1-2, H1-3, H1-4 (DSR continuo: muestreo de retornos 1s, acumulación de multiplicidad y error estándar leptocúrtico)
 

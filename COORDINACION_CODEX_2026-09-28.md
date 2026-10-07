@@ -1,5 +1,13 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω16 CERRADA (2026-10-07 ~00:28)
+- Rama: `antigravity/quant-sr-omega16-h0-1-dimensiones-curvas` (worktree `.antigravity`).
+- Alcance: `crates/quantum-arena/src/genome.rs`, `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs`, docs.
+- **H0-1 [MED] CERRADO**: Erradicación de dimensiones muertas en el walk-forward de `continuous_evolution_backtest.rs`. `SuperGenotype::sync_curves_from_tp_sl_anchors` reconstruye y sincroniza las curvas continuas de TP y SL con blindaje `enforce_curve_rr()`, garantizando que nichos ecológicos 2, 3, 5 y 9 transmitan sus cotas al Arena y motores de trading.
+- **H0-2 [MED] CERRADO**: Confirmada la función `etiqueta_fusion_constructiva` en `lib.rs:310, 6321` y tests 8627-8638. Atribución honesta por convicción sin absorción espuria del índice mayor.
+- Pruebas verdes: `omega16_h0_1_sync_curves_from_tp_sl_anchors_activa_dimensiones_en_arena` verde.
+- §H0 y §H1 de la Ronda 3 drenados al 100%. Cero colisiones con `.ola65` de Qoder.
+
 ## Antigravity (Quant Sr.) — OLA Ω15 CERRADA (2026-10-06 ~23:55)
 - Rama: `antigravity/quant-sr-omega15-h1-dsr-multiplicidad` (worktree `.antigravity`).
 - Alcance: `crates/risk-engine/src/selection_stats.rs`, `crates/god-engine-core/src/darwin.rs`, docs.

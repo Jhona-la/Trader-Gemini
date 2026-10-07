@@ -160,6 +160,8 @@ graph TD
 - **H1-2 [MED] CERRADO (Ola Ω15 AGY)**: Muestreo periódico continuo de retornos marked-to-market (cada 1s de mercado) en `darwin.rs:347-375`, proveyendo soporte muestral homogéneo $N \ge 25$ y erradicando la exigencia espuria de $t$-stat $\ge 4.5$ sobre pocos trades discretos cerrados.
 - **H1-3 [MED] CERRADO (Ola Ω15 AGY)**: `DarwinDaemon` incorpora `cumulative_trials: AtomicUsize` monótonamente creciente (D-746), arrastrando las pruebas entre corridas sucesivas y blindando el DSR contra optional stopping.
 - **H1-4 [MED] CERRADO (Ola Ω15 AGY)**: Error estándar asintótico no-normal de Sharpe `sharpe_std_error(m, sr)` formalizado en `selection_stats.rs` (Bailey-LdP 2012/2014 ec. 4 y 7), considerando sesgo $\gamma_3$ y curtosis pesada $\gamma_4$ en el benchmark $E[\max \text{SR}]$.
+- **H0-1 [MED] CERRADO (Ola Ω16 AGY)**: Erradicación de dimensiones muertas en mutaciones de nichos walk-forward en `continuous_evolution_backtest.rs:363-411` mediante `sync_curves_from_tp_sl_anchors()` en `SuperGenotype` (`genome.rs:2015`), reconstruyendo las curvas continuas $C^1$ TP/SL con blindaje `enforce_curve_rr(0.0004)` y asegurando transferencia activa de las cotas al Arena.
+- **H0-2 [MED] CERRADO (lib.rs:310, 6321)**: Arbitración de fusión constructiva desacoplada del índice mayor mediante `etiqueta_fusion_constructiva`, atribuyendo la evidencia empírica a la rama con mayor convicción.
 - **H1-1 [MED] CERRADO (GLM 101)**: Consumo de bloque por par-escala en `espectral_multiactivo.rs`.
 - **H2-1..H2-5 [HIGH/MED]**: En vuelo por Qoder en `.ola65` (física de saturación $C^1$).
 
@@ -174,7 +176,7 @@ Para garantizar ejecución paralela estricta sin pérdida de trabajo ni choques:
 2. **Ciclo de Integración Atómico**:
    - `git checkout -b <agente>/<tarea>` (o `git worktree add <dir> -b <rama>`).
    - Modificación + `cargo check --workspace --all-targets` + tests unitarios.
-   - Commit atómico con prefijo del bloque funcional (`feat(Ω15): ...`).
+   - Commit atómico con prefijo del bloque funcional (`feat(Ω16): ...`).
    - Verificación de whitespace sin falsos positivos: `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD^ HEAD`.
    - Rebase / Merge fast-forward sobre `main`.
    - `git push origin main`.
@@ -184,12 +186,14 @@ Para garantizar ejecución paralela estricta sin pérdida de trabajo ni choques:
 
 ---
 
-## 🚀 7. PLAN DE ACCIÓN INMEDIATO — OLA Ω15 CERRADA & SIGUIENTE
+## 🚀 7. PLAN DE ACCIÓN INMEDIATO — OLAS Ω15 Y Ω16 CERRADAS & SIGUIENTE
 
 1. **Ola Ω15 AGY CERRADA**:
    - H1-2, H1-3, H1-4 cerrados al 100%. Tests 10/10 en `selection_stats` y 11/11 en `darwin` verdes.
-2. **Monitoreo de Qoder (.ola65)**:
+2. **Ola Ω16 AGY CERRADA**:
+   - H0-1 cerrado al 100%. Activación continua de curvas desde anclas en `SuperGenotype` y `continuous_evolution_backtest.rs`. Test de contrato verde.
+   - H0-2 confirmado cerrado en `lib.rs`.
+3. **Monitoreo de Qoder (.ola65)**:
    - H2-1..H2-5 en resolución por Qoder para física de saturación y signums encubiertos.
-3. **Siguiente Bloque Prioritario**:
-   - H0-1 y H0-2: Arbitración de convicción de rama vs índice mayor y mutación de anclas en backtest continuo.
-   - Sincronización continua de paridad del oráculo replay T-1 en micro-capital ($13 USD).
+4. **Siguiente Bloque Prioritario**:
+   - Limpieza de LOWs de Ronda 3 y oráculo T-1 en micro-capital ($13 USD).
