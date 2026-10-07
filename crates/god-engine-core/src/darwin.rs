@@ -31,13 +31,13 @@ pub struct Genotype {
 
 impl Genotype {
     #[inline]
-    pub fn scalp_tp(&self) -> f64 {
+    pub fn tp_at_fast_anchor(&self) -> f64 {
         quantum_arena::temporal_spectrum::HorizonCurve { a: self.tp_curve_a, b: self.tp_curve_b }
             .eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
     }
 
     #[inline]
-    pub fn scalp_sl(&self) -> f64 {
+    pub fn sl_at_fast_anchor(&self) -> f64 {
         quantum_arena::temporal_spectrum::HorizonCurve { a: self.sl_curve_a, b: self.sl_curve_b }
             .eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
     }
@@ -713,14 +713,14 @@ mod tests {
         let genome = Genotype::new_random();
 
         assert!(genome.global_leverage >= 10.0 && genome.global_leverage <= 125.0);
-        assert!(genome.scalp_tp() > 0.0);
-        assert!(genome.scalp_sl() > 0.0);
+        assert!(genome.tp_at_fast_anchor() > 0.0);
+        assert!(genome.sl_at_fast_anchor() > 0.0);
 
         genome.apply_to_arena(&arena);
 
         let roundtrip = Genotype::current_from_arena(&arena);
         assert_eq!(roundtrip.global_leverage, genome.global_leverage);
-        assert!((roundtrip.scalp_tp() - genome.scalp_tp()).abs() < 1e-6);
+        assert!((roundtrip.tp_at_fast_anchor() - genome.tp_at_fast_anchor()).abs() < 1e-6);
     }
 
     #[test]
@@ -746,8 +746,8 @@ mod tests {
         let safe_genome = Genotype::current_from_arena(&arena);
         assert!(safe_genome.global_leverage.is_finite());
         assert!(safe_genome.trend_threshold.is_finite());
-        assert!(safe_genome.scalp_tp().is_finite());
-        assert!(safe_genome.scalp_sl().is_finite());
+        assert!(safe_genome.tp_at_fast_anchor().is_finite());
+        assert!(safe_genome.sl_at_fast_anchor().is_finite());
         assert!(safe_genome.min_confidence.is_finite());
     }
 

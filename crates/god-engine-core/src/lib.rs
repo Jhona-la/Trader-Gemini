@@ -6062,11 +6062,11 @@ impl GodEngineCore {
                         swing_stretch_z >= 0.0 && swing_stretch_z <= crate::diffusion::Z95;
 
                     let macd_diff = (ema_fast - ema_slow) / ema_slow;
-                    // G0-2 (Ola Ω11): desacoplar la rama 13 del ancla fija swing_tp_base (12h)
-                    // y alinearla con la geometría continua evaluada a la tau viva de la onda.
-                    let swing_tp = self.arena.config.tp_at_tau(swing_duration_ms as f64);
+                    // G0-2 (Ola Ω11): la rama 13 evalúa la geometría continua
+                    // a la τ viva de la onda (tp_at_tau), no al ancla fija 12h.
+                    let tp_tau_vivo = self.arena.config.tp_at_tau(swing_duration_ms as f64);
                     let threshold =
-                        (swing_tp * 0.003).max(0.0001) * (1.0 / hurst_exponent.max(0.1));
+                        (tp_tau_vivo * 0.003).max(0.0001) * (1.0 / hurst_exponent.max(0.1));
 
                     let is_bull_trend = is_confirmed_uptrend && ema_fast > ema_slow;
                     let is_bear_trend = is_confirmed_downtrend && ema_fast < ema_slow;
