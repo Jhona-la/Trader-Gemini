@@ -1,5 +1,21 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-06 — Qoder: RONDA 3 DEL BARRIDO CERRADA (H0-H2, docs-only) — 22 hallazgos
+
+- Contra ece24d87 (9 olas nuevas desde ronda 2). 3 auditores paralelo.
+  **22 hallazgos (2 HIGH, 7 MED, 13 LOW/estados)** en seccion RONDA-3.
+- **HIGH**: H2-1 conformal con divisores 1e-3/1e-6 = signum disfrazado;
+  H2-2 familia tanh encubierto (flow_impulse/hawkes_bessel/coaxial —
+  la ola 63 sembro divisores que saturan).
+- **MED clave**: H2-3 turbo_z default fuera de banda (motor apagado);
+  H1-2/H1-3 DSR inalcanzable + sin control entre rondas; H0-1
+  walk-forward en dimensiones muertas; H0-2 atribucion por indice;
+  H1-1 muestras 1-dependientes; H1-4 sigma_SR IID.
+- **Mapa positivo**: Ville xfamilia CORRECTA, Hurst VR CORRECTO, zeta2
+  CORRECTO, lead-lag Omega11 CERRADO, supermartingala cruzada CORRECTA.
+- Asignacion: Qoder 65 = H2 fisica saturacion (oraculo); AGY Omega15 =
+  H1 darwin. Detalle en buzon.
+
 ## 2026-10-06 — Qoder: OLA 64 CERRADA — VILLE DE FAMILIA EN ρ(τ) DEL VETO DE GRUPO (F2-B8) — ORÁCULO PASA 16/144
 
 - Rama qoder/ola64-ville-rho-tau (worktree .ola64, base d29758f8),

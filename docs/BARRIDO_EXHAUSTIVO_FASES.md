@@ -760,3 +760,96 @@ peligrosa que fingiría rigor). La honestidad del sistema exige decir
 **Requisito para cerrar**: API de retornos por trade de los engines
 sombra (ola futura si el consejo la aprueba). Entonces el DSR de la
 cosecha es: `edge_survives_multiplicity(returns_of_best, num_trees)`.
+
+# ═══════════════════════════════════════════════════════════════════
+# RONDA 3 (2026-10-06 tarde) — REVISIÓN DESDE LA BASE contra ece24d87
+# (9 olas nuevas desde ronda 2: Qoder 61-64, AGY Ω10-Ω14, GLM XCVIII)
+# 3 auditores: H0 metas/conceptos, H1 matemática, H2 física/motores.
+# Foco: AUDITAR LOS FIXES NUEVOS (todo fix carga bug — patrón demostrado
+# 3 veces: #661→G1-1, G2-6→H2-1, Ville 62→H2-3). 22 hallazgos.
+# ═══════════════════════════════════════════════════════════════════
+
+## §H0 — METAS/CONCEPTOS (0 HIGH, 2 MED + LOWs)
+
+Doctrina SOSTENIDA en ejes estructurales; sizing por curvas intacto;
+G0-5 sin anclas huérfanas; Omega13 alimenta TasaAcierto. Estados LOWs
+G0: G0-6 VIVO, G0-7 CERRADO (ola 63), G0-8 VIVO (naming), G0-9 nota,
+G0-10 VIVO (epigenoma TOML).
+
+- H0-1 [MED] continuous_evolution_backtest.rs:363-411 — nichos 2/3/5/9
+  mutan anclas escalares que apply_to_arena IGNORA (todo deriva de
+  curvas): el walk-forward explora dimensiones muertas.
+- H0-2 [MED] lib.rs:6291 — la arbitracion atribuye el cierre al max de
+  volume_flow_rate: etiqueta de INDICE MAYOR, no la rama con la
+  conviccion — Omega13 alimenta conviccion_de_rama pero el max()
+  hace que las ramas altas absorban la evidencia.
+- H0-3 [nota] drift Ville M/alfa=8320: diferenciacion tarda ~7h (tau=30s)
+  a ~410 dias (tau=12h) — doctrinalmente correcto pero #626 congelado
+  para tau>1min; candidato: familia por banda observable.
+- H0-4..8 [LOW]: segunda nocion de friccion buf_fast/slow (lib.rs:3078),
+  epigenoma TOML, atomos G0-6, naming, lectores de vistas en backtests.
+
+## §H1 — MATEMATICA/ESTADISTICA (0 HIGH, 3 MED + LOWs)
+
+Veredictos piezas nuevas: (a) Ville xfamilia 62 CORRECTA (Bonferroni
+sobre union de supermartingalas, dependencia irrelevante); (b)
+e-proceso cruzado 64 CORRECTA con defecto menor (H1-1); (c) Hurst VR
+Omega10 CORRECTA (c_k verificada exacta por derivacion); DSR OOS
+CORRECTA con matices (H1-2/3/4); (d) zeta2 CORRECTA (convergencia
+limpia, campo unico).
+
+- H1-1 [MED] espectral_multiactivo.rs:176-197 — cada bloque participa
+  en DOS muestras consecutivas: muestras 1-dependientes, n efectivo
+  ~mitad del contado. Ville NO se rompe pero la madurez sobreestima.
+  Fix: alimentar solo direccion canonica.
+- H1-2 [MED] darwin.rs:357-368 — DSR sobre retornos de TRADES: compuerta
+  exige t-stat 4.3-4.6, practicamente inalcanzable en ventanas cortas
+  (n=100 exige SR 0.44/trade). Fix: retornos por barra o e-proceso.
+- H1-3 [MED] darwin.rs:388,608-635 — multiplicidad ENTRE rondas sin
+  control: DSR como test de muestra FIJA bajo optional stopping — la
+  receta que mordio dos veces. Fix: e-proceso por linaje o Bonferroni.
+- H1-4 [MED] selection_stats.rs:103 — sigma_SR=1/sqrt(n-1) IID-normal
+  con trades gamma4>>3: benchmark E[maxSR] CORTO, DSR anti-conservador.
+  El sigma correcto ya vive en psr(): conectarlo es gratis.
+- H1-5..9 [LOW]: familia 32 vs <=5 efectiva en tau*, docs numericos
+  desincronizados, FAMILIA constantes duras, G1-7 exportaciones muertas
+  VIVAS.
+
+## §H2 — FISICA/MOTORES (2 HIGH, 4 MED + LOWs)
+
+Veredictos fixes: flow_impulse z-gate PARCIAL (unidades OK pero default
+2.5 FUERA de banda [0.1,1.5] — dispara solo lambda/mu>4.3); confluence
+rampas PARCIAL (2 de 3 gates — el de ML quedo binario); perceptron NO
+CIERRA (saturacion); conformal COSMETICO; shockwave PARCIAL (ATR/60 es
+drift, difusion es /sqrt(60) — Mach inflado 7.75x); lead-lag Omega11
+VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
+
+- H2-1 [HIGH] conformal_reversion_filter.rs:136-137 — constantes
+  1e-3/1e-6 estan 3-6 ordenes bajo la escala operativa (|z|>=1.645):
+  en TODA la region emisora direccion=+-1 y acuerdo=0/1 — G2-6
+  arreglado es un signum disfrazado de tanh.
+- H2-2 [HIGH] familia tanh encubierto: flow_impulse.rs:110 (flow/1e-3),
+  hawkes_bessel.rs:378 (direction/1e-3), coaxial_breakout.rs:47
+  (x/1e-4) — entradas O(1) saturan: la ola 63 erradico .signum()
+  literal pero sembro divisores 10^3-10^4 que reproducen el escalon.
+- H2-3 [MED] genome.rs:774 vs :967 — turbo_z_score_stdev default 2.5
+  fuera de banda [0.1..1.5]: from_vector clampa a 1.5, genoma fresco y
+  serializado con fisica distinta; motor apagado en cascadas tipicas.
+  Fix: default en banda (0.75 dispara desde ~2.8).
+- H2-4 [MED] confluence:266-283 — gate de ML binario: tercera puerta
+  sin C1 (salto hasta ~0.4).
+- H2-5 [MED] shockwave:168-193 — ATR/60 es drift; bajo difusion el
+  analogo es /sqrt(60): Mach inflado 7.75x (misma clase que AGY-P23).
+- H2-6 [MED] perceptron:38 — (score*10).tanh() satura: amplitud G2-4
+  persiste via saturacion. Ganancia 2-3.
+- H2-7 [MED] paridad de GANANCIA flow_impulse rota: tres calibraciones
+  del mismo flujo (espectral x2, vote x0.8, vivo /1e-3).
+- H2-8..12 [LOW]: G2-12/11/13/15 VIVOS; lead-lag divergencia ETH
+  escalada 0.6 y firma con rho negativo.
+
+## Asignacion (ronda 3)
+
+- Qoder ola 65: H2-1 + H2-2 + H2-3 + H2-4 + H2-5 (fisica de
+  saturacion — con oraculo).
+- AGY Omega15: H1-2 + H1-3 + H1-4 (darwin/DSR — su zona).
+- Despues: H0-1/H0-2/H1-1; LOWs a ola de limpieza.
