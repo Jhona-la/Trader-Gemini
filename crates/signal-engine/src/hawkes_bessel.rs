@@ -325,13 +325,22 @@ impl QuantumStrategy for HawkesBesselEngine {
             return 0.0;
         }
 
-        // M2-C02 — CERRADO (R9, 2026-09-19): el core excita el proceso
-        // real por trade y publica λ/μ̂ VERDADERO en 'hawkes_intensity'
-        // (por moneda, CERT-M2-C02); este evaluate consume ese exceso
-        // sobre SS con la moneda de la casa (#657/#659/#666 — ver el
-        // comentario del return). El historial del mislabel pre-R9 se
-        // retiró (G2-12): el texto obsoleto describía el proxy de
-        // aceleración YA reemplazado e invitaba a re-parar lo cableado.
+        // M2-C02 — CERRADO (R9, 2026-09-19; verificado H2-8 RONDA 3,
+        // 2026-10-07): el core excita el proceso real por SÍMBOLO
+        // (`hawkes_by_coin`, record_event por trade) y publica λ/μ
+        // VERDADERO al registry como 'hawkes_intensity'
+        // (god-engine-core/src/lib.rs:~4180,
+        // `hawkes_ratio_real.clamp(0.1, 10)`).
+        //
+        // HISTORIA CERRADA (no re-parar — era el riesgo de este bloque
+        // viejo, hallazgo H2-8): antes de M2-C02 el slot 'hawkes_intensity'
+        // llevaba un PROXY de aceleración 1+|a_t|/ATR (mislabel de la
+        // auditoría décima). Aquel texto advertía "FIX REAL pendiente, NO
+        // hecho" — PENDIENTE YA CUMPLIDO: la matemática Σα·e^(−βΔt) de
+        // este engine está VIVA en producción vía el proceso por símbolo
+        // del core. Los consumidores del slot
+        // (flow_excitation_confluence, flow_impulse) leen intensidad real
+        // desde entonces.
         let core_intensity = r
             .get_scoped_parameter(
                 sym_opt,

@@ -199,8 +199,11 @@ mod tests {
         };
         let mut e = EProceso::new();
         let mut cruzo = false;
-        // p=0.58: E[ln factor] = 0.58·ln(1.1) + 0.42·ln(0.9) ≈ 0.0110/obs
-        // — cruza 20 en ~n=272.
+        // p=0.58: E[Δln-capital] = 0.58·ln(1.1) − 0.42·|ln(0.9)| =
+        // 0.01103/obs ⇒ cruce de ln(1/α)=ln(20)=2.996 en n≈272
+        // (H1-6/G1-8: el "~800" anterior era el número de FAMILIA
+        // M=416, no el umbral simple — ver comentario de
+        // significativo_familia para los n por M).
         for _ in 0..4_000 {
             let acierta = (rng() % 100) < 58;
             let r = if acierta { 0.02 } else { -0.019 };

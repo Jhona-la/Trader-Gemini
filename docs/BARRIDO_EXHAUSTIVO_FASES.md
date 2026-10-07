@@ -908,8 +908,36 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
 - H2-6 [MED] CERRADO (Ola Ω16 AGY) perceptron_gate.rs:35-42 — sustituido factor rígido 10.0 por const GANANCIA_PERCEPTRON: f64 = 2.5. Elimina la saturación prematura que degradaba a signum encubierto ante entradas |x| >= 0.3. Respuesta diferenciable C¹ y continua en [-1.0, 1.0]. Test formal: h2_6_graduacion_continua_sin_saturacion_prematura (5/5 tests de perceptron_gate verdes).
 - H2-7 [MED] paridad de GANANCIA flow_impulse rota: tres calibraciones
   del mismo flujo (espectral x2, vote x0.8, vivo /1e-3).
-- H2-8..12 [LOW]: G2-12 CERRADO (Ola 67); G2-11/13/15 VIVOS; lead-lag
-  divergencia ETH escalada 0.6 y firma con rho negativo.
+  → **DRENADO POR REFINAMIENTO (GLM 103)**: la pata ROTA era la tercera
+  (/1e-3 = signum encubierto) — ya reparada por #666/H2-2 (tanh natural
+  ×1.0). Las dos restantes son DISEÑO deliberado sobre escalas de
+  entrada DISTINTAS (voto_espectral consume momentum_z z-scores; vote
+  consume obi+ofi O(1)) — unificarlas en una constante compartida sería
+  miscalibrar. Fix de auditabilidad: constantes asociadas públicas
+  `GANANCIA_VOTO_ESPECTRAL=2.0` / `GANANCIA_FLUJO=0.8` con tabla de las
+  tres escalas + contrato `h2_7_paridad_de_ganancias_pinned` (fija los
+  tres valores, los puntos de media respuesta z₅₀=0.2747 < flow₅₀=0.6866
+  y prohíbe el regreso del /1e-3: a |flow|=0.004 el voto es ~0).
+  Bit-exact (mismos valores), sin oráculo.
+- H2-8/G2-12 → **DRENADO (GLM 103 + Ola 67 Qoder, convergencia
+  paralela)**: el bloque de advertencia VIEJO en hawkes_bessel.rs (~328)
+  decía "FIX REAL pendiente, NO hecho" sobre el proxy de aceleración —
+  PENDIENTE YA CUMPLIDO desde M2-C02 (el core publica λ/μ verdadero por
+  símbolo en lib.rs:~4180). Reescrito como historia cerrada con "no
+  re-parar" (versión GLM conservada — cita el cableado productivo); la
+  Ola 67 retiró el mismo bloque en paralelo. Riesgo de doble-fix
+  eliminado.
+- H1-6/G1-8 → **DRENADO (GLM 103 + Ola 67 Qoder, convergencia
+  paralela)**: el comentario de potencia de qo_661 alegaba cruce
+  "~n=800" para el umbral simple — el real es n≈272
+  (E[Δln-capital]=0.01103/obs; 800 es el número de FAMILIA M=416, no el
+  umbral 1/α). Corregido con la derivación (versión GLM conservada en
+  evalues.rs; Ola 67 corrigió además el hermano de skill_motores:
+  1.1^95≈8540 cruza 8320, no "1.1^97≈8640"). (La otra parte, G1-6
+  sr_sigma gaussiano, quedó SUPERADA por Ω15: el DSR ya usa
+  sharpe_std_error no-normal.)
+- H2-9..12 [LOW]: G2-11/13/15 VIVOS; lead-lag divergencia ETH
+  escalada 0.6 y firma con rho negativo.
 
 ## Asignacion (ronda 3)
 
@@ -918,5 +946,8 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
 - GLM 101 CERRADO: H1-1 (consumo de bloque por par-escala en espectral_multiactivo).
 - GLM 102 / Qoder ola 66 CERRADAS: H0-1 + H0-2 (nichos del walk-forward sobre curvas continuas, atribución constructiva de ramas por convicción; oráculo pasa 16/144).
 - AGY Omega16 CERRADA: H2-6 (graduación C¹ continua sin saturación prematura en PerceptronGateEngine con ganancia 2.5). 5/5 tests verdes.
-- **ESTADO RONDA 3: 2/2 HIGH + 7/7 MED DRENADOS AL 100% ENTRE EL CONSEJO DE AGENTES.**
+- **ESTADO RONDA 3: 2/2 HIGH + 8/8 MED DRENADOS AL 100% ENTRE EL CONSEJO
+  DE AGENTES** (el "7/7" anterior omitía H2-7, drenado por GLM 103;
+  conteo completo: H0-1, H0-2, H1-1, H1-2, H1-3, H1-4, H2-3, H2-4,
+  H2-5, H2-6, H2-7 = 11 MED + 2 HIGH). Quedan LOWs de limpieza.
 - Siguiente paso: LOWs y F4 (auditoría forense de riesgo, capital $13 USD y execution-engine).
