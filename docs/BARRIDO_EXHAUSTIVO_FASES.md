@@ -951,3 +951,118 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   conteo completo: H0-1, H0-2, H1-1, H1-2, H1-3, H1-4, H2-3, H2-4,
   H2-5, H2-6, H2-7 = 11 MED + 2 HIGH). Quedan LOWs de limpieza.
 - Siguiente paso: LOWs y F4 (auditoría forense de riesgo, capital $13 USD y execution-engine).
+
+---
+
+# RONDA 4 (2026-10-07, contra 8938cf41 — post Ola 65/66/67, Ω15/Ω16, GLM 101/102/103)
+
+Mandato del operador: revisión desde la base tras 10+ olas nuevas. 3
+auditores paralelo (A metas/doctrina, B matemática/estadística, C
+física/motores). **17 hallazgos (2 HIGH, 6 MED, 9 LOW)** — el patrón
+«todo fix carga bug» se confirma por CUARTA vez: el blindaje del
+walk-forward corregido en H0-1 seguía clampando un gen fuera de su
+bound; la paridad calma-abstiene (#659) arreglada en los caminos vivos
+nunca llegó a las DOS sombras espectrales.
+
+## §R4-A — METAS/CONCEPTOS/DOCTRINA
+
+- **R4-A1 [MED] god_engine.rs:~3876 — tercer sitio de ancla cruda.** El
+  fallback de stop_pct de la envolvente lee `scalp_sl_base` crudo (Ω14
+  arregló genome_protection_prices y el fallback OCO, dejó éste).
+  Viola fuente única (invariante 3). → **CERRADO (Ola 68)**:
+  `sl_at_tau(TAU_ANCHOR_FAST_MS)`.
+- **R4-A2 [MED] ADR-0014:41 — doctrina formal desincronizada.** El
+  principio 6 aún prescribe significancia Fisher 2/√(n−3) con N efectivo
+  (retirada por #661/#663 → Ville familia M/α; Ola 67 borró las
+  exportaciones muertas). ARQUITECTURA_VIVA §2.9 sí está al día.
+  Fix: adenda al ADR. [ABIERTO — docs]
+- R4-A3 [LOW] hot_swap_controller defaults mágicos sin doc de
+  procedencia (0.005/0.002/0.020/0.010 = curva baseline en los anchors).
+- R4-A4 [LOW] naming residual: telemetría "Scalp execution"
+  (god_engine.rs:3165), campo vivo `swing_nn` (debería ser macro_nn).
+- R4-A5 [LOW] rama 13 semi-renombrada: swing_duration_ms/swing_stretch_z
+  aún dicotómicos.
+
+## §R4-B — MATEMÁTICA/ESTADÍSTICA
+
+- **R4-B1 [HIGH] walk-forward: nichos exploran eje MUERTO y promote
+  rechaza campeones.** Blindaje (:450) y nicho 4 (:409) clampean
+  `tech_threshold∈[0.08,0.22]` — el bound evolutivo slot-21 es [0.24,
+  0.30] (D-625, genome.rs:1831): todo mutante corre a 0.24 en el arena
+  (clamped por apply_to_arena) y `GenomeEnvelope::promote→validate`
+  RECHAZA campeones por «gen 21 fuera de bounds» ⇒ NINGÚN mutante se
+  persiste (misma clase que H0-1). Telemetría :962 imprime sin clamp.
+  → **CERRADO (Ola 68)**: banda [0.24, 0.30] blindaje / [0.24, 0.27]
+  nicho 4.
+- **R4-B2 [MED] muestreo H1-2 mezcla cadencias** (darwin.rs:376-386):
+  la muestra de retornos dispara por reloj 1 s **o** por cierre de trade
+  (`|| closed.is_some()`) ⇒ serie heterocedástica (Δt irregulares con
+  saltos de PnL realizado) que distorsiona γ₃/γ₄/SR del DSR
+  (Mertens asume frecuencia fija). [ABIERTO — Ola 69]
+- R4-B3 [MED] DSR con soporte marginal: selection_stats n≥20; con OOS
+  de ~20-40 s de feed denso hay apenas 20-40 retornos de 1 s — γ₃/γ₄
+  de varianza enorme alimentan el listón de Gumbel. Fix: piso n≥60 o
+  σ gaussiano bajo n pequeño. [ABIERTO — Ola 69]
+- R4-B4 [LOW] doc «≥104 aciertos» del veto de grupo: real 113
+  (ln43500/ln1.1=10.68/0.0953).
+- R4-B5 [LOW] nits: evalues :114 «M=448» vs familia real 416+32;
+  temporal_spectrum:1682 «1.1⁶⁹≈670» → 718.
+- R4-B6 [LOW] fallback anti-conservador σ_SR (selection_stats:88): si
+  1−γ₃SR+((γ₄−1)/4)SR² ≤ 0 cae a 1/√(n−1), MENOR que el error real.
+- **R4-B7 [MED] blindaje silencia nicho 2**: clamp swing_sl_base
+  [0.0080, 0.0350] pisa el slow-anchor 0.0075 del nicho 2 y el rebuild
+  post-blindaje propaga +6.7% de distorsión a la curva.
+  → **CERRADO (Ola 68)**: banda [0.0070, 0.0350] ⊇ nichos 2/3/5.
+
+## §R4-C — FÍSICA/MOTORES
+
+- **R4-C1 [HIGH] la CALMA invierte las sombras espectrales de hawkes y
+  flow_impulse.** `voto_espectral` de ambos multiplica
+  `excitacion_hawkes_norm(ratio)` SIN `.max(0.0)`: en calma (ratio<SS)
+  la excitación es negativa y cada escala vota INVERTIDA (calma + flujo
+  alcista vota bajista) — el defecto exacto que #659/F2-A4 documentó y
+  arregló en los caminos vivos, pero las SOMBRAS alimentan
+  `votos_espectrales` → consenso espectral que DIRIGE desde #624.
+  Peor: lib.rs:2092 fallback `None => 1.0` ⇒ monedas sin proceso Hawkes
+  votan invertidas a peso constante. Tests gap: nunca se probó calma.
+  → **CERRADO (Ola 68)**: `.max(0.0)` en ambas + tests calma→abstención
+  (el fallback 1.0 ahora abstiene naturalmente).
+- **R4-C2 [MED] firma viva shockwave saturada**: SAT_MOMENTO=1e4
+  (supersonic_shockwave.rs:207) — speed_norm O(1e-4..1e-2)/s ⇒ media
+  respuesta en 5e-5 ⇒ dirección binaria de facto en el camino vivo;
+  rompe paridad con la sombra (tanh natural en z). [ABIERTO — Ola 69]
+- **R4-C3 [MED] conformal `acuerdo` saturado**: divisor 0.5 en
+  (−(z·trend)/0.5).tanh() — media respuesta |z·trend|=0.28, ~6× bajo el
+  emisor típico 1.645. [ABIERTO — Ola 69]
+- R4-C4 [MED-LOW] perceptron gate residual empinado:
+  tanh((act−0.5)·5).clamp(0.15,1) — kink C⁰ en act≈0.53 (derivada
+  0→4.9); H2-6 arregló la direccional, dejó el gate.
+- R4-C5 [LOW] shockwave: mid_price ausente rompe unidades (speed crudo
+  vs atr_pct/√60 fraccional) — abstener sin mid.
+- R4-C6 [LOW] flow_impulse emisión binaria documentada (AGY-AUD-002) +
+  kink C⁰ .min(2.0) en hawkes_scale del confluence.
+
+## Mapa positivo (verificado por los 3 auditores)
+
+- **evalues**: capital (1+λ·sign(s)·sign(r)) exacto; Bonferroni M/α
+  unión válida sin independencia; TODOS los números de doc correctos
+  tras GLM 103 (n≈272, 586, 818).
+- **selection_stats**: sharpe_std_error reproduce Mertens exacto;
+  Gumbel eq.5 recalculado ✓; darwin OOS causal 50/50 real,
+  cumulative_trials monótono sin doble conteo.
+- **espectral_multiactivo (GLM 101)**: consumo de bloque verificado
+  para δ≈0.4τ/0.6τ y ts idéntico — supermartingala preservada; familia
+  C(30,2)·5 conservadora y válida.
+- **Curvas (Ola 66)**: through_two_points ↔ derive_anchors idempotente;
+  nichos kelly/trail llegan a curvas vivas.
+- **Ganancias nuevas ejemplares** (GLM 103/Ω16): tabla de escalas,
+  contratos pinned, justificación de no-unificar.
+- **Ola 67 renames puros** (tp/sl_at_fast_anchor, tp_tau_vivo):
+  fórmulas idénticas a sus predecesoras.
+
+## Asignación ronda 4
+
+- **Qoder Ola 68 CERRADA (con oráculo)**: R4-C1 + R4-B1 + R4-B7 + R4-A1.
+- **Ola 69 (siguiente)**: R4-B2 (muestreo por rejilla) + R4-B3 (piso n)
+  + R4-C2/C3/C4 (saturación residual) — con oráculo.
+- Docs: R4-A2 adenda ADR-0014; LOWs B4/B5/A3/A4/A5 en limpieza.
