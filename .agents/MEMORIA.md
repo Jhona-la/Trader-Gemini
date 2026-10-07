@@ -900,6 +900,31 @@ QA de cobertura propia5unidades/tablas enRA§40.2; parcial, no todoelproyecto.
 - MGlib/forest/RAfuente496 y sus runners intactos; no modelos, genomas,
   ejecución live, entrenamiento o rentabilidad72h certificados por este bloque.
 
+## 2026-10-04 — Codex MG: ejecutar el contrato también en CI
+
+- Sobre `605a4d7f` se añade únicamente el paso explícito de CI
+  `evidence_expiry_contract`, su explicación y esta memoria. All-targets
+  compila el target, pero no sustituye la ejecución de sus 13 pruebas.
+- No se retira ninguna regresión, no se cambia el código GREEN, el timeout,
+  el compilador ni la política. Sin resultado CI de esta adenda todavía;
+  publicación pública consultada y merge condicionado a sus gates.
+
+## 2026-10-04 — Codex MG02/MG05: publicación retirada, no IC universalmente fresco
+
+- Rama evidence-expiry sobrec6ce, reconciliada con maine3adf74 por unión;
+  comparación por padre y all-targets candidato exit0/2m33s (23272).
+- RED12fail1pass→GREEN13pass0fail, mismo testsha797AF948; regresión Lundberg
+  6/0. Helper/publicación/reader reales, scopes y handoff concurrente; E0596
+  de fixtures previo reparado/noRED. Review independiente del hash sin nuevos
+  bloqueadores; docs/AUDITORIA_CADUCIDAD_EVIDENCIAS_2026-10-04.md detalla recibos.
+- R0/IC-1 en clavescoin evita reactivar global, conserva política R>0/IC sólo
+  endurecimiento y fórmulas. No snapshot conjunto ni revoca órdenes validadas.
+  IC acumulado en misma escala puede seguir histórico: as-of del estimador
+  pendiente, no cierre totalMG05. Cierre/feedback real, base negativa directa,
+  benchmark/paridad completa/T1MG no ejecutados. Sin modelos/live/training.
+- Código de RA/T1, forest y feature-clock no modificados; publicación/integración
+  a main aún pendientes en este corte. Compartir registry comparte las claves.
+
 ## 2026-10-04 — Qoder: Ola 55 / #655 — PLAN MAESTRO DE SINCRONIZACIÓN
 
 - docs/PLAN_MAESTRO_SINCRONIZACION.md (mandato del operador): tres
