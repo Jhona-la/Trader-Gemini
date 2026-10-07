@@ -137,3 +137,69 @@ Los tres se referencian mutuamente; ninguno sustituye a los demás.
 *Este documento se actualiza por ciclo. Fuente de verdad del estado:
 buzón + TABLERO + ADRs 0001-0013. La meta es la dirección; los gates
 son el camino.*
+
+---
+
+## ESTADO AL CIERRE DE LA SESIÓN GLM (LXV–XCVII, 2026-10-06)
+
+> Consolidado para el operador y el consejo: qué quedó construido, qué
+> quedó verificado, y qué desbloquea qué. Cualquier agente que retome
+> empieza aquí.
+
+### La familia honesta de modelos (el activo principal)
+
+7 símbolos con evidencia `selección ∧ test posterior` (la plantilla
+honesta completa): **BTC (+0.0168), ADA (+0.0081), ATOM (+0.0114),
+BNB (+0.0066), SOL (+0.0203 — récord), XRP (+0.0080), XLM (+0.0053)**.
+2 bloqueos honestos (NEAR, ICP — sin edge medible). Cobertura: 7/26 del
+roster. La tubería de promoción fue barrida y saneada (LXXXIX:
+atomicidad tmp+rename+sync del gate, margen fail-closed).
+
+### El barrido total (directriz del operador: F0-F8)
+
+**Completado**: 338 archivos src + 964 tests, **217 hallazgos**. La
+escalera pedida (metas → conceptos → matemática → física → código) se
+cumplió: F0 metas (Qoder), F1 matemática, F2 física, F3 núcleo, F4
+dinero (Ω), F5 tubería (GLM), F6 datos, F7 observabilidad, F8 tests.
+Los ~15 HIGH: **todos drenados, resueltos o diseñados**. El inventario
+vivo es `docs/BARRIDO_EXHAUSTIVO_FASES.md`.
+
+### La cadena de certificación (las reglas de la casa)
+
+1. **Muralla CI**: 431 tests de 5 crates + auto-EOF + blindaje
+   whitespace (XC–XCII) — ioc_fill fue el rojo invisible que la motivó.
+2. **Oráculo T-1 pre-push** sin excepciones para conducta viva
+   (trinquete 11.0%).
+3. **Paridad bt↔vivo** para cambios de ejecución.
+4. **Plantilla honesta** para todo modelo (split cronológico + test
+   posterior + purga de frontera — la frontera es CERRADA, verificada).
+
+### Investigación cerrada con evidencia
+
+- **Saga L2 v1** (ADR-0010, adendas 1-6): dirección robusta (+5 pts
+  OOS constante) pero ni probabilidad, ni rango, ni condicionado por
+  régimen transfieren el quiebre de septiembre. Señal concentrada en
+  muestras no-range (+8.7 pts). La información direccional existe;
+  capturarla como probabilidad estable es el problema abierto.
+- **Cópulas t** (LXXI–LXXV): medidas, consumidas por el veto, y la
+  deriva mensual documentada (mediana 0.106 — ADR-0009).
+- **Vigilancia**: el watchdog sigue a la generación activa (LXXXXI) —
+  cosecha, manual y futuro cubiertos.
+
+### La cola restante — QUÉ DESBLOQUEA QUÉ
+
+| frente | condición que lo desbloquea |
+|---|---|
+| Revalidaciones 7 modelos + regenerar cópulas + 9 símbolos nuevos | **Tapes de octubre** (el exchange no los ha publicado) |
+| FDUSD (10 modelos inertes) | **Palabra del dueño** (A remoción / B archivo — DECISION_FDUSD_BORRADOR.md) |
+| Cablear veto drift (la señal ya se mide: drift_real_vs_control_pct) | **Distribución medida en vivo** (sesiones de trading) |
+| DSR cosecha completo | **API de retornos por trade** (diseño en BARRIDO §DISEÑO-DSR) |
+| ~79 rojos perpetuos | Triaje por ciclo (mapa de deuda viva ya catalogado) |
+
+### El proceso multiagente (lo que hizo posible todo esto)
+
+Rama por agente → merge → push → eliminar. Buzón append-only (con
+dedupe de copias exactas). TABLERO con fila por agente. Planes
+maestros reconciliados (GLM estado/ruta, Qoder contratos, Codex
+cobertura, Antigravity Ω). Pre-aprobaciones de diffs en vuelo. El
+patrón F de barrido por zonas. La regla de mismo-commit para vetos.
