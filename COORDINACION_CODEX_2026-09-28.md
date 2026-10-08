@@ -1,5 +1,17 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω24 CERRADA (2026-10-08 ~10:50)
+- Rama: `antigravity/quant-sr-ronda6-ou-tiempo-fisico` (worktree `.antigravity`), base `246542bf`.
+- Alcance: `crates/strategy-core/src/multivariate_coint.rs`, `crates/strategy-core/src/vecm_arbitrage.rs`, docs.
+- **ESTIMADOR ANALÍTICO CONTINUO SDE ORNSTEIN-UHLENBECK / FOKKER-PLANCK CON RELOJ FÍSICO REAL EN COINTEGRACIÓN MULTIACTIVO**:
+  - `ContinuousOrnsteinUhlenbeckSde` activado en `MultivariateCointegrationEngine` vía constructor `.with_continuous_ou()`. Preserva compatibilidad exacta con contratos existentes de deuda abierta (`basket_state_contract.rs: 7/7 verdes`).
+  - Protección de estabilidad ergódica: erradicada la singularidad por varianza nula y frontera de raíz unitaria ($b \approx 1$) mediante convergencia ergódica a la media empírica de observaciones cuando $Var(x) < 10^{-8}$ o $(1 - b) < 0.02$, impidiendo divisiones por cero en interceptos OLS y eliminando la inversión espuria de Z-Score.
+  - Implementación del principio de innovación previa: el Z-score de la perturbación se evalúa sobre la distribución estacionaria $(\mu, \sigma_\infty, \theta)$ previa antes de actualizar los momentos, alineando la direccionalidad de señales `SignalType::Short` / `SignalType::Long`.
+  - Duración de señal en `expected_duration_ms` acotada a la vida media física $t_{1/2} = \ln(2)/\theta$ en milisegundos bajo `TradeHorizon::Continuous`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo check -p strategy-core --lib`: **0 advertencias** (100% limpio).
+  - `cargo test -p strategy-core`: **27/27 unit tests verdes** + **11/11 contract tests verdes** (**38/38 tests pasando en verde**).
+
 ## Antigravity (Quant Sr.) — OLA Ω23 CERRADA (2026-10-08 ~09:30)
 - Rama: `antigravity/quant-sr-ronda6-continuo-integral` (worktree `.antigravity`), base `c41fdd33`.
 - Alcance: `crates/god-engine-core/src/lib.rs`, docs.

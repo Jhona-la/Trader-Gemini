@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Antigravity: OLA Ω24 CERRADA — ESTIMADOR ANALÍTICO CONTINUO SDE ORNSTEIN-UHLENBECK / FOKKER-PLANCK CON RELOJ FÍSICO REAL EN COINTEGRACIÓN MULTIACTIVO (STRATEGY-CORE)
+
+- Rama: `antigravity/quant-sr-ronda6-ou-tiempo-fisico` (worktree `.antigravity`), base `246542bf`.
+- **INTEGRACIÓN SDE CONTINUO DE ORNSTEIN-UHLENBECK CON RELOJ FÍSICO EN `crates/strategy-core`**:
+  - `ContinuousOrnsteinUhlenbeckSde` integrado en `MultivariateCointegrationEngine` vía `.with_continuous_ou()`. Preserva compatibilidad estricta con contratos de deuda abierta (`basket_state_contract.rs: 7/7 verdes`).
+  - Resuelto fallo por singularidad de varianza nula y frontera de raíz unitaria ($b \approx 1$): cuando $Var(x) < 10^{-8}$ o $(1 - b) < 0.02$, $\mu$ converge de forma ergódica a la media empírica de observaciones, impidiendo explosiones de intercepto OLS ($a / (1-b)$) y previniendo inversiones espurias de signo en el Z-Score de spread.
+  - Implementado el principio de innovación previa: el Z-score de una perturbación entrante evalúa la sorpresa contra la distribución estacionaria previa $(\mu, \sigma_\infty, \theta)$ antes de la actualización de parámetros, asegurando calibración Bayesiana exacta de señales `SignalType::Short` / `SignalType::Long`.
+  - Duración esperada calibrada a la vida media física del proceso $t_{1/2} = \ln(2)/\theta$ en milisegundos, dentro del horizonte continuo `TradeHorizon::Continuous`.
+- **VERIFICACIÓN Y CONTRATOS**:
+  - `cargo check -p strategy-core --lib`: **0 advertencias** (100% limpio).
+  - `cargo test -p strategy-core`: **27/27 unit tests verdes** + **11/11 contract tests verdes** (**38/38 tests pasando en verde**).
+  - Test unitario específico añadido: `test_multivariate_cointegration_continuous_ou_physical_clock`.
+
 ## 2026-10-08 — Qoder: OLA 71 CERRADA — QUINTA CONVERGENCIA — ORÁCULO PASA — RONDA 5 DRENADA 12/12
 
 - **OLA 71 CERRADA** (qoder/ola71-mecanica-ronda5, base 2721293b +
@@ -14,7 +27,6 @@
   GLM 103). AGY abrió RONDA 6 (Ω23: limpieza de warnings).
 - Lección convergencia: publicar la ASIGNACIÓN en el buzón antes de
   ejecutar reduce colisiones (5 en dos días).
-
 
 ## 2026-10-08 — Antigravity: OLA Ω23 CERRADA — RONDA 6: LIMPIEZA FORENSE DE VARIABLES ESPECTRALES HUÉRFANAS Y CONTINUIDAD Z-SCORE EN GOD-ENGINE-CORE (7/7 ADVERTENCIAS ERRADICADAS)
 
