@@ -197,6 +197,23 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
                 .map(|p| p.get_value() / BARRA_S)
             })
             .unwrap_or(0.001);
+        // R5-C1 (R4-C5): sin mid_price la velocidad queda en precio/s
+        // crudo; si el sonido vino del fallback atr_pct (fracción/s) las
+        // unidades NO tienen común denominador ⇒ Mach inflado ×precio.
+        // Abstener en vez de fabricar: sólo con spread_sound (ambos en
+        // precio/s) la comparación sin mid es válida.
+        let hay_mid = mid_price > 1e-8;
+        let sonido_de_spread = registry
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "spread_speed_of_sound",
+                "SupersonicShockwaveEngine",
+            )
+            .is_some();
+        if !hay_mid && !sonido_de_spread {
+            return 0.0;
+        }
         let sound_norm = sound_segundo;
 
         if !speed.is_finite() || !sound_norm.is_finite() || sound_norm <= 0.0 {
@@ -211,7 +228,7 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         // saturaba speed_norm O(1e-4..1e-2)/s a signum disfrazado
         // (media respuesta en 5e-5); tanh(mach/2) es el análogo vivo de
         // la sombra (tanh natural en z) y conserva ambos contratos de
-        // qo_666: mach 1.2 → 0.53·jump, mach 10 → 0.9997·jump.
+        // qo_666: mach 1.2 → 0.53·jump, mach 10 → 0.99991·jump.
         (speed_norm / sound_norm / 2.0).tanh() * jump
     }
 
