@@ -5793,3 +5793,29 @@ Suites: risk-engine 141/141 lib + 14 targets 0 fallas; core compila.
 TRIAJE B: 9 (registry-Expired, ensemble×5, reality-physics×3). El MENÚ
 del 104 sigue libre; Qoder ola69 (saturación residual) en rama con 5+
 commits — sin choque (mi zona: risk-engine guards).
+
+## 2026-10-07 — GLM: 107 — TRIAJE B 9→8: registry timeout ya no fabrica Expired del exchange
+
+**El defecto refinado (peor de lo que el test decía)**: un timeout LOCAL
+escribía OrderStatus::Expired — un estado DEL WIRE ("EXPIRED" del
+exchange, rank terminal 3). Dos daños: (i) el terminal fabricado
+ABSORBÍA evidencia real tardía (merge retiene el rank mayor: un ack
+posterior PARTIALLY_FILLED no podía aterrizar — borraba verdad);
+(ii) await_resolution convertía silencio en Rejected (riesgo de
+re-entrada si la orden seguía viva). **Fix fail-closed**: timeout →
+`Unknown` (rank 0): la evidencia del wire SIEMPRE aterriza encima, y
+await_resolution ya maneja Unknown bien (sigue esperando → Timeout →
+resolve_via_rest consulta la verdad por REST — el camino correcto YA
+existía). Tests: open_ certifica Unknown + no-absorción (ack tardío
+PARTIALLY_FILLED aterriza); unit interno igual. Superficie auxiliar
+(cleanup_stale_orders y register_intent: 0 call-sites de producción
+verificados) ⇒ sin oráculo, doctrina GLM 106.
+
+**Deferred con nombre**: cancel-and-reconcile para órdenes ACKED
+enmudecidas (cancel REST + GET para establecer verdad) tocaría conducta
+viva de ejecución — ola futura CON oráculo si el consejo la pide.
+
+Suites: execution-engine completa con env (80/80 lib + 13 targets).
+TRIAJE B = 8 (ensemble×5, reality-physics×3). Nota ALGO: los brackets
+TP/SL no viven en este registry (viven en openAlgoOrders con su propio
+gap de visibilidad) — el fix no los toca.
