@@ -138,7 +138,12 @@ impl ConformalReversionFilterEngine {
         // 1e-3/1e-6 y |z|≥1.645 (única región emisora), direccion≡±1 y
         // acuerdo≡0/1: el "tanh continuo" era un signum disfrazado.
         let direccion = -(z / 2.0).tanh();
-        let acuerdo = (-(z * trend) / 0.5).tanh().max(0.0);
+        // R4-C3: divisor 0.5 dejaba la media respuesta en |z·trend|=0.28,
+        // ~6× bajo el emisor típico (|z|≥1.645) — acuerdo saturaba a
+        // 0/1 con |trend|≥0.5. Divisor 2.0: en la región emisora con
+        // |tendencia| moderada el acuerdo gradúa (tanh(1.645·0.5/2)=0.38;
+        // tanh(1.645·1.0/2)=0.69).
+        let acuerdo = (-(z * trend) / 2.0).tanh().max(0.0);
         let v = strength * direccion * acuerdo;
         if v > 0.0 && !accept_long {
             return 0.0;
@@ -178,11 +183,11 @@ impl QuantumStrategy for ConformalReversionFilterEngine {
         let z = get("vecm_zscore")
             .or_else(|| get("cointegration_zscore"))
             .unwrap_or(0.0);
-        // `ema_trend_swing` es el nombre de la clave que publica el core (su
-        // productor está fuera de este ámbito); `trend_direction` es el
-        // respaldo. Ambas transportan la MISMA magnitud: dirección de la
-        // tendencia macro.
-        let trend = get("ema_trend_swing")
+        // `ema_trend_swing_z` es la z canónica del macro-trend (R5-A1: el
+        // core la publica tipificada con la volatilidad medida). El trend
+        // CRUDO queda como respaldo para llamadores sin el escritor.
+        let trend = get("ema_trend_swing_z")
+            .or_else(|| get("ema_trend_swing"))
             .or_else(|| get("trend_direction"))
             .unwrap_or(0.0);
         // Fail-open si el motor aún no publica la decisión conformal, coherente
@@ -316,7 +321,7 @@ mod qo_621_tests {
         // z=0.5, tendencia=positiva (todos iguales): la significancia de
         // z=0.5 al 10% es ~0 => score=0 => abstención.
         // (El score conformal exige z lo bastante lejos de 0.)
-        let alguno = voto_debil.dominante();
+        let _alguno = voto_debil.dominante();
         // Con z=0.5 uniforme la significancia puede no ser cero — verificamos
         // que es MENOR que con z=2.0 (la significancia crece con |z|).
         let fuerte = ConformalReversionFilterEngine::voto_espectral(&[2.0; ESCALAS_VOTO], 0.10);

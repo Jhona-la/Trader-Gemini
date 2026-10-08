@@ -11,10 +11,12 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpigenomaSymbolParams {
     pub symbol: String,
-    pub scalp_tp: f64,
-    pub scalp_sl: f64,
-    pub swing_tp: f64,
-    pub swing_sl: f64,
+    /// Bordes de la curva de horizonte continua en las anclas fast/slow
+    /// (G0-10: eran scalp_*/swing_* de la dicotomía erradicada U-ERR-5).
+    pub tp_fast: f64,
+    pub sl_fast: f64,
+    pub tp_slow: f64,
+    pub sl_slow: f64,
     pub min_confidence: f64,
     pub max_leverage: f64,
 }
@@ -58,23 +60,23 @@ impl HotSwapController {
             .epigenoma_dir
             .join("activos")
             .join(format!("{}.toml", params.symbol));
-        let scalp_tp = if params.scalp_tp.is_finite() && params.scalp_tp > 0.0 {
-            params.scalp_tp
+        let tp_fast = if params.tp_fast.is_finite() && params.tp_fast > 0.0 {
+            params.tp_fast
         } else {
             0.005
         };
-        let scalp_sl = if params.scalp_sl.is_finite() && params.scalp_sl > 0.0 {
-            params.scalp_sl
+        let sl_fast = if params.sl_fast.is_finite() && params.sl_fast > 0.0 {
+            params.sl_fast
         } else {
             0.002
         };
-        let swing_tp = if params.swing_tp.is_finite() && params.swing_tp > 0.0 {
-            params.swing_tp
+        let tp_slow = if params.tp_slow.is_finite() && params.tp_slow > 0.0 {
+            params.tp_slow
         } else {
             0.020
         };
-        let swing_sl = if params.swing_sl.is_finite() && params.swing_sl > 0.0 {
-            params.swing_sl
+        let sl_slow = if params.sl_slow.is_finite() && params.sl_slow > 0.0 {
+            params.sl_slow
         } else {
             0.010
         };
@@ -92,19 +94,19 @@ impl HotSwapController {
         let content = format!(
             r#"# Epigenoma State for {}
 symbol = "{}"
-scalp_tp = {:.6}
-scalp_sl = {:.6}
-swing_tp = {:.6}
-swing_sl = {:.6}
+tp_fast = {:.6}
+sl_fast = {:.6}
+tp_slow = {:.6}
+sl_slow = {:.6}
 min_confidence = {:.6}
 max_leverage = {:.6}
 "#,
             params.symbol,
             params.symbol,
-            scalp_tp,
-            scalp_sl,
-            swing_tp,
-            swing_sl,
+            tp_fast,
+            sl_fast,
+            tp_slow,
+            sl_slow,
             min_confidence,
             max_leverage,
         );
@@ -237,10 +239,10 @@ mod tests {
 
         let params = EpigenomaSymbolParams {
             symbol: "BTCUSDT".to_string(),
-            scalp_tp: 0.005,
-            scalp_sl: 0.003,
-            swing_tp: 0.02,
-            swing_sl: 0.01,
+            tp_fast: 0.005,
+            sl_fast: 0.003,
+            tp_slow: 0.02,
+            sl_slow: 0.01,
             min_confidence: 0.75,
             max_leverage: 10.0,
         };

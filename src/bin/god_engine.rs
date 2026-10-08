@@ -3844,11 +3844,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let stop_pct = if core_sl > 0.0 && entry_price > 0.0 {
                             ((entry_price - core_sl).abs() / entry_price).max(0.0015)
                         } else {
+                            // R4-A1 (G0-5 paridad Ω14): tercer sitio que leía el
+                            // ancla cruda `scalp_sl_base` — fuente única: la
+                            // curva viva evaluada al ancla rápida (hot-swap
+                            // seguro si el genoma muta curvas en caliente).
                             engine_real
                                 .arena
                                 .config
-                                .scalp_sl_base
-                                .load(Ordering::Relaxed)
+                                .sl_at_tau(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
                                 .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 1.5)
                                 .max(0.0015)
                         };

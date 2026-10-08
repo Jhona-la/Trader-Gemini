@@ -38,9 +38,17 @@ todo cambio de código que toque señales, consenso o consumo:
    fuente independiente — H4).
 6. **La convicción se GANA con historial propio** (#626, cierre
    espectral de D-752): pesos por IC prequential por motor×escala
-   (olvido 1/64, madurez 30, significancia 2/√(n−3) con N efectivo),
-   piso de exploración; en frío ≡ pesos iguales — la ponderación sólo
-   entra con evidencia.
+   (olvido 1/64, madurez 30), piso de exploración; en frío ≡ pesos
+   iguales — la ponderación sólo entra con evidencia. La
+   significancia la decide el **e-proceso de Ville con corrección de
+   FAMILIA M/α** (#661/#663 — umbral Bonferroni sobre la unión de
+   supermartingalas: 640 para el banco de τ*, 8320 para los 416 pares
+   motor×escala del consenso, 43 500 para las celdas del veto de
+   grupo; anytime-valid, inmune al optional stopping y a la
+   multiplicidad del máximo). El umbral Fisher 2/√(n−3) con N
+   efectivo fue RETIRADO (#663 subsume #599; exportaciones muertas
+   eliminadas en Ola 67). *Adenda R4-A2 (2026-10-07): este principio
+   se reescribe para que el ADR no prescribe la fórmula retirada.*
 
 ## Alternativas consideradas
 

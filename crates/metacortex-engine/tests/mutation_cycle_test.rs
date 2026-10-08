@@ -51,10 +51,10 @@ fn test_template_generation_and_immune_system() {
     // 3. Test Epigenoma State Persistence
     let symbol_params = EpigenomaSymbolParams {
         symbol: "BTCUSDT".to_string(),
-        scalp_tp: 0.007,
-        scalp_sl: 0.005,
-        swing_tp: 0.02,
-        swing_sl: 0.01,
+        tp_fast: 0.007,
+        sl_fast: 0.005,
+        tp_slow: 0.02,
+        sl_slow: 0.01,
         min_confidence: 0.65,
         max_leverage: 20.0,
     };

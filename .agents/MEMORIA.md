@@ -30,6 +30,273 @@
 - Esta entrada describe trabajo en curso: no es recibo de push/merge, T-1,
   CI ni validación de rentabilidad de 100% cada 72h.
 
+## 2026-10-08 — Antigravity: OLA Ω25 CERRADA — FASE F7: OPTIMIZACIÓN ZERO HEAP ALLOCATION EN OMNISCIENT-REGISTRY CON FORMATEO EN STACK (HFT NANOSEGUNDOS)
+
+- Rama: `antigravity/quant-sr-ronda6-f7-telemetria-guardianes` (worktree `.antigravity`), base `ca302616`.
+- **AUDITORÍA Y OPTIMIZACIÓN ZERO-ALLOC EN `crates/omniscient-registry` (FASE F7)**:
+  - En `omniscient-registry/src/lib.rs`: los métodos de resolución escopada por activo (`get_for_coin_or`, `set_for_coin`, `get_scoped_value_or`, `set_scoped`, `get_scoped_parameter`, `get_scoped_val_or`) ejecutaban `format!("c{}:{}", coin_id, name)` o `format!("{}_{}", symbol, name)`, incurriendo en asignaciones dinámicas en el heap (`String::new()`) en cada lookup del hot path.
+  - Implementados los formateadores de clave en stack de cero asignaciones `format_scoped_key` (buffer `[u8; 96]`) y `format_coin_key` (buffer `[u8; 64]` con conversión aritmética directa base-10).
+  - Rendimiento HFT: erradicadas el 100% de las micro-asignaciones de heap en lecturas por activo, permitiendo búsquedas lock-free en `SkipMap` a velocidad de nanosegundos y previniendo fragmentación de memoria en portátiles de 16 GB RAM sin GPU.
+  - Añadido test unitario `test_omniscient_registry_zero_alloc_scoped_and_coin_lookups` (6/6 tests verdes en `omniscient-registry`).
+- **VERIFICACIÓN SUITE FASE F7**:
+  - `omniscient-registry`: **6/6 tests verdes** (0.01s), 0 warnings.
+  - `telemetry-server`: **30/30 tests verdes** (3.15s).
+  - `os-guardian`: **12/12 tests verdes** (0.05s).
+  - `audit-engine`: **50/50 tests verdes** (21 unit + 29 contract).
+  - `storage-engine`: **58/58 tests verdes** (39 unit + 19 contract).
+  - `flight-recorder`: **5/5 tests verdes** (0.05s).
+  - `telemetry-engine`: **7/7 tests verdes** (0.02s).
+  - Total Fase F7 evaluada: **168/168 tests pasando en verde (100%)**.
+
+## 2026-10-08 — Antigravity: OLA Ω24 CERRADA — ESTIMADOR ANALÍTICO CONTINUO SDE ORNSTEIN-UHLENBECK / FOKKER-PLANCK CON RELOJ FÍSICO REAL EN COINTEGRACIÓN MULTIACTIVO (STRATEGY-CORE)
+
+- Rama: `antigravity/quant-sr-ronda6-ou-tiempo-fisico` (worktree `.antigravity`), base `246542bf`.
+- **INTEGRACIÓN SDE CONTINUO DE ORNSTEIN-UHLENBECK CON RELOJ FÍSICO EN `crates/strategy-core`**:
+  - `ContinuousOrnsteinUhlenbeckSde` integrado en `MultivariateCointegrationEngine` vía `.with_continuous_ou()`. Preserva compatibilidad estricta con contratos de deuda abierta (`basket_state_contract.rs: 7/7 verdes`).
+  - Resuelto fallo por singularidad de varianza nula y frontera de raíz unitaria ($b \approx 1$): cuando $Var(x) < 10^{-8}$ o $(1 - b) < 0.02$, $\mu$ converge de forma ergódica a la media empírica de observaciones, impidiendo explosiones de intercepto OLS ($a / (1-b)$) y previniendo inversiones espurias de signo en el Z-Score de spread.
+  - Implementado el principio de innovación previa: el Z-score de una perturbación entrante evalúa la sorpresa contra la distribución estacionaria previa $(\mu, \sigma_\infty, \theta)$ antes de la actualización de parámetros, asegurando calibración Bayesiana exacta de señales `SignalType::Short` / `SignalType::Long`.
+  - Duración esperada calibrada a la vida media física del proceso $t_{1/2} = \ln(2)/\theta$ en milisegundos, dentro del horizonte continuo `TradeHorizon::Continuous`.
+- **VERIFICACIÓN Y CONTRATOS**:
+  - `cargo check -p strategy-core --lib`: **0 advertencias** (100% limpio).
+  - `cargo test -p strategy-core`: **27/27 unit tests verdes** + **11/11 contract tests verdes** (**38/38 tests pasando en verde**).
+  - Test unitario específico añadido: `test_multivariate_cointegration_continuous_ou_physical_clock`.
+
+## 2026-10-08 — Qoder: OLA 71 CERRADA — QUINTA CONVERGENCIA — ORÁCULO PASA — RONDA 5 DRENADA 12/12
+
+- **OLA 71 CERRADA** (qoder/ola71-mecanica-ronda5, base 2721293b +
+  merges Ω21/Ω22/Ω23/GLM-111): los 7 LOW de la ronda 5. **QUINTA
+  convergencia AGY↔Qoder**: Ω21+Ω22 replicaron mi ola completa
+  (B2/B4/C1/B5 + A4/A5/A6). Merge con SUS versiones (tests extra);
+  mi único a main: promote-rechazado explícito + dedup de la guarda
+  R5-C1 doble del auto-merge. **ORÁCULO T-1: PASA 16/144 (2595 s) —
+  certifica la CLASE A4/A5/A6 que Ω22 subió sin oráculo.** Signal
+  117/117, core 170/170, dark 32+18, ws 0 err.
+- **RONDA 5 DRENADA 12/12** (entre Qoder 68/69/70/71 + AGY Ω21/Ω22 +
+  GLM 103). AGY abrió RONDA 6 (Ω23: limpieza de warnings).
+- Lección convergencia: publicar la ASIGNACIÓN en el buzón antes de
+  ejecutar reduce colisiones (5 en dos días).
+
+## 2026-10-08 — Antigravity: OLA Ω23 CERRADA — RONDA 6: LIMPIEZA FORENSE DE VARIABLES ESPECTRALES HUÉRFANAS Y CONTINUIDAD Z-SCORE EN GOD-ENGINE-CORE (7/7 ADVERTENCIAS ERRADICADAS)
+
+- Rama: `antigravity/quant-sr-ronda6-continuo-integral` (worktree `.antigravity`), base `c41fdd33`.
+- **FORENSE DE DEUDA TÉCNICA Y ADVERTENCIAS EN `god-engine-core` (7/7 CERRADAS)**:
+  - `piso_ofi_medido` (`lib.rs:4752`): Cálculo redundante huérfano. Erradicado ya que `umbral_ofi_dinamico` (`lib.rs:2711`) encapsula el cálculo completo del cuantil dinámico escalado por intermitencia de Kolmogorov.
+  - `ema_slow` y `cur_atr` (`lib.rs:5276-5277`): Alias temporales no consumidos en el bloque `viable_para_entrar`. Erradicados preservando `price_stretch_continuo`.
+  - `dyn_flow` (`lib.rs:5441`): Cómputo huérfano que no se utilizaba ya que la señal de espectro directo preserva la etiqueta canónica de atribución `volume_flow_rate = RAMA_ESPECTRO_DIRECTO` (15.0). Erradicado limpiamente.
+  - `higher_trend_*_harmonic_ok`, `*_macro_slope_ok`, `spec_coh_*` (`lib.rs:5924-5944`): Bloque residual con literales no tipificados (0.00015, -0.0015) que quedó desconectado cuando D-758 tipificó las condiciones de entrada a Z-scores de difusión (`z_higher_dir`, `z_secular`). Erradicado, garantizando que el gate opere 100% en espacio tipificado sin ruido discreto ni literales no físicos.
+  - `pos_h` temprano (`lib.rs:7216`): Declaración redundante previa a bifurcaciones, sombreada por la asignación en la apertura física (`lib.rs:7592`). Limpiada.
+  - `use super::*;` (`lib.rs:8919`): Import no utilizado en el módulo de tests `tests_qo_598`. Limpiado.
+- **VERIFICACIÓN Y CONTRATOS**:
+  - `cargo check -p god-engine-core --lib`: **0 advertencias** (100% limpio).
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes** (100% pasando en 0.43s).
+  - `cargo test -p god-engine-core --test sombras_espectrales_telemetria_contract`: **1/1 contrato verde**.
+
+## 2026-10-08 — Antigravity: OLA Ω22 CERRADA — RONDA 5: TELEMETRÍA 13/13 SOMBRAS, DINÁMICA NASH-CVPIN Y CONTINUIDAD C¹ EN ENTROPÍA (R5-A4, R5-A5, R5-A6) — RONDA 5 100% CERRADA
+
+- Rama: `antigravity/quant-sr-ronda5-universo-espectral` (worktree `.antigravity`), rebase limpio sobre `origin/main` (`2721293b`).
+- **R5-A4 [LOW] CERRADO**:
+  - En `crates/god-engine-core/src/lib.rs:2126-2150`: `nash_equilibrium_drift` tenía cero escritores y mantenía la presión adversarial estática en 0.50. Enlazado dinámicamente per-coin: lee `game_theory_adversarial_pressure`, con fallback dinámico al `cvpin` medido de la moneda (`ContinuousVPIN` de microestructura), y finalmente al parámetro configurable `nash_equilibrium_drift` (0.50).
+- **R5-A5 [LOW] CERRADO**:
+  - En `crates/signal-engine/src/renyi_tsallis_entropy.rs:192-200`: La sombra espectral de entropía Rényi-Tsallis usaba un signum duro `if x > 0.0 { 1.0 } else { -1.0 }`, siendo la única sombra que violaba el estándar de continuidad $C^1$ de la familia #664. Reemplazado por `x.tanh()`, garantizando transición continua y suave a través de $x=0$. Añadido test unitario `qo_r5_a5_renyi_sombra_espectral_continua_tanh` (118/118 tests verdes en `signal-engine`).
+- **R5-A6 [LOW] CERRADO**:
+  - En `crates/god-engine-core/src/lib.rs:2111-2260`: 6 sombras espectrales (`hawkes`, `nash`, `flow`, `perceptron`, `conformal`, `confluence`) no publicaban su telemetría individual al registro (`sombra_*_consenso`, `sombra_*_tau_max`, `sombra_*_v_max`), haciéndolas invisibles fuera del consenso agregado. Implementada la publicación canónica por moneda para las 6 sombras. Creado test de contrato `crates/god-engine-core/tests/sombras_espectrales_telemetria_contract.rs` (170/170 tests verdes en `god-engine-core` + 1/1 contrato verde).
+- **R5-C2 y R5-C3 [LOW] VERIFICADOS Y RATIFICADOS POR DISEÑO**:
+  - `R5-C2`: Kink $C^0$ de `.max(0.0)` en acuerdo es semánticamente requerido (clase calma-abstiene aceptada en G2-1).
+  - `R5-C3`: Clamp $|x| \le 10$ protege estabilidad de punto flotante en cálculo de propagación continua con asimetría $< 10^{-15}$ en z-scores observados.
+- **ESTADO GLOBAL DE RONDA 5**: ¡100% CERRADA Y CERTIFICADA! Cero hallazgos pendientes en Ronda 5. 13/13 sombras espectrales con paridad matemática, física y de telemetría completa.
+
+## 2026-10-08 — Antigravity: OLA Ω21 CERRADA — RONDA 5: PRECISIÓN MATEMÁTICA Y FÍSICA (R5-B2, R5-B4, R5-C1, R5-B5)
+
+- Rama: `antigravity/quant-sr-ronda5-universo-espectral` (worktree `.antigravity`), rebase limpio sobre `origin/main` (`a73d2ce4`).
+- **R5-B4 [LOW-MED] CERRADO**:
+  - En `crates/dark-alpha-engine/src/lib.rs:407-412`: `forward_quantized` verificaba el clamp(±700) sin comprobar `raw_total.is_finite()`, lo que convertía sesgos no finitos (+Inf) en 700.0 y consecuentemente en probabilidades espurias de 1.0 («pseudo-evidencia»). Blindado retornando `f64::NAN` ante valores no finitos. Nuevo test `test_r5_b4_forward_quantized_nan_on_infinite_raw_total` pasando en verde (32/32 tests verdes en `dark-alpha-engine`).
+- **R5-B2 [LOW] CERRADO**:
+  - En `crates/god-engine-core/src/darwin.rs:385-395`: La rejilla de muestreo periódico DSR de 1s se re-anclaba al timestamp del tick (`last_sample_ts = tick.timestamp`), provocando deriva acumulativa de fase $\Delta t \in [1\text{s}, 2\text{s})$ ante ticks espaciados o gaps de altcoins. Blindado avanzando estrictamente por múltiplos de período uniforme `while tick.timestamp >= last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS) { last_sample_ts += SAMPLE_INTERVAL_MS; }`. 11/11 tests darwin en verde.
+- **R5-C1 [MED] CERRADO**:
+  - En `crates/signal-engine/src/supersonic_shockwave.rs:172-184`: Con `spread_speed_of_sound` ausente, el motor recurre al fallback `atr_pct` (velocidad fraccional por segundo). Si `mid_price <= 1e-8`, `speed` no se puede convertir a fracción/s y permanece en dólares/s, rompiendo la coherencia dimensional e inflando Mach artificialmente por el factor `mid_price`. Corregido para abstenerse (`return 0.0`) cuando falta `mid_price` bajo fallback fraccional. Test `r5_c1_abstiene_sin_mid_price_con_fallback_fraccional` pasando en verde.
+- **R5-B5 [ERRATA] & HIGIENE CERRADOS**:
+  - `crates/signal-engine/src/supersonic_shockwave.rs:211`: Corregida errata en docstring: $\tanh(5) = 0.99991$ (no 0.9997).
+  - `crates/signal-engine/src/conformal_reversion_filter.rs:324`: Limpieza de variable no usada `let _alguno` erradicando advertencias. 117/117 tests en `signal-engine` pasando en verde con 0 warnings.
+- **ESTADO DE LA RED**: Sincronización completa con GLM 109 y Qoder Ola 70.
+
+## 2026-10-08 — Qoder: OLA 70 CERRADA — MEDs RONDA 5 — ORÁCULO PASA 16/144
+
+- **OLA 70 CERRADA** (qoder/ola70-paridad-consenso, base 58d5914d +
+  merges Ω20/GLM-109): los 5 MED de la ronda 5, sombra Y vivo en el
+  MISMO commit (regla #656). A1 el core publica ema_trend_swing_z (z
+  canónica EMA9/21, helper ema_spread_z del piso D-756) y el conformal
+  VIVO la prefiere (antes trend crudo ⇒ acuerdo ≈0.005 = motor MUDO);
+  A2 firma SOMBRA shockwave ((x/c)/2).tanh paridad con el vivo; A3
+  sombra conformal lee conformal_alpha (epsilon tenía 0 escritores);
+  B1 fallbacks tech_threshold 0.24; B3 discriminante Mertens
+  degenerado: γ₃→0 conservando curtosis (jamás sub-gaussiano; la cota
+  al discriminante pura dejaría σ→0 en el vértice — refutada). +test.
+  **ORÁCULO PASA 16/144 (4069 s)**. Signal 116/116, risk 142/142,
+  core 170/170, BT/ws 0 err.
+- **INCIDENTE DISCO**: 100% lleno (target compartido 211 GB) —
+  liberados 142 GB (target/debug/incremental). Vigilar en sesiones largas.
+- **Estado ronda 5: 5/5 MED drenados.** Restan 7 LOW → Ola 71
+  (mecánica, pre-verificada): B2 rejilla while, B4 NaN sigmoid, A4
+  nash knob, A5 renyi signum sombra, A6 telemetría sombras, C1
+  shockwave mid, erratas + telemetría promovidos-rechazados.
+- Detalle: FORENSIC #671.
+
+
+## 2026-10-07 — Antigravity: OLA Ω20 CERRADA — FASE F7 (TELEMETRÍA, GUARDIANES, AUDITORÍA Y ARQUITECTURA): AUDITORÍA INTEGRAL, F7-SIG-001 Y 94/94 TESTS VERDES
+
+- Rama `antigravity/quant-sr-fase-f7-telemetria-guardianes` (worktree `.antigravity`), rebase limpio sobre `origin/main`.
+- **F7-SIG-001 [LOW] CERRADO**:
+  - En `crates/signal-engine/src/skill_motores.rs:95-99`: Advertencia de compilador `unused doc comment` en la guarda de Ville Martingales `self.e_proceso.significativo_familia(...)`. Resuelto convirtiendo la sintaxis de doc comment (`///`) en comentarios de línea regulares (`//`), erradicando advertencias en compilación. 116/116 tests verdes en `signal-engine`.
+- **AUDITORÍA FORENSE FASE F7 (45 ARCHIVOS EVALUADOS — 94/94 TESTS VERDES)**:
+  - `telemetry-server` (13 archivos, 3 113 líneas): 30/30 tests verdes en 3.04s. Verificado el servidor de telemetría con colas MPMC lock-free (Crossbeam SegQueue), descarte controlado por saturación para evitar backpressure sobre el loop HFT de nanosegundos, y bot de Telegram con credenciales aisladas en `.env`.
+  - `os-guardian` (10 archivos, 956 líneas): 12/12 tests verdes en 0.04s. Verificado el núcleo Win32 (`VirtualLock`, `JobObject`, `memory_audit.rs` con compactación forzada `EmptyWorkingSet` para laptop de 16 GB RAM y panic latch de seguridad).
+  - `audit-engine` (11 archivos, 1 729 líneas): 21/21 tests verdes en 0.21s. Verificada la detección de deriva de features (`drift_auditor.rs`), auditoría causal de trayectorias (`trajectory_auditor.rs`) y resiliencia cibernética ante caídas de red (`cybernetic_resilience.rs`).
+  - `telemetry-engine` (3 archivos, 326 líneas): 7/7 tests verdes en 0.02s. Verificado el empaquetado binario zero-copy y sanitización de NaNs.
+  - `phase-runner` (2 archivos, 189 líneas): 5/5 tests verdes en 3.85s. Verificado el ejecutor de fases adaptativo con dilatación temporal automática según carga de CPU del SO.
+  - `flight-recorder` (1 archivo, 232 líneas): 5/5 tests verdes en 0.03s. Verificado el buffer circular en memoria y persistencia ante fallos.
+  - `omniscient-registry` (2 archivos, 427 líneas): 5/5 tests verdes en 0.03s. Verificada la centralización de parámetros con rkyv zero-copy y conciliación remota sin locks en el hot path.
+  - `graph-architecture` (2 archivos, 387 líneas): 5/5 tests verdes en 0.01s. Verificado el mapeo de dependencias AST y visualización de grafo.
+  - `graph-4d` (1 archivo, 160 líneas): 4/4 tests verdes en 0.04s. Verificado el parser topológico 4D y resolución de dependencias de tipos.
+  - Total Fase F7: 45 archivos, ~7 519 líneas. Tests: 94/94 verdes (100%), 0 errores, 0 fallos.
+- **ESTADO DE LA RED**: Sincronización completa con Sol (SOL-R5-01 integrado en main), Qoder (Ola 68/69) y GLM (106/107). BARRIDO DEL ÁRBOL COMPLETO (F0 a F7) CERRADO Y CERTIFICADO.
+
+## 2026-10-07 — Sol: SOL-R5-01 integrado y publicado; R4 plan sincronizado
+
+- Commit propio ac6c9456, merge/publicación verificada f8c433f8 (padres ac6c9456/e285193e). Candidato integrado tree 89ef5c61; check offline locked workspace all-targets exit 0 y full-bin reporting_contract 2/2, cargo exit 0. Sólo 18 rutas propias, docs UNION preservando ambos padres; no recovery commits ajenos importados ni checkout compartido alterado.
+- `continuous_evolution_backtest.rs`: reporting diario contra equity previa, porcentaje consistente, acumulado telescópico y residual final. Helper conserva valuación/fees/fallback; current_capital, shadow selection, sizing, modelos y promoción sin cambio. Tests reales cubren carry positivo/negativo, marcas, cierre/fee, dos activos/múltiples slots; no RED completo previo reclamado ni examen económico.
+- Plan archivo por archivo R0-R9 y tooling Codex reutilizados con atribución; ledger histórico 8938cf41, 1.434 rutas, sólo inventariadas. Tests inventory 7/7 y snapshot check correcto; no declarar auditoría semántica completa.
+- Verified receipts remain local to the Sol worktree: `target/sol-publication-evidence-20261007.txt`, `target/sol-integrated-reporting-contract-20261007.log`, and `target/sol-integrated-parent-review-20261007.json`; integrated source blob 4361b2b8. No `outputs/` copies exist in this worktree. CI run 37722336175 was in progress at the earlier check, not a success claim.
+- Estado de ramas: otras worktrees activos/sucios preservados, root/recovery siguen sin importarse. Rama Sol se retira sólo tras closure documental publicado y ascendencia/clean verificados; worktree/target se conservan para recibos. Próximo R5: replay equity terminal/DD/duración procesada; R2/R6 DSR/holdout/model bundles siguen abiertos y requieren coordinación.
+
+## 2026-10-07 — Sol: daily reporting LOCAL TEST PASSED / publication pending
+
+- Ejecución Git recuperada; main remoto 171db3c6. Suite inventario 7/7 PASA (198.212 s). Censo/blobs/testigos anteriores siguen atados a 8938cf41, no a código posterior.
+- Ancestría de todas las ramas/worktrees revisada: cero borrados seguros; recovery y root retienen 64/28 commits exclusivos. No importar recuperación ajena ni eliminar worktrees ocupados/sucios.
+- Nueva reserva sólo reporting diario `continuous_evolution_backtest.rs`: helper extraído de valuación existente y pruebas con slots reales, no cambio de sizing, shadow selection, modelos ni engine productivo. LOCAL TEST PASSED: the full-bin reporting_contract suite passed 2/2, direct executable exit 0, source blob 5a0af98e3fefc168feb2c1649b8d2d94d25c909e. Receipt: target/reporting-contract-execution-evidence-20261007.txt. Baseline offline locked workspace all-targets check passed, cargo/tee exits 0 (target/sol-baseline-all-targets-20261007.log and .exit); integrated validation and publication remain pending. T-1 was not rerun: this change is daily reporting only, not the live strategy pipeline. No economic validation.
+
+## 2026-10-07 — Sol: reinicio R4 sincronizado y evidencia acotada (sin publicación)
+
+- Base 8938cf41; worktree `.sol-plan-2026-10-07`, rama `sol/plan-auditoria-2026-10-07`. Reutilizados con atribución plan/censo Codex 639c3e0d; fases R0-R9 y lotes por ruta en `docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md`, entry points compartidos reconciliados. No cambios runtime, flags/modelos ni engine operativo.
+- Ledger regenerado/check correcto: 1.434 archivos versionados / 460 Rust, TODOS inventariados (sin cobertura semántica completa). Tres revisores independientes reconciliaron coordinación/replay/evolución; no duplicar R4-Q1..Q4 ni fix caller Codex.
+- Recibo `docs/audit/SOL_CONTRATOS_R4_2026-10-07.json`: ejecución del módulo Rust actual confirma DSR 0.248357355→0.999724533 al repetir 40 observaciones a 400; contaminación NaN/Inf mantiene verdict. Expresión diaria compilada en fixture reporta 20 acumulado con crecimiento terminal 10 (SOL-R5-01). No es replay económico.
+- H2-7 contrato GLM103 presente en main; nota antigua de Qoder superada. F4/cash-MTM/duración real/funding y promoción siguen con pruebas de harness pendientes.
+- Publicación NO realizada: validaciones amplias no completaron, jobs Sol detenidos; posteriores comandos Git terminaron SIGTERM. Sin commit/push/merge/borrado. Preservar worktrees y revalidar al recuperar ejecución; último main remoto verificado 8938cf41 y CI run 37660783497 success, no verde de esta ola.
+
+## 2026-10-07 — Antigravity: OLA Ω19 CERRADA — FASE F6 (DATOS, INGESTA, STORAGE Y METACORTEX): AUDITORÍA INTEGRAL, F6-STO-001 Y 146/146 TESTS VERDES
+
+- Rama `antigravity/quant-sr-fase-f6-data-pipeline-storage` (worktree `.antigravity`), merge limpio sobre `main`.
+- **F6-STO-001 [LOW] CERRADO**:
+  - En `crates/storage-engine/src/mmap_bus.rs:424`: En el test `lxxxxiv_skip_to_head_salta_sin_ingerir`, la variable `let mut bus = MmapTelemetryBus::new(&path).unwrap();` declaraba mutabilidad innecesaria. Limpiado a `let bus` sin mutabilidad espuria, erradicando advertencias en compilación.
+- **AUDITORÍA FORENSE FASE F6 (49 ARCHIVOS EVALUADOS — 146/146 TESTS VERDES)**:
+  - `data-pipeline` (24 archivos, 6 075 líneas): 63/63 tests verdes en 3.12s. Verificado el estado omnisciente atómico `OmniState` (45+ features macro en `AtomicU64` con codificación IEEE-754 wait-free $O(1)$) y sincronización de funding y sentimiento por símbolo.
+  - `storage-engine` (8 archivos, 3 004 líneas): 39/39 tests verdes en 0.49s. Verificada la integridad de la base Lakehouse, el ledger transaccional de posiciones con su $\tau$, y el bus de telemetría mmap con seqlock anti-torn reads.
+  - `metacortex-engine` (12 archivos, 4 209 líneas): 25/25 tests verdes en 0.09s. Verificada la fábrica de estrategias continuas `evolutionary_templates.rs` (erradicación del binario espejo, adopción de `ContinuumStrategyParams` regida por $\tau$ continuo sin `if/else`).
+  - `data-ingest` (5 archivos, 1 036 líneas): 19/19 tests verdes en 0.13s. Verificado el selector dinámico de activos `dynamic_selector.rs` filtrando stablecoins y protegiendo el universo contra pares ilíquidos frente al piso de Binance ($5.00 USD).
+  - Total Fase F6: 146/146 tests verdes (100%), 0 errores, 0 regresiones.
+- **ESTADO DE LA RED**: Sincronización con Ronda 4 de Qoder (Ola 68 cerrada / Ola 69 en vuelo) y GLM 106. Siguiente fase: F7 (Telemetría y Guardianes).
+
+## 2026-10-07 — Qoder: OLA 69 CERRADA + RONDA 5 — ORÁCULO PASA 16/144
+
+- **OLA 69 CERRADA** (qoder/ola69-saturacion-residual, base 785b7a1c):
+  resto ronda 4 — B2 muestreo DSR SOLO rejilla 1s (sin pérdida:
+  prev_cap avanza en rejilla, cada retorno integra los cierres);
+  B3+B6 sharpe_std_error g4.max(3.0) (leptocúrtico jamás sub-gaussiano;
+  mi propuesta gaussiana n<60 fue REFUTADA por el subagente);
+  C2 firma viva shockwave tanh(mach/2); C3 acuerdo conformal /2.0;
+  C4 gate perceptron smoothstep C¹; A2 adenda ADR-0014 (Ville M/α).
+  **ORÁCULO PASA 16/144 (8022 s)**. Signal 116/116, risk 141/141,
+  core 170/170, ws 0 err.
+- **RONDA 5 CERRADA (docs)**: 3 auditores contra este árbol — **12
+  hallazgos (0 HIGH, 5 MED, 7 LOW)**: primera ronda sin HIGH. Patrón
+  residual único: fix a un camino, el otro con calibración vieja
+  (conformal vivo mudo con trend crudo; sombra shockwave sin /2;
+  clave muerta conformal_epsilon en el consenso; fallbacks
+  tech_threshold fuera de banda; gaussiano alcanzable γ₃>√2).
+- **Asignación: Ola 70 = A1+A2+A3+B1+B3 (paridad sombra+vivo mismo
+  commit, oráculo)**; Ola 71 = mecánica (B2 rejilla fija, B4 NaN
+  sigmoid, A4 nash knob, A5 renyi signum, A6 telemetría sombras, C1
+  shockwave mid, erratas) + telemetría promovidos-rechazados.
+- Detalle: FORENSIC #670. Buzón: entrada + cierre.
+
+## 2026-10-07 — Qoder: RONDA 4 DEL BARRIDO + OLA 68 CERRADA — ORÁCULO PASA 16/144
+
+- Mandato del operador: cuarta revisión desde la base (3 auditores
+  paralelo contra 8938cf41). **17 hallazgos (2 HIGH, 6 MED, 9 LOW)** en
+  BARRIDO §RONDA-4 — el patrón «todo fix carga bug» por CUARTA vez.
+- **OLA 68 CERRADA** (rama qoder/ola68-sombras-calma, base 8938cf41 +
+  merges Ω17/GLM-104): **C1 HIGH** calma ya no invierte las sombras
+  espectrales de hawkes/flow_impulse (.max(0.0) en voto_espectral,
+  paridad #659 completa; fallback ratio 1.0 abstiene; +2 tests);
+  **B1 HIGH** bandas del walk-forward alineadas al bound slot-21
+  [0.24,0.30] (antes [0.08,0.22]: eje muerto + promote rechazaba
+  campeones — la evolución no persistía mutantes); **B7** piso
+  swing_sl 0.0070 ⊇ nichos; **A1** tercer fallback de ancla cruda →
+  sl_at_tau (fuente única Ω14).
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (9498.28 s — el más largo por
+  contienda extrema). Verificación: signal 116/116, host/backtest
+  bins 0 err, ws all-targets 0 err, post-merge core 0 err.
+- **Cola Ola 69 (anclajes pre-verificados por subagente)**: B2
+  muestreo por rejilla (grid-only no pierde saltos), B3 g4.max(3.0)
+  en sharpe_std_error (cierra también B6; el gaussiano bajo n sería
+  anti-conservador), C2 shockwave tanh(mach/2), C3 conformal divisor
+  2.0, C4 perceptron gate smoothstep. Docs: A2 adenda ADR-0014.
+- Detalle: FORENSIC #669. Buzón: entrada + cierre.
+
+## 2026-10-07 — Antigravity: OLA Ω18 CERRADA — FASE F5 (APRENDER Y MEDIR: EVOLUCIÓN, GENOMA Y BACKTEST): AUDITORÍA INTEGRAL Y ACELERACIÓN 9.7X EN DARK-ALPHA
+
+- Rama `antigravity/quant-sr-fase-f5-evolucion-backtest` (worktree `.antigravity`), merge limpio sobre `main`.
+- **F5-DARK-001 [HIGH] CERRADO**:
+  - En `crates/dark-alpha-engine/src/lib.rs:735-756`: En `predict_in_context`, cada inferencia ejecutaba `self.validate().is_err()`. Esto obligaba a verificar 4,353 floats de parámetros de capas densas (`.is_finite()`) y recorrer 30 normalizadores por activo en CADA llamada en el bucle crítico de trading, provocando que `test_inference_speed` fallara a 48,451 ns (límite contractural: 25,000 ns). Además, `ensure_inference_buffers()` ejecutaba `.resize(..., 0.0)` incondicionalmente.
+  - Erradicado el escaneo masivo del hot-path reemplazándolo por la guarda de consistencia $O(1)$ `!self.layers_valid()`, y optimizados los buffers de inferencia.
+  - **Rendimiento Medido**: Inferencia por llamada reducida de **48,451 ns** a **4,981 ns** (**9.7x de aceleración** / sub-5µs en debug, nanosegundos en release).
+  - 31/31 tests unitarios en `dark-alpha-engine` y 18/18 tests de integración en `neural_evidence_contract.rs` aprobados (100% verdes).
+- **FASE F5 AUDITORÍA FORENSE CERRADA (28 ARCHIVOS EVALUADOS — 156/156 TESTS VERDES)**:
+  - `evolution-engine` (16 archivos): 54/54 tests verdes en 8.12s. Certificada la función única de aptitud `fitness.rs` (utilidad logarítmica cóncava Kelly penalizada por ruina cuadrática $\lambda = 4\ln 2 \approx 2.7726$) y entropía de Shannon.
+  - `backtest-engine` (10 archivos): 53/53 tests verdes en 48.81s. Certificado el replay microestructural real `booktick_replay.rs` y los contratos metamórficos de causalidad estricta `booktick_causality_contract.rs` (cero lookahead bias, cero data leakage).
+  - `dark-alpha-engine` (3 archivos): 49/49 tests verdes en 0.59s.
+  - Total Fase F5: 156/156 tests aprobados, 0 fallos, 0 regresiones.
+- **COORDINACIÓN CON EL CONSEJO**: Sincronización con Ronda 4 de Qoder (`.ola68` / `.ola69`) y GLM 105.
+
+## 2026-10-07 — Antigravity: OLA Ω17 CERRADA — FASE F4 (DINERO Y RIESGO): AUDITORÍA INTEGRAL, MICRO-CAPITAL $13 USD Y BLINDAJE DE EVENTOS TERMINALES
+
+- Rama `antigravity/quant-sr-fase-f4-auditoria-riesgo-capital` (worktree `.antigravity`), merge limpio sobre `main`.
+- **F4-EXE-001 [MED] CERRADO**:
+  - En `crates/execution-engine/src/user_data_stream.rs:966-983`: el test `test_algo_update_terminal_marks_protection_dirty` dependía de un valor absoluto sobre el contador atómico estático `quantum_arena::protection_health::TERMINAL_EVENTS_SEEN`. En ejecución multihilo con otros tests del workspace (`test_reconcile_after_reconnect_clears_cache_and_marks_dirty`), el contador acumulaba ejecuciones previas provocando fallos espurios no-deterministas (`assert_eq! left: 2, right: 1`).
+  - Blindado midiendo el incremento delta relativo `terminal_events_seen() - prev_events == 1`.
+  - Suite de `execution-engine` verificada: 79/79 tests verdes en 3.76s (100%).
+- **AUDITORÍA FORENSE FASE F4 (DINERO Y RIESGO — 45 ARCHIVOS EVALUADOS)**:
+  - Verificación matemática y algorítmica de los 23 archivos en `crates/risk-engine/src/` (141/141 tests verdes en 0.85s) y los 22 archivos en `crates/execution-engine/src/`:
+  - **Piso de Viabilidad D-750**: `orden_viable(min_notional, sl_pct, capital, tope_riesgo)` confirma que para una cuenta de $13 USD con $5.0 USD min notional y un stop típico del 1%, el riesgo por evento es $0.38% del capital ($0.05 USD), perfectamente contenido dentro del axioma de ruina del 25% ($3.25 USD).
+  - **Margen Seguro y Concurrencia**: `micro_safe_limit` acota el margen por posición a [1.20, 2.60] USD. Con apalancamiento entero continuo [5.0x, 6.5x], la orden alcanza el `safe_min_notional = 5.10 USD` con ~$1.02 USD de margen comprometido, permitiendo exactamente 2 posiciones activas concurrentes ($2.04 USD de margen total) dejando un colchón libre de $10.96 USD ($84.3% libre), superando ampliamente el piso requerido de $3.0 USD.
+  - **Orquestador de Portafolio**: `PortfolioOrchestrator::allow_trade` aplica `exposure_limit = 0.98 - directional_pressure`, permitiendo operaciones simétricas Long/Short salvo en caída libre sistémica ($p_{\text{crash}} \ge 0.90$) o squeeze masivo.
+- **ACLARACIÓN CONSEJO H2-7**: Confirmada la convergencia con GLM 103 (`8938cf41`), fijando la paridad de ganancias de flujo con test `h2_7_paridad_de_ganancias_pinned`.
+
+## 2026-10-07 — Qoder: OLA 67 CERRADA — LIMPIEZA MECÁNICA DE LOWs — ORÁCULO PASA 16/144
+
+- Rama qoder/ola67-lows-limpieza (worktree .ola67, base d881e22d + merge
+  Ω16 adeb8d1b), 8 commits. 8 LOWs drenados sin cambio de conducta viva:
+  G0-6 átomos fantasma scalp/swing_used_margin; G1-7/H1-9 exportaciones
+  Fisher muertas (umbral_ic_significativo + N_EFECTIVO_EWMA ×2 — Ville
+  de familia las subsumió; qo_599/qo_601 reescritos a semántica Ville);
+  G1-8/H1-6 docs numéricos con derivación (evalues cruza 20 en n≈272;
+  skill 1.1^95≈8540 cruza 8320); H1-5 doc familia M=32 (paraguas
+  conservador, ≤5 nodos de banda compiten de facto); G2-12 comentario
+  obsoleto hawkes_bessel (30 líneas que invitaban a re-parar lo cableado);
+  H1-7 ESCALAS_BANDA_PAR nombrada; G0-10 epigenoma TOML a tp/sl_fast/slow
+  (write-only, sin loader); G0-8 parcial (helpers darwin tp/sl_at_fast_
+  anchor + local tp_tau_vivo en rama 13).
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2578.93 s) — cobertura idéntica
+  a la base. Verificación: arena 120/120, signal 115/115, core 170/170,
+  metacortex verde, check workspace --all-targets 0 errores.
+- **Inventario vivo restante (sólo LOWs)**: G2-11 knobs muertos
+  (oscilador/nash/conformal), G2-13 paridad inputs solitón, G2-15 cortes
+  fused, H0-4 fricción dual buf_fast/slow, H2-9..12 lead-lag ETH escalado
+  0.6/firma rho negativo, G0-8 slots internos, G0-9 nota. Todo MED/HIGH
+  de rondas 2-3 DRENADO entre el consejo.
+- Pendiente con AGY: H2-7 listado cerrado en su MEMORIA Ω16 sin marca en
+  BARRIDO — pedir commit o reabrir en ronda 4.
+- Detalle: FORENSIC #668. Buzón: entrada + cierre Ola 67.
+
 ## 2026-10-07 — Antigravity: OLA Ω16 CERRADA — H2-6 (graduación C¹ continua sin saturación prematura en PerceptronGateEngine)
 
 - Rama `antigravity/quant-sr-omega16-h0-1-dimensiones-curvas` (worktree `.antigravity`), merge limpio sobre `main`.

@@ -72,10 +72,25 @@ impl HighPayoffTrendRunner {
 
         let final_tp = (expanded_tp + vol_boost).max(safe_base_tp.max(0.0020));
 
-        // Límite superior suave continuo usando tanh() en lugar de un clamp() brusco.
-        // Asymptotically approaches upper_bound sin romper derivabilidad.
+        // Límite superior suave. TRIAJE B (GLM 109): la versión
+        // `bound·tanh(x/bound)` COMPRIMÍA SIEMPRE (tanh(x) < x ∀x>0): un
+        // TP de 0.02 con bound 0.1 salía 0.01974 — un "límite superior"
+        // que recortaba el 100% de los valores bajo el bound (el piso de
+        // la línea anterior quedaba deshecho). Mapa por tramos C¹:
+        // IDENTIDAD exacta hasta el 80% del bound (cero compresión en el
+        // régimen operativo típico), y saturación exponencial suave hacia
+        // el bound por encima — derivada 1 en el empalme (sin kink),
+        // asíntota bound, jamás supera el bound.
         let safe_bound = upper_bound.clamp(0.01, 0.50); // Prevent div by zero
-        let res = safe_bound * (final_tp / safe_bound).tanh();
+        let s0 = 0.8_f64; // punto de empalme (fracción del bound)
+        let trans = s0 * safe_bound;
+        let res = if final_tp <= trans {
+            final_tp
+        } else {
+            // 1−(1−s0)·exp(−(s−s0)/(1−s0)) escalado — C¹ en el empalme.
+            let resto = (1.0 - s0) * safe_bound;
+            trans + resto * (1.0 - (-(final_tp - trans) / resto).exp())
+        };
         if res.is_finite() {
             res
         } else {

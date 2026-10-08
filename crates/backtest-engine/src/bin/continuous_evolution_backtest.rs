@@ -113,6 +113,45 @@ fn nicho_curva_sl(g: &mut quantum_arena::genome::SuperGenotype, sl_fast: f64, sl
     g.derive_anchors_from_curves();
 }
 
+/// SOL-R5-01: daily reporting only. Keep the harness's existing mark,
+/// estimated exit fee, fallback and finite-value policy; this is not an
+/// exchange liquidation valuation or a concurrent live-arena snapshot.
+fn daily_report(
+    arena: &GlobalArena,
+    fallback_price: f64,
+    previous_equity: &mut f64,
+    cumulative_pnl: &mut f64,
+) -> (f64, f64, f64, f64, f64) {
+    let cash = arena.unified_capital.load(Ordering::Relaxed);
+    let mut floating = 0.0;
+    for coin in arena.coins.iter() {
+        for pos in coin.positions.slots() {
+            if pos.is_open() {
+                let entry = pos.entry_price.load(Ordering::Relaxed);
+                let qty = pos.quantity.load(Ordering::Relaxed);
+                let is_long = pos.is_long.load(Ordering::Relaxed);
+                let price = coin.current_price.load(Ordering::Relaxed);
+                let exit_price = if price > 0.0 { price } else { fallback_price };
+                let exit_fee = qty * exit_price * 0.0005;
+                let value = (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 }
+                    - exit_fee;
+                if value.is_finite() {
+                    floating += value;
+                }
+            }
+        }
+    }
+    let equity = cash + floating;
+    // Match endpoint equity on BOTH sides; carried floating PnL is not a
+    // new gain/loss on the next day. Initial reporting equity is the flat
+    // account's initial capital, independently of candidate sizing state.
+    let pnl = equity - *previous_equity;
+    let pct = if *previous_equity > 0.0 { pnl / *previous_equity * 100.0 } else { 0.0 };
+    *cumulative_pnl += pnl;
+    *previous_equity = equity;
+    (cash, floating, equity, pnl, pct)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // E3 — ENTORNO DE GENOMA AISLADO: las promociones de este backtest van a
@@ -307,7 +346,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         current_genome.scalp_tp_base = 0.0160;
     }
     if !current_genome.tech_threshold.is_finite() || current_genome.tech_threshold <= 0.0 {
-        current_genome.tech_threshold = 0.1487;
+        current_genome.tech_threshold = 0.24; // R5-B1: bound slot-21 (D-625) — 0.1487 hacia promote al rechazo
     }
     if !current_genome.scalp_kelly_fraction.is_finite()
         || current_genome.scalp_kelly_fraction <= 0.0
@@ -321,6 +360,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mut global_pnl = 0.0;
+    let mut report_equity = initial_capital;
     let mut day_idx = 0;
     let mut idx = 0;
 
@@ -348,7 +388,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let day_start_ts = first_ts + (day_idx * ms_per_day);
         let day_end_ts = day_start_ts + ms_per_day;
 
-        let day_start_capital = arena.unified_capital.load(Ordering::Relaxed);
         let mut day_trades = 0;
         let mut day_scalp_trades = 0;
         let mut day_scalp_pnl = 0.0;
@@ -404,9 +443,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 g.scalp_trail_act_atr = g.scalp_trail_act_atr.clamp(0.8, 1.8);
                 g
             } else if i < (num_mutants * 40 / 100).max(4) {
-                // Nicho 4: KAN Neural & DarkAlpha (Alta ponderación neural)
+                // Nicho 4: KAN Neural & DarkAlpha (Alta ponderación neural).
+                // R4-B1: banda DENTRO del bound evolutivo slot-21 [0.24, 0.30]
+                // (D-625) — el clamp viejo [0.120, 0.220] dejaba TODO el nicho
+                // en 0.24 tras apply_to_arena y promote RECHAZABA a los
+                // campeones por "gen 21 fuera de bounds". Banda baja = más
+                // señales tech pasan = mayor ponderación neural (la intención
+                // original del nicho, ahora factible).
                 let mut g = current_genome.mutate_cmaes_seeded(0.25, deterministic_seed);
-                g.tech_threshold = g.tech_threshold.clamp(0.120, 0.220);
+                g.tech_threshold = g.tech_threshold.clamp(0.240, 0.270);
                 g
             } else if i < (num_mutants * 50 / 100).max(5) {
                 // Nicho 5: Mean-Reversion & Wall Bounce (Absorción en muros L2)
@@ -447,7 +492,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 current_genome.mutate_cmaes_seeded(0.55, deterministic_seed)
             };
             // Blindaje Cuántico: cotas estrictas para todos los mutantes (impedir que nazcan mutantes cobardes o suicidas)
-            mutant_genome.tech_threshold = mutant_genome.tech_threshold.clamp(0.080, 0.220);
+            // R4-B1: banda = bound evolutivo slot-21 [0.24, 0.30] (D-625) —
+            // el clamp viejo [0.080, 0.220] colapsaba TODOS los mutantes a
+            // 0.24 en el arena y promote/validate los rechazaba.
+            mutant_genome.tech_threshold = mutant_genome.tech_threshold.clamp(0.24, 0.30);
             mutant_genome.scalp_kelly_fraction =
                 mutant_genome.scalp_kelly_fraction.clamp(0.12, 0.38);
             mutant_genome.dynamic_obi_threshold =
@@ -455,7 +503,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             mutant_genome.dynamic_ofi_threshold =
                 mutant_genome.dynamic_ofi_threshold.clamp(0.15, 0.35);
             mutant_genome.scalp_sl_base = mutant_genome.scalp_sl_base.clamp(0.0030, 0.0150);
-            mutant_genome.swing_sl_base = mutant_genome.swing_sl_base.clamp(0.0080, 0.0350);
+            // R4-B7: el piso 0.0080 silenciaba el ancla lenta del nicho 2
+            // (0.0075) — el rebuild post-blindaje propagaba la distorsión
+            // (+6.7%) a la curva. Banda ⊇ los slow-anchors de los nichos
+            // 2/3/5 (0.0075/0.0120/0.0085).
+            mutant_genome.swing_sl_base = mutant_genome.swing_sl_base.clamp(0.0070, 0.0350);
             mutant_genome.scalp_trail_act_atr = mutant_genome.scalp_trail_act_atr.clamp(1.0, 2.5);
             mutant_genome.scalp_trail_step_atr = mutant_genome.scalp_trail_step_atr.clamp(1.0, 2.5);
             mutant_genome.scalp_trail_atr_mult_base =
@@ -671,43 +723,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             idx
         );
 
-        let day_start_cap_real = day_start_capital;
-        let day_final_cap = arena.unified_capital.load(Ordering::Relaxed);
         let last_tick_price = if idx > 0 {
             ticks[idx - 1].bid_price
         } else {
             ticks[0].bid_price
         };
-        let mut open_unrealized = 0.0;
-        for coin in arena.coins.iter() {
-            for pos in coin.positions.slots() {
-                if pos.is_open() {
-                    let entry = pos.entry_price.load(Ordering::Relaxed);
-                    let qty = pos.quantity.load(Ordering::Relaxed);
-                    let is_long = pos.is_long.load(Ordering::Relaxed);
-                    let c_price = coin.current_price.load(Ordering::Relaxed);
-                    let exit_price = if c_price > 0.0 {
-                        c_price
-                    } else {
-                        last_tick_price
-                    };
-                    let exit_fee = qty * exit_price * 0.0005;
-                    let unrealized =
-                        (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
-                    if unrealized.is_finite() {
-                        open_unrealized += unrealized;
-                    }
-                }
-            }
-        }
-        let total_equity = day_final_cap + open_unrealized;
-        let day_pnl = total_equity - day_start_cap_real;
-        global_pnl += day_pnl;
-        let pnl_pct = if day_start_cap_real > 0.0 {
-            (day_pnl / day_start_cap_real) * 100.0
-        } else {
-            0.0
-        };
+        let (day_final_cap, open_unrealized, total_equity, day_pnl, pnl_pct) = daily_report(
+            &arena,
+            last_tick_price,
+            &mut report_equity,
+            &mut global_pnl,
+        );
         current_capital = total_equity;
 
         println!(
@@ -942,7 +968,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Sanitización ligera para evitar NaNs sin restringir la adaptabilidad genética
         if !current_genome.tech_threshold.is_finite() {
-            current_genome.tech_threshold = 0.12;
+            current_genome.tech_threshold = 0.24; // R5-B1: bound slot-21 (D-625)
         }
         if !current_genome.scalp_kelly_fraction.is_finite() {
             current_genome.scalp_kelly_fraction = 0.55;
@@ -969,6 +995,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // PROMOTE AL ENVELOPE GLOBAL
+    // R4-B1 (lección): el rechazo silencioso de promote era invisible
+    // cuando el baseline siempre ganaba — el rechazo ahora es explícito
+    // y contable en logs.
     match quantum_arena::genome_store::GenomeEnvelope::promote(
         current_genome.clone(),
         "continuous_evolution_backtest",
@@ -978,7 +1007,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "💾 [GUARDADO] Genoma Campeón persistido exitosamente en generación {}.",
             env.generation
         ),
-        Err(e) => println!("⚠️ [ERROR] No se pudo guardar el genoma: {}", e),
+        Err(e) => println!(
+            "🚫 [PROMOTE-RECHAZADO] el campeón NO se persistió (bounds/validate): {}",
+            e
+        ),
     }
 
     println!("============================================================");
@@ -986,6 +1018,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("💰 Capital Inicial: $13.00");
     println!("💰 Capital Final  : ${:.4}", current_capital);
     println!("💵 PnL Global     : ${:+.4}", global_pnl);
+    println!(
+        "PnL reconciliation residual: {:+.12}",
+        global_pnl - (current_capital - initial_capital)
+    );
     println!(
         "📈 Crecimiento    : {:.2}%",
         ((current_capital - 13.0) / 13.0) * 100.0
@@ -1006,4 +1042,74 @@ struct SignalPathDiag {
     max_obi: f64,
     tech_thr: f64,
     max_micro_trend: f64,
+}
+
+#[cfg(test)]
+mod reporting_contract {
+    use super::*;
+    use quantum_arena::position::PositionHorizon;
+
+    fn near(actual: f64, expected: f64) {
+        assert!(actual.is_finite() && (actual - expected).abs() <= 2e-12 * expected.abs().max(1.0),
+            "actual={actual:?}, expected={expected:?}");
+    }
+
+    fn checkpoint(arena: &GlobalArena, previous: &mut f64, sum: &mut f64, expected_pnl: f64, expected_equity: f64) {
+        let cash = arena.unified_capital.load(Ordering::Relaxed);
+        let margin = arena.used_margin.load(Ordering::Relaxed);
+        let start_equity = *previous;
+        let (_, _, equity, pnl, pct) = daily_report(arena, 110.0, previous, sum);
+        near(pnl, expected_pnl);
+        near(equity, expected_equity);
+        near(*previous, expected_equity);
+        near(pct, expected_pnl / start_equity * 100.0);
+        near(*sum, expected_equity - 100.0);
+        near(arena.unified_capital.load(Ordering::Relaxed), cash);
+        near(arena.used_margin.load(Ordering::Relaxed), margin);
+    }
+
+    #[test]
+    fn sol_r5_01_carry_changes_close_fees_and_flat_cash_telescope() {
+        let arena = GlobalArena::build_in_own_stack(100.0);
+        let (mut previous, mut sum) = (100.0, 0.0);
+        checkpoint(&arena, &mut previous, &mut sum, 0.0, 100.0);
+        let pos = &arena.coins[0].positions.position;
+        assert!(pos.open_with_fee(true, 100.0, 1.0, 10.0, 1_000, 150.0, 50.0,
+            PositionHorizon::Continuous, 0.6, 0.5, 0.05));
+        arena.used_margin.fetch_add(10.0, Ordering::Relaxed);
+        arena.unified_capital.fetch_add(-0.05, Ordering::Relaxed);
+        arena.coins[0].current_price.store(110.0, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, 9.895, 109.895);
+        checkpoint(&arena, &mut previous, &mut sum, 0.0, 109.895);
+        arena.coins[0].current_price.store(120.0, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, 9.995, 119.89);
+        let (long, entry, qty, margin, entry_fee) = pos.close_with_fee();
+        assert!(long && !pos.is_open());
+        near(entry_fee, 0.05);
+        arena.used_margin.fetch_add(-margin, Ordering::Relaxed);
+        arena.unified_capital.fetch_add((120.0 - entry) * qty - qty * 120.0 * 0.0005, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, 0.0, 119.89);
+        arena.unified_capital.fetch_add(-0.25, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, -0.25, 119.64);
+        arena.unified_capital.fetch_add(2.0, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, 2.0, 121.64);
+    }
+
+    #[test]
+    fn sol_r5_01_multiactivo_multislot_negative_carry_is_not_counted_twice() {
+        let arena = GlobalArena::build_in_own_stack(100.0);
+        let (mut previous, mut sum) = (100.0, 0.0);
+        let long = &arena.coins[0].positions.position;
+        let short = &arena.coins[1].positions.position;
+        let second_slot = &arena.coins[0].positions.slots()[0];
+        for (pos, is_long, qty) in [(long, true, 1.0), (short, false, 2.0), (second_slot, true, 0.5)] {
+            assert!(pos.open_with_fee(is_long, 100.0, qty, 1.0, 1_000, 0.0, 0.0,
+                PositionHorizon::Continuous, 0.5, 0.5, 0.0));
+        }
+        arena.coins[0].current_price.store(90.0, Ordering::Relaxed);
+        arena.coins[1].current_price.store(105.0, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, -25.1725, 74.8275);
+        checkpoint(&arena, &mut previous, &mut sum, 0.0, 74.8275);
+        assert!(long.is_open() && short.is_open() && second_slot.is_open());
+    }
 }

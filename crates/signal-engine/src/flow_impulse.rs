@@ -76,9 +76,10 @@ impl FlowImpulseEngine {
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
     ) -> crate::voto_espectral::VotoEspectral {
-        let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
-            ratio_lambda_mu,
-        );
+        // R4-C1 (#659 paridad sombra/vivo): la CALMA se abstiene — sin el
+        // .max(0.0) la excitación negativa INVERTÍA el sentido de cada
+        // escala dentro del consenso espectral vivo.
+        let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(ratio_lambda_mu).max(0.0);
         let mut por_escala = [0.0f64; 32];
         for k in 0..32 {
             let x = desplazamientos[k];
@@ -519,6 +520,19 @@ mod qo_619_tests {
         let portador =
             crate::hawkes_bessel::HawkesBesselEngine::voto_espectral(&x, 3.0).en_escala(20).abs();
         assert!(pico > portador, "impulso {pico} vs portador {portador}");
+        // R4-C1: la CALMA se abstiene — antes la excitación negativa
+        // INVERTÍA el sentido del voto en el consenso espectral (mismo
+        // defecto #659 que los caminos vivos ya tenían arreglado).
+        for calma in [1.0, 1.2, 1.59] {
+            let v = FlowImpulseEngine::voto_espectral(&x, calma);
+            for k in 0..ESCALAS_VOTO {
+                assert_eq!(
+                    v.en_escala(k),
+                    0.0,
+                    "calma (ratio={calma}) debe abstenerse en escala {k}"
+                );
+            }
+        }
     }
 
     /// H2-7 (RONDA 3) — PARIDAD DE GANANCIAS DEL FLUJO, PINNEADA.

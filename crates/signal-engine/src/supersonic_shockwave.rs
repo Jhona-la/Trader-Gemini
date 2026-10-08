@@ -84,7 +84,10 @@ impl SupersonicShockwaveEngine {
                 return 0.0;
             }
             let m = Self::compute_mach_number(x.abs().min(10.0), c_z);
-            (x.clamp(-10.0, 10.0).tanh() * Self::compute_shockwave_jump(m))
+            // R5-A2: firma a la ESCALA DEL ESTADÍSTICO en PARIDAD con el
+            // camino vivo ((speed/sound)/2 de la Ola 69) — antes tanh(x)
+            // crudo era 2× más empinado que el vivo del MISMO motor.
+            ((x.clamp(-10.0, 10.0) / c_z) / 2.0).tanh() * Self::compute_shockwave_jump(m)
                 .clamp(-1.0, 1.0)
         })
     }
@@ -169,6 +172,22 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         // en velocidad-por-segundo del rango ATR es ÷√60, no ÷60 (drift).
         // ÷60 subrestimaba la velocidad del sonido 7.75× ⇒ Mach inflado.
         const BARRA_S: f64 = 7.7459666924; // √60
+        let has_spread_sound = registry
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "spread_speed_of_sound",
+                "SupersonicShockwaveEngine",
+            )
+            .is_some();
+        if !has_spread_sound && mid_price <= 1e-8 {
+            // R5-C1 (R4-C5): con spread_speed_of_sound ausente, el fallback es atr_pct (fracción/s).
+            // Sin mid_price (>1e-8), speed no se puede normalizar a fracción/s y permanece en dólares/s.
+            // Mezclar dólares/s con fracción/s rompe unidades físicas (Mach ×mid_price).
+            // Por coherencia dimensional estricta, el motor se abstiene devolviendo 0.0.
+            return 0.0;
+        }
+
         let sound_segundo = registry
             .get_scoped_parameter(
                 sym_opt,
@@ -194,6 +213,8 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
                 .map(|p| p.get_value() / BARRA_S)
             })
             .unwrap_or(0.001);
+        // R5-C1 resuelto arriba por Ω21 (guarda previa al sonido — el
+        // auto-merge duplicó esta segunda guarda de la Ola 71; retirada).
         let sound_norm = sound_segundo;
 
         if !speed.is_finite() || !sound_norm.is_finite() || sound_norm <= 0.0 {
@@ -204,8 +225,12 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         let jump = Self::compute_shockwave_jump(mach);
         // #659 (F2-A11): firma CONTINUA del flujo (familia tanh del
         // solitón #657 — sin escalón de signum en speed=0).
-        const SAT_MOMENTO: f64 = 1e4;
-        (speed_norm * SAT_MOMENTO).tanh() * jump
+        // R4-C2: firma a la ESCALA DEL ESTADÍSTICO — el divisor 1e4
+        // saturaba speed_norm O(1e-4..1e-2)/s a signum disfrazado
+        // (media respuesta en 5e-5); tanh(mach/2) es el análogo vivo de
+        // la sombra (tanh natural en z) y conserva ambos contratos de
+        // qo_666: mach 1.2 → 0.53·jump, mach 10 → 0.99991·jump.
+        (speed_norm / sound_norm / 2.0).tanh() * jump
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
@@ -358,4 +383,20 @@ mod qo_666_tests {
         let v10 = engine.evaluate();
         assert!(v10 > 0.7 && v10 > 3.0 * v, "Mach 10 satura vs Mach 1.2 debil: {v10} vs {v}");
     }
+
+    /// R5-C1 (R4-C5): sin spread_speed_of_sound y sin mid_price (>1e-8),
+    /// el fallback fraccional (atr_pct) no puede coexistir con speed en USD/s
+    /// sin romper la coherencia dimensional. El motor debe abstenerse (0.0).
+    #[test]
+    fn r5_c1_abstiene_sin_mid_price_con_fallback_fraccional() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        registry.set("order_flow_speed", 72.0);
+        registry.set("atr_pct", 0.0077459666924);
+        // mid_price ausente (0.0 <= 1e-8)
+        let mut engine = SupersonicShockwaveEngine::default();
+        engine.init(Arc::clone(&registry)).ok();
+        let v = engine.evaluate();
+        assert_eq!(v, 0.0, "Sin mid_price y con fallback fraccional debe abstenerse");
+    }
 }
+

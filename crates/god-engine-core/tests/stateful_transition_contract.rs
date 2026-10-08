@@ -5,10 +5,10 @@ fn snapshot(e: &StatefulEngine) -> Vec<u64> {
         e.tick_count,
         e.current_ts,
         e.last_event_ms,
-        e.last_scalp_exit_ms,
-        e.scalp_loss_streak as u64,
-        e.scalp_long_loss_streak as u64,
-        e.scalp_short_loss_streak as u64,
+        e.last_exit_fastband_ms,
+        e.fastband_loss_streak as u64,
+        e.fastband_long_loss_streak as u64,
+        e.fastband_short_loss_streak as u64,
         e.kline_start_ms,
         e.last_trade_is_sell as u64,
     ];
@@ -176,10 +176,10 @@ fn rejected_future_ticks_do_not_release_cooldown_or_forget_directional_losses() 
         (1e200, 1e200, E::NonFiniteDerivedValue),
     ] {
         let mut e = seeded();
-        e.last_scalp_exit_ms = e.last_event_ms;
-        e.scalp_loss_streak = 3;
-        e.scalp_long_loss_streak = 3;
-        e.scalp_short_loss_streak = 2;
+        e.last_exit_fastband_ms = e.last_event_ms;
+        e.fastband_loss_streak = 3;
+        e.fastband_long_loss_streak = 3;
+        e.fastband_short_loss_streak = 2;
         let before = snapshot(&e);
         assert!(!e.can_open_position_ms(1000.0));
         assert_eq!(e.get_active_directional_streak_ms(true, 1000.0), 3);

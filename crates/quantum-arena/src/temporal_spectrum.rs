@@ -300,30 +300,6 @@ const HABILIDAD_OLVIDO: f64 = 1.0 / 64.0;
 /// (misma disciplina que `MUESTRAS_MADURAS` del banco de pronóstico).
 pub const MUESTRAS_SKILL_MADURAS: u64 = 30;
 
-/// F1-A1 / H5: Tamaño efectivo del estimador EWMA (λ=1/64 ⇒ N_ef ≈ 2/λ = 128).
-/// El umbral de significancia se ancla aquí en sesiones largas para evitar
-/// que n→∞ colapse el umbral a cero y admita ruido como habilidad genuina.
-pub const N_EFECTIVO_EWMA: u64 = 128;
-
-/// #599 — umbral de significancia del IC para la selección de τ* (t ≥ 2 con
-/// el error estándar de Fisher 1/√(n−3)). El MÁXIMO de varios IC de puro
-/// ruido suele ser positivo (sesgo de selección entre 32 escalas,
-/// señalización de CL sobre #594): exigir significancia hace el umbral
-/// autoajustable por muestra — ≈0.385 con 30 bloques, ≈0.215 con 90 — sin
-/// constantes mágicas. `None` sin muestras para el estadístico.
-#[inline]
-pub fn umbral_ic_significativo(n_bloques: u64) -> Option<f64> {
-    if n_bloques < MUESTRAS_SKILL_MADURAS + 3 {
-        return None;
-    }
-    let umbral = 2.0 / ((n_bloques - 3) as f64).sqrt();
-    if umbral.is_finite() && umbral > 0.0 {
-        Some(umbral.min(1.0))
-    } else {
-        None
-    }
-}
-
 /// #662 (F2-B4) — peso CONTINUO de la masa de una escala en la regresión
 /// ζ(p): rampa C¹ (smoothstep 3t²−2t³) centrada en el corte viejo de 0,10
 /// (0 en ≤0,05; 1 en ≥0,15; 0,5 en 0,10). Con pertenencia dura cada escala
@@ -674,15 +650,15 @@ impl TemporalSpectrum {
                 continue;
             }
             if let Some(ic) = s.habilidad_medida() {
-                // #599 / F1-A1: un IC positivo aislado es el máximo típico de ruido
-                // entre 32 escalas — exige significancia t ≥ 2 para opinar,
-                // anclando n al N_EFECTIVO_EWMA para consistencia en sesiones largas.
-                // #661 — Ville REPLAZA el umbral fijo: capital ≥ 1/α
-                // (anytime-valid, inmune a la multiplicidad del máximo).
-                // #663 (G1-1): la selección de τ* toma el MÁXIMO entre
-                // las 32 escalas — corrección de FAMILIA M/α (Bonferroni
-                // sobre 32 e-procesos: umbral 640, no 20). Ville por
-                // proceso no cubría la multiplicidad del máximo.
+                // #599/#661/#663: τ* toma el MÁXIMO entre escalas — un IC
+                // positivo aislado es el típico máximo de ruido (sesgo de
+                // selección, señalización de CL sobre #594). Ville decide la
+                // significancia con corrección de FAMILIA M/α (Bonferroni
+                // sobre los 32 e-procesos de la malla: umbral 640, no 20
+                // por proceso). H1-5: sólo los nodos de banda [30 s, 12 h]
+                // (≤5) compiten de facto — M=32 es el paraguas conservador
+                // de la malla completa; la cobertura sigue válida, el gate
+                // queda ~6× más duro que el mínimo por banda.
                 let significativo = s.skill_e.significativo_familia(32);
                 if significativo && ic > best_skill {
                     best_skill = ic;
@@ -1805,7 +1781,11 @@ mod tests {
         let ensayos = 4000usize;
         let (mut sin_umbral, mut con_umbral) = (0usize, 0usize);
         let mut lcg = 0xA0761D6478BD642Fu64;
-        let umbral = umbral_ic_significativo(N).expect("33 bloques");
+        // Umbral t≥2 de Fisher (2/√(n−3)) — el criterio PRE-Ville que
+        // esta medición compara contra IC>0. La producción decidió por
+        // Ville de familia (#661/#663); el test conserva la medición
+        // del sesgo como evidencia de por qué el criterio crudo no basta.
+        let umbral = 2.0 / ((N - 3) as f64).sqrt();
         for _ in 0..ensayos {
             let (mut positiva, mut significativa) = (false, false);
             for _ in 0..ESCALAS_BANDA {
@@ -1859,17 +1839,13 @@ mod tests {
 
     #[test]
     fn qo_599_el_maximo_de_ics_de_ruido_no_opina_sin_significancia() {
-        // Umbral autoajustable: 2/√(n−3), None sin muestras suficientes.
-        assert_eq!(umbral_ic_significativo(MUESTRAS_SKILL_MADURAS), None);
-        let u33 = umbral_ic_significativo(MUESTRAS_SKILL_MADURAS + 3).expect("33 bloques");
-        let u90 = umbral_ic_significativo(90).expect("90 bloques");
-        assert!((u33 - 2.0 / 30.0_f64.sqrt()).abs() < 1e-12);
-        assert!((u90 - 2.0 / 87.0_f64.sqrt()).abs() < 1e-12);
-        assert!(u33 > u90, "el umbral se afloja con evidencia");
+        // La significancia la decide el e-proceso de Ville con umbral de
+        // FAMILIA 640 (32/α, #663): el helper fabrica capital (1+λ)^n con
+        // el signo del IC — n=30 ⇒ ~17 (ruido, no cruza), n=90 ⇒ ~5313.
 
         // Escenario del sesgo de selección (señalización de CL): la escala
-        // 19 lleva el IC más alto (0.35, típico MÁXIMO de ruido con n=30)
-        // y antes lideraba la selección; la 18 tiene IC 0.5 con n=90.
+        // 19 lleva el IC más alto PERO inmaduro (n=30, capital ~17 < 640)
+        // y no puede liderar; la 18 tiene IC 0.5 madura (n=90 ⇒ cruza).
         let mut spec = TemporalSpectrum::new();
         spec.first_ts_ms = 0;
         spec.last_ts_ms = 86_400_000;
@@ -1884,9 +1860,9 @@ mod tests {
         assert_eq!(
             spec.dominant_tau_ms,
             SPECTRUM_SCALES_MS[18],
-            "el máximo de ruido (0.35 < 0.385) no opina; la escala significativa lidera"
+            "el máximo de ruido (n=30, capital ~17 < 640) no opina; la escala madura significativa lidera"
         );
-        // Sin NINGUNA escala significativa (ambas n=30 con IC < umbral)
+        // Sin NINGUNA escala significativa (ambas n=30, capital ~17 < 640)
         // → respaldo de energía: manda la más energética (19, señal 0.9).
         spec.scales[18] = escala_con_habilidad(18, MUESTRAS_SKILL_MADURAS, 0.3);
         spec.scales[18].signal = 0.4;

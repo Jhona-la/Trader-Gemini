@@ -4,6 +4,11 @@ use storage_engine::mmap_bus::{MmapTelemetryReader, TelemetryFrame};
 
 #[test]
 fn open_reader_permanently_skips_a_reserved_frame_committed_later() {
+    // TRIAJE B (GLM 105) — DRENADO: stop-at-first-invalid. El cursor YA NO
+    // consume slots reservados (seq impar): el frame commiteado DESPUÉS se
+    // recupera en el siguiente ciclo de lectura de la MISMA instancia.
+    // (Antes: pérdida permanente para esa instancia — sistemática en el
+    // dataset del Shadow Forest, que consume este bus cada 500 ms.)
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -27,16 +32,14 @@ fn open_reader_permanently_skips_a_reserved_frame_committed_later() {
         writer[76..80].copy_from_slice(&1_u32.to_ne_bytes()); // reserved/in progress
         let mut reader = MmapTelemetryReader::new(&path);
         assert!(reader.read_latest_frames().unwrap().is_empty());
+        // Reintento con el slot SIGUE reservado: el reader espera (no avanza,
+        // no pierde) — sin colgarse: devuelve lo acumulado.
+        assert!(reader.read_latest_frames().unwrap().is_empty());
         writer[80..88].copy_from_slice(&0.125_f64.to_ne_bytes());
         writer[76..80].copy_from_slice(&2_u32.to_ne_bytes()); // same reservation committed
-        assert!(
-            reader.read_latest_frames().unwrap().is_empty(),
-            "known defect: cursor already consumed the in-progress slot"
-        );
-        // A fresh reader sees the now valid frame, proving it was actually committed.
-        let mut fresh = MmapTelemetryReader::new(&path);
-        let frames = fresh.read_latest_frames().unwrap();
-        assert_eq!(frames.len(), 1);
+        // EL FIX: la MISMA instancia ahora SÍ ve el frame commiteado.
+        let frames = reader.read_latest_frames().unwrap();
+        assert_eq!(frames.len(), 1, "el frame commiteado después se recupera");
         assert_eq!(frames[0].payload[0], 0.125);
     }
     drop(file);

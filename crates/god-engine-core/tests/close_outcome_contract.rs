@@ -635,10 +635,10 @@ fn cl5_una_perdida_cuenta_una_sola_vez_en_la_racha() {
     let (_arena, mut core) = core(OutcomeContext::IsolatedSimulation, false);
     assert!(close(&mut core, 97.0) < 0.0);
     let fe = &core.feature_engines[0];
-    assert_eq!(fe.scalp_loss_streak, 1, "racha global");
-    assert_eq!(fe.scalp_long_loss_streak, 1, "racha de largos");
-    assert_eq!(fe.scalp_short_loss_streak, 0, "racha de cortos");
-    assert!(fe.last_scalp_was_loss);
+    assert_eq!(fe.fastband_loss_streak, 1, "racha global");
+    assert_eq!(fe.fastband_long_loss_streak, 1, "racha de largos");
+    assert_eq!(fe.fastband_short_loss_streak, 0, "racha de cortos");
+    assert!(fe.last_exit_fastband_was_loss);
 }
 
 /// CL-10 — UNA ganancia no es evidencia de edge: el Kelly que publica el

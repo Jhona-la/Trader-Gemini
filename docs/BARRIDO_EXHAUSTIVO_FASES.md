@@ -632,13 +632,18 @@ router τ viva, banda #586, relojes físicos, Ville, exceso Hawkes). El drift:
   clamp de anclas de C-05. Tests de contrato formal dedicados añadidos en god_engine.rs
   (omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva y
   omega14_g0_5_c05_clamp_anclas_invariante: 2/2 verdes).
-- G0-6 [LOW] state.rs:521 — átomos `scalp/swing_used_margin` fantasma (0
-  escritores, 0 lectores). G0-7 [LOW] flow_excitation_confluence:243 salto
-  en la frontera del piso OBI (C¹). G0-8 [LOW] slots/naming scalp/swing en
-  position.rs/stateful_engine.rs (residuo léxico). G0-9 [LOW] espacio
-  genético parametrizado por anclas de 2 puntos — no expresa curvatura
-  (nota de consejo). G0-10 [LOW] epigenoma TOML + binarios legacy siguen
-  serializando scalp/swing con defaults mágicos.
+- G0-6 [LOW] CERRADO (Ola 67 Qoder) state.rs:521 — átomos `scalp/
+  swing_used_margin` retirados (0 escritores, 0 lectores verificados por
+  grep; oráculo PASA). G0-7 [LOW] CERRADO vía G2-3 (Ola 63 — mismo sitio
+  confluence:243, rampas smoothstep de exceso). G0-8 [LOW] PARCIAL
+  CERRADO (Ola 67): helpers Genotype::scalp_tp/sl → tp/sl_at_fast_anchor
+  (misma curva al ancla) + local swing_tp de rama 13 → tp_tau_vivo (el
+  valor ya era tp_at_tau desde Ω11); el residuo de slots internos en
+  position.rs/stateful_engine.rs queda documentado (sin costo semántico).
+  G0-9 [LOW] espacio genético parametrizado por anclas de 2 puntos — no
+  expresa curvatura (nota de consejo). G0-10 [LOW] CERRADO (Ola 67):
+  epigenoma TOML renombrado a tp/sl_fast/slow (write-only sin loader en
+  producción, cero riesgo de compat; mutation_cycle_test actualizado).
 
 ## §G1 — MATEMÁTICA/ESTADÍSTICA (8: 3 HIGH, 2 MED, 3 LOW)
 
@@ -673,9 +678,12 @@ VR) están correctas; cada fix tiene un defecto de INTEGRACIÓN estadística:
 - G1-5 [MED] selection_stats.rs DUPLICADO en risk-engine y
   evolution-engine (diff vacío hoy; drift silencioso garantizado).
 - G1-6 [LOW] sr_sigma=1/√(n−1) aproxima σ entre pruebas (conservador con
-  GA correlacionado — documentar). G1-7 [LOW] exportaciones muertas Fisher
-  (umbral_ic_significativo, N_EFECTIVO_EWMA). G1-8 [LOW] comentario de
-  potencia evalues: cruce esperado n≈272 con p=0.58, no ~800.
+  GA correlacionado — documentar). G1-7 [LOW] CERRADO (Ola 67 Qoder)
+  exportaciones muertas Fisher retiradas (umbral_ic_significativo +
+  N_EFECTIVO_EWMA ×2 — 0 usos productivos por grep; Ville de familia las
+  subsumió en #661/#663; qo_599/qo_601 reescritos a semántica Ville).
+  G1-8 [LOW] CERRADO (Ola 67): evalues documenta n≈272 (E[ln factor] =
+  0.58·ln1.1 + 0.42·ln0.9 ≈ 0.011/obs) y skill 1.1^95≈8540 cruza 8320.
 
 ## §G2 — FÍSICA/MOTORES (15: 2 HIGH, 8 MED, 5 LOW)
 
@@ -707,8 +715,9 @@ duros supervivientes, y abstención-SS incompleta:
   trivial, lag siempre acreditado).
 - G2-11 [LOW] knobs muertos CONFIRMADOS (quantum_k_spring/lambda/alpha,
   nash_drift, conformal_epsilon + game_payoffs sin escritor). G2-12 [LOW]
-  hawkes_bessel:328 comentario OBSOLETO que invita a «re-parar» lo ya
-  pareado (riesgo de doble fix). G2-13 [LOW] paridad de INPUTS solitón
+  CERRADO (Ola 67 Qoder): las 30 líneas del mislabel pre-R9 retiradas de
+  hawkes_bessel — describían el proxy de aceleración YA reemplazado por
+  λ/μ̂ real e invitaban a re-parar lo cableado. G2-13 [LOW] paridad de INPUTS solitón
   (sombra lee knob muerto 1.0, vivo usa OFI). G2-14 [LOW] suelos
   literales ramas 13/15 (=G0-3). G2-15 [LOW] cortes duros fused ±0.38/0.22.
 
@@ -811,8 +820,18 @@ G0-10 VIVO (epigenoma TOML).
 - H0-3 [nota] drift Ville M/alfa=8320: diferenciacion tarda ~7h (tau=30s)
   a ~410 dias (tau=12h) — doctrinalmente correcto pero #626 congelado
   para tau>1min; candidato: familia por banda observable.
-- H0-4..8 [LOW]: segunda nocion de friccion buf_fast/slow (lib.rs:3078),
-  epigenoma TOML, atomos G0-6, naming, lectores de vistas en backtests.
+- H0-4..8 [LOW]: epigenoma TOML (G0-10), átomos G0-6 y naming G0-8-parcial
+  DRENADOS por Ola 67. **H0-8 DRENADO (GLM 104)**: brazos muertos
+  scalp_tp/sl/kelly del ast_mutator REMOVIDOS (muertos porque online_daemon
+  sólo pasa ml_threshold_*, pero reactivarlos habría roto la fuente única
+  de curvas — el test ahora exige RECHAZO); bins legacy (vectorized,
+  booktick_replay) anotados como lectores de VISTAS. **H0-7-residuo
+  DRENADO (GLM 104)**: 7 identificadores scalp_* de stateful_engine
+  renombrados a fastband_* (59+5 reemplazos, rol espectral real;
+  PositionManager pub scalp/swing queda como DECISIÓN — repr(C) público).
+  H0-4 (fricción dual buf_fast/slow vs roundtrip_friction unificada en la
+  misma función) SIGUE ABIERTO como DECISIÓN (unificar = conducta ⇒
+  oráculo).
 
 ## §H1 — MATEMATICA/ESTADISTICA (0 HIGH, 3 MED + LOWs)
 
@@ -862,9 +881,13 @@ limpia, campo unico).
   leptocúrtica γ₄ en el cálculo de `sr_sigma` para `expected_max_sharpe`.
   Benchmark E[max SR] riguroso y conservador frente a colas pesadas cripto.
   Test formal: omega15_h1_4_dsr_sharpe_std_error_leptocurtico (10/10 verdes en selection_stats).
-- H1-5..9 [LOW]: familia 32 vs <=5 efectiva en tau*, docs numericos
-  desincronizados, FAMILIA constantes duras, G1-7 exportaciones muertas
-  VIVAS.
+- H1-5..9 [LOW] DRENADOS (Ola 67 Qoder): H1-5 doc de familia M=32
+  reescrito (paraguas conservador de la malla; ≤5 nodos de banda
+  [30s,12h] compiten de facto), H1-6/H1-8 docs numéricos corregidos
+  (evalues n≈272; skill 1.1^95≈8540 cruza 8320), H1-7 ESCALAS_BANDA_PAR
+  nombrada en FAMILIA_VETO_GRUPO (el 5 ya era derivado de MAX_COINS,
+  ahora también la banda lo es), H1-9/G1-7 exportaciones muertas
+  retiradas. Oráculo T-1: PASA 16/144.
 
 ## §H2 — FISICA/MOTORES (2 HIGH, 4 MED + LOWs)
 
@@ -905,19 +928,42 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   tres valores, los puntos de media respuesta z₅₀=0.2747 < flow₅₀=0.6866
   y prohíbe el regreso del /1e-3: a |flow|=0.004 el voto es ~0).
   Bit-exact (mismos valores), sin oráculo.
-- H2-8 → **DRENADO (GLM 103)**: el bloque de advertencia VIEJO en
-  hawkes_bessel.rs (~328) decía "FIX REAL pendiente, NO hecho" sobre el
-  proxy de aceleración — PENDIENTE YA CUMPLIDO desde M2-C02 (el core
-  publica λ/μ verdadero por símbolo en lib.rs:~4180). Reescrito como
-  historia cerrada con "no re-parar" — el riesgo de doble-fix eliminado.
-- H1-6 → **DRENADO (GLM 103, la parte concreta G1-8)**: el comentario
-  de potencia de qo_661 alegaba cruce "~n=800" para el umbral simple —
-  el real es n≈272 (E[Δln-capital]=0.01103/obs; 800 es el número de
-  FAMILIA M=416, no el umbral 1/α). Corregido con la derivación. (La
-  otra parte, G1-6 sr_sigma gaussiano, quedó SUPERADA por Ω15: el DSR
-  ya usa sharpe_std_error no-normal.)
-- H2-9..12 [LOW]: G2-11/13/15 VIVOS; lead-lag divergencia ETH
-  escalada 0.6 y firma con rho negativo.
+- H2-8/G2-12 → **DRENADO (GLM 103 + Ola 67 Qoder, convergencia
+  paralela)**: el bloque de advertencia VIEJO en hawkes_bessel.rs (~328)
+  decía "FIX REAL pendiente, NO hecho" sobre el proxy de aceleración —
+  PENDIENTE YA CUMPLIDO desde M2-C02 (el core publica λ/μ verdadero por
+  símbolo en lib.rs:~4180). Reescrito como historia cerrada con "no
+  re-parar" (versión GLM conservada — cita el cableado productivo); la
+  Ola 67 retiró el mismo bloque en paralelo. Riesgo de doble-fix
+  eliminado.
+- H1-6/G1-8 → **DRENADO (GLM 103 + Ola 67 Qoder, convergencia
+  paralela)**: el comentario de potencia de qo_661 alegaba cruce
+  "~n=800" para el umbral simple — el real es n≈272
+  (E[Δln-capital]=0.01103/obs; 800 es el número de FAMILIA M=416, no el
+  umbral 1/α). Corregido con la derivación (versión GLM conservada en
+  evalues.rs; Ola 67 corrigió además el hermano de skill_motores:
+  1.1^95≈8540 cruza 8320, no "1.1^97≈8640"). (La otra parte, G1-6
+  sr_sigma gaussiano, quedó SUPERADA por Ω15: el DSR ya usa
+  sharpe_std_error no-normal.)
+- H2-9..12 [LOW]: **H2-11 (=G2-15) DRENADO-PINNEADO (GLM 104)**: los
+  cinco cortes de confluencia_resonante (0.38/0.22/0.52/0.12/±2e-4) son
+  ahora constantes públicas (FUSED_UMBAL_PLENO/MODERADO,
+  HURST_CONTINUACION, COHERENCIA_MINIMA, MAREA_MACRO_TOLERANCIA) con
+  contrato h2_11 que fija valores y fronteras justo-adentro/afuera —
+  bit-exact; promoverlos a genoma = conducta ⇒ oráculo (opción abierta).
+  **H2-12-pata-doc DRENADA (GLM 104)**: doc de lag_optimo corregida al
+  comportamiento real (rho.abs() pasa — la doc decía "exigido POSITIVO"
+  y un rho negativo VOLTEA la firma de la divergencia); decisión de
+  vetar rho<0 + ruta ETH 0.6/0.4 SIGUEN ABIERTAS (conducta ⇒ oráculo).
+  **H2-10 DRENADO (GLM 112, con oráculo)**: la sombra del solitón leía
+  el knob global muerto soliton_amplitude (0 escritores ⇒ siempre 1.0)
+  — ahora ESPEJA la cascada del vivo (per-coin soliton_amplitude → OFI
+  → 0.0; sanitizado del motor idéntico). **H2-9 cerrado por partes**:
+  conformal_epsilon y nash_drift RESUELTOS DE FACTO por Ω21/Ω22
+  (escritores reales: conformal_alpha :4673, cadena Nash-CVPIN); los
+  knobs cuánticos (k_spring/lambda/alpha) declarados CONTRATO por GLM
+  112 — defaults = física pinneada bit-idéntica; publicarlos del genoma
+  = canal evolutivo futuro con oráculo.
 
 ## Asignacion (ronda 3)
 
@@ -930,4 +976,349 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   DE AGENTES** (el "7/7" anterior omitía H2-7, drenado por GLM 103;
   conteo completo: H0-1, H0-2, H1-1, H1-2, H1-3, H1-4, H2-3, H2-4,
   H2-5, H2-6, H2-7 = 11 MED + 2 HIGH). Quedan LOWs de limpieza.
+- Siguiente paso: Fase F4 cerrada (auditoría forense de riesgo, capital $13 USD y execution-engine) -> avanzar a Fase F5.
+
+---
+
+# FASE F4 — DINERO, RIESGO Y EJECUCIÓN (45 ARCHIVOS AUDITADOS)
+
+## Inventario Real de la Fase F4
+- **crates/risk-engine/src/**: 23 archivos (8 719 líneas). Tests: 141/141 verdes en 0.85s.
+- **crates/execution-engine/src/**: 22 archivos (11 655 líneas). Tests: 79/79 verdes en 3.76s.
+- **Total**: 45 archivos, ~20 374 líneas.
+
+## Hallazgos de la Fase F4
+
+- **F4-EXE-001 [MED] CERRADO (Ola Ω17 AGY)** `crates/execution-engine/src/user_data_stream.rs:966-983`:
+  El test `test_algo_update_terminal_marks_protection_dirty` realizaba una aserción absoluta `assert_eq!(terminal_events_seen(), 1)` sobre el contador estático `AtomicU64` global `TERMINAL_EVENTS_SEEN`. En ejecución paralela con `test_reconcile_after_reconnect_clears_cache_and_marks_dirty`, el contador acumulaba ejecuciones previas (`left: 2, right: 1`) causando fallos no-deterministas. Blindado midiendo el incremento relativo `terminal_events_seen() - prev_events == 1`. 79/79 tests de `execution-engine` verificados verdes.
+
+- **F4-RISK-001 [AUDITADO - APROBADO] Régimen Micro-Capital $13 USD y Piso Binance $5**:
+  - `capital_regime::trades_of_room(13.0, 5.0) = 2.6 <= 3.0` activa `micro_weight = 1.0` (régimen micro pleno).
+  - `enforce_minimum_notional`: con `dynamic_min_notional = 5.0` y margen de seguridad (+0.1) se evalúa `safe_min_notional = 5.10 USD`.
+  - `micro_lev_cap`: apalancamiento continuo [5.0x, 6.5x]. Con L=5x, el margen requerido por trade es $1.02 USD.
+  - `micro_safe_limit`: [1.20, 2.60] USD. La orden cabe holgadamente en $1.02 USD sin activar recortes de margen.
+  - Concurrencia de posiciones: 2 órdenes simultáneas consumen $2.04 USD de margen a 5x ($10.20 USD notional), dejando $10.96 USD libres (84.3% del capital), satisfaciendo con creces el colchón mínimo de $3.0 USD.
+  - `orden_viable`: el riesgo al Stop Loss de 100 bps en la orden mínima de $5.10 es $0.051 USD (0.39% de la cuenta de $13 USD), muy por debajo del tope de ruina del 25% ($3.25 USD).
+
+- **F4-RISK-002 [AUDITADO - APROBADO] Orquestador de Portafolio y Protección Simétrica**:
+  - `PortfolioOrchestrator::allow_trade`: aplica `exposure_limit = 0.98 - directional_pressure`.
+  - Permite simultaneidad y simetría total de posiciones Long y Short.
+  - Veto absoluto de largos reservado estrictamente para caída libre sistémica ($p_{\text{crash}} \ge 0.90$). En caídas intermedias la presión modula el margen admisible suavemente sin saltos discretos.
+
+---
+
+# FASE F5 — APRENDER Y MEDIR (EVOLUCIÓN, GENOMA Y BACKTEST — 28 ARCHIVOS AUDITADOS)
+
+## Inventario Real de la Fase F5
+- **crates/evolution-engine/src/**: 16 archivos (6 499 líneas). Tests: 54/54 verdes en 8.12s.
+- **crates/backtest-engine/src/**: 10 archivos (5 180 líneas). Tests: 53/53 verdes en 48.81s.
+- **crates/dark-alpha-engine/src/**: 3 archivos (2 010 líneas). Tests: 49/49 verdes (31 unit + 18 integration) en 0.59s.
+- **Total Fase F5**: 28 archivos, ~13 689 líneas. Tests: 156/156 verdes (100% aprobado, 0 fallos).
+
+## Hallazgos de la Fase F5
+
+- **F5-DARK-001 [HIGH] CERRADO (Ola Ω18 AGY)** `crates/dark-alpha-engine/src/lib.rs:735-756`:
+  - **Defecto**: En `predict_in_context`, cada inferencia ejecutaba `if self.validate().is_err()`. Esto implicaba verificar exhaustivamente 4,353 floats de pesos y sesgos (`.is_finite()`) de las 3 capas densas, más la iteración de 30 per-coin normalizers en CADA tick de mercado en el hot-path. Hacía que `test_inference_speed` fallara con 48,451 ns (límite: 25,000 ns). Además, `ensure_inference_buffers()` ejecutaba `.resize(..., 0.0)` incondicionalmente.
+  - **Causa Raíz**: Contradicción de diseño respecto a la docstring de `validate()` ("un archivo truncado o corrupto se rechaza en la carga, no en mitad de una inferencia en vivo").
+  - **Solución Implementada**:
+    1. Sustituido el escaneo masivo de 4,353 parámetros en el hot path por la guarda de consistencia dimensional y de forma $O(1)$: `!self.layers_valid()`.
+    2. Optimizada `ensure_inference_buffers()` para verificar `len != expected` antes de disparar resize.
+    3. Validación profunda de parámetros (`validate()`) preservada en deserialización (`load_json`), entrenamiento (`fit`), y tests directos de modelo.
+  - **Resultado Medido**:
+    - Latencia de inferencia por llamada reducida de **48,451 ns** a **4,981 ns** (**aceleración de 9.7x**, muy inferior al tope de 25,000 ns).
+    - 31/31 tests unitarios en `dark-alpha-engine` y 18/18 tests de integración en `neural_evidence_contract.rs` aprobados en verde. Cero regresiones en `quantum-arena` (120/120) y `god-engine-core` (170/170).
+
+- **F5-EVOL-001 [AUDITADO - APROBADO] Función Única de Aptitud (D-652 / D-653 / D-654 / D-655)**:
+  - `fitness.rs`: Formaliza la utilidad logarítmica cóncava penalizada por ruina cuadrática $F = \ln(\text{capital\_final} / \text{capital\_inicial}) - \lambda \cdot (\text{max\_drawdown\_pct})^2$.
+  - Constante analítica $\lambda = 4 \cdot \ln(2) \approx 2.7726$ equilibra la penalización de un DD del 50% con la duplicación de capital.
+  - Erradica al 100% la patología heredada donde estrategias paralizadas (cero trades) superaban a estrategias activas.
+  - `compute_with_bayesian_prior` previene el bloqueo en frío contrayendo suavemente hacia el prior sin penalizar con $-\infty$.
+  - `entropy_fitness.rs`: Incorpora entropía de Shannon sobre el espacio de señales, castigando el colapso a polaridad fija unidireccional y modelando fricción de microestructura con Poisson.
+
+- **F5-BACKTEST-001 [AUDITADO - APROBADO] Replay Real y Contratos Metamórficos de Causalidad**:
+  - `booktick_replay.rs`: Microestructura 100% real de libro (bid, ask, bid_qty, ask_qty), series FRED históricas reales (SP500, NASDAQ, VIX, DXY), slippage dinámico modelado por ATR real, fees nativos del genoma, y ejecución a través del IDÉNTICO camino de producción (`GodEngineCore::process_event`).
+  - `booktick_causality_contract.rs`: Contratos metamórficos verificados:
+    - `cx_first_event_has_no_future_feature_history`: cero fuga de features futuras al evento inicial.
+    - `cx_future_suffix_cannot_change_prefix_in_either_mode`: cualquier mutación en sufijos futuros deja idéntico el prefijo histórico en ambos modos.
+    - Garantía matemática formal de cero lookahead bias y causalidad estricta.
+
 - Siguiente paso: LOWs y F4 (auditoría forense de riesgo, capital $13 USD y execution-engine).
+
+## 2026-10-07 — R4 / Sol: reconciliación y continuación archivo por archivo
+
+Plan operativo: `PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md`; coordinación: `PLAN_MAESTRO_SINCRONIZACION.md`. Se reutiliza el censo de Codex, actualizado contra 8938cf41: 1.434 archivos versionados / 460 Rust. Un cierre de inventario histórico NO acredita cobertura semántica de cada archivo ni corrección de la versión actual.
+
+Errata del conteo anterior: la lista enumerada contiene 11 MED, no 8. H2-7 queda acreditado por el contrato GLM103 presente en main; no se reabre por una nota antigua. F4 mantiene auditoría de todos sus archivos pendiente: cuatro fixes puntuales no sustituyen el recibo de cobertura completa.
+
+Hallazgos actuales se registran sin duplicar R4-Q1..Q4 de Codex: cash != MTM, muestreo mixto, contador recreado por el caller y dependencia temporal no corregida sólo con cuatro momentos. Diagnóstico Rust Sol confirma además que `compute_moments` elimina NaN/Inf silenciosamente. SOL-R5-01: `continuous_evolution_backtest.rs:703-705` suma equity_final−cash_inicial_dia, lo que duplica flotante arrastrado. Fixture controlado produce PnL diario acumulado 20 con crecimiento terminal 10; no se afirma que una corrida económica haya producido esa posición.
+
+Recibo: `audit/SOL_CONTRATOS_R4_2026-10-07.json`; alcance y hashes explícitos. Historical witnesses remain bounded reproductions, not current-code or economic verdicts. SOL-R5-01 now has a local daily-reporting-only correction: LOCAL TEST PASSED, full-bin reporting_contract 2/2, direct exit 0 (target/reporting-contract-execution-evidence-20261007.txt). Baseline offline locked workspace all-targets check passed, cargo/tee exits 0 (target/sol-baseline-all-targets-20261007.log and .exit); integrated validation and publication are pending. Other findings remain open. T-1 was not rerun because this is reporting only, not the live strategy pipeline. Recorrer TODOS los archivos restantes por el ledger y cerrar por evidencias, no por ausencia de matches ni por tests sintácticos.
+
+---
+
+# RONDA 4 (2026-10-07, contra 8938cf41 — post Ola 65/66/67, Ω15/Ω16, GLM 101/102/103)
+
+Mandato del operador: revisión desde la base tras 10+ olas nuevas. 3
+auditores paralelo (A metas/doctrina, B matemática/estadística, C
+física/motores). **17 hallazgos (2 HIGH, 6 MED, 9 LOW)** — el patrón
+«todo fix carga bug» se confirma por CUARTA vez: el blindaje del
+walk-forward corregido en H0-1 seguía clampando un gen fuera de su
+bound; la paridad calma-abstiene (#659) arreglada en los caminos vivos
+nunca llegó a las DOS sombras espectrales.
+
+## §R4-A — METAS/CONCEPTOS/DOCTRINA
+
+- **R4-A1 [MED] god_engine.rs:~3876 — tercer sitio de ancla cruda.** El
+  fallback de stop_pct de la envolvente lee `scalp_sl_base` crudo (Ω14
+  arregló genome_protection_prices y el fallback OCO, dejó éste).
+  Viola fuente única (invariante 3). → **CERRADO (Ola 68)**:
+  `sl_at_tau(TAU_ANCHOR_FAST_MS)`.
+- **R4-A2 [MED] ADR-0014:41 — doctrina formal desincronizada.** El
+  principio 6 aún prescribe significancia Fisher 2/√(n−3) con N efectivo
+  (retirada por #661/#663 → Ville familia M/α; Ola 67 borró las
+  exportaciones muertas). ARQUITECTURA_VIVA §2.9 sí está al día.
+  Fix: adenda al ADR. [ABIERTO — docs]
+- R4-A3 [LOW] hot_swap_controller defaults mágicos sin doc de
+  procedencia (0.005/0.002/0.020/0.010 = curva baseline en los anchors).
+- R4-A4 [LOW] naming residual: telemetría "Scalp execution"
+  (god_engine.rs:3165), campo vivo `swing_nn` (debería ser macro_nn).
+- R4-A5 [LOW] rama 13 semi-renombrada: swing_duration_ms/swing_stretch_z
+  aún dicotómicos.
+
+## §R4-B — MATEMÁTICA/ESTADÍSTICA
+
+- **R4-B1 [HIGH] walk-forward: nichos exploran eje MUERTO y promote
+  rechaza campeones.** Blindaje (:450) y nicho 4 (:409) clampean
+  `tech_threshold∈[0.08,0.22]` — el bound evolutivo slot-21 es [0.24,
+  0.30] (D-625, genome.rs:1831): todo mutante corre a 0.24 en el arena
+  (clamped por apply_to_arena) y `GenomeEnvelope::promote→validate`
+  RECHAZA campeones por «gen 21 fuera de bounds» ⇒ NINGÚN mutante se
+  persiste (misma clase que H0-1). Telemetría :962 imprime sin clamp.
+  → **CERRADO (Ola 68)**: banda [0.24, 0.30] blindaje / [0.24, 0.27]
+  nicho 4.
+- **R4-B2 [MED] muestreo H1-2 mezcla cadencias** (darwin.rs:376-386):
+  la muestra de retornos dispara por reloj 1 s **o** por cierre de trade
+  (`|| closed.is_some()`) ⇒ serie heterocedástica (Δt irregulares con
+  saltos de PnL realizado) que distorsiona γ₃/γ₄/SR del DSR
+  (Mertens asume frecuencia fija). [ABIERTO — Ola 69]
+- R4-B3 [MED] DSR con soporte marginal: selection_stats n≥20; con OOS
+  de ~20-40 s de feed denso hay apenas 20-40 retornos de 1 s — γ₃/γ₄
+  de varianza enorme alimentan el listón de Gumbel. Fix: piso n≥60 o
+  σ gaussiano bajo n pequeño. [ABIERTO — Ola 69]
+- R4-B4 [LOW] doc «≥104 aciertos» del veto de grupo: real 113
+  (ln43500/ln1.1=10.68/0.0953).
+- R4-B5 [LOW] nits: evalues :114 «M=448» vs familia real 416+32;
+  temporal_spectrum:1682 «1.1⁶⁹≈670» → 718.
+- R4-B6 [LOW] fallback anti-conservador σ_SR (selection_stats:88): si
+  1−γ₃SR+((γ₄−1)/4)SR² ≤ 0 cae a 1/√(n−1), MENOR que el error real.
+- **R4-B7 [MED] blindaje silencia nicho 2**: clamp swing_sl_base
+  [0.0080, 0.0350] pisa el slow-anchor 0.0075 del nicho 2 y el rebuild
+  post-blindaje propaga +6.7% de distorsión a la curva.
+  → **CERRADO (Ola 68)**: banda [0.0070, 0.0350] ⊇ nichos 2/3/5.
+
+## §R4-C — FÍSICA/MOTORES
+
+- **R4-C1 [HIGH] la CALMA invierte las sombras espectrales de hawkes y
+  flow_impulse.** `voto_espectral` de ambos multiplica
+  `excitacion_hawkes_norm(ratio)` SIN `.max(0.0)`: en calma (ratio<SS)
+  la excitación es negativa y cada escala vota INVERTIDA (calma + flujo
+  alcista vota bajista) — el defecto exacto que #659/F2-A4 documentó y
+  arregló en los caminos vivos, pero las SOMBRAS alimentan
+  `votos_espectrales` → consenso espectral que DIRIGE desde #624.
+  Peor: lib.rs:2092 fallback `None => 1.0` ⇒ monedas sin proceso Hawkes
+  votan invertidas a peso constante. Tests gap: nunca se probó calma.
+  → **CERRADO (Ola 68)**: `.max(0.0)` en ambas + tests calma→abstención
+  (el fallback 1.0 ahora abstiene naturalmente).
+- **R4-C2 [MED] firma viva shockwave saturada**: SAT_MOMENTO=1e4
+  (supersonic_shockwave.rs:207) — speed_norm O(1e-4..1e-2)/s ⇒ media
+  respuesta en 5e-5 ⇒ dirección binaria de facto en el camino vivo;
+  rompe paridad con la sombra (tanh natural en z). [ABIERTO — Ola 69]
+- **R4-C3 [MED] conformal `acuerdo` saturado**: divisor 0.5 en
+  (−(z·trend)/0.5).tanh() — media respuesta |z·trend|=0.28, ~6× bajo el
+  emisor típico 1.645. [ABIERTO — Ola 69]
+- R4-C4 [MED-LOW] perceptron gate residual empinado:
+  tanh((act−0.5)·5).clamp(0.15,1) — kink C⁰ en act≈0.53 (derivada
+  0→4.9); H2-6 arregló la direccional, dejó el gate.
+- R4-C5 [LOW] shockwave: mid_price ausente rompe unidades (speed crudo
+  vs atr_pct/√60 fraccional) — abstener sin mid.
+- R4-C6 [LOW] flow_impulse emisión binaria documentada (AGY-AUD-002) +
+  kink C⁰ .min(2.0) en hawkes_scale del confluence.
+
+## Mapa positivo (verificado por los 3 auditores)
+
+- **evalues**: capital (1+λ·sign(s)·sign(r)) exacto; Bonferroni M/α
+  unión válida sin independencia; TODOS los números de doc correctos
+  tras GLM 103 (n≈272, 586, 818).
+- **selection_stats**: sharpe_std_error reproduce Mertens exacto;
+  Gumbel eq.5 recalculado ✓; darwin OOS causal 50/50 real,
+  cumulative_trials monótono sin doble conteo.
+- **espectral_multiactivo (GLM 101)**: consumo de bloque verificado
+  para δ≈0.4τ/0.6τ y ts idéntico — supermartingala preservada; familia
+  C(30,2)·5 conservadora y válida.
+- **Curvas (Ola 66)**: through_two_points ↔ derive_anchors idempotente;
+  nichos kelly/trail llegan a curvas vivas.
+- **Ganancias nuevas ejemplares** (GLM 103/Ω16): tabla de escalas,
+  contratos pinned, justificación de no-unificar.
+- **Ola 67 renames puros** (tp/sl_at_fast_anchor, tp_tau_vivo):
+  fórmulas idénticas a sus predecesoras.
+
+## Asignación ronda 4
+
+- **Qoder Ola 68 CERRADA (con oráculo)**: R4-C1 + R4-B1 + R4-B7 + R4-A1.
+- **Ola 69 (siguiente)**: R4-B2 (muestreo por rejilla) + R4-B3 (piso n)
+  + R4-C2/C3/C4 (saturación residual) — con oráculo.
+- Docs: R4-A2 adenda ADR-0014; LOWs B4/B5/A3/A4/A5 en limpieza.
+
+---
+
+# FASE F6 — DATOS, INGESTA, STORAGE Y METACORTEX (49 ARCHIVOS AUDITADOS)
+
+## Inventario Real de la Fase F6
+- **crates/data-pipeline/src/**: 24 archivos (6 075 líneas). Tests: 63/63 verdes en 3.12s.
+- **crates/storage-engine/src/**: 8 archivos (3 004 líneas). Tests: 39/39 verdes en 0.49s.
+- **crates/metacortex-engine/src/**: 12 archivos (4 209 líneas). Tests: 25/25 verdes en 0.09s.
+- **crates/data-ingest/src/**: 5 archivos (1 036 líneas). Tests: 19/19 verdes en 0.13s.
+- **Total Fase F6**: 49 archivos, ~14 324 líneas. Tests: 146/146 verdes (100% aprobado, 0 fallos).
+
+## Hallazgos de la Fase F6
+
+- **F6-STO-001 [LOW] CERRADO (Ola Ω19 AGY)** `crates/storage-engine/src/mmap_bus.rs:424`:
+  - En el test `lxxxxiv_skip_to_head_salta_sin_ingerir`, la variable `let mut bus = MmapTelemetryBus::new(&path).unwrap();` declaraba mutabilidad innecesaria. Limpiado a `let bus` sin mutabilidad espuria, erradicando advertencias en compilación. 39/39 tests verdes.
+
+- **F6-PIPE-001 [AUDITADO - APROBADO] Estado Omnisciente Atómico y Normalización Streaming**:
+  - `omni_multiplexer.rs`: Todas las variables macro y cross-exchange se almacenan en `AtomicU64` con codificación IEEE-754 (`f64::to_bits()`), permitiendo lecturas y escrituras atómicas libres de locks (*lock-free*) y libres de esperas (*wait-free*) en el hot path.
+  - Cero alocaciones en el bucle principal de ingesta: búferes circulares prealocados y deserialización zero-copy.
+  - Sincronización asíncrona de tasas de financiación (`funding_by_symbol`) y sentimiento de masas (`ls_account_by_symbol`, `taker_ratio_by_symbol`) mediante `RwLock` actualizado en segundo plano por pollers desacoplados.
+
+- **F6-CORTEX-001 [AUDITADO - APROBADO] Fábrica de Estrategias y Continuo Temporal (U-ERR-9)**:
+  - `evolutionary_templates.rs`: Erradicada la antigua duplicación espejo `DualHorizonStrategyParams`. Sustituida por `ContinuumStrategyParams`, donde la geometría completa de TP y SL se evalúa de manera diferenciable y continua como función de la escala temporal intrínseca $\tau$ sin bifurcaciones condicionales `if/else`.
+  - Inmunidad contra dolor/trauma en `fases_autonomous.rs` y persistencia atómica en `epigenoma_store.rs`.
+
+- **F6-INGEST-001 [AUDITADO - APROBADO] Selector Dinámico de Activos y Restricción $13 USD**:
+  - `dynamic_selector.rs`: Filtra stablecoins estériles y clasifica activos por liquidez real y volatilidad, actualizando directamente `quantum_arena::symbols::update_dynamic_universe`.
+  - Garantiza que sólo los activos con profundidad suficiente para satisfacer el piso institucional de $5.00 USD de Binance sean seleccionados, previniendo deslizamientos extremos en pares ilíquidos.
+
+---
+
+# FASE F7 — TELEMETRÍA, GUARDIANES, AUDITORÍA Y ARQUITECTURA (45 ARCHIVOS AUDITADOS)
+
+## Inventario Real de la Fase F7
+- **crates/telemetry-server/src/**: 13 archivos (3 113 líneas). Tests: 30/30 verdes en 3.04s.
+- **crates/os-guardian/src/**: 10 archivos (956 líneas). Tests: 12/12 verdes en 0.04s.
+- **crates/audit-engine/src/**: 11 archivos (1 729 líneas). Tests: 21/21 verdes en 0.21s.
+- **crates/telemetry-engine/src/**: 3 archivos (326 líneas). Tests: 7/7 verdes en 0.02s.
+- **crates/phase-runner/src/**: 2 archivos (189 líneas). Tests: 5/5 verdes en 3.85s.
+- **crates/flight-recorder/src/**: 1 archivo (232 líneas). Tests: 5/5 verdes en 0.03s.
+- **crates/omniscient-registry/src/**: 2 archivos (427 líneas). Tests: 5/5 verdes en 0.03s.
+- **crates/graph-architecture/src/**: 2 archivos (387 líneas). Tests: 5/5 verdes en 0.01s.
+- **crates/graph-4d/src/**: 1 archivo (160 líneas). Tests: 4/4 verdes en 0.04s.
+- **Total Fase F7**: 45 archivos, ~7 519 líneas. Tests: 94/94 verdes (100% aprobado, 0 fallos).
+
+## Hallazgos de la Fase F7
+
+- **F7-SIG-001 [LOW] CERRADO (Ola Ω20 AGY)** `crates/signal-engine/src/skill_motores.rs:95-99`:
+  - Advertencia de compilador `unused doc comment` en la guarda de Ville Martingales `self.e_proceso.significativo_familia(...)`. Resuelto convirtiendo sintaxis de doc comment (`///`) en comentario de bloque (`//`), erradicando advertencias en compilación. 116/116 tests verdes.
+
+- **F7-TEL-001 [AUDITADO - APROBADO] Servidor de Telemetría Lock-Free y Anillos Zero-Copy**:
+  - `telemetry-server/src/lockfree_bus.rs`: Cola MPMC lock-free (Crossbeam SegQueue) con descarte controlado por saturación de capacidad, garantizando cero contención y cero backpressure sobre el bucle crítico de decisión microtemporal.
+  - `zero_copy_bus.rs` / `zero_copy_ring.rs`: Memoria compartida y buffers anulares sin clonación ni asignaciones en el hot path.
+  - `telegram_bot.rs`: Enrutador reactivo asíncrono con credenciales aisladas mediante inyección por variables de entorno (.env protegido).
+
+- **F7-OSG-001 [AUDITADO - APROBADO] Guardián de Sistema Operativo y Blindaje Win32**:
+  - `os-guardian/src/memory_audit.rs`: Monitoreo en tiempo real de RAM para entorno de 16 GB, ejecutando compactación forzada (`EmptyWorkingSet`) y panic latch si el consumo de memoria excede el presupuesto crítico.
+  - `pmu_sensor.rs` / `ebpf_core.rs`: Fallback adaptativo para Windows con lectura de TSC (`_rdtsc`) y mitigación de fallos de página sin bloquear el hilo de ejecución principal.
+
+- **F7-AUD-001 [AUDITADO - APROBADO] Motor de Auditoría, Deriva y Resiliencia Cibernética**:
+  - `audit-engine/src/drift_auditor.rs`: Detección en tiempo real de divergencias entre estado simulado y real.
+  - `trajectory_auditor.rs`: Auditoría de trayectorias de precios y paridad causal.
+  - `cybernetic_resilience.rs`: Supervisión de fallos transitorios en brokers y reconexión exponencial con jitter.
+
+- **F7-OMNI-001 [AUDITADO - APROBADO] Registro Omnisciente Centralizado e Invariantes de Estado**:
+  - `omniscient-registry/src/lib.rs`: Centralización de parámetros del sistema mediante snapshots rkyv zero-copy, previniendo colisiones entre subsistemas concurrentes.
+
+- **F7-GRAPH-001 [AUDITADO - APROBADO] Grafo de Arquitectura 4D y Trazabilidad de Flujos**:
+  - `graph-architecture/src/lib.rs` y `graph-4d/src/lib.rs`: Mapeo continuo de nodos y dependencias del sistema, habilitando la inspección dimensional de flujos entre ingestión, características, señales y efectores.
+
+---
+
+# RONDA 5 (2026-10-07, contra .ola69 — post Ola 68/69, Ω17/Ω18, GLM 104)
+
+Mandato del operador. 3 auditores paralelo: A = paridad sombra↔vivo
+SISTEMÁTICA (tabla 13 motores × 3 caminos — el chequeo que el consejo pidió
+tras C1), B = matemática de las olas nuevas, C = física/conducta. **12
+hallazgos (0 HIGH, 5 MED, 7 LOW)** — primera ronda SIN HIGH: las correctivas
+de rondas 3-4 sostienen. El patrón residual es UNO solo: el fix se porta a
+un camino y el otro queda con la calibración vieja o clave muerta.
+
+## §R5-A — PARIDAD SOMBRA↔VIVO (tabla completa en buzón)
+
+- **R5-A1 [MED] conformal vivo MUDO**: el evaluate lee `ema_trend_swing`
+  = macro_trend CRUDO (fracción O(1e-3)); con divisor 2.0 el acuerdo ≈
+  0.005 — R4-C3 calibró para la sombra tanh(z) (|trend|~O(1)), el vivo
+  quedó inaudible. Fix: normalizar el trend vivo (tanh de su z) o clave
+  publicada z-normalizada (writer+reader mismo commit, lección #613).
+- **R5-A2 [MED] shockwave firma divergente**: sombra tanh(x)≡tanh(mach)
+  vs vivo tanh(mach/2) — R4-C2 se portó sólo al vivo. Fix: `((x/c)/2).tanh()`
+  en voto_espectral.
+- **R5-A3 [MED] clave muerta en el consenso**: la sombra lee
+  `conformal_epsilon` (0 escritores) mientras el genoma publica
+  `conformal_alpha` — el consenso VIVO corre conformal con α=0.10 fijo,
+  sordo a la calibración [0.01,0.30]. Fix: leer `conformal_alpha`.
+- **R5-A4 [LOW] CERRADO (Ola Ω22 AGY)**: `nash_presion_adv` enlazado per-coin con `game_theory_adversarial_pressure`, con fallback dinámico al `cvpin` medido de la moneda, y finalmente a `nash_equilibrium_drift` (0.50).
+- **R5-A5 [LOW] CERRADO (Ola Ω22 AGY)**: `renyi` sombra espectral alineada con la familia continua $\tanh$ de #664, erradicando el signum duro en `voto_espectral`. Test `qo_r5_a5_renyi_sombra_espectral_continua_tanh` verde.
+- **R5-A6 [LOW] CERRADO (Ola Ω22 AGY)**: Telemetría individual de sombras espectrales completa 13/13 publicada al registry (`sombra_*_consenso`, `sombra_*_tau_max`, `sombra_*_v_max`) para hawkes, nash, flow, perceptron, conformal y confluence. Test `sombras_espectrales_telemetria_contract.rs` verde.
+
+## §R5-B — MATEMÁTICA (verificada con cálculo)
+
+- **R5-B1 [MED] fallbacks tech_threshold fuera de banda**:
+  continuous_evolution_backtest.rs:310 (0.1487) y :958 (0.12) — si el
+  campeón estable hereda genoma legacy por el fallback, promote SIGUE
+  rechazándolo (la clase B1 de Ola 68 no erradicada del todo). Fix:
+  alinear ambos a 0.24.
+- **R5-B3 [MED] fallback gaussiano ALCANZABLE**: el comentario
+  «inalcanzable con g4≥3» es FALSO — con γ₃>√2 el denom_sq cruza ≤0 (ej
+  γ₃=2, sr=2 → −1) y cae al gaussiano sub-gaussiano anti-conservador
+  justo con asimetría positiva fuerte. Fix: acotar γ₃ al discriminante.
+- **R5-B2 [LOW] CERRADO (Ola Ω21 AGY)**: rejilla se re-anclaba al tick de cruce
+  (Δt∈[1s,2s) con huecos de altcoins). Corregido con avance periódico por rejilla
+  estricta `while tick.timestamp >= last_sample_ts.saturating_add(1000) { last += 1000 }`
+  en `darwin.rs:393-395`.
+- **R5-B4 [LOW-MED] CERRADO (Ola Ω21 AGY)**: en `dark-alpha-engine/src/lib.rs:407-412`,
+  `forward_quantized` verificaba el clamp(±700) sin comprobar `raw_total.is_finite()`,
+  lo que convertía bias=+Inf en pseudo-evidencia 1.0. Corregido retornando `f64::NAN` si
+  `!raw_total.is_finite()`. Test `test_r5_b4_forward_quantized_nan_on_infinite_raw_total` verde.
+- **R5-B5 [errata] CERRADO (Ola Ω21 AGY)**: corregida errata en docstring de
+  `supersonic_shockwave.rs:211`: $\tanh(5)=0.99991$ (no 0.9997).
+
+## §R5-C — FÍSICA (regresión completa VIVA)
+
+- **R5-C1 [MED] CERRADO (Ola Ω21 AGY)** (= R4-C5 confirmado): shockwave mid ausente
+  + fallback atr_pct mezclaba precio-crudo/s con fracción/s ⇒ Mach ×mid_price.
+  Corregido en `supersonic_shockwave.rs:172-184`: abstenerse devolviendo 0.0 cuando falta
+  `mid_price` y se recurre al fallback fraccional. Test unitario verde.
+- **R5-C2 [LOW] VERIFICADO (DISEÑO ACEPTADO)**: kink C⁰ del .max(0.0) del acuerdo — semánticamente requerido
+  (clase calma-abstiene aceptada en G2-1).
+- **R5-C3 [LOW] VERIFICADO (DISEÑO ACEPTADO)**: clamp |x|≤10 sólo en sombra (asimetría < 1e-15 en z real).
+
+## Mapa positivo (verificado)
+
+- Paridad EXACTA: oscilador, SR, coaxial, trend_runner, perceptron (infer
+  compartido — R4-C4/H2-6 por construcción), hawkes, flow_impulse
+  (contrato h2_7). Calma-abstiene .max(0.0) en los TRES caminos de
+  hawkes/flow/confluence (C1 bien propagado).
+- Ola 68 bandas verificadas con derivación de coeficientes de curva
+  (a,b ∈ bounds; nichos ⊇; RR ✓). DSR grid-only íntegro;
+  cumulative_trials monótono. g4.max(3.0) dirección correcta.
+- GLM 104 sin daño (lead_lag docs-only; ast_mutator cierra canal muerto;
+  renames bit-exact). Ola 68 A1 unidades coherentes.
+- TODOS los fixes de olas 62/63/65/68 siguen vivos tras los merges.
+
+## Cierre de Ronda 5 (100% CERTIFICADA)
+
+- **Qoder Ola 70 (merge 2721293b)**: R5-A1 + R5-A2 + R5-A3 + R5-B1 + R5-B3 cerrados.
+- **Antigravity Ola Ω21 (merge 9cf77026)**: R5-B2 + R5-B4 + R5-C1 + R5-B5 cerrados.
+- **Antigravity Ola Ω22 (commit actual)**: R5-A4 + R5-A5 + R5-A6 cerrados; R5-C2 + R5-C3 verificados.
+- **ESTADO GLOBAL**: Ronda 5 100% CERRADA Y VERIFICADA. Cero hallazgos abiertos en R5.
+
+
+

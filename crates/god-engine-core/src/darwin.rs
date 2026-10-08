@@ -31,13 +31,13 @@ pub struct Genotype {
 
 impl Genotype {
     #[inline]
-    pub fn scalp_tp(&self) -> f64 {
+    pub fn tp_at_fast_anchor(&self) -> f64 {
         quantum_arena::temporal_spectrum::HorizonCurve { a: self.tp_curve_a, b: self.tp_curve_b }
             .eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
     }
 
     #[inline]
-    pub fn scalp_sl(&self) -> f64 {
+    pub fn sl_at_fast_anchor(&self) -> f64 {
         quantum_arena::temporal_spectrum::HorizonCurve { a: self.sl_curve_a, b: self.sl_curve_b }
             .eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
     }
@@ -349,9 +349,16 @@ fn evaluate_genotype(
     let mut trades = 0_u32;
     let mut portfolio_returns = Vec::with_capacity(128);
     let mut last_sample_ts = stream.first().map(|t| t.timestamp).unwrap_or(0);
-    // H1-2: Intervalo de muestreo regular para retornos de portafolio marked-to-market (1 segundo = 1000 ms).
-    // Proporciona una serie temporal homogénea con soporte muestral estadísticamente suficiente (N >= 20)
-    // eliminando el artefacto de exigir un t-stat absurdo > 4.5 en ventanas cortas con pocos trades cerrados.
+    // H1-2: rejilla de muestreo de retornos del portafolio (1 s). La serie es
+    // de capital REALIZADO (fee de entrada + PnL al cierre; el no-realizado
+    // vive en pnl_unrealized y no entra): mayormente ceros exactos con saltos
+    // dispersos — curtosis alta ⇒ σ_SR no-normal se infla ⇒ DSR conservador
+    // (defendible). R4-B2: la rejilla es la ÚNICA cadencia — el disparo extra
+    // por cierre (`|| closed.is_some()`) mezclaba Δt irregulares con saltos
+    // de PnL (heterocedasticidad que distorsiona γ₃/γ₄/SR de Mertens) y
+    // re-faseaba la rejilla. Como prev_cap sólo avanza EN la rejilla, cada
+    // retorno de 1 s integra todos los cierres de su ventana (sin pérdida);
+    // la cola <1 s tras el último cierre no se muestrea.
     const SAMPLE_INTERVAL_MS: u64 = 1_000;
 
     for tick in stream {
@@ -372,9 +379,13 @@ fn evaluate_genotype(
             max_drawdown = max_drawdown.max((peak_capital - capital) / peak_capital);
         }
 
-        // Muestreo temporal periódico de retornos o muestreo al cierre de trades si hubo cambio
+        // R4-B2 / R5-B2: SOLO la rejilla decide la cadencia (ver comentario de
+        // SAMPLE_INTERVAL_MS). El PnL del cierre entra integrado en el
+        // retorno de la rejilla siguiente. R5-B2: la rejilla avanza de forma
+        // estricta y periódica por múltiplos de SAMPLE_INTERVAL_MS (last += 1000)
+        // para evitar que ticks tardíos o gaps re-anclen la fase a Δt irregular.
         let time_elapsed = tick.timestamp >= last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS);
-        if time_elapsed || closed.is_some() {
+        if time_elapsed {
             if prev_cap > 0.0 {
                 let r = (capital - prev_cap) / prev_cap;
                 if r.is_finite() {
@@ -382,7 +393,9 @@ fn evaluate_genotype(
                 }
             }
             prev_cap = capital;
-            last_sample_ts = tick.timestamp;
+            while tick.timestamp >= last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS) {
+                last_sample_ts = last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS);
+            }
         }
     }
     let final_capital = arena.unified_capital.load(Ordering::Relaxed);
@@ -713,14 +726,14 @@ mod tests {
         let genome = Genotype::new_random();
 
         assert!(genome.global_leverage >= 10.0 && genome.global_leverage <= 125.0);
-        assert!(genome.scalp_tp() > 0.0);
-        assert!(genome.scalp_sl() > 0.0);
+        assert!(genome.tp_at_fast_anchor() > 0.0);
+        assert!(genome.sl_at_fast_anchor() > 0.0);
 
         genome.apply_to_arena(&arena);
 
         let roundtrip = Genotype::current_from_arena(&arena);
         assert_eq!(roundtrip.global_leverage, genome.global_leverage);
-        assert!((roundtrip.scalp_tp() - genome.scalp_tp()).abs() < 1e-6);
+        assert!((roundtrip.tp_at_fast_anchor() - genome.tp_at_fast_anchor()).abs() < 1e-6);
     }
 
     #[test]
@@ -746,8 +759,8 @@ mod tests {
         let safe_genome = Genotype::current_from_arena(&arena);
         assert!(safe_genome.global_leverage.is_finite());
         assert!(safe_genome.trend_threshold.is_finite());
-        assert!(safe_genome.scalp_tp().is_finite());
-        assert!(safe_genome.scalp_sl().is_finite());
+        assert!(safe_genome.tp_at_fast_anchor().is_finite());
+        assert!(safe_genome.sl_at_fast_anchor().is_finite());
         assert!(safe_genome.min_confidence.is_finite());
     }
 
@@ -923,6 +936,7 @@ mod tests {
         // Con 0 trades cerrados (< MIN_TRADES=30), el fitness por contrato es NEG_INFINITY
         assert_eq!(fitness, f64::NEG_INFINITY);
         // A lo largo de 30 segundos muestreando cada 1s, debemos tener ~29-30 observaciones de retorno
+        // (R4-B2: la rejilla es la única cadencia — sin disparo por cierre).
         assert!(
             returns.len() >= 25,
             "Debe tener al menos 25 observaciones periódicas en 30 segundos de datos, dio {}",

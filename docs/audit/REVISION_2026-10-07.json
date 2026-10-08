@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
-  "snapshot_commit_time": "2026-10-07T09:52:30-05:00",
+  "snapshot_commit": "8938cf41d5b2d181e807de1a3fa41f36b09dfc32",
+  "snapshot_commit_time": "2026-10-07T12:36:49-05:00",
   "scope": "Every tracked leaf entry in git ls-tree -r at snapshot_commit; no working-tree files.",
   "classification": "Heuristic proposed routing; owners are roles, not accepted assignments.",
   "verification": "Inventoried is not reviewed. check validates metadata, not the truth of review evidence.",
@@ -85,7 +85,7 @@
       "path": ".agents/MEMORIA.md",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "5346cffed7df360dd05661bd32bb2c7b732c19ca",
+      "blob": "d6ed52a677dc8726716a113800b98413eb9e8fc5",
       "zone": ".agents",
       "category": "documentation",
       "phase": "F0",
@@ -95,7 +95,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "5346cffed7df360dd05661bd32bb2c7b732c19ca",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": ".agents/rules/contexto-arquitectonico.md",
@@ -373,7 +384,7 @@
       "path": "COORDINACION_CODEX_2026-09-28.md",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "df20129f85a37ff27cc517b297aee6f75f37898c",
+      "blob": "5c00fdb8d8f709d59f0533166424a593c27e5152",
       "zone": "COORDINACION_CODEX_2026-09-28.md",
       "category": "documentation",
       "phase": "F0",
@@ -383,7 +394,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "df20129f85a37ff27cc517b297aee6f75f37898c",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "Cargo.lock",
@@ -437,7 +459,7 @@
       "path": "FORENSIC_INTELLIGENCE_AUDIT.md",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "0a88dee6a94d438af204d5ae6304b401da019691",
+      "blob": "6acc296699bee60488536bfda8cd7596f3ba039e",
       "zone": "FORENSIC_INTELLIGENCE_AUDIT.md",
       "category": "documentation",
       "phase": "F0",
@@ -447,7 +469,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "0a88dee6a94d438af204d5ae6304b401da019691",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "INFORME_ASEGURAMIENTO_CUARTO.md",
@@ -4261,7 +4294,7 @@
       "path": "crates/god-engine-core/src/darwin.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "e2937a3d2dc1efe81826e376c575c4c01a003744",
+      "blob": "9f3b63f4d6730b793a75429fbd3e1d8937307dfd",
       "zone": "crates/god-engine-core",
       "category": "source",
       "phase": "F3",
@@ -4271,7 +4304,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "e2937a3d2dc1efe81826e376c575c4c01a003744",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/god-engine-core/src/diffusion.rs",
@@ -4373,7 +4417,7 @@
       "path": "crates/god-engine-core/src/lib.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "d5e196182972f1c3eff69093f621ff12e81673f2",
+      "blob": "552c48fac65fae3455345db152027e9499901618",
       "zone": "crates/god-engine-core",
       "category": "source",
       "phase": "F3",
@@ -4383,7 +4427,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "d5e196182972f1c3eff69093f621ff12e81673f2",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/god-engine-core/src/liquidation_feed.rs",
@@ -5269,7 +5324,7 @@
       "path": "crates/metacortex-engine/src/hot_swap_controller.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "dae2cc508491318998a761cc9bb19d55410e952f",
+      "blob": "f207f93fa5b4d470606dd2de09cf0c9887c17b37",
       "zone": "crates/metacortex-engine",
       "category": "source",
       "phase": "F6",
@@ -5279,7 +5334,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "dae2cc508491318998a761cc9bb19d55410e952f",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/metacortex-engine/src/immune_system.rs",
@@ -5397,7 +5463,7 @@
       "path": "crates/metacortex-engine/tests/mutation_cycle_test.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "9f1d1a7b12009fe3b496e5e5ff61c09bbec677ed",
+      "blob": "9e7d6a79b8db6ccc57e896067fdb5ee59096642c",
       "zone": "crates/metacortex-engine",
       "category": "test",
       "phase": "F8",
@@ -5407,7 +5473,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "9f1d1a7b12009fe3b496e5e5ff61c09bbec677ed",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/metacortex-engine/tests/quantum_organism_test.rs",
@@ -5813,7 +5890,7 @@
       "path": "crates/quantum-arena/src/espectral_multiactivo.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "1f4eeeed9a913fd097f84487015c205e47c3e634",
+      "blob": "a480b0d2cc3449fc07ca569dbd0606af84fcbf8c",
       "zone": "crates/quantum-arena",
       "category": "source",
       "phase": "F1",
@@ -5823,13 +5900,24 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "1f4eeeed9a913fd097f84487015c205e47c3e634",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/quantum-arena/src/evalues.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "37a773e0a920b897a92af4e0b3b714e0df2f47aa",
+      "blob": "758ff0af9725b73ffdbb054e84e3e025c0435a94",
       "zone": "crates/quantum-arena",
       "category": "source",
       "phase": "F1",
@@ -5839,7 +5927,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "37a773e0a920b897a92af4e0b3b714e0df2f47aa",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/quantum-arena/src/feed_health.rs",
@@ -6037,7 +6136,7 @@
       "path": "crates/quantum-arena/src/state.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "1ec940502642a1cd1678364ced6eca557dd3d2ad",
+      "blob": "a9b0813d22d967458416c2e5b8c050cdb014a211",
       "zone": "crates/quantum-arena",
       "category": "source",
       "phase": "F2",
@@ -6047,7 +6146,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "1ec940502642a1cd1678364ced6eca557dd3d2ad",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/quantum-arena/src/state_continuity.rs",
@@ -6117,7 +6227,7 @@
       "path": "crates/quantum-arena/src/temporal_spectrum.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "a4fa286188e358eb00e94f350171a9b0f4d1002f",
+      "blob": "45c2bba7f8af60b3f160b1327de8468d8c094013",
       "zone": "crates/quantum-arena",
       "category": "source",
       "phase": "F1",
@@ -6127,7 +6237,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "a4fa286188e358eb00e94f350171a9b0f4d1002f",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/quantum-arena/src/tick_source.rs",
@@ -7221,7 +7342,7 @@
       "path": "crates/signal-engine/src/flow_impulse.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "e92c98759b8ae6dbc5bc1c227bbeb04adc483a26",
+      "blob": "b9e0f31379aefd02a63927cb4e665a53990f77ea",
       "zone": "crates/signal-engine",
       "category": "source",
       "phase": "F2",
@@ -7231,7 +7352,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "e92c98759b8ae6dbc5bc1c227bbeb04adc483a26",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/signal-engine/src/game_theoretic_nash.rs",
@@ -7253,7 +7385,7 @@
       "path": "crates/signal-engine/src/hawkes_bessel.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "4831d6fc2a312e5295049858814e51a2650ca453",
+      "blob": "19567f58d2eeca66eb2f2e97eb78d87b53eea673",
       "zone": "crates/signal-engine",
       "category": "source",
       "phase": "F2",
@@ -7263,7 +7395,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "4831d6fc2a312e5295049858814e51a2650ca453",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/signal-engine/src/lib.rs",
@@ -7365,7 +7508,7 @@
       "path": "crates/signal-engine/src/skill_motores.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "d55d78f5500440597c0db22c6e4899822ecb2188",
+      "blob": "6a1341e3f58b9bd2cbb9c7b917298f50e3726e3a",
       "zone": "crates/signal-engine",
       "category": "source",
       "phase": "F1",
@@ -7375,7 +7518,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "d55d78f5500440597c0db22c6e4899822ecb2188",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/signal-engine/src/soliton_wave.rs",
@@ -9493,7 +9647,7 @@
       "path": "docs/BARRIDO_EXHAUSTIVO_FASES.md",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "d0d2e4da4148038bd8298fa21dc8b52ea8be5892",
+      "blob": "325a85f5b98c483312630eba449c45aebc0507f0",
       "zone": "docs",
       "category": "documentation",
       "phase": "F0",
@@ -9503,7 +9657,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+          "reason": "object_or_mode_changed",
+          "blob": "d0d2e4da4148038bd8298fa21dc8b52ea8be5892",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "docs/BATCH_BACKTEST_REPORT.md",

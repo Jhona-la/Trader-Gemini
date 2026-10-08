@@ -366,18 +366,43 @@ impl MmapTelemetryReader {
             // copia (reuso de slot por wraparound del anillo). El filtro
             // timestamp != 0 (FIX #602) SOLO cubría slots jamás inicializados,
             // no tearing en reuso.
-            unsafe {
+            let integro = unsafe {
                 let frame_ptr = ring_ptr.add(slot);
                 let seq_ptr = (frame_ptr as *const u8).add(12) as *const u32;
                 let seq_before = seq_ptr.read_volatile();
                 let frame = std::ptr::read_volatile(frame_ptr);
                 let seq_after = seq_ptr.read_volatile();
-
                 if (seq_before & 1) == 0 && seq_before == seq_after && frame.timestamp_ns != 0 {
+                    Some(frame)
+                } else {
+                    None
+                }
+            };
+
+            match integro {
+                Some(frame) => {
                     frames.push(frame);
+                    self.last_read_idx += 1;
+                }
+                None => {
+                    // TRIAJE B (GLM 105) — STOP-AT-FIRST-INVALID: el slot está
+                    // reservado (seq impar, escritor mid-commit) o torn. El
+                    // cursor NO lo consume: cuando el escritor commitee, el
+                    // PRÓXIMO ciclo lo lee — la pérdida permanente se vuelve
+                    // latencia de un ciclo. (Antes el cursor avanzaba igual y
+                    // el frame commiteado después se perdía para siempre para
+                    // esta instancia — pérdida SISTEMÁTICA en el dataset del
+                    // Shadow Forest, que consume este bus cada 500 ms.)
+                    //
+                    // LIVENESS garantizada por el clamp MAX_BATCH_READ de
+                    // arriba: si el backlog supera 10_000 frames (escritor
+                    // muerto mid-write incluido), el cursor salta a
+                    // head−10_000 — el slot atascado queda atrás y el lector
+                    // sigue la corriente. Dentro de un backlog ≤ 10_000,
+                    // esperar al commit del escritor es lo correcto.
+                    break;
                 }
             }
-            self.last_read_idx += 1;
         }
 
         Ok(frames)
@@ -396,7 +421,7 @@ mod tests {
         let path = dir.join("t.mmap");
         let _ = std::fs::remove_file(&path);
         {
-            let mut bus = MmapTelemetryBus::new(&path).unwrap();
+            let bus = MmapTelemetryBus::new(&path).unwrap();
             bus.write_trace(12, 30, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
             bus.write_trace(12, 30, [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
         }
@@ -515,11 +540,71 @@ mod tests {
             let mut reader = MmapTelemetryReader::new(&path);
             let frames = reader.read_latest_frames().expect("Failed to read frames");
             // Slot 0 íntegro; slot 1 rasgado (seq impar) → descartado.
+            // (GLM 105: con stop-at-first-invalid el cursor se DETIENE en el
+            // slot 1 — el frame rasgado sigue sin pasar; sólo cambia que el
+            // slot no se consume.)
             assert_eq!(frames.len(), 1, "frame rasgado NO debe pasar el lector");
             assert_eq!(frames[0].subsystem_id, SUBSYSTEM_RISK_KELLY);
             assert_eq!(frames[0].seq % 2, 0);
             assert_eq!(frames[0].payload[0], 1.5);
             drop(reader);
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// TRIAJE B (GLM 105) — LIVENESS del stop-at-first-invalid: un slot
+    /// congelado (escritor muerto mid-write) NO clava al lector para
+    /// siempre. La garantía la da el clamp MAX_BATCH_READ: cuando el
+    /// backlog supera 10_000 frames, el cursor salta a head−10_000 y el
+    /// slot atascado queda atrás. Protocolo REAL con write_trace.
+    #[test]
+    fn triaje_b_liveness_clamp_supera_slot_congelado() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or(std::time::Duration::from_secs(42))
+            .as_nanos();
+        let path = temp_dir.join(format!("test_mmap_valvula_{}.dat", unique_id));
+
+        {
+            let bus = MmapTelemetryBus::new(&path).expect("crear bus");
+            bus.write_trace(SUBSYSTEM_RISK_KELLY, FRAME_TYPE_BAYESIAN_PROB, [1.5; 6]);
+            // Congelar el slot 0: escritor "muerto" a mitad de escritura.
+            let corruptor = MmapTelemetryBus::new(&path).expect("reabrir bus");
+            unsafe {
+                let mmap = &*corruptor.mmap.get();
+                let base_ptr = mmap.as_ptr().add(HEADER_SIZE) as *const u8;
+                let seq_ptr = base_ptr.add(12) as *mut u32;
+                let cur = seq_ptr.read_volatile();
+                seq_ptr.write_volatile(cur | 1);
+            }
+            // El lector se DETIENE en el slot congelado (backlog pequeño).
+            let mut reader = MmapTelemetryReader::new(&path);
+            let primera = reader.read_latest_frames().expect("primera lectura");
+            assert!(primera.is_empty(), "slot congelado: nada íntegro aún");
+            // El escritor vivo sigue: backlog > MAX_BATCH_READ (10_000).
+            let viviente = MmapTelemetryBus::new(&path).expect("reabrir vivo");
+            for _ in 0..10_200 {
+                viviente.write_trace(SUBSYSTEM_TENSOR_ML, FRAME_TYPE_TENSOR_ENTROPY, [9.9; 6]);
+            }
+            // La lectura NO se cuelga: el clamp salta el slot congelado y
+            // entrega los frames recientes de la corriente viva.
+            let frames = reader.read_latest_frames().expect("lectura post-burst");
+            assert!(
+                !frames.is_empty(),
+                "el clamp rescata al lector del slot congelado"
+            );
+            assert!(frames.len() <= 10_000, "lote acotado: {}", frames.len());
+            for f in &frames {
+                assert_eq!(
+                    f.subsystem_id, SUBSYSTEM_TENSOR_ML,
+                    "sólo corriente viva; el congelado (RISK_KELLY) no puede estar"
+                );
+            }
+            // El cursor alcanzó la cabeza: sin cuelgue residual.
+            let segunda = reader.read_latest_frames().expect("segunda lectura");
+            assert!(segunda.is_empty(), "cursor en cabeza: nada nuevo");
         }
 
         let _ = std::fs::remove_file(path);

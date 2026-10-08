@@ -147,7 +147,14 @@ impl LeadLagAlphaEngine {
     }
 
     /// Lag óptimo (ms) de un líder contra el alt: el de ρ máxima en
-    /// magnitud, exigido POSITIVO y significativo. 0 si no hay evidencia.
+    /// magnitud. H2-12 (RONDA 3): la doc decía "exigido POSITIVO" pero el
+    /// código compara `rho.abs()` — un rho NEGATIVO pasa el gate y su
+    /// signo voltea la firma de la divergencia aguas abajo
+    /// (`predict_eth_impulse_con_reloj`: div ∝ rho). ¿Vetar rho<0 (el
+    /// anti-líder no lidera, engaña) es cambio de conducta que exige
+    /// oráculo — DECISIÓN ABIERTA para el consejo, ver BARRIDO H2-12.
+    /// Mientras tanto esta doc describe el comportamiento REAL.
+    /// 0 si no hay evidencia.
     fn lag_optimo(
         &self,
         leader: &VecDeque<(f64, f64)>,

@@ -156,6 +156,13 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
+        // TRIAJE B (GLM 109) — CL-15: "no opina es AUSENCIA, no un 0,5".
+        // Los fallbacks 0.5 fabricaban lift: con ml_prob 0.36 real y base
+        // inventada 0.5, la pata short votaba −0.33 QUE NO EXISTIRÍA con la
+        // base honesta (CL-21: bases reales 0.18-0.23; lib.rs:4328 sólo
+        // cae a 0.5 cuando NO hay bosque). Sin prob o sin base medible, el
+        // motor ML NO OPINA (voto 0) — misma doctrina que el
+        // DarkAlpha-fallback-None de B-H1.
         let ml_prob = r
             .get_scoped_parameter(
                 sym_opt,
@@ -164,12 +171,16 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
                 "FlowExcitationConfluenceEngine",
             )
             .map(|p| p.get_value())
-            .unwrap_or(0.5);
+            .filter(|v| v.is_finite());
 
         // FIX #643: Guarda de finitud estricta en indicadores de entrada
-        if !hawkes.is_finite() || !obi.is_finite() || !ml_prob.is_finite() {
+        if !hawkes.is_finite() || !obi.is_finite() {
             return 0.0;
         }
+        let ml_prob = match ml_prob {
+            Some(v) if v.is_finite() => v,
+            _ => return 0.0, // CL-15: sin prob del modelo, no opina
+        };
 
         // CERT-M2-C03: el gate anterior usaba `ml_prob >= 0.5` absoluto —
         // con el etiquetado honesto HOST-010 (base ~0.30), la pata long
@@ -186,8 +197,11 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
                 "FlowExcitationConfluenceEngine",
             )
             .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v > 0.0 && *v < 1.0)
-            .unwrap_or(0.5);
+            .filter(|v| v.is_finite() && *v > 0.0 && *v < 1.0);
+        let ml_base = match ml_base {
+            Some(v) => v,
+            None => return 0.0, // CL-15: sin base medida, el lift no es medible — no opina
+        };
         let ml_lift = r
             .get_scoped_parameter(
                 sym_opt,
@@ -305,6 +319,9 @@ mod tests {
         registry.set("hawkes_intensity", 2.0);
         registry.set("order_book_imbalance", 0.5);
         registry.set("ml_prob_motor", 0.85);
+        // GLM 109: base honesta explícita — el fallback 0.5 fue removido
+        // (CL-15: sin base medida el motor NO opina).
+        registry.set("ml_model_base", 0.30);
 
         let mut engine = FlowExcitationConfluenceEngine::new();
         assert!(engine.init(registry).is_ok());
@@ -353,6 +370,7 @@ mod tests {
         registry.set("hawkes_intensity", 2.0);
         registry.set("order_book_imbalance", 0.5);
         registry.set("ml_prob_motor", 0.85);
+        registry.set("ml_model_base", 0.30);
         registry.set("hawkes_excitation_gene", 0.95);
 
         let mut engine = FlowExcitationConfluenceEngine::new();

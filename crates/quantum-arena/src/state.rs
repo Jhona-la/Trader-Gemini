@@ -518,8 +518,6 @@ pub struct GlobalArena {
     /// una caída observada en evidencia: sin ella, un tope de drawdown es una
     /// opinión. 0 = todavía no se ha dimensionado ninguna orden.
     pub riesgo_por_operacion: AtomicF64,
-    pub scalp_used_margin: AtomicF64,
-    pub swing_used_margin: AtomicF64,
     pub tick_counter: AtomicU64,
     pub kill_switch_active: AtomicBool,
     pub last_ws_latency_ms: AtomicU64,
@@ -611,8 +609,6 @@ impl GlobalArena {
             unified_capital: AtomicF64::new(initial_capital),
             used_margin: AtomicF64::new(0.0),
             riesgo_por_operacion: AtomicF64::new(0.0),
-            scalp_used_margin: AtomicF64::new(0.0),
-            swing_used_margin: AtomicF64::new(0.0),
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),
             last_ws_latency_ms: AtomicU64::new(0),

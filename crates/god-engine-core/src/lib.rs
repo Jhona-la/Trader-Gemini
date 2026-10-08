@@ -437,6 +437,18 @@ pub fn escala_del_trailing(atr_pct: f64, entrada: f64, tau_ms: f64, hurst: f64) 
 /// 0,22 con continuación (h ≥ 0,52); coherencia > 0,12 en su dirección; marea
 /// macro no adversa. El bono de convicción es (h − 0,5)⁺·0,5 en ambos lados.
 /// Devuelve `(es_largo, confianza)`.
+///
+/// H2-11 (G2-15, RONDA 3): los cinco cortes eran literales dispersos
+/// calibrados a mano — ahora son constantes nombradas PINNEADAS con el
+/// mismo valor (bit-exact; el contrato h2_11 los fija). Promoverlos a
+/// knobs del genoma sería cambio de conducta: ola futura con oráculo si
+/// el consejo lo pide.
+pub const FUSED_UMBAL_PLENO: f64 = 0.38;
+pub const FUSED_UMBAL_MODERADO: f64 = 0.22;
+pub const HURST_CONTINUACION: f64 = 0.52;
+pub const COHERENCIA_MINIMA: f64 = 0.12;
+pub const MAREA_MACRO_TOLERANCIA: f64 = 0.00020;
+
 #[inline]
 pub fn confluencia_resonante(
     fused: f64,
@@ -445,14 +457,14 @@ pub fn confluencia_resonante(
     coherencia_corta: f64,
     marea_macro: f64,
 ) -> Option<(bool, f64)> {
-    let continuacion = hurst_tau_star >= 0.52;
+    let continuacion = hurst_tau_star >= HURST_CONTINUACION;
     let bono = (hurst_tau_star - 0.50).max(0.0) * 0.50;
-    let largo = (fused > 0.38 || (fused > 0.22 && continuacion))
-        && coherencia_larga > 0.12
-        && marea_macro >= -0.00020;
-    let corto = (fused < -0.38 || (fused < -0.22 && continuacion))
-        && coherencia_corta > 0.12
-        && marea_macro <= 0.00020;
+    let largo = (fused > FUSED_UMBAL_PLENO || (fused > FUSED_UMBAL_MODERADO && continuacion))
+        && coherencia_larga > COHERENCIA_MINIMA
+        && marea_macro >= -MAREA_MACRO_TOLERANCIA;
+    let corto = (fused < -FUSED_UMBAL_PLENO || (fused < -FUSED_UMBAL_MODERADO && continuacion))
+        && coherencia_corta > COHERENCIA_MINIMA
+        && marea_macro <= MAREA_MACRO_TOLERANCIA;
     if largo {
         let conf_base = (0.50 + coherencia_larga * 0.35 + bono).clamp(0.50, 0.95);
         Some((true, conf_base))
@@ -1965,10 +1977,28 @@ impl GodEngineCore {
                     // #610 (Ola 32): sombras del SOLITÓN (perfil sech firmado)
                     // y del CHOQUE supersónico (salto Rankine-Hugoniot
                     // M(τ)=|x(τ)|/c) — misma malla de desplazamientos.
-                    let voto_soliton = signal_engine::soliton_wave::SolitonWaveEngine::voto_espectral(
-                        &desplazamientos,
-                        self.arena.registry.get_value_or("soliton_amplitude", 1.0),
-                    );
+                    // H2-10 (RONDA 3, GLM 112): la sombra leía el knob
+                    // global `soliton_amplitude` (CERO escritores
+                    // productivos ⇒ siempre 1.0) mientras el VIVO usa la
+                    // cascada scoped soliton_amplitude → OFI → vol_delta
+                    // (soliton_wave.rs). ESPEJO EXACTO: misma cascada
+                    // per-coin — el sanitizado interno del motor
+                    // (amp≤0→1.0, clamp [1e-3,10]) hace el resto idéntico.
+                    let amp_soliton = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "soliton_amplitude", {
+                            // OFI firmado [-1,1]: negativo/0 → el motor lo
+                            // sanea a 1.0 — misma semántica que el vivo.
+                            self.arena
+                                .registry
+                                .get_for_coin_or(coin_id, "order_flow_imbalance", 0.0)
+                        });
+                    let voto_soliton =
+                        signal_engine::soliton_wave::SolitonWaveEngine::voto_espectral(
+                            &desplazamientos,
+                            amp_soliton,
+                        );
                     if let Some((k_sol, v_sol)) = voto_soliton.dominante() {
                         self.arena.registry.set_for_coin(
                             coin_id,
@@ -2075,17 +2105,60 @@ impl GodEngineCore {
                             &desplazamientos,
                             ratio_hawkes_fresco,
                         );
+                    if let Some(media_hk) = voto_hawkes.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_hawkes_consenso", media_hk);
+                    }
+                    if let Some((k_hk, v_hk)) = voto_hawkes.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_hawkes_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_hk],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_hawkes_v_max", v_hk);
+                    }
 
-                    // #618: SOMBRA ESPECTRAL de GAME-THEORETIC NASH
-                    let nash_drift = self
+                    // #618 / R5-A4: SOMBRA ESPECTRAL de GAME-THEORETIC NASH
+                    // Presión adversarial escopada por moneda — busca la clave viva
+                    // `game_theory_adversarial_pressure`, con fallback a `cvpin`
+                    // medido de la moneda, y finalmente a `nash_equilibrium_drift` (0.50).
+                    let nash_presion_adv = self
                         .arena
                         .registry
-                        .get_value_or("nash_equilibrium_drift", 0.5);
+                        .get_for_coin_or(
+                            coin_id,
+                            "game_theory_adversarial_pressure",
+                            self.arena.registry.get_for_coin_or(
+                                coin_id,
+                                "cvpin",
+                                self.arena
+                                    .registry
+                                    .get_value_or("nash_equilibrium_drift", 0.50),
+                            ),
+                        );
                     let voto_nash =
                         signal_engine::game_theoretic_nash::GameTheoreticNashEngine::voto_espectral(
                             &desplazamientos,
-                            nash_drift,
+                            nash_presion_adv,
                         );
+                    if let Some(media_nash) = voto_nash.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_nash_consenso", media_nash);
+                    }
+                    if let Some((k_nash, v_nash)) = voto_nash.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_nash_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_nash],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_nash_v_max", v_nash);
+                    }
 
                     // #619→#649: SOMBRA ESPECTRAL de FLOW IMPULSE
                     let voto_flow =
@@ -2093,23 +2166,72 @@ impl GodEngineCore {
                             &desplazamientos,
                             ratio_hawkes_fresco,
                         );
+                    if let Some(media_flow) = voto_flow.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_flow_consenso", media_flow);
+                    }
+                    if let Some((k_flow, v_flow)) = voto_flow.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_flow_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_flow],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_flow_v_max", v_flow);
+                    }
 
                     // #620: SOMBRA ESPECTRAL de PERCEPTRON GATE
                     let voto_perceptron =
                         signal_engine::perceptron_gate::PerceptronGateEngine::voto_espectral(
                             &desplazamientos,
                         );
+                    if let Some(media_perc) = voto_perceptron.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_perceptron_consenso", media_perc);
+                    }
+                    if let Some((k_perc, v_perc)) = voto_perceptron.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_perceptron_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_perc],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_perceptron_v_max", v_perc);
+                    }
 
                     // #621: SOMBRA ESPECTRAL de CONFORMAL REVERSION FILTER
                     let conf_eps = self
                         .arena
                         .registry
-                        .get_value_or("conformal_epsilon", 0.10);
+                        // R5-A3: la clave VIVA del genoma es conformal_alpha
+                        // (publicada en :4566); conformal_epsilon tiene CERO
+                        // escritores — el consenso corría con α fijo 0.10,
+                        // sordo a la calibración [0.01, 0.30].
+                        .get_value_or("conformal_alpha", 0.10);
                     let voto_conformal =
                         signal_engine::conformal_reversion_filter::ConformalReversionFilterEngine::voto_espectral(
                             &desplazamientos,
                             conf_eps,
                         );
+                    if let Some(media_conf) = voto_conformal.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_conformal_consenso", media_conf);
+                    }
+                    if let Some((k_conf, v_conf)) = voto_conformal.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_conformal_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_conf],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_conformal_v_max", v_conf);
+                    }
 
                     // #622→#649: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE
                     let voto_confluence =
@@ -2117,6 +2239,21 @@ impl GodEngineCore {
                             &desplazamientos,
                             ratio_hawkes_fresco,
                         );
+                    if let Some(media_conf_fl) = voto_confluence.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_confluence_consenso", media_conf_fl);
+                    }
+                    if let Some((k_conf_fl, v_conf_fl)) = voto_confluence.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_confluence_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_conf_fl],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_confluence_v_max", v_conf_fl);
+                    }
 
                     // SOMBRA ESPECTRAL de TREND-RUNNER (persistencia multiescala)
                     let hurst_tr = self
@@ -3560,12 +3697,12 @@ impl GodEngineCore {
                             .fetch_add(net_trade_pnl, Ordering::Relaxed);
                     }
 
-                    self.feature_engines[coin_id].last_scalp_exit_tick =
+                    self.feature_engines[coin_id].last_exit_fastband_tick =
                         self.feature_engines[coin_id].tick_count;
                     // D-754: los dos relojes del enfriamiento - CUANDO se
                     // cerro (en ms de evento, no en cuenta de ticks) y CON QUE
                     // horizonte se habia dimensionado.
-                    self.feature_engines[coin_id].last_scalp_exit_ms = event_time_ms;
+                    self.feature_engines[coin_id].last_exit_fastband_ms = event_time_ms;
                     if tau_de_la_posicion > 0 {
                         self.feature_engines[coin_id].tau_ultimo_cierre_ms = tau_de_la_posicion;
                     }
@@ -4619,7 +4756,6 @@ impl GodEngineCore {
                     .load(Ordering::Relaxed)
                     .clamp(0.0, 1.0);
             let piso_obi_medido = self.cuantiles[coin_id].dynamic_obi_threshold() * intermittency_mult;
-            let piso_ofi_medido = self.cuantiles[coin_id].dynamic_ofi_threshold() * intermittency_mult;
             // D-756: el suelo del score analítico, por el mismo camino. Es el
             // percentil 85 MEDIDO de |composite_score| en este símbolo: por
             // debajo de él, «convicción analítica» describe lo que el score
@@ -4685,6 +4821,21 @@ impl GodEngineCore {
 
             set_reg("ema_trend", micro_trend);
             set_reg("ema_trend_swing", macro_trend);
+            // R5-A1: z CANÓNICA del macro-trend (spread EMA9/21 tipificado
+            // con la volatilidad medida — el mismo ema_spread_z del piso
+            // D-756). El consumidor vivo del conformal la prefiere: con el
+            // trend CRUDO (fracción O(1e-3)) su acuerdo tanh(−z·trend/2)
+            // era ≈0.005 — el fallback escalar estaba MUDO. Escritor y
+            // lector entran en el MISMO commit (regla #613).
+            set_reg(
+                "ema_trend_swing_z",
+                crate::diffusion::ema_spread_z(
+                    macro_trend,
+                    atr_pct,
+                    crate::diffusion::EMA_FAST_BARS,
+                    crate::diffusion::EMA_SLOW_BARS,
+                ),
+            );
             set_reg("higher_trend", higher_trend);
             // D-756: el signo de la tendencia superior se decidía con un
             // literal de 10 pb. Diez puntos básicos son un desplazamiento
@@ -5128,8 +5279,6 @@ impl GodEngineCore {
                 // (misma banda canónica: reversión a la media ≡ anti-persistencia)
                 let is_mean_reverting = is_anti_persistent;
 
-                let ema_slow = ema_slow_continuo;
-                let cur_atr = cur_atr_continuo;
                 let price_stretch = price_stretch_continuo;
                 // D-472, D-474 & D-478: Disciplina Antiextensión y Cero Persecución (No Chasing Law)
                 // Prohibido vender por debajo de la media (price_stretch < 0.0) o comprar por encima (price_stretch > 0.0).
@@ -5293,7 +5442,6 @@ impl GodEngineCore {
                             let fused = spec.fused_score;
                             let tau_star = field_long.resonant_tau_ms;
                             let expected_tau = (tau_star.clamp(500.0, 3_600_000.0)).round() as u64;
-                            let dyn_flow = (1.0 + fused.abs() * 2.0).clamp(1.0, 5.0);
 
                             // Señal Directa del Campo Espectral Continuo (#563):
                             // Se activa cuando el momento espectral unificado y la coherencia armónica
@@ -5780,27 +5928,6 @@ impl GodEngineCore {
                     // 80 medido de |OBI|, techo por el maximo que |OBI| admite.
                     let range_obi = (dynamic_obi_thr * 0.85).max(piso_obi_medido).min(1.0);
 
-                    let long_macro_slope_ok = macro_trend >= 0.0 || (higher_trend > 0.00020 && micro_trend > 0.00015);
-                    let short_macro_slope_ok = macro_trend <= 0.0 || (higher_trend < -0.00020 && micro_trend < -0.00015);
-
-                    let (spec_coh_long, spec_coh_short) = if let Some(spec) = self.temporal_spectrum.get(coin_id) {
-                        (spec.spectral_coherence(true), spec.spectral_coherence(false))
-                    } else {
-                        (0.0, 0.0)
-                    };
-
-                    // Autoadaptabilidad Espectral Continua (#579):
-                    // En lugar de exigir un umbral rígido estático de higher_trend >= 0.00030 (que vetaba 54,052 intenciones),
-                    // la confluencia macro se valida armónicamente si la coherencia de fase de las 32 escalas espectrales
-                    // confirma la dirección (spec_coh > 0.08) sin colapso secular, o si la tendencia superior confirma la pendiente.
-                    let higher_trend_long_harmonic_ok = (higher_trend >= 0.00015 && long_macro_slope_ok)
-                        || (spec_coh_long > 0.08 && secular_trend > -0.0015)
-                        || (higher_trend >= -0.00010 && micro_trend > 0.00010 && long_macro_slope_ok);
-
-                    let higher_trend_short_harmonic_ok = (higher_trend <= -0.00015 && short_macro_slope_ok)
-                        || (spec_coh_short > 0.08 && secular_trend < 0.0015)
-                        || (higher_trend <= 0.00010 && micro_trend < -0.00010 && short_macro_slope_ok);
-
                     // Diagnóstico por dirección: las condiciones del gate se nombran una
                     // sola vez y el diagnóstico cuenta cuál falla. La semántica es la de la
                     // conjunción anterior: comparaciones puras, sin efectos laterales.
@@ -6051,11 +6178,11 @@ impl GodEngineCore {
                         swing_stretch_z >= 0.0 && swing_stretch_z <= crate::diffusion::Z95;
 
                     let macd_diff = (ema_fast - ema_slow) / ema_slow;
-                    // G0-2 (Ola Ω11): desacoplar la rama 13 del ancla fija swing_tp_base (12h)
-                    // y alinearla con la geometría continua evaluada a la tau viva de la onda.
-                    let swing_tp = self.arena.config.tp_at_tau(swing_duration_ms as f64);
+                    // G0-2 (Ola Ω11): la rama 13 evalúa la geometría continua
+                    // a la τ viva de la onda (tp_at_tau), no al ancla fija 12h.
+                    let tp_tau_vivo = self.arena.config.tp_at_tau(swing_duration_ms as f64);
                     let threshold =
-                        (swing_tp * 0.003).max(0.0001) * (1.0 / hurst_exponent.max(0.1));
+                        (tp_tau_vivo * 0.003).max(0.0001) * (1.0 / hurst_exponent.max(0.1));
 
                     let is_bull_trend = is_confirmed_uptrend && ema_fast > ema_slow;
                     let is_bear_trend = is_confirmed_downtrend && ema_fast < ema_slow;
@@ -7068,7 +7195,6 @@ impl GodEngineCore {
                 self.arena.registry.set_for_coin(coin_id, "qo_slot_rechazo", razon);
             }
             let target_pos_slot = maybe_slot.unwrap_or(0);
-            let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 
             // QO-588 — GATE DE PIRÁMIDE LIMPIA (restauración). Historia del
             // defecto: el contrato legacy exigía retorno no realizado >= 28 pb
@@ -7963,10 +8089,10 @@ mod tests_cl22 {
     fn cl22_el_enfriamiento_legado_contradice_al_unificado() {
         let mut e = StatefulEngine::new();
         let t0 = 1_000_000u64;
-        e.last_scalp_exit_ms = t0;
-        e.last_scalp_exit_ts = t0;
+        e.last_exit_fastband_ms = t0;
+        e.last_exit_fastband_ts = t0;
         e.last_exit_tau_ms = 10_000;
-        e.scalp_loss_streak = 0;
+        e.fastband_loss_streak = 0;
         e.last_event_ms = t0 + 60_000;
         e.current_ts = t0 + 60_000;
         assert!(e.can_open_position_ms(10_000.0));
@@ -8796,8 +8922,6 @@ mod tests_qo_598 {
     //! publicador de contagio, el MISMO que lee correlation_guard). La
     //! lectura scoped `{SYM}_…`/global del cable original jamás encuentra
     //! ese slot: el modulador nació muerto (siempre factor 1).
-
-    use super::*;
 
     #[test]
     fn qo_598_el_slot_del_publicador_es_de_moneda_no_scoped() {

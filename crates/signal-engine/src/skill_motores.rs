@@ -39,12 +39,6 @@ pub const NUM_PARES_MOTOR_ESCALA: usize = MOTORES * 32;
 pub const PISO_EXPLORACION: f64 = 0.15;
 const OLVIDO: f64 = 1.0 / 64.0;
 const EPS_VOTO: f64 = 1e-9;
-/// Ola 48 / H5 — tamaño efectivo del estimador EWMA (λ=1/64 ⇒ N_ef ≈
-/// 2/λ = 128): el umbral de significancia se ancla AQUÍ, no al conteo
-/// crudo n. Con n crudo el umbral decae a 0 en sesiones largas y admite
-/// ruido como habilidad — reabriendo el sesgo de selección que #599
-/// cerró para el espectro.
-pub const N_EFECTIVO_EWMA: u64 = 128;
 
 /// Acumuladores EWMA del IC (forma exacta de #594).
 #[derive(Clone, Copy)]
@@ -98,11 +92,11 @@ impl AcumIc {
             return None;
         }
         // #661 — Ville REPLAZA el umbral fijo de Fisher: el e-proceso es
-        /// anytime-valid (cualquier número de consultas). #663 (G1-1):
-        /// la composición consulta 13 motores × 32 escalas = 416
-        /// e-procesos — umbral de FAMILIA M/α = 8320 (Bonferroni), no
-        /// el 20 por proceso: en ruido el máximo de 416 procesos con
-        /// umbral 20 cruza casi seguro.
+        // anytime-valid (cualquier número de consultas). #663 (G1-1):
+        // la composición consulta 13 motores × 32 escalas = 416
+        // e-procesos — umbral de FAMILIA M/α = 8320 (Bonferroni), no
+        // el 20 por proceso: en ruido el máximo de 416 procesos con
+        // umbral 20 cruza casi seguro.
         if !self.e_proceso.significativo_familia(NUM_PARES_MOTOR_ESCALA) {
             return None;
         }
@@ -358,7 +352,7 @@ mod tests {
         assert_eq!(w[0][19], PISO_EXPLORACION);
         // Maduramos bloques alineados: armado +1, retorno +0.05 constante.
         // #663 (G1-1): el gate de Ville ahora es de FAMILIA M/α=8320
-        // (416 pares) — 1.1^97 ≈ 8640 cruza; ~100 maduraciones.
+        // (416 pares) — 1.1^95 ≈ 8540 cruza; el bucle acumula n=100.
         for i in 3..=100u64 {
             madurar(&mut sm, 19, i * 1_000, 0.05, 1.0);
         }

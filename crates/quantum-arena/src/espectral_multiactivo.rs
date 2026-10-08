@@ -57,12 +57,17 @@ use std::collections::HashMap;
 
 const ESCALAS: usize = 32;
 
+/// #665: escalas de banda operable por par ([30 s, 12 h] = nodos 18..22
+/// de la malla 4^k µs) — las celdas que la ruta del veto consulta de
+/// facto (la escala dominante vive siempre en banda).
+const ESCALAS_BANDA_PAR: usize = 5;
+
 /// #665 (F2-B8): tamaño de la FAMILIA de e-procesos que el veto de
-/// grupo efectivamente escanea — C(MAX_COINS,2) pares × las ~5 escalas
-/// de la banda operable [30 s, 12 h] (nodos 18..22 de la malla 4^k µs).
+/// grupo efectivamente escanea — C(MAX_COINS,2) pares × ESCALAS_BANDA_PAR.
 /// Alimenta el umbral Bonferroni M/α del gate Ville de la ruta del veto
 /// (`coherencia_media_con_todas` → qo_613_rho_tau).
-pub const FAMILIA_VETO_GRUPO: usize = (crate::state::MAX_COINS * (crate::state::MAX_COINS - 1) / 2) * 5;
+pub const FAMILIA_VETO_GRUPO: usize =
+    (crate::state::MAX_COINS * (crate::state::MAX_COINS - 1) / 2) * ESCALAS_BANDA_PAR;
 /// Guardia de recencia del emparejamiento: los bloques de ambos deben
 /// cerrar dentro de 0.5·τ el uno del otro (contemporáneos) (bloques de τ no solapados y
 /// aproximadamente contemporáneos — sino el par mezcla regímenes).

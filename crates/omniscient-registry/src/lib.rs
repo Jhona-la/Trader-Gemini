@@ -89,6 +89,60 @@ impl std::fmt::Debug for OmniscientRegistry {
     }
 }
 
+#[inline(always)]
+fn format_scoped_key<F, R>(prefix: &str, separator: &str, suffix: &str, f: F) -> R
+where
+    F: FnOnce(&str) -> R,
+{
+    let mut buf = [0u8; 96];
+    let p_bytes = prefix.as_bytes();
+    let s_bytes = separator.as_bytes();
+    let su_bytes = suffix.as_bytes();
+    let total = p_bytes.len() + s_bytes.len() + su_bytes.len();
+    if total <= buf.len() {
+        buf[..p_bytes.len()].copy_from_slice(p_bytes);
+        buf[p_bytes.len()..p_bytes.len() + s_bytes.len()].copy_from_slice(s_bytes);
+        buf[p_bytes.len() + s_bytes.len()..total].copy_from_slice(su_bytes);
+        if let Ok(s) = std::str::from_utf8(&buf[..total]) {
+            return f(s);
+        }
+    }
+    f(&format!("{}{}{}", prefix, separator, suffix))
+}
+
+#[inline(always)]
+fn format_coin_key<F, R>(coin_id: usize, name: &str, f: F) -> R
+where
+    F: FnOnce(&str) -> R,
+{
+    let mut buf = [0u8; 64];
+    buf[0] = b'c';
+    let mut cid = coin_id;
+    let mut num_buf = [0u8; 20];
+    let mut num_len = 0;
+    if cid == 0 {
+        num_buf[0] = b'0';
+        num_len = 1;
+    } else {
+        while cid > 0 {
+            num_buf[num_len] = b'0' + (cid % 10) as u8;
+            cid /= 10;
+            num_len += 1;
+        }
+        num_buf[..num_len].reverse();
+    }
+    let total = 1 + num_len + 1 + name.len();
+    if total <= buf.len() {
+        buf[1..1 + num_len].copy_from_slice(&num_buf[..num_len]);
+        buf[1 + num_len] = b':';
+        buf[2 + num_len..total].copy_from_slice(name.as_bytes());
+        if let Ok(s) = std::str::from_utf8(&buf[..total]) {
+            return f(s);
+        }
+    }
+    f(&format!("c{}:{}", coin_id, name))
+}
+
 impl OmniscientRegistry {
     pub fn new() -> Self {
         Self {
@@ -145,14 +199,15 @@ impl OmniscientRegistry {
         self.get_value_fast(name).unwrap_or(default)
     }
 
-    /// D-07: Namespacing por activo: registra o actualiza un parámetro prefijado por símbolo.
+    /// D-07: Namespacing por activo: registra o actualiza un parámetro prefijado por símbolo con zero heap-allocation.
     #[inline(always)]
     pub fn set_scoped(&self, symbol: &str, name: &str, val: f64) {
-        let scoped_name = format!("{}_{}", symbol, name);
-        self.set(&scoped_name, val);
+        format_scoped_key(symbol, "_", name, |scoped_name| {
+            self.set(scoped_name, val);
+        });
     }
 
-    /// D-07: Lectura con resolución de ámbito: busca `{symbol}_{name}` y si no existe busca `{name}`.
+    /// D-07: Lectura con resolución de ámbito: busca `{symbol}_{name}` y si no existe busca `{name}` sin heap-allocation.
     #[inline(always)]
     pub fn get_scoped(
         &self,
@@ -160,37 +215,41 @@ impl OmniscientRegistry {
         name: &str,
         consumer_name: &str,
     ) -> Option<Arc<Parameter>> {
-        let scoped_name = format!("{}_{}", symbol, name);
-        self.get(&scoped_name, consumer_name)
-            .or_else(|| self.get(name, consumer_name))
+        format_scoped_key(symbol, "_", name, |scoped_name| {
+            self.get(scoped_name, consumer_name)
+                .or_else(|| self.get(name, consumer_name))
+        })
     }
 
-    /// D-07: Lectura rápida O(1) con resolución de ámbito y fallback por defecto.
+    /// D-07: Lectura rápida O(1) con resolución de ámbito y fallback por defecto (Zero Heap Allocation Hot-Path).
     #[inline(always)]
     pub fn get_scoped_value_or(&self, symbol: &str, name: &str, default: f64) -> f64 {
-        let scoped_name = format!("{}_{}", symbol, name);
-        self.get_value_fast(&scoped_name)
-            .or_else(|| self.get_value_fast(name))
-            .unwrap_or(default)
+        format_scoped_key(symbol, "_", name, |scoped_name| {
+            self.get_value_fast(scoped_name)
+                .or_else(|| self.get_value_fast(name))
+                .unwrap_or(default)
+        })
     }
 
-    /// D38: Namespacing por índice numérico de activo (Zero Allocation lookup friendly)
+    /// D38: Namespacing por índice numérico de activo con stack buffer (Zero Heap Allocation Hot-Path).
     #[inline(always)]
     pub fn set_for_coin(&self, coin_id: usize, name: &str, val: f64) {
-        let key = format!("c{}:{}", coin_id, name);
-        self.set(&key, val);
+        format_coin_key(coin_id, name, |key| {
+            self.set(key, val);
+        });
     }
 
-    /// D38: Lectura por índice numérico de activo con fallback al parámetro global
+    /// D38: Lectura por índice numérico de activo con fallback al parámetro global sin heap allocation.
     #[inline(always)]
     pub fn get_for_coin_or(&self, coin_id: usize, name: &str, default: f64) -> f64 {
-        let key = format!("c{}:{}", coin_id, name);
-        self.get_value_fast(&key)
-            .or_else(|| self.get_value_fast(name))
-            .unwrap_or(default)
+        format_coin_key(coin_id, name, |key| {
+            self.get_value_fast(key)
+                .or_else(|| self.get_value_fast(name))
+                .unwrap_or(default)
+        })
     }
 
-    /// D-219: Lectura polimórfica escopada por activo (símbolo + coin_id) con fallback transparente al global
+    /// D-219: Lectura polimórfica escopada por activo (símbolo + coin_id) con fallback transparente al global (Zero Heap Alloc).
     #[inline(always)]
     pub fn get_scoped_parameter(
         &self,
@@ -201,22 +260,26 @@ impl OmniscientRegistry {
     ) -> Option<Arc<Parameter>> {
         if let Some(sym) = symbol {
             if !sym.is_empty() {
-                let scoped_name = format!("{}_{}", sym, name);
-                if let Some(p) = self.get(&scoped_name, consumer_name) {
-                    return Some(p);
+                let p = format_scoped_key(sym, "_", name, |scoped_name| {
+                    self.get(scoped_name, consumer_name)
+                });
+                if p.is_some() {
+                    return p;
                 }
             }
         }
         if let Some(cid) = coin_id {
-            let scoped_cid = format!("c{}:{}", cid, name);
-            if let Some(p) = self.get(&scoped_cid, consumer_name) {
-                return Some(p);
+            let p = format_coin_key(cid, name, |scoped_cid| {
+                self.get(scoped_cid, consumer_name)
+            });
+            if p.is_some() {
+                return p;
             }
         }
         self.get(name, consumer_name)
     }
 
-    /// D-219: Lectura rápida O(1) de valor numérico escopado por activo (símbolo + coin_id)
+    /// D-219: Lectura rápida O(1) de valor numérico escopado por activo (símbolo + coin_id) con stack buffer.
     #[inline(always)]
     pub fn get_scoped_val_or(
         &self,
@@ -227,16 +290,20 @@ impl OmniscientRegistry {
     ) -> f64 {
         if let Some(sym) = symbol {
             if !sym.is_empty() {
-                let scoped_name = format!("{}_{}", sym, name);
-                if let Some(val) = self.get_value_fast(&scoped_name) {
-                    return val;
+                let val = format_scoped_key(sym, "_", name, |scoped_name| {
+                    self.get_value_fast(scoped_name)
+                });
+                if let Some(v) = val {
+                    return v;
                 }
             }
         }
         if let Some(cid) = coin_id {
-            let scoped_cid = format!("c{}:{}", cid, name);
-            if let Some(val) = self.get_value_fast(&scoped_cid) {
-                return val;
+            let val = format_coin_key(cid, name, |scoped_cid| {
+                self.get_value_fast(scoped_cid)
+            });
+            if let Some(v) = val {
+                return v;
             }
         }
         self.get_value_fast(name).unwrap_or(default)
@@ -427,5 +494,38 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].name, "alpha");
         assert_eq!(all[0].get_value(), 1.23);
+    }
+
+    #[test]
+    fn test_omniscient_registry_zero_alloc_scoped_and_coin_lookups() {
+        let registry = OmniscientRegistry::new();
+        // 1. Probar fallback al global
+        assert_eq!(registry.get_for_coin_or(0, "global_param", 10.5), 10.5);
+        registry.set("global_param", 99.0);
+        assert_eq!(registry.get_for_coin_or(0, "global_param", 10.5), 99.0);
+
+        // 2. Probar override específico por coin_id
+        registry.set_for_coin(0, "global_param", 123.45);
+        assert_eq!(registry.get_for_coin_or(0, "global_param", 10.5), 123.45);
+        assert_eq!(registry.get_for_coin_or(1, "global_param", 10.5), 99.0);
+
+        // 3. Probar scoped por símbolo
+        registry.set_scoped("BTCUSDT", "spread", 0.0001);
+        assert_eq!(registry.get_scoped_value_or("BTCUSDT", "spread", 0.0), 0.0001);
+        assert_eq!(registry.get_scoped_value_or("ETHUSDT", "spread", 0.0005), 0.0005);
+
+        // 4. Probar resolución polimórfica (símbolo + coin_id)
+        assert_eq!(
+            registry.get_scoped_val_or(Some("BTCUSDT"), Some(0), "spread", 0.0),
+            0.0001
+        );
+        assert_eq!(
+            registry.get_scoped_val_or(None, Some(0), "global_param", 0.0),
+            123.45
+        );
+        assert_eq!(
+            registry.get_scoped_val_or(None, None, "global_param", 0.0),
+            99.0
+        );
     }
 }

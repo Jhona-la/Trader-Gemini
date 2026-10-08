@@ -14636,3 +14636,197 @@ E8C7D240 y all-targets0 del merge localcace007d. No cambia lambda, gates,
 OOS o promoción; capital observado no es MTM ni garantía de rentabilidad.
 RA§33 explica por qué compilar tests no sustituye ejecutarlos y conserva
 todos los pasos CI. Plan§14 consolida secuencia y propuestas sin acuse externo.
+
+## #668 — Ola 67: LIMPIEZA MECÁNICA DE LOWs (rondas 2-3 del barrido) (2026-10-07)
+
+Rama qoder/ola67-lows-limpieza (worktree .ola67, base d881e22d + merge
+Ω16 adeb8d1b), 7 commits atómicos. Ocho LOWs drenados, CERO cambio de
+conducta viva (verificado por oráculo):
+
+1. **G0-6** — átomos fantasma `scalp/swing_used_margin` retirados de
+   GlobalArena (state.rs): 0 escritores / 0 lectores por grep en todo el
+   workspace; cero construcciones literales externas del struct.
+2. **G1-7/H1-9** — exportaciones Fisher muertas retiradas:
+   `umbral_ic_significativo` + `N_EFECTIVO_EWMA` (temporal_spectrum) y
+   `N_EFECTIVO_EWMA` (skill_motores). Ville de familia (#661/#663) las
+   subsumió; 0 usos productivos por grep. qo_599 reescrito a semántica
+   Ville (el helper fabrica capital (1+λ)^n: n=30 ⇒ ~17 < 640 ruido;
+   n=90 ⇒ ~5313 cruza) y qo_601 conserva la medición del sesgo con el
+   umbral t≥2 inline como evidencia histórica del criterio pre-Ville.
+3. **G1-8/H1-6** — docs numéricos desincronizados corregidos con
+   derivación explícita: evalues "cruza 20 en ~n=800" → **n≈272**
+   (E[ln factor] = 0.58·ln1.1 + 0.42·ln0.9 ≈ 0.011/obs; ln20/0.011 ≈ 272);
+   skill "1.1^97 ≈ 8640" → **1.1^95 ≈ 8540 cruza 8320** (ln8320/ln1.1 =
+   94.7 ⇒ n=95). Los umbrales de familia (585/820 obs) ya eran correctos.
+4. **H1-5** — comentario de familia M=32 reescrito: ≤5 nodos de banda
+   [30s,12h] compiten de facto por τ*; M=32 es el paraguas conservador
+   de la malla completa (Bonferroni sigue válido, gate ~6× más duro que
+   el mínimo por banda — endurecer no rompe la cobertura).
+5. **G2-12** — 30 líneas del comentario obsoleto de hawkes_bessel
+   retiradas: describían el mislabel pre-R9 (proxy de aceleración) con un
+   "FIX REAL pendiente" que invitaba a re-parar lo YA cableado (λ/μ̂ real
+   por moneda #535/CERT-M2-C02 + exceso-SS #657/#659/#666).
+6. **H1-7** — ESCALAS_BANDA_PAR (5) const nombrada: FAMILIA_VETO_GRUPO
+   ahora deriva de MAX_COINS × banda explícita, sin literal mágico.
+7. **G0-10** — EpigenomaSymbolParams renombrado scalp/sl/swing →
+   tp/sl_fast/slow (vocabulario continuo U-ERR-5). TOML write-only sin
+   loader productivo: cero riesgo de compatibilidad.
+8. **G0-8 parcial** — helpers Genotype::scalp_tp/scalp_sl →
+   tp/sl_at_fast_anchor (misma HorizonCurve evaluada a TAU_ANCHOR_FAST_MS;
+   5 llamadores en tests del mismo archivo) y local swing_tp de rama 13
+   → tp_tau_vivo (el valor YA era tp_at_tau desde Ω11 G0-2). El residuo
+   de slots internos position.rs/stateful_engine.rs queda documentado.
+
+**Verificación**: quantum-arena 120/120, signal-engine 115/115 (incluye
+Ω16 de AGY), god-engine-core 170/170, metacortex 25+34+4+1+1+1 verde,
+`cargo check --workspace --all-targets` 0 errores (9m13s bajo contienda).
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (2578.93 s, release, --test-threads=1
+--nocapture, sobre a05ff2d2+merge-Ω16). Cobertura IDÉNTICA a la línea
+base: los mismos 16 genes sensibles; ningún gen certificado perdió
+sensibilidad con la limpieza.
+
+Lecciones: (a) un comentario que describe un defecto YA reparado es un
+riesgo de doble-fix activo (G2-12); (b) las docs numéricas de potencia
+deben derivarse (E[ln factor]) no estimarse; (c) al retirar exportaciones
+muertas hay que reescribir SUS tests a la semántica viva, no borrarlos.
+
+OBSERVACIÓN al consejo: la MEMORIA de Ω16 lista H2-7 (paridad de ganancia
+flow_impulse) como cerrado pero BARRIDO §H2 no lleva la marca — pedir el
+commit a AGY o reabrirlo en la próxima ronda.
+
+## #669 — Ola 68: CORRECTIVA RONDA 4 (sombras calma-invierte + nichos vivos) (2026-10-07)
+
+Rama qoder/ola68-sombras-calma (worktree .ola68, base 8938cf41 + merges
+Ω17/GLM-104), 7 commits. Cuatro hallazgos de la RONDA 4 cerrados:
+
+1. **R4-C1 [HIGH] — la CALMA ya no invierte las sombras espectrales.**
+   `voto_espectral` de hawkes_bessel y flow_impulse multiplicaban
+   `excitacion_hawkes_norm(ratio)` SIN `.max(0.0)`: en calma (ratio<SS)
+   cada escala votaba INVERTIDA dentro del consenso que dirige desde
+   #624 — exactamente el defecto #659/F2-A4 arreglado en los caminos
+   vivos pero nunca portado a las sombras. El fallback `None => 1.0`
+   de lib.rs:2092 hacía que monedas SIN proceso Hawkes votaran
+   invertidas a peso constante. Fix: `.max(0.0)` en ambas + 2 tests
+   calma→abstención (el fallback ahora abstiene naturalmente).
+2. **R4-B1 [HIGH] — nichos del walk-forward dejan de explorar un eje
+   muerto.** Blindaje y nicho 4 clampeaban tech_threshold [0.08,0.22],
+   bajo el bound evolutivo slot-21 [0.24,0.30] (D-625): todo mutante
+   corría a 0.24 en el arena Y `promote→validate` rechazaba campeones
+   (ningún mutante se persistía — invisible porque el baseline siempre
+   ganaba). Fix: bandas alineadas al bound.
+3. **R4-B7 [MED] — el piso swing_sl_base 0.0080 del blindaje silenciaba
+   el ancla lenta 0.0075 del nicho 2 (+6.7% de distorsión propagada por
+   el rebuild). Fix: banda [0.0070, 0.0350] ⊇ nichos 2/3/5.
+4. **R4-A1 [MED] — tercer sitio de ancla cruda retirado**: el fallback
+   de stop_pct de la envolvente (god_engine.rs) ahora
+   `sl_at_tau(TAU_ANCHOR_FAST_MS)` (fuente única G0-5/Ω14).
+
+**Verificación**: signal-engine 116/116 (tests calma nuevos), host
+bins 0 err, backtest bins 0 err, workspace --all-targets 0 err;
+post-merge Ω17/GLM-104: core check 0 err.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (9498.28 s, release — el más
+largo registrado por contienda extrema de CPU con builds paralelos del
+consejo). Cobertura íntegra: ningún gen certificado perdió sensibilidad
+con la corrección de las sombras del consenso.
+
+Lecciones: (a) paridad sombra↔vivo exige portar CADA fix de física a
+AMBOS caminos en el MISMO commit — la regla existía (#656-658) y aun
+ así #659 quedó a medias; (b) las bandas de blindaje de un GA deben
+derivar de los BOUNDS del genoma (una constante duplicada es un eje
+muerto esperando ocurrir); (c) el rechazo silencioso de promote por
+bounds es invisible cuando el baseline siempre gana — la telemetría
+debe contar promovidos RECHAZADOS.
+
+## #670 — Ola 69: RESTO RONDA 4 (rejilla DSR, σ_SR sub-gaussiano, saturación residual) + RONDA 5 (2026-10-07)
+
+Rama qoder/ola69-saturacion-residual (worktree .ola69, base 785b7a1c), 7
+commits. Cinco hallazgos ronda 4 cerrados:
+
+1. **R4-B2** — muestreo del DSR SOLO por rejilla de 1s: el disparo extra
+   por cierre (`|| closed.is_some()`) mezclaba cadencias heterocedásticas
+   y re-faseaba la rejilla. Sin pérdida: prev_cap sólo avanza en rejilla ⇒
+   cada retorno integra los cierres de su ventana. Comentario
+   "marked-to-market" corregido (la serie es de capital REALIZADO:
+   mayormente ceros con saltos — curtosis alta ⇒ DSR conservador).
+2. **R4-B3+B6** — sharpe_std_error con g4.max(3.0): leptocúrtico honesto,
+   jamás sub-gaussiano. Mi propuesta original (n<60 → gaussiano) fue
+   REFUTADA por el subagente de pre-verificación: anti-conservador.
+3. **R4-C2** — firma viva shockwave tanh(mach/2) a escala del estadístico
+   (era /1e4 = signum disfrazado); conserva ambos contratos qo_666.
+4. **R4-C3** — acuerdo conformal divisor 2.0 (media respuesta estaba 6×
+   bajo el emisor |z|≥1.645).
+5. **R4-C4** — gate perceptron smoothstep C¹ 0.15+0.85·S((a−0.5)) (kink
+   C⁰ del clamp eliminado); h2_6 reescrito con verificación de piso.
+6. **R4-A2** — adenda ADR-0014 principio 6: Ville de familia M/α
+   (640/8320/43500) — el ADR ya no prescribe la fórmula Fisher retirada.
+
+**Verificación**: signal 116/116, risk 141/141, core 170/170, workspace
+--all-targets 0 errores.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (8022.65 s, release). Cobertura
+íntegra con los cambios de conducta (firma shockwave, acuerdo conformal,
+gate perceptron alimentan el ensamble vivo).
+
+**RONDA 5 ejecutada en paralelo** (3 auditores, contra este mismo árbol):
+**12 hallazgos (0 HIGH, 5 MED, 7 LOW)** — primera ronda sin HIGH. Patrón
+residual único: fix portado a un camino, el otro con calibración vieja
+(A1 conformal vivo mudo con trend crudo; A2 firma sombra tanh(mach) vs
+vivo tanh(mach/2); A3 clave muerta conformal_epsilon vs conformal_alpha
+en el consenso VIVO) + B1 fallbacks tech_threshold fuera de banda +
+B3 fallback gaussiano alcanzable (γ₃>√2 → denom_sq<0). Asignación:
+Ola 70 = A1+A2+A3+B1+B3 (con oráculo); Ola 71 = mecánica + LOWs.
+
+Lecciones: (a) la calibración de un divisor depende de la ESCALA del
+input — verificar la escala VIVA antes de fijar el divisor (C3 calibró
+para la sombra); (b) los fallbacks de decodificación legacy comparten la
+misma clase de banda-rota que el código principal — auditarlos juntos;
+(c) el comentario "inalcanzable" de un guard es una afirmación
+matemática que los auditores deben verificar (B3/R5: era falsa).
+
+## #671 — Ola 70: MEDs RONDA 5 (paridad sombra↔vivo del consenso) (2026-10-08)
+
+Rama qoder/ola70-paridad-consenso (worktree .ola70, base 58d5914d + merge
+Ω20). Cinco MED cerrados, sombra Y vivo en el MISMO commit (regla #656):
+
+1. **R5-A1** — el core publica `ema_trend_swing_z` (z canónica del spread
+   EMA9/21 con el MISMO ema_spread_z del piso D-756, tipificada por la
+   volatilidad medida) y el conformal VIVO la prefiere con fallback al
+   trend crudo. Antes: trend crudo O(1e-3) ⇒ acuerdo tanh(−z·trend/2)
+   ≈ 0.005 — el fallback escalar estaba MUDO. Clave nueva con par
+   escritor/lector en el mismo commit (lección #613).
+2. **R5-A2** — firma de la SOMBRA shockwave a ((x/c_z)/2).tanh() en
+   paridad exacta con el vivo de la Ola 69 (antes tanh(x) 2× más empinada
+   que su propio camino vivo).
+3. **R5-A3** — la sombra conformal lee `conformal_alpha` (la clave VIVA
+   del genoma, publicada por el calibrador): `conformal_epsilon` tenía
+   CERO escritores y el consenso director corría con α=0.10 fijo, sordo
+   a la calibración [0.01, 0.30].
+4. **R5-B1** — fallbacks tech_threshold 0.1487/0.12 → 0.24 (bound
+   slot-21 D-625): la rama ESTABILIDAD heredaba genomas que promote
+   rechazaba.
+5. **R5-B3** — discriminante de Mertens degenerado (γ₃² > γ₄−1 vuelve
+   imaginaria la varianza asintótica): se desconfía del término de skew
+   (γ₃→0) conservando el de curtosis ⇒ denom ≥ 1+((g4−1)/4)SR² ≥ 1,
+   jamás sub-gaussiano. Nota: la cota de γ₃ al discriminante pura
+   dejaría σ→0 en el vértice de la parábola (más anti-conservador aún) —
+   refutada en diseño. +test r5_b3 (142/142).
+
+**Verificación**: signal 116/116, risk 142/142 (test nuevo), core 170/170,
+backtest bins 0 err, workspace --all-targets 0 errores.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (4068.97 s, release). Cobertura
+íntegra: el consenso con conformal audible + shockwave en paridad + α
+calibrada no rompió ningún gen certificado.
+
+Incidente operacional: DISCO LLENO (os error 112, 173 MB libres de 930
+GB — el target compartido acumuló 211 GB). Liberados 142 GB borrando
+target/debug/incremental (caché descartable). El oráculo reanudó limpio.
+
+Lecciones: (a) la z canónica de una magnitud YA existía como helper
+(ema_spread_z) — publicarla cuesta una línea y mata una clase entera de
+consumidores mudos; (b) dos formas de "arreglar" un discriminante
+negativo (acotar el parámetro vs desconfiar del término) no son
+equivalentes — la primera puede empeorar; (c) el disco compartido es
+infraestructura del consejo: vigilar target/ en las sesiones largas.

@@ -1,10 +1,11 @@
 # Revisión desde la base: plan y recibos por archivo
 
-Fecha: 2026-10-07, America/Bogota. Responsable de coordinación: Codex.
-Base de esta ronda R4: `adeb8d1b1f8171b14fffa8abc9f54c396e4794dd`.
-Rama documental: `codex/quant-foundations-2026-10-07`.
-Rama de recuperación: `codex/integration-recovery-2026-10-07`.
-Estado: **auditoría iniciada; cobertura semántica y validación económica abiertas**.
+Fecha: 2026-10-07, America/Bogota. Coordinación inicial R4: Codex; revisión independiente y continuación: Sol.
+Base histórica de R4: `adeb8d1b1f8171b14fffa8abc9f54c396e4794dd`.
+Base nueva verificada por Sol: `8938cf41d5b2d181e807de1a3fa41f36b09dfc32`.
+Ramas Codex: `codex/quant-foundations-2026-10-07` y `codex/integration-recovery-2026-10-07` (trabajo activo preservado).
+Rama propia Sol: `sol/plan-auditoria-2026-10-07`, worktree aislado `.sol-plan-2026-10-07`.
+Estado: **plan operativo recuperado con atribución; auditoría reiniciada; cobertura semántica y validación económica abiertas**.
 
 Este plan recupera y actualiza el borrador no versionado del worktree
 `codex-review-2026-10-07`, basado en `a054495c`. No borra ese original ni
@@ -294,3 +295,163 @@ No borrar worktrees sucios ni interpretarlos como basura.
 El cierre de esta ola documentará resultados realmente ejecutados y bloqueos.
 No se declara ausencia total de bugs, rentabilidad consistente ni revisión
 completa por el mero hecho de tener un plan o un inventario.
+
+## 11. Continuación Sol: reinicio verificable, no plan rival
+
+Se reutilizan con atribución el plan y las herramientas de Codex del commit
+`639c3e0d`. Los informes históricos siguen ligados a sus blobs originales.
+No se importan sus fixes de runtime ni sus archivos no versionados, y no se
+atribuye a Sol la creación del censo o del diagnóstico estadístico original.
+
+El ledger `audit/REVISION_2026-10-07.json` se regenera para la nueva base
+`8938cf41`, conservando historia cuando proceda. Incluye CADA archivo
+versionado, también derivados, configuración, scripts y documentos. La
+clasificación automática no acredita lectura. Los archivos no versionados de
+otros worktrees quedan como alcance pendiente de su dueño, no como basura.
+
+### 11.1 Escalera de evidencia que deben usar todos los agentes
+
+| Estado | Recibo obligatorio | Qué NO acredita |
+|---|---|---|
+| Inventariado | Ruta, blob, modo y base exacta | Lectura o corrección |
+| Inspección parcial/completa | Rangos leídos, contratos, dependencias, autor | Ejecución correcta |
+| Hallazgo reproducido | Fixture, resultado esperado/observado, comando y exit | Impacto económico real |
+| Corregido local | Regresión RED→GREEN y diff propio | Integración |
+| Integrado | SHA en main, diff contra padres y regresión de consumidores | Rentabilidad |
+| Validado económicamente | OOS sellado, costes, riesgo, incertidumbre y protocolo | Garantía de crecimiento futuro |
+
+El esquema actual del ledger conserva sus cuatro estados técnicos; esta
+escalera se registra en `evidence.kind/result` y en recibos de revisión, sin
+convertir un campo `verificado` en certificación universal. `check` valida
+metadatos, NO la verdad de una revisión. Un archivo enorme sólo completa
+lectura al unir sus rangos; un consumidor requiere revalidación si cambian
+productor, modelos o datos aunque su propio blob permanezca idéntico.
+
+### 11.2 Lotes prioritarios y coordinación propuesta
+
+| Lote | Rutas concretas | Recibo y límite | Dueño propuesto |
+|---|---|---|---|
+| R0-A | Plan compartido, este plan, BARRIDO, ADR-0003, Cargo manifests, ledger | Meta y unidades reconciliadas; denominador por SHA; mapa de ramas y acuses | Sol + revisión Codex |
+| R1-A | `crates/god-engine-core/src/lib.rs`, `src/bin/god_engine.rs`, `crates/god-engine-core/src/reality_physics.rs`, `crates/quantum-arena/src/position.rs` | Productor→consumidor por evento, activo, slot y generación; ninguna etiqueta sustituye trazabilidad | Consejo núcleo; acuse pendiente |
+| R2-A | `selection_stats.rs`, `darwin.rs`, `online_daemon.rs`, `return_evidence.rs` | Reloj, MTM, dependencia, familias y uso de holdout; no subir N fabricando observaciones | Codex/GLM; Sol revisor |
+| R3-A | `temporal_spectrum.rs`, `espectral_multiactivo.rs`, `evalues.rs`, `skill_motores.rs`, Hawkes/OU/Hodge | Fuente primaria, unidades, nulo y ablación; distinguir continuo y malla numérica | Qoder/Antigravity; acuse pendiente |
+| R4-A | `tick_replayer.rs`, loaders de datos, `OmniHistory`, trainers y manifests | Cobertura real 7/15/30/180 días, orden, disponibilidad causal, hashes y fuentes sintéticas | GLM/Codex; acuse pendiente |
+| R5-A | `booktick_replay.rs`, `continuous_evolution_backtest.rs`, `backtest_windows.rs`, `audit_forensic_backtest.rs`, `metrics.rs` | Cash/equity diario/terminal, duración ejecutada, fees/funding, reservas e insolvencia | Sol diagnóstico; runtime por acuerdo |
+| R5-B | `envio.rs`, `correlation_guard.rs`, `ruin.rs`, executor/reconciliation, `veto_registry.rs` | Veto tipado, composición, coste de oportunidad y recuperación; exits defensivos | Claude/Codex; acuse pendiente |
+| R6-A | `genome.rs`, `genome_store.rs`, `ml_inference.rs`, `ml_registry.rs`, promotores | Fenotipo evaluado==servido, publicación antes de activar, concurrencia/rollback e identidad | GLM/Codex; acuse pendiente |
+| R7-A | Workflows, Cargo targets, locking, storage y telemetría | All-targets, determinismo, fallos inyectados, recursos p50/p95/p99 medidos | Consejo plataforma |
+| R8-A | TODOS los restantes del ledger | Cada ruta con generador/consumidor o exclusión explícita; no cierre por extensión | Dueño asignado con acuse |
+| R9-A | Recibos anteriores y harness final | Regresión en tip integrado + examen OOS multiactivo; pérdidas y no-operación incluidas | Revisor independiente + operador |
+
+Los lotes son rutas iniciales, NO exclusiones del resto de archivos. Procesar
+por prioridad de daño/contaminación y dependencia, después por ruta estable.
+Cada reclamo de archivo debe publicar base/blob, escritor, revisor, rangos y
+entregable en el buzón. No asignar aceptación o disponibilidad a otro agente
+sin respuesta. Un conflicto documental se resuelve por unión con atribución.
+
+### 11.3 Hallazgos nuevos y convergencia
+
+- R4-Q1..Q4 de Codex siguen abiertos o pendientes de integración en esta base.
+  Sol confirmó el caller que recrea Darwin, cash presentado como MTM y reloj
+  mixto. El fix del caller ya está en rama Codex: no duplicarlo.
+- SOL-R5-01: el backtester continuo usa `equity_final - cash_inicial_dia` y
+  suma resultados diarios. Flotante arrastrado se vuelve a contabilizar;
+  probar identidad telescópica de equity neta por día antes de cambiar sizing.
+- SOL-R5-02: replay compartido termina y calcula drawdown sobre cash; informar
+  slots abiertos, unrealized, equity y regla de valoración terminal.
+- SOL-R4-01: días solicitados se limitan a cobertura disponible en continuo;
+  el replay puede terminar antes y annualizar con el fin original del tape.
+  Registrar intervalo solicitado/disponible/ejecutado y causa de fin.
+- H2-7 no se reabre: contrato GLM103 `h2_7_paridad_de_ganancias_pinned`
+  presente en 8938cf41. La observación antigua de Ola67 quedó superada.
+
+Se entrega evidencia conductual separada de los ports/modelos de trazas.
+No se ejecutó un backtest económico 7/15/30/180 días ni un examen final en
+esta ola. Sus requisitos y bloqueos quedan visibles; no se sustituye por
+proyecciones de capital, inferencias de tests verdes o afirmaciones de excelencia.
+
+### 11.4 Recibo de esta ola y bloqueo de publicación
+
+- Ejecutado: generación y `check` del ledger sobre 8938cf41, 1.434 rutas,
+  cero errores de cobertura/esquema; todos los estados siguen inventariados.
+- Ejecutado: testigo compilado con `rustc 1.98.0-nightly` que importa blobs
+  Rust congelados de `selection_stats.rs` en 8938cf41, no un port Python ni
+  una validación de código cambiado posterior. DSR 40→400
+  observaciones repetidas: 0.248357355→0.999724533; NaN/Inf añadidos no
+  cambian verdict; expresión diaria compilada da 20 acumulado frente a 10
+  de equity terminal en fixture controlado. Comando terminó con exit 0.
+- NO certificado: suite completa de inventario ni `cargo check --offline
+  --locked --workspace --all-targets` iniciados en target propio; no acabaron
+  y se detuvieron únicamente los jobs de Sol. Comandos Git posteriores
+  terminaron con SIGTERM sin salida útil; no se inventa causa ni resultado.
+- Último remoto confirmado: main 8938cf41 y root-audit d0e02da1; CI Replay
+  contracts run 37660783497 success para 8938cf41. No es CI del plan nuevo.
+- NO realizado: commit, push, merge, refresh final del remoto, eliminación
+  de ramas ni examen económico. Worktree Sol y fuentes de otros agentes
+  preservados. Continuar publicación cuando la ejecución vuelva a responder,
+  con status/diff/ancestría/pruebas nuevos; no reutilizar el verde de otro SHA.
+
+### 11.5 Continuación tras recuperar ejecución (16:02 Bogotá en adelante)
+
+- Main remoto refrescado a `171db3c6`; el censo/testigo 8938cf41 sigue
+  histórico y congelado, no una certificación de ese main posterior.
+- Suite completa `scripts/tests/test_audit_inventory.py`: 7/7 PASAN,
+  198.212 s. Ancestría de cada rama local/remota y status de cada worktree
+  completados: cero candidatos seguros de borrado. Recibo:
+  `audit/SOL_RAMAS_2026-10-07.md`. No borrar review-plan/Sol ocupados/sucios;
+  root y recovery mantienen 28/64 commits exclusivos contra main al corte.
+- Reserva nueva: SOL-R5-01 en `continuous_evolution_backtest.rs`, únicamente
+  reporting diario. Helper extrae valuación existente sin alterar fees/fallback;
+  tests ejercitan slots reales, carry positivo/negativo, multiactivo, cierre y
+  cash. LOCAL TEST PASSED: full-bin reporting_contract 2/2, direct exit 0;
+  source blob 5a0af98e3fefc168feb2c1649b8d2d94d25c909e, source SHA256
+  9a3ea9e2ca8ec1c0b4b0f1fd4dfc4c26e9f4b6c0d79c46116b2eaf265ed02459.
+  Receipt: target/reporting-contract-execution-evidence-20261007.txt.
+- Baseline offline locked workspace all-targets check passed in the own
+  target, cargo/tee exits 0: target/sol-baseline-all-targets-20261007.log
+  and .exit. Integrated all-targets and reporting_contract validation,
+  commit and publication are
+  pending; prior base success is not integrated-candidate evidence.
+- T-1 was not rerun: daily reporting only, not the live strategy pipeline.
+  No live orders, engine execution, strategy/sizing/shadow-selection changes,
+  model/arming changes, or economic validation. Historical receipts above
+  remain historical; no current CI or future publication success is claimed.
+
+### 11.6 Cierre de integración SOL-R5-01 — publicación verificada
+
+- Commit propio `ac6c945634d7bbb20a0ae9f19382babe660b7de5`: plan/censo
+  atribuídos y corrección únicamente de reporting diario. Merge publicado
+  `f8c433f8c99d230b1708cf850b44fa0204eba25b`, padres ac6c9456 y
+  `e285193ef3397c65fe957e6191d5b1296806e1df`; árbol probado
+  `89ef5c61b9dd1bb879ea81d32e5d2e4bd8198b9e`. SHA remoto confirmado por
+  ls-remote y ambos commits propios acreditados como ancestros (exit 0).
+- `cargo check --offline --locked --workspace --all-targets` en candidato
+  integrado: cargo_exit=0. Test full-bin `reporting_contract`: 2/2 PASAN,
+  cargo_exit=0. No transferencia del verde anterior. Review contra AMBOS
+  padres preservó documentación por unión y cambios nuevos de Qoder/GLM;
+  sólo las 18 rutas autorizadas difieren respecto de main integrado.
+- Helper real calcula `equity_final - equity_previa` y el porcentaje usa
+  equity previa. Acumulado telescópico y residual final expuesto. Tests con
+  arena real prueban carry positivo/negativo, cambios de marca, cierre,
+  comisiones en cash, dos activos y múltiples slots. No se altera sizing,
+  selección shadow, fees/marks/fallback existentes ni promoción del motor.
+- Fuente integrada: blob `4361b2b8557f34d28b6cea172a4561f3af79d404`,
+  SHA256 `7f8503371f84d27e890d9e3d5575695baa2ed6b430c8a95674c3489b7dd53b6c`.
+  Verified publication receipt: `target/sol-publication-evidence-20261007.txt`
+  in the Sol worktree. Behavioral log: `target/sol-integrated-reporting-contract-20261007.log`;
+  both-parent review: `target/sol-integrated-parent-review-20261007.json`.
+  These are local, ignored receipts, not repository-relative published artifacts;
+  no `outputs/` copies exist in this worktree.
+- El counterejemplo histórico sigue congelado en 8938cf41; la etapa RED
+  completa del harness no llegó a producir un resultado antes de la corrección.
+  No reclamar RED→GREEN del bin completo; sí histórico reproducido + tests
+  reales de corrección GREEN. No examen económico, T-1 nuevo ni producción.
+- CI remoto del merge: run 37722336175 en progreso al último chequeo.
+  No declarar resultado futuro. Publicación Git, all-targets local, tests
+  conductuales y CI son recibos distintos.
+- Próximo contrato R5: equity/drawdown terminal y duración efectivamente
+  procesada en replay compartido, reconciliación fees/funding y posiciones
+  abiertas; R2/R6 dependencia DSR/holdout/publicación sigue coordinado con
+  las ramas de otros agentes. La auditoría semántica de todos los archivos
+  y meta de crecimiento siguen abiertas. Los estados históricos anteriores
+  se conservan como bitácora, no como estado final de esta ola.
