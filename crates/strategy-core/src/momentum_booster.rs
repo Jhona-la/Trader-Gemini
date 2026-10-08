@@ -25,18 +25,13 @@ impl VolatileMomentumBooster {
             return 1.0;
         }
         use std::sync::atomic::Ordering;
-        // FIX #662: Sanitizar atr_pct y normalizar dirección de posición
+        // FIX #662: Sanitizar atr_pct. La dirección de posición ya no
+        // alimenta la alineación (GLM 109: sólo el PnL positivo decide —
+        // ver abajo); el parámetro se conserva por sanitidad de contrato.
         let safe_atr = if atr_pct.is_finite() && atr_pct > 0.0 {
             atr_pct
         } else {
             0.001
-        };
-        let pos_dir = if position_direction > 0.0 {
-            1.0
-        } else if position_direction < 0.0 {
-            -1.0
-        } else {
-            0.0
         };
 
         // Filtrado suave de PnL negativo: (pnl + |pnl|) / 2 = 0 si es negativo, pnl si positivo. (Max es equivalente O(1) en FPU)
@@ -47,8 +42,17 @@ impl VolatileMomentumBooster {
         // está empujando a favor de la posición independientemente de si es Long o Short.
         // Anteriormente `excess_hawkes * pos_dir` invertía el signo para Short (-1.0),
         // matando la extensión de TP para todas las posiciones cortas ganadoras.
+        //
+        // TRIAJE B (GLM 109): la rama `else pos_dir` (regresión del propio
+        // P15) mantenía la extensión ACTIVA con PnL NEGATIVO — el
+        // comentario de arriba (":42") promete "(pnl+|pnl|)/2 = 0 si es
+        // negativo", pero la alineación seguía vía dirección de posición.
+        // Sin PnL positivo NO hay evidencia de que el impulso empuje A
+        // FAVOR: alineación neutral (0.0) — la extensión sólo se arma con
+        // ganancia realizada. (Los shorts ganadores de P15 van por la
+        // rama positive_pnl > 0 — intactos.)
         let excess_hawkes = (hawkes_ratio - 1.0).clamp(-2.0, 2.0);
-        let alignment_direction = if positive_pnl > 0.0 { 1.0 } else { pos_dir };
+        let alignment_direction = if positive_pnl > 0.0 { 1.0 } else { 0.0 };
         let momentum_alignment = excess_hawkes * alignment_direction;
 
         // Función de activación sigmoidea escalar para determinar qué tan alineado está el mercado
@@ -97,6 +101,19 @@ mod tests {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         let boost = VolatileMomentumBooster::calculate_tp_extension(1.0, -0.01, 1.0, 0.01, &arena);
         assert_eq!(boost, 1.0, "PnL negativo no debe dilatar el TP");
+        // TRIAJE B (GLM 109): el caso con EXCESO de hawkes (cascada 3×) —
+        // el test anterior sólo cubría hawkes=1.0 (exceso 0), dejando pasar
+        // la regresión de P15 que alineaba vía dirección de posición.
+        let boost_cascada =
+            VolatileMomentumBooster::calculate_tp_extension(1.0, -0.01, 3.0, 0.01, &arena);
+        assert_eq!(
+            boost_cascada, 1.0,
+            "PnL negativo no dilata el TP NI con cascada: sin ganancia no hay alineación"
+        );
+        // PnL CERO: tampoco hay evidencia a favor — neutral.
+        let boost_cero =
+            VolatileMomentumBooster::calculate_tp_extension(1.0, 0.0, 3.0, 0.01, &arena);
+        assert_eq!(boost_cero, 1.0);
     }
 
     #[test]
