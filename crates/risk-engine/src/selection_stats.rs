@@ -85,22 +85,23 @@ pub fn sharpe_std_error(m: &ReturnMoments, sr: f64) -> f64 {
     if n < 2.0 {
         return 0.0;
     }
-    // R4-B3/B6: γ₄ pisado al gaussiano (3.0) — con momentos muestrales
-    // ruidosos la curtosis estimada puede caer BAJO 3 (o la combinación
-    // 1−γ₃·SR+((γ₄−1)/4)SR² volverse ≤0) y el fallback gaussiano
-    // 1/√(n−1) era ANTI-conservador en esa región degenerada (bajaba el
-    // listón del DSR justo donde la muestra es débil). Con g4 ≥ 3 el
-    // denom_sq ≥ 1 + ((3−1)/4)SR² − γ₃·SR nunca colapsa por debajo del
-    // régimen gaussiano: leptocúrtico honesto, jamás sub-gaussiano.
-    let g3 = m.skewness;
+    // R4-B3/B6 + R5-B3: γ₄ pisado al gaussiano (3.0) y γ₃ desconfiado en
+    // la región degenerada. El discriminante de Mertens 1−γ₃·SR+((γ₄−1)/4)SR²
+    // cruza ≤0 cuando γ₃² > γ₄−1 (ej γ₃=2, SR=2 → −1): ahí el fallback
+    // 1/√(n−1) era ANTI-conservador y la cota al discriminante dejaría σ→0
+    // en el vértice (peor aún). Resolución: si la asimetría medida vuelve
+    // IMAGINARIA la varianza asintótica, se desconfía del término de skew
+    // (γ₃→0) y se conserva el de curtosis — denom ≥ 1+((g4−1)/4)SR² ≥ 1:
+    // leptocúrtico honesto, jamás sub-gaussiano, justo donde la muestra
+    // es débil. La región legítima (denom > 0) usa la fórmula intacta.
     let g4 = m.kurtosis.max(3.0);
-    let denom_sq = 1.0 - g3 * sr + (g4 - 1.0) / 4.0 * sr * sr;
-    if denom_sq <= 1e-12 {
-        // Inalcanzable con g4 ≥ 3 salvo |sr|→∞; paridad defensiva.
-        1.0 / (n - 1.0).sqrt()
+    let denom_raw = 1.0 - m.skewness * sr + (g4 - 1.0) / 4.0 * sr * sr;
+    let denom_sq = if denom_raw > 0.0 {
+        denom_raw
     } else {
-        (denom_sq / (n - 1.0)).sqrt()
-    }
+        1.0 + (g4 - 1.0) / 4.0 * sr * sr
+    };
+    (denom_sq / (n - 1.0)).sqrt()
 }
 
 /// Constante de Euler–Mascheroni (γ), la que aparece en la aproximación de
@@ -397,4 +398,30 @@ mod tests {
         let bm_gauss = expected_max_sharpe(100, se_iid_gauss);
         assert!(bm_no_normal > bm_gauss, "El benchmark E[max SR] debe ser más estricto con colas pesadas");
     }
+
+/// R5-B3 — el discriminante de Mertens puede volverse negativo (γ₃² > γ₄−1):
+/// con γ₃=2, SR=2 y γ₄=3 la varianza asintótica "vale" −1. La resolución
+/// desconfía del término de skew y conserva el de curtosis: denom ≥ 1 —
+/// JAMÁS sub-gaussiano, a diferencia del fallback 1/√(n−1) viejo.
+#[test]
+fn r5_b3_discriminante_degenerado_jamas_sub_gaussiano() {
+    let m = ReturnMoments { n: 100, mean: 0.0, variance: 1.0, skewness: 2.0, kurtosis: 3.0 };
+    let sr = 2.0_f64;
+    let se = sharpe_std_error(&m, sr);
+    // Con γ₃=0 y γ₄=3: denom = 1 + (2/4)·4 = 3 ⇒ se = √(3/99).
+    let esperado = (3.0_f64 / 99.0).sqrt();
+    assert!(
+        (se - esperado).abs() < 1e-12,
+        "región degenerada usa γ₃=0 con curtosis intacta: {se} vs {esperado}"
+    );
+    let gaussiano = 1.0_f64 / 99.0_f64.sqrt();
+    assert!(
+        se > gaussiano,
+        "jamás sub-gaussiano donde la muestra es débil: {se} vs {gaussiano}"
+    );
+    // Región legítima intacta: γ₃=0.5, SR=1, γ₄=5 → denom = 1 − 0.5 + 1 = 1.5.
+    let m_legit = ReturnMoments { n: 100, mean: 0.0, variance: 1.0, skewness: 0.5, kurtosis: 5.0 };
+    let se_legit = sharpe_std_error(&m_legit, 1.0);
+    assert!((se_legit - (1.5_f64 / 99.0).sqrt()).abs() < 1e-12);
+}
 }
