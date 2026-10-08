@@ -183,11 +183,11 @@ impl QuantumStrategy for ConformalReversionFilterEngine {
         let z = get("vecm_zscore")
             .or_else(|| get("cointegration_zscore"))
             .unwrap_or(0.0);
-        // `ema_trend_swing` es el nombre de la clave que publica el core (su
-        // productor está fuera de este ámbito); `trend_direction` es el
-        // respaldo. Ambas transportan la MISMA magnitud: dirección de la
-        // tendencia macro.
-        let trend = get("ema_trend_swing")
+        // `ema_trend_swing_z` es la z canónica del macro-trend (R5-A1: el
+        // core la publica tipificada con la volatilidad medida). El trend
+        // CRUDO queda como respaldo para llamadores sin el escritor.
+        let trend = get("ema_trend_swing_z")
+            .or_else(|| get("ema_trend_swing"))
             .or_else(|| get("trend_direction"))
             .unwrap_or(0.0);
         // Fail-open si el motor aún no publica la decisión conformal, coherente

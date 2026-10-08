@@ -2140,7 +2140,11 @@ impl GodEngineCore {
                     let conf_eps = self
                         .arena
                         .registry
-                        .get_value_or("conformal_epsilon", 0.10);
+                        // R5-A3: la clave VIVA del genoma es conformal_alpha
+                        // (publicada en :4566); conformal_epsilon tiene CERO
+                        // escritores — el consenso corría con α fijo 0.10,
+                        // sordo a la calibración [0.01, 0.30].
+                        .get_value_or("conformal_alpha", 0.10);
                     let voto_conformal =
                         signal_engine::conformal_reversion_filter::ConformalReversionFilterEngine::voto_espectral(
                             &desplazamientos,
@@ -4708,6 +4712,21 @@ impl GodEngineCore {
 
             set_reg("ema_trend", micro_trend);
             set_reg("ema_trend_swing", macro_trend);
+            // R5-A1: z CANÓNICA del macro-trend (spread EMA9/21 tipificado
+            // con la volatilidad medida — el mismo ema_spread_z del piso
+            // D-756). El consumidor vivo del conformal la prefiere: con el
+            // trend CRUDO (fracción O(1e-3)) su acuerdo tanh(−z·trend/2)
+            // era ≈0.005 — el fallback escalar estaba MUDO. Escritor y
+            // lector entran en el MISMO commit (regla #613).
+            set_reg(
+                "ema_trend_swing_z",
+                crate::diffusion::ema_spread_z(
+                    macro_trend,
+                    atr_pct,
+                    crate::diffusion::EMA_FAST_BARS,
+                    crate::diffusion::EMA_SLOW_BARS,
+                ),
+            );
             set_reg("higher_trend", higher_trend);
             // D-756: el signo de la tendencia superior se decidía con un
             // literal de 10 pb. Diez puntos básicos son un desplazamiento
