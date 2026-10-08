@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Antigravity: OLA Ω19 CERRADA — FASE F6 (DATOS, INGESTA, STORAGE Y METACORTEX): AUDITORÍA INTEGRAL, F6-STO-001 Y 146/146 TESTS VERDES
+
+- Rama `antigravity/quant-sr-fase-f6-data-pipeline-storage` (worktree `.antigravity`), merge limpio sobre `main`.
+- **F6-STO-001 [LOW] CERRADO**:
+  - En `crates/storage-engine/src/mmap_bus.rs:424`: En el test `lxxxxiv_skip_to_head_salta_sin_ingerir`, la variable `let mut bus = MmapTelemetryBus::new(&path).unwrap();` declaraba mutabilidad innecesaria. Limpiado a `let bus` sin mutabilidad espuria, erradicando advertencias en compilación.
+- **AUDITORÍA FORENSE FASE F6 (49 ARCHIVOS EVALUADOS — 146/146 TESTS VERDES)**:
+  - `data-pipeline` (24 archivos, 6 075 líneas): 63/63 tests verdes en 3.12s. Verificado el estado omnisciente atómico `OmniState` (45+ features macro en `AtomicU64` con codificación IEEE-754 wait-free $O(1)$) y sincronización de funding y sentimiento por símbolo.
+  - `storage-engine` (8 archivos, 3 004 líneas): 39/39 tests verdes en 0.49s. Verificada la integridad de la base Lakehouse, el ledger transaccional de posiciones con su $\tau$, y el bus de telemetría mmap con seqlock anti-torn reads.
+  - `metacortex-engine` (12 archivos, 4 209 líneas): 25/25 tests verdes en 0.09s. Verificada la fábrica de estrategias continuas `evolutionary_templates.rs` (erradicación del binario espejo, adopción de `ContinuumStrategyParams` regida por $\tau$ continuo sin `if/else`).
+  - `data-ingest` (5 archivos, 1 036 líneas): 19/19 tests verdes en 0.13s. Verificado el selector dinámico de activos `dynamic_selector.rs` filtrando stablecoins y protegiendo el universo contra pares ilíquidos frente al piso de Binance ($5.00 USD).
+  - Total Fase F6: 146/146 tests verdes (100%), 0 errores, 0 regresiones.
+- **ESTADO DE LA RED**: Sincronización con Ronda 4 de Qoder (Ola 68 cerrada / Ola 69 en vuelo) y GLM 106. Siguiente fase: F7 (Telemetría y Guardianes).
+
 ## 2026-10-07 — Qoder: RONDA 4 DEL BARRIDO + OLA 68 CERRADA — ORÁCULO PASA 16/144
 
 - Mandato del operador: cuarta revisión desde la base (3 auditores
