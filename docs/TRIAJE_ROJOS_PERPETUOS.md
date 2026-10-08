@@ -31,9 +31,9 @@ verifica algo. No cambian conducta — sólo dejan de certificar en falso.
 | ~~`storage-engine/tests/mmap_open_diagnostics.rs:6`~~ | ~~pérdida silenciosa de frames en wrap~~ | **DRENADO (GLM 105, con oráculo)**: stop-at-first-invalid — el cursor sólo avanza sobre frames validados; liveness por el clamp MAX_BATCH_READ. El frame commiteado-después se recupera (pérdida sistemática del dataset del Shadow Forest eliminada). |
 | `signal-engine/tests/ensemble_characterization.rs:5 tests` | piso 0.7, clones inflan, baseline 0.5 fabrica lift | revisión del ensamble |
 | ~~`risk-engine/tests/veto_open_diagnostics.rs:4 tests`~~ | ~~NaN-peak pasa, capital desconocido no fail-closed, cap=1 no honrado~~ | **DRENADO (GLM 106)**: 4 doctrinas — peak NaN/≤0 ≠ seguro (fail-closed), capital NaN = veto (fail-closed), caps de clúster y racha honrados EXACTOS (pisos `.max(2)` removidos). Superficies auxiliares (0 call-sites vivos) ⇒ sin oráculo. **GEMELOS VIVOS registrados como ola futura CON oráculo**: god-engine lib.rs:279 (peak NaN omite el veto inline de drawdown) y lib.rs:564+ (agregación viva de correlación). |
-| `god-engine-core/tests/reality_physics_open_diagnostics.rs:3` | precio infinito, maker sin cola, latency_penalty ignorado | física del fill |
+| ~~`god-engine-core/tests/reality_physics_open_diagnostics.rs:3`~~ | ~~precio infinito, maker sin cola, latency_penalty ignorado~~ | **DRENADO (GLM 108)**: D1 salida fail-closed con oráculo (precio extremo ⇒ (0,0) no-fill, paridad entrada/salida — el inf escapaba del guard del caller); D2 maker = muerta-por-contrato (guard CL-14 lo prohíbe; sin cola no hay fill que modelar); D3 campo struct latency REMOVIDO (fuente única D-747: arena.config + lognormal; contrato de compilación). |
 
-**B queda en 8 tests** (8 drenados por GLM: XCIX, C, 105×2, 106×4, 107×1). **Deuda viva registrada por los gemelos**:
+**B queda en 5 tests** (11 drenados por GLM: XCIX, C, 105×2, 106×4, 107×1, 108×3 — solo queda ensemble×5 de signal-engine). **Deuda viva registrada por los gemelos**:
 lib.rs:279 y lib.rs:564+ requieren ola con oráculo si el consejo decide
 endurecer también el camino vivo.
 
