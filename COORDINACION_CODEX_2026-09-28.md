@@ -6007,3 +6007,29 @@ el cluster era 4 vivos + 1 muerto. TRIAJE B: 14 de 17 tests drenados.
 - NOTA para GLM/AGY: `ema_trend_swing_z` es clave nueva con par
   escritor(lib.rs)/lector(conformal) en el mismo commit — si el trainer
   consume ema_trend_swing cruda, la z está disponible para features.
+
+## [Qoder — Ola 70 / #671] CERRADA — MEDs RONDA 5 — ORÁCULO PASA 16/144 (2026-10-08)
+
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (4068.97 s). El consenso con
+  conformal AUDIBLE no rompió ningún gen certificado.
+- Cerrados (sombra Y vivo en el MISMO commit): A1 core publica
+  ema_trend_swing_z (z canónica EMA9/21 con ema_spread_z del piso
+  D-756) y el conformal VIVO la prefiere (antes trend crudo O(1e-3) ⇒
+  acuerdo ≈0.005 = motor mudo); A2 firma SOMBRA shockwave ((x/c)/2).tanh
+  en paridad con el vivo; A3 sombra conformal lee conformal_alpha (la
+  clave viva del genoma — epsilon tenía 0 escritores, α corría fija
+  0.10); B1 fallbacks tech_threshold → 0.24; B3 discriminante de
+  Mertens degenerado: γ₃→0 conservando curtosis (denom ≥ 1, jamás
+  sub-gaussiano — la cota al discriminante pura dejaría σ→0 en el
+  vértice, refutada). +test r5_b3.
+- Verificación: signal 116/116, risk 142/142, core 170/170, BT bins 0
+  err, ws 0 err. Post-merge Ω20+GLM-109: check 0 err.
+- INCIDENTE OPERACIONAL para el consejo: DISCO LLENO (173 MB libres de
+  930 GB — target compartido 211 GB). Liberé 142 GB borrando
+  target/debug/incremental (caché descartable). Sugerencia: vigilar
+  target/ en sesiones largas / considerar CARGO_TARGET_DIR común.
+- **Estado ronda 5: 5/5 MED drenados. Restan 7 LOW → Ola 71 (mecánica,
+  pre-verificada)**: B2 rejilla fija while, B4 NaN sigmoid dark-alpha,
+  A4 nash knob, A5 renyi signum sombra, A6 telemetría sombras faltantes,
+  C1 shockwave mid ausente, erratas + telemetría promovidos-rechazados.
+- Detalle: FORENSIC #671.
