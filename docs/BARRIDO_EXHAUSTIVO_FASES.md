@@ -1037,6 +1037,16 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
 
 - Siguiente paso: LOWs y F4 (auditoría forense de riesgo, capital $13 USD y execution-engine).
 
+## 2026-10-07 — R4 / Sol: reconciliación y continuación archivo por archivo
+
+Plan operativo: `PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md`; coordinación: `PLAN_MAESTRO_SINCRONIZACION.md`. Se reutiliza el censo de Codex, actualizado contra 8938cf41: 1.434 archivos versionados / 460 Rust. Un cierre de inventario histórico NO acredita cobertura semántica de cada archivo ni corrección de la versión actual.
+
+Errata del conteo anterior: la lista enumerada contiene 11 MED, no 8. H2-7 queda acreditado por el contrato GLM103 presente en main; no se reabre por una nota antigua. F4 mantiene auditoría de todos sus archivos pendiente: cuatro fixes puntuales no sustituyen el recibo de cobertura completa.
+
+Hallazgos actuales se registran sin duplicar R4-Q1..Q4 de Codex: cash != MTM, muestreo mixto, contador recreado por el caller y dependencia temporal no corregida sólo con cuatro momentos. Diagnóstico Rust Sol confirma además que `compute_moments` elimina NaN/Inf silenciosamente. SOL-R5-01: `continuous_evolution_backtest.rs:703-705` suma equity_final−cash_inicial_dia, lo que duplica flotante arrastrado. Fixture controlado produce PnL diario acumulado 20 con crecimiento terminal 10; no se afirma que una corrida económica haya producido esa posición.
+
+Recibo: `audit/SOL_CONTRATOS_R4_2026-10-07.json`; alcance y hashes explícitos. Historical witnesses remain bounded reproductions, not current-code or economic verdicts. SOL-R5-01 now has a local daily-reporting-only correction: LOCAL TEST PASSED, full-bin reporting_contract 2/2, direct exit 0 (target/reporting-contract-execution-evidence-20261007.txt). Baseline offline locked workspace all-targets check passed, cargo/tee exits 0 (target/sol-baseline-all-targets-20261007.log and .exit); integrated validation and publication are pending. Other findings remain open. T-1 was not rerun because this is reporting only, not the live strategy pipeline. Recorrer TODOS los archivos restantes por el ledger y cerrar por evidencias, no por ausencia de matches ni por tests sintácticos.
+
 ---
 
 # RONDA 4 (2026-10-07, contra 8938cf41 — post Ola 65/66/67, Ω15/Ω16, GLM 101/102/103)
@@ -1151,3 +1161,154 @@ nunca llegó a las DOS sombras espectrales.
 - **Ola 69 (siguiente)**: R4-B2 (muestreo por rejilla) + R4-B3 (piso n)
   + R4-C2/C3/C4 (saturación residual) — con oráculo.
 - Docs: R4-A2 adenda ADR-0014; LOWs B4/B5/A3/A4/A5 en limpieza.
+
+---
+
+# FASE F6 — DATOS, INGESTA, STORAGE Y METACORTEX (49 ARCHIVOS AUDITADOS)
+
+## Inventario Real de la Fase F6
+- **crates/data-pipeline/src/**: 24 archivos (6 075 líneas). Tests: 63/63 verdes en 3.12s.
+- **crates/storage-engine/src/**: 8 archivos (3 004 líneas). Tests: 39/39 verdes en 0.49s.
+- **crates/metacortex-engine/src/**: 12 archivos (4 209 líneas). Tests: 25/25 verdes en 0.09s.
+- **crates/data-ingest/src/**: 5 archivos (1 036 líneas). Tests: 19/19 verdes en 0.13s.
+- **Total Fase F6**: 49 archivos, ~14 324 líneas. Tests: 146/146 verdes (100% aprobado, 0 fallos).
+
+## Hallazgos de la Fase F6
+
+- **F6-STO-001 [LOW] CERRADO (Ola Ω19 AGY)** `crates/storage-engine/src/mmap_bus.rs:424`:
+  - En el test `lxxxxiv_skip_to_head_salta_sin_ingerir`, la variable `let mut bus = MmapTelemetryBus::new(&path).unwrap();` declaraba mutabilidad innecesaria. Limpiado a `let bus` sin mutabilidad espuria, erradicando advertencias en compilación. 39/39 tests verdes.
+
+- **F6-PIPE-001 [AUDITADO - APROBADO] Estado Omnisciente Atómico y Normalización Streaming**:
+  - `omni_multiplexer.rs`: Todas las variables macro y cross-exchange se almacenan en `AtomicU64` con codificación IEEE-754 (`f64::to_bits()`), permitiendo lecturas y escrituras atómicas libres de locks (*lock-free*) y libres de esperas (*wait-free*) en el hot path.
+  - Cero alocaciones en el bucle principal de ingesta: búferes circulares prealocados y deserialización zero-copy.
+  - Sincronización asíncrona de tasas de financiación (`funding_by_symbol`) y sentimiento de masas (`ls_account_by_symbol`, `taker_ratio_by_symbol`) mediante `RwLock` actualizado en segundo plano por pollers desacoplados.
+
+- **F6-CORTEX-001 [AUDITADO - APROBADO] Fábrica de Estrategias y Continuo Temporal (U-ERR-9)**:
+  - `evolutionary_templates.rs`: Erradicada la antigua duplicación espejo `DualHorizonStrategyParams`. Sustituida por `ContinuumStrategyParams`, donde la geometría completa de TP y SL se evalúa de manera diferenciable y continua como función de la escala temporal intrínseca $\tau$ sin bifurcaciones condicionales `if/else`.
+  - Inmunidad contra dolor/trauma en `fases_autonomous.rs` y persistencia atómica en `epigenoma_store.rs`.
+
+- **F6-INGEST-001 [AUDITADO - APROBADO] Selector Dinámico de Activos y Restricción $13 USD**:
+  - `dynamic_selector.rs`: Filtra stablecoins estériles y clasifica activos por liquidez real y volatilidad, actualizando directamente `quantum_arena::symbols::update_dynamic_universe`.
+  - Garantiza que sólo los activos con profundidad suficiente para satisfacer el piso institucional de $5.00 USD de Binance sean seleccionados, previniendo deslizamientos extremos en pares ilíquidos.
+
+---
+
+# FASE F7 — TELEMETRÍA, GUARDIANES, AUDITORÍA Y ARQUITECTURA (45 ARCHIVOS AUDITADOS)
+
+## Inventario Real de la Fase F7
+- **crates/telemetry-server/src/**: 13 archivos (3 113 líneas). Tests: 30/30 verdes en 3.04s.
+- **crates/os-guardian/src/**: 10 archivos (956 líneas). Tests: 12/12 verdes en 0.04s.
+- **crates/audit-engine/src/**: 11 archivos (1 729 líneas). Tests: 21/21 verdes en 0.21s.
+- **crates/telemetry-engine/src/**: 3 archivos (326 líneas). Tests: 7/7 verdes en 0.02s.
+- **crates/phase-runner/src/**: 2 archivos (189 líneas). Tests: 5/5 verdes en 3.85s.
+- **crates/flight-recorder/src/**: 1 archivo (232 líneas). Tests: 5/5 verdes en 0.03s.
+- **crates/omniscient-registry/src/**: 2 archivos (427 líneas). Tests: 5/5 verdes en 0.03s.
+- **crates/graph-architecture/src/**: 2 archivos (387 líneas). Tests: 5/5 verdes en 0.01s.
+- **crates/graph-4d/src/**: 1 archivo (160 líneas). Tests: 4/4 verdes en 0.04s.
+- **Total Fase F7**: 45 archivos, ~7 519 líneas. Tests: 94/94 verdes (100% aprobado, 0 fallos).
+
+## Hallazgos de la Fase F7
+
+- **F7-SIG-001 [LOW] CERRADO (Ola Ω20 AGY)** `crates/signal-engine/src/skill_motores.rs:95-99`:
+  - Advertencia de compilador `unused doc comment` en la guarda de Ville Martingales `self.e_proceso.significativo_familia(...)`. Resuelto convirtiendo sintaxis de doc comment (`///`) en comentario de bloque (`//`), erradicando advertencias en compilación. 116/116 tests verdes.
+
+- **F7-TEL-001 [AUDITADO - APROBADO] Servidor de Telemetría Lock-Free y Anillos Zero-Copy**:
+  - `telemetry-server/src/lockfree_bus.rs`: Cola MPMC lock-free (Crossbeam SegQueue) con descarte controlado por saturación de capacidad, garantizando cero contención y cero backpressure sobre el bucle crítico de decisión microtemporal.
+  - `zero_copy_bus.rs` / `zero_copy_ring.rs`: Memoria compartida y buffers anulares sin clonación ni asignaciones en el hot path.
+  - `telegram_bot.rs`: Enrutador reactivo asíncrono con credenciales aisladas mediante inyección por variables de entorno (.env protegido).
+
+- **F7-OSG-001 [AUDITADO - APROBADO] Guardián de Sistema Operativo y Blindaje Win32**:
+  - `os-guardian/src/memory_audit.rs`: Monitoreo en tiempo real de RAM para entorno de 16 GB, ejecutando compactación forzada (`EmptyWorkingSet`) y panic latch si el consumo de memoria excede el presupuesto crítico.
+  - `pmu_sensor.rs` / `ebpf_core.rs`: Fallback adaptativo para Windows con lectura de TSC (`_rdtsc`) y mitigación de fallos de página sin bloquear el hilo de ejecución principal.
+
+- **F7-AUD-001 [AUDITADO - APROBADO] Motor de Auditoría, Deriva y Resiliencia Cibernética**:
+  - `audit-engine/src/drift_auditor.rs`: Detección en tiempo real de divergencias entre estado simulado y real.
+  - `trajectory_auditor.rs`: Auditoría de trayectorias de precios y paridad causal.
+  - `cybernetic_resilience.rs`: Supervisión de fallos transitorios en brokers y reconexión exponencial con jitter.
+
+- **F7-OMNI-001 [AUDITADO - APROBADO] Registro Omnisciente Centralizado e Invariantes de Estado**:
+  - `omniscient-registry/src/lib.rs`: Centralización de parámetros del sistema mediante snapshots rkyv zero-copy, previniendo colisiones entre subsistemas concurrentes.
+
+- **F7-GRAPH-001 [AUDITADO - APROBADO] Grafo de Arquitectura 4D y Trazabilidad de Flujos**:
+  - `graph-architecture/src/lib.rs` y `graph-4d/src/lib.rs`: Mapeo continuo de nodos y dependencias del sistema, habilitando la inspección dimensional de flujos entre ingestión, características, señales y efectores.
+
+---
+
+# RONDA 5 (2026-10-07, contra .ola69 — post Ola 68/69, Ω17/Ω18, GLM 104)
+
+Mandato del operador. 3 auditores paralelo: A = paridad sombra↔vivo
+SISTEMÁTICA (tabla 13 motores × 3 caminos — el chequeo que el consejo pidió
+tras C1), B = matemática de las olas nuevas, C = física/conducta. **12
+hallazgos (0 HIGH, 5 MED, 7 LOW)** — primera ronda SIN HIGH: las correctivas
+de rondas 3-4 sostienen. El patrón residual es UNO solo: el fix se porta a
+un camino y el otro queda con la calibración vieja o clave muerta.
+
+## §R5-A — PARIDAD SOMBRA↔VIVO (tabla completa en buzón)
+
+- **R5-A1 [MED] conformal vivo MUDO**: el evaluate lee `ema_trend_swing`
+  = macro_trend CRUDO (fracción O(1e-3)); con divisor 2.0 el acuerdo ≈
+  0.005 — R4-C3 calibró para la sombra tanh(z) (|trend|~O(1)), el vivo
+  quedó inaudible. Fix: normalizar el trend vivo (tanh de su z) o clave
+  publicada z-normalizada (writer+reader mismo commit, lección #613).
+- **R5-A2 [MED] shockwave firma divergente**: sombra tanh(x)≡tanh(mach)
+  vs vivo tanh(mach/2) — R4-C2 se portó sólo al vivo. Fix: `((x/c)/2).tanh()`
+  en voto_espectral.
+- **R5-A3 [MED] clave muerta en el consenso**: la sombra lee
+  `conformal_epsilon` (0 escritores) mientras el genoma publica
+  `conformal_alpha` — el consenso VIVO corre conformal con α=0.10 fijo,
+  sordo a la calibración [0.01,0.30]. Fix: leer `conformal_alpha`.
+- R5-A4 [LOW] `nash_equilibrium_drift` sin escritor ⇒ presión adversarial
+  congelada a 0.5 (G2-11 recurrente — alimenta el consenso vivo).
+- R5-A5 [LOW] renyi sombra con signum duro (única sin tanh de la familia
+  #664; C0 se salva por certeza→0).
+- R5-A6 [LOW] 6 sombras sin telemetría individual `sombra_*` (hawkes/
+  nash/flow/perceptron/conformal/confluence) — invisibles salvo consenso.
+
+## §R5-B — MATEMÁTICA (verificada con cálculo)
+
+- **R5-B1 [MED] fallbacks tech_threshold fuera de banda**:
+  continuous_evolution_backtest.rs:310 (0.1487) y :958 (0.12) — si el
+  campeón estable hereda genoma legacy por el fallback, promote SIGUE
+  rechazándolo (la clase B1 de Ola 68 no erradicada del todo). Fix:
+  alinear ambos a 0.24.
+- **R5-B3 [MED] fallback gaussiano ALCANZABLE**: el comentario
+  «inalcanzable con g4≥3» es FALSO — con γ₃>√2 el denom_sq cruza ≤0 (ej
+  γ₃=2, sr=2 → −1) y cae al gaussiano sub-gaussiano anti-conservador
+  justo con asimetría positiva fuerte. Fix: acotar γ₃ al discriminante.
+- R5-B2 [LOW] rejilla se re-ancla al tick de cruce (Δt∈[1s,2s) con huecos
+  de altcoins). Fix: `while ts ≥ last+1000 { last += 1000 }`.
+- R5-B4 [LOW-MED] dark-alpha sigmoid clamp(±700) convierte bias=+Inf en
+  salida 1.0 «evidencia» finita (inalcanzable hoy: load valida; blindaje
+  de papel). Fix 1 línea: NaN si total no finito antes del clamp.
+- R5-B5 [errata] doc tanh(5)=0.99991 no 0.9997 (C2 de Ola 69).
+
+## §R5-C — FÍSICA (regresión completa VIVA)
+
+- **R5-C1 [MED] = R4-C5 confirmado**: shockwave mid ausente + fallback
+  atr_pct mezcla precio-crudo/s con fracción/s ⇒ Mach ×mid_price. Fix:
+  abstener sin mid cuando se usa el fallback fraccional.
+- R5-C2 [LOW] kink C⁰ del .max(0.0) del acuerdo — semánticamente requerido
+  (clase calma-abstiene aceptada en G2-1).
+- R5-C3 [LOW] clamp |x|≤10 sólo en sombra (asimetría ≤1% del jump).
+
+## Mapa positivo (verificado)
+
+- Paridad EXACTA: oscilador, SR, coaxial, trend_runner, perceptron (infer
+  compartido — R4-C4/H2-6 por construcción), hawkes, flow_impulse
+  (contrato h2_7). Calma-abstiene .max(0.0) en los TRES caminos de
+  hawkes/flow/confluence (C1 bien propagado).
+- Ola 68 bandas verificadas con derivación de coeficientes de curva
+  (a,b ∈ bounds; nichos ⊇; RR ✓). DSR grid-only íntegro;
+  cumulative_trials monótono. g4.max(3.0) dirección correcta.
+- GLM 104 sin daño (lead_lag docs-only; ast_mutator cierra canal muerto;
+  renames bit-exact). Ola 68 A1 unidades coherentes.
+- TODOS los fixes de olas 62/63/65/68 siguen vivos tras los merges.
+
+## Asignación ronda 5
+
+- **Qoder Ola 70 (siguiente, con oráculo)**: R5-A1+A2+A3 (paridad
+  conformal/shockwave/clave viva del consenso — sombra+vida en el mismo
+  commit, regla #656) + R5-B1 (fallbacks 0.24) + R5-B3 (γ₃ acotado).
+- Ola 71 (mecánica): R5-B2 rejilla fija, R5-B4 NaN sigmoid, R5-A4/A5/A6,
+  R5-C1, erratas. Docs: telemetría de promovidos-rechazados (lección B1).
+

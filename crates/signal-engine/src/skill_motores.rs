@@ -92,11 +92,11 @@ impl AcumIc {
             return None;
         }
         // #661 — Ville REPLAZA el umbral fijo de Fisher: el e-proceso es
-        /// anytime-valid (cualquier número de consultas). #663 (G1-1):
-        /// la composición consulta 13 motores × 32 escalas = 416
-        /// e-procesos — umbral de FAMILIA M/α = 8320 (Bonferroni), no
-        /// el 20 por proceso: en ruido el máximo de 416 procesos con
-        /// umbral 20 cruza casi seguro.
+        // anytime-valid (cualquier número de consultas). #663 (G1-1):
+        // la composición consulta 13 motores × 32 escalas = 416
+        // e-procesos — umbral de FAMILIA M/α = 8320 (Bonferroni), no
+        // el 20 por proceso: en ruido el máximo de 416 procesos con
+        // umbral 20 cruza casi seguro.
         if !self.e_proceso.significativo_familia(NUM_PARES_MOTOR_ESCALA) {
             return None;
         }

@@ -1,0 +1,32 @@
+{
+  "inspected_commit": "8938cf41d5b2d181e807de1a3fa41f36b09dfc32",
+  "execution_head": "8938cf41d5b2d181e807de1a3fa41f36b09dfc32",
+  "rustc": "rustc 1.98.0-nightly (096694416 2026-06-29)",
+  "scope": "Actual Rust selection_stats from frozen historical Git blobs; exact daily expression in controlled fixture. NOT a current-code verdict, trading-engine replay or profitability.",
+  "source_sha256": {
+    "crates/risk-engine/src/selection_stats.rs": "81b4d800c691dc7e0b71a142d2a5e44a80e3c48c95357c434f3dfdd74df102fc",
+    "crates/backtest-engine/src/bin/continuous_evolution_backtest.rs": "05223eb1b21c4b03811dbc532f3f2520b64679d971983f07ea594531589e63b5"
+  },
+  "source_expression": "let day_pnl = total_equity - day_start_cap_real;",
+  "observed": {
+    "clean_dsr": 0.999724532906202,
+    "contaminated_dsr": 0.999724532906202,
+    "clean_passes": true,
+    "contaminated_passes": true,
+    "original_observations": 40,
+    "repeated_observations": 400,
+    "original_dsr": 0.24835735517719226,
+    "repeated_dsr": 0.999724532906202,
+    "original_passes": false,
+    "repeated_passes": true,
+    "daily_pnl_sum": 20,
+    "terminal_growth": 10
+  },
+  "witnesses_reproduced": {
+    "nonfinite_contamination_not_rejected": true,
+    "repeated_observations_create_gate_pass": true,
+    "carried_unrealized_breaks_daily_reconciliation": true
+  },
+  "all_witnesses_reproduced": true,
+  "economic_validation": "not_executed"
+}

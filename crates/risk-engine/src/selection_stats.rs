@@ -85,8 +85,18 @@ pub fn sharpe_std_error(m: &ReturnMoments, sr: f64) -> f64 {
     if n < 2.0 {
         return 0.0;
     }
-    let denom_sq = 1.0 - m.skewness * sr + (m.kurtosis - 1.0) / 4.0 * sr * sr;
+    // R4-B3/B6: γ₄ pisado al gaussiano (3.0) — con momentos muestrales
+    // ruidosos la curtosis estimada puede caer BAJO 3 (o la combinación
+    // 1−γ₃·SR+((γ₄−1)/4)SR² volverse ≤0) y el fallback gaussiano
+    // 1/√(n−1) era ANTI-conservador en esa región degenerada (bajaba el
+    // listón del DSR justo donde la muestra es débil). Con g4 ≥ 3 el
+    // denom_sq ≥ 1 + ((3−1)/4)SR² − γ₃·SR nunca colapsa por debajo del
+    // régimen gaussiano: leptocúrtico honesto, jamás sub-gaussiano.
+    let g3 = m.skewness;
+    let g4 = m.kurtosis.max(3.0);
+    let denom_sq = 1.0 - g3 * sr + (g4 - 1.0) / 4.0 * sr * sr;
     if denom_sq <= 1e-12 {
+        // Inalcanzable con g4 ≥ 3 salvo |sr|→∞; paridad defensiva.
         1.0 / (n - 1.0).sqrt()
     } else {
         (denom_sq / (n - 1.0)).sqrt()

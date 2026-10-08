@@ -1,5 +1,81 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Antigravity: OLA Ω20 CERRADA — FASE F7 (TELEMETRÍA, GUARDIANES, AUDITORÍA Y ARQUITECTURA): AUDITORÍA INTEGRAL, F7-SIG-001 Y 94/94 TESTS VERDES
+
+- Rama `antigravity/quant-sr-fase-f7-telemetria-guardianes` (worktree `.antigravity`), rebase limpio sobre `origin/main`.
+- **F7-SIG-001 [LOW] CERRADO**:
+  - En `crates/signal-engine/src/skill_motores.rs:95-99`: Advertencia de compilador `unused doc comment` en la guarda de Ville Martingales `self.e_proceso.significativo_familia(...)`. Resuelto convirtiendo la sintaxis de doc comment (`///`) en comentarios de línea regulares (`//`), erradicando advertencias en compilación. 116/116 tests verdes en `signal-engine`.
+- **AUDITORÍA FORENSE FASE F7 (45 ARCHIVOS EVALUADOS — 94/94 TESTS VERDES)**:
+  - `telemetry-server` (13 archivos, 3 113 líneas): 30/30 tests verdes en 3.04s. Verificado el servidor de telemetría con colas MPMC lock-free (Crossbeam SegQueue), descarte controlado por saturación para evitar backpressure sobre el loop HFT de nanosegundos, y bot de Telegram con credenciales aisladas en `.env`.
+  - `os-guardian` (10 archivos, 956 líneas): 12/12 tests verdes en 0.04s. Verificado el núcleo Win32 (`VirtualLock`, `JobObject`, `memory_audit.rs` con compactación forzada `EmptyWorkingSet` para laptop de 16 GB RAM y panic latch de seguridad).
+  - `audit-engine` (11 archivos, 1 729 líneas): 21/21 tests verdes en 0.21s. Verificada la detección de deriva de features (`drift_auditor.rs`), auditoría causal de trayectorias (`trajectory_auditor.rs`) y resiliencia cibernética ante caídas de red (`cybernetic_resilience.rs`).
+  - `telemetry-engine` (3 archivos, 326 líneas): 7/7 tests verdes en 0.02s. Verificado el empaquetado binario zero-copy y sanitización de NaNs.
+  - `phase-runner` (2 archivos, 189 líneas): 5/5 tests verdes en 3.85s. Verificado el ejecutor de fases adaptativo con dilatación temporal automática según carga de CPU del SO.
+  - `flight-recorder` (1 archivo, 232 líneas): 5/5 tests verdes en 0.03s. Verificado el buffer circular en memoria y persistencia ante fallos.
+  - `omniscient-registry` (2 archivos, 427 líneas): 5/5 tests verdes en 0.03s. Verificada la centralización de parámetros con rkyv zero-copy y conciliación remota sin locks en el hot path.
+  - `graph-architecture` (2 archivos, 387 líneas): 5/5 tests verdes en 0.01s. Verificado el mapeo de dependencias AST y visualización de grafo.
+  - `graph-4d` (1 archivo, 160 líneas): 4/4 tests verdes en 0.04s. Verificado el parser topológico 4D y resolución de dependencias de tipos.
+  - Total Fase F7: 45 archivos, ~7 519 líneas. Tests: 94/94 verdes (100%), 0 errores, 0 fallos.
+- **ESTADO DE LA RED**: Sincronización completa con Sol (SOL-R5-01 integrado en main), Qoder (Ola 68/69) y GLM (106/107). BARRIDO DEL ÁRBOL COMPLETO (F0 a F7) CERRADO Y CERTIFICADO.
+
+## 2026-10-07 — Sol: SOL-R5-01 integrado y publicado; R4 plan sincronizado
+
+- Commit propio ac6c9456, merge/publicación verificada f8c433f8 (padres ac6c9456/e285193e). Candidato integrado tree 89ef5c61; check offline locked workspace all-targets exit 0 y full-bin reporting_contract 2/2, cargo exit 0. Sólo 18 rutas propias, docs UNION preservando ambos padres; no recovery commits ajenos importados ni checkout compartido alterado.
+- `continuous_evolution_backtest.rs`: reporting diario contra equity previa, porcentaje consistente, acumulado telescópico y residual final. Helper conserva valuación/fees/fallback; current_capital, shadow selection, sizing, modelos y promoción sin cambio. Tests reales cubren carry positivo/negativo, marcas, cierre/fee, dos activos/múltiples slots; no RED completo previo reclamado ni examen económico.
+- Plan archivo por archivo R0-R9 y tooling Codex reutilizados con atribución; ledger histórico 8938cf41, 1.434 rutas, sólo inventariadas. Tests inventory 7/7 y snapshot check correcto; no declarar auditoría semántica completa.
+- Verified receipts remain local to the Sol worktree: `target/sol-publication-evidence-20261007.txt`, `target/sol-integrated-reporting-contract-20261007.log`, and `target/sol-integrated-parent-review-20261007.json`; integrated source blob 4361b2b8. No `outputs/` copies exist in this worktree. CI run 37722336175 was in progress at the earlier check, not a success claim.
+- Estado de ramas: otras worktrees activos/sucios preservados, root/recovery siguen sin importarse. Rama Sol se retira sólo tras closure documental publicado y ascendencia/clean verificados; worktree/target se conservan para recibos. Próximo R5: replay equity terminal/DD/duración procesada; R2/R6 DSR/holdout/model bundles siguen abiertos y requieren coordinación.
+
+## 2026-10-07 — Sol: daily reporting LOCAL TEST PASSED / publication pending
+
+- Ejecución Git recuperada; main remoto 171db3c6. Suite inventario 7/7 PASA (198.212 s). Censo/blobs/testigos anteriores siguen atados a 8938cf41, no a código posterior.
+- Ancestría de todas las ramas/worktrees revisada: cero borrados seguros; recovery y root retienen 64/28 commits exclusivos. No importar recuperación ajena ni eliminar worktrees ocupados/sucios.
+- Nueva reserva sólo reporting diario `continuous_evolution_backtest.rs`: helper extraído de valuación existente y pruebas con slots reales, no cambio de sizing, shadow selection, modelos ni engine productivo. LOCAL TEST PASSED: the full-bin reporting_contract suite passed 2/2, direct executable exit 0, source blob 5a0af98e3fefc168feb2c1649b8d2d94d25c909e. Receipt: target/reporting-contract-execution-evidence-20261007.txt. Baseline offline locked workspace all-targets check passed, cargo/tee exits 0 (target/sol-baseline-all-targets-20261007.log and .exit); integrated validation and publication remain pending. T-1 was not rerun: this change is daily reporting only, not the live strategy pipeline. No economic validation.
+
+## 2026-10-07 — Sol: reinicio R4 sincronizado y evidencia acotada (sin publicación)
+
+- Base 8938cf41; worktree `.sol-plan-2026-10-07`, rama `sol/plan-auditoria-2026-10-07`. Reutilizados con atribución plan/censo Codex 639c3e0d; fases R0-R9 y lotes por ruta en `docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md`, entry points compartidos reconciliados. No cambios runtime, flags/modelos ni engine operativo.
+- Ledger regenerado/check correcto: 1.434 archivos versionados / 460 Rust, TODOS inventariados (sin cobertura semántica completa). Tres revisores independientes reconciliaron coordinación/replay/evolución; no duplicar R4-Q1..Q4 ni fix caller Codex.
+- Recibo `docs/audit/SOL_CONTRATOS_R4_2026-10-07.json`: ejecución del módulo Rust actual confirma DSR 0.248357355→0.999724533 al repetir 40 observaciones a 400; contaminación NaN/Inf mantiene verdict. Expresión diaria compilada en fixture reporta 20 acumulado con crecimiento terminal 10 (SOL-R5-01). No es replay económico.
+- H2-7 contrato GLM103 presente en main; nota antigua de Qoder superada. F4/cash-MTM/duración real/funding y promoción siguen con pruebas de harness pendientes.
+- Publicación NO realizada: validaciones amplias no completaron, jobs Sol detenidos; posteriores comandos Git terminaron SIGTERM. Sin commit/push/merge/borrado. Preservar worktrees y revalidar al recuperar ejecución; último main remoto verificado 8938cf41 y CI run 37660783497 success, no verde de esta ola.
+
+## 2026-10-07 — Antigravity: OLA Ω19 CERRADA — FASE F6 (DATOS, INGESTA, STORAGE Y METACORTEX): AUDITORÍA INTEGRAL, F6-STO-001 Y 146/146 TESTS VERDES
+
+- Rama `antigravity/quant-sr-fase-f6-data-pipeline-storage` (worktree `.antigravity`), merge limpio sobre `main`.
+- **F6-STO-001 [LOW] CERRADO**:
+  - En `crates/storage-engine/src/mmap_bus.rs:424`: En el test `lxxxxiv_skip_to_head_salta_sin_ingerir`, la variable `let mut bus = MmapTelemetryBus::new(&path).unwrap();` declaraba mutabilidad innecesaria. Limpiado a `let bus` sin mutabilidad espuria, erradicando advertencias en compilación.
+- **AUDITORÍA FORENSE FASE F6 (49 ARCHIVOS EVALUADOS — 146/146 TESTS VERDES)**:
+  - `data-pipeline` (24 archivos, 6 075 líneas): 63/63 tests verdes en 3.12s. Verificado el estado omnisciente atómico `OmniState` (45+ features macro en `AtomicU64` con codificación IEEE-754 wait-free $O(1)$) y sincronización de funding y sentimiento por símbolo.
+  - `storage-engine` (8 archivos, 3 004 líneas): 39/39 tests verdes en 0.49s. Verificada la integridad de la base Lakehouse, el ledger transaccional de posiciones con su $\tau$, y el bus de telemetría mmap con seqlock anti-torn reads.
+  - `metacortex-engine` (12 archivos, 4 209 líneas): 25/25 tests verdes en 0.09s. Verificada la fábrica de estrategias continuas `evolutionary_templates.rs` (erradicación del binario espejo, adopción de `ContinuumStrategyParams` regida por $\tau$ continuo sin `if/else`).
+  - `data-ingest` (5 archivos, 1 036 líneas): 19/19 tests verdes en 0.13s. Verificado el selector dinámico de activos `dynamic_selector.rs` filtrando stablecoins y protegiendo el universo contra pares ilíquidos frente al piso de Binance ($5.00 USD).
+  - Total Fase F6: 146/146 tests verdes (100%), 0 errores, 0 regresiones.
+- **ESTADO DE LA RED**: Sincronización con Ronda 4 de Qoder (Ola 68 cerrada / Ola 69 en vuelo) y GLM 106. Siguiente fase: F7 (Telemetría y Guardianes).
+
+## 2026-10-07 — Qoder: OLA 69 CERRADA + RONDA 5 — ORÁCULO PASA 16/144
+
+- **OLA 69 CERRADA** (qoder/ola69-saturacion-residual, base 785b7a1c):
+  resto ronda 4 — B2 muestreo DSR SOLO rejilla 1s (sin pérdida:
+  prev_cap avanza en rejilla, cada retorno integra los cierres);
+  B3+B6 sharpe_std_error g4.max(3.0) (leptocúrtico jamás sub-gaussiano;
+  mi propuesta gaussiana n<60 fue REFUTADA por el subagente);
+  C2 firma viva shockwave tanh(mach/2); C3 acuerdo conformal /2.0;
+  C4 gate perceptron smoothstep C¹; A2 adenda ADR-0014 (Ville M/α).
+  **ORÁCULO PASA 16/144 (8022 s)**. Signal 116/116, risk 141/141,
+  core 170/170, ws 0 err.
+- **RONDA 5 CERRADA (docs)**: 3 auditores contra este árbol — **12
+  hallazgos (0 HIGH, 5 MED, 7 LOW)**: primera ronda sin HIGH. Patrón
+  residual único: fix a un camino, el otro con calibración vieja
+  (conformal vivo mudo con trend crudo; sombra shockwave sin /2;
+  clave muerta conformal_epsilon en el consenso; fallbacks
+  tech_threshold fuera de banda; gaussiano alcanzable γ₃>√2).
+- **Asignación: Ola 70 = A1+A2+A3+B1+B3 (paridad sombra+vivo mismo
+  commit, oráculo)**; Ola 71 = mecánica (B2 rejilla fija, B4 NaN
+  sigmoid, A4 nash knob, A5 renyi signum, A6 telemetría sombras, C1
+  shockwave mid, erratas) + telemetría promovidos-rechazados.
+- Detalle: FORENSIC #670. Buzón: entrada + cierre.
+
 ## 2026-10-07 — Qoder: RONDA 4 DEL BARRIDO + OLA 68 CERRADA — ORÁCULO PASA 16/144
 
 - Mandato del operador: cuarta revisión desde la base (3 auditores

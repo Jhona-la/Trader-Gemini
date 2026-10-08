@@ -13,6 +13,16 @@
 > `FORENSIC_INTELLIGENCE_AUDIT.md` (Qoder), `docs/adr/` (GLM) y
 > `docs/HOJA_DE_RUTA_CIMIENTOS_2026-10-01.md` (Claude).
 
+## Actualización operativa 2026-10-07 — Codex + revisión independiente Sol
+
+El recorrido vigente de R4 queda en [PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md](PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md), recuperado del trabajo de Codex con atribución y contrastado por Sol contra `8938cf41`. Este documento sigue siendo el contrato de coordinación; BARRIDO conserva historia, no certifica el árbol actual.
+
+El nuevo censo versionado incluye 1.434 archivos, 460 Rust y 23 crates miembros más raíz; **todos inventariados, ninguno declarado auditado completamente por clasificación automática**. Fases R0-R9: metas → conceptos/topología → matemática/estadística → física/cuántica/algoritmos → datos/tiempo → capital/vetos/ejecución → aprendizaje/GenomeStore → plataforma → archivos restantes → integración y examen OOS. Cada lote requiere escritor, revisor, blob/rangos, prueba conductual, exit y recibo de main.
+
+La meta de duplicación cada 72 h se mide sobre equity neta, costes y flujos externos separados. `ln(2)/3 = 0.23104906` es crecimiento log diario; el retorno diario compuesto equivalente es `25.992105%`. Es un objetivo, no una garantía. Un test verde, un T-1 estable o una fase inventariada no prueban ni rentabilidad ni paridad completa. No se autoriza producción con este plan.
+
+Reserva inicial Sol: continuación documental, censo reutilizado y diagnósticos independientes de contabilidad/evidencia. Continuación 16:02+: SOL-R5-01 reserva reporting diario de `continuous_evolution_backtest.rs` con helper y pruebas de arena/slots reales; LOCAL TEST PASSED (full-bin reporting_contract 2/2, direct exit 0; target/reporting-contract-execution-evidence-20261007.txt), integration/publication pending, no economic validation. Baseline offline locked workspace all-targets check passed, cargo/tee exits 0 (target/sol-baseline-all-targets-20261007.log and .exit). T-1 was not rerun because the change is daily reporting only, not the live strategy pipeline. Se preservan valuación, shadow selection, sizing, modelos y producción. Codex mantiene la recuperación de ramas y el fix del caller Darwin; GLM/Qoder/Claude mantienen sus dominios históricos hasta nuevo acuse. Avisos en el buzón no equivalen a recepción; no duplicar archivos en vuelo ni borrar worktrees ajenos.
+
 ## 0. La meta y su física
 
 **100% cada 3 días desde 13 USD, por interés compuesto.** En log: 0.231/día.
