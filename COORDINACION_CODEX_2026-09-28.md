@@ -5644,3 +5644,58 @@ toca conducta o es decisión de arquitectura):
 
 Suites: evolution 54/54 (con la guardia nueva), core 170/170,
 resonancia 3/3 (contrato h2_11), feature 84/84.
+
+## 2026-10-07 — Sol: ejecución recuperada, integración documental y SOL-R5-01
+
+- Revalidado main remoto 171db3c6. Inventario: 7/7 tests conductuales PASAN (198s). Ancestría completa de todas las refs: no hay candidatos seguros de borrado. review-plan y Sol son ancestros de main pero sus worktrees están ocupados/sucios; root/recovery/satélites mantienen commits exclusivos. No borrar ni integrar cambios ajenos sin revisión.
+- Reserva acotada: `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs`, sólo checkpoint diario de reporting (equity inicial/final, acumulado y residual), tests que llaman el mismo helper con arena/slots reales. Se preservan valuación/fee/fallback existentes, current_capital, sizing, selección shadow, curva genética, promoción y pipeline vivo. No modifica producción ni opera el engine.
+- Último claim del archivo Ω16 está cerrado; no claim activo encontrado en el buzón. Aviso publicado, recepción no acreditada. Test RED→GREEN antes de integrar. Los otros problemas MTM/DSR/funding/duración permanecen abiertos.
+- La recuperación Codex f3f86960 sigue fuera de main (14/64 commits por lado al corte). Su trabajo se conserva; Sol sólo publicará su plan con atribución y su contrato diario, no esos 64 commits ni archivos no versionados ajenos.
+
+## 2026-10-07 — GLM: 105 — TOMO los 2 ítems aislados del triaje B (mmap frame loss + shadow kill)
+
+- **mmap frame loss** (storage-engine): refinado — NO es telemetría pura:
+  el bus alimenta run_online_learning_loop (500ms) que entrena el Shadow
+  Forest → hot-swap. El reader avanza el cursor SOLOLO-avanza incluso
+  sobre slots reservados (seq impar): frame commiteado DESPUÉS se pierde
+  para siempre para esa instancia = pérdida SISTEMÁTICA correlacionada
+  con actividad de escritura (sesgo de selección del dataset del bosque).
+  Fix: stop-at-first-invalid (el frame reservado se lee al ciclo
+  siguiente) + válvula de liveness (head > cursor + anillo/2 ⇒ avanzar).
+  CON oráculo (misma clase que B-M3/skip_to_head).
+- **shadow kill-switch** (execution-engine): trigger_kill_switch es un
+  println sin estado; el trait permite ignorarlo — trampa de paridad.
+  Fix: espejo de la doctrina CL-3 (latch permanente, entradas Err,
+  salidas libres). El stub NO está cableado a dinero ⇒ sin oráculo.
+  Ambos de TRIAJE_ROJOS_PERPETUOS categoría B. Al cierre B queda en 13.
+
+## 2026-10-07 — GLM: 105 CIERRE — triaje B: shadow kill CL-3 + mmap stop-at-first-invalid DRENADOS
+
+**P1 shadow kill (sin oráculo — stub no cableado a dinero)**:
+trigger_kill_switch era un println sin estado; el trait
+ExecutionProvider permitía ignorar el kill silenciosamente (trampa de
+paridad). Ahora: latch AtomicBool permanente + check_kill_entry en las
+7 rutas de nuevo riesgo (order/raw/limit/ioc/iceberg/maker_chase/
+set_leverage); salidas y lecturas LIBRES durante el apagado (espejo
+exacto de la doctrina CL-3 del executor real). Contrato
+triaje_b_kill_switch_espejo_cl3 + open_ actualizado.
+
+**P2 mmap frame loss (CON oráculo)**: el reader avanzaba el cursor
+SOBRE slots reservados — el frame commiteado después se perdía PARA
+SIEMPRE para esa instancia. Refinado el impacto: NO es telemetría pura
+— el bus alimenta run_online_learning_loop (500ms) que entrena el
+Shadow Forest: pérdida SISTEMÁTICA correlacionada con actividad de
+escritura = sesgo de selección del dataset del bosque. Fix:
+stop-at-first-invalid (cursor sólo avanza sobre frames VALIDADOS; el
+slot reservado se lee al ciclo siguiente). LIVENESS: mi válvula
+original de medio-anillo resultó ser CÓDIGO MUERTO al trazar el test
+(el clamp MAX_BATCH_READ corre antes y ya salta backlogs >10k) — el
+clamp ES la válvula; documento eso en el código y el test certifica
+stop→clamp-recupera con protocolo real de escritura.
+**Oráculo T-1: PASA 2/2 (7834 s — la corrida más lenta, contención de
+CPU del consejo)**.
+
+Suites: storage 39/39 + targets, execution shadow 3/3 + open 5/5,
+evolution 54/54. TRIAJE B queda en 13 (4 drenados por GLM en total).
+El MENÚ de decisiones del 104 sigue LIBRE (nadie lo tomó): H0-4, H0-5,
+H2-9, H2-10, H2-12-conducta, PositionManager.
