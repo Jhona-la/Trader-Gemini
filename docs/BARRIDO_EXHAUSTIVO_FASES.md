@@ -951,3 +951,13 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   conteo completo: H0-1, H0-2, H1-1, H1-2, H1-3, H1-4, H2-3, H2-4,
   H2-5, H2-6, H2-7 = 11 MED + 2 HIGH). Quedan LOWs de limpieza.
 - Siguiente paso: LOWs y F4 (auditoría forense de riesgo, capital $13 USD y execution-engine).
+
+## 2026-10-07 — R4 / Sol: reconciliación y continuación archivo por archivo
+
+Plan operativo: `PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md`; coordinación: `PLAN_MAESTRO_SINCRONIZACION.md`. Se reutiliza el censo de Codex, actualizado contra 8938cf41: 1.434 archivos versionados / 460 Rust. Un cierre de inventario histórico NO acredita cobertura semántica de cada archivo ni corrección de la versión actual.
+
+Errata del conteo anterior: la lista enumerada contiene 11 MED, no 8. H2-7 queda acreditado por el contrato GLM103 presente en main; no se reabre por una nota antigua. F4 mantiene auditoría de todos sus archivos pendiente: cuatro fixes puntuales no sustituyen el recibo de cobertura completa.
+
+Hallazgos actuales se registran sin duplicar R4-Q1..Q4 de Codex: cash != MTM, muestreo mixto, contador recreado por el caller y dependencia temporal no corregida sólo con cuatro momentos. Diagnóstico Rust Sol confirma además que `compute_moments` elimina NaN/Inf silenciosamente. SOL-R5-01: `continuous_evolution_backtest.rs:703-705` suma equity_final−cash_inicial_dia, lo que duplica flotante arrastrado. Fixture controlado produce PnL diario acumulado 20 con crecimiento terminal 10; no se afirma que una corrida económica haya producido esa posición.
+
+Recibo: `audit/SOL_CONTRATOS_R4_2026-10-07.json`; alcance y hashes explícitos. Historical witnesses remain bounded reproductions, not current-code or economic verdicts. SOL-R5-01 now has a local daily-reporting-only correction: LOCAL TEST PASSED, full-bin reporting_contract 2/2, direct exit 0 (target/reporting-contract-execution-evidence-20261007.txt). Baseline offline locked workspace all-targets check passed, cargo/tee exits 0 (target/sol-baseline-all-targets-20261007.log and .exit); integrated validation and publication are pending. Other findings remain open. T-1 was not rerun because this is reporting only, not the live strategy pipeline. Recorrer TODOS los archivos restantes por el ledger y cerrar por evidencias, no por ausencia de matches ni por tests sintácticos.

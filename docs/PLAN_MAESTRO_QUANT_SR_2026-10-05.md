@@ -7,6 +7,14 @@
 
 ## 🏛️ 1. IDENTIDAD, DOCTRINA Y MANDATO CUÁNTICO
 
+### Nota de vigencia R4 — 2026-10-07, Sol / revisión del consejo
+
+El [plan operativo archivo por archivo](PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md) es la continuación de R4; [el plan compartido](PLAN_MAESTRO_SINCRONIZACION.md) gobierna ownership. Los estados históricos de este documento no se transfieren a un SHA nuevo sin recibos. El censo actual consta de 1.434 archivos versionados / 460 Rust en `8938cf41`; clasificación no equivale a auditoría completa.
+
+Erratas conceptuales del texto histórico siguiente: nocional mínimo NO equivale a margen reservado ni determina por sí solo un número de posiciones; `23.105%` expresa tasa log diaria, mientras el retorno compuesto diario equivalente es `25.992105%`; `HorizonCurve` sirve `exp(a+b*ln(tau))`, no la expresión lineal sin exponencial. Ville requiere hipótesis/filtración/apuestas predecibles y control de la familia; no confiere inmunidad universal al data snooping. El símplex de cuatro etiquetas no prueba continuidad ni calibración completa. RMT no convierte la hipótesis de Riemann en señal de mercado, y Hodge sobre grafos no es la conjetura algebraico-geométrica del milenio. Toda transferencia de física/cuántica queda experimental hasta identificación, unidades, baseline, coste y beneficio OOS; O(1) no demuestra latencia en nanosegundos.
+
+Corrección de estados: H2-7 está cubierto por el contrato GLM103 presente en `8938cf41`; la cita de `sync_curves_from_tp_sl_anchors` quedó superada por el helper real `rebuild_tp_sl_curves_from_anchors`. Darwin sigue leyendo cash y mezclando reloj de cierres con muestreo; el caller todavía recrea su contador en esta base (fix Codex pendiente de integración). Estas limitaciones reabren contratos sin borrar contribuciones previas. Se conserva debajo el histórico para trazabilidad, no como certificación actual.
+
 ### 1.1 Metas Financieras y Físicas
 - **Capital Base**: **$13.00 USD**.
 - **Entorno de Mercado**: Binance Futures USD-M (USDT / USDC colateral).

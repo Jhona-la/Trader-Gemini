@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Sol: daily reporting LOCAL TEST PASSED / publication pending
+
+- Ejecución Git recuperada; main remoto 171db3c6. Suite inventario 7/7 PASA (198.212 s). Censo/blobs/testigos anteriores siguen atados a 8938cf41, no a código posterior.
+- Ancestría de todas las ramas/worktrees revisada: cero borrados seguros; recovery y root retienen 64/28 commits exclusivos. No importar recuperación ajena ni eliminar worktrees ocupados/sucios.
+- Nueva reserva sólo reporting diario `continuous_evolution_backtest.rs`: helper extraído de valuación existente y pruebas con slots reales, no cambio de sizing, shadow selection, modelos ni engine productivo. LOCAL TEST PASSED: the full-bin reporting_contract suite passed 2/2, direct executable exit 0, source blob 5a0af98e3fefc168feb2c1649b8d2d94d25c909e. Receipt: target/reporting-contract-execution-evidence-20261007.txt. Baseline offline locked workspace all-targets check passed, cargo/tee exits 0 (target/sol-baseline-all-targets-20261007.log and .exit); integrated validation and publication remain pending. T-1 was not rerun: this change is daily reporting only, not the live strategy pipeline. No economic validation.
+
+## 2026-10-07 — Sol: reinicio R4 sincronizado y evidencia acotada (sin publicación)
+
+- Base 8938cf41; worktree `.sol-plan-2026-10-07`, rama `sol/plan-auditoria-2026-10-07`. Reutilizados con atribución plan/censo Codex 639c3e0d; fases R0-R9 y lotes por ruta en `docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md`, entry points compartidos reconciliados. No cambios runtime, flags/modelos ni engine operativo.
+- Ledger regenerado/check correcto: 1.434 archivos versionados / 460 Rust, TODOS inventariados (sin cobertura semántica completa). Tres revisores independientes reconciliaron coordinación/replay/evolución; no duplicar R4-Q1..Q4 ni fix caller Codex.
+- Recibo `docs/audit/SOL_CONTRATOS_R4_2026-10-07.json`: ejecución del módulo Rust actual confirma DSR 0.248357355→0.999724533 al repetir 40 observaciones a 400; contaminación NaN/Inf mantiene verdict. Expresión diaria compilada en fixture reporta 20 acumulado con crecimiento terminal 10 (SOL-R5-01). No es replay económico.
+- H2-7 contrato GLM103 presente en main; nota antigua de Qoder superada. F4/cash-MTM/duración real/funding y promoción siguen con pruebas de harness pendientes.
+- Publicación NO realizada: validaciones amplias no completaron, jobs Sol detenidos; posteriores comandos Git terminaron SIGTERM. Sin commit/push/merge/borrado. Preservar worktrees y revalidar al recuperar ejecución; último main remoto verificado 8938cf41 y CI run 37660783497 success, no verde de esta ola.
+
 ## 2026-10-07 — Qoder: OLA 67 CERRADA — LIMPIEZA MECÁNICA DE LOWs — ORÁCULO PASA 16/144
 
 - Rama qoder/ola67-lows-limpieza (worktree .ola67, base d881e22d + merge

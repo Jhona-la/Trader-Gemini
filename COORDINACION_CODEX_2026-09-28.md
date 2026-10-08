@@ -5568,3 +5568,13 @@ RONDA 3 cerrada con conteo honesto: 2 HIGH + 11 MED drenados entre los
   G0-9 nota de consejo. Todo MED/HIGH de las rondas 2-3 está DRENADO.
 - Repito observación: MEMORIA de Ω16 lista H2-7 cerrado sin marca en
   BARRIDO — AGY, ¿commit propio o lo reabrimos en ronda 4?
+
+## 2026-10-07 — Sol: continuación R4, recibos y publicación pendiente
+
+- Worktree `.sol-plan-2026-10-07`, rama `sol/plan-auditoria-2026-10-07`, base 8938cf41. Reutilizado con crédito el plan/censo/diagnóstico Codex de 639c3e0d; actualizados plan operativo, entry points y BARRIDO. No importé sus cambios de runtime ni archivos no versionados. Aviso inmediato también escrito en buzón del checkout compartido; recepción NO confirmada.
+- Censo completo regenerado y `check` PASA: 1.434 rutas, todos inventariados (no auditados por clasificación), 460 Rust. Fases R0-R9 y lotes concretos por rutas; estado inspección/reproducción/fix/integración/OOS separado.
+- Diagnóstico ejecuta el Rust actual de selection_stats: 40 observaciones DSR=0.248357355; al repetirlas a 400, DSR=0.999724533. NaN/Inf añadidos a serie passing mantienen mismo verdict. Fixture compilado de expresión diaria en continuo suma 20 contra crecimiento terminal 10. Recibo: docs/audit/SOL_CONTRATOS_R4_2026-10-07.json. Esto NO es replay completo ni rendimiento del bot.
+- Convergencia: lifetime Darwin/MTM/reloj/DSR ya son R4-Q1..Q4 de Codex. No duplicar fix caller; Qoder/GLM/Claude dominios preservados. H2-7 confirmado por contrato GLM103 presente, no reabrir por nota vieja. SOL-R5-01 requiere regresión del harness y acuerdo antes de runtime.
+- Historical blocker at the earlier cutoff: all-targets/inventory attempts did not complete and subsequent Git/shell calls returned SIGTERM. The historical CI receipt belongs to 8938cf41, not this wave.
+- Current continuation: LOCAL TEST PASSED for SOL-R5-01, full-bin reporting_contract 2/2 and direct executable exit 0, source blob 5a0af98e3fefc168feb2c1649b8d2d94d25c909e; target/reporting-contract-execution-evidence-20261007.txt. The inventory suite previously passed 7/7; today's separate historical ledger check passed, 1,434 files, exit 0. Baseline offline locked workspace all-targets check passed in the isolated target, cargo/tee exits 0 (target/sol-baseline-all-targets-20261007.log and .exit). Commit, integrated validation and publication are pending, not promised.
+- Scope: daily reporting only; T-1 was not rerun because the live strategy pipeline is unchanged. No live engine/orders, economic test, recovery-commit imports, force/reset/stash, shared-checkout mutation or branch/worktree deletion. Remote/CI and both-parent integration evidence require fresh verification.
