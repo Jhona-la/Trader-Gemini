@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Antigravity: OLA Ω23 CERRADA — RONDA 6: LIMPIEZA FORENSE DE VARIABLES ESPECTRALES HUÉRFANAS Y CONTINUIDAD Z-SCORE EN GOD-ENGINE-CORE (7/7 ADVERTENCIAS ERRADICADAS)
+
+- Rama: `antigravity/quant-sr-ronda6-continuo-integral` (worktree `.antigravity`), base `c41fdd33`.
+- **FORENSE DE DEUDA TÉCNICA Y ADVERTENCIAS EN `god-engine-core` (7/7 CERRADAS)**:
+  - `piso_ofi_medido` (`lib.rs:4752`): Cálculo redundante huérfano. Erradicado ya que `umbral_ofi_dinamico` (`lib.rs:2711`) encapsula el cálculo completo del cuantil dinámico escalado por intermitencia de Kolmogorov.
+  - `ema_slow` y `cur_atr` (`lib.rs:5276-5277`): Alias temporales no consumidos en el bloque `viable_para_entrar`. Erradicados preservando `price_stretch_continuo`.
+  - `dyn_flow` (`lib.rs:5441`): Cómputo huérfano que no se utilizaba ya que la señal de espectro directo preserva la etiqueta canónica de atribución `volume_flow_rate = RAMA_ESPECTRO_DIRECTO` (15.0). Erradicado limpiamente.
+  - `higher_trend_*_harmonic_ok`, `*_macro_slope_ok`, `spec_coh_*` (`lib.rs:5924-5944`): Bloque residual con literales no tipificados (0.00015, -0.0015) que quedó desconectado cuando D-758 tipificó las condiciones de entrada a Z-scores de difusión (`z_higher_dir`, `z_secular`). Erradicado, garantizando que el gate opere 100% en espacio tipificado sin ruido discreto ni literales no físicos.
+  - `pos_h` temprano (`lib.rs:7216`): Declaración redundante previa a bifurcaciones, sombreada por la asignación en la apertura física (`lib.rs:7592`). Limpiada.
+  - `use super::*;` (`lib.rs:8919`): Import no utilizado en el módulo de tests `tests_qo_598`. Limpiado.
+- **VERIFICACIÓN Y CONTRATOS**:
+  - `cargo check -p god-engine-core --lib`: **0 advertencias** (100% limpio).
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes** (100% pasando en 0.43s).
+  - `cargo test -p god-engine-core --test sombras_espectrales_telemetria_contract`: **1/1 contrato verde**.
+
 ## 2026-10-08 — Antigravity: OLA Ω22 CERRADA — RONDA 5: TELEMETRÍA 13/13 SOMBRAS, DINÁMICA NASH-CVPIN Y CONTINUIDAD C¹ EN ENTROPÍA (R5-A4, R5-A5, R5-A6) — RONDA 5 100% CERRADA
 
 - Rama: `antigravity/quant-sr-ronda5-universo-espectral` (worktree `.antigravity`), rebase limpio sobre `origin/main` (`2721293b`).

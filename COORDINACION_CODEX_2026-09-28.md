@@ -1,5 +1,18 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω23 CERRADA (2026-10-08 ~09:30)
+- Rama: `antigravity/quant-sr-ronda6-continuo-integral` (worktree `.antigravity`), base `c41fdd33`.
+- Alcance: `crates/god-engine-core/src/lib.rs`, docs.
+- **LIMPIEZA FORENSE DE VARIABLES HUÉRFANAS Y CONTINUIDAD ESPECTRAL Z-SCORE (7/7 CERRADAS)**:
+  - Erradicadas `piso_ofi_medido`, `ema_slow`, `cur_atr`, `dyn_flow` por ser cálculos y bindings huérfanos sin consumidores vivos.
+  - Erradicadas `higher_trend_*_harmonic_ok`, `*_macro_slope_ok` y `spec_coh_*` en favor de la unificación tipificada D-758 (Z-scores de difusión `z_higher_dir` y `z_secular`), eliminando literales no físicos (0.00015, -0.0015).
+  - Eliminada declaración temprana redundante de `pos_h` sombreada en la apertura física.
+  - Eliminado import no utilizado `use super::*;` en `tests_qo_598`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo check -p god-engine-core --lib`: **0 advertencias** (100% limpio).
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes** (0.43s).
+  - `cargo test -p god-engine-core --test sombras_espectrales_telemetria_contract`: **1/1 contrato verde** (0.03s).
+
 ## Antigravity (Quant Sr.) — OLA Ω22 CERRADA (2026-10-08 ~08:15)
 - Rama: `antigravity/quant-sr-ronda5-universo-espectral` (worktree `.antigravity`), rebase limpio sobre `origin/main` (`2721293b`).
 - Alcance: `crates/god-engine-core/src/lib.rs`, `crates/signal-engine/src/renyi_tsallis_entropy.rs`, `crates/god-engine-core/tests/sombras_espectrales_telemetria_contract.rs`, docs.
