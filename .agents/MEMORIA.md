@@ -1,15 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
-## 2026-10-08 — Antigravity: OLA Ω29 EN VUELO — LOTE R5 / FASE F4 (DINERO, RIESGO, VETOS Y EJECUCIÓN) Y SINCRONIZACIÓN DE PLAN MAESTRO CUÁNTICO
+## 2026-10-08 — Antigravity: OLA Ω29 CERRADA — ARMONIZACIÓN DE APALANCAMIENTO MICRO A 5.0X EN LEVERAGE_MATRIX, RESOLUCIÓN DE DIVERGENCIA CON LIB.RS Y BLINDAJE DE PISO DE BINANCE ($13 USD)
 
-- Rama: `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` (worktree `.antigravity`), base `3f0d37e9`.
-- **AUDITORÍA FORENSE F4 COMPLETADA (44 ARCHIVOS)**:
-  - Verificados los 22 archivos de `crates/risk-engine/src/` y 22 archivos de `crates/execution-engine/src/`.
-  - Confirmada la resolución previa de los 4 defectos críticos (HIGH) en commit `5663d1f1`: F4-H1 (`lev_deriva` no NaN/cero en reconciliación), F4-H2 (host bootstrap leverage respetando el margen de $13 USD), F4-H3 (bounds de genoma y RR en $\tau_{\text{lo}}$ en `GenomeStore`), y F4-H4 (`mark_local_reject` en `executor.rs` ante errores firmes).
-  - Verificada la suite completa de `risk-engine` (100% pasando en verde) y `execution-engine` (107 pasando, 0 fallando, 5 ignoradas por API key).
-- **PLAN MAESTRO CUÁNTICO Y CONTINUO ESPECTRAL ACTUALIZADO**:
-  - Actualizado artefacto `PLAN_MAESTRO_QUANT_SR.md` y sincronizado `COORDINACION_CODEX_2026-09-28.md` y `docs/PLAN_MAESTRO_SINCRONIZACION.md`.
-  - Formalizadas las 5 formulaciones de física y matemática cuántica de vanguardia: Navier-Stokes en microestructura de liquidez, descomposición de Helmholtz-Hodge en grafos de contagio, conexiones de curvatura de Yang-Mills, proceso continuo Ornstein-Uhlenbeck / Fokker-Planck con reloj físico, y supermartingalas de Ville para inferencia anytime-valid.
-  - Sincronización multi-agente: preservados íntegramente los worktrees de Qoder (`.ola72`), Sol (`.sol-plan-2026-10-07`) y Codex.
+- Rama: `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` (worktree `.antigravity`), base `c52fe8cc`.
+- **ARMONIZACIÓN DE APALANCAMIENTO MICRO EN `crates/risk-engine/src/leverage_matrix.rs`**:
+  - Resuelta la divergencia F4-M2 entre `leverage_matrix.rs:260` (que clampeaba a 4.0x en régimen micro) y `lib.rs:1179` (que define `micro_lev_cap >= 5.0x`).
+  - Con un capital base de \$13.00 USD y un presupuesto de margen de \$1.02 por orden (para soportar 2 posiciones concurrentes con \$10.96 de margen libre = 84.3%), un techo de 4.0x limitaba el nocional a \$4.08 USD, violando el piso mínimo de Binance Futures (\$5.00 min notional) y forzando rescates de emergencia en cada orden micro.
+  - Armonizado `raw_ceiling = log_lerp(standard_ceiling, 5.0, micro_w)`, garantizando que el dimensionamiento continuo alcance de forma natural los \$5.10 de nocional seguro (\$1.02 * 5.0x = \$5.10).
+  - Actualizado el test unitario `d750_el_minimo_del_simbolo_gobierna_el_techo` (`caro <= 5.0 + 1e-9`).
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p risk-engine`: **141/141 tests verdes (100% éxito)** (54 lib tests + 87 contract/diagnostic tests).
+  - `cargo check --workspace --all-targets`: **0 errores** (todos los 23 crates y binarios del workspace compilan limpiamente).
 
 ## 2026-10-08 — Antigravity: OLA Ω28 CERRADA — RESOLUCIÓN FORENSE OU-R4-01 Y OU-R4-02: EXCLUSIVIDAD DE MODO SDE CONTINUO Y MONOTONICIDAD TEMPORAL ESTRICTA EN COINTEGRACIÓN MULTIACTIVO (STRATEGY-CORE)
 
