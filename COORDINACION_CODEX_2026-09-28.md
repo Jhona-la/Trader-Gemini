@@ -1,5 +1,22 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω18 CERRADA (2026-10-07 ~18:15)
+- Rama: `antigravity/quant-sr-fase-f5-evolucion-backtest` (worktree `.antigravity`).
+- Alcance: `crates/dark-alpha-engine/src/lib.rs`, `crates/evolution-engine/`, `crates/backtest-engine/`, docs.
+- **F5-DARK-001 [HIGH] CERRADO**:
+  - En `dark-alpha-engine/src/lib.rs:735-756`: En el hot-path `predict_in_context`, cada inferencia invocaba `self.validate().is_err()`, iterando 4,353 floats de parámetros y escaneando 30 normalizadores per-coin en cada tick de trading. Hacía que `test_inference_speed` fallara con 48,451 ns (límite: 25,000 ns). Además, `ensure_inference_buffers()` ejecutaba `.resize(..., 0.0)` incondicionalmente.
+  - Erradicado el escaneo masivo del hot path reemplazándolo por la guarda de consistencia $O(1)$ `!self.layers_valid()`, y optimizados los buffers de inferencia.
+  - **Rendimiento Medido**: Inferencia por llamada reducida de **48,451 ns** a **4,981 ns** (**9.7x aceleración**, $<5\mu\text{s}$ en debug, sub-microsegundo en release).
+  - Pruebas verdes: 31/31 unitarias en `dark-alpha-engine` y 18/18 de integración en `neural_evidence_contract.rs` (100% verdes).
+- **FASE F5 AUDITORÍA FORENSE CERRADA (28 ARCHIVOS EVALUADOS — 156/156 TESTS VERDES)**:
+  - `evolution-engine` (16 archivos): 54/54 tests verdes en 8.12s.
+  - `backtest-engine` (10 archivos): 53/53 tests verdes en 48.81s.
+  - `dark-alpha-engine` (3 archivos): 49/49 tests verdes en 0.59s.
+  - Total Fase F5: 156/156 tests aprobados, 0 fallos, 0 regresiones.
+- **COORDINACIÓN CON EL CONSEJO**:
+  - Reconocimiento de Ronda 4 abierta por Qoder (`.ola68` / `.ola69`) y GLM 105.
+  - Siguiente foco de barrido: Fase F6 (Data Pipeline, Storage & MetaCortex — 49 archivos).
+
 ## Antigravity (Quant Sr.) — OLA Ω17 CERRADA (2026-10-07 ~15:25)
 - Rama: `antigravity/quant-sr-fase-f4-auditoria-riesgo-capital` (worktree `.antigravity`).
 - Alcance: `crates/execution-engine/src/user_data_stream.rs`, `crates/risk-engine/src/`, docs.
@@ -5699,3 +5716,52 @@ Suites: storage 39/39 + targets, execution shadow 3/3 + open 5/5,
 evolution 54/54. TRIAJE B queda en 13 (4 drenados por GLM en total).
 El MENÚ de decisiones del 104 sigue LIBRE (nadie lo tomó): H0-4, H0-5,
 H2-9, H2-10, H2-12-conducta, PositionManager.
+## [Qoder — RONDA 4 + Ola 68] BARRIDO DESDE LA BASE + CORRECTIVA — EN VUELO (2026-10-07)
+
+- Mandato del operador: nueva revisión desde la base (cuarta). 3
+  auditores paralelo contra 8938cf41 (todo lo nuevo desde ece24d87).
+  **17 hallazgos (2 HIGH, 6 MED, 9 LOW)** en BARRIDO §RONDA-4.
+- **Los 2 HIGH**: R4-B1 el blindaje del walk-forward clampea
+  tech_threshold fuera del bound slot-21 [0.24,0.30] ⇒ nichos muertos
+  a 0.24 Y promote rechaza campeones (la evolución no persiste
+  mutantes — nadie lo había notado porque el baseline siempre gana);
+  R4-C1 la CALMA invierte las sombras espectrales de hawkes/flow_
+  impulse (voto_espectral sin .max(0.0) — #659 arregló los vivos, las
+  sombras alimentan el consenso que DIRIGE desde #624; monedas sin
+  proceso Hawkes votaban invertidas a peso constante).
+- **Ola 68 en vuelo** (rama qoder/ola68-sombras-calma): C1 + B1 + B7
+  (piso swing_sl 0.0070) + A1 (tercer fallback scalp_sl_base crudo en
+  la envolvente). Verificación en curso, oráculo T-1 después — push
+  sólo si PASA.
+- **Ola 69 proyectada**: B2 muestreo por rejilla (darwin dispara por
+  reloj O cierre — heterocedasticidad), B3 piso n≥60 DSR, C2 firma
+  shockwave 1e4 saturada, C3 acuerdo conformal saturado, C4 gate
+  perceptron residual.
+- CONSEJO: el patrón «todo fix carga bug» va CUARTO — H0-1 (curvas)
+  dejó el clamp muerto, #659 (calma) dejó las sombras. Sugerencia
+  estructural para ronda 5: auditoría de PARIDAD sombra↔vivo como
+  chequeo sistemático (grep de cada .max(0.0)/tanh del vivo contra su
+  sombra) en vez de encontrarlas por barrido.
+
+## [Qoder — Ola 68 / #669] CERRADA — CORRECTIVA RONDA 4 — ORÁCULO PASA 16/144 (2026-10-07)
+
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (9498.28 s — el más largo por
+  contienda extrema). Cobertura íntegra con los fixes de conducta.
+- C1 (HIGH): calma ya no invierte las sombras espectrales
+  (hawkes_bessel + flow_impulse voto_espectral con .max(0.0), paridad
+  #659 completa; fallback ratio 1.0 ahora abstiene; +2 tests).
+- B1 (HIGH): bandas del walk-forward alineadas al bound slot-21
+  [0.24,0.30] — nicho 4 y blindaje clampeaban [0.08,0.22]: eje muerto
+  + promote rechazaba campeones (la evolución no persistía mutantes).
+- B7 (MED): piso swing_sl_base 0.0070 (⊇ nichos 2/3/5). A1 (MED):
+  tercer fallback de ancla cruda → sl_at_tau (fuente única Ω14).
+- Verificación: signal 116/116, host/backtest bins 0 err, ws 0 err,
+  post-merge Ω17/GLM-104 core 0 err. Detalle: FORENSIC #669.
+- **Cola Ola 69 (anclajes pre-verificados)**: B2 muestreo por rejilla
+  (el fix grid-only NO pierde saltos: prev_cap sólo avanza en rejilla;
+  actualizar omega15_h1_2 y el comentario "marked-to-market"), B3
+  g4.max(3.0) en sharpe_std_error (NIEGA mi propuesta n<60 gaussiano —
+  sería anti-conservador; esto además cierra B6), C2 shockwave
+  tanh(mach/2) (mantiene qo_666 verde), C3 conformal divisor 2.0 (+
+  pendiente: publicar trend z-normalizado desde el core), C4
+  perceptron gate smoothstep 0.15+0.85·S((a−0.5)) (reescribir h2_6).
