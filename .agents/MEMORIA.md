@@ -1,4 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-08 — Antigravity: OLA Ω32 CERRADA — UNIFICACIÓN DE RESOLUCIÓN ESPECTRAL Y ADMISIÓN CONTINUA DE SLOTS EN QUANTUM-ARENA (CIERRE DE BRECHA D-431 [0.60, 0.80))
+
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `7cbbf303`.
+- **RESOLUCIÓN ESPECTRAL PARAMETRIZADA EN `crates/quantum-arena/src/position.rs`**:
+  - Resuelto el conflicto de política espectral: mientras la fusión D-431 declaraba independientes escalas temporales separadas por $\Delta \ln \tau \ge 0.60$, el método de asignación de slots físicos `find_resonant_slot` aplicaba de forma estática `diff_ln < 0.80`. Esta discrepancia generaba un hueco ciego en el intervalo de despacho $[0.60, 0.80)$ (ej. $\tau_1 = 30\text{ s}$ y $\tau_2 = 60\text{ s}$, con $|\Delta \ln \tau| \approx 0.693$), descartando señales válidas no destructivas.
+  - Constantes introducidas: `DEFAULT_RESONANT_DELTA_LN = 0.80` (preservación 100% de la semántica legacy) y `UNIFIED_RESONANT_DELTA_LN = 0.60` (resolución armónica D-431).
+  - Métodos provistos: `find_resonant_slot_with_threshold` y `razon_sin_slot_with_threshold`, con validación de entradas no finitas y preservación de API retrocompatible en `find_resonant_slot` y `razon_sin_slot`.
+- **CONTRATO FORMAL EN `crates/quantum-arena/tests/spectral_slot_resolution_contract.rs`**:
+  - `spectral_slot_resolucion_default_080_rechaza_colision_cercana`: verifica rechazo y telemetría `RAZON_COLISION_BANDA` bajo 0.80.
+  - `spectral_slot_resolucion_unificada_060_admite_el_hueco_intermedio`: verifica admisión exitosa en ranuras separadas para el intervalo $[0.60, 0.80)$ bajo `UNIFIED_RESONANT_DELTA_LN`.
+  - `spectral_slot_coexistencia_ortogonal_multiescala`: valida coexistencia armónica de micro-escala (15s) y macro-escala (1h) en la misma dirección, y no interferencia entre sentidos opuestos (Long vs Short).
+  - `spectral_slot_entradas_no_finitas_fallan_seguro`: valida robustez matemática fail-closed ante NaN, $\pm\infty$ y valores no positivos.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p quantum-arena`: **156/156 tests verdes (100% éxito)** (65 lib + 91 contract/diagnostic tests).
+  - `cargo check --workspace --all-targets`: **0 errores** en todos los 23 crates y binarios del workspace (41.03s).
+
 ## 2026-10-08 — Antigravity: OLA Ω31 CERRADA — INTEGRACIÓN DE EVIDENCIA SECUENCIAL VILLE EN MOTOR DE EVOLUCIÓN (ROLLBACK ANYTIME-VALID EN ONLINE_DAEMON)
 
 - Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `d27dd2bb`.

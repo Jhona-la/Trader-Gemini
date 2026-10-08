@@ -669,10 +669,24 @@ impl PositionManager {
         count
     }
 
-    /// Legacy slot-admission heuristic: same-side log-scale distance must be >=0.80.
-    /// This discrete cutoff does NOT prove orthogonality or independent risk.
-    /// Invalid/small tau fallback and three-slot capacity remain audited limitations.
+    /// Distancia logarítmica espectral por defecto: Δln(τ) = 0.80 (ratio de escala ~2.23).
+    pub const DEFAULT_RESONANT_DELTA_LN: f64 = 0.80;
+    /// Distancia logarítmica espectral unificada (D-431): Δln(τ) = 0.60 (ratio de escala ~1.82).
+    pub const UNIFIED_RESONANT_DELTA_LN: f64 = 0.60;
+
+    /// Admisión de slot con umbral por defecto (0.80).
     pub fn find_resonant_slot(&self, tau_ms: f64, is_long: bool) -> Option<usize> {
+        self.find_resonant_slot_with_threshold(tau_ms, is_long, Self::DEFAULT_RESONANT_DELTA_LN)
+    }
+
+    /// Admisión de slot en el continuo espectral con resolución temporal configurable `threshold_ln`.
+    /// Si `diff_ln < threshold_ln`, se detecta interferencia destructiva en la misma escala/dirección.
+    pub fn find_resonant_slot_with_threshold(
+        &self,
+        tau_ms: f64,
+        is_long: bool,
+        threshold_ln: f64,
+    ) -> Option<usize> {
         let slots = [&self.scalp, &self.swing, &self.position];
         let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
             tau_ms
@@ -680,6 +694,11 @@ impl PositionManager {
             30_000.0
         };
         let ln_target = safe_tau.ln();
+        let safe_threshold = if threshold_ln.is_finite() && threshold_ln > 0.0 {
+            threshold_ln
+        } else {
+            Self::DEFAULT_RESONANT_DELTA_LN
+        };
 
         // 1. Verificar si hay colisión / interferencia destructiva con posiciones en la misma dirección
         for pos in slots.iter() {
@@ -688,16 +707,14 @@ impl PositionManager {
                 if open_is_long == is_long {
                     let open_tau = (pos.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
                     let diff_ln = (ln_target - open_tau.ln()).abs();
-                    // Retained policy cutoff (scale ratio ~2.23), not measured
-                    // dependence, destructive interference or a Hilbert inner product.
-                    if diff_ln < 0.80 {
+                    if diff_ln < safe_threshold {
                         return None;
                     }
                 }
             }
         }
 
-        // First free physical slot; no functional-space optimization is performed.
+        // Primer slot físico desocupado
         for (idx, pos) in slots.iter().enumerate() {
             if !pos.is_open() {
                 return Some(idx);
@@ -708,16 +725,19 @@ impl PositionManager {
     }
 
     /// QO-589 — RAZÓN del rechazo de slot (telemetría del embudo, no política).
-    /// `find_resonant_slot` devuelve None por DOS causas indistinguibles para
-    /// el llamador: colisión same-direction dentro de la banda (|Δlnτ| < 0.80)
-    /// o capacidad llena. Distinguirlas es obligatorio para medir el hueco de
-    /// despacho [0.60, 0.80) que la fusión D-431 declara independientes y el
-    /// slot bloquea: esos descartes caen en razón 1 y son los que el consejo
-    /// debe contar para decidir unificar el umbral.
     pub const RAZON_COLISION_BANDA: u8 = 1;
     pub const RAZON_CAPACIDAD_LLENA: u8 = 2;
 
     pub fn razon_sin_slot(&self, tau_ms: f64, is_long: bool) -> u8 {
+        self.razon_sin_slot_with_threshold(tau_ms, is_long, Self::DEFAULT_RESONANT_DELTA_LN)
+    }
+
+    pub fn razon_sin_slot_with_threshold(
+        &self,
+        tau_ms: f64,
+        is_long: bool,
+        threshold_ln: f64,
+    ) -> u8 {
         let slots = [&self.scalp, &self.swing, &self.position];
         let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
             tau_ms
@@ -725,13 +745,18 @@ impl PositionManager {
             30_000.0
         };
         let ln_target = safe_tau.ln();
+        let safe_threshold = if threshold_ln.is_finite() && threshold_ln > 0.0 {
+            threshold_ln
+        } else {
+            Self::DEFAULT_RESONANT_DELTA_LN
+        };
         for pos in slots.iter() {
             if pos.is_open() {
                 let open_is_long = pos.is_long.load(Ordering::Relaxed);
                 if open_is_long == is_long {
                     let open_tau = (pos.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
                     let diff_ln = (ln_target - open_tau.ln()).abs();
-                    if diff_ln < 0.80 {
+                    if diff_ln < safe_threshold {
                         return Self::RAZON_COLISION_BANDA;
                     }
                 }

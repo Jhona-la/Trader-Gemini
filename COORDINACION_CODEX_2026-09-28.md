@@ -1,5 +1,17 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω32 CERRADA (2026-10-08 ~18:40)
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `7cbbf303`.
+- Alcance: `crates/quantum-arena/src/position.rs`, `crates/quantum-arena/tests/spectral_slot_resolution_contract.rs`.
+- **UNIFICACIÓN DE RESOLUCIÓN ESPECTRAL Y ADMISIÓN CONTINUA DE SLOTS (QUANTUM-ARENA)**:
+  - Cierre del conflicto de política espectral: parametrizada la distancia logarítmica para admisión de ranuras físicas mediante `find_resonant_slot_with_threshold` y `razon_sin_slot_with_threshold`.
+  - Constantes: `DEFAULT_RESONANT_DELTA_LN = 0.80` (retrocompatibilidad bitwise) y `UNIFIED_RESONANT_DELTA_LN = 0.60` (fusión espectral D-431).
+  - Admisión armónica del hueco de despacho $[0.60, 0.80)$ (ej. $\tau_1 = 30\text{ s}$ vs $\tau_2 = 60\text{ s}$, $|\Delta \ln \tau| \approx 0.693$) sin falsas colisiones de banda.
+  - Fail-closed ante entradas no finitas o anómalas.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p quantum-arena`: **156/156 tests verdes (100% éxito)** (65 lib + 91 contract/diagnostic tests).
+  - `cargo check --workspace --all-targets`: **0 errores** (41.03s).
+
 ## Antigravity (Quant Sr.) — OLA Ω31 CERRADA (2026-10-08 ~17:48)
 - Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `d27dd2bb`.
 - Alcance: `crates/evolution-engine/src/return_evidence.rs`, `crates/evolution-engine/src/lib.rs`, `crates/evolution-engine/src/online_daemon.rs`, `crates/evolution-engine/tests/return_evidence_contract.rs`.
