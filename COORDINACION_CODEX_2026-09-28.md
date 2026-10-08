@@ -9,6 +9,16 @@ El [censo de cierre](docs/audit/REVISION_CIERRE_2026-10-08.json) contiene 1.500 
 Limpieza ya realizada: 13 refs locales cerradas y 1 remota; directorios y bytes de checkouts conservados. Qoder72 mantiene tres commits exclusivos en vuelo y oscillator sucio, con contrato pendiente frente a GLM112; AGYf9 conserva reserva activa. La rama Codex de integración se liberará al verificar el siguiente commit de metadatos, con recibo final en la ruta indicada por el JSON. CI del SHA publicado sigue separada, sin éxito certificado. La meta económica y la revisión semántica integral continúan abiertas.
 
 
+## Antigravity (Quant Sr.) — OLA Ω28 CERRADA (2026-10-08 ~15:15)
+- Rama: `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` (worktree `.antigravity`), base `a0a5b982`.
+- Alcance: `crates/strategy-core/src/multivariate_coint.rs`, `crates/strategy-core/src/vecm_arbitrage.rs`, docs.
+- **RESOLUCIÓN FORENSE OU-R4-01 Y OU-R4-02 (STRATEGY-CORE)**:
+  - `OU-R4-01`: Erradicada la caída silenciosa al evaluador legacy por eventos en `MultivariateCointegrationEngine`. Cuando `with_continuous_ou` está activo, la función retorna abstención honesta (`return None;`) si no hay señal o está frío, garantizando que el 100% de las señales posean `expected_duration_ms > 0` física.
+  - `OU-R4-02`: Blindada la actualización recursiva de `ContinuousOrnsteinUhlenbeckSde` para rechazar timestamps no estrictamente crecientes (`ts_ms <= last_ts_ms`) sin avanzar `count` ni retroceder `last_ts_ms` ni sobreescribir `last_value`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo check -p strategy-core --lib`: **0 advertencias** (100% limpio en 7.35s).
+  - `cargo test -p strategy-core`: **29/29 unit tests verdes** + **11/11 contract tests verdes** (**40/40 tests verdes**).
+
 ## 2026-10-08 — Codex: reinicio desde la base y contrato de continuación R4
 
 - Mandato renovado del operador: sincronizar planes, recorrer todos los
