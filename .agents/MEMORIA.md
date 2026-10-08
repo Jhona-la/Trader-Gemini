@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Antigravity: OLA Ω28 CERRADA — RESOLUCIÓN FORENSE OU-R4-01 Y OU-R4-02: EXCLUSIVIDAD DE MODO SDE CONTINUO Y MONOTONICIDAD TEMPORAL ESTRICTA EN COINTEGRACIÓN MULTIACTIVO (STRATEGY-CORE)
+
+- Rama: `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` (worktree `.antigravity`), base `a0a5b982`.
+- **RESOLUCIÓN OU-R4-01 EN `crates/strategy-core/src/multivariate_coint.rs`**:
+  - Resuelto el defecto reportado por la revisión estática de Codex (`REVISION_MERGE_CORE_OU_REGISTRY_2026-10-08.md`): cuando el estimador SDE físico continuo está activo (`with_continuous_ou`), si el estimador estaba frío (`count < 10`), el spread no cruzaba el umbral o la vida media superaba los límites, la ejecución caía silenciosamente al evaluador legacy por eventos, emitiendo intenciones con `expected_duration_ms: 0`.
+  - Implementada la **exclusividad estricta del modo continuo SDE**: si `physical_sde` está activo, la función retorna abstención honesta (`return None;`) sin caer al evaluador legacy, garantizando que el 100% de las señales emitidas provengan de la física continua y posean `expected_duration_ms > 0` acotada a la vida media física $t_{1/2}$.
+  - Añadido test unitario: `test_ou_r4_01_sde_mode_never_falls_back_to_legacy_with_zero_duration`.
+- **RESOLUCIÓN OU-R4-02 EN `crates/strategy-core/src/vecm_arbitrage.rs`**:
+  - Resuelto el defecto en `ContinuousOrnsteinUhlenbeckSde::update`: la condición anterior `self.count == 0 || ts_ms <= self.last_ts_ms` agrupaba la inicialización con ticks fuera de orden, incrementando el `count` ante timestamps repetidos o retrógrados, sobreescribiendo `last_value` y retrocediendo `last_ts_ms`.
+  - Implementada la **invariante física de monotonicidad temporal estricta**: si `ts_ms <= self.last_ts_ms`, el tick se rechaza limpiamente retornando el Z-Score estacionario sin mutar `last_value`, sin alterar `last_ts_ms` y sin avanzar `count`.
+  - Añadido test unitario: `test_ou_r4_02_retrograde_and_duplicate_timestamp_does_not_mutate_state_or_advance_count`.
+- **VERIFICACIÓN SUITE `strategy-core`**:
+  - `cargo check -p strategy-core --lib`: **0 advertencias** (100% limpio en 7.35s).
+  - `cargo test -p strategy-core`: **29/29 unit tests verdes** + **11/11 contract tests verdes** (**40/40 tests pasando en verde**).
+
 ## 2026-10-08 — Codex R4: nueva base, recuperación y recibos separados
 
 - El operador renovó el mandato: plan desde metas/conceptos/ciencias hasta
