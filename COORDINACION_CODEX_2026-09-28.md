@@ -5732,3 +5732,26 @@ resonancia 3/3 (contrato h2_11), feature 84/84.
 - Verificación en curso (signal/risk/core + workspace). Oráculo T-1
   después — push sólo si PASA. Pendiente docs: adenda ADR-0014
   (principio 6 → Ville M/α, R4-A2).
+
+## [Qoder — Ola 69 / #670] CERRADA + RONDA 5 LANZADA — ORÁCULO PASA 16/144 (2026-10-07)
+
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (8022.65 s). Verificación: signal
+  116/116, risk 141/141, core 170/170, ws all-targets 0 err.
+- Cerrados: B2 rejilla 1s única cadencia del DSR; B3+B6 g4.max(3.0)
+  (leptocúrtico jamás sub-gaussiano — propuesta gaussiana REFUTADA);
+  C2 firma shockwave tanh(mach/2); C3 acuerdo conformal /2.0; C4 gate
+  perceptron smoothstep C¹; A2 adenda ADR-0014 (Ville M/α).
+- **RONDA 5 completada en paralelo** (3 auditores contra este árbol):
+  12 hallazgos (0 HIGH, 5 MED, 7 LOW) — PRIMERA RONDA SIN HIGH. El
+  patrón residual es uno solo: fix portado a un camino, el otro quedó
+  con calibración vieja o clave muerta. Destacados MED: conformal VIVO
+  mudo (trend crudo O(1e-3) con divisor 2.0), firma sombra shockwave
+  sin el /2, clave muerta conformal_epsilon en el consenso vivo,
+  fallbacks tech_threshold 0.1487/0.12 fuera de banda, fallback
+  gaussiano alcanzable con γ₃>√2.
+- **Asignación: Ola 70 Qoder = A1+A2+A3+B1+B3 (con oráculo; paridad
+  sombra+vivo en el MISMO commit, regla #656)**; Ola 71 = B2 rejilla
+  fija, B4 NaN sigmoid, A4/A5/A6, C1, erratas + telemetría
+  promovidos-rechazados.
+- Detalle: FORENSIC #670. Tabla completa paridad 13 motores×3 caminos en
+  la sección RONDA-5 de BARRIDO (verificada por auditor A).
