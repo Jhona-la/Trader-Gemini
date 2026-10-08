@@ -2111,17 +2111,60 @@ impl GodEngineCore {
                             &desplazamientos,
                             ratio_hawkes_fresco,
                         );
+                    if let Some(media_hk) = voto_hawkes.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_hawkes_consenso", media_hk);
+                    }
+                    if let Some((k_hk, v_hk)) = voto_hawkes.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_hawkes_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_hk],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_hawkes_v_max", v_hk);
+                    }
 
-                    // #618: SOMBRA ESPECTRAL de GAME-THEORETIC NASH
-                    let nash_drift = self
+                    // #618 / R5-A4: SOMBRA ESPECTRAL de GAME-THEORETIC NASH
+                    // Presión adversarial escopada por moneda — busca la clave viva
+                    // `game_theory_adversarial_pressure`, con fallback a `cvpin`
+                    // medido de la moneda, y finalmente a `nash_equilibrium_drift` (0.50).
+                    let nash_presion_adv = self
                         .arena
                         .registry
-                        .get_value_or("nash_equilibrium_drift", 0.5);
+                        .get_for_coin_or(
+                            coin_id,
+                            "game_theory_adversarial_pressure",
+                            self.arena.registry.get_for_coin_or(
+                                coin_id,
+                                "cvpin",
+                                self.arena
+                                    .registry
+                                    .get_value_or("nash_equilibrium_drift", 0.50),
+                            ),
+                        );
                     let voto_nash =
                         signal_engine::game_theoretic_nash::GameTheoreticNashEngine::voto_espectral(
                             &desplazamientos,
-                            nash_drift,
+                            nash_presion_adv,
                         );
+                    if let Some(media_nash) = voto_nash.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_nash_consenso", media_nash);
+                    }
+                    if let Some((k_nash, v_nash)) = voto_nash.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_nash_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_nash],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_nash_v_max", v_nash);
+                    }
 
                     // #619→#649: SOMBRA ESPECTRAL de FLOW IMPULSE
                     let voto_flow =
@@ -2129,12 +2172,42 @@ impl GodEngineCore {
                             &desplazamientos,
                             ratio_hawkes_fresco,
                         );
+                    if let Some(media_flow) = voto_flow.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_flow_consenso", media_flow);
+                    }
+                    if let Some((k_flow, v_flow)) = voto_flow.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_flow_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_flow],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_flow_v_max", v_flow);
+                    }
 
                     // #620: SOMBRA ESPECTRAL de PERCEPTRON GATE
                     let voto_perceptron =
                         signal_engine::perceptron_gate::PerceptronGateEngine::voto_espectral(
                             &desplazamientos,
                         );
+                    if let Some(media_perc) = voto_perceptron.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_perceptron_consenso", media_perc);
+                    }
+                    if let Some((k_perc, v_perc)) = voto_perceptron.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_perceptron_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_perc],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_perceptron_v_max", v_perc);
+                    }
 
                     // #621: SOMBRA ESPECTRAL de CONFORMAL REVERSION FILTER
                     let conf_eps = self
@@ -2150,6 +2223,21 @@ impl GodEngineCore {
                             &desplazamientos,
                             conf_eps,
                         );
+                    if let Some(media_conf) = voto_conformal.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_conformal_consenso", media_conf);
+                    }
+                    if let Some((k_conf, v_conf)) = voto_conformal.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_conformal_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_conf],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_conformal_v_max", v_conf);
+                    }
 
                     // #622→#649: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE
                     let voto_confluence =
@@ -2157,6 +2245,21 @@ impl GodEngineCore {
                             &desplazamientos,
                             ratio_hawkes_fresco,
                         );
+                    if let Some(media_conf_fl) = voto_confluence.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_confluence_consenso", media_conf_fl);
+                    }
+                    if let Some((k_conf_fl, v_conf_fl)) = voto_confluence.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_confluence_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_conf_fl],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_confluence_v_max", v_conf_fl);
+                    }
 
                     // SOMBRA ESPECTRAL de TREND-RUNNER (persistencia multiescala)
                     let hurst_tr = self
