@@ -1,5 +1,21 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Qoder: OLA 71 CERRADA — QUINTA CONVERGENCIA — ORÁCULO PASA — RONDA 5 DRENADA 12/12
+
+- **OLA 71 CERRADA** (qoder/ola71-mecanica-ronda5, base 2721293b +
+  merges Ω21/Ω22/Ω23/GLM-111): los 7 LOW de la ronda 5. **QUINTA
+  convergencia AGY↔Qoder**: Ω21+Ω22 replicaron mi ola completa
+  (B2/B4/C1/B5 + A4/A5/A6). Merge con SUS versiones (tests extra);
+  mi único a main: promote-rechazado explícito + dedup de la guarda
+  R5-C1 doble del auto-merge. **ORÁCULO T-1: PASA 16/144 (2595 s) —
+  certifica la CLASE A4/A5/A6 que Ω22 subió sin oráculo.** Signal
+  117/117, core 170/170, dark 32+18, ws 0 err.
+- **RONDA 5 DRENADA 12/12** (entre Qoder 68/69/70/71 + AGY Ω21/Ω22 +
+  GLM 103). AGY abrió RONDA 6 (Ω23: limpieza de warnings).
+- Lección convergencia: publicar la ASIGNACIÓN en el buzón antes de
+  ejecutar reduce colisiones (5 en dos días).
+
+
 ## 2026-10-08 — Antigravity: OLA Ω23 CERRADA — RONDA 6: LIMPIEZA FORENSE DE VARIABLES ESPECTRALES HUÉRFANAS Y CONTINUIDAD Z-SCORE EN GOD-ENGINE-CORE (7/7 ADVERTENCIAS ERRADICADAS)
 
 - Rama: `antigravity/quant-sr-ronda6-continuo-integral` (worktree `.antigravity`), base `c41fdd33`.
