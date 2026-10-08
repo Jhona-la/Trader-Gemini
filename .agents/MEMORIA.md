@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Qoder: OLA 70 CERRADA — MEDs RONDA 5 — ORÁCULO PASA 16/144
+
+- **OLA 70 CERRADA** (qoder/ola70-paridad-consenso, base 58d5914d +
+  merges Ω20/GLM-109): los 5 MED de la ronda 5, sombra Y vivo en el
+  MISMO commit (regla #656). A1 el core publica ema_trend_swing_z (z
+  canónica EMA9/21, helper ema_spread_z del piso D-756) y el conformal
+  VIVO la prefiere (antes trend crudo ⇒ acuerdo ≈0.005 = motor MUDO);
+  A2 firma SOMBRA shockwave ((x/c)/2).tanh paridad con el vivo; A3
+  sombra conformal lee conformal_alpha (epsilon tenía 0 escritores);
+  B1 fallbacks tech_threshold 0.24; B3 discriminante Mertens
+  degenerado: γ₃→0 conservando curtosis (jamás sub-gaussiano; la cota
+  al discriminante pura dejaría σ→0 en el vértice — refutada). +test.
+  **ORÁCULO PASA 16/144 (4069 s)**. Signal 116/116, risk 142/142,
+  core 170/170, BT/ws 0 err.
+- **INCIDENTE DISCO**: 100% lleno (target compartido 211 GB) —
+  liberados 142 GB (target/debug/incremental). Vigilar en sesiones largas.
+- **Estado ronda 5: 5/5 MED drenados.** Restan 7 LOW → Ola 71
+  (mecánica, pre-verificada): B2 rejilla while, B4 NaN sigmoid, A4
+  nash knob, A5 renyi signum sombra, A6 telemetría sombras, C1
+  shockwave mid, erratas + telemetría promovidos-rechazados.
+- Detalle: FORENSIC #671.
+
+
 ## 2026-10-07 — Antigravity: OLA Ω20 CERRADA — FASE F7 (TELEMETRÍA, GUARDIANES, AUDITORÍA Y ARQUITECTURA): AUDITORÍA INTEGRAL, F7-SIG-001 Y 94/94 TESTS VERDES
 
 - Rama `antigravity/quant-sr-fase-f7-telemetria-guardianes` (worktree `.antigravity`), rebase limpio sobre `origin/main`.
