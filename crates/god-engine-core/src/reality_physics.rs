@@ -17,7 +17,11 @@ pub struct RealityPhysics {
     pub mode: EngineMode,
     pub base_maker_fee: f64,
     pub base_taker_fee: f64,
-    pub latency_penalty_ms: u64, // Simula latencia de RTT a Binance Tokyo/AWS AP-Northeast.
+    // TRIAJE B (GLM 108): el campo `latency_penalty_ms` fue REMOVIDO —
+    // jamás se leía (la latencia entra por ARGUMENTO explícito, y la
+    // fuente viva es arena.config + muestreo lognormal D-747, fuente
+    // única del término de latencia). Era una trampa de API: setearlo
+    // no tenía efecto y honrarlo crearía una SEGUNDA fuente de latencia.
 }
 
 impl Default for RealityPhysics {
@@ -26,7 +30,6 @@ impl Default for RealityPhysics {
             mode: EngineMode::HyperRealistic,
             base_maker_fee: 0.0002, // 0.02% (Binance VIP 0 Maker)
             base_taker_fee: 0.0005, // 0.05% (Binance VIP 0 Taker)
-            latency_penalty_ms: 15, // 15ms Round-Trip-Time (muy agresivo).
         }
     }
 }
@@ -115,12 +118,29 @@ impl RealityPhysics {
 
         let fee_usd = safe_nominal * safe_taker_fee;
 
+        // TRIAJE B (GLM 108) — CONTRATO DE SALIDA: un precio base finito
+        // pero EXTREMO (f64::MAX) desborda la multiplicación y producía un
+        // fill a `inf` — el guard del caller (lib.rs:7485) sólo cubre
+        // <= 0.0, así que el inf escapaba y qty = nominal/inf = 0. La
+        // heurística PROMETE fill válido o (0,0): salida no finita = no
+        // fill (fail-closed, mismo contrato que el guard de entrada).
+        if !executed_price.is_finite() || !fee_usd.is_finite() {
+            return (0.0, 0.0);
+        }
+
         (executed_price, fee_usd)
     }
 
     /// Estimación condicional maker (Post-Only); no modela si/cuándo se llena.
     /// Para órdenes de horizonte más pausado (tau >= 60s), se coloca en el mejor bid/ask
     /// ejecutando sin slippage adverso y pagando tarifa Maker VIP0 (0.0002).
+    ///
+    /// TRIAJE B (GLM 108) — MUERTA-POR-CONTRATO (patrón A-H4): el guard
+    /// CL-14 (lib.rs:7927) PROHÍBE llamarla desde el core — el host siempre
+    /// envía MARKET y simular entradas pasivas ahorraría al backtest lo
+    /// que el vivo sí paga. Superficie de diagnóstico pura: SIN datos de
+    /// cola no existe probabilidad de fill que modelar; la estimación
+    /// incondicional (precio base + fee maker) ES el contrato deliberado.
     pub fn calculate_maker_entry(
         &self,
         base_price: f64,
@@ -234,6 +254,12 @@ impl RealityPhysics {
             // Cerramos SHORT comprando al ASK (cruzando hacia arriba)
             base_price * (1.0 + total_slippage_pct)
         };
+
+        // TRIAJE B (GLM 108) — CONTRATO DE SALIDA (paridad con la entrada):
+        // salida no finita = no fill (0,0), jamás un fill a ±inf.
+        if !executed_price.is_finite() || !fee_usd.is_finite() {
+            return (0.0, 0.0);
+        }
 
         (executed_price, fee_usd)
     }
