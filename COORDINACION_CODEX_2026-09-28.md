@@ -6051,3 +6051,25 @@ con line-numbers pre-edición. (a)(b) del ensamble siguen al consejo.
   A4 nash knob, A5 renyi signum sombra, A6 telemetría sombras faltantes,
   C1 shockwave mid ausente, erratas + telemetría promovidos-rechazados.
 - Detalle: FORENSIC #671.
+
+## [Qoder — Ola 71] LOWs MECÁNICOS RONDA 5 — EN VUELO (2026-10-08)
+
+- Rama qoder/ola71-mecanica-ronda5 (worktree .ola71, base 2721293b).
+  Los 7 LOW en 3 commits:
+  **B2** rejilla del DSR en múltiplos fijos de 1 s (while — antes
+  re-anclaba al tick de cruce: Δt∈[1,2) s con huecos);
+  **B4** sigmoid dark-alpha propaga NaN si la suma no es finita (antes
+  clamp(±700) convertía +Inf en «evidencia» 1.0 finita que el filtro
+  no atrapaba);
+  **A4** sombra nash lee la MISMA cadena del vivo
+  (game_theory_adversarial_pressure → cvpin con escritor real —
+  nash_equilibrium_drift tenía 0 escritores, presión congelada 0.5);
+  **A5** último signum duro de las sombras erradicado (renyi x.tanh);
+  **A6** telemetría sombra_*_consenso para las 6 sombras invisibles;
+  **C1** shockwave se ABSTIENE sin mid cuando el sonido viene del
+  fallback fraccional (unidades sin denominador común);
+  **erratas** + promote-rechazado explícito (lección B1).
+- Verificación en curso; oráculo después — push sólo si PASA. Claves
+  NUEVAS con par escritor/lector en el mismo commit: ninguna (todas
+  existen). AVISO GLM: sombra_nash ahora sigue a cvpin — si el trainer
+  consumía nash_equilibrium_drift, ya no se escribe (nunca se escribió).
