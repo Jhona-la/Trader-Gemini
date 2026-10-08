@@ -28,6 +28,7 @@ pub mod moe_neat_arena;
 pub mod neat;
 pub mod online_daemon;
 pub mod return_evidence;
+pub use return_evidence::SequentialVilleEvidence;
 pub mod online_random_forest;
 pub mod polars_evolver;
 pub mod random_forest;

@@ -797,6 +797,8 @@ pub struct LiveEvolutionDaemon {
     /// NEGATIVO estadísticamente significativo, se revierte al padre.
     pub post_promo_returns: Vec<f64>,
     pub promoted_generation: Option<(u64, u64)>, // (generación, padre)
+    /// Ω31 — Supermartingala de Ville para watchdog anytime-valid inmune a optional stopping.
+    pub post_promo_ville: Option<crate::return_evidence::SequentialVilleEvidence>,
     /// D-746 (DÉCIMA OLA) — PRUEBAS ACUMULADAS PARA LA CORRECCIÓN POR
     /// MULTIPLICIDAD. El gate DSR recibía el literal `2_000` en cada ronda,
     /// como si cada evaluación de tres minutos fuese el primer experimento de
@@ -850,6 +852,7 @@ impl LiveEvolutionDaemon {
             returns_by_coin: std::collections::HashMap::new(),
             post_promo_returns: Vec::with_capacity(256),
             promoted_generation: None,
+            post_promo_ville: None,
             cumulative_trials: 0,
             market_returns_by_coin: std::collections::HashMap::new(),
             market_last_bar: std::collections::HashMap::new(),
@@ -1114,9 +1117,12 @@ impl LiveEvolutionDaemon {
                         if coin_window.len() > 400 {
                             coin_window.drain(0..coin_window.len() - 400);
                         }
-                        // FASE 3: evidencia post-promoción para el watchdog.
+                        // FASE 3 + Ω31: evidencia post-promoción para el watchdog clásico y anytime-valid.
                         if self.promoted_generation.is_some() {
                             self.post_promo_returns.push(ret);
+                            if let Some(ville) = self.post_promo_ville.as_mut() {
+                                ville.observe(ret);
+                            }
                         }
 
                         // E4a — FEATURES REALES para el Shadow Forest (antes:
@@ -1191,7 +1197,12 @@ impl LiveEvolutionDaemon {
             }
             return;
         };
-        if t_stat <= -2.0 {
+        let ville_degraded = self
+            .post_promo_ville
+            .as_ref()
+            .map(|v| v.is_exhausted() || v.is_evidence_decayed(0.50))
+            .unwrap_or(false);
+        if t_stat <= -2.0 || ville_degraded {
             use quantum_arena::genome_store::GenomeEnvelope;
             let destino = GenomeEnvelope::load_generation(generation_id)
                 .ok()
@@ -1201,9 +1212,10 @@ impl LiveEvolutionDaemon {
                     })
                 });
             println!(
-                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {:.2} sobre {} obs post-promoción. Destino del rollback: {:?} (padre registrado {}).",
+                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {:.2}, ville_degraded: {} sobre {} obs post-promoción. Destino del rollback: {:?} (padre registrado {}).",
                 generation_id,
                 t_stat,
+                ville_degraded,
                 self.post_promo_returns.len(),
                 destino,
                 parent
@@ -1234,6 +1246,7 @@ impl LiveEvolutionDaemon {
             // Watchdog consumido: no re-revertir en cada ciclo sobre la misma evidencia.
             self.promoted_generation = None;
             self.post_promo_returns.clear();
+            self.post_promo_ville = None;
         }
     }
 
@@ -1329,6 +1342,7 @@ impl LiveEvolutionDaemon {
                     env.parent_generation,
                 );
                 if reiniciada {
+                    self.post_promo_ville = crate::return_evidence::SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).ok();
                     println!(
                         "🐕 [WATCHDOG-EXTERN] Promoción externa detectada (gen {}, padre {}) — vigilancia de rollback ARMADA (cosecha/manual cubiertos).",
                         env.generation, env.parent_generation
@@ -1888,6 +1902,7 @@ impl LiveEvolutionDaemon {
                     env.parent_generation,
                 );
                 if reiniciada {
+                    self.post_promo_ville = crate::return_evidence::SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).ok();
                     println!(
                         "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado.",
                         env.generation, env.parent_generation

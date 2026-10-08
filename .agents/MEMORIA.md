@@ -1,4 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-08 — Antigravity: OLA Ω31 CERRADA — INTEGRACIÓN DE EVIDENCIA SECUENCIAL VILLE EN MOTOR DE EVOLUCIÓN (ROLLBACK ANYTIME-VALID EN ONLINE_DAEMON)
+
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `d27dd2bb`.
+- **IMPLEMENTACIÓN DE `SequentialVilleEvidence` EN `crates/evolution-engine/src/return_evidence.rs`**:
+  - Encapsula `risk_engine::VilleEProcess` en el pipeline de evaluación del motor de evolución online.
+  - Proporciona inferencia *anytime-valid* inmune al sesgo de parada opcional (*optional stopping*): cota maximal de Ville $\mathbb{P}_{H_0}(\sup_{t \ge 0} M_t \ge 1/\alpha) \le \alpha$.
+  - Métodos provistos: `observe`, `is_edge_certified`, `is_exhausted`, `evidence_drawdown`, `is_evidence_decayed`, `anytime_p_value`.
+  - Reexportado públicamente en `crates/evolution-engine/src/lib.rs`.
+- **CABLEADO EN `crates/evolution-engine/src/online_daemon.rs`**:
+  - Añadido campo `post_promo_ville: Option<SequentialVilleEvidence>` a `LiveEvolutionDaemon`.
+  - Armado automático con $\alpha=0.05$ y límites $[\lambda_{\min}=0.05, \lambda_{\max}=0.50]$ ante promociones hot-swap internas y promociones externas detectadas.
+  - Ingesta en caliente de cada retorno realizado posterior a la promoción en `post_promo_ville.observe(ret)`.
+  - Watchdog de degradación en `check_post_promotion_degradation`: evalúa `ville_degraded = is_exhausted() || is_evidence_decayed(0.50)` junto al criterio complementario `t_stat <= -2.0`, ejecutando el rollback automático a la generación padre con certificación matemática de pérdida de ventaja.
+- **TESTS Y CONTRATOS**:
+  - Añadido test unitario/contrato en `crates/evolution-engine/tests/return_evidence_contract.rs`: `sequential_ville_evidence_certifies_edge_and_detects_decay`.
+  - `cargo test -p evolution-engine`: **136/136 tests verdes (100% éxito)** (65 lib + 71 contract tests).
+  - `cargo check --workspace --all-targets`: **0 errores** en todos los 23 crates y binarios del workspace (24.69s).
+
 ## 2026-10-08 — Antigravity: OLA Ω30 CERRADA — INTEGRACIÓN DE SUPERMARTINGALAS DE VILLE Y E-VALORES ANYTIME-VALID EN RISK-ENGINE (INMUNIDAD A PARADA OPCIONAL)
 
 - Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `74bb2278`.

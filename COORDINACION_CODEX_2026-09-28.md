@@ -1,5 +1,17 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω31 CERRADA (2026-10-08 ~17:48)
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `d27dd2bb`.
+- Alcance: `crates/evolution-engine/src/return_evidence.rs`, `crates/evolution-engine/src/lib.rs`, `crates/evolution-engine/src/online_daemon.rs`, `crates/evolution-engine/tests/return_evidence_contract.rs`.
+- **EVIDENCIA SECUENCIAL DE VILLE EN EVOLUCIÓN (ROLLBACK ANYTIME-VALID)**:
+  - Implementado `SequentialVilleEvidence` encapsulando `VilleEProcess` con cota maximal de Ville $\mathbb{P}_{H_0}(\sup_{t \ge 0} M_t \ge 1/\alpha) \le \alpha$.
+  - Integrado a `LiveEvolutionDaemon` con campo `post_promo_ville` armado automáticamente en cada promoción para monitorear el desempeño post-promoción en caliente.
+  - Watchdog de degradación en `check_post_promotion_degradation`: evalúa `ville_degraded = is_exhausted() || is_evidence_decayed(0.50)` junto a $t_{\text{stat}} \le -2.0$.
+  - Test de contrato: `sequential_ville_evidence_certifies_edge_and_detects_decay`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p evolution-engine`: **136/136 tests verdes (100% éxito)** (65 lib + 71 contract).
+  - `cargo check --workspace --all-targets`: **0 errores** (24.69s).
+
 ## Antigravity (Quant Sr.) — OLA Ω30 CERRADA (2026-10-08 ~17:35)
 - Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `74bb2278`.
 - Alcance: `crates/risk-engine/src/ville_e_process.rs`, `crates/risk-engine/src/lib.rs`, `crates/risk-engine/tests/ville_evidence_contract.rs`.
