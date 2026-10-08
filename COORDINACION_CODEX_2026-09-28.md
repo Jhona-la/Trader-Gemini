@@ -5939,3 +5939,50 @@ análisis cuidadoso la próxima). 11 ítems B drenados por GLM en 4 ciclos.
   promovidos-rechazados.
 - Detalle: FORENSIC #670. Tabla completa paridad 13 motores×3 caminos en
   la sección RONDA-5 de BARRIDO (verificada por auditor A).
+
+## 2026-10-07 — GLM: 109 — TOMO el cluster ensemble×5 (triaje B final): (c)+(d)+(e); (a)+(b) al consejo
+
+Exploración del cluster con resultado mixto:
+- (e) momentum PnL-negativo: CÓDIGO MUERTO (0 callers en árbol vivo —
+  mi nota del 108 "alimentan gates vivos" era inexacta para este).
+  Corrección de contrato SIN oráculo.
+- (c) baseline 0.5: viola doctrina CL-15 ESTABLECIDA ("no opina es
+  AUSENCIA, no un 0,5") — fix inequívoco (ausencia de voto ML), pero
+  voltea un votante vivo del ensamble ⇒ oráculo.
+- (d) trend soft-cap: tanh comprime SIEMPRE (0.02→0.01974) — un
+  "límite superior" que reduce hasta el 100% de lo que está bajo el
+  bound. Fix: saturación logística que preserva lo bajo el bound ⇒
+  oráculo.
+- (a) piso 0.70 y (b) boost clones: recalibran TODA decisión del
+  ensamble — la auditoría XIV exige análisis de tasas de aceptación con
+  datos + preservación de masa/prior por fuente. NO son fix de ciclo:
+  quedan como MENÚ del consejo (ola con oráculo + análisis medido).
+
+## 2026-10-08 — GLM: 109 CIERRE — TRIAJE B: 14/17 drenados; quedan (a)(b) como decisión de consejo
+
+- **(c) CL-15 (CON oráculo)**: los fallbacks 0.5 de ml_prob/ml_base en
+  flow_excitation_confluence FABRICABAN lift (voto short −0.33 con base
+  inventada que no existiría con la honesta 0.18-0.23). Ahora: sin prob
+  o sin base medida el motor ML NO OPINA (voto 0). En producción el
+  host SÍ publica ambas claves cuando hay bosque (CL-21) — el cambio
+  sólo voltea el voto en condiciones sin-bosque. **Oráculo T-1: PASA
+  2/2 (5069 s)**.
+- **(d) soft-cap (CON oráculo, mismo veredicto)**: bound·tanh comprimía
+  SIEMPRE (0.02→0.01974). Mapa por tramos C¹: identidad EXACTA hasta el
+  80% del bound (el régimen operativo típico queda bit-exacto), y
+  saturación exponencial hacia el bound encima (derivada 1 en el
+  empalme, sin kink). Valores típicos de TP quedan intactos.
+- **(e) SIN oráculo**: código muerto verificado (0 callers) — la
+  regresión P15 activaba extensión de momentum con PnL NEGATIVO vía
+  dirección de posición; sin ganancia realizada, alineación neutral.
+- **(a) piso 0.70 + (b) boost clones → DECISIÓN DEL CONSEJO**: ambos
+  recalibran TODA decisión del ensamble (gates 5762/6206, router IOC,
+  lifetime 1+9·conf). La auditoría XIV §14 exige comparar tasas de
+  aceptación/costes/exposición con datos medidos, y advierte que la
+  invariancia a clones exige preservar masa/prior por fuente (no basta
+  quitar el boost). Propuesta: ola con oráculo + análisis de aceptación
+  sobre tapes cuando el consejo lo priorice.
+
+Suites: ensemble 5/5, signal 116/116, strategy-core 26/26, core 170/170.
+Corrección de mi nota del 108: (e) NO alimenta gates vivos (0 callers) —
+el cluster era 4 vivos + 1 muerto. TRIAJE B: 14 de 17 tests drenados.
