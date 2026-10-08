@@ -1974,14 +1974,6 @@ impl GodEngineCore {
                     let voto_sombra =
                         signal_engine::quantum_oscillator::QuantumOscillatorEngine::voto_espectral(
                             &desplazamientos,
-                            self.arena.registry.get_value_or("quantum_k_spring", 1.0),
-                            self.arena
-                                .registry
-                                .get_value_or("quantum_lambda_anharmonic", 0.1),
-                            self.arena
-                                .registry
-                                .get_value_or("quantum_alpha", 0.5)
-                                .clamp(0.01, 10.0),
                         );
                     if let Some((k_dom, v_dom)) = voto_sombra.dominante() {
                         self.arena.registry.set_for_coin(
@@ -2001,9 +1993,23 @@ impl GodEngineCore {
                     // #610 (Ola 32): sombras del SOLITÓN (perfil sech firmado)
                     // y del CHOQUE supersónico (salto Rankine-Hugoniot
                     // M(τ)=|x(τ)|/c) — misma malla de desplazamientos.
+                    // G2-13 (paridad inputs): la MISMA cadena del vivo —
+                    // soliton_amplitude → fallback order_flow_imbalance
+                    // (medido). Antes la sombra leía el knob muerto con
+                    // default 1.0 mientras el vivo usaba el OFI real.
+                    let amp_soliton = {
+                        let a = self.arena.registry.get_value_or("soliton_amplitude", f64::NAN);
+                        if a.is_finite() && a > 0.0 {
+                            a
+                        } else {
+                            self.arena
+                                .registry
+                                .get_for_coin_or(coin_id, "order_flow_imbalance", 1.0)
+                        }
+                    };
                     let voto_soliton = signal_engine::soliton_wave::SolitonWaveEngine::voto_espectral(
                         &desplazamientos,
-                        self.arena.registry.get_value_or("soliton_amplitude", 1.0),
+                        amp_soliton,
                     );
                     if let Some((k_sol, v_sol)) = voto_soliton.dominante() {
                         self.arena.registry.set_for_coin(
@@ -3225,8 +3231,15 @@ impl GodEngineCore {
                 // A escala lenta (s=1, tau=12h): buffer amplio (22-35 bps) y activación escalada con el objetivo TP.
                 // En todo el continuo s in [0, 1]: interpolación suave lerp(fast, slow, s) sin escalones ni acantilados.
                 // VIP0 Binance taker fee = 0.05% (5 bps). Roundtrip taker fee = 10 bps. Slippage floor + taker impact = ~6.0 bps.
-                // Total roundtrip friction garantizada: cubre tarifa maker entry + taker stop exit + doble slippage floor.
-                let roundtrip_friction = (live_fee * 1.5 + slip_floor * 2.0).max(0.00145);
+                // H0-4 (fuente única): la noción local 1.5·fee+2·slip era
+                // una SEGUNDA fricción de roundtrip distinta de la canónica
+                // `tp_sl::roundtrip_friction` (XLIV-8). Unificada: la misma
+                // función pura del gate, con el fee vivo y latencia 0 en el
+                // contexto de gestión (XLIV-8b: ATR/latencia no finitos ⇒
+                // latencia 0). El piso 0.00145 se conserva.
+                let roundtrip_friction =
+                    risk_engine::tp_sl::roundtrip_friction(live_fee, slip_floor, atr_pct_live, 0.0)
+                        .max(0.00145);
                 let buf_fast = (roundtrip_friction + 0.00035).clamp(0.00180, 0.00250);
                 // El espacio de respiración (breathing room) debe ser proporcional a la volatilidad real ATR(tau):
                 let min_breathing_fast = (atr_pct_live * 1.25).max(0.00150);

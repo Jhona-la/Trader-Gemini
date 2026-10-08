@@ -90,10 +90,15 @@ impl QuantumOscillatorEngine {
     /// (bit a bit intacto hasta el cambio ordenado con oráculo).
     pub fn voto_espectral(
         desplazamientos: &[f64; ESCALAS_OSCILADOR],
-        k_spring: f64,
-        lambda_anharmonic: f64,
-        alpha: f64,
     ) -> VotoEspectral {
+        // G2-11 (F3-A4): los knobs del registro (quantum_k_spring /
+        // lambda_anharmonic / alpha) no tenían ESCRITOR ni gen — lecturas
+        // decorativas congeladas a los defaults. Retiradas: consts internas
+        // bit-idénticas, la ilusión de configurabilidad eliminada.
+        const K_SPRING: f64 = 1.0;
+        const LAMBDA_ANHARMONIC: f64 = 0.1;
+        const ALPHA_CONFINAMIENTO: f64 = 0.5;
+        let alpha = ALPHA_CONFINAMIENTO;
         let safe_alpha = if alpha.is_finite() && alpha > 0.0 {
             alpha.clamp(0.01, 10.0)
         } else {
@@ -101,7 +106,7 @@ impl QuantumOscillatorEngine {
         };
         VotoEspectral::desde_espectro(desplazamientos, |x| {
             let safe_x = if x.is_finite() { x.clamp(-10.0, 10.0) } else { 0.0 };
-            let force = Self::compute_quantum_restoring_force(safe_x, k_spring, lambda_anharmonic);
+            let force = Self::compute_quantum_restoring_force(safe_x, K_SPRING, LAMBDA_ANHARMONIC);
             // #650 (Ola 50) — PARIDAD con el vivo (AGY-P14): la MISMA
             // envolvente C(x) = e^{−α·x²} ∈ (0,1] que modula la fuerza del
             // motor vivo. La sombra usaba √|ψ|² = (α/π)^{1/4}·e^{−αx²/2}:
@@ -169,37 +174,17 @@ impl QuantumStrategy for QuantumOscillatorEngine {
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        let k_spring = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "quantum_k_spring",
-                "QuantumOscillatorEngine",
-            )
-            .map(|p| p.get_value())
-            .unwrap_or(1.0);
-        let lambda = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "quantum_lambda_anharmonic",
-                "QuantumOscillatorEngine",
-            )
-            .map(|p| p.get_value())
-            .unwrap_or(0.1);
+        // G2-11 (F3-A4): knobs sin escritor NI gen — retiradas del registro;
+        // consts bit-idénticas a los defaults congelados (paridad por
+        // construcción entre vivo y sombra, ahora evidente).
+        const K_SPRING: f64 = 1.0;
+        const LAMBDA_ANHARMONIC: f64 = 0.1;
+        const ALPHA_CONFINAMIENTO: f64 = 0.5;
+        let k_spring = K_SPRING;
+        let lambda = LAMBDA_ANHARMONIC;
+        let alpha = ALPHA_CONFINAMIENTO;
 
-        let alpha = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "quantum_alpha",
-                "QuantumOscillatorEngine",
-            )
-            .map(|p| p.get_value())
-            .unwrap_or(0.5)
-            .clamp(0.01, 10.0);
-
-        if !pos.is_finite() || !k_spring.is_finite() || !lambda.is_finite() {
+        if !pos.is_finite() {
             return 0.0;
         }
         let force = Self::compute_quantum_restoring_force(pos, k_spring, lambda);
@@ -293,10 +278,9 @@ mod qo_609_tests {
             x_neg[k] = -*v;
             x_extremo[k] = 10.0; // estado del continuo (ruptura)
         }
-        let (k, l, a) = (1.0, 0.1, 0.5);
-        let voto_pos = QuantumOscillatorEngine::voto_espectral(&x_pos, k, l, a);
-        let voto_neg = QuantumOscillatorEngine::voto_espectral(&x_neg, k, l, a);
-        let voto_extremo = QuantumOscillatorEngine::voto_espectral(&x_extremo, k, l, a);
+        let voto_pos = QuantumOscillatorEngine::voto_espectral(&x_pos);
+        let voto_neg = QuantumOscillatorEngine::voto_espectral(&x_neg);
+        let voto_extremo = QuantumOscillatorEngine::voto_espectral(&x_extremo);
         // Antisimetría: x → −x ⇒ voto → −voto (el pozo es impar).
         for kk in 0..ESCALAS_VOTO {
             let vp = voto_pos.en_escala(kk);
@@ -309,7 +293,7 @@ mod qo_609_tests {
             assert!(voto_extremo.en_escala(kk).abs() < 1e-3);
         }
         // Desplazamientos nulos ⇒ voto nulo.
-        let cero = QuantumOscillatorEngine::voto_espectral(&[0.0; ESCALAS_VOTO], k, l, a);
+        let cero = QuantumOscillatorEngine::voto_espectral(&[0.0; ESCALAS_VOTO]);
         assert_eq!(cero.dominante(), None, "sin convicción no hay dominante");
     }
 
@@ -321,7 +305,7 @@ mod qo_609_tests {
         let mut x = [0.0; ESCALAS_VOTO];
         x[5] = 1.0; // desplazamiento moderado (confinado)
         x[25] = 6.0; // desplazamiento extremo (ruptura)
-        let voto = QuantumOscillatorEngine::voto_espectral(&x, 1.0, 0.1, 0.5);
+        let voto = QuantumOscillatorEngine::voto_espectral(&x);
         assert!(
             voto.en_escala(25).abs() < voto.en_escala(5).abs(),
             "la escala de ruptura debe votar más débil: moderada={} extrema={}",
