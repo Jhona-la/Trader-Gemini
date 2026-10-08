@@ -1,5 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Qoder: OLA 69 CERRADA + RONDA 5 — ORÁCULO PASA 16/144
+
+- **OLA 69 CERRADA** (qoder/ola69-saturacion-residual, base 785b7a1c):
+  resto ronda 4 — B2 muestreo DSR SOLO rejilla 1s (sin pérdida:
+  prev_cap avanza en rejilla, cada retorno integra los cierres);
+  B3+B6 sharpe_std_error g4.max(3.0) (leptocúrtico jamás sub-gaussiano;
+  mi propuesta gaussiana n<60 fue REFUTADA por el subagente);
+  C2 firma viva shockwave tanh(mach/2); C3 acuerdo conformal /2.0;
+  C4 gate perceptron smoothstep C¹; A2 adenda ADR-0014 (Ville M/α).
+  **ORÁCULO PASA 16/144 (8022 s)**. Signal 116/116, risk 141/141,
+  core 170/170, ws 0 err.
+- **RONDA 5 CERRADA (docs)**: 3 auditores contra este árbol — **12
+  hallazgos (0 HIGH, 5 MED, 7 LOW)**: primera ronda sin HIGH. Patrón
+  residual único: fix a un camino, el otro con calibración vieja
+  (conformal vivo mudo con trend crudo; sombra shockwave sin /2;
+  clave muerta conformal_epsilon en el consenso; fallbacks
+  tech_threshold fuera de banda; gaussiano alcanzable γ₃>√2).
+- **Asignación: Ola 70 = A1+A2+A3+B1+B3 (paridad sombra+vivo mismo
+  commit, oráculo)**; Ola 71 = mecánica (B2 rejilla fija, B4 NaN
+  sigmoid, A4 nash knob, A5 renyi signum, A6 telemetría sombras, C1
+  shockwave mid, erratas) + telemetría promovidos-rechazados.
+- Detalle: FORENSIC #670. Buzón: entrada + cierre.
+
+
 ## 2026-10-07 — Qoder: RONDA 4 DEL BARRIDO + OLA 68 CERRADA — ORÁCULO PASA 16/144
 
 - Mandato del operador: cuarta revisión desde la base (3 auditores
