@@ -15,7 +15,14 @@ pub fn check_drawdown_limit(
         return false; // Total capital loss or corruption -> block
     }
     if !peak_capital.is_finite() || peak_capital <= 0.0 {
-        return true; // No hay histórico, se asume seguro inicial
+        // TRIAJE B (GLM 106): FAIL-CLOSED. Pico desconocido = drawdown NO
+        // medible — asumir "seguro" era fabricar permiso sin evidencia (un
+        // pico 0 contra capital positivo es 100% de drawdown consumido).
+        // En el arranque LEGÍTIMO el pico se inicializa al capital inicial
+        // (nunca NaN); llegar aquí es corrupción de estado.
+        // NOTA: gemelo VIVO de esta semántica en god-engine lib.rs:279
+        // (peak NaN omite el veto inline) — cerrarlo es ola con oráculo.
+        return false;
     }
 
     let current_drawdown = (peak_capital - current_capital) / peak_capital;
@@ -131,6 +138,10 @@ pub fn enforce_minimum_notional(
 /// Protege la cuenta ante rachas de pérdidas consecutivas (Punto #211)
 #[inline(always)]
 pub fn check_streak_drawdown_limit(consecutive_losses: u32, max_allowed_streak: u32) -> bool {
-    let allowed = max_allowed_streak.max(2);
-    consecutive_losses < allowed
+    // TRIAJE B (GLM 106): el cap EXPLÍCITO se honra — el piso `.max(2)`
+    // elevaba silenciosamente un cap de 1 a 2 (una pérdida más de lo que
+    // el dueño autorizó). Un cap es la palabra del dueño: 1 = una pérdida
+    // ya veta; 0 = bloqueo total legítimo. (Superficie auxiliar auditada:
+    // el bound vivo de racha es ruin::clamp_ruin.)
+    consecutive_losses < max_allowed_streak
 }

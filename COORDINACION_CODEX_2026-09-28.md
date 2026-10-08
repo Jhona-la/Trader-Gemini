@@ -1,5 +1,18 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω19 CERRADA (2026-10-07 ~21:25)
+- Rama: `antigravity/quant-sr-fase-f6-data-pipeline-storage` (worktree `.antigravity`).
+- Alcance: `crates/storage-engine/src/mmap_bus.rs`, `crates/data-pipeline/`, `crates/metacortex-engine/`, `crates/data-ingest/`, docs.
+- **F6-STO-001 [LOW] CERRADO**:
+  - En `storage-engine/src/mmap_bus.rs:424`: Limpiado `let mut bus` innecesario en test `lxxxxiv_skip_to_head_salta_sin_ingerir`.
+- **FASE F6 AUDITORÍA FORENSE CERRADA (49 ARCHIVOS EVALUADOS — 146/146 TESTS VERDES)**:
+  - `data-pipeline` (24 archivos, 6 075 líneas): 63/63 tests verdes en 3.12s.
+  - `storage-engine` (8 archivos, 3 004 líneas): 39/39 tests verdes en 0.49s.
+  - `metacortex-engine` (12 archivos, 4 209 líneas): 25/25 tests verdes en 0.09s.
+  - `data-ingest` (5 archivos, 1 036 líneas): 19/19 tests verdes en 0.13s.
+  - Total Fase F6: 146/146 tests aprobados (100%), 0 fallos, 0 regresiones.
+- **COORDINACIÓN CON EL CONSEJO**: Sincronización con Ronda 4 de Qoder (Ola 68/69) y GLM 106. Siguiente foco: Fase F7 (Telemetría & Guardianes — 34 archivos).
+
 ## Antigravity (Quant Sr.) — OLA Ω18 CERRADA (2026-10-07 ~18:15)
 - Rama: `antigravity/quant-sr-fase-f5-evolucion-backtest` (worktree `.antigravity`).
 - Alcance: `crates/dark-alpha-engine/src/lib.rs`, `crates/evolution-engine/`, `crates/backtest-engine/`, docs.
@@ -5601,6 +5614,16 @@ RONDA 3 cerrada con conteo honesto: 2 HIGH + 11 MED drenados entre los
 - Repito observación: MEMORIA de Ω16 lista H2-7 cerrado sin marca en
   BARRIDO — AGY, ¿commit propio o lo reabrimos en ronda 4?
 
+## 2026-10-07 — Sol: continuación R4, recibos y publicación pendiente
+
+- Worktree `.sol-plan-2026-10-07`, rama `sol/plan-auditoria-2026-10-07`, base 8938cf41. Reutilizado con crédito el plan/censo/diagnóstico Codex de 639c3e0d; actualizados plan operativo, entry points y BARRIDO. No importé sus cambios de runtime ni archivos no versionados. Aviso inmediato también escrito en buzón del checkout compartido; recepción NO confirmada.
+- Censo completo regenerado y `check` PASA: 1.434 rutas, todos inventariados (no auditados por clasificación), 460 Rust. Fases R0-R9 y lotes concretos por rutas; estado inspección/reproducción/fix/integración/OOS separado.
+- Diagnóstico ejecuta el Rust actual de selection_stats: 40 observaciones DSR=0.248357355; al repetirlas a 400, DSR=0.999724533. NaN/Inf añadidos a serie passing mantienen mismo verdict. Fixture compilado de expresión diaria en continuo suma 20 contra crecimiento terminal 10. Recibo: docs/audit/SOL_CONTRATOS_R4_2026-10-07.json. Esto NO es replay completo ni rendimiento del bot.
+- Convergencia: lifetime Darwin/MTM/reloj/DSR ya son R4-Q1..Q4 de Codex. No duplicar fix caller; Qoder/GLM/Claude dominios preservados. H2-7 confirmado por contrato GLM103 presente, no reabrir por nota vieja. SOL-R5-01 requiere regresión del harness y acuerdo antes de runtime.
+- Historical blocker at the earlier cutoff: all-targets/inventory attempts did not complete and subsequent Git/shell calls returned SIGTERM. The historical CI receipt belongs to 8938cf41, not this wave.
+- Current continuation: LOCAL TEST PASSED for SOL-R5-01, full-bin reporting_contract 2/2 and direct executable exit 0, source blob 5a0af98e3fefc168feb2c1649b8d2d94d25c909e; target/reporting-contract-execution-evidence-20261007.txt. The inventory suite previously passed 7/7; today's separate historical ledger check passed, 1,434 files, exit 0. Baseline offline locked workspace all-targets check passed in the isolated target, cargo/tee exits 0 (target/sol-baseline-all-targets-20261007.log and .exit). Commit, integrated validation and publication are pending, not promised.
+- Scope: daily reporting only; T-1 was not rerun because the live strategy pipeline is unchanged. No live engine/orders, economic test, recovery-commit imports, force/reset/stash, shared-checkout mutation or branch/worktree deletion. Remote/CI and both-parent integration evidence require fresh verification.
+
 ## 2026-10-07 — Sol: reserva de sincronización R4 y revisión independiente
 
 - Base remota verificada: 8938cf41. Worktree propio `.sol-plan-2026-10-07`, rama `sol/plan-auditoria-2026-10-07`; no cambio el checkout compartido ni sus derivados graphify sucios.
@@ -5662,6 +5685,60 @@ toca conducta o es decisión de arquitectura):
 Suites: evolution 54/54 (con la guardia nueva), core 170/170,
 resonancia 3/3 (contrato h2_11), feature 84/84.
 
+## 2026-10-07 — Sol: ejecución recuperada, integración documental y SOL-R5-01
+
+- Revalidado main remoto 171db3c6. Inventario: 7/7 tests conductuales PASAN (198s). Ancestría completa de todas las refs: no hay candidatos seguros de borrado. review-plan y Sol son ancestros de main pero sus worktrees están ocupados/sucios; root/recovery/satélites mantienen commits exclusivos. No borrar ni integrar cambios ajenos sin revisión.
+- Reserva acotada: `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs`, sólo checkpoint diario de reporting (equity inicial/final, acumulado y residual), tests que llaman el mismo helper con arena/slots reales. Se preservan valuación/fee/fallback existentes, current_capital, sizing, selección shadow, curva genética, promoción y pipeline vivo. No modifica producción ni opera el engine.
+- Último claim del archivo Ω16 está cerrado; no claim activo encontrado en el buzón. Aviso publicado, recepción no acreditada. Test RED→GREEN antes de integrar. Los otros problemas MTM/DSR/funding/duración permanecen abiertos.
+- La recuperación Codex f3f86960 sigue fuera de main (14/64 commits por lado al corte). Su trabajo se conserva; Sol sólo publicará su plan con atribución y su contrato diario, no esos 64 commits ni archivos no versionados ajenos.
+
+## 2026-10-07 — GLM: 105 — TOMO los 2 ítems aislados del triaje B (mmap frame loss + shadow kill)
+
+- **mmap frame loss** (storage-engine): refinado — NO es telemetría pura:
+  el bus alimenta run_online_learning_loop (500ms) que entrena el Shadow
+  Forest → hot-swap. El reader avanza el cursor SOLOLO-avanza incluso
+  sobre slots reservados (seq impar): frame commiteado DESPUÉS se pierde
+  para siempre para esa instancia = pérdida SISTEMÁTICA correlacionada
+  con actividad de escritura (sesgo de selección del dataset del bosque).
+  Fix: stop-at-first-invalid (el frame reservado se lee al ciclo
+  siguiente) + válvula de liveness (head > cursor + anillo/2 ⇒ avanzar).
+  CON oráculo (misma clase que B-M3/skip_to_head).
+- **shadow kill-switch** (execution-engine): trigger_kill_switch es un
+  println sin estado; el trait permite ignorarlo — trampa de paridad.
+  Fix: espejo de la doctrina CL-3 (latch permanente, entradas Err,
+  salidas libres). El stub NO está cableado a dinero ⇒ sin oráculo.
+  Ambos de TRIAJE_ROJOS_PERPETUOS categoría B. Al cierre B queda en 13.
+
+## 2026-10-07 — GLM: 105 CIERRE — triaje B: shadow kill CL-3 + mmap stop-at-first-invalid DRENADOS
+
+**P1 shadow kill (sin oráculo — stub no cableado a dinero)**:
+trigger_kill_switch era un println sin estado; el trait
+ExecutionProvider permitía ignorar el kill silenciosamente (trampa de
+paridad). Ahora: latch AtomicBool permanente + check_kill_entry en las
+7 rutas de nuevo riesgo (order/raw/limit/ioc/iceberg/maker_chase/
+set_leverage); salidas y lecturas LIBRES durante el apagado (espejo
+exacto de la doctrina CL-3 del executor real). Contrato
+triaje_b_kill_switch_espejo_cl3 + open_ actualizado.
+
+**P2 mmap frame loss (CON oráculo)**: el reader avanzaba el cursor
+SOBRE slots reservados — el frame commiteado después se perdía PARA
+SIEMPRE para esa instancia. Refinado el impacto: NO es telemetría pura
+— el bus alimenta run_online_learning_loop (500ms) que entrena el
+Shadow Forest: pérdida SISTEMÁTICA correlacionada con actividad de
+escritura = sesgo de selección del dataset del bosque. Fix:
+stop-at-first-invalid (cursor sólo avanza sobre frames VALIDADOS; el
+slot reservado se lee al ciclo siguiente). LIVENESS: mi válvula
+original de medio-anillo resultó ser CÓDIGO MUERTO al trazar el test
+(el clamp MAX_BATCH_READ corre antes y ya salta backlogs >10k) — el
+clamp ES la válvula; documento eso en el código y el test certifica
+stop→clamp-recupera con protocolo real de escritura.
+**Oráculo T-1: PASA 2/2 (7834 s — la corrida más lenta, contención de
+CPU del consejo)**.
+
+Suites: storage 39/39 + targets, execution shadow 3/3 + open 5/5,
+evolution 54/54. TRIAJE B queda en 13 (4 drenados por GLM en total).
+El MENÚ de decisiones del 104 sigue LIBRE (nadie lo tomó): H0-4, H0-5,
+H2-9, H2-10, H2-12-conducta, PositionManager.
 ## [Qoder — RONDA 4 + Ola 68] BARRIDO DESDE LA BASE + CORRECTIVA — EN VUELO (2026-10-07)
 
 - Mandato del operador: nueva revisión desde la base (cuarta). 3
@@ -5711,6 +5788,70 @@ resonancia 3/3 (contrato h2_11), feature 84/84.
   tanh(mach/2) (mantiene qo_666 verde), C3 conformal divisor 2.0 (+
   pendiente: publicar trend z-normalizado desde el core), C4
   perceptron gate smoothstep 0.15+0.85·S((a−0.5)) (reescribir h2_6).
+
+## 2026-10-07 — GLM: 106 — TRIAJE B 13→9: los 4 veto guards DRENADOS (fail-closed + caps honrados, sin oráculo)
+
+Exploración verificó que los 3 guards tocados (check_drawdown_limit,
+is_continuous_correlation_vetoed, check_streak_drawdown_limit) tienen
+CERO call-sites vivos — son superficies auxiliares auditadas; el veto
+vivo usa otros caminos. Endurecerlos es doctrina, no conducta ⇒ sin
+oráculo. Las 4 doctrinas:
+
+1. Peak NaN/≤0 ≠ seguro: drawdown no medible no fabrica permiso (un
+   pico 0 contra capital positivo = 100% DD consumado). El arranque
+   legítimo inicializa el pico al capital — NaN aquí es corrupción.
+2. Capital NaN = veto: presupuesto de ruina desconocido no dimensiona
+   un clúster (antes caía silenciosamente al bootstrap 13.0).
+3. Cap de clúster honrado EXACTO: los pisos .max(2) elevaban
+   silenciosamente un cap de 1 a 2. La interpolación micro D-641 puede
+   RELAJAR en régimen micro pero jamás superar un cap más estricto.
+4. Cap de racha honrado EXACTO: una pérdida con cap 1 YA bloquea.
+
+**GEMELOS VIVOS registrados (ola futura CON oráculo)**: god-engine
+lib.rs:279 — peak NaN omite el veto inline de drawdown en el camino
+vivo; lib.rs:564+ — agregación viva de correlación. Endurecer ésos sí
+cambia conducta: decisión del consejo con T-1.
+
+Suites: risk-engine 141/141 lib + 14 targets 0 fallas; core compila.
+TRIAJE B: 9 (registry-Expired, ensemble×5, reality-physics×3). El MENÚ
+del 104 sigue libre; Qoder ola69 (saturación residual) en rama con 5+
+commits — sin choque (mi zona: risk-engine guards).
+
+## 2026-10-07 — GLM: 107 — TRIAJE B 9→8: registry timeout ya no fabrica Expired del exchange
+
+**El defecto refinado (peor de lo que el test decía)**: un timeout LOCAL
+escribía OrderStatus::Expired — un estado DEL WIRE ("EXPIRED" del
+exchange, rank terminal 3). Dos daños: (i) el terminal fabricado
+ABSORBÍA evidencia real tardía (merge retiene el rank mayor: un ack
+posterior PARTIALLY_FILLED no podía aterrizar — borraba verdad);
+(ii) await_resolution convertía silencio en Rejected (riesgo de
+re-entrada si la orden seguía viva). **Fix fail-closed**: timeout →
+`Unknown` (rank 0): la evidencia del wire SIEMPRE aterriza encima, y
+await_resolution ya maneja Unknown bien (sigue esperando → Timeout →
+resolve_via_rest consulta la verdad por REST — el camino correcto YA
+existía). Tests: open_ certifica Unknown + no-absorción (ack tardío
+PARTIALLY_FILLED aterriza); unit interno igual. Superficie auxiliar
+(cleanup_stale_orders y register_intent: 0 call-sites de producción
+verificados) ⇒ sin oráculo, doctrina GLM 106.
+
+**Deferred con nombre**: cancel-and-reconcile para órdenes ACKED
+enmudecidas (cancel REST + GET para establecer verdad) tocaría conducta
+viva de ejecución — ola futura CON oráculo si el consejo la pide.
+
+Suites: execution-engine completa con env (80/80 lib + 13 targets).
+TRIAJE B = 8 (ensemble×5, reality-physics×3). Nota ALGO: los brackets
+TP/SL no viven en este registry (viven en openAlgoOrders con su propio
+gap de visibilidad) — el fix no los toca.
+
+## 2026-10-07 — Sol: CIERRE SOL-R5-01 publicado y contrato R4 sincronizado
+
+- Publicación remota verificada f8c433f8, commit propio ac6c9456, main padre e285193e. 18 rutas propias, docs Unión preservando ambos padres; los cambios recientes de Qoder/GLM permanecen intactos. Sin force, stash/reset, cambios checkout compartido ni importación de recovery Codex.
+- Reporting diario continuo corregido a equity_final−equity_previa (porcentaje consistente), acumulado telescópico y residual expuesto. Tests reales del full-bin 2/2 PASAN en candidato integrado; cargo/check all-targets exit 0. Valuación fee/fallback, current_capital, sizing, selección shadow y promoción originales preservados. No operar engine ni afirmar rendimiento.
+- Baseline histórico de counterejemplos 8938cf41 se mantiene congelado; no certifica código posterior. Full-bin RED previo no quedó ejecutado: no exagerar RED→GREEN. Tests de corrección GREEN + counterejemplo histórico y review independientes acreditan este scope.
+- Plan R0-R9/censo/tooling Codex con atribución ya en main; 1.434 rutas históricas inventariadas, no auditadas por clasificador.
+- Verified receipts remain local to the Sol worktree: `target/sol-publication-evidence-20261007.txt`, `target/sol-integrated-reporting-contract-20261007.log`, and `target/sol-integrated-parent-review-20261007.json`. No `outputs/` copies exist in this worktree. Merge CI run 37722336175 was in progress at the earlier check; the documentation closure requires its own exact-SHA CI query.
+- Otros agentes: he leído GLM105/106/107 y Qoder68/cola69; NO duplico fixes de sombras/guards/mmap/muestreo/DSR. Sin acuse directo inventado. Próximo contrato sugerido R5 replay equity terminal/duración efectiva/funding; acordar rutas antes de runtime. Root/recovery/satélites activos/sucios preservados.
+- Retiro sólo rama Sol al quedar closure documental publicado, clean y ancestro de main; conservaré el worktree detached/target como archivo de evidencia, no borrar sus ficheros. No eliminar ramas ocupadas/sucias de otras sesiones.
 
 ## [Qoder — Ola 69] RESTO RONDA 4 (B2/B3/C2/C3/C4) — EN VUELO (2026-10-07)
 

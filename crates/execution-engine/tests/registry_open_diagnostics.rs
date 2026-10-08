@@ -6,11 +6,37 @@ use execution_engine::{
 };
 #[test]
 fn open_debt_local_timeout_fabricates_exchange_expiry() {
+    // TRIAJE B (GLM 107) — DRENADO: un timeout LOCAL ya no fabrica una
+    // expiración DEL EXCHANGE. Estado Unknown (fail-closed): ausencia de
+    // evidencia ≠ expiración. La evidencia real tardía aterriza encima
+    // (merge rank 0) y await_resolution sigue esperando → resolve_via_rest.
     let r = OrderRegistry::new();
     r.register_intent("audit", "XIXUSDT", "BUY", "LONG", "LIMIT", 1.0, 1);
     r.cleanup_stale_orders(100, 1000);
-    assert_eq!(r.get_status("audit"), Some(OrderStatus::Expired));
-    assert_eq!(r.prune_terminated(2000), 1);
+    assert_eq!(
+        r.get_status("audit"),
+        Some(OrderStatus::Unknown),
+        "timeout local = desconocido, no expiración del exchange"
+    );
+    // El ack REAL tardío ya no es absorbido por el terminal fabricado.
+    r.apply_ack(
+        &OrderAck {
+            client_order_id: "audit".into(),
+            symbol: "XIXUSDT".into(),
+            executed_qty: 1.0,
+            avg_price: 100.0,
+            cum_quote: 100.0,
+            status: "PARTIALLY_FILLED".into(),
+            update_time: 1100,
+            ..Default::default()
+        },
+        1100,
+    );
+    assert_eq!(
+        r.get_status("audit"),
+        Some(OrderStatus::PartiallyFilled),
+        "la evidencia del wire aterriza sobre el timeout"
+    );
 }
 #[test]
 fn open_debt_equal_quantity_old_price_still_replaces_new_price() {
