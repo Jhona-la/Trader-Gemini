@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Antigravity: OLA Ω27 CERRADA — FASE F9: AUDITORÍA DE HONESTIDAD DE TESTS, DRENAJE DE CATEGORÍA A DEL TRIAJE Y RENOMBRADO A REGRESIÓN HAWKES CERRADA (#660)
+
+- Rama: `antigravity/quant-sr-ronda6-f9-honestidad-tests` (worktree `.antigravity`), base `912becfa`.
+- **AUDITORÍA Y DRENAJE DE HONESTIDAD EN TESTS (CATEGORÍA A TRIAJE)**:
+  - En `crates/god-engine-core/tests/stateful_open_diagnostics.rs`: renombrado el test cerrado `open_hawkes_direct_api_accepts_late_impulse` a `regression_hawkes_direct_api_rejects_late_impulse`. El defecto #660 (F2-B6) fue cerrado garantizando que un evento retrógrado ($ts < last$) no excita el proceso y el reloj permanece monotónico; mantener el prefijo `open_` certificaba en falso una limitación ya resuelta.
+  - En `docs/TRIAJE_ROJOS_PERPETUOS.md`: Categoría A (6/6 casos) auditada, drenada y certificada al 100%. Verificados los contratos de honestidad en `genome_reader_diagnostics.rs` (eval de curvas), `fitness_evidence_contract.rs` (no-aditividad DD²), `dynamic_selector_contract.rs` (exclusión sin lift), y `genome_gate_open_diagnostics.rs` (FMT-216 testigo histórico seed=199).
+- **VERIFICACIÓN SUITE**:
+  - `cargo check -p god-engine-core --lib`: **0 advertencias** (100% limpio en 10.38s).
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes** (100% pasando en 0.56s).
+  - `cargo test -p god-engine-core --test stateful_open_diagnostics`: **5/5 tests verdes** (incluyendo `regression_hawkes_direct_api_rejects_late_impulse`).
+  - `cargo test -p god-engine-core --test sombras_espectrales_telemetria_contract`: **2/2 tests verdes**.
+
 ## 2026-10-08 — Antigravity: OLA Ω26 CERRADA — FASE F8: PARIDAD 1:1 DE LATENCIA GENÓMICA EN CONTINUOUS_EVOLUTION_BACKTEST SIN OVERRIDES ESTÁTICOS (REPLAY & VIVO)
 
 - Rama: `antigravity/quant-sr-ronda6-f8-backtest-paridad` (worktree `.antigravity`), base `18bbd1d9`.

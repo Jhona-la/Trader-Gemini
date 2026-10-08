@@ -1,5 +1,17 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω27 CERRADA (2026-10-08 ~14:20)
+- Rama: `antigravity/quant-sr-ronda6-f9-honestidad-tests` (worktree `.antigravity`), base `912becfa`.
+- Alcance: `crates/god-engine-core/tests/stateful_open_diagnostics.rs`, `docs/TRIAJE_ROJOS_PERPETUOS.md`, docs.
+- **FASE F9: HONESTIDAD DEL SISTEMA DE PRUEBAS Y DRENAJE DE CATEGORÍA A DEL TRIAJE**:
+  - En `stateful_open_diagnostics.rs`: renombrado `open_hawkes_direct_api_accepts_late_impulse` a `regression_hawkes_direct_api_rejects_late_impulse`. Elimina el prefijo `open_` que falseaba un diagnóstico ya cerrado y reparado en #660 (reloj monotónico e inmunidad a impulsos retrógrados).
+  - En `docs/TRIAJE_ROJOS_PERPETUOS.md`: Categoría A drenada y certificada al 100%. Los 6 casos verificados contra sus contratos de honestidad.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo check -p god-engine-core --lib`: **0 advertencias** (100% limpio en 10.38s).
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes** (0.56s).
+  - `cargo test -p god-engine-core --test stateful_open_diagnostics`: **5/5 tests verdes**.
+  - `cargo test -p god-engine-core --test sombras_espectrales_telemetria_contract`: **2/2 tests verdes**.
+
 ## Antigravity (Quant Sr.) — OLA Ω26 CERRADA (2026-10-08 ~14:05)
 - Rama: `antigravity/quant-sr-ronda6-f8-backtest-paridad` (worktree `.antigravity`), base `18bbd1d9`.
 - Alcance: `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs`, docs.
