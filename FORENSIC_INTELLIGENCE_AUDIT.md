@@ -14686,3 +14686,49 @@ derivar de los BOUNDS del genoma (una constante duplicada es un eje
 muerto esperando ocurrir); (c) el rechazo silencioso de promote por
 bounds es invisible cuando el baseline siempre gana — la telemetría
 debe contar promovidos RECHAZADOS.
+
+## #670 — Ola 69: RESTO RONDA 4 (rejilla DSR, σ_SR sub-gaussiano, saturación residual) + RONDA 5 (2026-10-07)
+
+Rama qoder/ola69-saturacion-residual (worktree .ola69, base 785b7a1c), 7
+commits. Cinco hallazgos ronda 4 cerrados:
+
+1. **R4-B2** — muestreo del DSR SOLO por rejilla de 1s: el disparo extra
+   por cierre (`|| closed.is_some()`) mezclaba cadencias heterocedásticas
+   y re-faseaba la rejilla. Sin pérdida: prev_cap sólo avanza en rejilla ⇒
+   cada retorno integra los cierres de su ventana. Comentario
+   "marked-to-market" corregido (la serie es de capital REALIZADO:
+   mayormente ceros con saltos — curtosis alta ⇒ DSR conservador).
+2. **R4-B3+B6** — sharpe_std_error con g4.max(3.0): leptocúrtico honesto,
+   jamás sub-gaussiano. Mi propuesta original (n<60 → gaussiano) fue
+   REFUTADA por el subagente de pre-verificación: anti-conservador.
+3. **R4-C2** — firma viva shockwave tanh(mach/2) a escala del estadístico
+   (era /1e4 = signum disfrazado); conserva ambos contratos qo_666.
+4. **R4-C3** — acuerdo conformal divisor 2.0 (media respuesta estaba 6×
+   bajo el emisor |z|≥1.645).
+5. **R4-C4** — gate perceptron smoothstep C¹ 0.15+0.85·S((a−0.5)) (kink
+   C⁰ del clamp eliminado); h2_6 reescrito con verificación de piso.
+6. **R4-A2** — adenda ADR-0014 principio 6: Ville de familia M/α
+   (640/8320/43500) — el ADR ya no prescribe la fórmula Fisher retirada.
+
+**Verificación**: signal 116/116, risk 141/141, core 170/170, workspace
+--all-targets 0 errores.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (8022.65 s, release). Cobertura
+íntegra con los cambios de conducta (firma shockwave, acuerdo conformal,
+gate perceptron alimentan el ensamble vivo).
+
+**RONDA 5 ejecutada en paralelo** (3 auditores, contra este mismo árbol):
+**12 hallazgos (0 HIGH, 5 MED, 7 LOW)** — primera ronda sin HIGH. Patrón
+residual único: fix portado a un camino, el otro con calibración vieja
+(A1 conformal vivo mudo con trend crudo; A2 firma sombra tanh(mach) vs
+vivo tanh(mach/2); A3 clave muerta conformal_epsilon vs conformal_alpha
+en el consenso VIVO) + B1 fallbacks tech_threshold fuera de banda +
+B3 fallback gaussiano alcanzable (γ₃>√2 → denom_sq<0). Asignación:
+Ola 70 = A1+A2+A3+B1+B3 (con oráculo); Ola 71 = mecánica + LOWs.
+
+Lecciones: (a) la calibración de un divisor depende de la ESCALA del
+input — verificar la escala VIVA antes de fijar el divisor (C3 calibró
+para la sombra); (b) los fallbacks de decodificación legacy comparten la
+misma clase de banda-rota que el código principal — auditarlos juntos;
+(c) el comentario "inalcanzable" de un guard es una afirmación
+matemática que los auditores deben verificar (B3/R5: era falsa).
