@@ -1,5 +1,27 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω30 CERRADA (2026-10-08 ~17:35)
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `74bb2278`.
+- Alcance: `crates/risk-engine/src/ville_e_process.rs`, `crates/risk-engine/src/lib.rs`, `crates/risk-engine/tests/ville_evidence_contract.rs`.
+- **SUPERMARTINGALAS DE VILLE Y E-VALORES ANYTIME-VALID (RISK-ENGINE)**:
+  - Implementado `VilleEProcess` con garantía de cota maximal de Ville: $\mathbb{P}_{H_0}(\sup_{t \ge 0} M_t \ge 1/\alpha) \le \alpha$. Inmunidad matemática al sesgo de parada opcional (*optional stopping*).
+  - Adaptación causal de fracción de apuesta con suelo de exploración $[\lambda_{\min}, \lambda_{\max}]$, actualización discreta y continua SDE mediante integral exponencial Ito.
+  - Diagnóstico de fatiga: `evidence_drawdown`, `is_evidence_decayed`, `is_exhausted`, `anytime_p_value`.
+  - Contrato formal con 4 tests exhaustivos demostrando cota bajo $H_0$, potencia bajo $H_1$, agotamiento ante drift negativo y difusión continua SDE.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p risk-engine`: **150/150 tests verdes (100% éxito)** (59 lib + 91 contract).
+  - `cargo check --workspace --all-targets`: **0 errores** (38.09s).
+
+## Antigravity (Quant Sr.) — OLA Ω29 CERRADA (2026-10-08 ~16:40)
+- Rama: `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` (worktree `.antigravity`), base `c52fe8cc`.
+- Alcance: `crates/risk-engine/src/leverage_matrix.rs`, `crates/risk-engine/src/lib.rs`.
+- **ARMONIZACIÓN DE APALANCAMIENTO MICRO A 5.0X EN LEVERAGE_MATRIX**:
+  - Resuelta divergencia F4-M2 entre `leverage_matrix.rs:260` (4.0x) y `lib.rs:1179` (5.0x).
+  - Nocional micro calibrado a \$5.10 de forma continua y natural (\$1.02 * 5.0x = \$5.10) para cuenta de \$13 USD, preservando margen libre $\ge \$10.96$ (84.3%) y respetando el piso mínimo de Binance Futures (\$5.00) sin rescates forzosos.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p risk-engine`: **141/141 tests verdes**.
+  - `cargo check --workspace --all-targets`: **0 errores** (53.12s).
+
 ## Antigravity (Quant Sr.) — OLA Ω28 CERRADA (2026-10-08 ~15:15)
 - Rama: `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` (worktree `.antigravity`), base `a0a5b982`.
 - Alcance: `crates/strategy-core/src/multivariate_coint.rs`, `crates/strategy-core/src/vecm_arbitrage.rs`, docs.

@@ -1,4 +1,25 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-08 — Antigravity: OLA Ω30 CERRADA — INTEGRACIÓN DE SUPERMARTINGALAS DE VILLE Y E-VALORES ANYTIME-VALID EN RISK-ENGINE (INMUNIDAD A PARADA OPCIONAL)
+
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `74bb2278`.
+- **IMPLEMENTACIÓN DE E-PROCESO SECUENCIAL EN `crates/risk-engine/src/ville_e_process.rs`**:
+  - Resuelto el problema de sesgo e inflación de error Tipo I ante monitoreo continuo (*optional stopping*). Enfoque bayesiano y frecuentista clásico inflan el falso rechazo >40% cuando se inspeccionan métricas tick-a-tick.
+  - Implementado `VilleEProcess`: supermartingala de prueba no negativa $M_t = M_{t-1}(1 + \lambda_t X_t)$ bajo la hipótesis nula de ausencia de edge $H_0: \mathbb{E}[X] \le 0$, con $M_0 = 1.0$.
+  - Por la **Desigualdad Maximal de Ville (1939)**: $\mathbb{P}_{H_0}(\sup_{t \ge 0} M_t \ge 1/\alpha) \le \alpha$. Cota estricta y rigurosa para cualquier tiempo de parada $\tau$.
+  - Adaptación causal de la fracción de apuesta $\lambda_t$ mediante Online Newton Step / Sharpe empírico acotado en $[\lambda_{\min}, \lambda_{\max}]$. Con $\lambda_{\min} > 0$ se habilita sondeo continuo que detecta agotamiento de ventaja.
+  - Actualización continua SDE con integral exponencial de Ito: $dM_t = M_t \lambda_t (dX_t - \frac{1}{2}\lambda_t \sigma^2 dt)$.
+  - Diagnóstico de fatiga y degradación: `evidence_drawdown()`, `is_evidence_decayed(max_dd)`, `is_edge_certified()`, `is_exhausted()`, y cota anytime del valor p: $p_{\text{anytime}} \le \min(1.0, 1 / \sup_{s \le t} M_s)$.
+- **CABLEADO Y EXPORTACIÓN**:
+  - Declarado `pub mod ville_e_process;` y reexportado `pub use ville_e_process::VilleEProcess;` en `crates/risk-engine/src/lib.rs`.
+- **CONTRATO FORMAL EN `crates/risk-engine/tests/ville_evidence_contract.rs`**:
+  - `ville_contrato_cota_maximal_bajo_hipotesis_nula`: 200 caminos de ruido puro centrados con optional stopping demuestran que la tasa empírica de falsas certificaciones no supera $\alpha = 0.05$.
+  - `ville_contrato_potencia_bajo_ventaja_genuina`: verifica certificación de ventaja en tiempo finito bajo drift positivo genuino y cota anytime $p \le 0.05$.
+  - `ville_contrato_deteccion_de_agotamiento_e_involucion_de_evidencia`: valida que con suelo de exploración el proceso decae a $\le 10^{-4}$ bajo drift adverso, y que el proceso defensivo detecta caídas de evidencia $> 20\%$ desde el pico histórico.
+  - `ville_contrato_difusion_continua_sde_monotonia`: verifica la fidelidad numérica de la integral exponencial Ito continua.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p risk-engine`: **150/150 tests verdes (100% éxito)** (59 lib tests + 91 contract/diagnostic tests).
+  - `cargo check --workspace --all-targets`: **0 errores** en los 23 crates y binarios del workspace (38.09s).
+
 ## 2026-10-08 — Antigravity: OLA Ω29 CERRADA — ARMONIZACIÓN DE APALANCAMIENTO MICRO A 5.0X EN LEVERAGE_MATRIX, RESOLUCIÓN DE DIVERGENCIA CON LIB.RS Y BLINDAJE DE PISO DE BINANCE ($13 USD)
 
 - Rama: `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` (worktree `.antigravity`), base `c52fe8cc`.

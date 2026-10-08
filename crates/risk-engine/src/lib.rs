@@ -20,8 +20,10 @@ pub mod ruin;
 pub mod tp_sl;
 pub mod veto_registry;
 pub mod selection_stats;
+pub mod ville_e_process;
 
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
+pub use ville_e_process::VilleEProcess;
 
 use quantum_arena::GlobalArena;
 
