@@ -421,7 +421,7 @@ mod tests {
         let path = dir.join("t.mmap");
         let _ = std::fs::remove_file(&path);
         {
-            let mut bus = MmapTelemetryBus::new(&path).unwrap();
+            let bus = MmapTelemetryBus::new(&path).unwrap();
             bus.write_trace(12, 30, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
             bus.write_trace(12, 30, [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
         }
