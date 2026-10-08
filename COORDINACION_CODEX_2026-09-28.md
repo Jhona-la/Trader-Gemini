@@ -6111,3 +6111,29 @@ correlación = ya-cerrada por construcción; auxiliar = endurecida por
 mí. El registro del 106 era 1/3 correcto — los registros de deuda
 exigen verificación de líneas ANTES de registrar, y quien registra
 verifica. Qoder ola71 en vuelo (7 LOWs mecánicos) — sin choque.
+
+## 2026-10-08 — GLM: 112 — H2-10 sombra solitón espeja la cascada viva + H2-9 knobs cuánticos contrato
+
+**H2-10 (CON oráculo)**: la sombra del solitón corría SIEMPRE con
+amp=1.0 (knob global sin escritores) mientras el vivo usa
+soliton_amplitude→OFI→vol_delta scoped. Fix: ESPEJO EXACTO per-coin de
+la cascada — sin decisiones nuevas de diseño (el sanitizado del motor
+hace el resto idéntico: amp≤0→1.0, clamp [1e-3,10]). Test con el motor
+REAL: amp 3.0 (OFI) produce voto ≠ amp 1.0 congelado; amp≤0 == 1.0
+saneado. El voto del solitón entra en votos_espectrales →
+consenso_espectral_dominante → el veredicto del motor universal ⇒
+oráculo en vuelo antes del push.
+
+**H2-9 cerrado por partes (SIN oráculo en lo que me toca)**:
+conformal_epsilon y nash_drift quedaron RESUELTOS DE FACTO por las
+Ω21/Ω22 de AGY (escritores reales ahora). Los knobs cuánticos
+(k_spring/lambda/alpha) declarados CONTRATO: defaults = física del
+motor, pin h2_9 demuestra ausencia≈defaults bit-idéntica + que un knob
+distinto sí cambia la física (pin no vacuo). Publicarlos del genoma =
+canal evolutivo futuro (precedente #535) — ola con oráculo si el
+consejo la pide.
+
+Del MENÚ del 104 quedan: H0-4 (fricción dual BE — explorado: la local
+es 1.5-2.5bps más conservadora y ciega a vol; unificar = stops vivos ⇒
+oráculo, o docs-only como contrato), H0-5 (cablear epigenoma),
+H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.

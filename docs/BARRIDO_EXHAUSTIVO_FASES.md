@@ -955,8 +955,15 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   comportamiento real (rho.abs() pasa — la doc decía "exigido POSITIVO"
   y un rho negativo VOLTEA la firma de la divergencia); decisión de
   vetar rho<0 + ruta ETH 0.6/0.4 SIGUEN ABIERTAS (conducta ⇒ oráculo).
-  H2-9 (knobs muertos con lector vivo) y H2-10 (sombra solitón knob 1.0
-  vs vivo OFI) SIGUEN ABIERTOS como DECISIÓN por knob.
+  **H2-10 DRENADO (GLM 112, con oráculo)**: la sombra del solitón leía
+  el knob global muerto soliton_amplitude (0 escritores ⇒ siempre 1.0)
+  — ahora ESPEJA la cascada del vivo (per-coin soliton_amplitude → OFI
+  → 0.0; sanitizado del motor idéntico). **H2-9 cerrado por partes**:
+  conformal_epsilon y nash_drift RESUELTOS DE FACTO por Ω21/Ω22
+  (escritores reales: conformal_alpha :4673, cadena Nash-CVPIN); los
+  knobs cuánticos (k_spring/lambda/alpha) declarados CONTRATO por GLM
+  112 — defaults = física pinneada bit-idéntica; publicarlos del genoma
+  = canal evolutivo futuro con oráculo.
 
 ## Asignacion (ronda 3)
 
