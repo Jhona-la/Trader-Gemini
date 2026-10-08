@@ -520,8 +520,26 @@ impl OrderRegistry {
         before - map.len()
     }
 
-    /// Identifica y expira órdenes activas que han excedido su tiempo de vida máximo (stale timeout).
-    /// FIX #613: Evalúa tanto updated_ms como created_ms para no expirar órdenes activas que siguen recibiendo fills.
+    /// Identifica órdenes activas que han excedido su tiempo de vida máximo
+    /// (stale timeout) y las marca de estado DESCONOCIDO.
+    /// FIX #613: Evalúa tanto updated_ms como created_ms para no tocar
+    /// órdenes activas que siguen recibiendo fills.
+    ///
+    /// TRIAJE B (GLM 107) — FAIL-CLOSED, no fabricación: un timeout LOCAL
+    /// es AUSENCIA DE EVIDENCIA, no una expiración del exchange. Antes se
+    /// escribía `OrderStatus::Expired` — un estado del wire ("EXPIRED" del
+    /// exchange, rank terminal 3) — con dos daños: (i) el terminal
+    /// fabricado ABSORBÍA evidencia real tardía (`merge` retiene el rank
+    /// mayor: un ack posterior con PARTIALLY_FILLED no podía aterrizar);
+    /// (ii) `await_resolution` convertía el silencio en `Rejected`
+    /// (riesgo de re-entrada si la orden seguía viva allá). Con `Unknown`
+    /// (rank 0, merge lo deja pasar) la evidencia real SIEMPRE aterriza, y
+    /// `await_resolution` ya maneja Unknown correctamente: sigue esperando
+    /// → Timeout → `resolve_via_rest` consulta la verdad por REST.
+    /// Superficie auxiliar (0 call-sites de producción) ⇒ sin oráculo.
+    /// Cancel-and-reconcile para órdenes acked enmudecidas (llamadas REST
+    /// activas) tocaría conducta viva — ola futura con oráculo si el
+    /// consejo la pide.
     pub fn cleanup_stale_orders(&self, max_active_age_ms: u64, now_ms: u64) -> Vec<TrackedOrder> {
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
         let mut stale = Vec::new();
@@ -530,7 +548,7 @@ impl OrderRegistry {
                 && now_ms.saturating_sub(order.updated_ms) > max_active_age_ms
                 && now_ms.saturating_sub(order.created_ms) > max_active_age_ms
             {
-                order.status = OrderStatus::Expired;
+                order.status = OrderStatus::Unknown;
                 order.updated_ms = now_ms;
                 stale.push(order.clone());
             }
@@ -680,11 +698,22 @@ mod tests {
         reg.register_intent("o_active", "BTCUSDT", "BUY", "LONG", "LIMIT", 1.0, 1000);
         reg.register_intent("o_stale", "BTCUSDT", "BUY", "LONG", "LIMIT", 1.0, 100);
 
-        // A t=2000 ms, con max_age=500 ms, o_stale (t=100) debe expirar, o_active (t=1000) debe expirar si t - 1000 > 500
+        // A t=2000 ms, con max_age=500 ms, ambas edades (100 y 1000) superan
+        // el umbral: ambas pasan a Unknown (TRIAJE B/GLM 107: timeout local
+        // = estado DESCONOCIDO, no fabrica expiración del exchange).
         let stale = reg.cleanup_stale_orders(500, 2000);
         assert_eq!(stale.len(), 2);
-        assert_eq!(reg.get("o_stale").unwrap().status, OrderStatus::Expired);
-        assert_eq!(reg.get("o_active").unwrap().status, OrderStatus::Expired);
+        assert_eq!(reg.get("o_stale").unwrap().status, OrderStatus::Unknown);
+        assert_eq!(reg.get("o_active").unwrap().status, OrderStatus::Unknown);
+        // La evidencia real tardía NO es absorbida: un ack PARTIALLY_FILLED
+        // posterior aterriza sobre el Unknown (rank 0 lo deja pasar) — el
+        // contrato que el Expired fabricado (rank 3) violaba.
+        reg.apply_ack(&ack("o_stale", "PARTIALLY_FILLED", 1.0, 60000.0), 2100);
+        assert_eq!(
+            reg.get("o_stale").unwrap().status,
+            OrderStatus::PartiallyFilled,
+            "el ack real tardío aterriza sobre el timeout"
+        );
     }
 
     #[test]

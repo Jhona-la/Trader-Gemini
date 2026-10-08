@@ -691,6 +691,9 @@ pub fn live_envelope_gate(
     let pos_margin = pos.margin_used.load(Ordering::Relaxed);
 
     // D-442: stop real de la orden; fallback = scalp_sl_base ⊔ ATR×1.5, piso 15 bps.
+    // H0-8 (RONDA 3): scalp_sl_base es VISTA de sl_horizon_curve (fuente
+    // única REHAB-1) — el fallback de telemetría la lee como atajo; el
+    // motor en vivo decide por sl_at_tau(curva), no por esta ancla.
     let stop_pct = if core_sl > 0.0 && entry_price > 0.0 {
         ((entry_price - core_sl).abs() / entry_price).max(0.0015)
     } else {

@@ -14642,3 +14642,47 @@ muertas hay que reescribir SUS tests a la semántica viva, no borrarlos.
 OBSERVACIÓN al consejo: la MEMORIA de Ω16 lista H2-7 (paridad de ganancia
 flow_impulse) como cerrado pero BARRIDO §H2 no lleva la marca — pedir el
 commit a AGY o reabrirlo en la próxima ronda.
+
+## #669 — Ola 68: CORRECTIVA RONDA 4 (sombras calma-invierte + nichos vivos) (2026-10-07)
+
+Rama qoder/ola68-sombras-calma (worktree .ola68, base 8938cf41 + merges
+Ω17/GLM-104), 7 commits. Cuatro hallazgos de la RONDA 4 cerrados:
+
+1. **R4-C1 [HIGH] — la CALMA ya no invierte las sombras espectrales.**
+   `voto_espectral` de hawkes_bessel y flow_impulse multiplicaban
+   `excitacion_hawkes_norm(ratio)` SIN `.max(0.0)`: en calma (ratio<SS)
+   cada escala votaba INVERTIDA dentro del consenso que dirige desde
+   #624 — exactamente el defecto #659/F2-A4 arreglado en los caminos
+   vivos pero nunca portado a las sombras. El fallback `None => 1.0`
+   de lib.rs:2092 hacía que monedas SIN proceso Hawkes votaran
+   invertidas a peso constante. Fix: `.max(0.0)` en ambas + 2 tests
+   calma→abstención (el fallback ahora abstiene naturalmente).
+2. **R4-B1 [HIGH] — nichos del walk-forward dejan de explorar un eje
+   muerto.** Blindaje y nicho 4 clampeaban tech_threshold [0.08,0.22],
+   bajo el bound evolutivo slot-21 [0.24,0.30] (D-625): todo mutante
+   corría a 0.24 en el arena Y `promote→validate` rechazaba campeones
+   (ningún mutante se persistía — invisible porque el baseline siempre
+   ganaba). Fix: bandas alineadas al bound.
+3. **R4-B7 [MED] — el piso swing_sl_base 0.0080 del blindaje silenciaba
+   el ancla lenta 0.0075 del nicho 2 (+6.7% de distorsión propagada por
+   el rebuild). Fix: banda [0.0070, 0.0350] ⊇ nichos 2/3/5.
+4. **R4-A1 [MED] — tercer sitio de ancla cruda retirado**: el fallback
+   de stop_pct de la envolvente (god_engine.rs) ahora
+   `sl_at_tau(TAU_ANCHOR_FAST_MS)` (fuente única G0-5/Ω14).
+
+**Verificación**: signal-engine 116/116 (tests calma nuevos), host
+bins 0 err, backtest bins 0 err, workspace --all-targets 0 err;
+post-merge Ω17/GLM-104: core check 0 err.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (9498.28 s, release — el más
+largo registrado por contienda extrema de CPU con builds paralelos del
+consejo). Cobertura íntegra: ningún gen certificado perdió sensibilidad
+con la corrección de las sombras del consenso.
+
+Lecciones: (a) paridad sombra↔vivo exige portar CADA fix de física a
+AMBOS caminos en el MISMO commit — la regla existía (#656-658) y aun
+ así #659 quedó a medias; (b) las bandas de blindaje de un GA deben
+derivar de los BOUNDS del genoma (una constante duplicada es un eje
+muerto esperando ocurrir); (c) el rechazo silencioso de promote por
+bounds es invisible cuando el baseline siempre gana — la telemetría
+debe contar promovidos RECHAZADOS.

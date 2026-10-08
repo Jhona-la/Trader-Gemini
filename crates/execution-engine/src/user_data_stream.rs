@@ -965,6 +965,7 @@ mod tests {
     #[test]
     fn test_algo_update_terminal_marks_protection_dirty() {
         quantum_arena::protection_health::clear_dirty();
+        let prev_events = quantum_arena::protection_health::terminal_events_seen();
         let registry = Arc::new(OrderRegistry::new());
         let streamer = UserDataStreamer::new(BinanceClient::new("key".into(), true), registry);
 
@@ -977,7 +978,11 @@ mod tests {
         let canceled = r#"{"e":"ALGO_UPDATE","E":1700000000001,"o":{"caid":"wdTP_1","o":"TAKE_PROFIT_MARKET","s":"BTCUSDT","X":"CANCELED"}}"#;
         streamer.dispatch(canceled.as_bytes());
         assert!(quantum_arena::protection_health::is_dirty());
-        assert_eq!(quantum_arena::protection_health::terminal_events_seen(), 1);
+        assert_eq!(
+            quantum_arena::protection_health::terminal_events_seen() - prev_events,
+            1,
+            "debe registrar exactamente 1 nuevo evento terminal visto"
+        );
 
         quantum_arena::protection_health::clear_dirty();
     }
