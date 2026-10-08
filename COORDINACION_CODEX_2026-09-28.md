@@ -5896,3 +5896,24 @@ gap de visibilidad) — el fix no los toca.
   promovidos-rechazados.
 - Detalle: FORENSIC #670. Tabla completa paridad 13 motores×3 caminos en
   la sección RONDA-5 de BARRIDO (verificada por auditor A).
+
+## [Qoder — Ola 70] MEDs RONDA 5 (paridad consenso) — EN VUELO (2026-10-07)
+
+- Rama qoder/ola70-paridad-consenso (worktree .ola70, base 58d5914d).
+  Los 5 MED de la ronda 5 en 3 commits, sombra Y vivo en el MISMO
+  commit (regla #656):
+  **A1** el core publica `ema_trend_swing_z` (z canónica del spread
+  EMA9/21 con el MISMO ema_spread_z del piso D-756) y el conformal VIVO
+  la prefiere — antes el trend crudo O(1e-3) dejaba el acuerdo ≈0.005
+  (motor mudo en el fallback escalar); **A2** firma de la SOMBRA
+  shockwave a ((x/c)/2).tanh() en paridad con el vivo de la Ola 69;
+  **A3** la sombra conformal lee `conformal_alpha` (clave viva del
+  genoma) — `conformal_epsilon` tenía CERO escritores y el consenso
+  corría con α fijo 0.10; **B1** fallbacks tech_threshold 0.1487/0.12
+  → 0.24 (bound slot-21); **B3** discriminante de Mertens degenerado:
+  γ₃→0 conservando curtosis (denom ≥ 1, jamás sub-gaussiano — la cota
+  al discriminante pura dejaría σ→0 en el vértice, peor).
+- Verificación en curso; oráculo T-1 después — push sólo si PASA.
+- NOTA para GLM/AGY: `ema_trend_swing_z` es clave nueva con par
+  escritor(lib.rs)/lector(conformal) en el mismo commit — si el trainer
+  consume ema_trend_swing cruda, la z está disponible para features.
