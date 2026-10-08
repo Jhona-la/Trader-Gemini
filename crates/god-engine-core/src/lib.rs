@@ -4749,7 +4749,6 @@ impl GodEngineCore {
                     .load(Ordering::Relaxed)
                     .clamp(0.0, 1.0);
             let piso_obi_medido = self.cuantiles[coin_id].dynamic_obi_threshold() * intermittency_mult;
-            let piso_ofi_medido = self.cuantiles[coin_id].dynamic_ofi_threshold() * intermittency_mult;
             // D-756: el suelo del score analítico, por el mismo camino. Es el
             // percentil 85 MEDIDO de |composite_score| en este símbolo: por
             // debajo de él, «convicción analítica» describe lo que el score
@@ -5273,8 +5272,6 @@ impl GodEngineCore {
                 // (misma banda canónica: reversión a la media ≡ anti-persistencia)
                 let is_mean_reverting = is_anti_persistent;
 
-                let ema_slow = ema_slow_continuo;
-                let cur_atr = cur_atr_continuo;
                 let price_stretch = price_stretch_continuo;
                 // D-472, D-474 & D-478: Disciplina Antiextensión y Cero Persecución (No Chasing Law)
                 // Prohibido vender por debajo de la media (price_stretch < 0.0) o comprar por encima (price_stretch > 0.0).
@@ -5438,7 +5435,6 @@ impl GodEngineCore {
                             let fused = spec.fused_score;
                             let tau_star = field_long.resonant_tau_ms;
                             let expected_tau = (tau_star.clamp(500.0, 3_600_000.0)).round() as u64;
-                            let dyn_flow = (1.0 + fused.abs() * 2.0).clamp(1.0, 5.0);
 
                             // Señal Directa del Campo Espectral Continuo (#563):
                             // Se activa cuando el momento espectral unificado y la coherencia armónica
@@ -5924,27 +5920,6 @@ impl GodEngineCore {
                     // D-756: mismo criterio que min_obi_trend — suelo por el percentil
                     // 80 medido de |OBI|, techo por el maximo que |OBI| admite.
                     let range_obi = (dynamic_obi_thr * 0.85).max(piso_obi_medido).min(1.0);
-
-                    let long_macro_slope_ok = macro_trend >= 0.0 || (higher_trend > 0.00020 && micro_trend > 0.00015);
-                    let short_macro_slope_ok = macro_trend <= 0.0 || (higher_trend < -0.00020 && micro_trend < -0.00015);
-
-                    let (spec_coh_long, spec_coh_short) = if let Some(spec) = self.temporal_spectrum.get(coin_id) {
-                        (spec.spectral_coherence(true), spec.spectral_coherence(false))
-                    } else {
-                        (0.0, 0.0)
-                    };
-
-                    // Autoadaptabilidad Espectral Continua (#579):
-                    // En lugar de exigir un umbral rígido estático de higher_trend >= 0.00030 (que vetaba 54,052 intenciones),
-                    // la confluencia macro se valida armónicamente si la coherencia de fase de las 32 escalas espectrales
-                    // confirma la dirección (spec_coh > 0.08) sin colapso secular, o si la tendencia superior confirma la pendiente.
-                    let higher_trend_long_harmonic_ok = (higher_trend >= 0.00015 && long_macro_slope_ok)
-                        || (spec_coh_long > 0.08 && secular_trend > -0.0015)
-                        || (higher_trend >= -0.00010 && micro_trend > 0.00010 && long_macro_slope_ok);
-
-                    let higher_trend_short_harmonic_ok = (higher_trend <= -0.00015 && short_macro_slope_ok)
-                        || (spec_coh_short > 0.08 && secular_trend < 0.0015)
-                        || (higher_trend <= 0.00010 && micro_trend < -0.00010 && short_macro_slope_ok);
 
                     // Diagnóstico por dirección: las condiciones del gate se nombran una
                     // sola vez y el diagnóstico cuenta cuál falla. La semántica es la de la
@@ -7213,7 +7188,6 @@ impl GodEngineCore {
                 self.arena.registry.set_for_coin(coin_id, "qo_slot_rechazo", razon);
             }
             let target_pos_slot = maybe_slot.unwrap_or(0);
-            let pos_h = quantum_arena::position::PositionHorizon::Continuous;
 
             // QO-588 — GATE DE PIRÁMIDE LIMPIA (restauración). Historia del
             // defecto: el contrato legacy exigía retorno no realizado >= 28 pb
@@ -8941,8 +8915,6 @@ mod tests_qo_598 {
     //! publicador de contagio, el MISMO que lee correlation_guard). La
     //! lectura scoped `{SYM}_…`/global del cable original jamás encuentra
     //! ese slot: el modulador nació muerto (siempre factor 1).
-
-    use super::*;
 
     #[test]
     fn qo_598_el_slot_del_publicador_es_de_moneda_no_scoped() {
