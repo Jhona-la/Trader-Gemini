@@ -14732,3 +14732,49 @@ para la sombra); (b) los fallbacks de decodificación legacy comparten la
 misma clase de banda-rota que el código principal — auditarlos juntos;
 (c) el comentario "inalcanzable" de un guard es una afirmación
 matemática que los auditores deben verificar (B3/R5: era falsa).
+
+## #671 — Ola 70: MEDs RONDA 5 (paridad sombra↔vivo del consenso) (2026-10-08)
+
+Rama qoder/ola70-paridad-consenso (worktree .ola70, base 58d5914d + merge
+Ω20). Cinco MED cerrados, sombra Y vivo en el MISMO commit (regla #656):
+
+1. **R5-A1** — el core publica `ema_trend_swing_z` (z canónica del spread
+   EMA9/21 con el MISMO ema_spread_z del piso D-756, tipificada por la
+   volatilidad medida) y el conformal VIVO la prefiere con fallback al
+   trend crudo. Antes: trend crudo O(1e-3) ⇒ acuerdo tanh(−z·trend/2)
+   ≈ 0.005 — el fallback escalar estaba MUDO. Clave nueva con par
+   escritor/lector en el mismo commit (lección #613).
+2. **R5-A2** — firma de la SOMBRA shockwave a ((x/c_z)/2).tanh() en
+   paridad exacta con el vivo de la Ola 69 (antes tanh(x) 2× más empinada
+   que su propio camino vivo).
+3. **R5-A3** — la sombra conformal lee `conformal_alpha` (la clave VIVA
+   del genoma, publicada por el calibrador): `conformal_epsilon` tenía
+   CERO escritores y el consenso director corría con α=0.10 fijo, sordo
+   a la calibración [0.01, 0.30].
+4. **R5-B1** — fallbacks tech_threshold 0.1487/0.12 → 0.24 (bound
+   slot-21 D-625): la rama ESTABILIDAD heredaba genomas que promote
+   rechazaba.
+5. **R5-B3** — discriminante de Mertens degenerado (γ₃² > γ₄−1 vuelve
+   imaginaria la varianza asintótica): se desconfía del término de skew
+   (γ₃→0) conservando el de curtosis ⇒ denom ≥ 1+((g4−1)/4)SR² ≥ 1,
+   jamás sub-gaussiano. Nota: la cota de γ₃ al discriminante pura
+   dejaría σ→0 en el vértice de la parábola (más anti-conservador aún) —
+   refutada en diseño. +test r5_b3 (142/142).
+
+**Verificación**: signal 116/116, risk 142/142 (test nuevo), core 170/170,
+backtest bins 0 err, workspace --all-targets 0 errores.
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (4068.97 s, release). Cobertura
+íntegra: el consenso con conformal audible + shockwave en paridad + α
+calibrada no rompió ningún gen certificado.
+
+Incidente operacional: DISCO LLENO (os error 112, 173 MB libres de 930
+GB — el target compartido acumuló 211 GB). Liberados 142 GB borrando
+target/debug/incremental (caché descartable). El oráculo reanudó limpio.
+
+Lecciones: (a) la z canónica de una magnitud YA existía como helper
+(ema_spread_z) — publicarla cuesta una línea y mata una clase entera de
+consumidores mudos; (b) dos formas de "arreglar" un discriminante
+negativo (acotar el parámetro vs desconfiar del término) no son
+equivalentes — la primera puede empeorar; (c) el disco compartido es
+infraestructura del consejo: vigilar target/ en las sesiones largas.
