@@ -2,6 +2,7 @@
 /// Supplied weights are assumed, not estimated cointegration vectors. Neither
 /// stationarity nor a physical-time OU model is certified by this helper.
 use crate::types::{SignalIntent, SignalType, TradeHorizon};
+use crate::vecm_arbitrage::ContinuousOrnsteinUhlenbeckSde;
 
 const MAX_ASSETS: usize = 4;
 
@@ -20,6 +21,8 @@ pub struct MultivariateCointegrationEngine {
     /// Optional limit of consecutive rejections before resetting on structural break.
     /// None by default to preserve legacy open-debt contracts, Some(N) for adaptive recovery.
     structural_break_limit: Option<u32>,
+    /// Estimador SDE de tiempo continuo de Ornstein-Uhlenbeck / Fokker-Planck con reloj físico real.
+    pub physical_sde: Option<ContinuousOrnsteinUhlenbeckSde>,
 }
 
 impl MultivariateCointegrationEngine {
@@ -60,6 +63,7 @@ impl MultivariateCointegrationEngine {
             last_spread: 0.0,
             consecutive_rejections: 0,
             structural_break_limit: None,
+            physical_sde: None,
         }
     }
 
@@ -69,12 +73,19 @@ impl MultivariateCointegrationEngine {
         self
     }
 
-    /// Updates the legacy event-index estimator. The timestamp is not yet used
-    /// for a physical-time OU fit. Rejected observations do not mutate state.
+    /// Activa el estimador continuo SDE de Ornstein-Uhlenbeck / Fokker-Planck con reloj físico real.
+    pub fn with_continuous_ou(mut self) -> Self {
+        self.physical_sde = Some(ContinuousOrnsteinUhlenbeckSde::new(0.1, 0.0, 0.01));
+        self
+    }
+
+    /// Updates the multivariate cointegration estimator.
+    /// When `physical_sde` is active, evaluates under the continuous-time SDE using physical timestamps.
+    /// In legacy mode, preserves event-index statistics.
     pub fn update_and_evaluate(
         &mut self,
         prices: &[f64; MAX_ASSETS],
-        _timestamp_ms: u64,
+        timestamp_ms: u64,
     ) -> Option<SignalIntent> {
         // Public fields can be changed by callers; do not extend invalid state.
         if !self.mean_spread.is_finite()
@@ -102,6 +113,41 @@ impl MultivariateCointegrationEngine {
         if !spread.is_finite() {
             return None;
         }
+
+        // Estimador SDE de tiempo continuo de Ornstein-Uhlenbeck / Fokker-Planck con reloj físico real.
+        // Si está activo, opera la reversión continua multiactivo sobre tiempo físico y emite
+        // una intención con expected_duration_ms calibrada a la vida media física t_{1/2} en ms.
+        if let Some(sde) = &mut self.physical_sde {
+            let sde_z = sde.update(spread, timestamp_ms);
+            let sde_hl_sec = sde.half_life_seconds();
+            if sde.count >= 10 && sde_hl_sec.is_finite() && sde_hl_sec <= 3600.0 {
+                let tau_rev_ms = (sde_hl_sec * 1000.0).clamp(500.0, 43_200_000.0) as u64;
+                let sd = sde.stationary_variance().sqrt().max(1e-8);
+                let expected_magnitude = (sde_z.abs() * sd).clamp(0.002, 0.20);
+                if sde_z < -self.z_score_threshold {
+                    let confidence = (-sde_z / 3.0).clamp(0.5, 0.99);
+                    return Some(SignalIntent {
+                        signal: SignalType::Long,
+                        confidence,
+                        horizon: TradeHorizon::Continuous,
+                        expected_duration_ms: tau_rev_ms,
+                        expected_magnitude,
+                        ..Default::default()
+                    });
+                } else if sde_z > self.z_score_threshold {
+                    let confidence = (sde_z / 3.0).clamp(0.5, 0.99);
+                    return Some(SignalIntent {
+                        signal: SignalType::Short,
+                        confidence,
+                        horizon: TradeHorizon::Continuous,
+                        expected_duration_ms: tau_rev_ms,
+                        expected_magnitude,
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+
         let next_count = self.count.checked_add(1)?;
 
         // 2. Legacy hybrid mean/EW variance update, not unbiased sample Welford.
@@ -435,5 +481,46 @@ mod tests {
         let signal = engine.update_and_evaluate(&shock_prices, 200000).expect("señal activa");
         assert!(signal.expected_magnitude > 0.002, "expected magnitude no debe ser cero");
         assert!(signal.expected_magnitude <= 0.20, "expected magnitude acotada");
+    }
+
+    #[test]
+    fn test_multivariate_cointegration_continuous_ou_physical_clock() {
+        let weights = [1.0, -0.5, -0.3, -0.2];
+        let mut engine = MultivariateCointegrationEngine::new(weights, 2.0).with_continuous_ou();
+
+        assert!(engine.physical_sde.is_some(), "estimador SDE físico debe estar activo");
+
+        let base_prices = [100.0, 50.0, 30.0, 20.0];
+        // Calibrar el proceso continuo con 60 observaciones físicas cada 1000 ms (1 segundo físico)
+        for i in 0..60 {
+            let noise = ((i % 5) as f64 - 2.0) * 0.05;
+            let prices = [
+                base_prices[0] + noise,
+                base_prices[1] + noise * 0.2,
+                base_prices[2] - noise * 0.1,
+                base_prices[3] + noise * 0.1,
+            ];
+            let _ = engine.update_and_evaluate(&prices, 10_000 + i * 1_000);
+        }
+
+        let sde = engine.physical_sde.as_ref().unwrap();
+        assert!(sde.count >= 60, "todas las observaciones físicas deben contarse");
+        assert!(sde.theta > 0.0, "velocidad física theta debe ser positiva");
+        assert!(sde.half_life_seconds().is_finite(), "vida media física debe ser finita");
+
+        // Shock positivo en el activo líder -> genera divergencia de spread y señal Short con duración espectral
+        let shock_prices = [180.0, 50.0, 30.0, 20.0];
+        let signal = engine
+            .update_and_evaluate(&shock_prices, 70_000)
+            .expect("debe emitir señal continua por shock de divergencia física");
+
+        assert_eq!(signal.signal, SignalType::Short);
+        assert_eq!(signal.horizon, TradeHorizon::Continuous);
+        assert!(
+            signal.expected_duration_ms >= 500 && signal.expected_duration_ms <= 43_200_000,
+            "duración esperada ({}) debe estar acotada al espectro temporal continuo",
+            signal.expected_duration_ms
+        );
+        assert!(signal.confidence >= 0.50, "confianza Bayesiana calibrada");
     }
 }

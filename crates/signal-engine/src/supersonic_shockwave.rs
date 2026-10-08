@@ -213,6 +213,8 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
                 .map(|p| p.get_value() / BARRA_S)
             })
             .unwrap_or(0.001);
+        // R5-C1 resuelto arriba por Ω21 (guarda previa al sonido — el
+        // auto-merge duplicó esta segunda guarda de la Ola 71; retirada).
         let sound_norm = sound_segundo;
 
         if !speed.is_finite() || !sound_norm.is_finite() || sound_norm <= 0.0 {

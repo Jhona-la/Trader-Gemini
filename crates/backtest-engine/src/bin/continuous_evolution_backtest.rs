@@ -995,6 +995,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // PROMOTE AL ENVELOPE GLOBAL
+    // R4-B1 (lección): el rechazo silencioso de promote era invisible
+    // cuando el baseline siempre ganaba — el rechazo ahora es explícito
+    // y contable en logs.
     match quantum_arena::genome_store::GenomeEnvelope::promote(
         current_genome.clone(),
         "continuous_evolution_backtest",
@@ -1004,7 +1007,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "💾 [GUARDADO] Genoma Campeón persistido exitosamente en generación {}.",
             env.generation
         ),
-        Err(e) => println!("⚠️ [ERROR] No se pudo guardar el genoma: {}", e),
+        Err(e) => println!(
+            "🚫 [PROMOTE-RECHAZADO] el campeón NO se persistió (bounds/validate): {}",
+            e
+        ),
     }
 
     println!("============================================================");

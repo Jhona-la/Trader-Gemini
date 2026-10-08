@@ -293,16 +293,25 @@ impl ContinuousOrnsteinUhlenbeckSde {
         self.s_yy = self.s_yy * decay + y * y;
         self.count += 1;
 
+        let z_prior = self.stationary_zscore(value);
+
         if self.count >= 10 {
             // Regresión discreta exacta: y = a + b * x
             // donde b = exp(-θ dt), a = μ (1 - b)
             let n_eff = self.s_w.max(1.0);
+            let empirical_mean = self.s_y / n_eff;
             let denom = (n_eff * self.s_xx - self.s_x * self.s_x).max(1e-12);
             let b = ((n_eff * self.s_xy - self.s_x * self.s_y) / denom).clamp(0.001, 0.9999);
             let a = (self.s_y - b * self.s_x) / n_eff;
 
             let est_theta = (-b.ln() / dt_sec).clamp(1e-4, 50.0);
-            let est_mu = a / (1.0 - b).max(1e-6);
+            // Si el denominador de OLS es débil o b está cerca de 1.0 (frontera de raíz unitaria),
+            // la estimación ergódica de μ converge a la media empírica para prevenir singularidades (a / 0)
+            let est_mu = if (1.0 - b) < 0.02 || denom < 1e-8 {
+                empirical_mean
+            } else {
+                (a / (1.0 - b)).clamp(empirical_mean - 5.0, empirical_mean + 5.0)
+            };
 
             // Residuos y estimación de sigma de difusión (Fokker-Planck)
             let raw_sse = (self.s_yy - 2.0 * b * self.s_xy + b * b * self.s_xx) / n_eff - a * a;
@@ -318,7 +327,11 @@ impl ContinuousOrnsteinUhlenbeckSde {
         self.last_value = value;
         self.last_ts_ms = ts_ms;
 
-        self.stationary_zscore(value)
+        if self.count > 10 {
+            z_prior
+        } else {
+            self.stationary_zscore(value)
+        }
     }
 }
 

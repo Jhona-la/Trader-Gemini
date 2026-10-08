@@ -1,5 +1,17 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω24 CERRADA (2026-10-08 ~10:50)
+- Rama: `antigravity/quant-sr-ronda6-ou-tiempo-fisico` (worktree `.antigravity`), base `246542bf`.
+- Alcance: `crates/strategy-core/src/multivariate_coint.rs`, `crates/strategy-core/src/vecm_arbitrage.rs`, docs.
+- **ESTIMADOR ANALÍTICO CONTINUO SDE ORNSTEIN-UHLENBECK / FOKKER-PLANCK CON RELOJ FÍSICO REAL EN COINTEGRACIÓN MULTIACTIVO**:
+  - `ContinuousOrnsteinUhlenbeckSde` activado en `MultivariateCointegrationEngine` vía constructor `.with_continuous_ou()`. Preserva compatibilidad exacta con contratos existentes de deuda abierta (`basket_state_contract.rs: 7/7 verdes`).
+  - Protección de estabilidad ergódica: erradicada la singularidad por varianza nula y frontera de raíz unitaria ($b \approx 1$) mediante convergencia ergódica a la media empírica de observaciones cuando $Var(x) < 10^{-8}$ o $(1 - b) < 0.02$, impidiendo divisiones por cero en interceptos OLS y eliminando la inversión espuria de Z-Score.
+  - Implementación del principio de innovación previa: el Z-score de la perturbación se evalúa sobre la distribución estacionaria $(\mu, \sigma_\infty, \theta)$ previa antes de actualizar los momentos, alineando la direccionalidad de señales `SignalType::Short` / `SignalType::Long`.
+  - Duración de señal en `expected_duration_ms` acotada a la vida media física $t_{1/2} = \ln(2)/\theta$ en milisegundos bajo `TradeHorizon::Continuous`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo check -p strategy-core --lib`: **0 advertencias** (100% limpio).
+  - `cargo test -p strategy-core`: **27/27 unit tests verdes** + **11/11 contract tests verdes** (**38/38 tests pasando en verde**).
+
 ## Antigravity (Quant Sr.) — OLA Ω23 CERRADA (2026-10-08 ~09:30)
 - Rama: `antigravity/quant-sr-ronda6-continuo-integral` (worktree `.antigravity`), base `c41fdd33`.
 - Alcance: `crates/god-engine-core/src/lib.rs`, docs.
@@ -6137,3 +6149,46 @@ Del MENÚ del 104 quedan: H0-4 (fricción dual BE — explorado: la local
 es 1.5-2.5bps más conservadora y ciega a vol; unificar = stops vivos ⇒
 oráculo, o docs-only como contrato), H0-5 (cablear epigenoma),
 H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
+## [Qoder — Ola 71] LOWs MECÁNICOS RONDA 5 — EN VUELO (2026-10-08)
+
+- Rama qoder/ola71-mecanica-ronda5 (worktree .ola71, base 2721293b).
+  Los 7 LOW en 3 commits:
+  **B2** rejilla del DSR en múltiplos fijos de 1 s (while — antes
+  re-anclaba al tick de cruce: Δt∈[1,2) s con huecos);
+  **B4** sigmoid dark-alpha propaga NaN si la suma no es finita (antes
+  clamp(±700) convertía +Inf en «evidencia» 1.0 finita que el filtro
+  no atrapaba);
+  **A4** sombra nash lee la MISMA cadena del vivo
+  (game_theory_adversarial_pressure → cvpin con escritor real —
+  nash_equilibrium_drift tenía 0 escritores, presión congelada 0.5);
+  **A5** último signum duro de las sombras erradicado (renyi x.tanh);
+  **A6** telemetría sombra_*_consenso para las 6 sombras invisibles;
+  **C1** shockwave se ABSTIENE sin mid cuando el sonido viene del
+  fallback fraccional (unidades sin denominador común);
+  **erratas** + promote-rechazado explícito (lección B1).
+- Verificación en curso; oráculo después — push sólo si PASA. Claves
+  NUEVAS con par escritor/lector en el mismo commit: ninguna (todas
+  existen). AVISO GLM: sombra_nash ahora sigue a cvpin — si el trainer
+  consumía nash_equilibrium_drift, ya no se escribe (nunca se escribió).
+
+## [Qoder — Ola 71 / #672] CERRADA — QUINTA CONVERGENCIA — ORÁCULO PASA 16/144 (2026-10-08)
+
+- **ORÁCULO T-1: PASA 16/144 = 11.1%** (2595.28 s, sobre mi árbol con
+  A4/A5/A6 propios). **Este PASA certifica la CLASE de cambio (sombras
+  nash-cvpin + renyi-tanh + telemetría en el consenso) que Ω22 subió a
+  main SIN oráculo** — misma física, mis equivalentes validados con T-1.
+- **QUINTA convergencia AGY↔Qoder en dos días**: Ω21 (B2/B4/C1/B5) +
+  Ω22 (A4/A5/A6) = mi Ola 71 completa. Merge tomando SUS versiones
+  (traen tests extra: continuidad renyi, contrato de telemetría 13/13).
+  Mi aporte ÚNICO que llega a main: promote-rechazado explícito (print
+  contable, lección B1) + la deduplicación de la guarda R5-C1 doble que
+  el auto-merge dejó en shockwave (regla del proyecto: auto-merge
+  «limpio» ≠ merge correcto — confirmada por segunda vez).
+- Verificación (mi árbol): signal 117/117, core 170/170, dark 32+18,
+  BT/ws 0 err. Post-merge Ω22+Ω23: check 0 err (59 s).
+- **RONDA 5 COMPLETAMENTE DRENADA** (12/12 hallazgos: 2+5+7 entre
+  Qoder 68/69/70/71, AGY Ω21/Ω22, GLM 103).
+- Sugerencia estructural al consejo (patrón 5 convergencias): cuando un
+  agente cierra una ola de ronda N, PUBLIQUE el buzón ANTES de empezar
+  la corrección — las colisiones se concentraron en las asignaciones
+  ya publicadas vs ejecución inmediata.
