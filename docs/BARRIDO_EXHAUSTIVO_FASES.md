@@ -1191,6 +1191,49 @@ nunca llegó a las DOS sombras espectrales.
   - `dynamic_selector.rs`: Filtra stablecoins estériles y clasifica activos por liquidez real y volatilidad, actualizando directamente `quantum_arena::symbols::update_dynamic_universe`.
   - Garantiza que sólo los activos con profundidad suficiente para satisfacer el piso institucional de $5.00 USD de Binance sean seleccionados, previniendo deslizamientos extremos en pares ilíquidos.
 
+---
+
+# FASE F7 — TELEMETRÍA, GUARDIANES, AUDITORÍA Y ARQUITECTURA (45 ARCHIVOS AUDITADOS)
+
+## Inventario Real de la Fase F7
+- **crates/telemetry-server/src/**: 13 archivos (3 113 líneas). Tests: 30/30 verdes en 3.04s.
+- **crates/os-guardian/src/**: 10 archivos (956 líneas). Tests: 12/12 verdes en 0.04s.
+- **crates/audit-engine/src/**: 11 archivos (1 729 líneas). Tests: 21/21 verdes en 0.21s.
+- **crates/telemetry-engine/src/**: 3 archivos (326 líneas). Tests: 7/7 verdes en 0.02s.
+- **crates/phase-runner/src/**: 2 archivos (189 líneas). Tests: 5/5 verdes en 3.85s.
+- **crates/flight-recorder/src/**: 1 archivo (232 líneas). Tests: 5/5 verdes en 0.03s.
+- **crates/omniscient-registry/src/**: 2 archivos (427 líneas). Tests: 5/5 verdes en 0.03s.
+- **crates/graph-architecture/src/**: 2 archivos (387 líneas). Tests: 5/5 verdes en 0.01s.
+- **crates/graph-4d/src/**: 1 archivo (160 líneas). Tests: 4/4 verdes en 0.04s.
+- **Total Fase F7**: 45 archivos, ~7 519 líneas. Tests: 94/94 verdes (100% aprobado, 0 fallos).
+
+## Hallazgos de la Fase F7
+
+- **F7-SIG-001 [LOW] CERRADO (Ola Ω20 AGY)** `crates/signal-engine/src/skill_motores.rs:95-99`:
+  - Advertencia de compilador `unused doc comment` en la guarda de Ville Martingales `self.e_proceso.significativo_familia(...)`. Resuelto convirtiendo sintaxis de doc comment (`///`) en comentario de bloque (`//`), erradicando advertencias en compilación. 116/116 tests verdes.
+
+- **F7-TEL-001 [AUDITADO - APROBADO] Servidor de Telemetría Lock-Free y Anillos Zero-Copy**:
+  - `telemetry-server/src/lockfree_bus.rs`: Cola MPMC lock-free (Crossbeam SegQueue) con descarte controlado por saturación de capacidad, garantizando cero contención y cero backpressure sobre el bucle crítico de decisión microtemporal.
+  - `zero_copy_bus.rs` / `zero_copy_ring.rs`: Memoria compartida y buffers anulares sin clonación ni asignaciones en el hot path.
+  - `telegram_bot.rs`: Enrutador reactivo asíncrono con credenciales aisladas mediante inyección por variables de entorno (.env protegido).
+
+- **F7-OSG-001 [AUDITADO - APROBADO] Guardián de Sistema Operativo y Blindaje Win32**:
+  - `os-guardian/src/memory_audit.rs`: Monitoreo en tiempo real de RAM para entorno de 16 GB, ejecutando compactación forzada (`EmptyWorkingSet`) y panic latch si el consumo de memoria excede el presupuesto crítico.
+  - `pmu_sensor.rs` / `ebpf_core.rs`: Fallback adaptativo para Windows con lectura de TSC (`_rdtsc`) y mitigación de fallos de página sin bloquear el hilo de ejecución principal.
+
+- **F7-AUD-001 [AUDITADO - APROBADO] Motor de Auditoría, Deriva y Resiliencia Cibernética**:
+  - `audit-engine/src/drift_auditor.rs`: Detección en tiempo real de divergencias entre estado simulado y real.
+  - `trajectory_auditor.rs`: Auditoría de trayectorias de precios y paridad causal.
+  - `cybernetic_resilience.rs`: Supervisión de fallos transitorios en brokers y reconexión exponencial con jitter.
+
+- **F7-OMNI-001 [AUDITADO - APROBADO] Registro Omnisciente Centralizado e Invariantes de Estado**:
+  - `omniscient-registry/src/lib.rs`: Centralización de parámetros del sistema mediante snapshots rkyv zero-copy, previniendo colisiones entre subsistemas concurrentes.
+
+- **F7-GRAPH-001 [AUDITADO - APROBADO] Grafo de Arquitectura 4D y Trazabilidad de Flujos**:
+  - `graph-architecture/src/lib.rs` y `graph-4d/src/lib.rs`: Mapeo continuo de nodos y dependencias del sistema, habilitando la inspección dimensional de flujos entre ingestión, características, señales y efectores.
+
+---
+
 # RONDA 5 (2026-10-07, contra .ola69 — post Ola 68/69, Ω17/Ω18, GLM 104)
 
 Mandato del operador. 3 auditores paralelo: A = paridad sombra↔vivo
@@ -1268,3 +1311,4 @@ un camino y el otro queda con la calibración vieja o clave muerta.
   commit, regla #656) + R5-B1 (fallbacks 0.24) + R5-B3 (γ₃ acotado).
 - Ola 71 (mecánica): R5-B2 rejilla fija, R5-B4 NaN sigmoid, R5-A4/A5/A6,
   R5-C1, erratas. Docs: telemetría de promovidos-rechazados (lección B1).
+
