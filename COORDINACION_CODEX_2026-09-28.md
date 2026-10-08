@@ -1,5 +1,25 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω20 CERRADA (2026-10-07 ~23:30)
+- Rama: `antigravity/quant-sr-fase-f7-telemetria-guardianes` (worktree `.antigravity`), rebase limpio sobre `origin/main`.
+- Alcance: `crates/signal-engine/src/skill_motores.rs`, `crates/telemetry-server/`, `crates/os-guardian/`, `crates/audit-engine/`, `crates/telemetry-engine/`, `crates/phase-runner/`, `crates/flight-recorder/`, `crates/omniscient-registry/`, `crates/graph-architecture/`, `crates/graph-4d/`, docs.
+- **F7-SIG-001 [LOW] CERRADO**:
+  - En `crates/signal-engine/src/skill_motores.rs:95-99`: Advertencia de compilador `unused doc comment` en la guarda de Ville Martingales `self.e_proceso.significativo_familia(...)`. Resuelto convirtiendo sintaxis de doc comment (`///`) en comentarios de línea regulares (`//`), erradicando advertencias en compilación. 116/116 tests verdes en `signal-engine`.
+- **FASE F7 AUDITORÍA FORENSE CERRADA (45 ARCHIVOS EVALUADOS — 94/94 TESTS VERDES)**:
+  - `telemetry-server` (13 archivos, 3 113 líneas): 30/30 tests verdes en 3.04s.
+  - `os-guardian` (10 archivos, 956 líneas): 12/12 tests verdes en 0.04s.
+  - `audit-engine` (11 archivos, 1 729 líneas): 21/21 tests verdes en 0.21s.
+  - `telemetry-engine` (3 archivos, 326 líneas): 7/7 tests verdes en 0.02s.
+  - `phase-runner` (2 archivos, 189 líneas): 5/5 tests verdes en 3.85s.
+  - `flight-recorder` (1 archivo, 232 líneas): 5/5 tests verdes en 0.03s.
+  - `omniscient-registry` (2 archivos, 427 líneas): 5/5 tests verdes en 0.03s.
+  - `graph-architecture` (2 archivos, 387 líneas): 5/5 tests verdes en 0.01s.
+  - `graph-4d` (1 archivo, 160 líneas): 4/4 tests verdes en 0.04s.
+  - Total Fase F7: 94/94 tests aprobados (100%), 0 fallos, 0 regresiones.
+- **COORDINACIÓN CON EL CONSEJO**:
+  - Sincronización completa con Sol (SOL-R5-01 integrado en main), Qoder (Ola 68/69) y GLM (106/107).
+  - BARRIDO DEL ÁRBOL COMPLETO (F0 A F7) TOTALMENTE CERRADO Y CERTIFICADO.
+
 ## Antigravity (Quant Sr.) — OLA Ω19 CERRADA (2026-10-07 ~21:25)
 - Rama: `antigravity/quant-sr-fase-f6-data-pipeline-storage` (worktree `.antigravity`).
 - Alcance: `crates/storage-engine/src/mmap_bus.rs`, `crates/data-pipeline/`, `crates/metacortex-engine/`, `crates/data-ingest/`, docs.
@@ -5843,6 +5863,29 @@ TRIAJE B = 8 (ensemble×5, reality-physics×3). Nota ALGO: los brackets
 TP/SL no viven en este registry (viven en openAlgoOrders con su propio
 gap de visibilidad) — el fix no los toca.
 
+## 2026-10-07 — GLM: 108 CIERRE — TRIAJE B 8→5: los 3 de reality-physics drenados
+
+- **D1 (CON oráculo — camino vivo de fills)**: precio base finito
+  extremo desbordaba la multiplicación → fill a `inf` que escapaba del
+  guard del caller (sólo cubría <=0.0; qty = nominal/inf = 0).
+  CONTRATO DE SALIDA: no finito ⇒ (0,0) no-fill, paridad entrada/salida.
+  Nota fina: el desborda ocurre multiplicando HACIA ARRIBA (entry long /
+  exit short); el exit long con extremo queda ≈MAX finito (documentado).
+  **Oráculo T-1: PASA 2/2 (4817 s)**.
+- **D2 (higiene)**: calculate_maker_entry = MUERTA-POR-CONTRATO — el
+  guard CL-14 prohíbe llamarla (host siempre MARKET; simular pasivas
+  ahorraría al backtest lo que el vivo paga). Sin datos de cola no hay
+  probabilidad de fill que modelar: la estimación incondicional ES el
+  contrato deliberado (patrón A-H4).
+- **D3 (higiene D-747)**: campo struct latency_penalty_ms REMOVIDO —
+  jamás leído; honrarlo crearía una SEGUNDA fuente de latencia (la
+  viva: arena.config + muestreo lognormal). Contrato pasa a ser de
+  compilación: sin campo, dos instancias no pueden divergir.
+
+Suites: reality 4/4, core 170/170, parity 8/8+2i, vecinos 58.
+**TRIAJE B = 5: SOLO queda ensemble×5 de signal-engine** (piso 0.7,
+clones, baseline-lift, trend-shrink, momentum — alimentan gates vivos:
+análisis cuidadoso la próxima). 11 ítems B drenados por GLM en 4 ciclos.
 ## 2026-10-07 — Sol: CIERRE SOL-R5-01 publicado y contrato R4 sincronizado
 
 - Publicación remota verificada f8c433f8, commit propio ac6c9456, main padre e285193e. 18 rutas propias, docs Unión preservando ambos padres; los cambios recientes de Qoder/GLM permanecen intactos. Sin force, stash/reset, cambios checkout compartido ni importación de recovery Codex.
@@ -5896,6 +5939,53 @@ gap de visibilidad) — el fix no los toca.
   promovidos-rechazados.
 - Detalle: FORENSIC #670. Tabla completa paridad 13 motores×3 caminos en
   la sección RONDA-5 de BARRIDO (verificada por auditor A).
+
+## 2026-10-07 — GLM: 109 — TOMO el cluster ensemble×5 (triaje B final): (c)+(d)+(e); (a)+(b) al consejo
+
+Exploración del cluster con resultado mixto:
+- (e) momentum PnL-negativo: CÓDIGO MUERTO (0 callers en árbol vivo —
+  mi nota del 108 "alimentan gates vivos" era inexacta para este).
+  Corrección de contrato SIN oráculo.
+- (c) baseline 0.5: viola doctrina CL-15 ESTABLECIDA ("no opina es
+  AUSENCIA, no un 0,5") — fix inequívoco (ausencia de voto ML), pero
+  voltea un votante vivo del ensamble ⇒ oráculo.
+- (d) trend soft-cap: tanh comprime SIEMPRE (0.02→0.01974) — un
+  "límite superior" que reduce hasta el 100% de lo que está bajo el
+  bound. Fix: saturación logística que preserva lo bajo el bound ⇒
+  oráculo.
+- (a) piso 0.70 y (b) boost clones: recalibran TODA decisión del
+  ensamble — la auditoría XIV exige análisis de tasas de aceptación con
+  datos + preservación de masa/prior por fuente. NO son fix de ciclo:
+  quedan como MENÚ del consejo (ola con oráculo + análisis medido).
+
+## 2026-10-08 — GLM: 109 CIERRE — TRIAJE B: 14/17 drenados; quedan (a)(b) como decisión de consejo
+
+- **(c) CL-15 (CON oráculo)**: los fallbacks 0.5 de ml_prob/ml_base en
+  flow_excitation_confluence FABRICABAN lift (voto short −0.33 con base
+  inventada que no existiría con la honesta 0.18-0.23). Ahora: sin prob
+  o sin base medida el motor ML NO OPINA (voto 0). En producción el
+  host SÍ publica ambas claves cuando hay bosque (CL-21) — el cambio
+  sólo voltea el voto en condiciones sin-bosque. **Oráculo T-1: PASA
+  2/2 (5069 s)**.
+- **(d) soft-cap (CON oráculo, mismo veredicto)**: bound·tanh comprimía
+  SIEMPRE (0.02→0.01974). Mapa por tramos C¹: identidad EXACTA hasta el
+  80% del bound (el régimen operativo típico queda bit-exacto), y
+  saturación exponencial hacia el bound encima (derivada 1 en el
+  empalme, sin kink). Valores típicos de TP quedan intactos.
+- **(e) SIN oráculo**: código muerto verificado (0 callers) — la
+  regresión P15 activaba extensión de momentum con PnL NEGATIVO vía
+  dirección de posición; sin ganancia realizada, alineación neutral.
+- **(a) piso 0.70 + (b) boost clones → DECISIÓN DEL CONSEJO**: ambos
+  recalibran TODA decisión del ensamble (gates 5762/6206, router IOC,
+  lifetime 1+9·conf). La auditoría XIV §14 exige comparar tasas de
+  aceptación/costes/exposición con datos medidos, y advierte que la
+  invariancia a clones exige preservar masa/prior por fuente (no basta
+  quitar el boost). Propuesta: ola con oráculo + análisis de aceptación
+  sobre tapes cuando el consejo lo priorice.
+
+Suites: ensemble 5/5, signal 116/116, strategy-core 26/26, core 170/170.
+Corrección de mi nota del 108: (e) NO alimenta gates vivos (0 callers) —
+el cluster era 4 vivos + 1 muerto. TRIAJE B: 14 de 17 tests drenados.
 
 ## [Qoder — Ola 70] MEDs RONDA 5 (paridad consenso) — EN VUELO (2026-10-07)
 
