@@ -1,0 +1,104 @@
+{
+  "from_commit": "e9c6a435eb1780da7f2c6e29103f3bd7d227d94c",
+  "to_commit": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+  "added": [
+    "docs/INTEGRACION_RAMAS_2026-10-07.md",
+    "docs/PLAN_AUDITORIA_BASE_2026-10-08.md",
+    "docs/audit/COPY_PACKET_PREFLIGHT_REVIEW_2026-10-08.md",
+    "docs/audit/DELTA_INTEGRACION_2026-10-08.json",
+    "docs/audit/DEPTH_INDEPENDENT_REVIEW_2026-10-08.md",
+    "docs/audit/PROTOCOLO_OOS_R4_2026-10-07.md",
+    "docs/audit/R2_SELECTION_STATS_AUDIT_2026-10-08.md",
+    "docs/audit/RECIBOS_DEPTH_R4_2026-10-08.json",
+    "docs/audit/RECIBOS_DIAGNOSTICOS_RUST_R4_2026-10-08.json",
+    "docs/audit/RECIBOS_INTEGRACION_R4_2026-10-07.json",
+    "docs/audit/RECIBO_ENSAMBLADO_R4_2026-10-08.json",
+    "docs/audit/REVALIDACION_FUNDAMENTOS_R4_2026-10-08.md",
+    "docs/audit/REVALIDACION_OOS_R4_2026-10-08.md",
+    "docs/audit/REVISION_CODIGO_2026-10-08.json",
+    "docs/audit/REVISION_MERGE_CORE_OU_REGISTRY_2026-10-08.md",
+    "docs/audit/REVISION_PAQUETE_CIENTIFICO_2026-10-08.md",
+    "docs/audit/REVISION_PARSER_DEPTH_R4_2026-10-08.md",
+    "scripts/audit_r4_depth_witness.py",
+    "scripts/audit_r4_rust_witnesses.py",
+    "scripts/fixtures/r4_depth_witness.rs",
+    "scripts/fixtures/r4_ou_witness.rs",
+    "scripts/fixtures/r4_selection_stats_witness.rs"
+  ],
+  "removed": [],
+  "changed": [
+    {
+      "path": ".agents/MEMORIA.md",
+      "old_blob": "05b6b8e56d4ff30fdc3ad67513d7cbc6e365ac9e",
+      "new_blob": "4ae5a9524f984ce36a057afa9517f88d261d0269",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "COORDINACION_CODEX_2026-09-28.md",
+      "old_blob": "a5fe0d1a4859cfefc1a7e49d51ff508887c571c5",
+      "new_blob": "238d66d65d5d81fa11ab5fdbd89426e9c3913865",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_QUANT_SR_2026-10-05.md",
+      "old_blob": "9921b90b2dd64d7565eac705b5d10a92680eddc6",
+      "new_blob": "e9eee2a562e95a431bb350199db525de3add80ff",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_SINCRONIZACION.md",
+      "old_blob": "457dd4de505b82d962a2313cdf2353308d0a8af3",
+      "new_blob": "5ec4832b8bd67a3b376ff8d854c590d827b73cb9",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",
+      "old_blob": "1cdb604bc6686e959b00e3836e824d0b8589bd2d",
+      "new_blob": "9a2b55a1482a88aada08850267783f1958a2a842",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/audit/CI_CANDIDATE_GUARD_R4_2026-10-07.md",
+      "old_blob": "060a923a796dc726a6a772d4ee3950670cf10b8e",
+      "new_blob": "4e534a12ce4a486b32e4d944c5753f51c8f47a89",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/audit/FUNDAMENTOS_R4_2026-10-07.md",
+      "old_blob": "06aada6e8364a1b167ff5610cbb15c642466a610",
+      "new_blob": "7180ffd12cb2700705b00a7c8c1bc12e840e9bfe",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/audit/RECUPERACION_RUIN_R4_2026-10-07.md",
+      "old_blob": "52c10d3ebf4f5a0a2f27a3b651a4c6366489a522",
+      "new_blob": "c41207f48b41d42fb7fbb9f7cb6b4528e8bbd7dc",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/audit/RESIDUALES_INTEGRACION_R4_2026-10-07.md",
+      "old_blob": "fd7610026e3801299cf415af9774b6624b2ba204",
+      "new_blob": "5307c59088f52644f4122c7618b915baeebabcb1",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    }
+  ],
+  "unchanged_count": 1469
+}
