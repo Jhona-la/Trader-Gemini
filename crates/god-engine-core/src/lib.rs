@@ -2001,10 +2001,28 @@ impl GodEngineCore {
                     // #610 (Ola 32): sombras del SOLITÓN (perfil sech firmado)
                     // y del CHOQUE supersónico (salto Rankine-Hugoniot
                     // M(τ)=|x(τ)|/c) — misma malla de desplazamientos.
-                    let voto_soliton = signal_engine::soliton_wave::SolitonWaveEngine::voto_espectral(
-                        &desplazamientos,
-                        self.arena.registry.get_value_or("soliton_amplitude", 1.0),
-                    );
+                    // H2-10 (RONDA 3, GLM 112): la sombra leía el knob
+                    // global `soliton_amplitude` (CERO escritores
+                    // productivos ⇒ siempre 1.0) mientras el VIVO usa la
+                    // cascada scoped soliton_amplitude → OFI → vol_delta
+                    // (soliton_wave.rs). ESPEJO EXACTO: misma cascada
+                    // per-coin — el sanitizado interno del motor
+                    // (amp≤0→1.0, clamp [1e-3,10]) hace el resto idéntico.
+                    let amp_soliton = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "soliton_amplitude", {
+                            // OFI firmado [-1,1]: negativo/0 → el motor lo
+                            // sanea a 1.0 — misma semántica que el vivo.
+                            self.arena
+                                .registry
+                                .get_for_coin_or(coin_id, "order_flow_imbalance", 0.0)
+                        });
+                    let voto_soliton =
+                        signal_engine::soliton_wave::SolitonWaveEngine::voto_espectral(
+                            &desplazamientos,
+                            amp_soliton,
+                        );
                     if let Some((k_sol, v_sol)) = voto_soliton.dominante() {
                         self.arena.registry.set_for_coin(
                             coin_id,
