@@ -483,6 +483,55 @@ fn xlvie_dependency_exposure_mide_riesgo_real_del_snapshot() {
     );
 }
 
+/// GEMELO VIVO correlación (GLM 111) — PIN 1: `Some(NaN)` como rho directo
+/// cae a la SUMA LINEAL ADVERSA (rama `_`), SIN descuento de varianza —
+/// jamás NaN, jamás gratis. La agregación viva no puede construir un rho
+/// NaN (miembros no-finitos → 1.0 adverso), pero el contrato del
+/// consumidor puro queda fijo: basura dentro ⇒ pesimismo fuera.
+#[test]
+fn gemelo_vivo_rho_nan_directo_cae_a_suma_adversa_sin_descuento() {
+    use risk_engine::correlation_guard::calcular_riesgo_grupo;
+    let riesgos = [0.01, 0.01, 0.01];
+    let con_rho_bajo = calcular_riesgo_grupo(&riesgos, Some(0.0)); // √(3·1e-4)≈0.017
+    let con_rho_nan = calcular_riesgo_grupo(&riesgos, Some(f64::NAN));
+    let suma_lineal = calcular_riesgo_grupo(&riesgos, None);
+    assert_eq!(con_rho_nan, suma_lineal, "Some(NaN) ⇒ rama adversa _ (suma)");
+    assert_eq!(con_rho_nan, 0.03);
+    assert!(
+        con_rho_nan > con_rho_bajo,
+        "sin descuento de varianza: {con_rho_nan} ≥ {con_rho_bajo}"
+    );
+    assert!(con_rho_nan.is_finite(), "jamás NaN hacia el veto");
+}
+
+/// GEMELO VIVO correlación (GLM 111) — PIN 2: capital NaN ⇒ bits 0 en el
+/// vector de riesgos medidos (el eslabón `dependency_exposure` —
+/// `!capital.is_finite() ⇒ None ⇒ bits 0`). Aguas abajo el híbrido mapea
+/// bits-0 al fallback del llamador y fallback inválido ⇒ 1.0 prohibitivo
+/// (contratado en xlvie_sanidad_e_hibrido_de_acceso). NaN jamás regala
+/// descuento: la cadena completa es fail-closed.
+#[test]
+fn gemelo_vivo_capital_nan_produce_bits_cero_no_riesgo_fabricado() {
+    use risk_engine::correlation_guard::dependency_exposure;
+    let (arena, _) = fixture();
+    open(&arena, 0, 0, true); // misma posición del test medido: 0.08 con capital sano
+    arena.unified_capital.store(f64::NAN, Relaxed);
+    let e = dependency_exposure(&arena, 0, true, 0.5).unwrap();
+    assert_eq!(e.same_bet_positions, 1);
+    assert_eq!(
+        e.same_bet_riesgos_bits.len(),
+        1,
+        "la posición sigue contada como same-bet"
+    );
+    assert_eq!(
+        e.same_bet_riesgos_bits[0], 0,
+        "capital NaN ⇒ NO MEDIDO (bits 0), no un riesgo fabricado"
+    );
+    // Y el híbrido sobre bits-0 con fallback inválido es prohibitivo.
+    let h = e.same_bet_riesgos_hibridos(f64::NAN);
+    assert_eq!(h, vec![1.0], "fallback inválido ⇒ 1.0, jamás gratis");
+}
+
 /// AGY-AUD-P06: Cuando el universo presenta alta vorticidad de Helmholtz-Hodge
 /// (hawkes_contagion_curl_share elevado), rho_efectivo escala continuamente
 /// hacia 1.0 (dependencia sistémica), reduciendo la ilusión de diversificación.
