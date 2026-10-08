@@ -1151,3 +1151,83 @@ nunca llegó a las DOS sombras espectrales.
 - **Ola 69 (siguiente)**: R4-B2 (muestreo por rejilla) + R4-B3 (piso n)
   + R4-C2/C3/C4 (saturación residual) — con oráculo.
 - Docs: R4-A2 adenda ADR-0014; LOWs B4/B5/A3/A4/A5 en limpieza.
+
+---
+
+# RONDA 5 (2026-10-07, contra .ola69 — post Ola 68/69, Ω17/Ω18, GLM 104)
+
+Mandato del operador. 3 auditores paralelo: A = paridad sombra↔vivo
+SISTEMÁTICA (tabla 13 motores × 3 caminos — el chequeo que el consejo pidió
+tras C1), B = matemática de las olas nuevas, C = física/conducta. **12
+hallazgos (0 HIGH, 5 MED, 7 LOW)** — primera ronda SIN HIGH: las correctivas
+de rondas 3-4 sostienen. El patrón residual es UNO solo: el fix se porta a
+un camino y el otro queda con la calibración vieja o clave muerta.
+
+## §R5-A — PARIDAD SOMBRA↔VIVO (tabla completa en buzón)
+
+- **R5-A1 [MED] conformal vivo MUDO**: el evaluate lee `ema_trend_swing`
+  = macro_trend CRUDO (fracción O(1e-3)); con divisor 2.0 el acuerdo ≈
+  0.005 — R4-C3 calibró para la sombra tanh(z) (|trend|~O(1)), el vivo
+  quedó inaudible. Fix: normalizar el trend vivo (tanh de su z) o clave
+  publicada z-normalizada (writer+reader mismo commit, lección #613).
+- **R5-A2 [MED] shockwave firma divergente**: sombra tanh(x)≡tanh(mach)
+  vs vivo tanh(mach/2) — R4-C2 se portó sólo al vivo. Fix: `((x/c)/2).tanh()`
+  en voto_espectral.
+- **R5-A3 [MED] clave muerta en el consenso**: la sombra lee
+  `conformal_epsilon` (0 escritores) mientras el genoma publica
+  `conformal_alpha` — el consenso VIVO corre conformal con α=0.10 fijo,
+  sordo a la calibración [0.01,0.30]. Fix: leer `conformal_alpha`.
+- R5-A4 [LOW] `nash_equilibrium_drift` sin escritor ⇒ presión adversarial
+  congelada a 0.5 (G2-11 recurrente — alimenta el consenso vivo).
+- R5-A5 [LOW] renyi sombra con signum duro (única sin tanh de la familia
+  #664; C0 se salva por certeza→0).
+- R5-A6 [LOW] 6 sombras sin telemetría individual `sombra_*` (hawkes/
+  nash/flow/perceptron/conformal/confluence) — invisibles salvo consenso.
+
+## §R5-B — MATEMÁTICA (verificada con cálculo)
+
+- **R5-B1 [MED] fallbacks tech_threshold fuera de banda**:
+  continuous_evolution_backtest.rs:310 (0.1487) y :958 (0.12) — si el
+  campeón estable hereda genoma legacy por el fallback, promote SIGUE
+  rechazándolo (la clase B1 de Ola 68 no erradicada del todo). Fix:
+  alinear ambos a 0.24.
+- **R5-B3 [MED] fallback gaussiano ALCANZABLE**: el comentario
+  «inalcanzable con g4≥3» es FALSO — con γ₃>√2 el denom_sq cruza ≤0 (ej
+  γ₃=2, sr=2 → −1) y cae al gaussiano sub-gaussiano anti-conservador
+  justo con asimetría positiva fuerte. Fix: acotar γ₃ al discriminante.
+- R5-B2 [LOW] rejilla se re-ancla al tick de cruce (Δt∈[1s,2s) con huecos
+  de altcoins). Fix: `while ts ≥ last+1000 { last += 1000 }`.
+- R5-B4 [LOW-MED] dark-alpha sigmoid clamp(±700) convierte bias=+Inf en
+  salida 1.0 «evidencia» finita (inalcanzable hoy: load valida; blindaje
+  de papel). Fix 1 línea: NaN si total no finito antes del clamp.
+- R5-B5 [errata] doc tanh(5)=0.99991 no 0.9997 (C2 de Ola 69).
+
+## §R5-C — FÍSICA (regresión completa VIVA)
+
+- **R5-C1 [MED] = R4-C5 confirmado**: shockwave mid ausente + fallback
+  atr_pct mezcla precio-crudo/s con fracción/s ⇒ Mach ×mid_price. Fix:
+  abstener sin mid cuando se usa el fallback fraccional.
+- R5-C2 [LOW] kink C⁰ del .max(0.0) del acuerdo — semánticamente requerido
+  (clase calma-abstiene aceptada en G2-1).
+- R5-C3 [LOW] clamp |x|≤10 sólo en sombra (asimetría ≤1% del jump).
+
+## Mapa positivo (verificado)
+
+- Paridad EXACTA: oscilador, SR, coaxial, trend_runner, perceptron (infer
+  compartido — R4-C4/H2-6 por construcción), hawkes, flow_impulse
+  (contrato h2_7). Calma-abstiene .max(0.0) en los TRES caminos de
+  hawkes/flow/confluence (C1 bien propagado).
+- Ola 68 bandas verificadas con derivación de coeficientes de curva
+  (a,b ∈ bounds; nichos ⊇; RR ✓). DSR grid-only íntegro;
+  cumulative_trials monótono. g4.max(3.0) dirección correcta.
+- GLM 104 sin daño (lead_lag docs-only; ast_mutator cierra canal muerto;
+  renames bit-exact). Ola 68 A1 unidades coherentes.
+- TODOS los fixes de olas 62/63/65/68 siguen vivos tras los merges.
+
+## Asignación ronda 5
+
+- **Qoder Ola 70 (siguiente, con oráculo)**: R5-A1+A2+A3 (paridad
+  conformal/shockwave/clave viva del consenso — sombra+vida en el mismo
+  commit, regla #656) + R5-B1 (fallbacks 0.24) + R5-B3 (γ₃ acotado).
+- Ola 71 (mecánica): R5-B2 rejilla fija, R5-B4 NaN sigmoid, R5-A4/A5/A6,
+  R5-C1, erratas. Docs: telemetría de promovidos-rechazados (lección B1).
