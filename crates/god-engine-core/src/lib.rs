@@ -2112,11 +2112,23 @@ impl GodEngineCore {
                             ratio_hawkes_fresco,
                         );
 
-                    // #618: SOMBRA ESPECTRAL de GAME-THEORETIC NASH
-                    let nash_drift = self
-                        .arena
-                        .registry
-                        .get_value_or("nash_equilibrium_drift", 0.5);
+                    // #618: SOMBRA ESPECTRAL de GAME-THEORETIC NASH.
+                    // R5-A4 (G2-11): `nash_equilibrium_drift` tenía CERO
+                    // escritores ⇒ presión adversarial congelada a 0.5.
+                    // Paridad con el camino VIVO: la misma cadena
+                    // game_theory_adversarial_pressure → cvpin (el core
+                    // ESCRIBE cvpin medido en el registro).
+                    let nash_drift = {
+                        let adv = self
+                            .arena
+                            .registry
+                            .get_value_or("game_theory_adversarial_pressure", f64::NAN);
+                        if adv.is_finite() {
+                            adv
+                        } else {
+                            self.arena.registry.get_for_coin_or(coin_id, "cvpin", 0.5)
+                        }
+                    };
                     let voto_nash =
                         signal_engine::game_theoretic_nash::GameTheoreticNashEngine::voto_espectral(
                             &desplazamientos,
@@ -2157,6 +2169,29 @@ impl GodEngineCore {
                             &desplazamientos,
                             ratio_hawkes_fresco,
                         );
+
+                    // R5-A6: telemetría de las 6 sombras que no publicaban
+                    // (hawkes/nash/flow/perceptron/conformal/confluence) —
+                    // invisibles salvo vía consenso; mismo patrón que
+                    // sombra_res_/sombra_trend_ (media de banda completa).
+                    if let Some(m) = voto_hawkes.media_banda(0, 31) {
+                        self.arena.registry.set_for_coin(coin_id, "sombra_hawkes_consenso", m);
+                    }
+                    if let Some(m) = voto_nash.media_banda(0, 31) {
+                        self.arena.registry.set_for_coin(coin_id, "sombra_nash_consenso", m);
+                    }
+                    if let Some(m) = voto_flow.media_banda(0, 31) {
+                        self.arena.registry.set_for_coin(coin_id, "sombra_flow_consenso", m);
+                    }
+                    if let Some(m) = voto_perceptron.media_banda(0, 31) {
+                        self.arena.registry.set_for_coin(coin_id, "sombra_perceptron_consenso", m);
+                    }
+                    if let Some(m) = voto_conformal.media_banda(0, 31) {
+                        self.arena.registry.set_for_coin(coin_id, "sombra_conformal_consenso", m);
+                    }
+                    if let Some(m) = voto_confluence.media_banda(0, 31) {
+                        self.arena.registry.set_for_coin(coin_id, "sombra_confluence_consenso", m);
+                    }
 
                     // SOMBRA ESPECTRAL de TREND-RUNNER (persistencia multiescala)
                     let hurst_tr = self

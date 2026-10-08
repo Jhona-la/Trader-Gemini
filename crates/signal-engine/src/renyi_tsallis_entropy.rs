@@ -192,8 +192,9 @@ impl RenyiTsallisEntropyEngine {
             // acotar la certeza en [0,1].
             let s_max = self.calculate_tsallis_entropy(&[0.5, 0.5]).max(1e-9);
             let certeza = (1.0 - (s_q / s_max).clamp(0.0, 1.0)).clamp(0.0, 1.0);
-            let signo = if x > 0.0 { 1.0 } else { -1.0 };
-            (signo * certeza).clamp(-1.0, 1.0)
+            // R5-A5: tanh graduado (familia #664) — el if/else de signo
+            // era el último signum duro de las sombras (kink C⁰ en x=0).
+            (x.tanh() * certeza).clamp(-1.0, 1.0)
         })
     }
 }
