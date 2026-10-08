@@ -115,8 +115,10 @@ impl MultivariateCointegrationEngine {
         }
 
         // Estimador SDE de tiempo continuo de Ornstein-Uhlenbeck / Fokker-Planck con reloj físico real.
-        // Si está activo, opera la reversión continua multiactivo sobre tiempo físico y emite
-        // una intención con expected_duration_ms calibrada a la vida media física t_{1/2} en ms.
+        // Si está activo (modo opt-in exclusivo vía with_continuous_ou), opera la reversión continua
+        // multiactivo sobre tiempo físico y emite una intención con expected_duration_ms calibrada
+        // a la vida media física t_{1/2} en ms. Si no supera umbral o está frío, se abstiene (None)
+        // con honestidad matemática estricta, sin caer al evaluador discreto legacy (OU-R4-01).
         if let Some(sde) = &mut self.physical_sde {
             let sde_z = sde.update(spread, timestamp_ms);
             let sde_hl_sec = sde.half_life_seconds();
@@ -146,6 +148,9 @@ impl MultivariateCointegrationEngine {
                     });
                 }
             }
+            // En modo SDE continuo, la ausencia de señal o la fase de maduración inicial
+            // retorna abstención honesta (None). No cae al evaluador discreto legacy.
+            return None;
         }
 
         let next_count = self.count.checked_add(1)?;
@@ -522,5 +527,38 @@ mod tests {
             signal.expected_duration_ms
         );
         assert!(signal.confidence >= 0.50, "confianza Bayesiana calibrada");
+    }
+
+    #[test]
+    fn test_ou_r4_01_sde_mode_never_falls_back_to_legacy_with_zero_duration() {
+        // OU-R4-01: En modo continuo SDE, el motor NUNCA debe caer silenciosamente al evaluador
+        // legacy basado en eventos que emite señales con expected_duration_ms=0.
+        let mut engine =
+            MultivariateCointegrationEngine::new([1.0, 0.0, 0.0, 0.0], 2.0).with_continuous_ou();
+
+        // 1. Inicialización en frío: primera observación devuelve None
+        let res0 = engine.update_and_evaluate(&[1.0, 1.0, 1.0, 1.0], 1000);
+        assert!(res0.is_none());
+
+        // 2. Segunda observación con salto que en el evaluador legacy dispararía señal:
+        // Pero en modo SDE (count < 10) está en fase de maduración física y DEBE abstenerse (None)
+        let res1 = engine.update_and_evaluate(&[(0.1f64).exp(), 1.0, 1.0, 1.0], 2000);
+        assert!(
+            res1.is_none(),
+            "en modo SDE frío debe abstenerse (None) sin caer al evaluador legacy"
+        );
+
+        // 3. Cuando emite señal tras maduración física, expected_duration_ms debe ser > 0 y finito
+        for i in 2..20 {
+            let _ = engine.update_and_evaluate(&[1.0, 1.0, 1.0, 1.0], 2000 + i * 1000);
+        }
+        let shock = engine.update_and_evaluate(&[1.5, 1.0, 1.0, 1.0], 25_000);
+        if let Some(intent) = shock {
+            assert_ne!(
+                intent.expected_duration_ms, 0,
+                "señal continua SDE jamás debe tener expected_duration_ms=0"
+            );
+            assert_eq!(intent.horizon, TradeHorizon::Continuous);
+        }
     }
 }

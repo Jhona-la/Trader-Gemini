@@ -267,11 +267,18 @@ impl ContinuousOrnsteinUhlenbeckSde {
         if !value.is_finite() {
             return self.stationary_zscore(self.last_value);
         }
-        if self.count == 0 || ts_ms <= self.last_ts_ms {
+        if self.count == 0 {
             self.last_value = value;
             self.last_ts_ms = ts_ms;
-            self.count += 1;
+            self.count = 1;
             return 0.0;
+        }
+
+        if ts_ms <= self.last_ts_ms {
+            // OU-R4-02: Monotonicidad temporal estricta de la física SDE.
+            // Timestamps repetidos o retrógrados no mutan el estado, no avanzan count
+            // ni retroceden el reloj físico.
+            return self.stationary_zscore(self.last_value);
         }
 
         let dt_sec = (ts_ms - self.last_ts_ms) as f64 / 1000.0;
@@ -427,5 +434,37 @@ mod tests {
         // NaN immunity
         let nan_z = ou.update(f64::NAN, ts + 2000);
         assert!(nan_z.is_finite());
+    }
+
+    #[test]
+    fn test_ou_r4_02_retrograde_and_duplicate_timestamp_does_not_mutate_state_or_advance_count() {
+        let mut ou = ContinuousOrnsteinUhlenbeckSde::new(0.2, 10.0, 0.5);
+        // Primera observación: inicializa estado
+        let z0 = ou.update(10.0, 1000);
+        assert_eq!(z0, 0.0);
+        assert_eq!(ou.count, 1);
+        assert_eq!(ou.last_ts_ms, 1000);
+        assert_eq!(ou.last_value, 10.0);
+
+        // Intento retrógrado: ts=500 < 1000
+        let z_retro = ou.update(25.0, 500);
+        assert!(z_retro.is_finite());
+        assert_eq!(ou.count, 1, "tick retrógrado NO debe incrementar count");
+        assert_eq!(ou.last_ts_ms, 1000, "tick retrógrado NO debe retroceder last_ts_ms");
+        assert_eq!(ou.last_value, 10.0, "tick retrógrado NO debe sobreescribir last_value");
+
+        // Intento duplicado: ts=1000 == 1000
+        let z_dup = ou.update(30.0, 1000);
+        assert!(z_dup.is_finite());
+        assert_eq!(ou.count, 1, "tick duplicado NO debe incrementar count");
+        assert_eq!(ou.last_ts_ms, 1000, "tick duplicado NO debe alterar last_ts_ms");
+        assert_eq!(ou.last_value, 10.0, "tick duplicado NO debe sobreescribir last_value");
+
+        // Siguiente tick causal estrictamente creciente: ts=1500 > 1000
+        let z_causal = ou.update(10.2, 1500);
+        assert!(z_causal.is_finite());
+        assert_eq!(ou.count, 2, "tick causal debe avanzar count");
+        assert_eq!(ou.last_ts_ms, 1500, "tick causal debe avanzar reloj");
+        assert_eq!(ou.last_value, 10.2, "tick causal debe actualizar last_value");
     }
 }
