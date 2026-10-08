@@ -30,6 +30,33 @@
 - Esta entrada describe trabajo en curso: no es recibo de push/merge, T-1,
   CI ni validación de rentabilidad de 100% cada 72h.
 
+## 2026-10-08 — Antigravity: OLA Ω27 CERRADA — FASE F9: AUDITORÍA DE HONESTIDAD DE TESTS, DRENAJE DE CATEGORÍA A DEL TRIAJE Y RENOMBRADO A REGRESIÓN HAWKES CERRADA (#660)
+
+- Rama: `antigravity/quant-sr-ronda6-f9-honestidad-tests` (worktree `.antigravity`), base `912becfa`.
+- **AUDITORÍA Y DRENAJE DE HONESTIDAD EN TESTS (CATEGORÍA A TRIAJE)**:
+  - En `crates/god-engine-core/tests/stateful_open_diagnostics.rs`: renombrado el test cerrado `open_hawkes_direct_api_accepts_late_impulse` a `regression_hawkes_direct_api_rejects_late_impulse`. El defecto #660 (F2-B6) fue cerrado garantizando que un evento retrógrado ($ts < last$) no excita el proceso y el reloj permanece monotónico; mantener el prefijo `open_` certificaba en falso una limitación ya resuelta.
+  - En `docs/TRIAJE_ROJOS_PERPETUOS.md`: Categoría A (6/6 casos) auditada, drenada y certificada al 100%. Verificados los contratos de honestidad en `genome_reader_diagnostics.rs` (eval de curvas), `fitness_evidence_contract.rs` (no-aditividad DD²), `dynamic_selector_contract.rs` (exclusión sin lift), y `genome_gate_open_diagnostics.rs` (FMT-216 testigo histórico seed=199).
+- **VERIFICACIÓN SUITE**:
+  - `cargo check -p god-engine-core --lib`: **0 advertencias** (100% limpio en 10.38s).
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes** (100% pasando en 0.56s).
+  - `cargo test -p god-engine-core --test stateful_open_diagnostics`: **5/5 tests verdes** (incluyendo `regression_hawkes_direct_api_rejects_late_impulse`).
+  - `cargo test -p god-engine-core --test sombras_espectrales_telemetria_contract`: **2/2 tests verdes**.
+
+## 2026-10-08 — Antigravity: OLA Ω26 CERRADA — FASE F8: PARIDAD 1:1 DE LATENCIA GENÓMICA EN CONTINUOUS_EVOLUTION_BACKTEST SIN OVERRIDES ESTÁTICOS (REPLAY & VIVO)
+
+- Rama: `antigravity/quant-sr-ronda6-f8-backtest-paridad` (worktree `.antigravity`), base `18bbd1d9`.
+- **PARIDAD 1:1 DE LATENCIA GENÓMICA EN `crates/backtest-engine` (FASE F8)**:
+  - En `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs`: erradicado el override estático y arbitrario de latencia `engine.arena.config.latency_penalty_ms.store(25.0, Ordering::Relaxed)` que forzaba 25 ms en el motor maestro y en cada motor sombra mutante en el loop evolutivo de simulación continua.
+  - Al igual que en producción (`src/bin/god_engine.rs`), la penalización de latencia queda estrictamente gobernada por el genoma activo mutado y evaluado (`current_genome.latency_penalty_ms`), transmitiéndose fielmente a través de `mutant_genome.apply_to_arena(&mut mutant_arena)`.
+  - Cumplimiento riguroso del contrato `xlvia_genoma_compartido_misma_latencia_en_bt_y_vivo`: elimina la brecha simulador vs realidad operativa donde una mutación adaptativa de ejecución en el genoma no se reflejaba en el backtest debido al override ciego de 25 ms.
+  - Limpieza de import no utilizado `use std::sync::Arc;` en el binario.
+- **VERIFICACIÓN SUITE FASE F8**:
+  - `cargo check --bin continuous_evolution_backtest -p backtest-engine`: **0 advertencias** (100% limpio).
+  - `cargo test -p backtest-engine --test bt_vivo_parity_audit`: **8/8 tests verdes** (2 ignorados de tape manual/largo), 0 fallos.
+  - `cargo test -p backtest-engine --lib`: **53/53 tests unitarios verdes** (100% pasando en 13.63s).
+  - `cargo test -p backtest-engine --bin continuous_evolution_backtest`: **2/2 tests verdes**.
+  - Total suite `backtest-engine`: **63/63 tests pasando en verde (100%)**.
+
 ## 2026-10-08 — Antigravity: OLA Ω25 CERRADA — FASE F7: OPTIMIZACIÓN ZERO HEAP ALLOCATION EN OMNISCIENT-REGISTRY CON FORMATEO EN STACK (HFT NANOSEGUNDOS)
 
 - Rama: `antigravity/quant-sr-ronda6-f7-telemetria-guardianes` (worktree `.antigravity`), base `ca302616`.
