@@ -1,5 +1,17 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω25 CERRADA (2026-10-08 ~13:10)
+- Rama: `antigravity/quant-sr-ronda6-f7-telemetria-guardianes` (worktree `.antigravity`), base `ca302616`.
+- Alcance: `crates/omniscient-registry/src/lib.rs`, docs.
+- **FASE F7: OPTIMIZACIÓN ZERO HEAP ALLOCATION EN OMNISCIENT-REGISTRY CON FORMATEO EN STACK (HFT NANOSEGUNDOS)**:
+  - Eliminado el uso de `format!` con heap allocation (`String::new()`) en todos los métodos de resolución escopada por activo (`get_for_coin_or`, `set_for_coin`, `get_scoped_value_or`, `set_scoped`, `get_scoped_parameter`, `get_scoped_val_or`).
+  - Implementados `format_scoped_key` y `format_coin_key` con buffers en stack `[u8; 96]` y `[u8; 64]`, preservando búsquedas lock-free en `SkipMap` a velocidad de nanosegundos y previniendo fragmentación de memoria en portátiles de 16 GB RAM sin GPU.
+  - Test unitario específico añadido: `test_omniscient_registry_zero_alloc_scoped_and_coin_lookups`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo check -p omniscient-registry --lib`: **0 advertencias** (100% limpio).
+  - `cargo test -p omniscient-registry`: **6/6 tests verdes** (0.01s).
+  - Verificación global Fase F7: 168/168 tests verdes en los crates de telemetría, guardianes de OS, auditoría y almacenamiento.
+
 ## Antigravity (Quant Sr.) — OLA Ω24 CERRADA (2026-10-08 ~10:50)
 - Rama: `antigravity/quant-sr-ronda6-ou-tiempo-fisico` (worktree `.antigravity`), base `246542bf`.
 - Alcance: `crates/strategy-core/src/multivariate_coint.rs`, `crates/strategy-core/src/vecm_arbitrage.rs`, docs.

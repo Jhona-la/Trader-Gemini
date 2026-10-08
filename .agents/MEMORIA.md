@@ -1,5 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Antigravity: OLA Ω25 CERRADA — FASE F7: OPTIMIZACIÓN ZERO HEAP ALLOCATION EN OMNISCIENT-REGISTRY CON FORMATEO EN STACK (HFT NANOSEGUNDOS)
+
+- Rama: `antigravity/quant-sr-ronda6-f7-telemetria-guardianes` (worktree `.antigravity`), base `ca302616`.
+- **AUDITORÍA Y OPTIMIZACIÓN ZERO-ALLOC EN `crates/omniscient-registry` (FASE F7)**:
+  - En `omniscient-registry/src/lib.rs`: los métodos de resolución escopada por activo (`get_for_coin_or`, `set_for_coin`, `get_scoped_value_or`, `set_scoped`, `get_scoped_parameter`, `get_scoped_val_or`) ejecutaban `format!("c{}:{}", coin_id, name)` o `format!("{}_{}", symbol, name)`, incurriendo en asignaciones dinámicas en el heap (`String::new()`) en cada lookup del hot path.
+  - Implementados los formateadores de clave en stack de cero asignaciones `format_scoped_key` (buffer `[u8; 96]`) y `format_coin_key` (buffer `[u8; 64]` con conversión aritmética directa base-10).
+  - Rendimiento HFT: erradicadas el 100% de las micro-asignaciones de heap en lecturas por activo, permitiendo búsquedas lock-free en `SkipMap` a velocidad de nanosegundos y previniendo fragmentación de memoria en portátiles de 16 GB RAM sin GPU.
+  - Añadido test unitario `test_omniscient_registry_zero_alloc_scoped_and_coin_lookups` (6/6 tests verdes en `omniscient-registry`).
+- **VERIFICACIÓN SUITE FASE F7**:
+  - `omniscient-registry`: **6/6 tests verdes** (0.01s), 0 warnings.
+  - `telemetry-server`: **30/30 tests verdes** (3.15s).
+  - `os-guardian`: **12/12 tests verdes** (0.05s).
+  - `audit-engine`: **50/50 tests verdes** (21 unit + 29 contract).
+  - `storage-engine`: **58/58 tests verdes** (39 unit + 19 contract).
+  - `flight-recorder`: **5/5 tests verdes** (0.05s).
+  - `telemetry-engine`: **7/7 tests verdes** (0.02s).
+  - Total Fase F7 evaluada: **168/168 tests pasando en verde (100%)**.
+
 ## 2026-10-08 — Antigravity: OLA Ω24 CERRADA — ESTIMADOR ANALÍTICO CONTINUO SDE ORNSTEIN-UHLENBECK / FOKKER-PLANCK CON RELOJ FÍSICO REAL EN COINTEGRACIÓN MULTIACTIVO (STRATEGY-CORE)
 
 - Rama: `antigravity/quant-sr-ronda6-ou-tiempo-fisico` (worktree `.antigravity`), base `246542bf`.
