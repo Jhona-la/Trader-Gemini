@@ -30,12 +30,13 @@ verifica algo. No cambian conducta — sólo dejan de certificar en falso.
 | ~~`execution-engine/tests/execution_open_diagnostics.rs:51`~~ | ~~`assert_ne!(score, score)` — orden total inconsistente~~ | **DRENADO (GLM C)**: Ord total real, NaN menor. |
 | ~~`storage-engine/tests/mmap_open_diagnostics.rs:6`~~ | ~~pérdida silenciosa de frames en wrap~~ | **DRENADO (GLM 105, con oráculo)**: stop-at-first-invalid — el cursor sólo avanza sobre frames validados; liveness por el clamp MAX_BATCH_READ. El frame commiteado-después se recupera (pérdida sistemática del dataset del Shadow Forest eliminada). |
 | `signal-engine/tests/ensemble_characterization.rs:5 tests` | piso 0.7, clones inflan, baseline 0.5 fabrica lift | revisión del ensamble |
-| `risk-engine/tests/veto_open_diagnostics.rs:4 tests` | NaN-peak pasa, capital desconocido no fail-closed, cap=1 no honrado | doctrina de cada guard |
+| ~~`risk-engine/tests/veto_open_diagnostics.rs:4 tests`~~ | ~~NaN-peak pasa, capital desconocido no fail-closed, cap=1 no honrado~~ | **DRENADO (GLM 106)**: 4 doctrinas — peak NaN/≤0 ≠ seguro (fail-closed), capital NaN = veto (fail-closed), caps de clúster y racha honrados EXACTOS (pisos `.max(2)` removidos). Superficies auxiliares (0 call-sites vivos) ⇒ sin oráculo. **GEMELOS VIVOS registrados como ola futura CON oráculo**: god-engine lib.rs:279 (peak NaN omite el veto inline de drawdown) y lib.rs:564+ (agregación viva de correlación). |
 | `god-engine-core/tests/reality_physics_open_diagnostics.rs:3` | precio infinito, maker sin cola, latency_penalty ignorado | física del fill |
 
-**B queda en 13 tests** (3 drenados por GLM: XCIX, C, 105×2 — nota: el
-mapa XCVIII contaba 15; la tabla lista 8 filas ≈ 17 tests, de los cuales
-4 ya están drenados).
+**B queda en 9 tests** (7 drenados por GLM: XCIX, C, 105×2, 106×4 — los 4
+de veto guards cuentan como 4). **Deuda viva registrada por los gemelos**:
+lib.rs:279 y lib.rs:564+ requieren ola con oráculo si el consejo decide
+endurecer también el camino vivo.
 
 ## Categoría C — COMPORTAMIENTO DOCUMENTADO (aceptado, no bug)
 

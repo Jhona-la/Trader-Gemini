@@ -761,6 +761,16 @@ impl CorrelationGuardEngine {
     /// capital y agnóstico de horizonte. La puerta viva del núcleo usa ahora
     /// `veto_por_exposicion_direccional` (D-750b); este método sobrevive como
     /// superficie auditada por los tests de diagnóstico abiertos.
+    ///
+    /// TRIAJE B (GLM 106) — dos doctrinas endurecidas:
+    /// (i) capital NaN/≤0 = presupuesto de ruina DESCONOCIDO ⇒ veto
+    /// (antes: caía silenciosamente al bootstrap 13.0, inventando un
+    /// régimen micro que el llamador no reportó);
+    /// (ii) el cap EXPLÍCITO se honra — los pisos `.max(2)` elevaban
+    /// silenciosamente un cap de 1 a 2 (una posición más de lo que el
+    /// dueño autorizó). La interpolación micro/estándar puede SUBIR el
+    /// límite en régimen micro (2 por diseño D-641) pero jamás subirlo
+    /// por encima del cap cuando el cap es más estricto que ambos.
     pub fn is_continuous_correlation_vetoed(
         same_dir_count: usize,
         current_capital: f64,
@@ -770,17 +780,21 @@ impl CorrelationGuardEngine {
         if same_dir_count == 0 {
             return false;
         }
-        let safe_capital = if current_capital.is_finite() && current_capital > 0.0 {
-            current_capital
-        } else {
-            13.0
-        };
+        if !current_capital.is_finite() || current_capital <= 0.0 {
+            // FAIL-CLOSED: capital desconocido = no se puede clasificar el
+            // régimen ni dimensionar el presupuesto de ruina del clúster.
+            return true;
+        }
         // D-641 (completo): el límite de posiciones correlacionadas deja de
         // saltar en $30. Micro pleno => 2, como se diseñó; estándar => el
         // cluster genómico; entre ambos, interpolación redondeada al entero.
-        let w = crate::capital_regime::micro_weight(safe_capital, min_notional);
-        let standard = max_allowed_cluster.max(2) as f64;
-        let limit = crate::capital_regime::lerp(standard, 2.0, w).round().max(2.0) as usize;
+        let w = crate::capital_regime::micro_weight(current_capital, min_notional);
+        let standard = max_allowed_cluster as f64;
+        let interpolado = crate::capital_regime::lerp(standard, 2.0, w).round().max(1.0);
+        // El cap explícito manda: el límite efectivo nunca puede SER mayor
+        // que lo autorizado (piso 1 = al menos 1 posición misma-dirección
+        // permitida salvo cap 0 = bloqueo total del clúster).
+        let limit = interpolado.min((max_allowed_cluster.max(1)) as f64) as usize;
         same_dir_count >= limit
     }
 
