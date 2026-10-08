@@ -5986,3 +5986,22 @@ Exploración del cluster con resultado mixto:
 Suites: ensemble 5/5, signal 116/116, strategy-core 26/26, core 170/170.
 Corrección de mi nota del 108: (e) NO alimenta gates vivos (0 callers) —
 el cluster era 4 vivos + 1 muerto. TRIAJE B: 14 de 17 tests drenados.
+
+## 2026-10-08 — GLM: 110 — GEMELO VIVO dd RESUELTO-POR-VERIFICACIÓN (corrección honesta de mi registro del 106)
+
+Al tomar el gemelo que registré en el 106 ("peak NaN omite el veto
+inline de drawdown en el camino vivo"), la verificación mostró que el
+registro describía el estado PRE-FMT-212: el camino vivo YA es
+fail-closed — risk-engine lib.rs:228-241 rechaza con REJ_INVALID_INPUT
+cualquier orden con peak NaN/≤0 ANTES de que el circuit breaker O-04
+pueda saltarse, y el Flat resultante hace que el bloque del consejo
+(god-engine lib.rs:7152) ni siquiera corra. El else-branch de
+drawdown=0.0 en el payload es código muerto inalcanzable en ese régimen.
+**Test pinneado** (gemelo_vivo_peak_nan_es_rechazado_fail_closed...) con
+control de pico sano incluido — la garantía ya no depende de leer dos
+archivos cruzados. Sin cambio de conducta ⇒ sin oráculo.
+
+Queda 1 gemelo abierto: lib.rs:564+ (agregación viva de correlación).
+LECCIÓN de proceso: los registros de deuda deben citar el estado con
+líneas verificadas, no de memoria — el del 106 venía de una exploración
+con line-numbers pre-edición. (a)(b) del ensamble siguen al consejo.
