@@ -5765,3 +5765,31 @@ H2-9, H2-10, H2-12-conducta, PositionManager.
   tanh(mach/2) (mantiene qo_666 verde), C3 conformal divisor 2.0 (+
   pendiente: publicar trend z-normalizado desde el core), C4
   perceptron gate smoothstep 0.15+0.85·S((a−0.5)) (reescribir h2_6).
+
+## 2026-10-07 — GLM: 106 — TRIAJE B 13→9: los 4 veto guards DRENADOS (fail-closed + caps honrados, sin oráculo)
+
+Exploración verificó que los 3 guards tocados (check_drawdown_limit,
+is_continuous_correlation_vetoed, check_streak_drawdown_limit) tienen
+CERO call-sites vivos — son superficies auxiliares auditadas; el veto
+vivo usa otros caminos. Endurecerlos es doctrina, no conducta ⇒ sin
+oráculo. Las 4 doctrinas:
+
+1. Peak NaN/≤0 ≠ seguro: drawdown no medible no fabrica permiso (un
+   pico 0 contra capital positivo = 100% DD consumado). El arranque
+   legítimo inicializa el pico al capital — NaN aquí es corrupción.
+2. Capital NaN = veto: presupuesto de ruina desconocido no dimensiona
+   un clúster (antes caía silenciosamente al bootstrap 13.0).
+3. Cap de clúster honrado EXACTO: los pisos .max(2) elevaban
+   silenciosamente un cap de 1 a 2. La interpolación micro D-641 puede
+   RELAJAR en régimen micro pero jamás superar un cap más estricto.
+4. Cap de racha honrado EXACTO: una pérdida con cap 1 YA bloquea.
+
+**GEMELOS VIVOS registrados (ola futura CON oráculo)**: god-engine
+lib.rs:279 — peak NaN omite el veto inline de drawdown en el camino
+vivo; lib.rs:564+ — agregación viva de correlación. Endurecer ésos sí
+cambia conducta: decisión del consejo con T-1.
+
+Suites: risk-engine 141/141 lib + 14 targets 0 fallas; core compila.
+TRIAJE B: 9 (registry-Expired, ensemble×5, reality-physics×3). El MENÚ
+del 104 sigue libre; Qoder ola69 (saturación residual) en rama con 5+
+commits — sin choque (mi zona: risk-engine guards).
