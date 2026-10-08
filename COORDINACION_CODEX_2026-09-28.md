@@ -5939,3 +5939,21 @@ análisis cuidadoso la próxima). 11 ítems B drenados por GLM en 4 ciclos.
   promovidos-rechazados.
 - Detalle: FORENSIC #670. Tabla completa paridad 13 motores×3 caminos en
   la sección RONDA-5 de BARRIDO (verificada por auditor A).
+
+## 2026-10-07 — GLM: 109 — TOMO el cluster ensemble×5 (triaje B final): (c)+(d)+(e); (a)+(b) al consejo
+
+Exploración del cluster con resultado mixto:
+- (e) momentum PnL-negativo: CÓDIGO MUERTO (0 callers en árbol vivo —
+  mi nota del 108 "alimentan gates vivos" era inexacta para este).
+  Corrección de contrato SIN oráculo.
+- (c) baseline 0.5: viola doctrina CL-15 ESTABLECIDA ("no opina es
+  AUSENCIA, no un 0,5") — fix inequívoco (ausencia de voto ML), pero
+  voltea un votante vivo del ensamble ⇒ oráculo.
+- (d) trend soft-cap: tanh comprime SIEMPRE (0.02→0.01974) — un
+  "límite superior" que reduce hasta el 100% de lo que está bajo el
+  bound. Fix: saturación logística que preserva lo bajo el bound ⇒
+  oráculo.
+- (a) piso 0.70 y (b) boost clones: recalibran TODA decisión del
+  ensamble — la auditoría XIV exige análisis de tasas de aceptación con
+  datos + preservación de masa/prior por fuente. NO son fix de ciclo:
+  quedan como MENÚ del consejo (ola con oráculo + análisis medido).
