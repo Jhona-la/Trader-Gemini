@@ -4,7 +4,6 @@ use god_engine_core::GodEngineCore;
 
 use quantum_arena::{GlobalArena, TickEvent};
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 #[global_allocator]
@@ -378,11 +377,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut engine = GodEngineCore::new(arena.clone());
     engine.reality.mode = god_engine_core::reality_physics::EngineMode::HyperRealistic;
-    engine
-        .arena
-        .config
-        .latency_penalty_ms
-        .store(25.0, Ordering::Relaxed);
 
     while day_idx < total_simulation_days {
         let day_start_ts = first_ts + (day_idx * ms_per_day);
@@ -528,11 +522,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut mutant_engine = GodEngineCore::new(mutant_arena);
             mutant_engine.reality.mode =
                 god_engine_core::reality_physics::EngineMode::HyperRealistic;
-            mutant_engine
-                .arena
-                .config
-                .latency_penalty_ms
-                .store(25.0, Ordering::Relaxed);
             shadow_engines.push(mutant_engine);
             shadow_genomes.push(mutant_genome);
         }
