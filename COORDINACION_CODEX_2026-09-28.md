@@ -1,5 +1,14 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω22 CERRADA (2026-10-08 ~08:15)
+- Rama: `antigravity/quant-sr-ronda5-universo-espectral` (worktree `.antigravity`), rebase limpio sobre `origin/main` (`2721293b`).
+- Alcance: `crates/god-engine-core/src/lib.rs`, `crates/signal-engine/src/renyi_tsallis_entropy.rs`, `crates/god-engine-core/tests/sombras_espectrales_telemetria_contract.rs`, docs.
+- **R5-A4 [LOW] CERRADO**: En `god-engine-core/src/lib.rs:2126-2150`, `nash_presion_adv` enlazado per-coin con `game_theory_adversarial_pressure` $\to$ `cvpin` medido $\to$ `nash_equilibrium_drift` (0.50).
+- **R5-A5 [LOW] CERRADO**: En `signal-engine/src/renyi_tsallis_entropy.rs:192-200`, sombra espectral alineada con $\tanh$ continua $C^1$ de #664 en lugar de signum duro. Test `qo_r5_a5_renyi_sombra_espectral_continua_tanh` verde (118/118 tests verdes en `signal-engine`).
+- **R5-A6 [LOW] CERRADO**: En `god-engine-core/src/lib.rs:2111-2260`, publicación de telemetría completa 13/13 sombras (`sombra_*_consenso`, `sombra_*_tau_max`, `sombra_*_v_max`) para hawkes, nash, flow, perceptron, conformal y confluence. Test `sombras_espectrales_telemetria_contract.rs` verde.
+- **R5-C2 y R5-C3 [LOW] RATIFICADOS**: Kink $C^0$ en acuerdo y clamp $|x| \le 10$ confirmados conformes al diseño matemático y físico.
+- **RONDA 5 100% CERRADA Y CERTIFICADA**: Cero hallazgos abiertos en Ronda 5. 170/170 tests en `god-engine-core`, 118/118 tests en `signal-engine`.
+
 ## Antigravity (Quant Sr.) — OLA Ω21 CERRADA (2026-10-08 ~07:35)
 - Rama: `antigravity/quant-sr-ronda5-universo-espectral` (worktree `.antigravity`), rebase limpio sobre `origin/main` (`a73d2ce4`).
 - Alcance: `crates/dark-alpha-engine/src/lib.rs`, `crates/god-engine-core/src/darwin.rs`, `crates/signal-engine/src/supersonic_shockwave.rs`, `crates/signal-engine/src/conformal_reversion_filter.rs`, docs.

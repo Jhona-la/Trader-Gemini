@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Antigravity: OLA Ω22 CERRADA — RONDA 5: TELEMETRÍA 13/13 SOMBRAS, DINÁMICA NASH-CVPIN Y CONTINUIDAD C¹ EN ENTROPÍA (R5-A4, R5-A5, R5-A6) — RONDA 5 100% CERRADA
+
+- Rama: `antigravity/quant-sr-ronda5-universo-espectral` (worktree `.antigravity`), rebase limpio sobre `origin/main` (`2721293b`).
+- **R5-A4 [LOW] CERRADO**:
+  - En `crates/god-engine-core/src/lib.rs:2126-2150`: `nash_equilibrium_drift` tenía cero escritores y mantenía la presión adversarial estática en 0.50. Enlazado dinámicamente per-coin: lee `game_theory_adversarial_pressure`, con fallback dinámico al `cvpin` medido de la moneda (`ContinuousVPIN` de microestructura), y finalmente al parámetro configurable `nash_equilibrium_drift` (0.50).
+- **R5-A5 [LOW] CERRADO**:
+  - En `crates/signal-engine/src/renyi_tsallis_entropy.rs:192-200`: La sombra espectral de entropía Rényi-Tsallis usaba un signum duro `if x > 0.0 { 1.0 } else { -1.0 }`, siendo la única sombra que violaba el estándar de continuidad $C^1$ de la familia #664. Reemplazado por `x.tanh()`, garantizando transición continua y suave a través de $x=0$. Añadido test unitario `qo_r5_a5_renyi_sombra_espectral_continua_tanh` (118/118 tests verdes en `signal-engine`).
+- **R5-A6 [LOW] CERRADO**:
+  - En `crates/god-engine-core/src/lib.rs:2111-2260`: 6 sombras espectrales (`hawkes`, `nash`, `flow`, `perceptron`, `conformal`, `confluence`) no publicaban su telemetría individual al registro (`sombra_*_consenso`, `sombra_*_tau_max`, `sombra_*_v_max`), haciéndolas invisibles fuera del consenso agregado. Implementada la publicación canónica por moneda para las 6 sombras. Creado test de contrato `crates/god-engine-core/tests/sombras_espectrales_telemetria_contract.rs` (170/170 tests verdes en `god-engine-core` + 1/1 contrato verde).
+- **R5-C2 y R5-C3 [LOW] VERIFICADOS Y RATIFICADOS POR DISEÑO**:
+  - `R5-C2`: Kink $C^0$ de `.max(0.0)` en acuerdo es semánticamente requerido (clase calma-abstiene aceptada en G2-1).
+  - `R5-C3`: Clamp $|x| \le 10$ protege estabilidad de punto flotante en cálculo de propagación continua con asimetría $< 10^{-15}$ en z-scores observados.
+- **ESTADO GLOBAL DE RONDA 5**: ¡100% CERRADA Y CERTIFICADA! Cero hallazgos pendientes en Ronda 5. 13/13 sombras espectrales con paridad matemática, física y de telemetría completa.
+
 ## 2026-10-08 — Antigravity: OLA Ω21 CERRADA — RONDA 5: PRECISIÓN MATEMÁTICA Y FÍSICA (R5-B2, R5-B4, R5-C1, R5-B5)
 
 - Rama: `antigravity/quant-sr-ronda5-universo-espectral` (worktree `.antigravity`), rebase limpio sobre `origin/main` (`a73d2ce4`).
