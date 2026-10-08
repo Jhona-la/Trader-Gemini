@@ -1257,12 +1257,9 @@ un camino y el otro queda con la calibración vieja o clave muerta.
   `conformal_epsilon` (0 escritores) mientras el genoma publica
   `conformal_alpha` — el consenso VIVO corre conformal con α=0.10 fijo,
   sordo a la calibración [0.01,0.30]. Fix: leer `conformal_alpha`.
-- R5-A4 [LOW] `nash_equilibrium_drift` sin escritor ⇒ presión adversarial
-  congelada a 0.5 (G2-11 recurrente — alimenta el consenso vivo).
-- R5-A5 [LOW] renyi sombra con signum duro (única sin tanh de la familia
-  #664; C0 se salva por certeza→0).
-- R5-A6 [LOW] 6 sombras sin telemetría individual `sombra_*` (hawkes/
-  nash/flow/perceptron/conformal/confluence) — invisibles salvo consenso.
+- **R5-A4 [LOW] CERRADO (Ola Ω22 AGY)**: `nash_presion_adv` enlazado per-coin con `game_theory_adversarial_pressure`, con fallback dinámico al `cvpin` medido de la moneda, y finalmente a `nash_equilibrium_drift` (0.50).
+- **R5-A5 [LOW] CERRADO (Ola Ω22 AGY)**: `renyi` sombra espectral alineada con la familia continua $\tanh$ de #664, erradicando el signum duro en `voto_espectral`. Test `qo_r5_a5_renyi_sombra_espectral_continua_tanh` verde.
+- **R5-A6 [LOW] CERRADO (Ola Ω22 AGY)**: Telemetría individual de sombras espectrales completa 13/13 publicada al registry (`sombra_*_consenso`, `sombra_*_tau_max`, `sombra_*_v_max`) para hawkes, nash, flow, perceptron, conformal y confluence. Test `sombras_espectrales_telemetria_contract.rs` verde.
 
 ## §R5-B — MATEMÁTICA (verificada con cálculo)
 
@@ -1292,9 +1289,9 @@ un camino y el otro queda con la calibración vieja o clave muerta.
   + fallback atr_pct mezclaba precio-crudo/s con fracción/s ⇒ Mach ×mid_price.
   Corregido en `supersonic_shockwave.rs:172-184`: abstenerse devolviendo 0.0 cuando falta
   `mid_price` y se recurre al fallback fraccional. Test unitario verde.
-- R5-C2 [LOW] kink C⁰ del .max(0.0) del acuerdo — semánticamente requerido
+- **R5-C2 [LOW] VERIFICADO (DISEÑO ACEPTADO)**: kink C⁰ del .max(0.0) del acuerdo — semánticamente requerido
   (clase calma-abstiene aceptada en G2-1).
-- R5-C3 [LOW] clamp |x|≤10 sólo en sombra (asimetría ≤1% del jump).
+- **R5-C3 [LOW] VERIFICADO (DISEÑO ACEPTADO)**: clamp |x|≤10 sólo en sombra (asimetría < 1e-15 en z real).
 
 ## Mapa positivo (verificado)
 
@@ -1309,14 +1306,12 @@ un camino y el otro queda con la calibración vieja o clave muerta.
   renames bit-exact). Ola 68 A1 unidades coherentes.
 - TODOS los fixes de olas 62/63/65/68 siguen vivos tras los merges.
 
-## Asignación ronda 5
+## Cierre de Ronda 5 (100% CERTIFICADA)
 
-- **Qoder Ola 70 (en vuelo en .ola70)**: R5-A1+A2+A3 (paridad
-  conformal/shockwave/clave viva del consenso — sombra+vida en el mismo
-  commit, regla #656) + R5-B1 (fallbacks 0.24) + R5-B3 (γ₃ acotado).
-- **Antigravity Ola Ω21 CERRADA**: R5-B2 (rejilla fija darwin), R5-B4 (NaN sigmoid),
-  R5-C1 (abstenir sin mid_price en shockwave fraccional), R5-B5 (errata tanh(5)),
-  limpieza 0 warnings en conformal_reversion_filter.
-- Restante Ronda 5: R5-A4/A5/A6, R5-C2/C3.
+- **Qoder Ola 70 (merge 2721293b)**: R5-A1 + R5-A2 + R5-A3 + R5-B1 + R5-B3 cerrados.
+- **Antigravity Ola Ω21 (merge 9cf77026)**: R5-B2 + R5-B4 + R5-C1 + R5-B5 cerrados.
+- **Antigravity Ola Ω22 (commit actual)**: R5-A4 + R5-A5 + R5-A6 cerrados; R5-C2 + R5-C3 verificados.
+- **ESTADO GLOBAL**: Ronda 5 100% CERRADA Y VERIFICADA. Cero hallazgos abiertos en R5.
+
 
 

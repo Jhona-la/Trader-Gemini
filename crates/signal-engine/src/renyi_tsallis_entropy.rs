@@ -192,9 +192,10 @@ impl RenyiTsallisEntropyEngine {
             // acotar la certeza en [0,1].
             let s_max = self.calculate_tsallis_entropy(&[0.5, 0.5]).max(1e-9);
             let certeza = (1.0 - (s_q / s_max).clamp(0.0, 1.0)).clamp(0.0, 1.0);
-            // R5-A5: tanh graduado (familia #664) — el if/else de signo
-            // era el último signum duro de las sombras (kink C⁰ en x=0).
-            (x.tanh() * certeza).clamp(-1.0, 1.0)
+            // #664 / R5-A5: dirección CONTINUA (tanh) alineada con la familia
+            // de sombras espectrales en lugar del signum duro.
+            let signo = x.tanh();
+            (signo * certeza).clamp(-1.0, 1.0)
         })
     }
 }
@@ -416,6 +417,7 @@ mod qo_615_tests {
 #[cfg(test)]
 mod qo_664_tests {
     use super::*;
+    use crate::voto_espectral::ESCALAS_VOTO;
 
     /// #664 (G2-9): la convicción Rényi-Tsallis es CONTINUA en ambos
     /// umbrales — antes saltaba de 0 a (1−tsallis)·obi al cruzar
@@ -435,5 +437,24 @@ mod qo_664_tests {
         let bajo_h = RenyiTsallisEntropyEngine::vote(0.58, 0.30);
         let sobre_h = RenyiTsallisEntropyEngine::vote(0.62, 0.30);
         assert!(bajo_h >= 0.0 && (bajo_h - sobre_h).abs() < 0.01, "sin salto en tsallis=0.60: {bajo_h} {sobre_h}");
+    }
+
+    /// R5-A5: la sombra espectral es CONTINUA (C¹) a través de x=0 gracias a tanh
+    /// (se erradicó el signum duro).
+    #[test]
+    fn qo_r5_a5_renyi_sombra_espectral_continua_tanh() {
+        let engine = RenyiTsallisEntropyEngine::new(1.5, 2.0);
+        let mut x_pos = [0.0; ESCALAS_VOTO];
+        let mut x_neg = [0.0; ESCALAS_VOTO];
+        let eps = 1e-4;
+        x_pos[5] = eps;
+        x_neg[5] = -eps;
+        let v_pos = engine.voto_espectral(&x_pos).en_escala(5);
+        let v_neg = engine.voto_espectral(&x_neg).en_escala(5);
+        assert!(v_pos > 0.0);
+        assert!(v_neg < 0.0);
+        // Con tanh(eps) ≈ eps, la diferencia entre +eps y -eps es de orden O(eps),
+        // no un salto O(1).
+        assert!((v_pos - v_neg).abs() < 1e-3, "transición C¹ suave en x=0: {v_pos} vs {v_neg}");
     }
 }
