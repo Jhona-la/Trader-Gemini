@@ -84,7 +84,10 @@ impl SupersonicShockwaveEngine {
                 return 0.0;
             }
             let m = Self::compute_mach_number(x.abs().min(10.0), c_z);
-            (x.clamp(-10.0, 10.0).tanh() * Self::compute_shockwave_jump(m))
+            // R5-A2: firma a la ESCALA DEL ESTADÍSTICO en PARIDAD con el
+            // camino vivo ((speed/sound)/2 de la Ola 69) — antes tanh(x)
+            // crudo era 2× más empinado que el vivo del MISMO motor.
+            ((x.clamp(-10.0, 10.0) / c_z) / 2.0).tanh() * Self::compute_shockwave_jump(m)
                 .clamp(-1.0, 1.0)
         })
     }
