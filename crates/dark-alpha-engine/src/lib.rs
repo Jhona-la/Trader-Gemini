@@ -404,7 +404,16 @@ impl QuantizedDenseLayer {
                 j += 1;
             }
 
-            let total = (self.biases[i] + sum_dot * scale).clamp(-700.0, 700.0);
+            // R5-B4: la suma no finita se propaga como NaN (el filtro
+            // probability.is_finite() del predict la captura) — antes el
+            // clamp(±700) convertía +Inf en 700 ⇒ sigmoid=1.0 «evidencia»
+            // saturada pero FINITA que el filtro no atrapaba.
+            let raw = self.biases[i] + sum_dot * scale;
+            let total = if raw.is_finite() {
+                raw.clamp(-700.0, 700.0)
+            } else {
+                f64::NAN
+            };
             output[i] = 1.0 / (1.0 + (-total).exp());
         }
     }
