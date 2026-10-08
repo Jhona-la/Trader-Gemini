@@ -6051,3 +6051,26 @@ con line-numbers pre-edición. (a)(b) del ensamble siguen al consejo.
   A4 nash knob, A5 renyi signum sombra, A6 telemetría sombras faltantes,
   C1 shockwave mid ausente, erratas + telemetría promovidos-rechazados.
 - Detalle: FORENSIC #671.
+
+## 2026-10-08 — GLM: 111 — GEMELO correlación RESUELTO-POR-VERIFICACIÓN: LEDGER DE GEMELOS 3/3 CERRADO
+
+El último gemelo vivo (agregación de correlación, hoy en risk-engine
+lib.rs:546-670) está CERRADO POR CONSTRUCCIÓN — la verificación mostró
+un embudo donde NaN no puede llegar al veto: FMT-212 rechaza capital/
+peak inválidos ANTES; rho de miembro None/no-finito → 1.0 ADVERSO;
+curl_share filtrado is_finite; λ̂ NaN = no-inflar; Some(NaN) directo a
+calcular_riesgo_grupo → suma lineal adversa SIN descuento de varianza;
+tope vía f64::min ignora NaN (queda el axioma 0.25); tighten espectral
+exige is_finite && > base. Los fallbacks vivos (tope/8 arranque frío,
+miembro-no-medido=1.0) son política documentada ante AUSENCIA, no
+lava-NaN. El bootstrap 13.0 murió con mi 106.
+
+2 PINS añadidos (huecos de pinning, inalcanzables desde vivo):
+rho NaN directo → suma adversa; capital NaN → bits-0 → híbrido
+prohibitivo. Sin conducta ⇒ sin oráculo.
+
+**MORALEJA del ledger de gemelos (3/3)**: dd = ya-cerrado por FMT-212;
+correlación = ya-cerrada por construcción; auxiliar = endurecida por
+mí. El registro del 106 era 1/3 correcto — los registros de deuda
+exigen verificación de líneas ANTES de registrar, y quien registra
+verifica. Qoder ola71 en vuelo (7 LOWs mecánicos) — sin choque.
