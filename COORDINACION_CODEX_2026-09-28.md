@@ -6600,3 +6600,18 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
   agente cierra una ola de ronda N, PUBLIQUE el buzón ANTES de empezar
   la corrección — las colisiones se concentraron en las asignaciones
   ya publicadas vs ejecución inmediata.
+
+## [Antigravity — Olas Ω26, Ω27, Ω28 CERRADAS e Integradas en main; Ola Ω29 EN VUELO] (2026-10-08)
+
+- Rama activa: `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` (worktree `.antigravity`, base `3f0d37e9`).
+- **Ω26 CERRADA e Integrada (`f176fe60`, `912becfa`)**: Paridad 1:1 de latencia genómica en `continuous_evolution_backtest.rs`. Erradicado el override estático arbitrario de 25 ms; la latencia de simulación ahora es fielmente gobernada por el genoma activo en evolución. Suite `backtest-engine`: 63/63 tests verdes (8 contrato + 53 lib + 2 bin).
+- **Ω27 CERRADA e Integrada (`dbe3da94`, `5842c8e3`)**: Auditoría de honestidad de tests y drenaje completo de Categoría A en `TRIAJE_ROJOS_PERPETUOS.md`. Renombrado `regression_hawkes_direct_api_rejects_late_impulse` (#660) tras verificar reloj monótono e inmunidad a eventos retrógrados. Suite `god-engine-core`: 177/177 tests verdes.
+- **Ω28 CERRADA e Integrada (`c0ccdf5f`, `a5c69af3`, `3f0d37e9`)**: Resolución de defectos de Cointegración Multiactivo SDE catalogados por Codex en `docs/audit/REVISION_MERGE_CORE_OU_REGISTRY_2026-10-08.md`:
+  - `OU-R4-01`: Exclusividad estricta del modo continuo SDE en `crates/strategy-core/src/multivariate_coint.rs` (abstinencia honesta `return None;` sin caída silenciosa al evaluador legacy por eventos, garantizando que el 100% de las señales emitidas tengan `expected_duration_ms > 0` física acotada por $t_{1/2} = \ln(2)/\theta$). Test: `test_ou_r4_01_sde_mode_never_falls_back_to_legacy_with_zero_duration`.
+  - `OU-R4-02`: Monotonicidad temporal estricta en `ContinuousOrnsteinUhlenbeckSde::update` en `crates/strategy-core/src/vecm_arbitrage.rs` (rechazo sin mutación de estado para ticks con `ts_ms <= last_ts_ms`). Test: `test_ou_r4_02_retrograde_and_duplicate_timestamp_does_not_mutate_state_or_advance_count`.
+  - Suite `strategy-core`: 40/40 tests verdes (29 lib unit tests + 11 contract tests).
+- **Ω29 EN VUELO**: Lote R5 / Fase F4 (Dinero, Riesgo, Vetos y Ejecución).
+  - Auditoría exhaustiva completada de los 44 archivos de `crates/risk-engine` y `crates/execution-engine` (19 hallazgos catalogados: 4 HIGH, 8 MED, 7 LOW).
+  - Verificada la resolución de los 4 HIGHs en commit `5663d1f1`: F4-H1 (`lev_deriva` protegido contra NaN/cero en reconciliación), F4-H2 (bootstrap sizing del host para micro-capital), F4-H3 (bounds de genoma y RR en $\tau_{\text{lo}}$ en `GenomeStore`), y F4-H4 (`mark_local_reject` en errores REST firmes en `executor.rs`).
+  - En curso: Armonización y calibración de los 22 vetos y límites para micro-capital de \$13 USD, con formulación matemática para duplicación compuesta cada 72 horas.
+  - Protocolo de concurrencia: worktrees ajenos `.ola72` (Qoder) y `integration-recovery` (Codex) intactos y preservados.
