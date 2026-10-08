@@ -24,14 +24,18 @@ verifica algo. No cambian conducta — sólo dejan de certificar en falso.
 
 | archivo:línea | defecto | decisión requerida |
 |---|---|---|
-| `execution-engine/tests/shadow_open_diagnostics.rs:20` | kill-switch no bloquea nueva entrada | ¿bloquear? (cambia semántica del kill) |
+| ~~`execution-engine/tests/shadow_open_diagnostics.rs:20`~~ | ~~kill-switch no bloquea nueva entrada~~ | **DRENADO (GLM 105)**: espejo CL-3 — latch permanente, 7 rutas de nuevo riesgo bloqueadas, salidas libres. Sin oráculo (stub sin cablear a dinero). |
 | `execution-engine/tests/registry_open_diagnostics.rs:8` | timeout local fabrica Expired del exchange | ¿fail-open o fail-closed? |
-| `execution-engine/tests/execution_open_diagnostics.rs:44` | selector fabrica BTCUSDT de `[]` | ¿qué devuelve el universo vacío? |
-| `execution-engine/tests/execution_open_diagnostics.rs:51` | `assert_ne!(score, score)` — orden total inconsistente | estabilizar el comparador |
-| `storage-engine/tests/mmap_open_diagnostics.rs:6` | pérdida silenciosa de frames en wrap | ¿reader fresco o checkpoint? |
+| ~~`execution-engine/tests/execution_open_diagnostics.rs:44`~~ | ~~selector fabrica BTCUSDT de `[]`~~ | **DRENADO (GLM XCIX)**: fail-closed, universo vacío. |
+| ~~`execution-engine/tests/execution_open_diagnostics.rs:51`~~ | ~~`assert_ne!(score, score)` — orden total inconsistente~~ | **DRENADO (GLM C)**: Ord total real, NaN menor. |
+| ~~`storage-engine/tests/mmap_open_diagnostics.rs:6`~~ | ~~pérdida silenciosa de frames en wrap~~ | **DRENADO (GLM 105, con oráculo)**: stop-at-first-invalid — el cursor sólo avanza sobre frames validados; liveness por el clamp MAX_BATCH_READ. El frame commiteado-después se recupera (pérdida sistemática del dataset del Shadow Forest eliminada). |
 | `signal-engine/tests/ensemble_characterization.rs:5 tests` | piso 0.7, clones inflan, baseline 0.5 fabrica lift | revisión del ensamble |
 | `risk-engine/tests/veto_open_diagnostics.rs:4 tests` | NaN-peak pasa, capital desconocido no fail-closed, cap=1 no honrado | doctrina de cada guard |
 | `god-engine-core/tests/reality_physics_open_diagnostics.rs:3` | precio infinito, maker sin cola, latency_penalty ignorado | física del fill |
+
+**B queda en 13 tests** (3 drenados por GLM: XCIX, C, 105×2 — nota: el
+mapa XCVIII contaba 15; la tabla lista 8 filas ≈ 17 tests, de los cuales
+4 ya están drenados).
 
 ## Categoría C — COMPORTAMIENTO DOCUMENTADO (aceptado, no bug)
 
