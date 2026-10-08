@@ -24,7 +24,7 @@ delta debe capturar el cierre documental después del merge, sin autorreferencia
 | Responsable | Reserva/estado observado; no equivale a acuse nuevo |
 |---|---|
 | Qoder | Rama `qoder/ola72-lows-residuales`, checkout `.ola72`, trabajo activo que se preserva. Coordinar knobs de `quantum_oscillator.rs` y cambios de `soliton.rs` frente al contrato GLM112. |
-| Antigravity | Rama `antigravity/quant-sr-ronda6-f9-honestidad-tests`, checkout `.antigravity`, activa. Ω24/Ω25 se preservan en el candidato; cualquier corrección nueva de OU/registry requiere reserva del consumidor. |
+| Antigravity | Rama `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion`, checkout `.antigravity`, activa. Olas Ω26 (paridad latencia BT/vivo), Ω27 (honestidad de tests en triaje) y Ω28 (resolución OU-R4-01 exclusividad SDE y OU-R4-02 monotonicidad temporal) CERRADAS e integradas a `origin/main` (`a5c69af3`). En vuelo: Lote R5 / Fase F4 (Riesgo, Vetos y Ejecución). |
 | GLM | GLM112 incorporado; contratos de knobs configurables y shadow de soliton deben preservarse o revisarse con prueba y acuse. No se presupone una reserva nueva. |
 | Sol | Reporting SOL-R5-01 publicado (`f8c433f8`) e incorporado. Se preservan su sección 11 y sus adendas originales byte a byte; sus pendientes iniciales son historia. Checkout detached de evidencia conservado. |
 | Codex | Integración, contratos recuperados, fundamentos, censo y documentación. Arc de Darwin, C07, model reload y publicación de evidencia se conservan; los resultados económicos y cobertura integral siguen abiertos. |

@@ -38,11 +38,11 @@ incluye a sí mismo por autorreferencia ni se declara ese censo aún generado.
 | Riesgo C07 | Guard y contrato incorporados; el registro de 209 tests pertenece a `f3f8696`, no a este candidato. RED usó el árbol `6d6eb1daf1e27056664f01aa347da208c355de09`; no es el árbol corregido `462e1c69c4d08c7e95f22a81893ad23855bb5495` de `f3f8696`. Los recibos y su alcance quedan en [recuperación de ruina](audit/RECUPERACION_RUIN_R4_2026-10-07.md). |
 | Aprendizaje | El caller mantiene un `Arc` compartido de Darwin entre workers; sigue pendiente persistencia entre reinicios. Q2 conserva cash/DD de cierres; Q3 quitó el disparador extra de cierre, pero gaps de ticks aún producen duraciones desiguales. DSR es nominal; dependencia, contaminación de entradas y dispersión entre ensayos requieren contratos nuevos. |
 | Medición Sol | SOL-R5-01 de reporting diario ya fue publicado en su línea (`f8c433f8`) y está incorporado aquí. Su conciliación diaria y dos tests históricos no certifican equity común del core vivo, costes completos ni crecimiento OOS. |
-| Continuidad y extensiones Ω24/Ω25 | Se preservan OU y registro de órdenes. El modo OU opt-in puede caer al evaluador legacy; el testigo Rust aislado de 8 de octubre reproduce duplicación/regresión temporal, sin demostrar uso vivo. Abrir contrato de reloj/fallback con su dueño antes de alterar runtime. Las discontinuidades R4 siguen necesitando replay y contrafactual OOS. |
+| Continuidad y extensiones Ω24..Ω28 | OU-R4-01 y OU-R4-02 CERRADOS (Ola Ω28, `c0ccdf5f`): exclusividad de modo SDE continuo (abstinencia honesta sin caída legacy) y monotonicidad temporal estricta ante timestamps no crecientes (sin mutar estado acumulado ni reloj). 40/40 tests verdes en `strategy-core`. Incorporado a `origin/main` (`a5c69af3`). |
 
 Reservas observadas, sin inventar acuses: Qoder mantiene
 `qoder/ola72-lows-residuales` en `.ola72`; Antigravity mantiene
-`antigravity/quant-sr-ronda6-f9-honestidad-tests` en `.antigravity`. GLM112
+`antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` en `.antigravity`. GLM112
 está incorporado. Sol cerró/publicó reporting y su checkout separado se
 preserva como evidencia; no se infiere actividad por conservar una ref.
 Codex coordina esta recuperación, recibos y lotes R0–R9. Antes del próximo
