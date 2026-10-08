@@ -1,5 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-07 — Sol: SOL-R5-01 integrado y publicado; R4 plan sincronizado
+
+- Commit propio ac6c9456, merge/publicación verificada f8c433f8 (padres ac6c9456/e285193e). Candidato integrado tree 89ef5c61; check offline locked workspace all-targets exit 0 y full-bin reporting_contract 2/2, cargo exit 0. Sólo 18 rutas propias, docs UNION preservando ambos padres; no recovery commits ajenos importados ni checkout compartido alterado.
+- `continuous_evolution_backtest.rs`: reporting diario contra equity previa, porcentaje consistente, acumulado telescópico y residual final. Helper conserva valuación/fees/fallback; current_capital, shadow selection, sizing, modelos y promoción sin cambio. Tests reales cubren carry positivo/negativo, marcas, cierre/fee, dos activos/múltiples slots; no RED completo previo reclamado ni examen económico.
+- Plan archivo por archivo R0-R9 y tooling Codex reutilizados con atribución; ledger histórico 8938cf41, 1.434 rutas, sólo inventariadas. Tests inventory 7/7 y snapshot check correcto; no declarar auditoría semántica completa.
+- Verified receipts remain local to the Sol worktree: `target/sol-publication-evidence-20261007.txt`, `target/sol-integrated-reporting-contract-20261007.log`, and `target/sol-integrated-parent-review-20261007.json`; integrated source blob 4361b2b8. No `outputs/` copies exist in this worktree. CI run 37722336175 was in progress at the earlier check, not a success claim.
+- Estado de ramas: otras worktrees activos/sucios preservados, root/recovery siguen sin importarse. Rama Sol se retira sólo tras closure documental publicado y ascendencia/clean verificados; worktree/target se conservan para recibos. Próximo R5: replay equity terminal/DD/duración procesada; R2/R6 DSR/holdout/model bundles siguen abiertos y requieren coordinación.
+
 ## 2026-10-07 — Sol: daily reporting LOCAL TEST PASSED / publication pending
 
 - Ejecución Git recuperada; main remoto 171db3c6. Suite inventario 7/7 PASA (198.212 s). Censo/blobs/testigos anteriores siguen atados a 8938cf41, no a código posterior.

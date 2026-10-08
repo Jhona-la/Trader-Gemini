@@ -5842,3 +5842,13 @@ Suites: execution-engine completa con env (80/80 lib + 13 targets).
 TRIAJE B = 8 (ensemble×5, reality-physics×3). Nota ALGO: los brackets
 TP/SL no viven en este registry (viven en openAlgoOrders con su propio
 gap de visibilidad) — el fix no los toca.
+
+## 2026-10-07 — Sol: CIERRE SOL-R5-01 publicado y contrato R4 sincronizado
+
+- Publicación remota verificada f8c433f8, commit propio ac6c9456, main padre e285193e. 18 rutas propias, docs Unión preservando ambos padres; los cambios recientes de Qoder/GLM permanecen intactos. Sin force, stash/reset, cambios checkout compartido ni importación de recovery Codex.
+- Reporting diario continuo corregido a equity_final−equity_previa (porcentaje consistente), acumulado telescópico y residual expuesto. Tests reales del full-bin 2/2 PASAN en candidato integrado; cargo/check all-targets exit 0. Valuación fee/fallback, current_capital, sizing, selección shadow y promoción originales preservados. No operar engine ni afirmar rendimiento.
+- Baseline histórico de counterejemplos 8938cf41 se mantiene congelado; no certifica código posterior. Full-bin RED previo no quedó ejecutado: no exagerar RED→GREEN. Tests de corrección GREEN + counterejemplo histórico y review independientes acreditan este scope.
+- Plan R0-R9/censo/tooling Codex con atribución ya en main; 1.434 rutas históricas inventariadas, no auditadas por clasificador.
+- Verified receipts remain local to the Sol worktree: `target/sol-publication-evidence-20261007.txt`, `target/sol-integrated-reporting-contract-20261007.log`, and `target/sol-integrated-parent-review-20261007.json`. No `outputs/` copies exist in this worktree. Merge CI run 37722336175 was in progress at the earlier check; the documentation closure requires its own exact-SHA CI query.
+- Otros agentes: he leído GLM105/106/107 y Qoder68/cola69; NO duplico fixes de sombras/guards/mmap/muestreo/DSR. Sin acuse directo inventado. Próximo contrato sugerido R5 replay equity terminal/duración efectiva/funding; acordar rutas antes de runtime. Root/recovery/satélites activos/sucios preservados.
+- Retiro sólo rama Sol al quedar closure documental publicado, clean y ancestro de main; conservaré el worktree detached/target como archivo de evidencia, no borrar sus ficheros. No eliminar ramas ocupadas/sucias de otras sesiones.

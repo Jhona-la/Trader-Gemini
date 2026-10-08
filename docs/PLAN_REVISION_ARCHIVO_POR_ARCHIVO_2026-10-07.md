@@ -416,3 +416,42 @@ proyecciones de capital, inferencias de tests verdes o afirmaciones de excelenci
   No live orders, engine execution, strategy/sizing/shadow-selection changes,
   model/arming changes, or economic validation. Historical receipts above
   remain historical; no current CI or future publication success is claimed.
+
+### 11.6 Cierre de integración SOL-R5-01 — publicación verificada
+
+- Commit propio `ac6c945634d7bbb20a0ae9f19382babe660b7de5`: plan/censo
+  atribuídos y corrección únicamente de reporting diario. Merge publicado
+  `f8c433f8c99d230b1708cf850b44fa0204eba25b`, padres ac6c9456 y
+  `e285193ef3397c65fe957e6191d5b1296806e1df`; árbol probado
+  `89ef5c61b9dd1bb879ea81d32e5d2e4bd8198b9e`. SHA remoto confirmado por
+  ls-remote y ambos commits propios acreditados como ancestros (exit 0).
+- `cargo check --offline --locked --workspace --all-targets` en candidato
+  integrado: cargo_exit=0. Test full-bin `reporting_contract`: 2/2 PASAN,
+  cargo_exit=0. No transferencia del verde anterior. Review contra AMBOS
+  padres preservó documentación por unión y cambios nuevos de Qoder/GLM;
+  sólo las 18 rutas autorizadas difieren respecto de main integrado.
+- Helper real calcula `equity_final - equity_previa` y el porcentaje usa
+  equity previa. Acumulado telescópico y residual final expuesto. Tests con
+  arena real prueban carry positivo/negativo, cambios de marca, cierre,
+  comisiones en cash, dos activos y múltiples slots. No se altera sizing,
+  selección shadow, fees/marks/fallback existentes ni promoción del motor.
+- Fuente integrada: blob `4361b2b8557f34d28b6cea172a4561f3af79d404`,
+  SHA256 `7f8503371f84d27e890d9e3d5575695baa2ed6b430c8a95674c3489b7dd53b6c`.
+  Verified publication receipt: `target/sol-publication-evidence-20261007.txt`
+  in the Sol worktree. Behavioral log: `target/sol-integrated-reporting-contract-20261007.log`;
+  both-parent review: `target/sol-integrated-parent-review-20261007.json`.
+  These are local, ignored receipts, not repository-relative published artifacts;
+  no `outputs/` copies exist in this worktree.
+- El counterejemplo histórico sigue congelado en 8938cf41; la etapa RED
+  completa del harness no llegó a producir un resultado antes de la corrección.
+  No reclamar RED→GREEN del bin completo; sí histórico reproducido + tests
+  reales de corrección GREEN. No examen económico, T-1 nuevo ni producción.
+- CI remoto del merge: run 37722336175 en progreso al último chequeo.
+  No declarar resultado futuro. Publicación Git, all-targets local, tests
+  conductuales y CI son recibos distintos.
+- Próximo contrato R5: equity/drawdown terminal y duración efectivamente
+  procesada en replay compartido, reconciliación fees/funding y posiciones
+  abiertas; R2/R6 dependencia DSR/holdout/publicación sigue coordinado con
+  las ramas de otros agentes. La auditoría semántica de todos los archivos
+  y meta de crecimiento siguen abiertas. Los estados históricos anteriores
+  se conservan como bitácora, no como estado final de esta ola.
